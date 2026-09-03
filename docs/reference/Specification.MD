@@ -1,5 +1,33 @@
 # SwarmForge VS Code Extension — Specification
 
+**Last Updated:** September 3, 2026 (BL-1296: Bubble gets its own answering
+seat so it stays answerable while the Cursor seat is mid-turn, while
+remaining a mirror of the front desk — the human's ruling (option 1 of
+three, 2026-09-03): strict echo, the Bubble seat relays the front desk's own
+answer and produces none of its own. `runBubbleSeatTurn`
+(`extension/src/tools/bubbleSeatLive.ts`) drives the same turn the Let's
+Talk surface drives (`processLetsTalkTurn` against
+`createLiveCursorBridgeAgentSession`) and posts back what it returns,
+unedited — no code path in that module composes a reply, so invariant 1
+(never diverges from the front desk) is structural rather than a rule to
+remember. `tryDispatchToBubbleSeat`
+(`extension/src/tools/telegramCursorBridgeLive.ts`) dispatches a Bubble-topic
+message before Cursor's own gate (`decideInboundAction`) is consulted at
+all; `decideBubbleSeatTurn`'s (`extension/src/tools/bubbleSeat.ts`) first
+clause refuses any topic that is not Bubble's own before anything else is
+considered (invariant 2), and the seat runs inside the bridge's existing
+poll, opening no second `getUpdates` consumer (invariant 3), the same way
+BL-1235's seat does. `cursorBusy` is accepted on the decision input and
+deliberately never read — Bubble used to wait behind that flag, which is
+the defect this ticket removes. A refusal (front desk threw, or returned an
+empty reply) always names why, posted into Bubble's own topic, never
+silence. Hardened with a hand-authored mutation sweep (Stryker's dry run
+blocked repo-wide by the standing `liveRepoDerivationGuard` red, BL-1291):
+25 mutants, 24 killed + 1 equivalent recorded with reasoning. Acceptance:
+`specs/features/BL-1296-bubble-answers-from-its-own-seat.feature`. How-to:
+`docs/how-to/BL-1296-bubble-answers-from-its-own-seat.md`. No diagram
+depicts cursor-bridge/seat-dispatch internals.)
+Prior entry —
 **Last Updated:** September 3, 2026 (BL-1375: the land step's shared-path
 refusal (BL-1332) is narrowed. `own-paths` (`land_step_lib.bb`) used to
 refuse outright whenever a path was owned by both the landing ticket and

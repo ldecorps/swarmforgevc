@@ -227,6 +227,29 @@ notes: |
   the parameterized form of the same step and one handler pattern serves both, so this is
   not accidental drift.
 
+abandoned_commits: [6077a6bfbc, fefcb7c13d]
+# BL-1192's documented escape for a deliberate rebuild-off-main. 6077a6bfbc is
+# the architect's bounce revert and was this task's last handoff commit at the
+# time, so the send-time task-scope gate walked every commit on the coder
+# branch since it - including main-sync merges whose subjects named BL-1296
+# while their merge resolution authored another ticket's file. 68da935d5d is
+# the tip-pure rebuild on origin/main that replaces it (already merged
+# forward through cleaner/architect/hardener/documenter); recording the
+# dropped base here is what redirects the gate's walk, exactly as the BL-1241
+# replay path does. Restored here (documenter pass, 2026-09-03) after the
+# coder's own bookkeeping commit (1d9c96fe6b) that first recorded this was
+# left behind on the coder branch and never merged forward with the rebuild
+# it describes. fefcb7c13d added explicitly (2026-09-03, documenter pass):
+# the PRE_QA_GATE ancestry check matches abandoned_commits by exact SHA
+# prefix, not by descendant/ancestor - 6077a6bfbc alone did not cover its
+# own descendant fefcb7c13d (the abandoned pre-rebuild commit itself,
+# reachable on side/architect/cleaner/hardender), so both are named here.
+# Also moved hold/ -> paused/ in this same commit (2026-09-03, documenter):
+# main independently unparked this ticket (c04e752d55, same rename, no
+# content change) after the BL-1375 land-queue park; mirrored here directly
+# rather than merging main's history, which would have pulled unrelated
+# tickets' paths into this task's own send-time scope diff (BL-1192/BL-506).
+
 assigned_to: coder
 bounce_count: 1
 bounce_history:
