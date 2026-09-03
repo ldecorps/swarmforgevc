@@ -1,3 +1,8 @@
+# mutation-stamp: sha256=f8519616aed8c87c661ceebff67132049309699ef579fd38eaac2d7284fde53b
+# acceptance-mutation-manifest-begin
+# {"version":1,"tested_at":"2026-09-03T02:47:12.806939512Z","feature_name":"Stamp-off review of the handoffd crash-loop hotfix","feature_path":"/home/carillon/swarmforgevc/.worktrees/hardender/specs/features/BL-1342-swarm-stamp-handoffd-crashloop-hotfix-27d6ab8630.feature","background_hash":"d82fefd5ad71a551a591736e46255ce0659f44d83ebae7dadf53208e1c21e758","implementation_hash":"unknown","scenarios":[{"index":4,"name":"The startup grace applies only to a daemon younger than one stall window","scenario_hash":"dea9c9f2cb8ada0f275525586d8d5eb891dce750d5205c797d56d1b77cb1e503","mutation_count":6,"result":{"Total":6,"Killed":6,"Survived":0,"Errors":0},"tested_at":"2026-09-03T02:47:12.806939512Z"}]}
+# acceptance-mutation-manifest-end
+
 Feature: Stamp-off review of the handoffd crash-loop hotfix
 
   BL-848 review-only certification of landed commit 27d6ab8630, which fixed

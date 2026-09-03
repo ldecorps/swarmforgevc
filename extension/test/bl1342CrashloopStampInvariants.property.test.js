@@ -150,7 +150,7 @@ test('BL-1342/BL-654 invariant 2: a skipped parcel is left as found and re-evalu
     { numRuns: 2 },
   );
   assert.ok(runs > 0, 'the race was never exercised');
-}, 120000);
+});
 
 test('BL-1342/BL-654 invariant 3: the grace only softens :stalled, only for a known young age', () => {
   // GENERATOR REACH (by construction): the four cases the verdict turns on
