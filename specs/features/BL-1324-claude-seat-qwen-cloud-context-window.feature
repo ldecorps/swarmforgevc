@@ -30,7 +30,17 @@ Feature: a claude seat whose --model is qwen* gets Token Plan billing and a real
       | --model qwen3.8-max --effort high        | true   |
       | --model claude-sonnet-5 --effort high    | false  |
       | --effort high                            | false  |
-      | --model=qwen3.8-max --effort high        | false  |
+      # RETIRED by BL-1328 (2026-09-03): the row asserting
+      # `--model=qwen3.8-max --effort high -> false` documented the
+      # single-token detection GAP as certified behaviour. BL-1324's own human
+      # ruling authorized closing that gap, and BL-1328 did; the assertion is
+      # therefore superseded, and BL-1006 retires a superseded boundary rather
+      # than rewording it (flipping false->true would have left this contract
+      # asserting behaviour BL-1324 never shipped). The successor coverage is
+      # BL-1328's own Outline, which asserts `--model=qwen3.8-max -> reports`
+      # and `--model=claude-sonnet-5 -> does not report`. The other three rows
+      # above stay: each is still true, and the space-form negative and the
+      # no-model case exist nowhere else.
 
   # BL-1324 qwen-targeted-claude-seat-remaps-billing-guard-02
   Scenario: a claude seat whose own --model is qwen* rides the Token Plan endpoint without the global opt-in

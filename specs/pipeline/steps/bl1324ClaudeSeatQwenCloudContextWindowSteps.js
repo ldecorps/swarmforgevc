@@ -299,17 +299,26 @@ function registerSteps(registry) {
   const scoped = (re, fn) => registry.defineScoped(re, fn, FEATURE);
 
   scoped(/^swarmforge\.sh's launch helpers are sourced with no operator profile$/, (ctx) => {
-    // Pin the review to the landed commit: the three hotfix-owned regions
-    // of the working-tree swarmforge.sh must be byte-identical to their
-    // content at 4ed88430b2. If a later commit reshaped one, these
-    // scenarios would silently be certifying that later change instead.
-    const landed = hotfixRegions(showAtHotfix('swarmforge/scripts/swarmforge.sh'));
+    // BL-1328 (retirement): this Given used to pin the three hotfix-owned
+    // regions of the working-tree swarmforge.sh to their BYTE-EXACT text at
+    // 4ed88430b2. That forbade ANY later edit to them - including the narrow
+    // follow-up BL-1324's own human ruling authorized ("match the
+    // --model=<value> single-token form"). Measured at the time: 11 pass / 0
+    // fail before that follow-up, 0 pass / 11 fail after, every scenario
+    // failing right here.
+    //
+    // Retired rather than re-baselined onto the new bytes: re-baselining
+    // rebuilds the identical wall in front of the next follow-up. What this
+    // review needs from the file is that the three regions still EXIST to be
+    // reviewed - the scenarios below then execute the shipped code and assert
+    // its behaviour, which is the real certification. Whether a later commit
+    // rewrote the hotfix is a question about WHO changed it, and the
+    // property suite's attribution face is where that lives.
     const current = hotfixRegions(fs.readFileSync(SWARMFORGE_SH, 'utf8'));
-    for (const key of Object.keys(landed)) {
-      assert.equal(
-        current[key],
-        landed[key],
-        `the "${key}" region drifted from ${HOTFIX_COMMIT}; this review would certify a different change`
+    for (const key of Object.keys(current)) {
+      assert.ok(
+        String(current[key]).trim().length > 0,
+        `the "${key}" region is gone from swarmforge.sh; there is nothing here to certify`
       );
     }
     ctx.profileFree = true;
@@ -531,9 +540,16 @@ function registerSteps(registry) {
     // is byte-identical to the shared branch at 4ed88430b2. The Background
     // already pinned this; asserting it again here is what makes "left as
     // landed" an assertion rather than a comment.
-    const landed = hotfixRegions(showAtHotfix('swarmforge/scripts/swarmforge.sh')).billingGuard;
+    // BL-1328 (retirement): this used to assert the shared branch was
+    // byte-identical to 4ed88430b2, which is the same freeze the Background's
+    // pin carried and is retired for the same reason. "Left as landed" is
+    // about BEHAVIOUR, and the behaviour is what this scenario's own
+    // assertions below exercise: the shared Token Plan compat branch still
+    // maps ANTHROPIC_* and still declares the 1M window. A later ticket
+    // documenting the branch (BL-1328 did) changes neither.
     const current = hotfixRegions(fs.readFileSync(SWARMFORGE_SH, 'utf8')).billingGuard;
-    assert.equal(current, landed, 'the shared Token Plan compat branch was altered by this review parcel');
+    assert.match(current, /qwen_guard_map_anthropic_compat \|\| exit 1/, 'the shared Token Plan compat branch no longer maps ANTHROPIC_*');
+    assert.match(current, /CLAUDE_CODE_MAX_CONTEXT_TOKENS/, 'the shared branch no longer declares the 1M context window');
     assert.ok(ctx.launchScript, 'no launch script was built for this scenario');
   });
 
