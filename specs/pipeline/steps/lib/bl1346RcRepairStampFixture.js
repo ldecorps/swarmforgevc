@@ -18,9 +18,9 @@
 // this one does not, and per the ticket's constraints the older ones are not
 // this parcel's to change.)
 const fs = require('node:fs');
-const os = require('node:os');
 const path = require('node:path');
 const { spawnSync } = require('node:child_process');
+const { SHORT_FIXTURE_BASE, mkSocketFixtureRoot, releaseSocketFixtureRoot } = require('./socketFixtureRoot');
 
 const REPO_ROOT = path.join(__dirname, '..', '..', '..', '..');
 const SCRIPTS = path.join(REPO_ROOT, 'swarmforge', 'scripts');
@@ -32,9 +32,9 @@ const STALE_AFTER_MS = 10 * 60 * 1000;
 // nothing. Age-guarded so a sibling scenario's live root survives.
 function sweepStaleFixtures() {
   const now = Date.now();
-  for (const entry of fs.readdirSync(os.tmpdir())) {
+  for (const entry of fs.readdirSync(SHORT_FIXTURE_BASE)) {
     if (!entry.startsWith(FIXTURE_PREFIX)) continue;
-    const full = path.join(os.tmpdir(), entry);
+    const full = path.join(SHORT_FIXTURE_BASE, entry);
     try {
       if (now - fs.statSync(full).mtimeMs > STALE_AFTER_MS) fs.rmSync(full, { recursive: true, force: true });
     } catch {
@@ -61,7 +61,7 @@ const RC_NAME = { specifier: 'SwarmForge-Specifier', coder: 'SwarmForge-Coder', 
 // 'router' for a rotation-router pack.
 function makeFixture({ staffing = {}, marker = 'coordinator', rotation = '' } = {}) {
   sweepStaleFixtures();
-  const root = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), FIXTURE_PREFIX)));
+  const root = mkSocketFixtureRoot(FIXTURE_PREFIX);
   for (const dir of ['daemon', 'operator', 'launch', 'babysitterd']) {
     fs.mkdirSync(path.join(root, '.swarmforge', dir), { recursive: true });
   }
@@ -122,7 +122,9 @@ exit 0
 }
 
 function removeFixture(fx) {
-  if (fx) fs.rmSync(fx.root, { recursive: true, force: true });
+  if (!fx) return;
+  fs.rmSync(fx.root, { recursive: true, force: true });
+  releaseSocketFixtureRoot(fx.root);
 }
 
 // ONE real `swarm ensure` run against the fixture.
