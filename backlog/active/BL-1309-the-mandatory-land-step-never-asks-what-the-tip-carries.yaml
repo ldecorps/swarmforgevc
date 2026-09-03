@@ -8,11 +8,11 @@ severity: high
 # and the only thing that caught it was a specifier reading git history four
 # lands later. A gate that is bypassable on the mandatory path is a broken
 # safety signal, which is the same grading BL-1293 and BL-1307 carry.
-status: todo
+status: blocked
 epic: swarm-reliability
 priority: 5
 direction: swarm-reported
-depends_on: [BL-1308]
+depends_on: [BL-1308, BL-1354]
 # Both landed and closed. BL-1241 built `entangled-siblings`, BL-1308 widened it
 # to full ancestry. This slice does not touch the detector - it wires the
 # finished detector into the step QA cannot skip. Nothing unbuilt is waited on.
@@ -138,6 +138,14 @@ notes: |
   (Article 3.2 rule 3): it names land_step_lib.bb / land_step_cli.bb, which
   BL-1332 (active, coder) is changing now. Re-evaluate once BL-1332 lands.
   BL-1306 took the slot.
+
+  2026-09-03 00:05Z (coordinator): BLOCKED on BL-1354 (specifier note 00:01Z,
+  "must land BEFORE active BL-1309 or refusal is forced"): BL-1354 fixes the
+  sibling detector's false refusal on done/ tickets; this ticket wires that
+  detector into the mandatory land-decide step, so landing it first would make
+  the false refusal mandatory. depends_on now lists BL-1354. Stays active,
+  unclaimed; coder told not to start it. Clears when BL-1354 is in done/.
+
 qa_e2e_procedure: |
   1. On a scratch clone, build a branch tip that merges two tickets' work where
      only one is on `origin/main`. Run
@@ -202,3 +210,5 @@ approval_context: >
   under either option. A land step that refuses because it could not run the
   detector would be a swarm-wide outage, and BL-806, BL-1293 and BL-1307 all
   already hold that line.
+
+assigned_to: coder
