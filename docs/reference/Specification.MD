@@ -1,5 +1,43 @@
 # SwarmForge VS Code Extension — Specification
 
+**Last Updated:** September 3, 2026 (BL-1339: BL-1334's land-approval record
+now lands where every consumer of the approval predicate actually reads it,
+closing a gap that shipped fully gated and inert. `land_step_cli.bb`'s
+`resolve-repo-root` answers `git rev-parse --show-toplevel` from the
+invoking process's directory; a pipeline role only ever stands in its own
+linked worktree, and QA runs the land step from there, so BL-1334's writer
+resolved `.worktrees/QA` while every reader — `handoffd.bb`'s push sweep,
+`babysitter_check.bb`'s Article 4.2 sweep, `build_freshness_cli.bb`'s
+deploy freshness gate — resolves the target root instead. An absent store
+is "no record ever written" by design, so nothing reported the miss: the
+predicate fell straight through to plain ancestry, the exact pre-BL-1334
+behaviour, with a fully-gated fix on file claiming it could not happen.
+Per the human's ruling (option 2 of three), the writer now resolves the
+SHARED target root through a new `shared-target-root`
+(`land_step_lib.bb`) — `git-common-dir`'s parent, the same resolver
+`replay!` already used twelve lines below to place its scratch worktree,
+which answers identically from either checkout — and `is_qa_ancestor.sh`
+resolves the land-approval store (only that store, not the machine-local
+bounce stores, which stay on the caller's directory per the ruling) the
+same way, so the grant half of the predicate answers alike wherever it is
+asked. Fails closed per invariant 3: an unresolvable shared root writes
+nothing, reports the record unwritten with a reason, and lets the land
+still succeed on the sanctioned override — it never falls back to the
+caller's directory, since that silent fallback is the defect itself. Every
+new fixture builds a main checkout AND a linked worktree, because the
+ticket's own diagnosis is that all six prior stages went green on
+single-root fixtures where writer-root and reader-root were the same
+directory by construction and could not express this defect. The
+worktree-caller JSONL bounce-store blind spot the investigation also
+surfaced (ruling option 3's territory) stays open by design, recorded but
+not folded into this ticket. Acceptance:
+`specs/features/BL-1339-a-land-approval-record-lands-where-the-predicate-reads.feature`.
+No new extension command or setting — swarm-internal land/approval
+machinery; `docs/reference/BL-632-commit-time-guard-refuses-pipeline-code-on-main.md`
+already described the predicate at the level this fix operates beneath
+(which store, not which root) and needed no correction. No diagram depicts
+this internal resolution detail.)
+Prior entry —
 **Last Updated:** September 3, 2026 (BL-1336: the vitest fork ceiling can
 now tell a `config rotation router` swarm — one live resident pane plus the
 coordinator — from a full forge's seven live role sessions, and sizes its
