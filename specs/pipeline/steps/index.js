@@ -35,6 +35,7 @@ const DOMAINS = [
   require('./bl1351EventSnapshotConsumersSteps'),
   require('./bl1328QwenModelTokenFormsSteps'),
   require('./bl1337ProfileCastSteps'),
+  require('./bl1296BubbleSeatSteps'),
   require('./bl1338RoutingStampFingerprintSteps'),
   require('./bl1273SelfHealEmitSitesSteps'),
   require('./bl1268StaleClaimNamesThisTicketSteps'),
@@ -949,6 +950,7 @@ const DOMAINS = [
   require('./bl1301ParkedTicketSteps'),
   require('./bl1330SwarmStampBobAnthropicStartingCastSteps'),
   require('./bl1354SharedPathLandedSiblingSteps'),
+  require('./bl1309LandDecideStepEntanglementSteps'),
 ];
 
 function registerSteps(registry) {
