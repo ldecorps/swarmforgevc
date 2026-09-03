@@ -12,6 +12,7 @@ mutation_cost: low
 slice_size_envelope: low
 required_stages: [coder, cleaner, architect, hardender, documenter, qa]
 acceptance: specs/features/BL-1320-operator-step-for-adding-a-seat-to-a-bottleneck-stage.feature
+abandoned_commits: [5d7e93bd13]
 
 human_approval: approved
 human_ruling: |
