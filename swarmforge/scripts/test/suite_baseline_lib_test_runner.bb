@@ -26,6 +26,41 @@
 (defn- decide [& {:as over}]
   (suite-baseline-lib/decide (merge {:key key-abc :record nil :record-error nil :observed []} over)))
 
+;; ── parse-failures: an unreadable run is never an empty one ──────────────
+;;
+;; This is the safety of the whole feature. An empty observed set beside an
+;; empty recorded set looks like a clean cache hit and skips the base run, so
+;; a suite that could not run must not produce one.
+
+(assert= "a green suite has an empty failure set"
+         [] (suite-baseline-lib/parse-failures {:text "all good\n" :exit 0}))
+
+(assert= "a failing suite that named nothing is UNREADABLE, not green"
+         nil (suite-baseline-lib/parse-failures {:text "bash: vitest: command not found\n" :exit 127}))
+
+(assert= "no exit status and no named failures is unreadable too"
+         nil (suite-baseline-lib/parse-failures {:text "" :exit nil}))
+
+(assert= "vitest FAIL lines name the failing files"
+         ["test/a.test.js" "test/b.test.js"]
+         (suite-baseline-lib/parse-failures
+          {:text " FAIL  test/a.test.js\nsome noise\n FAIL  test/b.test.js\n" :exit 1}))
+
+(assert= "the × form is read too, and duplicates collapse to a set"
+         ["test/a.test.js > case one"]
+         (suite-baseline-lib/parse-failures
+          {:text "  × test/a.test.js > case one\n  × test/a.test.js > case one\n" :exit 1}))
+
+(assert= "a node:test 'not ok' line is read as a failure"
+         ["scenario three"]
+         (suite-baseline-lib/parse-failures {:text "not ok 3 - scenario three\n" :exit 1}))
+
+;; A failing exit that DID name failures is readable - the refusal is only for
+;; output nothing could be read from.
+(assert= "a failing suite that named a failure is readable"
+         ["test/a.test.js"]
+         (suite-baseline-lib/parse-failures {:text " FAIL  test/a.test.js\n" :exit 1}))
+
 ;; ── the suite registry ────────────────────────────────────────────────────
 
 (assert= "the suites this caches are named, not guessed"
@@ -48,6 +83,10 @@
   (assert-false "and the record is not rewritten" (:write-baseline? d))
   (let [line (suite-baseline-lib/evidence-line d)]
     (assert-true "the evidence names the base sha" (str/includes? line "abc1230000"))
+    ;; The ticket's own expected sentence names WHO recorded the baseline: a
+    ;; reader who cannot tell which stage observed it cannot judge how old it
+    ;; is or go and ask.
+    (assert-true "it names the stage that recorded the baseline" (str/includes? line "coder"))
     (assert-true "it names the recorded count" (str/includes? line "2 recorded"))
     (assert-true "it names the observed count" (str/includes? line "2 observed"))
     (assert-true "and says the sets agree" (str/includes? line "same set"))))

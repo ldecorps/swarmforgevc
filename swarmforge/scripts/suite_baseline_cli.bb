@@ -63,19 +63,26 @@
                              (sh root "git" "merge-base" "HEAD" rev))]
     (when (zero? exit) (str/trim out))))
 
+(defn- sha256 [^String text]
+  (let [d (.digest (java.security.MessageDigest/getInstance "SHA-256")
+                   (.getBytes text "UTF-8"))]
+    (apply str (map #(format "%02x" %) d))))
+
 (defn- config-hash
-  "A hash of the suite's own config files. A MISSING file contributes its
+  "A digest of the suite's own config files. A MISSING file contributes its
    absence rather than nothing at all: deleting a config must move the hash,
-   or an old record would keep applying to a suite that no longer has one."
+   or an old record would keep applying to a suite that no longer has one.
+   SHA-256 rather than `hash`, because this is a cache key and a collision
+   here silently reuses the wrong failure set."
   [root paths]
   (let [material (str/join "\n"
                            (for [p (sort paths)
                                  :let [f (fs/path root p)]]
                              (str p "\t"
                                   (if (fs/exists? f)
-                                    (str (fs/size f) ":" (hash (slurp (str f))))
+                                    (sha256 (slurp (str f)))
                                     "ABSENT"))))]
-    (format "%08x" (hash material))))
+    (subs (sha256 material) 0 16)))
 
 (defn- records-file [root suite]
   (fs/path root ".swarmforge" "suite-baselines" (str suite ".jsonl")))
@@ -103,13 +110,18 @@
 ;; be measured two different ways. A test supplies its own runner; without one
 ;; the suite's real command runs and its failing test names are read back.
 
-(defn- default-run [dir command]
-  (let [{:keys [out err]} (sh (str (fs/path dir "extension")) "bash" "-lc" command)
+(defn- default-run
+  "The real suite, and its failure set read back from its output. An output
+   this cannot read is a REFUSAL, never an empty set - see
+   suite-baseline-lib/parse-failures for why that distinction is the whole
+   safety of the thing."
+  [dir command]
+  (let [{:keys [exit out err]} (sh (str (fs/path dir "extension")) "bash" "-lc" command)
         text (str out err)]
-    (->> (str/split-lines text)
-         (keep #(second (re-matches #"^\s*(?:FAIL|×)\s+(\S+.*?)\s*$" %)))
-         distinct
-         vec)))
+    (or (suite-baseline-lib/parse-failures {:text text :exit exit})
+        (die! 1 (str "could not read a failure set from `" command "` in " dir
+                     " (exit " exit "). Refusing rather than reporting no failures:\n"
+                     (str/join "\n" (take-last 20 (str/split-lines text))))))))
 
 (defn- run-suite [{:keys [suite command]} dir]
   (if-let [runner (not-empty (System/getenv "SUITE_BASELINE_RUNNER"))]

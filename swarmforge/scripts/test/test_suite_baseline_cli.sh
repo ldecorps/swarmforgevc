@@ -117,6 +117,13 @@ contains "01: the evidence names the base sha" "$OUT" "$(base_sha "$R")"
 contains "01: it names the recorded count" "$OUT" "2 recorded reds"
 contains "01: it names the observed count" "$OUT" "2 observed reds"
 contains "01: and says the sets agree" "$OUT" "same set"
+contains "01: and names the stage that recorded the baseline" "$OUT" "recorded by coder"
+
+# The default (unstubbed) path must refuse an output it cannot read rather
+# than report no failures - an empty observed set beside an empty record would
+# look like a clean hit and skip the base run.
+UNREADABLE="$(cd "$R" && SUITE_BASELINE_RUNNER="" bash "$CLI" unit --base "$(base_sha "$R")" 2>&1)"
+contains "01b: an unrunnable suite is refused, never reported as no failures"   "$UNREADABLE" "Refusing rather than reporting no failures"
 
 # ═══════════════════════════════════════════════════════════════════════════
 # 02 / 04: a red the record does not name is NEW, never excused

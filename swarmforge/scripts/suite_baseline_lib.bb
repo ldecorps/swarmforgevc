@@ -52,6 +52,27 @@
 (defn suite-names [] (vec (sort (keys suites))))
 (defn suite [name] (get suites name))
 
+(defn parse-failures
+  "Pure: a suite run's output -> its failure set, or nil when the output
+   cannot be read as a suite result at all.
+
+   nil is not the empty set and the difference is the whole point. A command
+   that could not run, or whose output this does not recognise, must NEVER
+   read as \"no failures\": an empty observed set beside an empty recorded set
+   would look like a clean cache hit and skip the base run, which is exactly
+   the shape invariant 2 forbids. The caller refuses on nil."
+  [{:keys [text exit]}]
+  (let [reds (->> (str/split-lines (str text))
+                  (keep #(second (re-matches #"^\s*(?:FAIL|×|✗|not ok \d+ -)\s+(\S.*?)\s*$" %)))
+                  distinct
+                  vec)]
+    (cond
+      (seq reds) reds
+      ;; a clean exit with nothing named is a genuinely green suite
+      (and (number? exit) (zero? exit)) []
+      ;; a failing exit that named nothing is unreadable, not green
+      :else nil)))
+
 (defn record-entry
   "The record as it is stored: the key it was observed under, the failure set,
    and who observed it. The key travels WITH the set - a set filed without the
@@ -133,6 +154,7 @@
 
       :else
       (let [recorded (vec (:reds record))
+            recorded-by (:recorded-by record)
             recorded-set (set recorded)
             observed-set (set observed)
             new-reds (vec (remove recorded-set observed))
@@ -149,6 +171,7 @@
          :excused (vec (filter observed-set recorded))
          :write-baseline? false
          :recorded recorded
+         :recorded-by recorded-by
          :observed observed
          :key key}))))
 
@@ -156,7 +179,7 @@
   "The sentence a role puts in its evidence. It names the base sha, so a reader
    can tell WHICH base a pre-existing red was pre-existing at - which today's
    'identical failure set with and without this parcel' does not."
-  [{:keys [key recorded observed new vanished second-run? reason]}]
+  [{:keys [key recorded recorded-by observed new vanished second-run? reason]}]
   (let [{:keys [suite base-sha]} key]
     (if second-run?
       (str/join
@@ -167,7 +190,8 @@
                 (when (seq new) (str "new: " (str/join ", " new) ";"))
                 (when (seq vanished) (str "vanished: " (str/join ", " vanished) ";"))
                 "running the base suite as well to settle it."]))
-      (str "suite " suite " at base " base-sha ": "
+      (str "suite " suite " at base " base-sha
+           " (baseline recorded by " (or (not-empty (str recorded-by)) "an earlier stage") "): "
            (count recorded) " recorded reds, "
            (count observed) " observed reds, same set"
            " - baseline reused, base run skipped."))))
