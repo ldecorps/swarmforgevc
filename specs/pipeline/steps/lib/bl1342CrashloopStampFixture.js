@@ -9,9 +9,9 @@
 // evaluate-health in handoffd_supervisor.bb; the narrow-catch scenario calls
 // the REAL read-envelope-if-present in handoff_lib.bb.
 const fs = require('node:fs');
-const os = require('node:os');
 const path = require('node:path');
 const { spawnSync } = require('node:child_process');
+const { SHORT_FIXTURE_BASE, mkSocketFixtureRoot, releaseSocketFixtureRoot } = require('./socketFixtureRoot');
 
 const REPO_ROOT = path.join(__dirname, '..', '..', '..', '..');
 const SCRIPTS = path.join(REPO_ROOT, 'swarmforge', 'scripts');
@@ -27,9 +27,9 @@ const STALE_AFTER_MS = 10 * 60 * 1000;
 
 function sweepStaleFixtures() {
   const now = Date.now();
-  for (const entry of fs.readdirSync(os.tmpdir())) {
+  for (const entry of fs.readdirSync(SHORT_FIXTURE_BASE)) {
     if (!entry.startsWith(FIXTURE_PREFIX)) continue;
-    const full = path.join(os.tmpdir(), entry);
+    const full = path.join(SHORT_FIXTURE_BASE, entry);
     try {
       if (now - fs.statSync(full).mtimeMs > STALE_AFTER_MS) fs.rmSync(full, { recursive: true, force: true });
     } catch {
@@ -64,7 +64,7 @@ function parcel(id, body) {
 // permissions (engineering.prompt) and no root-user hole to skip on.
 function makeFixture({ unreadable = false, readable = true } = {}) {
   sweepStaleFixtures();
-  const root = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), FIXTURE_PREFIX)));
+  const root = mkSocketFixtureRoot(FIXTURE_PREFIX);
   fs.mkdirSync(path.join(root, OUTBOX), { recursive: true });
   fs.mkdirSync(path.join(root, CLEANER_INBOX), { recursive: true });
   fs.mkdirSync(path.join(root, '.swarmforge', 'daemon'), { recursive: true });
@@ -125,7 +125,9 @@ function neutralizeRaceHook(fx) {
 }
 
 function removeFixture(fx) {
-  if (fx) fs.rmSync(fx.root, { recursive: true, force: true });
+  if (!fx) return;
+  fs.rmSync(fx.root, { recursive: true, force: true });
+  releaseSocketFixtureRoot(fx.root);
 }
 
 function daemonEnv(fx) {
@@ -168,13 +170,14 @@ ${forms}`;
 // The supervisor's -main returns at once when a stop file already exists,
 // so the script can be loaded just to reach evaluate-health.
 function callSupervisor(forms) {
-  const root = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), `${FIXTURE_PREFIX}sup-`)));
+  const root = mkSocketFixtureRoot(`${FIXTURE_PREFIX}sup-`);
   try {
     fs.mkdirSync(path.join(root, '.swarmforge', 'daemon'), { recursive: true });
     fs.writeFileSync(path.join(root, '.swarmforge', 'daemon', 'stop'), '');
     return callLanded(SUPERVISOR, forms, { args: [root] });
   } finally {
     fs.rmSync(root, { recursive: true, force: true });
+    releaseSocketFixtureRoot(root);
   }
 }
 
