@@ -955,6 +955,7 @@ const DOMAINS = [
   require('./bl1359MergeChargedOnlyWithIntroducedSteps'),
   require('./bl1360CeremonyHandoffComposedSteps'),
   require('./bl1375ApprovedSiblingsCanLandSteps'),
+  require('./bl1376ExpediteBranchHandoverSteps'),
 ];
 
 function registerSteps(registry) {
