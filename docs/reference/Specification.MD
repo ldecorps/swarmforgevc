@@ -5,7 +5,8 @@ stream now writes a periodic keepalive comment frame (`: keepalive\n\n`,
 default every 20000 ms) to every open connection, whether or not any bridge
 state changed. Node's bundled undici applies a 300000 ms `bodyTimeout`
 BETWEEN body chunks on a bare `fetch`, and the front-desk reply-relay's
-`connectAndRelayReplies` (`telegram-front-desk-bot.ts`) sets no dispatcher
+`connectAndRelayReplies` (`extension/src/tools/telegram-front-desk-bot.ts`)
+sets no dispatcher
 override, so a silent stream died with `TypeError: terminated` after five
 idle minutes — indistinguishable from a real drop, so a quiet swarm read as
 a chronic outage and BL-1111's sustained-outage alert fired on a phantom one
