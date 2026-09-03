@@ -1,3 +1,8 @@
+# mutation-stamp: sha256=0808d58812fb788829ec69093547f3777c6fa87a56cfd6690193af21dc50aa15
+# acceptance-mutation-manifest-begin
+# {"version":1,"tested_at":"2026-09-03T01:52:01.119416914Z","feature_name":"BL-1339 a land-approval record lands where the predicate reads it","feature_path":"/home/carillon/swarmforgevc/.worktrees/hardender/specs/features/BL-1339-a-land-approval-record-lands-where-the-predicate-reads.feature","background_hash":"aca64171dc43e33f6e85e4866935a596f2c7db2d7187435fe763192f1a234cf9","implementation_hash":"unknown","scenarios":[{"index":0,"name":"a land step run from <checkout> records into the one shared store","scenario_hash":"ce06b637de7f33f4e3da9704be99c0d4ee414dcc08247767a31368c73ac177e4","mutation_count":2,"result":{"Total":2,"Killed":2,"Survived":0,"Errors":0},"tested_at":"2026-09-03T01:52:01.119416914Z"}]}
+# acceptance-mutation-manifest-end
+
 Feature: BL-1339 a land-approval record lands where the predicate reads it
 
   BL-1334 made the land step record WHICH approved source each tip-pure
