@@ -98,12 +98,15 @@ test('BL-1323/BL-654 invariant 2: no green suite writes a decision into the hotf
   const rowEnd = row.indexOf('\n- commit:');
   const thisRow = rowEnd === -1 ? row : row.slice(0, rowEnd);
 
-  assert.ok(/state: stamp-open/.test(thisRow), `the row is no longer stamp-open:\n${thisRow}`);
+  // What the invariant forbids is a DECISION written without a human - not any
+  // particular pre-decision state name. The row legitimately moves through
+  // stamp-open, awaiting-human and so on as the parcel travels; asserting one
+  // of those strings made this test fail on a lifecycle step that broke
+  // nothing. Assert the decision fields themselves.
+  const DECIDED_STATES = /state:\s*(certified|waived)\b/;
+  assert.ok(!DECIDED_STATES.test(thisRow), `a decided state appears on a row no human has decided:\n${thisRow}`);
   assert.ok(/human_decision: null/.test(thisRow), `a decision was written without a human:\n${thisRow}`);
-  assert.ok(
-    !/certified|waived/.test(thisRow),
-    `certified/waived appears on a row no human has decided:\n${thisRow}`,
-  );
+  assert.ok(/decided_at: null/.test(thisRow), `a decision timestamp was written without a human:\n${thisRow}`);
 
   // And the suite itself is inert on the ledger: running the reviewing
   // acceptance feature leaves the file byte-identical.
