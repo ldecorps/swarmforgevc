@@ -19,7 +19,7 @@ invariants:
   - "Clearing a role's question slot never fails because the human could not be told - an announcement that cannot be written is reported and the slot still clears."
   - "A closure is announced only for a clearing that actually happened, and only on the thread the question was asked on - never for a refused or no-op clear, and never on a second channel."
 
-human_approval: pending
+human_approval: approved
 approval_context: >
   A new feature file needs a look, and one design call inside it is worth stating
   rather than leaving to be discovered at review. When the closure announcement

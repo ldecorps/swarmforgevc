@@ -15,7 +15,7 @@ direction: swarm-reported
 depends_on: [BL-1332, BL-1272]
 mutation_cost: medium
 slice_size_envelope: medium
-assigned_to: none
+assigned_to: coder
 required_stages: [coder, cleaner, architect, hardender, documenter, qa]
 
 acceptance: specs/features/BL-1354-a-shared-path-does-not-hide-a-landed-sibling.feature
@@ -27,8 +27,7 @@ invariants:
 required_wiring:
   - 'specs/pipeline/steps/index.js::bl1354SharedPathLandedSiblingSteps::acceptance handler registered so the runner executes every scenario. Absent at mint, grep bl1354 returns 0. This is deliberately the ONLY entry - see notes for why no production-wiring anchor is offered.'
 
-human_approval: pending
-
+human_approval: approved
 approval_context: >
   No decision needed from you - this is a straight defect report and I am not
   asking you to choose anything. Flagging it only because of a sequencing
