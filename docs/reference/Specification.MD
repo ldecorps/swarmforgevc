@@ -1,5 +1,41 @@
 # SwarmForge VS Code Extension — Specification
 
+**Last Updated:** September 3, 2026 (BL-1345: two remaining halves of the
+2026-09-02 stale-router-marker outage — the failure that respawned the
+specifier's pane with the coordinator's launch script, twice, and left the
+swarm with no specifier at all — are closed; hotfix `195de28861` already
+fixed the cause (`swarm ensure`'s RC repair), certification of which is
+BL-1346's own stamp-off. First: `babysitter_check.bb` was a third,
+never-updated consumer of `.swarmforge/mono-router-active-role` — it read
+the marker unconditionally and derived a resident role, resident-mailbox
+state, and dispatch-note state from it even on a standing pack, where no
+resident exists at all. It now routes through the same shared
+`mono_router_lib/resolve-resident-role` decision the hotfix uses, and
+folds the result through the pack's own role list so an unknown or
+unreadable marker reaches the same conclusion as no marker at all
+(invariant 3) — never a hardcoded per-role default (BL-804 invariant 1).
+Second, and the fix that would have caught the actual incident: the
+health recheck could not see a pane running the WRONG role, because it
+had already been pointed at that wrong role by the same stale marker and
+so compared it against itself. A new `assigned-role-mismatch`
+(`remote_control_health_lib.bb`) compares the observed `--remote-control`
+name against the role the pack actually assigns the pane — never against
+whatever role the caller was asking about — and reports a `:failed`
+mismatch naming both, wired into `swarm_ensure.bb`'s per-role RC loop
+after the ordinary `actionable?` repair path declines to act. Silent on a
+rotation-router pack (a rotated resident legitimately runs another role's
+script — BL-1020/BL-648 unchanged) and silent when there's no RC flag to
+compare at all. Bounced once at architect (invariant 2's mismatch case was
+drawn rather than enumerated, ~10% intermittent red); the coder's rework
+lists match/mismatch/router as explicit cases so all three are reached by
+construction, the same remedy BL-1352's own bounce used. Acceptance:
+`specs/features/BL-1345-a-stale-router-marker-does-not-staff-a-standing-pack.feature`.
+How-to: both `docs/how-to/BL-1020-stale-mono-router-marker-is-not-topology.md`
+and `docs/how-to/BL-514-remote-control-health-and-ensure-wiring.md` updated
+with the new consumer and the mismatch check. No new extension command or
+setting — swarm-internal health/staffing machinery; no diagram depicts
+this internal decision.)
+Prior entry —
 **Last Updated:** September 3, 2026 (BL-1339: BL-1334's land-approval record
 now lands where every consumer of the approval predicate actually reads it,
 closing a gap that shipped fully gated and inert. `land_step_cli.bb`'s
