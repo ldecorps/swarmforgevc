@@ -957,6 +957,7 @@ const DOMAINS = [
   require('./bl1375ApprovedSiblingsCanLandSteps'),
   require('./bl1376ExpediteBranchHandoverSteps'),
   require('./bl1377SuiteBaselineSteps'),
+  require('./bl1378ExpediteCloseGuardSteps'),
 ];
 
 function registerSteps(registry) {
