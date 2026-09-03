@@ -1,0 +1,155 @@
+id: BL-1358
+title: "The Gherkin mutation harness has no per-mutant time ceiling anywhere, so one hung mutant holds a worker until a human notices - measured at 808 seconds"
+milestone: M8
+type: defect
+severity: medium
+status: todo
+epic: code-quality-gates
+priority: 26
+direction: swarm-reported
+depends_on: []
+mutation_cost: low
+slice_size_envelope: low
+assigned_to: none
+required_stages: [coder, cleaner, architect, hardender, documenter, qa]
+
+acceptance: specs/features/BL-1358-a-mutant-that-will-not-finish-is-killed-and-reported.feature
+
+required_wiring:
+  - "specs/pipeline/steps/index.js::bl1358::the new step handler must be registered - specs/pipeline/runtime.js THROWS on any scenario with no handler. Honest note per BL-1235: satisfied by this parcel's own diff, so it proves nothing about reachability; the harness already has live callers and there is no new call site to anchor. Kept because BL-233 requires the handler to land in the SAME commit as the feature file. Verified absent at spec time, grep bl1358 returns 0."
+
+invariants:
+  - "The ceiling never silently changes a mutant's verdict: a timed-out mutant is reported as timed out, never folded into detected or into surviving."
+  - "One mutant hitting the ceiling never invalidates the rest of the run - every other mutant still carries its ordinary outcome."
+
+human_approval: pending
+approval_context: >
+  Two things need your eye, one of them a genuine fork.
+
+  THE FORK, declared in ruling_options: whether a timed-out mutant should FAIL
+  the hardener's gate the way a surviving mutant does, or be reported as its own
+  non-blocking category. Option 1 is conservative - a hang is treated as "not
+  proven killed", so the gate stays honest and a flaky-but-slow scenario blocks
+  until someone looks. Option 2 keeps the gate moving and puts the timeout in the
+  report for a human to judge, at the cost that a genuinely undetected mutant
+  could hide behind a timeout. They differ in who carries the risk, which is why
+  it is asked rather than chosen.
+
+  THE NUMBER, not a fork: the acceptance is written against a ceiling without
+  pinning its value. Measured context for whatever you pick - real-git fixture
+  scenarios run about 10-20 seconds each, and the incident that surfaced this ran
+  808. A default in the low hundreds of seconds leaves generous headroom over the
+  slowest legitimate scenario while catching a wedge in minutes rather than never.
+  Say a number in your reply if you want a specific one; otherwise the implementer
+  picks inside that band and the reviewers check it against the slowest scenario
+  actually in the tree.
+
+ruling_options:
+  - option 1 - a timed-out mutant fails the gate, the same as a surviving mutant
+  - option 2 - a timed-out mutant is reported as its own category and does not block the gate
+
+source: |
+  Raised by the hardender as a `rule_proposal` (scope `role:hardener`,
+  2026-09-03T04:30:07Z) whose body ended "mutationWorker.js has no timeout".
+  Verified off disk this pass rather than taken from the report:
+
+      grep -rn 'timeout|terminate|deadline|AbortController' \
+        specs/pipeline/gherkinMutation*.js specs/pipeline/mutationWorker.js
+
+  returns exactly one line, `gherkinMutationManifest.js:25`'s
+  `'unterminated acceptance-mutation-manifest block'` error string. There is no
+  ceiling of any kind in the harness.
+
+  `specs/pipeline/mutationWorker.js` is 73 lines: it reads work over readline,
+  calls `writeEntryPoints` and `runGeneratedTests`, and waits. Nothing bounds
+  that wait.
+
+  The incident: BL-1351's Background opens a real client polling a real bridge
+  every 20ms over 1223 items. A mutated Outline cell made a later step stop
+  matching, `runtime.js:24` threw before any handler ran, and the client was
+  left connected. The worker was pinned for **808 seconds** with no ceiling to
+  end it. The leak itself is BL-1357; this ticket is the reason 808 seconds was
+  possible rather than, say, two minutes.
+
+description: |
+  ## What is broken
+
+  Every mutant the Gherkin mutation harness runs is run to completion, however
+  long that takes, because nothing in the harness sets a deadline. A mutant that
+  hangs - for any reason - holds its worker until a person notices the run is
+  not progressing and kills it by hand.
+
+  ## Why a ceiling is worth more than fixing the one hang
+
+  BL-1357 fixes the leak that caused this particular 808-second wedge, and it is
+  the right root fix. It is not a substitute for a ceiling, for two reasons:
+
+  - **A hang has many causes.** A scenario that shells out to a command that
+    waits, a fixture that blocks on a lock, a poll loop with no exit condition -
+    none of those are the leak BL-1357 closes, and each produces the same
+    unbounded wait.
+  - **A hang is indistinguishable from slow progress while it is happening.**
+    That is what makes the missing ceiling expensive in practice: the hardener
+    cannot tell a wedged run from a merely long one without waiting out the
+    difference, so the cost is paid in attention every time, not just when
+    something is actually wrong.
+
+  ## What must be true afterwards
+
+  A mutant that exceeds the ceiling is killed, its worker is freed for the next
+  mutant, and the run finishes with every other mutant carrying its ordinary
+  outcome. The timed-out mutant is reported as timed out - named, with the
+  ceiling it exceeded - and never quietly folded into "detected" or into
+  "survived". Whether that report BLOCKS the gate is the open ruling above.
+
+  A mutant that finishes inside the ceiling is untouched, and nothing about a
+  normal run changes.
+
+  ## How (direction, not mandate)
+
+  - The ceiling belongs where the wait is, so the kill can actually reclaim the
+    worker rather than leaving an orphan behind it.
+  - Killing must reclaim the whole process group, not just the direct child -
+    a mutant that shelled out leaves descendants, and this repo has the scar
+    already (`kill -KILL -- -PGID`, recorded in the engineering rules).
+  - Make the ceiling configurable rather than a literal, so a slow host can
+    raise it without editing code.
+
+out_of_scope: |
+  - The leak that produced this particular 808-second hang. That is BL-1357,
+    minted from the same report. Neither ticket depends on the other and either
+    is worth having alone.
+  - A ceiling for the Stryker / TypeScript mutation lane. Different harness,
+    different runner, not measured here; if it has the same gap it deserves its
+    own slice rather than being assumed into this one.
+  - Making mutation faster. BL-1349 owns the property lane's wall clock; this
+    ticket is about a run that never ends, not one that takes a while.
+
+qa_e2e_procedure: |
+  1. `node specs/pipeline/cli.js specs/features/BL-1358-a-mutant-that-will-not-finish-is-killed-and-reported.feature`
+     - all four scenarios pass.
+  2. Against the real harness, not a fake: run a Gherkin mutation over a feature
+     whose step handler deliberately never returns. Expect the run to finish,
+     that mutant reported as timed out and named with its ceiling, and every
+     other mutant to carry its ordinary outcome.
+  3. While step 2 runs, confirm no orphan processes survive the kill - check the
+     process group is gone, not merely the direct child.
+  4. Ordinary path unchanged: re-run a Gherkin mutation that was green before the
+     parcel and confirm identical counts (Total/Killed/Survived/Errors) and no
+     timeouts reported.
+  5. Confirm the ceiling is configurable and that raising it changes the
+     behaviour in step 2 as expected.
+
+notes: |
+  Minted 2026-09-03 from the hardender's rule proposal, which was rejected as
+  scoped rather than dismissed - it proposed authoring guidance filed at the role
+  that CATCHES this. Full reasoning:
+  `backlog/evidence/BL-1357-BL-1358-rule-proposal-disposition-20260903.md`.
+
+  Split 1:2 (BL-680 consolidation authority) with BL-1357. The report named two
+  independent missing mechanisms in different files; bundling them would fail
+  INVEST's Independent and Small. This one is the safety net and is deliberately
+  the higher priority of the pair - it bounds EVERY future hang, including ones
+  BL-1357 cannot prevent, and it is the cheaper of the two.
+
+  IR-DRY: 0 findings.
