@@ -3,6 +3,7 @@ import * as path from 'path';
 import { CursorAgentError, type SDKUserMessage } from '@cursor/sdk';
 import { atomicWrite } from '../util/atomicWrite';
 import { readQwenLocalTopicId, runLocalSeatTurn } from './localQwenSeatLive';
+import { bubbleMirrorTopicForPath } from '../bridge/bubbleMirrorTopic';
 import {
   answerCallbackQuery,
   createForumTopicWithRateLimitRetry,
@@ -1537,6 +1538,25 @@ export interface CursorBridgeLoopDeps {
   qwenLocalTopicId?: number;
   /** Seam for the seat's whole turn - injected so tests need no ollama. */
   runLocalSeatTurnFn?: typeof runLocalSeatTurn;
+  /**
+   * BL-1296: Bubble's own answering seat. Handled here, ahead of cursor's
+   * decision, so a message in the Bubble topic is answered by Bubble's worker
+   * while the Cursor seat is mid-turn - which is the whole point of the
+   * ticket: the two used to share one responder and one turn at a time.
+   *
+   * Same posture as the qwen seat above, for the same reason: it runs inside
+   * THIS poll, so it opens no second getUpdates consumer (invariant 3).
+   * Bubble stays a MIRROR - the seat answers from the front desk's shared
+   * context, never from a context of its own (invariant 1, structural in
+   * bubbleSeat.ts's own type).
+   */
+  bubbleSeatTopicId?: number;
+  /** Seam for the Bubble seat's turn - injected so tests need no live agent. */
+  runBubbleSeatTurnFn?: (input: {
+    topicId: number;
+    text: string;
+    post: (topicId: number, message: string) => Promise<void>;
+  }) => Promise<void>;
 }
 
 function resolveInboundQueueFromFeeder(opDir: string): boolean {
@@ -2020,6 +2040,25 @@ async function processInboundUpdates(
       });
       continue;
     }
+    // BL-1296: Bubble's topic, handled by Bubble's own worker BEFORE cursor's
+    // decision is consulted - so cursor is never asked about it, and being
+    // mid-turn cannot delay it. `ctx.busy` is deliberately not consulted:
+    // waiting on it is the defect this ticket exists to remove.
+    if (
+      deps.bubbleSeatTopicId !== undefined &&
+      deps.runBubbleSeatTurnFn &&
+      inbound.kind !== 'callback' &&
+      inbound.topicId === deps.bubbleSeatTopicId
+    ) {
+      await deps.runBubbleSeatTurnFn({
+        topicId: inbound.topicId,
+        text: inbound.text ?? '',
+        post: async (topicId: number, message: string) => {
+          await handlerCtx.post(deps.botToken, deps.chatId, topicId, message, inbound.messageId);
+        },
+      });
+      continue;
+    }
     const pending = readPendingOperatorConfirm(deps.repoRoot);
     const pendingPlan = readPendingPlanConfirm(deps.repoRoot);
     const rawDecision = decideInboundAction(
@@ -2314,6 +2353,17 @@ export async function runCursorBridgeApp(
     // Undefined - nobody has bound a topic - simply means the seat owns none
     // and this poll behaves exactly as it did before the seat existed.
     qwenLocalTopicId: readQwenLocalTopicId(env.repoRoot),
+    // BL-1296: the Bubble seat's topic, read from the SAME map and by the same
+    // shipped reader the Bubble MIRROR already uses - never a second way to
+    // learn the id. `bubbleMirrorTopicForPath` returns undefined when the map
+    // binds Bubble to cursor's own topic, so a misconfigured map can never
+    // hand the Bubble seat cursor's surface (invariant 2, upheld by the data
+    // and not only by the seat's own gate).
+    //
+    // Undefined means nobody has bound a Bubble topic; the dispatch guard is
+    // then false and this poll behaves exactly as it did before the seat
+    // existed - cursor keeps answering the topic, as it does today.
+    bubbleSeatTopicId: bubbleMirrorTopicForPath(env.repoRoot),
     ...env.loopOverrides,
   };
 
