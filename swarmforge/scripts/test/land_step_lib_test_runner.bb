@@ -781,6 +781,137 @@
 
 ;; ── report ─────────────────────────────────────────────────────────────────
 
+
+;; ── BL-1354: a shared path does not hide a landed sibling ────────────────
+;; `sibling-landed?`'s per-path question used to be whole-blob equality, so a
+;; file several tickets touch was answered by every co-owner at once: while
+;; ANY co-owner's lines were unlanded the blob differed, and every sibling on
+;; that file read unlanded - including ones whose own lines were fully landed.
+;; Six-for-six on docs/reference/Specification.MD during BL-1332's own land.
+
+;; The parse is pure over the diff text.
+(assert= "diff-line-changes: added and removed lines land under their own path"
+         {"f.txt" {:added #{"new line"} :removed #{"old line"}}}
+         (land-step-lib/diff-line-changes
+          (str "diff --git a/f.txt b/f.txt\n--- a/f.txt\n+++ b/f.txt\n"
+               "@@ -1 +1 @@\n-old line\n+new line\n")))
+(assert= "diff-line-changes: two files in one diff stay separate"
+         {"a.txt" {:added #{"a"}} "b.txt" {:added #{"b"}}}
+         (land-step-lib/diff-line-changes
+          (str "diff --git a/a.txt b/a.txt\n--- /dev/null\n+++ b/a.txt\n@@ -0,0 +1 @@\n+a\n"
+               "diff --git a/b.txt b/b.txt\n--- /dev/null\n+++ b/b.txt\n@@ -0,0 +1 @@\n+b\n")))
+;; A removed CONTENT line can itself begin "--- " once git's own "-" prefix is
+;; applied. Reading that as a file header would re-point every following line.
+(assert= "diff-line-changes: a removed line that looks like a header stays content"
+         {"f.txt" {:removed #{"--  x"}}}
+         (land-step-lib/diff-line-changes
+          (str "diff --git a/f.txt b/f.txt\n--- a/f.txt\n+++ b/f.txt\n@@ -1 +0,0 @@\n---  x\n")))
+;; A deletion's own path comes from the `---` side, not from /dev/null.
+(assert= "diff-line-changes: a deleted file is attributed to its own path"
+         {"gone.txt" {:removed #{"body"}}}
+         (land-step-lib/diff-line-changes
+          (str "diff --git a/gone.txt b/gone.txt\n--- a/gone.txt\n+++ /dev/null\n@@ -1 +0,0 @@\n-body\n")))
+
+;; sibling-lines-landed? is pure over the injected facts, so every fail-closed
+;; row is pinned without a repository.
+(assert= "sibling-path-verdict: every surviving added line present -> landed"
+         :landed
+         (land-step-lib/sibling-path-verdict
+          {:changes {:added #{"mine"}} :tip-lines #{"mine" "a co-owner's"}
+           :main-lines #{"mine" "somebody else's"}}))
+(assert= "sibling-path-verdict: a co-owner's unlanded line does not hide it"
+         :landed
+         (land-step-lib/sibling-path-verdict
+          {:changes {:added #{"mine"}} :tip-lines #{"mine" "co-owner unlanded"}
+           :main-lines #{"mine"}}))
+(assert= "sibling-path-verdict: one of my own lines missing -> unlanded"
+         :unlanded
+         (land-step-lib/sibling-path-verdict
+          {:changes {:added #{"mine" "also mine"}} :tip-lines #{"mine" "also mine"}
+           :main-lines #{"mine"}}))
+(assert= "sibling-path-verdict: a line I removed still present -> unlanded"
+         :unlanded
+         (land-step-lib/sibling-path-verdict
+          {:changes {:removed #{"gone"}} :tip-lines #{"kept"} :main-lines #{"gone"}}))
+(assert= "sibling-path-verdict: a line I removed is absent -> landed"
+         :landed
+         (land-step-lib/sibling-path-verdict
+          {:changes {:removed #{"gone"}} :tip-lines #{"kept"} :main-lines #{"other"}}))
+;; A line one of the sibling's own commits added and a LATER commit rewrote is
+;; not part of what this tip would land, so origin/main is not asked for it.
+;; BL-1271's real attribution missed on exactly one such superseded line.
+(assert= "sibling-path-verdict: a line superseded before the tip is not demanded"
+         :landed
+         (land-step-lib/sibling-path-verdict
+          {:changes {:added #{"first draft" "final"}} :tip-lines #{"final"}
+           :main-lines #{"final"}}))
+(assert= "sibling-path-verdict: nothing of mine survives to the tip -> vacuous, not evidence either way"
+         :vacuous
+         (land-step-lib/sibling-path-verdict
+          {:changes {:added #{"first draft"}} :tip-lines #{"final"} :main-lines #{"final"}}))
+(assert= "sibling-path-verdict: the sibling authored no line here -> vacuous"
+         :vacuous
+         (land-step-lib/sibling-path-verdict
+          {:changes {} :tip-lines #{"a co-owner's"} :main-lines #{"a co-owner's"}}))
+(assert= "sibling-path-verdict: an unread diff -> unlanded"
+         :unlanded
+         (land-step-lib/sibling-path-verdict
+          {:changes nil :tip-lines #{"mine"} :main-lines #{"mine"}}))
+(assert= "sibling-path-verdict: an unread origin/main blob -> unlanded"
+         :unlanded
+         (land-step-lib/sibling-path-verdict
+          {:changes {:added #{"mine"}} :tip-lines #{"mine"} :main-lines nil}))
+(assert= "sibling-path-verdict: an unread tip blob -> unlanded"
+         :unlanded
+         (land-step-lib/sibling-path-verdict
+          {:changes {:added #{"mine"}} :tip-lines nil :main-lines #{"mine"}}))
+(assert= "sibling-path-verdict: only blank lines -> vacuous, never landed on nothing"
+         :vacuous
+         (land-step-lib/sibling-path-verdict
+          {:changes {:added #{"" "  "}} :tip-lines #{""} :main-lines #{""}}))
+(assert= "sibling-path-verdict: a line added and removed again nets to nothing -> vacuous"
+         :vacuous
+         (land-step-lib/sibling-path-verdict
+          {:changes {:added #{"x"} :removed #{"x"}} :tip-lines #{"x"} :main-lines #{"x"}}))
+;; Vacuous everywhere is NOT landed: sibling-landed?'s empty-paths row is what
+;; keeps silence from being scored as evidence (invariant 1).
+(assert= "sibling-landed?: every attributed path vacuous -> not landed"
+         false
+         (land-step-lib/sibling-landed? {:paths [] :complete? true :same-content? (constantly true)}))
+
+;; The whole defect, against a real repository: ONE shared file carries both
+;; siblings' lines. The first sibling's lines are landed on origin/main as a
+;; different commit object (a tip-pure replay); the second's are not.
+(with-fixture [root]
+  (commit! root "shared.txt" "base\n" "seed the shared file")
+  (mark-origin-main-here! root)
+  (commit! root "shared.txt" "base\nBL-9002 line\n" "BL-9002: sibling work")
+  (commit! root "shared.txt" "base\nBL-9002 line\nBL-9003 line\n" "BL-9003: other sibling work")
+  (commit! root "own.txt" "own\n" "BL-9001: own work")
+  (let [commit (:out (sh! root "git" "rev-parse" "HEAD"))]
+    (sh! root "git" "checkout" "-q" "-b" "landing" (:out (sh! root "git" "rev-parse" "refs/remotes/origin/main")))
+    (commit! root "shared.txt" "base\nBL-9002 line\n" "BL-9002: sibling work (replayed tip-pure)")
+    (mark-origin-main-here! root)
+    (sh! root "git" "checkout" "-q" "main")
+    (let [result (land-step-lib/entangled-siblings root commit "BL-9001")]
+      (assert= "entangled-siblings: a shared path does not hide the landed sibling"
+               #{"BL-9002"} (:landed result))
+      (assert= "entangled-siblings: and the co-owner whose lines are absent stays unlanded"
+               #{"BL-9003"} (:unlanded result)))))
+
+;; Neither sibling's lines landed: both stay unlanded, on the same shared file.
+(with-fixture [root]
+  (commit! root "shared.txt" "base\n" "seed the shared file")
+  (mark-origin-main-here! root)
+  (commit! root "shared.txt" "base\nBL-9002 line\n" "BL-9002: sibling work")
+  (commit! root "shared.txt" "base\nBL-9002 line\nBL-9003 line\n" "BL-9003: other sibling work")
+  (commit! root "own.txt" "own\n" "BL-9001: own work")
+  (let [result (land-step-lib/entangled-siblings root (:out (sh! root "git" "rev-parse" "HEAD")) "BL-9001")]
+    (assert= "entangled-siblings: neither co-owner's lines on origin/main -> both unlanded"
+             #{} (:landed result))
+    (assert= "entangled-siblings: and both are named"
+             #{"BL-9002" "BL-9003"} (:unlanded result))))
+
 (if (seq @failures)
   (do
     (doseq [f @failures] (println f))
