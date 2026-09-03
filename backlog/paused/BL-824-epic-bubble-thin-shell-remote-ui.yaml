@@ -185,6 +185,19 @@ out_of_scope: |
     not regress it, but does not re-open it.
 
 notes: |
+  2026-09-03 (specifier), ruling_options sweep re-checked: no `ruling_options:`
+  is added here, and that is the disposition rather than an omission. This
+  ticket's `approval_context` names two decisions and neither is a live fork.
+  (1) The remote-UI technology was CHOSEN by the specifier (WebView over a
+  bridge-served HTML bundle), approved as specced, and BL-825 is already built
+  against it - re-posing it as a tap would re-open a settled decision that
+  work now depends on. (2) APK distribution says in its own words that it is
+  DEFERRED, not decided, and is scoped to slice C; the ruling belongs on slice
+  C when that is minted, where the answer can actually be recorded against the
+  work it changes. So this is the sweep's declining-to-ask shape, not the
+  BL-1300 shape. Whoever mints slice C owns carrying `ruling_options:` for the
+  distribution question.
+
   Human 2026-08-17 (Cursor): after BL-908's ambulance ride, ambulance the
   children — BL-825 then BL-829. Do not engage ambulance on this epic; it is
   a tracker only.
