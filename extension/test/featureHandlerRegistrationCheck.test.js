@@ -234,6 +234,29 @@ test('a handler kept in a subdirectory of steps/ resolves like any other', () =>
   assert.deepEqual(offenders, []);
 });
 
+// BL-1371 hardening: isDiscovered's guard is `startsWith(prefix) &&
+// !includes('/')` - a *Steps.js file sitting in a SUBDIRECTORY of steps/
+// starts with the prefix but fails the second half, so it must NOT be
+// auto-discovered even though nothing excludes it by suffix. The `tree()`
+// helper above can never build this case (its stepFiles regex forbids any
+// slash after steps/), so this fixture is built directly, listing the nested
+// file in stepFiles the way real discovery would find it on disk.
+test('a *Steps.js file nested one level under steps/ is not auto-discovered', () => {
+  const offenders = assessFeatureHandlerRegistration({
+    featureFiles: ['specs/features/BL-9999-nested.feature'],
+    stepFiles: [`${STEPS}/index.js`, `${STEPS}/sub/bl9999NestedSteps.js`],
+    libFiles: [],
+    readFile: (p) =>
+      ({
+        'specs/features/BL-9999-nested.feature': 'Feature: nested',
+        [`${STEPS}/index.js`]: 'const DOMAINS = [];',
+        [`${STEPS}/sub/bl9999NestedSteps.js`]: 'module.exports = {};',
+      })[p] ?? null,
+  });
+  assert.deepEqual(kinds(offenders), ['unregistered-handler']);
+  assert.equal(offenders[0].path, `${STEPS}/sub/bl9999NestedSteps.js`);
+});
+
 test("a require inside steps/lib/ resolves against lib/, not against steps/", () => {
   const offenders = assessFeatureHandlerRegistration({
     featureFiles: [],
