@@ -32,6 +32,7 @@
 const assert = require('node:assert/strict');
 const fc = require('fast-check');
 const fs = require('node:fs');
+const os = require('node:os');
 const path = require('node:path');
 const { execFileSync, spawnSync } = require('node:child_process');
 const { mkTmpDir } = require('./helpers/tmpDir');
@@ -39,6 +40,16 @@ const { mkTmpDir } = require('./helpers/tmpDir');
 const REPO_ROOT = path.join(__dirname, '..', '..');
 const CHECK = path.join(REPO_ROOT, 'swarmforge', 'scripts', 'babysitter_check.bb');
 const FIXTURE_PREFIX = 'bl1359-property-';
+
+// A killed run traps no `finally`, so the previous run's fixtures are swept by
+// prefix BEFORE this one starts as well (BL-971).
+function sweepFixtures() {
+  for (const entry of fs.readdirSync(os.tmpdir())) {
+    if (entry.startsWith(FIXTURE_PREFIX)) {
+      fs.rmSync(path.join(os.tmpdir(), entry), { recursive: true, force: true });
+    }
+  }
+}
 
 function git(root, ...args) {
   return execFileSync('git', ['-c', 'user.email=t@t', '-c', 'user.name=t', ...args], {
@@ -114,6 +125,7 @@ function buildFixture(sideFiles, taken) {
 const fileNames = (n) => Array.from({ length: n }, (_, i) => `extension/src/mod${i}.ts`);
 
 test('BL-1359/BL-654 invariant 1: a merge is charged with exactly its first-parent delta', () => {
+  sweepFixtures();
   const reach = { tookNone: 0, tookAll: 0, tookSome: 0 };
 
   const check = (count, taken) => {
@@ -168,6 +180,7 @@ test('BL-1359/BL-654 invariant 1: a merge is charged with exactly its first-pare
 });
 
 test('BL-1359/BL-654 invariant 2: a git call that cannot answer never reads as clean', () => {
+  sweepFixtures();
   const reach = { firstParentGone: 0, commitUnknown: 0 };
 
   // The first parent's tree is gone, so the two-tree diff the charge is
@@ -205,6 +218,7 @@ test('BL-1359/BL-654 invariant 2: a git call that cannot answer never reads as c
 });
 
 test('BL-1359/BL-654 invariant 3: non-merge commits are charged exactly as before', () => {
+  sweepFixtures();
   const { root, firstParent } = buildFixture(fileNames(2), 1);
   try {
     fc.assert(
