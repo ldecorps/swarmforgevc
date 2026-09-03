@@ -150,19 +150,27 @@ function registerSteps(registry) {
     assert.equal(seats.length, 2, `expected two seats of ${STAGE}, parser reported ${JSON.stringify(st.parsed.roles)}`);
   });
 
+  // The last step of scenario 01 (BL-971/tempDirTrapGuard): st.root is built
+  // in an earlier step and this feature has no scenario-end hook, so cleanup
+  // has to live in the terminal step - guarded by try/finally, since a
+  // failing assertion above must not leak the root either.
   scoped(/^each seat carries its own model$/, (ctx) => {
     const st = state(ctx);
-    const models = [st.documented.bare, st.documented.extra].map((line) => {
-      const m = line.match(/--model\s+(\S+)/);
-      assert.ok(m, `a documented window line names no model: ${line}`);
-      return m[1];
-    });
-    assert.notEqual(models[0], models[1], 'the page gives both seats the same model, so "its own model" is untested');
-    for (const model of models) {
-      assert.ok(
-        st.parsed.extraArgs.some((a) => a.includes(model)),
-        `the parser did not carry ${model} through: ${JSON.stringify(st.parsed.extraArgs)}`,
-      );
+    try {
+      const models = [st.documented.bare, st.documented.extra].map((line) => {
+        const m = line.match(/--model\s+(\S+)/);
+        assert.ok(m, `a documented window line names no model: ${line}`);
+        return m[1];
+      });
+      assert.notEqual(models[0], models[1], 'the page gives both seats the same model, so "its own model" is untested');
+      for (const model of models) {
+        assert.ok(
+          st.parsed.extraArgs.some((a) => a.includes(model)),
+          `the parser did not carry ${model} through: ${JSON.stringify(st.parsed.extraArgs)}`,
+        );
+      }
+    } finally {
+      fs.rmSync(st.root, { recursive: true, force: true });
     }
   });
 
@@ -172,10 +180,15 @@ function registerSteps(registry) {
     assert.equal(seats.length, 1, `expected one seat of ${STAGE}, got ${JSON.stringify(seats)}`);
   });
 
+  // Terminal step of scenario 02 - same try/finally reasoning as scenario 01
+  // above: the assertion must not be able to skip cleanup.
   scoped(/^that seat is the bare stage-named seat$/, (ctx) => {
     const st = state(ctx);
-    assert.ok(st.parsed.roles.includes(STAGE), `the bare ${STAGE} seat is gone: ${JSON.stringify(st.parsed.roles)}`);
-    fs.rmSync(st.root, { recursive: true, force: true });
+    try {
+      assert.ok(st.parsed.roles.includes(STAGE), `the bare ${STAGE} seat is gone: ${JSON.stringify(st.parsed.roles)}`);
+    } finally {
+      fs.rmSync(st.root, { recursive: true, force: true });
+    }
   });
 
   scoped(/^the how-to's tier guidance is read for a stage whose constraint is capacity at a difficulty band$/, (ctx) => {
