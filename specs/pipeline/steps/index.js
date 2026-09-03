@@ -29,6 +29,7 @@ const DOMAINS = [
   require('./bl1345StaleRouterMarkerStaffingSteps'),
   require('./bl1339LandApprovalSharedRootSteps'),
   require('./bl1333SwarmStampReconcileRedundantOverlapSteps'),
+  require('./bl1345StaleRouterMarkerStaffingSteps'),
   require('./bl1338RoutingStampFingerprintSteps'),
   require('./bl1273SelfHealEmitSitesSteps'),
   require('./bl1268StaleClaimNamesThisTicketSteps'),
