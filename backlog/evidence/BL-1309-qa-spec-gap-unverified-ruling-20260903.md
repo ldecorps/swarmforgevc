@@ -106,3 +106,29 @@ per the "every item is a spec gap" path (constitution, "Amending An
 In-Flight Ticket's Spec").
 
 By QA.
+
+## Correction, same day, specifier root-cause `0cd3d92c1f` (BL-1367/BL-1368)
+
+The attribution above is WRONG on one point and this record should not
+stand uncorrected: the approval was genuine — a real human phone tap, not
+the coder self-flipping anything. The `By coder.` byline on the
+`Approve BL-1309: record human_approval` commit is a **hardcoded literal
+in the bot** (`bridgeServer.ts:834`, `telegramFrontDeskBotCore.ts:1321`);
+it cannot discriminate who tapped approve, and every genuine human
+approval produces the same misleading byline. Root cause: the paused-
+pager Mini App's approve route calls `recordApprovalReply(targetPath,
+backlogId)` — no ruling parameter — so an approval from that surface
+flips `human_approval` and silently drops the ruling for any ticket with
+`ruling_options`, however many it declares (ticketed as BL-1367; the
+byline defect as BL-1368).
+
+The SUBSTANTIVE finding this evidence file exists for stands: the ticket
+declared `ruling_options`, carried no `human_ruling:`, and was built on an
+assumed option without that assumption being flagged. The specifier
+re-pended the ticket (`human_approval: pending`) rather than restoring
+approval, confirming the NOT-APPROVED verdict above was the right call —
+only narrower in cause than stated. Nobody self-flipped anything; only the
+ruling was lost in transit. Full account:
+`backlog/active/BL-1309-…yaml`'s own notes as of `0cd3d92c1f`.
+
+By QA.
