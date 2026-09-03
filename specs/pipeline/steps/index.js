@@ -26,7 +26,6 @@ const DOMAINS = [
   require('./bl1352EscalationTransportFaultSteps'),
   require('./bl1335ExhaustionOpensFailoverRecordSteps'),
   require('./bl1336RouterForkCeilingSteps'),
-  require('./bl1345StaleRouterMarkerStaffingSteps'),
   require('./bl1339LandApprovalSharedRootSteps'),
   require('./bl1338RoutingStampFingerprintSteps'),
   require('./bl1273SelfHealEmitSitesSteps'),

@@ -271,36 +271,6 @@
       :expected expected
       :actual actual})))
 
-(defn assigned-role-mismatch
-  "BL-1345: is this pane running a role OTHER than the one its pack assigns it?
-
-   The 2026-09-02 outage ended with `rc:specifier: HEALTHY` printed over a
-   pane that was running the coordinator's launch script. The RC check could
-   not see it because it had already been asked about the coordinator - the
-   role the stale marker named - so it compared that role against itself and
-   agreed. The check that would have caught the outage in twenty minutes
-   rather than two launches is this one: compare the observed process against
-   the role the PACK assigns the pane, not against whatever role the check was
-   pointed at.
-
-   Returns nil when there is nothing to say, or {:pane :expected :observed}
-   naming all three, because a mismatch that does not say what it saw sends
-   the reader back to the pane to find out.
-
-   Deliberately silent in three cases, each of which would otherwise cry wolf:
-   a rotation-router pack (a rotated resident legitimately runs another role's
-   script - BL-1020/BL-648 unchanged), no observed name at all (that is the
-   :down/:off path's job, not a mismatch), and no expected name (a role whose
-   launch script carries no --remote-control flag)."
-  [{:keys [rotation-router? pane assigned-rc-name observed-rc-name]}]
-  (when (and (not rotation-router?)
-             (not (str/blank? (str assigned-rc-name)))
-             (not (str/blank? (str observed-rc-name)))
-             (not= (str assigned-rc-name) (str observed-rc-name)))
-    {:pane pane
-     :expected (str assigned-rc-name)
-     :observed (str observed-rc-name)}))
-
 (defn actionable?
   "RC is worth repairing when a live agent lost its flag (:degraded) or when
    its flag is fine but its cloud session has died (:session-dead, BL-898).
