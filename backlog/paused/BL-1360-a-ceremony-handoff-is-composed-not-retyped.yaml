@@ -1,0 +1,178 @@
+id: BL-1360
+title: "A ceremony handoff is composed, not retyped: the merge-up broadcast and the bookkeeping note have fixed recipients, priority and message template, yet every role hand-writes the draft, re-reads the protocol and counts characters before daring to send"
+milestone: M8
+type: feature
+status: todo
+epic: deterministic-transit-assist
+priority: 8
+direction: human-requested
+depends_on: []
+mutation_cost: low
+slice_size_envelope: low
+assigned_to: coder
+required_stages: [coder, cleaner, architect, hardender, documenter, qa]
+
+acceptance: specs/features/BL-1360-a-ceremony-handoff-is-composed-not-retyped.feature
+
+invariants:
+  - "Every ceremony is sent through swarm_handoff.sh: the composer never writes a mailbox directly, so every send-time gate still arms and the tmux wake still fires."
+  - "A composed message is one line within the note cap by construction and never truncates the ticket id or the commit - the two facts its recipient acts on."
+  - "The recipient list and priority of a named ceremony have ONE definition; a test asserts it agrees with handoff-protocol.md rather than restating it (BL-897)."
+
+required_wiring:
+  - 'specs/pipeline/steps/index.js::bl1360CeremonyHandoffComposedSteps::acceptance handler registered so the runner executes every scenario. See notes for why no production anchor is offered.'
+
+human_approval: pending
+approval_context: >
+  No choice is posed and there are no ruling_options. Two shape questions came
+  up while speccing and both are settled in the ticket rather than asked, so
+  you are approving the value, not picking a design.
+  .
+  Settled 1 - named ceremonies, not a generic template engine. Three sends are
+  fully fixed by the protocol today; a general mechanism can be grown later if
+  a fourth appears, and would cost more than it saves now.
+  .
+  Settled 2 - a ceremony message is fixed, not a default the sender may edit.
+  Anything needing nuance is an ordinary note, sent the ordinary way. Allowing
+  an override would put the character-counting and the protocol re-reading
+  straight back.
+  .
+  What to know before approving. This removes NO gate and NO judgement. The
+  composer is a front end to `swarm_handoff.sh`, so a ceremony that today
+  would be refused is still refused, with the same message. It also does not
+  touch the commit half of "commit and hand off" - staging is where BL-506
+  scope discipline lives and it deserves its own slice, named in the epic.
+
+description: |
+  ## What is wrong
+
+  Three pipeline sends carry no judgement whatsoever:
+
+  - **QA merge-up broadcast** - recipients `coder,cleaner,architect,hardender,documenter`,
+    priority `00`, message `BL-042 QA-approved a1b2c3d4 - merge your branch up
+    to QA's`. Only the ticket and the commit vary.
+  - **QA to coordinator bookkeeping note** - priority `00`, the approved commit
+    and the task id. Same.
+  - **Specifier spec-ready note** - priority `00`, the paused ticket id. Same.
+
+  Each is nonetheless hand-assembled every time. The sending role writes the
+  draft by hand, opens `handoff-protocol.md` to confirm the recipient list and
+  whether `to:` accepts a comma-separated list, and measures the message with
+  `echo -n "..." | wc -c` against the 80-character cap.
+
+  ## Observed
+
+  2026-09-03, a QA seat approving BL-1337: **16m06s and 58.6k tokens** spent
+  composing two notes. The transcript shows the seat counting the message,
+  grepping the protocol for the broadcast mechanism, re-reading it to confirm
+  the format, and only then sending. Nothing in that turn was a decision.
+
+  This is the operator's own 2026-07-26 complaint recurring five weeks later.
+  BL-667 records it verbatim: *"agents take forever to 1: merge main when qa
+  lands, 2: merge up with the previous agent's branch, 3: commit and hand off.
+  could not a script help?"* This slice is that epic's third, smallest and
+  still-unfiled child - the handoff tail command - now spec-able because
+  BL-664, the profiler the epic said must size the remaining slices, has
+  landed.
+
+  ## Worth knowing: the hand-counting is already redundant
+
+  `swarm_handoff.bb:517` refuses an over-cap message at send time and names
+  the measured length ("Header 'message' must be no longer than 80 characters;
+  got %d"). The seat's `wc -c` re-derived, at LLM cost, a check the tool
+  already performs for free.
+
+  It is not irrational, though, and the fix must not be "tell roles to stop
+  counting". An over-cap note that reaches a mailbox by any other route is
+  renamed `.dead` and silently skipped by `ready_for_next.sh` - a priority-00
+  operator directive was lost that way on 2026-08-22. Composing the message so
+  it cannot exceed the cap removes the fear, which telling people not to worry
+  does not.
+
+  ## How (direction, not mandate)
+
+  - One entry point taking a ceremony name plus the facts only the sender
+    knows (ticket, commit), writing the draft and invoking
+    `swarm_handoff.sh`. Where it lives - a shell script beside
+    `swarm_handoff.sh`, a subcommand of it - is open.
+  - The recipient list must not become a fourth copy. It is already written in
+    `handoff-protocol.md`, `QA.prompt` and `PIPELINE.md`; invariant 3 asks for
+    one definition and a test that pins it to the document.
+  - Composition must be inspectable without sending - a dry-run that prints
+    the draft is what lets a sceptical role trust it once instead of checking
+    it every time.
+  - The prompt half is the specifier's to land, not the coder's: once the
+    composer exists, `QA.prompt`'s Handoff section and the specifier's own
+    spec-ready instruction must tell roles to use it. Flagged here because no
+    gate can schedule that (BL-798).
+
+  ## Explicitly NOT in scope
+
+  - The commit half of "commit and hand off". `commit --only <declared paths>`
+    is where BL-506 ticket-scope discipline lives, and a script that stages on
+    an agent's behalf in a shared checkout needs its own slice and its own
+    guards. Named in BL-667's remaining_slices.
+  - Whether the merge-up broadcast should exist at all. BL-668's sweep was
+    meant to remove those turns and does not (3 fast-forwards against 125
+    surfacings - see BL-1361), so the broadcast is still load-bearing and this
+    slice makes it cheap rather than removing it.
+
+qa_e2e_procedure: |
+  1. Compose each defined ceremony with a dry-run and confirm the draft
+     matches what `handoff-protocol.md` documents, field for field.
+  2. Send a merge-up ceremony in the live swarm. Confirm each of the five
+     pipeline worktree roles receives it, the specifier does not, and every
+     recipient's tmux wake fired.
+  3. Compose with a ticket id and commit at their longest realistic lengths;
+     confirm the message is one line, at most 80 characters, with neither the
+     id nor the commit truncated.
+  4. Send a ceremony under a condition an existing send-time gate refuses.
+     Confirm the refusal text is the gate's own and that no mailbox received
+     anything.
+  5. Ask for a ceremony name that does not exist; confirm the refusal lists
+     the names that do.
+  6. Time a QA approval before and after, and record both in the COST
+     experiment log the epic's before/after rides.
+
+notes: |
+  Minted 2026-09-03 by the specifier from a live operator observation - a QA
+  pane screenshot with the elapsed time and token count on it, and the
+  directive "we have to make an effort to make these mechanistic steps more
+  deterministic. this is a clear waste of agentic effort."
+
+  Verified this pass rather than assumed:
+  - `handoff-protocol.md:248` caps `message` at 80 chars; `:254` fixes the
+    broadcast recipient list and priority; `:134` confirms `to:` carries a
+    comma-separated list, which is what the seat went to the document to
+    check.
+  - `swarm_handoff.bb:517` already refuses an over-cap message with the
+    measured length, so the seat's manual count was redundant.
+  - The three ceremonies above are the complete set of fully-fixed sends in
+    the protocol today.
+
+  **No production-wiring anchor is declared (BL-1235).** The composer is a new
+  entry point roles invoke from their prompts, so the only call site that
+  could be anchored is one this parcel creates - green by construction, and
+  proving nothing. The prompt changes that make it the standard route are the
+  specifier's to land and cannot be pinned to a parcel commit (BL-798). The
+  single entry is the acceptance-handler registration.
+
+  IR-DRY: one finding, possible-synonym at 0.5, between the outline's
+  "<ceremony> ceremony is composed" and scenario 01's named "merge-up ceremony
+  is composed". They assert different things - 01 the recipients and priority,
+  05 the message - so collapsing them would lose coverage. Left as written. A
+  second finding was real drift ("a ticket id and an approved commit" vs "QA
+  has an approved commit for a ticket") and was normalized away.
+
+source: |
+  Operator directive 2026-09-03, verbatim: "we have to make an effort to make
+  these mecanistic steps more deterministic. this is a clear waste of agentic
+  effort." Attached evidence: a QA pane at 16m06s / 58.6k tokens composing two
+  ceremony notes, visibly counting `echo -n "BL-1337 QA-approved, landed
+  9e6ae3743e - bookkeep to done" | wc -c` and grepping the handoff protocol
+  for the broadcast mechanism.
+
+  Child of BL-667 (EPIC - deterministic transit assist), whose own source is
+  the operator's 2026-07-26 intake
+  `.swarmforge/operator/INTAKE-deterministic-git-choreography-assist.md`. This
+  is that epic's "handoff tail command (unfiled - smallest)" slice.
