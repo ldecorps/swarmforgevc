@@ -1,0 +1,185 @@
+id: BL-1380
+title: "The paused-pager Expedite route records a bare approval, so expediting a ticket that posed a choice writes approved, discards the choice, and leaves the coder with a question nobody will ever be asked again"
+milestone: M8
+type: defect
+severity: high
+# high, same grading as BL-1367 whose Approve-route twin this is: a live path
+# that destroys a human's recorded answer and reads as success. Not critical -
+# it needs an operator to tap Expedite on an option-bearing ticket, and no
+# other work is harmed when it fires.
+status: todo
+epic: question-attention-path
+priority: 7
+direction: swarm-reported
+depends_on: []
+mutation_cost: medium
+slice_size_envelope: low
+required_stages: [coder, cleaner, architect, hardender, documenter, qa]
+
+acceptance: specs/features/BL-1380-expedite-must-not-answer-a-question-the-operator-never-saw.feature
+
+invariants:
+  - "Tapping Expedite never writes an answer to a question the operator was not shown: a ticket with declared ruling_options and no ruling on record never reaches human_approval approved by this route."
+  - "A refusal here leaves the ticket exactly where it was and names the gate and the options - never a silent no-op. This is BL-1083 invariant 2 unchanged, not a new rule."
+  - "A ticket with no ruling_options expedites exactly as it does today, including the case where it was never pending approval at all."
+
+human_approval: pending
+approval_context: >
+  This one is about your phone, which is why the shape is yours rather than
+  mine. The defect is not in question and I am not asking about it.
+  .
+  Tapping Expedite on a ticket that posed a choice currently writes
+  human_approval approved with no ruling. The ask stops being pending, so you
+  are never shown the question again, and the coder reaches a fork with nothing
+  to go on. There is exactly one ticket in this state right now and it is one I
+  minted this morning - BL-1379, which asks you where an expedition should put
+  the tickets it parked. Expedite it from the pager today and that question
+  disappears.
+  .
+  What I am asking is what should happen instead. Refusing is the smallest fix
+  and is what BL-1083 already prescribes for a gate saying no, but it costs you
+  a second interaction. Showing you the options inside the Expedite flow costs
+  more to build and is plainly nicer to use. The third option keeps Expedite
+  exactly as fast as it is today and accepts that the ticket goes active with
+  the question still open.
+  .
+  What does not change under any option: Expedite still satisfies the approval
+  gate rather than being blocked by it. That is BL-1083 and I am not reopening
+  it.
+
+ruling_options:
+  - Refuse with a 409 naming the gate and the ruling options, so you answer and then expedite (recommended)
+  - Show the ruling options inside the Expedite flow so answering and expediting are one interaction
+  - Record the approval and leave the ruling ask outstanding, so the ticket goes active with the question still open
+
+description: |
+  ## The two rules that meet here
+
+  **BL-1083** made `promoteToActive` the one promotion chokepoint and, at this
+  route, recorded the operator's approval BEFORE the gates run. Its comment in
+  `bridgeServer.ts` is explicit about why:
+
+      the human's approval is recorded BEFORE the gates are consulted, exactly
+      as the Telegram Expedite verb does - so Expedite SATISFIES the
+      human_approval gate rather than being blocked by it. A fix that let
+      approval refuse an expedite would leave the verb dead, which is the
+      over-correction this ticket explicitly warns against.
+
+  **BL-1367** made an approval carry its ruling: a ticket declaring
+  `ruling_options` must never reach `approved` with no ruling, because the
+  choice is then silently discarded.
+
+  ## Why this is narrower than a genuine deadlock
+
+  It reads as "never blocked" against "never approved unanswered", but BL-1083
+  never said never refuse. Its own **invariant 2** says the opposite:
+
+      A refused promotion leaves the ticket exactly where it was and tells the
+      operator which gate refused it and why - never a silent no-op.
+
+  What BL-1083 forbade is the `human_approval` gate blocking an expedite for
+  want of the very approval the operator is in the act of giving. **A ruling is
+  a different question.** Tapping Expedite says "work this now"; it does not say
+  "option 2". So a visible, explained refusal that names the ruling is not the
+  over-correction BL-1083 warns about — it is the shape BL-1083 itself
+  prescribes, and this route already uses it for promotion refusals (409 with
+  the gate's own words, BL-572/662).
+
+  That is why the ruling below is about which remedy, not about whether the two
+  rules can coexist. They can.
+
+  ## Verified, not assumed
+
+  - `handlePausedPagerExpediteRoute` (`bridgeServer.ts:799`) calls
+    `recordApprovalReply(targetPath, backlogId)` with no ruling argument.
+  - `recordApprovalReply` with no ruling takes the `approveHumanApprovalText`
+    branch, which flips `human_approval` and never writes `human_ruling:`. The
+    ask stops being pending, so nothing asks again — the silent discard is real,
+    not theoretical.
+  - Live exposure today is exactly one ticket: **BL-1379**, `human_approval:
+    pending` with three `ruling_options`. It is in `backlog/paused/`, which is
+    precisely where Expedite reaches.
+
+  ## How (direction, not mandate)
+
+  - The classifier BL-1367 built — `classifyApprovalRulingRequirement` in
+    `pendingApprovalReply.ts` — already returns exactly the four outcomes this
+    route needs. Reuse it; do not write a second copy. A second copy of the
+    rules is the defect and not the fix (BL-1083 invariant 1, same spirit).
+  - Whichever option is chosen, the decision must be made BEFORE any write. The
+    Approve route already does this and is the model to follow.
+  - Under option 1, the 409 body should carry the options themselves, not just
+    "a ruling is required" — the operator cannot answer a question the refusal
+    does not state.
+
+  ## Explicitly NOT in scope
+
+  - Reopening BL-1083's rule that Expedite satisfies the approval gate. It
+    stands.
+  - The Approve route, which BL-1367 fixed and which is already in flight.
+  - The Telegram Expedite verb, which shares the shape but is a separate
+    surface with its own interaction model; if the ruling picks option 2, say
+    in the follow-up whether the verb should match rather than assuming it.
+
+qa_e2e_procedure: |
+  1. Fixture: a paused ticket with `ruling_options` and `human_approval:
+     pending`. Expedite it from the pager route. Confirm the outcome the ruling
+     selected, and in every case confirm `human_approval` is NOT left as bare
+     `approved` with the ruling discarded (invariant 1).
+  2. Confirm the ticket did not move and its file is byte-unchanged when the
+     route refuses (invariant 2), and that the response names the gate AND the
+     option labels — not a bare status (BL-572/662).
+  3. Fixture with no `ruling_options`. Confirm Expedite behaves byte-for-byte as
+     today: approval recorded, promoted, priority 0 (invariant 3).
+  4. Fixture that was never pending approval at all. Confirm today's behaviour
+     is unchanged — `recordApprovalReply` returning false there is not an error.
+  5. Fixture with `ruling_options` AND a ruling already on record. Confirm
+     Expedite proceeds and the existing ruling is neither cleared nor rewritten.
+  6. Drive every scenario through the real HTTP route, never the classifier
+     alone. A scenario that calls only the classifier reports green for a
+     decision that is right and never reached — which is this defect's own
+     shape, and was the point BL-1367's coder made about its own acceptance.
+  7. Remove the fixture root in a `finally`, sweeping by prefix before the run
+     too (BL-971).
+
+notes: |
+  No `required_wiring:`, and the reason is specific rather than a shrug. The
+  natural anchor would be `classifyApprovalRulingRequirement` in
+  `bridgeServer.ts` — but BL-1367 already put that string in that file for the
+  Approve route, so a substring match cannot tell this route's call site from
+  the existing one and would go green on an unfixed Expedite. Anchoring on a
+  new helper instead would mean inventing a name at mint, which BL-874 forbids.
+  The reachability proof this ticket actually needs is e2e step 6: every
+  scenario drives the real HTTP route.
+
+  Surfaced by the architect on BL-1367's review as a spec-gap `note` rather
+  than a send-back, after the coder and cleaner had both flagged it. That was
+  the right call three times over: BL-1367's own `required_wiring` and scope
+  name only the Approve route, so this was never a defect in that parcel, and
+  none of those three roles should have resolved a policy conflict unilaterally.
+  BL-1367 is unblocked and forwarding.
+
+  IR-DRY: 5 findings, max 0.78 - the three setup variants (options with no
+  ruling / options with a ruling / no options), which are the axis the whole
+  feature turns on and cannot be collapsed without fusing scenarios that assert
+  different things. One redundant scenario WAS found and dropped rather than
+  defended: a separate "nothing is written before the decision" case was
+  subsumed by the no-approval and byte-unchanged assertions, so its one unique
+  claim moved into the leaves-it-alone scenario.
+
+  Mint-time INVEST: one observable outcome, one sitting, and it depends on
+  nothing unbuilt — the classifier it reuses is landing with BL-1367 and is
+  already on the cleaner and architect tips.
+
+source: |
+  Architect note (priority 00, 2026-09-03T12:32Z): "BL-1367 surfaces BL-1083 vs
+  BL-1367 policy conflict - see evidence", pointing at
+  `backlog/evidence/BL-1367-architect-pass-20260903.md` on `swarmforge-architect`:
+
+    "the `/paused-pager/expedite` route (`handlePausedPagerExpediteRoute`)
+    shares this exact shape - it also calls `recordApprovalReply` with no
+    ruling - but BL-1083 requires that route to record approval BEFORE gates
+    run, and a naive copy of this ticket's refusal there would leave Expedite
+    dead (the over-correction BL-1083's own comment warns against). ... agree
+    this is a genuine policy conflict (BL-1083's "never blocked" vs BL-1367's
+    "never approved unanswered") that only the specifier can rule on."
