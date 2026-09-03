@@ -10,9 +10,9 @@
 // BABYSITTER_QA_EXCLUSIVE_PATHS_SCRIPT seam (the same hermetic seam BL-962's
 // and BL-1086's steps use); the ancestry predicate is the real one.
 const fs = require('node:fs');
-const os = require('node:os');
 const path = require('node:path');
 const { execFileSync, spawnSync } = require('node:child_process');
+const { SHORT_FIXTURE_BASE, mkSocketFixtureRoot, releaseSocketFixtureRoot } = require('./socketFixtureRoot');
 
 const REPO_ROOT = path.join(__dirname, '..', '..', '..', '..');
 const SCRIPTS = path.join(REPO_ROOT, 'swarmforge', 'scripts');
@@ -26,9 +26,9 @@ const STALE_AFTER_MS = 10 * 60 * 1000;
 // traps nothing. Age-guarded, so a sibling scenario's live root survives.
 function sweepStaleFixtures() {
   const now = Date.now();
-  for (const entry of fs.readdirSync(os.tmpdir())) {
+  for (const entry of fs.readdirSync(SHORT_FIXTURE_BASE)) {
     if (!entry.startsWith(FIXTURE_PREFIX)) continue;
-    const full = path.join(os.tmpdir(), entry);
+    const full = path.join(SHORT_FIXTURE_BASE, entry);
     try {
       if (now - fs.statSync(full).mtimeMs > STALE_AFTER_MS) fs.rmSync(full, { recursive: true, force: true });
     } catch {
@@ -59,7 +59,7 @@ function write(root, rel, content, mode) {
 // clears, so its nudge is rescheduled forever).
 function makeFixture() {
   sweepStaleFixtures();
-  const root = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), FIXTURE_PREFIX)));
+  const root = mkSocketFixtureRoot(FIXTURE_PREFIX);
   git(root, 'init', '-q', '-b', 'main', '.');
   write(root, path.join('extension', 'src', 'base.ts'), 'base\n');
   git(root, 'add', '-A');
@@ -110,7 +110,9 @@ function makeFixture() {
 }
 
 function removeFixture(fx) {
-  if (fx) fs.rmSync(fx.root, { recursive: true, force: true });
+  if (!fx) return;
+  fs.rmSync(fx.root, { recursive: true, force: true });
+  releaseSocketFixtureRoot(fx.root);
 }
 
 function env(fx) {

@@ -206,3 +206,5 @@ notes: |
   deliberately not an anchor on the handshake function this parcel adds -
   that would live in the module this parcel writes and would go green on its
   own diff, proving nothing (BL-1235).
+
+assigned_to: coder

@@ -1,3 +1,8 @@
+# mutation-stamp: sha256=282354f4b4d591843fb762c626142cf9bac66d8b97dd8218dd3d9643204c12fa
+# acceptance-mutation-manifest-begin
+# {"version":1,"tested_at":"2026-09-03T03:34:28.843316956Z","feature_name":"BL-1344 an investigated babysitter finding can be waived, and stays waived","feature_path":"/home/carillon/swarmforgevc/.worktrees/hardender/specs/features/BL-1344-an-investigated-finding-can-be-waived.feature","background_hash":"e542ee4586eafc23f5665fc6fc0c289cd701432845ad4719279d1da63904445d","implementation_hash":"unknown","scenarios":[{"index":5,"name":"An unusable waive store alerts rather than going quiet","scenario_hash":"49e31ee74385d0b1959e5bba27b2b2617e73ae3dcf6f7598527bed07196f374e","mutation_count":2,"result":{"Total":2,"Killed":2,"Survived":0,"Errors":0},"tested_at":"2026-09-03T03:34:28.843316956Z"}]}
+# acceptance-mutation-manifest-end
+
 Feature: BL-1344 an investigated babysitter finding can be waived, and stays waived
 
   The babysitter's health sweep dedups a nudge on a rolling 30-minute
