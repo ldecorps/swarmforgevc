@@ -22,7 +22,9 @@ invariants:
 required_wiring:
   - 'specs/pipeline/steps/index.js::bl1363ClosingATicketIsOneCommandSteps::acceptance handler registered so the runner executes every scenario. See notes for why no production anchor is offered.'
 
-human_approval: pending
+human_approval: approved
+human_ruling: |
+  Apply the convention to new closes only and leave the 665 loose files (recommended)
 approval_context: >
   One decision is yours, posed as ruling_options below, and it is about
   existing history rather than the script.
