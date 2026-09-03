@@ -18,6 +18,14 @@
 ;;   paths. QA reviews <branch>'s tip and lands THAT commit (never the
 ;;   originally-cited one), and records `abandoned_commits: [<cited
 ;;   commit>]` on the ticket per swarmforge/backlog-schema.md.
+;;   BL-1375: also one "PASSENGER_SIBLING <ticket-id>" line per APPROVED
+;;   unlanded sibling whose own lines ride into main on a path this replay
+;;   had to take whole. A shared blob cannot be split per-hunk, so a
+;;   co-owned path carries them; the replayed tree was run through the land
+;;   step's tree guards before this line was printed, but QA still owes each
+;;   named sibling the same `abandoned_commits:` bookkeeping its own land
+;;   would have produced. A sibling that is withheld, awaiting approval, or
+;;   whose approval state cannot be read never rides - it escalates below.
 ;; Exit 1, prints "LAND_ESCALATE" then the reason on the next line: the
 ;;   detection or replay itself could not be completed cleanly (a real
 ;;   conflict, an unreadable range). Per QA.prompt: not a bounce to the
@@ -64,7 +72,12 @@
             :replay
             (let [result (land-step-lib/replay! {:root project-root :commit canonical
                                                   :task-ticket-id task-ticket-id
-                                                  :own-paths (:own-paths plan)})]
+                                                  :own-paths (:own-paths plan)
+                                                  ;; BL-1375 invariant 2: replay! runs the
+                                                  ;; tree guards against the replayed tree
+                                                  ;; before handing back a commit, and only
+                                                  ;; when a passenger actually rides.
+                                                  :passengers (:passengers plan)})]
               (if (:success result)
                 (do
                   ;; BL-1334: record WHICH approved source this replay stands
@@ -87,6 +100,7 @@
                   (println (str "LAND_REPLAY " (:branch result) " " (:commit result)))
                   (doseq [id (sort (:unlanded plan))] (println (str "ENTANGLED_SIBLING " id)))
                   (doseq [id (sort (:landed plan))] (println (str "LANDED_SIBLING " id)))
+                  (doseq [id (sort (:passengers plan))] (println (str "PASSENGER_SIBLING " id)))
                   (System/exit 0))
                 (do
                   (println "LAND_ESCALATE")

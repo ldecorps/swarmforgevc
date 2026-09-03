@@ -1,0 +1,178 @@
+id: BL-1374
+title: "The replay credits a tagged sync merge with everything it carried, so a routine git merge main named after the ticket sweeps other tickets' unlanded files into its own paths and refuses a land with no real entanglement in it"
+milestone: M8
+type: defect
+severity: high
+# high, and it rose today: the human's BL-1309 ruling makes the tip-pure replay
+# the everyday land path, so an over-inclusive own-path set now costs on EVERY
+# land rather than occasionally. It fails closed - a false refusal, never a
+# wrong landing - which is why it is not critical.
+status: todo
+epic: swarm-reliability
+priority: 5
+direction: swarm-reported
+depends_on: [BL-1354, BL-1308]
+mutation_cost: medium
+slice_size_envelope: medium
+assigned_to: coder
+required_stages: [coder, cleaner, architect, hardender, documenter, qa]
+
+acceptance: specs/features/BL-1374-a-sync-merge-is-not-credited-with-its-passengers.feature
+
+invariants:
+  - "A genuine entanglement is still refused: narrowing the own-path set must not let a ticket's real shared-file work ride into main unnoticed (BL-1332, the whole reason the refusal exists)."
+  - "Detection stays as wide as it is today - a passenger ticket is still REPORTED as unlanded even once it is no longer credited as this ticket's own path (BL-1308 invariant 2, which was widened deliberately)."
+  - "The replay still reproduces what the parcel put on the branch: no path the ticket's own commits changed is dropped from the replay."
+
+required_wiring:
+  - 'swarmforge/scripts/land_step_lib.bb::own-commit-changed-paths::the delivered-side path set this ticket narrows'
+  - 'specs/pipeline/steps/index.js::bl1374SyncMergePassengersSteps::acceptance handler registered so the runner executes every scenario'
+
+human_approval: approved
+human_ruling: |
+  Both - the code fix, with the rule written as belt and braces
+approval_context: >
+  One decision is yours, posed as ruling_options, because the two remedies
+  trade robustness against discipline and the cheap one is not obviously wrong.
+  .
+  Option 1 fixes it in code: stop crediting a merge with its passengers, the
+  same way `sibling-own-line-changes` already skips merges. The risk is
+  invariant 3 - `ancestry-commits`' own note says the replay "must still
+  reproduce what the parcel put on the branch", so this has to be done without
+  dropping work that legitimately only exists via a merge.
+  .
+  Option 2 fixes it by rule: a sync merge's subject must never name a ticket,
+  which is already standing practice for the documenter's cross-ticket edits.
+  It costs no code and relies on every role remembering, every time. QA
+  followed entirely normal practice and hit this.
+  .
+  My recommendation is option 1, listed first. Your BL-1309 ruling made the
+  tip-pure replay the everyday path, which turns an occasional annoyance into a
+  per-land tax, and a discipline rule that must hold on every merge by every
+  role is not a good thing to be one slip away from.
+  .
+  Option 3 is both - and it is worth knowing that the rule half is mine to
+  write and costs you nothing to accept alongside either.
+
+ruling_options:
+  - Fix it in code - stop crediting a merge with its passengers (recommended)
+  - Fix it by rule - a sync merge subject never names a ticket
+  - Both - the code fix, with the rule written as belt and braces
+
+description: |
+  ## What is wrong
+
+  `own-commit-changed-paths` for `:delivered` answers, for a merge, with the
+  two-tree diff against its FIRST parent - which is everything the SECOND
+  parent brought in, whoever authored it. The attribution walk credits that to
+  whichever ticket the merge's subject names.
+
+  So `git merge main`, with a subject naming the ticket you are working on,
+  makes every unlanded file that sync carried into that ticket's own path.
+
+  ## The asymmetry is already on the record
+
+  `sibling-own-line-changes` (`land_step_lib.bb:171-187`) explicitly SKIPS
+  merge commits: "a merge authors no lines of its own", and crediting "a
+  merge's passengers to whichever ticket its subject names is how the landing
+  [goes wrong]". BL-1354 landed that reasoning for the sibling side.
+
+  The delivered side never got it, and `ancestry-commits`' own BL-1308 note
+  names the gap in one sentence: "the detector under-included in exactly the
+  place the path set over-includes". Detection was widened to compensate. The
+  over-inclusion was left in place, deliberately and knowingly.
+
+  ## Observed
+
+  2026-09-03, QA landing BL-1309 (`522584ed85`). Its branch carried
+  `5d4486eb08`, a `git merge main` picking up BL-1309's own approval restore,
+  with a subject naming BL-1309. That sync also carried a `bounce_history`
+  addition to `backlog/active/BL-1296-…yaml` and an `abandoned_commits` line
+  plus a land-success evidence file for BL-1328 - both confirmed as genuinely
+  unlanded against `origin/main`.
+
+  `land_step_cli.bb` returned `LAND_ESCALATE`, refusing to replay because
+  BL-1296's file was "shared with unlanded sibling(s) BL-1296,BL-1328". There
+  was no genuine entanglement: BL-1309's own work touches neither file.
+
+  QA diagnosed it precisely, did not rebase to reword the merge (out of policy)
+  and did not hand-roll a replacement replay (its prompt names
+  `land_step_cli.bb` as the tool for exactly this) - it reported instead.
+
+  ## Why it got worse the same day
+
+  The human ruled BL-1309's own fork on 2026-09-03: "refuse every entangled
+  tip, so the tip-pure replay becomes the normal land". That ruling was made
+  knowing it costs a slower land every time. It also means an over-inclusive
+  own-path set is now on the critical path of EVERY land, not an occasional
+  one.
+
+  ## How (direction, not mandate)
+
+  - `sibling-own-line-changes`' merge skip is the shape and the precedent; the
+    question is whether the delivered side can adopt it without violating
+    invariant 3.
+  - Invariant 3 is the real constraint and deserves a test before a fix: work
+    that reaches the branch only through a merge must still replay. Establish
+    whether such a case actually exists in this repo's history before assuming
+    either way.
+  - Invariant 2 is a regression risk in the opposite direction. BL-1308 widened
+    detection precisely because narrowing attribution once made a passenger's
+    ticket invisible. Narrow the PATH SET without narrowing DETECTION.
+
+  ## Explicitly NOT in scope
+
+  - Unblocking BL-1309's specific land, which is QA's own call with its own
+    documented remedies.
+  - The shared-registry coupling that makes `specs/pipeline/steps/index.js` a
+    frequent co-owner (BL-1371) - a different cause of a similar-looking
+    refusal.
+
+qa_e2e_procedure: |
+  1. Fixture repo: ticket A's branch, a `git merge main` whose subject names A,
+     carrying an unlanded file owned by ticket B. Compute A's own paths and
+     confirm B's file is NOT among them.
+  2. Same fixture: confirm a file A's OWN commits changed IS among them
+     (invariant 3).
+  3. Same fixture: confirm the land step still REPORTS B as unlanded
+     (invariant 2) - narrowing attribution must not blind detection.
+  4. Genuine entanglement: A's own commit edits a file B has unlanded lines in.
+     Confirm the land is still refused naming B (invariant 1). This is the test
+     that matters most.
+  5. Construct, if one exists, a case where a path reaches the branch ONLY via a
+     merge and the parcel must still replay it. If none can be constructed,
+     record that finding - it is the evidence invariant 3 is safe.
+  6. Regression: re-run BL-1309's own land classification and confirm it no
+     longer escalates on BL-1296/BL-1328.
+  7. Remove the fixture root in a `finally`, sweeping by prefix before the run
+     too (BL-971).
+
+notes: |
+  Minted 2026-09-03 by the specifier from a QA priority-00 note, evidence
+  `backlog/evidence/BL-1309-land-escalate-20260903.md` (QA worktree). QA's
+  diagnosis was correct in every particular and is reproduced above rather than
+  re-derived.
+
+  Verified this pass rather than assumed:
+  - `land_step_lib.bb:77-81` documents the delivered-side behaviour, and
+    `:171-187` documents the sibling side's merge skip - the asymmetry is in
+    one file, in two comments.
+  - `ancestry-commits`' BL-1308 note contains the sentence "the detector
+    under-included in exactly the place the path set over-includes", and states
+    "Only DETECTION widens here" - so the over-inclusion is known, not a
+    surprise.
+  - Both passenger paths genuinely differ from `origin/main`, so this was not a
+    stale-tip artefact.
+  - BL-1309 is `human_approval: approved` with `human_ruling: refuse every
+    entangled tip...`, which is what raises this defect's cost.
+
+  `depends_on` names two LANDED tickets (BL-1354, BL-1308) whose reasoning this
+  builds on, per INVEST-I - neither is waited on.
+
+  IR-DRY: clean.
+
+source: |
+  QA note 2026-09-03 (priority 00): "BL-1309 LAND_ESCALATE - my merge subject
+  over-scoped, see evidence". Third land-step attribution defect in the same
+  family: BL-1332 fixed the write side, BL-1354 the sibling read side, this is
+  the delivered-side path set.

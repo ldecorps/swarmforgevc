@@ -953,6 +953,7 @@ const DOMAINS = [
   require('./bl1309LandDecideStepEntanglementSteps'),
   require('./bl1356StampOffWatchesTheRunSteps'),
   require('./bl1359MergeChargedOnlyWithIntroducedSteps'),
+  require('./bl1375ApprovedSiblingsCanLandSteps'),
 ];
 
 function registerSteps(registry) {
