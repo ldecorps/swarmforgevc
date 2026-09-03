@@ -102,6 +102,32 @@ description: |
     detector from becoming a swarm-wide land outage. See invariant 2.
 
 notes: |
+  ## 2026-09-03 CORRECTION - the option was answered, not assumed
+
+  Recorded above (from QA's report and the coordinator's block) that the coder
+  "built option 1 on its own say-so", and my own re-pend told it not to finish
+  the predicate "on a guess". **Both are wrong and are withdrawn here.**
+
+  The operator answered this fork directly in the coder's interactive session -
+  both options in the ticket's order, with their costs - and chose option 1,
+  refuse every entangled tip, which is what the diff implements. Provenance:
+  coder commit `e12140cd4b`. Answer filed at
+  `backlog/answers-archive/ANSWER-2026-09-03-bl1309-refusal-width-refuse-every-entangled-tip-relayed.md`.
+
+  That channel reaches no approval route, so nothing was flipped and nothing
+  recorded. It is a THIRD way a ruling goes missing, distinct from BL-1367's
+  pager route which flips the field and drops the answer - and both leave the
+  identical record, which is why they read as one thing. Now BL-1369.
+
+  Every check QA, the coordinator and I ran was correct. None of us could see
+  the answer because nothing recorded it. The coder raised the discrepancy with
+  provenance rather than letting the record stand, having already corrected its
+  own BL-1296 evidence unprompted the same hour.
+
+  Unchanged: `human_approval` stays `pending` and `status: blocked` stands.
+  The field is the human's tap. One tap restores it - the fork is not open, it
+  only reads that way.
+
   ## 2026-09-03 - re-pended to collect the ruling that was never recorded
 
   Raised by QA (priority-00 note). QA's substantive finding is CORRECT: this
