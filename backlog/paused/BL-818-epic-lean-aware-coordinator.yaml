@@ -7,7 +7,7 @@ epic: lean-aware-coordinator
 priority: 10
 direction: human-requested
 depends_on: []
-decomposes_into: [BL-819, BL-820]
+decomposes_into: [BL-819, BL-820, BL-1365]
 source: |
   Raw intake `backlog/INTAKE-lean-aware-coordinator.md` (human via Cursor
   2026-08-05 ~09:55 CEST, amended ~09:58 for the shift-closing ceremony),
@@ -17,6 +17,27 @@ source: |
   promotable; children are promoted individually.
 
 notes: |
+  ## 2026-09-03 — locked decision 1 re-applied, not re-opened
+
+  The operator asked whether the determinism sweep (BL-667's 2026-09-03
+  inventory) should live in the closing ceremony, in the lean coordinator's
+  job, or in "a special role that runs once a day whose responsibility would
+  be to turn agentic repeated tasks into deterministic scripts."
+
+  Decision 1 below already answers it: a duty of the existing coordinator,
+  "not a ninth standing pipeline agent unless the specifier can prove a
+  separate seat is required." The specifier cannot prove it here — the sweep's
+  detection half is computable from git with no agent in the loop, and its
+  judgement half is exactly what decision 4 already assigns to the specifier
+  inside the ceremony. A daily seat would spend a boot and a context window
+  re-deriving a measure whose window is 45 days, and would usually find
+  nothing.
+
+  Recorded so the question is not asked a third time. The work itself is
+  **BL-1365** (the packet carries determinism candidates), with **BL-1364**
+  connecting BL-664's unwired profiler so the ranking can use mechanical share
+  of agent TIME rather than commit count as a proxy.
+
   2026-08-07 human: ATTACK — promote/build children now (start with approved BL-819 ledger). BL-820 stays blocked on ceremony hook / BL-762 unless human says otherwise. Deprioritize Bubble speech/gesture WIP (BL-828 paused).
 
   UMBRELLA / tracking item (type: epic), NOT directly promotable — the
