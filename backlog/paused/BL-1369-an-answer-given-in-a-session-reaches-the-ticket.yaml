@@ -29,7 +29,7 @@ required_wiring:
   - 'extension/src/concierge/pendingApprovalReply.ts::human_ruling::the sole existing ruling writer is the live consumer a relay must go through, never a second writer'
   - 'specs/pipeline/steps/index.js::bl1369SessionAnswerReachesTicketSteps::acceptance handler registered so the runner executes every scenario'
 
-human_approval: pending
+human_approval: approved
 approval_context: >
   No choice is posed and there are no ruling_options - deliberately, since this
   is the ticket about answers going missing and it should not add another
@@ -81,6 +81,19 @@ description: |
   Four turns, one already-answered question, and a false inference about a
   colleague's conduct committed to `main` on the way. Every step was reasonable
   on the evidence available; the evidence was simply not there to be had.
+
+  ## A second instance, the same day, before this was even committed
+
+  BL-1309's refusal-width fork went the same way: answered by the operator in
+  the coder's session, invisible to every store, and read by QA, the
+  coordinator and the specifier as work built on an assumed option. A false
+  statement about the coder's conduct reached `main` and had to be withdrawn
+  (`backlog/answers-archive/ANSWER-2026-09-03-bl1309-refusal-width-refuse-every-entangled-tip-relayed.md`).
+
+  Two tickets in one day, and the second only surfaced because the coder
+  volunteered provenance rather than letting the record stand. That is not a
+  control - it is a colleague being scrupulous. This ticket exists so the swarm
+  does not depend on that.
 
   Same family from the other end as BL-1245 (a role-ask answer that reaches the
   human but pairs with nothing), and a sibling of BL-1367 (an approval surface
