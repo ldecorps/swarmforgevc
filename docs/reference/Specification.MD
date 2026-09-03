@@ -1,5 +1,37 @@
 # SwarmForge VS Code Extension — Specification
 
+**Last Updated:** September 3, 2026 (BL-1350: the bridge's `/events` SSE
+stream now writes a periodic keepalive comment frame (`: keepalive\n\n`,
+default every 20000 ms) to every open connection, whether or not any bridge
+state changed. Node's bundled undici applies a 300000 ms `bodyTimeout`
+BETWEEN body chunks on a bare `fetch`, and the front-desk reply-relay's
+`connectAndRelayReplies` (`extension/src/tools/telegram-front-desk-bot.ts`)
+sets no dispatcher
+override, so a silent stream died with `TypeError: terminated` after five
+idle minutes — indistinguishable from a real drop, so a quiet swarm read as
+a chronic outage and BL-1111's sustained-outage alert fired on a phantom one
+roughly every 2-4 hours. A hold test (`curl -N --max-time 340` against
+`/events`) confirmed the bridge never closes an idle connection and the
+client-side undici timeout is the sole cause. `writeSseKeepalive` is defined
+in `bridgeServer.ts` itself, beside `sseClients` and the poll timer — not a
+separately-tested helper no production path reaches (the BL-1235 shape) —
+and its `setInterval` handle is cleared by `stop()` alongside `poll`. A
+client already gone (`writableEnded`/`destroyed`) or one whose write throws
+is dropped from `sseClients` instead of stopping the keepalive for every
+other client. The keepalive frame is a pure SSE comment: a browser
+`EventSource` ignores it natively, and this repo's own reader
+(`parseNextSseRecord`/`relayOneRecord`) matches neither an `event: ` nor a
+`data: ` line in it, so no reply is delivered, none acknowledged, and no
+reply-outbox cursor moves — confirmed by both invariants, the second driving
+the real relay loop (`drainBufferedRecords`, now exported for this reason)
+over stub keepalive/snapshot/comment frames. The BL-1111 alert and its
+backoff/threshold are untouched — this ticket removes the failure the alert
+correctly reports, it does not quiet the report. The 6.7 MB connect-snapshot
+size is a separate, already-split defect (BL-1351) and out of scope here.
+Acceptance: `specs/features/BL-1350-idle-event-stream-keepalive.feature`. No
+new extension command or setting; no diagram depicts SSE frame-level
+behavior, so no diagram change.)
+Prior entry —
 **Last Updated:** September 3, 2026 (BL-1327: a scheduled, PROPOSAL-ONLY
 descent ladder — human ruling 2026-09-02, "Proposal-only... no autonomous
 model/effort mutation in this ticket." A new daily cron
