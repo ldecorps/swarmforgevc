@@ -1,0 +1,204 @@
+id: BL-1356
+title: "Stamp-off invariants pin their ledger row's current state literal, so the row advancing through its own workflow jams every role's commit gate until someone adds an allowlist row"
+milestone: M8
+type: defect
+severity: high
+status: todo
+epic: code-quality-gates
+priority: 28
+direction: swarm-reported
+depends_on: []
+mutation_cost: medium
+slice_size_envelope: medium
+assigned_to: none
+required_stages: [coder, cleaner, architect, hardender, documenter, qa]
+
+acceptance: specs/features/BL-1356-stamp-off-invariant-watches-the-run-not-the-row.feature
+
+required_wiring:
+  - "specs/pipeline/steps/index.js::bl1356::the new step handler must be registered - specs/pipeline/runtime.js THROWS on any scenario with no handler. Honest note per BL-1235: this anchor is satisfied by the parcel's own diff and so proves nothing about reachability. It is kept for the reason BL-1314 kept its twin - BL-233 requires the handler to land in the SAME commit as the feature file, and a real .feature whose handler lands later turns main red for every other parcel. Verified absent at spec time, grep bl1356 returns 0."
+
+invariants:
+  - "A stamp-off invariant fails when, and only when, the run that executes it changed the row it watches - no value the row legitimately held before the run is a violation, and any write the run makes to it is."
+  - "Scoping the assertion never weakens it: a run that stamps a decision into the ledger still fails, whatever state the row held beforehand."
+
+human_approval: pending
+approval_context: >
+  One ruling is needed and it changes what the coder builds, so it is asked here
+  rather than discovered at review: whether these invariants should keep reading
+  the LIVE backlog/hotfix-ledger.yaml at all. Option 1 keeps them on the live
+  file and fixes only the assertion, so the test still genuinely proves the real
+  ledger was not stamped - but the shared commit gate stays coupled to a file
+  roles edit all shift. Option 2 moves the gating assertion onto a fixture and
+  leaves the live-file check to a separate non-gating audit, which fully
+  decouples the gate but weakens what the gating half proves. Both are
+  defensible and they differ in who carries the risk.
+
+  Everything else is firm and evidenced: the failure, its cause, that the
+  invariant itself is intact, and that the allowlist has absorbed five instances
+  of this already.
+
+ruling_options:
+  - option 1 - keep the invariants on the live ledger and assert non-mutation across the run instead of a state literal
+  - option 2 - gate on a fixture ledger and move the live-ledger check to a separate non-gating audit
+
+source: |
+  Reported by the coder as a `note` on 2026-09-03: "property-suite guard blocked
+  4 unrelated commits today on load flakes". Investigated by the specifier the
+  same pass rather than taken at face value - the phrase "load flakes" turned out
+  to describe suite-level failures, but the cause is not host load and not a
+  flake.
+
+  Full property lane run captured by the specifier 2026-09-03 (144.76s,
+  `npm run test:properties` from `extension/`): **27 test files failed, 289
+  passed.** Of the 27, `ps_suite_extract_failing_files` parses all 27 and
+  `ps_allowlist_file_is_allowlisted` puts **26 in the standing allowlist and
+  exactly one outside it**:
+
+      >> BLOCKING  test/bl1323StampOffInvariants.property.test.js
+
+  That single file is what refuses every commit touching `extension/src/*` or a
+  `*.property.test.js`, repo-wide, per `check_property_suite_drift.sh`'s
+  `path_triggers_check`. Its failing assertion, verbatim from the run:
+
+      FAIL test/bl1323StampOffInvariants.property.test.js >
+        BL-1323/BL-654 invariant 2: no green suite writes a decision into the hotfix ledger
+      AssertionError: the row is no longer stamp-open:
+        state: awaiting-human
+        stamp_ticket: BL-1323
+      test/bl1323StampOffInvariants.property.test.js:79
+        assert.ok(/state: stamp-open/.test(thisRow), ...)
+
+  The row genuinely is `awaiting-human` now - that is the stamp workflow doing
+  what it is for. Nothing regressed.
+
+  Confirmed the same shape across the family (`grep -o 'state: [a-z-]*'` over the
+  stamp-off files): `bl1116` and `bl1117` pin `/state: pending/`, `bl1323` pins
+  `/state: stamp-open/`. All read the live file - `bl1116` line 19:
+  `const LEDGER = path.join(REPO, 'backlog', 'hotfix-ledger.yaml')`.
+
+  And the allowlist already carries five of them, every one with the same
+  boilerplate rationale, "pre-existing; tracked under BL-1175 pending fix":
+  bl1113, bl1115, bl1116, bl1117, bl1136. bl1323 is the sixth instance of one
+  mechanism, not a sixth unrelated red.
+
+description: |
+  ## What is broken
+
+  A BL-654 stamp-off property test defends a real invariant: running the test
+  suite must never write a decision into `backlog/hotfix-ledger.yaml`. Each one
+  encodes that by asserting the CURRENT state literal of its own row - `/state:
+  stamp-open/`, `/state: pending/`.
+
+  A hotfix ledger row is not a constant. Advancing it (`stamp-open` ->
+  `awaiting-human` -> `certified`/`waived`) is precisely the workflow the ledger
+  exists to track. So every one of these tests is written pre-red: it passes only
+  while its row has not yet moved, and goes red the moment it does, for reasons
+  that have nothing to do with the invariant it defends.
+
+  ## Why that is a high-severity defect and not a test nit
+
+  The property lane's commit guard refuses ANY commit touching `extension/src/*`
+  or a `*.property.test.js` when the lane is red with a non-allowlisted file. So
+  one stamp-off row advancing jams the commit gate for every role in the swarm,
+  repo-wide, and the only documented exit is
+  `SWARMFORGE_SKIP_PROPERTY_SUITE_GUARD=1` - which the guard's own header calls
+  "recovery-only; never the standing recipe (BL-1121)". Four unrelated commits
+  hit it on 2026-09-02 alone.
+
+  The remedy so far has been to add the file to
+  `property_suite_standing_allowlist.tsv`. That is BL-1175's mechanism working as
+  designed, but it is being spent absorbing a defect rather than parking a
+  genuine standing red: the allowlist now holds five stamp-off files, all with
+  the same rationale string, and it will hold a seventh, and an eighth, because
+  every future stamp-off ticket mints another pre-red test. Each one jams the
+  gate for the whole swarm in the window between its row advancing and somebody
+  diagnosing it - and diagnosing it is expensive, because the refusal names the
+  file and nothing else (BL-1275 is open on exactly that).
+
+  ## What must be true afterwards
+
+  A stamp-off invariant must fail when, and only when, THE RUN THAT EXECUTES IT
+  changed the row it watches. The value the row happened to hold when the run
+  started is not the subject: a row sitting at `awaiting-human` is as valid as
+  one at `stamp-open`, and neither is evidence about what the suite wrote.
+
+  The non-weakening half matters as much and is invariant 2: a run that really
+  does stamp a decision into the ledger must still fail, from ANY starting state.
+  A "fix" that makes these tests pass by asserting less is the failure mode to
+  avoid - this ticket is not licence to soften a real gate, and the architect
+  should review it against invariant 2 specifically.
+
+  Once the assertions no longer red on normal advance, the five stamp-off rows
+  come OUT of `property_suite_standing_allowlist.tsv` in the same parcel. Leaving
+  them in would hide a future genuine stamp-off regression behind a waiver that
+  no longer has a reason.
+
+  ## How (direction, not mandate)
+
+  - The natural encoding of "the run did not write" is a before/after comparison
+    of the row across the run, not a match against a fixed literal. What the row
+    said beforehand becomes the expected value.
+  - `human_decision` and the terminal states (`certified`, `waived`) are the
+    fields a suite must never introduce; those are worth asserting positively
+    whatever shape the rest takes.
+  - Six files carry this pattern (bl1113, bl1115, bl1116, bl1117, bl1136,
+    bl1323). Prefer one shared helper they all call over six parallel edits -
+    the seventh stamp-off ticket should inherit the fix rather than repeat the
+    bug.
+
+out_of_scope: |
+  - Retaining the guard's suite output so a refusal is adjudicable afterwards.
+    That is BL-1275 (paused), and it is what made this diagnosis cost a full
+    144-second re-run rather than a glance at a log.
+  - The property lane's speed and fork sizing (BL-1348, BL-1349) - both approved
+    and paused, and neither touches this. The lane being slow is why nobody
+    re-runs it to check; it is not why it is red.
+  - The other 26 failing files in the 2026-09-03 run. They are already
+    allowlisted, several for unrelated reasons (`alertTelemetry` fails with "No
+    test suite found in file", the BL-1249 `node:test` collection shape, tracked
+    by BL-1206). Only the stamp-off family is this ticket's subject.
+  - Changing `check_property_suite_drift.sh` or the allowlist mechanism itself.
+    The guard is behaving exactly as specified; the tests it is reporting are the
+    defect.
+
+qa_e2e_procedure: |
+  1. From `extension/`, run `npm run test:properties` and keep the full output
+     (it takes ~145s; do not let it be killed at 120s).
+  2. Source `swarmforge/scripts/property_suite_standing_allowlist_lib.sh`, then
+     for every file from `ps_suite_extract_failing_files "$OUT"` call
+     `ps_allowlist_file_is_allowlisted "$tsv" "$file"`. No stamp-off file may
+     appear as failing, and none may need an allowlist row to avoid it.
+  3. Confirm `property_suite_standing_allowlist.tsv` no longer carries bl1113,
+     bl1115, bl1116, bl1117, bl1136 or bl1323.
+  4. Non-weakening check, the important one: in a scratch copy of the repo, edit
+     a watched row's `state:` to `certified` and its `human_decision:` to a
+     non-null value MID-RUN (a fixture that writes it while the suite executes),
+     and confirm the stamp-off invariant still FAILS. A version that passes here
+     has softened the gate and must be bounced.
+  5. `git status` on the shared checkout: the run must leave
+     `backlog/hotfix-ledger.yaml` byte-identical (BL-1124 canary territory).
+
+notes: |
+  Immediate unblock, separate from this ticket and not waiting on it: as of
+  2026-09-03 `backlog/hotfix-ledger.yaml` carries an UNCOMMITTED working-tree
+  edit in the shared master checkout advancing the BL-1323 row from `stamp-open`
+  to `awaiting-human`. HEAD still says `stamp-open`, so the red is coming from
+  another role's in-flight edit. Whoever owns that edit should land it; the file
+  then needs an allowlist row until this ticket lands, because the row will
+  legitimately stay past `stamp-open`. That waiver belongs to whoever owns the
+  gate registry, not to this ticket, and its rationale column should cite BL-1356
+  rather than the boilerplate string the other five carry.
+
+  Not a duplicate of BL-1314, which shares the lesson ("the assertion is the
+  defect, not the code it accuses") but a different site: BL-1314 was
+  `test_pipeline_code_on_main_guard.sh`'s BL-925 invariant-2 ancestry grep, and
+  it is done. Not BL-1234 (allowlist matcher, done), not BL-1175 (the allowlist
+  mechanism itself, working as designed), not BL-1107 (one file's per-test budget
+  under host load, done).
+
+  IR-DRY reviewed 2026-09-03, 3 medium findings, none actioned: two are polarity
+  pairs that must read as opposites (`passes`/`fails`; writing state vs writing
+  human_decision), and one is the Outline's `"<state>"` placeholder against
+  scenario 02's `"stamp-open"` literal, where the concrete value is load-bearing
+  because that scenario's When and Then differ from the Outline's.
