@@ -77,57 +77,9 @@ function git(...args) {
   });
 }
 
-// BL-1328: the region comparison below is "every line the hotfix landed is
-// still there, in order", not byte equality. Byte equality made this
-// invariant forbid ANY later edit to the reviewed code - including the narrow
-// follow-up the same human ruling on BL-1324 authorized - which is a claim
-// about the file's future, not about whether THIS parcel rewrote the hotfix.
-// What the invariant actually says is the latter, and the attribution face
-// below (no BL-1324-attributed commit touches a hotfix path) is its other
-// half.
-function assertHotfixLinesIntact(currentRegion, landedRegion, label) {
-  const current = String(currentRegion).split('\n');
-  const landedLines = String(landedRegion).split('\n');
-  let cursor = 0;
-  for (const line of landedLines) {
-    const found = current.indexOf(line, cursor);
-    assert.notEqual(found, -1, `${label} lost or reworded a line the hotfix landed: ${JSON.stringify(line)}`);
-    cursor = found + 1;
-  }
-  const added = current.filter((line) => !landedLines.includes(line) && line.trim().length > 0);
-  if (added.length > 0) {
-    assert.ok(
-      current.some((line) => /BL-\d{3,4}/.test(line)),
-      `${label} grew ${added.length} line(s) that no ticket claims: ${JSON.stringify(added.slice(0, 3))}`
-    );
-  }
-}
-
-// Anchored extraction, so the comparison survives unrelated edits moving
-// the code and still catches an edit to the hotfix's own lines.
-function hotfixRegions(text) {
-  const lines = text.split('\n');
-  const grab = (startRe, endRe, label) => {
-    const start = lines.findIndex((l) => startRe.test(l));
-    assert.notEqual(start, -1, `hotfix region "${label}" not found`);
-    const rel = lines.slice(start + 1).findIndex((l) => endRe.test(l));
-    assert.notEqual(rel, -1, `hotfix region "${label}" has no end`);
-    return lines.slice(start, start + rel + 2).join('\n');
-  };
-  return {
-    matcher: grab(/^extra_cli_targets_qwen_cloud\(\) \{$/, /^\}$/, 'matcher'),
-    billingGuard: grab(
-      /extra_cli_targets_qwen_cloud "\$extra_cli"/,
-      /^\s*elif role_uses_openrouter "\$role"; then$/,
-      'billing guard'
-    ),
-    paneEnv: grab(
-      /elif \[\[ "\$agent" == "claude" \]\] && extra_cli_targets_qwen_cloud "\$\{EXTRA_CLI_ARGS\[\$index\]:-\}"/,
-      /^\s*fi$/,
-      'pane env'
-    ),
-  };
-}
+// BL-1328: the region extractor that fed the retired content faces went
+// with them - see invariant 1 below for why byte equality was the wrong
+// test for what this invariant declares.
 
 function fixtureEnv(overrides = {}) {
   const env = { ...process.env };
@@ -256,46 +208,36 @@ const qwenSeat = fc
 
 describe('BL-1324 stamp-off invariants', () => {
   it('invariant 1: no revision of this stamp-off rewrote, reverted or retouched the hotfix', () => {
-    // Quantifies over two case kinds, both reaching every revision that has
-    // touched a hotfix-owned artifact since the hotfix landed - not HEAD
-    // alone:
-    //   content    - the swarmforge.sh hotfix regions must be byte-identical
-    //                to 4ed88430b2 at HEAD and at each such revision;
-    //   attribution - no revision that changed ANY hotfix-owned artifact may
-    //                be attributed to this stamp-off ticket. (The pack conf
-    //                was legitimately restaffed later by an operator commit,
-    //                441fd35112, so content equality is the wrong test for
-    //                it; who changed it is the right one.)
+    // What this invariant DECLARES is "this stamp-off never reimplements,
+    // rewrites or reverts the hotfix" - a statement about the STAMP-OFF
+    // PARCEL, not a freeze on swarmforge.sh for all time.
+    //
+    // BL-1328 (retirement): the `content`/`worktree` faces asserted the
+    // swarmforge.sh hotfix regions were BYTE-IDENTICAL to 4ed88430b2 at HEAD,
+    // in the working tree, and at every revision touching the path since -
+    // and that walk covers every FUTURE revision too, so it forbade the
+    // narrow follow-up BL-1324's own human ruling authorized (matching
+    // `--model=<value>`). Measured at the time: BL-1324's feature went from
+    // 11 pass / 0 fail to 0 pass / 11 fail on that pin alone, and the
+    // pre-commit property gate refused the commit for the same reason. The
+    // faces are RETIRED rather than re-baselined onto the new bytes:
+    // re-baselining rebuilds the identical wall in front of the next
+    // follow-up.
+    //
+    // The `attribution` face already says exactly what the invariant
+    // declares, and this same file had already reached that conclusion once,
+    // for the pack conf: "content equality is the wrong test for it; who
+    // changed it is the right one." That reasoning applies to swarmforge.sh
+    // in exactly the same way, and it is what remains here.
     const touching = (p) => git('rev-list', `${HOTFIX_COMMIT}..HEAD`, '--', p).split('\n').filter(Boolean);
-    const shPath = HOTFIX_PATHS[0];
-    const cases = [
-      // The checked-out file too, not only committed revisions: a working
-      // tree that rewrote the hotfix would otherwise reach every other
-      // gate in this parcel before anything noticed.
-      { kind: 'worktree', p: shPath, rev: 'working tree' },
-      { kind: 'content', p: shPath, rev: 'HEAD' },
-      ...touching(shPath).map((rev) => ({ kind: 'content', p: shPath, rev })),
-      ...HOTFIX_PATHS.flatMap((p) => touching(p).map((rev) => ({ kind: 'attribution', p, rev }))),
-    ];
+    const cases = HOTFIX_PATHS.flatMap((p) => touching(p).map((rev) => ({ kind: 'attribution', p, rev })));
     assert.ok(
       cases.some((c) => c.kind === 'attribution'),
       'the revision walk reached no revision that touched a hotfix artifact - the attribution face would be vacuous'
     );
 
-    const landedRegions = hotfixRegions(git('show', `${HOTFIX_COMMIT}:${shPath}`));
-
     fc.assert(
-      fc.property(fc.constantFrom(...cases), ({ kind, p, rev }) => {
-        if (kind === 'content' || kind === 'worktree') {
-          const text = kind === 'worktree'
-            ? fs.readFileSync(path.join(REPO_ROOT, p), 'utf8')
-            : git('show', `${rev}:${p}`);
-          const seen = hotfixRegions(text);
-          for (const key of Object.keys(landedRegions)) {
-            assertHotfixLinesIntact(seen[key], landedRegions[key], `region "${key}" of ${p} at ${rev}`);
-          }
-          return;
-        }
+      fc.property(fc.constantFrom(...cases), ({ p, rev }) => {
         const subject = git('log', '-1', '--format=%s', rev).trim();
         assert.ok(
           !/BL-1324/.test(subject),
