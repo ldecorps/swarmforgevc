@@ -74,10 +74,30 @@ export interface VitestForkCeilingInput {
   platform: string;
   override?: string;
   defaultCeiling?: number;
+  // BL-1336: the swarm's rotation mode, exported into the role env by
+  // swarmforge.sh beside SWARMFORGE_PACK. Undefined outside a swarm, which is
+  // the ordinary developer case and behaves exactly as before.
+  rotation?: string;
 }
 
 const FULL_FORGE_PACK = 'full-forge';
 const MACOS_PLATFORM = 'darwin';
+const ROUTER_ROTATION = 'router';
+
+// BL-1336, human ruling: a FIXED ceiling above the default, with the memory
+// budget still the binding cap. Fixed rather than derived from the host's core
+// count on purpose - deriving would make this function host-sensitive, which
+// turns a deterministic unit test into a flaky one, and the RAM budget below
+// is what actually protects a small host either way.
+//
+// Why a router pack may run wider at all: under `config rotation router` the
+// launcher starts the coordinator and ONE resident pane that rotates in place
+// through the pipeline roles; every other role is a dormant launch artifact
+// with no session and no process. A vitest run inside the resident contends
+// with the coordinator alone, not with seven sibling role sessions - and that
+// sibling contention is the only thing this CPU ceiling exists to guard
+// against.
+export const ROUTER_FORK_CEILING = 10;
 
 // A positive integer only - "0", "-1", "1.5", "", whitespace-only, and any
 // non-numeric text are all IGNORED (fall through to the pack rule), never
@@ -90,10 +110,24 @@ function parsePositiveIntOverride(raw: string | undefined): number | undefined {
   return Number.isInteger(n) && n > 0 ? n : undefined;
 }
 
-export function resolveVitestForkCeiling({ pack, platform, override, defaultCeiling = MAX_WORKERS }: VitestForkCeilingInput): number {
+export function resolveVitestForkCeiling({
+  pack,
+  platform,
+  override,
+  defaultCeiling = MAX_WORKERS,
+  rotation,
+}: VitestForkCeilingInput): number {
   const parsedOverride = parsePositiveIntOverride(override);
   if (parsedOverride !== undefined) return parsedOverride;
+  // The full-forge-on-darwin ceiling is untouched by BL-1336 and stays ahead
+  // of the router rule: that pack is not a router pack, so the two can never
+  // both apply, and keeping the order explicit means a future router variant
+  // of full-forge could not silently widen it.
   if (pack === FULL_FORGE_PACK && platform === MACOS_PLATFORM) return 1;
+  // Keyed on ROTATION, never on pack names: router packs are not a fixed
+  // enum and new ones are minted regularly, so a name-matching predicate
+  // would silently miss every future one.
+  if (rotation === ROUTER_ROTATION) return ROUTER_FORK_CEILING;
   return defaultCeiling;
 }
 
@@ -114,6 +148,9 @@ export interface VitestWorkerPoolInput extends VitestForkCeilingInput {
   hostRamMB: number;
 }
 
-export function resolveVitestWorkerPool({ pack, platform, override, defaultCeiling, hostRamMB }: VitestWorkerPoolInput): number {
-  return resolveWorkerPoolSize(hostRamMB, resolveVitestForkCeiling({ pack, platform, override, defaultCeiling }));
+export function resolveVitestWorkerPool({ pack, platform, override, defaultCeiling, hostRamMB, rotation }: VitestWorkerPoolInput): number {
+  // resolveWorkerPoolSize takes the MINIMUM of the RAM-derived size and this
+  // ceiling, so a raised ceiling can never widen the pool past what the host's
+  // memory allows (BL-1336 invariant 2, BL-422/BL-792's floor untouched).
+  return resolveWorkerPoolSize(hostRamMB, resolveVitestForkCeiling({ pack, platform, override, defaultCeiling, rotation }));
 }
