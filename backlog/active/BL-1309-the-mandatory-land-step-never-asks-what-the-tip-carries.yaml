@@ -264,7 +264,9 @@ qa_e2e_procedure: |
   refused. Evidence:
   backlog/evidence/BL-1324-specifier-land-escalate-adjudication-20260902.md.
 
-human_approval: pending
+human_approval: approved
+human_ruling: |
+  refuse every entangled tip, so the tip-pure replay becomes the normal land
 ruling_options:
   - refuse every entangled tip, so the tip-pure replay becomes the normal land
   - refuse only when the entangled sibling is withheld or awaiting approval
