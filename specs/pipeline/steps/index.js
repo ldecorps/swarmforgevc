@@ -957,6 +957,7 @@ const DOMAINS = [
   require('./bl1375ApprovedSiblingsCanLandSteps'),
   require('./bl1376ExpediteBranchHandoverSteps'),
   require('./bl1377SuiteBaselineSteps'),
+  require('./bl1367ApprovalCarriesItsRulingSteps'),
   require('./bl1374SyncMergePassengersSteps'),
   require('./bl1378ExpediteCloseGuardSteps'),
 ];
