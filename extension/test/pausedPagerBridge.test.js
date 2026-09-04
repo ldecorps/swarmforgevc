@@ -581,3 +581,135 @@ test('BL-1367 invariant 2: a pager approval never disturbs a ruling already reco
     assert.match(yaml, /^human_approval: pending$/m);
   });
 });
+
+// ── BL-1380: Expedite never answers a question the operator was not shown ────
+//
+// BL-1083 records the operator's approval BEFORE the promotion gates run, so
+// Expedite SATISFIES the human_approval gate rather than being blocked by it.
+// On a ticket declaring ruling_options that bare approval also answered a
+// question nobody was asked: recordApprovalReply with no ruling takes the
+// approveHumanApprovalText branch, the ask stops being pending, and the choice
+// is gone with no way to ask again. The human's ruling (2026-09-04) is option
+// 1 - refuse with a 409 naming the gate and the options, so you answer and
+// then expedite.
+//
+// Every test here drives the REAL HTTP route, never the classifier alone: a
+// decision that is right and never reached is this defect's own shape.
+
+const RULING_OPTIONS_YAML =
+  'ruling_options:\n' +
+  '  - Refuse and name the options\n' +
+  '  - Show the options inside the flow\n';
+
+test('BL-1380: Expedite refuses (409) a ticket that poses an unanswered choice, naming the gate and the options', async () => {
+  const target = mkGitTmpWithCli();
+  const original =
+    'id: BL-030\ntitle: poses a choice\nstatus: paused\npriority: 4\n' +
+    'human_approval: pending\n' +
+    RULING_OPTIONS_YAML;
+  writeBacklogTicket(target, 'paused', 'BL-030', original);
+
+  await withBridge(target, {}, async (handle) => {
+    const res = await fetch(`http://127.0.0.1:${handle.port}/paused-pager/expedite`, {
+      method: 'POST',
+      headers: { ...controlAuthHeaders(), 'content-type': 'application/json' },
+      body: JSON.stringify({ id: 'BL-030' }),
+    });
+    assert.equal(res.status, 409);
+    const body = await res.json();
+
+    // Not a bare status: the operator cannot answer a question the refusal
+    // does not state (BL-572/BL-662).
+    assert.equal(body.success, false);
+    assert.equal(body.id, 'BL-030');
+    assert.equal(body.gate, 'human_ruling', 'the refusal must name the gate that refused');
+    assert.deepEqual(body.options, ['Refuse and name the options', 'Show the options inside the flow']);
+    assert.match(String(body.detail), /BL-030/);
+
+    const pausedPath = path.join(target, 'backlog', 'paused', 'BL-030.yaml');
+    const activePath = path.join(target, 'backlog', 'active', 'BL-030.yaml');
+    // Invariant 1 and 2 together: nothing was written before the decision, so
+    // the ask is still pending and the ticket has not moved.
+    assert.equal(fs.existsSync(activePath), false);
+    assert.equal(fs.readFileSync(pausedPath, 'utf8'), original, 'the file must be byte-unchanged');
+  });
+});
+
+test('BL-1380: Expedite proceeds when the choice is already answered, and leaves the ruling alone', async () => {
+  const target = mkGitTmpWithCli();
+  writeBacklogTicket(
+    target,
+    'paused',
+    'BL-031',
+    'id: BL-031\ntitle: choice already answered\nstatus: paused\npriority: 4\n' +
+      'human_approval: approved\n' +
+      'human_ruling: Refuse and name the options\n' +
+      RULING_OPTIONS_YAML
+  );
+
+  await withBridge(target, {}, async (handle) => {
+    const res = await fetch(`http://127.0.0.1:${handle.port}/paused-pager/expedite`, {
+      method: 'POST',
+      headers: { ...controlAuthHeaders(), 'content-type': 'application/json' },
+      body: JSON.stringify({ id: 'BL-031' }),
+    });
+    assert.equal(res.status, 200);
+
+    const activePath = path.join(target, 'backlog', 'active', 'BL-031.yaml');
+    assert.equal(fs.existsSync(activePath), true);
+    const yaml = fs.readFileSync(activePath, 'utf8');
+    assert.match(yaml, /^priority:\s*0$/m);
+    // The answer on record is neither cleared nor rewritten.
+    assert.match(yaml, /^human_ruling: Refuse and name the options$/m);
+  });
+});
+
+test('BL-1380: a ticket with nothing to choose expedites exactly as it does today', async () => {
+  const target = mkGitTmpWithCli();
+  writeBacklogTicket(
+    target,
+    'paused',
+    'BL-032',
+    'id: BL-032\ntitle: no choice posed\nstatus: paused\npriority: 5\nhuman_approval: pending\n'
+  );
+
+  await withBridge(target, {}, async (handle) => {
+    const res = await fetch(`http://127.0.0.1:${handle.port}/paused-pager/expedite`, {
+      method: 'POST',
+      headers: { ...controlAuthHeaders(), 'content-type': 'application/json' },
+      body: JSON.stringify({ id: 'BL-032' }),
+    });
+    assert.equal(res.status, 200);
+
+    const activePath = path.join(target, 'backlog', 'active', 'BL-032.yaml');
+    assert.equal(fs.existsSync(activePath), true);
+    const yaml = fs.readFileSync(activePath, 'utf8');
+    assert.match(yaml, /^priority:\s*0$/m);
+    // BL-1083 unchanged: Expedite still SATISFIES the approval gate.
+    assert.match(yaml, /^human_approval: approved$/m);
+  });
+});
+
+test('BL-1380: a ticket that was never pending approval expedites exactly as it does today', async () => {
+  const target = mkGitTmpWithCli();
+  // No human_approval field at all: recordApprovalReply returning false here
+  // is not an error, and never was (BL-1083's own comment says so).
+  writeBacklogTicket(
+    target,
+    'paused',
+    'BL-033',
+    'id: BL-033\ntitle: no approval ask at all\nstatus: paused\npriority: 6\n'
+  );
+
+  await withBridge(target, {}, async (handle) => {
+    const res = await fetch(`http://127.0.0.1:${handle.port}/paused-pager/expedite`, {
+      method: 'POST',
+      headers: { ...controlAuthHeaders(), 'content-type': 'application/json' },
+      body: JSON.stringify({ id: 'BL-033' }),
+    });
+    assert.equal(res.status, 200);
+    const activePath = path.join(target, 'backlog', 'active', 'BL-033.yaml');
+    assert.equal(fs.existsSync(activePath), true);
+    assert.match(fs.readFileSync(activePath, 'utf8'), /^priority:\s*0$/m);
+  });
+});
