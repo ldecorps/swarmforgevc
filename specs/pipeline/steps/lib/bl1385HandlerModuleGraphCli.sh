@@ -15,6 +15,9 @@
 #     land-replay           the LAND's own tree-guard list, run against a bad
 #                           materialised tree exactly as land_step_lib.bb does
 #     commit-guards         the commit guard chain, run over a bad staged tree
+#     concurrent            TWO guards examining the same good tree at once,
+#                           with a live sibling root planted to prove neither
+#                           removes a directory it did not create
 #
 # Prints one JSON line:
 #   {"exit":N,"marker":bool,"namesHandler":bool,"namesModule":bool,"out":"..."}
@@ -89,6 +92,7 @@ case "$SHAPE" in
     echo "export const x = 1;" >"$R/extension/src/tools/bl1385TreeOnlyModule.ts"
     ;;
   unreadable-tree) ;;
+  concurrent) ;;
   land-replay|commit-guards)
     bad_handler_requiring "require(path.join(EXT_OUT, 'tools', 'absentFromTree'));"
     ;;
@@ -132,6 +136,22 @@ case "$SHAPE" in
     git -C "$R" reset -q --soft HEAD~1 2>/dev/null || true
     OUT="$(cd "$R" && bash "$GUARD" 2>&1)"
     CODE=$?
+    ;;
+  concurrent)
+    # BL-1385 invariant 3. A live sibling root is planted first, owned by THIS
+    # process, so the run also proves no guard reaps a directory it does not
+    # own - the failure that made this guard refuse two valid commits.
+    PROBE="${TMPDIR:-/tmp}/bl1385-handler-graph.ACCPROBE$$"
+    mkdir -p "$PROBE"; printf '%s\n' "$$" >"$PROBE/.owner-pid"
+    ( bash "$GUARD" HEAD "$R" >"$WORK/a.out" 2>&1; echo $? >"$WORK/a.code" ) &
+    ( bash "$GUARD" HEAD "$R" >"$WORK/b.out" 2>&1; echo $? >"$WORK/b.code" ) &
+    wait
+    A_CODE="$(cat "$WORK/a.code" 2>/dev/null || echo 99)"
+    B_CODE="$(cat "$WORK/b.code" 2>/dev/null || echo 99)"
+    PROBE_SURVIVED=false; [[ -d "$PROBE" ]] && PROBE_SURVIVED=true
+    rm -rf "$PROBE"
+    OUT="a=$A_CODE b=$B_CODE probe_survived=$PROBE_SURVIVED $(cat "$WORK/a.out" "$WORK/b.out" 2>/dev/null)"
+    if [[ "$A_CODE" -eq 0 && "$B_CODE" -eq 0 && "$PROBE_SURVIVED" == true ]]; then CODE=0; else CODE=1; fi
     ;;
   *)
     OUT="$(bash "$GUARD" HEAD "$R" 2>&1)"
