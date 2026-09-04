@@ -172,3 +172,5 @@ source: |
   night shift on weekdays" crontab policy - NOT adopted: the sentence
   changes when the ceremony runs, not which shifts exist; flagged to the
   human in approval_context for a one-word correction.
+
+assigned_to: coder
