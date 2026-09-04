@@ -20,11 +20,11 @@ fail() { echo "FAIL: $*"; status=1; }
 pass() { echo "PASS: $*"; }
 
 # BL-1390 second incident: a blind prefix sweep deletes a CONCURRENT copy's
-# fixtures - 1156 copies of a sibling suite exhausted the host that way.
-# This suite is invoked once per scenario by its acceptance handler, so it
-# can run concurrently too. fixture_isolation_begin bounds the clock, logs
-# the invoker, takes a lock, reaps only roots NO LIVE RUN OWNS, and creates
-# an owner-stamped $WORK.
+# fixtures - 1156 copies of a sibling suite exhausted the host that way, and
+# BL-1392 was bounced for carrying this same retired pattern. This suite is
+# invoked once per scenario by its acceptance handler, so it runs concurrently
+# too. fixture_isolation_begin bounds the clock, logs the invoker, takes a
+# lock, reaps only roots NO LIVE RUN OWNS, and creates an owner-stamped $WORK.
 source "$SCRIPT_DIR/lib/fixture_isolation.sh"
 fixture_isolation_begin "$FIXTURE_PREFIX" "${BL1363_SUITE_BOUND_SECONDS:-900}"
 trap 'rm -rf "$WORK"' EXIT
@@ -127,7 +127,17 @@ cat > "$root/swarmforge/scripts/commit_integrity_cli.bb" <<'BB'
 (System/exit 1)
 BB
 gq "$root" add -A && gq "$root" commit -m "fixture: stub the integrity CLI to refuse"
-run_close BL-9001
+run_close BL-9001; close_rc=$?
+# The exit code itself, not merely the file state: a caller (the coordinator,
+# eventually) branches on $? to know a close did not happen, and none of the
+# other assertions in this scenario would notice if that exit code silently
+# read 0 - rollback_close and the stderr message both still ran either way
+# (hardener finding, BL-1363).
+if [[ "$close_rc" -ne 0 ]]; then
+  pass "a refused close exits non-zero"
+else
+  fail "a refused close exited 0 - a caller checking \$? would read this as success"
+fi
 if [[ -f "$root/backlog/active/BL-9001-first.yaml" ]]; then
   pass "a refused close leaves the ticket in the active area"
 else
@@ -201,6 +211,55 @@ if g "$root" status --porcelain | grep -q "unrelated.txt"; then
   pass "and the unrelated staged work is still there, untouched"
 else
   fail "the close consumed another writer's staged work"
+fi
+
+# ── 7. an ambiguous id (more than one matching file) is refused ───────────
+# Hardener finding, BL-1363: no existing scenario ever gave close_ticket.sh a
+# second file matching the same BL-id glob, so the `${#MATCHES[@]} != 1`
+# refusal had zero coverage - a mutant dropping it survived undetected.
+setup seven
+cp "$root/backlog/active/BL-9001-first.yaml" "$root/backlog/active/BL-9001-duplicate.yaml"
+gq "$root" add -A && gq "$root" commit -m "fixture: a second file matching BL-9001's glob"
+run_close BL-9001; close_rc=$?
+if [[ "$close_rc" -ne 0 ]]; then
+  pass "an ambiguous id (two matching files) is refused"
+else
+  fail "an ambiguous id was silently resolved instead of refused"
+fi
+if [[ -f "$root/backlog/active/BL-9001-first.yaml" && -f "$root/backlog/active/BL-9001-duplicate.yaml" ]]; then
+  pass "neither ambiguous file moved"
+else
+  fail "one of the ambiguous files moved despite the refusal"
+fi
+
+# ── 8. a ticket with no milestone: field is refused, never a bare done/ move ──
+# Hardener finding, BL-1363: no existing scenario ever gave close_ticket.sh a
+# ticket file with an absent milestone: field, so the `[[ -z "$MILESTONE" ]]`
+# refusal had zero coverage. With a REAL commit_integrity_cli.bb present the
+# malformed backlog/done//<file> destination is independently rejected by
+# that CLI's own validation, so a first attempt at this scenario (through
+# the normal integrity path) still refused either way and could not tell the
+# two mechanisms apart. The guard is load-bearing specifically in the
+# DEGRADED "no commit_integrity_cli.bb" fallback (mirrors promotion's own
+# equivalent branch, never independently exercised by this suite before) -
+# confirmed live: with the guard dropped and no integrity CLI present, the
+# close SUCCEEDS (rc=0), silently landing the ticket at backlog/done/ root
+# instead of refusing. This scenario removes the integrity CLI to reach
+# exactly that branch.
+setup eight
+rm -f "$root/swarmforge/scripts/commit_integrity_cli.bb"
+printf 'id: BL-9501\ntitle: fixture\nstatus: todo\nassigned_to: coder\n' > "$root/backlog/active/BL-9501-no-milestone.yaml"
+gq "$root" add -A && gq "$root" commit -m "fixture: a ticket with no milestone field, no integrity CLI"
+run_close BL-9501; close_rc=$?
+if [[ "$close_rc" -ne 0 ]]; then
+  pass "a ticket with no milestone: field is refused, even in the degraded no-integrity-CLI path"
+else
+  fail "a ticket with no milestone: field was closed anyway (degraded path, no integrity CLI)"
+fi
+if [[ -f "$root/backlog/active/BL-9501-no-milestone.yaml" ]]; then
+  pass "the milestone-less ticket stayed in active/"
+else
+  fail "the milestone-less ticket moved despite having nowhere well-defined to go"
 fi
 
 # ── the suite left the live repository alone (BL-1390's lesson) ────────────

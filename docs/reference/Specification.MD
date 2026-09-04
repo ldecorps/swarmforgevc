@@ -44,6 +44,44 @@ How-to: `docs/how-to/BL-1390-post-commit-push-while-it-still-fast-forwards.md`
 (new page — a distinct mechanism from the periodic push sweep it works
 alongside). No diagram depicts push-sweep or hook internals at this
 granularity.)
+**Last Updated:** September 4, 2026 (BL-1363: promoting a ticket has been
+a script (`promote_and_route_next.sh`) since BL-1028; closing one stayed
+hand-made every time. Measured over 45 days: 484 promotion commits carry
+the script's generated subject against 409 hand-made close commits in TWO
+different spellings (`Close BL-N: move to done` / `Close BL-N: move to
+done. By coordinator.`), and the destination drifted with them —
+`backlog/done/` held 665 loose ticket files beside 516 spread across
+`backlog/done/M1..M8/`, because nothing decided which. Article 2.6 is why
+this matters beyond tidiness: when one approval satisfies several
+tickets, every id must move or none does, and a hand-made close is
+exactly where an id silently never reaching `done/` goes unnoticed.
+`swarmforge/scripts/close_ticket.sh <repo-root> <BL-id> [<BL-id> ...]` is
+the mirror of `promote_and_route_next.sh`, reusing its integrity-commit
+path (`commit_integrity_cli.bb`) rather than growing a second one: every
+id is resolved (found in `backlog/active/`, uniquely, with a readable
+`milestone:` field) BEFORE anything is touched, so one unresolvable id
+refuses the whole batch with nothing moved or staged; a refusal from the
+integrity guard rolls the staged active→done rename back via the same
+snapshot-and-restore shape BL-1028 already established for promotion,
+scoped only to the paths this script itself staged — never a blanket
+`git reset`, which on the shared master checkout would discard another
+role's staged work — and is obeyed rather than overridden by a raw
+commit. The commit subject names EVERY id the close satisfies
+(`Close <id1,id2,...>: move to done`), never a single generated spelling
+again. Destination is the ticket's own `milestone:` field, which every
+ticket already carries and the hygiene gate already enforces — never
+guessed, never defaulted; human ruling 2026-09-04 (recommended option):
+apply the convention to new closes only, leaving the existing 665 loose
+files where they are (a migration is pure churn until something reads the
+done area by path, which nothing does today). The script deliberately
+does NOT promote — the follow-on promotion stays
+`promote_and_route_next.sh`'s, so a refused close can never strand an
+already-promoted ticket on `NO_TASK` (invariant 3). Acceptance:
+`specs/features/BL-1363-closing-a-ticket-is-one-command.feature`. No
+how-to page: internal coordinator-tooling CLI, same documentation
+precedent as its own mirror `promote_and_route_next.sh` and sibling
+`record-bounce.js`/`record-review-evidence.js` (all Specification.MD-only,
+no dedicated page — BL-1362). No diagram depicts backlog-close internals.)
 Prior entry —
 **Last Updated:** September 4, 2026 (BL-1362: Article 4.4's evidence file
 — items `D1..Dn` or an explicit NONE, committed alone and forwarded by
