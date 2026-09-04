@@ -1,5 +1,161 @@
 # SwarmForge VS Code Extension — Specification
 
+**Last Updated:** September 4, 2026 (BL-1381: `shift_schedule_applier_lib.bb`
+`require`d `babashka.process` INSIDE `budgetShiftGovernorVerdict`'s
+function body rather than the file's `ns` form — Babashka's SCI resolves
+the alias at analysis time, before the runtime require has run, so the
+WHOLE FILE failed to load with `Unable to resolve symbol: process/shell`.
+Every consumer crashed at load, not at the governor call:
+`reconcile_shift_schedule_crontab.bb` (reached from
+`install_shift_schedule_cron.sh` on every `./swarm start` via
+`install_swarmforge_crons.sh`/`start_ancillary_services.sh`),
+`apply_shift_schedule.bb`, and the lib's own BL-660 regression test
+(`swarm_shift_lib_test_runner.bb`, red and unnoticed since the require
+entered with BL-666 on 2026-08-27 — the standing bb suite is not run by
+any commit-blocking gate). The install wrapper's `set -euo pipefail`
+caught the crash and printed only `WARN: swarmforge cron install failed`
+into launch output, so a configured `swarm_shift` schedule silently never
+installed for eight days; verified the crash happened to leave the live
+crontab byte-identical (nothing lost, but not to be trusted to keep doing
+so). Fixed by moving the require to the `ns` form. A second, smaller gap
+(intake item 3): the wrapper parsed the reconcile's JSON through a
+`read -r ... < <(python3 ...)` process substitution whose failure `set -e`
+cannot observe, so a reconcile that exited 0 with no or unparseable output
+was reported as "No shift schedule configured" — a real failure read as a
+legitimate outcome. Both close under one rule: the wrapper exits zero only
+on its three named outcomes (no schedule configured, already current,
+installed) and non-zero naming the cause on everything else, touching
+crontab only on a successful, parseable reconcile (invariant 1: a failed or
+verdict-less reconcile leaves crontab byte-identical to before the run).
+Acceptance:
+`specs/features/BL-1381-the-shift-schedule-applier-crashes-at-load-and-the-install-fails-silent.feature`.
+How-to: `docs/how-to/BL-1162-start-stop-swarm-cron-lifecycle-symmetry.md`
+(extended in place — the start path's own silent-failure window). No
+diagram depicts shift-schedule-applier internals.)
+Prior entry —
+**Last Updated:** September 4, 2026 (BL-1387: the reconcile sweep's only
+reading of an open `MERGE_HEAD` was "a human is mid-merge, hold" —
+`master-main-merge-head-present?` is `git rev-parse --verify MERGE_HEAD`
+and nothing else, no owner, process, lock, or index read. On 2026-09-04 the
+merge was the daemon's own failed attempt (BL-1386): `pgrep -ax git` empty,
+no `.git/index.lock`, and the index carrying none of `HEAD..MERGE_HEAD` —
+a `git commit` here would have written a merge reverting the whole origin
+side, and the hold lasted 15 minutes, ending only when the Operator read
+the index by hand. A pure classifier now answers one of `:none | :own |
+:live-human | :orphaned` from `{merge-head-present? owned-by-daemon?
+live-git-process? lock-fresh? index-carries-incoming?}`: `:own` is BL-1386's
+ownership record matching the sha (BL-1386 acts on it; this ticket never
+does — a specifier amendment retired this ticket's own scenario 02 row
+that had wrongly listed the record as human-owner evidence, after the
+coder refused both the passthrough and reverting BL-1386's routing and
+raised it instead); `:live-human` needs a positive owner signal (a live
+`git` process whose cwd is the checkout, or a fresh `.git/index.lock`);
+`:orphaned` is everything else — no longer the default reading of mere
+absence. Every plan that branched on `merge-head-present?` branches on this
+classifier instead, `:live-human` mapping to today's
+`:skip-human-merge-in-progress` unchanged. `orphaned-merge` is a new
+surfaced reason (`surface-message`, the deadlock record,
+`main_sync_status_cli.bb`, the escalation text) stating the sha and
+whether the index carries the incoming side — computed from a real diff
+intersection, never from an absent-unmerged-paths reading, since a
+poisoned index can show none while still missing the incoming content —
+and escalates on the FIRST tick rather than after three ticks of a hold
+that reads as patience. This ticket adds no git write of its own: neither
+`:live-human` nor `:orphaned` is ever aborted by the daemon; auto-abort of
+an orphan is a separate, unbuilt decision (backing up staged-new files an
+abort would delete is a human judgment). The coordinator's step-0 action
+table gains the `orphaned-merge` row (specifier-owned, BL-798, landed with
+this mint): back up staged-new files, `git merge --abort`, let the next
+tick redo the join, diff against BOTH parents before any push. Acceptance:
+`specs/features/BL-1387-an-open-merge-nobody-owns-is-surfaced-as-orphaned-not-human.feature`.
+How-to: `docs/how-to/BL-1120-handoffd-must-not-abort-foreign-merge.md` and
+`docs/how-to/BL-891-master-main-reconcile-sweep.md` (both extended in
+place). No diagram depicts reconcile-sweep internals at this granularity.)
+Prior entry —
+**Last Updated:** September 4, 2026 (BL-1385: BL-1371's discovery registry
+requires every top-level `specs/pipeline/steps/*Steps.js` eagerly at module
+load, failing the whole run loudly on one that cannot load — correct, but
+nothing stopped an unloadable handler from reaching `main` in the first
+place, only from running once it got there. A hand-land of
+`bl1296BubbleSeatSteps.js` (2026-09-04, 01:31 BST), whose require resolved
+only in the checking worktree (a compiled `extension/out/tools/bubbleSeat.js`
+from an unlanded parcel), passed both existing guards —
+`check_feature_handler_registration.sh` proves a handler is registered and
+reachable, never that it loads — and took every acceptance run on
+`origin/main` to zero runnable features: 947 handlers, one unloadable, zero
+features executable. `check_handler_module_graph.sh` closes the gap: for
+every top-level handler ON THE TREE UNDER TEST, it proves the require graph
+resolves — walking each `require(...)` call including the two computed
+forms that have now each caused one incident
+(`path.join(EXT_ROOT,'out',...)`, `path.join(__dirname,'lib',...)`) — and
+the verdict depends only on that tree, never on the checking worktree's own
+`out/` or source files (invariant 2: a module present in the checker's
+worktree but absent from the tree still refuses; absent from the checker
+but present on the tree still passes). On failure it prints
+`HANDLER_LOAD_BLOCK` plus one line per handler naming the handler and the
+unresolved module. Wired into both consumers named at mint: the land
+replay's tree-guard list (`land_step_lib.bb`, joining
+`check_feature_handler_registration.sh` as a second, sibling tree guard)
+and the commit-time guard chain (`run_commit_guards.sh`, Tier 1 — a
+`main`-only guard, so it costs nothing on every other branch), so neither a
+tip-pure land nor a hand-land on `main` can bypass it. Amended in flight
+(invariant 3, 2026-09-04): the guard runs from a commit hook, where
+invocations overlap constantly, and its own BL-971 sweep-by-prefix —
+written for test fixtures that never run concurrently — deleted a live
+run's materialised tree, reading every file as absent and refusing valid
+commits with hundreds of phantom missing modules. Each run now claims its
+working directory with an owner-pid file immediately after `mkdtemp`, and
+reaping is scoped to roots no LIVE run owns (a dead owner pid, or an age
+bound) rather than sweeping the whole shared prefix; a `require` check
+that could not tell present from absent (e.g. `EMFILE` under the
+~947-handler single-process walk) is a distinct third answer, never folded
+into "missing" as a false refusal. Explicitly not built here: repairing
+`main` today (one QA land, already asked for by note) or the eight live
+feature files whose handlers are not yet built (a different, noted class).
+Acceptance:
+`specs/features/BL-1385-a-handler-that-cannot-load-never-reaches-main.feature`.
+How-to: `docs/how-to/BL-1371-step-handlers-register-by-discovery.md` and
+`docs/how-to/BL-1252-commit-guard-chain-reports-every-violation.md` (both
+extended in place) plus a short addendum to
+`docs/how-to/BL-1241-entangled-tip-at-the-land-step-has-a-reachable-remedy.md`
+noting the second tree guard. No diagram depicts step-handler-registration
+or commit-guard internals at this granularity.)
+Prior entry —
+**Last Updated:** September 4, 2026 (BL-1386: the master-main-reconcile
+sweep (`handoffd.bb`, `master_main_reconcile_lib.bb`) could orphan its own
+merge and then blame a human for it — `absorb-with-merge!` discarded
+`abort!`'s result and never logged it, so when `git merge --abort` failed
+(the ordinary cause on the shared master checkout: `.git/index.lock` held
+by another writer) `MERGE_HEAD` stayed open, and the next tick, applying
+BL-1120's rule that a pre-existing `MERGE_HEAD` is always a foreign human's
+merge, surfaced `human-merge-in-progress` against its own leftovers.
+Reproduced live three times in eighteen minutes on 2026-09-04 —
+`pgrep -ax git` empty each time, the index carrying none of the incoming
+side, and concluding any of them would have silently reverted a QA landing
+on push. The daemon now writes a durable ownership record
+(`.swarmforge/daemon/master-main-merge-owner.json`: sha, tick, pid,
+timestamp) before `git merge`, cleared after a successful merge or abort,
+so `MERGE_HEAD == record.sha` is proof the daemon itself started that
+merge — on this tick, or an earlier one whose abort failed — and only that
+positive match may ever be aborted; BL-1120's protection for every other
+`MERGE_HEAD` (no record, or a record naming a different sha) is unchanged
+and unwidened. An abort that fails is retried with a short bounded backoff
+and, on continued failure, the record is left standing (never cleared,
+never falls through to a rematch/reset as if the abort had succeeded) and
+the log carries `merge-abort-failed` plus git's own captured error text.
+`merge!`'s failure text is likewise now logged and the fixed `conflict`
+label is used only when git actually reported a content conflict —
+`merge-failed` names every other real-merge failure (e.g. a pre-merge-commit
+hook refusal), so the log states an observation, never an assertion.
+Companion detector ticket (foreign/orphaned classification without a
+record) is the separate, still-active BL-1387; nothing here changes what
+counts as foreign. Acceptance:
+`specs/features/BL-1386-the-reconcile-sweep-never-orphans-a-merge-it-started.feature`.
+How-to: `docs/how-to/BL-1120-handoffd-must-not-abort-foreign-merge.md` and
+`docs/how-to/BL-891-master-main-reconcile-sweep.md` (both extended in
+place — the ownership refinement and the corrected log wording). No
+diagram depicts reconcile-sweep internals at this granularity.)
+Prior entry —
 **Last Updated:** September 4, 2026 (BL-1309: `land_main_publish.sh`
 `--decide-only` — the one landing step `QA.prompt` cannot skip — now
 consults BL-1241/BL-1308/BL-1354's `entangled-siblings` detector before
@@ -214,6 +370,81 @@ Acceptance: `specs/features/BL-1371-a-step-handler-registers-without-a-shared-fi
 How-to: `docs/how-to/BL-1371-step-handlers-register-by-discovery.md`. No
 diagram depicts step-handler registration.)
 Prior entry —
+**Last Updated:** September 3, 2026 (BL-1367: the paused-pager Mini App
+approve route (`computePausedPagerApproveOutcome`,
+`extension/src/bridge/bridgeServer.ts`) used to call
+`recordApprovalReply(targetPath, backlogId)` — a signature with no ruling
+argument — so a ticket declaring `ruling_options` approved from the phone
+flipped `human_approval` to `approved` and silently discarded the choice it
+posed; BL-1309 was approved this way on 2026-09-01 and its question was
+never answered. `recordApprovalReply`
+(`extension/src/concierge/pendingApprovalReply.ts`) now takes an optional
+`ruling`, the one writer both the bot's callback path and the pager route
+call. Before writing, `classifyApprovalRulingRequirement(rulingOptions,
+ruling)` classifies the tap as `ok`, `ruling-required`, or
+`unknown-option`; only `ok` proceeds — the other two refuse with HTTP `409`
+naming the outstanding options, never a bare status (BL-572/BL-662),
+instead of half-recording. A ticket with no `ruling_options` behaves
+exactly as before; an existing `human_ruling:` is never overwritten by a
+later plain approval. Hardened: `classifyApprovalRulingRequirement` and
+`computePausedPagerApproveOutcome` both reduced from CRAP 7.00 to <=5.20
+(`matchesRulingOption`/`buildRulingRefusalBody` split out). Acceptance:
+`specs/features/BL-1367-an-approval-from-any-surface-carries-its-ruling.feature`.
+How-to:
+`docs/how-to/BL-1367-approval-from-any-surface-carries-its-ruling.md`. No
+diagram depicts the approval/ruling write path.)
+Prior entry —
+**Last Updated:** September 3, 2026 (BL-1360: three fixed pipeline sends —
+the QA merge-up broadcast, the QA-to-coordinator bookkeeping note, and the
+specifier's spec-ready note — carry no judgement at all, yet were
+hand-assembled every time (one QA seat spent 16m06s/58.6k tokens composing
+two of them, 2026-09-03). `swarmforge/scripts/ceremony_handoff.sh
+<ceremony> --ticket BL-042 [--commit ...] [--dry-run]` composes the draft
+from one definition (`ceremony_handoff_lib.bb`, pure) and shells out to the
+real `swarm_handoff.sh` (`ceremony_handoff.bb`) — a thin front end, never a
+second way into a mailbox: every send-time gate still arms, the tmux wake
+still fires, and a refusal is the gate's own text passed through unchanged.
+The message is composed from `message-forms` tried longest-prose first;
+neither the ticket id nor the commit is ever truncated to fit the
+80-character note cap — if no form fits, composition fails and the sender
+falls back to an ordinary note. The `merge-up`/`bookkeep` recipient lists
+and priorities have one definition, checked by a test against
+`handoff-protocol.md` rather than restated (BL-897). Wiring role prompts to
+make this the standard route is a separate, specifier-owned follow-up
+(BL-798) — not part of this build. Acceptance:
+`specs/features/BL-1360-a-ceremony-handoff-is-composed-not-retyped.feature`.
+How-to: `docs/how-to/BL-1360-ceremony-handoff-compose-not-retype.md`. No
+diagram depicts handoff-composition internals — `handoff-flow.mmd`'s
+change-trigger is the mailbox lifecycle/state machine, unchanged here.)
+Prior entry —
+**Last Updated:** September 3, 2026 (BL-1296: Bubble gets its own answering
+seat so it stays answerable while the Cursor seat is mid-turn, while
+remaining a mirror of the front desk — the human's ruling (option 1 of
+three, 2026-09-03): strict echo, the Bubble seat relays the front desk's own
+answer and produces none of its own. `runBubbleSeatTurn`
+(`extension/src/tools/bubbleSeatLive.ts`) drives the same turn the Let's
+Talk surface drives (`processLetsTalkTurn` against
+`createLiveCursorBridgeAgentSession`) and posts back what it returns,
+unedited — no code path in that module composes a reply, so invariant 1
+(never diverges from the front desk) is structural rather than a rule to
+remember. `tryDispatchToBubbleSeat`
+(`extension/src/tools/telegramCursorBridgeLive.ts`) dispatches a Bubble-topic
+message before Cursor's own gate (`decideInboundAction`) is consulted at
+all; `decideBubbleSeatTurn`'s (`extension/src/tools/bubbleSeat.ts`) first
+clause refuses any topic that is not Bubble's own before anything else is
+considered (invariant 2), and the seat runs inside the bridge's existing
+poll, opening no second `getUpdates` consumer (invariant 3), the same way
+BL-1235's seat does. `cursorBusy` is accepted on the decision input and
+deliberately never read — Bubble used to wait behind that flag, which is
+the defect this ticket removes. A refusal (front desk threw, or returned an
+empty reply) always names why, posted into Bubble's own topic, never
+silence. Hardened with a hand-authored mutation sweep (Stryker's dry run
+blocked repo-wide by the standing `liveRepoDerivationGuard` red, BL-1291):
+25 mutants, 24 killed + 1 equivalent recorded with reasoning. Acceptance:
+`specs/features/BL-1296-bubble-answers-from-its-own-seat.feature`. How-to:
+`docs/how-to/BL-1296-bubble-answers-from-its-own-seat.md`. No diagram
+depicts cursor-bridge/seat-dispatch internals.)
+Prior entry —
 **Last Updated:** September 3, 2026 (BL-1375: the land step's shared-path
 refusal (BL-1332) is narrowed. `own-paths` (`land_step_lib.bb`) used to
 refuse outright whenever a path was owned by both the landing ticket and
@@ -247,6 +478,66 @@ Acceptance:
 How-to: `docs/how-to/BL-1241-entangled-tip-at-the-land-step-has-a-reachable-remedy.md`
 (extended in place — same detector, same doc). No diagram depicts land-step
 internals.)
+Prior entry —
+**Last Updated:** September 3, 2026 (BL-1359: the Article 4.2
+pipeline-code-on-main sweep's merge-commit path read
+(`commit-touched-paths` in `babysitter_check.bb`, restated in
+`babysitterd_sweep_lib.bb`) charged a merge with the UNION of every
+parent's diff instead of what it introduced over its FIRST parent —
+`git diff-tree -m --first-parent` looks like it restricts the comparison,
+but `--first-parent` is a revision-traversal option with no effect on a
+single named commit's `diff-tree`, so `-m` alone decided the output (one
+diff section per parent). The BL-962 non-first-parent exemption could never
+rescue this: it adjudicates the wrong parent when the charge set itself is
+inflated. Measured on live history, this false-charged `specs/pipeline/steps/index.js`
+— the registry every ticket appends to — on essentially every merge-up;
+two of the Operator's three 2026-09-03 sweep findings were pure artefacts
+of it. `commit-touched-paths` now resolves the merge's first parent
+(`<sha>^1`, itself fail-closed per invariant 2) and runs a plain two-tree
+`diff-tree` against it — matching a non-merge commit's own single-parent
+diff exactly, which is what the surrounding comment always claimed the old
+command did. BL-590's own catch (a merge's content invisible to a *plain*
+`git show`/`diff-tree` with no merge-aware form at all) is unaffected and
+still reports its paths; only the union over-charge is removed. Non-merge
+commits, the BL-962 exemption logic, and the fail-closed posture are
+otherwise unchanged. Acceptance:
+`specs/features/BL-1359-a-merge-is-charged-only-with-what-it-introduced.feature`.
+How-to: `docs/how-to/BL-611-babysitterd-runbook.md` (the Check 13
+"pipeline code on main" section corrected in place — it had stated the
+`--first-parent` restriction as fact). No diagram depicts babysitterd
+sweep internals.)
+Prior entry —
+**Last Updated:** September 3, 2026 (BL-1356: the six BL-654 "stamp-off"
+property tests (`bl1113`/`bl1115`/`bl1116`/`bl1117`/`bl1136`/`bl1323`) that
+defend "a green suite must never write a decision into
+`backlog/hotfix-ledger.yaml`" no longer pin their watched row's CURRENT
+state as a fixed literal (`/state: pending/`, `/state: stamp-open/`) — a row
+is not a constant, advancing it through `stamp-open` → `awaiting-human` →
+`certified`/`waived` is exactly the ledger's own workflow, so every one of
+these tests was pre-red and jammed the repo-wide property-suite commit gate
+(BL-1175) the moment its row legitimately moved; five of six had already
+accumulated identical standing-allowlist waivers, and the sixth jammed four
+unrelated commits on 2026-09-02 with none yet. Per the ticket's human ruling
+(option 1 of two offered), the invariants stay on the LIVE ledger and the
+assertion changed instead: `extension/test/helpers/stampOff.js`'s
+`assertRunWritesNoDecision(hotfix, work, opts)` is now the one place all six
+call — it snapshots the watched row before `work()` runs and asserts it is
+byte-identical after, so the row's pre-run state (whatever it is) becomes
+the expected value rather than a hard-coded literal, while a run that
+genuinely stamps a decision (`state: certified`/`waived`, non-null
+`human_decision`, non-null `decided_at`) still fails from ANY starting
+state — the non-weakening half is checked independently, not implied by the
+before/after comparison alone. The five allowlist rows this discharged
+(`bl1113`, `bl1115`, `bl1116`, `bl1117`, `bl1136`) came out of
+`property_suite_standing_allowlist.tsv` in the same parcel, since a waiver
+whose reason is gone would hide a future genuine stamp-off regression
+behind it; `bl1323` never had one. Acceptance:
+`specs/features/BL-1356-stamp-off-invariant-watches-the-run-not-the-row.feature`.
+How-to:
+`docs/how-to/BL-1175-property-suite-standing-reds-block-unrelated-commits.md`
+(extended in place — same allowlist/guard mechanism, one more shape of
+standing red resolved rather than parked). No diagram depicts property-suite
+gating internals.)
 Prior entry —
 **Last Updated:** September 3, 2026 (BL-1354: the land step's sibling-landed
 detector (`land_step_lib.bb`) no longer judges a shared file by whole-blob
