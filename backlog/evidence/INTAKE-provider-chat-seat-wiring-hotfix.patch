@@ -1,0 +1,466 @@
+diff --git a/extension/src/tools/providerChatSeat.ts b/extension/src/tools/providerChatSeat.ts
+new file mode 100644
+index 0000000000..85bd62c596
+--- /dev/null
++++ b/extension/src/tools/providerChatSeat.ts
+@@ -0,0 +1,100 @@
++/**
++ * Operator test seats: bind a Telegram forum topic to a direct
++ * OpenAI-compatible chat provider (DeepSeek, NVIDIA NIM, …) — never OpenRouter.
++ *
++ * Runtime map (gitignored): `.swarmforge/operator/provider-chat-topic-map.json`
++ * Shape:
++ *   {
++ *     "<message_thread_id>": {
++ *       "model": "<model-id>",
++ *       "baseUrl": "https://api.deepseek.com",
++ *       "apiKeyEnv": "DEEPSEEK_API_KEY",
++ *       "systemPrompt": "<optional static orientation text>"
++ *     },
++ *     ...
++ *   }
++ *
++ * systemPrompt is static per-seat config (this file stays pure/no IO); a
++ * live-composed swarm-state snapshot is appended to it server-side by
++ * providerChatSeatLive.ts before the request goes out, so the seat has some
++ * genuine current-state grounding without needing tool-calling from the
++ * model itself. This is a lighter parity with the Host (Cursor) topic's
++ * real tool-using agent session, not an attempt to replicate it — a plain
++ * chat-completions call has no tools to reach for.
++ *
++ * Pure decision only — I/O lives in providerChatSeatLive.ts.
++ */
++
++export const PROVIDER_CHAT_TOPIC_MAP_REL = [
++  '.swarmforge',
++  'operator',
++  'provider-chat-topic-map.json',
++] as const;
++
++export interface ProviderChatSeatConfig {
++  model: string;
++  /** OpenAI-compatible root, e.g. https://api.deepseek.com or https://integrate.api.nvidia.com/v1 */
++  baseUrl: string;
++  /** Process env var that holds the bearer token for this seat. */
++  apiKeyEnv: string;
++  /** Optional static orientation text, sent as the system message. */
++  systemPrompt?: string;
++}
++
++export type ProviderChatTurn =
++  | { kind: 'not-mine' }
++  | { kind: 'refuse'; reason: string; modelId: string }
++  | { kind: 'answer'; modelId: string; baseUrl: string; apiKey: string; systemPrompt?: string };
++
++export interface ProviderChatTurnInput {
++  topicId: number | undefined;
++  topicSeats: Record<string, ProviderChatSeatConfig>;
++  env: Record<string, string | undefined>;
++}
++
++export function seatForProviderChatTopic(
++  topicSeats: Record<string, ProviderChatSeatConfig>,
++  topicId: number | undefined
++): ProviderChatSeatConfig | undefined {
++  if (topicId === undefined) {
++    return undefined;
++  }
++  return topicSeats[String(topicId)];
++}
++
++export function decideProviderChatTurn(input: ProviderChatTurnInput): ProviderChatTurn {
++  const seat = seatForProviderChatTopic(input.topicSeats, input.topicId);
++  if (!seat) {
++    return { kind: 'not-mine' };
++  }
++  const modelId = String(seat.model ?? '').trim();
++  const baseUrl = String(seat.baseUrl ?? '').trim().replace(/\/+$/, '');
++  const apiKeyEnv = String(seat.apiKeyEnv ?? '').trim();
++  if (!modelId || !baseUrl || !apiKeyEnv) {
++    return {
++      kind: 'refuse',
++      reason: 'seat config is incomplete (need model, baseUrl, apiKeyEnv)',
++      modelId: modelId || '(unset)',
++    };
++  }
++  const apiKey = String(input.env[apiKeyEnv] ?? '').trim();
++  if (!apiKey) {
++    return {
++      kind: 'refuse',
++      reason: `${apiKeyEnv} is not set in the front-desk process environment`,
++      modelId,
++    };
++  }
++  const systemPrompt = seat.systemPrompt !== undefined ? String(seat.systemPrompt) : undefined;
++  return { kind: 'answer', modelId, baseUrl, apiKey, systemPrompt };
++}
++
++export function formatProviderChatRefusal(
++  turn: Extract<ProviderChatTurn, { kind: 'refuse' }>
++): string {
++  return `Chat seat cannot answer (${turn.modelId}): ${turn.reason}.`;
++}
++
++export function formatProviderChatAcknowledgement(modelId: string): string {
++  return `Chat seat working on it with ${modelId}.`;
++}
+diff --git a/extension/src/tools/providerChatSeatLive.ts b/extension/src/tools/providerChatSeatLive.ts
+new file mode 100644
+index 0000000000..5a14b65310
+--- /dev/null
++++ b/extension/src/tools/providerChatSeatLive.ts
+@@ -0,0 +1,217 @@
++/**
++ * Live I/O for providerChatSeat.ts — read the topic→seat map, call an
++ * OpenAI-compatible chat completions endpoint, post back into the topic.
++ */
++
++import * as fs from 'fs';
++import * as path from 'path';
++import {
++  PROVIDER_CHAT_TOPIC_MAP_REL,
++  ProviderChatSeatConfig,
++  decideProviderChatTurn,
++  formatProviderChatAcknowledgement,
++  formatProviderChatRefusal,
++} from './providerChatSeat';
++
++export function providerChatTopicMapPath(targetPath: string): string {
++  return path.join(targetPath, ...PROVIDER_CHAT_TOPIC_MAP_REL);
++}
++
++function parseSeat(raw: unknown): ProviderChatSeatConfig | undefined {
++  if (!raw || typeof raw !== 'object') {
++    return undefined;
++  }
++  const o = raw as Record<string, unknown>;
++  const model = String(o.model ?? '').trim();
++  const baseUrl = String(o.baseUrl ?? '').trim();
++  const apiKeyEnv = String(o.apiKeyEnv ?? '').trim();
++  if (!model || !baseUrl || !apiKeyEnv) {
++    return undefined;
++  }
++  const systemPrompt = typeof o.systemPrompt === 'string' && o.systemPrompt.trim() ? o.systemPrompt : undefined;
++  return { model, baseUrl, apiKeyEnv, systemPrompt };
++}
++
++export function readProviderChatTopicSeats(targetPath: string): Record<string, ProviderChatSeatConfig> {
++  try {
++    const raw = JSON.parse(fs.readFileSync(providerChatTopicMapPath(targetPath), 'utf8')) as Record<
++      string,
++      unknown
++    >;
++    const out: Record<string, ProviderChatSeatConfig> = {};
++    for (const [topicId, value] of Object.entries(raw)) {
++      if (!/^\d+$/.test(topicId)) {
++        continue;
++      }
++      const seat = parseSeat(value);
++      if (seat) {
++        out[topicId] = seat;
++      }
++    }
++    return out;
++  } catch {
++    return {};
++  }
++}
++
++// Cheap, best-effort live grounding — plain fs reads, never a shell-out, and
++// never throws (a snapshot failure degrades to fewer facts, not a broken
++// reply). This is what stands in for real tool access: the MODEL never
++// decides to fetch anything, this composes a short factual block server-side
++// and sends it as part of the system message on every turn.
++function readSwarmIdentity(targetPath: string): Record<string, string> {
++  try {
++    const raw = fs.readFileSync(path.join(targetPath, '.swarmforge', 'swarm-identity'), 'utf8');
++    const out: Record<string, string> = {};
++    for (const line of raw.split('\n')) {
++      const tab = line.indexOf('\t');
++      if (tab === -1) continue;
++      out[line.slice(0, tab)] = line.slice(tab + 1);
++    }
++    return out;
++  } catch {
++    return {};
++  }
++}
++
++function countBacklogYaml(targetPath: string, folder: string): number | undefined {
++  try {
++    return fs.readdirSync(path.join(targetPath, 'backlog', folder)).filter((f) => f.endsWith('.yaml')).length;
++  } catch {
++    return undefined;
++  }
++}
++
++export function composeSwarmContextBlock(targetPath: string, nowIso: string = new Date().toISOString()): string {
++  const identity = readSwarmIdentity(targetPath);
++  const active = countBacklogYaml(targetPath, 'active');
++  const paused = countBacklogYaml(targetPath, 'paused');
++  const lines = [
++    `Live snapshot (${nowIso}), read directly from disk, not from you:`,
++    `- launch pack: ${identity.launch_pack || 'unknown'}${identity.rotation ? ` (rotation: ${identity.rotation})` : ''}`,
++    `- active backlog depth cap: ${identity.active_backlog_max_depth ?? 'unknown'}`,
++    `- tickets in backlog/active: ${active ?? 'unknown'}, paused: ${paused ?? 'unknown'}`,
++    `This snapshot can be stale by the time you answer and covers only these facts - say so plainly rather than inventing anything beyond it.`,
++  ];
++  return lines.join('\n');
++}
++
++type FetchLike = (
++  url: string,
++  init?: { method?: string; headers?: Record<string, string>; body?: string }
++) => Promise<{ ok: boolean; status: number; text: () => Promise<string> }>;
++
++/** DeepSeek accepts both /chat/completions and /v1/chat/completions; NVIDIA NIM wants /v1. */
++export function chatCompletionsUrl(baseUrl: string): string {
++  const root = baseUrl.replace(/\/+$/, '');
++  if (/\/chat\/completions$/i.test(root)) {
++    return root;
++  }
++  if (/\/v1$/i.test(root)) {
++    return `${root}/chat/completions`;
++  }
++  return `${root}/chat/completions`;
++}
++
++export async function completeWithProviderChat(
++  modelId: string,
++  prompt: string,
++  baseUrl: string,
++  apiKey: string,
++  systemPrompt?: string,
++  fetchFn: FetchLike = globalThis.fetch as unknown as FetchLike
++): Promise<string> {
++  const url = chatCompletionsUrl(baseUrl);
++  const messages = systemPrompt
++    ? [{ role: 'system', content: systemPrompt }, { role: 'user', content: prompt }]
++    : [{ role: 'user', content: prompt }];
++  const res = await fetchFn(url, {
++    method: 'POST',
++    headers: {
++      'content-type': 'application/json',
++      authorization: `Bearer ${apiKey}`,
++    },
++    body: JSON.stringify({
++      model: modelId,
++      messages,
++    }),
++  });
++  const raw = await res.text();
++  if (!res.ok) {
++    throw new Error(`${url} answered ${res.status}: ${raw.trim().slice(0, 300)}`);
++  }
++  const parsed = JSON.parse(raw) as {
++    choices?: Array<{ message?: { content?: string } }>;
++  };
++  return String(parsed.choices?.[0]?.message?.content ?? '').trim();
++}
++
++export interface ProviderChatSeatTurnDeps {
++  targetPath: string;
++  topicId: number | undefined;
++  text: string;
++  env?: Record<string, string | undefined>;
++  post: (topicId: number, message: string) => Promise<void>;
++  complete?: (
++    modelId: string,
++    prompt: string,
++    baseUrl: string,
++    apiKey: string,
++    systemPrompt?: string
++  ) => Promise<string>;
++  topicSeats?: Record<string, ProviderChatSeatConfig>;
++}
++
++export interface ProviderChatSeatTurnOutcome {
++  kind: 'not-mine' | 'refuse' | 'answer';
++  posted: string[];
++}
++
++export async function runProviderChatSeatTurn(
++  deps: ProviderChatSeatTurnDeps
++): Promise<ProviderChatSeatTurnOutcome> {
++  const posted: string[] = [];
++  const post = async (message: string): Promise<void> => {
++    if (deps.topicId === undefined) {
++      return;
++    }
++    posted.push(message);
++    await deps.post(deps.topicId, message);
++  };
++
++  const topicSeats = deps.topicSeats ?? readProviderChatTopicSeats(deps.targetPath);
++  const env = deps.env ?? process.env;
++  const turn = decideProviderChatTurn({
++    topicId: deps.topicId,
++    topicSeats,
++    env,
++  });
++
++  if (turn.kind === 'not-mine') {
++    return { kind: turn.kind, posted };
++  }
++  if (turn.kind === 'refuse') {
++    await post(formatProviderChatRefusal(turn));
++    return { kind: turn.kind, posted };
++  }
++
++  await post(formatProviderChatAcknowledgement(turn.modelId));
++  const complete = deps.complete ?? completeWithProviderChat;
++  const systemPrompt = [turn.systemPrompt, composeSwarmContextBlock(deps.targetPath)]
++    .filter((s): s is string => Boolean(s && s.trim()))
++    .join('\n\n');
++  try {
++    const reply = String(
++      await complete(turn.modelId, deps.text, turn.baseUrl, turn.apiKey, systemPrompt || undefined)
++    ).trim();
++    if (!reply) {
++      await post(`Chat seat (${turn.modelId}) returned an empty reply.`);
++      return { kind: 'refuse', posted };
++    }
++    await post(reply);
++    return { kind: 'answer', posted };
++  } catch (err) {
++    await post(`Chat seat cannot answer (${turn.modelId}): ${(err as Error).message}`);
++    return { kind: 'refuse', posted };
++  }
++}
+diff --git a/extension/src/tools/telegram-front-desk-bot.ts b/extension/src/tools/telegram-front-desk-bot.ts
+index b814279a7d..6b54fef7e9 100644
+--- a/extension/src/tools/telegram-front-desk-bot.ts
++++ b/extension/src/tools/telegram-front-desk-bot.ts
+@@ -140,6 +140,7 @@ import {
+ } from './telegramFrontDeskBotCore';
+ import { cursorBridgeTopicIdFromMap, bubbleTopicIdFromMap, frontDeskTopicMapWithoutCursorBridge } from './telegramCursorBridgeCore';
+ import { appendCursorBridgeInboundUpdate } from './cursorBridgeInboundQueue';
++import { runProviderChatSeatTurn } from './providerChatSeatLive';
+ import { backlogForTopic } from '../concierge/topicRouter';
+ import {
+   recordApprovalReply,
+@@ -2440,6 +2441,20 @@ function buildPollAdapters(
+       }
+     },
+     openSubjectAndRecord: (topicId, text, updateId) => openSubjectAndRecord(targetPath, topicId, text, updateId),
++    // BL-1235-style seat, generalized (providerChatSeat.ts): a topic bound
++    // in provider-chat-topic-map.json answers here, never as a generic
++    // opened support subject. runProviderChatSeatTurn posts its own
++    // acknowledgement/answer/refusal, so this adapter only needs to report
++    // whether it claimed the update.
++    runProviderChatSeat: async (topicId, text) => {
++      const outcome = await runProviderChatSeatTurn({
++        targetPath,
++        topicId,
++        text,
++        post: (postTopicId, message) => sendTelegramMessage(botToken, chatId, message, undefined, undefined, postTopicId).then(() => undefined),
++      });
++      return outcome.kind === 'not-mine' ? 'not-mine' : 'handled';
++    },
+     backlogForTopic: (topicId) => backlogForTopic(readBacklogTopicMap(targetPath), topicId),
+     postOperatorContext: (backlogId, text, updateId) => postOperatorContext(targetPath, backlogId, text, updateId),
+     recordApprovalReply: (backlogId) => Promise.resolve(recordApprovalReply(targetPath, backlogId)),
+diff --git a/extension/src/tools/telegramCursorBridgeLive.ts b/extension/src/tools/telegramCursorBridgeLive.ts
+index d7ec0c175a..94e070ae53 100644
+--- a/extension/src/tools/telegramCursorBridgeLive.ts
++++ b/extension/src/tools/telegramCursorBridgeLive.ts
+@@ -3,6 +3,7 @@ import * as path from 'path';
+ import { CursorAgentError, type SDKUserMessage } from '@cursor/sdk';
+ import { atomicWrite } from '../util/atomicWrite';
+ import { readQwenLocalTopicId, runLocalSeatTurn } from './localQwenSeatLive';
++import { runProviderChatSeatTurn } from './providerChatSeatLive';
+ import {
+   answerCallbackQuery,
+   createForumTopicWithRateLimitRetry,
+@@ -1537,6 +1538,14 @@ export interface CursorBridgeLoopDeps {
+   qwenLocalTopicId?: number;
+   /** Seam for the seat's whole turn - injected so tests need no ollama. */
+   runLocalSeatTurnFn?: typeof runLocalSeatTurn;
++  /**
++   * Operator test seats (providerChatSeat.ts): topic->direct-OpenAI-compatible-
++   * provider bindings read from provider-chat-topic-map.json, same "cursor
++   * never sees this topic" posture as qwenLocalTopicId above - checked in the
++   * same place, same reason (one getUpdates consumer, decided before cursor's
++   * own decision is consulted).
++   */
++  runProviderChatSeatTurnFn?: typeof runProviderChatSeatTurn;
+ }
+ 
+ function resolveInboundQueueFromFeeder(opDir: string): boolean {
+@@ -2020,6 +2029,25 @@ async function processInboundUpdates(
+       });
+       continue;
+     }
++    // Same posture as the qwenLocal block above, generalized: any topic
++    // bound in provider-chat-topic-map.json is decided BEFORE cursor sees
++    // it. runProviderChatSeatTurn itself no-ops ('not-mine') for a topic
++    // that is not in the map, so this is safe to call unconditionally per
++    // inbound message rather than needing a second hardcoded topic-id field.
++    if (inbound.kind !== 'callback') {
++      const runProviderTurn = deps.runProviderChatSeatTurnFn ?? runProviderChatSeatTurn;
++      const providerOutcome = await runProviderTurn({
++        targetPath: deps.repoRoot,
++        topicId: inbound.topicId,
++        text: inbound.text ?? '',
++        post: async (topicId: number, message: string) => {
++          await handlerCtx.post(deps.botToken, deps.chatId, topicId, message, inbound.messageId);
++        },
++      });
++      if (providerOutcome.kind !== 'not-mine') {
++        continue;
++      }
++    }
+     const pending = readPendingOperatorConfirm(deps.repoRoot);
+     const pendingPlan = readPendingPlanConfirm(deps.repoRoot);
+     const rawDecision = decideInboundAction(
+diff --git a/extension/src/tools/telegramFrontDeskBotCore.ts b/extension/src/tools/telegramFrontDeskBotCore.ts
+index ea0aa079eb..7206dbb756 100644
+--- a/extension/src/tools/telegramFrontDeskBotCore.ts
++++ b/extension/src/tools/telegramFrontDeskBotCore.ts
+@@ -1077,6 +1077,19 @@ export interface PollAdapters {
+    * (posted) instead of silently dropped.
+    */
+   forwardCursorBridgeUpdate?: (update: TelegramUpdate) => Promise<boolean>;
++  /**
++   * Operator test seats (providerChatSeat.ts): a topic bound in
++   * provider-chat-topic-map.json to a direct OpenAI-compatible provider.
++   * Decided BEFORE decideUpdateAction/openSubjectAndRecord below - same
++   * "never falls through to opening a generic support subject" posture as
++   * cursorBridgeTopicId/bubbleTopicId above, for the same reason (a bound
++   * topic is not a support request). The adapter itself already posts the
++   * acknowledgement/answer/refusal into the topic (mirrors
++   * forwardCursorBridgeUpdate's shape: the live side performs, Core only
++   * decides whether to call it and to stop there). Optional so fixtures
++   * pre-dating this seat keep working.
++   */
++  runProviderChatSeat?: (topicId: number | undefined, text: string) => Promise<'not-mine' | 'handled'>;
+ }
+ 
+ // BL-389: the keystone fix. A DROP is a DECISION (the code looked at the
+@@ -2825,11 +2838,26 @@ async function attemptCursorBridgePollAnswerForward(
+   await adapters.forwardCursorBridgeUpdate(update);
+ }
+ 
++async function attemptProviderChatSeatDelivery(
++  update: TelegramUpdate,
++  adapters: PollAdapters
++): Promise<UpdateDeliveryOutcome | undefined> {
++  if (!adapters.runProviderChatSeat) {
++    return undefined;
++  }
++  const outcome = await adapters.runProviderChatSeat(topicIdOf(update), update.message?.text ?? '');
++  return outcome === 'not-mine' ? undefined : 'posted';
++}
++
+ async function processMessageUpdate(update: TelegramUpdate, principalUserId: string, adapters: PollAdapters): Promise<UpdateDeliveryOutcome> {
+   const cursorBridgeOutcome = await attemptCursorBridgeTopicExclusion(update, adapters);
+   if (cursorBridgeOutcome) {
+     return cursorBridgeOutcome;
+   }
++  const providerChatSeatOutcome = await attemptProviderChatSeatDelivery(update, adapters);
++  if (providerChatSeatOutcome) {
++    return providerChatSeatOutcome;
++  }
+   const sideChannelOutcome = await attemptSideChannelDelivery(update, principalUserId, adapters);
+   if (sideChannelOutcome) {
+     return sideChannelOutcome;

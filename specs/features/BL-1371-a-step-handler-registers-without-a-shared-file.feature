@@ -1,3 +1,7 @@
+# acceptance-mutation-manifest-begin
+# {"version":1,"tested_at":"2026-09-03T16:11:45.943829117Z","feature_name":"A step handler registers without a shared file","feature_path":"/home/carillon/swarmforgevc/.worktrees/expedite-BL-1371/specs/features/BL-1371-a-step-handler-registers-without-a-shared-file.feature","background_hash":"b73bf05218be6c4f113da0a80f147f31496d5bc73f762b3c3c0649b041657a15","implementation_hash":"unknown","scenarios":[],"outcome":"inapplicable"}
+# acceptance-mutation-manifest-end
+
 Feature: A step handler registers without a shared file
 
   Every acceptance step handler in this project is registered by appending a
@@ -47,3 +51,9 @@ Feature: A step handler registers without a shared file
     When the runner loads the handlers
     Then the run fails naming that file
     And no scenario is reported as passing
+
+  # BL-1371 a-step-handler-registers-without-a-shared-file-05
+  Scenario: both runners find handlers the same way
+    Given a new step handler file is added to the steps directory
+    When each runner resolves its handlers
+    Then the acceptance runner and the Gherkin mutation runner load the same handler set
