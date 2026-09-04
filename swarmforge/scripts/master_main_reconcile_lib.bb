@@ -148,62 +148,12 @@
       (seq (blocking-overlap dirty-paths merge-changed-paths redundant-paths)) :dirty-blocked
       :else :should-reconcile)))
 
-;; ── BL-1386: which MERGE_HEAD is the daemon's own? ──────────────────────
-;;
-;; On 2026-09-04 the sweep left its own failed merge open three times in
-;; eighteen minutes. `absorb-with-merge!` discarded `abort!`'s result, so an
-;; abort defeated by a transient `.git/index.lock` went unnoticed; the next
-;; tick saw a pre-existing MERGE_HEAD and, by BL-1120's rule, called it a
-;; human's and protected it. The daemon had orphaned its own merge and then
-;; named someone else as its owner.
-;;
-;; The missing fact is ownership. A record written BEFORE `git merge` and
-;; cleared after a successful merge or abort makes "this MERGE_HEAD is mine"
-;; provable on a LATER tick, which is all BL-1120 ever needed: it protects a
-;; merge this daemon did not start, and an owned sha is not one of those.
-
-(defn merge-owner-path [daemon-dir]
-  (str (fs/path daemon-dir "master-main-merge-owner.json")))
-
-(defn read-merge-owner [daemon-dir]
-  (or (read-json (merge-owner-path daemon-dir)) {}))
-
-(defn write-merge-owner! [daemon-dir record]
-  (spit (merge-owner-path daemon-dir) (json/generate-string record)))
-
-(defn clear-merge-owner! [daemon-dir]
-  (write-merge-owner! daemon-dir {}))
-
-(defn owns-merge-head?
-  "True only when `record` positively names THIS `merge-head-sha`.
-
-   Every uncertainty is a NO, because a wrong yes aborts a merge this daemon
-   did not start - the one thing BL-1120 exists to prevent. An absent record,
-   an empty record, a blank sha on either side, or a record naming a
-   different sha all answer false (invariant 2)."
-  [record merge-head-sha]
-  (let [recorded (some-> (:sha record) str str/trim)
-        actual (some-> merge-head-sha str str/trim)]
-    (boolean (and (seq (or recorded "")) (seq (or actual "")) (= recorded actual)))))
-
 ;; BL-1120: never abort a merge this tick did not start.
-;; BL-1386 widens "this tick" to "this daemon, provably" - and only that far.
 (defn may-abort-failed-merge?
-  "True only when the daemon can prove it started the merge.
-
-   1-arity (BL-1120, unchanged): this tick started the merge attempt, so
-   MERGE_HEAD was absent before `git merge`.
-
-   2-arity (BL-1386): OR the on-disk ownership record positively names this
-   MERGE_HEAD sha - an abort that failed on an earlier tick, still this
-   daemon's merge. A pre-existing MERGE_HEAD with no record, or one naming a
-   different sha, is a foreign merge and is never aborted: BL-1120 stands in
-   full for every merge this daemon cannot prove is its own."
-  ([started-this-tick?]
-   (boolean started-this-tick?))
-  ([started-this-tick? {:keys [owner-record merge-head-sha]}]
-   (boolean (or started-this-tick?
-                (owns-merge-head? owner-record merge-head-sha)))))
+  "True only when this tick started the merge attempt (MERGE_HEAD was absent
+   before git merge). A pre-existing MERGE_HEAD is a foreign merge — never abort."
+  [started-this-tick?]
+  (boolean started-this-tick?))
 
 (defn merge-attempt-plan
   "Given whether MERGE_HEAD already exists: :skip-human-merge-in-progress or :run-merge."
@@ -1066,68 +1016,16 @@
    already resolved everything (unchanged from before this ticket);
    {:success true :outcome :merged} when the 3-way merge absorbed a
    non-conflicting divergence losslessly (the new case this ticket
-   adds); else fallback!'s own result, verbatim.
-
-   BL-1386 adds three adapters, all OPTIONAL so every pre-existing call site
-   and test keeps its exact behaviour with no edits:
-     :record-owner! (fn [] -> _)      - called immediately BEFORE merge!,
-                                        durably recording the sha about to be
-                                        merged. Invariant 1: a merge is owned
-                                        on disk before it can possibly fail.
-     :clear-owner!  (fn [] -> _)      - called after a successful merge, and
-                                        after a successful abort. Never after
-                                        a FAILED abort: the record is what
-                                        lets the next tick finish the job.
-     :log!          (fn [label text]) - the observed outcome and git's OWN
-                                        error text.
-
-   And it stops discarding abort!'s result. `abort!` may now return
-   {:success bool :error <text>}; a nil/absent return is treated as success,
-   so the old 1-arg adapters that returned whatever `sh!` gave them keep
-   working. On a FAILED abort this returns
-   {:success false :outcome :merge-abort-failed ...} WITHOUT calling
-   fallback!, because a rematch/reset on top of a still-open merge is a
-   second hazard on top of the first."
-  [{:keys [ff! merge! abort! fallback! record-owner! clear-owner! log!]}]
-  (let [log (or log! (fn [_ _] nil))
-        ;; A nil return means no-opinion, which for a pre-BL-1386 adapter
-        ;; is success - it is what the discarded result always was.
-        succeeded? (fn [r] (or (nil? r) (not (false? (:success r)))))
-        ff-result (ff!)]
+   adds); else fallback!'s own result, verbatim."
+  [{:keys [ff! merge! abort! fallback!]}]
+  (let [ff-result (ff!)]
     (if (:success ff-result)
       {:success true :outcome :ff}
-      (do
-        (when record-owner! (record-owner!))
-        (let [merge-result (merge!)]
-          (if (:success merge-result)
-            (do (when clear-owner! (clear-owner!))
-                {:success true :outcome :merged})
-            ;; The merge failed. Say WHY, in git's words, before doing
-            ;; anything else - on 2026-09-04 this text existed and was
-            ;; thrown away every tick, which is why the cause stayed
-            ;; unknowable across three orphans.
-            (let [merge-error (str/trim (str (:error merge-result)))
-                  conflict? (boolean (:conflict? merge-result))
-                  abort-result (abort!)]
-              (if (succeeded? abort-result)
-                (do
-                  (when clear-owner! (clear-owner!))
-                  ;; BL-1214's line is kept for the case it was written for -
-                  ;; a merge git actually reported as conflicting - and the
-                  ;; observed outcome is used otherwise, so the log stops
-                  ;; asserting `conflict` as a label for every failure.
-                  (log (if conflict? "conflict" "merge-failed") merge-error)
-                  (fallback!))
-                ;; The abort did NOT take. MERGE_HEAD is still ours and still
-                ;; open. Leave the ownership record standing so the next tick
-                ;; can finish it by ownership, and do NOT fall through to
-                ;; fallback! as though the tree were clean.
-                (let [abort-error (str/trim (str (:error abort-result)))]
-                  (log "merge-abort-failed" abort-error)
-                  {:success false
-                   :outcome :merge-abort-failed
-                   :merge-error merge-error
-                   :abort-error abort-error})))))))))
+      (let [merge-result (merge!)]
+        (if (:success merge-result)
+          {:success true :outcome :merged}
+          (do (abort!)
+              (fallback!)))))))
 
 ;; Self-healing across transitions, mirroring push_sweep_lib.bb's own
 ;; sweep!: reaching :up-to-date or a successful :should-reconcile always
