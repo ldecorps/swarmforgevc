@@ -209,3 +209,5 @@ source: |
 
   The human's sentence is quoted verbatim at the top of `description:` and is
   not paraphrased anywhere in this ticket (Article 5.3).
+
+assigned_to: coder
