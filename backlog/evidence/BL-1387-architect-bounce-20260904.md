@@ -105,3 +105,19 @@ NOT COMPLIANT. Correctness defect (D1) — a second live call site of the
 shared decision function still asserts `human-merge-in-progress` from bare
 `MERGE_HEAD` presence, contrary to the ticket's own unconditional
 invariant 1. Bouncing to coder.
+
+## Revert (BL-490/BL-495)
+
+`record-bounce.js`'s revert check returned `verdict: violation` naming
+`a51b4d68fe` (the bounced defect commit itself). Reverted on
+`swarmforge-architect`: `git revert --no-edit a51b4d68fe` -> `793dbfaf02`.
+Confirmed by content, not ancestry: `classify-open-merge` and the new step
+handler are both absent post-revert. Note for whoever picks this up next:
+this branch's `master_main_reconcile_lib.bb`/`handoffd.bb` still carry
+BL-1386's write-side (`owns-merge-head?`, `:record-owner!`/`:clear-owner!`)
+from an earlier cross-branch merge, unaffected by this revert — that is
+expected and correct (this revert only undoes `a51b4d68fe`'s own diff), not
+a sign BL-1386 is done: `master-main-reconcile-merge!` still does not pass
+`merge-class` to `absorb-dispatch-plan` (BL-1387's own contribution, now
+reverted), so BL-1386's next-tick abort-by-ownership gap (BL-1386-architect-
+bounce-20260904.md) is unaffected either way.
