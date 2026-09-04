@@ -201,6 +201,20 @@ if log_of "$root" | grep -qE "fetch-failed|push-failed|counts-unknown"; then
 else
   fail "the hook logged nothing for an unreachable origin: $(log_of "$root")"
 fi
+# The check above alone is too broad to prove the push was never ATTEMPTED
+# (hardener finding, BL-1390): "push-failed" is also in its OR-pattern, and
+# that is what a broken fetch-failure guard would log instead - dropping
+# `(when (zero? (:exit fetched)) (rev-counts))` computes stale counts from
+# an origin/main tracking ref left over from setup, reads should-push, and
+# the resulting push! then fails against the unreachable remote too, so the
+# broad check above passes either way. A truly unreachable origin must
+# refuse BEFORE ever shelling a push - confirmed live, unmutated code logs
+# "fetch-failed" specifically here, never "push-failed".
+if log_of "$root" | tail -1 | grep -q "fetch-failed\|counts-unknown"; then
+  pass "the push was refused before ever being attempted (fetch-failed/counts-unknown, not push-failed)"
+else
+  fail "the hook attempted a push against an unreachable origin instead of refusing first: $(log_of "$root" | tail -1)"
+fi
 
 # ── 5. two quick commits both reach origin, in order, no force ─────────────
 setup_repo five
@@ -217,6 +231,43 @@ if log_of "$root" | grep -q -- "--force"; then
 else
   pass "no push used force"
 fi
+
+# ── 5b: the REAL git push subprocess never carries --force ─────────────────
+#
+# The check above is a proxy, not the invariant: log_of only ever contains
+# the fixed strings `log!` writes ("pushed"/"push-failed"/...), never the
+# actual argv passed to git - so it would read identically whether or not
+# push-main! silently gained --force (hardener finding, BL-1390). This
+# scenario watches the REAL subprocess instead, via `GIT_TRACE` - unlike a
+# PATH-prepended `git` shim (tried first and found NOT to work: git itself
+# prepends `/usr/lib/git-core` to PATH before running a hook, and that
+# directory ships its own `git` binary, so a shim earlier in the caller's
+# PATH is never reached), `GIT_TRACE` is an ordinary environment variable
+# that propagates through the whole subprocess chain (bash -> bb ->
+# babashka.process/sh -> git) and git's own trace machinery logs each
+# invocation's real argv, including "built-in: git push ..." lines from
+# the hook's own internal calls - confirmed live before writing this
+# scenario, by re-applying the exact --force mutation this check exists to
+# catch and reading `built-in: git push --force origin main` in the trace.
+setup_repo five-b
+TRACE_LOG="$WORK/git-trace.log"
+echo "$RANDOM" > "$root/f1.txt"
+git -C "$root" add -A >/dev/null 2>&1
+GIT_TRACE="$TRACE_LOG" git -C "$root" commit -q -m "BL-9390: fixture commit f1.txt" >/dev/null 2>&1
+git_q "$root" fetch origin main
+if [[ "$(counts "$root")" == "0/0" ]]; then
+  pass "scenario 5b: the traced commit reached origin (trace setup did not itself break the push)"
+else
+  fail "scenario 5b: origin did not receive the traced commit: $(counts "$root")"
+fi
+if ! grep -q "git push" "$TRACE_LOG" 2>/dev/null; then
+  fail "scenario 5b: GIT_TRACE never saw a push at all - the check would pass vacuously either way"
+elif grep -q "git push --force" "$TRACE_LOG" 2>/dev/null; then
+  fail "a REAL git push subprocess used --force"
+else
+  pass "no REAL git push subprocess used --force"
+fi
+
 # The hook shells no push of its own - the one adapter is push_sweep_lib.bb's.
 if grep -v '^[[:space:]]*#' "$HOOKS_DIR/post-commit" | grep -q "git push"; then
   fail "the hook shells its own git push instead of using the one adapter"
