@@ -20,10 +20,22 @@ required_stages: [coder, cleaner, architect, hardender, documenter, qa]
 acceptance: specs/features/BL-1382-a-crontab-line-the-swarm-did-not-write-is-never-the-swarms-to-remove.feature
 
 invariants:
-  - "A crontab line carrying no swarmforge marker for this root is byte-preserved by every swarm cron writer for that root - install, uninstall and reconcile - whatever path it names. Under ruling option 2 this binds install and reconcile only."
+  - "A crontab line carrying no swarmforge marker for this root is byte-preserved by every swarm cron writer for that root - install, uninstall and reconcile - whatever path it names. RULED option 1 on 2026-09-04, so this binds every writer; the earlier clause narrowing it under option 2 is void."
   - "Bash and Babashka decide ownership by ONE rule: a test asserts the shell predicate and the bb strip agree on a shared corpus of lines, so the two readers can never drift (BL-897)."
 
 human_approval: pending
+human_ruling: |
+  Marker-only ownership everywhere (recommended) - stop, install and reconcile touch only marked lines; unmarked lines reported and left
+
+  Recorded 2026-09-04 by the specifier from the human's VERBATIM reply in
+  front-desk thread SUP-17, channel telegram, 2026-09-04T14:13:07.473Z -
+  the option 1 label, posted after the Operator relayed the three
+  ruling_options into that thread at 14:10:18Z. Not a ruling-keyboard tap:
+  a text reply in a support thread writes no field (BL-1369 shape), so it
+  is written here with its provenance, the same way BL-1375's ruling was
+  recorded from a direct instruction. Filed at
+  backlog/answers-archive/ANSWER-2026-09-04-bl1382-marker-only-ownership-everywhere.md.
+  human_approval is NOT flipped by this record - that is the human's tap.
 approval_context: >
   Your intake of 2026-09-04, item 2 of "What's needed", split out from
   BL-1381. The mechanism is settled and is not what I am asking about: two
@@ -120,11 +132,10 @@ description: |
   ## Scope note on the feature file
 
   Scenarios `BL-1382 a-full-stack-stop-removes-only-marked-lines-01` and
-  `BL-1382 an-unmarked-line-is-reported-not-swept-04` assume ruling option 1.
-  Under option 2 both are **retired** - retired, not reworded - and invariant
-  1 narrows to install and reconcile as its text already says. Under option 3
-  scenarios 01, 02 and 04 are retired and replaced by refusal scenarios the
-  specifier will write before promotion. Nothing is built yet,
+  `BL-1382 an-unmarked-line-is-reported-not-swept-04` were written for
+  ruling option 1. The human RULED option 1 on 2026-09-04 (see
+  `human_ruling:`), so both stand exactly as written and nothing is
+  retired; the option 2 and option 3 amendments described at mint are void. Nothing is built yet,
   so this is an amendment before the coder starts, not a BL-233 boundary.
 
   ## Explicitly NOT in scope
@@ -138,10 +149,10 @@ qa_e2e_procedure: |
      holding: a freshness line marked for root R; an unmarked line naming
      `R/.swarmforge/operator/day-shift-start.sh`; an unmarked line naming
      `R/swarmforge/scripts/wait.sh R`; a line marked for a sibling root S.
-  2. Run `uninstall_swarmforge_crons.sh R`. Under option 1: only the freshness
-     line for R is gone, both unmarked lines and the S line are byte-identical,
-     and the output lists the unmarked operator-script line as left in place.
-     Under option 2: today's behaviour, and the help text names it.
+  2. Run `uninstall_swarmforge_crons.sh R`. Only the freshness line for R is
+     gone, both unmarked lines and the S line are byte-identical, and the
+     output lists the unmarked operator-script line as left in place (ruling
+     option 1).
   3. Same fixture, set `config swarm_shift day` in the fixture conf, run
      `install_shift_schedule_cron.sh R` (BL-1381 must be landed for this path
      to run at all - confirm it is): the managed block for R appears, both
@@ -160,6 +171,14 @@ qa_e2e_procedure: |
      too (BL-971).
 
 notes: |
+  2026-09-04 (specifier): RULING RECORDED - option 1, marker-only ownership
+  everywhere, from the human's verbatim reply in SUP-17 at 14:13:07Z
+  (provenance in `human_ruling:`). Scenarios 01 and 04 stand; invariant 1's
+  option-2 clause voided; e2e step 2 re-tensed. `human_approval` stays
+  `pending` until the human taps Approve in the BL-1382 topic or says so
+  through the front-desk approval path - an agent never flips it. Once
+  approved, the ticket is promotable with no further specifier work.
+
   `required_wiring` deliberately absent: both predicates are already on live
   paths (`uninstall_swarmforge_crons.sh` sources the lib and `./stop-swarm.sh`
   runs it; `install_shift_schedule_cron.sh` runs the reconcile on every start
