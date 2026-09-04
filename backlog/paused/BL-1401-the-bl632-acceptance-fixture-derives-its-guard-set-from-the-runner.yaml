@@ -29,7 +29,7 @@ invariants:
   - "A guard the runner names but the tree lacks fails the scenario loud, naming the guard - never silently skipped, and the fixture never runs a chain narrower than production's."
   - "Exactly one parser of the runner's guard lines exists in the repo: the acceptance handler consumes BL-1398's helper, it never carries a second parse of run_guard lines."
 
-human_approval: pending
+human_approval: approved
 approval_context: >
   A new feature file is authored here, so it needs a tap. No choice is posed
   and there are no ruling_options. Surfaced by the architect on BL-1398's
