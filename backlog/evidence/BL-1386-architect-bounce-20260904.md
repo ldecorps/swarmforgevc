@@ -94,3 +94,14 @@ NOT COMPLIANT. Correctness defect (D1) — the ticket's core promised
 behavior is unwired from the live daemon and the acceptance suite that
 should have caught it instead re-implements the missing logic in the
 fixture. Bouncing to coder.
+
+## Revert (BL-490/BL-495)
+
+`record-bounce.js`'s revert check returned `verdict: violation` naming
+`7836b7364a` (the bounced defect commit itself, not an evidence commit —
+BL-1208's restored-content suppression does not apply here, this is
+genuinely authored, unreverted work). Reverted on `swarmforge-architect`:
+`git revert --no-edit 7836b7364a` -> `5eee195a81`. Confirmed by content, not
+ancestry: `owns-merge-head?` and `master-main-merge-owner-file` are both
+absent from the two lib/daemon files post-revert, and the new step-handler
+files no longer exist on disk.
