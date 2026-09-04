@@ -157,7 +157,9 @@ function runCli(root, tip) {
   const lines = out.trim().split('\n');
   const named = new Set();
   for (const line of lines) {
-    const m = /^(?:ENTANGLED_SIBLING|LANDED_SIBLING) (\S+)$/.exec(line);
+    // BL-1389 extended LANDED_SIBLING with the path that decided the verdict,
+    // so the id is no longer the whole rest of the line.
+    const m = /^(?:ENTANGLED_SIBLING|LANDED_SIBLING) (\S+)(?: \S+)?$/.exec(line);
     if (m) named.add(m[1]);
     if (/entangled tip - sibling ticket\(s\)/.test(line)) {
       for (const id of line.match(/BL-\d+/g) || []) named.add(id);
