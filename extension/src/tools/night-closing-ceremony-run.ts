@@ -21,6 +21,11 @@ import {
   type LiveState,
 } from '../quality/nightClosingCeremonyLive';
 import { resolveCliMainWorktreeContext, printJsonToStdout, runCliMain } from './swarm-metrics';
+// BL-1393: the lean pass is a STEP of this sequence now, not a second
+// mechanism that finish-shift called on its own. Importing it here is what
+// makes "one ceremony" true rather than asserted.
+import { runClosingCeremony } from '../metrics/closingCeremonyRun';
+import { sendNoteViaHandoff } from './closing-ceremony-run';
 
 export type RunDeps = {
   readConf: (confPath: string) => string;
@@ -37,6 +42,15 @@ export type RunDeps = {
   nightStop: (target: string) => void;
   surface: (target: string, code: string) => void;
   recordCnp: (target: string, held: string[]) => void;
+  /** BL-1393: the lean pass, run as a step of this sequence. */
+  deliverLeanPacket: (target: string, shiftKey: string) => void;
+  /** BL-1393: a sleep after no work still ends in a recorded outcome. */
+  recordEmptyOutcome: (target: string, shiftKey: string) => void;
+  /**
+   * BL-1393: has the swarm worked a shift since the last ceremony? True when a
+   * shift-start stamp is newer than the newest recorded ceremony outcome.
+   */
+  workedAShift: (target: string) => boolean;
 };
 
 function statePath(target: string): string {
@@ -143,6 +157,12 @@ function applyAction(target: string, action: LiveAction, deps: RunDeps, dryRun: 
     case 'instruct-briefing':
       deps.instructBriefing(target, action.dayKey);
       return;
+    case 'lean-packet':
+      deps.deliverLeanPacket(target, action.shiftKey);
+      return;
+    case 'record-empty-outcome':
+      deps.recordEmptyOutcome(target, action.shiftKey);
+      return;
     case 'night-stop':
       deps.nightStop(target);
       return;
@@ -206,7 +226,73 @@ export function buildRealDeps(): RunDeps {
       fs.mkdirSync(path.dirname(file), { recursive: true });
       atomicWrite(file, `${JSON.stringify({ heldParcelIds: held, at: Date.now() }, null, 2)}\n`);
     },
+    deliverLeanPacket: (target, shiftKey) => {
+      // The BL-820 pass itself, unchanged: it folds the lifecycle ledger into
+      // the shift packet and delivers it to the specifier, or records an
+      // explicit no-change outcome for an empty shift.
+      runClosingCeremony(target, `${shiftKey}T00:00:00Z`, { sendNote: sendNoteViaHandoff });
+    },
+    recordEmptyOutcome: (target, shiftKey) => {
+      // Same recorder, same store: a sleep after no work is one auto_no_change
+      // run, distinguishable from a ceremony that never happened at all.
+      runClosingCeremony(target, `${shiftKey}T00:00:00Z`, { sendNote: sendNoteViaHandoff });
+    },
+    workedAShift: (target) => shiftWorkedSinceLastCeremony(target),
   };
+}
+
+/**
+ * BL-1393: "at least one shift of work since the last ceremony", read from
+ * what the swarm ALREADY writes rather than from a new bookkeeping file some
+ * path could forget to update. `.swarmforge/swarm-identity` is rewritten by
+ * swarmforge.sh on every launch, so its mtime IS the shift start; every
+ * recorded ceremony outcome lands in `.swarmforge/lean/ceremony/<shiftKey>.json`.
+ *
+ * `.swarmforge/shift-started` is read first and is the explicit form. Nothing
+ * writes it today: adding that one line to swarmforge.sh is refused by
+ * BL-1328's property test, which requires every added executable line in that
+ * file to sit inside ITS detection helper - a guard pinned to one parcel's
+ * diff and now binding on every later one (surfaced in this parcel's evidence,
+ * not fixed here). Honouring the path anyway costs nothing and means whoever
+ * lifts that guard need only add the stamp.
+ *
+ * Fails OPEN - true when it cannot tell. A missing stamp on a swarm that has
+ * been working all day must never silence the ceremony; the empty-outcome path
+ * is for a swarm that demonstrably did nothing, not for a probe that failed.
+ */
+export function shiftWorkedSinceLastCeremony(target: string): boolean {
+  const startedAt = newestMtimeMs([
+    path.join(target, '.swarmforge', 'shift-started'),
+    path.join(target, '.swarmforge', 'swarm-identity'),
+  ]);
+  if (startedAt === null) {
+    return true;
+  }
+  const ceremonyDir = path.join(target, '.swarmforge', 'lean', 'ceremony');
+  let lastCeremonyAt: number | null = null;
+  try {
+    lastCeremonyAt = newestMtimeMs(
+      fs.readdirSync(ceremonyDir).map((name) => path.join(ceremonyDir, name))
+    );
+  } catch {
+    lastCeremonyAt = null;
+  }
+  return lastCeremonyAt === null || startedAt > lastCeremonyAt;
+}
+
+function newestMtimeMs(paths: string[]): number | null {
+  let newest: number | null = null;
+  for (const p of paths) {
+    try {
+      const at = fs.statSync(p).mtimeMs;
+      if (newest === null || at > newest) {
+        newest = at;
+      }
+    } catch {
+      // absent is not an error here: the caller decides what absence means.
+    }
+  }
+  return newest;
 }
 
 export function parseArgs(argv: string[]): {
@@ -214,11 +300,17 @@ export function parseArgs(argv: string[]): {
   target: string | null;
   nowMs: number;
   dryRun: boolean;
+  sleepPath: string | null;
 } {
   let confPath: string | null = null;
   let target: string | null = null;
   let nowMs = Date.now();
   let dryRun = false;
+  // BL-1393: the caller IS the trigger. finish-shift, a crontab bedtime and
+  // night-stop are sleeps whatever the hour, so they say so and the gate's
+  // overnight window does not get to veto them; the daemon keeps passing
+  // nothing and keeps being gated by its window.
+  let sleepPath: string | null = null;
   for (let i = 0; i < argv.length; i++) {
     if (argv[i] === '--conf' && argv[i + 1] !== undefined) {
       confPath = argv[++i];
@@ -228,9 +320,11 @@ export function parseArgs(argv: string[]): {
       nowMs = Number(argv[++i]);
     } else if (argv[i] === '--dry-run') {
       dryRun = true;
+    } else if (argv[i] === '--sleep-path' && argv[i + 1] !== undefined) {
+      sleepPath = argv[++i];
     }
   }
-  return { confPath, target, nowMs, dryRun };
+  return { confPath, target, nowMs, dryRun, sleepPath };
 }
 
 function localDayKey(nowMs: number): string {
@@ -253,12 +347,16 @@ export function runNightClosingCeremony(
   confPath: string,
   nowMs: number,
   deps: RunDeps,
-  dryRun = false
+  dryRun = false,
+  sleepPath: string | null = null
 ): { gateMode: string; advanced: boolean; state: LiveState | null; actions: LiveAction[] } {
   const conf = deps.readConf(confPath);
   const gate = deps.evaluate(conf, nowMs);
-  if (gate.mode !== 'ceremony') {
-    return { gateMode: gate.mode, advanced: false, state: deps.readState(target), actions: [] };
+  // A sleep is a sleep whatever the hour (BL-1393): finish-shift at 17:00 on a
+  // weekday runs the same ceremony the daemon runs at 06:00. Only the DAEMON's
+  // trigger is gated by the closure window.
+  if (gate.mode !== 'ceremony' && sleepPath === null) {
+    return { gateMode: sleepPath === null ? gate.mode : `sleep:${sleepPath}`, advanced: false, state: deps.readState(target), actions: [] };
   }
 
   const nightKey = localDayKey(nowMs);
@@ -269,13 +367,14 @@ export function runNightClosingCeremony(
     nowMs,
     nightKey,
     dayKey: nightKey,
-    ceremonyDue: Boolean(gate.ceremonyDue),
+    ceremonyDue: Boolean(gate.ceremonyDue) || sleepPath !== null,
     drainBudgetMs,
     hardDeadlineMs,
     inFlightCount: flight.count,
     activeRole: deps.readActiveRole(target),
     heldParcelIds: deps.scanHeld(target),
     briefingAlreadySent: deps.briefingSent(target, nightKey),
+    workedAShift: deps.workedAShift(target),
   };
 
   // Continue in-progress nights even outside the begin window.
@@ -291,15 +390,15 @@ export function runNightClosingCeremony(
   if (!dryRun) {
     deps.writeState(target, state);
   }
-  return { gateMode: gate.mode, advanced: actions.length > 0 || state.phase !== (prev?.phase ?? 'idle'), state, actions };
+  return { gateMode: sleepPath === null ? gate.mode : `sleep:${sleepPath}`, advanced: actions.length > 0 || state.phase !== (prev?.phase ?? 'idle'), state, actions };
 }
 
 export async function main(): Promise<void> {
   const { projectRoot } = resolveCliMainWorktreeContext();
-  const { confPath, target, nowMs, dryRun } = parseArgs(process.argv.slice(2));
+  const { confPath, target, nowMs, dryRun, sleepPath } = parseArgs(process.argv.slice(2));
   const root = target ?? projectRoot;
   const conf = confPath ?? path.join(projectRoot, 'swarmforge', 'swarmforge.conf');
-  const result = runNightClosingCeremony(root, conf, nowMs, buildRealDeps(), dryRun);
+  const result = runNightClosingCeremony(root, conf, nowMs, buildRealDeps(), dryRun, sleepPath);
   printJsonToStdout(result);
 }
 
