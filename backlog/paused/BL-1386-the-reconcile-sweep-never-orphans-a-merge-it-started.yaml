@@ -30,7 +30,9 @@ invariants:
   - "The daemon aborts only a merge it can prove it started: a MERGE_HEAD whose sha matches its own ownership record. A MERGE_HEAD with no record, or one naming a different sha, is never aborted by this ticket - BL-1120 stands in full for every foreign merge."
   - "A failed abort is never reported as an abort: the log line the sweep writes after a failed real merge says which of merge and abort failed, and quotes git's own error text - never the fixed word conflict when git reported no conflict."
 
-human_approval: pending
+human_approval: approved
+human_ruling: "run & approve"
+human_ruling_recorded_by: operator (Claude Code, verbatim from the human, 2026-09-04)
 approval_context: >
   A new feature file is authored here, so it needs a tap. No choice is posed
   and there are no ruling_options. This is the creator half of the poisoned
