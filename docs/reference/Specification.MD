@@ -38,6 +38,7 @@ how-to page: internal coordinator-tooling CLI, same documentation
 precedent as its own mirror `promote_and_route_next.sh` and sibling
 `record-bounce.js`/`record-review-evidence.js` (all Specification.MD-only,
 no dedicated page — BL-1362). No diagram depicts backlog-close internals.)
+
 Prior entry —
 **Last Updated:** September 4, 2026 (BL-1390: every writer on the shared
 `main` checkout (coordinator, specifier, concierge, approval bot,
@@ -83,6 +84,7 @@ How-to: `docs/how-to/BL-1390-post-commit-push-while-it-still-fast-forwards.md`
 (new page — a distinct mechanism from the periodic push sweep it works
 alongside). No diagram depicts push-sweep or hook internals at this
 granularity.)
+
 Prior entry —
 **Last Updated:** September 4, 2026 (BL-1362: Article 4.4's evidence file
 — items `D1..Dn` or an explicit NONE, committed alone and forwarded by
