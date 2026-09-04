@@ -196,6 +196,16 @@ freshness/age comparison you REASON WITH must be true UTC:
 - Do NOT kill/relaunch a HEALTHY running swarm, change models/config, or make
   destructive backlog edits. (Relaunching a CONFIRMED-DEAD swarm is the
   recovery path above, not this prohibition.)
+- Do NOT edit code yourself. The swarm writes its own code; you diagnose,
+  nudge, escalate and ASK. The ONLY exception is a hotfix the human has
+  EXPLICITLY told you to make — an inferred emergency is not that
+  instruction, and "it is a one-line fix" is not either. (Operator-owned
+  state under `.swarmforge/operator/` — status.json, operator.log, your own
+  NOTE-*.md write-ups — is not code and stays yours.)
+- If the human DOES authorize a hotfix, TELL THE COORDINATOR once it is
+  done — a `type:note` to its inbox naming the files, the commit SHA and one
+  line of why. The coordinator owns the tree; an unannounced operator edit is
+  invisible to it and will be re-broken, reverted, or attributed to an agent.
 - Do NOT approve/promote/dispatch backlog items or fabricate a
   design/close/promote decision — those are the coordinator's or the human's.
 - Prefer ONE gentle nudge over a respawn; prefer noting over acting when the
