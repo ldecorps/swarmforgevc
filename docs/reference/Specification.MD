@@ -1,5 +1,31 @@
 # SwarmForge VS Code Extension — Specification
 
+**Last Updated:** September 3, 2026 (BL-1374: the land step's replay
+credited a tagged sync merge with everything it carried —
+`path-owner-tickets` (`land_step_lib.bb`) walked `own-commit-changed-paths`'s
+(`task_scope_gate_lib.bb`) `:delivered` diff, which for a merge answers
+against its first parent alone (everything the second parent brought in,
+whoever authored it), so a routine `git merge main` tagged with a ticket
+subject swept every unlanded file that sync carried into that ticket's own
+path set and refused a land with no real entanglement in it — reproduced on
+`5d4486eb08`, whose `--name-only` list held two tickets' files but whose
+combined patch held not one hunk. `merge-authored-paths` fixes it: for a
+merge commit, attribution now checks whether the merge's own DENSE COMBINED
+diff (`git diff-tree --cc`/`--combined`) produces a patch for the path, not
+whether the path merely appears in `--name-only` — a clean auto-merge
+(different parts of one file, the merger wrote nothing) is no longer
+credited, while a genuine conflict resolution (a real hunk in the combined
+diff) still is, so invariant 3 (never drop a path this ticket's own work
+changed) holds. Detection (BL-1308's widened candidate walk) is unchanged —
+a passenger is still reported as unlanded, only the credit narrowed. Per
+the human's ruling (2026-09-03, option 3 of three): both remedies landed —
+this code fix, plus the discipline rule as belt and braces (a sync merge's
+subject must still never name a ticket). Acceptance:
+`specs/features/BL-1374-a-sync-merge-is-not-credited-with-its-passengers.feature`.
+How-to: `docs/how-to/BL-1241-entangled-tip-at-the-land-step-has-a-reachable-remedy.md`
+(extended in place — same remedy chain, one more entry). No diagram depicts
+land-step internals.)
+Prior entry —
 **Last Updated:** September 3, 2026 (BL-1378: the close guard
 (`ticket_close_guard_lib.bb`, `commit_integrity_cli.bb`) required a QA
 `git_handoff`/`note` in the coordinator's own mailbox before allowing an
@@ -80,6 +106,29 @@ How-to: `docs/how-to/BL-567-expedite-one-ticket-with-the-swarm-stopped.md`
 (extended in place — same OUTSTANDING block, one more item type). No
 diagram depicts expeditor internals.)
 Prior entry —
+**Last Updated:** September 3, 2026 (BL-1371: `specs/pipeline/steps/index.js`'s
+hand-maintained `DOMAINS` array of 937 `require('./blNNNSteps')` lines is
+replaced by directory discovery — the module reads its own directory for
+top-level `*Steps.js` files and loads each one, eagerly, at module load, still
+exporting `registerSteps` unchanged. Registration cannot now be lost, leaked
+by a replay, or removed by a revert independently of the handler file itself,
+because there is nothing to be absent from — the structural cause behind
+three prior incident classes (a merge-adjudication over-charge, a land-replay
+leak (BL-1324), and BL-1356's land-queue deadlock with no first mover).
+Verified as a SET comparison, never a count (937 handler identities / 13754
+registrations, empty difference both directions) plus a per-step
+resolution-parity check across all 1059 feature files / 19693 steps: zero
+steps changed which file and pattern answers them. `check_feature_handler_registration.sh`
+(BL-1303) is narrowed, not retired — it still refuses a handler file present
+but unreachable from a conforming discovery predicate. The
+`required_wiring: specs/pipeline/steps/index.js::blNNNSteps` anchor pattern —
+this backlog's single most common `required_wiring` entry, and one that
+proved nothing even before this change — is retired for new tickets; point a
+new handler's `required_wiring` at the handler file's own export instead.
+Acceptance: `specs/features/BL-1371-a-step-handler-registers-without-a-shared-file.feature`.
+How-to: `docs/how-to/BL-1371-step-handlers-register-by-discovery.md`. No
+diagram depicts step-handler registration.)
+Prior entry —
 **Last Updated:** September 3, 2026 (BL-1367: the paused-pager Mini App
 approve route (`computePausedPagerApproveOutcome`,
 `extension/src/bridge/bridgeServer.ts`) used to call
@@ -154,29 +203,6 @@ blocked repo-wide by the standing `liveRepoDerivationGuard` red, BL-1291):
 `specs/features/BL-1296-bubble-answers-from-its-own-seat.feature`. How-to:
 `docs/how-to/BL-1296-bubble-answers-from-its-own-seat.md`. No diagram
 depicts cursor-bridge/seat-dispatch internals.)
-Prior entry —
-**Last Updated:** September 3, 2026 (BL-1371: `specs/pipeline/steps/index.js`'s
-hand-maintained `DOMAINS` array of 937 `require('./blNNNSteps')` lines is
-replaced by directory discovery — the module reads its own directory for
-top-level `*Steps.js` files and loads each one, eagerly, at module load, still
-exporting `registerSteps` unchanged. Registration cannot now be lost, leaked
-by a replay, or removed by a revert independently of the handler file itself,
-because there is nothing to be absent from — the structural cause behind
-three prior incident classes (a merge-adjudication over-charge, a land-replay
-leak (BL-1324), and BL-1356's land-queue deadlock with no first mover).
-Verified as a SET comparison, never a count (937 handler identities / 13754
-registrations, empty difference both directions) plus a per-step
-resolution-parity check across all 1059 feature files / 19693 steps: zero
-steps changed which file and pattern answers them. `check_feature_handler_registration.sh`
-(BL-1303) is narrowed, not retired — it still refuses a handler file present
-but unreachable from a conforming discovery predicate. The
-`required_wiring: specs/pipeline/steps/index.js::blNNNSteps` anchor pattern —
-this backlog's single most common `required_wiring` entry, and one that
-proved nothing even before this change — is retired for new tickets; point a
-new handler's `required_wiring` at the handler file's own export instead.
-Acceptance: `specs/features/BL-1371-a-step-handler-registers-without-a-shared-file.feature`.
-How-to: `docs/how-to/BL-1371-step-handlers-register-by-discovery.md`. No
-diagram depicts step-handler registration.)
 Prior entry —
 **Last Updated:** September 3, 2026 (BL-1375: the land step's shared-path
 refusal (BL-1332) is narrowed. `own-paths` (`land_step_lib.bb`) used to
