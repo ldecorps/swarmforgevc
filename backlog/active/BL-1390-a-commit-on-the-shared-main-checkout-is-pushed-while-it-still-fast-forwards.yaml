@@ -26,7 +26,7 @@ required_wiring:
   - 'specs/pipeline/steps/bl1390PushWhileFastForwardSteps.js::registerSteps::the handler file exists so discovery registers every scenario (BL-1371)'
 
 invariants:
-  - "A push happens only when, after a fresh fetch, local main is strictly ahead of origin/main and not behind - never a force push, never while diverged, never from a role worktree branch (BL-891 invariant 1 and BL-1310 stand unchanged)."
+  - "A push happens only when, after a fresh fetch, local main is strictly ahead of origin/main and not behind - never a force push, never while diverged, never from a role worktree branch (BL-891 invariant 1 and BL-1310 stand unchanged). Neither the hook nor any test of it ever writes the live repository's config: every fixture root is a git-init or clone under mkdtemp, proven by rev-parse --git-common-dir before any mutating git command, and the suite asserts the live origin URL is byte-identical after it runs. AMENDED 2026-09-04 after the fixture clobbered the shared origin."
   - "The hook never fails, blocks or delays a commit beyond a bounded time: an unreachable origin, a slow fetch or a refused push leaves the commit exactly as made and logs why, and the periodic push sweep remains the fallback."
   - "One push path: every push from the shared checkout goes through push_sweep_lib.bb's adapter, so the sweep and the hook can never disagree about whether a push was safe."
 
@@ -118,11 +118,54 @@ qa_e2e_procedure: |
      watch `main_sync_status_cli.bb` across a specifier mint followed by a
      QA landing - `ahead` returns to 0 within the hook's bound and the
      landing absorbs as `ff-only`.
-  7. Remove fixture roots in a `finally`, sweeping THEIR prefix before the
+  7. Isolation, proved not assumed: before the suite runs, record the live
+     repository's `remote.origin.url`; after it, assert it is byte-identical
+     and that `git worktree list` of the live repository is unchanged. Inside
+     the suite, every `git -C "$root"` is preceded by a check that
+     `git -C "$root" rev-parse --git-common-dir` resolves under the fixture's
+     mkdtemp WORK dir - an empty `$root` (`git -C ""` is the current
+     directory) or a path inside the live repository fails the suite loud
+     before any mutation. Re-run scenario 04's "unreachable origin" case with
+     `root` deliberately emptied: the suite refuses; the live origin is intact.
+  8. Remove fixture roots in a `finally`, sweeping THEIR prefix before the
      run too (BL-971); the hook's own scratch, if any, is per-invocation and
      never swept by prefix (BL-1385's lesson).
 
 notes: |
+  ## 2026-09-04 AMENDMENT (specifier) - the fixture clobbered the LIVE repository's origin
+
+  Live incident, reported by QA (`QA-bl1390-shared-git-config-origin-clobbered-20260904.md`
+  on the QA branch): the shared `.git/config`'s `remote.origin.url` read
+  `/tmp/bl1390-post-commit-kTsiBL/does-not-exist.git`, so every push, fetch
+  and ls-remote from EVERY worktree failed until QA restored it at 17:01Z
+  (`git remote set-url origin git@github.com:ldecorps/swarmforgevc.git`);
+  QA's BL-1358 land had silently failed at the push step and was caught by
+  QA reading stderr. That URL is exactly the value line 184 of
+  `test_bl1390_post_commit_push.sh` assigns with `git -C "$root" remote
+  set-url origin "$WORK/does-not-exist.git"`. For it to reach the live
+  config, `$root` was empty at that line - `git -C ""` leaves the working
+  directory unchanged, and a role worktree's `.git` is a file pointing at
+  the shared git dir, so the write landed in the one config every worktree
+  shares. HOW `$root` came to be empty, or how else that value reached the
+  live config, is NOT established: `setup_repo` sets `root` globally on
+  purpose, so a function-local variable is ruled out. Two candidates the
+  coder must test on the bounce, with the live origin recorded before and
+  after each run: the hook resolving its repository from its own script
+  location (the fixture's own comment says it does) so a hook invoked from
+  the live worktree's copy acts on the live repository; and a fixture WORK
+  dir removed mid-run (the EXIT trap, or a prefix sweep - BL-1385's shape)
+  leaving `git -C` pointed at a path that no longer exists. `set -u` does
+  not catch an EMPTY value either way.
+
+  Amended: invariant 1 extended (never write the live config; prove the
+  fixture root; assert the live origin after), e2e step 7 added. Scenario
+  06 added to the feature. Bounce class behavior, producer coder - a test
+  that mutates production state is a defect on its own merits; the ticket's
+  own e2e step 1 said "fixture master checkout with a bare origin" and the
+  fixture does build one, so this is not a spec gap. The general guardrail
+  is landed in engineering.prompt with this amendment (boot budget gate
+  run), so the next fixture author reads it before writing `git -C`.
+
   `required_wiring` anchor 1 is a consumer anchor: git runs whatever sits in
   `swarmforge/git-hooks/` through `core.hooksPath`, and the literal
   `push_sweep_lib.bb` inside that file proves the hook reaches the one push
