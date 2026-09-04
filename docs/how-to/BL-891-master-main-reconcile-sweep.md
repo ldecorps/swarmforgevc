@@ -76,8 +76,18 @@ push-sweep, flow watchdog, master-checkout drift). Each tick:
    known content conflict with `:refuse-rematch` (clean worktree — no
    `MERGE_HEAD`). If a merge this tick started still conflicts, it aborts
    immediately and surfaces rematch/refuse — never "finish in an editor".
-   **(BL-1120)** If `MERGE_HEAD` already existed, the tick skips entirely
-   and surfaces `human-merge-in-progress` without `git merge --abort`.
+   **(BL-1120, refined by BL-1386)** If `MERGE_HEAD` already existed, the
+   tick aborts it ONLY when a durable ownership record
+   (`.swarmforge/daemon/master-main-merge-owner.json`) names that exact
+   sha — proof the daemon itself started that merge, on this tick or an
+   earlier one whose abort failed. Any other pre-existing `MERGE_HEAD`
+   (no record, or a record naming a different sha) still skips entirely
+   and surfaces `human-merge-in-progress` without `git merge --abort`,
+   exactly as before. An abort that fails is retried with a short bounded
+   backoff and, on continued failure, logged as `merge-abort-failed` with
+   git's own error text — the record is left standing so a later tick can
+   finish the abort by ownership, and the sweep never falls through to a
+   rematch/reset as if the abort had succeeded.
 
 **(BL-925)** Step 3's merge used to be refused for a reason that had
 nothing to do with a real conflict: `origin/main`'s incoming tip routinely
@@ -104,8 +114,10 @@ genuine content conflict still aborts exactly as before.
 | up to date | Local `main` already has everything `origin/main` has. Nothing emitted. |
 | reconciled | Local `main` was behind and no dirty path overlapped a path the merge would change (clean tree, or dirty-but-non-overlapping) — merged forward automatically. Nothing emitted; check `git log` if you want to see it happen. |
 | dirty overlap, not reconciled | Local `main` is behind and a dirty (or untracked) path collides with a path the incoming merge would write to — the one case a plain `git merge` would itself refuse. **(BL-1333/f57795b6d2)** Any overlapping path proven byte-identical to `origin/main` is dropped and the merge proceeds anyway; this verdict/note fires only for paths that survive that proof — genuinely differing local work, never a stale duplicate. The sweep leaves the (still-blocking) checkout exactly as it found it and surfaces a `note` naming the offending path(s) (a count, past the first, if naming them all would blow the note's 80-char budget) to the coordinator. |
-| merge conflict / refuse-rematch (BL-1130 / BL-1141) | Predicted or real conflict on the **automated** path. Aborted (or never started); checkout has no `MERGE_HEAD` / unmerged paths. **(BL-1141)** live handoffd / Process B then **execute** rematch onto `origin/main` so `behind=0` — not a standing Cursor wait-reconcile. Do not finish a daemon merge in an editor. |
-| human merge in progress (BL-1120) | `MERGE_HEAD` was already set when the tick ran. The sweep does **not** merge and does **not** abort — a human (or other agent) owns the join. Surfaces a note; finish or abort the merge yourself. |
+| merge conflict / refuse-rematch (BL-1130 / BL-1141) | Predicted or real conflict on the **automated** path. Aborted (or never started); checkout has no `MERGE_HEAD` / unmerged paths. **(BL-1141)** live handoffd / Process B then **execute** rematch onto `origin/main` so `behind=0` — not a standing Cursor wait-reconcile. Do not finish a daemon merge in an editor. **(BL-1386)** The log now names the actual outcome and quotes git's own error text: `conflict` only when git reported a real content conflict, `merge-failed` for any other real-merge failure (e.g. a pre-merge-commit hook refusal) — never the fixed label regardless of cause. |
+| human merge in progress (BL-1120) | `MERGE_HEAD` was already set when the tick ran and names no daemon ownership record (or a record for a different sha). The sweep does **not** merge and does **not** abort — a human (or other agent) owns the join. Surfaces a note; finish or abort the merge yourself. |
+| daemon's own merge, aborted by ownership (BL-1386) | `MERGE_HEAD` was already set when the tick ran, but its sha matches a standing `.swarmforge/daemon/master-main-merge-owner.json` record — the daemon's own merge from this tick or an earlier one whose abort had failed. Aborted; the record is cleared; no `human-merge-in-progress` note. |
+| abort failed (BL-1386) | The daemon's own merge failed and the subsequent `git merge --abort` did not take (e.g. `.git/index.lock` held by another writer). Retried with a short bounded backoff; on continued failure the ownership record is left in place (never cleared, never falls through to a rematch/reset), the log carries `merge-abort-failed` plus git's own error text, and a later tick finishes the abort by ownership. |
 
 Both surfaced cases send **one** note and then go quiet for that same reason
 — reaching a clean/resolved state clears the flag, so a *later*, unrelated
