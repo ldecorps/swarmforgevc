@@ -158,12 +158,15 @@ not as the several separate edits that produced it).
 ### Guardrails
 
 - **A test fixture never mutates the live repository (BL-1390, 2026-09-04).**
-  `test_bl1390_post_commit_push.sh` ran `git -C "$root" remote set-url origin
-  "$WORK/does-not-exist.git"` with `$root` empty: `git -C ""` leaves the
-  working directory unchanged, the coder's worktree `.git` is a file pointing
-  at the shared git dir, and the shared `remote.origin.url` became a fixture
-  path - every push, fetch and ls-remote from every worktree failed until QA
-  found it landing BL-1358 and restored the URL. Rules: fixture roots are
+  `test_bl1390_post_commit_push.sh`'s value `"$WORK/does-not-exist.git"` from
+  its `git -C "$root" remote set-url origin` line ended up in the SHARED
+  `remote.origin.url`, and every push, fetch and ls-remote from every
+  worktree failed until QA found it landing BL-1358 and restored the URL.
+  The exact path is unproven (`root` is set globally; candidates are a hook
+  resolving its repository from its own script location, or a fixture dir
+  removed mid-run) - which is the point: `git -C ""` is the current
+  directory, a linked worktree's `.git` is a file pointing at the shared git
+  dir, and one wrong root writes the config every worktree shares. Rules: fixture roots are
   `git init`/`git clone` under mkdtemp, never `git worktree add` from the
   live repository (a linked worktree shares `.git/config`); before ANY
   mutating git command assert `git -C "$root" rev-parse --git-common-dir`

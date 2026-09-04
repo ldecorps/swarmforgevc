@@ -91,7 +91,7 @@
   `git init`/`git clone` under mkdtemp, proven by `rev-parse
   --git-common-dir` before any mutating git command - `git -C ""` is the
   current directory and a linked worktree shares the live `.git/config`
-  (BL-1390: an empty `$root` pointed `remote set-url` at the shared origin
-  and broke every push). See
+  (BL-1390: the parcel's own test wrote its fixture URL into the shared
+  origin and broke every push). See
   **engineering-detailed.prompt** §Guardrails for the full pre-trim text
   and every incident narrative.
