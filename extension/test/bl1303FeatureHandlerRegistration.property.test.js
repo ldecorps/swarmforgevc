@@ -64,7 +64,11 @@ function buildTree({ tickets, registryReadable }) {
   const expectedUnreadable = [];
   const expectedFeatures = [];
   for (const { n, shape } of tickets) {
-    const handler = `bl${n}FixtureSteps`;
+    // BL-1371: registration is discovery, so the 'unregistered' shape has to
+    // be a handler discovery CANNOT reach - one named outside the
+    // `*Steps.js` predicate. A `...Steps.js` file is registered by existing
+    // and could no longer produce the state this shape is about.
+    const handler = shape === 'unregistered' ? `bl${n}FixtureHandler` : `bl${n}FixtureSteps`;
     const handlerPath = `${STEPS}/${handler}.js`;
     files[`specs/features/BL-${n}-fixture.feature`] = `Feature: fixture ${n}`;
     if (shape === 'registered') {

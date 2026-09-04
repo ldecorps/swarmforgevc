@@ -9,6 +9,13 @@
 
 export const REGISTRY_PATH = 'specs/pipeline/steps/index.js';
 export const STEPS_DIR = 'specs/pipeline/steps';
+/**
+ * BL-1371: the discovery predicate specs/pipeline/steps/index.js registers by.
+ * A top-level file in STEPS_DIR whose name ends here IS registered - there is
+ * no list to be absent from. Mirrors that module's own HANDLER_SUFFIX; a test
+ * asserts the two literals agree rather than trusting the comment.
+ */
+export const HANDLER_SUFFIX = 'Steps.js';
 export const LIB_DIR = 'specs/pipeline/steps/lib';
 export const FEATURES_DIR = 'specs/features';
 
