@@ -141,3 +141,5 @@ source: |
   replay bundles unlanded BL-1367/1387". QA evidence
   `BL-1386-land-escalate-20260904.md` (QA branch). Specifier adjudication
   and the attribution table: `backlog/evidence/BL-1386-land-escalate-adjudication-20260904.md`.
+
+assigned_to: coder
