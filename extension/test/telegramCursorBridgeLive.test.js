@@ -21,6 +21,7 @@ const {
   runCursorBridgeLoop,
   runCursorBridgeBootIfConfigured,
   runPromptWithActiveRunRecovery,
+  resolveBubbleSeatTurnFn,
   sleep,
   writeJsonFile,
   writePollHeartbeat,
@@ -764,6 +765,226 @@ test('runCursorBridgePollOnce in inbound-queue mode, busy-queued reply acks the 
   // BL-767 scenario 03: the busy cue also follows the queued question into
   // its own origin topic (Bubble, 91), not only Cursor Remote (55).
   assert.equal(persisted.queuedWorkLivenessStatus?.['91']?.renderedText, 'Bridge: busy · 1 waiting');
+});
+
+// BL-1296 (hardener pass): the sibling BL-1235 qwen-seat dispatch branch this
+// one copies has only a source-text regression test
+// (bl1296BubbleSeatLive.test.js's "defaults ... to the real implementation"),
+// never a test that actually DRIVES the poll loop with a Bubble-topic
+// message. A source-text check proves the wiring exists, not that it runs
+// ahead of cursor's own decision - which is the whole defect the architect's
+// D1 bounce found last time (the guard was unconditionally false in
+// production). These two tests exercise `processInboundUpdates` for real.
+test('runCursorBridgePollOnce dispatches a Bubble-topic message to the Bubble seat, never to cursor', async () => {
+  const root = mkRoot();
+  const opDir = path.join(root, '.swarmforge', 'operator');
+  const statePath = path.join(opDir, 'cursor-bridge-state.json');
+  const topicMapPath = path.join(opDir, 'cursor-bridge-topic-map.json');
+  writeJsonFile(statePath, { updateOffset: 0, cursorTopicId: 55 });
+  const session = createMockCursorBridgeAgentSession(root);
+  const seatCalls = [];
+  const posts = [];
+  const next = await runCursorBridgePollOnce(
+    {
+      repoRoot: root,
+      botToken: 'token',
+      chatId: '-100',
+      principalUserId: '42',
+      opDir,
+      statePath,
+      topicMapPath,
+      agentSession: session,
+      bubbleSeatTopicId: 91,
+      runBubbleSeatTurnFn: async (input) => {
+        seatCalls.push(input);
+        return { kind: 'answer', seat: 'Bubble', topicId: 91, via: 'front-desk-mirror' };
+      },
+      post: async (_t, _c, _topic, text) => {
+        posts.push(text);
+      },
+      getUpdates: async () => ({
+        success: true,
+        updates: [
+          {
+            update_id: 30,
+            message: {
+              message_id: 5,
+              text: 'what is the swarm doing?',
+              from: { id: 42 },
+              chat: { id: -100 },
+              message_thread_id: 91,
+            },
+          },
+        ],
+      }),
+    },
+    { updateOffset: 0, cursorTopicId: 55 },
+    false,
+    0
+  );
+  assert.equal(seatCalls.length, 1);
+  assert.equal(seatCalls[0].topicId, 91);
+  assert.equal(seatCalls[0].seatTopicId, 91);
+  assert.equal(seatCalls[0].text, 'what is the swarm doing?');
+  // Cursor was never asked: no prompt run started (busy never flips true),
+  // and nothing was posted to cursor's own topic.
+  assert.equal(next.busy, false);
+  assert.ok(!posts.some((p) => p.includes('OMEGA')));
+});
+
+test('runCursorBridgePollOnce leaves a non-Bubble-topic message to cursor\'s own decision, Bubble seat untouched', async () => {
+  const root = mkRoot();
+  const opDir = path.join(root, '.swarmforge', 'operator');
+  const statePath = path.join(opDir, 'cursor-bridge-state.json');
+  const topicMapPath = path.join(opDir, 'cursor-bridge-topic-map.json');
+  writeJsonFile(statePath, { updateOffset: 0, cursorTopicId: 55 });
+  const session = createMockCursorBridgeAgentSession(root);
+  const seatCalls = [];
+  const posts = [];
+  const next = await runCursorBridgePollOnce(
+    {
+      repoRoot: root,
+      botToken: 'token',
+      chatId: '-100',
+      principalUserId: '42',
+      opDir,
+      statePath,
+      topicMapPath,
+      agentSession: session,
+      bubbleSeatTopicId: 91,
+      runBubbleSeatTurnFn: async (input) => {
+        seatCalls.push(input);
+        return { kind: 'answer', seat: 'Bubble', topicId: 91, via: 'front-desk-mirror' };
+      },
+      post: async (_t, _c, _topic, text) => {
+        posts.push(text);
+      },
+      getUpdates: async () => ({
+        success: true,
+        updates: [
+          {
+            update_id: 31,
+            message: {
+              message_id: 6,
+              text: 'remember the code word OMEGA',
+              from: { id: 42 },
+              chat: { id: -100 },
+              message_thread_id: 55,
+            },
+          },
+        ],
+      }),
+    },
+    { updateOffset: 0, cursorTopicId: 55 },
+    false,
+    0
+  );
+  assert.equal(seatCalls.length, 0, 'the Bubble seat was asked about a message in cursor\'s own topic');
+  assert.equal(next.busy, true, 'cursor\'s own topic message did not reach cursor\'s decision at all');
+  await new Promise((resolve) => setTimeout(resolve, 20));
+  assert.ok(posts.some((p) => p.includes('OMEGA')));
+});
+
+test('resolveBubbleSeatTurnFn picks the injected fn when one is given', () => {
+  const fake = async () => ({ kind: 'not-mine' });
+  assert.equal(resolveBubbleSeatTurnFn({ runBubbleSeatTurnFn: fake }), fake);
+});
+
+test('resolveBubbleSeatTurnFn falls back to the real implementation when none is injected', () => {
+  // Proves the SELECTION without invoking the real (live-agent-spawning)
+  // default: this pins that the fallback is `runBubbleSeatTurn` from
+  // `./bubbleSeatLive`, the same module the dispatch tests above fake out.
+  const { runBubbleSeatTurn } = require('../out/tools/bubbleSeatLive');
+  assert.equal(resolveBubbleSeatTurnFn({}), runBubbleSeatTurn);
+  assert.equal(resolveBubbleSeatTurnFn({ runBubbleSeatTurnFn: undefined }), runBubbleSeatTurn);
+});
+
+// Direct unit tests of tryDispatchToBubbleSeat's own return value, rather
+// than relying on processInboundUpdates's fallthrough behavior to make a
+// dropped `return true` visible: with bubbleSeatTopicId and cursorTopicId
+// necessarily distinct (invariant 2 - "a seat never serves another seat's
+// topic"), a message that reaches the fallthrough decides `ignore` there
+// regardless, so the two poll-loop tests above cannot discriminate a mutant
+// that turns the final `return true` into `return false`. Testing the
+// return value directly closes that gap without depending on downstream
+// topic-routing internals.
+test('tryDispatchToBubbleSeat returns true and dispatches when the topic is the Bubble seat\'s own', async () => {
+  const { tryDispatchToBubbleSeat } = require('../out/tools/telegramCursorBridgeLive');
+  const seatCalls = [];
+  const posts = [];
+  const handled = await tryDispatchToBubbleSeat(
+    {
+      repoRoot: '/nowhere',
+      botToken: 'token',
+      chatId: '-100',
+      bubbleSeatTopicId: 91,
+      runBubbleSeatTurnFn: async (input) => {
+        seatCalls.push(input);
+        return { kind: 'answer', seat: 'Bubble', topicId: 91, via: 'front-desk-mirror' };
+      },
+    },
+    { kind: 'message', topicId: 91, text: 'what is the swarm doing?', messageId: 5 },
+    { state: { cursorTopicId: 55 }, busy: false },
+    { post: async (_token, _chatId, topicId, message) => posts.push({ topicId, message }) }
+  );
+  assert.equal(handled, true);
+  assert.equal(seatCalls.length, 1);
+  // Pins topicId/seatTopicId as inbound.topicId / deps.bubbleSeatTopicId
+  // respectively, not swapped - both happen to hold 91 here (the guard
+  // above already forces inbound.topicId === deps.bubbleSeatTopicId), so
+  // this alone cannot discriminate the swap; it is the field's SOURCE that
+  // matters for readability, not this assertion's value.
+  assert.equal(seatCalls[0].topicId, 91);
+  assert.equal(seatCalls[0].seatTopicId, 91);
+  assert.equal(seatCalls[0].text, 'what is the swarm doing?');
+});
+
+test('tryDispatchToBubbleSeat passes an empty string, never the fallback\'s own placeholder, when the inbound event carries no text', async () => {
+  // Discriminates `inbound.text ?? ''` from a mutant that swaps the fallback
+  // literal - no existing dispatch test drives an inbound event with `text`
+  // undefined (e.g. a photo-only message reaching this topic).
+  const { tryDispatchToBubbleSeat } = require('../out/tools/telegramCursorBridgeLive');
+  const seatCalls = [];
+  const handled = await tryDispatchToBubbleSeat(
+    {
+      repoRoot: '/nowhere',
+      botToken: 'token',
+      chatId: '-100',
+      bubbleSeatTopicId: 91,
+      runBubbleSeatTurnFn: async (input) => {
+        seatCalls.push(input);
+        return { kind: 'answer', seat: 'Bubble', topicId: 91, via: 'front-desk-mirror' };
+      },
+    },
+    { kind: 'message', topicId: 91, messageId: 7 },
+    { state: { cursorTopicId: 55 }, busy: false },
+    { post: async () => {} }
+  );
+  assert.equal(handled, true);
+  assert.equal(seatCalls.length, 1);
+  assert.equal(seatCalls[0].text, '');
+});
+
+test('tryDispatchToBubbleSeat returns false and never dispatches for a message outside its topic', async () => {
+  const { tryDispatchToBubbleSeat } = require('../out/tools/telegramCursorBridgeLive');
+  const seatCalls = [];
+  const handled = await tryDispatchToBubbleSeat(
+    {
+      repoRoot: '/nowhere',
+      botToken: 'token',
+      chatId: '-100',
+      bubbleSeatTopicId: 91,
+      runBubbleSeatTurnFn: async (input) => {
+        seatCalls.push(input);
+        return { kind: 'answer', seat: 'Bubble', topicId: 91, via: 'front-desk-mirror' };
+      },
+    },
+    { kind: 'message', topicId: 55, text: 'remember the code word OMEGA', messageId: 6 },
+    { state: { cursorTopicId: 55 }, busy: false },
+    { post: async () => {} }
+  );
+  assert.equal(handled, false);
+  assert.equal(seatCalls.length, 0);
 });
 
 test('bootstrapCursorBridgeState persists topic id', async () => {

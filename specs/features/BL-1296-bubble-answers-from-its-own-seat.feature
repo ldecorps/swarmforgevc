@@ -1,3 +1,8 @@
+# mutation-stamp: sha256=7c85dd7c6b1ffaef80291cb732834974145c32717d9b7e5580de1e1ad0584a2d
+# acceptance-mutation-manifest-begin
+# {"version":1,"tested_at":"2026-09-03T12:11:47.473233833Z","feature_name":"Bubble answers from its own seat while the Cursor seat is busy","feature_path":"/home/carillon/swarmforgevc/.worktrees/hardender/specs/features/BL-1296-bubble-answers-from-its-own-seat.feature","background_hash":"d236707bda7d2e90512721644022d9773584fff212226d99a1930cdfd6e65237","implementation_hash":"unknown","scenarios":[{"index":1,"name":"A seat never serves another seat's topic","scenario_hash":"8822bb14469b57dfe7aa769ea3cc436cf15ace9582f29254b9e5c0b68e70f95e","mutation_count":4,"result":{"Total":4,"Killed":4,"Survived":0,"Errors":0},"tested_at":"2026-09-03T12:11:47.473233833Z"}]}
+# acceptance-mutation-manifest-end
+
 Feature: Bubble answers from its own seat while the Cursor seat is busy
 
   Today Bubble is a mirror topic. There is exactly ONE answering seat, the

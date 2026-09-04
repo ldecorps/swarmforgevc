@@ -82,6 +82,10 @@ export function liveFrontDeskTurn(targetPath: string): FrontDeskTurnFn {
   };
 }
 
+function mirrorUnavailableReasonFor(answered: FrontDeskAnswer): string {
+  return answered.success ? 'the front desk returned an empty answer' : answered.reason;
+}
+
 async function askFrontDesk(input: BubbleSeatTurnInput): Promise<FrontDeskAnswer> {
   const ask = input.frontDeskTurnFn ?? liveFrontDeskTurn(input.targetPath);
   try {
@@ -118,13 +122,7 @@ export async function runBubbleSeatTurn(input: BubbleSeatTurnInput): Promise<Bub
     seatTopicId: input.seatTopicId,
     cursorTopicId: input.cursorTopicId,
     mirrorAvailable: usable,
-    ...(usable
-      ? {}
-      : {
-          mirrorUnavailableReason: answered.success
-            ? 'the front desk returned an empty answer'
-            : answered.reason,
-        }),
+    ...(usable ? {} : { mirrorUnavailableReason: mirrorUnavailableReasonFor(answered) }),
   });
 
   if (decision.kind === 'answer') {
