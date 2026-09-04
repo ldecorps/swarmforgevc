@@ -38,7 +38,21 @@ Guardrails section): a test fixture never mutates the live repository —
 fixture roots are `git init`/`git clone` under `mkdtemp`, proven by
 `rev-parse --git-common-dir` resolving under the fixture's own directory
 before any mutating git command, and a suite asserts the live origin URL
-is byte-identical before and after it runs. Acceptance:
+is byte-identical before and after it runs. A second incident, found
+independently by QA: 1156 concurrent copies of the e2e test
+(`test_bl1390_post_commit_push.sh`, spawned repeatedly by the acceptance
+and mutation harnesses) exhausted a host during an unrelated land — the
+multiplier itself is unestablished (the parcel's own harnesses are
+sequential and memoized; recorded as unknown, not guessed), but each
+copy's blind startup `rm -rf <prefix>*` sweep (BL-971's own convention)
+deleted every OTHER copy's fixture, the same class of bug BL-1385 hit
+first in `check_handler_module_graph.sh`. Generalized into the same
+standing guardrail rather than fixed twice: BL-971's "sweep by prefix
+before the run too" is right for one runner at a time only — anything
+that CAN run concurrently records its owner pid inside its fixture root,
+reaps only roots whose pid is dead or whose age exceeds a bound, takes a
+lock so at most one instance runs, bounds its own wall clock, and logs
+the process chain that invoked it. Acceptance:
 `specs/features/BL-1390-a-commit-on-the-shared-main-checkout-is-pushed-while-it-still-fast-forwards.feature`.
 How-to: `docs/how-to/BL-1390-post-commit-push-while-it-still-fast-forwards.md`
 (new page — a distinct mechanism from the periodic push sweep it works

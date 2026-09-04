@@ -41,7 +41,10 @@
   `[vitest-worker]: Timeout calling "onTaskUpdate"` (BL-871) is the only
   allowlisted `test:properties` unhandled error. A `fs.mkdtempSync` fixture
   dir is removed in a `finally` and swept by prefix BEFORE the run too
-  (BL-971 — a killed run traps nothing). See **engineering-detailed.prompt**
+  (BL-971 — a killed run traps nothing), reaping ONLY roots no live run
+  owns (a dead recorded owner pid, or an age bound): under concurrent
+  invocation a blind prefix sweep destroys sibling runs (BL-1385, BL-1390:
+  1156 copies of one e2e each deleting the others). See **engineering-detailed.prompt**
   §"Test Speed And Isolation" for the full pre-trim wording.
 
 ## Acceptance Pipeline
