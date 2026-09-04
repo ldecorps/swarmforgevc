@@ -19,7 +19,7 @@ fail() { echo "FAIL: $*"; status=1; }
 pass() { echo "PASS: $*"; }
 
 source "$SCRIPT_DIR/lib/fixture_isolation.sh"
-fixture_isolation_begin "$FIXTURE_PREFIX" "${BL1361_SUITE_BOUND_SECONDS:-900}"
+fixture_isolation_begin "$FIXTURE_PREFIX" "${BL1361_SUITE_BOUND_SECONDS:-900}" "$@"
 trap 'rm -rf "$WORK"' EXIT
 
 in_fixture() {
