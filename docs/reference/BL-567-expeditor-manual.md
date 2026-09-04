@@ -148,8 +148,55 @@ rather than inferring it. Current entries: `bl-topic-record`, `briefing-hooks`,
 
 ### `park-record.json`
 
-`{parked-at-ms, destination, tickets, role-branch-tips, why}`. `destination` is always
-`hold`.
+`{parked-at-ms, destination, tickets, role-branch-tips, why, run-ticket, parked, at}`.
+`destination` is always `hold`. `run-ticket`, `parked` (one `{ticket, from}` per
+parked ticket — `from` is each ticket's ORIGIN folder, always `active` today)
+and `at` were added by BL-1379 (2026-09-04): this is the durable record the
+park-reversal sweep drives from, so it carries what it needs to restore each
+ticket rather than assuming every park came from `active/`. The pre-existing
+keys (`parked-at-ms`, `destination`, `tickets`, `role-branch-tips`, `why`)
+are unchanged — anything already reading them keeps working.
+
+### Park reversal (BL-1379, 2026-09-04)
+
+The run itself cannot reverse its own park — it exits before its commit can
+land, so nothing inside it can observe that event. `handoffd.bb`'s
+`expedite-park-reversal-sweep!` runs every daemon tick instead, scanning
+every `.swarmforge/expedite/*/park-record.json` that has no sibling
+`unpark-done.json` yet, and calling:
+
+```
+bb swarmforge/scripts/expedite_cli.bb unpark <project-root> <run-dir>
+```
+
+For each parked entry, `unpark-decision` (`expedite_lib.bb`) answers one of:
+
+| decision | when | outcome |
+|---|---|---|
+| `:hold-not-landed` | `expedite/<run-ticket>` does not resolve, or is not yet an ancestor of `main` | left in `backlog/hold/`, reported, retried next tick |
+| `:restore` | the ticket is still exactly where this run's record says it parked it | moved to its recorded origin folder (`backlog/active/`, always — park only ever parks out of `active/` today) and marked (below) |
+| `:skip-moved` | it is no longer in `backlog/hold/` | left where it now is, named in the report — never guessed at |
+| `:skip-absent` | it cannot be found in any backlog folder | named as absent, never silently dropped |
+| `:skip-closed` | it is in `backlog/done/` | left closed, named in the report |
+
+Only `:restore` writes anything, and only for the ticket names THIS run's own
+`park-record.json` lists — a ticket a human separately moved into
+`backlog/hold/` is invisible to it (Article 3.1 unchanged for that case). A
+restored ticket carries the freshness mark (per `backlog-schema.md`):
+
+| field | value |
+|---|---|
+| `status` | `blocked` — the load-bearing half; `promote_and_route_next.sh` and the dropped-parcel sweep already read it (BL-1100/BL-1301) |
+| `freshness_check` | `required` |
+| `freshness_check_reason` | names the expedition that restored it, e.g. "restored from backlog/hold/ by the BL-1375 expedition's park reversal (BL-1379); that run may have invalidated this ticket's premises, so it needs an Article 3.6 freshness check before it is worked" |
+
+The mark is cleared only by the coordinator (after `deprecate-check.js`
+allows) or by the specifier's adjudication — never by the reversal
+machinery that set it, which would make the mark meaningless. Once every
+parked entry reaches a terminal (non-`:hold-not-landed`) decision, the
+sweep writes `unpark-done.json` (`{at, run-ticket, restored, note}`) beside
+`park-record.json` and stops shelling out for that run on every subsequent
+tick.
 
 ### The QA-hat verdict store (BL-1025)
 
@@ -388,10 +435,15 @@ A deferral nobody is told about is a drop.
   anything else there sweeps them into an unrelated commit.
   *Owner: whoever next commits in the master checkout — deliberately. Named in
   the closing summary.*
-- **No re-promotion of what it parked.** Parked tickets stay in `backlog/hold/`,
-  which Article 3.1 makes human-held and forbids the coordinator promoting
-  from; a parked ticket may also be stale against what the run changed.
-  *Owner: a human. Named in the closing summary.*
+- **No re-promotion of what it parked, and no self-reversal of the park
+  either** — the run process exits before its own commit can land, so
+  nothing inside the run can observe that event. *At the moment the run
+  ends*, parked tickets sit in `backlog/hold/`, which Article 3.1 makes
+  human-held; a parked ticket may also be stale against what the run
+  changed. *Owner, at that moment: a human. Named in the closing summary.*
+  As of BL-1379 (2026-09-04) that ownership is temporary: `handoffd.bb`'s
+  `expedite-park-reversal-sweep!` restores each ticket automatically once
+  this run's commit reaches `main` — see "Park reversal (BL-1379)" below.
 - **No role worktree is touched.**
 
 ### The closing summary (BL-1024)

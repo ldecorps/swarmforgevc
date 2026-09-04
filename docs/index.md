@@ -34,7 +34,7 @@ expects them, and are not migrated or rewritten here.
 - [Stuck-Role Escalation Email — Understanding the Alert](how-to/BL-349-stuck-role-escalation-email.md)
 - [Front-desk give-up escalation: one email per episode](how-to/BL-1151-front-desk-giveup-one-email-per-episode.md) — BL-1151: arming survives cooldown re-arm until healthy grace; no ~15min repeat mail
 - [Front-desk build-stale restarts must not burn the crash give-up budget](how-to/BL-1154-build-stale-restarts-not-crash-giveup-budget.md) — BL-1154: voluntary stale-build rolls preserve `:attempts`; true crash loops unchanged
-- [Driving one ticket through every gate with the swarm stopped (the expeditor)](how-to/BL-567-expedite-one-ticket-with-the-swarm-stopped.md)
+- [Driving one ticket through every gate with the swarm stopped (the expeditor)](how-to/BL-567-expedite-one-ticket-with-the-swarm-stopped.md) — (BL-1379) parked siblings are no longer left in `backlog/hold/` forever: a daemon sweep restores them to `active/` once the expedition lands, marked `blocked` pending an Article 3.6 freshness check.
 - [Expeditor adopts (or refuses) a run ticket it cannot close](how-to/BL-1023-expeditor-refuses-a-run-ticket-it-cannot-bookkeep.md) — no silent success with the yaml still in paused/hold (BL-1023).
 - [Ambulance mode — running one ticket exclusively while the swarm stays live](how-to/BL-655-ambulance-mode-the-hold.md)
 - [Approvals Ambulance choice](how-to/BL-893-approvals-ambulance-choice.md) — fifth Approvals button + `/ambulance BL-xxx`; hold only, not Q jump (BL-893).
@@ -317,7 +317,7 @@ expects them, and are not migrated or rewritten here.
 - [BL-012 Spec: Chase and Dead-Letter Escalation](reference/specs/BL-012-spec.md)
 - [BL-627 — Pricing table correctness and coverage invariant](reference/specs/BL-627-pricing-table-correctness-and-coverage-invariant.md) — list-price table version 2; bare `claude-*` roster coverage check (BL-627). Its one deliberate omission (time-bounded rates) is reversed by [BL-1056](how-to/BL-1056-a-price-with-an-expiry-date.md).
 - [M2 Specification — Reliability Layer](reference/specs/m2-spec.md)
-- [Expeditor — complete reference](reference/BL-567-expeditor-manual.md) — every flag, exit code, artifact, verdict and refusal of the stack-stopped driver; BL-782 root-scoped liveness probes and `--probe-liveness`.
+- [Expeditor — complete reference](reference/BL-567-expeditor-manual.md) — every flag, exit code, artifact, verdict and refusal of the stack-stopped driver; BL-782 root-scoped liveness probes and `--probe-liveness`; (BL-1379) the daemon's park-reversal sweep, its `unpark` subcommand, and the freshness mark it writes.
 - [Build Freshness QA Approval Gate (BL-629)](reference/BL-629-build-freshness-qa-approval-gate.md) — the deploy-time gate preventing sync of pre-QA code to daemons.
 - [Commit-Time Guard Refuses Pipeline Code on Main (BL-632)](reference/BL-632-commit-time-guard-refuses-pipeline-code-on-main.md) — the pre-commit/pre-merge-commit hooks that stop a non-QA role from putting pipeline code on `main` in the first place.
 - [Ticket Lifecycle Ledger (BL-819)](reference/BL-819-ticket-lifecycle-ledger.md) — the coordinator-owned, append-only per-ticket lifecycle record: event/snapshot schema, storage, idempotency, write points, and its boundary vs the coordinator's other duties.
