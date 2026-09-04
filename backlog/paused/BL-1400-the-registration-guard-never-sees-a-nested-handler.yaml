@@ -1,0 +1,103 @@
+id: BL-1400
+title: "The feature-handler registration guard never sees a nested handler: its tree lists the steps directory flat, so the nested-placement refusal its own discovery predicate and BL-1371's how-to promise can never fire, and a feature whose only handler sits in a subdirectory reaches main unrefused"
+milestone: M8
+type: defect
+severity: medium
+# medium: real but contained. The guard promises to refuse a handler placed
+# where discovery cannot reach it and silently does not for the subdirectory
+# case; such a feature then throws at run time on its own (BL-233) rather
+# than at land. Nobody nests handlers on purpose, so the exposure is a
+# mistake going unrefused, not a live fault.
+status: todo
+epic: swarm-reliability
+priority: 14
+direction: swarm-reported
+depends_on: []
+mutation_cost: low
+slice_size_envelope: low
+required_stages: [coder, cleaner, architect, hardender, documenter, qa]
+
+acceptance: specs/features/BL-1400-the-registration-guard-never-sees-a-nested-handler.feature
+
+required_wiring:
+  - 'extension/src/tools/check-feature-handler-registration.ts::recursive::readTree must list the steps directory recursively (the readdirSync option or an equivalent walk) so nested files enter stepFiles and the existing isDiscovered predicate can classify them; the literal is absent today (grep returns 0)'
+  - 'specs/pipeline/steps/bl1400NestedHandlerIsSeenSteps.js::registerSteps::the handler file exists so discovery registers every scenario (BL-1371)'
+
+invariants:
+  - "A handler file anywhere under specs/pipeline/steps/ is in the guard's tree: a feature whose only handler is nested is refused as unregistered, naming the handler and the feature - never passed for want of seeing it."
+  - "Legitimate nested files are not offenders: a lib/ helper reached by a discovered handler's require stays reachable, and lib/ files that no handler requires are never reported as unregistered handlers (they are not handlers)."
+
+human_approval: pending
+approval_context: >
+  A new feature file is authored here, so it needs a tap. No choice is posed
+  and there are no ruling_options. Found by the coder while re-tensing the
+  land-step fixture (BL-1388), measured rather than reasoned: the tree
+  guards return nothing for a feature whose only handler is nested.
+
+description: |
+  ## What is wrong
+
+  `featureHandlerRegistrationCheck.ts`'s `isDiscovered` rejects any step
+  file whose path under `specs/pipeline/steps/` contains a further slash,
+  and its header says a handler "placed outside the predicate (a
+  subdirectory, or a name not ending in HANDLER_SUFFIX) and required by
+  nothing that discovery does reach" is "still refused". BL-1371's how-to
+  says the same. But `check-feature-handler-registration.ts`'s `readTree`
+  fills `stepFiles` from a NON-recursive listing of the steps directory, so
+  a nested handler never enters the tree; `collectUnregisteredHandlers`
+  finds no handler declaring the feature's ticket and skips; the guards
+  return `[]`. The suffix case works; the subdirectory case is dead code.
+  Measured by the coder on 2026-09-04 (BL-1388 evidence).
+
+  ## How (direction, not mandate)
+
+  - List the steps directory recursively in `readTree` (`readdirSync` with
+    `recursive: true`, or a bounded walk), keeping paths relative to the
+    repo root as today. `isDiscovered` then classifies nested files
+    correctly with no change.
+  - `lib/` and other nested helpers must not become false offenders
+    (invariant 2): `walkRegistry` already marks files reached by a
+    discovered handler's `require` as reachable, and a nested file that no
+    feature names and no handler requires is simply not a handler - keep
+    `collectUnregisteredHandlers` keyed on the feature's ticket as today.
+  - Add the nested case to the guard's own tests and to
+    `check_feature_handler_registration.sh`'s fixture, so the how-to's
+    sentence is backed by a test.
+
+  ## Explicitly NOT in scope
+
+  - The land-step fixture (BL-1388, which now asserts the suffix case only).
+  - Refusing a feature with NO handler file at all anywhere (a different
+    question - today's guard is handler-to-feature).
+
+qa_e2e_procedure: |
+  1. Fixture tree: feature `BL-9009-x.feature` and its only handler at
+     `specs/pipeline/steps/nested/bl9009XSteps.js`. Run
+     `check_feature_handler_registration.sh`: refused, `unregistered-handler`
+     naming the nested path and the feature.
+  2. Move the handler to the top level: passes.
+  3. Tree with `specs/pipeline/steps/lib/helperSteps.js` required by a
+     top-level handler: passes; the same lib file required by nothing:
+     still passes (not an offender).
+  4. Run the guard against the live tree: no new offenders (every nested
+     file on main today is a lib helper).
+  5. Remove fixture roots in a `finally`, reaping only roots no live run
+     owns (BL-1385/BL-1390).
+
+notes: |
+  `required_wiring` anchor 1 is a consumer anchor: the CLI's tree builder
+  is what feeds the pure check, and the recursion literal is absent today.
+
+  IR-DRY at mint: 2 medium findings, both reviewed and kept as intentional
+  distinctions - "examines the live tree" (scenario 04) vs "examines the
+  tree" (the scratch tree, Background) are different subjects; "sits at the
+  top" vs "sits in a subdirectory" are the two placements the feature is
+  about. Not duplicates.
+
+  Mint-time INVEST: one observable outcome (a nested handler is seen and
+  refused), one sitting, no unbuilt sibling.
+
+source: |
+  Coder note on BL-1388, priority 00, 2026-09-04T20:21Z: "nested-handler
+  row never refuses - steps dir is listed flat; amend?". Coder evidence
+  `BL-1388-coder-20260904.md` (coder branch), measured end to end.
