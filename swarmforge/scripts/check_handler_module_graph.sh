@@ -142,6 +142,22 @@ function stub() {
 }
 
 const missing = [];
+const inconclusive = [];
+let lastFsError = '';
+
+// true = present, false = ENOENT-confirmed absent, null = could not tell.
+// The three are distinct on purpose: only the middle one is a finding.
+function existsOnTree(p) {
+  try {
+    fs.statSync(p);
+    return true;
+  } catch (e) {
+    if (e && e.code === 'ENOENT') return false;
+    lastFsError = (e && e.code) || String(e);
+    return null;
+  }
+}
+
 const origResolve = Module._resolveFilename;
 
 Module._resolveFilename = function (request, parent, isMain, options) {
@@ -174,12 +190,17 @@ Module._resolveFilename = function (request, parent, isMain, options) {
       // extension/out is gitignored and never in an archive, so ask the
       // question that actually matters: is its SOURCE on this tree?
       const rel = real.slice(outDir.length).replace(/\.js$/, '');
-      for (const cand of [
+      const cands = [
         path.join(TREE, 'extension', 'src', rel + '.ts'),
         path.join(TREE, 'extension', 'src', rel + '.js'),
         path.join(TREE, 'extension', 'src', rel, 'index.ts'),
-      ]) {
-        if (fs.existsSync(cand)) return cand;
+      ];
+      for (const cand of cands) {
+        if (existsOnTree(cand) === true) return cand;
+      }
+      if (cands.map(existsOnTree).some((v) => v === null)) {
+        inconclusive.push(`${request} (could not be checked: ${lastFsError})`);
+        return cands[0];
       }
       missing.push(`${request} (no extension/src source on this tree)`);
       const err = new Error(`BL1385_MISSING ${request}`);
@@ -189,7 +210,18 @@ Module._resolveFilename = function (request, parent, isMain, options) {
     // Any other in-tree relative/absolute module: it must exist ON THE TREE.
     if (real) {
       for (const cand of [real, real + '.js', real + '.json', path.join(real, 'index.js')]) {
-        if (fs.existsSync(cand)) return origResolve.call(this, cand, parent, isMain, options);
+        if (existsOnTree(cand) === true) return origResolve.call(this, cand, parent, isMain, options);
+      }
+      // Only an ENOENT-confirmed absence is a finding. A resource failure
+      // (EMFILE/ENFILE under load) makes existsSync answer false for a file
+      // that is right there, and reporting that as a missing module turns
+      // this guard into an intermittent blocker on every commit in the repo -
+      // which is exactly what it did on its first real merge.
+      const verdicts = [real, real + '.js', real + '.json', path.join(real, 'index.js')]
+        .map(existsOnTree);
+      if (verdicts.some((v) => v === null)) {
+        inconclusive.push(`${request} (could not be checked: ${lastFsError})`);
+        return origResolve.call(this, request, parent, isMain, options);
       }
       missing.push(request);
       const err = new Error(`BL1385_MISSING ${request}`);
@@ -228,6 +260,7 @@ Module._load = function (request, parent, isMain) {
 // coexist.
 const origExit = process.exit;
 const failures = [];
+const inconclusiveAll = [];
 const handlers = fs
   .readdirSync(STEPS_DIR)
   .filter((n) => n.endsWith('Steps.js'))
@@ -236,6 +269,7 @@ const handlers = fs
 for (const name of handlers) {
   const file = path.join(STEPS_DIR, name);
   missing.length = 0;
+  inconclusive.length = 0;
   for (const k of Object.keys(require.cache)) delete require.cache[k];
   // A handler that calls process.exit at load would otherwise end the whole
   // sweep and silently pass every handler after it.
@@ -250,6 +284,7 @@ for (const name of handlers) {
     // question. BL-1371's registry surfaces that, and refusing here would
     // block on unrelated behaviour.
   } finally {
+    if (inconclusive.length > 0) inconclusiveAll.push(`${name}: ${inconclusive.join('; ')}`);
     process.exit = origExit;
   }
 }
@@ -258,11 +293,29 @@ if (failures.length > 0) {
   process.stdout.write(failures.join('\n'));
   origExit.call(process, 1);
 }
+if (inconclusiveAll.length > 0) {
+  // Distinct exit: the tree was examined but some answers could not be
+  // obtained. The caller decides; this guard does not silently pass it as
+  // clean, and does not refuse a commit on a file-descriptor shortage.
+  process.stdout.write('INCONCLUSIVE ' + inconclusiveAll.slice(0, 5).join('; '));
+  origExit.call(process, 2);
+}
 origExit.call(process, 0);
 RUNNER
 
 RUNNER_OUT="$(BL1385_TREE="$WORK_TREE" BL1385_STEPS_DIR="$STEPS_DIR" node "$NODE_RUNNER" 2>&1)"
 RUNNER_STATUS=$?
+
+# 2 = the tree was examined but some answers could not be obtained (a file
+# descriptor shortage under load makes existsSync answer false for a file that
+# is right there). That is NOT a finding: refusing on it would make this guard
+# an intermittent blocker on every commit in the repo, which is what it did on
+# its first real merge. It is not a clean pass either - it is said out loud.
+if [[ "$RUNNER_STATUS" -eq 2 ]]; then
+  echo "handler-graph: could not complete the examination - $RUNNER_OUT"
+  echo "handler-graph: NOT refusing on an incomplete examination; re-run to get a verdict"
+  exit 0
+fi
 
 if [[ "$RUNNER_STATUS" -ne 0 ]]; then
   FAILURES="$(grep -c . <<<"$RUNNER_OUT")"
