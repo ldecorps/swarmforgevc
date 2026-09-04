@@ -44,12 +44,18 @@ function extractStepTexts(featureSource) {
 }
 
 describe('BL-988 BL-578 acceptance contract binding', () => {
-  it('index.js registers the BL-578 step module', () => {
-    const indexSrc = fs.readFileSync(INDEX_PATH, 'utf8');
-    assert.match(
-      indexSrc,
-      /bl578DevhostBounceWslWindowLeakSteps/,
-      'BL-578 step module must stay required from the pipeline step index'
+  // BL-1371: the registry no longer names its modules - a top-level
+  // `*Steps.js` file in the steps directory is registered by existing. So the
+  // binding is asked of discovery itself rather than of index.js's source
+  // text; a grep for the module name in that file now proves nothing either
+  // way, and would go green on a comment.
+  it('discovery loads the BL-578 step module', () => {
+    const loaded = require(INDEX_PATH)
+      .discoverHandlerFiles()
+      .map((file) => path.basename(file, '.js'));
+    assert.ok(
+      loaded.includes('bl578DevhostBounceWslWindowLeakSteps'),
+      'BL-578 step module must stay discoverable from the pipeline steps directory'
     );
   });
 

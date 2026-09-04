@@ -18,8 +18,19 @@
  * because requiring the registry executes every handler module and a tree
  * that cannot run is exactly the tree this check is asked about. The two
  * things that made BL-1253's scenarios unrunnable are both statically
- * visible: the registration is a `require` line in the registry, and the lib
- * script is a `path.join(__dirname, 'lib', ...)` reference in the handler.
+ * visible: registration, and the lib script as a
+ * `path.join(__dirname, 'lib', ...)` reference in the handler.
+ *
+ * BL-1371 NARROWED this guard rather than retiring it. Registration was a
+ * hand-maintained `require` line in specs/pipeline/steps/index.js, which is
+ * how a handler file could exist and still not be registered - exactly what
+ * BL-1253's revert-then-resurrect produced. Registration is now discovery: a
+ * top-level `*Steps.js` file in the steps directory IS registered, so the
+ * lose-the-registration failure mode stops existing rather than being
+ * guarded. Every offender kind survives; only what makes a handler
+ * unreachable narrows (see discoveredHandlers below). The gate was not
+ * deleted as a side effect - the decision is recorded in the parcel's
+ * evidence file.
  *
  * Shared constants and types live in featureHandlerRegistrationTypes.ts.
  * Text-level parsing (require specifiers, sibling-script references, ticket
@@ -32,7 +43,7 @@
  */
 
 import { extractRequiredModules, extractSiblingScripts, featureTicketId, handlerDeclaresTicket } from './featureHandlerRegistrationText';
-import { REGISTRY_PATH, type Offender, type OffenderKind, type FeatureHandlerTree } from './featureHandlerRegistrationTypes';
+import { HANDLER_SUFFIX, REGISTRY_PATH, STEPS_DIR, type Offender, type OffenderKind, type FeatureHandlerTree } from './featureHandlerRegistrationTypes';
 
 /** Order offenders are reported in: the registry first, then what it reaches. */
 const KIND_ORDER: OffenderKind[] = [
@@ -85,11 +96,37 @@ function visitRequiredModule(
 }
 
 /**
- * Every step file reachable from the registry by `require`, transitively - a
- * handler pulled in by another step file is registered just as truly as one
- * named in index.js. Unresolvable and unreadable hops are collected as
- * offenders rather than skipped: a registry that cannot be followed is
- * refused, never waved through.
+ * The handlers the registry DISCOVERS: every top-level `*Steps.js` file in
+ * specs/pipeline/steps/.
+ *
+ * BL-1371 narrowed this guard rather than retiring it. Registration used to be
+ * a `require` line in index.js, so a handler file could exist and still be
+ * unregistered - the state BL-1253's bounce-revert created, and the reason
+ * this guard was built. Under discovery that state cannot exist for a
+ * conforming file: its own presence registers it. What remains, and is still
+ * refused below, is a handler that discovery does NOT reach - one named or
+ * placed outside the predicate (a subdirectory, or a name not ending in
+ * HANDLER_SUFFIX) and required by nothing that discovery does reach.
+ */
+function isDiscovered(stepFile: string): boolean {
+  if (stepFile === REGISTRY_PATH || !stepFile.endsWith(HANDLER_SUFFIX)) {
+    return false;
+  }
+  const prefix = `${STEPS_DIR}/`;
+  return stepFile.startsWith(prefix) && !stepFile.slice(prefix.length).includes('/');
+}
+
+function discoveredHandlers(tree: FeatureHandlerTree): string[] {
+  return tree.stepFiles.filter(isDiscovered);
+}
+
+/**
+ * Every step file the registry reaches: what discovery loads, plus everything
+ * those files pull in by `require`, transitively - a handler pulled in by
+ * another step file is registered just as truly as one discovery names
+ * directly. Unresolvable and unreadable hops are collected as offenders
+ * rather than skipped: a registry that cannot be followed is refused, never
+ * waved through.
  */
 function walkRegistry(
   tree: FeatureHandlerTree,
@@ -105,6 +142,13 @@ function walkRegistry(
   const queue: string[] = [REGISTRY_PATH];
   const seen = new Set<string>([REGISTRY_PATH]);
   const textOf = new Map<string, string>([[REGISTRY_PATH, registryText]]);
+
+  // Discovery is the seed. index.js is still walked for `require` lines (a
+  // registry that keeps explicit hops keeps working), it simply no longer has
+  // any - which is the whole point of the ticket.
+  for (const handler of discoveredHandlers(tree)) {
+    visitRequiredModule(handler, tree, seen, textOf, queue, reachable, offenders);
+  }
 
   while (queue.length > 0) {
     const current = queue.shift() as string;
