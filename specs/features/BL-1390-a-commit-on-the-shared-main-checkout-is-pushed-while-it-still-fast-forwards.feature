@@ -47,3 +47,11 @@ Feature: BL-1390 A commit on the shared main checkout is pushed while it still f
     When two commits are made on main within a second
     Then origin/main equals local main after the second hook
     And no push used force
+
+  # BL-1390 the-suite-never-touches-the-live-repository-06
+  Scenario: the hook's own test suite leaves the live repository's remotes and worktrees untouched
+    Given the live repository's origin URL and worktree list are recorded
+    When the hook's test suite runs to completion
+    Then the live repository's origin URL is byte-identical
+    And the live repository's worktree list is byte-identical
+    And every mutating git command in the suite ran against a root under the fixture's temporary directory

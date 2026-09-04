@@ -157,6 +157,20 @@ not as the several separate edits that produced it).
 
 ### Guardrails
 
+- **A test fixture never mutates the live repository (BL-1390, 2026-09-04).**
+  `test_bl1390_post_commit_push.sh` ran `git -C "$root" remote set-url origin
+  "$WORK/does-not-exist.git"` with `$root` empty: `git -C ""` leaves the
+  working directory unchanged, the coder's worktree `.git` is a file pointing
+  at the shared git dir, and the shared `remote.origin.url` became a fixture
+  path - every push, fetch and ls-remote from every worktree failed until QA
+  found it landing BL-1358 and restored the URL. Rules: fixture roots are
+  `git init`/`git clone` under mkdtemp, never `git worktree add` from the
+  live repository (a linked worktree shares `.git/config`); before ANY
+  mutating git command assert `git -C "$root" rev-parse --git-common-dir`
+  resolves under the fixture dir; record the live `remote.origin.url` before
+  the suite and assert it byte-identical after; `set -u` does not catch an
+  EMPTY variable, so test the value, not its existence.
+
 - Do not edit mutation or Gherkin mutation manifests by hand.
 - Do not commit unrelated local changes or generated artifacts unless required.
 - On unexplained session-start reverts, `git restore --source=HEAD --staged
