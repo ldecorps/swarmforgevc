@@ -6,7 +6,9 @@ Feature: BL-1379 An expedition's park reverses itself when the expedition lands
   indistinguishable from a deliberate human hold. This feature is that the
   driver reverses its own move once the expedition's commit is on main, driven
   by a durable record of what it parked - touching only those tickets, never
-  before the land, and never twice.
+  before the land, and never twice. As the human ruled, each restored ticket
+  returns to the folder it was parked from, marked as needing a freshness
+  check before it may be worked.
 
   Background:
     Given an expedition that parked ticket "BL-9002" out of backlog/active/
@@ -19,10 +21,8 @@ Feature: BL-1379 An expedition's park reverses itself when the expedition lands
     And the report names "BL-9002" as restored
 
   # BL-1379 the-restore-destination-re-enters-the-freshness-gate-02
-  Scenario: a restored ticket re-enters the queue where the freshness gate will see it
-    Given the expedition's approved commit is an ancestor of main
-    When the park reversal runs
-    Then "BL-9002" is in backlog/paused/
+  # RETIRED 2026-09-04 (never reworded): it encoded ruling option 1 (restore to
+  # paused/); the human ruled option 3 on 2026-09-03. Replaced by 08 and 09.
 
   # BL-1379 nothing-is-restored-before-the-land-03
   Scenario: an expedition that has not landed leaves its park in place and says so
@@ -65,3 +65,18 @@ Feature: BL-1379 An expedition's park reverses itself when the expedition lands
     When the expedition parks the field
     Then a durable park record names "BL-9002"
     And the record names the folder "BL-9002" was parked from
+
+  # BL-1379 the-restore-destination-is-the-prior-folder-08
+  Scenario: a restored ticket returns to the folder it was parked from
+    Given the expedition's approved commit is an ancestor of main
+    When the park reversal runs
+    Then "BL-9002" is in backlog/active/
+
+  # BL-1379 a-restored-ticket-is-marked-for-a-freshness-check-09
+  Scenario: a restored ticket is marked as needing a freshness check before it may be worked
+    Given the expedition's approved commit is an ancestor of main
+    When the park reversal runs
+    Then "BL-9002" reads status blocked
+    And "BL-9002" carries freshness_check required naming the expedition
+    And the promotion helper skips "BL-9002" as blocked
+    And the report names "BL-9002" as restored and marked

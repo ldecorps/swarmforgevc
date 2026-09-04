@@ -111,6 +111,16 @@
   (when-let [line (expedite-announce-lib/format-milestone (assoc payload :ticket ticket))]
     (invoke-announce! project-root line)))
 
+(defn- read-json
+  "BL-1379: the park record is read back by the reversal. Unreadable or absent
+   yields nil, and the caller treats that as 'this run parked nothing' rather
+   than guessing at a queue to restore."
+  [path]
+  (try
+    (when (fs/exists? path)
+      (json/parse-string (slurp (str path)) true))
+    (catch Exception _ nil)))
+
 (defn- write-json! [path data]
   (fs/create-dirs (fs/parent path))
   (spit (str path) (str (json/generate-string data {:pretty true}) "\n")))
@@ -416,17 +426,90 @@
                    :when (and b (str/starts-with? b "swarmforge-"))]
                [b sha]))))
 
+;; ── BL-1379: reverse this run's own park, once the expedition has landed ──
+;;
+;; Article 3.1 makes backlog/hold/ human-held. The expeditor is allowed to
+;; empty it only of tickets IT put there, which is why every decision below is
+;; driven by the run's own park-record and never by "what is in hold/".
+
+(defn- ticket-current-folder [project-root ticket]
+  (some (fn [sub] (when (ticket-file project-root sub ticket) sub))
+        ["hold" "active" "paused" "done"]))
+
+(defn- expedition-landed? [project-root commit]
+  (and (seq (str commit))
+       (zero? (:exit (sh {:dir (str project-root)}
+                         "git" "merge-base" "--is-ancestor" (str commit) "main")))))
+
+(defn- mark-needs-freshness-check!
+  "Write the restored ticket's mark, per backlog-schema.md's freshness_check
+   entry: status blocked (the half promote_and_route_next.sh and the
+   dropped-parcel sweep actually read), the field saying WHY, and the reason
+   naming the expedition.
+
+   Idempotent: a ticket already carrying the mark is left alone rather than
+   accumulating duplicates. This code never CLEARS the mark - clearing is the
+   coordinator's after deprecate-check.js allows, and machinery that could
+   clear its own mark would make the mark meaningless."
+  [project-root ticket folder run-ticket]
+  (when-let [f (ticket-file project-root folder ticket)]
+    (let [body (slurp (str f))
+          mark (expedite-lib/freshness-mark {:run-ticket run-ticket})]
+      (when-not (str/includes? body (str expedite-lib/freshness-mark-field ":"))
+        (spit (str f)
+              (str (str/replace body #"(?m)^status:.*$"
+                                (str "status: " (:status mark)))
+                   (when-not (str/ends-with? body "\n") "\n")
+                   expedite-lib/freshness-mark-field ": "
+                   (get mark expedite-lib/freshness-mark-field) "\n"
+                   expedite-lib/freshness-reason-field ": >-\n  "
+                   (get mark expedite-lib/freshness-reason-field) "\n"))))))
+
+(defn unpark-parked!
+  "Reverse this run's park, or say why not. Returns the report."
+  [{:keys [project-root ticket dry-run?]} run-dir commit]
+  (let [record-file (fs/path run-dir "park-record.json")]
+    (if-not (fs/exists? record-file)
+      {:restored [] :left [] :note "no park record for this run - nothing was parked"}
+      (let [record (read-json record-file)
+            landed? (expedition-landed? project-root commit)
+            plan (expedite-lib/unpark-plan
+                  {:record record
+                   :landed? landed?
+                   :current-folder-of #(ticket-current-folder project-root %)})]
+        (when-not dry-run?
+          (doseq [{:keys [ticket from]} (:restore plan)]
+            (log! "unpark" ticket (str "backlog/hold/ -> backlog/" from "/"))
+            (must-move-ticket! project-root ticket "hold" from
+                               "REFUSE could not unpark" ticket "from backlog/hold/")
+            (mark-needs-freshness-check! project-root ticket from ticket)))
+        (let [report (expedite-lib/unpark-report plan)]
+          (doseq [{:keys [ticket reason in]} (:left report)]
+            (log! "unpark-left" ticket reason (str "in=" in)))
+          report)))))
+
 ;; ── initiation ────────────────────────────────────────────────────────────
 
 (defn park-others! [{:keys [project-root ticket dry-run?]} run-dir]
   (let [plan (expedite-lib/park-plan {:active-tickets (active-ticket-ids project-root)
                                       :run-ticket ticket})]
     (when-not (:nothing-to-park? plan)
-      (let [record {:parked-at-ms (now-ms)
-                    :destination (:destination plan)
-                    :tickets (vec (:park plan))
-                    :role-branch-tips (role-branch-tips project-root)
-                    :why (str "parked by the expeditor to free the pipeline for " ticket)}]
+      (let [record (merge
+                    {:parked-at-ms (now-ms)
+                     :destination (:destination plan)
+                     :tickets (vec (:park plan))
+                     :role-branch-tips (role-branch-tips project-root)
+                     :why (str "parked by the expeditor to free the pipeline for " ticket)}
+                    ;; BL-1379: the reversal is driven by THIS record, so it
+                    ;; carries each ticket's ORIGIN folder rather than relying
+                    ;; on park-plan only ever parking out of active/. The
+                    ;; existing keys stay untouched - anything already reading
+                    ;; :tickets keeps working.
+                    (expedite-lib/park-record
+                     {:run-ticket ticket
+                      :parked-tickets (:park plan)
+                      :origin-folder "active"
+                      :at (str (java.time.Instant/now))}))]
         (doseq [t (:park plan)]
           (log! "park" t "->" (str "backlog/" (:destination plan) "/"))
           (when-not dry-run?
