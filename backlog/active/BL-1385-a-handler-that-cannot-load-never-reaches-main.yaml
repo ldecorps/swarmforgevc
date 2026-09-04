@@ -237,7 +237,7 @@ source: |
 
 assigned_to: coder
 
-abandoned_commits: [26ef184d39, 0fd657add1]
+abandoned_commits: [26ef184d39, 0fd657add1, d53e4ddd39]
 # 26ef184d39 (hardener's "Merge main (BL-1385 amendment cf2ea583c7...) into
 # hardener") is stranded on swarmforge-hardender only. Its unique content
 # over its own parent was merging cf2ea583c7 (the specifier's in-flight
