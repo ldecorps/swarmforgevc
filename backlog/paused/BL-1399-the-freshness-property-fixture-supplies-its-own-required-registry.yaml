@@ -1,0 +1,96 @@
+id: BL-1399
+title: "The freshness watchdog property fixture supplies its own required-daemon registry through the guard's existing seam, so its deliberately one-row conf is not refused by the fail-closed registry guard - the standing red bl1012 on main"
+milestone: M8
+type: defect
+severity: high
+# high: a standing red in a property test the property-suite guard reads,
+# so every code commit meets a refusal or an allowlist edit until fixed,
+# while the checker and the guard are both correct. Same class as BL-1398:
+# a fixture pinned by hand against a production closure that grew.
+status: todo
+epic: swarm-reliability
+priority: 9
+direction: swarm-reported
+depends_on: []
+mutation_cost: low
+slice_size_envelope: low
+required_stages: [coder, hardender, qa]
+stage_skip_reasons:
+  cleaner: "one env var added to one fixture helper; nothing to de-duplicate."
+  architect: "no design: the guard's own FRESHNESS_REQUIRED seam is used as documented at its line 8."
+  documenter: "no document describes this fixture; the seam is already documented in the guard's header."
+
+acceptance: specs/features/BL-1399-the-freshness-property-fixture-supplies-its-own-required-registry.feature
+
+required_wiring:
+  - 'extension/test/bl1012FreshnessSelfInflictedIncidents.property.test.js::FRESHNESS_REQUIRED::the fixture must hand the guard its own required list through the seam the guard already reads; absent from the test today (grep returns 0)'
+  - 'specs/pipeline/steps/bl1399FreshnessFixtureOwnRegistrySteps.js::registerSteps::the handler file exists so discovery registers every scenario (BL-1371)'
+
+invariants:
+  - "The fixture's conf and its required registry always agree and are both the fixture's own: every daemon the fixture's registry names has a row in the fixture's conf, and neither file is read from the live scripts directory."
+  - "The fail-closed registry guard is untouched: with the live required list and a conf missing a listed daemon it still refuses naming the daemon (BL-784)."
+
+human_approval: approved
+approval_context: >
+  A new feature file is authored here, so it needs a tap. No choice is posed
+  and there are no ruling_options. The red is a fixture reading production's
+  required-daemon list while writing a one-row conf on purpose; the guard
+  has had a seam for exactly this since it was written.
+
+description: |
+  ## What is wrong
+
+  `extension/test/bl1012FreshnessSelfInflictedIncidents.property.test.js`
+  builds a fixture root with its OWN `freshness.conf` pinned to one row,
+  `handoffd|120|...`, "so these properties are independent of any ops
+  change to the live conf" (its own comment). `daemon_log_freshness_check.sh`
+  now runs `daemon_log_freshness_registry_guard.sh` first (BL-784), which
+  fails closed when any daemon named in the REQUIRED list lacks a conf row.
+  The fixture never sets `FRESHNESS_REQUIRED`, so the guard reads the LIVE
+  `daemon_log_freshness_required.conf` from the scripts directory, finds
+  `babysitterd` (and others) with no row in the fixture's one-row conf, and
+  exits 1 - `runChecker` expects 0. Three properties red on `main`
+  (reproduced this pass: "Expected 0, Received 1" at line 89).
+
+  ## How (direction, not mandate)
+
+  - In `mkRoot`/`runChecker`, write a fixture `freshness_required.conf`
+    naming exactly the daemons the fixture's conf carries (today:
+    `handoffd`) and pass `FRESHNESS_REQUIRED=<that path>` in the checker's
+    env beside the existing `FRESHNESS_CONF` - the seam the guard reads at
+    its line 8. The test's isolation intent is preserved, not weakened.
+  - Add one property row: a fixture registry naming a daemon the fixture
+    conf lacks makes the checker exit non-zero naming it (the guard still
+    bites - invariant 2).
+  - No change to the checker, the guard, or the live conf files.
+
+  ## Explicitly NOT in scope
+
+  - The bl632 fixture's hand-listed guards (BL-1398, same class, its own
+    file).
+  - Whether babysitterd should be in the live required list (it should; it
+    is).
+
+qa_e2e_procedure: |
+  1. `npx vitest run --config vitest.properties.config.mjs bl1012` on main
+     after the parcel: 3/3 pass.
+  2. Temporarily point the fixture's `FRESHNESS_REQUIRED` at the LIVE
+     required list: the guard refuses naming `babysitterd` (the guard is
+     untouched, invariant 2). Restore.
+  3. Remove fixture roots in a `finally`, reaping only roots no live run
+     owns (BL-1385/BL-1390).
+
+notes: |
+  `required_wiring` anchor 1 is a consumer anchor in the BL-1235 sense: the
+  literal is the guard's own env name, absent from the test today; it can
+  only appear if the fixture uses the seam.
+
+  IR-DRY: run on the feature file at mint (see commit).
+
+  Mint-time INVEST: one observable outcome (the property test is green and
+  still isolated), minutes of work, no unbuilt sibling.
+
+source: |
+  QA note, priority 00, 2026-09-04T18:44Z: "untracked red: bl1012 -
+  babysitterd has no row in freshness.conf". Reproduced by the specifier on
+  main the same pass.
