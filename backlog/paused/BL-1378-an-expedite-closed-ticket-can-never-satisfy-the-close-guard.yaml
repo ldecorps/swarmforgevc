@@ -192,3 +192,4 @@ source: |
   here: the defect is minted, and the staged move is left alone.
 
 assigned_to: coder
+abandoned_commits: [8db7f53453]
