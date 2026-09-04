@@ -495,3 +495,4 @@ bl1345_stale_marker_test_runner.bb	standing
 bl1344_waive_lib_test_runner.bb	standing		
 test_bl1328_qwen_model_token_forms.sh	standing		
 bl1337_profile_cast_test_runner.bb	standing		
+test_bl1363_close_ticket.sh	standing		
