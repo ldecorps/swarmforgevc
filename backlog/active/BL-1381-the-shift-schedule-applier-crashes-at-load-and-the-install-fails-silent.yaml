@@ -195,7 +195,7 @@ source: |
 
 assigned_to: coder
 
-abandoned_commits: [3ab16ec996, 822253f148, 6f93401d03, 3695b7c7b1, 6faa76837b, d604b33acf, 7703415c3f, 877c1c3d43, 090ca4439b, 84da5b59a4, a993f97e14, 45f86d14e3, c35fbfc56d, a8f153b4c3, bf1915f300, 60fef197d1]
+abandoned_commits: [3ab16ec996, 822253f148, 6f93401d03, 3695b7c7b1, 6faa76837b, d604b33acf, 7703415c3f, 877c1c3d43, 090ca4439b, 84da5b59a4, a993f97e14, 45f86d14e3, c35fbfc56d, a8f153b4c3, bf1915f300, 60fef197d1, fd1d18190b]
 # Additional shas (2026-09-04, documenter, second rebuild pass): each
 # subsequent tip-pure rebuild on origin/main strands the previous one plus
 # every other worktree's own independent cherry-pick of the same "Mint
