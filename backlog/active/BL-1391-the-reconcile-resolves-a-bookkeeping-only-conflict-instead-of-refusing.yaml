@@ -138,3 +138,5 @@ source: |
   conflicts deterministically (ticket notes, `abandoned_commits`, topic
   records), while still refusing on code." Point 1 is BL-1390; point 3 is
   landed as a rule in swarmforge/roles/specifier.prompt in the mint commit.
+
+assigned_to: coder

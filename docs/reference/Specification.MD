@@ -1,5 +1,32 @@
 # SwarmForge VS Code Extension — Specification
 
+**Last Updated:** September 4, 2026 (BL-1380: the paused-pager Expedite
+route (`handlePausedPagerExpediteRoute`, `bridgeServer.ts`) called
+`recordApprovalReply(targetPath, backlogId)` with no ruling — the exact
+gap BL-1367 closed on the Approve route — so tapping Expedite on a ticket
+declaring `ruling_options` flipped `human_approval` to `approved` with no
+`human_ruling:` written, silently discarding the choice; live exposure was
+BL-1379 (minted with three `ruling_options`, sitting in `backlog/paused/`,
+precisely where Expedite reaches). Reuses BL-1367's
+`classifyApprovalRulingRequirement` classifier — never a second copy of
+the rules — but asks a deliberately different question:
+`classifyExpediteRulingRefusal` weighs only the ruling already ON RECORD
+(Expedite offers no label to validate, unlike Approve) and refuses only
+`ruling-required`, never `unknown-option` — an already-answered ticket is
+not this route's to re-judge, and refusing it would leave the verb dead on
+exactly the tickets BL-1083 built it not to block. A ticket with no
+`ruling_options` still expedites byte-for-byte as before. Per the human's
+ruling (option 1 of three): refuse with `409` naming the gate
+(`human_ruling`) and the outstanding options, so the operator answers on
+the bot's ruling keyboard and then expedites — this is BL-1083's own
+invariant 2 (a refused promotion names the gate, never a silent no-op),
+not a reopening of BL-1083 (Expedite still SATISFIES the human_approval
+gate; a ruling is a different question). Acceptance:
+`specs/features/BL-1380-expedite-must-not-answer-a-question-the-operator-never-saw.feature`.
+How-to: `docs/how-to/BL-1367-approval-from-any-surface-carries-its-ruling.md`
+(extended in place — the third surface this same fix now covers). No
+diagram depicts the approval/ruling write path.)
+Prior entry —
 **Last Updated:** September 4, 2026 (BL-1389: the land step's
 `sibling-landed?` (BL-1354) scored a sibling's own lines per path but
 still verdicted LANDED/UNLANDED per whole TICKET — any one attributed path

@@ -24,16 +24,18 @@ invariants:
   - "A ticket with no ruling_options expedites exactly as it does today, including the case where it was never pending approval at all."
 
 human_approval: approved
-abandoned_commits: [47db7cc629]
-# BL-1192's documented escape for a deliberate rebuild-off-main. 47db7cc629
-# is the architect's git_handoff commit and was this task's last-handoff
-# commit, so the send-time task-scope gate walked every commit on the
-# hardender branch since it - including BL-1381's own promotion
-# bookkeeping (backlog/done/BL-1381-...yaml), which landed on this
-# branch as part of the same merge batch before this ticket was even
-# routed here. b034a3aae6 is the tip-pure rebuild on origin/main that
-# replaces it; recording the dropped base here is what redirects the
-# gate's walk, exactly as the BL-1241 replay path does.
+abandoned_commits: [47db7cc629, d1abc56f82, 117abb80a9, 3629f4efa6, fad6c7b6aa, cb2ce3b0e8]
+# BL-1192's documented escape for a deliberate rebuild-off-main. Hardener's
+# own tip-pure replay (b034a3aae6) was built directly on origin/main to
+# route around BL-1381's own promotion bookkeeping (backlog/done/BL-1381-...
+# yaml) landing on the hardener branch as part of the same merge batch
+# before this ticket was even routed there. Verified content-equivalent:
+# bridgeServer.ts, the property test, the feature file, and the step
+# handler are byte-identical between b034a3aae6 and the real organic-
+# pipeline tip 117abb80a9. Every commit in the organic chain
+# (coder/cleaner/architect/hardener's real passes, plus hardener's own
+# earlier abandoned_commits bookkeeping for 47db7cc629) is therefore
+# stranded on its own worktree branch only, same content, different path.
 human_ruling: |
   Refuse with a 409 naming the gate and the ruling options, so you answer and then expedite (recommended)
 approval_context: >
