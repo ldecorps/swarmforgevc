@@ -26,7 +26,14 @@ fi
 
 existing="$(crontab -l 2>/dev/null || true)"
 export CRONTAB_LINES="$existing"
-result="$(bb "$RECONCILE_BB" "$ROOT")"
+# BL-1381: capture the reconcile's own failure rather than letting `set -e`
+# abort here. An abort exits non-zero with NO message, which is invariant 2's
+# other half unmet - every non-zero path must name its cause.
+if ! result="$(bb "$RECONCILE_BB" "$ROOT" 2>&1)"; then
+  echo "install_shift_schedule_cron.sh: the reconcile failed for $ROOT - refusing to report a verdict it never gave" >&2
+  [[ -n "$result" ]] && echo "install_shift_schedule_cron.sh: reconcile said: $result" >&2
+  exit 1
+fi
 result_file="$(mktemp)"
 trap 'rm -f "$result_file"' EXIT
 printf '%s' "$result" > "$result_file"
@@ -45,7 +52,10 @@ if [[ ! -s "$result_file" ]]; then
   exit 1
 fi
 
-if ! parsed="$(python3 - "$result_file" <<'PYPARSE'
+# 2>/dev/null: the operator gets the named cause below, never a raw
+# interpreter traceback. A stack trace in launch output is what made this
+# failure unreadable in the first place.
+if ! parsed="$(python3 - "$result_file" 2>/dev/null <<'PYPARSE'
 import json, sys
 d = json.load(open(sys.argv[1]))
 if not isinstance(d, dict):
