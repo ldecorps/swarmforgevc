@@ -4,7 +4,7 @@ milestone: M8
 type: feature
 status: todo
 epic: swarm-reliability
-priority: 12
+priority: 5
 direction: human-requested
 depends_on: []
 mutation_cost: medium
