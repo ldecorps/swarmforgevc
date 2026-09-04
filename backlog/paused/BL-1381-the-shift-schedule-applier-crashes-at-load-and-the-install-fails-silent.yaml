@@ -24,7 +24,7 @@ invariants:
   - "A failed or verdict-less reconcile never reaches crontab: after any install run that exits non-zero, the crontab it was pointed at is byte-identical to before the run."
   - "The install wrapper exits zero only on one of its three named outcomes (no schedule configured, already current, installed) - every other path exits non-zero and names its cause."
 
-human_approval: pending
+human_approval: approved
 approval_context: >
   No choice is posed and there are no ruling_options. This is your own intake
   of 2026-09-04, split 1:2 with BL-1382 (the stripping mechanism); this half is
