@@ -16,7 +16,7 @@ const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const os = require('node:os');
 const path = require('node:path');
-const { runGeneratedTests, DEFAULT_MUTANT_TIMEOUT_MS } = require('../runnerAdapter');
+const { runGeneratedTests, resolveMutantTimeoutMs, DEFAULT_MUTANT_TIMEOUT_MS } = require('../runnerAdapter');
 const { handle } = require('../mutationWorker');
 
 const FIXTURE_PREFIX = 'bl1358-ceiling-';
@@ -247,5 +247,56 @@ test('BL-1358 03: one mutant timing out leaves every other mutant carrying its o
     assert.notEqual(failing.timedOut, true, 'an ordinary failure was reported as a timeout');
   } finally {
     fs.rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test('BL-1358 05: resolveMutantTimeoutMs falls back to the default on a non-positive or unparseable override', () => {
+  // Direct unit coverage of the guard itself - Node's spawnSync treats
+  // timeout:0 as NO TIMEOUT AT ALL and throws on a negative timeout, so a
+  // broken override reaching either value would silently (or fatally)
+  // disable the very ceiling this ticket exists to install. Verified against
+  // Node's own spawnSync semantics, not assumed: `spawnSync('sleep',['1'],
+  // {timeout:0})` runs unbounded; `{timeout:-5}` throws a RangeError.
+  const previousEnv = process.env.GHERKIN_MUTATION_TIMEOUT_MS;
+  delete process.env.GHERKIN_MUTATION_TIMEOUT_MS;
+  try {
+    assert.equal(resolveMutantTimeoutMs('0'), DEFAULT_MUTANT_TIMEOUT_MS, 'a zero override must not disable the ceiling');
+    assert.equal(resolveMutantTimeoutMs(0), DEFAULT_MUTANT_TIMEOUT_MS, 'a numeric zero override must not disable the ceiling');
+    assert.equal(resolveMutantTimeoutMs('-5'), DEFAULT_MUTANT_TIMEOUT_MS, 'a negative override must not reach spawnSync');
+    assert.equal(resolveMutantTimeoutMs('not-a-number'), DEFAULT_MUTANT_TIMEOUT_MS, 'an unparseable override must not reach spawnSync');
+    assert.equal(resolveMutantTimeoutMs(undefined), DEFAULT_MUTANT_TIMEOUT_MS, 'no override at all uses the default');
+    // Non-vacuity: a genuinely valid override IS honored, so the guard is
+    // rejecting specific bad values, not silently discarding every override.
+    assert.equal(resolveMutantTimeoutMs('4200'), 4200, 'a valid positive override is honored');
+  } finally {
+    if (previousEnv === undefined) delete process.env.GHERKIN_MUTATION_TIMEOUT_MS;
+    else process.env.GHERKIN_MUTATION_TIMEOUT_MS = previousEnv;
+  }
+});
+
+test('BL-1358 06: a zero GHERKIN_MUTATION_TIMEOUT_MS resolves to the default, not to no-timeout-at-all', () => {
+  // The env-var path specifically, since that is the reachable-by-typo
+  // surface the ticket's own comment names ("no ceiling is the state this
+  // ticket exists to end... must not be reachable through a typo in an env
+  // var"). Driven through the real runGeneratedTests -> resolveMutantTimeoutMs
+  // chain, but with a FAST-finishing scenario: waiting out the real 300s
+  // default to prove it fired would make this test itself the very hang the
+  // ticket exists to bound. Reading `result.timeoutMs` back proves the
+  // resolution happened without needing the ceiling to actually elapse.
+  const previous = process.env.GHERKIN_MUTATION_TIMEOUT_MS;
+  process.env.GHERKIN_MUTATION_TIMEOUT_MS = '0';
+  const dir = mkFixture();
+  try {
+    const result = runGeneratedTests([writeFastTest(dir, 'zero-env.test.js')]);
+    assert.equal(result.success, true, result.output);
+    assert.equal(
+      result.timeoutMs,
+      DEFAULT_MUTANT_TIMEOUT_MS,
+      'GHERKIN_MUTATION_TIMEOUT_MS=0 must resolve to the default ceiling, never to spawnSync timeout:0 (no timeout at all)'
+    );
+  } finally {
+    fs.rmSync(dir, { recursive: true, force: true });
+    if (previous === undefined) delete process.env.GHERKIN_MUTATION_TIMEOUT_MS;
+    else process.env.GHERKIN_MUTATION_TIMEOUT_MS = previous;
   }
 });
