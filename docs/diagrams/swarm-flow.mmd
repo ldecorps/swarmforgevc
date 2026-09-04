@@ -52,9 +52,13 @@
 %% docs/how-to/BL-588-isolate-batch-recovery-trees.md; BL-532 deferrals are input.
 %% BL-668 (2026-08-27): after QA lands on origin/main, handoffd runs
 %% post-qa-branch-sweep-sweep! — fast-forwards clean/ff-able role branches in
-%% roles.tsv worktrees; dirty, in_process, or divergent roles are surfaced with
-%% logged skip reasons. QA merge-up notes reach surfaced roles only; clean roles
-%% need no LLM merge-up turn. See docs/how-to/BL-668-post-qa-deterministic-branch-sweep.md.
+%% roles.tsv worktrees; dirty, in_process, or divergent roles are surfaced.
+%% BL-1361 (2026-09-04): a surfaced role is also TOLD by the sweep itself
+%% (post-qa-branch-sweep-tell!, a note via swarm_handoff.bb) — dirty-worktree
+%% wakes immediately, in-process/divergent are told but deferred
+%% (SWARMFORGE_SKIP_SYNC_INJECT). This is separate from QA's hand-composed
+%% merge-up note below; clean roles need no LLM merge-up turn either way.
+%% See docs/how-to/BL-668-post-qa-deterministic-branch-sweep.md.
 flowchart LR
   ROOT["backlog/ root\n(human raw intake)"]
   COORD(("coordinator\n(master, intake/routing +\nbacklog bookkeeping only,\nnever commits code,\nno git merge/push)"))
@@ -91,6 +95,11 @@ flowchart LR
   MAIN -.->|ff clean branches| ARCHITECT
   MAIN -.->|ff clean branches| HARDENDER
   MAIN -.->|ff clean branches| DOCUMENTER
+  MAIN -.->|sweep tell (BL-1361):\ndirty wakes, others deferred| CODER
+  MAIN -.->|sweep tell| CLEANER
+  MAIN -.->|sweep tell| ARCHITECT
+  MAIN -.->|sweep tell| HARDENDER
+  MAIN -.->|sweep tell| DOCUMENTER
   QA -->|merge-up note\n(surfaced roles only)| CODER
   QA -->|merge-up note| CLEANER
   QA -->|merge-up note| ARCHITECT
