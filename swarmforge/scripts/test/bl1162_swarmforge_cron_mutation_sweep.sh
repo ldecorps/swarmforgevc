@@ -66,10 +66,18 @@ write_pair() {
 
 echo "mutation sweep over swarmforge cron lifecycle (BL-1162)"
 
-write_pair \
-  '  [[ "$line" == *"$root/.swarmforge/operator/"* ]] && return 0' \
-  '  : # operator path check removed'
-mutate_file "$CRON_LIB" "cron lib drops operator path ownership"
+# BL-1382 (human ruling, marker-only ownership): the operator-path clause
+# this mutant targeted - `[[ "$line" == *"$root/.swarmforge/operator/"* ]]` -
+# was DELETED from swarmforge_cron_line_belongs_to_root, not moved or
+# renamed. Path-based ownership of an unmarked line is the exact defect
+# class BL-1382 exists to end (it erased a hand-installed schedule
+# overnight), so there is no equivalent behavior left to re-anchor this
+# mutant to. Retired here (hardener, BL-1382 pass) rather than left
+# silently "skip"ped - BL-1382's own dedicated suites
+# (test_bl1382_unmarked_cron_lines_survive.sh,
+# test_bl1382_cron_ownership_agreement.sh, and the property test) now cover
+# marker-only ownership directly and far more thoroughly than this sweep
+# ever did.
 
 write_pair \
   '  [[ "$line" == *"$freshness_marker"* ]] && return 0' \
