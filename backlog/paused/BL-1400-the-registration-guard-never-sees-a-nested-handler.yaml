@@ -27,7 +27,7 @@ invariants:
   - "A handler file anywhere under specs/pipeline/steps/ is in the guard's tree: a feature whose only handler is nested is refused as unregistered, naming the handler and the feature - never passed for want of seeing it."
   - "Legitimate nested files are not offenders: a lib/ helper reached by a discovered handler's require stays reachable, and lib/ files that no handler requires are never reported as unregistered handlers (they are not handlers)."
 
-human_approval: pending
+human_approval: approved
 approval_context: >
   A new feature file is authored here, so it needs a tap. No choice is posed
   and there are no ruling_options. Found by the coder while re-tensing the
