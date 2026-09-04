@@ -23,7 +23,7 @@ invariants:
   - "A crontab line carrying no swarmforge marker for this root is byte-preserved by every swarm cron writer for that root - install, uninstall and reconcile - whatever path it names. RULED option 1 on 2026-09-04, so this binds every writer; the earlier clause narrowing it under option 2 is void."
   - "Bash and Babashka decide ownership by ONE rule: a test asserts the shell predicate and the bb strip agree on a shared corpus of lines, so the two readers can never drift (BL-897)."
 
-human_approval: pending
+human_approval: approved
 human_ruling: |
   Marker-only ownership everywhere (recommended) - stop, install and reconcile touch only marked lines; unmarked lines reported and left
 
