@@ -34,6 +34,9 @@ const INDEX_GUARDS = [
   // missing on every plan, and these properties fail against a chain that is
   // behaving correctly.
   'check_handler_module_graph.sh',
+  // BL-1395: joined the cheap tier on 2026-09-04 (run_commit_guards.sh, "Tier
+  // 1") - it loads every changed Babashka script and boots handoffd.
+  'check_bb_scripts_load.sh',
 ];
 const SUITE_GUARD = 'check_property_suite_drift.sh';
 const ALL_GUARDS = [...INDEX_GUARDS, SUITE_GUARD];
