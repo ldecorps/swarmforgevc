@@ -21,6 +21,13 @@
 (assert-true "coder worktree eligible"
              (post-qa-branch-sweep-lib/sweep-eligible-role?
               {:role "coder" :worktree-name "coder"}))
+;; hardener finding: coordinator's own fixture above has worktree-name "master"
+;; too, so it cannot distinguish the role-based exclusion from the separate
+;; "master" worktree-name check - a specifier fixture with a NON-master
+;; worktree-name isolates the role-based branch on its own.
+(assert-true "specifier excluded from sweep (role-based, not worktree-name)"
+             (not (post-qa-branch-sweep-lib/sweep-eligible-role?
+                   {:role "specifier" :worktree-name "specifier"})))
 
 (assert= "already at landed"
          {:action :already-settled}
@@ -47,6 +54,15 @@
          (post-qa-branch-sweep-lib/decide-role
           {:head-sha "old" :landed-sha "new" :dirty? false :in-process? false :can-ff? false}))
 
+;; hardener finding: the two prior dirty/in_process cases each set only ONE of
+;; the two flags true, so neither can tell which branch decide-role checks
+;; FIRST when both are true - a priority-order mutant survived both. dirty?
+;; must win: it is the one reason that does not resolve itself (BL-1361).
+(assert= "dirty outranks in_process when both are true"
+         {:action :surface :reason :dirty-worktree}
+         (post-qa-branch-sweep-lib/decide-role
+          {:head-sha "old" :landed-sha "new" :dirty? true :in-process? true :can-ff? true}))
+
 (let [daemon-dir (str (fs/path (fs/create-temp-dir {:prefix "bl668-test-"}) "daemon"))
       landed "landed1"
       facts {"coder" {:head-sha "c1" :landed-sha landed :dirty? false :in-process? false :can-ff? true}
@@ -63,6 +79,128 @@
   (assert= "first run surfaces two" 2 (count (filter #(= (:type %) :surfaced) (:actions first))))
   (assert= "rerun noop settle" 1 @settle-count)
   (assert= "rerun no duplicate actions" 0 (count (:actions second))))
+
+
+;; ── BL-1361: the sweep TELLS the roles it could not settle ────────────────
+;;
+;; BL-668's contract says a branch it cannot settle is "surfaced to its role
+;; untouched". The first half works; the second was built as a log line.
+;; Measured 2026-09-03: 125 surfacings against 3 settles, and not one role was
+;; ever told - on 2026-08-27 all six surfaced in one pass and nobody heard.
+;;
+;; Human ruling: TELL for every reason, WAKE only for a dirty worktree - the
+;; one reason that does not resolve itself. A branch that merely cannot
+;; fast-forward is merged on that role's next parcel anyway, because a
+;; forwarded commit must carry the received commit as an ancestor.
+
+(assert-true "BL-1361: a dirty worktree wakes the role"
+             (post-qa-branch-sweep-lib/wake-for-reason? :dirty-worktree))
+(assert= "BL-1361: a divergent branch is told but NOT woken"
+         false (boolean (post-qa-branch-sweep-lib/wake-for-reason? :divergent-branch)))
+(assert= "BL-1361: in_process work is told but not woken"
+         false (boolean (post-qa-branch-sweep-lib/wake-for-reason? :in-process-work)))
+(assert= "BL-1361: an unknown reason never wakes - waking is the exception"
+         false (boolean (post-qa-branch-sweep-lib/wake-for-reason? :something-new)))
+
+(let [text (post-qa-branch-sweep-lib/surface-notice "cleaner" :dirty-worktree "abc1234567")]
+  (assert-true "BL-1361: the notice names the landed commit" (str/includes? text "abc1234567"))
+  (assert-true "BL-1361: and the reason in the sweep's own words"
+               (str/includes? text (post-qa-branch-sweep-lib/surface-reason-text :dirty-worktree)))
+  (assert-true "BL-1361: and fits the 80-char note cap" (<= (count text) 80)))
+
+(let [text (post-qa-branch-sweep-lib/surface-notice "architect" :divergent-branch "def4567890")]
+  (assert-true "BL-1361: every reason produces a notice" (str/includes? text "def4567890"))
+  (assert-true "BL-1361: and it fits the cap too" (<= (count text) 80)))
+
+;; hardener finding: both cases above land at EXACTLY 80 chars (the short-sha
+;; is capped at 10 chars by surface-notice itself, so a longer sha cannot grow
+;; the message) - truncation is a no-op at that boundary either way, so the
+;; "fits the cap" assertions passed whether or not (subs text 0 80) ran, and a
+;; mutant dropping the truncation entirely survived. An UNKNOWN reason falls
+;; through surface-reason-text to `(str reason)`, which can be made
+;; arbitrarily long and genuinely forces the untruncated text past 80.
+(let [long-reason (keyword "some-unusually-long-and-unexpected-future-reason-keyword")
+      text (post-qa-branch-sweep-lib/surface-notice "documenter" long-reason "abc1234567")]
+  (assert-true "BL-1361: a long unknown reason is truncated to the 80-char cap"
+               (= 80 (count text)))
+  (assert-true "BL-1361: the truncated notice still starts with the landed commit"
+               (str/starts-with? text "branch behind abc1234567:")))
+
+(let [tells (atom [])
+      adapters {:role-facts! (fn [r] (if (= r "cleaner")
+                                       {:worktree-path "/w/cleaner" :head-sha "old0000000" :dirty? true
+                                        :in-process? false :can-ff? false}
+                                       {:worktree-path "/w/architect" :head-sha "old0000000" :dirty? false
+                                        :in-process? false :can-ff? true}))
+                :fast-forward! (fn [_ _] {:success true})
+                :tell! (fn [role reason text wake?]
+                         (swap! tells conj {:role role :reason (name reason) :text text :wake? wake?})
+                         {:success true})
+                :log! (fn [& _] nil)}
+      dir (str (fs/create-temp-dir {:prefix "bl1361-tell-"}))]
+  (post-qa-branch-sweep-lib/sweep! dir "abc1234567" ["cleaner" "architect"] adapters)
+  (assert= "BL-1361: exactly the surfaced role is told - a settled one hears nothing"
+           ["cleaner"] (mapv :role @tells))
+  (assert= "BL-1361: and the dirty worktree wakes it" true (:wake? (first @tells)))
+  (reset! tells [])
+  (post-qa-branch-sweep-lib/sweep! dir "abc1234567" ["cleaner" "architect"] adapters)
+  (assert= "BL-1361: a repeat sweep of the same state tells nobody" [] @tells)
+  (fs/delete-tree dir))
+
+(let [tells (atom [])
+      logs (atom [])
+      adapters {:role-facts! (fn [_] {:worktree-path "/w" :head-sha "old0000000" :dirty? true
+                                      :in-process? false :can-ff? false})
+                :fast-forward! (fn [_ _] {:success false :error "no"})
+                :tell! (fn [role _ _ _]
+                         (swap! tells conj role)
+                         (if (= role "cleaner")
+                           {:success false :error "mailbox unwritable"}
+                           {:success true}))
+                :log! (fn [& parts] (swap! logs conj (vec parts)))}
+      dir (str (fs/create-temp-dir {:prefix "bl1361-fail-"}))]
+  (post-qa-branch-sweep-lib/sweep! dir "abc1234567" ["cleaner" "architect"] adapters)
+  (assert= "BL-1361: a role that cannot be told does not withhold the others"
+           ["cleaner" "architect"] @tells)
+  (assert-true "BL-1361: and the failure is logged"
+               (some #(= "post-qa-branch-sweep-tell-failed" (first %)) @logs))
+  (fs/delete-tree dir))
+
+;; hardener finding: the previous scenario only exercises tell! RETURNING
+;; {:success false} - the try/catch around the call also has to survive
+;; tell! actually THROWING (a real adapter, e.g. swarm_handoff.bb, can raise
+;; on an unwritable mailbox rather than returning a failure map), and no test
+;; drove that path - a mutant removing the try/catch entirely survived.
+(let [tells (atom [])
+      logs (atom [])
+      adapters {:role-facts! (fn [_] {:worktree-path "/w" :head-sha "old0000000" :dirty? true
+                                      :in-process? false :can-ff? false})
+                :fast-forward! (fn [_ _] {:success false :error "no"})
+                :tell! (fn [role _ _ _]
+                         (swap! tells conj role)
+                         (if (= role "cleaner")
+                           (throw (Exception. "mailbox write threw"))
+                           {:success true}))
+                :log! (fn [& parts] (swap! logs conj (vec parts)))}
+      dir (str (fs/create-temp-dir {:prefix "bl1361-throw-"}))]
+  (post-qa-branch-sweep-lib/sweep! dir "abc1234567" ["cleaner" "architect"] adapters)
+  (assert= "BL-1361: a tell! that THROWS does not withhold the others either"
+           ["cleaner" "architect"] @tells)
+  (assert-true "BL-1361: and the thrown error is logged too"
+               (some #(and (= "post-qa-branch-sweep-tell-failed" (first %))
+                            (str/includes? (str (nth % 2)) "mailbox write threw"))
+                      @logs))
+  (fs/delete-tree dir))
+
+(let [dir (str (fs/create-temp-dir {:prefix "bl1361-notell-"}))]
+  (post-qa-branch-sweep-lib/sweep!
+   dir "abc1234567" ["cleaner"]
+   {:role-facts! (fn [_] {:worktree-path "/w" :head-sha "old0000000" :dirty? true
+                          :in-process? false :can-ff? false})
+    :fast-forward! (fn [_ _] {:success false})
+    :log! (fn [& _] nil)})
+  (assert-true "BL-1361: a caller with no :tell! adapter still sweeps" true)
+  (fs/delete-tree dir))
 
 (when (seq @failures)
   (doseq [f @failures] (println f))
