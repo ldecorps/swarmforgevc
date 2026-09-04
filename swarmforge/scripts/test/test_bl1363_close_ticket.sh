@@ -26,7 +26,7 @@ pass() { echo "PASS: $*"; }
 # too. fixture_isolation_begin bounds the clock, logs the invoker, takes a
 # lock, reaps only roots NO LIVE RUN OWNS, and creates an owner-stamped $WORK.
 source "$SCRIPT_DIR/lib/fixture_isolation.sh"
-fixture_isolation_begin "$FIXTURE_PREFIX" "${BL1363_SUITE_BOUND_SECONDS:-900}"
+fixture_isolation_begin "$FIXTURE_PREFIX" "${BL1363_SUITE_BOUND_SECONDS:-900}" "$@"
 trap 'rm -rf "$WORK"' EXIT
 
 LIVE_ORIGIN_BEFORE="$(git -C "$REPO_ROOT" config --get remote.origin.url 2>/dev/null)"
