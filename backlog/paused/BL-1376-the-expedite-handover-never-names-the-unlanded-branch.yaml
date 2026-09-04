@@ -17,6 +17,12 @@ depends_on: []
 mutation_cost: low
 slice_size_envelope: low
 required_stages: [coder, cleaner, architect, hardender, documenter, qa]
+abandoned_commits: [a4c4a44ed5]
+# BL-1241: land_step_cli.bb's automated replay off this commit over-included
+# unrelated files (other tickets' bookkeeping swept in via a batch-commit
+# subject naming BL-1376) - QA hand-built a clean tip-pure replay instead
+# and landed 049161fc03. See backlog/evidence/BL-1376-land-success-20260904.md
+# (QA worktree).
 
 acceptance: specs/features/BL-1376-the-expedite-handover-never-names-the-unlanded-branch.feature
 
