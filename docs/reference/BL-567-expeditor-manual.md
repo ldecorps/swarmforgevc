@@ -422,7 +422,24 @@ expedite   the uncommitted backlog moves:
 expedite     backlog/active/ -> backlog/hold/  (BL-586)
 expedite     backlog/active/ -> backlog/done/  (BL-1021)
 expedite     owner: whoever next commits in the master checkout ...
+expedite   the run branch:
+expedite     expedite/BL-1375  3 commits ahead of origin/main
+expedite     owner: QA - Article 1.8/4.2 make QA the integration point ...
 ```
+
+**BL-1376 (2026-09-03):** a third item, `branch-outstanding`, names the run
+branch (`expedite/<BL-id>`) itself — the expeditor deliberately never lands
+it (Article 1.8/4.2 make QA the integration point, BL-247), and until this
+ticket the closing summary never said so: `expedite/BL-1375`'s run reported
+seven passing stages and a ticket moved to `backlog/done/` while its branch
+sat three commits ahead of `origin/main` on no other branch, reaching
+nobody. The item states the distance when the ancestry check against
+`origin/main` can read it, and the reason when it can't — never a number
+nobody measured, and an unreadable check is never silently omitted. It is
+silent only when there is genuinely nothing to land: zero commits ahead, or
+the branch never existed (an early refusal, before any worktree was
+created). No merge, push, or publish was added to the driver — this is the
+report becoming honest, not the expeditor starting to land its own branch.
 
 ## Machinery it may never use
 
