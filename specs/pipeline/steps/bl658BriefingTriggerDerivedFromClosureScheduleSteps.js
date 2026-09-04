@@ -4,7 +4,7 @@
 const assert = require('node:assert/strict');
 const path = require('node:path');
 
-const FEATURE = 'The closing ceremony ends the night with the briefing, and the briefing ends the night';
+const FEATURE = 'The closing ceremony ends the shift with the briefing, and the briefing ends the shift';
 const REPO_ROOT = path.join(__dirname, '..', '..', '..');
 const {
   resolveClosureSchedule,

@@ -10,6 +10,13 @@ Feature: Closing-ceremony lean pass
   # Unparked (BL-233): BL-762 (finish-shift) and BL-819 (the ledger this
   # reads) are both done. Step handlers:
   # specs/pipeline/steps/bl820ClosingCeremonyLeanPassSteps.js.
+  #
+  # BL-1393 re-tensed this header (that ticket's `retires:` scope exemption).
+  # This pass is no longer a mechanism finish-shift calls on its own: it is one
+  # STEP of the single closing ceremony, run between the drain and the
+  # briefing on every sleep after a shift of work, whichever path stops the
+  # swarm. Every scenario below still holds - they describe the step, and what
+  # changed is who calls it.
 
   Background:
     Given a shift with a lifecycle ledger holding that shift's tickets
