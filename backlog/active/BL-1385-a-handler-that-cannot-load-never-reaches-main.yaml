@@ -236,3 +236,21 @@ source: |
   `backlog/evidence/BL-1296-land-deadlock-shared-registry-20260903.md`.
 
 assigned_to: coder
+
+abandoned_commits: [26ef184d39, 0fd657add1, d53e4ddd39]
+# 26ef184d39 (hardener's "Merge main (BL-1385 amendment cf2ea583c7...) into
+# hardener") is stranded on swarmforge-hardender only. Its unique content
+# over its own parent was merging cf2ea583c7 (the specifier's in-flight
+# spec/feature amendment) - content documenter already carries via its own
+# separate merge of main (33452b74dc), and the actual code fix arrived
+# through coder's rework (839873ab82, merged 7df559255e). Same content,
+# different path; nothing of 26ef184d39's is missing from this tip.
+# 0fd657add1 (QA's own bounce_history bookkeeping commit) is stranded on
+# swarmforge-QA only. Its content (bounce_count: 2, the QA bounce_history
+# row) was applied by hand into this same yaml rather than merged, since
+# QA's branch has since diverged with unrelated content; verified byte-
+# equivalent for the fields it touched.
+bounce_count: 2
+bounce_history:
+  - { at: 2026-09-04, by: documenter, blamed: coder, class: behavior, commit: e542f740c2, evidence: backlog/evidence/BL-1385-documenter-bounce-20260904.md }
+  - { at: 2026-09-04, by: QA, blamed: cleaner, class: behavior, commit: 56cb425362, evidence: backlog/evidence/BL-1385-bounce-20260904.md }
