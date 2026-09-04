@@ -1,3 +1,8 @@
+# mutation-stamp: sha256=87fb5335baaf08e15f17951edea79d499f890e6c2f786e0ac00f5fddc6ca689f
+# acceptance-mutation-manifest-begin
+# {"version":1,"tested_at":"2026-09-04T11:24:04.513268242Z","feature_name":"BL-1387 An open merge nobody owns is surfaced as orphaned, not as a human's","feature_path":"/home/carillon/swarmforgevc/.worktrees/hardender/specs/features/BL-1387-an-open-merge-nobody-owns-is-surfaced-as-orphaned-not-human.feature","background_hash":"c4f6e9fa9c0e4da20eaebc48d5dc28f945734508738db6be0b045712583f1ac4","implementation_hash":"unknown","scenarios":[{"index":1,"name":"a positive owner signal keeps the human-merge-in-progress reading","scenario_hash":"72447c681868b2e44b1a6a1c630a2a6ca341cc852bc5ea9602ad4432c5450a4d","mutation_count":2,"result":{"Total":2,"Killed":2,"Survived":0,"Errors":0},"tested_at":"2026-09-04T11:24:04.513268242Z"},{"index":3,"name":"the orphaned surface states whether the index carries the incoming side","scenario_hash":"a2c66f77404a70943aa62e9515199691358096354c3e8f9b233a014142f1a960","mutation_count":4,"result":{"Total":4,"Killed":4,"Survived":0,"Errors":0},"tested_at":"2026-09-04T11:24:04.513268242Z"}]}
+# acceptance-mutation-manifest-end
+
 Feature: BL-1387 An open merge nobody owns is surfaced as orphaned, not as a human's
 
   The reconcile sweep reads an open MERGE_HEAD on the shared main checkout

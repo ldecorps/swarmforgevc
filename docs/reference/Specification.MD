@@ -1,5 +1,79 @@
 # SwarmForge VS Code Extension — Specification
 
+**Last Updated:** September 4, 2026 (BL-1387: the reconcile sweep's only
+reading of an open `MERGE_HEAD` was "a human is mid-merge, hold" —
+`master-main-merge-head-present?` is `git rev-parse --verify MERGE_HEAD`
+and nothing else, no owner, process, lock, or index read. On 2026-09-04 the
+merge was the daemon's own failed attempt (BL-1386): `pgrep -ax git` empty,
+no `.git/index.lock`, and the index carrying none of `HEAD..MERGE_HEAD` —
+a `git commit` here would have written a merge reverting the whole origin
+side, and the hold lasted 15 minutes, ending only when the Operator read
+the index by hand. A pure classifier now answers one of `:none | :own |
+:live-human | :orphaned` from `{merge-head-present? owned-by-daemon?
+live-git-process? lock-fresh? index-carries-incoming?}`: `:own` is BL-1386's
+ownership record matching the sha (BL-1386 acts on it; this ticket never
+does — a specifier amendment retired this ticket's own scenario 02 row
+that had wrongly listed the record as human-owner evidence, after the
+coder refused both the passthrough and reverting BL-1386's routing and
+raised it instead); `:live-human` needs a positive owner signal (a live
+`git` process whose cwd is the checkout, or a fresh `.git/index.lock`);
+`:orphaned` is everything else — no longer the default reading of mere
+absence. Every plan that branched on `merge-head-present?` branches on this
+classifier instead, `:live-human` mapping to today's
+`:skip-human-merge-in-progress` unchanged. `orphaned-merge` is a new
+surfaced reason (`surface-message`, the deadlock record,
+`main_sync_status_cli.bb`, the escalation text) stating the sha and
+whether the index carries the incoming side — computed from a real diff
+intersection, never from an absent-unmerged-paths reading, since a
+poisoned index can show none while still missing the incoming content —
+and escalates on the FIRST tick rather than after three ticks of a hold
+that reads as patience. This ticket adds no git write of its own: neither
+`:live-human` nor `:orphaned` is ever aborted by the daemon; auto-abort of
+an orphan is a separate, unbuilt decision (backing up staged-new files an
+abort would delete is a human judgment). The coordinator's step-0 action
+table gains the `orphaned-merge` row (specifier-owned, BL-798, landed with
+this mint): back up staged-new files, `git merge --abort`, let the next
+tick redo the join, diff against BOTH parents before any push. Acceptance:
+`specs/features/BL-1387-an-open-merge-nobody-owns-is-surfaced-as-orphaned-not-human.feature`.
+How-to: `docs/how-to/BL-1120-handoffd-must-not-abort-foreign-merge.md` and
+`docs/how-to/BL-891-master-main-reconcile-sweep.md` (both extended in
+place). No diagram depicts reconcile-sweep internals at this granularity.)
+Prior entry —
+**Last Updated:** September 4, 2026 (BL-1386: the master-main-reconcile
+sweep (`handoffd.bb`, `master_main_reconcile_lib.bb`) could orphan its own
+merge and then blame a human for it — `absorb-with-merge!` discarded
+`abort!`'s result and never logged it, so when `git merge --abort` failed
+(the ordinary cause on the shared master checkout: `.git/index.lock` held
+by another writer) `MERGE_HEAD` stayed open, and the next tick, applying
+BL-1120's rule that a pre-existing `MERGE_HEAD` is always a foreign human's
+merge, surfaced `human-merge-in-progress` against its own leftovers.
+Reproduced live three times in eighteen minutes on 2026-09-04 —
+`pgrep -ax git` empty each time, the index carrying none of the incoming
+side, and concluding any of them would have silently reverted a QA landing
+on push. The daemon now writes a durable ownership record
+(`.swarmforge/daemon/master-main-merge-owner.json`: sha, tick, pid,
+timestamp) before `git merge`, cleared after a successful merge or abort,
+so `MERGE_HEAD == record.sha` is proof the daemon itself started that
+merge — on this tick, or an earlier one whose abort failed — and only that
+positive match may ever be aborted; BL-1120's protection for every other
+`MERGE_HEAD` (no record, or a record naming a different sha) is unchanged
+and unwidened. An abort that fails is retried with a short bounded backoff
+and, on continued failure, the record is left standing (never cleared,
+never falls through to a rematch/reset as if the abort had succeeded) and
+the log carries `merge-abort-failed` plus git's own captured error text.
+`merge!`'s failure text is likewise now logged and the fixed `conflict`
+label is used only when git actually reported a content conflict —
+`merge-failed` names every other real-merge failure (e.g. a pre-merge-commit
+hook refusal), so the log states an observation, never an assertion.
+Companion detector ticket (foreign/orphaned classification without a
+record) is the separate, still-active BL-1387; nothing here changes what
+counts as foreign. Acceptance:
+`specs/features/BL-1386-the-reconcile-sweep-never-orphans-a-merge-it-started.feature`.
+How-to: `docs/how-to/BL-1120-handoffd-must-not-abort-foreign-merge.md` and
+`docs/how-to/BL-891-master-main-reconcile-sweep.md` (both extended in
+place — the ownership refinement and the corrected log wording). No
+diagram depicts reconcile-sweep internals at this granularity.)
+Prior entry —
 **Last Updated:** September 4, 2026 (BL-1309: `land_main_publish.sh`
 `--decide-only` — the one landing step `QA.prompt` cannot skip — now
 consults BL-1241/BL-1308/BL-1354's `entangled-siblings` detector before
