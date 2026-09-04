@@ -1,5 +1,38 @@
 # SwarmForge VS Code Extension — Specification
 
+**Last Updated:** September 4, 2026 (BL-1381: `shift_schedule_applier_lib.bb`
+`require`d `babashka.process` INSIDE `budgetShiftGovernorVerdict`'s
+function body rather than the file's `ns` form — Babashka's SCI resolves
+the alias at analysis time, before the runtime require has run, so the
+WHOLE FILE failed to load with `Unable to resolve symbol: process/shell`.
+Every consumer crashed at load, not at the governor call:
+`reconcile_shift_schedule_crontab.bb` (reached from
+`install_shift_schedule_cron.sh` on every `./swarm start` via
+`install_swarmforge_crons.sh`/`start_ancillary_services.sh`),
+`apply_shift_schedule.bb`, and the lib's own BL-660 regression test
+(`swarm_shift_lib_test_runner.bb`, red and unnoticed since the require
+entered with BL-666 on 2026-08-27 — the standing bb suite is not run by
+any commit-blocking gate). The install wrapper's `set -euo pipefail`
+caught the crash and printed only `WARN: swarmforge cron install failed`
+into launch output, so a configured `swarm_shift` schedule silently never
+installed for eight days; verified the crash happened to leave the live
+crontab byte-identical (nothing lost, but not to be trusted to keep doing
+so). Fixed by moving the require to the `ns` form. A second, smaller gap
+(intake item 3): the wrapper parsed the reconcile's JSON through a
+`read -r ... < <(python3 ...)` process substitution whose failure `set -e`
+cannot observe, so a reconcile that exited 0 with no or unparseable output
+was reported as "No shift schedule configured" — a real failure read as a
+legitimate outcome. Both close under one rule: the wrapper exits zero only
+on its three named outcomes (no schedule configured, already current,
+installed) and non-zero naming the cause on everything else, touching
+crontab only on a successful, parseable reconcile (invariant 1: a failed or
+verdict-less reconcile leaves crontab byte-identical to before the run).
+Acceptance:
+`specs/features/BL-1381-the-shift-schedule-applier-crashes-at-load-and-the-install-fails-silent.feature`.
+How-to: `docs/how-to/BL-1162-start-stop-swarm-cron-lifecycle-symmetry.md`
+(extended in place — the start path's own silent-failure window). No
+diagram depicts shift-schedule-applier internals.)
+Prior entry —
 **Last Updated:** September 4, 2026 (BL-1387: the reconcile sweep's only
 reading of an open `MERGE_HEAD` was "a human is mid-merge, hold" —
 `master-main-merge-head-present?` is `git rev-parse --verify MERGE_HEAD`
