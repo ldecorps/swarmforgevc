@@ -1,0 +1,174 @@
+id: BL-1393
+title: "The closing ceremony runs every time the swarm did at least one shift and goes to sleep, with the lean pass as a named step inside it: any shift-ending stop freezes, drains, hands the specifier the lean packet, briefs and emails, then stops - a restart is not a sleep, and the schedule of shifts is untouched"
+milestone: M8
+type: feature
+status: todo
+epic: swarm-reliability
+priority: 12
+direction: human-requested
+depends_on: []
+mutation_cost: medium
+slice_size_envelope: medium
+required_stages: [coder, cleaner, architect, hardender, documenter, qa]
+
+acceptance: specs/features/BL-1393-the-closing-ceremony-runs-every-time-the-swarm-worked-a-shift-and-goes-to-sleep.feature
+
+retires:
+  - specs/features/BL-658-briefing-trigger-derived-from-closure-schedule.feature
+  - specs/features/BL-820-closing-ceremony-lean-pass.feature
+
+required_wiring:
+  - 'swarmforge/scripts/finish_shift_lib.sh::night-closing-ceremony-run::finish-shift is the pre-existing sleep path the crontab bedtimes and the human both use; today it calls only the BL-820 lean CLI, so this literal proves it now drives the ONE ceremony sequence. Absent today (grep returns 0)'
+  - 'extension/src/tools/night-closing-ceremony-run.ts::runClosingCeremony::the BL-658 sequence is the pre-existing consumer the daemon drives; it must invoke the lean pass (metrics/closingCeremonyRun.ts export) as a step between drain and briefing. Absent today'
+  - 'specs/pipeline/steps/bl1393CeremonyOnEverySleepSteps.js::registerSteps::the handler file exists so discovery registers every scenario (BL-1371)'
+
+invariants:
+  - "One ceremony sequence: every stop that is a sleep - a scheduled bedtime, ./finish-shift, night-stop, or the daemon's closure-window trigger - drives the same ordered steps (freeze, drain, lean packet to the specifier, briefing and email, stop keeping bridges), and the lean pass is one of those steps, never a second mechanism beside them."
+  - "The ceremony fires only after at least one shift of work since the last ceremony and only on a stop that is a sleep: a restart (hotfix bounce, relaunch, expedite park) never fires it, a sleep after no work records an explicit empty outcome and sends no briefing, and nothing here adds, removes or reschedules a shift."
+  - "Every ceremony ends in a recorded outcome (BL-820 carried): the packet reaches the specifier's work loop or an explicit empty outcome is written, and the briefing for a day-key is sent at most once (BL-658 carried)."
+
+human_approval: pending
+approval_context: >
+  Your directive of 2026-09-04, relayed by the coordinator, quoted verbatim
+  in `source:`. One reading of it is mine and you may want to correct it in
+  one word: I read "each time the swarm does at least 1 shift and goes to
+  sleep" as changing WHEN the ceremony runs - every sleep after work, not
+  only the overnight window BL-658 derived from closure_stop_local - and NOT
+  as changing WHICH shifts exist. The weekday/weekend schedule and its "no
+  night shift on weekdays" stand untouched by this ticket. If you meant the
+  schedule too, say so and I split that into its own ticket. No
+  ruling_options otherwise; the sequence is BL-658's, the step is BL-820's.
+
+description: |
+  ## What exists today, and why it is two things
+
+  BL-658 (done) built the night closing ceremony: at a closure time derived
+  from `closure_stop_local`, the daemon's gate flips to ceremony mode and
+  `night-closing-ceremony-run.js` freezes promotion, drains the in-flight
+  parcel, rotates the resident to the documenter for the morning briefing,
+  sends the email, then stops the swarm keeping the bridges. BL-820 (done)
+  built the lean pass: at shift close `./finish-shift` calls
+  `closing-ceremony-run.js`, which folds the lifecycle ledger into a packet
+  and hands it to the specifier for a recorded outcome. They are two
+  mechanisms with two triggers: the daemon's overnight window runs BL-658
+  without the lean pass; a human's or the crontab's `finish-shift` runs the
+  lean pass without the drain, the briefing or the email. A weekday 17:00
+  bedtime, the ordinary way this swarm goes to sleep, gets only the lean
+  pass; the full ceremony never runs on a weekday at all.
+
+  ## What the human asked for
+
+  "820 should be part of 658. the closing ceremony should happen each time
+  the swarm does at least 1 shift and goes to sleep." One ceremony, on every
+  sleep after work.
+
+  ## How (direction, not mandate)
+
+  - **One sequence.** `night-closing-ceremony-run.js` becomes THE ceremony:
+    freeze -> drain (bounded, BL-658's budget) -> lean pass
+    (`runClosingCeremony` from `metrics/closingCeremonyRun.ts`, its packet
+    to the specifier as today) -> briefing written and emailed -> stop
+    keeping bridges. The BL-820 CLI stays as the lean step's entry point but
+    is no longer called on its own by `finish_shift_lib.sh`; that direct
+    call is removed (dead logic removed, not re-shipped).
+  - **Every sleep path drives it.** `finish-shift` (used by the human, by
+    `day-shift-bedtime.sh`, by `wait_for_expedite_then_bedtime.sh`) and
+    `night-stop.sh` invoke the one sequence; the daemon's closure-window
+    trigger keeps invoking it too. Rename the CLI if "night" misleads; the
+    anchors above name today's file.
+  - **"Did at least one shift" is checkable.** Define it as: a shift-start
+    marker (the start scripts already write `.swarmforge/day_shift_pack` /
+    a start log; give them one explicit `shift-started` stamp if needed)
+    newer than the last ceremony's outcome record. Absent that, the
+    ceremony writes the explicit empty outcome BL-820 already defines and
+    sends no briefing.
+  - **A restart is not a sleep.** `remote_bounce.sh`, `kill_all_swarm.sh`
+    for a hotfix relaunch, and an expedite park never invoke the ceremony;
+    only the sleep paths above do. The hard cron deadline stays the
+    unconditional backstop (BL-658).
+  - **Feature files of the two predecessors** are re-tensed, not retired:
+    BL-658's narrative says the ceremony "ends the night"; BL-820's header
+    says it is "invoked by finish-shift" as its own step. Both now state a
+    false present and are corrected in this parcel under `retires:` (the
+    scope exemption); no scenario of either is retired - their assertions
+    still hold for the scheduled trigger and for the lean step. BL-658's
+    mutation manifest is regenerated by the toolchain, never hand-edited.
+  - The schedule (crontab, `continuous-shifts.json`, BL-660 packs) is not
+    touched. Note that on this host cron is currently dead (BL-1392), so the
+    scheduled sleeps that would exercise this do not fire until it is
+    started.
+
+  ## Explicitly NOT in scope
+
+  - Adding, removing or moving shifts; the "no night shift on weekdays"
+    crontab policy stands unless the human says otherwise (approval_context).
+  - Starting cron on the host (BL-1392) or the applier crash (BL-1381).
+  - The content of the lean packet or the briefing (BL-1365 and siblings).
+
+qa_e2e_procedure: |
+  1. Fixture swarm with a shift-start stamp newer than the last ceremony.
+     Run `finish-shift`: freeze marker set, in-flight parcel drained or
+     parked cleanly, the lean packet delivered to the specifier's inbox, the
+     briefing written and its email recorded as sent, the swarm stopped with
+     bridges alive - in that order, from ONE sequence (one log trail).
+  2. Same fixture, trigger through the daemon's closure-window gate: the
+     identical sequence and trail; the lean packet is delivered here too.
+  3. Fixture with NO shift-start stamp since the last ceremony: `finish-shift`
+     records the explicit empty outcome, sends no briefing, stops.
+  4. Run `remote_bounce.sh` and an expedite park in the fixture: no ceremony
+     step runs, no packet, no briefing.
+  5. Crontab and `continuous-shifts.json` are byte-identical before and after
+     every run above.
+  6. `finish_shift_lib.sh` no longer calls `closing-ceremony-run.js` directly
+     (grep), and `night-closing-ceremony-run.ts` imports `runClosingCeremony`.
+  7. BL-658's and BL-820's feature files read true in the present tense and
+     their scenarios all still pass; BL-658's manifest was regenerated by the
+     toolchain.
+  8. Live, once cron is running on this host (BL-1392): watch one weekday
+     17:00 bedtime - the specifier receives the packet note, the briefing
+     email arrives, the swarm is asleep with the bridges up.
+  9. Remove fixture roots in a `finally`, sweeping THEIR prefix before the
+     run too (BL-971).
+
+notes: |
+  `required_wiring` anchors 1 and 2 are consumer anchors: `finish_shift_lib.sh`
+  is the sleep path every bedtime uses and `night-closing-ceremony-run.ts`
+  is the sequence the daemon drives; both literals are absent today (grep
+  this pass: 0 and 0), so a parcel that folds the step into the sequence but
+  leaves finish-shift calling the old CLI fails anchor 1, and one that
+  re-points finish-shift without invoking the lean step fails anchor 2.
+
+  `retires:` names both predecessors' feature paths for the scope
+  exemption; the deliverable there is a narrative re-tense (BL-1006's
+  "a durable contract carrying a false sentence is still a lie"), not a
+  scenario retirement.
+
+  Observed while minting: the daemon's BL-658 gate is in ceremony mode right
+  now (16:17Z onward) and its run reports `advanced: false` on every tick
+  with nightKey 2026-09-03 - the sequence is wired but appears stuck on a
+  stale night key. Reported to the coordinator; not this ticket's scope but
+  the coder will meet it in scenario 02's fixture.
+
+  IR-DRY: run on the feature file at mint (see commit).
+
+  Mint-time INVEST: one observable outcome (one ceremony on every sleep
+  after work), one sitting - both mechanisms exist and are landed; the
+  parcel joins them and moves the trigger.
+
+source: |
+  Human directive, 2026-09-04, given to the coordinator and recorded
+  verbatim in `.swarmforge/operator/NOTE-human-directive-BL820-into-BL658-20260904.md`
+  (archived to `.swarmforge/operator/archive/` at mint), relayed by note at
+  16:17:45Z:
+
+    "820 should be part of 658.
+    rhe closing ceremony should happen each time the swarm does at least 1
+    shift and goes to sleep."
+
+  (sic - "rhe" as typed.) The coordinator's three readings: (1) BL-820
+  absorbed into BL-658's sequence - adopted; (2) the combined ceremony
+  triggers on every shift end where the swarm did at least one shift, not
+  only the overnight window - adopted; (3) that this supersedes the "no
+  night shift on weekdays" crontab policy - NOT adopted: the sentence
+  changes when the ceremony runs, not which shifts exist; flagged to the
+  human in approval_context for a one-word correction.
