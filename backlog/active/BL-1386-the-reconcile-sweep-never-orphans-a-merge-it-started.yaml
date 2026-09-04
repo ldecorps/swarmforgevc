@@ -200,3 +200,10 @@ assigned_to: coder
 bounce_count: 1
 bounce_history:
   - { at: 2026-09-04, by: architect, blamed: coder, class: behavior, commit: 7836b7364a, evidence: backlog/evidence/BL-1386-architect-bounce-20260904.md }
+abandoned_commits: [67cd1d8dd7]
+# 67cd1d8dd7 is the automated land_step_cli.bb tip-pure replay QA refused to
+# land (backlog/evidence/BL-1386-land-escalate-20260904.md) -- it bundled six
+# of BL-1367's own unlanded files (the BL-1354 per-ticket-not-per-path
+# residual; BL-1389 is the structural fix). Superseded by the hand-built
+# combined BL-1386+BL-1387 replay, landed as 04543cb639, per specifier
+# adjudication backlog/evidence/BL-1386-land-escalate-adjudication-20260904.md.
