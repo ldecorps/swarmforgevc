@@ -690,6 +690,103 @@
    :promoted []
    :note "left in hold/ deliberately; promotion is not the expeditor's call"})
 
+;; ── BL-1379: an expedition reverses its own park ─────────────────────────
+;;
+;; park-plan moves every OTHER active ticket into backlog/hold/ at initiation,
+;; and nothing ever moved them back. Article 3.1 makes hold/ HUMAN-HELD -
+;; "never auto-promote from here; they sit until a human moves them back" - so
+;; a mechanical, temporary park landed in a folder whose whole contract is that
+;; only a human moves things out of it, and became indistinguishable from a
+;; deliberate hold the moment the run ended. Five tickets sat there from
+;; 12:02 on 2026-09-04 with nothing to notice.
+;;
+;; This reverses BL-567 scenario 18, which asserted today's behaviour outright.
+;; Its stated worry - that a parked ticket may be STALE against what the run
+;; changed - is real and is answered rather than dismissed: the human's ruling
+;; (option 3) restores each ticket to the folder it came from AND marks it as
+;; needing a freshness check before it may be worked. The live proof that the
+;; worry is not hypothetical: BL-1309 was parked by the very expedition whose
+;; ruling superseded BL-1309's own.
+
+(def park-record-filename "park-record.json")
+
+(defn park-record-path
+  "The run's own durable park record, beside its other run state."
+  [root ticket]
+  (str root "/.swarmforge/expedite/" ticket "/" park-record-filename))
+
+(defn park-record
+  "Pure: what THIS run parked and where each ticket came from.
+
+   The origin folder is recorded per ticket rather than assumed. park-plan only
+   ever parks out of active/ today, so the value is uniform - which is exactly
+   why assuming it is the thing that would rot silently the day it stops being
+   true."
+  [{:keys [run-ticket parked-tickets origin-folder at]}]
+  {:run-ticket run-ticket
+   :parked (vec (for [t parked-tickets]
+                  {:ticket t :from (or origin-folder "active")}))
+   :destination park-dir
+   :at at})
+
+(def freshness-mark-field
+  "The human's ruling (option 3): a restored ticket goes back where it came
+   from AND is marked as needing a freshness check before it may be worked.
+   The mark is a ticket field so the coordinator's Article 3.6 gate and any
+   human reading the ticket see the same thing."
+  "freshness_check_required")
+
+(defn unpark-decision
+  "Pure, per ticket: what the reversal does about ONE parked entry.
+
+   :restore        - move it back to :from and mark it for a freshness check
+   :hold-not-landed- the expedition has not landed; leave everything alone
+   :skip-moved     - it is no longer in hold/; a human moved it, leave it
+   :skip-absent    - it is nowhere we can see; say so rather than guess
+   :skip-closed    - it is in done/; the run is over for it
+
+   Every non-restore answer is REPORTED, never silent. Invariant 3: a parked
+   ticket that has since moved, been closed, or been edited is left exactly
+   where it is and named."
+  [{:keys [landed? current-folder]}]
+  (cond
+    (not landed?) :hold-not-landed
+    (nil? current-folder) :skip-absent
+    (= "done" current-folder) :skip-closed
+    (not= park-dir current-folder) :skip-moved
+    :else :restore))
+
+(defn unpark-plan
+  "Pure: the whole reversal, from the run's OWN record and nothing else.
+
+   Invariant 1 lives here: the input is the record's entries, so a ticket a
+   human put in hold/ is never even considered - the reversal cannot see it.
+   Driving this from `everything in hold/` is the one implementation that
+   would break Article 3.1, which is why the record exists."
+  [{:keys [record landed? current-folder-of]}]
+  (let [entries (:parked record)
+        decided (for [{:keys [ticket from]} entries]
+                  (let [cur (current-folder-of ticket)
+                        d (unpark-decision {:landed? landed? :current-folder cur})]
+                    {:ticket ticket :from from :current cur :decision d}))]
+    {:restore (vec (filter #(= :restore (:decision %)) decided))
+     :left (vec (remove #(= :restore (:decision %)) decided))
+     :landed? (boolean landed?)
+     :mark-field freshness-mark-field}))
+
+(defn unpark-report
+  "Pure: what the reversal did, in the vocabulary the closing block uses.
+   An idempotent second run restores nothing and says so (invariant 3)."
+  [plan]
+  {:restored (vec (map :ticket (:restore plan)))
+   :left (vec (for [{:keys [ticket decision current]} (:left plan)]
+                {:ticket ticket :reason (name decision) :in current}))
+   :marked (vec (map :ticket (:restore plan)))
+   :mark-field (:mark-field plan)
+   :note (if (:landed? plan)
+           "restored to the folder each was parked from, and marked for a freshness check before it may be worked (BL-1379, human ruling option 3)"
+           "nothing restored: the expedition has not landed, so the park stays in place and is reported (BL-1379 invariant 2)")})
+
 ;; ── BL-1249: restart hold (operator control-pause) ──────────────────────────
 ;; The restart phase must decline to run the start command while
 ;; .swarmforge/operator/control-pause.json — the same marker BL-1191's gate

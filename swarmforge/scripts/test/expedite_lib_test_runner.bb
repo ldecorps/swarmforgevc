@@ -983,6 +983,90 @@
                      :role "cleaner" :exit 0 :attempt 0
                      :elapsed {:overrun? false :elapsed-ms 1}})))
 
+;; ── BL-1379: the expedition reverses its own park ────────────────────────
+;;
+;; park-plan moved every other active ticket into hold/ and nothing moved them
+;; back. Article 3.1 makes hold/ human-held, so a mechanical park became
+;; indistinguishable from a deliberate one; five tickets sat there from 12:02
+;; on 2026-09-04 with nothing to notice.
+
+(let [rec (expedite-lib/park-record {:run-ticket "BL-9001"
+                                     :parked-tickets ["BL-9002" "BL-9003"]
+                                     :at "2026-09-04T12:02:00Z"})]
+  (assert= "park record names every parked ticket"
+           ["BL-9002" "BL-9003"] (mapv :ticket (:parked rec)))
+  ;; Recorded, not assumed: park-plan only parks out of active/ today, and
+  ;; that uniformity is exactly what would rot silently.
+  (assert= "park record names each ticket's ORIGIN folder"
+           ["active" "active"] (mapv :from (:parked rec)))
+  (assert= "park record names where they went"
+           "hold" (:destination rec))
+  (assert= "park record does not include the run ticket itself"
+           false (contains? (set (mapv :ticket (:parked rec))) "BL-9001"))
+
+  ;; Invariant 2: nothing restored until the expedition landed.
+  (let [p (expedite-lib/unpark-plan {:record rec :landed? false
+                                     :current-folder-of (constantly "hold")})
+        r (expedite-lib/unpark-report p)]
+    (assert= "invariant 2: an unlanded expedition restores nothing" [] (:restored r))
+    (assert= "invariant 2: and every ticket is REPORTED, not silently stranded"
+             ["hold-not-landed" "hold-not-landed"] (mapv :reason (:left r)))
+    (assert-true "invariant 2: the note says why nothing moved"
+                 (clojure.string/includes? (:note r) "has not landed")))
+
+  ;; The happy path: restored to the folder each came FROM (the human's ruling
+  ;; option 3), and marked for a freshness check.
+  (let [p (expedite-lib/unpark-plan {:record rec :landed? true
+                                     :current-folder-of (constantly "hold")})
+        r (expedite-lib/unpark-report p)]
+    (assert= "a landed expedition restores what it parked"
+             ["BL-9002" "BL-9003"] (:restored r))
+    (assert= "restored to the folder it was parked FROM (ruling option 3)"
+             ["active" "active"] (mapv :from (:restore p)))
+    (assert= "and every restored ticket is MARKED for a freshness check"
+             ["BL-9002" "BL-9003"] (:marked r))
+    (assert= "the mark is a ticket field the Article 3.6 gate can read"
+             "freshness_check_required" (:mark-field r)))
+
+  ;; Invariant 3: a ticket that moved, closed, or vanished is left alone AND
+  ;; named. Refuses rather than guesses.
+  (let [p (expedite-lib/unpark-plan
+           {:record rec :landed? true
+            :current-folder-of {"BL-9002" "active" "BL-9003" "done"}})
+        r (expedite-lib/unpark-report p)]
+    (assert= "invariant 3: a ticket a human already moved is not forced back"
+             [] (:restored r))
+    (assert= "invariant 3: and each is named with its reason"
+             [["BL-9002" "skip-moved"] ["BL-9003" "skip-closed"]]
+             (mapv (juxt :ticket :reason) (:left r))))
+
+  (let [p (expedite-lib/unpark-plan {:record rec :landed? true
+                                     :current-folder-of (constantly nil)})]
+    (assert= "invariant 3: a ticket nowhere to be found is reported, never guessed"
+             ["skip-absent" "skip-absent"]
+             (mapv :reason (:left (expedite-lib/unpark-report p)))))
+
+  ;; Idempotence: the second run restores nothing and says nothing was.
+  (let [p (expedite-lib/unpark-plan {:record rec :landed? true
+                                     :current-folder-of (constantly "active")})]
+    (assert= "invariant 3: a second reversal restores nothing"
+             [] (:restored (expedite-lib/unpark-report p)))))
+
+;; Invariant 1, structurally: the plan reads the RECORD, so a ticket a human
+;; put in hold/ is not merely skipped - it is never considered. A reversal
+;; driven by "everything in hold/" is the one implementation that breaks
+;; Article 3.1, and this is the row that would catch it.
+(let [rec (expedite-lib/park-record {:run-ticket "BL-9001"
+                                     :parked-tickets ["BL-9002"] :at "t"})
+      seen (atom [])
+      p (expedite-lib/unpark-plan
+         {:record rec :landed? true
+          :current-folder-of (fn [t] (swap! seen conj t) "hold")})]
+  (assert= "invariant 1: the reversal only ever asks about tickets IT parked"
+           ["BL-9002"] @seen)
+  (assert= "invariant 1: and a human's held ticket is never restored"
+           ["BL-9002"] (:restored (expedite-lib/unpark-report p))))
+
 ;; ── report ────────────────────────────────────────────────────────────────
 (if (empty? @failures)
   (println "ALL PASS")
