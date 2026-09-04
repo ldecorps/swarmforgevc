@@ -30,7 +30,9 @@ invariants:
   - "This ticket aborts nothing. Classification and surfacing only; every git write stays exactly where it is today, and a foreign merge is still never aborted by the daemon (BL-1120)."
   - "The orphaned-merge surface always states whether the index carries the incoming side, computed from the index against HEAD..MERGE_HEAD - never from the absence of unmerged paths, which is the reading that makes a poisoned merge look clean."
 
-human_approval: pending
+human_approval: approved
+human_ruling: "run & approve"
+human_ruling_recorded_by: operator (Claude Code, verbatim from the human, 2026-09-04)
 approval_context: >
   A new feature file is authored here, so it needs a tap. No choice is posed
   and there are no ruling_options. This is the detector half of the
