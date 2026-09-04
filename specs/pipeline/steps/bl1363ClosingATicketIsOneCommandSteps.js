@@ -37,8 +37,10 @@ const CLAIMS = {
 };
 
 // Module scope, deliberately: the runtime gives each scenario its own ctx, so
-// a per-ctx memo re-ran this whole suite once per scenario - part of the
-// multiplier behind BL-1390's 1156-copy storm. One run per process.
+// a per-ctx memo re-ran this whole suite once per scenario - 6-9 invocations
+// per feature, several roles running acceptance at once. That multiplier is
+// half of how 1156 concurrent copies of a sibling suite came to exist
+// (BL-1390's second incident). One run per process, shared by every scenario.
 let suiteRun = null;
 
 function runE2e(ctx) {
