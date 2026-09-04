@@ -504,3 +504,4 @@ test_bl1361_sweep_tells_roles.sh	standing
 test_bl1366_land_is_one_command.sh	standing		
 test_bl1395_bb_scripts_load.sh	standing		
 test_bl1398_guard_fixture_derives_set.sh	standing		
+test_bl1399_freshness_fixture_own_registry.sh	standing		
