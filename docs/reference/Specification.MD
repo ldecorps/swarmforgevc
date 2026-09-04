@@ -1,5 +1,31 @@
 # SwarmForge VS Code Extension — Specification
 
+**Last Updated:** September 3, 2026 (BL-1377: showing a red is pre-existing
+(BL-1063) means running a suite twice — at the parcel's base and with the
+parcel — and every stage sitting on the same base commit re-derived the
+same base half. Measured on BL-1375's coder pass: `npm run test:properties`
+(143s) and `npm test` (~30s), each run twice, for one evidence sentence.
+`swarmforge/scripts/suite_baseline.sh <unit|properties> [--base] [--recorded-by]
+[--json]` records the base half once, keyed by `{suite, base-sha,
+config-hash}` (a SHA-256 digest over the suite's own config files — a
+missing file moves the hash too), and a stage with a fresh, matching record
+runs the suite only once and diffs against it. Two invariants: a record can
+only ever excuse a red it actually names at that exact key (the cache can
+shrink a run, never widen an excuse), and an absent/unreadable/mismatched
+record falls back to today's two runs unconditionally — no path turns a
+missing baseline into a green. The base suite always runs in a throwaway
+worktree at the base sha (`.worktrees/suite-baseline-<sha>`, swept by
+prefix and removed in a `finally`, BL-971) — the calling stage's own
+worktree is never touched. Records live at
+`.swarmforge/suite-baselines/<suite>.jsonl`; a single unparseable line
+makes the whole file unreadable rather than silently skipped. Does not
+change what counts as a pre-existing red (BL-1063) or BL-1175's standing
+allowlist, and does not make the suites themselves faster (BL-1348/BL-1349
+remain separate). Acceptance:
+`specs/features/BL-1377-a-suites-failure-set-is-recorded-once-per-base-commit.feature`.
+How-to: `docs/how-to/BL-1377-suite-baseline-recorded-once-per-base.md`. No
+diagram depicts suite-baseline internals.)
+Prior entry —
 **Last Updated:** September 3, 2026 (BL-1376: an expedite run's closing
 OUTSTANDING handover — whose whole job is naming what the run left for
 someone else — never named its own run branch, so BL-1375's run (2026-09-03)
