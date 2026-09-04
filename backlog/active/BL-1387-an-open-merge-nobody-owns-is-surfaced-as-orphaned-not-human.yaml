@@ -1,0 +1,161 @@
+id: BL-1387
+title: "An open merge nobody owns is surfaced as orphaned, not as a human's: the reconcile sweep classifies a foreign MERGE_HEAD by ownership and liveness, says when its index carries none of the incoming side, and escalates at once instead of holding for a human who is not there"
+milestone: M8
+type: defect
+severity: high
+# high: a broken safety signal. The sweep's only reading of an open merge is
+# "a human is mid-merge, hold", asserted from MERGE_HEAD presence alone. On
+# 2026-09-04 that reading held two roles and the daemon for 15 minutes on a
+# merge with no owning process and a poisoned index, and told the human
+# nothing a human could act on. Not critical: the hold is safe; the
+# misdirection is the fault.
+status: todo
+epic: swarm-reliability
+priority: 7
+direction: swarm-reported
+depends_on: []
+mutation_cost: medium
+slice_size_envelope: medium
+required_stages: [coder, cleaner, architect, hardender, documenter, qa]
+
+acceptance: specs/features/BL-1387-an-open-merge-nobody-owns-is-surfaced-as-orphaned-not-human.feature
+
+required_wiring:
+  - 'swarmforge/scripts/handoffd.bb::orphaned-merge::the daemon adapters must feed liveness into the classification and surface the new reason - the lib alone can classify a map but only the daemon can read pgrep, the lock mtime and the index. Literal fixed at mint (BL-874); grep today returns 0'
+  - 'swarmforge/scripts/master_main_reconcile_lib.bb::orphaned-merge::the reason vocabulary main_sync_status_cli.bb passes through to the coordinator step-0 action table and to the specifier landing rule - a reason that only exists in the daemon never reaches either'
+  - 'specs/pipeline/steps/bl1387OrphanedMergeSurfacedSteps.js::registerSteps::the handler file exists so discovery registers every scenario (BL-1371)'
+
+invariants:
+  - "human-merge-in-progress is never asserted from MERGE_HEAD presence alone: it requires positive evidence of an owner - a live git process on the checkout, a fresh index lock, or a BL-1386 ownership record - and absent all three the surfaced reason is orphaned-merge."
+  - "This ticket aborts nothing. Classification and surfacing only; every git write stays exactly where it is today, and a foreign merge is still never aborted by the daemon (BL-1120)."
+  - "The orphaned-merge surface always states whether the index carries the incoming side, computed from the index against HEAD..MERGE_HEAD - never from the absence of unmerged paths, which is the reading that makes a poisoned merge look clean."
+
+human_approval: approved
+human_ruling: "run & approve"
+human_ruling_recorded_by: operator (Claude Code, verbatim from the human, 2026-09-04)
+approval_context: >
+  A new feature file is authored here, so it needs a tap. No choice is posed
+  and there are no ruling_options. This is the detector half of the
+  poisoned merge the coordinator asked me to mint (evidence
+  backlog/evidence/main-sync-poisoned-merge-authorship-blind-20260904.md);
+  the creator half is BL-1386. This half deliberately does NOT auto-abort an
+  orphan: the Operator's hand-clear on 2026-09-04 had to back up a staged
+  file the abort would have deleted, and that judgment stays with whoever
+  clears it. What changes is what they are told - orphaned, index poisoned,
+  abort-and-redo - and how fast: at once, not after three ticks of a hold
+  that reads as patience.
+
+description: |
+  ## What is wrong
+
+  `absorb-dispatch-plan` and every plan beside it in
+  `master_main_reconcile_lib.bb` map `merge-head-present? -> :skip-human-merge-in-progress`.
+  The daemon's `master-main-merge-head-present?` is `git rev-parse --verify
+  MERGE_HEAD`. That is the whole predicate: an open merge IS a human's. It
+  reads no owner, no process, no lock, no index. Then `surface-message`
+  says `BL-1120: human-merge-in-progress on master - not aborted`, the
+  main-sync deadlock sweep trips with reason `human-merge-in-progress`,
+  `main_sync_status_cli.bb` hands the coordinator and specifier
+  `wait-dirty-clear`/`deadlock-tripped` with that reason, and both roles
+  hold for a human to finish - as their prompts tell them to.
+
+  On 2026-09-04 that human did not exist. The merge was the daemon's own
+  failed attempt (BL-1386). `pgrep -ax git` was empty, `.git/index.lock`
+  absent, and the index equalled the HEAD tree plus one stray staged file:
+  none of `HEAD..MERGE_HEAD` was in it. A `git commit` would have written a
+  merge commit whose tree reverted the whole origin side. The hold lasted
+  15 minutes and ended only because the Operator read the index by hand.
+
+  ## How (direction, not mandate)
+
+  - A pure classifier in the lib: given `{merge-head-present? owned-by-daemon?
+    live-git-process? lock-fresh? index-carries-incoming?}` return one of
+    `:none | :own | :live-human | :orphaned`. `:own` is BL-1386's record
+    matching the sha (absent record -> never own). `:live-human` needs any
+    positive owner signal. `:orphaned` is the rest. Every existing plan that
+    branches on `merge-head-present?` branches on this instead, mapping
+    `:live-human` to today's `:skip-human-merge-in-progress` unchanged.
+  - Daemon adapters supply the inputs: a git process whose cwd is the
+    checkout (`pgrep` plus `/proc/<pid>/cwd`, never `pgrep -f` which
+    self-matches), the lock's mtime against a short freshness window, and
+    whether `git diff --cached --name-only HEAD` intersects
+    `git diff --name-only HEAD MERGE_HEAD` (invariant 3 - the poisoned index
+    has no unmerged paths and looks clean by that reading).
+  - New reason `:orphaned-merge` in `surface-message`, in the deadlock
+    record, and in the escalation text: "orphaned merge on master:
+    MERGE_HEAD <sha>, no owner, index carries none of the incoming side -
+    abort and redo, back up staged-new files first". Escalate on the first
+    tick, not the third: an orphan is not a human needing patience.
+  - The coordinator's step-0 action row for this reason is the specifier's
+    to land (BL-798); recorded in `notes:` with the commit.
+  - Lib stays pure and tested by the existing runners; daemon adapters are
+    the side-effecting edits. Babashka has no mutation/CRAP/DRY wired
+    (degraded fallback recorded by the hardener).
+
+  ## Explicitly NOT in scope
+
+  - Aborting anything. Auto-abort of an orphan is a separate decision with a
+    real cost (the Operator's backup step) and would need its own ruling.
+  - Preventing the orphan: **BL-1386**.
+  - The main-sync deadlock sweep's tick threshold in general (BL-920).
+
+qa_e2e_procedure: |
+  1. Fixture checkout with a hand-created MERGE_HEAD, no git process, no
+     lock, index equal to HEAD: one tick surfaces `orphaned-merge` naming the
+     sha and "index carries none of the incoming side", the deadlock record
+     reads reason `orphaned-merge`, `main_sync_status_cli.bb` reports that
+     reason, and the escalation fires on that first tick. MERGE_HEAD is
+     still present afterwards (invariant 2).
+  2. Same, but a live `git merge` process is parked on the checkout (a
+     `git merge` held on its editor, or a fake git with the right cwd): the
+     tick surfaces `human-merge-in-progress` exactly as today and does not
+     escalate early.
+  3. Same as 1 with a fresh `.git/index.lock` (mtime within the window): read
+     as live, not orphaned. Age the lock past the window: orphaned.
+  4. Same as 1 with a BL-1386 ownership record naming that sha: classified
+     `:own`, and this ticket does not act on it (BL-1386 does).
+  5. Index poisoning read both ways: an orphan whose index DOES carry the
+     incoming paths surfaces `orphaned-merge` with "index carries the
+     incoming side"; one whose index does not says so. Neither reading is
+     taken from unmerged-path count.
+  6. Live regression: replay the 2026-09-04 08:23Z state from
+     `.swarmforge/operator/NOTE-main-merge-poisoned-20260904.md` section 2 in
+     a fixture and confirm the surfaced text would have told the Operator
+     what section 2 had to establish by hand.
+  7. Remove the fixture root in a `finally`, sweeping by prefix before the
+     run too (BL-971).
+
+notes: |
+  Prompt deliverable, mine (BL-798): the coordinator step-0 action table
+  gains a row for reason `orphaned-merge` (do not wait; do not conclude;
+  back up staged-new files; `git merge --abort`; redo the merge; diff
+  against BOTH parents before push) and the specifier landing rule points
+  at it. Landed on main with this mint - see the commit that carries this
+  ticket. Nothing the coder builds changes because of that row.
+
+  Why liveness and not authorship: the coordinator's evidence proposes
+  replacing an authorship read; there is no authorship read to replace.
+  The predicate is presence-only, which is why it cannot tell a human, an
+  agent, or the daemon's own previous tick apart. Liveness is the only
+  signal that distinguishes "someone is mid-merge" from "something was
+  left behind", and the index check is the only signal that distinguishes
+  "safe to conclude" from "poisoned".
+
+  IR-DRY: run on the feature file at mint (see commit).
+
+  Mint-time INVEST: one observable outcome (an orphan is named an orphan,
+  at once, with the one fact the clearer needs), one sitting, independent
+  of BL-1386 - the classifier is fully buildable on liveness alone and
+  merely reads the record if present.
+
+source: |
+  Coordinator note, priority 00, 2026-09-04T08:43Z: "Mint: poisoned-merge,
+  authorship-blind gate - evidence/main-sync-poisoned*". Evidence:
+  `backlog/evidence/main-sync-poisoned-merge-authorship-blind-20260904.md`
+  (coordinator, 801561f2f7); Operator write-up
+  `.swarmforge/operator/NOTE-main-merge-poisoned-20260904.md`. Evidence
+  fix 1 (predicate stops assuming human, uses real liveness) is this ticket;
+  fix 2 (the operation leaving MERGE_HEAD fails loud or self-aborts) is
+  BL-1386.
+
+assigned_to: coder

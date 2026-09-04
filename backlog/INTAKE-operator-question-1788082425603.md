@@ -119,3 +119,19 @@ The four-day block is over. Sequence, same pass:
 This intake stays in the backlog root, undrained, until that question is
 answered. That remains the correct state — but it is now waiting on an answer
 rather than on a wedged channel.
+
+**ANSWERED (surface half) 2026-09-04T08:27:12Z — verified, slot resolved,
+second half re-asked.** The human replied in front-desk thread SUP-17,
+channel telegram, directly after the Operator's 07:46:34Z relay: **"a
+Telegram view"**. Read by the specifier in
+`.swarmforge/support/threads/SUP-17.json`, filed as
+`backlog/answers-archive/ANSWER-2026-09-04-spec-tip-text-filter-surface-a-telegram-view.md`.
+It never paired to the specifier's slot (ask-escalation transport faulted,
+BL-1352; runtime re-sent the question as "[still needed]" at 08:46:53Z), so
+the slot was resolved by `role_ask.bb --resolve` citing that file, and a
+follow-up was raised the same pass: what exactly they wanted to see about
+"the spec tip text filter" in that Telegram view — the original sentence is
+cut off right after it, and no Telegram-facing code or doc carries a "tip"
+or "text filter" concept (re-grepped this pass with the surface known). Still
+undrained, correctly: waiting on the second half, not minting against a
+guess.
