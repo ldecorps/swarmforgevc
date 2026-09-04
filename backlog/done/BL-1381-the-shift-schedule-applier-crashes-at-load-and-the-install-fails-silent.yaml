@@ -25,16 +25,6 @@ invariants:
   - "The install wrapper exits zero only on one of its three named outcomes (no schedule configured, already current, installed) - every other path exits non-zero and names its cause."
 
 human_approval: approved
-abandoned_commits: [3ab16ec996]
-# BL-1192's documented escape for a deliberate rebuild-off-main. 3ab16ec996
-# is the architect's git_handoff commit and was this task's last-handoff
-# commit, so the send-time task-scope gate walked every commit on the
-# hardender branch since it - including unrelated merge-up/hardening
-# commits for other tickets processed in between, plus the specifier's
-# BL-1381..BL-1384 mint commit that landed on this branch before this
-# ticket was even routed here. bf1915f300 is the tip-pure rebuild on
-# origin/main that replaces it; recording the dropped base here is what
-# redirects the gate's walk, exactly as the BL-1241 replay path does.
 approval_context: >
   No choice is posed and there are no ruling_options. This is your own intake
   of 2026-09-04, split 1:2 with BL-1382 (the stripping mechanism); this half is
