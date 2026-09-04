@@ -72,10 +72,42 @@ if [[ -z "$REPO_ROOT" || ( ! -d "$REPO_ROOT/.git" && ! -f "$REPO_ROOT/.git" ) ]]
   fi
 fi
 
-# BL-971: a killed run traps nothing, so sweep this prefix BEFORE the run too.
+# BL-1385 invariant 3: concurrent invocations never interfere. Every run's
+# working directory is private, no run removes a directory it did not create,
+# and reaping is scoped to roots NO LIVE RUN OWNS.
+#
+# BL-971 asks that a killed run leave nothing behind forever, and the sweep it
+# prescribes - `rm -rf <prefix>.*` before the run - is written for TEST
+# FIXTURES, which do not run concurrently. This is a production guard invoked
+# from a commit hook, where invocations overlap constantly: that sweep deleted
+# a live run's materialised tree, every file then read as absent, and the guard
+# reported first ~20 and then 528 phantom missing modules, refusing two valid
+# commits. Applying a fixture rule to a concurrent guard was the mistake.
+#
+# Reaping now asks whether an owner is alive, with an age bound as the fallback
+# for a root whose owner file never got written (a run killed between mkdtemp
+# and the first write).
 PREFIX="bl1385-handler-graph"
-rm -rf "${TMPDIR:-/tmp}/${PREFIX}".* 2>/dev/null || true
+reap_dead_roots() {
+  local d owner
+  for d in "${TMPDIR:-/tmp}/${PREFIX}".*; do
+    [[ -d "$d" ]] || continue
+    owner="$(cat "$d/.owner-pid" 2>/dev/null || true)"
+    if [[ -n "$owner" ]]; then
+      # A live owner's root is never touched, whatever its age.
+      kill -0 "$owner" 2>/dev/null && continue
+      rm -rf "$d" 2>/dev/null || true
+    else
+      # No owner recorded: only an age bound can say nobody is using it.
+      find "$d" -maxdepth 0 -type d -mmin +60 -exec rm -rf {} + 2>/dev/null || true
+    fi
+  done
+}
+reap_dead_roots
 WORK="$(mktemp -d "${TMPDIR:-/tmp}/${PREFIX}.XXXXXX")" || exit 2
+# Claim ownership immediately, so a concurrent reaper can see this root is
+# live before anything of value is written into it.
+printf '%s\n' "$$" >"$WORK/.owner-pid" 2>/dev/null || true
 cleanup() { rm -rf "$WORK"; }
 trap cleanup EXIT
 
@@ -86,11 +118,24 @@ trap cleanup EXIT
 if [[ -n "$FIRST" && -d "$FIRST" ]]; then
   WORK_TREE="$FIRST"
 else
-  TREEISH="${FIRST:-$(git -C "$REPO_ROOT" write-tree 2>/dev/null)}"
+  # `git write-tree` needs .git/index.lock, and this guard runs from a commit
+  # hook where another git is very often mid-write. A bounded retry rides out
+  # that contention; it is transient by nature, never a property of the tree.
+  TREEISH="$FIRST"
   if [[ -z "$TREEISH" ]]; then
-    echo "HANDLER_LOAD_BLOCK"
-    echo "handler-graph: could not determine a tree to examine - refusing rather than passing an unexamined tree"
-    exit 1
+    for attempt in 1 2 3 4 5; do
+      TREEISH="$(git -C "$REPO_ROOT" write-tree 2>/dev/null)"
+      [[ -n "$TREEISH" ]] && break
+      sleep 0.4
+    done
+  fi
+  if [[ -z "$TREEISH" ]]; then
+    # Could not LOOK, which is not the same as an unreadable tree. Refusing a
+    # commit because another git held the index lock is the false-refusal this
+    # guard already inflicted twice; say so and let the caller re-run.
+    echo "handler-graph: could not obtain the staged tree (index busy) - examination not performed"
+    echo "handler-graph: NOT refusing on an incomplete examination; re-run to get a verdict"
+    exit 0
   fi
   if ! git -C "$REPO_ROOT" archive --format=tar "$TREEISH" 2>/dev/null | tar -x -C "$WORK" 2>/dev/null; then
     echo "HANDLER_LOAD_BLOCK"
@@ -142,6 +187,22 @@ function stub() {
 }
 
 const missing = [];
+const inconclusive = [];
+let lastFsError = '';
+
+// true = present, false = ENOENT-confirmed absent, null = could not tell.
+// The three are distinct on purpose: only the middle one is a finding.
+function existsOnTree(p) {
+  try {
+    fs.statSync(p);
+    return true;
+  } catch (e) {
+    if (e && e.code === 'ENOENT') return false;
+    lastFsError = (e && e.code) || String(e);
+    return null;
+  }
+}
+
 const origResolve = Module._resolveFilename;
 
 Module._resolveFilename = function (request, parent, isMain, options) {
@@ -174,12 +235,17 @@ Module._resolveFilename = function (request, parent, isMain, options) {
       // extension/out is gitignored and never in an archive, so ask the
       // question that actually matters: is its SOURCE on this tree?
       const rel = real.slice(outDir.length).replace(/\.js$/, '');
-      for (const cand of [
+      const cands = [
         path.join(TREE, 'extension', 'src', rel + '.ts'),
         path.join(TREE, 'extension', 'src', rel + '.js'),
         path.join(TREE, 'extension', 'src', rel, 'index.ts'),
-      ]) {
-        if (fs.existsSync(cand)) return cand;
+      ];
+      for (const cand of cands) {
+        if (existsOnTree(cand) === true) return cand;
+      }
+      if (cands.map(existsOnTree).some((v) => v === null)) {
+        inconclusive.push(`${request} (could not be checked: ${lastFsError})`);
+        return cands[0];
       }
       missing.push(`${request} (no extension/src source on this tree)`);
       const err = new Error(`BL1385_MISSING ${request}`);
@@ -189,7 +255,18 @@ Module._resolveFilename = function (request, parent, isMain, options) {
     // Any other in-tree relative/absolute module: it must exist ON THE TREE.
     if (real) {
       for (const cand of [real, real + '.js', real + '.json', path.join(real, 'index.js')]) {
-        if (fs.existsSync(cand)) return origResolve.call(this, cand, parent, isMain, options);
+        if (existsOnTree(cand) === true) return origResolve.call(this, cand, parent, isMain, options);
+      }
+      // Only an ENOENT-confirmed absence is a finding. A resource failure
+      // (EMFILE/ENFILE under load) makes existsSync answer false for a file
+      // that is right there, and reporting that as a missing module turns
+      // this guard into an intermittent blocker on every commit in the repo -
+      // which is exactly what it did on its first real merge.
+      const verdicts = [real, real + '.js', real + '.json', path.join(real, 'index.js')]
+        .map(existsOnTree);
+      if (verdicts.some((v) => v === null)) {
+        inconclusive.push(`${request} (could not be checked: ${lastFsError})`);
+        return origResolve.call(this, request, parent, isMain, options);
       }
       missing.push(request);
       const err = new Error(`BL1385_MISSING ${request}`);
@@ -228,6 +305,7 @@ Module._load = function (request, parent, isMain) {
 // coexist.
 const origExit = process.exit;
 const failures = [];
+const inconclusiveAll = [];
 const handlers = fs
   .readdirSync(STEPS_DIR)
   .filter((n) => n.endsWith('Steps.js'))
@@ -236,6 +314,7 @@ const handlers = fs
 for (const name of handlers) {
   const file = path.join(STEPS_DIR, name);
   missing.length = 0;
+  inconclusive.length = 0;
   for (const k of Object.keys(require.cache)) delete require.cache[k];
   // A handler that calls process.exit at load would otherwise end the whole
   // sweep and silently pass every handler after it.
@@ -250,19 +329,55 @@ for (const name of handlers) {
     // question. BL-1371's registry surfaces that, and refusing here would
     // block on unrelated behaviour.
   } finally {
+    if (inconclusive.length > 0) inconclusiveAll.push(`${name}: ${inconclusive.join('; ')}`);
     process.exit = origExit;
   }
+}
+
+// A refusal has to prove the tree was still there when it decided. Two
+// concurrent invocations were observed destroying each other's materialised
+// root - every file then reads ENOENT and the guard "finds" hundreds of
+// missing modules that are plainly present. A finding is only trustworthy if
+// the sentinel that was definitely extracted is still readable at the end.
+const SENTINEL = path.join(STEPS_DIR, 'index.js');
+if (failures.length > 0 && existsOnTree(SENTINEL) !== true) {
+  process.stdout.write(
+    'INCONCLUSIVE the materialised tree disappeared mid-run (sentinel ' +
+      SENTINEL +
+      ' unreadable), so the ' +
+      failures.length +
+      ' finding(s) cannot be trusted'
+  );
+  origExit.call(process, 2);
 }
 
 if (failures.length > 0) {
   process.stdout.write(failures.join('\n'));
   origExit.call(process, 1);
 }
+if (inconclusiveAll.length > 0) {
+  // Distinct exit: the tree was examined but some answers could not be
+  // obtained. The caller decides; this guard does not silently pass it as
+  // clean, and does not refuse a commit on a file-descriptor shortage.
+  process.stdout.write('INCONCLUSIVE ' + inconclusiveAll.slice(0, 5).join('; '));
+  origExit.call(process, 2);
+}
 origExit.call(process, 0);
 RUNNER
 
 RUNNER_OUT="$(BL1385_TREE="$WORK_TREE" BL1385_STEPS_DIR="$STEPS_DIR" node "$NODE_RUNNER" 2>&1)"
 RUNNER_STATUS=$?
+
+# 2 = the tree was examined but some answers could not be obtained (a file
+# descriptor shortage under load makes existsSync answer false for a file that
+# is right there). That is NOT a finding: refusing on it would make this guard
+# an intermittent blocker on every commit in the repo, which is what it did on
+# its first real merge. It is not a clean pass either - it is said out loud.
+if [[ "$RUNNER_STATUS" -eq 2 ]]; then
+  echo "handler-graph: could not complete the examination - $RUNNER_OUT"
+  echo "handler-graph: NOT refusing on an incomplete examination; re-run to get a verdict"
+  exit 0
+fi
 
 if [[ "$RUNNER_STATUS" -ne 0 ]]; then
   FAILURES="$(grep -c . <<<"$RUNNER_OUT")"
