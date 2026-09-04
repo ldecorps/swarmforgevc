@@ -36,22 +36,30 @@ changed — only the completeness of the report.
 
 ## The two tiers
 
-The four guards are not equally cheap. `check_property_suite_drift.sh`
-runs `npm run test:properties`; the other three only read the git index.
-So the runner groups them:
+The guards are not equally cheap. `check_property_suite_drift.sh` runs
+`npm run test:properties`; every other guard only reads the git index (or,
+for the two handler guards below, the step registry / a tree's module
+graph) and exits. So the runner groups them:
 
 - **Tier 1 (cheap):** `check_commit_size.sh`, `check_ticket_deletion.sh`,
-  `check_pipeline_code_on_main.sh` — all three always run, and if any
-  refuses, the commit is refused with every Tier-1 violation named. Tier 2
-  is never reached.
+  `check_pipeline_code_on_main.sh`, `check_feature_handler_registration.sh`
+  (BL-1303 — a `main`-only guard proving a feature's handler is registered
+  and reachable), and `check_handler_module_graph.sh` (BL-1385 — a
+  sibling `main`-only guard proving that same handler's require graph
+  actually RESOLVES on the tree; registration is not loadability, and a
+  hand-land bypasses the land replay's own tree guard entirely, so the
+  load question has to be asked here too) — all five always run, and if
+  any refuses, the commit is refused with every Tier-1 violation named.
+  Tier 2 is never reached.
 - **Tier 2 (expensive):** `check_property_suite_drift.sh` — reached only
-  once all three Tier-1 guards pass, so the property suite is never
-  charged to a commit that is already refused for a cheap reason. It still
-  runs on every commit that Tier 1 allows — deferring it never means
-  skipping it.
+  once every Tier-1 guard passes, so the property suite is never charged
+  to a commit that is already refused for a cheap reason. It still runs
+  on every commit that Tier 1 allows — deferring it never means skipping
+  it.
 
-Guard order inside Tier 1 is unchanged, so a commit with exactly one
-violation still sees the same message it did before this change.
+Guard order inside Tier 1 is unchanged (each new guard appends), so a
+commit with exactly one violation still sees the same message it did
+before this change.
 
 ## If you hit this refusal
 
