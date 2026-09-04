@@ -1,5 +1,44 @@
 # SwarmForge VS Code Extension — Specification
 
+**Last Updated:** September 4, 2026 (BL-1379: an expedition parks every
+other `backlog/active/` ticket into human-held `backlog/hold/` at
+initiation and, until now, never reversed it — specced deliberately at
+BL-567 scenario 18 ("promotion stays a human or coordinator decision"),
+but nothing ever told anyone the park was still standing: five tickets sat
+stranded in `hold/` from 12:02 on 2026-09-04 with the active queue empty
+and no human notified. The human's instruction was to reinstate the
+original state on the expedition's own finish; the specifier's one posed
+question was WHERE the tickets should land, since BL-567's own worry (a
+parked ticket may be stale against what the run changed) is not
+hypothetical — BL-1309 was parked by the very expedition whose ruling
+superseded BL-1309's own. Per the human's ruling (option 3 of three):
+restore to the prior folder (`backlog/active/`, always — a park only ever
+parks out of `active/`) but mark each restored ticket `status: blocked`
+with `freshness_check: required` and `freshness_check_reason` naming the
+expedition, so it is visibly back where it was but cannot be routed to
+work until an Article 3.6 deprecator freshness check clears it (by the
+coordinator or the specifier's adjudication — never by the reversal
+machinery that set the mark). The run process itself cannot perform the
+reversal — it exits before its own commit can land, so nothing inside it
+can observe that event — so a new daemon sweep,
+`expedite-park-reversal-sweep!` (`handoffd.bb`), reads every run's own
+durable `park-record.json` (extended with `run-ticket`/`parked`
+`{ticket, from}`/`at`, existing keys untouched) each tick and, once that
+run's `expedite/<ticket>` branch tip is an ancestor of `main`, calls
+`expedite_cli.bb unpark <root> <run-dir>` to restore every ticket the
+record names — never a ticket a human separately put in `hold/` (Article
+3.1 unchanged for that case), and never one that has since moved, closed,
+or been edited (left exactly where it is, named in the report, per
+invariant 3). A terminal reversal writes `unpark-done.json` so the sweep
+stops re-checking a settled run every tick. Retires BL-567 scenario 18
+(deleted, not reworded — it asserted the now-superseded behavior).
+Acceptance:
+`specs/features/BL-1379-an-expedite-park-reverses-itself-when-the-expedition-lands.feature`.
+How-to: `docs/how-to/BL-567-expedite-one-ticket-with-the-swarm-stopped.md`
+and `docs/reference/BL-567-expeditor-manual.md` (both extended in place —
+the park-reversal mechanism and its artifacts). No diagram depicts
+expeditor internals.)
+Prior entry —
 **Last Updated:** September 4, 2026 (BL-1381: `shift_schedule_applier_lib.bb`
 `require`d `babashka.process` INSIDE `budgetShiftGovernorVerdict`'s
 function body rather than the file's `ns` form — Babashka's SCI resolves
