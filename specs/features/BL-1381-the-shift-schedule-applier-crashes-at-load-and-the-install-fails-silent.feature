@@ -1,3 +1,8 @@
+# mutation-stamp: sha256=ca405cbf9a4cf2d5a2033507436908945c605b07c166ef86e027f56f4172efb3
+# acceptance-mutation-manifest-begin
+# {"version":1,"tested_at":"2026-09-04T11:41:41.601893856Z","feature_name":"BL-1381 The shift schedule applier loads and its install wrapper fails loud","feature_path":"/home/carillon/swarmforgevc/.worktrees/hardender/specs/features/BL-1381-the-shift-schedule-applier-crashes-at-load-and-the-install-fails-silent.feature","background_hash":"53f1df09fd3144f0d7521eae239b427c2c60941273e55e2a5f1674cfaa26a360","implementation_hash":"unknown","scenarios":[{"index":2,"name":"the governor verdict shells out only when its CLI exists","scenario_hash":"24d63c451478bede1d6e721e99e6908cd87c1567900d165ac900ddcd4b8ce5dd","mutation_count":4,"result":{"Total":4,"Killed":4,"Survived":0,"Errors":0},"tested_at":"2026-09-04T11:41:41.601893856Z"},{"index":3,"name":"a reconcile that produced no verdict fails the install loud","scenario_hash":"ab080cbf732e041ea2ea9a2eac78494a929b053468a7a92837a39680478b2003","mutation_count":2,"result":{"Total":2,"Killed":2,"Survived":0,"Errors":0},"tested_at":"2026-09-04T11:41:41.601893856Z"}]}
+# acceptance-mutation-manifest-end
+
 Feature: BL-1381 The shift schedule applier loads and its install wrapper fails loud
 
   shift_schedule_applier_lib.bb requires babashka.process inside a function
