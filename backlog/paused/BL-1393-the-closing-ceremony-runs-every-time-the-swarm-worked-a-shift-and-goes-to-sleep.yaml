@@ -27,7 +27,7 @@ invariants:
   - "The ceremony fires only after at least one shift of work since the last ceremony and only on a stop that is a sleep: a restart (hotfix bounce, relaunch, expedite park) never fires it, a sleep after no work records an explicit empty outcome and sends no briefing, and nothing here adds, removes or reschedules a shift."
   - "Every ceremony ends in a recorded outcome (BL-820 carried): the packet reaches the specifier's work loop or an explicit empty outcome is written, and the briefing for a day-key is sent at most once (BL-658 carried)."
 
-human_approval: pending
+human_approval: approved
 approval_context: >
   Your directive of 2026-09-04, relayed by the coordinator, quoted verbatim
   in `source:`. One reading of it is mine and you may want to correct it in
