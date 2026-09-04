@@ -218,3 +218,12 @@ source: |
   investigated finding can be waived), both landed: those covered the OTHER
   two sub-causes of the same false-CRIT channel. This is the third and the
   only one that recurs on every merge-up.
+
+abandoned_commits: [7b4db1ccd3]
+# 7b4db1ccd3 added 2026-09-04 (QA hand-built land replay, BL-1241): the
+# commit cited to land_step_cli.bb for this land (own QA-approval commit
+# ea2917409f is its ancestor), superseded by the tip-pure replay
+# fd0c301a4a actually landed. Blocked since 2026-09-03 by the shared-
+# index.js registry deadlock (BL-1296/BL-1309/BL-1356 unlanded); cleared
+# once BL-1371 (discovery registration) and this session's own BL-1296/
+# BL-1309 lands removed the blockers.
