@@ -122,3 +122,5 @@ source: |
   host - no scheduled shift ever fires, since Aug30". Verified and the
   consequences recorded in
   `backlog/evidence/cron-daemon-dead-since-20260830-found-20260904.md`.
+
+assigned_to: coder
