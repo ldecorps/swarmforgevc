@@ -29,7 +29,7 @@ invariants:
   - "Resolution is lossless and append-only: every line either side added survives in the result, in ours-then-theirs order, and a conflict where a side deleted, renamed or rewrote existing lines is refused, never resolved."
   - "A resolved absorb is never silent: the merge commit body and the daemon log name every resolved path and the strategy applied, and the absorb still passes the same commit guards as any merge on main."
 
-human_approval: pending
+human_approval: approved
 approval_context: >
   Minted on your "go ahead" of 2026-09-04 to my three-point proposal after
   you asked why you were getting so many deadlocks. This is point 2. No
