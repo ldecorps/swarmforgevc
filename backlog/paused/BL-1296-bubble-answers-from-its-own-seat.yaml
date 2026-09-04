@@ -58,7 +58,7 @@ invariants:
   - "Exactly one getUpdates owner exists at all times; adding the second seat opens no competing poller."
 
 required_wiring:
-  - 'specs/pipeline/steps/index.js::bl1296BubbleSeatSteps::the five scenarios must actually run, so the handler this ticket adds has to be registered in the step index rather than merely existing as a file'
+  - 'specs/pipeline/steps/bl1296BubbleSeatSteps.js::registerSteps::the five scenarios must actually run, so the handler this ticket adds has to be registered in the step index rather than merely existing as a file; repointed 2026-09-04 after BL-1371 discovery - the handler file IS the registration and index.js names nothing'
 
 qa_e2e: >
   With both seats running, occupy the Cursor seat with a long turn (a piloted

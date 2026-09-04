@@ -24,7 +24,7 @@ stage_skip_reasons:
 acceptance: specs/features/BL-1292-fixture-liveness-is-decided-by-identity.feature
 
 required_wiring:
-  - "specs/pipeline/steps/index.js::bl1292::the new step handler must be registered in the step registry - specs/pipeline/runtime.js THROWS on any scenario with no handler, so an unregistered file fails every scenario in this ticket's feature file rather than silently skipping them. Verified absent from index.js at spec time (grep bl1292 -> 0), so the anchor cannot pass before the work is done"
+  - "specs/pipeline/steps/bl1292FixtureLivenessByIdentitySteps.js::registerSteps::the new step handler must be registered in the step registry - specs/pipeline/runtime.js THROWS on any scenario with no handler, so an unregistered file fails every scenario in this ticket's feature file rather than silently skipping them. Verified absent from index.js at spec time (grep bl1292 -> 0), so the anchor cannot pass before the work is done; repointed 2026-09-04 after BL-1371 discovery - the handler file IS the registration and index.js names nothing"
 
 invariants:
   - "A test's answer to 'is this fixture still running?' is true only while THAT fixture is running: a zombie awaiting its reaper, and a pid reused by an unrelated process, both answer false."

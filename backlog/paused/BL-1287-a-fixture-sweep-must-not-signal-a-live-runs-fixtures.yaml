@@ -24,7 +24,7 @@ required_stages: [coder, cleaner, architect, hardender, documenter, qa]
 acceptance: specs/features/BL-1287-a-fixture-sweep-must-not-signal-a-live-runs-fixtures.feature
 
 required_wiring:
-  - "specs/pipeline/steps/index.js::bl1287::the new step handler must be registered in the step registry - specs/pipeline/runtime.js THROWS on any scenario with no handler, so an unregistered file fails every scenario in this ticket's feature file rather than silently skipping them. Verified absent from index.js at spec time (grep bl1287 -> 0), so the anchor cannot pass before the work is done"
+  - "specs/pipeline/steps/bl1287FixtureSweepSparesLiveRunSteps.js::registerSteps::the new step handler must be registered in the step registry - specs/pipeline/runtime.js THROWS on any scenario with no handler, so an unregistered file fails every scenario in this ticket's feature file rather than silently skipping them. Verified absent from index.js at spec time (grep bl1287 -> 0), so the anchor cannot pass before the work is done; repointed 2026-09-04 after BL-1371 discovery - the handler file IS the registration and index.js names nothing"
 
 invariants:
   - "A fixture sweep only ever signals a pid whose creating run is no longer alive; a fixture a live run still owns is never selected, however its temp path or tunnel name is shaped."

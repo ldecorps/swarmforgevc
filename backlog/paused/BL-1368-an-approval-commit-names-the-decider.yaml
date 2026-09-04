@@ -27,7 +27,7 @@ invariants:
 required_wiring:
   - 'extension/src/bridge/bridgeServer.ts::record human_approval::the pager route composes one of the two approval commit messages'
   - 'extension/src/tools/telegramFrontDeskBotCore.ts::record human_approval::the bot path composes the other'
-  - 'specs/pipeline/steps/index.js::bl1368ApprovalCommitNamesDeciderSteps::acceptance handler registered so the runner executes every scenario'
+  - 'specs/pipeline/steps/bl1368ApprovalCommitNamesDeciderSteps.js::registerSteps::acceptance handler registered so the runner executes every scenario; repointed 2026-09-04 after BL-1371 discovery - the handler file IS the registration and index.js names nothing'
 
 human_approval: approved
 approval_context: >
