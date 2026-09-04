@@ -15,16 +15,27 @@
 (defn- strip-schedule-lines [lines root]
   (let [op-marker (str "# swarmforge-operator-schedule root=[" root "]")
         begin (str "# swarmforge-shift-schedule-begin " root)
-        end (str "# swarmforge-shift-schedule-end " root)]
+        end (str "# swarmforge-shift-schedule-end " root)
+        freshness-root (str "FRESHNESS_ROOT=" root " ")]
     (vec
      (remove
       (fn [line]
+        ;; BL-1382: markers only - the same rule
+        ;; swarmforge_cron_lib.sh::swarmforge_cron_line_belongs_to_root uses.
+        ;; The three path clauses that stood here claimed any line naming a
+        ;; script under the root, which erased the human's hand-installed
+        ;; schedule on 2026-09-04. The two readers must never drift again:
+        ;; test_bl1382_cron_ownership_agreement.sh classifies one shared
+        ;; corpus with BOTH and refuses if they disagree on any line (BL-897).
         (or (str/includes? line op-marker)
-            (str/includes? line begin)
-            (str/includes? line end)
-            (str/includes? line (str root "/.swarmforge/operator/"))
-            (str/includes? line (str root "/start-swarm.sh"))
-            (str/includes? line (str root "/stop-swarm.sh"))))
+            ;; Bounded the same way the shell predicate bounds it: the root
+            ;; ends the marker or is followed by whitespace, so root /a never
+            ;; claims /a-sibling's block (BL-783/BL-1162 isolation).
+            (str/ends-with? line begin)
+            (str/includes? line (str begin " "))
+            (str/ends-with? line end)
+            (str/includes? line (str end " "))
+            (str/includes? line freshness-root)))
       lines))))
 
 (defn- conf-path [root]
