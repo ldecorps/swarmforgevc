@@ -26,7 +26,7 @@ invariants:
 
 required_wiring:
   - 'swarmforge/scripts/land_step_lib.bb::merge-authored-paths::the combined-diff discriminator this ticket adds - the narrowing lives here, and the previously named own-commit-changed-paths matched only a neighbouring call plus comments'
-  - 'specs/pipeline/steps/index.js::bl1374SyncMergePassengersSteps::acceptance handler registered so the runner executes every scenario'
+  - 'specs/pipeline/steps/bl1374SyncMergePassengersSteps.js::registerSteps::acceptance handler registered so the runner executes every scenario; repointed 2026-09-04 after BL-1371 discovery - the handler file IS the registration and index.js names nothing'
 
 human_approval: approved
 human_ruling: |

@@ -20,7 +20,7 @@ invariants:
   - "A LAND_ESCALATE verdict is never auto-resolved: the command stops, reports it, and leaves main untouched. That judgement is QA's, and taking it would be the tool deciding what to land."
 
 required_wiring:
-  - 'specs/pipeline/steps/index.js::bl1366LandingIsOneCommandSteps::acceptance handler registered so the runner executes every scenario. See notes for why no production anchor is offered.'
+  - 'specs/pipeline/steps/bl1366LandingIsOneCommandSteps.js::registerSteps::acceptance handler registered so the runner executes every scenario. See notes for why no production anchor is offered.; repointed 2026-09-04 after BL-1371 discovery - the handler file IS the registration and index.js names nothing'
 
 human_approval: approved
 approval_context: >

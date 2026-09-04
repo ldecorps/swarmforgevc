@@ -26,7 +26,7 @@ invariants:
 
 required_wiring:
   - 'extension/src/bridge/bridgeServer.ts::computePausedPagerApproveOutcome::the pager route is the live consumer that must reach the ruling writer'
-  - 'specs/pipeline/steps/index.js::bl1367ApprovalCarriesItsRulingSteps::acceptance handler registered so the runner executes every scenario'
+  - 'specs/pipeline/steps/bl1367ApprovalCarriesItsRulingSteps.js::registerSteps::acceptance handler registered so the runner executes every scenario; repointed 2026-09-04 after BL-1371 discovery - the handler file IS the registration and index.js names nothing'
 
 human_approval: approved
 approval_context: >

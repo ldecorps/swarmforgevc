@@ -136,7 +136,7 @@ acceptance: specs/features/BL-693-repeated-paragraph-gate.feature.draft
 
 required_wiring:
   - "extension/test/docsDuplicateParagraphGuard.test.js::docs::the zero-duplicate assertion must sit in the suite every parcel runs — its absence is exactly why one botched insertion went unnoticed for 17 days. The filename is fixed by this declaration."
-  - "specs/pipeline/steps/index.js::bl693DocsDuplicateParagraphGuardSteps::the registration line that makes this ticket's own six scenarios executable. This is BL-1340's draft-conversion pin, not a production-wiring proof: it is satisfied by this parcel's own diff by construction, and its job is to stop the draft being renamed without a registered handler (or left a draft and never run at all)."
+  - "specs/pipeline/steps/bl693DocsDuplicateParagraphGuardSteps.js::registerSteps::the registration line that makes this ticket's own six scenarios executable. This is BL-1340's draft-conversion pin, not a production-wiring proof: it is satisfied by this parcel's own diff by construction, and its job is to stop the draft being renamed without a registered handler (or left a draft and never run at all).; repointed 2026-09-04 after BL-1371 discovery - the handler file IS the registration and index.js names nothing"
 
 out_of_scope: |
   - Near-duplicate / fuzzy matching. Exact line match is what the evidence

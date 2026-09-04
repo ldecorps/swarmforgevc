@@ -16,7 +16,7 @@ required_stages: [coder, cleaner, architect, hardender, documenter, qa]
 acceptance: specs/features/BL-1358-a-mutant-that-will-not-finish-is-killed-and-reported.feature
 
 required_wiring:
-  - "specs/pipeline/steps/index.js::bl1358::the new step handler must be registered - specs/pipeline/runtime.js THROWS on any scenario with no handler. Honest note per BL-1235: satisfied by this parcel's own diff, so it proves nothing about reachability; the harness already has live callers and there is no new call site to anchor. Kept because BL-233 requires the handler to land in the SAME commit as the feature file. Verified absent at spec time, grep bl1358 returns 0."
+  - "specs/pipeline/steps/bl1358MutantTimeoutKilledSteps.js::registerSteps::the new step handler must be registered - specs/pipeline/runtime.js THROWS on any scenario with no handler. Honest note per BL-1235: satisfied by this parcel's own diff, so it proves nothing about reachability; the harness already has live callers and there is no new call site to anchor. Kept because BL-233 requires the handler to land in the SAME commit as the feature file. Verified absent at spec time, grep bl1358 returns 0.; repointed 2026-09-04 after BL-1371 discovery - the handler file IS the registration and index.js names nothing"
 
 invariants:
   - "The ceiling never silently changes a mutant's verdict: a timed-out mutant is reported as timed out, never folded into detected or into surviving."
