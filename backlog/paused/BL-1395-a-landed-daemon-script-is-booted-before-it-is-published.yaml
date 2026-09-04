@@ -32,7 +32,7 @@ invariants:
   - "handoffd in particular is BOOTED from the tree under test, not merely analysed: the guard starts it against a fixture root and waits for one heartbeat, because SCI analyses each defn eagerly and a forward reference inside a defn is only proven absent by loading the whole file in order."
   - "The guard's verdict is a function of the tree under test alone, never of the checking worktree (BL-1385 invariant 2 carried): a script that loads in the checker's worktree but not on the tree refuses."
 
-human_approval: pending
+human_approval: approved
 approval_context: >
   A new feature file is authored here, so it needs a tap. No choice is posed
   and there are no ruling_options. The live outage is being repaired by QA
