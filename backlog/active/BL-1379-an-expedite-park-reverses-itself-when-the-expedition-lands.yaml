@@ -127,11 +127,29 @@ description: |
 
   ## Scope note on the feature file
 
-  The acceptance file is written for ruling option 1. Only ONE scenario depends
-  on that choice — `BL-1379 the-restore-destination-re-enters-the-freshness-gate-02`
-  — and it is deliberately isolated so options 2 and 3 amend that scenario
-  alone, leaving the other six untouched. Nothing is built yet, so this is an
+  The acceptance file was written for ruling option 1 with ONE scenario
+  isolated on that choice. The human ruled OPTION 3 on 2026-09-03 13:55
+  (`human_ruling:` above), and on 2026-09-04 that scenario was RETIRED (never
+  reworded) and replaced by scenarios 08 (restore to the prior folder) and 09
+  (the freshness mark). Nothing was built before the amendment, so this is an
   amendment before the coder starts, not a BL-233 slice-boundary problem.
+
+  ## The mark, concretely (ruling option 3)
+
+  "Restore to the prior folder" is the folder the park record names -
+  `backlog/active/` today. "Mark as needing a freshness check before it may
+  be worked" is two things the restored YAML carries: `status: blocked`
+  (the coordinator-clearable park backlog-schema.md already defines - the
+  promotion helper skips it, BL-1100, and the dropped-parcel sweep treats it
+  as deliberately parked, BL-1301 - so nothing routes or nudges it) and
+  `freshness_check: required` plus `freshness_check_reason:` naming the
+  expedition, so the block is distinguishable from every other block and
+  the coordinator knows what clears it. Clearing is the COORDINATOR'S, after
+  `deprecate-check.js` (which reads `active/` as well as `paused/`) returns
+  allow, or after the specifier adjudicates a hold - never this driver's,
+  which sets the mark and never removes it (idempotence, invariant 3, still
+  holds: a second run finds nothing to restore and leaves the mark alone).
+  The coordinator row and the schema field landed with this amendment.
 
   ## Explicitly NOT in scope
 
@@ -147,7 +165,14 @@ qa_e2e_procedure: |
   1. Fixture: two active tickets, expedite one. Confirm the other is parked to
      hold/ and a durable park record names it and its origin folder.
   2. Land the expedition's commit. Confirm the parked ticket is restored to the
-     folder the ruling selected, and that the report names what it restored.
+     folder it was parked from (`backlog/active/`), carrying `status: blocked`,
+     `freshness_check: required` and `freshness_check_reason:` naming the run,
+     and that the report names it as restored and marked.
+  2b. Confirm `promote_and_route_next.sh` skips the restored ticket as blocked
+     and the dropped-parcel sweep does not nudge it (existing BL-1100/BL-1301
+     behaviour, now pinned by scenario 09); then, as the coordinator would,
+     run `node extension/out/tools/deprecate-check.js <root> <id>` on it and
+     confirm it evaluates an `active/` ticket rather than holding on folder.
   3. Do NOT land. Confirm the parked ticket stays in hold/ and is still named in
      the closing OUTSTANDING block (invariant 2).
   4. Put a ticket in hold/ by hand, unrelated to the run. Confirm the reversal
@@ -165,6 +190,24 @@ qa_e2e_procedure: |
      too (BL-971).
 
 notes: |
+  ## 2026-09-04 AMENDMENT (specifier) - scenario 02 retired for ruling option 3
+
+  Raised by the coder at build start (priority-00 note). The ruling is
+  genuine and was recorded properly: `human_ruling:` was written by the bot's
+  ruling keyboard on 2026-09-03 13:55:49 BST (commit d1fb25dc40, "Approve
+  BL-1379: record human_approval"), option 3 verbatim. What did not happen
+  was the amendment the scope note promised: the option-dependent scenario
+  02 still asserted paused/ (option 1) when the ticket was promoted on
+  2026-09-04 11:27. Specifier's miss, 21 hours long. The coder read the
+  ruling against the feature before writing code and stopped - the right
+  call; nothing was built, so there is no bounce and nothing to charge.
+
+  Amended: scenario 02 RETIRED (never reworded); 08 and 09 added; the
+  narrative gains one sentence; e2e step 2 re-tensed and 2b added; the mark
+  defined above. `freshness_check` added to backlog-schema.md and the
+  coordinator's clearing row to coordinator.prompt in the same commit
+  (BL-798 - prose I own lands with the amendment, never "later").
+
   No `required_wiring:`. The reversal's call site is the land step, which is
   itself being changed by this ticket, so any anchor would be satisfied by the
   parcel's own diff — the BL-1235 fail-open shape. The acceptance scenarios
@@ -211,3 +254,6 @@ source: |
   not paraphrased anywhere in this ticket (Article 5.3).
 
 assigned_to: coder
+bounce_count: 1
+bounce_history:
+  - { at: 2026-09-04, by: architect, blamed: coder, class: behavior, commit: b9358ea76c, evidence: backlog/evidence/BL-1379-architect-bounce-20260904.md }
