@@ -1,0 +1,194 @@
+id: BL-1381
+title: "The shift schedule applier crashes at load, so every schedule cron install since 2026-08-27 has failed and its own BL-660 unit runner is a standing red; the install wrapper must fail loud, never report a reconcile that produced nothing as success"
+milestone: M8
+type: defect
+severity: high
+# high: a live fault degrading behaviour plus a broken health signal. The
+# schedule cron install path has been inert on every swarm start since
+# 2026-08-27 (a configured swarm_shift schedule would never install), and the
+# BL-660 unit runner that would have caught it has been red the whole time
+# with nobody told. Not critical: no data was lost by THIS fault - the crash
+# happens to leave the crontab untouched (verified byte-identical).
+status: todo
+epic: swarm-reliability
+priority: 10
+direction: human-intake
+depends_on: []
+mutation_cost: low
+slice_size_envelope: low
+required_stages: [coder, cleaner, architect, hardender, documenter, qa]
+
+acceptance: specs/features/BL-1381-the-shift-schedule-applier-crashes-at-load-and-the-install-fails-silent.feature
+
+invariants:
+  - "A failed or verdict-less reconcile never reaches crontab: after any install run that exits non-zero, the crontab it was pointed at is byte-identical to before the run."
+  - "The install wrapper exits zero only on one of its three named outcomes (no schedule configured, already current, installed) - every other path exits non-zero and names its cause."
+
+human_approval: pending
+approval_context: >
+  No choice is posed and there are no ruling_options. This is your own intake
+  of 2026-09-04, split 1:2 with BL-1382 (the stripping mechanism); this half is
+  items 1 and 3 of your "What's needed". One correction to the intake's own
+  analysis is recorded in `notes:` (the crash aborts the wrapper at the bb
+  assignment, before the python step it describes) - it changes nothing about
+  what is needed.
+
+description: |
+  ## The fault
+
+  `swarmforge/scripts/shift_schedule_applier_lib.bb` lines 76-77 `require`
+  `babashka.process` INSIDE `budgetShiftGovernorVerdict`'s body and then call
+  `process/shell`. Babashka's SCI resolves the alias at analysis time, when
+  the runtime require has not happened, so the whole file fails to load:
+
+      Unable to resolve symbol: process/shell
+      :phase "analysis"   (line 77, column 34)
+
+  Reproduced 2026-09-04 on babashka v1.12.218 three ways, all identical:
+  `bb -e '(load-file ...)'` on the lib alone; the reconcile CLI
+  (`reconcile_shift_schedule_crontab.bb`, which `load-file`s it); and the
+  BL-660 unit runner `swarmforge/scripts/test/swarm_shift_lib_test_runner.bb`,
+  which also `load-file`s it and has therefore been red since the require
+  entered with BL-666 (`f2895842b6`, 2026-08-27).
+
+  ## Who is affected
+
+  Every consumer of the lib crashes at load, not at the governor call:
+
+  - `reconcile_shift_schedule_crontab.bb` <- `install_shift_schedule_cron.sh`
+    <- `install_swarmforge_crons.sh` <- `start_ancillary_services.sh`. That
+    is EVERY `./swarm` start. The wrapper runs `result="$(bb ...)"` under
+    `set -euo pipefail`, so the crash aborts it with exit 1; the caller prints
+    `WARN: swarmforge cron install failed` into launch output and carries on.
+    Net effect: the schedule cron install has been a no-op on every start for
+    eight days, and the only trace is one WARN line nobody reads.
+  - `apply_shift_schedule.bb` (the BL-660 fixture/user applier).
+  - `swarm_shift_lib_test_runner.bb` - the regression test for exactly this
+    lib, red, and invisible (the standing bb suite is not run by any gate
+    that blocks a commit, so a red here costs nothing until a human trips on
+    it).
+
+  ## The second, smaller gap (intake item 3)
+
+  `install_shift_schedule_cron.sh` parses the reconcile JSON in a
+  `read -r ... < <(python3 ...)` process substitution, whose failure `set -e`
+  does not observe. A reconcile that exits ZERO but prints nothing, or prints
+  something that is not JSON, therefore leaves `scheduling`/`changed`/`mode`
+  empty, and the wrapper prints "No shift schedule configured" and exits 0.
+  A reconcile that produced no verdict must never be reported as "no schedule
+  configured" - that is a silent-good-outcome-from-a-real-failure, which the
+  engineering guardrails flag hard.
+
+  ## How (direction, not mandate)
+
+  - Move the require to the file's `ns` form (`[babashka.process :as process]`).
+    Keep the `fs/exists?` guard and the try/catch-to-nil around the shell-out;
+    the verdict stays best-effort.
+  - In the wrapper, treat empty or unparseable reconcile output as a failure:
+    exit non-zero, print the cause, touch nothing. The three legitimate
+    outcomes keep their exact messages (`No shift schedule configured ...`,
+    `Shift schedule cron already current ...`, `Installed shift schedule cron
+    ...`). Do the JSON parse where `set -e` can see it, or check the result
+    explicitly - either is fine.
+  - The BL-660 runner is the regression test: it must load and pass again,
+    and gains a case for `budgetShiftGovernorVerdict` with a present fake CLI
+    (parsed verdict returned) and an absent one (nil). Babashka has NO
+    mutation/CRAP/DRY wired (BL-472 deferred): the hardener records the
+    degraded fallback and gates on the unit runners plus the shell test
+    `test_shift_schedule_applier.sh`, never implying mutation ran.
+  - Tests run against a FIXTURE crontab only (a `crontab` shim on PATH or the
+    `--crontab-file` path). No test or e2e step touches the live user crontab.
+
+  ## Explicitly NOT in scope
+
+  - Which path stripped three lines from the live crontab overnight, and the
+    ownership rule behind it: **BL-1382**. This ticket's crash demonstrably
+    did not do it, as the intake itself establishes.
+  - The human's weekday/weekend schedule preset (restored, working).
+  - Re-deriving the overnight timeline commit by commit (intake: out of scope).
+
+qa_e2e_procedure: |
+  1. `bb -e '(load-file "swarmforge/scripts/shift_schedule_applier_lib.bb") (println :ok)'`
+     prints `:ok`, exit 0.
+  2. `bb swarmforge/scripts/test/swarm_shift_lib_test_runner.bb` exits 0 with
+     no FAIL lines (it was red before this parcel - confirm it is the lib
+     load that changed, not the assertions).
+  3. In a mkdtemp fixture root with a `crontab` shim on PATH that reads and
+     writes a fixture file: set `config swarm_shift day` in the fixture's
+     `swarmforge/swarmforge.conf`, run `install_shift_schedule_cron.sh <root>`,
+     confirm exit 0, the managed begin/end block for the root appears, the
+     pre-existing fixture lines are still present.
+  4. Same fixture, replace the reconcile step with one that exits 1 printing
+     nothing, then one that exits 0 printing `not json`: each run exits
+     non-zero, prints a cause, and the fixture crontab file is byte-identical
+     (invariants 1 and 2). Neither prints "No shift schedule configured".
+  5. On the live host, with the human's unrecognized `weekday-day-weekend-night`
+     mode still in place: `bash swarmforge/scripts/install_shift_schedule_cron.sh <root>`
+     prints "No shift schedule configured", exits 0, and `crontab -l` is
+     byte-identical before and after. Do NOT set a recognized mode on the live
+     host - that would exercise BL-1382's stripping on the human's crontab.
+  6. Remove the fixture root in a `finally`, sweeping by prefix before the run
+     too (BL-971).
+
+notes: |
+  Correction to the intake's own analysis, carried here so the coder does
+  not chase it: on the CURRENT crash the wrapper never reaches the python
+  step. `result="$(bb ...)"` is a plain assignment under `set -e`, so bb's
+  exit 1 aborts the wrapper right there (the intake's own `EXIT=1` shows
+  this). The process-substitution gap the intake describes is real, but it is
+  reached only when bb exits ZERO with unusable output - which is exactly
+  the case scenario 04's second row covers. Both are fixed by the same
+  "fail loud" rule.
+
+  `required_wiring` deliberately absent: there is no new consumer to anchor.
+  The live consumers already reach this lib (`reconcile_shift_schedule_crontab.bb`
+  `load-file`s it; `start_ancillary_services.sh` runs the install wrapper on
+  every start - both verified by grep this pass), and an anchor on the
+  parcel's own `ns` edit would be satisfied by construction (BL-1235). The
+  acceptance handler and the BL-660 runner are the gate.
+
+  Standing red, recorded: the BL-660 runner has been red since 2026-08-27
+  and no gate surfaced it. That is the memory-noted "standing bb suite
+  refuses to run so every red is invisible" shape, not a new discovery; this
+  ticket fixes the red, not the invisibility.
+
+  IR-DRY: run on the feature file at mint (see commit); the one flagged pair
+  is the two rows of scenario 04's outline, which are the two distinct
+  failure shapes and are kept as rows on purpose.
+
+  Mint-time INVEST: one observable outcome (the applier loads and the install
+  wrapper is honest), one sitting, no unbuilt sibling. BL-1382 is independent:
+  it changes WHICH lines the writers touch, this changes WHETHER they run.
+
+source: |
+  Raw intake `backlog/INTAKE-shift-schedule-applier-process-shell-crash.md`
+  (human via Claude Code, 2026-09-04), drained by the specifier 2026-09-04 and
+  split 1:2 - this ticket carries "What's needed" items 1 and 3; **BL-1382**
+  carries item 2 (the stripping mechanism and whether any auto-install path
+  may touch a hand-installed schedule). The intake is archived at
+  `backlog/archive/INTAKE-shift-schedule-applier-process-shell-crash.md`.
+
+  Human words carried verbatim (Article 5.3):
+
+  - "Priority: high — the schedule cron install path is a real correctness
+    surface (it can rewrite the user's crontab), and it is currently broken in
+    a way that happened to fail safe tonight but should not be trusted to keep
+    doing so."
+  - "1. Fix `process/shell` — move `(require '[babashka.process :as process])`
+    (or the whole namespace require) to the file's top-level `ns`/require
+    form instead of inside the function body, so this code path actually
+    runs instead of silently no-op'ing via the `set -e`/process-substitution
+    gap above."
+  - "3. The `set -e`-blind-to-process-substitution-failure gap in
+    `install_shift_schedule_cron.sh` itself is arguably a second, smaller
+    defect worth a look independent of (1) — a crash three layers down
+    degrading all the way to "silently do nothing, report success" is the
+    kind of silent-good-outcome-from-a-real-failure this project's own
+    engineering rules usually flag hard."
+  - "So: this exact crash is currently harmless to the crontab."
+  - "Out of scope: Re-deriving the exact overnight timeline commit-by-commit
+    — the live swarm's own commit history for
+    `swarmforge/scripts/shift_schedule*.bb` overnight is the actual evidence
+    trail for that, not re-litigated here."
+  - "Out of scope: The custom weekday/weekend schedule itself (already
+    working, restored, not the subject of this intake)."
