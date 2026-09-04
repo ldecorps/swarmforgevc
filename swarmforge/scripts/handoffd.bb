@@ -18,6 +18,9 @@
 (load-file (str (fs/path (fs/parent (fs/canonicalize *file*)) "node_tool_bringup_lib.bb")))
 (load-file (str (fs/path (fs/parent (fs/canonicalize *file*)) "handoff_lib.bb")))
 (load-file (str (fs/path (fs/parent (fs/canonicalize *file*)) "self_heal_telemetry_lib.bb")))
+;; BL-1392: the cron-heartbeat decision - pure, so this file keeps only the
+;; clock, the filesystem and the escalation channel.
+(load-file (str (fs/path (fs/parent (fs/canonicalize *file*)) "cron_heartbeat_lib.bb")))
 (load-file (str (fs/path (fs/parent (fs/canonicalize *file*)) "ambulance_lib.bb")))
 (load-file (str (fs/path (fs/parent (fs/canonicalize *file*)) "chase_sweep_lib.bb")))
 (load-file (str (fs/path (fs/parent (fs/canonicalize *file*)) "mono_router_lib.bb")))
@@ -2164,6 +2167,63 @@
     (if (zero? (:exit result))
       (log! "landed-but-open-nudge" (:id item) (:approval-commit item))
       (log! "landed-but-open-nudge-error" (:id item) (str (:err result))))))
+
+
+;; ── BL-1392: is the cron daemon we schedule into still alive? ──────────────
+;;
+;; Cron cannot report its own death, and this daemon is the one process that
+;; can notice it: it is not run BY cron. The freshness cron writes its log
+;; every 2 minutes, so that log's age is a heartbeat cron itself keeps.
+;;
+;; On this host cron stopped on 2026-08-30 and every ./swarm start printed
+;; "Installed" for five days while the BL-675 watchdog, every shift boundary
+;; and every bedtime silently did not fire. The install-time probe
+;; (install_swarmforge_crons.sh's CRON_DAEMON_DOWN) is green at start and blind
+;; afterwards; this is the half that catches cron dying LATER.
+;;
+;; The decision is cron_heartbeat_lib.bb's, so the escalate-once-per-episode
+;; rule and the clock live apart. It never starts cron - that needs root and
+;; is the host owner's (invariant 3).
+
+(def cron-heartbeat-state-file "cron-heartbeat.json")
+
+(defn- cron-heartbeat-log-path []
+  (str (fs/path project-root ".swarmforge" "daemon" "freshness-check.cron.log")))
+
+(defn- cron-heartbeat-state []
+  (or (read-json (str (fs/path daemon-dir cron-heartbeat-state-file))) {}))
+
+(defn- write-cron-heartbeat-state! [state]
+  (try
+    (fs/create-dirs daemon-dir)
+    (spit (str (fs/path daemon-dir cron-heartbeat-state-file)) (json/generate-string state))
+    (catch Exception e (log! "cron-heartbeat-state-error" (.getMessage e)))))
+
+(defn cron-heartbeat-sweep! []
+  (try
+    (let [path (cron-heartbeat-log-path)
+          present? (fs/exists? path)
+          ;; An unreadable mtime stays nil rather than becoming a guessed age:
+          ;; the lib answers :unknown for it and neither escalates nor clears.
+          age-ms (when present?
+                   (try
+                     (- (System/currentTimeMillis)
+                        (.toMillis (fs/last-modified-time path)))
+                     (catch Exception _ nil)))
+          state (cron-heartbeat-state)
+          verdict (cron-heartbeat-lib/cron-heartbeat-verdict
+                   {:present? present? :age-ms age-ms :escalated? (:escalated state)})]
+      (when (cron-heartbeat-lib/escalating? verdict)
+        (let [message (cron-heartbeat-lib/stale-message
+                       {:verdict verdict :age-ms age-ms :log-path path})]
+          ;; The sweep's own label, and the required_wiring literal: one string
+          ;; a human, a log grep and this ticket all match.
+          (log! "cron-heartbeat-stale" (if present? (str age-ms "ms") "absent") path)
+          (send-push-alarm-email! "SwarmForge: the cron daemon is not running" (str message "\n"))))
+      (write-cron-heartbeat-state!
+       (cron-heartbeat-lib/next-episode-state state verdict)))
+    (catch Exception e
+      (log! "cron-heartbeat-error" (.getMessage e)))))
 
 (defn landed-but-open-sweep! [roles]
   (try
@@ -4497,6 +4557,10 @@
                           #(dropped-parcel-sweep! (load-roles)))
                       ;; BL-1104: landed-but-open shares the same cadence —
                       ;; name MUST be the literal `landed-but-open` (required_wiring).
+                      ;; BL-1392: same cadence as its siblings; the label is
+                      ;; the required_wiring literal.
+                      (run-sweep! "cron-heartbeat"
+                          #(cron-heartbeat-sweep!))
                       (run-sweep! "landed-but-open"
                           #(landed-but-open-sweep! (load-roles)))
                       ;; BL-678: batch-claim-progress suspect nudge shares

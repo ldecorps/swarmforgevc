@@ -501,3 +501,6 @@ test_bl1391_bookkeeping_conflict.sh	standing
 bl1391_bookkeeping_conflict_property_runner.bb	standing		
 test_bl1363_close_ticket.sh	standing		
 bl1363_close_ticket_property_runner.sh	standing		
+cron_heartbeat_lib_test_runner.bb	standing		
+test_bl1392_dead_cron_never_silent.sh	standing		
+bl1392_cron_heartbeat_property_runner.bb	standing		
