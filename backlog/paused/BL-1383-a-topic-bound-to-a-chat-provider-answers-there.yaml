@@ -21,7 +21,7 @@ invariants:
   - "A topic bound in provider-chat-topic-map.json is decided before the generic front-desk flow: no support subject is ever opened for a bound topic's message, whether the provider answered, refused, or failed."
   - "Provider credentials and endpoints reach the process from the extension host environment and the gitignored map only - never from the target working directory, a feature file, or a commit."
 
-human_approval: pending
+human_approval: approved
 approval_context: >
   Your intake of 2026-09-04 with the patch attached. No choice is posed and
   there are no ruling_options. One thing to know before you approve: I minted

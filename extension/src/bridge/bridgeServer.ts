@@ -80,6 +80,7 @@ import { computeEpicTopics, filterEpicsWithTopics, resolveTopicMembership } from
 import {
   recordApprovalReply,
   readRulingOptions,
+  readRecordedRuling,
   classifyApprovalRulingRequirement,
   ApprovalRulingRequirement,
 } from '../concierge/pendingApprovalReply';
@@ -758,6 +759,43 @@ function replacePriorityLine(content: string, priority: number): string {
   return content.trimEnd() + `\npriority: ${priority}\n`;
 }
 
+// BL-1380: is there a choice on this ticket that nobody has answered? Reuses
+// BL-1367's classifier rather than growing a second copy of the rules here -
+// a second copy of the rules is the defect and not the fix.
+//
+// The question this route asks it differs from the Approve route's in one
+// way, and deliberately: Approve validates a label the SURFACE just offered,
+// while Expedite offers none, so what is weighed is the ruling already ON
+// RECORD. Only `ruling-required` refuses. `unknown-option` here would mean a
+// human answered through the ruling keyboard in words that no longer match a
+// declared label - an answer that exists, and not this route's to re-judge;
+// refusing it would leave the verb dead on tickets the operator HAS answered,
+// which is the over-correction BL-1083 warns against. A ticket declaring no
+// options reaches `ok` and expedites byte-for-byte as it does today.
+function classifyExpediteRulingRefusal(
+  targetPath: string,
+  backlogId: string
+): Record<string, unknown> | undefined {
+  const requirement = classifyApprovalRulingRequirement(
+    readRulingOptions(targetPath, backlogId),
+    readRecordedRuling(targetPath, backlogId)
+  );
+  if (requirement.kind !== 'ruling-required') {
+    return undefined;
+  }
+  return {
+    success: false,
+    id: backlogId,
+    // The gate's own name, so the pager shows WHICH rule refused rather than a
+    // bare status - the same posture the promotion refusal below takes
+    // (BL-572/BL-662).
+    gate: 'human_ruling',
+    reason: 'ruling required',
+    options: requirement.options,
+    detail: `${backlogId} poses a choice that is still unanswered, and expediting it would record an approval to a question you were never shown. Answer it on the bot's ruling keyboard, then expedite.`,
+  };
+}
+
 function handlePausedPagerExpediteRoute(
   req: http.IncomingMessage,
   res: http.ServerResponse,
@@ -797,6 +835,24 @@ function handlePausedPagerExpediteRoute(
       // which is the over-correction this ticket explicitly warns against. A
       // ticket that was not pending approval is already approved (or has no
       // ask at all), so `false` here is not an error.
+      //
+      // BL-1380: that recording is exactly what must not happen when the
+      // ticket poses a CHOICE. recordApprovalReply with no ruling takes the
+      // approveHumanApprovalText branch, so the ask stops being pending and
+      // the option the operator was never shown is gone with no way to ask
+      // again - the coder then reaches a fork with nothing to go on. The
+      // decision is made BEFORE any write, as the Approve route does.
+      //
+      // This is not BL-1083 reopened: Expedite still SATISFIES the
+      // human_approval gate. A ruling is a different question - tapping
+      // Expedite says "work this now", never "option 2" - and BL-1083's own
+      // invariant 2 prescribes a visible, explained refusal for a gate saying
+      // no. Human ruling, 2026-09-04: refuse, so you answer and then expedite.
+      const rulingRefusal = classifyExpediteRulingRefusal(targetPath, backlogId);
+      if (rulingRefusal) {
+        respondJson(res, 409, rulingRefusal);
+        return;
+      }
       recordApprovalReply(targetPath, backlogId);
       const promotion = promoteToActive(targetPath, backlogId);
       if (promotion.refusal) {
