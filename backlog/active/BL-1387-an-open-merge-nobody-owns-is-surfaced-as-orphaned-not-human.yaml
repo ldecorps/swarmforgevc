@@ -157,3 +157,5 @@ source: |
   fix 1 (predicate stops assuming human, uses real liveness) is this ticket;
   fix 2 (the operation leaving MERGE_HEAD fails loud or self-aborts) is
   BL-1386.
+
+assigned_to: coder
