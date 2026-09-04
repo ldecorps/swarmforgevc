@@ -7,12 +7,20 @@ produces nothing. "A silent ceremony is a failed ceremony": a ceremony run's
 own state (pending → `complete` | `failed`) exists so that silence is
 detectable, rather than indistinguishable from "the ceremony never ran".
 
+**Since BL-1393 (2026-09-04), this pass is a step INSIDE the one closing
+ceremony sequence** — see
+[BL-658's how-to](../how-to/BL-658-briefing-trigger-derived-from-closure-schedule.md)
+for the full sequence (freeze, drain, lean pass, briefing, stop) and for
+every sleep path that now drives it (`finish-shift`, `night-stop.sh`, the
+daemon's overnight window). This page describes the lean pass's own shape —
+the packet, the outcome vocabulary, the storage format — which is unchanged
+by BL-1393; only what invokes it moved.
+
 ## Shape
 
-1. **The coordinator brings the packet.** `./finish-shift` runs the ceremony
-   CLI before it stops the pipeline (while ancillaries and agents are still
-   up), which folds that shift's ledger events into a `CeremonyPacket` —
-   dwell hotspots, bounce classes, skip reasons, stalls, and 1-3 process
+1. **The coordinator brings the packet.** The closing ceremony sequence
+   folds that shift's ledger events into a `CeremonyPacket` — dwell
+   hotspots, bounce classes, skip reasons, stalls, and 1-3 process
    hypotheses derived from those — and delivers it to the specifier as a
    `note`, never only into the daily briefing.
 2. **The coordinator may act within powers it already holds** — promotion
@@ -112,17 +120,18 @@ read/write layer (`extension/src/metrics/closingCeremonyStore.ts`):
 node extension/out/tools/closing-ceremony-run.js [--target <path>] [--at <iso-timestamp>]
 ```
 
-Invoked by `./finish-shift` (via
-`swarmforge/scripts/finish_shift_lib.sh`'s
-`finish_shift_run_closing_ceremony`), ahead of `kill_pipeline_swarm.sh`, so
-the pipeline is still up while it runs. Composes the packet from BL-819's
+**Since BL-1393, invoked as one step inside the closing ceremony sequence**
+(`night-closing-ceremony-run.ts`'s `deliverLeanPacket`/`recordEmptyOutcome`
+deps), itself driven by every sleep path — `./finish-shift`, `night-stop.sh`,
+the daemon's overnight window — rather than called directly by
+`finish_shift_lib.sh`. Runs ahead of the swarm actually stopping, so the
+pipeline is still up while it executes. Composes the packet from BL-819's
 ledger and delivers it via the real `swarm_handoff.sh` (never a direct
 `inbox/new/` write) — the coordinator identity is fixed in the CLI, never
 inherited from whatever `SWARMFORGE_ROLE` the invoking shell happens to
-carry. A missing compile or a non-zero exit is a loud skip logged by
-`finish_shift_lib.sh`, never a bedtime failure — the ceremony is additive to
-`./finish-shift`'s own contract (BL-762), not a new way for it to fail
-closed.
+carry. A missing compile or a non-zero exit is a loud skip, never a bedtime
+failure — the ceremony is additive to `./finish-shift`'s own contract
+(BL-762), not a new way for it to fail closed.
 
 ### `closing-ceremony-adjustment.js` — the coordinator's own record
 
@@ -148,15 +157,16 @@ state `complete`.
 
 ## Boundary: what this pass is not
 
-- **Not a fourth stop verb.** It attaches to `./finish-shift` (BL-762), the
-  existing bedtime hook — no new shift-close/bedtime code path was added.
+- **Not a fourth stop verb.** It is a step inside the one closing ceremony
+  sequence (BL-1393), itself attached to every sleep path — no new
+  shift-close/bedtime code path was added.
 - **Not a replacement for the Swarm Optimizer or the human briefing.** Both
   continue unchanged; this pass is an additional consumer of BL-819's
   ledger, aimed at the specifier.
-- **Not a mid-shift digest.** It runs once, at shift close, from
-  `./finish-shift`; mid-shift signals (a `note` after a harsh bounce wave, a
-  human-visible briefing summary) are optional extras, never a replacement
-  cadence.
+- **Not a mid-shift digest.** It runs once, at shift close, as one step of
+  the closing ceremony; mid-shift signals (a `note` after a harsh bounce
+  wave, a human-visible briefing summary) are optional extras, never a
+  replacement cadence.
 - **Not scope creep onto domain features.** The pass optimizes how work is
   specified, gated, routed and evidenced on the forge itself — it does not
   change product features of whatever is under build, except where the
@@ -169,8 +179,11 @@ state `complete`.
 
 - [Ticket Lifecycle Ledger (BL-819)](BL-819-ticket-lifecycle-ledger.md) — the
   ledger this pass reads; owns event/snapshot schema and write points.
+- [The closing ceremony: one sequence, every sleep after work (BL-658, folds in BL-820)](../how-to/BL-658-briefing-trigger-derived-from-closure-schedule.md)
+  — the sequence this pass is now a step of, and every sleep path that
+  drives it (BL-1393).
 - [Bedtime vs. lights-out: which stop verb to run](../how-to/BL-762-finish-shift-bedtime-vs-lights-out.md)
-  — the `./finish-shift` hook this pass attaches to.
+  — the `./finish-shift` hook the ceremony attaches to.
 - [`extension/src/quality/closingCeremony.ts`](../../extension/src/quality/closingCeremony.ts)
   — the pure packet-fold and validation core.
 - [`extension/src/metrics/closingCeremonyRun.ts`](../../extension/src/metrics/closingCeremonyRun.ts)

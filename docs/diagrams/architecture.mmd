@@ -31,12 +31,15 @@
 %% reason keyword :silent-revert distinct from BL-855's :noop-landing-merge.
 %% BL-1085: push-sweep ahead-range gather at most once per tick; cache
 %% keyed on tip SHA + ordered ahead SHAs (replay complete only; no tip-only).
-%% BL-820 added the closing-ceremony lean pass: ./finish-shift runs
-%% closing-ceremony-run.js before it stops the pipeline, folding the BL-819
-%% ledger into a shift packet stored under lean/ceremony/ and delivered to
-%% the specifier via a real swarm_handoff.sh note; the coordinator and
-%% specifier each record their own adjustment/outcome back against that
-%% same run.
+%% BL-820 added the closing-ceremony lean pass, folding the BL-819 ledger
+%% into a shift packet stored under lean/ceremony/ and delivered to the
+%% specifier via a real swarm_handoff.sh note; the coordinator and specifier
+%% each record their own adjustment/outcome back against that same run.
+%% BL-1393 (2026-09-04): the lean pass is now one step INSIDE the one
+%% closing-ceremony sequence (freeze/drain/lean-pass/briefing/stop) that
+%% night-closing-ceremony-run.ts runs on every sleep - ./finish-shift,
+%% night-stop.sh, and the daemon's overnight window all drive it now, not
+%% ./finish-shift calling closing-ceremony-run.js on its own.
 %% BL-866 added companionManifest.ts (epic BL-865, Bubble offline-first sync
 %% foundation slice): the bridge's companion-manifest + package catalog,
 %% read-only, serving versioned JSON packages (backlog, docs) by a
@@ -470,7 +473,7 @@ flowchart TB
   PANES -->|handoffd.bb: polls outbox,\nperforms chase sweeps,\ncanary sweep, push sweep,\nmaster-checkout drift sweep (BL-839),\nmaster-main-reconcile sweep (BL-891),\nlifecycle-snapshot sweep (BL-897),\nlanded-but-open sweep (BL-1104),\nnotifies via tmux send-keys| SOCKET
   PANES -->|git commit/merge| TARGETREPO
   PANES -->|lean-ledger-record.js at handoff\ncompletion + close-commit (BL-819)| LEANDIR
-  PANES -->|closing-ceremony-run.js at\n./finish-shift, before pipeline stop (BL-820):\nreads LEANDIR, writes a run| CEREMONYDIR
+  PANES -->|night-closing-ceremony-run.ts:\nlean-pass step on every sleep path\n(finish-shift, night-stop, daemon window;\nBL-1393, was ./finish-shift alone BL-820):\nreads LEANDIR, writes a run| CEREMONYDIR
   PANES -->|closing-ceremony-adjustment.js /\n-outcome.js record coordinator/specifier\ndecisions against the run (BL-820)| CEREMONYDIR
   CEREMONYDIR -->|note to specifier via\nswarm_handoff.sh (BL-820)| HANDOFFS
   DAEMONDIR -->|handoffd.bb push-sweep!:\ngit push main\n(bounded retry, no force-push;\nBL-630 refuses a non-QA-approved tip;\nBL-855 refuses a no-op landing merge;\nBL-1098 refuses a silent path revert)| TARGETREPO
