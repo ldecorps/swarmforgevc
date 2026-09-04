@@ -300,51 +300,96 @@
                 (diff-readable? root c)))
           candidates))
 
-(defn landed-siblings
-  "The subset of `siblings` whose OWN attributed line changes between
-   origin/main and `commit` are already reflected in origin/main's tree
-   (BL-1354 - never the whole blob of a path they merely share).
+(defn landed-sibling-verdicts
+  "BL-1389. Per sibling: `{:landed? bool :deciding-path path :paths [...]}`.
 
-   Attribution reuses task_scope_gate_lib.bb's own walk (BL-1192), the same
-   one `own-paths` delegates to - never a second implementation. `paths-fn` is
-   injected so the walk-failed row is drivable without corrupting a
-   repository; it defaults to that real walk. `lines-fn` is injected the same
-   way for the per-sibling line attribution (BL-1354)."
+   `landed-siblings` returned a bare set, so a verdict a human wanted to check
+   could only be re-derived by hand - which is exactly what QA had to do on
+   2026-09-04 to find that BL-1367 had been called landed while its handler and
+   a source file were absent from origin/main. The verdict now names the path
+   it rests on: for an UNLANDED sibling that is the first attributed path whose
+   own lines are not there (the one that decided it); for a LANDED one the
+   verdict rests on every attributed path, and the last in sorted order is
+   named as the one that completed it.
+
+   `extra-paths-fn` (BL-1389, invariant 2) supplies paths attributed to this
+   sibling by the per-PATH walk that the per-SIBLING walk did not report. The
+   two walks do not see the same set - a merge the path-scoped walk credits to
+   a ticket contributes no path to `task-tagged-changed-paths` - and a verdict
+   computed from the smaller set is what let an unlanded sibling read landed.
+   nil (the default) keeps the pre-BL-1389 attributed set exactly.
+
+   Attribution reuses task_scope_gate_lib.bb's own walk (BL-1192), the same one
+   `own-paths` delegates to - never a second implementation. `paths-fn` and
+   `lines-fn` are injected so the walk-failed and unreadable-diff rows are
+   drivable without corrupting a repository."
   ([root commit origin-main candidates siblings]
-   (landed-siblings root commit origin-main candidates siblings nil))
+   (landed-sibling-verdicts root commit origin-main candidates siblings nil))
   ([root commit origin-main candidates siblings paths-fn]
-   (landed-siblings root commit origin-main candidates siblings paths-fn nil))
+   (landed-sibling-verdicts root commit origin-main candidates siblings paths-fn nil))
   ([root commit origin-main candidates siblings paths-fn lines-fn]
+   (landed-sibling-verdicts root commit origin-main candidates siblings paths-fn lines-fn nil))
+  ([root commit origin-main candidates siblings paths-fn lines-fn extra-paths-fn]
    (let [walk (or paths-fn
                   #(task-scope-gate-lib/task-tagged-changed-paths root origin-main commit % :delivered))
          lines (or lines-fn #(sibling-own-line-changes root candidates %))
          main-lines (memoize #(blob-lines root origin-main %))
          tip-lines (memoize #(blob-lines root commit %))]
-     (->> siblings
-          (filter (fn [sibling]
-                    ;; BL-1354: the content question is asked per SIBLING, not
-                    ;; per path alone. A shared path's blob is decided by every
-                    ;; co-owner at once; this sibling's own lines are not.
-                    (let [changes (lines sibling)
-                          ;; A path the shipped attribution walk credits to
-                          ;; this sibling only through a MERGE carries no line
-                          ;; the sibling authored - `{}`, a real answer, not
-                          ;; the unread `nil` that fails the whole sibling
-                          ;; closed.
-                          verdict (memoize
-                                   #(if (nil? changes)
-                                      :unlanded
-                                      (sibling-path-verdict
-                                       {:changes (get changes % {})
-                                        :main-lines (main-lines %)
-                                        :tip-lines (tip-lines %)})))
-                          attributed (walk sibling)]
-                      (sibling-landed?
-                       {:paths (when attributed
-                                 (remove #(= :vacuous (verdict %)) attributed))
-                        :complete? (attribution-complete? root candidates sibling)
-                        :same-content? #(= :landed (verdict %))}))))
-          set))))
+     (into {}
+           (for [sibling siblings]
+             (let [changes (lines sibling)
+                   ;; BL-1354: the content question is asked per SIBLING, not
+                   ;; per path alone. A shared path's blob is decided by every
+                   ;; co-owner at once; this sibling's own lines are not.
+                   ;;
+                   ;; A path the shipped attribution walk credits to this
+                   ;; sibling only through a MERGE carries no line the sibling
+                   ;; authored - `{}`, a real answer, not the unread `nil` that
+                   ;; fails the whole sibling closed.
+                   verdict (memoize
+                            #(if (nil? changes)
+                               :unlanded
+                               (sibling-path-verdict
+                                {:changes (get changes % {})
+                                 :main-lines (main-lines %)
+                                 :tip-lines (tip-lines %)})))
+                   walked (walk sibling)
+                   attributed (when walked
+                                (distinct (concat walked (when extra-paths-fn
+                                                           (extra-paths-fn sibling)))))
+                   considered (when attributed
+                                (vec (sort (remove #(= :vacuous (verdict %)) attributed))))
+                   landed? (sibling-landed?
+                            {:paths considered
+                             :complete? (attribution-complete? root candidates sibling)
+                             :same-content? #(= :landed (verdict %))})]
+               [sibling
+                {:landed? landed?
+                 :paths (vec (or considered []))
+                 :deciding-path (if landed?
+                                  (last considered)
+                                  (first (remove #(= :landed (verdict %))
+                                                 (or considered []))))}]))))))
+
+(defn landed-siblings
+  "The subset of `siblings` whose OWN attributed line changes between
+   origin/main and `commit` are already reflected in origin/main's tree
+   (BL-1354 - never the whole blob of a path they merely share).
+
+   The verdicts themselves, with the path each rests on, are
+   `landed-sibling-verdicts` (BL-1389); this is that answer as the set every
+   caller before it expected."
+  ([root commit origin-main candidates siblings]
+   (landed-siblings root commit origin-main candidates siblings nil))
+  ([root commit origin-main candidates siblings paths-fn]
+   (landed-siblings root commit origin-main candidates siblings paths-fn nil))
+  ([root commit origin-main candidates siblings paths-fn lines-fn]
+   (landed-siblings root commit origin-main candidates siblings paths-fn lines-fn nil))
+  ([root commit origin-main candidates siblings paths-fn lines-fn extra-paths-fn]
+   (->> (landed-sibling-verdicts root commit origin-main candidates siblings
+                                 paths-fn lines-fn extra-paths-fn)
+        (keep (fn [[sibling {:keys [landed?]}]] (when landed? sibling)))
+        set)))
 
 (defn entangled-siblings
   "{:entangled #{ticket-ids} :landed #{...} :unlanded #{...} :warning nil} on a
@@ -358,7 +403,11 @@
    a commit naming no ticket at all is not counted (positive identification
    only, task_scope_gate_lib.bb's own posture - never guessed as
    entanglement from silence)."
-  [root commit task-ticket-id]
+  ([root commit task-ticket-id]
+   (entangled-siblings root commit task-ticket-id nil))
+  ([root commit task-ticket-id extra-paths-fn]
+   (entangled-siblings root commit task-ticket-id extra-paths-fn nil))
+  ([root commit task-ticket-id extra-paths-fn lines-fn]
   (if-let [origin-main (origin-main-sha root)]
     (let [candidates (ancestry-commits root origin-main commit)]
       (if (nil? candidates)
@@ -367,7 +416,12 @@
                             (keep #(commit-ticket-id root %))
                             (remove #(= % task-ticket-id))
                             set)
-              landed (landed-siblings root commit origin-main candidates siblings)]
+              ;; BL-1389: the verdicts carry the path each rests on, so the
+              ;; report can say WHY a sibling reads landed instead of leaving
+              ;; a human to diff the tip for it.
+              verdicts (landed-sibling-verdicts root commit origin-main candidates siblings
+                                                nil lines-fn extra-paths-fn)
+              landed (->> verdicts (keep (fn [[s v]] (when (:landed? v) s))) set)]
           ;; :entangled stays the FULL set - it is what land-plan decides on,
           ;; and BL-1272 invariant 2 keeps that decision unchanged. :landed and
           ;; :unlanded are the reporting split: a sibling's original commit is
@@ -377,8 +431,11 @@
           {:entangled siblings
            :landed landed
            :unlanded (into #{} (remove landed siblings))
+           ;; BL-1389 invariant 3: {sibling deciding-path} for the landed ones.
+           :landed-paths (into {} (for [[s v] verdicts :when (:landed? v)]
+                                    [s (:deciding-path v)]))
            :warning nil})))
-    {:entangled nil :warning "land-step: origin/main could not be resolved"}))
+    {:entangled nil :warning "land-step: origin/main could not be resolved"})))
 
 
 ;; ── BL-1375: is an unlanded sibling APPROVED, or is it withheld? ─────────
@@ -655,6 +712,53 @@
           {:owners (into #{} (remove nil? ids))
            :any-untagged? (boolean (some nil? ids))})))))
 
+(defn delivered-attribution
+  "BL-1389. Every delivered path in origin/main..commit, with the attribution
+   of its changes: {path {:owners #{...} :any-untagged? bool}}. A nil VALUE is
+   that one path's attribution being unreadable, which the caller refuses on
+   by name; nil overall is the delivered diff itself being unreadable.
+
+   Computed once and shared, because two consumers ask the same question and
+   used to answer it from different walks: `own-paths` decides each path from
+   the per-PATH attribution, while the landed/unlanded split was computed from
+   the per-SIBLING walk alone. A path the first credits to a sibling and the
+   second never reports is a path decided against a verdict that never saw it -
+   the BL-1389 defect."
+  ([root origin-main commit]
+   (delivered-attribution root origin-main commit path-attributing-commits))
+  ([root origin-main commit commits-fn]
+   (when-let [delivered (full-delivered-paths root origin-main commit)]
+     (into {} (for [p delivered]
+                [p (path-owner-tickets root origin-main commit p commits-fn)])))))
+
+(defn sibling-path-landed-fn
+  "BL-1389. (sibling, path) -> is THAT sibling's own contribution to THAT path
+   already on origin/main? The per-path half of BL-1354's own-lines question,
+   asked where the exclusion decision is actually made rather than once per
+   ticket.
+
+   Fail-closed throughout: an unreadable commit range, an unreadable diff, an
+   unreadable blob, and a sibling with no surviving lines on the path all
+   answer false. Landed stays a POSITIVE finding (BL-1272 invariant 1)."
+  ([root origin-main commit] (sibling-path-landed-fn root origin-main commit nil))
+  ([root origin-main commit lines-fn]
+  (let [candidates (ancestry-commits root origin-main commit)
+        ;; `lines-fn` is shared with landed-sibling-verdicts when land-plan
+        ;; drives both, so one sibling's diffs are read once per land rather
+        ;; than once per question. Each of those reads is every commit that
+        ;; sibling authored in range.
+        changes-of (or lines-fn
+                       (memoize #(when candidates (sibling-own-line-changes root candidates %))))
+        main-lines (memoize #(blob-lines root origin-main %))
+        tip-lines (memoize #(blob-lines root commit %))]
+    (fn [sibling path]
+      (let [changes (changes-of sibling)]
+        (boolean
+         (and (some? changes)
+              (= :landed (sibling-path-verdict {:changes (get changes path {})
+                                                :main-lines (main-lines path)
+                                                :tip-lines (tip-lines path)})))))))))
+
 (defn own-paths
   "This ticket's own changed paths since origin/main - the tip-pure replay
    content (BL-1241's remedy (b)).
@@ -700,11 +804,24 @@
   ([root commit task-ticket-id unlanded-siblings commits-fn]
    (own-paths root commit task-ticket-id unlanded-siblings commits-fn nil))
   ([root commit task-ticket-id unlanded-siblings commits-fn approval-fn]
+   (own-paths root commit task-ticket-id unlanded-siblings commits-fn approval-fn nil))
+  ([root commit task-ticket-id unlanded-siblings commits-fn approval-fn opts]
    (if-let [origin-main (origin-main-sha root)]
      (if-let [delivered (full-delivered-paths root origin-main commit)]
        ;; BL-1375: memoized so N shared paths read one sibling's ticket file
        ;; once, and so every path in one run answers from the same read.
-       (let [blocking-for (memoize #(blocking-siblings root % approval-fn))]
+       (let [blocking-for (memoize #(blocking-siblings root % approval-fn))
+             ;; BL-1389. `:attribution` and `:path-landed-fn` are injected by
+             ;; land-plan so the same reads serve the landed/unlanded split and
+             ;; this decision; absent, they are computed here so a direct
+             ;; caller reaches the same answer.
+             attribution-of (let [m (:attribution opts)
+                                  walk (or commits-fn path-attributing-commits)]
+                              (if m
+                                #(get m %)
+                                #(path-owner-tickets root origin-main commit % walk)))
+             path-landed? (or (:path-landed-fn opts)
+                              (sibling-path-landed-fn root origin-main commit))]
         (loop [remaining delivered acc [] excluded [] passengers #{}]
          (if (empty? remaining)
            ;; BL-1343. An empty set is two different answers wearing the same
@@ -729,9 +846,12 @@
              ;; whose own lines ride into main on a path this replay includes.
              ;; The caller owes them the tree guard before publish (invariant
              ;; 2) and owes QA their names either way.
-             {:paths acc :warning nil :passengers passengers})
+             ;; BL-1389 invariant 3: what was excluded, and to whom it was
+             ;; credited, rides with the success answer - not only with the
+             ;; refusal. QA had to diff the replayed tip by hand to see it.
+             {:paths acc :warning nil :passengers passengers :excluded excluded})
            (let [path (first remaining)
-                 attribution (path-owner-tickets root origin-main commit path commits-fn)]
+                 attribution (attribution-of path)]
              (cond
                (nil? attribution)
                {:paths nil :warning (str "land-step: could not read " path "'s attribution")}
@@ -775,10 +895,30 @@
                                 ", and a replayed path is taken whole, so landing it would carry "
                                 "the sibling's lines into main (BL-1332/BL-1375)")})
 
+               ;; BL-1389, invariant 1. The question is asked of THIS PATH,
+               ;; never of the owner's ticket-level verdict: the two walks
+               ;; attribute different sets, so a sibling whose per-sibling set
+               ;; happened to be all-landed left `unlanded-siblings` while a
+               ;; path credited to it alone was still absent from origin/main -
+               ;; and every such path was then kept and rode into the replay
+               ;; under the landing ticket's approval (2026-09-04, BL-1367's
+               ;; handler and source in BL-1386's replay). A path no owner can
+               ;; be SHOWN to have landed is excluded, whatever any owner's
+               ;; approval or ticket-level verdict reads.
                (and (seq (:owners attribution))
                     (not (:any-untagged? attribution))
                     (not (contains? (:owners attribution) task-ticket-id))
-                    (every? unlanded-siblings (:owners attribution)))
+                    (or
+                     ;; The pre-BL-1389 answer, unchanged and asked first: it
+                     ;; needs no diff read, and every owner being a known
+                     ;; unlanded sibling already settles the path.
+                     (every? unlanded-siblings (:owners attribution))
+                     ;; BL-1389: only when the ticket-level verdict says the
+                     ;; owners have landed is the per-path question asked - and
+                     ;; then it is asked of THIS path, because the two walks
+                     ;; attribute different sets and the verdict may never have
+                     ;; seen this one.
+                     (not-any? #(path-landed? % path) (:owners attribution))))
                (recur (rest remaining) acc
                       (conj excluded {:path path :owners (:owners attribution)})
                       passengers)
@@ -806,12 +946,39 @@
   [{:keys [root commit task-ticket-id]}]
   (if-not task-ticket-id
     {:action :escalate :reason "land-step: task name names no ticket id"}
-    (let [{:keys [entangled landed unlanded warning]} (entangled-siblings root commit task-ticket-id)]
+    ;; BL-1389: the per-PATH attribution is computed ONCE and feeds both
+    ;; questions - which siblings have landed, and which paths may ride. They
+    ;; used to be answered from different walks, and a path the per-path walk
+    ;; credited to a sibling the per-sibling walk never reported was decided
+    ;; against a verdict that had not seen it.
+    (let [origin-main (origin-main-sha root)
+          candidates (when origin-main (ancestry-commits root origin-main commit))
+          ;; One read of each sibling's own diffs, shared by the landed/unlanded
+          ;; split and by the per-path exclusion below. Each is every commit
+          ;; that sibling authored in range, so asking twice doubles the
+          ;; slowest part of the land step.
+          lines-of (memoize #(when candidates (sibling-own-line-changes root candidates %)))
+          ;; Deferred: a land with no entangled sibling never forces it, and
+          ;; that is the common case. Forcing it there would add one
+          ;; path-scoped walk per delivered path to every clean land.
+          attribution (when origin-main
+                        (delay (delivered-attribution root origin-main commit)))
+          extra-paths-fn (when attribution
+                           (fn [sibling]
+                             (for [[path a] @attribution
+                                   :when (and a (contains? (:owners a) sibling))]
+                               path)))
+          {:keys [entangled landed unlanded landed-paths warning]}
+          (entangled-siblings root commit task-ticket-id extra-paths-fn lines-of)]
       (cond
         warning {:action :escalate :reason warning}
         (empty? entangled) {:action :land}
         :else
-        (let [{:keys [paths warning passengers]} (own-paths root commit task-ticket-id unlanded)]
+        (let [{:keys [paths warning passengers excluded]}
+              (own-paths root commit task-ticket-id unlanded nil nil
+                         {:attribution (when attribution @attribution)
+                          :path-landed-fn (when origin-main
+                                            (sibling-path-landed-fn root origin-main commit lines-of))})]
           (if (nil? paths)
             {:action :escalate
              :reason (or warning (str "land-step: could not compute " task-ticket-id "'s own paths to replay"))}
@@ -819,6 +986,8 @@
             ;; lines ride on an included shared path. replay! owes them the
             ;; tree guards before it hands QA a commit to publish.
             {:action :replay :entangled entangled :landed landed :unlanded unlanded
+             :landed-paths (or landed-paths {})
+             :excluded (or excluded [])
              :own-paths paths :passengers (or passengers #{})}))))))
 
 (defn entanglement-note

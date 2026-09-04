@@ -1439,6 +1439,115 @@ RESOLVED BY THIS TICKET
   (assert= "BL-1375: and a self-consistent tree passes"
            [] (land-step-lib/run-replayed-tree-guards root)))
 
+;; ── BL-1389: the exclusion asks per PATH, and landed means every path ────
+;;
+;; The verdict "has this sibling landed?" is computed once per TICKET, from the
+;; paths the per-SIBLING walk attributes to it. `own-paths` then decides each
+;; path against that verdict. The two walks do not see the same set: on
+;; 2026-09-04, `path-owner-tickets` credited
+;; specs/pipeline/steps/bl1367ApprovalCarriesItsRulingSteps.js to BL-1367 alone
+;; with no untagged touch, while BL-1367's per-sibling attributed set was six
+;; doc and evidence paths and did not contain it. Those six read landed, so
+;; BL-1367 was absent from `unlanded`, so every path it owned alone was kept -
+;; and its unlanded handler and source rode into a replay under BL-1386's
+;; approval. Only QA reading the replay diff by hand stopped it.
+
+;; 01: a path an unlanded sibling owns ALONE is excluded even when the caller
+;; says that sibling has landed. The verdict is not the question; whether THIS
+;; path's own lines are on origin/main is.
+(with-fixture [root]
+  (mark-origin-main-here! root)
+  (commit! root "sib/only.txt" "sibling line\n" "BL-9002: the sibling's own file")
+  (commit! root "own/only.txt" "own line\n" "BL-9001: the landing ticket's own file")
+  (let [commit (:out (sh! root "git" "rev-parse" "HEAD"))
+        ;; #{} - the ticket-level verdict says BL-9002 has landed. It has not.
+        result (land-step-lib/own-paths root commit "BL-9001" #{})]
+    (assert= "own-paths (BL-1389 01): a path the sibling owns alone, not on origin/main, is excluded though the sibling reads landed"
+             false (contains? (set (:paths result)) "sib/only.txt"))
+    (assert= "own-paths (BL-1389 01): the landing ticket's own path still lands"
+             true (contains? (set (:paths result)) "own/only.txt"))
+    (assert= "own-paths (BL-1389 01): and the exclusion is reported, path and sibling"
+             [{:path "sib/only.txt" :owners #{"BL-9002"}}]
+             (:excluded result))))
+
+;; 02: the complement, so the exclusion is a positive finding about THIS path
+;; and never a blanket refusal of everything a sibling touched: the same
+;; exclusively-owned path, delivered, whose own lines ARE already on
+;; origin/main, is kept. origin/main carries the sibling's line plus a line of
+;; its own, so the path is genuinely in the delivered diff rather than
+;; identical and therefore never asked about.
+(with-fixture [root]
+  (mark-origin-main-here! root)
+  (let [base (:out (sh! root "git" "rev-parse" "HEAD"))]
+    (commit! root "sib/only.txt" "sibling line\n" "BL-9002: the sibling's own file")
+    (commit! root "own/only.txt" "own line\n" "BL-9001: the landing ticket's own file")
+    (let [commit (:out (sh! root "git" "rev-parse" "HEAD"))]
+      (sh! root "git" "checkout" "-q" "-b" "landing" base)
+      (commit! root "sib/only.txt" "sibling line\nmain drifted on\n"
+               "BL-9002: the sibling's own file (replayed tip-pure), and main moves on")
+      (mark-origin-main-here! root)
+      (sh! root "git" "checkout" "-q" "main")
+      ;; #{} again - the ticket-level verdict is the same as row 01's. Only the
+      ;; per-PATH answer differs, which is the whole point of the change.
+      (let [result (land-step-lib/own-paths root commit "BL-9001" #{})]
+        (assert-true "own-paths (BL-1389 02): the path is delivered at all"
+                     (some? (:paths result)))
+        (assert= "own-paths (BL-1389 02): a sibling path whose own lines are already on origin/main is kept"
+                 true (contains? (set (:paths result)) "sib/only.txt"))
+        (assert= "own-paths (BL-1389 02): and nothing is reported as excluded"
+                 [] (:excluded result))))))
+
+;; ── BL-1389: landed means EVERY attributed path, and names its decider ──
+;;
+;; Both fixtures put the sibling's commits IN the range and land its content on
+;; origin/main as a DIFFERENT commit object, which is the real shape: a sibling
+;; whose work reached main through its own tip-pure replay. A sibling whose
+;; commits are not in origin/main..commit is not a sibling of this land at all
+;; and would prove nothing here.
+(with-fixture [root]
+  (mark-origin-main-here! root)
+  (let [base (:out (sh! root "git" "rev-parse" "HEAD"))]
+    (commit! root "sib/landed.txt" "sibling landed line\n" "BL-9002: the sibling's first file")
+    (commit! root "sib/unlanded.txt" "sibling unlanded line\n" "BL-9002: the sibling's second file")
+    (commit! root "own/only.txt" "own line\n" "BL-9001: own work")
+    (let [commit (:out (sh! root "git" "rev-parse" "HEAD"))]
+      ;; origin/main gets ONLY the first of the sibling's two files.
+      (sh! root "git" "checkout" "-q" "-b" "landing" base)
+      (commit! root "sib/landed.txt" "sibling landed line\n"
+               "BL-9002: the sibling's first file (replayed tip-pure)")
+      (mark-origin-main-here! root)
+      (sh! root "git" "checkout" "-q" "main")
+      (let [om (land-step-lib/origin-main-sha root)
+            cands (str/split-lines (:out (sh! root "git" "rev-list" (str om ".." commit))))
+            verdicts (land-step-lib/landed-sibling-verdicts root commit om cands #{"BL-9002"})]
+        (assert= "landed-sibling-verdicts: one attributed path still absent from origin/main is enough to read unlanded"
+                 false (get-in verdicts ["BL-9002" :landed?]))
+        (assert= "landed-sibling-verdicts: and the deciding path is the one that is not there"
+                 "sib/unlanded.txt" (get-in verdicts ["BL-9002" :deciding-path]))))))
+
+(with-fixture [root]
+  (mark-origin-main-here! root)
+  (let [base (:out (sh! root "git" "rev-parse" "HEAD"))]
+    (commit! root "sib/a.txt" "sibling a\n" "BL-9002: the sibling's first file")
+    (commit! root "sib/b.txt" "sibling b\n" "BL-9002: the sibling's second file")
+    (commit! root "own/only.txt" "own line\n" "BL-9001: own work")
+    (let [commit (:out (sh! root "git" "rev-parse" "HEAD"))]
+      (sh! root "git" "checkout" "-q" "-b" "landing" base)
+      (commit! root "sib/a.txt" "sibling a\n" "BL-9002: the sibling's first file (replayed tip-pure)")
+      (commit! root "sib/b.txt" "sibling b\n" "BL-9002: the sibling's second file (replayed tip-pure)")
+      (mark-origin-main-here! root)
+      (sh! root "git" "checkout" "-q" "main")
+      (let [om (land-step-lib/origin-main-sha root)
+            cands (str/split-lines (:out (sh! root "git" "rev-list" (str om ".." commit))))
+            verdicts (land-step-lib/landed-sibling-verdicts root commit om cands #{"BL-9002"})]
+        (assert= "landed-sibling-verdicts: every attributed path on origin/main reads landed"
+                 true (get-in verdicts ["BL-9002" :landed?]))
+        (assert-true "landed-sibling-verdicts: a landed verdict still names the path it rests on"
+                     (some? (get-in verdicts ["BL-9002" :deciding-path])))
+        (assert= "landed-siblings: unchanged, still the set of landed sibling ids"
+                 #{"BL-9002"}
+                 (land-step-lib/landed-siblings root commit om cands #{"BL-9002"}))))))
+
 (if (seq @failures)
   (do
     (doseq [f @failures] (println f))
