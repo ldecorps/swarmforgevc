@@ -123,6 +123,25 @@ You are QA.
     `git push origin HEAD:main`, then release the lock. On push rejection:
     fetch, rematch once (bounded), wait on the lock — never force-push and
     never unbounded tip-purity bounce loops mid-gate.
+    - **A hand-built tip-pure land must record what the land step records
+      (BL-1334; gap found 2026-09-04, BL-1405).** `land_step_cli.bb` writes a
+      replay-to-approved-source line to the SHARED root's
+      `.swarmforge/land-approvals/<YYYY-MM>.jsonl` and `is_qa_ancestor.sh`
+      approves the replay through it. When you build the replay by hand
+      (LAND_ESCALATE route), nothing writes that line, your landed commit
+      reads as unapproved pipeline code on main to all three predicate
+      consumers, and the babysitter raises a CRIT per commit that nobody can
+      close. Before you report the land done: (1) record the mapping - once
+      BL-1405 lands, `bb swarmforge/scripts/record_land_approval.bb <root>
+      <replay-10-hex> <cited-approved-source-10-hex> <ticket>`; until then
+      append ONE line to that file in the master checkout's `.swarmforge/`,
+      exactly `{"at":"<ISO-8601 UTC>","ticket":"<BL-id>","commit":"<replay 10-hex>","source":"<cited 10-hex>"}`
+      (the source is the commit the parcel was cited on and QA approved -
+      never a commit you did not review); (2) verify `bash
+      swarmforge/scripts/is_qa_ancestor.sh <replay>` exits 0; (3) record
+      `abandoned_commits: [<cited commit>]` on the ticket as the LAND_REPLAY
+      item below requires. All six hand-lands of 2026-09-04 skipped all
+      three.
     - You CANNOT check out or merge into `main` from `.worktrees/QA`: `main`
       is checked out in the master worktree, and git refuses to update a
       branch checked out elsewhere. `git push origin HEAD:main` (after the

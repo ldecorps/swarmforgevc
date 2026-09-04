@@ -1,0 +1,122 @@
+id: BL-1404
+title: "A recorded babysitter waive silences the operator escalation as well as the coordinator nudge: decide-escalations is fed the raw findings, so a waived Article 4.2 finding still wakes the LLM operator every cooldown forever - one key, both channels"
+milestone: M8
+type: defect
+severity: high
+# high: this is the alert-fatigue failure BL-1344 was minted to prevent,
+# still live on the more expensive channel. A permanent CRIT (an Article
+# 4.2 finding keys on an immutable sha) re-wakes the LLM operator every 30
+# minutes for as long as the swarm runs, waive or no waive; six such keys
+# were live on 2026-09-04 (four deliveries each in two hours, recorded in
+# the bl1393 evidence file). Not critical: nothing is lost, the alert is
+# merely un-closable.
+status: todo
+epic: swarm-reliability
+priority: 9
+direction: swarm-reported
+depends_on: []
+mutation_cost: low
+slice_size_envelope: low
+required_stages: [coder, cleaner, architect, hardender, documenter, qa]
+
+acceptance: specs/features/BL-1404-a-recorded-waive-silences-the-operator-escalation-too.feature
+
+required_wiring:
+  - 'specs/pipeline/steps/bl1404WaiveSilencesEscalationSteps.js::registerSteps::the handler file exists so discovery registers every scenario (BL-1371)'
+
+invariants:
+  - "A waive is applied to the finding set ONCE, before both channels decide: a key the waive store names never nudges and never escalates, and the sweep log still reports it as WAIVED on the record (BL-1344 invariant: suppression is a visible overlay, never an erasure)."
+  - "BL-1344's three bounds hold unchanged for the escalation channel: one key one waive, only a recorded decision waives, and an unusable store escalates everything rather than going quiet."
+
+human_approval: pending
+approval_context: >
+  A new feature file is authored here, so it needs a tap. No choice is posed
+  and there are no ruling_options. Raised by the coordinator on 2026-09-04
+  after the same six Article 4.2 findings re-fired unchanged all evening.
+
+description: |
+  ## What is wrong
+
+  BL-1344 gave the babysitter a durable close-out for a finding over
+  permanent history: `babysitter_waive.bb --record <key> <by> <reason>`
+  writes `backlog/babysitter-waives.yaml`, and `babysitter_check.bb`
+  partitions the sweep's findings into waived and nudgeable BEFORE the
+  nudge cooldown (`babysitter_check.bb:1316-1339`). But the operator
+  escalation path is decided from the RAW list:
+
+      (babysitterd-sweep-lib/decide-nudges nudgeable nudge-opts)        ; post-waive
+      (babysitterd-sweep-lib/decide-escalations findings {...})          ; raw
+
+  (`babysitter_check.bb:1329` vs `:1331`). So a recorded waive stops the
+  coordinator nudge and leaves the BABYSITTER_ESCALATION wake untouched:
+  the LLM operator is summoned every escalation cooldown for a finding a
+  human already closed. BL-1344's feature only ever asserted "stops
+  nudging"; the escalation channel was never in its scenarios.
+
+  Observed 2026-09-04: `pipeline-code-on-main-8e53a3e853...` delivered to
+  the operator at 22:17Z, 22:45Z, 23:15Z and 23:45Z with a verbatim-identical
+  detail string, each delivery re-adjudicated by hand (evidence
+  `babysitter-article42-bl1393-tip-pure-land-false-positive-20260904.md`).
+  No waive had been recorded for any of the six keys - the store does not
+  exist - which is a separate procedural gap (coordinator/operator prompts
+  amended at mint); but even with the waive recorded, this channel would
+  have kept firing.
+
+  ## How (direction, not mandate)
+
+  - Feed `decide-escalations` the same post-waive set the nudge decision
+    gets (`nudgeable`), or apply `partition-findings` once and pass its
+    `:to-nudge` to both deciders. Keep the WAIVED log line exactly as
+    today - it is the visible overlay BL-1344 promised.
+  - Keep the unusable-store branch symmetric: a store that cannot be read
+    escalates everything and logs WAIVE-STORE-UNUSABLE, as the nudge path
+    already does.
+  - Extend BL-1344's runner/property test with the escalation channel; add
+    the escalation half to `docs/how-to/BL-611-babysitterd-runbook.md`'s
+    waive section.
+
+  ## Explicitly NOT in scope
+
+  - The Article 4.2 predicate itself and why hand-built lands trip it
+    (BL-1405 - the record the hand-built route never writes).
+  - Any class-wide or pattern waive (BL-1344 invariant 1 forbids it).
+
+qa_e2e_procedure: |
+  1. Fixture: a CRIT finding keyed `pipeline-code-on-main-<sha>`, an empty
+     escalation dedup state; run the sweep's decision: escalation enqueued.
+  2. Record a waive for that exact key with `babysitter_waive.bb --record`;
+     run again: no escalation enqueued, no nudge, log line
+     `WAIVED [<key>] ...` present.
+  3. Two CRIT findings, one waived: only the other escalates.
+  4. Corrupt the waive store: both escalate and the log says
+     WAIVE-STORE-UNUSABLE.
+  5. Live: after the six 2026-09-04 keys are waived by the coordinator,
+     `.swarmforge/babysitterd/escalation-dedup.json` gains no new stamp for
+     them across two cooldowns.
+  6. Fixture roots removed in a `finally`, reaping only roots no live run
+     owns (BL-1385/BL-1390); never a bare prefix sweep.
+
+notes: |
+  No consumer `required_wiring` anchor: the call site is the one line in
+  `babysitter_check.bb` this parcel changes, so any anchor would be
+  satisfied by the parcel's own diff (BL-1235 fail-open). The BL-1344 runner
+  extended with the escalation channel is what proves the wiring.
+
+  The procedural half - nobody has ever recorded a waive; every Article
+  4.2 false positive since BL-1344 landed was closed by an evidence file
+  the sweep cannot read - is landed with this mint as prompt prose in
+  `coordinator.prompt` and `operator.prompt` (BL-798: prose I own lands
+  with the ticket, never later).
+
+  IR-DRY at mint: see commit.
+
+  Mint-time INVEST: one observable outcome (a waived key wakes nobody),
+  one sitting, no unbuilt sibling.
+
+source: |
+  Coordinator note, priority 00, 2026-09-04T23:50Z: "Article 4.2 babysitter
+  re-alerts same closed commits repeatedly - no dedup". Operator evidence
+  `babysitter-article42-bl1393-tip-pure-land-false-positive-20260904.md`
+  (four deliveries of one key). Read at mint: `babysitter_check.bb:1316-1339`
+  (waive applied to nudges only), `babysitterd_sweep_lib.bb:521-570` (both
+  deciders), `backlog/babysitter-waives.yaml` absent.
