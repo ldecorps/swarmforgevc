@@ -10,6 +10,18 @@ depends_on: []
 mutation_cost: low
 slice_size_envelope: low
 assigned_to: coder
+abandoned_commits: [cc16bf0b0d]
+# cc16bf0b0d (coder's reverse-copy merge, "BL-1363 reverse copy,
+# merge-only") is stranded on the coder's "side" branch only. Its content
+# applicable to what documenter received: two invalid suite-manifest.tsv
+# rows (bl1363_close_ticket_property_runner.sh,
+# bl1390_post_commit_push_property_runner.bb) that violate the manifest's
+# own documented rule ("a property runner has its own lane and is never
+# a suite member, so it is not a legal column-1 value either") - applied
+# by hand into this same file rather than merged, since the coder's
+# branch has otherwise diverged with unrelated BL-1391/BL-1392 content.
+# Verified: both rows removed, all other rows and their trailing-tab
+# formatting unchanged.
 required_stages: [coder, cleaner, architect, hardender, documenter, qa]
 
 acceptance: specs/features/BL-1363-closing-a-ticket-is-one-command.feature
