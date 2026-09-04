@@ -59,7 +59,7 @@ function registerSteps(registry) {
   const scoped = (re, fn) => registry.defineScoped(re, fn, FEATURE);
 
   // ── Background ──────────────────────────────────────────────────────────
-  scoped(/^a freshness fixture root with a one-row conf for handoffd$/, (ctx) => {
+  scoped(/^a freshness fixture root whose conf pins handoffd and carries a derived row per supervisor the guard walks$/, (ctx) => {
     ctx.bl1399 = ctx.bl1399 || {};
   });
 
