@@ -11,7 +11,7 @@ severity: medium
 # Not low: QA has hit it repeatedly and it is not cosmetic.
 status: todo
 epic: code-quality-gates
-priority: 23
+priority: 1
 direction: swarm-reported
 depends_on: []
 mutation_cost: low
