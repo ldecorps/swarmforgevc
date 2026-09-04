@@ -170,3 +170,16 @@ source: |
   Child of BL-667 (EPIC - deterministic transit assist). Regression against
   BL-668 (post-QA deterministic branch sweep, landed), whose invariant 1
   promised a surfaced branch would reach "its role" and delivered a log line.
+
+abandoned_commits: [51fb42b9df]
+# 51fb42b9df ("Merge cleaner d99182426f into coder (BL-1361 reverse copy,
+# merge-only)") is stranded on side/architect/cleaner, not this tip.
+# Diffed against this documenter commit: its handoffd.bb differs only by
+# reintroducing the PRE-fix BL-1392 cron-heartbeat block - the exact
+# `(read-json ...)`/forward-reference crash bug fixed in 631a5b4552 and
+# already verified absent from this tip (bb load-file check, one def of
+# cron-heartbeat-sweep!, zero read-json matches). Every other file in the
+# diff is this tip having MORE content (BL-1390/1391/1392 doc/evidence
+# work this reverse copy predates), not missing content. Merging this
+# commit would reintroduce a known crash; nothing of value is dropped by
+# not merging it.
