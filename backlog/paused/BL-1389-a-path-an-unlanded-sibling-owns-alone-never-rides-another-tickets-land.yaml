@@ -1,0 +1,143 @@
+id: BL-1389
+title: "A path an unlanded sibling owns alone never rides another ticket's land: the tip-pure replay excludes it whatever the sibling's approval state, and a sibling reads landed only when every path attributed to it is on origin/main"
+milestone: M8
+type: defect
+severity: high
+# high: a land guard that fails OPEN. Content approved to be WORKED but never
+# landed under its own ticket rode into a replay under another ticket's
+# authorization, and only QA reading the replay diff by hand stopped it
+# (BL-506). Not critical: nothing reached origin/main and the hand-built
+# recipe lands the parcel today.
+status: todo
+epic: swarm-reliability
+priority: 9
+direction: swarm-reported
+depends_on: []
+mutation_cost: medium
+slice_size_envelope: medium
+required_stages: [coder, cleaner, architect, hardender, documenter, qa]
+
+acceptance: specs/features/BL-1389-a-path-an-unlanded-sibling-owns-alone-never-rides-another-tickets-land.feature
+
+required_wiring:
+  - 'swarmforge/scripts/land_step_cli.bb::EXCLUDED_SIBLING_PATH::the CLI QA reads must print, per excluded path, the path and the sibling it was credited to - today the replay reports 27 entangled and 17 landed names and not one path, so QA had to diff the tip by hand to see what rode. Literal fixed at mint (BL-874); grep today returns 0'
+  - 'specs/pipeline/steps/bl1389UnlandedSiblingPathNeverRidesSteps.js::registerSteps::the handler file exists so discovery registers every scenario (BL-1371)'
+
+invariants:
+  - "A path whose every attributing commit names one unlanded sibling and never the landing ticket is excluded from the replay, whatever that sibling's human_approval reads - BL-1375's passenger rule applies only to a path the landing ticket ALSO owns."
+  - "A sibling reads landed only when EVERY path attributed to it has that sibling's own lines on origin/main; one landed path (a feature file from mint, an evidence file) never makes an unlanded sibling read landed. BL-1354 invariant 1 carried forward and made per-path-complete."
+  - "The replay report names, per excluded path, the path and the sibling it was credited to, and per LANDED_SIBLING the path that decided the verdict - a verdict a human can check without diffing the tip."
+
+human_approval: pending
+approval_context: >
+  A new feature file is authored here, so it needs a tap. No choice is
+  posed and there are no ruling_options. This is the structural half of
+  QA's BL-1386 land escalation today (adjudication in
+  backlog/evidence/BL-1386-land-escalate-adjudication-20260904.md): the
+  land step judged BL-1367 landed while its handler and two source files
+  are absent from origin/main, so its files rode into BL-1386's replay.
+  QA caught it by hand. The immediate land goes by the hand-built recipe
+  QA already used for BL-1376; this ticket is the guard that makes the
+  hand check unnecessary.
+
+description: |
+  ## What is wrong
+
+  `land_step_lib.bb`'s `own-paths` excludes a path only when every owner
+  the attribution walk found is in the `unlanded` set `entangled-siblings`
+  computed. That set is per TICKET: `sibling-landed?` (BL-1354) asks
+  whether the sibling's own lines are on `origin/main` across the paths
+  attributed to it, and a sibling whose attributed set contains a path
+  that IS on `origin/main` - its feature file, minted at spec time; its
+  evidence files, hand-landed earlier - can read landed while its code is
+  not. Once it reads landed, `own-paths` keeps every path it owns alone,
+  and the replay ships that content under the landing ticket's approval.
+
+  Reproduction (QA worktree, cited commit `2cab559722`, `origin/main`
+  `94be289136`): `path-owner-tickets` returns `{BL-1367}` with
+  `any-untagged? false` for `specs/pipeline/steps/bl1367ApprovalCarriesItsRulingSteps.js`
+  and `extension/src/concierge/pendingApprovalReply.ts`; both are absent
+  from `origin/main`; both were in the replay `67cd1d8dd7`. The CLI printed
+  17 `LANDED_SIBLING` names and no path, so the false verdict was invisible
+  until QA diffed the tip. The residual was recorded when BL-1354 landed
+  (memory, 2026-09-03: "per-ticket not per-path"); this is its first
+  observed fail-OPEN consequence rather than a false refusal.
+
+  ## How (direction, not mandate)
+
+  - Make the exclusion self-sufficient: a path whose owners are non-empty,
+    contain no untagged touch, exclude the landing ticket, and consist of
+    siblings none of whose OWN lines for THIS path are on `origin/main`,
+    is excluded regardless of the sibling's ticket-level verdict
+    (invariant 1). The per-path own-line check already exists
+    (`sibling-own-line-changes`, BL-1354); it is asked per sibling today
+    and must be asked per path here.
+  - Make the ticket-level verdict per-path-complete: `sibling-landed?`
+    reports landed only when every attributed path's own lines are on
+    `origin/main`, and the report names the deciding path (invariant 2).
+    Keep BL-1272/BL-1354 invariant 1 - landed stays a positive finding.
+  - Print `EXCLUDED_SIBLING_PATH <path> <sibling>` per excluded path and
+    extend `LANDED_SIBLING` with the deciding path, so QA reads the verdict
+    instead of re-deriving it (invariant 3).
+  - BL-1375's passenger rule is untouched: an approved sibling still rides
+    on a path the landing ticket also owns, after the tree guards.
+  - Tests: the existing `land_step_lib_test_runner.bb` fixtures plus the
+    BL-1131/BL-1334 property runners; Babashka has no mutation/CRAP/DRY
+    wired (degraded fallback recorded by the hardener).
+
+  ## Explicitly NOT in scope
+
+  - Landing BL-1386 or BL-1367 today (QA, by the hand-built recipe - the
+    adjudication says how).
+  - The inflated `ENTANGLED_SIBLING` list of replay-landed done tickets
+    (memory `land-escalate-sibling-list-inflated…`); named here only so the
+    coder does not fold it in.
+  - Attribution by commit subject (first id wins) - unchanged.
+
+qa_e2e_procedure: |
+  1. Fixture: origin/main holds sibling S's feature file; the tip carries
+     S's handler and a source file under S-tagged commits, and the landing
+     ticket T's own files. Run the land step for T: S reads UNLANDED, the
+     replay excludes S's two files, prints `EXCLUDED_SIBLING_PATH` for each
+     naming S, and T's files land.
+  2. Same, with S `human_approval: approved`: identical result - approval
+     does not make an exclusively-owned path ride (invariant 1).
+  3. Same, with a path T and S both own: BL-1375 behaviour unchanged - S
+     rides as a passenger on that path only, and the tree guards run.
+  4. S with EVERY attributed path's own lines on origin/main: S reads
+     landed and the `LANDED_SIBLING` line names the deciding path.
+  5. Live regression: re-run the land step for BL-1386's cited commit
+     `2cab559722` (or its abandoned replay) against the then-current
+     origin/main - if BL-1367 is still unlanded, its six files are excluded
+     and named; if BL-1367 has landed by then, it reads landed with its
+     deciding path named and nothing of it rides.
+  6. Remove fixture roots in a `finally`, sweeping THEIR prefix before the
+     run too (BL-971) - the land step's own scratch worktrees are per-run and
+     are never swept by prefix (BL-1385's lesson).
+
+notes: |
+  `required_wiring` anchor 1 is a consumer anchor: `land_step_cli.bb` is
+  the pre-existing CLI QA runs, and the literal cannot appear unless the
+  report changes. The lib-side change is proved by the runners and by
+  scenario 05's live regression.
+
+  Two candidate mechanisms were considered before minting; the evidence
+  supports the per-ticket verdict: BL-1367 is IN the CLI's entangled list,
+  its exclusive paths attribute to it alone with no untagged touch, and the
+  only way `own-paths` keeps such a path is BL-1367 absent from `unlanded`
+  - i.e. present in `landed`. The coder should confirm with
+  `landed-siblings` on the reproduction before changing anything; if the
+  verdict came from somewhere else, the invariants still bind and the
+  fix moves, not the contract.
+
+  IR-DRY: run on the feature file at mint (see commit).
+
+  Mint-time INVEST: one observable outcome (an unlanded sibling's exclusive
+  file never rides), one sitting inside one lib and its CLI, no unbuilt
+  sibling.
+
+source: |
+  QA note, priority 00, 2026-09-04T13:20Z: "BL-1386 QA-pass, LAND_ESCALATE:
+  replay bundles unlanded BL-1367/1387". QA evidence
+  `BL-1386-land-escalate-20260904.md` (QA branch). Specifier adjudication
+  and the attribution table: `backlog/evidence/BL-1386-land-escalate-adjudication-20260904.md`.
