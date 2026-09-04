@@ -66,3 +66,16 @@ pipeline stages, etc.).
 
 Per Article 5.3, the human's sentence above must survive verbatim into
 whatever ticket(s) this becomes.
+
+---
+
+## Drained 2026-09-04 (specifier) — carried by BL-1379, now DONE
+
+Specced as **BL-1379** ("An expedite park reverses itself when the
+expedition lands"), which quotes the human's sentence above verbatim at the
+top of its `description:` (Article 5.3) and names this intake in `source:`.
+BL-1379 ran the full chain and sits in `backlog/done/` as of 2026-09-04.
+The five tickets the BL-1375 run parked were released by hand by the
+coordinator under the 2026-08-31 "exhaust hold/ first" directive; the
+mechanical reversal BL-1379 built covers every future expedition. Archived
+with this pointer; nothing further to mint.
