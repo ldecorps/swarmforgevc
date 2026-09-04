@@ -1,3 +1,7 @@
+# acceptance-mutation-manifest-begin
+# {"version":1,"tested_at":"2026-09-04T16:26:03.192138336Z","feature_name":"A mutant that will not finish is killed and reported, never left to pin a worker","feature_path":"/home/carillon/swarmforgevc/.worktrees/hardender/specs/features/BL-1358-a-mutant-that-will-not-finish-is-killed-and-reported.feature","background_hash":"59f116b79419d2044ee6a8c7eafb2dcd2b0173a036738e5fb928bda3407bf200","implementation_hash":"unknown","scenarios":[],"outcome":"inapplicable"}
+# acceptance-mutation-manifest-end
+
 Feature: A mutant that will not finish is killed and reported, never left to pin a worker
   The Gherkin mutation harness runs each mutant to completion and waits. There is
   no ceiling anywhere in it: `grep -n 'timeout|terminate|deadline|AbortController'`
