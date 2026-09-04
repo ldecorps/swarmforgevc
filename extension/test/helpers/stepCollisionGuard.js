@@ -24,21 +24,23 @@ const STEPS_INDEX = path.join(REPO_ROOT, 'specs', 'pipeline', 'steps', 'index.js
 const STEP_REGISTRY = path.join(REPO_ROOT, 'specs', 'pipeline', 'stepRegistry.js');
 const VERDICT_MARKER = 'BL1277_COLLISION_VERDICT ';
 
-// The shipped step files are exactly the ones steps/index.js pulls in, in the
-// order it pulls them in - taken from the module system's own parent/child
-// record rather than by globbing the directory. A glob would also sweep up the
-// `*Only.js` focused entry points, each of which re-exports another file's
-// registerSteps; those would then look like a second file registering every
-// one of that file's patterns, and the guard would refuse a repository that is
-// in fact clean.
+// The shipped step files are exactly the ones steps/index.js loads, in the
+// order it loads them - asked of that module's OWN discovery function rather
+// than restated here as a glob. BL-1371 replaced index.js's hand-maintained
+// DOMAINS array with discovery, and both older routes are wrong for their own
+// reason: the module system's parent/child record now also carries whatever a
+// handler happens to require at load time, and a bare `*.js` glob would sweep
+// up the `*Only.js` focused entry points, each of which re-exports another
+// file's registerSteps - those would then look like a second file registering
+// every one of that file's patterns and the guard would refuse a repository
+// that is in fact clean. discoverHandlerFiles() is the one definition of the
+// shipped set, so this guard cannot drift from what the runner loads.
 function shippedStepFiles(indexPath = STEPS_INDEX) {
-  const resolved = require.resolve(indexPath);
-  require(resolved);
-  const record = require.cache[resolved];
-  if (!record) {
-    throw new Error(`stepCollisionGuard: ${indexPath} did not land in require.cache`);
+  const registry = require(require.resolve(indexPath));
+  if (typeof registry.discoverHandlerFiles !== 'function') {
+    throw new Error(`stepCollisionGuard: ${indexPath} no longer exports discoverHandlerFiles()`);
   }
-  return record.children.map((child) => child.filename);
+  return registry.discoverHandlerFiles();
 }
 
 function patternKey(pattern) {

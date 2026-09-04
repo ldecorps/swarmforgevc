@@ -44,8 +44,11 @@
 %% BL-828 (2026-08-25): collapsed Bubble — pure BubbleGestureDecider;
 %% idle tap deferred one double-tap window then mic; double-tap expands;
 %% RECORDING tap sends immediately; OverlayService device edge only.
-%% BL-988 (2026-08-25): BL-578 WSL bounce acceptance stays bound in
-%% steps/index.js; property regression against orphaned contract.
+%% BL-988 (2026-08-25): BL-578 WSL bounce acceptance stays bound; property
+%% regression against orphaned contract. BL-1371 (2026-09-03) moved
+%% steps/index.js from a hand-maintained require array to directory
+%% discovery over its own *Steps.js files, so the BL-988 binding now asks
+%% discovery whether the module loads rather than grepping index.js source.
 %% BL-999 (2026-08-25): burndown CLI test budgets justified by
 %% measurement (worst×margin), not mere presence.
 %% BL-719 added a dropped-parcel chase sweep to the same handoffd.bb cadence

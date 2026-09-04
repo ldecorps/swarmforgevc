@@ -32,15 +32,31 @@ build_repo() {
   rm -rf "$repo"
   mkdir -p "$repo/specs/features" "$repo/specs/pipeline/steps/lib"
 
-  local i
+  # BL-1371: registration is DISCOVERY - a top-level `*Steps.js` file in the
+  # steps directory is registered by existing. So a handler this fixture means
+  # to be UNREACHABLE (not listed in $registered) is written under a name
+  # outside that predicate, `...FixtureHandler.js`; only a handler meant to be
+  # reachable gets the `...Steps.js` name. "Present but absent from the
+  # hand-maintained array" is no longer a state a tree can be in.
+  local i handler wanted found
   for ((i = 1; i <= count; i++)); do
     echo "Feature: fixture $i" > "$repo/specs/features/BL-90$i-fixture.feature"
-    echo "module.exports = { registerSteps() {} };" > "$repo/specs/pipeline/steps/bl90${i}FixtureSteps.js"
+    wanted="bl90${i}FixtureSteps"
+    found=0
+    for handler in ${registered[@]+"${registered[@]}"}; do
+      if [ "$handler" = "$wanted" ]; then
+        found=1
+      fi
+    done
+    if [ "$found" -eq 1 ]; then
+      echo "module.exports = { registerSteps() {} };" > "$repo/specs/pipeline/steps/bl90${i}FixtureSteps.js"
+    else
+      echo "module.exports = { registerSteps() {} };" > "$repo/specs/pipeline/steps/bl90${i}FixtureHandler.js"
+    fi
   done
 
   {
     echo "const DOMAINS = ["
-    local handler
     for handler in ${registered[@]+"${registered[@]}"}; do
       echo "  require('./${handler}'),"
     done
@@ -74,8 +90,8 @@ repo="$(build_repo unregistered main 1)"
 run_guard "$repo"
 [ "$STATUS" -eq 1 ] || fail "02: an unrunnable tree was allowed (status $STATUS): $OUT"
 names "BL-901-fixture.feature" || fail "02: refusal did not name the feature file: $OUT"
-names "bl901FixtureSteps.js" || fail "02: refusal did not name the unregistered handler: $OUT"
-pass "02 an unregistered handler is refused, naming the feature and the handler"
+names "bl901FixtureHandler.js" || fail "02: refusal did not name the unreachable handler: $OUT"
+pass "02 a handler discovery cannot reach is refused, naming the feature and the handler"
 
 # ── 03: a registered handler's sibling script is missing ────────────────────
 repo="$(build_repo sibling main 1 bl901FixtureSteps)"
