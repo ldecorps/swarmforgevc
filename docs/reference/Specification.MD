@@ -361,66 +361,6 @@ How-to: `docs/how-to/BL-1241-entangled-tip-at-the-land-step-has-a-reachable-reme
 (extended in place — same detector, same doc). No diagram depicts land-step
 internals.)
 Prior entry —
-**Last Updated:** September 3, 2026 (BL-1359: the Article 4.2
-pipeline-code-on-main sweep's merge-commit path read
-(`commit-touched-paths` in `babysitter_check.bb`, restated in
-`babysitterd_sweep_lib.bb`) charged a merge with the UNION of every
-parent's diff instead of what it introduced over its FIRST parent —
-`git diff-tree -m --first-parent` looks like it restricts the comparison,
-but `--first-parent` is a revision-traversal option with no effect on a
-single named commit's `diff-tree`, so `-m` alone decided the output (one
-diff section per parent). The BL-962 non-first-parent exemption could never
-rescue this: it adjudicates the wrong parent when the charge set itself is
-inflated. Measured on live history, this false-charged `specs/pipeline/steps/index.js`
-— the registry every ticket appends to — on essentially every merge-up;
-two of the Operator's three 2026-09-03 sweep findings were pure artefacts
-of it. `commit-touched-paths` now resolves the merge's first parent
-(`<sha>^1`, itself fail-closed per invariant 2) and runs a plain two-tree
-`diff-tree` against it — matching a non-merge commit's own single-parent
-diff exactly, which is what the surrounding comment always claimed the old
-command did. BL-590's own catch (a merge's content invisible to a *plain*
-`git show`/`diff-tree` with no merge-aware form at all) is unaffected and
-still reports its paths; only the union over-charge is removed. Non-merge
-commits, the BL-962 exemption logic, and the fail-closed posture are
-otherwise unchanged. Acceptance:
-`specs/features/BL-1359-a-merge-is-charged-only-with-what-it-introduced.feature`.
-How-to: `docs/how-to/BL-611-babysitterd-runbook.md` (the Check 13
-"pipeline code on main" section corrected in place — it had stated the
-`--first-parent` restriction as fact). No diagram depicts babysitterd
-sweep internals.)
-Prior entry —
-**Last Updated:** September 3, 2026 (BL-1356: the six BL-654 "stamp-off"
-property tests (`bl1113`/`bl1115`/`bl1116`/`bl1117`/`bl1136`/`bl1323`) that
-defend "a green suite must never write a decision into
-`backlog/hotfix-ledger.yaml`" no longer pin their watched row's CURRENT
-state as a fixed literal (`/state: pending/`, `/state: stamp-open/`) — a row
-is not a constant, advancing it through `stamp-open` → `awaiting-human` →
-`certified`/`waived` is exactly the ledger's own workflow, so every one of
-these tests was pre-red and jammed the repo-wide property-suite commit gate
-(BL-1175) the moment its row legitimately moved; five of six had already
-accumulated identical standing-allowlist waivers, and the sixth jammed four
-unrelated commits on 2026-09-02 with none yet. Per the ticket's human ruling
-(option 1 of two offered), the invariants stay on the LIVE ledger and the
-assertion changed instead: `extension/test/helpers/stampOff.js`'s
-`assertRunWritesNoDecision(hotfix, work, opts)` is now the one place all six
-call — it snapshots the watched row before `work()` runs and asserts it is
-byte-identical after, so the row's pre-run state (whatever it is) becomes
-the expected value rather than a hard-coded literal, while a run that
-genuinely stamps a decision (`state: certified`/`waived`, non-null
-`human_decision`, non-null `decided_at`) still fails from ANY starting
-state — the non-weakening half is checked independently, not implied by the
-before/after comparison alone. The five allowlist rows this discharged
-(`bl1113`, `bl1115`, `bl1116`, `bl1117`, `bl1136`) came out of
-`property_suite_standing_allowlist.tsv` in the same parcel, since a waiver
-whose reason is gone would hide a future genuine stamp-off regression
-behind it; `bl1323` never had one. Acceptance:
-`specs/features/BL-1356-stamp-off-invariant-watches-the-run-not-the-row.feature`.
-How-to:
-`docs/how-to/BL-1175-property-suite-standing-reds-block-unrelated-commits.md`
-(extended in place — same allowlist/guard mechanism, one more shape of
-standing red resolved rather than parked). No diagram depicts property-suite
-gating internals.)
-Prior entry —
 **Last Updated:** September 3, 2026 (BL-1337: the BoB starting cast generator
 (BL-1181) now takes a named, steward-owned **profile** instead of one
 hard-coded policy, and gates every pick on a **handshake** before the cast is
