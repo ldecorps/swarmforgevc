@@ -1,3 +1,7 @@
+# acceptance-mutation-manifest-begin
+# {"version":1,"tested_at":"2026-09-04T17:14:06.136247979Z","feature_name":"BL-1390 A commit on the shared main checkout is pushed while it still fast-forwards","feature_path":"/home/carillon/swarmforgevc/.worktrees/hardender/specs/features/BL-1390-a-commit-on-the-shared-main-checkout-is-pushed-while-it-still-fast-forwards.feature","background_hash":"c63af9cc1d1253161b4fd7c8d88438c3df87464d4b974839bb49bb8bedc8f118","implementation_hash":"unknown","scenarios":[],"outcome":"inapplicable"}
+# acceptance-mutation-manifest-end
+
 Feature: BL-1390 A commit on the shared main checkout is pushed while it still fast-forwards
 
   Every writer on the shared main checkout leaves local main ahead of
