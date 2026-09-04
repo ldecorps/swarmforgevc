@@ -110,7 +110,10 @@ notes: |
   `required_wiring` anchor 1 is a consumer anchor: the live BL-632 handler
   is what runs the feature, and the helper's name is absent from it today.
 
-  IR-DRY at mint: see commit.
+  IR-DRY at mint: 1 medium possible-synonym, "names an additional guard
+  that is present on the tree" (02) vs "names a guard that is absent from
+  the tree" (03) - the present/absent pair IS the distinction the two
+  scenarios exist for; kept.
 
   Mint-time INVEST: one observable outcome (BL-632's contract green against
   today's runner and staying green when the runner grows), one sitting, no
