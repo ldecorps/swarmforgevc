@@ -128,3 +128,4 @@ assigned_to: coder
 bounce_count: 1
 bounce_history:
   - { at: 2026-09-04, by: QA, blamed: coder, class: behavior, commit: 152bae1089, evidence: backlog/evidence/BL-1399-bounce-20260904.md }
+abandoned_commits: [174391df60]
