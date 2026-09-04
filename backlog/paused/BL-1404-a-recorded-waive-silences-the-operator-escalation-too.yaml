@@ -108,7 +108,9 @@ notes: |
   `coordinator.prompt` and `operator.prompt` (BL-798: prose I own lands
   with the ticket, never later).
 
-  IR-DRY at mint: see commit.
+  IR-DRY at mint: 6 medium findings, all kept - every pair is a deliberate
+  contrast the scenarios exist for: an escalation enqueued vs not enqueued,
+  a key recorded vs nothing recorded, the first key vs a second key.
 
   Mint-time INVEST: one observable outcome (a waived key wakes nobody),
   one sitting, no unbuilt sibling.
