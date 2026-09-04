@@ -1160,7 +1160,14 @@
    ;; and never loads one, which is why a93aa4a18f landed on 2026-09-04 with
    ;; 947 handlers, 1 unloadable, 0 features runnable.
    {:script "check_handler_module_graph.sh"
-    :why "a discovered step handler whose module graph does not resolve on the replayed tree (BL-1385)"}])
+    :why "a discovered step handler whose module graph does not resolve on the replayed tree (BL-1385)"}
+   ;; BL-1395: a handler graph is not a Babashka script. SCI analyses each defn
+   ;; eagerly, so a forward reference or a runtime require in a .bb fails at
+   ;; LOAD - three reached main in eight days, the last crash-looping the live
+   ;; daemon from 18:20Z on 2026-09-04. A hand-built land that skips the replay
+   ;; meets this guard through run_commit_guards.sh; a replay meets it here.
+   {:script "check_bb_scripts_load.sh"
+    :why "a Babashka script on the replayed tree that fails SCI analysis, or a handoffd that will not boot (BL-1395)"}])
 
 (defn run-replayed-tree-guards
   "Runs every tree guard against `tree-root` and returns a vector of refusal
