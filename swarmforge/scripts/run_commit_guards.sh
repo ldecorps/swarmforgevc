@@ -71,6 +71,14 @@ run_guard check_feature_handler_registration.sh
 # main on 2026-09-04 - so the load question has to be asked here too, not only
 # in the replay's tree-guard list.
 run_guard check_handler_module_graph.sh
+# BL-1395: registration and loadability are still not the same thing, and a
+# handler graph is not a Babashka script. SCI analyses a defn EAGERLY, so a
+# forward reference or a runtime require fails at LOAD - three such files
+# reached main in eight days, the last crash-looping the live daemon, and that
+# land's whole verification was three greps for required_wiring labels. This
+# guard loads what the commit changed and BOOTS handoffd, because a grep for a
+# label is not proof a file loads.
+run_guard check_bb_scripts_load.sh
 
 if guard_chain_has_refusal; then
   report_refusals
