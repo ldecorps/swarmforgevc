@@ -64,9 +64,13 @@ pass "03 origin-advanced-since-gate wiring"
 
 # ── BL-1309: the mandatory decide step asks what the tip carries ─────────
 #
-# Human ruling (2026-09-03, option 1): refuse EVERY entangled tip. The fixture
-# is the shape the reflog caught on 2026-08-31 - a QA-branch tip whose merged
-# ancestry carries a sibling ticket whose content never reached origin/main.
+# Human ruling (2026-09-03, option 2 as revised by BL-1375): refuse only when
+# an unlanded sibling is WITHHELD, awaiting approval, or unreadable. The
+# fixture is the shape the reflog caught on 2026-08-31 - a QA-branch tip whose
+# merged ancestry carries a sibling ticket whose content never reached
+# origin/main - and rows 04..04d hold the GIT shape fixed while varying only
+# the sibling's backlog state, so the narrowing is measured rather than
+# assumed: the same tip that refuses in 04 proceeds in 04b.
 
 # A REAL separate origin, not the repo's own .git: the script fetches
 # origin/main on every run, so a self-remote would refresh origin/main back to
@@ -93,7 +97,22 @@ echo "own work" >"$E_ROOT/own.txt"
 git -C "$E_ROOT" add -A
 git -C "$E_ROOT" commit -q -m "BL-9001: the ticket being landed"
 
-# ── 04: an unlanded sibling on the tip refuses, names it, exits 3 ────────
+# The sibling's backlog state is the ONLY thing rows 04..04d vary. Ticket
+# files are read off the filesystem (land_step_lib.bb's worktree-ticket-sources),
+# never out of the index, so writing one leaves the tip - and therefore the
+# entanglement - byte-identical between rows.
+bl1309_sibling_ticket() { # <folder> <yaml-body>
+  rm -rf "$E_ROOT/backlog"
+  if [[ -n "${1:-}" ]]; then
+    mkdir -p "$E_ROOT/backlog/$1"
+    printf '%s\n' "$2" >"$E_ROOT/backlog/$1/BL-9002-the-sibling.yaml"
+  fi
+}
+
+# ── 04: an unlanded sibling nobody can read the approval of refuses ──────
+# No backlog file anywhere: :unreadable, which BLOCKS. Absence never buys a
+# ride (BL-1375 invariant 1 - a check that could not run is not a pass).
+bl1309_sibling_ticket "" ""
 set +e
 OUT04="$(bash "$CLI" "$E_ROOT" --decide-only 2>&1)"
 CODE04=$?
@@ -104,7 +123,54 @@ grep -q 'BL-9002' <<<"$OUT04" || fail "04: refusal does not name the unlanded si
 grep -q ':purity-action' <<<"$OUT04" && fail "04: a refusal still advised a push: $OUT04"
 [[ ! -d "$E_ROOT/.swarmforge/land-main.publish.lock" ]] \
   || fail "04: refusal left the land lock held"
-pass "04 unlanded sibling on the tip → ENTANGLED_SIBLING_BLOCK, exit 3, no advice"
+pass "04 unlanded sibling with an unreadable approval state → refuse, exit 3"
+
+# ── 04b: THE NARROWING. The same tip, sibling approved → ordinary decision ─
+# This row is why the ruling changed: four APPROVED tickets sharing one path
+# deadlocked, each refusing on the others. Non-vacuous by construction - row
+# 04 above just refused on this identical git state.
+bl1309_sibling_ticket active "id: BL-9002
+human_approval: approved"
+set +e
+OUT04B="$(bash "$CLI" "$E_ROOT" --decide-only 2>&1)"
+CODE04B=$?
+set -e
+[[ "$CODE04B" -eq 0 ]] || fail "04b: an approved sibling still refused, got $CODE04B: $OUT04B"
+grep -q 'ENTANGLED_SIBLING_BLOCK' <<<"$OUT04B" && fail "04b: approved sibling refused: $OUT04B"
+grep -q ':purity-action' <<<"$OUT04B" || fail "04b: no ordinary decision printed: $OUT04B"
+pass "04b approved unlanded sibling → ordinary decision, no marker"
+
+# ── 04c: withheld in backlog/hold → refuse, naming the hold ──────────────
+# The folder outranks the field: an approved-looking file in hold/ is still a
+# hold, which is the 2026-08-31 shape this ticket exists for.
+bl1309_sibling_ticket hold "id: BL-9002
+human_approval: approved"
+set +e
+OUT04C="$(bash "$CLI" "$E_ROOT" --decide-only 2>&1)"
+CODE04C=$?
+set -e
+[[ "$CODE04C" -eq 3 ]] || fail "04c: a withheld sibling did not refuse, got $CODE04C: $OUT04C"
+grep -q 'ENTANGLED_SIBLING_BLOCK' <<<"$OUT04C" || fail "04c: no marker: $OUT04C"
+grep -q 'BL-9002' <<<"$OUT04C" || fail "04c: refusal does not name the withheld sibling: $OUT04C"
+grep -qi 'hold' <<<"$OUT04C" || fail "04c: refusal does not say WHY it refused: $OUT04C"
+pass "04c sibling withheld in backlog/hold → refuse, naming the reason"
+
+# ── 04d: awaiting approval → refuse, naming the pending approval ─────────
+bl1309_sibling_ticket active "id: BL-9002
+human_approval: pending"
+set +e
+OUT04D="$(bash "$CLI" "$E_ROOT" --decide-only 2>&1)"
+CODE04D=$?
+set -e
+[[ "$CODE04D" -eq 3 ]] || fail "04d: a sibling awaiting approval did not refuse, got $CODE04D: $OUT04D"
+grep -q 'BL-9002' <<<"$OUT04D" || fail "04d: refusal does not name the sibling: $OUT04D"
+grep -q 'pending' <<<"$OUT04D" || fail "04d: refusal does not name the pending approval: $OUT04D"
+pass "04d sibling awaiting approval → refuse, naming the pending approval"
+
+# Rows 05..08 are about the detector itself, not the backlog: leave no ticket
+# file behind, so an unlanded sibling there still blocks and the fail-open
+# rows keep their non-vacuity.
+bl1309_sibling_ticket "" ""
 
 # ── 05: once the sibling's content is on origin/main, the ordinary decision ─
 git -C "$E_ROOT" push -q origin main
