@@ -497,3 +497,5 @@ test_bl1328_qwen_model_token_forms.sh	standing
 bl1337_profile_cast_test_runner.bb	standing		
 test_bl1390_post_commit_push.sh	standing		
 bl1390_post_commit_push_property_runner.bb	standing		
+test_bl1363_close_ticket.sh	standing		
+bl1363_close_ticket_property_runner.sh	standing		
