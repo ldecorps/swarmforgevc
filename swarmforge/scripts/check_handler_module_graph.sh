@@ -118,7 +118,7 @@ const fs = require('node:fs');
 const path = require('node:path');
 
 const TREE = fs.realpathSync(process.env.BL1385_TREE);
-const HANDLER = process.env.BL1385_HANDLER;
+const STEPS_DIR = process.env.BL1385_STEPS_DIR;
 
 // A stub permissive enough that a handler's TOP-LEVEL code cannot fail on its
 // SHAPE. The guard's question is whether every module RESOLVES on this tree,
@@ -220,37 +220,56 @@ Module._load = function (request, parent, isMain) {
   return origLoad.call(this, request, parent, isMain);
 };
 
-try {
-  require(HANDLER);
-  process.exit(0);
-} catch (e) {
-  if (missing.length > 0) {
-    process.stdout.write(missing.join('; '));
-    process.exit(1);
+// ONE process for every handler, not one process each. At 947 handlers the
+// per-process spawn dominated: 27s on this repo, paid by every commit and
+// every land. Per-handler isolation is kept by clearing require.cache and by
+// scoping the `missing` list to each handler, which is all this guard's
+// question needs - it asks whether modules RESOLVE, not whether handlers can
+// coexist.
+const origExit = process.exit;
+const failures = [];
+const handlers = fs
+  .readdirSync(STEPS_DIR)
+  .filter((n) => n.endsWith('Steps.js'))
+  .sort();
+
+for (const name of handlers) {
+  const file = path.join(STEPS_DIR, name);
+  missing.length = 0;
+  for (const k of Object.keys(require.cache)) delete require.cache[k];
+  // A handler that calls process.exit at load would otherwise end the whole
+  // sweep and silently pass every handler after it.
+  process.exit = () => { throw new Error('BL1385_HANDLER_CALLED_EXIT'); };
+  try {
+    require(file);
+  } catch (e) {
+    if (missing.length > 0) {
+      failures.push(`${name} - ${missing.join('; ')}`);
+    }
+    // Resolved everything but threw for its own reasons: NOT this guard's
+    // question. BL-1371's registry surfaces that, and refusing here would
+    // block on unrelated behaviour.
+  } finally {
+    process.exit = origExit;
   }
-  // The handler resolved everything but threw for another reason (its own
-  // top-level code). That is NOT this guard's question - BL-1371's registry
-  // would surface it, and refusing here would block on unrelated behaviour.
-  process.exit(0);
 }
+
+if (failures.length > 0) {
+  process.stdout.write(failures.join('\n'));
+  origExit.call(process, 1);
+}
+origExit.call(process, 0);
 RUNNER
 
-FAILURES=0
-FAILED_LINES=""
+RUNNER_OUT="$(BL1385_TREE="$WORK_TREE" BL1385_STEPS_DIR="$STEPS_DIR" node "$NODE_RUNNER" 2>&1)"
+RUNNER_STATUS=$?
 
-while IFS= read -r handler; do
-  name="$(basename "$handler")"
-  out="$(BL1385_TREE="$WORK_TREE" BL1385_HANDLER="$handler" node "$NODE_RUNNER" 2>&1)"
-  status=$?
-  if [[ "$status" -ne 0 ]]; then
-    FAILURES=$((FAILURES + 1))
-    FAILED_LINES+="handler-load-failed: $name - ${out:-<no message>}"$'\n'
-  fi
-done < <(find "$STEPS_DIR" -maxdepth 1 -name '*Steps.js' -type f | sort)
-
-if [[ "$FAILURES" -gt 0 ]]; then
+if [[ "$RUNNER_STATUS" -ne 0 ]]; then
+  FAILURES="$(grep -c . <<<"$RUNNER_OUT")"
   echo "HANDLER_LOAD_BLOCK"
-  printf '%s' "$FAILED_LINES"
+  while IFS= read -r line; do
+    [[ -n "$line" ]] && echo "handler-load-failed: $line"
+  done <<<"$RUNNER_OUT"
   echo "handler-graph: $FAILURES handler(s) on this tree cannot load; under BL-1371 discovery that makes EVERY acceptance run throw"
   # 1, not 3: commit_guard_chain_lib.sh's run_guard treats any status other
   # than 1 as UNEXPECTED rather than as a refusal, and this guard is a member
