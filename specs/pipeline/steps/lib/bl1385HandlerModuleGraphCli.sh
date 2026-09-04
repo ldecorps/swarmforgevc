@@ -15,6 +15,14 @@
 #     land-replay           the LAND's own tree-guard list, run against a bad
 #                           materialised tree exactly as land_step_lib.bb does
 #     commit-guards         the commit guard chain, run over a bad staged tree
+#     no-steps-dir           a tree with no specs/pipeline/steps directory at
+#                           all - nothing to discover, must pass
+#     handler-calls-exit     a handler between the good and bad ones calls
+#                           process.exit(0) at load; the sweep must still
+#                           reach and refuse the bad handler after it
+#     escapes-tree-scope     a handler requires a nonexistent absolute path
+#                           outside any tree - foreign, not tree content,
+#                           must pass rather than being flagged missing
 #
 # Prints one JSON line:
 #   {"exit":N,"marker":bool,"namesHandler":bool,"namesModule":bool,"out":"..."}
@@ -29,6 +37,34 @@ SHAPE="$2"
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(cd "$SCRIPT_DIR/../../../.." && pwd)"
 GUARD="$REPO_ROOT/swarmforge/scripts/check_handler_module_graph.sh"
+
+# no-steps-dir builds a bare tree with no specs/pipeline/steps directory at
+# all, so it cannot share the setup below (which always creates one) -
+# handled entirely separately, before that setup runs.
+if [[ "$SHAPE" == "no-steps-dir" ]]; then
+  R="$WORK/repo"
+  mkdir -p "$R"
+  git init -q -b main "$R"
+  git -C "$R" config user.email t@t
+  git -C "$R" config user.name t
+  git -C "$R" config commit.gpgsign false
+  echo "nothing to discover here" >"$R/README.md"
+  git -C "$R" add -A
+  git -C "$R" commit -q -m "no steps dir at all"
+  OUT="$(bash "$GUARD" HEAD "$R" 2>&1)"
+  CODE=$?
+  MARKER=false
+  grep -q 'HANDLER_LOAD_BLOCK' <<<"$OUT" && MARKER=true
+  BL_OUT="$OUT" BL_CODE="$CODE" BL_MARKER="$MARKER" \
+    python3 -c 'import json, os; print(json.dumps({
+      "exit": int(os.environ["BL_CODE"]),
+      "marker": os.environ["BL_MARKER"] == "true",
+      "namesHandler": False,
+      "namesModule": False,
+      "out": os.environ["BL_OUT"],
+  }))'
+  exit 0
+fi
 
 R="$WORK/repo"
 mkdir -p "$R/specs/pipeline/steps/lib" "$R/extension/src/tools"
@@ -91,6 +127,23 @@ case "$SHAPE" in
   unreadable-tree) ;;
   land-replay|commit-guards)
     bad_handler_requiring "require(path.join(EXT_OUT, 'tools', 'absentFromTree'));"
+    ;;
+  handler-calls-exit)
+    # An exit-calling handler sorts BEFORE the bad one (mm < zz): with the
+    # exit-during-load guard intact the sweep must still reach and refuse
+    # zzBad after it, not silently stop there.
+    cat >"$R/specs/pipeline/steps/mmExitSteps.js" <<'EXIT'
+'use strict';
+process.exit(0);
+function registerSteps() {}
+module.exports = { registerSteps };
+EXIT
+    bad_handler_requiring "require(path.join(EXT_OUT, 'tools', 'absentFromTree'));"
+    ;;
+  escapes-tree-scope)
+    # A foreign absolute path, outside any tree and nonexistent anywhere -
+    # not tree content, so the guard must not flag it as a missing module.
+    bad_handler_requiring "require('/nonexistent-bl1385-invariant2-probe-9f3a1c');"
     ;;
   *) echo "unknown shape: $SHAPE" >&2; exit 2 ;;
 esac

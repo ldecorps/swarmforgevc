@@ -1,3 +1,8 @@
+# mutation-stamp: sha256=4105b442e2104f7a759e922ebfba9b96c4e96ee07662f8ff93b40c7ac815094f
+# acceptance-mutation-manifest-begin
+# {"version":1,"tested_at":"2026-09-04T11:15:55.584348589Z","feature_name":"BL-1385 A handler that cannot load never reaches main","feature_path":"/home/carillon/swarmforgevc/.worktrees/hardender/specs/features/BL-1385-a-handler-that-cannot-load-never-reaches-main.feature","background_hash":"cb1755a47e3456b4b6c8a6c4b9d87c8889e4ee82ca55cffbc9d1d3492f92136f","implementation_hash":"unknown","scenarios":[{"index":0,"name":"a handler whose require does not resolve on the tree is refused","scenario_hash":"9b0ed1886ce7909ad4be31516fc49b314e52754f4944e1f143fd066ef0172889","mutation_count":3,"result":{"Total":3,"Killed":3,"Survived":0,"Errors":0},"tested_at":"2026-09-04T11:15:55.584348589Z"},{"index":2,"name":"the checker's own worktree never changes the verdict","scenario_hash":"a200edf1572050f7fea01a2f9d487d03f429197e849b18042368540c2b811ab9","mutation_count":6,"result":{"Total":6,"Killed":6,"Survived":0,"Errors":0},"tested_at":"2026-09-04T11:15:55.584348589Z"}]}
+# acceptance-mutation-manifest-end
+
 Feature: BL-1385 A handler that cannot load never reaches main
 
   Since BL-1371 a step handler registers by existing in specs/pipeline/steps,
@@ -68,3 +73,24 @@ Feature: BL-1385 A handler that cannot load never reaches main
     When the handler module graph guard examines the tree
     Then the guard refuses
     And its output says the tree could not be examined
+
+  # BL-1385 a-tree-with-nothing-to-discover-passes-07
+  Scenario: a tree with no step registry directory at all passes
+    Given a tree with no step registry directory at all
+    When the handler module graph guard examines the tree
+    Then the guard passes
+    And its output omits the HANDLER_LOAD_BLOCK marker
+
+  # BL-1385 a-handler-calling-exit-does-not-hide-a-later-bad-one-08
+  Scenario: a handler calling process.exit at load does not hide a later bad handler
+    Given a handler on the tree calling process.exit before a bad handler requiring a module absent from the tree
+    When the handler module graph guard examines the tree
+    Then the guard refuses
+    And its output names the handler and the missing module
+
+  # BL-1385 a-foreign-absolute-path-is-not-tree-content-09
+  Scenario: a handler requiring a foreign absolute path outside any tree passes
+    Given a handler on the tree requiring a nonexistent absolute path outside any tree
+    When the handler module graph guard examines the tree
+    Then the guard passes
+    And its output omits the HANDLER_LOAD_BLOCK marker
