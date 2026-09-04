@@ -20,11 +20,11 @@ fail() { echo "FAIL: $*"; status=1; }
 pass() { echo "PASS: $*"; }
 
 # BL-1390 second incident: a blind prefix sweep deletes a CONCURRENT copy's
-# fixtures - 1156 copies of a sibling suite exhausted the host that way.
-# This suite is invoked once per scenario by its acceptance handler, so it
-# can run concurrently too. fixture_isolation_begin bounds the clock, logs
-# the invoker, takes a lock, reaps only roots NO LIVE RUN OWNS, and creates
-# an owner-stamped $WORK.
+# fixtures - 1156 copies of a sibling suite exhausted the host that way, and
+# BL-1392 was bounced for carrying this same retired pattern. This suite is
+# invoked once per scenario by its acceptance handler, so it runs concurrently
+# too. fixture_isolation_begin bounds the clock, logs the invoker, takes a
+# lock, reaps only roots NO LIVE RUN OWNS, and creates an owner-stamped $WORK.
 source "$SCRIPT_DIR/lib/fixture_isolation.sh"
 fixture_isolation_begin "$FIXTURE_PREFIX" "${BL1363_SUITE_BOUND_SECONDS:-900}"
 trap 'rm -rf "$WORK"' EXIT

@@ -84,7 +84,6 @@ How-to: `docs/how-to/BL-1390-post-commit-push-while-it-still-fast-forwards.md`
 (new page — a distinct mechanism from the periodic push sweep it works
 alongside). No diagram depicts push-sweep or hook internals at this
 granularity.)
-
 Prior entry —
 **Last Updated:** September 4, 2026 (BL-1362: Article 4.4's evidence file
 — items `D1..Dn` or an explicit NONE, committed alone and forwarded by

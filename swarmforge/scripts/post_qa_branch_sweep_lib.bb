@@ -91,6 +91,30 @@
     :missing-ref "missing git ref"
     (str reason)))
 
+(defn wake-for-reason?
+  "BL-1361, human ruling 2026-09-04: TELL the role for every surfacing reason,
+   but WAKE it only for a dirty worktree.
+
+   A dirty worktree is the one reason that does not resolve itself. A branch
+   that merely cannot fast-forward is merged the next time that role receives a
+   parcel anyway, because a forwarded commit must carry the received commit as
+   an ancestor - so waking for it spends a turn on something the role would
+   have done for free. Waking is the exception here, so an unknown reason never
+   wakes."
+  [reason]
+  (= :dirty-worktree (if (keyword? reason) reason (keyword (str reason)))))
+
+(defn surface-notice
+  "The one-liner a surfaced role is told: the landed commit, why the sweep
+   could not settle its branch, and what it must do. Kept inside the 80-char
+   note cap, because a note over the cap quarantines silently as .dead - a
+   surfacing nobody hears is the defect this ticket exists to end, and an
+   oversized message would reproduce it in a new way."
+  [role reason landed-sha]
+  (let [short-sha (subs (str landed-sha) 0 (min 10 (count (str landed-sha))))
+        text (str "branch behind " short-sha ": " (surface-reason-text reason) " - merge up")]
+    (if (<= (count text) 80) text (subs text 0 80))))
+
 (defn record-surface!
   [state role reason]
   (update state :surfaced conj {:role role :reason (if (keyword? reason) (name reason) (str reason))}))
@@ -134,6 +158,25 @@
            (fn [[state actions] role-name]
              (let [facts ((:role-facts! adapters) role-name)
                    [new-state action] (sweep-one-role state landed-sha role-name facts adapters)]
+               ;; BL-1361: the send. `action` is produced only for a NEW
+               ;; surfacing - sweep-one-role returns nil when the record
+               ;; already exists - so the existing surfaced record stays the
+               ;; authority and a per-tick sweep is silent (invariant 2).
+               ;;
+               ;; One unreachable mailbox never withholds the rest (invariant
+               ;; 3): a failure is logged and the reduce carries on. Wrapped
+               ;; because a `tell!` that THROWS must not end the sweep either -
+               ;; the roles after it are owed their notice.
+               (when (and action (= :surfaced (:type action)) (:tell! adapters))
+                 (let [reason (keyword (:reason action))
+                       result (try
+                                ((:tell! adapters) role-name reason
+                                 (surface-notice role-name reason landed-sha)
+                                 (wake-for-reason? reason))
+                                (catch Exception e {:success false :error (str (.getMessage e))}))]
+                   (when-not (:success result)
+                     ((:log! adapters) "post-qa-branch-sweep-tell-failed"
+                      role-name (str (:error result))))))
                [new-state (if action (conj actions action) actions)]))
            [initial []]
            role-names)]
