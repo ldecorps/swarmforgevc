@@ -3285,6 +3285,54 @@
   (zero? (:exit (daemon-cycle-guard-lib/sh! ["git" "rev-parse" "-q" "--verify" "MERGE_HEAD"]
                                             {:dir (str project-root)}))))
 
+;; BL-1386: the SHA, not just the presence. Ownership is a sha comparison, so
+;; the daemon has to be able to say WHICH merge is open, not only that one is.
+(defn- master-main-merge-head-sha []
+  (let [{:keys [exit out]} (daemon-cycle-guard-lib/sh!
+                            ["git" "rev-parse" "-q" "--verify" "MERGE_HEAD"]
+                            {:dir (str project-root)})]
+    (when (zero? exit) (str/trim out))))
+
+;; The sha `git merge origin/main` is about to bring in - recorded BEFORE the
+;; merge runs, so an abort that fails still leaves proof of ownership behind.
+(defn- master-main-origin-sha []
+  (let [{:keys [exit out]} (daemon-cycle-guard-lib/sh!
+                            ["git" "rev-parse" "-q" "--verify" "origin/main"]
+                            {:dir (str project-root)})]
+    (when (zero? exit) (str/trim out))))
+
+;; BL-1386 consumer anchors. Both literals live HERE, in the only process
+;; that can write the record or emit the log line, because that is what proves
+;; a live path reaches the new decision (BL-1235). The lib owns the same two
+;; strings; test_handoffd_master_main_reconcile_wiring.sh asserts the pair
+;; agrees, so a rename on either side is a red test rather than a daemon that
+;; writes one file while BL-1387 reads another (BL-897's cross-boundary rule).
+(def ^:private master-main-merge-owner-file "master-main-merge-owner.json")
+(def ^:private master-main-merge-abort-failed-label "merge-abort-failed")
+
+(defn- master-main-record-merge-owner! []
+  (master-main-reconcile-lib/write-merge-owner!
+   (str daemon-dir)
+   {:sha (master-main-origin-sha)
+    :pid (.pid (java.lang.ProcessHandle/current))
+    :recorded-at (str (java.time.Instant/now))}))
+
+(defn- master-main-clear-merge-owner! []
+  (master-main-reconcile-lib/clear-merge-owner! (str daemon-dir)))
+
+;; `git merge --abort` with a short bounded retry: the ordinary cause of a
+;; failed abort on this shared checkout is a transient `.git/index.lock` held
+;; by the concierge topic store, the coordinator or the specifier, all of
+;; which commit here. Bounded, never a spin - three attempts, then report.
+(defn- master-main-merge-abort! []
+  (loop [attempt 1]
+    (let [{:keys [exit err]} (daemon-cycle-guard-lib/sh!
+                              ["git" "merge" "--abort"] {:dir (str project-root)})]
+      (cond
+        (zero? exit) {:success true}
+        (< attempt 3) (do (Thread/sleep 500) (recur (inc attempt)))
+        :else {:success false :error (str/trim (or err ""))}))))
+
 (defn- master-main-origin-is-ancestor? []
   (zero? (:exit (daemon-cycle-guard-lib/sh! ["git" "merge-base" "--is-ancestor" "origin/main" "HEAD"]
                                             {:dir (str project-root)}))))
@@ -3424,13 +3472,44 @@
                                      {:dir (str project-root)})]
                  {:success (zero? exit)}))
         :merge! (fn []
-                  (let [{:keys [exit err]} (daemon-cycle-guard-lib/sh!
-                                            ["git" "merge" "--no-edit" "origin/main"]
-                                            {:dir (str project-root)})]
-                    {:success (zero? exit) :error (str/trim (or err ""))}))
+                  (let [{:keys [exit out err]} (daemon-cycle-guard-lib/sh!
+                                                ["git" "merge" "--no-edit" "origin/main"]
+                                                {:dir (str project-root)})
+                        text (str (or out "") "\n" (or err ""))]
+                    ;; BL-1386: whether git ACTUALLY reported a conflict, read
+                    ;; from git's own output, so the `conflict` label is an
+                    ;; observation rather than an assumption. git prints
+                    ;; "CONFLICT (...)" / "Automatic merge failed" on the real
+                    ;; thing and neither on a hook refusal.
+                    {:success (zero? exit)
+                     :error (str/trim text)
+                     :conflict? (boolean (or (str/includes? text "CONFLICT")
+                                             (str/includes? text "Automatic merge failed")))}))
+        ;; BL-1386: the result is no longer discarded, and the abort is
+        ;; retried through a transient index.lock before it is reported.
         :abort! (fn []
-                  (when (master-main-reconcile-lib/may-abort-failed-merge? true)
-                    (daemon-cycle-guard-lib/sh! ["git" "merge" "--abort"] {:dir (str project-root)})))
+                  (if (master-main-reconcile-lib/may-abort-failed-merge? true)
+                    (master-main-merge-abort!)
+                    {:success false :error "refusing to abort a merge this daemon did not start"}))
+        ;; Invariant 1: the merge is owned on disk BEFORE it can fail, and the
+        ;; record is cleared only on a successful merge or a successful abort.
+        :record-owner! master-main-record-merge-owner!
+        :clear-owner! master-main-clear-merge-owner!
+        ;; Invariant 3: git's own words, under the observed label - never the
+        ;; fixed string `conflict` for a failure git never called a conflict.
+        :log! (fn [label text]
+                (let [detail (if (str/blank? (str text))
+                               "(git reported no error text)"
+                               (str text))]
+                  (log! "master-main-reconcile" label detail)
+                  ;; A failed abort is the state that orphaned three merges on
+                  ;; 2026-09-04, so it also says WHERE the proof of ownership
+                  ;; is - the next tick reads that file to finish the job, and
+                  ;; a human reading the log should not have to guess its name.
+                  (when (= label master-main-merge-abort-failed-label)
+                    (log! "master-main-reconcile" label
+                          (str "ownership retained in " master-main-merge-owner-file
+                               " - next tick aborts by ownership")))))
         ;; BL-1214: fallback! only ever runs after a REAL 3-way merge! was
         ;; attempted and conflicted (absorb-with-merge!'s own contract) - log
         ;; that fact before recovering, so a genuine content conflict is
@@ -3438,6 +3517,11 @@
         ;; rematch recovery below then succeeds and moves HEAD on, exactly as
         ;; qa_e2e_procedure step 2 specifies. Additive only: the rematch
         ;; outcome/behavior itself is unchanged.
+        ;; BL-1214's line stays: fallback! still only ever runs after a real
+        ;; merge was attempted AND its abort succeeded (absorb-with-merge!'s
+        ;; contract, now enforced rather than assumed - a failed abort returns
+        ;; before reaching here), so "attempted-and-aborted" remains a true
+        ;; statement at this point and its e2e step 2 still holds.
         :fallback! (fn []
                      (log! "master-main-reconcile" "conflict" "real-merge-attempted-and-aborted")
                      (master-main-rematch-onto-origin! :rematched-refuse :refuse-rematch))}))))
