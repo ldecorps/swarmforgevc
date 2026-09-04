@@ -88,7 +88,11 @@ notes: |
   `required_wiring` anchor 1 is a consumer anchor: the CLI's tree builder
   is what feeds the pure check, and the recursion literal is absent today.
 
-  IR-DRY: run on the feature file at mint (see commit).
+  IR-DRY at mint: 2 medium findings, both reviewed and kept as intentional
+  distinctions - "examines the live tree" (scenario 04) vs "examines the
+  tree" (the scratch tree, Background) are different subjects; "sits at the
+  top" vs "sits in a subdirectory" are the two placements the feature is
+  about. Not duplicates.
 
   Mint-time INVEST: one observable outcome (a nested handler is seen and
   refused), one sitting, no unbuilt sibling.
