@@ -83,6 +83,20 @@ mutate "detector-presence guard dropped (always attempts, changes fail-open path
   'if [[ -n "$TIP_SHA" && -f "$BL1309_LIB" ]]; then' \
   'if [[ -n "$TIP_SHA" ]]; then' \
   "dropping only the -f check leaves -n \"\$TIP_SHA\" standing; the one case this changes is a present-TIP_SHA/missing-lib run that now reaches entangled_sibling_report instead of skipping it - and that call's failure (load-file on a nonexistent path) is caught by the SAME || true that catches every other detector crash (see the || true mutant below, which IS real and killed). Verified empirically: with only this guard dropped, unit row 06 (detector absent) still passes byte-for-byte. The guard is a performance short-circuit, not a correctness requirement, given || true already covers the failure."
+# ── BL-1375's narrowing: the predicate that decides WHICH sibling blocks ──
+# Mutant 1 restores the superseded option-1 behaviour exactly (refuse every
+# entangled tip), which is the regression this slice exists to prevent
+# recurring; it must not survive.
+mutate "blockers check dropped (option 1 restored: every entangled tip refuses)" \
+  '(when (seq blockers)' \
+  '(when true'
+mutate "blockers check inverted (refuses only when NOTHING blocks)" \
+  '(when (seq blockers)' \
+  '(when (empty? blockers)'
+mutate "blocking-siblings asked about no siblings (nothing ever blocks)" \
+  '(land-step-lib/blocking-siblings root unlanded)' \
+  '(land-step-lib/blocking-siblings root #{})'
+
 mutate "|| true dropped (a detector crash would abort under set -e instead of failing open)" \
   'ENTANGLED_OUT="$(entangled_sibling_report || true)"' \
   'ENTANGLED_OUT="$(entangled_sibling_report)"'
