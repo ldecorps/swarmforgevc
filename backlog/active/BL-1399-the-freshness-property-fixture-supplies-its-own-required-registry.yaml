@@ -94,3 +94,5 @@ source: |
   QA note, priority 00, 2026-09-04T18:44Z: "untracked red: bl1012 -
   babysitterd has no row in freshness.conf". Reproduced by the specifier on
   main the same pass.
+
+assigned_to: coder
