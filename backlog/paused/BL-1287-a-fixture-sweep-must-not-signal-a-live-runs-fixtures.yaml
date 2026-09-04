@@ -15,7 +15,7 @@ severity: medium
 # swarm's own delivery machinery.
 status: todo
 epic: code-quality-gates
-priority: 24
+priority: 3
 direction: swarm-reported
 depends_on: []
 mutation_cost: low
