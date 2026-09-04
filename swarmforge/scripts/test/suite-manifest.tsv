@@ -499,3 +499,5 @@ test_bl1390_post_commit_push.sh	standing
 bl1390_post_commit_push_property_runner.bb	standing		
 test_bl1391_bookkeeping_conflict.sh	standing		
 bl1391_bookkeeping_conflict_property_runner.bb	standing		
+test_bl1363_close_ticket.sh	standing		
+bl1363_close_ticket_property_runner.sh	standing		
