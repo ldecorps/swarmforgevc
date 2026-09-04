@@ -50,6 +50,20 @@ That helper installs, in order:
 When no shift is configured, schedule install is a no-op (24/7 semantics
 unchanged). Logs name what was installed or skipped.
 
+**Silent failure window, fixed 2026-09-04 (BL-1381):** a broken
+`babashka.process` require inside `shift_schedule_applier_lib.bb` crashed
+the whole file at load — not just the code path it sat in — on every
+`./swarm start` since 2026-08-27. `install_shift_schedule_cron.sh`'s
+wrapper caught the crash (`set -euo pipefail`) and printed only `WARN:
+swarmforge cron install failed` into launch output, which nobody reads; a
+configured `swarm_shift` schedule never actually installed for those eight
+days. A second, smaller gap let a reconcile that exited 0 with unparseable
+output be reported as "no schedule configured" (a real failure read as a
+legitimate outcome) — both are fixed by the same rule: the wrapper now
+exits non-zero and names the cause on any outcome other than its three
+legitimate ones (no schedule configured, already current, installed), and
+never touches crontab on a failed or verdict-less reconcile.
+
 Manual repair (stack already up):
 
 ```bash
