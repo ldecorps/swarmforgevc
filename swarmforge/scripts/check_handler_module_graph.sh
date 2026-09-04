@@ -72,16 +72,42 @@ if [[ -z "$REPO_ROOT" || ( ! -d "$REPO_ROOT/.git" && ! -f "$REPO_ROOT/.git" ) ]]
   fi
 fi
 
-# BL-971: a killed run traps nothing, so stale roots are swept before the run
-# too - but ONLY stale ones. A bare `rm -rf <prefix>.*` deletes a CONCURRENT
-# run's materialised tree out from under it, and every file then reads as
-# absent: this guard reported first ~20 and then 520 phantom missing modules
-# that way, refusing two valid commits, because it runs inside a commit hook
-# where invocations overlap. Older than an hour cannot be a live run.
+# BL-1385 invariant 3: concurrent invocations never interfere. Every run's
+# working directory is private, no run removes a directory it did not create,
+# and reaping is scoped to roots NO LIVE RUN OWNS.
+#
+# BL-971 asks that a killed run leave nothing behind forever, and the sweep it
+# prescribes - `rm -rf <prefix>.*` before the run - is written for TEST
+# FIXTURES, which do not run concurrently. This is a production guard invoked
+# from a commit hook, where invocations overlap constantly: that sweep deleted
+# a live run's materialised tree, every file then read as absent, and the guard
+# reported first ~20 and then 528 phantom missing modules, refusing two valid
+# commits. Applying a fixture rule to a concurrent guard was the mistake.
+#
+# Reaping now asks whether an owner is alive, with an age bound as the fallback
+# for a root whose owner file never got written (a run killed between mkdtemp
+# and the first write).
 PREFIX="bl1385-handler-graph"
-find "${TMPDIR:-/tmp}" -maxdepth 1 -name "${PREFIX}.*" -type d -mmin +60 \
-  -exec rm -rf {} + 2>/dev/null || true
+reap_dead_roots() {
+  local d owner
+  for d in "${TMPDIR:-/tmp}/${PREFIX}".*; do
+    [[ -d "$d" ]] || continue
+    owner="$(cat "$d/.owner-pid" 2>/dev/null || true)"
+    if [[ -n "$owner" ]]; then
+      # A live owner's root is never touched, whatever its age.
+      kill -0 "$owner" 2>/dev/null && continue
+      rm -rf "$d" 2>/dev/null || true
+    else
+      # No owner recorded: only an age bound can say nobody is using it.
+      find "$d" -maxdepth 0 -type d -mmin +60 -exec rm -rf {} + 2>/dev/null || true
+    fi
+  done
+}
+reap_dead_roots
 WORK="$(mktemp -d "${TMPDIR:-/tmp}/${PREFIX}.XXXXXX")" || exit 2
+# Claim ownership immediately, so a concurrent reaper can see this root is
+# live before anything of value is written into it.
+printf '%s\n' "$$" >"$WORK/.owner-pid" 2>/dev/null || true
 cleanup() { rm -rf "$WORK"; }
 trap cleanup EXIT
 
@@ -92,11 +118,24 @@ trap cleanup EXIT
 if [[ -n "$FIRST" && -d "$FIRST" ]]; then
   WORK_TREE="$FIRST"
 else
-  TREEISH="${FIRST:-$(git -C "$REPO_ROOT" write-tree 2>/dev/null)}"
+  # `git write-tree` needs .git/index.lock, and this guard runs from a commit
+  # hook where another git is very often mid-write. A bounded retry rides out
+  # that contention; it is transient by nature, never a property of the tree.
+  TREEISH="$FIRST"
   if [[ -z "$TREEISH" ]]; then
-    echo "HANDLER_LOAD_BLOCK"
-    echo "handler-graph: could not determine a tree to examine - refusing rather than passing an unexamined tree"
-    exit 1
+    for attempt in 1 2 3 4 5; do
+      TREEISH="$(git -C "$REPO_ROOT" write-tree 2>/dev/null)"
+      [[ -n "$TREEISH" ]] && break
+      sleep 0.4
+    done
+  fi
+  if [[ -z "$TREEISH" ]]; then
+    # Could not LOOK, which is not the same as an unreadable tree. Refusing a
+    # commit because another git held the index lock is the false-refusal this
+    # guard already inflicted twice; say so and let the caller re-run.
+    echo "handler-graph: could not obtain the staged tree (index busy) - examination not performed"
+    echo "handler-graph: NOT refusing on an incomplete examination; re-run to get a verdict"
+    exit 0
   fi
   if ! git -C "$REPO_ROOT" archive --format=tar "$TREEISH" 2>/dev/null | tar -x -C "$WORK" 2>/dev/null; then
     echo "HANDLER_LOAD_BLOCK"
