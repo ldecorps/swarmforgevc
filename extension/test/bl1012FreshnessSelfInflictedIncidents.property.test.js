@@ -40,20 +40,58 @@ function isoAt(epoch) {
 
 // A fixture root with its OWN conf pinned at handoffd|120, so these
 // properties are independent of any ops change to the live conf.
-function mkRoot() {
+//
+// BL-1399: and its OWN required-daemon registry beside it. The checker runs
+// daemon_log_freshness_registry_guard.sh first (BL-784), which fails closed
+// when a daemon in the REQUIRED list has no conf row. Left to itself the
+// guard reads the LIVE daemon_log_freshness_required.conf out of the scripts
+// directory, finds babysitterd with no row in this deliberately one-row conf,
+// and refuses - three properties red on main with nothing wrong in the
+// watchdog, the guard or the conf. FRESHNESS_REQUIRED is the seam the guard
+// has read since it was written; using it keeps the isolation this fixture
+// always intended rather than weakening it.
+//
+// The guard has a SECOND arm with no seam: it walks the live scripts
+// directory for `*_supervisor.bb` and refuses any it cannot find a conf row
+// for. `FRESHNESS_REQUIRED` alone therefore still leaves the fixture refused,
+// now naming bridge_headless_supervisor. So the conf carries a row for each
+// supervisor the guard will find - DERIVED from the same glob the guard walks
+// rather than listed here, which is the whole lesson of BL-1398 - and each
+// gets a fresh heartbeat in the fixture, so it is healthy and the watchdog
+// takes no action on it. Only handoffd's age is varied, so every assertion
+// below still reads handoffd's behaviour alone.
+function supervisorNames() {
+  return fs
+    .readdirSync(path.join(REPO_ROOT, 'swarmforge', 'scripts'))
+    .filter((f) => f.endsWith('_supervisor.bb'))
+    .map((f) => f.slice(0, -'.bb'.length))
+    .sort();
+}
+
+function mkRoot(requiredNames = ['handoffd']) {
   const root = mkTmpDir('sfvc-bl1012-prop-');
   fs.mkdirSync(path.join(root, '.swarmforge', 'daemon'), { recursive: true });
-  fs.writeFileSync(
-    path.join(root, 'freshness.conf'),
-    `handoffd|${BASE}|.swarmforge/daemon/handoffd.log|.swarmforge/daemon/handoffd.pid|start_handoff_daemon.sh\n`
-  );
+  const rows = [
+    `handoffd|${BASE}|.swarmforge/daemon/handoffd.log|.swarmforge/daemon/handoffd.pid|start_handoff_daemon.sh`,
+  ];
+  for (const name of supervisorNames()) {
+    rows.push(
+      `${name}|${CEILING}|.swarmforge/daemon/${name}.log|.swarmforge/daemon/${name}.pid|noop.sh`,
+    );
+    fs.writeFileSync(
+      path.join(root, '.swarmforge', 'daemon', `${name}.log`),
+      `${isoAt(NOW)} heartbeat\n`,
+    );
+  }
+  fs.writeFileSync(path.join(root, 'freshness.conf'), `${rows.join('\n')}\n`);
+  fs.writeFileSync(path.join(root, 'freshness_required.conf'), `${requiredNames.join('\n')}\n`);
   return root;
 }
 
 // ageSecs === null means "no log at all" - what start_handoff_daemon.sh's own
 // rotation leaves behind after a restart the checker itself performed.
-function runChecker({ ageSecs, load, cores, lastRestartSecondsAgo }) {
-  const root = mkRoot();
+function runChecker({ ageSecs, load, cores, lastRestartSecondsAgo, requiredNames, expectExit = 0 }) {
+  const root = mkRoot(requiredNames);
   try {
     if (ageSecs !== null) {
       fs.writeFileSync(
@@ -74,6 +112,7 @@ function runChecker({ ageSecs, load, cores, lastRestartSecondsAgo }) {
         ...process.env,
         FRESHNESS_ROOT: root,
         FRESHNESS_CONF: path.join(root, 'freshness.conf'),
+        FRESHNESS_REQUIRED: path.join(root, 'freshness_required.conf'),
         FRESHNESS_NOW_EPOCH: String(NOW),
         FRESHNESS_INCIDENT_FILE: path.join(root, '.swarmforge', 'daemon', 'freshness-incidents.log'),
         FRESHNESS_COOL_OFF_SECS: '300',
@@ -86,7 +125,11 @@ function runChecker({ ageSecs, load, cores, lastRestartSecondsAgo }) {
         FRESHNESS_START_CMD: `printf '%s %s\\n' "$1" "$2" >> "${path.join(root, 'starts.log')}"`,
       },
     });
-    assert.equal(result.status, 0, `checker exited ${result.status}: ${result.stderr}`);
+    assert.equal(
+      result.status,
+      expectExit,
+      `checker exited ${result.status} (expected ${expectExit}): ${result.stderr}`,
+    );
     const read = (rel) => {
       try {
         return fs.readFileSync(path.join(root, rel), 'utf8');
@@ -95,6 +138,7 @@ function runChecker({ ageSecs, load, cores, lastRestartSecondsAgo }) {
       }
     };
     return {
+      stderr: result.stderr || '',
       incidents: read(path.join('.swarmforge', 'daemon', 'freshness-incidents.log')),
       announces: read('announces.log'),
       starts: read('starts.log'),
@@ -222,4 +266,29 @@ test('property (BL-1012 invariant 3): every incident record this run writes name
   // the restart path would leave the grace path unattributable.
   assert.ok(reach.restart >= 3, `generator reached only ${reach.restart} restart records`);
   assert.ok(reach.grace >= 3, `generator reached only ${reach.grace} grace records`);
+});
+
+// BL-1399: the seam isolates the fixture; it does not disarm the guard. A
+// registry naming a daemon this fixture's conf does not carry must still be
+// refused, naming it - the same fail-closed behaviour BL-784 built, proven
+// against the fixture's own files rather than the live ones.
+test('property (BL-1399): a fixture registry naming a daemon the conf lacks is still refused, naming it', () => {
+  fc.assert(
+    fc.property(fc.stringMatching(/^[a-z]{3,8}d$/), loadArb, coresArb, (extra, load, cores) => {
+      // Constructed: the extra name is never handoffd, so every case is a
+      // daemon the one-row conf genuinely lacks.
+      fc.pre(extra !== 'handoffd');
+      const { stderr } = runChecker({
+        ageSecs: 10,
+        load,
+        cores,
+        lastRestartSecondsAgo: null,
+        requiredNames: ['handoffd', extra],
+        expectExit: 1,
+      });
+      assert.match(stderr, /FRESHNESS_REGISTRY_GUARD/);
+      assert.ok(stderr.includes(extra), `the refusal must name ${extra}: ${stderr}`);
+    }),
+    { numRuns: 10 },
+  );
 });
