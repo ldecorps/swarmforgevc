@@ -1,5 +1,35 @@
 # SwarmForge VS Code Extension — Specification
 
+**Last Updated:** September 4, 2026 (BL-1361: the post-QA branch sweep's
+"surfaced to its role" contract, BL-668, was built as a log line only —
+`record-surface!` wrote the sweep's state file and `log!`, with no send,
+no note, no wake, ever reaching the role. Counted against the daemon
+logs 2026-09-03: 125 `post-qa-branch-sweep-surfaced` events against 3
+`post-qa-branch-sweep-settled`, and on 2026-08-27T16:41:56Z all six
+roles surfaced in a single pass with nobody told. `handoffd.bb`'s new
+`post-qa-branch-sweep-tell!` sends through the daemon's existing
+`swarm_handoff.bb` path rather than writing a mailbox directly, gated by
+the sweep's own dedupe record (`surface-already-recorded?`) so a
+per-tick re-sweep of unchanged state sends nothing. Per human ruling
+2026-09-04, every surfacing reason is told but only `:dirty-worktree`
+wakes the role immediately (`SWARMFORGE_SKIP_SYNC_INJECT=1` defers the
+other two) — a divergent branch merges anyway on that role's next
+parcel, since a forwarded commit must carry the received commit as an
+ancestor, so waking for it would spend a turn the role gets for free. A
+`tell!` failure (thrown exception or non-zero `swarm_handoff` exit) is
+caught and logged as `post-qa-branch-sweep-tell-failed`; the sweep
+continues for every other role (invariant 3). The sweep's ff-only
+contract on the branch itself is unchanged — a surfaced worktree is
+still left untouched; only who hears about it changed. The larger
+finding this slice does NOT fix: 97% surfaced is the ff-only contract
+meeting the normal state of a role branch (almost always ahead of
+`origin/main`), not a notification bug — closing that is BL-667's
+still-unfiled delivery-time pre-merge slice. Acceptance:
+`specs/features/BL-1361-the-sweep-tells-the-roles-it-could-not-settle.feature`.
+How-to: `docs/how-to/BL-668-post-qa-deterministic-branch-sweep.md`
+(extended in place — new "A surfaced role is told, not just logged"
+section). No diagram depicts sweep internals at this granularity.)
+Prior entry —
 **Last Updated:** September 4, 2026 (BL-1391: the reconcile sweep's
 `merge-tree` verdict `:conflict` always refused, once local `main` was
 ahead — correct for code, but what actually collides on this shared
