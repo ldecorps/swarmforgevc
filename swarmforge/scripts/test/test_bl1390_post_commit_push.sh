@@ -307,7 +307,11 @@ setup_repo five-b
 TRACE_LOG="$WORK/git-trace.log"
 echo "$RANDOM" > "$root/f1.txt"
 gq "$root" add -A
-GIT_TRACE="$TRACE_LOG" g "$root" commit -q -m "BL-9390: fixture commit f1.txt" >/dev/null 2>&1
+# GIT_TRACE has to be set on the commit itself, so this one call carries the
+# env rather than going through `gq` - but it still goes through the guard,
+# which is what the structural check requires and what a raw `git -C` here
+# would defeat.
+in_fixture "$root" && GIT_TRACE="$TRACE_LOG" git -C "$root" commit -q -m "BL-9390: fixture commit f1.txt" >/dev/null 2>&1
 gq "$root" fetch origin main
 if [[ "$(counts "$root")" == "0/0" ]]; then
   pass "scenario 5b: the traced commit reached origin (trace setup did not itself break the push)"
@@ -381,7 +385,10 @@ fi
 # Every mutating command ran against a fixture root: proven structurally by
 # there being exactly ONE raw `git -C` in this file - inside the guard itself -
 # so no call can reach a repository the guard did not prove is under $WORK.
-raw_git_calls="$(grep -cE '^[[:space:]]*git -C ' "${BASH_SOURCE[0]}")"
+# A line that calls in_fixture first is guarded even though `git -C` appears on
+# it (the traced commit needs its own env), so it does not count as raw.
+raw_git_calls="$(grep -E '^[[:space:]]*git -C |in_fixture "\$root" && GIT_TRACE' "${BASH_SOURCE[0]}" \
+  | grep -cvE 'in_fixture ')"
 if [[ "$raw_git_calls" == "1" ]]; then
   pass "every mutating git command in the suite goes through the fixture guard"
 else
