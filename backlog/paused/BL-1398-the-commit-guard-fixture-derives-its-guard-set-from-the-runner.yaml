@@ -1,0 +1,105 @@
+id: BL-1398
+title: "The commit-guard property fixture derives its guard set from run_commit_guards.sh instead of listing the guards by hand, so adding a guard to the runner can never turn the fixture red - as BL-1385's guard did today"
+milestone: M8
+type: defect
+severity: high
+# high: a standing red in a property test the property-suite guard reads,
+# so every code commit in every worktree meets a refusal (or an allowlist
+# edit) until it is fixed - and the red says nothing about the guard chain
+# being wrong, only that a list in a test was not updated. The BL-973 and
+# BL-1279 membership shape again: a closure enumerated by hand goes stale
+# the moment the thing it mirrors grows.
+status: todo
+epic: swarm-reliability
+priority: 9
+direction: swarm-reported
+depends_on: []
+mutation_cost: medium
+slice_size_envelope: low
+required_stages: [coder, cleaner, architect, hardender, documenter, qa]
+
+acceptance: specs/features/BL-1398-the-commit-guard-fixture-derives-its-guard-set-from-the-runner.feature
+
+required_wiring:
+  - 'extension/test/bl632CommitTimeGuardInvariants.property.test.js::run_guard::the fixture must READ the runner for its guard list - the literal is the runner line shape it parses, absent from the test today (grep returns 0)'
+  - 'specs/pipeline/steps/bl1398GuardFixtureDerivesItsSetSteps.js::registerSteps::the handler file exists so discovery registers every scenario (BL-1371)'
+
+invariants:
+  - "The fixture's guard set is a function of run_commit_guards.sh (and the pre-merge-commit hook) read at test time - never a list in the test: a guard added to or removed from the runner is reflected without editing the test."
+  - "A guard the runner names but the tree lacks fails the test loud, naming the guard - it is never silently skipped, and the fixture never runs a guard chain narrower than production's."
+
+human_approval: pending
+approval_context: >
+  A new feature file is authored here, so it needs a tap. No choice is posed
+  and there are no ruling_options. Found by QA while landing; the red is a
+  stale hand-written list, not a defect in any guard.
+
+description: |
+  ## What is wrong
+
+  `extension/test/bl632CommitTimeGuardInvariants.property.test.js` builds a
+  fixture repository and copies the REAL commit guards into it from a
+  hand-written `EXEC_FIXTURE_FILES` list (five `check_*.sh` guards, the
+  runner, its libs, two hooks). `run_commit_guards.sh` now also runs
+  `check_handler_module_graph.sh` (BL-1385, landed 2026-09-04). The fixture
+  does not copy it, the runner in the fixture cannot find it, the chain
+  fails, and the property test is red on `main`:
+
+      pre-commit: every guard in this tier ran, so the list above is complete ...
+      Test Files  1 failed (1)
+
+  Reproduced this pass with `npx vitest run --config vitest.properties.config.mjs
+  bl632CommitTimeGuardInvariants`. The same shape has been fixed before for
+  other fixtures (BL-1279: front-desk fixtures derive their bb closure;
+  BL-973's hand-enumerated membership), and will recur with BL-1395's guard
+  next unless the list is derived.
+
+  ## How (direction, not mandate)
+
+  - Derive the guard set at test time: parse the `run_guard <script> ...`
+    lines of `swarmforge/scripts/run_commit_guards.sh` and of
+    `swarmforge/git-hooks/pre-merge-commit`, copy each named guard, and
+    follow each guard's own `source`/`.` lines one level to copy the libs
+    it needs (bounded, no recursion beyond the scripts dir). Keep the
+    existing hardlink warming and per-case copy - only the list moves.
+  - A guard the runner names but the tree lacks throws, naming it
+    (invariant 2) - never `continue`.
+  - The two hook files stay explicit: they are what git runs, not what the
+    runner lists.
+  - No change to any guard or to the runner.
+
+  ## Explicitly NOT in scope
+
+  - Any behaviour of `check_handler_module_graph.sh` itself (BL-1385, done)
+    or of the coming `check_bb_scripts_load.sh` (BL-1395).
+  - Other fixtures that still enumerate closures by hand; name them in the
+    coder's evidence if met, mint separately.
+
+qa_e2e_procedure: |
+  1. `npx vitest run --config vitest.properties.config.mjs
+     bl632CommitTimeGuardInvariants` on main after the parcel: green, with
+     the BL-1385 guard present in the fixture's copied set (assert by
+     listing the fixture template).
+  2. Add a dummy `run_guard check_zzz_probe.sh` line to a COPY of the runner
+     used by the fixture (a seam, never the live file) with the probe script
+     present: the fixture copies it and the chain runs it; with the probe
+     script ABSENT: the test fails naming `check_zzz_probe.sh`.
+  3. Remove a guard line from that seam copy: the fixture no longer copies
+     it and the test is still green - the set follows the runner both ways.
+  4. Remove fixture roots in a `finally`, reaping only roots no live run
+     owns (BL-1385/BL-1390).
+
+notes: |
+  `required_wiring` anchor 1 is a genuine consumer anchor: the literal is
+  the runner's own line shape (`run_guard`), absent from the test today; it
+  can only appear if the test reads the runner.
+
+  IR-DRY: run on the feature file at mint (see commit).
+
+  Mint-time INVEST: one observable outcome (the fixture follows the
+  runner), well under one sitting, no unbuilt sibling.
+
+source: |
+  QA note, priority 00, 2026-09-04T18:43Z: "untracked red: bl632 property
+  fixture missing check_handler_module_graph.sh". Reproduced by the
+  specifier on main the same pass.
