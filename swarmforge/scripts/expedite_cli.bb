@@ -478,11 +478,14 @@
                    :landed? landed?
                    :current-folder-of #(ticket-current-folder project-root %)})]
         (when-not dry-run?
-          (doseq [{:keys [ticket from]} (:restore plan)]
-            (log! "unpark" ticket (str "backlog/hold/ -> backlog/" from "/"))
-            (must-move-ticket! project-root ticket "hold" from
-                               "REFUSE could not unpark" ticket "from backlog/hold/")
-            (mark-needs-freshness-check! project-root ticket from ticket)))
+          ;; `ticket` inside this doseq is the PARKED ticket; the run ticket is
+          ;; the outer one, and the mark has to name the expedition rather than
+          ;; the ticket it is written on.
+          (doseq [{parked :ticket :keys [from]} (:restore plan)]
+            (log! "unpark" parked (str "backlog/hold/ -> backlog/" from "/"))
+            (must-move-ticket! project-root parked "hold" from
+                               "REFUSE could not unpark" parked "from backlog/hold/")
+            (mark-needs-freshness-check! project-root parked from ticket)))
         (let [report (expedite-lib/unpark-report plan)]
           (doseq [{:keys [ticket reason in]} (:left report)]
             (log! "unpark-left" ticket reason (str "in=" in)))
@@ -992,7 +995,74 @@
 
 ;; ── main ──────────────────────────────────────────────────────────────────
 
+(defn- expedition-commit
+  "The expedition's own commit: the tip of its branch.
+
+   No branch means no proof the expedition landed, and the reversal restores
+   ONLY on proof - so an absent branch leaves the park in place and says so,
+   rather than resolving to something that merely fails the ancestor check for
+   the wrong reason."
+  [root run-ticket]
+  (let [{:keys [exit out]} (sh {:dir (str root)} "git" "rev-parse" "--verify"
+                               (str "expedite/" run-ticket))]
+    (when (zero? exit) (str/trim out))))
+
+(defn- unpark-subcommand!
+  "BL-1379: `expedite_cli.bb unpark <project-root> <run-dir>` - the entry point
+   handoffd's expedite-park-reversal sweep calls each tick.
+
+   A subcommand and not a step inside a run, because the expedition's process
+   exits long before its commit lands: nothing inside the run can observe the
+   event the reversal waits for. The sweep therefore asks, per record, whether
+   that expedition is on main yet.
+
+   The run ticket is read from the record itself rather than from argv, so a
+   caller cannot point one run's reversal at another run's parks."
+  [root run-dir]
+  (let [record (read-json (fs/path run-dir "park-record.json"))
+        run-ticket (or (:run-ticket record) (str (fs/file-name run-dir)))
+        commit (expedition-commit root run-ticket)
+        report (if commit
+                 (unpark-parked! {:project-root root :ticket run-ticket :dry-run? false}
+                                 run-dir commit)
+                 {:restored []
+                  :left (vec (for [{:keys [ticket]} (:parked record)]
+                               {:ticket ticket :reason "hold-no-expedition-branch"
+                                :in "hold"}))
+                  :note (str "expedite/" run-ticket
+                             " no longer exists, so whether it landed cannot be"
+                             " established - the park stays in place")})]
+    ;; A run whose reversal has reached a terminal state is marked done, so the
+    ;; sweep stops shelling for it every tick. "Terminal" is read off the report
+    ;; rather than asserted: an entry still reported with a `hold-` reason is
+    ;; one waiting on the land, which is exactly the case that must be retried.
+    ;; Runs from before this ticket - whose records name no parked entries in
+    ;; the shape the reversal reads - settle on their first pass rather than
+    ;; being re-examined forever.
+    (when-not (some #(str/starts-with? (str (:reason %)) "hold-") (:left report))
+      (write-json! (fs/path run-dir "unpark-done.json")
+                   {:at (str (java.time.Instant/now))
+                    :run-ticket run-ticket
+                    :restored (:restored report)
+                    :note (:note report)}))
+    ;; One machine-readable line: the sweep logs it, and it is the same report
+    ;; a human reading the run directory gets.
+    (println (str "UNPARK_REPORT " (json/generate-string report)))
+    ;; BL-1024e: `exit!` is the process's ONE termination point. It is a no-op
+    ;; beyond System/exit here - nothing has registered leavings, because this
+    ;; subcommand is not a run.
+    (exit! 0)))
+
 (defn -main [& argv]
+  ;; BL-1379: the reversal's own entry point, checked before the ordinary
+  ;; expedition argv parse so a sweep invocation never looks like a run.
+  (when (= "unpark" (first argv))
+    (let [[_ root run-dir] argv]
+      (when (or (str/blank? (str root)) (str/blank? (str run-dir)))
+        (binding [*out* *err*]
+          (println "usage: expedite_cli.bb unpark <project-root> <run-dir>"))
+        (exit! 2))
+      (unpark-subcommand! (str (fs/canonicalize root)) (fs/path run-dir))))
   (let [{:keys [project-root ticket] :as opts} (expedite-lib/parse-args argv)]
     (when (or (str/blank? (str project-root)) (str/blank? (str ticket))) (usage!))
     (let [root (str (fs/canonicalize project-root))
