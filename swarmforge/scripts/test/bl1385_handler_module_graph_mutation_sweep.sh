@@ -104,13 +104,19 @@ mutate "no-steps-dir case flipped from pass to refusal" "$MUT_DIR/from5" "$MUT_D
 
 # 6. out/->src/ mapping candidate list emptied: invariant 2's "present on the
 #    tree passes" direction would break - every out/ require refuses, even a
-#    real, resolvable one.
-write from6 "      for (const cand of [
+#    real, resolvable one. Re-anchored (hardener, 2026-09-04) after the
+#    cleaner's firstOnTree(cands) consolidation replaced the original
+#    inline-array `for` loop with a `cands` variable passed to a shared
+#    helper - the old anchor (a literal `for (const cand of [...])`) no
+#    longer exists on disk, so this mutant SKIPPED silently until re-pointed
+#    at the new `cands` assignment (flagged by cleaner's governed pass,
+#    backlog/evidence/BL-1385-cleaner-governed-pass-20260904.md).
+write from6 "      const cands = [
         path.join(TREE, 'extension', 'src', rel + '.ts'),
         path.join(TREE, 'extension', 'src', rel + '.js'),
         path.join(TREE, 'extension', 'src', rel, 'index.ts'),
-      ]) {"
-write to6   "      for (const cand of []) {"
+      ];"
+write to6   "      const cands = [];"
 mutate "out/->src/ candidate list emptied (invariant 2, present-on-tree direction)" "$MUT_DIR/from6" "$MUT_DIR/to6"
 
 # 7. TREE-rooted check dropped: invariant 2's "absent from tree refuses"
