@@ -1,5 +1,31 @@
 # SwarmForge VS Code Extension — Specification
 
+**Last Updated:** September 3, 2026 (BL-1378: the close guard
+(`ticket_close_guard_lib.bb`, `commit_integrity_cli.bb`) required a QA
+`git_handoff`/`note` in the coordinator's own mailbox before allowing an
+`active/`/`paused/` -> `backlog/done/` move — a precondition an expedite
+run (`docs/how-to/BL-567-...md`) is forbidden by design from ever
+satisfying, since it never touches the mailboxes, so no expedite-closed
+ticket could reach `backlog/done/` by any sanctioned route. The guard now
+also reads `.swarmforge/expedite-approvals/<month>.jsonl` (the durable
+verdict record the expeditor already writes at its QA hat, already trusted
+by `is_qa_ancestor.sh`) as a second, genuinely additional approval path
+(BL-925 invariant 2) — the mailbox check still decides first and alone; the
+store is consulted only when it finds nothing, and only a record naming the
+ticket with `stage: QA` and `approval: true` together approves. Per the
+human's ruling (2026-09-03, option 1 of three): landing is required too —
+the record's `commit` must also be an ancestor of `main`, or the close is
+refused naming it (an undeterminable ancestry answer refuses, never treated
+as yes) — otherwise the fix would make official exactly what BL-1375 was
+caught in, a done ticket whose code reaches no branch anyone reads (see the
+sibling BL-1376). A missing store falls back to today's
+`missing-qa-approval` refusal; an obstructed, unreadable, or malformed
+store refuses naming the specific problem, never read as absent-therefore-
+approved. Acceptance:
+`specs/features/BL-1378-an-expedite-closed-ticket-can-never-satisfy-the-close-guard.feature`.
+How-to: `docs/how-to/BL-1378-expedite-close-guard-reads-verdict-store.md`.
+No diagram depicts close-guard internals.)
+Prior entry —
 **Last Updated:** September 3, 2026 (BL-1377: showing a red is pre-existing
 (BL-1063) means running a suite twice — at the parcel's base and with the
 parcel — and every stage sitting on the same base commit re-derived the
