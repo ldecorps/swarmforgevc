@@ -146,9 +146,16 @@ notes: |
   config, `$root` was empty at that line - `git -C ""` leaves the working
   directory unchanged, and a role worktree's `.git` is a file pointing at
   the shared git dir, so the write landed in the one config every worktree
-  shares. The likely mechanism is a `root` variable local to `setup_repo`
-  read at top level; the coder confirms on the bounce. `set -u` does not
-  catch an EMPTY value.
+  shares. HOW `$root` came to be empty, or how else that value reached the
+  live config, is NOT established: `setup_repo` sets `root` globally on
+  purpose, so a function-local variable is ruled out. Two candidates the
+  coder must test on the bounce, with the live origin recorded before and
+  after each run: the hook resolving its repository from its own script
+  location (the fixture's own comment says it does) so a hook invoked from
+  the live worktree's copy acts on the live repository; and a fixture WORK
+  dir removed mid-run (the EXIT trap, or a prefix sweep - BL-1385's shape)
+  leaving `git -C` pointed at a path that no longer exists. `set -u` does
+  not catch an EMPTY value either way.
 
   Amended: invariant 1 extended (never write the live config; prove the
   fixture root; assert the live origin after), e2e step 7 added. Scenario
