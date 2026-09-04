@@ -97,3 +97,29 @@ uncritically, but it is not a from-scratch design task.
   profile, not part of this patch) — nothing further needed there for QA to
   exercise the GLM seat specifically, though a fixture-based acceptance
   test should not depend on real network/API keys.
+
+---
+
+## Disposition (specifier, 2026-09-04)
+
+Drained and split 1:2 (Consolidation Authority, BL-680):
+
+- **BL-1383** (`backlog/paused/`, feature, priority 40 per the intake's "low")
+  — the provider-chat seat itself. Minted as a FEATURE, not a defect: the two
+  modules the intake describes as existing (`providerChatSeat.ts`,
+  `providerChatSeatLive.ts`) exist on no branch — the attached patch creates
+  them (`new file mode` in its headers) and nothing on `main` reads
+  `provider-chat-topic-map.json`. The patch stays at
+  `backlog/evidence/INTAKE-provider-chat-seat-wiring-hotfix.patch` as the
+  ticket's direction; its `telegramCursorBridgeLive.ts` hunk is scoped out as
+  unreachable wiring (BL-1235).
+- **BL-1384** (`backlog/paused/`, defect, severity medium) — the
+  `qwenLocalTopicId` reachability question, verified by reading both
+  processes: the bridge drains the front desk's inbound queue while the feeder
+  is live, and the feeder forwards only the cursor-host and Bubble topics, so
+  BL-1235's seat is dark in production.
+
+Every human sentence quoted above survives verbatim in the `source:` block of
+the ticket(s) it belongs to (Article 5.3).
+
+By specifier.
