@@ -601,4 +601,38 @@ pass "with the switch off, a block that persists past the escalation threshold s
 
 git -C "$ROOT" checkout -q -- seed.txt
 
+# ── BL-1386: the two constants that cross the lib/daemon boundary agree ──
+#
+# handoffd.bb is the only process that writes the ownership record or emits
+# the failed-abort log line, so both literals live there (the ticket's
+# consumer anchors). master_main_reconcile_lib.bb owns the same two strings.
+# A constant mirrored across a language/file boundary needs a test asserting
+# both literals agree (Guardrails, BL-897) - otherwise a rename on one side
+# leaves the daemon writing one file while BL-1387 reads another, silently.
+LIB_BB="$SCRIPT_DIR/../master_main_reconcile_lib.bb"
+DAEMON_BB="$SCRIPT_DIR/../handoffd.bb"
+
+LIB_OWNER_FILE="$(BL1386_LIB="$LIB_BB" bb -e '
+(require (quote [clojure.string :as str]))
+(load-file (System/getenv "BL1386_LIB"))
+(println (last (str/split (master-main-reconcile-lib/merge-owner-path "/tmp/d") #"/")))' 2>/dev/null)"
+
+[[ -n "$LIB_OWNER_FILE" ]] \
+  || fail "BL-1386: could not read the ownership record's file name from the lib - this pin proves nothing"
+grep -qF "$LIB_OWNER_FILE" "$DAEMON_BB" \
+  || fail "BL-1386: the daemon does not name the ownership file the lib writes ($LIB_OWNER_FILE); BL-1387 would read a file nobody writes"
+pass "BL-1386: the ownership record's file name agrees across lib and daemon ($LIB_OWNER_FILE)"
+
+# The failed-abort label the lib emits must be the one the daemon recognises.
+grep -qF '"merge-abort-failed"' "$LIB_BB" \
+  || fail "BL-1386: the lib no longer emits the merge-abort-failed label - the daemon's handling is dead"
+grep -qF 'merge-abort-failed' "$DAEMON_BB" \
+  || fail "BL-1386: the daemon does not name the merge-abort-failed label the lib emits"
+pass "BL-1386: the failed-abort log label agrees across lib and daemon"
+
+# And the defect itself: the abort's result must not be discarded any more.
+grep -q 'do (abort!)' "$LIB_BB" \
+  && fail "BL-1386: absorb-with-merge! still discards abort!'s result - the 2026-09-04 orphan is back"
+pass "BL-1386: absorb-with-merge! no longer discards the abort result"
+
 echo "ALL SCENARIOS PASS"
