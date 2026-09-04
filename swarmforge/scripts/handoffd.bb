@@ -114,8 +114,19 @@
     (println "Usage: handoffd.bb <project-root>"))
   (System/exit 1))
 
+;; BL-1395: `usage` EXITS, and this is a top-level form - so a `load-file`
+;; probe with no arguments stopped a few forms in, analysing almost none of the
+;; file. That is why nothing could check this daemon loads, and why three
+;; unloadable scripts reached main. Under a probe (loaded, not executed) the
+;; root falls back to an inert placeholder and the file is read to the end;
+;; invoked directly with no root, the usage exit is exactly as before.
+(def ^:private invoked-directly?
+  (= *file* (System/getProperty "babashka.file")))
+
 (def project-root
-  (or (first *command-line-args*) (usage)))
+  (or (first *command-line-args*)
+      (when invoked-directly? (usage))
+      "bl1395-load-probe-no-root"))
 
 ;; BL-812: handoffd's process cwd is not guaranteed to be project-root (seen
 ;; live: launcher home dir) - without this, every handoff-lib target-root
@@ -4881,4 +4892,15 @@
                 (delete-own-pid-file!)
                 (log! "stopped")))))))))
 
-(-main)
+
+;; BL-1395: guarded, not bare. A bare `(-main)` means any `load-file` probe
+;; STARTS the daemon instead of analysing it, so nothing on the commit path or
+;; the land path could ever check that this file loads - and three files that
+;; fail SCI analysis reached main in eight days because of it, the last one
+;; crash-looping the live daemon from 18:20Z on 2026-09-04.
+;;
+;; This is the same idiom every other bb script here already uses
+;; (apply_shift_schedule.bb, babysitter_waive.bb, bob_starting_cast_cli.bb):
+;; run when executed, analyse silently when loaded.
+(when (= *file* (System/getProperty "babashka.file"))
+  (-main))

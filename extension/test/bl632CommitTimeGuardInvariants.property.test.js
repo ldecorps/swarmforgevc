@@ -6,6 +6,7 @@ const fs = require('node:fs');
 const path = require('node:path');
 const { execFileSync, spawnSync } = require('node:child_process');
 const { mkTmpDir } = require('./helpers/tmpDir');
+const { deriveCommitGuardFixtureSet, RUNNER_REL } = require('./helpers/commitGuardFixtureSet');
 
 // BL-632 declared invariant (backlog/active/BL-632-commit-time-guard-refuses-pipeline-code-on-main.yaml):
 // "No commit path available to a non-QA role - commit, merge, or amend -
@@ -18,26 +19,12 @@ const { mkTmpDir } = require('./helpers/tmpDir');
 // guard's decision logic.
 
 const REPO_ROOT = path.join(__dirname, '..', '..');
-const GUARD_SCRIPT = path.join(REPO_ROOT, 'swarmforge', 'scripts', 'check_pipeline_code_on_main.sh');
-const SIZE_GUARD = path.join(REPO_ROOT, 'swarmforge', 'scripts', 'check_commit_size.sh');
-const TICKET_GUARD = path.join(REPO_ROOT, 'swarmforge', 'scripts', 'check_ticket_deletion.sh');
-const PROPERTY_GUARD = path.join(REPO_ROOT, 'swarmforge', 'scripts', 'check_property_suite_drift.sh');
-const FEATURE_HANDLER_GUARD = path.join(REPO_ROOT, 'swarmforge', 'scripts', 'check_feature_handler_registration.sh');
-// BL-1252 moved the pre-commit hook's guards behind this runner and BL-1303
-// gave pre-merge-commit a chain of its own over the same sourced aggregation.
-// Both files are part of what the hooks EXECUTE, so a fixture without them
-// runs no guard at all - every action fails with "No such file or directory"
-// instead of the refusal this property is about.
-const GUARD_RUNNER = path.join(REPO_ROOT, 'swarmforge', 'scripts', 'run_commit_guards.sh');
-const GUARD_CHAIN_LIB = path.join(REPO_ROOT, 'swarmforge', 'scripts', 'commit_guard_chain_lib.sh');
-// Libs the guards SOURCE. A guard whose lib is absent dies at its source
-// line before deciding anything, so the fixture carries them too.
-const MERGE_PARENT_LIB = path.join(REPO_ROOT, 'swarmforge', 'scripts', 'incoming_merge_parent_lib.sh');
-const SHARED_REPO_GUARD_LIB = path.join(REPO_ROOT, 'swarmforge', 'scripts', 'property_suite_shared_repo_guard.sh');
-const STANDING_ALLOWLIST_LIB = path.join(REPO_ROOT, 'swarmforge', 'scripts', 'property_suite_standing_allowlist_lib.sh');
-const PRE_COMMIT_HOOK = path.join(REPO_ROOT, 'swarmforge', 'git-hooks', 'pre-commit');
-const PRE_MERGE_COMMIT_HOOK = path.join(REPO_ROOT, 'swarmforge', 'git-hooks', 'pre-merge-commit');
-
+// BL-1398: the fixture's guard set is DERIVED from what the hooks actually
+// run, never listed here. A hand-written list goes stale the moment a guard
+// joins the runner - BL-1385's check_handler_module_graph.sh landed on
+// 2026-09-04 and turned this test red without any guard being wrong, and
+// BL-1395's guard would have done it again a day later.
+//
 // BL-971: the measured per-case cost was NEVER the git subprocesses - it
 // was macOS Gatekeeper assessing each freshly created executable on its
 // FIRST exec (~1.2-1.8s per file, per inode, worse under load; measured
@@ -51,20 +38,8 @@ const PRE_MERGE_COMMIT_HOOK = path.join(REPO_ROOT, 'swarmforge', 'git-hooks', 'p
 // the REAL guards, never a fresh Gatekeeper scan. Nothing about the
 // invariant weakens: the per-case action still runs real git against real
 // hook files with identical content in the case's own repo.
-const EXEC_FIXTURE_FILES = [
-  'swarmforge/scripts/check_pipeline_code_on_main.sh',
-  'swarmforge/scripts/check_commit_size.sh',
-  'swarmforge/scripts/check_ticket_deletion.sh',
-  'swarmforge/scripts/check_property_suite_drift.sh',
-  'swarmforge/scripts/check_feature_handler_registration.sh',
-  'swarmforge/scripts/run_commit_guards.sh',
-  'swarmforge/scripts/commit_guard_chain_lib.sh',
-  'swarmforge/scripts/incoming_merge_parent_lib.sh',
-  'swarmforge/scripts/property_suite_shared_repo_guard.sh',
-  'swarmforge/scripts/property_suite_standing_allowlist_lib.sh',
-  'swarmforge/git-hooks/pre-commit',
-  'swarmforge/git-hooks/pre-merge-commit',
-];
+const FIXTURE_SET = deriveCommitGuardFixtureSet({ repoRoot: REPO_ROOT });
+const EXEC_FIXTURE_FILES = FIXTURE_SET.files;
 
 let fixtureTemplate = null;
 
@@ -77,22 +52,9 @@ function mkFixtureTemplate() {
 
   fs.mkdirSync(path.join(d, 'swarmforge', 'scripts'), { recursive: true });
   fs.mkdirSync(path.join(d, 'swarmforge', 'git-hooks'), { recursive: true });
-  for (const [src, rel] of [
-    [GUARD_SCRIPT, 'swarmforge/scripts/check_pipeline_code_on_main.sh'],
-    [SIZE_GUARD, 'swarmforge/scripts/check_commit_size.sh'],
-    [TICKET_GUARD, 'swarmforge/scripts/check_ticket_deletion.sh'],
-    [PROPERTY_GUARD, 'swarmforge/scripts/check_property_suite_drift.sh'],
-    [FEATURE_HANDLER_GUARD, 'swarmforge/scripts/check_feature_handler_registration.sh'],
-    [GUARD_RUNNER, 'swarmforge/scripts/run_commit_guards.sh'],
-    [GUARD_CHAIN_LIB, 'swarmforge/scripts/commit_guard_chain_lib.sh'],
-    [MERGE_PARENT_LIB, 'swarmforge/scripts/incoming_merge_parent_lib.sh'],
-    [SHARED_REPO_GUARD_LIB, 'swarmforge/scripts/property_suite_shared_repo_guard.sh'],
-    [STANDING_ALLOWLIST_LIB, 'swarmforge/scripts/property_suite_standing_allowlist_lib.sh'],
-    [PRE_COMMIT_HOOK, 'swarmforge/git-hooks/pre-commit'],
-    [PRE_MERGE_COMMIT_HOOK, 'swarmforge/git-hooks/pre-merge-commit'],
-  ]) {
+  for (const rel of EXEC_FIXTURE_FILES) {
     const dst = path.join(d, rel);
-    fs.copyFileSync(src, dst);
+    fs.copyFileSync(path.join(REPO_ROOT, rel), dst);
     fs.chmodSync(dst, 0o755);
   }
   // check_feature_handler_registration.sh resolves its compiled checker
@@ -122,7 +84,7 @@ function mkFixtureTemplate() {
   // exec. Exit codes are irrelevant here (pre-merge-commit has no merge
   // context to succeed in) - only the exec itself matters.
   for (const rel of EXEC_FIXTURE_FILES) {
-    spawnSync(path.join(d, rel), rel.endsWith('check_commit_size.sh') ? ['50'] : [], { cwd: d, encoding: 'utf8' });
+    spawnSync(path.join(d, rel), FIXTURE_SET.warmArgs.get(rel) || [], { cwd: d, encoding: 'utf8' });
   }
   return d;
 }
@@ -262,3 +224,28 @@ test('property (invariant): no non-QA commit, merge, or amend path lands pipelin
     { numRuns: 10 }
   );
 }, 90000);
+
+// BL-1398 invariant 2, at the consumer. The derivation lives in
+// helpers/commitGuardFixtureSet.js; this file re-reads the runner's own
+// `run_guard` lines and asserts the fixture carries every guard they name.
+// Two independent readings that must agree: a derivation that silently
+// dropped a line would otherwise leave the fixture running a chain narrower
+// than production and still reporting green - the failure this ticket exists
+// to make impossible.
+test('the fixture carries every guard the runner names, with no hand-written list', () => {
+  const runnerText = fs.readFileSync(path.join(REPO_ROOT, RUNNER_REL), 'utf8');
+  const named = runnerText
+    .split('\n')
+    .filter((line) => !/^[ \t]*#/.test(line))
+    .map((line) => /^[ \t]*run_guard[ \t]+(\S+)/.exec(line))
+    .filter(Boolean)
+    .map((m) => m[1]);
+
+  assert.ok(named.length > 0, 'the runner names no guards at all - the line shape must have changed');
+  for (const guard of named) {
+    assert.ok(
+      EXEC_FIXTURE_FILES.includes(`swarmforge/scripts/${guard}`),
+      `the fixture does not carry ${guard}, which the runner runs`,
+    );
+  }
+});

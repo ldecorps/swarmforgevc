@@ -26,7 +26,7 @@ pass() { echo "PASS: $*"; }
 # the invoker, takes a lock, reaps only roots NO LIVE RUN OWNS, and creates an
 # owner-stamped $WORK.
 source "$SCRIPT_DIR/lib/fixture_isolation.sh"
-fixture_isolation_begin "$FIXTURE_PREFIX" "${BL1391_SUITE_BOUND_SECONDS:-1200}"
+fixture_isolation_begin "$FIXTURE_PREFIX" "${BL1391_SUITE_BOUND_SECONDS:-1200}" "$@"
 trap 'rm -rf "$WORK"' EXIT
 
 # Every git call is guarded: `git -C ""` does NOT fail, it uses the current
