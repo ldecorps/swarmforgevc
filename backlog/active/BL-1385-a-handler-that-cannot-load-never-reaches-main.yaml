@@ -27,6 +27,7 @@ required_wiring:
 invariants:
   - "No commit reaches main carrying a discoverable handler (a top-level specs/pipeline/steps/*Steps.js) whose module graph does not resolve on that commit's own tree - neither through the land replay nor through a hand-land that runs run_commit_guards.sh."
   - "The guard's verdict is a function of the TREE under test alone, never of the checking worktree or its compiled out/: a module present in the checker's worktree but absent from the tree refuses, and a module absent from the checker's worktree but present on the tree passes."
+  - "Concurrent invocations never interfere: every run's working directory is private (a fresh mkdtemp), no run removes a directory it did not create, and any reaping of leftovers is scoped to directories no live run owns (a recorded owner pid that is dead, or an age bound) - two overlapping invocations on the same tree reach the same verdict. ADDED 2026-09-04 after the cleaner reproduced two runs deleting each other's tree."
 
 human_approval: approved
 approval_context: >
@@ -86,6 +87,11 @@ description: |
     verdict must not depend on the checking worktree's files (invariant 2);
     a static resolver must never fall back to `require.resolve` against the
     live worktree.
+  - Private working directory (ADDED 2026-09-04): `mktemp -d` per
+    invocation, removed by this run's own trap, never `rm -rf <prefix>.*` at
+    start - that deletes a concurrent run's live tree. If leftovers from
+    killed runs must be reaped, record the owner pid in the directory and
+    reap only directories whose pid is dead or whose age exceeds a bound.
   - On failure: exit non-zero, print a stable marker
     (`HANDLER_LOAD_BLOCK`) and one line per handler naming the handler and
     the module it could not resolve, so the land step and the commit guard
@@ -139,10 +145,48 @@ qa_e2e_procedure: |
   7. Regression on the real tree: run the guard against `origin/main` after
      QA's BL-1296 land - it passes; against `a93aa4a18f` - it refuses naming
      `bl1296BubbleSeatSteps.js` and `bubbleSeat`.
-  8. Remove fixture roots in a `finally`, sweeping by prefix before the run
-     too (BL-971).
+  8. Remove the fixture roots the TESTS create in a `finally`, sweeping
+     THEIR prefix before the run too (BL-971). That rule is for test fixtures
+     only. The guard's own working directory is production state invoked
+     concurrently by every commit and every land across every worktree: it
+     must NEVER sweep a shared prefix at run time (BL-1287's shape).
+  9. Concurrency: start two invocations of the guard at the same instant on
+     the same worktree and tree - both exit 0 with the same verdict, and
+     neither's working directory was removed by the other. Repeat with a
+     shape-A tree in one worktree and a shape-B tree in another, overlapping:
+     each reports its own tree's verdict. Reproduction to beat: the cleaner's
+     `BL-1385-cleaner-followup-concurrency-race-20260904.md` (one run exit
+     0, the other "could not determine a tree to examine").
 
 notes: |
+  ## 2026-09-04 AMENDMENT (specifier) - the guard raced on a shared /tmp prefix; scenario 07 + invariant 3 added
+
+  Found by the cleaner while committing an unrelated BL-1387 change, after
+  this parcel had already passed cleaner and architect (evidence
+  `BL-1385-cleaner-followup-concurrency-race-20260904.md` on the cleaner
+  branch; routed by note through the coordinator). The guard's header does
+  `rm -rf ${TMPDIR:-/tmp}/bl1385-handler-graph.*` BEFORE its own mkdtemp,
+  so two overlapping invocations - which happen by design, since the guard
+  runs on every commit and every land in every worktree sharing /tmp -
+  delete each other's live tree: one exits 0, the other refuses with a
+  large varying "cannot load" count (519, then 530) that looks like a real
+  handler defect. Reproduced by the cleaner with two concurrent runs of the
+  unmodified script.
+
+  The spec contributed to this. qa_e2e step 8 carried the standing
+  fixture-cleanup boilerplate ("sweeping by prefix before the run too,
+  BL-971") without saying it applies to the TESTS' fixture roots only; the
+  coder applied it to the guard's own working directory. Corrected above,
+  and recorded in the specifier's own memory so the boilerplate is never
+  again handed to a production guard. Sweeping a directory another live
+  process owns is still a defect on its own merits (BL-1287's shape), so the
+  bounce class is behavior, producer coder - not a spec-gap correction.
+
+  No new ticket: the guard is unlanded and in flight (hardener holds it),
+  so the fix belongs in this parcel (BL-233 shape). The hardener bounces to
+  the coder with the cleaner's evidence and this amendment; scenario 07's
+  handler lands in the same rework.
+
   APPROVAL PROVENANCE (specifier, 2026-09-04 ~09:30Z) - read this before
   trusting or doubting `human_approval: approved`. The human tapped Approve
   in the BL-1385 topic; the bot wrote `approved` into this file at
@@ -192,3 +236,21 @@ source: |
   `backlog/evidence/BL-1296-land-deadlock-shared-registry-20260903.md`.
 
 assigned_to: coder
+
+abandoned_commits: [26ef184d39, 0fd657add1]
+# 26ef184d39 (hardener's "Merge main (BL-1385 amendment cf2ea583c7...) into
+# hardener") is stranded on swarmforge-hardender only. Its unique content
+# over its own parent was merging cf2ea583c7 (the specifier's in-flight
+# spec/feature amendment) - content documenter already carries via its own
+# separate merge of main (33452b74dc), and the actual code fix arrived
+# through coder's rework (839873ab82, merged 7df559255e). Same content,
+# different path; nothing of 26ef184d39's is missing from this tip.
+# 0fd657add1 (QA's own bounce_history bookkeeping commit) is stranded on
+# swarmforge-QA only. Its content (bounce_count: 2, the QA bounce_history
+# row) was applied by hand into this same yaml rather than merged, since
+# QA's branch has since diverged with unrelated content; verified byte-
+# equivalent for the fields it touched.
+bounce_count: 2
+bounce_history:
+  - { at: 2026-09-04, by: documenter, blamed: coder, class: behavior, commit: e542f740c2, evidence: backlog/evidence/BL-1385-documenter-bounce-20260904.md }
+  - { at: 2026-09-04, by: QA, blamed: cleaner, class: behavior, commit: 56cb425362, evidence: backlog/evidence/BL-1385-bounce-20260904.md }

@@ -400,7 +400,11 @@ skipped; it never changes what the guard decides once it runs. The guard
 list (`replayed-tree-guards` in `land_step_lib.bb`) is a plain `def`, so
 adding a second tree guard later is one list entry, not a second call site,
 and each guard runs as its own process with its own status collected
-individually (BL-1242/BL-1252's shape, satisfied by construction).
+individually (BL-1242/BL-1252's shape, satisfied by construction). That
+prediction held: `check_handler_module_graph.sh` (BL-1385) joined the same
+list as a second, sibling tree guard — registration is not loadability,
+and it proves a handler's require graph resolves on the tree under test,
+never the checking worktree's own files.
 
 None of this changes `land_step_cli.bb`'s three top-level outcomes —
 `LAND_CLEAN`, `LAND_REPLAY <branch> <new-commit>`, `LAND_ESCALATE` — only
