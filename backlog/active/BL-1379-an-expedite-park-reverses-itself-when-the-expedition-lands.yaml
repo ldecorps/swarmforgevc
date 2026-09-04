@@ -254,3 +254,6 @@ source: |
   not paraphrased anywhere in this ticket (Article 5.3).
 
 assigned_to: coder
+bounce_count: 1
+bounce_history:
+  - { at: 2026-09-04, by: architect, blamed: coder, class: behavior, commit: b9358ea76c, evidence: backlog/evidence/BL-1379-architect-bounce-20260904.md }
