@@ -1,0 +1,171 @@
+id: BL-1385
+title: "A step handler that cannot load never reaches main: the land tree guard and the commit guard prove every discovered handler's module graph resolves on the tree under test, because under discovery one unloadable handler crashes every acceptance run"
+milestone: M8
+type: defect
+severity: high
+# high: a broken safety signal with swarm-wide reach - from 01:31 BST on
+# 2026-09-04 no acceptance run on origin/main could execute any feature, so
+# no parcel's hardener or QA gate could be honestly green, and the guards that
+# exist to stop that state let the commit through. Not critical: nothing was
+# destroyed, main is repairable by one QA land, and the pipeline kept moving.
+status: todo
+epic: swarm-reliability
+priority: 8
+direction: swarm-reported
+depends_on: []
+mutation_cost: medium
+slice_size_envelope: medium
+required_stages: [coder, cleaner, architect, hardender, documenter, qa]
+
+acceptance: specs/features/BL-1385-a-handler-that-cannot-load-never-reaches-main.feature
+
+required_wiring:
+  - 'swarmforge/scripts/land_step_lib.bb::check_handler_module_graph.sh::the CONSUMER anchor (BL-1235) - the land replay tree-guard list at land_step_lib.bb:928 is pre-existing and runs check_feature_handler_registration.sh today; the new guard must be in that same list or the land path never asks the question. Script name fixed here at mint so the pattern is a literal that will exist (BL-874); grep for it today returns 0'
+  - 'swarmforge/scripts/run_commit_guards.sh::check_handler_module_graph.sh::the second consumer - the commit-time guard set that a93aa4a18f passed. A hand-land on main bypasses the land replay entirely, so the guard must sit here too or the exact incident recurs'
+  - 'specs/pipeline/steps/bl1385HandlerModuleGraphGuardSteps.js::registerSteps::the handler file exists so discovery registers every scenario (BL-1371)'
+
+invariants:
+  - "No commit reaches main carrying a discoverable handler (a top-level specs/pipeline/steps/*Steps.js) whose module graph does not resolve on that commit's own tree - neither through the land replay nor through a hand-land that runs run_commit_guards.sh."
+  - "The guard's verdict is a function of the TREE under test alone, never of the checking worktree or its compiled out/: a module present in the checker's worktree but absent from the tree refuses, and a module absent from the checker's worktree but present on the tree passes."
+
+human_approval: approved
+approval_context: >
+  A new feature file is authored here, so it needs a tap. No choice is posed
+  and there are no ruling_options. The incident is verified, not argued: one
+  handler (bl1296BubbleSeatSteps.js, hand-landed at 01:31 BST today by the
+  "handler files first" route) requires a compiled module whose source is on
+  no branch main can see, and under BL-1371's discovery that single file
+  makes every acceptance run on origin/main throw. The immediate repair is
+  QA's and is already asked for by note (land BL-1296, which is approved and
+  waiting); this ticket is the guard that stops the next one. The fast route
+  itself is retired by this adjudication - its reason to exist ended with
+  BL-1371 - and needs no tap.
+
+description: |
+  ## What is wrong
+
+  BL-1371 made presence registration: `specs/pipeline/steps/index.js`
+  discovers every top-level `*Steps.js` and requires each one eagerly at
+  module load, failing the whole run loudly on a file it cannot require
+  (BL-1371 invariant 2, correct and kept). That moves a question nobody used
+  to have to ask onto every path that puts a handler on `main`: does this
+  handler's module graph resolve on THIS tree?
+
+  Nothing asks it. The land replay's tree guard
+  (`land_step_lib.bb:928`) and the commit-time guard set
+  (`run_commit_guards.sh:67`) both run `check_feature_handler_registration.sh`
+  (BL-1303, narrowed by BL-1371), which checks that a feature's handler is
+  registered and reachable and never loads one. So `a93aa4a18f` landed
+  `bl1296BubbleSeatSteps.js` - whose line 21 requires
+  `path.join(EXT_ROOT,'out','tools','bubbleSeat')`, the compiled form of an
+  `extension/src/tools/bubbleSeat.ts` that exists only on BL-1296's unlanded
+  parcel - and both guards passed it. From that moment, 947 handlers, 1
+  unloadable, 0 features runnable. Full adjudication:
+  `backlog/evidence/BL-1296-orphan-handler-crashes-discovery-20260904.md`.
+
+  The check QA ran by hand before that land was answered by the wrong tree:
+  in QA's worktree the source is present and `out/` compiles, so the require
+  resolved there. That is invariant 2 - a guard that consults the checker's
+  own worktree cannot see this class at all.
+
+  ## How (direction, not mandate)
+
+  - A guard, `check_handler_module_graph.sh` (name fixed at mint for the
+    wiring anchors), that takes a tree-ish and, for every top-level
+    `*Steps.js` in `specs/pipeline/steps/` ON THAT TREE, proves its require
+    graph resolves on that tree. Two workable shapes; the coder picks:
+    (a) materialise the tree (a `git worktree` or `git archive` into a
+    mkdtemp root), compile `extension/src` there, and `require` each handler
+    in a child process - exact, slower; (b) resolve statically - walk each
+    handler's `require(...)` calls including the computed
+    `path.join(EXT_ROOT,'out',...)` and `path.join(__dirname,'lib',...)`
+    forms, map `extension/out/<p>.js` to `extension/src/<p>.ts` on the tree,
+    and recurse through `./lib/` siblings - fast, and the two computed forms
+    it must understand are exactly the two that have now each caused one
+    incident (stampOff.js on 09-04, bubbleSeat on 09-04). Either way the
+    verdict must not depend on the checking worktree's files (invariant 2);
+    a static resolver must never fall back to `require.resolve` against the
+    live worktree.
+  - On failure: exit non-zero, print a stable marker
+    (`HANDLER_LOAD_BLOCK`) and one line per handler naming the handler and
+    the module it could not resolve, so the land step and the commit guard
+    key off a literal rather than prose.
+  - Wire it into BOTH consumers named in `required_wiring`. In
+    `land_step_lib.bb` it joins the replayed-tree guard list beside the
+    registration check (BL-1375's rider already runs "the land's other tree
+    guards" there). In `run_commit_guards.sh` it runs as its own guard under
+    the file's existing `set -uo pipefail` / capture-each-status discipline
+    (BL-1242/BL-1252) - never under `set -e`.
+  - A guard that cannot examine the tree (unreadable tree-ish, steps
+    directory missing) refuses and says why; absence never buys a pass
+    (BL-1375 invariant 1). This is a TREE guard, not the entanglement
+    detector - BL-806's fail-open line applies to inputs the decide step
+    cannot read about SIBLINGS, not to a tree the guard was handed and
+    cannot open.
+  - Babashka side has no mutation/CRAP/DRY wired; the TypeScript resolver,
+    if the coder chooses shape (b) in TS, is under Stryker as usual.
+
+  ## Explicitly NOT in scope
+
+  - Repairing `main` today. That is one QA land (BL-1296, approved and
+    waiting) and is asked for by note; this ticket must not wait on it and
+    must not do it.
+  - The eight live feature files on `main` whose handlers are not yet built
+    (BL-1275, BL-1287, BL-1289..BL-1292, BL-1357, BL-1358 - minted with a live
+    `.feature` ahead of the handler). Those throw only when their own feature
+    is run and are a different class; noted here so nobody folds them in.
+  - Retiring the "handler files first" route. Done by adjudication; no code.
+
+qa_e2e_procedure: |
+  1. Fixture tree A: a scratch repo with `specs/pipeline/steps/index.js`
+     (discovery), one good handler, and one handler requiring
+     `path.join(EXT_ROOT,'out','tools','missing')` with no
+     `extension/src/tools/missing.ts` on the tree. Run the guard against
+     tree A: exit non-zero, `HANDLER_LOAD_BLOCK`, names the handler and
+     `missing`.
+  2. Fixture tree B: same, plus `extension/src/tools/missing.ts` on the
+     tree. Guard passes, no marker.
+  3. Invariant 2 both ways: run the guard against tree A FROM a checking
+     worktree that has `extension/out/tools/missing.js` compiled - it must
+     still refuse; run it against tree B from a worktree that has no
+     `out/` at all - it must still pass.
+  4. The `./lib/` and `require('./x')` forms: a handler requiring
+     `./lib/helper` absent from the tree refuses; present, passes.
+  5. Land path: a tip-pure replay whose tree is shape A is refused by
+     `land_step_lib.bb` with the marker in its output; shape B lands.
+  6. Commit path: `run_commit_guards.sh` on a commit adding a shape-A handler
+     fails with the marker and the other guards' statuses still print
+     (BL-1242 shape - the chain is not aborted by the first failure).
+  7. Regression on the real tree: run the guard against `origin/main` after
+     QA's BL-1296 land - it passes; against `a93aa4a18f` - it refuses naming
+     `bl1296BubbleSeatSteps.js` and `bubbleSeat`.
+  8. Remove fixture roots in a `finally`, sweeping by prefix before the run
+     too (BL-971).
+
+notes: |
+  `required_wiring` entries 1 and 2 are genuine consumer anchors, not the
+  BL-1235 by-construction shape: both files are pre-existing live paths
+  (the land replay guard list and the commit guard set), neither mentions
+  the new script today (grep this pass), and a guard that is built but
+  listed in neither is exactly the fail-open BL-1235 describes. The script
+  name is fixed here for that reason, the same way BL-1309 fixed
+  `ENTANGLED_SIBLING_BLOCK` at mint.
+
+  Why two consumers and not one: `a93aa4a18f` never went through the land
+  replay - it was a hand-land that ran the commit guards. A guard on the
+  land path alone would have missed the actual incident.
+
+  IR-DRY: run on the feature file at mint (see commit). The flagged pairs
+  are the refuse/pass mirror of one step with different fixture trees; one
+  handler serves both and the contrast is the point.
+
+  Mint-time INVEST: one observable outcome (an unloadable handler cannot
+  reach main), one sitting, no unbuilt sibling - both consumers exist and
+  the registration guard it sits beside is the template.
+
+source: |
+  QA note, priority 00, 2026-09-04T08:18Z: "origin/main acceptance runner
+  crashes on ANY feature (BL-1296 handler gap)". Specifier adjudication and
+  all verification: `backlog/evidence/BL-1296-orphan-handler-crashes-discovery-20260904.md`.
+  Prior adjudication of the route this retires:
+  `backlog/evidence/BL-1296-land-deadlock-shared-registry-20260903.md`.
