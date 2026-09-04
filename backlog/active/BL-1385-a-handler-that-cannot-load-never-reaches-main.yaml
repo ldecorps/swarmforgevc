@@ -236,3 +236,6 @@ source: |
   `backlog/evidence/BL-1296-land-deadlock-shared-registry-20260903.md`.
 
 assigned_to: coder
+bounce_count: 1
+bounce_history:
+  - { at: 2026-09-04, by: documenter, blamed: coder, class: behavior, commit: e542f740c2, evidence: backlog/evidence/BL-1385-documenter-bounce-20260904.md }
