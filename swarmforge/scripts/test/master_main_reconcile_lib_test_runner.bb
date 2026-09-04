@@ -1383,6 +1383,127 @@
            :rematched (:outcome r))
   (assert= "absorb: and still aborts then falls back" [:abort :fallback] @ev))
 
+;; ── BL-1387: an open merge nobody owns is an orphan, not a human's ───────
+
+;; classify-open-merge - :live-human needs POSITIVE evidence (invariant 1).
+(assert= "classify: no MERGE_HEAD at all"
+         :none (master-main-reconcile-lib/classify-open-merge {:merge-head-present? false}))
+(assert= "classify: presence ALONE is no longer a human (the whole defect)"
+         :orphaned (master-main-reconcile-lib/classify-open-merge {:merge-head-present? true}))
+(assert= "classify: a live git process on the checkout is an owner"
+         :live-human (master-main-reconcile-lib/classify-open-merge
+                      {:merge-head-present? true :live-git-process? true}))
+(assert= "classify: a fresh index lock is an owner"
+         :live-human (master-main-reconcile-lib/classify-open-merge
+                      {:merge-head-present? true :lock-fresh? true}))
+(assert= "classify: the daemon's own recorded merge is :own, not a human's"
+         :own (master-main-reconcile-lib/classify-open-merge
+               {:merge-head-present? true :owned-by-daemon? true}))
+(assert= "classify: ownership outranks a coincident live process"
+         :own (master-main-reconcile-lib/classify-open-merge
+               {:merge-head-present? true :owned-by-daemon? true :live-git-process? true}))
+
+;; index-lock-fresh? - absence of evidence never manufactures an owner.
+(assert-true "lock: a lock touched now is fresh"
+             (master-main-reconcile-lib/index-lock-fresh?
+              {:lock-present? true :lock-mtime-ms 1000000 :now-ms 1000000}))
+(assert= "lock: a lock older than the window is NOT an owner"
+         false (master-main-reconcile-lib/index-lock-fresh?
+                {:lock-present? true :lock-mtime-ms 1000000
+                 :now-ms (+ 1000000 master-main-reconcile-lib/index-lock-freshness-ms 1)}))
+(assert= "lock: an absent lock is not an owner"
+         false (master-main-reconcile-lib/index-lock-fresh? {:lock-present? false :now-ms 5}))
+(assert= "lock: an unreadable mtime is not an owner"
+         false (master-main-reconcile-lib/index-lock-fresh?
+                {:lock-present? true :lock-mtime-ms nil :now-ms 5}))
+
+;; index-carries-incoming? - invariant 3, never from unmerged-path count.
+(assert= "index: the 2026-09-04 shape - staged files share nothing with the incoming side"
+         false (master-main-reconcile-lib/index-carries-incoming? ["stray.txt"] ["a.txt" "b.txt"]))
+(assert-true "index: an index that does carry an incoming path says so"
+             (master-main-reconcile-lib/index-carries-incoming? ["a.txt"] ["a.txt" "b.txt"]))
+(assert= "index: an empty index carries nothing"
+         false (master-main-reconcile-lib/index-carries-incoming? [] ["a.txt"]))
+(assert= "index: an unreadable side answers nil, never a fabricated false"
+         nil (master-main-reconcile-lib/index-carries-incoming? nil ["a.txt"]))
+
+;; the surfaced note fits the 80-char cap WITH both facts the clearer needs.
+(let [poisoned (master-main-reconcile-lib/surface-message
+                {:reason :orphaned-merge :behind 3
+                 :merge-head-sha "abcdef1234567890" :carries-incoming? false})]
+  (assert-true "surface: the orphan note fits the note cap" (<= (count poisoned) 80))
+  (assert-true "surface: it names the merge" (clojure.string/includes? poisoned "abcdef1234"))
+  (assert-true "surface: it says the index carries none of the incoming side"
+               (clojure.string/includes? poisoned "carries none of the incoming side")))
+(let [carrying (master-main-reconcile-lib/surface-message
+                {:reason :orphaned-merge :behind 3
+                 :merge-head-sha "abcdef1234567890" :carries-incoming? true})]
+  (assert-true "surface: a carrying index is reported as carrying"
+               (clojure.string/includes? carrying "carries the incoming side"))
+  (assert-true "surface: and still fits" (<= (count carrying) 80)))
+(assert-true "surface: an unreadable index says so rather than guessing"
+             (clojure.string/includes?
+              (master-main-reconcile-lib/surface-message
+               {:reason :orphaned-merge :behind 3 :merge-head-sha "abc" :carries-incoming? nil})
+              "index unreadable"))
+
+;; the escalation is uncapped and carries the remedy's dangerous step.
+(let [esc (master-main-reconcile-lib/orphaned-merge-escalation
+           {:merge-head-sha "abcdef1234567890" :carries-incoming? false})]
+  (assert-true "escalation: names the full sha" (clojure.string/includes? esc "abcdef1234567890"))
+  (assert-true "escalation: says abort and redo" (clojure.string/includes? esc "abort and redo"))
+  (assert-true "escalation: warns that abort deletes staged-new files"
+               (clojure.string/includes? esc "back up staged-new files first")))
+
+;; the plan branches: :live-human keeps TODAY's reading, an absent class is
+;; byte-identical to before this ticket.
+(let [P master-main-reconcile-lib/automated-absorb-plan]
+  (assert= "plan: no class + presence behaves exactly as before BL-1387"
+           :skip-human-merge-in-progress (P {:merge-head-present? true :behind 3}))
+  (assert= "plan: :live-human maps to today's reading, unchanged"
+           :skip-human-merge-in-progress (P {:merge-head-present? true :merge-class :live-human :behind 3}))
+  ;; CORRECTED after the BL-1386 architect bounce (D1): this row used to
+  ;; expect :skip-human-merge-in-progress, encoding the very assumption the
+  ;; bounce overturned - that "BL-1386 finishes it elsewhere". It does not
+  ;; finish anywhere unless the dispatch routes it here.
+  (assert= "plan: :own is finished BY the dispatch, not held as a human's"
+           :abort-owned-merge (P {:merge-head-present? true :merge-class :own :behind 3}))
+  (assert= "plan: :orphaned gets its own branch"
+           :skip-orphaned-merge (P {:merge-head-present? true :merge-class :orphaned :behind 3}))
+  (assert= "plan: :none proceeds"
+           :run-merge (P {:merge-head-present? false :merge-class :none :behind 3})))
+(let [Q master-main-reconcile-lib/post-land-absorb-plan]
+  (assert= "plan (post-land): :orphaned gets its own branch here too"
+           :skip-orphaned-merge (Q {:merge-head-present? true :merge-class :orphaned :behind 3}))
+  (assert= "plan (post-land): no class is unchanged"
+           :skip-human-merge-in-progress (Q {:merge-head-present? true :behind 3})))
+
+;; ── BL-1386 D1 (architect bounce): an owned merge is ABORTED, not held ────
+;; The bounced code mapped :own to :skip-human-merge-in-progress on the
+;; reasoning that "BL-1386 finishes it elsewhere" - it did not, and the tick
+;; after a failed abort still called the daemon's own leftover a human's.
+(let [P master-main-reconcile-lib/automated-absorb-plan
+      Q master-main-reconcile-lib/post-land-absorb-plan]
+  (assert= "D1: an owned merge routes to the abort branch, not the human reading"
+           :abort-owned-merge (P {:merge-head-present? true :merge-class :own :behind 3}))
+  (assert= "D1: post-land routes an owned merge the same way"
+           :abort-owned-merge (Q {:merge-head-present? true :merge-class :own :behind 3}))
+  (assert= "D1: a live human's merge is untouched by that widening (BL-1120)"
+           :skip-human-merge-in-progress (P {:merge-head-present? true :merge-class :live-human :behind 3}))
+  (assert= "D1: an orphan is untouched by it too (BL-1387)"
+           :skip-orphaned-merge (P {:merge-head-present? true :merge-class :orphaned :behind 3}))
+  (assert= "D1: a caller with no class is still byte-identical to pre-BL-1386"
+           :skip-human-merge-in-progress (P {:merge-head-present? true :behind 3})))
+
+;; The gate the daemon applies on that branch: ownership must still hold when
+;; it acts, not merely when it classified.
+(assert-true "D1: the 2-arity authorises the abort when the record names the sha"
+             (master-main-reconcile-lib/may-abort-failed-merge?
+              false {:owner-record {:sha "abc123"} :merge-head-sha "abc123"}))
+(assert= "D1: ownership evaporating between classify and act fails CLOSED"
+         false (master-main-reconcile-lib/may-abort-failed-merge?
+                false {:owner-record {} :merge-head-sha "abc123"}))
+
 ;; ── report ───────────────────────────────────────────────────────────────
 (if (empty? @failures)
   (println "ALL TESTS PASS")

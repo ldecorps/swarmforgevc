@@ -186,6 +186,106 @@
         actual (some-> merge-head-sha str str/trim)]
     (boolean (and (seq (or recorded "")) (seq (or actual "")) (= recorded actual)))))
 
+;; ── BL-1387: WHOSE open merge is this, and is the index safe? ────────────
+;;
+;; Every plan below keyed on `merge-head-present?` alone, and read an open
+;; MERGE_HEAD as "a human is mid-merge, hold". That is presence, not
+;; ownership: it cannot tell a human, another agent, and the daemon's own
+;; previous tick apart. On 2026-09-04 it held two roles and the daemon for
+;; fifteen minutes on a merge with no owning process, whose index carried
+;; NONE of the incoming side - a `git commit` there would have written a
+;; merge whose tree reverted the whole origin side.
+;;
+;; Liveness is the only signal that separates "someone is mid-merge" from
+;; "something was left behind"; the index check is the only one that
+;; separates "safe to conclude" from "poisoned". Note that unmerged-path
+;; COUNT answers neither - a poisoned index has none and looks clean.
+
+(def index-lock-freshness-ms
+  "How recently `.git/index.lock` must have been touched to count as a live
+   owner. Deliberately short: a lock older than this is the residue of a dead
+   writer, which is the state that has to read as orphaned rather than as
+   someone still working."
+  60000)
+
+(defn index-lock-fresh?
+  "True when the lock exists and its mtime is within the freshness window.
+   An absent lock, an unreadable mtime, or a clock that cannot be compared
+   is NOT freshness - absence of evidence never manufactures an owner."
+  [{:keys [lock-present? lock-mtime-ms now-ms]}]
+  (boolean (and lock-present?
+                (number? lock-mtime-ms)
+                (number? now-ms)
+                (>= lock-mtime-ms (- now-ms index-lock-freshness-ms)))))
+
+(defn classify-open-merge
+  "Who owns the open merge? :none | :own | :live-human | :orphaned.
+
+   :none        no MERGE_HEAD at all.
+   :own         BL-1386's ownership record names this sha - the daemon's own
+                merge, which BL-1386 finishes and this ticket does not touch.
+   :live-human  at least one POSITIVE owner signal: a git process whose cwd
+                is this checkout, or a fresh index lock.
+   :orphaned    an open merge with no owner signal at all.
+
+   The asymmetry is the whole point. `:live-human` needs positive evidence,
+   because that is the reading that makes every role hold; `:orphaned` is
+   what is left when nothing vouches for the merge. Invariant 1: presence
+   alone never yields :live-human again."
+  [{:keys [merge-head-present? owned-by-daemon? live-git-process? lock-fresh?]}]
+  (cond
+    (not merge-head-present?) :none
+    owned-by-daemon? :own
+    (or live-git-process? lock-fresh?) :live-human
+    :else :orphaned))
+
+(defn index-carries-incoming?
+  "Does the index actually contain the incoming side?
+
+   `staged-paths` is `git diff --cached --name-only HEAD`; `incoming-paths`
+   is `git diff --name-only HEAD MERGE_HEAD`. The answer is whether they
+   INTERSECT. Never derived from unmerged-path count: the 2026-09-04 index
+   had zero unmerged paths and none of the incoming side, which is exactly
+   the state that reads as clean and concludes as a revert (invariant 3).
+
+   nil - either side unreadable - is returned as nil rather than false, so a
+   caller says \"could not tell\" instead of asserting a poisoning it did not
+   observe."
+  [staged-paths incoming-paths]
+  (when (and (some? staged-paths) (some? incoming-paths))
+    (boolean (seq (clojure.set/intersection (set staged-paths) (set incoming-paths))))))
+
+(defn- orphaned-index-clause
+  "`carries-incoming?` may be nil - the index could not be read - and that is
+   said plainly rather than guessed either way. Absence of a reading is not a
+   reading."
+  [carries-incoming?]
+  (cond
+    (nil? carries-incoming?) "index unreadable"
+    carries-incoming? "index carries the incoming side"
+    :else "index carries none of the incoming side"))
+
+(defn orphaned-merge-message
+  "The SURFACED note, which is capped at 80 characters by the handoff
+   protocol. The two facts that must survive that cap are the ones the
+   clearer acts on: WHICH merge, and whether its index is safe to conclude.
+   The remedy is deliberately not here - it does not fit beside them, and it
+   is carried in full by the escalation below. Composing to fit rather than
+   truncating is the same discipline BL-1360's ceremony composer applies."
+  [{:keys [merge-head-sha carries-incoming?]}]
+  (str "BL-1387 orphan " (apply str (take 10 (str merge-head-sha)))
+       ": " (orphaned-index-clause carries-incoming?)))
+
+(defn orphaned-merge-escalation
+  "The escalation text, which is not capped: the full statement including the
+   remedy and its one dangerous step. `git merge --abort` DELETES staged-new
+   files, which is why the 2026-09-04 hand-clear had to back one up first -
+   so the warning travels with the instruction rather than being folded away."
+  [{:keys [merge-head-sha carries-incoming?]}]
+  (str "orphaned merge on master: MERGE_HEAD " (str merge-head-sha)
+       ", no owner, " (orphaned-index-clause carries-incoming?)
+       " - abort and redo, back up staged-new files first"))
+
 ;; BL-1120: never abort a merge this tick did not start.
 ;; BL-1386 widens "this tick" to "this daemon, provably" - and only that far.
 (defn may-abort-failed-merge?
@@ -205,6 +305,44 @@
    (boolean (or started-this-tick?
                 (owns-merge-head? owner-record merge-head-sha)))))
 
+(defn open-merge-branch
+  "BL-1387: the ONE mapping from an open merge to a plan branch, shared by
+   every plan that used to test `merge-head-present?` directly, so the three
+   cannot drift apart.
+
+   `merge-class` is optional. When it is absent every caller behaves EXACTLY
+   as before this ticket - presence means :skip-human-merge-in-progress -
+   which is what keeps the lib's existing suites and every other call site
+   unchanged. When it is present:
+
+     :live-human  -> :skip-human-merge-in-progress   (today's reading, kept)
+     :own         -> :abort-owned-merge              (BL-1386: the daemon's
+                                                      own leftover, aborted
+                                                      by ownership on a LATER
+                                                      tick)
+     :orphaned    -> :skip-orphaned-merge            (BL-1387's reading)
+     :none        -> nil                             (nothing to skip)
+
+   Returns nil when there is no open merge to branch on.
+
+   BL-1386 ARCHITECT BOUNCE (2026-09-04), D1. `:own` used to map to
+   `:skip-human-merge-in-progress` on the reasoning that BL-1386 would finish
+   it elsewhere. It does not: the daemon's `:abort!` adapter is only ever
+   reached from `absorb-with-merge!` on the SAME tick that started the merge,
+   so the ownership 2-arity was never called in production and the tick after
+   a failed abort still called the daemon's own leftover a human's - the exact
+   scenario the ticket exists to fix. `:own` now has its own branch, and the
+   daemon acts on it."
+  [{:keys [merge-head-present? merge-class]}]
+  (cond
+    (and merge-class (not= :none merge-class))
+    (case merge-class
+      :orphaned :skip-orphaned-merge
+      :own :abort-owned-merge
+      :skip-human-merge-in-progress)
+    (and (nil? merge-class) merge-head-present?) :skip-human-merge-in-progress
+    :else nil))
+
 (defn merge-attempt-plan
   "Given whether MERGE_HEAD already exists: :skip-human-merge-in-progress or :run-merge."
   [merge-head-already-present?]
@@ -222,9 +360,9 @@
   "Plan for the automated origin/main absorb path.
    :noop | :skip-human-merge-in-progress | :refuse-rematch | :run-merge.
    Never starts a merge known to conflict (no MERGE_HEAD left for an editor)."
-  [{:keys [merge-head-present? behind would-conflict? tip-contains-origin?]}]
+  [{:keys [merge-head-present? behind would-conflict? tip-contains-origin? merge-class] :as opts}]
   (cond
-    merge-head-present? :skip-human-merge-in-progress
+    (open-merge-branch opts) (open-merge-branch opts)
     (or (zero? (or behind 0)) tip-contains-origin?) :noop
     would-conflict? :refuse-rematch
     :else :run-merge))
@@ -283,9 +421,9 @@
    :skip-human-merge-in-progress.
    Never plans an operator content-conflict absorb merge."
   [{:keys [merge-head-present? behind ahead tip-contains-origin?
-           absorb-would-conflict?]}]
+           absorb-would-conflict? merge-class] :as opts}]
   (cond
-    merge-head-present? :skip-human-merge-in-progress
+    (open-merge-branch opts) (open-merge-branch opts)
     (or (zero? (or behind 0)) tip-contains-origin?) :noop
     (and (pos? (or behind 0)) (zero? (or ahead 0))) :ff-absorb
     absorb-would-conflict? :replay-bookkeeping
@@ -452,7 +590,7 @@
 ;;    would blow the 80-char budget the message falls back to the unnamed
 ;;    form rather than truncating a path into something misleading. ────────
 (defn surface-message
-  [{:keys [behind reason overlapping-paths]}]
+  [{:keys [behind reason overlapping-paths] :as opts}]
   (let [refuse-absorb (str "BL-1130: absorb refused — rematch onto origin/main, " behind " behind")
         rematch-bk (str "BL-1135: rematch bookkeeping onto origin/main, " behind " behind")]
     (case reason
@@ -473,6 +611,14 @@
       :human-merge-in-progress
       (let [msg (str "BL-1120: human-merge-in-progress on master, " behind " behind - not aborted")]
         (if (<= (count msg) 80) msg "BL-1120: human-merge-in-progress on master - not aborted"))
+      ;; BL-1387: an orphan is not a human needing patience. The reason is
+      ;; distinct so main_sync_status_cli.bb passes it through to the
+      ;; coordinator's step-0 action table and the specifier's landing rule -
+      ;; a reason that exists only inside the daemon reaches neither.
+      :orphaned-merge
+      (let [msg (orphaned-merge-message {:merge-head-sha (:merge-head-sha opts)
+                                         :carries-incoming? (:carries-incoming? opts)})]
+        (if (<= (count msg) 80) msg "BL-1387: orphaned merge on master - abort and redo"))
       :verdict-unavailable
       (let [msg (str "BL-1236: merge verdict unavailable, " behind " behind origin - not reset")]
         (if (<= (count msg) 80) msg "BL-1236: merge verdict unavailable - not reset"))

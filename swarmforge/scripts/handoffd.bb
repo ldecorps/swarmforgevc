@@ -3301,6 +3301,70 @@
                             {:dir (str project-root)})]
     (when (zero? exit) (str/trim out))))
 
+;; ── BL-1387: is anyone actually holding this open merge? ─────────────────
+;;
+;; The old predicate was `git rev-parse --verify MERGE_HEAD` and nothing
+;; else, so an open merge WAS a human's. These adapters supply the evidence
+;; the classifier needs to tell a live owner from an orphan.
+
+;; `pgrep -x git`, never `pgrep -f`: a `-f` match scans full command lines and
+;; matches THIS process's own arguments, so it reports a git that is only ever
+;; itself. (Bitten live in this repo on 2026-09-04 by exactly that.) The pid
+;; alone is not enough either - a git running in some other worktree is not an
+;; owner of THIS checkout - so each pid's cwd is resolved and compared.
+(defn- master-main-live-git-process? []
+  (let [{:keys [exit out]} (daemon-cycle-guard-lib/sh! ["pgrep" "-x" "git"] {:dir (str project-root)})]
+    (and (zero? exit)
+         (let [root (str (fs/canonicalize project-root))
+               self (str (.pid (java.lang.ProcessHandle/current)))]
+           (boolean
+            (some (fn [pid]
+                    (and (not= pid self)
+                         (try
+                           (= root (str (fs/canonicalize (fs/path "/proc" pid "cwd"))))
+                           (catch Exception _ false))))
+                  (remove str/blank? (str/split-lines (str/trim out)))))))))
+
+(defn- master-main-index-lock-state []
+  (let [lock (fs/path project-root ".git" "index.lock")]
+    (if (fs/exists? lock)
+      {:lock-present? true
+       :lock-mtime-ms (try (.toMillis (fs/last-modified-time lock)) (catch Exception _ nil))
+       :now-ms (System/currentTimeMillis)}
+      {:lock-present? false :now-ms (System/currentTimeMillis)})))
+
+;; Invariant 3: whether the index CARRIES the incoming side, computed against
+;; HEAD..MERGE_HEAD - never inferred from unmerged-path count, which is zero
+;; for a poisoned index and is precisely the reading that makes one look
+;; clean enough to conclude.
+(defn- master-main-git-paths [& args]
+  (let [{:keys [exit out]} (daemon-cycle-guard-lib/sh! (into ["git"] args) {:dir (str project-root)})]
+    (when (zero? exit)
+      (remove str/blank? (str/split-lines (str/trim out))))))
+
+(defn- master-main-index-carries-incoming? []
+  (master-main-reconcile-lib/index-carries-incoming?
+   (master-main-git-paths "diff" "--cached" "--name-only" "HEAD")
+   (master-main-git-paths "diff" "--name-only" "HEAD" "MERGE_HEAD")))
+
+;; The whole classification, in the daemon because only the daemon can read a
+;; process table, a lock mtime and an index. `orphaned-merge` is this file's
+;; consumer anchor: a reason that exists only in the lib reaches neither the
+;; coordinator's step-0 action table nor the specifier's landing rule.
+(defn- master-main-open-merge-class []
+  (let [sha (master-main-merge-head-sha)]
+    (master-main-reconcile-lib/classify-open-merge
+     {:merge-head-present? (some? sha)
+      :owned-by-daemon? (master-main-reconcile-lib/owns-merge-head?
+                         (master-main-reconcile-lib/read-merge-owner (str daemon-dir)) sha)
+      :live-git-process? (master-main-live-git-process?)
+      :lock-fresh? (master-main-reconcile-lib/index-lock-fresh? (master-main-index-lock-state))})))
+
+(defn- master-main-orphaned-merge-escalation []
+  (master-main-reconcile-lib/orphaned-merge-escalation
+   {:merge-head-sha (master-main-merge-head-sha)
+    :carries-incoming? (master-main-index-carries-incoming?)}))
+
 ;; BL-1386 consumer anchors. Both literals live HERE, in the only process
 ;; that can write the record or emit the log line, because that is what proves
 ;; a live path reaches the new decision (BL-1235). The lib owns the same two
@@ -3388,8 +3452,17 @@
    ahead! - only a KNOWN ahead=0 may actually reset; local-ahead or an
    undeterminable count refuses instead of discarding."
   [success-outcome failure-outcome]
-  (if (master-main-merge-head-present?)
-    {:success false :error "human-merge-in-progress" :outcome :human-merge-in-progress}
+  ;; BL-1387 invariant 1: an open merge is classified, never read as a
+  ;; human's from presence alone. The rematch path is as bound by that as the
+  ;; absorb path - and it is a RESET path, so mistaking an orphan for a human
+  ;; here is what keeps a poisoned merge alive rather than surfaced. Nothing
+  ;; is aborted either way (invariant 2); only the reason changes.
+  (if-let [open-class (let [c (master-main-open-merge-class)]
+                        (when (not= :none c) c))]
+    (if (= :orphaned open-class)
+      {:success false :error "orphaned-merge" :outcome :orphaned-merge
+       :escalation (master-main-orphaned-merge-escalation)}
+      {:success false :error "human-merge-in-progress" :outcome :human-merge-in-progress})
     (let [raw-reset! (fn []
                         (let [{:keys [exit err]} (daemon-cycle-guard-lib/sh!
                                                   ["git" "reset" "--hard" "origin/main"]
@@ -3420,8 +3493,13 @@
         conflict? (= verdict :conflict)
         unavailable? (= verdict :unavailable)
         mid? (master-main-merge-head-present?)
+        ;; BL-1387: WHOSE merge, not merely that one is open. Only computed
+        ;; when there is something to classify, so the ordinary tick pays
+        ;; nothing for a process scan it does not need.
+        merge-class (when mid? (master-main-open-merge-class))
         plan (master-main-reconcile-lib/absorb-dispatch-plan
               {:merge-head-present? mid?
+               :merge-class merge-class
                :behind behind
                :ahead ahead
                :tip-contains-origin? tip-ok?
@@ -3431,6 +3509,51 @@
     (case plan
       :skip-human-merge-in-progress
       {:success false :error "human-merge-in-progress" :outcome :human-merge-in-progress}
+
+      ;; BL-1386, the half the architect's D1 bounce found unwired: a
+      ;; MERGE_HEAD this daemon can PROVE it started - the ownership record
+      ;; names this exact sha - is finished here, on a LATER tick than the one
+      ;; that opened it. This is the only place `may-abort-failed-merge?`'s
+      ;; ownership 2-arity is reached in production; before the bounce the
+      ;; only caller passed a literal `true`, so the leftover from a failed
+      ;; abort was still read as a human's, which is the whole 2026-09-04
+      ;; incident. BL-1120 is untouched: a merge with no record, or one naming
+      ;; a different sha, never reaches this branch at all.
+      :abort-owned-merge
+      (let [sha (master-main-merge-head-sha)
+            record (master-main-reconcile-lib/read-merge-owner (str daemon-dir))]
+        (if (master-main-reconcile-lib/may-abort-failed-merge?
+             false {:owner-record record :merge-head-sha sha})
+          (let [{:keys [success error]} (master-main-merge-abort!)]
+            (if success
+              (do (master-main-clear-merge-owner!)
+                  (log! "master-main-reconcile" "aborted-owned-merge"
+                        (str "finished this daemon's own leftover merge " sha))
+                  {:success false :outcome :aborted-owned-merge})
+              (do (log! "master-main-reconcile" master-main-merge-abort-failed-label
+                        (str "still cannot abort own merge " sha ": " error))
+                  {:success false :error "merge-abort-failed" :outcome :merge-abort-failed})))
+          ;; Ownership evaporated between classification and here (the record
+          ;; was cleared, or MERGE_HEAD changed). Fail closed to today's
+          ;; reading rather than aborting on a stale claim.
+          {:success false :error "human-merge-in-progress" :outcome :human-merge-in-progress}))
+
+      ;; BL-1387: an orphan is not a human needing patience. Nothing is
+      ;; aborted here (invariant 2) - only what the sweep SAYS changes, and
+      ;; it says the one thing the clearer has to establish by hand today:
+      ;; whether the index carries the incoming side.
+      :skip-orphaned-merge
+      (let [escalation (master-main-orphaned-merge-escalation)]
+        (log! "master-main-reconcile" "orphaned-merge" escalation)
+        {:success false
+         :error "orphaned-merge"
+         :outcome :orphaned-merge
+         :escalation escalation
+         :surface (master-main-reconcile-lib/surface-message
+                   {:reason :orphaned-merge
+                    :behind behind
+                    :merge-head-sha (master-main-merge-head-sha)
+                    :carries-incoming? (master-main-index-carries-incoming?)})})
 
       :noop
       {:success true :outcome :noop}
