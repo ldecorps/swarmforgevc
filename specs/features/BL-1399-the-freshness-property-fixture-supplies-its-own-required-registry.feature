@@ -5,11 +5,13 @@ Feature: BL-1399 The freshness property fixture supplies its own required regist
   pins a one-row conf on purpose but lets the guard read the live required
   list, so the guard refuses and three properties are red without any
   watchdog defect. This feature is that the fixture hands the guard its
-  own required list through the seam the guard already reads, and that the
-  guard itself still bites.
+  own required list through the seam the guard already reads, that the
+  guard's supervisor arm is satisfied by rows derived from the same glob it
+  walks rather than a list in the test, and that the guard itself still
+  bites.
 
   Background:
-    Given a freshness fixture root with a one-row conf for handoffd
+    Given a freshness fixture root whose conf pins handoffd and carries a derived row per supervisor the guard walks
 
   # BL-1399 the-fixture-registry-matches-its-conf-01
   Scenario: the checker runs green against the fixture's own registry
