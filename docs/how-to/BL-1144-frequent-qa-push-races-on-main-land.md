@@ -20,7 +20,35 @@ on a stale base → tip-purity bounce cascades.
 
 ## Operator / QA discipline
 
-Prefer:
+`land_main_publish.sh` now performs the whole sequence as one command
+(BL-1366) rather than QA hand-orchestrating each step:
+
+```bash
+swarmforge/scripts/land_main_publish.sh <root> --land <task-name> <approved-commit> [<issue-ref>]
+```
+
+This is the preferred route. It runs `land_step_cli.bb` for the
+entanglement verdict, acquires the land lock (bounded wait, never
+unbounded — `LAND_LOCK_TIMEOUT` on the deadline), pushes FF-only, rematches
+**at most once** if origin moved (never a second rematch — waits on the
+lock instead), releases the lock on every exit path via a trap, and closes
+a `GH-`-seeded `<issue-ref>` if given. Output is one of:
+
+| Output | Meaning |
+| --- | --- |
+| `LAND_PUBLISHED <sha>` | Pushed to `main`; issue closed if `<issue-ref>` given |
+| `LAND_STOPPED: ...` | `land_step_cli.bb` escalated, produced no verdict, or named no commit — `main` untouched, nothing pushed |
+| `LAND_LOCK_TIMEOUT: ...` | Another land held the lock past the deadline; not waited past it, not forced |
+| `LAND_REMATCH: ...` | Origin moved after acquiring the lock; rematched once and retried the push |
+| `LAND_ISSUE_SKIPPED: ...` | Push succeeded but `issue_done.sh` could not close the issue — the land itself still stands |
+
+`LAND_ESCALATE` (from `land_step_cli.bb`) is never auto-resolved by this
+wrapper — it is QA's judgement alone, and the wrapper stops rather than
+guess. Never `--force`; grep the script for `-f`/`--force` on any push
+path to confirm.
+
+Manual step-by-step invocation remains available for cases outside `--land`
+(e.g. inspecting the decision without landing):
 
 ```bash
 swarmforge/scripts/land_main_publish.sh <root> --acquire-lock
@@ -107,3 +135,4 @@ hour.
 - [BL-1131 rematch-then-FF](BL-1131-ticket-land-without-operator-absorb-merge.md)
 - [BL-1130 clean-refuse absorb](BL-1130-land-on-main-without-external-conflict-resolution.md)
 - [BL-1241 entangled tip has a reachable remedy](BL-1241-entangled-tip-at-the-land-step-has-a-reachable-remedy.md) — the detector this ticket wires in, and the tip-pure replay remedy
+- BL-1366 — the one-command `--land` mode above, replacing hand-orchestration of acquire/decide/push/release; sibling of BL-1360/BL-1361/BL-1362/BL-1363 (deterministic transit assist)

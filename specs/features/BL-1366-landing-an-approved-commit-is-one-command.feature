@@ -1,3 +1,8 @@
+# mutation-stamp: sha256=61f16cb9031177fcf1906a96f657d079ab60e16a18e74c687d66c2c3ed977f71
+# acceptance-mutation-manifest-begin
+# {"version":1,"tested_at":"2026-09-04T18:53:15.561219390Z","feature_name":"Landing an approved commit is one command","feature_path":"/home/carillon/swarmforgevc/.worktrees/hardender/specs/features/BL-1366-landing-an-approved-commit-is-one-command.feature","background_hash":"34daac488405c5d44310ee5f0b23a02dfda6f04a242cc2d678bea5e3f7b41485","implementation_hash":"unknown","scenarios":[{"index":4,"name":"the lock is released whatever ends the land","scenario_hash":"b1701c979b2cb7bc9b79dc9244c49b17d2b59c51970c4af7e25fa87110773591","mutation_count":4,"result":{"Total":4,"Killed":4,"Survived":0,"Errors":0},"tested_at":"2026-09-04T18:53:15.561219390Z"}]}
+# acceptance-mutation-manifest-end
+
 Feature: Landing an approved commit is one command
 
   `land_main_publish.sh` documents its own caller protocol in its header:

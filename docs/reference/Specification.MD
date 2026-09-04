@@ -1,5 +1,36 @@
 # SwarmForge VS Code Extension — Specification
 
+**Last Updated:** September 4, 2026 (BL-1366: `land_main_publish.sh`
+documented a caller protocol nothing implemented — acquire the land lock,
+decide, rematch if advised, push FF-only, release — and QA hand-ran all
+four steps after every approval, alongside `land_step_cli.bb` for the
+entanglement verdict and `issue_done.sh` for a `GH-`-seeded ticket. A new
+`--land <task-name> <approved-commit> [<issue-ref>]` mode performs the
+whole documented sequence as one command: `land_step_cli.bb`'s three
+outcomes are the branch points (`LAND_CLEAN` lands the cited commit,
+`LAND_REPLAY` lands the replayed one it names, `LAND_ESCALATE` stops —
+never auto-resolved, since that judgement is QA's alone and reported as
+`LAND_STOPPED`); the lock is acquired with a bounded deadline
+(`LAND_LOCK_TIMEOUT` rather than an unbounded wait) and released on every
+exit path via a trap, so a land that dies between acquire and release
+never leaves the lock held for the next one; a residual race after
+acquiring rematches onto the current origin tip **at most once**
+(`LAND_REMATCH`) then waits on the lock rather than rematching a second
+time; the push path is grepped clean of `--force`/`-f`. Explicitly NOT in
+scope: the merge-up broadcast and coordinator bookkeeping note (BL-1360),
+and anything about what the entanglement verdict concludes (settled by
+BL-1354, which this consumes — the landed-sibling verdict is per-ticket,
+not per-path, since BL-1354 landed). Fifth and last opportunity of the
+2026-09-03 determinism sweep, held back at mint until BL-1354 stopped
+moving the contract this wraps. Acceptance:
+`specs/features/BL-1366-landing-an-approved-commit-is-one-command.feature`.
+How-to: `docs/how-to/BL-1144-frequent-qa-push-races-on-main-land.md`
+(extended in place — the manual four-command sequence stays documented
+as a fallback, the one-command `--land` mode is now the preferred route).
+No diagram depicts land-publish internals at this granularity — QA still
+lands and pushes exactly as `swarm-flow.mmd` already shows, only the
+number of commands changed.)
+Prior entry —
 **Last Updated:** September 4, 2026 (BL-1361: the post-QA branch sweep's
 "surfaced to its role" contract, BL-668, was built as a log line only —
 `record-surface!` wrote the sweep's state file and `log!`, with no send,
