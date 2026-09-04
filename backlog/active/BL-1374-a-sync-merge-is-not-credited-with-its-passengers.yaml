@@ -28,6 +28,21 @@ required_wiring:
   - 'swarmforge/scripts/land_step_lib.bb::merge-authored-paths::the combined-diff discriminator this ticket adds - the narrowing lives here, and the previously named own-commit-changed-paths matched only a neighbouring call plus comments'
   - 'specs/pipeline/steps/bl1374SyncMergePassengersSteps.js::registerSteps::acceptance handler registered so the runner executes every scenario; repointed 2026-09-04 after BL-1371 discovery - the handler file IS the registration and index.js names nothing'
 
+abandoned_commits: [41fc392944, 7536ae3f52, abd510a750]
+# abd510a750 added 2026-09-04 (QA hand-built land replay, BL-1241): the
+# commit cited to land_step_cli.bb for this land, superseded by the
+# tip-pure replay 850a0d4f93 actually landed.
+# 2026-09-04: documenter's original QA send (de234ef2d5, task-scope-clean)
+# went stale after the specifier repointed required_wiring (6ca2cff386);
+# redo_from.sh BL-1374 documenter cleared it. The redo's own follow-on
+# work (7536ae3f52 evidence commit, then 41fc392944 re-run evidence) got
+# entangled with an intervening main-merge that carried BL-1309/BL-1296
+# passengers, so documenter hand-built a tip-pure replay (788fa75e25,
+# preceded by an untagged docs commit d2674c47f9 for the shared BL-1241
+# how-to page, matching that doc's established untagged-subject
+# convention) directly on 935f0ae1bf instead. Same content, clean
+# ancestry; these two are stranded on swarmforge-documenter only.
+
 human_approval: approved
 human_ruling: |
   Both - the code fix, with the rule written as belt and braces

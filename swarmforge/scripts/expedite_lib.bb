@@ -757,6 +757,50 @@
 (def uncommitted-moves-owner
   "whoever next commits in the master checkout - do it deliberately, or an unrelated commit sweeps them")
 
+;; BL-1376. The expeditor deliberately does not land: Article 1.8/4.2 make QA
+;; the integration point (BL-247) and the run's own how-to says it works on
+;; expedite/<BL-id>, "Never main". So the branch is NAMED, with the owner the
+;; constitution already gives it - and the run's QA-hat verdict is already
+;; durable in .swarmforge/expedite-approvals/ for is_qa_ancestor.sh to read.
+;; Naming a leaving is not performing it: nothing here merges, pushes, or
+;; publishes.
+(defn run-branch-name
+  "The branch an expedite run works on. ONE definition, read by the worktree
+   setup that creates it and by the handover that names it - two literals
+   would be two branches the day the prefix changes (BL-897)."
+  [ticket]
+  (str "expedite/" ticket))
+
+(def run-branch-owner
+  "QA - Article 1.8/4.2 make QA the integration point (BL-247); this run's QA-hat verdict is already recorded under .swarmforge/expedite-approvals/")
+
+(defn branch-outstanding
+  "Pure: the run branch as an outstanding item, or nil when there is genuinely
+   nothing on it to land.
+
+   Silent on a definite zero and on a branch that does not exist. An ancestry
+   check that could not run
+   (`:reason`, no `:ahead`) reports the branch rather than omitting it: on this
+   path a check that cannot answer must never read as \"nothing found\", which
+   is the whole shape of the defect - a run said everything true it knew and
+   the code reached nobody."
+  [{:keys [name ahead reason absent?]}]
+  (when (and (seq (str name))
+             ;; A branch that does not exist is a DEFINITE nothing, not an
+             ;; unreadable check: a run that refused before it ever created a
+             ;; worktree left no code anywhere, and saying otherwise would put
+             ;; a phantom leaving in front of every early refusal.
+             (not absent?)
+             (not (and (number? ahead) (zero? ahead))))
+    (cond-> {:subject "the run branch"
+             :branch name
+             :owner run-branch-owner}
+      (number? ahead) (assoc :ahead ahead)
+      ;; a branch with no readable distance says why, and claims no number.
+      (and (not (number? ahead)) (seq (str reason))) (assoc :reason reason)
+      (and (not (number? ahead)) (not (seq (str reason))))
+      (assoc :reason "the distance from origin/main could not be read"))))
+
 (defn- backlog-moves [ticket parked ticket-moved?]
   (cond-> (mapv #(str "backlog/active/ -> " hold-folder "  (" % ")") parked)
     ticket-moved? (conj (str "backlog/active/ -> backlog/done/  (" ticket ")"))))
@@ -769,11 +813,12 @@
    Reported on EVERY ending, including the unhappy ones. A run that bounced
    past its bound, overran a stage, or failed its restart is exactly when the
    leavings matter most, and the failed-restart case is the one that bit."
-  [{:keys [ticket parked ticket-moved? dry-run?]}]
+  [{:keys [ticket parked ticket-moved? dry-run? branch]}]
   (if dry-run?
     []
     (let [parked (vec (remove nil? parked))
-          moves (backlog-moves ticket parked ticket-moved?)]
+          moves (backlog-moves ticket parked ticket-moved?)
+          branch-item (branch-outstanding branch)]
       (cond-> []
         (seq parked)
         (conj {:subject "the parked tickets"
@@ -784,7 +829,11 @@
         (seq moves)
         (conj {:subject "the uncommitted backlog moves"
                :moves (vec moves)
-               :owner uncommitted-moves-owner})))))
+               :owner uncommitted-moves-owner})
+
+        ;; BL-1376: the third leaving, and the one that reached nobody.
+        branch-item
+        (conj branch-item)))))
 
 (defn format-outstanding-summary
   "Pure: the closing summary's text. One `expedite ` prefix per line, matching
@@ -798,11 +847,18 @@
        "\n"
        (concat
         [(line "OUTSTANDING - this run left work for someone else:")]
-        (mapcat (fn [{:keys [subject tickets folder moves owner]}]
+        (mapcat (fn [{:keys [subject tickets folder moves owner branch ahead reason]}]
                   (concat
                    [(line "  " subject ":")]
                    (when (seq tickets) [(line "    " (str/join ", " tickets) "  held in " folder)])
                    (map #(line "    " %) (or moves []))
+                   ;; BL-1376. The distance is stated when it is known and the
+                   ;; reason when it is not - never a number nobody measured.
+                   (when (seq (str branch))
+                     [(line "    " branch
+                            (cond
+                              (number? ahead) (str "  " ahead " commits ahead of origin/main")
+                              :else (str "  distance unknown: " reason)))])
                    [(line "    owner: " owner)]))
                 items)
         ;; Honest in the other direction too: a run that parked nothing says

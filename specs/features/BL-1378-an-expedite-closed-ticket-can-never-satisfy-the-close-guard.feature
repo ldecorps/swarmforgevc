@@ -1,3 +1,8 @@
+# mutation-stamp: sha256=30222abc3f5429d22a8ff23c26776c3560e8bce249a4943d51b0a562038ac3f9
+# acceptance-mutation-manifest-begin
+# {"version":1,"tested_at":"2026-09-03T13:34:02.783705693Z","feature_name":"BL-1378 An expedite-closed ticket can satisfy the close guard","feature_path":"/home/carillon/swarmforgevc/.worktrees/hardender/specs/features/BL-1378-an-expedite-closed-ticket-can-never-satisfy-the-close-guard.feature","background_hash":"17fa96cc6e4ec482f005e18a72b73d6a9ab5626deb5a1aea99b5f92229a16df5","implementation_hash":"unknown","scenarios":[{"index":1,"name":"the mailbox path keeps deciding every close that has no expedite record","scenario_hash":"9f56ae1d1b4e68e92d176e1f86a79b1ad8d51e5fb060a4f3d9b8f2559b8a4541","mutation_count":4,"result":{"Total":4,"Killed":4,"Survived":0,"Errors":0},"tested_at":"2026-09-03T13:34:02.783705693Z"},{"index":2,"name":"a record grants a close only when it names this ticket, the QA stage, and approval","scenario_hash":"5de76cec45e03c917157561e67878f5c45de0f38337b15e85b13676d99e24c1e","mutation_count":3,"result":{"Total":3,"Killed":3,"Survived":0,"Errors":0},"tested_at":"2026-09-03T13:34:02.783705693Z"},{"index":4,"name":"a store that cannot be trusted refuses the close and says why","scenario_hash":"1c677d8352f864b30107cb05449f3292335468aaa157a7dede795eb83831bb76","mutation_count":4,"result":{"Total":4,"Killed":4,"Survived":0,"Errors":0},"tested_at":"2026-09-03T13:34:02.783705693Z"}]}
+# acceptance-mutation-manifest-end
+
 Feature: BL-1378 An expedite-closed ticket can satisfy the close guard
 
   The close guard refuses an active-to-done commit unless QA sent the

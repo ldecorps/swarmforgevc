@@ -82,14 +82,46 @@
    (:blocked-ticket-ids), not every ticket the commit touched - a
    partially-approved multi-ticket close must not read as if the already-
    approved ticket were also rejected."
-  [{:keys [reason blocked-ticket-ids ticket-ids]}]
-  (let [names (str/join "," (or (seq blocked-ticket-ids) ticket-ids))]
-    (case reason
-      :missing-qa-approval
-      (str "commit_integrity_cli: CLOSE BLOCKED for " names
-           " — no QA git_handoff or note to coordinator referencing this ticket. "
-           "Coder/architect bookkeeping notes do not authorize close; wait for QA approval.")
-      (str "commit_integrity_cli: CLOSE BLOCKED for " names " (" (name reason) ")."))))
+  [{:keys [reason blocked-ticket-ids ticket-ids details]}]
+  (let [names (str/join "," (or (seq blocked-ticket-ids) ticket-ids))
+        ;; BL-1378: a multi-ticket close can fail for more than one reason at
+        ;; once, and "which ticket, for which reason" is the only form of this
+        ;; message anyone can act on.
+        per-ticket (str/join "\n"
+                             (for [t (or (seq blocked-ticket-ids) ticket-ids)
+                                   :let [{:keys [reason detail]} (get details t)]
+                                   :when reason]
+                               (str "  " t ": " (name reason)
+                                    (when (seq (str detail)) (str " — " detail)))))]
+    (str
+     (case reason
+       :missing-qa-approval
+       (str "commit_integrity_cli: CLOSE BLOCKED for " names
+            " — no QA git_handoff or note to coordinator referencing this ticket, "
+            "and no expedite QA verdict record for it. "
+            "Coder/architect bookkeeping notes do not authorize close; wait for QA approval.")
+
+       ;; BL-1378: an expedite-closed ticket is approved by the run's own QA-hat
+       ;; verdict record, but the code still has to have reached main - a ticket
+       ;; in backlog/done/ whose branch nobody reads is what this refuses.
+       :expedite-commit-not-on-main
+       (str "commit_integrity_cli: CLOSE BLOCKED for " names
+            " — an expedite QA verdict record approves it, but the approved commit "
+            "has not reached main. QA lands the branch (Article 1.8/4.2, BL-247); "
+            "close after it lands. Do not bypass this guard.")
+
+       :expedite-ancestry-undeterminable
+       (str "commit_integrity_cli: CLOSE BLOCKED for " names
+            " — an expedite QA verdict record approves it, but whether the approved "
+            "commit reached main could not be determined. Refusing rather than guessing.")
+
+       :expedite-store-problem
+       (str "commit_integrity_cli: CLOSE BLOCKED for " names
+            " — the expedite verdict store cannot be trusted. A store that cannot be "
+            "read is never read as absent, and absence is never approval.")
+
+       (str "commit_integrity_cli: CLOSE BLOCKED for " names " (" (name reason) ")."))
+     (when (seq per-ticket) (str "\n" per-ticket)))))
 
 (defn -main [args]
   (let [project-root (first args)
@@ -110,11 +142,17 @@
         (binding [*out* *err*]
           (println (str "commit_integrity_cli: abandoned " (count abandoned)
                         " in-flight handoff(s) for " (str/join "," ticket-ids)))))
+      ;; BL-1378: an ALLOWED close says which path approved it. A close that
+      ;; went through on an expedite verdict record rather than a QA mailbox
+      ;; handoff is a materially different event, and a reader who cannot tell
+      ;; them apart cannot audit either.
       (println (json/generate-string (cond-> result
                                        (seq ticket-ids)
                                        (assoc :closed-ticket-ids ticket-ids)
                                        (seq abandoned)
-                                       (assoc :abandoned-handoffs (count abandoned)))))
+                                       (assoc :abandoned-handoffs (count abandoned))
+                                       (seq (:details close-check))
+                                       (assoc :close-approval (:details close-check)))))
       (when-not (:success result)
         (binding [*out* *err*]
           (println (str "commit_integrity_cli: FAILED (" (name (:reason result))

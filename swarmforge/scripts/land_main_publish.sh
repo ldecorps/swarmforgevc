@@ -8,6 +8,29 @@
 # EDN decision from master_main_reconcile_lib (no push). Callers that push
 # must acquire the land lock first, rematch if advised, then push FF-only
 # (never force). Residual races rematch at most once then wait on the lock.
+#
+# BL-1309: --decide-only ALSO asks what the tip carries. This is the only land
+# step QA.prompt makes mandatory, and it used to ask solely whether the push
+# would fast-forward - never whose work rode along. `main`'s first-parent chain
+# IS the QA branch, so a plain push of that tip ships every ticket ever merged
+# into it, including work QA deliberately held. Verified by reflog on
+# 2026-08-31: BL-1308's own land pushed BL-1300, held four commits earlier for
+# a human ruling that had not been given - and BL-1308 was the ticket that
+# fixed the detector this step now consults.
+#
+# Human ruling (2026-09-03, ticket ruling_options option 2, as REVISED by
+# BL-1375's ruling): refuse only when an unlanded sibling is WITHHELD, awaiting
+# approval, or its approval state cannot be read. Option 1 - refuse every
+# entangled tip - was the ruling first given and is what this guard shipped
+# until now; it deadlocked the land queue within hours, because when several
+# APPROVED tickets share one path each refuses on the others and none can go
+# first. The narrowing is read through land_step_lib.bb's own
+# `blocking-siblings`, the predicate BL-1375 built and land-plan already
+# decides on, so the mandatory step and the hand-run CLI cannot disagree.
+#
+# Exit status: 3 with ENTANGLED_SIBLING_BLOCK on refusal, 0 otherwise
+# (2 stays the usage error). The refusal is an ordinary exit, never an abort:
+# it must not leave the land lock held.
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -76,7 +99,7 @@ export BL1144_REMATCHED_EDGE="$REMATCHED_EDGE"
 export BL1144_LOCK_FREE="$LOCK_FREE"
 export BL1144_LIB="$SCRIPT_DIR/master_main_reconcile_lib.bb"
 
-bb -e "$(cat <<'BB'
+DECISION="$(bb -e "$(cat <<'BB'
 (require '[clojure.string :as str])
 (load-file (System/getenv "BL1144_LIB"))
 (defn- env-bool [k] (= "true" (System/getenv k)))
@@ -106,4 +129,63 @@ bb -e "$(cat <<'BB'
         :tip-purity-required (master-main-reconcile-lib/tip-purity-required?)
         :max-attempts master-main-reconcile-lib/publish-rematch-max-attempts}))
 BB
-)"
+)")"
+
+# ── BL-1309: does this tip carry an unlanded ticket's content? ────────────
+#
+# Fails OPEN on every input it cannot read - no tip sha, no detector on disk,
+# a tip whose subject names no ticket, an unreadable range against
+# origin/main, or a detector that errors. A land step that refused because it
+# could not run its own check would be a swarm-wide outage, which is the line
+# BL-806, BL-1293 and BL-1307 all already hold. Only a POSITIVE finding
+# refuses.
+export BL1309_LIB="$SCRIPT_DIR/land_step_lib.bb"
+export BL1309_ROOT="$ROOT"
+export BL1309_TIP="$TIP_SHA"
+
+entangled_sibling_report() {
+  bb -e "$(cat <<'BB'
+(load-file (System/getenv "BL1309_LIB"))
+(let [root (System/getenv "BL1309_ROOT")
+      tip (System/getenv "BL1309_TIP")
+      ;; nil - the tip's subject names no ticket - is an unknown, not a
+      ;; finding: there is nothing to call the OTHER tickets siblings OF.
+      task (land-step-lib/commit-ticket-id root tip)]
+  (when task
+    (let [{:keys [unlanded warning]} (land-step-lib/entangled-siblings root tip task)]
+      ;; A warning means the walk could not be completed. Say nothing.
+      (when (and (nil? warning) (seq unlanded))
+        ;; BL-1375's narrowing, asked here rather than restated: an unlanded
+        ;; sibling that is APPROVED rides, one that is withheld, awaiting
+        ;; approval, or unreadable blocks. `blocking-siblings` is the same
+        ;; predicate land-plan decides on, so the mandatory decide step and
+        ;; the hand-run land_step_cli.bb cannot give different answers about
+        ;; the same tip.
+        (let [blockers (land-step-lib/blocking-siblings root unlanded)]
+          (when (seq blockers)
+            (println "ENTANGLED_SIBLING_BLOCK")
+            (doseq [{:keys [ticket state reason]} blockers]
+              (println (str "entangled-sibling: " ticket " (" (name state) ") "
+                            reason)))
+            (println (str "land-decide: refusing to advise a push of " tip
+                          " - replay this ticket's own paths onto origin/main"
+                          " (BL-1241) and land that commit instead"))))))))
+BB
+)" 2>/dev/null
+}
+
+# `|| true` on the substitution, deliberately: this script runs under
+# `set -euo pipefail`, and a detector that exits non-zero must fail OPEN
+# rather than abort the land step mid-flight and leave the lock held
+# (Guardrails, BL-1242/BL-1252).
+ENTANGLED_OUT=""
+if [[ -n "$TIP_SHA" && -f "$BL1309_LIB" ]]; then
+  ENTANGLED_OUT="$(entangled_sibling_report || true)"
+fi
+if [[ "$ENTANGLED_OUT" == *"ENTANGLED_SIBLING_BLOCK"* ]]; then
+  printf '%s\n' "$ENTANGLED_OUT"
+  exit 3
+fi
+
+
+printf '%s\n' "$DECISION"
