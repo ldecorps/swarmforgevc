@@ -10,7 +10,7 @@ direction: human-requested
 depends_on: [BL-653]
 mutation_cost: medium
 slice_size_envelope: medium
-assigned_to: none
+assigned_to: coder
 required_stages: [coder, cleaner, architect, hardender, documenter, qa]
 
 acceptance: specs/features/BL-1353-task-arrived-is-not-an-escalation.feature
