@@ -31,8 +31,8 @@ Feature: BL-1405 A hand-built land records its land approval
 
   # BL-1405 a-record-grants-nothing-on-its-own-03
   Scenario: a record naming an unapproved source grants the replay nothing
-    Given a source commit the approval predicate answers no for
-    When the land-approval CLI records the replay against that source for ticket "BL-9009"
+    Given an unapproved second source commit
+    When the land-approval CLI records the replay against the unapproved source for ticket "BL-9009"
     Then the approval predicate still answers no for the replay
 
   # BL-1405 recording-twice-writes-one-line-04
