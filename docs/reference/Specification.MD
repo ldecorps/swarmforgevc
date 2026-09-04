@@ -1,5 +1,37 @@
 # SwarmForge VS Code Extension — Specification
 
+**Last Updated:** September 4, 2026 (BL-1362: Article 4.4's evidence file
+— items `D1..Dn` or an explicit NONE, committed alone and forwarded by
+that commit (BL-536) — has a gate hardened three times
+(`review_forward_evidence_gate_lib.bb`: BL-536, BL-806, BL-1293, each
+after a role got the ritual wrong) and, until now, no writer: every role
+hand-composed the filename, structure, and commit from scratch. Measured
+over 45 days: 2182 of 12903 non-merge commits (16.9%) carried nothing but
+a `backlog/evidence/` file, each with a different subject — the signature
+of hand-composition, not emission from one tool. `record-review-evidence.js`
+(`extension/src/tools/record-review-evidence.ts`) is the writer: `--ticket
+<BL-id> --role <reviewing role>` plus either `--none` (a clean sweep) or
+one or more `--item '{"command":...,"commit":...,"excerpt":...,"class":...,
+"expected":...,"blamed":...,"remediation":...}'` flags (the D1..Dn
+inventory) — supplying neither refuses, since a pass with no verdict is
+not finished and the forward gate would refuse it a turn later anyway
+(invariant 3: the tool records the verdict it is given and never derives
+one). Writes `backlog/evidence/<ticket>-<role>-<YYYYMMDD>.md` (the
+corpus's own convention; a same-day second pass by the same role gets a
+`-2`, `-3`, ... suffix — the corpus's own existing collision form, chosen
+over a `pass2` qualifier because the tool can emit a number
+deterministically without knowing what a second pass meant), stages and
+commits that ONE path alone (`git add --`, never `-A` — BL-506, so it
+cannot fold unrelated work into a parcel), and prints the commit for the
+role to forward. NONE and an inventory render through the same code path
+(invariant 2 — never two ways to record a clean sweep). Removes no gate:
+a role using the tool passes the forward gate by construction rather than
+by remembering. Acceptance:
+`specs/features/BL-1362-a-review-pass-records-its-evidence-by-tool.feature`.
+No how-to page: an internal role-tooling CLI, same documentation
+precedent as its sibling `record-bounce.js` (also Specification.MD-only,
+no dedicated page). No diagram depicts evidence-recording internals.)
+Prior entry —
 **Last Updated:** September 4, 2026 (BL-1358: the Gherkin mutation
 harness had no per-mutant time ceiling anywhere — `specs/pipeline/
 mutationWorker.js` read work over readline and waited on
