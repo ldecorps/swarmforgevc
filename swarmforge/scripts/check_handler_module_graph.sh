@@ -72,9 +72,15 @@ if [[ -z "$REPO_ROOT" || ( ! -d "$REPO_ROOT/.git" && ! -f "$REPO_ROOT/.git" ) ]]
   fi
 fi
 
-# BL-971: a killed run traps nothing, so sweep this prefix BEFORE the run too.
+# BL-971: a killed run traps nothing, so stale roots are swept before the run
+# too - but ONLY stale ones. A bare `rm -rf <prefix>.*` deletes a CONCURRENT
+# run's materialised tree out from under it, and every file then reads as
+# absent: this guard reported first ~20 and then 520 phantom missing modules
+# that way, refusing two valid commits, because it runs inside a commit hook
+# where invocations overlap. Older than an hour cannot be a live run.
 PREFIX="bl1385-handler-graph"
-rm -rf "${TMPDIR:-/tmp}/${PREFIX}".* 2>/dev/null || true
+find "${TMPDIR:-/tmp}" -maxdepth 1 -name "${PREFIX}.*" -type d -mmin +60 \
+  -exec rm -rf {} + 2>/dev/null || true
 WORK="$(mktemp -d "${TMPDIR:-/tmp}/${PREFIX}.XXXXXX")" || exit 2
 cleanup() { rm -rf "$WORK"; }
 trap cleanup EXIT
@@ -287,6 +293,23 @@ for (const name of handlers) {
     if (inconclusive.length > 0) inconclusiveAll.push(`${name}: ${inconclusive.join('; ')}`);
     process.exit = origExit;
   }
+}
+
+// A refusal has to prove the tree was still there when it decided. Two
+// concurrent invocations were observed destroying each other's materialised
+// root - every file then reads ENOENT and the guard "finds" hundreds of
+// missing modules that are plainly present. A finding is only trustworthy if
+// the sentinel that was definitely extracted is still readable at the end.
+const SENTINEL = path.join(STEPS_DIR, 'index.js');
+if (failures.length > 0 && existsOnTree(SENTINEL) !== true) {
+  process.stdout.write(
+    'INCONCLUSIVE the materialised tree disappeared mid-run (sentinel ' +
+      SENTINEL +
+      ' unreadable), so the ' +
+      failures.length +
+      ' finding(s) cannot be trusted'
+  );
+  origExit.call(process, 2);
 }
 
 if (failures.length > 0) {
