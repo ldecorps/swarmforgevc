@@ -7,9 +7,13 @@
 // merged into it. Verified by reflog on 2026-08-31: BL-1308's own land pushed
 // BL-1300, held four commits earlier for a human ruling never given.
 //
-// Human ruling (2026-09-03, the ticket's ruling_options option 1): refuse
-// EVERY entangled tip. There is no withheld-vs-ordinary predicate to get
-// wrong.
+// Human ruling (2026-09-03): option 1, "refuse EVERY entangled tip", shipped
+// first and deadlocked the land queue within hours - four approved tickets
+// sharing specs/pipeline/steps/index.js each refused on the others. BL-1375's
+// ruling REVISED it to option 2: refuse only when the unlanded sibling is
+// withheld, awaiting approval, or unreadable. Every shape below therefore
+// builds the SAME git entanglement and varies only the sibling's backlog
+// ticket file, so the narrowing is measured rather than described.
 //
 // Every scenario runs the REAL script over a REAL repository with a REAL bare
 // origin, through lib/bl1309LandDecideFixtureCli.sh. A self-remote would let
@@ -36,7 +40,10 @@ const WITHHELD_TICKET = 'BL-9003';
 const SIBLING_STATES = {
   'no ticket but the one being landed': 'clean',
   'a ticket whose content is on origin/main': 'landed-sibling',
-  'a ticket whose content is not there yet': 'unlanded-sibling',
+  'an approved ticket whose content is not there yet': 'approved-sibling',
+  'a ticket withheld in backlog/hold': 'held-sibling',
+  'a ticket still awaiting its human approval': 'pending-sibling',
+  'a ticket whose approval state cannot be read': 'unreadable-sibling',
 };
 
 const UNREADABLE_INPUTS = {
@@ -96,6 +103,12 @@ function registerSteps(registry) {
     ctx.bl1309.shape = 'withheld-sibling';
   });
 
+  // Same merge route, same tip, same sibling id - only its approval differs.
+  // Paired with the scenario above, this is the narrowing itself.
+  scoped(/^the tip carries the merge of an approved ticket that has not landed$/, (ctx) => {
+    ctx.bl1309.shape = 'approved-merge-sibling';
+  });
+
   scoped(/^(the detector cannot be run at all|the range against origin\/main is unreadable)$/, (ctx, input) => {
     const shape = UNREADABLE_INPUTS[input];
     assert.ok(shape, `unknown unreadable input: ${input}`);
@@ -132,6 +145,18 @@ function registerSteps(registry) {
     assert.ok(
       ctx.bl1309.report.out.includes(WITHHELD_TICKET),
       `the refusal does not name the withheld ticket: ${ctx.bl1309.report.out}`
+    );
+  });
+
+  // A refusal that names a ticket without saying what is wrong with it leaves
+  // the reader to guess whether it is held, unapproved, or simply unreadable -
+  // three different remedies. BL-1375's predicate carries the reason, so the
+  // step prints it.
+  scoped(/^its output says why that ticket may not ride$/, (ctx) => {
+    assert.match(
+      ctx.bl1309.report.out,
+      /withheld|hold|approval/i,
+      `the refusal names no reason: ${ctx.bl1309.report.out}`
     );
   });
 }

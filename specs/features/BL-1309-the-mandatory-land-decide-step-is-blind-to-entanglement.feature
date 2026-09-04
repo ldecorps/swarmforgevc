@@ -14,9 +14,17 @@ Feature: The mandatory land decide step refuses a tip carrying an unlanded ticke
   that branch, checked or not.
 
   The decide step is the only step on the path QA cannot skip, so it is where
-  the answer has to be given. Refusing is fail-closed on the ONE fact the
-  detector can establish; every input it cannot read fails open, as BL-806
-  and BL-1293 established for this family.
+  the answer has to be given. Every input the detector itself cannot read
+  fails open, as BL-806 and BL-1293 established for this family.
+
+  How WIDE the refusal is was the human's own call, and it was answered twice.
+  Option 1 - refuse every entangled tip - shipped first and deadlocked the
+  land queue the same day: when several APPROVED tickets share one path, each
+  refuses because the others are unlanded and none can go first. BL-1375's
+  ruling narrowed it to option 2, which is what these scenarios describe: an
+  unlanded sibling that is APPROVED rides, and one that is withheld, awaiting
+  approval, or whose approval state cannot be read still refuses. Absence is
+  never a ride - only a positive reading of "approved" narrows anything.
 
   Background:
     Given a branch tip that is a descendant of origin/main
@@ -29,10 +37,13 @@ Feature: The mandatory land decide step refuses a tip carrying an unlanded ticke
     Then it reports <verdict>
 
     Examples:
-      | sibling_state                             | verdict |
-      | no ticket but the one being landed        | proceed |
-      | a ticket whose content is on origin/main  | proceed |
-      | a ticket whose content is not there yet   | refuse  |
+      | sibling_state                                        | verdict |
+      | no ticket but the one being landed                   | proceed |
+      | a ticket whose content is on origin/main             | proceed |
+      | an approved ticket whose content is not there yet    | proceed |
+      | a ticket withheld in backlog/hold                    | refuse  |
+      | a ticket still awaiting its human approval           | refuse  |
+      | a ticket whose approval state cannot be read         | refuse  |
 
   # BL-1309 land-decide-refuses-entangled-tip-02
   Scenario: The 2026-08-31 land that shipped a ticket held for a human ruling
@@ -41,6 +52,14 @@ Feature: The mandatory land decide step refuses a tip carrying an unlanded ticke
     Then it reports refuse
     And its output carries the ENTANGLED_SIBLING_BLOCK marker
     And its output names the withheld ticket
+    And its output says why that ticket may not ride
+
+  # BL-1309 land-decide-refuses-entangled-tip-04
+  Scenario: The deadlock the narrowing exists to dissolve
+    Given the tip carries the merge of an approved ticket that has not landed
+    When the land decide step runs
+    Then it reports proceed
+    And its output omits the ENTANGLED_SIBLING_BLOCK marker
 
   # BL-1309 land-decide-refuses-entangled-tip-03
   Scenario Outline: An input the step cannot read never becomes a refusal
