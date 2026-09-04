@@ -1,3 +1,7 @@
+# acceptance-mutation-manifest-begin
+# {"version":1,"tested_at":"2026-09-04T18:06:48.306476531Z","feature_name":"BL-1392 A dead cron daemon is never silent","feature_path":"/home/carillon/swarmforgevc/.worktrees/hardender/specs/features/BL-1392-a-dead-cron-daemon-is-never-silent.feature","background_hash":"74234e98afe7498fb5daf1f36ac2d78acc339464f950703b8c019892f982b90b","implementation_hash":"unknown","scenarios":[],"outcome":"inapplicable"}
+# acceptance-mutation-manifest-end
+
 Feature: BL-1392 A dead cron daemon is never silent
 
   The swarm schedules its watchdog, its shift boundaries and its reviews
