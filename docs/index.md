@@ -39,6 +39,7 @@ expects them, and are not migrated or rewritten here.
 - [Ambulance mode — running one ticket exclusively while the swarm stays live](how-to/BL-655-ambulance-mode-the-hold.md)
 - [Approvals Ambulance choice](how-to/BL-893-approvals-ambulance-choice.md) — fifth Approvals button + `/ambulance BL-xxx`; hold only, not Q jump (BL-893).
 - [Approval ask carries ruling options](how-to/BL-589-approval-ask-carries-ruling-options.md) — `ruling_options:` renders tappable choices; tap records `human_ruling` (BL-589).
+- [An approval from any surface carries its ruling](how-to/BL-1367-approval-from-any-surface-carries-its-ruling.md) — the paused-pager approve route now refuses (409, naming the outstanding options) rather than half-recording a ticket that declares `ruling_options`; a plain approval never overwrites an existing ruling (BL-1367).
 - [Ghost approval ask — refuse post without live yaml, reconcile stale buttons](how-to/BL-1190-ghost-approval-ask-requires-live-yaml.md) — no ask posts without a committed ticket yaml; a dropped yaml closes/staleifies the buttoned ask instead of looping (BL-1190).
 - [Ambulance workflow gaps from the first live run](how-to/BL-691-ambulance-mode-workflow-gaps-from-bl688-live-run.md) — sync-hold, busy-rotate for patient mail, engage only from `active/` (BL-691; updates BL-655).
 - [Host switchover doctor — the post-move checklist](how-to/BL-1057-host-switchover-doctor.md)
