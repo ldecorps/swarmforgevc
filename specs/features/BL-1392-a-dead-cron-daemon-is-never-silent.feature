@@ -2,7 +2,7 @@ Feature: BL-1392 A dead cron daemon is never silent
 
   The swarm schedules its watchdog, its shift boundaries and its reviews
   into the host crontab and checks only that a crontab command exists.
-  When no cron daemon is running, every install prints success and nothing
+  With no cron daemon running, every install prints success and nothing
   ever fires, and because the watchdog itself rides cron, nothing notices.
   This feature is that an install with no daemon says so and names the
   fix, that the daemon-side sweep notices a stale watchdog heartbeat and
