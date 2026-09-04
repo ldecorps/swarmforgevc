@@ -148,8 +148,31 @@ An absent marker never holds. A marker that exists but cannot be read as a
 definite "not active" — malformed JSON, truncated, an unparseable `untilMs` —
 holds the restart, the same as an explicit `active: true`: doubt fails closed.
 
-Parked tickets are **reported, never re-promoted**. What you parked may be stale
-against what the run changed, so promotion stays a human decision.
+Parked tickets are **reported, never re-promoted directly to work** — but as
+of BL-1379 (2026-09-04) they no longer sit in `backlog/hold/` forever
+either. A daemon sweep (`expedite-park-reversal-sweep!` in `handoffd.bb`,
+running every tick alongside the other reconcile/reaper sweeps) reads each
+run's own durable `park-record.json` and, once that run's ticket is an
+ancestor of `main`, moves every ticket it parked back to the folder it
+parked FROM — always `backlog/active/`, per the human's ruling ("restore
+to the prior folder"), never to `backlog/paused/` — and marks each one
+`status: blocked` with `freshness_check: required` naming the expedition
+(`freshness_check_reason`). Restoring to `active/` while marking it
+`blocked` (rather than routing it straight through `paused/`'s own
+Article 3.6 promotion gate) is the load-bearing choice: `blocked` is what
+`promote_and_route_next.sh` and the dropped-parcel sweep already read
+(BL-1100/BL-1301), so the ticket sits back where the human's own literal
+instruction put it, visibly restored, but still cannot be routed to work
+until the mark clears. What you parked MAY be stale against what the run
+changed, and this is how that worry is answered rather than dismissed:
+the mark forces an Article 3.6 deprecator freshness check before the
+coordinator can clear it, and only the coordinator or specifier does —
+never the reversal machinery that set it. Only tickets THIS run's own
+record names are ever touched; a ticket a
+human separately moved into `backlog/hold/` is invisible to it (Article 3.1
+unchanged for that case). A ticket that has since moved, closed, or been
+edited by a human since it was parked is left exactly where it is and named
+in the sweep's log, never guessed at.
 
 ## Reading a run
 
@@ -186,10 +209,19 @@ expedite     expedite/BL-1375  3 commits ahead of origin/main
 expedite     owner: QA - Article 1.8/4.2 make QA the integration point ...
 ```
 
-**Three things there need you, not the swarm.** The parked tickets sit in
-`backlog/hold/`, which Article 3.1 forbids the coordinator promoting from — so
-if you do not move them back, `active/` can stay empty and the pipeline idles
-(this is what happened on 2026-08-21). The backlog moves are **staged, not
+**Two of the three things there need you; the parked tickets, as of BL-1379
+(2026-09-04), no longer do.** At the moment the run's own report prints, the
+parked tickets genuinely still sit in `backlog/hold/` with no owner but a
+human — the run process exits before its own commit can land, so it cannot
+observe that event itself. But once this run's approved commit reaches
+`main`, the daemon's park-reversal sweep (see "Parked tickets", above)
+restores them on its own, back to the folder each one parked FROM
+(`backlog/active/`, always, since that is the only folder a park ever
+leaves from) with a freshness-check mark — `status: blocked`, so it does
+not actually route to work until the mark clears. You do not need to move
+them back by hand, and `active/` does not stay empty waiting for you to
+notice (this is what happened on 2026-08-21, before this ticket). The
+backlog moves are still **staged, not
 committed**, in the shared master checkout: commit them deliberately, or the
 next role to commit anything there sweeps them into an unrelated commit. And
 the run branch (`expedite/<BL-id>`) is **never landed by the run itself** —
@@ -225,8 +257,12 @@ the run ticket itself from `paused/`/`hold/` into `active/` when needed
 It does not write a BL topic record or touch the briefing. Those need the front-desk
 machinery it exists to work without.
 
-It does not commit the backlog moves it made, and it does not restore what it
-parked. Both are yours — see the OUTSTANDING block above.
+It does not commit the backlog moves it made — that stays yours, see the
+OUTSTANDING block above. It does not restore what it parked ITSELF (the run
+process exits before its own commit lands, so nothing inside the run can
+observe the landing event) — but the daemon's park-reversal sweep does,
+automatically, once the run's approved commit reaches `main` (BL-1379,
+above).
 
 ## When it refuses
 
