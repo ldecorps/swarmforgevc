@@ -190,3 +190,5 @@ source: |
   all verification: `backlog/evidence/BL-1296-orphan-handler-crashes-discovery-20260904.md`.
   Prior adjudication of the route this retires:
   `backlog/evidence/BL-1296-land-deadlock-shared-registry-20260903.md`.
+
+assigned_to: coder
