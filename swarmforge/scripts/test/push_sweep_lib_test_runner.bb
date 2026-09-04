@@ -819,6 +819,58 @@
   (push-sweep-lib/sweep! 100000 dir retry-cfg adapters)
   (assert= "BL-1098 sweep!: tip matching newest authoring still publishes" 1 @(:push calls)))
 
+
+;; ── BL-1390: the post-commit hook's decision ──────────────────────────────
+;;
+;; Every writer on the shared main checkout leaves local main ahead of origin;
+;; the sweep only pushes on its cadence, and once origin moves the checkout is
+;; both ahead and behind, so every QA landing becomes a merge only a clean
+;; verdict may make. Measured 2026-09-04: 32 local-only commits, 115 deadlock
+;; lines, four hand-merges. Pushing while a fast-forward is still possible
+;; keeps `ahead` at zero and the landing arrives as pure lag.
+;;
+;; The ahead/behind half is NOT restated here - post-commit-decision composes
+;; the existing push-decision, so the hook and the sweep cannot disagree about
+;; what is safe (invariant 3).
+
+(assert= "BL-1390: on main, ahead and not behind, the hook pushes"
+         :should-push
+         (push-sweep-lib/post-commit-decision {:branch "main" :linked-worktree? false :ahead 1 :behind 0}))
+
+(assert= "BL-1390: ahead AND behind is diverged - never a push, the reconcile owns the join"
+         :diverged
+         (push-sweep-lib/post-commit-decision {:branch "main" :linked-worktree? false :ahead 1 :behind 1}))
+
+(assert= "BL-1390: nothing ahead is nothing to push"
+         :nothing-to-push
+         (push-sweep-lib/post-commit-decision {:branch "main" :linked-worktree? false :ahead 0 :behind 0}))
+
+(assert= "BL-1390: behind only is still nothing to push, never a push of somebody else's tip"
+         :nothing-to-push
+         (push-sweep-lib/post-commit-decision {:branch "main" :linked-worktree? false :ahead 0 :behind 3}))
+
+;; A role worktree branch never pushes, before or after this ticket - role
+;; branches reach origin only through QA's land (BL-1310, and this ticket's
+;; own out-of-scope list). Refused BEFORE any fetch, so scenario 03's "nothing
+;; is fetched" holds.
+(assert= "BL-1390: a linked role worktree never pushes, however far ahead it is"
+         :not-shared-checkout
+         (push-sweep-lib/post-commit-decision {:branch "coder" :linked-worktree? true :ahead 5 :behind 0}))
+
+(assert= "BL-1390: a non-main branch in the master checkout never pushes either"
+         :not-shared-checkout
+         (push-sweep-lib/post-commit-decision {:branch "side" :linked-worktree? false :ahead 5 :behind 0}))
+
+(assert= "BL-1390: main in a LINKED worktree is still not the shared checkout"
+         :not-shared-checkout
+         (push-sweep-lib/post-commit-decision {:branch "main" :linked-worktree? true :ahead 1 :behind 0}))
+
+;; Unknown facts fail CLOSED to no push: an unreadable count must never be
+;; read as "safe to push" (the sweep's own posture).
+(assert= "BL-1390: unreadable counts never push"
+         :counts-unknown
+         (push-sweep-lib/post-commit-decision {:branch "main" :linked-worktree? false :ahead nil :behind nil}))
+
 ;; ── report ────────────────────────────────────────────────────────────────
 (if (empty? @failures)
   (println "push_sweep_lib: ALL TESTS PASSED")

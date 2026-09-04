@@ -2823,11 +2823,12 @@
 ;; failed exit here, which push_sweep_lib.bb's own bounded retry treats
 ;; like any other transient failure - true divergence is caught BEFORE a
 ;; push is ever attempted, by push-sweep-rev-counts! above.
+;; BL-1390: the push itself now lives in push_sweep_lib.bb, so the periodic
+;; sweep here and the post-commit hook cannot disagree about how main reaches
+;; origin (invariant 3 - one push path). The guarded runner is still this
+;; file's; only the command is shared.
 (defn push-sweep-push! []
-  (let [{:keys [exit err]} (daemon-cycle-guard-lib/sh! ["git" "push" "origin" "main"] {:dir (str project-root)})]
-    (if (zero? exit)
-      {:success true}
-      {:success false :error (str/trim (or err ""))})))
+  (push-sweep-lib/push-main! project-root daemon-cycle-guard-lib/sh!))
 
 ;; BL-630: the real git/CLI-specific wiring for push_sweep_lib.bb's own
 ;; qa-gate-decision - pure decision logic stays there, this is only the
