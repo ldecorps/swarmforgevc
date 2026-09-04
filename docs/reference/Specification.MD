@@ -1,5 +1,42 @@
 # SwarmForge VS Code Extension — Specification
 
+**Last Updated:** September 4, 2026 (BL-1382: two crontab-ownership
+predicates — `swarmforge_cron_lib.sh`'s `swarmforge_cron_line_belongs_to_root`
+(consumed by `./stop-swarm.sh`'s uninstall path) and
+`reconcile_shift_schedule_crontab.bb`'s `strip-schedule-lines` (consumed by
+the install/reconcile path) — both claimed any crontab line merely NAMING a
+path under the root (`R/.swarmforge/operator/`, `R/start-swarm.sh`,
+`R/stop-swarm.sh`), alongside their marker clauses. That path clause was
+meant to sweep LEGACY presets (hand-installed files naming operator
+scripts by path with no marker), but to the predicate "the human
+hand-installed this schedule" and "a legacy preset installed this" were
+the same line: overnight 2026-09-04 a full-stack stop erased three
+hand-installed shift lines from the live crontab — everything naming
+`.swarmforge/operator/*.sh` — and the 09:00 weekday start was 40 minutes
+from being missed when caught. Per the human's verbatim ruling (option 1,
+recorded from a front-desk reply, SUP-17 2026-09-04T14:13:07Z): ownership
+is now MARKER-ONLY everywhere — install, uninstall, and reconcile touch
+only lines carrying one of the swarm's own markers (freshness, legacy
+operator-schedule, or the BL-660 shift-schedule begin/end block); the path
+clauses are removed entirely, not narrowed. An unmarked line that merely
+names the root is reported — never swept — by both the install and
+uninstall paths (`left in place (no swarmforge marker for this root): ...`,
+`swarmforge_cron_line_names_root`/`swarmforge_cron_report_unmarked`). A
+shared-corpus test (`test_bl1382_cron_ownership_agreement.sh`) asserts the
+shell predicate and the Babashka strip agree on the same marker set, so
+the two readers can never drift (invariant 2, BL-897). Multi-root
+isolation (BL-783/BL-1162) is unchanged. The root cause of WHICH writer
+fired overnight was not pinned (the applier lib has crashed at load since
+2026-08-27 per BL-1381, and no uninstall log line was found for the
+window) — the ticket fixes the predicate, which is the defect whichever
+writer ran it. Acceptance:
+`specs/features/BL-1382-a-crontab-line-the-swarm-did-not-write-is-never-the-swarms-to-remove.feature`.
+How-to: `docs/how-to/BL-1162-start-stop-swarm-cron-lifecycle-symmetry.md`
+(extended in place — "What gets managed" table narrowed to markers only,
+new "An unmarked line naming the root is reported, never swept" section,
+Verify-state and Related sections updated). No diagram depicts cron
+predicate internals at this granularity.)
+Prior entry —
 **Last Updated:** September 4, 2026 (BL-1393: BL-658 (the daemon's overnight
 freeze/drain/briefing/stop sequence) and BL-820 (the lean pass folding the
 shift's lifecycle ledger into a packet for the specifier) were two

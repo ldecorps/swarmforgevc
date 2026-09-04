@@ -17,17 +17,47 @@ symmetric for **every** swarmforge line scoped to this project root.
 ## What gets managed
 
 One shared registry (`swarmforge/scripts/swarmforge_cron_lib.sh`) decides
-whether a crontab line belongs to root `R`:
+whether a crontab line belongs to root `R`. **Marker-only, since BL-1382
+(2026-09-04, human ruling option 1):**
 
-| Kind | Marker / path pattern |
+| Kind | Marker |
 | --- | --- |
 | Freshness watchdog | `# swarmforge-BL-675-freshness-check root=[R]` |
 | Legacy operator schedule | `# swarmforge-operator-schedule root=[R]` |
 | BL-660 shift schedule block | `# swarmforge-shift-schedule-begin R` … `end` |
-| Operator scripts | paths under `R/.swarmforge/operator/` |
-| Lifecycle wrappers | `R/start-swarm.sh`, `R/stop-swarm.sh` |
 
-Multi-root hosts are isolated: removing lines for `R1` never touches `R2`.
+A line is the swarm's to remove only if it carries one of these markers —
+never because it merely *names* a path under the root. Multi-root hosts
+are isolated: removing lines for `R1` never touches `R2`.
+
+### An unmarked line naming the root is reported, never swept (BL-1382)
+
+Until 2026-09-04 the same predicate also matched any line containing
+`R/.swarmforge/operator/`, `R/start-swarm.sh`, or `R/stop-swarm.sh` — a
+path clause meant to sweep LEGACY presets (`crontab.day-only`,
+`crontab.day-night`, themselves hand-installed files naming operator
+scripts by path with no marker). To that predicate, "the human
+hand-installed this schedule" and "a legacy preset installed this" were
+the same line: overnight 2026-09-04 a full-stack stop erased three
+hand-installed shift lines from the live crontab (everything naming
+`.swarmforge/operator/*.sh`), and the 09:00 weekday start was 40 minutes
+from being missed when it was caught.
+
+The path clauses are gone. `swarmforge_cron_line_names_root` now reports —
+never removes — any line naming the root that carries none of the three
+markers above; both `install_shift_schedule_cron.sh` and
+`uninstall_swarmforge_crons.sh` print one line per unmarked match:
+
+```
+left in place (no swarmforge marker for this root): <the crontab line>
+```
+
+If a legacy-preset sweep is ever wanted again, it is an explicit, opt-in
+flag — never the default meaning of "belongs to root". The Babashka side
+(`reconcile_shift_schedule_crontab.bb`'s `strip-schedule-lines`) mirrors
+the same marker set; a shared-corpus test
+(`test_bl1382_cron_ownership_agreement.sh`) asserts the shell predicate
+and the bb strip agree, so the two readers can never drift (BL-897).
 
 ## Start path — ensure required lines
 
@@ -98,12 +128,15 @@ intentionally up.
 crontab -l | grep -F '/path/to/project-root' || echo 'no lines for this root'
 ```
 
-After `./stop-swarm.sh`: expect **no** matching lines.
+After `./stop-swarm.sh`: expect **no MARKED lines** for this root — an
+unmarked hand-installed line naming the root (BL-1382) is expected to
+survive, and is printed as "left in place" in the stop output.
 
 After `./start-swarm.sh` with scheduling configured: expect freshness
 plus rendered start/stop schedule lines (legacy operator schedule and/or
 BL-660 `swarm_shift` conf via `reconcile_shift_schedule_crontab.bb` —
-see [BL-660 three shift packs](BL-660-three-shift-packs-conf-selectable.md)).
+see [BL-660 three shift packs](BL-660-three-shift-packs-conf-selectable.md)),
+and any unmarked line for this root reported as left in place, unchanged.
 
 ## Related docs
 
@@ -113,3 +146,12 @@ see [BL-660 three shift packs](BL-660-three-shift-packs-conf-selectable.md)).
   `swarm_shift` conf as the sole schedule source (installed by BL-1162 start path).
 - [Bedtime vs lights-out](BL-762-finish-shift-bedtime-vs-lights-out.md) —
   `./finish-shift` vs `./stop-swarm.sh` scope (bedtime does not uninstall crons).
+
+## Verify (BL-1382 marker-only ownership)
+
+```bash
+bash swarmforge/scripts/test/test_bl1382_unmarked_cron_lines_survive.sh
+bash swarmforge/scripts/test/test_bl1382_cron_ownership_agreement.sh
+npx vitest run --config vitest.properties.config.mjs bl1382CronOwnershipMarkerOnly
+specs/pipeline/scripts/run_acceptance.sh specs/features/BL-1382-a-crontab-line-the-swarm-did-not-write-is-never-the-swarms-to-remove.feature
+```
