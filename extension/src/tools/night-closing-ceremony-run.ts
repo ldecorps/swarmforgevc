@@ -342,6 +342,23 @@ function parseHmToMs(nowMs: number, hm: string): number {
   return d.getTime();
 }
 
+// BL-1393: a sleep is a sleep whatever the hour - finish-shift at 17:00 on a
+// weekday runs the same ceremony the daemon runs at 06:00. Only the DAEMON's
+// trigger (sleepPath === null) is gated by the closure window.
+function gateBypassed(gateMode: string, sleepPath: string | null): boolean {
+  return gateMode !== 'ceremony' && sleepPath === null;
+}
+
+// A sleep caller's own trigger always counts as due, regardless of the
+// daemon's closure-window gate.
+function ceremonyIsDue(gateCeremonyDue: unknown, sleepPath: string | null): boolean {
+  return Boolean(gateCeremonyDue) || sleepPath !== null;
+}
+
+function gateModeLabel(gateMode: string, sleepPath: string | null): string {
+  return sleepPath === null ? gateMode : `sleep:${sleepPath}`;
+}
+
 export function runNightClosingCeremony(
   target: string,
   confPath: string,
@@ -352,11 +369,9 @@ export function runNightClosingCeremony(
 ): { gateMode: string; advanced: boolean; state: LiveState | null; actions: LiveAction[] } {
   const conf = deps.readConf(confPath);
   const gate = deps.evaluate(conf, nowMs);
-  // A sleep is a sleep whatever the hour (BL-1393): finish-shift at 17:00 on a
-  // weekday runs the same ceremony the daemon runs at 06:00. Only the DAEMON's
-  // trigger is gated by the closure window.
-  if (gate.mode !== 'ceremony' && sleepPath === null) {
-    return { gateMode: sleepPath === null ? gate.mode : `sleep:${sleepPath}`, advanced: false, state: deps.readState(target), actions: [] };
+  if (gateBypassed(gate.mode, sleepPath)) {
+    // Reachable only when sleepPath === null, so the label is always gate.mode.
+    return { gateMode: gate.mode, advanced: false, state: deps.readState(target), actions: [] };
   }
 
   const nightKey = localDayKey(nowMs);
@@ -367,7 +382,7 @@ export function runNightClosingCeremony(
     nowMs,
     nightKey,
     dayKey: nightKey,
-    ceremonyDue: Boolean(gate.ceremonyDue) || sleepPath !== null,
+    ceremonyDue: ceremonyIsDue(gate.ceremonyDue, sleepPath),
     drainBudgetMs,
     hardDeadlineMs,
     inFlightCount: flight.count,
@@ -390,7 +405,7 @@ export function runNightClosingCeremony(
   if (!dryRun) {
     deps.writeState(target, state);
   }
-  return { gateMode: sleepPath === null ? gate.mode : `sleep:${sleepPath}`, advanced: actions.length > 0 || state.phase !== (prev?.phase ?? 'idle'), state, actions };
+  return { gateMode: gateModeLabel(gate.mode, sleepPath), advanced: actions.length > 0 || state.phase !== (prev?.phase ?? 'idle'), state, actions };
 }
 
 export async function main(): Promise<void> {
