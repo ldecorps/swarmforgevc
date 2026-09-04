@@ -27,7 +27,7 @@ required_wiring:
 
 invariants:
   - "A push happens only when, after a fresh fetch, local main is strictly ahead of origin/main and not behind - never a force push, never while diverged, never from a role worktree branch (BL-891 invariant 1 and BL-1310 stand unchanged). Neither the hook nor any test of it ever writes the live repository's config: every fixture root is a git-init or clone under mkdtemp, proven by rev-parse --git-common-dir before any mutating git command, and the suite asserts the live origin URL is byte-identical after it runs. AMENDED 2026-09-04 after the fixture clobbered the shared origin."
-  - "The hook never fails, blocks or delays a commit beyond a bounded time: an unreachable origin, a slow fetch or a refused push leaves the commit exactly as made and logs why, and the periodic push sweep remains the fallback."
+  - "The hook never fails, blocks or delays a commit beyond a bounded time: an unreachable origin, a slow fetch or a refused push leaves the commit exactly as made and logs why, and the periodic push sweep remains the fallback. The hook's own e2e is bounded the same way: at most one instance runs at a time (a lock), its startup reaps only fixture roots no live run owns (dead recorded owner pid or age bound - never a blind prefix sweep), it has a wall-clock bound, and its log names the process chain that invoked it. ADDED 2026-09-04 after 1156 concurrent copies exhausted the host."
   - "One push path: every push from the shared checkout goes through push_sweep_lib.bb's adapter, so the sweep and the hook can never disagree about whether a push was safe."
 
 human_approval: approved
@@ -127,11 +127,53 @@ qa_e2e_procedure: |
      directory) or a path inside the live repository fails the suite loud
      before any mutation. Re-run scenario 04's "unreachable origin" case with
      `root` deliberately emptied: the suite refuses; the live origin is intact.
-  8. Remove fixture roots in a `finally`, sweeping THEIR prefix before the
-     run too (BL-971); the hook's own scratch, if any, is per-invocation and
-     never swept by prefix (BL-1385's lesson).
+  8. Concurrency of the suite itself: start the e2e twice at the same
+     instant. The second acquires no lock and either waits or exits cleanly
+     naming the first's pid; the first's fixture directory is intact
+     throughout and passes; at no point do two instances run. Then start ten
+     at once: at most one runs, the rest are refused or queued, none
+     destroys another's fixture, and each log line names the invoking
+     parent chain (pid, ppid, command).
+  9. Remove fixture roots in a `finally`. The startup reap removes ONLY
+     roots whose recorded owner pid is dead or whose age exceeds a bound
+     (BL-971's sweep qualified by BL-1385/BL-1390): a blind prefix sweep
+     under concurrent invocation destroys sibling runs, and the hook's own
+     scratch, if any, is per-invocation.
 
 notes: |
+  ## 2026-09-04 SECOND INCIDENT (specifier) - 1156 concurrent copies of the e2e
+
+  QA (`QA-bl1390-runaway-test-process-explosion-20260904.md`, QA branch)
+  counted 1156 concurrent `bash swarmforge/scripts/test/test_bl1390_post_commit_push.sh`
+  processes during its BL-1362 land: load 5.9-8.7, 13 of 19 GiB RAM, swap
+  in use, the property-suite guard slowing from 332s to 570s and refusing
+  on shifting files. QA did not kill them (not its work); by the time the
+  specifier looked (17:3xZ) none were left and the load was falling.
+
+  What multiplied them is NOT established, and this record says so rather
+  than guessing: the parcel's mutation sweep runs the e2e sequentially (6
+  mutants, one `bash` each); the acceptance handler runs it lazily and
+  memoizes on the feature's shared context, so an acceptance run spawns it
+  once; no registry guard test executes step bodies; the fixture installs
+  only the post-commit hook, so fixture commits cannot recurse into the
+  live guard chain. The coder root-causes on the bounce, with the one tool
+  that answers it: the e2e now logs the process chain that invoked it
+  (invariant 2), so the next storm names its spawner.
+
+  What IS established and required regardless: each copy's startup
+  `rm -rf ${FIXTURE_PREFIX}*` deletes every other live copy's fixture, so
+  N concurrent invocations become N failures - the BL-1385 shape again,
+  this time in a test. Invariant 2 extended: a lock, a reap limited to
+  dead-owner or aged roots, a wall-clock bound, parent-chain logging.
+  Scenario 07 added; e2e steps 8-9 re-tensed. The BL-971 sentence in
+  engineering.prompt is qualified in the same commit (boot budget gate run).
+
+  Correction to the 2026-09-04 first-incident record above: the coder's
+  rework in the parcel documents the mechanism - an early draft called
+  `g "$root"` with `$root` empty and `git -C ""` is the current directory -
+  and now guards every git call with `in_fixture`. That establishes what
+  the earlier entry left open.
+
   ## 2026-09-04 AMENDMENT (specifier) - the fixture clobbered the LIVE repository's origin
 
   Live incident, reported by QA (`QA-bl1390-shared-git-config-origin-clobbered-20260904.md`
