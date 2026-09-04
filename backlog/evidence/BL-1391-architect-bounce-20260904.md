@@ -87,3 +87,18 @@ Recorded what reproduces and how often, not a diagnosis.
 NOT COMPLIANT (intermittently). Bouncing to coder to investigate and
 harden against the race, then re-demonstrate non-flakiness (a run-N-times
 loop, not a single green run, given the measured rate).
+
+## Revert (BL-490/BL-495)
+
+`record-bounce.js`'s revert check returned `verdict: violation` naming
+`cd0d38875c` (the bounced coder commit itself, not an evidence commit —
+genuinely authored content, BL-1208's restored-content suppression does
+not apply). Reverted on `swarmforge-architect`:
+`git revert --no-edit cd0d38875c` -> `6a2235cee7`. Confirmed by content:
+`bookkeeping-conflict`/`bookkeeping-path?`/`append-only-merge` are all
+absent from `handoffd.bb` and `master_main_reconcile_lib.bb` post-revert,
+and the new step handler file no longer exists. Re-ran
+`master_main_reconcile_lib_test_runner.bb` (ALL TESTS PASS) and BL-1390's
+own suite (`push_sweep_lib_test_runner.bb`, `test_bl1390_post_commit_push.sh`
+— both unaffected) to confirm the revert did not disturb the sibling
+ticket's already-approved work.
