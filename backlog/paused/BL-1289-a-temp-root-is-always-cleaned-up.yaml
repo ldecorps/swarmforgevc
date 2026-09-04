@@ -23,7 +23,7 @@ stage_skip_reasons:
 acceptance: specs/features/BL-1289-a-temp-root-is-always-cleaned-up.feature
 
 required_wiring:
-  - "specs/pipeline/steps/index.js::bl1289::the new step handler must be registered in the step registry - specs/pipeline/runtime.js THROWS on any scenario with no handler, so an unregistered file fails every scenario in this ticket's feature file rather than silently skipping them. Verified absent from index.js at spec time (grep bl1289 -> 0), so the anchor cannot pass before the work is done"
+  - "specs/pipeline/steps/bl1289TempRootAlwaysCleanedSteps.js::registerSteps::the new step handler must be registered in the step registry - specs/pipeline/runtime.js THROWS on any scenario with no handler, so an unregistered file fails every scenario in this ticket's feature file rather than silently skipping them. Verified absent from index.js at spec time (grep bl1289 -> 0), so the anchor cannot pass before the work is done; repointed 2026-09-04 after BL-1371 discovery - the handler file IS the registration and index.js names nothing"
 
 invariants:
   - "Every temp root a runner creates is removed on every exit path it controls, and a root left behind by a run that was killed is swept before the next run makes any assertion - nothing traps SIGKILL, so cleanup alone is never sufficient."

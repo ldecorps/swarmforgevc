@@ -47,7 +47,7 @@ invariants:
   - "A file leaves the standing allowlist only by passing under the property lane, never by being deleted from the list while still red."
 required_wiring:
   - "swarmforge/scripts/property_suite_standing_allowlist.tsv::test/hostActivityFeed.property.test.js::the 14 entries with unrelated causes must survive this change - guards against draining the list wholesale"
-  - "specs/pipeline/steps/index.js::bl1206DrainTheNodeTestImportEntriesFromThePropertyAllowlistSteps::acceptance handler registered"
+  - "specs/pipeline/steps/bl1206DrainTheNodeTestImportEntriesFromThePropertyAllowlistSteps.js::registerSteps::acceptance handler registered; repointed 2026-09-04 after BL-1371 discovery - the handler file IS the registration and index.js names nothing"
 description: |
   ## What
 

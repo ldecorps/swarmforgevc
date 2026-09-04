@@ -27,7 +27,7 @@ invariants:
   - "The category set comes from the walker's own definition; the series never restates it, so the two cannot drift apart (BL-897)."
 
 required_wiring:
-  - 'specs/pipeline/steps/index.js::bl1364MechanicalShareReadableSteps::acceptance handler registered so the runner executes every scenario. A production anchor IS expected here - see notes.'
+  - 'specs/pipeline/steps/bl1364MechanicalShareReadableSteps.js::registerSteps::acceptance handler registered so the runner executes every scenario. A production anchor IS expected here - see notes.; repointed 2026-09-04 after BL-1371 discovery - the handler file IS the registration and index.js names nothing'
 
 human_approval: approved
 approval_context: >

@@ -20,7 +20,7 @@ invariants:
 
 required_wiring:
   - 'extension/src/tools/telegram-front-desk-bot.ts::listLiveRoleQuestionCandidates::the concierge tick sweep wiring must reach the new reader from a pre-existing live consumer, not from a declaration this parcel adds itself'
-  - 'specs/pipeline/steps/index.js::bl1347UnansweredRoleQuestionEscalatesSteps::acceptance handler registered so the runner executes every scenario. Absent at spec time, grep bl1347 returns 0.'
+  - 'specs/pipeline/steps/bl1347UnansweredRoleQuestionEscalatesSteps.js::registerSteps::acceptance handler registered so the runner executes every scenario. Absent at spec time, grep bl1347 returns 0.; repointed 2026-09-04 after BL-1371 discovery - the handler file IS the registration and index.js names nothing'
 
 source: |
   BL-772 slice E, declared in that epic since it was written and never minted:
