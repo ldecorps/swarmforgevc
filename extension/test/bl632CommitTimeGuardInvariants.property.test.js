@@ -23,6 +23,12 @@ const SIZE_GUARD = path.join(REPO_ROOT, 'swarmforge', 'scripts', 'check_commit_s
 const TICKET_GUARD = path.join(REPO_ROOT, 'swarmforge', 'scripts', 'check_ticket_deletion.sh');
 const PROPERTY_GUARD = path.join(REPO_ROOT, 'swarmforge', 'scripts', 'check_property_suite_drift.sh');
 const FEATURE_HANDLER_GUARD = path.join(REPO_ROOT, 'swarmforge', 'scripts', 'check_feature_handler_registration.sh');
+// BL-1395: the chain loads every changed Babashka script and boots handoffd.
+// The fixture carries it for the same reason as the guards above - a guard the
+// chain runs and the fixture lacks dies with "No such file or directory",
+// which the hook reports as an unexpected failure rather than the refusal
+// these properties are about.
+const BB_LOAD_GUARD = path.join(REPO_ROOT, 'swarmforge', 'scripts', 'check_bb_scripts_load.sh');
 // BL-1252 moved the pre-commit hook's guards behind this runner and BL-1303
 // gave pre-merge-commit a chain of its own over the same sourced aggregation.
 // Both files are part of what the hooks EXECUTE, so a fixture without them
@@ -57,6 +63,7 @@ const EXEC_FIXTURE_FILES = [
   'swarmforge/scripts/check_ticket_deletion.sh',
   'swarmforge/scripts/check_property_suite_drift.sh',
   'swarmforge/scripts/check_feature_handler_registration.sh',
+  'swarmforge/scripts/check_bb_scripts_load.sh',
   'swarmforge/scripts/run_commit_guards.sh',
   'swarmforge/scripts/commit_guard_chain_lib.sh',
   'swarmforge/scripts/incoming_merge_parent_lib.sh',
@@ -83,6 +90,7 @@ function mkFixtureTemplate() {
     [TICKET_GUARD, 'swarmforge/scripts/check_ticket_deletion.sh'],
     [PROPERTY_GUARD, 'swarmforge/scripts/check_property_suite_drift.sh'],
     [FEATURE_HANDLER_GUARD, 'swarmforge/scripts/check_feature_handler_registration.sh'],
+    [BB_LOAD_GUARD, 'swarmforge/scripts/check_bb_scripts_load.sh'],
     [GUARD_RUNNER, 'swarmforge/scripts/run_commit_guards.sh'],
     [GUARD_CHAIN_LIB, 'swarmforge/scripts/commit_guard_chain_lib.sh'],
     [MERGE_PARENT_LIB, 'swarmforge/scripts/incoming_merge_parent_lib.sh'],
