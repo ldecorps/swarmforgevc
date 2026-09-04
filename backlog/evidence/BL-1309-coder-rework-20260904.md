@@ -90,3 +90,39 @@ that deletion is this branch's own draft→live promotion, not lost coverage.
 The index.js conflict was resolved in favour of main's discovery registry.
 
 By coder.
+
+## ADDENDUM — the narrowing measured on the REAL tip, not only on fixtures
+
+`qa_e2e_procedure` step 4 asks for the live path. Run against this branch's own
+tip (`aba92d6998`), which carries 36 distinct ticket ids over `origin/main`:
+
+    bash swarmforge/scripts/land_main_publish.sh . --decide-only
+    → {... :purity-action :rematch-then-push ...}   exit 0, no marker
+
+A green run is not evidence by itself — an exit 0 here could equally mean the
+detector failed open and never answered. So the detector was asked directly,
+and it is NOT a fail-open:
+
+    task:            BL-1309
+    warning:         nil          ← the walk COMPLETED; this is a real answer
+    unlanded-count:  31
+    blockers:        []
+
+That is the whole ticket in one measurement. **Thirty-one unlanded siblings on
+a real tip, and every one of them reads approved, so the land proceeds.** Under
+the superseded option 1 this identical tip would have refused on all 31 — which
+is precisely the deadlock BL-1375 was raised to clear, reproduced here on live
+data rather than argued from the four-ticket incident.
+
+Note the two absences remain asymmetrical and both were exercised: `warning:
+nil` is the detector answering (fail-open not taken), while `blockers: []` is
+31 positive readings of "approved" — not 31 unknowns waved through. A sibling
+with no readable ticket file would have appeared in `blockers`, as unit row 04
+pins.
+
+Ordering re-checked for the fail-open path: `blockers` is fully computed BEFORE
+the first `println`, so a crash inside `blocking-siblings` cannot emit a
+half-written refusal - it yields empty output and fails open through the same
+`|| true` whose removal the mutation sweep kills.
+
+By coder.
