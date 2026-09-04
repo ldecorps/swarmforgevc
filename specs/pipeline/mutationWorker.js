@@ -34,6 +34,28 @@ function handle(request, stepsModulePath) {
     const outDir = path.join(workDir, 'generated');
     const generatedPath = writeEntryPoints(feature, outDir, { stepsModulePath });
     const result = runGeneratedTests([generatedPath]);
+    if (result.timedOut) {
+      // BL-1358, invariant 1. A mutant that never finished is reported as its
+      // OWN outcome, named with the ceiling it exceeded - never folded into
+      // test_failure (which would claim the tests DETECTED it) nor into
+      // test_success (which would claim it survived a test that actually
+      // ran). `infrastructure_error` is the report's third bucket: it lands in
+      // the summary's Errors, which gherkinMutationClassify already fails the
+      // gate on - the human's ruling option 1, a timed-out mutant failing the
+      // gate the same as a surviving one, with no change to the classifier and
+      // no new outcome string the pinned vendored mutator would not understand.
+      return {
+        id,
+        outcome: 'infrastructure_error',
+        timed_out: true,
+        error:
+          `mutant ${id} exceeded the ${result.timeoutMs} ms per-mutant ceiling and was killed ` +
+          '(SIGKILL to its whole process group). It was neither detected nor shown to survive: ' +
+          'nothing about its scenario was proven, and this run reports it as timed out. ' +
+          'Raise GHERKIN_MUTATION_TIMEOUT_MS if the scenario is legitimately slower than the ceiling.',
+        output: result.output,
+      };
+    }
     return {
       id,
       outcome: result.success ? 'test_success' : 'test_failure',
