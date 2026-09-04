@@ -55,10 +55,21 @@ description: |
   ## How (direction, not mandate)
 
   - In `mkRoot`/`runChecker`, write a fixture `freshness_required.conf`
-    naming exactly the daemons the fixture's conf carries (today:
-    `handoffd`) and pass `FRESHNESS_REQUIRED=<that path>` in the checker's
-    env beside the existing `FRESHNESS_CONF` - the seam the guard reads at
-    its line 8. The test's isolation intent is preserved, not weakened.
+    naming exactly the daemons the fixture's conf carries and pass
+    `FRESHNESS_REQUIRED=<that path>` in the checker's env beside the
+    existing `FRESHNESS_CONF` - the seam the guard reads at its line 8. The
+    test's isolation intent is preserved, not weakened.
+  - AMENDED 2026-09-04 (coder finding): the guard has a SECOND arm with no
+    seam - it walks its own `$SCRIPT_DIR/*_supervisor.bb` (the live scripts
+    directory, since the guard runs from there) and refuses any supervisor
+    script with no conf row. The registry seam alone therefore still fails,
+    naming the first supervisor. Handle it in the fixture, not the guard:
+    the fixture conf carries one row per supervisor script DERIVED from the
+    same glob the guard walks - never a list written in the test (BL-1398's
+    lesson) - each with a fresh heartbeat so the watchdog takes no action on
+    it; only handoffd's row varies, so every BL-1012 assertion still reads
+    handoffd's behaviour alone. A supervisor script added to the repository
+    is covered without editing the test.
   - Add one property row: a fixture registry naming a daemon the fixture
     conf lacks makes the checker exit non-zero naming it (the guard still
     bites - invariant 2).
@@ -77,10 +88,28 @@ qa_e2e_procedure: |
   2. Temporarily point the fixture's `FRESHNESS_REQUIRED` at the LIVE
      required list: the guard refuses naming `babysitterd` (the guard is
      untouched, invariant 2). Restore.
+  2b. Drop one derived supervisor row from the fixture conf (a seam in the
+     test, never the live file): the guard refuses naming that supervisor -
+     the second arm still bites and the rows are really derived. Add a
+     throwaway `zzz_probe_supervisor.bb` to a COPY of the scripts dir the
+     fixture points the guard at, if the fixture can redirect it; if the
+     guard can only walk the live dir, assert instead that the fixture's
+     row set equals the live glob's basenames at test time.
   3. Remove fixture roots in a `finally`, reaping only roots no live run
      owns (BL-1385/BL-1390).
 
 notes: |
+  2026-09-04 AMENDMENT (specifier, spec-gap raised by the coder): the mint
+  described only the registry seam. The guard's supervisor arm (lines 51-57)
+  has no seam and walks the live scripts dir; the mint could not see it
+  because the guard exits on the first failure and `babysitterd` failed
+  first. The coder's fix - supervisor rows derived from the guard's own glob,
+  each with a fresh heartbeat - is adopted as the direction; "no change to
+  the guard" stands. The feature's Background said "a one-row conf"; that is
+  now a false sentence in a durable contract and is re-tensed (a setup line,
+  not an assertion; the coder updates the matching handler pattern in the
+  same parcel). Nothing built changes. No bounce: nothing had been reviewed.
+
   `required_wiring` anchor 1 is a consumer anchor in the BL-1235 sense: the
   literal is the guard's own env name, absent from the test today; it can
   only appear if the fixture uses the seam.
