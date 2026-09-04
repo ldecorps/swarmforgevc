@@ -1,0 +1,140 @@
+id: BL-1391
+title: "The reconcile resolves a conflict confined to append-only bookkeeping files deterministically instead of refusing, so a note appended by two roles or an abandoned_commits record never halts the coordinator for a human"
+milestone: M8
+type: defect
+severity: high
+# high: the same daily halt as BL-1390 from the other side. When local main
+# and origin both touch a ticket YAML - QA's abandoned_commits record at
+# land, the specifier's notes on main, the coordinator's close - the merge
+# verdict is a conflict, the reconcile refuses (correctly for code), and no
+# role may resolve it. Bookkeeping conflicts are append-only by nature and
+# have a lossless mechanical answer.
+status: todo
+epic: swarm-reliability
+priority: 10
+direction: human-requested
+depends_on: []
+mutation_cost: medium
+slice_size_envelope: medium
+required_stages: [coder, cleaner, architect, hardender, documenter, qa]
+
+acceptance: specs/features/BL-1391-the-reconcile-resolves-a-bookkeeping-only-conflict-instead-of-refusing.feature
+
+required_wiring:
+  - 'swarmforge/scripts/handoffd.bb::bookkeeping-conflict::the daemon dispatch must reach the resolver and log it - the lib alone can classify a conflict but only the daemon performs the absorb. Literal fixed at mint (BL-874); grep today returns 0'
+  - 'specs/pipeline/steps/bl1391BookkeepingConflictResolvedSteps.js::registerSteps::the handler file exists so discovery registers every scenario (BL-1371)'
+
+invariants:
+  - "The resolver never touches a conflict outside the bookkeeping set (ticket YAML under backlog/, backlog/topics/*.json, backlog/evidence/*.md, backlog/answers-archive/*.md, docs/briefings/**): a conflict in code, specs, prompts, conf or any other path refuses exactly as today, and a merge with one such path resolves nothing at all."
+  - "Resolution is lossless and append-only: every line either side added survives in the result, in ours-then-theirs order, and a conflict where a side deleted, renamed or rewrote existing lines is refused, never resolved."
+  - "A resolved absorb is never silent: the merge commit body and the daemon log name every resolved path and the strategy applied, and the absorb still passes the same commit guards as any merge on main."
+
+human_approval: pending
+approval_context: >
+  Minted on your "go ahead" of 2026-09-04 to my three-point proposal after
+  you asked why you were getting so many deadlocks. This is point 2. No
+  choice is posed and there are no ruling_options: the bookkeeping set and
+  the append-only rule are stated in the invariants and are deliberately
+  narrow - anything that is not a pure append on both sides still refuses.
+  If you want that set wider or narrower, say so in the topic and I amend.
+
+description: |
+  ## What is wrong
+
+  `master_main_reconcile_lib.bb` asks git for a merge verdict
+  (`merge-tree --write-tree`, BL-1236). On `:conflict` the plan is
+  `:refuse-rematch` or `:replay-bookkeeping`, both of which end in a
+  refusal once local main is ahead (BL-1310 forbids the reset). That is the
+  right answer for code. It is the wrong answer for the conflicts that
+  actually occur on this checkout, which are bookkeeping: QA's land writes
+  `abandoned_commits:` into a ticket YAML on origin while the specifier
+  appended `notes:` to the same YAML on main; the coordinator closed a
+  ticket while the concierge appended a topic record; two roles appended to
+  one evidence file. Each of these is two appends to one file, has a
+  lossless mechanical resolution, and today halts the coordinator's
+  bookkeeping until a human merges by hand (four times on 2026-09-04).
+
+  ## How (direction, not mandate)
+
+  - Classify the conflict set from the merge verdict: if EVERY conflicted
+    path is in the bookkeeping set (invariant 1) and every conflict hunk is
+    append-only on both sides relative to the merge base (each side only
+    added lines - no deletion, no rewrite of a base line), resolve by
+    keeping both sides' additions, ours then theirs. For a ticket YAML the
+    natural cases are `notes:` (both appended entries), `abandoned_commits:`
+    and `bounce_history:` (union of entries, order preserved, duplicates
+    dropped). Anything else in the hunk - a scalar field changed on both
+    sides, a deletion, a rename - refuses exactly as today.
+  - Perform the absorb as a real merge commit whose body lists each
+    resolved path and its strategy (invariant 3), through the same
+    `absorb-with-merge!` ladder and the same pre-merge-commit guards, and
+    log `bookkeeping-conflict` with the path list. Never bypass a guard.
+  - Ownership and abort behaviour are BL-1386's and unchanged: the resolver
+    runs inside the merge the daemon already owns.
+  - Property test the append-only classifier: for random base/ours/theirs
+    triples, a resolution is produced only when both diffs are pure
+    insertions, and the result contains every inserted line of both.
+
+  ## Explicitly NOT in scope
+
+  - Feature files under specs/features/: a conflict there is a spec
+    conflict, refused as today (and the specifier now avoids creating them
+    - rule landed in specifier.prompt with this mint).
+  - Preventing the divergence in the first place (BL-1390).
+  - Semantic merges of any scalar field. A ticket whose `status:` or
+    `human_approval:` differs on both sides is a human's to settle.
+
+qa_e2e_procedure: |
+  1. Fixture: base ticket YAML; ours appends a `notes:` entry, theirs adds
+     an `abandoned_commits:` line. Run the reconcile: the absorb completes,
+     no MERGE_HEAD is left, both additions are present, the merge body and
+     the log name the path and the strategy.
+  2. Same, with theirs ALSO rewriting the ticket's `title:`: refused exactly
+     as today, no merge commit, no partial resolution.
+  3. Same as 1 plus a conflict in `swarmforge/scripts/handoffd.bb`: refused;
+     the bookkeeping path is NOT resolved on its own (invariant 1's "resolves
+     nothing at all").
+  4. Two evidence files each appended by both sides: resolved, ours then
+     theirs, byte-complete; one evidence file where theirs deleted a
+     paragraph: refused.
+  5. Run the property runner: 500 random triples; every produced resolution
+     contains every inserted line of both sides; no resolution is produced
+     for a triple with a deletion or rewrite.
+  6. Live: after landing, watch one real QA land collide with a specifier
+     notes append on the same ticket - the absorb completes on the next
+     tick and the coordinator's close is not held.
+  7. Remove fixture roots in a `finally`, sweeping THEIR prefix before the
+     run too (BL-971).
+
+notes: |
+  `required_wiring` anchor 1 is a consumer anchor: `handoffd.bb` is the
+  pre-existing live caller of the absorb ladder and the only process that
+  can emit the log line; a lib-only implementation that the daemon never
+  reaches fails it (BL-1235). Absent today.
+
+  Why append-only and not a full semantic merge: the failure the human is
+  paying for is two appends to one file. A resolver that understood every
+  YAML field would be a larger, riskier slice with more ways to be wrong,
+  and a wrong automatic resolution of `human_approval:` or `status:` would
+  be worse than today's halt. Narrow on purpose; widen only on evidence.
+
+  IR-DRY: run on the feature file at mint (see commit).
+
+  Mint-time INVEST: one observable outcome (a bookkeeping-only conflict
+  absorbs without a human), one sitting, no unbuilt sibling - BL-1390
+  reduces how often this fires and is independent.
+
+source: |
+  Human, in the specifier's pane, 2026-09-04 ~15:15Z, with a screenshot of
+  the coordinator holding BL-1385's close for 48 deadlock ticks:
+
+    "why am I fetting so many deadlocks?"
+
+  The specifier's assessment proposed three changes; the human replied:
+
+    "go ahead"
+
+  Point 2 as proposed, verbatim: "Let the daemon resolve bookkeeping-only
+  conflicts deterministically (ticket notes, `abandoned_commits`, topic
+  records), while still refusing on code." Point 1 is BL-1390; point 3 is
+  landed as a rule in swarmforge/roles/specifier.prompt in the mint commit.

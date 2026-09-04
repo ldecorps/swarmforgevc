@@ -1,0 +1,152 @@
+id: BL-1390
+title: "A commit on the shared main checkout is pushed at once while it still fast-forwards, so local main stays at ahead zero and every QA landing absorbs by fast-forward instead of by a merge nobody is allowed to make"
+milestone: M8
+type: defect
+severity: high
+# high: a broken health signal with daily reach. Every writer on the shared
+# checkout (coordinator, specifier, concierge, approval bot) leaves local
+# main "ahead", the periodic push sweep refuses once origin has moved, and
+# from then on every QA landing needs a real merge that only a clean
+# verdict may make. On 2026-09-04 local main reached 32 ahead / 2 behind,
+# the deadlock latch tripped 115 times in the daemon log, the coordinator
+# held a close for 48 ticks, and the operator hand-merged four times.
+status: todo
+epic: swarm-reliability
+priority: 8
+direction: human-requested
+depends_on: []
+mutation_cost: medium
+slice_size_envelope: medium
+required_stages: [coder, cleaner, architect, hardender, documenter, qa]
+
+acceptance: specs/features/BL-1390-a-commit-on-the-shared-main-checkout-is-pushed-while-it-still-fast-forwards.feature
+
+required_wiring:
+  - 'swarmforge/git-hooks/post-commit::push_sweep_lib.bb::the hook is the CONSUMER git runs through core.hooksPath and it must reach origin through the ONE existing push adapter, never a second git push (BL-1198); the file does not exist today so the literal is fixed at mint (BL-874)'
+  - 'specs/pipeline/steps/bl1390PushWhileFastForwardSteps.js::registerSteps::the handler file exists so discovery registers every scenario (BL-1371)'
+
+invariants:
+  - "A push happens only when, after a fresh fetch, local main is strictly ahead of origin/main and not behind - never a force push, never while diverged, never from a role worktree branch (BL-891 invariant 1 and BL-1310 stand unchanged)."
+  - "The hook never fails, blocks or delays a commit beyond a bounded time: an unreachable origin, a slow fetch or a refused push leaves the commit exactly as made and logs why, and the periodic push sweep remains the fallback."
+  - "One push path: every push from the shared checkout goes through push_sweep_lib.bb's adapter, so the sweep and the hook can never disagree about whether a push was safe."
+
+human_approval: pending
+approval_context: >
+  Minted on your "go ahead" of 2026-09-04 to my three-point proposal after
+  you asked why you were getting so many deadlocks. This is point 1. No
+  choice is posed and there are no ruling_options: the shape (a post-commit
+  hook on the shared checkout that pushes only while a fast-forward is
+  possible) follows from the diagnosis, and the coder is free on the
+  mechanics. Point 2 is BL-1391; point 3 is a rule landed in the specifier
+  prompt in the same commit.
+
+description: |
+  ## What is wrong
+
+  The shared `main` checkout is written by the coordinator (promotes,
+  closes), the specifier (mints, amendments), the concierge (topic
+  records), the approval bot (taps) and the operator (config). Each commit
+  makes local `main` "ahead" of `origin/main`. The push sweep pushes those
+  commits only on its own cadence and only while not diverged
+  (`push_sweep_lib.bb`, `:diverged` outcome). The moment QA lands on
+  `origin/main` while anything local is unpushed, the checkout is both
+  ahead and behind: the push sweep refuses, and absorbing origin becomes a
+  real merge that the reconcile sweep may perform only on a clean
+  `merge-tree` verdict (BL-1130/BL-1236) and may never resolve by reset
+  (BL-1310). Any overlap - a ticket YAML both sides touched, a feature file
+  a hand-built land carried - is a predicted conflict, the deadlock latch
+  trips, and every role's prompt forbids the non-fast-forward merge that
+  would clear it, so it waits for a human.
+
+  Measured 2026-09-04: 32 local-only commits (10 concierge topic records, 9
+  coordinator promotes/closes, 5 specifier, 4 operator hand-merges, 3
+  approval taps, 1 config), 115 deadlock lines, four hand-merges, one close
+  held 48 ticks. Nothing had pushed since 14:44Z because the sweep had been
+  diverged since then.
+
+  ## The fix
+
+  Push while it is still cheap. If a commit on the shared checkout is
+  pushed as soon as it is made - and only while a fast-forward is possible
+  - local `main` sits at ahead zero almost all the time, and a QA landing
+  arrives as pure lag: `behind>0`, `ahead=0`, which the coordinator's step
+  0 already absorbs with `--ff-only` and the reconcile absorbs with no
+  merge at all. Divergence shrinks to the race window between one local
+  commit and one QA push, which is seconds, not a working day.
+
+  ## How (direction, not mandate)
+
+  - A `post-commit` hook in `swarmforge/git-hooks/` (the configured
+    `core.hooksPath`, beside `pre-commit`), active only when the commit
+    lands on `main` in the master checkout (not in a linked worktree - role
+    branches push only through QA's land). It fetches with a short bound,
+    and if local `main` is ahead and NOT behind it pushes through
+    `push_sweep_lib.bb`'s existing adapter (invariant 3). If behind, it
+    logs `diverged` and leaves the join to the reconcile. It never exits
+    non-zero into git and never waits long: a post-commit hook cannot fail
+    the commit, but it can stall the committer.
+  - The daemon's periodic push sweep stays as the fallback for anything the
+    hook missed (a hook disabled by env, a network blip).
+  - A concurrent committer (the concierge commits within seconds of a
+    specifier mint) must not race the hook into a force or a double push:
+    the adapter's own lock or a retry on a refused non-fast-forward push,
+    never `--force`.
+  - Tests: the hook's decision is a pure function over `{ahead behind
+    branch in-worktree?}` in the bb lib, driven by the existing push-sweep
+    runners; the hook itself is a thin wrapper.
+
+  ## Explicitly NOT in scope
+
+  - Resolving a conflict that has already formed (BL-1391).
+  - The reconcile's own orphaned-merge defects (BL-1386, BL-1387).
+  - Role worktree branches: they never push, before or after this ticket.
+
+qa_e2e_procedure: |
+  1. Fixture master checkout with a bare origin. Commit on main with origin
+     unchanged: the hook pushes, `ahead/behind` reads 0/0, the push went
+     through push_sweep_lib.bb's adapter (its log line), the commit is
+     intact.
+  2. Advance origin, then commit locally: the hook does NOT push, logs
+     `diverged`, the commit is intact, and the reconcile sweep's next tick
+     sees a two-way divergence exactly as today.
+  3. Commit on a linked role worktree branch: no fetch, no push, no log.
+  4. Make origin unreachable, commit: the commit completes within the bound,
+     the hook logs the failure, nothing is pushed.
+  5. Two commits within a second (simulate the concierge following a mint):
+     both reach origin in order, no force, no error.
+  6. Live: after the parcel lands and the hook is installed on this host,
+     watch `main_sync_status_cli.bb` across a specifier mint followed by a
+     QA landing - `ahead` returns to 0 within the hook's bound and the
+     landing absorbs as `ff-only`.
+  7. Remove fixture roots in a `finally`, sweeping THEIR prefix before the
+     run too (BL-971); the hook's own scratch, if any, is per-invocation and
+     never swept by prefix (BL-1385's lesson).
+
+notes: |
+  `required_wiring` anchor 1 is a consumer anchor: git runs whatever sits in
+  `swarmforge/git-hooks/` through `core.hooksPath`, and the literal
+  `push_sweep_lib.bb` inside that file proves the hook reaches the one push
+  adapter rather than shelling its own `git push`. Absent today (the file
+  does not exist).
+
+  IR-DRY: run on the feature file at mint (see commit).
+
+  Mint-time INVEST: one observable outcome (local main stays at ahead zero
+  after a commit that can fast-forward), one sitting, no unbuilt sibling.
+
+source: |
+  Human, in the specifier's pane, 2026-09-04 ~15:15Z, with a screenshot of
+  the coordinator holding BL-1385's close for 48 deadlock ticks:
+
+    "why am I fetting so many deadlocks?"
+
+  The specifier's assessment proposed three changes; the human replied:
+
+    "go ahead"
+
+  Point 1 as proposed, verbatim: "Writers on the shared checkout push after
+  every commit, so `ahead` stays near zero and QA's lands fast-forward. This
+  removes most merges outright." Point 2 is BL-1391. Point 3 ("never edit a
+  feature file on `main` while its parcel is in flight and a hand-built
+  land may carry the branch's copy. Today's conflict is mine.") is landed
+  as a rule in swarmforge/roles/specifier.prompt in the mint commit.

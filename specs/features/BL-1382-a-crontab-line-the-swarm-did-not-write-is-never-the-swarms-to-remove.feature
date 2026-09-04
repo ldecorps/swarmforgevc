@@ -19,7 +19,7 @@ Feature: BL-1382 A crontab line the swarm did not write is never the swarm's to 
     And the fixture crontab holds a freshness line marked for "S"
 
   # BL-1382 a-full-stack-stop-removes-only-marked-lines-01
-  # Assumes ruling option 1; RETIRE-WITH: ruling option 2 (never reword).
+  # Ruling option 1 recorded 2026-09-04 (human, SUP-17 14:13:07Z): stands as written.
   Scenario: a full-stack stop removes only the lines it marked
     When the swarm cron lines for "R" are uninstalled
     Then the freshness line marked for "R" is gone
@@ -43,7 +43,7 @@ Feature: BL-1382 A crontab line the swarm did not write is never the swarm's to 
     Then the line carrying the operator schedule marker for "R" is gone
 
   # BL-1382 an-unmarked-line-is-reported-not-swept-04
-  # Assumes ruling option 1; RETIRE-WITH: ruling option 2 (never reword).
+  # Ruling option 1 recorded 2026-09-04 (human, SUP-17 14:13:07Z): stands as written.
   Scenario: the uninstall reports each unmarked line it left in place
     When the swarm cron lines for "R" are uninstalled
     Then the output reports the unmarked line naming "R/.swarmforge/operator/day-shift-start.sh" as left in place
