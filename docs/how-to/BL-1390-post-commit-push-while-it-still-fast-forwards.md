@@ -108,6 +108,25 @@ fails loud before any mutation); and the suite records the live
 (invariant 1, extended after this incident). See the engineering
 constitution's Guardrails section for the full incident narrative.
 
+## A second incident: 1156 concurrent copies of the e2e exhausted a host
+
+QA independently found `test_bl1390_post_commit_push.sh` running 1156
+concurrent copies during an unrelated land, exhausting the host. The
+multiplier itself is unestablished (this parcel's own harnesses are
+sequential and memoized — recorded as unknown, not guessed); what IS
+established is that each copy's blind startup `rm -rf <prefix>*` sweep
+(BL-971's own "sweep by prefix before the run too" convention) deleted
+every OTHER copy's fixture — the same class of bug BL-1385 hit first in
+`check_handler_module_graph.sh`.
+
+Generalized into a standing guardrail rather than fixed twice: BL-971's
+sweep-by-prefix rule is right for exactly one runner at a time. Anything
+that CAN run concurrently now records its owner pid inside its own
+fixture root, reaps only roots whose pid is dead or whose age exceeds a
+bound (never the whole shared prefix), takes a lock so at most one
+instance of itself runs, bounds its own wall clock, and logs the process
+chain that invoked it (invariant 2, extended).
+
 ## What this does not change
 
 - Resolving a conflict that has already formed: **BL-1391**, a separate

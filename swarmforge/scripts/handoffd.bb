@@ -2806,7 +2806,7 @@
       :log-warning! (fn [msg] (log! "email-misconfigured" msg))
       :mark-warned! (fn [] (reset! push-alarm-email-missing-key-warned? true))})))
 
-;; ── BL-1392: is the cron daemon we schedule into still alive? ──
+;; ── BL-1392: is the cron daemon we schedule into still alive? ──────────────
 ;;
 ;; Placed AFTER send-push-alarm-email! deliberately: sci resolves a defn body's
 ;; vars when it RUNS, so a sweep defined above its dependencies loads fine,
@@ -2814,7 +2814,7 @@
 ;; where its own try/catch swallows it as `cron-heartbeat-error`. That is a
 ;; watchdog that never fires, which is exactly what BL-1392 exists to end. Two
 ;; such forward references were in the first version of this sweep, and only
-;; running a real daemon tick found them.────────────
+;; running a real daemon tick found them.
 ;;
 ;; Cron cannot report its own death, and this daemon is the one process that
 ;; can notice it: it is not run BY cron. The freshness cron writes its log
