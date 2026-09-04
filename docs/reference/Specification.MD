@@ -111,6 +111,55 @@ How-to: `docs/how-to/BL-1120-handoffd-must-not-abort-foreign-merge.md` and
 `docs/how-to/BL-891-master-main-reconcile-sweep.md` (both extended in
 place). No diagram depicts reconcile-sweep internals at this granularity.)
 Prior entry —
+**Last Updated:** September 4, 2026 (BL-1385: BL-1371's discovery registry
+requires every top-level `specs/pipeline/steps/*Steps.js` eagerly at module
+load, failing the whole run loudly on one that cannot load — correct, but
+nothing stopped an unloadable handler from reaching `main` in the first
+place, only from running once it got there. A hand-land of
+`bl1296BubbleSeatSteps.js` (2026-09-04, 01:31 BST), whose require resolved
+only in the checking worktree (a compiled `extension/out/tools/bubbleSeat.js`
+from an unlanded parcel), passed both existing guards —
+`check_feature_handler_registration.sh` proves a handler is registered and
+reachable, never that it loads — and took every acceptance run on
+`origin/main` to zero runnable features: 947 handlers, one unloadable, zero
+features executable. `check_handler_module_graph.sh` closes the gap: for
+every top-level handler ON THE TREE UNDER TEST, it proves the require graph
+resolves — walking each `require(...)` call including the two computed
+forms that have now each caused one incident
+(`path.join(EXT_ROOT,'out',...)`, `path.join(__dirname,'lib',...)`) — and
+the verdict depends only on that tree, never on the checking worktree's own
+`out/` or source files (invariant 2: a module present in the checker's
+worktree but absent from the tree still refuses; absent from the checker
+but present on the tree still passes). On failure it prints
+`HANDLER_LOAD_BLOCK` plus one line per handler naming the handler and the
+unresolved module. Wired into both consumers named at mint: the land
+replay's tree-guard list (`land_step_lib.bb`, joining
+`check_feature_handler_registration.sh` as a second, sibling tree guard)
+and the commit-time guard chain (`run_commit_guards.sh`, Tier 1 — a
+`main`-only guard, so it costs nothing on every other branch), so neither a
+tip-pure land nor a hand-land on `main` can bypass it. Amended in flight
+(invariant 3, 2026-09-04): the guard runs from a commit hook, where
+invocations overlap constantly, and its own BL-971 sweep-by-prefix —
+written for test fixtures that never run concurrently — deleted a live
+run's materialised tree, reading every file as absent and refusing valid
+commits with hundreds of phantom missing modules. Each run now claims its
+working directory with an owner-pid file immediately after `mkdtemp`, and
+reaping is scoped to roots no LIVE run owns (a dead owner pid, or an age
+bound) rather than sweeping the whole shared prefix; a `require` check
+that could not tell present from absent (e.g. `EMFILE` under the
+~947-handler single-process walk) is a distinct third answer, never folded
+into "missing" as a false refusal. Explicitly not built here: repairing
+`main` today (one QA land, already asked for by note) or the eight live
+feature files whose handlers are not yet built (a different, noted class).
+Acceptance:
+`specs/features/BL-1385-a-handler-that-cannot-load-never-reaches-main.feature`.
+How-to: `docs/how-to/BL-1371-step-handlers-register-by-discovery.md` and
+`docs/how-to/BL-1252-commit-guard-chain-reports-every-violation.md` (both
+extended in place) plus a short addendum to
+`docs/how-to/BL-1241-entangled-tip-at-the-land-step-has-a-reachable-remedy.md`
+noting the second tree guard. No diagram depicts step-handler-registration
+or commit-guard internals at this granularity.)
+Prior entry —
 **Last Updated:** September 4, 2026 (BL-1386: the master-main-reconcile
 sweep (`handoffd.bb`, `master_main_reconcile_lib.bb`) could orphan its own
 merge and then blame a human for it — `absorb-with-merge!` discarded
