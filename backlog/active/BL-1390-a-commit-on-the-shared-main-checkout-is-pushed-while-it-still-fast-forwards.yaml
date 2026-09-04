@@ -30,7 +30,7 @@ invariants:
   - "The hook never fails, blocks or delays a commit beyond a bounded time: an unreachable origin, a slow fetch or a refused push leaves the commit exactly as made and logs why, and the periodic push sweep remains the fallback."
   - "One push path: every push from the shared checkout goes through push_sweep_lib.bb's adapter, so the sweep and the hook can never disagree about whether a push was safe."
 
-human_approval: pending
+human_approval: approved
 approval_context: >
   Minted on your "go ahead" of 2026-09-04 to my three-point proposal after
   you asked why you were getting so many deadlocks. This is point 1. No
@@ -150,3 +150,5 @@ source: |
   feature file on `main` while its parcel is in flight and a hand-built
   land may carry the branch's copy. Today's conflict is mine.") is landed
   as a rule in swarmforge/roles/specifier.prompt in the mint commit.
+
+assigned_to: coder
