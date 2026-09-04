@@ -1,0 +1,55 @@
+#!/usr/bin/env bash
+# BL-1390: push a commit on the shared main checkout while a fast-forward is
+# still possible, so local main stays at ahead zero and every QA landing
+# absorbs by fast-forward instead of by a merge nobody is allowed to make.
+#
+# Installed repo-wide with the other hooks via `git config core.hooksPath
+# swarmforge/git-hooks` (see swarmforge.sh's ensure_commit_size_guard), so one
+# install covers every role worktree - which is why this hook has to decide for
+# itself that it is on the SHARED checkout and not in a linked worktree.
+#
+# The decision and the push are push_sweep_lib.bb's - post-commit-decision and
+# push-main!, the same two the daemon's periodic sweep uses - so this hook and
+# that sweep can never disagree about whether a push was safe (BL-1390
+# invariant 3, and BL-1198's one-adapter rule). This file shells no `git push`
+# of its own.
+#
+# It can never fail a commit and must never stall one: the whole thing runs
+# under a bounded `timeout` and exits 0 unconditionally. An unreachable origin,
+# a slow fetch or a refused push leaves the commit exactly as made, logs why,
+# and the periodic push sweep remains the fallback (invariant 2).
+set -uo pipefail
+
+HOOK_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+REPO_ROOT="$(cd "$HOOK_DIR/../.." && pwd)"
+SCRIPTS_DIR="$REPO_ROOT/swarmforge/scripts"
+
+# The ONE push adapter (BL-1198): named here so it is visible in the hook that
+# depends on it, and passed rather than re-derived inside the runner.
+PUSH_SWEEP_LIB="$SCRIPTS_DIR/push_sweep_lib.bb"
+RUNNER="$SCRIPTS_DIR/post_commit_push.bb"
+
+# An operator or a test can turn the hook off without editing it; the periodic
+# sweep still pushes.
+if [[ "${SWARMFORGE_POST_COMMIT_PUSH:-1}" != "1" ]]; then
+  exit 0
+fi
+
+if [[ ! -r "$PUSH_SWEEP_LIB" || ! -r "$RUNNER" ]] || ! command -v bb >/dev/null 2>&1; then
+  exit 0
+fi
+
+# The bound. Generous enough for a normal fetch+push over a working network,
+# short enough that a committer never waits on a dead origin.
+BOUND_SECONDS="${SWARMFORGE_POST_COMMIT_PUSH_TIMEOUT:-20}"
+LOG_PATH="${SWARMFORGE_POST_COMMIT_PUSH_LOG:-$REPO_ROOT/.swarmforge/daemon/post-commit-push.log}"
+
+# The repository to act on is the one git ran this hook IN - `$PWD` - never
+# $REPO_ROOT, which is where the hook FILE lives. core.hooksPath is shared by
+# every worktree, so those two differ for every role-branch commit, and using
+# the hook's own location would judge a worktree commit as if it were on main.
+COMMIT_REPO="$(git rev-parse --show-toplevel 2>/dev/null || echo "$PWD")"
+
+timeout "$BOUND_SECONDS" bb "$RUNNER" "$PUSH_SWEEP_LIB" "$COMMIT_REPO" "$LOG_PATH" >/dev/null 2>&1 || true
+
+exit 0
