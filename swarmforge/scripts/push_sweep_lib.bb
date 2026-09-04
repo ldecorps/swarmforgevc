@@ -59,6 +59,49 @@
       (pos? behind) :diverged
       :else :should-push)))
 
+(defn post-commit-decision
+  "BL-1390: may a post-commit on the shared checkout push right now?
+
+   Every writer on the shared `main` checkout - coordinator, specifier,
+   concierge, approval bot, operator - leaves local main ahead of origin, and
+   the sweep only pushes on its own cadence. The moment QA lands while
+   anything local is unpushed the checkout is BOTH ahead and behind: the sweep
+   refuses, and absorbing origin becomes a real merge that only a clean verdict
+   may make and no role may resolve. Measured 2026-09-04: 32 local-only
+   commits, 115 deadlock lines, one close held 48 ticks, four hand-merges.
+   Pushing while a fast-forward is still possible keeps `ahead` near zero, so a
+   landing arrives as pure lag and absorbs `--ff-only`.
+
+   `:not-shared-checkout` is decided FIRST and needs no counts, so a commit on
+   a role branch costs no fetch at all - role branches reach origin only
+   through QA's land, before and after this ticket.
+
+   The ahead/behind question itself is NOT restated here: it delegates to
+   `push-decision` above, so the hook and the sweep can never disagree about
+   whether a push was safe (invariant 3). Unknown counts fail CLOSED - an
+   unreadable count is never read as permission to push."
+  [{:keys [branch linked-worktree? ahead behind]}]
+  (cond
+    (or linked-worktree? (not= branch "main")) :not-shared-checkout
+    (or (nil? ahead) (nil? behind)) :counts-unknown
+    :else (push-decision {:ahead ahead :behind behind})))
+
+(defn push-main!
+  "BL-1390: the ONE push from the shared checkout, shared by the daemon's
+   periodic sweep and the post-commit hook (invariant 3). Never `--force`: a
+   rejected non-fast-forward push surfaces as a plain failed exit, which the
+   sweep's bounded retry already treats as a transient failure and the hook
+   simply logs and leaves to that sweep.
+
+   `sh!` is injected because this file has no process dependency of its own -
+   the daemon passes daemon_cycle_guard_lib's guarded runner, the hook passes
+   babashka.process."
+  [project-root sh!]
+  (let [{:keys [exit err]} (sh! ["git" "push" "origin" "main"] {:dir (str project-root)})]
+    (if (zero? exit)
+      {:success true}
+      {:success false :error (str/trim (or err ""))})))
+
 ;; ── BL-630: push-sweep refuses to publish a `main` tip that is not
 ;;    QA-approved ────────────────────────────────────────────────────────
 ;; BL-590 post-mortem: publish-time (this sweep reaching origin), not
