@@ -982,7 +982,16 @@
 
 (def ^:private replayed-tree-guards
   [{:script "check_feature_handler_registration.sh"
-    :why "a feature file whose step handler is not registered on the replayed tree (BL-1303/BL-1324)"}])
+    :why "a feature file whose step handler is not registered on the replayed tree (BL-1303/BL-1324)"}
+   ;; BL-1385: registration is not loadability. Since BL-1371 a handler
+   ;; registers by EXISTING, and the registry requires every discovered
+   ;; handler eagerly - so one handler whose require names a module living
+   ;; only on an unlanded parcel makes EVERY acceptance run throw. The
+   ;; registration guard above checks a handler is registered and reachable
+   ;; and never loads one, which is why a93aa4a18f landed on 2026-09-04 with
+   ;; 947 handlers, 1 unloadable, 0 features runnable.
+   {:script "check_handler_module_graph.sh"
+    :why "a discovered step handler whose module graph does not resolve on the replayed tree (BL-1385)"}])
 
 (defn run-replayed-tree-guards
   "Runs every tree guard against `tree-root` and returns a vector of refusal
