@@ -30,7 +30,13 @@ invariants:
   - "This ticket's classification adds no git write of its own: a merge classified live-human or orphaned is never aborted by the daemon (BL-1120). The only class that may act is :own, and that action - the ownership abort - is BL-1386's contract, reached through BL-1386's branch, never through a passthrough in this ticket's handler. AMENDED 2026-09-04 from: this ticket aborts nothing, every git write stays where it is today."
   - "The orphaned-merge surface always states whether the index carries the incoming side, computed from the index against HEAD..MERGE_HEAD - never from the absence of unmerged paths, which is the reading that makes a poisoned merge look clean."
 
-abandoned_commits: [0e31d40b55, 3ad3132a1d, 39659fcf90]
+abandoned_commits: [0e31d40b55, 3ad3132a1d, 39659fcf90, d4e1491cbd]
+# d4e1491cbd is the automated land_step_cli.bb tip-pure replay QA did not
+# land -- built alongside BL-1386's own escalation, off a stale origin/main
+# copy of this ticket's own feature file (missing the specifier's scenario-06
+# retirement amendment). Superseded by the hand-built combined BL-1386+BL-1387
+# replay, landed as 04543cb639, per specifier adjudication
+# backlog/evidence/BL-1386-land-escalate-adjudication-20260904.md.
 # 39659fcf90 (architect re-review evidence, "D2 fix confirmed, forwarding")
 # is stranded on swarmforge-architect only - a confirmatory evidence file,
 # no functional content. Verified directly: this tip already has both
