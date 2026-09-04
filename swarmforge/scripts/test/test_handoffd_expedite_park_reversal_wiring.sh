@@ -122,6 +122,10 @@ grep -q 'BL-9001' "$ROOT/backlog/active/BL-9002-parked.yaml" \
   || fail "the freshness mark does not name the expedition that parked it; got: $(cat "$ROOT/backlog/active/BL-9002-parked.yaml")"
 pass "the restored ticket is blocked pending an Article 3.6 freshness check naming its expedition"
 
+[[ -f "$RUN_DIR/unpark-done.json" ]] \
+  || fail "the settled run was never marked done, so the sweep will shell for it on every tick forever"
+pass "a settled run is marked done and drops out of the sweep"
+
 [[ -f "$ROOT/backlog/hold/BL-9003-human-held.yaml" ]] \
   || fail "the sweep emptied a ticket out of hold/ that no record named - Article 3.1 breach"
 pass "a ticket a human placed in hold/ is untouched: the sweep sees only its own record"

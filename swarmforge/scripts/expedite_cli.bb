@@ -1032,6 +1032,19 @@
                   :note (str "expedite/" run-ticket
                              " no longer exists, so whether it landed cannot be"
                              " established - the park stays in place")})]
+    ;; A run whose reversal has reached a terminal state is marked done, so the
+    ;; sweep stops shelling for it every tick. "Terminal" is read off the report
+    ;; rather than asserted: an entry still reported with a `hold-` reason is
+    ;; one waiting on the land, which is exactly the case that must be retried.
+    ;; Runs from before this ticket - whose records name no parked entries in
+    ;; the shape the reversal reads - settle on their first pass rather than
+    ;; being re-examined forever.
+    (when-not (some #(str/starts-with? (str (:reason %)) "hold-") (:left report))
+      (write-json! (fs/path run-dir "unpark-done.json")
+                   {:at (str (java.time.Instant/now))
+                    :run-ticket run-ticket
+                    :restored (:restored report)
+                    :note (:note report)}))
     ;; One machine-readable line: the sweep logs it, and it is the same report
     ;; a human reading the run directory gets.
     (println (str "UNPARK_REPORT " (json/generate-string report)))

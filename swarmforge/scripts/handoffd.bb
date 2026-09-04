@@ -3726,14 +3726,35 @@
     (let [expedite-root (fs/path project-root ".swarmforge" "expedite")]
       (when (fs/exists? expedite-root)
         (doseq [run-dir (filter fs/directory? (fs/list-dir expedite-root))]
-          (let [record-file (fs/path run-dir "park-record.json")]
-            (when (fs/exists? record-file)
-              (let [res (daemon-cycle-guard-lib/sh!
-                         ["bb" (str (fs/path project-root "swarmforge" "scripts" "expedite_cli.bb"))
-                          "unpark" (str project-root) (str run-dir)]
-                          {:dir (str project-root)})]
-                (when-not (str/blank? (str (:out res)))
-                  (log! "expedite-park-reversal" (str/trim (str (:out res)))))))))))
+          ;; Only runs that parked something, and only until their reversal has
+          ;; reached a terminal state - otherwise every historical run costs a
+          ;; process spawn on every tick, forever, to be told again that it has
+          ;; nothing to do.
+          (when (and (fs/exists? (fs/path run-dir "park-record.json"))
+                     (not (fs/exists? (fs/path run-dir "unpark-done.json"))))
+            (let [res (daemon-cycle-guard-lib/sh!
+                       ["bb" (str (fs/path project-root "swarmforge" "scripts" "expedite_cli.bb"))
+                        "unpark" (str project-root) (str run-dir)]
+                       {:dir (str project-root)})
+                  out (str/trim (str (:out res)))
+                  report (try (some-> (->> (str/split-lines out)
+                                           (filter #(str/starts-with? % "UNPARK_REPORT "))
+                                           last)
+                                      (subs (count "UNPARK_REPORT "))
+                                      (json/parse-string true))
+                              (catch Exception _ nil))]
+              ;; Logged when it DID something, or when it said something the
+              ;; sweep could not read. A reversal still waiting on its
+              ;; expedition to land is the ordinary state and says nothing new
+              ;; each tick.
+              (cond
+                (seq (:restored report))
+                (log! "expedite-park-reversal" (str (fs/file-name run-dir))
+                      "restored" (str/join "," (:restored report)))
+
+                (nil? report)
+                (when-not (str/blank? out)
+                  (log! "expedite-park-reversal-unreadable" (str (fs/file-name run-dir)) out))))))))
     (catch Exception e
       (log! "expedite-park-reversal-error" (.getMessage e)))))
 
