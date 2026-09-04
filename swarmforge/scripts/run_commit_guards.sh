@@ -77,8 +77,8 @@ if guard_chain_has_refusal; then
   exit "$guard_chain_status"
 fi
 
-# ── Tier 2: the expensive guard, reached only by a commit the cheap three
-#    allow. Deferring it must never mean skipping it. ─────────────────────────
+# ── Tier 2: the expensive guard, reached only by a commit every cheap guard
+#    allows. Deferring it must never mean skipping it. ────────────────────────
 run_guard check_property_suite_drift.sh
 
 if guard_chain_has_refusal; then
