@@ -24,6 +24,15 @@ export type LiveAction =
   | { kind: 'record-cnp'; heldParcelIds: string[] }
   | { kind: 'rotate-documenter' }
   | { kind: 'instruct-briefing'; dayKey: string }
+  // BL-1393: the BL-820 lean pass, folded in as a STEP of this one sequence
+  // rather than a second mechanism beside it. It runs after the drain (the
+  // ledger it folds must be complete) and before the briefing is instructed
+  // (the specifier reads the packet while the documenter writes the day).
+  | { kind: 'lean-packet'; shiftKey: string }
+  // BL-1393: a sleep after no shift of work still ends in a RECORDED outcome -
+  // "a silent ceremony is a failed ceremony" (BL-820 carried) - but sends no
+  // briefing and delivers no packet.
+  | { kind: 'record-empty-outcome'; shiftKey: string }
   | { kind: 'night-stop' };
 
 export type LiveObservation = {
@@ -37,6 +46,15 @@ export type LiveObservation = {
   activeRole: string | null;
   heldParcelIds: string[];
   briefingAlreadySent: boolean;
+  /**
+   * BL-1393: did the swarm actually work a shift since the last ceremony? The
+   * human's directive is "each time the swarm does at least 1 shift and goes
+   * to sleep", so a sleep after no work is explicit and quiet rather than a
+   * full ceremony. Optional, defaulting to TRUE: every pre-BL-1393 caller
+   * meant "a night that is due", and a missing field must never silence a
+   * real ceremony.
+   */
+  workedAShift?: boolean;
 };
 
 export type LiveAdvance = { state: LiveState; actions: LiveAction[] };
@@ -71,8 +89,36 @@ function startFrozen(obs: LiveObservation): LiveAdvance {
   if (obs.heldParcelIds.length > 0) {
     actions.push({ kind: 'record-cnp', heldParcelIds: [...obs.heldParcelIds] });
   }
+
+  // BL-1393: a sleep after no shift of work. Promotion is still frozen and the
+  // swarm still stops - it IS going to sleep - but there is nothing to brief
+  // on and no ledger to fold, so the ceremony says so in one recorded outcome
+  // instead of waking the documenter for an empty day.
+  if (obs.workedAShift === false) {
+    sequence.push('no-shift-since-last-ceremony', 'empty-outcome-recorded', 'swarm-stopped');
+    actions.push({ kind: 'record-empty-outcome', shiftKey: obs.dayKey });
+    actions.push({ kind: 'night-stop' });
+    return {
+      state: {
+        ...idleState(obs.nightKey),
+        phase: 'done',
+        sequence,
+        startedAtMs: obs.nowMs,
+        drainDeadlineMs: obs.nowMs,
+        hardDeadlineMs: obs.hardDeadlineMs,
+      },
+      actions,
+    };
+  }
   if (obs.briefingAlreadySent) {
-    sequence.push('briefing-already-sent', 'swarm-stopped');
+    // BL-1393: the day is already briefed, so there is no second briefing to
+    // instruct - but the shift still HAPPENED, and "every ceremony ends in a
+    // recorded outcome" (BL-820 carried) binds this path too. Before this the
+    // short-circuit ended the ceremony with nothing recorded at all: no
+    // packet, no outcome, indistinguishable from a ceremony that never ran.
+    // Found by the invariant-3 property test.
+    sequence.push('lean-packet', 'briefing-already-sent', 'swarm-stopped');
+    actions.push({ kind: 'lean-packet', shiftKey: obs.dayKey });
     actions.push({ kind: 'night-stop' });
     return {
       state: {
@@ -119,6 +165,12 @@ function enterBriefing(state: LiveState, obs: LiveObservation): LiveAdvance {
   } else if (hadInFlight) {
     pushUnique(sequence, 'parcel-drained');
   }
+
+  // BL-1393: the lean pass, here and nowhere else - after the drain, so the
+  // ledger it folds is complete, and before the briefing, so the specifier has
+  // the packet while the documenter writes the day.
+  pushUnique(sequence, 'lean-packet');
+  actions.push({ kind: 'lean-packet', shiftKey: obs.dayKey });
 
   const happyDays = !parked && obs.activeRole === 'documenter';
   let rotationRequested = state.rotationRequested;
