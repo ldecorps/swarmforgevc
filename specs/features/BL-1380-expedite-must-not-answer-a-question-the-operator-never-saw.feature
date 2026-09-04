@@ -1,3 +1,8 @@
+# mutation-stamp: sha256=929bb6c46e08326a1aa83c0d0163bdd35727f3db915eb92dca4ad80f5074a283
+# acceptance-mutation-manifest-begin
+# {"version":1,"tested_at":"2026-09-04T15:43:29.581859507Z","feature_name":"BL-1380 Expedite never answers a question the operator was not shown","feature_path":"/home/carillon/swarmforgevc/.worktrees/hardender/specs/features/BL-1380-expedite-must-not-answer-a-question-the-operator-never-saw.feature","background_hash":"ae145b9883040517f6c21a46eb4364148f489a3b41af980e58e81bde4571c51a","implementation_hash":"unknown","scenarios":[{"index":3,"name":"a ticket with nothing to choose expedites exactly as it does today","scenario_hash":"e6be1241c5acb4f0d35b3bfeb6aa6a2cdc8ace46dd283ba539ba3fecb970403c","mutation_count":2,"result":{"Total":2,"Killed":2,"Survived":0,"Errors":0},"tested_at":"2026-09-04T15:43:29.581859507Z"}]}
+# acceptance-mutation-manifest-end
+
 Feature: BL-1380 Expedite never answers a question the operator was not shown
 
   Tapping Expedite on the paused pager records the operator's approval before
