@@ -24,8 +24,16 @@ rm -rf "${TMPDIR:-/tmp}/${FIXTURE_PREFIX}"* 2>/dev/null || true
 WORK="$(mktemp -d "${TMPDIR:-/tmp}/${FIXTURE_PREFIX}XXXXXX")" || exit 1
 trap 'rm -rf "$WORK"' EXIT
 
+# BL-1390 scenario 06: the live repository's own state, recorded BEFORE the
+# suite touches anything and compared after it finishes. This test once
+# rewrote the shared remote.origin.url to a fixture path and broke every push
+# and fetch from every worktree until QA restored it; the suite now proves it
+# did not, rather than asserting it in a comment.
+LIVE_ORIGIN_BEFORE="$(git -C "$REPO_ROOT" config --get remote.origin.url 2>/dev/null)"
+LIVE_WORKTREES_BEFORE="$(git -C "$REPO_ROOT" worktree list 2>/dev/null)"
+
 # EVERY git call in this file goes through a guarded helper, and the guard is
-# not decoration. An early draft of this test called `git -C "$root" ...` with
+# not decoration. An early draft of this test called `g "$root" ...` with
 # `$root` empty (a broken fixture setup left it unset), and `git -C ""` does
 # NOT fail - it operates on the CURRENT directory, so a `git add -A` and a
 # commit meant for a throwaway fixture landed on this repository's own branch,
@@ -33,13 +41,35 @@ trap 'rm -rf "$WORK"' EXIT
 # test. Refusing anything that is not under $WORK makes that unreachable.
 in_fixture() {
   local dir="${1:-}"
-  [[ -n "$dir" && "$dir" == "$WORK"/* && -d "$dir" ]]
+  [[ -n "$dir" && "$dir" == "$WORK"/* && -d "$dir" ]] || return 1
+  # BL-1390 amendment: PROVEN, not assumed. A linked worktree shares the live
+  # .git/config, so a path that merely looks like a fixture is not enough -
+  # git's own answer for which repository this directory belongs to must also
+  # be under $WORK. This is the check whose absence let `remote set-url` point
+  # the shared repository's origin at a fixture path.
+  local common
+  # The ONE raw git call in this file, and it must stay raw: it is the guard's
+  # own question, so routing it through the guard would recurse.
+  common="$(git -C "$dir" rev-parse --git-common-dir 2>/dev/null)" || return 1
+  case "$common" in
+    /*) [[ "$common" == "$WORK"/* ]] || return 1 ;;
+    *)  : ;;   # relative (.git) - resolved against $dir, already under $WORK
+  esac
+  return 0
 }
 
-git_q() {
-  in_fixture "$1" || { fail "refusing git in a non-fixture directory: '${1:-<empty>}'"; return 1; }
-  git -C "$1" "${@:2}" >/dev/null 2>&1
+# EVERY git call in this file goes through one of these two, and the guard is
+# not decoration. An early draft called `g "$root" ...` with `$root` empty;
+# `git -C ""` does NOT fail - it uses the current directory - so a fixture
+# `remote set-url` rewrote the LIVE repository's origin and broke every push,
+# fetch and ls-remote from every worktree until QA restored it (2026-09-04,
+# 17:01Z). Nothing below may call git directly.
+g() {
+  in_fixture "$1" || { fail "refusing git outside the fixture: '${1:-<empty>}'"; return 1; }
+  git -C "$1" "${@:2}"
 }
+
+gq() { g "$@" >/dev/null 2>&1; }
 
 # A master checkout on main with a bare origin, and the real hooks installed.
 # Sets $root (and $origin) for the caller. Deliberately NOT a function that
@@ -50,11 +80,11 @@ setup_repo() {
   mkdir -p "$root"
   git init -q --bare "$origin"
   git init -q -b main "$root"
-  git -C "$root" config user.email t@t
-  git -C "$root" config user.name t
-  git -C "$root" config commit.gpgsign false
-  git -C "$root" config core.hooksPath "$HOOKS_DIR"
-  git -C "$root" remote add origin "$origin"
+  g "$root" config user.email t@t
+  g "$root" config user.name t
+  g "$root" config commit.gpgsign false
+  g "$root" config core.hooksPath "$HOOKS_DIR"
+  g "$root" remote add origin "$origin"
   # The hook resolves its repo root from its own location, so the fixture gets
   # the scripts it needs rather than the hook reaching into this checkout.
   mkdir -p "$root/swarmforge/git-hooks"
@@ -64,15 +94,15 @@ setup_repo() {
   # property suite) on a repository that is not this one - the fixture would be
   # testing the guards, not the hook.
   cp "$HOOKS_DIR/post-commit" "$root/swarmforge/git-hooks/post-commit"
-  git -C "$root" config core.hooksPath "$root/swarmforge/git-hooks"
+  g "$root" config core.hooksPath "$root/swarmforge/git-hooks"
   echo seed > "$root/seed.txt"
   # The setup checks itself. A fixture that silently fails to seed reads later
   # as "the hook pushed while diverged" - a defect report against working code,
   # which is exactly what happened while this test was being written.
-  git -C "$root" add -A >/dev/null 2>&1 || fail "setup($name): git add failed"
-  git -C "$root" commit -m "seed" >/dev/null 2>&1 || fail "setup($name): seed commit failed"
+  g "$root" add -A >/dev/null 2>&1 || fail "setup($name): git add failed"
+  g "$root" commit -m "seed" >/dev/null 2>&1 || fail "setup($name): seed commit failed"
   local push_err
-  push_err="$(git -C "$root" push -u origin main 2>&1)" || fail "setup($name): seed push failed: $push_err"
+  push_err="$(g "$root" push -u origin main 2>&1)" || fail "setup($name): seed push failed: $push_err"
 }
 
 counts() { git -C "$1" rev-list --left-right --count origin/main...main 2>/dev/null | tr '\t' '/'; }
@@ -82,20 +112,20 @@ commit_on() {
   local root="$1" file="$2"
   in_fixture "$root" || { fail "refusing to commit outside the fixture: '${root:-<empty>}'"; return 1; }
   echo "$RANDOM" > "$root/$file"
-  git -C "$root" add -A >/dev/null 2>&1
-  git -C "$root" commit -q -m "BL-9390: fixture commit $file" >/dev/null 2>&1
+  g "$root" add -A >/dev/null 2>&1
+  g "$root" commit -q -m "BL-9390: fixture commit $file" >/dev/null 2>&1
 }
 
 # ── 1. origin unchanged: the hook pushes at once ───────────────────────────
 setup_repo one
 commit_on "$root" a.txt
-git_q "$root" fetch origin main
+gq "$root" fetch origin main
 if [[ "$(counts "$root")" == "0/0" ]]; then
   pass "a commit made while origin has not moved is pushed immediately (ahead/behind 0/0)"
 else
   fail "expected 0/0 after the hook, got $(counts "$root") - log: $(log_of "$root")"
 fi
-if [[ "$(git -C "$root" rev-parse main)" == "$(git -C "$root" rev-parse origin/main)" ]]; then
+if [[ "$(g "$root" rev-parse main)" == "$(g "$root" rev-parse origin/main)" ]]; then
   pass "origin/main carries the commit the hook pushed"
 else
   fail "origin/main does not equal local main"
@@ -113,20 +143,20 @@ other="$WORK/two-other"
 # init default (master), so a plain clone lands on an unborn branch and the
 # push below fails with "src refspec main does not match any" - silently,
 # leaving origin unmoved and the whole scenario meaningless.
-git clone -q -b main "$WORK/two-origin.git" "$other"
-git -C "$other" config user.email t@t; git -C "$other" config user.name t
-git -C "$other" config commit.gpgsign false
+git clone -q -b main "$WORK/two-origin.git" "$other"   # destination is under $WORK by construction
+g "$other" config user.email t@t; g "$other" config user.name t
+g "$other" config commit.gpgsign false
 echo remote > "$other/remote.txt"
-git -C "$other" add -A >/dev/null 2>&1 || fail "scenario 02 setup: add failed"
-git -C "$other" commit -qm "somebody else's commit" >/dev/null 2>&1 || fail "scenario 02 setup: commit failed"
-other_push_err="$(git -C "$other" push origin main 2>&1)" || fail "scenario 02 setup: push failed: $other_push_err"
+g "$other" add -A >/dev/null 2>&1 || fail "scenario 02 setup: add failed"
+g "$other" commit -qm "somebody else's commit" >/dev/null 2>&1 || fail "scenario 02 setup: commit failed"
+other_push_err="$(g "$other" push origin main 2>&1)" || fail "scenario 02 setup: push failed: $other_push_err"
 before_origin="$(git -C "$WORK/two-origin.git" rev-parse main 2>/dev/null)"
 # The PREMISE, asserted rather than assumed: origin must really be one commit
 # ahead of this checkout before the scenario means anything. A fixture that
 # failed to set that up would otherwise read as "the hook pushed while
 # diverged" - a defect report against working code.
-git_q "$root" fetch origin "+refs/heads/main:refs/remotes/origin/main"
-premise="$(git -C "$root" rev-list --left-right --count origin/main...main 2>/dev/null | tr '\t' '/')"
+gq "$root" fetch origin "+refs/heads/main:refs/remotes/origin/main"
+premise="$(g "$root" rev-list --left-right --count origin/main...main 2>/dev/null | tr '\t' '/')"
 if [[ "$premise" != "1/0" ]]; then
   fail "scenario 02 premise not established: expected origin 1 ahead (behind/ahead 1/0), got '$premise'"
 fi
@@ -142,7 +172,7 @@ if log_of "$root" | grep -q "diverged"; then
 else
   fail "the hook did not log diverged: $(log_of "$root")"
 fi
-if git -C "$root" log -1 --format=%s | grep -q "fixture commit b.txt"; then
+if g "$root" log -1 --format=%s | grep -q "fixture commit b.txt"; then
   pass "the commit is intact on local main"
 else
   fail "the commit was disturbed"
@@ -152,9 +182,9 @@ fi
 setup_repo three
 # Named for this fixture, and pruned below: `git worktree add` writes a
 # registration into the repository it runs in, which outlives $WORK.
-git_q "$root" worktree add -b bl1390-fixture-role "$WORK/three-coder"
+gq "$root" worktree add -b bl1390-fixture-role "$WORK/three-coder"
 wt="$WORK/three-coder"
-git -C "$wt" config user.email t@t; git -C "$wt" config user.name t
+g "$wt" config user.email t@t; g "$wt" config user.name t
 before_origin="$(git -C "$WORK/three-origin.git" rev-parse main)"
 # Only what THIS commit logs counts: the fixture's own seed commit logged a
 # line already (origin was empty at that moment), and comparing against an
@@ -175,13 +205,13 @@ fi
 
 # The worktree registration is this scenario's own artifact - removed here so
 # nothing of the fixture survives it, whatever $WORK's own cleanup does.
-git_q "$root" worktree remove --force "$WORK/three-coder"
-git_q "$root" worktree prune
-git_q "$root" branch -D bl1390-fixture-role
+gq "$root" worktree remove --force "$WORK/three-coder"
+gq "$root" worktree prune
+gq "$root" branch -D bl1390-fixture-role
 
 # ── 4. unreachable origin: bounded, logged, commit intact ──────────────────
 setup_repo four
-git -C "$root" remote set-url origin "$WORK/does-not-exist.git"
+g "$root" remote set-url origin "$WORK/does-not-exist.git"
 started=$(date +%s)
 commit_on "$root" d.txt
 elapsed=$(( $(date +%s) - started ))
@@ -191,7 +221,7 @@ if (( elapsed <= bound + 10 )); then
 else
   fail "the commit took ${elapsed}s, past the ${bound}s bound"
 fi
-if git -C "$root" log -1 --format=%s | grep -q "fixture commit d.txt"; then
+if g "$root" log -1 --format=%s | grep -q "fixture commit d.txt"; then
   pass "the commit completes and is intact with origin unreachable"
 else
   fail "the commit did not complete with origin unreachable"
@@ -220,8 +250,8 @@ fi
 setup_repo five
 commit_on "$root" e1.txt
 commit_on "$root" e2.txt
-git_q "$root" fetch origin main
-if [[ "$(git -C "$root" rev-parse main)" == "$(git -C "$root" rev-parse origin/main)" ]]; then
+gq "$root" fetch origin main
+if [[ "$(g "$root" rev-parse main)" == "$(g "$root" rev-parse origin/main)" ]]; then
   pass "two commits in quick succession both reach origin in order"
 else
   fail "origin/main lags after two quick commits: $(counts "$root")"
@@ -273,6 +303,31 @@ if grep -v '^[[:space:]]*#' "$HOOKS_DIR/post-commit" | grep -q "git push"; then
   fail "the hook shells its own git push instead of using the one adapter"
 else
   pass "the hook contains no git push of its own (BL-1198)"
+fi
+
+# ── 6. the suite itself left the live repository alone ─────────────────────
+LIVE_ORIGIN_AFTER="$(git -C "$REPO_ROOT" config --get remote.origin.url 2>/dev/null)"
+LIVE_WORKTREES_AFTER="$(git -C "$REPO_ROOT" worktree list 2>/dev/null)"
+if [[ "$LIVE_ORIGIN_BEFORE" == "$LIVE_ORIGIN_AFTER" ]]; then
+  pass "the live repository's origin URL is byte-identical after the suite"
+else
+  fail "the suite changed the live origin URL: '$LIVE_ORIGIN_BEFORE' -> '$LIVE_ORIGIN_AFTER'"
+fi
+if [[ "$LIVE_WORKTREES_BEFORE" == "$LIVE_WORKTREES_AFTER" ]]; then
+  pass "the live repository's worktree list is byte-identical after the suite"
+else
+  fail "the suite changed the live worktree list:
+before: $LIVE_WORKTREES_BEFORE
+after:  $LIVE_WORKTREES_AFTER"
+fi
+# Every mutating command ran against a fixture root: proven structurally by
+# there being exactly ONE raw `git -C` in this file - inside the guard itself -
+# so no call can reach a repository the guard did not prove is under $WORK.
+raw_git_calls="$(grep -cE '^[[:space:]]*git -C ' "${BASH_SOURCE[0]}")"
+if [[ "$raw_git_calls" == "1" ]]; then
+  pass "every mutating git command in the suite goes through the fixture guard"
+else
+  fail "found $raw_git_calls raw 'git -C' calls; only the guard itself may call git directly"
 fi
 
 if [[ $status -eq 0 ]]; then echo "ALL PASS"; else echo "FAILURES"; fi

@@ -36,6 +36,11 @@ const CLAIMS = {
   'two-commits': 'two commits in quick succession both reach origin in order',
   'no-force': 'no push used force',
   'one-adapter': 'the hook contains no git push of its own (BL-1198)',
+  // BL-1390 amendment, 2026-09-04: the suite proves it left the live
+  // repository alone, after this fixture rewrote the shared origin URL.
+  'live-origin': "the live repository's origin URL is byte-identical after the suite",
+  'live-worktrees': "the live repository's worktree list is byte-identical after the suite",
+  'all-guarded': 'every mutating git command in the suite goes through the fixture guard',
 };
 
 function runE2e(ctx) {
@@ -145,6 +150,27 @@ function registerSteps(registry) {
 
   scoped(/^no push used force$/, (ctx) => {
     requirePassed(ctx, 'no-force');
+  });
+
+  // ── scenario 06 (amendment): the suite never touches the live repository ──
+  scoped(/^the live repository's origin URL and worktree list are recorded$/, (ctx) => {
+    ctx.bl1390 = ctx.bl1390 || {};
+  });
+
+  scoped(/^the hook's test suite runs to completion$/, (ctx) => {
+    runE2e(ctx);
+  });
+
+  scoped(/^the live repository's origin URL is byte-identical$/, (ctx) => {
+    requirePassed(ctx, 'live-origin');
+  });
+
+  scoped(/^the live repository's worktree list is byte-identical$/, (ctx) => {
+    requirePassed(ctx, 'live-worktrees');
+  });
+
+  scoped(/^every mutating git command in the suite ran against a root under the fixture's temporary directory$/, (ctx) => {
+    requirePassed(ctx, 'all-guarded');
   });
 }
 
