@@ -1,5 +1,39 @@
 # SwarmForge VS Code Extension — Specification
 
+**Last Updated:** September 4, 2026 (BL-1392: nothing checked that the
+cron daemon this swarm schedules into was actually alive. On this WSL2
+host (no `[boot]` command in `/etc/wsl.conf`) cron stopped on 2026-08-30
+06:52 BST — the freshness cron log's last write — and every `./swarm
+start` since printed "Installed" over a dead scheduler: the BL-675
+watchdog that restarts a dead `handoffd` was off for five days, every
+shift start and bedtime was manual, and a scheduled bedtime never fired,
+found by the coordinator and verified in
+`backlog/evidence/cron-daemon-dead-since-20260830-found-20260904.md`. Two
+halves, since an install-time check alone is green at start and blind
+afterwards (BL-1235's shape): `install_swarmforge_crons.sh` now probes
+for a live `cron`/`crond` process (`pgrep`; macOS launchd keeps
+`/usr/sbin/cron` running whenever a crontab exists) and, finding none,
+prints `CRON_DAEMON_DOWN` naming the host fix (`sudo service cron start`
+plus the `/etc/wsl.conf` boot line) and exits non-zero — the crontab
+lines are still written so they fire the moment cron starts (invariant
+1). A new `handoffd` sweep (`cron-heartbeat-stale`, `cron_heartbeat_lib.bb`)
+reads the mtime of the SAME freshness cron log
+(`.swarmforge/daemon/freshness-check.cron.log`) against a 10-minute bound
+(the freshness cron's own 2-minute cadence plus slack) — the OS-independent
+signal that catches cron dying AFTER a clean install, since cron cannot
+report its own death and nothing else runs on a schedule cron itself
+controls. Escalates once per episode past the bound (or on an
+always-absent log, its own reading), stays quiet once escalated, and a
+fresh log clears the episode so a later death escalates again (BL-920
+self-healing). The swarm never starts cron itself (invariant 3) — both
+halves only report and name the fix; starting a system daemon needs root
+and is the host owner's. Acceptance:
+`specs/features/BL-1392-a-dead-cron-daemon-is-never-silent.feature`.
+How-to: `docs/how-to/BL-675-daemon-log-freshness-watchdog.md` (extended
+in place — the natural home, since this ticket's runtime half reads the
+exact log that page's own "Install" section already documents). No
+diagram depicts cron-heartbeat internals.)
+Prior entry —
 **Last Updated:** September 4, 2026 (BL-1363: promoting a ticket has been
 a script (`promote_and_route_next.sh`) since BL-1028; closing one stayed
 hand-made every time. Measured over 45 days: 484 promotion commits carry
