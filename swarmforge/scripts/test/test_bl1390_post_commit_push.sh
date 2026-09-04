@@ -30,7 +30,7 @@ pass() { echo "PASS: $*"; }
 # line, a lock so only one instance runs, reaping of roots NO LIVE RUN OWNS,
 # and an owner-stamped $WORK.
 source "$SCRIPT_DIR/lib/fixture_isolation.sh"
-fixture_isolation_begin "$FIXTURE_PREFIX" "${BL1390_SUITE_BOUND_SECONDS:-900}"
+fixture_isolation_begin "$FIXTURE_PREFIX" "${BL1390_SUITE_BOUND_SECONDS:-900}" "$@"
 trap 'rm -rf "$WORK"' EXIT
 
 # A second invocation only needs to reach the lock decision to prove scenario
@@ -306,9 +306,9 @@ fi
 setup_repo five-b
 TRACE_LOG="$WORK/git-trace.log"
 echo "$RANDOM" > "$root/f1.txt"
-git -C "$root" add -A >/dev/null 2>&1
-GIT_TRACE="$TRACE_LOG" git -C "$root" commit -q -m "BL-9390: fixture commit f1.txt" >/dev/null 2>&1
-git_q "$root" fetch origin main
+gq "$root" add -A
+GIT_TRACE="$TRACE_LOG" g "$root" commit -q -m "BL-9390: fixture commit f1.txt" >/dev/null 2>&1
+gq "$root" fetch origin main
 if [[ "$(counts "$root")" == "0/0" ]]; then
   pass "scenario 5b: the traced commit reached origin (trace setup did not itself break the push)"
 else

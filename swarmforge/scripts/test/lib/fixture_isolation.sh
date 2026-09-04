@@ -23,8 +23,22 @@
 #
 # Usage, right after the suite sets its own FIXTURE_PREFIX:
 #   source "<...>/lib/fixture_isolation.sh"
-#   fixture_isolation_begin "$FIXTURE_PREFIX" [<bound-seconds>]
+#   fixture_isolation_begin "$FIXTURE_PREFIX" "<bound-seconds>" "$@"
 #   ... "$WORK" is created for you, owner-stamped ...
+#
+# The trailing "$@" is the CALLING SCRIPT's own original command-line
+# arguments, explicitly threaded through - never implicit. The wall-clock
+# bound re-execs the calling script under `timeout`, and a bare "$@" at
+# that point is this FUNCTION's own positional args (the prefix and bound),
+# not the script's - a script invoked with real CLI arguments would see
+# them silently replaced by the prefix/bound pair after the re-exec.
+# Verified directly (BL-1392 hardener finding): a minimal repro script
+# invoked as `bash script.sh original-arg1 original-arg2` saw its own "$@"
+# become the fixture prefix and bound value once this bug was reproduced.
+# None of today's three callers take CLI arguments, so this was dormant -
+# but the whole point of a shared library is the caller after this one,
+# and the explicit-argv convention below closes it structurally rather
+# than by every future caller remembering not to trip over it.
 
 fixture_isolation_lock_path() {
   printf '%s/%s.lock' "${TMPDIR:-/tmp}" "${1%-}"
@@ -65,6 +79,10 @@ fixture_isolation_log_invoker() {
 # if it never reaches the lock.
 fixture_isolation_begin() {
   local prefix="$1" bound="${2:-900}"
+  shift 2 2>/dev/null || shift "$#"
+  # "$@" is now the CALLING SCRIPT's own original argv (see the usage
+  # comment above) - explicitly threaded through by every caller, never
+  # this function's own prefix/bound pair.
 
   # Wall-clock bound: re-exec once under `timeout`, marked so it happens once.
   if [[ -z "${FIXTURE_ISOLATION_BOUNDED:-}" ]]; then

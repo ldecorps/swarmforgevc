@@ -26,7 +26,7 @@ pass() { echo "PASS: $*"; }
 # the invoker, takes a lock, reaps only roots NO LIVE RUN OWNS, and creates
 # an owner-stamped $WORK.
 source "$SCRIPT_DIR/lib/fixture_isolation.sh"
-fixture_isolation_begin "$PREFIX" "${BL1392_SUITE_BOUND_SECONDS:-900}"
+fixture_isolation_begin "$PREFIX" "${BL1392_SUITE_BOUND_SECONDS:-900}" "$@"
 trap 'rm -rf "$WORK"' EXIT
 
 # A fake `crontab` that keeps its table in a file, and a `pgrep` whose answer
