@@ -20,9 +20,25 @@ pass() { echo "PASS: $*"; }
 # A killed run traps no `finally`, so the previous run's fixtures are swept by
 # prefix BEFORE this one starts as well (BL-971). These roots are this test's
 # own, one run at a time.
-rm -rf "${TMPDIR:-/tmp}/${FIXTURE_PREFIX}"* 2>/dev/null || true
-WORK="$(mktemp -d "${TMPDIR:-/tmp}/${FIXTURE_PREFIX}XXXXXX")" || exit 1
+# BL-1390 second incident: this suite runs concurrently (an acceptance handler
+# invokes it once per scenario, and several roles run acceptance at once), and
+# its old startup was a BLIND prefix sweep - so each of the 1156 copies QA
+# counted deleted every other copy's fixture mid-run. BL-971's sweep-the-prefix
+# rule is for a suite that runs one at a time; this one does not.
+#
+# fixture_isolation_begin gives, in order: a wall-clock bound, an invoker log
+# line, a lock so only one instance runs, reaping of roots NO LIVE RUN OWNS,
+# and an owner-stamped $WORK.
+source "$SCRIPT_DIR/lib/fixture_isolation.sh"
+fixture_isolation_begin "$FIXTURE_PREFIX" "${BL1390_SUITE_BOUND_SECONDS:-900}" "$@"
 trap 'rm -rf "$WORK"' EXIT
+
+# A second invocation only needs to reach the lock decision to prove scenario
+# 07; running the whole body again would be the storm this exists to prevent.
+if [[ -n "${BL1390_LOCK_PROBE:-}" ]]; then
+  echo "LOCK_PROBE_RAN_BODY: a probe acquired the lock and would have run the suite"
+  exit 0
+fi
 
 # BL-1390 scenario 06: the live repository's own state, recorded BEFORE the
 # suite touches anything and compared after it finishes. This test once
@@ -79,6 +95,7 @@ setup_repo() {
   name="$1"; root="$WORK/$name"; origin="$WORK/$name-origin.git"
   mkdir -p "$root"
   git init -q --bare "$origin"
+  g "$origin" symbolic-ref HEAD refs/heads/main >/dev/null 2>&1 || true
   git init -q -b main "$root"
   g "$root" config user.email t@t
   g "$root" config user.name t
@@ -88,7 +105,14 @@ setup_repo() {
   # The hook resolves its repo root from its own location, so the fixture gets
   # the scripts it needs rather than the hook reaching into this checkout.
   mkdir -p "$root/swarmforge/git-hooks"
-  cp -R "$REPO_ROOT/swarmforge/scripts" "$root/swarmforge/scripts"
+  # ONE copy per run, symlinked per fixture. Six deep copies of the whole
+  # scripts tree per run is heavy I/O that raced git's own object writes -
+  # observed as "fatal: object ... cannot be read" during a fixture's push.
+  if [[ ! -d "$WORK/shared-scripts" ]]; then
+    cp -R "$REPO_ROOT/swarmforge/scripts" "$WORK/shared-scripts" \
+      || { fail "setup($name): could not stage the shared scripts copy"; return 1; }
+  fi
+  ln -s "$WORK/shared-scripts" "$root/swarmforge/scripts"
   # ONLY the post-commit hook. Copying the whole hooks directory would install
   # the full commit guard chain into the fixture, which refuses (and runs the
   # property suite) on a repository that is not this one - the fixture would be
@@ -282,9 +306,9 @@ fi
 setup_repo five-b
 TRACE_LOG="$WORK/git-trace.log"
 echo "$RANDOM" > "$root/f1.txt"
-git -C "$root" add -A >/dev/null 2>&1
-GIT_TRACE="$TRACE_LOG" git -C "$root" commit -q -m "BL-9390: fixture commit f1.txt" >/dev/null 2>&1
-git_q "$root" fetch origin main
+gq "$root" add -A
+GIT_TRACE="$TRACE_LOG" g "$root" commit -q -m "BL-9390: fixture commit f1.txt" >/dev/null 2>&1
+gq "$root" fetch origin main
 if [[ "$(counts "$root")" == "0/0" ]]; then
   pass "scenario 5b: the traced commit reached origin (trace setup did not itself break the push)"
 else
@@ -303,6 +327,40 @@ if grep -v '^[[:space:]]*#' "$HOOKS_DIR/post-commit" | grep -q "git push"; then
   fail "the hook shells its own git push instead of using the one adapter"
 else
   pass "the hook contains no git push of its own (BL-1198)"
+fi
+
+# ── 7. a second invocation never destroys the first's fixtures ─────────────
+# Ten at once, which is the shape that actually happened. Each probe reaches
+# the lock decision and stops; none may run the body, and none may touch this
+# run's fixture directory.
+probe_out="$WORK/lock-probes.txt"
+: > "$probe_out"
+for _ in $(seq 1 10); do
+  ( BL1390_LOCK_PROBE=1 FIXTURE_ISOLATION_LOCK_WAIT=1 FIXTURE_ISOLATION_NO_REAP=1 \
+      timeout 60 bash "${BASH_SOURCE[0]}" >>"$probe_out" 2>&1 ) &
+done
+wait
+if grep -q 'LOCK_PROBE_RAN_BODY' "$probe_out"; then
+  fail "a second invocation acquired the lock while this one holds it"
+else
+  pass "at most one instance of the suite runs at a time"
+fi
+if grep -q "SUITE_BUSY: another instance of this suite (pid $$)" "$probe_out"; then
+  pass "a second invocation exits cleanly naming the first's pid"
+else
+  fail "a probe did not name this run's pid: $(head -3 "$probe_out")"
+fi
+if [[ -d "$WORK" && -f "$WORK/.fixture-owner-pid" ]]; then
+  pass "the first's fixture directory is intact throughout"
+elif [[ -d "$WORK" ]]; then
+  fail "this run's fixture directory survived but lost its owner stamp"
+else
+  fail "this run's fixture directory ($WORK) was destroyed while it was running"
+fi
+if grep -cq 'SUITE_INVOKER pid=' "$probe_out"; then
+  pass "each suite log names the process chain that invoked it"
+else
+  fail "no SUITE_INVOKER line: $(head -3 "$probe_out")"
 fi
 
 # ── 6. the suite itself left the live repository alone ─────────────────────

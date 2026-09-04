@@ -151,6 +151,51 @@ deterministically — process alive, pidfile agrees, announce path has
 creds — and **tells** the coordinator / `status.json`. It does not
 restart babysitterd. See [the babysitterd runbook](BL-611-babysitterd-runbook.md).
 
+## The watchdog for the watchdog: is the cron daemon itself alive? (BL-1392)
+
+Everything above assumes the installed crontab line actually fires. Nothing
+did until this ticket — on a WSL2 host with no `[boot]` command in
+`/etc/wsl.conf`, cron itself stopped on 2026-08-30 and every `./swarm start`
+since printed "Installed" over a dead scheduler: this freshness watchdog
+was off for five days (it restarts a dead `handoffd`, but nothing restarts
+a dead `cron`), every shift start and bedtime was manual, and a scheduled
+bedtime silently never fired. Two halves, because an install-time check is
+green at start and blind afterwards (the same BL-1235 shape every
+consumer-anchor rule in this repo warns about):
+
+- **Install-time**: `install_swarmforge_crons.sh` (every `./swarm start`
+  runs it) now probes for a live `cron`/`crond` process
+  (`pgrep -x cron`/`crond`; on macOS launchd keeps `/usr/sbin/cron` running
+  whenever a crontab exists, so the same probe works there). No daemon
+  found → prints `CRON_DAEMON_DOWN` naming the host fix (`sudo service cron
+  start`, plus the `/etc/wsl.conf` `[boot]` line so it survives a WSL
+  restart) and exits non-zero — `start_ancillary_services.sh` already
+  echoes a WARN on a non-zero installer, so the marker reaches launch
+  output unchanged. The crontab lines are still written even on this
+  refusal: they fire the moment cron starts, so a later manual `sudo
+  service cron start` needs no re-install.
+- **Runtime**: a `handoffd` sweep (`cron-heartbeat-stale`,
+  `cron_heartbeat_lib.bb`) reads the mtime of THIS SAME freshness cron log
+  (`.swarmforge/daemon/freshness-check.cron.log`, above) against a 10-minute
+  bound (the freshness cron's own 2-minute cadence, with slack for a slow
+  host or a tick landing either side of the boundary) — the one signal that
+  catches cron dying AFTER a clean install, since nothing else notices a
+  process cron itself never runs. Escalates once per episode past the
+  bound (or if the log has never existed at all, its own `absent-escalate`
+  reading, worded differently so the message says which it saw), stays
+  quiet while already escalated (a repeat every tick is noise, not news),
+  and a fresh log clears the episode so a later death escalates again
+  (BL-920 self-healing, the same shape this watchdog's own restart/cool-off
+  state already uses). An unreadable mtime is its own `:unknown` verdict —
+  never read as evidence of death OR of life.
+
+**The swarm never starts cron itself** (invariant 3, unchanged by either
+half) — starting a system daemon needs root, and doing it automatically is
+explicitly out of scope. Both halves only ever report and name the fix.
+
+Acceptance:
+`specs/features/BL-1392-a-dead-cron-daemon-is-never-silent.feature`.
+
 ## Cron PATH and SKIP_BABYSITTERD (BL-789, Mac host-switch hotfix)
 
 Cron's own PATH is `/usr/bin:/bin` — missing `bb`/`node`. Two consequences,

@@ -19,8 +19,14 @@ status=0
 fail() { echo "FAIL: $*"; status=1; }
 pass() { echo "PASS: $*"; }
 
-rm -rf "${TMPDIR:-/tmp}/${FIXTURE_PREFIX}"* 2>/dev/null || true
-WORK="$(mktemp -d "${TMPDIR:-/tmp}/${FIXTURE_PREFIX}XXXXXX")" || exit 1
+# BL-1390 second incident: a blind prefix sweep deletes a CONCURRENT copy's
+# fixtures - 1156 copies of a sibling suite exhausted the host that way.
+# This suite is invoked once per scenario by its acceptance handler, so it
+# can run concurrently too. fixture_isolation_begin bounds the clock, logs
+# the invoker, takes a lock, reaps only roots NO LIVE RUN OWNS, and creates
+# an owner-stamped $WORK.
+source "$SCRIPT_DIR/lib/fixture_isolation.sh"
+fixture_isolation_begin "$FIXTURE_PREFIX" "${BL1363_SUITE_BOUND_SECONDS:-900}" "$@"
 trap 'rm -rf "$WORK"' EXIT
 
 LIVE_ORIGIN_BEFORE="$(git -C "$REPO_ROOT" config --get remote.origin.url 2>/dev/null)"
