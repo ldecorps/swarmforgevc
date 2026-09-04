@@ -36,23 +36,11 @@ const CLAIMS = {
   'own-paths-only': "the close commit contains only its own ticket's paths (BL-506)",
 };
 
-// Module scope, deliberately: the runtime gives each scenario its own ctx, so
-// a per-ctx memo re-ran this whole suite once per scenario - 6-9 invocations
-// per feature, several roles running acceptance at once. That multiplier is
-// half of how 1156 concurrent copies of a sibling suite came to exist
-// (BL-1390's second incident). One run per process, shared by every scenario.
-let suiteRun = null;
-
 function runE2e(ctx) {
-  if (suiteRun) {
-    ctx.bl1363 = { ...(ctx.bl1363 || {}), out: suiteRun.out, status: suiteRun.status };
-    return suiteRun.out;
-  }
   if (ctx.bl1363?.out) return ctx.bl1363.out;
   const res = spawnSync('bash', [E2E], { cwd: REPO_ROOT, encoding: 'utf8', timeout: 1800000 });
   const out = `${res.stdout || ''}${res.stderr || ''}`;
   ctx.bl1363 = { ...(ctx.bl1363 || {}), out, status: res.status };
-  suiteRun = { out, status: res.status };
   if (res.status !== 0) {
     throw new Error(`the BL-1363 close e2e failed (${res.status}):\n${out}`);
   }
