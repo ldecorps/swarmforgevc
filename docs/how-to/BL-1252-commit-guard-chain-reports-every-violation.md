@@ -44,13 +44,20 @@ graph) and exits. So the runner groups them:
 - **Tier 1 (cheap):** `check_commit_size.sh`, `check_ticket_deletion.sh`,
   `check_pipeline_code_on_main.sh`, `check_feature_handler_registration.sh`
   (BL-1303 — a `main`-only guard proving a feature's handler is registered
-  and reachable), and `check_handler_module_graph.sh` (BL-1385 — a
+  and reachable), `check_handler_module_graph.sh` (BL-1385 — a
   sibling `main`-only guard proving that same handler's require graph
   actually RESOLVES on the tree; registration is not loadability, and a
   hand-land bypasses the land replay's own tree guard entirely, so the
-  load question has to be asked here too) — all five always run, and if
-  any refuses, the commit is refused with every Tier-1 violation named.
-  Tier 2 is never reached.
+  load question has to be asked here too), and `check_bb_scripts_load.sh`
+  (BL-1395 — every `.bb` script under `swarmforge/scripts/` that the
+  commit changes is `bb -e '(load-file ...)'`-probed against the tree
+  under test, naming file/line/symbol on a Babashka SCI analysis failure;
+  `handoffd.bb` specifically is BOOTED against a fixture root and waited
+  for one heartbeat, since SCI analyses each `defn` eagerly and only
+  running the whole file in order proves a forward reference absent — see
+  "A landed daemon script is booted before it is published" below) — all
+  six always run, and if any refuses, the commit is refused with every
+  Tier-1 violation named. Tier 2 is never reached.
 - **Tier 2 (expensive):** `check_property_suite_drift.sh` — reached only
   once every Tier-1 guard passes, so the property suite is never charged
   to a commit that is already refused for a cheap reason. It still runs
@@ -79,6 +86,52 @@ pre-commit: these guards did not refuse cleanly - they failed unexpectedly (a cr
 pre-commit: an unexpected failure still refuses the commit; it is never collected as a pass.
 ```
 
+## A landed daemon script is booted before it is published (BL-1395)
+
+Babashka's SCI analyses a `defn`'s body eagerly, but only when the FILE is
+loaded — a symbol reference that does not exist (a typo'd built-in, a
+forward reference to a `defn` written further down the file) fails at
+load, not at grep time. Three times in eight days a `.bb` script with such
+a defect reached `main` unseen: BL-1381 (`shift_schedule_applier_lib.bb`,
+crashed every consumer for eight days), and twice on 2026-09-04 for
+`handoffd.bb`'s `cron-heartbeat-state` (a call to a `read-json` function
+that does not exist) — caught once by the hardener, then **reintroduced by
+QA's own hand-splice at land**, whose verification was three greps for
+`required_wiring` labels rather than an actual load. The live daemon
+crash-looped from 18:20Z with no wakes, chases, sweeps, reconcile, or
+nudges running.
+
+Nothing on the commit path or the land path loaded a changed `.bb` file
+before this ticket — and `handoffd.bb` ended with a bare `(-main)`, so
+even a willing `load-file` probe would have STARTED the daemon instead of
+analysing it.
+
+- **The probe**: `check_bb_scripts_load.sh` runs `bb -e '(load-file ...)'`
+  against a checkout of the tree under test (never the checker's own
+  worktree — a script that loads there but not on the tree still refuses)
+  for every `.bb` file the commit or the land's replayed tree changes. A
+  failure names the file, line, and symbol.
+- **`handoffd.bb` is BOOTED, not just loaded**: the guard starts it against
+  a `mkdtemp` fixture root and waits for one heartbeat line, bounded,
+  because SCI analysing each `defn` in isolation cannot prove a forward
+  reference absent — only running the file start-to-finish can, which is
+  exactly the shape of defect that hid for eight days and slipped back in
+  at land.
+- **The guarded `(-main)`**: `handoffd.bb` now ends with
+  `(when (= *file* (System/getProperty "babashka.file")) (-main))` — the
+  same idiom `apply_shift_schedule.bb`, `babysitter_waive.bb`, and
+  `bob_starting_cast_cli.bb` already used. `load-file`d for analysis, it
+  now analyses silently and exits 0 without starting the daemon; run
+  directly as a script, it still boots normally.
+- **Wired into both publish paths**: `run_commit_guards.sh` (so a
+  hand-splice on `main` meets it, same as the crash that motivated this
+  ticket) and `land_step_lib.bb`'s tree-guard list (so a land replay meets
+  it too) — a hand-built land that skips the replay still hits the
+  commit-time copy.
+- Fixture roots are per-invocation, reaped by dead owner pid or age bound
+  — never a blind prefix sweep (BL-1385/BL-1390's guardrail, carried
+  forward here too).
+
 ## Where it lives
 
 | Piece | Location |
@@ -95,6 +148,13 @@ pre-commit: an unexpected failure still refuses the commit; it is never collecte
   across the chain, one status per call, one combined refusal.
 - Article 4.4 (complete review inventory, one bounce per pass) — the
   constitutional rule this mechanical gate now also follows.
+- BL-1385 (`check_handler_module_graph.sh`) — the sibling Tier-1 guard
+  proving a handler's require graph resolves; BL-1395 asks the same
+  "does this actually load" question of every `.bb` script, not just
+  handler modules.
+- BL-1381 — the earlier, eight-day-silent instance of the same class of
+  defect (`shift_schedule_applier_lib.bb`) that established the need for
+  this guard.
 
 ## Verify
 
@@ -102,4 +162,6 @@ pre-commit: an unexpected failure still refuses the commit; it is never collecte
 bash swarmforge/scripts/test/test_run_commit_guards.sh
 npx vitest run --config vitest.properties.config.mjs test/bl1252CommitGuardAggregationInvariants.property.test.js
 specs/pipeline/scripts/run_acceptance.sh specs/features/BL-1252-commit-guard-chain-reports-every-violation.feature
+bash swarmforge/scripts/test/test_bl1395_bb_scripts_load.sh
+specs/pipeline/scripts/run_acceptance.sh specs/features/BL-1395-a-landed-daemon-script-is-booted-before-it-is-published.feature
 ```

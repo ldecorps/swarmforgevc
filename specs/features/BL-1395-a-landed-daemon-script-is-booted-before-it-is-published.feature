@@ -1,3 +1,8 @@
+# mutation-stamp: sha256=7991e6f23a1fb46e96a103fac457cee76db313d390d14d7ec08e8a2b8a31a483
+# acceptance-mutation-manifest-begin
+# {"version":1,"tested_at":"2026-09-04T20:27:12.868335403Z","feature_name":"BL-1395 A landed daemon script is booted before it is published","feature_path":"/home/carillon/swarmforgevc/.worktrees/hardender/specs/features/BL-1395-a-landed-daemon-script-is-booted-before-it-is-published.feature","background_hash":"de06caa9b194715740c50cb39257c50890c936280af9a42103611bd5ea0f3b15","implementation_hash":"unknown","scenarios":[{"index":0,"name":"a script that fails analysis on the tree is refused naming the symbol","scenario_hash":"06548f2f6d05f28f504b5e9334e1dcb344982b1313d9e61414adf7e967393fd0","mutation_count":3,"result":{"Total":3,"Killed":3,"Survived":0,"Errors":0},"tested_at":"2026-09-04T20:27:12.868335403Z"},{"index":2,"name":"handoffd from the tree under test is booted against a fixture root","scenario_hash":"a545dec6dfcf87e392bf91e0e1b55840be337b434ddb6335fc291c51970827a6","mutation_count":4,"result":{"Total":4,"Killed":4,"Survived":0,"Errors":0},"tested_at":"2026-09-04T20:27:12.868335403Z"},{"index":4,"name":"the commit guards and the land replay both refuse a broken script","scenario_hash":"1a53718bab80331ae9b3eecd9fe976ea033256881e9ffe52a19cba899052dd50","mutation_count":2,"result":{"Total":2,"Killed":2,"Survived":0,"Errors":0},"tested_at":"2026-09-04T20:27:12.868335403Z"}]}
+# acceptance-mutation-manifest-end
+
 Feature: BL-1395 A landed daemon script is booted before it is published
 
   Babashka analyses every definition eagerly when a file loads, so a script
