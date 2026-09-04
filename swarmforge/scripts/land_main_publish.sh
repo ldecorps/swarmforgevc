@@ -18,10 +18,15 @@
 # a human ruling that had not been given - and BL-1308 was the ticket that
 # fixed the detector this step now consults.
 #
-# Human ruling (2026-09-03, ticket ruling_options option 1): refuse EVERY
-# entangled tip. No withheld-vs-ordinary judgment is made here - the rule has
-# no predicate to get wrong, and the remedy it forces (BL-1241's tip-pure
-# replay) already exists and is already run by hand today.
+# Human ruling (2026-09-03, ticket ruling_options option 2, as REVISED by
+# BL-1375's ruling): refuse only when an unlanded sibling is WITHHELD, awaiting
+# approval, or its approval state cannot be read. Option 1 - refuse every
+# entangled tip - was the ruling first given and is what this guard shipped
+# until now; it deadlocked the land queue within hours, because when several
+# APPROVED tickets share one path each refuses on the others and none can go
+# first. The narrowing is read through land_step_lib.bb's own
+# `blocking-siblings`, the predicate BL-1375 built and land-plan already
+# decides on, so the mandatory step and the hand-run CLI cannot disagree.
 #
 # Exit status: 3 with ENTANGLED_SIBLING_BLOCK on refusal, 0 otherwise
 # (2 stays the usage error). The refusal is an ordinary exit, never an abort:
@@ -150,13 +155,21 @@ entangled_sibling_report() {
     (let [{:keys [unlanded warning]} (land-step-lib/entangled-siblings root tip task)]
       ;; A warning means the walk could not be completed. Say nothing.
       (when (and (nil? warning) (seq unlanded))
-        (println "ENTANGLED_SIBLING_BLOCK")
-        (doseq [sibling (sort unlanded)]
-          (println (str "entangled-sibling: " sibling
-                        " has content on this tip that is not on origin/main")))
-        (println (str "land-decide: refusing to advise a push of " tip
-                      " - replay this ticket's own paths onto origin/main"
-                      " (BL-1241) and land that commit instead"))))))
+        ;; BL-1375's narrowing, asked here rather than restated: an unlanded
+        ;; sibling that is APPROVED rides, one that is withheld, awaiting
+        ;; approval, or unreadable blocks. `blocking-siblings` is the same
+        ;; predicate land-plan decides on, so the mandatory decide step and
+        ;; the hand-run land_step_cli.bb cannot give different answers about
+        ;; the same tip.
+        (let [blockers (land-step-lib/blocking-siblings root unlanded)]
+          (when (seq blockers)
+            (println "ENTANGLED_SIBLING_BLOCK")
+            (doseq [{:keys [ticket state reason]} blockers]
+              (println (str "entangled-sibling: " ticket " (" (name state) ") "
+                            reason)))
+            (println (str "land-decide: refusing to advise a push of " tip
+                          " - replay this ticket's own paths onto origin/main"
+                          " (BL-1241) and land that commit instead"))))))))
 BB
 )" 2>/dev/null
 }
