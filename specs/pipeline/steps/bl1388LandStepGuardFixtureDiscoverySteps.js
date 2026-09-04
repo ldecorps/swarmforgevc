@@ -26,12 +26,14 @@ const CLAIMS = {
   'empty-array-passes': 'the empty-array tree is pinned as PASSING, the premise BL-1371 established',
 };
 
-// The <placement> column. Both rows name a handler the ticket expected the
-// guard to refuse; only one of them is a refusal case in the guard as it
-// stands, and the handler says so rather than pretending otherwise.
+// The <placement> column. The "nested in a subdirectory" row was RETIRED by
+// the specifier on 2026-09-04 (never reworded) after this handler measured
+// that the guard never sees a nested handler at all - the tree reader lists
+// the steps directory flat, so no handler declares the feature's ticket and
+// the feature is skipped. That hole is BL-1400's; what remains here is the
+// placement the guard really does refuse.
 const PLACEMENTS = {
   'named without the Steps.js suffix': 'refused',
-  'nested in a subdirectory of the steps directory': 'not-refused',
 };
 
 let suiteRun = null;
@@ -68,7 +70,10 @@ function registerSteps(registry) {
   });
 
   // ── Given ───────────────────────────────────────────────────────────────
-  scoped(/^the handler is (.+)$/, (ctx, placement) => {
+  // Anchored on the placements this handler knows, not `(.+)`: a greedy
+  // pattern here also swallowed scenario 05's "the handler is RENAMED with the
+  // Steps.js suffix" and reported it as an unknown placement.
+  scoped(/^the handler is (named without the Steps\.js suffix|at the top of the steps directory)$/, (ctx, placement) => {
     if (/^at the top of the steps directory$/.test(placement)) {
       ctx.bl1388.placement = 'discoverable';
       return;
@@ -105,19 +110,14 @@ function registerSteps(registry) {
   });
 
   scoped(/^the guards refuse$/, (ctx) => {
-    assert.equal(
-      ctx.bl1388.placement,
-      'refused',
-      'MEASURED, not assumed: the guard lists specs/pipeline/steps NON-recursively ' +
-        '(check-feature-handler-registration.ts readTree -> listDir(STEPS_DIR)), so a handler ' +
-        'nested in a subdirectory is never in stepFiles at all, no handler declares the ' +
-        "feature's ticket, and collectUnregisteredHandlers skips it. A nested handler is not a " +
-        'refusal case in the guard as it stands. This row asserts behaviour the guard does not ' +
-        'have; the gap went to the specifier as a priority-00 note (BL-1388 spec gap, 2026-09-04). ' +
-        'The runner fix itself is complete and green - see backlog/evidence/BL-1388-coder-20260904.md.',
-    );
+    assert.equal(ctx.bl1388.placement, 'refused', `unexpected placement: ${ctx.bl1388.placement}`);
+    requirePassed(ctx, 'measuring');
     requirePassed(ctx, 'real-path');
     requirePassed(ctx, 'non-main');
+  });
+
+  scoped(/^the handler is renamed with the Steps.js suffix$/, (ctx) => {
+    runE2e(ctx);
   });
 
   scoped(/^the refusal names the feature file$/, (ctx) => {
