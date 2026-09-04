@@ -389,6 +389,34 @@ How-to: `docs/how-to/BL-1241-entangled-tip-at-the-land-step-has-a-reachable-reme
 (extended in place — same detector, same doc). No diagram depicts land-step
 internals.)
 Prior entry —
+**Last Updated:** September 3, 2026 (BL-1359: the Article 4.2
+pipeline-code-on-main sweep's merge-commit path read
+(`commit-touched-paths` in `babysitter_check.bb`, restated in
+`babysitterd_sweep_lib.bb`) charged a merge with the UNION of every
+parent's diff instead of what it introduced over its FIRST parent —
+`git diff-tree -m --first-parent` looks like it restricts the comparison,
+but `--first-parent` is a revision-traversal option with no effect on a
+single named commit's `diff-tree`, so `-m` alone decided the output (one
+diff section per parent). The BL-962 non-first-parent exemption could never
+rescue this: it adjudicates the wrong parent when the charge set itself is
+inflated. Measured on live history, this false-charged `specs/pipeline/steps/index.js`
+— the registry every ticket appends to — on essentially every merge-up;
+two of the Operator's three 2026-09-03 sweep findings were pure artefacts
+of it. `commit-touched-paths` now resolves the merge's first parent
+(`<sha>^1`, itself fail-closed per invariant 2) and runs a plain two-tree
+`diff-tree` against it — matching a non-merge commit's own single-parent
+diff exactly, which is what the surrounding comment always claimed the old
+command did. BL-590's own catch (a merge's content invisible to a *plain*
+`git show`/`diff-tree` with no merge-aware form at all) is unaffected and
+still reports its paths; only the union over-charge is removed. Non-merge
+commits, the BL-962 exemption logic, and the fail-closed posture are
+otherwise unchanged. Acceptance:
+`specs/features/BL-1359-a-merge-is-charged-only-with-what-it-introduced.feature`.
+How-to: `docs/how-to/BL-611-babysitterd-runbook.md` (the Check 13
+"pipeline code on main" section corrected in place — it had stated the
+`--first-parent` restriction as fact). No diagram depicts babysitterd
+sweep internals.)
+Prior entry —
 **Last Updated:** September 3, 2026 (BL-1337: the BoB starting cast generator
 (BL-1181) now takes a named, steward-owned **profile** instead of one
 hard-coded policy, and gates every pick on a **handshake** before the cast is

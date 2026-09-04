@@ -1,0 +1,191 @@
+id: BL-1386
+title: "The reconcile sweep never orphans a merge it started: an abort that fails is retried and logged, the daemon records which MERGE_HEAD is its own and aborts it next tick, and the real reason a merge failed is logged instead of the word conflict"
+milestone: M8
+type: defect
+severity: high
+# high: three times in eighteen minutes on 2026-09-04 the daemon left its own
+# failed merge open on the shared main checkout with an index carrying none
+# of the incoming side; concluding any of them would have silently reverted
+# a QA landing on push. A live fault with data-loss reach, caught each time
+# by a human reading the index by hand. Not critical: nothing was lost and
+# the swarm kept moving.
+status: todo
+epic: swarm-reliability
+priority: 6
+direction: swarm-reported
+depends_on: []
+mutation_cost: medium
+slice_size_envelope: medium
+required_stages: [coder, cleaner, architect, hardender, documenter, qa]
+
+acceptance: specs/features/BL-1386-the-reconcile-sweep-never-orphans-a-merge-it-started.feature
+
+required_wiring:
+  - 'swarmforge/scripts/handoffd.bb::merge-abort-failed::the daemon must LOG an abort that did not take - today absorb-with-merge! discards abort! result and the log has never carried an abort failure (grep this pass). Literal fixed at mint (BL-874) and chosen so it matches no existing symbol (abort-failed alone sits inside may-abort-failed-merge?); a log line only the daemon can emit is the consumer anchor (BL-1235)'
+  - 'swarmforge/scripts/handoffd.bb::master-main-merge-owner.json::the durable ownership record the daemon writes before git merge and clears after a successful abort or merge; the file name is fixed here so BL-1387 can read it. grep today returns 0'
+  - 'specs/pipeline/steps/bl1386ReconcileOwnsItsMergeSteps.js::registerSteps::the handler file exists so discovery registers every scenario (BL-1371)'
+
+invariants:
+  - "No sweep tick ends with a MERGE_HEAD the daemon itself created unless an ownership record naming that MERGE_HEAD sha exists on disk - a merge the daemon started is either concluded, aborted, or recorded as its own before the tick returns, never silently left for the next tick to misread."
+  - "The daemon aborts only a merge it can prove it started: a MERGE_HEAD whose sha matches its own ownership record. A MERGE_HEAD with no record, or one naming a different sha, is never aborted by this ticket - BL-1120 stands in full for every foreign merge."
+  - "A failed abort is never reported as an abort: the log line the sweep writes after a failed real merge says which of merge and abort failed, and quotes git's own error text - never the fixed word conflict when git reported no conflict."
+
+human_approval: approved
+human_ruling: "run & approve"
+human_ruling_recorded_by: operator (Claude Code, verbatim from the human, 2026-09-04)
+approval_context: >
+  A new feature file is authored here, so it needs a tap. No choice is posed
+  and there are no ruling_options. This is the creator half of the poisoned
+  merge the coordinator asked me to mint (evidence
+  backlog/evidence/main-sync-poisoned-merge-authorship-blind-20260904.md);
+  the detector half is BL-1387. One correction to that evidence you should
+  have before you tap: the daemon never reads git authorship. Its rule is
+  older and blinder than that - any MERGE_HEAD it did not create THIS tick
+  is a foreign human's (BL-1120). Every orphan on 2026-09-04 was the daemon's
+  own merge from the PREVIOUS tick, whose abort failed without a trace, and
+  the daemon then protected its own leftovers as a human's work. Appended
+  to the evidence file in this commit.
+
+description: |
+  ## What happened, from the daemon's own log
+
+  `master-main-reconcile-sweep` runs every ~25s. With local `main` ahead
+  and behind `origin/main` and a clean `merge-tree` verdict, the plan is
+  `:ff-absorb`, executed by `absorb-with-merge!`
+  (`master_main_reconcile_lib.bb`): fast-forward fails on a two-way
+  divergence, so a REAL `git merge --no-edit origin/main` runs on the
+  shared checkout. When that fails, the ladder is
+
+      (do (abort!) (fallback!))
+
+  `abort!` runs `git merge --abort` and its result is DISCARDED. The
+  fallback then logs the fixed string `conflict real-merge-attempted-and-aborted`
+  whether or not the abort took, and whether or not git reported a conflict.
+  On 2026-09-04 the verdict was clean every tick (`merge-tree` rc 0, both
+  incoming commits QA-ancestor rc 0) and the real merge still failed every
+  tick - the `merge!` adapter captures git's error text and nothing ever
+  logs it, so WHY is unknowable from the log.
+
+  When the abort fails - on this checkout the ordinary cause is
+  `.git/index.lock` held by another writer, since the concierge's topic
+  store, the coordinator and the specifier all commit here - `MERGE_HEAD`
+  stays. The next tick reads `merge-head-present?` and, by BL-1120's rule
+  "a pre-existing MERGE_HEAD is a foreign merge, never abort", surfaces
+  `human-merge-in-progress` and holds. It has just orphaned its own merge
+  and named a human as the owner. Timeline: MERGE_HEAD mtime 08:23:49Z,
+  daemon surfaces `human-merge-in-progress` at 08:23:50Z; again 08:40:31Z;
+  again 08:41:53Z. `pgrep -ax git` was empty each time, and the index
+  carried none of `HEAD..MERGE_HEAD` - a poisoned merge whose conclusion
+  would have reverted BL-1376's landing on push. The Operator hand-aborted
+  the first, the coordinator the second.
+
+  ## What is wrong, precisely
+
+  1. The abort's result is ignored and never logged (invariant 3).
+  2. The daemon keeps no record of which MERGE_HEAD it created, so the very
+     next tick cannot tell its own leftovers from a human's (invariant 1).
+  3. `git merge`'s actual error text is captured and thrown away; the log
+     asserts `conflict` as a label, not an observation.
+
+  ## How (direction, not mandate)
+
+  - Before `merge!`, write `.swarmforge/daemon/master-main-merge-owner.json`
+    (name fixed at mint - BL-1387 reads it): the sha it is about to merge,
+    the tick, the daemon pid, and a timestamp. Clear it after a successful
+    merge or a successful abort. Then `MERGE_HEAD == record.sha` is proof
+    of ownership and `may-abort-failed-merge?` can be true on a LATER tick
+    for that sha - still "a merge this daemon started", which is all BL-1120
+    ever protected.
+  - Check `abort!`'s exit. On failure, retry with a short bounded backoff
+    (index.lock is transient); if it still fails, leave the ownership record
+    in place, log `merge-abort-failed` with git's error text, and let the next tick
+    abort it by ownership. Never fall through to `fallback!` as if the abort
+    had succeeded - a rematch/reset on top of an open merge is a second
+    hazard.
+  - Log `merge!`'s error text on failure, and replace the fixed `conflict`
+    label with the observed outcome: `merge-failed`/`merge-abort-failed` plus the
+    text. Keep the existing `conflict` line ONLY for the case where git
+    actually reported a conflict, so BL-1214's e2e step 2 still holds.
+  - The lib stays pure and tested by
+    `swarmforge/scripts/test/master_main_reconcile_lib_test_runner.bb` and
+    its property runner; the daemon adapters are the only side-effecting
+    edits. Babashka has no mutation/CRAP/DRY wired: the hardener records the
+    degraded fallback and gates on those runners plus
+    `test_handoffd_master_main_reconcile_wiring.sh`.
+
+  ## Explicitly NOT in scope
+
+  - Classifying a MERGE_HEAD the daemon did NOT create (live human, or an
+    orphan from a killed pane) and surfacing it as orphaned rather than
+    human: **BL-1387**.
+  - Why the real merge fails every tick on this checkout. This ticket makes
+    the reason visible; fixing it is whatever that reason turns out to be.
+  - The concierge's topic store committing on the shared checkout without
+    coordination. It is one of the writers that contend for the lock, not
+    the cause of the orphan.
+
+qa_e2e_procedure: |
+  1. Fixture repo with a diverged origin (local ahead 1, origin ahead 1, no
+     content conflict) and a `merge!` adapter whose git is made to fail
+     after writing MERGE_HEAD (a pre-merge-commit hook that exits 1 is the
+     realistic way). Run one sweep tick: the ownership record names the
+     merged sha before the merge, and after the tick MERGE_HEAD is absent
+     and the record is cleared (abort succeeded).
+  2. Same, but hold `.git/index.lock` from a second process during the
+     abort: the tick ends with MERGE_HEAD present, the ownership record
+     present and naming that sha, and the log carrying `merge-abort-failed` with
+     git's lock error text - not `real-merge-attempted-and-aborted`.
+  3. Release the lock, run the next tick: the daemon aborts by ownership,
+     MERGE_HEAD is gone, the record is cleared, the log says so, and no
+     `human-merge-in-progress` was ever surfaced for it.
+  4. Foreign MERGE_HEAD (created by hand, no record, or a record naming a
+     different sha): the tick does not abort it and surfaces exactly as
+     today (invariant 2, BL-1120 runner still green).
+  5. `merge!` fails with a genuine conflict: the log still carries the
+     BL-1214 `conflict` line AND the error text; with a hook refusal it
+     carries `merge-failed` and the hook's text, never `conflict`.
+  6. Live regression: read `.swarmforge/daemon/handoffd.log` after the
+     landed daemon has run through a real divergence on this checkout and
+     confirm the failure reason for the real merge is now readable.
+  7. Remove the fixture root in a `finally`, sweeping by prefix before the
+     run too (BL-971).
+
+notes: |
+  `required_wiring` anchors 1 and 2 are the daemon's own new literals, but
+  `handoffd.bb` is the pre-existing live consumer of `absorb-with-merge!`
+  and the only process that can emit that log line or write that record,
+  so a parcel that changes the lib and forgets the daemon adapters fails
+  both. The BL-1235 caveat is acknowledged: the lib-side change is proved
+  by the runners, the anchors prove the daemon reached it.
+
+  Correction to the coordinator's evidence, carried here and appended
+  there: "the daemon's predicate infers human from git authorship" is not
+  what the code does. `merge-attempt-plan` / `absorb-dispatch-plan` key on
+  `merge-head-present?` alone and no authorship is read anywhere in
+  `master_main_reconcile_lib.bb` or `handoffd.bb` (grep this pass). The
+  family resemblance the coordinator saw is real, though: BL-1368's byline
+  and this rule both assign a decision to "a human" on evidence that
+  cannot distinguish one.
+
+  The 2026-09-04 orphans were the DAEMON's, established by timestamps:
+  each `human-merge-in-progress` surface is one second after a sweep tick
+  whose real merge ran, and each MERGE_HEAD mtime is that tick. No pane
+  merged; both main-checkout roles disclaimed it in-pane.
+
+  IR-DRY: run on the feature file at mint (see commit).
+
+  Mint-time INVEST: one observable outcome (the daemon never leaves its own
+  merge open unrecorded), one sitting, no unbuilt sibling; BL-1387 reads the
+  record this writes but is independently buildable on liveness alone.
+
+source: |
+  Coordinator note, priority 00, 2026-09-04T08:43Z: "Mint: poisoned-merge,
+  authorship-blind gate - evidence/main-sync-poisoned*". Evidence:
+  `backlog/evidence/main-sync-poisoned-merge-authorship-blind-20260904.md`
+  (coordinator, 801561f2f7); Operator write-up
+  `.swarmforge/operator/NOTE-main-merge-poisoned-20260904.md` sections 5-6.
+  The evidence's "Two fixes needed" are split here: fix 2 (the operation
+  leaving MERGE_HEAD fails loud or self-aborts) is this ticket; fix 1 (the
+  predicate stops assuming human, uses liveness) is BL-1387.
+
+assigned_to: coder

@@ -730,6 +730,14 @@ You are the specifier.
   non-fast-forward join is NEVER yours. BL-891's reconcile sweep in `handoffd`
   owns those. When the CLI says to wait, stop, report its output, and end the
   turn — your mint keeps until the next one.
+  - **Never commit while `.git/MERGE_HEAD` exists — a commit concludes
+    someone else's merge with your files folded in (2026-09-04).** Check for
+    it before every commit on the shared checkout. If the CLI's deadlock
+    reason is `orphaned-merge` (BL-1387) or reads `human-merge-in-progress`
+    while `pgrep -x git` is empty and the lock is stale, the merge was left
+    behind; clearing it is the coordinator's step 0 (its row names the
+    backup-then-abort recipe), not yours - keep your files on disk
+    untracked, say so, and commit when `MERGE_HEAD` is gone.
   - This is a different rule from "Does not receive QA merge work" below, which
     forbids merging FEATURE work. This one forbids the *reconciling* merge too:
     Article 1.2's "never merges" has no exception carved out for landing your own
