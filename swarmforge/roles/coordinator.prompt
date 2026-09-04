@@ -143,6 +143,19 @@ You are the coordinator.
 - **Fail-closed:** missing evidence, ambiguous YAML, or CLI failure is `hold`,
   same posture as the onboarding contract gate — never promote on a gate you
   could not evaluate.
+- **An active ticket carrying `freshness_check: required` is blocked until
+  YOU clear it (BL-1379).** An expedition's park reversal restores the
+  tickets it parked to the folder they came from - `backlog/active/` - with
+  `status: blocked`, `freshness_check: required` and `freshness_check_reason:`
+  naming the run, because the expedition may have invalidated them (BL-1309's
+  ruling was revised by the very run that parked it). Routing and the
+  dropped-parcel sweep already skip a blocked ticket; your part is the check:
+  run `node extension/out/tools/deprecate-check.js <project-root> <BL-id>`
+  (it reads `active/` as well as `paused/`). On `allow`: remove the two
+  fields, set `status: todo`, route as normal. On `hold`: send the specifier
+  the same priority-`00` note as a promotion hold and leave the mark. Never
+  clear it without the check, and never read it as the old hold/ strand -
+  the reason is in the ticket.
 - **A stale adjudication fingerprint on a ticket already in `backlog/active/`
   needs no chase (BL-1271, 2026-09-02).** The adjudication record is a
   PROMOTION-TIME artifact: `deprecate-check.js` is its only reader and

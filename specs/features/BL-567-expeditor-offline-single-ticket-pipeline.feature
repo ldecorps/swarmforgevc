@@ -189,9 +189,3 @@ Feature: Expeditor - drive one ticket through every gate with the swarm stopped
     And the report states the delta between the observed live set and the expected one
     And the report does not assert health it did not observe
 
-  # BL-567 restart-reports-parked-work-without-promoting-18
-  Scenario: the restart reports parked tickets instead of silently re-promoting them
-    Given a second ticket parked to backlog/hold/ during initiation
-    When the expeditor runs the fixture ticket to done and then restarts the stack
-    Then the report names the ticket left in backlog/hold/ and what it was holding
-    And that ticket is still in backlog/hold/ after the restart
