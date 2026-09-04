@@ -1,0 +1,137 @@
+id: BL-1384
+title: "The qwen-local seat's topic never reaches the cursor bridge while the front desk feeds it: the feeder forwards only the cursor-host and Bubble topics, so BL-1235's seat is dark in production and its messages open support subjects"
+milestone: M8
+type: defect
+severity: medium
+# medium: real but contained - one operator test seat, shipped by BL-1235
+# and green over fakes, delivers nothing in production, and each message to
+# it opens a spurious support subject. Nothing load-bearing depends on it.
+status: todo
+epic: local-llm-swarm
+priority: 41
+direction: human-intake
+depends_on: []
+mutation_cost: low
+slice_size_envelope: low
+required_stages: [coder, cleaner, architect, hardender, documenter, qa]
+
+acceptance: specs/features/BL-1384-the-local-seat-topic-reaches-the-bridge-through-the-front-desk.feature
+
+required_wiring:
+  - 'extension/src/tools/telegram-front-desk-bot.ts::readQwenLocalTopicId::the live poller must resolve the local seat topic to forward it - today the file never reads it'
+  - 'specs/pipeline/steps/bl1384LocalSeatTopicForwardedSteps.js::registerSteps::the handler file exists so discovery registers every scenario (BL-1371)'
+
+invariants:
+  - "A topic the bridge process owns - cursor host, Bubble, or the local seat - is forwarded whole to the bridge inbound queue and never opens a support subject, whether or not the bridge is currently draining."
+
+human_approval: pending
+approval_context: >
+  Split out of your provider-chat intake of 2026-09-04, which flagged this
+  as a question ("questions whether qwenLocalTopicId / Local Qwen is
+  reachable in production at all right now, for the identical reason") and
+  left it to the specifier. I verified it by reading the code, not by a live
+  test: the answer is no, for exactly the reason you suspected. No choice is
+  posed and there are no ruling_options. Approve if you want the seat to
+  work; reject if the qwen-local seat is retired and BL-1235's contract
+  should be retired with it - say which.
+
+description: |
+  ## The gap (verified this pass by reading both processes)
+
+  BL-1235 put the qwen-local seat inside the cursor-bridge process:
+  `telegramCursorBridgeLive.ts` checks `deps.qwenLocalTopicId` in
+  `processInboundUpdates` and runs `runLocalSeatTurn` for that topic. Its
+  acceptance passes over fakes where the bridge polls Telegram itself.
+
+  In production the bridge does not poll. `runCursorBridgePollOnce` chooses
+  its source with `resolveInboundQueueFromFeeder(opDir)`: while the front
+  desk's poll heartbeat is fresh, the bridge only DRAINS
+  `drainCursorBridgeInboundUpdates` - the file queue the front desk feeds.
+  And the front desk feeds it selectively: `attemptCursorBridgeTopicExclusion`
+  in `telegramFrontDeskBotCore.ts` forwards an update only when
+  `decideCursorBridgeExclusion(update, [cursorTopicId, bubbleTopicId])`
+  says `drop`. The local seat's topic is not in that list, and
+  `telegram-front-desk-bot.ts` never reads `readQwenLocalTopicId` at all.
+
+  So with the front desk up - the normal state - a message in the qwen-local
+  topic is never forwarded, never reaches the bridge, and falls through to
+  `openSubjectAndRecord`: the same "ticket icon instead of an answer" symptom
+  the provider-chat intake saw on its own topics.
+
+  ## How (direction, not mandate)
+
+  - The front-desk poller resolves the local seat topic the same way it
+    resolves the cursor and Bubble topics (an adapter, `readQwenLocalTopicId`
+    from `localQwenSeatLive.ts`, gated by the same routing-enabled flag) and
+    includes it in the owned-topic list handed to `decideCursorBridgeExclusion`.
+  - The bridge side needs no change: a drained update for that topic already
+    takes BL-1235's branch (`inbound.topicId === deps.qwenLocalTopicId`).
+    Verify that with the fixture in scenario 02 rather than assuming it.
+  - Keep the front-desk topic map scrub consistent: if the local seat topic
+    can also appear in the front-desk topic map, it must be scrubbed from
+    subject routing exactly as the cursor topics are
+    (`frontDeskTopicMapWithoutCursorBridge`).
+
+  ## Explicitly NOT in scope
+
+  - The provider-chat seats (**BL-1383**), which answer in the front desk
+    process itself rather than being forwarded.
+  - Changing where the qwen-local seat runs. Moving it out of the bridge
+    process is a design change BL-1235 already argued against.
+
+qa_e2e_procedure: |
+  1. Unit and acceptance over fakes: with the feeder live, a message in the
+     local seat topic is appended to the bridge inbound queue and no subject
+     is opened; the bridge, draining that queue, answers in the topic; an
+     unowned topic is still not forwarded; with no local seat map, nothing
+     changes (scenarios 01-04).
+  2. Live, on this host: with `local-seat-topic-map.json` binding the Local
+     Qwen topic and the local endpoint up, post a message in that topic and
+     confirm the seat answers there and the topic icon does not change to the
+     ticket icon. Then stop the local endpoint and confirm BL-1235's
+     "unavailable endpoint reports the reason in the topic" still holds via
+     the forwarded path.
+  3. Post in the cursor host topic and in an unbound topic and confirm each
+     behaves exactly as before.
+  4. Remove any fixture root in a `finally`, sweeping by prefix before the run
+     too (BL-971).
+
+notes: |
+  `required_wiring` anchor 1 is a genuine consumer anchor: `telegram-front-desk-bot.ts`
+  and `telegramFrontDeskBotCore.ts` contain no case-insensitive match for
+  `qwenlocal`, `localSeatTopicMap` or `localQwenSeatLive` today (grep this
+  pass), and the poller is the pre-existing live consumer. The reader
+  `readQwenLocalTopicId` already exists in `localQwenSeatLive.ts`, so the
+  pattern is a literal that will exist (BL-874).
+
+  BL-1235's feature file is NOT retired or reworded by this ticket: its
+  scenarios describe the bridge side, which stays true; this ticket adds the
+  feeder-side contract. Scenario 02 here deliberately re-asserts BL-1235's
+  first scenario through the forwarded path so the end-to-end route has a
+  gate of its own.
+
+  This is the BL-298 shape named in the specifier prompt: a consumer green
+  over fakes while nothing populates its store in production. Recorded here
+  so the next seat behind a topic is specced with its feeder path named.
+
+  IR-DRY: run on the feature file at mint (see commit).
+
+  Mint-time INVEST: one observable outcome (the local seat answers with the
+  front desk up), one sitting, no unbuilt sibling.
+
+source: |
+  Raw intake `backlog/INTAKE-provider-chat-seat-topics-never-answer.md` (human
+  via Claude Code, 2026-09-04), drained by the specifier 2026-09-04 and split
+  1:2 - **BL-1383** carries the provider-chat seat; this ticket carries the
+  qwen-local reachability question the intake flagged. The intake is archived
+  at `backlog/archive/INTAKE-provider-chat-seat-topics-never-answer.md`.
+
+  Human words carried verbatim (Article 5.3):
+
+  - "(and, as a byproduct, this intake questions whether
+    `qwenLocalTopicId`/"Local Qwen" is reachable in production at all right
+    now, for the identical reason — out of scope here, flagged for whoever
+    picks this up)."
+  - "Consider whether to fold in a look at `qwenLocalTopicId` reachability
+    (flagged above) as a sibling ticket or explicitly out of scope — it is the
+    same defect class but a separate topic/seat, not touched by tonight's fix."
