@@ -137,3 +137,5 @@ source: |
   BL-9009 fixture stale post-BL-1371, untracked". Evidence:
   `.worktrees/QA/backlog/evidence/BL-1374-qa-pass-20260904.md` (QA branch),
   reproduced by the specifier on `main` this pass.
+
+assigned_to: coder
