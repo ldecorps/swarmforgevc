@@ -227,7 +227,10 @@ notes: |
   the parameterized form of the same step and one handler pattern serves both, so this is
   not accidental drift.
 
-abandoned_commits: [6077a6bfbc, fefcb7c13d]
+abandoned_commits: [6077a6bfbc, fefcb7c13d, 359a2c8e66]
+# 359a2c8e66 added 2026-09-04 (QA hand-built land replay, BL-1241): the
+# commit cited to land_step_cli.bb for this land, superseded by the
+# tip-pure replay 60043c433f actually landed.
 # BL-1192's documented escape for a deliberate rebuild-off-main. 6077a6bfbc is
 # the architect's bounce revert and was this task's last handoff commit at the
 # time, so the send-time task-scope gate walked every commit on the coder
