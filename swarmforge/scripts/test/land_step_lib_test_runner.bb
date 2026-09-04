@@ -541,6 +541,217 @@
     (assert= "own-paths (07): a shared path with a later untagged own edit atop an unlanded sibling's touch is never dropped (invariant 1)"
              true (contains? (set (:paths result)) "shared.txt"))))
 
+;; ── BL-1374: a sync merge is not credited with its passengers ─────────────
+;;
+;; `path-owner-tickets` runs every commit git's path-scoped history walk
+;; reports through `commit-ticket-id`. That walk already elides a merge that is
+;; TREESAME to a parent on the path - so a sync merge that merely carried a
+;; passenger through is invisible, and probe fixtures built that way show no
+;; defect at all.
+;;
+;; The shape that bites is the CLEAN AUTO-MERGE. When both sides changed the
+;; same file in different places, the merge result differs from BOTH parents,
+;; so the walk reports the merge, and its subject decides the owner. Every line
+;; in it was written by one side or the other; the merger wrote none. Measured
+;; on the live tip that produced the report (5d4486eb08, "Merge main into
+;; swarmforge-QA for BL-1309 human_approval restore"): `git diff-tree --cc
+;; --name-only` lists BL-1296's and BL-1309's ticket files, while the same
+;; command WITH its patch produces not one hunk - the merge authored nothing
+;; anywhere, and BL-1309's own commits never touched BL-1296's file.
+;;
+;; So the discriminator is the dense combined patch, not its name list: a merge
+;; owns a path only where it actually wrote a line there. `sibling-own-line-
+;; changes` skips merges outright for the same reason ("a merge authors no
+;; lines of its own"); this is that rule with the one exception a merge really
+;; can author - a conflict resolution - kept, because invariant 3 says no path
+;; the ticket's own commits changed may be dropped from the replay.
+
+;; 01 + 02: a clean auto-merge naming this ticket carries two OTHER tickets'
+;; work. Neither passenger becomes this ticket's own path, and this ticket's
+;; real work still replays.
+(with-fixture [root]
+  (commit! root "shared.txt" "a
+b
+c
+d
+e
+f
+g
+h
+i
+j
+" "seed shared file")
+  (mark-origin-main-here! root)
+  ;; a sibling's unlanded work, on local main
+  (commit! root "shared.txt" "a
+b
+c
+d
+e
+f
+g
+h
+i
+j
+BL-9002 bounce history
+"
+           "BL-9002: sibling appends its bounce history")
+  ;; this ticket's branch, off origin/main, carrying ANOTHER sibling's edit to
+  ;; the same file - the long-lived role branch this arrives on in real life
+  (sh! root "git" "checkout" "-q" "-b" "tA" (:out (sh! root "git" "rev-parse" "refs/remotes/origin/main")))
+  (commit! root "shared.txt" "BL-9003 header
+b
+c
+d
+e
+f
+g
+h
+i
+j
+"
+           "BL-9003: a different sibling edits the top of the same file")
+  (commit! root "own.txt" "own
+" "BL-9001: own work")
+  (sh! root "git" "merge" "--no-ff" "-q" "-m" "BL-9001: sync main into the branch" "main")
+  (let [commit (:out (sh! root "git" "rev-parse" "HEAD"))
+        cc-names (:out (sh! root "git" "diff-tree" "--no-commit-id" "--cc" "--name-only" "-r" commit))
+        cc-patch (:out (sh! root "git" "diff-tree" "--no-commit-id" "--cc" "-r" commit))
+        result (land-step-lib/own-paths root commit "BL-9001" #{"BL-9002" "BL-9003"})]
+    ;; The premise, asserted rather than assumed: the merge IS reported for the
+    ;; shared path (so the old attribution really did reach it) and yet wrote
+    ;; nothing there.
+    (assert-includes "own-paths (BL-1374 premise): the merge differs from both parents on the shared path"
+                     cc-names "shared.txt")
+    (assert= "own-paths (BL-1374 premise): and the merge authored no line anywhere - it only combined"
+             "" cc-patch)
+    (assert= "own-paths (BL-1374 01): a passenger the merge merely carried is not this ticket's own path"
+             false (contains? (set (:paths result)) "shared.txt"))
+    (assert= "own-paths (BL-1374 01): so the land is not refused over an entanglement that is not there"
+             nil (:warning result))
+    (assert= "own-paths (BL-1374 02): and this ticket's own work still replays"
+             true (contains? (set (:paths result)) "own.txt"))))
+
+;; 03: a genuine entanglement is still refused. This is the test that matters
+;; most - narrowing attribution must not let a ticket's real shared-file work
+;; ride into main unnoticed (invariant 1, BL-1332's whole reason).
+(with-fixture [root]
+  (commit! root "shared.txt" "a
+b
+c
+" "seed shared file")
+  (mark-origin-main-here! root)
+  (commit! root "shared.txt" "a
+b
+c
+BL-9002 line
+" "BL-9002: sibling appends")
+  (sh! root "git" "checkout" "-q" "-b" "tA" (:out (sh! root "git" "rev-parse" "refs/remotes/origin/main")))
+  ;; this ticket's OWN, non-merge commit edits the shared file
+  (commit! root "shared.txt" "BL-9001 line
+a
+b
+c
+" "BL-9001: own edit to the shared file")
+  (sh! root "git" "merge" "--no-ff" "-q" "-m" "BL-9001: sync main into the branch" "main")
+  (let [commit (:out (sh! root "git" "rev-parse" "HEAD"))
+        result (land-step-lib/own-paths root commit "BL-9001" #{"BL-9002"})]
+    (assert= "own-paths (BL-1374 03): a real shared-file edit is still refused" nil (:paths result))
+    (assert-includes "own-paths (BL-1374 03): naming the sibling it is shared with"
+                     (:warning result) "BL-9002")
+    (assert-includes "own-paths (BL-1374 03): and naming the path"
+                     (:warning result) "shared.txt")))
+
+;; 04: detection is untouched. Narrowing the PATH SET must not narrow the
+;; report (BL-1308 invariant 2, widened deliberately).
+(with-fixture [root]
+  (commit! root "shared.txt" "a
+b
+c
+d
+e
+f
+g
+h
+i
+j
+" "seed shared file")
+  (mark-origin-main-here! root)
+  (commit! root "shared.txt" "a
+b
+c
+d
+e
+f
+g
+h
+i
+j
+BL-9002 tail
+" "BL-9002: sibling appends")
+  (sh! root "git" "checkout" "-q" "-b" "tA" (:out (sh! root "git" "rev-parse" "refs/remotes/origin/main")))
+  (commit! root "shared.txt" "BL-9003 head
+b
+c
+d
+e
+f
+g
+h
+i
+j
+" "BL-9003: another sibling edits the top")
+  (commit! root "own.txt" "own
+" "BL-9001: own work")
+  (sh! root "git" "merge" "--no-ff" "-q" "-m" "BL-9001: sync main into the branch" "main")
+  (let [commit (:out (sh! root "git" "rev-parse" "HEAD"))
+        {:keys [unlanded warning]} (land-step-lib/entangled-siblings root commit "BL-9001")]
+    (assert= "entangled-siblings (BL-1374 04): detection still reads cleanly" nil warning)
+    (assert= "entangled-siblings (BL-1374 04): the passenger's ticket is still reported as unlanded"
+             true (contains? (set unlanded) "BL-9002"))
+    (assert= "entangled-siblings (BL-1374 04): and so is the other passenger's"
+             true (contains? (set unlanded) "BL-9003"))))
+
+;; 05, invariant 3: a merge that really DID author content - a conflict a role
+;; resolved by hand - still owns the path it resolved. The narrowing is "a
+;; merge owns only what it wrote", never "a merge owns nothing".
+(with-fixture [root]
+  (commit! root "shared.txt" "a
+b
+" "seed shared file")
+  (mark-origin-main-here! root)
+  (commit! root "shared.txt" "a
+MAIN
+" "BL-9002: sibling changes line 2")
+  (sh! root "git" "checkout" "-q" "-b" "tA" (:out (sh! root "git" "rev-parse" "refs/remotes/origin/main")))
+  (commit! root "shared.txt" "a
+BRANCH
+" "BL-9003: another sibling changes line 2 differently")
+  ;; own work of this ticket's own, so an "everything was excluded" refusal
+  ;; cannot stand in for the shared-path one and make this test vacuous.
+  (commit! root "own.txt" "own\n" "BL-9001: own work")
+  (sh! root "git" "merge" "--no-ff" "-q" "-m" "BL-9001: sync main into the branch" "main")
+  ;; the conflict, resolved by hand into content NEITHER parent holds
+  (spit (str (fs/path root "shared.txt")) "a
+RESOLVED BY THIS TICKET
+")
+  (sh! root "git" "add" "-A")
+  (sh! root "git" "commit" "-q" "-m" "BL-9001: sync main into the branch")
+  (let [commit (:out (sh! root "git" "rev-parse" "HEAD"))
+        cc-patch (:out (sh! root "git" "diff-tree" "--no-commit-id" "--cc" "-r" commit))
+        result (land-step-lib/own-paths root commit "BL-9001" #{"BL-9002" "BL-9003"})]
+    (assert-includes "own-paths (BL-1374 05 premise): the resolving merge DID author a line"
+                     cc-patch "shared.txt")
+    (assert= "own-paths (BL-1374 05): a merge that resolved content still owns that path, so the shared-path refusal still fires (invariant 3)"
+             nil (:paths result))
+    ;; The SHARED-PATH refusal specifically. Without this, a merge credited
+    ;; with nothing at all would still refuse - by the different route of
+    ;; having excluded every delivered path as somebody else's - and this
+    ;; assertion would pass while invariant 3 was broken.
+    (assert-includes "own-paths (BL-1374 05): and it is the shared-path refusal, not the everything-was-excluded one"
+                     (:warning result) "is shared with unlanded sibling(s)")
+    (assert-includes "own-paths (BL-1374 05): naming the sibling" (:warning result) "BL-900")))
+
 ;; ── BL-1334: the land step records the replay->approved-source mapping ─────
 ;; The land step publishes a tip-pure replay to main and does not advance
 ;; swarmforge-QA, so QA's own approved work reads as unapproved at the instant
