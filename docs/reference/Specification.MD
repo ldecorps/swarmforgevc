@@ -1,5 +1,40 @@
 # SwarmForge VS Code Extension — Specification
 
+**Last Updated:** September 4, 2026 (BL-1391: the reconcile sweep's
+`merge-tree` verdict `:conflict` always refused, once local `main` was
+ahead — correct for code, but what actually collides on this shared
+checkout day to day is bookkeeping: QA's land writing
+`abandoned_commits:` into a ticket YAML on `origin/main` while the
+specifier appended `notes:` to the same YAML on local `main`; the
+coordinator closing a ticket while the concierge appends a topic record;
+two roles appending to one evidence file — each a lossless two-appends
+collision that halted the coordinator's bookkeeping until a human merged
+by hand, four times on 2026-09-04, the same daily cost BL-1390 closes
+from the push side. A conflict now resolves instead of refusing when
+EVERY conflicted path is in the bookkeeping set (a ticket YAML under
+`backlog/`, `backlog/topics/*.json`, `backlog/evidence/*.md`,
+`backlog/answers-archive/*.md`, `docs/briefings/**` — invariant 1,
+exhaustive; a mixed conflict with even one path outside the set resolves
+nothing at all) AND every conflicted hunk is append-only on both sides
+against the merge base (no deletion, no rewrite of an existing line —
+invariant 2; a scalar field differing on both sides is always a rewrite
+and always refuses). Resolution keeps both sides' additions in
+ours-then-theirs order — for `notes:` both appended entries land, for
+`abandoned_commits:`/`bounce_history:` the union with order preserved and
+duplicates dropped. The absorb is a real merge commit through the SAME
+`absorb-with-merge!` ladder and pre-merge-commit guards every other
+reconcile merge passes — never bypassed — whose body names each resolved
+path and its strategy, and the daemon logs `bookkeeping-conflict` with
+the same list (invariant 3: never silent). Ownership/abort behavior is
+unchanged from BL-1386. Explicitly not touched: `specs/features/**`
+conflicts still refuse (the specifier also now avoids creating them, per
+a rule landed in `specifier.prompt` with this mint); preventing the
+divergence in the first place is BL-1390's, not this ticket's. Acceptance:
+`specs/features/BL-1391-the-reconcile-resolves-a-bookkeeping-only-conflict-instead-of-refusing.feature`.
+How-to: `docs/how-to/BL-891-master-main-reconcile-sweep.md` (extended in
+place — a new section plus a verdict-table row). No diagram depicts
+reconcile-sweep internals at this granularity.)
+Prior entry —
 **Last Updated:** September 4, 2026 (BL-1392: nothing checked that the
 cron daemon this swarm schedules into was actually alive. On this WSL2
 host (no `[boot]` command in `/etc/wsl.conf`) cron stopped on 2026-08-30
