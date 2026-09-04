@@ -17,6 +17,14 @@ if ! command -v crontab >/dev/null 2>&1; then
 fi
 
 existing="$(crontab -l 2>/dev/null || true)"
+
+# BL-1382: say what is being LEFT, not only what is removed. An unmarked line
+# naming this root is the human's, and reporting it is how they see that the
+# tool noticed it and chose not to touch it (human ruling, 2026-09-04). This
+# runs before the early exit below, because "no swarmforge lines for R" is
+# exactly the case where a human's line naming R is most likely present.
+printf '%s\n' "$existing" | swarmforge_cron_report_unmarked "$ROOT"
+
 if ! swarmforge_cron_root_has_lines "$ROOT" "$existing"; then
   echo "No swarmforge cron lines for $ROOT"
   exit 0
