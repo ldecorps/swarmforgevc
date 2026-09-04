@@ -3710,6 +3710,54 @@
       (log! "master-main-reconcile-escalation-email" (name reason))
       (catch Exception e (log! "master-main-reconcile-escalation-email-error" (.getMessage e))))))
 
+(defn expedite-park-reversal-sweep!
+  "BL-1379: reverse any expedition park whose expedition has since landed.
+
+   Reads every run's own durable park record under .swarmforge/expedite/*/ and
+   asks, per record, whether that expedition's ticket is on main yet. Only
+   tickets the record names are ever touched, so a ticket a human put in
+   backlog/hold/ is never considered - Article 3.1 is untouched.
+
+   A sweep and not a step in the expedition, because the expedition's process
+   exits before its commit lands: nothing inside the run can observe the event
+   the reversal waits for."
+  []
+  (try
+    (let [expedite-root (fs/path project-root ".swarmforge" "expedite")]
+      (when (fs/exists? expedite-root)
+        (doseq [run-dir (filter fs/directory? (fs/list-dir expedite-root))]
+          ;; Only runs that parked something, and only until their reversal has
+          ;; reached a terminal state - otherwise every historical run costs a
+          ;; process spawn on every tick, forever, to be told again that it has
+          ;; nothing to do.
+          (when (and (fs/exists? (fs/path run-dir "park-record.json"))
+                     (not (fs/exists? (fs/path run-dir "unpark-done.json"))))
+            (let [res (daemon-cycle-guard-lib/sh!
+                       ["bb" (str (fs/path project-root "swarmforge" "scripts" "expedite_cli.bb"))
+                        "unpark" (str project-root) (str run-dir)]
+                       {:dir (str project-root)})
+                  out (str/trim (str (:out res)))
+                  report (try (some-> (->> (str/split-lines out)
+                                           (filter #(str/starts-with? % "UNPARK_REPORT "))
+                                           last)
+                                      (subs (count "UNPARK_REPORT "))
+                                      (json/parse-string true))
+                              (catch Exception _ nil))]
+              ;; Logged when it DID something, or when it said something the
+              ;; sweep could not read. A reversal still waiting on its
+              ;; expedition to land is the ordinary state and says nothing new
+              ;; each tick.
+              (cond
+                (seq (:restored report))
+                (log! "expedite-park-reversal" (str (fs/file-name run-dir))
+                      "restored" (str/join "," (:restored report)))
+
+                (nil? report)
+                (when-not (str/blank? out)
+                  (log! "expedite-park-reversal-unreadable" (str (fs/file-name run-dir)) out))))))))
+    (catch Exception e
+      (log! "expedite-park-reversal-error" (.getMessage e)))))
+
 (defn master-main-reconcile-sweep! []
   (try
     (master-main-reconcile-lib/sweep!
@@ -4547,6 +4595,19 @@
                     ;; this cadence block is.
                     (run-sweep! "master-main-reconcile-sweep"
                         #(master-main-reconcile-sweep!))
+                    ;; BL-1379: an expedition parks every other active ticket
+                    ;; into backlog/hold/ and nothing ever moved them back -
+                    ;; Article 3.1 makes hold/ human-held, so a mechanical park
+                    ;; became indistinguishable from a deliberate one and five
+                    ;; tickets sat there for hours. The reversal belongs on a
+                    ;; SWEEP rather than in the expedition: the expedition's
+                    ;; process exits long before its commit lands (QA lands it
+                    ;; later, in another process), so the run itself can never
+                    ;; be the trigger. Sharing this cadence means the queue
+                    ;; comes back within a tick of the land, and the sweep is
+                    ;; self-healing for parks left by runs that already ended.
+                    (run-sweep! "expedite-park-reversal-sweep"
+                        #(expedite-park-reversal-sweep!))
                     ;; BL-668: post-QA role-branch sweep shares the same cadence
                     ;; as master-main-reconcile immediately above — fast-forward
                     ;; clean pipeline role branches after origin/main advances.
