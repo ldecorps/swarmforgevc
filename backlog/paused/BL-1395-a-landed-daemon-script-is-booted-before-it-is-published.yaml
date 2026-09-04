@@ -1,0 +1,132 @@
+id: BL-1395
+title: "A landed daemon script is booted before it is published: the land and the commit guards analyse every changed Babashka script and boot handoffd from the tree under test, and handoffd's bare (-main) is guarded so load-file is a pure analysis probe"
+milestone: M8
+type: defect
+severity: high
+# high: a broken safety signal with swarm-down reach. The BL-1392 land put
+# a daemon script on main that fails Babashka's analysis at load; the live
+# handoffd crash-looped from 18:20Z - no wakes, chases, sweeps, reconcile or
+# nudges - and the land's verification was three greps. The same class
+# already hid BL-1381's crash for eight days. Not critical only because the
+# repair is a minutes-long re-splice by QA and the mailbox backup still
+# delivered the escalation.
+status: todo
+epic: swarm-reliability
+priority: 7
+direction: swarm-reported
+depends_on: []
+mutation_cost: medium
+slice_size_envelope: medium
+required_stages: [coder, cleaner, architect, hardender, documenter, qa]
+
+acceptance: specs/features/BL-1395-a-landed-daemon-script-is-booted-before-it-is-published.feature
+
+required_wiring:
+  - 'swarmforge/scripts/run_commit_guards.sh::check_bb_scripts_load.sh::the commit-time guard set every commit on main runs, including a hand-splice; the new guard must sit in it. Script name fixed at mint (BL-874); grep today returns 0'
+  - 'swarmforge/scripts/land_step_lib.bb::check_bb_scripts_load.sh::the land replay tree-guard list (BL-1375 rider) - a hand-built land that skips the replay still meets the commit guards above, and a replay that does not must meet it here'
+  - 'swarmforge/scripts/handoffd.bb::babashka.file::the bare (-main) at the foot of the daemon must be guarded by the same *file* check every other bb script uses, so load-file analyses without running - grep today returns 0 in this file'
+  - 'specs/pipeline/steps/bl1395DaemonBootedBeforePublishSteps.js::registerSteps::the handler file exists so discovery registers every scenario (BL-1371)'
+
+invariants:
+  - "No commit reaches main carrying a Babashka script that fails SCI analysis: every .bb file a commit or a land changes is load-filed (analysis only, its -main guarded) against the tree under test, and a failure names the file, line and symbol and refuses - a grep for a label is never accepted as proof a file loads."
+  - "handoffd in particular is BOOTED from the tree under test, not merely analysed: the guard starts it against a fixture root and waits for one heartbeat, because SCI analyses each defn eagerly and a forward reference inside a defn is only proven absent by loading the whole file in order."
+  - "The guard's verdict is a function of the tree under test alone, never of the checking worktree (BL-1385 invariant 2 carried): a script that loads in the checker's worktree but not on the tree refuses."
+
+human_approval: pending
+approval_context: >
+  A new feature file is authored here, so it needs a tap. No choice is posed
+  and there are no ruling_options. The live outage is being repaired by QA
+  from the adjudication (backlog/evidence/handoffd-crash-loop-bl1392-splice-dropped-hardener-fix-20260904.md);
+  this ticket is the guard that makes a grep-verified land of a daemon
+  script impossible to publish.
+
+description: |
+  ## What is wrong
+
+  Babashka's SCI analyses a `defn` eagerly, so a file whose body references
+  a symbol not yet defined - a missing function, a runtime `require`, a
+  forward reference - fails at LOAD, before any function runs. Three times
+  in eight days such a file reached `main` unseen: BL-1381
+  (`shift_schedule_applier_lib.bb`, since 2026-08-27, every consumer
+  crashed), and twice today on BL-1392 - first caught by the hardener while
+  hardening a different ticket, then re-introduced by QA's hand-splice at
+  land, where the verification was three greps for `required_wiring`
+  labels. The live daemon crash-looped from 18:20Z. Nothing on the commit
+  path or the land path loads a changed `.bb` file, and `handoffd.bb` ends
+  with a bare `(-main)`, so even a willing `load-file` probe would start
+  the daemon instead of analysing it.
+
+  ## How (direction, not mandate)
+
+  - `check_bb_scripts_load.sh` (name fixed at mint): for every `.bb` under
+    `swarmforge/scripts/` that the commit or the replayed tree changes,
+    `bb -e '(load-file ...)'` against a checkout of the tree under test
+    (invariant 3), with `*command-line-args*` empty; exit non-zero naming
+    file, line and symbol on any analysis error. Libraries load in
+    isolation; scripts that `load-file` siblings load the siblings too, so
+    the probe runs from the tree's own scripts dir.
+  - Guard `handoffd.bb`'s `(-main)` with
+    `(when (= *file* (System/getProperty "babashka.file")) (-main))`, the
+    idiom the other scripts already use, so the probe above is safe.
+  - For `handoffd.bb` specifically, also BOOT it (invariant 2): the guard
+    starts it against a mkdtemp fixture root the way
+    `test_handoffd_push_sweep_wiring.sh` does and waits for one heartbeat
+    line, bounded; that is the test that caught today's defect and it must
+    run on the tree being published, not on a branch.
+  - Wire the guard into `run_commit_guards.sh` (so a hand-splice on main
+    meets it) and into `land_step_lib.bb`'s tree-guard list (so a replay
+    meets it), under the file's capture-each-status discipline
+    (BL-1242/BL-1252), never `set -e`.
+  - Fixture roots per invocation, reaped by dead owner pid or age, never a
+    blind prefix sweep (BL-1385/BL-1390).
+
+  ## Explicitly NOT in scope
+
+  - Repairing today's `main`: QA's re-splice, per the adjudication.
+  - Why the splice took an earlier version of the block: recorded, not
+    ticketed - the guard makes the outcome unpublishable whatever the cause.
+  - Handler module graphs (BL-1385) and land attribution (BL-1389).
+
+qa_e2e_procedure: |
+  1. Fixture tree with a `.bb` lib containing `(defn f [] (g))` before
+     `(defn g [] 1)`: the guard refuses naming the file, line and `g`. Move
+     `g` above `f`: passes.
+  2. Fixture tree with a lib doing a runtime `(require '[babashka.process
+     :as process])` inside a fn body and calling `process/shell`
+     (BL-1381's shape): refuses.
+  3. `handoffd.bb` from a tree where `cron-heartbeat-state` calls an
+     undefined `read-json` (today's shape): the boot step fails within the
+     bound naming `handoffd.bb:<line>`; from the QA tip's shape: boots, one
+     heartbeat, passes.
+  4. Invariant 3: a lib that loads in the checker's worktree (symbol defined
+     there) but not on the tree: refuses.
+  5. `run_commit_guards.sh` on a commit changing a broken `.bb`: the guard
+     chain fails naming it and the other guards still report; the land
+     replay on the same tree: refused with the same name.
+  6. Regression on the real tree: `bb -e '(load-file
+     "swarmforge/scripts/handoffd.bb")'` on the landed tree exits 0 without
+     starting a daemon (the guarded -main), and `test_handoffd_push_sweep_wiring.sh`
+     passes.
+  7. Remove fixture roots in a `finally`, reaping only roots no live run
+     owns (dead owner pid or age bound - BL-1385/BL-1390).
+
+notes: |
+  `required_wiring` anchors 1-3 are consumer anchors: the two guard lists
+  are pre-existing live paths and the bare `(-main)` is the one line in
+  the daemon that makes a load probe impossible today; all three literals
+  are absent (grep this pass). Anchor 3's pattern is the property name the
+  idiom reads, which cannot appear in handoffd.bb unless the guard is
+  written.
+
+  IR-DRY: run on the feature file at mint (see commit).
+
+  Mint-time INVEST: one observable outcome (a daemon script that cannot
+  load never reaches main), one sitting, no unbuilt sibling - the boot test
+  exists, the guard lists exist, the idiom exists.
+
+source: |
+  Coordinator note, priority 00, 2026-09-04T18:26Z: "URGENT: handoffd
+  crash-loops - BL-1392's read-json unresolved symbol". Adjudication:
+  `backlog/evidence/handoffd-crash-loop-bl1392-splice-dropped-hardener-fix-20260904.md`.
+  The hardener's own finding of the same two defects earlier today:
+  `BL-1392-hardener-critical-fix-handoffd-load-crash-20260904.md` (QA branch).
