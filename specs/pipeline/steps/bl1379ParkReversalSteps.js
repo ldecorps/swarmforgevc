@@ -193,6 +193,52 @@ function registerSteps(registry) {
     assert.match(entry.reason, /^skip-/, `${id} was not reported as skipped: ${entry.reason}`);
   });
 
+  // ── Scenarios 08/09, added by the specifier's 2026-09-04 amendment after
+  //    the option-1 scenario was RETIRED (never reworded). The mark is not a
+  //    flag: `status: blocked` is the half promote_and_route_next.sh and the
+  //    dropped-parcel sweep actually read, so the ticket is genuinely
+  //    unworkable rather than merely annotated - which is what my own first
+  //    version got wrong, marking a ticket that the coordinator's depth check
+  //    would have picked straight back up.
+  scoped(/^"(BL-\d+)" reads status blocked$/, (ctx, id) => {
+    assert.equal(
+      ctx.bl1379.report.restoredStatus,
+      'blocked',
+      `${id} was restored without being blocked: ${JSON.stringify(ctx.bl1379.report)}`
+    );
+  });
+
+  scoped(/^"(BL-\d+)" carries freshness_check required naming the expedition$/, (ctx, id) => {
+    const { report } = ctx.bl1379;
+    assert.equal(report.marked, true, `${id} carries no freshness_check field`);
+    // Naming the run is what lets a coordinator tell WHICH expedition to check
+    // against; a bare flag would say only that something happened.
+    assert.equal(
+      report.markNamesRun,
+      true,
+      `the mark does not name the expedition that parked ${id}`
+    );
+  });
+
+  scoped(/^the promotion helper skips "(BL-\d+)" as blocked$/, (ctx, id) => {
+    // Asked of the REAL promotion gate, not restated here: the mark is only
+    // worth anything if production's own gate refuses the ticket.
+    assert.equal(
+      ctx.bl1379.report.promotionBlocked,
+      true,
+      `the promotion gate would still promote ${id}: ${JSON.stringify(ctx.bl1379.report)}`
+    );
+  });
+
+  scoped(/^the report names "(BL-\d+)" as restored and marked$/, (ctx, id) => {
+    const { report } = ctx.bl1379;
+    assert.ok(report.restored.includes(id), `${id} not named as restored`);
+    assert.ok(
+      (report.restoredAndMarked || []).includes(id),
+      `${id} is not named as restored AND marked - "back" and "back but not workable" are different facts to the reader: ${JSON.stringify(report)}`
+    );
+  });
+
   scoped(/^a durable park record names "(BL-\d+)"$/, (ctx, id) => {
     // The record is what drives the reversal, so its presence is proven by the
     // reversal having acted on exactly that ticket and no other.

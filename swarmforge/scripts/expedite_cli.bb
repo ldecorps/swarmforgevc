@@ -441,23 +441,29 @@
        (zero? (:exit (sh {:dir (str project-root)}
                          "git" "merge-base" "--is-ancestor" (str commit) "main")))))
 
-(defn- mark-needs-freshness-check! [project-root ticket folder run-ticket]
-  ;; The human's ruling (option 3): restored to the prior folder AND marked as
-  ;; needing a freshness check before it may be worked. A ticket field, so the
-  ;; Article 3.6 gate and a human reading the file see the same statement.
+(defn- mark-needs-freshness-check!
+  "Write the restored ticket's mark, per backlog-schema.md's freshness_check
+   entry: status blocked (the half promote_and_route_next.sh and the
+   dropped-parcel sweep actually read), the field saying WHY, and the reason
+   naming the expedition.
+
+   Idempotent: a ticket already carrying the mark is left alone rather than
+   accumulating duplicates. This code never CLEARS the mark - clearing is the
+   coordinator's after deprecate-check.js allows, and machinery that could
+   clear its own mark would make the mark meaningless."
+  [project-root ticket folder run-ticket]
   (when-let [f (ticket-file project-root folder ticket)]
     (let [body (slurp (str f))
-          field expedite-lib/freshness-mark-field]
-      (when-not (str/includes? body (str field ":"))
+          mark (expedite-lib/freshness-mark {:run-ticket run-ticket})]
+      (when-not (str/includes? body (str expedite-lib/freshness-mark-field ":"))
         (spit (str f)
-              (str body
+              (str (str/replace body #"(?m)^status:.*$"
+                                (str "status: " (:status mark)))
                    (when-not (str/ends-with? body "\n") "\n")
-                   field ": true\n"
-                   "# BL-1379: parked into backlog/hold/ by the " run-ticket
-                   " expedition and restored here when it landed. The park was\n"
-                   "# mechanical, not a human hold - but the run may have\n"
-                   "# invalidated this ticket's premises, so it needs a\n"
-                   "# freshness check (Article 3.6) before it is worked.\n"))))))
+                   expedite-lib/freshness-mark-field ": "
+                   (get mark expedite-lib/freshness-mark-field) "\n"
+                   expedite-lib/freshness-reason-field ": >-\n  "
+                   (get mark expedite-lib/freshness-reason-field) "\n"))))))
 
 (defn unpark-parked!
   "Reverse this run's park, or say why not. Returns the report."

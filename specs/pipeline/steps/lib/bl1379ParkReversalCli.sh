@@ -80,6 +80,9 @@ bb -e "$(cat <<'BB'
 (require '[clojure.string :as str] '[cheshire.core :as json]
          '[babashka.process :as p] '[babashka.fs :as fs])
 (load-file (System/getenv "BL1379_LIB"))
+;; The REAL promotion gate, so scenario 09's "the promotion helper skips it as
+;; blocked" is answered by production rather than by restating its rule here.
+(load-file (str (fs/path (fs/parent (System/getenv "BL1379_LIB")) "promotion_gates_lib.bb")))
 
 (def repo (System/getenv "BL1379_REPO"))
 (def commit (System/getenv "BL1379_COMMIT"))
@@ -106,9 +109,17 @@ bb -e "$(cat <<'BB'
                                (fs/list-dir (fs/path repo "backlog" "hold"))))]
         (when src
           (fs/move src (fs/path repo "backlog" from (fs/file-name src)))
-          ;; The human's ruling (option 3): mark it for a freshness check.
-          (let [dst (str (fs/path repo "backlog" from (fs/file-name src)))]
-            (spit dst (str (slurp dst) expedite-lib/freshness-mark-field ": true\n"))))))
+          ;; The human's ruling (option 3), per backlog-schema.md: status
+          ;; blocked (what the promotion helper actually reads), the field
+          ;; saying why, and the reason naming the expedition.
+          (let [dst (str (fs/path repo "backlog" from (fs/file-name src)))
+                mark (expedite-lib/freshness-mark {:run-ticket (:run-ticket record)})]
+            (spit dst (str (str/replace (slurp dst) #"(?m)^status:.*$"
+                                        (str "status: " (:status mark)))
+                           expedite-lib/freshness-mark-field ": "
+                           (get mark expedite-lib/freshness-mark-field) "\n"
+                           expedite-lib/freshness-reason-field ": "
+                           (get mark expedite-lib/freshness-reason-field) "\n"))))))
     (expedite-lib/unpark-report plan)))
 
 (def report (run-reversal))
@@ -135,6 +146,16 @@ bb -e "$(cat <<'BB'
            :doneAfter (ids-in "done")
            :marked (boolean (and restored-file
                                  (str/includes? restored-file
-                                                expedite-lib/freshness-mark-field)))}))
+                                                expedite-lib/freshness-mark-field)))
+           :restoredStatus (when restored-file
+                             (second (re-find #"(?m)^status:\s*(\S+)" restored-file)))
+           :markNamesRun (boolean (and restored-file
+                                       (str/includes? restored-file (:run-ticket record))))
+           ;; The REAL promotion gate's verdict on the restored ticket - the
+           ;; half of the mark that actually stops it being worked.
+           :promotionBlocked (boolean
+                              (when restored-file
+                                (promotion-gates-lib/blocked-status-refusal restored-file)))
+           :restoredAndMarked (:restored-and-marked final-report)}))
 BB
 )"

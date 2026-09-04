@@ -1025,8 +1025,25 @@
              ["active" "active"] (mapv :from (:restore p)))
     (assert= "and every restored ticket is MARKED for a freshness check"
              ["BL-9002" "BL-9003"] (:marked r))
-    (assert= "the mark is a ticket field the Article 3.6 gate can read"
-             "freshness_check_required" (:mark-field r)))
+    ;; CORRECTED after the specifier's 2026-09-04 amendment: the field is
+    ;; `freshness_check` (backlog-schema.md), paired with `status: blocked`,
+    ;; which is the half promote_and_route_next.sh and the dropped-parcel
+    ;; sweep actually read. My first version marked a ticket that the
+    ;; coordinator's depth check would have picked straight back up.
+    (assert= "the mark is the schema's field name"
+             "freshness_check" (:mark-field r))
+    (assert= "restored AND marked is reported distinctly from restored"
+             ["BL-9002" "BL-9003"] (:restored-and-marked r)))
+
+  ;; The mark itself, per backlog-schema.md.
+  (let [mark (expedite-lib/freshness-mark {:run-ticket "BL-9001"})]
+    (assert= "the mark blocks the ticket - the half the promotion helper reads"
+             "blocked" (:status mark))
+    (assert= "and says WHY it is blocked"
+             "required" (get mark expedite-lib/freshness-mark-field))
+    (assert-true "and names the expedition, so a coordinator knows what to check against"
+                 (clojure.string/includes?
+                  (get mark expedite-lib/freshness-reason-field) "BL-9001")))
 
   ;; Invariant 3: a ticket that moved, closed, or vanished is left alone AND
   ;; named. Refuses rather than guesses.

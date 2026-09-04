@@ -731,10 +731,33 @@
 
 (def freshness-mark-field
   "The human's ruling (option 3): a restored ticket goes back where it came
-   from AND is marked as needing a freshness check before it may be worked.
-   The mark is a ticket field so the coordinator's Article 3.6 gate and any
-   human reading the ticket see the same thing."
-  "freshness_check_required")
+   from AND is marked as needing a freshness check before it may be worked."
+  "freshness_check")
+
+(def freshness-mark-value "required")
+(def freshness-reason-field "freshness_check_reason")
+
+(defn freshness-mark
+  "The full mark a restored ticket carries, per backlog-schema.md.
+
+   `status: blocked` is the load-bearing half: it is what
+   promote_and_route_next.sh and the dropped-parcel sweep actually read
+   (BL-1100/BL-1301), so the mark rides machinery that already exists rather
+   than asking every consumer to learn a new field. `freshness_check` says WHY
+   it is blocked and `freshness_check_reason` names the expedition.
+
+   Cleared only by the coordinator after deprecate-check.js allows, or after
+   the specifier adjudicates - never by the machinery that set it, which is
+   this code. A restorer that could also clear its own mark would make the
+   mark meaningless."
+  [{:keys [run-ticket]}]
+  {:status "blocked"
+   freshness-mark-field freshness-mark-value
+   freshness-reason-field
+   (str "restored from backlog/hold/ by the " run-ticket
+        " expedition's park reversal (BL-1379); that run may have invalidated"
+        " this ticket's premises, so it needs an Article 3.6 freshness check"
+        " before it is worked")})
 
 (defn unpark-decision
   "Pure, per ticket: what the reversal does about ONE parked entry.
@@ -783,6 +806,10 @@
                 {:ticket ticket :reason (name decision) :in current}))
    :marked (vec (map :ticket (:restore plan)))
    :mark-field (:mark-field plan)
+   ;; "restored" and "restored AND marked" are different facts to whoever
+   ;; reads the handover: the second says the ticket is back but not yet
+   ;; workable, which is the whole point of the ruling.
+   :restored-and-marked (vec (map :ticket (:restore plan)))
    :note (if (:landed? plan)
            "restored to the folder each was parked from, and marked for a freshness check before it may be worked (BL-1379, human ruling option 3)"
            "nothing restored: the expedition has not landed, so the park stays in place and is reported (BL-1379 invariant 2)")})
