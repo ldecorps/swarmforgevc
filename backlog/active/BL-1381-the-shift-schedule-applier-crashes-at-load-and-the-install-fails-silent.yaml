@@ -195,7 +195,18 @@ source: |
 
 assigned_to: coder
 
-abandoned_commits: [3ab16ec996, 822253f148, 6f93401d03, 3695b7c7b1, 6faa76837b, d604b33acf, 7703415c3f]
+abandoned_commits: [3ab16ec996, 822253f148, 6f93401d03, 3695b7c7b1, 6faa76837b, d604b33acf, 7703415c3f, 877c1c3d43, 090ca4439b, 84da5b59a4, a993f97e14, 45f86d14e3, c35fbfc56d, a8f153b4c3, bf1915f300, 60fef197d1]
+# Additional shas (2026-09-04, documenter, second rebuild pass): each
+# subsequent tip-pure rebuild on origin/main strands the previous one plus
+# every other worktree's own independent cherry-pick of the same "Mint
+# BL-1381..BL-1384" commit (877c1c3d43/090ca4439b/84da5b59a4/a993f97e14, one
+# per worktree that hit the same check_merge_deletion guard for the same
+# archived-INTAKE-files reason - a993f97e14 is documenter's own, from
+# BL-1374 earlier this session), hardener's own abandoned_commits bookkeeping
+# commit (45f86d14e3, superseded - its content is a subset of this list),
+# and this ticket's own prior documenter commits (bf1915f300 merged in,
+# c35fbfc56d, a8f153b4c3, 60fef197d1) - all superseded by the current tip,
+# same content, different path.
 # 2026-09-04 (documenter): hardener's forward (bf1915f300) was itself a
 # tip-pure replay built directly on origin/main, whose first-parent chain
 # includes e8e758f1a6 ("Mint BL-1381..BL-1384..."), a single-parent commit
