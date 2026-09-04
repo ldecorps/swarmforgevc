@@ -30,7 +30,7 @@ invariants:
   - "The fixture's conf and its required registry always agree and are both the fixture's own: every daemon the fixture's registry names has a row in the fixture's conf, and neither file is read from the live scripts directory."
   - "The fail-closed registry guard is untouched: with the live required list and a conf missing a listed daemon it still refuses naming the daemon (BL-784)."
 
-human_approval: pending
+human_approval: approved
 approval_context: >
   A new feature file is authored here, so it needs a tap. No choice is posed
   and there are no ruling_options. The red is a fixture reading production's
