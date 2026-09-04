@@ -62,11 +62,28 @@ decision). The `DECISION` value is computed and held before this check
 runs, so a refusal never has stale push advice already on stdout ahead of
 it, and the land lock is never left held on a refusal.
 
-**The ruling is option 1 of the ticket's two: refuse every entangled tip,
-unconditionally — no withheld-vs-ordinary predicate.** An entangled tip is
-the normal state of a long-lived role branch (ordinary pipelining), so this
-makes many ordinary lands refuse; that is the ruling, not a defect. The
-remedy is unchanged: run `land_step_cli.bb <task> <commit>` (see
+**The ruling shipped here is option 2, as REVISED by BL-1375 (2026-09-04) —
+refuse only a sibling that is WITHHELD, awaiting approval, or unreadable; an
+APPROVED unlanded sibling rides.** Option 1 (refuse every entangled tip,
+unconditionally) was the ruling first given and is what this guard shipped
+until now — but it was never landed, and within hours of running for real it
+deadlocked the land queue: four APPROVED tickets sharing one path each
+refused on the others, and none could go first, since an entangled tip is
+the normal state of a long-lived role branch. The narrowing is read through
+`land_step_lib.bb`'s `blocking-siblings` — the same predicate `land-plan`
+already decides on — so the mandatory `--decide-only` step and the hand-run
+`land_step_cli.bb` can never disagree about one tip. Each blocked sibling's
+line now names its state and reason:
+
+```
+entangled-sibling: <ticket-id> (withheld) <reason>
+entangled-sibling: <ticket-id> (awaiting-approval) <reason>
+entangled-sibling: <ticket-id> (unreadable) <reason>
+```
+
+An unreadable approval state still blocks — absence never buys a ride
+(BL-1375 invariant 1). The remedy is unchanged: run `land_step_cli.bb <task>
+<commit>` (see
 [BL-1241](BL-1241-entangled-tip-at-the-land-step-has-a-reachable-remedy.md))
 to build the tip-pure replay, land that instead. QA already performs this
 by hand; the check now tells QA to rather than expecting it to remember.

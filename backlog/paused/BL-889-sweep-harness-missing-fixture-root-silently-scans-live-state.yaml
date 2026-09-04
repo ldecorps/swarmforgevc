@@ -110,7 +110,7 @@ invariants:
 required_wiring:
   - "swarmforge/scripts/test/dispatch_gap_sweep_harness.bb::System/exit::the mandated non-zero refusal; this file has zero System/exit occurrences today, so the entry is only satisfied once the guard is actually wired into this harness and not merely into a shared helper"
   - "swarmforge/scripts/test/dropped_parcel_sweep_harness.bb::System/exit::same mandated refusal in the harness the incident actually happened in; also zero System/exit occurrences today"
-  - "specs/pipeline/steps/index.js::bl889HarnessRefusesMissingFixtureRootSteps::the registration line that makes this ticket's own three scenarios executable. This is BL-1340's draft-conversion pin, not a production-wiring proof: it is satisfied by this parcel's own diff by construction, and its job is to stop the draft being renamed without a registered handler (or left a draft and never run at all)."
+  - "specs/pipeline/steps/bl889HarnessRefusesMissingFixtureRootSteps.js::registerSteps::the registration line that makes this ticket's own three scenarios executable. This is BL-1340's draft-conversion pin, not a production-wiring proof: it is satisfied by this parcel's own diff by construction, and its job is to stop the draft being renamed without a registered handler (or left a draft and never run at all).; repointed 2026-09-04 after BL-1371 discovery - the handler file IS the registration and index.js names nothing"
 
 description: |
   ## What

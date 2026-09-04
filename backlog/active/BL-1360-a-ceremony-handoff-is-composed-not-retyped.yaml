@@ -20,7 +20,7 @@ invariants:
   - "The recipient list and priority of a named ceremony have ONE definition; a test asserts it agrees with handoff-protocol.md rather than restating it (BL-897)."
 
 required_wiring:
-  - 'specs/pipeline/steps/index.js::bl1360CeremonyHandoffComposedSteps::acceptance handler registered so the runner executes every scenario. See notes for why no production anchor is offered.'
+  - 'specs/pipeline/steps/bl1360CeremonyHandoffComposedSteps.js::registerSteps::acceptance handler registered so the runner executes every scenario. See notes for why no production anchor is offered.; repointed 2026-09-04 after BL-1371 discovery - the handler file IS the registration and index.js names nothing'
 
 human_approval: approved
 approval_context: >

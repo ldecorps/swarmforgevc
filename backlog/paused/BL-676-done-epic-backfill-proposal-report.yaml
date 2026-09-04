@@ -13,7 +13,7 @@ mutation_cost: low
 invariants:
   - "The proposal pass is read-only over backlog/ — it writes only its own report file."
 required_wiring:
-  - "specs/pipeline/steps/index.js::bl676EpicBackfillProposalsSteps::acceptance handler registered so the runner executes this ticket's scenarios"
+  - "specs/pipeline/steps/bl676EpicBackfillProposalsSteps.js::registerSteps::acceptance handler registered so the runner executes this ticket's scenarios; repointed 2026-09-04 after BL-1371 discovery - the handler file IS the registration and index.js names nothing"
 
 acceptance: specs/features/BL-676-epic-backfill-proposals.feature.draft
 
