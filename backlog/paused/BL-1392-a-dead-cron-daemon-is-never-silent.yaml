@@ -29,7 +29,7 @@ invariants:
   - "A dead cron is detected by something cron does not run: the daemon sweep reads the age of the freshness cron log and escalates once per episode past the bound, stays quiet while it is fresh, and re-arms after cron returns (BL-920 self-healing state)."
   - "The check never starts, restarts, installs or configures a cron daemon: it reports and names the fix; starting cron needs root and is the host owner's."
 
-human_approval: pending
+human_approval: approved
 approval_context: >
   A new feature file is authored here, so it needs a tap. No choice is posed
   and there are no ruling_options. The host fix is not this ticket and needs
