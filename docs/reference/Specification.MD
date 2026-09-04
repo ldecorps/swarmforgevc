@@ -1,5 +1,35 @@
 # SwarmForge VS Code Extension — Specification
 
+**Last Updated:** September 4, 2026 (BL-1358: the Gherkin mutation
+harness had no per-mutant time ceiling anywhere — `specs/pipeline/
+mutationWorker.js` read work over readline and waited on
+`runGeneratedTests` for however long that took, with nothing to end it.
+Measured live at 808 seconds: BL-1351's Background opened a real client
+polling a real bridge every 20ms over 1223 items, a mutated Outline cell
+made a later step stop matching, `runtime.js` threw before any handler
+ran, and the client stayed connected with the worker pinned until a human
+noticed. BL-1357 fixes that specific leak; this ticket is the reason 808
+seconds was possible at all rather than two minutes — a hang has many
+possible causes (a blocking shell-out, a fixture waiting on a lock, a
+poll loop with no exit condition) and is indistinguishable from slow
+progress while it is happening. `runnerAdapter.js`'s `spawnSync` — the
+exact wait the harness had no ceiling on — now carries a
+`DEFAULT_MUTANT_TIMEOUT_MS` of 300000 (300 seconds, the human's own
+number: generous headroom over the ~10-20s real fixture scenarios,
+catching a wedge in minutes rather than 808 seconds), overridable via
+`GHERKIN_MUTATION_TIMEOUT_MS`. Per the human's ruling (option 1 of two):
+a timed-out mutant fails the gate the same as a surviving one — reported
+as its own `timed_out: true` outcome, naming the mutant, the ceiling it
+exceeded, and that `GHERKIN_MUTATION_TIMEOUT_MS` is the escape hatch for a
+scenario legitimately slower than the ceiling — never folded into
+"detected" or "surviving" (invariant 1), and one mutant hitting the
+ceiling never invalidates the rest of the run — every other mutant still
+carries its ordinary outcome (invariant 2). Acceptance:
+`specs/features/BL-1358-a-mutant-that-will-not-finish-is-killed-and-reported.feature`.
+No how-to page: a narrow internal fix to the Gherkin mutation harness's
+own worker timeout, with no existing doc home and no new operator-facing
+workflow to document. No diagram depicts mutation-harness internals.)
+Prior entry —
 **Last Updated:** September 4, 2026 (BL-1380: the paused-pager Expedite
 route (`handlePausedPagerExpediteRoute`, `bridgeServer.ts`) called
 `recordApprovalReply(targetPath, backlogId)` with no ruling — the exact
