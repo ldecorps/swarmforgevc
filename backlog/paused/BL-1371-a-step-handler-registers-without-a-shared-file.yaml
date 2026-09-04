@@ -27,15 +27,7 @@ invariants:
   - "Registering a new handler requires editing no file that another ticket also edits - a design that keeps any shared list has not delivered this ticket."
 
 required_wiring:
-  # Updated in-parcel, as the mint note required: the parcel DID remove the
-  # array, so the old anchor (a require line in index.js) points at something
-  # that no longer exists. What proves loading now is the discovery the
-  # registry performs - index.js delegating to registerDiscoveredSteps - plus
-  # this ticket's own handler file being one discovery returns, which it is by
-  # ending in the discovered suffix.
-  - 'specs/pipeline/steps/index.js::registerDiscoveredSteps::the registry loads handlers by discovery; the hand-maintained array is gone'
-  - 'specs/pipeline/steps/discoverStepHandlers.js::HANDLER_FILE_SUFFIX::the discovery rule itself, mirrored in featureHandlerRegistrationTypes.ts and pinned by a test'
-  - 'specs/pipeline/steps/bl1371StepDiscoverySteps.js::registerSteps::this ticket''s acceptance handler, registered by existing under the discovered suffix'
+  - 'specs/pipeline/steps/index.js::bl1371StepDiscoverySteps::acceptance handler registered so the runner executes every scenario. If the parcel replaces the array with discovery, update this entry in-parcel to the anchor that then proves loading - see notes.'
 
 human_approval: approved
 approval_context: >

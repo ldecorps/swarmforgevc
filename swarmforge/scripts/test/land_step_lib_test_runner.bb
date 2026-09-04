@@ -1421,9 +1421,7 @@ RESOLVED BY THIS TICKET
   (fs/create-dirs (fs/path root "specs" "features"))
   (fs/create-dirs (fs/path root "specs" "pipeline" "steps"))
   (spit (str (fs/path root "specs" "features" "BL-9009-fixture.feature")) "Feature: fixture\n")
-  ;; BL-1371: a top-level `*Steps.js` file is registered by existing, so an
-  ;; unreachable handler is one under a name discovery does not return.
-  (spit (str (fs/path root "specs" "pipeline" "steps" "bl9009FixtureHandler.js"))
+  (spit (str (fs/path root "specs" "pipeline" "steps" "bl9009FixtureSteps.js"))
         "module.exports = { registerSteps() {} };\n")
   (spit (str (fs/path root "specs" "pipeline" "steps" "index.js")) "const DOMAINS = [\n];\n")
   (sh! root "git" "add" "-A")
@@ -1433,11 +1431,9 @@ RESOLVED BY THIS TICKET
                  (boolean (seq refusals)))
     (assert-includes "BL-1375: and the refusal names the offending feature"
                      (str/join " " refusals) "BL-9009-fixture.feature"))
-  ;; Giving it a discovered name clears the refusal - the guard is deciding,
-  ;; not just failing.
-  (fs/delete (fs/path root "specs" "pipeline" "steps" "bl9009FixtureHandler.js"))
-  (spit (str (fs/path root "specs" "pipeline" "steps" "bl9009FixtureSteps.js"))
-        "module.exports = { registerSteps() {} };\n")
+  ;; Registering it clears the refusal - the guard is deciding, not just failing.
+  (spit (str (fs/path root "specs" "pipeline" "steps" "index.js"))
+        "const DOMAINS = [\n  require('./bl9009FixtureSteps'),\n];\n")
   (sh! root "git" "add" "-A")
   (sh! root "git" "commit" "-q" "-m" "fixture: register the handler")
   (assert= "BL-1375: and a self-consistent tree passes"

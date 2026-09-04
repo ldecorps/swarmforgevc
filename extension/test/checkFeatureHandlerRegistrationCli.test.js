@@ -58,13 +58,12 @@ test('an offending tree exits 1 and writes the refusal naming the offender', () 
   const deps = io({
     'specs/features/BL-1253-dead-feeder.feature': 'Feature: dead feeder',
     [`${STEPS}/index.js`]: 'const DOMAINS = [];',
-    // BL-1371: a name discovery does not pick up, so nothing reaches it.
-    [`${STEPS}/bl1253DeadFeederHandler.js`]: 'module.exports = {};',
+    [`${STEPS}/bl1253DeadFeederSteps.js`]: 'module.exports = {};',
   });
   assert.equal(checkFeatureHandlerRegistration(deps), 1);
   const text = deps.written.join('');
   assert.match(text, /unregistered handler/);
-  assert.match(text, /bl1253DeadFeederHandler\.js/);
+  assert.match(text, /bl1253DeadFeederSteps\.js/);
   assert.match(text, /specs\/features\/BL-1253-dead-feeder\.feature/);
 });
 
@@ -93,7 +92,7 @@ test('main passes its repo-root argument to the io factory and returns its statu
     return io({
       'specs/features/BL-1-one.feature': 'Feature: one',
       [`${STEPS}/index.js`]: 'const DOMAINS = [];',
-      [`${STEPS}/bl1OneHandler.js`]: 'module.exports = {};',
+      [`${STEPS}/bl1OneSteps.js`]: 'module.exports = {};',
     });
   });
   assert.deepEqual(seen, ['/some/repo']);

@@ -16,14 +16,6 @@ const { REGISTRY_PATH } = require('../out/tools/featureHandlerRegistrationTypes'
 // a handler, its lib script and its index.js registration together; a later
 // merge resurrected the handler and the feature but neither the registration
 // nor the lib, and `main` carried 8 scenarios that all failed.
-//
-// BL-1371 NARROWED what "unregistered" can mean. The registry no longer holds
-// a hand-maintained require list: it discovers every top-level `*Steps.js`
-// file in the steps directory, so a handler with a discovered name cannot be
-// left out of it - that half of the incident stopped being possible rather
-// than being guarded. What remains, and is still refused below, is a
-// ticket-named handler file the registry does NOT reach: a name discovery
-// does not pick up, or one only another (missing) module required.
 
 const STEPS = 'specs/pipeline/steps';
 
@@ -59,34 +51,18 @@ test('a feature whose handler is registered reports no offender', () => {
 });
 
 // ── 02: handler file present, registration absent ───────────────────────────
-test('a handler file the registry does not reach is an offender naming both', () => {
+test('a handler file present but absent from the registry is an offender naming both', () => {
   const offenders = assessFeatureHandlerRegistration(
     tree({
       'specs/features/BL-1253-dead-feeder.feature': 'Feature: dead feeder',
       [`${STEPS}/index.js`]: registry('backlogSteps'),
       [`${STEPS}/backlogSteps.js`]: 'module.exports = {};',
-      // Named so discovery does not pick it up (BL-1371): the file is the
-      // feature's own ticket-named handler, and nothing loads it.
-      [`${STEPS}/bl1253DeadFeederOwnsGetUpdatesStampHandler.js`]: 'module.exports = {};',
-    })
-  );
-  assert.deepEqual(kinds(offenders), ['unregistered-handler']);
-  assert.equal(offenders[0].path, `${STEPS}/bl1253DeadFeederOwnsGetUpdatesStampHandler.js`);
-  assert.equal(offenders[0].feature, 'specs/features/BL-1253-dead-feeder.feature');
-});
-
-// BL-1371: the other half of case 02 - a discovered name IS registered, with
-// no require line anywhere. This is the coupling the ticket removed.
-test('a handler discovered from its own file is registered without any require line', () => {
-  const offenders = assessFeatureHandlerRegistration(
-    tree({
-      'specs/features/BL-1253-dead-feeder.feature': 'Feature: dead feeder',
-      [`${STEPS}/index.js`]: "require('./discoverStepHandlers');",
-      [`${STEPS}/discoverStepHandlers.js`]: 'module.exports = {};',
       [`${STEPS}/bl1253DeadFeederOwnsGetUpdatesStampSteps.js`]: 'module.exports = {};',
     })
   );
-  assert.deepEqual(offenders, []);
+  assert.deepEqual(kinds(offenders), ['unregistered-handler']);
+  assert.equal(offenders[0].path, `${STEPS}/bl1253DeadFeederOwnsGetUpdatesStampSteps.js`);
+  assert.equal(offenders[0].feature, 'specs/features/BL-1253-dead-feeder.feature');
 });
 
 // ── 03: registered handler reaching for an absent sibling script ────────────
@@ -155,11 +131,9 @@ test('one pass reports every offending feature, not only the first', () => {
       'specs/features/BL-3-three.feature': 'Feature: three',
       [`${STEPS}/index.js`]: registry('backlogSteps'),
       [`${STEPS}/backlogSteps.js`]: 'module.exports = {};',
-      // Undiscovered names (BL-1371), so each feature's own handler is
-      // genuinely unreachable rather than merely unlisted.
-      [`${STEPS}/bl1OneHandler.js`]: 'module.exports = {};',
-      [`${STEPS}/bl2TwoHandler.js`]: 'module.exports = {};',
-      [`${STEPS}/bl3ThreeHandler.js`]: 'module.exports = {};',
+      [`${STEPS}/bl1OneSteps.js`]: 'module.exports = {};',
+      [`${STEPS}/bl2TwoSteps.js`]: 'module.exports = {};',
+      [`${STEPS}/bl3ThreeSteps.js`]: 'module.exports = {};',
     })
   );
   assert.equal(offenders.length, 3);
@@ -177,8 +151,8 @@ test('offenders of different kinds are reported together in one pass', () => {
   const offenders = assessFeatureHandlerRegistration(
     tree({
       'specs/features/BL-1-one.feature': 'Feature: one',
-      [`${STEPS}/index.js`]: registry('bl4GoneSteps'),
-      [`${STEPS}/bl1OneHandler.js`]: 'module.exports = {};',
+      [`${STEPS}/index.js`]: registry('bl2TwoSteps', 'bl4GoneSteps'),
+      [`${STEPS}/bl1OneSteps.js`]: 'module.exports = {};',
       [`${STEPS}/bl2TwoSteps.js`]: "const CLI = path.join(__dirname, 'lib', 'bl2Cli.sh');",
     })
   );
@@ -420,8 +394,8 @@ test('the refusal names every offender and says the report is complete', () => {
       'specs/features/BL-2-two.feature': 'Feature: two',
       [`${STEPS}/index.js`]: registry('backlogSteps'),
       [`${STEPS}/backlogSteps.js`]: 'module.exports = {};',
-      [`${STEPS}/bl1OneHandler.js`]: 'module.exports = {};',
-      [`${STEPS}/bl2TwoHandler.js`]: 'module.exports = {};',
+      [`${STEPS}/bl1OneSteps.js`]: 'module.exports = {};',
+      [`${STEPS}/bl2TwoSteps.js`]: 'module.exports = {};',
     })
   );
   const text = formatFeatureHandlerRefusal(offenders);

@@ -22,15 +22,8 @@ ROOT="$(cd "$(mktemp -d)" && pwd -P)"
 trap 'rm -rf "$ROOT"' EXIT
 
 # Builds a scratch repo on $branch carrying $n feature files, each with its
-# own ticket-named handler file.
-#
-# BL-1371: registration is discovery, not a require line - the registry loads
-# every top-level `*Steps.js` file in the steps directory. So a handler named
-# in $registered is written under a DISCOVERED name (`...FixtureSteps.js`) and
-# one that is not is written under a name discovery does not pick up
-# (`...FixtureHandler.js`), which is what "the registry does not reach this
-# handler" now means. Callers pass the same `bl90NFixtureSteps` stems as
-# before.
+# own ticket-named handler file; handlers named in $registered are the ones
+# index.js requires.
 build_repo() {
   local name="$1" branch="$2" count="$3"
   shift 3
@@ -39,28 +32,20 @@ build_repo() {
   rm -rf "$repo"
   mkdir -p "$repo/specs/features" "$repo/specs/pipeline/steps/lib"
 
-  local i entry discovered
+  local i
   for ((i = 1; i <= count; i++)); do
     echo "Feature: fixture $i" > "$repo/specs/features/BL-90$i-fixture.feature"
-    discovered=0
-    for entry in ${registered[@]+"${registered[@]}"}; do
-      if [ "$entry" = "bl90${i}FixtureSteps" ]; then
-        discovered=1
-      fi
-    done
-    if [ "$discovered" -eq 1 ]; then
-      echo "module.exports = { registerSteps() {} };" > "$repo/specs/pipeline/steps/bl90${i}FixtureSteps.js"
-    else
-      echo "module.exports = { registerSteps() {} };" > "$repo/specs/pipeline/steps/bl90${i}FixtureHandler.js"
-    fi
+    echo "module.exports = { registerSteps() {} };" > "$repo/specs/pipeline/steps/bl90${i}FixtureSteps.js"
   done
 
   {
-    echo "// the registry: discovery, not a hand-maintained list (BL-1371)"
-    echo "const { registerDiscoveredSteps } = require('./discoverStepHandlers');"
-    echo "module.exports = { registerSteps: (r) => registerDiscoveredSteps(r, __dirname) };"
+    echo "const DOMAINS = ["
+    local handler
+    for handler in ${registered[@]+"${registered[@]}"}; do
+      echo "  require('./${handler}'),"
+    done
+    echo "];"
   } > "$repo/specs/pipeline/steps/index.js"
-  echo "module.exports = {};" > "$repo/specs/pipeline/steps/discoverStepHandlers.js"
 
   git -C "$repo" init -q
   git -C "$repo" checkout -q -b "$branch"
@@ -89,7 +74,7 @@ repo="$(build_repo unregistered main 1)"
 run_guard "$repo"
 [ "$STATUS" -eq 1 ] || fail "02: an unrunnable tree was allowed (status $STATUS): $OUT"
 names "BL-901-fixture.feature" || fail "02: refusal did not name the feature file: $OUT"
-names "bl901FixtureHandler.js" || fail "02: refusal did not name the unregistered handler: $OUT"
+names "bl901FixtureSteps.js" || fail "02: refusal did not name the unregistered handler: $OUT"
 pass "02 an unregistered handler is refused, naming the feature and the handler"
 
 # ── 03: a registered handler's sibling script is missing ────────────────────

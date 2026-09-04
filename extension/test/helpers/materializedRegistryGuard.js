@@ -57,10 +57,6 @@ function findExtensionRoot(startDir) {
 const EXTENSION_ROOT = findExtensionRoot(__dirname);
 const REPO_ROOT = path.dirname(EXTENSION_ROOT);
 const RESOLVER = path.join(REPO_ROOT, 'specs', 'pipeline', 'scripts', 'resolve_contract_steps.js');
-// BL-1371: the registry's own discovery predicate, so this helper asks the
-// production module whether a planted name is discovered rather than
-// restating the rule.
-const { stepHandlerFileNames } = require(path.join(REPO_ROOT, 'specs', 'pipeline', 'steps', 'discoverStepHandlers.js'));
 
 // The same shape pre_qa_gate_gather_lib.bb materializes: specs/pipeline
 // mirrored under a fresh NON-git temp root, node_modules and extension
@@ -117,12 +113,6 @@ function materializeCurrentPipeline({
 // re-runs the failure to capture the require STACK, which NAMES the file
 // whose load-time work killed the chain - the resolver's own error carries
 // only the failure message.
-//
-// BL-1371: requiring steps/index.js no longer loads a handler - the registry
-// discovers and requires them when registerSteps() is CALLED - so the probe
-// calls it, on a registry stub, or it would report a clean load for a tree
-// whose handlers cannot load at all (a false green in the guard whose whole
-// job is catching exactly that).
 function registryLoadVerdict(pipelineDir, workDir) {
   const irPath = path.join(workDir, 'bl968-empty-feature-ir.json');
   fs.writeFileSync(irPath, JSON.stringify({ name: 'bl968-guard', scenarios: [] }));
@@ -139,38 +129,26 @@ function registryLoadVerdict(pipelineDir, workDir) {
   if (!verdict.loadable) {
     const probe = spawnSync(
       process.execPath,
-      [
-        '-e',
-        `try { require(${JSON.stringify(path.join(pipelineDir, 'steps', 'index.js'))})` +
-          `.registerSteps({ define() {}, defineScoped() {}, resolve() { return null; }, listDefinitions() { return []; } });` +
-          ` } catch (e) { console.error(e.stack); process.exit(1); }`,
-      ],
+      ['-e', `try { require(${JSON.stringify(path.join(pipelineDir, 'steps', 'index.js'))}); } catch (e) { console.error(e.stack); process.exit(1); }`],
       { encoding: 'utf8', env }
     );
-    verdict.detail = probe.stderr || verdict.error || '';
+    verdict.detail = probe.stderr || '';
   }
   return verdict;
 }
 
-// Plants one offender step file into a materialized tree. `files` maps a
-// steps/-relative path to its source, so an offender can also live in a lib
-// module a clean-looking step file requires (the chain-depth axis). Returns a
-// restore() that removes every planted file, so a shared tree can be reused
-// across draws.
-//
-// BL-1371: registration used to be a require line this helper patched into
-// steps/index.js's DOMAINS array. The registry now discovers every top-level
-// `*Steps.js` file, so planting the file IS registering it - and this helper
-// refuses a `registerRelPath` discovery would not pick up, rather than
-// planting a file the guard would then never load (a silent false green,
-// which is exactly the failure class BL-968 exists to catch).
+// Plants one offender step file into a materialized tree and registers it
+// FIRST in steps/index.js's DOMAINS list. `files` maps a steps/-relative
+// path to its source, so an offender can also live in a lib module a
+// clean-looking step file requires (the chain-depth axis). Returns a
+// restore() that unpatches the index and removes every planted file, so a
+// shared tree can be reused across draws.
 function plantOffender(pipelineDir, { registerRelPath, files }) {
-  const registerFile = registerRelPath.endsWith('.js') ? registerRelPath : `${registerRelPath}.js`;
-  if (!Object.prototype.hasOwnProperty.call(files, registerFile)) {
-    throw new Error(`plantOffender: ${registerFile} is not among the planted files`);
-  }
-  if (!stepHandlerFileNames(path.join(pipelineDir, 'steps'), { readdir: () => [registerFile] }).includes(registerFile)) {
-    throw new Error(`plantOffender: ${registerFile} is not a name the steps registry discovers`);
+  const indexPath = path.join(pipelineDir, 'steps', 'index.js');
+  const originalIndex = fs.readFileSync(indexPath, 'utf8');
+  const marker = 'const DOMAINS = [';
+  if (!originalIndex.includes(marker)) {
+    throw new Error(`steps/index.js no longer carries the '${marker}' registration marker the guard patches`);
   }
   const planted = [];
   for (const [rel, source] of Object.entries(files)) {
@@ -179,8 +157,10 @@ function plantOffender(pipelineDir, { registerRelPath, files }) {
     fs.writeFileSync(full, source);
     planted.push(full);
   }
+  fs.writeFileSync(indexPath, originalIndex.replace(marker, `${marker}\n  require('./${registerRelPath}'),`));
   return {
     restore() {
+      fs.writeFileSync(indexPath, originalIndex);
       for (const full of planted) {
         fs.rmSync(full, { force: true });
       }
