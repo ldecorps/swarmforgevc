@@ -78,12 +78,18 @@ function registerSteps(registry) {
   });
 
   scoped(registry, /^the BL-718 step handler module is registered in the pipeline steps index$/, () => {
-    const indexSource = fs.readFileSync(STEPS_INDEX, 'utf8');
-    if (!indexSource.includes("require('./bl718BubbleTalkMirrorSteps')")) {
-      throw new Error('specs/pipeline/steps/index.js must require bl718BubbleTalkMirrorSteps');
-    }
+    // BL-1371: registration is no longer a require line in steps/index.js -
+    // the registry discovers every top-level `*Steps.js` file in the steps
+    // directory. So the question this step asks is whether the handler file
+    // is one the registry's own discovery returns, asked of that discovery
+    // rather than of index.js's text.
     if (!fs.existsSync(BL718_HANDLER)) {
       throw new Error(`missing handler module at ${BL718_HANDLER}`);
+    }
+    const { stepHandlerFileNames } = require(path.join(path.dirname(STEPS_INDEX), 'discoverStepHandlers.js'));
+    const discovered = stepHandlerFileNames(path.dirname(STEPS_INDEX));
+    if (!discovered.includes(path.basename(BL718_HANDLER))) {
+      throw new Error(`the steps registry does not discover ${path.basename(BL718_HANDLER)}`);
     }
   });
 

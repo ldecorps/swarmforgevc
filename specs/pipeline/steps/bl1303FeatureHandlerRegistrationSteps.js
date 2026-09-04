@@ -60,7 +60,13 @@ function buildRepo({ branch, tickets, registryReadable = true }) {
   tickets.forEach((shape, index) => {
     const id = 900 + index + 1;
     const feature = `${FEATURES_DIR}/BL-${id}-fixture.feature`;
-    const handler = `${STEPS_DIR}/bl${id}FixtureSteps.js`;
+    // BL-1371: registration is discovery - a top-level `*Steps.js` file is
+    // loaded by existing - so the "unregistered" shape is a ticket-named
+    // handler under a name discovery does NOT return.
+    const handler =
+      shape === 'unregistered'
+        ? `${STEPS_DIR}/bl${id}FixtureHandler.js`
+        : `${STEPS_DIR}/bl${id}FixtureSteps.js`;
     const script = `${LIB_DIR}/bl${id}FixtureCli.sh`;
     fs.writeFileSync(path.join(repo, feature), `Feature: fixture ${id}\n`, 'utf8');
     const body =

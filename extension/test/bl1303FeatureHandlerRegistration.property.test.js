@@ -71,7 +71,10 @@ function buildTree({ tickets, registryReadable }) {
       files[handlerPath] = 'module.exports = {};';
       required.push(handler);
     } else if (shape === 'unregistered') {
-      files[handlerPath] = 'module.exports = {};';
+      // BL-1371: a handler whose name discovery picks up is registered by
+      // existing, so the unreachable shape is a ticket-named handler file
+      // under a name discovery does NOT return.
+      files[`${STEPS}/bl${n}FixtureHandler.js`] = 'module.exports = {};';
       if (registryReadable) {
         expectedFeatures.push(`specs/features/BL-${n}-fixture.feature`);
       }

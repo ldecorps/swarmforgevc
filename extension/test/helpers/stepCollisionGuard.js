@@ -24,21 +24,18 @@ const STEPS_INDEX = path.join(REPO_ROOT, 'specs', 'pipeline', 'steps', 'index.js
 const STEP_REGISTRY = path.join(REPO_ROOT, 'specs', 'pipeline', 'stepRegistry.js');
 const VERDICT_MARKER = 'BL1277_COLLISION_VERDICT ';
 
-// The shipped step files are exactly the ones steps/index.js pulls in, in the
-// order it pulls them in - taken from the module system's own parent/child
-// record rather than by globbing the directory. A glob would also sweep up the
-// `*Only.js` focused entry points, each of which re-exports another file's
-// registerSteps; those would then look like a second file registering every
-// one of that file's patterns, and the guard would refuse a repository that is
-// in fact clean.
+// The shipped step files are exactly the ones the registry loads, asked of
+// the registry's OWN discovery (BL-1371) rather than by re-globbing the
+// directory here. That distinction still matters for the reason the previous
+// require.cache walk existed: the `*Only.js` focused entry points each
+// re-export another file's registerSteps, and a directory-wide glob would
+// make them look like a second file registering every one of that file's
+// patterns - so the guard would refuse a repository that is in fact clean.
+// Discovery returns `*Steps.js` files only, which excludes them.
 function shippedStepFiles(indexPath = STEPS_INDEX) {
-  const resolved = require.resolve(indexPath);
-  require(resolved);
-  const record = require.cache[resolved];
-  if (!record) {
-    throw new Error(`stepCollisionGuard: ${indexPath} did not land in require.cache`);
-  }
-  return record.children.map((child) => child.filename);
+  const stepsDir = path.dirname(indexPath);
+  const { loadStepHandlerModules } = require(path.join(stepsDir, 'discoverStepHandlers.js'));
+  return loadStepHandlerModules(stepsDir).map((entry) => path.join(stepsDir, entry.name));
 }
 
 function patternKey(pattern) {

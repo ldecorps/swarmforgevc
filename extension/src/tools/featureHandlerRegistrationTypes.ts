@@ -8,6 +8,14 @@
  */
 
 export const REGISTRY_PATH = 'specs/pipeline/steps/index.js';
+/**
+ * BL-1371: a top-level file in STEPS_DIR whose name ends in this suffix IS a
+ * registered handler - the runner discovers it from its own file rather than
+ * from a require line in the registry. Mirrors HANDLER_FILE_SUFFIX in
+ * specs/pipeline/steps/discoverStepHandlers.js; the two literals are pinned
+ * against each other by extension/test/bl1371StepDiscovery.test.js (BL-897).
+ */
+export const HANDLER_FILE_SUFFIX = 'Steps.js';
 export const STEPS_DIR = 'specs/pipeline/steps';
 export const LIB_DIR = 'specs/pipeline/steps/lib';
 export const FEATURES_DIR = 'specs/features';

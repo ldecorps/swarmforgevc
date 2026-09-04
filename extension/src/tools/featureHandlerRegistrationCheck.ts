@@ -13,6 +13,14 @@
  * but neither the registration nor the lib. `main` then carried 8 scenarios
  * that all failed with "no step handler matched".
  *
+ * BL-1371: registration became discovery - every top-level `*Steps.js` file in
+ * the steps directory is loaded by existing - so "the registration is a require
+ * line in the registry" below now reads "the file is one discovery returns, or
+ * something reachable required it". The half of the incident where a revert
+ * removed a require line and left the handler behind cannot recur; the half
+ * where a handler is genuinely unreachable, and the missing sibling script,
+ * still can, and are still refused.
+ *
  * This module is the pure assessor: it walks the registry graph and decides
  * which feature files are left unrunnable. It never requires a step file,
  * because requiring the registry executes every handler module and a tree
@@ -32,7 +40,7 @@
  */
 
 import { extractRequiredModules, extractSiblingScripts, featureTicketId, handlerDeclaresTicket } from './featureHandlerRegistrationText';
-import { REGISTRY_PATH, type Offender, type OffenderKind, type FeatureHandlerTree } from './featureHandlerRegistrationTypes';
+import { HANDLER_FILE_SUFFIX, REGISTRY_PATH, type Offender, type OffenderKind, type FeatureHandlerTree } from './featureHandlerRegistrationTypes';
 
 /** Order offenders are reported in: the registry first, then what it reaches. */
 const KIND_ORDER: OffenderKind[] = [
@@ -105,6 +113,17 @@ function walkRegistry(
   const queue: string[] = [REGISTRY_PATH];
   const seen = new Set<string>([REGISTRY_PATH]);
   const textOf = new Map<string, string>([[REGISTRY_PATH, registryText]]);
+
+  // BL-1371: the registry discovers every top-level `*Steps.js` file in the
+  // steps directory, so each one is reachable by existing - there is no
+  // require line to look for and no way to leave one out. They are walked
+  // like any other hop so a handler that pulls in a lib module still marks it
+  // reachable, and an unreadable one is still an offender rather than a pass.
+  for (const handler of tree.stepFiles) {
+    if (handler !== REGISTRY_PATH && handler.endsWith(HANDLER_FILE_SUFFIX)) {
+      visitRequiredModule(handler, tree, seen, textOf, queue, reachable, offenders);
+    }
+  }
 
   while (queue.length > 0) {
     const current = queue.shift() as string;

@@ -12,6 +12,17 @@
 # handler and the feature but neither the registration nor the lib, and `main`
 # carried 8 scenarios that all failed.
 #
+# BL-1371 NARROWED this guard rather than retiring it, deliberately. The
+# registry no longer carries a hand-maintained require list: it discovers every
+# top-level `*Steps.js` file in the steps directory, so half of the 2026-08-30
+# incident - a registration lost while the handler file survived - stopped
+# being possible rather than being guarded. What this guard still refuses, and
+# what keeps it worth running, is the other half: a ticket-named handler the
+# registry cannot reach (a name discovery does not return, or one only a
+# missing module required), and a reachable handler executing an absent sibling
+# script. Deleting it was considered and NOT done here - that would be a
+# decision of its own, not a side effect of this parcel.
+#
 # Sits beside check_pipeline_code_on_main.sh in the commit-guard chain, which
 # already refuses a bad `main` tip before it exists rather than reacting to
 # one that already does. Reached on BOTH commit-time paths, which are two
