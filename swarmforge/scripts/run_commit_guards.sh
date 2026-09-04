@@ -65,6 +65,12 @@ run_guard check_pipeline_code_on_main.sh
 # does on `main` is a node process reading the step registry, not a git
 # index read.
 run_guard check_feature_handler_registration.sh
+# BL-1385: registration is not loadability. The guard above proves a feature's
+# handler is registered and reachable; it never loads one. A hand-land on main
+# bypasses the land replay entirely - which is exactly how a93aa4a18f reached
+# main on 2026-09-04 - so the load question has to be asked here too, not only
+# in the replay's tree-guard list.
+run_guard check_handler_module_graph.sh
 
 if guard_chain_has_refusal; then
   report_refusals

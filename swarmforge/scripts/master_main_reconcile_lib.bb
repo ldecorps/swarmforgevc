@@ -452,7 +452,16 @@
         land (post-land-absorb-plan
               (assoc ctx :absorb-would-conflict? conflict?))]
     (cond
-      (= bl1130 :skip-human-merge-in-progress) :skip-human-merge-in-progress
+      ;; BL-1387/BL-1386: EVERY open-merge branch propagates, not only the
+      ;; human one. This cond used to name :skip-human-merge-in-progress
+      ;; alone, so the orphaned and owned branches fell through to :ff-absorb
+      ;; - a MUTATING plan on a checkout with an open MERGE_HEAD, and the
+      ;; reason the daemon's own classification never fired: handoffd.bb
+      ;; dispatches through THIS function, not through automated-absorb-plan
+      ;; directly. Found by driving run-post-hotfix-merge! end to end while
+      ;; fixing the BL-1387 bounce; the acceptance fixtures called the inner
+      ;; plan directly and could not see it.
+      (contains? #{:skip-human-merge-in-progress :skip-orphaned-merge :abort-owned-merge} bl1130) bl1130
       (= land :noop) :noop
       verdict-unavailable? :verdict-unavailable
       (= land :replay-bookkeeping) :replay-bookkeeping

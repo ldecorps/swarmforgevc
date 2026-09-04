@@ -1504,6 +1504,35 @@
          false (master-main-reconcile-lib/may-abort-failed-merge?
                 false {:owner-record {} :merge-head-sha "abc123"}))
 
+;; ── absorb-dispatch-plan propagates EVERY open-merge branch ───────────────
+;;
+;; Found while fixing the BL-1387 bounce, and worse than the bounce itself:
+;; this cond named :skip-human-merge-in-progress alone, so :skip-orphaned-merge
+;; and :abort-owned-merge fell through to :ff-absorb - a MUTATING plan on a
+;; checkout with an open MERGE_HEAD. handoffd.bb dispatches through THIS
+;; function, so neither BL-1387's orphan classification nor BL-1386's
+;; abort-by-ownership ever reached the daemon. Both acceptance fixtures called
+;; the inner automated-absorb-plan directly and so could not see it: a test
+;; that reaches the right decision by a different route proves the decision,
+;; not the wiring.
+(let [D master-main-reconcile-lib/absorb-dispatch-plan
+      ctx {:merge-head-present? true :behind 2 :ahead 1 :tip-contains-origin? false}]
+  (assert= "dispatch: a live human's merge propagates"
+           :skip-human-merge-in-progress (D (assoc ctx :merge-class :live-human)))
+  (assert= "dispatch: an ORPHAN propagates instead of falling to :ff-absorb"
+           :skip-orphaned-merge (D (assoc ctx :merge-class :orphaned)))
+  (assert= "dispatch: an OWNED merge propagates instead of falling to :ff-absorb"
+           :abort-owned-merge (D (assoc ctx :merge-class :own)))
+  (assert= "dispatch: no class is still byte-identical to pre-BL-1386"
+           :skip-human-merge-in-progress (D ctx))
+  ;; The load-bearing one: no open merge may EVER reach a mutating plan.
+  (assert-true "dispatch: no open merge reaches a mutating plan by any class"
+               (every? (fn [k] (contains? #{:skip-human-merge-in-progress
+                                            :skip-orphaned-merge
+                                            :abort-owned-merge}
+                                          (D (assoc ctx :merge-class k))))
+                       [:live-human :orphaned :own])))
+
 ;; ── report ───────────────────────────────────────────────────────────────
 (if (empty? @failures)
   (println "ALL TESTS PASS")
