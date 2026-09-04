@@ -507,3 +507,5 @@ test_bl1398_guard_fixture_derives_set.sh	standing
 test_bl1399_freshness_fixture_own_registry.sh	standing		
 test_bl1388_land_step_guard_fixture.sh	standing		
 test_bl1393_one_ceremony_every_sleep.sh	standing		
+test_bl1382_unmarked_cron_lines_survive.sh	standing		
+test_bl1382_cron_ownership_agreement.sh	standing		

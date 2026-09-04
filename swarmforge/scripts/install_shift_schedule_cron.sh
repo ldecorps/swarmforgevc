@@ -13,6 +13,10 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 # WHICH program runs, never what verdict the wrapper reaches, so no test can
 # force an outcome the real code would not produce.
 RECONCILE_BB="${SHIFT_SCHEDULE_RECONCILE_BB:-$SCRIPT_DIR/reconcile_shift_schedule_crontab.bb}"
+# BL-1382: the shared ownership rule, so this writer reports the unmarked
+# lines it leaves in place with the same words the uninstall uses.
+# shellcheck disable=SC1091
+source "$SCRIPT_DIR/swarmforge_cron_lib.sh"
 
 if ! command -v crontab >/dev/null 2>&1; then
   echo "install_shift_schedule_cron.sh: no crontab command on this host; schedule lines will NOT run for $ROOT" >&2
@@ -95,5 +99,8 @@ else
   printf '%s\n' "$new_lines" | grep -v '^$' | crontab -
 fi
 
+# BL-1382: the install writes `stripped + rendered`, so it is a cron writer
+# like the uninstall and owes the same account of what it left alone.
+printf '%s\n' "$existing" | swarmforge_cron_report_unmarked "$ROOT"
 echo "Installed shift schedule cron for $ROOT (mode=$mode)"
 printf '%s\n' "$new_lines" | grep -E 'swarmforge-shift-schedule|swarmforge-operator-schedule|start-swarm|operator/' || true
