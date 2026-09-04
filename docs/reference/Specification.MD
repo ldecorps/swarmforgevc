@@ -335,53 +335,6 @@ How-to: `docs/how-to/BL-567-expedite-one-ticket-with-the-swarm-stopped.md`
 (extended in place — same OUTSTANDING block, one more item type). No
 diagram depicts expeditor internals.)
 Prior entry —
-**Last Updated:** September 3, 2026 (BL-1371: `specs/pipeline/steps/index.js`'s
-hand-maintained `DOMAINS` array of 937 `require('./blNNNSteps')` lines is
-replaced by directory discovery — the module reads its own directory for
-top-level `*Steps.js` files and loads each one, eagerly, at module load, still
-exporting `registerSteps` unchanged. Registration cannot now be lost, leaked
-by a replay, or removed by a revert independently of the handler file itself,
-because there is nothing to be absent from — the structural cause behind
-three prior incident classes (a merge-adjudication over-charge, a land-replay
-leak (BL-1324), and BL-1356's land-queue deadlock with no first mover).
-Verified as a SET comparison, never a count (937 handler identities / 13754
-registrations, empty difference both directions) plus a per-step
-resolution-parity check across all 1059 feature files / 19693 steps: zero
-steps changed which file and pattern answers them. `check_feature_handler_registration.sh`
-(BL-1303) is narrowed, not retired — it still refuses a handler file present
-but unreachable from a conforming discovery predicate. The
-`required_wiring: specs/pipeline/steps/index.js::blNNNSteps` anchor pattern —
-this backlog's single most common `required_wiring` entry, and one that
-proved nothing even before this change — is retired for new tickets; point a
-new handler's `required_wiring` at the handler file's own export instead.
-Acceptance: `specs/features/BL-1371-a-step-handler-registers-without-a-shared-file.feature`.
-How-to: `docs/how-to/BL-1371-step-handlers-register-by-discovery.md`. No
-diagram depicts step-handler registration.)
-Prior entry —
-**Last Updated:** September 3, 2026 (BL-1367: the paused-pager Mini App
-approve route (`computePausedPagerApproveOutcome`,
-`extension/src/bridge/bridgeServer.ts`) used to call
-`recordApprovalReply(targetPath, backlogId)` — a signature with no ruling
-argument — so a ticket declaring `ruling_options` approved from the phone
-flipped `human_approval` to `approved` and silently discarded the choice it
-posed; BL-1309 was approved this way on 2026-09-01 and its question was
-never answered. `recordApprovalReply`
-(`extension/src/concierge/pendingApprovalReply.ts`) now takes an optional
-`ruling`, the one writer both the bot's callback path and the pager route
-call. Before writing, `classifyApprovalRulingRequirement(rulingOptions,
-ruling)` classifies the tap as `ok`, `ruling-required`, or
-`unknown-option`; only `ok` proceeds — the other two refuse with HTTP `409`
-naming the outstanding options, never a bare status (BL-572/BL-662),
-instead of half-recording. A ticket with no `ruling_options` behaves
-exactly as before; an existing `human_ruling:` is never overwritten by a
-later plain approval. Hardened: `classifyApprovalRulingRequirement` and
-`computePausedPagerApproveOutcome` both reduced from CRAP 7.00 to <=5.20
-(`matchesRulingOption`/`buildRulingRefusalBody` split out). Acceptance:
-`specs/features/BL-1367-an-approval-from-any-surface-carries-its-ruling.feature`.
-How-to:
-`docs/how-to/BL-1367-approval-from-any-surface-carries-its-ruling.md`. No
-diagram depicts the approval/ruling write path.)
-Prior entry —
 **Last Updated:** September 3, 2026 (BL-1360: three fixed pipeline sends —
 the QA merge-up broadcast, the QA-to-coordinator bookkeeping note, and the
 specifier's spec-ready note — carry no judgement at all, yet were
@@ -433,6 +386,29 @@ blocked repo-wide by the standing `liveRepoDerivationGuard` red, BL-1291):
 `docs/how-to/BL-1296-bubble-answers-from-its-own-seat.md`. No diagram
 depicts cursor-bridge/seat-dispatch internals.)
 Prior entry —
+**Last Updated:** September 3, 2026 (BL-1371: `specs/pipeline/steps/index.js`'s
+hand-maintained `DOMAINS` array of 937 `require('./blNNNSteps')` lines is
+replaced by directory discovery — the module reads its own directory for
+top-level `*Steps.js` files and loads each one, eagerly, at module load, still
+exporting `registerSteps` unchanged. Registration cannot now be lost, leaked
+by a replay, or removed by a revert independently of the handler file itself,
+because there is nothing to be absent from — the structural cause behind
+three prior incident classes (a merge-adjudication over-charge, a land-replay
+leak (BL-1324), and BL-1356's land-queue deadlock with no first mover).
+Verified as a SET comparison, never a count (937 handler identities / 13754
+registrations, empty difference both directions) plus a per-step
+resolution-parity check across all 1059 feature files / 19693 steps: zero
+steps changed which file and pattern answers them. `check_feature_handler_registration.sh`
+(BL-1303) is narrowed, not retired — it still refuses a handler file present
+but unreachable from a conforming discovery predicate. The
+`required_wiring: specs/pipeline/steps/index.js::blNNNSteps` anchor pattern —
+this backlog's single most common `required_wiring` entry, and one that
+proved nothing even before this change — is retired for new tickets; point a
+new handler's `required_wiring` at the handler file's own export instead.
+Acceptance: `specs/features/BL-1371-a-step-handler-registers-without-a-shared-file.feature`.
+How-to: `docs/how-to/BL-1371-step-handlers-register-by-discovery.md`. No
+diagram depicts step-handler registration.)
+Prior entry —
 **Last Updated:** September 3, 2026 (BL-1375: the land step's shared-path
 refusal (BL-1332) is narrowed. `own-paths` (`land_step_lib.bb`) used to
 refuse outright whenever a path was owned by both the landing ticket and
@@ -463,6 +439,35 @@ lines are unchanged. Live regression against the real jammed QA tip
 `BL-1356`, `BL-1359`) went from all-`:escalate` to all-`:replay`.
 Acceptance:
 `specs/features/BL-1375-approved-siblings-sharing-a-path-can-land.feature`.
+How-to: `docs/how-to/BL-1241-entangled-tip-at-the-land-step-has-a-reachable-remedy.md`
+(extended in place — same detector, same doc). No diagram depicts land-step
+internals.)
+Prior entry —
+**Last Updated:** September 3, 2026 (BL-1354: the land step's sibling-landed
+detector (`land_step_lib.bb`) no longer judges a shared file by whole-blob
+equality against `origin/main` — a defect that made EVERY co-owner of a hot
+file (`docs/reference/Specification.MD`, `docs/index.md`, cross-ticket
+backlog yaml/topics) read unlanded while ANY one co-owner's lines were still
+unlanded, self-reinforcing on every ticket that shared the file. Reproduced
+live on BL-1332's land: all six siblings its `LAND_ESCALATE` named as
+unlanded were already in `backlog/done/`. `landed-siblings` now scores each
+sibling on its OWN attributed lines: `diff-line-changes` parses a unified
+diff into per-path line sets, `sibling-own-line-changes` merges the
+sibling's own NON-MERGE commits only (a merge's first-parent diff carries
+its second parent's content regardless of author, which was inflating
+attribution the other direction — one ticket's own unlanded lines were
+being charged to an unrelated sibling), and `sibling-path-verdict` scores
+each path three-valued (`:landed`/`:unlanded`/`:vacuous`, the last for a
+line the sibling once added that a later commit rewrote) against what
+survives at the tip; vacuous paths are dropped before scoring so a sibling
+left with nothing is still judged unlanded through the existing
+empty-paths fail-closed row — landed stays a positive finding, never an
+inference from silence (BL-1272 invariant 1, unrelaxed). `land_step_cli.bb`'s
+`LAND_CLEAN`/`LAND_REPLAY`/`LAND_ESCALATE` output shape is unchanged; only
+what feeds the landed/unlanded split changed. Wiring this detector into the
+mandatory land decide step is the separate, still-active BL-1309, not built
+here. Acceptance:
+`specs/features/BL-1354-a-shared-path-does-not-hide-a-landed-sibling.feature`.
 How-to: `docs/how-to/BL-1241-entangled-tip-at-the-land-step-has-a-reachable-remedy.md`
 (extended in place — same detector, same doc). No diagram depicts land-step
 internals.)
@@ -526,35 +531,6 @@ How-to:
 (extended in place — same allowlist/guard mechanism, one more shape of
 standing red resolved rather than parked). No diagram depicts property-suite
 gating internals.)
-Prior entry —
-**Last Updated:** September 3, 2026 (BL-1354: the land step's sibling-landed
-detector (`land_step_lib.bb`) no longer judges a shared file by whole-blob
-equality against `origin/main` — a defect that made EVERY co-owner of a hot
-file (`docs/reference/Specification.MD`, `docs/index.md`, cross-ticket
-backlog yaml/topics) read unlanded while ANY one co-owner's lines were still
-unlanded, self-reinforcing on every ticket that shared the file. Reproduced
-live on BL-1332's land: all six siblings its `LAND_ESCALATE` named as
-unlanded were already in `backlog/done/`. `landed-siblings` now scores each
-sibling on its OWN attributed lines: `diff-line-changes` parses a unified
-diff into per-path line sets, `sibling-own-line-changes` merges the
-sibling's own NON-MERGE commits only (a merge's first-parent diff carries
-its second parent's content regardless of author, which was inflating
-attribution the other direction — one ticket's own unlanded lines were
-being charged to an unrelated sibling), and `sibling-path-verdict` scores
-each path three-valued (`:landed`/`:unlanded`/`:vacuous`, the last for a
-line the sibling once added that a later commit rewrote) against what
-survives at the tip; vacuous paths are dropped before scoring so a sibling
-left with nothing is still judged unlanded through the existing
-empty-paths fail-closed row — landed stays a positive finding, never an
-inference from silence (BL-1272 invariant 1, unrelaxed). `land_step_cli.bb`'s
-`LAND_CLEAN`/`LAND_REPLAY`/`LAND_ESCALATE` output shape is unchanged; only
-what feeds the landed/unlanded split changed. Wiring this detector into the
-mandatory land decide step is the separate, still-active BL-1309, not built
-here. Acceptance:
-`specs/features/BL-1354-a-shared-path-does-not-hide-a-landed-sibling.feature`.
-How-to: `docs/how-to/BL-1241-entangled-tip-at-the-land-step-has-a-reachable-remedy.md`
-(extended in place — same detector, same doc). No diagram depicts land-step
-internals.)
 Prior entry —
 **Last Updated:** September 3, 2026 (BL-1337: the BoB starting cast generator
 (BL-1181) now takes a named, steward-owned **profile** instead of one
