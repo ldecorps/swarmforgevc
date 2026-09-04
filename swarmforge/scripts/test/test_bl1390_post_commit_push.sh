@@ -30,7 +30,7 @@ pass() { echo "PASS: $*"; }
 # line, a lock so only one instance runs, reaping of roots NO LIVE RUN OWNS,
 # and an owner-stamped $WORK.
 source "$SCRIPT_DIR/lib/fixture_isolation.sh"
-fixture_isolation_begin "$FIXTURE_PREFIX" "${BL1390_SUITE_BOUND_SECONDS:-900}"
+fixture_isolation_begin "$FIXTURE_PREFIX" "${BL1390_SUITE_BOUND_SECONDS:-900}" "$@"
 trap 'rm -rf "$WORK"' EXIT
 
 # A second invocation only needs to reach the lock decision to prove scenario
