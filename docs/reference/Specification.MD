@@ -1,5 +1,36 @@
 # SwarmForge VS Code Extension — Specification
 
+**Last Updated:** September 4, 2026 (BL-1366: `land_main_publish.sh`
+documented a caller protocol nothing implemented — acquire the land lock,
+decide, rematch if advised, push FF-only, release — and QA hand-ran all
+four steps after every approval, alongside `land_step_cli.bb` for the
+entanglement verdict and `issue_done.sh` for a `GH-`-seeded ticket. A new
+`--land <task-name> <approved-commit> [<issue-ref>]` mode performs the
+whole documented sequence as one command: `land_step_cli.bb`'s three
+outcomes are the branch points (`LAND_CLEAN` lands the cited commit,
+`LAND_REPLAY` lands the replayed one it names, `LAND_ESCALATE` stops —
+never auto-resolved, since that judgement is QA's alone and reported as
+`LAND_STOPPED`); the lock is acquired with a bounded deadline
+(`LAND_LOCK_TIMEOUT` rather than an unbounded wait) and released on every
+exit path via a trap, so a land that dies between acquire and release
+never leaves the lock held for the next one; a residual race after
+acquiring rematches onto the current origin tip **at most once**
+(`LAND_REMATCH`) then waits on the lock rather than rematching a second
+time; the push path is grepped clean of `--force`/`-f`. Explicitly NOT in
+scope: the merge-up broadcast and coordinator bookkeeping note (BL-1360),
+and anything about what the entanglement verdict concludes (settled by
+BL-1354, which this consumes — the landed-sibling verdict is per-ticket,
+not per-path, since BL-1354 landed). Fifth and last opportunity of the
+2026-09-03 determinism sweep, held back at mint until BL-1354 stopped
+moving the contract this wraps. Acceptance:
+`specs/features/BL-1366-landing-an-approved-commit-is-one-command.feature`.
+How-to: `docs/how-to/BL-1144-frequent-qa-push-races-on-main-land.md`
+(extended in place — the manual four-command sequence stays documented
+as a fallback, the one-command `--land` mode is now the preferred route).
+No diagram depicts land-publish internals at this granularity — QA still
+lands and pushes exactly as `swarm-flow.mmd` already shows, only the
+number of commands changed.)
+Prior entry —
 **Last Updated:** September 4, 2026 (BL-1361: the post-QA branch sweep's
 "surfaced to its role" contract, BL-668, was built as a log line only —
 `record-surface!` wrote the sweep's state file and `log!`, with no send,
@@ -196,65 +227,6 @@ how-to page: internal coordinator-tooling CLI, same documentation
 precedent as its own mirror `promote_and_route_next.sh` and sibling
 `record-bounce.js`/`record-review-evidence.js` (all Specification.MD-only,
 no dedicated page — BL-1362). No diagram depicts backlog-close internals.)
-Prior entry —
-**Last Updated:** September 4, 2026 (BL-1390: every writer on the shared
-`main` checkout (coordinator, specifier, concierge, approval bot,
-operator) left local `main` ahead of `origin/main` until the daemon's
-periodic push sweep reached it on its own cadence; the moment QA landed
-while anything local was unpushed, the checkout was both ahead and
-behind, the push sweep refused, and absorbing origin became a real merge
-that only a clean `merge-tree` verdict may make and no role may resolve
-by reset — measured 2026-09-04: 32 local-only commits, the deadlock latch
-tripped 115 times, one coordinator close held 48 ticks, four operator
-hand-merges. A new `post-commit` hook
-(`swarmforge/git-hooks/post-commit`, installed repo-wide via
-`core.hooksPath`) pushes a commit on the shared checkout AT ONCE while a
-fast-forward is still possible — deciding first, with no fetch, whether
-it is even on the shared checkout (`:not-shared-checkout` for any role
-branch or linked worktree, since those reach `origin/main` only through
-QA's land), then fetching with a short bound and pushing through
-`push_sweep_lib.bb`'s ONE existing adapter (`push-main!`, BL-1198), the
-same one the periodic sweep calls, so the two can never disagree about
-whether a push was safe. Never `--force`, never while diverged (logs
-`diverged` and leaves the join to the reconcile sweep); the whole run is
-wrapped in a bounded `timeout` and the hook script exits `0`
-unconditionally, since a post-commit hook cannot fail the commit it runs
-after but can stall the committer — an unreachable origin, a slow fetch,
-or a refused push leaves the commit exactly as made and logs why, and the
-periodic push sweep remains the fallback for anything the hook missed.
-Keeping local `main` near `ahead 0` shrinks divergence to the race window
-between one local commit and one QA push (seconds, not a working day),
-and a landing then usually arrives as pure lag, absorbed by `--ff-only`.
-An incident during this ticket's own build: its shell test ran `git -C
-"$root" remote set-url` with `$root` empty — `git -C ""` is the current
-directory, and a linked worktree shares the live `.git/config` — silently
-rewriting the shared `remote.origin.url` to a fixture path and breaking
-every push/fetch from every worktree until QA restored it. Fixed and
-generalized into a standing engineering guardrail (constitution
-Guardrails section): a test fixture never mutates the live repository —
-fixture roots are `git init`/`git clone` under `mkdtemp`, proven by
-`rev-parse --git-common-dir` resolving under the fixture's own directory
-before any mutating git command, and a suite asserts the live origin URL
-is byte-identical before and after it runs. A second incident, found
-independently by QA: 1156 concurrent copies of the e2e test
-(`test_bl1390_post_commit_push.sh`, spawned repeatedly by the acceptance
-and mutation harnesses) exhausted a host during an unrelated land — the
-multiplier itself is unestablished (the parcel's own harnesses are
-sequential and memoized; recorded as unknown, not guessed), but each
-copy's blind startup `rm -rf <prefix>*` sweep (BL-971's own convention)
-deleted every OTHER copy's fixture, the same class of bug BL-1385 hit
-first in `check_handler_module_graph.sh`. Generalized into the same
-standing guardrail rather than fixed twice: BL-971's "sweep by prefix
-before the run too" is right for one runner at a time only — anything
-that CAN run concurrently records its owner pid inside its fixture root,
-reaps only roots whose pid is dead or whose age exceeds a bound, takes a
-lock so at most one instance runs, bounds its own wall clock, and logs
-the process chain that invoked it. Acceptance:
-`specs/features/BL-1390-a-commit-on-the-shared-main-checkout-is-pushed-while-it-still-fast-forwards.feature`.
-How-to: `docs/how-to/BL-1390-post-commit-push-while-it-still-fast-forwards.md`
-(new page — a distinct mechanism from the periodic push sweep it works
-alongside). No diagram depicts push-sweep or hook internals at this
-granularity.)
 Prior entry —
 **Last Updated:** September 4, 2026 (BL-1362: Article 4.4's evidence file
 — items `D1..Dn` or an explicit NONE, committed alone and forwarded by
