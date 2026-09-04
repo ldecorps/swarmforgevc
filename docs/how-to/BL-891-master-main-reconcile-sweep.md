@@ -117,7 +117,8 @@ genuine content conflict still aborts exactly as before.
 | up to date | Local `main` already has everything `origin/main` has. Nothing emitted. |
 | reconciled | Local `main` was behind and no dirty path overlapped a path the merge would change (clean tree, or dirty-but-non-overlapping) — merged forward automatically. Nothing emitted; check `git log` if you want to see it happen. |
 | dirty overlap, not reconciled | Local `main` is behind and a dirty (or untracked) path collides with a path the incoming merge would write to — the one case a plain `git merge` would itself refuse. **(BL-1333/f57795b6d2)** Any overlapping path proven byte-identical to `origin/main` is dropped and the merge proceeds anyway; this verdict/note fires only for paths that survive that proof — genuinely differing local work, never a stale duplicate. The sweep leaves the (still-blocking) checkout exactly as it found it and surfaces a `note` naming the offending path(s) (a count, past the first, if naming them all would blow the note's 80-char budget) to the coordinator. |
-| merge conflict / refuse-rematch (BL-1130 / BL-1141) | Predicted or real conflict on the **automated** path. Aborted (or never started); checkout has no `MERGE_HEAD` / unmerged paths. **(BL-1141)** live handoffd / Process B then **execute** rematch onto `origin/main` so `behind=0` — not a standing Cursor wait-reconcile. Do not finish a daemon merge in an editor. **(BL-1386)** The log now names the actual outcome and quotes git's own error text: `conflict` only when git reported a real content conflict, `merge-failed` for any other real-merge failure (e.g. a pre-merge-commit hook refusal) — never the fixed label regardless of cause. |
+| merge conflict / refuse-rematch (BL-1130 / BL-1141) | Predicted or real conflict on the **automated** path. Aborted (or never started); checkout has no `MERGE_HEAD` / unmerged paths. **(BL-1141)** live handoffd / Process B then **execute** rematch onto `origin/main` so `behind=0` — not a standing Cursor wait-reconcile. Do not finish a daemon merge in an editor. **(BL-1386)** The log now names the actual outcome and quotes git's own error text: `conflict` only when git reported a real content conflict, `merge-failed` for any other real-merge failure (e.g. a pre-merge-commit hook refusal) — never the fixed label regardless of cause. **(BL-1391)** A conflict confined ENTIRELY to bookkeeping paths, where every conflicting hunk is a pure append on both sides, is no longer refused here — it is resolved instead (see "Bookkeeping-only conflicts resolve instead of refusing", below); this row is reached only when at least one conflicted path is outside that set, or at least one hunk is not a pure append. |
+| bookkeeping conflict, resolved (BL-1391) | Every conflicted path was in the bookkeeping set (a ticket YAML under `backlog/`, `backlog/topics/*.json`, `backlog/evidence/*.md`, `backlog/answers-archive/*.md`, `docs/briefings/**`) and every conflict hunk was append-only on both sides. Absorbed as a real merge commit whose body names each resolved path and its strategy; the daemon log carries `bookkeeping-conflict` with the same path list. Passes the same commit guards as any merge on `main` — never bypassed. |
 | human merge in progress (BL-1120, narrowed by BL-1387) | `MERGE_HEAD` was already set when the tick ran, names no daemon ownership record, and there is POSITIVE evidence of a live foreign owner — a `git` process whose cwd is the checkout, or a fresh `.git/index.lock` (mtime inside a short freshness window). The sweep does **not** merge and does **not** abort — a human (or other agent) owns the join. Surfaces a note; finish or abort the merge yourself. |
 | orphaned merge (BL-1387) | `MERGE_HEAD` was already set when the tick ran, names no daemon ownership record, and NEITHER liveness signal is present (no live git process, no fresh lock) — nobody owns this merge. Escalates AT ONCE (not after three ticks of a hold that reads as patience), naming the sha and stating plainly whether the index carries the incoming side (`HEAD..MERGE_HEAD`) — a poisoned index can show no unmerged paths and still carry none of the incoming side, which is what a merge/commit here would silently make permanent. The sweep still does not abort it — auto-abort of an orphan is a separate, unbuilt decision (backing up staged-new files first is a human judgment); the coordinator's step-0 action table (BL-798) tells whoever holds the parcel to back up staged-new files then `git merge --abort` by hand. |
 | daemon's own merge, aborted by ownership (BL-1386) | `MERGE_HEAD` was already set when the tick ran, but its sha matches a standing `.swarmforge/daemon/master-main-merge-owner.json` record — the daemon's own merge from this tick or an earlier one whose abort had failed. Aborted; the record is cleared; no `human-merge-in-progress` or `orphaned-merge` note — this class is neither. |
@@ -128,6 +129,56 @@ Both surfaced cases send **one** note and then go quiet for that same reason
 block always surfaces fresh rather than being silently swallowed by a stale
 flag from an already-resolved episode (the same self-healing shape
 push-sweep's own alarm flags use).
+
+## Bookkeeping-only conflicts resolve instead of refusing (BL-1391)
+
+`:conflict` from `merge-tree` used to mean the same thing whatever the
+conflicted paths were: refuse, because BL-1310 forbids resolving by reset
+and every genuine content conflict needs a human or a rematch. That is the
+right answer for code — and the wrong answer for what actually collides on
+this shared checkout day to day: QA's land writing `abandoned_commits:`
+into a ticket YAML on `origin/main` while the specifier appended `notes:`
+to the same YAML on local `main`; the coordinator closing a ticket while
+the concierge appends a topic record; two roles appending to one evidence
+file. Each of those is two APPENDS to one file with a lossless mechanical
+answer, and each used to halt the coordinator's bookkeeping until a human
+merged by hand — four times on 2026-09-04 alone, the same daily cost
+BL-1390 closes from the push side.
+
+**The bookkeeping set** (invariant 1, exhaustive): a ticket YAML under
+`backlog/`, `backlog/topics/*.json`, `backlog/evidence/*.md`,
+`backlog/answers-archive/*.md`, `docs/briefings/**`. A conflict touching
+ANY path outside this set is refused exactly as before — the resolver
+never partially resolves a mixed conflict; either every conflicted path is
+in the set, or nothing is resolved.
+
+**The append-only test** (invariant 2): for each conflicted hunk, compare
+both sides against the merge base. Only if EACH side's diff is a pure
+insertion — no line removed, no existing line rewritten — is that hunk
+resolved, keeping both sides' additions in ours-then-theirs order (for
+`notes:`, both appended entries land; for `abandoned_commits:` and
+`bounce_history:`, the union of entries, order preserved, duplicates
+dropped). A hunk where either side deleted, renamed, or rewrote a base
+line is never resolved — that conflict, and therefore the whole merge,
+refuses exactly as today. A scalar field (`status:`, `human_approval:`)
+differing on both sides is always a rewrite, never an append, and always
+refuses — this mechanism never adjudicates a genuine disagreement, only
+merges non-overlapping additions.
+
+**Nothing is silent** (invariant 3): the absorb is a REAL merge commit —
+through the same `absorb-with-merge!` ladder and the same pre-merge-commit
+guards every other reconcile merge passes, never bypassed — whose body
+lists each resolved path and the strategy applied, and the daemon logs
+`bookkeeping-conflict` with the same path list. Ownership and abort
+behavior are unchanged from BL-1386: this resolver runs inside the merge
+the daemon already owns.
+
+**Explicitly not touched**: a conflict in `specs/features/**` is a spec
+conflict and still refuses (the specifier now also avoids creating them,
+per a rule in `specifier.prompt`); preventing the divergence in the first
+place is BL-1390's job, not this ticket's; and a mixed conflict — even one
+bookkeeping path alongside one code path — resolves nothing at all and
+refuses in full.
 
 ## Operator workflow
 
