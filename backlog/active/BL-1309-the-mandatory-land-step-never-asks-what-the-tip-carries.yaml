@@ -25,10 +25,10 @@ acceptance: specs/features/BL-1309-the-mandatory-land-decide-step-is-blind-to-en
 
 required_wiring:
   - "swarmforge/scripts/land_main_publish.sh::ENTANGLED_SIBLING_BLOCK::the CONSUMER anchor (BL-1235). land_main_publish.sh is pre-existing and is the only land step QA.prompt makes mandatory, so a marker in THIS file proves a live path reaches the new decision. Anchoring in land_step_lib.bb instead would be satisfied by the parcel's own diff and prove nothing. The marker string is fixed here at mint so the pattern is a literal that will exist (BL-874); grep for it today returns 0."
-  - "specs/pipeline/steps/index.js::bl1309LandDecideStepEntanglementSteps::the draft-conversion anchor, doing a DIFFERENT job from the entry above. This ticket's own acceptance: starts life pointing at a .feature.draft, which passes every gate vacuously (BL-761 fails closed only on an ABSENT declaration). This entry pins the registration so the rename cannot be forgotten. It is deliberately NOT offered as proof of production wiring - see BL-1235 and the entry above."
+  - "specs/pipeline/steps/bl1309LandDecideStepEntanglementSteps.js::registerSteps::the draft-conversion pin, doing a DIFFERENT job from the entry above, REPOINTED 2026-09-04 - it used to cite index.js, whose hand-maintained DOMAINS array BL-1371 replaced with discovery on 2026-09-03, so no handler name appears in that file and the old anchor could never match. Under discovery the handler file IS the registration; its registerSteps export is what index.js loads. The pin's purpose (this parcel renames the draft to .feature, lands the handler, repoints acceptance:) was discharged by the coder on 2026-09-03 and the file already exists on main, so this entry now only proves the handler was not lost. It is deliberately NOT offered as proof of production wiring - see BL-1235 and the entry above."
 
 invariants:
-  - "No tip that adds an unlanded ticket's content over origin/main is advised for push, whatever route that content took onto the tip - a first-parent merge, a second-parent merge, or a rematch."
+  - "No tip that adds a BLOCKING sibling's content over origin/main is advised for push, whatever route that content took onto the tip - a first-parent merge, a second-parent merge, or a rematch. A sibling blocks when it is withheld in backlog/hold, awaiting its human approval, or its approval state cannot be read; an APPROVED unlanded sibling rides by every route. Only a positive reading of approved narrows anything - absence never buys a ride (BL-1375 invariant 1). AMENDED 2026-09-04: the pre-revision wording refused every unlanded sibling, which is ruling option 1, superseded by BL-1375."
   - "An input the step cannot read never becomes a refusal. An unrunnable detector, an unreadable range against origin/main and an unknown ticket all fail OPEN, exactly as BL-806 established and BL-1293 and BL-1307 preserved."
 
 source: |
@@ -102,6 +102,46 @@ description: |
     detector from becoming a swarm-wide land outage. See invariant 2.
 
 notes: |
+  ## 2026-09-04 AMENDMENT (specifier) - two spec gaps the coder raised, both real, both fixed here
+
+  Raised by the coder (priority-00 note, evidence
+  backlog/evidence/BL-1309-coder-rework-20260904.md on its branch) after
+  rebuilding the guard to the REVISED ruling. The coder's rework is correct
+  against the ruling that stands: it consults land_step_lib.bb's
+  `blocking-siblings` (the predicate BL-1375 built), so the mandatory decide
+  step and the hand-run land_step_cli.bb cannot disagree about one tip; an
+  approved unlanded sibling rides, a held / pending / unreadable one refuses,
+  fail-open on the step's OWN inputs is preserved. Nothing to rebuild.
+
+  1. `invariants:` entry 1 still said "no tip that adds an UNLANDED ticket's
+     content is advised for push" - ruling option 1, superseded by BL-1375's
+     revision recorded in `human_ruling:`. Amended above to the standing
+     ruling. The coder's property test already encodes the standing ruling
+     and says so in its header; this brings the declared invariant back into
+     agreement with it, which is the architect's Invariants Review input.
+  2. `required_wiring` entry 2 anchored the handler NAME inside
+     `specs/pipeline/steps/index.js`. BL-1371 landed discovery on
+     2026-09-03: index.js no longer names any handler (`grep -c` -> 0), so
+     the entry was unsatisfiable and would have false-blocked the
+     documenter->QA send. Repointed to the handler file's own export.
+     Entry 1 (the ENTANGLED_SIBLING_BLOCK consumer anchor) is untouched and
+     still the one that proves production wiring.
+
+  The same dead-anchor shape sat on 38 other live tickets (every ticket
+  minted before BL-1371 that pinned its handler in the array). Swept in the
+  same pass, separate commit, so no other parcel meets it at its last hop.
+
+  Feature file: the coder's live `.feature` retires the option-1 row of
+  scenario 01 (gone, not reworded), adds the option-2 rows and scenario 04
+  (the deadlock the narrowing dissolves), and re-tenses the narrative with
+  both rulings. That is the BL-1006 discipline applied inside one ticket
+  and is accepted as the contract; the draft on main is replaced by it when
+  the parcel lands. Amending the draft on main as well would only create a
+  modify/delete conflict against the parcel's own rename.
+
+  Holder notified by priority-00 note to merge main and re-read; this
+  amendment changes no scenario and no code.
+
   ## 2026-09-03 CORRECTION - the option was answered, not assumed
 
   Recorded above (from QA's report and the coordinator's block) that the coder
