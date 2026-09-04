@@ -498,4 +498,4 @@ bl1337_profile_cast_test_runner.bb	standing
 test_bl1390_post_commit_push.sh	standing		
 test_bl1363_close_ticket.sh	standing		
 cron_heartbeat_lib_test_runner.bb	standing		
-test_bl1392_dead_cron_never_silent.sh	standing		
+bl1363_close_ticket_property_runner.sh	standing		
