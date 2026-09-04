@@ -20,7 +20,7 @@ invariants:
   - "A stray found is a refusal, not a warning: the check exits non-zero, so a pass cannot be approved with test or mutation processes still alive."
 
 required_wiring:
-  - 'specs/pipeline/steps/index.js::bl1370WorktreeStrayCheckSteps::acceptance handler registered so the runner executes every scenario. A production anchor IS expected - see notes.'
+  - 'specs/pipeline/steps/bl1370WorktreeStrayCheckSteps.js::registerSteps::acceptance handler registered so the runner executes every scenario. A production anchor IS expected - see notes.; repointed 2026-09-04 after BL-1371 discovery - the handler file IS the registration and index.js names nothing'
 
 human_approval: approved
 approval_context: >

@@ -25,7 +25,7 @@ invariants:
 
 required_wiring:
   - 'swarmforge/scripts/test/bl962_merge_adjudication_test_runner.bb::second ancestry predicate::the over-broad assertion this ticket narrows lives here'
-  - 'specs/pipeline/steps/index.js::bl1372InvariantTwoPinSteps::acceptance handler registered so the runner executes every scenario'
+  - 'specs/pipeline/steps/bl1372InvariantTwoPinSteps.js::registerSteps::acceptance handler registered so the runner executes every scenario; repointed 2026-09-04 after BL-1371 discovery - the handler file IS the registration and index.js names nothing'
 
 human_approval: approved
 approval_context: >

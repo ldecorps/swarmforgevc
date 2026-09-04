@@ -130,7 +130,7 @@ description: |
   half-done rename turns the suite red for every other parcel in flight.
 
 required_wiring:
-  - "specs/pipeline/steps/index.js::bl816RedSuiteDispositionRecordedSteps::acceptance handler registered so the runner executes this ticket's scenarios"
+  - "specs/pipeline/steps/bl816RedSuiteDispositionRecordedSteps.js::registerSteps::acceptance handler registered so the runner executes this ticket's scenarios; repointed 2026-09-04 after BL-1371 discovery - the handler file IS the registration and index.js names nothing"
 
 acceptance: specs/features/BL-816-red-suite-disposition-recorded.feature.draft
 
