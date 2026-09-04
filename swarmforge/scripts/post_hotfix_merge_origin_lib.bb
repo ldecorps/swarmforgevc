@@ -70,38 +70,6 @@
    :mid-merge? false
    :ahead (:ahead (rev-counts!)) :behind (:behind (rev-counts!))})
 
-(defn open-merge-outcome
-  "BL-1387 D1 (architect bounce, 2026-09-04): what an open MERGE_HEAD means
-   HERE, in the post-hotfix/heal path.
-
-   This file has two sites that used to answer `human-merge-in-progress` from
-   bare `mid-merge?` - `run-post-hotfix-merge!`'s dispatch (which passed no
-   :merge-class and so fell into open-merge-branch's backward-compat branch)
-   and `finish-rematch-recovery`'s own `(cond (mid-merge?) ...)`. BL-1387's
-   invariant 1 is stated unconditionally, with no carve-out for this file, and
-   the severity is higher here rather than lower: swarm_heal.bb calls itself
-   the operator's one-shot for \"main-sync is stuck\", so this is the tool
-   someone reaches for while diagnosing the very orphan the old reading hides.
-
-   `merge-class!` is optional. When a caller supplies it - both production
-   entry points now do - the full classification is used. When it is absent
-   the answer degrades to the ownership record alone, which is cheap and needs
-   no process table: an open merge the daemon PROVABLY owns is reported as
-   such rather than as a human's. Absent both, the reading stays today's, but
-   the index fact travels with it so the operator is not left to establish by
-   hand what the tool already knows."
-  [{:keys [merge-class! index-carries-incoming!]}]
-  (let [klass (when merge-class! (merge-class!))
-        carries (when index-carries-incoming! (index-carries-incoming!))
-        base {:ok? false :exit 1 :mid-merge? true}
-        with-index (fn [m] (if (some? index-carries-incoming!)
-                             (assoc m :index-carries-incoming? carries)
-                             m))]
-    (case klass
-      :orphaned (with-index (assoc base :outcome :orphaned-merge))
-      :own (with-index (assoc base :outcome :own-merge-in-progress))
-      (with-index (assoc base :outcome :human-merge-in-progress)))))
-
 (defn- finish-rematch-recovery
   "Shared rematch-or-surface path for refuse-rematch and rematch-bookkeeping.
    BL-1310: rematch!'s own reset adapter is gated by master_main_reconcile_
@@ -110,12 +78,10 @@
    durable block a human resolves, never a transient failure worth
    retrying unattended)."
   [daemon-dir rev-counts! mid-merge? rematch!
-   {:keys [success-outcome fail-outcome fail-message no-rematch-message]
-    :as opts}]
+   {:keys [success-outcome fail-outcome fail-message no-rematch-message]}]
   (cond
-    ;; BL-1387 D1: classified, never asserted from presence alone.
     (mid-merge?)
-    (open-merge-outcome opts)
+    {:ok? false :exit 1 :outcome :human-merge-in-progress :mid-merge? true}
 
     rematch!
     (let [r (rematch!)]
@@ -132,15 +98,12 @@
 (defn- finish-refuse-rematch
   "BL-1141: refuse-rematch recovers by rematching onto origin/main when
    rematch! is provided — never print+exit alone as the standing path."
-  ([daemon-dir rev-counts! mid-merge? rematch!]
-   (finish-refuse-rematch daemon-dir rev-counts! mid-merge? rematch! {}))
-  ([daemon-dir rev-counts! mid-merge? rematch! classify]
+  [daemon-dir rev-counts! mid-merge? rematch!]
   (finish-rematch-recovery daemon-dir rev-counts! mid-merge? rematch!
-                           (merge classify
                            {:success-outcome :rematched-refuse
                             :fail-outcome :refuse-rematch
                             :fail-message "BL-1141: rematch after refuse failed — will retry (no operator merge)"
-                            :no-rematch-message refuse-rematch-line}))))
+                            :no-rematch-message refuse-rematch-line}))
 
 (defn- finish-conflict
   [abort! status-porcelain! mid-merge? merge-res daemon-dir rev-counts! rematch!]
@@ -159,15 +122,12 @@
 (defn- finish-replay-bookkeeping
   "BL-1131/1138: colliding local-ahead → rematch onto origin/main when
    rematch! is provided; otherwise surface rematch-bookkeeping (no operator)."
-  ([daemon-dir rev-counts! mid-merge? rematch!]
-   (finish-replay-bookkeeping daemon-dir rev-counts! mid-merge? rematch! {}))
-  ([daemon-dir rev-counts! mid-merge? rematch! classify]
+  [daemon-dir rev-counts! mid-merge? rematch!]
   (finish-rematch-recovery daemon-dir rev-counts! mid-merge? rematch!
-                           (merge classify
                            {:success-outcome :rematched-bookkeeping
                             :fail-outcome :rematch-bookkeeping
                             :fail-message "BL-1138: rematch bookkeeping failed — will retry (no operator merge)"
-                            :no-rematch-message "BL-1131: absorb deferred — rematch bookkeeping onto origin/main (no operator merge)"}))))
+                            :no-rematch-message "BL-1131: absorb deferred — rematch bookkeeping onto origin/main (no operator merge)"}))
 
 (defn run-post-hotfix-merge!
   "Fetch origin/main; absorb when behind under BL-1131 rematch-then-FF.
@@ -184,7 +144,6 @@
    keeps today's ff-only-then-rematch behavior unchanged."
   [{:keys [daemon-dir fetch! rev-counts! dirty-paths! merge! merge3! abort!
            status-porcelain! mid-merge? merge-verdict! tip-contains-origin!
-           merge-class! index-carries-incoming!
            rematch!]}]
   (fetch!)
   (refresh-honest-surfaced! daemon-dir (set (or (dirty-paths!) #{})))
@@ -196,15 +155,8 @@
         verdict (if merge-verdict! (merge-verdict!) :unavailable)
         conflict? (= verdict :conflict)
         unavailable? (= verdict :unavailable)
-        ;; BL-1387 D1: this call used to pass no :merge-class, so it fell
-        ;; into open-merge-branch's backward-compat branch and asserted a
-        ;; human owned any open merge from presence alone - the reading the
-        ;; ticket exists to retire, in the tool an operator reaches for while
-        ;; diagnosing exactly that state.
-        klass (when (and merge-class! (mid-merge?)) (merge-class!))
         plan (master-main-reconcile-lib/absorb-dispatch-plan
               {:merge-head-present? (boolean (mid-merge?))
-               :merge-class klass
                :behind behind
                :ahead ahead
                :tip-contains-origin? tip-ok?
@@ -213,18 +165,7 @@
                :verdict-unavailable? unavailable?})]
     (case plan
       :skip-human-merge-in-progress
-      (open-merge-outcome {:merge-class! merge-class!
-                           :index-carries-incoming! index-carries-incoming!})
-
-      ;; An orphan and an owned leftover are each named, with the index fact,
-      ;; instead of all three collapsing into "someone is mid-merge".
-      :skip-orphaned-merge
-      (open-merge-outcome {:merge-class! (constantly :orphaned)
-                           :index-carries-incoming! index-carries-incoming!})
-
-      :abort-owned-merge
-      (open-merge-outcome {:merge-class! (constantly :own)
-                           :index-carries-incoming! index-carries-incoming!})
+      {:ok? false :exit 1 :outcome :human-merge-in-progress :mid-merge? true}
 
       :noop
       (finish-ok daemon-dir rev-counts! :noop)
