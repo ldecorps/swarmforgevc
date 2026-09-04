@@ -58,12 +58,22 @@ export interface BubbleSeatTurnInput {
   mirrorUnavailableReason?: string;
 }
 
+// `seatTopicId === undefined` on its own is not a distinct case: when it
+// holds and topicId is also undefined, `topicId === undefined` already
+// fires; when topicId is a number, `topicId !== seatTopicId` already fires
+// (a number is never `undefined`). So the gate below is exactly
+// `topicId === undefined || topicId !== seatTopicId` - the third clause
+// alone, once the redundant first is folded away.
+function notMineTurn(topicId: number | undefined, cursorTopicId: number | undefined): BubbleSeatTurn {
+  return topicId !== undefined && topicId === cursorTopicId
+    ? { kind: 'not-mine', seat: CURSOR_SEAT_NAME }
+    : { kind: 'not-mine' };
+}
+
 export function decideBubbleSeatTurn(input: BubbleSeatTurnInput): BubbleSeatTurn {
   const { topicId, seatTopicId, cursorTopicId } = input;
-  if (seatTopicId === undefined || topicId === undefined || topicId !== seatTopicId) {
-    return topicId !== undefined && topicId === cursorTopicId
-      ? { kind: 'not-mine', seat: CURSOR_SEAT_NAME }
-      : { kind: 'not-mine' };
+  if (topicId === undefined || topicId !== seatTopicId) {
+    return notMineTurn(topicId, cursorTopicId);
   }
   // Note what is NOT consulted here: cursorBusy. Bubble answers on its own
   // worker, so cursor's turn is none of its business.
