@@ -1,0 +1,139 @@
+id: BL-1388
+title: "The land-step runner's BL-1375 tree-guard fixture asserts the retired hand-maintained registry, so the runner has been red on main since BL-1371 landed discovery; the fixture must refuse what the guard refuses today and pin that a discoverable handler passes"
+milestone: M8
+type: defect
+severity: medium
+# medium: real but contained. The guard under test is correct; two
+# assertions in one fixture encode the registration model BL-1371 retired,
+# so land_step_lib_test_runner.bb reports "2 failure(s)" on every run since
+# 2026-09-03 16:57 BST and every QA pass on a land-step ticket has to reason
+# the red away (BL-1374's did). A normalized red hides the next real one -
+# the BL-618 shape - but nothing is broken in production.
+status: todo
+epic: swarm-reliability
+priority: 12
+direction: swarm-reported
+depends_on: []
+mutation_cost: low
+slice_size_envelope: low
+required_stages: [coder, hardender, qa]
+stage_skip_reasons:
+  cleaner: "one fixture block in one test runner is re-tensed; there is no second copy to de-duplicate and no structure to extract."
+  architect: "no design decision - the assertion's premise is re-tensed to the guard exactly as BL-1371 landed it, and BL-1371's architect already reviewed that guard."
+  documenter: "no document describes this fixture; BL-1371's how-to already states the discovery rule the fixture must now follow."
+
+acceptance: specs/features/BL-1388-the-land-step-runners-tree-guard-fixture-asserts-the-retired-registry.feature
+
+required_wiring:
+  - 'specs/pipeline/steps/bl1388LandStepGuardFixtureDiscoverySteps.js::registerSteps::the handler file exists so discovery registers every scenario (BL-1371)'
+
+invariants:
+  - "Every assertion in land_step_lib_test_runner.bb about check_feature_handler_registration.sh describes the guard as it stands under discovery (BL-1371): no fixture asserts a refusal or a pass that depends on the contents of a DOMAINS array, because no such array is read."
+
+human_approval: approved
+approval_context: >
+  A new feature file is authored here, so it needs a tap. No choice is posed
+  and there are no ruling_options. QA found this on BL-1374's pass and
+  reported it by note rather than bouncing a coder who owns none of it; the
+  standing red is nine days old on paper (since BL-1371 landed) and nothing
+  gated on it. The fix is one fixture block; the value is that the land-step
+  runner is trustworthy again.
+
+description: |
+  ## What is wrong
+
+  `swarmforge/scripts/test/land_step_lib_test_runner.bb` (the block headed
+  "the REAL guard wiring, not the injected one", lines ~1200-1230) builds a
+  scratch tree with `specs/features/BL-9009-fixture.feature`, a handler
+  `bl9009FixtureSteps.js`, and a hand-written `index.js` holding an EMPTY
+  `DOMAINS` array, then asserts that `run-replayed-tree-guards` refuses the
+  tree ("the real tree guard refuses an unregistered handler on a non-main
+  tree") and names the feature. It then adds a `require('./bl9009FixtureSteps')`
+  line to the array and asserts the refusal clears.
+
+  BL-1371 (`5a54d66774`, 2026-09-03 16:57 BST) made registration discovery:
+  `check_feature_handler_registration.sh` now treats any top-level
+  `*Steps.js` in `specs/pipeline/steps/` as reachable whatever `index.js`
+  says (`featureHandlerRegistrationCheck.ts` line 27: "Registration is now
+  discovery"). So the guard correctly finds `bl9009FixtureSteps.js`
+  reachable, refuses nothing, and both assertions fail:
+
+      FAIL: BL-1375: the real tree guard refuses an unregistered handler on a non-main tree
+      FAIL: BL-1375: and the refusal names the offending feature   (actual: "")
+      2 failure(s)
+
+  Reproduced on `main` this pass, deterministic. The guard is right; the
+  fixture's premise is the retired model. This is the "repaired fixture rot
+  can reveal a FALSE assertion" shape, and the remedy is to re-tense the
+  assertion, never to touch the guard.
+
+  ## What the guard refuses today (BL-1371 how-to)
+
+  A handler file that discovery does NOT reach: one named without the
+  `Steps.js` suffix, or nested in a subdirectory of `specs/pipeline/steps/`,
+  and required by nothing discovery loads. A feature whose only handler is
+  in that state is exactly "a feature with no registered handler" under the
+  new model, and the guard still names the feature.
+
+  ## How (direction, not mandate)
+
+  - Re-tense the fixture: make `bl9009FixtureSteps.js` undiscoverable (put
+    it under `specs/pipeline/steps/nested/`, or name it `bl9009Fixture.js`),
+    drop the hand-written `DOMAINS` array entirely (the real `index.js` is
+    what the guard reads; the fixture may copy it or omit it as the guard's
+    own tests do), and keep both refusal assertions verbatim in intent. The
+    "registering it clears the refusal" half becomes "moving it where
+    discovery reaches it clears the refusal".
+  - Add one assertion that pins the new premise so the fixture cannot drift
+    back: a discoverable handler beside an EMPTY `DOMAINS` array is NOT
+    refused (invariant 1).
+  - Nothing in `land_step_lib.bb` or the guard changes. Babashka has no
+    mutation/CRAP/DRY wired: the hardener records the degraded fallback and
+    gates on the runner being green.
+
+  ## Explicitly NOT in scope
+
+  - The guard's own behaviour (BL-1371, landed) or the load guard (BL-1385).
+  - Any other standing red in the bb suite (BL-660's runner is BL-1381).
+
+qa_e2e_procedure: |
+  1. `bb swarmforge/scripts/test/land_step_lib_test_runner.bb` on the parcel:
+     exits 0, no FAIL lines; on `main` before the parcel it exits 1 with
+     exactly the two FAIL lines quoted above (confirm the red was this and
+     only this).
+  2. In the re-tensed fixture, temporarily move the handler back to a
+     discoverable name: the refusal assertions fail (the fixture is
+     measuring the guard, not passing vacuously). Restore.
+  3. Confirm `run-replayed-tree-guards` is still the real
+     `check_feature_handler_registration.sh` path, not an injected
+     tree-guards-fn (the block's own header explains why - keep it).
+  4. No other assertion in the runner changed (diff the runner against main:
+     only the fixture block).
+  5. Remove the fixture root in a `finally`, sweeping by prefix before the
+     run too (BL-971).
+
+notes: |
+  Found by QA on BL-1374's pass (evidence
+  `BL-1374-qa-pass-20260904.md` on the QA branch, section "Untracked
+  standing red found"), reported to the specifier by note rather than
+  bounced to a coder who owns none of it - the correct routing (Article
+  4.3). QA's duplicate check against BL-1385 is right: that ticket is about
+  a handler whose own module graph cannot load; this one is about a fixture
+  asserting a registration mechanism that no longer exists.
+
+  Retire-never-reword: the two assertions are unit assertions in a bb
+  runner, not Gherkin scenarios, so BL-1006's rule does not bind their
+  wording; their INTENT (the real guard refuses an unregistered handler on
+  a non-main tree, and names the feature) survives verbatim. BL-1375's own
+  feature file asserts the rider at the scenario level and is untouched.
+
+  IR-DRY: run on the feature file at mint (see commit).
+
+  Mint-time INVEST: one observable outcome (the runner is green and its
+  guard assertions are true), well under one sitting, no unbuilt sibling.
+
+source: |
+  QA note, priority 00, 2026-09-04T09:13Z: "land_step_lib_test_runner
+  BL-9009 fixture stale post-BL-1371, untracked". Evidence:
+  `.worktrees/QA/backlog/evidence/BL-1374-qa-pass-20260904.md` (QA branch),
+  reproduced by the specifier on `main` this pass.

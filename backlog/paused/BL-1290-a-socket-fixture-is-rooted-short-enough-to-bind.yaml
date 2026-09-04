@@ -24,7 +24,7 @@ stage_skip_reasons:
 acceptance: specs/features/BL-1290-a-socket-fixture-is-rooted-short-enough-to-bind.feature
 
 required_wiring:
-  - "specs/pipeline/steps/index.js::bl1290::the new step handler must be registered in the step registry - specs/pipeline/runtime.js THROWS on any scenario with no handler, so an unregistered file fails every scenario in this ticket's feature file rather than silently skipping them. Verified absent from index.js at spec time (grep bl1290 -> 0), so the anchor cannot pass before the work is done"
+  - "specs/pipeline/steps/bl1290SocketFixtureShortRootSteps.js::registerSteps::the new step handler must be registered in the step registry - specs/pipeline/runtime.js THROWS on any scenario with no handler, so an unregistered file fails every scenario in this ticket's feature file rather than silently skipping them. Verified absent from index.js at spec time (grep bl1290 -> 0), so the anchor cannot pass before the work is done; repointed 2026-09-04 after BL-1371 discovery - the handler file IS the registration and index.js names nothing"
 
 invariants:
   - "No control-socket fixture path can exceed swarm_socket_lib.bb's length limit on any supported OS, whatever that OS uses as its temp base - a fixture that binds on Linux but not macOS is a violation, not a platform quirk."

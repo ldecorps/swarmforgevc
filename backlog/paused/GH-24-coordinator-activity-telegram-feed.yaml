@@ -100,7 +100,7 @@ description: |
   half-done rename turns the suite red for every other parcel in flight.
 
 required_wiring:
-  - "specs/pipeline/steps/index.js::gh24CoordinatorActivityTelegramFeedSteps::acceptance handler registered so the runner executes this ticket's scenarios"
+  - "specs/pipeline/steps/gh24CoordinatorActivityTelegramFeedSteps.js::registerSteps::acceptance handler registered so the runner executes this ticket's scenarios; repointed 2026-09-04 after BL-1371 discovery - the handler file IS the registration and index.js names nothing"
 
 acceptance: specs/features/GH-24-coordinator-activity-telegram-feed.feature.draft
 

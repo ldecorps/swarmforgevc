@@ -27,7 +27,7 @@ invariants:
 
 required_wiring:
   - 'extension/src/concierge/pendingApprovalReply.ts::human_ruling::the sole existing ruling writer is the live consumer a relay must go through, never a second writer'
-  - 'specs/pipeline/steps/index.js::bl1369SessionAnswerReachesTicketSteps::acceptance handler registered so the runner executes every scenario'
+  - 'specs/pipeline/steps/bl1369SessionAnswerReachesTicketSteps.js::registerSteps::acceptance handler registered so the runner executes every scenario; repointed 2026-09-04 after BL-1371 discovery - the handler file IS the registration and index.js names nothing'
 
 human_approval: approved
 approval_context: >

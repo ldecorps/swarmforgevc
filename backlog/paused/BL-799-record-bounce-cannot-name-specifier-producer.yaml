@@ -71,7 +71,7 @@ description: |
   - Any change to bounce routing rules (Article 4.3/4.4).
 
 required_wiring:
-  - "specs/pipeline/steps/index.js::bl799RecordBounceSpecifierProducerSteps::acceptance handler registered so the runner actually executes both scenarios; without it the contract below is declared but never run"
+  - "specs/pipeline/steps/bl799RecordBounceSpecifierProducerSteps.js::registerSteps::acceptance handler registered so the runner actually executes both scenarios; without it the contract below is declared but never run; repointed 2026-09-04 after BL-1371 discovery - the handler file IS the registration and index.js names nothing"
 
 acceptance: specs/features/BL-799-record-bounce-specifier-producer.feature.draft
 
