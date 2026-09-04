@@ -187,3 +187,5 @@ source: |
   The evidence's "Two fixes needed" are split here: fix 2 (the operation
   leaving MERGE_HEAD fails loud or self-aborts) is this ticket; fix 1 (the
   predicate stops assuming human, uses liveness) is BL-1387.
+
+assigned_to: coder
