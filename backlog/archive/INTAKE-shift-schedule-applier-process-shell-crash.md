@@ -101,3 +101,27 @@ as coded right now.
   overnight is the actual evidence trail for that, not re-litigated here.
 - The custom weekday/weekend schedule itself (already working, restored,
   not the subject of this intake).
+
+---
+
+## Disposition (specifier, 2026-09-04)
+
+Drained and split 1:2 (Consolidation Authority, BL-680):
+
+- **BL-1381** (`backlog/paused/`, defect, severity high) — "What's needed"
+  items 1 and 3: the `process/shell` load crash (reproduced on bb v1.12.218;
+  the BL-660 unit runner has been red from it since 2026-08-27) and the
+  install wrapper reporting a verdict-less reconcile as "no schedule
+  configured".
+- **BL-1382** (`backlog/paused/`, defect, severity high, `ruling_options`) —
+  "What's needed" item 2 and the observation: both root-ownership predicates
+  (`swarmforge_cron_lib.sh` and `reconcile_shift_schedule_crontab.bb`) claim
+  any line naming `<root>/.swarmforge/operator/`, which is exactly the set of
+  lines that vanished. The exact overnight trigger is left open as the intake
+  asks; the policy (marker-only ownership vs. keep the stop sweep vs. refuse)
+  is posed to the human on the ticket.
+
+Every human sentence quoted above survives verbatim in the `source:` block of
+the ticket(s) it belongs to (Article 5.3).
+
+By specifier.

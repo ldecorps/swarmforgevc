@@ -1,0 +1,177 @@
+id: BL-1383
+title: "A Telegram forum topic bound to a direct OpenAI-compatible chat provider answers in that topic, instead of every message opening a generic support subject"
+milestone: M8
+type: feature
+status: todo
+epic: local-llm-swarm
+priority: 40
+direction: human-intake
+depends_on: []
+mutation_cost: medium
+slice_size_envelope: medium
+required_stages: [coder, cleaner, architect, hardender, documenter, qa]
+
+acceptance: specs/features/BL-1383-a-topic-bound-to-a-chat-provider-answers-there.feature
+
+required_wiring:
+  - 'extension/src/tools/telegram-front-desk-bot.ts::runProviderChatSeatTurn(::the live poller is the pre-existing consumer and today calls nothing of the kind - zero callers on main'
+  - 'specs/pipeline/steps/bl1383ProviderChatSeatAnswersSteps.js::registerSteps::the handler file exists so discovery registers every scenario (BL-1371)'
+
+invariants:
+  - "A topic bound in provider-chat-topic-map.json is decided before the generic front-desk flow: no support subject is ever opened for a bound topic's message, whether the provider answered, refused, or failed."
+  - "Provider credentials and endpoints reach the process from the extension host environment and the gitignored map only - never from the target working directory, a feature file, or a commit."
+
+human_approval: pending
+approval_context: >
+  Your intake of 2026-09-04 with the patch attached. No choice is posed and
+  there are no ruling_options. One thing to know before you approve: I minted
+  this as a FEATURE, not the defect the intake describes, because the two
+  modules the intake calls existing code (providerChatSeat.ts,
+  providerChatSeatLive.ts) do not exist on main or on any branch - the patch
+  creates them ("new file mode" in its own headers), and nothing on main reads
+  provider-chat-topic-map.json. From main's side there is no seat to be
+  broken yet. The priority you gave (low) is kept. The qwen-local half you
+  flagged is verified dark for the reason you suspected and is its own ticket,
+  BL-1384. The cursor-bridge half of the patch is scoped OUT (see description)
+  - say so in the topic if you want it kept.
+
+description: |
+  ## What is wanted
+
+  `.swarmforge/operator/provider-chat-topic-map.json` binds a forum topic id
+  to a direct OpenAI-compatible provider (today: two test seats plus the GLM
+  seat on the b.ai gateway, thread 71550). A message in a bound topic gets an
+  acknowledgement and then the provider's reply in that topic. Today no code
+  on `main` reads that map, so every such message falls through the front
+  desk's generic path and opens a support subject ("changed the topic icon to
+  a ticket" instead of an answer).
+
+  ## Where it lives (verified this pass)
+
+  The live Telegram poller is `telegram-front-desk-bot.ts`
+  (`launch_front_desk.sh` -> `extension/out/tools/telegram-front-desk-bot.js`).
+  Its per-update dispatch is `processMessageUpdate` in
+  `telegramFrontDeskBotCore.ts`, which today has adapter hooks only for the
+  cursor-host and Bubble topics (`cursorBridgeTopicId`/`bubbleTopicId` ->
+  `forwardCursorBridgeUpdate`) and otherwise falls to `openSubjectAndRecord`.
+  The seat is decided THERE - after the cursor-bridge exclusion, before the
+  side-channel and subject-opening steps - by a new optional adapter the
+  live bot supplies. Core decides whether to call it and stops; the live side
+  performs (the same split `forwardCursorBridgeUpdate` already uses).
+
+  ## How (direction, not mandate)
+
+  The human's patch, `backlog/evidence/INTAKE-provider-chat-seat-wiring-hotfix.patch`,
+  is the direction: compiled clean, redeployed, and exercised live through
+  the real GLM topic on 2026-09-04. `git apply --check` passes on `main` at
+  mint. It is a starting point to be reviewed fresh, not applied blind:
+
+  - `providerChatSeat.ts` (new, pure): reads the map, decides
+    `not-mine | answer | refuse` for a topic, threads an optional
+    `systemPrompt`. Testable without VS Code or network.
+  - `providerChatSeatLive.ts` (new, side effects): `runProviderChatSeatTurn`
+    posts the acknowledgement, calls the provider, posts the reply or the
+    provider's actual failure reason (never a bare HTTP status -
+    BL-572/BL-662), and appends a small swarm-context block to the system
+    prompt from cheap never-throwing reads.
+  - `telegramFrontDeskBotCore.ts`: the `runProviderChatSeat?` adapter and the
+    dispatch step described above.
+  - `telegram-front-desk-bot.ts`: the live adapter, posting via
+    `sendTelegramMessage` exactly as every other reply in that file.
+
+  **Scoped OUT of this ticket - the patch's `telegramCursorBridgeLive.ts`
+  hunk.** The intake itself establishes that the cursor-bridge process only
+  ever receives updates the front desk forwards for the cursor and Bubble
+  topics, so a provider-seat hook there is code no live path reaches. Shipping
+  unreachable wiring is exactly BL-1235's shape and the architect will bounce
+  it; leave that hunk out. If a second transport is ever wanted, it is its own
+  slice.
+
+  Fixture-based acceptance only: a fake provider endpoint in-process, never a
+  real network call or a real key (invariant 2). The GLM seat and
+  `B_AI_API_KEY` are live runtime state QA may use for the e2e step.
+
+  ## Explicitly NOT in scope
+
+  - The qwen-local seat's identical reachability gap: **BL-1384**.
+  - Any change to the map's shape or to how seats are configured.
+  - Rate limiting, streaming, or conversation memory for the seat.
+
+qa_e2e_procedure: |
+  1. Unit and acceptance over fakes: a bound topic answers, an unbound topic
+     follows today's flow, a failing provider reports its reason in the topic,
+     a cursor-host topic is never claimed by the seat (scenarios 01-04).
+  2. Confirm no support subject was opened for the bound topic in any of the
+     runs above (invariant 1) - check the front-desk subject store, not the
+     absence of a log line.
+  3. Live, on this host: with the GLM (b.ai) binding in the map and
+     `B_AI_API_KEY` in the environment, redeploy the front desk
+     (`redeploy_front_desk.sh`), post a message in thread 71550, and confirm
+     an acknowledgement then a model reply arrive in that topic and the topic
+     icon does NOT change to the ticket icon.
+  4. Post in an unbound topic and confirm the front desk behaves exactly as
+     before (a subject opens).
+  5. `grep -rn 'B_AI_API_KEY\|api[_-]key' extension/src/tools/providerChatSeat*.ts`
+     shows env reads only, and `git diff --stat` of the parcel touches no file
+     under the target working directory (invariant 2).
+  6. Remove any fixture root in a `finally`, sweeping by prefix before the run
+     too (BL-971).
+
+notes: |
+  Why `type: feature`: verified by `git log --all` on both module paths (no
+  commit anywhere) and by grep of `extension/src`, `docs`, `swarmforge`,
+  `specs` for `providerChatSeat` and `provider-chat-topic-map` (no hit). The
+  patch's own headers say `new file mode 100644` for both. The human's map
+  and seats are real runtime state; the code that would read them was built
+  in their session and never landed. So on `main` this is the seat's first
+  appearance, which makes it a feature with a defect-shaped symptom, and the
+  severity field is correctly absent.
+
+  `required_wiring` anchor 1 is a genuine consumer anchor, not the BL-1235
+  by-construction shape: `telegram-front-desk-bot.ts` is the pre-existing live
+  poller and today contains no call to `runProviderChatSeatTurn` (grep of
+  `extension/src` excluding tests: zero hits on main). The open-paren form is
+  used so a comment merely naming the function does not satisfy it (the
+  memory-noted "anchor can pass on a comment" trap). The core-side hook is
+  deliberately NOT anchored: it is the parcel's own new code and would pass
+  by construction. Scenario 01's "no support subject opened" is the real
+  proof of the hook.
+
+  Epic `local-llm-swarm` is BL-1235's epic (the qwen seat is the first of
+  these "one model behind its own topic" seats); provider seats generalise it
+  to remote OpenAI-compatible providers, and BL-1384 sits beside it.
+
+  IR-DRY: run on the feature file at mint (see commit).
+
+  Mint-time INVEST: one observable outcome (a bound topic answers), one
+  sitting given the patch, no unbuilt sibling; `mutation_cost: medium` for the
+  two new TypeScript modules under Stryker.
+
+source: |
+  Raw intake `backlog/INTAKE-provider-chat-seat-topics-never-answer.md` (human
+  via Claude Code, 2026-09-04), drained by the specifier 2026-09-04 and split
+  1:2 - this ticket carries the seat itself; **BL-1384** carries the qwen-local
+  reachability question the intake flagged. The intake is archived at
+  `backlog/archive/INTAKE-provider-chat-seat-topics-never-answer.md`; its
+  patch stays at `backlog/evidence/INTAKE-provider-chat-seat-wiring-hotfix.patch`.
+
+  Human words carried verbatim (Article 5.3):
+
+  - "Priority: low — three test seats affected, none load-bearing for the
+    pipeline; purely a "the feature silently does nothing" gap."
+  - "The patch is a straightforward apply (`git apply
+    backlog/evidence/INTAKE-provider-chat-seat-wiring-hotfix.patch` from repo
+    root) — whoever picks this up should review it fresh rather than trust it
+    uncritically, but it is not a from-scratch design task."
+  - "No `required_wiring` proposed here — the anchor is straightforward
+    (`runProviderChatSeat` string in `telegramFrontDeskBotCore.ts` /
+    `telegram-front-desk-bot.ts`), leaving the exact required_wiring shape to
+    mint time."
+  - "Consider whether to fold in a look at `qwenLocalTopicId` reachability
+    (flagged above) as a sibling ticket or explicitly out of scope — it is the
+    same defect class but a separate topic/seat, not touched by tonight's fix."
+  - "`.swarmforge/operator/provider-chat-topic-map.json` and the `B_AI_API_KEY`
+    env var are already live/configured (gitignored runtime state + shell
+    profile, not part of this patch) — nothing further needed there for QA to
+    exercise the GLM seat specifically, though a fixture-based acceptance
+    test should not depend on real network/API keys."
