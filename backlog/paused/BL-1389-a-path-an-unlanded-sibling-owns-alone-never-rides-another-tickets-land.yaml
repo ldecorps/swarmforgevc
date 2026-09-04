@@ -28,7 +28,7 @@ invariants:
   - "A sibling reads landed only when EVERY path attributed to it has that sibling's own lines on origin/main; one landed path (a feature file from mint, an evidence file) never makes an unlanded sibling read landed. BL-1354 invariant 1 carried forward and made per-path-complete."
   - "The replay report names, per excluded path, the path and the sibling it was credited to, and per LANDED_SIBLING the path that decided the verdict - a verdict a human can check without diffing the tip."
 
-human_approval: pending
+human_approval: approved
 approval_context: >
   A new feature file is authored here, so it needs a tap. No choice is
   posed and there are no ruling_options. This is the structural half of
