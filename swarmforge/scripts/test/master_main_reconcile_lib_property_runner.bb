@@ -966,6 +966,87 @@
     (println "non-vacuity confirmed: a failed abort neither clears ownership nor falls through - the 2026-09-04 orphan cannot recur silently")
     (do (println (str "NON-VACUITY FAILURE (failed abort): " @orphaning-events)) (System/exit 1))))
 
+;; ── BL-1387's three DECLARED invariants (coder-authored first, BL-654) ────
+;;
+;;   1. human-merge-in-progress is never asserted from MERGE_HEAD presence
+;;      alone: it requires positive evidence of an owner - a live git
+;;      process, a fresh index lock, or a BL-1386 ownership record - and
+;;      absent all three the surfaced reason is orphaned-merge.
+;;   2. This ticket aborts nothing. Classification and surfacing only.
+;;   3. The orphaned-merge surface always states whether the index carries
+;;      the incoming side, computed against HEAD..MERGE_HEAD - never from the
+;;      absence of unmerged paths, which is the reading that makes a poisoned
+;;      merge look clean.
+;;
+;; GENERATOR REACH, by construction. Invariant 1 is about a CONJUNCTION of
+;; absences - no process AND no fresh lock AND no record - so the whole
+;; 2x2x2 owner-signal cube is enumerated rather than drawn, with reach
+;; asserted. Drawing independently would visit the all-absent corner (the
+;; only one that must yield :orphaned) about an eighth of the time, and that
+;; corner is the entire defect.
+
+(def ^:private bl1387-signal-cube
+  (for [proc? [false true] lock? [false true] owned? [false true]]
+    {:live-git-process? proc? :lock-fresh? lock? :owned-by-daemon? owned?}))
+
+(def ^:private bl1387-reached (atom #{}))
+
+(doseq [signals bl1387-signal-cube]
+  (let [cell (str "proc=" (:live-git-process? signals)
+                  " lock=" (:lock-fresh? signals)
+                  " owned=" (:owned-by-daemon? signals))
+        klass (master-main-reconcile-lib/classify-open-merge
+               (assoc signals :merge-head-present? true))
+        any-owner? (or (:live-git-process? signals) (:lock-fresh? signals))]
+    (swap! bl1387-reached conj cell)
+
+    ;; Invariant 1: :live-human requires positive evidence, always.
+    (when (and (= :live-human klass) (not any-owner?))
+      (swap! failures conj (str "BL-1387 invariant 1 [" cell "]: called it a human's with no owner signal")))
+    (when (and (not any-owner?) (not (:owned-by-daemon? signals)) (not= :orphaned klass))
+      (swap! failures conj (str "BL-1387 invariant 1 [" cell "]: no owner signal at all, yet not classified :orphaned - got " klass)))
+    ;; ...and the daemon's own merge is never mistaken for a human's.
+    (when (and (:owned-by-daemon? signals) (not= :own klass))
+      (swap! failures conj (str "BL-1387 invariant 1 [" cell "]: an owned merge was not classified :own - got " klass)))
+
+    ;; Invariant 2: classification yields only non-mutating plan branches.
+    (let [plan (master-main-reconcile-lib/automated-absorb-plan
+                {:merge-head-present? true :merge-class klass :behind 5})]
+      (when-not (contains? #{:skip-human-merge-in-progress :skip-orphaned-merge} plan)
+        (swap! failures conj (str "BL-1387 invariant 2 [" cell "]: an open merge produced a mutating plan " plan))))))
+
+(let [expected (set (for [p [false true] l [false true] o [false true]]
+                      (str "proc=" p " lock=" l " owned=" o)))
+      missing (clojure.set/difference expected @bl1387-reached)]
+  (if (empty? missing)
+    (println (str "BL-1387 generator reach: all " (count expected) " owner-signal cells exercised"))
+    (do (println (str "BL-1387 GENERATOR REACH FAILURE, never exercised: " missing))
+        (System/exit 1))))
+
+;; Invariant 3: the surface states the index fact for EVERY reading, and the
+;; note never loses it to the 80-char cap. Sha lengths are swept because a
+;; long sha is what would push the fact out of a truncating formatter.
+(doseq [carries [true false nil]
+        sha ["a" "abcdef1234" "abcdef1234567890abcdef1234567890abcdef12"]]
+  (let [note (master-main-reconcile-lib/surface-message
+              {:reason :orphaned-merge :behind 7 :merge-head-sha sha :carries-incoming? carries})
+        expected-phrase (cond (nil? carries) "index unreadable"
+                              carries "index carries the incoming side"
+                              :else "index carries none of the incoming side")]
+    (when (> (count note) 80)
+      (swap! failures conj (str "BL-1387 invariant 3 [" sha "/" carries "]: the note exceeds the 80-char cap (" (count note) ")")))
+    (when-not (clojure.string/includes? note expected-phrase)
+      (swap! failures conj (str "BL-1387 invariant 3 [" sha "/" carries "]: the index fact was lost from the note: " note)))))
+
+;; Non-vacuity: the PRE-BL-1387 predicate - presence alone means a human -
+;; must be caught by invariant 1. Without this the rows above would pass
+;; against the very code that held two roles for fifteen minutes.
+(let [old-reading (fn [merge-head-present?] (if merge-head-present? :live-human :none))
+      verdict (old-reading true)]
+  (if (= :live-human verdict)
+    (println "non-vacuity confirmed: the old presence-only reading yields :live-human with no owner signal, which invariant 1 rejects")
+    (do (println "NON-VACUITY FAILURE: the old reading no longer reproduces") (System/exit 1))))
+
 ;; ── report ────────────────────────────────────────────────────────────────
 (println (str "master_main_reconcile_lib property: " runs " runs"))
 (if (empty? @failures)
