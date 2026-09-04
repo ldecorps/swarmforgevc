@@ -15,8 +15,6 @@
   (when (not= expected actual)
     (swap! failures conj (str "FAIL: " msg "\n  expected: " (pr-str expected) "\n  actual:   " (pr-str actual)))))
 
-(defn assert-is-false [msg actual] (assert= msg false (boolean actual)))
-
 (defn assert-true [msg actual] (assert= msg true (boolean actual)))
 
 ;; ── porcelain-lines->paths ──────────────────────────────────────────────
@@ -1536,93 +1534,6 @@
                        [:live-human :orphaned :own])))
 
 ;; ── report ───────────────────────────────────────────────────────────────
-
-;; ── BL-1391: a bookkeeping-only conflict is resolved, not refused ─────────
-;;
-;; The reconcile refuses every conflicted merge, which is right for code and
-;; wrong for what actually collides on this checkout: QA's abandoned_commits
-;; record at land beside the specifier's notes append on the same ticket, two
-;; roles appending to one evidence file, a close beside a topic record. Each is
-;; two appends to one file with a lossless mechanical answer, and each halted
-;; the coordinator for a human (four hand-merges on 2026-09-04).
-
-;; The set is deliberately narrow (invariant 1).
-(assert-true "BL-1391: a ticket YAML under backlog/ is bookkeeping"
-             (master-main-reconcile-lib/bookkeeping-path? "backlog/active/BL-9002-a-thing.yaml"))
-(assert-true "BL-1391: a topic record is bookkeeping"
-             (master-main-reconcile-lib/bookkeeping-path? "backlog/topics/BL-9002.json"))
-(assert-true "BL-1391: an evidence file is bookkeeping"
-             (master-main-reconcile-lib/bookkeeping-path? "backlog/evidence/BL-9002-coder-20260904.md"))
-(assert-true "BL-1391: an answers-archive entry is bookkeeping"
-             (master-main-reconcile-lib/bookkeeping-path? "backlog/answers-archive/ANSWER-2026-09-04-x.md"))
-(assert-true "BL-1391: a briefing is bookkeeping"
-             (master-main-reconcile-lib/bookkeeping-path? "docs/briefings/2026-09-04.json"))
-(assert= "BL-1391: a daemon script is NOT bookkeeping"
-              false (boolean (master-main-reconcile-lib/bookkeeping-path? "swarmforge/scripts/handoffd.bb")))
-(assert= "BL-1391: a feature file is NOT bookkeeping - a spec conflict is a spec conflict"
-              false (boolean (master-main-reconcile-lib/bookkeeping-path? "specs/features/BL-9002-a-thing.feature")))
-(assert= "BL-1391: a role prompt is NOT bookkeeping"
-              false (boolean (master-main-reconcile-lib/bookkeeping-path? "swarmforge/roles/coder.prompt")))
-(assert= "BL-1391: the conf is NOT bookkeeping"
-              false (boolean (master-main-reconcile-lib/bookkeeping-path? "swarmforge/swarmforge.conf")))
-
-;; Both sides appended: every added line survives, ours before theirs.
-(let [merged (master-main-reconcile-lib/append-only-merge
-              {:base ["id: BL-9002" "title: a thing"]
-               :ours ["id: BL-9002" "title: a thing" "notes: |" "  the specifier's note"]
-               :theirs ["id: BL-9002" "title: a thing" "abandoned_commits: [abc1234567]"]})]
-  (assert-true "BL-1391: two appends to one ticket resolve" (:resolved? merged))
-  (assert= "BL-1391: and every added line survives, ours then theirs"
-           ["id: BL-9002" "title: a thing" "notes: |" "  the specifier's note" "abandoned_commits: [abc1234567]"]
-           (:lines merged)))
-
-;; A rewritten base line is a rewrite, not an append (invariant 2).
-(let [merged (master-main-reconcile-lib/append-only-merge
-              {:base ["id: BL-9002" "title: a thing"]
-               :ours ["id: BL-9002" "title: a thing" "notes: mine"]
-               :theirs ["id: BL-9002" "title: something else"]})]
-  (assert-is-false "BL-1391: a side that rewrote a base line is refused" (:resolved? merged))
-  (assert= "BL-1391: and the refusal says which side was not an append"
-           :theirs-not-append-only (:reason merged)))
-
-;; A deletion is a deletion, however small.
-(let [merged (master-main-reconcile-lib/append-only-merge
-              {:base ["a" "b" "c"]
-               :ours ["a" "b" "c" "d"]
-               :theirs ["a" "c"]})]
-  (assert-is-false "BL-1391: a side that deleted a base line is refused" (:resolved? merged))
-  (assert= "BL-1391: named as theirs" :theirs-not-append-only (:reason merged)))
-
-;; An insertion in the MIDDLE is still an append-only change - the rule is
-;; "added lines only", not "added at the end".
-(let [merged (master-main-reconcile-lib/append-only-merge
-              {:base ["a" "z"]
-               :ours ["a" "ours-mid" "z"]
-               :theirs ["a" "theirs-mid" "z"]})]
-  (assert-true "BL-1391: mid-file insertions on both sides resolve" (:resolved? merged))
-  (assert= "BL-1391: ours before theirs, base order preserved"
-           ["a" "ours-mid" "theirs-mid" "z"] (:lines merged)))
-
-;; The same line added by both sides survives once - it survives, which is what
-;; invariant 2 requires, and a duplicated abandoned_commits entry helps nobody.
-(let [merged (master-main-reconcile-lib/append-only-merge
-              {:base ["a"] :ours ["a" "same"] :theirs ["a" "same"]})]
-  (assert-true "BL-1391: an identical addition on both sides resolves" (:resolved? merged))
-  (assert= "BL-1391: and appears once" ["a" "same"] (:lines merged)))
-
-;; The whole-conflict gate: one non-bookkeeping path resolves NOTHING.
-(assert= "BL-1391: every conflicted path in the set is resolvable"
-         :resolvable
-         (master-main-reconcile-lib/bookkeeping-conflict-plan
-          ["backlog/active/BL-9002.yaml" "backlog/evidence/BL-9002-coder-20260904.md"]))
-(assert= "BL-1391: one code path and the whole conflict refuses"
-         :refuse
-         (master-main-reconcile-lib/bookkeeping-conflict-plan
-          ["backlog/active/BL-9002.yaml" "swarmforge/scripts/handoffd.bb"]))
-(assert= "BL-1391: an empty conflict list is not a licence to resolve"
-         :refuse
-         (master-main-reconcile-lib/bookkeeping-conflict-plan []))
-
 (if (empty? @failures)
   (println "ALL TESTS PASS")
   (do (println (str (count @failures) " FAILURE(S):"))

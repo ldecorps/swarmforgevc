@@ -3153,8 +3153,6 @@
       (log! "push-sweep-silent-revert-gate-error" (.getMessage e))
       {:facts-complete? false})))
 
-
-
 (defn push-sweep! []
   (try
     ;; BL-1085: clear per-tick memo so each push-sweep! starts clean; the
@@ -3387,100 +3385,6 @@
 (defn- master-main-clear-merge-owner! []
   (master-main-reconcile-lib/clear-merge-owner! (str daemon-dir)))
 
-;; ── BL-1391: resolve a conflict confined to append-only bookkeeping ────────
-;;
-;; A predicted conflict routes to :replay-bookkeeping or :refuse-rematch, both
-;; of which end in a refusal once local main is ahead - right for code, wrong
-;; for what actually collides here: QA's abandoned_commits record at land
-;; beside the specifier's notes append on the same ticket, a close beside a
-;; concierge topic record, two roles appending to one evidence file. Four
-;; hand-merges on 2026-09-04.
-;;
-;; The decision is master_main_reconcile_lib.bb's (bookkeeping-conflict-plan
-;; and append-only-merge, both pure and property-tested); this is the git
-;; wiring and the log line. The merge is the one the daemon already owns -
-;; ownership and abort behaviour are BL-1386's, unchanged.
-
-(defn- master-main-unmerged-paths []
-  (let [{:keys [exit out]} (daemon-cycle-guard-lib/sh!
-                            ["git" "diff" "--name-only" "--diff-filter=U"]
-                            {:dir (str project-root)})]
-    (when (zero? exit)
-      (vec (remove str/blank? (str/split-lines (str out)))))))
-
-(defn- master-main-stage-content [stage path]
-  (let [{:keys [exit out]} (daemon-cycle-guard-lib/sh!
-                            ["git" "show" (str ":" stage ":" path)]
-                            {:dir (str project-root)})]
-    (when (zero? exit) (str/split (str out) #"\n" -1))))
-
-(defn- master-main-abort-merge! []
-  (daemon-cycle-guard-lib/sh! ["git" "merge" "--abort"] {:dir (str project-root)}))
-
-(defn master-main-try-bookkeeping-absorb!
-  "Attempt BL-1391's resolution. Returns a result map when it RESOLVED and
-   committed, nil when it did not - in which case the tree is left exactly as
-   it was found and the caller falls through to today's refusal.
-
-   Every refusal path aborts the merge it opened, so a `nil` here never leaves
-   a MERGE_HEAD behind for the next tick to inherit (BL-1386's own lesson)."
-  []
-  (master-main-record-merge-owner!)
-  (let [merge-res (daemon-cycle-guard-lib/sh!
-                   ["git" "merge" "--no-commit" "--no-ff" "origin/main"]
-                   {:dir (str project-root)})]
-    (if (zero? (:exit merge-res))
-      ;; No conflict after all - not this function's case. Leave the merge for
-      ;; the ordinary ladder rather than committing something it did not plan.
-      (do (master-main-abort-merge!) nil)
-      (let [paths (master-main-unmerged-paths)
-            plan (master-main-reconcile-lib/bookkeeping-conflict-plan paths)]
-        (if (not= plan :resolvable)
-          (do
-            (log! "master-main-reconcile" "bookkeeping-conflict" "refused"
-                  (str "conflict is not bookkeeping-only: " (str/join "," (or paths ["<unreadable>"]))))
-            (master-main-abort-merge!)
-            nil)
-          (let [resolutions
-                (for [path paths]
-                  [path (master-main-reconcile-lib/append-only-merge
-                         {:base (master-main-stage-content 1 path)
-                          :ours (master-main-stage-content 2 path)
-                          :theirs (master-main-stage-content 3 path)})])]
-            (if (some (fn [[_ r]] (not (:resolved? r))) resolutions)
-              (do
-                (log! "master-main-reconcile" "bookkeeping-conflict" "refused"
-                      (str "not append-only on both sides: "
-                           (str/join "," (for [[p r] resolutions :when (not (:resolved? r))]
-                                           (str p "(" (name (or (:reason r) :unknown)) ")")))))
-                (master-main-abort-merge!)
-                nil)
-              (do
-                (doseq [[path r] resolutions]
-                  (spit (str (fs/path project-root path)) (str/join "\n" (:lines r))))
-                (apply daemon-cycle-guard-lib/sh!
-                       (into ["git" "add" "--"] paths) [{:dir (str project-root)}])
-                (let [body (str "Absorb origin/main, resolving an append-only bookkeeping conflict.\n\n"
-                                "BL-1391: every conflicted path was in the bookkeeping set and both\n"
-                                "sides only ADDED lines, so both additions are kept, ours then theirs:\n"
-                                (str/join "\n" (for [p paths] (str "  " p " - append-only union"))) "\n")
-                      commit-res (daemon-cycle-guard-lib/sh!
-                                  ["git" "commit" "--no-edit" "-m" body]
-                                  {:dir (str project-root)})]
-                  (if (zero? (:exit commit-res))
-                    (do
-                      (master-main-clear-merge-owner!)
-                      (log! "master-main-reconcile" "bookkeeping-conflict" "resolved"
-                            (str/join "," paths))
-                      {:success true :outcome :bookkeeping-conflict-resolved :paths paths})
-                    (do
-                      ;; The guards refused this merge exactly as they would
-                      ;; refuse any other (invariant 3): no bypass, no retry.
-                      (log! "master-main-reconcile" "bookkeeping-conflict" "refused-by-guards"
-                            (str/trim (str (or (:err commit-res) ""))))
-                      (master-main-abort-merge!)
-                      nil)))))))))))
-
 ;; `git merge --abort` with a short bounded retry: the ordinary cause of a
 ;; failed abort on this shared checkout is a transient `.git/index.lock` held
 ;; by the concierge topic store, the coordinator or the specifier, all of
@@ -3674,22 +3578,14 @@
       ;; moves HEAD on. Additive only: the rematch outcome/behavior itself is
       ;; unchanged.
       :replay-bookkeeping
-      (or
-       ;; BL-1391 first: a conflict confined to append-only bookkeeping has a
-       ;; lossless answer, and refusing it is what held the coordinator for a
-       ;; human four times on 2026-09-04. nil means it did not resolve and left
-       ;; the tree as it found it, so today's behaviour follows unchanged.
-       (master-main-try-bookkeeping-absorb!)
-       (do
-         (log! "master-main-reconcile" "conflict" "predicted-conflict-colliding-local-ahead")
-         (master-main-rematch-onto-origin! :rematched-bookkeeping :rematch-bookkeeping)))
+      (do
+        (log! "master-main-reconcile" "conflict" "predicted-conflict-colliding-local-ahead")
+        (master-main-rematch-onto-origin! :rematched-bookkeeping :rematch-bookkeeping))
 
       :refuse-rematch
-      (or
-       (master-main-try-bookkeeping-absorb!)
-       (do
-         (log! "master-main-reconcile" "conflict" "predicted-conflict")
-         (master-main-rematch-onto-origin! :rematched-refuse :refuse-rematch)))
+      (do
+        (log! "master-main-reconcile" "conflict" "predicted-conflict")
+        (master-main-rematch-onto-origin! :rematched-refuse :refuse-rematch))
 
       ;; :ff-absorb — try fast-forward, then a real 3-way merge (BL-1214),
       ;; else rematch (BL-1141).
