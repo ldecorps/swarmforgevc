@@ -1,3 +1,8 @@
+# mutation-stamp: sha256=e4624fc8d3e1a95092d1d64193a67d7c13149353e4fcfb776b5117f6a4f2cbd3
+# acceptance-mutation-manifest-begin
+# {"version":1,"tested_at":"2026-09-04T12:14:56.884071669Z","feature_name":"BL-1379 An expedition's park reverses itself when the expedition lands","feature_path":"/home/carillon/swarmforgevc/.worktrees/hardender/specs/features/BL-1379-an-expedite-park-reverses-itself-when-the-expedition-lands.feature","background_hash":"cc80d44da91b185915a2f3159957caf7b7a2b092b49023853bf3d1e686b7922e","implementation_hash":"unknown","scenarios":[{"index":4,"name":"a parked ticket that changed since the park is left where it is","scenario_hash":"433d04e6e15644392445562967a06e7b1894473b6d4321280c2277115042be2a","mutation_count":2,"result":{"Total":2,"Killed":2,"Survived":0,"Errors":0},"tested_at":"2026-09-04T12:14:56.884071669Z"}]}
+# acceptance-mutation-manifest-end
+
 Feature: BL-1379 An expedition's park reverses itself when the expedition lands
 
   An expedition parks every other active ticket into backlog/hold/ to clear the
