@@ -1,0 +1,245 @@
+id: BL-1296
+title: "Bubble gets its own answering seat so it stays answerable while the Cursor seat is busy, while remaining a mirror of the front desk"
+milestone: M8
+type: feature
+status: todo
+epic: local-llm-swarm
+priority: 50
+direction: human-requested
+depends_on: [BL-1235]
+mutation_cost: medium
+slice_size_envelope: medium
+required_stages: [coder, cleaner, architect, hardender, documenter, qa]
+acceptance: specs/features/BL-1296-bubble-answers-from-its-own-seat.feature
+
+source: >
+  Operator conversation, 2026-08-28. Human observed Bubble (the operator phone app)
+  going quiet while the single Cursor answering seat was busy running the BL-1248
+  pilot's long gherkin-mutation/property sweep. The tunnel/bridge were healthy the
+  whole time (fresh heartbeat, offset advancing) — the responder was simply occupied.
+  Human asked whether Bubble could have its own seat to run in parallel.
+
+  Drained from backlog/INTAKE-bubble-own-seat-parallel-answering.yaml (filed by the
+  operator 2026-08-28 on the human's request; that intake is the sole source of this
+  ticket and was removed from the backlog root when this was minted).
+
+description: >
+  Today Bubble is a MIRROR topic (extension/src/bridge/bubbleMirrorTopic.ts). There is
+  exactly ONE answering seat — the live Cursor agent session
+  (extension/src/bridge/cursorBridgeAgentSession) — and both the cursor host topic
+  (8435) and the Bubble topic (11810) route to it. So whenever the Cursor seat is busy
+  (e.g. a piloted expedite), Bubble cannot answer: same responder, one turn at a time.
+
+  The request is to give Bubble a dedicated answering seat so it can respond in parallel,
+  leaving cursor's host topic and the front desk untouched — the SAME shape as BL-1235
+  ("A local qwen seat answers in its own dedicated messaging topic"). Ride on BL-1235's
+  seat/lifecycle machinery rather than inventing a parallel mechanism.
+
+  DECIDED (human, 2026-08-30): option B — DEDICATED WORKER, Bubble stays a mirror.
+  Bubble remains the phone view of the front desk and gets its own worker so the mirror
+  stays live and answerable even while cursor is busy. Option A (an INDEPENDENT
+  responder that answers on its own and may diverge from the front desk — a genuine
+  second brain) was considered and NOT chosen; divergence is out of scope. The human's
+  words for the chosen shape: "Same answers as the front desk, just not blocked behind
+  Cursor's current turn."
+
+  How (direction, not mandate): BL-1235 shipped a dedicated-topic seat with its own turn
+  loop (extension/src/tools/localQwenSeat.ts, wired through
+  extension/src/tools/telegramCursorBridgeCore.ts and the subject-id topic map at
+  .swarmforge/operator/cursor-bridge-topic-map.json, which today reads
+  {"8435": "CURSOR_REMOTE", "11810": "BUBBLE"}). Reuse that machinery for a Bubble
+  worker rather than inventing a second mechanism. How "stays a mirror" is achieved —
+  shared context, or relaying the front desk's own answer — is the implementer's call,
+  provided invariant 1 holds.
+
+invariants:
+  - "The Bubble seat never diverges from the front desk: it is a mirror served by its own worker, never an independent responder with its own separate context."
+  - "A seat answers only its own topic - the Bubble worker never serves the cursor host topic or the front desk, and the Cursor seat never serves the Bubble topic."
+  - "Exactly one getUpdates owner exists at all times; adding the second seat opens no competing poller."
+
+required_wiring:
+  - 'specs/pipeline/steps/index.js::bl1296BubbleSeatSteps::the five scenarios must actually run, so the handler this ticket adds has to be registered in the step index rather than merely existing as a file'
+
+qa_e2e: >
+  With both seats running, occupy the Cursor seat with a long turn (a piloted
+  expedite or an equivalent long sweep) and confirm from the phone that a message sent
+  to the Bubble topic is answered while that turn is still in flight — this is the whole
+  point of the ticket and must be demonstrated live, not only in fakes. Then send a
+  message to the cursor host topic and confirm the Bubble worker did not answer it, and
+  vice versa. Stop the Bubble seat and confirm the watchdog reports it. Throughout,
+  confirm only one getUpdates owner exists (no 409s in the bridge log) and that the
+  bridge does not restart — the dead-feeder/409 classes must not reopen.
+
+human_approval: approved
+human_ruling: |
+  Strict echo (option 1) - the Bubble seat relays the front desk's own answer
+  and produces none of its own.
+
+  Recorded 2026-09-03 by direct instruction from the human (t / ldecorps@gmail.com)
+  in a Claude Code coordinator chat session, NOT via the Telegram bot or pager
+  tap (human reported being unable to find the pending approvals there). Text
+  matches backlog/answers-archive/ANSWER-2026-09-03-bl1296-echo-vs-worker-strict-echo-relayed.md,
+  which the specifier had already filed from an earlier answer. This entry is
+  the explicit record of the restoring action per BL-1367's finding that the
+  approval-commit byline cannot discriminate who tapped.
+approval_context: >
+  Re-pended DELIBERATELY on 2026-09-03 to collect a ruling. Your approval was
+  real and is not erased - it is commit `9adf88994d`. The ask has to re-fire to
+  record an answer, and only you can restore an approval, never me.
+  .
+  Why. The previous approval_context asked you a question in prose - whether
+  "same answers as the front desk" meant strict echo or a mirror-contexted
+  worker, "a materially different build" - and offered no ruling_options. So
+  the Approve tap recorded `approved` and nothing else, and the question went
+  nowhere. The coder reached that exact fork today and correctly refused to
+  guess. My mistake, not theirs, and the fix is below.
+  .
+  What the coder established, which narrows the choice. A second Cursor agent
+  session built the obvious way does NOT run in parallel: `promptAgent` runs
+  inside `withAgentLock(targetPath)` and that lock is ONE file per repo root.
+  A Bubble worker built that way would serialize behind the Cursor seat's turn
+  - reproducing the exact blocking this ticket exists to remove, while looking
+  fully wired. Real parallelism needs its own lock scope, its own agent-id
+  state, and a model choice.
+  .
+  My recommendation is option 1, listed first, because it is your own words
+  read literally - "Same answers as the front desk, just not blocked behind
+  Cursor's current turn" - and it is the only option that cannot diverge, which
+  invariant 1 forbids. Be aware of its cost, which the coder found and I am not
+  hiding: the front desk answers asynchronously by routing to roles, so a
+  question asked only on the phone has no front-desk answer to echo. Option 3
+  is the pragmatic middle if you want the phone answered directly without a
+  second paid seat, at qwen3:14b's measured ~2.8 tok/s on this host.
+  .
+  Nothing else about the ticket changes. Milestone M8 and epic local-llm-swarm
+  stand as previously confirmed, and the A/B shape decision (option B,
+  dedicated worker, Bubble stays a mirror) is untouched - this ruling decides
+  HOW that worker answers, not whether Bubble stays a mirror.
+
+ruling_options:
+  - Strict echo - the Bubble seat relays the front desk's own answer and produces none (recommended)
+  - Dedicated paid agent session with its own lock scope and its own agent-id state
+  - Local-model worker on BL-1235's qwen seat with its own lock scope and no extra paid seat
+
+notes: |
+  ## 2026-09-03 08:0xZ - a reported ruling that is NOT on record (specifier)
+
+  The coder sent a priority-00 note, "BL-1296 ruling: strict echo (option 1) -
+  evidence 85375b0383, restore approval", with an evidence file quoting an
+  answer "verbatim as selected". **The ruling is not corroborated and the
+  approval was not restored.** Checked this pass, all four negative:
+
+  - `human_ruling:` is ABSENT from this ticket. 36 other tickets across
+    `backlog/` carry a `human_ruling: |` block, so the recording mechanism
+    works - its absence here is meaningful, not an unwired feature.
+  - `human_approval:` is still `pending` on both `main` and `origin/main`.
+  - `.swarmforge/operator/telegram-approval-ask-messages.json` holds a BL-1296
+    ask whose stored text predates this amendment - it contains neither the
+    ruling options nor the re-pended context.
+  - No decision or reply store under `.swarmforge/operator/` carries an answer.
+    The ONLY occurrence of the words "Strict echo" anywhere is this ticket's own
+    `ruling_options[0]` label, read back in the concierge snapshot.
+
+  That last point is the likely explanation and it is an easy mistake, not a
+  dishonest one: option 1's label ends in "(recommended)", and a recommendation
+  read back out of the ticket looks very like an answer. Recorded as
+  unverifiable rather than as false - the human may well have replied in a pane
+  where nothing paired it (BL-1245's answered-but-unpaired case, which happened
+  to a different question this same morning).
+
+  **Do not build the turn function on this.** What would settle it: a
+  `human_ruling:` block on this ticket written by the tap, or the human's own
+  words filed to `backlog/answers-archive/` - which is the specifier's to write,
+  as the coder correctly noted, and I will write it the moment I can see them.
+  Until then `status: blocked` (coordinator, 07:48Z) stands and is correct.
+
+  The coder's evidence file `BL-1296-human-ruling-strict-echo-20260903.md`
+  asserts a collected ruling. It currently lives only on the coder branch; if it
+  merges to `main` unchanged it becomes a durable false record. The coder has
+  been asked to correct or retract it.
+
+  ## 2026-09-03 - spec gap adjudicated, ticket re-pended for a ruling
+
+  The coder raised a priority-00 spec gap rather than narrowing the ticket
+  alone (evidence `backlog/evidence/BL-1296-coder-rework-20260903.md`, the
+  choice the architect bounce's own remediation pointer 2 offers). That was the
+  right call and this amendment answers it.
+
+  Half one of the architect's D1 is FIXED and stays: the seat now reads its
+  topic at the live construction site through the SAME shipped reader the
+  Bubble mirror already uses, with a non-vacuous test that fails when the
+  wiring line is deleted.
+
+  Half two - the turn function - waits on the ruling now posed in
+  `ruling_options`. Do NOT build it against a guess.
+
+  2026-09-03 07:48Z (coordinator): status -> blocked. Re-pended by specifier
+  (2302c234b2) for the echo-vs-worker ruling; stays active, coder not to
+  resume this half. Clears when human_approval is restored.
+
+  2026-09-03 09:0xZ (coordinator): UNBLOCKED. Human restored human_approval
+  directly in this chat session (not via Telegram - reported unable to find
+  the pending approvals there), selecting strict echo (option 1), matching the
+  specifier's already-filed answers-archive text and recommendation. status ->
+  todo. Coder may resume the turn-function half now.
+
+  **The seat binding must not ship on its own.** A bound seat with no worker is
+  a mechanism with no live consumer - the BL-1235 shape this swarm has shipped
+  three times already this week (BL-668 near-inert, BL-664 unwired, BL-1235
+  itself). The coder's guard makes it inert-SAFE, not useful: with no topic the
+  poll behaves exactly as before and cursor keeps answering. That is a good
+  guard, not a delivery. This parcel completes when the seat answers.
+
+  Also recorded: the commit for this parcel's rework was made with
+  `SWARMFORGE_SKIP_PROPERTY_SUITE_GUARD=1` and the coder documented why - the
+  guard named a different unrelated passing file on each run, which is the
+  known jam on BL-1356. Legitimate use of the documented override, recorded
+  rather than silent.
+
+  Operator did NOT implement or pre-spec this (out of bounds without a spec). Feasibility
+  read given to the human: conceptually straightforward and already patterned on BL-1235,
+  but a real ticket, not a quick edit — a second agent session bound to the Bubble topic,
+  a model/seat choice, lifecycle/supervision, and care not to reopen the 409/dead-feeder
+  bugs the bridge is still stabilizing (3 restarts in the hour before this was filed).
+
+  The intake's acceptance list, carried forward and now expressed as the feature file's
+  five scenarios plus the three invariants:
+    - "Bubble answers in its own topic even while the Cursor host seat is busy with other work (parallelism demonstrated)."
+    - "Cursor's host topic and the front desk are never served by the Bubble seat, and vice versa (no cross-answering)."
+    - "A Bubble seat that cannot answer says why in its own topic; it never fails silently and never hands the turn to another seat."
+    - "No regression of the Telegram 409 / double-poller or dead-feeder classes: only one getUpdates owner; the second seat does not open a competing poller."
+    - "The new seat is supervised/kept-alive like the existing bridge (watchdog covers both seats)."
+
+  Related, from the intake:
+    - "BL-1235 (paused) — local qwen dedicated-topic seat; shares the seat/lifecycle machinery this should reuse."
+    - "Dead-feeder / 409 bridge stability work (commits 2ec06b6ef1, 5045fae371) — the concurrency hazards a second seat must not reopen."
+  BL-1235 has since SHIPPED (backlog/done/), so the machinery this rides on exists today
+  rather than being a sibling in flight — that is why depends_on is satisfiable now.
+
+  A live design input recorded on BL-1235: the human's model-tag answer was qwen3:14b at
+  a measured ~2.8 tok/s on this host. A slow seat is a real constraint on any second
+  seat's turn loop, and the Bubble worker's model/seat choice should be made with that in
+  mind rather than assumed to match the Cursor seat.
+
+  IR-DRY: one medium-confidence near-duplicate reported, between scenario 02's
+  parameterized "a message arrives in the <topic> topic" and scenarios 01/03's concrete
+  "a message arrives in the Bubble topic". Reviewed and deliberately kept: the outline is
+  the parameterized form of the same step and one handler pattern serves both, so this is
+  not accidental drift.
+
+abandoned_commits: [6077a6bfbc]
+# BL-1192's documented escape for a deliberate rebuild-off-main. 6077a6bfbc is
+# the architect's bounce revert and was this task's last handoff commit, so the
+# scope gate walked every commit on the coder branch since it - including my own
+# main-sync merges, whose subjects named BL-1296 while their merge resolution
+# authored backlog/active/BL-1309-...yaml. The gate was right to refuse: a merge
+# carrying another ticket's paths must not name a ticket in its subject, and
+# those merges are already ancestors of work handed off for other tickets, so
+# rewriting them was not available. 68da935d5d is the tip-pure rebuild on
+# origin/main that replaces it; recording the dropped base here is what redirects
+# the gate's walk, exactly as the BL-1241 replay path does.
+
+assigned_to: coder
+bounce_count: 1
+bounce_history:
+  - { at: 2026-09-03, by: architect, blamed: coder, class: behavior, commit: 500e6826c4, evidence: backlog/evidence/BL-1296-architect-bounce-20260903.md }
