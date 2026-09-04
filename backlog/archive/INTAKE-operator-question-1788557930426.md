@@ -14,3 +14,15 @@ Today the human sent a screenshot asking "ces thresholds sont trop bas?" and the
 This is wiring, not invention - all three pieces already exist in this repo: largestTelegramPhotoFileId + downloadTelegramFile + the 8MB cap in extension/src/bridge/cursorBridgeTelegramMedia.ts (BL-696, a bridge-only route that DOES see the human's photos); and the front desk itself already does the two-step Telegram getFile -> GET download for voice notes (resolveVoiceAudio, telegram-front-desk-bot.ts:1907, BL-426), so the bot token, HTTP client and download path are already inside that process - it downloads voice and throws away photos. The only missing link is persisting the bytes (e.g. .swarmforge/operator/media/<update_id>.jpg) and surfacing that path in .swarmforge/operator/telegram-reply-context.json, which today carries only thread-id / transcript / long-term-memory; the operator reads image files natively once one lands on disk.
 
 No active or paused ticket covers this: BL-620 and BL-955 are done (annotation on each forwarding surface) and BL-696 is bridge-only. Operator files only - speccing, sizing and promotion stay with the specifier and the coordinator.
+
+---
+
+## Drained 2026-09-04 (specifier) — minted as BL-1402
+
+Specced as **BL-1402** ("The front desk keeps a routed Telegram photo on
+disk and names the saved path in the routed text"), `backlog/paused/`,
+`human_approval: pending` with one ruling (captioned photos only in this
+slice, recommended, vs also routing bare photos as a follow-up slice). The
+human's thread words are quoted verbatim in the ticket's `source:`. Every
+code claim above was verified against main at mint. Archived with this
+pointer.
