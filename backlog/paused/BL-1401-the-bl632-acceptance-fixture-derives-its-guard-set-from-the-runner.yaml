@@ -1,0 +1,124 @@
+id: BL-1401
+title: "The BL-632 acceptance handler derives its fixture's guard set from run_commit_guards.sh through BL-1398's helper instead of a hand-written copy list, so BL-632's feature stops going red every time a guard is added to the runner - as BL-1385's guard did on 2026-09-04 (4 pass / 7 fail)"
+milestone: M8
+type: defect
+severity: medium
+# medium: real but contained. The acceptance run is per feature, so only
+# BL-632's own contract is red; no other parcel's gate reads it. But that
+# contract is the commit-time guard's only executable acceptance, and while
+# it is red no change to the guard can be gated - a broken safety signal for
+# one mechanism, not a live fault. High would be BL-1398's shape (a red the
+# property-suite guard reads on EVERY commit); this is not that.
+status: todo
+epic: swarm-reliability
+priority: 12
+direction: swarm-reported
+depends_on: [BL-1398]
+mutation_cost: low
+slice_size_envelope: low
+required_stages: [coder, cleaner, architect, hardender, documenter, qa]
+
+acceptance: specs/features/BL-1401-the-bl632-acceptance-fixture-derives-its-guard-set-from-the-runner.feature
+
+required_wiring:
+  - 'specs/pipeline/steps/bl632CommitTimeGuardSteps.js::deriveCommitGuardFixtureSet::the live BL-632 handler must consume the helper BL-1398 shipped for its guard set; absent from the handler today (grep returns 0)'
+  - 'specs/pipeline/steps/bl1401AcceptanceFixtureDerivesItsSetSteps.js::registerSteps::the handler file exists so discovery registers every scenario (BL-1371)'
+
+invariants:
+  - "The acceptance fixture's copied guard set is a function of run_commit_guards.sh and the two hooks read at run time - never a list in the handler: a guard added to or removed from the runner is reflected without editing the handler."
+  - "A guard the runner names but the tree lacks fails the scenario loud, naming the guard - never silently skipped, and the fixture never runs a chain narrower than production's."
+  - "Exactly one parser of the runner's guard lines exists in the repo: the acceptance handler consumes BL-1398's helper, it never carries a second parse of run_guard lines."
+
+human_approval: pending
+approval_context: >
+  A new feature file is authored here, so it needs a tap. No choice is posed
+  and there are no ruling_options. Surfaced by the architect on BL-1398's
+  review (2026-09-04): the acceptance-side twin of the fixture BL-1398
+  fixes, reproduced at 4 pass / 7 fail.
+
+description: |
+  ## What is wrong
+
+  `specs/pipeline/steps/bl632CommitTimeGuardSteps.js`'s `mkFixtureRepo`
+  copies the real commit guards, runner, libs and hooks into a scratch
+  repository from a hand-written twelve-entry list (five `check_*.sh`
+  guards, the runner, four libs, two hooks). `run_commit_guards.sh` now also
+  runs `check_handler_module_graph.sh` (BL-1385, landed 2026-09-04). The
+  list does not name it, the runner in the fixture exits 127 on the missing
+  guard, the chain reports a refusal, and every "the commit succeeds"
+  scenario of `BL-632-commit-time-guard-refuses-pipeline-code-on-main.feature`
+  fails: 4 pass / 7 fail, reproduced by the architect on 2026-09-04
+  (`BL-1398-architect-20260904.md`). Nothing about the guard is wrong.
+
+  This is the acceptance-side twin of BL-1398, which fixes the SAME stale
+  list in the property test `bl632CommitTimeGuardInvariants.property.test.js`
+  and explicitly scoped other hand-enumerated fixtures out ("name them in the
+  coder's evidence if met, mint separately"). BL-1398 ships
+  `extension/test/helpers/commitGuardFixtureSet.js` with
+  `deriveCommitGuardFixtureSet()`, which parses the `run_guard <script>
+  [args]` lines of the runner and both hooks at call time and resolves the
+  libs they source, throwing on a guard the tree lacks.
+
+  ## How (direction, not mandate)
+
+  - Replace the hand-written copy list in `mkFixtureRepo` with a call to
+    `deriveCommitGuardFixtureSet()` (a step handler may require from
+    `extension/test/helpers/`; ten handlers already do). Keep the rest of
+    the fixture - the empty step registry, the `extension/out` symlink,
+    `core.hooksPath` - exactly as it is; only the guard set changes.
+  - Do NOT write a second parser of `run_guard` lines (invariant 3). If the
+    helper lacks something this fixture needs, extend the helper.
+  - The BL-632 feature file is NOT amended; its scenarios are correct and
+    are the thing this ticket makes green again. Its mutation stamp records
+    `implementation_hash: unknown`, so the hardener's acceptance-mutation
+    pass on the changed handler is the normal one.
+  - Scenarios 02 and 03 need the handler's fixture builder to accept a
+    runner path (a seam), so the ticket's own handler can hand it a scratch
+    runner copy; BL-1398's helper already takes one.
+
+  ## Explicitly NOT in scope
+
+  - BL-1398's property fixture (landed or landing first - `depends_on`).
+  - Any other fixture that still enumerates a closure by hand: name it in
+    the coder's evidence if met, mint separately.
+
+qa_e2e_procedure: |
+  1. On the parcel: `specs/pipeline/scripts/run_acceptance.sh
+     specs/features/BL-632-commit-time-guard-refuses-pipeline-code-on-main.feature`
+     passes every scenario run (was 4 pass / 7 fail on main 2026-09-04).
+  2. Copy `run_commit_guards.sh` to a scratch seam and append
+     `run_guard check_bl1401_extra.sh` with that script present beside it;
+     build the fixture from the seam: the copied set includes the extra
+     guard and the chain runs it.
+  3. Name `check_bl1401_absent.sh` in the seam with no such script: the
+     build fails naming that guard.
+  4. `grep -c 'run_guard' specs/pipeline/steps/bl632CommitTimeGuardSteps.js`
+     returns 0 and `grep -c deriveCommitGuardFixtureSet` the same file
+     returns at least 1 (invariant 3).
+  5. Fixture roots are removed in a `finally`, reaping only roots no live
+     run owns (BL-1385/BL-1390); never a bare prefix sweep.
+
+notes: |
+  `depends_on: [BL-1398]` names a ticket at the hardener on 2026-09-04, not
+  yet in `backlog/done/`. The BL-957 promotion gate fails closed until it
+  lands, so this ticket cannot be promoted early; that is the intended
+  sequencing. A second parser to avoid the dependency would be a DRY defect
+  the cleaner folds anyway, and would ship a fixture the helper then has to
+  replace - deliberately refused (INVEST: Independent is satisfied by the
+  gate, not by re-deriving).
+
+  `required_wiring` anchor 1 is a consumer anchor: the live BL-632 handler
+  is what runs the feature, and the helper's name is absent from it today.
+
+  IR-DRY at mint: see commit.
+
+  Mint-time INVEST: one observable outcome (BL-632's contract green against
+  today's runner and staying green when the runner grows), one sitting, no
+  unbuilt sibling beyond the declared dependency.
+
+source: |
+  Architect note on BL-1398, priority 00, 2026-09-04T20:25Z: "spec-gap:
+  bl632CommitTimeGuardSteps.js is BL-1398's stale twin, 7 fails". Architect
+  evidence `BL-1398-architect-20260904.md` §"Surfaced item" (architect
+  branch); coder evidence for BL-1398 named it first. Not a bounce: BL-1398
+  forwarded clean.
