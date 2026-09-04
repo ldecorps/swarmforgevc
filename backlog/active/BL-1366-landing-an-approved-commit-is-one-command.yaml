@@ -159,3 +159,13 @@ source: |
 
   Child of BL-667 (EPIC - deterministic transit assist). Sibling of BL-1360,
   BL-1361, BL-1362, BL-1363.
+
+abandoned_commits: [714e9c6035]
+# 714e9c6035 ("Merge cleaner b48b9cd600 into coder (BL-1366 reverse copy,
+# merge-only)") is stranded on side, not this tip. Diffed against this
+# documenter commit: every changed file is a pure deletion relative to
+# this tip - it is a stale snapshot predating the BL-1361/1366/1390/1391/
+# 1392 doc and evidence work this tip already carries. Its one-line
+# handoffd.bb difference is a stray trailing-dash artifact from an old
+# conflict-marker resolution, already clean on this tip. Nothing of
+# value is dropped by not merging it.
