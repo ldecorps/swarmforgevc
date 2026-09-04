@@ -2,7 +2,15 @@
 ;; BL-660: crontab render/diff for shift schedule applier — pure, no shell.
 
 (ns shift-schedule-applier-lib
+  ;; BL-1381: babashka.process belongs HERE, not inside a function body.
+  ;; SCI resolves an alias at ANALYSIS time, so a runtime `(require '[...])`
+  ;; inside budgetShiftGovernorVerdict left `process/shell` unresolvable and
+  ;; the whole FILE failed to load - taking down every consumer at load rather
+  ;; than at the governor call. The schedule cron install was therefore inert
+  ;; on every ./swarm start from 2026-08-27, and this lib's own BL-660 runner
+  ;; was red the entire time.
   (:require [babashka.fs :as fs]
+            [babashka.process :as process]
             [cheshire.core :as json]
             [clojure.string :as str]))
 
@@ -73,7 +81,9 @@
   (let [cli (str project-root "/extension/out/tools/budget-shift-governor.js")]
     (when (fs/exists? cli)
       (try
-        (require '[babashka.process :as process])
+        ;; The require moved to the ns form (BL-1381). The fs/exists? guard
+        ;; above and this try/catch stay: the verdict is best-effort, and a
+        ;; governor that cannot run must yield nil rather than break a caller.
         (let [{:keys [exit out]} (process/shell {:dir project-root :out :string :err :string}
                                                 (str "node " cli " --now " now-ms))]
           (when (zero? exit)
