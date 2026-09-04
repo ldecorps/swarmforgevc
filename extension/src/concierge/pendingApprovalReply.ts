@@ -351,17 +351,71 @@ export function explainApprovalRecordNoOp(targetPath: string, backlogId: string)
   return classifyApprovalRecordNoOp(fs.readFileSync(filePath, 'utf8'));
 }
 
+// BL-1367: whether an approval may be recorded at all, and whether it carries
+// a ruling. PURE over the two facts that decide it - what the ticket declares
+// and what the surface offered - so every surface asks one question rather
+// than each growing its own reading.
+//
+// A ticket posing a choice must never end up approved with the choice
+// unanswered: the next role cannot tell consent from a complete answer, and
+// builds on a guess. BL-1309 was approved that way from the pager on
+// 2026-09-01 and its binary refusal-width question was never answered. So an
+// approval that cannot carry its ruling is REFUSED rather than half-recorded -
+// the human answers it from the bot's ruling keyboard instead.
+export type ApprovalRulingRequirement =
+  | { kind: 'ok' }
+  | { kind: 'ruling-required'; options: string[] }
+  | { kind: 'unknown-option'; options: string[] };
+
+// Split out so the caller's own branch count reflects only the three
+// ticket-shape cases (no options / missing ruling / options present) and
+// not also the label-matching rule itself.
+function matchesRulingOption(options: string[], chosen: string): boolean {
+  return options.some((option) => option.trim() === chosen);
+}
+
+export function classifyApprovalRulingRequirement(
+  rulingOptions: string[] = [],
+  ruling: string = ''
+): ApprovalRulingRequirement {
+  const options = rulingOptions;
+  // Blank is not an answer. A surface that sent an empty field must not slip
+  // past the check a missing one trips.
+  const chosen = ruling.trim();
+  if (options.length === 0) {
+    // Nothing declared it, so nothing can validate it - and a ruling on a
+    // ticket that posed no choice is the same unanswerable state in the other
+    // direction.
+    return chosen ? { kind: 'unknown-option', options } : { kind: 'ok' };
+  }
+  if (!chosen) {
+    return { kind: 'ruling-required', options };
+  }
+  return matchesRulingOption(options, chosen) ? { kind: 'ok' } : { kind: 'unknown-option', options };
+}
+
 // Impure driver: flips the ticket's human_approval to approved if it is
 // currently pending. Returns whether it actually changed, so the live
 // wiring can tell a real flip from a no-op (already approved, or the
 // backlog id has no matching ticket file - e.g. a stale topic mapping).
-export function recordApprovalReply(targetPath: string, backlogId: string): boolean {
+//
+// BL-1367: `ruling` is the widened seam. Both entry points - the bot's
+// callback path and the paused-pager Mini App route - now reach ONE writer, so
+// a third surface cannot reintroduce the dropped ruling by having its own.
+// Omitting it is byte-for-byte the behaviour every existing caller had.
+// Validating the label against what the ticket declares is the CALLER's job
+// (classifyApprovalRulingRequirement above): this driver is told what to
+// write, and a caller that has not asked must not be silently rescued here.
+export function recordApprovalReply(targetPath: string, backlogId: string, ruling?: string): boolean {
   const filePath = findTicketFilePath(targetPath, backlogId);
   if (!filePath) {
     return false;
   }
   const rawText = fs.readFileSync(filePath, 'utf8');
-  const { text, changed } = approveHumanApprovalText(rawText);
+  const chosen = (ruling ?? '').trim();
+  const { text, changed } = chosen
+    ? rulingHumanApprovalText(rawText, chosen)
+    : approveHumanApprovalText(rawText);
   if (changed) {
     fs.writeFileSync(filePath, text);
   }
