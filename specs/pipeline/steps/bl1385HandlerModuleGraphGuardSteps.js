@@ -119,6 +119,33 @@ function registerSteps(registry) {
     ctx.bl1385.shape = 'unreadable-tree';
   });
 
+  // ── BL-1385 invariant 3 (added 2026-09-04 after the cleaner reproduced two
+  //    runs deleting each other's tree). This guard runs from a commit hook,
+  //    where invocations overlap constantly - and BL-971's sweep-by-prefix,
+  //    written for test fixtures that never run concurrently, deleted a live
+  //    run's materialised tree. Every file then read as absent and the guard
+  //    reported hundreds of phantom missing modules, refusing valid commits.
+  scoped(/^two handler module graph guards examine the tree at the same time$/, (ctx) => {
+    ctx.bl1385.shape = 'concurrent';
+    ctx.bl1385.report = runFixture('concurrent');
+  });
+
+  scoped(/^both guards pass$/, (ctx) => {
+    const { report } = ctx.bl1385;
+    assert.match(report.out, /a=0 b=0/, `a concurrent pair did not both pass: ${report.out}`);
+  });
+
+  scoped(/^neither guard removed a working directory it did not create$/, (ctx) => {
+    // A sibling root owned by a LIVE pid is planted before the pair runs. Its
+    // survival is the invariant stated directly: reaping is scoped to roots no
+    // live run owns.
+    assert.match(
+      ctx.bl1385.report.out,
+      /probe_survived=true/,
+      `a guard reaped a root it did not own: ${ctx.bl1385.report.out}`
+    );
+  });
+
   // ── When ────────────────────────────────────────────────────────────────
   const run = (ctx) => {
     assert.ok(ctx.bl1385.shape, 'no fixture shape was chosen');
