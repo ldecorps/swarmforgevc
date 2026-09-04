@@ -505,3 +505,4 @@ test_bl1366_land_is_one_command.sh	standing
 test_bl1395_bb_scripts_load.sh	standing		
 test_bl1398_guard_fixture_derives_set.sh	standing		
 test_bl1399_freshness_fixture_own_registry.sh	standing		
+test_bl1388_land_step_guard_fixture.sh	standing		

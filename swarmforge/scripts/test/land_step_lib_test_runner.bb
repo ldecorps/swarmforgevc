@@ -1412,31 +1412,77 @@ RESOLVED BY THIS TICKET
 ;; actually assesses a non-main tree. Without --assume-main the guard's own
 ;; branch gate exits 0 on the scratch branch's name and this would pass
 ;; vacuously - so the FIRST case here must be a refusal.
+;;
+;; BL-1388: what makes a handler UNREGISTERED changed under BL-1371. The guard
+;; no longer reads a DOMAINS array - "registration is now discovery": any
+;; top-level `*Steps.js` in specs/pipeline/steps/ is reachable whatever
+;; index.js says. This fixture used to build its refusal case as a discoverable
+;; handler beside an empty array, which the guard rightly stopped refusing on
+;; 2026-09-03, so the runner reported "2 failure(s)" on every run afterwards.
+;; The premise is re-tensed, never the guard: the refusal case is now a handler
+;; discovery genuinely cannot reach. The intent of both assertions - the real
+;; guard refuses an unregistered handler on a non-main tree, and names the
+;; feature - survives unchanged.
 
-(with-fixture [root]
-  ;; On a `land-replay/...` branch, exactly where the real replay stands. The
-  ;; fixture's default branch is main, on which the guard would run anyway and
-  ;; this case would say nothing about --assume-main.
+(defn- fixture-tree-on-replay-branch!
+  "A scratch tree standing exactly where the real replay stands: a
+  `land-replay/...` branch carrying one feature and one handler, the handler
+  written at `handler-rel` (relative to the tree root)."
+  [root handler-rel]
   (sh! root "git" "checkout" "-q" "-b" "land-replay/BL-9001-abc1234567")
   (fs/create-dirs (fs/path root "specs" "features"))
-  (fs/create-dirs (fs/path root "specs" "pipeline" "steps"))
+  (fs/create-dirs (fs/parent (fs/path root handler-rel)))
   (spit (str (fs/path root "specs" "features" "BL-9009-fixture.feature")) "Feature: fixture\n")
-  (spit (str (fs/path root "specs" "pipeline" "steps" "bl9009FixtureSteps.js"))
-        "module.exports = { registerSteps() {} };\n")
+  (spit (str (fs/path root handler-rel)) "module.exports = { registerSteps() {} };\n")
+  ;; The registry file itself must exist and be readable, or the guard refuses
+  ;; for THAT reason ("unreadable step registry") and every case below would
+  ;; pass while proving nothing about the handler. Its array lists nothing:
+  ;; under discovery that is not what decides, which is precisely what the last
+  ;; case here pins.
   (spit (str (fs/path root "specs" "pipeline" "steps" "index.js")) "const DOMAINS = [\n];\n")
   (sh! root "git" "add" "-A")
-  (sh! root "git" "commit" "-q" "-m" "fixture: a feature with no registered handler")
+  (sh! root "git" "commit" "-q" "-m" "fixture: a feature and one handler"))
+
+;; A handler discovery cannot reach: named without the Steps.js suffix, so it
+;; is not loaded and nothing else requires it. That is "a feature with no
+;; registered handler" under the model that actually runs today.
+;;
+;; MEASURED, and narrower than BL-1388's ticket assumed: a handler NESTED below
+;; the steps directory is not a refusal case at all. The guard's tree reader
+;; lists specs/pipeline/steps non-recursively
+;; (check-feature-handler-registration.ts `listDir(STEPS_DIR)`), so a nested
+;; file is never in `stepFiles`, the feature has no handler that declares its
+;; ticket, and collectUnregisteredHandlers skips it. The fixture asserts what
+;; the guard does, never what a ticket expected it to do; the gap went to the
+;; specifier as a priority-00 note.
+(with-fixture [root]
+  (fixture-tree-on-replay-branch! root "specs/pipeline/steps/bl9009Fixture.js")
   (let [refusals (land-step-lib/run-replayed-tree-guards root)]
-    (assert-true "BL-1375: the real tree guard refuses an unregistered handler on a non-main tree"
+    (assert-true "BL-1388: the real tree guard refuses a handler discovery cannot reach on a non-main tree"
                  (boolean (seq refusals)))
-    (assert-includes "BL-1375: and the refusal names the offending feature"
-                     (str/join " " refusals) "BL-9009-fixture.feature"))
-  ;; Registering it clears the refusal - the guard is deciding, not just failing.
-  (spit (str (fs/path root "specs" "pipeline" "steps" "index.js"))
-        "const DOMAINS = [\n  require('./bl9009FixtureSteps'),\n];\n")
+    (assert-includes "BL-1388: and the refusal names the offending feature"
+                     (str/join " " refusals) "BL-9009-fixture.feature")))
+
+;; Moving it where discovery reaches it clears the refusal - the guard is
+;; deciding, not just failing. (Under the retired model this half was
+;; "registering it in DOMAINS clears the refusal".)
+(with-fixture [root]
+  (fixture-tree-on-replay-branch! root "specs/pipeline/steps/bl9009Fixture.js")
+  (assert-true "BL-1388: the undiscoverable handler is refused before it is renamed"
+               (boolean (seq (land-step-lib/run-replayed-tree-guards root))))
+  (fs/move (fs/path root "specs" "pipeline" "steps" "bl9009Fixture.js")
+           (fs/path root "specs" "pipeline" "steps" "bl9009FixtureSteps.js"))
   (sh! root "git" "add" "-A")
-  (sh! root "git" "commit" "-q" "-m" "fixture: register the handler")
-  (assert= "BL-1375: and a self-consistent tree passes"
+  (sh! root "git" "commit" "-q" "-m" "fixture: give the handler a name discovery reaches")
+  (assert= "BL-1388: and a tree whose handler discovery reaches passes"
+           [] (land-step-lib/run-replayed-tree-guards root)))
+
+;; The new premise, pinned so the fixture cannot drift back to the retired one:
+;; a DISCOVERABLE handler beside an array that lists nothing is NOT refused.
+;; This is the exact tree the old fixture asserted a refusal for.
+(with-fixture [root]
+  (fixture-tree-on-replay-branch! root "specs/pipeline/steps/bl9009FixtureSteps.js")
+  (assert= "BL-1388: a discoverable handler beside an empty registry array is not refused"
            [] (land-step-lib/run-replayed-tree-guards root)))
 
 ;; ── BL-1389: the exclusion asks per PATH, and landed means every path ────
