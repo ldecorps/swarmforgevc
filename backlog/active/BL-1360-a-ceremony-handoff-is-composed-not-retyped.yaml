@@ -176,3 +176,12 @@ source: |
   the operator's 2026-07-26 intake
   `.swarmforge/operator/INTAKE-deterministic-git-choreography-assist.md`. This
   is that epic's "handoff tail command (unfiled - smallest)" slice.
+
+abandoned_commits: [b9e3bf5f64]
+# b9e3bf5f64 added 2026-09-04 (QA hand-built land replay, BL-1241): the
+# commit cited to land_step_cli.bb for this land (own QA-approval commit
+# 0b46b44b12 is its ancestor), superseded by the tip-pure replay
+# b023bf1ab9 actually landed. Blocked since 2026-09-03 by the largest
+# shared-index.js registry deadlock this session recorded (9 unlanded
+# sibling handlers); cleared once BL-1371 (discovery registration) and
+# this session's own lands removed the blockers.
