@@ -135,7 +135,16 @@ bb -e "$(cat <<'BB'
   (master-main-reconcile-lib/automated-absorb-plan
    {:merge-head-present? (some? mh-before) :merge-class klass :behind 3}))
 
-(def reason (if (= branch :skip-orphaned-merge) "orphaned-merge" "human-merge-in-progress"))
+;; The reason is derived from the BRANCH production actually returned, with no
+;; else-branch to fall into. An earlier version mapped anything that was not
+;; :skip-orphaned-merge to "human-merge-in-progress", which silently absorbed
+;; BL-1386's new :abort-owned-merge and reported a reading that no longer
+;; happens - the same masking shape the BL-1386 D1 bounce was about.
+(def reason (case branch
+              :skip-orphaned-merge "orphaned-merge"
+              :skip-human-merge-in-progress "human-merge-in-progress"
+              :abort-owned-merge "aborted-owned-merge"
+              (str "unmapped-branch:" branch)))
 
 ;; Unmerged-path COUNT, reported so the acceptance can show the poisoned index
 ;; has none and still is not safe - the reading invariant 3 forbids relying on.

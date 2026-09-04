@@ -216,15 +216,28 @@ function registerSteps(registry) {
 
   // ── Then: ownership handover and foreign merges ─────────────────────────
   scoped(/^human-merge-in-progress was never surfaced for that MERGE_HEAD$/, (ctx) => {
-    const labels = labelsOf(ctx.bl1386.report);
+    const { report } = ctx.bl1386;
+    const labels = labelsOf(report);
     assert.ok(
       !labels.includes('skip-human-merge-in-progress'),
       `the daemon called its own merge a human's: ${JSON.stringify(labels)}`
     );
+    // ARCHITECT BOUNCE D1b: pin the PRODUCTION decision, not just the
+    // outcome the fixture reached. `tick2-branch` is what
+    // automated-absorb-plan returned - the same call handoffd.bb's dispatch
+    // makes - so a regression that routes :own back to
+    // :skip-human-merge-in-progress fails HERE. Verified by construction:
+    // with the pre-bounce mapping restored this reads
+    // ":skip-human-merge-in-progress" and the scenario fails.
     assert.equal(
-      ctx.bl1386.report.outcome,
+      textFor(report, 'tick2-branch'),
+      ':abort-owned-merge',
+      `production dispatch did not route the owned merge to an abort: ${JSON.stringify(report.logs)}`
+    );
+    assert.equal(
+      report.outcome,
       'aborted-by-ownership',
-      `the next tick did not abort by ownership: ${JSON.stringify(ctx.bl1386.report)}`
+      `the next tick did not abort by ownership: ${JSON.stringify(report)}`
     );
   });
 

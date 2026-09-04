@@ -316,17 +316,29 @@
    unchanged. When it is present:
 
      :live-human  -> :skip-human-merge-in-progress   (today's reading, kept)
-     :own         -> :skip-human-merge-in-progress   (BL-1386 finishes it;
-                                                      this ticket never acts)
-     :orphaned    -> :skip-orphaned-merge            (the new reading)
+     :own         -> :abort-owned-merge              (BL-1386: the daemon's
+                                                      own leftover, aborted
+                                                      by ownership on a LATER
+                                                      tick)
+     :orphaned    -> :skip-orphaned-merge            (BL-1387's reading)
      :none        -> nil                             (nothing to skip)
 
-   Returns nil when there is no open merge to branch on."
+   Returns nil when there is no open merge to branch on.
+
+   BL-1386 ARCHITECT BOUNCE (2026-09-04), D1. `:own` used to map to
+   `:skip-human-merge-in-progress` on the reasoning that BL-1386 would finish
+   it elsewhere. It does not: the daemon's `:abort!` adapter is only ever
+   reached from `absorb-with-merge!` on the SAME tick that started the merge,
+   so the ownership 2-arity was never called in production and the tick after
+   a failed abort still called the daemon's own leftover a human's - the exact
+   scenario the ticket exists to fix. `:own` now has its own branch, and the
+   daemon acts on it."
   [{:keys [merge-head-present? merge-class]}]
   (cond
     (and merge-class (not= :none merge-class))
     (case merge-class
       :orphaned :skip-orphaned-merge
+      :own :abort-owned-merge
       :skip-human-merge-in-progress)
     (and (nil? merge-class) merge-head-present?) :skip-human-merge-in-progress
     :else nil))

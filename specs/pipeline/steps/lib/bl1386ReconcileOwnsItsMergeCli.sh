@@ -156,9 +156,16 @@ bb -e "$(cat <<'BB'
    :log! (fn [label text] (swap! logs conj [label text]))})
 
 ;; next-tick: tick 1 leaves an owned MERGE_HEAD open (its abort was defeated
-;; by the lock), then the lock is released and tick 2 must abort BY OWNERSHIP
-;; rather than surfacing human-merge-in-progress. Both ticks run here so the
-;; scenario measures the handover between them, which is the whole point.
+;; by the lock), then the lock is released and tick 2 must finish it BY
+;; OWNERSHIP rather than surfacing human-merge-in-progress.
+;;
+;; ARCHITECT BOUNCE D1b (2026-09-04): this function used to compute `owned?`
+;; itself and then call `git merge --abort` and `clear-merge-owner!` itself -
+;; it re-implemented the very behaviour under test, so it passed while the
+;; daemon did not do it at all. The DECISION now comes from production code:
+;; `classify-open-merge` then `automated-absorb-plan`, the same two functions
+;; handoffd.bb's dispatch calls. The fixture performs only what the daemon's
+;; adapters perform, and only when production says to.
 (defn- run-next-tick []
   ;; Tick 1, with the lock held during the abort.
   (let [tick1 (master-main-reconcile-lib/absorb-with-merge!
@@ -170,21 +177,34 @@ bb -e "$(cat <<'BB'
                                   (if (zero? exit) {:success true} {:success false :error (str/trim err)})))))
         mh (merge-head-sha)
         record (master-main-reconcile-lib/read-merge-owner daemon-dir)
-        owned? (master-main-reconcile-lib/may-abort-failed-merge?
-                false {:owner-record record :merge-head-sha mh})]
+        ;; PRODUCTION classification, not a fixture opinion.
+        klass (master-main-reconcile-lib/classify-open-merge
+               {:merge-head-present? (some? mh)
+                :owned-by-daemon? (master-main-reconcile-lib/owns-merge-head? record mh)
+                :live-git-process? false
+                :lock-fresh? false})
+        ;; PRODUCTION dispatch, the same call handoffd.bb makes.
+        branch (master-main-reconcile-lib/automated-absorb-plan
+                {:merge-head-present? (some? mh) :merge-class klass :behind 3})]
     (swap! logs conj ["tick1-outcome" (str (:outcome tick1))])
-    (if owned?
-      ;; Tick 2: the lock is gone, ownership is proven, so the daemon finishes
-      ;; its own merge instead of protecting it as a human's.
-      (let [{:keys [exit err]} (git "merge" "--abort")]
-        (if (zero? exit)
-          (do (master-main-reconcile-lib/clear-merge-owner! daemon-dir)
-              (swap! logs conj ["aborted-by-ownership" ""])
-              {:outcome "aborted-by-ownership"})
-          (do (swap! logs conj ["merge-abort-failed" (str/trim err)])
-              {:outcome "merge-abort-failed"})))
+    (swap! logs conj ["tick2-branch" (str branch)])
+    (if (= branch :abort-owned-merge)
+      ;; What the daemon's adapters do on that branch, and nothing more: the
+      ;; gate above is production's, so a regression that stops routing here
+      ;; makes this scenario fail rather than silently pass.
+      (if (master-main-reconcile-lib/may-abort-failed-merge?
+           false {:owner-record record :merge-head-sha mh})
+        (let [{:keys [exit err]} (git "merge" "--abort")]
+          (if (zero? exit)
+            (do (master-main-reconcile-lib/clear-merge-owner! daemon-dir)
+                (swap! logs conj ["aborted-by-ownership" ""])
+                {:outcome "aborted-by-ownership"})
+            (do (swap! logs conj ["merge-abort-failed" (str/trim err)])
+                {:outcome "merge-abort-failed"})))
+        (do (swap! logs conj ["ownership-evaporated" ""])
+            {:outcome "human-merge-in-progress"}))
       (do (swap! logs conj ["skip-human-merge-in-progress" ""])
-          {:outcome "skip-human-merge-in-progress"}))))
+          {:outcome (str branch)}))))
 
 ;; A foreign MERGE_HEAD is decided BEFORE any merge is attempted, exactly as
 ;; the daemon's own plan does - the sweep never reaches the ladder for one.

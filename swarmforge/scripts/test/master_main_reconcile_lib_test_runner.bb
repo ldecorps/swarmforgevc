@@ -1462,8 +1462,12 @@
            :skip-human-merge-in-progress (P {:merge-head-present? true :behind 3}))
   (assert= "plan: :live-human maps to today's reading, unchanged"
            :skip-human-merge-in-progress (P {:merge-head-present? true :merge-class :live-human :behind 3}))
-  (assert= "plan: :own is BL-1386's to finish, never this ticket's"
-           :skip-human-merge-in-progress (P {:merge-head-present? true :merge-class :own :behind 3}))
+  ;; CORRECTED after the BL-1386 architect bounce (D1): this row used to
+  ;; expect :skip-human-merge-in-progress, encoding the very assumption the
+  ;; bounce overturned - that "BL-1386 finishes it elsewhere". It does not
+  ;; finish anywhere unless the dispatch routes it here.
+  (assert= "plan: :own is finished BY the dispatch, not held as a human's"
+           :abort-owned-merge (P {:merge-head-present? true :merge-class :own :behind 3}))
   (assert= "plan: :orphaned gets its own branch"
            :skip-orphaned-merge (P {:merge-head-present? true :merge-class :orphaned :behind 3}))
   (assert= "plan: :none proceeds"
@@ -1473,6 +1477,32 @@
            :skip-orphaned-merge (Q {:merge-head-present? true :merge-class :orphaned :behind 3}))
   (assert= "plan (post-land): no class is unchanged"
            :skip-human-merge-in-progress (Q {:merge-head-present? true :behind 3})))
+
+;; ── BL-1386 D1 (architect bounce): an owned merge is ABORTED, not held ────
+;; The bounced code mapped :own to :skip-human-merge-in-progress on the
+;; reasoning that "BL-1386 finishes it elsewhere" - it did not, and the tick
+;; after a failed abort still called the daemon's own leftover a human's.
+(let [P master-main-reconcile-lib/automated-absorb-plan
+      Q master-main-reconcile-lib/post-land-absorb-plan]
+  (assert= "D1: an owned merge routes to the abort branch, not the human reading"
+           :abort-owned-merge (P {:merge-head-present? true :merge-class :own :behind 3}))
+  (assert= "D1: post-land routes an owned merge the same way"
+           :abort-owned-merge (Q {:merge-head-present? true :merge-class :own :behind 3}))
+  (assert= "D1: a live human's merge is untouched by that widening (BL-1120)"
+           :skip-human-merge-in-progress (P {:merge-head-present? true :merge-class :live-human :behind 3}))
+  (assert= "D1: an orphan is untouched by it too (BL-1387)"
+           :skip-orphaned-merge (P {:merge-head-present? true :merge-class :orphaned :behind 3}))
+  (assert= "D1: a caller with no class is still byte-identical to pre-BL-1386"
+           :skip-human-merge-in-progress (P {:merge-head-present? true :behind 3})))
+
+;; The gate the daemon applies on that branch: ownership must still hold when
+;; it acts, not merely when it classified.
+(assert-true "D1: the 2-arity authorises the abort when the record names the sha"
+             (master-main-reconcile-lib/may-abort-failed-merge?
+              false {:owner-record {:sha "abc123"} :merge-head-sha "abc123"}))
+(assert= "D1: ownership evaporating between classify and act fails CLOSED"
+         false (master-main-reconcile-lib/may-abort-failed-merge?
+                false {:owner-record {} :merge-head-sha "abc123"}))
 
 ;; ── report ───────────────────────────────────────────────────────────────
 (if (empty? @failures)

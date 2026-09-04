@@ -1009,11 +1009,25 @@
     (when (and (:owned-by-daemon? signals) (not= :own klass))
       (swap! failures conj (str "BL-1387 invariant 1 [" cell "]: an owned merge was not classified :own - got " klass)))
 
-    ;; Invariant 2: classification yields only non-mutating plan branches.
+    ;; Invariant 2: THIS ticket aborts nothing - "a foreign merge is still
+    ;; never aborted by the daemon (BL-1120)". Encoded per-class after the
+    ;; BL-1386 D1 bounce, which is STRONGER than the version this replaced.
+    ;; That one demanded every class yield a non-mutating branch, which was
+    ;; only true while :own had no branch of its own - it would have failed
+    ;; BL-1386's fix as though it were a regression, and passed the bounced
+    ;; code as though it were correct. The real property is: a merge this
+    ;; daemon cannot prove is its own is NEVER aborted, and :own is the only
+    ;; class that may act - which is exactly BL-1386's invariant 2 read from
+    ;; the other side.
     (let [plan (master-main-reconcile-lib/automated-absorb-plan
-                {:merge-head-present? true :merge-class klass :behind 5})]
-      (when-not (contains? #{:skip-human-merge-in-progress :skip-orphaned-merge} plan)
-        (swap! failures conj (str "BL-1387 invariant 2 [" cell "]: an open merge produced a mutating plan " plan))))))
+                {:merge-head-present? true :merge-class klass :behind 5})
+          foreign? (contains? #{:live-human :orphaned} klass)]
+      (when (and foreign? (not (contains? #{:skip-human-merge-in-progress :skip-orphaned-merge} plan)))
+        (swap! failures conj (str "BL-1387 invariant 2 [" cell "]: a merge this daemon does not own produced a mutating plan " plan)))
+      (when (and (= :own klass) (not= :abort-owned-merge plan))
+        (swap! failures conj (str "BL-1386 D1 [" cell "]: an OWNED merge was not routed to its abort branch - got " plan)))
+      (when (and (not foreign?) (not= :own klass) (not= :none klass))
+        (swap! failures conj (str "BL-1387 invariant 2 [" cell "]: unclassified state " klass " reached a plan"))))))
 
 (let [expected (set (for [p [false true] l [false true] o [false true]]
                       (str "proc=" p " lock=" l " owned=" o)))

@@ -3510,6 +3510,34 @@
       :skip-human-merge-in-progress
       {:success false :error "human-merge-in-progress" :outcome :human-merge-in-progress}
 
+      ;; BL-1386, the half the architect's D1 bounce found unwired: a
+      ;; MERGE_HEAD this daemon can PROVE it started - the ownership record
+      ;; names this exact sha - is finished here, on a LATER tick than the one
+      ;; that opened it. This is the only place `may-abort-failed-merge?`'s
+      ;; ownership 2-arity is reached in production; before the bounce the
+      ;; only caller passed a literal `true`, so the leftover from a failed
+      ;; abort was still read as a human's, which is the whole 2026-09-04
+      ;; incident. BL-1120 is untouched: a merge with no record, or one naming
+      ;; a different sha, never reaches this branch at all.
+      :abort-owned-merge
+      (let [sha (master-main-merge-head-sha)
+            record (master-main-reconcile-lib/read-merge-owner (str daemon-dir))]
+        (if (master-main-reconcile-lib/may-abort-failed-merge?
+             false {:owner-record record :merge-head-sha sha})
+          (let [{:keys [success error]} (master-main-merge-abort!)]
+            (if success
+              (do (master-main-clear-merge-owner!)
+                  (log! "master-main-reconcile" "aborted-owned-merge"
+                        (str "finished this daemon's own leftover merge " sha))
+                  {:success false :outcome :aborted-owned-merge})
+              (do (log! "master-main-reconcile" master-main-merge-abort-failed-label
+                        (str "still cannot abort own merge " sha ": " error))
+                  {:success false :error "merge-abort-failed" :outcome :merge-abort-failed})))
+          ;; Ownership evaporated between classification and here (the record
+          ;; was cleared, or MERGE_HEAD changed). Fail closed to today's
+          ;; reading rather than aborting on a stale claim.
+          {:success false :error "human-merge-in-progress" :outcome :human-merge-in-progress}))
+
       ;; BL-1387: an orphan is not a human needing patience. Nothing is
       ;; aborted here (invariant 2) - only what the sweep SAYS changes, and
       ;; it says the one thing the clearer has to establish by hand today:
