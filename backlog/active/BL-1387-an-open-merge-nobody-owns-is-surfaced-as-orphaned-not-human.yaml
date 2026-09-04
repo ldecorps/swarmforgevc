@@ -26,8 +26,8 @@ required_wiring:
   - 'specs/pipeline/steps/bl1387OrphanedMergeSurfacedSteps.js::registerSteps::the handler file exists so discovery registers every scenario (BL-1371)'
 
 invariants:
-  - "human-merge-in-progress is never asserted from MERGE_HEAD presence alone: it requires positive evidence of an owner - a live git process on the checkout, a fresh index lock, or a BL-1386 ownership record - and absent all three the surfaced reason is orphaned-merge."
-  - "This ticket aborts nothing. Classification and surfacing only; every git write stays exactly where it is today, and a foreign merge is still never aborted by the daemon (BL-1120)."
+  - "human-merge-in-progress is never asserted from MERGE_HEAD presence alone: it requires positive evidence of a LIVE FOREIGN owner - a live git process on the checkout or a fresh index lock. A BL-1386 ownership record naming the sha classifies the merge as the daemon's OWN, which is neither human nor orphaned; absent all three the surfaced reason is orphaned-merge. AMENDED 2026-09-04: the record was wrongly listed as evidence of a human owner."
+  - "This ticket's classification adds no git write of its own: a merge classified live-human or orphaned is never aborted by the daemon (BL-1120). The only class that may act is :own, and that action - the ownership abort - is BL-1386's contract, reached through BL-1386's branch, never through a passthrough in this ticket's handler. AMENDED 2026-09-04 from: this ticket aborts nothing, every git write stays where it is today."
   - "The orphaned-merge surface always states whether the index carries the incoming side, computed from the index against HEAD..MERGE_HEAD - never from the absence of unmerged paths, which is the reading that makes a poisoned merge look clean."
 
 human_approval: approved
@@ -126,6 +126,37 @@ qa_e2e_procedure: |
      run too (BL-971).
 
 notes: |
+  ## 2026-09-04 AMENDMENT (specifier) - the owned row contradicted BL-1386; retired
+
+  Raised by the coder (priority-00 note) while fixing the architect's D1
+  bounce on BL-1386: that fix routes an OWNED MERGE_HEAD (a BL-1386 record
+  naming its sha) to an abort branch, never to the human reading - which is
+  what BL-1386's title, scenario 03 and invariant 2 always said. This
+  ticket's scenario 02 listed that same record as an "owner signal" that
+  KEEPS the human-merge-in-progress reading, and invariant 1 named it as
+  evidence of a human owner. Both were wrong at mint - my error, made when
+  I wrote the two halves as if the record were just one more liveness
+  signal. The coder refused to make the handler accept either answer (the
+  passthrough the constitution forbids) and refused to revert the routing
+  (the bounced defect), and raised it here. Correct on all three counts.
+
+  Amended: scenario 02's third row is RETIRED (never reworded); scenario 06
+  added - an owned merge is classified as the daemon's own and surfaced as
+  NEITHER human-merge-in-progress NOR orphaned-merge; invariants 1 and 2
+  re-tensed. The narrative gains one sentence. Nothing else changes.
+
+  Consequence for the parcel in flight (architect holds it): scenario 06 is
+  a NEW scenario, so its handler step must land in the same parcel (BL-233)
+  - the holder cannot forward without a coder change. Bounce class is
+  spec-gap and the timing is the specifier's, not the producer's: once the
+  bounce is recorded I file record-bounce-correction (BL-990) so the coder
+  is not charged. BL-1386 is unchanged by this; its holder merges main so
+  its acceptance run sees the retired row gone.
+
+  Lesson recorded: when a creator/detector split shares one classification,
+  the mint must say which ticket OWNS each class's action. Here :own was
+  BL-1386's from the start and this ticket had no business surfacing it.
+
   Prompt deliverable, mine (BL-798): the coordinator step-0 action table
   gains a row for reason `orphaned-merge` (do not wait; do not conclude;
   back up staged-new files; `git merge --abort`; redo the merge; diff
@@ -159,6 +190,7 @@ source: |
   BL-1386.
 
 assigned_to: coder
-bounce_count: 1
+bounce_count: 2
 bounce_history:
   - { at: 2026-09-04, by: architect, blamed: coder, class: behavior, commit: a51b4d68fe, evidence: backlog/evidence/BL-1387-architect-bounce-20260904.md }
+  - { at: 2026-09-04, by: architect, blamed: coder, class: acceptance, commit: 0e31d40b55, evidence: backlog/evidence/BL-1387-architect-pass2-bounce-20260904.md }
