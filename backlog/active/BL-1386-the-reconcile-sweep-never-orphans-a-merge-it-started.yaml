@@ -151,6 +151,14 @@ qa_e2e_procedure: |
      run too (BL-971).
 
 notes: |
+  2026-09-04 (specifier): BL-1387 amended to agree with this ticket after the
+  coder's D1 rework routed an owned MERGE_HEAD to an abort branch: BL-1387's
+  scenario 02 row that kept the human reading for an ownership record is
+  RETIRED and a scenario for the owned class added; its invariants now say
+  the ownership abort is THIS ticket's contract. Nothing in this ticket
+  changes. Holder: merge main so the acceptance run no longer sees the
+  retired row.
+
   `required_wiring` anchors 1 and 2 are the daemon's own new literals, but
   `handoffd.bb` is the pre-existing live consumer of `absorb-with-merge!`
   and the only process that can emit that log line or write that record,
