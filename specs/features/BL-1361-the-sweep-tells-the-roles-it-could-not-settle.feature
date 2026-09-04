@@ -1,3 +1,8 @@
+# mutation-stamp: sha256=f658808749eaf3585678940ebb17b7034befc0bcabd7acd2cd72717efe90b891
+# acceptance-mutation-manifest-begin
+# {"version":1,"tested_at":"2026-09-04T18:43:31.908384623Z","feature_name":"The post-QA sweep tells the roles it could not settle","feature_path":"/home/carillon/swarmforgevc/.worktrees/hardender/specs/features/BL-1361-the-sweep-tells-the-roles-it-could-not-settle.feature","background_hash":"0f2e9899630c9204ee75ab976f7157d465ccd48b52070501029c5c976120629c","implementation_hash":"unknown","scenarios":[{"index":2,"name":"every surfacing reason reaches its role","scenario_hash":"35e7f216ce6c2526954b6ed823861d7fb83bcc1130384b67c23a9fd4a49dfc40","mutation_count":3,"result":{"Total":3,"Killed":3,"Survived":0,"Errors":0},"tested_at":"2026-09-04T18:43:31.908384623Z"}]}
+# acceptance-mutation-manifest-end
+
 Feature: The post-QA sweep tells the roles it could not settle
 
   BL-668 ships a post-QA sweep that fast-forwards clean pipeline role branches
