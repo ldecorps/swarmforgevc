@@ -15,7 +15,7 @@ severity: medium
 # cosmetic.
 status: todo
 epic: code-quality-gates
-priority: 45
+priority: 6
 direction: swarm-reported
 depends_on: []
 mutation_cost: low
