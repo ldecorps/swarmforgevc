@@ -1,5 +1,37 @@
 # SwarmForge VS Code Extension — Specification
 
+**Last Updated:** September 4, 2026 (BL-1389: the land step's
+`sibling-landed?` (BL-1354) scored a sibling's own lines per path but
+still verdicted LANDED/UNLANDED per whole TICKET — any one attributed path
+landing (a feature file minted at spec time, an evidence file hand-landed
+earlier) was enough to read the sibling as landed while its actual handler
+code and other source files stayed absent from `origin/main`; once landed,
+`own-paths` let every path attributed to that sibling ride into the
+replay under the LANDING ticket's own approval, and the CLI's report
+printed only sibling ticket ids — never a path — so nothing in the output
+could show a human what was about to ride. Reproduced live 2026-09-04
+(QA's BL-1386 land): two files genuinely absent from `origin/main`,
+attributed to BL-1367 alone, rode into replay `67cd1d8dd7` because BL-1367
+read landed on its OTHER attributed paths; QA caught it only by diffing
+the tip by hand. Two fixes: exclusion is now self-sufficient per path
+(a path whose owners are non-empty, untagged-free, exclude the landing
+ticket, and consist only of siblings whose OWN lines at THAT path are not
+on `origin/main` is excluded regardless of those siblings' ticket-level
+verdict), and the ticket-level verdict is now per-path-complete
+(`sibling-landed?` reports landed only when EVERY attributed path has that
+sibling's own lines on `origin/main` — one landed path can no longer carry
+the whole ticket). The report now names what it decided: `LANDED_SIBLING
+<ticket-id> <deciding-path>` and a new `EXCLUDED_SIBLING_PATH <path>
+<ticket-id>` per delivered path left out of the replay, naming the
+sibling it was credited to — a human reads the verdict off the CLI's own
+output instead of re-deriving it by diffing the tip. BL-1375's passenger
+rule (an approved sibling rides on a path the landing ticket also owns,
+after the tree guards) is untouched. Acceptance:
+`specs/features/BL-1389-a-path-an-unlanded-sibling-owns-alone-never-rides-another-tickets-land.feature`.
+How-to: `docs/how-to/BL-1241-entangled-tip-at-the-land-step-has-a-reachable-remedy.md`
+(extended in place — same remedy chain, one more entry). No diagram
+depicts land-step internals.)
+Prior entry —
 **Last Updated:** September 4, 2026 (BL-1379: an expedition parks every
 other `backlog/active/` ticket into human-held `backlog/hold/` at
 initiation and, until now, never reversed it — specced deliberately at

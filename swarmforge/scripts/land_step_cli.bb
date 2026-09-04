@@ -10,10 +10,15 @@
 ;;   proceeds with its own ordinary land action on <commit> unchanged.
 ;; Exit 0, prints "LAND_REPLAY <branch> <new-commit>" then one
 ;;   "ENTANGLED_SIBLING <ticket-id>" line per sibling still unlanded, and one
-;;   "LANDED_SIBLING <ticket-id>" line per sibling whose own content is
-;;   already byte-identical on origin/main (BL-1272 - its original commit
+;;   "LANDED_SIBLING <ticket-id> <deciding-path>" line per sibling whose own
+;;   content is already on origin/main (BL-1272 - its original commit
 ;;   remains an ancestor, so the replay is still the right action, but it is
-;;   nothing left for anyone to adjudicate): a tip-pure commit was
+;;   nothing left for anyone to adjudicate; BL-1389 appends the path the
+;;   verdict rests on, so it can be checked without diffing the tip), and one
+;;   "EXCLUDED_SIBLING_PATH <path> <ticket-id>" line per delivered path left
+;;   OUT of the replay, naming the sibling it was credited to (BL-1389: the
+;;   report used to print names and no paths, so a path an unlanded sibling
+;;   owned alone could ride into the replay unseen): a tip-pure commit was
 ;;   built on <branch>, off origin/main, containing only this ticket's own
 ;;   paths. QA reviews <branch>'s tip and lands THAT commit (never the
 ;;   originally-cited one), and records `abandoned_commits: [<cited
@@ -99,7 +104,19 @@
                         (println (str "LAND_APPROVAL_UNRECORDED " (:reason rec))))))
                   (println (str "LAND_REPLAY " (:branch result) " " (:commit result)))
                   (doseq [id (sort (:unlanded plan))] (println (str "ENTANGLED_SIBLING " id)))
-                  (doseq [id (sort (:landed plan))] (println (str "LANDED_SIBLING " id)))
+                  ;; BL-1389 invariant 3. The verdict a human would otherwise
+                  ;; have to re-derive by diffing the replayed tip: which path
+                  ;; decided each landed sibling, and which paths were left out
+                  ;; and to whom they were credited. On 2026-09-04 this report
+                  ;; printed 17 landed names and 27 entangled ones and not one
+                  ;; path, and an unlanded sibling's handler and source rode
+                  ;; into the replay unseen.
+                  (doseq [id (sort (:landed plan))]
+                    (let [deciding (get (:landed-paths plan) id)]
+                      (println (str "LANDED_SIBLING " id (when deciding (str " " deciding))))))
+                  (doseq [{:keys [path owners]} (sort-by :path (:excluded plan))
+                          owner (sort owners)]
+                    (println (str "EXCLUDED_SIBLING_PATH " path " " owner)))
                   (doseq [id (sort (:passengers plan))] (println (str "PASSENGER_SIBLING " id)))
                   (System/exit 0))
                 (do
