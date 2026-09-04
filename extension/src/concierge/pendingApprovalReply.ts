@@ -367,14 +367,21 @@ export type ApprovalRulingRequirement =
   | { kind: 'ruling-required'; options: string[] }
   | { kind: 'unknown-option'; options: string[] };
 
+// Split out so the caller's own branch count reflects only the three
+// ticket-shape cases (no options / missing ruling / options present) and
+// not also the label-matching rule itself.
+function matchesRulingOption(options: string[], chosen: string): boolean {
+  return options.some((option) => option.trim() === chosen);
+}
+
 export function classifyApprovalRulingRequirement(
-  rulingOptions: string[] | undefined,
-  ruling: string | undefined
+  rulingOptions: string[] = [],
+  ruling: string = ''
 ): ApprovalRulingRequirement {
-  const options = rulingOptions ?? [];
+  const options = rulingOptions;
   // Blank is not an answer. A surface that sent an empty field must not slip
   // past the check a missing one trips.
-  const chosen = (ruling ?? '').trim();
+  const chosen = ruling.trim();
   if (options.length === 0) {
     // Nothing declared it, so nothing can validate it - and a ruling on a
     // ticket that posed no choice is the same unanswerable state in the other
@@ -384,9 +391,7 @@ export function classifyApprovalRulingRequirement(
   if (!chosen) {
     return { kind: 'ruling-required', options };
   }
-  return options.some((option) => option.trim() === chosen)
-    ? { kind: 'ok' }
-    : { kind: 'unknown-option', options };
+  return matchesRulingOption(options, chosen) ? { kind: 'ok' } : { kind: 'unknown-option', options };
 }
 
 // Impure driver: flips the ticket's human_approval to approved if it is

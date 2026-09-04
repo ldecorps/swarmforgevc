@@ -81,6 +81,7 @@ import {
   recordApprovalReply,
   readRulingOptions,
   classifyApprovalRulingRequirement,
+  ApprovalRulingRequirement,
 } from '../concierge/pendingApprovalReply';
 import { requestConciergeTick } from '../concierge/conciergeTickRequest';
 import { getContextBudgetUiHtml } from './contextBudgetUiHtml';
@@ -836,6 +837,27 @@ function handlePausedPagerExpediteRoute(
 // commitEpicReorderWrites below. A failed commit must not report
 // unqualified success: disk holds the flip, but the human is told it is
 // not yet durable.
+//
+// Split out of computePausedPagerApproveOutcome so that function's own branch
+// count reflects only its control flow (found / satisfies-ruling / changed /
+// committed), not also the two wording ternaries for which refusal reason to
+// report.
+function buildRulingRefusalBody(
+  backlogId: string,
+  requirement: Extract<ApprovalRulingRequirement, { kind: 'ruling-required' } | { kind: 'unknown-option' }>
+): Record<string, unknown> {
+  const isMissing = requirement.kind === 'ruling-required';
+  return {
+    success: false,
+    id: backlogId,
+    reason: isMissing ? 'ruling required' : 'unknown ruling option',
+    options: requirement.options,
+    detail: isMissing
+      ? `${backlogId} poses a choice and this tap carried no answer. Answer it on the bot's ruling keyboard, or send the chosen option with the approval.`
+      : `${backlogId} declares no such option. Answer it on the bot's ruling keyboard, or send one of the options above.`,
+  };
+}
+
 async function computePausedPagerApproveOutcome(
   targetPath: string,
   backlogId: string,
@@ -863,16 +885,7 @@ async function computePausedPagerApproveOutcome(
     // WHICH choice is outstanding rather than a bare status (BL-572/BL-662).
     return {
       status: 409,
-      body: {
-        success: false,
-        id: backlogId,
-        reason: requirement.kind === 'ruling-required' ? 'ruling required' : 'unknown ruling option',
-        options: requirement.options,
-        detail:
-          requirement.kind === 'ruling-required'
-            ? `${backlogId} poses a choice and this tap carried no answer. Answer it on the bot's ruling keyboard, or send the chosen option with the approval.`
-            : `${backlogId} declares no such option. Answer it on the bot's ruling keyboard, or send one of the options above.`,
-      },
+      body: buildRulingRefusalBody(backlogId, requirement),
       conciergeTick: false,
     };
   }

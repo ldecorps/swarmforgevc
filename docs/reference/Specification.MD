@@ -1,5 +1,89 @@
 # SwarmForge VS Code Extension — Specification
 
+**Last Updated:** September 4, 2026 (BL-1385: BL-1371's discovery registry
+requires every top-level `specs/pipeline/steps/*Steps.js` eagerly at module
+load, failing the whole run loudly on one that cannot load — correct, but
+nothing stopped an unloadable handler from reaching `main` in the first
+place, only from running once it got there. A hand-land of
+`bl1296BubbleSeatSteps.js` (2026-09-04, 01:31 BST), whose require resolved
+only in the checking worktree (a compiled `extension/out/tools/bubbleSeat.js`
+from an unlanded parcel), passed both existing guards —
+`check_feature_handler_registration.sh` proves a handler is registered and
+reachable, never that it loads — and took every acceptance run on
+`origin/main` to zero runnable features: 947 handlers, one unloadable, zero
+features executable. `check_handler_module_graph.sh` closes the gap: for
+every top-level handler ON THE TREE UNDER TEST, it proves the require graph
+resolves — walking each `require(...)` call including the two computed
+forms that have now each caused one incident
+(`path.join(EXT_ROOT,'out',...)`, `path.join(__dirname,'lib',...)`) — and
+the verdict depends only on that tree, never on the checking worktree's own
+`out/` or source files (invariant 2: a module present in the checker's
+worktree but absent from the tree still refuses; absent from the checker
+but present on the tree still passes). On failure it prints
+`HANDLER_LOAD_BLOCK` plus one line per handler naming the handler and the
+unresolved module. Wired into both consumers named at mint: the land
+replay's tree-guard list (`land_step_lib.bb`, joining
+`check_feature_handler_registration.sh` as a second, sibling tree guard)
+and the commit-time guard chain (`run_commit_guards.sh`, Tier 1 — a
+`main`-only guard, so it costs nothing on every other branch), so neither a
+tip-pure land nor a hand-land on `main` can bypass it. Amended in flight
+(invariant 3, 2026-09-04): the guard runs from a commit hook, where
+invocations overlap constantly, and its own BL-971 sweep-by-prefix —
+written for test fixtures that never run concurrently — deleted a live
+run's materialised tree, reading every file as absent and refusing valid
+commits with hundreds of phantom missing modules. Each run now claims its
+working directory with an owner-pid file immediately after `mkdtemp`, and
+reaping is scoped to roots no LIVE run owns (a dead owner pid, or an age
+bound) rather than sweeping the whole shared prefix; a `require` check
+that could not tell present from absent (e.g. `EMFILE` under the
+~947-handler single-process walk) is a distinct third answer, never folded
+into "missing" as a false refusal. Explicitly not built here: repairing
+`main` today (one QA land, already asked for by note) or the eight live
+feature files whose handlers are not yet built (a different, noted class).
+Acceptance:
+`specs/features/BL-1385-a-handler-that-cannot-load-never-reaches-main.feature`.
+How-to: `docs/how-to/BL-1371-step-handlers-register-by-discovery.md` and
+`docs/how-to/BL-1252-commit-guard-chain-reports-every-violation.md` (both
+extended in place) plus a short addendum to
+`docs/how-to/BL-1241-entangled-tip-at-the-land-step-has-a-reachable-remedy.md`
+noting the second tree guard. No diagram depicts step-handler-registration
+or commit-guard internals at this granularity.)
+Prior entry —
+**Last Updated:** September 4, 2026 (BL-1386: the master-main-reconcile
+sweep (`handoffd.bb`, `master_main_reconcile_lib.bb`) could orphan its own
+merge and then blame a human for it — `absorb-with-merge!` discarded
+`abort!`'s result and never logged it, so when `git merge --abort` failed
+(the ordinary cause on the shared master checkout: `.git/index.lock` held
+by another writer) `MERGE_HEAD` stayed open, and the next tick, applying
+BL-1120's rule that a pre-existing `MERGE_HEAD` is always a foreign human's
+merge, surfaced `human-merge-in-progress` against its own leftovers.
+Reproduced live three times in eighteen minutes on 2026-09-04 —
+`pgrep -ax git` empty each time, the index carrying none of the incoming
+side, and concluding any of them would have silently reverted a QA landing
+on push. The daemon now writes a durable ownership record
+(`.swarmforge/daemon/master-main-merge-owner.json`: sha, tick, pid,
+timestamp) before `git merge`, cleared after a successful merge or abort,
+so `MERGE_HEAD == record.sha` is proof the daemon itself started that
+merge — on this tick, or an earlier one whose abort failed — and only that
+positive match may ever be aborted; BL-1120's protection for every other
+`MERGE_HEAD` (no record, or a record naming a different sha) is unchanged
+and unwidened. An abort that fails is retried with a short bounded backoff
+and, on continued failure, the record is left standing (never cleared,
+never falls through to a rematch/reset as if the abort had succeeded) and
+the log carries `merge-abort-failed` plus git's own captured error text.
+`merge!`'s failure text is likewise now logged and the fixed `conflict`
+label is used only when git actually reported a content conflict —
+`merge-failed` names every other real-merge failure (e.g. a pre-merge-commit
+hook refusal), so the log states an observation, never an assertion.
+Companion detector ticket (foreign/orphaned classification without a
+record) is the separate, still-active BL-1387; nothing here changes what
+counts as foreign. Acceptance:
+`specs/features/BL-1386-the-reconcile-sweep-never-orphans-a-merge-it-started.feature`.
+How-to: `docs/how-to/BL-1120-handoffd-must-not-abort-foreign-merge.md` and
+`docs/how-to/BL-891-master-main-reconcile-sweep.md` (both extended in
+place — the ownership refinement and the corrected log wording). No
+diagram depicts reconcile-sweep internals at this granularity.)
+Prior entry —
 **Last Updated:** September 4, 2026 (BL-1309: `land_main_publish.sh`
 `--decide-only` — the one landing step `QA.prompt` cannot skip — now
 consults BL-1241/BL-1308/BL-1354's `entangled-siblings` detector before
@@ -140,6 +224,53 @@ How-to: `docs/how-to/BL-567-expedite-one-ticket-with-the-swarm-stopped.md`
 (extended in place — same OUTSTANDING block, one more item type). No
 diagram depicts expeditor internals.)
 Prior entry —
+**Last Updated:** September 3, 2026 (BL-1371: `specs/pipeline/steps/index.js`'s
+hand-maintained `DOMAINS` array of 937 `require('./blNNNSteps')` lines is
+replaced by directory discovery — the module reads its own directory for
+top-level `*Steps.js` files and loads each one, eagerly, at module load, still
+exporting `registerSteps` unchanged. Registration cannot now be lost, leaked
+by a replay, or removed by a revert independently of the handler file itself,
+because there is nothing to be absent from — the structural cause behind
+three prior incident classes (a merge-adjudication over-charge, a land-replay
+leak (BL-1324), and BL-1356's land-queue deadlock with no first mover).
+Verified as a SET comparison, never a count (937 handler identities / 13754
+registrations, empty difference both directions) plus a per-step
+resolution-parity check across all 1059 feature files / 19693 steps: zero
+steps changed which file and pattern answers them. `check_feature_handler_registration.sh`
+(BL-1303) is narrowed, not retired — it still refuses a handler file present
+but unreachable from a conforming discovery predicate. The
+`required_wiring: specs/pipeline/steps/index.js::blNNNSteps` anchor pattern —
+this backlog's single most common `required_wiring` entry, and one that
+proved nothing even before this change — is retired for new tickets; point a
+new handler's `required_wiring` at the handler file's own export instead.
+Acceptance: `specs/features/BL-1371-a-step-handler-registers-without-a-shared-file.feature`.
+How-to: `docs/how-to/BL-1371-step-handlers-register-by-discovery.md`. No
+diagram depicts step-handler registration.)
+Prior entry —
+**Last Updated:** September 3, 2026 (BL-1367: the paused-pager Mini App
+approve route (`computePausedPagerApproveOutcome`,
+`extension/src/bridge/bridgeServer.ts`) used to call
+`recordApprovalReply(targetPath, backlogId)` — a signature with no ruling
+argument — so a ticket declaring `ruling_options` approved from the phone
+flipped `human_approval` to `approved` and silently discarded the choice it
+posed; BL-1309 was approved this way on 2026-09-01 and its question was
+never answered. `recordApprovalReply`
+(`extension/src/concierge/pendingApprovalReply.ts`) now takes an optional
+`ruling`, the one writer both the bot's callback path and the pager route
+call. Before writing, `classifyApprovalRulingRequirement(rulingOptions,
+ruling)` classifies the tap as `ok`, `ruling-required`, or
+`unknown-option`; only `ok` proceeds — the other two refuse with HTTP `409`
+naming the outstanding options, never a bare status (BL-572/BL-662),
+instead of half-recording. A ticket with no `ruling_options` behaves
+exactly as before; an existing `human_ruling:` is never overwritten by a
+later plain approval. Hardened: `classifyApprovalRulingRequirement` and
+`computePausedPagerApproveOutcome` both reduced from CRAP 7.00 to <=5.20
+(`matchesRulingOption`/`buildRulingRefusalBody` split out). Acceptance:
+`specs/features/BL-1367-an-approval-from-any-surface-carries-its-ruling.feature`.
+How-to:
+`docs/how-to/BL-1367-approval-from-any-surface-carries-its-ruling.md`. No
+diagram depicts the approval/ruling write path.)
+Prior entry —
 **Last Updated:** September 3, 2026 (BL-1360: three fixed pipeline sends —
 the QA merge-up broadcast, the QA-to-coordinator bookkeeping note, and the
 specifier's spec-ready note — carry no judgement at all, yet were
@@ -190,29 +321,6 @@ blocked repo-wide by the standing `liveRepoDerivationGuard` red, BL-1291):
 `specs/features/BL-1296-bubble-answers-from-its-own-seat.feature`. How-to:
 `docs/how-to/BL-1296-bubble-answers-from-its-own-seat.md`. No diagram
 depicts cursor-bridge/seat-dispatch internals.)
-Prior entry —
-**Last Updated:** September 3, 2026 (BL-1371: `specs/pipeline/steps/index.js`'s
-hand-maintained `DOMAINS` array of 937 `require('./blNNNSteps')` lines is
-replaced by directory discovery — the module reads its own directory for
-top-level `*Steps.js` files and loads each one, eagerly, at module load, still
-exporting `registerSteps` unchanged. Registration cannot now be lost, leaked
-by a replay, or removed by a revert independently of the handler file itself,
-because there is nothing to be absent from — the structural cause behind
-three prior incident classes (a merge-adjudication over-charge, a land-replay
-leak (BL-1324), and BL-1356's land-queue deadlock with no first mover).
-Verified as a SET comparison, never a count (937 handler identities / 13754
-registrations, empty difference both directions) plus a per-step
-resolution-parity check across all 1059 feature files / 19693 steps: zero
-steps changed which file and pattern answers them. `check_feature_handler_registration.sh`
-(BL-1303) is narrowed, not retired — it still refuses a handler file present
-but unreachable from a conforming discovery predicate. The
-`required_wiring: specs/pipeline/steps/index.js::blNNNSteps` anchor pattern —
-this backlog's single most common `required_wiring` entry, and one that
-proved nothing even before this change — is retired for new tickets; point a
-new handler's `required_wiring` at the handler file's own export instead.
-Acceptance: `specs/features/BL-1371-a-step-handler-registers-without-a-shared-file.feature`.
-How-to: `docs/how-to/BL-1371-step-handlers-register-by-discovery.md`. No
-diagram depicts step-handler registration.)
 Prior entry —
 **Last Updated:** September 3, 2026 (BL-1375: the land step's shared-path
 refusal (BL-1332) is narrowed. `own-paths` (`land_step_lib.bb`) used to
@@ -308,34 +416,6 @@ How-to:
 standing red resolved rather than parked). No diagram depicts property-suite
 gating internals.)
 Prior entry —
-**Last Updated:** September 3, 2026 (BL-1309: `land_main_publish.sh`
-`--decide-only` — the one landing step `QA.prompt` cannot skip — now
-consults BL-1241/BL-1308/BL-1354's `entangled-siblings` detector before
-printing a decision, closing the gap that let three tickets QA had
-explicitly held for a human ruling (BL-1300, BL-1307, BL-1295) reach
-`origin/main` anyway as passengers on an unrelated land, over two days,
-each caught only after the fact by a specifier reading git history. Per the
-ticket's human ruling (option 1 of two offered): refusal is unconditional —
-ANY unlanded sibling on the tip, via any route (plain commit, second-parent
-merge, or rematch), prints `ENTANGLED_SIBLING_BLOCK` plus one
-`entangled-sibling: <id>` line per sibling and the tip-pure-replay remedy,
-exits status `3`, and never advises a push; no withheld-vs-ordinary
-predicate exists or is planned, since the point of option 1 is having no
-judgment left to get wrong. `DECISION` (the pre-existing BL-1144 purity
-call) is computed and held before this check runs, so a refusal is never
-preceded by stale push advice, and the land lock is never left held on a
-refusal. Fails open on anything unreadable (no tip SHA, no detector on
-disk, an unticketed tip subject, an unreadable range, a detector error) —
-only a positive finding refuses, matching BL-806/BL-1293/BL-1307's
-tip-purity posture; a blind detector must never become a land outage.
-Measured cost: ~12x slower per `--decide-only` call (1.1s → 13.7s on a real
-tip), inherent to the detector's per-candidate-commit `git log` calls and
-accepted as the ruling's cost, not fixed in this slice. Acceptance:
-`specs/features/BL-1309-the-mandatory-land-decide-step-is-blind-to-entanglement.feature`.
-How-to: `docs/how-to/BL-1144-frequent-qa-push-races-on-main-land.md`
-(extended in place — same script, same operator-facing decide-only call).
-No diagram depicts land-step internals.)
-Prior entry —
 **Last Updated:** September 3, 2026 (BL-1354: the land step's sibling-landed
 detector (`land_step_lib.bb`) no longer judges a shared file by whole-blob
 equality against `origin/main` — a defect that made EVERY co-owner of a hot
@@ -364,66 +444,6 @@ here. Acceptance:
 How-to: `docs/how-to/BL-1241-entangled-tip-at-the-land-step-has-a-reachable-remedy.md`
 (extended in place — same detector, same doc). No diagram depicts land-step
 internals.)
-Prior entry —
-**Last Updated:** September 3, 2026 (BL-1359: the Article 4.2
-pipeline-code-on-main sweep's merge-commit path read
-(`commit-touched-paths` in `babysitter_check.bb`, restated in
-`babysitterd_sweep_lib.bb`) charged a merge with the UNION of every
-parent's diff instead of what it introduced over its FIRST parent —
-`git diff-tree -m --first-parent` looks like it restricts the comparison,
-but `--first-parent` is a revision-traversal option with no effect on a
-single named commit's `diff-tree`, so `-m` alone decided the output (one
-diff section per parent). The BL-962 non-first-parent exemption could never
-rescue this: it adjudicates the wrong parent when the charge set itself is
-inflated. Measured on live history, this false-charged `specs/pipeline/steps/index.js`
-— the registry every ticket appends to — on essentially every merge-up;
-two of the Operator's three 2026-09-03 sweep findings were pure artefacts
-of it. `commit-touched-paths` now resolves the merge's first parent
-(`<sha>^1`, itself fail-closed per invariant 2) and runs a plain two-tree
-`diff-tree` against it — matching a non-merge commit's own single-parent
-diff exactly, which is what the surrounding comment always claimed the old
-command did. BL-590's own catch (a merge's content invisible to a *plain*
-`git show`/`diff-tree` with no merge-aware form at all) is unaffected and
-still reports its paths; only the union over-charge is removed. Non-merge
-commits, the BL-962 exemption logic, and the fail-closed posture are
-otherwise unchanged. Acceptance:
-`specs/features/BL-1359-a-merge-is-charged-only-with-what-it-introduced.feature`.
-How-to: `docs/how-to/BL-611-babysitterd-runbook.md` (the Check 13
-"pipeline code on main" section corrected in place — it had stated the
-`--first-parent` restriction as fact). No diagram depicts babysitterd
-sweep internals.)
-Prior entry —
-**Last Updated:** September 3, 2026 (BL-1356: the six BL-654 "stamp-off"
-property tests (`bl1113`/`bl1115`/`bl1116`/`bl1117`/`bl1136`/`bl1323`) that
-defend "a green suite must never write a decision into
-`backlog/hotfix-ledger.yaml`" no longer pin their watched row's CURRENT
-state as a fixed literal (`/state: pending/`, `/state: stamp-open/`) — a row
-is not a constant, advancing it through `stamp-open` → `awaiting-human` →
-`certified`/`waived` is exactly the ledger's own workflow, so every one of
-these tests was pre-red and jammed the repo-wide property-suite commit gate
-(BL-1175) the moment its row legitimately moved; five of six had already
-accumulated identical standing-allowlist waivers, and the sixth jammed four
-unrelated commits on 2026-09-02 with none yet. Per the ticket's human ruling
-(option 1 of two offered), the invariants stay on the LIVE ledger and the
-assertion changed instead: `extension/test/helpers/stampOff.js`'s
-`assertRunWritesNoDecision(hotfix, work, opts)` is now the one place all six
-call — it snapshots the watched row before `work()` runs and asserts it is
-byte-identical after, so the row's pre-run state (whatever it is) becomes
-the expected value rather than a hard-coded literal, while a run that
-genuinely stamps a decision (`state: certified`/`waived`, non-null
-`human_decision`, non-null `decided_at`) still fails from ANY starting
-state — the non-weakening half is checked independently, not implied by the
-before/after comparison alone. The five allowlist rows this discharged
-(`bl1113`, `bl1115`, `bl1116`, `bl1117`, `bl1136`) came out of
-`property_suite_standing_allowlist.tsv` in the same parcel, since a waiver
-whose reason is gone would hide a future genuine stamp-off regression
-behind it; `bl1323` never had one. Acceptance:
-`specs/features/BL-1356-stamp-off-invariant-watches-the-run-not-the-row.feature`.
-How-to:
-`docs/how-to/BL-1175-property-suite-standing-reds-block-unrelated-commits.md`
-(extended in place — same allowlist/guard mechanism, one more shape of
-standing red resolved rather than parked). No diagram depicts property-suite
-gating internals.)
 Prior entry —
 **Last Updated:** September 3, 2026 (BL-1337: the BoB starting cast generator
 (BL-1181) now takes a named, steward-owned **profile** instead of one
