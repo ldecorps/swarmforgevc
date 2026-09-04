@@ -203,6 +203,20 @@ function existsOnTree(p) {
   }
 }
 
+// Checks each candidate AT MOST ONCE - existsOnTree is a real fs.statSync,
+// so checking a candidate twice (once to look for a hit, again to look for
+// an inconclusive) costs an extra syscall per candidate and widens the
+// window for a resource hiccup to answer differently the second time.
+function firstOnTree(cands) {
+  let inconclusive = false;
+  for (const cand of cands) {
+    const v = existsOnTree(cand);
+    if (v === true) return { found: cand, inconclusive: false };
+    if (v === null) inconclusive = true;
+  }
+  return { found: null, inconclusive };
+}
+
 const origResolve = Module._resolveFilename;
 
 Module._resolveFilename = function (request, parent, isMain, options) {
@@ -240,10 +254,9 @@ Module._resolveFilename = function (request, parent, isMain, options) {
         path.join(TREE, 'extension', 'src', rel + '.js'),
         path.join(TREE, 'extension', 'src', rel, 'index.ts'),
       ];
-      for (const cand of cands) {
-        if (existsOnTree(cand) === true) return cand;
-      }
-      if (cands.map(existsOnTree).some((v) => v === null)) {
+      const srcHit = firstOnTree(cands);
+      if (srcHit.found) return srcHit.found;
+      if (srcHit.inconclusive) {
         inconclusive.push(`${request} (could not be checked: ${lastFsError})`);
         return cands[0];
       }
@@ -254,17 +267,15 @@ Module._resolveFilename = function (request, parent, isMain, options) {
     }
     // Any other in-tree relative/absolute module: it must exist ON THE TREE.
     if (real) {
-      for (const cand of [real, real + '.js', real + '.json', path.join(real, 'index.js')]) {
-        if (existsOnTree(cand) === true) return origResolve.call(this, cand, parent, isMain, options);
-      }
+      const genCands = [real, real + '.js', real + '.json', path.join(real, 'index.js')];
+      const genHit = firstOnTree(genCands);
+      if (genHit.found) return origResolve.call(this, genHit.found, parent, isMain, options);
       // Only an ENOENT-confirmed absence is a finding. A resource failure
       // (EMFILE/ENFILE under load) makes existsSync answer false for a file
       // that is right there, and reporting that as a missing module turns
       // this guard into an intermittent blocker on every commit in the repo -
       // which is exactly what it did on its first real merge.
-      const verdicts = [real, real + '.js', real + '.json', path.join(real, 'index.js')]
-        .map(existsOnTree);
-      if (verdicts.some((v) => v === null)) {
+      if (genHit.inconclusive) {
         inconclusive.push(`${request} (could not be checked: ${lastFsError})`);
         return origResolve.call(this, request, parent, isMain, options);
       }
