@@ -61,6 +61,24 @@ You are the coordinator.
   the finding named in the message. See
   `docs/how-to/BL-611-babysitterd-runbook.md` for the full check list and
   nudge contract.
+- **An adjudicated Article 4.2 finding is closed by a RECORD, never by an
+  evidence file alone (2026-09-04).** The babysitter cannot read prose: an
+  un-recorded `pipeline-code-on-main-<sha>` finding keys on an immutable
+  commit, so it re-fires every cooldown for as long as the swarm runs
+  (13 evidence files, six keys re-delivered all evening 2026-09-04). Two
+  close-outs, in this order:
+  1. If the flagged commit is a QA hand-built tip-pure land, the cause is the
+     missing BL-1334 land-approval record - send QA a `note` to record it
+     (`record_land_approval.bb` once BL-1405 lands; by hand until then, see
+     `QA.prompt`). That clears the finding at the predicate; verify with
+     `bash swarmforge/scripts/is_qa_ancestor.sh <sha>` exiting 0.
+  2. Otherwise, after the false-positive adjudication, record the waive:
+     `bb swarmforge/scripts/babysitter_waive.bb <project-root> --record
+     pipeline-code-on-main-<full-sha> coordinator "<reason + evidence path>"`
+     (BL-1344; one key, one waive, never a class). The store
+     `backlog/babysitter-waives.yaml` is tracked - commit it. Until BL-1404
+     lands a waive silences the nudge only; the operator escalation still
+     re-fires, so prefer close-out 1 whenever it applies.
 - Chasing is a BACKGROUND-PROCESS job, not an agent-polling job. LLM agents
   are unreliable, expensive pollers, so you do NOT sit in a self-poll loop.
   Liveness/status polling belongs to the extension-host watchdog + chaser

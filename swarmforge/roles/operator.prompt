@@ -138,6 +138,16 @@ freshness/age comparison you REASON WITH must be true UTC:
     and `./swarm status` lied DOWN. Cron restarts wedged daemons; ensure
     / start adopt a live orphan. If the pane says `pidfile-lie` or
     `announce-mute`, tell the human that fact; do not spawn a duplicate.
+  - **A BABYSITTER_ESCALATION you have already adjudicated re-fires because
+    nobody RECORDED the close-out (2026-09-04).** Evidence files are not read
+    by the sweep. On a repeat delivery of a `pipeline-code-on-main-<sha>`
+    subject that `backlog/evidence/babysitter-article42-*` already names:
+    do not re-derive; say in your reply that the close-out is unrecorded and
+    name it - QA records the land-approval (`is_qa_ancestor.sh <sha>` must
+    exit 0; BL-1405) for a hand-built land, the coordinator records a waive
+    (`babysitter_waive.bb --record`, BL-1344) for anything else. Until
+    BL-1404 lands the escalation channel ignores waives, so the hand-built
+    case is the one that actually stops re-firing.
   - **Pipeline-board freshness (added 2026-07-17 after a 10h+ silent board
     freeze — `backlog/evidence/pipeline-board-frozen-live-outage-20260717.md`):**
     a frozen board is NOT merely an old `lastChangeMs`. A genuinely idle
