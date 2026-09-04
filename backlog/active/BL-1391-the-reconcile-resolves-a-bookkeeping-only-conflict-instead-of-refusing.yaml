@@ -140,3 +140,15 @@ source: |
   landed as a rule in swarmforge/roles/specifier.prompt in the mint commit.
 
 assigned_to: coder
+abandoned_commits: [1d444d534c]
+# 1d444d534c ("Merge architect (BL-1391 reverse copy, merge-only)") is
+# stranded on the "side" branch only. Verified its diff against this tip
+# for handoffd.bb/master_main_reconcile_lib.bb: master_main_reconcile_lib.bb
+# is byte-identical; handoffd.bb's only difference is entirely BL-1361's
+# own unrelated post-qa-branch-sweep-tell! feature (a different, in-flight
+# ticket sharing the branch) plus one stray corrupted comment line - no
+# BL-1391 bookkeeping-conflict content appears in the diff at all. Nothing
+# of this commit's BL-1391-relevant content is missing from this tip.
+bounce_count: 1
+bounce_history:
+  - { at: 2026-09-04, by: architect, blamed: coder, class: behavior, commit: cd0d38875c, evidence: backlog/evidence/BL-1391-architect-bounce-20260904.md }
