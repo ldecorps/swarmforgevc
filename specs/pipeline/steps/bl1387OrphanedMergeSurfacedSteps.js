@@ -195,7 +195,6 @@ function registerSteps(registry) {
     );
   });
 
-
   scoped(/^the escalation does not fire early$/, (ctx) => {
     assert.equal(
       ctx.bl1387.report.escalation,
