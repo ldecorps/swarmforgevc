@@ -194,3 +194,17 @@ source: |
     working, restored, not the subject of this intake)."
 
 assigned_to: coder
+
+abandoned_commits: [3ab16ec996, 822253f148, 6f93401d03, 3695b7c7b1, 6faa76837b, d604b33acf, 7703415c3f]
+# 2026-09-04 (documenter): hardener's forward (bf1915f300) was itself a
+# tip-pure replay built directly on origin/main, whose first-parent chain
+# includes e8e758f1a6 ("Mint BL-1381..BL-1384..."), a single-parent commit
+# whose subject names BL-1381 first - so its whole diff (introducing
+# BL-1382/1383/1384's own backlog YAML and feature files too) was credited
+# entirely to BL-1381 by the send-time scope gate. Documenter rebuilt again
+# on origin/main with only BL-1381's own paths (verified byte-identical to
+# bf1915f300 and to hardener's real, evidenced organic-pipeline tip
+# d604b33acf for every BL-1381-specific file), which strands the whole
+# organic pipeline chain (coder/cleaner/architect/hardener's real commits,
+# and the redundant 6faa76837b mint cherry-pick) on their own worktree
+# branches only - all content-equivalent, nothing missing from this tip.
