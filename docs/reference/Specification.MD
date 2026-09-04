@@ -1,5 +1,44 @@
 # SwarmForge VS Code Extension — Specification
 
+**Last Updated:** September 4, 2026 (BL-1363: promoting a ticket has been
+a script (`promote_and_route_next.sh`) since BL-1028; closing one stayed
+hand-made every time. Measured over 45 days: 484 promotion commits carry
+the script's generated subject against 409 hand-made close commits in TWO
+different spellings (`Close BL-N: move to done` / `Close BL-N: move to
+done. By coordinator.`), and the destination drifted with them —
+`backlog/done/` held 665 loose ticket files beside 516 spread across
+`backlog/done/M1..M8/`, because nothing decided which. Article 2.6 is why
+this matters beyond tidiness: when one approval satisfies several
+tickets, every id must move or none does, and a hand-made close is
+exactly where an id silently never reaching `done/` goes unnoticed.
+`swarmforge/scripts/close_ticket.sh <repo-root> <BL-id> [<BL-id> ...]` is
+the mirror of `promote_and_route_next.sh`, reusing its integrity-commit
+path (`commit_integrity_cli.bb`) rather than growing a second one: every
+id is resolved (found in `backlog/active/`, uniquely, with a readable
+`milestone:` field) BEFORE anything is touched, so one unresolvable id
+refuses the whole batch with nothing moved or staged; a refusal from the
+integrity guard rolls the staged active→done rename back via the same
+snapshot-and-restore shape BL-1028 already established for promotion,
+scoped only to the paths this script itself staged — never a blanket
+`git reset`, which on the shared master checkout would discard another
+role's staged work — and is obeyed rather than overridden by a raw
+commit. The commit subject names EVERY id the close satisfies
+(`Close <id1,id2,...>: move to done`), never a single generated spelling
+again. Destination is the ticket's own `milestone:` field, which every
+ticket already carries and the hygiene gate already enforces — never
+guessed, never defaulted; human ruling 2026-09-04 (recommended option):
+apply the convention to new closes only, leaving the existing 665 loose
+files where they are (a migration is pure churn until something reads the
+done area by path, which nothing does today). The script deliberately
+does NOT promote — the follow-on promotion stays
+`promote_and_route_next.sh`'s, so a refused close can never strand an
+already-promoted ticket on `NO_TASK` (invariant 3). Acceptance:
+`specs/features/BL-1363-closing-a-ticket-is-one-command.feature`. No
+how-to page: internal coordinator-tooling CLI, same documentation
+precedent as its own mirror `promote_and_route_next.sh` and sibling
+`record-bounce.js`/`record-review-evidence.js` (all Specification.MD-only,
+no dedicated page — BL-1362). No diagram depicts backlog-close internals.)
+Prior entry —
 **Last Updated:** September 4, 2026 (BL-1390: every writer on the shared
 `main` checkout (coordinator, specifier, concierge, approval bot,
 operator) left local `main` ahead of `origin/main` until the daemon's
@@ -38,7 +77,21 @@ Guardrails section): a test fixture never mutates the live repository —
 fixture roots are `git init`/`git clone` under `mkdtemp`, proven by
 `rev-parse --git-common-dir` resolving under the fixture's own directory
 before any mutating git command, and a suite asserts the live origin URL
-is byte-identical before and after it runs. Acceptance:
+is byte-identical before and after it runs. A second incident, found
+independently by QA: 1156 concurrent copies of the e2e test
+(`test_bl1390_post_commit_push.sh`, spawned repeatedly by the acceptance
+and mutation harnesses) exhausted a host during an unrelated land — the
+multiplier itself is unestablished (the parcel's own harnesses are
+sequential and memoized; recorded as unknown, not guessed), but each
+copy's blind startup `rm -rf <prefix>*` sweep (BL-971's own convention)
+deleted every OTHER copy's fixture, the same class of bug BL-1385 hit
+first in `check_handler_module_graph.sh`. Generalized into the same
+standing guardrail rather than fixed twice: BL-971's "sweep by prefix
+before the run too" is right for one runner at a time only — anything
+that CAN run concurrently records its owner pid inside its fixture root,
+reaps only roots whose pid is dead or whose age exceeds a bound, takes a
+lock so at most one instance runs, bounds its own wall clock, and logs
+the process chain that invoked it. Acceptance:
 `specs/features/BL-1390-a-commit-on-the-shared-main-checkout-is-pushed-while-it-still-fast-forwards.feature`.
 How-to: `docs/how-to/BL-1390-post-commit-push-while-it-still-fast-forwards.md`
 (new page — a distinct mechanism from the periodic push sweep it works

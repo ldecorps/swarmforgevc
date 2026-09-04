@@ -1,3 +1,7 @@
+# acceptance-mutation-manifest-begin
+# {"version":1,"tested_at":"2026-09-04T17:37:28.788344536Z","feature_name":"Closing a ticket is one command","feature_path":"/home/carillon/swarmforgevc/.worktrees/hardender/specs/features/BL-1363-closing-a-ticket-is-one-command.feature","background_hash":"863c5b5a7e6dd6be3b362799fbadbf76d2c380eb8b5c58112b694da13b4522c3","implementation_hash":"unknown","scenarios":[],"outcome":"inapplicable"}
+# acceptance-mutation-manifest-end
+
 Feature: Closing a ticket is one command
 
   The coordinator's promotion half is a script: `promote_and_route_next.sh`

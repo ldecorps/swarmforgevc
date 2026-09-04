@@ -157,6 +157,18 @@ not as the several separate edits that produced it).
 
 ### Guardrails
 
+- **A prefix sweep before a run reaps only what no live run owns (BL-1385,
+  BL-1390, 2026-09-04).** BL-971's "sweep by prefix BEFORE the run too" is
+  right for one runner at a time. `check_handler_module_graph.sh` (a guard
+  invoked by every commit and land) and `test_bl1390_post_commit_push.sh`
+  (an e2e spawned by acceptance and mutation harnesses) both did a blind
+  `rm -rf <prefix>*` at startup; two overlapping guard runs deleted each
+  other's tree, and 1156 concurrent copies of the e2e exhausted a host.
+  Rule: record the owner pid inside each fixture root; reap only roots
+  whose pid is dead or whose age exceeds a bound; anything that can run
+  concurrently also takes a lock so at most one instance runs, bounds its
+  wall clock, and logs the process chain that invoked it.
+
 - **A test fixture never mutates the live repository (BL-1390, 2026-09-04).**
   `test_bl1390_post_commit_push.sh`'s value `"$WORK/does-not-exist.git"` from
   its `git -C "$root" remote set-url origin` line ended up in the SHARED
