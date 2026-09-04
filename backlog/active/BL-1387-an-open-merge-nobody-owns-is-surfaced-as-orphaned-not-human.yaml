@@ -190,6 +190,7 @@ source: |
   BL-1386.
 
 assigned_to: coder
-bounce_count: 1
+bounce_count: 2
 bounce_history:
   - { at: 2026-09-04, by: architect, blamed: coder, class: behavior, commit: a51b4d68fe, evidence: backlog/evidence/BL-1387-architect-bounce-20260904.md }
+  - { at: 2026-09-04, by: architect, blamed: coder, class: acceptance, commit: 0e31d40b55, evidence: backlog/evidence/BL-1387-architect-pass2-bounce-20260904.md }
