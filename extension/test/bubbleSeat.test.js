@@ -53,9 +53,28 @@ test('a message in some third topic is not this seat\'s either, and names no oth
   assert.equal(decided.seat, undefined);
 });
 
+test('an unbound message with no cursor topic to compare against names no seat either', () => {
+  // Discriminates `topicId !== undefined && topicId === cursorTopicId` from a
+  // mutant that drops the `topicId !== undefined` guard: with both topicId
+  // and cursorTopicId undefined, `undefined === undefined` alone would wrongly
+  // name Cursor.
+  const decided = turn({ topicId: undefined, cursorTopicId: undefined });
+  assert.equal(decided.kind, 'not-mine');
+  assert.equal(decided.seat, undefined);
+});
+
 test('an unbound Bubble seat never claims a message', () => {
   assert.equal(turn({ seatTopicId: undefined }).kind, 'not-mine');
   assert.equal(turn({ topicId: undefined }).kind, 'not-mine');
+});
+
+test('an unbound seat never claims an unaddressed message either - both undefined is still not a match', () => {
+  // Discriminates `topicId === undefined` from a mutant that drops that
+  // clause entirely: with seatTopicId ALSO undefined, `topicId !==
+  // seatTopicId` is `undefined !== undefined` = false, so only the
+  // `topicId === undefined` clause on its own catches this case. Neither of
+  // the two calls above puts both at undefined simultaneously.
+  assert.equal(turn({ topicId: undefined, seatTopicId: undefined }).kind, 'not-mine');
 });
 
 test('a seat that cannot answer refuses IN ITS OWN TOPIC, naming why, and hands the turn to nobody', () => {
@@ -73,8 +92,10 @@ test('a seat that cannot answer refuses IN ITS OWN TOPIC, naming why, and hands 
 
 test('a refusal with no stated reason still says something a reader can act on', () => {
   const text = formatBubbleSeatRefusal(turn({ mirrorAvailable: false }));
-  assert.match(text, /Bubble seat cannot answer/);
-  assert.ok(text.trim().length > 'Bubble seat cannot answer:'.length);
+  // Pin the actual default reason text, not just "something longer than the
+  // prefix" - a mutant that falls back to '' still produces a longer string
+  // via the trailing ". No other seat has been asked." sentence.
+  assert.equal(text, 'Bubble seat cannot answer: the front desk mirror is unavailable for this turn. No other seat has been asked.');
 });
 
 test('the watchdog reports a stopped seat by name, and stays quiet about a live one', () => {
@@ -83,16 +104,32 @@ test('the watchdog reports a stopped seat by name, and stays quiet about a live 
     { name: CURSOR_SEAT_NAME, alive: true },
   ]);
   assert.deepEqual(watch.needsAttention, [BUBBLE_SEAT_NAME]);
-  assert.match(watch.message, /Bubble/);
-  assert.ok(!/Cursor/.test(watch.message), 'a live seat is reported as needing attention');
+  // Exact match: kills the `stopped: []` fallback ArrayDeclaration mutant
+  // (would leak "Stryker was here" into a still-empty `unknown` branch) and
+  // pins the message shape overall.
+  assert.equal(watch.message, 'seats needing attention — stopped: Bubble');
 });
 
-test('the watchdog covers BOTH seats - a stopped Cursor seat is reported too', () => {
+test('the watchdog joins MULTIPLE stopped seats with ", ", not concatenated bare', () => {
+  // A single-element fixture cannot discriminate `join(', ')` from
+  // `join("")` - both produce the same string for one element.
   const watch = decideSeatWatch([
-    { name: BUBBLE_SEAT_NAME, alive: true },
+    { name: BUBBLE_SEAT_NAME, alive: false },
     { name: CURSOR_SEAT_NAME, alive: false },
   ]);
-  assert.deepEqual(watch.needsAttention, [CURSOR_SEAT_NAME]);
+  assert.deepEqual(watch.needsAttention, [BUBBLE_SEAT_NAME, CURSOR_SEAT_NAME]);
+  assert.equal(watch.message, 'seats needing attention — stopped: Bubble, Cursor');
+});
+
+test('the watchdog reports stopped AND unknown seats together, separated by "; "', () => {
+  // Only a fixture with BOTH `parts` populated can discriminate the outer
+  // `parts.join('; ')` separator.
+  const watch = decideSeatWatch([
+    { name: BUBBLE_SEAT_NAME, alive: false },
+    { name: CURSOR_SEAT_NAME, alive: undefined },
+  ]);
+  assert.deepEqual(watch.needsAttention, [BUBBLE_SEAT_NAME, CURSOR_SEAT_NAME]);
+  assert.equal(watch.message, 'seats needing attention — stopped: Bubble; liveness unknown: Cursor');
 });
 
 test('with both seats alive the watchdog says so rather than going quiet', () => {
@@ -101,11 +138,24 @@ test('with both seats alive the watchdog says so rather than going quiet', () =>
     { name: CURSOR_SEAT_NAME, alive: true },
   ]);
   assert.deepEqual(watch.needsAttention, []);
-  assert.match(watch.message, /both seats|all seats/i);
+  // Exact match: kills both the `join(', ')` -> `join("")` mutant (needs 2+
+  // names to differ) and the `s => s.name` -> `s => undefined` mutant.
+  assert.equal(watch.message, 'all seats running: Bubble, Cursor');
 });
 
 test('a seat whose liveness is unknown is reported, never assumed alive', () => {
   const watch = decideSeatWatch([{ name: BUBBLE_SEAT_NAME, alive: undefined }]);
   assert.deepEqual(watch.needsAttention, [BUBBLE_SEAT_NAME]);
-  assert.match(watch.message, /unknown/i);
+  // Exact match: kills the `unknown: []` fallback ArrayDeclaration mutant
+  // (would leak "Stryker was here" into the still-empty `stopped` branch).
+  assert.equal(watch.message, 'seats needing attention — liveness unknown: Bubble');
+});
+
+test('the watchdog joins MULTIPLE unknown seats with ", ", not concatenated bare', () => {
+  const watch = decideSeatWatch([
+    { name: BUBBLE_SEAT_NAME, alive: undefined },
+    { name: CURSOR_SEAT_NAME, alive: undefined },
+  ]);
+  assert.deepEqual(watch.needsAttention, [BUBBLE_SEAT_NAME, CURSOR_SEAT_NAME]);
+  assert.equal(watch.message, 'seats needing attention — liveness unknown: Bubble, Cursor');
 });
