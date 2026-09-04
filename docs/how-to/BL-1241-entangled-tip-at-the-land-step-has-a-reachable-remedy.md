@@ -401,10 +401,18 @@ list (`replayed-tree-guards` in `land_step_lib.bb`) is a plain `def`, so
 adding a second tree guard later is one list entry, not a second call site,
 and each guard runs as its own process with its own status collected
 individually (BL-1242/BL-1252's shape, satisfied by construction). That
-prediction held: `check_handler_module_graph.sh` (BL-1385) joined the same
-list as a second, sibling tree guard — registration is not loadability,
-and it proves a handler's require graph resolves on the tree under test,
-never the checking worktree's own files.
+prediction held twice: `check_handler_module_graph.sh` (BL-1385) joined the
+same list as a second, sibling tree guard — registration is not
+loadability, and it proves a handler's require graph resolves on the tree
+under test, never the checking worktree's own files — and
+`check_bb_scripts_load.sh` (BL-1395) joined as a third, proving every
+changed `.bb` script (`handoffd.bb` specifically BOOTED, not just loaded)
+survives Babashka's SCI analysis on the tree under test, after a hand-splice
+at land reintroduced a defect this same class of guard now catches at
+commit time too. See
+[BL-1252's "A landed daemon script is booted before it is published"
+section](BL-1252-commit-guard-chain-reports-every-violation.md#a-landed-daemon-script-is-booted-before-it-is-published-bl-1395)
+for the guard's own mechanics.
 
 None of this changes `land_step_cli.bb`'s three top-level outcomes —
 `LAND_CLEAN`, `LAND_REPLAY <branch> <new-commit>`, `LAND_ESCALATE` — only

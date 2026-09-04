@@ -1,5 +1,39 @@
 # SwarmForge VS Code Extension — Specification
 
+**Last Updated:** September 4, 2026 (BL-1395: Babashka's SCI analyses a
+`defn` body eagerly only when the file LOADS, so a script referencing an
+undefined symbol (a typo'd built-in, a forward reference) passed a
+required_wiring grep and reached `main` unseen three times in eight days —
+BL-1381 (`shift_schedule_applier_lib.bb`, crashed every consumer for eight
+days silently) and twice on 2026-09-04 for `handoffd.bb`'s
+`cron-heartbeat-state` (calling a `read-json` function that does not
+exist), the second time reintroduced by QA's own hand-splice at land whose
+verification was three `required_wiring` label greps rather than an
+actual load; the live daemon crash-looped from 18:20Z with every sweep,
+wake, chase, and nudge silent. A new `check_bb_scripts_load.sh` Tier-1
+commit guard `bb -e '(load-file ...)'`-probes every `.bb` script a commit
+or a land's replayed tree changes, against the tree under test (never the
+checking worktree — invariant 3), naming file/line/symbol on failure;
+`handoffd.bb` is additionally BOOTED against a `mkdtemp` fixture root and
+waited for one heartbeat, since only running the whole file in order
+proves a forward reference absent. `handoffd.bb`'s trailing bare `(-main)`
+is now guarded — `(when (= *file* (System/getProperty "babashka.file"))
+(-main))`, the idiom `apply_shift_schedule.bb`/`babysitter_waive.bb`/
+`bob_starting_cast_cli.bb` already used — so a `load-file` analysis probe
+no longer starts the daemon it is trying to check. Wired into both
+publish paths: `run_commit_guards.sh` (a hand-splice on `main` meets it)
+and `land_step_lib.bb`'s replayed-tree-guards list, as a third sibling
+alongside BL-1385's handler-module-graph guard. Fixture roots per
+invocation, reaped by dead owner pid or age — never a blind prefix sweep
+(BL-1385/BL-1390's guardrail). Acceptance:
+`specs/features/BL-1395-a-landed-daemon-script-is-booted-before-it-is-published.feature`.
+How-to: `docs/how-to/BL-1252-commit-guard-chain-reports-every-violation.md`
+(extended in place — new "A landed daemon script is booted before it is
+published" section, Tier-1 list updated to six guards) and
+`docs/how-to/BL-1241-entangled-tip-at-the-land-step-has-a-reachable-remedy.md`
+(the replayed-tree-guards list note extended to name the third guard). No
+diagram depicts commit-guard or land-guard internals at this granularity.)
+Prior entry —
 **Last Updated:** September 4, 2026 (BL-1366: `land_main_publish.sh`
 documented a caller protocol nothing implemented — acquire the land lock,
 decide, rematch if advised, push FF-only, release — and QA hand-ran all
