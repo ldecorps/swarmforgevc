@@ -140,3 +140,6 @@ source: |
   landed as a rule in swarmforge/roles/specifier.prompt in the mint commit.
 
 assigned_to: coder
+bounce_count: 1
+bounce_history:
+  - { at: 2026-09-04, by: architect, blamed: coder, class: behavior, commit: cd0d38875c, evidence: backlog/evidence/BL-1391-architect-bounce-20260904.md }
