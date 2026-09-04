@@ -104,6 +104,50 @@
   (assert-true "second apply unchanged" (not (:changed? second-pass)))
   (assert= "human line surfaced" [human-line] (:surfaced-human with-human)))
 
+;; ── BL-1381: the lib LOADS, and the governor is best-effort ──────────────
+;;
+;; This runner was red from 2026-08-27 to 2026-09-04 and nobody was told: the
+;; standing bb suite is not run by any gate that blocks a commit, so a red here
+;; cost nothing until a human tripped on it. The cause was a `(require
+;; '[babashka.process :as process])` INSIDE budgetShiftGovernorVerdict's body -
+;; SCI resolves an alias at ANALYSIS time, so the whole file failed to load and
+;; every consumer died at load rather than at the governor call. The require
+;; now lives in the ns form.
+;;
+;; That this file runs at all is the regression test for the crash. These rows
+;; pin the governor's own contract so the require cannot quietly move back.
+
+(assert-true "BL-1381: the governor symbol resolves - the lib loaded"
+             (fn? shift-schedule-applier-lib/budgetShiftGovernorVerdict))
+
+;; Absent CLI -> nil, never a throw: the verdict is best-effort and a caller
+;; must not break because the governor is not built here.
+(let [empty-root (str (fs/create-temp-dir {:prefix "bl1381-nogov-"}))]
+  (assert= "BL-1381: an absent governor CLI yields nil, not an exception"
+           nil (shift-schedule-applier-lib/budgetShiftGovernorVerdict empty-root 1234)))
+
+;; Present CLI -> its parsed verdict. A real node script, because the point is
+;; that process/shell resolves and runs at all.
+(let [root (str (fs/create-temp-dir {:prefix "bl1381-gov-"}))
+      cli-dir (str root "/extension/out/tools")]
+  (fs/create-dirs cli-dir)
+  (spit (str cli-dir "/budget-shift-governor.js")
+        "console.log(JSON.stringify({verdict:'ok',now:process.argv[3]}));")
+  (let [v (shift-schedule-applier-lib/budgetShiftGovernorVerdict root 4242)]
+    (assert= "BL-1381: a present governor CLI yields its parsed verdict"
+             "ok" (:verdict v))
+    (assert= "BL-1381: and is handed the now-ms it was called with"
+             "4242" (:now v))))
+
+;; A CLI that exits non-zero, or prints unparseable output, is still nil -
+;; best-effort means best-effort in both directions.
+(let [root (str (fs/create-temp-dir {:prefix "bl1381-govfail-"}))
+      cli-dir (str root "/extension/out/tools")]
+  (fs/create-dirs cli-dir)
+  (spit (str cli-dir "/budget-shift-governor.js") "process.exit(3);")
+  (assert= "BL-1381: a governor that fails yields nil rather than throwing"
+           nil (shift-schedule-applier-lib/budgetShiftGovernorVerdict root 1)))
+
 (if (empty? @failures)
   (println "swarm_shift_lib: ALL TESTS PASSED")
   (do (doseq [f @failures] (println f)) (System/exit 1)))
