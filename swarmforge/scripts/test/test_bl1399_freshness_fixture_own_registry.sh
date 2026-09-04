@@ -116,6 +116,36 @@ else
   fail "this parcel modified a live freshness file"
 fi
 
+# ── 4b. the supervisor rows are DERIVED, and that arm still bites ───────
+# The amendment's qa_e2e 2b. The guard's second arm walks the live scripts dir
+# with no seam, so the fixture cannot hide a supervisor from it: drop one row
+# from the fixture's own conf (never the live file) and the guard must refuse,
+# naming that supervisor.
+make_root derived handoffd
+victim="$(grep -oE '^[a-z_]+_supervisor\|' "$WORK/derived/freshness.conf" | head -1 | tr -d '|')"
+if [[ -n "$victim" ]]; then
+  grep -v "^$victim|" "$WORK/derived/freshness.conf" > "$WORK/derived/freshness.conf.tmp"
+  mv "$WORK/derived/freshness.conf.tmp" "$WORK/derived/freshness.conf"
+  out="$(run_checker "$WORK/derived")"; rc=$?
+  if (( rc != 0 )) && grep -q "$victim" <<<"$out"; then
+    pass "dropping a derived supervisor row makes the guard refuse, naming that supervisor"
+  else
+    fail "the second arm did not bite for the dropped $victim (rc=$rc): $(tail -2 <<<"$out")"
+  fi
+else
+  fail "the fixture conf carries no supervisor row, so the derivation is not happening"
+fi
+
+# ── 4c. and the row set IS the live glob, computed at test time ──────────
+make_root rowset handoffd
+conf_rows="$(grep -oE '^[a-z_]+_supervisor\|' "$WORK/rowset/freshness.conf" | tr -d '|' | sort | tr '\n' ' ')"
+glob_rows="$(for s in "$SCRIPTS"/*_supervisor.bb; do [ -f "$s" ] && basename "$s" .bb; done | sort | tr '\n' ' ')"
+if [[ "$conf_rows" == "$glob_rows" && -n "$glob_rows" ]]; then
+  pass "the fixture's supervisor rows equal the live glob's basenames at test time"
+else
+  fail "the rows are not the live glob: conf[$conf_rows] glob[$glob_rows]"
+fi
+
 # ── 5. the property test itself is green ────────────────────────────────
 if ( cd "$REPO_ROOT/extension" && timeout 600 npx vitest run --config vitest.properties.config.mjs \
        test/bl1012FreshnessSelfInflictedIncidents.property.test.js >"$WORK/bl1012.log" 2>&1 ); then

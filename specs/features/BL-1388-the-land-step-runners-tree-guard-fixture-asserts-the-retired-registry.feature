@@ -1,3 +1,8 @@
+# mutation-stamp: sha256=0e22921bf602cee23874edaef715abaefa3eb17684ec2013c6051fbd20e67ecb
+# acceptance-mutation-manifest-begin
+# {"version":1,"tested_at":"2026-09-04T20:59:18.057771760Z","feature_name":"BL-1388 The land-step runner's tree-guard fixture describes the guard as it stands","feature_path":"/home/carillon/swarmforgevc/.worktrees/hardender/specs/features/BL-1388-the-land-step-runners-tree-guard-fixture-asserts-the-retired-registry.feature","background_hash":"8a6109dbc3e7b64ab46ddfcf8319b0c7a18e5e8ee84653f20bfde5768e2673d8","implementation_hash":"unknown","scenarios":[{"index":1,"name":"the real tree guard refuses a handler discovery cannot reach","scenario_hash":"38d9c314b56a44318662f2c915548c43d4a028031a144e1fa3d0f4287dea9b55","mutation_count":1,"result":{"Total":1,"Killed":1,"Survived":0,"Errors":0},"tested_at":"2026-09-04T20:59:18.057771760Z"}]}
+# acceptance-mutation-manifest-end
+
 Feature: BL-1388 The land-step runner's tree-guard fixture describes the guard as it stands
 
   The land-step runner pins that a tip-pure replay really reaches the

@@ -26,6 +26,8 @@ const CLAIMS = {
   'live-still-refuses': 'with the live required list the guard still refuses (BL-784 untouched)',
   unmodified: 'the live conf, registry, guard and checker are unmodified',
   'suite-green': 'bl1012FreshnessSelfInflictedIncidents is green',
+  'rows-derived': 'dropping a derived supervisor row makes the guard refuse, naming that supervisor',
+  'rows-match-glob': "the fixture's supervisor rows equal the live glob's basenames at test time",
 };
 
 // Module scope, not per-ctx: each scenario gets its own ctx, so a per-ctx memo
@@ -59,9 +61,12 @@ function registerSteps(registry) {
   const scoped = (re, fn) => registry.defineScoped(re, fn, FEATURE);
 
   // ── Background ──────────────────────────────────────────────────────────
-  scoped(/^a freshness fixture root whose conf pins handoffd and carries a derived row per supervisor the guard walks$/, (ctx) => {
-    ctx.bl1399 = ctx.bl1399 || {};
-  });
+  scoped(
+    /^a freshness fixture root whose conf pins handoffd and carries a derived row per supervisor the guard walks$/,
+    (ctx) => {
+      ctx.bl1399 = ctx.bl1399 || {};
+    },
+  );
 
   // ── Given ───────────────────────────────────────────────────────────────
   scoped(/^the fixture supplies a required registry naming only handoffd$/, (ctx) => {
@@ -103,6 +108,10 @@ function registerSteps(registry) {
   scoped(/^every property holds$/, (ctx) => {
     requirePassed(ctx, 'suite-green');
     requirePassed(ctx, 'unmodified');
+    // The amendment's 2b: the supervisor rows are really derived, and the
+    // guard's second arm really bites when one is missing.
+    requirePassed(ctx, 'rows-derived');
+    requirePassed(ctx, 'rows-match-glob');
   });
 }
 

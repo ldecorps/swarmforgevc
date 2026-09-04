@@ -53,24 +53,31 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 source "$SCRIPT_DIR/lifecycle_matrix.sh"
 source "$SCRIPT_DIR/stop_ancillary_services.sh"
 
-# BL-820: the closing-ceremony lean pass - a named step invoked before the
-# shift fully winds down (called from ./finish-shift ahead of
-# kill_pipeline_swarm.sh, while ancillaries and the pipeline are still up).
-# Wraps the compiled extension/out/tools/closing-ceremony-run.js CLI, which
-# owns the real behavior (fold BL-819's ledger into a shift packet, deliver
-# it to the specifier via swarm_handoff.sh, or auto-record an explicit
-# no-change outcome for an empty shift). A missing compile is a loud skip,
-# never a bedtime failure - the ceremony is additive to bedtime's own
-# contract (BL-762), not a new way for it to fail closed.
+# BL-1393: THE closing ceremony - one sequence, on every sleep after work.
+#
+# Until 2026-09-04 this called the BL-820 lean CLI directly and nothing else,
+# while BL-658's full ceremony (freeze, drain, briefing, email, stop) ran only
+# inside the daemon's overnight window. A weekday 17:00 bedtime - the ordinary
+# way this swarm sleeps - therefore got the lean pass alone and the full
+# ceremony never ran on a weekday at all. The human's directive was "820 should
+# be part of 658. the closing ceremony should happen each time the swarm does
+# at least 1 shift and goes to sleep", so bedtime now drives the ONE sequence
+# and the lean pass is a step inside it.
+#
+# `--sleep-path finish-shift` says "this stop is a sleep": the ceremony runs
+# whatever the hour, where the daemon's own trigger stays gated by its closure
+# window. A missing compile is a loud skip, never a bedtime failure - the
+# ceremony is additive to bedtime's own contract (BL-762), not a new way for it
+# to fail closed.
 finish_shift_run_closing_ceremony() {
   local root="$1"
-  local cli="$root/extension/out/tools/closing-ceremony-run.js"
+  local cli="$root/extension/out/tools/night-closing-ceremony-run.js"
   if [[ ! -f "$cli" ]]; then
-    echo "finish-shift: closing-ceremony CLI not compiled ($cli) - skipping lean pass" >&2
+    echo "finish-shift: closing-ceremony CLI not compiled ($cli) - skipping ceremony" >&2
     return 0
   fi
-  if ! node "$cli" --target "$root"; then
-    echo "finish-shift: closing-ceremony lean pass exited non-zero - continuing bedtime" >&2
+  if ! node "$cli" --target "$root" --sleep-path finish-shift; then
+    echo "finish-shift: closing ceremony exited non-zero - continuing bedtime" >&2
   fi
 }
 
