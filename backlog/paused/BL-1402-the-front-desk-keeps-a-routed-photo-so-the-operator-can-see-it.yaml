@@ -136,7 +136,11 @@ notes: |
   changes. Coordinator: a recorded `human_ruling` needs no specifier pass
   before promotion.
 
-  IR-DRY at mint: see commit.
+  IR-DRY at mint: 2 medium possible-synonyms, both kept as intentional:
+  "already holds its bound of older files" (Given, 04) vs "holds exactly its
+  bound of files" (Then, 04) are the precondition and the assertion of the
+  same scenario; "routes both deliveries" (03) vs "routes the message" is
+  the redelivery case against the single one.
 
   Mint-time INVEST: one observable outcome (the human's attached image
   reaches the operator's disk and the routed text says where), one sitting
