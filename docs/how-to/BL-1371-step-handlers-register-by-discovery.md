@@ -49,6 +49,20 @@ other file needs an edit.
 - Both acceptance runners (`run_acceptance.sh`, `run_gherkin_mutation.sh`)
   still default `STEPS_MODULE` to `specs/pipeline/steps/index.js` — neither
   needed an edit, since the change is inside that module.
+- **A handler whose `require` graph cannot resolve now stops it before
+  `main`, not just at the next acceptance run.** Discovery's own "fails the
+  run loudly" (above) is a RUNTIME guarantee — it does not stop a handler
+  requiring a not-yet-landed compiled module (e.g.
+  `path.join(EXT_ROOT,'out',...)`) from reaching `main` in the first place,
+  which is exactly what happened 2026-09-04: one hand-landed handler with
+  an unresolvable require took every acceptance run on `origin/main` to
+  zero runnable features. `check_handler_module_graph.sh` (BL-1385) proves
+  every discovered handler's module graph resolves ON THE TREE UNDER TEST
+  (never the checking worktree's own files) before a commit can reach
+  `main`, wired into both the land replay's tree-guard list
+  (`land_step_lib.bb`) and the commit-time guard chain
+  (`run_commit_guards.sh`, see
+  [BL-1252](BL-1252-commit-guard-chain-reports-every-violation.md)).
 
 ## Why
 

@@ -119,6 +119,18 @@ function registerSteps(registry) {
     ctx.bl1385.shape = 'unreadable-tree';
   });
 
+  scoped(/^a tree with no step registry directory at all$/, (ctx) => {
+    ctx.bl1385.shape = 'no-steps-dir';
+  });
+
+  scoped(/^a handler on the tree calling process\.exit before a bad handler requiring a module absent from the tree$/, (ctx) => {
+    ctx.bl1385.shape = 'handler-calls-exit';
+  });
+
+  scoped(/^a handler on the tree requiring a nonexistent absolute path outside any tree$/, (ctx) => {
+    ctx.bl1385.shape = 'escapes-tree-scope';
+  });
+
   // ── BL-1385 invariant 3 (added 2026-09-04 after the cleaner reproduced two
   //    runs deleting each other's tree). This guard runs from a commit hook,
   //    where invocations overlap constantly - and BL-971's sweep-by-prefix,
