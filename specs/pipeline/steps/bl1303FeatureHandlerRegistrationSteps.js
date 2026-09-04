@@ -45,10 +45,16 @@ function gitEnv() {
 /**
  * Builds a scratch repo on `branch`.
  *
- * `tickets` is one entry per ticket: 'registered' (handler named in the
- * registry), 'unregistered' (handler file present, registry silent), or
- * 'missing-sibling' (registered handler executing a lib script that is not in
- * the tree). `registryReadable: false` leaves no registry file at all.
+ * `tickets` is one entry per ticket: 'registered' (handler discovery reaches),
+ * 'unregistered' (handler file present but unreachable), or 'missing-sibling'
+ * (reachable handler executing a lib script that is not in the tree).
+ * `registryReadable: false` leaves no registry file at all.
+ *
+ * BL-1371: registration is DISCOVERY - a top-level `*Steps.js` file in the
+ * steps directory is registered by existing, so the 'unregistered' shape is a
+ * handler named OUTSIDE that predicate (`...Handler.js`). That is the state
+ * this guard still refuses; "present but absent from the hand-maintained
+ * array" stopped being reachable rather than being waved through.
  */
 function buildRepo({ branch, tickets, registryReadable = true }) {
   const repo = fs.mkdtempSync(path.join(os.tmpdir(), 'bl1303-'));
@@ -60,7 +66,10 @@ function buildRepo({ branch, tickets, registryReadable = true }) {
   tickets.forEach((shape, index) => {
     const id = 900 + index + 1;
     const feature = `${FEATURES_DIR}/BL-${id}-fixture.feature`;
-    const handler = `${STEPS_DIR}/bl${id}FixtureSteps.js`;
+    const handler =
+      shape === 'unregistered'
+        ? `${STEPS_DIR}/bl${id}FixtureHandler.js`
+        : `${STEPS_DIR}/bl${id}FixtureSteps.js`;
     const script = `${LIB_DIR}/bl${id}FixtureCli.sh`;
     fs.writeFileSync(path.join(repo, feature), `Feature: fixture ${id}\n`, 'utf8');
     const body =
@@ -73,6 +82,7 @@ function buildRepo({ branch, tickets, registryReadable = true }) {
     if (shape !== 'unregistered') {
       required.push(`bl${id}FixtureSteps`);
     }
+
     built.push({ shape, feature, handler, script });
   });
 
