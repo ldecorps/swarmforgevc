@@ -124,3 +124,6 @@ source: |
   `backlog/evidence/cron-daemon-dead-since-20260830-found-20260904.md`.
 
 assigned_to: coder
+bounce_count: 1
+bounce_history:
+  - { at: 2026-09-04, by: architect, blamed: coder, class: behavior, commit: 69051ff493, evidence: backlog/evidence/BL-1392-architect-bounce-20260904.md }
