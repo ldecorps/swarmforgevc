@@ -413,6 +413,54 @@ approved rider) and what `own-paths`/`replay!` decide about a shared path
 that used to be an unconditional refusal. Acceptance:
 `specs/features/BL-1375-approved-siblings-sharing-a-path-can-land.feature`.
 
+## "Landed" made per-path-complete, and the report finally names paths (BL-1389)
+
+BL-1354 (above) scored a sibling's own lines PER PATH but still verdicted
+LANDED/UNLANDED per TICKET — any one of the sibling's attributed paths
+landing (a feature file minted at spec time, an evidence file hand-landed
+earlier) was enough for `sibling-landed?` to read the whole sibling as
+landed, even while its handler code and other source files were still
+absent from `origin/main`. Once a sibling read landed, `own-paths` let
+every path attributed to it ride — under the LANDING ticket's own
+approval, not the sibling's — because `LAND_REPLAY`'s report printed only
+sibling ticket ids (`LANDED_SIBLING <id>`, `ENTANGLED_SIBLING <id>`), never
+one path, so nothing in the CLI's own output could show a human what was
+about to ride.
+
+Reproduced live on 2026-09-04 (QA's BL-1386 land, cited commit
+`2cab559722`, `origin/main` `94be289136`): `path-owner-tickets` attributed
+`specs/pipeline/steps/bl1367ApprovalCarriesItsRulingSteps.js` and
+`extension/src/concierge/pendingApprovalReply.ts` to BL-1367 alone — both
+genuinely absent from `origin/main` — yet BL-1367 read landed (some of its
+OTHER attributed paths were on `origin/main`) and both files rode into
+replay `67cd1d8dd7`. The CLI printed 17 `LANDED_SIBLING` names and not one
+path; QA caught it only by diffing the tip by hand.
+
+Two fixes, both invariant-scoped rather than loosened:
+
+- **Exclusion is now self-sufficient per path** (invariant 1): a path
+  whose owners are non-empty, untagged-free, exclude the landing ticket,
+  and consist ONLY of siblings whose OWN lines at THAT path are not on
+  `origin/main` is excluded from the replay regardless of what those
+  siblings' TICKET-LEVEL verdict reads — `sibling-own-line-changes`
+  (BL-1354) is now asked per path here, not only inside the ticket-level
+  roll-up.
+- **The ticket-level verdict is now per-path-complete** (invariant 2):
+  `sibling-landed?` reports landed only when EVERY path attributed to that
+  sibling has the sibling's own lines on `origin/main` — one landed path
+  can no longer carry the whole ticket. BL-1272's invariant that landed
+  stays a positive, never-guessed finding is unchanged.
+
+The report now names what it decided (invariant 3): `LANDED_SIBLING
+<ticket-id> <deciding-path>` names the path the landed verdict rests on,
+and a new `EXCLUDED_SIBLING_PATH <path> <ticket-id>` line prints once per
+delivered path left OUT of the replay, naming the sibling it was credited
+to — so a human reads the verdict off the CLI's own output instead of
+re-deriving it by diffing the tip. BL-1375's passenger rule (above) is
+untouched: an APPROVED sibling still rides on a path the landing ticket
+also owns, after the tree guards. Acceptance:
+`specs/features/BL-1389-a-path-an-unlanded-sibling-owns-alone-never-rides-another-tickets-land.feature`.
+
 ## What this does not change
 
 - BL-1192's send-time gate and its range — unchanged; this ticket only adds

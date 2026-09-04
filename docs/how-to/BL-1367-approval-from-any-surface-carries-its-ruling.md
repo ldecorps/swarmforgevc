@@ -40,6 +40,44 @@ operator at the bot's ruling keyboard instead — never a bare status code
 (BL-572/BL-662). The half-recorded state — approved with the question
 still unanswered — can no longer happen from this route.
 
+## A third surface: Expedite must not answer a question it never showed (BL-1380)
+
+The paused-pager Expedite route (`handlePausedPagerExpediteRoute` in
+`bridgeServer.ts`) had the identical gap — `recordApprovalReply(targetPath,
+backlogId)` with no ruling, so tapping Expedite on a ticket declaring
+`ruling_options` flipped `human_approval` to `approved` with no
+`human_ruling:` written, silently discarding the choice. Live exposure was
+exactly one ticket: BL-1379, minted with three `ruling_options` and sitting
+in `backlog/paused/` — precisely where Expedite reaches.
+
+Expedite reuses the same `classifyApprovalRulingRequirement` classifier —
+never a second copy of the rules — but asks it a DIFFERENT question on
+purpose. The Approve route validates a label the surface just offered
+(so it also refuses `unknown-option`, a ruling that matches nothing
+declared). Expedite offers no label at all; it only weighs the ruling
+already ON RECORD, so `classifyExpediteRulingRefusal` refuses only
+`ruling-required` — a ticket the operator has already answered through the
+bot's ruling keyboard is not this route's to re-judge, and refusing an
+already-answered ticket would leave the verb dead on exactly the tickets
+BL-1083 built it not to block. A ticket declaring no `ruling_options`
+still expedites byte-for-byte as before (invariant 3, same posture).
+
+The refusal is BL-1083's own invariant 2, not a reopening of it: BL-1083
+forbade the `human_approval` gate blocking Expedite for want of the very
+approval the tap is giving — Expedite still SATISFIES that gate. A ruling
+is a different question ("work this now" is not "option 2"), and BL-1083's
+own words already prescribe a visible, explained refusal for a gate that
+says no — which this route already does for promotion refusals (409 with
+the gate's own name, BL-572/BL-662). Per the human's ruling (option 1 of
+three, 2026-09-04): refuse with a `409` naming the gate (`human_ruling`)
+and the outstanding options, so the operator answers on the bot's ruling
+keyboard, then expedites — never show the options inside the Expedite flow
+itself (a bigger UI slice, considered and not chosen) and never record the
+approval with the question left open.
+
+Acceptance:
+`specs/features/BL-1380-expedite-must-not-answer-a-question-the-operator-never-saw.feature`.
+
 ## What does not change
 
 A ticket with no `ruling_options` field behaves exactly as it did before —
