@@ -78,6 +78,36 @@
     (say "swarm heal: syncing local main with origin/main …")
     (let [merge-result (post-hotfix-merge-origin-lib/run-post-hotfix-merge!
                         {:daemon-dir daemon-dir
+                         ;; BL-1387 D1: swarm_heal is the operator's one-shot
+                         ;; for "main-sync is stuck", so it is the tool most
+                         ;; likely to be run AT the orphaned merge this
+                         ;; classification exists to name. Asserting a human
+                         ;; owns it from presence is worst exactly here.
+                         :merge-class!
+                         (fn []
+                           (let [mh (let [r (sh root "git" "rev-parse" "-q" "--verify" "MERGE_HEAD")]
+                                      (when (zero? (:exit r)) (str/trim (:out r))))]
+                             (master-main-reconcile-lib/classify-open-merge
+                              {:merge-head-present? (some? mh)
+                               :owned-by-daemon? (master-main-reconcile-lib/owns-merge-head?
+                                                  (master-main-reconcile-lib/read-merge-owner daemon-dir) mh)
+                               :live-git-process? false
+                               :lock-fresh? (master-main-reconcile-lib/index-lock-fresh?
+                                             (let [lock (fs/path root ".git" "index.lock")]
+                                               (if (fs/exists? lock)
+                                                 {:lock-present? true
+                                                  :lock-mtime-ms (.toMillis (fs/last-modified-time lock))
+                                                  :now-ms (System/currentTimeMillis)}
+                                                 {:lock-present? false :now-ms (System/currentTimeMillis)})))})))
+                         :index-carries-incoming!
+                         (fn []
+                           (let [paths (fn [& args]
+                                         (let [r (apply sh root "git" args)]
+                                           (when (zero? (:exit r))
+                                             (remove str/blank? (str/split-lines (str/trim (:out r)))))))]
+                             (master-main-reconcile-lib/index-carries-incoming?
+                              (paths "diff" "--cached" "--name-only" "HEAD")
+                              (paths "diff" "--name-only" "HEAD" "MERGE_HEAD"))))
                          :fetch! (fn [] (sh root "git" "fetch" "origin" "main"))
                          :rev-counts! (fn []
                                         (let [c (sh root "git" "rev-list" "--left-right" "--count" "origin/main...main")]
