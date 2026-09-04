@@ -81,6 +81,24 @@ function idleState(nightKey: string): LiveState {
   };
 }
 
+// BL-1393 cleaner pass: the two "ceremony ends here, already done" exits
+// below (no shift worked; already briefed) built the identical `done`-phase
+// state shape and differed only in sequence/actions - factored out so the
+// shape is written once.
+function doneAdvance(obs: LiveObservation, sequence: string[], actions: LiveAction[]): LiveAdvance {
+  return {
+    state: {
+      ...idleState(obs.nightKey),
+      phase: 'done',
+      sequence,
+      startedAtMs: obs.nowMs,
+      drainDeadlineMs: obs.nowMs,
+      hardDeadlineMs: obs.hardDeadlineMs,
+    },
+    actions,
+  };
+}
+
 function startFrozen(obs: LiveObservation): LiveAdvance {
   const actions: LiveAction[] = [
     { kind: 'freeze', untilMs: obs.hardDeadlineMs },
@@ -98,17 +116,7 @@ function startFrozen(obs: LiveObservation): LiveAdvance {
     sequence.push('no-shift-since-last-ceremony', 'empty-outcome-recorded', 'swarm-stopped');
     actions.push({ kind: 'record-empty-outcome', shiftKey: obs.dayKey });
     actions.push({ kind: 'night-stop' });
-    return {
-      state: {
-        ...idleState(obs.nightKey),
-        phase: 'done',
-        sequence,
-        startedAtMs: obs.nowMs,
-        drainDeadlineMs: obs.nowMs,
-        hardDeadlineMs: obs.hardDeadlineMs,
-      },
-      actions,
-    };
+    return doneAdvance(obs, sequence, actions);
   }
   if (obs.briefingAlreadySent) {
     // BL-1393: the day is already briefed, so there is no second briefing to
@@ -120,17 +128,7 @@ function startFrozen(obs: LiveObservation): LiveAdvance {
     sequence.push('lean-packet', 'briefing-already-sent', 'swarm-stopped');
     actions.push({ kind: 'lean-packet', shiftKey: obs.dayKey });
     actions.push({ kind: 'night-stop' });
-    return {
-      state: {
-        ...idleState(obs.nightKey),
-        phase: 'done',
-        sequence,
-        startedAtMs: obs.nowMs,
-        drainDeadlineMs: obs.nowMs,
-        hardDeadlineMs: obs.hardDeadlineMs,
-      },
-      actions,
-    };
+    return doneAdvance(obs, sequence, actions);
   }
   return {
     state: {
