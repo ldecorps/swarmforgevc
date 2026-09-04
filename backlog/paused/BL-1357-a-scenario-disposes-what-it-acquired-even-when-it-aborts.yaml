@@ -16,7 +16,7 @@ required_stages: [coder, cleaner, architect, hardender, documenter, qa]
 acceptance: specs/features/BL-1357-a-scenario-disposes-what-it-acquired-even-when-it-aborts.feature
 
 required_wiring:
-  - "specs/pipeline/steps/index.js::bl1357::the new step handler must be registered - specs/pipeline/runtime.js THROWS on any scenario with no handler. Honest note per BL-1235: satisfied by this parcel's own diff, so it proves nothing about reachability; runScenario already has a live caller and there is no new call site to anchor. Kept because BL-233 requires the handler to land in the SAME commit as the feature file. Verified absent at spec time, grep bl1357 returns 0."
+  - "specs/pipeline/steps/bl1357ScenarioDisposesOnAbortSteps.js::registerSteps::the new step handler must be registered - specs/pipeline/runtime.js THROWS on any scenario with no handler. Honest note per BL-1235: satisfied by this parcel's own diff, so it proves nothing about reachability; runScenario already has a live caller and there is no new call site to anchor. Kept because BL-233 requires the handler to land in the SAME commit as the feature file. Verified absent at spec time, grep bl1357 returns 0.; repointed 2026-09-04 after BL-1371 discovery - the handler file IS the registration and index.js names nothing"
 
 invariants:
   - "Disposal happens exactly once per scenario that acquired something, on every exit path - normal completion, a handler throw, and a no-handler-match throw alike."

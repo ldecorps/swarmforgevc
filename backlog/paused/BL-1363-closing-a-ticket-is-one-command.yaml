@@ -20,7 +20,7 @@ invariants:
   - "Closing never promotes - the follow-on promotion stays promote_and_route_next.sh's, so a refused close cannot strand a promoted ticket on NO_TASK."
 
 required_wiring:
-  - 'specs/pipeline/steps/index.js::bl1363ClosingATicketIsOneCommandSteps::acceptance handler registered so the runner executes every scenario. See notes for why no production anchor is offered.'
+  - 'specs/pipeline/steps/bl1363ClosingATicketIsOneCommandSteps.js::registerSteps::acceptance handler registered so the runner executes every scenario. See notes for why no production anchor is offered.; repointed 2026-09-04 after BL-1371 discovery - the handler file IS the registration and index.js names nothing'
 
 human_approval: approved
 human_ruling: |

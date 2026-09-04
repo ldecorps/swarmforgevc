@@ -15,7 +15,7 @@ invariants:
   - "Every value the apply writes is a type: epic roster id or the documented pre-epic-era sentinel — an unknown value refuses the whole run before any write."
   - "Re-running the apply with the same approved mapping writes nothing and commits nothing."
 required_wiring:
-  - "specs/pipeline/steps/index.js::bl677EpicBackfillApplySteps::acceptance handler registered so the runner executes this ticket's scenarios"
+  - "specs/pipeline/steps/bl677EpicBackfillApplySteps.js::registerSteps::acceptance handler registered so the runner executes this ticket's scenarios; repointed 2026-09-04 after BL-1371 discovery - the handler file IS the registration and index.js names nothing"
 
 acceptance: specs/features/BL-677-epic-backfill-apply.feature.draft
 

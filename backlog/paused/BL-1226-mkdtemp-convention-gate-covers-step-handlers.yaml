@@ -14,7 +14,7 @@ acceptance: specs/features/BL-1226-mkdtemp-convention-gate-covers-step-handlers.
 
 required_wiring:
   - 'extension/src/tools/pilotMkdtempConventionCheck.ts::specs/pipeline/steps::the check must classify step-handler paths as in scope; this file names only extension/test today, which is the whole defect'
-  - 'specs/pipeline/steps/index.js::bl1226StepHandlerMkdtempGateSteps::acceptance handler registered'
+  - 'specs/pipeline/steps/bl1226StepHandlerMkdtempGateSteps.js::registerSteps::acceptance handler registered; repointed 2026-09-04 after BL-1371 discovery - the handler file IS the registration and index.js names nothing'
 
 invariants:
   - "The gate scans only paths the parcel TOUCHED. An untouched file is never read, never scanned and can never fail the gate - so widening scope can never turn a parcel red for code it did not write."
