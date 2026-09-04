@@ -1,0 +1,126 @@
+id: BL-1392
+title: "The swarm never checks that the cron daemon it schedules into is alive: cron has been stopped on this WSL host since 2026-08-30, so the freshness watchdog, every shift start and bedtime, and the descent review were silently inert while every install printed success"
+milestone: M8
+type: defect
+severity: high
+# high: a broken safety signal with reach. The BL-675 watchdog that restarts
+# a dead handoffd has been off for five days, every shift boundary was
+# manual, today's bedtime did not fire, and every ./swarm start said
+# "Installed". Not critical: the swarm itself ran; what was lost is every
+# scheduled action and the watchdog's cover.
+status: todo
+epic: swarm-reliability
+priority: 9
+direction: swarm-reported
+depends_on: []
+mutation_cost: low
+slice_size_envelope: medium
+required_stages: [coder, cleaner, architect, hardender, documenter, qa]
+
+acceptance: specs/features/BL-1392-a-dead-cron-daemon-is-never-silent.feature
+
+required_wiring:
+  - 'swarmforge/scripts/install_swarmforge_crons.sh::CRON_DAEMON_DOWN::the pre-existing installer every ./swarm start runs must print the marker and exit non-zero when no daemon is alive - today it checks only that a crontab command exists. Literal fixed at mint (BL-874); grep today returns 0'
+  - 'swarmforge/scripts/handoffd.bb::cron-heartbeat-stale::the daemon sweep is the only thing that can notice a dead cron, because cron cannot report its own death; the literal is the sweep log label. grep today returns 0'
+  - 'specs/pipeline/steps/bl1392DeadCronNeverSilentSteps.js::registerSteps::the handler file exists so discovery registers every scenario (BL-1371)'
+
+invariants:
+  - "No cron install reports success while no cron daemon is running: the installer prints CRON_DAEMON_DOWN naming the host command that starts it, exits non-zero, and the launcher shows that line - the crontab lines themselves are still written so they fire the moment cron starts."
+  - "A dead cron is detected by something cron does not run: the daemon sweep reads the age of the freshness cron log and escalates once per episode past the bound, stays quiet while it is fresh, and re-arms after cron returns (BL-920 self-healing state)."
+  - "The check never starts, restarts, installs or configures a cron daemon: it reports and names the fix; starting cron needs root and is the host owner's."
+
+human_approval: approved
+approval_context: >
+  A new feature file is authored here, so it needs a tap. No choice is posed
+  and there are no ruling_options. The host fix is not this ticket and needs
+  root: `sudo service cron start` now, and a `[boot] command="service cron
+  start"` line in /etc/wsl.conf so it survives a WSL restart - see
+  backlog/evidence/cron-daemon-dead-since-20260830-found-20260904.md. Until
+  that is done nothing scheduled fires, including tonight's bedtime.
+
+description: |
+  ## What is wrong
+
+  Every swarm start runs `install_swarmforge_crons.sh`, which runs the
+  freshness, schedule and descent-review installers. Each checks that a
+  `crontab` command exists and then writes lines and prints "Installed".
+  None asks whether a cron daemon is running. On this WSL2 host (no
+  systemd, no `[boot]` command in `/etc/wsl.conf`) cron stopped on
+  2026-08-30 06:52 BST - the freshness cron log's last write - and every
+  start since has printed success over a dead scheduler. The BL-675
+  watchdog, which restarts a dead handoffd, has therefore been off for five
+  days; every shift start and bedtime since has been manual; today's 17:00
+  bedtime did not fire. Nothing in `swarmforge/scripts` or `extension/src`
+  reads the freshness log's age, so the watchdog's own transport had no
+  watchdog. Found by the coordinator; verified in
+  `backlog/evidence/cron-daemon-dead-since-20260830-found-20260904.md`.
+
+  ## How (direction, not mandate)
+
+  - Install-time: in `install_swarmforge_crons.sh` (and so on every
+    `./swarm` start), detect a live daemon - `pgrep -x cron` or `crond`;
+    on macOS launchd keeps `/usr/sbin/cron` running whenever a crontab
+    exists, so the same probe works there - and when none is found print
+    `CRON_DAEMON_DOWN` with the host fix (`sudo service cron start`; the
+    `/etc/wsl.conf` boot line) and exit non-zero. Still write the lines
+    (invariant 1). `start_ancillary_services.sh` already echoes a WARN on a
+    non-zero installer; make sure the marker line reaches the launch output
+    unchanged so a human launching sees it.
+  - Runtime: a handoffd sweep (same `run-sweep!` registration as the others)
+    that reads the mtime of `.swarmforge/daemon/freshness-check.cron.log`
+    relative to the freshness cadence (2 minutes; a bound of ~10 minutes
+    tolerates a slow host) and, past the bound, logs
+    `cron-heartbeat-stale` and escalates through the BL-920 channel once
+    per episode; a fresh log clears the episode (invariant 2). This is the
+    OS-independent signal and the one that catches cron dying AFTER a start.
+  - Never start cron (invariant 3). A one-line how-to entry for the WSL
+    boot command belongs in the documenter's pass (BL-611 runbook).
+  - Tests: a fake `pgrep`/`service` seam for the installer (shell test), a
+    fixture log with controlled mtimes for the sweep (bb runner); Babashka
+    has no mutation/CRAP/DRY wired (degraded fallback recorded).
+
+  ## Explicitly NOT in scope
+
+  - Starting cron on this host, or persisting it across WSL restarts: the
+    human's, with root (evidence file names the commands).
+  - The crontab ownership predicate (BL-1382) and the applier crash
+    (BL-1381).
+
+qa_e2e_procedure: |
+  1. Fixture root with a `pgrep` shim reporting no cron: run
+     `install_swarmforge_crons.sh`: `CRON_DAEMON_DOWN` printed naming
+     `service cron start`, exit non-zero, and the crontab (via the crontab
+     shim) still holds the lines.
+  2. Same with the shim reporting a live cron: today's output and exit 0.
+  3. `start_ancillary_services.sh` in the no-cron fixture: the marker line
+     appears in its output.
+  4. handoffd sweep with a freshness log aged past the bound: one
+     `cron-heartbeat-stale` log line and one escalation; a second tick past
+     the bound escalates nothing more; refresh the log: the episode clears;
+     age it again: a NEW escalation (BL-920 self-healing).
+  5. Live, on this host BEFORE the human starts cron: the sweep escalates
+     once; AFTER `sudo service cron start`: the freshness log resumes within
+     2 minutes and the sweep goes quiet.
+  6. Remove fixture roots in a `finally`, sweeping THEIR prefix before the
+     run too (BL-971).
+
+notes: |
+  `required_wiring` anchors 1 and 2 are consumer anchors: the installer is
+  what every start runs, the daemon is the only process that can notice a
+  dead cron; both literals are absent today (grep this pass). The
+  install-time probe alone would be the BL-1235 shape (green at start,
+  blind afterwards), which is why the runtime heartbeat is the load-bearing
+  half.
+
+  IR-DRY: run on the feature file at mint (see commit).
+
+  Mint-time INVEST: one observable outcome (a dead cron is named, at start
+  and while running), one sitting, no unbuilt sibling.
+
+source: |
+  Coordinator note, priority 00, 2026-09-04T16:12Z: "cron not running on
+  host - no scheduled shift ever fires, since Aug30". Verified and the
+  consequences recorded in
+  `backlog/evidence/cron-daemon-dead-since-20260830-found-20260904.md`.
+
+assigned_to: coder
