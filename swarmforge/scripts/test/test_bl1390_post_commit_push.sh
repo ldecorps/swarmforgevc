@@ -312,7 +312,7 @@ gq "$root" add -A
 # which is what the structural check requires and what a raw `git -C` here
 # would defeat.
 in_fixture "$root" && GIT_TRACE="$TRACE_LOG" git -C "$root" commit -q -m "BL-9390: fixture commit f1.txt" >/dev/null 2>&1
-git_q "$root" fetch origin main
+gq "$root" fetch origin main
 if [[ "$(counts "$root")" == "0/0" ]]; then
   pass "scenario 5b: the traced commit reached origin (trace setup did not itself break the push)"
 else
