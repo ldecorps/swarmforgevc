@@ -129,7 +129,10 @@ function registerSteps(registry) {
     );
     assert.match(
       report.out,
-      new RegExp(`^LANDED_SIBLING ${sibling}$`, 'm'),
+      // BL-1389 appends the path that decided the verdict to this line; the
+      // distinction BL-1272 asserts is the id being on a LANDED_SIBLING line
+      // at all, which is unchanged.
+      new RegExp(`^LANDED_SIBLING ${sibling}(?: \\S+)?$`, 'm'),
       'the distinction must reach the line QA reads'
     );
   });

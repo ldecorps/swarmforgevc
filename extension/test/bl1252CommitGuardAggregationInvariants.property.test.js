@@ -28,6 +28,12 @@ const INDEX_GUARDS = [
   // BL-1303: a `main`-only guard that exits before doing any work on every
   // other branch, so it belongs to the cheap tier the aggregation is about.
   'check_feature_handler_registration.sh',
+  // BL-1385: joined the cheap tier on 2026-09-04 (run_commit_guards.sh, "Tier
+  // 1"). This list is hand-enumerated, so a guard added to the chain and not
+  // added here is left unstubbed by the fixture: the runner then reports it
+  // missing on every plan, and these properties fail against a chain that is
+  // behaving correctly.
+  'check_handler_module_graph.sh',
 ];
 const SUITE_GUARD = 'check_property_suite_drift.sh';
 const ALL_GUARDS = [...INDEX_GUARDS, SUITE_GUARD];
