@@ -28,7 +28,7 @@ invariants:
   - "The fixture's guard set is a function of run_commit_guards.sh (and the pre-merge-commit hook) read at test time - never a list in the test: a guard added to or removed from the runner is reflected without editing the test."
   - "A guard the runner names but the tree lacks fails the test loud, naming the guard - it is never silently skipped, and the fixture never runs a guard chain narrower than production's."
 
-human_approval: pending
+human_approval: approved
 approval_context: >
   A new feature file is authored here, so it needs a tap. No choice is posed
   and there are no ruling_options. Found by QA while landing; the red is a
