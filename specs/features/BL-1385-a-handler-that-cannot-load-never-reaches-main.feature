@@ -94,3 +94,10 @@ Feature: BL-1385 A handler that cannot load never reaches main
     When the handler module graph guard examines the tree
     Then the guard passes
     And its output omits the HANDLER_LOAD_BLOCK marker
+
+  # BL-1385 concurrent-invocations-do-not-interfere-10
+  Scenario: two invocations running at once each reach their own verdict
+    Given a handler on the tree requiring a compiled extension module whose source is on the tree
+    When two handler module graph guards examine the tree at the same time
+    Then both guards pass
+    And neither guard removed a working directory it did not create
