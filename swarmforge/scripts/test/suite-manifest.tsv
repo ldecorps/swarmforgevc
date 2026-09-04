@@ -500,3 +500,4 @@ test_bl1363_close_ticket.sh	standing
 cron_heartbeat_lib_test_runner.bb	standing		
 test_bl1392_dead_cron_never_silent.sh	standing		
 test_bl1391_bookkeeping_conflict.sh	standing		
+test_bl1361_sweep_tells_roles.sh	standing		

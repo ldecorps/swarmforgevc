@@ -777,6 +777,14 @@
 ;; sweep!; a test that calls sweep! directly proves nothing about where the
 ;; guard sits) - this flag fires exactly one real reconcile tick
 ;; deterministically, without a background process or a wall-clock wait.
+(def post-qa-sweep-once-only?
+  ;; BL-1361: the same one-shot-and-exit posture as --chase-sweep-once and
+  ;; --reconcile-sweep-once above, for the post-QA branch sweep. Its send is
+  ;; new here, and the only honest way to prove a role was TOLD is to run the
+  ;; sweep in the real daemon - post_qa_branch_sweep_cli.bb is BL-668's
+  ;; acceptance seam with FAKE adapters and cannot reach the send at all.
+  (some #{"--post-qa-sweep-once"} *command-line-args*))
+
 (def reconcile-sweep-once-only?
   (some #{"--reconcile-sweep-once"} *command-line-args*))
 
@@ -4000,6 +4008,29 @@
       {:success true}
       {:success false :error (str/trim (or err ""))})))
 
+(defn post-qa-branch-sweep-tell!
+  "BL-1361: tell a surfaced role, through the send this daemon already uses -
+   never by writing a mailbox directly.
+
+   The human's ruling decides the WAKE, not the send: every reason is told, and
+   only a dirty worktree wakes. The deferred case rides
+   SWARMFORGE_SKIP_SYNC_INJECT, a switch swarm_handoff.bb already has - the
+   parcel lands in the role's mailbox and it reads it on its next
+   ready_for_next, costing no turn."
+  [role reason text wake?]
+  (let [draft (write-scratch-draft! ["type: note"
+                                     (str "to: " role)
+                                     "priority: 10"
+                                     (str "message: " text)])
+        env (cond-> (merge (into {} (System/getenv)) {"SWARMFORGE_ROLE" "coordinator"})
+              (not wake?) (assoc "SWARMFORGE_SKIP_SYNC_INJECT" "1"))
+        result (daemon-cycle-guard-lib/sh! ["bb" (swarm-handoff-script) (str draft)]
+                                           {:dir (str project-root) :env env})]
+    (if (zero? (:exit result))
+      (do (log! "post-qa-branch-sweep-told" role (name reason) (if wake? "woken" "deferred"))
+          {:success true})
+      {:success false :error (str/trim (str (or (:err result) "")))})))
+
 (defn post-qa-branch-sweep-sweep! []
   (try
     (git-fetch-origin-main!)
@@ -4012,6 +4043,10 @@
          (str daemon-dir) landed roles
          {:role-facts! post-qa-branch-sweep-role-facts!
           :fast-forward! post-qa-branch-sweep-ff!
+          ;; BL-1361: the send BL-668 never had. Before this, "surfaced to its
+          ;; role" was a log line: 125 surfacings against 3 settles on
+          ;; 2026-09-03 and not one role was ever told.
+          :tell! post-qa-branch-sweep-tell!
           :log! (fn [& parts] (apply log! parts))})))
     (catch Exception e
       (log! "post-qa-branch-sweep-error" (.getMessage e)))))
@@ -4593,6 +4628,12 @@
       (do
         (try (chase-sweep! roles socket) (catch Exception e (log! "chase-sweep-once-error" (.getMessage e))))
         (log! "chase-sweep-once done"))
+
+      post-qa-sweep-once-only?
+      (do
+        (try (post-qa-branch-sweep-sweep!)
+             (catch Exception e (log! "post-qa-sweep-once-error" (.getMessage e))))
+        (log! "post-qa-sweep-once done"))
 
       reconcile-sweep-once-only?
       (do
