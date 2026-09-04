@@ -1,3 +1,8 @@
+# mutation-stamp: sha256=b05e22f5bc1ddb337b8c6a07d5dd486258379d231b08c2ae0633f6a817caa86c
+# acceptance-mutation-manifest-begin
+# {"version":1,"tested_at":"2026-09-04T16:47:00.644586631Z","feature_name":"A review pass records its evidence by tool","feature_path":"/home/carillon/swarmforgevc/.worktrees/hardender/specs/features/BL-1362-a-review-pass-records-its-evidence-by-tool.feature","background_hash":"2d57b067d8f4354c6dcde6b3b3bf0c7597206fc57515d2c66ff1121bec65b8ea","implementation_hash":"unknown","scenarios":[{"index":4,"name":"every reviewing role records to the same convention","scenario_hash":"eb42e76f6469489b99e6dc6eda5bdb04220255499f84a1acfd1026a6f05164ed","mutation_count":5,"result":{"Total":5,"Killed":5,"Survived":0,"Errors":0},"tested_at":"2026-09-04T16:47:00.644586631Z"}]}
+# acceptance-mutation-manifest-end
+
 Feature: A review pass records its evidence by tool
 
   Article 4.4 requires every review pass to leave one evidence file: items
