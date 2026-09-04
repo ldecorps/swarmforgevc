@@ -1,5 +1,209 @@
 # SwarmForge VS Code Extension — Specification
 
+**Last Updated:** September 3, 2026 (BL-1374: the land step's replay
+credited a tagged sync merge with everything it carried —
+`path-owner-tickets` (`land_step_lib.bb`) walked `own-commit-changed-paths`'s
+(`task_scope_gate_lib.bb`) `:delivered` diff, which for a merge answers
+against its first parent alone (everything the second parent brought in,
+whoever authored it), so a routine `git merge main` tagged with a ticket
+subject swept every unlanded file that sync carried into that ticket's own
+path set and refused a land with no real entanglement in it — reproduced on
+`5d4486eb08`, whose `--name-only` list held two tickets' files but whose
+combined patch held not one hunk. `merge-authored-paths` fixes it: for a
+merge commit, attribution now checks whether the merge's own DENSE COMBINED
+diff (`git diff-tree --cc`/`--combined`) produces a patch for the path, not
+whether the path merely appears in `--name-only` — a clean auto-merge
+(different parts of one file, the merger wrote nothing) is no longer
+credited, while a genuine conflict resolution (a real hunk in the combined
+diff) still is, so invariant 3 (never drop a path this ticket's own work
+changed) holds. Detection (BL-1308's widened candidate walk) is unchanged —
+a passenger is still reported as unlanded, only the credit narrowed. Per
+the human's ruling (2026-09-03, option 3 of three): both remedies landed —
+this code fix, plus the discipline rule as belt and braces (a sync merge's
+subject must still never name a ticket). Acceptance:
+`specs/features/BL-1374-a-sync-merge-is-not-credited-with-its-passengers.feature`.
+How-to: `docs/how-to/BL-1241-entangled-tip-at-the-land-step-has-a-reachable-remedy.md`
+(extended in place — same remedy chain, one more entry). No diagram depicts
+land-step internals.)
+Prior entry —
+**Last Updated:** September 3, 2026 (BL-1378: the close guard
+(`ticket_close_guard_lib.bb`, `commit_integrity_cli.bb`) required a QA
+`git_handoff`/`note` in the coordinator's own mailbox before allowing an
+`active/`/`paused/` -> `backlog/done/` move — a precondition an expedite
+run (`docs/how-to/BL-567-...md`) is forbidden by design from ever
+satisfying, since it never touches the mailboxes, so no expedite-closed
+ticket could reach `backlog/done/` by any sanctioned route. The guard now
+also reads `.swarmforge/expedite-approvals/<month>.jsonl` (the durable
+verdict record the expeditor already writes at its QA hat, already trusted
+by `is_qa_ancestor.sh`) as a second, genuinely additional approval path
+(BL-925 invariant 2) — the mailbox check still decides first and alone; the
+store is consulted only when it finds nothing, and only a record naming the
+ticket with `stage: QA` and `approval: true` together approves. Per the
+human's ruling (2026-09-03, option 1 of three): landing is required too —
+the record's `commit` must also be an ancestor of `main`, or the close is
+refused naming it (an undeterminable ancestry answer refuses, never treated
+as yes) — otherwise the fix would make official exactly what BL-1375 was
+caught in, a done ticket whose code reaches no branch anyone reads (see the
+sibling BL-1376). A missing store falls back to today's
+`missing-qa-approval` refusal; an obstructed, unreadable, or malformed
+store refuses naming the specific problem, never read as absent-therefore-
+approved. Acceptance:
+`specs/features/BL-1378-an-expedite-closed-ticket-can-never-satisfy-the-close-guard.feature`.
+How-to: `docs/how-to/BL-1378-expedite-close-guard-reads-verdict-store.md`.
+No diagram depicts close-guard internals.)
+Prior entry —
+**Last Updated:** September 3, 2026 (BL-1377: showing a red is pre-existing
+(BL-1063) means running a suite twice — at the parcel's base and with the
+parcel — and every stage sitting on the same base commit re-derived the
+same base half. Measured on BL-1375's coder pass: `npm run test:properties`
+(143s) and `npm test` (~30s), each run twice, for one evidence sentence.
+`swarmforge/scripts/suite_baseline.sh <unit|properties> [--base] [--recorded-by]
+[--json]` records the base half once, keyed by `{suite, base-sha,
+config-hash}` (a SHA-256 digest over the suite's own config files — a
+missing file moves the hash too), and a stage with a fresh, matching record
+runs the suite only once and diffs against it. Two invariants: a record can
+only ever excuse a red it actually names at that exact key (the cache can
+shrink a run, never widen an excuse), and an absent/unreadable/mismatched
+record falls back to today's two runs unconditionally — no path turns a
+missing baseline into a green. The base suite always runs in a throwaway
+worktree at the base sha (`.worktrees/suite-baseline-<sha>`, swept by
+prefix and removed in a `finally`, BL-971) — the calling stage's own
+worktree is never touched. Records live at
+`.swarmforge/suite-baselines/<suite>.jsonl`; a single unparseable line
+makes the whole file unreadable rather than silently skipped. Does not
+change what counts as a pre-existing red (BL-1063) or BL-1175's standing
+allowlist, and does not make the suites themselves faster (BL-1348/BL-1349
+remain separate). Acceptance:
+`specs/features/BL-1377-a-suites-failure-set-is-recorded-once-per-base-commit.feature`.
+How-to: `docs/how-to/BL-1377-suite-baseline-recorded-once-per-base.md`. No
+diagram depicts suite-baseline internals.)
+Prior entry —
+**Last Updated:** September 3, 2026 (BL-1376: an expedite run's closing
+OUTSTANDING handover — whose whole job is naming what the run left for
+someone else — never named its own run branch, so BL-1375's run (2026-09-03)
+walked all seven role hats, moved the ticket to `backlog/done/`, and
+printed a handover that was true in every word except that
+`expedite/BL-1375` was three commits ahead of `origin/main` and on no other
+branch; the fix for a live land-queue deadlock reached nobody. The
+expeditor deliberately does not land (Article 1.8/4.2 make QA the
+integration point, BL-247; `docs/how-to/BL-567-...md` already says "Never
+main") — this ticket does not reopen that, it only makes the report honest.
+`branch-outstanding` (`swarmforge/scripts/expedite_lib.bb`) adds a third
+`outstanding-work` item, same shape as the two that already existed
+(subject/what/owner): the run branch, its distance ahead of `origin/main`
+when readable, owner "QA". Silent only when genuinely nothing to land: zero
+commits ahead, or the branch never existed (an early refusal before any
+worktree). An unreadable ancestry check reports the branch with the reason
+it couldn't be read — never omits it, matching the ticket's invariant that
+a check which cannot answer must never read as "nothing found". No merge,
+push, or publish is added anywhere in the driver (invariant 2) — naming a
+leaving is not performing it. `outstanding-work`'s two existing call sites
+(pre-flight refusal path and run tail) both pick this up automatically,
+closing BL-1023's earlier note that the refusal path could diverge from the
+tail. Acceptance:
+`specs/features/BL-1376-the-expedite-handover-never-names-the-unlanded-branch.feature`.
+How-to: `docs/how-to/BL-567-expedite-one-ticket-with-the-swarm-stopped.md`
+(extended in place — same OUTSTANDING block, one more item type). No
+diagram depicts expeditor internals.)
+Prior entry —
+**Last Updated:** September 3, 2026 (BL-1371: `specs/pipeline/steps/index.js`'s
+hand-maintained `DOMAINS` array of 937 `require('./blNNNSteps')` lines is
+replaced by directory discovery — the module reads its own directory for
+top-level `*Steps.js` files and loads each one, eagerly, at module load, still
+exporting `registerSteps` unchanged. Registration cannot now be lost, leaked
+by a replay, or removed by a revert independently of the handler file itself,
+because there is nothing to be absent from — the structural cause behind
+three prior incident classes (a merge-adjudication over-charge, a land-replay
+leak (BL-1324), and BL-1356's land-queue deadlock with no first mover).
+Verified as a SET comparison, never a count (937 handler identities / 13754
+registrations, empty difference both directions) plus a per-step
+resolution-parity check across all 1059 feature files / 19693 steps: zero
+steps changed which file and pattern answers them. `check_feature_handler_registration.sh`
+(BL-1303) is narrowed, not retired — it still refuses a handler file present
+but unreachable from a conforming discovery predicate. The
+`required_wiring: specs/pipeline/steps/index.js::blNNNSteps` anchor pattern —
+this backlog's single most common `required_wiring` entry, and one that
+proved nothing even before this change — is retired for new tickets; point a
+new handler's `required_wiring` at the handler file's own export instead.
+Acceptance: `specs/features/BL-1371-a-step-handler-registers-without-a-shared-file.feature`.
+How-to: `docs/how-to/BL-1371-step-handlers-register-by-discovery.md`. No
+diagram depicts step-handler registration.)
+Prior entry —
+**Last Updated:** September 3, 2026 (BL-1367: the paused-pager Mini App
+approve route (`computePausedPagerApproveOutcome`,
+`extension/src/bridge/bridgeServer.ts`) used to call
+`recordApprovalReply(targetPath, backlogId)` — a signature with no ruling
+argument — so a ticket declaring `ruling_options` approved from the phone
+flipped `human_approval` to `approved` and silently discarded the choice it
+posed; BL-1309 was approved this way on 2026-09-01 and its question was
+never answered. `recordApprovalReply`
+(`extension/src/concierge/pendingApprovalReply.ts`) now takes an optional
+`ruling`, the one writer both the bot's callback path and the pager route
+call. Before writing, `classifyApprovalRulingRequirement(rulingOptions,
+ruling)` classifies the tap as `ok`, `ruling-required`, or
+`unknown-option`; only `ok` proceeds — the other two refuse with HTTP `409`
+naming the outstanding options, never a bare status (BL-572/BL-662),
+instead of half-recording. A ticket with no `ruling_options` behaves
+exactly as before; an existing `human_ruling:` is never overwritten by a
+later plain approval. Hardened: `classifyApprovalRulingRequirement` and
+`computePausedPagerApproveOutcome` both reduced from CRAP 7.00 to <=5.20
+(`matchesRulingOption`/`buildRulingRefusalBody` split out). Acceptance:
+`specs/features/BL-1367-an-approval-from-any-surface-carries-its-ruling.feature`.
+How-to:
+`docs/how-to/BL-1367-approval-from-any-surface-carries-its-ruling.md`. No
+diagram depicts the approval/ruling write path.)
+Prior entry —
+**Last Updated:** September 3, 2026 (BL-1360: three fixed pipeline sends —
+the QA merge-up broadcast, the QA-to-coordinator bookkeeping note, and the
+specifier's spec-ready note — carry no judgement at all, yet were
+hand-assembled every time (one QA seat spent 16m06s/58.6k tokens composing
+two of them, 2026-09-03). `swarmforge/scripts/ceremony_handoff.sh
+<ceremony> --ticket BL-042 [--commit ...] [--dry-run]` composes the draft
+from one definition (`ceremony_handoff_lib.bb`, pure) and shells out to the
+real `swarm_handoff.sh` (`ceremony_handoff.bb`) — a thin front end, never a
+second way into a mailbox: every send-time gate still arms, the tmux wake
+still fires, and a refusal is the gate's own text passed through unchanged.
+The message is composed from `message-forms` tried longest-prose first;
+neither the ticket id nor the commit is ever truncated to fit the
+80-character note cap — if no form fits, composition fails and the sender
+falls back to an ordinary note. The `merge-up`/`bookkeep` recipient lists
+and priorities have one definition, checked by a test against
+`handoff-protocol.md` rather than restated (BL-897). Wiring role prompts to
+make this the standard route is a separate, specifier-owned follow-up
+(BL-798) — not part of this build. Acceptance:
+`specs/features/BL-1360-a-ceremony-handoff-is-composed-not-retyped.feature`.
+How-to: `docs/how-to/BL-1360-ceremony-handoff-compose-not-retype.md`. No
+diagram depicts handoff-composition internals — `handoff-flow.mmd`'s
+change-trigger is the mailbox lifecycle/state machine, unchanged here.)
+Prior entry —
+**Last Updated:** September 3, 2026 (BL-1296: Bubble gets its own answering
+seat so it stays answerable while the Cursor seat is mid-turn, while
+remaining a mirror of the front desk — the human's ruling (option 1 of
+three, 2026-09-03): strict echo, the Bubble seat relays the front desk's own
+answer and produces none of its own. `runBubbleSeatTurn`
+(`extension/src/tools/bubbleSeatLive.ts`) drives the same turn the Let's
+Talk surface drives (`processLetsTalkTurn` against
+`createLiveCursorBridgeAgentSession`) and posts back what it returns,
+unedited — no code path in that module composes a reply, so invariant 1
+(never diverges from the front desk) is structural rather than a rule to
+remember. `tryDispatchToBubbleSeat`
+(`extension/src/tools/telegramCursorBridgeLive.ts`) dispatches a Bubble-topic
+message before Cursor's own gate (`decideInboundAction`) is consulted at
+all; `decideBubbleSeatTurn`'s (`extension/src/tools/bubbleSeat.ts`) first
+clause refuses any topic that is not Bubble's own before anything else is
+considered (invariant 2), and the seat runs inside the bridge's existing
+poll, opening no second `getUpdates` consumer (invariant 3), the same way
+BL-1235's seat does. `cursorBusy` is accepted on the decision input and
+deliberately never read — Bubble used to wait behind that flag, which is
+the defect this ticket removes. A refusal (front desk threw, or returned an
+empty reply) always names why, posted into Bubble's own topic, never
+silence. Hardened with a hand-authored mutation sweep (Stryker's dry run
+blocked repo-wide by the standing `liveRepoDerivationGuard` red, BL-1291):
+25 mutants, 24 killed + 1 equivalent recorded with reasoning. Acceptance:
+`specs/features/BL-1296-bubble-answers-from-its-own-seat.feature`. How-to:
+`docs/how-to/BL-1296-bubble-answers-from-its-own-seat.md`. No diagram
+depicts cursor-bridge/seat-dispatch internals.)
+Prior entry —
 **Last Updated:** September 3, 2026 (BL-1375: the land step's shared-path
 refusal (BL-1332) is narrowed. `own-paths` (`land_step_lib.bb`) used to
 refuse outright whenever a path was owned by both the landing ticket and
