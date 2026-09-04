@@ -30,6 +30,21 @@ invariants:
   - "This ticket's classification adds no git write of its own: a merge classified live-human or orphaned is never aborted by the daemon (BL-1120). The only class that may act is :own, and that action - the ownership abort - is BL-1386's contract, reached through BL-1386's branch, never through a passthrough in this ticket's handler. AMENDED 2026-09-04 from: this ticket aborts nothing, every git write stays where it is today."
   - "The orphaned-merge surface always states whether the index carries the incoming side, computed from the index against HEAD..MERGE_HEAD - never from the absence of unmerged paths, which is the reading that makes a poisoned merge look clean."
 
+abandoned_commits: [0e31d40b55, 3ad3132a1d]
+# 2026-09-04 (coder): the send-time task-scope gate refused a git_handoff whose
+# tip carried backlog/active/BL-1386-...yaml. Cause: two of my bounce-receipt
+# merges named BL-1387 in their SUBJECTS ("Merge architect ... receive the
+# BL-1387 D2 bounce", 3ad3132a1d; "Merge main into coder for the BL-1387
+# feature amendment", 699e48e194), and the gate attributes a commit to the
+# ticket its subject names - so BL-1386's ticket file, which rode in through
+# those merges, was charged to BL-1387. The gate was right; the rule (a sync or
+# receive merge subject carries no ticket id) is one I had recorded and did not
+# apply. 6a6a052d05 is the tip-pure rebuild on origin/main that replaces them:
+# 14 BL-1387 paths, zero BL-1386-exclusive paths, verified GREEN on its own
+# base (reconcile runner, reconcile property 500 runs, post_hotfix runner,
+# acceptance 8/8) rather than merely content-equal. 0e31d40b55 is named too as
+# the actual last-handoff commit whose range the walk would otherwise re-enter.
+
 human_approval: approved
 human_ruling: "run & approve"
 human_ruling_recorded_by: operator (Claude Code, verbatim from the human, 2026-09-04)
@@ -190,6 +205,7 @@ source: |
   BL-1386.
 
 assigned_to: coder
-bounce_count: 1
+bounce_count: 2
 bounce_history:
   - { at: 2026-09-04, by: architect, blamed: coder, class: behavior, commit: a51b4d68fe, evidence: backlog/evidence/BL-1387-architect-bounce-20260904.md }
+  - { at: 2026-09-04, by: architect, blamed: coder, class: acceptance, commit: 0e31d40b55, evidence: backlog/evidence/BL-1387-architect-pass2-bounce-20260904.md }

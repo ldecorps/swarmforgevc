@@ -176,6 +176,66 @@
   (assert= "stale dirty surfaced cleared when clean" nil (:surfaced state))
   (assert= "sync action is ff-only not wait-dirty-clear" :ff-only action))
 
+;; ── BL-1387 D1 (architect bounce): this file's TWO presence-only sites ────
+;;
+;; Invariant 1 is unconditional: human-merge-in-progress is never asserted
+;; from MERGE_HEAD presence alone. This lib had two sites that did exactly
+;; that, and neither was covered - run-post-hotfix-merge!'s dispatch passed no
+;; :merge-class (so it fell into open-merge-branch's backward-compat branch)
+;; and finish-rematch-recovery's own (cond (mid-merge?) ...). Both are the
+;; operator's tools: swarm_heal.bb calls itself the one-shot for "main-sync is
+;; stuck", so the misdirection landed on the person diagnosing the orphan.
+
+(let [O post-hotfix-merge-origin-lib/open-merge-outcome]
+  (assert= "D1: an orphan is named an orphan, not a human's"
+           :orphaned-merge (:outcome (O {:merge-class! (constantly :orphaned)})))
+  (assert= "D1: the daemon's own leftover is named as its own, not a human's"
+           :own-merge-in-progress (:outcome (O {:merge-class! (constantly :own)})))
+  (assert= "D1: a genuinely live human still reads as one"
+           :human-merge-in-progress (:outcome (O {:merge-class! (constantly :live-human)})))
+  ;; The degrade path: no classifier wired at all keeps today's reading, so
+  ;; every pre-existing caller is unchanged - but that is the ONLY case that
+  ;; still says human, and it now says so from an absent adapter rather than
+  ;; from bare presence.
+  (assert= "D1: with no classifier the reading degrades to today's, unchanged"
+           :human-merge-in-progress (:outcome (O {})))
+  ;; The index fact travels with the answer, so the operator is not left to
+  ;; establish by hand what the tool already knows (BL-1387 invariant 3).
+  (assert= "D1: the index fact rides along when the adapter is wired"
+           false (:index-carries-incoming?
+                  (O {:merge-class! (constantly :orphaned)
+                      :index-carries-incoming! (constantly false)})))
+  (assert= "D1: and is absent, not fabricated, when it is not wired"
+           nil (:index-carries-incoming? (O {:merge-class! (constantly :orphaned)})))
+  (assert-true "D1: every open-merge answer still refuses, exits 1, and flags mid-merge"
+               (every? (fn [k]
+                         (let [r (O {:merge-class! (constantly k)})]
+                           (and (false? (:ok? r)) (= 1 (:exit r)) (true? (:mid-merge? r)))))
+                       [:orphaned :own :live-human])))
+
+;; And the DISPATCH itself must pass the class through rather than falling into
+;; the backward-compat branch. Driven end to end, because that fall-through is
+;; the defect's exact shape and a metadata check would not see it.
+(let [run (fn [klass]
+            (post-hotfix-merge-origin-lib/run-post-hotfix-merge!
+             {:daemon-dir (str (fs/create-temp-dir {:prefix "bl1387-d1-"}))
+              :fetch! (fn [] {:exit 0})
+              :rev-counts! (fn [] {:ahead 1 :behind 2})
+              :dirty-paths! (fn [] [])
+              :mid-merge? (fn [] true)
+              :merge-verdict! (fn [] :clean)
+              :tip-contains-origin! (fn [] false)
+              :merge-class! (constantly klass)
+              :index-carries-incoming! (constantly false)}))]
+  (assert= "D1: an open merge classified :orphaned is dispatched as an orphan"
+           :orphaned-merge (:outcome (run :orphaned)))
+  (assert= "D1: an open merge classified :own is dispatched as the daemon's own"
+           :own-merge-in-progress (:outcome (run :own)))
+  (assert= "D1: a live human's merge still dispatches to today's reading"
+           :human-merge-in-progress (:outcome (run :live-human)))
+  (assert-true "D1: none of the three ever proceeds - classification acts on nothing"
+               (every? #(false? (:ok? (run %))) [:orphaned :own :live-human])))
+
 (if (empty? @failures)
   (println "post_hotfix_merge_origin_lib (BL-1118): ALL TESTS PASSED")
   (do (println (str "post_hotfix_merge_origin_lib (BL-1118): " (count @failures) " FAILURE(S):"))
