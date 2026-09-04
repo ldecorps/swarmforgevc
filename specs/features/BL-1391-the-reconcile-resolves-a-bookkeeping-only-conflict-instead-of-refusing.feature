@@ -1,3 +1,8 @@
+# mutation-stamp: sha256=351320dd9685f1ca3510a0ed39cf0d593f5367d05f9a94c9a3a978115f169924
+# acceptance-mutation-manifest-begin
+# {"version":1,"tested_at":"2026-09-04T18:32:10.627226475Z","feature_name":"BL-1391 The reconcile resolves a bookkeeping-only conflict instead of refusing","feature_path":"/home/carillon/swarmforgevc/.worktrees/hardender/specs/features/BL-1391-the-reconcile-resolves-a-bookkeeping-only-conflict-instead-of-refusing.feature","background_hash":"c705b42b4ef1cf0ef3e5f13c7b4be3445c93ae32644cc90fa8262cf440a76402","implementation_hash":"unknown","scenarios":[{"index":3,"name":"an evidence file is resolved only when both sides merely appended","scenario_hash":"6bd1205d1bf7552b48982965b401ec3b0d65c6132f003ffcd97f89d64c8fa894","mutation_count":4,"result":{"Total":4,"Killed":4,"Survived":0,"Errors":0},"tested_at":"2026-09-04T18:29:39.560349396Z"}]}
+# acceptance-mutation-manifest-end
+
 Feature: BL-1391 The reconcile resolves a bookkeeping-only conflict instead of refusing
 
   The reconcile refuses any merge whose verdict is a conflict, which is
