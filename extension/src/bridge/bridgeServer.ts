@@ -77,7 +77,12 @@ import { computeDocsTree } from '../docs/docsTree';
 import { sortEpicsByPriority, computeEpicReorder, EpicPriorityItem, ReorderDirection, PriorityWrite } from './epicReorderSafety';
 import { computeMakeTopPriority, MakeTopItem, MakeTopResult, DependencyResolution } from './makeTopPrioritySafety';
 import { computeEpicTopics, filterEpicsWithTopics, resolveTopicMembership } from './epicTopicSlugMatch';
-import { recordApprovalReply } from '../concierge/pendingApprovalReply';
+import {
+  recordApprovalReply,
+  readRulingOptions,
+  classifyApprovalRulingRequirement,
+  ApprovalRulingRequirement,
+} from '../concierge/pendingApprovalReply';
 import { requestConciergeTick } from '../concierge/conciergeTickRequest';
 import { getContextBudgetUiHtml } from './contextBudgetUiHtml';
 import { listTelemetryAgents, summarizeTelemetryForAgent } from './contextTelemetryGate';
@@ -729,6 +734,18 @@ function isPausedPagerIdRequestShape(value: unknown): value is { id: string } {
   return !!value && typeof value === 'object' && typeof (value as Record<string, unknown>).id === 'string';
 }
 
+// BL-1367: the Approve tap may carry the option the human chose. Optional, so
+// every existing caller and the other route sharing this shape are unaffected;
+// a non-string `ruling` is rejected rather than coerced, because a ruling is
+// written into the ticket and a coerced one would be a fabricated answer.
+function isPausedPagerApproveRequestShape(value: unknown): value is { id: string; ruling?: string } {
+  if (!isPausedPagerIdRequestShape(value)) {
+    return false;
+  }
+  const ruling = (value as Record<string, unknown>).ruling;
+  return ruling === undefined || typeof ruling === 'string';
+}
+
 // Shared by the expedite route (priority always -> 0) and BL-572's epic
 // reorder move route (priority -> a computed value): replaces an existing
 // `priority:` line in place, or appends one if the ticket had none, leaving
@@ -820,14 +837,59 @@ function handlePausedPagerExpediteRoute(
 // commitEpicReorderWrites below. A failed commit must not report
 // unqualified success: disk holds the flip, but the human is told it is
 // not yet durable.
+//
+// Split out of computePausedPagerApproveOutcome so that function's own branch
+// count reflects only its control flow (found / satisfies-ruling / changed /
+// committed), not also the two wording ternaries for which refusal reason to
+// report.
+function buildRulingRefusalBody(
+  backlogId: string,
+  requirement: Extract<ApprovalRulingRequirement, { kind: 'ruling-required' } | { kind: 'unknown-option' }>
+): Record<string, unknown> {
+  const isMissing = requirement.kind === 'ruling-required';
+  return {
+    success: false,
+    id: backlogId,
+    reason: isMissing ? 'ruling required' : 'unknown ruling option',
+    options: requirement.options,
+    detail: isMissing
+      ? `${backlogId} poses a choice and this tap carried no answer. Answer it on the bot's ruling keyboard, or send the chosen option with the approval.`
+      : `${backlogId} declares no such option. Answer it on the bot's ruling keyboard, or send one of the options above.`,
+  };
+}
+
 async function computePausedPagerApproveOutcome(
   targetPath: string,
-  backlogId: string
+  backlogId: string,
+  ruling?: string
 ): Promise<{ status: number; body: Record<string, unknown>; conciergeTick: boolean }> {
   if (!findBacklogFilePath(targetPath, backlogId)) {
     return { status: 404, body: { success: false, reason: 'ticket not found in active/paused' }, conciergeTick: false };
   }
-  const changed = recordApprovalReply(targetPath, backlogId);
+  // BL-1367. This route used to call recordApprovalReply(targetPath,
+  // backlogId) - a signature with no ruling parameter - so a ticket declaring
+  // ruling_options was flipped to approved and its choice silently discarded.
+  // BL-1309 was approved that way on 2026-09-01, its binary question never
+  // answered, and the coder built on its own reading two days before QA caught
+  // it. An approval that cannot carry its ruling is now REFUSED rather than
+  // half-recorded: the half-recorded state is the one nobody can tell from a
+  // complete answer.
+  const requirement = classifyApprovalRulingRequirement(
+    readRulingOptions(targetPath, backlogId),
+    ruling
+  );
+  if (requirement.kind !== 'ok') {
+    // 409, not 500: the request was well formed and the system is healthy; a
+    // rule said no - the same posture the promotion gate takes one route up.
+    // The options travel with the refusal so the pager can show the operator
+    // WHICH choice is outstanding rather than a bare status (BL-572/BL-662).
+    return {
+      status: 409,
+      body: buildRulingRefusalBody(backlogId, requirement),
+      conciergeTick: false,
+    };
+  }
+  const changed = recordApprovalReply(targetPath, backlogId, ruling);
   if (!changed) {
     return { status: 200, body: { success: false, id: backlogId, reason: 'not pending approval' }, conciergeTick: false };
   }
@@ -851,14 +913,14 @@ function handlePausedPagerApproveRoute(
     req,
     res,
     PAUSED_PAGER_CONTROL_MAX_BODY_BYTES,
-    isPausedPagerIdRequestShape,
-    'expected a JSON body of {id}'
+    isPausedPagerApproveRequestShape,
+    'expected a JSON body of {id} or {id, ruling}'
   ).then(async (value) => {
     if (!value) {
       return;
     }
     try {
-      const outcome = await computePausedPagerApproveOutcome(targetPath, value.id);
+      const outcome = await computePausedPagerApproveOutcome(targetPath, value.id, value.ruling);
       if (outcome.conciergeTick) {
         requestConciergeTick(targetPath);
       }

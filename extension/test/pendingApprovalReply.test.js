@@ -618,3 +618,140 @@ test('BL-582: explainApprovalRecordNoOp reads the real ticket, wherever it lives
 
   assert.equal(explainApprovalRecordNoOp(targetPath, 'BL-582'), 'already-approved');
 });
+
+// ── BL-1367: an approval from any surface carries its ruling ───────────────
+//
+// Two surfaces could record an approval and only one could record a ruling.
+// The bot's callback path reaches recordRulingReply; the paused-pager Mini App
+// called recordApprovalReply(targetPath, backlogId) - a signature with no
+// ruling parameter - so an approval tapped on the phone flipped
+// human_approval and silently discarded the answer, for any ticket, however
+// many options it declared. BL-1309 was approved that way on 2026-09-01, its
+// binary question never answered, and the coder built on its own reading.
+//
+// The seam is the signature: one writer both entry points reach, so a third
+// surface cannot reintroduce this by having its own.
+
+const {
+  classifyApprovalRulingRequirement,
+} = require('../out/concierge/pendingApprovalReply');
+
+test('BL-1367: a ticket declaring no ruling options approves as before', () => {
+  assert.deepEqual(classifyApprovalRulingRequirement(undefined, undefined), { kind: 'ok' });
+  assert.deepEqual(classifyApprovalRulingRequirement([], undefined), { kind: 'ok' });
+});
+
+test('BL-1367: a ticket declaring options refuses a bare approval rather than half-recording it', () => {
+  const options = ['do it in code', 'do it by rule'];
+  assert.deepEqual(classifyApprovalRulingRequirement(options, undefined), {
+    kind: 'ruling-required',
+    options,
+  });
+  // Blank is not an answer either - a surface that sent an empty field must
+  // not slip past the check a missing one trips.
+  assert.equal(classifyApprovalRulingRequirement(options, '   ').kind, 'ruling-required');
+});
+
+test('BL-1367: a ruling that names a declared option is accepted', () => {
+  const options = ['do it in code', 'do it by rule'];
+  assert.deepEqual(classifyApprovalRulingRequirement(options, 'do it by rule'), { kind: 'ok' });
+  // Surrounding whitespace is a transport artefact, not a different answer.
+  assert.deepEqual(classifyApprovalRulingRequirement(options, '  do it by rule  '), { kind: 'ok' });
+});
+
+test('BL-1367: a ruling that names no declared option is refused, never recorded', () => {
+  const options = ['do it in code', 'do it by rule'];
+  const verdict = classifyApprovalRulingRequirement(options, 'do it some third way');
+  assert.equal(verdict.kind, 'unknown-option');
+  assert.deepEqual(verdict.options, options);
+});
+
+test('BL-1367: a ruling offered for a ticket that poses no choice is refused, not silently written', () => {
+  // Nothing declared it, so nothing can validate it - and a human_ruling on a
+  // ticket with no options is exactly the unanswerable state this ticket
+  // exists to prevent, in the other direction.
+  assert.equal(classifyApprovalRulingRequirement(undefined, 'some option').kind, 'unknown-option');
+  assert.equal(classifyApprovalRulingRequirement([], 'some option').kind, 'unknown-option');
+});
+
+test('BL-1367: recordApprovalReply records the ruling when one is given', () => {
+  const dir = mkTmpDir('bl1367-record-');
+  try {
+    const activeDir = path.join(dir, 'backlog', 'active');
+    fs.mkdirSync(activeDir, { recursive: true });
+    fs.writeFileSync(
+      path.join(activeDir, 'BL-9367.yaml'),
+      'id: BL-9367\ntitle: poses a choice\nhuman_approval: pending\nruling_options:\n  - do it in code\n  - do it by rule\n'
+    );
+    assert.equal(recordApprovalReply(dir, 'BL-9367', 'do it by rule'), true);
+    const yaml = fs.readFileSync(path.join(activeDir, 'BL-9367.yaml'), 'utf8');
+    assert.match(yaml, /^human_approval: approved$/m);
+    assert.match(yaml, /^human_ruling: \|\n {2}do it by rule$/m);
+  } finally {
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test('BL-1367: recordApprovalReply with no ruling is byte-for-byte what it always was', () => {
+  const dir = mkTmpDir('bl1367-plain-');
+  try {
+    const activeDir = path.join(dir, 'backlog', 'active');
+    fs.mkdirSync(activeDir, { recursive: true });
+    fs.writeFileSync(
+      path.join(activeDir, 'BL-9368.yaml'),
+      'id: BL-9368\ntitle: poses no choice\nhuman_approval: pending\n'
+    );
+    assert.equal(recordApprovalReply(dir, 'BL-9368'), true);
+    const yaml = fs.readFileSync(path.join(activeDir, 'BL-9368.yaml'), 'utf8');
+    assert.match(yaml, /^human_approval: approved$/m);
+    assert.equal(/human_ruling/.test(yaml), false, 'a ticket posing no choice must gain no ruling');
+  } finally {
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test('BL-1367 invariant 2: an existing ruling survives a later plain approval', () => {
+  const dir = mkTmpDir('bl1367-keep-');
+  try {
+    const activeDir = path.join(dir, 'backlog', 'active');
+    fs.mkdirSync(activeDir, { recursive: true });
+    // The live shape this guards: BL-1296 was re-pended AFTER a ruling existed.
+    const before =
+      'id: BL-9369\ntitle: re-pended after a ruling\nhuman_approval: pending\nhuman_ruling: |\n  the answer already given\n';
+    fs.writeFileSync(path.join(activeDir, 'BL-9369.yaml'), before);
+    assert.equal(recordApprovalReply(dir, 'BL-9369'), true);
+    const yaml = fs.readFileSync(path.join(activeDir, 'BL-9369.yaml'), 'utf8');
+    assert.match(yaml, /^human_approval: approved$/m);
+    assert.match(yaml, /^human_ruling: \|\n {2}the answer already given$/m);
+  } finally {
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test('BL-1367 audit: the options reader and the writer resolve the SAME file', () => {
+  // Two finders exist in this path: the pager route's existence check matches
+  // by FILENAME, while readRulingOptions and recordApprovalReply both match by
+  // the `id:` field inside the file. If those could disagree, an option-bearing
+  // ticket could be read as declaring none and approved bare - invariant 1's
+  // exact failure mode. They cannot: both the reader and the writer use the
+  // id-field finder, so a ticket whose filename does not carry its id is seen
+  // identically by both.
+  const dir = mkTmpDir('bl1367-finders-');
+  try {
+    const activeDir = path.join(dir, 'backlog', 'active');
+    fs.mkdirSync(activeDir, { recursive: true });
+    // filename deliberately unlike the id
+    fs.writeFileSync(
+      path.join(activeDir, 'some-slug-with-no-id.yaml'),
+      'id: BL-9370\ntitle: poses a choice\nhuman_approval: pending\nruling_options:\n  - one\n  - two\n'
+    );
+    assert.deepEqual(readRulingOptions(dir, 'BL-9370'), ['one', 'two']);
+    assert.equal(
+      classifyApprovalRulingRequirement(readRulingOptions(dir, 'BL-9370'), undefined).kind,
+      'ruling-required',
+      'the reader must see the options the writer would write beside'
+    );
+  } finally {
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
+});
