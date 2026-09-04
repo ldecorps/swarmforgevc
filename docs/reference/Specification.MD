@@ -1,5 +1,40 @@
 # SwarmForge VS Code Extension — Specification
 
+**Last Updated:** September 4, 2026 (BL-1386: the master-main-reconcile
+sweep (`handoffd.bb`, `master_main_reconcile_lib.bb`) could orphan its own
+merge and then blame a human for it — `absorb-with-merge!` discarded
+`abort!`'s result and never logged it, so when `git merge --abort` failed
+(the ordinary cause on the shared master checkout: `.git/index.lock` held
+by another writer) `MERGE_HEAD` stayed open, and the next tick, applying
+BL-1120's rule that a pre-existing `MERGE_HEAD` is always a foreign human's
+merge, surfaced `human-merge-in-progress` against its own leftovers.
+Reproduced live three times in eighteen minutes on 2026-09-04 —
+`pgrep -ax git` empty each time, the index carrying none of the incoming
+side, and concluding any of them would have silently reverted a QA landing
+on push. The daemon now writes a durable ownership record
+(`.swarmforge/daemon/master-main-merge-owner.json`: sha, tick, pid,
+timestamp) before `git merge`, cleared after a successful merge or abort,
+so `MERGE_HEAD == record.sha` is proof the daemon itself started that
+merge — on this tick, or an earlier one whose abort failed — and only that
+positive match may ever be aborted; BL-1120's protection for every other
+`MERGE_HEAD` (no record, or a record naming a different sha) is unchanged
+and unwidened. An abort that fails is retried with a short bounded backoff
+and, on continued failure, the record is left standing (never cleared,
+never falls through to a rematch/reset as if the abort had succeeded) and
+the log carries `merge-abort-failed` plus git's own captured error text.
+`merge!`'s failure text is likewise now logged and the fixed `conflict`
+label is used only when git actually reported a content conflict —
+`merge-failed` names every other real-merge failure (e.g. a pre-merge-commit
+hook refusal), so the log states an observation, never an assertion.
+Companion detector ticket (foreign/orphaned classification without a
+record) is the separate, still-active BL-1387; nothing here changes what
+counts as foreign. Acceptance:
+`specs/features/BL-1386-the-reconcile-sweep-never-orphans-a-merge-it-started.feature`.
+How-to: `docs/how-to/BL-1120-handoffd-must-not-abort-foreign-merge.md` and
+`docs/how-to/BL-891-master-main-reconcile-sweep.md` (both extended in
+place — the ownership refinement and the corrected log wording). No
+diagram depicts reconcile-sweep internals at this granularity.)
+Prior entry —
 **Last Updated:** September 4, 2026 (BL-1309: `land_main_publish.sh`
 `--decide-only` — the one landing step `QA.prompt` cannot skip — now
 consults BL-1241/BL-1308/BL-1354's `entangled-siblings` detector before
