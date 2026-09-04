@@ -22,6 +22,10 @@ const fc = require('fast-check');
 const fs = require('node:fs');
 const path = require('node:path');
 const { execFileSync } = require('node:child_process');
+const {
+  assertRunWritesNoDecision,
+  assertParcelDoesNotEditReviewedSources,
+} = require('./helpers/stampOff');
 
 const REPO = path.join(__dirname, '..', '..');
 const HOTFIX = 'a3bf11b533';
@@ -44,42 +48,39 @@ function ledgerEntry() {
   return slice;
 }
 
-test('BL-1115/BL-654 invariant 1: stamp-off tree keeps hotfix blobs for landed paths', () => {
-  let draws = 0;
+test('BL-1115/BL-654 invariant 1: this stamp-off parcel never rewrites the hotfix it reviews', () => {
+  // BL-1356: was a working-tree-vs-hotfix-blob comparison, which went red on
+  // any later ticket's legitimate edit to the same path. Scoped to this
+  // parcel's own commits instead (`49fca1c741`, BL-1323's reference shape).
+  // Reach by CONSTRUCTION, not by draw: every hotfix path is asserted in the
+  // loop below, and the drawn property is the redundant pass. A reach floor
+  // tied to what fast-check happened to sample is exactly the shape the
+  // constitution's generator-reach rule forbids - and it failed here on the
+  // first run, 5 of 6 paths drawn in 18 tries.
+  for (const file of HOTFIX_PATHS) {
+    assertParcelDoesNotEditReviewedSources('BL-1115', [file]);
+  }
   fc.assert(
     fc.property(fc.constantFrom(...HOTFIX_PATHS), (file) => {
-      draws += 1;
-      const hotfixBlob = gitShow(HOTFIX, file);
-      const headBlob = fs.readFileSync(path.join(REPO, file), 'utf8');
-      assert.equal(headBlob, hotfixBlob, `${file} diverged from ${HOTFIX}`);
+      assertParcelDoesNotEditReviewedSources('BL-1115', [file]);
     }),
-    { numRuns: HOTFIX_PATHS.length * 5 }
+    { numRuns: HOTFIX_PATHS.length * 3 }
   );
-  assert.ok(draws >= HOTFIX_PATHS.length);
+  assertParcelDoesNotEditReviewedSources('BL-1115', HOTFIX_PATHS);
 });
 
-test('BL-1115/BL-654 invariant 2: green tests do not certify or waive the ledger row', () => {
-  const entry = ledgerEntry();
-  assert.match(entry, /\bstate:\s*pending\b/);
-  assert.match(entry, /\bhuman_decision:\s*null\b/);
-  assert.doesNotMatch(entry, /\bstate:\s*certified\b/);
-  assert.doesNotMatch(entry, /\bstate:\s*waived\b/);
-  assert.doesNotMatch(entry, /\bhuman_decision:\s*certified\b/);
-  assert.doesNotMatch(entry, /\bhuman_decision:\s*waived\b/);
-
-  fc.assert(
-    fc.property(fc.constantFrom('certified', 'waived'), (forbidden) => {
-      assert.doesNotMatch(
-        entry,
-        new RegExp(`\\bstate:\\s*${forbidden}\\b`),
-        `ledger must not show state ${forbidden} without a human decision`
-      );
-      assert.doesNotMatch(
-        entry,
-        new RegExp(`\\bhuman_decision:\\s*${forbidden}\\b`),
-        `ledger must not show human_decision ${forbidden} from green tests alone`
-      );
-    }),
-    { numRuns: 20 }
-  );
+test('BL-1115/BL-654 invariant 2: no run of this suite writes a decision into the ledger row', () => {
+  // BL-1356: was `state: pending` pinned as a literal, so the row advancing
+  // through its own workflow turned this red and jammed the swarm's commit
+  // gate. The question is now what THIS RUN wrote, with the row's prior value
+  // as the expected one - and a run that does stamp a decision still fails,
+  // from any starting state.
+  assertRunWritesNoDecision(HOTFIX, () => {
+    fc.assert(
+      fc.property(fc.constantFrom(...HOTFIX_PATHS), (file) => {
+        assert.equal(typeof gitShow(HOTFIX, file), 'string');
+      }),
+      { numRuns: 20 }
+    );
+  });
 });
