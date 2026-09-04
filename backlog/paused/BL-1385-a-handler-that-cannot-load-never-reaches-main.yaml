@@ -143,6 +143,13 @@ qa_e2e_procedure: |
      too (BL-971).
 
 notes: |
+  2026-09-04 ~09:07Z (specifier): the immediate repair is DONE - QA landed
+  BL-1296 as a72336cd8f, so bl1296BubbleSeatSteps.js now resolves its
+  require on origin/main and the acceptance runner loads every handler
+  again. This ticket is unchanged by that: it is the guard against the next
+  one, and qa_e2e step 7's "against origin/main after QA's BL-1296 land - it
+  passes" is now exercisable.
+
   `required_wiring` entries 1 and 2 are genuine consumer anchors, not the
   BL-1235 by-construction shape: both files are pre-existing live paths
   (the land replay guard list and the commit guard set), neither mentions
