@@ -76,3 +76,40 @@ coder's job, not mine to speculate the shape of.
 NOT COMPLIANT. D1 confirmed fixed (including the deeper self-caught
 defect). D2: the acceptance suite is red — two step handlers for the
 specifier's scenario 06 are missing. Bouncing to coder.
+
+## CORRECTION — the revert was wrong, reverted back (self-caught)
+
+`record-bounce.js` returned `verdict: violation` for `0e31d40b55` and I
+initially followed its remedy (`git revert --no-edit 0e31d40b55` ->
+`b987a1588e`), per BL-490/BL-495. That was a mistake, caught immediately by
+testing the live effect rather than trusting the mechanical check:
+
+```
+bb -e '(load-file "swarmforge/scripts/master_main_reconcile_lib.bb")
+       (println (master-main-reconcile-lib/absorb-dispatch-plan
+         {:merge-head-present? true :merge-class :own :behind 3 :ahead 0
+          :tip-contains-origin? false :would-conflict? false
+          :absorb-would-conflict? false :verdict-unavailable? false}))'
+-> :ff-absorb   ;; post-revert: WRONG, a mutating plan on an owned open merge
+```
+
+`0e31d40b55`'s `absorb-dispatch-plan` cond fix is what makes BL-1386's
+already-approved, forwarded-to-hardener `:abort-owned-merge` branch in
+`handoffd.bb` reachable at all — without it, that branch is dead code and
+an owned merge falls through to a mutating `:ff-absorb`. D2 (the missing
+scenario-06 step handler) is not a defect IN `0e31d40b55` — that commit's
+own work (D1 fix + the self-caught `absorb-dispatch-plan` fix) is complete
+and correct. The missing handler traces to the SPECIFIER's own later
+amendment (`00e0ddf694`), which the specifier's own commit message says it
+is charging to itself as a direct note to coder (BL-990) — not something
+`0e31d40b55` itself got wrong.
+
+Reverted the revert: `git revert --no-edit b987a1588e` -> `65845bdf40`,
+restoring `0e31d40b55`'s content. Confirmed by content: the `bb` probe
+above now returns `:abort-owned-merge` again.
+
+**D2 still stands and is still bounced below** — a red acceptance test
+cannot be forwarded regardless of which commit is "responsible" for it —
+but the bounce commit named to `swarm_handoff.sh` is the tip after
+restoring `0e31d40b55`'s content (`65845bdf40`'s descendant), not a
+reverted state that would re-break BL-1386.
