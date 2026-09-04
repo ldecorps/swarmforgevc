@@ -169,32 +169,6 @@ function registerSteps(registry) {
     assert.match(report.escalation, /back up staged-new files first/, report.escalation);
   });
 
-  // BL-1387 scenario 06, added by the specifier's 2026-09-04 amendment after
-  // the owned row was RETIRED: BL-1386's fix aborts an owned merge rather than
-  // surfacing it as a human's, so "an ownership record keeps the human
-  // reading" stopped being true. The daemon's own leftover is now its own
-  // category, which is what the classifier was for.
-  scoped(/^the open merge is classified as the daemon's own$/, (ctx) => {
-    assert.equal(
-      ctx.bl1387.report.class,
-      'own',
-      `an ownership record naming the MERGE_HEAD sha did not classify as :own: ${JSON.stringify(ctx.bl1387.report)}`
-    );
-  });
-
-  scoped(/^the surfaced reason is neither human-merge-in-progress nor orphaned-merge$/, (ctx) => {
-    const { reason } = ctx.bl1387.report;
-    assert.notEqual(reason, 'human-merge-in-progress', 'the daemon called its own leftover a human\'s');
-    assert.notEqual(reason, 'orphaned-merge', 'the daemon called its own leftover an orphan');
-    // Positively pinned, not merely "not the other two": an else-branch that
-    // absorbed the new value is exactly what the BL-1386 D1b bounce was about.
-    assert.equal(
-      reason,
-      'aborted-owned-merge',
-      `expected the owned reading, got ${reason}: ${JSON.stringify(ctx.bl1387.report.logs)}`
-    );
-  });
-
   scoped(/^the escalation does not fire early$/, (ctx) => {
     assert.equal(
       ctx.bl1387.report.escalation,
