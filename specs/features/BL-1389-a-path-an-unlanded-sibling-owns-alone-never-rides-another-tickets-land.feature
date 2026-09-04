@@ -1,3 +1,7 @@
+# acceptance-mutation-manifest-begin
+# {"version":1,"tested_at":"2026-09-04T15:31:34.256534175Z","feature_name":"BL-1389 A path an unlanded sibling owns alone never rides another ticket's land","feature_path":"/home/carillon/swarmforgevc/.worktrees/hardender/specs/features/BL-1389-a-path-an-unlanded-sibling-owns-alone-never-rides-another-tickets-land.feature","background_hash":"e54f3ed2de97dd49769ae648b7dcd1bb3e1ea083df608783a9b72e8ac1c35a86","implementation_hash":"unknown","scenarios":[],"outcome":"inapplicable"}
+# acceptance-mutation-manifest-end
+
 Feature: BL-1389 A path an unlanded sibling owns alone never rides another ticket's land
 
   The tip-pure replay keeps every delivered path except those it can
