@@ -3,6 +3,7 @@
 #
 # Usage:
 #   land_main_publish.sh <project-root> [--decide-only|--acquire-lock|--release-lock]
+#   land_main_publish.sh <project-root> --land <task-name> <approved-commit> [<issue-ref>]
 #
 # Default --decide-only: fetch origin/main SHA, compare tip ancestry, print
 # EDN decision from master_main_reconcile_lib (no push). Callers that push
@@ -36,6 +37,9 @@ set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 ROOT="${1:-}"
 MODE="${2:---decide-only}"
+LAND_TASK="${3:-}"
+LAND_COMMIT="${4:-}"
+LAND_ISSUE="${5:-}"
 
 if [[ -z "$ROOT" || "$ROOT" == --* ]]; then
   echo "usage: land_main_publish.sh <project-root> [--decide-only|--acquire-lock|--release-lock]" >&2
@@ -66,7 +70,144 @@ release_lock() {
   echo "LOCK_RELEASED"
 }
 
+
+# ── BL-1366: the land, performed rather than described ────────────────────
+#
+# This script has stated the caller protocol in its own header since BL-1144 -
+# "acquire the land lock first, rematch if advised, then push FF-only (never
+# force). Residual races rematch at most once then wait on the lock" - and
+# nothing implemented it. QA retyped the sequence after every approval, with
+# the three ways it goes wrong one slip away each: a force-push (BL-1144
+# forbids it), a lock left held (release_lock is `rm -rf` on a directory, so a
+# land that dies between acquire and release blocks every later land), and an
+# escalation pushed past (LAND_ESCALATE means the tool could not establish the
+# tip is clean).
+#
+# It adds no new git behaviour. Every primitive already exists here or in
+# land_step_cli.bb; what changes is that the sequence stops being remembered.
+
+# Invariant 2: released on EVERY exit path, including a rejected push, an
+# escalation, an unexpected error and a signal. A trap covers the paths nobody
+# enumerated, which is the point - the failures that left the lock held were
+# never the ones anyone listed.
+LAND_LOCK_HELD=0
+land_release_trap() {
+  if [[ "$LAND_LOCK_HELD" == "1" ]]; then
+    release_lock >/dev/null 2>&1 || true
+    LAND_LOCK_HELD=0
+  fi
+}
+
+land_acquire_with_deadline() {
+  # Bounded, never an unbounded spin (the repo-wide guardrail for lock loops).
+  local deadline=$(( $(date +%s) + ${LAND_LOCK_WAIT_SECONDS:-120} ))
+  while :; do
+    if mkdir "$LOCK_DIR" 2>/dev/null; then
+      echo "$$" >"$LOCK_DIR/pid"
+      LAND_LOCK_HELD=1
+      echo "LOCK_ACQUIRED"
+      return 0
+    fi
+    if (( $(date +%s) >= deadline )); then
+      echo "LAND_LOCK_TIMEOUT: another land has held $LOCK_DIR past the ${LAND_LOCK_WAIT_SECONDS:-120}s deadline; not waiting further and not forcing it." >&2
+      return 1
+    fi
+    sleep "${LAND_LOCK_POLL_SECONDS:-2}"
+  done
+}
+
+# Never --force, and never a retry loop around a rejected push: at most ONE
+# rematch onto the current origin tip, then wait on the lock. A wrapper that
+# retried a rejected push is one bad branch away from reaching for --force.
+land_push_ff_only() {
+  local sha="$1"
+  git -C "$ROOT" push origin "$sha:refs/heads/main" 2>&1
+}
+
+run_land() {
+  local task="$1" commit="$2" issue="$3"
+  if [[ -z "$task" || -z "$commit" ]]; then
+    echo "usage: land_main_publish.sh <project-root> --land <task-name> <approved-commit> [<issue-ref>]" >&2
+    return 2
+  fi
+
+  trap land_release_trap EXIT INT TERM
+
+  # 1. The entanglement verdict FIRST, before the lock: an escalation must not
+  #    even take the lock, let alone push (invariant 3). This is QA's judgement
+  #    to make, and taking it here would be the tool deciding what to land.
+  local step_out step_rc=0
+  step_out="$(bb "$SCRIPT_DIR/land_step_cli.bb" "$task" "$commit" "$ROOT" 2>&1)" || step_rc=$?
+  printf '%s\n' "$step_out"
+
+  local land_sha=""
+  if grep -q '^LAND_ESCALATE' <<<"$step_out"; then
+    echo "LAND_STOPPED: the land step escalated - main is untouched and nothing was pushed. That verdict is QA's to resolve." >&2
+    return 3
+  elif grep -q '^LAND_REPLAY ' <<<"$step_out"; then
+    # LAND_REPLAY <branch> <new-commit>: the replayed commit is what lands.
+    land_sha="$(grep '^LAND_REPLAY ' <<<"$step_out" | head -1 | awk '{print $3}')"
+  elif grep -q '^LAND_CLEAN ' <<<"$step_out"; then
+    land_sha="$(grep '^LAND_CLEAN ' <<<"$step_out" | head -1 | awk '{print $2}')"
+  else
+    echo "LAND_STOPPED: land_step_cli.bb produced no verdict this script understands (rc=$step_rc); nothing was pushed." >&2
+    return 3
+  fi
+
+  if [[ -z "$land_sha" ]]; then
+    echo "LAND_STOPPED: the land step named no commit to land; nothing was pushed." >&2
+    return 3
+  fi
+
+  # 2. The lock, bounded.
+  land_acquire_with_deadline || return 4
+
+  # 3. Push FF-only. A rejection means origin moved under us.
+  local push_out push_rc=0
+  push_out="$(land_push_ff_only "$land_sha")" || push_rc=$?
+  printf '%s\n' "$push_out"
+
+  if (( push_rc != 0 )); then
+    # 4. Exactly ONE rematch onto the CURRENT origin tip, then push once more.
+    #    Never a second rematch and never a force: if this push is rejected
+    #    too, the land stops and waits for the next attempt.
+    echo "LAND_REMATCH: origin moved; rematching onto its current tip once (never twice, never --force)."
+    git -C "$ROOT" fetch origin main >/dev/null 2>&1 || true
+    local rematch_rc=0
+    git -C "$ROOT" rebase origin/main "$land_sha" >/dev/null 2>&1 || rematch_rc=$?
+    if (( rematch_rc != 0 )); then
+      git -C "$ROOT" rebase --abort >/dev/null 2>&1 || true
+      echo "LAND_STOPPED: the single permitted rematch conflicted; main is untouched and nothing was force-pushed." >&2
+      return 5
+    fi
+    land_sha="$(git -C "$ROOT" rev-parse HEAD)"
+    push_rc=0
+    push_out="$(land_push_ff_only "$land_sha")" || push_rc=$?
+    printf '%s\n' "$push_out"
+    if (( push_rc != 0 )); then
+      echo "LAND_STOPPED: the push was rejected again after the one permitted rematch; not rematching twice and not forcing. Re-run once the lock is free." >&2
+      return 5
+    fi
+  fi
+
+  echo "LAND_PUBLISHED $land_sha"
+
+  # 5. A GH-seeded ticket closes its issue; anything else attempts no issue
+  #    call at all.
+  if [[ -n "$issue" ]]; then
+    if [[ -f "$SCRIPT_DIR/issue_done.sh" ]]; then
+      bash "$SCRIPT_DIR/issue_done.sh" "$issue" "$land_sha" || \
+        echo "LAND_ISSUE_SKIPPED: issue_done.sh could not close $issue; the land itself stands." >&2
+    else
+      echo "LAND_ISSUE_SKIPPED: no issue_done.sh in this target." >&2
+    fi
+  fi
+
+  return 0
+}
+
 case "$MODE" in
+  --land) run_land "$LAND_TASK" "$LAND_COMMIT" "$LAND_ISSUE"; exit $? ;;
   --acquire-lock) acquire_lock; exit $? ;;
   --release-lock) release_lock; exit 0 ;;
   --decide-only) ;;
