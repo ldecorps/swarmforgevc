@@ -143,6 +143,20 @@ qa_e2e_procedure: |
      too (BL-971).
 
 notes: |
+  APPROVAL PROVENANCE (specifier, 2026-09-04 ~09:30Z) - read this before
+  trusting or doubting `human_approval: approved`. The human tapped Approve
+  in the BL-1385 topic; the bot wrote `approved` into this file at
+  08:27:56Z while the file was still UNTRACKED (mint not yet committed - the
+  shared checkout held an orphaned MERGE_HEAD, BL-1386) and the bot's own
+  commit FAILED; it said so in SUP-17: "BL-1385: approved recorded but
+  FAILED TO COMMIT - a human must land the change manually". The value then
+  rode, unannounced, into the mint commit 339f433c95 (08:40:02Z), which the
+  specifier made from the on-disk file. Tap precedes commit by 12 minutes,
+  no agent wrote the field, and no ruling_options were declared, so the
+  approval is genuine and complete. Recorded because a commit subject that
+  does not mention an approval it carries is otherwise the BL-1367/BL-1368
+  shape.
+
   2026-09-04 ~09:07Z (specifier): the immediate repair is DONE - QA landed
   BL-1296 as a72336cd8f, so bl1296BubbleSeatSteps.js now resolves its
   require on origin/main and the acceptance runner loads every handler
