@@ -148,12 +148,200 @@
       (seq (blocking-overlap dirty-paths merge-changed-paths redundant-paths)) :dirty-blocked
       :else :should-reconcile)))
 
+;; ── BL-1386: which MERGE_HEAD is the daemon's own? ──────────────────────
+;;
+;; On 2026-09-04 the sweep left its own failed merge open three times in
+;; eighteen minutes. `absorb-with-merge!` discarded `abort!`'s result, so an
+;; abort defeated by a transient `.git/index.lock` went unnoticed; the next
+;; tick saw a pre-existing MERGE_HEAD and, by BL-1120's rule, called it a
+;; human's and protected it. The daemon had orphaned its own merge and then
+;; named someone else as its owner.
+;;
+;; The missing fact is ownership. A record written BEFORE `git merge` and
+;; cleared after a successful merge or abort makes "this MERGE_HEAD is mine"
+;; provable on a LATER tick, which is all BL-1120 ever needed: it protects a
+;; merge this daemon did not start, and an owned sha is not one of those.
+
+(defn merge-owner-path [daemon-dir]
+  (str (fs/path daemon-dir "master-main-merge-owner.json")))
+
+(defn read-merge-owner [daemon-dir]
+  (or (read-json (merge-owner-path daemon-dir)) {}))
+
+(defn write-merge-owner! [daemon-dir record]
+  (spit (merge-owner-path daemon-dir) (json/generate-string record)))
+
+(defn clear-merge-owner! [daemon-dir]
+  (write-merge-owner! daemon-dir {}))
+
+(defn owns-merge-head?
+  "True only when `record` positively names THIS `merge-head-sha`.
+
+   Every uncertainty is a NO, because a wrong yes aborts a merge this daemon
+   did not start - the one thing BL-1120 exists to prevent. An absent record,
+   an empty record, a blank sha on either side, or a record naming a
+   different sha all answer false (invariant 2)."
+  [record merge-head-sha]
+  (let [recorded (some-> (:sha record) str str/trim)
+        actual (some-> merge-head-sha str str/trim)]
+    (boolean (and (seq (or recorded "")) (seq (or actual "")) (= recorded actual)))))
+
+;; ── BL-1387: WHOSE open merge is this, and is the index safe? ────────────
+;;
+;; Every plan below keyed on `merge-head-present?` alone, and read an open
+;; MERGE_HEAD as "a human is mid-merge, hold". That is presence, not
+;; ownership: it cannot tell a human, another agent, and the daemon's own
+;; previous tick apart. On 2026-09-04 it held two roles and the daemon for
+;; fifteen minutes on a merge with no owning process, whose index carried
+;; NONE of the incoming side - a `git commit` there would have written a
+;; merge whose tree reverted the whole origin side.
+;;
+;; Liveness is the only signal that separates "someone is mid-merge" from
+;; "something was left behind"; the index check is the only one that
+;; separates "safe to conclude" from "poisoned". Note that unmerged-path
+;; COUNT answers neither - a poisoned index has none and looks clean.
+
+(def index-lock-freshness-ms
+  "How recently `.git/index.lock` must have been touched to count as a live
+   owner. Deliberately short: a lock older than this is the residue of a dead
+   writer, which is the state that has to read as orphaned rather than as
+   someone still working."
+  60000)
+
+(defn index-lock-fresh?
+  "True when the lock exists and its mtime is within the freshness window.
+   An absent lock, an unreadable mtime, or a clock that cannot be compared
+   is NOT freshness - absence of evidence never manufactures an owner."
+  [{:keys [lock-present? lock-mtime-ms now-ms]}]
+  (boolean (and lock-present?
+                (number? lock-mtime-ms)
+                (number? now-ms)
+                (>= lock-mtime-ms (- now-ms index-lock-freshness-ms)))))
+
+(defn classify-open-merge
+  "Who owns the open merge? :none | :own | :live-human | :orphaned.
+
+   :none        no MERGE_HEAD at all.
+   :own         BL-1386's ownership record names this sha - the daemon's own
+                merge, which BL-1386 finishes and this ticket does not touch.
+   :live-human  at least one POSITIVE owner signal: a git process whose cwd
+                is this checkout, or a fresh index lock.
+   :orphaned    an open merge with no owner signal at all.
+
+   The asymmetry is the whole point. `:live-human` needs positive evidence,
+   because that is the reading that makes every role hold; `:orphaned` is
+   what is left when nothing vouches for the merge. Invariant 1: presence
+   alone never yields :live-human again."
+  [{:keys [merge-head-present? owned-by-daemon? live-git-process? lock-fresh?]}]
+  (cond
+    (not merge-head-present?) :none
+    owned-by-daemon? :own
+    (or live-git-process? lock-fresh?) :live-human
+    :else :orphaned))
+
+(defn index-carries-incoming?
+  "Does the index actually contain the incoming side?
+
+   `staged-paths` is `git diff --cached --name-only HEAD`; `incoming-paths`
+   is `git diff --name-only HEAD MERGE_HEAD`. The answer is whether they
+   INTERSECT. Never derived from unmerged-path count: the 2026-09-04 index
+   had zero unmerged paths and none of the incoming side, which is exactly
+   the state that reads as clean and concludes as a revert (invariant 3).
+
+   nil - either side unreadable - is returned as nil rather than false, so a
+   caller says \"could not tell\" instead of asserting a poisoning it did not
+   observe."
+  [staged-paths incoming-paths]
+  (when (and (some? staged-paths) (some? incoming-paths))
+    (boolean (seq (clojure.set/intersection (set staged-paths) (set incoming-paths))))))
+
+(defn- orphaned-index-clause
+  "`carries-incoming?` may be nil - the index could not be read - and that is
+   said plainly rather than guessed either way. Absence of a reading is not a
+   reading."
+  [carries-incoming?]
+  (cond
+    (nil? carries-incoming?) "index unreadable"
+    carries-incoming? "index carries the incoming side"
+    :else "index carries none of the incoming side"))
+
+(defn orphaned-merge-message
+  "The SURFACED note, which is capped at 80 characters by the handoff
+   protocol. The two facts that must survive that cap are the ones the
+   clearer acts on: WHICH merge, and whether its index is safe to conclude.
+   The remedy is deliberately not here - it does not fit beside them, and it
+   is carried in full by the escalation below. Composing to fit rather than
+   truncating is the same discipline BL-1360's ceremony composer applies."
+  [{:keys [merge-head-sha carries-incoming?]}]
+  (str "BL-1387 orphan " (apply str (take 10 (str merge-head-sha)))
+       ": " (orphaned-index-clause carries-incoming?)))
+
+(defn orphaned-merge-escalation
+  "The escalation text, which is not capped: the full statement including the
+   remedy and its one dangerous step. `git merge --abort` DELETES staged-new
+   files, which is why the 2026-09-04 hand-clear had to back one up first -
+   so the warning travels with the instruction rather than being folded away."
+  [{:keys [merge-head-sha carries-incoming?]}]
+  (str "orphaned merge on master: MERGE_HEAD " (str merge-head-sha)
+       ", no owner, " (orphaned-index-clause carries-incoming?)
+       " - abort and redo, back up staged-new files first"))
+
 ;; BL-1120: never abort a merge this tick did not start.
+;; BL-1386 widens "this tick" to "this daemon, provably" - and only that far.
 (defn may-abort-failed-merge?
-  "True only when this tick started the merge attempt (MERGE_HEAD was absent
-   before git merge). A pre-existing MERGE_HEAD is a foreign merge — never abort."
-  [started-this-tick?]
-  (boolean started-this-tick?))
+  "True only when the daemon can prove it started the merge.
+
+   1-arity (BL-1120, unchanged): this tick started the merge attempt, so
+   MERGE_HEAD was absent before `git merge`.
+
+   2-arity (BL-1386): OR the on-disk ownership record positively names this
+   MERGE_HEAD sha - an abort that failed on an earlier tick, still this
+   daemon's merge. A pre-existing MERGE_HEAD with no record, or one naming a
+   different sha, is a foreign merge and is never aborted: BL-1120 stands in
+   full for every merge this daemon cannot prove is its own."
+  ([started-this-tick?]
+   (boolean started-this-tick?))
+  ([started-this-tick? {:keys [owner-record merge-head-sha]}]
+   (boolean (or started-this-tick?
+                (owns-merge-head? owner-record merge-head-sha)))))
+
+(defn open-merge-branch
+  "BL-1387: the ONE mapping from an open merge to a plan branch, shared by
+   every plan that used to test `merge-head-present?` directly, so the three
+   cannot drift apart.
+
+   `merge-class` is optional. When it is absent every caller behaves EXACTLY
+   as before this ticket - presence means :skip-human-merge-in-progress -
+   which is what keeps the lib's existing suites and every other call site
+   unchanged. When it is present:
+
+     :live-human  -> :skip-human-merge-in-progress   (today's reading, kept)
+     :own         -> :abort-owned-merge              (BL-1386: the daemon's
+                                                      own leftover, aborted
+                                                      by ownership on a LATER
+                                                      tick)
+     :orphaned    -> :skip-orphaned-merge            (BL-1387's reading)
+     :none        -> nil                             (nothing to skip)
+
+   Returns nil when there is no open merge to branch on.
+
+   BL-1386 ARCHITECT BOUNCE (2026-09-04), D1. `:own` used to map to
+   `:skip-human-merge-in-progress` on the reasoning that BL-1386 would finish
+   it elsewhere. It does not: the daemon's `:abort!` adapter is only ever
+   reached from `absorb-with-merge!` on the SAME tick that started the merge,
+   so the ownership 2-arity was never called in production and the tick after
+   a failed abort still called the daemon's own leftover a human's - the exact
+   scenario the ticket exists to fix. `:own` now has its own branch, and the
+   daemon acts on it."
+  [{:keys [merge-head-present? merge-class]}]
+  (cond
+    (and merge-class (not= :none merge-class))
+    (case merge-class
+      :orphaned :skip-orphaned-merge
+      :own :abort-owned-merge
+      :skip-human-merge-in-progress)
+    (and (nil? merge-class) merge-head-present?) :skip-human-merge-in-progress
+    :else nil))
 
 (defn merge-attempt-plan
   "Given whether MERGE_HEAD already exists: :skip-human-merge-in-progress or :run-merge."
@@ -172,9 +360,9 @@
   "Plan for the automated origin/main absorb path.
    :noop | :skip-human-merge-in-progress | :refuse-rematch | :run-merge.
    Never starts a merge known to conflict (no MERGE_HEAD left for an editor)."
-  [{:keys [merge-head-present? behind would-conflict? tip-contains-origin?]}]
+  [{:keys [merge-head-present? behind would-conflict? tip-contains-origin? merge-class] :as opts}]
   (cond
-    merge-head-present? :skip-human-merge-in-progress
+    (open-merge-branch opts) (open-merge-branch opts)
     (or (zero? (or behind 0)) tip-contains-origin?) :noop
     would-conflict? :refuse-rematch
     :else :run-merge))
@@ -233,9 +421,9 @@
    :skip-human-merge-in-progress.
    Never plans an operator content-conflict absorb merge."
   [{:keys [merge-head-present? behind ahead tip-contains-origin?
-           absorb-would-conflict?]}]
+           absorb-would-conflict? merge-class] :as opts}]
   (cond
-    merge-head-present? :skip-human-merge-in-progress
+    (open-merge-branch opts) (open-merge-branch opts)
     (or (zero? (or behind 0)) tip-contains-origin?) :noop
     (and (pos? (or behind 0)) (zero? (or ahead 0))) :ff-absorb
     absorb-would-conflict? :replay-bookkeeping
@@ -264,7 +452,16 @@
         land (post-land-absorb-plan
               (assoc ctx :absorb-would-conflict? conflict?))]
     (cond
-      (= bl1130 :skip-human-merge-in-progress) :skip-human-merge-in-progress
+      ;; BL-1387/BL-1386: EVERY open-merge branch propagates, not only the
+      ;; human one. This cond used to name :skip-human-merge-in-progress
+      ;; alone, so the orphaned and owned branches fell through to :ff-absorb
+      ;; - a MUTATING plan on a checkout with an open MERGE_HEAD, and the
+      ;; reason the daemon's own classification never fired: handoffd.bb
+      ;; dispatches through THIS function, not through automated-absorb-plan
+      ;; directly. Found by driving run-post-hotfix-merge! end to end while
+      ;; fixing the BL-1387 bounce; the acceptance fixtures called the inner
+      ;; plan directly and could not see it.
+      (contains? #{:skip-human-merge-in-progress :skip-orphaned-merge :abort-owned-merge} bl1130) bl1130
       (= land :noop) :noop
       verdict-unavailable? :verdict-unavailable
       (= land :replay-bookkeeping) :replay-bookkeeping
@@ -402,7 +599,7 @@
 ;;    would blow the 80-char budget the message falls back to the unnamed
 ;;    form rather than truncating a path into something misleading. ────────
 (defn surface-message
-  [{:keys [behind reason overlapping-paths]}]
+  [{:keys [behind reason overlapping-paths] :as opts}]
   (let [refuse-absorb (str "BL-1130: absorb refused — rematch onto origin/main, " behind " behind")
         rematch-bk (str "BL-1135: rematch bookkeeping onto origin/main, " behind " behind")]
     (case reason
@@ -423,6 +620,14 @@
       :human-merge-in-progress
       (let [msg (str "BL-1120: human-merge-in-progress on master, " behind " behind - not aborted")]
         (if (<= (count msg) 80) msg "BL-1120: human-merge-in-progress on master - not aborted"))
+      ;; BL-1387: an orphan is not a human needing patience. The reason is
+      ;; distinct so main_sync_status_cli.bb passes it through to the
+      ;; coordinator's step-0 action table and the specifier's landing rule -
+      ;; a reason that exists only inside the daemon reaches neither.
+      :orphaned-merge
+      (let [msg (orphaned-merge-message {:merge-head-sha (:merge-head-sha opts)
+                                         :carries-incoming? (:carries-incoming? opts)})]
+        (if (<= (count msg) 80) msg "BL-1387: orphaned merge on master - abort and redo"))
       :verdict-unavailable
       (let [msg (str "BL-1236: merge verdict unavailable, " behind " behind origin - not reset")]
         (if (<= (count msg) 80) msg "BL-1236: merge verdict unavailable - not reset"))
@@ -1016,16 +1221,68 @@
    already resolved everything (unchanged from before this ticket);
    {:success true :outcome :merged} when the 3-way merge absorbed a
    non-conflicting divergence losslessly (the new case this ticket
-   adds); else fallback!'s own result, verbatim."
-  [{:keys [ff! merge! abort! fallback!]}]
-  (let [ff-result (ff!)]
+   adds); else fallback!'s own result, verbatim.
+
+   BL-1386 adds three adapters, all OPTIONAL so every pre-existing call site
+   and test keeps its exact behaviour with no edits:
+     :record-owner! (fn [] -> _)      - called immediately BEFORE merge!,
+                                        durably recording the sha about to be
+                                        merged. Invariant 1: a merge is owned
+                                        on disk before it can possibly fail.
+     :clear-owner!  (fn [] -> _)      - called after a successful merge, and
+                                        after a successful abort. Never after
+                                        a FAILED abort: the record is what
+                                        lets the next tick finish the job.
+     :log!          (fn [label text]) - the observed outcome and git's OWN
+                                        error text.
+
+   And it stops discarding abort!'s result. `abort!` may now return
+   {:success bool :error <text>}; a nil/absent return is treated as success,
+   so the old 1-arg adapters that returned whatever `sh!` gave them keep
+   working. On a FAILED abort this returns
+   {:success false :outcome :merge-abort-failed ...} WITHOUT calling
+   fallback!, because a rematch/reset on top of a still-open merge is a
+   second hazard on top of the first."
+  [{:keys [ff! merge! abort! fallback! record-owner! clear-owner! log!]}]
+  (let [log (or log! (fn [_ _] nil))
+        ;; A nil return means no-opinion, which for a pre-BL-1386 adapter
+        ;; is success - it is what the discarded result always was.
+        succeeded? (fn [r] (or (nil? r) (not (false? (:success r)))))
+        ff-result (ff!)]
     (if (:success ff-result)
       {:success true :outcome :ff}
-      (let [merge-result (merge!)]
-        (if (:success merge-result)
-          {:success true :outcome :merged}
-          (do (abort!)
-              (fallback!)))))))
+      (do
+        (when record-owner! (record-owner!))
+        (let [merge-result (merge!)]
+          (if (:success merge-result)
+            (do (when clear-owner! (clear-owner!))
+                {:success true :outcome :merged})
+            ;; The merge failed. Say WHY, in git's words, before doing
+            ;; anything else - on 2026-09-04 this text existed and was
+            ;; thrown away every tick, which is why the cause stayed
+            ;; unknowable across three orphans.
+            (let [merge-error (str/trim (str (:error merge-result)))
+                  conflict? (boolean (:conflict? merge-result))
+                  abort-result (abort!)]
+              (if (succeeded? abort-result)
+                (do
+                  (when clear-owner! (clear-owner!))
+                  ;; BL-1214's line is kept for the case it was written for -
+                  ;; a merge git actually reported as conflicting - and the
+                  ;; observed outcome is used otherwise, so the log stops
+                  ;; asserting `conflict` as a label for every failure.
+                  (log (if conflict? "conflict" "merge-failed") merge-error)
+                  (fallback!))
+                ;; The abort did NOT take. MERGE_HEAD is still ours and still
+                ;; open. Leave the ownership record standing so the next tick
+                ;; can finish it by ownership, and do NOT fall through to
+                ;; fallback! as though the tree were clean.
+                (let [abort-error (str/trim (str (:error abort-result)))]
+                  (log "merge-abort-failed" abort-error)
+                  {:success false
+                   :outcome :merge-abort-failed
+                   :merge-error merge-error
+                   :abort-error abort-error})))))))))
 
 ;; Self-healing across transitions, mirroring push_sweep_lib.bb's own
 ;; sweep!: reaching :up-to-date or a successful :should-reconcile always

@@ -601,4 +601,81 @@ pass "with the switch off, a block that persists past the escalation threshold s
 
 git -C "$ROOT" checkout -q -- seed.txt
 
+# ── BL-1386: the two constants that cross the lib/daemon boundary agree ──
+#
+# RESTORED after the architect's bounce revert: this block was removed by the
+# revert of 7836b7364a and the file then AUTO-MERGED clean, so nothing asked.
+# The four conflicted files were reviewed by hand; this one was not, which is
+# how a clean merge quietly deletes in-flight work.
+#
+# handoffd.bb is the only process that writes the ownership record or emits
+# the failed-abort log line, so both literals live there (the ticket's
+# consumer anchors). master_main_reconcile_lib.bb owns the same two strings.
+# A constant mirrored across a boundary needs a test asserting both literals
+# agree (Guardrails, BL-897) - otherwise a rename on one side leaves the
+# daemon writing one file while BL-1387 reads another, silently.
+LIB_BB="$SCRIPT_DIR/../master_main_reconcile_lib.bb"
+DAEMON_BB="$SCRIPT_DIR/../handoffd.bb"
+
+LIB_OWNER_FILE="$(BL1386_LIB="$LIB_BB" bb -e '
+(require (quote [clojure.string :as str]))
+(load-file (System/getenv "BL1386_LIB"))
+(println (last (str/split (master-main-reconcile-lib/merge-owner-path "/tmp/d") #"/")))' 2>/dev/null)"
+
+[[ -n "$LIB_OWNER_FILE" ]] \
+  || fail "BL-1386: could not read the ownership record's file name from the lib - this pin proves nothing"
+grep -qF "$LIB_OWNER_FILE" "$DAEMON_BB" \
+  || fail "BL-1386: the daemon does not name the ownership file the lib writes ($LIB_OWNER_FILE); BL-1387 would read a file nobody writes"
+pass "BL-1386: the ownership record's file name agrees across lib and daemon ($LIB_OWNER_FILE)"
+
+grep -qF '"merge-abort-failed"' "$LIB_BB" \
+  || fail "BL-1386: the lib no longer emits the merge-abort-failed label - the daemon's handling is dead"
+grep -qF 'merge-abort-failed' "$DAEMON_BB" \
+  || fail "BL-1386: the daemon does not name the merge-abort-failed label the lib emits"
+pass "BL-1386: the failed-abort log label agrees across lib and daemon"
+
+grep -q 'do (abort!)' "$LIB_BB" \
+  && fail "BL-1386: absorb-with-merge! still discards abort!'s result - the 2026-09-04 orphan is back"
+pass "BL-1386: absorb-with-merge! no longer discards the abort result"
+
+# ── BL-1386 D1 (architect bounce, 2026-09-04): the LIVE daemon reaches the
+#    ownership decision, not merely the lib ─────────────────────────────────
+#
+# The bounce's evidence was a grep: `owns-merge-head?` and the ownership
+# 2-arity of `may-abort-failed-merge?` appeared nowhere in handoffd.bb, so the
+# ticket's headline half was unwired while its unit and property suites were
+# green. The acceptance could not catch it because the fixture re-implemented
+# the decision. This is the consumer-side pin the architect asked for: the
+# daemon must CALL the ownership path, and must route :own to an abort rather
+# than to the human reading.
+grep -q 'may-abort-failed-merge?' "$DAEMON_BB" \
+  || fail "BL-1386 D1: handoffd.bb does not call may-abort-failed-merge? at all"
+grep -q ':owner-record' "$DAEMON_BB" \
+  || fail "BL-1386 D1: handoffd.bb never passes an ownership record - the 2-arity is unreachable, which is the bounced defect"
+grep -q 'owns-merge-head?' "$DAEMON_BB" \
+  || fail "BL-1386 D1: handoffd.bb never asks whether it owns the merge"
+grep -q ':abort-owned-merge' "$DAEMON_BB" \
+  || fail "BL-1386 D1: handoffd.bb has no abort-by-ownership branch to act on"
+pass "BL-1386 D1: the daemon reaches the ownership decision and acts on it"
+
+# And the lib must ROUTE an owned merge there rather than to the human
+# reading - the single line whose absence was the whole defect.
+OWNED_BRANCH="$(BL1386_LIB="$LIB_BB" bb -e '
+(load-file (System/getenv "BL1386_LIB"))
+(println (master-main-reconcile-lib/automated-absorb-plan
+          {:merge-head-present? true :merge-class :own :behind 3}))' 2>/dev/null | tr -d '[:space:]')"
+[[ "$OWNED_BRANCH" == ":abort-owned-merge" ]] \
+  || fail "BL-1386 D1: an owned merge routes to '$OWNED_BRANCH', not :abort-owned-merge - the daemon would call its own leftover a human's"
+pass "BL-1386 D1: an owned merge routes to the abort branch, not the human reading"
+
+# BL-1120 is untouched by that widening: a foreign merge still routes to the
+# human reading, and an absent record still yields no ownership.
+FOREIGN_BRANCH="$(BL1386_LIB="$LIB_BB" bb -e '
+(load-file (System/getenv "BL1386_LIB"))
+(println (master-main-reconcile-lib/automated-absorb-plan
+          {:merge-head-present? true :merge-class :live-human :behind 3}))' 2>/dev/null | tr -d '[:space:]')"
+[[ "$FOREIGN_BRANCH" == ":skip-human-merge-in-progress" ]] \
+  || fail "BL-1386 D1: a live human's merge no longer routes to the human reading (got '$FOREIGN_BRANCH') - BL-1120 regressed"
+pass "BL-1386 D1: a live human's merge still routes to the human reading (BL-1120 intact)"
+
 echo "ALL SCENARIOS PASS"
