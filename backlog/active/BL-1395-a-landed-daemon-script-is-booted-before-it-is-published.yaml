@@ -130,3 +130,5 @@ source: |
   `backlog/evidence/handoffd-crash-loop-bl1392-splice-dropped-hardener-fix-20260904.md`.
   The hardener's own finding of the same two defects earlier today:
   `BL-1392-hardener-critical-fix-handoffd-load-crash-20260904.md` (QA branch).
+
+assigned_to: coder
