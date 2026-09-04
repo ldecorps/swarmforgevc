@@ -41,13 +41,31 @@ const CLAIMS = {
   'live-origin': "the live repository's origin URL is byte-identical after the suite",
   'live-worktrees': "the live repository's worktree list is byte-identical after the suite",
   'all-guarded': 'every mutating git command in the suite goes through the fixture guard',
+  // BL-1390 second amendment, 2026-09-04: 1156 concurrent copies of this
+  // suite exhausted the host because each began with a blind prefix sweep.
+  'one-at-a-time': 'at most one instance of the suite runs at a time',
+  'names-holder': "a second invocation exits cleanly naming the first's pid",
+  'fixture-intact': "the first's fixture directory is intact throughout",
+  'invoker-logged': 'each suite log names the process chain that invoked it',
 };
 
+// Module scope, deliberately: the runtime gives each scenario its own ctx, so
+// a per-ctx memo re-ran this whole suite once per scenario - 6-9 invocations
+// per feature, several roles running acceptance at once. That multiplier is
+// half of how 1156 concurrent copies of a sibling suite came to exist
+// (BL-1390's second incident). One run per process, shared by every scenario.
+let suiteRun = null;
+
 function runE2e(ctx) {
+  if (suiteRun) {
+    ctx.bl1390 = { ...(ctx.bl1390 || {}), out: suiteRun.out, status: suiteRun.status };
+    return suiteRun.out;
+  }
   if (ctx.bl1390?.out) return ctx.bl1390.out;
   const res = spawnSync('bash', [E2E], { cwd: REPO_ROOT, encoding: 'utf8', timeout: 900000 });
   const out = `${res.stdout || ''}${res.stderr || ''}`;
   ctx.bl1390 = { ...(ctx.bl1390 || {}), out, status: res.status };
+  suiteRun = { out, status: res.status };
   if (res.status !== 0) {
     throw new Error(`the BL-1390 post-commit e2e failed (${res.status}):\n${out}`);
   }
@@ -171,6 +189,31 @@ function registerSteps(registry) {
 
   scoped(/^every mutating git command in the suite ran against a root under the fixture's temporary directory$/, (ctx) => {
     requirePassed(ctx, 'all-guarded');
+  });
+
+  // ── scenario 07 (second amendment): the suite is safe to invoke twice ────
+  scoped(/^the hook's test suite is running$/, (ctx) => {
+    ctx.bl1390 = ctx.bl1390 || {};
+  });
+
+  scoped(/^a second invocation of the suite starts$/, (ctx) => {
+    runE2e(ctx);
+  });
+
+  scoped(/^the second waits or exits cleanly naming the first's pid$/, (ctx) => {
+    requirePassed(ctx, 'names-holder');
+  });
+
+  scoped(/^the first's fixture directory is intact throughout$/, (ctx) => {
+    requirePassed(ctx, 'fixture-intact');
+  });
+
+  scoped(/^at most one instance of the suite ran at a time$/, (ctx) => {
+    requirePassed(ctx, 'one-at-a-time');
+  });
+
+  scoped(/^each suite log names the process chain that invoked it$/, (ctx) => {
+    requirePassed(ctx, 'invoker-logged');
   });
 }
 
