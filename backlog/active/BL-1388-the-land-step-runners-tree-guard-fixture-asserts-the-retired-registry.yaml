@@ -77,8 +77,10 @@ description: |
 
   ## How (direction, not mandate)
 
-  - Re-tense the fixture: make `bl9009FixtureSteps.js` undiscoverable (put
-    it under `specs/pipeline/steps/nested/`, or name it `bl9009Fixture.js`),
+  - Re-tense the fixture: make `bl9009FixtureSteps.js` undiscoverable by
+    naming it without the `Steps.js` suffix (AMENDED 2026-09-04: a nested
+    placement is NOT a refusal case - the guard lists the steps directory
+    flat and never sees a nested file at all; that hole is BL-1400),
     drop the hand-written `DOMAINS` array entirely (the real `index.js` is
     what the guard reads; the fixture may copy it or omit it as the guard's
     own tests do), and keep both refusal assertions verbatim in intent. The
@@ -113,6 +115,18 @@ qa_e2e_procedure: |
      run too (BL-971).
 
 notes: |
+  2026-09-04 AMENDMENT (specifier, spec-gap raised by the coder): the
+  scenario 02 row "nested in a subdirectory" and scenario 03 (nested
+  premise) can never pass - `check-feature-handler-registration.ts`'s
+  `readTree` fills `stepFiles` non-recursively, so a nested handler is
+  never in the list and `collectUnregisteredHandlers` skips the feature
+  (measured by the coder: the tree guards return `[]`). Row and scenario
+  RETIRED, never reworded; scenario 05 added (rename with the suffix clears
+  the refusal). The hole itself - a feature can reach main with its only
+  handler nested, against the guard's own predicate and BL-1371's how-to -
+  is minted as BL-1400, not folded in. Nothing built changes; the coder's
+  handler already asserts only the suffix case. Not a bounce.
+
   Found by QA on BL-1374's pass (evidence
   `BL-1374-qa-pass-20260904.md` on the QA branch, section "Untracked
   standing red found"), reported to the specifier by note rather than
