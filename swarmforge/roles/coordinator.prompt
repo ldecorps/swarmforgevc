@@ -487,6 +487,23 @@ closed work.
      QA parcel in `in_process`, report the CLI output loudly, and **stop this
      turn** — no further shell archaeology. When deadlock is tripped, wakes
      and dropped-parcel nudges are suppressed until `behind=0`.
+   - **`deadlock-tripped` with `deadlock.reason: orphaned-merge`** (BL-1387,
+     once landed) — an open `MERGE_HEAD` with NO owner: no `git` process on
+     the checkout, no fresh `.git/index.lock`, no BL-1386 ownership record.
+     This is not a human to wait for; it is a merge somebody left behind,
+     and on 2026-09-04 it was the daemon's own failed abort three times in
+     eighteen minutes. NEVER `git commit` or `git merge --continue` it: a
+     left-behind index can carry none of the incoming side while showing no
+     unmerged paths, and concluding it writes a merge commit that silently
+     reverts the whole origin side on push. Read the surfaced text for
+     whether the index carries the incoming side, list staged-new files
+     (`git diff --cached --name-status HEAD`) and back them up (an abort
+     deletes them), then `git merge --abort` and let the daemon's next tick
+     redo the join. If you redo it yourself, diff the result against BOTH
+     parents before any push. Until BL-1387 lands the same state surfaces as
+     `human-merge-in-progress`: on that reason, check `pgrep -x git` (never
+     `-f`, it self-matches) and the lock's age yourself before holding, and
+     apply this row when both are empty.
 
 1. **Make the merged code actually RUN** (BL-328):
    `bb swarmforge/scripts/build_freshness_cli.bb <project-root> sync`

@@ -33,3 +33,46 @@ silent-revert`, `orphaned-merge-on-main-poisoned-index-silent-revert-20260904`.
 
 Recurring at this rate (2x/hour) on the shared master checkout, this is a
 standing landing-integrity risk, not a one-off.
+
+---
+
+## Specifier correction and disposition (2026-09-04, minted as BL-1386 + BL-1387)
+
+**The predicate does not read authorship.** `master_main_reconcile_lib.bb`'s
+`merge-attempt-plan` / `automated-absorb-plan` / `absorb-dispatch-plan` map
+`merge-head-present?` straight to `:skip-human-merge-in-progress`, and
+`handoffd.bb`'s `master-main-merge-head-present?` is `git rev-parse --verify
+MERGE_HEAD`. No `%an`, no `t <t@t>` is consulted anywhere in either file
+(grep this pass). The rule is BL-1120's: any MERGE_HEAD this tick did not
+create is a foreign merge, never abort. That is presence-only, which is
+blinder than authorship - it cannot tell a human, an agent, or the daemon's
+own previous tick apart. The BL-1368 family resemblance is real (a decision
+assigned to "a human" on evidence that cannot distinguish one).
+
+**Every orphan on 2026-09-04 was the daemon's own.** `absorb-with-merge!`
+runs a real `git merge --no-edit origin/main` on the shared checkout each
+tick when the divergence is clean, and on failure does `(do (abort!)
+(fallback!))` - the abort's exit is discarded and never logged (the daemon
+log has never carried an abort failure). Timestamps: MERGE_HEAD mtime
+08:23:49Z and `human-merge-in-progress` surfaced 08:23:50Z; again 08:40:31Z;
+again 08:41:53Z - each one second after a sweep tick whose real merge ran.
+An abort that lost `.git/index.lock` to another writer (the concierge's
+topic store, which failed its own commit of `backlog/topics/BL-1385.json`
+in that same window and left it staged - the stray file section 2 of the
+Operator's note found) left MERGE_HEAD behind, and the next tick protected
+it as a human's. The `merge!` adapter also captures git's error text and
+discards it, so why the real merge fails every tick on this checkout
+(verdict clean, both incoming commits QA-ancestor rc 0, pre-merge-commit
+hook runs `check_pipeline_code_on_main.sh` and
+`check_feature_handler_registration.sh`) is not readable from any log.
+
+- **BL-1386** (creator side, `backlog/paused/`, high): abort result checked,
+  retried and logged; the daemon records which MERGE_HEAD is its own and
+  aborts it by ownership next tick; the real reason a merge failed is logged
+  instead of the fixed word `conflict`.
+- **BL-1387** (detector side, `backlog/paused/`, high): a foreign MERGE_HEAD
+  is classified by ownership and liveness; an orphan is surfaced as
+  `orphaned-merge` with whether its index carries the incoming side, and
+  escalates on the first tick. Aborts nothing.
+
+By specifier.
