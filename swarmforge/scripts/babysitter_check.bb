@@ -477,18 +477,42 @@
 (defn commit-is-merge? [sha]
   (zero? (:exit (sh! "git" "-C" project-root "rev-parse" "-q" "--verify" (str sha "^2")))))
 
-;; A merge commit's own content is invisible to a plain `git show`/
-;; `diff-tree` (no --first-parent) - BL-590's own f8dc07963 reports zero
-;; files that way, 13 via -m --first-parent. `-m` shows the diff against
-;; each parent for a merge; --first-parent restricts that to the ONE
-;; comparison that matters here (what this merge introduced relative to
-;; what was already on the branch), matching a non-merge commit's own
-;; single-parent diff exactly.
+(defn commit-first-parent
+  "A merge's first parent. nil on git failure - the caller fails closed on it
+   rather than falling back to a comparison that answers a different question
+   (invariant 2: resolving the parent is one more call that can fail)."
+  [sha]
+  (let [r (sh! "git" "-C" project-root "rev-parse" "-q" "--verify" (str sha "^1"))]
+    (when (zero? (:exit r)) (str/trim (:out r)))))
+
+;; A merge commit's own content is invisible to a plain `git show`/`diff-tree`
+;; - BL-590's own f8dc07963 reports zero files that way. So a merge needs its
+;; own comparison, and the one that answers this question is the TWO-TREE diff
+;; against its first parent: what this merge introduced relative to what was
+;; already on the branch, matching a non-merge commit's own single-parent diff
+;; exactly.
+;;
+;; BL-1359: what this comment used to claim, `-m --first-parent`, does NOT do
+;; that. `--first-parent` is a revision-TRAVERSAL option; for a single named
+;; commit no traversal happens, so on `diff-tree` it is a no-op and `-m` alone
+;; decides the output - one diff section per parent, i.e. the UNION of the
+;; diffs against every parent. Measured on live history: `15dc336877` returns
+;; 54 files with the flag and 54 without it (byte-identical, which is the proof
+;; it does nothing), while its true first-parent diff is 7. Everything
+;; downstream had been reasoned from the comment rather than the behaviour,
+;; which is how it survived BL-962's adjudication being built on top of it.
+;;
+;; The BL-962 exemption below could not rescue it: that adjudicates against the
+;; NON-first parents, and in the over-charged shape it is the FIRST parent the
+;; merge result matches, so an over-charged path could never be cleared.
+;; `specs/pipeline/steps/index.js` is the registry every ticket appends to, so
+;; the false charge fired on essentially every merge-up.
 (defn commit-touched-paths [sha]
   (let [r (if (commit-is-merge? sha)
-            (sh! "git" "-C" project-root "diff-tree" "-m" "--first-parent" "--no-commit-id" "--name-only" "-r" sha)
+            (when-let [first-parent (commit-first-parent sha)]
+              (sh! "git" "-C" project-root "diff-tree" "--no-commit-id" "--name-only" "-r" first-parent sha))
             (sh! "git" "-C" project-root "diff-tree" "--no-commit-id" "--name-only" "-r" sha))]
-    (when (zero? (:exit r))
+    (when (and r (zero? (:exit r)))
       (vec (remove str/blank? (str/split-lines (:out r)))))))
 
 (defn commit-subject [sha]
@@ -499,9 +523,9 @@
   (filterv (fn [p] (some #(str/starts-with? p %) qa-paths)) paths))
 
 ;; ── merge adjudication against QA-approved parents (BL-962) ───────────────
-;; -m --first-parent above charges a reconciliation merge with everything
-;; its QA-side parent brought in, so every operator merge of QA-landed work
-;; raised a false CRIT (da6031c60 / b3ba48bfc, evidence
+;; A reconciliation merge is charged with everything it introduces over its
+;; first parent, which includes what its QA-side parent brought in, so every
+;; operator merge of QA-landed work raised a false CRIT (da6031c60 / b3ba48bfc, evidence
 ;; backlog/evidence/babysitter-on-main-false-positive-20260820.md). The
 ;; exemption rule is BL-925's commit-time rule applied to the history sweep:
 ;; a merge's path clears ONLY when some QA-approved parent holds
@@ -582,6 +606,17 @@
   (let [touched (commit-touched-paths sha)
         offending (offending-paths (or touched []) qa-paths)]
     (cond
+      ;; BL-1359, invariant 2, and this reaches `offender-row` rather than
+      ;; stopping at the read - said out loud because the ticket asked for it
+      ;; to be. `commit-touched-paths` answers nil when a git call could not
+      ;; run, and `(or touched [])` turned that into an empty path set, i.e.
+      ;; into CLEAN. A read that failed and a commit that touched nothing are
+      ;; the two answers a safety gate must never conflate. Narrowing what a
+      ;; merge is charged with adds one more call that can fail (resolving the
+      ;; first parent), so leaving this would have converted a git failure into
+      ;; a silent pass on exactly the path this ticket touches.
+      (nil? touched) ::adjudication-failed
+
       (empty? offending) nil
 
       (not (commit-is-merge? sha))

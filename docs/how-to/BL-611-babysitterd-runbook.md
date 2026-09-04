@@ -539,12 +539,34 @@ a second `git merge-base` call. If `swarmforge-QA` itself can't be resolved,
 the whole check fails closed to `UNAVAILABLE` rather than reading as a clean
 sweep.
 
-Merge commits are diffed with `git diff-tree -m --first-parent`, never a
-plain `git show`/`diff-tree` — a merge's own plain diff reports zero files
-even when its combined content touches a QA-exclusive path (measured
-directly on this repo: 0 files plain vs. the real 13/35 via `--first-parent`
-on two different merges), which is exactly the shape that let the BL-590
-incident's own merge commit (`f8dc07963`) go unnoticed.
+Merge commits are diffed with a two-tree `git diff-tree` against their
+FIRST PARENT (`commit-touched-paths` resolves the parent via `<sha>^1`,
+then diffs `<first-parent> <sha>`), never a plain `git show`/`diff-tree` —
+a merge's own plain diff reports zero files even when its combined content
+touches a QA-exclusive path (measured directly on this repo: 0 files plain
+vs. the real 13/35 files touched, on two different merges), which is
+exactly the shape that let the BL-590 incident's own merge commit
+(`f8dc07963`) go unnoticed.
+
+**Not `-m --first-parent` (BL-1359).** An earlier shape used
+`git diff-tree -m --first-parent`, on the belief `--first-parent` restricts
+the comparison to the first parent's diff alone. It does not: for a single
+named commit (no revision traversal) `--first-parent` is a no-op on
+`diff-tree`, and `-m` alone decides the output — one diff section PER
+PARENT, i.e. the union of the diffs against every parent, not the diff
+against the first one. Measured on live history: `15dc336877` returned 54
+files with the flag and 54 without it (byte-identical, proving the flag did
+nothing), while its true first-parent diff was 7. That over-charge could
+not be rescued by the BL-962 exemption below either — that exemption
+adjudicates against the NON-first parents, and in the over-charged shape it
+was the FIRST parent the merge result actually matched, so an over-charged
+path could never clear. `specs/pipeline/steps/index.js` is the registry
+every ticket appends to, so the false charge fired on essentially every
+merge-up before this fix. The two-tree first-parent diff matches a
+non-merge commit's own single-parent diff exactly, is what the prior
+comment always claimed the code did, and — like every other git call this
+check makes — fails closed (invariant 2): a merge whose first parent
+cannot be resolved is never silently treated as clean.
 
 Each finding's key carries the offending sha
 (`pipeline-code-on-main-<sha>`), so `decide-nudges`' dedup treats every

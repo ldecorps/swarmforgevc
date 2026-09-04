@@ -49,6 +49,7 @@ bl1097_router_dispatch_trail_test_runner.bb	standing
 bl1138_rematch_bookkeeping_test_runner.bb	standing		
 bl1141_refuse_rematch_test_runner.bb	standing		
 bl1313_handoff_files_with_batches_test_runner.bb	standing		
+bl1359_merge_charged_test_runner.bb	standing		
 bl556_evaluate_ingest_test_runner.bb	standing		
 bl568_menu_blocked_test_runner.bb	standing		
 bl615_orphaned_claim_progress_test_runner.bb	standing		
