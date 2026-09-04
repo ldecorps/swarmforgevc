@@ -162,6 +162,105 @@
 ;; provable on a LATER tick, which is all BL-1120 ever needed: it protects a
 ;; merge this daemon did not start, and an owned sha is not one of those.
 
+
+;; ── BL-1391: a conflict confined to append-only bookkeeping is resolvable ──
+;;
+;; The reconcile refuses every conflicted merge. That is right for code and
+;; wrong for what actually collides on this checkout: QA's `abandoned_commits`
+;; record written at land beside the specifier's `notes:` append on the same
+;; ticket, a close beside a concierge topic record, two roles appending to one
+;; evidence file. Each is two additions to one file with a lossless mechanical
+;; answer, and each halted the coordinator until a human merged by hand - four
+;; times on 2026-09-04.
+;;
+;; Narrow on purpose. A resolver that understood every YAML field would be a
+;; larger, riskier slice, and a wrong automatic resolution of `human_approval:`
+;; or `status:` would be worse than today's halt.
+
+(def ^:private bookkeeping-prefixes
+  ["backlog/topics/" "backlog/evidence/" "backlog/answers-archive/" "docs/briefings/"])
+
+(defn bookkeeping-path?
+  "Is this path in the bookkeeping set (invariant 1)? Ticket YAML anywhere
+   under backlog/, plus topic records, evidence, answers archive and briefings.
+
+   Everything else - code, specs, prompts, conf, and feature files, whose
+   conflicts are SPEC conflicts - is outside the set and refuses exactly as
+   today."
+  [path]
+  (let [path (str path)]
+    (boolean
+     (or (and (str/starts-with? path "backlog/") (str/ends-with? path ".yaml"))
+         (some #(str/starts-with? path %) bookkeeping-prefixes)))))
+
+(defn bookkeeping-conflict-plan
+  "`:resolvable` only when the conflict set is non-empty and EVERY conflicted
+   path is bookkeeping; `:refuse` otherwise.
+
+   The all-or-nothing shape is invariant 1's own words - a merge with one
+   non-bookkeeping path resolves nothing at all, rather than resolving the
+   bookkeeping half and leaving a partially-merged tree behind. An empty list
+   is not a licence to resolve: it means the caller could not read the
+   conflict set, and unknown fails closed."
+  [conflicted-paths]
+  (let [paths (remove str/blank? (map str (or conflicted-paths [])))]
+    (if (and (seq paths) (every? bookkeeping-path? paths)) :resolvable :refuse)))
+
+(defn- insertion-blocks
+  "Every base line, in order, matched against `side`; the lines `side` added
+   are collected into the block before the base line they precede, with a final
+   block for anything added after the last base line.
+
+   nil when `side` is not the base plus insertions - a deleted or rewritten
+   base line leaves base unconsumed, which is exactly the shape that must
+   refuse. Greedy matching can mis-attribute an inserted line that happens to
+   equal the next base line; that only ever makes this stricter (some later
+   base line then fails to match and the whole file refuses), never looser."
+  [base side]
+  (loop [remaining-base (seq base)
+         remaining-side (seq side)
+         current []
+         blocks []]
+    (cond
+      (nil? remaining-side)
+      (when (nil? remaining-base) (conj blocks current))
+
+      (and (some? remaining-base) (= (first remaining-side) (first remaining-base)))
+      (recur (next remaining-base) (next remaining-side) [] (conj blocks current))
+
+      :else
+      (recur remaining-base (next remaining-side) (conj current (first remaining-side)) blocks))))
+
+(defn append-only-merge
+  "{:resolved? true :lines [...]} when BOTH sides only ADDED lines relative to
+   the base, else {:resolved? false :reason ...}.
+
+   Lossless and ordered (invariant 2): every line either side added survives,
+   ours before theirs, with the base's own lines in their original order. A
+   line both sides added appears once - it survives, which is what the
+   invariant requires, and a duplicated `abandoned_commits` entry helps nobody.
+
+   Append-only means ADDED lines, not appended-at-the-end: a `notes:` entry
+   inserted in the middle of a ticket YAML is the common case and resolves. A
+   deletion or a rewritten base line - a `title:` or `status:` changed on
+   either side - is refused, named by side."
+  [{:keys [base ours theirs]}]
+  (let [base (vec (or base []))
+        our-blocks (insertion-blocks base (vec (or ours [])))
+        their-blocks (insertion-blocks base (vec (or theirs [])))]
+    (cond
+      (nil? our-blocks) {:resolved? false :reason :ours-not-append-only}
+      (nil? their-blocks) {:resolved? false :reason :theirs-not-append-only}
+      :else
+      {:resolved? true
+       :lines (vec
+               (mapcat
+                (fn [i]
+                  (let [mine (nth our-blocks i [])
+                        yours (remove (set (nth our-blocks i [])) (nth their-blocks i []))]
+                    (concat mine yours (when (< i (count base)) [(nth base i)]))))
+                (range (inc (count base)))))})))
+
 (defn merge-owner-path [daemon-dir]
   (str (fs/path daemon-dir "master-main-merge-owner.json")))
 
