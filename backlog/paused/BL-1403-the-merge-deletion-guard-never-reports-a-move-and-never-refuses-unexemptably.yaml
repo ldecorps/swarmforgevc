@@ -116,7 +116,10 @@ notes: |
   shape. The shell test and the acceptance scenarios exercise the real hook
   path, which is what proves reachability here.
 
-  IR-DRY at mint: see commit.
+  IR-DRY at mint: 3 medium possible-synonyms, all kept - each is a
+  deliberate contrast pair the scenarios exist for: a deleting commit
+  naming "BL-9009" vs naming no ticket (03/04 vs 05), a message naming
+  "BL-9009" vs naming no ticket (04 vs 02/03), and allowed vs refused.
 
   Mint-time INVEST: one observable outcome (a merge-up after a root drain
   is allowed, and any refusal names an id you can put in the message), one
