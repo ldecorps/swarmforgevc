@@ -195,3 +195,6 @@ source: |
   as a rule in swarmforge/roles/specifier.prompt in the mint commit.
 
 assigned_to: coder
+bounce_count: 1
+bounce_history:
+  - { at: 2026-09-04, by: QA, blamed: coder, class: behavior, commit: d37743249c, evidence: backlog/evidence/BL-1390-bounce-20260904.md }
