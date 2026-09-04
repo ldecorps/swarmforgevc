@@ -189,3 +189,6 @@ source: |
   predicate stops assuming human, uses liveness) is BL-1387.
 
 assigned_to: coder
+bounce_count: 1
+bounce_history:
+  - { at: 2026-09-04, by: architect, blamed: coder, class: behavior, commit: 7836b7364a, evidence: backlog/evidence/BL-1386-architect-bounce-20260904.md }
