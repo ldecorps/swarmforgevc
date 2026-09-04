@@ -8,7 +8,9 @@ Feature: BL-1387 An open merge nobody owns is surfaced as orphaned, not as a hum
   unmerged paths, and concluding it silently reverts the origin side. This
   feature is that an open merge is classified by ownership and liveness,
   that an orphan is named an orphan and escalated at once with the one fact
-  a clearer needs, and that nothing is aborted by this classification.
+  a clearer needs, and that nothing is aborted by this classification. A
+  merge the daemon can prove it started is the daemon's own, and what
+  happens to it is BL-1386's contract, not this one's.
 
   Background:
     Given a fixture checkout with an open MERGE_HEAD created outside the sweep
@@ -24,6 +26,8 @@ Feature: BL-1387 An open merge nobody owns is surfaced as orphaned, not as a hum
     And the escalation fires on that tick
 
   # BL-1387 an-owner-signal-keeps-todays-reading-02
+  # Row "an ownership record naming the MERGE_HEAD sha" RETIRED 2026-09-04 (never reworded):
+  # an owned merge is the daemon's own and BL-1386 aborts it - it is never a human's. See 06.
   Scenario Outline: a positive owner signal keeps the human-merge-in-progress reading
     Given <owner signal>
     When one sweep tick runs
@@ -34,7 +38,6 @@ Feature: BL-1387 An open merge nobody owns is surfaced as orphaned, not as a hum
       | owner signal                                   |
       | a live git process whose cwd is the checkout   |
       | an index lock younger than the freshness window |
-      | an ownership record naming the MERGE_HEAD sha  |
 
   # BL-1387 a-stale-lock-is-not-an-owner-03
   Scenario: an index lock older than the freshness window is not an owner
@@ -64,3 +67,11 @@ Feature: BL-1387 An open merge nobody owns is surfaced as orphaned, not as a hum
     When one sweep tick runs
     Then MERGE_HEAD is still present after the tick
     And the index is byte-identical to before the tick
+
+  # BL-1387 an-owned-merge-is-the-daemons-not-a-humans-06
+  Scenario: an ownership record naming the MERGE_HEAD sha classifies the merge as the daemon's own
+    Given an ownership record naming the MERGE_HEAD sha
+    When one sweep tick runs
+    Then the open merge is classified as the daemon's own
+    And the surfaced reason is neither human-merge-in-progress nor orphaned-merge
+    And the escalation does not fire early

@@ -1,3 +1,8 @@
+# mutation-stamp: sha256=8dc434fb52807f0a7f013bb0066a649708545353ab55c1d76556583e5ff91647
+# acceptance-mutation-manifest-begin
+# {"version":1,"tested_at":"2026-09-04T10:49:55.846494333Z","feature_name":"BL-1386 The reconcile sweep never orphans a merge it started","feature_path":"/home/carillon/swarmforgevc/.worktrees/hardender/specs/features/BL-1386-the-reconcile-sweep-never-orphans-a-merge-it-started.feature","background_hash":"48b1de0d2e594677327adac309daf3e23262fb9e59b6b0eae71a6bf2b7d7e51d","implementation_hash":"unknown","scenarios":[{"index":3,"name":"a MERGE_HEAD the daemon cannot prove it started is left alone","scenario_hash":"e042db1d57fd07e6efd69893290289137899b932d8e7c27ef236b4ecc8d8098e","mutation_count":2,"result":{"Total":2,"Killed":2,"Survived":0,"Errors":0},"tested_at":"2026-09-04T10:49:55.846494333Z"},{"index":4,"name":"a failed real merge is logged with the observed outcome and git's text","scenario_hash":"948de4d8d36d008d07794896bf62c98e191d078e3a94e110a64f7bef1c0590cc","mutation_count":4,"result":{"Total":4,"Killed":4,"Survived":0,"Errors":0},"tested_at":"2026-09-04T10:49:55.846494333Z"}]}
+# acceptance-mutation-manifest-end
+
 Feature: BL-1386 The reconcile sweep never orphans a merge it started
 
   After local main and origin/main have diverged without conflict, the
