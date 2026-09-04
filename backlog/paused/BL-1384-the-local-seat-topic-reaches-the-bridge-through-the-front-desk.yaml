@@ -24,7 +24,7 @@ required_wiring:
 invariants:
   - "A topic the bridge process owns - cursor host, Bubble, or the local seat - is forwarded whole to the bridge inbound queue and never opens a support subject, whether or not the bridge is currently draining."
 
-human_approval: pending
+human_approval: approved
 approval_context: >
   Split out of your provider-chat intake of 2026-09-04, which flagged this
   as a question ("questions whether qwenLocalTopicId / Local Qwen is

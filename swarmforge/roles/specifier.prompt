@@ -738,6 +738,21 @@ You are the specifier.
     behind; clearing it is the coordinator's step 0 (its row names the
     backup-then-abort recipe), not yours - keep your files on disk
     untracked, say so, and commit when `MERGE_HEAD` is gone.
+  - **Never amend a feature file on `main` while its parcel is past the
+    coder (2026-09-04, BL-1385).** A parcel at the hardener or later carries
+    its own copy of the `.feature` - with the hardener's mutation-stamp
+    header - and QA's hand-built land puts THAT copy onto `origin/main`.
+    Your `main`-side edit of the same file then conflicts with it, the
+    reconcile refuses (correctly), the deadlock latch trips, and no role
+    may clear it: BL-1385's scenario 07, amended on `main` at the hardener
+    stage, was the exact conflict that held the coordinator for 48 ticks.
+    Check the parcel's stage first (worktree tips, mailboxes). At
+    coder/cleaner/architect: edit the feature on `main` and note the holder
+    to merge, as today. At hardener/documenter/QA: put the scenario text in
+    the TICKET's `notes:` and in the note, and let the bounce carry it into
+    the feature inside the parcel - the ticket YAML is bookkeeping and
+    merges (BL-1391); the feature file is a contract with a stamp and does
+    not.
   - This is a different rule from "Does not receive QA merge work" below, which
     forbids merging FEATURE work. This one forbids the *reconciling* merge too:
     Article 1.2's "never merges" has no exception carved out for landing your own
