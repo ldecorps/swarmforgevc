@@ -26,10 +26,21 @@ replay's tree-guard list (`land_step_lib.bb`, joining
 `check_feature_handler_registration.sh` as a second, sibling tree guard)
 and the commit-time guard chain (`run_commit_guards.sh`, Tier 1 — a
 `main`-only guard, so it costs nothing on every other branch), so neither a
-tip-pure land nor a hand-land on `main` can bypass it. Explicitly not built
-here: repairing `main` today (one QA land, already asked for by note) or
-the eight live feature files whose handlers are not yet built (a different,
-noted class). Acceptance:
+tip-pure land nor a hand-land on `main` can bypass it. Amended in flight
+(invariant 3, 2026-09-04): the guard runs from a commit hook, where
+invocations overlap constantly, and its own BL-971 sweep-by-prefix —
+written for test fixtures that never run concurrently — deleted a live
+run's materialised tree, reading every file as absent and refusing valid
+commits with hundreds of phantom missing modules. Each run now claims its
+working directory with an owner-pid file immediately after `mkdtemp`, and
+reaping is scoped to roots no LIVE run owns (a dead owner pid, or an age
+bound) rather than sweeping the whole shared prefix; a `require` check
+that could not tell present from absent (e.g. `EMFILE` under the
+~947-handler single-process walk) is a distinct third answer, never folded
+into "missing" as a false refusal. Explicitly not built here: repairing
+`main` today (one QA land, already asked for by note) or the eight live
+feature files whose handlers are not yet built (a different, noted class).
+Acceptance:
 `specs/features/BL-1385-a-handler-that-cannot-load-never-reaches-main.feature`.
 How-to: `docs/how-to/BL-1371-step-handlers-register-by-discovery.md` and
 `docs/how-to/BL-1252-commit-guard-chain-reports-every-violation.md` (both
