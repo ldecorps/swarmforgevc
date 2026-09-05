@@ -1,3 +1,8 @@
+# mutation-stamp: sha256=a3c24a2d4fe547bc658e3fdb22892c9551ceabc394fc9dbf1139c5243c1b0ddf
+# acceptance-mutation-manifest-begin
+# {"version":1,"tested_at":"2026-09-05T19:05:21.169383049Z","feature_name":"A fixture-tunnel sweep never signals a fixture a live run still owns","feature_path":"/home/carillon/swarmforgevc/.worktrees/hardender/specs/features/BL-1287-a-fixture-sweep-must-not-signal-a-live-runs-fixtures.feature","background_hash":"eb177f3bd18d46805d91443d68c8ee2dafe6319fbf8844d50e901c2965cde047","implementation_hash":"unknown","scenarios":[{"index":0,"name":"A fixture is swept only when the run that created it is gone","scenario_hash":"ea9b045adfefbf32605e82b1c33b94309aeddda3bcb86e9572b682f8b0ada332","mutation_count":4,"result":{"Total":4,"Killed":4,"Survived":0,"Errors":0},"tested_at":"2026-09-05T19:05:21.169383049Z"}]}
+# acceptance-mutation-manifest-end
+
 Feature: A fixture-tunnel sweep never signals a fixture a live run still owns
 
   extension/test/helpers/fixtureTunnelName.js's leakedFixtureTunnelPids is

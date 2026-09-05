@@ -1,5 +1,38 @@
 # SwarmForge VS Code Extension — Specification
 
+**Last Updated:** September 5, 2026 (BL-1287: the property-lane fixture
+sweep in `extension/test/helpers/fixtureTunnelName.js`
+(`leakedFixtureTunnelPids`, added by BL-1061) selected every temp-path
+`cloudflared` on the host with no scoping to the asking run — a fixture a
+CONCURRENTLY-RUNNING sibling suite still owned lived under the same OS
+temp directory and carried the same command-line shape as an earlier
+run's leak, so `bl857TunnelOwnershipInvariants.property.test.js`'s
+module-load sweep could SIGKILL `bl787NamedTunnelInvariants.property.test.js`'s
+live fixtures in the property lane's parallel fork pool. Measured
+2026-08-30: a process shaped exactly like a live bl787 fixture, its
+creating run still running, was selected for signalling by the real
+predicate. The discriminator added is liveness of the CREATING RUN, not
+process age — a start-time cutoff would still kill a sibling fork that
+started earlier and legitimately owns older-looking fixtures.
+`fixtureTunnelName()` already encodes its caller's own `process.pid` in
+every name it mints; the sweep now reads that back and skips any fixture
+whose creator is still alive (`isProcessAlive`, checking `ps -o stat=`
+rather than a bare `process.kill(pid, 0)`, since a just-SIGKILLed process
+stays signallable as an unreaped ZOMBIE until its subreaper collects it —
+the same discriminator class BL-1292 fixed for fixture identity, applied
+here to process liveness since there is no command-line text to match a
+bare creator pid against). A fixture whose creator cannot be identified
+falls back to the pre-BL-1287 posture (selected), so a killed creator's
+own leaked fixtures are still cleared however it died. The temp-path
+check BL-1061 chose (never by tunnel name, which would let a name-matched
+sweep reach the operator's real tunnel) is unchanged — this ticket adds a
+second question ("does someone still need it?"), it does not reopen the
+first ("could this be a fixture?"). Acceptance:
+`specs/features/BL-1287-a-fixture-sweep-must-not-signal-a-live-runs-fixtures.feature`.
+No `.ts`/`src` production files touched; no extension command, setting,
+or UI changed — pure test infrastructure. See the BL-1061 entry below for
+the sweep's original shape.)
+Prior entry —
 **Last Updated:** September 5, 2026 (BL-1403: `check_merge_deletion.sh`
 (BL-1242/BL-1341) closed two gaps that combined into one recurring,
 unexemptable block on every worktree's merge-up after every backlog-root
@@ -6137,7 +6170,13 @@ strictly worse than shipping neither. bl857's suite also now sweeps leaked
 fixture tunnels before its first process-table assertion, selecting by the
 fixture's own throwaway temp path rather than by tunnel name — a
 name-matched sweep would itself select the operator's tunnel, the exact
-hazard under test. New coverage: a real-process shell integration test
+hazard under test. (BL-1287, 2026-09-05, tightened this further: the
+temp-path selector alone could not distinguish an earlier run's leaked
+fixture from a concurrently-running sibling's LIVE one — both live under
+the same OS temp directory by construction — so the sweep now also checks
+whether the fixture's creating run, encoded in its own `fixtureTunnelName()`
+tunnel name, is still alive, and skips any fixture a live run still owns.
+See the BL-1287 entry below for the full mechanism.) New coverage: a real-process shell integration test
 (`test_bl1061_tunnel_reap_enumerates_full_command_lines.sh`) driving the
 actual reap against real fixture processes, and a property suite
 (`bl1061TunnelFixtureIsolation.property.test.js`, 5/5 acceptance scenarios
