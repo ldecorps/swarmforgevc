@@ -1,4 +1,4 @@
-# How to read /pilot's acceptance-contract landing gate (BL-727, BL-729, BL-731, BL-733, BL-735, BL-737, BL-741, BL-747, BL-753, BL-755, BL-757, BL-758, BL-1215)
+# How to read /pilot's acceptance-contract landing gate (BL-727, BL-729, BL-731, BL-733, BL-735, BL-737, BL-741, BL-747, BL-753, BL-755, BL-757, BL-758, BL-1215, BL-1229)
 
 BL-718 landed through `/pilot` with a hand-authored acceptance feature file
 that had zero step handlers — nothing between "the agent believes it passed"
@@ -342,6 +342,51 @@ same commit `getLandedCommit()` already captures for the receipt):
 **Remediation when refused:** push the named commit to `origin/main` and
 re-run the gate — do not silent-bypass.
 
+## Test-side deps stubs cannot silently outgrow the contract (BL-1229)
+
+`landPilotedTicket`'s `PilotAcceptanceGateDeps` interface (in
+`pilotAcceptanceGate.ts`) is the contract every check above is injected
+through. When BL-757 added `checkOrphanedAuthoredDocs` to it, production
+wiring was updated correctly at the live call site — but the sixteen test
+files that hand-built their own `deps` object in plain JavaScript were
+never touched, because nothing compares a hand-rolled object literal
+against a TypeScript interface. Ten of those files crashed 22 assertions
+with `deps.checkOrphanedAuthoredDocs is not a function`, invisible in the
+normal test lane because those same files also carried the `node:test`
+import gap (BL-1220) that kept Vitest from collecting them at all.
+
+Human ruling, 2026-08-28: take the stronger line — connect the contract to
+the stub so the *next* widening costs one clear failure, not one crash per
+file that forgot, and a missing member must never be silently defaulted.
+
+`extension/test/helpers/pilotAcceptanceGateDeps.js` is the one shared base
+every test's `deps` object is now built from:
+
+- **`baseAcceptanceGateDeps()`** returns a complete, hand-maintained object
+  — one benign default per contract member, the same default every
+  pre-existing local stub already used. It is never a Proxy or an
+  auto-defaulter that invents a value for whatever key happens to be
+  missing — that would convert the next widening's crash into a passing
+  test that exercises nothing, exactly what the human ruling forbids.
+- **`makeAcceptanceGateDeps(overrides)`** spreads the base with a test's
+  own overrides layered on top — a test overriding nothing still gets a
+  complete object; overriding one member changes only that one, same as
+  every pre-existing local `mkDeps()` did.
+- **`extractRequiredMembers`** reads the REAL interface's own source text
+  from `pilotAcceptanceGate.ts` (never a second, hand-copied member list)
+  and returns every non-optional (no trailing `?`) member name.
+- **`pilotAcceptanceGateDepsCompleteness.test.js`** is the one test that
+  connects them: it asserts every required member the real interface
+  declares is present in `baseAcceptanceGateDeps()`'s own keys. Widening
+  the contract without updating the shared stub now fails HERE, once,
+  naming the missing member — not once per test file that happens to
+  exercise the newly-required code path.
+
+Both invariants hold: a stub missing a member fails loudly (never a silent
+default), and adding a contract member produces exactly one named failure
+regardless of how many test files build a `deps` object from the shared
+base.
+
 ## Why
 
 A live pipeline run has two independent places that execute a ticket's
@@ -366,6 +411,16 @@ run, and no gate ever noticed.
   `extension/test/pilotAcceptanceGate.property.test.js`,
   `extension/test/pilotAcceptanceGateCli.test.js`
 - Acceptance: `specs/features/BL-727-pilot-acceptance-contract-gate.feature`
+- Shared deps-contract test stub (BL-1229), the one base every
+  `landPilotedTicket` test builds its `deps` object from:
+  `extension/test/helpers/pilotAcceptanceGateDeps.js`
+- Deps-contract completeness test (fails once, naming the missing member,
+  on any future contract widening the stub hasn't caught up to):
+  `extension/test/pilotAcceptanceGateDepsCompleteness.test.js`
+- Deps-contract step handlers:
+  `specs/pipeline/steps/bl1229PilotGateDepsContractStubsSteps.js`
+- Deps-contract acceptance:
+  `specs/features/BL-1229-pilot-gate-deps-contract-cannot-silently-outgrow-its-test-stubs.feature`
 - Commit-claim check (BL-729), pure — message/patch text in, unsupported
   claims out: `extension/src/tools/commitClaimCheck.ts`
 - Commit-claim git-backed deps (resolves the run's own commit range, reads
@@ -525,3 +580,9 @@ run, and no gate ever noticed.
 - BL-1215 — refuse land when the implementation commit is not reachable
   from `origin/main`; fails CLOSED on an unreadable remote (mirrors BL-729's
   fails-OPEN posture in the opposite direction)
+- BL-1229 — a shared, hand-maintained test-deps stub for
+  `landPilotedTicket`, connected to the real interface by a completeness
+  test, so a future contract widening fails once by name instead of once
+  per test file that forgot to update its own hand-rolled stub
+  (companion: BL-1220's `node:test` import fix, BL-1221's earlier partial
+  stub repair)
