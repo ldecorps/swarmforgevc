@@ -52,7 +52,7 @@ function bbJson(expression) {
 
 function state(ctx) {
   if (!ctx.bl1353) {
-    ctx.bl1353 = { inboxFresh: false, claimed: false };
+    ctx.bl1353 = { inboxFresh: false, claimed: false, hibernated: false };
   }
   return ctx.bl1353;
 }
@@ -81,9 +81,10 @@ function registerSteps(registry) {
   });
 
   scoped(/^the swarm is hibernated with a drained backlog$/, (ctx) => {
-    const s = state(ctx);
-    s.hibernated = true;
-    s.backlogDrained = true;
+    // The state where the probe is load-bearing: with the backlog drained,
+    // fresh coordinator mail is the ONLY thing separating a relaunch from
+    // staying down (BL-310).
+    state(ctx).hibernated = true;
   });
 
   scoped(/^the operator runtime evaluates its tick sweep$/, (ctx) => {
@@ -99,9 +100,8 @@ function registerSteps(registry) {
 
   scoped(/^the closing pass evaluates whether to relaunch$/, (ctx) => {
     const s = state(ctx);
-    // The probe's SECOND consumer, driven through the real decision: a
-    // hibernated swarm with fresh coordinator mail relaunches rather than
-    // staying down, which is what reading the probe buys (BL-307/BL-310).
+    assert.equal(s.hibernated, true, 'the relaunch up-trigger only fires on a hibernated swarm');
+    // The probe's SECOND consumer, driven through the real decision.
     s.relaunches = bb(
       `(operator-lib/should-relaunch? {:already-hibernated? true :backlog-drained? true :fresh-coordinator-mail? ${s.inboxFresh}})`
     );
