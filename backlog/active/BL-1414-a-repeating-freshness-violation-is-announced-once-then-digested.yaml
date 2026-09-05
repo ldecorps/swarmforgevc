@@ -135,3 +135,5 @@ source: |
   reduce the traffic of this alert, which is juat noise as far as I am
   concerned" (screenshot: four FRESHNESS_VIOLATION messages at 06:20,
   Operator topic, 3884 messages).
+
+assigned_to: coder
