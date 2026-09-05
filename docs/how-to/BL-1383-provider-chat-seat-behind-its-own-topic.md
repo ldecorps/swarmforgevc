@@ -10,8 +10,9 @@ message in such a topic fell through to the front desk's generic path and
 opened a support subject instead of an answer. Generalizes
 [BL-1235's local Qwen seat](BL-1235-local-qwen-seat-behind-its-own-topic.md)
 from a single local model to any number of remote, directly-configured
-providers; BL-1384 (open at this writing) covers the sibling reachability
-gap on the qwen-local seat specifically, flagged by the same intake.
+providers; BL-1384 covers the sibling reachability gap on the qwen-local
+seat specifically, flagged by the same intake (see
+[BL-1235's how-to](BL-1235-local-qwen-seat-behind-its-own-topic.md#reachability-in-production-the-front-desk-must-forward-the-topic-too-bl-1384)).
 
 ## Where it lives
 
@@ -100,6 +101,7 @@ limiting/streaming/conversation memory for a seat.
   — the pattern this generalizes, including the "never fall through to a
   support subject" posture and the never-a-bare-status refusal shape.
 - BL-1384 — the sibling qwen-local-seat reachability gap flagged by the
-  same intake (open at this writing; no doc page yet).
+  same intake; documented in BL-1235's how-to (linked above), since it is
+  the feeder-side half of that seat's own contract, not a new mechanism.
 
 Acceptance: `specs/features/BL-1383-a-topic-bound-to-a-chat-provider-answers-there.feature`.
