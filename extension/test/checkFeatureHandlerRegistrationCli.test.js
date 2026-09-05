@@ -21,9 +21,14 @@ function io(files) {
     paths
       .filter((p) => p.startsWith(`${dir}/`) && !p.slice(dir.length + 1).includes('/'))
       .map((p) => p.slice(dir.length + 1));
+  // BL-1400: the recursive listing readTree needs to see a handler placed in
+  // a subdirectory - the placement the discovery predicate has always
+  // rejected but the flat tree never showed it.
+  const listTree = (dir) => paths.filter((p) => p.startsWith(`${dir}/`)).map((p) => p.slice(dir.length + 1));
   return {
     written,
     listDir,
+    listTree,
     readFile: (p) => (p in files ? files[p] : null),
     write: (text) => written.push(text),
   };
@@ -101,3 +106,70 @@ test('main passes its repo-root argument to the io factory and returns its statu
   assert.deepEqual(seen, ['/some/repo']);
   assert.equal(status, 1);
 });
+
+
+// BL-1400: the guard's predicate rejects a subdirectory placement and its own
+// header promises such a handler is "still refused" - but readTree listed the
+// steps directory FLAT, so a nested handler never entered the tree at all and
+// the feature passed for want of seeing it.
+
+test('readTree lists a handler nested in a subdirectory of the steps directory', () => {
+  const tree = readTree(
+    io({
+      'specs/features/BL-9009-x.feature': 'Feature: x',
+      [`${STEPS}/index.js`]: 'const DOMAINS = [];',
+      [`${STEPS}/nested/bl9009XSteps.js`]: 'module.exports = {};',
+    })
+  );
+  assert.deepEqual(tree.stepFiles, [`${STEPS}/index.js`, `${STEPS}/nested/bl9009XSteps.js`]);
+});
+
+test('readTree keeps lib files out of the step files - a helper is not a handler', () => {
+  const tree = readTree(
+    io({
+      [`${STEPS}/index.js`]: 'const DOMAINS = [];',
+      [`${STEPS}/lib/bl9009Helper.js`]: 'module.exports = {};',
+      [`${STEPS}/lib/deep/bl9009Deeper.js`]: 'module.exports = {};',
+    })
+  );
+  assert.deepEqual(tree.stepFiles, [`${STEPS}/index.js`]);
+  assert.deepEqual(tree.libFiles.sort(), [`${STEPS}/lib/bl9009Helper.js`, `${STEPS}/lib/deep/bl9009Deeper.js`]);
+});
+
+test('a feature whose only handler is nested is refused, naming the handler and the feature', () => {
+  const deps = io({
+    'specs/features/BL-9009-x.feature': 'Feature: x',
+    [`${STEPS}/index.js`]: 'const DOMAINS = [];',
+    [`${STEPS}/nested/bl9009XSteps.js`]: 'module.exports = {};',
+  });
+  assert.equal(checkFeatureHandlerRegistration(deps), 1);
+  const refusal = deps.written.join('');
+  assert.match(refusal, /nested\/bl9009XSteps\.js/);
+  assert.match(refusal, /BL-9009-x\.feature/);
+});
+
+test('the same handler at the top of the steps directory passes', () => {
+  const deps = io({
+    'specs/features/BL-9009-x.feature': 'Feature: x',
+    [`${STEPS}/index.js`]: 'const DOMAINS = [];',
+    [`${STEPS}/bl9009XSteps.js`]: 'module.exports = {};',
+  });
+  assert.equal(checkFeatureHandlerRegistration(deps), 0);
+  assert.deepEqual(deps.written, []);
+});
+
+for (const [relation, registry] of [
+  ['a top-level handler requires', "const helper = require('./lib/bl9009Helper');"],
+  ['no handler requires', ''],
+]) {
+  test(`a lib helper ${relation} it is never reported as an unregistered handler`, () => {
+    const deps = io({
+      'specs/features/BL-9009-x.feature': 'Feature: x',
+      [`${STEPS}/index.js`]: 'const DOMAINS = [];',
+      [`${STEPS}/bl9009XSteps.js`]: `${registry}\nmodule.exports = {};`,
+      [`${STEPS}/lib/bl9009Helper.js`]: 'module.exports = {};',
+    });
+    assert.equal(checkFeatureHandlerRegistration(deps), 0);
+    assert.deepEqual(deps.written, []);
+  });
+}
