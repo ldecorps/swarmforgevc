@@ -457,4 +457,72 @@ grep -q -- 'new-session' <<< "$(cat "$CALL_LOG")" && fail "K: expected no tmux n
 pass "K: a role already repaired inside the cooldown window is not repaired again by the live sweep"
 rm -rf "$ROOT"
 
+# ── N: BL-1404 — a CRIT finding with no waive recorded still escalates to
+#    the operator, exactly as today (baseline for O below). ──────────────
+ROOT="$(make_root)"
+touch "$ROOT/.swarmforge/handoffs/failed/stray.handoff"
+N_OUT="$(run_check "$ROOT" --nudge)"
+grep -q "ESCALATED operator: \[failed-box\]" <<< "$N_OUT" || fail "N: expected an ESCALATED line with no waive recorded; got: $N_OUT"
+pass "N: a CRIT finding with no waive recorded still escalates to the operator"
+rm -rf "$ROOT"
+
+# ── O: BL-1404 — a recorded waive silences the operator escalation, not
+#    only the coordinator nudge. Before this ticket, decide-escalations was
+#    fed the RAW findings, so a waived Article 4.2 finding kept summoning
+#    the operator every escalation cooldown forever, waive or no waive. ──
+ROOT="$(make_root)"
+touch "$ROOT/.swarmforge/handoffs/failed/stray.handoff"
+mkdir -p "$ROOT/backlog"
+printf -- '- key: failed-box\n  waived_by: coordinator\n  reason: "investigated, not a real fault"\n  waived_at: 2026-09-05\n' \
+  > "$ROOT/backlog/babysitter-waives.yaml"
+O_OUT="$(run_check "$ROOT" --nudge)"
+grep -q "CRIT \[failed-box\]" <<< "$O_OUT" || fail "O: the finding must still be reported even though it is waived; got: $O_OUT"
+grep -q "WAIVED \[failed-box\]" <<< "$O_OUT" || fail "O: expected the WAIVED overlay line; got: $O_OUT"
+grep -q "ESCALATED operator: \[failed-box\]" <<< "$O_OUT" && fail "O: a waived finding must not escalate to the operator; got: $O_OUT"
+grep -q "NUDGED coordinator" <<< "$O_OUT" && fail "O: a waived finding must not nudge the coordinator either; got: $O_OUT"
+pass "O: a recorded waive silences the operator escalation as well as the coordinator nudge"
+rm -rf "$ROOT"
+
+# ── P: BL-1404 — two CRIT findings, only one waived: the other still
+#    escalates. Proves the waive is per-key, not a blanket suppression. ──
+ROOT="$(make_root)"
+touch "$ROOT/.swarmforge/handoffs/failed/stray.handoff"
+SOCK="$ROOT/fake.sock"; touch "$SOCK"
+echo "$SOCK" > "$ROOT/.swarmforge/tmux-socket"
+mkdir -p "$ROOT/.worktrees/coder" "$ROOT/.swarmforge/launch"
+printf 'coder\tcoder\t%s\tswarmforge-coder\tCoder\tclaude\ttask\n' "$ROOT/.worktrees/coder" \
+  > "$ROOT/.swarmforge/roles.tsv"
+printf '#!/usr/bin/env zsh\necho fake-launch\n' > "$ROOT/.swarmforge/launch/coder.sh"
+cat > "$FAKE_BIN/tmux" <<'TMUX'
+#!/usr/bin/env bash
+for arg in "$@"; do
+  if [[ "$arg" == "has-session" ]]; then exit 1; fi
+done
+exit 0
+TMUX
+chmod +x "$FAKE_BIN/tmux"
+mkdir -p "$ROOT/backlog"
+printf -- '- key: failed-box\n  waived_by: coordinator\n  reason: "investigated"\n  waived_at: 2026-09-05\n' \
+  > "$ROOT/backlog/babysitter-waives.yaml"
+P_OUT="$(run_check "$ROOT" --nudge)"
+grep -q "CRIT \[failed-box\]" <<< "$P_OUT" || fail "P: expected both CRIT findings reported; missing failed-box: $P_OUT"
+grep -q "CRIT \[pane-coder\]" <<< "$P_OUT" || fail "P: expected both CRIT findings reported; missing pane-coder: $P_OUT"
+grep -q "WAIVED \[failed-box\]" <<< "$P_OUT" || fail "P: expected the WAIVED overlay line for failed-box; got: $P_OUT"
+grep -q "ESCALATED operator: \[failed-box\]" <<< "$P_OUT" && fail "P: the waived finding must not escalate; got: $P_OUT"
+grep -q "ESCALATED operator: \[pane-coder\]" <<< "$P_OUT" || fail "P: the UNWAIVED finding must still escalate; got: $P_OUT"
+pass "P: with two CRIT findings and only one waived, the other still escalates"
+rm -rf "$ROOT"
+
+# ── Q: BL-1404 — a corrupt waive store escalates everything (fail-open,
+#    symmetric with the nudge path's own WAIVE-STORE-UNUSABLE handling). ──
+ROOT="$(make_root)"
+touch "$ROOT/.swarmforge/handoffs/failed/stray.handoff"
+mkdir -p "$ROOT/backlog"
+printf '{{{ not a valid waive store\n' > "$ROOT/backlog/babysitter-waives.yaml"
+Q_OUT="$(run_check "$ROOT" --nudge)"
+grep -q "WAIVE-STORE-UNUSABLE" <<< "$Q_OUT" || fail "Q: expected WAIVE-STORE-UNUSABLE to be logged; got: $Q_OUT"
+grep -q "ESCALATED operator: \[failed-box\]" <<< "$Q_OUT" || fail "Q: an unusable store must still escalate every finding; got: $Q_OUT"
+pass "Q: a corrupt/unreadable waive store escalates everything and logs WAIVE-STORE-UNUSABLE"
+rm -rf "$ROOT"
+
 echo "ALL PASS"
