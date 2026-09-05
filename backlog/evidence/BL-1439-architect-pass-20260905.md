@@ -123,5 +123,30 @@ outstanding-debt result, not a wiring failure).
 Architecturally compliant. No architecture violation, no invariant
 violation, no correctness defect found — the ledger discharge mechanism is
 correctly and completely built, and the four undischarged gates are
-genuinely, honestly blocked exactly as invariant 3 anticipates. Forwarding
-to hardener.
+genuinely, honestly blocked exactly as invariant 3 anticipates.
+
+## Addendum: the ticket was amended by the specifier while I held the parcel
+
+After writing the verdict above, my attempt to forward to hardener was
+refused (`CONTRACT_AMENDED_SINCE_BASE`): the specifier amended this
+ticket on main (`42674ab66d`) independently reaching the same
+"land what's genuinely done, don't hold on external blockers" conclusion
+I recorded above — but going further than a disposition call: BL-1440
+(new) now owns the `constitutionDocCitations` red; BL-1441 (new) is
+minted as the successor for the four still-blocked gates; scenario 03 is
+amended (wrong at mint per the specifier's own note) to require every row
+discharged OR carrying an attempt record naming its blocker, with every
+outstanding row's register ownership re-pointed to BL-1441; and a new
+`--attempt` verb is added to `required_wiring`, absent from the commit I
+just reviewed.
+
+Merged main (`5b84569457`). This is new required work, not a defect in
+what was delivered — the coder's and cleaner's work was correct against
+the ticket as it stood, and my own review found no defect. The
+`--attempt` verb and the BL-1441 re-pointing are genuine new production
+code / data no one has written yet (confirmed: `grep attempt
+hardening_debt_ledger_update.bb` finds nothing). This is coder-owned
+work, not mine to write. Forwarding the merged commit to coder (not a
+bounce, no bounce_count recorded — nothing here was wrong, the ground
+moved under an already-correct parcel) so the amendment gets implemented,
+rather than sending an already-stale candidate to hardener.
