@@ -6,6 +6,12 @@ BL-1402-the-front-desk-keeps-a-routed-photo-so-the-operator-can-see-it
 ## Hardener tip
 650dbc86e3
 
+## Post-merge note
+Also merged coder b15c7fd7b0 (removes a stale duplicate
+`backlog/paused/BL-1402-*.yaml` copy, coordinator-confirmed 2026-09-05,
+reintroduced by an earlier required merge-up) — stranded on the coder side
+branch, not otherwise in this chain's ancestry.
+
 ## Review inventory (Article 4.4)
 NONE.
 
