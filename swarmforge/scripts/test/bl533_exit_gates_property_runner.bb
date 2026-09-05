@@ -21,6 +21,7 @@
 
 ;; I1: feature on disk, not in ls-files → untracked-acceptance violation.
 (let [tmp (str (fs/create-temp-dir {:prefix "bl533-i1-"}))
+      _ (.addShutdownHook (Runtime/getRuntime) (Thread. (fn [] (try (fs/delete-tree tmp) (catch Exception _ nil)))))
       feat "specs/features/BL-533-prop.feature"
       ticket-text (str "id: BL-533\ntype: feature\nepic: e\nmilestone: M8\n"
                        "acceptance: " feat "\npriority: 1\n")]

@@ -10,6 +10,10 @@
 (load-file (str (fs/path script-dir ".." "shift_schedule_applier_lib.bb")))
 
 (def failures (atom []))
+
+(def created-temp-dirs (atom []))
+(.addShutdownHook (Runtime/getRuntime)
+                   (Thread. (fn [] (doseq [d @created-temp-dirs] (try (fs/delete-tree d) (catch Exception _ nil))))))
 (defn assert= [msg e a] (when (not= e a) (swap! failures conj (str "FAIL " msg "\n  expected: " (pr-str e) "\n  actual: " (pr-str a)))))
 (defn assert-true [msg a] (assert= msg true (boolean a)))
 
@@ -122,13 +126,15 @@
 
 ;; Absent CLI -> nil, never a throw: the verdict is best-effort and a caller
 ;; must not break because the governor is not built here.
-(let [empty-root (str (fs/create-temp-dir {:prefix "bl1381-nogov-"}))]
+(let [empty-root (str (fs/create-temp-dir {:prefix "bl1381-nogov-"}))
+      _ (swap! created-temp-dirs conj empty-root)]
   (assert= "BL-1381: an absent governor CLI yields nil, not an exception"
            nil (shift-schedule-applier-lib/budgetShiftGovernorVerdict empty-root 1234)))
 
 ;; Present CLI -> its parsed verdict. A real node script, because the point is
 ;; that process/shell resolves and runs at all.
 (let [root (str (fs/create-temp-dir {:prefix "bl1381-gov-"}))
+      _ (swap! created-temp-dirs conj root)
       cli-dir (str root "/extension/out/tools")]
   (fs/create-dirs cli-dir)
   (spit (str cli-dir "/budget-shift-governor.js")
@@ -142,6 +148,7 @@
 ;; A CLI that exits non-zero, or prints unparseable output, is still nil -
 ;; best-effort means best-effort in both directions.
 (let [root (str (fs/create-temp-dir {:prefix "bl1381-govfail-"}))
+      _ (swap! created-temp-dirs conj root)
       cli-dir (str root "/extension/out/tools")]
   (fs/create-dirs cli-dir)
   (spit (str cli-dir "/budget-shift-governor.js") "process.exit(3);")
