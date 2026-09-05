@@ -77,6 +77,17 @@ const OPERATOR_RUNTIME_BB_FILES = [
   'hotfix_certification_lib.bb',
   'process_table_lib.bb',
   'babysitterd_freshness_lib.bb',
+  // BL-1439: found blocking this ticket's own Stryker dry run (an
+  // unrelated pre-existing drift, the same shape as every entry above -
+  // five more load-file dependencies added to operator_runtime.bb's
+  // closure since this list was last caught up, never fixed here before
+  // because nothing gated it until this parcel needed the whole suite
+  // green to run a scoped mutation pass).
+  'context_telemetry_store.bb',
+  'role_ask_escalation_lib.bb',
+  'rotation_telemetry_lib.bb',
+  'seat_difficulty_lib.bb',
+  'self_heal_telemetry_lib.bb',
 ];
 
 // BL-944 scenario 03: a file listed here but NOT reached by any load-file

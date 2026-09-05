@@ -8,8 +8,17 @@
 ;;
 ;; Usage:
 ;;   hardening_debt_ledger_update.bb <project-root> --defer <parcel> <gate> <file-set-csv> <reason> <load> [<detected-at>]
+;;   hardening_debt_ledger_update.bb <project-root> --discharge <parcel> <gate> --evidence <path> [<discharged-at>]
 ;;
-;; <detected-at> defaults to today (YYYY-MM-DD) when omitted.
+;; <detected-at>/<discharged-at> default to today (YYYY-MM-DD) when omitted.
+;;
+;; BL-1439: --discharge is the ledger's OTHER verb - a run that pays a
+;; deferred gate its own committed evidence file. It never removes the
+;; row (invariant 1): it marks the matching row discharged, so the
+;; deferral and its discharge stay readable together. Refuses (exit 1,
+;; nothing written) with no --evidence path or no matching outstanding
+;; row - never a silent no-op, which would leave the debt looking paid
+;; when it was not recorded at all.
 
 (ns hardening-debt-ledger-update
   (:require [babashka.fs :as fs]))
@@ -51,6 +60,23 @@
           (if (> (count after) before-count)
             (println "recorded" gate "deferral for" parcel)
             (println "already recorded (same gate+file-set) - no duplicate row"))))
+
+      "--discharge"
+      (let [[parcel gate ev-flag evidence discharged-at] rest-args]
+        (when (or (nil? parcel) (nil? gate) (not= "--evidence" ev-flag) (nil? evidence))
+          (usage!))
+        (let [before (read-rows project-root)
+              {:keys [rows discharged?]} (hdl/discharge-debt before {:parcel parcel :gate gate
+                                                                     :evidence evidence
+                                                                     :discharged-at (or discharged-at (today))})]
+          (if discharged?
+            (do (write-rows! project-root rows)
+                (println "discharged" gate "for" parcel))
+            (do
+              (binding [*out* *err*]
+                (println (str "hardening_debt_ledger_update: no matching outstanding row for parcel="
+                              parcel " gate=" gate " - nothing written")))
+              (System/exit 1)))))
 
       (usage!))))
 
