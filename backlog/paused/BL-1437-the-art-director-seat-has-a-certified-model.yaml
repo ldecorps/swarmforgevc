@@ -1,0 +1,148 @@
+id: BL-1437
+title: "The art-director seat has no certified model: the Model Steward's role_matrix has no row for the new role, so the model factory omits the seat from every assignment and pack_staffing_gate_lib.bb refuses its window line (the full-forge pack already launches only under PACK_STAFFING_SKIP_GATE=1); a model is certified for the seat through the steward's own contract - a recorded scorecard from a real look-and-feel review, evaluate and certify, the seed row and the report artifact - so the factory assigns it and the gate admits it"
+milestone: M8
+type: feature
+status: todo
+epic: art-direction
+priority: 12
+direction: swarm-reported
+depends_on: [BL-1418]
+mutation_cost: medium
+slice_size_envelope: medium
+required_stages: [coder, cleaner, architect, hardender, documenter, qa]
+
+acceptance: specs/features/BL-1437-the-art-director-seat-has-a-certified-model.feature
+
+human_approval: pending
+approval_context: >
+  A new feature file is authored here, so it needs a tap. No choice is
+  posed and there are no ruling_options. Found by the architect reviewing
+  BL-1418: the seat exists everywhere except the steward's role matrix,
+  and a matrix row is a certification nobody may fabricate. The pack
+  already launches under the operator escape hatch because of the
+  specifier seat's uncertified claude-fable-5-1 (a separate, older gap the
+  pack's own comments record), so this adds a second refusal reason to a
+  gate already bypassed, not a new outage. Note the evidence requirement:
+  the scorecard must come from a real Art Director review - BL-1419's
+  briefing email is the natural first sample - and the coder wears the
+  steward hat to record it through the CLI; if you would rather the
+  reviewer seat were exempt from certification, say so and this becomes a
+  gate-policy ticket instead.
+
+invariants:
+  - "A role_matrix row is a certification: it names a model whose registry status is certified and an evidence pointer that resolves to a committed scorecard artifact from a real review; no row is written by hand, only through the steward CLI (evaluate, certify), and every certification has a report artifact."
+  - "The factory and the gate keep one notion of eligibility: this parcel adds a row and its evidence; it does not narrow ranked-on-role-matrix?, eligible, or the staffing gate's checks, and the specifier seat's separate gap is untouched."
+  - "The steward's contract is unchanged: the coder runs the steward CLI as a discrete steward task assigned by the coordinator (model-steward.prompt), and the steward never assigns a model to a role - the factory does, from the row."
+
+required_wiring:
+  - 'swarmforge/model-steward/seed/models.seed.json::"art-director"::the role_matrix row is the deliverable, read by model_factory_lib assign-swarm and pack_staffing_gate_lib ranked-on-role-matrix?, both pre-existing consumers; absent today (grep returns 0)'
+  - 'specs/pipeline/steps/bl1437ArtDirectorSeatIsCertifiedSteps.js::registerSteps::the handler file exists so discovery registers every scenario (BL-1371)'
+
+description: |
+  ## What is wrong
+
+  Architect note 2026-09-05T20:38Z on its BL-1418 pass: qa_e2e step 5
+  ("assign --mode quality lists art-director") cannot pass at any commit
+  of that parcel. `model_factory_lib.bb assign-swarm` resolves each role
+  in `swarm-roles` through the Model Steward registry, seeded from
+  `swarmforge/model-steward/seed/models.seed.json`; its `role_matrix` has
+  seven keys (architect, coder, cleaner, QA, hardender, documenter,
+  specifier), each a ranked list of `{provider, model, score, evidence}`
+  where evidence is a pointer such as `recruiter-scorecard:seed-architect-01`.
+  A role with no row has no eligible candidate and is absent from the
+  answer. The coder extended `swarm-roles` (BL-1418's scope) and refused
+  to add a row, correctly: a row is certified evidence, not configuration.
+
+  `pack_staffing_gate_lib.bb` refuses to launch a seat whose provider and
+  model are not ranked on that role's matrix (`not-on-role-matrix`), so
+  the `window art-director claude art-director --model claude-sonnet-5`
+  line BL-1418 adds is refused as well. The full-forge pack already
+  launches only with `PACK_STAFFING_SKIP_GATE=1` because the specifier
+  seat runs `claude-fable-5-1`, unregistered in the gate's agent-model
+  table and uncertified (full-forge.conf lines 245-259, human 2026-09-04).
+  So the operational state does not change with BL-1418; the gate simply
+  has one more true reason to refuse until this lands.
+
+  The repository holds no scorecard artifacts at all: `swarmforge/model-steward/`
+  has `schema/` and `seed/` only, and the seed's evidence pointers name
+  scorecards that live nowhere in the tree.
+
+  ## What changes
+
+  - A recorded scorecard for the art-director role: the Art Director's
+    first real review (BL-1419, the briefing email) run on the candidate
+    model the pack names, claude-sonnet-5, scored against the role's own
+    duty (look and feel on a real surface) and committed as an artifact
+    under `swarmforge/model-steward/` in the shape the registry schema
+    expects, with its id as the evidence pointer.
+  - The steward CLI run as a steward task: `model_steward_cli.bb evaluate
+    anthropic/claude-sonnet-5 --role art-director --scorecard <path>` then
+    `certify anthropic/claude-sonnet-5` if not already certified, producing
+    the certification report artifact; the `role_matrix` gains an
+    `art-director` row from that run, and the seed file is updated from
+    the resulting registry, never hand-edited (invariant 1).
+  - `assign --mode quality` and `--mode cheap` then name art-director; the
+    staffing gate's decision for the art-director line is no longer refuse.
+  - The documenter records the seat's certification in the compat docs the
+    steward projects (`compat-docs`) and the how-to for launching the pack.
+
+  ## How (direction, not mandate)
+
+  - Read `model-steward.prompt` first: the coder wears the steward hat for
+    a discrete task the coordinator assigns; the steward records what a
+    review hands it and never assigns. If the CLI's `evaluate` needs a
+    scorecard shape the schema does not yet describe for a reviewer role,
+    extend the schema minimally and say so in the evidence.
+  - Fixture for scenarios 02 and 03: `MODEL_FACTORY_STATE_DIR` and the
+    steward's state-dir override pointed at a temporary directory seeded
+    from the parcel's seed file (the CLIs already honour both); the
+    staffing gate scenario evaluates the real pack line against that
+    registry. Never the live `.swarmforge/model-steward/` state.
+  - If a real BL-1419 review is not available when this activates, a
+    review of any committed human-facing artifact on its real surface by
+    the seat's model is the sample; the scorecard says which.
+
+  ## Out of scope
+
+  - The specifier seat's claude-fable-5-1 gap (the gate's agent-model
+    table and its own certification): a separate ticket if the human wants
+    the escape hatch retired.
+  - Any change to what the steward certifies for the other seven roles.
+
+qa_e2e_procedure: |
+  1. The BL-1437 feature passes (four scenarios, five runs); BL-1418's
+     feature still passes.
+  2. `bb swarmforge/scripts/model_steward_cli.bb role-matrix art-director`
+     lists the certified model with its evidence pointer; `show
+     anthropic/claude-sonnet-5` reports status certified.
+  3. `bb swarmforge/scripts/model_factory_cli.bb assign --mode quality`
+     names art-director (BL-1418's original step 5, satisfiable now).
+  4. Launching the full-forge pack with the escape hatch unset refuses ONLY
+     for the specifier seat's separate gap, naming that seat, not
+     art-director.
+  5. The scorecard and certification report artifacts are committed and
+     the seed row's evidence pointer resolves to them.
+
+notes: |
+  Minted 2026-09-05 by the specifier on the architect's priority-00 note
+  "BL-1418 qa_e2e step5 dead: no seed entry, art-director absent."
+  BL-1418's step 5 was amended the same commit to the honest check and
+  points here. The coder's and cleaner's evidence on BL-1418 both found
+  the gap and filed it as out of scope without a note; the architect
+  forwarded it. depends_on names BL-1418 (active) on purpose: the seat
+  must exist before it is certified, and the promotion gate orders them.
+
+  INVEST at mint: Independent (BL-1418 lands first by the gate),
+  Negotiable (scorecard sample and schema extension are direction),
+  Valuable (one outcome: the seat is assignable and admitted on its
+  merits), Estimable (one review sample, two CLI runs, one seed update,
+  one handler; medium because the evidence is real work), Small (four
+  scenarios, five runs, three invariants at the cap), Testable (fixture
+  state directories; the real pack line).
+
+source: |
+  Architect note 2026-09-05T20:38:09Z and
+  `.worktrees/architect/backlog/evidence/BL-1418-architect-pass-20260905.md`;
+  `model_factory_lib.bb` assign-role/assign-swarm; `models.seed.json`
+  role_matrix keys; `pack_staffing_gate_lib.bb` not-on-role-matrix;
+  `full-forge.conf` 245-262; `model-steward.prompt` Owns/Does Not Own.

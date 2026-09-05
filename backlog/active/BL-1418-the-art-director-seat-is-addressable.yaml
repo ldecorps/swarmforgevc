@@ -114,8 +114,13 @@ qa_e2e_procedure: |
   4. `.swarmforge/operator/role-topic-map.json` gains an `art-director`
      entry after `ensureRoleTopics`; the topic's icon differs from the
      other eight.
-  5. `bb swarmforge/scripts/model_factory_cli.bb assign --mode quality`
-     lists art-director.
+  5. AMENDED 2026-09-05: `bb swarmforge/scripts/model_factory_cli.bb assign
+     --mode quality` runs without error and OMITS art-director - the
+     factory's honest answer for a role with no certified candidate, absent
+     rather than erroring - and `bb swarmforge/scripts/model_steward_cli.bb
+     role-matrix art-director --include-uncertified` lists nothing.
+     Listing the seat needs a certified model on its role matrix, which is
+     the Model Steward's contract and BL-1437, never this parcel's to add.
 
 notes: |
   Minted 2026-09-05 by the specifier on the human's in-session directive
@@ -151,6 +156,21 @@ notes: |
   documenter duty; Article 1.10 stands as written. The description's pack
   window line is already the standing-pane line, so nothing else in the
   ticket changes; scenarios unchanged (invariant 2).
+
+  AMENDED 2026-09-05 (specifier; architect's out-of-parcel finding, parcel
+  past the architect): qa_e2e step 5 asked the model factory to list
+  art-director, but assign-swarm resolves each role through the Model
+  Steward's role_matrix (models.seed.json), which has no row for the new
+  seat; a role with no eligible candidate is simply absent from the
+  result. The coder extended swarm-roles (in scope) and correctly refused
+  to fabricate a certification row. Step 5 now checks the honest state;
+  BL-1437 certifies a model for the seat through the steward's own
+  contract. Consequence for launch: pack_staffing_gate_lib.bb refuses a
+  seat whose model is not on its role matrix, so the art-director window
+  line adds a second refusal reason to a pack that already launches under
+  PACK_STAFFING_SKIP_GATE=1 for the specifier seat's uncertified
+  claude-fable-5-1 (full-forge.conf lines 245-259); nothing changes
+  operationally until BL-1437 lands. Scenarios and invariants unchanged.
 
 source: |
   Human, in-session 2026-09-05: "introduce new role: Art Director. whose job
