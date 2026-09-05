@@ -33,6 +33,12 @@ const {
 // case). Contrast `activePoolFreshnessAudit.test.js`, where this same fix
 // would be wrong: it spawns the compiled, mutatable CLI itself as a
 // subprocess.
+// BL-1038-EXEMPT: the live read is the assertion. This test's whole reason
+// to exist (BL-757) is running the docs-orphan checker against the REAL
+// docs/ tree rather than a fixture - a synthetic tree would let a genuinely
+// orphaned doc page pass unnoticed, which is the single thing this file
+// exists to catch. Its non-vacuity case builds its own fixture tree
+// instead, so the live read here is never load-bearing for that proof.
 const REPO_ROOT = execFileSync('git', ['-C', __dirname, 'rev-parse', '--show-toplevel'], { encoding: 'utf8' }).trim();
 const REAL_TREE_TEST = path.join(__dirname, 'docsStructureRealTree.test.js');
 
