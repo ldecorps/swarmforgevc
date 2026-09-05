@@ -101,6 +101,7 @@ gh25_role_ask_escalation_test_runner.bb	standing
 gherkin_lint_gate_lib_test_runner.bb	standing		
 handoff_lib_test_runner.bb	standing		
 handoff_wake_session_test_runner.bb	standing		
+handoffd_supervisor_startup_grace_test_runner.bb	standing		
 hardening_debt_ledger_lib_test_runner.bb	standing		
 harness_env_scrub_lib_test_runner.bb	standing		
 harness_env_scrub_test_runner.bb	standing		
@@ -303,6 +304,7 @@ test_handoffd_master_checkout_drift_wiring.sh	standing
 test_handoffd_master_main_reconcile_wiring.sh	standing		
 test_handoffd_notify_verified.sh	standing		
 test_handoffd_one_shot_flags_parse.sh	standing		
+test_handoffd_outbox_vanished_parcel_wiring.sh	standing		
 test_handoffd_pause_auto_resume_wiring.sh	standing		
 test_handoffd_pause_suppresses_outbound_wakes.sh	standing		
 test_handoffd_per_recipient_delivery.sh	standing		
