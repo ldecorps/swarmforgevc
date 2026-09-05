@@ -1,3 +1,8 @@
+# mutation-stamp: sha256=44ccc3d9dbef9b4261537b7c774d43413688ce051e50551ce67ad0ebdc4efeec
+# acceptance-mutation-manifest-begin
+# {"version":1,"tested_at":"2026-09-05T16:48:45.084461740Z","feature_name":"BL-1263 three assertions are retired to the behaviour that shipped, and none is weakened on the way","feature_path":"/home/carillon/swarmforgevc/.worktrees/hardender/specs/features/BL-1263-stale-assertions-are-retired-to-the-behaviour-that-shipped.feature","background_hash":"218ab32ae58e0c98e0e7e25a21b08ccf90869ecd5505f1fe2eb5e94a51bbc345","implementation_hash":"unknown","scenarios":[{"index":0,"name":"the assertion pins the value that ships now, not the one it replaced","scenario_hash":"37b3c58fe0a94c2c9b83b234367a0475e56ef12944520b54a685b0f56906e151","mutation_count":6,"result":{"Total":6,"Killed":6,"Survived":0,"Errors":0},"tested_at":"2026-09-05T16:48:45.084461740Z"}]}
+# acceptance-mutation-manifest-end
+
 Feature: BL-1263 three assertions are retired to the behaviour that shipped, and none is weakened on the way
 
   Three production behaviours changed deliberately and are still correct: a

@@ -31,6 +31,16 @@ const SITES = {
   },
 };
 
+// Pins the Outline's own <shipped behaviour> prose per site (KNOWN_VALUES),
+// so a mutated cell is rejected here instead of flowing unread into the
+// shape-based `site.shippedExpectation` lookup below (engineering.prompt's
+// Scenario Outline rule; BL-908's KNOWN_VALUES pattern).
+const KNOWN_SHIPPED_BEHAVIOUR = {
+  'an unqualified model id': 'the id qualified by its backend',
+  'a poll body without the multi-answer key': 'a poll body carrying the multi-answer key',
+  'an ambulance engaged from paused': 'an ambulance engaged only from active',
+};
+
 function extractTestBody(text, testName) {
   const marker = `test('${testName}'`;
   const start = text.indexOf(marker);
@@ -61,6 +71,7 @@ function registerSteps(registry) {
     const site = SITES[retiredExpectation];
     assert.ok(site, `unknown <retired expectation>: ${retiredExpectation}`);
     ctx.bl1263.site = site;
+    ctx.bl1263.retiredExpectationKey = retiredExpectation;
     const fullText = fs.readFileSync(path.join(EXTENSION_DIR, site.file), 'utf8');
     ctx.bl1263.text = extractTestBody(fullText, site.testName);
   });
@@ -75,6 +86,11 @@ function registerSteps(registry) {
   });
 
   scoped(/^it expects (.+)$/, (ctx, shippedBehaviour) => {
+    assert.equal(
+      shippedBehaviour,
+      KNOWN_SHIPPED_BEHAVIOUR[ctx.bl1263.retiredExpectationKey],
+      `unknown <shipped behaviour> "${shippedBehaviour}" for retired expectation "${ctx.bl1263.retiredExpectationKey}"`
+    );
     assert.ok(
       ctx.bl1263.text.includes(ctx.bl1263.site.shippedExpectation),
       `expected ${ctx.bl1263.site.file} to assert the shipped behaviour (${ctx.bl1263.site.shippedExpectation}) for "${shippedBehaviour}"`
