@@ -24,3 +24,11 @@ human can Amend if the lost ask went further.
 Never paired to the ask slot by the runtime (the ask-escalation transport
 is BL-1352's fault); slot released with `role_ask.bb --resolve` citing
 this file.
+
+**Follow-up 2026-09-05T05:11Z (coordinator note 20260905T051100Z_004273):**
+the human's own words are on record after all, in
+`backlog/evidence/coordinator-note-2026-09-05-spec-tree-filter-request.md`
+(8c34efaae5): "tip to only show entries for which the tree contain that text
+(classic filter found in every IDE tree structure menu)." / "august 30." The
+human corrected the ask date to 2026-08-30. BL-1412 amended the same pass to
+carry them verbatim and to widen matching to milestone/epic labels.
