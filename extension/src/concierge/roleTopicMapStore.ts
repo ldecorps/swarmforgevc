@@ -16,7 +16,10 @@ import { PIPELINE_CHAIN } from '../swarm/rolePack';
 // not a stage a parcel is handed to) but still gets its own steering topic
 // per the ticket's "all 8 roles" - appended rather than duplicating the
 // 7-role list a second time.
-export const ALL_SWARM_ROLES: readonly string[] = [...PIPELINE_CHAIN, 'coordinator'];
+// BL-1418: the Art Director is likewise outside the forward chain (Article
+// 1.10, PIPELINE.md) but still gets its own standing topic (human ruling:
+// standing pane).
+export const ALL_SWARM_ROLES: readonly string[] = [...PIPELINE_CHAIN, 'coordinator', 'art-director'];
 
 export function roleTopicMapPath(targetPath: string): string {
   return path.join(targetPath, '.swarmforge', 'operator', 'role-topic-map.json');
