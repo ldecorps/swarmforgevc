@@ -81,9 +81,10 @@ function registerSteps(registry) {
   });
 
   scoped(/^the swarm is hibernated with a drained backlog$/, (ctx) => {
-    const s = state(ctx);
-    s.hibernated = true;
-    s.backlogDrained = true;
+    // The state where the probe is load-bearing: with the backlog drained,
+    // fresh coordinator mail is the ONLY thing separating a relaunch from
+    // staying down (BL-310).
+    state(ctx).hibernated = true;
   });
 
   scoped(/^the operator runtime evaluates its tick sweep$/, (ctx) => {
