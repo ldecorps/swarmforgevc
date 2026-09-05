@@ -18,6 +18,16 @@ function mkTmp() {
   return mkTmpDir('sfvc-emit-throttle-standing-red-');
 }
 
+function readLastChangeLogEntry(root) {
+  const lines = fs
+    .readFileSync(throttleChangeLogPath(root), 'utf8')
+    .trim()
+    .split('\n')
+    .filter(Boolean)
+    .map((l) => JSON.parse(l));
+  return lines[lines.length - 1];
+}
+
 function writeRegisterFixture(root, opts) {
   writeStandingRedRegisterFixture(root, { ...opts, filePrefix: 'bl1429-fixture' });
 }
@@ -102,13 +112,7 @@ test('BL-1429: recovery withdraws the recommendation and logs the clearing, nami
   const rec = emitThrottleRecommendation(root);
 
   assert.equal(rec.recommendedCap, null, 'expected the recommendation to be withdrawn');
-  const lines = fs
-    .readFileSync(throttleChangeLogPath(root), 'utf8')
-    .trim()
-    .split('\n')
-    .filter(Boolean)
-    .map((l) => JSON.parse(l));
-  const last = lines[lines.length - 1];
+  const last = readLastChangeLogEntry(root);
   assert.equal(last.from, 1);
   assert.equal(last.to, null);
   assert.match(last.reason, /red count/, `expected the clearing reason to name the red count, got: ${last.reason}`);
@@ -148,13 +152,7 @@ test('BL-1429 bounce: a clearing names the diagnosis that was actually binding, 
   const tick2 = emitThrottleRecommendation(root);
   assert.equal(tick2.recommendedCap, null, 'expected the recommendation to be fully withdrawn');
 
-  const lines = fs
-    .readFileSync(throttleChangeLogPath(root), 'utf8')
-    .trim()
-    .split('\n')
-    .filter(Boolean)
-    .map((l) => JSON.parse(l));
-  const last = lines[lines.length - 1];
+  const last = readLastChangeLogEntry(root);
   assert.equal(last.from, 0);
   assert.equal(last.to, null);
   assert.match(
