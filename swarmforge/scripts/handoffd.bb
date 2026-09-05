@@ -1250,29 +1250,43 @@
   "BL-536: force-relaunch a role's persisted launch script with provider-
    compat env args after an auth-class failure was observed in its pane.
    Mirrors do-respawn!'s busy precheck exactly — never types/respawns into a
-   pane showing Claude Code's busy footer."
+   pane showing Claude Code's busy footer.
+
+   BL-1416: returns whether it actually performed the respawn (true) or
+   skipped it (false) — this is a SECOND, independent live check against a
+   fresh capture, so it can still decline even when the tick's own pane
+   snapshot looked idle (a race between that snapshot and this call). The
+   caller commits the episode's incremented attempt count only when this
+   returns true (resolve-committed-state) — a skipped attempt is not an
+   attempt."
   [role-info socket]
   (let [session (:session role-info)
         role (:role role-info)
         pane (try (capture-pane-text socket session) (catch Exception _ ""))]
     (if (chase-sweep-lib/actively-processing? pane)
-      (log! "auth-respawn-skip-busy" role)
+      (do (log! "auth-respawn-skip-busy" role) false)
       (let [launch-script (fs/path state-dir "launch" (str role ".sh"))
             env-args (provider-respawn-env-lib/provider-respawn-env-args state-dir role)]
         (log! "auth-respawn" role (str launch-script))
         (apply tmux! (concat ["-S" socket "respawn-pane" "-k"]
                              env-args
-                             ["-t" session (shell-quote-lib/launch-command launch-script)]))))))
+                             ["-t" session (shell-quote-lib/launch-command launch-script)]))
+        true))))
 
 (defn send-auth-persist-alert!
   "BL-536: reuses the same operator alert channel the endless-loop breaker
    uses (Telegram OPERATOR topic + email) — but never halts the swarm or
-   kills sessions; this is a notify-only alert."
-  [role max-attempts]
+   kills sessions; this is a notify-only alert.
+
+   BL-1416: reason (the log line and the email body) now names the matched
+   pane line and the number of PERFORMED respawns (matched-line/performed-
+   count), not merely the configured cap, so a reader can tell a genuine
+   credential failure from text that merely mentions one."
+  [role max-attempts matched-line performed-count]
   (let [reply-outbox (fs/path state-dir "operator" "telegram-reply-outbox.jsonl")
         subject (provider-auth-observe-lib/format-email-subject role)
         tg-text (provider-auth-observe-lib/format-telegram-alert role max-attempts)
-        reason (provider-auth-observe-lib/format-alert-reason role max-attempts)]
+        reason (provider-auth-observe-lib/format-alert-reason role matched-line performed-count)]
     (log! "auth-persist-alert" role reason)
     (try
       (fs/create-dirs (fs/parent reply-outbox))
@@ -1291,18 +1305,31 @@
       (catch Exception e (log! "auth-persist-email-error" (.getMessage e))))))
 
 (defn observe-pane-auth!
-  "Feed one pane snapshot into provider-auth-observe-lib; act on the result."
+  "Feed one pane snapshot into provider-auth-observe-lib; act on the result.
+
+   BL-1416: the busy predicate (the same one do-respawn!/do-auth-respawn!
+   already consult) gates classification itself — a pane the runtime
+   reports busy is never classified auth-dead, whatever its scrollback
+   contains. The committed state only ever reflects a PERFORMED respawn
+   (resolve-committed-state): a :respawn action that do-auth-respawn! then
+   declines (its own later, independent busy check) leaves the episode
+   exactly where it was, not incremented."
   [role-info socket pane]
   (let [role (:role role-info)
         prev (get @auth-observe-states role)
         max-attempts (auth-respawn-max-attempts)
+        busy-signal (if (chase-sweep-lib/actively-processing? pane) :healthy :observe)
         decision (provider-auth-observe-lib/decide-auth-observation
-                  prev pane {:max-attempts max-attempts})]
-    (swap! auth-observe-states assoc role (:state decision))
-    (case (:action decision)
-      :respawn (do-auth-respawn! role-info socket)
-      :alert (send-auth-persist-alert! role max-attempts)
-      :none nil)))
+                  prev pane {:max-attempts max-attempts
+                             :busy? (= :healthy busy-signal)})
+        performed? (when (= :respawn (:action decision)) (do-auth-respawn! role-info socket))]
+    (swap! auth-observe-states assoc role
+           (provider-auth-observe-lib/resolve-committed-state prev decision performed?))
+    (when (= :alert (:action decision))
+      (send-auth-persist-alert!
+       role max-attempts
+       (provider-auth-observe-lib/matched-auth-line pane)
+       (get-in decision [:state :attempts])))))
 
 (defn- provider-outage-observe-min-interval-ms []
   (provider-outage-evidence-lib/parse-observe-min-interval-ms
