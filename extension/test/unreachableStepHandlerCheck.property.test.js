@@ -62,6 +62,7 @@ function mkGateDeps(unreachableOutcome) {
         shellTestsScanned: 0,
         entryPointsNamed: 0,
       }),
+      checkOrphanedAuthoredDocs: () => ({ checked: true, docsTouched: false }),
       checkUnreachableStepHandlers: () => unreachableOutcome,
       checkMultiBranchParserCoverage: () => ({ checked: true, parsersScanned: 0 }),
       checkPerHatRolePromptEvidence: () => ({ checked: true, verdictsScanned: 0 }),
