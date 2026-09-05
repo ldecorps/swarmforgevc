@@ -39,6 +39,34 @@
          "<p>One</p><p>Two</p>"
          (markdown-to-html-lib/render-markdown-to-html "One\n\n\nTwo"))
 
+;; BL-1419: replaces the old per-line contract this exact input used to pin
+;; (BL-393's "every non-blank line becomes its own <p>" rendered
+;; "One\nTwo" as two separate paragraphs) - consecutive non-blank lines with
+;; NO blank line between them are now one block, joined with a single space.
+(assert= "BL-1419: consecutive wrapped lines with no blank line between them join into ONE paragraph"
+         "<p>One Two</p>"
+         (markdown-to-html-lib/render-markdown-to-html "One\nTwo"))
+
+(assert= "BL-1419: a bold span that wraps across two lines closes as one <strong>, not two broken paragraphs"
+         "<p><strong>bold start bold end</strong> rest.</p>"
+         (markdown-to-html-lib/render-markdown-to-html "**bold start\nbold end** rest."))
+
+(assert= "BL-1419: a backtick span renders as <code>"
+         "<p>run <code>bb foo.bb</code> now</p>"
+         (markdown-to-html-lib/render-markdown-to-html "run `bb foo.bb` now"))
+
+(assert= "BL-1419: a \"- \" list with wrapped continuation lines renders as one <ul> of <li>, continuations joined in"
+         "<ul><li>first item continues here</li><li>second item</li></ul>"
+         (markdown-to-html-lib/render-markdown-to-html "- first item\n  continues here\n- second item"))
+
+(assert= "BL-1419: consecutive \"> \" lines render as ONE <blockquote>, joined with single spaces"
+         "<blockquote>line one line two line three</blockquote>"
+         (markdown-to-html-lib/render-markdown-to-html "> line one\n> line two\n> line three"))
+
+(assert= "BL-1419: a list ends and a following paragraph starts cleanly, with no blank line required"
+         "<ul><li>only item</li></ul><p>Following paragraph.</p>"
+         (markdown-to-html-lib/render-markdown-to-html "- only item\nFollowing paragraph."))
+
 (assert= "render-markdown-to-html: nil input renders to an empty string, never a crash"
          ""
          (markdown-to-html-lib/render-markdown-to-html nil))
