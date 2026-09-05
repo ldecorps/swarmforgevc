@@ -1,5 +1,35 @@
 # SwarmForge VS Code Extension — Specification
 
+**Last Updated:** September 5, 2026 (BL-1403: `check_merge_deletion.sh`
+(BL-1242/BL-1341) closed two gaps that combined into one recurring,
+unexemptable block on every worktree's merge-up after every backlog-root
+drain. (1) A moved path — a root drain's `git mv backlog/INTAKE-x.md
+backlog/archive/INTAKE-x.md` plus an appended footer — was reported as a
+deletion because `collect_deletions` diffed with `--no-renames`; it now
+runs `git diff --name-status -M` and skips any `R*` status, since content
+surviving at a new path is not a deletion. (2) `attribution_for_path`
+(renamed from the former `ticket_id_for_path`/`introducing_commit_for_path`
+pair, now resolving both together so the reported commit always matches
+the side the id came from) fell back from `HEAD` to `MERGE_HEAD` only when
+HEAD's introducing commit had no subject at all — but a raw intake's own
+introducing commit has a normal subject that, by design, names no ticket
+yet, so the id came back empty and the exemption could never match
+anything: every refusal printed `(unattributed)` even though the commit
+that later archived the same path (a root-drain "Mint BL-nnnn: ... archive
+its intake") named the right ticket on the other side of the merge. The
+only workaround before this fix was cherry-picking the archiving commit
+before merging — rediscovered by hand by the coder (BL-1311, 2026-09-02)
+and the documenter (BL-1402, 2026-09-04). `attribution_for_path` now falls
+back to `MERGE_HEAD` whenever HEAD's subject yields no ticket id, not only
+when empty. Acceptance:
+`specs/features/BL-1403-the-merge-deletion-guard-never-reports-a-move-and-never-refuses-unexemptably.feature`,
+plus a property runner
+(`swarmforge/scripts/test/bl1403_merge_deletion_guard_property_runner.bb`).
+How-to: extended `docs/how-to/BL-1242-merge-deletion-guard.md` in place
+(existing owning page) with the moves/attribution fix, linked from
+`docs/index.md` (updated in place). No diagram edit: no diagram depicts
+this guard's internals. No new extension command or setting.)
+Prior entry —
 **Last Updated:** September 5, 2026 (BL-1384: the qwen-local seat's own
 Telegram topic (BL-1235) was unreachable in production, because the
 bridge process only polls Telegram directly in a fixture — in production
