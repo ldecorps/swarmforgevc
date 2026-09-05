@@ -12,24 +12,32 @@
   reason: "host busy, cooldown gate skip-busy/skip-cooldown"
   load: "14.29/17.21/16.99"
   detected_at: 2026-08-19
+  attempted_at: 2026-09-06
+  attempted_blocker: "mutation_cooldown_gate.bb: skip-cooldown, telegram-front-desk-bot.ts and telegramFrontDeskBotCore.ts at file_age_days 0.12 of 3 (touched by BL-1425, 2cd4072055, hours before this attempt); run belongs to BL-1441"
 - parcel: BL-955
   gate: mutation
   file_set: extension/src/onboarding/negotiationTelegramRelay.ts,extension/src/onboarding/negotiationTelegramRouting.ts,extension/src/tools/telegramFrontDeskBotCore.ts
   reason: "host busy, load 35/36/29 on 4 cores"
   load: "35.11/35.79/28.92"
   detected_at: 2026-08-19
+  attempted_at: 2026-09-06
+  attempted_blocker: "mutation_cooldown_gate.bb: skip-cooldown, telegramFrontDeskBotCore.ts (shared with BL-620's set) at file_age_days 0.12 of 3 (BL-1425, 2cd4072055); run belongs to BL-1441"
 - parcel: BL-954-a-bounce-verifies-its-own-revert
   gate: mutation
   file_set: extension/src/metrics/bounceRevertGitAdapter.ts,extension/src/quality/bounceRevertVerdict.ts,extension/src/tools/record-bounce.ts
   reason: "host load 9.98/20.10/27.01, well over 2x-cores threshold"
   load: "20.10"
   detected_at: 2026-08-19
+  attempted_at: 2026-09-06
+  attempted_blocker: "Stryker dry run fails on a pre-existing, unrelated suite-wide red (extension/test/constitutionDocCitations.test.js, BL-1440) before any mutant of this file set is instrumented; run belongs to BL-1441"
 - parcel: BL-956-pipeline-board-caption-and-cap-hotfix
   gate: mutation
   file_set: extension/src/concierge/pipelineBoard.ts
   reason: "cooldown gate DECISION: skip-cooldown (file_age_days 0.47 of 3) and host busy"
   load: "85.56/4-cores"
   detected_at: 2026-08-19
+  attempted_at: 2026-09-06
+  attempted_blocker: "mutation_cooldown_gate.bb: skip-cooldown, pipelineBoard.ts at file_age_days 0.10 of 3 (BL-1425, 2cd4072055); run belongs to BL-1441"
 - parcel: BL-956-pipeline-board-caption-and-cap-hotfix
   gate: gherkin-mutation
   file_set: specs/features/BL-956-pipeline-board-caption-and-cap-hotfix.feature

@@ -16,12 +16,15 @@
 # under vitest.properties.config.mjs; the unit suite run once (16 files / 26
 # tests red per vitest; 7 distinct files). Five allowlist rows were green and
 # are not registered (BL-1428 removes them from the allowlist).
-# Hardening lane (2026-09-05): the five deferred gates in backlog/hardening-debt-ledger.yaml
-# from 2026-08-19, whose parcels are closed. BL-1428 joins a ledger row to a register row
-# on (lane, file); these rows give that debt an open owner. Discharge = BL-1439.
-hardening	extension/src/tools/telegram-front-desk-bot.ts,extension/src/tools/telegramFrontDeskBotCore.ts,extension/src/tools/telegramTopicDecisions.ts	BL-1439	2026-08-19	mutation gate deferred on BL-620 (host busy); owed run is BL-1439
-hardening	extension/src/onboarding/negotiationTelegramRelay.ts,extension/src/onboarding/negotiationTelegramRouting.ts,extension/src/tools/telegramFrontDeskBotCore.ts	BL-1439	2026-08-19	mutation gate deferred on BL-955 (host busy); owed run is BL-1439
-hardening	extension/src/metrics/bounceRevertGitAdapter.ts,extension/src/quality/bounceRevertVerdict.ts,extension/src/tools/record-bounce.ts	BL-1439	2026-08-19	mutation gate deferred on BL-954 (host load); owed run is BL-1439
-hardening	extension/src/concierge/pipelineBoard.ts	BL-1439	2026-08-19	mutation gate deferred on BL-956 (cooldown + host busy); owed run is BL-1439
-hardening	specs/features/BL-956-pipeline-board-caption-and-cap-hotfix.feature	BL-1439	2026-08-19	gherkin-mutation run stalled on BL-956, no verdict recorded; owed run is BL-1439
+# Hardening lane (2026-09-06): the four STILL-outstanding gates in
+# backlog/hardening-debt-ledger.yaml from 2026-08-19 (BL-956's gherkin-
+# mutation discharged 2026-09-05 and its row correctly carries none here -
+# a discharged row has no register row). BL-1428 joins a ledger row to a
+# register row on (lane, file). Owed run = BL-1441 (BL-1439's time-split
+# successor, minted 2026-09-06 once the coder's evidence showed these four
+# blocked by cooldown/BL-1440, not by BL-1439's own work).
+hardening	extension/src/tools/telegram-front-desk-bot.ts,extension/src/tools/telegramFrontDeskBotCore.ts,extension/src/tools/telegramTopicDecisions.ts	BL-1441	2026-08-19	mutation gate deferred on BL-620 (host busy); owed run is BL-1441
+hardening	extension/src/onboarding/negotiationTelegramRelay.ts,extension/src/onboarding/negotiationTelegramRouting.ts,extension/src/tools/telegramFrontDeskBotCore.ts	BL-1441	2026-08-19	mutation gate deferred on BL-955 (host busy); owed run is BL-1441
+hardening	extension/src/metrics/bounceRevertGitAdapter.ts,extension/src/quality/bounceRevertVerdict.ts,extension/src/tools/record-bounce.ts	BL-1441	2026-08-19	mutation gate deferred on BL-954 (host load); owed run is BL-1441
+hardening	extension/src/concierge/pipelineBoard.ts	BL-1441	2026-08-19	mutation gate deferred on BL-956 (cooldown + host busy); owed run is BL-1441
 unit	extension/test/constitutionDocCitations.test.js	BL-1440	2026-08-27	dangling docs/ citations in constitution articles (docs/deprecated/ since 08-27, docs/design/*.md since 09-05); refuses every Stryker dry run; owner BL-1440

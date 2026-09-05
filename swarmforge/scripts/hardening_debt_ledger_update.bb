@@ -9,8 +9,10 @@
 ;; Usage:
 ;;   hardening_debt_ledger_update.bb <project-root> --defer <parcel> <gate> <file-set-csv> <reason> <load> [<detected-at>]
 ;;   hardening_debt_ledger_update.bb <project-root> --discharge <parcel> <gate> --evidence <path> [<discharged-at>]
+;;   hardening_debt_ledger_update.bb <project-root> --attempt <parcel> <gate> <blocker> [<attempted-at>]
 ;;
-;; <detected-at>/<discharged-at> default to today (YYYY-MM-DD) when omitted.
+;; <detected-at>/<discharged-at>/<attempted-at> default to today
+;; (YYYY-MM-DD) when omitted.
 ;;
 ;; BL-1439: --discharge is the ledger's OTHER verb - a run that pays a
 ;; deferred gate its own committed evidence file. It never removes the
@@ -19,6 +21,13 @@
 ;; nothing written) with no --evidence path or no matching outstanding
 ;; row - never a silent no-op, which would leave the debt looking paid
 ;; when it was not recorded at all.
+;;
+;; BL-1439 amendment 2026-09-06: --attempt is the THIRD verb - a run the
+;; host refused (cooldown, load, a suite-wide red blocking the dry run).
+;; It records the blocker on the row but NEVER discharges it (invariant
+;; 3, carried unchanged from the original ticket) - the row stays
+;; outstanding, visibly tried rather than silently skipped. Refuses (exit
+;; 1, nothing written) with no blocker text or no matching row.
 
 (ns hardening-debt-ledger-update
   (:require [babashka.fs :as fs]))
@@ -76,6 +85,22 @@
               (binding [*out* *err*]
                 (println (str "hardening_debt_ledger_update: no matching outstanding row for parcel="
                               parcel " gate=" gate " - nothing written")))
+              (System/exit 1)))))
+
+      "--attempt"
+      (let [[parcel gate blocker attempted-at] rest-args]
+        (when (or (nil? parcel) (nil? gate) (nil? blocker)) (usage!))
+        (let [before (read-rows project-root)
+              {:keys [rows recorded?]} (hdl/record-attempt before {:parcel parcel :gate gate
+                                                                    :blocker blocker
+                                                                    :attempted-at (or attempted-at (today))})]
+          (if recorded?
+            (do (write-rows! project-root rows)
+                (println "recorded attempt for" gate "on" parcel "- still outstanding"))
+            (do
+              (binding [*out* *err*]
+                (println (str "hardening_debt_ledger_update: no matching outstanding row for parcel="
+                              parcel " gate=" gate " (or no blocker given) - nothing written")))
               (System/exit 1)))))
 
       (usage!))))

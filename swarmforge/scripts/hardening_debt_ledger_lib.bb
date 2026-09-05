@@ -42,7 +42,10 @@
    ;; debt - present only once discharged, absent (nil) on every row
    ;; before then, so the generic parse loop already picks these up with
    ;; no other change (unknown fields are ignored, known ones assoc'd).
-   "discharged_at" :discharged-at "discharged_evidence" :discharged-evidence})
+   "discharged_at" :discharged-at "discharged_evidence" :discharged-evidence
+   ;; BL-1439 amendment: an attempted-but-refused run's own record - same
+   ;; absent-until-recorded shape as the discharge fields above.
+   "attempted_at" :attempted-at "attempted_blocker" :attempted-blocker})
 
 ;; BL-942 architect bounce D1: reason/load are free-form prose (the "why" a
 ;; hardening pass deferred), and a naive first-"-scan for the closing quote
@@ -127,13 +130,16 @@
                      :else (assoc current k (parse-scalar raw))))))))))
 
 (defn- render-row [{:keys [parcel gate file-set reason load detected-at
-                           discharged-at discharged-evidence]}]
+                           discharged-at discharged-evidence
+                           attempted-at attempted-blocker]}]
   (str "- parcel: " parcel "\n"
        "  gate: " gate "\n"
        "  file_set: " (str/join "," (normalize-file-set file-set)) "\n"
        "  reason: \"" (escape-quoted reason) "\"\n"
        "  load: \"" (escape-quoted load) "\"\n"
        "  detected_at: " detected-at "\n"
+       (if attempted-at (str "  attempted_at: " attempted-at "\n") "")
+       (if attempted-blocker (str "  attempted_blocker: \"" (escape-quoted attempted-blocker) "\"\n") "")
        (if discharged-at (str "  discharged_at: " discharged-at "\n") "")
        (if discharged-evidence (str "  discharged_evidence: " discharged-evidence "\n") "")))
 
@@ -177,26 +183,52 @@
   (let [target (normalize-file-set file-set)]
     (filterv #(= target (:file-set %)) rows)))
 
-;; ── BL-1439: discharge - a run that pays the debt a defer recorded ────────
-;; The row is never deleted (invariant 1): discharge only ever ADDS
-;; discharged-at/discharged-evidence to the matching row, so the deferral
-;; and its discharge stay readable together in the same row.
+;; ── BL-1439: discharge/attempt - the two ways a row learns a run happened ──
+;; The row is never deleted (invariant 1): both verbs only ever ADD fields
+;; to the matching row, so a deferral and what became of it stay readable
+;; together in the same row. Both key on (parcel, gate) - the real ledger's
+;; own identity today, since no two rows share that pair - via the SAME
+;; find, so a future third verb (or a change to how a row is identified)
+;; is one edit, not two kept in sync by hand.
+
+(defn- find-row-idx [rows parcel gate]
+  (first (keep-indexed (fn [i r] (when (and (= parcel (:parcel r)) (= gate (:gate r))) i)) rows)))
 
 (defn discharge-debt
   "rows, {:parcel :gate :evidence :discharged-at} -> {:rows rows'
-   :discharged? bool}. Matches the row by (parcel, gate) - the real
-   ledger's own identity today, since no two rows share a (parcel, gate)
-   pair; a discharge naming no matching row, or with no evidence path,
-   changes nothing and answers :discharged? false so the caller refuses
-   loudly rather than silently no-op'ing (the ticket's own invariant 1)."
+   :discharged? bool}. A discharge naming no matching row, or with no
+   evidence path, changes nothing and answers :discharged? false so the
+   caller refuses loudly rather than silently no-op'ing (the ticket's own
+   invariant 1)."
   [rows {:keys [parcel gate evidence discharged-at]}]
   (if (str/blank? evidence)
     {:rows rows :discharged? false}
-    (let [idx (first (keep-indexed (fn [i r] (when (and (= parcel (:parcel r)) (= gate (:gate r))) i)) rows))]
+    (let [idx (find-row-idx rows parcel gate)]
       (if (nil? idx)
         {:rows rows :discharged? false}
         {:rows (update rows idx assoc :discharged-at discharged-at :discharged-evidence evidence)
          :discharged? true}))))
+
+;; BL-1439 amendment 2026-09-06: a run the host refused (cooldown, load, a
+;; suite-wide red blocking the dry run) is recorded as an ATTEMPT - never
+;; discharged by assertion (invariant 3, carried from the original ticket).
+;; Distinct from discharge-debt: the row gains :attempted-at/:attempted-
+;; blocker but NEVER :discharged-at, so outstanding-debt (which filters on
+;; :discharged-at alone) still reports it - an attempt is evidence a real
+;; try happened, not proof the debt was paid.
+(defn record-attempt
+  "rows, {:parcel :gate :blocker :attempted-at} -> {:rows rows'
+   :recorded? bool}. Refuses (rows unchanged) with no blocker text or no
+   matching row - an attempt with no stated reason is exactly the silence
+   invariant 3 forbids."
+  [rows {:keys [parcel gate blocker attempted-at]}]
+  (if (str/blank? blocker)
+    {:rows rows :recorded? false}
+    (let [idx (find-row-idx rows parcel gate)]
+      (if (nil? idx)
+        {:rows rows :recorded? false}
+        {:rows (update rows idx assoc :attempted-at attempted-at :attempted-blocker blocker)
+         :recorded? true}))))
 
 (defn outstanding-debt
   "rows -> the machine-readable answer scenario 04 needs: every row's
