@@ -34,34 +34,15 @@
 const assert = require('node:assert/strict');
 const fc = require('fast-check');
 const fs = require('node:fs');
-const path = require('node:path');
 const { landPilotedTicket } = require('../out/tools/pilotAcceptanceGate');
-const { baseAcceptanceGateDeps, BASE_ACCEPTANCE_GATE_DEPS_MEMBERS } = require('./helpers/pilotAcceptanceGateDeps');
-
-const GATE_TS = path.join(__dirname, '..', 'src', 'tools', 'pilotAcceptanceGate.ts');
-const INTERFACE_NAME = 'PilotAcceptanceGateDeps';
-
-function extractInterfaceBody(tsSource, interfaceName) {
-  const start = tsSource.indexOf(`export interface ${interfaceName} {`);
-  if (start === -1) throw new Error(`interface ${interfaceName} not found`);
-  const bodyStart = tsSource.indexOf('{', start) + 1;
-  const bodyEnd = tsSource.indexOf('\n}', bodyStart);
-  if (bodyEnd === -1) throw new Error(`closing brace for interface ${interfaceName} not found`);
-  return tsSource.slice(bodyStart, bodyEnd);
-}
-
-function extractRequiredMembers(interfaceBody) {
-  const required = [];
-  for (const rawLine of interfaceBody.split('\n')) {
-    const line = rawLine.trim();
-    if (line === '' || line.startsWith('//')) continue;
-    const m = line.match(/^([A-Za-z_$][A-Za-z0-9_$]*)(\??):/);
-    if (!m) continue;
-    const [, name, optionalMark] = m;
-    if (optionalMark !== '?') required.push(name);
-  }
-  return required;
-}
+const {
+  baseAcceptanceGateDeps,
+  BASE_ACCEPTANCE_GATE_DEPS_MEMBERS,
+  GATE_TS,
+  INTERFACE_NAME,
+  extractInterfaceBody,
+  extractRequiredMembers,
+} = require('./helpers/pilotAcceptanceGateDeps');
 
 const gateSrc = fs.readFileSync(GATE_TS, 'utf8');
 const REAL_REQUIRED_MEMBERS = extractRequiredMembers(extractInterfaceBody(gateSrc, INTERFACE_NAME));

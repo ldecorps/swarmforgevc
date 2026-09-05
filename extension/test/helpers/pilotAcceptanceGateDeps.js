@@ -1,5 +1,8 @@
 'use strict';
 
+const fs = require('node:fs');
+const path = require('node:path');
+
 // BL-1229: the ONE base object every landPilotedTicket test stub is built
 // from, so the next contract widening costs one clear failure (the
 // completeness test below/alongside this file, over THIS object) rather
@@ -72,8 +75,57 @@ function makeAcceptanceGateDeps(overrides) {
   return { ...baseAcceptanceGateDeps(), ...(overrides || {}) };
 }
 
+// BL-1229: the real PilotAcceptanceGateDeps interface's own source text,
+// and the two pure extractors both the completeness test and the property
+// test need against it - one definition, never copy-pasted between them
+// (the class of drift this whole ticket exists to prevent, applied to its
+// own test-side tooling too).
+const GATE_TS = path.join(__dirname, '..', '..', 'src', 'tools', 'pilotAcceptanceGate.ts');
+const INTERFACE_NAME = 'PilotAcceptanceGateDeps';
+
+// Extracts the interface's own text block: from `export interface <name> {`
+// to the matching closing `}` (the interface body never nests braces of its
+// own beyond inline object/function types, none of which appear here -
+// confirmed by reading the real interface, and by every extractor test
+// using the same one-line-per-member shape it actually has).
+function extractInterfaceBody(tsSource, interfaceName) {
+  const start = tsSource.indexOf(`export interface ${interfaceName} {`);
+  if (start === -1) {
+    throw new Error(`interface ${interfaceName} not found`);
+  }
+  const bodyStart = tsSource.indexOf('{', start) + 1;
+  const bodyEnd = tsSource.indexOf('\n}', bodyStart);
+  if (bodyEnd === -1) {
+    throw new Error(`closing brace for interface ${interfaceName} not found`);
+  }
+  return tsSource.slice(bodyStart, bodyEnd);
+}
+
+// A member line looks like `  name: (...) => Type;` (required) or
+// `  name?: (...) => Type;` (optional). Comment-only and blank lines are
+// skipped; a line's own leading `//` never has a `:` before it that this
+// regex would misparse as a member.
+function extractRequiredMembers(interfaceBody) {
+  const required = [];
+  for (const rawLine of interfaceBody.split('\n')) {
+    const line = rawLine.trim();
+    if (line === '' || line.startsWith('//')) continue;
+    const m = line.match(/^([A-Za-z_$][A-Za-z0-9_$]*)(\??):/);
+    if (!m) continue;
+    const [, name, optionalMark] = m;
+    if (optionalMark !== '?') {
+      required.push(name);
+    }
+  }
+  return required;
+}
+
 module.exports = {
   baseAcceptanceGateDeps,
   makeAcceptanceGateDeps,
   BASE_ACCEPTANCE_GATE_DEPS_MEMBERS,
+  GATE_TS,
+  INTERFACE_NAME,
+  extractInterfaceBody,
+  extractRequiredMembers,
 };
