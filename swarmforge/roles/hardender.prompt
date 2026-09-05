@@ -780,7 +780,10 @@ You are the hardender.
   assertions is missing, so for files touched by the reds the number is a
   FLOOR, not a measurement. Say so when you record the pass. And this is a way
   to keep measuring THROUGH someone else's red — never a reason to leave the
-  red unowned: an unowned standing red is still a defect to surface (BL-816),
+  red unowned: an unowned standing red is still a defect to surface (BL-816,
+  superseded 2026-09-05 by the standing-red rule: a red with no open ticket
+  in `backlog/standing-reds.tsv` is an `unowned-red` note to the specifier
+  the same pass, and QA will not approve over it - Article 4.2),
   and this flag makes it easier to ignore, which is the one thing it must not
   be used for.
   (Incident: BL-1235, 2026-08-30 — ~18 pre-existing unowned reds left

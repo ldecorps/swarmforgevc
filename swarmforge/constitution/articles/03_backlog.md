@@ -16,11 +16,10 @@
    promoted ahead of every non-expedited ticket, regardless of its ticket
    `priority:` value. Within the expedited set, rule 2's priority ordering
    applies unchanged.
-   - **Transition**: the predicate also matches legacy `type: bug` tickets
-     while any still carry that type. `bug` is retired for new tickets —
-     always write `type: defect`. Drop `bug` from the predicate only once no
-     ticket carries it. See **expedite-defects-amendment-2026-07-25.md** §3.1
-     for the legacy-count evidence.
+   - **Transition** (legacy `type: bug`): **expedite-defects-amendment-2026-07-25.md** §3.1.
+   - **A standing red rides this lane** (2026-09-05): a test failing on
+     `main` is `type: defect`, `severity: high` at first sighting; see
+     **standing-red-register-amendment-2026-09-05.md**.
    - **Missing `severity:` fails CLOSED**: a defect with no `severity:` field
      is NOT expedited — absence must never buy priority. The coordinator
      surfaces such tickets for triage rather than guessing a severity.
@@ -48,7 +47,8 @@
 
 ## 3.5 Health-Based Intake Throttling (Circuit Breaker)
 - When swarm health signals spike (QA-bounce rate, BL-098 chase/nudge
-  telemetry, daemon errors, degraded transport BL-121) meaningfully above
+  telemetry, daemon errors, degraded transport BL-121, standing reds:
+  register over 10, oldest over 7 days, or any unowned — BL-1429) above
   trend baseline, the coordinator lowers `active_backlog_max_depth`: drop to
   `1` if **degraded** (signals elevated, pipeline moving), `0` if **severe**
   (stalled/transport down). Restore the prior cap once signals normalize —

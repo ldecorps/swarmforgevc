@@ -1,0 +1,45 @@
+# backlog/standing-reds.tsv - the standing-red register (human directive
+# 2026-09-05: "we should not sweep failing tests under the carpet").
+# One row per test file that fails on main and is tolerated while its fix is
+# in flight. A row MUST name an OPEN ticket (backlog/paused or backlog/active);
+# a row naming a closed or absent ticket is an UNOWNED red, which throttles
+# intake (BL-1429) and blocks QA approval (Article 4.2). A row is removed in
+# the same land that turns the test green. BL-1428 builds the reader and the
+# commit guard; until then this file is read by humans and roles.
+#
+# Columns, tab-separated: lane<TAB>file<TAB>ticket<TAB>first_seen<TAB>note
+#   lane: property | unit | bb | acceptance | shell
+#   file: repo-relative path (extension/test/... for the vitest lanes)
+#   first_seen: YYYY-MM-DD the red was first recorded anywhere
+#
+# Measured 2026-09-05 by the specifier: each property allowlist file run alone
+# under vitest.properties.config.mjs; the unit suite run once (16 files / 26
+# tests red per vitest; 7 distinct files). Five allowlist rows were green and
+# are not registered (BL-1428 removes them from the allowlist).
+property	extension/test/alertTelemetry.property.test.js	BL-1206	2026-08-27	node:test import; fails collection
+property	extension/test/bl1146HostQueueEnqueueNext.property.test.js	BL-1206	2026-08-27	node:test import; fails collection
+property	extension/test/bl1147ProbeLegacyTopicAdoption.property.test.js	BL-1206	2026-08-27	node:test import; fails collection
+property	extension/test/bl1150OutageFailoverCliLoadFileSafe.property.test.js	BL-1206	2026-08-27	node:test import; fails collection
+property	extension/test/bl1200FixtureGitWritesStayInOwnRepo.property.test.js	BL-1206	2026-08-27	node:test import (line 26); added to BL-1206 2026-09-05
+property	extension/test/bl669OutageFailoverSteward.property.test.js	BL-1206	2026-08-27	node:test import; fails collection
+property	extension/test/bl733ProducerCrosscheck.property.test.js	BL-1206	2026-08-27	node:test import; fails collection
+property	extension/test/bl735PilotAcceptanceExecution.property.test.js	BL-1206	2026-08-27	node:test import; fails collection
+property	extension/test/bl782LivenessProbesScopedToRoot.property.test.js	BL-1206	2026-08-27	node:test import; fails collection
+property	extension/test/crossFileDuplicationCheck.property.test.js	BL-1206	2026-08-27	node:test import; fails collection
+property	extension/test/hostActivityFeed.property.test.js	BL-1206	2026-08-27	node:test import; fails collection
+property	extension/test/pilotAcceptanceGate.property.test.js	BL-1206	2026-08-27	node:test import; fails collection
+property	extension/test/pilotScopedCrapEvidence.property.test.js	BL-1206	2026-08-27	node:test import; fails collection
+property	extension/test/resolveMutationConcurrency.property.test.js	BL-1206	2026-08-27	node:test import; fails collection
+property	extension/test/shellEntryPointDriveCheck.property.test.js	BL-1206	2026-08-27	node:test import; fails collection
+property	extension/test/multiBranchParserCoverageCheck.property.test.js	BL-1229	2026-08-27	landPilotedTicket deps contract outgrew its stubs
+property	extension/test/perHatRolePromptEvidenceCheck.property.test.js	BL-1229	2026-08-27	landPilotedTicket deps contract outgrew its stubs
+property	extension/test/unreachableStepHandlerCheck.property.test.js	BL-1221	2026-08-27	landPilotedTicket required deps member unsupplied
+property	extension/test/tempDirTrapGuard.property.test.js	BL-1289	2026-08-30	21 runners create a temp root with no cleanup path
+property	extension/test/bl874PortableTimeInvariants.property.test.js	BL-1430	2026-08-27	one-definition property red; no owner until 2026-09-05
+unit	extension/test/pricingTable.test.js	BL-1212	2026-08-28	PRICING_TABLE missing claude-fable-5-1
+unit	extension/test/shellEntryPointDriveCheck.test.js	BL-1229	2026-08-28	landPilotedTicket deps contract outgrew its stubs
+unit	extension/test/socketFixtureShortRootGuard.test.js	BL-1290	2026-08-30	socket fixture rooted at os.tmpdir() over the path limit
+unit	extension/test/telegramClient.test.js	BL-1263	2026-08-29	asserts behaviour a deliberate source change replaced
+unit	extension/test/telegramCursorOperatorExec.test.js	BL-1263	2026-08-29	ambulance engage/release message shape changed
+unit	extension/test/tempDirTrapGuard.test.js	BL-1289	2026-08-30	21 runners create a temp root with no cleanup path
+unit	extension/test/unreachableStepHandlerCheck.test.js	BL-1221	2026-08-28	landPilotedTicket required deps member unsupplied
