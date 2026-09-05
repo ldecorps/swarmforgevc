@@ -25,6 +25,7 @@ import * as fs from 'fs';
 import * as path from 'path';
 import { readReworkSignal } from '../metrics/reworkObservatoryStore';
 import { diagnoseReworkSignal, classifyThrottleSeverity, recommendedCapForSeverity, ThrottleSeverity } from '../metrics/reworkDiagnosis';
+import { computeStandingRedRecommendation, describeStandingRedSignal, StandingRedRecommendation } from '../metrics/standingRedSignal';
 import { atomicWrite, atomicAppend } from '../util/atomicWrite';
 import { makeArgsGuardedMain, printJsonToStdout, runCliMain } from './swarm-metrics';
 
@@ -54,7 +55,26 @@ export interface ThrottleRecommendation {
   severity: ThrottleSeverity | null;
   reworkRate: number | null;
   baselineRate: number | null;
+  // BL-1429: the standing-red register's own recommendation, folded into
+  // recommendedCap below via the lower of the two (never a raise) - kept
+  // here so the briefing and coordinator can read WHICH signal is active
+  // right now, independent of the change log (which only records
+  // TRANSITIONS, not the standing state).
+  standingRed: StandingRedRecommendation | null;
   updated_at: string;
+}
+
+// Article 3.5's own "never raise" rule, applied across BL-432's rework
+// signal and BL-1429's standing-red signal: null means "no constraint from
+// this signal", so it never wins against a real number from the other one.
+function minRecommendedCap(a: number | null, b: number | null): number | null {
+  if (a === null) {
+    return b;
+  }
+  if (b === null) {
+    return a;
+  }
+  return Math.min(a, b);
 }
 
 // Pure given the signal - the SAME diagnose -> classify -> map pipeline
@@ -65,11 +85,14 @@ export function computeThrottleRecommendation(targetRepoPath: string, nowMs: num
   const signal = readReworkSignal(targetRepoPath);
   const verdict = signal ? diagnoseReworkSignal(signal) : null;
   const severity = classifyThrottleSeverity(verdict);
+  const reworkCap = recommendedCapForSeverity(severity);
+  const standingRed = computeStandingRedRecommendation(targetRepoPath);
   return {
-    recommendedCap: recommendedCapForSeverity(severity),
+    recommendedCap: minRecommendedCap(reworkCap, standingRed?.recommendedCap ?? null),
     severity,
     reworkRate: verdict?.reworkRate ?? null,
     baselineRate: verdict?.baselineRate ?? null,
+    standingRed,
     updated_at: new Date(nowMs).toISOString(),
   };
 }
@@ -90,12 +113,27 @@ export interface ThrottleChangeLogEntry {
   reason: string;
 }
 
-function describeChangeReason(rec: ThrottleRecommendation): string {
-  if (rec.severity === 'severe') {
-    return `severe rework diagnosis (rate ${rec.reworkRate} vs baseline ${rec.baselineRate}) - freezing intake`;
-  }
-  if (rec.severity === 'degraded') {
+// BL-1429: names whichever signal is actually responsible for the CURRENT
+// recommendedCap (the more restrictive of rework/standing-red, ties
+// naming standing-red since both apply at cap 1 either way), or - when
+// recommendedCap just became null - whichever signal was active in the
+// PRIOR recommendation, since that is what just cleared. A clearing with
+// no known prior cause (the pre-BL-1429 shape: rework severity cleared,
+// no standing-red block at all) keeps the original wording unchanged.
+function describeChangeReason(rec: ThrottleRecommendation, prior: ThrottleRecommendation | null): string {
+  if (rec.recommendedCap !== null) {
+    const reworkCap = recommendedCapForSeverity(rec.severity);
+    const standingCap = rec.standingRed?.recommendedCap ?? null;
+    if (standingCap !== null && (reworkCap === null || standingCap <= reworkCap)) {
+      return `standing-red register signal (${describeStandingRedSignal(rec.standingRed!.signal)}) - stabilizing to one`;
+    }
+    if (rec.severity === 'severe') {
+      return `severe rework diagnosis (rate ${rec.reworkRate} vs baseline ${rec.baselineRate}) - freezing intake`;
+    }
     return `degraded rework diagnosis (rate ${rec.reworkRate} vs baseline ${rec.baselineRate}) - stabilizing to one`;
+  }
+  if (prior?.standingRed) {
+    return `${describeStandingRedSignal(prior.standingRed.signal)} cleared - restoring the configured cap`;
   }
   return 'rework diagnosis cleared - restoring the configured cap';
 }
@@ -109,13 +147,14 @@ function describeChangeReason(rec: ThrottleRecommendation): string {
 // nothing on its very first tick either.
 export function emitThrottleRecommendation(targetRepoPath: string, nowMs: number = Date.now()): ThrottleRecommendation {
   const recommendation = computeThrottleRecommendation(targetRepoPath, nowMs);
-  const priorCap = readPriorRecommendation(targetRepoPath)?.recommendedCap ?? null;
+  const prior = readPriorRecommendation(targetRepoPath);
+  const priorCap = prior?.recommendedCap ?? null;
   if (priorCap !== recommendation.recommendedCap) {
     const entry: ThrottleChangeLogEntry = {
       ts: recommendation.updated_at,
       from: priorCap,
       to: recommendation.recommendedCap,
-      reason: describeChangeReason(recommendation),
+      reason: describeChangeReason(recommendation, prior),
     };
     atomicAppend(throttleChangeLogPath(targetRepoPath), JSON.stringify(entry) + '\n');
   }
