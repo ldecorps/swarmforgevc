@@ -53,12 +53,13 @@ function isUnitLaneTestFile(relativePath) {
 }
 
 /**
- * Impure: every unit-lane violation under testDir. There is deliberately no
- * allowlist parameter and no skip path - an allowlist with a "pending fix"
- * rationale is exactly how the property lane's copy of this defect became
- * invisible, and this ticket must not ship that mechanism.
+ * Impure, shared by both lanes below: every violation under testDir among
+ * files isLaneFile accepts. There is deliberately no allowlist parameter
+ * and no skip path - an allowlist with a "pending fix" rationale is
+ * exactly how the property lane's copy of this defect became invisible,
+ * and neither lane may ship that mechanism.
  */
-function findUnitLaneNodeTestImports(testDir) {
+function findNodeTestImportsForLane(testDir, isLaneFile) {
   const violations = [];
   const walk = (dir) => {
     for (const entry of fs.readdirSync(dir, { withFileTypes: true })) {
@@ -67,7 +68,7 @@ function findUnitLaneNodeTestImports(testDir) {
         walk(full);
         continue;
       }
-      if (!isUnitLaneTestFile(path.relative(testDir, full))) {
+      if (!isLaneFile(path.relative(testDir, full))) {
         continue;
       }
       for (const line of findNodeTestImportLines(fs.readFileSync(full, 'utf8'))) {
@@ -77,6 +78,13 @@ function findUnitLaneNodeTestImports(testDir) {
   };
   walk(testDir);
   return violations;
+}
+
+/**
+ * Impure: every unit-lane violation under testDir.
+ */
+function findUnitLaneNodeTestImports(testDir) {
+  return findNodeTestImportsForLane(testDir, (relativePath) => isUnitLaneTestFile(relativePath));
 }
 
 /**
@@ -91,29 +99,10 @@ function isPropertyLaneTestFile(relativePath) {
 }
 
 /**
- * Impure: every property-lane violation under testDir. Same walk shape as
- * findUnitLaneNodeTestImports - the only thing that differs between lanes is
- * which files qualify (isPropertyLaneTestFile vs isUnitLaneTestFile).
+ * Impure: every property-lane violation under testDir.
  */
 function findPropertyLaneNodeTestImports(testDir) {
-  const violations = [];
-  const walk = (dir) => {
-    for (const entry of fs.readdirSync(dir, { withFileTypes: true })) {
-      const full = path.join(dir, entry.name);
-      if (entry.isDirectory()) {
-        walk(full);
-        continue;
-      }
-      if (!isPropertyLaneTestFile(path.relative(testDir, full))) {
-        continue;
-      }
-      for (const line of findNodeTestImportLines(fs.readFileSync(full, 'utf8'))) {
-        violations.push({ file: full, line });
-      }
-    }
-  };
-  walk(testDir);
-  return violations;
+  return findNodeTestImportsForLane(testDir, (relativePath) => isPropertyLaneTestFile(relativePath));
 }
 
 module.exports = {
