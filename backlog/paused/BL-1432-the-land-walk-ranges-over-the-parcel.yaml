@@ -12,14 +12,14 @@ priority: 9
 direction: swarm-reported
 depends_on: [BL-1389, BL-668]
 mutation_cost: medium
-slice_size_envelope: small
+slice_size_envelope: medium
 required_stages: [coder, cleaner, architect, hardender, documenter, qa]
 
 acceptance: specs/features/BL-1432-the-land-walk-ranges-over-the-parcel.feature
 
 human_approval: approved
 human_ruling: |
-  Re-point QA branch to origin/main after each successful land (option 1).
+  Both - re-point after each land and bound the walk
 approval_context: >
   A new feature file is authored here, so it needs a tap, and one choice is
   yours: how the walk is kept to the parcel. QA's branch keeps 1839
@@ -76,11 +76,13 @@ description: |
   entangled sibling will one day be missed. A walk that ranges over the
   parcel alone cannot name a sibling the parcel never carried.
 
-  ## What changes (ruled 2026-09-05: option 1, re-point after each land)
+  ## What changes (ruled 2026-09-05: option 3, both)
 
-  The human's tap recorded option 1 in `human_ruling:`; options 2 and 3
-  are closed. Option 1 below is the build; the option 2 paragraph stays
-  only as the record of what was not chosen.
+  The human first tapped option 1, then reopened the ruling the same
+  hour through the architect (priority-00 note, verbatim: "Human wants
+  BL-1432 ruling reopened: change option 1 to option 3 (both)");
+  `human_ruling:` now records option 3 and BOTH paragraphs below are the
+  build. Scenarios 01-02 are the bounded walk; 03-04 are the re-point.
 
   - Option 1: after `LAND_PUBLISHED`, QA's land procedure re-points the
     branch to origin/main when `git status --porcelain` is empty and the
@@ -93,7 +95,10 @@ description: |
     and every range read (`ancestry-commits`, `path-attributing-commits`,
     `full-delivered-paths`) runs from that base, with the entanglement
     question still asked of every commit in it (invariant 2).
-  - Option 3: both.
+  - Option 3 (ruled): both. The re-point never runs on a worktree with
+    an uncommitted change or a parcel in `in_process`, and logs the skip
+    naming why (invariant 3); the bounded walk holds on a branch that was
+    not re-pointed, so neither half depends on the other.
 
   ## How (direction, not mandate)
 
@@ -110,12 +115,14 @@ description: |
   - Any change to the tip-pure replay itself.
 
 qa_e2e_procedure: |
-  1. The BL-1432 feature passes (two scenarios) under the ruled option; the
-     land-step sibling features still pass.
+  1. The BL-1432 feature passes (four scenarios, five runs); the land-step
+     sibling features and BL-668's still pass.
   2. Live: time `bb swarmforge/scripts/land_step_cli.bb <task> <tip>` on the
      next QA-approved parcel before and after; after, it completes in under
      60 seconds on this host and `git rev-list --count main..swarmforge-QA`
-     is the parcel's own commit count (option 1 or 3) or unchanged (option 2).
+     is the parcel's own commit count after the re-point; with a file
+     deliberately left modified in the QA worktree, the re-point is skipped
+     and the skip is logged naming the change.
 
 notes: |
   Minted 2026-09-05 by the specifier alongside BL-1431 from QA's evidence;
@@ -129,11 +136,17 @@ notes: |
   minted again. Adjudication:
   `backlog/evidence/specifier-qa-landing-difficulty-adjudication-20260905.md`.
 
-  RULED 2026-09-05 (human tap, recorded in human_ruling): option 1 -
-  re-point QA's branch to origin/main after each successful land, on a
-  clean worktree with an empty in_process mailbox, logged (invariant 3).
-  The scenarios were written to hold under every option and are
-  unchanged; the coder builds option 1 only. The ruling is
+  RULED 2026-09-05 (human tap, first recorded in human_ruling): option 1.
+  RE-RULED 2026-09-05T10:01Z: the human reopened the ruling and chose
+  option 3, relayed by the architect's priority-00 note (verbatim: "Human
+  wants BL-1432 ruling reopened: change option 1 to option 3 (both)"); the
+  specifier rewrote human_ruling to the option-3 label on that relay - a
+  recorded human decision, not a self-flip - and the human's own sentence
+  was not captured by the relay. The feature gained scenarios 03-04 (the
+  re-point half; 01-02 already required the bounded walk, since their
+  branch carries history) and the envelope moved to medium: two small
+  mechanisms, neither depending on the other. Approval left as the human
+  set it minutes earlier; they are steering this ticket directly. The ruling is
   posed as ruling_options (BL-1300) so a tap records it; the scenarios
   hold under every option (they assert the range walked, not the
   mechanism).
