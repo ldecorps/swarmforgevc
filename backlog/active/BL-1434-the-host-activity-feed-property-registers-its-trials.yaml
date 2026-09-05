@@ -127,3 +127,5 @@ source: |
   specifier read of the file (no registration, `process.exit(1)` at line
   69), `git log --diff-filter=A` (BL-833, 2026-08-25), and BL-1206's
   required_wiring anchor naming the file as an unrelated-cause survivor.
+
+assigned_to: coder
