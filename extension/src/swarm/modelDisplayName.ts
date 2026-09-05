@@ -8,7 +8,6 @@ export const MODEL_DISPLAY_NAMES: Readonly<Record<string, string>> = {
   'claude-opus-5': 'Opus 5',
   'claude-haiku-4-5-20251001': 'Haiku 4.5',
   'claude-fable-5': 'Fable 5',
-  'claude-fable-5-1': 'Fable 5.1',
   // Cursor seat (cursor-agent --model auto); steward identity cursor/auto.
   auto: 'Cursor Auto',
   'cursor/auto': 'Cursor Auto',
