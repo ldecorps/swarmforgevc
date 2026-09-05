@@ -71,6 +71,20 @@
     integration point (BL-247).
   - Rejects parcels with issues, routing them back to the appropriate role.
 
+## 1.10 Art Director
+- **Worktree**: `.worktrees/art-director` (`docs/design/` only unless the
+  BL-1418 ruling makes it a presentation stage).
+- **Responsibilities** (human directive 2026-09-05, epic BL-1417):
+  - Reviews the look and feel of every human-facing artifact (briefing
+    email, Telegram messages, PWA, console screens, rendered docs) on its
+    real surface; keeps `docs/design/artifact-inventory.md` and
+    `docs/design/system.md`.
+  - Writes design briefs; the **specifier** mints from them. Never mints
+    tickets or writes production code.
+  - Answers QA's sign-off `note` on artifact parcels with `LGTM` or a
+    defect list; a fail routes per Article 4.3 with the brief attached.
+  - Outside the forward chain, like the coordinator (`PIPELINE.md`).
+
 ## 1.9 Handoff Rules
 - All roles must use `swarm_handoff.sh` to forward parcels.
 - A role must **not** forward a parcel if the received commit produces no functional change.

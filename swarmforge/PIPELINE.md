@@ -30,6 +30,7 @@ merge, close tickets, or promote backlog items.
 | **hardender** | `hardender` | batch | **documenter** |
 | **documenter** | `documenter` | task | **QA** |
 | **QA** | `QA` | task | **coordinator** *(approval + merge-up broadcast)*; lands the approved commit on `main` |
+| **art-director** | `art-director` | task | **specifier** *(design briefs)*; answers QA sign-off notes — outside the chain (Article 1.10, BL-1417) |
 
 - The specifier works on **master** but only for spec/prompt files — not
   integration merges; every other role works only in its own
