@@ -519,6 +519,51 @@ ticket; only the hand-built route gained a way to write to the same store
 the ordinary route already used. Acceptance:
 `specs/features/BL-1405-a-hand-built-land-records-its-land-approval.feature`.
 
+## One land plan reads one tip, immune to a moving `origin/main` (BL-1431)
+
+`land-plan` used to resolve `origin-main-sha` itself, then hand off to
+`entangled-siblings`, `own-paths`, and `main-ticket-sources`, each of which
+resolved the SAME ref by name again independently — up to five separate
+reads inside one plan. On a busy repo, `origin/main` moves between those
+reads: on 2026-09-05, QA's `land_step_cli.bb` runs took 3.5-4.5 minutes
+each while `main` landed 14 times in half an hour (mints, approvals, topic
+records — committed by the front desk and the concierge too, not only the
+specifier, so a "pause minting during a land" remedy can't work). When a
+mint landed between `land-plan`'s attribution-map build and `own-paths`'
+own diff, the delivered diff picked up the mint's new path, looked it up
+in an attribution map built on the OLD sha, found nothing, and refused
+with a `could-not-read-attribution` `LAND_ESCALATE` — a refusal that is
+correct for a read that genuinely failed, misapplied to a read that never
+happened at all. This produced two false `LAND_ESCALATE`s on BL-1416 and
+one on BL-1407 in a single morning.
+
+`land_step_cli.bb` now resolves `origin-main-sha` exactly ONCE, at entry
+(after canonicalising the commit), and passes it into `land-plan` as the
+optional `:origin-main` key. `land-plan` threads that exact SHA to every
+reader below it — `entangled-siblings`, `own-paths`, the per-path
+attribution map, `main-ticket-sources`, sibling-landed verdicts — none of
+them re-resolves the ref by name; a caller that omits `:origin-main` (the
+pre-existing direct/test contract) still gets it resolved once, at
+`land-plan`'s own entry, never per read. A fetch that moves `origin/main`
+mid-walk now changes nothing about the verdict: the whole plan is computed
+against the one tip it started with.
+
+**The publish step is unchanged** (invariant 2): `land_main_publish.sh`
+still does a single FF-only push with one rebase rematch onto whatever the
+CURRENT tip is when it publishes, never a second rematch, never
+`--force` — a moved `origin/main` is reconciled there, and only there, not
+inside the plan's own read. **Fail-open posture is unchanged** (invariant
+3): an `origin/main` that can't be resolved at entry is still the caller's
+own warning, never a guessed SHA, and a read that fails mid-walk still
+refuses rather than silently narrowing its own answer (BL-1389's posture,
+unrelaxed). Acceptance:
+`specs/features/BL-1431-one-land-plan-reads-one-tip.feature`.
+
+The walk's own COST — why it takes 3.5-4.5 minutes at all, and the QA
+branch's long history of never-landed merge commits — is the sibling
+question BL-1432 poses to the human; this ticket only makes the walk
+immune to a moving ref, it does not make the walk faster.
+
 ## What this does not change
 
 - BL-1192's send-time gate and its range — unchanged; this ticket only adds
