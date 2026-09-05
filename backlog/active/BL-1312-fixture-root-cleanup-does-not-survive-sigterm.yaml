@@ -213,3 +213,5 @@ approval_context: >
   suite is currently load-bearing for other in-flight work and you would
   rather not perturb a shared fixture helper right now; it does not close the
   defect, and the ticket would need re-scoping to say so.
+
+assigned_to: coder
