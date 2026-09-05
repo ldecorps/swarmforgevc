@@ -84,6 +84,14 @@ declare -A side_of=()
 collect_deletions() {
   local against="$1" side="$2" status path
   [[ -n "$against" ]] || return 0
+  # BL-1403: rename detection ON (git's default similarity threshold) - a
+  # moved path (e.g. a root-drain archiving `git mv backlog/INTAKE-x.md
+  # backlog/archive/INTAKE-x.md` plus an appended footer) reports as
+  # `R<NNN>\t<old>\t<new>`, never a bare `D`, so the `status == "D"` check
+  # below already excludes it - its content survives at the new path, so it
+  # is not a deletion at all. Only a status-only rename (name kept, content
+  # replaced) would EVER fall below the threshold back to D+A, which is
+  # correctly still reported.
   while IFS=$'\t' read -r status path; do
     [[ -n "$status" && -n "$path" ]] || continue
     [[ "$status" == "D" ]] || continue
@@ -95,7 +103,7 @@ collect_deletions() {
     fi
     side_of["$path"]="$side"
     deleted_paths+=("$path")
-  done < <(git diff --name-status "$against" --no-renames)
+  done < <(git diff --name-status -M "$against")
 }
 
 collect_deletions HEAD "this branch"
@@ -125,33 +133,53 @@ message="$(cat "$MSG_FILE")"
 # Asking HEAD about an incoming-only path returns nothing, which would report
 # it as "(unattributed)" and lose the very ticket id the exemption matches
 # against - so the refusal would be unexemptable by naming the right ticket.
-ticket_id_for_path() {
-  local path="$1" subject
+# BL-1403: id and commit are now resolved TOGETHER, from whichever side
+# actually names a ticket - HEAD's own subject yielding NO id (present but
+# unticketed, e.g. a raw intake's "file a question" commit) falls through to
+# MERGE_HEAD exactly like an EMPTY subject already did, so the commit
+# reported always matches the side the id came from. Prints
+# "commit<TAB>id" - commit FIRST, id LAST: bash's `read` silently swallows a
+# LEADING empty field even with IFS set to a single explicit tab (measured
+# while authoring this: `printf '%s\t%s\n' "" x | { IFS=$'\t' read a b; }`
+# gives a=x, b="", not a="", b=x) but correctly preserves a TRAILING one, so
+# id - the field that is legitimately empty when neither side attributes -
+# must never be first.
+attribution_for_path() {
+  local path="$1" subject commit
+  commit="$(git log -1 --format=%h HEAD -- "$path" 2>/dev/null || true)"
   subject="$(git log -1 --format=%s HEAD -- "$path" 2>/dev/null || true)"
-  if [[ -z "$subject" && -n "$MERGE_HEAD_SHA" ]]; then
-    subject="$(git log -1 --format=%s "$MERGE_HEAD_SHA" -- "$path" 2>/dev/null || true)"
-  fi
   if [[ "$subject" =~ ([A-Za-z]+-[0-9]+) ]]; then
-    printf '%s\n' "${BASH_REMATCH[1]}"
+    printf '%s\t%s\n' "$commit" "${BASH_REMATCH[1]}"
+    return
   fi
-}
-
-introducing_commit_for_path() {
-  local commit
-  commit="$(git log -1 --format=%h HEAD -- "$1" 2>/dev/null || true)"
-  if [[ -z "$commit" && -n "$MERGE_HEAD_SHA" ]]; then
-    commit="$(git log -1 --format=%h "$MERGE_HEAD_SHA" -- "$1" 2>/dev/null || true)"
+  if [[ -n "$MERGE_HEAD_SHA" ]]; then
+    local m_commit m_subject
+    m_commit="$(git log -1 --format=%h "$MERGE_HEAD_SHA" -- "$path" 2>/dev/null || true)"
+    m_subject="$(git log -1 --format=%s "$MERGE_HEAD_SHA" -- "$path" 2>/dev/null || true)"
+    if [[ "$m_subject" =~ ([A-Za-z]+-[0-9]+) ]]; then
+      printf '%s\t%s\n' "$m_commit" "${BASH_REMATCH[1]}"
+      return
+    fi
+    # Neither side names a ticket - still report a commit for diagnostics,
+    # preferring HEAD's (matches the pre-BL-1403 default) when it exists.
+    if [[ -z "$commit" ]]; then
+      commit="$m_commit"
+    fi
   fi
-  printf '%s\n' "$commit"
+  printf '%s\t%s\n' "$commit" ""
 }
 
 violations=()
 for path in "${deleted_paths[@]}"; do
-  id="$(ticket_id_for_path "$path")"
+  id=""
+  commit=""
+  while IFS=$'\t' read -r attr_commit attr_id; do
+    id="$attr_id"
+    commit="$attr_commit"
+  done < <(attribution_for_path "$path")
   if [[ -n "$id" ]] && printf '%s' "$message" | grep -qiE "\\b${id}\\b"; then
     continue
   fi
-  commit="$(introducing_commit_for_path "$path")"
   violations+=("${id:-(unattributed)}"$'\t'"$path"$'\t'"${commit:-unknown}"$'\t'"${side_of[$path]:-this branch}")
 done
 
