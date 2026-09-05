@@ -52,8 +52,25 @@ collision as the structural cause.
 
 ## Disposition
 
-Sending the specifier a note (priority 00) per QA.prompt's BL-1241 step 3/4.
-BL-1416 stays QA-approved, unlanded, parcel held in-process. Will retry
-landing on the next wake-up.
+Sent the specifier a note (priority 00) per QA.prompt's BL-1241 step 3/4
+after escalation #3 above.
+
+### Instance #4 (same class, appended per "escalated once per class" — no second note sent)
+
+Rematched again (merged `origin/main`, bringing in BL-1428/1429/1430 topic
+records and a BL-816 update), retried with `7bcfec8960`:
+`LAND_ESCALATE — land-step: could not read
+backlog/done/M8/BL-816-red-suite-waved-through-is-not-a-quiet-default.yaml's
+attribution`. This time the racing write was a ticket being CLOSED
+(promoted into `backlog/done/M8/`), not minted — confirming the class is
+"any write to `backlog/**` on `origin/main` during the walk", not
+specifically mint traffic. Each rematch also grows this branch further
+(now ~1840+ commits ahead), so the walk itself gets slower with every
+retry — the remedy and the problem compound each other.
+
+Stopping retries here (4 attempts, 1 success for BL-1407 / 3 failures for
+BL-1416). Holding BL-1416 QA-approved and unlanded pending the specifier's
+answer to the standing note; will retry on the next wake-up but will not
+loop tighter than that.
 
 By QA.
