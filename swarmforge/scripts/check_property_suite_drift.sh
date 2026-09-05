@@ -411,13 +411,7 @@ report_canary_once() {
   [[ -n "$BEFORE" ]] || return 0
 
   if [[ -n "$SUITE_PID" ]]; then
-    kill -TERM -- "-$SUITE_PID" 2>/dev/null || true
-    local waited
-    for waited in 1 2 3 4 5 6 7 8 9 10; do
-      kill -0 -- "-$SUITE_PID" 2>/dev/null || break
-      sleep 0.05
-    done
-    kill -KILL -- "-$SUITE_PID" 2>/dev/null || true
+    run_bounded_kill_group "$SUITE_PID"
   fi
 
   set +e
