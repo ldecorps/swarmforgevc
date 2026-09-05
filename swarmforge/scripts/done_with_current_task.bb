@@ -105,8 +105,10 @@
    git_handoff (never carries a message header, so the message read here
    is always nil) and for any note whose message is not the router's
    verb-first Spec/Work form (a chase/merge-up/dirty-worktree note, etc.).
-   Delegates entirely to work-note-evidence-lib's pure parser wrapper -
-   the only IO here is reading the file's own message header."
+   Delegates entirely to work-note-evidence-lib's pure parser wrapper,
+   which itself delegates to chase-sweep-lib/dispatch-trail-ticket-id
+   (BL-1223's one dispatch-trail parser) - the only IO here is reading the
+   file's own message header."
   [source-file]
   (work-note-evidence-lib/work-note-ticket-id-from-message
    (handoff-lib/header-field source-file "message")))
