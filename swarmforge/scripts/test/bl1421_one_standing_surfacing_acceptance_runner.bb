@@ -16,7 +16,8 @@
 ;; identical shape. Called from bl1421OneStandingSurfacingSteps.js.
 (ns bl1421-one-standing-surfacing-acceptance-runner
   (:require [babashka.fs :as fs]
-            [cheshire.core :as json]))
+            [cheshire.core :as json]
+            [clojure.string :as str]))
 
 (load-file (str (fs/path (fs/parent (fs/parent (fs/canonicalize *file*))) "post_qa_branch_sweep_lib.bb")))
 
@@ -40,6 +41,7 @@
                      (Thread. (fn [] (when-not @handed-off? (try (fs/delete-tree dir) (catch Exception _ nil)))))))
 
 (def tells (atom []))
+(def logs (atom []))
 (def current-facts (atom nil))
 (def current-caught-up (atom nil))
 
@@ -50,13 +52,18 @@
    :tell! (fn [_ reason _text wake?]
             (swap! tells conj {:reason (name reason) :wake (boolean wake?)})
             {:success true})
-   :log! (fn [& _] nil)})
+   :log! (fn [& parts] (swap! logs conj (vec parts)))})
 
+;; BL-1433: containsLanded defaults to false when a tick omits it - every
+;; pre-existing BL-1421/BL-1361 tick describes a HEAD that lacks the landed
+;; commit, and absence must never silence a real tell (invariant 3 is
+;; about an UNREADABLE fact, not an absent fixture key).
 (doseq [tick ticks]
   (reset! current-facts {:head-sha "role-head"
                           :dirty? (boolean (:dirty tick))
                           :in-process? (boolean (:inProcess tick))
-                          :can-ff? (boolean (:canFf tick))})
+                          :can-ff? (boolean (:canFf tick))
+                          :contains-landed? (boolean (:containsLanded tick))})
   (reset! current-caught-up (boolean (:caughtUp tick)))
   (post-qa-branch-sweep-lib/sweep! dir (:landedSha tick) [role] adapters))
 
@@ -64,5 +71,6 @@
           {:dir dir
            :tellCount (count @tells)
            :wakeCount (count (filter :wake @tells))
-           :tells @tells}))
+           :tells @tells
+           :logs (mapv #(str/join " " (map str %)) @logs)}))
 (reset! handed-off? true)

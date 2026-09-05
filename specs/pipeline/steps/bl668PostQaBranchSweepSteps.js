@@ -37,6 +37,11 @@ function toFactsMap(raw) {
       'dirty?': f.dirty,
       'in-process?': f.inProcess,
       'can-ff?': f.canFf,
+      // BL-1433: every fixture here describes a HEAD that lacks the landed
+      // commit unless it explicitly says otherwise - absence must never
+      // be read as containment (invariant 3 is about an UNREADABLE fact,
+      // not an absent fixture key).
+      'contains-landed?': Boolean(f.containsLanded),
     };
   }
   return out;
