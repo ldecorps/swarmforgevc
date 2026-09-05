@@ -29,22 +29,18 @@ const KNOWN_BOOKKEEPING_PATHS = new Set(['backlog/', 'docs/', 'specs/features/',
 
 const REPO_ROOT = path.join(__dirname, '..', '..', '..');
 const GUARD_SCRIPT = path.join(REPO_ROOT, 'swarmforge', 'scripts', 'check_pipeline_code_on_main.sh');
-const SIZE_GUARD = path.join(REPO_ROOT, 'swarmforge', 'scripts', 'check_commit_size.sh');
-const TICKET_GUARD = path.join(REPO_ROOT, 'swarmforge', 'scripts', 'check_ticket_deletion.sh');
-const PROPERTY_GUARD = path.join(REPO_ROOT, 'swarmforge', 'scripts', 'check_property_suite_drift.sh');
-const PRE_COMMIT_HOOK = path.join(REPO_ROOT, 'swarmforge', 'git-hooks', 'pre-commit');
-const PRE_MERGE_COMMIT_HOOK = path.join(REPO_ROOT, 'swarmforge', 'git-hooks', 'pre-merge-commit');
-// What the hooks EXECUTE and SOURCE, not only the guards themselves.
-// BL-1252 moved pre-commit's guards behind run_commit_guards.sh and BL-1303
-// gave pre-merge-commit a chain of its own over the same sourced
-// aggregation; a fixture missing either dies before any guard decides
-// anything, so the scenarios stop testing the guard they name.
-const GUARD_RUNNER = path.join(REPO_ROOT, 'swarmforge', 'scripts', 'run_commit_guards.sh');
-const GUARD_CHAIN_LIB = path.join(REPO_ROOT, 'swarmforge', 'scripts', 'commit_guard_chain_lib.sh');
-const FEATURE_HANDLER_GUARD = path.join(REPO_ROOT, 'swarmforge', 'scripts', 'check_feature_handler_registration.sh');
-const MERGE_PARENT_LIB = path.join(REPO_ROOT, 'swarmforge', 'scripts', 'incoming_merge_parent_lib.sh');
-const SHARED_REPO_GUARD_LIB = path.join(REPO_ROOT, 'swarmforge', 'scripts', 'property_suite_shared_repo_guard.sh');
-const STANDING_ALLOWLIST_LIB = path.join(REPO_ROOT, 'swarmforge', 'scripts', 'property_suite_standing_allowlist_lib.sh');
+
+// BL-1401: the fixture's guard set is DERIVED from what the hooks actually
+// run, through the ONE helper BL-1398 shipped for it. The hand-written copy
+// list that stood here went stale the moment a guard joined the runner:
+// BL-1385's check_handler_module_graph.sh landed on 2026-09-04 and this
+// feature went 4 pass / 7 fail - the fixture's chain dying with exit 127
+// while every guard was behaving correctly. Consuming the helper rather than
+// re-parsing the runner here is invariant 3: exactly one parser of
+// `run_guard` lines exists in the repo.
+const {
+  deriveCommitGuardFixtureSet,
+} = require(path.join(REPO_ROOT, 'extension', 'test', 'helpers', 'commitGuardFixtureSet.js'));
 
 // Fixture-root hygiene (BL-459's acceptance sibling): every root the
 // Background creates is registered for removal at process exit, so neither
@@ -79,22 +75,12 @@ function mkFixtureRepo() {
 
   fs.mkdirSync(path.join(root, 'swarmforge', 'scripts'), { recursive: true });
   fs.mkdirSync(path.join(root, 'swarmforge', 'git-hooks'), { recursive: true });
-  for (const [src, rel] of [
-    [GUARD_SCRIPT, 'swarmforge/scripts/check_pipeline_code_on_main.sh'],
-    [SIZE_GUARD, 'swarmforge/scripts/check_commit_size.sh'],
-    [TICKET_GUARD, 'swarmforge/scripts/check_ticket_deletion.sh'],
-    [PROPERTY_GUARD, 'swarmforge/scripts/check_property_suite_drift.sh'],
-    [FEATURE_HANDLER_GUARD, 'swarmforge/scripts/check_feature_handler_registration.sh'],
-    [GUARD_RUNNER, 'swarmforge/scripts/run_commit_guards.sh'],
-    [GUARD_CHAIN_LIB, 'swarmforge/scripts/commit_guard_chain_lib.sh'],
-    [MERGE_PARENT_LIB, 'swarmforge/scripts/incoming_merge_parent_lib.sh'],
-    [SHARED_REPO_GUARD_LIB, 'swarmforge/scripts/property_suite_shared_repo_guard.sh'],
-    [STANDING_ALLOWLIST_LIB, 'swarmforge/scripts/property_suite_standing_allowlist_lib.sh'],
-    [PRE_COMMIT_HOOK, 'swarmforge/git-hooks/pre-commit'],
-    [PRE_MERGE_COMMIT_HOOK, 'swarmforge/git-hooks/pre-merge-commit'],
-  ]) {
+  // A guard the runner names but the tree lacks THROWS here, naming it
+  // (invariant 2): a fixture that quietly skipped it would run a chain
+  // narrower than production and still report the scenario green.
+  for (const rel of deriveCommitGuardFixtureSet({ repoRoot: REPO_ROOT }).files) {
     const dst = path.join(root, rel);
-    fs.copyFileSync(src, dst);
+    fs.copyFileSync(path.join(REPO_ROOT, rel), dst);
     fs.chmodSync(dst, 0o755);
   }
   // An EMPTY step registry, so BL-1303's guard asks its real question of
