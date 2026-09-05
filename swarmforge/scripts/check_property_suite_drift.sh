@@ -88,21 +88,24 @@ next_refusal_index() {
 }
 
 # Bounded so the directory cannot grow without limit. Names carry a
-# zero-padded index, so a plain sort is creation order.
+# zero-padded index, so the glob is ALREADY creation order - counted and
+# then walked directly, with no array and no `sort` subshell. Deliberate:
+# `${#names[@]}` over an array that can legitimately be empty is the
+# BL-801 shape that breaks under `set -u` on the stock macOS bash 3.2 this
+# has to run on, and there is nothing here an array buys.
 prune_refusal_logs() {
-  local dir="$1" keep="$2" name seen=0 total=0
-  local names=()
+  local dir="$1" keep="$2" name total=0 seen=0
   for name in "$dir"/refusal-*.log; do
     [[ -e "$name" ]] || continue
-    names+=("$name")
+    total=$((total + 1))
   done
-  total=${#names[@]}
   (( total > keep )) || return 0
-  while IFS= read -r name; do
+  for name in "$dir"/refusal-*.log; do
+    [[ -e "$name" ]] || continue
     seen=$((seen + 1))
     (( seen > total - keep )) && break
     rm -f "$name"
-  done < <(printf '%s\n' "${names[@]}" | sort)
+  done
   return 0
 }
 
