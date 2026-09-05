@@ -1,5 +1,38 @@
 # SwarmForge VS Code Extension — Specification
 
+**Last Updated:** September 5, 2026 (BL-1383: a Telegram forum topic bound
+in `.swarmforge/operator/provider-chat-topic-map.json` now answers from a
+direct OpenAI-compatible chat provider (DeepSeek, NVIDIA NIM, the GLM b.ai
+seat), instead of every message in that topic opening a generic support
+subject — generalizing BL-1235's local Qwen seat pattern from one local
+model to any number of remote, directly-configured providers. Pure
+decision (`extension/src/tools/providerChatSeat.ts`,
+`decideProviderChatTurn`: `not-mine | refuse | answer`) plus live I/O
+(`providerChatSeatLive.ts`, `runProviderChatSeatTurn`), wired into the live
+poller's dispatch (`telegramFrontDeskBotCore.ts`'s `processMessageUpdate`)
+immediately after the cursor-bridge topic exclusion and before the
+side-channel/generic-subject path, so a bound topic's message is decided
+before any support subject could ever open for it (invariant 1). Provider
+credentials/endpoints reach the process from the extension-host
+environment and the gitignored map only, never the target working
+directory or a commit (invariant 2) — an incomplete seat config or an
+unset API-key env var refuses with the specific reason rather than falling
+through. A failing provider call posts its own error text in the topic,
+never a bare HTTP status (BL-572/BL-662 shape); an empty completion also
+refuses rather than posting a blank message. The human's original patch
+also touched `telegramCursorBridgeLive.ts`; that hunk was scoped out at
+mint as unreachable wiring (the cursor-bridge process never receives
+updates for a provider-seat topic) — the same shape BL-1235's precedent
+guards against. Sibling ticket BL-1384 (open at this writing) covers the
+qwen-local seat's own reachability gap, flagged by the same intake.
+Acceptance:
+`specs/features/BL-1383-a-topic-bound-to-a-chat-provider-answers-there.feature`.
+How-to (new): `docs/how-to/BL-1383-provider-chat-seat-behind-its-own-topic.md`,
+linked from `docs/index.md`. No diagram edit: BL-1235's own sibling seat
+mechanism was never added to `front-desk-flow.mmd` or any other diagram
+either — the seat/topic-exclusion dispatch sits earlier than what that
+diagram depicts. No new extension command or setting.)
+Prior entry —
 **Last Updated:** September 5, 2026 (BL-1365: the closing-ceremony packet
 gains `determinismCandidates` — hand-made, repeated rituals a script could
 perform instead, computed rather than found by the occasional manual sweep
