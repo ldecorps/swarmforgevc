@@ -1,0 +1,129 @@
+id: BL-1434
+title: "hostActivityFeed.property.test.js (BL-833) is a bare node script with no test registration, so the property lane reports no suite found and its forty trials have never run under the suite; the register attributed it to BL-1206, whose fix never touches it, so the row orphans when BL-1206 closes; the file registers its trials with vitest, passes alone, still refuses an invented line, and its register and allowlist rows leave with the green"
+milestone: M8
+type: defect
+severity: high
+# high: a standing red on main with no valid owner once BL-1206 closes,
+# which is a broken safety signal under the standing-red rule (2026-09-05,
+# Article 3.2.4). The red itself is contained: BL-833's feed is exercised
+# by nothing in the suite until this lands.
+status: todo
+epic: code-quality-gates
+priority: 3
+direction: swarm-reported
+depends_on: [BL-833, BL-1428]
+mutation_cost: low
+slice_size_envelope: small
+required_stages: [coder, cleaner, architect, hardender, documenter, qa]
+
+acceptance: specs/features/BL-1434-the-host-activity-feed-property-registers-its-trials.feature
+
+human_approval: approved
+approval_context: >
+  A new feature file is authored here, so it needs a tap. No choice is
+  posed and there are no ruling_options. Minted on the architect's
+  out-of-parcel finding during BL-1206's review: the specifier's own
+  register row was wrong about this file's defect (it is not a node:test
+  import; the file registers nothing at all), and the standing-red rule
+  you said "go" to makes a red with no valid owner a high-severity defect
+  at first sighting. Ordering: this parcel edits the same register and
+  allowlist BL-1206's parcel edits, so the coordinator's orthogonality
+  rule keeps them apart; it should follow BL-1206's land.
+
+invariants:
+  - "The conversion weakens nothing: every check the bare script made (the feed never invents a line, the bound holds, a quiet session reads quiet) is a registered test whose failure is a red run, never a process exit the runner does not see."
+  - "A land that turns the test green removes its register row and its allowlist row in the same commit (standing-red rule); no row for this file survives the parcel."
+  - "Nothing about extension/src/bridge/hostActivityFeed.ts changes: this parcel touches the test file, the register and the allowlist only."
+
+required_wiring:
+  - 'extension/test/hostActivityFeed.property.test.js::vitest::the file registers its trials with vitest so the properties config collects them; absent today (grep returns 0)'
+  - 'specs/pipeline/steps/bl1434HostActivityFeedPropertyRegistersSteps.js::registerSteps::the handler file exists so discovery registers every scenario (BL-1371)'
+
+description: |
+  ## What is wrong
+
+  Architect note 2026-09-05T15:56Z, from its BL-1206 pass: the sole
+  property row left in `backlog/standing-reds.tsv` after BL-1206's parcel
+  is `extension/test/hostActivityFeed.property.test.js`, owner BL-1206,
+  note "node:test import; fails collection" - and that note is wrong. The
+  file (BL-833, `bb98f87e9f`, 2026-08-25) requires `node:assert/strict` and
+  `../out/bridge/hostActivityFeed`, runs forty trials over a mulberry32
+  PRNG at top level, counts failures, and calls `process.exit(1)`; it
+  contains no `test(`, `it(` or `describe(` and no vitest import. Vitest
+  collects it under `vitest.properties.config.mjs`, finds no suite, and
+  reports the file red. It has been on the allowlist since 2026-08-27 as
+  "tracked under BL-1175 pending fix" and its assertions have never run
+  under the suite.
+
+  The specifier's register row put it under BL-1206 on 2026-09-05 from a
+  grep hit: BL-1206's YAML names the file only in a required_wiring anchor
+  that pins its allowlist row as one that must SURVIVE that parcel (an
+  unrelated cause). BL-1206's mechanism removes node:test imports and will
+  not touch this file; when BL-1206 closes, the row names a closed ticket
+  and reads unowned to BL-1428's register CLI, which BL-1429 will turn into
+  an intake throttle.
+
+  ## What changes
+
+  - The file registers its trials with vitest: import `test` (and `expect`
+    or keep node:assert inside the test body) from vitest, wrap the forty
+    trials and the quiet-session check as one or more `test(...)` calls,
+    and drop the `process.exit` path - a failed assertion is the red.
+    Requiring `../out/bridge/hostActivityFeed` stays as the sibling
+    property files do it (compile before the run, as today).
+  - The property passes alone and inside `npm run test:properties`.
+  - The register row and the allowlist row for the file are removed in the
+    same commit (BL-1428's rule; the allowlist reader is unchanged).
+
+  ## How (direction, not mandate)
+
+  - Scenario 03 injects a feed module whose `readHostActivityFeed` returns
+    one line that was never recorded (a stub through the same require
+    seam, or a wrapper module), and asserts the registered test fails
+    naming it - the conversion must not have turned the checks into
+    logging.
+  - Scenario 01 reads vitest's collection result for the file (the
+    `--reporter=json` list or the run summary), never a grep for `test(`.
+  - Fixture roots, if any, under mkdtemp; prove the root before any
+    mutating git command (BL-1390).
+
+  ## Out of scope
+
+  - Any change to the feed itself or to BL-833's bound.
+  - The other rows in the register (their own tickets).
+
+qa_e2e_procedure: |
+  1. The BL-1434 feature passes (four scenarios).
+  2. `cd extension && npx vitest run --config vitest.properties.config.mjs
+     test/hostActivityFeed.property.test.js` passes and reports at least one
+     test; `npm run test:properties` refuses nothing new.
+  3. At the parcel commit `grep -c hostActivityFeed backlog/standing-reds.tsv
+     swarmforge/scripts/property_suite_standing_allowlist.tsv` is 0 for both.
+  4. `git diff <received>..<parcel> --stat` touches no file under
+     extension/src (invariant 3).
+
+notes: |
+  Minted 2026-09-05 by the specifier on the architect's priority-20 note
+  "BL-1206 close orphans register row hostActivityFeed.property - ev
+  architect" (`.worktrees/architect/backlog/evidence/BL-1206-architect-pass-20260905.md`).
+  The mis-attribution is the specifier's: the register was built the same
+  morning from an owner grep, and this file matched BL-1206 through an
+  anchor that says the opposite. Not amended on main now: the register row
+  sits between rows BL-1206's in-flight parcel deletes, so any edit to it
+  on main conflicts with that land (BL-1385 shape); this parcel removes the
+  row after BL-1206 lands, and the coordinator's orthogonality rule keeps
+  the two apart because both touch the register and the allowlist.
+
+  INVEST at mint: Independent (BL-833 and BL-1428 landed; BL-1206 is an
+  ordering constraint the orthogonality rule enforces, not a wait),
+  Negotiable (assertion style inside the test body is direction), Valuable
+  (one outcome: BL-833's property actually runs and is green), Estimable
+  (one test-file rewrite, two data rows, one handler; low), Small (four
+  scenarios, three invariants), Testable (vitest collection and run; an
+  injected feed for the non-vacuity pin).
+
+source: |
+  Architect note 2026-09-05T15:56:45Z and its BL-1206 pass evidence;
+  specifier read of the file (no registration, `process.exit(1)` at line
+  69), `git log --diff-filter=A` (BL-833, 2026-08-25), and BL-1206's
+  required_wiring anchor naming the file as an unrelated-cause survivor.
