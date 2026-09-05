@@ -1,3 +1,8 @@
+# mutation-stamp: sha256=6add5a6737a3ab645fbcef11c5fd23dffe05ad5fd6c6ecb1b6b2216ddc9619b0
+# acceptance-mutation-manifest-begin
+# {"version":1,"tested_at":"2026-09-05T19:11:49.605673957Z","feature_name":"A fixture root survives SIGTERM whenever no other step file happens to install a reaper","feature_path":"/home/carillon/swarmforgevc/.worktrees/hardender/specs/features/BL-1312-fixture-root-signal-cleanup.feature","background_hash":"74234e98afe7498fb5daf1f36ac2d78acc339464f950703b8c019892f982b90b","implementation_hash":"unknown","scenarios":[{"index":0,"name":"a fixture root is removed on an abnormal-exit signal however the process is loaded","scenario_hash":"1ecb4f4b8fc61e97a181932cbce43cdcd33e2aa97f9c30d34235ce8f81753913","mutation_count":6,"result":{"Total":6,"Killed":6,"Survived":0,"Errors":0},"tested_at":"2026-09-05T19:11:49.605673957Z"}]}
+# acceptance-mutation-manifest-end
+
 Feature: A fixture root survives SIGTERM whenever no other step file happens to install a reaper
 
   mkSocketFixtureRoot hands out fixture roots and promises to remove the
