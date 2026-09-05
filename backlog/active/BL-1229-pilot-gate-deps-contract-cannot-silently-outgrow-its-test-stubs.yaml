@@ -176,3 +176,5 @@ notes: |
     hygiene gate cannot see it — it compares the local and published
     corpora, and M0 is in neither — so this is latent rather than firing.
     Duplicate-id detection is already owned by BL-1105 and BL-1194."
+
+assigned_to: coder
