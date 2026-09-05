@@ -1,0 +1,128 @@
+id: BL-1435
+title: "The BL-1038 live-repository derivation guard recognizes only path.join(__dirname, '..', '..') as a live-root binding, so a unit-lane test that binds its root through git rev-parse --show-toplevel is invisible to it (five do today, docsStructureRealTree.test.js among them since BL-1317 re-derived it on 2026-09-02) and the guard's clean verdict is vacuous for them; a rev-parse root is a live root, a bare marker on it is refused, and every such read in the tree is exempt with a reason or fixture-rooted"
+milestone: M8
+type: defect
+severity: high
+# high: a broken safety signal. The guard is the unit suite's protection
+# against tests whose cost grows with the repository (BL-1038, 121.6 s of
+# a 533.8 s profile at mint); today it inspects none of the tests that
+# use the rev-parse idiom and reports the tree clean anyway. Not
+# critical: nothing is down, the suite is merely slower than it says.
+status: todo
+epic: unit-suite-speed
+priority: 4
+direction: swarm-reported
+depends_on: [BL-1038, BL-1212]
+mutation_cost: medium
+slice_size_envelope: medium
+required_stages: [coder, cleaner, architect, hardender, documenter, qa]
+
+acceptance: specs/features/BL-1435-a-rev-parse-root-is-a-live-read.feature
+
+human_approval: pending
+approval_context: >
+  A new feature file is authored here, so it needs a tap. No choice is
+  posed and there are no ruling_options. Minted on the coder's priority-00
+  note from the BL-1212 parcel: BL-1212's bare-marker scenario could not be
+  refused because the guard never reads the file since BL-1317 changed how
+  it finds the repository root. That scenario is retired from BL-1212 and
+  carried here (BL-1006). depends_on names BL-1212 (active, at the coder)
+  on purpose: scenario 04 asserts the real tree is clean, which needs
+  BL-1212's reasoned exemption in place, so the promotion gate holds this
+  until BL-1212 lands.
+
+invariants:
+  - "One notion of a live root: the rev-parse idiom and the path.join idiom are recognized by the same detection, and every rule that applies to one (growth patterns, production escape, reasoned exemption, bare marker refused) applies to the other; no second scanner."
+  - "The guard's clean verdict is never vacuous: every file the real tree holds that binds a live root by either idiom is inspected, and the verdict names it as a violation, an exemption with a reason, or a file reading no growth surface."
+  - "Widening detection removes no coverage and adds no bare exemptions: each rev-parse-rooted test the widened guard flags is resolved in this parcel by a written reason a reader can disagree with, or by a fixture root, never by a marker alone (BL-1212 invariant carried)."
+
+required_wiring:
+  - 'extension/test/helpers/liveRepoDerivationGuard.js::show-toplevel::the guard recognizes the rev-parse root idiom; absent today (grep returns 0)'
+  - 'specs/pipeline/steps/bl1435RevParseRootIsALiveReadSteps.js::registerSteps::the handler file exists so discovery registers every scenario (BL-1371)'
+
+description: |
+  ## What is wrong
+
+  `extension/test/helpers/liveRepoDerivationGuard.js` binds the live root
+  with `LIVE_ROOT_BINDING_RE` (a `const`/`let` bound to
+  `path.join(__dirname, '..', '..')`) and, for the production-escape rule,
+  `LIVE_ROOT_INLINE_SRC` (the same expression inline). Nothing else counts
+  as a live root. `docsStructureRealTree.test.js` was changed by BL-1317's
+  hardener (`533da24a41`, 2026-09-02) to bind `REPO_ROOT` through
+  `execFileSync('git', ['-C', __dirname, 'rev-parse', '--show-toplevel'])`
+  for Stryker sandbox path safety; from that commit the guard has not seen
+  the file. The coder on BL-1212 verified it on 2026-09-05: with the
+  exemption's reason stripped, `liveRepoDerivation`, `violationFor` and
+  the marker check all return null - the guard is not refusing a bare
+  marker, it is not looking. `grep -l show-toplevel extension/test/*.test.js`
+  names five files that day: activePoolFreshnessAudit,
+  bl1300HeadroomProofIsPinned, docsStructureRealTree, gitEnvGuard,
+  swarmMetricsCli. BL-1038 scenario 03 ("the guard reports no violations
+  across the test tree") passes for all of them without inspecting one.
+
+  ## What changes
+
+  - The guard recognizes a root bound through `git rev-parse
+    --show-toplevel` - via `execFileSync`, `execSync` or `spawnSync`, with
+    or without a `-C`/`cwd` argument, `.trim()`ed or not - as a live-root
+    binding, both as a named binding and inline, through the same
+    detection the path.join idiom uses (invariant 1). The bound name then
+    feeds the existing growth patterns, the production-escape rule and
+    `EXEMPTION_RE` unchanged.
+  - Each of the rev-parse-rooted tests the widened guard flags is resolved
+    in this parcel, file by file, in the evidence: a `BL-1038-EXEMPT:`
+    reason where the live read IS the assertion (as BL-1212 records for
+    docsStructureRealTree), or a fixture root where it is not (invariant
+    3). A file that binds the root but reads no growth surface is not a
+    violation and needs nothing.
+  - BL-1212's retired scenario 02 lives here as scenario 02's bare-marker row.
+
+  ## How (direction, not mandate)
+
+  - One regex alternation for the binding (`path.join(...)` | a
+    `rev-parse` call whose arguments include `--show-toplevel`), and the
+    inline form likewise; keep `EXEMPTION_RE` and `growthPatternsFor`
+    untouched so the honoured/refused decisions cannot diverge by idiom.
+  - The guard's own unit test (`liveRepoDerivationGuard.test.js`) gains the
+    three call shapes and the bare-marker case; scenario 04 runs the real
+    guard over the parcel's `extension/test` tree.
+  - Fixture text only for scenarios 01 to 03; no repository is created.
+
+  ## Out of scope
+
+  - Any change to which growth operations count (BL-1038's boundary).
+  - Tests outside the unit lane.
+
+qa_e2e_procedure: |
+  1. The BL-1435 feature passes (three scenarios, six runs); BL-1038's and
+     BL-1212's features still pass.
+  2. `cd extension && npx vitest run test/liveRepoDerivationGuard.test.js`
+     passes, and a scratch copy of docsStructureRealTree.test.js with its
+     exemption reason stripped is reported as a violation by the guard
+     (the red/green pair BL-1212 could not run).
+  3. The evidence lists every file `grep -l show-toplevel extension/test/*.test.js`
+     names at the parcel commit with its disposition (reason, fixture, or
+     no growth surface).
+
+notes: |
+  Minted 2026-09-05 by the specifier on the coder's priority-00 note
+  "BL-1212 scenario 02 stale since BL-1317 (09-02); guard blind, see
+  evidence" (`.worktrees/coder/backlog/evidence/BL-1212-coder-20260905.md`).
+  BL-1212's scenario 02 was retired the same commit with a RETIRE-WITH
+  comment naming this ticket; the coder was told to merge main and drop
+  the scenario's step definitions. The coder's own out-of-scope refusal
+  ("do NOT weaken the guard, widen its boundary") was correct and is why
+  this is a separate ticket.
+
+  INVEST at mint: Independent in code (BL-1038 landed); BL-1212 is named
+  as a dependency so the promotion gate orders the two, which scenario 04
+  needs. Negotiable (regex shape is direction), Valuable (one outcome:
+  the guard sees every live root it claims to), Estimable (one detection
+  widening, one unit test, five file dispositions, one handler; medium),
+  Small (three scenarios, six runs, three invariants at the cap), Testable
+  (fixture text; the real tree at the parcel commit).
+
+source: |
+  Coder note 2026-09-05T16:33:59Z and evidence; `liveRepoDerivationGuard.js`
+  lines 39 and 85; `git show --stat 533da24a41`; `grep -l show-toplevel
+  extension/test/*.test.js` (five files, 2026-09-05).
