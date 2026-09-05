@@ -21,7 +21,7 @@ import {
   alreadyRuledToastText,
   approvalAskTextShowsDecidedVerdict,
 } from '../concierge/approvalAskClosing';
-import { unsafeDispatchToastText } from '../concierge/expediteSafety';
+import { unsafeDispatchToastText, crossedCapToastText } from '../concierge/expediteSafety';
 import { classifyRecertTopicReply } from '../concierge/recertTopicReply';
 import { roleForTopic } from '../concierge/roleTopicMapStore';
 import {
@@ -640,6 +640,11 @@ export interface PromotionOutcome {
   // BL-1091: absolute source path when a rename happened, so the commit can
   // name both ends of the move.
   source?: string;
+  // BL-1425: set when a queue-jump crossed the active_backlog_max_depth
+  // gate (the only gate a queue-jump may cross) - distinct from a plain
+  // `moved: true` with no crossing, so the toast can tell "allowed past the
+  // cap" from "allowed with room" and never leave it silent (invariant 3).
+  crossed?: PromotionRefusal;
 }
 
 /**
@@ -769,7 +774,11 @@ export interface PollAdapters {
   // which gate refused and why. The union keeps every existing boolean-
   // returning wiring working unchanged; normalizePromotionOutcome below is the
   // one place that reconciles them.
-  promoteTicketIfPaused?: (backlogId: string) => Promise<boolean | PromotionOutcome>;
+  // BL-1425: options carries the caller-declared queue-jump mode - passed
+  // through to backlogWriter.ts's promoteToActive unchanged, never
+  // recomputed here (the depth-cap crossing rule lives only in
+  // promotion_gates_lib.bb).
+  promoteTicketIfPaused?: (backlogId: string, options?: { queueJump?: boolean }) => Promise<boolean | PromotionOutcome>;
   // BL-490-VIOLATION (architect bounce, 2026-07-17): the approve+promote
   // writes above are plain fs.writeFileSync/fs.renameSync against the
   // shared master checkout's OWN working tree - uncommitted, exactly the
@@ -1513,7 +1522,7 @@ export async function recordExpediteDecisionAndClose(
   adapters: PollAdapters,
   backlogId: string,
   nowMs: number = Date.now()
-): Promise<{ changed: boolean; collision?: string; refusal?: PromotionRefusal }> {
+): Promise<{ changed: boolean; collision?: string; refusal?: PromotionRefusal; crossed?: PromotionRefusal }> {
   // The approval is recorded FIRST and the gates are consulted after, so
   // Expedite satisfies the human_approval gate rather than skipping it
   // (BL-1083 scenario 03). A human tap may reorder work; it may not promote
@@ -1522,7 +1531,13 @@ export async function recordExpediteDecisionAndClose(
   if (!changed) {
     return { changed: false };
   }
-  const promotion = normalizePromotionOutcome(await adapters.promoteTicketIfPaused?.(backlogId));
+  // BL-1425 (human directive 2026-09-05, reversing BL-1083's depth-cap row):
+  // this IS the queue-jump routine - the Q jump tap, the /qjump verb, and
+  // the paused-pager Expedite all reach it, and all three place the ticket
+  // "on rails" ignoring the cap. Every other gate (hold, depends_on,
+  // human_approval, ...) still refuses exactly as it does without this
+  // flag - only active_backlog_max_depth is ever crossed, and only here.
+  const promotion = normalizePromotionOutcome(await adapters.promoteTicketIfPaused?.(backlogId, { queueJump: true }));
   // BL-490-VIOLATION: durably commits the approve+promote writes BEFORE any
   // dispatch can fire - see this adapter's own doc comment (PollAdapters)
   // for why an uncommitted mutation here is unsafe. Still runs on a refusal:
@@ -1541,13 +1556,20 @@ export async function recordExpediteDecisionAndClose(
     await notifyHumanDecisionRecorded(adapters);
     return { changed: true, refusal: promotion.refusal };
   }
+  if (promotion.crossed) {
+    // BL-1425 invariant 3: never silent - both the Q jump tap and the
+    // /qjump verb reach this same routine, so notifying here (rather than
+    // in each caller separately) tells the operator through the Approvals
+    // topic on either entry point, without a second copy of the text.
+    await adapters.notifyApprovalsTopic?.(undefined, `${backlogId}: ${crossedCapToastText(promotion.crossed.reason)}`);
+  }
   const collision = await adapters.checkExpediteFileCollision?.(backlogId);
   if (!collision) {
     await adapters.dispatchExpediteBuild?.(backlogId);
   }
   await closeApprovalAskIfPossible(adapters, backlogId, { kind: 'expedited' }, nowMs);
   await notifyHumanDecisionRecorded(adapters);
-  return { changed: true, collision };
+  return { changed: true, collision, crossed: promotion.crossed };
 }
 
 async function deliverOperatorContext(backlogId: string, text: string, updateId: number, adapters: PollAdapters): Promise<boolean> {
@@ -2147,7 +2169,12 @@ async function dispatchExpediteCallback(
   adapters: PollAdapters
 ): Promise<UpdateDeliveryOutcome> {
   const result = await recordExpediteDecisionAndClose(adapters, decision.backlogId);
-  await adapters.answerCallbackQuery(callbackQuery.id, result.collision ? unsafeDispatchToastText(result.collision) : undefined);
+  const toast = result.collision
+    ? unsafeDispatchToastText(result.collision)
+    : result.crossed
+      ? crossedCapToastText(result.crossed.reason)
+      : undefined;
+  await adapters.answerCallbackQuery(callbackQuery.id, toast);
   return 'posted';
 }
 

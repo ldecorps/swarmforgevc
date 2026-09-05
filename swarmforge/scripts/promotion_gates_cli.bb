@@ -34,10 +34,17 @@
 ;;   promotion_gates_cli.bb route-target <root> <ticket-file>
 ;;     -> "<role> REWRITE" or "<role> NOREWRITE" on stdout, exit 0
 ;;
-;;   promotion_gates_cli.bb gate-promotion <root> <BL-id>
+;;   promotion_gates_cli.bb gate-promotion <root> <BL-id> [--queue-jump]
 ;;     -> "ALLOW|<file>" on stdout, exit 0
 ;;     -> "REFUSE|<gate>|<reason>" on stdout, exit 2
 ;;     -> "NOT_FOUND" on stdout, exit 1 (not in paused/ or hold/)
+;;     BL-1425: --queue-jump is a caller-DECLARED mode that skips
+;;     active_backlog_max_depth ONLY - every other gate refuses exactly as
+;;     without the flag. When the cap would otherwise have refused, ALSO
+;;     prints "ADVISORY|active_backlog_max_depth|queue-jump past cap:
+;;     active count N >= cap M" to stderr - stdout's ALLOW contract stays
+;;     byte-identical. No script the coordinator or the daemon runs may
+;;     ever pass this flag (invariant 1).
 ;;     BL-1083: `locate` + cap resolution + `evaluate` in ONE call, for a
 ;;     caller that cannot compose them. The extension host's promoteToActive
 ;;     moves a ticket into backlog/active from TypeScript, across a boundary no
@@ -133,9 +140,14 @@
                        backlog-depth-lib/default-max-depth))]
     (or effective configured)))
 
-(defn- cmd-gate-promotion [[root bl-id]]
+(defn- cmd-gate-promotion [[root bl-id & flags]]
   (when (or (nil? root) (nil? bl-id)) (usage!))
-  (let [paused (find-in (fs/path root "backlog" "paused") bl-id)
+  ;; BL-1425: the flag literal is fixed at mint (required_wiring anchor) -
+  ;; a caller-DECLARED mode, never inferred from any ticket field or
+  ;; environment. Skips active_backlog_max_depth ONLY; every other gate
+  ;; above is unchanged and in the same order.
+  (let [queue-jump? (some #{"--queue-jump"} flags)
+        paused (find-in (fs/path root "backlog" "paused") bl-id)
         held-file (when-not paused (find-in (fs/path root "backlog" "hold") bl-id))
         file (or paused held-file)]
     (when (nil? file)
@@ -143,15 +155,21 @@
       ;; never minted. The caller's own no-op contract, not a refusal.
       (println "NOT_FOUND")
       (System/exit 1))
-    (let [result (promotion-gates-lib/evaluate
+    (let [active-count (promotion-gates-lib/active-count root)
+          max-depth (resolve-max-depth root)
+          result (promotion-gates-lib/evaluate
                   {:content (slurp file)
                    :held? (some? held-file)
                    :root root
-                   :active-count (promotion-gates-lib/active-count root)
-                   :max-depth (resolve-max-depth root)
+                   :active-count active-count
+                   :max-depth max-depth
                    :active-epics (promotion-gates-lib/active-epics root)
-                   :done-ids (promotion-gates-lib/done-ids root)})]
+                   :done-ids (promotion-gates-lib/done-ids root)
+                   :queue-jump? (boolean queue-jump?)})]
       (print-advisory! (:advisory result))
+      (when (:crossed result)
+        (binding [*out* *err*]
+          (println (promotion-gates-lib/crossed-advisory-line {:active-count active-count :max-depth max-depth}))))
       (if (:ok result)
         (do (println (str "ALLOW|" file)) (System/exit 0))
         (do (println (str "REFUSE|" (:gate result) "|" (:reason result))) (System/exit 2))))))

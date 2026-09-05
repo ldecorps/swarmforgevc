@@ -1,4 +1,4 @@
-import { execFileSync } from 'child_process';
+import { spawnSync } from 'child_process';
 import * as fs from 'fs';
 import * as path from 'path';
 import { parseBacklogYaml } from './backlogReader';
@@ -63,6 +63,15 @@ export interface BacklogMoveResult {
    * failure invariant 2 forbids.
    */
   refusal?: { gate: string; reason: string };
+  /**
+   * BL-1425: set when a caller-declared `queueJump` crossed the
+   * active_backlog_max_depth gate (the ONLY gate a queue-jump may cross;
+   * every other gate above still refuses exactly as it would without the
+   * flag). Distinct from a plain `moved: true` with no `crossed`, so a
+   * caller can tell "allowed past the cap" from "allowed with room" and
+   * never leave the crossing silent (invariant 3).
+   */
+  crossed?: { gate: string; reason: string };
 }
 
 // Shared by markDone and promoteToActive: both are a find-then-rename into
@@ -105,37 +114,52 @@ function promotionGatesCliPath(targetPath: string): string {
 }
 
 type GateVerdict =
-  | { kind: 'allow' }
+  | { kind: 'allow'; crossed?: { gate: string; reason: string } }
   | { kind: 'not-found' }
   | { kind: 'refuse'; gate: string; reason: string };
 
-// The CLI's raw stdout, or a signal that it could not be reached at all
-// (bb missing, the script crashing, any exit code other than the two the
-// CLI documents as real verdicts). Split from consultPromotionGates so each
-// half - "did we hear back" vs. "what did it say" - carries its own small
-// complexity instead of one function carrying both.
-type GateCliOutcome = { stdout: string } | { crashed: true };
+// The CLI's raw stdout+stderr, or a signal that it could not be reached at
+// all (bb missing, the script crashing, any exit code other than the two
+// the CLI documents as real verdicts). Split from consultPromotionGates so
+// each half - "did we hear back" vs. "what did it say" - carries its own
+// small complexity instead of one function carrying both. spawnSync (not
+// execFileSync) because BL-1425's crossed-cap advisory is printed to
+// stderr on the ALLOW (exit 0) path too, and execFileSync's return value
+// on success is stdout alone - it cannot also carry stderr for that path.
+type GateCliOutcome = { stdout: string; stderr: string } | { crashed: true };
 
-function runGateCli(cli: string, targetPath: string, itemId: string): GateCliOutcome {
-  try {
-    return { stdout: execFileSync('bb', [cli, 'gate-promotion', targetPath, itemId], { encoding: 'utf8' }) };
-  } catch (err) {
-    const e = err as { status?: number; stdout?: string };
-    // exit 1 = NOT_FOUND, exit 2 = REFUSE: both are real verdicts the CLI
-    // prints on stdout before exiting non-zero. Anything else - bb absent,
-    // the CLI missing, a crash - is NOT an allowance: a gate that fails open
-    // is not a gate, and this one exists because a bypass promoted BL-1078
-    // onto an unlanded dependency.
-    if (e.status === 1 || e.status === 2) {
-      return { stdout: typeof e.stdout === 'string' ? e.stdout : '' };
-    }
+function runGateCli(cli: string, targetPath: string, itemId: string, queueJump: boolean): GateCliOutcome {
+  const args = queueJump ? [cli, 'gate-promotion', targetPath, itemId, '--queue-jump'] : [cli, 'gate-promotion', targetPath, itemId];
+  const result = spawnSync('bb', args, { encoding: 'utf8' });
+  // exit 0 = ALLOW, exit 1 = NOT_FOUND, exit 2 = REFUSE: all three are real
+  // verdicts the CLI prints on stdout. Anything else - bb absent, the CLI
+  // missing, a crash (result.error, or a signal/non-numeric status) - is
+  // NOT an allowance: a gate that fails open is not a gate, and this one
+  // exists because a bypass promoted BL-1078 onto an unlanded dependency.
+  if (result.error || typeof result.status !== 'number' || ![0, 1, 2].includes(result.status)) {
     return { crashed: true };
   }
+  return { stdout: result.stdout ?? '', stderr: result.stderr ?? '' };
 }
 
-function parseGateVerdict(stdout: string, cli: string): GateVerdict {
+function parseGateVerdict(stdout: string, stderr: string, cli: string): GateVerdict {
   const line = stdout.split('\n').map((l) => l.trim()).filter(Boolean).pop() ?? '';
   if (line.startsWith('ALLOW')) {
+    // BL-1425: gate-name-agnostic by construction, same as REFUSE parsing
+    // below - never restates which gate a queue-jump can cross (that rule
+    // lives only in promotion_gates_lib.bb). The CLI emits exactly two
+    // ADVISORY shapes on an ALLOW (its own header doc): "orthogonality"
+    // (BL-854, unrelated to queue-jump) and the crossed-cap one (BL-1425) -
+    // whichever ADVISORY line is not orthogonality is the crossing signal.
+    const crossedLine = stderr
+      .split('\n')
+      .map((l) => l.trim())
+      .filter((l) => l.startsWith('ADVISORY|'))
+      .find((l) => l.split('|')[1] !== 'orthogonality');
+    if (crossedLine) {
+      const [, gate, ...reason] = crossedLine.split('|');
+      return { kind: 'allow', crossed: { gate, reason: reason.join('|') } };
+    }
     return { kind: 'allow' };
   }
   if (line === 'NOT_FOUND') {
@@ -152,7 +176,7 @@ function parseGateVerdict(stdout: string, cli: string): GateVerdict {
   };
 }
 
-function consultPromotionGates(targetPath: string, itemId: string): GateVerdict {
+function consultPromotionGates(targetPath: string, itemId: string, queueJump: boolean): GateVerdict {
   const cli = promotionGatesCliPath(targetPath);
   // Named explicitly rather than discovered by a failed exec: "the gate CLI is
   // not here" and "the gate refused" are different facts, and an operator
@@ -165,7 +189,7 @@ function consultPromotionGates(targetPath: string, itemId: string): GateVerdict 
       reason: `the promotion gates could not be consulted (${cli} is missing); refusing rather than promoting ungated`,
     };
   }
-  const outcome = runGateCli(cli, targetPath, itemId);
+  const outcome = runGateCli(cli, targetPath, itemId, queueJump);
   if ('crashed' in outcome) {
     return {
       kind: 'refuse',
@@ -173,7 +197,7 @@ function consultPromotionGates(targetPath: string, itemId: string): GateVerdict 
       reason: `the promotion gates could not be consulted (${cli}); refusing rather than promoting ungated`,
     };
   }
-  return parseGateVerdict(outcome.stdout, cli);
+  return parseGateVerdict(outcome.stdout, outcome.stderr, cli);
 }
 
 // BL-490: the Expedite verb's promote step - no paused->active mover existed
@@ -194,8 +218,12 @@ function consultPromotionGates(targetPath: string, itemId: string): GateVerdict 
 // pass; BL-1078 declared depends_on: [BL-713] with BL-713 still active. A
 // check placed in one caller would have left the other, and every future one,
 // ungated - which is this defect exactly, with one caller fewer.
-export function promoteToActive(targetPath: string, itemId: string): BacklogMoveResult {
-  const verdict = consultPromotionGates(targetPath, itemId);
+export function promoteToActive(
+  targetPath: string,
+  itemId: string,
+  options?: { queueJump?: boolean }
+): BacklogMoveResult {
+  const verdict = consultPromotionGates(targetPath, itemId, options?.queueJump ?? false);
   if (verdict.kind === 'not-found') {
     return { moved: false };
   }
@@ -209,7 +237,8 @@ export function promoteToActive(targetPath: string, itemId: string): BacklogMove
     return { moved: false };
   }
   const destDir = path.join(targetPath, 'backlog', 'active');
-  return moveBacklogFileTo(filePath, destDir);
+  const result = moveBacklogFileTo(filePath, destDir);
+  return verdict.crossed ? { ...result, crossed: verdict.crossed } : result;
 }
 
 /** BL-698: park a live ticket into backlog/hold/ (active preferred, else paused). */
