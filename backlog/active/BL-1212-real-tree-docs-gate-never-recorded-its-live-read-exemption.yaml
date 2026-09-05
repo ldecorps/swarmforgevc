@@ -111,10 +111,9 @@ qa_e2e_procedure: >
      docsStructureRealTree.test.js AND carries a reason. Read the
      reason and judge it as a reviewer would - it must say why the
      live read is the assertion, not merely cite this ticket id.
-  3. Scenario 02 non-vacuity, run as a red/green pair: strip the
-     reason from the marker leaving it bare, confirm the guard
-     reports the file as a violation again, then restore it. This is
-     the check that the exemption mechanism still has teeth.
+  3. RETIRED 2026-09-05 with scenario 02 (see notes): the guard cannot
+     see this file's root derivation since BL-1317, so the red/green
+     pair cannot be run here; BL-1435 carries it.
   4. Scenario 03: with BL-1209 landed, the whole guard test passes -
      19 passed, 0 failed, no violations. This is the load-bearing
      one and it cannot pass before its dependency does.
@@ -161,6 +160,21 @@ notes: >
   extension/test/docsStructureRealTree.test.js plus this ticket's
   feature file. Disjoint from everything except BL-1209, which it
   depends on and must not be co-active with - sequence them.
+
+  AMENDED 2026-09-05 (specifier; parcel at the coder, who reported it):
+  scenario 02 RETIRED, never reworded (BL-1006, falsified after mint).
+  BL-1317 (533da24a41, 2026-09-02) changed docsStructureRealTree.test.js's
+  REPO_ROOT from path.join(__dirname, '..', '..') to execFileSync git
+  rev-parse --show-toplevel; liveRepoDerivationGuard.js recognizes only
+  the path.join idiom (LIVE_ROOT_BINDING_RE, LIVE_ROOT_INLINE_SRC), so it
+  never inspects this file and a bare marker is not refused - the coder
+  verified all three reads return null. The exemption this ticket adds
+  is still right and stays (scenario 01); scenario 03 still holds. The
+  guard's blindness to the rev-parse idiom is BL-1435 (five unit-lane
+  tests use it today), which carries the bare-marker scenario. Coder:
+  merge main, drop scenario 02's step definitions from the handler
+  ("carries an exemption marker with no reason after it", "it is
+  reported as a violation") so no step is unreachable, and forward.
 
 approval_context: >
   One thing to sanity-check, since it is a judgement rather than a
