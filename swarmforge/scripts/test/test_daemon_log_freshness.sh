@@ -1077,6 +1077,152 @@ kill "$FAKE_SUP_PID" 2>/dev/null || true
 check "BL-784: fresh handoffd_supervisor heartbeat is not restarted" '[[ ! -f "$ROOT/kills.log" ]]'
 pass "BL-784: healthy quiet supervisor is not restarted by freshness checker"
 
+# ── BL-1413: the freshness check reads past a NUL byte ──────────────────────
+BL1413_PROBE="$SCRIPT_DIR/lib/bl1413_heartbeat_age_probe.sh"
+BL1413_FIXTURES="$SCRIPT_DIR/fixtures/bl1413"
+
+# 01: a NUL-filled line older than the newest heartbeat does not change the
+# measured age. Direct function probe (never observable through run_checker
+# alone, since a healthy run leaves no external trace of the exact age) AND
+# a full checker run proving no restart/announce follows from it.
+ROOT="$(make_root)"
+NOW=1700000000
+OLD_TS="$(date -u -d "@$((NOW - 500))" +%Y-%m-%dT%H:%M:%SZ 2>/dev/null \
+  || date -u -r $((NOW - 500)) +%Y-%m-%dT%H:%M:%SZ)"
+RECENT_TS="$(date -u -d "@$((NOW - 10))" +%Y-%m-%dT%H:%M:%SZ 2>/dev/null \
+  || date -u -r $((NOW - 10)) +%Y-%m-%dT%H:%M:%SZ)"
+FRESH_TS="$(date -u -d "@$NOW" +%Y-%m-%dT%H:%M:%SZ 2>/dev/null \
+  || date -u -r "$NOW" +%Y-%m-%dT%H:%M:%SZ)"
+{
+  printf '%s heartbeat\n' "$OLD_TS"
+  printf '\0\0\0'
+  printf '\n'
+  printf '%s heartbeat\n' "$RECENT_TS"
+} > "$ROOT/.swarmforge/daemon/handoffd.log"
+printf '%s heartbeat\n' "$FRESH_TS" > "$ROOT/.swarmforge/babysitterd/babysitterd.log"
+PROBED_AGE="$(NOW=$NOW /bin/sh "$BL1413_PROBE" "$CHECKER" "$ROOT/.swarmforge/daemon/handoffd.log" | awk '{print $1}')"
+check "BL-1413-01: measured age is 10 seconds despite the older NUL-filled line" '[[ "$PROBED_AGE" -eq 10 ]]'
+run_checker "$ROOT" "$NOW"
+check "BL-1413-01: no restart across the NUL byte" '[[ ! -f "$ROOT/kills.log" ]]'
+check "BL-1413-01: no announce" '[[ ! -f "$ROOT/announces.log" ]]'
+pass "BL-1413-01: a NUL-filled line older than the newest heartbeat does not change the measured age"
+
+# 02: a NUL-filled line with NO heartbeat after it leaves the age at the
+# last real (pre-NUL) heartbeat - the NUL line itself never matches the
+# heartbeat token, so it simply never becomes a candidate.
+ROOT="$(make_root)"
+NOW=1700000000
+RECENT_TS="$(date -u -d "@$((NOW - 20))" +%Y-%m-%dT%H:%M:%SZ 2>/dev/null \
+  || date -u -r $((NOW - 20)) +%Y-%m-%dT%H:%M:%SZ)"
+FRESH_TS="$(date -u -d "@$NOW" +%Y-%m-%dT%H:%M:%SZ 2>/dev/null \
+  || date -u -r "$NOW" +%Y-%m-%dT%H:%M:%SZ)"
+{
+  printf '%s heartbeat\n' "$RECENT_TS"
+  printf '\0\0\0'
+} > "$ROOT/.swarmforge/daemon/handoffd.log"
+printf '%s heartbeat\n' "$FRESH_TS" > "$ROOT/.swarmforge/babysitterd/babysitterd.log"
+PROBED_AGE="$(NOW=$NOW /bin/sh "$BL1413_PROBE" "$CHECKER" "$ROOT/.swarmforge/daemon/handoffd.log" | awk '{print $1}')"
+check "BL-1413-02: measured age is 20 seconds - the trailing NUL line is not a heartbeat candidate" '[[ "$PROBED_AGE" -eq 20 ]]'
+run_checker "$ROOT" "$NOW"
+check "BL-1413-02: no restart" '[[ ! -f "$ROOT/kills.log" ]]'
+check "BL-1413-02: no announce" '[[ ! -f "$ROOT/announces.log" ]]'
+pass "BL-1413-02: a NUL-filled line with no heartbeat after it leaves the age at the last real heartbeat"
+
+# 03 (regression guard): a log whose newest heartbeat is genuinely past the
+# threshold, with a NUL-filled line before it, still restarts and announces
+# with the real age - the fix must never turn a genuine stale-heartbeat
+# into a false negative.
+ROOT="$(make_root)"
+NOW=1700000000
+STALE_TS="$(date -u -d "@$((NOW - 200))" +%Y-%m-%dT%H:%M:%SZ 2>/dev/null \
+  || date -u -r $((NOW - 200)) +%Y-%m-%dT%H:%M:%SZ)"
+FRESH_TS="$(date -u -d "@$NOW" +%Y-%m-%dT%H:%M:%SZ 2>/dev/null \
+  || date -u -r "$NOW" +%Y-%m-%dT%H:%M:%SZ)"
+{
+  printf '\0\0\0'
+  printf '\n'
+  printf '%s heartbeat\n' "$STALE_TS"
+} > "$ROOT/.swarmforge/daemon/handoffd.log"
+printf '%s heartbeat\n' "$FRESH_TS" > "$ROOT/.swarmforge/babysitterd/babysitterd.log"
+sleep 120 &
+FAKE_PID=$!
+echo "$FAKE_PID" > "$ROOT/.swarmforge/daemon/handoffd.pid"
+run_checker "$ROOT" "$NOW"
+kill "$FAKE_PID" 2>/dev/null || true
+check "BL-1413-03: a genuinely stale heartbeat (NUL line before it) still restarts" \
+  'grep -qx "$FAKE_PID" "$ROOT/kills.log"'
+check "BL-1413-03: durable record names the real age (200), not the NUL sentinel" \
+  'grep -q "daemon=handoffd" "$ROOT/.swarmforge/daemon/freshness-incidents.log" && grep -q "age_secs=200" "$ROOT/.swarmforge/daemon/freshness-incidents.log" && grep -q "action=restart" "$ROOT/.swarmforge/daemon/freshness-incidents.log"'
+check "BL-1413-03: announced with the real age" \
+  'grep -q "FRESHNESS_VIOLATION restart swarm=primary daemon=handoffd" "$ROOT/announces.log"'
+pass "BL-1413-03: a genuinely stale log with a NUL-filled line before it still restarts and announces the real age"
+
+# 03b: the torn-line fallback specifically - the NEWEST matching line's OWN
+# timestamp is corrupt (not hidden by a NUL byte truncation), and an OLDER
+# line is fresh and parseable. Distinct failure mode from 01-03: proves the
+# fallback loop itself, not just the -a flag.
+ROOT="$(make_root)"
+NOW=1700000000
+RECENT_TS="$(date -u -d "@$((NOW - 15))" +%Y-%m-%dT%H:%M:%SZ 2>/dev/null \
+  || date -u -r $((NOW - 15)) +%Y-%m-%dT%H:%M:%SZ)"
+FRESH_TS="$(date -u -d "@$NOW" +%Y-%m-%dT%H:%M:%SZ 2>/dev/null \
+  || date -u -r "$NOW" +%Y-%m-%dT%H:%M:%SZ)"
+{
+  printf '%s heartbeat\n' "$RECENT_TS"
+  printf 'not-a-timestamp heartbeat\n'
+} > "$ROOT/.swarmforge/daemon/handoffd.log"
+printf '%s heartbeat\n' "$FRESH_TS" > "$ROOT/.swarmforge/babysitterd/babysitterd.log"
+PROBED="$(NOW=$NOW /bin/sh "$BL1413_PROBE" "$CHECKER" "$ROOT/.swarmforge/daemon/handoffd.log")"
+check "BL-1413-03b: a torn newest line falls back to the older parseable one (age 15)" '[[ "$(printf "%s" "$PROBED" | awk "{print \$1}")" -eq 15 ]]'
+check "BL-1413-03b: falls back with reason stale-heartbeat, not unparseable-timestamp" '[[ "$(printf "%s" "$PROBED" | awk "{print \$2}")" == "stale-heartbeat" ]]'
+run_checker "$ROOT" "$NOW"
+check "BL-1413-03b: no restart - the fallback found a fresh heartbeat" '[[ ! -f "$ROOT/kills.log" ]]'
+pass "BL-1413-03b: a torn newest heartbeat line falls back to the newest parseable one"
+
+# 04: the check over the real (trimmed) 2026-09-05 supervisor logs reports
+# every supervisor fresh. Each fixture is a real excerpt around that
+# supervisor's actual NUL-filled crash line (BL-1413's own incident); a
+# synthetic recent heartbeat is appended at test time (never baked into the
+# committed fixture) so the scenario stays deterministic forever rather than
+# drifting against wall-clock time.
+ROOT="$(make_root)"
+NOW=1700000000
+RECENT_TS="$(date -u -d "@$((NOW - 10))" +%Y-%m-%dT%H:%M:%SZ 2>/dev/null \
+  || date -u -r $((NOW - 10)) +%Y-%m-%dT%H:%M:%SZ)"
+mkdir -p "$ROOT/.swarmforge/daemon" "$ROOT/.swarmforge/operator"
+FAKE_SUP_PIDS=()
+for pair in \
+  "handoffd-supervisor.trimmed.log:.swarmforge/daemon/handoffd-supervisor.log:.swarmforge/daemon/handoffd-supervisor.pid" \
+  "front-desk-supervisor.trimmed.log:.swarmforge/operator/front-desk-supervisor.log:.swarmforge/operator/front-desk-supervisor.pid" \
+  "cursor-bridge-supervisor.trimmed.log:.swarmforge/operator/cursor-bridge-supervisor.log:.swarmforge/operator/cursor-bridge-supervisor.pid" \
+  "onboarder-supervisor.trimmed.log:.swarmforge/operator/onboarder-supervisor.log:.swarmforge/operator/onboarder-supervisor.pid" \
+  "operator-runtime-supervisor.trimmed.log:.swarmforge/operator/operator-runtime-supervisor.log:.swarmforge/operator/operator-runtime-supervisor.pid"
+do
+  src="${pair%%:*}"
+  rest="${pair#*:}"
+  dst="${rest%%:*}"
+  pid_dst="${rest#*:}"
+  cp "$BL1413_FIXTURES/$src" "$ROOT/$dst"
+  printf '%s heartbeat\n' "$RECENT_TS" >> "$ROOT/$dst"
+  # A pid file naming a REAL live process - *_supervisor rows are skipped
+  # entirely when their pid file is absent (BL-784), which would make this
+  # scenario pass trivially without ever exercising heartbeat_age_secs.
+  sleep 120 &
+  fake_pid=$!
+  FAKE_SUP_PIDS+=("$fake_pid")
+  echo "$fake_pid" > "$ROOT/$pid_dst"
+done
+printf '%s heartbeat\n' "$(date -u -d "@$NOW" +%Y-%m-%dT%H:%M:%SZ 2>/dev/null || date -u -r "$NOW" +%Y-%m-%dT%H:%M:%SZ)" > "$ROOT/.swarmforge/daemon/handoffd.log"
+printf '%s heartbeat\n' "$(date -u -d "@$NOW" +%Y-%m-%dT%H:%M:%SZ 2>/dev/null || date -u -r "$NOW" +%Y-%m-%dT%H:%M:%SZ)" > "$ROOT/.swarmforge/babysitterd/babysitterd.log"
+run_checker "$ROOT" "$NOW"
+for fake_pid in "${FAKE_SUP_PIDS[@]}"; do
+  kill "$fake_pid" 2>/dev/null || true
+done
+check "BL-1413-04: no supervisor was killed despite its real NUL-filled line" '[[ ! -f "$ROOT/kills.log" ]]'
+check "BL-1413-04: no supervisor was restarted" '[[ ! -f "$ROOT/starts.log" ]] || ! grep -q . "$ROOT/starts.log"'
+check "BL-1413-04: nothing was announced" '[[ ! -f "$ROOT/announces.log" ]]'
+pass "BL-1413-04: the real 2026-09-05 supervisor logs, NUL line and all, all report fresh"
+
 if [[ "$fail" -eq 0 ]]; then
   echo "BL-675 daemon-log-freshness: ALL CHECKS PASSED"
 else
