@@ -14,7 +14,6 @@
 // handoffd for a different root.
 
 const assert = require('node:assert/strict');
-const { test } = require('node:test');
 const fs = require('node:fs');
 const path = require('node:path');
 const { spawn, spawnSync } = require('node:child_process');

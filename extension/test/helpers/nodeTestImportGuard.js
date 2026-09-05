@@ -7,8 +7,10 @@
 // while every role reading the tree counts the file as coverage. Twenty-three
 // main-lane files were in that state; this guard stops a new one joining them.
 //
-// Deliberately lane-scoped (unit lane only). The property lane carries the
-// same defect in its own files and is BL-1206's, landing independently.
+// Deliberately lane-scoped (unit lane only) for isUnitLaneTestFile /
+// findUnitLaneNodeTestImports below; isPropertyLaneTestFile /
+// findPropertyLaneNodeTestImports are BL-1206's own analog for the property
+// lane, sharing the same pure per-line scanner (findNodeTestImportLines).
 const fs = require('fs');
 const path = require('path');
 
@@ -77,4 +79,47 @@ function findUnitLaneNodeTestImports(testDir) {
   return violations;
 }
 
-module.exports = { findNodeTestImportLines, isUnitLaneTestFile, findUnitLaneNodeTestImports };
+/**
+ * Is this path one the property lane actually collects? Mirrors
+ * vitest.properties.config.mjs's own include glob, test slash double-star
+ * slash star dot property dot test dot js - no fixtures exemption exists
+ * there today (no fixtures-named directory holds a property file), unlike
+ * the unit lane above.
+ */
+function isPropertyLaneTestFile(relativePath) {
+  return relativePath.split(path.sep).join('/').endsWith('.property.test.js');
+}
+
+/**
+ * Impure: every property-lane violation under testDir. Same walk shape as
+ * findUnitLaneNodeTestImports - the only thing that differs between lanes is
+ * which files qualify (isPropertyLaneTestFile vs isUnitLaneTestFile).
+ */
+function findPropertyLaneNodeTestImports(testDir) {
+  const violations = [];
+  const walk = (dir) => {
+    for (const entry of fs.readdirSync(dir, { withFileTypes: true })) {
+      const full = path.join(dir, entry.name);
+      if (entry.isDirectory()) {
+        walk(full);
+        continue;
+      }
+      if (!isPropertyLaneTestFile(path.relative(testDir, full))) {
+        continue;
+      }
+      for (const line of findNodeTestImportLines(fs.readFileSync(full, 'utf8'))) {
+        violations.push({ file: full, line });
+      }
+    }
+  };
+  walk(testDir);
+  return violations;
+}
+
+module.exports = {
+  findNodeTestImportLines,
+  isUnitLaneTestFile,
+  findUnitLaneNodeTestImports,
+  isPropertyLaneTestFile,
+  findPropertyLaneNodeTestImports,
+};
