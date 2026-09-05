@@ -15,6 +15,12 @@ Feature: The mechanical share of a turn is readable
   Two things must not be confused once the series exists: a stage nobody worked
   and a stage measured at zero. Silence is not a measurement.
 
+  Nor are damage and a live append the same thing. A transcript sampled while
+  its agent is mid-write ends in a torn final line; on the live repo some
+  transcript always does. That line is dropped and the transcript is named,
+  but the window stays complete. A file that cannot be read, or one torn in
+  its interior, is damage and closes the window.
+
   Background:
     Given role transcripts covering a window have been walked
 
@@ -50,3 +56,11 @@ Feature: The mechanical share of a turn is readable
       | test-run         |
       | thinking-writing |
       | turn-overhead    |
+
+  # BL-1364 the-mechanical-share-of-a-turn-is-readable-05
+  Scenario: a transcript still being appended to is tolerated, not treated as damage
+    Given a transcript in the window whose final line is torn mid-write
+    When the turn profile series is read
+    Then the window is reported as complete
+    And that transcript is named as having a truncated tail
+    And that stage reports a mechanical share
