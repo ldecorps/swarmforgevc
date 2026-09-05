@@ -26,11 +26,14 @@
 (def quality-mode "quality")
 (def steering-modes #{cheap-mode quality-mode})
 
-;; The seven pipeline roles ModelFactory resolves a full-swarm assignment
-;; for — matches swarmforge/model-steward/seed/models.seed.json's role_matrix
-;; keys and PIPELINE.md's chain (coordinator is a separate always-on process,
-;; never assigned a swarm role model here).
-(def swarm-roles ["architect" "coder" "cleaner" "QA" "hardender" "documenter" "specifier"])
+;; The pipeline roles ModelFactory resolves a full-swarm assignment for —
+;; matches swarmforge/model-steward/seed/models.seed.json's role_matrix keys
+;; and PIPELINE.md's chain (coordinator is a separate always-on process,
+;; never assigned a swarm role model here). BL-1418: 'art-director' is
+;; likewise outside the forward chain but still a real staffed seat (human
+;; ruling: standing pane), so it belongs in this swarm-roles list exactly
+;; like the seven pipeline roles above.
+(def swarm-roles ["architect" "coder" "cleaner" "QA" "hardender" "documenter" "specifier" "art-director"])
 
 ;; A model's cost_class (Model Registry metadata) ranked low-to-high for
 ;; cheap-mode's "lowest $/quality that still meets the role floor" rule.
