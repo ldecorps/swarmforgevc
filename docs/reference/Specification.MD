@@ -1,5 +1,29 @@
 # SwarmForge VS Code Extension — Specification
 
+**Last Updated:** September 5, 2026 (BL-1401: the acceptance-side twin of
+BL-1398's fixture defect — `specs/pipeline/steps/bl632CommitTimeGuardSteps.js`'s
+`mkFixtureRepo` carried its own separate hand-written twelve-entry copy
+list (five `check_*.sh` guards, the runner, four libs, two hooks) and went
+red the same way when `check_handler_module_graph.sh` (BL-1385) joined
+`run_commit_guards.sh`'s chain: 4 pass / 7 fail on
+`BL-632-commit-time-guard-refuses-pipeline-code-on-main.feature`,
+reproduced by the architect 2026-09-04, with no guard actually broken.
+Rather than write a second parser of `run_guard` lines (invariant 3), the
+handler now calls the SAME `deriveCommitGuardFixtureSet()` helper BL-1398
+shipped in `extension/test/helpers/commitGuardFixtureSet.js` — one parser,
+two callers (the property test and this acceptance handler), so a guard
+added to or removed from the runner is reflected in both without editing
+either; a guard the runner names but the tree lacks still fails the
+scenario loud, naming it. `depends_on: [BL-1398]` — this ticket could not
+promote until BL-1398 landed, deliberately, since a second parser to avoid
+the dependency would be a DRY defect and would ship a fixture the shared
+helper then has to replace. Acceptance:
+`specs/features/BL-1401-the-bl632-acceptance-fixture-derives-its-guard-set-from-the-runner.feature`.
+How-to: `docs/how-to/BL-973-bb-fixture-closure-guards-and-suite-inventory.md`
+(extended in place — the existing BL-1398 section gained "The
+acceptance-side twin (BL-1401)" subsection). No diagram depicts
+acceptance-fixture internals at this granularity.)
+Prior entry —
 **Last Updated:** September 5, 2026 (BL-1370: every clause of the per-pass
 orphan-process gate (no leftover test/mutation processes before
 verification, none after, a straggler reaped by process GROUP never a bare
