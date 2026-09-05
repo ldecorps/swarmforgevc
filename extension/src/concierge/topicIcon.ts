@@ -140,7 +140,22 @@ export interface StandingTopicTarget {
 // table (ICON_EMOJI, STANDING_TOPIC_ICON, EPIC_ICON_POOL) before adoption.
 // QA's magnifier changed from 🔍 to 🔎 in the first remap, which also
 // resolves the prior collision with ICON_EMOJI.paused.
-export type RoleTopicIconRole = 'coordinator' | 'specifier' | 'architect' | 'coder' | 'cleaner' | 'hardender' | 'QA' | 'documenter';
+// BL-1418: 'art-director' extends the role set for the new standing Art
+// Director seat (human ruling 2026-09-05: standing pane). 🎨 (the obvious
+// pick) collides with epicIcon.ts's ORIGINAL_POOL_ORDER_PREFIX (its 5th
+// fixed epic glyph) - 🔮 (crystal ball) is the next distinct choice, absent
+// from every icon table above and from ORIGINAL_POOL_ORDER_PREFIX, present
+// in the live 112-sticker set.
+export type RoleTopicIconRole =
+  | 'coordinator'
+  | 'specifier'
+  | 'architect'
+  | 'coder'
+  | 'cleaner'
+  | 'hardender'
+  | 'QA'
+  | 'documenter'
+  | 'art-director';
 
 export const ROLE_TOPIC_ICON: Record<RoleTopicIconRole, string> = {
   coordinator: '📣',
@@ -151,6 +166,7 @@ export const ROLE_TOPIC_ICON: Record<RoleTopicIconRole, string> = {
   hardender: '🧪',
   QA: '🔎',
   documenter: '📰',
+  'art-director': '🔮',
 };
 
 // A single per-agent steering topic the concierge tick's icon sync targets -
