@@ -25,6 +25,7 @@
 (load-file (str (fs/path (fs/parent (fs/canonicalize *file*)) "tree_collapse_guard_lib.bb")))
 (load-file (str (fs/path (fs/parent (fs/canonicalize *file*)) "landed_ticket_lib.bb")))
 (load-file (str (fs/path (fs/parent (fs/canonicalize *file*)) "task_scope_gate_lib.bb")))
+(load-file (str (fs/path (fs/parent (fs/canonicalize *file*)) "contract_freshness_gate_lib.bb")))
 (load-file (str (fs/path (fs/parent (fs/canonicalize *file*)) "unregistered_test_gate_lib.bb")))
 (load-file (str (fs/path (fs/parent (fs/canonicalize *file*)) "reverse_hop_lib.bb")))
 
@@ -441,6 +442,30 @@
         task-scope-block
         (when (task-scope-gate-lib/blocked? task-scope-result)
           task-scope-result)
+        ;; BL-1411 contract-freshness gate: refuses a git_handoff whose
+        ;; ticket's own acceptance feature file has been amended on main (or
+        ;; origin/main) since the sender's merge-base with that ref - an
+        ;; in-flight amendment that never reached the holder (BL-1370) or
+        ;; reached it too late (BL-1353) is caught here instead of riding
+        ;; downstream to a bounce (see contract_freshness_gate_lib.bb). Same
+        ;; fail-open posture; a warning on an unreadable ticket/path never
+        ;; blocks on its own.
+        contract-freshness-result
+        (when (and (= "git_handoff" type) canonical (not (str/blank? task-name)))
+          (contract-freshness-gate-lib/findings-for-git-handoff
+           {:root (project-root) :task-name task-name :commit canonical}))
+        _ (when-let [warning (:warning contract-freshness-result)]
+            (binding [*out* *err*]
+              (println (str "CONTRACT_FRESHNESS WARNING: " warning))))
+        ;; Invariant 3's "stated in one line": a ref that resolves but
+        ;; still could not be evaluated (an absent path, no merge-base, an
+        ;; unreadable diff) never refuses, but the sender still hears why.
+        _ (doseq [line (:not-evaluated contract-freshness-result)]
+            (binding [*out* *err*]
+              (println (str "CONTRACT_FRESHNESS_NOT_EVALUATED: " line))))
+        contract-freshness-block
+        (when (contract-freshness-gate-lib/blocked? contract-freshness-result)
+          contract-freshness-result)
         ;; BL-1240 unregistered-test gate: refuses a git_handoff whose own
         ;; parcel adds a file under swarmforge/scripts/test/ with no row in
         ;; suite-manifest.tsv, so the omission fails the ticket that created
@@ -502,7 +527,11 @@
                                      ;; message, or the refusal reads as a plain
                                      ;; entanglement and sends the coder off to
                                      ;; rebuild for the wrong reason.
-                                     :acceptance-unreadable? (:acceptance-unreadable? task-scope-block)}))))
+                                     :acceptance-unreadable? (:acceptance-unreadable? task-scope-block)}))
+                             contract-freshness-block
+                             (conj (contract-freshness-gate-lib/refusal-message
+                                    {:task-name task-name
+                                     :findings (:findings contract-freshness-block)}))))
                      (and (not= "git_handoff" type) (not (str/blank? commit)))
                      (conj "Header 'commit' is only allowed for git_handoff.")
                      (and (not= "git_handoff" type) (not (str/blank? task-name)))
