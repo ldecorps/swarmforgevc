@@ -1,3 +1,8 @@
+# mutation-stamp: sha256=f0f791fcf00bbc95e4b27cced3edb16d77018c6d0c8d0bd7c62cc4c107544658
+# acceptance-mutation-manifest-begin
+# {"version":1,"tested_at":"2026-09-05T10:58:14.861604500Z","feature_name":"BL-1423 The standing Babashka suite runs again: the two hotfix test files are registered","feature_path":"/home/carillon/swarmforgevc/.worktrees/hardender/specs/features/BL-1423-the-standing-bb-suite-runs-again.feature","background_hash":"7c3e36221944e7bd08900b53b0e9ee57f9ac4a9ec99d4e414c6ca66b7bb49c3b","implementation_hash":"unknown","scenarios":[{"index":1,"name":"each hotfix test file has exactly one standing row and is listed by the standing run","scenario_hash":"c3b833c88c006ab006a0b5df7270eceeafcc3b55c9a26c5840e610ad4395d90d","mutation_count":2,"result":{"Total":2,"Killed":2,"Survived":0,"Errors":0},"tested_at":"2026-09-05T10:58:14.861604500Z"}]}
+# acceptance-mutation-manifest-end
+
 Feature: BL-1423 The standing Babashka suite runs again: the two hotfix test files are registered
 
   run_bb_suite.sh runs the suite inventory gate first and unconditionally,
