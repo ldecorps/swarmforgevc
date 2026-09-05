@@ -634,4 +634,84 @@ pass "22: a re-run past the ceiling counts as a failure and the commit is refuse
 git -C "$ROOT" reset -q HEAD
 rm -rf "$ROOT/extension" "$ROOT/.swarmforge"
 
+# ── 23 (BL-1407): the BL-1124 canary is asserted around a re-run too, not
+#    only around the main run - a re-run that mutates the shared checkout
+#    is refused citing BL-1124, the same as a main-run mutation already is.
+stage extension/src/pipelineBoard.ts
+MUTATING_RERUN_23=(bash -c '
+if [[ "$#" -eq 0 ]]; then
+  printf "%s\n" " FAIL  test/bl1407FakeMutate.property.test.js > x" >&2
+  exit 1
+else
+  git -C "'"$ROOT"'" -c user.email=t@t -c user.name=t commit -q --allow-empty -m mutated-during-rerun
+  exit 0
+fi
+')
+set +e
+OUT23="$(cd "$ROOT" && bash "$GUARD" "${MUTATING_RERUN_23[@]}" 2>&1)"
+ST23=$?
+set -e
+[[ "$ST23" -ne 0 ]] || fail "23: a re-run that mutates the shared checkout must refuse"
+echo "$OUT23" | grep -q 'BL-1124' \
+  || fail "23: expected the BL-1124 canary marker in the refusal, got: $OUT23"
+pass "23: a re-run that mutates the shared checkout is refused citing BL-1124"
+git -C "$ROOT" reset -q HEAD~1 --hard
+rm -rf "$ROOT/extension" "$ROOT/.swarmforge"
+
+# ── 24 (BL-1407, BL-1202 parity): killing the guard mid-re-run still reaps
+#    the re-run's own process group - the main run's report_canary_once is
+#    single-shot (already spent by the time reruns start), so run_bounded
+#    must be self-sufficient for this, not rely on that machinery firing
+#    again.
+stage extension/src/pipelineBoard.ts
+MARKER24="$ROOT/../bl1407_marker24_$$"
+rm -f "$MARKER24" "${MARKER24}.child"
+MUTATING_SLEEP_RERUN_24=(bash -c '
+if [[ "$#" -eq 0 ]]; then
+  printf "%s\n" " FAIL  test/bl1407FakeKill.property.test.js > x" >&2
+  exit 1
+else
+  echo $$ > "'"$MARKER24"'"
+  (sleep 30) &
+  echo $! > "'"$MARKER24"'.child"
+  sleep 30
+fi
+')
+(
+  cd "$ROOT"
+  exec bash "$GUARD" "${MUTATING_SLEEP_RERUN_24[@]}" >"$ROOT/../bl1407_out24_$$" 2>&1
+) &
+GUARD_PID_24=$!
+
+DEADLINE=$((SECONDS + 10))
+while [[ ! -s "$MARKER24" ]] && (( SECONDS < DEADLINE )); do
+  sleep 0.05
+done
+[[ -s "$MARKER24" ]] || fail "24: fake re-run never started (marker never appeared)"
+CHILD_PID_24="$(cat "$MARKER24")"
+
+kill -TERM "$GUARD_PID_24" 2>/dev/null || true
+set +e
+wait "$GUARD_PID_24"
+ST24=$?
+set -e
+[[ "$ST24" -ne 0 ]] || fail "24: a guard killed mid-re-run must exit non-zero, got $ST24"
+
+DEADLINE=$((SECONDS + 5))
+while { kill -0 "$CHILD_PID_24" 2>/dev/null || kill -0 "$(cat "${MARKER24}.child" 2>/dev/null || echo 0)" 2>/dev/null; } \
+      && (( SECONDS < DEADLINE )); do
+  sleep 0.05
+done
+if kill -0 "$CHILD_PID_24" 2>/dev/null; then
+  fail "24: the fake re-run's own process ($CHILD_PID_24) is still running after the guard was killed mid-re-run"
+fi
+GRANDCHILD_PID_24="$(cat "${MARKER24}.child" 2>/dev/null || echo "")"
+if [[ -n "$GRANDCHILD_PID_24" ]] && kill -0 "$GRANDCHILD_PID_24" 2>/dev/null; then
+  fail "24: the fake re-run's grandchild ($GRANDCHILD_PID_24) is still running after the guard was killed mid-re-run"
+fi
+pass "24: killing the guard mid-re-run still reaps the re-run's own process group"
+rm -f "$MARKER24" "${MARKER24}.child" "$ROOT/../bl1407_out24_$$"
+git -C "$ROOT" reset -q HEAD
+rm -rf "$ROOT/extension" "$ROOT/.swarmforge"
+
 echo "ALL PASS"

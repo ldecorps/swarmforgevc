@@ -178,40 +178,72 @@ run_rerun_for_file() {
   fi
 }
 
+# Grace-then-force kill of $1's whole process group - the same sequencing
+# report_canary_once uses for the main suite's SUITE_PID, factored out so
+# run_bounded's own trap (below) and its ceiling-overrun branch share one
+# copy rather than drifting apart.
+run_bounded_kill_group() {
+  local pid="$1" grace
+  kill -TERM -- "-$pid" 2>/dev/null || true
+  for grace in 1 2 3 4 5 6 7 8 9 10; do
+    kill -0 -- "-$pid" 2>/dev/null || break
+    sleep 0.05
+  done
+  kill -KILL -- "-$pid" 2>/dev/null || true
+}
+
 # Runs "$@" as the leader of its own process group (BL-1202's shape, reused)
 # bounded by $1 seconds wall-clock. A command that is still running at the
-# ceiling is killed (group-wide, grace-then-force, same as
-# report_canary_once) and counted as a failure via exit 124 - a plain
-# sentinel fed straight into the same invariant-3 decision a real non-zero
-# exit would produce, never a forced pass/fail bypass. No GNU `timeout`
-# dependency (stock macOS bash has none).
+# ceiling is killed (group-wide, grace-then-force) and counted as a failure
+# via exit 124 - a plain sentinel fed straight into the same invariant-3
+# decision a real non-zero exit would produce, never a forced pass/fail
+# bypass. No GNU `timeout` dependency (stock macOS bash has none).
+#
+# The main suite's report_canary_once/on_interrupt machinery is single-shot
+# (CANARY_DONE latches true right after the main run, per its own comment),
+# so it never fires again during the re-run phase - a kill delivered while
+# THIS function's own subprocess is alive would otherwise orphan it, and
+# the ticket's own direction is explicit: "Keep BL-1124's HEAD-unchanged
+# canary around the re-run as around the main run." This function is
+# therefore self-contained for both concerns: its own INT/TERM/HUP trap
+# (saved and restored around the call, never leaking into the rest of the
+# script) reaps its own process group, and it takes and asserts its own
+# BL-1124 snapshot around its own subprocess - one canary window per file,
+# which also pinpoints WHICH re-run mutated the checkout, if any did.
 run_bounded() {
   local ceiling="$1"; shift
-  local out_file pid waited=0 rc
+  local out_file pid waited=0 rc before prev_int prev_term timed_out=0
   out_file="$(mktemp)"
+  before="$(bl1124_snapshot "$REPO_ROOT")"
   set -m
   ("$@") >"$out_file" 2>&1 &
   pid=$!
   set +m
+  prev_int="$(trap -p INT)"
+  prev_term="$(trap -p TERM)"
+  trap 'run_bounded_kill_group "$pid"; exit 1' INT TERM HUP
   while kill -0 -- "$pid" 2>/dev/null; do
     if (( waited >= ceiling )); then
-      kill -TERM -- "-$pid" 2>/dev/null || true
-      local grace
-      for grace in 1 2 3 4 5 6 7 8 9 10; do
-        kill -0 -- "-$pid" 2>/dev/null || break
-        sleep 0.05
-      done
-      kill -KILL -- "-$pid" 2>/dev/null || true
-      wait "$pid" 2>/dev/null || true
-      rm -f "$out_file"
-      return 124
+      timed_out=1
+      run_bounded_kill_group "$pid"
+      break
     fi
     sleep 1
     waited=$((waited + 1))
   done
-  wait "$pid"
+  wait "$pid" 2>/dev/null
   rc=$?
+  if [[ -n "$prev_int" ]]; then eval "$prev_int"; else trap - INT; fi
+  if [[ -n "$prev_term" ]]; then eval "$prev_term"; else trap - TERM; fi
+  trap - HUP
   rm -f "$out_file"
+  if ! bl1124_assert_unchanged "$REPO_ROOT" "$before"; then
+    echo "Commit rejected: property suite re-run mutated the shared checkout (BL-1124)." >&2
+    exit 1
+  fi
+  if (( timed_out )); then
+    return 124
+  fi
   return "$rc"
 }
 
