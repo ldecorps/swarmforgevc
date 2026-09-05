@@ -152,6 +152,48 @@
   ["/tmp/tmp.unrelated-checkout" "/Users/someone/other-project"
    (str "/somewhere-else" root) (str "/opt/parent" worktree "-decoy") nil])
 
+;; ── BL-1370: a prefix-sibling root is NOT mine, in either arm ──────────
+;; `.worktrees/coder-cursor2` is a live sibling on this host, and every
+;; consumer of this predicate KILLS what it claims. The scope here is the
+;; worktree ALONE, which is what the per-pass stray gate passes; under the
+;; janitor's wider scope a sibling worktree beneath the host root is
+;; legitimately in scope, and that case is unchanged.
+(def sibling-worktree (str worktree "-cursor2"))
+(def sibling-root (str root "-2"))
+
+(def prefix-sibling-cases
+  [{:cmd (str "node --test " sibling-worktree "/x.generated.test.js") :cwd nil}
+   {:cmd "sleep 3600" :cwd (str sibling-worktree "/extension")}
+   {:cmd "sleep 3600" :cwd sibling-worktree}
+   {:cmd (str "node " sibling-root "/x.js") :cwd sibling-root}])
+
+(defn- gen-p3-scenario [s]
+  (gen-pick s prefix-sibling-cases))
+
+(check-all "P3 bl1370-prefix-sibling: a root that merely extends this one's path is never in scope, by cmdline or by cwd"
+  gen-p3-scenario
+  (fn [{:keys [cmd cwd]}]
+    (if (process-table-lib/project-scoped-process? cmd cwd [worktree])
+      (str "a prefix-sibling was claimed: cmd=" cmd " cwd=" cwd)
+      true)))
+
+;; The complement, so P3 is not a property about a predicate that says no to
+;; everything: the worktree's OWN equivalents are still in scope.
+(def own-cases
+  [{:cmd (str "node --test " worktree "/x.generated.test.js") :cwd nil}
+   {:cmd "sleep 3600" :cwd (str worktree "/extension")}
+   {:cmd "sleep 3600" :cwd worktree}])
+
+(defn- gen-p4-scenario [s]
+  (gen-pick s own-cases))
+
+(check-all "P4 bl1370-own-still-in-scope: the worktree's own processes are still claimed, so P3 is not vacuous"
+  gen-p4-scenario
+  (fn [{:keys [cmd cwd]}]
+    (if (process-table-lib/project-scoped-process? cmd cwd [worktree])
+      true
+      (str "the worktree's own process was not claimed: cmd=" cmd " cwd=" cwd))))
+
 (defn- classify-both [cmd cwd]
   {:janitor (orphan-janitor-lib/project-scoped-path? root cmd cwd)
    :shared (process-table-lib/project-scoped-process? cmd cwd scope-paths)})
@@ -192,7 +234,7 @@
 (fs/delete-tree root)
 
 ;; ── report ────────────────────────────────────────────────────────────────
-(println (str "bl887 scope-predicate invariant properties: " runs " runs each (P1/P2)"))
+(println (str "bl887 scope-predicate invariant properties: " runs " runs each (P1/P2/P3/P4)"))
 (if (empty? @failures)
   (println "ALL PROPERTIES HOLD")
   (do (println (str (count @failures) " PROPERTY FAILURE(S):"))
