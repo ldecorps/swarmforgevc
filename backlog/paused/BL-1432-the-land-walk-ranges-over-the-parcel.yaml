@@ -141,8 +141,8 @@ notes: |
   option 3, relayed by the architect's priority-00 note (verbatim: "Human
   wants BL-1432 ruling reopened: change option 1 to option 3 (both)"); the
   specifier rewrote human_ruling to the option-3 label on that relay - a
-  recorded human decision, not a self-flip - and the human's own sentence
-  was not captured by the relay. The feature gained scenarios 03-04 (the
+  recorded human decision, not a self-flip. The human then confirmed it in
+  the specifier pane, verbatim: "BL-1432: make it option 3" (2026-09-05). The feature gained scenarios 03-04 (the
   re-point half; 01-02 already required the bounded walk, since their
   branch carries history) and the envelope moved to medium: two small
   mechanisms, neither depending on the other. Approval left as the human
