@@ -27,7 +27,7 @@ invariants:
   - "One writer of the land-approval record: the CLI calls land_step_lib's record-land-approval! and never carries a second serializer of the record line, so the land step and the hand-built route can never disagree on its shape."
   - "A record grants nothing on its own: the predicate answers approved for a recorded replay only when the named source is itself approved (BL-1334 unchanged), and a record with a missing sha is refused, never written."
 
-human_approval: pending
+human_approval: approved
 approval_context: >
   A new feature file is authored here, so it needs a tap. No choice is posed
   and there are no ruling_options. This is the root cause behind the

@@ -27,7 +27,7 @@ invariants:
   - "A path whose content survives at another path in the merge result is never reported as a deletion; a path whose content survives nowhere is reported exactly as before (every BL-1242 and BL-1341 scenario unchanged)."
   - "A refusal is exemptable whenever EITHER side's history names a ticket for the path: the refusal carries that id and that commit, and (unattributed) appears only when no commit on either side names one."
 
-human_approval: pending
+human_approval: approved
 approval_context: >
   A new feature file is authored here, so it needs a tap. No choice is posed
   and there are no ruling_options. Reported by the documenter (evidence
