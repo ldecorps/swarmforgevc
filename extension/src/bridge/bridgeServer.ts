@@ -87,7 +87,7 @@ import {
 import { requestConciergeTick } from '../concierge/conciergeTickRequest';
 import { getContextBudgetUiHtml } from './contextBudgetUiHtml';
 import { listTelemetryAgents, summarizeTelemetryForAgent } from './contextTelemetryGate';
-import { runCommitIntegrity, commitApprovalWrites } from '../util/commitIntegrityRunner';
+import { runCommitIntegrity, commitApprovalWrites, humanDecisionCommitMessage } from '../util/commitIntegrityRunner';
 import { getLetsTalkUiHtml } from './letsTalkUiHtml';
 import {
   createLetsTalkWriteRoutes,
@@ -949,7 +949,8 @@ async function computePausedPagerApproveOutcome(
   if (!changed) {
     return { status: 200, body: { success: false, id: backlogId, reason: 'not pending approval' }, conciergeTick: false };
   }
-  const committed = await commitApprovalWrites(targetPath, backlogId, `Approve ${backlogId}: record human_approval\n\nBy coder.`);
+  // BL-1368: the byline names the human who decided, never a pipeline role.
+  const committed = await commitApprovalWrites(targetPath, backlogId, humanDecisionCommitMessage(`Approve ${backlogId}: record human_approval`));
   if (!committed) {
     return { status: 500, body: { success: false, changed: true, id: backlogId, reason: 'approved but failed to commit' }, conciergeTick: false };
   }
