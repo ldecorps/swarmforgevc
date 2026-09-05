@@ -175,3 +175,5 @@ source: |
     profile, not part of this patch) — nothing further needed there for QA to
     exercise the GLM seat specifically, though a fixture-based acceptance
     test should not depend on real network/API keys."
+
+assigned_to: coder
