@@ -170,3 +170,13 @@ qa_e2e_procedure: >
   no owner; it is now this ticket's fifteenth file and its register row names
   BL-1206. Severity raised to high under the standing-red rule. Scenarios are
   unchanged: they quantify over the allowlisted set, not a fixed count.
+
+  [2026-09-05] specifier, Article 3.6 freshness adjudication - CONFIRM
+  PROMOTE, this time RECORDED with record-adjudication.js (BL-1267): the
+  hold reads the 2026-08-28 paragraph above, which names the retired
+  type: bug surface only to explain an earlier false hold, so prose alone
+  re-arms the gate on every pass. Premise re-verified 2026-09-05: the
+  node:test files still fail collection (20 of the 25 allowlist rows are
+  red when run alone, measured this morning); BL-1428 re-points the
+  allowlist rows to their owners and this ticket drains them. Severity
+  raised to high the same day under the standing-red rule.
