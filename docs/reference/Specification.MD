@@ -1,5 +1,37 @@
 # SwarmForge VS Code Extension — Specification
 
+**Last Updated:** September 5, 2026 (BL-1365: the closing-ceremony packet
+gains `determinismCandidates` — hand-made, repeated rituals a script could
+perform instead, computed rather than found by the occasional manual sweep
+that produced this ticket and three siblings on 2026-09-03. A ritual
+performed by a script collapses to one commit subject; one performed by an
+agent has a long tail of them — `dominance` (top subject's share of a
+class's commits) separates the two cleanly on real history (promotion
+~1.00, topic records 0.97, pass/bounce evidence 0.01), computed straight
+from `git log --name-only`, no new instrumentation needed. Two independent
+halves per invariant 1: a new `ritualLedgerProducer.ts` sweep
+(`ritual-ledger-producer-sweep!` in `handoffd.bb`, mirroring BL-1364's
+turn-profile-producer shape) classifies commits by bookkeeping path area
+into `.swarmforge/telemetry/ritual-ledger.json` on its own cadence; the
+ceremony (`closingCeremonyRun.ts`) only ever reads what is already stored,
+so a shift that closes no ceremony delays adjudication but loses no
+measurement. A class already named by an open ticket is suppressed
+(invariant 2) via a new declared `ritual_class:` ticket field
+(`swarmforge/backlog-schema.md`) rather than text matching, which was
+measured against the live backlog and rejected in both directions (prefix
+matching over-suppressed, title-only under-suppressed). A candidate is
+evidence for a ticket, never auto-minted (invariant 3) — the specifier
+still decides. Acceptance:
+`specs/features/BL-1365-the-ceremony-packet-names-hand-made-rituals.feature`.
+Reference (new):
+`docs/reference/BL-1365-ritual-ledger-determinism-candidates.md`, linked
+from `docs/index.md` and from BL-820's own reference page. No diagram
+edit, following BL-1364's same-day precedent: the architecture diagram's
+per-ticket comment log stopped being updated after 2026-08-27 and does not
+depict individual daemon sweeps or per-field telemetry detail at this
+granularity; the closing-ceremony node/edge shape the diagram already
+depicts is unchanged. No new extension command or setting.)
+Prior entry —
 **Last Updated:** September 5, 2026 (BL-1364: BL-664's turn profiler was
 unreachable — `transcriptWalker.ts` had live consumers, but
 `turnProfile.ts`'s `buildTurnProfileSeries` had zero production importers, so

@@ -40,6 +40,11 @@ by BL-1393; only what invokes it moved.
    Auto window models are hold-only; pack conf is never rewritten in
    this slice — see
    [BL-1119 how-to](../how-to/BL-1119-closing-ceremony-role-quality-dial.md).
+6. **(BL-1365)** The packet also carries `determinismCandidates`: hand-made
+   rituals (repeated, scriptable acts still done by an agent) computed from
+   a separately-swept ritual ledger. See
+   [BL-1365 reference](BL-1365-ritual-ledger-determinism-candidates.md) for
+   the detector, the thresholds, and the suppression mechanism.
 
 ## Storage
 
@@ -58,6 +63,7 @@ interface CeremonyPacket {
   skipReasons: string[];
   stalls: CeremonyStallSummary[];          // { role, eventType, count }
   hypotheses: string[];
+  determinismCandidates: CeremonyDeterminismCandidate[]; // BL-1365
 }
 
 interface CeremonyRun {
@@ -179,6 +185,8 @@ state `complete`.
 
 - [Ticket Lifecycle Ledger (BL-819)](BL-819-ticket-lifecycle-ledger.md) — the
   ledger this pass reads; owns event/snapshot schema and write points.
+- [Ritual Ledger & Determinism Candidates (BL-1365)](BL-1365-ritual-ledger-determinism-candidates.md)
+  — the separately-swept commit ledger that fills `determinismCandidates`.
 - [The closing ceremony: one sequence, every sleep after work (BL-658, folds in BL-820)](../how-to/BL-658-briefing-trigger-derived-from-closure-schedule.md)
   — the sequence this pass is now a step of, and every sleep path that
   drives it (BL-1393).
