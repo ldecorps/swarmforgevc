@@ -1,0 +1,144 @@
+id: BL-1421
+title: "The post-QA branch sweep re-tells and re-wakes every dirty role on every landed commit: its state resets per landed sha and a mid-parcel role is classed dirty before in_process, so six roles got 539 'branch behind: dirty worktree - merge up' notes and wakes on 2026-09-05 (75-102 each) that queued twenty deep and were cleared blind; a surfacing is told once until the role catches up, and a role holding in_process work is never woken"
+milestone: M8
+type: defect
+severity: high
+# high: a live fault degrading behaviour. 539 priority-10 notes and tmux
+# wakes in one day across six roles; each wake interrupts a working agent,
+# and the queue they form is what the roles swept blind, losing real Work
+# dispatches (BL-1384 x4). Not critical: nothing is destroyed.
+status: todo
+epic: swarm-reliability
+priority: 2
+direction: swarm-reported
+depends_on: [BL-668, BL-1361]
+mutation_cost: low
+slice_size_envelope: low
+required_stages: [coder, cleaner, architect, hardender, documenter, qa]
+
+acceptance: specs/features/BL-1421-one-standing-surfacing-per-role.feature
+
+required_wiring:
+  - 'swarmforge/scripts/handoffd.bb::caught-up-to-told?::post-qa-branch-sweep-role-facts!, the live fact supplier, must tell the pure lib whether HEAD contains the sha the role was last told; the name is fixed here (BL-874) and absent today'
+  - 'specs/pipeline/steps/bl1421OneStandingSurfacingSteps.js::registerSteps::the handler file exists so discovery registers every scenario (BL-1371)'
+
+invariants:
+  - "One standing surfacing per (role, reason): a role is told again only after its HEAD contains the landed sha it was last told about; a newer landed sha alone never re-tells or re-wakes."
+  - "A role holding in_process work is surfaced as in-process work and never woken by the sweep: decide-role reads in_process before dirtiness, so a mid-parcel tree is the parcel, not a stale worktree."
+  - "BL-1361's contract holds unchanged: every surfacing reason reaches its role, a role already told is told nothing on the next sweep, one unreachable mailbox withholds nothing from the others."
+
+human_approval: pending
+approval_context: >
+  A new feature file is authored here, so it needs a tap. No choice is posed
+  and there are no ruling_options. Your 2026-09-04 ruling on BL-1361 ("Wake
+  only for a dirty worktree and defer the other reasons") stands; this
+  ticket fixes two things around it: the state reset that made every landed
+  commit a new surfacing, and the precedence that read a working role's
+  uncommitted parcel as a dirty worktree.
+
+description: |
+  ## What is wrong
+
+  `post_qa_branch_sweep_lib.bb` (BL-668, BL-1361):
+
+      (defn normalize-state-for-landed [state landed-sha]
+        (if (= (:landed-sha state) landed-sha) state
+            {:landed-sha landed-sha :settled {} :surfaced []}))
+
+  `:surfaced` is the "already told" record BL-1361 scenario 02 relies on.
+  It empties on every new landed sha. `main` landed 103 commits on
+  2026-09-05 (approvals, topic records, mints, promotions), so a role that
+  stayed behind was told again up to 103 times. And:
+
+      (cond ... dirty? {:action :surface :reason :dirty-worktree}
+                in-process? {:action :surface :reason :in-process-work} ...)
+
+  reads dirtiness before in_process work, so a role mid-parcel - whose
+  worktree is dirty because it is working - is classed dirty-worktree, the
+  one reason the human's ruling WAKES for. Measured in
+  `.swarmforge/handoffs/coordinator/sent/` for 2026-09-05:
+
+      coder 75   cleaner 87   architect 101   hardender 82   documenter 102   QA 92
+
+  539 notes, each a tmux wake, all reading "branch behind <sha>: dirty
+  worktree - merge up", several for the same sha twice. The coder's inbox
+  held 18 of them at 06:41Z. Between 05:13Z and 05:17Z the coder cleared 30
+  queued notes with back-to-back completions three seconds apart, and the
+  Work dispatches for BL-1384 and BL-1402 went out with them (BL-1422 is
+  the completion side of that).
+
+  ## What is wanted
+
+  - A surfacing is standing: once told for a reason, a role is told nothing
+    more until its HEAD contains the sha it was told about; then, if it is
+    behind again, it is told once more. The state carries the told sha per
+    role and reason, and a new landed sha never clears it.
+  - `decide-role` reads in_process work before dirtiness. A role holding a
+    parcel is surfaced as in-process work (told, deferred, never woken - the
+    ruling's "defer the other reasons"). A dirty worktree with NO in_process
+    work is what wakes, as ruled.
+  - BL-1361's four scenarios stay green; its feature is not edited.
+
+  ## How (direction, not mandate)
+
+  - State shape: `:surfaced [{:role :reason :told-sha}]`;
+    `normalize-state-for-landed` keeps `:surfaced` across landed shas and
+    resets only `:settled`; `surface-already-recorded?` becomes "a record
+    exists whose told-sha the role has not caught up to". The daemon's
+    `post-qa-branch-sweep-role-facts!` supplies `:caught-up-to-told?` from
+    `git merge-base --is-ancestor <told-sha> HEAD` in the role's worktree
+    (the `git-is-ancestor?` it already uses for `:can-ff?`).
+  - `decide-role`: swap the `dirty?` and `in-process?` arms.
+  - Tests: `post_qa_branch_sweep_lib_test_runner.bb` gains the replay case
+    (103 shas, one tell) and the precedence case; fixtures are pure state
+    maps, no git needed, except the daemon fact which gets one `git init`
+    fixture under mkdtemp (BL-1390).
+  - The note text keeps its shape ("branch behind <sha>: <reason> - merge
+    up", <=80 chars).
+
+  ## Out of scope
+
+  - Merging on the role's behalf (BL-667's transit-assist slices).
+  - The completion-side guard for Work notes: BL-1422.
+  - The volume of landed commits itself (approval and topic-record commits
+    are separate concerns).
+
+qa_e2e_procedure: |
+  1. `bb swarmforge/scripts/test/post_qa_branch_sweep_lib_test_runner.bb`
+     passes with the replay and precedence cases; the BL-1421 feature passes
+     all six scenario runs; BL-1361's feature passes all of its runs.
+  2. Live, after landing and one handoffd restart: over the next twenty
+     landed commits, `ls .swarmforge/handoffs/coordinator/sent/ | grep
+     _to_coder | xargs grep -l 'branch behind'` gains at most one file per
+     role that stays behind, and none for a role holding in_process work
+     gets a wake (handoffd.log `post-qa-branch-sweep-told <role> ... deferred`).
+  3. `cat .swarmforge/daemon/post-qa-branch-sweep-state.json` shows a
+     `told-sha` per surfaced role that survives a landed-sha change.
+  4. `grep -n 'caught-up-to-told?' swarmforge/scripts/handoffd.bb` returns
+     the fact supplier (required_wiring).
+
+notes: |
+  Minted 2026-09-05 by the specifier on the coordinator's priority-00 note
+  "1384 3rd blind-complete: ev coordinator-bl1384-triple-blind-complete-20260905.md"
+  (ba63d7342d). The coordinator suspected Work notes being "swept through in
+  a burst alongside the high-volume chase notes"; the coder's completed
+  mailbox proves it (30 completions 05:13-05:17Z, 3 s apart), and the
+  sweep's state reset plus precedence are the source of the volume.
+
+  IR-DRY (2026-09-05): 16 occurrences, 14 unique, three medium findings
+  (told-for-A vs caught-up-to-A Givens; told-nothing vs told-once Thens;
+  the two "commit B lands" Givens). Reviewed: each pair is the behaviour
+  under test, deliberate, kept.
+
+  INVEST at mint: Independent (both depends_on landed), Negotiable (state
+  shape is direction), Valuable (one outcome: one tell per standing
+  surfacing, no wake for a working role), Estimable (two lib changes + one
+  daemon fact + tests; low), Small (four scenarios, three invariants),
+  Testable (pure state fixtures, replay of 103 shas).
+
+source: |
+  Coordinator note 2026-09-05T06:41:04Z (handoff 20260905T064104Z_004504)
+  and evidence backlog/evidence/coordinator-bl1384-triple-blind-complete-20260905.md.
+  Specifier measurements the same day: coordinator sent/ counts per role,
+  the coder's completed mailbox timestamps, git rev-list on origin/main,
+  post_qa_branch_sweep_lib.bb normalize-state-for-landed and decide-role.

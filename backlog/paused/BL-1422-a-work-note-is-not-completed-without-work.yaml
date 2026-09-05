@@ -1,0 +1,145 @@
+id: BL-1422
+title: "A Work dispatch can be completed with no work: done_with_current completes whatever is in_process and dequeues the next, so a role clearing a queue of chase notes with back-to-back completions sweeps the Work notes out unread (BL-1384 blind-completed four times on 2026-09-05, 4-39 s after dequeue); a Work note leaves in_process only with a commit or git_handoff naming its ticket since dequeue, or an explicit --no-work reason recorded on the file"
+milestone: M8
+type: defect
+severity: high
+# high: a live fault losing dispatched work silently and repeatedly: four
+# blind completions of one ticket in one day, each costing a coordinator
+# round trip and a dropped-parcel nudge; the ticket is still unworked.
+status: todo
+epic: swarm-reliability
+priority: 2
+direction: swarm-reported
+depends_on: [BL-1223, BL-1301]
+mutation_cost: low
+slice_size_envelope: low
+required_stages: [coder, cleaner, architect, hardender, documenter, qa]
+
+acceptance: specs/features/BL-1422-a-work-note-is-not-completed-without-work.feature
+
+required_wiring:
+  - 'swarmforge/scripts/done_with_current_task.bb::dispatch-trail-ticket-id::the live task completion must recognise a Work note through the one dispatch parser (BL-1223); absent today (grep returns 0)'
+  - 'specs/pipeline/steps/bl1422WorkNoteNotCompletedWithoutWorkSteps.js::registerSteps::the handler file exists so discovery registers every scenario (BL-1371)'
+
+invariants:
+  - "A Work note leaves in_process only with work evidence since its dequeue (a commit naming the ticket on the role's branch, or a git_handoff naming it sent by the role) or with an explicit --no-work reason recorded as no_work_reason on the completed file; never silently."
+  - "Work-note recognition is chase_sweep_lib.bb dispatch-trail-ticket-id (BL-1223's one parser of the router's verb-first form); no second regex."
+  - "Every non-Work note and every git_handoff completes exactly as today, and the complete-then-dequeue contract of done_with_current is unchanged for them."
+
+human_approval: pending
+approval_context: >
+  A new feature file is authored here, so it needs a tap. No choice is posed
+  and there are no ruling_options. Sibling of BL-1421 (the flood that drove
+  the blind bursts); this is the guard at the moment of completion, so that
+  a dispatch cannot be lost even when a queue is being cleared fast.
+
+description: |
+  ## What is wrong
+
+  `route_backlog_to_coder.sh` dispatches a ticket as a priority-10 note,
+  `message: Work <BL-id-slug>: read file in backlog/active`.
+  `done_with_current_task.bb` completes the in_process item, then execs
+  `ready_for_next_task.sh --idle-boundary`, which dequeues the next queued
+  item and prints it. A role that answers each printed item with another
+  `done_with_current.sh` clears its queue at one item per call, reading
+  nothing (the specifier did exactly this once on 2026-09-05; operator
+  memory). The coder's completed mailbox for 2026-09-05:
+
+      05:13:16 -> 05:13:25  note  BL-1365 amendment
+      05:13:47 -> 05:13:51  note  branch behind 47765018c2: dirty worktree - merge up
+      05:13:51 -> 05:13:54  note  branch behind e9e4be7886 ...
+      ... (26 more, 3 s apart)
+      05:14:03 -> 05:14:42  note  Work BL-1384-...          <- dispatch, no commit, no parcel
+      05:15:02 -> 05:15:09  note  Work BL-1402-...          <- dispatch, no commit, no parcel
+      05:17:08 -> 05:17:12  note  Work BL-1402-...  (forced re-route)
+      05:17:12 -> 05:17:15  note  Work BL-1384-...  (forced re-route)
+      06:00:43 -> 06:00:47  note  Work BL-1384-...  (third route)
+
+  BL-1384 has been routed four times and never worked; the dropped-parcel
+  sweep flagged it each time and the coordinator re-routed each time
+  (evidence ba63d7342d). The notes flooding the queue are BL-1421's; the
+  completion that cannot tell a dispatch from a chase note is this ticket.
+
+  ## What is wanted
+
+  - Before completing the in_process item, the task completion recognises a
+    Work note through `chase-sweep-lib/dispatch-trail-ticket-id` (the parser
+    BL-1223 made the one definition of the router's form) and, for one,
+    requires evidence of work since `dequeued_at`: a commit on the role's
+    current branch whose subject names the ticket id, or a git_handoff in
+    the role's outbox/sent naming the ticket, created after the dequeue.
+  - Without evidence it refuses, exit non-zero, naming the ticket and the
+    two ways forward: do the work and send the parcel, or
+    `done_with_current.sh --no-work "<reason>"`. The note stays in_process.
+  - With `--no-work "<reason>"` (non-blank) it completes and writes
+    `no_work_reason: <reason>` and `no_work_at:` onto the completed file, and
+    logs it, so the coordinator and BL-1415's dropped-parcel verdict can
+    read a deliberate non-start instead of inferring one.
+  - Chase notes, merge-up notes, every other note, and git_handoffs complete
+    exactly as today.
+
+  ## How (direction, not mandate)
+
+  - `done_with_current_task.bb`: read the in_process file's `type`,
+    `message`, `dequeued_at`; `(chase-sweep-lib/dispatch-trail-ticket-id
+    {:task nil :message message})` non-nil means a Work note. Evidence:
+    `git log --since=<dequeued_at> --format=%s HEAD` in the role's worktree
+    grepped for the id (pipeline_stage_lib extract-ticket-id equality, never
+    a substring), or `sent/` files newer than dequeued_at whose `task:`
+    extracts to the id.
+  - `--no-work` is the one accepted argument beside the BL-652 refusal;
+    `dispatch_lib/refuse-unexpected-args!` learns it, with a non-blank reason
+    required.
+  - `claim_progress_lib.bb` already answers "HEAD advanced since claim" for
+    the daemon; reuse its sidecar when present, fall back to the git log.
+  - Tests: a runner under `swarmforge/scripts/test/` with fixture mailbox +
+    `git init` worktree under mkdtemp (BL-1390), plus the burst replay
+    (scenario 05).
+
+  ## Out of scope
+
+  - The flood that provokes the bursts: BL-1421.
+  - Re-routing on a `--no-work` completion: BL-1415's verdict reads the
+    header; the sweep's action is unchanged here.
+  - Batch-mode completion (`done_with_current_batch`): batch roles receive
+    git_handoffs, not Work notes.
+
+qa_e2e_procedure: |
+  1. The new runner and the BL-1422 feature pass (all seven scenario runs);
+     `handoff_lib_test_runner.bb` and the dispatch_lib argv tests still pass.
+  2. Scratch role (fixture mailbox + worktree): put a Work note in
+     in_process, run `done_with_current.sh`: refused, file still there;
+     commit `BL-9001: x` in the worktree, run again: completed. Repeat with
+     `--no-work "waiting on BL-9000"`: completed, `grep no_work_reason` on
+     the completed file returns it.
+  3. Scratch queue of 28 chase notes plus a Work note: a loop of
+     `done_with_current.sh` calls completes the chase notes and stops at the
+     Work note with the refusal on stderr.
+  4. `grep -n dispatch-trail-ticket-id swarmforge/scripts/done_with_current_task.bb`
+     returns the guard (required_wiring).
+  5. Live, after landing: the next Work note the coder completes carries a
+     commit naming its ticket after its dequeue, or a no_work_reason.
+
+notes: |
+  Minted 2026-09-05 by the specifier on the coordinator's priority-00 note
+  "1384 3rd blind-complete" (evidence ba63d7342d), with the coder's completed
+  mailbox as the proof of the burst pattern. This is the successor the
+  amended BL-1415 named out of scope ("the double-dequeue is
+  done_with_current.sh's behaviour").
+
+  IR-DRY (2026-09-05): 19 occurrences, 16 unique, six medium findings, all
+  plain vs --no-work vs repeated done_with_current, and completed vs still
+  in_process contrasts. Reviewed: deliberate, kept.
+
+  INVEST at mint: Independent (both depends_on landed; BL-1421 is a sibling,
+  not a prerequisite), Negotiable (evidence sources are direction), Valuable
+  (one outcome: a dispatch cannot be completed silently without work),
+  Estimable (one guard + one flag + tests; low), Small (five scenarios,
+  three invariants), Testable (fixture mailbox + worktree, burst replay).
+
+source: |
+  Coordinator note 2026-09-05T06:41:04Z (handoff 20260905T064104Z_004504)
+  and backlog/evidence/coordinator-bl1384-triple-blind-complete-20260905.md.
+  Specifier reading the same day: .worktrees/coder/.swarmforge/handoffs/inbox/completed
+  headers 05:13-05:17Z and 06:00Z; done_with_current_task.bb;
+  route_backlog_to_coder.sh line 132.
