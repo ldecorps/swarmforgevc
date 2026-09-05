@@ -1,3 +1,8 @@
+# mutation-stamp: sha256=0ecba40687f97e353bb75f49a23c1dbaa9d5741fa84ac3205b1fc6f082d12a50
+# acceptance-mutation-manifest-begin
+# {"version":1,"tested_at":"2026-09-05T19:29:45.123486718Z","feature_name":"BL-1419 The daily briefing email reflows its text and reads well on a phone","feature_path":"/home/carillon/swarmforgevc/.worktrees/hardender/specs/features/BL-1419-the-briefing-email-reflows-and-reads-well-on-a-phone.feature","background_hash":"9532ae2dff3a47f26bdd51baaee4dece23557238426060bd691d5467d61ff680","implementation_hash":"unknown","scenarios":[{"index":0,"name":"consecutive wrapped lines render as one block element","scenario_hash":"bd17efae1ad6a57371abe682d017470b5b00af26ad86f6a26ea8747517b53a0c","mutation_count":6,"result":{"Total":6,"Killed":6,"Survived":0,"Errors":0},"tested_at":"2026-09-05T19:29:45.123486718Z"}]}
+# acceptance-mutation-manifest-end
+
 Feature: BL-1419 The daily briefing email reflows its text and reads well on a phone
 
   The briefing markdown is written hard-wrapped at ~74 columns. BL-393
