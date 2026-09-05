@@ -1,0 +1,209 @@
+id: BL-1425
+title: "A queue-jump places the ticket on the pipeline regardless of active_backlog_max_depth: the Approvals Q jump tap, the /qjump verb and the paused-pager Expedite approve, promote past a full depth cap and dispatch now, telling the operator the cap was crossed, while depends_on, hold and blocked still refuse and the coordinator's own promotion stays capped (human directive 2026-09-05; reverses the depth-cap row of BL-1083)"
+milestone: M8
+type: feature
+status: todo
+epic: swarmforge-console
+priority: 6
+direction: human-requested
+depends_on: [BL-721, BL-1083]
+mutation_cost: low
+slice_size_envelope: small
+required_stages: [coder, cleaner, architect, hardender, documenter, qa]
+
+acceptance: specs/features/BL-1425-a-queue-jump-places-the-ticket-past-the-depth-cap.feature
+
+retires:
+  - specs/features/BL-1083-every-promotion-path-goes-through-the-gate.feature
+  - specs/pipeline/steps/bl1083PromotionGateSteps.js
+  - extension/test/bl1083PromotionGateInvariants.property.test.js
+
+human_approval: approved
+approval_context: >
+  A new feature file is authored here, so it needs a tap. No choice is
+  posed and there are no ruling_options; one assumption is stated so you
+  can Amend it if it is wrong. Your directive names the max cap and only
+  the max cap, so this ticket crosses exactly that gate: depends_on, hold
+  and status blocked still refuse a queue-jump, because BL-1083's own
+  approval text (which you approved on 2026-08-23) framed precisely this
+  split - "the depth cap to remain overridable by an explicit human tap
+  while depends_on and hold stay hard" - and called it a coherent position.
+  The change applies to all three human entry points that already share
+  one promote path (the Approvals Q jump button, the typed /qjump verb, and
+  the paused-pager Expedite); the coordinator's own promotion stays capped.
+  The constitution wording (workflow article, its reference, the
+  coordinator prompt) is landed by the specifier in this mint's commit.
+
+invariants:
+  - "Only a caller-declared queue-jump crosses the depth cap, and it crosses ONLY that gate: hold, epic, blocked, human_approval, acceptance, slice_size_envelope and depends_on refuse a queue-jump exactly as they refuse any promotion, and no script the coordinator or the daemon runs ever declares the mode."
+  - "The bypass lives inside the one promotion-gates chokepoint as a declared mode, so BL-1083 invariant 1 still holds: no caller skips the CLI and no second copy of the depth-cap rule exists in TypeScript."
+  - "A queue-jump past the cap is never silent and never widens the cap: the operator is told the cap was crossed with the active count and the cap, and the ticket fills a real active slot, so the coordinator's next ordinary promotion waits for the count to fall below the cap."
+
+required_wiring:
+  - 'extension/src/panel/backlogWriter.ts::--queue-jump::the mover passes the declared mode to the chokepoint CLI; absent today (grep returns 0)'
+  - 'extension/src/tools/telegram-front-desk-bot.ts::queueJump::the Q jump tap and the /qjump verb request the mode from the mover, the live consumer; absent today (grep returns 0)'
+  - 'extension/src/bridge/bridgeServer.ts::queueJump::the paused-pager Expedite requests the same mode; absent today (grep returns 0)'
+  - 'specs/pipeline/steps/bl1425QueueJumpPastCapSteps.js::registerSteps::the handler file exists so discovery registers every scenario (BL-1371)'
+
+description: |
+  ## What is wanted
+
+  Human directive, in the specifier pane 2026-09-05, verbatim: "ammend qjump
+  behaviour: it should.place the ticket on rails, ignoring the max cap".
+
+  "On rails" is what BL-721 already promises for a Q jump: approve, promote
+  paused to active, inject the routing handoff so the build starts now.
+  What stops it today is the depth cap. BL-1083 (2026-08-23) made
+  `promoteToActive` take its verdict from the promotion-gates chokepoint
+  (`promotion_gates_cli.bb gate-promotion`), whose chain ends in
+  `depth-refusal`; on a full cap the tap is refused and the operator reads
+  "Expedite refused by the active_backlog_max_depth gate - active count N >=
+  cap M - no open slot. The ticket is unchanged; your approval was
+  recorded." BL-1083's own approval_context asked whether the cap should
+  stay overridable by an explicit human tap; the strict reading was
+  approved then. This directive reverses that one row and nothing else.
+
+  ## What changes
+
+  - `promotion_gates_cli.bb gate-promotion <root> <BL-id> --queue-jump`: a
+    caller-declared mode in which the chokepoint skips `depth-refusal` ONLY,
+    every other gate unchanged and in the same order, and reports the
+    crossing as a structured line the way BL-854 reports orthogonality
+    (an `ADVISORY|active_backlog_max_depth|queue-jump past cap: active count
+    N >= cap M` on stderr, stdout's `ALLOW|<file>` contract byte-identical).
+    The flag literal is fixed at mint for the wiring anchor.
+  - `promoteToActive(targetPath, itemId, { queueJump: true })` in
+    `backlogWriter.ts` passes the flag and surfaces the crossing in its
+    result (`crossed?: { gate, reason }` beside the existing `refusal?`), so
+    a caller can tell "allowed past the cap" from "allowed with room".
+  - The three human entry points request it - `promoteTicketIfPaused` as
+    wired in `telegram-front-desk-bot.ts` (the Q jump tap and `/qjump` share
+    `recordExpediteDecisionAndClose`, BL-721), and the paused-pager Expedite
+    route in `bridgeServer.ts`. The Telegram toast on a crossing reads the
+    count and the cap ("Q jumped past the active_backlog_max_depth cap:
+    active count 7 >= cap 6"); the pager's 200 body carries the same
+    `crossed` object. The ask still closes with the `-- Q jumped <UTC>` line.
+  - Dispatch is unchanged: the Telegram path still runs
+    `route_backlog_to_coder.sh` (which consults `route-target`, never the
+    depth gate); the pager Expedite promotes and sets priority 0 as today and
+    leaves dispatch to the coordinator's unassigned-active sweep (BL-538).
+
+  ## What does NOT change
+
+  - The coordinator's own path: `promote_and_route_next.sh` keeps its cap
+    gate and `select`; the daemon's open-slot nudge (`handoffd.bb`,
+    `chase_sweep_lib.bb`) still fires only under the cap. Scenario 03 reads
+    those scripts and pins that none names the mode.
+  - The cap itself. A queue-jumped ticket is a real active ticket; with the
+    count at cap+1 the coordinator's next ordinary promotion waits for two
+    closures. `swarm_handoff.bb`'s "Active backlog depth exceeded" warning
+    will print on sends while over the cap; BL-598 already classes it as
+    non-actionable telemetry, and it stays that way.
+  - The ruling refusal (BL-1380): a queue-jump on a ticket that poses an
+    unanswered `ruling_options` choice is still refused before any write.
+  - Article 3.2.4's expedited-defects ORDERING lane (Article 3.2.4 "never
+    an extra active slot") - that is the coordinator's ranking, not the
+    human's queue-jump; the constitution wording now says so explicitly.
+
+  ## Retirements (BL-1006: retire, never reword)
+
+  - `specs/features/BL-1083-every-promotion-path-goes-through-the-gate.feature`
+    scenario 02's `active_backlog_max_depth` Examples row is falsified by
+    this ticket: remove that row (depends_on and hold stay), and drop the
+    matching branch in `bl1083PromotionGateSteps.js` and the depth-cap case
+    at `bl1083PromotionGateInvariants.property.test.js` line ~84. The
+    feature's narrative sentence "a human tap may reorder work, never promote
+    onto an unlanded dependency or out of a hold" remains true; re-tense any
+    sentence there that now states a false present. The BL-1083 feature
+    carries the hardener's mutation stamp; `retires:` above declares the
+    three BL-1083-owned paths so the task-scope gate admits the edit.
+  - Scenario 01 here is the coverage for what that row asserted for the
+    ordinary path (row 2: an ordinary promotion is still refused).
+
+  ## How (direction, not mandate)
+
+  - Keep the mode a parameter of `evaluate` (`:queue-jump? true` skips
+    `depth-refusal` and returns `{:ok true :crossed {...}}`), so `select`,
+    `evaluate` and every other CLI verb are untouched by construction; the
+    CLI parses the trailing flag and prints the crossing as an advisory line.
+  - Fixture for scenario 01: BL-1083's own handler already builds a root with
+    the real `promotion_gates_cli.bb` reachable, a conf with a cap, and
+    active/ filled to it; reuse that shape (prove the fixture root with
+    `rev-parse --git-common-dir` before any mutating git command, BL-1390).
+  - Scenario 02 is pure: drive `recordExpediteDecisionAndClose` with an
+    adapter whose `promoteTicketIfPaused` returns the richer outcome carrying
+    `crossed`, and assert the Approvals-topic notification text.
+  - Scenario 03: read `promote_and_route_next.sh`, `route_backlog_to_coder.sh`,
+    `handoffd.bb` and `chase_sweep_lib.bb` at the parcel commit and assert
+    `--queue-jump` and `queue-jump?` appear in none of them - a structural
+    check the invariant needs and nothing else pins.
+  - Documenter: `docs/reference/Specification.MD` (the BL-721 and BL-1083
+    entries), `docs/explanation/BL-900-epic-priority-promotion-ranking.md`
+    (queue-jump "is a coordinator action" - it is the human's), the how-to
+    for the Approvals buttons, and `docs/diagrams/swarm-flow.mmd`: its
+    backlog-flow trigger fires here, so the diagram gains the queue-jump edge
+    entering active past the depth gate in this parcel (Article 1.7).
+
+  ## Out of scope
+
+  - Giving the pager Expedite a dispatch step (it never had one; BL-538).
+  - Crossing any gate other than the depth cap; changing the freshness gate
+    (Article 3.6), which the queue-jump path does not run today either.
+  - `direction: queue-jump`, the STEERING.md ranking tag on paused tickets -
+    a different thing with the same name; untouched.
+  - The compliance battery's `gate-coordinator` scoring (scores the
+    coordinator's promotions; a queue-jump is the human's).
+
+qa_e2e_procedure: |
+  1. The BL-1425 feature passes (three scenarios, seven runs); the BL-1083
+     feature still passes with its depth-cap row retired (two runs of
+     scenario 02, not three); `bl1083PromotionGateInvariants.property.test.js`
+     passes without the depth-cap case.
+  2. Live, from the Approvals topic while backlog/active is at the cap
+     (check `bb swarmforge/scripts/effective_backlog_depth_cli.bb .` against
+     `ls backlog/active/*.yaml | wc -l`): pick a paused, already-approved
+     ticket with no unlanded depends_on and type `/qjump <id>`. Within one
+     poll the ticket is in backlog/active, the ask closes with `-- Q jumped
+     <UTC>`, the topic shows the crossed-cap line with the count and the cap,
+     and the coder's mailbox holds the routing note.
+  3. Same state, run `swarmforge/scripts/promote_and_route_next.sh` as the
+     coordinator: it still refuses with "no open slot".
+  4. Pick a paused ticket with an unlanded depends_on and `/qjump` it: refused
+     naming the depends_on gate, ticket unchanged - as today.
+  5. `grep -c -- --queue-jump swarmforge/scripts/promote_and_route_next.sh
+     swarmforge/scripts/route_backlog_to_coder.sh swarmforge/scripts/handoffd.bb
+     swarmforge/scripts/chase_sweep_lib.bb` is 0 for each.
+
+notes: |
+  Minted 2026-09-05 by the specifier on the human's in-pane directive
+  (verbatim in description and source). The constitution wording that
+  described queue-jump as "reorders promotion only" (workflow.prompt How
+  Work Moves, workflow-detailed.prompt rows and section, coordinator.prompt
+  Expedited Defects) is amended by the specifier in the same commit as this
+  mint (BL-798: prose the specifier owns is landed by the specifier); the
+  boot prefix budget gate was run on the boot-inlined change.
+
+  The flag `--queue-jump`, the mover option `queueJump` and the handler
+  name `bl1425QueueJumpPastCapSteps` are fixed at mint so the wiring anchors
+  are literals that will exist (BL-874); they name the seam, not the
+  internals.
+
+  INVEST at mint: Independent (BL-721 and BL-1083 landed; the BL-1083
+  retirement is scoped in here via retires:), Negotiable (CLI parsing,
+  advisory shape and fixture reuse are direction), Valuable (one outcome: a
+  human's queue-jump lands the ticket on the pipeline now), Estimable (one
+  evaluate parameter, one CLI flag, one mover option, two caller edits, one
+  toast, one row retired; low), Small (three scenarios, seven runs, three
+  invariants at the cap), Testable (fixture root; live steps in
+  qa_e2e_procedure).
+
+source: |
+  Human, in the specifier pane 2026-09-05, verbatim: "ammend qjump behaviour:
+  it should.place the ticket on rails, ignoring the max cap". Specifier
+  trace the same hour: `promotion_gates_lib.bb` evaluate chain (depth-refusal
+  last), `promotion_gates_cli.bb gate-promotion`, `backlogWriter.ts`
+  promoteToActive (BL-1083), `telegramFrontDeskBotCore.ts`
+  recordExpediteDecisionAndClose refusal toast, `bridgeServer.ts` pager
+  route, `route_backlog_to_coder.sh` (route-target only), BL-1083's
+  approval_context naming this exact amendment, live state at the time
+  (six active, cap six).

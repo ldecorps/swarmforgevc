@@ -1,0 +1,178 @@
+id: BL-1424
+title: "A commit that adds a test file under swarmforge/scripts/test/ with no suite-manifest.tsv row is refused by the pre-commit guard chain: BL-1240 fires only at a parcel's git_handoff, so hotfix 27d6ab8630 (a human commit straight onto main) added two unregistered files on 2026-09-02 and the standing suite refused every run for three days before anyone was told; the guard judges only the files the commit itself adds, never pre-existing drift"
+milestone: M8
+type: defect
+severity: medium
+# medium: prevention of a recurring class, not a present fault. The live
+# fault is BL-1423's two rows; this closes the path that produced them. A
+# hotfix is committed outside the pipeline several times a week (the
+# hotfix ledger has 30+ rows) and each one that adds a test file goes dark
+# until someone runs the whole suite - the shape BL-1240 ended for parcels.
+status: todo
+epic: swarm-reliability
+priority: 12
+direction: swarm-reported
+depends_on: [BL-1240, BL-1252]
+mutation_cost: low
+slice_size_envelope: small
+required_stages: [coder, cleaner, architect, hardender, documenter, qa]
+
+acceptance: specs/features/BL-1424-a-commit-that-adds-a-test-file-registers-it.feature
+
+human_approval: approved
+approval_context: >
+  A new feature file is authored here, so it needs a tap. No choice is
+  posed and there are no ruling_options. The one design decision - the
+  guard runs on EVERY commit in every checkout, not only on main - is
+  recorded in the description with its reason (a hotfix is a commit on
+  main, but a branch commit merged later would otherwise need a second,
+  merge-time check; the cost is one re-commit with the exact row quoted).
+  Sibling of BL-1423 (the two rows that are missing today); this ticket is
+  the guard so it does not happen a third time (BL-1239 was the first
+  backfill, 39 files).
+
+invariants:
+  - "The guard refuses only on a test file the commit itself ADDS (a staged addition directly under swarmforge/scripts/test/ matching suite_inventory_lib's test-file?) with no row in the STAGED manifest; drift that pre-exists the commit never refuses it (BL-1240's parcel-scoped property, carried to the commit)."
+  - "What counts as a test file and what a row says come from suite_inventory_lib.bb (test-file?, parse-manifest) through unregistered_test_gate_lib's unregistered-findings: no second notion of registered."
+  - "Fail-open on its own blindness: an unreadable index or manifest WARNS to stderr and exits 0; the guard never runs a test and never reads unstaged working-tree state."
+
+required_wiring:
+  - 'swarmforge/scripts/run_commit_guards.sh::check_test_file_registration.sh::the guard joins the cheap tier of the pre-commit chain, the pre-existing live consumer; a guard script nobody runs gates nothing (BL-1235)'
+  - 'specs/pipeline/steps/bl1424TestFileRegistrationGuardSteps.js::registerSteps::the handler file exists so discovery registers every scenario (BL-1371)'
+
+description: |
+  ## What is wrong
+
+  Three gates guard `swarmforge/scripts/test/suite-manifest.tsv` and a
+  hotfix meets none of them (BL-1423 has the full trace): BL-1240's
+  `unregistered_test_gate_lib.bb` runs at the git_handoff send, so it sees
+  parcels only; BL-1239's inventory gate runs at suite time and lands on
+  the wrong person; BL-1342-style stamp-offs certify behaviour, not
+  membership. Hotfix `27d6ab8630` was a single-parent commit straight onto
+  main on 2026-09-02 (it passed the pre-commit chain, which asks nothing
+  about the manifest) and the standing suite refused every run until a
+  coordinator sweep noticed on 2026-09-05.
+
+  ## What changes
+
+  A new cheap-tier guard, `swarmforge/scripts/check_test_file_registration.sh`,
+  in `run_commit_guards.sh` (BL-1252's pre-commit chain), asking of every
+  commit exactly the question BL-1240 asks of every parcel: does THIS commit
+  add a test file with no manifest row? If so, refuse, naming the file and
+  quoting the row it needs (the same `suggested-row` text BL-1240 prints,
+  and the same "or lane excluded with a date and a reason" alternative).
+  Otherwise silent.
+
+  Scope, and the load-bearing property (invariant 1): the guard judges the
+  commit's OWN staged additions, never the tree. A tree-wide inventory here
+  would refuse every commit on drift its author did not create, which is
+  the relocation BL-1240's header explicitly refuses to do, and would have
+  blocked every commit in the repository for the last three days on
+  BL-1423's two files. Scenario 02 pins this.
+
+  Runs on every commit in every checkout, not only on main. A hotfix is a
+  commit on main, but a branch commit merged onto main later would then
+  need a second check at merge time (pre-merge-commit), and the replay
+  land (`land_step_lib.bb`) already lands only parcels BL-1240 gated. One
+  guard at the commit covers all of it; the cost to a role branch is one
+  re-commit with the exact row quoted, no more than BL-1240 already asks.
+
+  The guard-chain COPIES. The chain's membership is pinned by hand in
+  `extension/test/bl1252CommitGuardAggregationInvariants.property.test.js`
+  (INDEX_GUARDS) and `swarmforge/scripts/test/test_run_commit_guards.sh`;
+  adding a guard without updating them leaves a property test asserting a
+  chain that no longer exists. Update both in this parcel - UNLESS BL-1408
+  (pending: those copies derive from the runner) has landed first, in which
+  case they need nothing. BL-1408 also records that
+  `test_run_commit_guards.sh` has failed at case 01 since 2026-09-04; do not
+  paper over that here, add the guard to its list and leave the case-01 red
+  to BL-1408. Do NOT add this guard to `land_step_lib.bb`'s tree-guard list:
+  those run tree-wide against the replayed tree, exactly the shape invariant
+  1 forbids.
+
+  ## How (direction, not mandate)
+
+  - Staged additions: `git diff --cached --name-status --diff-filter=A`
+    against HEAD (every staged path on a root commit). Feed the paths to
+    `unregistered-findings` with `manifest-rows` parsed from the STAGED
+    manifest (`git show :swarmforge/scripts/test/suite-manifest.tsv`) via
+    `parse-manifest`, and `exists?` answering from the index. A missing
+    staged manifest is `nil` rows, the fail-open branch (scenario 03).
+  - Same shape as the sibling cheap guards: own `set -euo pipefail` inside,
+    status captured by `run_guard`, one refusal line per finding so the
+    chain's one-report contract (BL-1252) carries it. Prefer a thin shell
+    wrapper over a `bb` entry point in `unregistered_test_gate_lib.bb`
+    (a `findings-for-staged-commit` beside `findings-for-git-handoff`), so
+    the decision stays in the lib the acceptance handlers already drive.
+  - Fixture: `git init` under mkdtemp with a copy of the guard scripts and a
+    small registered test tree; wire only THIS guard, not the whole chain
+    (the chain boots handoffd and runs the property suite; scenario 02's
+    stale file is committed before the guard is wired). Prove the fixture
+    root with `rev-parse --git-common-dir` before any mutating git command
+    (BL-1390).
+  - Dogfood: the parcel's own shell test for the guard
+    (`test_check_test_file_registration.sh`, say) is itself a test file
+    under the governed tree - the commit that adds it must add its standing
+    row in the same commit or refuse itself. That refusal, seen once by the
+    coder, is the evidence the guard is live before any scenario runs.
+
+  ## Out of scope
+
+  - The two rows missing today (BL-1423).
+  - Deriving the guard-chain copies (BL-1408) and the case-01 red it owns.
+  - A merge-time check in pre-merge-commit, or a tree-guard row in
+    `land_step_lib.bb` (see above, deliberately not).
+  - The TypeScript and Gherkin test lanes (their own tooling; BL-1240's
+    scope statement carries over).
+
+qa_e2e_procedure: |
+  1. The BL-1424 feature passes (three scenarios, seven runs); the guard's
+     own shell test passes and has a standing manifest row.
+  2. `grep -n check_test_file_registration.sh swarmforge/scripts/run_commit_guards.sh`
+     shows the guard in tier 1 (before the `guard_chain_has_refusal` check),
+     and NOT in `land_step_lib.bb`'s tree-guard list.
+  3. Live probe in a throwaway `git clone` of the repo under mkdtemp (never
+     the live checkout, never a linked worktree - it shares .git/config,
+     BL-1390) with `core.hooksPath` pointed at the clone's
+     `swarmforge/git-hooks`: stage a new `test_probe_bl1424.sh` under
+     `swarmforge/scripts/test/` with no row and `git commit` - refused, the
+     message names the file and quotes `test_probe_bl1424.sh<TAB>standing`;
+     add the row, commit again - this guard is silent (the rest of the chain
+     runs as on any commit). Delete the clone.
+  4. `extension/test/bl1252CommitGuardAggregationInvariants.property.test.js`
+     passes with the guard in INDEX_GUARDS (or derived, if BL-1408 landed);
+     `test_run_commit_guards.sh` lists the guard, its pre-existing case-01
+     red noted against BL-1408, not this ticket.
+
+notes: |
+  Minted 2026-09-05 by the specifier as the companion to BL-1423, on the
+  coordinator's note (verbatim in BL-1423's source). The coordinator asked
+  only for the two rows; the specifier minted this because the trace showed
+  no existing gate CAN see a hotfix, the hotfix ledger shows the path is
+  taken several times a week, and BL-1239 was already the second backfill
+  of this manifest (39 files). Separate ticket on purpose: BL-1423 is two
+  data rows and urgent; this touches the commit-guard chain and its
+  hand-kept copies, a known hazard area (BL-1398/BL-1401/BL-1408).
+
+  Guard name `check_test_file_registration.sh` and handler name
+  `bl1424TestFileRegistrationGuardSteps` are fixed at mint so the
+  required_wiring anchors are literals that will exist (BL-874).
+
+  INVEST at mint: Independent (BL-1240 and BL-1252 landed; BL-1408 is
+  named as a may-have-landed, never a wait), Negotiable (index read, lib
+  entry point, fixture shape are direction), Valuable (one outcome: a
+  commit cannot leave the suite dark), Estimable (one guard script, one
+  lib entry point, two list edits, one handler; low), Small (three
+  scenarios, seven runs, three invariants at the cap - the third is the chain's
+  standing fail-open posture, stated so the architect checks it as a
+  property), Testable (fixture repo under mkdtemp; live probe in a
+  throwaway clone).
+
+source: |
+  Same coordinator note as BL-1423 (2026-09-05T08:27Z). Specifier trace:
+  `unregistered_test_gate_lib.bb` header ("PARCEL-SCOPED ... never 'is the
+  tree clean'"), `run_commit_guards.sh` tier structure (BL-1252),
+  `pre-merge-commit` chain (two main-only guards), `land_step_lib.bb`
+  tree-guard list, `git log --first-parent main | grep 27d6ab8630` (a
+  direct commit on main), `backlog/hotfix-ledger.yaml` row for 27d6ab8630
+  (stamp_ticket BL-1342, awaiting-human).
