@@ -174,6 +174,7 @@ seat_difficulty_lib_test_runner.bb	standing
 self_heal_telemetry_lib_test_runner.bb	standing		
 shell_quote_lib_test_runner.bb	standing		
 single_role_repair_lib_test_runner.bb	standing		
+standing_red_register_lib_test_runner.bb	standing		
 standing_rule_violations_files_test_runner.bb	standing		
 standing_rule_violations_lib_test_runner.bb	standing		
 stuck_escalation_email_lib_test_runner.bb	standing		

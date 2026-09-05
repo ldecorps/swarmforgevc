@@ -40,7 +40,15 @@ STUB
   chmod +x "$GUARDS/$name"
 }
 
-ALL_GUARDS="check_commit_size.sh check_ticket_deletion.sh check_pipeline_code_on_main.sh check_feature_handler_registration.sh check_property_suite_drift.sh"
+# BL-1428: hand-kept in step with run_commit_guards.sh's own Tier 1 list
+# (the same discipline bl1252CommitGuardAggregationInvariants.property.test.js's
+# own INDEX_GUARDS constant states) - check_handler_module_graph.sh and
+# check_bb_scripts_load.sh (both landed 2026-09-04) were already missing
+# here before this ticket, which left every stub-driven case below failing
+# with "No such file or directory" on real guards this fixture never meant
+# to exercise; check_standing_red_register.sh (this ticket) is added at
+# the same time rather than reproducing the same gap a third way.
+ALL_GUARDS="check_commit_size.sh check_ticket_deletion.sh check_pipeline_code_on_main.sh check_feature_handler_registration.sh check_handler_module_graph.sh check_bb_scripts_load.sh check_standing_red_register.sh check_property_suite_drift.sh"
 
 reset_fixture() {
   rm -rf "$GUARDS" "$RAN"
