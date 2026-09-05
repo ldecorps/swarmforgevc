@@ -22,7 +22,7 @@ invariants:
   - "Filtering prunes, never regroups: every ticket that matches keeps its full scenario list and the same milestone and epic placement it has in the unfiltered tree, and a ticket that does not match is absent at every level."
   - "The screen stays read-only (BL-592 read-only-gate-06): the term rides a GET query parameter and no request other than GET exists on the spec tree surface after this parcel."
 
-human_approval: pending
+human_approval: approved
 approval_context: >
   A new feature file is authored here, so it needs a tap. No choice is posed
   and there are no ruling_options: the filter's semantics are BL-254's, which
