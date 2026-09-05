@@ -21,7 +21,7 @@ hand (e.g. `d63e80320` on 2026-07-22).
 | --- | --- |
 | Green | Commit allowed |
 | Red (all failures explicitly allowlisted — BL-1175) | Commit allowed; `allowlisted-standing-reds` marker |
-| Red (any non-allowlisted failure) | Commit blocked; output names unallowlisted files |
+| Red (any non-allowlisted failure) | Commit blocked; output names unallowlisted files; full suite output retained (BL-1275, below) |
 | Red (unparsed failure output) | Commit blocked |
 | Toolchain missing (`node_modules` / npm / exit 127) | Warn + allow (fail open) |
 | Mid-merge byte-identical import (BL-1121) | `skip-reconcile-import` + allow (standing recipe; not the env override) |
@@ -35,6 +35,25 @@ path of the run it guards — including the guard itself being killed
 mid-run — and never leaves a suite process running once it exits. Detail:
 `docs/how-to/BL-1124-property-suite-fixtures-must-not-mutate-shared-main.md#canary-fires-on-every-exit-path-including-a-kill-bl-1202`
 (BL-1202).
+
+**A non-allowlisted refusal retains its full suite output (BL-1275).** Until
+this ticket the run was captured to a `mktemp` file, echoed to stderr, and
+deleted — the only surviving copy of the evidence a refusal was reached from
+was terminal scrollback, and twice that decided whether an investigation was
+possible at all (a retained log split one vague report into four distinct
+mechanisms on 2026-08-22; a swept one left a rejection unadjudicated on
+2026-08-29). On a non-allowlisted red the guard now copies the run's output
+to `.swarmforge/property-guard-refusals/refusal-<index>-<stamp>.log` and
+names that path in the refusal message
+(`property-suite-guard: refusal output retained at <path>`). One file per
+refusal — four different files refused five commits in a single shift on
+2026-08-29, and a fixed name would have kept only the last, precisely the
+one that was not the open question. Retention is bounded to the 20 most
+recent refusals (`SWARMFORGE_PROPERTY_GUARD_REFUSAL_KEEP` for tests only —
+it changes how many are kept, never whether a commit is refused), and the
+directory writes its own `.gitignore` of `*` so nothing under it ever
+becomes a commitable artifact. A green run or an allowlisted-standing-reds
+run (BL-1175) retains nothing — only a refusal does.
 
 ## Operator note
 

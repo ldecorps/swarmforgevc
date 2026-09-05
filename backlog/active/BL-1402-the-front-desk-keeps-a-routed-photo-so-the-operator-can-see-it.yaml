@@ -157,3 +157,5 @@ source: |
   "Oui" (21:37:39Z, to filing this). Code claims in the intake verified
   against main at mint: annotation at core.ts:231, media helpers and the
   8 MB cap in cursorBridgeTelegramMedia.ts, resolveVoiceAudio at bot.ts:1907.
+
+assigned_to: coder
