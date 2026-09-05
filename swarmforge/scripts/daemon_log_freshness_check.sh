@@ -57,6 +57,8 @@ SCRIPT_DIR=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)
 . "$SCRIPT_DIR/freshness_stop_marker_lib.sh"
 # shellcheck disable=SC1091
 . "$SCRIPT_DIR/freshness_announce_normalize_lib.sh"
+# shellcheck disable=SC1091
+. "$SCRIPT_DIR/freshness_announce_lib.sh"
 FRESHNESS_EXTRA_PATH_DIRS=${FRESHNESS_EXTRA_PATH_DIRS:-"/usr/local/bin:/opt/homebrew/bin:${HOME:-}/.local/bin:${HOME:-}/.npm-global/bin"}
 PATH="${FRESHNESS_EXTRA_PATH_DIRS}:${PATH:-/usr/bin:/bin}"
 export PATH
@@ -77,6 +79,11 @@ RESTART_GRACE=${FRESHNESS_RESTART_GRACE:-300}
 # BL-1110 / BL-977: same default as handoffd_supervisor's in-sweep budget.
 IN_SWEEP_BUDGET_MS=${FRESHNESS_IN_SWEEP_BUDGET_MS:-225000}
 INCIDENT_FILE=${FRESHNESS_INCIDENT_FILE:-"$ROOT/.swarmforge/daemon/freshness-incidents.log"}
+# BL-1414: default 30 minutes - the first tick of a violation still
+# announces exactly as before; further ticks within this window are
+# recorded but not announced, until one digest line fires and the window
+# restarts.
+DIGEST_SECS=${FRESHNESS_ANNOUNCE_DIGEST_SECS:-1800}
 
 # BL-784: every long-running supervisor must be registered before we check logs.
 FRESHNESS_CONF="$CONF" /bin/sh "$SCRIPT_DIR/daemon_log_freshness_registry_guard.sh"
@@ -390,6 +397,16 @@ process_daemon() {
   effective=$(effective_threshold "$threshold" "$factor")
 
   if [ "$age" -le "$effective" ]; then
+    # BL-1414: the first fresh tick after an announced violation announces
+    # recovery once; every other fresh tick (never violated, or already
+    # recovered) prints "none" and does nothing.
+    fresh_decision=$(announce_transition_only "$ROOT" "$NOW" "$DIGEST_SECS" "$name" "$reason" "fresh")
+    case "$fresh_decision" in
+      "recovered "*)
+        violation_secs=${fresh_decision#recovered }
+        do_announce "FRESHNESS_RECOVERED swarm=${SWARM_NAME} daemon=${name} reason=${reason} was_violating_secs=${violation_secs}"
+        ;;
+    esac
     return 0
   fi
 
@@ -425,7 +442,19 @@ process_daemon() {
   if [ "$last" -gt 0 ] && [ "$since" -lt "$COOL_OFF" ]; then
     record="epoch=${NOW} swarm=${SWARM_NAME} daemon=${name} age_secs=$(render_age "$age") reason=${reason} threshold=${threshold} effective_threshold=${effective} contention_factor=${factor} action=escalate cool_off_remaining=$((COOL_OFF - since))"
     append_incident "$record"
-    do_announce "FRESHNESS_VIOLATION escalate swarm=${SWARM_NAME} daemon=${name} age_secs=$(render_age "$age") reason=${reason} threshold=${effective} (cool-off; no second restart)"
+    # BL-1414: announce is a transition, not a tick - the incident record
+    # above is unconditional (invariant 1); whether THIS tick also reaches
+    # Telegram is decided here.
+    violation_decision=$(announce_transition_only "$ROOT" "$NOW" "$DIGEST_SECS" "$name" "$reason" "escalate")
+    case "$violation_decision" in
+      announce)
+        do_announce "FRESHNESS_VIOLATION escalate swarm=${SWARM_NAME} daemon=${name} age_secs=$(render_age "$age") reason=${reason} threshold=${effective} (cool-off; no second restart)"
+        ;;
+      "digest "*)
+        suppressed_ticks=${violation_decision#digest }
+        do_announce "FRESHNESS_VIOLATION digest swarm=${SWARM_NAME} daemon=${name} age_secs=$(render_age "$age") reason=${reason} threshold=${effective} suppressed_ticks=${suppressed_ticks} (cool-off; no second restart)"
+        ;;
+    esac
     return 0
   fi
 
@@ -438,7 +467,17 @@ process_daemon() {
   # existing reader of these records keeps working.
   record="epoch=${NOW} swarm=${SWARM_NAME} daemon=${name} age_secs=$(render_age "$age") reason=${reason} threshold=${threshold} effective_threshold=${effective} contention_factor=${factor} action=restart"
   append_incident "$record"
-  do_announce "FRESHNESS_VIOLATION restart swarm=${SWARM_NAME} daemon=${name} age_secs=$(render_age "$age") reason=${reason} threshold=${effective}"
+  # BL-1414: same transition decision as the escalate branch above.
+  violation_decision=$(announce_transition_only "$ROOT" "$NOW" "$DIGEST_SECS" "$name" "$reason" "restart")
+  case "$violation_decision" in
+    announce)
+      do_announce "FRESHNESS_VIOLATION restart swarm=${SWARM_NAME} daemon=${name} age_secs=$(render_age "$age") reason=${reason} threshold=${effective}"
+      ;;
+    "digest "*)
+      suppressed_ticks=${violation_decision#digest }
+      do_announce "FRESHNESS_VIOLATION digest swarm=${SWARM_NAME} daemon=${name} age_secs=$(render_age "$age") reason=${reason} threshold=${effective} suppressed_ticks=${suppressed_ticks}"
+      ;;
+  esac
 }
 
 # Load project + telegram env files when present (production cron path).

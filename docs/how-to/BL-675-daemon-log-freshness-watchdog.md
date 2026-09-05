@@ -338,6 +338,55 @@ Default 300 seconds (`FRESHNESS_COOL_OFF_SECS`). A repeat violation inside the
 window does **not** hammer another restart — it appends an `action=escalate`
 record and announces louder. After the window, a new restart is allowed.
 
+## Announce is a transition, not a tick (BL-1414)
+
+Before this ticket, `do_announce` sent one Telegram message for every
+violation `process_daemon` recorded — one per watched daemon per two-minute
+cron tick. A persisting violation was therefore announced thirty times an
+hour, per daemon. On 2026-09-05, five supervisors "violated" on every tick
+(BL-1413's false reading, above), and the Operator topic received four
+messages a tick — 136 escalations in ninety minutes before the human asked
+for the traffic to stop. BL-1413 removed that instance; this ticket removes
+the shape, so a genuinely persistent violation (a daemon down through its
+whole cool-off) doesn't reproduce it.
+
+**The durable incident record is unaffected.** `.swarmforge/daemon/freshness-incidents.log`
+still gains exactly one line per tick that finds a violation, exactly as
+before (invariant 1) — this ticket changes only whether a tick's
+violation or recovery is ALSO worth a Telegram message, never what gets
+recorded.
+
+`announce_transition_only` (`freshness_announce_lib.sh`, sourced by the
+checker the same way `freshness_stop_marker_lib.sh` already is) decides
+per (daemon, reason), from durable state under
+`.swarmforge/daemon/freshness-announce/<daemon>__<reason>.state` — never
+process memory, since every cron tick is a fresh `/bin/sh` process
+(invariant 3):
+
+| Decision | When | Announced text |
+|---|---|---|
+| `announce` | First tick of a new violation | The restart/escalate message, unchanged from before this ticket |
+| `suppress` | A repeat tick inside the digest window (default 1800s, `FRESHNESS_ANNOUNCE_DIGEST_SECS`) | Nothing — still recorded in the incident log |
+| `digest <n>` | The digest window elapsed with the violation still live | One line naming the daemon, `<n>` suppressed ticks, and the current age; the window then restarts |
+| `recovered <secs>` | The first fresh tick after a violation | One recovery line naming the daemon and how long (`<secs>`) it was in violation |
+| `none` | A fresh tick with no violation on record | Nothing |
+
+The first tick of any transition — into violation, or back to fresh — is
+never suppressed (invariant 2): a fresh violation always announces
+immediately, and recovery always announces immediately, regardless of the
+digest window. Only repeats of an already-announced state are folded into
+a digest.
+
+Recovery detection reads the same state: a daemon back under threshold
+whose state file says "announced stale" announces recovery once (naming
+how long it was violating) and clears the state; a daemon that was never
+announced as violating (state absent) prints `none` and stays silent, since
+there is nothing to recover from.
+
+`FRESHNESS_ANNOUNCE_DIGEST_SECS` (default 1800, i.e. 30 minutes) is the one
+new env seam. Acceptance:
+`specs/features/BL-1414-a-repeating-freshness-violation-is-announced-once-then-digested.feature`.
+
 ## Manual / test seams
 
 ```bash
@@ -357,6 +406,7 @@ FRESHNESS_NOW_EPOCH=$(date +%s) \
 | `FRESHNESS_CORES` | Injected core count (BL-1012; default: read from the host) |
 | `FRESHNESS_MAX_THRESHOLD_SECS` | Ceiling on the effective threshold (BL-1012; default 600) |
 | `FRESHNESS_RESTART_GRACE` | Post-restart grace window in seconds (BL-1012; default 300) — see "Grace window" above |
+| `FRESHNESS_ANNOUNCE_DIGEST_SECS` | Announce-digest window in seconds (BL-1414; default 1800) — see "Announce is a transition, not a tick" above |
 | `FRESHNESS_ANNOUNCE_CMD` | Override announce (`$1` = message) |
 | `FRESHNESS_KILL_CMD` | Override kill (`$1` = pid) |
 | `FRESHNESS_START_CMD` | Override restart (`$1` = script, `$2` = root) |
@@ -404,6 +454,10 @@ plus a property runner
 and trimmed excerpts of the five real 2026-09-05 supervisor logs around
 their NUL-bearing line, checked in under
 `swarmforge/scripts/test/fixtures/bl1413/`.
+The announce-transition digest above has its own,
+`specs/features/BL-1414-a-repeating-freshness-violation-is-announced-once-then-digested.feature`,
+plus a property runner
+(`swarmforge/scripts/test/bl1414_freshness_announce_digest_property_runner.sh`).
 
 ## Consumer: cost-health sidecar's `daemonRestarts` (BL-904)
 
