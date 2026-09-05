@@ -1,0 +1,134 @@
+id: BL-1407
+title: "The property-suite gate re-runs a non-allowlisted red file once in isolation before it may refuse: a red that passes alone is recorded as a load flake and the commit is allowed, a red that fails alone refuses as today - five refusals in one evening blocked an approved parcel for 2.5 hours on a different unrelated red each time"
+milestone: M8
+type: defect
+severity: high
+# high: a live fault degrading the pipeline. The gate runs the whole 316-file
+# property suite on every commit in every worktree; under the pool BL-1348
+# and BL-1349 describe, some file goes red on load often enough that on
+# 2026-09-04 the BL-1370 coder's five commit attempts were refused on five
+# different unrelated files across 2.5 hours, with nothing to adjudicate
+# (BL-1275). BL-1356 (2026-09-03) was the same class. Not critical: a
+# retry can get through, and nothing is lost.
+status: todo
+epic: code-quality-gates
+priority: 8
+direction: swarm-reported
+depends_on: []
+mutation_cost: medium
+slice_size_envelope: low
+required_stages: [coder, cleaner, architect, hardender, documenter, qa]
+
+acceptance: specs/features/BL-1407-the-property-gate-reruns-a-red-in-isolation-before-it-refuses.feature
+
+required_wiring:
+  - 'specs/pipeline/steps/bl1407PropertyGateRerunsARedInIsolationSteps.js::registerSteps::the handler file exists so discovery registers every scenario (BL-1371)'
+
+invariants:
+  - "A deterministic red is always refused: a non-allowlisted file that fails again when re-run alone refuses the commit exactly as today, naming the file - the re-run can never turn a real regression into a pass."
+  - "A flake never passes silently: every red the re-run cleared is recorded durably (file, commit, whether the commit touched that file, and where the full-run output is retained) so the flake rate is measurable and BL-1348/BL-1349 can be judged against it."
+  - "The re-run is bounded: each red file is re-run at most once, alone, under a wall-clock ceiling; a re-run that cannot complete counts as a failure, never as a pass."
+
+human_approval: pending
+approval_context: >
+  A new feature file is authored here, so it needs a tap. No choice is posed
+  and there are no ruling_options. This does not weaken the gate for a real
+  regression (invariant 1); it stops a load-dependent red in an unrelated
+  file from refusing a commit that did not touch it, and it makes the flake
+  visible instead of leaving it as scrollback.
+
+description: |
+  ## What is wrong
+
+  `swarmforge/scripts/check_property_suite_drift.sh` runs `npm run
+  test:properties` (316 files, ~145 s, a fork pool BL-1348 shows is
+  mis-sized and BL-1349 shows has spawn-heavy files) and refuses the commit
+  when any non-allowlisted file is red. It decides from ONE run. A red that
+  is load-dependent - green alone, red under the full pool - refuses exactly
+  like a regression, and because the guard deletes its own output (BL-1275)
+  nobody can tell which it was afterwards.
+
+  2026-09-04, BL-1370 (approved, coder): five commit attempts refused across
+  2.5 hours, "a different unrelated red each run" (coder note to the
+  coordinator, 00:22Z 09-05). None of the five was a file the parcel
+  touched. 2026-09-03, BL-1356: four unrelated commits blocked the same way.
+  The standing-red allowlist (BL-1175) is the wrong tool for this: it is for
+  files known red on main, edited by ticket, not for a file that is green
+  nine runs in ten.
+
+  ## Outcome
+
+  A red in a non-allowlisted file is re-run once, alone. If it passes alone
+  it is a load flake: recorded, and the commit is allowed. If it fails alone
+  it is a regression: refused as today, naming the file. The gate stays
+  exactly as strict for anything deterministic and stops charging commits
+  for the pool's weather.
+
+  ## How (direction, not mandate)
+
+  - After the full run, take the non-allowlisted failing files
+    (`ps_suite_extract_failing_files` + the allowlist helper, as today) and
+    re-run them once with `npx vitest run --config vitest.properties.config.mjs
+    <file>` sequentially, one file at a time, under a ceiling (a few minutes
+    total; on overrun, treat the rest as failed - invariant 3).
+  - Record each cleared flake as one JSON line in a machine-local, bounded
+    store (e.g. `.swarmforge/property-flakes/<YYYY-MM>.jsonl`: at, file,
+    commit, touched-by-commit, retained-output path or "not retained until
+    BL-1275"). Print one line per flake to stderr so the committer sees it.
+  - Do NOT re-run allowlisted files (scenario 04) and do not re-run a file
+    more than once. Keep BL-1124's HEAD-unchanged canary around the re-run
+    as around the main run.
+  - `docs/how-to/BL-1175-*.md` (or the guard's own how-to) gains the flake
+    semantics; the daily briefing may later fold the flake store in (not in
+    scope).
+
+  ## Explicitly NOT in scope
+
+  - Sizing the pool or budgeting spawn-heavy files (BL-1348, BL-1349): this
+    ticket makes their effect measurable, it does not replace them.
+  - Retaining the full-run output on refusal (BL-1275): complementary; this
+    ticket records the flake, that one keeps the output.
+  - Any change to the allowlist or its editing rules (BL-1175).
+
+qa_e2e_procedure: |
+  1. Fixture suite: a non-allowlisted property file that fails on its first
+     execution and passes on its second (a marker file it creates); stage a
+     commit touching neither; run the guard: allowed, one flake line printed
+     and one JSON record written naming the file, the commit and
+     touched=false.
+  2. Same fixture with a file that fails every time: refused, the refusal
+     names the file, no flake record.
+  3. Three flaky files: each re-run exactly once (count the vitest
+     invocations); an allowlisted red file: never re-run.
+  4. A re-run that hangs past the ceiling: counted as failed, commit refused.
+  5. Live: on the next real load flake in any worktree, the commit goes
+     through with a flake line in the guard output and a record in the
+     store.
+  6. Fixture roots removed in a `finally`, reaping only roots no live run
+     owns (BL-1385/BL-1390); never a bare prefix sweep.
+
+notes: |
+  No consumer `required_wiring` anchor: the guard is already wired into
+  `run_commit_guards.sh` tier 2, so any anchor would be satisfied by the
+  parcel's own diff (BL-1235 fail-open). The shell e2e drives the real hook
+  path.
+
+  Priorities raised in the same commit so the causal fixes stop waiting
+  behind ordinary work: BL-1275 65 -> 12 (severity medium -> high), BL-1348
+  42 -> 14, BL-1349 40 -> 15. All three are already approved.
+
+  IR-DRY at mint: 6 medium findings, all kept - the three "fails in the full
+  run and <passes alone | fails alone | hangs alone>" Givens are the one-run
+  versus re-run contrast the feature exists for, and non-allowlisted versus
+  allowlisted is scenario 03's point.
+
+  Mint-time INVEST: one observable outcome (a load flake in an unrelated
+  file no longer refuses the commit, and is recorded), one sitting in one
+  guard script plus its test, no unbuilt sibling.
+
+source: |
+  Coordinator note, priority 00, 2026-09-05T00:24Z: "Property gate flake
+  blocks BL-1370 2.5h+, 5 refusals, see BL-1275". Coder note to the
+  coordinator 00:22Z: "Property gate refused 5 BL-1370 commits, a different
+  unrelated red each run". Host checked at 01:26Z: load 3.7, no other
+  worktree running a suite - the flakes are the pool, not a neighbour.

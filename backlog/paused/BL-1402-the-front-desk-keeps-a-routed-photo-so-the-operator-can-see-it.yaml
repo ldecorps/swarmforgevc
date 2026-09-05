@@ -1,0 +1,159 @@
+id: BL-1402
+title: "The front desk keeps a routed Telegram photo on disk and names the saved path in the routed text, so an image the human attaches reaches the operator instead of dying as a placeholder"
+milestone: M8
+type: feature
+status: todo
+epic: swarm-reliability
+priority: 10
+direction: human-requested
+depends_on: []
+mutation_cost: medium
+slice_size_envelope: low
+required_stages: [coder, cleaner, architect, hardender, documenter, qa]
+
+acceptance: specs/features/BL-1402-the-front-desk-keeps-a-routed-photo-so-the-operator-can-see-it.feature
+
+required_wiring:
+  - 'extension/src/tools/telegram-front-desk-bot.ts::persistRoutedPhoto(::the live poll loop must call the persistence at the poll boundary before routing, the way it wires transcribeVoice; the name is fixed at mint (BL-874) and absent today (grep returns 0)'
+  - 'specs/pipeline/steps/bl1402FrontDeskPhotoPassthroughSteps.js::registerSteps::the handler file exists so discovery registers every scenario (BL-1371)'
+
+invariants:
+  - "A photo that cannot be kept never blocks its caption: on any fetch failure (getFile, download, size cap) the caption routes with text byte-identical to today's, one audit line names the update id and the reason and never content, and no file is written."
+  - "BL-620's statement stays on every forwarding surface, byte-identical - keeping the bytes on disk never implies the front desk read the image; the saved path rides on its own line after that note."
+  - "The media store is bounded and idempotent: a redelivered update never writes a second file for the same update id, and the store never grows past its bound (oldest files go first)."
+
+human_approval: approved
+human_ruling: |
+  Also route bare photos - mint a follow-up slice with a placeholder caption
+approval_context: >
+  A new feature file is authored here, so it needs a tap. One choice is posed
+  and it does NOT change this ticket's scenarios either way: this slice keeps
+  the photo of a CAPTIONED message (your "Ces thresholds sont trop bas?"
+  screenshot had a caption). A photo sent with no caption is dropped today as
+  media-no-caption (BL-620) and stays dropped under option 1; option 2 mints
+  a follow-up slice that routes bare photos to the operator with a
+  placeholder caption. Option 1 is recommended for now: smaller, and the
+  bare-photo case is a separate decision about what a wordless message
+  means.
+ruling_options:
+  - Captioned photos only in this slice (recommended) - a bare photo stays dropped
+  - Also route bare photos - mint a follow-up slice with a placeholder caption
+
+description: |
+  ## What is wanted
+
+  On 2026-09-04 21:26Z the human sent a screenshot with the caption "Ces
+  thresholds sont trop bas?" to the front desk. The operator saw only the
+  caption plus BL-620's placeholder and could not answer. The human, asked
+  whether the bridge should be improved to pass the image, replied "Oui"
+  (SUP-17, 21:37:39Z; the Operator filed the intake at 21:38:59Z).
+
+  Today `annotateRoutedMediaText` (`telegramFrontDeskBotCore.ts:231`)
+  appends `[image attached - not read by the front desk]` when
+  `update.message.photo` exists, and that line is ALL that survives: the
+  `photo[]` array and every `file_id` stay in the poller and are never
+  persisted. The getUpdates offset is consumed by the front desk, so nothing
+  can fetch the image later. BL-620 chose "no vision" deliberately so nobody
+  believes the picture was READ; the side effect is that it is also LOST.
+
+  This is wiring, not invention. All three pieces exist in this repo:
+  `largestTelegramPhotoFileId`, `MAX_TELEGRAM_PHOTO_BYTES` (8 MB) and the
+  download in `extension/src/bridge/cursorBridgeTelegramMedia.ts` (BL-696,
+  bridge-only); and the front desk itself already does Telegram's two-step
+  `getFile` -> GET for voice notes (`resolveVoiceAudio`,
+  `telegram-front-desk-bot.ts:1907`, BL-426) - the bot token, HTTP client
+  and download path are all inside that process. It downloads voice and
+  throws photos away.
+
+  ## Outcome
+
+  After this ticket, a captioned photo the front desk routes is saved under
+  `.swarmforge/operator/media/<update_id>.<ext>` and the routed text carries
+  a second line naming that path (relative to the project root) right after
+  BL-620's note, unchanged. The operator reads image files natively once one
+  is on disk, and its reply context already carries the thread transcript in
+  which that line appears - no change to the reply-context writer is needed
+  for the outcome, though `operator_runtime.bb`'s
+  `write-telegram-reply-context!` may additionally list media paths if the
+  coder finds that cheap.
+
+  ## How (direction, not mandate)
+
+  - Persist ONCE per update at the poll boundary, before any routing
+    decision, through a `persistRoutedPhoto(` seam wired in the bot the way
+    `transcribeVoice:` is (an injected adapter, so the core stays pure and
+    the fixture never touches the network). Reuse `getFile` +
+    `downloadTelegramFile` (voice path) or `cursorBridgeTelegramMedia.ts`'s
+    helpers; pick the largest size; enforce `MAX_TELEGRAM_PHOTO_BYTES`.
+  - Write with `extension/src/util/atomicWrite`'s temp-and-rename shape;
+    name by `update_id` and the extension from Telegram's `file_path`
+    (`mimeTypeFromTelegramFilePath` already maps it). A file already present
+    for that update id is left alone (invariant 3).
+  - Keep `annotateRoutedMediaText` byte-identical (BL-620 asserts
+    `/image.*not read/i`, BL-955 asserts the exact note with `includes`);
+    add the saved path as a separate pure step applied at the same posting
+    boundary, e.g. `[image saved: .swarmforge/operator/media/123.jpg]`, so
+    every BL-955 surface that carries the note also carries the path.
+  - Bound the store: keep the newest N files (N = 50 unless the coder has a
+    reason), pruning oldest-first at write time. Failure to prune is logged,
+    never thrown.
+  - Failure audit: the BL-620 `formatDropAuditLine` shape - update id and an
+    already-computed reason, never content.
+
+  ## Explicitly NOT in scope
+
+  - A photo with no caption (dropped today as media-no-caption) - see the
+    ruling; option 2 is a follow-up slice, not this one.
+  - Vision for the front desk itself; it still does not read the image.
+  - The cursor bridge's own photo route (BL-696), which already works.
+  - Documents, stickers, video; only `message.photo`.
+
+qa_e2e_procedure: |
+  1. Unit/acceptance: run the BL-1402 feature; then run BL-620's and
+     BL-955's features unchanged - every scenario still passes (the note is
+     byte-identical, the path is an added line).
+  2. Live: with the day-shift front desk running, send a photo with a
+     caption to the front desk. Within one poll: `.swarmforge/operator/media/
+     <update_id>.jpg` exists and opens as the image; the SUP thread's
+     message text carries BL-620's note and then the saved path line.
+  3. Send the same caption+photo again (Telegram redelivery cannot be forced;
+     replay the update through the poll seam in a fixture instead): one
+     file, unchanged mtime.
+  4. Fixture: make getFile fail, make the download fail, make the photo
+     exceed 8 MB - each time the caption routes with today's exact text,
+     one audit line names the update id and reason, no file appears.
+  5. Fixture: seed the store with N older files; persist one more; count is
+     N and the oldest is gone.
+  6. Fixture roots removed in a `finally`, reaping only roots no live run
+     owns (BL-1385/BL-1390); never a bare prefix sweep.
+
+notes: |
+  `required_wiring` anchor 1 is a consumer anchor: the poll loop in the live
+  bot is the pre-existing consumer that must reach the new code, and the
+  literal is chosen at mint so it will exist (BL-874). Do not rename it.
+
+  The ruling is deliberately shaped so that NEITHER option amends this
+  feature (2026-09-04 lesson, BL-1379: a ruling with an option-dependent
+  scenario lagged 21h). Option 2 mints BL-14xx as a follow-up; nothing here
+  changes. Coordinator: a recorded `human_ruling` needs no specifier pass
+  before promotion.
+
+  IR-DRY at mint: 2 medium possible-synonyms, both kept as intentional:
+  "already holds its bound of older files" (Given, 04) vs "holds exactly its
+  bound of files" (Then, 04) are the precondition and the assertion of the
+  same scenario; "routes both deliveries" (03) vs "routes the message" is
+  the redelivery case against the single one.
+
+  Mint-time INVEST: one observable outcome (the human's attached image
+  reaches the operator's disk and the routed text says where), one sitting
+  in one process, no unbuilt sibling.
+
+source: |
+  Backlog-root intake `INTAKE-operator-question-1788557930426.md`, filed by
+  the Operator 2026-09-04T21:38:50Z from front-desk thread SUP-17. Human's
+  words in that thread, verbatim: "Ces thresholds sont trop bas?" (21:26:56Z,
+  with the lost screenshot), "Ne peux tu pas lire les images ou est ce le
+  bridge telegram qui doit etre amelioré pour te la passer?" (21:33:47Z),
+  "Oui" (21:37:39Z, to filing this). Code claims in the intake verified
+  against main at mint: annotation at core.ts:231, media helpers and the
+  8 MB cap in cursorBridgeTelegramMedia.ts, resolveVoiceAudio at bot.ts:1907.

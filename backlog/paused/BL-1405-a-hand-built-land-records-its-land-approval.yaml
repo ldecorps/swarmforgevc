@@ -1,0 +1,138 @@
+id: BL-1405
+title: "A hand-built tip-pure land records its land approval: the BL-1376 route publishes QA's replay to main without the BL-1334 replay-to-source record the land step writes, so every hand-built land reads as unapproved to the one shared predicate and raises a standing Article 4.2 CRIT - six of them on 2026-09-04"
+milestone: M8
+type: defect
+severity: high
+# high: the hand-built land is a sanctioned, recurring route (BL-1386
+# adjudication route 1, taken six times on 2026-09-04 alone) and every use
+# of it makes main read as carrying unapproved pipeline code to
+# is_qa_ancestor.sh's three consumers - the babysitter CRIT, the push-sweep
+# gate and the commit-time guard - until an unrelated merge closes the
+# window. A broken safety signal on a live route, not a lost commit.
+status: todo
+epic: swarm-reliability
+priority: 9
+direction: swarm-reported
+depends_on: []
+mutation_cost: low
+slice_size_envelope: low
+required_stages: [coder, cleaner, architect, hardender, documenter, qa]
+
+acceptance: specs/features/BL-1405-a-hand-built-land-records-its-land-approval.feature
+
+required_wiring:
+  - 'specs/pipeline/steps/bl1405HandBuiltLandRecordsApprovalSteps.js::registerSteps::the handler file exists so discovery registers every scenario (BL-1371)'
+
+invariants:
+  - "One writer of the land-approval record: the CLI calls land_step_lib's record-land-approval! and never carries a second serializer of the record line, so the land step and the hand-built route can never disagree on its shape."
+  - "A record grants nothing on its own: the predicate answers approved for a recorded replay only when the named source is itself approved (BL-1334 unchanged), and a record with a missing sha is refused, never written."
+
+human_approval: pending
+approval_context: >
+  A new feature file is authored here, so it needs a tap. No choice is posed
+  and there are no ruling_options. This is the root cause behind the
+  thirteen Article 4.2 false-positive evidence files written in this
+  directory since 2026-09-03; it re-fires on every hand-built land.
+
+description: |
+  ## What is wrong
+
+  BL-1334 ruled (human ruling, option 2) that the land step "records the
+  replay-to-approved-source mapping for the predicate to consult":
+  `land_step_cli.bb:99` calls `land-step-lib/record-land-approval!`, which
+  appends one JSON line to the SHARED target root's
+  `.swarmforge/land-approvals/<YYYY-MM>.jsonl` -
+  `{"at":...,"ticket":"BL-1334","commit":"<replay 10-hex>","source":"<approved source 10-hex>"}`
+  - and `is_qa_ancestor.sh` resolves a replay to its source through that
+  store and asks the ordinary approval question of the source.
+
+  The hand-built tip-pure land - QA building the replay by hand when the
+  land step escalates (BL-1376 recipe, BL-1386 adjudication route 1) - does
+  none of that. It has no CLI to call: the writer is reachable only from
+  inside `land_step_cli.bb`. So the published commit stands in for an
+  approved source that nothing records, `is_qa_ancestor.sh <replay>`
+  answers exit 1, and the babysitter raises `pipeline-code-on-main-<sha>`
+  CRIT for it. Measured at mint: `fd785f89ea` (BL-1393's cited, approved
+  source) exits 0; `8e53a3e853` (its hand-built replay on main) exits 1.
+  All six hand-lands of 2026-09-04 (BL-1382, 1388, 1393, 1395, 1398, 1399)
+  are in this state, and none carries `abandoned_commits:` either - the
+  bookkeeping the land recipe requires was skipped along with the record.
+
+  ## Outcome
+
+  A hand-built land ends with a record the predicate reads, so the replay
+  answers approved the moment it lands (BL-1334's invariant, now for both
+  routes), and the Article 4.2 class of false positives ends at its cause.
+
+  ## How (direction, not mandate)
+
+  - Expose the existing writer as `swarmforge/scripts/record_land_approval.bb
+    <project-root> <replay-commit> <approved-source> [<ticket-id>]` (the
+    name is fixed at mint so the QA prompt can cite it). It resolves the
+    shared target root the way the land step does, calls
+    `record-land-approval!` (invariant 1), prints the record it wrote, and
+    exits non-zero with the reason when the writer refuses.
+  - The CLI need not prove the source is approved (the predicate does, and
+    a record naming an unapproved source grants nothing - invariant 2), but
+    it should print the predicate's answer for the replay afterwards, so QA
+    sees `approved` before closing the land.
+  - Recording twice for the same replay is harmless and idempotent at the
+    predicate (first matching line wins); the CLI may skip an exact
+    duplicate line.
+  - The documenter adds the step to the hand-built recipe in
+    `docs/how-to/BL-1241-entangled-tip-at-the-land-step-has-a-reachable-remedy.md`
+    and cross-links `is_qa_ancestor.sh`'s BL-1334 section. The QA prompt
+    step is landed at mint (below).
+
+  ## Explicitly NOT in scope
+
+  - Changing the predicate or the store shape (BL-1334, done).
+  - The escalation channel ignoring waives (BL-1404).
+  - Back-filling the six 2026-09-04 records: QA does that by hand today
+    (note sent at mint), not in this parcel.
+
+qa_e2e_procedure: |
+  1. Fixture repo with a `swarmforge-QA` ref, an approved source commit
+     (ancestor of that ref, no bounce), and a hand-built tip-pure replay on
+     main that is not an ancestor: `is_qa_ancestor.sh <replay>` exits 1.
+  2. `bb swarmforge/scripts/record_land_approval.bb <root> <replay> <source>
+     BL-9009`: the shared root's `.swarmforge/land-approvals/<YYYY-MM>.jsonl`
+     gains one line naming both and the ticket; `is_qa_ancestor.sh <replay>`
+     now exits 0.
+  3. Omit either sha: exit non-zero, nothing written.
+  4. Record a replay against a source that is NOT approved: written, but
+     `is_qa_ancestor.sh <replay>` still exits 1.
+  5. Run the CLI twice with the same arguments: one line.
+  6. Live, after the six back-fills: the babysitter's next gather lists no
+     `pipeline-code-on-main` finding for those shas.
+  7. Fixture roots removed in a `finally`, reaping only roots no live run
+     owns (BL-1385/BL-1390); never a bare prefix sweep.
+
+notes: |
+  No consumer `required_wiring` anchor: the consumer of this CLI is QA's
+  hand-built land procedure (prose in `QA.prompt`, landed with this mint),
+  and an anchor on prose I land myself is satisfied by my own commit - the
+  BL-1235 fail-open shape. The acceptance scenarios drive the real predicate
+  end to end, which is what proves reachability.
+
+  The QA prompt step is landed at mint (BL-798) and describes the interim
+  hand-append of the record line until this CLI exists; the line shape is
+  quoted from the store as it stands.
+
+  IR-DRY at mint: 9 medium findings; scenario 03's steps were sharpened
+  ("the unapproved source") so they are not near-duplicates of 01's; the
+  rest are kept as deliberate contrasts - approved vs no vs still no, one
+  record vs recorded twice, a line gained vs exactly one line held.
+
+  Mint-time INVEST: one observable outcome (a hand-built land reads as
+  approved when it lands), one sitting (a thin CLI over an existing
+  function plus its test), no unbuilt sibling.
+
+source: |
+  Coordinator note, priority 00, 2026-09-04T23:50Z, and the thirteen
+  `backlog/evidence/babysitter-article42-*` adjudications (2026-09-03/04),
+  each of which names the ancestry-only predicate and stops there. Root
+  cause read at mint: BL-1334 (`backlog/done/`), `land_step_lib.bb:1083`
+  (`record-land-approval!`), `land_step_cli.bb:99` (its only caller),
+  `is_qa_ancestor.sh:225-291`, and the six tickets' missing
+  `abandoned_commits:`.

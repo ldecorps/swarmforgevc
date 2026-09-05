@@ -125,3 +125,6 @@ source: |
   evidence `BL-1398-architect-20260904.md` §"Surfaced item" (architect
   branch); coder evidence for BL-1398 named it first. Not a bounce: BL-1398
   forwarded clean.
+
+assigned_to: coder
+abandoned_commits: [af05fbda54]

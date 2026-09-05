@@ -135,3 +135,12 @@ cut off right after it, and no Telegram-facing code or doc carries a "tip"
 or "text filter" concept (re-grepped this pass with the surface known). Still
 undrained, correctly: waiting on the second half, not minting against a
 guess.
+
+**Recheck 2026-09-04 22:45Z (specifier, root drain on coordinator's op note):**
+still undrained, correctly. The SUP-17 thread through 21:38Z carries no reply
+to the second-half question (what they wanted to see about "the spec tip text
+filter" in that Telegram view); the specifier's ask marker still holds it
+(`asked_at_ms` 1788515527872) and `deliver-role-answer.js` reports nothing
+new. The human's later messages in the thread (1382 approval, weekend shift,
+reverse copies, the thresholds screenshot) are other subjects. Waiting on the
+answer, not minting against a guess.

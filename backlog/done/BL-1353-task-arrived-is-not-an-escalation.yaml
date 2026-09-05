@@ -10,14 +10,15 @@ direction: human-requested
 depends_on: [BL-653]
 mutation_cost: medium
 slice_size_envelope: medium
-assigned_to: none
+assigned_to: coder
+abandoned_commits: [a3c7148136]
 required_stages: [coder, cleaner, architect, hardender, documenter, qa]
 
 acceptance: specs/features/BL-1353-task-arrived-is-not-an-escalation.feature
 
 invariants:
   - "A wake source is never removed before a live escalation producer covers the condition it stood in for - BL-653's own invariant, carried forward unchanged."
-  - "The coordinator-inbox freshness probe keeps its second consumer: the BL-307/BL-310 closing-pass hibernation decision reads the same signal and must be unaffected by any change to the wake path."
+  - "The coordinator-inbox freshness probe keeps its second consumer: the BL-307/BL-310 closing pass reads the same signal as its relaunch up-trigger (fresh mail wakes a hibernated swarm; it is not an input to the hibernate down-trigger) and that decision must be unaffected by any change to the wake path."
 
 required_wiring:
   - 'docs/how-to/BL-653-operator-escalation-driven-wake-model.md::TASK_ARRIVED::the documented wake-source model must name TASK_ARRIVED, in either its legitimate-sources table or its What-retired list. Absent at mint - the doc does not mention it at all, which is the divergence this ticket closes. Holds under either ruling.'
@@ -88,10 +89,13 @@ description: |
 
   `coordinator-inbox-has-fresh?` has **two** consumers, and only the wake path
   is in scope. `closing-pass-sweep!` (`operator_runtime.bb:1454`) reads the same
-  probe as `fresh-coordinator-mail?` for the BL-307/BL-310 hibernation
-  decision - fresh coordinator mail is a reason NOT to hibernate. Deleting or
-  repurposing the probe itself would silently change hibernation behaviour.
-  Change the wake path, leave the probe's other consumer intact.
+  probe as `fresh-coordinator-mail?` for the BL-310 relaunch UP-trigger
+  (`should-relaunch?`): fresh coordinator mail relaunches a hibernated swarm
+  even with no promotable ticket yet. It is NOT an input to the hibernate
+  DOWN-trigger (`should-hibernate?`) - a drained, idle, not-yet-hibernated
+  swarm hibernates whether or not mail is fresh, today and before this ticket.
+  Deleting or repurposing the probe itself would silently change relaunch
+  behaviour. Change the wake path, leave the probe's other consumer intact.
 
   ## How (direction, not mandate)
 
@@ -124,8 +128,10 @@ qa_e2e_procedure: |
      all; under GATE, none appear for handoffs the coordinator claimed.
   4. Confirm coverage is intact: force a babysitterd CRIT finding and verify a
      `BABYSITTER_ESCALATION` still dispatches an Operator session.
-  5. Confirm hibernation is unaffected: with fresh mail in the coordinator's
-     `inbox/new`, verify the closing pass still declines to hibernate.
+  5. Confirm the closing pass's relaunch up-trigger is unaffected: with the
+     swarm hibernated and fresh mail in the coordinator's `inbox/new`, verify
+     the closing pass relaunches; with neither fresh mail nor promotable work
+     it stays down (BL-310's own two scenarios).
   6. Confirm the how-to's wake-source list now matches the code.
 
 notes: |
@@ -157,6 +163,21 @@ notes: |
   genuinely different mechanisms (BABYSITTER_ESCALATION arrives via the queue,
   never from the tick). Normalizing either would erase a load-bearing
   distinction.
+
+  **Amended 2026-09-05 by the specifier on the coder's priority-00 note** (spec
+  defect, mine, at mint): scenario 03, the feature narrative, invariant 2, the
+  description's "trap to avoid" paragraph and e2e step 5 all said fresh
+  coordinator mail is a reason NOT to hibernate. Verified against
+  `operator_lib.bb`: `should-hibernate?` (the DOWN-trigger) does not read
+  `fresh-coordinator-mail?` at all; `should-relaunch?` (the BL-310 UP-trigger)
+  does. Scenario 03 is AMENDED, not retired: it was wrong at mint, never true
+  and later falsified (BL-1006's retire-never-reword covers the latter), and the
+  property it guards - the probe's second consumer survives the wake-path change
+  - is real and is exactly invariant 2. It now states the relaunch direction.
+  Step text changed, so the acceptance handler must follow in the same parcel
+  (BL-233); the neighbouring coverage is BL-310 scenarios 01/02. The human
+  ruling and scope are untouched - this corrects a factual error, poses no
+  choice, and does not re-pend approval.
 
 source: |
   backlog/INTAKE-operator-task-arrived-wakes-are-not-escalations-1788390881366.md

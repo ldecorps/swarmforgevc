@@ -101,3 +101,6 @@ source: |
   Coder note on BL-1388, priority 00, 2026-09-04T20:21Z: "nested-handler
   row never refuses - steps dir is listed flat; amend?". Coder evidence
   `BL-1388-coder-20260904.md` (coder branch), measured end to end.
+
+assigned_to: coder
+abandoned_commits: [ee22cd6641]
