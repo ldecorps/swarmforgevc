@@ -4,7 +4,7 @@ milestone: M8
 type: feature
 status: todo
 epic: code-quality-gates
-priority: 40
+priority: 15
 direction: human-requested
 depends_on: []
 mutation_cost: medium
@@ -120,6 +120,10 @@ source: |
   This ticket takes the intake's directive 2. BL-1348 takes directive 1.
 
 notes: |
+  2026-09-05 (specifier): priority 40 -> 15, same evidence as BL-1348 - the
+  spawn-heavy files this ticket budgets are the other half of the load that
+  turned five unrelated files red under the gate on 2026-09-04.
+
   ## Verified at mint
 
   - All three named files exist at

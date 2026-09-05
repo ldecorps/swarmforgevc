@@ -2,10 +2,10 @@ id: BL-1275
 title: "The property-suite guard deletes the suite output it refused a commit on, so the red is unadjudicable unless someone happened to keep the scrollback"
 milestone: M8
 type: defect
-severity: medium
+severity: high
 status: todo
 epic: code-quality-gates
-priority: 65
+priority: 12
 direction: swarm-reported
 depends_on: []
 mutation_cost: low
@@ -96,6 +96,14 @@ approval_context: >
   role discipline, reject and I will close it.
 
 notes: |
+  2026-09-05 (specifier): priority 65 -> 12 and severity medium -> high.
+  Five property-gate refusals of BL-1370 on 2026-09-04 (a different
+  unrelated red each run, 2.5 hours) left nothing to adjudicate because
+  this guard deleted its own output each time - the exact shape this ticket
+  describes, now blocking an approved parcel. BL-1407 (re-run a red in
+  isolation before refusing) records the flake; this ticket keeps the
+  output it was judged from. Complementary, both wanted.
+
   Verified by reading the script at `main` on 2026-08-29, not taken on report:
   `SUITE_OUT_FILE="$(mktemp)"` (line 206), `OUT="$(cat "$SUITE_OUT_FILE" ...)"`
   then `rm -f "$SUITE_OUT_FILE"` (lines 220-221), and the refusal at line 255
