@@ -11,6 +11,7 @@ depends_on: [BL-653]
 mutation_cost: medium
 slice_size_envelope: medium
 assigned_to: coder
+abandoned_commits: [a3c7148136]
 required_stages: [coder, cleaner, architect, hardender, documenter, qa]
 
 acceptance: specs/features/BL-1353-task-arrived-is-not-an-escalation.feature
