@@ -175,3 +175,5 @@ source: |
   class". The bounce: BL-1370, by cleaner, commit 12b538c4b9, evidence
   `backlog/evidence/BL-1370-cleaner-bounce-20260905.md`. Sibling case the
   same day: BL-1353 (operator memory, coder/cleaner duplicate handler fix).
+
+assigned_to: coder
