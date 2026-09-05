@@ -21,7 +21,8 @@ hand (e.g. `d63e80320` on 2026-07-22).
 | --- | --- |
 | Green | Commit allowed |
 | Red (all failures explicitly allowlisted — BL-1175) | Commit allowed; `allowlisted-standing-reds` marker |
-| Red (any non-allowlisted failure) | Commit blocked; output names unallowlisted files; full suite output retained (BL-1275, below) |
+| Red (non-allowlisted failure, clears on re-run alone) | Commit allowed; load flake recorded (BL-1407, below) |
+| Red (any non-allowlisted failure that still fails alone) | Commit blocked; output names unallowlisted files; full suite output retained (BL-1275, below) |
 | Red (unparsed failure output) | Commit blocked |
 | Toolchain missing (`node_modules` / npm / exit 127) | Warn + allow (fail open) |
 | Mid-merge byte-identical import (BL-1121) | `skip-reconcile-import` + allow (standing recipe; not the env override) |
@@ -54,6 +55,26 @@ it changes how many are kept, never whether a commit is refused), and the
 directory writes its own `.gitignore` of `*` so nothing under it ever
 becomes a commitable artifact. A green run or an allowlisted-standing-reds
 run (BL-1175) retains nothing — only a refusal does.
+
+**A non-allowlisted red is re-run once, alone, before it refuses (BL-1407).**
+The full 316-file run shares a fork pool (BL-1348/BL-1349 describe it as
+mis-sized) where a file can go red only under load — green run alone, red
+under the full pool — and until this ticket that refused a commit exactly
+like a genuine regression: on 2026-09-04 one approved parcel was refused
+five times across 2.5 hours, a different unrelated file each time, none of
+them touched by the commit. Every non-allowlisted failing file from the
+full run is now re-run once, alone, via `npx vitest run --config
+vitest.properties.config.mjs <file>`, sequentially, under a **shared**
+wall-clock ceiling (`SWARMFORGE_PROPERTY_RERUN_CEILING_SECONDS`, default
+180s, total across all files — a file that has no budget left when its
+turn comes counts as still-failing, never as a pass). A file that passes
+alone is a load flake: the commit is allowed and the flake is recorded as
+one JSON line in `.swarmforge/property-flakes/<YYYY-MM>.jsonl` (file,
+commit, whether this commit's staged diff touched that file, and a
+retained-output pointer — "not retained until BL-1275", since a
+flake-cleared run is never a refusal and BL-1275 only retains refusal
+output). A file that still fails alone is refused exactly as before,
+naming the file. Allowlisted files (BL-1175) are never re-run.
 
 ## Operator note
 
