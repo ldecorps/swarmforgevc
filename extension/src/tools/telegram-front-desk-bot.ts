@@ -229,7 +229,7 @@ export { controlDrainTimeoutMs } from './telegramControlCore';
 export { isPipelineEmpty, resolveLiveRoles } from './telegramPipelineDrain';
 import { isWithinWindow, localMinutesOfDay, currentWindowStartMs } from './cooldownWindowCore';
 import { readCooldownConfigFromDisk, writeCooldownWindowMarker } from './cooldownWindowState';
-import { commitApprovalWrites } from '../util/commitIntegrityRunner';
+import { commitApprovalWrites, humanDecisionCommitMessage } from '../util/commitIntegrityRunner';
 import { readConfigValue, readEffectiveConfigValue } from '../util/swarmforgeConfig';
 
 const execFileAsync = promisify(execFile);
@@ -2370,7 +2370,10 @@ export async function commitExpediteWrites(
   return commitApprovalWrites(
     targetPath,
     backlogId,
-    `Expedite ${backlogId}: record approval + promotion\n\nBy coder.`,
+    // BL-1368: Expedite records human_approval too, so it composes the same
+    // human-decision byline as every other verb - leaving this one writer on
+    // `By coder.` is exactly the surviving half the ticket warns about.
+    humanDecisionCommitMessage(`Expedite ${backlogId}: record approval + promotion`),
     sourcePath ? [sourcePath] : []
   );
 }
