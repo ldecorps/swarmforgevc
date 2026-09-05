@@ -2805,6 +2805,24 @@
     (catch Exception e
       (log! "turn-profile-producer-sweep-error" (.getMessage e)))))
 
+;; BL-1365: the ritual ledger — classifies the window's commits by path area
+;; and records each class's volume and subject-dominance, which is what
+;; separates a ritual done by script (one generated subject, dominance ~1.00)
+;; from one done by an agent (a long tail, ~0.01). The closing ceremony only
+;; READS this store, so the measurement must accrue on a cadence of its own:
+;; a shift that closes no ceremony then delays adjudication and loses no
+;; measurement (the ticket's invariant 1). Rewrites one current-state file, so
+;; firing every cycle is safe. Defined after its dependencies for BL-1392's
+;; reason, same as the sweep above.
+(defn ritual-ledger-producer-sweep! []
+  (try
+    (let [cli-path (node-tool-path "run-ritual-ledger-producer.js")
+          {:keys [exit out]} (daemon-cycle-guard-lib/sh! ["node" cli-path] {:dir (str project-root)})]
+      (when (zero? exit)
+        (log! "ritual-ledger-producer" (str/trim out))))
+    (catch Exception e
+      (log! "ritual-ledger-producer-sweep-error" (.getMessage e)))))
+
 ;; BL-356: twice in one day local `main` accumulated hours of committed work
 ;; that never reached origin, indistinguishable from a dead swarm from
 ;; outside - nothing in the swarm ever pushed; publication depended
@@ -4843,6 +4861,11 @@
                     ;; cadence — window dedupe makes every-tick safe.
                     (run-sweep! "turn-profile-producer-sweep"
                         #(turn-profile-producer-sweep!))
+                    ;; BL-1365: ritual ledger shares the same cadence —
+                    ;; it rewrites one current-state file, so every-tick is
+                    ;; safe, and it must not depend on a ceremony running.
+                    (run-sweep! "ritual-ledger-producer-sweep"
+                        #(ritual-ledger-producer-sweep!))
                     ;; BL-356: push sweep shares the same cadence - no
                     ;; separate timeout, same rationale as BL-222/BL-214/
                     ;; BL-258/BL-309/BL-316/BL-339/BL-353/BL-350 above.
