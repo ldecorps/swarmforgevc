@@ -26,7 +26,7 @@ invariants:
   - "Work-note recognition is chase_sweep_lib.bb dispatch-trail-ticket-id (BL-1223's one parser of the router's verb-first form); no second regex."
   - "Every non-Work note and every git_handoff completes exactly as today, and the complete-then-dequeue contract of done_with_current is unchanged for them."
 
-human_approval: pending
+human_approval: approved
 approval_context: >
   A new feature file is authored here, so it needs a tap. No choice is posed
   and there are no ruling_options. Sibling of BL-1421 (the flood that drove
