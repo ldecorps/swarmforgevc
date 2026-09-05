@@ -37,6 +37,7 @@
 
 ;; I2: ordinary extension/src stage → run marker (no MERGE_HEAD).
 (let [tmp (str (fs/create-temp-dir {:prefix "bl1121-prop-"}))
+      _ (.addShutdownHook (Runtime/getRuntime) (Thread. (fn [] (try (fs/delete-tree tmp) (catch Exception _ nil)))))
       _ (git! tmp "init" "-q" "-b" "main")
       _ (git! tmp "commit" "-q" "--allow-empty" "-m" "init")
       rel "extension/src/pipelineBoard.ts"

@@ -20,7 +20,12 @@
 (def failures (atom []))
 (defn fail! [m] (swap! failures conj m))
 
+(def created-temp-dirs (atom []))
+(.addShutdownHook (Runtime/getRuntime)
+                   (Thread. (fn [] (doseq [d @created-temp-dirs] (try (fs/delete-tree d) (catch Exception _ nil))))))
+
 (let [root (str (fs/create-temp-dir {:prefix "bl1138-io-"}))
+      _ (swap! created-temp-dirs conj root)
       daemon (str (fs/path root ".swarmforge" "daemon"))
       _ (fs/create-dirs daemon)
       _ (git! root "init" "-b" "main")
@@ -33,6 +38,7 @@
       ]
   ;; Build diverged: origin advances a.txt; local advances b.txt then conflicts a.txt
   (let [bare (str (fs/create-temp-dir {:prefix "bl1138-bare-"}))
+        _ (swap! created-temp-dirs conj bare)
         _ (process/sh "git" "init" "--bare" "-b" "main" bare)
         _ (git! root "remote" "remove" "origin")
         _ (git! root "remote" "add" "origin" bare)

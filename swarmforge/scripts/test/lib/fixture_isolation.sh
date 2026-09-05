@@ -1,4 +1,11 @@
 #!/usr/bin/env bash
+# BL-1289: register $WORK with the shared tmp-cleanup registry below so a
+# normal exit removes it immediately, on top of (never instead of)
+# fixture_isolation_reap's next-run, owner-liveness sweep - that sweep stays
+# the ONLY defense against a killed run (a trap cannot catch SIGKILL), and
+# this file's own lock/reap/bound logic is untouched.
+source "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/tmp_cleanup.sh"
+
 # BL-1390 (second incident): a suite that can run concurrently must not destroy
 # its own siblings.
 #
@@ -110,5 +117,6 @@ fixture_isolation_begin() {
 
   WORK="$(mktemp -d "${TMPDIR:-/tmp}/${prefix}XXXXXX")" || exit 1
   fixture_isolation_stamp_owner "$WORK"
+  register_tmp_dir "$WORK"
   export WORK
 }

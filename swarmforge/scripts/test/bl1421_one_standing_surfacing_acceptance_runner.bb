@@ -24,7 +24,20 @@
 
 (def role (or (:role scenario) "coder"))
 (def ticks (:ticks scenario))
+;; BL-1289: dir is reused across many SEPARATE bb invocations (one per
+;; Gherkin step - see file header), so a plain per-invocation shutdown hook
+;; would delete it before the next step could reuse it. This invocation
+;; "owns" dir only when it CREATED it fresh (no :dir in scenario); the hook
+;; is then a crash-only backstop - it deletes dir if this process dies
+;; before handing the path back to the caller in the printed result below,
+;; and is a no-op once that hand-off has happened (bl1421OneStandingSurfacingSteps.js's
+;; own afterEach owns cleanup on every normal path from there on).
+(def created-fresh? (nil? (:dir scenario)))
 (def dir (or (:dir scenario) (str (fs/create-temp-dir {:prefix "bl1421-acc-"}))))
+(def handed-off? (atom false))
+(when created-fresh?
+  (.addShutdownHook (Runtime/getRuntime)
+                     (Thread. (fn [] (when-not @handed-off? (try (fs/delete-tree dir) (catch Exception _ nil)))))))
 
 (def tells (atom []))
 (def current-facts (atom nil))
@@ -52,3 +65,4 @@
            :tellCount (count @tells)
            :wakeCount (count (filter :wake @tells))
            :tells @tells}))
+(reset! handed-off? true)

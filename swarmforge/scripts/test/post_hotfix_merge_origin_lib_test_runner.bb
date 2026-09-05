@@ -10,6 +10,10 @@
 
 (def failures (atom []))
 
+(def created-temp-dirs (atom []))
+(.addShutdownHook (Runtime/getRuntime)
+                   (Thread. (fn [] (doseq [d @created-temp-dirs] (try (fs/delete-tree d) (catch Exception _ nil))))))
+
 (defn- assert= [msg expected actual]
   (when (not= expected actual)
     (swap! failures conj (str "FAIL: " msg " expected=" (pr-str expected) " actual=" (pr-str actual)))))
@@ -39,6 +43,7 @@
           "UU swarmforge/scripts/a.bb\nM  other.bb\nAA x.ts\n"))
 
 (let [daemon (str (fs/create-temp-dir {:prefix "bl1118-daemon-"}))
+      _ (swap! created-temp-dirs conj daemon)
       calls (atom [])
       behind-atom (atom 2)
       adapters {:daemon-dir daemon
@@ -68,6 +73,7 @@
                      (master-main-reconcile-lib/read-deadlock daemon)))))
 
 (let [daemon (str (fs/create-temp-dir {:prefix "bl1118-conflict-"}))
+      _ (swap! created-temp-dirs conj daemon)
       mid? (atom false)
       adapters {:daemon-dir daemon
                 :fetch! (fn [] nil)
@@ -87,6 +93,7 @@
   (assert-true "not left mid-merge" (not (:mid-merge? result))))
 
 (let [daemon (str (fs/create-temp-dir {:prefix "bl1130-preflight-"}))
+      _ (swap! created-temp-dirs conj daemon)
       calls (atom [])
       adapters {:daemon-dir daemon
                 :fetch! (fn [] (swap! calls conj :fetch))
@@ -105,6 +112,7 @@
 
 ;; BL-1131: local-ahead + conflict foresight → rematch bookkeeping, not operator merge.
 (let [daemon (str (fs/create-temp-dir {:prefix "bl1131-replay-"}))
+      _ (swap! created-temp-dirs conj daemon)
       calls (atom [])
       adapters {:daemon-dir daemon
                 :fetch! (fn [] (swap! calls conj :fetch))
@@ -126,6 +134,7 @@
 
 ;; BL-1138: rematch! executes and clears behind/deadlock
 (let [daemon (str (fs/create-temp-dir {:prefix "bl1138-rematch-"}))
+      _ (swap! created-temp-dirs conj daemon)
       _ (master-main-reconcile-lib/write-deadlock! daemon
                                                    {:active true :reason "rematch-bookkeeping"})
       counts (atom {:ahead 1 :behind 2})
@@ -157,6 +166,7 @@
   (assert-true "BL-1138 deadlock cleared" (not (master-main-reconcile-lib/deadlock-active? dl))))
 
 (let [daemon (str (fs/create-temp-dir {:prefix "bl1118-honest-"}))
+      _ (swap! created-temp-dirs conj daemon)
       _ (master-main-reconcile-lib/write-state! daemon {:surfaced "dirty" :escalated true})
       adapters {:daemon-dir daemon
                 :fetch! (fn [] nil)
@@ -218,7 +228,9 @@
 ;; the defect's exact shape and a metadata check would not see it.
 (let [run (fn [klass]
             (post-hotfix-merge-origin-lib/run-post-hotfix-merge!
-             {:daemon-dir (str (fs/create-temp-dir {:prefix "bl1387-d1-"}))
+             {:daemon-dir (let [d (str (fs/create-temp-dir {:prefix "bl1387-d1-"}))]
+                            (swap! created-temp-dirs conj d)
+                            d)
               :fetch! (fn [] {:exit 0})
               :rev-counts! (fn [] {:ahead 1 :behind 2})
               :dirty-paths! (fn [] [])
