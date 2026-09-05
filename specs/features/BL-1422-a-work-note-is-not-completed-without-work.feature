@@ -1,3 +1,8 @@
+# mutation-stamp: sha256=1a861c318ecacf6b3e5504670c0a49114ef1071c96d77d5b8820ee3d21855109
+# acceptance-mutation-manifest-begin
+# {"version":1,"tested_at":"2026-09-05T09:02:05.756978564Z","feature_name":"BL-1422 A Work dispatch cannot be completed without work or a stated reason","feature_path":"/home/carillon/swarmforgevc/.worktrees/hardender/specs/features/BL-1422-a-work-note-is-not-completed-without-work.feature","background_hash":"cf497ed00684fed6b3bc91685004c488171c408a1538bdc06cb006c8e0c6dbad","implementation_hash":"unknown","scenarios":[{"index":1,"name":"a Work note followed by work evidence completes as today","scenario_hash":"5ce8a0305cd190a42da1252c0c23c8c72c081c0197868e8df4a8e2ecfbbe6b85","mutation_count":2,"result":{"Total":2,"Killed":2,"Survived":0,"Errors":0},"tested_at":"2026-09-05T09:02:05.756978564Z"},{"index":3,"name":"a note that is not a Work dispatch, or a git_handoff, completes as today","scenario_hash":"6a2c64a12579e25dfcd0f8ed643b3ebd5a1249db5f6af7570937aa752baa0354","mutation_count":2,"result":{"Total":2,"Killed":2,"Survived":0,"Errors":0},"tested_at":"2026-09-05T09:02:05.756978564Z"}]}
+# acceptance-mutation-manifest-end
+
 Feature: BL-1422 A Work dispatch cannot be completed without work or a stated reason
 
   The router dispatches a ticket to a role as a note whose message reads
