@@ -550,7 +550,12 @@ function buildGridRows(
     // but the grid has no coordinator column any more - remap it to 'QA' so
     // it renders at the end-of-line stage instead of matching no column at
     // all (an all-dots row) or falling through to not-started.
-    const column = rawRole === 'coordinator' ? 'QA' : rawRole;
+    // BL-1418: art-director is likewise outside PIPELINE_BOARD_COLUMN_ORDER
+    // (it is not a stage a parcel is handed to - no ticket is ever
+    // assigned_to it in practice) but ALL_SWARM_ROLES-driven iteration
+    // still resolves through it structurally, so it gets the same 'QA'
+    // remap as coordinator, for the same reason.
+    const column = rawRole === 'coordinator' || rawRole === 'art-director' ? 'QA' : rawRole;
     rowsById.set(id, {
       id,
       column,

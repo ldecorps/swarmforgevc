@@ -52,8 +52,10 @@ const RUNS = 300;
 // buildGridRows remaps a coordinator-held row onto the QA column (the grid
 // carries no coordinator column at all), so it is not a stage a row can
 // paint on. Quantifying over it would test that documented remap, not this
-// ticket's fold.
-const BOARD_STAGES = ALL_SWARM_ROLES.filter((r) => r !== 'coordinator');
+// ticket's fold. BL-1418: art-director gets the identical remap (also
+// outside PIPELINE_BOARD_COLUMN_ORDER, also not a stage a parcel is
+// handed to), for the same reason.
+const BOARD_STAGES = ALL_SWARM_ROLES.filter((r) => r !== 'coordinator' && r !== 'art-director');
 const stage = fc.constantFrom(...BOARD_STAGES);
 const ticketId = fc.integer({ min: 900, max: 999 }).map((n) => `BL-${n}`);
 const seatSuffix = fc.constantFrom('sonnet2', 'haiku', 'opus5', 'a', 'seat-2');

@@ -16,8 +16,21 @@ function mkTmp() {
 
 // ── ALL_SWARM_ROLES ───────────────────────────────────────────────────────
 
-test('ALL_SWARM_ROLES lists exactly the 8 swarm roles, coordinator included', () => {
-  assert.deepEqual(ALL_SWARM_ROLES, ['specifier', 'coder', 'cleaner', 'architect', 'hardender', 'documenter', 'QA', 'coordinator']);
+test('ALL_SWARM_ROLES lists exactly the 9 swarm roles, coordinator and art-director included', () => {
+  // BL-1418: art-director is outside PIPELINE_CHAIN's forward parcel chain,
+  // same as coordinator, but still gets its own standing topic (human
+  // ruling: standing pane).
+  assert.deepEqual(ALL_SWARM_ROLES, [
+    'specifier',
+    'coder',
+    'cleaner',
+    'architect',
+    'hardender',
+    'documenter',
+    'QA',
+    'coordinator',
+    'art-director',
+  ]);
 });
 
 // ── roleTopicMapPath / readRoleTopicMap / writeRoleTopicMap ──────────────
