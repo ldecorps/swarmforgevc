@@ -1,3 +1,8 @@
+# mutation-stamp: sha256=a134800767750fce8f31b988dd1d334b39dda811b4180429ba250bdc4b38095d
+# acceptance-mutation-manifest-begin
+# {"version":1,"tested_at":"2026-09-05T22:25:59.871531282Z","feature_name":"BL-1436 The pricing table prices every model the swarm runs","feature_path":"/home/carillon/swarmforgevc/.worktrees/hardender/specs/features/BL-1436-the-pricing-table-prices-every-model-the-swarm-runs.feature","background_hash":"74234e98afe7498fb5daf1f36ac2d78acc339464f950703b8c019892f982b90b","implementation_hash":"unknown","scenarios":[{"index":1,"name":"claude-fable-5-1 is priced at its published rate for each token category","scenario_hash":"5505c242ca417f9bd87d2a90f81b7026882d1d41b0c84a177d727447cbe4eae1","mutation_count":6,"result":{"Total":6,"Killed":6,"Survived":0,"Errors":0},"tested_at":"2026-09-05T22:25:59.871531282Z"}]}
+# acceptance-mutation-manifest-end
+
 Feature: BL-1436 The pricing table prices every model the swarm runs
 
   BL-627 corrected the pricing table and added a fail-loud invariant: every

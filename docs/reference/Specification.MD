@@ -1,5 +1,22 @@
 # SwarmForge VS Code Extension — Specification
 
+**Last Updated:** September 5, 2026 (BL-1436: `PRICING_TABLE` had no entry
+for `claude-fable-5-1` — the full-forge specifier seat's actual model
+since 2026-09-04 (`swarmforge/packs/full-forge.conf`, `71f67b3fa6`,
+distinct from the imprecise `claude-fable-5` the pack used before) — so
+BL-627's coverage check was red on `main` and every turn of that seat was
+costed at `null` in the BL-551 ledger and the briefing. The row is now
+priced (input $10, output $50, cache read $0.25 per million tokens,
+verified against the project's Claude API reference rather than copied
+from the sibling `claude-fable-5` row) with no cache-creation rate, since
+none is published — `estimateCostUsd` returns `null`, never a guess, for
+a turn that spends cache-creation tokens on this model.
+`modelDisplayName.ts` now maps it to `Fable 5.1`. The standing-red
+register row, which had drifted to name the wrong (closed) ticket, is
+removed in the same commit. Acceptance:
+`specs/features/BL-1436-the-pricing-table-prices-every-model-the-swarm-runs.feature`.
+How-to: [BL-627](specs/BL-627-pricing-table-correctness-and-coverage-invariant.md).)
+Prior entry —
 **Last Updated:** September 5, 2026 (BL-1420: BL-784's fail-closed registry
 guard refused every run of three pre-BL-784 freshness-watchdog fixtures
 since 2026-08-27 — BL-1011's acceptance feature was 0/8 and BL-1012's 0/9
