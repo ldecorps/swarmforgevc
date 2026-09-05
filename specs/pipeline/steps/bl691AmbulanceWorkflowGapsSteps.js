@@ -5,9 +5,9 @@
 
 const assert = require('node:assert/strict');
 const fs = require('node:fs');
-const os = require('node:os');
 const path = require('node:path');
 const { spawnSync } = require('node:child_process');
+const { mkSocketFixtureRoot } = require('./lib/socketFixtureRoot');
 
 const FEATURE = 'the ambulance moves the patient and nothing else';
 const REPO = path.join(__dirname, '..', '..', '..');
@@ -39,7 +39,7 @@ function ensure(ctx) {
 }
 
 function mkRoot() {
-  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'bl691-aps-'));
+  const root = mkSocketFixtureRoot('bl691-aps-');
   fs.mkdirSync(path.join(root, '.swarmforge'), { recursive: true });
   fs.writeFileSync(path.join(root, 'fake.sock'), '');
   fs.writeFileSync(path.join(root, '.swarmforge', 'tmux-socket'), path.join(root, 'fake.sock'));

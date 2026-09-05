@@ -7,7 +7,6 @@
 
 const assert = require('node:assert/strict');
 const fs = require('node:fs');
-const os = require('node:os');
 const path = require('node:path');
 const { execFileSync } = require('node:child_process');
 const {
@@ -18,6 +17,7 @@ const { installInProcessTmux } = require('../../../extension/test/helpers/fakeTm
 const { spawnFakeAgentTree } = require('../../../extension/test/helpers/fakeAgentTree');
 const { copySeededRepoInto } = require('../../../extension/test/helpers/sharedRepoFixture');
 const { mkTmpDir } = require('../../../extension/test/helpers/tmpDir');
+const { mkSocketFixtureRoot } = require('./lib/socketFixtureRoot');
 
 const FEATURE = 'BL-1112 standing unit reds in sampleResourcesCli and strykerSandboxSiblingsLib';
 
@@ -161,7 +161,7 @@ function registerSteps(registry) {
 
   scoped(/^an extension temp dir whose (\S+) symlink points at a removed path$/, (ctx, sibling) => {
     assert.ok(KNOWN_SIBLINGS.has(sibling), `unknown <sibling>: ${sibling}`);
-    const root = fs.mkdtempSync(path.join(os.tmpdir(), 'bl1112-stryker-'));
+    const root = mkSocketFixtureRoot('bl1112-stryker-');
     const extensionDir = path.join(root, 'extension');
     const siblingDir = path.join(root, sibling);
     fs.mkdirSync(extensionDir, { recursive: true });
