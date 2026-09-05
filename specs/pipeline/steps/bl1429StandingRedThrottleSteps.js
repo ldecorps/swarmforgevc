@@ -19,6 +19,7 @@ const EFFECTIVE_CLI = path.join(REPO_ROOT, 'swarmforge', 'scripts', 'effective_b
 const { emitThrottleRecommendation, throttleChangeLogPath } = require(path.join(EXTENSION_DIR, 'out', 'tools', 'emit-throttle-recommendation'));
 const { describeStandingRedSignal } = require(path.join(EXTENSION_DIR, 'out', 'metrics', 'standingRedSignal'));
 const { persistReworkSignal } = require(path.join(EXTENSION_DIR, 'out', 'metrics', 'reworkObservatoryStore'));
+const { writeStandingRedRegisterFixture } = require(path.join(EXTENSION_DIR, 'test', 'helpers', 'standingRedRegisterFixture'));
 
 function mkTmp(prefix) {
   return fs.mkdtempSync(path.join(os.tmpdir(), prefix));
@@ -49,27 +50,8 @@ function writeConfKey(targetRepo, key, value) {
   fs.writeFileSync(confPath(targetRepo), lines.join('\n') + '\n');
 }
 
-// Writes `count` register rows sharing `oldestAgeDays` (so the report's own
-// MAX-based oldest_age_days is exactly that value); the first `unownedCount`
-// name a ticket that resolves absent (never minted), the rest name a ticket
-// minted into backlog/active/ (resolves owned). count 0 writes an empty
-// register (no rows at all - oldest_age_days reads back null).
-function writeRegisterFixture(targetRepo, { count, oldestAgeDays, unownedCount = 0 }) {
-  const firstSeen = new Date(Date.now() - oldestAgeDays * 24 * 60 * 60 * 1000).toISOString().slice(0, 10);
-  const rows = [];
-  for (let i = 0; i < count; i++) {
-    const owned = i >= unownedCount;
-    const ticket = owned ? `BL-9${800 + i}` : `BL-9${900 + i}`;
-    rows.push(`unit\textension/test/bl1429-acceptance-fixture-${i}.test.js\t${ticket}\t${firstSeen}\tfixture row`);
-    if (owned) {
-      const activeDir = path.join(targetRepo, 'backlog', 'active');
-      fs.mkdirSync(activeDir, { recursive: true });
-      fs.writeFileSync(path.join(activeDir, `${ticket}-fixture.yaml`), `id: ${ticket}\ntitle: t\nstatus: todo\n`);
-    }
-  }
-  const registerPath = path.join(targetRepo, 'backlog', 'standing-reds.tsv');
-  fs.mkdirSync(path.dirname(registerPath), { recursive: true });
-  fs.writeFileSync(registerPath, `# fixture register\n${rows.join('\n')}\n`);
+function writeRegisterFixture(targetRepo, opts) {
+  writeStandingRedRegisterFixture(targetRepo, { ...opts, filePrefix: 'bl1429-acceptance-fixture' });
 }
 
 function writeReworkSignal(targetRepo, { reworkRate, baselineRate }) {
