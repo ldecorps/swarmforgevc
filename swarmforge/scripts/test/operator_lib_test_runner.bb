@@ -1167,6 +1167,32 @@
                        (map :type (operator-lib/tick-observed-events
                                     {:reachable? true :command-file-exists? true :command-detail "go"
                                      :coordinator-inbox-fresh? true}))))
+;; ── BL-1353: TASK_ARRIVED retired as a wake source (human ruling) ─────────
+;; It was manufactured every tick from a bare mtime probe on the coordinator's
+;; inbox that never asked whether the coordinator picked the handoff up - 37 of
+;; 73 dispatched events on 2026-09-02 UTC, over half that day's disposable Opus
+;; sessions, for ordinary pipeline motion the coordinator handles itself.
+(assert= "BL-1353: fresh coordinator mail manufactures no wake at all"
+         []
+         (operator-lib/tick-observed-events {:reachable? true :command-file-exists? false
+                                             :coordinator-inbox-fresh? true}))
+(assert-true "BL-1353: TASK_ARRIVED is not a manufacturable tick event type"
+             (not (contains? operator-lib/manufactured-tick-event-types "TASK_ARRIVED")))
+(assert= "BL-1353: the real wake sources are untouched by the retirement"
+         ["SWARM_CONTROL_LOST" "HUMAN_COMMAND"]
+         (mapv :type (operator-lib/tick-observed-events
+                       {:reachable? false :command-file-exists? true :command-detail "go"
+                        :coordinator-inbox-fresh? true})))
+;; Invariant 2: the freshness probe's OTHER consumer - the BL-307/BL-310
+;; closing pass - is untouched. Fresh coordinator mail still relaunches a
+;; hibernated swarm, and its absence still leaves it hibernating.
+(assert-true "BL-1353: fresh coordinator mail still relaunches a hibernated swarm"
+             (operator-lib/should-relaunch? {:already-hibernated? true :backlog-drained? true
+                                             :fresh-coordinator-mail? true}))
+(assert-true "BL-1353: without fresh mail a drained hibernated swarm stays down"
+             (not (operator-lib/should-relaunch? {:already-hibernated? true :backlog-drained? true
+                                                  :fresh-coordinator-mail? false})))
+
 (assert= "BL-653: babysitter escalation wire shape"
          {:type "BABYSITTER_ESCALATION" :subject "proc-coder" :detail "process gone"}
          (operator-lib/babysitter-escalation-event {:key "proc-coder" :message "process gone"}))
