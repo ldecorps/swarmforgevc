@@ -180,3 +180,5 @@ approval_context: >
   is loud and unambiguous once run - the problem there is that
   nothing ran it, and that is the coordinator's thread, not this
   ticket's.
+
+assigned_to: coder

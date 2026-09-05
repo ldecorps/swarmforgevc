@@ -162,3 +162,5 @@ source: |
   (told-sha = landed sha for the four roles); `git -C .worktrees/architect
   rev-list --count` both ways (17 ahead, 0 behind); daemon start
   `daemon-start-audit.log` 12:19:08Z; BL-1421 land 12:13Z.
+
+assigned_to: coder
