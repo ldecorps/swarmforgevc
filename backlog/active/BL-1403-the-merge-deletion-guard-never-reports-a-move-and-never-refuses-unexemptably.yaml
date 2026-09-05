@@ -132,3 +132,5 @@ source: |
   4669a198cd) read the guard's source and named the cause. Earlier instance:
   coder on BL-1311's merge-up, 2026-09-02. Immediate unblock sent to the
   documenter as a note (cherry-pick f374d49a8e, then merge).
+
+assigned_to: coder
