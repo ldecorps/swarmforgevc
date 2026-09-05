@@ -175,6 +175,7 @@ expects them, and are not migrated or rewritten here.
 - [Keep BL-578 acceptance bound](how-to/BL-988-orphaned-wsl-acceptance-contract-binding.md) — restore orphaned step binding; property regression against re-orphan (BL-988).
 - [Context Telemetry: Recording and Querying Agent Invocations](how-to/GH-22-context-telemetry-recorder-and-query-cli.md)
 - [Context-telemetry producer wiring](how-to/BL-665-context-telemetry-producer-wiring.md) — transcript walker fills GH-22 store via `record`; handoffd sweep (BL-665).
+- [Turn-profile producer wiring](how-to/BL-1364-turn-profile-producer-wiring.md) — connects BL-664's unreachable `buildTurnProfileSeries` to a handoffd sweep; absent-vs-zero and interior-damage-vs-torn-tail invariants (BL-1364).
 - [Cost ledger synthetic pricing for Max-billed roles](how-to/BL-565-cost-ledger-synthetic-pricing-max-billed-roles.md) — token capture + list-price `syntheticCostUsd`; billed vs synthetic rollups stay separate (BL-565).
 - [Monitoring Agent Context Budget in the Mini App Console](how-to/GH-23-context-budget-dashboard.md)
 - [Reviewing Paused Tickets in the Mini App Console](how-to/BL-538-console-paused-ticket-pager.md)
