@@ -1,5 +1,31 @@
 # SwarmForge VS Code Extension — Specification
 
+**Last Updated:** September 5, 2026 (BL-1353: `TASK_ARRIVED` retired as an LLM
+Operator wake source, human-ruled 2026-09-04. BL-653 made the Operator
+summoned rather than scheduled and documented exactly three legitimate wake
+sources (inbound human traffic, a `BABYSITTER_ESCALATION` CRIT finding,
+`SWARM_CONTROL_LOST`) — but `TASK_ARRIVED` was still manufactured every tick
+by `tick-observed-events` (`operator_lib.bb`) from a bare mtime probe on the
+coordinator's `inbox/new` (`coordinator-inbox-has-fresh?`,
+`operator_runtime.bb`) that never checked whether the coordinator picked the
+handoff up: ordinary pipeline motion, not an escalation. Measured off
+`.swarmforge/operator/events-done` for 2026-09-02 UTC: `TASK_ARRIVED` 37,
+`BABYSITTER_ESCALATION` 32, `SWARM_CONTROL_LOST` 4 — 51% of that day's
+dispatched events, each a disposable Opus session. Fixed by dropping the
+`TASK_ARRIVED` conjunct from `tick-observed-events` and its entry from
+`manufactured-tick-event-types`; the freshness probe itself is untouched,
+since `closing-pass-sweep!`'s `fresh-coordinator-mail?` still reads it as the
+BL-307/BL-310 hibernated-swarm relaunch UP-trigger (not an input to the
+hibernate DOWN-trigger), a second consumer this ticket was explicit about
+leaving alone. An unclaimed handoff stays covered — by babysitterd CRIT and
+BL-098 chase/nudge telemetry — so BL-653's own invariant (no wake source
+removed before a live escalation producer covers what it stood in for) holds.
+Acceptance: `specs/features/BL-1353-task-arrived-is-not-an-escalation.feature`.
+How-to: `docs/how-to/BL-653-operator-escalation-driven-wake-model.md`
+(extended in place — a new "What's retired" bullet plus `TASK_ARRIVED` added
+to the quiet-night regression checklist). No diagram depicts operator
+wake-source selection at this granularity.)
+Prior entry —
 **Last Updated:** September 5, 2026 (BL-1400: `check-feature-handler-registration.ts`'s
 `readTree` listed `specs/pipeline/steps/` NON-recursively, so a nested
 handler — the one placement BL-1371's own `isDiscovered` predicate and its
