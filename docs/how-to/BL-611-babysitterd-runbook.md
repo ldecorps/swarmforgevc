@@ -664,19 +664,30 @@ Three bounds, each load-bearing:
   suppression requires a positively read waive, never the absence of a
   readable answer.
 
-Scope: the waive silences the coordinator **nudge** only. The same finding's
-operator `BABYSITTER_ESCALATION` (if it has crossed that separate threshold)
-still fires — extending the waive there is an explicit follow-up, not this
-mechanism's job yet.
+Scope: the waive silences **both** the coordinator nudge and the operator
+`BABYSITTER_ESCALATION` channel (BL-1404). Before BL-1404, `decide-escalations`
+was fed the sweep's raw finding list rather than the post-waive `nudgeable`
+set, so a recorded waive stopped the coordinator nudge but left a permanent
+CRIT (an Article 4.2 finding keyed on an immutable sha) re-waking the LLM
+operator every escalation cooldown forever — observed 2026-09-04, one key
+delivered to the operator four times in two hours, each re-adjudicated by
+hand. Both deciders now read the same post-waive set
+(`babysitter_check.bb`'s single `partition-findings` call feeds `nudgeable`
+to `decide-nudges` AND `decide-escalations`), and the unusable-store branch
+is symmetric: a store that cannot be read escalates everything (and nudges
+everything) rather than going quiet on either channel.
 
 Verify:
 
 ```bash
 bb swarmforge/scripts/test/bl1344_waive_lib_test_runner.bb
+bb swarmforge/scripts/test/bl1404_waive_silences_escalation_property_runner.bb
+bash swarmforge/scripts/test/test_babysitter_check.sh
 ```
 
-Acceptance feature:
-[`specs/features/BL-1344-an-investigated-finding-can-be-waived.feature`](../../specs/features/BL-1344-an-investigated-finding-can-be-waived.feature).
+Acceptance features:
+[`specs/features/BL-1344-an-investigated-finding-can-be-waived.feature`](../../specs/features/BL-1344-an-investigated-finding-can-be-waived.feature),
+[`specs/features/BL-1404-a-recorded-waive-silences-the-operator-escalation-too.feature`](../../specs/features/BL-1404-a-recorded-waive-silences-the-operator-escalation-too.feature).
 
 ## Verify
 
