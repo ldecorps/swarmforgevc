@@ -97,30 +97,38 @@ helper and the real file (not a reimplementation):
   test/docsStructureRealTree.test.js` — **5 passed, 0 failed**, unaffected
   by the comment addition.
 
-## Why this is a spec-gap note, not a bounce
+## Update: the specifier had already amended the ticket (985b0df0b6)
 
-The parcel's own code change (the exemption comment) is correct, harmless,
-and exactly what the ticket and BL-1038's policy ask for — nothing here is
-a defect in the coder's or cleaner's work. The gap is entirely in the
-ticket's own qa_e2e item 3 / scenario 02 premise, which assumed the guard
-would still detect this file's derivation shape; an unrelated intervening
-commit (BL-1317, landed after mint) silently invalidated that premise for
-this one file. Per this role's spec-gap rule, an untestable/ambiguous
-scenario whose premise the parcel did not create leaves as a `note`
-(priority `00`) to specifier and coordinator, never a bounce and never a
-second parcel. The coder already surfaced this transparently in
-`backlog/evidence/BL-1212-coder-20260905.md`; I am independently
-confirming it and forwarding the note myself since my role is the one this
-project's spec-gap protocol names.
+Before I could send my own spec-gap note, my first `git_handoff` attempt to
+hardener was refused with `CONTRACT_AMENDED_SINCE_BASE`: the ticket's
+feature file had been amended on `main` by `985b0df0b6` while this parcel
+was in flight — the specifier independently reached the exact same finding
+(via the coder's own 2026-09-05T16:33Z note) and retired scenario 02 with a
+RETIRE-WITH pointer to a newly-minted BL-1435 (defect, high: widen the
+guard to recognize the `git rev-parse` idiom), per Article 5.3/BL-1006. I
+had already sent my own priority-`00` note to specifier and coordinator
+naming the same gap moments before discovering the amendment — redundant
+now but harmless, and it independently corroborates the specifier's own
+finding.
+
+Per the in-flight-amendment protocol (this parcel's holder merges `main`
+first, then replays the amendment): merged `origin/main` (also picking up
+BL-1433, already landed in `backlog/done/M8/`), then updated
+`specs/pipeline/steps/bl1212RealTreeDocsGateRecordsItsLiveReadExemptionSteps.js`
+to drop scenario 02's now-retired steps and its stale header (replaced with
+a note pointing at the retirement commit and BL-1435), removing the now-
+unused `violationFor`/`liveRepoDerivation` imports. Re-drove scenarios 01
+and 03 directly against the amended feature — both **PASS**. Re-ran
+`npx vitest run test/liveRepoDerivationGuard.test.js
+test/docsStructureRealTree.test.js` — **24/24 pass** (19 + 5), confirming
+the amended acceptance surface and the regression requirement both hold
+cleanly with no dangling reference to the retired scenario.
 
 ## Verdict
 
 Architecturally compliant. No architecture violation, no invariant
-violation, no correctness defect in the parcel. Forwarding to hardener;
-separately sending a priority-`00` note to specifier + coordinator
-flagging that BL-1212's qa_e2e item 3 / scenario 02 can no longer be
-honestly executed as literally written, so the specifier can decide
-whether to amend the scenario's wording (e.g. to assert the guard's
-pattern-matcher itself, rather than this specific now-drifted file) or
-accept the coder's documented substitute as the ticket's actual closing
-evidence.
+violation, no correctness defect in the parcel. The spec-gap this pass
+surfaced was independently found and already resolved by the specifier
+(BL-1212 amended, BL-1435 minted) before this parcel forwarded — replayed
+the amendment onto the step-handler file and re-verified green. Forwarding
+to hardener.
