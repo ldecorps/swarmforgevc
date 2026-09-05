@@ -38,6 +38,7 @@ function mkDeps(overrides) {
     checkMkdtempConvention: () => ({ checked: true, testFilesScanned: 0, violations: [], scannedPaths: [] }),
     checkPropertyGeneratorReach: () => ({ checked: true, propertyFilesScanned: 0, scannedPaths: [] }),
     checkShellEntryPointDrive: () => ({ checked: true, shellTestsScanned: 0, entryPointsNamed: 0 }),
+    checkOrphanedAuthoredDocs: () => ({ checked: true, docsTouched: false }),
     checkUnreachableStepHandlers: () => ({ checked: true, stepFilesScanned: 0, patternsChecked: 0 }),
     checkMultiBranchParserCoverage: () => ({ checked: true, parsersScanned: 0 }),
     checkPerHatRolePromptEvidence: () => ({ checked: true, verdictsScanned: 0 }),
@@ -113,6 +114,7 @@ test('landPilotedTicket refuses cross-file duplication and writes nothing durabl
       duplication: { fingerprint: block, paths: ['a.sh', 'b.sh', 'c.sh'] },
     }),
     checkShellEntryPointDrive: () => ({ checked: true, shellTestsScanned: 0, entryPointsNamed: 0 }),
+    checkOrphanedAuthoredDocs: () => ({ checked: true, docsTouched: false }),
     checkUnreachableStepHandlers: () => ({ checked: true, stepFilesScanned: 0, patternsChecked: 0 }),
     checkMultiBranchParserCoverage: () => ({ checked: true, parsersScanned: 0 }),
     checkPerHatRolePromptEvidence: () => ({ checked: true, verdictsScanned: 0 }),
@@ -133,6 +135,7 @@ test('landPilotedTicket lands with a warning when touched-file history is unread
   const { deps, calls } = mkDeps({
     checkCrossFileDuplication: () => ({ checked: false }),
     checkShellEntryPointDrive: () => ({ checked: true, shellTestsScanned: 0, entryPointsNamed: 0 }),
+    checkOrphanedAuthoredDocs: () => ({ checked: true, docsTouched: false }),
     checkUnreachableStepHandlers: () => ({ checked: true, stepFilesScanned: 0, patternsChecked: 0 }),
     checkMultiBranchParserCoverage: () => ({ checked: true, parsersScanned: 0 }),
     checkPerHatRolePromptEvidence: () => ({ checked: true, verdictsScanned: 0 }),
@@ -152,6 +155,7 @@ test('landPilotedTicket records filesScanned on the receipt when duplication was
   const { deps } = mkDeps({
     checkCrossFileDuplication: () => ({ checked: true, filesScanned: 4 }),
     checkShellEntryPointDrive: () => ({ checked: true, shellTestsScanned: 0, entryPointsNamed: 0 }),
+    checkOrphanedAuthoredDocs: () => ({ checked: true, docsTouched: false }),
     checkUnreachableStepHandlers: () => ({ checked: true, stepFilesScanned: 0, patternsChecked: 0 }),
     checkMultiBranchParserCoverage: () => ({ checked: true, parsersScanned: 0 }),
     checkPerHatRolePromptEvidence: () => ({ checked: true, verdictsScanned: 0 }),
