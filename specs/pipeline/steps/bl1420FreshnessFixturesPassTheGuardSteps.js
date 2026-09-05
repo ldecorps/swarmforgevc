@@ -35,6 +35,18 @@ const KNOWN_FIXTURES = new Map([
   ['the bl1011 property runner', 'bl1011-property-runner'],
 ]);
 
+// Pins each row's own <supervisors> count against its own <fixture> label
+// (KNOWN_VALUES) - the Given step both BUILDS the scratch directory's fake
+// scripts from <supervisors> AND the Then step's assertion re-derives its
+// expectation from that same captured value, so a mutated Examples cell
+// would otherwise round-trip unnoticed (BL-908's class: a value consumed
+// only by itself proves nothing about the Outline's own literal).
+const KNOWN_SUPERVISOR_COUNTS = new Map([
+  ['the BL-1011 handler', 2],
+  ['the BL-1012 handler', 3],
+  ['the bl1011 property runner', 2],
+]);
+
 function mkTmpDir(prefix) {
   return fs.mkdtempSync(path.join(os.tmpdir(), prefix));
 }
@@ -155,6 +167,8 @@ function registerSteps(registry) {
     if (!fixture) {
       throw new Error(`unknown <fixture>: ${fixtureLabel}`);
     }
+    assert.equal(ctx.supervisorCount, KNOWN_SUPERVISOR_COUNTS.get(fixtureLabel),
+      `unexpected <supervisors> for <fixture> "${fixtureLabel}": got ${ctx.supervisorCount}`);
     const confPath = path.join(ctx.fixtureRoot, 'freshness.conf');
     const requiredPath = path.join(ctx.fixtureRoot, 'freshness_required.conf');
     if (fixture === 'bl1011-property-runner') {
