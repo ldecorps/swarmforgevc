@@ -230,8 +230,8 @@ function registerSteps(registry) {
     /^the section carries (the architecture charts only|the open-ticket chart only|both chart sources|no charts and a plain note)$/,
     (ctx, shipped) => {
       const html = ctx.result.lastSentHtml || '';
-      const hasArch = /<h3>architecture diagram<\/h3>/.test(html);
-      const hasBurn = /<h3>[^<]*burndown[^<]*<\/h3>/i.test(html);
+      const hasArch = /<h3[^>]*>architecture diagram<\/h3>/.test(html);
+      const hasBurn = /<h3[^>]*>[^<]*burndown[^<]*<\/h3>/i.test(html);
       const expected = SHIPPED_EXPECTATIONS[shipped];
       if (hasArch !== expected.arch || hasBurn !== expected.burn) {
         throw new Error(
@@ -252,7 +252,7 @@ function registerSteps(registry) {
 
   registry.define(/^the open-ticket chart is omitted$/, (ctx) => {
     const html = ctx.result.lastSentHtml || '';
-    if (/<h3>[^<]*burndown[^<]*<\/h3>/i.test(html)) {
+    if (/<h3[^>]*>[^<]*burndown[^<]*<\/h3>/i.test(html)) {
       throw new Error(`expected the open-ticket chart to be omitted; got: ${html}`);
     }
   });
