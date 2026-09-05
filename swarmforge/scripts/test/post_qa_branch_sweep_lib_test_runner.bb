@@ -36,27 +36,59 @@
 (assert= "already at landed"
          {:action :already-settled}
          (post-qa-branch-sweep-lib/decide-role
-          {:head-sha "abc" :landed-sha "abc" :dirty? false :in-process? false :can-ff? false}))
+          {:head-sha "abc" :landed-sha "abc" :dirty? false :in-process? false :can-ff? false :contains-landed? false}))
 
 (assert= "dirty surfaces first"
          {:action :surface :reason :dirty-worktree}
          (post-qa-branch-sweep-lib/decide-role
-          {:head-sha "old" :landed-sha "new" :dirty? true :in-process? false :can-ff? true}))
+          {:head-sha "old" :landed-sha "new" :dirty? true :in-process? false :can-ff? true :contains-landed? false}))
 
 (assert= "in_process surfaces when clean"
          {:action :surface :reason :in-process-work}
          (post-qa-branch-sweep-lib/decide-role
-          {:head-sha "old" :landed-sha "new" :dirty? false :in-process? true :can-ff? true}))
+          {:head-sha "old" :landed-sha "new" :dirty? false :in-process? true :can-ff? true :contains-landed? false}))
 
 (assert= "can ff settles"
          {:action :settle}
          (post-qa-branch-sweep-lib/decide-role
-          {:head-sha "old" :landed-sha "new" :dirty? false :in-process? false :can-ff? true}))
+          {:head-sha "old" :landed-sha "new" :dirty? false :in-process? false :can-ff? true :contains-landed? false}))
 
 (assert= "divergent surfaces"
          {:action :surface :reason :divergent-branch}
          (post-qa-branch-sweep-lib/decide-role
-          {:head-sha "old" :landed-sha "new" :dirty? false :in-process? false :can-ff? false}))
+          {:head-sha "old" :landed-sha "new" :dirty? false :in-process? false :can-ff? false :contains-landed? false}))
+
+;; ── BL-1433: a HEAD that contains the landed commit is settled whatever
+;;    else the worktree holds (invariant 1) ─────────────────────────────
+
+(assert= "holds-landed wins over a clean, fast-forwardable worktree"
+         {:action :holds-landed}
+         (post-qa-branch-sweep-lib/decide-role
+          {:head-sha "ahead" :landed-sha "new" :dirty? false :in-process? false :can-ff? false :contains-landed? true}))
+
+(assert= "holds-landed wins over a dirty worktree"
+         {:action :holds-landed}
+         (post-qa-branch-sweep-lib/decide-role
+          {:head-sha "ahead" :landed-sha "new" :dirty? true :in-process? false :can-ff? false :contains-landed? true}))
+
+(assert= "holds-landed wins over in_process work"
+         {:action :holds-landed}
+         (post-qa-branch-sweep-lib/decide-role
+          {:head-sha "ahead" :landed-sha "new" :dirty? true :in-process? true :can-ff? false :contains-landed? true}))
+
+;; ── BL-1433: an unanswerable containment fact is a skip, never a tell
+;;    (invariant 3) - distinct from :missing-ref (head/landed themselves
+;;    absent), which is unaffected ─────────────────────────────────────
+
+(assert= "unknown containment skips rather than falling through to divergent"
+         {:action :skip :reason :unknown-containment}
+         (post-qa-branch-sweep-lib/decide-role
+          {:head-sha "old" :landed-sha "new" :dirty? false :in-process? false :can-ff? false :contains-landed? nil}))
+
+(assert= "missing-ref still wins over an absent containment fact (head-sha nil)"
+         {:action :skip :reason :missing-ref}
+         (post-qa-branch-sweep-lib/decide-role
+          {:head-sha nil :landed-sha "new" :dirty? false :in-process? false :can-ff? false :contains-landed? nil}))
 
 ;; hardener finding: the two prior dirty/in_process cases each set only ONE of
 ;; the two flags true, so neither can tell which branch decide-role checks
@@ -71,15 +103,15 @@
 (assert= "in_process outranks dirty when both are true (BL-1421)"
          {:action :surface :reason :in-process-work}
          (post-qa-branch-sweep-lib/decide-role
-          {:head-sha "old" :landed-sha "new" :dirty? true :in-process? true :can-ff? true}))
+          {:head-sha "old" :landed-sha "new" :dirty? true :in-process? true :can-ff? true :contains-landed? false}))
 
 (let [bl668-root (fs/create-temp-dir {:prefix "bl668-test-"})
       _ (swap! created-temp-dirs conj bl668-root)
       daemon-dir (str (fs/path bl668-root "daemon"))
       landed "landed1"
-      facts {"coder" {:head-sha "c1" :landed-sha landed :dirty? false :in-process? false :can-ff? true}
-             "cleaner" {:head-sha "l1" :landed-sha landed :dirty? true :in-process? false :can-ff? true}
-             "architect" {:head-sha "a1" :landed-sha landed :dirty? false :in-process? false :can-ff? false}}
+      facts {"coder" {:head-sha "c1" :landed-sha landed :dirty? false :in-process? false :can-ff? true :contains-landed? false}
+             "cleaner" {:head-sha "l1" :landed-sha landed :dirty? true :in-process? false :can-ff? true :contains-landed? false}
+             "architect" {:head-sha "a1" :landed-sha landed :dirty? false :in-process? false :can-ff? false :contains-landed? false}}
       settle-count (atom 0)
       adapters {:role-facts! #(get facts %)
                 :fast-forward! (fn [_ _] (swap! settle-count inc) {:success true})
@@ -91,6 +123,45 @@
   (assert= "first run surfaces two" 2 (count (filter #(= (:type %) :surfaced) (:actions first))))
   (assert= "rerun noop settle" 1 @settle-count)
   (assert= "rerun no duplicate actions" 0 (count (:actions second))))
+
+;; ── BL-1433: sweep!-level - holds-landed and unknown-containment produce
+;;    no action, no tell, and log their own distinct tag ─────────────────
+
+(let [logs (atom [])
+      tells (atom [])
+      dir (str (fs/create-temp-dir {:prefix "bl1433-holds-"}))
+      _ (swap! created-temp-dirs conj dir)
+      adapters {:role-facts! (fn [_] {:head-sha "ahead" :dirty? true :in-process? true
+                                       :can-ff? false :contains-landed? true})
+                :fast-forward! (fn [_ _] {:success true})
+                :tell! (fn [role reason text wake?]
+                         (swap! tells conj role)
+                         {:success true})
+                :log! (fn [& parts] (swap! logs conj (vec parts)))}
+      result (post-qa-branch-sweep-lib/sweep! dir "landedX" ["architect"] adapters)]
+  (assert= "holds-landed produces no action" [] (:actions result))
+  (assert= "holds-landed tells nobody" [] @tells)
+  (assert-true "holds-landed is logged under its own tag"
+               (some #(= "post-qa-branch-sweep-holds-landed" (first %)) @logs))
+  (fs/delete-tree dir))
+
+(let [logs (atom [])
+      tells (atom [])
+      dir (str (fs/create-temp-dir {:prefix "bl1433-unknown-"}))
+      _ (swap! created-temp-dirs conj dir)
+      adapters {:role-facts! (fn [_] {:head-sha "old" :dirty? false :in-process? false
+                                       :can-ff? false :contains-landed? nil})
+                :fast-forward! (fn [_ _] {:success true})
+                :tell! (fn [role reason text wake?]
+                         (swap! tells conj role)
+                         {:success true})
+                :log! (fn [& parts] (swap! logs conj (vec parts)))}
+      result (post-qa-branch-sweep-lib/sweep! dir "landedY" ["hardener"] adapters)]
+  (assert= "unknown-containment produces no action" [] (:actions result))
+  (assert= "unknown-containment tells nobody" [] @tells)
+  (assert-true "unknown-containment is logged under its own tag"
+               (some #(= "post-qa-branch-sweep-unknown-containment" (first %)) @logs))
+  (fs/delete-tree dir))
 
 
 ;; ── BL-1361: the sweep TELLS the roles it could not settle ────────────────
@@ -141,9 +212,9 @@
 (let [tells (atom [])
       adapters {:role-facts! (fn [r] (if (= r "cleaner")
                                        {:worktree-path "/w/cleaner" :head-sha "old0000000" :dirty? true
-                                        :in-process? false :can-ff? false}
+                                        :in-process? false :can-ff? false :contains-landed? false}
                                        {:worktree-path "/w/architect" :head-sha "old0000000" :dirty? false
-                                        :in-process? false :can-ff? true}))
+                                        :in-process? false :can-ff? true :contains-landed? false}))
                 :fast-forward! (fn [_ _] {:success true})
                 :tell! (fn [role reason text wake?]
                          (swap! tells conj {:role role :reason (name reason) :text text :wake? wake?})
@@ -163,7 +234,7 @@
 (let [tells (atom [])
       logs (atom [])
       adapters {:role-facts! (fn [_] {:worktree-path "/w" :head-sha "old0000000" :dirty? true
-                                      :in-process? false :can-ff? false})
+                                      :in-process? false :can-ff? false :contains-landed? false})
                 :fast-forward! (fn [_ _] {:success false :error "no"})
                 :tell! (fn [role _ _ _]
                          (swap! tells conj role)
@@ -188,7 +259,7 @@
 (let [tells (atom [])
       logs (atom [])
       adapters {:role-facts! (fn [_] {:worktree-path "/w" :head-sha "old0000000" :dirty? true
-                                      :in-process? false :can-ff? false})
+                                      :in-process? false :can-ff? false :contains-landed? false})
                 :fast-forward! (fn [_ _] {:success false :error "no"})
                 :tell! (fn [role _ _ _]
                          (swap! tells conj role)
@@ -212,7 +283,7 @@ _ (swap! created-temp-dirs conj dir)]
   (post-qa-branch-sweep-lib/sweep!
    dir "abc1234567" ["cleaner"]
    {:role-facts! (fn [_] {:worktree-path "/w" :head-sha "old0000000" :dirty? true
-                          :in-process? false :can-ff? false})
+                          :in-process? false :can-ff? false :contains-landed? false})
     :fast-forward! (fn [_ _] {:success false})
     :log! (fn [& _] nil)})
   (assert-true "BL-1361: a caller with no :tell! adapter still sweeps" true)
@@ -282,7 +353,7 @@ _ (swap! created-temp-dirs conj dir)]
       dir (str (fs/create-temp-dir {:prefix "bl1421-replay-"}))
       _ (swap! created-temp-dirs conj dir)
       adapters {:role-facts! (fn [_] {:worktree-path "/w" :head-sha "stale0000" :dirty? true
-                                      :in-process? false :can-ff? false})
+                                      :in-process? false :can-ff? false :contains-landed? false})
                 :fast-forward! (fn [_ _] {:success true})
                 :caught-up-to-told? (fn [_ _] false)
                 :tell! (fn [role reason text wake?]
@@ -305,7 +376,7 @@ _ (swap! created-temp-dirs conj dir)]
       dir (str (fs/create-temp-dir {:prefix "bl1421-catchup-"}))
       _ (swap! created-temp-dirs conj dir)
       adapters {:role-facts! (fn [_] {:worktree-path "/w" :head-sha "stale0000" :dirty? true
-                                      :in-process? false :can-ff? false})
+                                      :in-process? false :can-ff? false :contains-landed? false})
                 :fast-forward! (fn [_ _] {:success true})
                 :caught-up-to-told? (fn [_ _] @caught-up?)
                 :tell! (fn [role reason text wake?]
@@ -330,7 +401,7 @@ _ (swap! created-temp-dirs conj dir)]
       dir (str (fs/create-temp-dir {:prefix "bl1421-inprocess-"}))
       _ (swap! created-temp-dirs conj dir)
       adapters {:role-facts! (fn [_] {:worktree-path "/w" :head-sha "stale0000" :dirty? true
-                                      :in-process? true :can-ff? false})
+                                      :in-process? true :can-ff? false :contains-landed? false})
                 :fast-forward! (fn [_ _] {:success true})
                 :caught-up-to-told? (fn [_ _] false)
                 :tell! (fn [role reason text wake?]
