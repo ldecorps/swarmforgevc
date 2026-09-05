@@ -56,14 +56,30 @@
    by definition (its own uncommitted work), so checking dirty? first
    always misclassified it as a resolvable dirty-worktree wake instead of
    the in-process-work it actually is. A dirty worktree with NO in_process
-   parcel is what wakes, per the human's BL-1361 ruling."
-  [{:keys [head-sha landed-sha dirty? in-process? can-ff?]}]
+   parcel is what wakes, per the human's BL-1361 ruling.
+
+   BL-1433: contains-landed? is checked right after already-settled and
+   before in-process?/dirty? - a HEAD that already contains the landed
+   commit is settled for the sweep's purpose WHATEVER ELSE its worktree
+   holds (invariant 1): a role mid-parcel or with local uncommitted work is
+   still holds-landed, never surfaced for either reason. nil (the fact
+   supplier could not read the role's HEAD or the landed commit, or
+   otherwise cannot answer) is a logged skip, never a tell (invariant 3) -
+   distinct from :missing-ref, which is head-sha/landed-sha themselves
+   being absent."
+  [{:keys [head-sha landed-sha dirty? in-process? can-ff? contains-landed?]}]
   (cond
     (or (nil? landed-sha) (nil? head-sha))
     {:action :skip :reason :missing-ref}
 
     (= head-sha landed-sha)
     {:action :already-settled}
+
+    (nil? contains-landed?)
+    {:action :skip :reason :unknown-containment}
+
+    contains-landed?
+    {:action :holds-landed}
 
     in-process?
     {:action :surface :reason :in-process-work}
@@ -194,8 +210,24 @@
   [state landed-sha role-name facts adapters]
   (let [decision (decide-role (assoc facts :landed-sha landed-sha))]
     (case (:action decision)
-      (:skip :already-settled)
+      :already-settled
       [state nil]
+
+      ;; BL-1433: :missing-ref stays silent (unchanged pre-existing
+      ;; posture); :unknown-containment is logged (invariant 3's "logged
+      ;; skip"), same shape as the missing-ref case otherwise.
+      :skip
+      (do
+        (when (= :unknown-containment (:reason decision))
+          ((:log! adapters) "post-qa-branch-sweep-unknown-containment" role-name))
+        [state nil])
+
+      ;; BL-1433 invariant 1: logged, never surfaced, never told, never
+      ;; woken - whatever else the worktree holds.
+      :holds-landed
+      (do
+        ((:log! adapters) "post-qa-branch-sweep-holds-landed" role-name landed-sha)
+        [state nil])
 
       :settle
       (if (settled-at-landed? state role-name landed-sha)
