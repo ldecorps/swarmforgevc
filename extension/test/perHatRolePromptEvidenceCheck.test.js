@@ -31,6 +31,7 @@ function mkDeps(overrides) {
     checkMkdtempConvention: () => ({ checked: true, testFilesScanned: 0, violations: [], scannedPaths: [] }),
     checkPropertyGeneratorReach: () => ({ checked: true, propertyFilesScanned: 0, scannedPaths: [] }),
       checkShellEntryPointDrive: () => ({ checked: true, shellTestsScanned: 0, entryPointsNamed: 0 }),
+      checkOrphanedAuthoredDocs: () => ({ checked: true, docsTouched: false }),
       checkUnreachableStepHandlers: () => ({ checked: true, stepFilesScanned: 0, patternsChecked: 0 }),
       checkMultiBranchParserCoverage: () => ({ checked: true, parsersScanned: 0 }),
       checkPerHatRolePromptEvidence: () => ({ checked: true, verdictsScanned: 0 }),
