@@ -183,22 +183,27 @@
   (let [target (normalize-file-set file-set)]
     (filterv #(= target (:file-set %)) rows)))
 
-;; ── BL-1439: discharge - a run that pays the debt a defer recorded ────────
-;; The row is never deleted (invariant 1): discharge only ever ADDS
-;; discharged-at/discharged-evidence to the matching row, so the deferral
-;; and its discharge stay readable together in the same row.
+;; ── BL-1439: discharge/attempt - the two ways a row learns a run happened ──
+;; The row is never deleted (invariant 1): both verbs only ever ADD fields
+;; to the matching row, so a deferral and what became of it stay readable
+;; together in the same row. Both key on (parcel, gate) - the real ledger's
+;; own identity today, since no two rows share that pair - via the SAME
+;; find, so a future third verb (or a change to how a row is identified)
+;; is one edit, not two kept in sync by hand.
+
+(defn- find-row-idx [rows parcel gate]
+  (first (keep-indexed (fn [i r] (when (and (= parcel (:parcel r)) (= gate (:gate r))) i)) rows)))
 
 (defn discharge-debt
   "rows, {:parcel :gate :evidence :discharged-at} -> {:rows rows'
-   :discharged? bool}. Matches the row by (parcel, gate) - the real
-   ledger's own identity today, since no two rows share a (parcel, gate)
-   pair; a discharge naming no matching row, or with no evidence path,
-   changes nothing and answers :discharged? false so the caller refuses
-   loudly rather than silently no-op'ing (the ticket's own invariant 1)."
+   :discharged? bool}. A discharge naming no matching row, or with no
+   evidence path, changes nothing and answers :discharged? false so the
+   caller refuses loudly rather than silently no-op'ing (the ticket's own
+   invariant 1)."
   [rows {:keys [parcel gate evidence discharged-at]}]
   (if (str/blank? evidence)
     {:rows rows :discharged? false}
-    (let [idx (first (keep-indexed (fn [i r] (when (and (= parcel (:parcel r)) (= gate (:gate r))) i)) rows))]
+    (let [idx (find-row-idx rows parcel gate)]
       (if (nil? idx)
         {:rows rows :discharged? false}
         {:rows (update rows idx assoc :discharged-at discharged-at :discharged-evidence evidence)
@@ -213,14 +218,13 @@
 ;; try happened, not proof the debt was paid.
 (defn record-attempt
   "rows, {:parcel :gate :blocker :attempted-at} -> {:rows rows'
-   :recorded? bool}. Matches by (parcel, gate), same identity discharge-
-   debt uses. Refuses (rows unchanged) with no blocker text or no matching
-   row - an attempt with no stated reason is exactly the silence invariant
-   3 forbids."
+   :recorded? bool}. Refuses (rows unchanged) with no blocker text or no
+   matching row - an attempt with no stated reason is exactly the silence
+   invariant 3 forbids."
   [rows {:keys [parcel gate blocker attempted-at]}]
   (if (str/blank? blocker)
     {:rows rows :recorded? false}
-    (let [idx (first (keep-indexed (fn [i r] (when (and (= parcel (:parcel r)) (= gate (:gate r))) i)) rows))]
+    (let [idx (find-row-idx rows parcel gate)]
       (if (nil? idx)
         {:rows rows :recorded? false}
         {:rows (update rows idx assoc :attempted-at attempted-at :attempted-blocker blocker)
