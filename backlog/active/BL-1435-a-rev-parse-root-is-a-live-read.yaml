@@ -126,3 +126,5 @@ source: |
   Coder note 2026-09-05T16:33:59Z and evidence; `liveRepoDerivationGuard.js`
   lines 39 and 85; `git show --stat 533da24a41`; `grep -l show-toplevel
   extension/test/*.test.js` (five files, 2026-09-05).
+
+assigned_to: coder
