@@ -1,0 +1,149 @@
+id: BL-1426
+title: "post_qa_branch_sweep.bb, the manual entry point for the post-QA branch sweep, has never parsed (one paren unclosed in role-facts since its birth commit f5b6b49f1f, 2026-08-26), nobody ran it in ten days, the daemon never needed it, and it duplicates the fact supplier BL-1421 is changing: retire the wrapper and its shell shim, and the how-to offers no command that runs the sweep by hand"
+milestone: M8
+type: defect
+severity: medium
+# medium: real but contained. A documented how-to command has never worked,
+# and the file is dead code that would silently diverge from the daemon
+# once BL-1421 lands. Nothing live is degraded: the daemon runs the sweep
+# from the lib directly and has done so throughout.
+status: todo
+epic: deterministic-transit-assist
+priority: 20
+direction: swarm-reported
+depends_on: [BL-668]
+mutation_cost: low
+slice_size_envelope: small
+required_stages: [coder, cleaner, architect, hardender, documenter, qa]
+
+acceptance: specs/features/BL-1426-the-never-parsed-sweep-wrapper-is-retired.feature
+
+retires:
+  - swarmforge/scripts/post_qa_branch_sweep.bb
+  - swarmforge/scripts/post_qa_branch_sweep.sh
+  - docs/how-to/BL-668-post-qa-deterministic-branch-sweep.md
+
+human_approval: approved
+approval_context: >
+  A new feature file is authored here, so it needs a tap. No choice is
+  posed and there are no ruling_options. One decision is stated so you can
+  Amend it: the wrapper is RETIRED, not repaired. The repair is one
+  character, but the file has never worked, nothing calls it, BL-668's own
+  contract has no scenario for it, and it carries a second copy of the
+  daemon's role-fact supplier (dirty, in_process, can-ff) that BL-1421 is
+  changing right now in handoffd.bb - a repaired wrapper would run a sweep
+  that disagrees with the live one. Deduplicating instead would touch the
+  files BL-1421 holds. The daemon remains the only runner, as it has been.
+
+invariants:
+  - "The daemon's sweep is untouched: this parcel does not modify handoffd.bb, post_qa_branch_sweep_lib.bb or post_qa_branch_sweep_lib_test_runner.bb (BL-1421 holds them in flight)."
+
+required_wiring:
+  - 'specs/pipeline/steps/bl1426PostQaSweepWrapperRetiredSteps.js::registerSteps::the handler file exists so discovery registers every scenario (BL-1371)'
+
+description: |
+  ## What is wrong
+
+  `swarmforge/scripts/post_qa_branch_sweep.bb` (BL-668, f5b6b49f1f,
+  2026-08-26) fails to read: `role-facts` closes `(zero? (:exit (sh! ...)))`
+  but never closes the `(and head ...)` around it, so the reader meets the
+  map's `}` with a `(` still open:
+
+      Unmatched delimiter: }, expected: ) to match ( at [41 17]
+
+  A pure reader pass over every `.bb` directly under `swarmforge/scripts`
+  on 2026-09-05 found exactly this one unreadable file out of 286. It has
+  been so since the commit that created it. Nothing noticed because:
+
+  - nothing runs it. Its only caller is its own shim
+    `post_qa_branch_sweep.sh`; no cron, operator recipe, test or manifest
+    row names either. The live sweep is `handoffd.bb`, which load-files
+    `post_qa_branch_sweep_lib.bb` and supplies its own facts
+    (`post-qa-branch-sweep-role-facts!`, `handoffd.bb` ~4029-4052).
+  - BL-1395's load guard never reached it: its whole-tree loop is drained
+    by an earlier stdin-reading script and stops at file 107 of 286
+    (BL-1427). The per-commit guard landed on 2026-09-04, after this file.
+  - BL-668's feature has five scenarios, all driven through the acceptance
+    seam `test/post_qa_branch_sweep_cli.bb`; none names the wrapper.
+
+  The wrapper is also a duplicate. Its `role-dirty?`, `role-in-process?`
+  and `role-facts` restate the daemon's private supplier line for line.
+  BL-1421 (active) adds a `caught-up-to-told?` fact to the daemon's
+  supplier; a repaired wrapper would then run a sweep that re-tells every
+  role, the very defect BL-1421 fixes.
+
+  ## What changes
+
+  - Delete `swarmforge/scripts/post_qa_branch_sweep.bb` and
+    `swarmforge/scripts/post_qa_branch_sweep.sh`.
+  - `docs/how-to/BL-668-post-qa-deterministic-branch-sweep.md`: remove the
+    "Manual invocation" block under "When it runs" and the "CLI wrapper" row
+    of the Modules table; one sentence records that the wrapper was retired
+    on 2026-09-05 (this ticket) and that `handoffd` is the only runner.
+    `docs/reference/Specification.MD` line ~4052 drops the wrapper from the
+    BL-668 module list. `docs/index.md`'s how-to line needs no change.
+  - The documenter checks the diagram registry: `swarm-flow.mmd` depicts
+    the daemon's sweep, not the wrapper, so no diagram trigger fires.
+
+  ## How (direction, not mandate)
+
+  - Scenario 02 is a reader pass, not a load: read each file form by form
+    with a pushback reader and report the file and message on the first
+    exception; evaluate nothing (a load would run entry calls, which is
+    BL-1427's business). It is the cheap whole-tree check the load guard's
+    drained loop could not give, and it stays green as long as no script is
+    unreadable.
+  - Scenario 03 looks for a fenced code line invoking
+    `post_qa_branch_sweep.bb` or `post_qa_branch_sweep.sh`, never the bare
+    file name: the retirement sentence in the how-to may name it.
+  - `retires:` declares the three BL-668-owned paths so the task-scope gate
+    admits deletions and doc edits from this ticket.
+
+  ## Out of scope
+
+  - The load guard's drained loop and executed entry calls (BL-1427).
+  - Any change to the daemon's sweep, the lib, or their tests (BL-1421).
+  - A deduplicated shared fact supplier for a future manual entry point;
+    if one is ever wanted it is minted after BL-1421 lands and built on the
+    lib, not on a copy.
+
+qa_e2e_procedure: |
+  1. The BL-1426 feature passes (three scenarios); BL-668's feature still
+     passes all five scenarios unchanged.
+  2. At the parcel commit: `git ls-files swarmforge/scripts | grep -c
+     post_qa_branch_sweep` is 2 (the lib and its test-dir seam are not in
+     scope; the wrapper and shim are gone) - concretely the survivors are
+     `post_qa_branch_sweep_lib.bb` under scripts/ and, under scripts/test/,
+     `post_qa_branch_sweep_cli.bb` and `post_qa_branch_sweep_lib_test_runner.bb`.
+  3. `git diff <received>..<parcel> --stat` touches neither `handoffd.bb`
+     nor `post_qa_branch_sweep_lib.bb` nor its test runner (invariant 1).
+  4. `bb swarmforge/scripts/test/post_qa_branch_sweep_lib_test_runner.bb`
+     passes; the how-to's "When it runs" section has no fenced command.
+  5. After land, on main, the reader pass of scenario 02 run by hand over
+     `swarmforge/scripts/*.bb` reports 0 unreadable.
+
+notes: |
+  Minted 2026-09-05 by the specifier on the coordinator's note (verbatim in
+  source). The coordinator reported the unbalanced parens; the specifier
+  reproduced the reader error, confirmed the file has never parsed, found
+  no caller and no scenario, read the daemon's own supplier, and chose
+  retirement over the one-character repair for the reasons in
+  approval_context. Finding why the load guard missed it is BL-1427.
+
+  INVEST at mint: Independent (BL-668 landed; BL-1421 is named only to keep
+  this parcel off its files, never waited on), Negotiable (the reader pass
+  and the doc wording are direction), Valuable (one outcome: no unreadable
+  script on main and no how-to command that cannot run), Estimable (two
+  deletions, one doc edit, one three-scenario handler; low), Small (three
+  scenarios, one invariant), Testable (read-only tree checks; live steps in
+  qa_e2e_procedure).
+
+source: |
+  Coordinator note to the specifier, 2026-09-05T09:15Z, verbatim: "Mint:
+  post_qa_branch_sweep.bb has unbalanced parens since f5b6b49f1f (08-26)".
+  Specifier trace the same hour: pure reader pass (Unmatched delimiter at
+  [41 17]); `git log` on the file (one commit, its birth); `git grep` for
+  callers (the .sh shim only); BL-668 feature scenarios (none for the
+  wrapper); `handoffd.bb` 4029-4052 (its own supplier); BL-1421's touched
+  files (handoffd.bb, the lib, the lib test runner); the load guard's
+  whole-tree trace (107 of 286 analysed, BL-1427).
