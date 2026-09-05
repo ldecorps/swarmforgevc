@@ -1,3 +1,8 @@
+# mutation-stamp: sha256=7111c146f86cec998fdd88c51a7da3f2fa6ee3172a2044f68971fda8e520b39f
+# acceptance-mutation-manifest-begin
+# {"version":1,"tested_at":"2026-09-05T14:26:43.308725554Z","feature_name":"BL-1427 The load guard covers every script it lists and runs none of them","feature_path":"/home/carillon/swarmforgevc/.worktrees/hardender/specs/features/BL-1427-the-load-guard-covers-every-script-and-runs-none.feature","background_hash":"dc4d90c38aafd64ab04e4355c7e69d232461bd6e483d629f97446c863a48b610","implementation_hash":"unknown","scenarios":[{"index":2,"name":"a script's top-level entry call is analysed and never run","scenario_hash":"235981c9336867038a85b009e7f851bddb885381753b3321376d0a027a85f314","mutation_count":3,"result":{"Total":3,"Killed":3,"Survived":0,"Errors":0},"tested_at":"2026-09-05T14:26:43.308725554Z"}]}
+# acceptance-mutation-manifest-end
+
 Feature: BL-1427 The load guard covers every script it lists and runs none of them
 
   BL-1395's check_bb_scripts_load.sh promises that every Babashka script a
