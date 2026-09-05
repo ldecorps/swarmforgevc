@@ -8,9 +8,17 @@
 ;; Usage:
 ;;   hardening_debt_ledger_read.bb <project-root> [--parcel <id>]
 ;;
-;; Prints a JSON array of {parcel, gate, file_set, reason, load, detected_at}
-;; - file_set is a JSON array of strings, never a comma-joined string, so a
-;; caller never re-parses the on-disk row shape itself.
+;; Prints a JSON array of {parcel, gate, file_set, reason, load, detected_at,
+;; discharged_at, discharged_evidence} - file_set is a JSON array of
+;; strings, never a comma-joined string, so a caller never re-parses the
+;; on-disk row shape itself. discharged_at/discharged_evidence are null on
+;; a row still outstanding.
+;;
+;; BL-1439: this prints EVERY row, discharged or not - the ledger's own
+;; human-readable full history (qa_e2e_procedure step 2 wants a discharged
+;; row's evidence pointer, not its disappearance). outstanding-debt (which
+;; DOES drop discharged rows) is what the register CLI reads instead -
+;; two different questions, one library, no second parser.
 
 (ns hardening-debt-ledger-read
   (:require [babashka.fs :as fs]
@@ -30,8 +38,10 @@
   (let [p (ledger-path project-root)]
     (if (fs/exists? p) (hdl/parse-ledger (slurp (str p))) [])))
 
-(defn- ->json-row [{:keys [parcel gate file-set reason load detected-at]}]
-  {:parcel parcel :gate gate :file_set file-set :reason reason :load load :detected_at detected-at})
+(defn- ->json-row [{:keys [parcel gate file-set reason load detected-at
+                          discharged-at discharged-evidence]}]
+  {:parcel parcel :gate gate :file_set file-set :reason reason :load load :detected_at detected-at
+   :discharged_at discharged-at :discharged_evidence discharged-evidence})
 
 (defn -main [& args]
   (let [[project-root & rest-args] args]
@@ -41,6 +51,6 @@
           rows (if (= flag "--parcel")
                  (do (when (nil? parcel) (usage!)) (hdl/rows-for-parcel rows parcel))
                  rows)]
-      (println (json/generate-string (mapv ->json-row (hdl/outstanding-debt rows)))))))
+      (println (json/generate-string (mapv ->json-row rows))))))
 
 (apply -main *command-line-args*)
