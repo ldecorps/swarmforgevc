@@ -403,6 +403,7 @@ test_qwen_launch_guard_lib.sh	standing
 test_ready_for_next_no_promotion.sh	standing		
 test_ready_for_next_rotate_home.sh	standing		
 test_recover_miniapp_bridge.sh	standing		
+test_record_land_approval_cli.sh	standing		
 test_redo_from.sh	standing		
 test_reexpedite_from_wip.sh	standing		
 test_reference_freshness_guard.sh	standing		
