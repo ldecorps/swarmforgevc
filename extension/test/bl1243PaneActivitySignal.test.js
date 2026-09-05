@@ -31,19 +31,35 @@ function loadResolver() {
 const FIXTURES = path.join(__dirname, '..', '..', 'specs', 'features', 'fixtures', 'BL-970');
 const KINDS = new Set(['ok', 'stale', 'err']);
 
+// BL-1291: pinned rather than enumerated - a live directory listing here
+// previously walked this fixture folder on every run, a cost that grows
+// with however many captures accumulate there over time. This is the exact
+// "same seven pane texts" the header above already names; a new BL-970
+// capture added later needs a line here too, the same discipline a pinned
+// fixture list already asks elsewhere in this codebase.
+const FIXTURE_FILES = [
+  'empty-capture.txt',
+  'idle-bg-shell-running-chrome.txt',
+  'idle-quoted-busy-marker.txt',
+  'idle-real-qa-4-shells.txt',
+  'midturn-esc-footer.txt',
+  'midturn-unlisted-verb-no-counter.txt',
+  'midturn-unlisted-verb-real-capture.txt',
+];
+
 function fixture(name) {
   return fs.readFileSync(path.join(FIXTURES, name), 'utf8');
 }
 
 describe('BL-1243 the per-pane activity signal', () => {
   it('paints a mid-turn pane ok, on every real mid-turn capture', () => {
-    for (const name of fs.readdirSync(FIXTURES).filter((f) => f.startsWith('midturn-'))) {
+    for (const name of FIXTURE_FILES.filter((f) => f.startsWith('midturn-'))) {
       assert.equal(derivePaneActivitySignal(fixture(name)), 'ok', name);
     }
   });
 
   it('paints an alive-but-idle pane stale, on every real idle capture', () => {
-    for (const name of fs.readdirSync(FIXTURES).filter((f) => f.startsWith('idle-'))) {
+    for (const name of FIXTURE_FILES.filter((f) => f.startsWith('idle-'))) {
       assert.equal(derivePaneActivitySignal(fixture(name)), 'stale', name);
     }
   });
@@ -64,7 +80,7 @@ describe('BL-1243 the per-pane activity signal', () => {
   });
 
   it('agrees with isPaneActivelyProcessing rather than re-deciding busy', () => {
-    for (const name of fs.readdirSync(FIXTURES)) {
+    for (const name of FIXTURE_FILES) {
       const text = fixture(name);
       if (!text.trim()) {
         continue;
@@ -78,7 +94,7 @@ describe('BL-1243 the per-pane activity signal', () => {
   });
 
   it('emits nothing outside the palette that already existed', () => {
-    for (const name of fs.readdirSync(FIXTURES)) {
+    for (const name of FIXTURE_FILES) {
       const signal = derivePaneActivitySignal(fixture(name));
       assert.ok(signal === undefined || KINDS.has(signal), `${name} produced ${signal}`);
     }
