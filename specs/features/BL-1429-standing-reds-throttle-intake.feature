@@ -1,3 +1,7 @@
+# acceptance-mutation-manifest-begin
+# {"version":1,"tested_at":"2026-09-05T19:17:20.347406864Z","feature_name":"BL-1429 Standing reds throttle intake","feature_path":"/home/carillon/swarmforgevc/.worktrees/hardender/specs/features/BL-1429-standing-reds-throttle-intake.feature","background_hash":"bda8893e89ec7e5dfa2902f20fd7af6eeddac1fc45f0c00604b4a1d205bf4ac7","implementation_hash":"unknown","scenarios":[]}
+# acceptance-mutation-manifest-end
+
 Feature: BL-1429 Standing reds throttle intake
 
   Article 3.5 lets the coordinator lower active_backlog_max_depth when
