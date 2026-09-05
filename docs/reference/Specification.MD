@@ -1,5 +1,39 @@
 # SwarmForge VS Code Extension — Specification
 
+**Last Updated:** September 5, 2026 (BL-1402: a captioned photo the front
+desk routes is now saved to `.swarmforge/operator/media/<update_id>.<ext>`
+and the routed text carries a second line naming that path, right after
+BL-620's own "not read" note — which stays byte-identical (BL-620/BL-955's
+tests both assert its exact wording). `persistRoutedPhoto`
+(`telegram-front-desk-bot.ts`) reuses Telegram's two-step `getFile`→`GET`
+(the same shape `resolveVoiceAudio` already uses for voice), enforces the
+existing 8 MB `MAX_TELEGRAM_PHOTO_BYTES` cap, and writes via `atomicWrite`
+(widened to accept `Buffer`); `annotateSavedPhotoPath`
+(`telegramFrontDeskBotCore.ts`) is a separate pure text step, always
+applied after `annotateRoutedMediaText`. `persistPhotoIfRouted` gates the
+persist call to an ALLOWLIST of the three decision kinds whose posted text
+actually carries the saved-path line (`post-existing`, `operator-context`,
+an "open" decision) — architect's bounce 1 found the first cut excluded
+only `action === 'drop'`, letting an Approvals/Recert-topic reply's photo
+through the gate anyway (neither surface ever consumes the outcome),
+wasting a fetch/write and risking `pruneMediaStore` evicting a different,
+genuinely-referenced photo; the allowlist fails safe for any future
+decision kind. Three invariants: a fetch/size-cap failure never blocks the
+caption (routes byte-identical, logs one bounded audit line naming the
+update id and reason, writes no file); BL-620's note stays byte-identical
+on every surface; the store is bounded (newest `ROUTED_PHOTO_STORE_BOUND`,
+50, oldest-`mtime`-first pruning) and idempotent (`existingMediaFile`
+checks before any network call, so a redelivered update costs one
+`readdir`, never a re-fetch). Per the human's own ruling, a photo with no
+caption stays dropped (`media-no-caption`) — routing bare photos is an
+explicit follow-up slice, not this one. Acceptance:
+`specs/features/BL-1402-the-front-desk-keeps-a-routed-photo-so-the-operator-can-see-it.feature`.
+How-to (new): `docs/how-to/BL-1402-front-desk-keeps-a-routed-photo.md`,
+linked from `docs/index.md`. No diagram edit: `front-desk-flow.mmd` does
+not model dispatch-level detail this fine — the same call already made for
+BL-1235's and BL-1383's own seat/topic-exclusion mechanisms. No new
+extension command or setting.)
+Prior entry —
 **Last Updated:** September 5, 2026 (BL-1413: `daemon_log_freshness_check.sh`'s
 `heartbeat_age_secs` now reads a daemon's log with `LC_ALL=C grep -aE`
 (text mode, byte-wise) instead of plain `grep -E` — GNU grep treats a file

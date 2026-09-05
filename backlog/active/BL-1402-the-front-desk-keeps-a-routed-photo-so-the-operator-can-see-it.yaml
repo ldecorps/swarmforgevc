@@ -159,3 +159,6 @@ source: |
   8 MB cap in cursorBridgeTelegramMedia.ts, resolveVoiceAudio at bot.ts:1907.
 
 assigned_to: coder
+bounce_count: 1
+bounce_history:
+  - { at: 2026-09-05, by: architect, blamed: coder, class: behavior, commit: bbce356ecf, evidence: backlog/evidence/BL-1402-architect-bounce1-20260905.md }

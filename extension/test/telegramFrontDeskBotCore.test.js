@@ -11,6 +11,8 @@ const {
   resolveReplyDelivery,
   decideUpdateAction,
   annotateRoutedMediaText,
+  annotateSavedPhotoPath,
+  formatPhotoPersistFailureAuditLine,
   formatDropAuditLine,
   pollAndForward,
   decideCursorBridgeExclusion,
@@ -7303,4 +7305,188 @@ test('reconcileStaleApprovalAsks: falls back to a no-op wait when waitBetweenClo
     0
   );
   assert.deepEqual(closed, ['BL-1', 'BL-2']);
+});
+
+// ── BL-1402: a routed photo is kept and its path is named ────────────────
+
+test('BL-1402: annotateSavedPhotoPath appends the saved path on its own line for a saved or already-saved outcome', () => {
+  const base = 'the caption\n[image attached - not read by the front desk]';
+  assert.equal(
+    annotateSavedPhotoPath(base, { kind: 'saved', path: '.swarmforge/operator/media/1.jpg' }),
+    'the caption\n[image attached - not read by the front desk]\n[image saved: .swarmforge/operator/media/1.jpg]'
+  );
+  assert.equal(
+    annotateSavedPhotoPath(base, { kind: 'already-saved', path: '.swarmforge/operator/media/1.jpg' }),
+    'the caption\n[image attached - not read by the front desk]\n[image saved: .swarmforge/operator/media/1.jpg]'
+  );
+});
+
+test('BL-1402: annotateSavedPhotoPath leaves the text byte-identical for not-applicable or failed outcomes', () => {
+  const base = 'the caption\n[image attached - not read by the front desk]';
+  assert.equal(annotateSavedPhotoPath(base, { kind: 'not-applicable' }), base);
+  assert.equal(annotateSavedPhotoPath(base, { kind: 'failed', reason: 'download failed: timeout' }), base);
+  assert.equal(annotateSavedPhotoPath('plain text', { kind: 'not-applicable' }), 'plain text');
+});
+
+test('BL-1402: formatPhotoPersistFailureAuditLine is one bounded line naming update id and reason, never content', () => {
+  const line = formatPhotoPersistFailureAuditLine(77, 'download failed: timeout');
+  assert.equal(line.includes('\n'), false);
+  assert.match(line, /77/);
+  assert.match(line, /download failed: timeout/);
+  assert.doesNotMatch(line, /^front-desk drop /, 'a persist failure is not a drop and must not reuse that wording');
+});
+
+test('BL-1402: a saved photo posts BL-620\'s note then the saved path on its own line, via openSubjectAndRecord', async () => {
+  const opened = [];
+  const calls = [];
+  await pollAndForward(0, PRINCIPAL_ID, {
+    chatId: '1',
+    getUpdates: async () => ({ success: true, updates: [mkPhotoUpdate({ fromId: PRINCIPAL_ID, topicId: 7, caption: 'route these words', updateId: 51 })] }),
+    postToBridge: async () => true,
+    subjectForTopic: () => undefined,
+    openSubjectAndRecord: async (topicId, text, updateId) => {
+      opened.push({ topicId, text, updateId });
+      return 'SUP-9';
+    },
+    persistRoutedPhoto: async (update) => {
+      calls.push(update.update_id);
+      return { kind: 'saved', path: '.swarmforge/operator/media/51.jpg' };
+    },
+  });
+  assert.equal(calls.length, 1, 'persistRoutedPhoto must be called exactly once for the routed update');
+  assert.equal(opened.length, 1);
+  assert.equal(
+    opened[0].text,
+    'route these words\n[image attached - not read by the front desk]\n[image saved: .swarmforge/operator/media/51.jpg]'
+  );
+});
+
+test('BL-1402: a saved photo posts the note then the path via postToBridge too, when a subject already exists', async () => {
+  const posted = [];
+  await pollAndForward(0, PRINCIPAL_ID, {
+    chatId: '1',
+    getUpdates: async () => ({ success: true, updates: [mkPhotoUpdate({ fromId: PRINCIPAL_ID, topicId: 7, caption: 'route these words', updateId: 52 })] }),
+    postToBridge: async (subjectId, text) => {
+      posted.push(text);
+      return true;
+    },
+    subjectForTopic: (topicId) => (topicId === 7 ? 'SUP-1' : undefined),
+    openSubjectAndRecord: stubOpenSubjectAndRecord(),
+    persistRoutedPhoto: async () => ({ kind: 'saved', path: '.swarmforge/operator/media/52.jpg' }),
+  });
+  assert.equal(posted.length, 1);
+  assert.equal(
+    posted[0],
+    'route these words\n[image attached - not read by the front desk]\n[image saved: .swarmforge/operator/media/52.jpg]'
+  );
+});
+
+test('BL-1402 invariant 1: a persist failure never blocks the caption - the routed text is byte-identical to pre-BL-1402, and one audit line names the update id and reason, never content', async () => {
+  const opened = [];
+  const auditLines = [];
+  await pollAndForward(0, PRINCIPAL_ID, {
+    chatId: '1',
+    getUpdates: async () => ({ success: true, updates: [mkPhotoUpdate({ fromId: PRINCIPAL_ID, topicId: 7, caption: 'route these words', updateId: 53 })] }),
+    postToBridge: async () => true,
+    subjectForTopic: () => undefined,
+    openSubjectAndRecord: async (topicId, text) => {
+      opened.push(text);
+      return 'SUP-9';
+    },
+    persistRoutedPhoto: async () => ({ kind: 'failed', reason: 'download failed: connect ECONNREFUSED' }),
+    logDropAudit: (line) => auditLines.push(line),
+  });
+  assert.equal(opened.length, 1);
+  // Exactly BL-620's annotation, nothing more - the pre-BL-1402 shape.
+  assert.equal(opened[0], 'route these words\n[image attached - not read by the front desk]');
+  assert.equal(auditLines.length, 1, `expected exactly one audit line, got: ${JSON.stringify(auditLines)}`);
+  assert.match(auditLines[0], /53/);
+  assert.match(auditLines[0], /connect ECONNREFUSED/);
+  assert.equal(auditLines[0].includes('route these words'), false, 'the audit line must never carry message content');
+});
+
+test('BL-1402: persistRoutedPhoto is never called for a dropped update (media-no-caption, not-principal, not-my-chat)', async () => {
+  const calls = [];
+  const spy = async (update) => {
+    calls.push(update.update_id);
+    return { kind: 'saved', path: 'unused' };
+  };
+  await pollAndForward(0, PRINCIPAL_ID, {
+    chatId: '1',
+    getUpdates: async () => ({
+      success: true,
+      updates: [
+        mkPhotoUpdate({ fromId: PRINCIPAL_ID, topicId: 7, updateId: 61 }), // media-no-caption
+        mkPhotoUpdate({ fromId: 999, topicId: 7, caption: 'not principal', updateId: 62 }),
+        mkPhotoUpdate({ fromId: PRINCIPAL_ID, topicId: 7, caption: 'wrong chat', chatId: 2, updateId: 63 }),
+      ],
+    }),
+    postToBridge: async () => true,
+    subjectForTopic: () => undefined,
+    openSubjectAndRecord: stubOpenSubjectAndRecord(),
+    persistRoutedPhoto: spy,
+  });
+  assert.deepEqual(calls, [], `persistRoutedPhoto must not be called for a dropped update: ${JSON.stringify(calls)}`);
+});
+
+test('BL-1402: the persistRoutedPhoto adapter is optional - a fixture without it routes exactly as before BL-1402', async () => {
+  const opened = [];
+  await pollAndForward(0, PRINCIPAL_ID, {
+    chatId: '1',
+    getUpdates: async () => ({ success: true, updates: [mkPhotoUpdate({ fromId: PRINCIPAL_ID, topicId: 7, caption: 'route these words', updateId: 71 })] }),
+    postToBridge: async () => true,
+    subjectForTopic: () => undefined,
+    openSubjectAndRecord: async (topicId, text) => {
+      opened.push(text);
+      return 'SUP-9';
+    },
+  });
+  assert.equal(opened.length, 1);
+  assert.equal(opened[0], 'route these words\n[image attached - not read by the front desk]');
+});
+
+test('BL-1402 architect bounce 1: persistRoutedPhoto is never called for an approvals-topic reply carrying a photo', async () => {
+  const calls = [];
+  const rejections = [];
+  await pollAndForward(0, PRINCIPAL_ID, {
+    chatId: '1',
+    getUpdates: async () => ({ success: true, updates: [mkPhotoUpdate({ fromId: PRINCIPAL_ID, topicId: 750, caption: 'reject BL-433 no good', updateId: 81 })] }),
+    postToBridge: async () => true,
+    openSubjectAndRecord: stubOpenSubjectAndRecord(),
+    subjectForTopic: (topicId) => (topicId === 750 ? APPROVALS_SUBJECT_ID : undefined),
+    backlogForTopic: () => undefined,
+    recordRejectionReply: async (backlogId, reason) => {
+      rejections.push({ backlogId, reason });
+      return true;
+    },
+    persistRoutedPhoto: async (update) => {
+      calls.push(update.update_id);
+      return { kind: 'saved', path: 'unused' };
+    },
+  });
+  assert.deepEqual(calls, [], `persistRoutedPhoto must not be called for an approvals-topic reply: ${JSON.stringify(calls)}`);
+  assert.equal(rejections.length, 1, 'the reject itself must still be recorded');
+});
+
+test('BL-1402 architect bounce 1: persistRoutedPhoto is never called for a recert-topic reply carrying a photo', async () => {
+  const calls = [];
+  const validated = [];
+  await pollAndForward(0, PRINCIPAL_ID, {
+    chatId: '1',
+    getUpdates: async () => ({ success: true, updates: [mkPhotoUpdate({ fromId: PRINCIPAL_ID, topicId: 900, caption: 'validate BL-207-thing-01', updateId: 82 })] }),
+    postToBridge: async () => true,
+    openSubjectAndRecord: stubOpenSubjectAndRecord(),
+    subjectForTopic: (topicId) => (topicId === 900 ? RECERT_SUBJECT_ID : undefined),
+    backlogForTopic: () => undefined,
+    recordRecertValidate: async (scenarioId) => {
+      validated.push(scenarioId);
+      return true;
+    },
+    persistRoutedPhoto: async (update) => {
+      calls.push(update.update_id);
+      return { kind: 'saved', path: 'unused' };
+    },
+  });
+  assert.deepEqual(calls, [], `persistRoutedPhoto must not be called for a recert-topic reply: ${JSON.stringify(calls)}`);
+  assert.deepEqual(validated, ['BL-207-thing-01'], 'the validate itself must still be recorded');
 });
