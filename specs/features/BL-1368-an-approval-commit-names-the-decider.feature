@@ -1,3 +1,8 @@
+# mutation-stamp: sha256=e7b02cade56b23117f4ac1be14b1dec02429598b2762ecf20b7ea5998575ccfc
+# acceptance-mutation-manifest-begin
+# {"version":1,"tested_at":"2026-09-05T01:31:25.092845232Z","feature_name":"An approval commit names the decider","feature_path":"/home/carillon/swarmforgevc/.worktrees/hardender/specs/features/BL-1368-an-approval-commit-names-the-decider.feature","background_hash":"66e277810f2a9a97ac72cdf4e802fd2a6246cf3ff4e886b7181e92a3f3c1c248","implementation_hash":"unknown","scenarios":[{"index":0,"name":"every decision verb records the same way","scenario_hash":"1937be24afb360958f1e0dcf71aa7ec641d8f955e6f29e0e26e2699b00c4024a","mutation_count":3,"result":{"Total":3,"Killed":3,"Survived":0,"Errors":0},"tested_at":"2026-09-05T01:31:25.092845232Z"}]}
+# acceptance-mutation-manifest-end
+
 Feature: An approval commit names the decider
 
   A human tap on Approve makes the bridge commit the flip with the message

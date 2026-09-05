@@ -37,6 +37,22 @@ export async function runCommitIntegrity(targetPath: string, relPaths: string[],
   }
 }
 
+// BL-1368: the ONE byline every commit that records a HUMAN decision
+// carries. It used to be the literal `By coder.` at each writer, which made
+// the most consequential commit class in the repo assert something false:
+// every agent commits as `t <t@t>`, so the role byline is the only
+// attribution a reader has, and on 2026-09-03 QA correctly read `By coder.`
+// on an approval flip as an agent self-flipping a human's answer. It named
+// the decider truthfully only by accident - never. One exported constant,
+// composed by every writer, so the two halves of the fix cannot drift apart
+// and leave a surviving `By coder.` to mislead the next reader.
+export const HUMAN_DECISION_BYLINE = 'By the human, recorded by the front desk.';
+
+/** Compose a commit message for a decision only a human can make (BL-1368). */
+export function humanDecisionCommitMessage(subject: string): string {
+  return `${subject}\n\n${HUMAN_DECISION_BYLINE}`;
+}
+
 // BL-892 / BL-1091: shared by every automated human_approval writer (Expedite,
 // paused-pager Approve, Telegram Approve/Reject/Amend). Resolves the ticket's
 // current on-disk location (post-any-promote) and pathspec-commits it — plus
