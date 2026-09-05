@@ -10,7 +10,10 @@
 (defn assert-true [msg v]
   (when-not v (swap! failures conj (str "FAIL: " msg))))
 
-(def forbidden #{"SWARM_CHECK_TIMER" "AGENT_EXITED" "AGENT_STALLED"})
+;; BL-1353 added TASK_ARRIVED: retired as a wake source by human ruling, so it
+;; must never re-enter the tick path either - the same regression this runner
+;; was built to catch, one source later.
+(def forbidden #{"SWARM_CHECK_TIMER" "AGENT_EXITED" "AGENT_STALLED" "TASK_ARRIVED"})
 
 (doseq [reachable? [true false]
         cmd? [true false]
