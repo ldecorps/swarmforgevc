@@ -13,53 +13,11 @@ const EXTENSION_DIR = path.join(__dirname, '..', '..', '..', 'extension');
 const { leakedFixtureTunnelPids } = require(
   path.join(EXTENSION_DIR, 'test', 'helpers', 'fixtureTunnelName.js')
 );
+const { killPid, spawnFakeCloudflared, nameWithCreator, deadPid } = require(
+  path.join(EXTENSION_DIR, 'test', 'helpers', 'bl1287FixtureSweepFixture.js')
+);
 
 const FEATURE = 'A fixture-tunnel sweep never signals a fixture a live run still owns';
-
-function killPid(pid) {
-  if (!pid) return;
-  try {
-    process.kill(pid, 'SIGKILL');
-  } catch {
-    /* already gone */
-  }
-}
-
-// A real, harmless background process whose command line contains
-// "run <name>" the way a real cloudflared invocation would, launched from
-// a script under `dir` (defaults to the OS temp directory - the fixture
-// shape leakedFixtureTunnelPids scopes to).
-function spawnFakeCloudflared(name, dir) {
-  const binDir = dir || fs.mkdtempSync(path.join(os.tmpdir(), 'bl1287-fake-cf-'));
-  fs.mkdirSync(binDir, { recursive: true });
-  const bin = path.join(binDir, 'cloudflared');
-  fs.writeFileSync(bin, '#!/usr/bin/env bash\nsleep 300\n');
-  fs.chmodSync(bin, 0o755);
-  const child = spawnSync('bash', [
-    '-c',
-    `"$1" tunnel --config "$2/fake-config.yml" --no-autoupdate run "$3" >/dev/null 2>&1 & echo $!`,
-    '_',
-    bin,
-    binDir,
-    name,
-  ]);
-  return Number(child.stdout.toString().trim());
-}
-
-// A tunnel name in fixtureTunnelName()'s own shape, but with an EXPLICIT
-// creator pid rather than this process's own - the same read-back seam
-// leakedFixtureTunnelPids itself relies on.
-function nameWithCreator(creatorPid) {
-  return `sfvc-test-${creatorPid}-1-bl1287-${Math.random().toString(36).slice(2, 8)}`;
-}
-
-// A pid guaranteed dead: spawnSync waits for the child to fully exit
-// before returning, so its pid has already been reaped by the time this
-// function returns.
-function deadPid() {
-  const child = spawnSync('true', []);
-  return child.pid;
-}
 
 function registerSteps(registry) {
   const scoped = (re, fn) => registry.defineScoped(re, fn, FEATURE);

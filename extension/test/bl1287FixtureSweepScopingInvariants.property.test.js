@@ -12,42 +12,7 @@ const os = require('node:os');
 const { spawnSync, execFileSync } = require('node:child_process');
 const { leakedFixtureTunnelPids } = require('./helpers/fixtureTunnelName');
 const { spawnZombie } = require('./helpers/fixtureLiveness');
-const { mkTmpDir } = require('./helpers/tmpDir');
-
-function killPid(pid) {
-  if (!pid) return;
-  try {
-    process.kill(pid, 'SIGKILL');
-  } catch {
-    /* already gone */
-  }
-}
-
-function spawnFakeCloudflared(name, dir) {
-  const binDir = dir || mkTmpDir('bl1287-prop-fake-cf-');
-  fs.mkdirSync(binDir, { recursive: true });
-  const bin = path.join(binDir, 'cloudflared');
-  fs.writeFileSync(bin, '#!/usr/bin/env bash\nsleep 300\n');
-  fs.chmodSync(bin, 0o755);
-  const child = spawnSync('bash', [
-    '-c',
-    `"$1" tunnel --config "$2/fake-config.yml" --no-autoupdate run "$3" >/dev/null 2>&1 & echo $!`,
-    '_',
-    bin,
-    binDir,
-    name,
-  ]);
-  return Number(child.stdout.toString().trim());
-}
-
-function nameWithCreator(creatorPid) {
-  return `sfvc-test-${creatorPid}-1-bl1287prop-${Math.random().toString(36).slice(2, 8)}`;
-}
-
-// A pid guaranteed dead: spawnSync waits for full exit before returning.
-function deadPid() {
-  return spawnSync('true', []).pid;
-}
+const { killPid, spawnFakeCloudflared, nameWithCreator, deadPid } = require('./helpers/bl1287FixtureSweepFixture');
 
 // A pid guaranteed alive, killed a specific way (per invariant 2's "however
 // that run died"). Returns the corpse's own now-dead pid once fully reaped.
