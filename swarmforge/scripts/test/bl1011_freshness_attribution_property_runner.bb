@@ -60,6 +60,7 @@
 
 (def script (str (fs/path (fs/parent (fs/parent (fs/canonicalize *file*))) "daemon_log_freshness_check.sh")))
 (def conf (str (fs/path (fs/parent (fs/parent (fs/canonicalize *file*))) "daemon_log_freshness.conf")))
+(def live-scripts-dir (str (fs/parent (fs/parent (fs/canonicalize *file*)))))
 
 ;; Each generated root gets its OWN conf naming ONLY handoffd - the same
 ;; per-fixture isolation BL-1012's step handlers settled on. The shipped conf
@@ -96,9 +97,40 @@
 ;; only thing standing between that and a runner that silently proves nothing.
 ;; That is exactly what happened while writing this.
 
-(defn- build-checkout! [root {:keys [log-state swarm identity?]}]
+;; BL-1420: the registry guard's second arm (BL-784) walks scripts-dir on
+;; disk for *_supervisor.bb with no seam - a conf naming only handoffd is
+;; refused the instant one exists there, which is why this runner's 48 real
+;; subprocess calls per run have been silently refused since 2026-08-27
+;; (:continue true below swallowed the refusal into an empty announce).
+;; One conf row + a fresh heartbeat per script the SAME glob the guard
+;; walks finds - never a hand-written count - plus the FRESHNESS_REQUIRED
+;; registry the guard's first arm reads.
+(defn- supervisor-names [scripts-dir]
+  (->> (fs/glob scripts-dir "*_supervisor.bb")
+       (map #(str (fs/file-name %)))
+       (map #(subs % 0 (- (count %) (count ".bb"))))
+       sort))
+
+(defn- iso-at [epoch-secs]
+  (-> (java.time.Instant/ofEpochSecond epoch-secs)
+      .toString))
+
+(defn- write-guard-satisfying-rows!
+  [root {:keys [scripts-dir now-epoch ceiling-secs required-names]
+        :or {scripts-dir live-scripts-dir ceiling-secs 600 required-names ["handoffd"]}}]
+  (let [daemon-dir (fs/path root ".swarmforge" "daemon")]
+    (fs/create-dirs daemon-dir)
+    (doseq [name (supervisor-names scripts-dir)]
+      (spit (str (fs/path daemon-dir (str name ".log"))) (str (iso-at now-epoch) " heartbeat\n"))
+      (spit (str (fs/path root "freshness.conf"))
+            (str name "|" ceiling-secs "|.swarmforge/daemon/" name ".log|.swarmforge/daemon/" name ".pid|noop.sh\n")
+            :append true))
+    (spit (str (fs/path root "freshness_required.conf")) (str (str/join "\n" required-names) "\n"))))
+
+(defn- build-checkout! [root {:keys [log-state swarm identity? now]}]
   (fs/create-dirs (fs/path root ".swarmforge" "daemon"))
   (spit (str (fs/path root "freshness.conf")) fixture-conf-line)
+  (write-guard-satisfying-rows! root {:now-epoch now})
   (when identity?
     (spit (str (fs/path root ".swarmforge" "swarm-identity"))
           (str "swarm_name\t" swarm "\nswarm_mode\tautonomous\n")))
@@ -109,9 +141,18 @@
       :unparseable-timestamp (spit log "not-a-timestamp handoffd heartbeat\n")
       :stale-heartbeat (spit log "2026-08-21T10:00:00Z handoffd heartbeat\n"))))
 
+;; BL-1420 invariant 2: an unexpected checker exit is a failed run naming the
+;; stderr, never an empty observation. `:continue true` alone used to let a
+;; registry-guard refusal (exit 1, before any measurement) through as a
+;; silent empty announce, and every property held VACUOUSLY over zero
+;; violations - only the coverage floors eventually tripped, and only at
+;; high run counts. `:exit` is checked immediately after (:continue true is
+;; kept only so THIS function decides what a non-zero exit means, rather
+;; than babashka throwing before it can be reported with context).
 (defn- run-checker! [root {:keys [creds?]} now]
   (let [env (cond-> {"FRESHNESS_ROOT" root
                      "FRESHNESS_CONF" (str (fs/path root "freshness.conf"))
+                     "FRESHNESS_REQUIRED" (str (fs/path root "freshness_required.conf"))
                      "FRESHNESS_NOW_EPOCH" (str now)
                      "FRESHNESS_INCIDENT_FILE" (str (fs/path root "incidents.log"))
                      "FRESHNESS_COOL_OFF_SECS" "300"
@@ -122,10 +163,13 @@
                      "FRESHNESS_ANNOUNCE_CMD" (str "printf '%s\\n' \"$1\" >> \"" root "/announces.log\"")
                      "FRESHNESS_KILL_CMD" "true"
                      "FRESHNESS_START_CMD" "true"}
-              creds? (merge {"TELEGRAM_BOT_TOKEN" "already-set" "TELEGRAM_CHAT_ID" "12345"}))]
-    (process/sh {:extra-env env :continue true} "/bin/sh" script)
-    {:announced (let [f (str (fs/path root "announces.log"))] (if (fs/exists? f) (slurp f) ""))
-     :incidents (let [f (str (fs/path root "incidents.log"))] (if (fs/exists? f) (slurp f) ""))}))
+              creds? (merge {"TELEGRAM_BOT_TOKEN" "already-set" "TELEGRAM_CHAT_ID" "12345"}))
+        result (process/sh {:extra-env env :continue true} "/bin/sh" script)]
+    (if (zero? (:exit result))
+      {:ok? true
+       :announced (let [f (str (fs/path root "announces.log"))] (if (fs/exists? f) (slurp f) ""))
+       :incidents (let [f (str (fs/path root "incidents.log"))] (if (fs/exists? f) (slurp f) ""))}
+      {:ok? false :stderr (:err result)})))
 
 (loop [i 0 s 1011]
   (when (< i runs)
@@ -144,8 +188,16 @@
           now (if (= log-state :stale-heartbeat) (+ stale-epoch 300) 1800000000)
           root (str (fs/create-temp-dir {:prefix "bl1011-prop-"}))]
       (try
-        (build-checkout! root spec)
-        (let [{:keys [announced incidents]} (run-checker! root spec now)]
+        (build-checkout! root (assoc spec :now now))
+        (let [{:keys [ok? announced incidents stderr]} (run-checker! root spec now)]
+         (if-not ok?
+           ;; BL-1420 invariant 2: an unexpected checker exit is a failed
+           ;; run naming the stderr, never an empty observation folded into
+           ;; the properties below (which would then hold vacuously, exactly
+           ;; the registry-guard refusal this ticket exists to stop hiding).
+           (report! "P-checker (the checker must exit 0)" s spec
+                    (str "checker exited non-zero; stderr=" (pr-str stderr)))
+           (do
           (swap! coverage update log-state inc)
           (swap! coverage update (if creds? :creds-set :creds-unset) inc)
           (swap! coverage update (if identity? :identity-present :identity-absent) inc)
@@ -191,7 +243,7 @@
               ;; ...and an unmeasurable one must NOT.
               (when (not= log-state :stale-heartbeat)
                 (when-not (str/includes? announced "age_secs=unknown")
-                  (report! "P4 (an unmeasurable age renders as a word, not a number)" s spec announced))))))
+                  (report! "P4 (an unmeasurable age renders as a word, not a number)" s spec announced))))))))
         (finally
           ;; Removed in a finally, never only after the last assertion.
           (fs/delete-tree root)))

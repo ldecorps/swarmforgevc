@@ -32,6 +32,7 @@ const fs = require('node:fs');
 const os = require('node:os');
 const path = require('node:path');
 const { spawnSync } = require('node:child_process');
+const { writeGuardSatisfyingRows } = require('../../../extension/test/helpers/freshnessFixture');
 
 const REPO_ROOT = path.join(__dirname, '..', '..', '..');
 const CHECKER = path.join(REPO_ROOT, 'swarmforge', 'scripts', 'daemon_log_freshness_check.sh');
@@ -75,6 +76,18 @@ function mkRoot() {
     path.join(root, 'freshness.conf'),
     `handoffd|${BASE_THRESHOLD}|.swarmforge/daemon/handoffd.log|.swarmforge/daemon/handoffd.pid|start_handoff_daemon.sh\n`
   );
+  // BL-1420: the registry guard's second arm (BL-784) walks the live
+  // scripts directory for *_supervisor.bb with no seam - see
+  // freshnessFixture.js's own header for why this fixture needs a row per
+  // live supervisor, derived from the same glob, rather than a hand count.
+  writeGuardSatisfyingRows({
+    root,
+    daemonRelDir: '.swarmforge/daemon',
+    confPath: path.join(root, 'freshness.conf'),
+    requiredPath: path.join(root, 'freshness_required.conf'),
+    requiredNames: ['handoffd'],
+    nowEpoch: NOW,
+  });
   return root;
 }
 
@@ -106,6 +119,7 @@ function runChecker(ctx) {
     ...process.env,
     FRESHNESS_ROOT: root,
     FRESHNESS_CONF: path.join(root, 'freshness.conf'),
+    FRESHNESS_REQUIRED: path.join(root, 'freshness_required.conf'),
     FRESHNESS_NOW_EPOCH: String(NOW),
     FRESHNESS_INCIDENT_FILE: path.join(root, '.swarmforge', 'daemon', 'freshness-incidents.log'),
     FRESHNESS_COOL_OFF_SECS: '300',
