@@ -55,6 +55,13 @@ test('a line with two markers names both referents', () => {
   );
 });
 
+// BL-1038-EXEMPT: this test's whole point is the live docs tree - it exists
+// to catch the extractor mis-parsing a REAL RETIRED marker into a false
+// positive (the LIVE_ROW regression above), which a pinned fixture could
+// only ever prove for text this file already knows to expect. loadRetiredTokens
+// itself is a single documented-linear scan of docs/, never a per-file walk
+// this test repeats, so its cost is the same order as computeDocsStructure's
+// (BL-757/BL-1291's own docsStructureRealTree.test.js).
 test('loadRetiredTokens over the live docs yields only the genuine referent', () => {
   const tokens = loadRetiredTokens(path.join(__dirname, '..', '..'));
   assert.deepEqual(tokens, ['type: bug']);
