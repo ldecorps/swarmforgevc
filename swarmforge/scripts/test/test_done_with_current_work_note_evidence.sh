@@ -41,6 +41,7 @@ cp "$ROOT/.swarmforge/roles.tsv" "$TASK_WT/.swarmforge/roles.tsv"
 IN_PROCESS="$TASK_WT/.swarmforge/handoffs/inbox/in_process"
 COMPLETED="$TASK_WT/.swarmforge/handoffs/inbox/completed"
 SENT="$TASK_WT/.swarmforge/handoffs/sent"
+OUTBOX="$TASK_WT/.swarmforge/handoffs/outbox"
 
 # The role's git history accumulates across scenarios in this ONE fixture
 # worktree (a real commit is never undone), so a fixed dequeued_at would let
@@ -56,8 +57,8 @@ fresh_dequeued_at() {
 DEQUEUED_AT="$(fresh_dequeued_at)"
 
 reset_mailbox() {
-  rm -rf "$IN_PROCESS" "$COMPLETED" "$SENT"
-  mkdir -p "$IN_PROCESS" "$COMPLETED" "$SENT"
+  rm -rf "$IN_PROCESS" "$COMPLETED" "$SENT" "$OUTBOX"
+  mkdir -p "$IN_PROCESS" "$COMPLETED" "$SENT" "$OUTBOX"
 }
 
 write_work_note() {
@@ -81,6 +82,12 @@ write_sent_handoff_for() {
   local ticket="$1" created_at="$2"
   printf 'id: y\nfrom: taskrole\nto: cleaner\npriority: 50\ntype: git_handoff\nrole: taskrole\ntask: %s-some-slug\ncommit: 1111111111\ncreated_at: %s\n\nmerge_and_process taskrole 1111111111\n' \
     "$ticket" "$created_at" > "$SENT/50_sent.handoff"
+}
+
+write_outbox_handoff_for() {
+  local ticket="$1" created_at="$2"
+  printf 'id: z\nfrom: taskrole\nto: cleaner\npriority: 50\ntype: git_handoff\nrole: taskrole\ntask: %s-some-slug\ncommit: 2222222222\ncreated_at: %s\n\nmerge_and_process taskrole 2222222222\n' \
+    "$ticket" "$created_at" > "$OUTBOX/50_outbox.handoff"
 }
 
 run_done() {
@@ -125,6 +132,22 @@ OUT="$(run_done 2>&1)"
 echo "$OUT" | grep -q 'COMPLETED:' || fail "02b: expected COMPLETED, got: $OUT"
 [[ -f "$COMPLETED/10_work.handoff" ]] || fail "02b: expected the Work note in completed/"
 pass "02b: a git_handoff naming the ticket since dequeue completes the Work note as today"
+
+# ── 02c: a git_handoff naming the ticket, still in outbox/ (not yet moved
+#    to sent/ by handoffd's delivery sweep), ALSO completes as today - the
+#    ticket's own direction says "outbox/sent", and handoffd.bb's deliver!
+#    only moves a file to sent/ AFTER real delivery, so a role that just
+#    sent its parcel and completes within that window must not be
+#    false-refused. ──────────────────────────────────────────────────────
+DEQUEUED_AT="$(fresh_dequeued_at)"
+reset_mailbox
+write_work_note BL-9001
+sleep 1
+write_outbox_handoff_for BL-9001 "$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+OUT="$(run_done 2>&1)"
+echo "$OUT" | grep -q 'COMPLETED:' || fail "02c: expected COMPLETED, got: $OUT"
+[[ -f "$COMPLETED/10_work.handoff" ]] || fail "02c: expected the Work note in completed/"
+pass "02c: a git_handoff naming the ticket still pending in outbox/ also completes the Work note as today"
 
 # ── 03: --no-work records the reason on the completed file ────────────────
 DEQUEUED_AT="$(fresh_dequeued_at)"

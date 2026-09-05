@@ -130,14 +130,22 @@
     (catch Exception _ false)))
 
 (defn- sent-handoff-names-ticket-since?
-  "A git_handoff in this role's own sent/ mailbox, created after since-iso,
-   whose task header's ticket id is exactly ticket-id."
+  "A git_handoff in this role's own outbox/ or sent/ mailbox, created after
+   since-iso, whose task header's ticket id is exactly ticket-id. BOTH
+   directories, per the ticket's own direction: handoffd.bb's deliver! only
+   moves an outbox file into sent/ AFTER the daemon has actually picked it
+   up and delivered it (move-with-collision path (sent-dir ...)) - a
+   git_handoff this role just sent via swarm_handoff.sh can sit in outbox/
+   for a real window before that sweep runs. Reading sent/ alone would
+   false-refuse a role that sent its parcel and completed within that
+   window."
   [ticket-id since-iso]
   (boolean
    (some (fn [f]
            (and (= ticket-id (pipeline-stage-lib/extract-ticket-id (handoff-lib/header-field f "task")))
                 (instant-after? (or (handoff-lib/header-field f "created_at") "") since-iso)))
-         (handoff-lib/handoff-files (handoff-lib/my-mailbox-dir :sent)))))
+         (concat (handoff-lib/handoff-files (handoff-lib/my-mailbox-dir :sent))
+                 (handoff-lib/handoff-files (handoff-lib/my-mailbox-dir :outbox))))))
 
 (defn- work-evidenced-since?
   [ticket-id since-iso]
