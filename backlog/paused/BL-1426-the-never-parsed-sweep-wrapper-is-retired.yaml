@@ -23,7 +23,7 @@ retires:
   - swarmforge/scripts/post_qa_branch_sweep.sh
   - docs/how-to/BL-668-post-qa-deterministic-branch-sweep.md
 
-human_approval: pending
+human_approval: approved
 approval_context: >
   A new feature file is authored here, so it needs a tap. No choice is
   posed and there are no ruling_options. One decision is stated so you can
