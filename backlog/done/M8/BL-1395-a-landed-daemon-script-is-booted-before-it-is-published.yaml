@@ -132,3 +132,4 @@ source: |
   `BL-1392-hardener-critical-fix-handoffd-load-crash-20260904.md` (QA branch).
 
 assigned_to: coder
+abandoned_commits: [744a35ca13]
