@@ -54,7 +54,6 @@ Feature: a ticket reaches backlog/active only through the promotion gates
       | gate                      |
       | depends_on                |
       | hold                      |
-      | active_backlog_max_depth  |
 
   # BL-1083 every-promotion-path-goes-through-the-gate-03
   Scenario: Expedite satisfies the approval gate rather than skipping it
