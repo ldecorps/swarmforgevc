@@ -7444,3 +7444,49 @@ test('BL-1402: the persistRoutedPhoto adapter is optional - a fixture without it
   assert.equal(opened.length, 1);
   assert.equal(opened[0], 'route these words\n[image attached - not read by the front desk]');
 });
+
+test('BL-1402 architect bounce 1: persistRoutedPhoto is never called for an approvals-topic reply carrying a photo', async () => {
+  const calls = [];
+  const rejections = [];
+  await pollAndForward(0, PRINCIPAL_ID, {
+    chatId: '1',
+    getUpdates: async () => ({ success: true, updates: [mkPhotoUpdate({ fromId: PRINCIPAL_ID, topicId: 750, caption: 'reject BL-433 no good', updateId: 81 })] }),
+    postToBridge: async () => true,
+    openSubjectAndRecord: stubOpenSubjectAndRecord(),
+    subjectForTopic: (topicId) => (topicId === 750 ? APPROVALS_SUBJECT_ID : undefined),
+    backlogForTopic: () => undefined,
+    recordRejectionReply: async (backlogId, reason) => {
+      rejections.push({ backlogId, reason });
+      return true;
+    },
+    persistRoutedPhoto: async (update) => {
+      calls.push(update.update_id);
+      return { kind: 'saved', path: 'unused' };
+    },
+  });
+  assert.deepEqual(calls, [], `persistRoutedPhoto must not be called for an approvals-topic reply: ${JSON.stringify(calls)}`);
+  assert.equal(rejections.length, 1, 'the reject itself must still be recorded');
+});
+
+test('BL-1402 architect bounce 1: persistRoutedPhoto is never called for a recert-topic reply carrying a photo', async () => {
+  const calls = [];
+  const validated = [];
+  await pollAndForward(0, PRINCIPAL_ID, {
+    chatId: '1',
+    getUpdates: async () => ({ success: true, updates: [mkPhotoUpdate({ fromId: PRINCIPAL_ID, topicId: 900, caption: 'validate BL-207-thing-01', updateId: 82 })] }),
+    postToBridge: async () => true,
+    openSubjectAndRecord: stubOpenSubjectAndRecord(),
+    subjectForTopic: (topicId) => (topicId === 900 ? RECERT_SUBJECT_ID : undefined),
+    backlogForTopic: () => undefined,
+    recordRecertValidate: async (scenarioId) => {
+      validated.push(scenarioId);
+      return true;
+    },
+    persistRoutedPhoto: async (update) => {
+      calls.push(update.update_id);
+      return { kind: 'saved', path: 'unused' };
+    },
+  });
+  assert.deepEqual(calls, [], `persistRoutedPhoto must not be called for a recert-topic reply: ${JSON.stringify(calls)}`);
+  assert.deepEqual(validated, ['BL-207-thing-01'], 'the validate itself must still be recorded');
+});
