@@ -18,7 +18,7 @@ retires:
   - specs/pipeline/steps/bl1083PromotionGateSteps.js
   - extension/test/bl1083PromotionGateInvariants.property.test.js
 
-human_approval: pending
+human_approval: approved
 approval_context: >
   A new feature file is authored here, so it needs a tap. No choice is
   posed and there are no ruling_options; one assumption is stated so you
