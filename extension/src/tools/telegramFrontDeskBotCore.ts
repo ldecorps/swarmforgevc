@@ -1097,6 +1097,16 @@ export interface PollAdapters {
   /** Standing Bubble topic id — same ownership as Host / Cursor Remote. */
   bubbleTopicId?: () => Promise<number | undefined>;
   /**
+   * BL-1384: the qwen-local seat's own topic id (localQwenSeatLive.ts's
+   * readQwenLocalTopicId) - a THIRD topic the bridge process owns, alongside
+   * Host/Cursor Remote and Bubble. Without this the front desk never forwards
+   * that topic's updates to the bridge inbound queue, so BL-1235's seat -
+   * which only runs when the bridge DRAINS a forwarded update, never by
+   * polling Telegram itself in production - is unreachable and every message
+   * to it falls through to opening a generic support subject.
+   */
+  qwenLocalSeatTopicId?: () => Promise<number | undefined>;
+  /**
    * Dual-poller fix: append the raw Telegram update for the Host bridge to
    * consume. When present, Host/Bubble/poll_answer updates are forwarded
    * (posted) instead of silently dropped.
@@ -2834,8 +2844,8 @@ export function decideCursorBridgeExclusion(
   return ownedTopicIds.some((id) => isCursorBridgeTopic(topicId, id)) ? 'drop' : 'not-applicable';
 }
 
-function hasCursorBridgeTopicAdapter(adapters: Pick<PollAdapters, 'cursorBridgeTopicId' | 'bubbleTopicId'>): boolean {
-  return Boolean(adapters.cursorBridgeTopicId) || Boolean(adapters.bubbleTopicId);
+function hasCursorBridgeTopicAdapter(adapters: Pick<PollAdapters, 'cursorBridgeTopicId' | 'bubbleTopicId' | 'qwenLocalSeatTopicId'>): boolean {
+  return Boolean(adapters.cursorBridgeTopicId) || Boolean(adapters.bubbleTopicId) || Boolean(adapters.qwenLocalSeatTopicId);
 }
 
 async function resolveViaAdapter(getter: (() => Promise<number | undefined>) | undefined): Promise<number | undefined> {
@@ -2851,7 +2861,8 @@ async function attemptCursorBridgeTopicExclusion(
   }
   const cursorTopicId = await resolveViaAdapter(adapters.cursorBridgeTopicId);
   const bubbleTopicId = await resolveViaAdapter(adapters.bubbleTopicId);
-  if (decideCursorBridgeExclusion(update, [cursorTopicId, bubbleTopicId]) !== 'drop') {
+  const qwenLocalSeatTopicId = await resolveViaAdapter(adapters.qwenLocalSeatTopicId);
+  if (decideCursorBridgeExclusion(update, [cursorTopicId, bubbleTopicId, qwenLocalSeatTopicId]) !== 'drop') {
     return undefined;
   }
   if (!adapters.forwardCursorBridgeUpdate) {
