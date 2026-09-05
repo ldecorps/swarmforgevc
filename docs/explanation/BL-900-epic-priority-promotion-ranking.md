@@ -58,9 +58,16 @@ tie-break that existed before this change.
   breaker (Article 3.5) — an epic being urgent competes for its place in the
   queue, it doesn't buy a bigger queue.
 - **`direction: queue-jump`** is unaffected because it was never a ranking
-  input to begin with — `direction:` is read by no promotion code; a
-  queue-jump is a coordinator action described in `workflow.prompt`, not a
-  `rank-candidates` term.
+  input to begin with — `direction:` is read by no promotion code; it is a
+  STEERING.md paused-ticket ranking tag, not this doc's own subject, and
+  unrelated to the human's queue-jump action (the Approvals-topic tap, the
+  `/qjump` verb, or the paused-pager Expedite — BL-1425) despite the
+  shared name. A queue-jump is the human's action, not the coordinator's;
+  the coordinator's own promotion path (`rank-candidates`,
+  `promote_and_route_next.sh`) never declares it and stays capped by
+  `active_backlog_max_depth` exactly as before (BL-1425 crosses that cap
+  only for an explicit human tap, never for the coordinator's own
+  ranking).
 - **Ambulance mode** ([the hold](../how-to/BL-655-ambulance-mode-the-hold.md))
   is an orthogonal override — only one ticket's parcels move at all while it
   is active — so epic-priority ordering has nothing to interact with there

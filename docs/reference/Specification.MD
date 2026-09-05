@@ -5712,7 +5712,39 @@ recomputed in TypeScript, so the rules stay in one place. Expedite still
 records the human's approval before the gates run, so `human_approval` is
 satisfied rather than blocking the verb itself; `promote_and_route_next.sh`
 is unchanged. See the updated "Expedite a Ticket" section in
-`docs/how-to/BL-538-console-paused-ticket-pager.md`.)
+`docs/how-to/BL-538-console-paused-ticket-pager.md`.
+
+**Amended (BL-1425, human directive 2026-09-05): the depth cap alone is now
+overridable by an explicit human queue-jump.** BL-1083's own approval
+context had framed this exact split as coherent — "the depth cap to remain
+overridable by an explicit human tap while `depends_on` and hold stay
+hard" — and the human's later directive ("qjump ... should place the
+ticket on rails, ignoring the max cap") exercised it. `promotion_gates_cli.bb
+gate-promotion <root> <BL-id> --queue-jump` is a caller-declared mode that
+skips `depth-refusal` ONLY — `depends_on`, `hold`, `blocked`,
+`human_approval`, `acceptance`, and `slice_size_envelope` all still refuse
+a queue-jump exactly as they refuse any ordinary promotion, and the mode
+lives inside the one promotion-gates chokepoint (no second copy of the
+depth-cap rule in TypeScript). `backlogWriter.ts`'s `promoteToActive(...,
+{ queueJump: true })` passes the flag and surfaces the crossing in its
+result (`crossed?: { gate, reason }`, alongside the existing `refusal?`)
+so a caller can tell "allowed past the cap" from "allowed with room." All
+three human entry points that already shared this one promote path — the
+Approvals-topic Q-jump tap, the typed `/qjump` verb, and the paused-pager
+Expedite — request the mode; the crossing is never silent (the operator
+reads the active count and the cap on every crossing) and never widens the
+cap (a queue-jumped ticket fills a real active slot, so the coordinator's
+own next ordinary promotion still waits for the count to fall below the
+cap). **Nothing about the coordinator's own path changes**:
+`promote_and_route_next.sh` keeps its cap gate, and no script the
+coordinator or the daemon runs (`route_backlog_to_coder.sh`, `handoffd.bb`,
+`chase_sweep_lib.bb`) ever declares the queue-jump mode — a human's
+explicit tap crosses the gate, the coordinator's own ranking (Article
+3.2.4's expedited-defects lane) never does. BL-1083's own depth-cap
+scenario in `specs/features/BL-1083-every-promotion-path-goes-through-the-gate.feature`
+is retired (never reworded, BL-1006) since this ticket falsifies it; its
+`depends_on`/hold coverage is unchanged and still holds. Acceptance:
+`specs/features/BL-1425-a-queue-jump-places-the-ticket-past-the-depth-cap.feature`.)
 Prior entry —
 BL-973: five hand-maintained bb fixture
 copy-lists drifted from the real transitive `load-file` closure of the entry
@@ -9791,7 +9823,10 @@ Cursor Remote topic (`swarmforge/scripts/expedite.sh`,
 stays mutually exclusive with `/qjump` — renaming it was explicitly out of
 scope. New human-facing surface: the Approvals ask's fourth button now reads
 "Q jump", and typing `/qjump BL-xxx` in the Approvals topic does the same
-three-effect queue-jump as tapping it.); Previously August 13, 2026 (BL-864:
+three-effect queue-jump as tapping it. (BL-1425, 2026-09-05, amends the
+force-promote effect: the queue-jump now crosses the `active_backlog_max_depth`
+gate specifically, never `depends_on`/hold — see the BL-1425 entry near
+the BL-1083 entry above.)); Previously August 13, 2026 (BL-864:
 Let's Talk voice-engine slice B —
 Bubble Settings gains the phone-facing Local/OpenAI selector that writes
 BL-863's preference: a `GET`/`POST /lets-talk/audio-engine` HTTP surface

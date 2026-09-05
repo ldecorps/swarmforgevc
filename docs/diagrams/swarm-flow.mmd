@@ -18,6 +18,13 @@
 %% duplicated epic falls back to the candidate's own priority — never
 %% buried). The Article 3.2.4 expedite bucket still ranks strictly first;
 %% queue-jump and ambulance mode are untouched (neither is a ranking input).
+%% BL-1425 (2026-09-05, human directive): a human queue-jump (the
+%% Approvals-topic Q-jump tap, the /qjump verb, or the paused-pager
+%% Expedite — all three share one promote path, BL-721/BL-1083) crosses
+%% ONLY active_backlog_max_depth; depends_on, hold, and blocked still
+%% refuse exactly as they refuse any ordinary promotion, and no script
+%% the coordinator or the daemon runs ever declares the mode — the
+%% coordinator's own promotion path stays capped.
 %% BL-957 (2026-08-20): depends_on joins the refusing gates, between
 %% human_approval and depth (a ticket-property refusal beats a transient
 %% global one). A dependency counts as satisfied only in backlog/done/ —
@@ -80,6 +87,7 @@ flowchart LR
   SPEC -->|places spec| PAUSED
   PAUSED -->|promote (promotion_gates:\nhuman_approval, acceptance,\ndepends_on, expedite lane, depth,\nhold marker refuse; epic-priority\nranks before own priority;\northogonality advises only)| COORD
   COORD -->|promotes into| ACTIVE
+  PAUSED -.->|human queue-jump (Approvals-topic\ntap, /qjump verb, or paused-pager\nExpedite): crosses ONLY\nactive_backlog_max_depth -\ndepends_on/hold/blocked still\nrefuse - BL-721/BL-1425| ACTIVE
   COORD -->|routes first parcel| SPEC
   SPEC -->|git_handoff\npriority 00| CODER
 
