@@ -80,6 +80,12 @@ function registerSteps(registry) {
     state(ctx).crit = { key: 'proc-coder', message: 'resident process gone' };
   });
 
+  scoped(/^the swarm is hibernated with a drained backlog$/, (ctx) => {
+    const s = state(ctx);
+    s.hibernated = true;
+    s.backlogDrained = true;
+  });
+
   scoped(/^the operator runtime evaluates its tick sweep$/, (ctx) => {
     const s = state(ctx);
     s.events = bbJson(
@@ -91,7 +97,7 @@ function registerSteps(registry) {
     state(ctx).manufactured = bbJson('(vec (sort operator-lib/manufactured-tick-event-types))');
   });
 
-  scoped(/^the closing pass evaluates whether to hibernate$/, (ctx) => {
+  scoped(/^the closing pass evaluates whether to relaunch$/, (ctx) => {
     const s = state(ctx);
     // The probe's SECOND consumer, driven through the real decision: a
     // hibernated swarm with fresh coordinator mail relaunches rather than
@@ -120,7 +126,7 @@ function registerSteps(registry) {
     assert.deepEqual(state(ctx).manufactured, [...DOCUMENTED_TICK_SOURCES].sort());
   });
 
-  scoped(/^it observes fresh coordinator mail and does not hibernate$/, (ctx) => {
+  scoped(/^it observes fresh coordinator mail and relaunches$/, (ctx) => {
     const s = state(ctx);
     assert.equal(s.inboxFresh, true, 'the scenario must have put fresh mail in the inbox');
     assert.equal(s.relaunches, 'true', 'fresh coordinator mail no longer reaches the closing pass');
