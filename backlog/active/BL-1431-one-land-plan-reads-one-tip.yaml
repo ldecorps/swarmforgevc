@@ -147,3 +147,5 @@ source: |
   -main; `handoffd.bb` git-fetch-origin-main!; `land_main_publish.sh`
   rematch (rebase, one push); `git reflog show origin/main` (14 pushes
   10:15-10:48); QA branch swarmforge-QA 1839 ahead of main, 4 behind.
+
+assigned_to: coder
