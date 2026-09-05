@@ -236,6 +236,30 @@ export function annotateRoutedMediaText(text: string, update: TelegramUpdate): s
   return `${text}\n[image attached - not read by the front desk]`;
 }
 
+// BL-1402: the photo-persistence twin of annotateRoutedMediaText above - a
+// SEPARATE pure step so BL-620's/BL-955's exact note stays byte-identical
+// (annotateRoutedMediaText itself is untouched). Applied at the same
+// posting boundary, always AFTER annotateRoutedMediaText, so the saved path
+// rides its own line after that note, never merged into one.
+export type PhotoPersistOutcome =
+  | { kind: 'not-applicable' }
+  | { kind: 'saved'; path: string }
+  | { kind: 'already-saved'; path: string }
+  | { kind: 'failed'; reason: string };
+
+export function annotateSavedPhotoPath(text: string, outcome: PhotoPersistOutcome): string {
+  return outcome.kind === 'saved' || outcome.kind === 'already-saved' ? `${text}\n[image saved: ${outcome.path}]` : text;
+}
+
+// BL-1402: the failure-audit twin of formatDropAuditLine below - the SAME
+// bounded "id + an already-computed reason, never content" shape, but never
+// formatDropAuditLine's "front-desk drop" wording: the caption still routes
+// on a persist failure (invariant 1), so calling it a drop would mislead a
+// reader into thinking the whole message vanished.
+export function formatPhotoPersistFailureAuditLine(updateId: number, reason: string): string {
+  return `front-desk photo-persist-failed update_id=${updateId} reason=${reason}`;
+}
+
 // BL-620: the one-line drop audit - bounded, names the update id and the
 // already-computed reason, never message content. The writer is injected
 // (PollAdapters.logDropAudit, postFn-style) - this stays pure.
@@ -1091,6 +1115,14 @@ export interface PollAdapters {
    * pre-dating this seat keep working.
    */
   runProviderChatSeat?: (topicId: number | undefined, text: string) => Promise<'not-mine' | 'handled'>;
+  /**
+   * BL-1402: persist a routed photo's bytes once per update, before the
+   * caption is posted anywhere - the way transcribeVoice above is wired.
+   * Optional so every pre-BL-1402 fixture keeps working unchanged; missing
+   * means "photo persistence not wired", the exact pre-BL-1402 behavior
+   * (the caption still routes, it just never gains a saved-path line).
+   */
+  persistRoutedPhoto?: (update: TelegramUpdate) => Promise<PhotoPersistOutcome>;
 }
 
 // BL-389: the keystone fix. A DROP is a DECISION (the code looked at the
@@ -2851,6 +2883,28 @@ async function attemptProviderChatSeatDelivery(
   return outcome === 'not-mine' ? undefined : 'posted';
 }
 
+// BL-1402: gates persistRoutedPhoto to a message that is ACTUALLY about to
+// be routed with its caption - never a 'drop'ped/unauthorized message (out
+// of this ticket's scope: only a captioned photo the front desk routes) and
+// never a message with no photo at all. A failure logs its own bounded
+// audit line (formatPhotoPersistFailureAuditLine) through the same injected
+// sink formatDropAuditLine already uses - it is not a drop, so it gets its
+// own line shape rather than reusing that one.
+async function persistPhotoIfRouted(
+  update: TelegramUpdate,
+  decision: BotUpdateDecision,
+  adapters: PollAdapters
+): Promise<PhotoPersistOutcome> {
+  if (decision.action === 'drop' || !update.message?.photo || !adapters.persistRoutedPhoto) {
+    return { kind: 'not-applicable' };
+  }
+  const outcome = await adapters.persistRoutedPhoto(update);
+  if (outcome.kind === 'failed') {
+    adapters.logDropAudit?.(formatPhotoPersistFailureAuditLine(update.update_id, outcome.reason));
+  }
+  return outcome;
+}
+
 async function processMessageUpdate(update: TelegramUpdate, principalUserId: string, adapters: PollAdapters): Promise<UpdateDeliveryOutcome> {
   const cursorBridgeOutcome = await attemptCursorBridgeTopicExclusion(update, adapters);
   if (cursorBridgeOutcome) {
@@ -2865,14 +2919,19 @@ async function processMessageUpdate(update: TelegramUpdate, principalUserId: str
     return sideChannelOutcome;
   }
   const decision = decideUpdateAction(update, principalUserId, adapters.chatId, adapters.subjectForTopic, adapters.backlogForTopic);
+  // BL-1402: persisted (or classified as not-applicable/failed) ONCE here,
+  // before any of the three posting boundaries below apply it - the same
+  // "decide once, every surface carries the same result" posture BL-620's
+  // own annotation already uses.
+  const photoOutcome = await persistPhotoIfRouted(update, decision, adapters);
   if (decision.action === 'post-existing') {
     // BL-620: annotation happens HERE, at the posting boundary - the pure
     // decision for a caption equals the decision for the identical text.
-    const ok = await adapters.postToBridge(decision.subjectId, annotateRoutedMediaText(decision.text, update), update.update_id);
+    const ok = await adapters.postToBridge(decision.subjectId, annotateSavedPhotoPath(annotateRoutedMediaText(decision.text, update), photoOutcome), update.update_id);
     return deliveryOutcome(ok);
   }
   if (decision.action === 'operator-context') {
-    const ok = await deliverOperatorContext(decision.backlogId, annotateRoutedMediaText(decision.text, update), update.update_id, adapters);
+    const ok = await deliverOperatorContext(decision.backlogId, annotateSavedPhotoPath(annotateRoutedMediaText(decision.text, update), photoOutcome), update.update_id, adapters);
     return deliveryOutcome(ok);
   }
   const reserved = await deliverReservedSubjectReply(decision, topicIdOf(update), update, adapters);
@@ -2880,7 +2939,7 @@ async function processMessageUpdate(update: TelegramUpdate, principalUserId: str
     return reserved;
   }
   if (isOpenDecision(decision)) {
-    await adapters.openSubjectAndRecord(openTopicIdFor(decision), annotateRoutedMediaText(decision.text, update), update.update_id);
+    await adapters.openSubjectAndRecord(openTopicIdFor(decision), annotateSavedPhotoPath(annotateRoutedMediaText(decision.text, update), photoOutcome), update.update_id);
     return 'posted';
   }
   // decision.action === 'drop': a DECISION, never a delivery attempt at

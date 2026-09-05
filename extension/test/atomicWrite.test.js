@@ -74,3 +74,20 @@ test('atomicWrite does not leave tmp files', () => {
   assert.strictEqual(files.length, 1);
   assert.strictEqual(files[0], 'test.txt');
 });
+
+// BL-1402: a routed photo's bytes are a Buffer, not a string - widened so
+// binary content gets the same temp-and-rename guarantee string content
+// already had.
+test('atomicWrite writes a Buffer byte-for-byte, and leaves no tmp file behind', () => {
+  const dir = createTempDir();
+  const filePath = path.join(dir, 'photo.jpg');
+  const bytes = Buffer.from([0xff, 0xd8, 0xff, 0x00, 0x01, 0x02]);
+
+  atomicWrite(filePath, bytes);
+
+  const result = fs.readFileSync(filePath);
+  assert.ok(result.equals(bytes));
+  const files = fs.readdirSync(dir);
+  assert.strictEqual(files.length, 1);
+  assert.strictEqual(files[0], 'photo.jpg');
+});
