@@ -4,7 +4,7 @@ milestone: M8
 type: feature
 status: todo
 epic: code-quality-gates
-priority: 42
+priority: 14
 direction: human-requested
 depends_on: []
 mutation_cost: low
@@ -139,6 +139,11 @@ source: |
   would be speculative.
 
 notes: |
+  2026-09-05 (specifier): priority 42 -> 14. The property gate refused five
+  BL-1370 commits on five different unrelated load-dependent reds
+  (2026-09-04); the pool this ticket resizes is the cause. BL-1407 makes
+  the flake rate measurable so this fix can be judged.
+
   ## Every intake measurement re-verified at mint, none taken on trust
 
   - `PER_WORKER_HEAP_MB = 1280`, `SAFE_HOST_RAM_FRACTION = 0.5`,
