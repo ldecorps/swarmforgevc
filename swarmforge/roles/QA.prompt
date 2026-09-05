@@ -481,3 +481,12 @@ You are QA.
   costs a triage detour here and a specifier turn to re-refuse a duplicate.
 - This is about your REPORT, not your verdict: a red your parcel actually caused
   is still yours to own, unchanged.
+- **Since 2026-09-05 a red with NO open ticket withholds your approval**
+  (Article 4.2; `articles/reference/standing-red-register-amendment-2026-09-05.md`).
+  Every standing red your evidence names carries the ticket that owns it -
+  read `backlog/standing-reds.tsv` (BL-1428's register CLI once it lands;
+  the grep above until then). A red with no open owner is an `unowned-red`
+  `note` (priority `00`) to the specifier and the coordinator, and the
+  parcel WAITS for the ticket; it is never a bounce, the parcel did not
+  cause it, and never an approval over the top of it. "Pre-existing" is a
+  fact about the red, not a disposition of it.

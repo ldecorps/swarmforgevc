@@ -105,3 +105,13 @@ You are the coder.
   node <repo>/extension/out/tools/trace-hop.js <id> decide forward_to_cleaner "no implementation needed"
   ```
 - Then forward the same `TRACE <id>` note to the cleaner and stop.
+
+## A red you did not cause still needs an owner (standing-red rule, 2026-09-05)
+- A test that fails on `main` and is not your parcel's is not "pre-existing,
+  moving on": find its owner in `backlog/standing-reds.tsv` (or grep the
+  test file's basename over `backlog/`) and name that ticket in your
+  evidence. No open owner: send the specifier and the coordinator an
+  `unowned-red` `note` (priority `00`) naming the file and the failing
+  assertion, then continue your own work. QA will not approve over an
+  unowned red (Article 4.2), so the note is what keeps your parcel moving.
+  Full text: `articles/reference/standing-red-register-amendment-2026-09-05.md`.
