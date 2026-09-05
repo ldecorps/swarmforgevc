@@ -62,31 +62,55 @@ export function seatForProviderChatTopic(
   return topicSeats[String(topicId)];
 }
 
+interface NormalizedSeatConfig {
+  modelId: string;
+  baseUrl: string;
+  apiKeyEnv: string;
+}
+
+/** Trim every seat field once, in one place - decideProviderChatTurn's own
+ * complexity budget goes to the DECISION, not to string cleanup. */
+function normalizeSeatConfig(seat: ProviderChatSeatConfig): NormalizedSeatConfig {
+  return {
+    modelId: String(seat.model ?? '').trim(),
+    baseUrl: String(seat.baseUrl ?? '')
+      .trim()
+      .replace(/\/+$/, ''),
+    apiKeyEnv: String(seat.apiKeyEnv ?? '').trim(),
+  };
+}
+
+function seatConfigIsComplete(cfg: NormalizedSeatConfig): boolean {
+  return Boolean(cfg.modelId && cfg.baseUrl && cfg.apiKeyEnv);
+}
+
+function resolveApiKey(env: Record<string, string | undefined>, apiKeyEnv: string): string {
+  return String(env[apiKeyEnv] ?? '').trim();
+}
+
 export function decideProviderChatTurn(input: ProviderChatTurnInput): ProviderChatTurn {
   const seat = seatForProviderChatTopic(input.topicSeats, input.topicId);
   if (!seat) {
     return { kind: 'not-mine' };
   }
-  const modelId = String(seat.model ?? '').trim();
-  const baseUrl = String(seat.baseUrl ?? '').trim().replace(/\/+$/, '');
-  const apiKeyEnv = String(seat.apiKeyEnv ?? '').trim();
-  if (!modelId || !baseUrl || !apiKeyEnv) {
+  const cfg = normalizeSeatConfig(seat);
+  if (!seatConfigIsComplete(cfg)) {
     return {
       kind: 'refuse',
       reason: 'seat config is incomplete (need model, baseUrl, apiKeyEnv)',
-      modelId: modelId || '(unset)',
+      modelId: cfg.modelId || '(unset)',
     };
   }
-  const apiKey = String(input.env[apiKeyEnv] ?? '').trim();
+  const apiKey = resolveApiKey(input.env, cfg.apiKeyEnv);
   if (!apiKey) {
     return {
       kind: 'refuse',
-      reason: `${apiKeyEnv} is not set in the front-desk process environment`,
-      modelId,
+      reason: `${cfg.apiKeyEnv} is not set in the front-desk process environment`,
+      modelId: cfg.modelId,
     };
   }
   const systemPrompt = seat.systemPrompt !== undefined ? String(seat.systemPrompt) : undefined;
-  return { kind: 'answer', modelId, baseUrl, apiKey, systemPrompt };
+  return { kind: 'answer', modelId: cfg.modelId, baseUrl: cfg.baseUrl, apiKey, systemPrompt };
 }
 
 export function formatProviderChatRefusal(
