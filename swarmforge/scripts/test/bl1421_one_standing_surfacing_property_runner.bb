@@ -95,7 +95,7 @@
       (try
         (let [tells (atom [])
               box (atom {:caught-up false})
-              adapters {:role-facts! (fn [_] {:head-sha "role-head" :dirty? true :in-process? false :can-ff? false})
+              adapters {:role-facts! (fn [_] {:head-sha "role-head" :dirty? true :in-process? false :can-ff? false :contains-landed? false})
                         :fast-forward! (fn [_ _] {:success true})
                         :caught-up-to-told? (fn [_ _] (:caught-up @box))
                         :tell! (fn [_ _ _ _] (swap! tells conj true) {:success true})
@@ -129,7 +129,7 @@
       true ;; already-settled - in-process? is moot, not this property's concern
       (let [decision (post-qa-branch-sweep-lib/decide-role
                        {:head-sha head-sha :landed-sha landed-sha
-                        :dirty? dirty? :in-process? true :can-ff? can-ff?})]
+                        :dirty? dirty? :in-process? true :can-ff? can-ff? :contains-landed? false})]
         (cond
           (not= {:action :surface :reason :in-process-work} decision)
           (str "expected in-process-work regardless of dirty?=" dirty? ", got " (pr-str decision))
@@ -159,7 +159,7 @@
       (try
         (let [told (atom #{})
               throwing (set (keep (fn [[r t?]] (when t? r)) (map vector roles throw-mask)))
-              adapters {:role-facts! (fn [_] {:head-sha "role-head" :dirty? true :in-process? false :can-ff? false})
+              adapters {:role-facts! (fn [_] {:head-sha "role-head" :dirty? true :in-process? false :can-ff? false :contains-landed? false})
                         :fast-forward! (fn [_ _] {:success true})
                         :caught-up-to-told? (fn [_ _] false)
                         :tell! (fn [role _ _ _]

@@ -20,7 +20,8 @@
                 {:head-sha (get f "head-sha")
                  :dirty? (get f "dirty?")
                  :in-process? (get f "in-process?")
-                 :can-ff? (get f "can-ff?")}])
+                 :can-ff? (get f "can-ff?")
+                 :contains-landed? (get f "contains-landed?")}])
              (or (json/parse-string raw false) {}))))
 
 (def daemon-dir (nth *command-line-args* 0))
