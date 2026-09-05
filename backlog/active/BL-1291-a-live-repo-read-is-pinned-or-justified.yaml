@@ -108,3 +108,5 @@ notes: |
   runs the suite rather than to the author who introduced it - the same shape
   BL-1240 is fixing for the manifest. If that per-parcel approach generalises,
   these three are its natural next call sites.
+
+assigned_to: coder

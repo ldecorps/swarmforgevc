@@ -142,3 +142,5 @@ source: |
   the onboarder at 06:40: "what is going on?". handoffd.log 05:39-05:41Z.
 
 assigned_to: coder
+
+abandoned_commits: [5a658ddf3c]
