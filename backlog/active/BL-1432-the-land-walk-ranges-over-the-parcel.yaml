@@ -162,3 +162,5 @@ source: |
   `.worktrees/QA/backlog/evidence/BL-1416-land-escalate-20260905.md`
   (timings); specifier measurement `git rev-list --count` both ways and
   `git merge-base` on 2026-09-05; `land_step_lib.bb` range readers.
+
+assigned_to: coder
