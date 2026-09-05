@@ -1,5 +1,34 @@
 # SwarmForge VS Code Extension — Specification
 
+**Last Updated:** September 5, 2026 (BL-1413: `daemon_log_freshness_check.sh`'s
+`heartbeat_age_secs` now reads a daemon's log with `LC_ALL=C grep -aE`
+(text mode, byte-wise) instead of plain `grep -E` — GNU grep treats a file
+containing a NUL byte as binary and stops at the first one, so a single
+crash-time zero-filled line (observed 2026-08-30, one per supervisor log)
+made the checker read the last heartbeat line *before* that byte, sometimes
+days stale, on an otherwise healthy daemon. Once cron itself came back
+(BL-1392) this restarted five healthy supervisors and announced
+`FRESHNESS_VIOLATION` on every 2-minute tick — ~120 false alarms an hour —
+until this fix. A NUL byte, torn line, or invalid UTF-8 can still make one
+matched line's own timestamp fail to parse; the function now walks matches
+newest-to-oldest and falls back to the newest one that DOES parse, so an
+unparseable newest line no longer hides every older, genuinely fresh
+heartbeat behind it — only a file with no parseable heartbeat at all still
+returns the `unparseable-timestamp` sentinel (the regression guard,
+scenario 03). Human-flagged 2026-09-05 06:21 local via a screenshot of
+four `FRESHNESS_VIOLATION` messages in one tick; sibling BL-1414 addresses
+the announce-traffic half of the same complaint separately. Acceptance:
+`specs/features/BL-1413-the-freshness-check-reads-past-a-nul-byte.feature`,
+plus a property runner
+(`swarmforge/scripts/test/bl1413_freshness_nul_byte_property_runner.bb`)
+replaying trimmed excerpts of the five real supervisor logs around their
+NUL-bearing line. How-to: new "Reading past a NUL byte" section in
+`docs/how-to/BL-675-daemon-log-freshness-watchdog.md` (existing page, this
+ticket's owning doc). No diagram edit: no diagram depicts this script's
+internal shell-level read behavior, the same granularity call BL-1392's own
+entry (this file, below) made for the same script's cron-heartbeat sweep.
+No new extension command or setting.)
+Prior entry —
 **Last Updated:** September 5, 2026 (BL-1383: a Telegram forum topic bound
 in `.swarmforge/operator/provider-chat-topic-map.json` now answers from a
 direct OpenAI-compatible chat provider (DeepSeek, NVIDIA NIM, the GLM b.ai
