@@ -49,6 +49,7 @@ invariants:
 required_wiring:
   - 'swarmforge/scripts/hardening_debt_ledger_update.bb::--discharge::the ledger verb that records a run, the pre-existing writer the hardener already calls with --defer; absent today (grep returns 0)'
   - 'swarmforge/scripts/hardening_debt_ledger_lib.bb::discharged::outstanding-debt excludes discharged rows, the one filter the register CLI reads; absent today (grep returns 0)'
+  - 'swarmforge/scripts/hardening_debt_ledger_update.bb::--attempt::the attempt verb that records a refused run and its blocker on the row without discharging it (amendment 2026-09-06); absent today (grep returns 0)'
   - 'specs/pipeline/steps/bl1439DeferredHardeningGatesDischargedSteps.js::registerSteps::the handler file exists so discovery registers every scenario (BL-1371)'
 
 description: |
@@ -93,8 +94,16 @@ description: |
     rows; `render-ledger` writes the new fields; `hardening_debt_ledger_read.bb`
     prints them. The register CLI needs no change: it already reads
     `outstanding-debt` (invariant 2).
-  - The five register rows added with this mint leave in the same commit
-    that discharges the last of the five (the standing-red rule).
+  - `hardening_debt_ledger_update.bb --attempt <parcel> <gate> --evidence
+    <path> --blocker <reason> [<date>]` records a refused run on the row
+    (`attempted_at`, `attempt_evidence`, `attempt_blocker`) without
+    discharging it; `outstanding-debt` still includes it (invariant 3).
+    Amendment 2026-09-06.
+  - The register row of a discharged gate leaves in the discharging
+    commit; the rows of gates still outstanding when this parcel forwards
+    are re-pointed to BL-1441 in the same commit, so the debt never reads
+    unowned (standing-red rule). Amendment 2026-09-06; replaces the
+    mint's rule that all five rows leave together.
   - The documenter updates BL-942's how-to with the discharge verb and
     the rule that a run discharges what a deferral recorded.
 
@@ -119,13 +128,12 @@ description: |
 qa_e2e_procedure: |
   1. The BL-1439 feature passes (three scenarios, four runs).
   2. `bb swarmforge/scripts/hardening_debt_ledger_read.bb .` lists the five
-     2026-08-19 rows with `discharged_at` and an evidence pointer each, or
-     an attempt record for any that could not complete (invariant 3).
+     2026-08-19 rows, each with `discharged_at` and an evidence pointer or
+     with an attempt record naming its blocker (invariant 3).
   3. `bb swarmforge/scripts/standing_red_register_cli.bb .` reports no
-     hardening rows and no unowned rows; after the next promotion decision
-     `.swarmforge/coordinator/throttle-recommendation.json` shows no
-     standing-red signal and the effective cap returns to the configured
-     value.
+     unowned row; every remaining hardening row names BL-1441 and none
+     names a discharged gate. The throttle lifts only when BL-1441
+     discharges the last row (amendment 2026-09-06).
   4. Each evidence file shows the Stryker or gherkin-mutation summary with
      zero surviving mutants or a recorded reason per survivor.
 
@@ -144,6 +152,17 @@ notes: |
   handler; high mutation cost by nature), Small enough (three scenarios,
   four runs, three invariants at the cap; the runs are the bulk),
   Testable (pure ledger fixtures; the committed ledger).
+
+  Amended 2026-09-06 by the specifier while the parcel was at the coder:
+  scenario 03 was wrong at mint (amended, not retired: it never described
+  a behaviour that existed). The specifier did not check the cooldown gate
+  against the file sets; BL-1425 had touched two of them on 2026-09-05, so
+  three runs are refused until 2026-09-08, and BL-954's is stopped by the
+  citation red now owned by BL-1440. The refused runs are BL-1441's; this
+  parcel lands the verbs, the one discharge, the attempt records and the
+  re-pointed register rows. The coder was told by priority-00 note to
+  merge main and re-read; the coder's own report of the citation red was
+  the right call under the standing-red rule.
 
 source: |
   Coordinator note 2026-09-05T22:38:40Z; `standing_red_register_cli.bb .`

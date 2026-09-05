@@ -1,0 +1,116 @@
+id: BL-1441
+title: "Four of the five hardening gates deferred on 2026-08-19 could not run inside BL-1439: three file sets were touched by BL-1425 on 2026-09-05 and the cooldown gate refuses them until 2026-09-08, and BL-954's set is stopped by the constitution-citation red (BL-1440); once both clear, the four Stryker runs complete, each row is discharged with evidence, and the register's hardening lane empties"
+milestone: M8
+type: defect
+severity: high
+# high: the same broken safety signal BL-1439 carries, split by time. Four
+# production file sets have had no mutation run since 2026-08-19, and the
+# standing-red throttle holds the cap at one on their age until they are
+# discharged. Not critical: nothing is down.
+status: todo
+epic: code-quality-gates
+priority: 1
+direction: swarm-reported
+depends_on: [BL-1439, BL-1440]
+mutation_cost: high
+slice_size_envelope: small
+required_stages: [coder, cleaner, architect, hardender, documenter, qa]
+
+acceptance: specs/features/BL-1441-the-four-remaining-0819-hardening-gates-are-run.feature
+
+human_approval: pending
+approval_context: >
+  A new feature file is authored here, so it needs a tap. No choice is
+  posed and there are no ruling_options. This is the time-split half of
+  BL-1439: the runs the host refused on 2026-09-05. Your ruling on
+  BL-1439 stands (age counts from the deferral date), so the cap stays at
+  one until this ticket discharges the last row; the earliest it can run
+  is 2026-09-08, when the cooldown on the files BL-1425 touched expires.
+
+invariants:
+  - "A ledger row leaves the outstanding debt only through a discharge that names the gate, the parcel and a committed result; a run that cannot complete is recorded as an attempt and stays outstanding, never discharged by assertion."
+  - "The register row of a gate leaves in the same commit that discharges it, never earlier; the hardening lane is empty only when the ledger owes nothing from 2026-08-19."
+
+required_wiring:
+  - 'backlog/hardening-debt-ledger.yaml::discharged_evidence: backlog/evidence/BL-1441::the ledger itself, the store the register and throttle read, carries this parcel evidence pointers; absent today (grep returns 0)'
+  - 'specs/pipeline/steps/bl1441RemainingHardeningGatesRunSteps.js::registerSteps::the handler file exists so discovery registers every scenario (BL-1371)'
+
+description: |
+  ## What is wrong
+
+  BL-1439's coder evidence (`backlog/evidence/BL-1439-coder-20260905.md`)
+  records five attempts: BL-956 gherkin-mutation discharged (6/6 killed);
+  BL-620 mutation, BL-955 mutation and BL-956 mutation refused by
+  `mutation_cooldown_gate.bb` (`skip-cooldown`, `file_age_days 0.12` and
+  `0.10` against `mutation_cooldown_days 3`; d8690e2995 on 2026-09-05
+  touched `telegramFrontDeskBotCore.ts` and `pipelineBoard.ts`); BL-954
+  mutation stopped by Stryker's dry run failing on
+  `constitutionDocCitations.test.js` (BL-1440). BL-1439's scenario 03 was
+  amended on 2026-09-06 to accept an attempt record and require that
+  every outstanding row's register entry name this ticket, so BL-1439
+  lands its mechanism now and the debt stays owned.
+
+  ## What changes
+
+  - The four Stryker runs complete: `--mutate` scoped to compiled
+    `out/**` for each file set, `perTest`, sibling links per the
+    Verification rules, one file set at a time under the cooldown and
+    host-load gates. Each run is one evidence file
+    `backlog/evidence/BL-1441-<parcel>-mutation.md` with the summary
+    block, load and duration, and either zero survivors or one entry per
+    survivor with the reason it stands.
+  - Each row is discharged with `hardening_debt_ledger_update.bb
+    --discharge <parcel> mutation --evidence <path>` (BL-1439's verb); a
+    run that cannot complete is recorded with the attempt verb and stays
+    outstanding (invariant 1), and this ticket does not close until all
+    four are discharged.
+  - The four `hardening` register rows naming BL-1441 leave in the
+    commits that discharge them (invariant 2).
+
+  ## How (direction, not mandate)
+
+  - Do not start before 2026-09-08; check `mutation_cooldown_gate.bb` on
+    each file set first and record its decision in the evidence.
+  - If the host load gate refuses repeatedly, the hardener prompt's
+    BL-687 stall handling applies; record, do not force.
+
+  ## Out of scope
+
+  - The cooldown gate, its window, or which gates may be deferred.
+  - BL-1440's citation fix; this ticket only waits on it.
+
+qa_e2e_procedure: |
+  1. The BL-1441 feature passes (two scenarios, five runs).
+  2. `bb swarmforge/scripts/hardening_debt_ledger_read.bb .` shows every
+     2026-08-19 row with `discharged_at` and a `BL-1439-` or `BL-1441-`
+     evidence pointer.
+  3. `bb swarmforge/scripts/standing_red_register_cli.bb .` reports no
+     hardening rows; after the coordinator's next promotion decision the
+     throttle recommendation shows no standing-red signal and the
+     effective cap returns to the configured value.
+  4. Each evidence file shows the Stryker summary with zero survivors or
+     a recorded reason per survivor.
+
+notes: |
+  Minted 2026-09-06 by the specifier as the time-split successor of
+  BL-1439, on reading the coder's evidence. The split is the specifier's
+  own miss: BL-1439's scenario 03 required the live ledger to owe nothing,
+  and the specifier never checked the cooldown gate against the file sets,
+  two of which BL-1425 had touched that same day. Holding BL-1439 in
+  flight for three days at cap one was the alternative and was refused.
+
+  INVEST at mint: Independent is bent deliberately: depends_on names
+  BL-1439 (the verb) and BL-1440 (the dry-run block), neither landed at
+  mint, and the earliest run date is 2026-09-08; the coordinator promotes
+  it only once both have landed. Negotiable (run order and evidence
+  layout are direction), Valuable (one outcome: the debt is discharged
+  and the throttle lifts on its merits), Estimable (four bounded runs;
+  high mutation cost by nature), Small (two scenarios, five runs, two
+  invariants), Testable (the parcel's own ledger, evidence and register).
+
+source: |
+  `.worktrees/coder/backlog/evidence/BL-1439-coder-20260905.md`;
+  `swarmforge/swarmforge.conf` mutation_cooldown_days 3; `git log -1 --
+  extension/src/tools/telegramFrontDeskBotCore.ts
+  extension/src/concierge/pipelineBoard.ts` (d8690e2995, 2026-09-05);
+  BL-1439 human_ruling (age from origin).

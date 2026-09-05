@@ -1,0 +1,157 @@
+id: BL-1440
+title: "The constitution's dangling-citation guard (BL-945, extension/test/constitutionDocCitations.test.js) has been red on main since 2026-08-27: Article 3.6 and its reference pages cite docs/deprecated/, which nothing created, and Article 1.10 (2026-09-05) cites the Art Director's two design documents before they exist; the red refuses every Stryker dry run on the host and no commit guard catches a new dangling citation; every cited path resolves, retired pages get an indexed home, and a constitution commit citing a missing docs path is refused at commit time"
+milestone: M8
+type: defect
+severity: high
+# high: a broken safety signal. One red in the shared suite refuses every
+# mutation run on the host (Stryker's dry run executes the whole suite),
+# which is what blocked BL-954's owed gate inside BL-1439; and the
+# constitution has carried a false citation for ten days with nothing
+# firing. Not critical: nothing is down.
+status: todo
+epic: code-quality-gates
+priority: 1
+direction: swarm-reported
+depends_on: [BL-945, BL-1428]
+mutation_cost: low
+slice_size_envelope: small
+required_stages: [coder, cleaner, architect, hardender, documenter, qa]
+
+acceptance: specs/features/BL-1440-every-constitution-doc-citation-resolves.feature
+
+human_approval: pending
+approval_context: >
+  A new feature file is authored here, so it needs a tap, and one choice
+  is yours. Three of the six unresolved citations are the specifier's own
+  from yesterday's Art Director article, which names two living documents
+  the role keeps, docs/design/artifact-inventory.md and
+  docs/design/system.md; the file names were the specifier's, not yours.
+  You ruled yesterday that art direction is not a documenter
+  responsibility, so the question is only how the two citations come to
+  resolve. Option 1 seeds both files in this parcel with content that is
+  already yours: the inventory lists the artifacts the epic names
+  (briefing email, Telegram messages, PWA, console screens, rendered
+  docs) with their surfaces, and the design system records the one
+  ruled asset that exists today, the icon system, plus what is still
+  unruled; the Art Director keeps both from its first pass and answers
+  QA's sign-off note on this parcel. Option 2 leaves both files to the
+  Art Director's first ticket and the specifier amends Article 1.10 to
+  name docs/design/ only, so the citation resolves without seeding. If
+  your approval arrives with no ruling, option 1 applies. The other
+  three citations, docs/deprecated/, are not a choice: the directory is
+  the documented home for retired pages and simply never got its index.
+ruling_options:
+  - Seed both design documents now from the epic's own artifact list; the Art Director keeps them from its first pass
+  - Leave both to the Art Director's first ticket and amend Article 1.10 to name docs/design/ only
+
+invariants:
+  - "A cited docs path either resolves on disk or the citation is removed; no article is reworded to hide a path it still relies on, and no test is loosened to tolerate a missing target."
+  - "The commit guard refuses only on evidence the guard itself computed at that commit, over the same corpus and resolver the suite test uses, so the two can never disagree about what is dangling."
+
+required_wiring:
+  - 'swarmforge/scripts/run_commit_guards.sh::check_constitution_doc_citations.sh::the guard chain QA and every role commit through invokes the new guard; the script name is fixed at mint so the anchor is a literal (BL-874); absent today (grep returns 0)'
+  - 'docs/index.md::deprecated/README.md::the docs index links the retired-pages home, the consumer Article 1.7 names; absent today (grep returns 0)'
+  - 'specs/pipeline/steps/bl1440ConstitutionCitationsResolveSteps.js::registerSteps::the handler file exists so discovery registers every scenario (BL-1371)'
+
+description: |
+  ## What is wrong
+
+  Coder note 2026-09-05T23:00Z: "New unowned red:
+  constitutionDocCitations.test.js - see BL-1439 evidence". The coder's
+  evidence (`backlog/evidence/BL-1439-coder-20260905.md` in its parcel)
+  lists the unresolved citations the test prints: `docs/deprecated/` from
+  `01_roles.md` (1.7), `03_backlog.md` (3.6),
+  `reference/03-backlog-detailed.md` and three lines of
+  `reference/deprecator-freshness-gate-amendment-2026-08-27.md`; and
+  `docs/design/artifact-inventory.md` plus `docs/design/system.md` from
+  `01_roles.md` (1.10). `git log -S` dates the first to e55015f005
+  (2026-08-27) and the second to dddc130ce6 (2026-09-05). The test is
+  BL-945's (0bfd52db47, 2026-08-19), so the red has stood ten days, and
+  the specifier's 2026-09-05 register sweep missed it. The coder could not
+  run BL-954's owed Stryker gate because the dry run executes the whole
+  suite and stops on this failure.
+
+  Both constitution commits passed the commit guard chain: the guard is a
+  vitest test, and no guard in `run_commit_guards.sh` scans the
+  constitution for citations.
+
+  ## What changes
+
+  - `docs/deprecated/README.md`: the home for retired pages. States what
+    arrives here and how (Article 1.7 and 3.6: the documenter moves a page
+    here when behaviour is retired, `/deprecate confirm` per BL-1174), that
+    nothing has been retired yet, and that each retired page is listed
+    here with the retiring ticket. `docs/index.md` links it under
+    Reference.
+  - The two design-document citations resolve per the human ruling.
+    Option 1 (default if the approval carries no ruling):
+    `docs/design/artifact-inventory.md` lists every human-facing artifact
+    the BL-1417 epic names, one row each with surface, producer module and
+    how to view it on the real surface; `docs/design/system.md` records
+    the ruled assets that exist (`docs/branding/icon-system.md`, BL-945)
+    and names what is unruled, for the Art Director to fill. Both say the
+    Art Director keeps them. Option 2: no files; the specifier amends
+    Article 1.10 on `main` (BL-798, the specifier's own prose) to name
+    `docs/design/` only, and records the commit here.
+  - `swarmforge/scripts/check_constitution_doc_citations.sh`: a commit
+    guard that, when a staged change touches
+    `swarmforge/constitution/articles/**`, runs the same resolver the
+    suite test uses (`specs/pipeline/steps/lib/constitutionDocCitations.js`,
+    `findUnresolvedCitations`) over the staged corpus and refuses with
+    the citing file and path when any is unresolved. Wired into
+    `run_commit_guards.sh` in the BL-1242 shape: the chain captures its
+    status, the guard keeps its own `set -euo pipefail`.
+  - The `unit` register row for the test leaves in the same commit that
+    turns it green (standing-red rule, BL-1428).
+
+  ## How (direction, not mandate)
+
+  - The guard is a thin shell wrapper over a node one-liner calling the
+    existing lib with the articles dir and repo root; no second resolver
+    (invariant 2). Skip cleanly when no constitution path is staged.
+  - Scenario 03's fixture is a `git init` under mkdtemp with a one-article
+    constitution and a docs dir, proven by `rev-parse --git-common-dir`
+    before any git command (BL-1390).
+  - Seeded inventory rows come from the epic's own list; do not invent
+    artifacts. Where a producer module is unknown, say so in the row.
+
+  ## Out of scope
+
+  - Writing design briefs or ruling on look and feel (Article 1.10).
+  - Retiring any page into `docs/deprecated/`.
+
+qa_e2e_procedure: |
+  1. The BL-1440 feature passes (three scenarios, four runs).
+  2. `cd extension && npx vitest run test/constitutionDocCitations.test.js`
+     is green at the parcel commit; `npx vitest run` shows no red from it.
+  3. In a scratch clone, add a line citing `docs/nope.md` to any article,
+     stage it, run `swarmforge/scripts/run_commit_guards.sh`: refused,
+     naming the article and `docs/nope.md`. Remove the line: passes.
+  4. `docs/index.md` links `deprecated/README.md`; under option 1 both
+     design documents exist and QA's Article 1.10 sign-off note to the
+     Art Director is answered LGTM or with a defect list.
+  5. `bb swarmforge/scripts/standing_red_register_cli.bb .` reports no
+     `unit` row for the test.
+
+notes: |
+  Minted 2026-09-06 by the specifier on the coder's priority-00 note
+  (verbatim in description). The coder did the right thing under the
+  standing-red rule: reported the red and refused to work around it. The
+  citations that made it worse were the specifier's own (Article 1.10),
+  and the register sweep that should have caught the 08-27 red was also
+  the specifier's; `first_seen` in the register is 2026-08-27, honest.
+  The register row was written the same commit as this mint.
+
+  INVEST at mint: Independent (BL-945 and BL-1428 landed), Negotiable
+  (guard shape and doc wording are direction; the ruling decides the
+  design docs), Valuable (one outcome: the guard is green and cannot go
+  red unseen again), Estimable (one index page, two seeded docs or one
+  article line, one guard, one handler; low), Small (three scenarios,
+  four runs, two invariants), Testable (fixture repository; the parcel's
+  own tree).
+
+source: |
+  Coder note 2026-09-05T23:00:42Z; `.worktrees/coder/backlog/evidence/
+  BL-1439-coder-20260905.md`; `npx vitest run test/constitutionDocCitations.test.js`
+  on main 2026-09-06; `git log -S` on the citing articles; BL-945
+  (0bfd52db47); Article 1.7, 1.10, 3.6.
