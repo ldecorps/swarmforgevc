@@ -1,5 +1,25 @@
 # SwarmForge VS Code Extension — Specification
 
+**Last Updated:** September 5, 2026 (BL-1432: the land walk's cost was a
+function of the QA branch's whole never-landed history (1839 commits ahead
+of `origin/main`, growing forever since tip-pure replays never make QA's
+review/main-sync merges main ancestors) rather than of the parcel being
+landed — 3.5-4.5 minutes per land and dozens of already-done tickets
+misreported as `ENTANGLED_SIBLING`. Human ruling (reopened, then
+confirmed): both mechanisms. `land-plan` now bounds `entangled-siblings`
+and `own-paths`'s candidate walk to the parcel's own base
+(`task_scope_gate_lib.bb`'s new `parcel-own-base`, reusing the send-time
+scope gate's own last-handoff-commit notion) — live today, no caller
+change needed; `origin-main` itself stays exactly what every
+landed/unlanded verdict reads against, so a narrower range cannot hide a
+real sibling. `post-land-repoint!` re-points the QA branch to
+`origin/main` after a land, but only on a verified-clean tree with an
+empty `in_process` mailbox, logging every attempt and refusal — built and
+tested in isolation; wiring a live caller is a separate decision QA's own
+`qa_e2e_procedure` checks for directly. Acceptance:
+`specs/features/BL-1432-the-land-walk-ranges-over-the-parcel.feature`.
+How-to: [BL-1241](../how-to/BL-1241-entangled-tip-at-the-land-step-has-a-reachable-remedy.md).)
+Prior entry —
 **Last Updated:** September 5, 2026 (BL-1435: BL-1038's live-repository
 derivation guard recognized only `path.join(__dirname, '..', '..')` as a
 live-root binding — a rev-parse-rooted test (`git rev-parse
