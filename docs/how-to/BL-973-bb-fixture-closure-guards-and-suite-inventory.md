@@ -153,6 +153,18 @@ than silently running a narrower chain than production. See
 [BL-1252's guard-chain page](BL-1252-commit-guard-chain-reports-every-violation.md)
 for what the guard chain itself does.
 
+**The acceptance-side twin (BL-1401).** BL-1398 fixed only the property
+fixture; the acceptance handler for the same feature —
+`specs/pipeline/steps/bl632CommitTimeGuardSteps.js`'s `mkFixtureRepo` —
+carried its own separate hand-written twelve-entry copy list, and went
+red the same way when `check_handler_module_graph.sh` joined the runner
+(4 pass / 7 fail, reproduced 2026-09-04). Rather than write a second
+parser of `run_guard` lines, the handler now calls the SAME
+`deriveCommitGuardFixtureSet()` helper BL-1398 shipped in
+`extension/test/helpers/commitGuardFixtureSet.js` — one parser, two
+callers, so a guard added to the runner is reflected in both the property
+test and the acceptance fixture without editing either.
+
 ## Related — shell-test orphans (BL-724)
 
 `suite-manifest.tsv` also feeds a **shell-test discovery** sweep
