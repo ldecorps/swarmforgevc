@@ -144,3 +144,11 @@ filter" in that Telegram view); the specifier's ask marker still holds it
 new. The human's later messages in the thread (1382 approval, weekend shift,
 reverse copies, the thresholds screenshot) are other subjects. Waiting on the
 answer, not minting against a guess.
+
+**Recheck 2026-09-05 ~04:58Z (specifier, on the closing-ceremony wake):**
+still undrained, correctly. The specifier's ask marker still holds the
+second-half question (`asked_at_ms` 1788515527872);
+`deliver-role-answer.js --role specifier` reports `already-consumed` (nothing
+new paired); SUP-17 through 2026-09-05T04:04Z carries only the operator's
+session-death reports after the 21:38Z BL-1402 filing — no reply on what "the
+spec tip text filter" is. Waiting on the answer, not minting against a guess.

@@ -29,7 +29,7 @@ invariants:
   - "A flake never passes silently: every red the re-run cleared is recorded durably (file, commit, whether the commit touched that file, and where the full-run output is retained) so the flake rate is measurable and BL-1348/BL-1349 can be judged against it."
   - "The re-run is bounded: each red file is re-run at most once, alone, under a wall-clock ceiling; a re-run that cannot complete counts as a failure, never as a pass."
 
-human_approval: pending
+human_approval: approved
 approval_context: >
   A new feature file is authored here, so it needs a tap. No choice is posed
   and there are no ruling_options. This does not weaken the gate for a real
