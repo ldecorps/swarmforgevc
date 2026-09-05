@@ -119,7 +119,10 @@ notes: |
   hand-append of the record line until this CLI exists; the line shape is
   quoted from the store as it stands.
 
-  IR-DRY at mint: see commit.
+  IR-DRY at mint: 9 medium findings; scenario 03's steps were sharpened
+  ("the unapproved source") so they are not near-duplicates of 01's; the
+  rest are kept as deliberate contrasts - approved vs no vs still no, one
+  record vs recorded twice, a line gained vs exactly one line held.
 
   Mint-time INVEST: one observable outcome (a hand-built land reads as
   approved when it lands), one sitting (a thin CLI over an existing
