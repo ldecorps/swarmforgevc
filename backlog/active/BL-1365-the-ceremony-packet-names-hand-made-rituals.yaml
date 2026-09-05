@@ -22,6 +22,7 @@ invariants:
 required_wiring:
   - 'extension/src/metrics/closingCeremonyRun.ts::determinismCandidates::the packet ASSEMBLY populates the field, proving more than the type declaring it'
   - 'specs/pipeline/steps/bl1365CeremonyNamesHandMadeRitualsSteps.js::registerSteps::acceptance handler registered so the runner executes every scenario; repointed 2026-09-04 after BL-1371 discovery - the handler file IS the registration and index.js names nothing'
+  - 'swarmforge/scripts/handoffd.bb::ritual-ledger-producer-sweep::the INDEPENDENT CADENCE invariant 1 rests on. Added by the coder 2026-09-05, not present at mint: the ticket says candidates are computed outside the ceremony, and without a sweep the producer exists and nothing ever runs it - the packet field would populate only from a ledger nobody writes. That is precisely the shipped-inert shape this ticket was minted against (BL-1235/BL-1361), so it needs the one gate that would catch it.'
 
 human_approval: approved
 approval_context: >

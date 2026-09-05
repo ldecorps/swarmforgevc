@@ -82,6 +82,21 @@ export interface CeremonyQualityRecommendation {
   disposition: QualityDisposition;
 }
 
+/**
+ * BL-1365: one hand-made ritual the ledger offers for the specifier to judge.
+ * Evidence for a ticket, never a ticket — invariant 3 keeps the minting
+ * judgement where it already lives.
+ */
+export interface CeremonyDeterminismCandidate {
+  ritualClass: string;
+  label: string;
+  commits: number;
+  distinctSubjects: number;
+  dominance: number;
+  topSubject: string;
+  topSubjectCount: number;
+}
+
 export interface CeremonyPacket {
   shiftKey: string;
   pathTaken: string[];
@@ -91,6 +106,12 @@ export interface CeremonyPacket {
   stalls: CeremonyStallSummary[];
   hypotheses: string[];
   qualityRecommendations: CeremonyQualityRecommendation[];
+  /**
+   * BL-1365: computed OUTSIDE the ceremony on the ledger's own cadence and
+   * merely read here (invariant 1), so a ceremony that never runs delays
+   * adjudication and loses no measurement.
+   */
+  determinismCandidates: CeremonyDeterminismCandidate[];
 }
 
 export interface CeremonyRun {
@@ -401,7 +422,11 @@ export function markQualityRecommendationsRefused(packet: CeremonyPacket): Cerem
 export function buildClosingCeremonyPacket(
   shiftKey: string,
   allEvents: LeanLedgerEvent[],
-  windowModels: Record<string, string> = {}
+  windowModels: Record<string, string> = {},
+  // BL-1365: passed IN, never computed here - the ceremony reads the ledger's
+  // current state (invariant 1). Defaulted so every existing caller is
+  // unchanged and a packet without a ledger is simply candidate-free.
+  determinismCandidates: CeremonyDeterminismCandidate[] = []
 ): CeremonyPacket {
   const events = eventsForShiftKey(allEvents, shiftKey);
 
@@ -422,6 +447,7 @@ export function buildClosingCeremonyPacket(
     stalls,
     hypotheses,
     qualityRecommendations,
+    determinismCandidates,
   };
 }
 
@@ -431,7 +457,12 @@ export function isEmptyCeremonyPacket(packet: CeremonyPacket): boolean {
     packet.dwellHotspots.length === 0 &&
     packet.bounceClasses.length === 0 &&
     packet.skipReasons.length === 0 &&
-    packet.stalls.length === 0
+    packet.stalls.length === 0 &&
+    // BL-1365: a shift whose ONLY finding is a determinism candidate is not an
+    // empty shift. Without this the auto-no_change path would swallow the
+    // candidate and the specifier would never see it - the packet would have
+    // been computed, stored, and delivered to nobody.
+    packet.determinismCandidates.length === 0
   );
 }
 

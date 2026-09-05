@@ -9,9 +9,12 @@
 import * as fs from 'fs';
 import * as path from 'path';
 import { readLeanLedgerEvents } from './leanLedgerStore';
+import { readPersistedRitualLedger } from './ritualLedgerProducer';
+import { determinismCandidatesFromLedger } from './ritualLedger';
 import { readCeremonyRun, writeCeremonyRun, findOpenCeremonyRunsBefore, finalizeCeremonyRunAsFailed, ceremonyRunFilePath } from './closingCeremonyStore';
 import {
   CeremonyRun,
+  CeremonyDeterminismCandidate,
   buildClosingCeremonyPacket,
   isEmptyCeremonyPacket,
   buildClosingCeremonyNoteDraft,
@@ -22,6 +25,12 @@ import { parseSwarmIdentityConfPath } from '../util/swarmforgeConfig';
 
 export interface ClosingCeremonyRunDeps {
   sendNote: (targetPath: string, draft: string) => void;
+  /**
+   * BL-1365: the open-ticket texts that suppress a candidate (invariant 2).
+   * Injected so a test can state "this class is already ticketed" without
+   * writing backlog files.
+   */
+  readOpenTicketTexts?: (targetPath: string) => string[];
   /** BL-1119: role → window --model from effective pack conf (injectable). */
   readWindowModels?: (targetPath: string) => Record<string, string>;
 }
@@ -53,10 +62,65 @@ function readPackConfText(targetPath: string): string | null {
   }
 }
 
+/**
+ * BL-1365 default loader: every open ticket's raw text. `active/` and
+ * `paused/` only - a ticket in `done/` is finished work and must not go on
+ * suppressing its class forever, and `hold/` is a human's parking space, not
+ * a commitment to do the work.
+ */
+export function readOpenTicketTextsFromTarget(targetPath: string): string[] {
+  const texts: string[] = [];
+  for (const dir of ['active', 'paused']) {
+    const dirPath = path.join(targetPath, 'backlog', dir);
+    let names: string[];
+    try {
+      names = fs.readdirSync(dirPath);
+    } catch {
+      continue;
+    }
+    for (const name of names) {
+      if (!name.endsWith('.yaml')) {
+        continue;
+      }
+      try {
+        texts.push(fs.readFileSync(path.join(dirPath, name), 'utf8'));
+      } catch {
+        // An unreadable ticket suppresses nothing. Failing open here is the
+        // safe direction: the cost is one candidate the specifier has to
+        // dismiss, against silently hiding a real one.
+      }
+    }
+  }
+  return texts;
+}
+
 /** Default loader: effective pack conf (swarm-identity path) or swarmforge.conf. */
 export function readWindowModelsFromTarget(targetPath: string): Record<string, string> {
   const text = readPackConfText(targetPath);
   return text ? parseWindowModelsFromConf(text) : {};
+}
+
+/**
+ * BL-1365 invariant 1: READ the ledger, never compute it here. The producer
+ * accrues it on the daemon's own sweep, so a shift that closes no ceremony
+ * delays this adjudication and loses no measurement - the next ceremony
+ * still sees the earlier window's commits because they are still in the
+ * store. Selection and suppression happen here, against the tickets open
+ * NOW, so a ticket minted since the last sweep silences its class
+ * immediately (invariant 2). Split out of runClosingCeremony so that
+ * function's own branching count stays at its pre-BL-1365 baseline
+ * (differential complexity gate).
+ */
+function resolveDeterminismCandidates(
+  targetPath: string,
+  deps: Pick<ClosingCeremonyRunDeps, 'readOpenTicketTexts'>
+): CeremonyDeterminismCandidate[] {
+  const ledgerRecord = readPersistedRitualLedger(path.join(targetPath, '.swarmforge', 'telemetry'));
+  if (!ledgerRecord) {
+    return [];
+  }
+  const openTicketTexts = (deps.readOpenTicketTexts ?? readOpenTicketTextsFromTarget)(targetPath);
+  return determinismCandidatesFromLedger(ledgerRecord.ledger, openTicketTexts);
 }
 
 // Human decision 5: "the packet reaches the specifier, not only the
@@ -83,7 +147,10 @@ export function runClosingCeremony(targetPath: string, nowIso: string, deps: Clo
 
   const allEvents = readLeanLedgerEvents(targetPath);
   const windowModels = (deps.readWindowModels ?? readWindowModelsFromTarget)(targetPath);
-  const packet = buildClosingCeremonyPacket(shiftKey, allEvents, windowModels);
+
+  const determinismCandidates = resolveDeterminismCandidates(targetPath, deps);
+
+  const packet = buildClosingCeremonyPacket(shiftKey, allEvents, windowModels, determinismCandidates);
 
   // Scenario "empty-shift-still-produces-an-explicit-no-change": nothing
   // happened this shift, so there is nothing for the specifier to evaluate -
