@@ -1,0 +1,119 @@
+id: BL-1432
+title: "The land walk ranges over the QA branch's whole never-landed history (1839 commits ahead of main on 2026-09-05, growing by a few per ticket forever because tip-pure replays never make QA's merges main ancestors), so every land step takes 3.5-4.5 minutes and races the mint cadence; the walk ranges over the parcel alone - by re-pointing QA's branch to origin/main after each land, by bounding the range to the parcel's own base, or both (human ruling)"
+milestone: M8
+type: defect
+severity: medium
+# medium: real but contained. The cost is paid on every land and made the
+# BL-1431 race likely, but with BL-1431 landed a slow walk still reaches a
+# correct verdict; nothing is wrong, only slow and growing.
+status: todo
+epic: swarm-reliability
+priority: 9
+direction: swarm-reported
+depends_on: [BL-1389, BL-668]
+mutation_cost: medium
+slice_size_envelope: small
+required_stages: [coder, cleaner, architect, hardender, documenter, qa]
+
+acceptance: specs/features/BL-1432-the-land-walk-ranges-over-the-parcel.feature
+
+human_approval: pending
+approval_context: >
+  A new feature file is authored here, so it needs a tap, and one choice is
+  yours: how the walk is kept to the parcel. QA's branch keeps 1839
+  commits main will never contain, and every land walks them. Option 1
+  re-points QA's branch to origin/main after each successful land, when
+  its worktree is clean and nothing is in process - the branch converges
+  and the next range is the next parcel by construction; it is a branch
+  re-point on a clean tree, not the reset --hard the workflow article
+  forbids on a tree with work in it, but it reads close enough that it
+  should be your call. Option 2 keeps the branch as it is and bounds the
+  walk to commits since the parcel's own base (the first commit naming
+  the ticket), the same notion the task-scope gate uses; the branch keeps
+  growing and the walk stays cheap. Option 3 does both. The scenarios
+  assert the range the walk covers and hold under every option.
+ruling_options:
+  - Re-point QA branch to origin/main after each successful land (recommended)
+  - Bound the walk to commits since the parcel's own base, keep the branch
+  - Both - re-point after each land and bound the walk
+
+invariants:
+  - "The walk's cost is a function of the parcel, never of the QA branch's age: the commits the attribution walk visits are the parcel's own, whatever history the branch carries."
+  - "What counts as entangled, landed or own does not change (BL-1389, BL-1375, BL-1354): a narrower range must not hide an unlanded sibling whose commit lies inside the parcel's own range."
+  - "Nothing in flight is ever discarded: a branch re-point, if ruled, happens only on a clean worktree with an empty in_process mailbox, after LAND_PUBLISHED, and is logged."
+
+required_wiring:
+  - 'specs/pipeline/steps/bl1432LandWalkRangesOverTheParcelSteps.js::registerSteps::the handler file exists so discovery registers every scenario (BL-1371)'
+
+description: |
+  ## What is wrong
+
+  QA's evidence for BL-1416 (2026-09-05) measured every `land_step_cli.bb`
+  invocation at 3.5-4.5 minutes of wall clock on the QA branch, ~35%
+  single-core CPU, spawning short-lived git subprocesses walking per-commit
+  attribution. `git rev-list --count main..swarmforge-QA` was 1839 that
+  hour; `main..` the other way was 4; the merge-base was the same morning.
+  The 1839 are QA's own review merges and merges of main - content that IS
+  on main, under other SHAs, because tip-pure replays land content, not
+  commits. They never become main ancestors, so origin/main..tip never
+  shrinks and grows by a few commits per ticket. The walk
+  (`path-attributing-commits`: `git log origin-main..commit -- path` per
+  delivered path; `ancestry-commits` over the range; `commit-ticket-id` per
+  candidate) pays for all of them on every land.
+
+  ## What changes (per the ruling)
+
+  - Option 1: after `LAND_PUBLISHED`, QA's land procedure re-points the
+    branch to origin/main when `git status --porcelain` is empty and the
+    QA `in_process` mailbox is empty, logging the old and new tips; the
+    post-QA branch sweep (BL-668) may be the place, since it already fast-
+    forwards clean role branches and QA is only excluded because its branch
+    diverges.
+  - Option 2: `land-plan` takes a base - the parcel's own base, the same
+    "commits since this task's last handoff" the task-scope gate computes -
+    and every range read (`ancestry-commits`, `path-attributing-commits`,
+    `full-delivered-paths`) runs from that base, with the entanglement
+    question still asked of every commit in it (invariant 2).
+  - Option 3: both.
+
+  ## How (direction, not mandate)
+
+  - Fixture per BL-1389's handler, with a scripted history: N earlier
+    parcels landed tip-pure (content on main under replay SHAs, review
+    merges left on the branch), then one new parcel. Count the commits the
+    attribution walk visits through the `commits-fn` seam.
+  - Under option 1 the fixture re-points before scenario 02's second plan;
+    under option 2 the base is computed; the assertions are the same.
+
+  ## Out of scope
+
+  - The mid-walk ref race (BL-1431).
+  - Any change to the tip-pure replay itself.
+
+qa_e2e_procedure: |
+  1. The BL-1432 feature passes (two scenarios) under the ruled option; the
+     land-step sibling features still pass.
+  2. Live: time `bb swarmforge/scripts/land_step_cli.bb <task> <tip>` on the
+     next QA-approved parcel before and after; after, it completes in under
+     60 seconds on this host and `git rev-list --count main..swarmforge-QA`
+     is the parcel's own commit count (option 1 or 3) or unchanged (option 2).
+
+notes: |
+  Minted 2026-09-05 by the specifier alongside BL-1431 from QA's evidence;
+  QA asked for "(a) the walk gets fast enough on this branch that it
+  reliably beats the mint cadence", which is this ticket. The ruling is
+  posed as ruling_options (BL-1300) so a tap records it; the scenarios
+  hold under every option (they assert the range walked, not the
+  mechanism).
+
+  INVEST at mint: Independent (BL-1389 and BL-668 landed), Negotiable (the
+  ruling chooses the mechanism), Valuable (one outcome: lands stop paying
+  for history), Estimable (option 1: one post-land step; option 2: a base
+  parameter threaded through three range reads; medium), Small (two
+  scenarios, three invariants), Testable (fixture with scripted history;
+  live timing).
+
+source: |
+  `.worktrees/QA/backlog/evidence/BL-1416-land-escalate-20260905.md`
+  (timings); specifier measurement `git rev-list --count` both ways and
+  `git merge-base` on 2026-09-05; `land_step_lib.bb` range readers.
