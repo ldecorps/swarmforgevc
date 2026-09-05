@@ -1,0 +1,34 @@
+id: BL-1417
+title: "EPIC — Art Direction: a new role that looks at the look and feel of every artifact the swarm produces for a human, keeps an artifact inventory and a design system, writes design briefs the specifier mints from, and signs off artifact parcels at QA; do not promote directly; tracks children"
+milestone: M8
+status: todo
+type: epic
+epic: art-direction
+priority: 30
+direction: human-requested
+depends_on: []
+decomposes_into: [BL-1418, BL-1419]
+remaining_slices: |
+  - BL-1418 (filed 2026-09-05): onboard the Art Director seat - role lists,
+    topic icon, worktree, mailbox, launch; seat shape by human ruling.
+  - BL-1419 (filed 2026-09-05): first job - the daily briefing email reflows
+    its text and gets a phone layout.
+  - Unfiled, from the role's own first pass once seated: Telegram message
+    layouts (pipeline board, approval asks, alerts), the static PWA, the live
+    console / Mini App screens, rendered docs. Each arrives as a design brief
+    under docs/design/briefs/ and is minted by the specifier.
+  - Unfiled: Article 4.3 routing row for look-and-feel defects, landing with
+    the BL-1418 ruling (reviewer shape: to the owning implementer with the
+    brief attached; stage shape: to the art director).
+source: |
+  Human, in-session 2026-09-05, verbatim: "introduce new role: Art Director.
+  whose job is tonlook at the look and feel on arte facts produced by the
+  swarm. first job: reflow text in daily breigin email. also make it better
+  looking overall." Constitution: Article 1.10, PIPELINE.md row, adoption
+  record articles/reference/art-director-role-amendment-2026-09-05.md,
+  role prompt swarmforge/roles/art-director.prompt (all landed by the
+  specifier the same pass).
+notes: |
+  UMBRELLA / tracking item - not directly promotable; children are promoted
+  individually. Icons: this epic takes its own icon on both surfaces from
+  the existing pools (local-engineering rule 6); no YAML field.
