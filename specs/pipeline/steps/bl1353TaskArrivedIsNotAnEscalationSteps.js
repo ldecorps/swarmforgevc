@@ -80,6 +80,12 @@ function registerSteps(registry) {
     state(ctx).crit = { key: 'proc-coder', message: 'resident process gone' };
   });
 
+  scoped(/^the swarm is hibernated with a drained backlog$/, (ctx) => {
+    const s = state(ctx);
+    s.hibernated = true;
+    s.backlogDrained = true;
+  });
+
   scoped(/^the operator runtime evaluates its tick sweep$/, (ctx) => {
     const s = state(ctx);
     s.events = bbJson(
@@ -89,13 +95,6 @@ function registerSteps(registry) {
 
   scoped(/^the manufactured tick event types are listed$/, (ctx) => {
     state(ctx).manufactured = bbJson('(vec (sort operator-lib/manufactured-tick-event-types))');
-  });
-
-  scoped(/^the swarm is hibernated with a drained backlog$/, (ctx) => {
-    // The state where the probe is load-bearing: with the backlog drained,
-    // fresh coordinator mail is the ONLY thing separating a relaunch from
-    // staying down (BL-310).
-    state(ctx).hibernated = true;
   });
 
   scoped(/^the closing pass evaluates whether to relaunch$/, (ctx) => {
