@@ -2784,6 +2784,27 @@
     (catch Exception e
       (log! "context-telemetry-producer-sweep-error" (.getMessage e)))))
 
+;; BL-1364: shells to the compiled run-turn-profile-producer.js CLI — walks the
+;; same role transcripts through BL-664's transcriptWalker and, for the first
+;; time, through buildTurnProfileSeries, appending the window to
+;; .swarmforge/telemetry/turn-profile-series.jsonl. The series builder had zero
+;; production importers for a month, so no mechanical-share trend existed and
+;; two epics that sequenced themselves behind that number proceeded without it.
+;; Idempotent across reruns (window dedupe), so firing every cycle is safe —
+;; same posture as the context-telemetry sweep directly above, whose var
+;; definitions this one deliberately follows rather than precedes (a sweep
+;; defined above its dependencies loads, registers and greps fine, then throws
+;; the first time it actually fires, where its own try/catch swallows it —
+;; BL-1392).
+(defn turn-profile-producer-sweep! []
+  (try
+    (let [cli-path (node-tool-path "run-turn-profile-producer.js")
+          {:keys [exit out]} (daemon-cycle-guard-lib/sh! ["node" cli-path] {:dir (str project-root)})]
+      (when (zero? exit)
+        (log! "turn-profile-producer" (str/trim out))))
+    (catch Exception e
+      (log! "turn-profile-producer-sweep-error" (.getMessage e)))))
+
 ;; BL-356: twice in one day local `main` accumulated hours of committed work
 ;; that never reached origin, indistinguishable from a dead swarm from
 ;; outside - nothing in the swarm ever pushed; publication depended
@@ -4818,6 +4839,10 @@
                     ;; cadence — idempotent dedupe makes every-tick safe.
                     (run-sweep! "context-telemetry-producer-sweep"
                         #(context-telemetry-producer-sweep!))
+                    ;; BL-1364: turn-profile producer shares the same
+                    ;; cadence — window dedupe makes every-tick safe.
+                    (run-sweep! "turn-profile-producer-sweep"
+                        #(turn-profile-producer-sweep!))
                     ;; BL-356: push sweep shares the same cadence - no
                     ;; separate timeout, same rationale as BL-222/BL-214/
                     ;; BL-258/BL-309/BL-316/BL-339/BL-353/BL-350 above.
