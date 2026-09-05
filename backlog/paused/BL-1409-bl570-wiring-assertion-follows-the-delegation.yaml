@@ -30,7 +30,7 @@ invariants:
   - "Exactly one parser of run_guard lines exists in the repo (BL-1401 invariant 3): the check consumes BL-1398's helper for the runner hop and never greps run_guard lines itself."
   - "The check is non-vacuous: for every chain in which either hop is broken - the runner named only in a comment, or the guard absent from the derived set - it fails naming the missing hop."
 
-human_approval: pending
+human_approval: approved
 approval_context: >
   A new feature file is authored here, so it needs a tap. No choice is posed
   and there are no ruling_options. Surfaced by the coder on BL-1275

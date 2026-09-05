@@ -31,7 +31,7 @@ invariants:
   - "Exactly one parser of run_guard lines exists in the repo (BL-1401 invariant 3, carried forward): the three tests consume BL-1398's helper and none carries a second parse."
   - "The only guard any of the three tests names by hand is the expensive tier's single member, check_property_suite_drift.sh, and each test that names it asserts it is in the derived set - so that one constant cannot drift from the runner either."
 
-human_approval: pending
+human_approval: approved
 approval_context: >
   A new feature file is authored here, so it needs a tap. No choice is posed
   and there are no ruling_options. Surfaced by the coder on BL-1275
