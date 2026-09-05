@@ -1,0 +1,160 @@
+id: BL-1420
+title: "BL-784's fail-closed registry guard has refused every checker run of three pre-BL-784 fixtures since 2026-08-27 (the BL-1011 and BL-1012 acceptance handlers and the bl1011 attribution property runner all point FRESHNESS_CONF at a one-row conf): BL-1011 is 0/8 and BL-1012 0/9 on main, and the property runner swallows the refusal into an empty observation so its properties hold vacuously; each fixture supplies its own registry and supervisor rows through the guard's seams, and a refused checker is a red run"
+milestone: M8
+type: defect
+severity: medium
+# medium: a broken safety signal, not a live fault. Two durable acceptance
+# contracts for the freshness watchdog (BL-1011 attribution, BL-1012
+# grace/contention) have been red for nine days and one property runner has
+# been vacuous; nobody ran them because acceptance runs are per feature.
+# The watchdog itself is exercised by test_daemon_log_freshness.sh.
+status: todo
+epic: swarm-reliability
+priority: 9
+direction: swarm-reported
+depends_on: [BL-784, BL-1399]
+mutation_cost: low
+slice_size_envelope: low
+required_stages: [coder, cleaner, architect, hardender, documenter, qa]
+
+acceptance: specs/features/BL-1420-the-freshness-fixtures-pass-the-registry-guard.feature
+
+required_wiring:
+  - 'specs/pipeline/steps/bl1011FreshnessAlarmNamesSwarmAndReasonSteps.js::FRESHNESS_REQUIRED::the live BL-1011 handler must pass the guard its fixture registry; absent today (grep returns 0)'
+  - 'specs/pipeline/steps/bl1012FreshnessSelfInflictedIncidentsSteps.js::FRESHNESS_REQUIRED::the live BL-1012 handler must pass the guard its fixture registry; absent today (grep returns 0)'
+  - 'swarmforge/scripts/test/bl1011_freshness_attribution_property_runner.bb::FRESHNESS_REQUIRED::the property runner must pass the guard its fixture registry; absent today (grep returns 0)'
+  - 'specs/pipeline/steps/bl1420FreshnessFixturesPassTheGuardSteps.js::registerSteps::the handler file exists so discovery registers every scenario (BL-1371)'
+
+invariants:
+  - "Every fixture that runs daemon_log_freshness_check.sh derives its supervisor conf rows from the same *_supervisor.bb glob the guard walks and names them in its own FRESHNESS_REQUIRED registry; no fixture carries a hand-written supervisor list (BL-1398/BL-1399's lesson), so a supervisor script added to the repository is covered without editing any test."
+  - "A harness never turns a checker exit it did not expect into an observation: a non-zero exit fails the run naming the checker's stderr, and no property is evaluated over its output."
+  - "The guard, the checker and the live conf files are untouched: with the live required registry and a conf missing a listed daemon the guard still refuses naming it (BL-784, BL-1399 invariant 2)."
+
+human_approval: pending
+approval_context: >
+  A new feature file is authored here, so it needs a tap. No choice is posed
+  and there are no ruling_options. Found by the coder while building BL-1413
+  and kept out of that parcel's scope; the same fixture-versus-guard class
+  BL-1399 fixed for the vitest property last night, at the three call sites
+  BL-1399 did not cover.
+
+description: |
+  ## What is wrong
+
+  The coder's BL-1413 evidence (2026-09-05): BL-1011's property runner and
+  the BL-1011 and BL-1012 acceptance features "are both silently broken on
+  this branch by BL-784's registry guard, which landed after both were
+  written." Reproduced by the specifier on `main` the same day:
+
+      run_acceptance.sh specs/features/BL-1011-...feature   -> pass 0, 8 x "FRESHNESS_REGISTRY_GUARD: daemon 'babysitterd' has no row in freshness.conf"
+      run_acceptance.sh specs/features/BL-1012-...feature   -> pass 0, fail 9, same line
+
+  `daemon_log_freshness_check.sh` runs
+  `daemon_log_freshness_registry_guard.sh` first (BL-784, closed 2026-08-27).
+  The guard reads `FRESHNESS_CONF` and `FRESHNESS_REQUIRED` (defaulting to
+  the live files) and refuses when (a) a daemon in the required registry
+  has no conf row, or (b) any `$SCRIPT_DIR/*_supervisor.bb` on disk has no
+  conf row - the second arm walks the live scripts directory whatever the
+  conf. Three fixtures predate it and set only `FRESHNESS_CONF` to a
+  one-row conf:
+
+  - `specs/pipeline/steps/bl1011FreshnessAlarmNamesSwarmAndReasonSteps.js:70`
+  - `specs/pipeline/steps/bl1012FreshnessSelfInflictedIncidentsSteps.js:108`
+  - `swarmforge/scripts/test/bl1011_freshness_attribution_property_runner.bb:114`
+
+  The two handlers fail every step that invokes the checker. The property
+  runner spawns it with `:continue true` (line 126), so the refusal exits
+  before any measurement, the announce is empty, and properties such as
+  "every violation names its reason" hold over zero violations; only its
+  coverage floors trip, and only at high run counts.
+
+  BL-1399 (closed 2026-09-04) fixed the SAME class for
+  `extension/test/bl1012FreshnessSelfInflictedIncidents.property.test.js`:
+  a fixture `FRESHNESS_REQUIRED` registry plus one conf row per supervisor
+  script derived from the guard's own glob (`supervisorNames()` there), the
+  guard untouched. Its scope was that one fixture; these three were not in
+  it.
+
+  ## What is wanted
+
+  - Each of the three fixtures passes the guard on its own terms: a fixture
+    registry naming exactly the daemons its conf carries, and one conf row
+    per live `*_supervisor.bb` (derived from the glob, fresh heartbeat, so
+    the watchdog takes no action on it); only the row under test varies.
+  - BL-1011's feature 8/8 and BL-1012's 9/9 on `main`; the bl1011 property
+    runner's properties evaluate over real violations again.
+  - The property runner treats an unexpected checker exit as a failed run
+    naming the stderr line, never as an empty observation.
+  - No change to the guard, the checker, or the live conf files.
+
+  ## How (direction, not mandate)
+
+  - Extract BL-1399's `supervisorNames()` and its conf/registry writer into
+    one shared helper the vitest test and both step handlers require (e.g.
+    `extension/test/helpers/freshnessFixture.js` or a sibling under
+    `specs/pipeline/steps/helpers/`), so the JS derivation exists once; the
+    bb runner derives from the same glob in Clojure (`fs/glob` on the
+    scripts dir for `*_supervisor.bb`).
+  - Scenario 04's scratch directory holds copies of the guard and checker
+    beside N fake supervisor scripts, so the glob is exercised at a known
+    count, never against the live directory's changing count.
+  - In the runner, replace `:continue true` with a check of `:exit`: non-zero
+    fails the run with the stderr; keep `:continue true` only if the exit
+    is asserted immediately after.
+  - Nothing here edits BL-1011's or BL-1012's feature files: their
+    scenarios were right; their fixtures were stale.
+
+  ## Out of scope
+
+  - Any change to the guard's second arm (a seam for the scripts
+    directory): BL-1399 chose to keep the guard fail-closed and untouched,
+    and this ticket follows it.
+  - BL-1413's own fixtures, which use the shipped conf and never meet the
+    guard.
+
+qa_e2e_procedure: |
+  1. On the parcel and after landing on main:
+     `bash specs/pipeline/scripts/run_acceptance.sh specs/features/BL-1011-a-freshness-alarm-names-its-swarm-and-its-reason.feature`
+     -> pass 8 / fail 0; the same for BL-1012's feature -> pass 9 / fail 0;
+     `grep -c FRESHNESS_REGISTRY_GUARD` on both runs' output -> 0.
+  2. `PROPERTY_RUNS=40 bb swarmforge/scripts/test/bl1011_freshness_attribution_property_runner.bb`
+     passes with every coverage floor met; then edit the fixture registry in
+     a scratch copy to name a daemon the conf lacks: the run FAILS naming
+     the guard line (invariant 2), rather than reporting vacuous passes.
+  3. `grep -n FRESHNESS_REQUIRED` in the three files returns the seam
+     (required_wiring); `git diff main -- swarmforge/scripts/daemon_log_freshness_registry_guard.sh
+     swarmforge/scripts/daemon_log_freshness_check.sh swarmforge/scripts/daemon_log_freshness*.conf`
+     is empty (invariant 3).
+  4. The BL-1420 feature passes all six scenario runs; BL-1399's and
+     BL-784's features still pass.
+  5. Scratch directories are removed on exit; nothing sweeps by prefix.
+
+notes: |
+  Minted 2026-09-05 by the specifier on the coder's priority-10 note
+  "BL-784 registry guard broke BL-1011/1012 tests silently - see BL-1413
+  evidence" (`.worktrees/coder/backlog/evidence/BL-1413-coder-20260905.md`,
+  section "How this parcel avoids the registry-guard trap"). Reproduced on
+  main before minting (both features 0 passes, the guard line on every
+  failure). BL-1399 read before minting: same class, one fixture, guard
+  untouched by design - this ticket is its three remaining call sites.
+
+  Same class as BL-973 / BL-1279 / BL-1398 / BL-1399: a fixture that hand-
+  mirrors a production closure (here the live supervisor set) goes red when
+  the closure grows or a guard starts enforcing it; the derived-from-the-
+  same-glob rule is the standing remedy.
+
+  IR-DRY (2026-09-05): 16 occurrences, 13 unique, one medium finding (the
+  BL-1011 vs BL-1012 feature-run steps). Reviewed: two different contracts,
+  deliberate, kept.
+
+  INVEST at mint: Independent (both depends_on landed), Negotiable (helper
+  location is direction), Valuable (one outcome: two red contracts green,
+  one vacuous runner honest), Estimable (three fixtures + one helper + one
+  exit check; low), Small (four scenarios, three invariants), Testable
+  (acceptance runs on main, scratch glob at a known count).
+
+source: |
+  Coder note 2026-09-05T06:24:44Z (handoff 20260905T062444Z_001691):
+  "BL-784 registry guard broke BL-1011/1012 tests silently - see BL-1413
+  evidence". Specifier reproduction the same day: run_acceptance.sh over
+  both features on main.
