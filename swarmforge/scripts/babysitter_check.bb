@@ -1327,8 +1327,16 @@
               nudge-opts {:last-nudged-ms-by-key dedup-state :now-ms now :cooldown-ms nudge-cooldown-ms}
               {:keys [to-nudge new-dedup-state]}
               (babysitterd-sweep-lib/decide-nudges nudgeable nudge-opts)
+              ;; BL-1404: the SAME post-waive set the nudge decision gets, not
+              ;; the raw findings - a recorded waive silenced the coordinator
+              ;; nudge but left this channel deciding from the unwaived list,
+              ;; so a permanent-key CRIT kept summoning the operator every
+              ;; escalation cooldown forever, waive or no waive. nudgeable
+              ;; already equals `findings` when the store is unusable
+              ;; (partition-findings above), so the unusable-store branch
+              ;; stays symmetric with the nudge path for free.
               {:keys [to-escalate new-escalation-dedup-state]}
-              (babysitterd-sweep-lib/decide-escalations findings
+              (babysitterd-sweep-lib/decide-escalations nudgeable
                                                          {:last-escalated-ms-by-key escalation-dedup
                                                           :now-ms now
                                                           :cooldown-ms nudge-cooldown-ms})]
