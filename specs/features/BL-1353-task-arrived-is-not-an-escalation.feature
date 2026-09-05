@@ -11,8 +11,10 @@ Feature: Ordinary coordinator traffic does not wake the LLM Operator
   coordinator handles itself. It is not a finding that something is odd.
 
   Two consumers read the same freshness probe and only one of them is in
-  scope here: the wake path. The BL-307/BL-310 closing pass also reads it to
-  decide whether to hibernate, and that must be left working.
+  scope here: the wake path. The BL-307/BL-310 closing pass also reads it as
+  its relaunch up-trigger - fresh coordinator mail wakes a hibernated swarm
+  even before any ticket is promotable - and that must be left working. Fresh
+  mail is not an input to the hibernate down-trigger and never was.
 
   Background:
     Given the operator runtime tick is running
@@ -30,10 +32,11 @@ Feature: Ordinary coordinator traffic does not wake the LLM Operator
     Then they are exactly the wake sources the BL-653 model documents
 
   # BL-1353 task-arrived-is-not-an-escalation-03
-  Scenario: the hibernation decision still sees fresh coordinator mail
-    Given a handoff landed in the coordinator inbox within the tick interval
-    When the closing pass evaluates whether to hibernate
-    Then it observes fresh coordinator mail and does not hibernate
+  Scenario: the closing pass still relaunches a hibernated swarm on fresh coordinator mail
+    Given the swarm is hibernated with a drained backlog
+    And a handoff landed in the coordinator inbox within the tick interval
+    When the closing pass evaluates whether to relaunch
+    Then it observes fresh coordinator mail and relaunches
 
   # BL-1353 task-arrived-is-not-an-escalation-04
   Scenario: a babysitter CRIT finding still wakes the Operator
