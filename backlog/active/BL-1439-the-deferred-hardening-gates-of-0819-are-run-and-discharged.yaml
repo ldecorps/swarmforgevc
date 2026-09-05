@@ -151,3 +151,5 @@ source: |
   `backlog/hardening-debt-ledger.yaml`; `hardening_debt_ledger_update.bb`
   usage (--defer only); `standing_red_register_lib.bb` build-report join on
   (lane, file); BL-941 as the discharge precedent.
+
+assigned_to: coder
