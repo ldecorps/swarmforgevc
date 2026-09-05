@@ -151,3 +151,5 @@ source: |
   swarmforge/scripts/markdown_to_html_lib.bb lines 49-77; live render
   excerpt above; construct counts on docs/briefings/2026-09-03.md and
   2026-09-05.md.
+
+assigned_to: coder
