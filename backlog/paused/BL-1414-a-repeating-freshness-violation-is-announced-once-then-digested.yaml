@@ -1,0 +1,123 @@
+id: BL-1414
+title: "A repeating FRESHNESS_VIOLATION is announced on its first tick, then digested at most once per window with a suppressed-tick count, and its recovery announced once; the incident record still gets one line per tick (human, 2026-09-05: reduce the traffic of this alert)"
+milestone: M8
+type: feature
+status: todo
+epic: swarm-reliability
+priority: 5
+direction: human-requested
+depends_on: [BL-1011]
+mutation_cost: low
+slice_size_envelope: low
+required_stages: [coder, cleaner, architect, hardender, documenter, qa]
+
+acceptance: specs/features/BL-1414-a-repeating-freshness-violation-is-announced-once-then-digested.feature
+
+required_wiring:
+  - 'swarmforge/scripts/daemon_log_freshness_check.sh::announce_transition_only::process_daemon, the live cron tick, must route every violation announce through the transition decision; the name is fixed here (BL-874) and absent today'
+  - 'specs/pipeline/steps/bl1414FreshnessAnnounceDigestSteps.js::registerSteps::the handler file exists so discovery registers every scenario (BL-1371)'
+
+invariants:
+  - "Suppression is announce-only: every tick that finds a violation still appends its incident record exactly as today, so the durable log is never thinner than before."
+  - "The first tick of any (daemon, reason) transition, into violation or back to fresh, is never suppressed; only repeats of an already-announced state are."
+  - "The suppression decision is derived from durable state under .swarmforge/daemon (the incident log or a sibling marker), never from process memory: every cron tick is a fresh process."
+
+human_approval: approved
+approval_context: >
+  A new feature file is authored here, so it needs a tap. No choice is posed
+  and there are no ruling_options; the digest window defaults to 30 minutes
+  (FRESHNESS_ANNOUNCE_DIGEST_SECS) and you can change the default in Amend.
+  This is the traffic half of your 06:21 ask; BL-1413 is the false-alarm
+  half and should land first, since with it the current storm ends on its
+  own.
+
+description: |
+  ## What is wrong
+
+  `do_announce` in `daemon_log_freshness_check.sh` sends one Telegram
+  message for every violation `process_daemon` records, and `process_daemon`
+  records one per watched daemon per tick (`*/2` cron). A violation that
+  persists is therefore announced thirty times an hour per daemon. On
+  2026-09-05, from 04:00Z, five supervisors "violated" on every tick
+  (BL-1413, a false reading) and the Operator topic received four messages
+  a tick, 136 escalations in ninety minutes. The human, verbatim:
+
+  > can something be done to reduce the traffic of this alert, which is
+  > juat noise as far as I am concerned
+
+  BL-1413 removes this instance. It does not remove the shape: a daemon
+  that is genuinely down through its cool-off is announced the same way,
+  and the second message onward carries no information the first did not.
+
+  ## What is wanted
+
+  An announce is a transition, not a tick. Per (daemon, reason):
+  - the first tick in violation announces exactly as today (restart or
+    escalate text unchanged);
+  - further ticks of the same violation inside the digest window (default
+    30 minutes, `FRESHNESS_ANNOUNCE_DIGEST_SECS`) are recorded in the
+    incident log but not announced;
+  - when the window elapses and the violation persists, one digest line is
+    announced naming the daemon, how many ticks were suppressed and the
+    current age, and the window restarts;
+  - the first tick back under threshold announces recovery once, naming
+    the daemon and how long it was in violation.
+
+  ## How (direction, not mandate)
+
+  - A function `announce_transition_only` in the check (or a sourced
+    `freshness_announce_lib.sh` beside `freshness_announce_normalize_lib.sh`)
+    that takes daemon, reason, action and age and answers announce /
+    suppress / digest / recovered, reading the last announce epoch and the
+    suppressed count from durable state: either an `action=announce`
+    marker line appended to `freshness-incidents.log` (the file
+    `last_restart_epoch` already greps) or a small
+    `.swarmforge/daemon/freshness-announce/<daemon>.state` file. The
+    incident record for the tick is appended before the decision, as today
+    ("append BEFORE any announce").
+  - Recovery detection needs the fresh path to consult the state too: a
+    daemon under threshold whose state says "announced stale" announces
+    recovery and clears the state.
+  - POSIX sh, stock macOS bash 3.2 compatible; no process-memory state.
+  - Tests in `test_daemon_log_freshness.sh` and the announce-normalize
+    suite pattern: drive ticks with a fixture clock (`NOW` override the
+    script already supports through its env seams) and an announce stub.
+
+  ## Out of scope
+
+  - The false-stale reading itself (BL-1413).
+  - Telegram-side muting or moving the alert to another topic.
+  - Babysitterd's own escalations (a different emitter).
+
+qa_e2e_procedure: |
+  1. `bash swarmforge/scripts/test/test_daemon_log_freshness.sh` passes;
+     the BL-1414 feature passes all six scenario runs.
+  2. Fixture: a stale daemon log, `FRESHNESS_ANNOUNCE_CMD='echo ANNOUNCE'`,
+     run the check 5 times with `NOW` advancing 120s each: ANNOUNCE prints
+     once; `freshness-incidents.log` gains 5 records. Advance NOW past 30
+     minutes and run once: one digest naming 15 suppressed ticks. Make the
+     log fresh and run twice: one recovery line, then nothing.
+  3. Invariant 3: `grep -c 'announce' .swarmforge/daemon/freshness-incidents.log`
+     (or the state dir) shows the decision survived across separate
+     process invocations.
+  4. `grep -n 'announce_transition_only' swarmforge/scripts/daemon_log_freshness_check.sh`
+     returns the process_daemon call site (required_wiring).
+
+notes: |
+  Minted 2026-09-05 by the specifier on the human's in-session message
+  (06:21 local, Operator-topic screenshot). The verbatim sentence is in the
+  description (Article 5.3). Sibling BL-1413 carries the root cause of the
+  storm that prompted it; this ticket is the human's actual ask and stands
+  on its own for any future persistent violation.
+
+  INVEST at mint: Independent (BL-1011 landed; BL-1413 is a sibling, not a
+  prerequisite), Negotiable (state location is direction), Valuable (one
+  outcome: one message per transition), Estimable (one decision function +
+  state + tests; low), Small (six scenario runs, three invariants),
+  Testable (fixture clock + announce stub already supported by the script).
+
+source: |
+  Human, in-session 2026-09-05 06:21 local: "can something be done to
+  reduce the traffic of this alert, which is juat noise as far as I am
+  concerned" (screenshot: four FRESHNESS_VIOLATION messages at 06:20,
+  Operator topic, 3884 messages).
