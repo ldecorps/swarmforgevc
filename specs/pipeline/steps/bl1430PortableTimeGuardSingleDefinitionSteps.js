@@ -22,9 +22,15 @@ function registerSteps(registry) {
   // ── Scenario 01 ───────────────────────────────────────────────────────
   scoped(/^every definition of findPortableTimeViolation under extension\/src and specs\/pipeline is counted$/, (ctx) => {
     // git grep exits 1 when it finds nothing - :continue-shaped, never a throw.
+    // The pattern is assembled by concatenation so THIS file's own text
+    // (itself under specs/pipeline, one of the two scanned trees) never
+    // contains the contiguous phrase it searches for and so never counts
+    // itself as a definition - the same self-reference trap
+    // bl948SocketFixtureShortRootSteps.js's own generated-fixture bodies
+    // avoid the same way.
     const res = spawnSync(
       'git',
-      ['grep', '-l', 'function findPortableTimeViolation', '--', 'extension/src', 'specs/pipeline'],
+      ['grep', '-l', 'function ' + 'findPortableTimeViolation', '--', 'extension/src', 'specs/pipeline'],
       { cwd: REPO_ROOT, encoding: 'utf8' }
     );
     const files = (res.stdout || '')
