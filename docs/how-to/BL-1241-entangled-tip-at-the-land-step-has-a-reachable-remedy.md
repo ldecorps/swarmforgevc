@@ -564,6 +564,52 @@ branch's long history of never-landed merge commits — is the sibling
 question BL-1432 poses to the human; this ticket only makes the walk
 immune to a moving ref, it does not make the walk faster.
 
+## The walk is bounded to the parcel's own base, and a clean land can re-point the branch (BL-1432)
+
+QA's `swarmforge-QA` branch carries 1839 commits `origin/main` will never
+contain (2026-09-05) — its own review merges and main-sync merges, whose
+CONTENT already landed on `main` under different SHAs via tip-pure replay,
+so they never become `main` ancestors and never leave the branch. Every
+`land-plan` walk paid for all of them (3.5-4.5 minutes wall clock), and
+the same stale history inflated `ENTANGLED_SIBLING` reports with dozens of
+already-done tickets a narrower walk would never have named. Human ruling
+(reopened same day, then confirmed verbatim "BL-1432: make it option 3"):
+both mechanisms below, neither depending on the other.
+
+**The bounded walk (live, no wiring change needed).** `land-plan` gained
+an optional `:base` key; omitted, it computes
+`task_scope_gate_lib.bb`'s new `parcel-own-base` — the same
+last-handoff-commit notion the send-time task-scope gate already computes
+for `parcel-own-changed-paths`, exposed as a public wrapper rather than a
+second implementation — falling back to `origin-main` on a task's first
+hop or an unreadable abandoned base. `entangled-siblings` and `own-paths`
+each take this as their `walk-base`, bounding `ancestry-commits` and the
+delivered-diff read to the parcel's own commits; `origin-main` itself is
+untouched as the tree every landed/unlanded verdict is read against — only
+the candidate range narrows, so a bounded walk cannot hide a real
+still-unlanded sibling whose commit lies inside the parcel's own range.
+Because `land_step_cli.bb` never needed to change to pick this up, it is
+live today.
+
+**The re-point (`post-land-repoint!`) is built and unit/acceptance-tested
+in isolation but has no production call site yet.** It refuses — never
+running `git reset --hard` — on an uncommitted change or a parcel still in
+`in_process` (checked first, since an in-process parcel's own mailbox file
+is untracked and would otherwise misreport as a generic dirty tree), each
+refusal named in `.swarmforge/daemon/land-repoint.log`; on a verified-clean
+tree it moves both the branch and the worktree to `origin/main` and logs
+the old and new tip. The ticket's own `required_wiring` names only the
+acceptance step-handler file, and its "How" section calls the post-QA
+branch sweep (BL-668) only a candidate site, not a mandate — wiring a live
+caller is a separate decision QA's own `qa_e2e_procedure` step 2 checks
+for directly (timing `land_step_cli.bb` on the next real parcel, and
+confirming a deliberately dirty QA worktree skips the re-point with the
+skip logged). Until something calls `post-land-repoint!`, the QA branch's
+on-disk history keeps growing — a hygiene cost, not a correctness one; the
+bounded walk above already stops that growth from costing anything on
+every land. Acceptance:
+`specs/features/BL-1432-the-land-walk-ranges-over-the-parcel.feature`.
+
 ## What this does not change
 
 - BL-1192's send-time gate and its range — unchanged; this ticket only adds
