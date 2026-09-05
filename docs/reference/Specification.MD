@@ -1,5 +1,28 @@
 # SwarmForge VS Code Extension — Specification
 
+**Last Updated:** September 5, 2026 (BL-1415: the dropped-parcel chase
+sweep's stall clock (`chase_sweep_lib.bb`) read only a dispatch's
+`created_at`/`enqueued_at`, never what the recipient did with it — a Work
+note that waited unread past the 45-minute threshold while a task-mode
+coder finished other tickets was reported as a possible drop the instant
+the coder completed it, and `route_backlog_to_coder.sh` correctly refused
+the repair as `DISPATCHED`, so `--force` duplicated the route (live
+2026-09-05: BL-1402 falsely flagged, BL-1384 genuinely dropped, the sweep
+could not tell them apart). `handoff-event-ms` now takes the max of
+`created_at`/`enqueued_at`/`dequeued_at`/`completed_at` — one derivation,
+reused by both `newest-trail-event-ms` and the BL-978 trail index (no
+second implementation) — so a dispatch the recipient acted on inside the
+threshold is never a drop. A dispatch completed past the threshold with
+no later handoff naming the ticket is a new third verdict, `DROPPED`
+(`ticket-dispatch-verdict`, `dispatch_trail_cli.bb`): the sweep nudges as
+before, and `route_backlog_to_coder.sh` now three-way branches, routing a
+genuine `DROPPED` ticket without `--force` and naming the completed
+dispatch it repairs; live mail or a `git_handoff` for the ticket anywhere
+still answers `DISPATCHED` and keeps refusing. Acceptance:
+`specs/features/BL-1415-a-dispatch-that-never-reached-its-recipient-is-lost-not-dispatched.feature`.
+See the BL-1097 and BL-1301 entries below for the dispatch-trail and
+chase-sweep mechanisms this extends.)
+Prior entry —
 **Last Updated:** September 5, 2026 (BL-1432: the land walk's cost was a
 function of the QA branch's whole never-landed history (1839 commits ahead
 of `origin/main`, growing forever since tip-pure replays never make QA's
