@@ -13,6 +13,7 @@ import { computeTelegramRetryBackoffMs } from '../notify/telegramRetry';
 // second copy of the same arithmetic.
 import { formatDurationMs } from '../metrics/swarmMetrics';
 import { classifyApprovalReplyAction, classifyApprovalsTopicReply } from '../concierge/pendingApprovalReply';
+import { humanDecisionCommitMessage } from '../util/commitIntegrityRunner';
 import {
   ApprovalDecisionVerdict,
   composeDecidedAskText,
@@ -1318,7 +1319,8 @@ async function commitApprovalDecision(adapters: PollAdapters, backlogId: string,
     return false;
   }
   const verb = kind === 'approved' ? 'Approve' : kind === 'rejected' ? 'Reject' : 'Amend';
-  const committed = await adapters.commitApprovalWrites(backlogId, `${verb} ${backlogId}: record human_approval\n\nBy coder.`);
+  // BL-1368: one shared byline for the whole human-decision commit class.
+  const committed = await adapters.commitApprovalWrites(backlogId, humanDecisionCommitMessage(`${verb} ${backlogId}: record human_approval`));
   if (!committed) {
     await adapters.notifyApprovalsTopic?.(undefined, `${backlogId}: ${kind} recorded but FAILED TO COMMIT — a human must land the change manually.`);
   }

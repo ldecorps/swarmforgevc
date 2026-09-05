@@ -72,6 +72,8 @@ const {
   STALE_ASK_CLOSE_GAP_MS,
 } = require('../out/tools/telegramFrontDeskBotCore');
 
+const { humanDecisionCommitMessage } = require('../out/util/commitIntegrityRunner');
+
 const PRINCIPAL_ID = 111;
 
 function mkUpdate({ fromId, topicId, text, chatId } = {}) {
@@ -3891,7 +3893,8 @@ test('recordApprovalDecisionAndClose: a successful commit is reported and never 
 
   assert.equal(result.changed, true);
   assert.equal(result.committed, true);
-  assert.deepEqual(commitCalls, [{ backlogId: 'BL-892', message: 'Approve BL-892: record human_approval\n\nBy coder.' }]);
+  // BL-1368: the byline names the human who decided, never a pipeline role.
+  assert.deepEqual(commitCalls, [{ backlogId: 'BL-892', message: humanDecisionCommitMessage('Approve BL-892: record human_approval') }]);
   assert.deepEqual(notified, [], 'a successful commit needs no surfacing reply');
 });
 
