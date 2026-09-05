@@ -2,7 +2,11 @@ id: BL-1212
 title: "BL-757's real-tree docs gate is a justified live read that never recorded its BL-1038 exemption, so the derivation guard has been red since it landed - the guard's other violation is BL-1209's to clear, not an exemption"
 milestone: M8
 type: defect
-severity: low
+severity: high
+# high (2026-09-05): this ticket owns a standing red on main - a broken
+# safety signal under the standing-red rule (Article 3.2.4, see
+# articles/reference/standing-red-register-amendment-2026-09-05.md);
+# re-classed from low by the specifier. Register: backlog/standing-reds.tsv.
 # low: one missing comment line on an otherwise correct, deliberately-built
 # gate. Nothing is mis-gated - BL-757's checker works and BL-1038's guard is
 # right to ask. It is above trivial only because the red is real, has stood two

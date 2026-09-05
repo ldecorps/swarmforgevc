@@ -1,0 +1,134 @@
+id: BL-1429
+title: "Standing reds throttle intake: the throttle recommendation folds the standing-red register in, recommending a cap of 1 when the register holds more than 10 reds, an oldest red older than 7 days, or any unowned red (thresholds in swarmforge.conf), keeping the lower of its two recommendations, logging every change with its signal, and withdrawing it as soon as the register is back under every threshold (human directive and thresholds 2026-09-05)"
+milestone: M8
+type: feature
+status: todo
+epic: code-quality-gates
+priority: 3
+direction: human-requested
+depends_on: [BL-432, BL-1428]
+mutation_cost: low
+slice_size_envelope: small
+required_stages: [coder, cleaner, architect, hardender, documenter, qa]
+
+acceptance: specs/features/BL-1429-standing-reds-throttle-intake.feature
+
+human_approval: approved
+approval_context: >
+  A new feature file is authored here, so it needs a tap. No choice is
+  posed and there are no ruling_options; the thresholds are the ones you
+  said "go" to (10 reds, 7 days, any unowned red, cap to 1). One consequence
+  to be aware of: the register holds 27 reds today, so the moment this
+  lands the effective cap drops to 1 and stays there until the register is
+  under 10, which is the eight re-classed high-severity owner tickets being
+  worked ahead of everything else. That is the "stop everything and fix
+  failing tests" you described, made proportional; raise
+  standing_red_max_count in swarmforge.conf if you want it softer.
+  depends_on names BL-1428 because this reads its CLI; if BL-1428 is
+  still in flight when this activates, this parcel waits on it.
+
+invariants:
+  - "The register is a signal, never a raise: the emitted recommendation is the minimum of the rework recommendation and the standing-red recommendation, null only when both are null, and Article 3.5's two named caps (1 and 0) are the only values it ever recommends."
+  - "Every change of the recommended cap is logged with the signal that caused or cleared it (count, age or unowned), so the coordinator and the briefing can say why intake is throttled; a recommendation that persists unchanged logs nothing."
+  - "Thresholds are read from swarmforge.conf (standing_red_max_count, standing_red_max_age_days) with defaults 10 and 7 when absent; an unowned red throttles at any threshold."
+
+required_wiring:
+  - 'extension/src/tools/emit-throttle-recommendation.ts::standing-red::the emitter, the pre-existing live consumer effective_backlog_depth_cli.bb shells to at every promotion decision, folds the register signal; absent today (grep returns 0)'
+  - 'specs/pipeline/steps/bl1429StandingRedThrottleSteps.js::registerSteps::the handler file exists so discovery registers every scenario (BL-1371)'
+
+description: |
+  ## What is wanted
+
+  Human, in the specifier pane 2026-09-05, verbatim: "i would be more of
+  the school of.stoping everything and fix failing tests before doing
+  anything else. this is tol naive and extreem but my point is that we
+  should not sweep failing tests under the carpet." The specifier proposed
+  making standing reds an Article 3.5 signal with thresholds 10 reds or 7
+  days, cap to 1; the human answered "go".
+
+  ## What exists
+
+  Article 3.5 (circuit breaker) sanctions lowering `active_backlog_max_depth`
+  on health signals. BL-432 automated it: `effective_backlog_depth_cli.bb`
+  shells to `extension/out/tools/emit-throttle-recommendation.js` at EVERY
+  promotion decision, which reads the rework signal, classifies degraded
+  or severe (`reworkDiagnosis.ts`), maps to cap 1 or 0
+  (`recommendedCapForSeverity`), persists
+  `.swarmforge/coordinator/throttle-recommendation.json`, and logs each
+  change with a reason. The coordinator's prompt already says the CLI's
+  integer is the cap in force. Standing reds are not an input.
+
+  ## What changes
+
+  - A pure `standingRedSignal.ts` reads the register CLI's JSON (BL-1428:
+    `count`, `oldest_age_days`, `unowned`) and the two conf thresholds, and
+    answers `{ recommendedCap: 1, signal: 'count' | 'age' | 'unowned' }` or
+    null.
+  - `emit-throttle-recommendation.ts` computes both recommendations and
+    persists the lower (invariant 1); its change log names the signal that
+    caused a lowering or cleared it (invariant 2); the recommendation JSON
+    carries a `standingRed` block so the briefing and the coordinator can
+    read the numbers.
+  - `swarmforge.conf` gains `config standing_red_max_count 10` and
+    `config standing_red_max_age_days 7` with a comment naming this ticket
+    and the human's ruling.
+  - The coordinator prompt paragraph on the effective cap was amended with
+    this mint; the documenter updates the Article 3.5 how-to and the
+    briefing's burn section text that lists the throttle causes
+    (`extension/src/metrics/burnSectionText.ts`).
+
+  ## How (direction, not mandate)
+
+  - Read the register through the CLI, never by parsing the TSVs here
+    (BL-1428 invariant 1); degrade to "no standing-red signal" with a logged
+    warning when the CLI is missing or fails, the same shell-and-degrade
+    posture the emitter already has for the rework store.
+  - Conf keys through the same `config <key> <value>` reader the depth cap
+    uses (`backlog_depth_lib.bb` / `swarmforgeConfig.ts`), never a second
+    parser.
+  - Fixture per BL-432's own handler: a temporary root with a
+    recommendation store, a register file and a conf; the effective-depth
+    scenario runs the real `effective_backlog_depth_cli.bb` against it.
+
+  ## Out of scope
+
+  - The register itself and its guard (BL-1428).
+  - A severe (cap 0) standing-red posture: the human ruled cap 1; cap 0
+    stays the rework diagnosis's own severe verdict.
+  - Fixing any red.
+
+qa_e2e_procedure: |
+  1. The BL-1429 feature passes (five scenarios, eight runs); BL-432's
+     feature still passes.
+  2. At the parcel commit, on a fixture root with 11 register rows:
+     `bb swarmforge/scripts/effective_backlog_depth_cli.bb <root>` prints 1
+     and `.swarmforge/coordinator/throttle-recommendation.json` names the
+     count signal; remove two rows, run again: prints the configured cap and
+     the change log records the clearing.
+  3. Live, after land: the coordinator's next promotion decision reads 1
+     while `backlog/standing-reds.tsv` holds more than 10 rows; the daily
+     briefing's burn section names standing reds as the throttle cause.
+  4. `grep -n standing_red_max swarmforge/swarmforge.conf` shows both keys.
+
+notes: |
+  Minted 2026-09-05 by the specifier on the human's "go" (verbatim in
+  description). Second of the three pieces; the third was the constitution
+  and prompt amendments landed in the same commit (BL-798), see
+  `articles/reference/standing-red-register-amendment-2026-09-05.md`.
+
+  INVEST at mint: Independent in code (BL-432 landed) with one data
+  dependency declared honestly (BL-1428's CLI; a stub reading the TSV
+  directly is NOT an acceptable substitute, invariant 1 of BL-1428),
+  Negotiable (module shape and conf reader are direction), Valuable (one
+  outcome: reds throttle intake), Estimable (one pure module, one fold in
+  the emitter, two conf keys, one handler; low), Small (five scenarios,
+  eight runs, three invariants at the cap), Testable (fixture root, real
+  effective-depth CLI).
+
+source: |
+  Human, in the specifier pane 2026-09-05 (verbatim in description);
+  specifier trace of `emit-throttle-recommendation.ts`,
+  `reworkDiagnosis.ts` (classifyThrottleSeverity, recommendedCapForSeverity),
+  `backlog_depth_lib.bb` (BL-432 fold), `effective_backlog_depth_cli.bb`,
+  `coordinator.prompt` effective-cap paragraph; the 2026-09-05 measurement
+  (27 reds) recorded in backlog/standing-reds.tsv.

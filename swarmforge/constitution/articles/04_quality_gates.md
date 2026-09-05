@@ -14,6 +14,9 @@
 - All gates pass; no regressions; documentation updated. QA integrates on
   `main` (lands the commit + pushes); coordinator bookkeeps only — no git
   merge/push (BL-247).
+- QA approves no parcel whose evidence names a red with no open ticket in
+  the standing-red register: an unowned red is a `note` to the specifier
+  and the parcel waits (2026-09-05, **standing-red-register-amendment-2026-09-05.md**).
 
 ## 4.3 Rejection Protocol
 - A failed gate routes back to the role that OWNS the fix (the stage whose
