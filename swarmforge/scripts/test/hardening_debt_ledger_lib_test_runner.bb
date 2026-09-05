@@ -157,6 +157,39 @@
   (check "discharge-debt: naming no matching row refuses (discharged? false)" (not discharged?))
   (check "discharge-debt: a refused discharge (no match) changes nothing" (= [d-undischarged] rows)))
 
+;; ── BL-1439 amendment: record-attempt never discharges (invariant 3) ─────
+
+(let [{:keys [rows recorded?]} (hdl/record-attempt [d-undischarged d-other]
+                                                     {:parcel "BL-620" :gate "mutation"
+                                                      :blocker "cooldown gate skip-cooldown, file_age_days 0.12"
+                                                      :attempted-at "2026-09-06"})
+      matched (first (filter #(= "BL-620" (:parcel %)) rows))]
+  (check "record-attempt: reports recorded? true on a real match" recorded?)
+  (check "record-attempt: the row COUNT is unchanged" (= 2 (count rows)))
+  (check "record-attempt: the matching row gains attempted_at" (= "2026-09-06" (:attempted-at matched)))
+  (check "record-attempt: the matching row gains attempted_blocker"
+         (= "cooldown gate skip-cooldown, file_age_days 0.12" (:attempted-blocker matched)))
+  (check "record-attempt: the row is NOT discharged (invariant 3 - never discharged by assertion)"
+         (nil? (:discharged-at matched)))
+  (check "record-attempt: outstanding-debt STILL reports the attempted row (an attempt is not a discharge)"
+         (= #{"BL-620" "BL-955"} (set (map :parcel (hdl/outstanding-debt rows)))))
+  (check "record-attempt: the row round-trips its attempt fields through render/parse"
+         (let [reparsed (hdl/parse-ledger (hdl/render-ledger rows))
+               reparsed-match (first (filter #(= "BL-620" (:parcel %)) reparsed))]
+           (and (= "2026-09-06" (:attempted-at reparsed-match))
+                (= "cooldown gate skip-cooldown, file_age_days 0.12" (:attempted-blocker reparsed-match))))))
+
+(let [{:keys [rows recorded?]} (hdl/record-attempt [d-undischarged] {:parcel "BL-620" :gate "mutation" :blocker ""
+                                                                       :attempted-at "2026-09-06"})]
+  (check "record-attempt: an empty blocker refuses (recorded? false)" (not recorded?))
+  (check "record-attempt: a refused attempt changes nothing" (= [d-undischarged] rows)))
+
+(let [{:keys [rows recorded?]} (hdl/record-attempt [d-undischarged]
+                                                     {:parcel "BL-999-no-such-row" :gate "mutation"
+                                                      :blocker "some reason" :attempted-at "2026-09-06"})]
+  (check "record-attempt: naming no matching row refuses (recorded? false)" (not recorded?))
+  (check "record-attempt: a refused attempt (no match) changes nothing" (= [d-undischarged] rows)))
+
 (when (seq @failures)
   (binding [*out* *err*]
     (doseq [f @failures] (println f)))
