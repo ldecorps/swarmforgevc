@@ -23,7 +23,9 @@ invariants:
   - "The seat shape the human rules changes only the pack window line and rotation config; mailbox, worktree, prompt composition, topic and role lists are identical under every option."
   - "The art director topic icon collides with no other role topic icon (local-engineering rule 6's per-surface collision rule)."
 
-human_approval: pending
+human_approval: approved
+human_ruling: |
+  Standing pane (recommended) - always-on window, own topic, reviews on wake; coder implements briefs
 approval_context: >
   Two things need you. First, the tap: a new feature file is authored here.
   Second, a choice this ticket cannot make: the seat SHAPE. Standing pane
@@ -138,6 +140,17 @@ notes: |
   outcome: the seat exists), Estimable (one pack line, three lists, one
   test, docs; medium because of the hunt for enumerations), Small (four
   scenarios, three invariants), Testable (fixture swarm + live checks).
+
+  RULED 2026-09-05 (recorded by the specifier on the human's in-pane
+  instruction, verbatim: "approve the aet director ticket following your
+  advice (dont make it a documentor responsability)"): option 1, the
+  standing pane. Not a self-flip - the human answered in the specifier
+  pane instead of tapping, so the specifier wrote the same two lines the
+  tap writer (pendingApprovalReply rulingHumanApprovalText) would have.
+  Option 4 is closed: the Art Director stays a seat of its own, never a
+  documenter duty; Article 1.10 stands as written. The description's pack
+  window line is already the standing-pane line, so nothing else in the
+  ticket changes; scenarios unchanged (invariant 2).
 
 source: |
   Human, in-session 2026-09-05: "introduce new role: Art Director. whose job
