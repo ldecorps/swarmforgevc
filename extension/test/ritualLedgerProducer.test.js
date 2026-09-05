@@ -166,7 +166,7 @@ describe('the closing ceremony reads the ritual ledger', () => {
 
   it('stops offering a class once an open ticket names it', () => {
     const { root, result } = ceremonyFixture(handMadeEntries(RITUAL_VOLUME_FLOOR + 10), [
-      'title: nobody scripts backlog/evidence/ yet',
+      'ritual_class: pass-bounce-evidence\n',
     ]);
     try {
       assert.deepEqual(result.run.packet.determinismCandidates, []);
@@ -190,7 +190,7 @@ describe('the closing ceremony reads the ritual ledger', () => {
   it('with every class scripted or ticketed the ceremony records a reasoned no-change', () => {
     const { root, result } = ceremonyFixture(
       [...scriptedEntries(RITUAL_VOLUME_FLOOR + 10), ...handMadeEntries(RITUAL_VOLUME_FLOOR + 10)],
-      ['names backlog/evidence/ already']
+      ['ritual_class: pass-bounce-evidence\n']
     );
     try {
       assert.deepEqual(result.run.packet.determinismCandidates, []);

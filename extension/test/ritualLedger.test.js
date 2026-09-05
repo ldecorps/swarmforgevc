@@ -178,13 +178,13 @@ describe('determinismCandidatesFromLedger', () => {
 
   it('does not offer a class an open ticket already names (scenario 03)', () => {
     const ledger = buildRitualLedger(handMade);
-    const openTickets = ['Nobody writes backlog/evidence/ by script yet — make it deterministic'];
+    const openTickets = ['title: make evidence deterministic\nritual_class: pass-bounce-evidence\n'];
     assert.deepEqual(determinismCandidatesFromLedger(ledger, openTickets), []);
   });
 
   it('offers nothing when every class is scripted or ticketed (scenario 04)', () => {
     const ledger = buildRitualLedger([...scripted, ...handMade]);
-    const openTickets = ['a ticket naming backlog/evidence/ explicitly'];
+    const openTickets = ['ritual_class: pass-bounce-evidence\n'];
     assert.deepEqual(determinismCandidatesFromLedger(ledger, openTickets), []);
   });
 
@@ -205,19 +205,39 @@ describe('determinismCandidatesFromLedger', () => {
 describe('ritualClassIsNamedByText', () => {
   const evidenceClass = RITUAL_CLASSES.find((c) => c.id === 'pass-bounce-evidence');
 
-  it('matches a ticket naming the class path prefix', () => {
-    assert.equal(ritualClassIsNamedByText(evidenceClass, 'writes under backlog/evidence/ by hand'), true);
+  it('matches a ticket declaring the class id', () => {
+    assert.equal(ritualClassIsNamedByText(evidenceClass, 'ritual_class: pass-bounce-evidence\n'), true);
   });
 
-  it('matches a ticket naming the class id', () => {
-    assert.equal(ritualClassIsNamedByText(evidenceClass, 'the pass-bounce-evidence ritual'), true);
+  it('matches a declaration in a list', () => {
+    assert.equal(
+      ritualClassIsNamedByText(evidenceClass, 'ritual_class: [backlog-closure, pass-bounce-evidence]\n'),
+      true
+    );
+  });
+
+  it('matches a quoted declaration', () => {
+    assert.equal(ritualClassIsNamedByText(evidenceClass, "ritual_class: 'pass-bounce-evidence'\n"), true);
+  });
+
+  it('does not match a ticket declaring a DIFFERENT class', () => {
+    assert.equal(ritualClassIsNamedByText(evidenceClass, 'ritual_class: topic-records\n'), false);
+  });
+
+  // The live-backlog refutation, pinned as a test: 23 of 104 open tickets
+  // mention this path incidentally, and none of them is about the ritual.
+  it('does not match a ticket that merely mentions the class path', () => {
+    assert.equal(
+      ritualClassIsNamedByText(evidenceClass, 'description: the guard deletes backlog/evidence/ files on refusal'),
+      false
+    );
+  });
+
+  it('does not match a ticket that merely mentions the id in prose', () => {
+    assert.equal(ritualClassIsNamedByText(evidenceClass, 'see the pass-bounce-evidence numbers'), false);
   });
 
   it('does not match an unrelated ticket', () => {
     assert.equal(ritualClassIsNamedByText(evidenceClass, 'the front desk drops images'), false);
-  });
-
-  it('does not match on a bare common word from the label', () => {
-    assert.equal(ritualClassIsNamedByText(evidenceClass, 'evidence was recorded for this pass'), false);
   });
 });

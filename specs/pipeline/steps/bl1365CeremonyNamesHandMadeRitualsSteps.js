@@ -115,9 +115,10 @@ function registerSteps(registry) {
     const state = ensureCtx(ctx);
     state.subjectClass = HAND_MADE_CLASS;
     classifyWindow(state, handMade(HAND_MADE_CLASS, ABOVE_FLOOR));
-    // Named by its path prefix, the way a real ticket describing the work
-    // would name it.
-    state.openTicketTexts = [`title: nobody writes ${HAND_MADE_CLASS.pathPrefix} by script yet`];
+    // Named by DECLARATION. Prose was refuted against the live backlog: the
+    // path prefix appears in 23 of 104 open tickets that are not about the
+    // ritual, and the sweep's own findings name it in no title at all.
+    state.openTicketTexts = [`title: make this deterministic\nritual_class: ${HAND_MADE_CLASS.id}\n`];
   });
 
   scoped(/^every ritual class is scripted or already ticketed$/, (ctx) => {
@@ -127,7 +128,7 @@ function registerSteps(registry) {
       ...scripted(SCRIPTED_CLASS, ABOVE_FLOOR),
       ...handMade(HAND_MADE_CLASS, ABOVE_FLOOR),
     ]);
-    state.openTicketTexts = [`a ticket that already names ${HAND_MADE_CLASS.pathPrefix}`];
+    state.openTicketTexts = [`ritual_class: ${HAND_MADE_CLASS.id}\n`];
   });
 
   scoped(/^no ceremony runs for that window$/, (ctx) => {

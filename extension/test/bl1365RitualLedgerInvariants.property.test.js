@@ -140,9 +140,10 @@ const namingTextArb = classArb.chain((cls) =>
   fc.record({
     cls: fc.constant(cls),
     text: fc.constantFrom(
-      `title: nobody scripts ${cls.pathPrefix} yet`,
-      `the ${cls.id} ritual is hand made`,
-      `description: |\n  work under ${cls.pathPrefix} needs a writer`
+      `ritual_class: ${cls.id}\n`,
+      `title: a ticket\nritual_class: ${cls.id}\nstatus: todo\n`,
+      `ritual_class: [${cls.id}]\n`,
+      `ritual_class: '${cls.id}'\n`
     ),
   })
 );

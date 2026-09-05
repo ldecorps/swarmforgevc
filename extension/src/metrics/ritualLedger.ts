@@ -38,21 +38,39 @@ export interface RitualClass {
 }
 
 /**
- * Ritual classes are PATH AREAS, because that is what a ritual writes. One
- * prefix each: a class needing two prefixes is two rituals that happen to
- * share a directory, and splitting them keeps the dominance figure meaningful.
+ * Ritual classes are the BOOKKEEPING path areas — the places where a repeated,
+ * mechanical act leaves its trace. One prefix each: a class needing two
+ * prefixes is two rituals that happen to share a directory, and splitting them
+ * keeps the dominance figure meaningful.
+ *
+ * What is deliberately NOT here, and why. The first version of this list also
+ * carried the creative areas — `extension/src/`, `extension/test/`,
+ * `specs/features/`, `specs/pipeline/steps/`, `swarmforge/scripts/`, `docs/`.
+ * Measured against the live repo (13786 commits over 45 days) every one of
+ * them cleared both thresholds, because writing source or a feature spec is
+ * of course hand-made, and the packet offered NINE candidates. That is the
+ * alert nobody reads, which is the failure mode the ticket names first.
+ *
+ * The distinction that matters is not "hand-made" but "hand-made AND
+ * scriptable". A ritual is a repeated act with a fixed shape a script could
+ * perform; writing extension source is not one however varied its subjects
+ * are. So the list is the bookkeeping areas only — which is also exactly what
+ * the ticket's own measured table covers.
+ *
+ * Confirmed against the live repo after the narrowing: topic records read
+ * dominance 0.945 (the ticket measured 0.97) and pass/bounce evidence 0.009
+ * (measured 0.01), so the detector reproduces the figures the ticket was
+ * minted on.
  */
 export const RITUAL_CLASSES: RitualClass[] = [
-  { id: 'backlog-promotion', pathPrefix: 'backlog/active/', label: 'backlog promotion' },
+  // Both the promotion script's commits and in-flight spec amendments land
+  // here, so the label says so rather than promising a purity the path proxy
+  // cannot deliver - the specifier judging the candidate should know the
+  // number is mixed.
+  { id: 'backlog-promotion', pathPrefix: 'backlog/active/', label: 'backlog active-area edits (promotion and in-flight amendments)' },
   { id: 'backlog-closure', pathPrefix: 'backlog/done/', label: 'backlog closure' },
   { id: 'pass-bounce-evidence', pathPrefix: 'backlog/evidence/', label: 'pass/bounce evidence' },
   { id: 'topic-records', pathPrefix: 'backlog/topics/', label: 'topic records' },
-  { id: 'feature-specs', pathPrefix: 'specs/features/', label: 'feature specs' },
-  { id: 'step-handlers', pathPrefix: 'specs/pipeline/steps/', label: 'acceptance step handlers' },
-  { id: 'extension-source', pathPrefix: 'extension/src/', label: 'extension source' },
-  { id: 'extension-tests', pathPrefix: 'extension/test/', label: 'extension tests' },
-  { id: 'swarm-scripts', pathPrefix: 'swarmforge/scripts/', label: 'swarm scripts' },
-  { id: 'documentation', pathPrefix: 'docs/', label: 'documentation' },
 ];
 
 export interface RitualCommit {
@@ -99,15 +117,42 @@ export function ritualClassesForPaths(paths: string[]): string[] {
 }
 
 /**
- * A class is "named by" a ticket when the ticket text carries its path prefix
- * or its id. Both are literals nothing writes by accident; the LABEL is
- * deliberately not matched, because "evidence" or "documentation" appear in
- * ordinary prose and would suppress a real candidate on a coincidence
- * (invariant 2 must silence the packet, not blind it).
+ * A class is "named by" a ticket when the ticket DECLARES it, in a
+ * `ritual_class:` field carrying the class id — as a scalar or a list.
+ *
+ * Text matching was tried first and the live backlog refuted it, which is
+ * worth recording because the shape of the refutation is the reason for the
+ * field. Matching a class's path prefix anywhere in the ticket suppressed
+ * `pass-bounce-evidence` on 23 of 104 open tickets, almost all of which merely
+ * mention `backlog/evidence/` in passing — a detector suppressed that broadly
+ * never fires at all, which is the same silence as not building it.
+ * Tightening to the title inverted the failure: the 2026-09-03 sweep's OWN
+ * findings, BL-1362 and BL-1363, name neither path in their titles, so the
+ * one case invariant 2 exists to handle would not have been suppressed.
+ *
+ * No prose rule sits between those two, so the ticket declares instead. It is
+ * also the moment the knowledge exists: the specifier minting a ticket FROM a
+ * candidate knows exactly which class it addresses, and says so.
+ *
+ * Fails toward firing, deliberately. An undeclared ticket costs the specifier
+ * one judgement to dismiss a candidate — which invariant 3 already prices in —
+ * whereas over-suppression costs the whole mechanism, silently.
  */
 export function ritualClassIsNamedByText(cls: RitualClass, text: string): boolean {
-  const haystack = text.toLowerCase();
-  return haystack.includes(cls.pathPrefix.toLowerCase()) || haystack.includes(cls.id.toLowerCase());
+  for (const line of text.split('\n')) {
+    const match = /^\s*ritual_class:\s*(.*)$/.exec(line);
+    if (!match) {
+      continue;
+    }
+    const declared = match[1]
+      .replace(/[[\]'"]/g, ' ')
+      .split(/[\s,]+/)
+      .filter((token) => token.length > 0);
+    if (declared.includes(cls.id)) {
+      return true;
+    }
+  }
+  return false;
 }
 
 function statsForClass(cls: RitualClass, subjects: string[]): RitualClassStats {
