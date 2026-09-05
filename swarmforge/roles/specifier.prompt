@@ -670,6 +670,19 @@ You are the specifier.
   names tickets implemented against obsolete premises (Article 3.6), record
   `process_ticket` for deprecator work — amend/retire/split — not `no_change`
   unless you verified the hypothesis is wrong.
+- **Determinism candidates (BL-1365): declare the class you address.** The
+  packet's `determinismCandidates` names bookkeeping rituals still done by
+  hand (`backlog-promotion`, `backlog-closure`, `pass-bounce-evidence`,
+  `topic-records` - the ids in `ritualLedger.ts`), picked because their
+  commits show no dominant subject. A candidate is evidence, never a ticket
+  (invariant 3). When you record `process_ticket` for one, the minted ticket
+  carries `ritual_class: <id>` on ONE line (backlog-schema.md): that
+  declaration is the ONLY thing that keeps the class off the next packet -
+  prose naming its path does not, both text rules were measured and rejected
+  on 2026-09-05. When you record `no_change` for a candidate, write the
+  reason in your evidence and expect the same class to be offered again
+  until an open ticket declares it or its 45-day dominance rises; that
+  repeat is the fail-toward-firing posture, not a defect to ticket.
 - An empty shift auto-records its own `no_change` before you ever see a
   note — nothing to do there. Full shape, storage, and the coordinator's own
   half (bringing the packet, recording its own adjustments):
