@@ -714,4 +714,45 @@ rm -f "$MARKER24" "${MARKER24}.child" "$ROOT/../bl1407_out24_$$"
 git -C "$ROOT" reset -q HEAD
 rm -rf "$ROOT/extension" "$ROOT/.swarmforge"
 
+# ── 25 (BL-1407, hardener pass): the ceiling is a shared TOTAL budget, not
+#    a per-file one - a file whose own re-run exhausts it must make every
+#    LATER file count as still-failing WITHOUT even attempting a re-run
+#    (invariant 3's "on overrun, treat the rest as failed"). Scenario 22
+#    only proves a single file's own re-run is bounded; this proves the
+#    second file's budget-exhausted skip specifically, by logging which
+#    file an invocation was actually for.
+stage extension/src/pipelineBoard.ts
+LOG_25="$ROOT/../bl1407_budget_log_$$"
+rm -f "$LOG_25"
+BUDGET_25=(bash -c '
+if [[ "$#" -eq 0 ]]; then
+  printf "%s\n" \
+    " FAIL  test/bl1407FakeBudgetA.property.test.js > a" \
+    " FAIL  test/bl1407FakeBudgetB.property.test.js > b" >&2
+  exit 1
+else
+  echo "$1" >> "'"$LOG_25"'"
+  sleep 30
+  exit 1
+fi
+')
+set +e
+OUT25="$(cd "$ROOT" && SWARMFORGE_PROPERTY_RERUN_CEILING_SECONDS=2 bash "$GUARD" "${BUDGET_25[@]}" 2>&1)"
+ST25=$?
+set -e
+[[ "$ST25" -ne 0 ]] || fail "25: both files still failing (one never even attempted) must still refuse, got $ST25: $OUT25"
+[[ -f "$LOG_25" ]] || fail "25: expected the first file to have been re-run at all"
+[[ "$(wc -l < "$LOG_25" | tr -d ' ')" -eq 1 ]] \
+  || fail "25: expected exactly one re-run invocation (the budget-exhausting first file), got: $(cat "$LOG_25")"
+grep -q '^test/bl1407FakeBudgetA.property.test.js$' "$LOG_25" \
+  || fail "25: expected the first file's own re-run to be the one invoked, got: $(cat "$LOG_25")"
+echo "$OUT25" | grep -q 'bl1407FakeBudgetB.property.test.js' \
+  || fail "25: the second file must still be named in the refusal even though its own re-run never ran, got: $OUT25"
+[[ ! -d "$ROOT/.swarmforge/property-flakes" ]] \
+  || fail "25: neither file resolved a flake, no flake record must be written, found: $(ls "$ROOT/.swarmforge/property-flakes" 2>/dev/null)"
+pass "25: a file that exhausts the shared ceiling makes every later file count as still-failing without its own re-run attempt"
+rm -f "$LOG_25"
+git -C "$ROOT" reset -q HEAD
+rm -rf "$ROOT/extension" "$ROOT/.swarmforge"
+
 echo "ALL PASS"
