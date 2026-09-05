@@ -7,8 +7,10 @@
 // while every role reading the tree counts the file as coverage. Twenty-three
 // main-lane files were in that state; this guard stops a new one joining them.
 //
-// Deliberately lane-scoped (unit lane only). The property lane carries the
-// same defect in its own files and is BL-1206's, landing independently.
+// Deliberately lane-scoped (unit lane only) for isUnitLaneTestFile /
+// findUnitLaneNodeTestImports below; isPropertyLaneTestFile /
+// findPropertyLaneNodeTestImports are BL-1206's own analog for the property
+// lane, sharing the same pure per-line scanner (findNodeTestImportLines).
 const fs = require('fs');
 const path = require('path');
 
@@ -51,12 +53,13 @@ function isUnitLaneTestFile(relativePath) {
 }
 
 /**
- * Impure: every unit-lane violation under testDir. There is deliberately no
- * allowlist parameter and no skip path - an allowlist with a "pending fix"
- * rationale is exactly how the property lane's copy of this defect became
- * invisible, and this ticket must not ship that mechanism.
+ * Impure, shared by both lanes below: every violation under testDir among
+ * files isLaneFile accepts. There is deliberately no allowlist parameter
+ * and no skip path - an allowlist with a "pending fix" rationale is
+ * exactly how the property lane's copy of this defect became invisible,
+ * and neither lane may ship that mechanism.
  */
-function findUnitLaneNodeTestImports(testDir) {
+function findNodeTestImportsForLane(testDir, isLaneFile) {
   const violations = [];
   const walk = (dir) => {
     for (const entry of fs.readdirSync(dir, { withFileTypes: true })) {
@@ -65,7 +68,7 @@ function findUnitLaneNodeTestImports(testDir) {
         walk(full);
         continue;
       }
-      if (!isUnitLaneTestFile(path.relative(testDir, full))) {
+      if (!isLaneFile(path.relative(testDir, full))) {
         continue;
       }
       for (const line of findNodeTestImportLines(fs.readFileSync(full, 'utf8'))) {
@@ -77,4 +80,35 @@ function findUnitLaneNodeTestImports(testDir) {
   return violations;
 }
 
-module.exports = { findNodeTestImportLines, isUnitLaneTestFile, findUnitLaneNodeTestImports };
+/**
+ * Impure: every unit-lane violation under testDir.
+ */
+function findUnitLaneNodeTestImports(testDir) {
+  return findNodeTestImportsForLane(testDir, (relativePath) => isUnitLaneTestFile(relativePath));
+}
+
+/**
+ * Is this path one the property lane actually collects? Mirrors
+ * vitest.properties.config.mjs's own include glob, test slash double-star
+ * slash star dot property dot test dot js - no fixtures exemption exists
+ * there today (no fixtures-named directory holds a property file), unlike
+ * the unit lane above.
+ */
+function isPropertyLaneTestFile(relativePath) {
+  return relativePath.split(path.sep).join('/').endsWith('.property.test.js');
+}
+
+/**
+ * Impure: every property-lane violation under testDir.
+ */
+function findPropertyLaneNodeTestImports(testDir) {
+  return findNodeTestImportsForLane(testDir, (relativePath) => isPropertyLaneTestFile(relativePath));
+}
+
+module.exports = {
+  findNodeTestImportLines,
+  isUnitLaneTestFile,
+  findUnitLaneNodeTestImports,
+  isPropertyLaneTestFile,
+  findPropertyLaneNodeTestImports,
+};

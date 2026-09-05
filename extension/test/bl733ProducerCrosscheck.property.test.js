@@ -2,7 +2,6 @@
 
 // BL-733 declared invariant: pattern tickets never satisfy the pilot land gate
 // on repro-only coverage when the producer output space is enumerable.
-const { test } = require('node:test');
 const assert = require('node:assert/strict');
 const { landPilotedTicket } = require('../out/tools/pilotAcceptanceGate');
 const { PRODUCER_CROSSCHECK_REQUIRED_REFUSAL } = require('../out/tools/producerCrosscheckAcceptance');
