@@ -21,7 +21,7 @@ depends_on: [BL-1209]
 mutation_cost: low
 required_stages: [coder, cleaner, architect, hardender, documenter, qa]
 acceptance: specs/features/BL-1212-real-tree-docs-gate-records-its-live-read-exemption.feature
-abandoned_commits: [eb32d85d70, c7c136b464, ea6628d01e, 34f4315689, dca31e5f92, bd9ca1968e, 90529b2ccb, 420992e4bc, ab07820454, 809ae0df41]
+abandoned_commits: [eb32d85d70, c7c136b464, ea6628d01e, 34f4315689, dca31e5f92, bd9ca1968e, 90529b2ccb, 420992e4bc, ab07820454, 809ae0df41, 56c0b0bf93, 6fc5f8a14b, 40ef14c2f0]
 
 invariants:
   - "A live-repository read in the unit lane is either removed or JUSTIFIED IN WRITING - never silently tolerated and never rubber-stamped: the guard keeps refusing a bare marker, so every exemption added carries a reason a reader can disagree with."
