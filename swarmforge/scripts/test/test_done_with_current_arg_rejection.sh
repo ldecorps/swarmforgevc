@@ -129,4 +129,34 @@ grep -q '^completed_at:' \
   || fail "03: completed_at not stamped on b"
 pass "03: argumentless batch completion still works"
 
+# ── 04: BL-1422's one exception - bad --no-work shapes still fail fast ─────
+# (a bare --no-work with no reason at all, and --no-work plus extra args;
+# the blank-reason shape is test_done_with_current_work_note_evidence.sh's
+# own scenario 03b, since a literal "" argv element cannot survive an
+# unquoted word-split loop like this one).
+run_bad_no_work() {
+  setup_task
+  set +e
+  OUT="$(cd "$TASK_WT" && SWARMFORGE_ROLE=taskrole "$DONE_TASK" "$@" 2>&1)"
+  STATUS=$?
+  set -e
+  [[ "$STATUS" -ne 0 ]] || fail "04 ($*): expected non-zero, got 0; out=$OUT"
+  echo "$OUT" | grep -qi 'no argument' || fail "04 ($*): expected no-argument usage text; got: $OUT"
+  [[ -f "$TASK_WT/.swarmforge/handoffs/inbox/in_process/50_t.handoff" ]] \
+    || fail "04 ($*): handoff left in_process"
+  pass "04: task mode rejects bad --no-work shape '$*' with no side effects"
+}
+run_bad_no_work --no-work
+run_bad_no_work --no-work x extra
+
+# ── 05: --no-work "<reason>" is accepted at the argv layer (BL-1422) - this
+#    fixture's item is a plain note (message: body), not a Work dispatch,
+#    so the semantic use of the reason (stamping no_work_reason) is
+#    test_done_with_current_work_note_evidence.sh's own scope; this only
+#    proves refuse-unexpected-args! itself lets the shape through. ────────
+setup_task
+OUT="$(cd "$TASK_WT" && SWARMFORGE_ROLE=taskrole "$DONE_TASK" --no-work "not a work note anyway" 2>&1)"
+echo "$OUT" | grep -q 'COMPLETED:' || fail "05: expected COMPLETED, got: $OUT"
+pass "05: --no-work \"<reason>\" is accepted at the argv layer and completes"
+
 echo "ALL PASS: done_with_current arg rejection (BL-652)"
