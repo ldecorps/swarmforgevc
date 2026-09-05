@@ -133,6 +133,26 @@ scenario `01` (the lean-ledger fixture runs green), `02`/`03` (each guarded
 list's closure check, and that it fires on a new upstream edge), `04`/`05`
 (the suite inventory catches and reports an unlisted test file).
 
+## Related — the commit-guard property fixture (BL-1398)
+
+The same rot recurred outside this page's nine `.bb`-closure fixtures:
+`extension/test/bl632CommitTimeGuardInvariants.property.test.js` built its
+fixture repository by copying the real commit guards from a hand-written
+`EXEC_FIXTURE_FILES` list (five `check_*.sh` scripts, the runner, its
+libs, two hooks). When `check_handler_module_graph.sh` (BL-1385) joined
+`run_commit_guards.sh`'s Tier-1 chain, the fixture's hand list did not
+grow with it — the copied runner in the fixture could not find the new
+guard, the chain failed inside the fixture, and the property test went
+red on `main` even though no guard was actually broken. Fixed the same
+way as this page's table: the fixture now parses `run_guard <script> ...`
+lines out of `run_commit_guards.sh` (and `swarmforge/git-hooks/
+pre-merge-commit`) at test time and copies whatever that read names,
+following each guard's own `source`/`.` lines one level for its libs — a
+guard the runner names but the tree lacks throws loud, naming it, rather
+than silently running a narrower chain than production. See
+[BL-1252's guard-chain page](BL-1252-commit-guard-chain-reports-every-violation.md)
+for what the guard chain itself does.
+
 ## Related — shell-test orphans (BL-724)
 
 `suite-manifest.tsv` also feeds a **shell-test discovery** sweep

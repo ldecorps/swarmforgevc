@@ -1,5 +1,32 @@
 # SwarmForge VS Code Extension — Specification
 
+**Last Updated:** September 4, 2026 (BL-1398:
+`extension/test/bl632CommitTimeGuardInvariants.property.test.js` built its
+fixture repository from a hand-written `EXEC_FIXTURE_FILES` list of the
+real commit guards — the same membership-by-hand shape BL-973/BL-1279
+already fixed for nine other fixtures. When `check_handler_module_graph.sh`
+(BL-1385) joined `run_commit_guards.sh`'s Tier-1 chain the hand list did
+not grow with it, so the fixture's copied runner could not find the new
+guard, the chain failed inside the fixture, and the property test went red
+on `main` even though no guard was actually broken — recorded as a
+standing red requiring the property-suite guard's own allowlist rather
+than a real defect, and predicted to recur again with BL-1395's guard
+unless fixed at the root. The fixture now derives its guard set at test
+time by parsing the `run_guard <script> ...` lines of
+`run_commit_guards.sh` and `swarmforge/git-hooks/pre-merge-commit`, then
+following each named guard's own `source`/`.` lines one level to copy the
+libs it needs (bounded, no recursion beyond the scripts dir); a guard the
+runner names but the tree lacks throws loud naming it, rather than
+silently running a narrower chain than production (invariant 2). No
+change to any guard or to the runner itself. Acceptance:
+`specs/features/BL-1398-the-commit-guard-fixture-derives-its-guard-set-from-the-runner.feature`.
+How-to: `docs/how-to/BL-973-bb-fixture-closure-guards-and-suite-inventory.md`
+(extended in place — new "Related — the commit-guard property fixture"
+section; this fixture sits outside the page's own nine-fixture table
+since it derives from `run_guard` lines rather than a `load-file`
+closure, but is the same derive-don't-hand-list discipline). No diagram
+depicts commit-guard fixture internals at this granularity.)
+Prior entry —
 **Last Updated:** September 4, 2026 (BL-1395: Babashka's SCI analyses a
 `defn` body eagerly only when the file LOADS, so a script referencing an
 undefined symbol (a typo'd built-in, a forward reference) passed a
