@@ -9,28 +9,26 @@
 // content already exercises the same render-markdown-to-html(content) code
 // path the optional-section adapters feed in production.
 const path = require('node:path');
-const fs = require('node:fs');
-const os = require('node:os');
-const { execFileSync } = require('node:child_process');
+const {
+  ensureBriefingsDir: sharedEnsureBriefingsDir,
+  writeBriefing: sharedWriteBriefing,
+  runHarness: sharedRunHarness,
+} = require('./lib/briefingEmailHarnessFixture');
 
 const SWARMFORGE_SCRIPTS = path.join(__dirname, '..', '..', '..', 'swarmforge', 'scripts');
 const HARNESS = path.join(SWARMFORGE_SCRIPTS, 'test', 'briefing_email_harness.bb');
 const FILE_NAME = '2026-07-09.md';
 
 function ensureBriefingsDir(ctx) {
-  if (!ctx.briefingsDir) {
-    ctx.briefingsDir = fs.mkdtempSync(path.join(os.tmpdir(), 'aps-briefing-body-html-'));
-  }
-  return ctx.briefingsDir;
+  return sharedEnsureBriefingsDir(ctx, 'aps-briefing-body-html-');
 }
 
 function writeBriefing(briefingsDir, content) {
-  fs.writeFileSync(path.join(briefingsDir, FILE_NAME), content);
+  sharedWriteBriefing(briefingsDir, FILE_NAME, content);
 }
 
 function runHarness(briefingsDir, mode) {
-  const out = execFileSync('bb', [HARNESS, briefingsDir, mode], { encoding: 'utf8' });
-  return JSON.parse(out);
+  return sharedRunHarness(HARNESS, briefingsDir, mode);
 }
 
 function registerSteps(registry) {
