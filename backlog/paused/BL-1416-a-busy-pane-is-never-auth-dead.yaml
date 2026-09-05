@@ -1,0 +1,142 @@
+id: BL-1416
+title: "The auth-class observer (BL-536) classifies a role's whole visible pane, so a hardener mutating providerChatSeat tests that print 'invalid api key' reads as an auth failure; three respawns are skipped as busy yet still count toward the cap, and the human gets a 'provider credentials need manual attention' email for a healthy seat (hardender, 2026-09-05 05:40Z)"
+milestone: M8
+type: defect
+severity: medium
+# medium: real but contained. No respawn fired (the busy precheck held), but
+# the human received a false credentials email and Telegram alert, and on an
+# idle pane the same text would have respawned a healthy agent three times.
+status: todo
+epic: swarm-reliability
+priority: 9
+direction: swarm-reported
+depends_on: [BL-536]
+mutation_cost: low
+slice_size_envelope: low
+required_stages: [coder, cleaner, architect, hardender, documenter, qa]
+
+acceptance: specs/features/BL-1416-a-busy-pane-is-never-auth-dead.feature
+
+required_wiring:
+  - 'swarmforge/scripts/handoffd.bb::actively-processing? pane) :healthy::observe-pane-auth!, the live tick, must consult the busy predicate before classifying; absent today (grep returns 0)'
+  - 'specs/pipeline/steps/bl1416BusyPaneNeverAuthDeadSteps.js::registerSteps::the handler file exists so discovery registers every scenario (BL-1371)'
+
+invariants:
+  - "A pane the runtime reports busy (chase_sweep_lib.bb actively-processing?, the same predicate do-respawn! and do-auth-respawn! already use) is never classified auth-dead: no attempt counted, no alert."
+  - "The episode counts only respawns that were performed; an attempt skipped for any reason leaves the count and the alerted flag untouched."
+  - "A persist alert always names the pane line it matched and the number of performed respawns, so the reader can tell a credential failure from text that merely mentions one."
+
+human_approval: pending
+approval_context: >
+  A new feature file is authored here, so it needs a tap. No choice is posed
+  and there are no ruling_options. This is the email you asked about at
+  06:41 local ("what is going on?"): a false alarm from the auth observer,
+  not a credentials problem; the hardener was healthy and mid-run the whole
+  time.
+
+description: |
+  ## What is wrong
+
+  `observe-pane-auth!` (handoffd.bb) feeds the whole visible pane
+  (`capture-pane -p`) to `provider-auth-observe-lib/classify-auth-signal`,
+  which is `provider-compat-lib/provider-auth-error-text?`:
+
+      (re-find #"(?i)(invalid api[\s-]?key|authenticationerror|authentication failed|unauthorized)" text)
+
+  The hardener was hardening BL-1383 (`providerChatSeat.test.js`,
+  `providerChatSeatLive.ts`) in a scoped Stryker run from ~05:13Z; that
+  test file asserts `answered 401: invalid api key` and
+  `/invalid api key/`, and vitest prints those into the pane on every
+  mutant. handoffd.log:
+
+      05:39:27Z auth-respawn-skip-busy hardender
+      05:39:53Z auth-respawn-skip-busy hardender
+      05:40:19Z auth-respawn-skip-busy hardender
+      05:40:49Z auth-persist-alert hardender Auth-class failure persists on role 'hardender' after 3 respawn attempts (BL-536). Provider credentials likely need manual attention.
+      05:40:49Z auth-persist-telegram hardender
+      05:40:49Z auth-persist-email hardender
+
+  `do-auth-respawn!` correctly refused to respawn into a busy pane each
+  time ("Mirrors do-respawn!'s busy precheck exactly"), but
+  `decide-episode-action` had already counted the attempt, so three
+  skipped attempts reached the cap and `send-auth-persist-alert!` fired.
+  The hardener's claude process (started 05:13:19Z) ran uninterrupted
+  throughout; its pane at 05:45Z showed "All 515 tests pass. Now let's
+  rerun the scoped mutation pass". The human received the email at 06:40
+  local and asked what was going on.
+
+  The busy check lives one step too late: classification should never
+  see a busy pane as auth-dead, because a runtime that is mid-turn is
+  authenticated by construction.
+
+  ## What is wanted
+
+  - A pane showing the runtime's busy footer classifies healthy whatever
+    text it carries; nothing is counted, nothing is sent.
+  - An attempt skipped for any reason (busy, capture failure) is not an
+    attempt: the episode state advances only when a respawn was performed.
+  - The persist alert names the matched pane line (trimmed) and the number
+    of performed respawns.
+  - An idle pane showing the runtime's own auth error still respawns
+    exactly as BL-536 built it.
+
+  ## How (direction, not mandate)
+
+  - `observe-pane-auth!` passes `(chase-sweep-lib/actively-processing? pane)`
+    into `decide-auth-observation` as `:busy?`; the lib returns `:none`
+    with state untouched when busy. Keep the lib pure; the busy predicate
+    stays the one in chase_sweep_lib.bb.
+  - `do-auth-respawn!` returns whether it respawned; `observe-pane-auth!`
+    commits the incremented state only on `true` (or the lib exposes
+    `record-performed-respawn`).
+  - `format-alert-reason` gains the matched line (first match of the
+    regex, one line, <=120 chars) and the performed count.
+  - Scenario 05's fixture is a trimmed excerpt of the hardener's real pane
+    from 2026-09-05 (busy footer + the 401 assertion lines).
+  - Tests in `swarmforge/scripts/test/` beside BL-536's runners; Babashka
+    has no mutation wired (BL-472): the hardening pass records the fallback.
+
+  ## Out of scope
+
+  - Narrowing the regex itself (a test that prints the runtime's exact
+    error line would still match; the busy gate and the named match are
+    the fix).
+  - Chaser respawns of a long mutation run (chase-respawn-skip-busy): they
+    are skipped correctly and count nowhere.
+
+qa_e2e_procedure: |
+  1. BL-536's runners and the new BL-1416 runner pass; the BL-1416 feature
+     passes all seven scenario runs.
+  2. Replay: feed the 2026-09-05 hardener pane excerpt through
+     `classify-auth-signal` / `decide-auth-observation` with busy true:
+     healthy, state unchanged. Same text with the busy footer removed and
+     an idle prompt: auth, respawn.
+  3. Live, read-only: while a role runs a long test, `grep -a
+     'auth-respawn-skip-busy\|auth-persist' .swarmforge/daemon/handoffd.log`
+     gains no lines across three observer ticks.
+  4. `grep -n 'actively-processing? pane) :healthy'
+     swarmforge/scripts/handoffd.bb` returns the observe tick
+     (required_wiring).
+
+notes: |
+  Minted 2026-09-05 by the specifier on the human's in-session question
+  (06:41 local, screenshot of the "SwarmForge: persistent auth failure
+  (hardender) - respawn cap reached" email): "what is going on?". Verified
+  the same pass: handoffd.log lines above; `ps -o lstart` on the hardener's
+  claude process (05:13:19Z, uninterrupted); its pane; the regex in
+  provider_compat_lib.bb:145; the assertions in providerChatSeat.test.js
+  lines 466-645 in the hardener's worktree.
+
+  IR-DRY (2026-09-05): 20 occurrences, 17 unique, four medium findings, all
+  attempted-vs-not and alert-vs-no-alert contrasts. Reviewed: deliberate,
+  kept.
+
+  INVEST at mint: Independent (BL-536 landed), Negotiable (where the busy
+  flag enters is direction), Valuable (one outcome: no false credential
+  alarm, no false respawn), Estimable (one predicate hop + a counter fix +
+  alert text; low), Small (five scenarios, three invariants), Testable
+  (pure lib with a busy flag, pane excerpt fixture).
+
+source: |
+  Human, in-session 2026-09-05 06:41 local, screenshot of the email from
+  the onboarder at 06:40: "what is going on?". handoffd.log 05:39-05:41Z.
