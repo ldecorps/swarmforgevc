@@ -7,8 +7,9 @@
 ;; send-alarm-email! for the actual POST - no second Resend client - so this
 ;; module owns only the briefing-specific scanning/marker/subject logic.
 ;; BL-393 (cleaner extraction): generic markdown->HTML rendering lives in
-;; markdown_to_html_lib.bb, not here - this module only merges that render
-;; with its own diagram-html concern (merge-diagram-html below).
+;; markdown_to_html_lib.bb, not here. BL-1419: this module wraps that render
+;; in its own phone-mail-client layout (render-briefing-html below), merging
+;; in the diagram-html concern under its own heading.
 (ns briefing-email-lib
   (:require [babashka.fs :as fs]
             [cheshire.core :as json]
@@ -407,14 +408,71 @@
          diagrams (vec (concat (or architecture []) (or burndown []) (or shift-v [])))]
      (build-diagram-section (seq diagrams)))))
 
-;; BL-393: the diagram section's own html (a <div> of <h3>/<img> per
-;; diagram) must coexist with the rendered body, never replace it -
-;; appended after the body so both remain intact and neither clobbers the
-;; other (the critical interaction the ticket calls out explicitly).
-(defn- merge-diagram-html [body-html diagram-html]
-  (if diagram-html
-    (str body-html diagram-html)
-    body-html))
+;; BL-1419: minimal local HTML-escaping for the header's own date-label -
+;; a tiny duplicate of markdown_to_html_lib's private escape-html rather
+;; than reaching across the namespace boundary for a one-line concern
+;; (that lib owns MARKDOWN escaping; this is a plain string of this lib's
+;; own construction).
+(defn- escape-html-text [s]
+  (-> (str s)
+      (str/replace "&" "&amp;")
+      (str/replace "<" "&lt;")
+      (str/replace ">" "&gt;")))
+
+;; BL-1419: every style the phone layout depends on, carried INLINE on the
+;; element it styles - mail clients strip <style> blocks, so a <style>
+;; block is never used at all (invariant 2: stripping every <style> block
+;; from the output changes nothing, because there is none to strip).
+;; markdown-to-html-lib's renderer only ever emits these tags bare (no
+;; other attributes), so a literal string replace of each opening tag is
+;; exact and total - never a partial or malformed match.
+(def ^:private tag-inline-styles
+  {"p" "margin:0 0 12px 0"
+   "ul" "margin:0 0 12px 0;padding-left:20px"
+   "li" "margin:0 0 6px 0"
+   "blockquote" "margin:0 0 12px 0;padding:4px 0 4px 12px;border-left:3px solid #cccccc;color:#555555"
+   "code" "font-family:ui-monospace,Menlo,Consolas,monospace;background:#f2f2f2;padding:1px 4px;border-radius:3px"
+   "strong" "font-weight:600"
+   "table" "border-collapse:collapse;margin:0 0 12px 0"
+   "th" "padding:4px 8px;border:1px solid #dddddd;text-align:left"
+   "td" "padding:4px 8px;border:1px solid #dddddd"
+   "h1" "margin:16px 0 8px 0;font-size:22px;font-weight:600"
+   "h2" "margin:16px 0 8px 0;font-size:18px;font-weight:600"
+   "h3" "margin:12px 0 6px 0;font-size:16px;font-weight:600"
+   "h4" "margin:12px 0 6px 0;font-size:15px;font-weight:600"
+   "h5" "margin:12px 0 6px 0;font-size:14px;font-weight:600"
+   "h6" "margin:12px 0 6px 0;font-size:13px;font-weight:600"})
+
+(defn- style-inline-elements [html]
+  (reduce (fn [acc [tag style]]
+            (str/replace acc (str "<" tag ">") (str "<" tag " style=\"" style "\">")))
+          html
+          tag-inline-styles))
+
+(defn render-briefing-html
+  "Wraps the rendered markdown body (and, when present, the diagram
+   section's own html) in a bounded single-column phone layout (BL-1419):
+   a system font stack, a header naming the briefing and its date before
+   the first section, every block element's spacing/type style carried
+   INLINE (never a <style> block), and the diagrams section under its own
+   heading after the body - never before or interleaved (BL-393's own
+   body-then-diagrams ordering, kept)."
+  [date-label body-html diagram-html]
+  (let [container-style (str "margin:0;padding:16px;max-width:640px;"
+                              "font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Arial,sans-serif;"
+                              "color:#1a1a1a;line-height:1.5")
+        header (str "<div style=\"margin:0 0 16px 0\">"
+                     "<div style=\"font-size:20px;font-weight:600\">SwarmForge briefing</div>"
+                     "<div style=\"margin:4px 0 0 0;color:#666666;font-size:14px\">" (escape-html-text date-label) "</div>"
+                     "</div>")
+        diagrams-section (when diagram-html
+                            (str "<h2 style=\"" (get tag-inline-styles "h2") "\">Diagrams</h2>"
+                                 (style-inline-elements diagram-html)))]
+    (str "<div style=\"" container-style "\">"
+         header
+         (style-inline-elements body-html)
+         (or diagrams-section "")
+         "</div>")))
 
 ;; BL-902: given a (possibly nil) result of an optional :send-reason!
 ;; adapter (daemon_alarm_lib.bb's email-send-reason - :disabled or
@@ -448,7 +506,7 @@
         content (if (:leading-text token-burn-section)
                   (prepend-content-block content (:leading-text token-burn-section))
                   content)
-        html (merge-diagram-html (markdown-to-html-lib/render-markdown-to-html content) (:html diagram-section))]
+        html (render-briefing-html date-label (markdown-to-html-lib/render-markdown-to-html content) (:html diagram-section))]
     (if (seq (:attachments diagram-section))
       ((:send-email! adapters) subject content html (:attachments diagram-section))
       ((:send-email! adapters) subject content html))))
