@@ -155,3 +155,6 @@ source: |
   cache read $0.25); `modelDisplayName.ts`.
 
 assigned_to: coder
+bounce_count: 1
+bounce_history:
+  - { at: 2026-09-05, by: architect, blamed: coder, class: invariant-unencoded, commit: 09698f2ee1, evidence: backlog/evidence/BL-1436-bounce-20260905.md }
