@@ -9,6 +9,7 @@ const {
   PILOT_RAW_MKDTEMP_REFUSAL,
 } = require('../out/tools/pilotMkdtempConventionCheck');
 const { landPilotedTicket } = require('../out/tools/pilotAcceptanceGate');
+const { makeAcceptanceGateDeps } = require('./helpers/pilotAcceptanceGateDeps');
 const { mkTmpDir } = require('./helpers/tmpDir');
 
 test('isExtensionTestJsPath accepts extension test js and skips fixtures', () => {
@@ -153,35 +154,17 @@ test('the detector is loaded once, however many paths are in scope', () => {
 
 test('landPilotedTicket refuses raw-mkdtemp-outside-helper before move', async () => {
   const calls = { move: 0, receipt: 0 };
-  let executedFeaturePath;
-  const outcome = await landPilotedTicket('BL-743', {
-    readAcceptanceDeclaration: () => 'specs/features/fixture.feature',
-    resolveFeatureFilePath: () => '/repo/specs/features/fixture.feature',
-    isLifecycleTeardownTicket: () => false,
-    assessMultiworktreeFixture: () => ({
-      satisfied: true,
-      metadata: { worktreeCount: 1, siblingHandoffdRoots: [], pilotRoot: '/repo' },
-    }),
-    runAcceptance: async () => ({ success: true, output: 'ok' }),
-    recordAcceptanceExecution: (featureFilePath) => {
-      executedFeaturePath = featureFilePath;
-    },
-    readAcceptanceExecution: () => executedFeaturePath,
+  // BL-1229: built on the shared, contract-checked base
+  // (helpers/pilotAcceptanceGateDeps.js) - only this test's own overrides
+  // are listed here now.
+  const outcome = await landPilotedTicket('BL-743', makeAcceptanceGateDeps({
     checkCommitClaims: () => ({ checked: true, commitsChecked: 0 }),
-    checkCrossFileDuplication: () => ({ checked: true, filesScanned: 0 }),
-    checkScopedCrap: () => ({ checked: true, tsFilesScanned: 0, violations: [] }),
     checkMkdtempConvention: () => ({
       checked: true,
       testFilesScanned: 1,
       violations: [{ file: 'extension/test/bad.test.js', line: 2 }],
       scannedPaths: ['extension/test/bad.test.js'],
     }),
-    checkPropertyGeneratorReach: () => ({ checked: true, propertyFilesScanned: 0, scannedPaths: [] }),
-    checkShellEntryPointDrive: () => ({ checked: true, shellTestsScanned: 0, entryPointsNamed: 0 }),
-    checkOrphanedAuthoredDocs: () => ({ checked: true, docsTouched: false }),
-    checkUnreachableStepHandlers: () => ({ checked: true, stepFilesScanned: 0, patternsChecked: 0 }),
-    checkMultiBranchParserCoverage: () => ({ checked: true, parsersScanned: 0 }),
-    checkPerHatRolePromptEvidence: () => ({ checked: true, verdictsScanned: 0 }),
     moveTicketToDone: () => {
       calls.move += 1;
       return { moved: true, destination: '/repo/backlog/done/BL-743.yaml' };
@@ -190,9 +173,8 @@ test('landPilotedTicket refuses raw-mkdtemp-outside-helper before move', async (
       calls.receipt += 1;
     },
     getLandedCommit: () => 'a'.repeat(40),
-    checkOriginMainLanding: () => ({ reachable: true }),
     now: () => '2026-08-26T00:00:00.000Z',
-  });
+  }));
   assert.equal(outcome.landed, false);
   assert.equal(outcome.reasonKind, 'raw-mkdtemp-outside-helper');
   assert.match(outcome.reason, new RegExp(PILOT_RAW_MKDTEMP_REFUSAL));

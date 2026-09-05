@@ -10,10 +10,7 @@ test/bl735PilotAcceptanceExecution.property.test.js	allowlist	pre-existing; owne
 test/bl782LivenessProbesScopedToRoot.property.test.js	allowlist	pre-existing; owner BL-1206, see backlog/standing-reds.tsv
 test/crossFileDuplicationCheck.property.test.js	allowlist	pre-existing; owner BL-1206, see backlog/standing-reds.tsv
 test/hostActivityFeed.property.test.js	allowlist	pre-existing; owner BL-1206, see backlog/standing-reds.tsv
-test/multiBranchParserCoverageCheck.property.test.js	allowlist	pre-existing; owner BL-1229, see backlog/standing-reds.tsv
-test/perHatRolePromptEvidenceCheck.property.test.js	allowlist	pre-existing; owner BL-1229, see backlog/standing-reds.tsv
 test/pilotAcceptanceGate.property.test.js	allowlist	pre-existing; owner BL-1206, see backlog/standing-reds.tsv
 test/pilotScopedCrapEvidence.property.test.js	allowlist	pre-existing; owner BL-1206, see backlog/standing-reds.tsv
 test/resolveMutationConcurrency.property.test.js	allowlist	pre-existing; owner BL-1206, see backlog/standing-reds.tsv
 test/shellEntryPointDriveCheck.property.test.js	allowlist	pre-existing; owner BL-1206, see backlog/standing-reds.tsv
-test/unreachableStepHandlerCheck.property.test.js	allowlist	pre-existing; owner BL-1221, see backlog/standing-reds.tsv
