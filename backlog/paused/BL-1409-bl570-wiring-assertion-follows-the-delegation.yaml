@@ -1,0 +1,139 @@
+id: BL-1409
+title: "BL-570's wiring assertion follows BL-1252's delegation: the acceptance Background handler and test_property_suite_drift_guard.sh case 07 still assert the pre-commit hook names check_property_suite_drift.sh directly, so BL-570's feature has been 0/7 and the drift-guard suite red at case 07 since 76dd67b692 (2026-08-30), with the guard correctly wired the whole time"
+milestone: M8
+type: defect
+severity: medium
+# medium: real but contained. The acceptance run is per feature, so only
+# BL-570's own contract is red; but that contract is the drift guard's only
+# executable acceptance of its WIRING, and it has been red through six days
+# in which parcels kept changing the guard (BL-1275 most recently, whose
+# coder ran it as a regression and found it dead). A broken safety signal
+# for one mechanism, not a live fault: the guard runs on every commit.
+status: todo
+epic: code-quality-gates
+priority: 12
+direction: swarm-reported
+depends_on: [BL-1252, BL-1398]
+mutation_cost: low
+slice_size_envelope: low
+required_stages: [coder, cleaner, architect, hardender, documenter, qa]
+
+acceptance: specs/features/BL-1409-bl570-wiring-assertion-follows-the-delegation.feature
+
+required_wiring:
+  - 'specs/pipeline/steps/bl570PropertySuiteDriftGuardSteps.js::propertyGuardIsWired::the live BL-570 Background handler must call the extracted check; the name is fixed by this declaration (BL-874) and absent today (grep returns 0)'
+  - 'swarmforge/scripts/test/test_property_suite_drift_guard.sh::propertyGuardIsWired::case 07 must call the same check rather than grep the hook; absent today (grep returns 0)'
+  - 'specs/pipeline/steps/bl1409Bl570WiringFollowsTheDelegationSteps.js::registerSteps::the handler file exists so discovery registers every scenario (BL-1371)'
+
+invariants:
+  - "The installed check asserts reachability through the chain, never a literal in one file: the guard is installed iff the pre-commit hook invokes run_commit_guards.sh in a non-comment line AND the runner's guard set, as BL-1398's helper derives it, names check_property_suite_drift.sh."
+  - "Exactly one parser of run_guard lines exists in the repo (BL-1401 invariant 3): the check consumes BL-1398's helper for the runner hop and never greps run_guard lines itself."
+  - "The check is non-vacuous: for every chain in which either hop is broken - the runner named only in a comment, or the guard absent from the derived set - it fails naming the missing hop."
+
+human_approval: pending
+approval_context: >
+  A new feature file is authored here, so it needs a tap. No choice is posed
+  and there are no ruling_options. Surfaced by the coder on BL-1275
+  (2026-09-05) and reproduced by the specifier: BL-570's feature 0/7, every
+  run dying at the Background step.
+
+description: |
+  ## What is wrong
+
+  BL-570's acceptance Background step
+  (`specs/pipeline/steps/bl570PropertySuiteDriftGuardSteps.js`, "the shared
+  pre-commit property guard is installed") reads `swarmforge/git-hooks/
+  pre-commit` and asserts a non-comment line names
+  `check_property_suite_drift.sh`. `test_property_suite_drift_guard.sh` case
+  07 asserts the same line, then copies the hook plus a hand-picked set of
+  guards and libs into a scratch repo and commits through it.
+
+  BL-1252 (`76dd67b692`, 2026-08-30) made the hook a thin wrapper:
+
+      exec "$REPO_ROOT/swarmforge/scripts/run_commit_guards.sh" "$REPO_ROOT"
+
+  and `run_commit_guards.sh` is now the file that names the guard
+  (`run_guard check_property_suite_drift.sh`, tier 2). The guard has been
+  wired on every commit since; the assertion is one level too shallow. The
+  Background fails, so all seven scenario runs of
+  `BL-570-property-suite-drift-guard.feature` fail before their first step
+  (reproduced 2026-09-05: 0 pass / 7 fail, "pre-commit must invoke
+  check_property_suite_drift.sh (not only name it in a comment)"). Case 07
+  fails the same grep, and its copied hook would then exec a runner the
+  fixture never had.
+
+  ## How (direction, not mandate)
+
+  - Extract the wiring check into one function, `propertyGuardIsWired`, in a
+    small requireable module under `specs/pipeline/steps/lib/` (the
+    directory already holds such helpers). It takes `{ repoRoot }` with the
+    hook and runner paths defaulting to the live ones (a seam for the
+    scenarios), and decides: the hook invokes the runner in a non-comment
+    line, AND `deriveCommitGuardFixtureSet(...).guards` from BL-1398's helper
+    (`extension/test/helpers/commitGuardFixtureSet.js`) contains
+    `check_property_suite_drift.sh`. On failure it names the missing hop.
+    The name is fixed by the `required_wiring` declaration so the anchor is a
+    literal that will exist (BL-874); the shape inside is the coder's.
+  - The BL-570 handler's Background calls it against the real repo. Case 07
+    calls it through `node -e`, the way `test_bl1398_guard_fixture_derives_
+    set.sh`'s `derive()` reaches JS from bash.
+  - Case 07's commit-through-the-hook half: drive the copied hook with
+    `SWARMFORGE_COMMIT_GUARD_DIR` pointing at a directory holding the REAL
+    property guard (and the libs it sources) plus a passing stub for every
+    OTHER derived guard. That keeps a docs-only fixture commit from booting
+    handoffd (`check_bb_scripts_load.sh`) or reading the step registry inside
+    a scratch repo, and it still proves the delegation end to end: hook, then
+    runner, then the guard's own skip-paths decision. Copying the helper's
+    full `files` set instead is the alternative; prefer the stubs.
+  - The BL-570 feature file is NOT amended: its Background text is still
+    true, and its seven runs are the thing this ticket makes green again.
+    Its mutation stamp is unchanged.
+
+  ## Explicitly NOT in scope
+
+  - Whether the hook may call a guard directly, bypassing the runner: the
+    runner test's case 10 owns that (and BL-1408 fixes its list).
+  - The hand-written guard lists in the other commit-guard tests: BL-1408,
+    minted the same pass.
+
+qa_e2e_procedure: |
+  1. On the parcel: `specs/pipeline/scripts/run_acceptance.sh
+     specs/features/BL-570-property-suite-drift-guard.feature` passes all
+     seven scenario runs (0/7 on main 2026-09-05).
+  2. `bash swarmforge/scripts/test/test_property_suite_drift_guard.sh` passes
+     every case, case 07 included.
+  3. Seam: a scratch tree whose hook execs a runner copy that names the
+     property guard: the check passes. Comment out the exec line in the hook
+     copy: the check fails naming run_commit_guards.sh. Restore it and delete
+     the `run_guard check_property_suite_drift.sh` line from the runner copy:
+     the check fails naming check_property_suite_drift.sh.
+  4. `grep -c 'run_guard' specs/pipeline/steps/bl570PropertySuiteDriftGuardSteps.js`
+     returns 0 and `grep -c propertyGuardIsWired` returns at least 1; the
+     same two greps on `test_property_suite_drift_guard.sh` (invariant 2).
+  5. Fixture roots are removed on exit; nothing sweeps by prefix.
+
+notes: |
+  Minted 2026-09-05 by the specifier from the coder's priority-10 note on
+  BL-1275. Not a bounce: BL-1275 forwarded clean. The coder's evidence names
+  the exact hop and commit; the specifier reproduced both reds on main.
+
+  Why this is not a BL-570 feature amendment: the Background sentence is
+  true and the scenarios are correct; only the handler's reading of
+  "installed" stopped matching the tree. Amending the feature would reword a
+  correct contract to fit a stale test.
+
+  Shares the helper, the seam idiom and possibly `suite-manifest.tsv` and
+  the BL-973 how-to with BL-1408; expect the coordinator to serialize the
+  two (Concurrent Work Orthogonality).
+
+  IR-DRY at mint: 0 findings (12 step occurrences, 10 unique).
+
+  Mint-time INVEST: one observable outcome (BL-570's contract green against
+  today's chain, and failing loud for a genuinely broken hop), one sitting
+  (one extracted function, two call sites, one fixture rework), no unbuilt
+  sibling; both dependencies are in `backlog/done/`.
+
+source: |
+  Coder note to specifier, priority 10, 2026-09-05T02:33Z; coder evidence
+  `backlog/evidence/BL-1275-coder-20260905.md` (coder branch) §"Surfaced
+  beyond scope", item 1. Reproduced by the specifier on main at 22030a8444.
