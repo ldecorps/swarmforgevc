@@ -1,3 +1,8 @@
+# mutation-stamp: sha256=6b7121841010c24cd8247b29ebe693d3c1a343cb722a6fc8300cee6ad02593e7
+# acceptance-mutation-manifest-begin
+# {"version":1,"tested_at":"2026-09-05T21:11:29.469049949Z","feature_name":"BL-1432 The land walk ranges over the parcel, not the branch's history","feature_path":"/home/carillon/swarmforgevc/.worktrees/hardender/specs/features/BL-1432-the-land-walk-ranges-over-the-parcel.feature","background_hash":"cb78032b4ee0ddbacbe699a4147b9102157b329d88adc92ab8c120ad550158f1","implementation_hash":"unknown","scenarios":[{"index":3,"name":"a worktree with work in it is never re-pointed","scenario_hash":"ffa6ea32e8392bf935b01d51687a97ed5a83fb96482940c2096f5e4aeff268b4","mutation_count":2,"result":{"Total":2,"Killed":2,"Survived":0,"Errors":0},"tested_at":"2026-09-05T21:11:29.469049949Z"}]}
+# acceptance-mutation-manifest-end
+
 Feature: BL-1432 The land walk ranges over the parcel, not the branch's history
 
   The land step walks origin/main..tip. On 2026-09-05 QA's branch was 1839
