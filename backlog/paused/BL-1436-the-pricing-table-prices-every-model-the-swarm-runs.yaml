@@ -1,0 +1,155 @@
+id: BL-1436
+title: "PRICING_TABLE has no entry for claude-fable-5-1, the model the full-forge specifier seat has run since 2026-09-04, so BL-627's coverage test is red and every turn of that seat is costed at nothing in the ledger and the briefing; the register row for the red named BL-1212 (which only cites the file as an example) and reads unowned now that BL-1212 landed; the table prices the model at its published rates with the source recorded, the display-name map names it, and the row leaves with the green"
+milestone: M8
+type: defect
+severity: high
+# high: a standing red on main with no owner (the standing-red rule,
+# 2026-09-05, Article 3.2.4) and a broken health signal in its own right:
+# the cost ledger has been blind to the swarm's most expensive seat for a
+# day. Not critical: nothing is down, no data is lost.
+status: todo
+epic: cost-intelligence
+priority: 3
+direction: swarm-reported
+depends_on: [BL-627]
+mutation_cost: low
+slice_size_envelope: small
+required_stages: [coder, cleaner, architect, hardender, documenter, qa]
+
+acceptance: specs/features/BL-1436-the-pricing-table-prices-every-model-the-swarm-runs.feature
+
+human_approval: approved
+approval_context: >
+  A new feature file is authored here, so it needs a tap. No choice is
+  posed and there are no ruling_options. The rates come from the project's
+  own Claude API reference (input $10, output $50, cache read $0.25 per
+  million tokens for claude-fable-5-1, reference cached 2026-06-24); the
+  coder verifies them against the published pricing page on the day and
+  records the page and date beside the entry, never copying a sibling
+  row (the original BL-627 defect was an Opus row copied from Opus 4.1).
+  Minted on the coordinator's "unowned red" report; the register row that
+  pointed at BL-1212 was the specifier's own mis-attribution, the third of
+  its kind today, and this ticket corrects it.
+
+invariants:
+  - "Every Anthropic Claude model the swarm roster references has a PRICING_TABLE entry whose rates trace to a published source named beside them (BL-627's invariant carried); a model with no published rate is not guessed and not copied from a sibling row - it is reported by the coverage check until a source exists."
+  - "The coverage check is the only notion of the roster: this parcel adds an entry, it does not narrow collectReferencedClaudeModels or exempt a model from the check."
+  - "A land that turns the test green removes its standing-red register row in the same commit (standing-red rule); no row for pricingTable.test.js survives the parcel."
+
+required_wiring:
+  - 'extension/src/metrics/pricingTable.ts::claude-fable-5-1::the entry is the deliverable, read by the pre-existing coverage check and estimateCostUsd; absent today (grep returns 0)'
+  - 'extension/src/swarm/modelDisplayName.ts::claude-fable-5-1::the display-name map names the model so the briefing and console show Fable 5.1, not a raw id; absent today (grep returns 0)'
+  - 'specs/pipeline/steps/bl1436PricingTableCoversFable51Steps.js::registerSteps::the handler file exists so discovery registers every scenario (BL-1371)'
+
+description: |
+  ## What is wrong
+
+  Coordinator note 2026-09-05T19:47Z: "Unowned red: pricingTable.test.js
+  names closed BL-1212, no fix ticket exists". Verified the same hour:
+
+      × BL-627: the current repo roster passes the pricing coverage check
+        AssertionError: PRICING_TABLE missing entries for swarm-referenced
+        model(s): claude-fable-5-1
+
+  `extension/src/metrics/pricingTable.ts` carries entries for
+  claude-opus-4-8, claude-opus-5, claude-sonnet-5 (windowed),
+  claude-haiku-4-5-20251001 and claude-fable-5. `swarmforge/packs/full-forge.conf`
+  line 261 runs the specifier seat on `claude-fable-5-1` since `71f67b3fa6`
+  (2026-09-04; the pack's own comment at line 249: the human caught the
+  imprecise "claude-fable-5" the pack had been using). `collectReferencedClaudeModels`
+  reads the packs, so the coverage check names the gap, exactly as BL-627
+  built it to. `estimateCostUsd` returns null for an absent model, so every
+  turn of that seat since 09-04 has been costed at nothing in the BL-551
+  ledger, the briefing and the cost-rank tooling. `modelDisplayName.ts`
+  also lacks the id (it names Fable 5, Opus 5, Sonnet 5).
+
+  The standing-red register row for this test named BL-1212 with first_seen
+  2026-08-28: both wrong. BL-1212's text cites pricingTable.test.js only as
+  the example of a well-phrased exemption reason, and the red began on
+  09-04, not 08-28. BL-1212 landed on 2026-09-05, so the row now names a
+  closed ticket and the register CLI (BL-1428) reports it unowned; when
+  BL-1429 lands, an unowned red recommends a cap of 1 until this lands.
+
+  ## What changes
+
+  - `PRICING_TABLE` gains `'claude-fable-5-1'` at the published rates: input
+    $10 and output $50 per million tokens; cache read $0.25 per million (a
+    Fable 5.1-specific rate the reference records; not the 0.1x-of-input
+    convention the other rows use); cache creation per the published page
+    (the reference does not state it - verify, never derive from the
+    Fable 5 row). A comment beside the entry names the page and the date
+    it was read (invariant 1).
+  - `modelDisplayName.ts` maps `claude-fable-5-1` to `Fable 5.1`.
+  - The register row for `extension/test/pricingTable.test.js` is removed in
+    the same commit (invariant 3). The unit lane has no allowlist.
+  - The documenter refreshes the pricing section of the briefing/cost docs
+    if they list the priced models.
+
+  ## How (direction, not mandate)
+
+  - Verify the rates on the published pricing page on the day of the
+    change (the Pricing row in the project's Claude API reference names
+    the URL), and record page and date in the comment. If a cache-creation
+    rate is not published for the model, say so in the comment and in the
+    evidence rather than inventing one; the coverage check requires an
+    entry, not a guess, and `ModelPricing` may need that field optional -
+    the architect decides the shape.
+  - Scenario 02 drives `estimateCostUsd` with one category at a time;
+    scenario 01 runs `checkPricingCoverage` over the parcel's own tree;
+    scenario 03 reads the table source for the comment; scenario 04 reads
+    the map and the register.
+
+  ## Out of scope
+
+  - Re-verifying the other rows' rates (BL-627 did; a follow-up if the
+    page has moved since).
+  - Any change to the ledger, the briefing's cost maths, or the roster
+    sources.
+
+qa_e2e_procedure: |
+  1. The BL-1436 feature passes (four scenarios, six runs); BL-627's feature
+     still passes.
+  2. `cd extension && npx vitest run test/pricingTable.test.js` passes, 30
+     of 30.
+  3. `node -e` over the compiled `out/metrics/pricingTable.js`:
+     `estimateCostUsd('claude-fable-5-1', {inputTokens: 1e6, ...zeros})`
+     prints 10, output 50, cache-read 0.25.
+  4. `grep -c pricingTable backlog/standing-reds.tsv` is 0 at the parcel
+     commit; the register CLI reports no unowned row.
+  5. The next daily briefing after land costs the specifier seat's turns
+     at a non-null figure.
+
+notes: |
+  Minted 2026-09-05 by the specifier on the coordinator's note (verbatim in
+  description). The register row is not re-pointed on main now: the only
+  other data row in the register is the one BL-1434's active parcel
+  deletes, adjacent to this one, so an edit here on main conflicts with
+  that land (BL-1385 shape). This parcel removes the row itself; the
+  coordinator's orthogonality rule keeps it apart from BL-1434 since both
+  touch the register. Until then the row names a closed ticket, which is
+  the exact state BL-1429 throttles on once it lands - by design; if that
+  window bites, raising standing_red_max_count in swarmforge.conf is the
+  softer lever.
+
+  The third register mis-attribution of the day (after hostActivityFeed
+  and the same-morning first_seen dates): the owner grep matched tickets
+  that merely mention a test file. BL-1428's register CLI, now landed, is
+  what a future register edit must be checked against.
+
+  INVEST at mint: Independent (BL-627 landed; BL-1434 is an ordering
+  constraint the orthogonality rule enforces), Negotiable (the
+  cache-creation shape is the architect's), Valuable (one outcome: the
+  most expensive seat is costed and the red is owned), Estimable (one
+  table entry, one map entry, one register row, one handler; low), Small
+  (four scenarios, six runs, three invariants at the cap), Testable
+  (estimateCostUsd and the coverage check are pure; live step in
+  qa_e2e_procedure).
+
+source: |
+  Coordinator note 2026-09-05T19:47:43Z; `npx vitest run
+  test/pricingTable.test.js` (1 failed, 29 passed); `pricingTable.ts`
+  PRICING_TABLE and `collectReferencedClaudeModels`;
+  `swarmforge/packs/full-forge.conf` lines 249-261 and `git log -S
+  claude-fable-5-1` (71f67b3fa6, 2026-09-04); the project's Claude API
+  reference model table (cached 2026-06-24: claude-fable-5-1 $10 / $50,
+  cache read $0.25); `modelDisplayName.ts`.
