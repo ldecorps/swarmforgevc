@@ -7490,3 +7490,106 @@ test('BL-1402 architect bounce 1: persistRoutedPhoto is never called for a recer
   assert.deepEqual(calls, [], `persistRoutedPhoto must not be called for a recert-topic reply: ${JSON.stringify(calls)}`);
   assert.deepEqual(validated, ['BL-207-thing-01'], 'the validate itself must still be recorded');
 });
+
+// ── BL-1384: the qwen-local seat's topic is forwarded to the bridge ───────
+
+test('BL-1384: a message in the qwen-local seat topic is forwarded to the bridge, never opened as a subject', async () => {
+  const forwarded = [];
+  const update = mkUpdate({ fromId: PRINCIPAL_ID, topicId: 27182, text: 'what does this error mean' });
+  const result = await pollAndForward(
+    0,
+    PRINCIPAL_ID,
+    cursorBridgePollAdapters({
+      cursorBridgeTopicId: async () => 8435,
+      qwenLocalSeatTopicId: async () => 27182,
+      getUpdates: async () => ({ success: true, updates: [update] }),
+      forwardCursorBridgeUpdate: async (u) => {
+        forwarded.push(u);
+        return true;
+      },
+    })
+  );
+  assert.equal(result.posted, 1);
+  assert.equal(result.dropped, 0);
+  assert.equal(forwarded.length, 1);
+  assert.equal(forwarded[0].update_id, update.update_id);
+});
+
+test('BL-1384: the local-seat exclusion works even when no cursorBridgeTopicId/bubbleTopicId adapter is wired at all (local-seat-only deployment)', async () => {
+  const forwarded = [];
+  const update = mkUpdate({ fromId: PRINCIPAL_ID, topicId: 27182, text: 'hello' });
+  const result = await pollAndForward(
+    0,
+    PRINCIPAL_ID,
+    cursorBridgePollAdapters({
+      cursorBridgeTopicId: undefined,
+      qwenLocalSeatTopicId: async () => 27182,
+      getUpdates: async () => ({ success: true, updates: [update] }),
+      forwardCursorBridgeUpdate: async (u) => {
+        forwarded.push(u);
+        return true;
+      },
+    })
+  );
+  assert.equal(result.posted, 1);
+  assert.equal(forwarded.length, 1);
+});
+
+test('BL-1384: with no local-seat map (adapter resolves undefined), a message in an otherwise-unowned topic still opens its subject exactly as before', async () => {
+  const opened = [];
+  const update = mkUpdate({ fromId: PRINCIPAL_ID, topicId: 27182, text: 'hello' });
+  const result = await pollAndForward(
+    0,
+    PRINCIPAL_ID,
+    cursorBridgePollAdapters({
+      cursorBridgeTopicId: async () => 8435,
+      qwenLocalSeatTopicId: async () => undefined,
+      subjectForTopic: () => undefined,
+      getUpdates: async () => ({ success: true, updates: [update] }),
+      openSubjectAndRecord: async (topicId) => {
+        opened.push(topicId);
+        return 'SUP-1';
+      },
+    })
+  );
+  assert.equal(result.posted, 1);
+  assert.deepEqual(opened, [27182]);
+});
+
+test('BL-1384: the Cursor Remote topic is still excluded and forwarded when a qwenLocalSeatTopicId adapter is also wired', async () => {
+  const forwarded = [];
+  const update = mkUpdate({ fromId: PRINCIPAL_ID, topicId: 8435, text: '690' });
+  const result = await pollAndForward(
+    0,
+    PRINCIPAL_ID,
+    cursorBridgePollAdapters({
+      qwenLocalSeatTopicId: async () => 27182,
+      getUpdates: async () => ({ success: true, updates: [update] }),
+      forwardCursorBridgeUpdate: async (u) => {
+        forwarded.push(u);
+        return true;
+      },
+    })
+  );
+  assert.equal(result.posted, 1);
+  assert.equal(forwarded.length, 1);
+  assert.equal(forwarded[0].update_id, update.update_id);
+});
+
+test('BL-1384: a pre-existing fixture that never wires qwenLocalSeatTopicId at all keeps working unchanged', async () => {
+  const forwarded = [];
+  const update = mkUpdate({ fromId: PRINCIPAL_ID, topicId: 8435, text: '690' });
+  const result = await pollAndForward(
+    0,
+    PRINCIPAL_ID,
+    cursorBridgePollAdapters({
+      getUpdates: async () => ({ success: true, updates: [update] }),
+      forwardCursorBridgeUpdate: async (u) => {
+        forwarded.push(u);
+        return true;
+      },
+    })
+  );
+  assert.equal(result.posted, 1);
+  assert.equal(forwarded.length, 1);
+});
