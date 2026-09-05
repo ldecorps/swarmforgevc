@@ -147,6 +147,9 @@ notes: |
   cannot hold without it and the change is two predicates in the one
   shared function. Not a bounce; nothing built yet. The documenter updates
   the classifier's docstring (it still says starts-with).
+  IR-DRY on the amended feature: 6 medium findings, all kept - the 07/08
+  pair is an Outline placeholder beside its own instantiation, the rest are
+  the clean/stray and own/other/sibling contrasts the scenarios exist for.
 
   Minted 2026-09-03 by the specifier on the operator's direction: "another case
   to move into the deterministic camp: killing orphan processes", with a QA
@@ -181,3 +184,6 @@ source: |
   recorded on BL-667, and the first found by the operator rather than by the
   commit-classification pass - the sweep's method counts commits, and this
   ritual leaves none.
+bounce_count: 1
+bounce_history:
+  - { at: 2026-09-05, by: cleaner, blamed: coder, class: spec-gap, commit: 12b538c4b9, evidence: backlog/evidence/BL-1370-cleaner-bounce-20260905.md }
