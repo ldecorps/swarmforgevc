@@ -39,21 +39,32 @@ After confirmation, the bridge reuses the existing promote path
 `promote_and_route_next.sh` uses — `depends_on`, a `backlog/hold/` marker, and
 `active_backlog_max_depth` — before moving anything. Expedite records the
 human's tap as the ticket's approval BEFORE the gates run, so
-`human_approval` is satisfied rather than skipped; it does not bypass
-`depends_on`, hold, or the depth cap.
+`human_approval` is satisfied rather than skipped. **It still does not
+bypass `depends_on` or hold** — those refuse a pager Expedite exactly as
+they refuse any promotion. **The depth cap is the one exception**
+(BL-1425, human directive 2026-09-05): the pager Expedite is one of the
+three human entry points sharing this mover, so it passes a queue-jump
+flag that crosses `active_backlog_max_depth` specifically and reports the
+crossing in its 200 body (`crossed: { gate, reason }`) — the ticket fills
+a real active slot, so the coordinator's own next ordinary promotion still
+waits for the count to fall below the cap.
 
 - **Allowed**: sets the ticket priority to `0`, moves the ticket from
   `backlog/paused/` to `backlog/active/`, and leaves the pager on the next
   remaining paused ticket, or the empty state. The durable commit names
   **both** ends of that rename (paused deletion + active addition) so the
   ticket never sits in two folders at once (BL-1091); plain Approve/Reject/
-  Amend still commit exactly one path.
+  Amend still commit exactly one path. Crossing the depth cap is reported
+  in the response, never silent — the pager surfaces the crossed-cap
+  reason alongside the success.
 - **Refused**: the ticket is left exactly where it was (still in
   `backlog/paused/`, priority unchanged) and the pager shows the gate's own
   name and reason — e.g. an unlanded `depends_on` id, or the ticket being
   held — as a 409 response rather than a bare failure ([BL-572/BL-662](BL-662-paused-pager-shows-server-failure-reason.md)).
-  The same gate consultation guards the Telegram Expedite verb; a ticket
-  refused here is refused there too, since both call the one mover.
+  The same gate consultation guards the Telegram Expedite verb (now named
+  "Q jump" — [BL-721](../reference/Specification.MD)) and the typed
+  `/qjump` verb; a ticket refused here is refused there too, since all
+  three call the one mover.
 
 The pager is not a general YAML editor. It only supports reviewing paused
 tickets and expediting one ticket at a time.

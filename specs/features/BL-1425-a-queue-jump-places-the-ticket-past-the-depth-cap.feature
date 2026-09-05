@@ -1,3 +1,8 @@
+# mutation-stamp: sha256=caaf9f92e8893107dd557dc86497077239d78f126e7cfc2060c042000f0b37f5
+# acceptance-mutation-manifest-begin
+# {"version":1,"tested_at":"2026-09-05T20:19:17.513237644Z","feature_name":"BL-1425 A queue-jump places the ticket on the pipeline past the depth cap","feature_path":"/home/carillon/swarmforgevc/.worktrees/hardender/specs/features/BL-1425-a-queue-jump-places-the-ticket-past-the-depth-cap.feature","background_hash":"2d506d2ae8d2f48988d74d6390da8b7abc799aab66249ff92d30cee2bcff2dd9","implementation_hash":"unknown","scenarios":[{"index":0,"name":"only the depth cap yields to a queue-jump","scenario_hash":"85db312433511bb5ce86757a72cac72a9b03866c1b352174e58fc6a473ab5ccd","mutation_count":20,"result":{"Total":20,"Killed":20,"Survived":0,"Errors":0},"tested_at":"2026-09-05T20:19:17.513237644Z"}]}
+# acceptance-mutation-manifest-end
+
 Feature: BL-1425 A queue-jump places the ticket on the pipeline past the depth cap
 
   The Approvals Q jump tap, the /qjump verb and the paused-pager Expedite all
