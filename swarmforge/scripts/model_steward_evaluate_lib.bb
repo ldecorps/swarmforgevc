@@ -8,10 +8,14 @@
 ;;
 ;;   (load-file ".../model_steward_evaluate_lib.bb")
 (ns model-steward-evaluate-lib
-  (:require [clojure.string :as str]))
+  (:require [babashka.fs :as fs]
+            [clojure.string :as str]))
 
-;; model_steward_lib must already be load-file'd by the caller (CLI loads it
-;; before this file). Fully-qualified calls below assume that binding.
+;; model_steward_lib is load-file'd here too (BL-1427: idempotent re-load,
+;; free for a caller that already did it - CLI loads it before this file -
+;; and load-bearing for a standalone analysis probe or any future caller
+;; that does not). Fully-qualified calls below assume that binding.
+(load-file (str (fs/path (fs/parent (fs/canonicalize *file*)) "model_steward_lib.bb")))
 
 (def capability-dimensions
   ["coding_quality" "protocol_compliance" "tool_usage" "autonomy" "cost_latency"])

@@ -13,11 +13,16 @@
 ;;
 ;; Loaded via load-file, not required on a classpath:
 ;;   (load-file (str (fs/path (fs/parent (fs/canonicalize *file*)) "pack_staffing_gate_lib.bb")))
-;; and referred to as pack-staffing-gate-lib/foo. Callers must also load
-;; model_steward_lib.bb first (model-steward-lib/* is referenced directly —
-;; same contract as model_factory_lib.bb).
+;; and referred to as pack-staffing-gate-lib/foo. model_steward_lib is
+;; load-file'd below too (BL-1427: idempotent re-load, free for a caller
+;; that already did it - same contract as model_factory_lib.bb - and
+;; load-bearing for a standalone analysis probe or any future caller that
+;; does not).
 (ns pack-staffing-gate-lib
-  (:require [clojure.string :as str]))
+  (:require [babashka.fs :as fs]
+            [clojure.string :as str]))
+
+(load-file (str (fs/path (fs/parent (fs/canonicalize *file*)) "model_steward_lib.bb")))
 
 (def decision-pass "pass")
 (def decision-refuse "refuse")

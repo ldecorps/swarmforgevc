@@ -11,9 +11,16 @@
 ;;
 ;; Loaded via load-file, not required on a classpath:
 ;;   (load-file (str (fs/path (fs/parent (fs/canonicalize *file*)) "model_factory_lib.bb")))
-;; and referred to as model-factory-lib/foo. Callers must also load
-;; model_steward_lib.bb first (model-steward-lib/* is referenced directly).
-(ns model-factory-lib)
+;; and referred to as model-factory-lib/foo. A caller that has ALREADY
+;; loaded model_steward_lib.bb pays nothing extra here (BL-1427: re-loading
+;; a namespace of pure constants/defns is idempotent); a caller - or a
+;; standalone analysis probe - that has not gets it for free below, so
+;; model-steward-lib/* always resolves whether or not the caller remembered
+;; the documented order.
+(ns model-factory-lib
+  (:require [babashka.fs :as fs]))
+
+(load-file (str (fs/path (fs/parent (fs/canonicalize *file*)) "model_steward_lib.bb")))
 
 (def cheap-mode "cheap")
 (def quality-mode "quality")
