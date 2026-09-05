@@ -8,6 +8,7 @@ import * as path from 'path';
 import {
   PROVIDER_CHAT_TOPIC_MAP_REL,
   ProviderChatSeatConfig,
+  ProviderChatTurn,
   decideProviderChatTurn,
   formatProviderChatAcknowledgement,
   formatProviderChatRefusal,
@@ -17,19 +18,37 @@ export function providerChatTopicMapPath(targetPath: string): string {
   return path.join(targetPath, ...PROVIDER_CHAT_TOPIC_MAP_REL);
 }
 
+interface NormalizedRawSeatFields {
+  model: string;
+  baseUrl: string;
+  apiKeyEnv: string;
+}
+
+/** Trim every raw-map field once, in one place - parseSeat's own complexity
+ * budget goes to shape validation, not to string cleanup. */
+function normalizeRawSeatFields(o: Record<string, unknown>): NormalizedRawSeatFields {
+  return {
+    model: String(o.model ?? '').trim(),
+    baseUrl: String(o.baseUrl ?? '').trim(),
+    apiKeyEnv: String(o.apiKeyEnv ?? '').trim(),
+  };
+}
+
+function rawSeatFieldsAreComplete(fields: NormalizedRawSeatFields): boolean {
+  return Boolean(fields.model && fields.baseUrl && fields.apiKeyEnv);
+}
+
 function parseSeat(raw: unknown): ProviderChatSeatConfig | undefined {
   if (!raw || typeof raw !== 'object') {
     return undefined;
   }
-  const o = raw as Record<string, unknown>;
-  const model = String(o.model ?? '').trim();
-  const baseUrl = String(o.baseUrl ?? '').trim();
-  const apiKeyEnv = String(o.apiKeyEnv ?? '').trim();
-  if (!model || !baseUrl || !apiKeyEnv) {
+  const fields = normalizeRawSeatFields(raw as Record<string, unknown>);
+  if (!rawSeatFieldsAreComplete(fields)) {
     return undefined;
   }
+  const o = raw as Record<string, unknown>;
   const systemPrompt = typeof o.systemPrompt === 'string' && o.systemPrompt.trim() ? o.systemPrompt : undefined;
-  return { model, baseUrl, apiKeyEnv, systemPrompt };
+  return { ...fields, systemPrompt };
 }
 
 export function readProviderChatTopicSeats(targetPath: string): Record<string, ProviderChatSeatConfig> {
@@ -59,7 +78,7 @@ export function readProviderChatTopicSeats(targetPath: string): Record<string, P
 // reply). This is what stands in for real tool access: the MODEL never
 // decides to fetch anything, this composes a short factual block server-side
 // and sends it as part of the system message on every turn.
-function readSwarmIdentity(targetPath: string): Record<string, string> {
+export function readSwarmIdentity(targetPath: string): Record<string, string> {
   try {
     const raw = fs.readFileSync(path.join(targetPath, '.swarmforge', 'swarm-identity'), 'utf8');
     const out: Record<string, string> = {};
@@ -74,7 +93,7 @@ function readSwarmIdentity(targetPath: string): Record<string, string> {
   }
 }
 
-function countBacklogYaml(targetPath: string, folder: string): number | undefined {
+export function countBacklogYaml(targetPath: string, folder: string): number | undefined {
   try {
     return fs.readdirSync(path.join(targetPath, 'backlog', folder)).filter((f) => f.endsWith('.yaml')).length;
   } catch {
@@ -165,6 +184,41 @@ export interface ProviderChatSeatTurnOutcome {
   posted: string[];
 }
 
+/** The seat's own static prompt plus a live swarm-context block, joined by a
+ * blank line - the seat's half is omitted entirely (not left as a blank
+ * leading line) when it is absent or whitespace-only. */
+function composeProviderSystemPrompt(seatPrompt: string | undefined, targetPath: string): string | undefined {
+  const systemPrompt = [seatPrompt, composeSwarmContextBlock(targetPath)]
+    .filter((s): s is string => Boolean(s && s.trim()))
+    .join('\n\n');
+  return systemPrompt || undefined;
+}
+
+interface ProviderCompletionAttempt {
+  kind: 'answer' | 'refuse';
+  message: string;
+}
+
+/** Calls the provider and turns its result (or failure) into the one message
+ * to post - isolates runProviderChatSeatTurn's own complexity budget to
+ * ORCHESTRATION, not to the completion outcome's own branching. */
+async function attemptProviderCompletion(
+  complete: NonNullable<ProviderChatSeatTurnDeps['complete']>,
+  turn: Extract<ProviderChatTurn, { kind: 'answer' }>,
+  text: string,
+  systemPrompt: string | undefined
+): Promise<ProviderCompletionAttempt> {
+  try {
+    const reply = String(await complete(turn.modelId, text, turn.baseUrl, turn.apiKey, systemPrompt)).trim();
+    if (!reply) {
+      return { kind: 'refuse', message: `Chat seat (${turn.modelId}) returned an empty reply.` };
+    }
+    return { kind: 'answer', message: reply };
+  } catch (err) {
+    return { kind: 'refuse', message: `Chat seat cannot answer (${turn.modelId}): ${(err as Error).message}` };
+  }
+}
+
 export async function runProviderChatSeatTurn(
   deps: ProviderChatSeatTurnDeps
 ): Promise<ProviderChatSeatTurnOutcome> {
@@ -195,21 +249,8 @@ export async function runProviderChatSeatTurn(
 
   await post(formatProviderChatAcknowledgement(turn.modelId));
   const complete = deps.complete ?? completeWithProviderChat;
-  const systemPrompt = [turn.systemPrompt, composeSwarmContextBlock(deps.targetPath)]
-    .filter((s): s is string => Boolean(s && s.trim()))
-    .join('\n\n');
-  try {
-    const reply = String(
-      await complete(turn.modelId, deps.text, turn.baseUrl, turn.apiKey, systemPrompt || undefined)
-    ).trim();
-    if (!reply) {
-      await post(`Chat seat (${turn.modelId}) returned an empty reply.`);
-      return { kind: 'refuse', posted };
-    }
-    await post(reply);
-    return { kind: 'answer', posted };
-  } catch (err) {
-    await post(`Chat seat cannot answer (${turn.modelId}): ${(err as Error).message}`);
-    return { kind: 'refuse', posted };
-  }
+  const systemPrompt = composeProviderSystemPrompt(turn.systemPrompt, deps.targetPath);
+  const result = await attemptProviderCompletion(complete, turn, deps.text, systemPrompt);
+  await post(result.message);
+  return { kind: result.kind, posted };
 }
