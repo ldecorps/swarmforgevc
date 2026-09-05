@@ -10,6 +10,7 @@ const {
 } = require('../out/tools/pilotScopedCrapCheck');
 const { landPilotedTicket } = require('../out/tools/pilotAcceptanceGate');
 const { mkTmpDir } = require('./helpers/tmpDir');
+const { makeAcceptanceGateDeps } = require('./helpers/pilotAcceptanceGateDeps');
 
 test('isExtensionTsPath accepts extension ts and rejects other paths', () => {
   assert.equal(isExtensionTsPath('extension/src/foo.ts'), true);
@@ -40,46 +41,27 @@ test('assessPilotScopedCrap returns srcPathsInScope when coverage is missing', (
   assert.deepEqual(outcome, { checked: false, srcPathsInScope: [rel] });
 });
 
+// BL-1229: every landPilotedTicket call below is built on the shared,
+// contract-checked base (helpers/pilotAcceptanceGateDeps.js) - only each
+// test's own overrides are listed now.
 test('landPilotedTicket writes scopedCrap evidence naming src paths on successful land', async () => {
   let receipt;
-  let executedFeaturePath;
   const srcPath = 'extension/src/good.ts';
-  const outcome = await landPilotedTicket('BL-745', {
-    readAcceptanceDeclaration: () => 'specs/features/fixture.feature',
-    resolveFeatureFilePath: () => '/repo/specs/features/fixture.feature',
-    isLifecycleTeardownTicket: () => false,
-    assessMultiworktreeFixture: () => ({
-      satisfied: true,
-      metadata: { worktreeCount: 1, siblingHandoffdRoots: [], pilotRoot: '/repo' },
-    }),
-    runAcceptance: async () => ({ success: true, output: 'ok' }),
-    recordAcceptanceExecution: (featureFilePath) => {
-      executedFeaturePath = featureFilePath;
-    },
-    readAcceptanceExecution: () => executedFeaturePath,
+  const outcome = await landPilotedTicket('BL-745', makeAcceptanceGateDeps({
     checkCommitClaims: () => ({ checked: true, commitsChecked: 0 }),
-    checkCrossFileDuplication: () => ({ checked: true, filesScanned: 0 }),
     checkScopedCrap: () => ({
       checked: true,
       tsFilesScanned: 1,
       violations: [],
       scannedPaths: [srcPath],
     }),
-    checkMkdtempConvention: () => ({ checked: true, testFilesScanned: 0, violations: [], scannedPaths: [] }),
-    checkPropertyGeneratorReach: () => ({ checked: true, propertyFilesScanned: 0, scannedPaths: [] }),
-    checkShellEntryPointDrive: () => ({ checked: true, shellTestsScanned: 0, entryPointsNamed: 0 }),
-    checkOrphanedAuthoredDocs: () => ({ checked: true, docsTouched: false }),
-    checkUnreachableStepHandlers: () => ({ checked: true, stepFilesScanned: 0, patternsChecked: 0 }),
-    checkMultiBranchParserCoverage: () => ({ checked: true, parsersScanned: 0 }),
-    checkPerHatRolePromptEvidence: () => ({ checked: true, verdictsScanned: 0 }),
     moveTicketToDone: () => ({ moved: true, destination: '/repo/backlog/done/BL-745.yaml' }),
     writeReceipt: (_ticketId, r) => {
       receipt = r;
     },
     getLandedCommit: () => 'b'.repeat(40),
-    checkOriginMainLanding: () => ({ reachable: true }),
     now: () => '2026-08-27T00:00:00.000Z',
-  });
+  }));
   assert.equal(outcome.landed, true);
   assert.deepEqual(receipt.scopedCrap, {
     tsFilesScanned: 1,
@@ -90,22 +72,8 @@ test('landPilotedTicket writes scopedCrap evidence naming src paths on successfu
 
 test('landPilotedTicket refuses missing CRAP evidence when extension/src was in scope', async () => {
   const calls = { move: 0, receipt: 0 };
-  let executedFeaturePath;
-  const outcome = await landPilotedTicket('BL-745', {
-    readAcceptanceDeclaration: () => 'specs/features/fixture.feature',
-    resolveFeatureFilePath: () => '/repo/specs/features/fixture.feature',
-    isLifecycleTeardownTicket: () => false,
-    assessMultiworktreeFixture: () => ({
-      satisfied: true,
-      metadata: { worktreeCount: 1, siblingHandoffdRoots: [], pilotRoot: '/repo' },
-    }),
-    runAcceptance: async () => ({ success: true, output: 'ok' }),
-    recordAcceptanceExecution: (featureFilePath) => {
-      executedFeaturePath = featureFilePath;
-    },
-    readAcceptanceExecution: () => executedFeaturePath,
+  const outcome = await landPilotedTicket('BL-745', makeAcceptanceGateDeps({
     checkCommitClaims: () => ({ checked: true, commitsChecked: 0 }),
-    checkCrossFileDuplication: () => ({ checked: true, filesScanned: 0 }),
     checkScopedCrap: () => ({
       checked: true,
       tsFilesScanned: 1,
@@ -113,13 +81,6 @@ test('landPilotedTicket refuses missing CRAP evidence when extension/src was in 
       scannedPaths: [],
       srcPathsInScope: ['extension/src/omit.ts'],
     }),
-    checkMkdtempConvention: () => ({ checked: true, testFilesScanned: 0, violations: [], scannedPaths: [] }),
-    checkPropertyGeneratorReach: () => ({ checked: true, propertyFilesScanned: 0, scannedPaths: [] }),
-    checkShellEntryPointDrive: () => ({ checked: true, shellTestsScanned: 0, entryPointsNamed: 0 }),
-    checkOrphanedAuthoredDocs: () => ({ checked: true, docsTouched: false }),
-    checkUnreachableStepHandlers: () => ({ checked: true, stepFilesScanned: 0, patternsChecked: 0 }),
-    checkMultiBranchParserCoverage: () => ({ checked: true, parsersScanned: 0 }),
-    checkPerHatRolePromptEvidence: () => ({ checked: true, verdictsScanned: 0 }),
     moveTicketToDone: () => {
       calls.move += 1;
       return { moved: true, destination: '/repo/backlog/done/BL-745.yaml' };
@@ -128,9 +89,8 @@ test('landPilotedTicket refuses missing CRAP evidence when extension/src was in 
       calls.receipt += 1;
     },
     getLandedCommit: () => 'c'.repeat(40),
-    checkOriginMainLanding: () => ({ reachable: true }),
     now: () => '2026-08-27T00:00:00.000Z',
-  });
+  }));
   assert.equal(outcome.landed, false);
   assert.equal(outcome.reasonKind, 'crap-evidence-missing');
   assert.equal(calls.move, 0);
@@ -139,78 +99,35 @@ test('landPilotedTicket refuses missing CRAP evidence when extension/src was in 
 
 test('landPilotedTicket lands without scopedCrap evidence when only non-src extension ts was touched', async () => {
   let receipt;
-  let executedFeaturePath;
-  const outcome = await landPilotedTicket('BL-745', {
-    readAcceptanceDeclaration: () => 'specs/features/fixture.feature',
-    resolveFeatureFilePath: () => '/repo/specs/features/fixture.feature',
-    isLifecycleTeardownTicket: () => false,
-    assessMultiworktreeFixture: () => ({
-      satisfied: true,
-      metadata: { worktreeCount: 1, siblingHandoffdRoots: [], pilotRoot: '/repo' },
-    }),
-    runAcceptance: async () => ({ success: true, output: 'ok' }),
-    recordAcceptanceExecution: (featureFilePath) => {
-      executedFeaturePath = featureFilePath;
-    },
-    readAcceptanceExecution: () => executedFeaturePath,
+  const outcome = await landPilotedTicket('BL-745', makeAcceptanceGateDeps({
     checkCommitClaims: () => ({ checked: true, commitsChecked: 0 }),
-    checkCrossFileDuplication: () => ({ checked: true, filesScanned: 0 }),
     checkScopedCrap: () => ({
       checked: true,
       tsFilesScanned: 1,
       violations: [],
       scannedPaths: ['extension/scripts/nonSrc.ts'],
     }),
-    checkMkdtempConvention: () => ({ checked: true, testFilesScanned: 0, violations: [], scannedPaths: [] }),
-    checkPropertyGeneratorReach: () => ({ checked: true, propertyFilesScanned: 0, scannedPaths: [] }),
-    checkShellEntryPointDrive: () => ({ checked: true, shellTestsScanned: 0, entryPointsNamed: 0 }),
-    checkOrphanedAuthoredDocs: () => ({ checked: true, docsTouched: false }),
-    checkUnreachableStepHandlers: () => ({ checked: true, stepFilesScanned: 0, patternsChecked: 0 }),
-    checkMultiBranchParserCoverage: () => ({ checked: true, parsersScanned: 0 }),
-    checkPerHatRolePromptEvidence: () => ({ checked: true, verdictsScanned: 0 }),
     moveTicketToDone: () => ({ moved: true, destination: '/repo/backlog/done/BL-745.yaml' }),
     writeReceipt: (_ticketId, r) => {
       receipt = r;
     },
     getLandedCommit: () => 'd'.repeat(40),
-    checkOriginMainLanding: () => ({ reachable: true }),
     now: () => '2026-08-27T00:00:00.000Z',
-  });
+  }));
   assert.equal(outcome.landed, true);
   assert.equal(receipt.scopedCrap, undefined);
 });
 
 test('landPilotedTicket refuses crap-violation before move', async () => {
   const calls = { move: 0, receipt: 0 };
-  let executedFeaturePath;
-  const outcome = await landPilotedTicket('BL-741', {
-    readAcceptanceDeclaration: () => 'specs/features/fixture.feature',
-    resolveFeatureFilePath: () => '/repo/specs/features/fixture.feature',
-    isLifecycleTeardownTicket: () => false,
-    assessMultiworktreeFixture: () => ({
-      satisfied: true,
-      metadata: { worktreeCount: 1, siblingHandoffdRoots: [], pilotRoot: '/repo' },
-    }),
-    runAcceptance: async () => ({ success: true, output: 'ok' }),
-    recordAcceptanceExecution: (featureFilePath) => {
-      executedFeaturePath = featureFilePath;
-    },
-    readAcceptanceExecution: () => executedFeaturePath,
+  const outcome = await landPilotedTicket('BL-741', makeAcceptanceGateDeps({
     checkCommitClaims: () => ({ checked: true, commitsChecked: 0 }),
-    checkCrossFileDuplication: () => ({ checked: true, filesScanned: 0 }),
     checkScopedCrap: () => ({
       checked: true,
       tsFilesScanned: 1,
       violations: [{ file: 'extension/src/bad.ts', function: 'badFn', crap: 9 }],
       scannedPaths: ['extension/src/bad.ts'],
     }),
-    checkMkdtempConvention: () => ({ checked: true, testFilesScanned: 0, violations: [], scannedPaths: [] }),
-    checkPropertyGeneratorReach: () => ({ checked: true, propertyFilesScanned: 0, scannedPaths: [] }),
-    checkShellEntryPointDrive: () => ({ checked: true, shellTestsScanned: 0, entryPointsNamed: 0 }),
-    checkOrphanedAuthoredDocs: () => ({ checked: true, docsTouched: false }),
-    checkUnreachableStepHandlers: () => ({ checked: true, stepFilesScanned: 0, patternsChecked: 0 }),
-    checkMultiBranchParserCoverage: () => ({ checked: true, parsersScanned: 0 }),
-    checkPerHatRolePromptEvidence: () => ({ checked: true, verdictsScanned: 0 }),
     moveTicketToDone: () => {
       calls.move += 1;
       return { moved: true, destination: '/repo/backlog/done/BL-741.yaml' };
@@ -219,9 +136,8 @@ test('landPilotedTicket refuses crap-violation before move', async () => {
       calls.receipt += 1;
     },
     getLandedCommit: () => 'a'.repeat(40),
-    checkOriginMainLanding: () => ({ reachable: true }),
     now: () => '2026-08-26T00:00:00.000Z',
-  });
+  }));
   assert.equal(outcome.landed, false);
   assert.equal(outcome.reasonKind, 'crap-violation');
   assert.match(outcome.reason, new RegExp(PILOT_CRAP_VIOLATION_REFUSAL));

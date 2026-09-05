@@ -7,6 +7,7 @@ const {
   UNREACHABLE_STEP_HANDLER_REFUSAL,
 } = require('../out/tools/unreachableStepHandlerCheck');
 const { landPilotedTicket } = require('../out/tools/pilotAcceptanceGate');
+const { makeAcceptanceGateDeps } = require('./helpers/pilotAcceptanceGateDeps');
 
 // BL-753 declared invariant 1 (backlog/active/BL-753-...yaml):
 // "A registered step pattern in a run-touched specs/pipeline/steps/*.js file
@@ -34,38 +35,16 @@ function pairedStepFile(patternSource, featureName = FEATURE_NAME) {
   };
 }
 
+// BL-1229: built on the shared, contract-checked base
+// (helpers/pilotAcceptanceGateDeps.js) - only this file's own overrides
+// are listed here now.
 function mkGateDeps(unreachableOutcome) {
   const calls = { move: 0, receipt: 0 };
-  let executedFeaturePath;
   return {
     calls,
-    deps: {
-      readAcceptanceDeclaration: () => 'specs/features/fixture.feature',
-      resolveFeatureFilePath: () => '/repo/specs/features/fixture.feature',
-      isLifecycleTeardownTicket: () => false,
-      assessMultiworktreeFixture: () => ({
-        satisfied: true,
-        metadata: { worktreeCount: 1, siblingHandoffdRoots: [], pilotRoot: '/repo' },
-      }),
-      runAcceptance: async () => ({ success: true, output: 'ok' }),
-      recordAcceptanceExecution: (featureFilePath) => {
-        executedFeaturePath = featureFilePath;
-      },
-      readAcceptanceExecution: () => executedFeaturePath,
+    deps: makeAcceptanceGateDeps({
       checkCommitClaims: () => ({ checked: true, commitsChecked: 0 }),
-      checkCrossFileDuplication: () => ({ checked: true, filesScanned: 0 }),
-    checkScopedCrap: () => ({ checked: true, tsFilesScanned: 0, violations: [] }),
-    checkMkdtempConvention: () => ({ checked: true, testFilesScanned: 0, violations: [], scannedPaths: [] }),
-    checkPropertyGeneratorReach: () => ({ checked: true, propertyFilesScanned: 0, scannedPaths: [] }),
-      checkShellEntryPointDrive: () => ({
-        checked: true,
-        shellTestsScanned: 0,
-        entryPointsNamed: 0,
-      }),
-      checkOrphanedAuthoredDocs: () => ({ checked: true, docsTouched: false }),
       checkUnreachableStepHandlers: () => unreachableOutcome,
-      checkMultiBranchParserCoverage: () => ({ checked: true, parsersScanned: 0 }),
-      checkPerHatRolePromptEvidence: () => ({ checked: true, verdictsScanned: 0 }),
       moveTicketToDone: () => {
         calls.move += 1;
         return { moved: true, destination: '/repo/backlog/done/BL-753-prop.yaml' };
@@ -74,9 +53,8 @@ function mkGateDeps(unreachableOutcome) {
         calls.receipt += 1;
       },
       getLandedCommit: () => 'a'.repeat(40),
-      checkOriginMainLanding: () => ({ reachable: true }),
       now: () => '2026-08-26T00:00:00.000Z',
-    },
+    }),
   };
 }
 

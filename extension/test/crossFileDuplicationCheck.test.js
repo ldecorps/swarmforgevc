@@ -7,6 +7,7 @@ const {
   CROSS_FILE_DUPLICATION_REFUSAL,
 } = require('../out/tools/crossFileDuplicationCheck');
 const { landPilotedTicket } = require('../out/tools/pilotAcceptanceGate');
+const { makeAcceptanceGateDeps } = require('./helpers/pilotAcceptanceGateDeps');
 
 function helpBlock(label) {
   const lines = [];
@@ -16,32 +17,12 @@ function helpBlock(label) {
   return lines.join('\n');
 }
 
+// BL-1229: built on the shared, contract-checked base
+// (helpers/pilotAcceptanceGateDeps.js) - only this file's own
+// call-counting overrides are listed here now.
 function mkDeps(overrides) {
   const calls = { move: 0, writeReceipt: 0 };
-  let executedFeaturePath;
-  const deps = {
-    readAcceptanceDeclaration: () => 'specs/features/fixture.feature',
-    resolveFeatureFilePath: () => '/repo/specs/features/fixture.feature',
-    isLifecycleTeardownTicket: () => false,
-    assessMultiworktreeFixture: () => ({
-      satisfied: true,
-      metadata: { worktreeCount: 1, siblingHandoffdRoots: [], pilotRoot: '/repo' },
-    }),
-    runAcceptance: async () => ({ success: true, output: 'ok' }),
-    recordAcceptanceExecution: (featureFilePath) => {
-      executedFeaturePath = featureFilePath;
-    },
-    readAcceptanceExecution: () => executedFeaturePath,
-    checkCommitClaims: () => ({ checked: true, commitsChecked: 1 }),
-    checkCrossFileDuplication: () => ({ checked: true, filesScanned: 0 }),
-    checkScopedCrap: () => ({ checked: true, tsFilesScanned: 0, violations: [] }),
-    checkMkdtempConvention: () => ({ checked: true, testFilesScanned: 0, violations: [], scannedPaths: [] }),
-    checkPropertyGeneratorReach: () => ({ checked: true, propertyFilesScanned: 0, scannedPaths: [] }),
-    checkShellEntryPointDrive: () => ({ checked: true, shellTestsScanned: 0, entryPointsNamed: 0 }),
-    checkOrphanedAuthoredDocs: () => ({ checked: true, docsTouched: false }),
-    checkUnreachableStepHandlers: () => ({ checked: true, stepFilesScanned: 0, patternsChecked: 0 }),
-    checkMultiBranchParserCoverage: () => ({ checked: true, parsersScanned: 0 }),
-    checkPerHatRolePromptEvidence: () => ({ checked: true, verdictsScanned: 0 }),
+  const deps = makeAcceptanceGateDeps({
     moveTicketToDone: () => {
       calls.move += 1;
       return { moved: true, destination: '/repo/backlog/done/BL-737-fixture.yaml' };
@@ -49,11 +30,9 @@ function mkDeps(overrides) {
     writeReceipt: () => {
       calls.writeReceipt += 1;
     },
-    getLandedCommit: () => 'abc1234567',
-    checkOriginMainLanding: () => ({ reachable: true }),
     now: () => '2026-08-26T00:00:00.000Z',
     ...overrides,
-  };
+  });
   return { deps, calls };
 }
 

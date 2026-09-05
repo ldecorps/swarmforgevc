@@ -2,6 +2,7 @@ const assert = require('node:assert/strict');
 const { test } = require('node:test');
 const fc = require('fast-check');
 const { landPilotedTicket } = require('../out/tools/pilotAcceptanceGate');
+const { makeAcceptanceGateDeps } = require('./helpers/pilotAcceptanceGateDeps');
 
 // BL-727 declared invariants (backlog/active/BL-727-bl718-pilot-missed-unwired-acceptance.yaml):
 // 1. A piloted ticket reaches backlog/done/ only after its own declared
@@ -38,24 +39,17 @@ const { landPilotedTicket } = require('../out/tools/pilotAcceptanceGate');
 
 const DECL_KINDS = ['absent', 'inline', 'missingPath', 'existingFile'];
 
+// BL-1229: built on the shared, contract-checked base
+// (helpers/pilotAcceptanceGateDeps.js) - only this file's own overrides
+// (its conditional shapes per test axis) are listed here now.
 function buildDeps(declKind, contractGreen, calls, claimUnsupported = false, crossFileDup = false, shellDriveMiss = false) {
-  let executedFeaturePath;
-  return {
+  return makeAcceptanceGateDeps({
     readAcceptanceDeclaration: () => (declKind === 'absent' ? undefined : 'specs/features/fixture.feature'),
     resolveFeatureFilePath: () => (declKind === 'existingFile' ? '/repo/specs/features/fixture.feature' : undefined),
-    isLifecycleTeardownTicket: () => false,
-    assessMultiworktreeFixture: () => ({
-      satisfied: true,
-      metadata: { worktreeCount: 1, siblingHandoffdRoots: [], pilotRoot: '/repo' },
-    }),
     runAcceptance: async () =>
       contractGreen
         ? { success: true, output: 'ok' }
         : { success: false, output: 'Scenario "S": no step handler matched "Given x"' },
-    recordAcceptanceExecution: (featureFilePath) => {
-      executedFeaturePath = featureFilePath;
-    },
-    readAcceptanceExecution: () => executedFeaturePath,
     checkCommitClaims: () =>
       claimUnsupported
         ? { checked: true, commitsChecked: 1, unsupported: { commit: 'a'.repeat(10), identifier: 'x!', sentence: 'restore x!' } }
@@ -68,9 +62,6 @@ function buildDeps(declKind, contractGreen, calls, claimUnsupported = false, cro
             duplication: { fingerprint: 'x'.repeat(40), paths: ['a.sh', 'b.sh', 'c.sh'] },
           }
         : { checked: true, filesScanned: 0 },
-    checkScopedCrap: () => ({ checked: true, tsFilesScanned: 0, violations: [] }),
-    checkMkdtempConvention: () => ({ checked: true, testFilesScanned: 0, violations: [], scannedPaths: [] }),
-    checkPropertyGeneratorReach: () => ({ checked: true, propertyFilesScanned: 0, scannedPaths: [] }),
     checkShellEntryPointDrive: () =>
       shellDriveMiss
         ? {
@@ -80,10 +71,6 @@ function buildDeps(declKind, contractGreen, calls, claimUnsupported = false, cro
             miss: { entryPoint: 'stop-swarm.sh', testPath: 'swarmforge/scripts/test/t.sh' },
           }
         : { checked: true, shellTestsScanned: 0, entryPointsNamed: 0 },
-    checkOrphanedAuthoredDocs: () => ({ checked: true, docsTouched: false }),
-    checkUnreachableStepHandlers: () => ({ checked: true, stepFilesScanned: 0, patternsChecked: 0 }),
-    checkMultiBranchParserCoverage: () => ({ checked: true, parsersScanned: 0 }),
-    checkPerHatRolePromptEvidence: () => ({ checked: true, verdictsScanned: 0 }),
     moveTicketToDone: () => {
       calls.move += 1;
       return { moved: true, destination: '/repo/backlog/done/BL-PROP-fixture.yaml' };
@@ -95,9 +82,8 @@ function buildDeps(declKind, contractGreen, calls, claimUnsupported = false, cro
       calls.commit += 1;
       return 'a'.repeat(40);
     },
-    checkOriginMainLanding: () => ({ reachable: true }),
     now: () => '2026-07-31T00:00:00.000Z',
-  };
+  });
 }
 
 test('property: invariant 1 - lands iff the declared contract resolves to a real feature file AND runs green; every other shape fails closed', async () => {
