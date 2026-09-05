@@ -9,7 +9,12 @@
 const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const path = require('node:path');
-const { mkTmpDir } = require('../../../extension/test/helpers/tmpDir');
+// mkProcessTmpDir, not mkTmpDir: this handler runs under specs/pipeline/
+// runtime.js's plain `node --test`, never under Vitest, so mkTmpDir's
+// afterEach sweep (registered only via vitest.config.mjs's setupFiles) never
+// fires here - every acceptance run would leak its scratch root. Cleaned up
+// on process exit instead (BL-971's sweep-by-prefix backstop still applies).
+const { mkProcessTmpDir } = require('../../../extension/test/helpers/tmpDir');
 const {
   buildTurnProfileWindowRecord,
 } = require('../../../extension/out/metrics/turnProfileProducer');
@@ -53,7 +58,7 @@ function shellLine(atMs, command) {
 
 function ensureCtx(ctx) {
   if (!ctx.bl1364) {
-    ctx.bl1364 = { root: mkTmpDir('aps-bl1364-'), paths: [], trail: [] };
+    ctx.bl1364 = { root: mkProcessTmpDir('aps-bl1364-'), paths: [], trail: [] };
   }
   return ctx.bl1364;
 }
