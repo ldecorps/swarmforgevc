@@ -1,0 +1,168 @@
+id: BL-1410
+title: "Seventeen acceptance step handlers take their fixture root from extension/test's mkTmpDir, whose Vitest afterEach sweep the node --test acceptance runner never loads, so every acceptance run of those features leaks its scratch root; two more define a local bare mkdtemp that leaks under any runner - migrate this sub-class to the steps-lane helper, the targeted migration BL-1226's gate deliberately leaves out"
+milestone: M8
+type: defect
+severity: medium
+# medium: real but contained. Temp-directory litter on every acceptance run
+# of eleven-plus features, and two handlers that leak under Vitest as well;
+# the /tmp census BL-1226 cites (24774 bl* dirs) is what this class
+# accumulates into. No live fault, no safety signal broken. Not low: the
+# hardener found it on a parcel it was NOT reviewing for, and the cleaner had
+# to catch BL-1364's instance by hand - the class recurs one handler at a
+# time until the population is migrated and BL-1226's gate lands behind it.
+status: todo
+epic: code-quality-gates
+priority: 30
+direction: swarm-reported
+depends_on: []
+mutation_cost: low
+slice_size_envelope: low
+required_stages: [coder, cleaner, architect, hardender, documenter, qa]
+
+acceptance: specs/features/BL-1410-step-handlers-take-their-fixture-root-from-the-steps-lane-helper.feature
+
+required_wiring:
+  - 'specs/pipeline/steps/bl1410StepHandlersTakeTheStepsLaneRootSteps.js::registerSteps::the handler file exists so discovery registers every scenario (BL-1371)'
+
+invariants:
+  - "A fixture root an acceptance step handler creates is removed by the run's process exit on every path, abort included, because the helper that created it tracks it - never because a per-test hook fired (the runner loads none) and never because something listed the temp directory by prefix (BL-1385/BL-1390)."
+  - "Migration never rewrites test DATA: a handler that carries mkTmpDir inside a string literal as a fixture for a convention-gate feature keeps that literal byte-for-byte; only real imports, definitions and calls change, and those features stay green."
+
+human_approval: pending
+approval_context: >
+  A new feature file is authored here, so it needs a tap. No choice is posed
+  and there are no ruling_options.
+  .
+  Context you may remember: BL-1226 (approved) ended its own approval_context
+  with a question - whether a separate migration slice should be minted for
+  the already-leaking step handlers - and, minted before ruling_options
+  existed, recorded no answer when you approved it. This ticket answers the
+  NARROW half of that question: the 17-file mkTmpDir sub-class the hardener
+  found on 2026-09-05, where the fix is mechanical and the target helper
+  already exists. The 277 raw-mkdtemp handlers BL-1226 counted stay
+  undecided; nothing here touches them.
+
+description: |
+  ## What is wrong
+
+  `extension/test/helpers/tmpDir.js`'s `mkTmpDir` only creates and records a
+  root; removal happens in `sweepPendingTmpDirs`, which a Vitest `afterEach`
+  (registered by `tmpDirSetup.js` through `vitest.config.mjs`) calls after
+  every test. The acceptance runner is `specs/pipeline/runtime.js` under
+  plain `node --test`, launched by `specs/pipeline/scripts/run_acceptance.sh`
+  and `cli.js`; it loads no Vitest setup file, so under it `mkTmpDir` is a
+  bare `mkdtempSync` that nothing ever removes.
+
+  The hardener found the shape on BL-1364's handler (fixed there with the
+  same module's `mkProcessTmpDir`, which removes on process exit) and
+  grepped the lane: 17 step handlers reference `mkTmpDir`. Audited by the
+  specifier on 2026-09-05, reading imports and code calls rather than bare
+  mentions:
+
+  | shape | files |
+  |---|---|
+  | import the Vitest-swept helper AND call it - leak under acceptance | bl1112, bl420, bl450, bl492, bl511, bl664, bl665, bl743, bl771 (9) |
+  | define a LOCAL `mkTmpDir` = bare `mkdtempSync`, no `rmSync` anywhere - leak under any runner | bl551, bl565 (2) |
+  | import the helper, no plain code call found - audit (the convention-gate handlers among them write the name into scratch files as test DATA) | bl1066, bl1209, bl1280, bl868 (4) |
+  | mention the name in a string only, no import - out of scope | bl1038, bl1071 (2) |
+
+  (`bl1112...Steps.js` and the like are `specs/pipeline/steps/<name>Steps.js`.)
+
+  ## Why a ticket and not a hardening-pass fix
+
+  BL-1226 builds the GATE for this lane - touched-path only, by design, and
+  it says in its own words "no legacy migration in this slice". Its
+  approval_context asked whether a migration slice should follow and named
+  a targeted one as plausible and a 277-file sweep as not. This is that
+  targeted slice, for the one sub-class whose fix is a helper swap. The
+  hardener declined to fold 16 other tickets' files into a BL-1364 pass,
+  which was right (BL-506: an approval authorizes only its ticket's work).
+
+  ## How (direction, not mandate)
+
+  - Target helper: `specs/pipeline/steps/lib/socketFixtureRoot.js`'s
+    `mkSocketFixtureRoot` - the steps-lane convention (BL-948; 92 handlers
+    already use it) and the route BL-1226's gate will exempt. It tracks
+    every root and removes stragglers on process exit, throw paths included.
+    `mkProcessTmpDir` from the extension/test module removes on exit too and
+    is what BL-1364 and BL-1365 reached for this week; it is acceptable
+    where a handler has a stated reason to keep an `os.tmpdir()` base, but
+    one convention per lane is the cleaner's preference - say which in the
+    evidence rather than mixing silently.
+  - The two local definitions (bl551, bl565) are the worst of the set and
+    the simplest fix: delete the local function, import the helper.
+  - The four audit files: decide per file whether the import is a real call
+    the regex missed or an unused import; an unused import is removed, a
+    string literal is left alone (invariant 2). `bl743`, `bl1209`, `bl1280`
+    and `bl420` are the convention-gate features' own handlers and write
+    `const { mkTmpDir } = require('./helpers/tmpDir')` INTO scratch fixture
+    files on purpose - BL-1226 names this self-exemption trap for a
+    scanner, and it applies to a migration just the same.
+  - Scenario 01's observable is helper-agnostic on purpose: trace fixture
+    root creation in the child acceptance process (a preload that wraps
+    `fs.mkdtempSync` and records each path is the obvious way), then assert
+    none of the recorded roots exists after the child exits. Never assert
+    by listing the temp directory: `socketFixtureRoot` uses a fixed short
+    `/tmp` base, not `os.tmpdir()`, so a `TMPDIR` sandbox would see nothing,
+    and a prefix listing is the concurrency bomb BL-1385/BL-1390 already
+    detonated twice.
+  - Scenario 02 must read handlers as CODE - real `require` statements and
+    function definitions - not grep text, or it flags its own fixture data
+    (scenario 03 is the guard against that).
+
+  ## Explicitly NOT in scope
+
+  - The gate: BL-1226. This ticket touches neither
+    `pilotMkdtempConventionCheck.ts` nor its scope constant.
+  - The 277 raw-mkdtemp handlers with no cleanup and the 92 with cleanup
+    outside a finally (BL-1226's census). A different, larger decision.
+  - The runner's own teardown seam: BL-1357.
+
+qa_e2e_procedure: |
+  1. Baseline on main: pick BL-565's feature, run
+     `specs/pipeline/scripts/run_acceptance.sh specs/features/BL-565-*.feature`
+     under a tracing preload that logs every `mkdtempSync` result, and
+     confirm at least one logged root still exists afterwards (the leak).
+  2. On the parcel: repeat for each Examples row (BL-551, BL-565, BL-664,
+     BL-771); every scenario run passes, at least one root was created,
+     none survives the process.
+  3. Read every `specs/pipeline/steps/*.js` as code: zero `require` of
+     `helpers/tmpDir` that binds `mkTmpDir`, zero `function mkTmpDir`
+     definitions. The string-literal occurrences in bl743/bl1209/bl1280/bl420
+     are byte-identical to main (`git diff main -- <file>` shows only import
+     and call-site changes, if any).
+  4. Run the four convention-gate features (BL-420, BL-743, BL-1209,
+     BL-1280) and the four Examples features: all green.
+  5. Nothing in the parcel lists `os.tmpdir()` or `/tmp` by prefix to clean
+     up; removal is the helper's exit hook only.
+
+notes: |
+  Minted 2026-09-05 by the specifier from the hardener's priority-00
+  spec-gap note on BL-1364 ("17 step files use mkTmpDir (leaks under
+  acceptance)"), hardener evidence
+  `backlog/evidence/BL-1364-hardener-pass-20260905b.md` (hardener branch).
+  The coder had recorded the same observation on BL-1365 the same night.
+  Not a bounce: BL-1364 forwarded to the documenter with its own instance
+  fixed.
+
+  The hardener's note said no existing ticket covers the class; BL-1226 does
+  cover the GATE for it and is cross-referenced here and amended to point
+  back. The hardener's count (17) is files that mention the name; the table
+  above is the audited breakdown, and the firm migration set is the 11 in
+  its first two rows plus whatever the 4-file audit confirms.
+
+  `required_wiring` carries only the handler anchor: this is a migration
+  across 11-15 existing files, and any consumer anchor would be satisfied by
+  the parcel's own diff (BL-1235 fail-open).
+
+  IR-DRY at mint: 0 findings (11 step occurrences, 10 unique).
+
+  Mint-time INVEST: one observable outcome (the named features' acceptance
+  runs leave no root behind, and no handler takes the Vitest-swept route),
+  one sitting (a helper swap across a listed set), no unbuilt sibling -
+  BL-1226 is neither a dependency nor a dependant.
+
+source: |
+  Hardener note to specifier, priority 00, 2026-09-05T04:15Z: "spec-gap: 17
+  step files use mkTmpDir (leaks under acceptance), see BL-1364". Cleaner
+  note to hardener on BL-1364 (priority 50) first caught the instance.
