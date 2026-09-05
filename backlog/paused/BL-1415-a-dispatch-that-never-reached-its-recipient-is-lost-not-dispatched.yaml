@@ -29,7 +29,7 @@ invariants:
   - "The stall clock starts at the freshest of the dispatch's created_at or enqueued_at, the recipient copy's dequeued_at and completed_at, and any later handoff naming the ticket; a dispatch the recipient acted on less than the threshold ago is never a drop."
   - "DISPATCHED (live mail, or a git_handoff for the ticket in any mailbox state) always refuses without --force; DROPPED always routes with a warning naming the completed dispatch; missing data fails closed (not dropped) exactly as BL-1301 has it."
 
-human_approval: pending
+human_approval: approved
 approval_context: >
   RE-PENDED deliberately after your Approve tap (88d25c1108, 06:32:01 local):
   the ticket you approved said the coder never received the two Work notes.
