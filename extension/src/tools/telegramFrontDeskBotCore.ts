@@ -2883,19 +2883,25 @@ async function attemptProviderChatSeatDelivery(
   return outcome === 'not-mine' ? undefined : 'posted';
 }
 
-// BL-1402: gates persistRoutedPhoto to a message that is ACTUALLY about to
-// be routed with its caption - never a 'drop'ped/unauthorized message (out
-// of this ticket's scope: only a captioned photo the front desk routes) and
-// never a message with no photo at all. A failure logs its own bounded
-// audit line (formatPhotoPersistFailureAuditLine) through the same injected
-// sink formatDropAuditLine already uses - it is not a drop, so it gets its
-// own line shape rather than reusing that one.
+// BL-1402: gates persistRoutedPhoto to a decision whose posted text will
+// ACTUALLY carry photoOutcome via annotateSavedPhotoPath - the three action
+// kinds processMessageUpdate applies it to below ('post-existing',
+// 'operator-context', isOpenDecision's 'open-default'/'open-for-topic').
+// An allowlist, not a 'drop'-only exclusion: architect bounce 1 found that
+// excluding only 'drop' let an approvals/recert-topic reply's photo (never
+// consuming the outcome - deliverApprovalsTopicReply/deliverRecertTopicReply
+// call annotateRoutedMediaText directly, with no saved-path line) through
+// the gate anyway, wasting a fetch/write and risking pruneMediaStore
+// evicting a photo a DIFFERENT, actually-referenced message saved. An
+// allowlist fails safe against any future decision kind too: unrecognized
+// means "don't persist", never "persist by default".
 async function persistPhotoIfRouted(
   update: TelegramUpdate,
   decision: BotUpdateDecision,
   adapters: PollAdapters
 ): Promise<PhotoPersistOutcome> {
-  if (decision.action === 'drop' || !update.message?.photo || !adapters.persistRoutedPhoto) {
+  const consumesOutcome = decision.action === 'post-existing' || decision.action === 'operator-context' || isOpenDecision(decision);
+  if (!consumesOutcome || !update.message?.photo || !adapters.persistRoutedPhoto) {
     return { kind: 'not-applicable' };
   }
   const outcome = await adapters.persistRoutedPhoto(update);
