@@ -7,7 +7,7 @@ epic: deterministic-transit-assist
 priority: 1
 direction: human-requested
 depends_on: []
-decomposes_into: [BL-668, BL-1360, BL-1361, BL-1362, BL-1363, BL-1366, BL-1370]
+decomposes_into: [BL-668, BL-1360, BL-1361, BL-1362, BL-1363, BL-1366, BL-1370, BL-1411]
 remaining_slices: |
   - BL-668 (LANDED, and it did not work): post-QA deterministic branch sweep.
     Shipped and running on the handoffd cadence, but measured 2026-09-03 across
@@ -43,6 +43,11 @@ remaining_slices: |
     git-only state moves. BL-1361's measurement is the argument for it: the
     ff-only sweep cannot reach 97% of cases and a real merge in a clean
     worktree is what can.
+  - BL-1411 (filed 2026-09-05, closing-ceremony lean pass): swarm_handoff.sh
+    refuses a git_handoff whose acceptance feature file main amended since the
+    sender's merge-base. The in-flight amendment note (BL-317/BL-325) failed in
+    both directions on 2026-09-05 (BL-1370: never sent; BL-1353: sent too late);
+    this checks the contract mechanically at the send instead.
   - Commit half of "commit and hand off" (unfiled): commit --only <declared
     paths> before the send. Split out of BL-1360 deliberately - staging on an
     agent's behalf in a shared checkout is where BL-506 ticket-scope discipline
