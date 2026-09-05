@@ -1,3 +1,8 @@
+# mutation-stamp: sha256=0b16aa7bddbeb8a6d8dbba48957b001781627b34d9a86077a18b28c9d14d9882
+# acceptance-mutation-manifest-begin
+# {"version":1,"tested_at":"2026-09-05T10:55:36.960654758Z","feature_name":"BL-1414 A repeating freshness violation is announced on its first tick, then digested, never every tick","feature_path":"/home/carillon/swarmforgevc/.worktrees/hardender/specs/features/BL-1414-a-repeating-freshness-violation-is-announced-once-then-digested.feature","background_hash":"25d7122d0c3f0d9fca153ee416c415fe5e8eb03265cbdb495c25a760a704ef9a","implementation_hash":"unknown","scenarios":[{"index":4,"name":"a different daemon or reason is its own first announce","scenario_hash":"c58dc77644e9feb77dee28efe4d48fca751e08cf3215b8d87a379caafbfd5b24","mutation_count":2,"result":{"Total":2,"Killed":2,"Survived":0,"Errors":0},"tested_at":"2026-09-05T10:55:36.960654758Z"}]}
+# acceptance-mutation-manifest-end
+
 Feature: BL-1414 A repeating freshness violation is announced on its first tick, then digested, never every tick
 
   The freshness check announces every violation it records, and it records
