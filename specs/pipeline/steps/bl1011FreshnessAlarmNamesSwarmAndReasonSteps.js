@@ -24,6 +24,7 @@ const fs = require('node:fs');
 const os = require('node:os');
 const path = require('node:path');
 const { execFileSync } = require('node:child_process');
+const { writeGuardSatisfyingRows } = require('../../../extension/test/helpers/freshnessFixture');
 
 const FEATURE = 'A freshness alarm names its swarm and why it fired';
 
@@ -51,6 +52,20 @@ function makeRoot() {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), 'bl1011acc-'));
   fs.mkdirSync(path.join(root, '.swarmforge', 'daemon'), { recursive: true });
   fs.writeFileSync(path.join(root, 'freshness.conf'), FIXTURE_CONF);
+  // BL-1420: the registry guard's second arm walks the live scripts
+  // directory for *_supervisor.bb with no seam - a fixture conf naming
+  // only handoffd is refused the instant one exists on disk. One row +
+  // fresh heartbeat per live supervisor (derived from the same glob the
+  // guard walks), plus the FRESHNESS_REQUIRED registry the guard's first
+  // arm reads, lets the guard pass on this fixture's own terms.
+  writeGuardSatisfyingRows({
+    root,
+    daemonRelDir: '.swarmforge/daemon',
+    confPath: path.join(root, 'freshness.conf'),
+    requiredPath: path.join(root, 'freshness_required.conf'),
+    requiredNames: ['handoffd'],
+    nowEpoch: PINNED_EPOCH,
+  });
   return root;
 }
 
@@ -68,6 +83,7 @@ function runChecker(root, { nowEpoch, creds }) {
     HOME: root,
     FRESHNESS_ROOT: root,
     FRESHNESS_CONF: path.join(root, 'freshness.conf'),
+    FRESHNESS_REQUIRED: path.join(root, 'freshness_required.conf'),
     FRESHNESS_NOW_EPOCH: String(nowEpoch),
     FRESHNESS_INCIDENT_FILE: path.join(root, 'incidents.log'),
     FRESHNESS_COOL_OFF_SECS: '300',
