@@ -1,10 +1,14 @@
 'use strict';
 
 const assert = require('node:assert/strict');
+const fs = require('node:fs');
+const path = require('node:path');
+const { mkTmpDir } = require('./helpers/tmpDir');
 const {
   main,
   readTree,
   checkFeatureHandlerRegistration,
+  createFsIo,
 } = require('../out/tools/check-feature-handler-registration');
 
 // BL-1303: the CLI is a thin wrapper over the pure assessor (engineering.prompt,
@@ -124,6 +128,26 @@ test('readTree lists a handler nested in a subdirectory of the steps directory',
   assert.deepEqual(tree.stepFiles, [`${STEPS}/index.js`, `${STEPS}/nested/bl9009XSteps.js`]);
 });
 
+// BL-1400: readTree sorts stepFiles after the recursive listTree walk - a
+// real recursive readdirSync's order is not alphabetical across
+// subdirectories, so an unsorted result would make the assessor's own
+// "first offender named" ordering (KIND_ORDER, offenderKey) nondeterministic
+// across a real run vs. this fake io. The fake io above returns names in
+// object-key (insertion) order, so this fixture inserts a LATER-alphabetical
+// name first specifically to distinguish "sorted" from "insertion order" -
+// a fixture already in alphabetical order would pass whether or not .sort()
+// ran.
+test('readTree returns stepFiles sorted, regardless of the tree walk\'s own order', () => {
+  const tree = readTree(
+    io({
+      [`${STEPS}/zLast.js`]: 'module.exports = {};',
+      [`${STEPS}/aFirst.js`]: 'module.exports = {};',
+      [`${STEPS}/index.js`]: 'const DOMAINS = [];',
+    })
+  );
+  assert.deepEqual(tree.stepFiles, [`${STEPS}/aFirst.js`, `${STEPS}/index.js`, `${STEPS}/zLast.js`]);
+});
+
 test('readTree keeps lib files out of the step files - a helper is not a handler', () => {
   const tree = readTree(
     io({
@@ -173,3 +197,40 @@ for (const [relation, registry] of [
     assert.deepEqual(deps.written, []);
   });
 }
+
+// BL-1400: createFsIo.listTree is the real-filesystem implementation the CLI
+// actually runs through main() - the CLI's own thin-wrapper contract keeps it
+// out of every fake-io test above. Unit-tested here directly against a real
+// mkdtemp tree so its recursion, its files-only filter, and its missing-dir
+// fallback are asserted rather than only reached indirectly through a
+// subprocess (the shell/acceptance runs, which score 0% in-process coverage
+// per engineering.prompt's CLI thin-wrapper rule).
+test('createFsIo.listTree lists files at every depth as paths relative to the given directory', () => {
+  const root = mkTmpDir('bl1400-list-tree-');
+  fs.mkdirSync(path.join(root, 'steps', 'nested', 'deeper'), { recursive: true });
+  fs.writeFileSync(path.join(root, 'steps', 'top.js'), '');
+  fs.writeFileSync(path.join(root, 'steps', 'nested', 'mid.js'), '');
+  fs.writeFileSync(path.join(root, 'steps', 'nested', 'deeper', 'bottom.js'), '');
+
+  const io = createFsIo(root);
+  assert.deepEqual(
+    io.listTree('steps').sort(),
+    ['nested/deeper/bottom.js', 'nested/mid.js', 'top.js'].sort()
+  );
+});
+
+test('createFsIo.listTree excludes directories - only files (and symlinks) are listed', () => {
+  const root = mkTmpDir('bl1400-list-tree-');
+  fs.mkdirSync(path.join(root, 'steps', 'emptyDir'), { recursive: true });
+  fs.writeFileSync(path.join(root, 'steps', 'real.js'), '');
+  fs.symlinkSync(path.join(root, 'steps', 'real.js'), path.join(root, 'steps', 'linked.js'));
+
+  const io = createFsIo(root);
+  assert.deepEqual(io.listTree('steps').sort(), ['linked.js', 'real.js'].sort());
+});
+
+test('createFsIo.listTree returns [] for a directory that does not exist', () => {
+  const root = mkTmpDir('bl1400-list-tree-');
+  const io = createFsIo(root);
+  assert.deepEqual(io.listTree('does-not-exist'), []);
+});
