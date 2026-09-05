@@ -152,3 +152,15 @@ second-half question (`asked_at_ms` 1788515527872);
 new paired); SUP-17 through 2026-09-05T04:04Z carries only the operator's
 session-death reports after the 21:38Z BL-1402 filing — no reply on what "the
 spec tip text filter" is. Waiting on the answer, not minting against a guess.
+
+**DRAINED 2026-09-05 ~05:30Z (specifier) → BL-1412.** The coordinator's
+priority-00 note of 05:08Z, "Mint: filter for Spec-tree milestones view
+(human asked ~08-26, lost)", settles what the truncated sentence meant: a
+text filter on the live Mini App console's Spec tree (BL-592), the Telegram
+view the human named on 09-04. "spec tip" reads as "spec tree" through the
+truncation. Minted as `backlog/paused/BL-1412-a-text-filter-on-the-live-spec-tree.yaml`
+with BL-254's filter semantics (already accepted on the static PWA),
+`human_approval: pending` so the human can Amend if the lost ~08-26 ask went
+further. Relayed answer filed at
+`backlog/answers-archive/ANSWER-2026-09-05-spec-tree-text-filter-via-coordinator.md`;
+this intake moves to `backlog/archive/`.
