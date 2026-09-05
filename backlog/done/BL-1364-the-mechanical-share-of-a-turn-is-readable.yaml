@@ -171,3 +171,5 @@ source: |
   scenario 05 exists to draw. Scenario 05 reuses 03's and 01's step texts
   otherwise, so its handler adds one Given and two Thens.
   Spec defect at mint, mine; no bounce, the coder holds the parcel uncommitted.
+
+abandoned_commits: [f97bce44d4]
