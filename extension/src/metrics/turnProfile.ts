@@ -1,11 +1,19 @@
 import { computeTrend, TrendSeriesPoint } from './trend';
 import type { TrendedNumber } from '../notify/costHealthSidecar';
+import { INTERVAL_CATEGORIES } from './transcriptWalker';
 import type { CoverageWindow, ClassifiedInterval, IntervalCategory } from './transcriptWalker';
 
 export interface TurnProfileStageEntry {
   stage: string;
   mechanicalShare: TrendedNumber;
   turnOverheadShare: TrendedNumber;
+  /**
+   * BL-1364: every category the walker classifies, not only the two the
+   * original consumers asked for - a stage whose turns were entirely test-run
+   * or thinking-writing had no readable share at all before. Keyed from
+   * INTERVAL_CATEGORIES so this can never drift from the walker (BL-897).
+   */
+  categoryShares: Record<IntervalCategory, number>;
 }
 
 export interface TurnProfileSeries {
@@ -27,6 +35,18 @@ function categoryShare(intervals: ClassifiedInterval[], category: IntervalCatego
     .filter((row) => row.category === category)
     .reduce((sum, row) => sum + Math.max(0, row.endMs - row.startMs), 0);
   return catMs / total;
+}
+
+// A stage that IS in the series was worked, so a category it never used is a
+// measured zero and belongs here as one. The absent-versus-zero distinction
+// invariant 1 protects is about STAGES, and is enforced one level up by only
+// ever emitting stages the walker actually saw intervals for.
+function allCategoryShares(intervals: ClassifiedInterval[]): Record<IntervalCategory, number> {
+  const shares = {} as Record<IntervalCategory, number>;
+  for (const category of INTERVAL_CATEGORIES) {
+    shares[category] = categoryShare(intervals, category);
+  }
+  return shares;
 }
 
 function trendedShare(value: number, periodStart: string): TrendedNumber {
@@ -54,6 +74,7 @@ export function buildTurnProfileSeries(
     stage,
     mechanicalShare: trendedShare(categoryShare(stageIntervals, 'git-mechanical'), periodStart),
     turnOverheadShare: trendedShare(categoryShare(stageIntervals, 'turn-overhead'), periodStart),
+    categoryShares: allCategoryShares(stageIntervals),
   }));
   return {
     stages,
