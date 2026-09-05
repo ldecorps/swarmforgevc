@@ -148,6 +148,13 @@ boot_handoffd() {
   printf '%s\n' "$$" > "$work/.fixture-owner-pid" 2>/dev/null || true
   # shellcheck disable=SC2064
   trap "rm -rf '$work'" RETURN
+  # BL-1289: the RETURN trap above is the precise cleanup (fires the moment
+  # this function returns); this EXIT trap is a redundant backstop for the
+  # tempDirTrapGuard convention (which recognises EXIT, not RETURN) - by the
+  # time the process exits, $work is already gone, so this rm -rf is a
+  # harmless no-op in the normal case.
+  # shellcheck disable=SC2064
+  trap "rm -rf '$work'" EXIT
 
   local root="$work/repo"
   mkdir -p "$root/.swarmforge/daemon" "$root/swarmforge" "$root/docs/briefings" \

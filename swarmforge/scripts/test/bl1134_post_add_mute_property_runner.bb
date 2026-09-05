@@ -98,6 +98,7 @@
 
 ;; I2: read-only — lock observe and argv classify leave .git unchanged.
 (let [tmp (str (fs/create-temp-dir {:prefix "bl1134-prop-"}))
+      _ (.addShutdownHook (Runtime/getRuntime) (Thread. (fn [] (try (fs/delete-tree tmp) (catch Exception _ nil)))))
       git (fs/path tmp ".git")]
   (fs/create-dirs git)
   (let [before (set (map str (fs/list-dir git)))]

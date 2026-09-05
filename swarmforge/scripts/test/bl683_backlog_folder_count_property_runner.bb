@@ -12,6 +12,10 @@
 
 (def failures (atom []))
 
+(def created-temp-dirs (atom []))
+(.addShutdownHook (Runtime/getRuntime)
+                   (Thread. (fn [] (doseq [d @created-temp-dirs] (try (fs/delete-tree d) (catch Exception _ nil))))))
+
 (defn assert= [msg expected actual]
   (when (not= expected actual)
     (swap! failures conj (str "FAIL: " msg "\n  expected: " (pr-str expected) "\n  actual:   " (pr-str actual)))))
@@ -33,6 +37,7 @@
 
 (doseq [n [0 1 2 4 7]]
   (let [root (str (fs/create-temp-dir {:prefix "bl683-prop-"}))
+        _ (swap! created-temp-dirs conj root)
         active (str (fs/path root "backlog" "active"))]
     (populate! active n)
     (let [a (backlog-depth-lib/count-active-tickets active)

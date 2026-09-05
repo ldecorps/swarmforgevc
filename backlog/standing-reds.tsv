@@ -40,5 +40,4 @@ unit	extension/test/pricingTable.test.js	BL-1212	2026-08-28	PRICING_TABLE missin
 unit	extension/test/shellEntryPointDriveCheck.test.js	BL-1229	2026-08-28	landPilotedTicket deps contract outgrew its stubs
 unit	extension/test/telegramClient.test.js	BL-1263	2026-08-29	asserts behaviour a deliberate source change replaced
 unit	extension/test/telegramCursorOperatorExec.test.js	BL-1263	2026-08-29	ambulance engage/release message shape changed
-unit	extension/test/tempDirTrapGuard.test.js	BL-1289	2026-08-30	21 runners create a temp root with no cleanup path
 unit	extension/test/unreachableStepHandlerCheck.test.js	BL-1221	2026-08-28	landPilotedTicket required deps member unsupplied

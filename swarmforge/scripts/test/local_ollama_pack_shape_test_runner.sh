@@ -7,6 +7,7 @@ LIB="$SCRIPT_DIR/../local_ollama_pack_shape_lib.sh"
 GATE="$SCRIPT_DIR/../local_ollama_pack_shape_gate.sh"
 # shellcheck source=../local_ollama_pack_shape_lib.sh
 source "$LIB"
+source "$SCRIPT_DIR/lib/tmp_cleanup.sh"
 
 fail() { echo "FAIL: $*" >&2; exit 1; }
 pass() { echo "PASS: $*"; }
@@ -43,6 +44,7 @@ pass "04: qwen-forge forbidden; mono allowed"
 
 # ── 05: gate accepts real mono pack; refuses uncapped fixture ─────────────
 ROOT="$(cd "$(mktemp -d)" && pwd -P)"
+register_tmp_dir "$ROOT"
 mkdir -p "$ROOT/swarmforge/packs"
 printf '%s\n' "$MONO" > "$ROOT/swarmforge/packs/ollama-qwen3-mono-router.conf"
 bash "$GATE" "$ROOT" ollama-qwen3-mono-router >/dev/null \

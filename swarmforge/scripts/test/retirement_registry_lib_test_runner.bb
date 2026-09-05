@@ -10,6 +10,10 @@
 
 (def failures (atom []))
 
+(def created-temp-dirs (atom []))
+(.addShutdownHook (Runtime/getRuntime)
+                   (Thread. (fn [] (doseq [d @created-temp-dirs] (try (fs/delete-tree d) (catch Exception _ nil))))))
+
 (defn assert= [msg expected actual]
   (when (not= expected actual)
     (swap! failures conj (str "FAIL: " msg "\n  expected: " (pr-str expected) "\n  actual:   " (pr-str actual)))))
@@ -23,6 +27,7 @@
 
 (defn- mk-repo []
   (let [root (str (fs/create-temp-dir))]
+    (swap! created-temp-dirs conj root)
     (sh! root "git" "init" "-q")
     (sh! root "git" "-c" "user.email=t@t" "-c" "user.name=t" "commit" "-q" "--allow-empty" "-m" "init")
     root))

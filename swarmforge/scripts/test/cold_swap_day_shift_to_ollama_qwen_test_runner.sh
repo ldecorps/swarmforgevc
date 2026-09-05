@@ -5,11 +5,13 @@ set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 SWAP="$SCRIPT_DIR/../cold_swap_day_shift_to_ollama_qwen.sh"
 REPO="$(cd "$SCRIPT_DIR/../../.." && pwd)"
+source "$SCRIPT_DIR/lib/tmp_cleanup.sh"
 
 fail() { echo "FAIL: $*" >&2; exit 1; }
 pass() { echo "PASS: $*"; }
 
 ROOT="$(cd "$(mktemp -d)" && pwd -P)"
+register_tmp_dir "$ROOT"
 mkdir -p "$ROOT/swarmforge/packs" "$ROOT/swarmforge/scripts" "$ROOT/backlog/evidence"
 
 # Minimal mono pack + stub gates that succeed.

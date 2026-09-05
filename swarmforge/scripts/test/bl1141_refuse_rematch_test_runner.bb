@@ -20,8 +20,13 @@
 (def failures (atom []))
 (defn fail! [m] (swap! failures conj m))
 
+(def created-temp-dirs (atom []))
+(.addShutdownHook (Runtime/getRuntime)
+                   (Thread. (fn [] (doseq [d @created-temp-dirs] (try (fs/delete-tree d) (catch Exception _ nil))))))
+
 ;; Process B: ahead=0 behind>0 conflict foresight → refuse-rematch → rematch
 (let [daemon (str (fs/create-temp-dir {:prefix "bl1141-refuse-"}))
+      _ (swap! created-temp-dirs conj daemon)
       _ (master-main-reconcile-lib/write-state! daemon
                                                 {:surfaced "refuse-rematch" :ticks 13 :escalated false})
       counts (atom {:ahead 0 :behind 3})
@@ -60,6 +65,7 @@
 
 ;; Without rematch!: still surfaces (no MERGE_HEAD)
 (let [daemon (str (fs/create-temp-dir {:prefix "bl1141-no-rematch-"}))
+      _ (swap! created-temp-dirs conj daemon)
       adapters {:daemon-dir daemon
                 :fetch! (fn [] nil)
                 :rev-counts! (fn [] {:ahead 0 :behind 2})
@@ -80,6 +86,7 @@
 
 ;; IO fixture: diverged clean tip → rematch reaches behind=0, no MERGE_HEAD
 (let [root (str (fs/create-temp-dir {:prefix "bl1141-io-"}))
+      _ (swap! created-temp-dirs conj root)
       daemon (str (fs/path root ".swarmforge" "daemon"))
       _ (fs/create-dirs daemon)
       _ (git! root "init" "-b" "main")
@@ -89,6 +96,7 @@
       _ (git! root "add" "a.txt")
       _ (git! root "commit" "-m" "base")
       bare (str (fs/create-temp-dir {:prefix "bl1141-bare-"}))
+      _ (swap! created-temp-dirs conj bare)
       _ (process/sh "git" "init" "--bare" "-b" "main" bare)
       _ (git! root "remote" "add" "origin" bare)
       _ (git! root "push" "-u" "origin" "main")
