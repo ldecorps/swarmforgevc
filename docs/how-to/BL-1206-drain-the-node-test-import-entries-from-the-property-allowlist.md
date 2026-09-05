@@ -46,10 +46,18 @@ departed file actually passed when last measured, it reports any
 departure NOT backed by a recorded pass.
 
 At the end of this parcel, `property_suite_standing_allowlist.tsv` holds
-exactly one row: `test/hostActivityFeed.property.test.js`, red for an
-unrelated cause and deliberately left alone (out of scope for this
-ticket, named in its own acceptance scenario so a wholesale drain of the
-file would be caught).
+exactly one row: `test/hostActivityFeed.property.test.js`, left alone
+because its own defect (no test registration at all, not a `node:test`
+import — a mis-attribution the architect caught during this parcel's own
+review) is a different cause, out of scope here and named in this
+ticket's own acceptance scenario so a wholesale drain of the file would
+be caught. That row was itself cleared shortly after, and the
+mis-attribution corrected, by BL-1434 (2026-09-05): the file was a bare
+node script with no `test`/`it`/`describe` registration at all, so Vitest
+collected it and reported "no suite found" — a different failure shape
+from every `node:test`-import file this ticket converts. BL-1434
+registered its forty trials as `test(...)` calls and removed the
+register/allowlist rows in the same commit, per the standing-red rule.
 
 ## The standing guard
 
