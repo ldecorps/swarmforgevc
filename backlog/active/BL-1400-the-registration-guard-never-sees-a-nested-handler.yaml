@@ -103,3 +103,4 @@ source: |
   `BL-1388-coder-20260904.md` (coder branch), measured end to end.
 
 assigned_to: coder
+abandoned_commits: [ee22cd6641]
