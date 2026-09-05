@@ -1,3 +1,8 @@
+# mutation-stamp: sha256=a82f466bdd7d65d9c0dd3404247f5fe44749f50325e7d0d37ef9415bd53d6e1e
+# acceptance-mutation-manifest-begin
+# {"version":1,"tested_at":"2026-09-05T20:51:09.938003520Z","feature_name":"BL-1435 A root derived through git rev-parse is a live read the guard can see","feature_path":"/home/carillon/swarmforgevc/.worktrees/hardender/specs/features/BL-1435-a-rev-parse-root-is-a-live-read.feature","background_hash":"fbc4836ebc39ceb22acb8da25c934103c770686b59de7b1e88233a695dce9c36","implementation_hash":"unknown","scenarios":[{"index":0,"name":"a unit-lane test that binds its root through git rev-parse and grows with the repository is a violation","scenario_hash":"26ecdedce48e165efc57cd0ac8feb204927187d5d46ed478c8b50083e46ea1a8","mutation_count":3,"result":{"Total":3,"Killed":3,"Survived":0,"Errors":0},"tested_at":"2026-09-05T20:51:09.938003520Z"},{"index":1,"name":"the exemption rule applies to a rev-parse root exactly as to a path.join root","scenario_hash":"a135774058027b6450f5870119410e8fbe0c91e96e9f755c060bacac50cab671","mutation_count":4,"result":{"Total":4,"Killed":4,"Survived":0,"Errors":0},"tested_at":"2026-09-05T20:51:09.938003520Z"}]}
+# acceptance-mutation-manifest-end
+
 Feature: BL-1435 A root derived through git rev-parse is a live read the guard can see
 
   BL-1038's live-repository derivation guard refuses a unit-lane test whose

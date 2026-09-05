@@ -1,5 +1,24 @@
 # SwarmForge VS Code Extension — Specification
 
+**Last Updated:** September 5, 2026 (BL-1435: BL-1038's live-repository
+derivation guard recognized only `path.join(__dirname, '..', '..')` as a
+live-root binding — a rev-parse-rooted test (`git rev-parse
+--show-toplevel` against `__dirname`, as `docsStructureRealTree.test.js`
+was re-derived to do by BL-1317's hardener on 2026-09-02) was invisible to
+it, making BL-1038 scenario 03's "clean tree" verdict vacuous for every
+such file. `liveRepoDerivationGuard.js` now recognizes the rev-parse
+idiom — via `execFileSync`, `execSync`, or `spawnSync`, `-C` argument or
+trailing `cwd` option, `.trim()`ed or not — as a live-root binding through
+the same detection as `path.join`, feeding the existing growth patterns
+and `EXEMPTION_RE` unchanged. File-by-file disposition at this commit:
+`docsStructureRealTree.test.js` already carried a reasoned
+`BL-1038-EXEMPT:` (landed by BL-1212); `bl1300HeadroomProofIsPinned.test.js`
+binds the root but reads no growth surface; `gitEnvGuard.test.js`,
+`activePoolFreshnessAudit.test.js`, and `swarmMetricsCli.test.js` do not
+bind the live root at all (fixture roots or comment-only mentions).
+Acceptance: `specs/features/BL-1435-a-rev-parse-root-is-a-live-read.feature`.
+See the BL-1038 entry below for the full mechanism this extends.)
+Prior entry —
 **Last Updated:** September 5, 2026 (BL-1418: the Art Director (Article
 1.10, human directive "introduce new role: Art Director ... look at the
 look and feel on artifacts produced by the swarm") is now a real,
