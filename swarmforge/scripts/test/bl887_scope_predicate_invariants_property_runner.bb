@@ -234,7 +234,7 @@
 (fs/delete-tree root)
 
 ;; ── report ────────────────────────────────────────────────────────────────
-(println (str "bl887 scope-predicate invariant properties: " runs " runs each (P1/P2)"))
+(println (str "bl887 scope-predicate invariant properties: " runs " runs each (P1/P2/P3/P4)"))
 (if (empty? @failures)
   (println "ALL PROPERTIES HOLD")
   (do (println (str (count @failures) " PROPERTY FAILURE(S):"))

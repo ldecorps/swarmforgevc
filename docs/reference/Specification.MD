@@ -1,5 +1,43 @@
 # SwarmForge VS Code Extension — Specification
 
+**Last Updated:** September 5, 2026 (BL-1370: every clause of the per-pass
+orphan-process gate (no leftover test/mutation processes before
+verification, none after, a straggler reaped by process GROUP never a bare
+pid) was mechanical and none of it had a tool — 326 evidence files recorded
+the check in almost as many different hand-written wordings, while every
+actual orphan mechanism in the repo (`orphan_janitor_lib.bb` and siblings)
+is a background daemon sweep with no entry point a role can call about its
+own pass (and is not broken: its 8402-sweep/27546-candidate/3-reap numbers
+are correct conservative behaviour for a reclaimer that must never kill
+live work, not evidence of failure). A new `check_worktree_strays.bb
+<worktree-root> [--reap]` answers the different question this ticket is
+about — "is MY pass clean, right now" — emitting one stable, recordable
+result line (`WORKTREE_STRAYS: ...`) instead of 326 wordings; a stray found
+is a refusal (non-zero exit), never a warning. Scope delegates entirely to
+the SAME shared classifier the orphan janitor and the handoffd supervisor
+already defer to (`process_table_lib.bb`'s `project-scoped-process?`,
+BL-887) rather than inventing a second notion of "mine" — growing a second
+scope predicate is exactly how a tool that kills processes ends up killing
+a colleague's running suite. **Amendment folded into this same parcel**
+(specifier, on the coder's priority-00 spec-gap note): that shared
+classifier itself matched by bare `str/includes?`/`str/starts-with?` with
+no boundary check, so `.worktrees/coder` claimed a live sibling
+`.worktrees/coder-cursor2`'s processes and `/repo` claimed `/repo-2` — the
+fix (require a path-component boundary: cwd equal-or-`/`-continued,
+command-line followed by `/`, whitespace, a quote, or end of string) went
+into `process_table_lib.bb` itself, so the janitor and supervisor inherit
+the narrower scope too, which only ever reduces what they may reap.
+Reaping signals the process GROUP (never a bare pid, since an orphaned
+run's children outlive a pid-only kill) with two reported-not-killed
+exceptions: an unreadable pgid, and a stray sharing THIS process's own
+group (a stray started without `setsid` from the role's own shell — killing
+that group would take the role's own session down with it, measured while
+building this tool). Acceptance:
+`specs/features/BL-1370-a-role-checks-its-own-worktree-for-strays.feature`.
+How-to: `docs/how-to/BL-1370-worktree-stray-check.md` (new page). No
+diagram depicts orphan-gate/scope-classifier internals at this
+granularity.)
+Prior entry —
 **Last Updated:** September 4, 2026 (BL-1382: two crontab-ownership
 predicates — `swarmforge_cron_lib.sh`'s `swarmforge_cron_line_belongs_to_root`
 (consumed by `./stop-swarm.sh`'s uninstall path) and
