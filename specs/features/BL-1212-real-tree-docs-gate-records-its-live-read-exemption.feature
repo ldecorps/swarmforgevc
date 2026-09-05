@@ -28,10 +28,12 @@ Feature: BL-1212 the real-tree docs gate records why it reads the live repositor
     And the exemption states why the live read is the assertion
 
   # BL-1212 real-tree-docs-gate-records-its-live-read-exemption-02
-  Scenario: a bare marker with no reason is still refused
-    Given the real-tree docs gate carries an exemption marker with no reason after it
-    When the guard inspects it
-    Then it is reported as a violation
+  # RETIRED 2026-09-05 - RETIRE-WITH: BL-1435. "A bare marker with no reason is
+  # still refused" was falsified after mint by BL-1317 (533da24a41, 2026-09-02),
+  # which re-derived this file's root through git rev-parse --show-toplevel, an
+  # idiom the BL-1038 guard does not recognize as a live read at all, so the
+  # guard never inspects the marker. BL-1435 widens the guard and carries the
+  # bare-marker scenario. Retired, not reworded (BL-1006).
 
   # BL-1212 real-tree-docs-gate-records-its-live-read-exemption-03
   Scenario: the guard reports no violations across the test tree
