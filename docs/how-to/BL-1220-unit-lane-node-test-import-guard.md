@@ -43,7 +43,9 @@ greps for its own needle can flag the file describing it).
 
 Deliberately lane-scoped and **without an allowlist parameter or skip
 path** — the property lane carries the identical defect in its own 13-15
-files (BL-1206, lands independently), and an allowlist is exactly how
+files (BL-1206, landed independently — its own standing guard,
+`bl1206PropertyLaneNodeTestImportGuard.test.js`, is the property lane's
+analog of this one), and an allowlist is exactly how
 that lane's copy of this defect went invisible in the first place
 (BL-1175's standing-red allowlist absorbed it with a "pending fix"
 rationale). `test/fixtures/**` is exempt because those are pinned task
@@ -78,7 +80,8 @@ standing red): `backlog/evidence/BL-1220-unit-lane-node-test-imports-20260829.md
 ## Out of scope / separately owned
 
 - The property lane's identical 13-15 files and
-  `property_suite_standing_allowlist.tsv` — BL-1206.
+  `property_suite_standing_allowlist.tsv` — BL-1206, landed independently
+  (see [The property-lane node:test import drain](BL-1206-drain-the-node-test-import-entries-from-the-property-allowlist.md)).
 - BL-1221's `deps.checkOrphanedAuthoredDocs` stub gap — briefly visible on
   ten of the 24 repaired files after this ticket landed, fixed by BL-1221's
   own stub repair.
