@@ -132,3 +132,5 @@ source: |
   coordinator 00:22Z: "Property gate refused 5 BL-1370 commits, a different
   unrelated red each run". Host checked at 01:26Z: load 3.7, no other
   worktree running a suite - the flakes are the pool, not a neighbour.
+
+assigned_to: coder
