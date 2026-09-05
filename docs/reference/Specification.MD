@@ -1,5 +1,32 @@
 # SwarmForge VS Code Extension — Specification
 
+**Last Updated:** September 5, 2026 (BL-1275: `check_property_suite_drift.sh`
+used to capture its run into a `mktemp` file, echo it to stderr, and delete
+it — so the only surviving copy of the evidence a refusal was reached from
+was terminal scrollback, and the refusal named no path. Twice that decided
+an investigation: a retained 53KB `properties.log` split one vague report
+into four distinct mechanisms on 2026-08-22; a swept log left a rejection
+unadjudicated on 2026-08-29. Raised to priority 12 / high on 2026-09-05
+after five property-gate refusals of BL-1370 (a different unrelated red
+each run, 2.5 hours) again left nothing to adjudicate. Fixed: the suite
+output's removal moved onto the script's existing EXIT trap, and a
+non-allowlisted refusal now copies it to
+`.swarmforge/property-guard-refusals/refusal-<index>-<stamp>.log` and names
+that path in the refusal message — one file per refusal (a fixed name would
+have kept only the last of the five 2026-08-29 refusals, precisely the one
+that was not the open question), bounded to the 20 most recent
+(`SWARMFORGE_PROPERTY_GUARD_REFUSAL_KEEP` for tests), the directory
+self-`.gitignore`s `*` so nothing under it can become a commitable artifact.
+A green run or a BL-1175 allowlisted-standing-reds run retains nothing.
+Which reds refuse, the reds themselves, and the guard's exit codes are all
+untouched — complementary to BL-1407 (re-run a red in isolation before
+refusing), not overlapping it. Acceptance:
+`specs/features/BL-1275-property-guard-deletes-the-evidence-for-its-own-refusal.feature`.
+How-to: `docs/how-to/BL-570-property-suite-drift-guard.md` (extended in
+place — the refusal-row table entry and a new "A non-allowlisted refusal
+retains its full suite output" section). No diagram depicts guard-internal
+retention behavior at this granularity.)
+Prior entry —
 **Last Updated:** September 5, 2026 (BL-1353: `TASK_ARRIVED` retired as an LLM
 Operator wake source, human-ruled 2026-09-04. BL-653 made the Operator
 summoned rather than scheduled and documented exactly three legitimate wake
