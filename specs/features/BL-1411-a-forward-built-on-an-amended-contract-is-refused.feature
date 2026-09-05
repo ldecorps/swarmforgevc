@@ -1,3 +1,8 @@
+# mutation-stamp: sha256=c04a1dcccd6407bb01fcd01477bfffd89d077626960e63aabaeec663a368557b
+# acceptance-mutation-manifest-begin
+# {"version":1,"tested_at":"2026-09-05T10:26:29.540489632Z","feature_name":"BL-1411 A forward built on an amended acceptance contract is refused at the send","feature_path":"/home/carillon/swarmforgevc/.worktrees/hardender/specs/features/BL-1411-a-forward-built-on-an-amended-contract-is-refused.feature","background_hash":"46080a47e5f1fe98c7b12b4f3e58c0bed0d1448305860285f4089b0079cbb218","implementation_hash":"unknown","scenarios":[{"index":2,"name":"a difference that is not an amendment on main after the base does not refuse","scenario_hash":"e225aba39a6118fd6b08092fdac2f54b19882692104472b10e7905c0b4b4e7a9","mutation_count":2,"result":{"Total":2,"Killed":2,"Survived":0,"Errors":0},"tested_at":"2026-09-05T10:26:29.540489632Z"}]}
+# acceptance-mutation-manifest-end
+
 Feature: BL-1411 A forward built on an amended acceptance contract is refused at the send
 
   A ticket's acceptance contract can be amended on main while a role holds

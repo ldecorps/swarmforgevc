@@ -708,6 +708,68 @@ re-send.
 How-to: covered inline here; no dedicated how-to doc (same treatment as
 BL-953/BL-760).
 
+## Contract Freshness Gate (BL-1411)
+
+`swarm_handoff.sh` refuses a `git_handoff` send when the task's own ticket
+acceptance feature file has been amended on `main` (or `origin/main`, since
+BL-891 either can be the fresh one) since the sender's own merge-base with
+that ref. This catches a stale-contract forward at the SEND, before it can
+ride downstream as a spec-gap bounce. The constitution's existing remedy —
+a priority-`00` note from the specifier to whoever holds the parcel
+("Amending An In-Flight Ticket's Spec", BL-317/BL-325) — depends on two
+humans being right at the same moment: the specifier must know who holds
+the parcel, and the holder must read the note before forwarding. Both
+halves failed in the same 2026-09-05 shift: BL-1370 (the specifier amended
+the contract and sent no note; the coder forwarded a commit built on the
+pre-amendment contract, bounced by the cleaner as `spec-gap`) and BL-1353
+(the note was sent, but reached the holder after the parcel had already
+been forwarded — the coder and cleaner then made the same fix on two
+different branches, guaranteed to conflict at the next merge).
+
+Mechanics (`contract_freshness_gate_lib.bb`):
+
+- **Only the acceptance feature file is compared, never the ticket YAML
+  itself.** The YAML is bookkeeping every role appends to and merges
+  (BL-1391) — a YAML diff would false-block on every `notes:` append. An
+  amendment carried only in `notes:` (no feature-file change) is outside
+  this gate's reach by design, a named-but-unbuilt successor rather than a
+  gap papered over.
+- **Exactly one reader of `acceptance:`** — the path comes from
+  `task-scope-gate-lib/declared-acceptance-path` (BL-1276), the same
+  reader the task-scope gate above already uses; this gate never adds a
+  second parser of the field.
+- **Per ref R in `[main origin/main]` that resolves**: `base = git
+  merge-base <sender's commit> R`; the send is refused for that ref iff
+  `git diff --quiet base R -- <path>` reports the path differs. The
+  amending commits are `git log --format=%h base..R -- <path>`. The
+  comparison is always `base..R` on the acceptance path — it never touches
+  the parcel's own tip, so a parcel-side edit of its own copy (a mutation
+  stamp, a chartered `retires:` retirement) can never trip it.
+- **Fail-open on anything it cannot read** (invariant 3): a ref that
+  doesn't resolve, no merge-base, the path absent on that ref, or an
+  unreadable diff each record `:not-evaluated` with a one-line reason and
+  never refuse — an unreadable contract is BL-761's and BL-314's failure to
+  catch, not this gate's to guess at. A ref that simply doesn't exist at
+  all (`origin/main` in the overwhelming majority of local checkouts,
+  which carry no remote) is the ordinary case and is not surfaced as
+  `CONTRACT_FRESHNESS_NOT_EVALUATED` noise; only a ref that DOES resolve
+  but still can't be evaluated is reported. A ticket whose YAML can't be
+  read at all, or whose task name carries no extractable ticket id,
+  produces a `CONTRACT_FRESHNESS WARNING` (or nothing, for no ticket id)
+  and the send is allowed, unverified.
+
+Refusal message mirrors the self-audit's own shape:
+
+```text
+CONTRACT_AMENDED_SINCE_BASE for BL-901
+HANDOFF_NOT_QUEUED
+  specs/features/BL-901-....feature amended on main by a1b2c3d4e5
+Remedy: merge main (and origin/main), replay the amendment, send again.
+```
+
+How-to: covered inline here; no dedicated how-to doc (same treatment as
+BL-953/BL-760).
+
 ## Parcel-Rollback Guard (BL-1213)
 
 `swarm_handoff.sh` refuses a `git_handoff` send when the sending branch's

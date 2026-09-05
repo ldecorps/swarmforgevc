@@ -469,6 +469,56 @@ untouched: an APPROVED sibling still rides on a path the landing ticket
 also owns, after the tree guards. Acceptance:
 `specs/features/BL-1389-a-path-an-unlanded-sibling-owns-alone-never-rides-another-tickets-land.feature`.
 
+## A hand-built tip-pure land records its own approval too (BL-1405)
+
+`LAND_ESCALATE` (above) means the tool cannot build the replay for QA — QA
+builds it by hand instead (the BL-1376 recipe, BL-1386 adjudication route
+1). Before this ticket, that hand-built replay skipped the one step
+`land_step_cli.bb`'s own `LAND_REPLAY` path performs automatically: writing
+the replay-to-approved-source mapping (BL-1334) that
+`is_qa_ancestor.sh` — the babysitter's Article 4.2 sweep, the push-sweep
+gate, and the commit-time guard all consult — needs to answer `approved`
+for the replay. A hand-built land had no CLI reachable for it (the writer,
+`record-land-approval!`, lived only inside `land_step_cli.bb`'s own
+`-main`), so the published commit stood in for an approved source that
+nothing recorded, and `is_qa_ancestor.sh <replay>` answered exit 1 — a
+standing false-positive CRIT until an unrelated later merge closed the
+window. All six hand-lands of 2026-09-04 (BL-1382, 1388, 1393, 1395, 1398,
+1399) were in this state.
+
+`swarmforge/scripts/record_land_approval.bb <project-root> <replay-commit>
+<approved-source> [<ticket-id>]` is the thin CLI over that same writer
+(never a second serializer of the record — `land_step_lib.bb`'s
+`record-land-approval!` is the one writer either route calls). Before
+reporting a hand-built land done, QA:
+
+1. Records the mapping: `bb swarmforge/scripts/record_land_approval.bb
+   <root> <replay-10-hex> <cited-approved-source-10-hex> <ticket>`. Exit 0
+   prints `LAND_APPROVAL_RECORDED <replay> <- <source> (<ticket>)`, or
+   `LAND_APPROVAL_ALREADY_RECORDED <replay> <- <source>` for an exact
+   duplicate (idempotent — recording twice is harmless, first matching
+   line wins at the predicate). A missing sha on either side refuses (exit
+   non-zero) and writes nothing.
+2. Reads the CLI's own printed verdict — it shells out to the SAME
+   `is_qa_ancestor.sh <replay>` every other consumer calls (never a
+   reimplemented check) and prints `VERDICT <replay> approved` /
+   `not approved` / `undeterminable` — so QA sees `approved` before closing
+   the land, in the same run that wrote the record.
+3. Records `abandoned_commits: [<cited commit>]` on the ticket, exactly as
+   the ordinary `LAND_REPLAY` bookkeeping above requires — a hand-built
+   land owes the same bookkeeping its own `LAND_REPLAY` path would have
+   produced.
+
+A record on its own grants nothing: `is_qa_ancestor.sh` (BL-1334 section,
+`swarmforge/scripts/is_qa_ancestor.sh` around the "land-step
+replay->approved-source mapping" comments) still answers `approved` for a
+recorded replay only when the named SOURCE is itself approved — recording
+a replay against an unapproved source is written but still answers
+`not approved`. The predicate and the store shape are unchanged by this
+ticket; only the hand-built route gained a way to write to the same store
+the ordinary route already used. Acceptance:
+`specs/features/BL-1405-a-hand-built-land-records-its-land-approval.feature`.
+
 ## What this does not change
 
 - BL-1192's send-time gate and its range — unchanged; this ticket only adds
