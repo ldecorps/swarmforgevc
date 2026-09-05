@@ -1,0 +1,134 @@
+id: BL-1403
+title: "The merge-deletion guard never reports a moved path as dropped and never refuses unexemptably: a path whose content survives elsewhere in the merge result is not a deletion, and a refusal is attributed from the incoming side when HEAD's introducer names no ticket - today archiving a raw intake refuses every worktree's merge-up with no message that can clear it"
+milestone: M8
+type: defect
+severity: high
+# high: a live fault that blocks the pipeline. Every root drain archives an
+# intake (git mv into backlog/archive/ with a footer), and the next merge-up
+# in EVERY worktree then refuses with "(unattributed)" - no commit message
+# can satisfy it, so each role needs the cherry-pick workaround by hand.
+# Hit 2026-09-02 (coder, BL-1311) and 2026-09-04 (documenter, BL-1402).
+# Nothing is lost, so not critical.
+status: todo
+epic: swarm-reliability
+priority: 9
+direction: swarm-reported
+depends_on: []
+mutation_cost: medium
+slice_size_envelope: low
+required_stages: [coder, cleaner, architect, hardender, documenter, qa]
+
+acceptance: specs/features/BL-1403-the-merge-deletion-guard-never-reports-a-move-and-never-refuses-unexemptably.feature
+
+required_wiring:
+  - 'specs/pipeline/steps/bl1403MergeDeletionGuardMovesAndAttributionSteps.js::registerSteps::the handler file exists so discovery registers every scenario (BL-1371)'
+
+invariants:
+  - "A path whose content survives at another path in the merge result is never reported as a deletion; a path whose content survives nowhere is reported exactly as before (every BL-1242 and BL-1341 scenario unchanged)."
+  - "A refusal is exemptable whenever EITHER side's history names a ticket for the path: the refusal carries that id and that commit, and (unattributed) appears only when no commit on either side names one."
+
+human_approval: pending
+approval_context: >
+  A new feature file is authored here, so it needs a tap. No choice is posed
+  and there are no ruling_options. Reported by the documenter (evidence
+  BL-1402-documenter-merge-blocked-20260904.md) and relayed by the
+  coordinator; the specifier's own root drain is what triggers it.
+
+description: |
+  ## What is wrong
+
+  `swarmforge/scripts/check_merge_deletion.sh` (commit-msg hook, BL-1242 +
+  BL-1341) refuses a merge that drops a path either parent carries unless
+  the message names the ticket of the commit that introduced it. Two gaps
+  make one recurring, unexemptable block:
+
+  1. **A move is reported as a deletion.** `collect_deletions` diffs with
+     `--no-renames`, so archiving a raw intake - `git mv backlog/INTAKE-x.md
+     backlog/archive/INTAKE-x.md` plus an appended footer - shows as `D` on
+     the old path even though the content survives at the new one. The
+     guard exists so a merge "never silently drops work"; a move drops
+     nothing.
+  2. **Attribution gives up too early.** `ticket_id_for_path` reads the
+     subject of HEAD's last commit for the path and falls back to the
+     incoming side only when that subject is EMPTY. A raw intake's
+     introducing commit ("Operator: file a question as raw intake for the
+     swarm", `4239b65b55`) is non-empty and, by design, names no ticket -
+     the ticket does not exist yet. So `id` is empty, the exemption
+     `[[ -n "$id" ]] && grep ...` can never fire, and the refusal reads
+     `(unattributed)` - while the incoming side's last commit for that very
+     path (`f374d49a8e`, "Mint BL-1402: ... archive its intake") names the
+     id that should have been offered. The how-to already promises
+     attribution "on either side"
+     (`docs/how-to/BL-1242-merge-deletion-guard.md`); the code does not do
+     it.
+
+  Each worktree hits this on its next merge-up after every root drain. The
+  only way through today is to cherry-pick the archiving commit before the
+  merge (no MERGE_HEAD, so the guard never fires) - a recipe each role
+  rediscovers by hand.
+
+  ## How (direction, not mandate)
+
+  - Collect deletions with rename detection at git's default similarity
+    (`git diff --name-status -M`, or `--find-renames`) and skip `R*`
+    statuses: a moved path is not a deletion. Keep the default threshold -
+    an intake with a footer is well above it; a rewrite that keeps only the
+    name is not a move.
+  - In `ticket_id_for_path` (and `introducing_commit_for_path`), fall back
+    to `MERGE_HEAD`'s side whenever HEAD's subject yields NO ticket id, not
+    only when it is empty; report the side the attribution came from.
+  - Extend `swarmforge/scripts/test/test_merge_deletion_guard.sh` with the
+    move case and the no-id-introducer case; keep every existing case.
+  - Update `docs/how-to/BL-1242-merge-deletion-guard.md`: moves are not
+    deletions; the "(unattributed)" paragraph now matches the code.
+
+  ## Explicitly NOT in scope
+
+  - Letting an inherited deletion pass without naming its ticket. BL-1242's
+    core case IS a deletion carried by an incoming bounce-revert commit
+    ("revert BL-0001/BL-0002 bounce" in its fixture) and it must stay
+    refused until the message names the tickets - that is the BL-490/BL-495
+    protection, not a false positive.
+  - `check_ticket_deletion.sh` (BL-901), which owns ticket YAML paths.
+
+qa_e2e_procedure: |
+  1. Fixture repo: commit `backlog/INTAKE-x.md` with a subject naming no
+     ticket; on a second branch `git mv` it to `backlog/archive/` and append
+     a footer, committing as "Mint BL-9009: ... archive its intake"; merge
+     that branch `--no-ff --no-commit` into the first; run the guard with a
+     message naming nothing: allowed (exit 0).
+  2. Same fixture but the second branch DELETES the file (no new path):
+     refused, and the refusal names BL-9009 and the deleting commit, never
+     "(unattributed)"; re-run with a message naming BL-9009: allowed.
+  3. Second branch deletes the file with a subject naming no ticket either:
+     refused with "(unattributed)".
+  4. `bash swarmforge/scripts/test/test_merge_deletion_guard.sh`: every
+     pre-existing case still passes; the BL-1242 feature passes unchanged.
+  5. Live: in any worktree behind main after this ticket's mint commit,
+     `git merge origin/main` with the default subject is allowed.
+  6. Fixture roots removed in a `finally`, reaping only roots no live run
+     owns (BL-1385/BL-1390); never a bare prefix sweep.
+
+notes: |
+  No consumer `required_wiring` anchor: the commit-msg hook already calls
+  the guard (`swarmforge/git-hooks/commit-msg:30`), so any anchor in the
+  guard would be satisfied by the parcel's own diff - the BL-1235 fail-open
+  shape. The shell test and the acceptance scenarios exercise the real hook
+  path, which is what proves reachability here.
+
+  IR-DRY at mint: 3 medium possible-synonyms, all kept - each is a
+  deliberate contrast pair the scenarios exist for: a deleting commit
+  naming "BL-9009" vs naming no ticket (03/04 vs 05), a message naming
+  "BL-9009" vs naming no ticket (04 vs 02/03), and allowed vs refused.
+
+  Mint-time INVEST: one observable outcome (a merge-up after a root drain
+  is allowed, and any refusal names an id you can put in the message), one
+  sitting in one 167-line script plus its test, no unbuilt sibling.
+
+source: |
+  Coordinator note, priority 00, 2026-09-04T22:18Z: "check_merge_deletion.sh
+  unexemptable on unticketed INTAKE - blocks documenter". Documenter evidence
+  `BL-1402-documenter-merge-blocked-20260904.md` (documenter branch,
+  4669a198cd) read the guard's source and named the cause. Earlier instance:
+  coder on BL-1311's merge-up, 2026-09-02. Immediate unblock sent to the
+  documenter as a note (cherry-pick f374d49a8e, then merge).
