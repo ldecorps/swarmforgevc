@@ -16,7 +16,7 @@ acceptance: specs/features/BL-1365-the-ceremony-packet-names-hand-made-rituals.f
 
 invariants:
   - "Candidates are computed outside the ceremony on an independent cadence and merely READ by it - a ceremony that does not run delays adjudication and loses no measurement."
-  - "A ritual class an open ticket already names is never offered again: the packet carries what is NEW, never a standing restatement that becomes the alert nobody reads."
+  - "A ritual class an open ticket already names - DECLARED in a one-line `ritual_class:` field carrying the exact class id (backlog-schema.md), never inferred from prose - is never offered again: the packet carries what is NEW, never a standing restatement that becomes the alert nobody reads."
   - "The ledger proposes and the specifier disposes - a candidate is evidence for a ticket, never an auto-minted one."
 
 required_wiring:
@@ -105,8 +105,14 @@ description: |
     class counts as scripted - are the implementer's to pick and should be
     readable, not buried. They will need tuning; make that cheap.
   - Suppression by open ticket (invariant 2) is what keeps the packet quiet.
-    The four tickets from the 2026-09-03 sweep are the natural fixture: with
-    them open, the packet should offer nothing.
+    It keys on the ticket's `ritual_class:` declaration, exact id, one line -
+    adopted in backlog-schema.md on 2026-09-05 and declared by the specifier
+    at mint. Text matching was measured against 104 open tickets and rejected
+    in both directions: prefix-anywhere suppressed one class on 23 tickets
+    that merely mention `backlog/evidence/`; title-only missed BL-1362 and
+    BL-1363, the 2026-09-03 sweep's own findings. A fixture ticket declaring
+    the class is the natural test; the sweep's four tickets are now in
+    `backlog/done/` and suppress nothing.
   - If BL-1364 lands, the mechanical-share trend is a strictly better ranking
     signal than commit volume, because it sees turns that produce no commit.
     Neither slice blocks the other; prefer the trend when it is there.
@@ -131,9 +137,15 @@ qa_e2e_procedure: |
      and that the ceremony can still record a reasoned no-change.
   5. Skip a ceremony entirely for one window, then assemble the next one.
      Confirm the skipped window's candidates are still offered.
-  6. Run against the live repo with BL-1360, BL-1361, BL-1362 and BL-1363
-     open, and confirm the packet offers nothing - those four are the
-     2026-09-03 sweep's own findings and must read as already handled.
+  6. Run against the live repo. With no open ticket declaring `ritual_class:`
+     (true on 2026-09-05), the packet offers exactly the bookkeeping classes
+     below the dominance ceiling and above the volume floor, and NOT
+     `topic-records` (scripted, dominance ~0.95). On 2026-09-05 that was
+     `pass-bounce-evidence`, `backlog-promotion`, `backlog-closure` - true
+     positives, expected to decay as BL-1362's evidence writer and BL-1363's
+     close script take over the window. Then add `ritual_class: <one of
+     them>` to any open ticket (a scratch copy of a paused one is fine),
+     re-assemble, and confirm that class alone is no longer offered.
   7. Remove any fixture root in a `finally`, and sweep by prefix before the
      run too (BL-971).
 
@@ -173,6 +185,25 @@ notes: |
   IR-DRY: one finding, near-duplicate at 0.83, between "that class is offered
   as a candidate" and "that class is not offered as a candidate". That is the
   behaviour under test, stated in both directions. Left as written.
+
+  **Amended 2026-09-05 by the specifier on the coder's priority-00 note**
+  ("spec gaps: new field ritual_class: needed; e2e step6 premise stale").
+  Both gaps were real and both were mine at mint. (1) Invariant 2 said "an
+  open ticket already names" without saying HOW; the coder measured both text
+  rules on the live backlog and neither works, so the ticket declares. The
+  `ritual_class:` field is adopted in `swarmforge/backlog-schema.md` and the
+  specifier's own prompt now requires it on any ticket minted from a
+  candidate (same commit as this amendment). Invariant 2 and the suppression
+  bullet now name the mechanism. (2) e2e step 6 assumed BL-1360..1363 open;
+  all four are in `backlog/done/`, so "offers nothing" was unreachable and
+  would have been a false pass. Rewritten to the honest live result and a
+  declare-then-re-assemble check. The feature file is unchanged - scenario
+  03's "an open ticket already names" is still the contract; the schema
+  defines "names". No rebuild: the coder's implementation IS the ratified
+  reading. The third required_wiring anchor the coder added
+  (`handoffd.bb::ritual-ledger-producer-sweep`) is endorsed: it is the
+  independent cadence invariant 1 rests on, and it is a consumer anchor, not
+  one the parcel satisfies by declaration.
 
 source: |
   Operator question 2026-09-03 (see notes for the verbatim ask), following the
