@@ -132,3 +132,5 @@ source: |
   `backlog_depth_lib.bb` (BL-432 fold), `effective_backlog_depth_cli.bb`,
   `coordinator.prompt` effective-cap paragraph; the 2026-09-05 measurement
   (27 reds) recorded in backlog/standing-reds.tsv.
+
+assigned_to: coder
