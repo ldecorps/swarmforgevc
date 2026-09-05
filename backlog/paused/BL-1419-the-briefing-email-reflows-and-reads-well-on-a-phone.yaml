@@ -134,6 +134,10 @@ notes: |
   introduced alongside (BL-1417/BL-1418); this is its first job, minted by
   the specifier because the seat does not exist yet.
 
+  IR-DRY (2026-09-05): one exact near-duplicate (scenario 02's "no <p>
+  begins with" step) normalized to scenario 06's wording; the remaining
+  medium finding is the two count assertions, deliberate, kept.
+
   INVEST at mint: Independent (BL-393 landed; no sibling needed),
   Negotiable (block parser shape and layout details are direction),
   Valuable (one outcome: the email reads properly on a phone), Estimable

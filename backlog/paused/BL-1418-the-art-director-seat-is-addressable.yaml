@@ -1,0 +1,140 @@
+id: BL-1418
+title: "Onboard the Art Director as a real seat: a window in the full-forge pack, a worktree, a mailbox, a Telegram topic with its own icon, and a name in every role list (role-topic store, topic icon map, model factory) so a note to art-director is delivered and its prompt boots; seat shape per the human's ruling"
+milestone: M8
+type: feature
+status: todo
+epic: art-direction
+priority: 8
+direction: human-requested
+depends_on: []
+mutation_cost: medium
+slice_size_envelope: medium
+required_stages: [coder, cleaner, architect, hardender, documenter, qa]
+
+acceptance: specs/features/BL-1418-the-art-director-seat-is-addressable.feature
+
+required_wiring:
+  - 'swarmforge/packs/full-forge.conf::window art-director::the live pack must declare the seat; prepare_worktrees and the launch scripts derive everything else from this line; absent today (grep returns 0)'
+  - 'extension/src/concierge/topicIcon.ts::art-director::the role topic icon map must carry the seat or ensureRoleTopics has no icon for it; absent today (grep returns 0)'
+  - 'specs/pipeline/steps/bl1418ArtDirectorSeatSteps.js::registerSteps::the handler file exists so discovery registers every scenario (BL-1371)'
+
+invariants:
+  - "Every enumeration of swarm roles in the code base names art-director exactly as roles.tsv spells it (roleTopicMapStore ALL_SWARM_ROLES, topicIcon RoleTopicIconRole and its map, model_factory_lib swarm-roles, and any list a test finds by grepping for the literal hardender), or is explicitly a pipeline-chain list (PIPELINE_CHAIN, PIPELINE_ORDER, required_stages_lib, routing_manifest_lib, KNOWN_PRODUCING_ROLES) and stays untouched: the art director is not a stage."
+  - "The seat shape the human rules changes only the pack window line and rotation config; mailbox, worktree, prompt composition, topic and role lists are identical under every option."
+  - "The art director topic icon collides with no other role topic icon (local-engineering rule 6's per-surface collision rule)."
+
+human_approval: pending
+approval_context: >
+  Two things need you. First, the tap: a new feature file is authored here.
+  Second, a choice this ticket cannot make: the seat SHAPE. Standing pane
+  (recommended) means an always-on tmux window like the other roles, its own
+  Telegram topic in the sidebar, and it reviews on wake; on-demand means no
+  pane until the coordinator rotates it in for a look-and-feel task (the
+  Model Steward's shape, cheapest); presentation stage means it also edits
+  templates and CSS itself and sits before QA on artifact parcels (heaviest,
+  changes the pipeline topology and needs a follow-up ticket for
+  required_stages, routing manifest and Article 4.3). Article 1.10 and the
+  role prompt are written for the reviewer shapes and say so.
+ruling_options:
+  - Standing pane (recommended) - always-on window, own topic, reviews on wake; coder implements briefs
+  - On-demand seat - no pane; coordinator rotates it in per look-and-feel task
+  - Presentation stage - edits templates and CSS itself; sits before QA on artifact parcels
+
+description: |
+  ## What is wanted
+
+  Article 1.10 (landed 2026-09-05 with the human's directive) introduces the
+  Art Director. Prose alone is not a seat: `swarm_handoff.sh` refuses a
+  recipient not in `.swarmforge/roles.tsv`, `ensureRoleTopics` creates no
+  topic for a role the icon map does not know, the model factory cannot
+  assign it a model, and `prepare_worktrees` creates no worktree for a role
+  the pack does not declare. This ticket makes the seat real everywhere a
+  role must exist, under whichever shape the human rules.
+
+  Human directive, verbatim: "introduce new role: Art Director. whose job is
+  tonlook at the look and feel on arte facts produced by the swarm."
+
+  ## What changes
+
+  - `swarmforge/packs/full-forge.conf`: a `window art-director claude
+    art-director --model claude-sonnet-5 --dangerously-skip-permissions
+    --effort medium --remote-control SwarmForge-ArtDirector` line (task
+    receive mode, forward-only). Under the on-demand ruling the same line
+    sits in the rotation config instead; under the stage ruling it also
+    gains a chain position (a follow-up ticket, see out of scope).
+  - `roleTopicMapStore.ALL_SWARM_ROLES`, `topicIcon.ts` (`RoleTopicIconRole`
+    and its icon map: `art-director: '🎨'`, or the next free icon if that
+    collides), `model_factory_lib.bb` `swarm-roles`.
+  - `.swarmforge/roles.tsv` is derived from the pack at `./swarm` start;
+    `prepare_worktrees` (swarmforge.sh) creates `.worktrees/art-director` on
+    branch `primary/art-director`; the launch script and claude settings
+    are generated as for every role. Verify, do not hand-write.
+  - `docs/design/artifact-inventory.md` and `docs/design/system.md` are the
+    role's own first deliverables, not this parcel's; the documenter adds
+    the role to the roles page(s) under docs/ and the how-to for launching
+    the pack.
+
+  ## How (direction, not mandate)
+
+  - Grep for the literal `hardender` across extension/src and
+    swarmforge/scripts to find every role enumeration; classify each as a
+    chain list (untouched) or a swarm-roles list (gains art-director) and
+    record the classification in the evidence file (invariant 1).
+  - A unit test that greps the same way and asserts the classification, so
+    the next role added does not repeat the hunt by hand.
+  - Fixture swarm for scenarios 01-02: a `git init` root under mkdtemp with
+    a pack copy; never the live `.swarmforge/` (BL-1390).
+
+  ## Out of scope
+
+  - The presentation-stage ruling's chain work (required_stages enum,
+    routing manifest, PIPELINE_CHAIN, Article 4.3 stage row): a follow-up
+    ticket if that option is chosen.
+  - The role's own artifacts (inventory, system, briefs).
+
+qa_e2e_procedure: |
+  1. The BL-1418 feature passes all seven scenario runs; the role-list unit
+     test passes.
+  2. Live: after `./swarm` on the pack, `grep art-director .swarmforge/roles.tsv`
+     returns the row; `tmux ls` on the swarm socket shows
+     `swarmforge-art-director` (standing ruling) or the rotation config
+     names it (on-demand); `.worktrees/art-director` exists on branch
+     `primary/art-director`.
+  3. From the specifier pane: send `type: note / to: art-director /
+     priority: 50 / message: hello` via swarm_handoff.sh; the file appears
+     under the art director's mailbox `inbox/new`; `ready_for_next.sh` in
+     that pane returns it.
+  4. `.swarmforge/operator/role-topic-map.json` gains an `art-director`
+     entry after `ensureRoleTopics`; the topic's icon differs from the
+     other eight.
+  5. `bb swarmforge/scripts/model_factory_cli.bb assign --mode quality`
+     lists art-director.
+
+notes: |
+  Minted 2026-09-05 by the specifier on the human's in-session directive
+  (verbatim in description). The constitution entry (Article 1.10), the
+  PIPELINE.md row, the adoption record and the role prompt were landed by
+  the specifier the same pass (Article 1.2 / 5.1, BL-798 rule: prose the
+  specifier owns is landed by the specifier, never left for a stage).
+
+  The ruling is posed as ruling_options (BL-1300) so a tap records it; the
+  scenarios are written to hold under every option (invariant 2), so the
+  ruling amends the description's pack line, not the feature.
+
+  IR-DRY (2026-09-05): 12 occurrences, 12 unique, no findings.
+
+  INVEST at mint: Independent (no unbuilt sibling; BL-1419 does not need
+  this), Negotiable (icon, list-finding test are direction), Valuable (one
+  outcome: the seat exists), Estimable (one pack line, three lists, one
+  test, docs; medium because of the hunt for enumerations), Small (four
+  scenarios, three invariants), Testable (fixture swarm + live checks).
+
+source: |
+  Human, in-session 2026-09-05: "introduce new role: Art Director. whose job
+  is tonlook at the look and feel on arte facts produced by the swarm."
+  Precedent read: swarmforge/roles/model-steward.prompt (infrastructure role
+  outside the chain); role lists found: rolePack.ts PIPELINE_CHAIN,
+  swarmMetrics.ts PIPELINE_ORDER, qaBounce.ts KNOWN_PRODUCING_ROLES,
+  pipelineReviewOracle.ts REVIEW_STAGES, topicIcon.ts RoleTopicIconRole,
+  roleTopicMapStore ALL_SWARM_ROLES, model_factory_lib.bb swarm-roles,
+  required_stages_lib.bb, routing_manifest_lib.bb.

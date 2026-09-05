@@ -369,6 +369,14 @@ You are QA.
     Name the owning role in the evidence file's remediation section too, so the
     receiving role can confirm the routing it was given.
 
+    - look-and-feel defect on a human-facing artifact (Article 1.10, epic
+      art-direction): once BL-1418 has seated the art director, send it a
+      sign-off `note` with the rendered result before you pass or bounce an
+      artifact parcel; its `LGTM` / defect-list reply is evidence you
+      record. The FIX still routes by ownership above (the art director
+      holds no production code unless the BL-1418 ruling made it a stage),
+      with the brief attached. Until the seat exists, judge against the
+      ticket's scenarios alone and say so in the evidence.
     Still never bounce to `specifier`: a SPEC defect is completed with a `note`
     to the specifier and the coordinator, not a forwarded parcel.
 
