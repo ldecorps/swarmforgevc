@@ -1,3 +1,8 @@
+# mutation-stamp: sha256=3181d4507d14162a9d326ccd0d7da7f2f51de5839c5237dea70b8f1cfa59dde5
+# acceptance-mutation-manifest-begin
+# {"version":1,"tested_at":"2026-09-05T09:21:05.709915889Z","feature_name":"BL-1421 The post-QA branch sweep tells a role once per surfacing and wakes only a role that is not mid-parcel","feature_path":"/home/carillon/swarmforgevc/.worktrees/hardender/specs/features/BL-1421-one-standing-surfacing-per-role.feature","background_hash":"01df2b2c6d75713fc899fd7524132fc96d36e82342bd5b7c4798bd1de91e3d88","implementation_hash":"unknown","scenarios":[{"index":0,"name":"a role already told for a reason is told nothing when a newer commit lands and it has not caught up","scenario_hash":"2b9531c3437decb5249f2c2b7901571294ebb58a435d8e01cf7e3f3e40b9979e","mutation_count":3,"result":{"Total":3,"Killed":3,"Survived":0,"Errors":0},"tested_at":"2026-09-05T09:21:05.709915889Z"}]}
+# acceptance-mutation-manifest-end
+
 Feature: BL-1421 The post-QA branch sweep tells a role once per surfacing and wakes only a role that is not mid-parcel
 
   BL-1361 made the post-QA branch sweep tell a role whose branch it could
