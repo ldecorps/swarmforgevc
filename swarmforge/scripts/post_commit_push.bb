@@ -24,7 +24,13 @@
          '[clojure.string :as str])
 
 (def ^:private args *command-line-args*)
-(def ^:private lib-path (first args))
+;; BL-1198's explicit-passing intent (named in the hook, not re-derived
+;; here) is unchanged for a REAL invocation, which always supplies this;
+;; the fallback only fires when it is absent - a standalone analysis probe
+;; (BL-1427) with empty *command-line-args*, or any future bare `bb
+;; post_commit_push.bb` - so this top-level (load-file lib-path) below can
+;; resolve to something real instead of nil, which the reader cannot open.
+(def ^:private lib-path (or (first args) (str (fs/path (fs/parent (fs/canonicalize *file*)) "push_sweep_lib.bb"))))
 (def ^:private project-root (second args))
 (def ^:private log-path (nth args 2 nil))
 
