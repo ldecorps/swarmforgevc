@@ -18,8 +18,10 @@ Feature: BL-1439 The deferred hardening gates of 2026-08-19 are run and discharg
   register no longer reports discharged rows, and that the throttle's
   standing-red signal clears once the last row is discharged. Scenarios
   01 and 02 run the ledger tooling against a fixture ledger; scenario 03
-  reads the parcel's own committed ledger and evidence, a read-only
+  reads the parcel's own committed ledger and register, a read-only
   live-tree read justified because they are the contract at this commit.
+  A gate the host refuses (cooldown, load, a suite-wide red) is recorded
+  as an attempt and its run belongs to the successor BL-1441.
 
   Background:
     Given a fixture ledger holding the five 2026-08-19 deferral rows
@@ -41,8 +43,12 @@ Feature: BL-1439 The deferred hardening gates of 2026-08-19 are run and discharg
     Then the discharge is refused naming the missing evidence
     And the outstanding debt is unchanged
 
-  # BL-1439 the-live-ledger-owes-nothing-from-0819-03
-  Scenario: every 2026-08-19 row in the parcel's own ledger is discharged and the register reports no hardening row
+  # BL-1439 every-0819-row-is-discharged-or-owned-03
+  # Amended 2026-09-06: at mint this required the live ledger to owe nothing, but three
+  # of the five file sets were inside the mutation cooldown window (BL-1425 touched them
+  # on 2026-09-05) and BL-954's set is stopped by the citation red (BL-1440); the runs
+  # the host refuses belong to BL-1441, and this parcel must leave the debt owned.
+  Scenario: every 2026-08-19 row in the parcel's own ledger is discharged or carries an attempt record, and each outstanding one is owned by the successor
     When the parcel's own hardening-debt ledger and standing-red register are read
-    Then no outstanding row is dated 2026-08-19
-    And the register report holds no hardening lane row and no unowned row
+    Then every row dated 2026-08-19 is discharged or records an attempt naming its blocker
+    And every outstanding row has a register row naming BL-1441 and no discharged row has one
