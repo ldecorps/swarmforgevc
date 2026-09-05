@@ -18,7 +18,12 @@ required_stages: [coder, cleaner, architect, hardender, documenter, qa]
 
 acceptance: specs/features/BL-1439-the-deferred-hardening-gates-of-0819-are-run-and-discharged.feature
 
-human_approval: pending
+human_approval: approved
+human_ruling: |
+  Keep the age rule as-is: age counts from when the debt originated, not
+  from when a ticket owns the row. The debt is real regardless of
+  bookkeeping; the cap stays tight until the mutation/gherkin runs
+  themselves actually happen.
 approval_context: >
   A new feature file is authored here, so it needs a tap. No choice is
   posed and there are no ruling_options, but one consequence is yours to
