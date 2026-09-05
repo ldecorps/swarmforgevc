@@ -82,20 +82,20 @@ function registerSteps(registry) {
   });
 
   registry.define(/^the HTML part's headings render as HTML heading elements$/, (ctx) => {
-    if (!/<h[1-6]>Delivery metrics<\/h[1-6]>/.test(ctx.result.lastSentHtml || '')) {
+    if (!/<h[1-6][^>]*>Delivery metrics<\/h[1-6]>/.test(ctx.result.lastSentHtml || '')) {
       throw new Error(`expected the heading to render as an HTML heading element; got: ${ctx.result.lastSentHtml}`);
     }
   });
 
   registry.define(/^the HTML part's table renders as HTML table markup$/, (ctx) => {
     const html = ctx.result.lastSentHtml || '';
-    if (!/<table>/.test(html) || !/<th>Metric<\/th>/.test(html) || !/<td>Velocity<\/td>/.test(html)) {
+    if (!/<table[^>]*>/.test(html) || !/<th[^>]*>Metric<\/th>/.test(html) || !/<td[^>]*>Velocity<\/td>/.test(html)) {
       throw new Error(`expected the table to render as HTML table markup; got: ${html}`);
     }
   });
 
   registry.define(/^the HTML part's bold text renders as HTML emphasis$/, (ctx) => {
-    if (!/<strong>healthy<\/strong>/.test(ctx.result.lastSentHtml || '')) {
+    if (!/<strong[^>]*>healthy<\/strong>/.test(ctx.result.lastSentHtml || '')) {
       throw new Error(`expected bold text to render as HTML emphasis; got: ${ctx.result.lastSentHtml}`);
     }
   });
