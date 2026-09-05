@@ -71,6 +71,36 @@ check "read: a root with no deferrals reads back an empty debt list" '[[ "$QUIET
 #    root has no evidence directory whatsoever and the reader still works) ─
 check "no evidence directory was created by either CLI" '[[ ! -d "$ROOT/backlog/evidence" ]]'
 
+# ── BL-1439: --discharge marks the row, never deletes it ──────────────────
+bb "$DEFER_CLI" "$ROOT" --discharge BL-915 mutation --evidence backlog/evidence/BL-1439-a.md 2026-09-05 >/dev/null
+check "discharge: still 2 rows - never deleted (invariant 1)" "[[ \"\$(row_count)\" -eq 2 ]]"
+check "discharge: the row gains discharged_at" '[[ "$(ledger)" == *"discharged_at: 2026-09-05"* ]]'
+check "discharge: the row gains discharged_evidence" \
+  '[[ "$(ledger)" == *"discharged_evidence: backlog/evidence/BL-1439-a.md"* ]]'
+
+READ_AFTER_DISCHARGE="$(bb "$READ_CLI" "$ROOT")"
+check "read: a discharged row is still LISTED (with its discharge fields), not dropped" \
+  '[[ "$READ_AFTER_DISCHARGE" == *"\"parcel\":\"BL-915\""*"\"discharged_at\":\"2026-09-05\""* ]]'
+check "read: the undischarged sibling row still shows discharged_at null" \
+  '[[ "$READ_AFTER_DISCHARGE" == *"\"parcel\":\"BL-917\","*"\"discharged_at\":null"* ]]'
+
+# ── --discharge with no --evidence flag refuses, nothing written ──────────
+set +e
+bb "$DEFER_CLI" "$ROOT" --discharge BL-917 CRAP >/dev/null 2>&1
+NO_EVIDENCE_EXIT=$?
+set -e
+check "discharge: missing --evidence refuses (nonzero exit)" '[[ "$NO_EVIDENCE_EXIT" -ne 0 ]]'
+check "discharge: a refused discharge leaves BL-917 undischarged" \
+  '! grep -A8 "^- parcel: BL-917$" "$ROOT/backlog/hardening-debt-ledger.yaml" | grep -q discharged_at'
+
+# ── --discharge naming no matching row refuses, nothing written ───────────
+set +e
+bb "$DEFER_CLI" "$ROOT" --discharge BL-999-no-such-parcel mutation --evidence backlog/evidence/x.md >/dev/null 2>&1
+NO_MATCH_EXIT=$?
+set -e
+check "discharge: no matching row refuses (nonzero exit)" '[[ "$NO_MATCH_EXIT" -ne 0 ]]'
+check "discharge: row count still 2 after the refused discharge" "[[ \"\$(row_count)\" -eq 2 ]]"
+
 if [[ "$fail" -eq 0 ]]; then
   echo "hardening_debt_ledger CLI wiring: ALL CHECKS PASSED"
 else

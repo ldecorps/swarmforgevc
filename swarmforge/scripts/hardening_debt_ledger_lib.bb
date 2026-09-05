@@ -37,7 +37,12 @@
 
 (def ^:private field->key
   {"parcel" :parcel "gate" :gate "file_set" :file-set
-   "reason" :reason "load" :load "detected_at" :detected-at})
+   "reason" :reason "load" :load "detected_at" :detected-at
+   ;; BL-1439: a discharged row's own record of the run that paid the
+   ;; debt - present only once discharged, absent (nil) on every row
+   ;; before then, so the generic parse loop already picks these up with
+   ;; no other change (unknown fields are ignored, known ones assoc'd).
+   "discharged_at" :discharged-at "discharged_evidence" :discharged-evidence})
 
 ;; BL-942 architect bounce D1: reason/load are free-form prose (the "why" a
 ;; hardening pass deferred), and a naive first-"-scan for the closing quote
@@ -121,13 +126,16 @@
                      (= k :file-set) (assoc current k (normalize-file-set (str/split (or (parse-scalar raw) "") #",")))
                      :else (assoc current k (parse-scalar raw))))))))))
 
-(defn- render-row [{:keys [parcel gate file-set reason load detected-at]}]
+(defn- render-row [{:keys [parcel gate file-set reason load detected-at
+                           discharged-at discharged-evidence]}]
   (str "- parcel: " parcel "\n"
        "  gate: " gate "\n"
        "  file_set: " (str/join "," (normalize-file-set file-set)) "\n"
        "  reason: \"" (escape-quoted reason) "\"\n"
        "  load: \"" (escape-quoted load) "\"\n"
-       "  detected_at: " detected-at "\n"))
+       "  detected_at: " detected-at "\n"
+       (if discharged-at (str "  discharged_at: " discharged-at "\n") "")
+       (if discharged-evidence (str "  discharged_evidence: " discharged-evidence "\n") "")))
 
 (def ledger-header
   (str "# backlog/hardening-debt-ledger.yaml — BL-942 hardening gate debt ledger.\n"
@@ -169,11 +177,37 @@
   (let [target (normalize-file-set file-set)]
     (filterv #(= target (:file-set %)) rows)))
 
+;; ── BL-1439: discharge - a run that pays the debt a defer recorded ────────
+;; The row is never deleted (invariant 1): discharge only ever ADDS
+;; discharged-at/discharged-evidence to the matching row, so the deferral
+;; and its discharge stay readable together in the same row.
+
+(defn discharge-debt
+  "rows, {:parcel :gate :evidence :discharged-at} -> {:rows rows'
+   :discharged? bool}. Matches the row by (parcel, gate) - the real
+   ledger's own identity today, since no two rows share a (parcel, gate)
+   pair; a discharge naming no matching row, or with no evidence path,
+   changes nothing and answers :discharged? false so the caller refuses
+   loudly rather than silently no-op'ing (the ticket's own invariant 1)."
+  [rows {:keys [parcel gate evidence discharged-at]}]
+  (if (str/blank? evidence)
+    {:rows rows :discharged? false}
+    (let [idx (first (keep-indexed (fn [i r] (when (and (= parcel (:parcel r)) (= gate (:gate r))) i)) rows))]
+      (if (nil? idx)
+        {:rows rows :discharged? false}
+        {:rows (update rows idx assoc :discharged-at discharged-at :discharged-evidence evidence)
+         :discharged? true}))))
+
 (defn outstanding-debt
   "rows -> the machine-readable answer scenario 04 needs: every row's
-   parcel/gate/file-set, no prose consulted to produce it."
+   parcel/gate/file-set, no prose consulted to produce it. BL-1439: a
+   discharged row (one with :discharged-at) contributes no outstanding
+   debt and no register row/age - the ONE filter both the register CLI
+   and the throttle read (invariant 2)."
   [rows]
-  (mapv #(select-keys % [:parcel :gate :file-set :reason :load :detected-at]) rows))
+  (->> rows
+       (remove :discharged-at)
+       (mapv #(select-keys % [:parcel :gate :file-set :reason :load :detected-at]))))
 
 (defn has-row-for-parcel? [rows parcel]
   (boolean (seq (rows-for-parcel rows parcel))))

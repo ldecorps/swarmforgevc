@@ -118,6 +118,45 @@
 (check "a literal backslash immediately before a quote also round-trips exactly"
        (= [d-backslash-quote] (hdl/parse-ledger (hdl/render-ledger [d-backslash-quote]))))
 
+;; ── BL-1439: discharge-debt / outstanding-debt excludes discharged rows ──
+
+(def d-undischarged {:parcel "BL-620" :gate "mutation" :file-set ["a.ts" "b.ts"]
+                     :reason "host busy" :load "14/17/16" :detected-at "2026-08-19"})
+(def d-other {:parcel "BL-955" :gate "mutation" :file-set ["c.ts"]
+             :reason "host busy" :load "35/35/28" :detected-at "2026-08-19"})
+
+(let [{:keys [rows discharged?]} (hdl/discharge-debt [d-undischarged d-other]
+                                                       {:parcel "BL-620" :gate "mutation"
+                                                        :evidence "backlog/evidence/BL-1439-a.md"
+                                                        :discharged-at "2026-09-05"})]
+  (check "discharge-debt: reports discharged? true on a real match" discharged?)
+  (check "discharge-debt: the row COUNT is unchanged - never deleted (invariant 1)"
+         (= 2 (count rows)))
+  (check "discharge-debt: the matching row gains discharged_at"
+         (= "2026-09-05" (:discharged-at (first (filter #(= "BL-620" (:parcel %)) rows)))))
+  (check "discharge-debt: the matching row gains discharged_evidence"
+         (= "backlog/evidence/BL-1439-a.md" (:discharged-evidence (first (filter #(= "BL-620" (:parcel %)) rows)))))
+  (check "discharge-debt: the OTHER row is untouched"
+         (= d-other (first (filter #(= "BL-955" (:parcel %)) rows))))
+  (check "outstanding-debt: the discharged row no longer contributes outstanding debt"
+         (= ["BL-955"] (mapv :parcel (hdl/outstanding-debt rows))))
+  (check "outstanding-debt: the row itself still round-trips through render/parse with its discharge fields"
+         (let [reparsed (hdl/parse-ledger (hdl/render-ledger rows))]
+           (= "2026-09-05" (:discharged-at (first (filter #(= "BL-620" (:parcel %)) reparsed)))))))
+
+(let [{:keys [rows discharged?]} (hdl/discharge-debt [d-undischarged]
+                                                       {:parcel "BL-620" :gate "mutation" :evidence ""
+                                                        :discharged-at "2026-09-05"})]
+  (check "discharge-debt: an empty evidence path refuses (discharged? false)" (not discharged?))
+  (check "discharge-debt: a refused discharge changes nothing" (= [d-undischarged] rows)))
+
+(let [{:keys [rows discharged?]} (hdl/discharge-debt [d-undischarged]
+                                                       {:parcel "BL-999-no-such-row" :gate "mutation"
+                                                        :evidence "backlog/evidence/x.md"
+                                                        :discharged-at "2026-09-05"})]
+  (check "discharge-debt: naming no matching row refuses (discharged? false)" (not discharged?))
+  (check "discharge-debt: a refused discharge (no match) changes nothing" (= [d-undischarged] rows)))
+
 (when (seq @failures)
   (binding [*out* *err*]
     (doseq [f @failures] (println f)))
