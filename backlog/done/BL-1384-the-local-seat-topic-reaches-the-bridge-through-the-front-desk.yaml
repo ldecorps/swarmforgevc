@@ -137,3 +137,4 @@ source: |
     same defect class but a separate topic/seat, not touched by tonight's fix."
 
 assigned_to: coder
+abandoned_commits: [5aa31d3113]
