@@ -3,18 +3,20 @@
 // BL-1212: step handlers driving the REAL BL-1038 guard helper and the REAL
 // extension/test tree - never a reimplementation.
 //
-// Scenario 02 ("a bare marker with no reason is still refused") was
-// RETIRED 2026-09-05 (RETIRE-WITH: BL-1435): it was falsified after this
-// ticket's mint by BL-1317 (533da24a41, 2026-09-02), which re-derived
-// docsStructureRealTree.test.js's REPO_ROOT through `git rev-parse
-// --show-toplevel`, an idiom the BL-1038 guard's own pattern-matchers
-// never recognized as a live-root binding - the guard was already not
-// inspecting this file's marker at all, before this ticket touched
-// anything, for a reason unrelated to BL-1209. BL-1435 widens the guard's
-// detection and carries the bare-marker scenario forward. Retired, not
-// reworded (BL-1006) - see backlog/evidence/BL-1212-coder-20260905.md for
-// the original finding and specifier note
-// 00_20260905T163957Z_001352_from_specifier for the retirement.
+// Scenario 02 ("a bare marker with no reason is still refused") was RETIRED
+// by the specifier on 2026-09-05 (985b0df0b6, RETIRE-WITH: BL-1435), not
+// reworded (BL-1006): it was falsified after mint by BL-1317
+// (533da24a41, 2026-09-02), which re-derived
+// docsStructureRealTree.test.js's REPO_ROOT through
+// execFileSync('git', ..., 'rev-parse', '--show-toplevel') - an idiom the
+// BL-1038 guard's detectors (liveRootArgumentPatterns / LIVE_ROOT_BINDING_RE)
+// do not recognize as a live read at all, so the guard never reaches the
+// marker-check step for this file. BL-1435 widens the guard to recognize the
+// rev-parse idiom and carries the bare-marker scenario going forward. Its
+// steps are dropped here per the retirement (see
+// backlog/evidence/BL-1212-coder-20260905.md and
+// backlog/evidence/BL-1212-architect-pass-20260905.md for the independently
+// reproduced finding that led to it).
 const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const path = require('node:path');
@@ -51,6 +53,8 @@ function registerSteps(registry) {
   scoped(/^the exemption states why the live read is the assertion$/, (ctx) => {
     assert.match(ctx.bl1212.reason, /live read is the assertion/i);
   });
+
+  // Scenario 02 retired (985b0df0b6, RETIRE-WITH: BL-1435) - see file header.
 
   // ── Scenario 03 ──────────────────────────────────────────────────────
   scoped(/^every live-repository read in the test tree is either a fixture read or a recorded exemption$/, () => {
