@@ -1,2 +1,1 @@
 file	disposition	rationale
-test/hostActivityFeed.property.test.js	allowlist	pre-existing; owner BL-1206, see backlog/standing-reds.tsv
