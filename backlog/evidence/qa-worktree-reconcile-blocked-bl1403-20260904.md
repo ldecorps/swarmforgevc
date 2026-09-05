@@ -29,3 +29,24 @@ blocking any in-flight parcel — no parcel in this worktree's inbox needed
 BL-1403 lands.
 
 By QA.
+
+## Recurrence, 2026-09-05
+
+Same class, different offender file. A coordinator chase ("branch behind
+1292407cbd: in_process work present - merge up") hit the identical
+`check_merge_deletion.sh` refusal, this time on
+`backlog/INTAKE-operator-question-1788082425603.md` (introduced at
+`5e2f55ba81` on this branch, deleted/moved by an origin commit with no
+`BL-####` in its subject). Working tree was otherwise clean
+(`Auto-merging backlog/active/BL-1364-...yaml` succeeded). Aborted
+cleanly again, same reasoning: not blocking any in-flight parcel (BL-1364
+had already landed independently as `c645686400` via the hand-built
+replay recipe, not this reconcile), BL-1403 is still `paused`. This is the
+same structural class named in `land_step_cli.bb`'s `LAND_ESCALATE` for
+BL-1364 itself (`backlog/evidence/BL-1364-land-note-20260905.md`) and in
+BL-1370/BL-1400/BL-1401's land notes — every intake-archive-touching
+merge-up on this branch keeps re-triggering it. Not sending a fresh
+priority-`00` escalation for this instance; appending here per the
+one-escalation-per-class discipline.
+
+By QA.
