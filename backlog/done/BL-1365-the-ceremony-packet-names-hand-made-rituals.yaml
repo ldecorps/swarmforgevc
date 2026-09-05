@@ -213,3 +213,5 @@ source: |
   Child of BL-818 (EPIC - lean-aware coordinator), whose ceremony this
   extends. Cousin of BL-667's slices, which are what its detector would have
   surfaced automatically.
+
+abandoned_commits: [620b2200fe]
