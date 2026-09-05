@@ -1,26 +1,21 @@
 file	disposition	rationale
-test/alertTelemetry.property.test.js	allowlist	pre-existing; tracked under BL-1175 pending fix
-test/bl1012FreshnessSelfInflictedIncidents.property.test.js	allowlist	pre-existing; tracked under BL-1175 pending fix
-test/bl1146HostQueueEnqueueNext.property.test.js	allowlist	pre-existing; tracked under BL-1175 pending fix
-test/bl1147ProbeLegacyTopicAdoption.property.test.js	allowlist	pre-existing; tracked under BL-1175 pending fix
-test/bl1150OutageFailoverCliLoadFileSafe.property.test.js	allowlist	pre-existing; tracked under BL-1175 pending fix
-test/bl1200FixtureGitWritesStayInOwnRepo.property.test.js	allowlist	pre-existing; tracked under BL-1175 pending fix
-test/bl593MutationRunTelemetry.property.test.js	allowlist	pre-existing; tracked under BL-1175 pending fix
-test/bl632CommitTimeGuardInvariants.property.test.js	allowlist	pre-existing; tracked under BL-1175 pending fix
-test/bl669OutageFailoverSteward.property.test.js	allowlist	pre-existing; tracked under BL-1175 pending fix
-test/bl687EpicTileSurfaceUntouched.property.test.js	allowlist	pre-existing; tracked under BL-1175 pending fix
-test/bl733ProducerCrosscheck.property.test.js	allowlist	pre-existing; tracked under BL-1175 pending fix
-test/bl735PilotAcceptanceExecution.property.test.js	allowlist	pre-existing; tracked under BL-1175 pending fix
-test/bl782LivenessProbesScopedToRoot.property.test.js	allowlist	pre-existing; tracked under BL-1175 pending fix
-test/bl874PortableTimeInvariants.property.test.js	allowlist	pre-existing; tracked under BL-1175 pending fix
-test/crossFileDuplicationCheck.property.test.js	allowlist	pre-existing; tracked under BL-1175 pending fix
-test/hostActivityFeed.property.test.js	allowlist	pre-existing; tracked under BL-1175 pending fix
-test/multiBranchParserCoverageCheck.property.test.js	allowlist	pre-existing; tracked under BL-1175 pending fix
-test/perHatRolePromptEvidenceCheck.property.test.js	allowlist	pre-existing; tracked under BL-1175 pending fix
-test/pilotAcceptanceGate.property.test.js	allowlist	pre-existing; tracked under BL-1175 pending fix
-test/pilotScopedCrapEvidence.property.test.js	allowlist	pre-existing; tracked under BL-1175 pending fix
-test/resolveMutationConcurrency.property.test.js	allowlist	pre-existing; tracked under BL-1175 pending fix
-test/selfHealTelemetry.property.test.js	allowlist	pre-existing; tracked under BL-1175 pending fix
-test/shellEntryPointDriveCheck.property.test.js	allowlist	pre-existing; tracked under BL-1175 pending fix
-test/tempDirTrapGuard.property.test.js	allowlist	pre-existing; worktree scan noise; tracked under BL-1175 pending fix
-test/unreachableStepHandlerCheck.property.test.js	allowlist	pre-existing; tracked under BL-1175 pending fix
+test/alertTelemetry.property.test.js	allowlist	pre-existing; owner BL-1206, see backlog/standing-reds.tsv
+test/bl1146HostQueueEnqueueNext.property.test.js	allowlist	pre-existing; owner BL-1206, see backlog/standing-reds.tsv
+test/bl1147ProbeLegacyTopicAdoption.property.test.js	allowlist	pre-existing; owner BL-1206, see backlog/standing-reds.tsv
+test/bl1150OutageFailoverCliLoadFileSafe.property.test.js	allowlist	pre-existing; owner BL-1206, see backlog/standing-reds.tsv
+test/bl1200FixtureGitWritesStayInOwnRepo.property.test.js	allowlist	pre-existing; owner BL-1206, see backlog/standing-reds.tsv
+test/bl669OutageFailoverSteward.property.test.js	allowlist	pre-existing; owner BL-1206, see backlog/standing-reds.tsv
+test/bl733ProducerCrosscheck.property.test.js	allowlist	pre-existing; owner BL-1206, see backlog/standing-reds.tsv
+test/bl735PilotAcceptanceExecution.property.test.js	allowlist	pre-existing; owner BL-1206, see backlog/standing-reds.tsv
+test/bl782LivenessProbesScopedToRoot.property.test.js	allowlist	pre-existing; owner BL-1206, see backlog/standing-reds.tsv
+test/bl874PortableTimeInvariants.property.test.js	allowlist	pre-existing; owner BL-1430, see backlog/standing-reds.tsv
+test/crossFileDuplicationCheck.property.test.js	allowlist	pre-existing; owner BL-1206, see backlog/standing-reds.tsv
+test/hostActivityFeed.property.test.js	allowlist	pre-existing; owner BL-1206, see backlog/standing-reds.tsv
+test/multiBranchParserCoverageCheck.property.test.js	allowlist	pre-existing; owner BL-1229, see backlog/standing-reds.tsv
+test/perHatRolePromptEvidenceCheck.property.test.js	allowlist	pre-existing; owner BL-1229, see backlog/standing-reds.tsv
+test/pilotAcceptanceGate.property.test.js	allowlist	pre-existing; owner BL-1206, see backlog/standing-reds.tsv
+test/pilotScopedCrapEvidence.property.test.js	allowlist	pre-existing; owner BL-1206, see backlog/standing-reds.tsv
+test/resolveMutationConcurrency.property.test.js	allowlist	pre-existing; owner BL-1206, see backlog/standing-reds.tsv
+test/shellEntryPointDriveCheck.property.test.js	allowlist	pre-existing; owner BL-1206, see backlog/standing-reds.tsv
+test/tempDirTrapGuard.property.test.js	allowlist	pre-existing; worktree scan noise; owner BL-1289, see backlog/standing-reds.tsv
+test/unreachableStepHandlerCheck.property.test.js	allowlist	pre-existing; owner BL-1221, see backlog/standing-reds.tsv

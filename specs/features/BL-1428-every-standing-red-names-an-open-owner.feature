@@ -1,3 +1,8 @@
+# mutation-stamp: sha256=a324bdc531d292d42aa6105375e25cea531f89c21325302ddf071fd53dd0087c
+# acceptance-mutation-manifest-begin
+# {"version":1,"tested_at":"2026-09-05T12:53:32.992456618Z","feature_name":"BL-1428 Every standing red names an open owner","feature_path":"/home/carillon/swarmforgevc/.worktrees/hardender/specs/features/BL-1428-every-standing-red-names-an-open-owner.feature","background_hash":"4f005ab665af202caa9e0c92e76eb22521849337107cc5e9fedaa0a4252958ca","implementation_hash":"unknown","scenarios":[{"index":1,"name":"a commit that adds or changes a register row is judged by the ticket the row names","scenario_hash":"d30485a64ef9803d184fed0cbbc1bfd5c9038f49f6bfe428e951f9fc3ea025e3","mutation_count":8,"result":{"Total":8,"Killed":8,"Survived":0,"Errors":0},"tested_at":"2026-09-05T12:53:32.992456618Z"}]}
+# acceptance-mutation-manifest-end
+
 Feature: BL-1428 Every standing red names an open owner
 
   A standing red is a test that fails on main. On 2026-09-05 the repository

@@ -37,6 +37,9 @@ const INDEX_GUARDS = [
   // BL-1395: joined the cheap tier on 2026-09-04 (run_commit_guards.sh, "Tier
   // 1") - it loads every changed Babashka script and boots handoffd.
   'check_bb_scripts_load.sh',
+  // BL-1428: joined the cheap tier 2026-09-05 - a standing-red register or
+  // ledger row a commit adds or changes must name an open ticket.
+  'check_standing_red_register.sh',
 ];
 const SUITE_GUARD = 'check_property_suite_drift.sh';
 const ALL_GUARDS = [...INDEX_GUARDS, SUITE_GUARD];
