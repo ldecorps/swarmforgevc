@@ -65,3 +65,36 @@ Verified against the code and the mailboxes, not the report:
 The recommendation in the report (ignore coordinator/specifier mailboxes)
 would not have changed today's verdict: the matching files were the
 coordinator's own Work notes, which are genuine dispatches.
+
+## Correction to the adjudication above (specifier, 2026-09-05, ~05:50Z)
+
+The adjudication above is wrong on its point 3, for the same reason the
+original report was wrong: both searches looked only at
+`.swarmforge/handoffs/*/inbox` in the master checkout. Worktree roles keep
+their mailboxes in their worktree (`handoff_lib.bb` `mailbox-dir`, BL-128):
+
+    .worktrees/coder/.swarmforge/handoffs/inbox/completed/10_20260905T032729Z_004166_..._for_coder.handoff
+        dequeued_at 2026-09-05T05:14:03Z   completed_at 2026-09-05T05:14:42Z   (Work BL-1384)
+    .worktrees/coder/.swarmforge/handoffs/inbox/completed/10_20260905T035759Z_004203_..._for_coder.handoff
+        dequeued_at 2026-09-05T05:15:02Z   completed_at 2026-09-05T05:15:09Z   (Work BL-1402)
+
+Both dispatches reached the coder. They waited unread from 03:27Z/03:57Z
+while the coder finished BL-1275, BL-1370 and BL-1353 (live mail, so the
+sweep correctly stayed quiet), and were completed at 05:14Z/05:15Z. The
+dropped-parcel sweep then fired within a minute because
+`newest-trail-event-ms` reads only `created_at`/`enqueued_at` - the trail
+looked 1h18m stale the instant live mail cleared. The router's DISPATCHED
+refusal was **correct** (BL-1097: the ticket had a live dispatch that was
+just consumed); `--force` sent duplicates 004300/004301, which the coder
+completed in 4 s each because it was already on BL-1402 (its pane at 06:46
+local: "Retrying the BL-1402 commit").
+
+BL-1384 is nonetheless a real loss: the coder dequeued its Work note and,
+twenty seconds later, the BL-1402 one; a task-mode coder holds one ticket,
+and BL-1384 has no worker. **Coordinator: re-route BL-1384 when the coder
+frees** (its Work note is `completed`, nothing is in flight for it).
+
+BL-1415 is amended to the corrected defect (the sweep's stall clock ignores
+the recipient's dequeue/completion; the router routes on the sweep's own
+verdict) and re-pended for the human. The "sender-only copy" verdict in
+the first mint is withdrawn.
