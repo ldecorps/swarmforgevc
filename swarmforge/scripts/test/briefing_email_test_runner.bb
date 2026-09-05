@@ -758,7 +758,7 @@
            (str/includes? (first @sent-html) "cid:architecture-diagram"))
   (assert= "BL-393 body-html-04: the html also carries the rendered briefing body alongside the diagram - neither replaces the other"
            true
-           (str/includes? (first @sent-html) "<p>Headline</p>"))
+           (boolean (re-find #"<p[^>]*>Headline</p>" (first @sent-html))))
   (assert= "the diagram attachments reach the actual :send-email! call"
            [{:filename "architecture-diagram.png" :content-id "architecture-diagram" :base64 "QUJD"}]
            (first @sent-attachments))
@@ -792,9 +792,13 @@
   (assert= "diagram-cid-04: its send payload carries no attachments - only html (3-arg) is passed"
            3
            (count (first @sent-args)))
-  (assert= "BL-393 body-html-05: html carries the rendered body (plus the plaintext-mirrored no-diagram note) even with no diagrams available"
-           "<p>Headline</p><p>Architecture diagrams: unavailable this run (renderer not installed) - see docs/diagrams/ in the repo.</p>"
-           (nth (first @sent-args) 2))
+  (let [html (nth (first @sent-args) 2)]
+    (assert= "BL-393 body-html-05: html carries the rendered body even with no diagrams available"
+             true
+             (boolean (re-find #"<p[^>]*>Headline</p>" html)))
+    (assert= "BL-393 body-html-05: the plaintext-mirrored no-diagram note also reaches the html part"
+             true
+             (str/includes? html "Architecture diagrams: unavailable this run (renderer not installed) - see docs/diagrams/ in the repo.")))
   (assert= "BL-393: no diagram reference leaks into the html when rendering is unavailable"
            false
            (str/includes? (nth (first @sent-args) 2) "cid:"))
@@ -823,8 +827,8 @@
            3
            (count (first @sent-args)))
   (assert= "diagram-cid-05: the html arg is the rendered body, not nil"
-           "<p>Headline</p>"
-           (nth (first @sent-args) 2)))
+           true
+           (boolean (re-find #"<p[^>]*>Headline</p>" (nth (first @sent-args) 2)))))
 
 ;; render-markdown-to-html's own pure tests live in
 ;; markdown_to_html_test_runner.bb (BL-393 cleaner extraction) - it moved to
@@ -1047,6 +1051,53 @@
                 {:exit 0 :out "" :err ""}))]
   (assert-true "BL-821: a real git commit failure is reported, never thrown"
                (not (:ok (briefing-email-lib/commit-sent-marker! dir sh-fn)))))
+
+;; ── render-briefing-html (BL-1419: phone-mail-client layout) ─────────────
+
+(let [html (briefing-email-lib/render-briefing-html "2026-09-05" "<p>Body text.</p>" nil)]
+  (assert= "BL-1419: the header names the briefing and its date"
+           true
+           (and (str/includes? html "SwarmForge briefing")
+                (str/includes? html "2026-09-05")))
+  (assert= "BL-1419: the header comes before the first section (the rendered body)"
+           true
+           (< (.indexOf html "SwarmForge briefing") (.indexOf html "Body text.")))
+  (assert= "BL-1419: the body still renders, styled inline"
+           true
+           (boolean (re-find #"<p style=\"[^\"]+\">Body text\.</p>" html)))
+  (assert= "BL-1419: a single bounded-width column with a font stack wraps the whole layout"
+           true
+           (boolean (re-find #"<div style=\"[^\"]*max-width:640px[^\"]*font-family:[^\"]*\">" html)))
+  (assert= "BL-1419: no diagrams -> no 'Diagrams' heading at all"
+           false
+           (str/includes? html "Diagrams")))
+
+(let [html (briefing-email-lib/render-briefing-html "2026-09-05" "<p>Body text.</p>" "<div><h3>Architecture</h3><img/></div>")]
+  (assert= "BL-1419: the diagrams section appears under its own heading, after the body"
+           true
+           (< (.indexOf html "Body text.") (.indexOf html "Diagrams")))
+  (assert= "BL-1419: the diagram content itself still reaches the html part"
+           true
+           (str/includes? html "<h3")))
+
+;; Invariant 2: every style the html part depends on is carried inline on
+;; the element it styles - stripping every <style> block changes nothing,
+;; because the rendering never emits one to strip.
+(let [html (briefing-email-lib/render-briefing-html
+            "2026-09-05"
+            "<h2>Section</h2><p>A para.</p><ul><li>one</li></ul><blockquote>a quote</blockquote>"
+            nil)
+      stripped (str/replace html #"<style[^>]*>.*?</style>" "")]
+  (assert= "BL-1419 invariant 2: the rendering never emits a <style> block at all"
+           false
+           (str/includes? html "<style"))
+  (assert= "BL-1419 invariant 2: stripping every <style> block leaves the layout byte-identical (there is none to strip)"
+           html
+           stripped)
+  (assert= "BL-1419 invariant 2: every block element carries a style attribute"
+           true
+           (every? #(boolean (re-find (re-pattern (str "<" % " style=\"[^\"]+\">")) html))
+                   ["h2" "p" "ul" "li" "blockquote"])))
 
 ;; ── report ────────────────────────────────────────────────────────────────
 (if (seq @failures)
