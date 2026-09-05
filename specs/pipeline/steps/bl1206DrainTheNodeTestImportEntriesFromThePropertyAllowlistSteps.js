@@ -153,7 +153,23 @@ function registerSteps(registry) {
   // compares it byte-for-byte with the working tree today.
   const REGISTER_FILES = [ALLOWLIST_REL, path.join('backlog', 'standing-reds.tsv')];
 
+  // BL-113 hardening: pinned literally, per the Scenario Outline handler
+  // convention (never a passthrough regex) - this is the scenario's own
+  // fixed set of three Examples values, exactly as authored. Without this
+  // pin, a mutated cell (a nonexistent filename) has NO row in either
+  // register file before or after this ticket's diff, so the "unchanged"
+  // deepEqual below passes VACUOUSLY (null === null) regardless of the
+  // mutation - the check never actually reaches real register data. Pinning
+  // here forces the mutant to fail on membership, before the shape-based
+  // row lookup ever runs.
+  const KNOWN_OUTLINE_FILES = [
+    'test/hostActivityFeed.property.test.js',
+    'test/selfHealTelemetry.property.test.js',
+    'test/unreachableStepHandlerCheck.property.test.js',
+  ];
+
   scoped(/^(.+) is allowlisted for a cause other than the node:test import$/, (ctx, file) => {
+    assert.ok(KNOWN_OUTLINE_FILES.includes(file), `expected ${file} to be one of this scenario's own known Examples values: ${KNOWN_OUTLINE_FILES.join(', ')}`);
     assert.ok(!CONVERTED_FILES.includes(file), `expected ${file} not to be one of this ticket's own converted files`);
     ctx.bl1206.outlineFile = file;
     ctx.bl1206.beforeRows = REGISTER_FILES.map((rel) => rowFor(gitShowHead(rel), file));

@@ -1,3 +1,8 @@
+# mutation-stamp: sha256=bd3f44a01736110771175289626ece60d7166356edfd27d42d125ec42b497327
+# acceptance-mutation-manifest-begin
+# {"version":1,"tested_at":"2026-09-05T16:08:52.661382180Z","feature_name":"the thirteen property files that import test from node:test are collected by the property lane instead of standing allowlisted","feature_path":"/home/carillon/swarmforgevc/.worktrees/hardender/specs/features/BL-1206-drain-the-node-test-import-entries-from-the-property-allowlist.feature","background_hash":"852b688cc7bea8ca3f24e4b082a35e160b1c7c63b085aa2c1c243bf2933a591c","implementation_hash":"unknown","scenarios":[{"index":3,"name":"An allowlist entry red for an unrelated reason is left alone","scenario_hash":"15d939048c2cba37df809bbf813d3e10503f1c62baa6787b75aa945d716706af","mutation_count":3,"result":{"Total":3,"Killed":3,"Survived":0,"Errors":0},"tested_at":"2026-09-05T16:08:52.661382180Z"}]}
+# acceptance-mutation-manifest-end
+
 Feature: the thirteen property files that import test from node:test are collected by the property lane instead of standing allowlisted
 
   # BL-1206 (epic code-quality-gates). BL-1175 unblocked a stuck parcel by
