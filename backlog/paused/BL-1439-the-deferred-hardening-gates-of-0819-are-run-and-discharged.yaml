@@ -1,0 +1,148 @@
+id: BL-1439
+title: "Five hardening gates deferred on 2026-08-19 (Stryker mutation on BL-620's, BL-955's and BL-954's file sets, mutation on pipelineBoard.ts and a stalled gherkin-mutation on BL-956's feature) still sit in backlog/hardening-debt-ledger.yaml, whose only verb is --defer, with every parcel closed; the standing-red register reads them as unowned reds and BL-1429 has throttled intake to a cap of one; the owed gates are run and recorded, the ledger gains a discharge verb, and discharged rows leave the register"
+milestone: M8
+type: defect
+severity: high
+# high: a broken safety signal twice over. The mutation gate never ran on
+# four production file sets for seventeen days, and the register's rule
+# now throttles the whole swarm to one active ticket over it (unowned
+# today, age even once owned). Not critical: nothing is down.
+status: todo
+epic: code-quality-gates
+priority: 1
+direction: swarm-reported
+depends_on: [BL-942, BL-1428, BL-1429]
+mutation_cost: high
+slice_size_envelope: medium
+required_stages: [coder, cleaner, architect, hardender, documenter, qa]
+
+acceptance: specs/features/BL-1439-the-deferred-hardening-gates-of-0819-are-run-and-discharged.feature
+
+human_approval: pending
+approval_context: >
+  A new feature file is authored here, so it needs a tap. No choice is
+  posed and there are no ruling_options, but one consequence is yours to
+  weigh. The throttle you approved this morning is on right now over
+  hardening debt, not over a failing test: five mutation and
+  gherkin-mutation gates deferred under host load on 2026-08-19, on
+  parcels long closed, recorded in a ledger that can only add rows. The
+  specifier gave those rows an owner (this ticket) in the register the
+  same commit, which clears the unowned signal, but their age is
+  seventeen days and the age signal keeps the cap at one until the debt
+  is actually discharged, which is this ticket's real work: the runs
+  themselves. If you would rather deferred-gate debt aged from the day it
+  is owned, or counted separately from failing tests, say so and the
+  specifier amends the register's rule; as written, this is your rule
+  working. BL-1425 landed, so a /qjump on this ticket places it past the
+  cap.
+
+invariants:
+  - "A ledger row leaves the outstanding debt only through a discharge that names the gate, the parcel and a committed result; the row itself is never deleted, so the deferral and its discharge stay readable together."
+  - "The register and the throttle see one notion of outstanding debt: the ledger library's outstanding-debt is the only filter, and a discharged row contributes no register row and no age."
+  - "A gate that cannot complete on this host (the BL-687 stall shape) is recorded as such with the evidence of the attempt and stays outstanding, never discharged by assertion."
+
+required_wiring:
+  - 'swarmforge/scripts/hardening_debt_ledger_update.bb::--discharge::the ledger verb that records a run, the pre-existing writer the hardener already calls with --defer; absent today (grep returns 0)'
+  - 'swarmforge/scripts/hardening_debt_ledger_lib.bb::discharged::outstanding-debt excludes discharged rows, the one filter the register CLI reads; absent today (grep returns 0)'
+  - 'specs/pipeline/steps/bl1439DeferredHardeningGatesDischargedSteps.js::registerSteps::the handler file exists so discovery registers every scenario (BL-1371)'
+
+description: |
+  ## What is wrong
+
+  Coordinator note 2026-09-05T22:38Z: "Throttle still on: hardening-debt
+  ledger has 5 unowned rows (closed tix, 17d)". The register CLI reports
+  five `hardening` rows, all dated 2026-08-19, tickets BL-620, BL-955,
+  BL-954, BL-956, BL-956, all closed, all unowned;
+  `.swarmforge/coordinator/throttle-recommendation.json` reads
+  `recommendedCap 1, standingRed.signal unowned`; the effective cap is 1;
+  `backlog/active/` is empty.
+
+  The ledger (BL-942) records a hardening pass that deferred a mutation or
+  CRAP gate under load, one row per deferral, and its tool has exactly one
+  verb, `--defer`. Nothing records that a deferred gate later ran, so
+  `outstanding-debt` is every row forever. BL-941 discharged one earlier
+  instance by minting a ticket that ran the owed gates, which is the shape
+  here, but the ledger never learned about it.
+
+  BL-1428 folded the ledger into the standing-red register with the row's
+  `parcel` as owner, by the specifier's own design; a closed parcel is
+  unowned. BL-1429 throttles on any unowned red and on an oldest age over
+  `standing_red_max_age_days` (7). Ownership was given to this ticket in
+  `backlog/standing-reds.tsv` with this mint, which clears the unowned
+  signal; the age signal stays until discharge.
+
+  ## What changes
+
+  - The five owed gates run and are recorded, each as its own evidence
+    file: Stryker (`--mutate` scoped to compiled `out/**` for each file
+    set, `perTest`, sibling links per the Verification rules) on BL-620's,
+    BL-955's and BL-954's sets and on pipelineBoard.ts; the gherkin
+    mutation run on BL-956's feature. Surviving mutants are killed or
+    recorded with a reason; a run that cannot complete on this host is
+    recorded as an attempt and stays outstanding (invariant 3).
+  - `hardening_debt_ledger_update.bb --discharge <parcel> <gate>
+    --evidence <path> [<date>]` marks the matching row (by debt-key)
+    `discharged_at` and `discharged_evidence`; a discharge with no
+    evidence path, or naming no matching row, is refused. The row stays.
+  - `hardening_debt_ledger_lib.bb` `outstanding-debt` excludes discharged
+    rows; `render-ledger` writes the new fields; `hardening_debt_ledger_read.bb`
+    prints them. The register CLI needs no change: it already reads
+    `outstanding-debt` (invariant 2).
+  - The five register rows added with this mint leave in the same commit
+    that discharges the last of the five (the standing-red rule).
+  - The documenter updates BL-942's how-to with the discharge verb and
+    the rule that a run discharges what a deferral recorded.
+
+  ## How (direction, not mandate)
+
+  - Run the gates one file set at a time under the mutation cooldown gate
+    and the host-load rules the hardener prompt names; the deferral
+    reasons say why they were skipped and the same load may return.
+    Record load and duration in each evidence file.
+  - Key the discharge on `debt-key` (parcel + gate + normalized file set)
+    so a re-deferral of the same set is a new row, not a resurrection.
+  - Fixture ledger text for scenarios 01 and 02 (the parser is pure);
+    scenario 03 reads the committed ledger and runs the register CLI over
+    the parcel's tree.
+
+  ## Out of scope
+
+  - Changing which gates the hardener may defer, or the cooldown gate.
+  - The register's rule for how deferred-gate debt is aged or counted (a
+    human ruling if wanted; see approval_context).
+
+qa_e2e_procedure: |
+  1. The BL-1439 feature passes (three scenarios, four runs).
+  2. `bb swarmforge/scripts/hardening_debt_ledger_read.bb .` lists the five
+     2026-08-19 rows with `discharged_at` and an evidence pointer each, or
+     an attempt record for any that could not complete (invariant 3).
+  3. `bb swarmforge/scripts/standing_red_register_cli.bb .` reports no
+     hardening rows and no unowned rows; after the next promotion decision
+     `.swarmforge/coordinator/throttle-recommendation.json` shows no
+     standing-red signal and the effective cap returns to the configured
+     value.
+  4. Each evidence file shows the Stryker or gherkin-mutation summary with
+     zero surviving mutants or a recorded reason per survivor.
+
+notes: |
+  Minted 2026-09-05 by the specifier on the coordinator's note (verbatim in
+  description). The register rows giving this debt an owner were written
+  the same commit, after the header; the register held no other data row
+  at mint (BL-1434 and BL-1436 removed theirs), so nothing adjoins them.
+  Age is honest: first_seen is the deferral date, so
+  the throttle stays on age until discharge; the human is told.
+
+  INVEST at mint: Independent (BL-942, BL-1428, BL-1429 landed),
+  Negotiable (verb flags and evidence layout are direction), Valuable
+  (one outcome: the owed gates ran and the swarm is unthrottled on its
+  merits), Estimable (five bounded runs, one verb, one filter, one
+  handler; high mutation cost by nature), Small enough (three scenarios,
+  four runs, three invariants at the cap; the runs are the bulk),
+  Testable (pure ledger fixtures; the committed ledger).
+
+source: |
+  Coordinator note 2026-09-05T22:38:40Z; `standing_red_register_cli.bb .`
+  report; `.swarmforge/coordinator/throttle-recommendation.json`;
+  `backlog/hardening-debt-ledger.yaml`; `hardening_debt_ledger_update.bb`
+  usage (--defer only); `standing_red_register_lib.bb` build-report join on
+  (lane, file); BL-941 as the discharge precedent.
