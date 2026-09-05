@@ -85,4 +85,19 @@ Recording via `record-bounce.js` next; sending a `note` (priority 00) to
 coder pointing here, per Article 4.3 (routes to the role that owns the
 fix — the specifier already told coder exactly which lines to change).
 
+## Revert disposition — and the `record-bounce.js` false `violation` verdict
+
+`record-bounce.js` reports `verdict: violation` with `liveFiles:
+[backlog/evidence/BL-1370-cleaner-bounce-20260905.md]` for the commit
+passed (`12b538c4b9`, this evidence file's own commit). Same tool
+behaviour as the documented BL-962/BL-963 false positives: **no revert
+applies to this bounce**. Nothing delivered here is DEFECTIVE content to
+strip out — `check_worktree_strays.bb`, `worktree_stray_lib.bb`, the step
+handler and the shell suite's own-clean/own-stray/group-reap cases are all
+correct and reusable once the classifier fix lands; the only thing wrong
+is an ABSENCE (the amended invariant 1's fix and its two scenarios),
+which reverting the merge would not fix and would instead destroy good
+work. This is a "please add the missing piece" bounce, not a "please
+remove this" bounce.
+
 By cleaner.
