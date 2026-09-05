@@ -182,19 +182,35 @@ heartbeat_age_secs() {
     printf '%s %s\n' "$SENTINEL_AGE" "log-absent"
     return
   fi
-  # Last line containing the token "heartbeat" (content-free pulse).
-  line=$(grep -E '[[:space:]]heartbeat([[:space:]]|$)' "$log_path" | tail -n 1 || true)
-  if [ -z "$line" ]; then
+  # BL-1413: -a forces text mode so a NUL byte anywhere in the file (a
+  # crash-time zero-fill) never truncates the match set the way GNU grep's
+  # binary-file heuristic otherwise would - every heartbeat line after the
+  # NUL byte must still be visible, not just the ones before it.
+  # LC_ALL=C keeps the match byte-wise (same result on GNU and BSD grep,
+  # regardless of the invoking locale).
+  lines=$(LC_ALL=C grep -aE '[[:space:]]heartbeat([[:space:]]|$)' "$log_path" || true)
+  if [ -z "$lines" ]; then
     printf '%s %s\n' "$SENTINEL_AGE" "no-heartbeat-line"
     return
   fi
-  ts=$(printf '%s' "$line" | awk '{print $1}')
-  epoch=$(iso_to_epoch "$ts")
-  if [ -z "$epoch" ] || [ "$epoch" -eq 0 ]; then
-    printf '%s %s\n' "$SENTINEL_AGE" "unparseable-timestamp"
-    return
-  fi
-  printf '%s %s\n' $((NOW - epoch)) "stale-heartbeat"
+  # BL-1413: a torn/corrupted line can make ITS OWN timestamp unparseable,
+  # but must never hide an older, parseable heartbeat line behind it - walk
+  # from newest to oldest matching line and use the first one whose
+  # timestamp actually parses. Only when NONE parse is the file truly
+  # unparseable (the pre-BL-1413 sentinel behavior, unchanged for that case).
+  line_count=$(printf '%s\n' "$lines" | wc -l | tr -d ' ')
+  i=$line_count
+  while [ "$i" -ge 1 ]; do
+    line=$(printf '%s\n' "$lines" | sed -n "${i}p")
+    ts=$(printf '%s' "$line" | awk '{print $1}')
+    epoch=$(iso_to_epoch "$ts")
+    if [ -n "$epoch" ] && [ "$epoch" -ne 0 ]; then
+      printf '%s %s\n' $((NOW - epoch)) "stale-heartbeat"
+      return
+    fi
+    i=$((i - 1))
+  done
+  printf '%s %s\n' "$SENTINEL_AGE" "unparseable-timestamp"
 }
 
 # BL-1110: handoffd only logs heartbeat at cycle start/end; a heavy in-flight
