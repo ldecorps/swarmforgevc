@@ -170,6 +170,14 @@ notes: |
   adopters. This is the gate half of that. The migration half is the
   open question in approval_context.
 
+  2026-09-05 (specifier): the migration half is now PARTLY answered. The
+  hardener found 17 step handlers taking their root from extension/test's
+  Vitest-swept `mkTmpDir` (never swept under the acceptance runner) and
+  two more with a local bare mkdtemp; that sub-class is minted as
+  **BL-1410**, a targeted migration onto socketFixtureRoot, independent of
+  this gate. The 277 raw-mkdtemp handlers with no cleanup remain the open
+  question above; this ticket's scope is unchanged.
+
 source: |
   Architect rule_proposal, scope engineering, 2026-08-28. Disposition:
   minted as this ticket rather than appended to engineering.prompt.

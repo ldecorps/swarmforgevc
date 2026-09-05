@@ -1,0 +1,153 @@
+id: BL-1419
+title: "The daily briefing email reflows its hard-wrapped markdown into real paragraphs, lists, quotes and code, and lays the HTML part out for a phone mail client (bounded single column, font stack, inline block styles, a dated header, diagrams under their own heading); the plain-text part stays the markdown (human, 2026-09-05: reflow text in daily briefing email, make it better looking overall)"
+milestone: M8
+type: defect
+severity: medium
+# medium: real, contained to presentation. Every briefing email since
+# BL-393 has rendered every wrapped line as its own paragraph; the data is
+# complete (BL-393 fixed that), the reading is ragged on a phone.
+status: todo
+epic: art-direction
+priority: 6
+direction: human-requested
+depends_on: [BL-393]
+mutation_cost: low
+slice_size_envelope: low
+required_stages: [coder, cleaner, architect, hardender, documenter, qa]
+
+acceptance: specs/features/BL-1419-the-briefing-email-reflows-and-reads-well-on-a-phone.feature
+
+required_wiring:
+  - 'swarmforge/scripts/briefing_email_lib.bb::render-briefing-html::compose-and-send-one!, the live send path, must call the layout renderer, not the bare markdown converter; the name is fixed here (BL-874) and absent today'
+  - 'specs/pipeline/steps/bl1419BriefingEmailReflowSteps.js::registerSteps::the handler file exists so discovery registers every scenario (BL-1371)'
+
+invariants:
+  - "A line break inside a markdown block never survives into the HTML part as an element boundary: consecutive non-blank lines of one paragraph, list item or blockquote render as one element with single spaces where the breaks were."
+  - "Every style the HTML part depends on is carried inline on the element it styles; the rendering is complete with every <style> block removed."
+  - "The plain-text part is byte-identical to the composed markdown, so BL-393 scenario 01 and every consumer of the text part are untouched."
+
+human_approval: approved
+approval_context: >
+  A new feature file is authored here, so it needs a tap. No choice is posed
+  and there are no ruling_options. This is your "first job" for the Art
+  Director; it does not wait for that seat (BL-1418): QA gates it against the
+  scenarios, and the art director reviews the sent result on a phone as its
+  first act once seated. If you want a specific look (a colour, a logo, a
+  layout you have in mind), say so in Amend; the ticket asks only for text
+  first: reflow, hierarchy, spacing.
+
+description: |
+  ## What is wrong
+
+  Human, verbatim (2026-09-05): "first job: reflow text in daily breigin
+  email. also make it better looking overall."
+
+  `docs/briefings/<date>.md` is written hard-wrapped at ~74 columns (the
+  documenter writes it at the coordinator's instruction). BL-393 sends it
+  as a plain-text part plus an HTML part rendered by
+  `markdown_to_html_lib.bb` `render-markdown-to-html`, whose contract reads
+  "Every other non-blank line becomes its own <p>". Rendering
+  `docs/briefings/2026-09-05.md` through it today gives:
+
+      <p>&gt; Written by documenter at the coordinator's explicit `note` instruction</p>
+      <p>&gt; (2026-09-05), covering the period since `2026-09-03.md`'s cutoff — no</p>
+      ...
+      <p>**The QA land/replay/reconcile machinery kept absorbing structural</p>
+      <p>gaps** — the same theme as 2026-09-03, continuing deeper into the same</p>
+      <p>- BL-1309: the one landing step QA cannot skip never asked what the tip</p>
+      <p>  actually carried, so a plain push of the QA branch shipped every ticket</p>
+
+  Eight one-line paragraphs for one blockquote, a bold span that never
+  closes, 24 list items and their 75 continuation lines as 99 paragraphs
+  starting with "-" or two spaces, backticks left as literal backticks. On
+  a phone the mail reads as ragged fragments. The constructs the briefings
+  actually use (measured on 09-03 and 09-05): paragraphs, "- " lists with
+  indented continuation, "> " quotes, ## headings, **bold**, backtick code;
+  no tables, no rules.
+
+  ## What is wanted
+
+  - Reflow: consecutive non-blank lines of one block join with single spaces
+    into one element: paragraph -> <p>, "- " items -> <ul><li> (continuation
+    lines joined into their item), "> " lines -> <blockquote>, bold spanning
+    a wrap -> one <strong>, backticks -> <code>, headings and GFM tables as
+    BL-393 has them.
+  - Layout for a phone mail client: a single column with a declared maximum
+    width (~640 px) and a system font stack; spacing, heading and list styles
+    carried INLINE on the elements (mail clients drop <style>); a header
+    naming the briefing and its date before the first section; the diagrams
+    section under its own heading after the body; readable at 390 px with no
+    horizontal scroll.
+  - The plain-text part stays the markdown, byte-identical (BL-393
+    scenario 01; invariant 3).
+
+  ## How (direction, not mandate)
+
+  - `markdown_to_html_lib.bb`: make the renderer block-aware (paragraph,
+    list, blockquote, heading, table), joining a block's lines before inline
+    rendering; add code spans to `render-inline-markdown`. Amend the unit
+    test that pins the old per-line behaviour
+    (`markdown_to_html_test_runner.bb`, the `"One\nTwo"` -> `<p>One</p><p>Two</p>`
+    case): it was right for BL-393's contract and is wrong for this one;
+    replace it, do not delete the file's other cases. BL-393's feature
+    stays green (its scenario 02 asserts headings/tables/bold render as
+    elements, which still holds).
+  - `briefing_email_lib.bb`: a `render-briefing-html` that wraps the
+    converted body in the layout (header with date-label, body, diagrams
+    section) and applies inline styles per element; `compose-and-send-one!`
+    calls it. Keep the converter generic (BL-393's cleaner extraction) and
+    the email layout in the email lib.
+  - Fixture: a copy of `docs/briefings/2026-09-05.md` in the test dir for
+    scenario 06 (counts: 24 list items, 1 quote, 3 h2 - measured at mint).
+  - The documenter updates the briefing how-to; no diagram trigger fires.
+
+  ## Out of scope
+
+  - Changing what the briefing SAYS or how the documenter wraps the source.
+  - Telegram or PWA presentation (later briefs from the Art Director).
+  - Images, colour schemes or a logo: text first (art-director.prompt);
+    the human can ask for more in Amend.
+
+qa_e2e_procedure: |
+  1. `bb swarmforge/scripts/test/markdown_to_html_test_runner.bb` and
+     `bb swarmforge/scripts/test/briefing_email_test_runner.bb` pass; the
+     BL-1419 feature passes all eight scenario runs; BL-393's feature passes.
+  2. Render the real briefing:
+     `bb -e '(load-file "swarmforge/scripts/briefing_email_lib.bb") ...'`
+     (or the harness `briefing_email_harness.bb`) over
+     `docs/briefings/2026-09-05.md` to `tmp/briefing.html`; open it in a
+     browser at 390 px width: no sentence broken across lines mid-way, one
+     bullet per list item, the quote as one indented block, the date in the
+     header, no horizontal scroll.
+  3. Strip every `<style>` block from `tmp/briefing.html` and reload: the
+     layout is unchanged (invariant 2).
+  4. The plain-text part written by the harness is byte-identical to the
+     composed markdown (`cmp`).
+  5. Once the Art Director is seated (BL-1418): it reviews the next sent
+     briefing on a phone mail client and records LGTM or a defect list on
+     this ticket's notes; QA does not wait for it.
+
+notes: |
+  Minted 2026-09-05 by the specifier from the human's in-session directive
+  (verbatim in description) and a live render of docs/briefings/2026-09-05.md
+  through markdown_to_html_lib.bb the same pass. The Art Director role is
+  introduced alongside (BL-1417/BL-1418); this is its first job, minted by
+  the specifier because the seat does not exist yet.
+
+  IR-DRY (2026-09-05): one exact near-duplicate (scenario 02's "no <p>
+  begins with" step) normalized to scenario 06's wording; the remaining
+  medium finding is the two count assertions, deliberate, kept.
+
+  INVEST at mint: Independent (BL-393 landed; no sibling needed),
+  Negotiable (block parser shape and layout details are direction),
+  Valuable (one outcome: the email reads properly on a phone), Estimable
+  (one renderer + one layout fn + tests; low), Small (six scenarios, three
+  invariants), Testable (pure renderer over fixture markdown; the real
+  briefing as a counted fixture).
+
+source: |
+  Human, in-session 2026-09-05: "first job: reflow text in daily breigin
+  email. also make it better looking overall." Renderer read:
+  swarmforge/scripts/markdown_to_html_lib.bb lines 49-77; live render
+  excerpt above; construct counts on docs/briefings/2026-09-03.md and
+  2026-09-05.md.

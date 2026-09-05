@@ -1,0 +1,182 @@
+id: BL-1415
+title: "The dropped-parcel sweep's stall clock reads only a dispatch's created_at, never the recipient's dequeue or completion: a Work note that waited unread past the threshold is reported as a possible drop the instant the recipient completes it, the router correctly refuses the repair as DISPATCHED, and --force duplicates the route (BL-1384/BL-1402, 2026-09-05); the clock starts when the recipient acts, and the router routes on the same verdict"
+milestone: M8
+type: defect
+severity: medium
+# medium: real but contained. A false "possible drop" fires once per
+# dispatch that waited past the threshold and costs a coordinator round trip
+# plus, under --force, a duplicate Work note; the genuinely dropped case
+# (BL-1384, completed unread while the coder took BL-1402) is still surfaced.
+status: todo
+epic: swarm-reliability
+priority: 9
+direction: swarm-reported
+depends_on: [BL-1097, BL-1223, BL-1301]
+mutation_cost: low
+slice_size_envelope: low
+required_stages: [coder, cleaner, architect, hardender, documenter, qa]
+
+acceptance: specs/features/BL-1415-a-dispatch-that-never-reached-its-recipient-is-lost-not-dispatched.feature
+
+required_wiring:
+  - 'swarmforge/scripts/route_backlog_to_coder.sh::DROPPED::the live router must branch on the verdict; absent today (grep returns 0)'
+  - 'swarmforge/scripts/dispatch_trail_cli.bb::DROPPED::the CLI the router shells to must print the verdict; absent today (grep returns 0)'
+  - 'swarmforge/scripts/chase_sweep_lib.bb::completed_at::the trail clock must read the recipient copy completion header; absent today (grep returns 0)'
+  - 'specs/pipeline/steps/bl1415LostDispatchSteps.js::registerSteps::the handler file exists so discovery registers every scenario (BL-1371)'
+
+invariants:
+  - "One predicate in chase_sweep_lib.bb answers dropped / in-flight / worked for the sweep, dispatch_trail_cli.bb and route_backlog_to_coder.sh (BL-1097 invariant 2); the router never re-derives it from the mailboxes."
+  - "The stall clock starts at the freshest of the dispatch's created_at or enqueued_at, the recipient copy's dequeued_at and completed_at, and any later handoff naming the ticket; a dispatch the recipient acted on less than the threshold ago is never a drop."
+  - "DISPATCHED (live mail, or a git_handoff for the ticket in any mailbox state) always refuses without --force; DROPPED always routes with a warning naming the completed dispatch; missing data fails closed (not dropped) exactly as BL-1301 has it."
+
+human_approval: pending
+approval_context: >
+  RE-PENDED deliberately after your Approve tap (88d25c1108, 06:32:01 local):
+  the ticket you approved said the coder never received the two Work notes.
+  That was wrong. The specifier had searched only the master checkout's
+  mailboxes; worktree roles keep theirs under .worktrees/<role>/.swarmforge/,
+  where both notes sit completed (05:14:42Z and 05:15:09Z). The defect is
+  the sweep's stall clock, not a lost dispatch, and the feature file changed
+  accordingly, so it needs your tap again. No choice is posed and there are
+  no ruling_options.
+
+description: |
+  ## What is wrong
+
+  The coordinator's evidence
+  (`backlog/evidence/coordinator-dispatch-trail-false-positive-20260905.md`,
+  572173b1bd, with the specifier's two adjudications appended) reports two
+  dropped-parcel self-notes on 2026-09-05, "BL-1402 no parcel in flight -
+  possible drop" and the same for BL-1384, followed by
+  `route_backlog_to_coder.sh` refusing both as "already has a dispatch
+  trail", and a `--force` for each.
+
+  What actually happened, from the coder's worktree mailbox
+  (`.worktrees/coder/.swarmforge/handoffs/inbox/completed/`):
+
+      10_20260905T032729Z_004166 ... Work BL-1384 ...  dequeued 05:14:03Z  completed 05:14:42Z
+      10_20260905T035759Z_004203 ... Work BL-1402 ...  dequeued 05:15:02Z  completed 05:15:09Z
+
+  Both Work notes were delivered at 03:27Z and 03:57Z and waited unread
+  while the coder (task mode, one ticket at a time) finished BL-1275,
+  BL-1370 and BL-1353. While they waited, `live-mail?` was true and
+  `decide-dropped-parcel?` correctly did not fire. The moment the coder
+  completed them, live mail cleared, and `newest-trail-event-ms` - which
+  reads only each handoff's `enqueued_at`/`created_at` header
+  (`handoff-event-ms`) - answered 03:57Z: 1h18m old, past the 45-minute
+  stall threshold. Both tickets were reported as drops within a minute of
+  the coder starting on them. The router's DISPATCHED refusal was the
+  correct answer under BL-1097; the `--force` that followed sent a second
+  Work note for each (004300/004301), which the coder also completed in
+  seconds because it was already on BL-1402.
+
+  Two things were true at once: BL-1402 was a FALSE drop (the coder was
+  working it from 05:15Z, its commit is being retried at 06:46 local), and
+  BL-1384 was a REAL one - the coder dequeued a second Work note twenty
+  seconds after completing the first, and a task-mode coder can hold one
+  ticket. The sweep could not tell them apart because its clock never
+  looked at what the recipient did.
+
+  ## What is wanted
+
+  - The stall clock starts at the freshest of: the dispatch's creation, the
+    recipient copy's `dequeued_at`, its `completed_at`, and any later
+    handoff naming the ticket. A recipient that acted on a dispatch less
+    than the threshold ago is never a drop.
+  - A dispatch completed past the threshold with no parcel for the ticket
+    in any mailbox state after it, and no commit naming the ticket on any
+    role branch since, is DROPPED: the sweep nudges as today, and
+    `route_backlog_to_coder.sh` routes without `--force`, warning which
+    completed dispatch it is repairing.
+  - Live mail, or a `git_handoff` for the ticket anywhere, stays
+    DISPATCHED and the router keeps refusing.
+  - `dispatch_trail_cli.bb` prints the third verdict, DROPPED, with the
+    sweep's reason, so the coordinator never has to guess at `--force`.
+
+  ## How (direction, not mandate)
+
+  - `handoff-event-ms` (or a sibling used only by the trail clock) takes
+    the max of `created_at`/`enqueued_at`/`dequeued_at`/`completed_at`;
+    BL-978's single-pass trail index derives the same value in one place
+    (its invariant 2 - do not add a second derivation).
+  - `decide-dropped-parcel?` keeps its shape; the caller passes the new
+    newest-trail-ms. A verdict fn `ticket-dispatch-verdict` returns
+    `:dispatched` / `:dropped` / `:undispatched` with a reason string; the
+    CLI prints it; `route_backlog_to_coder.sh` three-way branches.
+  - "No work anywhere": no handoff naming the ticket in any mailbox state
+    newer than the completed dispatch. A git-branch check is optional and
+    must stay read-only (`git log --all --grep`); if added, it is the same
+    call the coordinator ran by hand on 2026-09-05.
+  - Tests: `dropped_parcel_test_runner.bb`,
+    `bl1097_router_dispatch_trail_test_runner.bb`,
+    `test_bl1097_router_refuses_dispatched_ticket.sh` gain the
+    completed-recently / completed-long-ago / worked fixtures. Fixture
+    trees under mkdtemp, removed in a finally, never a prefix sweep.
+  - BL-1097's and BL-1301's features stay green; nothing retired.
+
+  ## Out of scope
+
+  - The coder dequeuing a second Work note while holding a ticket (BL-1384's
+    actual loss): the double-dequeue is `done_with_current.sh`'s behaviour
+    (operator memory 09-05) and a candidate successor - not this slice.
+  - The BL-536 auth-observer false positive seen the same hour: BL-1416.
+
+qa_e2e_procedure: |
+  1. The three runners above pass with the new fixtures; the BL-1415 feature
+     passes all six scenario runs; BL-1097, BL-1223 and BL-1301 features
+     still pass.
+  2. Live, read-only: `bb swarmforge/scripts/dispatch_trail_cli.bb . dispatched BL-1402`
+     on the real checkout prints DISPATCHED while BL-1402's parcel is in
+     flight; the same for a done ticket prints DISPATCHED; an active ticket
+     whose only trail is a Work note completed over 45 minutes ago with
+     nothing after it prints DROPPED naming that note.
+  3. Scratch tree: a Work note copy with `completed_at` 30 s ago and none
+     after it: not dropped; set `completed_at` to 50 min ago: the sweep's
+     one-shot (`handoffd.bb` dropped-parcel sweep against the scratch root)
+     nudges and `route_backlog_to_coder.sh BL-9001 <scratch>` routes with
+     the warning; add a git_handoff for BL-9001 to a worktree mailbox:
+     refuses.
+  4. `grep -n DROPPED swarmforge/scripts/route_backlog_to_coder.sh
+     swarmforge/scripts/dispatch_trail_cli.bb` and `grep -n completed_at
+     swarmforge/scripts/chase_sweep_lib.bb` return the call sites
+     (required_wiring).
+  5. Scratch trees are gone after the runners exit.
+
+notes: |
+  RE-PENDED 2026-09-05 (specifier): `human_approval` was `approved` by the
+  human's tap at 06:32:01 local (88d25c1108) against a ticket whose premise
+  was wrong. Set back to `pending` deliberately because the feature file
+  changed; not an erased approval. The specifier never writes `approved`.
+
+  AMENDED 2026-09-05 (specifier, same day, ticket still paused, no parcel):
+  the first mint (28242bcf0b) said the two Work notes "never reached the
+  coder" and defined a LOST verdict for a sender-only copy. The specifier
+  had grepped `.swarmforge/handoffs/*/inbox` in the master checkout only;
+  worktree roles' mailboxes live at `.worktrees/<role>/.swarmforge/handoffs/inbox/`
+  (handoff_lib.bb `mailbox-dir`, BL-128), where both notes sit completed.
+  The coordinator's evidence made the same search mistake in the other
+  direction. Corrected cause above; both corrections are appended to the
+  evidence file.
+
+  IR-DRY (2026-09-05, amended feature): one near-duplicate ("... 50
+  minutes ago and nothing followed it") normalized to scenario 03's two
+  Givens in scenario 05; the remaining medium findings are the
+  not-dropped / dropped contrasts, deliberate, kept.
+
+  INVEST at mint (amended): Independent (all depends_on landed), Negotiable
+  (verdict shape and the optional git check are direction), Valuable (one
+  outcome: the drop verdict is right and acted on), Estimable (one clock
+  fn + verdict fn + two callers + fixtures; low), Small (five scenarios,
+  three invariants), Testable (fixture mailboxes with headers, real CLI).
+
+  APPROVED by the human at 06:32:01 local (88d25c1108) against the first
+  text, before the specifier's commit landed; superseded by the re-pend
+  above.
+
+source: |
+  Coordinator note 2026-09-05T05:17:07Z (handoff 20260905T051707Z_004303):
+  "Bug ev: coordinator-dispatch-trail-false-positive-20260905.md";
+  evidence commit 572173b1bd. Specifier verification the same day:
+  chase_sweep_lib.bb `newest-trail-event-ms` / `handoff-event-ms`,
+  `decide-dropped-parcel?`, the coder's worktree mailbox headers, the
+  coder pane at 06:46 local ("Retrying the BL-1402 commit").
