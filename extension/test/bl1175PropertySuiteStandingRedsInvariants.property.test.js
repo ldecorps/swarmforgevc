@@ -14,12 +14,43 @@ const ALLOWLIST_TSV = path.join(REPO_ROOT, 'swarmforge', 'scripts', 'property_su
 const ALLOWLIST_LIB = path.join(REPO_ROOT, 'swarmforge', 'scripts', 'property_suite_standing_allowlist_lib.sh');
 const CANARY_LIB = path.join(REPO_ROOT, 'swarmforge', 'scripts', 'property_suite_shared_repo_guard.sh');
 
-function runGuard(cwd, suiteArgv, env = {}) {
+function runGuard(cwd, suiteArgv, env = {}, guard = GUARD) {
   const merged = { ...process.env, ...env };
   if (!Object.prototype.hasOwnProperty.call(env, 'SWARMFORGE_SKIP_PROPERTY_SUITE_GUARD')) {
     delete merged.SWARMFORGE_SKIP_PROPERTY_SUITE_GUARD;
   }
-  return spawnSync('bash', [GUARD, ...suiteArgv], { cwd, encoding: 'utf8', env: merged });
+  return spawnSync('bash', [guard, ...suiteArgv], { cwd, encoding: 'utf8', env: merged });
+}
+
+// BL-1434: the real allowlist can legitimately reach zero rows (it did -
+// every prior row got fixed or reassigned), so invariant 2 can no longer
+// borrow a real filename from it to test the guard's "allowlisted red
+// still allows" path. The guard resolves its allowlist TSV path relative
+// to ITS OWN script directory (property_suite_standing_allowlist_lib.sh's
+// ps_allowlist_tsv_path), never from an env var or argument - so an
+// isolated copy of the guard plus its sourced libs, in a temp directory
+// with a SYNTHETIC allowlist row, tests the exact same code path without
+// ever touching the live project's own allowlist file (BL-1390's own
+// "never mutate the live checkout" lesson, applied here to a config file
+// rather than a git operation).
+const GUARD_SOURCED_FILES = [
+  'check_property_suite_drift.sh',
+  'property_suite_shared_repo_guard.sh',
+  'incoming_merge_parent_lib.sh',
+  'property_suite_standing_allowlist_lib.sh',
+];
+const SYNTHETIC_ALLOWLISTED_FILE = 'test/bl1175-synthetic-standing-red.property.test.js';
+
+function mkIsolatedGuard() {
+  const scriptsDir = fs.mkdtempSync(path.join(require('node:os').tmpdir(), 'bl1175-guard-scripts-'));
+  for (const name of GUARD_SOURCED_FILES) {
+    fs.copyFileSync(path.join(REPO_ROOT, 'swarmforge', 'scripts', name), path.join(scriptsDir, name));
+  }
+  fs.writeFileSync(
+    path.join(scriptsDir, 'property_suite_standing_allowlist.tsv'),
+    `file\tdisposition\trationale\n${SYNTHETIC_ALLOWLISTED_FILE}\tallowlist\tsynthetic row for BL-1175 invariant 2's own guard test - never a real project file\n`
+  );
+  return { guard: path.join(scriptsDir, 'check_property_suite_drift.sh'), scriptsDir };
 }
 
 function readInventory() {
@@ -42,11 +73,13 @@ function bashExtractFailures(output) {
 test('BL-1175 invariant 1: every standing-red inventory row has fix-or-allowlist disposition', () => {
   const inventory = readInventory();
   // BL-1430: not a fixed floor - this file's whole purpose is to shrink as
-  // reds get fixed (BL-1428 pruned 25->20; BL-1430 fixed two more ->18), so
-  // a hardcoded count breaks on every legitimate reduction. The structural
-  // checks below (per-row shape, disposition, rationale) are the actual
-  // invariant; this only guards against the inventory going silently empty.
-  assert.ok(inventory.length > 0, `expected a non-empty standing inventory, got ${inventory.length} rows`);
+  // reds get fixed (BL-1428 pruned 25->20; BL-1430 fixed two more ->18;
+  // BL-1434 emptied it entirely - every prior row had already been fixed
+  // or reassigned, and BL-1434 was the last one standing), so a hardcoded
+  // count, or even a non-empty floor, breaks on every legitimate reduction.
+  // The structural checks below (per-row shape, disposition, rationale)
+  // are the actual invariant, applied to however many rows remain -
+  // zero is a valid, and the best possible, outcome.
   for (const row of inventory) {
     assert.match(row.file, /^test\/.*\.property\.test\.js$/, JSON.stringify(row));
     assert.ok(['allowlist', 'fix'].includes(row.disposition), JSON.stringify(row));
@@ -58,7 +91,7 @@ test('BL-1175 invariant 1: every standing-red inventory row has fix-or-allowlist
 });
 
 test('BL-1175 invariant 2: all-allowlisted suite red allows; non-allowlisted red refuses without SKIP', () => {
-  const allowlisted = readInventory()[0].file;
+  const allowlisted = SYNTHETIC_ALLOWLISTED_FILE;
   const allowlistedOnly = [
     'bash',
     '-c',
@@ -70,6 +103,7 @@ test('BL-1175 invariant 2: all-allowlisted suite red allows; non-allowlisted red
     `printf '%s\\n' ' FAIL  ${allowlisted} > x' ' FAIL  test/pipelineBoard.property.test.js > y' >&2; exit 1`,
   ];
   const tmp = fs.mkdtempSync(path.join(require('node:os').tmpdir(), 'bl1175-prop-'));
+  const { guard, scriptsDir } = mkIsolatedGuard();
   try {
     spawnSync('git', ['init', '-q', '-b', 'main'], { cwd: tmp });
     spawnSync('git', ['-c', 'user.email=t@t', '-c', 'user.name=t', 'commit', '-q', '--allow-empty', '-m', 'init'], { cwd: tmp });
@@ -77,16 +111,17 @@ test('BL-1175 invariant 2: all-allowlisted suite red allows; non-allowlisted red
     fs.writeFileSync(path.join(tmp, 'extension', 'src', 'a.ts'), 'x\n');
     spawnSync('git', ['add', 'extension/src/a.ts'], { cwd: tmp });
 
-    const ok = runGuard(tmp, allowlistedOnly);
+    const ok = runGuard(tmp, allowlistedOnly, {}, guard);
     assert.equal(ok.status, 0, `${ok.stdout}\n${ok.stderr}`);
     assert.match(`${ok.stdout}\n${ok.stderr}`, /allowlisted-standing-reds/);
 
-    const bad = runGuard(tmp, mixed);
+    const bad = runGuard(tmp, mixed, {}, guard);
     assert.notEqual(bad.status, 0, `${bad.stdout}\n${bad.stderr}`);
     assert.match(`${bad.stdout}\n${bad.stderr}`, /pipelineBoard\.property\.test\.js/);
     assert.doesNotMatch(`${bad.stdout}\n${bad.stderr}`, /overridden/i);
   } finally {
     fs.rmSync(tmp, { recursive: true, force: true });
+    fs.rmSync(scriptsDir, { recursive: true, force: true });
   }
 });
 
