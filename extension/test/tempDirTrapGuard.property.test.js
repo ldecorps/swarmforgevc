@@ -202,7 +202,13 @@ test('the scanner reports exactly the unguarded files in an arbitrary mix of gua
 // property. ──────────────────────────────────────────────────────────────
 
 const REPO_ROOT = path.join(__dirname, '..', '..');
-const EXCLUDED_DIR_NAMES = new Set(['node_modules', '.git', 'out', 'coverage', '.stryker-tmp', 'vendor']);
+// BL-1430: .worktrees holds a full linked checkout per pipeline role (each
+// with its own copy of specs/pipeline/steps/lib/tempDirTrapGuard.js) -
+// counting it turned "one definition" into "one per worktree present on
+// this host", a host-population artifact, not a real duplication. The
+// definition itself is single; only the walk's scope was wrong - the
+// assertion below is unchanged.
+const EXCLUDED_DIR_NAMES = new Set(['node_modules', '.git', 'out', 'coverage', '.stryker-tmp', 'vendor', '.worktrees']);
 const GUARD_MODULE_PATH = path.join(REPO_ROOT, 'specs', 'pipeline', 'steps', 'lib', 'tempDirTrapGuard.js');
 
 function findFunctionDefinitionFiles(rootDir, functionName) {
