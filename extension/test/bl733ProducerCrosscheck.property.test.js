@@ -6,47 +6,31 @@ const { test } = require('node:test');
 const assert = require('node:assert/strict');
 const { landPilotedTicket } = require('../out/tools/pilotAcceptanceGate');
 const { PRODUCER_CROSSCHECK_REQUIRED_REFUSAL } = require('../out/tools/producerCrosscheckAcceptance');
+const { makeAcceptanceGateDeps } = require('./helpers/pilotAcceptanceGateDeps');
 
+// BL-1229: built on the shared, contract-checked base
+// (helpers/pilotAcceptanceGateDeps.js) - only this file's own overrides
+// are listed here now.
 function patternDeps(overrides = {}) {
   const calls = { move: 0, receipt: 0 };
-  let executedFeaturePath;
-  return {
-    deps: {
-      readAcceptanceDeclaration: () => 'specs/features/BL-733-role-crosscheck.feature',
-      readRequiredWiring: () => ['pattern tickets require producer output-space crosscheck'],
-      resolveFeatureFilePath: () => '/repo/specs/features/BL-733-role-crosscheck.feature',
-      isLifecycleTeardownTicket: () => false,
-      assessMultiworktreeFixture: () => ({
-        satisfied: true,
-        metadata: { worktreeCount: 1, siblingHandoffdRoots: [], pilotRoot: '/repo' },
-      }),
-      runAcceptance: async () => ({ success: true, output: 'ok' }),
-      recordAcceptanceExecution: (featureFilePath) => {
-        executedFeaturePath = featureFilePath;
-      },
-      readAcceptanceExecution: () => executedFeaturePath,
-      checkCommitClaims: () => ({ checked: true, commitsChecked: 0 }),
-      checkCrossFileDuplication: () => ({ checked: true, filesScanned: 0 }),
-    checkScopedCrap: () => ({ checked: true, tsFilesScanned: 0, violations: [] }),
-    checkMkdtempConvention: () => ({ checked: true, testFilesScanned: 0, violations: [], scannedPaths: [] }),
-    checkPropertyGeneratorReach: () => ({ checked: true, propertyFilesScanned: 0, scannedPaths: [] }),
-      checkShellEntryPointDrive: () => ({ checked: true, shellTestsScanned: 0, entryPointsNamed: 0 }),
-      checkOrphanedAuthoredDocs: () => ({ checked: true, docsTouched: false }),
-    checkUnreachableStepHandlers: () => ({ checked: true, stepFilesScanned: 0, patternsChecked: 0 }),
-    checkMultiBranchParserCoverage: () => ({ checked: true, parsersScanned: 0 }),
-    checkPerHatRolePromptEvidence: () => ({ checked: true, verdictsScanned: 0 }),
-      moveTicketToDone: () => {
-        calls.move += 1;
-        return { moved: true, destination: '/repo/backlog/done/BL-733-fixture.yaml' };
-      },
-      writeReceipt: () => {
-        calls.receipt += 1;
-      },
-      getLandedCommit: () => 'a'.repeat(40),
-      checkOriginMainLanding: () => ({ reachable: true }),
-      now: () => '2026-08-25T00:00:00.000Z',
-      ...overrides,
+  const deps = makeAcceptanceGateDeps({
+    readAcceptanceDeclaration: () => 'specs/features/BL-733-role-crosscheck.feature',
+    readRequiredWiring: () => ['pattern tickets require producer output-space crosscheck'],
+    resolveFeatureFilePath: () => '/repo/specs/features/BL-733-role-crosscheck.feature',
+    checkCommitClaims: () => ({ checked: true, commitsChecked: 0 }),
+    moveTicketToDone: () => {
+      calls.move += 1;
+      return { moved: true, destination: '/repo/backlog/done/BL-733-fixture.yaml' };
     },
+    writeReceipt: () => {
+      calls.receipt += 1;
+    },
+    getLandedCommit: () => 'a'.repeat(40),
+    now: () => '2026-08-25T00:00:00.000Z',
+    ...overrides,
+  });
+  return {
+    deps,
     calls,
   };
 }

@@ -9,6 +9,7 @@ const {
   PILOT_VACUOUS_PROPERTY_GENERATOR_REFUSAL,
 } = require('../out/tools/propertyGeneratorReachCheck');
 const { landPilotedTicket, checkPropertyGeneratorReach } = require('../out/tools/pilotAcceptanceGate');
+const { makeAcceptanceGateDeps } = require('./helpers/pilotAcceptanceGateDeps');
 const { mkTmpDir } = require('./helpers/tmpDir');
 
 function mkRoot() {
@@ -96,7 +97,6 @@ test('assessPropertyGeneratorReach passes when generator crosses explicit bounda
 
 test('checkPropertyGeneratorReach refuses land before move', async () => {
   const calls = { move: 0, receipt: 0 };
-  let executedFeaturePath;
   const refusal = checkPropertyGeneratorReach({
     checkPropertyGeneratorReach: () => ({
       checked: true,
@@ -114,23 +114,11 @@ test('checkPropertyGeneratorReach refuses land before move', async () => {
   assert.equal(refusal.refusal.reasonKind, 'vacuous-property-generator');
   assert.match(refusal.refusal.reason, new RegExp(PILOT_VACUOUS_PROPERTY_GENERATOR_REFUSAL));
 
-  const outcome = await landPilotedTicket('BL-739', {
-    readAcceptanceDeclaration: () => 'specs/features/fixture.feature',
-    resolveFeatureFilePath: () => '/repo/specs/features/fixture.feature',
-    isLifecycleTeardownTicket: () => false,
-    assessMultiworktreeFixture: () => ({
-      satisfied: true,
-      metadata: { worktreeCount: 1, siblingHandoffdRoots: [], pilotRoot: '/repo' },
-    }),
-    runAcceptance: async () => ({ success: true, output: 'ok' }),
-    recordAcceptanceExecution: (featureFilePath) => {
-      executedFeaturePath = featureFilePath;
-    },
-    readAcceptanceExecution: () => executedFeaturePath,
+  // BL-1229: built on the shared, contract-checked base
+  // (helpers/pilotAcceptanceGateDeps.js) - only this test's own overrides
+  // are listed here now.
+  const outcome = await landPilotedTicket('BL-739', makeAcceptanceGateDeps({
     checkCommitClaims: () => ({ checked: true, commitsChecked: 0 }),
-    checkCrossFileDuplication: () => ({ checked: true, filesScanned: 0 }),
-    checkScopedCrap: () => ({ checked: true, tsFilesScanned: 0, violations: [] }),
-    checkMkdtempConvention: () => ({ checked: true, testFilesScanned: 0, violations: [], scannedPaths: [] }),
     checkPropertyGeneratorReach: () => ({
       checked: true,
       propertyFilesScanned: 1,
@@ -142,11 +130,6 @@ test('checkPropertyGeneratorReach refuses land before move', async () => {
       },
       scannedPaths: ['extension/test/bad.property.test.js'],
     }),
-    checkShellEntryPointDrive: () => ({ checked: true, shellTestsScanned: 0, entryPointsNamed: 0 }),
-    checkOrphanedAuthoredDocs: () => ({ checked: true, docsTouched: false }),
-    checkUnreachableStepHandlers: () => ({ checked: true, stepFilesScanned: 0, patternsChecked: 0 }),
-    checkMultiBranchParserCoverage: () => ({ checked: true, parsersScanned: 0 }),
-    checkPerHatRolePromptEvidence: () => ({ checked: true, verdictsScanned: 0 }),
     moveTicketToDone: () => {
       calls.move += 1;
       return { moved: true, destination: '/repo/backlog/done/BL-739.yaml' };
@@ -155,9 +138,8 @@ test('checkPropertyGeneratorReach refuses land before move', async () => {
       calls.receipt += 1;
     },
     getLandedCommit: () => 'a'.repeat(40),
-    checkOriginMainLanding: () => ({ reachable: true }),
     now: () => '2026-08-27T00:00:00.000Z',
-  });
+  }));
   assert.equal(outcome.landed, false);
   assert.equal(outcome.reasonKind, 'vacuous-property-generator');
   assert.equal(calls.move, 0);

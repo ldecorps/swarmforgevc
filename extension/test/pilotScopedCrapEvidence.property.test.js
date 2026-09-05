@@ -3,37 +3,20 @@ const { test } = require('node:test');
 const fc = require('fast-check');
 const { landPilotedTicket } = require('../out/tools/pilotAcceptanceGate');
 const { isExtensionSrcTsPath } = require('../out/tools/pilotScopedCrapCheck');
+const { makeAcceptanceGateDeps } = require('./helpers/pilotAcceptanceGateDeps');
 
 // BL-745 declared invariants (backlog/active/BL-745-bl718-pilot-missed-crap-gate.yaml):
 // 1. Successful land touching extension/src/** TS leaves durable CRAP evidence naming scanned paths.
 // 2. Src-touching land that would omit CRAP evidence refuses land and writes nothing durable.
 // 3. Tickets that never touch extension/src/** are not refused solely for missing src CRAP evidence.
 
+// BL-1229: built on the shared, contract-checked base
+// (helpers/pilotAcceptanceGateDeps.js) - only this file's own overrides
+// are listed here now.
 function buildDeps(crapOutcome, calls) {
-  let executedFeaturePath;
-  return {
-    readAcceptanceDeclaration: () => 'specs/features/fixture.feature',
-    resolveFeatureFilePath: () => '/repo/specs/features/fixture.feature',
-    isLifecycleTeardownTicket: () => false,
-    assessMultiworktreeFixture: () => ({
-      satisfied: true,
-      metadata: { worktreeCount: 1, siblingHandoffdRoots: [], pilotRoot: '/repo' },
-    }),
-    runAcceptance: async () => ({ success: true, output: 'ok' }),
-    recordAcceptanceExecution: (featureFilePath) => {
-      executedFeaturePath = featureFilePath;
-    },
-    readAcceptanceExecution: () => executedFeaturePath,
+  return makeAcceptanceGateDeps({
     checkCommitClaims: () => ({ checked: true, commitsChecked: 0 }),
-    checkCrossFileDuplication: () => ({ checked: true, filesScanned: 0 }),
     checkScopedCrap: () => crapOutcome,
-    checkMkdtempConvention: () => ({ checked: true, testFilesScanned: 0, violations: [], scannedPaths: [] }),
-    checkPropertyGeneratorReach: () => ({ checked: true, propertyFilesScanned: 0, scannedPaths: [] }),
-    checkShellEntryPointDrive: () => ({ checked: true, shellTestsScanned: 0, entryPointsNamed: 0 }),
-    checkOrphanedAuthoredDocs: () => ({ checked: true, docsTouched: false }),
-    checkUnreachableStepHandlers: () => ({ checked: true, stepFilesScanned: 0, patternsChecked: 0 }),
-    checkMultiBranchParserCoverage: () => ({ checked: true, parsersScanned: 0 }),
-    checkPerHatRolePromptEvidence: () => ({ checked: true, verdictsScanned: 0 }),
     moveTicketToDone: () => {
       calls.move += 1;
       return { moved: true, destination: '/repo/backlog/done/BL-745-prop.yaml' };
@@ -43,9 +26,8 @@ function buildDeps(crapOutcome, calls) {
       calls.lastReceipt = receipt;
     },
     getLandedCommit: () => 'a'.repeat(40),
-    checkOriginMainLanding: () => ({ reachable: true }),
     now: () => '2026-08-27T00:00:00.000Z',
-  };
+  });
 }
 
 function srcPathsFromOutcome(outcome) {

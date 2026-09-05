@@ -7,6 +7,7 @@ const {
   PILOT_HAT_PROMPT_MISSING_REFUSAL,
 } = require('../out/tools/perHatRolePromptEvidenceCheck');
 const { landPilotedTicket } = require('../out/tools/pilotAcceptanceGate');
+const { makeAcceptanceGateDeps } = require('./helpers/pilotAcceptanceGateDeps');
 
 // BL-758 invariant 3: completed stage verdicts require role_prompt_path +
 // role_prompt_sha256 or land refuses pilot-hat-prompt-missing (inert).
@@ -16,33 +17,15 @@ const hashArb = fc
   .array(fc.constantFrom(...'0123456789abcdef'.split('')), { minLength: 64, maxLength: 64 })
   .map((chars) => chars.join(''));
 
+// BL-1229: built on the shared, contract-checked base
+// (helpers/pilotAcceptanceGateDeps.js) - only this file's own overrides
+// are listed here now.
 function mkDeps(outcome) {
   const calls = { move: 0, receipt: 0 };
-  let executedFeaturePath;
   return {
     calls,
-    deps: {
-      readAcceptanceDeclaration: () => 'specs/features/fixture.feature',
-      resolveFeatureFilePath: () => '/repo/specs/features/fixture.feature',
-      isLifecycleTeardownTicket: () => false,
-      assessMultiworktreeFixture: () => ({
-        satisfied: true,
-        metadata: { worktreeCount: 1, siblingHandoffdRoots: [], pilotRoot: '/repo' },
-      }),
-      runAcceptance: async () => ({ success: true, output: 'ok' }),
-      recordAcceptanceExecution: (p) => {
-        executedFeaturePath = p;
-      },
-      readAcceptanceExecution: () => executedFeaturePath,
+    deps: makeAcceptanceGateDeps({
       checkCommitClaims: () => ({ checked: true, commitsChecked: 0 }),
-      checkCrossFileDuplication: () => ({ checked: true, filesScanned: 0 }),
-    checkScopedCrap: () => ({ checked: true, tsFilesScanned: 0, violations: [] }),
-    checkMkdtempConvention: () => ({ checked: true, testFilesScanned: 0, violations: [], scannedPaths: [] }),
-    checkPropertyGeneratorReach: () => ({ checked: true, propertyFilesScanned: 0, scannedPaths: [] }),
-      checkShellEntryPointDrive: () => ({ checked: true, shellTestsScanned: 0, entryPointsNamed: 0 }),
-      checkOrphanedAuthoredDocs: () => ({ checked: true, docsTouched: false }),
-      checkUnreachableStepHandlers: () => ({ checked: true, stepFilesScanned: 0, patternsChecked: 0 }),
-      checkMultiBranchParserCoverage: () => ({ checked: true, parsersScanned: 0 }),
       checkPerHatRolePromptEvidence: () => outcome,
       moveTicketToDone: () => {
         calls.move += 1;
@@ -52,9 +35,8 @@ function mkDeps(outcome) {
         calls.receipt += 1;
       },
       getLandedCommit: () => 'a'.repeat(40),
-      checkOriginMainLanding: () => ({ reachable: true }),
       now: () => '2026-08-26T00:00:00.000Z',
-    },
+    }),
   };
 }
 
