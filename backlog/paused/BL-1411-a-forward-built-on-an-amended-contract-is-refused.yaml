@@ -22,7 +22,7 @@ invariants:
   - "Exactly one reader of acceptance: exists on the send path: the gate takes its path(s) from task-scope-gate-lib/declared-acceptance-path (BL-1276) and never parses the ticket YAML itself."
   - "A refusal is loud and never queues (HANDOFF_NOT_QUEUED, the amending commit, the path, the remedy); a contract it cannot read (path absent on main, no merge-base) is stated in one line and never refuses, because absence is BL-761's and BL-314's to catch."
 
-human_approval: pending
+human_approval: approved
 approval_context: >
   A new feature file is authored here, so it needs a tap. No choice is posed
   and there are no ruling_options. Minted from the 2026-09-05 closing-ceremony
