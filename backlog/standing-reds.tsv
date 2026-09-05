@@ -16,3 +16,4 @@
 # under vitest.properties.config.mjs; the unit suite run once (16 files / 26
 # tests red per vitest; 7 distinct files). Five allowlist rows were green and
 # are not registered (BL-1428 removes them from the allowlist).
+unit	extension/test/pricingTable.test.js	BL-1436	2026-09-04	PRICING_TABLE missing claude-fable-5-1
