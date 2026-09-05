@@ -163,7 +163,7 @@ test('packet contains no raw log transcript - closed field shape only', () => {
   const packet = buildClosingCeremonyPacket('2026-08-08', [event()]);
   assert.deepEqual(
     Object.keys(packet).sort(),
-    ['bounceClasses', 'dwellHotspots', 'hypotheses', 'pathTaken', 'qualityRecommendations', 'shiftKey', 'skipReasons', 'stalls'].sort()
+    ['bounceClasses', 'determinismCandidates', 'dwellHotspots', 'hypotheses', 'pathTaken', 'qualityRecommendations', 'shiftKey', 'skipReasons', 'stalls'].sort()
   );
 });
 
