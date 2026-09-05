@@ -130,3 +130,5 @@ notes: |
   already records. The new evidence concerns DETECTION, not the hazard, so it is
   not grounds to reverse that call silently. Noted here so the next pass weighing
   the queue has the fact.
+
+assigned_to: coder
