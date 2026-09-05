@@ -165,6 +165,45 @@ parser of `run_guard` lines, the handler now calls the SAME
 callers, so a guard added to the runner is reflected in both the property
 test and the acceptance fixture without editing either.
 
+## Related — the freshness-watchdog fixtures (BL-1399/BL-1420)
+
+The same rot hit `daemon_log_freshness_check.sh`'s callers once BL-784's
+own registry guard (`daemon_log_freshness_registry_guard.sh`) started
+refusing a conf missing a row for either a `FRESHNESS_REQUIRED`-named
+daemon or any live `*_supervisor.bb` script on disk — a fixture written
+before BL-784 that pointed only `FRESHNESS_CONF` at a one-row conf, never
+setting `FRESHNESS_REQUIRED`, was refused by the guard's own first arm
+before the checker ran a single measurement. BL-1399 (2026-09-04) fixed
+the first instance,
+`extension/test/bl1012FreshnessSelfInflictedIncidents.property.test.js`;
+BL-1420 (2026-09-05) fixed the three call sites BL-1399's scope did not
+cover — `specs/pipeline/steps/bl1011FreshnessAlarmNamesSwarmAndReasonSteps.js`
+(0/8 on `main`), `specs/pipeline/steps/bl1012FreshnessSelfInflictedIncidentsSteps.js`
+(0/9), and `swarmforge/scripts/test/bl1011_freshness_attribution_property_runner.bb`
+(whose `:continue true` swallowed the refusal into an empty announce, so
+its four properties held vacuously over zero real violations).
+
+BL-1420 extracted BL-1399's derivation into one shared JS helper,
+`extension/test/helpers/freshnessFixture.js` — `supervisorNames(scriptsDir)`
+(the same `*_supervisor.bb` glob the guard walks, injectable so a test can
+point it at a scratch directory instead of the live tree) and
+`writeGuardSatisfyingRows(...)` (one conf row plus a fresh heartbeat per
+name the glob finds, plus the `FRESHNESS_REQUIRED` registry) — so the two
+JS step handlers share one derivation rather than each hand-mirroring the
+guard's glob a second time. The bb property runner derives from the same
+glob independently in Clojure (`supervisor-names`/
+`write-guard-satisfying-rows!` via `fs/glob`) — the ticket's own direction
+was to derive from the same glob in Clojure, not to share code across the
+two languages. That runner's `run-checker!` also stopped swallowing the
+checker's exit status: a non-zero exit now fails the run naming the
+checker's stderr, and evaluates none of its properties or coverage
+counters over that run, instead of folding a refusal into an empty,
+vacuously-passing observation. The guard, the checker, and every live conf
+file are untouched by either ticket. Acceptance:
+`specs/features/BL-1420-the-freshness-fixtures-pass-the-registry-guard.feature`.
+See [BL-784](BL-784-supervisor-freshness-heartbeats-and-registry-guard.md)
+for the guard itself.
+
 ## Related — shell-test orphans (BL-724)
 
 `suite-manifest.tsv` also feeds a **shell-test discovery** sweep

@@ -1,3 +1,8 @@
+# mutation-stamp: sha256=bbfd12881b1d0058bd1102773a92085be78ca4d24387027955f0f358597a857d
+# acceptance-mutation-manifest-begin
+# {"version":1,"tested_at":"2026-09-05T21:37:12.640031883Z","feature_name":"BL-1420 Every freshness-check fixture passes the fail-closed registry guard, and a refused checker is a red run","feature_path":"/home/carillon/swarmforgevc/.worktrees/hardender/specs/features/BL-1420-the-freshness-fixtures-pass-the-registry-guard.feature","background_hash":"74234e98afe7498fb5daf1f36ac2d78acc339464f950703b8c019892f982b90b","implementation_hash":"unknown","scenarios":[{"index":3,"name":"a fixture's conf carries one row per live supervisor script without editing the fixture","scenario_hash":"0d5b22a5c540cb93a168d1feecccc1489b10fd8bc0be0ab5ec595c6d8409b823","mutation_count":6,"result":{"Total":6,"Killed":6,"Survived":0,"Errors":0},"tested_at":"2026-09-05T21:37:12.640031883Z"}]}
+# acceptance-mutation-manifest-end
+
 Feature: BL-1420 Every freshness-check fixture passes the fail-closed registry guard, and a refused checker is a red run
 
   BL-784 made daemon_log_freshness_check.sh run the registry guard first: it
