@@ -52,7 +52,7 @@ function bbJson(expression) {
 
 function state(ctx) {
   if (!ctx.bl1353) {
-    ctx.bl1353 = { inboxFresh: false, claimed: false };
+    ctx.bl1353 = { inboxFresh: false, claimed: false, hibernated: false };
   }
   return ctx.bl1353;
 }
@@ -91,11 +91,17 @@ function registerSteps(registry) {
     state(ctx).manufactured = bbJson('(vec (sort operator-lib/manufactured-tick-event-types))');
   });
 
-  scoped(/^the closing pass evaluates whether to hibernate$/, (ctx) => {
+  scoped(/^the swarm is hibernated with a drained backlog$/, (ctx) => {
+    // The state where the probe is load-bearing: with the backlog drained,
+    // fresh coordinator mail is the ONLY thing separating a relaunch from
+    // staying down (BL-310).
+    state(ctx).hibernated = true;
+  });
+
+  scoped(/^the closing pass evaluates whether to relaunch$/, (ctx) => {
     const s = state(ctx);
-    // The probe's SECOND consumer, driven through the real decision: a
-    // hibernated swarm with fresh coordinator mail relaunches rather than
-    // staying down, which is what reading the probe buys (BL-307/BL-310).
+    assert.equal(s.hibernated, true, 'the relaunch up-trigger only fires on a hibernated swarm');
+    // The probe's SECOND consumer, driven through the real decision.
     s.relaunches = bb(
       `(operator-lib/should-relaunch? {:already-hibernated? true :backlog-drained? true :fresh-coordinator-mail? ${s.inboxFresh}})`
     );
@@ -120,7 +126,7 @@ function registerSteps(registry) {
     assert.deepEqual(state(ctx).manufactured, [...DOCUMENTED_TICK_SOURCES].sort());
   });
 
-  scoped(/^it observes fresh coordinator mail and does not hibernate$/, (ctx) => {
+  scoped(/^it observes fresh coordinator mail and relaunches$/, (ctx) => {
     const s = state(ctx);
     assert.equal(s.inboxFresh, true, 'the scenario must have put fresh mail in the inbox');
     assert.equal(s.relaunches, 'true', 'fresh coordinator mail no longer reaches the closing pass');
