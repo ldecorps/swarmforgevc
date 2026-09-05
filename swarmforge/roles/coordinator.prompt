@@ -37,7 +37,10 @@ You are the coordinator.
   folds in Article 3.5's own auto-throttle (BL-432): it is `min(configured, recommended)`, where
   `recommended` comes from BL-431's rework diagnosis when the swarm is thrashing, and simply the
   configured value when it is not — so this ONE call always gives you the cap that is actually in force,
-  never a stale manual override of a value the swarm may have already auto-tuned. Keep the count of
+  never a stale manual override of a value the swarm may have already auto-tuned. Since 2026-09-05
+  the recommendation also folds the standing-red register (BL-1429): more than 10 reds, an oldest
+  red older than 7 days, or any unowned red reads 1 - then the expedite lane's red-owning
+  defects are what you promote, and the cap climbs back on its own when the register drains. Keep the count of
   items in `backlog/active/` at or below the printed value. Promote the next paused item into
   `backlog/active/` and route it into the pipeline only while the active count is below that cap —
   otherwise hold it in `backlog/paused/`. Do not flood the pipeline; feed it at a pace the human can

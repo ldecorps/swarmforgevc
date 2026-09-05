@@ -1,0 +1,175 @@
+id: BL-1428
+title: "Every standing red names an open owner: a register CLI reads the property allowlist, the hardening-debt ledger and backlog/standing-reds.tsv and reports each red with its ticket, first-seen date and age, naming as unowned any row whose ticket is closed or absent; a cheap-tier commit guard refuses a commit that adds or changes a row without an open ticket; the twenty-five allowlist rows that all say tracked under the closed BL-1175 are re-pointed and the five green ones removed (human directive 2026-09-05; supersedes BL-816)"
+milestone: M8
+type: defect
+severity: high
+# high: a broken safety signal. On 2026-09-05 twenty property and seven
+# unit files were red on main; the only record of them named a closed
+# ticket, five rows covered green tests, two reds had no owner anywhere,
+# and thirty-five evidence files that day said "pre-existing" and moved
+# on. Not critical: nothing is down.
+status: todo
+epic: code-quality-gates
+priority: 3
+direction: human-requested
+depends_on: [BL-1175, BL-1252]
+mutation_cost: low
+slice_size_envelope: small
+required_stages: [coder, cleaner, architect, hardender, documenter, qa]
+
+acceptance: specs/features/BL-1428-every-standing-red-names-an-open-owner.feature
+
+human_approval: approved
+approval_context: >
+  A new feature file is authored here, so it needs a tap. No choice is
+  posed and there are no ruling_options. This is the first of the three
+  pieces you said "go" to on 2026-09-05: the register. The register file
+  itself (backlog/standing-reds.tsv, 27 rows, every one naming an open
+  ticket) was written by the specifier in the same commit as this mint, so
+  the record exists today; this ticket builds the reader, the guard, and
+  the allowlist clean-up. BL-816 (your 2026-08-05 ask that a red must
+  produce a decision, approved and never promoted) is superseded by this
+  ticket and retired; its human sentence is carried verbatim below
+  (Article 5.3).
+
+invariants:
+  - "One notion of a standing red: the register CLI is the only reader of the three sources, and every consumer (the throttle signal, QA, the daily briefing) asks it rather than parsing a TSV or the ledger itself."
+  - "A commit is judged only by the register rows it adds or changes; rows that pre-exist the commit never refuse it, however stale, because a stale row is the throttle's signal (BL-1429), never the committer's fault."
+  - "The property-suite allowlist gate (BL-1175/BL-1234/BL-1407) is unchanged in what it refuses: this parcel edits the allowlist's rows, never its reader."
+
+required_wiring:
+  - 'swarmforge/scripts/run_commit_guards.sh::check_standing_red_register.sh::the guard joins the cheap tier of the pre-commit chain, the pre-existing live consumer; a guard nobody runs gates nothing (BL-1235)'
+  - 'specs/pipeline/steps/bl1428StandingRedRegisterSteps.js::registerSteps::the handler file exists so discovery registers every scenario (BL-1371)'
+
+description: |
+  ## What is wanted
+
+  Human, in the specifier pane 2026-09-05, verbatim: "is something being
+  done for tests failing but not raising any concerns that's not healthy.
+  QA should observe the boyscoot rule? how does this work in practice?
+  shoud we keep an epic of debt where we have failing tests that are
+  treated as ok? i would be more of the school of.stoping everything and
+  fix failing tests before doing anything else. this is tol naive and
+  extreem but my point is that we should not sweep failing tests under the
+  carpet." Then, to the three-piece proposal: "go".
+
+  Human, 2026-08-05, verbatim (BL-816's source, superseded here):
+  "Surface the meta-defect: QA/hardener/coder parcels that observe a red
+  `npm test` and proceed with 'unrelated / environmental, not bouncing'
+  leave the safety signal broken."
+
+  ## What is wrong today (measured 2026-09-05)
+
+  - `swarmforge/scripts/property_suite_standing_allowlist.tsv`: 25 rows,
+    every rationale "pre-existing; tracked under BL-1175 pending fix".
+    BL-1175 is closed; it built the allowlist gate and fixed no test. Run
+    alone: 20 rows red, 5 green (bl1012, bl593, bl632, bl687,
+    selfHealTelemetry) and still listed.
+  - `npm test` (unit lane): 7 files red, 26 tests. No list records them.
+  - Owners exist for 25 of the 27 reds, all paused: BL-1206 (15), BL-1229
+    (3), BL-1221 (2), BL-1289 (2), BL-1263 (2), BL-1290, BL-1212. All were
+    `severity: medium` or `low`, outside the Article 3.2.4 expedite lane,
+    approved and untouched for six to eight days. Two reds had no owner:
+    bl874PortableTimeInvariants (now BL-1430) and
+    bl1200FixtureGitWritesStayInOwnRepo (added to BL-1206).
+  - QA's rule ("a red outside your parcel is presumed already ticketed until
+    grepped", BL-1063) is followed: 35 evidence files that day say
+    "pre-existing". Nothing then moves the fix.
+  - `backlog/hardening-debt-ledger.yaml` (BL-942) records deferred mutation
+    gates by parcel, the same shape, unread by anyone.
+
+  ## What changes
+
+  - **`backlog/standing-reds.tsv`** (written with this mint; columns
+    `lane file ticket first_seen note`) is the register for every lane the
+    allowlist does not cover. Every row names an open ticket.
+  - **`swarmforge/scripts/standing_red_register_cli.bb`** reads the three
+    sources - the property allowlist (a red listed there must have a
+    register row naming its ticket; an allowlist file with no register row
+    is unowned), the hardening-debt ledger (its `parcel` is the ticket),
+    and the register - and prints one JSON object: `rows` (lane, file,
+    ticket, first_seen, age_days, owned), `count`, `oldest_age_days`,
+    `unowned` (rows whose ticket is absent from `backlog/paused` and
+    `backlog/active`, wherever else it may sit). BL-1429 reads this.
+  - **`swarmforge/scripts/check_standing_red_register.sh`** in the cheap
+    tier of `run_commit_guards.sh`: for each register or allowlist row the
+    commit ADDS or CHANGES, the named ticket must be open; a closed or
+    absent ticket refuses naming the row. Rows the commit does not touch
+    are never judged (invariant 2, BL-1424's scope discipline).
+  - **Allowlist clean-up, in this parcel:** remove the five green rows; the
+    twenty red rows keep their `allowlist` disposition and their rationale
+    now names the owner from the register (the `rationale` column is free
+    text the lib never parses).
+  - QA's daily briefing section for standing reds is the documenter's
+    call: at minimum the how-to under `docs/how-to/` explains the register,
+    the guard, and the rule that a land turning a test green removes its
+    row in the same commit.
+
+  ## How (direction, not mandate)
+
+  - Babashka for the CLI, mirroring `hardening_debt_ledger_read.bb`'s shape
+    (JSON out, no caller parses a TSV). Ticket openness is a file lookup
+    under `backlog/paused` and `backlog/active` with the id prefix, the same
+    `find-in` the promotion gates use.
+  - The guard reads `git diff --cached -U0` on the three source paths and
+    judges added or changed data lines only; comment lines never count.
+    Fail open on an unreadable index (WARN, exit 0), the chain's posture.
+  - Hand-kept guard-chain copies (bl1252 property test INDEX_GUARDS,
+    `test_run_commit_guards.sh`) gain the guard unless BL-1408 has landed;
+    do not add it to `land_step_lib.bb`'s tree-guard list.
+  - Fixture: `git init` under mkdtemp with a small backlog and the three
+    source files; prove the root with `rev-parse --git-common-dir` before
+    any mutating git command (BL-1390).
+
+  ## Out of scope
+
+  - The throttle signal (BL-1429) and fixing any red (their own tickets).
+  - Changing the allowlist gate's reader or its refusal predicate.
+  - The bb standing suite's own reds: it refused to run until BL-1423; once
+    it runs, its reds are registered under lane `bb` by the same rule.
+
+qa_e2e_procedure: |
+  1. The BL-1428 feature passes (four scenarios, seven runs).
+  2. At the parcel commit: `bb swarmforge/scripts/standing_red_register_cli.bb .`
+     prints `unowned: []`, a count of 27 or fewer, and every `ticket` resolves
+     under backlog/paused or backlog/active.
+  3. `grep -c allowlist swarmforge/scripts/property_suite_standing_allowlist.tsv`
+     is 20 (the five green rows are gone); `npm run test:properties` refuses
+     nothing it did not refuse before (invariant 3).
+  4. In a throwaway clone under mkdtemp with hooks pointed at the clone's
+     `swarmforge/git-hooks`: add a register row naming BL-1175 (closed) and
+     commit - refused naming the row; change it to BL-1206 - allowed.
+  5. `grep -n check_standing_red_register.sh swarmforge/scripts/run_commit_guards.sh`
+     shows the guard in tier 1.
+
+notes: |
+  Minted 2026-09-05 by the specifier on the human's in-pane directive and
+  "go" (verbatim in description). The constitution and role prompts were
+  amended in the same commit (BL-798): Article 3.2.4 (a standing red is a
+  defect, severity high, at first sighting), Article 3.5 (standing reds are
+  a throttle signal), Article 4.2 (QA approves no parcel over an unowned
+  red), the QA, hardener, coder, coordinator and specifier prompts, and
+  `articles/reference/standing-red-register-amendment-2026-09-05.md`.
+  The eight owner tickets were re-classed `severity: high` the same commit
+  so they ride the expedite lane now; BL-816 was retired as
+  superseded-by-BL-1428 with its human sentence carried here.
+
+  Ritual class: none of BL-1365's four ids names this bookkeeping.
+
+  INVEST at mint: Independent (BL-1175 and BL-1252 landed; BL-1429 is a
+  sibling that reads this CLI, not a wait), Negotiable (CLI language, guard
+  diff shape are direction), Valuable (one outcome: every tolerated red
+  has an open owner, checkably), Estimable (one reader, one guard, one
+  allowlist edit, one handler; low), Small (four scenarios, seven runs,
+  three invariants at the cap), Testable (fixture root; live steps in
+  qa_e2e_procedure).
+
+source: |
+  Human, in the specifier pane 2026-09-05 (verbatim in description), and
+  the screenshot they attached: the coder completing a merge-up with "Only
+  the known pre-existing scenario 07 fails" (test_property_suite_drift_guard.sh
+  case 07, red since BL-1252 on 2026-08-30, owned by paused BL-1409).
+  Specifier measurement the same hour: 25 allowlist files run alone (20
+  red, 5 green); `npx vitest run` (7 files, 26 tests red); owner grep per
+  red file over backlog/paused and backlog/active; BL-816's source
+  paragraph.

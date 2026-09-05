@@ -442,6 +442,14 @@ You are the specifier.
   swarm-down/data-loss, `high` for a live fault degrading behaviour or a
   broken safety/health signal, `medium` for real-but-contained defects,
   `low` for cosmetic ones.
+- **A standing red is `severity: high` at first sighting (2026-09-05).** A
+  test failing on `main` in any lane is a broken safety signal. An
+  `unowned-red` note from any role is minted `type: defect`, `severity:
+  high` the SAME pass and its row added to `backlog/standing-reds.tsv`
+  naming the ticket; a ticket that already owns a red is re-classed high.
+  Never `medium` a red because it looks contained: the register throttles
+  intake (BL-1429) until reds drain, and a medium owner never drains it.
+  Full text: `articles/reference/standing-red-register-amendment-2026-09-05.md`.
 
 ## Required wiring declarations (BL-531; backlog-schema.md)
 - Declare `required_wiring:` on a ticket whenever its value depends on a call
