@@ -866,3 +866,18 @@ Branch" section, verbatim, before this split compressed it:
   you bounced-and-reverted, diff every file against the sender's tip before
   committing — the merge can silently re-apply your own revert's deletion
   with no conflict marker (BL-954). See **workflow-detailed.prompt**.
+
+### A sync or receive merge carries no ticket id in its subject (2026-09-05, BL-1212)
+- The task-scope gate (`task_scope_gate_lib.bb`, BL-1192) attributes a
+  commit to a task by the FIRST ticket id in its subject and unions that
+  commit's own combined diff into the task's delivered paths. A merge you
+  make to sync `main` or to receive a parcel carries whatever main brought
+  in - other tickets' YAML, features, code - so a subject like "Merge main
+  into swarmforge-architect: pick up BL-1212 ..." makes every one of those
+  paths BL-1212's, and every later tip on that lineage is refused as
+  entangled. Write `Merge main <sha> into <role>.` or `Merge <role> <sha>
+  into <role>.` - no ticket id, no ticket words. Once such a merge is an
+  ancestor of handed-off work it cannot be rewritten; the only exit is the
+  gate's own: record the abandoned base in `abandoned_commits:`, rebuild a
+  tip-pure commit on `origin/main`, cite that. Hit on 2026-08-29 and again
+  on 2026-09-05 (`ea6628d01e`, BL-1212 at the documenter's send).
