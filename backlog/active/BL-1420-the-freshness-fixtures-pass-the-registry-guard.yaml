@@ -158,3 +158,5 @@ source: |
   "BL-784 registry guard broke BL-1011/1012 tests silently - see BL-1413
   evidence". Specifier reproduction the same day: run_acceptance.sh over
   both features on main.
+
+assigned_to: coder
