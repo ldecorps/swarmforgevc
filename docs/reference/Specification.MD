@@ -1,5 +1,39 @@
 # SwarmForge VS Code Extension — Specification
 
+**Last Updated:** September 5, 2026 (BL-1364: BL-664's turn profiler was
+unreachable — `transcriptWalker.ts` had live consumers, but
+`turnProfile.ts`'s `buildTurnProfileSeries` had zero production importers, so
+the "mechanical share of a turn" measurement two epics (BL-667, BL-668)
+sequenced themselves behind was never produced. BL-667 proceeded four slices
+without it; BL-668 shipped near-inert (3 fast-forwards against 125
+surfacings) and went a week unnoticed — a live trend would have shown the
+merge-up turns never went away. Fixed by a new
+`extension/src/metrics/turnProfileProducer.ts`, following the sibling BL-665
+context-telemetry shape exactly: walks the same transcripts, folds them
+through the previously-unreachable series builder, and appends each window
+to `.swarmforge/telemetry/turn-profile-series.jsonl`, on a new
+`turn-profile-producer-sweep!` in `handoffd.bb` defined directly after the
+context-telemetry sweep it mirrors (a sweep defined above its dependencies
+still loads and registers, then throws on first fire — BL-1392). Two
+invariants shape the stored record: a stage with no classified turns is
+ABSENT from the window, never a zero share (silence and a measured zero must
+stay distinguishable); a window with an interior-damaged transcript is
+`complete: false` and contributes no share at all, while a torn FINAL line
+(a live agent still writing) is dropped, the transcript named
+`truncated-tail`, and the window still reports complete — otherwise no
+window with any agent mid-turn could ever publish. The category set is never
+restated — it comes from `transcriptWalker`'s own definition (BL-897's
+general shape), so the two cannot drift apart. Out of scope: reading the
+series (the briefing and the BL-1365 closing-ceremony packet are both
+plausible first consumers) and changing what the walker classifies.
+Acceptance:
+`specs/features/BL-1364-the-mechanical-share-of-a-turn-is-readable.feature`.
+How-to: `docs/how-to/BL-1364-turn-profile-producer-wiring.md` (new, mirrors
+BL-665's how-to; linked from `docs/index.md`). No diagram edit: the
+architecture diagram's per-ticket comment log stopped being updated after
+2026-08-27 and no other recent ticket has resumed it; the visual graph does
+not depict individual daemon sweeps at this granularity.)
+Prior entry —
 **Last Updated:** September 5, 2026 (BL-1275: `check_property_suite_drift.sh`
 used to capture its run into a `mktemp` file, echo it to stderr, and delete
 it — so the only surviving copy of the evidence a refusal was reached from
