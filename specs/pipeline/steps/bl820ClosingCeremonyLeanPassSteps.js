@@ -168,6 +168,11 @@ function registerSteps(registry) {
     const actualKeys = Object.keys(ctx.packet).sort();
     const closedKeys = [
       'bounceClasses',
+      // BL-1365: a structured candidate list, still no raw transcript. This
+      // list is the SECOND hand-written copy of the packet's closed shape
+      // (extension/test/closingCeremony.test.js has the other), so a field
+      // added to the packet must be added to both or one of them goes red.
+      'determinismCandidates',
       'dwellHotspots',
       'hypotheses',
       'pathTaken',
