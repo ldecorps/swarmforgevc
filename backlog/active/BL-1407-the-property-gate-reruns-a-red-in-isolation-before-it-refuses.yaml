@@ -134,3 +134,9 @@ source: |
   worktree running a suite - the flakes are the pool, not a neighbour.
 
 assigned_to: coder
+
+abandoned_commits: [c334385d4f27fbb0264d1b0c5c3153324b4ff11e]
+# BL-1241 land-step remedy: land_step_cli.bb found this commit's history
+# entangled with 60+ unlanded sibling tickets and built a tip-pure replay
+# (984a9a197b) off origin/main instead. Landed commit: 984a9a197bbbd267223962ea4677aa65aa395548.
+# See backlog/evidence/BL-1407-land-success-20260905.md.
