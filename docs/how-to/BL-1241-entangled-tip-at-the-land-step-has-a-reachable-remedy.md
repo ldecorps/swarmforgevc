@@ -469,6 +469,101 @@ untouched: an APPROVED sibling still rides on a path the landing ticket
 also owns, after the tree guards. Acceptance:
 `specs/features/BL-1389-a-path-an-unlanded-sibling-owns-alone-never-rides-another-tickets-land.feature`.
 
+## A hand-built tip-pure land records its own approval too (BL-1405)
+
+`LAND_ESCALATE` (above) means the tool cannot build the replay for QA — QA
+builds it by hand instead (the BL-1376 recipe, BL-1386 adjudication route
+1). Before this ticket, that hand-built replay skipped the one step
+`land_step_cli.bb`'s own `LAND_REPLAY` path performs automatically: writing
+the replay-to-approved-source mapping (BL-1334) that
+`is_qa_ancestor.sh` — the babysitter's Article 4.2 sweep, the push-sweep
+gate, and the commit-time guard all consult — needs to answer `approved`
+for the replay. A hand-built land had no CLI reachable for it (the writer,
+`record-land-approval!`, lived only inside `land_step_cli.bb`'s own
+`-main`), so the published commit stood in for an approved source that
+nothing recorded, and `is_qa_ancestor.sh <replay>` answered exit 1 — a
+standing false-positive CRIT until an unrelated later merge closed the
+window. All six hand-lands of 2026-09-04 (BL-1382, 1388, 1393, 1395, 1398,
+1399) were in this state.
+
+`swarmforge/scripts/record_land_approval.bb <project-root> <replay-commit>
+<approved-source> [<ticket-id>]` is the thin CLI over that same writer
+(never a second serializer of the record — `land_step_lib.bb`'s
+`record-land-approval!` is the one writer either route calls). Before
+reporting a hand-built land done, QA:
+
+1. Records the mapping: `bb swarmforge/scripts/record_land_approval.bb
+   <root> <replay-10-hex> <cited-approved-source-10-hex> <ticket>`. Exit 0
+   prints `LAND_APPROVAL_RECORDED <replay> <- <source> (<ticket>)`, or
+   `LAND_APPROVAL_ALREADY_RECORDED <replay> <- <source>` for an exact
+   duplicate (idempotent — recording twice is harmless, first matching
+   line wins at the predicate). A missing sha on either side refuses (exit
+   non-zero) and writes nothing.
+2. Reads the CLI's own printed verdict — it shells out to the SAME
+   `is_qa_ancestor.sh <replay>` every other consumer calls (never a
+   reimplemented check) and prints `VERDICT <replay> approved` /
+   `not approved` / `undeterminable` — so QA sees `approved` before closing
+   the land, in the same run that wrote the record.
+3. Records `abandoned_commits: [<cited commit>]` on the ticket, exactly as
+   the ordinary `LAND_REPLAY` bookkeeping above requires — a hand-built
+   land owes the same bookkeeping its own `LAND_REPLAY` path would have
+   produced.
+
+A record on its own grants nothing: `is_qa_ancestor.sh` (BL-1334 section,
+`swarmforge/scripts/is_qa_ancestor.sh` around the "land-step
+replay->approved-source mapping" comments) still answers `approved` for a
+recorded replay only when the named SOURCE is itself approved — recording
+a replay against an unapproved source is written but still answers
+`not approved`. The predicate and the store shape are unchanged by this
+ticket; only the hand-built route gained a way to write to the same store
+the ordinary route already used. Acceptance:
+`specs/features/BL-1405-a-hand-built-land-records-its-land-approval.feature`.
+
+## One land plan reads one tip, immune to a moving `origin/main` (BL-1431)
+
+`land-plan` used to resolve `origin-main-sha` itself, then hand off to
+`entangled-siblings`, `own-paths`, and `main-ticket-sources`, each of which
+resolved the SAME ref by name again independently — up to five separate
+reads inside one plan. On a busy repo, `origin/main` moves between those
+reads: on 2026-09-05, QA's `land_step_cli.bb` runs took 3.5-4.5 minutes
+each while `main` landed 14 times in half an hour (mints, approvals, topic
+records — committed by the front desk and the concierge too, not only the
+specifier, so a "pause minting during a land" remedy can't work). When a
+mint landed between `land-plan`'s attribution-map build and `own-paths`'
+own diff, the delivered diff picked up the mint's new path, looked it up
+in an attribution map built on the OLD sha, found nothing, and refused
+with a `could-not-read-attribution` `LAND_ESCALATE` — a refusal that is
+correct for a read that genuinely failed, misapplied to a read that never
+happened at all. This produced two false `LAND_ESCALATE`s on BL-1416 and
+one on BL-1407 in a single morning.
+
+`land_step_cli.bb` now resolves `origin-main-sha` exactly ONCE, at entry
+(after canonicalising the commit), and passes it into `land-plan` as the
+optional `:origin-main` key. `land-plan` threads that exact SHA to every
+reader below it — `entangled-siblings`, `own-paths`, the per-path
+attribution map, `main-ticket-sources`, sibling-landed verdicts — none of
+them re-resolves the ref by name; a caller that omits `:origin-main` (the
+pre-existing direct/test contract) still gets it resolved once, at
+`land-plan`'s own entry, never per read. A fetch that moves `origin/main`
+mid-walk now changes nothing about the verdict: the whole plan is computed
+against the one tip it started with.
+
+**The publish step is unchanged** (invariant 2): `land_main_publish.sh`
+still does a single FF-only push with one rebase rematch onto whatever the
+CURRENT tip is when it publishes, never a second rematch, never
+`--force` — a moved `origin/main` is reconciled there, and only there, not
+inside the plan's own read. **Fail-open posture is unchanged** (invariant
+3): an `origin/main` that can't be resolved at entry is still the caller's
+own warning, never a guessed SHA, and a read that fails mid-walk still
+refuses rather than silently narrowing its own answer (BL-1389's posture,
+unrelaxed). Acceptance:
+`specs/features/BL-1431-one-land-plan-reads-one-tip.feature`.
+
+The walk's own COST — why it takes 3.5-4.5 minutes at all, and the QA
+branch's long history of never-landed merge commits — is the sibling
+question BL-1432 poses to the human; this ticket only makes the walk
+immune to a moving ref, it does not make the walk faster.
+
 ## What this does not change
 
 - BL-1192's send-time gate and its range — unchanged; this ticket only adds
