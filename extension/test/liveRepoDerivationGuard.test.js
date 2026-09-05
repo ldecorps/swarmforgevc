@@ -58,6 +58,66 @@ test('BL-1038: the growth op must target the BOUND root, not merely coexist with
   assert.equal(liveRepoDerivation("fs.readdirSync(path.join(__dirname, '..', '..', 'x'));"), null);
 });
 
+// ── BL-1435: the rev-parse idiom is the SAME live root as path.join ───────
+// One notion of a live root: `git rev-parse --show-toplevel` against
+// __dirname binds it exactly as `path.join(__dirname, '..', '..')` does -
+// same growth patterns, same production-escape rule, same exemption check,
+// through the SAME regex (invariant 1). __dirname is the tell; a rev-parse
+// against any OTHER root (a fixture this file itself built) is BL-1039's
+// business and must never match here.
+
+test('BL-1435: execFileSync("git", [\'-C\', __dirname, \'rev-parse\', \'--show-toplevel\']) binds the live root', () => {
+  const d = liveRepoDerivation(
+    "const REPO = execFileSync('git', ['-C', __dirname, 'rev-parse', '--show-toplevel'], { encoding: 'utf8' }).trim();\nfs.readdirSync(path.join(REPO, 'docs'));"
+  );
+  assert.match(d, /repo size/);
+});
+
+test('BL-1435: execSync and spawnSync bind the same idiom, with no -C argument too', () => {
+  const execSyncForm = liveRepoDerivation(
+    "const REPO = execSync('git rev-parse --show-toplevel', { cwd: __dirname }).toString().trim();\nfs.readdirSync(path.join(REPO, 'docs'));"
+  );
+  // execSync's own single-string form is a different call shape entirely
+  // (no argv array at all) - out of this ticket's own named shapes
+  // (execFileSync/execSync/spawnSync as an ARRAY-argv call). Documented here
+  // as a boundary, not silently assumed: the array-argv form is what all
+  // five real files actually use.
+  assert.equal(execSyncForm, null);
+
+  const spawnSyncForm = liveRepoDerivation(
+    "const REPO = spawnSync('git', ['rev-parse', '--show-toplevel'], { cwd: __dirname, encoding: 'utf8' }).stdout.trim();\nfs.readdirSync(path.join(REPO, 'docs'));"
+  );
+  assert.match(spawnSyncForm, /repo size/, 'spawnSync with cwd: __dirname (no -C) must bind the same live root');
+});
+
+test('BL-1435: the inline form (never bound to a name) is caught, same as the path.join inline form', () => {
+  const d = liveRepoDerivation(
+    "const { computeDocsStructure } = require('../out/docs/computeDocsStructure');\ncomputeDocsStructure(execFileSync('git', ['-C', __dirname, 'rev-parse', '--show-toplevel'], { encoding: 'utf8' }).trim());"
+  );
+  assert.match(d, /production code/);
+});
+
+test('BL-1435: a rev-parse against a FIXTURE root (not __dirname) is not a live-root binding', () => {
+  // gitEnvGuard.test.js's own shape: rev-parse --show-toplevel run against a
+  // mkTmpDir fixture it git-init'd itself - reads that fixture's own top
+  // level, never the live repository. Must never match, or this widening
+  // would falsely flag a file that touches no growth surface at all.
+  const text = [
+    "const target = mkTmpDir('fixture-');",
+    "execFileSync('git', ['init', '-q'], { cwd: target });",
+    "const toplevel = execFileSync('git', ['rev-parse', '--show-toplevel'], { cwd: target, encoding: 'utf8' }).trim();",
+    "fs.readdirSync(path.join(toplevel, 'docs'));",
+  ].join('\n');
+  assert.equal(liveRepoDerivation(text), null);
+});
+
+test('BL-1435: a bare exemption marker on a rev-parse-bound violation is NOT honoured (BL-1212 invariant carried)', () => {
+  const bare = "// BL-1038-EXEMPT:\nconst REPO = execFileSync('git', ['-C', __dirname, 'rev-parse', '--show-toplevel'], { encoding: 'utf8' }).trim();\nfs.readdirSync(path.join(REPO, 'docs'));";
+  assert.ok(violationFor('scratch.test.js', bare), 'a bare marker must not silence a genuine rev-parse-bound violation');
+  const withReason = bare.replace('BL-1038-EXEMPT:', 'BL-1038-EXEMPT: the live read is the assertion');
+  assert.equal(violationFor('scratch.test.js', withReason), null, 'a real reason still clears it');
+});
+
 test('BL-1038: a file doing BOTH is flagged only for the live read', () => {
   // Scenario 07. The two families can occur in one file; they are separable by
   // OPERATION, not by file. Removing the live read alone must clear it - the

@@ -36,7 +36,26 @@ const path = require('path');
 // So the growth operation must TARGET the bound live root, by name. That is
 // what separates "runs git log in a fixture it built" (BL-1039's, fine here)
 // from "runs git log against this repository" (this ticket's).
-const LIVE_ROOT_BINDING_RE = /(?:const|let)\s+(\w+)\s*=\s*path\.join\(\s*__dirname\s*,\s*'\.\.'\s*,\s*'\.\.'/;
+// BL-1435: a SECOND idiom binds the same live root - `git rev-parse
+// --show-toplevel` run against `__dirname` (via execFileSync/execSync/
+// spawnSync, with or without an explicit `-C __dirname` arg or a `{ cwd:
+// __dirname }` option). __dirname is the load-bearing tell, exactly as it
+// is for the path.join idiom below: a rev-parse against any OTHER root
+// (a mkTmpDir fixture, `git init`'d separately) resolves THAT fixture's
+// own top level, never the live repository, and must never match here -
+// that is BL-1039's own fixture-git exemption class, untouched by this
+// widening. One alternation, matched by the SAME regex the path.join form
+// uses, so the two idioms can never diverge in which rules apply to them
+// (invariant 1).
+// The three tells (`__dirname`, `rev-parse`, `--show-toplevel`) are looked
+// for in the window up to the call's own closing paren, never anchored to
+// the args array alone - `__dirname` may sit inside it (`-C`, __dirname])
+// or in a trailing `{ cwd: __dirname }` options object instead, and both
+// shapes occur in the real files this ticket names.
+const REV_PARSE_TOPLEVEL_SRC = String.raw`(?:execFileSync|execSync|spawnSync)\s*\(\s*['"]git['"]\s*,\s*(?=[^)]*__dirname)(?=[^)]*\brev-parse\b)(?=[^)]*--show-toplevel)\[[^\]]*\](?:\s*,\s*\{[^}]*\})?`;
+const LIVE_ROOT_BINDING_RE = new RegExp(
+  String.raw`(?:const|let)\s+(\w+)\s*=\s*(?:path\.join\(\s*__dirname\s*,\s*'\.\.'\s*,\s*'\.\.'|${REV_PARSE_TOPLEVEL_SRC})`
+);
 
 function growthPatternsFor(rootName) {
   const R = rootName;
@@ -82,7 +101,11 @@ const EXEMPTION_RE = /BL-1038-EXEMPT:[ \t]*(\S[^\n]*)/;
 // Text-only, no module resolution: what makes a callee "production" is that
 // the file imports it from ../out/ or ../src/, which the source says outright.
 const PROD_REQUIRE = /require\(\s*['"](\.\.[^'"]*\/(?:out|src)\/[^'"]*)['"]\s*\)/;
-const LIVE_ROOT_INLINE_SRC = String.raw`path\.join\(\s*__dirname\s*,\s*'\.\.'\s*,\s*'\.\.'\s*\)`;
+// BL-1435: same widening as LIVE_ROOT_BINDING_RE above, for the inline
+// (never-named) form - one source string, reused everywhere a "live root
+// written straight into a call" is matched, so the two idioms cannot
+// diverge here either (invariant 1).
+const LIVE_ROOT_INLINE_SRC = String.raw`(?:path\.join\(\s*__dirname\s*,\s*'\.\.'\s*,\s*'\.\.'\s*\)|${REV_PARSE_TOPLEVEL_SRC})`;
 
 // Identifiers bound to a production module: both `const { a, b } = require(...)`
 // and `const m = require(...)`.
