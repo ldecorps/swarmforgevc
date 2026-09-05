@@ -158,3 +158,5 @@ source: |
   BL-1439-coder-20260905.md`; `npx vitest run test/constitutionDocCitations.test.js`
   on main 2026-09-06; `git log -S` on the citing articles; BL-945
   (0bfd52db47); Article 1.7, 1.10, 3.6.
+
+assigned_to: coder
