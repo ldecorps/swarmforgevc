@@ -28,22 +28,42 @@ bash swarmforge/scripts/post_qa_branch_sweep.sh <project-root>
 ## What gets fast-forwarded
 
 A role branch is **settled** (fast-forwarded to the landed commit) only when
-all of the following hold, checked **in this order** (BL-1421: in-process work
-is checked before dirtiness — a role mid-parcel is dirty by definition, its
-own uncommitted work, so checking dirtiness first always misclassified it as
-a resolvable `:dirty-worktree` wake instead of the `:in-process-work` it
-actually was):
+all of the following hold, checked **in this order**:
 
 | Check | If it fails → |
 | --- | --- |
-| No parcel in `handoffs/inbox/in_process/` | `:in-process-work` — surfaced to role, deferred, never woken |
-| Worktree clean (`git status --porcelain` empty) | `:dirty-worktree` — surfaced to role, woken |
-| Branch can fast-forward to landed SHA | `:divergent-branch` — surfaced to role, deferred |
+| `head-sha`/`landed-sha` both readable | `:skip` `:missing-ref` — logged, no tell |
 | Head already at landed SHA | `:already-settled` — no-op |
+| HEAD's containment of the landed commit is answerable (BL-1433) | `:skip` `:unknown-containment` — logged, no tell, never a guess |
+| HEAD does NOT already contain the landed commit (BL-1433) | `:holds-landed` — logged, never surfaced, never told, whatever else the worktree holds |
+| No parcel in `handoffs/inbox/in_process/` (BL-1421) | `:in-process-work` — surfaced to role, deferred, never woken |
+| Worktree clean (`git status --porcelain` empty) (BL-1421) | `:dirty-worktree` — surfaced to role, woken |
+| Branch can fast-forward to landed SHA | `:divergent-branch` — surfaced to role, deferred |
 
-A dirty worktree only reaches `:dirty-worktree` (and its wake) when the role
-holds **no** in_process parcel — a working role's own dirty tree is always
-`:in-process-work` first.
+**A role whose HEAD already contains the landed commit is never told it is
+behind, whatever else its worktree holds (BL-1433, invariant 1).** Before
+this fix, a role that had merged `main` and started its own new work — 17
+commits ahead of `origin/main`, 0 behind — still fell through to
+`:divergent-branch` (`can-ff?` false, since it can't cleanly fast-forward
+onto a commit its own history has already passed), and BL-1421's own
+"caught up to the told sha" suppression was vacuously true for it (its HEAD
+already contained the told sha), so the record never blocked a re-tell:
+four roles received 61 identical "branch cannot fast-forward" notes in
+fifteen minutes on 2026-09-05, the exact queue-clearing-blind hazard
+BL-1384/BL-1422 exist to prevent. **`:divergent-branch` is now reachable
+only for a HEAD that genuinely LACKS the landed commit and cannot
+fast-forward** (invariant 2) — for that case BL-1421's standing-tell
+suppression is meaningful again.
+
+BL-1421's in-process-before-dirty ordering (in-process work is checked
+before dirtiness — a role mid-parcel is dirty by definition, its own
+uncommitted work, so checking dirtiness first always misclassified it as a
+resolvable `:dirty-worktree` wake instead of the `:in-process-work` it
+actually was) is unchanged, and now sits AFTER the `:holds-landed` check:
+a dirty or mid-parcel worktree only reaches `:in-process-work` /
+`:dirty-worktree` when its HEAD does not already contain the landed
+commit — a role that merged main and is now dirty with its OWN new work is
+`:holds-landed`, not `:dirty-worktree`, regardless.
 
 The sweep **never** merges, rebases, stashes, or hard-resets. Non-ff branches
 stay untouched; the role receives the usual QA merge-up note and resolves it
@@ -108,7 +128,10 @@ told. BL-1361 adds the send, reusing the daemon's existing
   (BL-1421, above), `:dirty-worktree` — and its wake — is only ever reached
   for a role with **no** parcel in in_process; a role mid-parcel is always
   `:in-process-work` (deferred) even though its own tree is dirty by
-  definition.
+  definition. And since `:holds-landed` (BL-1433, above) is checked before
+  either, none of this — wake or defer — is ever reached at all for a role
+  whose HEAD already contains the landed commit; it is logged and left
+  alone regardless of what its worktree holds.
 - **One unreachable mailbox never withholds the rest** (invariant 3): the
   `tell!` call is wrapped so a thrown exception or a non-zero `swarm_handoff`
   exit is caught, logged as `post-qa-branch-sweep-tell-failed`, and the
@@ -144,6 +167,8 @@ bash specs/pipeline/scripts/run_acceptance.sh \
   specs/features/BL-1361-the-sweep-tells-the-roles-it-could-not-settle.feature
 bash specs/pipeline/scripts/run_acceptance.sh \
   specs/features/BL-1421-one-standing-surfacing-per-role.feature
+bash specs/pipeline/scripts/run_acceptance.sh \
+  specs/features/BL-1433-a-branch-that-holds-the-landed-commit-is-not-behind.feature
 ```
 
 ## Siblings
@@ -155,5 +180,11 @@ bash specs/pipeline/scripts/run_acceptance.sh \
 - BL-1421 — one standing surfacing per (role, reason) across landed shas,
   and in-process work checked before dirtiness (this page's "State persists"
   and "Wake vs. defer" sections)
+- BL-1433 — a HEAD that already contains the landed commit is
+  `:holds-landed`, never surfaced or told, checked before in-process/dirty;
+  closes the gap BL-1421 left open (a role merely ahead of `origin/main`
+  read as `:divergent-branch` forever, 61 notes to four roles in fifteen
+  minutes) — this page's "What gets fast-forwarded" and "Wake vs. defer"
+  sections
 - BL-1360 — the hand-composed QA merge-up note; independent, same epic
 - Pipeline diagram: `docs/diagrams/swarm-flow.mmd` (post-land sweep + surfaced merge-up notes)
