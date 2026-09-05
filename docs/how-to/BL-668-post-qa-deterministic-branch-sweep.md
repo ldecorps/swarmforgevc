@@ -28,14 +28,22 @@ bash swarmforge/scripts/post_qa_branch_sweep.sh <project-root>
 ## What gets fast-forwarded
 
 A role branch is **settled** (fast-forwarded to the landed commit) only when
-all of the following hold:
+all of the following hold, checked **in this order** (BL-1421: in-process work
+is checked before dirtiness — a role mid-parcel is dirty by definition, its
+own uncommitted work, so checking dirtiness first always misclassified it as
+a resolvable `:dirty-worktree` wake instead of the `:in-process-work` it
+actually was):
 
 | Check | If it fails → |
 | --- | --- |
-| Worktree clean (`git status --porcelain` empty) | `:dirty-worktree` — surfaced to role |
-| No parcel in `handoffs/inbox/in_process/` | `:in-process-work` — surfaced to role |
-| Branch can fast-forward to landed SHA | `:divergent-branch` — surfaced to role |
+| No parcel in `handoffs/inbox/in_process/` | `:in-process-work` — surfaced to role, deferred, never woken |
+| Worktree clean (`git status --porcelain` empty) | `:dirty-worktree` — surfaced to role, woken |
+| Branch can fast-forward to landed SHA | `:divergent-branch` — surfaced to role, deferred |
 | Head already at landed SHA | `:already-settled` — no-op |
+
+A dirty worktree only reaches `:dirty-worktree` (and its wake) when the role
+holds **no** in_process parcel — a working role's own dirty tree is always
+`:in-process-work` first.
 
 The sweep **never** merges, rebases, stashes, or hard-resets. Non-ff branches
 stay untouched; the role receives the usual QA merge-up note and resolves it
@@ -46,9 +54,19 @@ as receiver.
 State persists under `.swarmforge/daemon/post-qa-branch-sweep-state.json`:
 
 - `landed-sha` — the `origin/main` commit the sweep targeted
-- `settled` — map of role → SHA fast-forwarded
-- `surfaced` — roles skipped with `:dirty-worktree`, `:in-process-work`, or
-  `:divergent-branch`
+- `settled` — map of role → SHA fast-forwarded; reset on every new landed
+  sha (a role settled to the old landed sha needs re-checking against the
+  new one anyway)
+- `surfaced` — `[{:role :reason :told-sha}]`, one standing record per
+  (role, reason) — the sha the role was told it was behind. **Survives a
+  new landed sha (BL-1421):** before this fix the whole `:surfaced` record
+  reset on every newly-landed commit, so a role that stayed behind while
+  `main` landed 103 commits in a day was told again up to 103 times (539
+  notes and tmux wakes across six roles on 2026-09-05). Now a record is
+  cleared only when the role's own HEAD is confirmed to contain the
+  `told-sha` (`caught-up-to-told?`, `git merge-base --is-ancestor <told-sha>
+  HEAD` in the role's worktree) — a newer landed sha alone never re-tells or
+  re-wakes a role that hasn't caught up yet.
 
 A second sweep against the same landed SHA is a no-op for already-settled
 branches (scenario BL-668 rerun-noop-05).
@@ -66,7 +84,12 @@ told. BL-1361 adds the send, reusing the daemon's existing
 - **What triggers it**: only a *new* surfacing — `sweep-one-role` returns an
   action only when `surface-already-recorded?` was false, so the existing
   surfaced record stays authoritative and a per-tick re-sweep of the same
-  state sends nothing (invariant 2, no nudge storm).
+  state sends nothing (invariant 2, no nudge storm). Since BL-1421,
+  "already recorded" means the role's own HEAD has not yet caught up to the
+  sha it was told about (`caught-up-to-told?`) — not merely "the landed sha
+  hasn't changed" as it read before, which let every newly-landed commit
+  count as a new surfacing regardless of whether the role had acted on the
+  last one.
 - **Message**: a one-liner within the 80-char note cap — the short landed
   SHA, the surfacing reason, and "merge up" (`surface-notice`,
   `post_qa_branch_sweep_lib.bb`). A note over the cap quarantines silently
@@ -81,7 +104,11 @@ told. BL-1361 adds the send, reusing the daemon's existing
   parcel (a forwarded commit must carry the received commit as an
   ancestor), so waking for it would spend a turn on something the role gets
   for free. A dirty worktree does not resolve itself and is the one reason
-  worth a turn now.
+  worth a turn now. Since `decide-role` checks in-process work first
+  (BL-1421, above), `:dirty-worktree` — and its wake — is only ever reached
+  for a role with **no** parcel in in_process; a role mid-parcel is always
+  `:in-process-work` (deferred) even though its own tree is dirty by
+  definition.
 - **One unreachable mailbox never withholds the rest** (invariant 3): the
   `tell!` call is wrapped so a thrown exception or a non-zero `swarm_handoff`
   exit is caught, logged as `post-qa-branch-sweep-tell-failed`, and the
@@ -115,6 +142,8 @@ bash specs/pipeline/scripts/run_acceptance.sh \
   specs/features/BL-668-post-qa-deterministic-branch-sweep.feature
 bash specs/pipeline/scripts/run_acceptance.sh \
   specs/features/BL-1361-the-sweep-tells-the-roles-it-could-not-settle.feature
+bash specs/pipeline/scripts/run_acceptance.sh \
+  specs/features/BL-1421-one-standing-surfacing-per-role.feature
 ```
 
 ## Siblings
@@ -123,5 +152,8 @@ bash specs/pipeline/scripts/run_acceptance.sh \
 - BL-667 epic — deterministic transit assist umbrella
 - BL-1361 — the surfaced-role send (this page's "A surfaced role is told,
   not just logged" section)
+- BL-1421 — one standing surfacing per (role, reason) across landed shas,
+  and in-process work checked before dirtiness (this page's "State persists"
+  and "Wake vs. defer" sections)
 - BL-1360 — the hand-composed QA merge-up note; independent, same epic
 - Pipeline diagram: `docs/diagrams/swarm-flow.mmd` (post-land sweep + surfaced merge-up notes)
