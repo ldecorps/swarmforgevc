@@ -23,6 +23,13 @@
 
 set -euo pipefail
 
+# BL-1407: the script's own invocation args, captured before any function
+# runs - "$@" inside a bash function is that function's OWN positional
+# params, not the top-level script's, so the re-run seam below (which needs
+# the same injected test command the full run used, from inside a function)
+# reads this array rather than "$@" directly.
+ORIG_ARGS=("$@")
+
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 # shellcheck source=property_suite_shared_repo_guard.sh
 source "$SCRIPT_DIR/property_suite_shared_repo_guard.sh"
@@ -128,6 +135,167 @@ retain_refusal_log() {
   cp "$src" "$path" 2>/dev/null || return 1
   prune_refusal_logs "$dir" "$(refusal_log_keep)"
   printf '%s' "$path"
+}
+
+# ── BL-1407: re-run a non-allowlisted red once, alone, before refusing ───
+# The gate decides from ONE run of the whole 316-file suite under a fork
+# pool BL-1348/BL-1349 show is mis-sized - a file that is only load-
+# dependent (green alone, red under the full pool) refuses a commit exactly
+# like a genuine regression, and because BL-1275 only retains output on
+# refusal, nobody could tell which it was. 2026-09-04: five commit attempts
+# refused across 2.5 hours, a different unrelated red each time, none of
+# them a file the parcel touched.
+FLAKE_LOG_DIR_REL=".swarmforge/property-flakes"
+RERUN_CEILING_SECONDS_DEFAULT=180
+
+rerun_ceiling_seconds() {
+  local v="${SWARMFORGE_PROPERTY_RERUN_CEILING_SECONDS:-$RERUN_CEILING_SECONDS_DEFAULT}"
+  if [[ "$v" =~ ^[0-9]+$ ]] && (( v >= 1 )); then
+    printf '%s' "$v"
+  else
+    printf '%s' "$RERUN_CEILING_SECONDS_DEFAULT"
+  fi
+}
+
+# Production: the same properties config the full suite uses, scoped to one
+# file. Under test injection (the guard was invoked with its own extra
+# args, the same seam run_default_suite's caller uses for the full run) the
+# file is appended after a placeholder that lands on bash -c's $0 slot, so
+# a fixture reads "$1" for the file being re-run - the file argument is
+# never $0, so a fixture that ignores args (like the plain GREEN/RED
+# fixtures) still runs unchanged.
+default_rerun_cmd() {
+  local file="$1"
+  (cd extension && npx vitest run --config vitest.properties.config.mjs "$file")
+}
+
+run_rerun_for_file() {
+  local file="$1"
+  if (( ${#ORIG_ARGS[@]} > 0 )); then
+    "${ORIG_ARGS[@]}" bl1407-rerun "$file"
+  else
+    default_rerun_cmd "$file"
+  fi
+}
+
+# Runs "$@" as the leader of its own process group (BL-1202's shape, reused)
+# bounded by $1 seconds wall-clock. A command that is still running at the
+# ceiling is killed (group-wide, grace-then-force, same as
+# report_canary_once) and counted as a failure via exit 124 - a plain
+# sentinel fed straight into the same invariant-3 decision a real non-zero
+# exit would produce, never a forced pass/fail bypass. No GNU `timeout`
+# dependency (stock macOS bash has none).
+run_bounded() {
+  local ceiling="$1"; shift
+  local out_file pid waited=0 rc
+  out_file="$(mktemp)"
+  set -m
+  ("$@") >"$out_file" 2>&1 &
+  pid=$!
+  set +m
+  while kill -0 -- "$pid" 2>/dev/null; do
+    if (( waited >= ceiling )); then
+      kill -TERM -- "-$pid" 2>/dev/null || true
+      local grace
+      for grace in 1 2 3 4 5 6 7 8 9 10; do
+        kill -0 -- "-$pid" 2>/dev/null || break
+        sleep 0.05
+      done
+      kill -KILL -- "-$pid" 2>/dev/null || true
+      wait "$pid" 2>/dev/null || true
+      rm -f "$out_file"
+      return 124
+    fi
+    sleep 1
+    waited=$((waited + 1))
+  done
+  wait "$pid"
+  rc=$?
+  rm -f "$out_file"
+  return "$rc"
+}
+
+current_head_sha() {
+  git rev-parse HEAD 2>/dev/null || printf '%s' "(initial-commit)"
+}
+
+# True when the staged diff touches $normalized (an ps_allowlist_normalize_file
+# result), so a flake record can say whether THIS commit is implicated.
+commit_touched_file() {
+  local normalized="$1" f
+  while IFS= read -r f; do
+    [[ -n "$f" ]] || continue
+    [[ "$(ps_allowlist_normalize_file "$f")" == "$normalized" ]] && return 0
+  done < <(git diff --cached --name-only)
+  return 1
+}
+
+json_escape() {
+  local s="$1"
+  s="${s//\\/\\\\}"
+  s="${s//\"/\\\"}"
+  printf '%s' "$s"
+}
+
+# Invariant 2: every red the re-run cleared is recorded durably (file,
+# commit, whether this commit touched it, and where full output is
+# retained) so the flake rate is measurable. No mixed-outcome scenario ties
+# a cleared file to a refusal's retained log (BL-1275 owns that store), so
+# the field is always the placeholder the ticket's own description names.
+record_flake() {
+  local file="$1" dir path at commit normalized touched_flag retained
+  normalized="$(ps_allowlist_normalize_file "$file")"
+  commit="$(current_head_sha)"
+  if commit_touched_file "$normalized"; then touched_flag=true; else touched_flag=false; fi
+  retained="not retained until BL-1275"
+  dir="$REPO_ROOT/$FLAKE_LOG_DIR_REL"
+  mkdir -p "$dir" 2>/dev/null || true
+  if [[ ! -f "$dir/.gitignore" ]]; then
+    printf '*\n' >"$dir/.gitignore" 2>/dev/null || true
+  fi
+  path="$dir/$(date -u +%Y-%m).jsonl"
+  at="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+  printf '{"at":"%s","file":"%s","commit":"%s","touched_by_commit":%s,"output_retained":"%s"}\n' \
+    "$at" "$(json_escape "$normalized")" "$(json_escape "$commit")" "$touched_flag" "$(json_escape "$retained")" \
+    >>"$path" 2>/dev/null || true
+  echo "property-suite-guard: flake recorded — $normalized failed in the full run, passed alone (BL-1407)" >&2
+}
+
+# Re-runs each non-allowlisted failing file (one per line in $1) once,
+# alone, under a TOTAL wall-clock ceiling shared across all of them - a
+# file that clears the remaining budget is never attempted and counts as
+# still-failing (invariant 3: no answer is never a pass). Prints the files
+# that are STILL failing after their re-run, one per line (empty output
+# when every one of them turned out to be a load flake). Allowlisted files
+# are never passed in here at all - the caller only ever hands it $UNLISTED.
+rerun_unlisted_alone() {
+  local unlisted="$1" file ceiling started now elapsed remaining rc
+  local still=()
+  ceiling="$(rerun_ceiling_seconds)"
+  started="$(date +%s)"
+  while IFS= read -r file; do
+    [[ -n "$file" ]] || continue
+    now="$(date +%s)"
+    elapsed=$((now - started))
+    remaining=$((ceiling - elapsed))
+    if (( remaining <= 0 )); then
+      still+=("$file")
+      continue
+    fi
+    set +e
+    run_bounded "$remaining" run_rerun_for_file "$file"
+    rc=$?
+    set -e
+    if (( rc == 0 )); then
+      record_flake "$file"
+    else
+      echo "property-suite-guard: $file still fails when run alone" >&2
+      still+=("$file")
+    fi
+  done <<<"$unlisted"
+  if (( ${#still[@]} > 0 )); then
+    printf '%s\n' "${still[@]}"
+  fi
 }
 
 path_triggers_check() {
@@ -343,6 +511,20 @@ if (( STATUS != 0 )); then
     echo "property-suite-guard: allowlisted-standing-reds; unrelated green commits not refused (BL-1175)" >&2
     exit 0
   fi
+
+  # BL-1407: give each non-allowlisted failing file one chance to prove the
+  # red was the pool's weather rather than the commit's fault, before this
+  # becomes a refusal. Nothing to re-run (UNLISTED empty - no TSV, or the
+  # suite crashed without printing per-file FAIL lines) skips straight to
+  # the existing refusal below, unchanged.
+  if [[ -n "$UNLISTED" ]]; then
+    UNLISTED="$(rerun_unlisted_alone "$UNLISTED")"
+    if [[ -z "$UNLISTED" ]]; then
+      echo "property-suite-guard: all non-allowlisted reds cleared on re-run alone (load flake, BL-1407)" >&2
+      exit 0
+    fi
+  fi
+
   # BL-1275: from here the commit IS refused, so keep the run this verdict
   # was reached from and say where it is.
   RETAINED="$(retain_refusal_log "$SUITE_OUT_FILE" || true)"
