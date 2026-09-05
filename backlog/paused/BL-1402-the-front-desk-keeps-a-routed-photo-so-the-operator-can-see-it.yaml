@@ -22,7 +22,9 @@ invariants:
   - "BL-620's statement stays on every forwarding surface, byte-identical - keeping the bytes on disk never implies the front desk read the image; the saved path rides on its own line after that note."
   - "The media store is bounded and idempotent: a redelivered update never writes a second file for the same update id, and the store never grows past its bound (oldest files go first)."
 
-human_approval: pending
+human_approval: approved
+human_ruling: |
+  Also route bare photos - mint a follow-up slice with a placeholder caption
 approval_context: >
   A new feature file is authored here, so it needs a tap. One choice is posed
   and it does NOT change this ticket's scenarios either way: this slice keeps
