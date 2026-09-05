@@ -4074,6 +4074,11 @@
        :dirty? (post-qa-branch-sweep-role-dirty? wt)
        :in-process? (post-qa-branch-sweep-role-in-process? ri)
        :can-ff? (and head landed (git-is-ancestor? wt head landed))
+       ;; BL-1433: is the landed commit already an ancestor of the role's
+       ;; own HEAD - true for a branch that is merely ahead by its own
+       ;; work, the case decide-role now settles before ever asking
+       ;; whether that same worktree is dirty or mid-parcel.
+       :contains-landed? (and head landed (git-is-ancestor? wt landed head))
        :worktree-path wt})))
 
 (defn- caught-up-to-told?
