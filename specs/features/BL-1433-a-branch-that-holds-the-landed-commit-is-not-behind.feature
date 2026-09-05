@@ -1,3 +1,8 @@
+# mutation-stamp: sha256=c932aa2831772b7e245277acd05814e7e07583bcd31726c2c454a024225d0ec3
+# acceptance-mutation-manifest-begin
+# {"version":1,"tested_at":"2026-09-05T16:29:46.566517264Z","feature_name":"BL-1433 A branch that holds the landed commit is not behind","feature_path":"/home/carillon/swarmforgevc/.worktrees/hardender/specs/features/BL-1433-a-branch-that-holds-the-landed-commit-is-not-behind.feature","background_hash":"166d7325b804845f4852cbac08413b0e43664a2b8c7225756a367859e973ed3d","implementation_hash":"unknown","scenarios":[{"index":0,"name":"a branch that holds the landed commit is told nothing whatever else the worktree holds","scenario_hash":"96bfaeecc5f64bfbd45c9332d1396b29159a1a55dcc7bb67c6922e5a857beb76","mutation_count":3,"result":{"Total":3,"Killed":3,"Survived":0,"Errors":0},"tested_at":"2026-09-05T16:29:46.566517264Z"}]}
+# acceptance-mutation-manifest-end
+
 Feature: BL-1433 A branch that holds the landed commit is not behind
 
   The post-QA branch sweep (BL-668) fast-forwards clean role branches to the
