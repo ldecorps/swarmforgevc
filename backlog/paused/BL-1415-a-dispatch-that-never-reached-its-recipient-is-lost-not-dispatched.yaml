@@ -139,6 +139,14 @@ notes: |
   is wrong, the real cause is above) is appended to that evidence file in
   the same commit.
 
+  APPROVED by the human at 06:32:01 local (88d25c1108, "By the human,
+  recorded by the front desk") against the on-disk text before the
+  specifier's commit landed; the only later edit is the IR-DRY note below.
+
+  IR-DRY (2026-09-05): 15 occurrences, 12 unique, one medium finding (the
+  no-copy vs copy-in-<state> Givens). Reviewed: the contrast IS the
+  behaviour, kept.
+
   INVEST at mint: Independent (both depends_on landed), Negotiable (verdict
   shape is direction), Valuable (one outcome: a lost dispatch is repaired
   automatically instead of refused), Estimable (one predicate change + two

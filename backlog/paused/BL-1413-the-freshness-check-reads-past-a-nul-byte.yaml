@@ -1,0 +1,164 @@
+id: BL-1413
+title: "The freshness check measures a heartbeat log from the last heartbeat BEFORE a NUL byte: GNU grep stops at binary content, so one crash-zeroed line from 2026-08-30 makes five live supervisors read six days stale, and since cron came back at 04:00Z the check restarts handoffd and four healthy supervisors every cool-off and announces FRESHNESS_VIOLATION every two minutes"
+milestone: M8
+type: defect
+severity: high
+# high: a live fault degrading behaviour AND a broken health signal. handoffd
+# (with its supervisor) has been killed and restarted every ~5 minutes since
+# 04:00Z on a healthy box (12 restarts by 05:30Z), the same for four other
+# supervisors, and the Operator topic carries ~120 false alarms an hour. Not
+# critical: the swarm keeps running between restarts and no data is lost.
+status: todo
+epic: swarm-reliability
+priority: 2
+direction: human-requested
+depends_on: [BL-1011, BL-1012]
+mutation_cost: low
+slice_size_envelope: low
+required_stages: [coder, cleaner, architect, hardender, documenter, qa]
+
+acceptance: specs/features/BL-1413-the-freshness-check-reads-past-a-nul-byte.feature
+
+required_wiring:
+  - 'swarmforge/scripts/daemon_log_freshness_check.sh::grep -aE::heartbeat_age_secs, the function the live cron tick runs, must read the log as text past any NUL byte; absent today (grep returns 0)'
+  - 'specs/pipeline/steps/bl1413FreshnessNulByteSteps.js::registerSteps::the handler file exists so discovery registers every scenario (BL-1371)'
+
+invariants:
+  - "The measured age of a log is NOW minus the timestamp of the newest line containing the heartbeat token anywhere in the file, for every byte sequence the file may contain (NUL, partial line, invalid UTF-8); a byte can only ever make one line unparseable, never hide the lines after it."
+  - "The check never restarts or announces a daemon whose measured age is within its effective threshold; a line that is unparseable is skipped, never turned into a sentinel while a newer parseable heartbeat exists."
+
+human_approval: approved
+approval_context: >
+  A new feature file is authored here, so it needs a tap. No choice is posed
+  and there are no ruling_options. This is the defect behind the alert storm
+  you sent the screenshot of at 06:21 (your local time); BL-1414 is the
+  announce-traffic half of your ask. A one-flag hotfix is named under
+  "Recommended hotfix" for you to authorize if you want the storm stopped
+  before this parcel lands; the specifier does not apply it.
+
+description: |
+  ## What is wrong
+
+  `daemon_log_freshness_check.sh` (BL-675, cron `*/2`) measures a daemon's
+  age as NOW minus the timestamp of the last "heartbeat" line in its log:
+
+      line=$(grep -E '[[:space:]]heartbeat([[:space:]]|$)' "$log_path" | tail -n 1 || true)
+
+  GNU grep 3.11 (what `/usr/bin/grep` is on this host and what cron runs)
+  treats a file containing a NUL byte as binary: it prints matching lines
+  up to the NUL, then prints `grep: <file>: binary file matches` to stderr
+  and stops. The cron log carries exactly that line for every supervisor
+  log. Each of the five supervisor logs holds one NUL-filled line written
+  around 2026-08-30 (handoffd-supervisor.log line 17064 of 49441, the
+  crash that also killed cron, see the operator memory). So the "last"
+  heartbeat the check sees is the last one before that line:
+
+      /usr/bin/grep -E  ... handoffd-supervisor.log | tail -1  -> 2026-08-30T04:31:36Z heartbeat
+      /usr/bin/grep -aE ... handoffd-supervisor.log | tail -1  -> 2026-09-05T05:27:15Z heartbeat
+
+  Cron was dead from 08-30 until the human ran `service cron start` on
+  09-05; the first tick after that (epoch 1788580801, 04:00:01Z) restarted
+  cursor_bridge_supervisor for age_secs=506861, and every tick since has
+  done the same for all five supervisors: by 05:30Z the incident log holds
+  15 restarts each for four supervisors, 12 for handoffd_supervisor (whose
+  start script also restarts handoffd: "Started handoff daemon (pid ...)
+  and supervisor" on every one), and 136 escalate announcements. The
+  human's screenshot at 06:21 local shows four FRESHNESS_VIOLATION
+  messages in one tick. The supervisors were healthy the whole time: their
+  logs carry heartbeat lines seconds old.
+
+  BL-1011 (attribution) and BL-1012 (contention-relative threshold, grace
+  after our own restart) both assumed the newest heartbeat line was being
+  read. It was not.
+
+  ## What is wanted
+
+  The age is measured from the newest heartbeat line in the file regardless
+  of what bytes the file carries. A NUL byte, a torn line or invalid UTF-8
+  can make one line unparseable; it can never hide the lines after it. A
+  healthy daemon is never restarted or announced for a corrupt line in its
+  past; a genuinely stale one still is (scenario 03 is the regression
+  guard).
+
+  ## How (direction, not mandate)
+
+  - `grep -aE` (text mode) in `heartbeat_age_secs`, under `LC_ALL=C` so the
+    match is byte-wise; keep `tail -n 1`. Stock macOS `/bin/bash` 3.2 and
+    BSD grep also accept `-a` (engineering.prompt targets both).
+  - If the newest matching line's timestamp does not parse (a torn line),
+    fall back to the newest one that does, rather than returning the
+    sentinel; only a file with NO parseable heartbeat returns
+    `unparseable-timestamp`.
+  - Tests: `swarmforge/scripts/test/test_daemon_log_freshness.sh` gains
+    NUL-bearing fixture logs (write them with `printf '\0'`), and scenario
+    04 replays copies of the five real 2026-09-05 supervisor logs (checked
+    into the fixture as trimmed excerpts around their NUL line, not the
+    49k-line originals) with restart and announce stubbed through
+    `FRESHNESS_START_CMD` / `FRESHNESS_ANNOUNCE_CMD`.
+  - Nothing here changes the incident record shape or the announce text.
+
+  ## Recommended hotfix (human-authorized only; report to the coordinator)
+
+  In `heartbeat_age_secs`, `grep -E` -> `grep -aE`. One flag; it is the
+  whole of invariant 1 for the NUL case and stops the restart storm on the
+  next tick. The operator does not edit code unless told to (operator
+  memory 09-04); the specifier does not either. The parcel still lands the
+  tests and the torn-line fallback.
+
+  ## Out of scope
+
+  - Why the supervisor logs gained a NUL-filled line (a crash-time
+    zero-fill; nothing to build).
+  - Announce traffic shaping for a real, persistent violation: BL-1414.
+  - Rotating or cleaning the existing logs: unnecessary once the read is
+    text-mode.
+
+qa_e2e_procedure: |
+  1. `bash swarmforge/scripts/test/test_daemon_log_freshness.sh` passes,
+     NUL cases included; the BL-1413 feature passes all four scenario runs.
+  2. Live: `FRESHNESS_START_CMD='echo START' FRESHNESS_ANNOUNCE_CMD='echo ANNOUNCE'
+     FRESHNESS_ROOT=$PWD sh swarmforge/scripts/daemon_log_freshness_check.sh`
+     over the real `.swarmforge/` prints neither START nor ANNOUNCE for any
+     supervisor while their logs still carry the 08-30 NUL line; the cron
+     log stops gaining `binary file matches` lines.
+  3. `tail -20 .swarmforge/daemon/freshness-incidents.log` after two cron
+     ticks shows no `action=restart` or `action=escalate` for a supervisor
+     whose log heartbeat is under threshold.
+  4. `grep -n 'grep -aE' swarmforge/scripts/daemon_log_freshness_check.sh`
+     returns the heartbeat_age_secs line (required_wiring).
+  5. Regression: a fixture log whose newest heartbeat is 2h old still
+     restarts and announces with the real age (scenario 03).
+
+notes: |
+  Minted 2026-09-05 by the specifier on the human's in-session message
+  (06:21 local, screenshot of the Operator topic): "can something be done
+  to reduce the traffic of this alert, which is juat noise as far as I am
+  concerned". That sentence is carried verbatim; BL-1414 is the half that
+  answers it directly. This ticket is the defect the specifier found
+  behind the traffic: the alerts are false, and the restarts they trigger
+  are real.
+
+  Evidence read this pass, not assumed: `/usr/bin/grep --version` = GNU
+  grep 3.11; `LC_ALL=C grep -c -P '\x00'` = 1 line in each of the five
+  supervisor logs; the two grep invocations above on
+  handoffd-supervisor.log; `.swarmforge/daemon/freshness-incidents.log`
+  counts since epoch 1788566400; `ps -o lstart` on the four supervisor
+  pids (all started 06:20-06:24 local, i.e. by the check); the cron log's
+  `binary file matches` lines and "Started handoff daemon ... and
+  supervisor."
+
+  IR-DRY (2026-09-05): 16 step occurrences, 13 unique, three medium findings
+  (10s vs 20s measured age; the two fixture shapes; the stubbed run variant).
+  Reviewed: deliberate contrasts between distinct fixtures, kept.
+
+  INVEST at mint: Independent (both depends_on landed), Negotiable (How is
+  direction; the flag is the obvious fix but the torn-line fallback is
+  design), Valuable (one outcome: no false restart/announce), Estimable
+  (one function + fixtures; low), Small (four scenarios, two invariants),
+  Testable (fixture logs with NUL bytes, stubbed restart/announce).
+
+source: |
+  Human, in-session 2026-09-05 06:21 local, with a screenshot of four
+  FRESHNESS_VIOLATION messages at 06:20: "can something be done to reduce
+  the traffic of this alert, which is juat noise as far as I am concerned".
+  Root cause found by the specifier the same pass.
