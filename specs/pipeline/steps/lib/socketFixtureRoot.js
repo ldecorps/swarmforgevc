@@ -20,7 +20,7 @@
 
 const fs = require('node:fs');
 const path = require('node:path');
-const { reap } = require('./fixtureReaper');
+const { reap, onAbnormalExit } = require('./fixtureReaper');
 
 const SHORT_FIXTURE_BASE = '/tmp';
 
@@ -51,10 +51,20 @@ function removeStragglers() {
   }
 }
 
+// BL-1312: a bare process.on('exit', ...) never fires on SIGTERM/SIGINT -
+// Node's default action for those terminates immediately without unwinding
+// 'exit' hooks. This helper's cleanup used to run only by accident, when
+// some OTHER step file loaded in the same process happened to also call
+// fixtureReaper's track()/onAbnormalExit() (whose own SIGINT/SIGTERM
+// handlers call process.exit(), which THEN unwinds 'exit' hooks). Routing
+// through onAbnormalExit gives this the SAME exit/SIGINT/SIGTERM coverage
+// track()/reap() already have - installed once globally regardless of how
+// many callers register (installGlobalHandlersOnce), so this stays a
+// single set of process-wide listeners exactly as invariant 2 requires.
 function installExitHook() {
   if (exitHookInstalled) return;
   exitHookInstalled = true;
-  process.on('exit', removeStragglers);
+  onAbnormalExit(removeStragglers);
 }
 
 function mkSocketFixtureRoot(prefix) {

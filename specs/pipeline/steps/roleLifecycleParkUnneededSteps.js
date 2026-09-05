@@ -98,6 +98,12 @@ const STUB_RESIDENT_SECONDS = 300;
 // fixture writes beside its own stub.
 function mkFakeBin() {
   const dir = mkSocketFixtureRoot('aps-role-lifecycle-fakebin-');
+  // BL-1312: registered before the stub/.zshenv are even written, closing
+  // the caller-side window between dir creation and this set gaining it
+  // (mkSocketFixtureRoot's own trackedRoots already covers dir from birth
+  // regardless - this set is this file's OWN redundant BL-1305 cleanup
+  // path, so its window is real but secondary).
+  liveFakeBinDirs.add(dir);
   const stub = path.join(dir, AGENT_NAME);
   // The stub must STAY RESIDENT, not `exit 0`. A role's pane is alive only
   // while its process is, and the scenarios assert real live sessions - so an
@@ -125,7 +131,6 @@ function mkFakeBin() {
     path.join(dir, '.zshenv'),
     `export PATH='${dir}'"\${PATH:+${path.delimiter}\$PATH}"\n`
   );
-  liveFakeBinDirs.add(dir);
   return dir;
 }
 
