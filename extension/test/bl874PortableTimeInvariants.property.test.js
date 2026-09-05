@@ -72,7 +72,13 @@ test('property (BL-874 invariant 1 converse): the shared-helper shape is never f
 // BL-654 - mirrors tempDirTrapGuard.property.test.js's invariant-2
 // treatment exactly.
 const REPO_ROOT = path.join(__dirname, '..', '..');
-const EXCLUDED_DIR_NAMES = new Set(['node_modules', '.git', 'out', 'coverage', '.stryker-tmp', 'vendor']);
+// BL-1430: .worktrees holds a full linked checkout per pipeline role (each
+// with its own copy of specs/pipeline/steps/lib/portableTimeGuard.js) -
+// counting it turned "one definition" into "one per worktree present on
+// this host" (8 on 2026-09-05), a host-population artifact, not a real
+// duplication. The definition itself is single; only the walk's scope was
+// wrong - the assertion below is unchanged.
+const EXCLUDED_DIR_NAMES = new Set(['node_modules', '.git', 'out', 'coverage', '.stryker-tmp', 'vendor', '.worktrees']);
 const GUARD_MODULE_PATH = path.join(REPO_ROOT, 'specs', 'pipeline', 'steps', 'lib', 'portableTimeGuard.js');
 const STANDING_GUARD_TEST_PATH = path.join(REPO_ROOT, 'extension', 'test', 'portableTimeGuard.test.js');
 
