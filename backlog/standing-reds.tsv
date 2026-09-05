@@ -38,7 +38,6 @@ property	extension/test/tempDirTrapGuard.property.test.js	BL-1289	2026-08-30	21 
 property	extension/test/bl874PortableTimeInvariants.property.test.js	BL-1430	2026-08-27	one-definition property red; no owner until 2026-09-05
 unit	extension/test/pricingTable.test.js	BL-1212	2026-08-28	PRICING_TABLE missing claude-fable-5-1
 unit	extension/test/shellEntryPointDriveCheck.test.js	BL-1229	2026-08-28	landPilotedTicket deps contract outgrew its stubs
-unit	extension/test/socketFixtureShortRootGuard.test.js	BL-1290	2026-08-30	socket fixture rooted at os.tmpdir() over the path limit
 unit	extension/test/telegramClient.test.js	BL-1263	2026-08-29	asserts behaviour a deliberate source change replaced
 unit	extension/test/telegramCursorOperatorExec.test.js	BL-1263	2026-08-29	ambulance engage/release message shape changed
 unit	extension/test/tempDirTrapGuard.test.js	BL-1289	2026-08-30	21 runners create a temp root with no cleanup path
