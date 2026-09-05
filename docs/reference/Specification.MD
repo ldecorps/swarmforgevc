@@ -1,5 +1,24 @@
 # SwarmForge VS Code Extension — Specification
 
+**Last Updated:** September 5, 2026 (BL-1400: `check-feature-handler-registration.ts`'s
+`readTree` listed `specs/pipeline/steps/` NON-recursively, so a nested
+handler — the one placement BL-1371's own `isDiscovered` predicate and its
+how-to both claim the guard still refuses — never entered `stepFiles` and
+the guard silently passed a feature whose only handler sat in a
+subdirectory; the suffix-naming refusal worked, the subdirectory refusal
+was dead code (measured by the coder 2026-09-04 while re-tensing BL-1388's
+fixture). Fixed by listing the tree recursively (paths still relative to
+the repo root); `isDiscovered` classifies nested files correctly with no
+change of its own, and a `lib/` helper reached by a discovered handler's
+`require` stays reachable and is not reported as an offender — only a
+handler nothing requires and no feature discovers is refused. Acceptance:
+`specs/features/BL-1400-the-registration-guard-never-sees-a-nested-handler.feature`.
+No how-to edit needed: `docs/how-to/BL-1371-step-handlers-register-by-discovery.md`
+already asserted the guard refuses a nested/misnamed handler — that
+sentence was aspirational until this ticket, is now true, and needed no
+wording change. No diagram depicts guard-internal tree-walk behavior at
+this granularity.)
+Prior entry —
 **Last Updated:** September 5, 2026 (BL-1401: the acceptance-side twin of
 BL-1398's fixture defect — `specs/pipeline/steps/bl632CommitTimeGuardSteps.js`'s
 `mkFixtureRepo` carried its own separate hand-written twelve-entry copy

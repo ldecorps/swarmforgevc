@@ -1,0 +1,171 @@
+id: BL-1408
+title: "The remaining hand-written copies of the commit-guard chain list derive from the runner or hook they exercise through BL-1398's helper: test_run_commit_guards.sh has exited 127 at case 01 since BL-1385's guard joined the runner on 2026-09-04 (BL-1395's doubled it), and test_pre_merge_commit_hook.sh and the BL-1252 property test carry the same shape, in sync only by hand"
+milestone: M8
+type: defect
+severity: medium
+# medium: real but contained. The chain decides correctly on every live
+# commit - the red is in the tests that PIN its aggregation. The runner test
+# is a standing suite row and has failed at its first case for a day, so
+# BL-1252's every-violation-in-one-refusal contract has had no executable
+# check since: a broken safety signal for one mechanism, not a live fault.
+# The two in-sync copies are prevention, not a present fault.
+status: todo
+epic: swarm-reliability
+priority: 12
+direction: swarm-reported
+depends_on: [BL-1398, BL-1401]
+mutation_cost: low
+slice_size_envelope: low
+required_stages: [coder, cleaner, architect, hardender, documenter, qa]
+
+acceptance: specs/features/BL-1408-commit-guard-tests-derive-their-guard-set.feature
+
+required_wiring:
+  - 'swarmforge/scripts/test/test_run_commit_guards.sh::commitGuardFixtureSet.js::the runner test must read the runner through BL-1398 helper for its stub set; absent today (grep returns 0)'
+  - 'swarmforge/scripts/test/test_pre_merge_commit_hook.sh::commitGuardFixtureSet.js::the pre-merge hook test must read the hook through the same helper; absent today (grep returns 0)'
+  - 'extension/test/bl1252CommitGuardAggregationInvariants.property.test.js::deriveCommitGuardFixtureSet::the BL-1252 property test must derive its guard list from the runner; absent today (grep returns 0)'
+  - 'specs/pipeline/steps/bl1408CommitGuardTestsDeriveTheirSetSteps.js::registerSteps::the handler file exists so discovery registers every scenario (BL-1371)'
+
+invariants:
+  - "Every commit-guard test's guard set is a function of the runner or hook it exercises, read at run time through BL-1398's helper - never a list in the test: a guard added to or removed from a chain is stubbed or dropped without editing any test."
+  - "Exactly one parser of run_guard lines exists in the repo (BL-1401 invariant 3, carried forward): the three tests consume BL-1398's helper and none carries a second parse."
+  - "The only guard any of the three tests names by hand is the expensive tier's single member, check_property_suite_drift.sh, and each test that names it asserts it is in the derived set - so that one constant cannot drift from the runner either."
+
+human_approval: pending
+approval_context: >
+  A new feature file is authored here, so it needs a tap. No choice is posed
+  and there are no ruling_options. Surfaced by the coder on BL-1275
+  (2026-09-05): the runner test exits 127 at case 01. Reproduced by the
+  specifier the same pass; the two in-sync copies were found by grepping
+  every file that names a chain guard.
+
+description: |
+  ## What is wrong
+
+  `swarmforge/scripts/test/test_run_commit_guards.sh` writes a passing stub
+  for each name in a hand-written `ALL_GUARDS=` list of five, then drives the
+  REAL `run_commit_guards.sh` against that stub directory. The runner now
+  names seven guards: `check_handler_module_graph.sh` (BL-1385) and
+  `check_bb_scripts_load.sh` (BL-1395) joined on 2026-09-04. `run_guard`
+  execs `$GUARD_DIR/<name>`, so the two unstubbed guards exit 127, the chain
+  refuses ("these guards did not refuse cleanly - they failed unexpectedly"),
+  case 01 fails, and because the test's own `fail` exits under `set -e`,
+  cases 02-11 never run. Reproduced 2026-09-05:
+
+      FAIL: 01: a clean commit was refused (status 127):
+        commit_guard_chain_lib.sh: line 33: .../guards/check_handler_module_graph.sh: No such file or directory
+        commit_guard_chain_lib.sh: line 33: .../guards/check_bb_scripts_load.sh: No such file or directory
+
+  It is a `standing` row in `suite-manifest.tsv`. The same file carries two
+  more hand-lists: case 04 enumerates four cheap guards for "every cheap
+  guard refuses" (the cheap tier is six), and case 10's regex of five names
+  is the check that the hook calls no guard directly - which now fails OPEN
+  for a direct call to either newer guard.
+
+  Two more copies are in sync today and will go red the same way:
+
+  - `swarmforge/scripts/test/test_pre_merge_commit_hook.sh`: `MERGE_GUARDS=`
+    names the two guards the pre-merge-commit hook runs today.
+  - `extension/test/bl1252CommitGuardAggregationInvariants.property.test.js`:
+    `INDEX_GUARDS` (six) plus `SUITE_GUARD`, edited by hand for BL-1385 and
+    again for BL-1395 the same day - its own comment says the list is
+    hand-enumerated and names exactly this failure.
+
+  This is the BL-973 / BL-1279 shape (a closure mirrored by hand goes red
+  when the closure grows) and the THIRD ticket for this one list: BL-1398
+  fixed the BL-632 property fixture, BL-1401 the BL-632 acceptance handler.
+  This ticket sweeps every remaining copy so there is no fourth. Enumerated
+  2026-09-05 by grepping every file that names
+  `check_feature_handler_registration.sh`; the other hits (the bl1303,
+  bl1332 and bl1375 handlers, `land_step_lib.bb`'s replay tree-guard list,
+  `test_pipeline_code_on_main_guard.sh`) reference one guard for their own
+  reasons and are not copies of the chain list.
+
+  ## How (direction, not mandate)
+
+  - Shell tests derive through node the way
+    `test_bl1398_guard_fixture_derives_set.sh`'s `derive()` already does: a
+    `node -e` that requires `extension/test/helpers/commitGuardFixtureSet.js`
+    and prints JSON. For the runner test, `guards` of
+    `deriveCommitGuardFixtureSet({ repoRoot })` is the stub list. For the
+    pre-merge test, the hook's own entries: `parseRunGuardEntries` over
+    `swarmforge/git-hooks/pre-merge-commit` is exported by the same helper;
+    a per-source call of the one parser is not a second parser.
+  - Case 04 becomes "every derived guard except the suite guard refuses".
+    Case 10's direct-call regex matches ANY `check_*.sh` invoked directly
+    (`check_[a-z_]+\.sh`), which needs no list at all.
+  - Property test: `SUITE_GUARD` stays one named constant (the expensive
+    tier has a single member; that is a production fact, not a list);
+    `INDEX_GUARDS` is the derived set minus it, and the test asserts the
+    derived set contains it (invariant 3).
+  - Each shell test needs ONE seam so scenarios 02/03 can hand it a scratch
+    chain copy: the runner path for the runner test, the hook path for the
+    pre-merge test, with the derivation's `repoRoot` taken from that path
+    (the seam tree carries `swarmforge/scripts/` and `swarmforge/git-hooks/`
+    the way BL-1398's `make_seam`/`plant_guard` build one). The live files
+    stay the default and are never written.
+  - The observable for "stubbed and run": the test prints the guard set it
+    derived, and case 01 asserts EVERY derived guard ran (today it checks the
+    property guard alone) and says so on PASS. The acceptance handler reads
+    those lines.
+  - Do NOT write a second `run_guard` parser (invariant 2). If the helper
+    lacks something a test needs, extend the helper.
+
+  ## Explicitly NOT in scope
+
+  - `land_step_lib.bb`'s replay tree-guard list: a different closure.
+  - The runner test's own first-failure-stop shape (`fail` exits under
+    `set -e`, which is what hid cases 02-11). Noted, not fixed here.
+  - BL-570's stale wiring assertion, red for the same family of reasons:
+    BL-1409, minted the same pass.
+
+qa_e2e_procedure: |
+  1. On the parcel: `bash swarmforge/scripts/test/test_run_commit_guards.sh`
+     passes every case (was FAIL 01, status 127, on main 2026-09-05);
+     `bash swarmforge/scripts/test/test_pre_merge_commit_hook.sh` passes; the
+     BL-1252 property file passes under the property-suite command.
+  2. Seam: copy `run_commit_guards.sh` and the chain lib into a scratch tree,
+     append `run_guard check_bl1408_extra.sh` with that script present beside
+     it, run the runner test against the seam: it passes, its derived-set
+     line names the extra guard, and case 01 reports every derived guard ran.
+  3. Same with a copy of `swarmforge/git-hooks/pre-merge-commit` and a third
+     `run_guard` line, against the pre-merge test.
+  4. `grep -cE '^\s*(ALL_GUARDS|MERGE_GUARDS|INDEX_GUARDS)\s*=' ` on each of
+     the three files returns 0; `grep -c commitGuardFixtureSet` on each
+     returns at least 1 (invariant 2). Case 10's regex names no guard.
+  5. Fixture roots are removed on the EXIT trap; nothing sweeps by prefix
+     (BL-1385/BL-1390).
+
+notes: |
+  Minted 2026-09-05 by the specifier from the coder's priority-10 note on
+  BL-1275 ("BL-570 feature 7/7 red since BL-1252; run_commit_guards test
+  127; unticketed"). Not a bounce: BL-1275 forwarded clean.
+
+  The property-test copy has no executable scenario of its own, deliberately:
+  a vitest file cannot be required from a step handler without running it,
+  and "it passes" gates nothing because it is green today by hand. Its gate
+  is invariant 1 at the architect's pass, wiring anchor 3, and e2e step 4.
+
+  Both this ticket and BL-1409 add an acceptance handler and will each touch
+  `suite-manifest.tsv` if they add a standing shell row, and the BL-973
+  how-to at the documenter. Expect the coordinator to serialize them
+  (Concurrent Work Orthogonality), not to run them side by side.
+
+  IR-DRY at mint: 3 medium possible-synonyms, all deliberate. "a runner seam
+  ..." vs "a pre-merge-commit hook seam ..." (02/03) and "the runner test
+  runs against the seam" vs "the pre-merge hook test runs against the seam"
+  are two different chains under two different tests - the reason the
+  ticket is a sweep and not a one-file fix. "the runner test runs" vs "...
+  against the seam" (01/02) is the real chain versus a scratch copy, the
+  green-today case versus the follows-the-runner case. Kept.
+
+  Mint-time INVEST: one observable outcome (no hand-written copy of either
+  chain's guard list remains, and the red runner test is green against
+  today's runner), one sitting - three mechanical swaps onto an existing
+  helper plus one seam each, no unbuilt sibling; both dependencies are in
+  `backlog/done/`.
+
+source: |
+  Coder note to specifier, priority 10, 2026-09-05T02:33Z; coder evidence
+  `backlog/evidence/BL-1275-coder-20260905.md` (coder branch) §"Surfaced
+  beyond scope", item 2. Reproduced by the specifier on main at 22030a8444.

@@ -23,7 +23,7 @@ acceptance: specs/features/BL-1364-the-mechanical-share-of-a-turn-is-readable.fe
 
 invariants:
   - "A stage with no classified turns in the window is ABSENT from the series, never reported as a zero share - silence and a measured zero must never be confused."
-  - "A window containing an unreadable or partial transcript is reported incomplete and contributes no share, rather than diluting one (the fail-closed posture every other sweep in this repo takes)."
+  - "A window containing an unreadable transcript, or one with interior damage (a line that fails to parse with a whole line after it), is reported incomplete and contributes no share, rather than diluting one - the fail-closed posture every other sweep in this repo takes. A torn FINAL line is a live append, not damage: the torn line is dropped, the transcript is named in the record as truncated-tail, and the window stays complete - otherwise no window with any agent mid-write could ever publish."
   - "The category set comes from the walker's own definition; the series never restates it, so the two cannot drift apart (BL-897)."
 
 required_wiring:
@@ -104,8 +104,11 @@ qa_e2e_procedure: |
      with mixed mechanical and thinking intervals and one with none. Confirm
      the first reports a share and the second is ABSENT from the series, not
      zero.
-  2. Corrupt one transcript in the window. Confirm the window is reported
-     incomplete and that no stage from it reports a share.
+  2. Corrupt an INTERIOR line of one transcript in the window. Confirm the
+     window is reported incomplete and that no stage from it reports a share.
+     Separately, append a torn final line to another transcript: the window
+     stays complete, that transcript is named as truncated-tail, and its stage
+     still reports a share.
   3. Run the producer twice over the same transcripts and confirm it is
      idempotent - no duplicated records (the sibling producer's own contract).
   4. Run against the live repo and confirm a real series appears with a
@@ -150,3 +153,21 @@ source: |
 
   Sibling in kind to BL-1361 (BL-668 shipped near-inert). Both are the BL-1235
   shape - a mechanism built, gated, landed, and reachable by nothing.
+
+  **Amended 2026-09-05 by the specifier on the coder's priority-00 note**
+  ("inv2: torn FINAL line = live append, tolerated"). Invariant 2 said
+  "unreadable or partial" without defining partial. The coder measured the
+  live repo: 6 of 2256 role transcripts ended in a torn final line, every one
+  an agent mid-append, and under the literal reading the producer reported the
+  whole window INCOMPLETE and could never publish - the outcome this ticket
+  exists to end. The coder's reading is ratified, not merely tolerated:
+  invariant 2 now defines interior damage (fail-closed) against a torn final
+  line (dropped, named as truncated-tail, window complete). Scenario 05 is
+  ADDED to gate the tolerated case, so its step handlers must land in the same
+  parcel (BL-233); scenario 03 is unchanged. e2e step 2 now exercises both.
+  IR-DRY after the amendment: the two mint-time findings plus one new pair,
+  "the window is reported as complete" (05) vs "... incomplete" (03) - the
+  positive and negative of the same assertion, which is the distinction
+  scenario 05 exists to draw. Scenario 05 reuses 03's and 01's step texts
+  otherwise, so its handler adds one Given and two Thens.
+  Spec defect at mint, mine; no bounce, the coder holds the parcel uncommitted.
