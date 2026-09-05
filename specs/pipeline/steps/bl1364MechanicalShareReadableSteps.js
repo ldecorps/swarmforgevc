@@ -112,6 +112,42 @@ function registerSteps(registry) {
     state.partialPath = damaged;
   });
 
+  scoped(/^a transcript in the window whose final line is torn mid-write$/, (ctx) => {
+    const state = ensureCtx(ctx);
+    // A worked stage alongside it, so "the window stays complete" is a claim
+    // about a window that actually has something to report - otherwise the
+    // scenario would pass on an empty series.
+    writeTranscript(state, 'coder.jsonl', [
+      shellLine(BASE_MS + 1_000, 'git merge --ff-only origin/main'),
+      toolLine(BASE_MS + 3_000, 'Write', { file_path: '/tmp/n.md', content: 'prose' }),
+    ]);
+    state.trail.push(trailFor(WORKED_STAGE, BASE_MS, BASE_MS + 10_000));
+    // The torn line is the LAST one and every line before it is whole: a
+    // transcript its agent is mid-append to, which is what some transcript on
+    // the live repo always looks like.
+    const live = path.join(state.root, 'qa-live.jsonl');
+    fs.writeFileSync(live, `${shellLine(BASE_MS + 2_000, 'npm run test')}\n{"type":"assis`, 'utf8');
+    state.paths.push(live);
+    state.tornTailPath = live;
+  });
+
+  scoped(/^the window is reported as complete$/, (ctx) => {
+    const state = ensureCtx(ctx);
+    assert.equal(
+      state.record.complete,
+      true,
+      `a live append was treated as damage: ${JSON.stringify(state.record.unreadable_transcripts)}`
+    );
+    assert.deepEqual(state.record.unreadable_transcripts, []);
+  });
+
+  scoped(/^that transcript is named as having a truncated tail$/, (ctx) => {
+    const state = ensureCtx(ctx);
+    // Named, never silently absorbed - the condition has to stay visible to
+    // whoever later reads the window.
+    assert.deepEqual(state.record.truncated_tail_transcripts, [state.tornTailPath]);
+  });
+
   scoped(/^a stage whose turns are entirely ([a-z-]+)$/, (ctx, category) => {
     const state = ensureCtx(ctx);
     assert.ok(
