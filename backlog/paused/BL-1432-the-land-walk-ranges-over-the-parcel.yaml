@@ -1,5 +1,5 @@
 id: BL-1432
-title: "The land walk ranges over the QA branch's whole never-landed history (1839 commits ahead of main on 2026-09-05, growing by a few per ticket forever because tip-pure replays never make QA's merges main ancestors), so every land step takes 3.5-4.5 minutes and races the mint cadence; the walk ranges over the parcel alone - by re-pointing QA's branch to origin/main after each land, by bounding the range to the parcel's own base, or both (human ruling)"
+title: "The land walk ranges over the QA branch's whole never-landed history (1839 commits ahead of main on 2026-09-05, growing by a few per ticket forever because tip-pure replays never make QA's merges main ancestors), so every land step takes 3.5-4.5 minutes and races the mint cadence; the walk ranges over the parcel alone and the ENTANGLED_SIBLING list stops naming done tickets - by re-pointing QA's branch to origin/main after each land, by bounding the range to the parcel's own base, or both (human ruling)"
 milestone: M8
 type: defect
 severity: medium
@@ -17,7 +17,9 @@ required_stages: [coder, cleaner, architect, hardender, documenter, qa]
 
 acceptance: specs/features/BL-1432-the-land-walk-ranges-over-the-parcel.feature
 
-human_approval: pending
+human_approval: approved
+human_ruling: |
+  Re-point QA branch to origin/main after each successful land (option 1).
 approval_context: >
   A new feature file is authored here, so it needs a tap, and one choice is
   yours: how the walk is kept to the parcel. QA's branch keeps 1839
@@ -38,7 +40,7 @@ ruling_options:
   - Both - re-point after each land and bound the walk
 
 invariants:
-  - "The walk's cost is a function of the parcel, never of the QA branch's age: the commits the attribution walk visits are the parcel's own, whatever history the branch carries."
+  - "The walk's cost is a function of the parcel, never of the QA branch's age: the commits the attribution walk visits are the parcel's own, whatever history the branch carries, and the ENTANGLED_SIBLING report names only tickets whose commits lie in that range."
   - "What counts as entangled, landed or own does not change (BL-1389, BL-1375, BL-1354): a narrower range must not hide an unlanded sibling whose commit lies inside the parcel's own range."
   - "Nothing in flight is ever discarded: a branch re-point, if ruled, happens only on a clean worktree with an empty in_process mailbox, after LAND_PUBLISHED, and is logged."
 
@@ -61,7 +63,24 @@ description: |
   delivered path; `ancestry-commits` over the range; `commit-ticket-id` per
   candidate) pays for all of them on every land.
 
-  ## What changes (per the ruling)
+  The same history is why the sibling list is inflated (the architect's
+  landing-difficulty survey, cause 1). BL-1354 and BL-1389 fixed what the
+  replay DOES with a sibling's path, and they hold; but every review merge
+  left on the branch still names a ticket in its subject, and a ticket
+  whose content landed tip-pure under another SHA is never a main
+  ancestor, so it is reported as an unlanded sibling forever. BL-1407's
+  automated land on 2026-09-05 10:13, sixteen hours after BL-1389 landed,
+  printed more than sixty ENTANGLED_SIBLING lines, most of them done
+  tickets (BL-1342, BL-1354, BL-1356 ...); BL-1399's escalation named
+  about forty-one. QA reads that list as noise, which is how a real
+  entangled sibling will one day be missed. A walk that ranges over the
+  parcel alone cannot name a sibling the parcel never carried.
+
+  ## What changes (ruled 2026-09-05: option 1, re-point after each land)
+
+  The human's tap recorded option 1 in `human_ruling:`; options 2 and 3
+  are closed. Option 1 below is the build; the option 2 paragraph stays
+  only as the record of what was not chosen.
 
   - Option 1: after `LAND_PUBLISHED`, QA's land procedure re-points the
     branch to origin/main when `git status --porcelain` is empty and the
@@ -101,7 +120,20 @@ qa_e2e_procedure: |
 notes: |
   Minted 2026-09-05 by the specifier alongside BL-1431 from QA's evidence;
   QA asked for "(a) the walk gets fast enough on this branch that it
-  reliably beats the mint cadence", which is this ticket. The ruling is
+  reliably beats the mint cadence", which is this ticket. AMENDED the
+  same day, still paused: the architect's landing-difficulty survey
+  (`.worktrees/architect/backlog/evidence/architect-qa-landing-difficulty-survey-20260905.md`)
+  asked whether BL-1354/BL-1389 closed the inflated-sibling escalations;
+  they did not, and the inflation has the same root as the cost, so it
+  is folded in here (title, description, invariant 1) rather than
+  minted again. Adjudication:
+  `backlog/evidence/specifier-qa-landing-difficulty-adjudication-20260905.md`.
+
+  RULED 2026-09-05 (human tap, recorded in human_ruling): option 1 -
+  re-point QA's branch to origin/main after each successful land, on a
+  clean worktree with an empty in_process mailbox, logged (invariant 3).
+  The scenarios were written to hold under every option and are
+  unchanged; the coder builds option 1 only. The ruling is
   posed as ruling_options (BL-1300) so a tap records it; the scenarios
   hold under every option (they assert the range walked, not the
   mechanism).
