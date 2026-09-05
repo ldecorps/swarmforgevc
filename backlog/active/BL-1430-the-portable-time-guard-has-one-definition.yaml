@@ -95,3 +95,5 @@ notes: |
 source: |
   Standing-red measurement 2026-09-05 (specifier): the file run alone,
   assertion quoted above; `git grep` for the definition; owner grep empty.
+
+assigned_to: coder
