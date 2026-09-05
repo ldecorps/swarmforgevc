@@ -27,7 +27,7 @@ invariants:
   - "A role holding in_process work is surfaced as in-process work and never woken by the sweep: decide-role reads in_process before dirtiness, so a mid-parcel tree is the parcel, not a stale worktree."
   - "BL-1361's contract holds unchanged: every surfacing reason reaches its role, a role already told is told nothing on the next sweep, one unreachable mailbox withholds nothing from the others."
 
-human_approval: pending
+human_approval: approved
 approval_context: >
   A new feature file is authored here, so it needs a tap. No choice is posed
   and there are no ruling_options. Your 2026-09-04 ruling on BL-1361 ("Wake

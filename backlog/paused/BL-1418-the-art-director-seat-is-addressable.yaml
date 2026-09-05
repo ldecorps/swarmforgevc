@@ -34,11 +34,16 @@ approval_context: >
   templates and CSS itself and sits before QA on artifact parcels (heaviest,
   changes the pipeline topology and needs a follow-up ticket for
   required_stages, routing manifest and Article 4.3). Article 1.10 and the
-  role prompt are written for the reviewer shapes and say so.
+  role prompt are written for the reviewer shapes and say so. Your 07:5x
+  addendum ("probably a responsibility for the documenter?") is the fourth
+  option: no new seat, Article 1.10 folds into 1.7 as a documenter duty,
+  the design system and inventory become documenter deliverables, and this
+  ticket retires; BL-1419 (the email) proceeds unchanged either way.
 ruling_options:
   - Standing pane (recommended) - always-on window, own topic, reviews on wake; coder implements briefs
   - On-demand seat - no pane; coordinator rotates it in per look-and-feel task
   - Presentation stage - edits templates and CSS itself; sits before QA on artifact parcels
+  - Fold into the documenter - no new seat; look-and-feel becomes a documenter duty and this ticket retires
 
 description: |
   ## What is wanted
@@ -122,6 +127,11 @@ notes: |
   ruling amends the description's pack line, not the feature.
 
   IR-DRY (2026-09-05): 12 occurrences, 12 unique, no findings.
+
+  AMENDED 2026-09-05 (specifier, ticket still paused and pending): the human
+  asked in-session whether the role is "probably a responsibility for the
+  documenter"; added as ruling option 4 so the tap records it. Scenarios
+  are unchanged; under option 4 the ticket retires rather than builds.
 
   INVEST at mint: Independent (no unbuilt sibling; BL-1419 does not need
   this), Negotiable (icon, list-finding test are direction), Valuable (one
