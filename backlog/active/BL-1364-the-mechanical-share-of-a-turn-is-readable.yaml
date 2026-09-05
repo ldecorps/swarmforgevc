@@ -28,6 +28,8 @@ invariants:
 
 required_wiring:
   - 'specs/pipeline/steps/bl1364MechanicalShareReadableSteps.js::registerSteps::acceptance handler registered so the runner executes every scenario. A production anchor IS expected here - see notes.; repointed 2026-09-04 after BL-1371 discovery - the handler file IS the registration and index.js names nothing'
+  - 'extension/src/metrics/turnProfileProducer.ts::buildTurnProfileSeries::the production CONSUMER that calls the previously-unreachable series builder. Added by the coder 2026-09-05 in the pass that created the producer, as the notes direct - naming it at mint would have armed the gate against a file nobody had written (BL-874). This is the one anchor that proves the defect fixed: the ticket IS the absence of a call site, so the anchor names the caller, not buildTurnProfileSeries own definition and not a constant this parcel adds (BL-1235).'
+  - 'swarmforge/scripts/handoffd.bb::turn-profile-producer-sweep::the producer runs on the daemon cadence, next to BL-665 context-telemetry-producer-sweep. Without this the producer exists and is still never called - the same shape as the defect (BL-1235/BL-1361).'
 
 human_approval: approved
 approval_context: >
