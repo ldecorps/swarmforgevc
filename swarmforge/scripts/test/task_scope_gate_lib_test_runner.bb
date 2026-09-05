@@ -682,6 +682,23 @@
            nil (task-scope-gate-lib/own-commit-changed-paths
                 root "0000000000000000000000000000000000000000")))
 
+;; ── BL-1432: parcel-own-base ──────────────────────────────────────────────
+
+;; A task's first hop (no recorded handoff) has no base of its own - nil,
+;; the caller's own signal to fall back to origin/main (only ever widens).
+(with-fixture [root]
+  (assert= "parcel-own-base: no prior handoff -> nil"
+           nil (task-scope-gate-lib/parcel-own-base root "BL-1174-fixture")))
+
+;; With a recorded last handoff, the base is exactly that commit - the same
+;; value parcel-own-changed-paths already reads for the send-time gate.
+(with-fixture [root]
+  (commit! root "backlog/active/BL-1174-own.yaml" "id: BL-1174\n" "BL-1174-fixture: coder's own first commit")
+  (let [first-commit (:out (sh! root "git" "rev-parse" "HEAD"))]
+    (record-handoff! root "BL-1174-fixture" first-commit)
+    (assert= "parcel-own-base: names the recorded last-handoff commit"
+             first-commit (task-scope-gate-lib/parcel-own-base root "BL-1174-fixture"))))
+
 (if (seq @failures)
   (do (doseq [f @failures] (binding [*out* *err*] (println f)))
       (println (str "\n" (count @failures) " failure(s)"))
