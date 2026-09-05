@@ -1,5 +1,20 @@
 # SwarmForge VS Code Extension — Specification
 
+**Last Updated:** September 5, 2026 (BL-1429: standing reds (BL-1428's
+register) now fold into the Article 3.5 intake throttle BL-432 built —
+`standingRedSignal.ts` recommends a cap of 1 when the register holds more
+than `standing_red_max_count` (default 10) reds, its oldest red exceeds
+`standing_red_max_age_days` (default 7) days, or any red is unowned;
+`emit-throttle-recommendation.ts` persists the LOWER of this and the
+existing rework-diagnosis recommendation, logging the signal that caused
+or cleared a change. Human directive 2026-09-05 ("stop everything and fix
+failing tests"), made proportional — cap 1, never 0. The briefing's
+token-burn warning now names the standing-red register alongside the
+other throttle levers. Acceptance:
+`specs/features/BL-1429-standing-reds-throttle-intake.feature`. See the
+"Auto-tuned intake throttle (BL-432...)" entry below for the full
+mechanism this folds into.)
+Prior entry —
 **Last Updated:** September 5, 2026 (BL-1287: the property-lane fixture
 sweep in `extension/test/helpers/fixtureTunnelName.js`
 (`leakedFixtureTunnelPids`, added by BL-1061) selected every temp-path
@@ -10639,6 +10654,8 @@ bb swarmforge/scripts/effective_backlog_depth_cli.bb <project-root>
 where `<project-root>` may be the master checkout or any linked worktree of it (BL-966, below). It refreshes the throttle recommendation fresh on every call (never trusts a periodic sweep that might be stale between coordinator wake-ups), then prints `min(configured cap, recommended cap)` — `backlog_depth_lib.bb`'s `effective-max-depth`. The recommendation only ever *lowers* the effective cap, never raises it above the human-configured value; a configured cap of `-1` (no ceiling) is not run through a bare `min` (a negative sentinel would otherwise always "win") — it resolves straight to the recommendation instead, so an unlimited cap can still be temporarily throttled during a severe diagnosis. When the diagnosis clears, the recommendation lifts and the effective cap returns to the configured value on the very next call — the swarm is never permanently stuck throttled. A failed refresh (CLI not yet compiled, `node` missing) degrades to a logged skip and falls through to whatever recommendation is already on disk, the same shell-and-degrade posture `handoffd.bb`'s other `emit-*.js` callers already use.
 
 This slice moves only this one knob — it does not self-generate tickets, respawn a role, reroute work, or touch code; those stay BL-431's escalate-only recommendations for a human, exactly the epic's safety contract (BL-429).
+
+**Standing reds fold into the same throttle (BL-1429, human directive 2026-09-05).** The rework diagnosis above is not the only Article 3.5 signal: BL-1428's standing-red register (`standing_red_register_cli.bb`) is now a second one. `extension/src/metrics/standingRedSignal.ts` reads the register's JSON report (`count`, `oldest_age_days`, `unowned`) and two conf thresholds — `standing_red_max_count` (default 10) and `standing_red_max_age_days` (default 7), both read through the same `config <key> <value>` reader `active_backlog_max_depth` uses — and recommends a cap of `1` (never `0`; the human ruled a soft stop, not a freeze, so a severe/cap-0 posture stays BL-432's rework diagnosis alone) when any one of three conditions holds: more than `standing_red_max_count` reds, the oldest red older than `standing_red_max_age_days` days, or any unowned red at all (an unowned red throttles regardless of count or age). `emit-throttle-recommendation.ts` computes both the rework recommendation and the standing-red recommendation and persists **the lower of the two** — the register is a signal, never a raise, so it can only pull the effective cap down toward `1`, never push it below whatever the rework diagnosis already recommends. The persisted JSON gains a `standingRed` block (the recommendation or `null`) alongside the existing rework fields, and the change log names whichever signal (`count`, `age`, or `unowned`) caused a lowering or cleared one — a recommendation that persists unchanged logs nothing. Reading the register goes only through the CLI (BL-1428's own invariant: never a second TSV parser here); a missing or failing CLI degrades to "no standing-red signal" with a logged warning, the same shell-and-degrade posture the rework reader already has. The daily briefing's token-burn warning (`burnSectionText.ts`) now names the standing-red register alongside the control pause, the nightly cooldown window, and a lowered `active_backlog_max_depth` as a way the swarm throttles itself.
 
 #### Promotion gates: one chokepoint for every promote/route decision (BL-663)
 
