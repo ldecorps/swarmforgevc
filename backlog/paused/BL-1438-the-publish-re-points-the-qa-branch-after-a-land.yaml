@@ -1,0 +1,130 @@
+id: BL-1438
+title: "BL-1432's ruled re-point of the QA branch shipped with no live caller: post-land-repoint! is built and tested in land_step_lib.bb and nothing invokes it, so the QA branch keeps growing by a few commits per land and BL-1432's live check cannot be run; land_main_publish.sh, the script QA runs for every land, invokes it once a land has published, prints the outcome, and never lets a skipped re-point fail the land"
+milestone: M8
+type: defect
+severity: medium
+# medium: real but contained. The bounded walk (BL-1432's other half) is
+# live, so lands are fast and the sibling report is honest; only the
+# branch's convergence, which the human ruled, is not happening. A
+# mechanism with zero callers is the BL-1235 class, and the ticket that
+# minted it anchored only its step handler - the specifier's own miss.
+status: todo
+epic: swarm-reliability
+priority: 6
+direction: swarm-reported
+depends_on: [BL-1432, BL-1144]
+mutation_cost: low
+slice_size_envelope: small
+required_stages: [coder, cleaner, architect, hardender, documenter, qa]
+
+acceptance: specs/features/BL-1438-the-publish-re-points-the-qa-branch-after-a-land.feature
+
+human_approval: pending
+approval_context: >
+  A new feature file is authored here, so it needs a tap. No choice is
+  posed and there are no ruling_options. This wires the re-point you
+  ruled under BL-1432 option 3 into the publish script; the mechanism
+  exists and passed its gates, it simply has no caller. The specifier's
+  own mint is at fault: BL-1432's wiring anchors named the step handler
+  only, so the gate that exists to catch an uncalled mechanism had
+  nothing to check. This ticket anchors the consumer.
+
+invariants:
+  - "The re-point runs only after a land has published: never before LAND_PUBLISHED, never on LAND_STOPPED, never on a rejected push, and never more than once per land."
+  - "A skipped re-point never fails a land: the publish exits 0 with LAND_PUBLISHED whatever the re-point decides, and the decision is printed (LAND_REPOINTED old new, or LAND_REPOINT_SKIPPED reason) and logged, never silent."
+  - "post-land-repoint!'s own guards are the only guards: the publish adds no second notion of clean, and the function's refusal on an uncommitted change or an in_process parcel (BL-1432 invariant 3) is what the publish reports."
+
+required_wiring:
+  - 'swarmforge/scripts/land_main_publish.sh::repoint::the publish, the live consumer QA runs on every land, invokes the re-point after LAND_PUBLISHED; absent today (grep returns 0)'
+  - 'swarmforge/scripts/land_step_cli.bb::repoint::the CLI verb the publish shells to, fixed at mint so the anchor is a literal (BL-874); absent today (grep returns 0)'
+  - 'specs/pipeline/steps/bl1438PublishRepointsQaBranchSteps.js::registerSteps::the handler file exists so discovery registers every scenario (BL-1371)'
+
+description: |
+  ## What is wrong
+
+  QA note 2026-09-05T21:21Z: "BL-1432 spec-gap: qa_e2e step 2 needs a
+  live wiring ticket". QA's evidence: `grep post-land-repoint!
+  swarmforge/scripts/*.bb` outside `land_step_lib.bb` and its tests finds
+  no call site - not `land_step_cli.bb`, not `post_qa_branch_sweep_lib.bb`,
+  not `handoffd.bb`. BL-1432's other half, the bounded walk, is live with
+  no call-site change because `land-plan` defaults its `:base` to the
+  parcel's own base; QA timed a real decide-only run at about two
+  seconds against three to seven minutes before. The re-point half was
+  built to the ticket's letter: `post-land-repoint!` takes a root, checks
+  in_process before dirtiness (BL-1421's ordering), refuses either with a
+  logged reason, and otherwise moves branch and worktree to origin/main,
+  logging old and new tips to `.swarmforge/daemon/land-repoint.log`. The
+  ticket's "How" said the sweep "may be the place" and anchored nothing
+  but the handler, so no gate asked whether anything calls it.
+
+  ## What changes
+
+  - `land_step_cli.bb` gains a `repoint <repo-root>` verb that calls
+    `post-land-repoint!` and prints one line: `LAND_REPOINTED <old> <new>`
+    or `LAND_REPOINT_SKIPPED <reason>`; exit 0 in both cases (a skip is a
+    decision, not a failure), non-zero only when the root cannot be read.
+  - `land_main_publish.sh` `run_land` invokes that verb with `$ROOT`
+    immediately after `echo "LAND_PUBLISHED $land_sha"`, before the issue
+    close, and prints the verb's line; its own return value is unchanged
+    by the outcome (invariant 2). No call on LAND_STOPPED or on a rejected
+    push (invariant 1).
+  - `docs/how-to/BL-1241-entangled-tip-at-the-land-step-has-a-reachable-remedy.md`
+    section "The walk is bounded ... and a clean land can re-point" drops
+    its "until something calls" sentence; the QA prompt's land bullet notes
+    the two new output lines.
+
+  ## How (direction, not mandate)
+
+  - The verb is a thin wrapper: parse the root, call the lib, print, exit;
+    the lib already logs. The publish shells to it the way it shells to the
+    land step, capturing output so the line is printed with the rest.
+  - Fixture per BL-1431's handler: a bare origin under mkdtemp, a QA-style
+    worktree with a tagged parcel that lands clean; scenario 03 reuses a
+    fixture that escalates (an entangled tip). Prove the root with
+    `rev-parse --git-common-dir` before any mutating git command (BL-1390);
+    `post-land-repoint!` itself moves a branch, so the fixture must be its
+    own repository, never a linked worktree of the live one.
+  - The re-point log path is under the ROOT the publish was given; QA runs
+    the publish with its worktree as root (the memory that the root must
+    be the candidate's worktree, not the master checkout).
+
+  ## Out of scope
+
+  - The bounded walk (live) and the re-point's own guards (BL-1432).
+  - Re-pointing any branch other than the one the publish ran in.
+
+qa_e2e_procedure: |
+  1. The BL-1438 feature passes (three scenarios, four runs); BL-1432's
+     and BL-1431's features still pass.
+  2. Live, on the next QA land after this ships: the publish output shows
+     `LAND_PUBLISHED` then `LAND_REPOINTED <old> <new>`;
+     `git -C .worktrees/QA rev-list --count origin/main..HEAD` is 0
+     afterwards, and `.swarmforge/daemon/land-repoint.log` in the QA
+     worktree carries the entry. This is BL-1432's qa_e2e step 2, runnable
+     now.
+  3. Leave one file modified in the QA worktree and land again:
+     `LAND_REPOINT_SKIPPED an uncommitted change`, exit 0, branch unmoved.
+
+notes: |
+  Minted 2026-09-05 by the specifier on QA's priority-00 note (verbatim in
+  description) after BL-1432 landed. The miss is the specifier's own:
+  BL-1432 was a two-mechanism ticket and its required_wiring named only
+  the handler; the first rule under "Required wiring declarations" in the
+  specifier's prompt is that an anchor the parcel satisfies by
+  construction gates nothing. This ticket anchors the consumer and the
+  verb.
+
+  INVEST at mint: Independent (BL-1432 and BL-1144 landed), Negotiable
+  (verb shape and output wording are direction; the two line prefixes are
+  fixed so the scenarios and QA's eye have one vocabulary), Valuable (one
+  outcome: the ruled re-point happens), Estimable (one verb, one shell
+  call, one doc sentence, one handler; low), Small (three scenarios, four
+  runs, three invariants at the cap), Testable (real publish script on a
+  fixture repository).
+
+source: |
+  QA note 2026-09-05T21:21:42Z and
+  `.worktrees/QA/backlog/evidence/BL-1432-qa-pass-20260905.md`;
+  `land_step_lib.bb` post-land-repoint! (1347-1400); `land_main_publish.sh`
+  run_land (LAND_PUBLISHED at line 193); `land_step_cli.bb` usage;
+  `docs/how-to/BL-1241-...md` lines 567-607.
