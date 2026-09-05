@@ -54,6 +54,52 @@ different parcel — collapses to the existing row rather than duplicating it
 records nothing; a ledger that fills up on successes tells the operator
 nothing.
 
+## Discharging a deferral (BL-1439)
+
+A deferred gate that later actually ran is recorded with the ledger's
+second verb, `--discharge`:
+
+```bash
+swarmforge/scripts/hardening_debt_ledger_update.bb <project-root> --discharge \
+  <parcel> <gate> --evidence <path> [<discharged-at>]
+```
+
+This is the rule the ledger was missing at BL-942's own mint: **a run
+discharges what a deferral recorded.** It matches the outstanding row by
+`(parcel, gate)` — the same identity `--defer` keys on — and sets
+`discharged_at`/`discharged_evidence`; it never deletes the row, so the
+deferral and its discharge stay readable together (invariant: never
+deleted, only marked). It refuses (exits 1, writes nothing) with no
+`--evidence` path or no matching outstanding row — never a silent no-op
+that would leave debt looking paid when nothing was actually recorded.
+`outstanding-debt` (the one filter both `hardening_debt_ledger_read.bb`
+and the standing-red register CLI read) excludes a discharged row; the
+register row for that gate leaves the register in the same commit that
+records the discharge.
+
+**A run the host refused is an attempt, not a discharge** (amendment
+2026-09-06, BL-1439): the third verb, `--attempt`, records a blocker on
+the row without paying the debt —
+
+```bash
+swarmforge/scripts/hardening_debt_ledger_update.bb <project-root> --attempt \
+  <parcel> <gate> <blocker> [<attempted-at>]
+```
+
+sets `attempted_at`/`attempted_blocker` (free text, e.g. the mutation
+cooldown window or a suite-wide red blocking the dry run) but never
+`discharged_at` — `outstanding-debt` still reports the row, because an
+attempt is evidence a real try happened, not proof the gate ran
+(invariant carried from the original ticket: a gate that cannot complete
+on this host is recorded as such and stays outstanding, never discharged
+by assertion). An attempted-but-still-outstanding row keeps its register
+row, re-pointed to whichever ticket now owns finishing the run, so the
+debt never reads unowned while it waits.
+
+`hardening_debt_ledger_read.bb`'s JSON gains `discharged_at`,
+`discharged_evidence`, `attempted_at`, and `attempted_blocker` (each
+`null` until set).
+
 ## Reading outstanding debt
 
 ```bash
@@ -92,6 +138,13 @@ Acceptance feature:
 
 - **BL-941** — discharges one specific instance of this debt (BL-915's), the
   case that surfaced this gap.
+- **BL-1439** — the ledger's `--discharge` and `--attempt` verbs (above);
+  discharged the 2026-08-19 deferrals it could run, recorded the rest as
+  attempts, and re-pointed their register rows to **BL-1441**, which owns
+  actually running the four still-blocked gates once the mutation cooldown
+  and BL-1440's citation-red fix clear. See
+  [BL-1428](BL-1428-standing-red-register.md) for the register/throttle
+  this ledger feeds.
 - **BL-472** (deferred) — wires mutation/CRAP tooling for Babashka itself, a
   different gap: that one is a tool that does not exist; this one is a tool
   that exists and never gets to run.

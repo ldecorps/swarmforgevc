@@ -66,6 +66,17 @@ function readLedgerRows(root) {
   return JSON.parse(execFileSync('bb', [READ_CLI, root], { encoding: 'utf8' }));
 }
 
+// Pins each Outline row's own <evidence> literal against its (parcel, gate)
+// pair (KNOWN_VALUES) - the Then step at "the ledger still holds the row"
+// asserts row.discharged_evidence === ctx.evidence, and ctx.evidence is the
+// SAME captured value passed to the CLI as input, so that check alone
+// round-trips any value unchanged and cannot tell a mutated Examples
+// literal from the real one (BL-908/BL-1420's class).
+const KNOWN_EVIDENCE = new Map([
+  ['BL-620/mutation', 'backlog/evidence/BL-1439-bl620-mutation.md'],
+  ['BL-956/gherkin-mutation', 'backlog/evidence/BL-1439-bl956-gherkin-mutation.md'],
+]);
+
 function registerSteps(registry) {
   const scoped = (re, fn) => registry.defineScoped(re, fn, FEATURE);
 
@@ -75,6 +86,8 @@ function registerSteps(registry) {
 
   // ── Scenario 01 (Outline) ─────────────────────────────────────────────
   scoped(/^the ledger is told that the (.+) gate for (.+) ran with a result recorded at (.+)$/, (ctx, gate, parcel, evidence) => {
+    assert.equal(evidence, KNOWN_EVIDENCE.get(`${parcel}/${gate}`),
+      `unknown <evidence> "${evidence}" for ${parcel}/${gate}`);
     ctx.gate = gate;
     ctx.parcel = parcel;
     ctx.evidence = evidence;
