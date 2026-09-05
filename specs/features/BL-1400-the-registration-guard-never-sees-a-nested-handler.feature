@@ -1,3 +1,8 @@
+# mutation-stamp: sha256=07b503a3a17451ea69b777c557da14414c596186832ea606cf188f6301e7da4c
+# acceptance-mutation-manifest-begin
+# {"version":1,"tested_at":"2026-09-05T01:55:21.859826112Z","feature_name":"BL-1400 The registration guard sees a nested handler","feature_path":"/home/carillon/swarmforgevc/.worktrees/hardender/specs/features/BL-1400-the-registration-guard-never-sees-a-nested-handler.feature","background_hash":"c398dbd12b74e7b48c3c86bb67ffae45d6ad962541bd3c3ba629f7449c8b0032","implementation_hash":"unknown","scenarios":[{"index":2,"name":"a helper under lib is never reported as an unregistered handler","scenario_hash":"d36b8295ed11aa42938df7796ac413149d0601445e605ab1d5af8fbd2962b2ad","mutation_count":2,"result":{"Total":2,"Killed":2,"Survived":0,"Errors":0},"tested_at":"2026-09-05T01:55:21.859826112Z"}]}
+# acceptance-mutation-manifest-end
+
 Feature: BL-1400 The registration guard sees a nested handler
 
   The registration guard promises to refuse a handler placed where discovery
