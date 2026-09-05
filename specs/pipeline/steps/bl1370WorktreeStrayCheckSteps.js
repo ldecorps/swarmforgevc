@@ -32,6 +32,18 @@ const CLAIMS = {
   stable: 'the same state yields the same line, byte for byte',
   'pattern-shared': "the job-process pattern is byte-identical to the supervisor's",
   'scope-shared': "scope delegates to process_table_lib's shared classifier",
+  // BL-1370 amendment (2026-09-05): the prefix-sibling shape, which is live
+  // on this host (.worktrees/coder-cursor2 beside .worktrees/coder).
+  'sibling-prefix-unreported': "a prefix-sibling root's suite is never reported as this worktree's stray",
+  'sibling-prefix-alive': "and a reap leaves the prefix-sibling root's process running",
+};
+
+// The <sibling> column of scenario 07: both rows are the same live shape -
+// a root whose path EXTENDS this one's - and the e2e constructs it as
+// `<root>-cursor2`, which is exactly the pair that exists on this host.
+const SIBLING_SHAPES = {
+  'the same name with a suffix appended': 'sibling-prefix-unreported',
+  'the same name with a dash and a digit': 'sibling-prefix-unreported',
 };
 
 // Module scope, not per-ctx: each scenario gets its own ctx, so a per-ctx memo
@@ -92,6 +104,15 @@ function registerSteps(registry) {
     ctx.bl1370.state = 'sibling';
   });
 
+  scoped(
+    /^a test process is running for a sibling root that extends this worktree's path as (.+)$/,
+    (ctx, shape) => {
+      const claim = SIBLING_SHAPES[shape];
+      assert.ok(claim, `unknown <sibling> example: ${shape}`);
+      ctx.bl1370.state = 'sibling-prefix';
+    },
+  );
+
   // ── When ────────────────────────────────────────────────────────────────
   scoped(/^the role checks for strays$/, (ctx) => {
     runE2e(ctx);
@@ -103,7 +124,11 @@ function registerSteps(registry) {
 
   // ── Then ────────────────────────────────────────────────────────────────
   scoped(/^the check reports clean$/, (ctx) => {
-    requirePassed(ctx, ctx.bl1370.state === 'sibling' ? 'sibling-unreported' : 'clean');
+    const claim = {
+      sibling: 'sibling-unreported',
+      'sibling-prefix': 'sibling-prefix-unreported',
+    }[ctx.bl1370.state] || 'clean';
+    requirePassed(ctx, claim);
     // Whichever way the scenario got here, the classifier and the pattern are
     // the shared ones - the invariant that makes "clean" trustworthy.
     requirePassed(ctx, 'scope-shared');
@@ -131,7 +156,7 @@ function registerSteps(registry) {
   });
 
   scoped(/^that process is still running$/, (ctx) => {
-    requirePassed(ctx, 'sibling-alive');
+    requirePassed(ctx, ctx.bl1370.state === 'sibling-prefix' ? 'sibling-prefix-alive' : 'sibling-alive');
   });
 
   scoped(/^the check yields a recordable result naming what was scanned$/, (ctx) => {
