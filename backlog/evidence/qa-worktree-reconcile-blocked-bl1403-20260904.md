@@ -49,4 +49,17 @@ merge-up on this branch keeps re-triggering it. Not sending a fresh
 priority-`00` escalation for this instance; appending here per the
 one-escalation-per-class discipline.
 
+## Further recurrences, 2026-09-05 (batch)
+
+~15 more coordinator "merge up" chase notes hit the identical
+`check_merge_deletion.sh` refusal on the same offender file across the
+BL-1364/BL-1365/BL-1383 QA passes this session (each verified individually
+— ancestry checked, one real `git merge`/`--abort` cycle run per distinct
+target commit, not blindly assumed). BL-1403 remained `active` (coder not
+yet started) throughout. Each of BL-1364/BL-1365/BL-1383 landed
+independently via the hand-built tip-pure replay recipe regardless, so
+none of this queue blocked real work — it is pure reconcile-hygiene noise
+until BL-1403's fix lands. Not logging each instance individually from
+here forward; this file is the standing reference for the class.
+
 By QA.
