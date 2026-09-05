@@ -10,6 +10,11 @@
 (load-file (str (fs/path script-dir "handoff_lib.bb")))
 (load-file (str (fs/path script-dir "pipeline_stage_lib.bb")))
 (load-file (str (fs/path script-dir "dispatch_lib.bb")))
+;; BL-1422: a Work note leaves in_process only with evidence of work since
+;; its dequeue - the pure decision core lives in work_note_evidence_lib.bb
+;; (never load-file'd directly by a test, since THIS file's own -main runs
+;; as a load-time side effect).
+(load-file (str (fs/path script-dir "work_note_evidence_lib.bb")))
 ;; BL-1317: Adapt reads the seat's backend and the pack/window default effort
 ;; off the same effective pack conf BL-1316's claim-time apply reads.
 (load-file (str (fs/path script-dir "backlog_depth_lib.bb")))
@@ -86,6 +91,79 @@
         :signal (if (handoff-lib/non-forwarding? target-file) "bounce" "clean")}))
     (catch Exception _ nil)))
 
+;; ── BL-1422: a Work note is not completed without work ────────────────────
+;; route_backlog_to_coder.sh dispatches a ticket as a priority-10 note whose
+;; message reads "Work <ticket>: read file in backlog/active". Nothing used
+;; to distinguish that from any other note at the moment of completion, so a
+;; role clearing a queue of chase notes with back-to-back done_with_current
+;; calls swept the dispatch out unread - BL-1384 was blind-completed four
+;; times in one day, each costing a coordinator round trip, the ticket still
+;; unworked.
+
+(defn- work-note-ticket-id
+  "The ticket id IF source-file is a genuine dispatch note - nil for a
+   git_handoff (never carries a message header, so the message read here
+   is always nil) and for any note whose message is not the router's
+   verb-first Spec/Work form (a chase/merge-up/dirty-worktree note, etc.).
+   Delegates entirely to work-note-evidence-lib's pure parser wrapper -
+   the only IO here is reading the file's own message header."
+  [source-file]
+  (work-note-evidence-lib/work-note-ticket-id-from-message
+   (handoff-lib/header-field source-file "message")))
+
+(defn- git-log-names-ticket-since?
+  "A commit on HEAD, committed after since-iso, whose subject's leading
+   ticket id is exactly ticket-id (never a substring match)."
+  [ticket-id since-iso]
+  (try
+    (let [{:keys [out exit]} (process/sh ["git" "log" (str "--since=" since-iso) "--format=%s" "HEAD"]
+                                         {:dir (handoff-lib/worktree-root)})]
+      (boolean
+       (and (zero? exit)
+            (some #(= ticket-id (pipeline-stage-lib/extract-ticket-id %))
+                  (str/split-lines (or out ""))))))
+    (catch Exception _ false)))
+
+(defn- instant-after? [ts-str since-str]
+  (try
+    (.isAfter (java.time.Instant/parse ts-str) (java.time.Instant/parse since-str))
+    (catch Exception _ false)))
+
+(defn- sent-handoff-names-ticket-since?
+  "A git_handoff in this role's own sent/ mailbox, created after since-iso,
+   whose task header's ticket id is exactly ticket-id."
+  [ticket-id since-iso]
+  (boolean
+   (some (fn [f]
+           (and (= ticket-id (pipeline-stage-lib/extract-ticket-id (handoff-lib/header-field f "task")))
+                (instant-after? (or (handoff-lib/header-field f "created_at") "") since-iso)))
+         (handoff-lib/handoff-files (handoff-lib/my-mailbox-dir :sent)))))
+
+(defn- work-evidenced-since?
+  [ticket-id since-iso]
+  (or (git-log-names-ticket-since? ticket-id since-iso)
+      (sent-handoff-names-ticket-since? ticket-id since-iso)))
+
+;; Called with the in_process file still in place - refuses (no side
+;; effects at all) when it is a Work note with neither work evidence since
+;; its dequeue nor a stated --no-work reason. Returns the reason string to
+;; stamp onto the completed file (nil for the ordinary, fully-evidenced or
+;; not-a-Work-note path). The DECISION itself is
+;; work-note-evidence-lib/work-note-completion-decision (pure); everything
+;; here is gathering its three inputs and acting on its verdict.
+(defn- work-note-gate! [source-file]
+  (let [ticket-id (work-note-ticket-id source-file)
+        since (or (handoff-lib/header-field source-file "dequeued_at") "1970-01-01T00:00:00Z")
+        reason (dispatch-lib/no-work-reason)
+        evidenced? (boolean (and ticket-id (work-evidenced-since? ticket-id since)))]
+    (case (work-note-evidence-lib/work-note-completion-decision ticket-id evidenced? reason)
+      :complete-plain nil
+      :complete-with-reason reason
+      :refuse
+      (handoff-lib/fail! 1
+                         (str "WORK_NOT_EVIDENCED: " ticket-id " has no commit or git_handoff naming it since dequeue.")
+                         (str "Do the work and send the parcel, or run: done_with_current.sh --no-work \"<reason>\"")))))
+
 (defn -main []
   ;; BL-652: family contract — direct helper invocation also refuses argv.
   (dispatch-lib/refuse-unexpected-args!)
@@ -112,8 +190,16 @@
                            "AMBIGUOUS_TASK_STATE: multiple tasks are in process."
                            (str/join "\n" (map #(str "- " %) in-process-files))))
       (let [source-file (first in-process-files)
-            target-file (fs/path completed-dir (fs/file-name source-file))]
+            target-file (fs/path completed-dir (fs/file-name source-file))
+            ;; BL-1422: refuses (exit, source-file untouched) on an
+            ;; unevidenced Work note; otherwise nil (ordinary completion,
+            ;; including every non-Work note and every git_handoff) or a
+            ;; stated --no-work reason to stamp below.
+            no-work-reason (work-note-gate! source-file)]
         (handoff-lib/set-header! source-file "completed_at" (handoff-lib/timestamp))
+        (when no-work-reason
+          (handoff-lib/set-header! source-file "no_work_reason" no-work-reason)
+          (handoff-lib/set-header! source-file "no_work_at" (handoff-lib/timestamp)))
         (when (fs/exists? target-file)
           (handoff-lib/fail! 2 (str "AMBIGUOUS_TASK_STATE: completed file already exists: " target-file)))
         (fs/move source-file target-file)
