@@ -300,7 +300,6 @@ test('sendTelegramPoll posts a native poll to the Telegram API and reports succe
     options: [{ text: 'staging' }, { text: 'prod' }],
     message_thread_id: 7,
     is_anonymous: false,
-    allows_multiple_answers: false,
   });
 });
 
