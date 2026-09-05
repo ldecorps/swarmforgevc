@@ -238,9 +238,9 @@ test('BL-698: hold and reinstate via execute', () => {
 
 test('BL-698: ambulance engage and release via execute', () => {
   const root = mkTmpDir('bl698-amb-');
-  fs.mkdirSync(path.join(root, 'backlog', 'paused'), { recursive: true });
+  fs.mkdirSync(path.join(root, 'backlog', 'active'), { recursive: true });
   fs.writeFileSync(
-    path.join(root, 'backlog', 'paused', 'BL-698.yaml'),
+    path.join(root, 'backlog', 'active', 'BL-698.yaml'),
     'id: BL-698\ntitle: t\nstatus: todo\n',
     'utf8'
   );
