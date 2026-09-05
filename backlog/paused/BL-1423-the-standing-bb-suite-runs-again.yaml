@@ -1,0 +1,168 @@
+id: BL-1423
+title: "The standing Babashka suite has refused every run since 2026-09-02: hotfix 27d6ab8630 added handoffd_supervisor_startup_grace_test_runner.bb and test_handoffd_outbox_vanished_parcel_wiring.sh with no suite-manifest.tsv row, BL-1240's gate fires only at a parcel's git_handoff so a hotfix never met it, and BL-1342's stamp-off certified behaviour only; both files get a standing row and run_bb_suite.sh runs again"
+milestone: M8
+type: defect
+severity: high
+# high: a broken safety signal, not a live fault. run_bb_suite.sh runs the
+# inventory gate first and exits 1, so all 486 standing tests have been
+# unrunnable through the suite entry point for three days, for every role
+# (the refusal reads "the suite inventory is out of date - fix it before
+# trusting a run"). Nothing is down and no data is lost.
+status: todo
+epic: swarm-reliability
+priority: 15
+direction: swarm-reported
+depends_on: [BL-1239, BL-1240, BL-1342]
+mutation_cost: low
+slice_size_envelope: small
+required_stages: [coder, cleaner, architect, hardender, documenter, qa]
+
+acceptance: specs/features/BL-1423-the-standing-bb-suite-runs-again.feature
+
+human_approval: pending
+approval_context: >
+  A new feature file is authored here, so it needs a tap. No choice is
+  posed and there are no ruling_options: both files take the standing lane
+  because neither is slow, manual, or live-only (the runner is pure, no
+  daemon; the wiring test uses the same fake-tmux, real-daemon scaffold as
+  its standing siblings test_handoffd_ambulance_wiring.sh and
+  test_handoffd_push_sweep_wiring.sh), and the manifest's own header says a
+  runnable test never belongs in excluded. Companion BL-1424 closes the
+  hole that let this happen (a commit-time guard); this ticket is only the
+  two rows, and is the urgent half.
+
+invariants:
+  - "This parcel's diff of suite-manifest.tsv is exactly two added rows: every pre-existing row is byte-identical, none is removed or re-laned."
+
+required_wiring:
+  - 'swarmforge/scripts/test/suite-manifest.tsv::handoffd_supervisor_startup_grace_test_runner.bb::the row is the deliverable; absent today (grep returns 0)'
+  - 'swarmforge/scripts/test/suite-manifest.tsv::test_handoffd_outbox_vanished_parcel_wiring.sh::the row is the deliverable; absent today (grep returns 0)'
+  - 'specs/pipeline/steps/bl1423StandingSuiteRunsAgainSteps.js::registerSteps::the handler file exists so discovery registers every scenario (BL-1371)'
+
+description: |
+  ## What is wrong
+
+  `swarmforge/scripts/test/run_bb_suite.sh` runs `suite_inventory_cli.bb`
+  FIRST and unconditionally (BL-1239: "a suite that silently skips a test
+  nobody listed is the defect this whole ticket is about") and exits 1 when
+  the tree and `suite-manifest.tsv` disagree. Today, on main:
+
+      bb swarmforge/scripts/test/suite_inventory_cli.bb swarmforge/scripts/test
+      FAIL: not in the manifest: handoffd_supervisor_startup_grace_test_runner.bb
+      FAIL: not in the manifest: test_handoffd_outbox_vanished_parcel_wiring.sh
+      suite inventory: 2 problem(s) over 492 test file(s)
+
+  Both files were added by hotfix `27d6ab8630` (2026-09-02, "handoffd
+  survives a vanished outbox parcel; supervisor grants a startup grace
+  window"), a single-parent commit straight onto main. Three gates exist
+  around this manifest and none fired:
+
+  - BL-1240's `unregistered_test_gate_lib.bb` is PARCEL-scoped by design
+    and runs inside `swarm_handoff.bb` at the git_handoff send. A commit
+    that never becomes a parcel never meets it.
+  - BL-1239's inventory gate fires at suite-run time and lands on whoever
+    next runs the suite, which since 09-02 has been nobody who could author
+    a row for someone else's file (choosing standing vs excluded needs the
+    reason the test was written; the task-scope gate, BL-1192/BL-1276,
+    keeps another ticket's parcel from touching rows that are not its own).
+  - BL-1342, the stamp-off that certified the hotfix, has seven scenarios
+    on the hotfix's behaviour and none on suite membership; its evidence
+    never mentions the manifest.
+
+  So the standing suite (486 rows) has refused every run for three days.
+  Roles have been running individual tests by hand (BL-1275's coder ran its
+  new shell test directly and added its own row; the suite still refuses on
+  the two older files).
+
+  ## What changes
+
+  Two rows in `swarmforge/scripts/test/suite-manifest.tsv`, lane
+  `standing`, empty date and reason, in the file's existing alphabetical
+  position (it is sorted by file name):
+
+      handoffd_supervisor_startup_grace_test_runner.bb<TAB>standing<TAB><TAB>
+      test_handoffd_outbox_vanished_parcel_wiring.sh<TAB>standing<TAB><TAB>
+
+  Nothing else in the manifest changes (invariant 1). Neither test file
+  changes: the runner is pure (`evaluate-health`, no daemon) and already
+  passes on main; the wiring test boots a real handoffd against a fake tmux
+  under mkdtemp, the scaffold its standing siblings use, and passed in the
+  hotfix and in BL-1342's stamp-off.
+
+  ## How (direction, not mandate)
+
+  - Verify both tests pass BEFORE registering them, so a standing row never
+    registers a red: `bb handoffd_supervisor_startup_grace_test_runner.bb`
+    from the test dir; `bash test_handoffd_outbox_vanished_parcel_wiring.sh`
+    from a shell with no TMUX in its environment (run_bb_suite.sh's own
+    warning: never a full sweep from an agent pane; a single fake-tmux test
+    is fine, but `env -u TMUX` costs nothing).
+  - Scenario 01 runs the real inventory CLI against the parcel's own tree;
+    scenario 02 parses the real manifest and runs `run_bb_suite.sh --list`
+    (inventory gate plus the list, no test executed). These are read-only
+    reads of the tracked tree at the parcel commit, which is the contract;
+    no fixture copy is needed and none should be made.
+  - The two manifest anchors in `required_wiring` are satisfied by this
+    parcel's own diff, which BL-1235 warns gates nothing for a MECHANISM.
+    Here the row IS the behaviour: the manifest is the membership list
+    `run_bb_suite.sh` (a pre-existing live consumer) reads, so the gate
+    proving the row exists at the sent commit is the same anchor shape
+    BL-1239 used for its backfill (`suite-manifest.tsv::test_wsl_bootstrap.sh`).
+
+  ## Out of scope
+
+  - The hole itself (a hotfix evades every registration gate): companion
+    BL-1424 adds the commit-time guard. This ticket must not wait on it,
+    and BL-1424 must not be folded in - one is two data rows, the other is
+    a new guard in the pre-commit chain with its own copies to keep in sync.
+  - Any change to the two test files, to `suite_inventory_lib.bb`, or to
+    the stamp-off feature template.
+
+qa_e2e_procedure: |
+  1. The BL-1423 feature passes (scenario 01, scenario 02 x2 examples).
+  2. At the parcel commit: `bb swarmforge/scripts/test/suite_inventory_cli.bb
+     swarmforge/scripts/test` prints "0 problem(s)" and exits 0, the first
+     clean inventory since 2026-09-02.
+  3. `git diff <received>..<parcel> -- swarmforge/scripts/test/suite-manifest.tsv`
+     shows exactly two added lines and no removed or changed line
+     (invariant 1).
+  4. From a DETACHED host shell (`env -u TMUX`, never an agent pane):
+     `swarmforge/scripts/test/run_bb_suite.sh startup_grace` and
+     `swarmforge/scripts/test/run_bb_suite.sh outbox_vanished` each run one
+     test and pass; `run_bb_suite.sh --list | wc -l` is two more than at the
+     received commit.
+  5. After land, on main: `run_bb_suite.sh --inventory` exits 0.
+
+notes: |
+  Minted 2026-09-05 by the specifier on the coordinator's note (verbatim in
+  source). The coordinator asked for the two rows; the specifier verified
+  the failure on main, traced both files to hotfix 27d6ab8630, and found
+  that no gate could have caught a hotfix (see description), which is
+  companion BL-1424. The two are deliberately separate tickets: this one is
+  urgent and trivially small; the guard is prevention and touches the
+  commit-guard chain's hand-kept copies.
+
+  Lane decision recorded here so no role re-derives it: standing for both.
+  Neither is slow, manual, or live-only; the manifest header forbids
+  excluding a runnable test. The runner passed when the specifier ran it on
+  main today (ALL TESTS PASS); the wiring test was not run from the agent
+  pane (it boots a daemon; a leaked fixture daemon confuses liveness) and
+  is verified by the coder per the description.
+
+  INVEST at mint: Independent (BL-1239/BL-1240/BL-1342 all landed; BL-1424
+  is a sibling, not a dependency either way), Negotiable (row position and
+  verification order are direction), Valuable (one outcome: the standing
+  suite runs), Estimable (two lines plus a two-scenario handler; low),
+  Small (two scenarios, one invariant), Testable (real inventory CLI and
+  --list on the parcel tree; live steps in qa_e2e_procedure).
+
+source: |
+  Coordinator note to the specifier, 2026-09-05T08:27Z, verbatim: "Mint: 2
+  pre-existing test files missing suite-manifest.tsv row (27d6ab8630)".
+  Verified by the specifier the same hour: suite_inventory_cli.bb output
+  quoted in the description; `git show --stat 27d6ab8630` lists both files
+  as new; `grep -c <file> suite-manifest.tsv` returns 0 for each; the
+  hotfix is a single-parent commit on main's first-parent line; BL-1342's
+  evidence files never mention the manifest. Precedent: BL-1239 (backfill
+  of 39 files, same anchor shape), BL-1284 (a property runner's manifest
+  row, the standing suite dead again).
