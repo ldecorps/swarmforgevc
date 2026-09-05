@@ -1078,6 +1078,19 @@ export interface PollAdapters {
    * (posted) instead of silently dropped.
    */
   forwardCursorBridgeUpdate?: (update: TelegramUpdate) => Promise<boolean>;
+  /**
+   * Operator test seats (providerChatSeat.ts): a topic bound in
+   * provider-chat-topic-map.json to a direct OpenAI-compatible provider.
+   * Decided BEFORE decideUpdateAction/openSubjectAndRecord below - same
+   * "never falls through to opening a generic support subject" posture as
+   * cursorBridgeTopicId/bubbleTopicId above, for the same reason (a bound
+   * topic is not a support request). The adapter itself already posts the
+   * acknowledgement/answer/refusal into the topic (mirrors
+   * forwardCursorBridgeUpdate's shape: the live side performs, Core only
+   * decides whether to call it and to stop there). Optional so fixtures
+   * pre-dating this seat keep working.
+   */
+  runProviderChatSeat?: (topicId: number | undefined, text: string) => Promise<'not-mine' | 'handled'>;
 }
 
 // BL-389: the keystone fix. A DROP is a DECISION (the code looked at the
@@ -2827,10 +2840,25 @@ async function attemptCursorBridgePollAnswerForward(
   await adapters.forwardCursorBridgeUpdate(update);
 }
 
+async function attemptProviderChatSeatDelivery(
+  update: TelegramUpdate,
+  adapters: PollAdapters
+): Promise<UpdateDeliveryOutcome | undefined> {
+  if (!adapters.runProviderChatSeat) {
+    return undefined;
+  }
+  const outcome = await adapters.runProviderChatSeat(topicIdOf(update), update.message?.text ?? '');
+  return outcome === 'not-mine' ? undefined : 'posted';
+}
+
 async function processMessageUpdate(update: TelegramUpdate, principalUserId: string, adapters: PollAdapters): Promise<UpdateDeliveryOutcome> {
   const cursorBridgeOutcome = await attemptCursorBridgeTopicExclusion(update, adapters);
   if (cursorBridgeOutcome) {
     return cursorBridgeOutcome;
+  }
+  const providerChatSeatOutcome = await attemptProviderChatSeatDelivery(update, adapters);
+  if (providerChatSeatOutcome) {
+    return providerChatSeatOutcome;
   }
   const sideChannelOutcome = await attemptSideChannelDelivery(update, principalUserId, adapters);
   if (sideChannelOutcome) {

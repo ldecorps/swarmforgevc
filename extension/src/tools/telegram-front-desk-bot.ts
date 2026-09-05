@@ -140,6 +140,7 @@ import {
 } from './telegramFrontDeskBotCore';
 import { cursorBridgeTopicIdFromMap, bubbleTopicIdFromMap, frontDeskTopicMapWithoutCursorBridge } from './telegramCursorBridgeCore';
 import { appendCursorBridgeInboundUpdate } from './cursorBridgeInboundQueue';
+import { runProviderChatSeatTurn } from './providerChatSeatLive';
 import { backlogForTopic } from '../concierge/topicRouter';
 import {
   recordApprovalReply,
@@ -2443,6 +2444,20 @@ function buildPollAdapters(
       }
     },
     openSubjectAndRecord: (topicId, text, updateId) => openSubjectAndRecord(targetPath, topicId, text, updateId),
+    // BL-1235-style seat, generalized (providerChatSeat.ts): a topic bound
+    // in provider-chat-topic-map.json answers here, never as a generic
+    // opened support subject. runProviderChatSeatTurn posts its own
+    // acknowledgement/answer/refusal, so this adapter only needs to report
+    // whether it claimed the update.
+    runProviderChatSeat: async (topicId, text) => {
+      const outcome = await runProviderChatSeatTurn({
+        targetPath,
+        topicId,
+        text,
+        post: (postTopicId, message) => sendTelegramMessage(botToken, chatId, message, undefined, undefined, postTopicId).then(() => undefined),
+      });
+      return outcome.kind === 'not-mine' ? 'not-mine' : 'handled';
+    },
     backlogForTopic: (topicId) => backlogForTopic(readBacklogTopicMap(targetPath), topicId),
     postOperatorContext: (backlogId, text, updateId) => postOperatorContext(targetPath, backlogId, text, updateId),
     recordApprovalReply: (backlogId) => Promise.resolve(recordApprovalReply(targetPath, backlogId)),
