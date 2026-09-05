@@ -2,7 +2,8 @@ id: BL-816
 title: "A parcel that observes a red unit suite must record a decision, not proceed quietly"
 milestone: M8
 type: chore
-status: todo
+status: superseded
+closed_as: superseded-by-BL-1428
 epic: code-quality-gates
 human_approval: approved
 priority: 80
@@ -203,3 +204,10 @@ notes: |
   behaviour. The handler name is fixed HERE, at mint, so the pattern is a
   literal that will exist rather than a placeholder the gate can never match
   (BL-874).
+
+  RETIRED 2026-09-05 (specifier, Article 3.6 outcome 2, superseded-by-BL-1428):
+  the standing-red rule makes the decision this ticket asked for mechanical -
+  the register row naming an open owner - and QA approves no parcel over an
+  unowned red (Article 4.2). The human sentence in `source:` survives verbatim
+  in BL-1428 and in articles/reference/standing-red-register-amendment-2026-09-05.md
+  (Article 5.3). The draft feature file is removed with this retirement.

@@ -2,7 +2,11 @@ id: BL-1289
 title: "21 bb and shell test runners create a temp root with no cleanup path, so tempDirTrapGuard's unit-lane scan is a standing red"
 milestone: M8
 type: defect
-severity: medium
+severity: high
+# high (2026-09-05): this ticket owns a standing red on main - a broken
+# safety signal under the standing-red rule (Article 3.2.4, see
+# articles/reference/standing-red-register-amendment-2026-09-05.md);
+# re-classed from medium by the specifier. Register: backlog/standing-reds.tsv.
 # medium: real but contained to the test lanes. Nothing is lost or corrupted
 # and the guard still fires loudly and correctly - it is doing its job. The
 # cost is that it has been red long enough to read as background, which is how
