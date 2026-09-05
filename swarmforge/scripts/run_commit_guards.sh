@@ -79,6 +79,9 @@ run_guard check_handler_module_graph.sh
 # guard loads what the commit changed and BOOTS handoffd, because a grep for a
 # label is not proof a file loads.
 run_guard check_bb_scripts_load.sh
+# BL-1428: a standing red must name an open ticket. A git index read, same
+# cost class as the other cheap-tier guards.
+run_guard check_standing_red_register.sh
 
 if guard_chain_has_refusal; then
   report_refusals
