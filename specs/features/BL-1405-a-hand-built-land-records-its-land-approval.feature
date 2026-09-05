@@ -1,3 +1,8 @@
+# mutation-stamp: sha256=ea354dc19c4467be4cb85f48188111a42ccb8b02bcd5a6a455aa0a071ffea815
+# acceptance-mutation-manifest-begin
+# {"version":1,"tested_at":"2026-09-05T09:50:35.299745349Z","feature_name":"BL-1405 A hand-built land records its land approval","feature_path":"/home/carillon/swarmforgevc/.worktrees/hardender/specs/features/BL-1405-a-hand-built-land-records-its-land-approval.feature","background_hash":"77885d579a2721d3e47d2e4754f71606c2d0346700ea4e2ebc35e755244ec78d","implementation_hash":"unknown","scenarios":[{"index":1,"name":"the CLI refuses to record without both commits","scenario_hash":"f9c6723359bc433bdbdb08483e4324432a399d7c5aedd2d08bb07cdf5fab94a8","mutation_count":2,"result":{"Total":2,"Killed":2,"Survived":0,"Errors":0},"tested_at":"2026-09-05T09:50:35.299745349Z"}]}
+# acceptance-mutation-manifest-end
+
 Feature: BL-1405 A hand-built land records its land approval
 
   The land step records which approved source a tip-pure replay stands in
