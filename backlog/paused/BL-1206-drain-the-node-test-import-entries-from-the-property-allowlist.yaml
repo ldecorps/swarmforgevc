@@ -2,7 +2,11 @@ id: BL-1206
 title: "Thirteen property files fail collection because they import test from node:test; BL-1175 allowlisted them and landed, so the repair it deferred is untracked"
 milestone: M8
 type: defect
-severity: medium
+severity: high
+# high (2026-09-05): this ticket owns a standing red on main - a broken
+# safety signal under the standing-red rule (Article 3.2.4, see
+# articles/reference/standing-red-register-amendment-2026-09-05.md);
+# re-classed from medium by the specifier. Register: backlog/standing-reds.tsv.
 # medium: real and contained. The 13 files' assertions do run and pass under
 # node:test's own runner, and check_property_suite_drift.sh exits 0 on an
 # allowlisted red, so nothing is blocked and nothing is silently wrong in
@@ -72,6 +76,7 @@ description: |
       test/pilotScopedCrapEvidence.property.test.js
       test/resolveMutationConcurrency.property.test.js
       test/shellEntryPointDriveCheck.property.test.js
+      test/bl1200FixtureGitWritesStayInOwnRepo.property.test.js  (added 2026-09-05: same node:test import, line 26; it had no owner)
 
   ## Why
 
@@ -159,3 +164,9 @@ qa_e2e_procedure: >
   present with a rationale naming its actual failure, and all 14 unrelated
   rows are unchanged. (4) Run swarmforge/scripts/check_property_suite_drift.sh
   and confirm it still exits 0.
+
+  AMENDED 2026-09-05 (specifier, ticket paused): bl1200FixtureGitWritesStayInOwnRepo
+  is the same defect (`const { test } = require('node:test')`, line 26) and had
+  no owner; it is now this ticket's fifteenth file and its register row names
+  BL-1206. Severity raised to high under the standing-red rule. Scenarios are
+  unchanged: they quantify over the allowlisted set, not a fixed count.
