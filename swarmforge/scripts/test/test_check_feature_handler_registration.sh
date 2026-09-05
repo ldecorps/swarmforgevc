@@ -182,4 +182,26 @@ OUT="$(bash "$STANDIN/check_feature_handler_registration.sh" "$repo" 2>&1)" || S
 names "fails closed" || fail "07: refusal did not say why it could not run: $OUT"
 pass "07 a checker the guard cannot run is a refusal, never a silent pass"
 
+# ── 08: a handler nested in a subdirectory is SEEN and refused (BL-1400) ───
+# The predicate always rejected a subdirectory placement, but the tree the
+# checker examined listed the steps directory flat, so a nested handler never
+# entered it and the feature passed for want of seeing it.
+repo="$(build_repo nested main 1 bl901FixtureSteps)"
+mkdir -p "$repo/specs/pipeline/steps/nested"
+git -C "$repo" mv "specs/pipeline/steps/bl901FixtureSteps.js" "specs/pipeline/steps/nested/bl901FixtureSteps.js"
+git -C "$repo" -c user.email=t@t -c user.name=t commit -q -m "nest the handler"
+run_guard "$repo"
+[ "$STATUS" -eq 1 ] || fail "08: a nested handler was allowed (status $STATUS): $OUT"
+names "nested/bl901FixtureSteps.js" || fail "08: refusal did not name the nested handler: $OUT"
+names "BL-901-fixture.feature" || fail "08: refusal did not name the feature: $OUT"
+
+# ...and a lib helper named for that same ticket is not turned into one.
+repo="$(build_repo nestedlib main 1 bl901FixtureSteps)"
+echo "module.exports = {};" > "$repo/specs/pipeline/steps/lib/bl901FixtureHelper.js"
+git -C "$repo" add -A
+git -C "$repo" -c user.email=t@t -c user.name=t commit -q -m "add an unrequired lib helper"
+run_guard "$repo"
+[ "$STATUS" -eq 0 ] || fail "08: a lib helper no handler requires was reported as an offender: $OUT"
+pass "08 a nested handler is refused by name, and a lib helper is not an offender"
+
 echo "ALL PASS: check_feature_handler_registration.sh"
