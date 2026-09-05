@@ -54,11 +54,26 @@ The resident and other panes do NOT need restarting.
 
 ## How it works
 
+0. **A busy pane is never classified auth-dead (BL-1416).** Before
+   classifying pane text at all, the observer checks the same busy
+   predicate `do-respawn!`/`do-auth-respawn!` already use
+   (`chase_sweep_lib.bb`'s `actively-processing?`). A pane the runtime
+   reports busy reads as healthy regardless of scrollback content, so a
+   role's own test output that happens to print auth-error-shaped text
+   (e.g. `providerChatSeat.test.js` asserting `invalid api key`) mid-run
+   never counts toward the cap and never alerts. Fixed after a false
+   `auth-persist-alert` fired on a healthy, uninterrupted hardener run
+   (2026-09-05).
+
 1. **Attempts are bounded per failure episode.** An episode is an unbroken
    run of auth-class observations for one role; a healthy observation ends
    the episode and resets the attempt count. Below the cap, each observation
-   respawns the role and counts an attempt (invariant: respawns per episode
-   are bounded across ALL observe ticks — repeated 401s never busy-loop).
+   attempts a respawn, but the episode's attempt count only advances for a
+   respawn that was actually **performed** — one skipped for any reason
+   (busy at the later, independent live check inside `do-auth-respawn!`, or
+   any other decline) leaves the count untouched (invariant: respawns per
+   episode are bounded across ALL observe ticks — repeated 401s never
+   busy-loop, and skipped attempts never silently reach the cap).
 
 2. **At the cap, the sweep goes quiet — once.** Once a role's episode
    reaches `auth_respawn_max_attempts`, further observe ticks stop
@@ -84,9 +99,14 @@ Watch `handoffd.log` for these tags:
 - `auth-respawn <role> <launch-script>` — a role was force-respawned with
   provider-compat env after an auth-class observation.
 - `auth-respawn-skip-busy <role>` — respawn was skipped because the pane
-  was mid-command; the next sweep retries.
+  was mid-command; the next sweep retries. This does **not** count toward
+  the attempt cap (BL-1416) — a run of these never reaches the alert on
+  its own.
 - `auth-persist-alert <role> <reason>` — the attempt cap was reached; an
-  alert was recorded for this episode.
+  alert was recorded for this episode. Since BL-1416, `<reason>` names the
+  matched pane line (trimmed, ≤120 chars) and the number of respawns that
+  were actually performed, so a genuine credential failure reads
+  differently from text that merely mentions one.
 - `auth-persist-telegram <role>` / `auth-persist-email <role>` — the
   Telegram and email legs of that alert were sent (each logs
   `-error` on failure without blocking the other leg).
@@ -103,6 +123,18 @@ Watch `handoffd.log` for these tags:
    doesn't match is treated as healthy by design.
 3. Check `handoffd.log` for `auth-respawn-skip-busy` — a busy pane defers
    to the next sweep rather than force-respawning mid-command.
+
+### A credential alert arrived for a healthy role
+
+Check `handoffd.log` for `auth-respawn-skip-busy` lines around the alert
+time: before BL-1416, a busy pane (e.g. a role mid-test-run whose own
+output happened to print auth-error-shaped text) still counted toward the
+attempt cap even though `do-auth-respawn!` correctly refused to touch it,
+so three skipped-as-busy ticks alone could reach the cap and fire a false
+`auth-persist-alert`. Since BL-1416 a busy pane is never classified
+auth-dead in the first place — if the alert's `<reason>` names a matched
+line, confirm it's the pane's own scrollback and not a stale alert from
+before the fix.
 
 ### Alert never arrives after repeated respawns
 
