@@ -173,3 +173,5 @@ source: |
   red, 5 green); `npx vitest run` (7 files, 26 tests red); owner grep per
   red file over backlog/paused and backlog/active; BL-816's source
   paragraph.
+
+assigned_to: coder
