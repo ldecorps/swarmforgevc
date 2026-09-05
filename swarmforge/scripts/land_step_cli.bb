@@ -69,7 +69,18 @@
           (binding [*out* *err*] (println (str "Cannot resolve commit: " commit)))
           (System/exit 2))
         (let [task-ticket-id (pipeline-stage-lib/extract-ticket-id task-name)
-              plan (land-step-lib/land-plan {:root project-root :commit canonical :task-ticket-id task-ticket-id})]
+              ;; BL-1431: resolved ONCE, here, at the true entry point of this
+              ;; land-step invocation - land-plan and, when it decides
+              ;; :replay, replay! both receive this SAME sha rather than each
+              ;; re-resolving origin/main by name mid-walk. A mint landing on
+              ;; origin/main between land-plan's own read and own-paths' used
+              ;; to desync the attribution map own-paths reads from the walk
+              ;; that built it, escalating on a commit that never entered the
+              ;; range (BL-1416 twice, BL-1407 once, 2026-09-05).
+              origin-main (land-step-lib/origin-main-sha project-root)
+              plan (land-step-lib/land-plan {:root project-root :commit canonical
+                                              :task-ticket-id task-ticket-id
+                                              :origin-main origin-main})]
           (case (:action plan)
             :land
             (do (println (str "LAND_CLEAN " canonical)) (System/exit 0))
@@ -82,7 +93,8 @@
                                                   ;; tree guards against the replayed tree
                                                   ;; before handing back a commit, and only
                                                   ;; when a passenger actually rides.
-                                                  :passengers (:passengers plan)})]
+                                                  :passengers (:passengers plan)
+                                                  :origin-main origin-main})]
               (if (:success result)
                 (do
                   ;; BL-1334: record WHICH approved source this replay stands
