@@ -56,7 +56,13 @@ trap cleanup EXIT
 
 MINE="$WORK/mine"
 THEIRS="$WORK/theirs"
-mkdir -p "$MINE" "$THEIRS"
+# BL-1370 amendment: a PREFIX-SIBLING root - one whose path extends this
+# worktree's - is the shape that actually exists on this host
+# (.worktrees/coder-cursor2 beside .worktrees/coder). The shared classifier
+# matched by bare prefix until this parcel, so this worktree claimed its
+# neighbour's suite and a reap would have killed it.
+SIBLING="${MINE}-cursor2"
+mkdir -p "$MINE" "$THEIRS" "$SIBLING"
 
 # A stand-in for a long-running job process: its cmdline carries the pattern
 # (`node --test`) and its cwd is the worktree, which is what the shared
@@ -151,6 +157,23 @@ if (( rc == 0 )) && grep -q 'WORKTREE_STRAYS: none in' <<<"$out"; then
 else
   fail "the post-reap re-check did not come back clean (rc=$rc): $out"
 fi
+
+# ── 07 + 08: a prefix-sibling root is neither reported nor reaped ────────
+read -r sib_pid sib_pgid < <(start_job "$SIBLING") || fail "could not start the prefix-sibling job"
+out="$(run_check "$MINE")"
+if ! grep -q "pid=$sib_pid" <<<"$out"; then
+  pass "a prefix-sibling root's suite is never reported as this worktree's stray"
+else
+  fail "the check claimed a prefix-sibling root's process: $out"
+fi
+out="$(run_reap "$MINE")"
+sleep 0.5
+if kill -0 "$sib_pid" 2>/dev/null; then
+  pass "and a reap leaves the prefix-sibling root's process running"
+else
+  fail "THE REAP KILLED A PREFIX-SIBLING ROOT'S PROCESS - the live shape on this host"
+fi
+kill_group_safely "$sib_pgid"
 
 # ── a stray sharing THIS process's own group is reported, not killed ─────
 # Measured while building this tool: a fixture job that did not get its own

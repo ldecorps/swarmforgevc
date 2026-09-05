@@ -88,6 +88,48 @@
          (process-table-lib/project-scoped-process?
           "sleep 3600" "/somewhere-else/host/root" bl887-paths))
 
+;; BL-1370: the match is at a PATH-COMPONENT BOUNDARY in both arms. A
+;; prefix-sibling worktree is a live shape on this host
+;; (.worktrees/coder-cursor2 beside .worktrees/coder), and the consumers of
+;; this predicate KILL what it claims - the janitor's sweep, the supervisor's
+;; crash-orphan reaper, and BL-1370's per-pass gate - so claiming a sibling
+;; means reaping a colleague's running suite.
+
+;; Scoped to the WORKTREE alone - which is exactly what BL-1370's per-pass
+;; gate passes. (Under the janitor's and supervisor's wider scope, which also
+;; carries the host root, a sibling worktree beneath that root is legitimately
+;; theirs; the sibling hazard is a scope of one worktree claiming its
+;; neighbour.)
+(def bl1370-own-worktree ["/host/root/.worktrees/coder"])
+
+(assert= "a prefix-sibling worktree named in the cmdline is NOT in scope"
+         false
+         (process-table-lib/project-scoped-process?
+          "node --test /host/root/.worktrees/coder-cursor2/x.generated.test.js"
+          nil bl1370-own-worktree))
+
+(assert= "a prefix-sibling worktree as the cwd is NOT in scope"
+         false
+         (process-table-lib/project-scoped-process?
+          "sleep 3600" "/host/root/.worktrees/coder-cursor2/extension" bl1370-own-worktree))
+
+(assert= "a sibling that appends a dash and a digit is NOT in scope"
+         false
+         (process-table-lib/project-scoped-process?
+          "node /host/root-2/x.js" "/host/root-2" ["/host/root"]))
+
+(assert-true "the scope path itself, exactly, IS in scope as a cwd"
+             (process-table-lib/project-scoped-process?
+              "sleep 3600" "/host/root/.worktrees/coder" bl887-paths))
+
+(assert-true "a scope path followed by whitespace in the cmdline IS in scope"
+             (process-table-lib/project-scoped-process?
+              "bash -c cd /host/root/.worktrees/coder && npm test" nil bl887-paths))
+
+(assert-true "a scope path inside quotes in the cmdline IS in scope"
+             (process-table-lib/project-scoped-process?
+              "sh -c \"/host/root/.worktrees/coder\"" nil bl887-paths))
+
 (assert= "cmdline and cwd both outside every scope path is out of scope"
          false
          (process-table-lib/project-scoped-process?

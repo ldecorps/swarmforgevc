@@ -98,9 +98,14 @@ describe('BL-1370 declared invariants', () => {
     try {
       fc.assert(
         fc.property(ROOT, fc.nat(), fc.boolean(), fc.boolean(), (root, pick, jobShape, inMine) => {
-          // The other root does NOT share this root's prefix: that case is the
-          // shared classifier's known boundary, pinned separately below.
-          const other = `/fixture/sibling-of-${root.slice('/fixture/'.length)}`;
+          // Two sibling shapes, drawn alternately: an unrelated name, and one
+          // that EXTENDS this root's path (`<root>-cursor2`, the live shape on
+          // this host). The second was the shared classifier's prefix hole
+          // until BL-1370 closed it; it is an ordinary case now, not a
+          // carve-out, which is the point of the amended invariant 1.
+          const other = pick % 2 === 0
+            ? `${root}-cursor2`
+            : `/fixture/sibling-of-${root.slice('/fixture/'.length)}`;
           const owner = inMine ? root : other;
           const shapes = jobShape ? JOB : NOT_JOB;
           const cmdline = shapes[pick % shapes.length](owner);
@@ -129,29 +134,35 @@ describe('BL-1370 declared invariants', () => {
     }
   }, 240000);
 
-  // The boundary, pinned rather than assumed. `project-scoped-process?` asks
-  // `str/includes? cmd root`, so a root that is a PATH PREFIX of another root
-  // ( /repo and /repo-2, or .worktrees/coder and .worktrees/coder-2 ) claims
-  // the longer one's processes. That is the shared classifier's behaviour,
-  // which the orphan janitor and the handoffd supervisor also inherit; this
-  // tool delegates to it precisely so the three cannot disagree, so the fix
-  // belongs there and not here. Reported to the specifier as a finding.
-  //
-  // This test exists so the day it changes, it changes visibly.
-  it('known boundary: a prefix-shaped sibling root IS claimed by the shared classifier', () => {
+  // BL-1370 amendment (2026-09-05): what used to be a pinned BOUNDARY is now
+  // a guarantee. `project-scoped-process?` matched by bare prefix in both
+  // arms, so `.worktrees/coder` claimed `.worktrees/coder-cursor2` - a live
+  // sibling on this host - and every consumer of that classifier KILLS what
+  // it claims. The specifier scoped the fix into this parcel rather than a
+  // sibling ticket, because invariant 1 cannot hold without it. This test
+  // asserted the hole; it now asserts its absence, in both arms.
+  it('inv1 (boundary): a root that merely extends this one is never mine, by cmdline or cwd', () => {
     const dir = mkTmpDir('bl1370-prop-');
     const probe = writeProbe(dir);
     try {
       const root = '/fixture/repo';
-      const [{ stray }] = classify(
-        [{ cmdline: `node --test /fixture/repo-2/x.generated.test.js`, cwd: '/fixture/repo-2', root }],
-        probe,
-      );
-      assert.equal(
-        stray,
-        true,
-        'the shared classifier no longer matches a prefix-shaped sibling - if that is deliberate, ' +
-          'this ticket\'s scenario 03/05 promise is now unconditional and this pin should be retired',
+      const cases = [
+        { cmdline: 'node --test /fixture/repo-2/x.generated.test.js', cwd: '/fixture/repo-2', root },
+        { cmdline: 'node --test /fixture/repo-cursor2/x.generated.test.js', cwd: null, root },
+        // The cwd arm, exercised with a JOB cmdline that names no path -
+        // `sleep 3600` could never be a stray whatever its cwd, so using it
+        // here would have tested nothing (my first draft did exactly that).
+        { cmdline: 'npx vitest --config vitest.properties.config.mjs', cwd: '/fixture/repo-2/extension', root },
+        // The complement, so this is not a predicate that says no to
+        // everything: the root's own equivalents are still mine.
+        { cmdline: 'node --test /fixture/repo/x.generated.test.js', cwd: '/fixture/repo', root },
+        { cmdline: 'npx vitest --config vitest.properties.config.mjs', cwd: '/fixture/repo/extension', root },
+      ];
+      const out = classify(cases, probe);
+      assert.deepEqual(
+        out.map((r) => r.stray),
+        [false, false, false, true, true],
+        'a prefix-sibling root was claimed, or the root lost its own processes',
       );
     } finally {
       fs.rmSync(dir, { recursive: true, force: true });
