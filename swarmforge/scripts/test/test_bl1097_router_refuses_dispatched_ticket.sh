@@ -119,4 +119,56 @@ done
   || fail "07: the agreement is vacuous - expected exactly BL-9099 undispatched, got [$SWEEP_SAYS]"
 pass "07: the router and the dispatch-gap sweep give identical answers over a mixed corpus"
 
+# ── BL-1415: a dispatch the recipient completed long ago, nothing since, ────
+# routes WITHOUT --force, naming what it repairs.
+CODER_COMPLETED_DIR="$(bb -e "
+(require '[babashka.fs :as fs])
+(load-file \"$SCRIPT_DIR/../handoff_lib.bb\")
+(println (str (handoff-lib/mailbox-dir (handoff-lib/load-role-info \"coder\" \"$ROOT\") :completed)))
+")"
+mkdir -p "$CODER_COMPLETED_DIR"
+LONG_AGO="$(date -u -d '50 minutes ago' +%Y-%m-%dT%H:%M:%S.000000Z 2>/dev/null || date -u -v-50M +%Y-%m-%dT%H:%M:%S.000000Z)"
+printf 'from: coordinator\nto: coder\ntype: note\nmessage: Work BL-9100-demo: read file in backlog/active\ncompleted_at: %s\n\nbody\n' \
+  "$LONG_AGO" > "$CODER_COMPLETED_DIR/00_bl9100.handoff"
+printf 'id: BL-9100\ntitle: "demo four"\nstatus: todo\nassigned_to: coder\n' \
+  > "$ROOT/backlog/active/BL-9100-demo-four.yaml"
+
+BEFORE="$(emitted_count)"
+OUT="$(route BL-9100 "$ROOT")"
+AFTER="$(emitted_count)"
+(( AFTER > BEFORE )) || fail "08: expected a parcel to be emitted for a dropped ticket (no --force needed); out: $OUT"
+grep -q "already has a dispatch trail" <<< "$OUT" && fail "08: a DROPPED ticket must not be refused as DISPATCHED; out: $OUT"
+grep -q "BL-9100" <<< "$OUT" && grep -q "no parcel in flight - possible drop" <<< "$OUT" \
+  || fail "08: expected the router to name what it is repairing; out: $OUT"
+pass "08: a dispatch completed long ago with nothing after it is DROPPED and routes without --force"
+
+# ── BL-1415: dispatch_trail_cli.bb itself prints DROPPED with the reason ───
+# A SEPARATE ticket - test 08's own route just created a fresh dispatch
+# trail for BL-9100, which correctly makes it read DISPATCHED again.
+mkdir -p "$CODER_COMPLETED_DIR"
+printf 'from: coordinator\nto: coder\ntype: note\nmessage: Work BL-9102-demo: read file in backlog/active\ncompleted_at: %s\n\nbody\n' \
+  "$LONG_AGO" > "$CODER_COMPLETED_DIR/00_bl9102.handoff"
+printf 'id: BL-9102\ntitle: "demo six"\nstatus: todo\nassigned_to: coder\n' \
+  > "$ROOT/backlog/active/BL-9102-demo-six.yaml"
+CLI_OUT="$(bb "$SCRIPT_DIR/../dispatch_trail_cli.bb" "$ROOT" dispatched BL-9102)"
+[[ "$CLI_OUT" == DROPPED* ]] || fail "09: expected DROPPED from the CLI, got: $CLI_OUT"
+grep -q "no parcel in flight - possible drop" <<< "$CLI_OUT" \
+  || fail "09: expected the CLI's reason to be the sweep's own nudge text; got: $CLI_OUT"
+pass "09: dispatch_trail_cli.bb prints DROPPED naming the same reason the sweep uses"
+
+# ── BL-1415: live mail (still unread) is never DROPPED, whatever its age ───
+CODER_NEW_DIR="$(bb -e "
+(require '[babashka.fs :as fs])
+(load-file \"$SCRIPT_DIR/../handoff_lib.bb\")
+(println (str (handoff-lib/mailbox-dir (handoff-lib/load-role-info \"coder\" \"$ROOT\") :new)))
+")"
+mkdir -p "$CODER_NEW_DIR"
+printf 'from: coordinator\nto: coder\ntype: note\nmessage: Work BL-9101-demo: read file in backlog/active\ncreated_at: %s\n\nbody\n' \
+  "$LONG_AGO" > "$CODER_NEW_DIR/00_bl9101.handoff"
+printf 'id: BL-9101\ntitle: "demo five"\nstatus: todo\nassigned_to: coder\n' \
+  > "$ROOT/backlog/active/BL-9101-demo-five.yaml"
+CLI_OUT="$(bb "$SCRIPT_DIR/../dispatch_trail_cli.bb" "$ROOT" dispatched BL-9101)"
+[[ "$CLI_OUT" == "DISPATCHED" ]] || fail "10: a dispatch still unread in new/ must never read DROPPED; got: $CLI_OUT"
+pass "10: a dispatch note still unread past the stall threshold is DISPATCHED, never DROPPED"
+
 echo "ALL PASS"

@@ -443,6 +443,124 @@
            (write-active-item! active-dir "BL-1301" "coder" "blocked")
            (mapv :id (chase-sweep-lib/dispatch-gap-items active-dir [new-dir]))))
 
+;; ── BL-1415: the clock also reads dequeued_at/completed_at ────────────────
+;; The recipient copy's OWN action timestamps, not just the dispatch's
+;; creation - a dispatch the recipient just dequeued or completed is never
+;; misread as stale from its (much earlier) created_at/enqueued_at alone
+;; (BL-1384/BL-1402, 2026-09-05).
+
+(let [tmp (mk-tmp)
+      sent-dir (str (fs/path tmp "sent"))]
+  (write-handoff! sent-dir "00_a.handoff"
+                  {:from "coordinator" :to "coder" :type "note" :message "Work BL-217"
+                   :created_at "2026-07-30T10:00:00.000000Z"
+                   :dequeued_at "2026-09-05T05:14:03.000000Z"})
+  (assert= "newest-trail-event-ms: dequeued_at is fresher than a much older created_at"
+           (.toEpochMilli (java.time.Instant/parse "2026-09-05T05:14:03.000000Z"))
+           (chase-sweep-lib/newest-trail-event-ms "BL-217" [sent-dir])))
+
+(let [tmp (mk-tmp)
+      sent-dir (str (fs/path tmp "sent"))]
+  (write-handoff! sent-dir "00_a.handoff"
+                  {:from "coordinator" :to "coder" :type "note" :message "Work BL-217"
+                   :created_at "2026-07-30T10:00:00.000000Z"
+                   :dequeued_at "2026-09-05T05:14:03.000000Z"
+                   :completed_at "2026-09-05T05:14:42.000000Z"})
+  (assert= "newest-trail-event-ms: completed_at, fresher still, wins over dequeued_at and created_at"
+           (.toEpochMilli (java.time.Instant/parse "2026-09-05T05:14:42.000000Z"))
+           (chase-sweep-lib/newest-trail-event-ms "BL-217" [sent-dir])))
+
+;; ── BL-1415: ticket-dispatch-verdict / ticket-dispatch-verdict-in ─────────
+
+(assert= "ticket-dispatch-verdict: no trail at all -> :undispatched"
+         {:verdict :undispatched :reason nil}
+         (chase-sweep-lib/ticket-dispatch-verdict
+          "BL-9001" {:has-trail? false :live-mail? false :newest-trail-ms nil :status nil}
+          100000 5000))
+
+(assert= "ticket-dispatch-verdict: live mail -> :dispatched, whatever the trail age"
+         {:verdict :dispatched :reason nil}
+         (chase-sweep-lib/ticket-dispatch-verdict
+          "BL-9001" {:has-trail? true :live-mail? true :newest-trail-ms 1000 :status nil}
+          100000 5000))
+
+(assert= "ticket-dispatch-verdict: trail too fresh to call stale -> :dispatched"
+         {:verdict :dispatched :reason nil}
+         (chase-sweep-lib/ticket-dispatch-verdict
+          "BL-9001" {:has-trail? true :live-mail? false :newest-trail-ms 99000 :status nil}
+          100000 5000))
+
+(assert= "ticket-dispatch-verdict: missing newest-trail-ms fails closed, never :dropped"
+         {:verdict :dispatched :reason nil}
+         (chase-sweep-lib/ticket-dispatch-verdict
+          "BL-9001" {:has-trail? true :live-mail? false :newest-trail-ms nil :status nil}
+          100000 5000))
+
+(assert= "ticket-dispatch-verdict: trail stale, no live mail -> :dropped, naming the SAME nudge text"
+         {:verdict :dropped :reason (chase-sweep-lib/dropped-parcel-note-message "BL-9001")}
+         (chase-sweep-lib/ticket-dispatch-verdict
+          "BL-9001" {:has-trail? true :live-mail? false :newest-trail-ms 1000 :status nil}
+          100000 5000))
+
+;; ticket-dispatch-verdict-in: full pipeline over a real fixture mailbox tree.
+
+(let [tmp (mk-tmp)
+      new-dir (str (fs/path tmp "coder-new"))]
+  ;; Still sits UNREAD in the recipient's own new/ mailbox - live mail, per
+  ;; live-mail-trail-dirs' scope, however old its own created_at is.
+  (write-handoff! new-dir "00_a.handoff"
+                  {:from "coordinator" :to "coder" :type "note" :message "Work BL-9001"
+                   :enqueued_at "2026-07-30T10:00:00.000000Z"})
+  (assert= "ticket-dispatch-verdict-in: a dispatch note still unread in the recipient's inbox is not dropped"
+           :dispatched
+           (:verdict (chase-sweep-lib/ticket-dispatch-verdict-in
+                      "BL-9001" [new-dir] [new-dir]
+                      (.toEpochMilli (java.time.Instant/parse "2026-07-30T12:00:00.000000Z"))
+                      5000))))
+
+(let [tmp (mk-tmp)
+      sent-dir (str (fs/path tmp "sent"))
+      completed-dir (str (fs/path tmp "coder-completed"))
+      new-dir (str (fs/path tmp "coder-new"))]
+  (write-handoff! sent-dir "00_a.handoff"
+                  {:from "coordinator" :to "coder" :type "note" :message "Work BL-9001"
+                   :created_at "2026-09-05T03:57:00.000000Z"
+                   :dequeued_at "2026-09-05T05:15:02.000000Z"})
+  (write-handoff! completed-dir "00_a.handoff"
+                  {:from "coordinator" :to "coder" :type "note" :message "Work BL-9001"
+                   :created_at "2026-09-05T03:57:00.000000Z"
+                   :dequeued_at "2026-09-05T05:15:02.000000Z"
+                   :completed_at "2026-09-05T05:15:09.000000Z"})
+  (let [result (chase-sweep-lib/ticket-dispatch-verdict-in
+                "BL-9001" [sent-dir completed-dir new-dir] [new-dir]
+                (.toEpochMilli (java.time.Instant/parse "2026-09-05T06:00:09.000000Z"))
+                (* 45 60 1000))]
+    (assert= "ticket-dispatch-verdict-in: completed 45m ago, no live mail -> :dropped"
+             :dropped (:verdict result))
+    (assert= "ticket-dispatch-verdict-in: names the same reason the sweep's nudge carries"
+             (chase-sweep-lib/dropped-parcel-note-message "BL-9001") (:reason result))))
+
+(let [tmp (mk-tmp)
+      sent-dir (str (fs/path tmp "sent"))
+      completed-dir (str (fs/path tmp "coder-completed"))
+      cleaner-completed (str (fs/path tmp "cleaner-completed"))
+      new-dir (str (fs/path tmp "coder-new"))]
+  (write-handoff! sent-dir "00_a.handoff"
+                  {:from "coordinator" :to "coder" :type "note" :message "Work BL-9001"
+                   :completed_at "2026-09-05T04:00:00.000000Z"})
+  (write-handoff! completed-dir "00_a.handoff"
+                  {:from "coordinator" :to "coder" :type "note" :message "Work BL-9001"
+                   :completed_at "2026-09-05T04:00:00.000000Z"})
+  (write-handoff! cleaner-completed "00_b.handoff"
+                  {:from "coder" :to "cleaner" :type "git_handoff" :task "BL-9001-demo"
+                   :completed_at "2026-09-05T05:50:00.000000Z"})
+  (assert= "ticket-dispatch-verdict-in: a git_handoff for the ticket anywhere means worked, not dropped"
+           :dispatched
+           (:verdict (chase-sweep-lib/ticket-dispatch-verdict-in
+                      "BL-9001" [sent-dir completed-dir cleaner-completed new-dir] [new-dir]
+                      (.toEpochMilli (java.time.Instant/parse "2026-09-05T06:00:00.000000Z"))
+                      (* 45 60 1000)))))
+
 ;; ── report ────────────────────────────────────────────────────────────────
 (if (seq @failures)
   (do

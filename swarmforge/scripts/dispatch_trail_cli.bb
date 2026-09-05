@@ -14,8 +14,12 @@
 ;;
 ;; Usage:
 ;;   dispatch_trail_cli.bb <project-root> dispatched <ticket-id>
-;;       Prints DISPATCHED or UNDISPATCHED. Exit 0 either way - this is a
-;;       question, not a gate; the caller decides what to do with the answer.
+;;       Prints DISPATCHED, UNDISPATCHED, or DROPPED <reason> (BL-1415: a
+;;       dispatch trail exists, no live mail anywhere, and it went stale past
+;;       the stall threshold with no work since - chase_sweep_lib.bb's
+;;       ticket-dispatch-verdict-in, the SAME predicate the dropped-parcel
+;;       sweep uses). Exit 0 in every case - this is a question, not a gate;
+;;       the caller decides what to do with the answer.
 ;;   dispatch_trail_cli.bb <project-root> undispatched-active
 ;;       Prints the id of every backlog/active/ item with no dispatch trail,
 ;;       one per line - the sweep's own answer, exposed so the two can be
@@ -46,6 +50,17 @@
       (System/exit 1))
     (chase-sweep-lib/dispatch-trail-dirs roles)))
 
+;; BL-1415: the same roles.tsv read, narrowed to :new/:in_process - the
+;; scope the sweep's own live-mail? question uses. A second load-all-roles
+;; call is cheap and keeps scan-dirs-for's own exit-on-empty behavior
+;; untouched for its existing caller.
+(defn- live-mail-dirs-for [root]
+  (chase-sweep-lib/live-mail-trail-dirs (handoff-lib/load-all-roles root)))
+
+(defn- stall-threshold-ms [root]
+  (chase-sweep-lib/parse-dropped-parcel-stall-threshold-ms
+   (try (slurp (str (fs/path root "swarmforge" "swarmforge.conf"))) (catch Exception _ nil))))
+
 (defn -main [& args]
   (let [[root command ticket-id] args]
     (when (or (nil? root) (nil? command)) (usage))
@@ -54,9 +69,14 @@
         "dispatched"
         (do
           (when (nil? ticket-id) (usage))
-          (println (if (chase-sweep-lib/ticket-dispatched-in? ticket-id (scan-dirs-for root))
-                     "DISPATCHED"
-                     "UNDISPATCHED")))
+          (let [{:keys [verdict reason]}
+                (chase-sweep-lib/ticket-dispatch-verdict-in
+                 ticket-id (scan-dirs-for root) (live-mail-dirs-for root)
+                 (System/currentTimeMillis) (stall-threshold-ms root))]
+            (println (case verdict
+                       :dispatched "DISPATCHED"
+                       :undispatched "UNDISPATCHED"
+                       :dropped (str "DROPPED " reason)))))
 
         "undispatched-active"
         (doseq [item (chase-sweep-lib/dispatch-gap-items
