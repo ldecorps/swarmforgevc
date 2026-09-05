@@ -1223,6 +1223,164 @@ check "BL-1413-04: no supervisor was restarted" '[[ ! -f "$ROOT/starts.log" ]] |
 check "BL-1413-04: nothing was announced" '[[ ! -f "$ROOT/announces.log" ]]'
 pass "BL-1413-04: the real 2026-09-05 supervisor logs, NUL line and all, all report fresh"
 
+# ── BL-1414: an announce is a transition, not a tick ─────────────────────
+run_checker_digest() {
+  local root=$1 now=$2 digest=$3
+  FRESHNESS_ROOT="$root" \
+  FRESHNESS_CONF="$CONF" \
+  FRESHNESS_NOW_EPOCH="$now" \
+  FRESHNESS_INCIDENT_FILE="$root/.swarmforge/daemon/freshness-incidents.log" \
+  FRESHNESS_COOL_OFF_SECS=300 \
+  FRESHNESS_ANNOUNCE_DIGEST_SECS="$digest" \
+  FRESHNESS_LOAD="$FRESHNESS_TEST_LOAD" \
+  FRESHNESS_CORES="$FRESHNESS_TEST_CORES" \
+  FRESHNESS_ANNOUNCE_CMD="printf '%s\n' \"\$1\" >> \"$root/announces.log\"" \
+  FRESHNESS_KILL_CMD="printf '%s\n' \"\$1\" >> \"$root/kills.log\"" \
+  FRESHNESS_START_CMD="printf '%s %s\n' \"\$1\" \"\$2\" >> \"$root/starts.log\"" \
+  /bin/sh "$CHECKER"
+}
+
+seed_announce_state() {
+  local root=$1 daemon=$2 reason=$3 announced=$4 suppressed=$5 started=$6
+  mkdir -p "$root/.swarmforge/daemon/freshness-announce"
+  printf 'announced_epoch=%s suppressed=%s violation_started_epoch=%s\n' \
+    "$announced" "$suppressed" "$started" \
+    > "$root/.swarmforge/daemon/freshness-announce/${daemon}__${reason}.state"
+}
+
+# ── BL-1414-01: the first tick of a violation is announced (mirrors 02a,
+#    asserted again here explicitly against the state file this ticket adds) ─
+ROOT="$(make_root)"
+NOW=1700000000
+STALE_TS="$(date -u -d "@$((NOW - 200))" +%Y-%m-%dT%H:%M:%SZ 2>/dev/null \
+  || date -u -r $((NOW - 200)) +%Y-%m-%dT%H:%M:%SZ)"
+FRESH_TS="$(date -u -d "@$NOW" +%Y-%m-%dT%H:%M:%SZ 2>/dev/null \
+  || date -u -r "$NOW" +%Y-%m-%dT%H:%M:%SZ)"
+printf '%s heartbeat\n' "$STALE_TS" > "$ROOT/.swarmforge/daemon/handoffd.log"
+printf '%s heartbeat\n' "$FRESH_TS" > "$ROOT/.swarmforge/babysitterd/babysitterd.log"
+sleep 120 &
+FAKE_PID=$!
+echo "$FAKE_PID" > "$ROOT/.swarmforge/daemon/handoffd.pid"
+run_checker_digest "$ROOT" "$NOW" 1800
+kill "$FAKE_PID" 2>/dev/null || true
+check "BL-1414-01: exactly one announce for the first violation tick" \
+  '[[ "$(wc -l < "$ROOT/announces.log" | tr -d " ")" -eq 1 ]]'
+check "BL-1414-01: announce-transition state was created" \
+  '[[ -f "$ROOT/.swarmforge/daemon/freshness-announce/handoffd__stale-heartbeat.state" ]]'
+pass "BL-1414-01: the first tick of a violation is announced"
+
+# ── BL-1414-02: further ticks of the same violation inside the window are
+#    recorded, not announced ─────────────────────────────────────────────
+ROOT="$(make_root)"
+NOW=1700000000
+STALE_TS="$(date -u -d "@$((NOW - 200))" +%Y-%m-%dT%H:%M:%SZ 2>/dev/null \
+  || date -u -r $((NOW - 200)) +%Y-%m-%dT%H:%M:%SZ)"
+printf '%s heartbeat\n' "$STALE_TS" > "$ROOT/.swarmforge/daemon/handoffd.log"
+printf '%s heartbeat\n' "$STALE_TS" > "$ROOT/.swarmforge/babysitterd/babysitterd.log" # never checked stale (threshold 600)
+# The daemon was announced stale on the previous tick: a restart record 60s
+# ago (so every further tick lands in the escalate branch, inside the
+# 300s cool-off) and an announce-transition state already marked announced.
+printf 'epoch=%s daemon=handoffd age_secs=200 threshold=120 action=restart\n' "$((NOW - 60))" \
+  > "$ROOT/.swarmforge/daemon/freshness-incidents.log"
+seed_announce_state "$ROOT" "handoffd" "stale-heartbeat" "$((NOW - 60))" 0 "$((NOW - 60))"
+for i in 1 2 3 4 5; do
+  run_checker_digest "$ROOT" "$((NOW + i * 30))" 1800
+done
+check "BL-1414-02: no further message is announced" \
+  '[[ ! -f "$ROOT/announces.log" ]]'
+check "BL-1414-02: 5 more incident records are appended (plus the seeded one)" \
+  '[[ "$(wc -l < "$ROOT/.swarmforge/daemon/freshness-incidents.log" | tr -d " ")" -eq 6 ]]'
+pass "BL-1414-02: further ticks of the same violation inside the window are recorded, not announced"
+
+# ── BL-1414-03: a violation that outlasts the window gets one digest ─────
+ROOT="$(make_root)"
+NOW=1700000000
+STALE_TS="$(date -u -d "@$((NOW - 200))" +%Y-%m-%dT%H:%M:%SZ 2>/dev/null \
+  || date -u -r $((NOW - 200)) +%Y-%m-%dT%H:%M:%SZ)"
+printf '%s heartbeat\n' "$STALE_TS" > "$ROOT/.swarmforge/daemon/handoffd.log"
+printf '%s heartbeat\n' "$STALE_TS" > "$ROOT/.swarmforge/babysitterd/babysitterd.log"
+# Announced 31 minutes ago; a restart record 60s ago keeps this tick in the
+# escalate branch; 14 ticks already suppressed since the announce.
+printf 'epoch=%s daemon=handoffd age_secs=200 threshold=120 action=restart\n' "$((NOW - 60))" \
+  > "$ROOT/.swarmforge/daemon/freshness-incidents.log"
+seed_announce_state "$ROOT" "handoffd" "stale-heartbeat" "$((NOW - 1860))" 14 "$((NOW - 1860))"
+run_checker_digest "$ROOT" "$NOW" 1800
+check "BL-1414-03: exactly one digest message is announced" \
+  '[[ "$(wc -l < "$ROOT/announces.log" | tr -d " ")" -eq 1 ]]'
+check "BL-1414-03: the digest names the daemon" \
+  'grep -q "FRESHNESS_VIOLATION digest.*daemon=handoffd" "$ROOT/announces.log"'
+check "BL-1414-03: the digest names the suppressed count" \
+  'grep -q "suppressed_ticks=14" "$ROOT/announces.log"'
+check "BL-1414-03: the digest names the current age" \
+  'grep -q "age_secs=200" "$ROOT/announces.log"'
+check "BL-1414-03: the window restarts (suppressed resets to 0)" \
+  'grep -q "suppressed=0" "$ROOT/.swarmforge/daemon/freshness-announce/handoffd__stale-heartbeat.state"'
+pass "BL-1414-03: a violation that outlasts the window gets one digest naming the suppressed count and age"
+
+# ── BL-1414-04: the first fresh tick after a violation announces recovery
+#    once; a following fresh tick announces nothing ──────────────────────
+ROOT="$(make_root)"
+NOW=1700000000
+FRESH_TS="$(date -u -d "@$NOW" +%Y-%m-%dT%H:%M:%SZ 2>/dev/null \
+  || date -u -r "$NOW" +%Y-%m-%dT%H:%M:%SZ)"
+printf '%s heartbeat\n' "$FRESH_TS" > "$ROOT/.swarmforge/daemon/handoffd.log"
+printf '%s heartbeat\n' "$FRESH_TS" > "$ROOT/.swarmforge/babysitterd/babysitterd.log"
+# Was announced stale and is still within the digest window: violating for
+# 600s so far.
+seed_announce_state "$ROOT" "handoffd" "stale-heartbeat" "$((NOW - 60))" 2 "$((NOW - 600))"
+run_checker_digest "$ROOT" "$NOW" 1800
+check "BL-1414-04: exactly one recovery message is announced" \
+  '[[ "$(wc -l < "$ROOT/announces.log" | tr -d " ")" -eq 1 ]]'
+check "BL-1414-04: the recovery message names the daemon and the violation duration" \
+  'grep -q "FRESHNESS_RECOVERED.*daemon=handoffd.*was_violating_secs=600" "$ROOT/announces.log"'
+check "BL-1414-04: the announce-transition state is cleared" \
+  '[[ ! -f "$ROOT/.swarmforge/daemon/freshness-announce/handoffd__stale-heartbeat.state" ]]'
+run_checker_digest "$ROOT" "$((NOW + 120))" 1800
+check "BL-1414-04: a following fresh tick announces nothing" \
+  '[[ "$(wc -l < "$ROOT/announces.log" | tr -d " ")" -eq 1 ]]'
+pass "BL-1414-04: the first fresh tick after a violation announces recovery once"
+
+# ── BL-1414-05: suppression is keyed per daemon and reason ───────────────
+# Example A: a different daemon violating for the SAME reason is its own
+# first announce.
+ROOT="$(make_root)"
+NOW=1700000000
+STALE_TS="$(date -u -d "@$((NOW - 700))" +%Y-%m-%dT%H:%M:%SZ 2>/dev/null \
+  || date -u -r $((NOW - 700)) +%Y-%m-%dT%H:%M:%SZ)"
+FRESH_TS="$(date -u -d "@$NOW" +%Y-%m-%dT%H:%M:%SZ 2>/dev/null \
+  || date -u -r "$NOW" +%Y-%m-%dT%H:%M:%SZ)"
+printf '%s heartbeat\n' "$FRESH_TS" > "$ROOT/.swarmforge/daemon/handoffd.log"
+printf '%s heartbeat\n' "$STALE_TS" > "$ROOT/.swarmforge/babysitterd/babysitterd.log"
+seed_announce_state "$ROOT" "handoffd" "stale-heartbeat" "$((NOW - 60))" 3 "$((NOW - 60))"
+run_checker_digest "$ROOT" "$NOW" 1800
+check "BL-1414-05a: exactly one message is announced for the new (babysitterd) violation" \
+  'grep -c "FRESHNESS_VIOLATION" "$ROOT/announces.log" | grep -qx 1'
+check "BL-1414-05a: the violation message names babysitterd, not handoffd" \
+  'grep "FRESHNESS_VIOLATION" "$ROOT/announces.log" | grep -q "daemon=babysitterd" && ! grep "FRESHNESS_VIOLATION" "$ROOT/announces.log" | grep -q "daemon=handoffd"'
+# handoffd is independently fresh in this fixture and was seeded mid-
+# violation, so it also, correctly and separately, recovers on this same
+# tick (BL-1414-04's own mechanic) - not what this scenario is about, but
+# asserted so the coexistence is understood, not accidentally masked.
+check "BL-1414-05a: handoffd's own unrelated recovery is the other announce line" \
+  'grep -q "FRESHNESS_RECOVERED.*daemon=handoffd" "$ROOT/announces.log"'
+pass "BL-1414-05a: a different daemon violating is its own first announce"
+
+# Example B: the SAME daemon violating for a DIFFERENT reason is its own
+# first announce.
+ROOT="$(make_root)"
+NOW=1700000000
+FRESH_TS="$(date -u -d "@$NOW" +%Y-%m-%dT%H:%M:%SZ 2>/dev/null \
+  || date -u -r "$NOW" +%Y-%m-%dT%H:%M:%SZ)"
+: > "$ROOT/.swarmforge/daemon/handoffd.log" # present, empty - no-heartbeat-line
+printf '%s heartbeat\n' "$FRESH_TS" > "$ROOT/.swarmforge/babysitterd/babysitterd.log"
+seed_announce_state "$ROOT" "handoffd" "stale-heartbeat" "$((NOW - 60))" 3 "$((NOW - 60))"
+run_checker_digest "$ROOT" "$NOW" 1800
+check "BL-1414-05b: exactly one message is announced for the new (no-heartbeat-line) violation" \
+  'grep -c "FRESHNESS_VIOLATION" "$ROOT/announces.log" | grep -qx 1'
+check "BL-1414-05b: it names the new reason, not the pre-existing one" \
+  'grep -q "reason=no-heartbeat-line" "$ROOT/announces.log"'
+pass "BL-1414-05b: the same daemon violating for a different reason is its own first announce"
+
 if [[ "$fail" -eq 0 ]]; then
   echo "BL-675 daemon-log-freshness: ALL CHECKS PASSED"
 else
