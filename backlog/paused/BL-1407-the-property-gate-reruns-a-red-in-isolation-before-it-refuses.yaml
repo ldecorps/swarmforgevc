@@ -117,7 +117,10 @@ notes: |
   behind ordinary work: BL-1275 65 -> 12 (severity medium -> high), BL-1348
   42 -> 14, BL-1349 40 -> 15. All three are already approved.
 
-  IR-DRY at mint: see commit.
+  IR-DRY at mint: 6 medium findings, all kept - the three "fails in the full
+  run and <passes alone | fails alone | hangs alone>" Givens are the one-run
+  versus re-run contrast the feature exists for, and non-allowlisted versus
+  allowlisted is scenario 03's point.
 
   Mint-time INVEST: one observable outcome (a load flake in an unrelated
   file no longer refuses the commit, and is recorded), one sitting in one
