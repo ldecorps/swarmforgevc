@@ -1,3 +1,8 @@
+# mutation-stamp: sha256=01604b981609bc61c61fe288d3f1afc302a111b061c2c9724ddc6dcf9fecd4aa
+# acceptance-mutation-manifest-begin
+# {"version":1,"tested_at":"2026-09-05T23:26:47.961612854Z","feature_name":"BL-1439 The deferred hardening gates of 2026-08-19 are run and discharged","feature_path":"/home/carillon/swarmforgevc/.worktrees/hardender/specs/features/BL-1439-the-deferred-hardening-gates-of-0819-are-run-and-discharged.feature","background_hash":"285cc0089e1951dba68abc96f4002d74c78ce029ff595423059d58c4f8d03469","implementation_hash":"unknown","scenarios":[{"index":0,"name":"discharging a row records the run and removes it from the outstanding debt","scenario_hash":"dd0703bc0db59ae37e6b8e9aca0d744941b8619a8d7cffe883f9350d47ebe2d6","mutation_count":6,"result":{"Total":6,"Killed":6,"Survived":0,"Errors":0},"tested_at":"2026-09-05T23:26:47.961612854Z"}]}
+# acceptance-mutation-manifest-end
+
 Feature: BL-1439 The deferred hardening gates of 2026-08-19 are run and discharged
 
   On 2026-08-19 the hardener deferred five gates under host load and

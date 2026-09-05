@@ -1,5 +1,28 @@
 # SwarmForge VS Code Extension — Specification
 
+**Last Updated:** September 6, 2026 (BL-1439: five hardening gates deferred
+2026-08-19 (Stryker mutation on BL-620's, BL-955's and BL-954's file sets,
+mutation on `pipelineBoard.ts`, and a stalled gherkin-mutation on BL-956's
+feature) sat in `backlog/hardening-debt-ledger.yaml` for seventeen days
+with every owning parcel closed — the ledger's only verb was `--defer`, so
+nothing ever recorded a later run, the standing-red register read the
+closed-ticket rows as unowned, and BL-1429 throttled intake to a cap of
+one on their age alone. The ledger gains `--discharge <parcel> <gate>
+--evidence <path>` (marks a matching row `discharged_at`/
+`discharged_evidence`, never deletes it; `outstanding-debt` excludes a
+discharged row and its register row leaves in the same commit) and, by a
+same-day amendment, `--attempt <parcel> <gate> <blocker>` (records a
+refused run's blocker without discharging it — the row stays outstanding,
+its register row re-pointed to whoever owns finishing it, so the debt
+never reads unowned while blocked). Of the five: the BL-956 gherkin-
+mutation gate ran clean and discharged; the other four are recorded as
+attempts, blocked by the mutation cooldown (BL-1425 touched two of the
+same file sets on 2026-09-05) and by BL-954's own citation red — both
+re-pointed to **BL-1441**, minted to own the actual runs once unblocked.
+Acceptance:
+`specs/features/BL-1439-the-deferred-hardening-gates-of-0819-are-run-and-discharged.feature`.
+How-to: [BL-942](../how-to/BL-942-hardening-debt-ledger.md).)
+Prior entry —
 **Last Updated:** September 5, 2026 (BL-1436: `PRICING_TABLE` had no entry
 for `claude-fable-5-1` — the full-forge specifier seat's actual model
 since 2026-09-04 (`swarmforge/packs/full-forge.conf`, `71f67b3fa6`,
