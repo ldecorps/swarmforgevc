@@ -41,7 +41,12 @@ function bashExtractFailures(output) {
 
 test('BL-1175 invariant 1: every standing-red inventory row has fix-or-allowlist disposition', () => {
   const inventory = readInventory();
-  assert.ok(inventory.length >= 20, `expected standing inventory, got ${inventory.length} rows`);
+  // BL-1430: not a fixed floor - this file's whole purpose is to shrink as
+  // reds get fixed (BL-1428 pruned 25->20; BL-1430 fixed two more ->18), so
+  // a hardcoded count breaks on every legitimate reduction. The structural
+  // checks below (per-row shape, disposition, rationale) are the actual
+  // invariant; this only guards against the inventory going silently empty.
+  assert.ok(inventory.length > 0, `expected a non-empty standing inventory, got ${inventory.length} rows`);
   for (const row of inventory) {
     assert.match(row.file, /^test\/.*\.property\.test\.js$/, JSON.stringify(row));
     assert.ok(['allowlist', 'fix'].includes(row.disposition), JSON.stringify(row));

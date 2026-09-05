@@ -34,8 +34,6 @@ property	extension/test/shellEntryPointDriveCheck.property.test.js	BL-1206	2026-
 property	extension/test/multiBranchParserCoverageCheck.property.test.js	BL-1229	2026-08-27	landPilotedTicket deps contract outgrew its stubs
 property	extension/test/perHatRolePromptEvidenceCheck.property.test.js	BL-1229	2026-08-27	landPilotedTicket deps contract outgrew its stubs
 property	extension/test/unreachableStepHandlerCheck.property.test.js	BL-1221	2026-08-27	landPilotedTicket required deps member unsupplied
-property	extension/test/tempDirTrapGuard.property.test.js	BL-1289	2026-08-30	21 runners create a temp root with no cleanup path
-property	extension/test/bl874PortableTimeInvariants.property.test.js	BL-1430	2026-08-27	one-definition property red; no owner until 2026-09-05
 unit	extension/test/pricingTable.test.js	BL-1212	2026-08-28	PRICING_TABLE missing claude-fable-5-1
 unit	extension/test/shellEntryPointDriveCheck.test.js	BL-1229	2026-08-28	landPilotedTicket deps contract outgrew its stubs
 unit	extension/test/telegramClient.test.js	BL-1263	2026-08-29	asserts behaviour a deliberate source change replaced
