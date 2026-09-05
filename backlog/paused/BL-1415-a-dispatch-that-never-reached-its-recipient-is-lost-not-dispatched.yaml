@@ -1,0 +1,161 @@
+id: BL-1415
+title: "A dispatch whose only trace is the sender's sent/ copy is LOST, not DISPATCHED: the trail requires a matching recipient-side copy in any mailbox state, dispatch_trail_cli prints LOST, route_backlog_to_coder.sh re-routes with a warning naming the lost parcel, and the sweep agrees (BL-1384/BL-1402 stranded active on 2026-09-05 behind a false refusal)"
+milestone: M8
+type: defect
+severity: medium
+# medium: real but contained. Two approved active tickets sat unrouted for
+# ~2h; the dropped-parcel sweep (BL-1301) surfaced them and --force fixed
+# them by hand. The router's refusal blocked the automatic fix, which is a
+# broken safety mechanism, but the detector itself fired.
+status: todo
+epic: swarm-reliability
+priority: 9
+direction: swarm-reported
+depends_on: [BL-1097, BL-1223]
+mutation_cost: low
+slice_size_envelope: low
+required_stages: [coder, cleaner, architect, hardender, documenter, qa]
+
+acceptance: specs/features/BL-1415-a-dispatch-that-never-reached-its-recipient-is-lost-not-dispatched.feature
+
+required_wiring:
+  - 'swarmforge/scripts/route_backlog_to_coder.sh::LOST::the live router must branch on the third verdict; absent today (grep returns 0)'
+  - 'swarmforge/scripts/dispatch_trail_cli.bb::LOST::the CLI the router shells to must print the verdict; absent today (grep returns 0)'
+  - 'specs/pipeline/steps/bl1415LostDispatchSteps.js::registerSteps::the handler file exists so discovery registers every scenario (BL-1371)'
+
+invariants:
+  - "One predicate answers dispatched/lost for the router, the CLI and the dispatch-gap sweep (BL-1097 invariant 2): chase_sweep_lib.bb decides, and a sent/ or outbox/ copy counts only when a recipient-side file with the same handoff id exists in that recipient's new, in_process, completed, done or abandoned."
+  - "LOST never refuses and never silently routes: the router routes AND warns naming the lost parcel file; DISPATCHED keeps refusing without --force exactly as today."
+  - "Fail toward routing: a mailbox the predicate cannot read (missing role dir, unreadable file) is treated as no recipient copy, because a starved ticket is the worse failure (dispatch_trail_cli.bb header)."
+
+human_approval: approved
+approval_context: >
+  A new feature file is authored here, so it needs a tap. No choice is posed
+  and there are no ruling_options. Note the coordinator's own evidence file
+  named a different cause (a specifier note counted as dispatch); the
+  specifier verified that reading is wrong and the adjudication is appended
+  to that file.
+
+description: |
+  ## What is wrong
+
+  The coordinator's evidence
+  (`backlog/evidence/coordinator-dispatch-trail-false-positive-20260905.md`,
+  572173b1bd) reports two dropped-parcel self-notes on 2026-09-05 (BL-1402,
+  BL-1384: "no parcel in flight - possible drop"), both tickets approved
+  and active with `assigned_to: coder`, no work commit on any role branch,
+  and `route_backlog_to_coder.sh` refusing both with "already has a
+  dispatch trail" (`dispatch_trail_cli.bb . dispatched <id>` = DISPATCHED).
+  The coordinator forced both routes by hand.
+
+  The evidence attributes the DISPATCHED verdict to a specifier->coordinator
+  bookkeeping note ("Root drained: BL-1402 ..."). The specifier verified
+  that this is not the cause: `dispatch-trail-ticket-id` (chase_sweep_lib.bb,
+  BL-1223) counts a `message:` only when it matches the verb-first
+  `\b(Spec|Work)\s+BL-…` form; "Root drained: BL-1402" does not match.
+  What matched are the coordinator's own Work notes, present ONLY in its
+  sent/ directory:
+
+      .swarmforge/handoffs/coordinator/sent/10_20260905T032729Z_004166_from_coordinator_to_coder.handoff
+          message: Work BL-1384-the-local-seat-topic-reaches-the-bridge-through-the-front-desk: ...
+      .swarmforge/handoffs/coordinator/sent/10_20260905T035759Z_004203_from_coordinator_to_coder.handoff
+          message: Work BL-1402-the-front-desk-keeps-a-routed-photo-so-the-operator-can-see-it: ...
+
+  Neither handoff id exists anywhere in the coder's mailbox (new,
+  in_process, completed, done, abandoned), in any failed/ dir, or in
+  handoffd.log. The coordinator did dispatch both; the coder never held
+  either. `dispatch-trail-states` (`[:new :in_process :completed :sent
+  :outbox]`) counts the sender's own sent/ copy as proof of dispatch, so a
+  parcel that was lost between the sender and the recipient is, forever,
+  "already routed", and BL-1097's refusal (built so a WORKED ticket is not
+  routed twice) blocks the one mechanism that would repair the loss.
+
+  ## What is wanted
+
+  A sender-side copy (sent/, outbox/) proves dispatch only when a matching
+  recipient-side copy exists in that recipient's mailbox in any state.
+  Without one the dispatch is LOST:
+  - `dispatch_trail_cli.bb <root> dispatched <id>` prints `LOST <sent-copy>`;
+  - `route_backlog_to_coder.sh` routes and warns, naming the lost parcel;
+  - `undispatched-active` and the dispatch-gap sweep list the ticket with
+    the same reason, because it is the same predicate.
+  A recipient-side copy in any state, or a git_handoff in any worktree
+  role's mailbox, stays DISPATCHED and the router keeps refusing.
+
+  ## How (direction, not mandate)
+
+  - In chase_sweep_lib.bb, `collect-dispatched-ticket-ids` already walks
+    every state dir; make the sent/outbox contribution conditional: parse
+    the handoff id and recipient from the filename
+    (`<prio>_<stamp>_<seq>_from_<A>_to_<B>.handoff`), look for
+    `*_<stamp>_<seq>_from_<A>_to_<B>_for_<B>.handoff` under B's mailbox
+    states. Return the trail as a map id -> {:verdict :dispatched|:lost
+    :evidence path} so the CLI and the sweep print the same reason.
+  - `ticket-dispatched?` keeps its boolean shape for existing callers;
+    add `ticket-dispatch-verdict`.
+  - route_backlog_to_coder.sh: three-way branch on DISPATCHED / LOST /
+    UNDISPATCHED; LOST prints `route_backlog_to_coder: earlier dispatch
+    <file> never reached <role> - re-routing` to stderr and proceeds.
+  - Tests: extend `bl1097_router_dispatch_trail_test_runner.bb`,
+    `test_bl1097_router_refuses_dispatched_ticket.sh` and
+    `dropped_parcel_test_runner.bb` with the sender-only fixture. Fixture
+    trees under mkdtemp, removed in a finally, never a prefix sweep
+    (BL-1385).
+  - Retire nothing in BL-1097's feature: its scenarios assert refusal for a
+    WORKED ticket and router/sweep agreement, both preserved.
+
+  ## Out of scope
+
+  - Why the two Work notes vanished between the coordinator's sent/ and
+    the coder's inbox (03:27Z and 03:57Z, during chaser respawns of the
+    coder at 03:20Z/03:26Z on BL-1275). No log names it; the specifier
+    recorded it as an open diagnostic in the coordinator's evidence file
+    rather than a ticket with nothing to test.
+  - Mention-only notes as trail evidence: already BL-1223.
+
+qa_e2e_procedure: |
+  1. `bb swarmforge/scripts/test/bl1097_router_dispatch_trail_test_runner.bb`,
+     `bash swarmforge/scripts/test/test_bl1097_router_refuses_dispatched_ticket.sh`
+     and `bb swarmforge/scripts/test/dropped_parcel_test_runner.bb` pass with
+     the new sender-only cases; the BL-1415 feature passes all six runs;
+     BL-1097's and BL-1223's features still pass.
+  2. Live replay, read-only: `bb swarmforge/scripts/dispatch_trail_cli.bb .
+     dispatched BL-1384` on the real `.swarmforge/` prints DISPATCHED (the
+     forced 05:16Z route 004301 now has a coder-side copy). Copy the two
+     04:xx sent files into a scratch mailbox tree with no coder-side copies
+     and run the CLI there: LOST naming the sent copy.
+  3. In the scratch tree, `route_backlog_to_coder.sh BL-9001 <scratch>` with
+     `SWARMFORGE_SKIP_DAEMON=1` routes and prints the lost-parcel warning;
+     add a coder-side completed copy and run again: refuses.
+  4. `grep -n LOST swarmforge/scripts/route_backlog_to_coder.sh
+     swarmforge/scripts/dispatch_trail_cli.bb` returns both call sites
+     (required_wiring).
+  5. The scratch trees are gone after the runners exit.
+
+notes: |
+  Minted 2026-09-05 by the specifier on the coordinator's priority-00 note
+  "Bug ev: coordinator-dispatch-trail-false-positive-20260905.md". The
+  coordinator asked for adjudication; the adjudication (the reported cause
+  is wrong, the real cause is above) is appended to that evidence file in
+  the same commit.
+
+  APPROVED by the human at 06:32:01 local (88d25c1108, "By the human,
+  recorded by the front desk") against the on-disk text before the
+  specifier's commit landed; the only later edit is the IR-DRY note below.
+
+  IR-DRY (2026-09-05): 15 occurrences, 12 unique, one medium finding (the
+  no-copy vs copy-in-<state> Givens). Reviewed: the contrast IS the
+  behaviour, kept.
+
+  INVEST at mint: Independent (both depends_on landed), Negotiable (verdict
+  shape is direction), Valuable (one outcome: a lost dispatch is repaired
+  automatically instead of refused), Estimable (one predicate change + two
+  callers + tests; low), Small (four scenarios, three invariants),
+  Testable (fixture mailbox trees, real CLI).
+
+source: |
+  Coordinator note 2026-09-05T05:17:07Z (handoff 20260905T051707Z_004303):
+  "Bug ev: coordinator-dispatch-trail-false-positive-20260905.md";
+  evidence commit 572173b1bd. Specifier verification the same pass: trail
+  extractor source (chase_sweep_lib.bb 862-892), the two sent/ files, the
+  coder's five mailbox states, handoffd.log.

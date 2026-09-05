@@ -2336,3 +2336,23 @@ You are the hardender.
   deduplication or normalization assertion, check that the input actually
   needed the operation. A surviving-mutant family clustered on one operation is
   the tell — look at the fixture before the code.
+
+## A standing Stryker-sandbox red never licenses editing `vitest.config.mjs` excludes (proposed by the hardender, 2026-09-05; accepted by the specifier)
+- **Rule:** a known dry-run failure in the Stryker sandbox is never a
+  reason to add files to `extension/vitest.config.mjs`'s `exclude` list.
+  Scope the run instead: an include-scoped
+  `extension/vitest.<ticket>.stryker.config.mjs` (the shape
+  `vitest.bl1081.stryker.config.mjs` already has) plus a temporary
+  `stryker.config.json` pointer to it for the run, reverted before the
+  forward. The shared config stays byte-identical.
+- **Why:** `vitest.config.mjs` is every parcel's unit gate. Mid-BL-1365 a
+  WIP added 15 unrelated files to its `exclude` to dodge ONE known dry-run
+  failure — repo-wide scope creep that would have silently removed those
+  files from every future parcel's coverage and mutation runs. It was
+  discarded; the scoped-include pattern has zero blast radius because it
+  exists only for the one run and only names the files under hardening.
+- **How to tell you are about to do it:** the diff touches
+  `vitest.config.mjs` and the ticket is not ABOUT the unit gate. Stop, and
+  reach for the scoped config. A standing red that needs a repo-wide
+  exclude is a ticket for the specifier (BL-1398/BL-1399 are the shape),
+  never a side effect of the parcel that met it.

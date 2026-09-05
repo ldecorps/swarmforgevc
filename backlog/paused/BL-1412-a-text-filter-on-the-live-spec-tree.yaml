@@ -1,5 +1,5 @@
 id: BL-1412
-title: "A text filter on the live Spec-tree console (Mini App): typing a term narrows the milestones view and every drill under it to matching tickets with BL-254's semantics, applied by the bridge through the one filterDocsTree; asked by the human ~2026-08-26, lost, resurfaced 2026-08-30 as 'the spec tip text filter'"
+title: "A text filter on the live Spec-tree console (Mini App): typing a term narrows the milestones view and every drill under it to matching tickets with BL-254's semantics, applied by the bridge through the one filterDocsTree; the classic IDE tree filter the human asked for on 2026-08-30 (lost, resurfaced truncated as 'the spec tip text filter')"
 milestone: M8
 type: feature
 status: todo
@@ -14,23 +14,29 @@ required_stages: [coder, cleaner, architect, hardender, documenter, qa]
 acceptance: specs/features/BL-1412-a-text-filter-on-the-live-spec-tree.feature
 
 required_wiring:
-  - 'extension/src/bridge/bridgeServer.ts::filterDocsTree(::the live /spec-tree-state route must CALL the one filter on its computed tree; docsTree.ts exporting it proves nothing (BL-1235); absent today (grep returns 0)'
+  - 'extension/src/bridge/bridgeServer.ts::filterSpecTree(::the live /spec-tree-state route must CALL the one filter on its computed tree; docsTree.ts exporting it proves nothing (BL-1235); absent today (grep returns 0)'
   - 'specs/pipeline/steps/bl1412SpecTreeTextFilterSteps.js::registerSteps::the handler file exists so discovery registers every scenario (BL-1371)'
 
 invariants:
-  - "Exactly one filter implementation serves the live console: docsTree.ts's filterDocsTree, applied by the bridge route; the inline Spec tree script never matches text itself, it only sends the term (the PWA's hand-kept mirror is BL-254's debt, not a licence for a third copy)."
+  - "All matching lives in docsTree.ts and is applied by the bridge route: the ticket match is filterDocsTree reused (never re-implemented, never edited, since pwa/app.js mirrors it by hand), the label match sits beside it in one function, and the inline Spec tree script never matches text, it only sends the term."
   - "Filtering prunes, never regroups: every ticket that matches keeps its full scenario list and the same milestone and epic placement it has in the unfiltered tree, and a ticket that does not match is absent at every level."
   - "The screen stays read-only (BL-592 read-only-gate-06): the term rides a GET query parameter and no request other than GET exists on the spec tree surface after this parcel."
 
 human_approval: pending
 approval_context: >
-  A new feature file is authored here, so it needs a tap. No choice is posed
-  and there are no ruling_options: the filter's semantics are BL-254's, which
+  RE-PENDED deliberately after your Expedite tap (909774421f, 05:18Z): your
+  verbatim words reached the specifier minutes after that tap and changed
+  the feature file (scenario 06, label match) and the ticket text, so the
+  contract you approved is not the one that will be built. Tap Expedite
+  again if the widening below is right; Amend if you meant ticket text only.
+  No choice is posed and there are no ruling_options: the filter's semantics
+  are BL-254's, which
   you already accepted on the static PWA, now on the live Telegram view you
-  named on 2026-09-04. Your original ~2026-08-26 wording is not on record
-  anywhere the specifier can read (support threads, topic records, operator
-  logs, intakes were searched); if it asked for something beyond BL-254's
-  match-title-description-Gherkin filter, say so in Amend.
+  named on 2026-09-04, widened to the classic IDE tree filter your verbatim
+  words describe: a milestone name or epic title that contains the term keeps
+  that node and its whole subtree, and a ticket matches by title, description
+  or scenario text. That widening is the specifier's reading of "entries for
+  which the tree contain that text"; Amend if you meant ticket text only.
 
 description: |
   ## What is wanted, and by whom
@@ -44,42 +50,63 @@ description: |
   hand in `pwa/app.js`. The live console never got it.
 
   Human sentences on record, verbatim (Article 5.3):
+  - The ask, relayed by the coordinator in
+    `backlog/evidence/coordinator-note-2026-09-05-spec-tree-filter-request.md`
+    (commit 8c34efaae5), "Human's own words, verbatim":
+    > tip to only show entries for which the tree contain that text (classic
+    > filter found in every IDE tree structure menu).
+    > august 30.
   - 2026-08-30 Telegram intake `INTAKE-operator-question-1788082425603`,
     arrived truncated: "I haven't seen any detailed around the spec tip
     text filter..."
   - 2026-09-04T08:27Z, SUP-17, answering which surface: "a Telegram view"
   - Coordinator note 2026-09-05T05:08Z (handoff 20260905T050852Z_004272),
     not the human's words: "Mint: filter for Spec-tree milestones view
-    (human asked ~08-26, lost)"
+    (human asked ~08-26, lost)" — the date was corrected by the human to
+    2026-08-30 (same evidence file). The coordinator believed it was minted
+    at the time and lost before reaching the backlog.
 
-  The ~2026-08-26 ask itself is not on record (searched: support threads,
-  `backlog/topics/*.json`, operator logs, intake archives, git log). "spec
-  tip" reads as "spec tree" through the truncation, and the coordinator's
-  note names the same view. This ticket mints the smallest reading:
-  BL-254's filter on the live Spec tree, starting at the milestones view.
+  Reading: "tip" is the human's own word for the control (a place to type;
+  the truncated intake carried the same word). "entries for which the tree
+  contain that text" is the classic IDE tree filter: type a term, entries
+  whose own label or whose subtree contains it stay, everything else hides,
+  and a kept entry's ancestor path stays visible. On this tree that means
+  BL-254's ticket match (title, description, scenario text) plus a label
+  match on milestone names, epic titles and ticket ids, a label match
+  keeping that node's whole subtree. Ticket-text-only was the specifier's first reading
+  (commit af1848ba02) before the verbatim words arrived; widened here.
 
   ## Behaviour
 
   - A filter box on the Spec tree screen, above the crumbs. Typing a term
-    narrows the tree to tickets whose title, description or scenario text
-    contains it, case-insensitively (BL-254 scenarios 01-03). Milestones
-    and epics with no matching ticket disappear; the counts on milestone
-    buttons are match counts.
+    narrows the tree, case-insensitively, to: tickets whose title,
+    description or scenario text contains it (BL-254 scenarios 01-03), and
+    milestones or epics whose name/title contains it, kept with their whole
+    subtree; and tickets whose id contains it (the id is a visible label on
+    this tree, BL-254's match does not cover it). Milestones and epics that
+    neither match by label nor hold a kept ticket disappear; the counts on
+    milestone buttons are counts of kept tickets.
   - The term stays applied across drilling and the crumbs; clearing the
     box restores the full tree; a term that matches nothing shows a
     no-results state naming the term (BL-254 scenarios 05-06).
-  - The bridge applies the filter: `/spec-tree-state?q=<term>` returns
-    `filterDocsTree(computeDocsTree(...), q)` with the unchanged schema
+  - The bridge applies the filter: `/spec-tree-state?q=<term>` returns the
+    filtered tree with the unchanged schema
     (`DOCS_TREE_SCHEMA_VERSION` 2); no `q` (or blank) returns the full
     tree. Token auth is unchanged (`q` is one more query parameter on a
     path already in `QUERY_TOKEN_ELIGIBLE_PATHS`).
 
   ## How (direction, not mandate)
 
+  - `docsTree.ts`: one new exported `filterSpecTree(tree, query)` that
+    REUSES `filterDocsTree` for the ticket match and adds the label match
+    (milestone name, epic title, ticket id; a label match keeps the
+    subtree). Leave
+    `filterDocsTree` itself byte-identical: `pwa/app.js` mirrors it by hand
+    (BL-254) and must stay in sync with what it mirrors.
   - `bridgeServer.ts` `buildJsonRoutes`: the BL-592 entry becomes
-    `compute: (url) => filterDocsTree(computeDocsTree(targetPath, nowMs),
+    `compute: (url) => filterSpecTree(computeDocsTree(targetPath, nowMs),
     queryParams(url).get('q') ?? '')` — the GH-23 entry beside it already
-    takes `url`. Import `filterDocsTree` from `../docs/docsTree`.
+    takes `url`. Import from `../docs/docsTree`.
   - `specTreeUiHtml.ts`: an `<input type="search" data-testid="spec-tree-filter">`;
     `refresh()` appends `&q=` when non-blank, debounced (~250 ms) on input;
     `render()` shows the no-results state when the filtered tree has no
@@ -101,9 +128,9 @@ description: |
 
   - Filtering the static PWA (BL-254, shipped) or reconciling its hand-kept
     mirror of `filterDocsTree` with the TS original — BL-254's recorded debt.
-  - Matching on fields beyond title/description/scenario text (labels,
-    epic titles, milestone names): not in BL-254 and not asked for on
-    record; if the human's Amend names one, it is a scope change here.
+  - Matching on anything but ticket title/description/scenario text and
+    the visible labels (milestone name, epic title, ticket id); statuses,
+    priorities and other YAML fields do not match.
   - Any write path on the Spec tree.
 
 qa_e2e_procedure: |
@@ -114,8 +141,8 @@ qa_e2e_procedure: |
      passes all eight scenario runs; BL-592's feature still passes
      (read-only-gate-06 included).
   2. Live: open the Mini App console from Telegram, Spec tree. Type a term
-     that matches one ticket (its own id is enough, e.g. `BL-1412` once
-     this ticket is on the checkout): the milestones list shrinks to one
+     that matches one ticket (a distinctive word from its title): the
+     milestones list shrinks to one
      entry with count 1; drill to the ticket; clear the box; every
      milestone returns with its full count. Type `zzzz-no-such-term`: the
      no-results state names the term.
@@ -124,12 +151,33 @@ qa_e2e_procedure: |
      pruned to those tickets; the same URL without `q` returns the full
      tree.
   4. Invariant 1: `grep -c 'toLowerCase' extension/src/bridge/specTreeUiHtml.ts`
-     returns 0 and `grep -n 'filterDocsTree(' extension/src/bridge/bridgeServer.ts`
-     returns the route line (required_wiring).
+     returns 0, `grep -n 'filterSpecTree(' extension/src/bridge/bridgeServer.ts`
+     returns the route line (required_wiring), and `git diff <base> --
+     extension/src/docs/docsTree.ts` shows `filterDocsTree`'s body untouched.
+  4b. Label match, live: type a milestone name (e.g. `M8`): that milestone
+     stays with its full count; type an epic tracker's title fragment: the
+     epic stays under each milestone it appears in, with all its tickets.
   5. Invariant 3: the diff adds no route whose method is not GET, and no
      `fetch(` with a method in the inline script.
 
 notes: |
+  RE-PENDED 2026-09-05 (specifier): `human_approval` was `approved` by the
+  human's Expedite tap at 05:18Z (909774421f, "By the human, recorded by
+  the front desk") against the af1848ba02 text. The amendment below changed
+  the feature file after that tap, so the field is set back to `pending`
+  deliberately, per the specifier rule that a changed feature file is
+  re-flagged for review; this is not an erased approval. The specifier never
+  writes `approved`.
+
+  AMENDED 2026-09-05 (specifier, same pass, ticket still paused, no parcel):
+  the coordinator's follow-up evidence
+  `backlog/evidence/coordinator-note-2026-09-05-spec-tree-filter-request.md`
+  brought the human's verbatim words and corrected the ask date to 08-30.
+  Title, approval_context, description, How, invariant 1, wiring anchor 1
+  and e2e step 4 amended; feature scenario 06 (label match keeps the
+  subtree) added and the narrative re-dated. Commit af1848ba02 is the
+  pre-amendment text.
+
   Minted 2026-09-05 by the specifier on the coordinator's priority-00 note
   "Mint: filter for Spec-tree milestones view (human asked ~08-26, lost)",
   which drains root intake `INTAKE-operator-question-1788082425603`
@@ -157,7 +205,11 @@ notes: |
   two items, both one physical line.
 
 source: |
-  Coordinator note 2026-09-05T05:08:52Z (handoff
+  Human's verbatim words, relayed by the coordinator in
+  `backlog/evidence/coordinator-note-2026-09-05-spec-tree-filter-request.md`
+  (8c34efaae5): "tip to only show entries for which the tree contain that
+  text (classic filter found in every IDE tree structure menu)." / "august
+  30." Coordinator note 2026-09-05T05:08:52Z (handoff
   20260905T050852Z_004272_from_coordinator): "Mint: filter for Spec-tree
   milestones view (human asked ~08-26, lost)". Root intake
   `INTAKE-operator-question-1788082425603.md` (2026-08-30, human via

@@ -6,15 +6,21 @@ Feature: BL-1412 A text filter on the live Spec-tree console narrows the milesto
   PWA has had exactly that since BL-254: a case-insensitive substring
   filter over a ticket's title, description and scenario text that prunes
   the tree to matching tickets while keeping the hierarchy. The human asked
-  for it on the Telegram view around 2026-08-26; the ask was lost,
-  resurfaced truncated on 2026-08-30 as "...the spec tip text filter...",
-  and was pinned to "a Telegram view" on 2026-09-04.
+  for it on the Telegram view on 2026-08-30, in these words: "tip to only
+  show entries for which the tree contain that text (classic filter found
+  in every IDE tree structure menu)." The ask was lost, resurfaced
+  truncated the same day as "...the spec tip text filter...", and was
+  pinned to "a Telegram view" on 2026-09-04.
 
-  This feature is that the Spec tree screen carries a filter box with
-  BL-254's semantics, applied by the bridge through the one existing
-  filterDocsTree: the milestones view and every drill under it show only
-  tickets that match, counts follow, clearing restores the full tree, and a
-  term that matches nothing says so. The screen stays read-only.
+  This feature is that the Spec tree screen carries a filter box behaving
+  as the classic IDE tree filter: a ticket is kept when its title,
+  description or scenario text contains the term (BL-254's match, reused),
+  a milestone, epic or ticket is kept with its whole subtree when its own
+  label (name, title or id) contains the term, every kept entry's ancestor
+  path stays visible, counts
+  follow, clearing restores the full tree, and a term that matches nothing
+  says so. All matching is done once, in the bridge. The screen stays
+  read-only.
 
   Background:
     Given the live Mini App console spec tree screen is open over a checkout with tickets in more than one milestone
@@ -56,3 +62,16 @@ Feature: BL-1412 A text filter on the live Spec-tree console narrows the milesto
     When the spec tree state is requested with a query term
     Then the response keeps the unfiltered schema and carries only matching tickets with their pruned hierarchy
     And the same request without a query term returns the full tree
+
+  # BL-1412 a-label-match-keeps-the-subtree-06
+  Scenario Outline: a term contained only in an entry's own label keeps that entry with its whole subtree
+    Given a term contained only in <label> and in no ticket's text
+    When the human types that term into the filter box
+    Then that entry is listed with its full count
+    And drilling into it shows every ticket beneath it, none hidden
+
+    Examples:
+      | label                          |
+      | one milestone's name           |
+      | one epic tracker's title       |
+      | one ticket's id                |
