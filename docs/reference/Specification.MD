@@ -1,5 +1,23 @@
 # SwarmForge VS Code Extension — Specification
 
+**Last Updated:** September 5, 2026 (BL-1418: the Art Director (Article
+1.10, human directive "introduce new role: Art Director ... look at the
+look and feel on artifacts produced by the swarm") is now a real,
+addressable seat — standing pane (human ruling), outside the forward
+chain like the coordinator. `swarmforge/packs/full-forge.conf` gains its
+`window art-director` line; `prepare_worktrees` derives
+`.worktrees/art-director` on branch `primary/art-director`; every
+SWARM-ROLES enumeration (`roleTopicMapStore.ALL_SWARM_ROLES`,
+`topicIcon.ts`'s `RoleTopicIconRole`/`ROLE_TOPIC_ICON` map — icon `🔮`,
+colliding with no other role's — `model_factory_lib.bb`'s `swarm-roles`)
+names it, while every pipeline-CHAIN list (`PIPELINE_CHAIN`,
+`PIPELINE_ORDER`, `KNOWN_PRODUCING_ROLES`, `required_stages_lib.bb`,
+`routing_manifest_lib.bb`) stays untouched — the Art Director is not a
+stage a parcel is ever handed to, and a new standing test pins that
+classification for the next role added. Acceptance:
+`specs/features/BL-1418-the-art-director-seat-is-addressable.feature`.
+How-to: [BL-1418](../how-to/BL-1418-the-art-director-seat-is-addressable.md).)
+Prior entry —
 **Last Updated:** September 5, 2026 (BL-1419, human directive "reflow text
 in daily briefing email, make it better looking overall": the briefing
 email's HTML part now joins a hard-wrapped markdown block's source lines
