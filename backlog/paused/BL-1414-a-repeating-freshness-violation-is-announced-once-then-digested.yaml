@@ -110,6 +110,20 @@ notes: |
   storm that prompted it; this ticket is the human's actual ask and stands
   on its own for any future persistent violation.
 
+  APPROVED + EXPEDITED by the human at 06:32:25 local (7d3d61dba4, "By the
+  human, recorded by the front desk") against the on-disk text, seconds
+  after the file was written and before the specifier's commit landed; the
+  BL-1415 tap (88d25c1108) came the same way. The only later edit is a
+  meaning-preserving IR-DRY normalization of one step in scenario 03 ("the
+  next tick finds it stale" -> "a tick finds it stale") plus these notes;
+  not re-pended, since no behaviour changed. BL-1413 (the false-alarm root
+  cause) is still awaiting its tap and should land first.
+
+  IR-DRY (2026-09-05): 19 occurrences, one near-duplicate ("the next tick
+  finds it stale" vs "a tick finds it stale") normalized to the latter in
+  scenario 03; the remaining medium findings are stale/fresh and
+  violation/recovery/new-violation contrasts, deliberate, kept.
+
   INVEST at mint: Independent (BL-1011 landed; BL-1413 is a sibling, not a
   prerequisite), Negotiable (state location is direction), Valuable (one
   outcome: one message per transition), Estimable (one decision function +
