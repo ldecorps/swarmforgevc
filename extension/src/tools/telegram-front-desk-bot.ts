@@ -2586,7 +2586,9 @@ function buildPollAdapters(
     // BL-1083: hands back the WHOLE result, refusal included - the gates can
     // now refuse this promotion, and a refusal the operator is not told about
     // is the silent no-op invariant 2 forbids.
-    promoteTicketIfPaused: (backlogId) => Promise.resolve(promoteToActive(targetPath, backlogId)),
+    // BL-1425: forwards the caller-declared queueJump option unchanged - the
+    // crossing rule itself lives only in promotion_gates_lib.bb.
+    promoteTicketIfPaused: (backlogId, options) => Promise.resolve(promoteToActive(targetPath, backlogId, options)),
     commitExpediteWrites: (backlogId, sourcePath) => commitExpediteWrites(targetPath, backlogId, sourcePath),
     // BL-892: every other automated human_approval writer's own commit
     // step - shares commitApprovalWrites (util/commitIntegrityRunner.ts)

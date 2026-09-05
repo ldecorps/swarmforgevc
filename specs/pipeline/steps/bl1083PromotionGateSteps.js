@@ -162,6 +162,10 @@ function registerSteps(registry) {
 
   // ── 02 ───────────────────────────────────────────────────────────────────
   scoped(/^a paused ticket the promotion gates refuse for (\S+)$/, (ctx, gate) => {
+    // BL-1425 (reverses this row): active_backlog_max_depth is no longer a
+    // gate an Expedite always refuses for - a queue-jump crosses it
+    // deliberately. Only depends_on and hold remain in this Outline's
+    // Examples.
     ctx.expectedGate = gate === 'hold' ? 'hold marker' : gate;
     if (gate === 'depends_on') {
       ctx.root = mkFixture();
@@ -173,9 +177,7 @@ function registerSteps(registry) {
       ctx.ticketFile = writeTicket(ctx.root, 'hold', TICKET_ID, 'human_approval: pending\ndepends_on: []\n');
       ctx.startFolder = 'hold';
     } else {
-      ctx.root = mkFixture({ maxDepth: 1 });
-      writeTicket(ctx.root, 'active', DEP_ID, '');
-      ctx.ticketFile = writeTicket(ctx.root, 'paused', TICKET_ID, 'human_approval: pending\ndepends_on: []\n');
+      throw new Error(`unknown <gate>: ${gate}`);
     }
     ctx.startFolder = ctx.startFolder ?? 'paused';
   });
