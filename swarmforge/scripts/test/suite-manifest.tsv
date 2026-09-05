@@ -259,6 +259,7 @@ test_daemon_log_freshness.sh	standing
 test_dispatch_gap_autoroute.sh	standing		
 test_dispatch_lib_receive_mode.sh	standing		
 test_done_with_current_arg_rejection.sh	standing		
+test_done_with_current_work_note_evidence.sh	standing		
 test_effective_backlog_depth_cli.sh	standing		
 test_ensure_commit_size_guard.sh	standing		
 test_expedite_cli.sh	standing		

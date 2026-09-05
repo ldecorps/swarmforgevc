@@ -2520,6 +2520,21 @@ Responsibilities:
 - Run inside one agent worktree.
 - Require exactly one file in `inbox/in_process/`.
 - Refuse to run if `inbox/in_process/` contains a batch directory.
+- Refuse argv other than none or `--no-work "<reason>"` (non-blank),
+  before touching anything (BL-652, BL-1422 below).
+- **BL-1422 — Work-note evidence gate.** If the in-process file is a Work
+  dispatch note (`chase-sweep-lib/dispatch-trail-ticket-id` on its
+  `message` header is non-nil), refuse (exit 1, `WORK_NOT_EVIDENCED: ...`,
+  no side effects, the file stays in_process) unless one of:
+  - a commit on the role's current branch since the note's own
+    `dequeued_at`, whose subject's leading ticket id exactly matches, or
+  - a `git_handoff` in the role's own `outbox/` or `sent/` mailbox created
+    since `dequeued_at` whose `task:` header names the ticket, or
+  - the invocation carried `--no-work "<reason>"`, in which case complete
+    and stamp `no_work_reason` and `no_work_at` onto the completed file
+    instead of requiring evidence.
+  Every non-Work note and every `git_handoff` skips this gate entirely and
+  completes exactly as below.
 - Add or update `completed_at`.
 - Move the file to `inbox/completed/`.
 - Print the completed task path.
