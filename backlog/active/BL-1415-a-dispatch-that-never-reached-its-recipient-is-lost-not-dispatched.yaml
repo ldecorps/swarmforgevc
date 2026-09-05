@@ -180,3 +180,5 @@ source: |
   chase_sweep_lib.bb `newest-trail-event-ms` / `handoff-event-ms`,
   `decide-dropped-parcel?`, the coder's worktree mailbox headers, the
   coder pane at 06:46 local ("Retrying the BL-1402 commit").
+
+assigned_to: coder
