@@ -1,3 +1,8 @@
+# mutation-stamp: sha256=f78a5c1c9ca2425b4422e97f5b2e704f2e0d898d25eca393e4f64e96bd0196db
+# acceptance-mutation-manifest-begin
+# {"version":1,"tested_at":"2026-09-05T21:20:19.073410652Z","feature_name":"BL-1415 The dropped-parcel clock starts when the recipient acts on a dispatch, and the router acts on the same verdict","feature_path":"/home/carillon/swarmforgevc/.worktrees/hardender/specs/features/BL-1415-a-dispatch-that-never-reached-its-recipient-is-lost-not-dispatched.feature","background_hash":"5d0773ec1efa03f810e9a82e78b42fd5f7e6c01a80a3b43203fd2d25826b502d","implementation_hash":"unknown","scenarios":[{"index":1,"name":"a dispatch the recipient acted on less than the threshold ago is not a drop","scenario_hash":"87ba35e380ac299dea5022051f1604fa6b64cd77585e93bb9278d8c1c2653356","mutation_count":2,"result":{"Total":2,"Killed":2,"Survived":0,"Errors":0},"tested_at":"2026-09-05T21:20:19.073410652Z"}]}
+# acceptance-mutation-manifest-end
+
 Feature: BL-1415 The dropped-parcel clock starts when the recipient acts on a dispatch, and the router acts on the same verdict
 
   The dropped-parcel sweep (BL-1301) reports an active ticket as "no parcel
