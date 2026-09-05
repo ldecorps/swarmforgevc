@@ -1,3 +1,7 @@
+# acceptance-mutation-manifest-begin
+# {"version":1,"tested_at":"2026-09-05T08:32:25.232942055Z","feature_name":"BL-1416 The auth-class observer never counts a busy pane, and skipped respawns never reach the persist alert","feature_path":"/home/carillon/swarmforgevc/.worktrees/hardender/specs/features/BL-1416-a-busy-pane-is-never-auth-dead.feature","background_hash":"4aa155f329af3bb039678c31eae83f2e4bdfe965300c2417f6c18e25e9a366d9","implementation_hash":"unknown","scenarios":[]}
+# acceptance-mutation-manifest-end
+
 Feature: BL-1416 The auth-class observer never counts a busy pane, and skipped respawns never reach the persist alert
 
   BL-536's observer captures each role's visible pane every tick and
