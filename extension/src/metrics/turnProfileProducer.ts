@@ -1,7 +1,7 @@
 import * as fs from 'fs';
 import * as path from 'path';
 import { INTERVAL_CATEGORIES, coverageFromIntervals, walkTranscriptFiles } from './transcriptWalker';
-import type { HandoffTrailEntry, IntervalCategory } from './transcriptWalker';
+import type { ClassifiedInterval, HandoffTrailEntry, IntervalCategory } from './transcriptWalker';
 import { buildTurnProfileSeries } from './turnProfile';
 import { listTranscriptJsonlPaths } from './transcriptUsage';
 import { RoleWorktree, groupRolesByWorktreePath } from './swarmMetrics';
@@ -114,15 +114,20 @@ export function assessTranscriptReadability(transcriptPaths: string[]): Transcri
 }
 
 /**
- * Fail closed: one unreadable transcript in the window and NO stage from that
- * window reports a share. Reporting the readable remainder would publish a
- * number that looks like a measurement and is not one.
+ * The ONE place a window record is assembled. Both entry points below go
+ * through it: the shape was briefly built twice and `window_day` had to be
+ * added to each copy, which is precisely how two builders of the same record
+ * drift apart (BL-897's shape, one level down).
+ *
+ * Fail closed: one unreadable transcript and NO stage from that window
+ * reports a share. Reporting the readable remainder would publish a number
+ * that looks like a measurement and is not one.
  */
-export function buildTurnProfileWindowRecord(params: {
-  transcriptPaths: string[];
-  handoffTrail?: HandoffTrailEntry[];
-}): TurnProfileWindowRecord {
-  const { readable, unreadable, truncatedTail } = assessTranscriptReadability(params.transcriptPaths);
+function assembleWindowRecord(
+  intervals: ClassifiedInterval[],
+  unreadable: string[],
+  truncatedTail: string[]
+): TurnProfileWindowRecord {
   if (unreadable.length > 0) {
     return {
       window_day: null,
@@ -134,13 +139,12 @@ export function buildTurnProfileWindowRecord(params: {
       stages: [],
     };
   }
-
-  const walked = walkTranscriptFiles(readable, params.handoffTrail ?? []);
-  const series = buildTurnProfileSeries(walked.intervals, walked.coverageWindow);
-  const endIso = walked.coverageWindow ? new Date(walked.coverageWindow.endMs).toISOString() : null;
+  const coverage = coverageFromIntervals(intervals);
+  const series = buildTurnProfileSeries(intervals, coverage);
+  const endIso = coverage ? new Date(coverage.endMs).toISOString() : null;
   return {
     window_day: endIso ? endIso.slice(0, 10) : null,
-    window_start: walked.coverageWindow ? new Date(walked.coverageWindow.startMs).toISOString() : null,
+    window_start: coverage ? new Date(coverage.startMs).toISOString() : null,
     window_end: endIso,
     complete: true,
     unreadable_transcripts: [],
@@ -155,6 +159,19 @@ export function buildTurnProfileWindowRecord(params: {
       category_shares: entry.categoryShares,
     })),
   };
+}
+
+/**
+ * Single-group entry point: stages come from time-matching a handoff trail.
+ */
+export function buildTurnProfileWindowRecord(params: {
+  transcriptPaths: string[];
+  handoffTrail?: HandoffTrailEntry[];
+}): TurnProfileWindowRecord {
+  const { readable, unreadable, truncatedTail } = assessTranscriptReadability(params.transcriptPaths);
+  const intervals =
+    unreadable.length > 0 ? [] : walkTranscriptFiles(readable, params.handoffTrail ?? []).intervals;
+  return assembleWindowRecord(intervals, unreadable, truncatedTail);
 }
 
 export interface TranscriptGroup {
@@ -175,7 +192,7 @@ export interface TranscriptGroup {
  * stage in it was measured over the same window (invariant 2).
  */
 export function buildTurnProfileWindowForGroups(groups: TranscriptGroup[]): TurnProfileWindowRecord {
-  const intervals = [];
+  const intervals: ClassifiedInterval[] = [];
   const unreadable: string[] = [];
   const truncatedTail: string[] = [];
   for (const group of groups) {
@@ -185,41 +202,11 @@ export function buildTurnProfileWindowForGroups(groups: TranscriptGroup[]): Turn
     if (readability.unreadable.length > 0) {
       continue;
     }
-    const walked = walkTranscriptFiles(readability.readable);
-    for (const row of walked.intervals) {
+    for (const row of walkTranscriptFiles(readability.readable).intervals) {
       intervals.push({ ...row, stage: group.stage });
     }
   }
-
-  if (unreadable.length > 0) {
-    return {
-      window_day: null,
-      window_start: null,
-      window_end: null,
-      complete: false,
-      unreadable_transcripts: unreadable,
-      truncated_tail_transcripts: truncatedTail,
-      stages: [],
-    };
-  }
-
-  const coverage = coverageFromIntervals(intervals);
-  const series = buildTurnProfileSeries(intervals, coverage);
-  const endIso = coverage ? new Date(coverage.endMs).toISOString() : null;
-  return {
-    window_day: endIso ? endIso.slice(0, 10) : null,
-    window_start: coverage ? new Date(coverage.startMs).toISOString() : null,
-    window_end: endIso,
-    complete: true,
-    unreadable_transcripts: [],
-    truncated_tail_transcripts: truncatedTail,
-    stages: series.stages.map((entry) => ({
-      stage: entry.stage,
-      mechanical_share: entry.mechanicalShare.value,
-      turn_overhead_share: entry.turnOverheadShare.value,
-      category_shares: entry.categoryShares,
-    })),
-  };
+  return assembleWindowRecord(intervals, unreadable, truncatedTail);
 }
 
 /** Idempotency key: one row per UTC day - see TurnProfileWindowRecord.window_day. */
