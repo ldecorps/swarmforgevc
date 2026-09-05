@@ -21,7 +21,7 @@ depends_on: []
 mutation_cost: low
 slice_size_envelope: low
 required_stages: [coder, cleaner, architect, hardender, documenter, qa]
-acceptance: specs/features/BL-1312-fixture-root-signal-cleanup.feature.draft
+acceptance: specs/features/BL-1312-fixture-root-signal-cleanup.feature
 required_wiring:
   - "specs/pipeline/steps/bl1312FixtureRootSignalCleanupSteps.js::registerSteps::this ticket converts its own .feature.draft to .feature in-parcel, so the handler must be REGISTERED in the same commit - specs/pipeline/runtime.js THROWS on any scenario with no handler, and an unregistered file turns the whole suite red for every other parcel rather than skipping quietly. Verified absent from index.js at spec time, so the anchor cannot pass before the work is done.; repointed 2026-09-04 after BL-1371 discovery - the handler file IS the registration and index.js names nothing"
 
