@@ -101,6 +101,34 @@ set -e
 check "discharge: no matching row refuses (nonzero exit)" '[[ "$NO_MATCH_EXIT" -ne 0 ]]'
 check "discharge: row count still 2 after the refused discharge" "[[ \"\$(row_count)\" -eq 2 ]]"
 
+# ── BL-1439 amendment: --attempt marks the row, never discharges it ───────
+bb "$DEFER_CLI" "$ROOT" --attempt BL-917 CRAP "mutation_cooldown_gate.bb: skip-cooldown" 2026-09-06 >/dev/null
+check "attempt: still 2 rows - never deleted" "[[ \"\$(row_count)\" -eq 2 ]]"
+check "attempt: the row gains attempted_at" '[[ "$(ledger)" == *"attempted_at: 2026-09-06"* ]]'
+check "attempt: the row gains attempted_blocker" \
+  '[[ "$(ledger)" == *"attempted_blocker: \"mutation_cooldown_gate.bb: skip-cooldown\""* ]]'
+check "attempt: the row is NOT discharged (invariant 3)" \
+  '! grep -A10 "^- parcel: BL-917$" "$ROOT/backlog/hardening-debt-ledger.yaml" | grep -q discharged_at'
+
+READ_AFTER_ATTEMPT="$(bb "$READ_CLI" "$ROOT")"
+check "read: an attempted row shows attempted_blocker, discharged_at still null" \
+  '[[ "$READ_AFTER_ATTEMPT" == *"\"parcel\":\"BL-917\","*"\"attempted_blocker\":\"mutation_cooldown_gate.bb: skip-cooldown\""*"\"discharged_at\":null"* ]]'
+
+# ── --attempt with no blocker text refuses, nothing written ───────────────
+set +e
+bb "$DEFER_CLI" "$ROOT" --attempt BL-915 mutation "" >/dev/null 2>&1
+NO_BLOCKER_EXIT=$?
+set -e
+check "attempt: missing blocker text refuses (nonzero exit)" '[[ "$NO_BLOCKER_EXIT" -ne 0 ]]'
+
+# ── --attempt naming no matching row refuses, nothing written ─────────────
+set +e
+bb "$DEFER_CLI" "$ROOT" --attempt BL-999-no-such-parcel mutation "some blocker" >/dev/null 2>&1
+NO_MATCH_ATTEMPT_EXIT=$?
+set -e
+check "attempt: no matching row refuses (nonzero exit)" '[[ "$NO_MATCH_ATTEMPT_EXIT" -ne 0 ]]'
+check "attempt: row count still 2 after the refused attempt" "[[ \"\$(row_count)\" -eq 2 ]]"
+
 if [[ "$fail" -eq 0 ]]; then
   echo "hardening_debt_ledger CLI wiring: ALL CHECKS PASSED"
 else

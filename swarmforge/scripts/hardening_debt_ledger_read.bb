@@ -39,9 +39,11 @@
     (if (fs/exists? p) (hdl/parse-ledger (slurp (str p))) [])))
 
 (defn- ->json-row [{:keys [parcel gate file-set reason load detected-at
-                          discharged-at discharged-evidence]}]
+                          discharged-at discharged-evidence
+                          attempted-at attempted-blocker]}]
   {:parcel parcel :gate gate :file_set file-set :reason reason :load load :detected_at detected-at
-   :discharged_at discharged-at :discharged_evidence discharged-evidence})
+   :discharged_at discharged-at :discharged_evidence discharged-evidence
+   :attempted_at attempted-at :attempted_blocker attempted-blocker})
 
 (defn -main [& args]
   (let [[project-root & rest-args] args]

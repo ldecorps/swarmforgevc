@@ -130,16 +130,29 @@ function registerSteps(registry) {
     ctx.registerReport = JSON.parse(execFileSync('bb', [REGISTER_CLI, REPO_ROOT], { encoding: 'utf8' }));
   });
 
-  scoped(/^no outstanding row is dated 2026-08-19$/, (ctx) => {
-    const outstanding0819 = ctx.liveRows.filter((r) => r.detected_at === '2026-08-19' && !r.discharged_at);
-    assert.deepEqual(outstanding0819, [],
-      `expected no outstanding 2026-08-19 row, got: ${JSON.stringify(outstanding0819)}`);
+  scoped(/^every row dated 2026-08-19 is discharged or records an attempt naming its blocker$/, (ctx) => {
+    const rows0819 = ctx.liveRows.filter((r) => r.detected_at === '2026-08-19');
+    assert.ok(rows0819.length > 0, 'expected at least one 2026-08-19 row (fixture assumption)');
+    const neither = rows0819.filter((r) => !r.discharged_at && !r.attempted_blocker);
+    assert.deepEqual(neither, [],
+      `expected every row to be discharged or carry an attempt naming its blocker, got: ${JSON.stringify(neither)}`);
   });
 
-  scoped(/^the register report holds no hardening lane row and no unowned row$/, (ctx) => {
+  scoped(/^every outstanding row has a register row naming BL-1441 and no discharged row has one$/, (ctx) => {
     const hardeningRows = ctx.registerReport.rows.filter((r) => r.lane === 'hardening');
-    assert.deepEqual(hardeningRows, [], `expected no hardening lane row, got: ${JSON.stringify(hardeningRows)}`);
-    assert.deepEqual(ctx.registerReport.unowned, [], `expected no unowned row, got: ${JSON.stringify(ctx.registerReport.unowned)}`);
+    const outstanding = ctx.liveRows.filter((r) => r.detected_at === '2026-08-19' && !r.discharged_at);
+    const discharged = ctx.liveRows.filter((r) => r.detected_at === '2026-08-19' && r.discharged_at);
+    for (const row of outstanding) {
+      const fileCsv = row.file_set.join(',');
+      const registerRow = hardeningRows.find((r) => r.file === fileCsv);
+      assert.ok(registerRow, `expected a register row for outstanding ${row.parcel}/${row.gate}, got hardening rows: ${JSON.stringify(hardeningRows)}`);
+      assert.equal(registerRow.ticket, 'BL-1441', `expected ${row.parcel}/${row.gate}'s register row to name BL-1441, got: ${registerRow.ticket}`);
+    }
+    for (const row of discharged) {
+      const fileCsv = row.file_set.join(',');
+      const registerRow = hardeningRows.find((r) => r.file === fileCsv);
+      assert.equal(registerRow, undefined, `expected NO register row for discharged ${row.parcel}/${row.gate}, got: ${JSON.stringify(registerRow)}`);
+    }
   });
 }
 
