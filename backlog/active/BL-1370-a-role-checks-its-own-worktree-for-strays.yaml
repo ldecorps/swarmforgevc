@@ -185,5 +185,6 @@ source: |
   commit-classification pass - the sweep's method counts commits, and this
   ritual leaves none.
 bounce_count: 1
+abandoned_commits: [d6e44499b7]
 bounce_history:
   - { at: 2026-09-05, by: cleaner, blamed: coder, class: spec-gap, commit: 12b538c4b9, evidence: backlog/evidence/BL-1370-cleaner-bounce-20260905.md }
