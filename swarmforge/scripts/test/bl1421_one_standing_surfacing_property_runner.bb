@@ -91,24 +91,25 @@
 (check-all "P1: sweep!'s per-tick tell/no-tell pattern matches an independent reference state machine"
   gen-p1
   (fn [caught-ups]
-    (let [dir (str (fs/create-temp-dir {:prefix "bl1421-p1-"}))
-          tells (atom [])
-          box (atom {:caught-up false})
-          adapters {:role-facts! (fn [_] {:head-sha "role-head" :dirty? true :in-process? false :can-ff? false})
-                    :fast-forward! (fn [_ _] {:success true})
-                    :caught-up-to-told? (fn [_ _] (:caught-up @box))
-                    :tell! (fn [_ _ _ _] (swap! tells conj true) {:success true})
-                    :log! (fn [& _] nil)}
-          actual (mapv (fn [i caught-up]
-                         (reset! box {:caught-up caught-up})
-                         (let [before (count @tells)]
-                           (post-qa-branch-sweep-lib/sweep! dir (str "sha-" i) ["coder"] adapters)
-                           (> (count @tells) before)))
-                       (range (count caught-ups)) caught-ups)
-          expected (reference-tell-pattern caught-ups)]
-      (fs/delete-tree dir)
-      (or (= expected actual)
-          (str "expected pattern " (pr-str expected) " got " (pr-str actual))))))
+    (let [dir (str (fs/create-temp-dir {:prefix "bl1421-p1-"}))]
+      (try
+        (let [tells (atom [])
+              box (atom {:caught-up false})
+              adapters {:role-facts! (fn [_] {:head-sha "role-head" :dirty? true :in-process? false :can-ff? false})
+                        :fast-forward! (fn [_ _] {:success true})
+                        :caught-up-to-told? (fn [_ _] (:caught-up @box))
+                        :tell! (fn [_ _ _ _] (swap! tells conj true) {:success true})
+                        :log! (fn [& _] nil)}
+              actual (mapv (fn [i caught-up]
+                             (reset! box {:caught-up caught-up})
+                             (let [before (count @tells)]
+                               (post-qa-branch-sweep-lib/sweep! dir (str "sha-" i) ["coder"] adapters)
+                               (> (count @tells) before)))
+                           (range (count caught-ups)) caught-ups)
+              expected (reference-tell-pattern caught-ups)]
+          (or (= expected actual)
+              (str "expected pattern " (pr-str expected) " got " (pr-str actual))))
+        (finally (fs/delete-tree dir))))))
 
 ;; ── P2: in-process work always surfaces as in-process-work, never woken ───
 
@@ -154,22 +155,23 @@
 (check-all "P3: a tell! that throws for some roles withholds nothing from the others"
   gen-p3
   (fn [{:keys [roles throw-mask]}]
-    (let [dir (str (fs/create-temp-dir {:prefix "bl1421-p3-"}))
-          told (atom #{})
-          throwing (set (keep (fn [[r t?]] (when t? r)) (map vector roles throw-mask)))
-          adapters {:role-facts! (fn [_] {:head-sha "role-head" :dirty? true :in-process? false :can-ff? false})
-                    :fast-forward! (fn [_ _] {:success true})
-                    :caught-up-to-told? (fn [_ _] false)
-                    :tell! (fn [role _ _ _]
-                             (if (contains? throwing role)
-                               (throw (Exception. (str role " mailbox unwritable")))
-                               (do (swap! told conj role) {:success true})))
-                    :log! (fn [& _] nil)}
-          expected-told (clojure.set/difference (set roles) throwing)]
-      (post-qa-branch-sweep-lib/sweep! dir "landed-sha" roles adapters)
-      (fs/delete-tree dir)
-      (or (= expected-told @told)
-          (str "expected told=" (pr-str expected-told) " got " (pr-str @told))))))
+    (let [dir (str (fs/create-temp-dir {:prefix "bl1421-p3-"}))]
+      (try
+        (let [told (atom #{})
+              throwing (set (keep (fn [[r t?]] (when t? r)) (map vector roles throw-mask)))
+              adapters {:role-facts! (fn [_] {:head-sha "role-head" :dirty? true :in-process? false :can-ff? false})
+                        :fast-forward! (fn [_ _] {:success true})
+                        :caught-up-to-told? (fn [_ _] false)
+                        :tell! (fn [role _ _ _]
+                                 (if (contains? throwing role)
+                                   (throw (Exception. (str role " mailbox unwritable")))
+                                   (do (swap! told conj role) {:success true})))
+                        :log! (fn [& _] nil)}
+              expected-told (clojure.set/difference (set roles) throwing)]
+          (post-qa-branch-sweep-lib/sweep! dir "landed-sha" roles adapters)
+          (or (= expected-told @told)
+              (str "expected told=" (pr-str expected-told) " got " (pr-str @told))))
+        (finally (fs/delete-tree dir))))))
 
 ;; ── P1b (also invariant 1): record-surface! upserts - at most ONE entry per
 ;;    (role, reason), always naming the LAST landed-sha it was called with.

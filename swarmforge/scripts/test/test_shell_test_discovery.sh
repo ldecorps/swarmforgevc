@@ -9,6 +9,7 @@ SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 REPO_ROOT="$(cd "$SCRIPT_DIR/../../.." && pwd)"
 CLI="$SCRIPT_DIR/shell_test_discovery_cli.bb"
 LIB="$SCRIPT_DIR/shell_test_discovery_lib.bb"
+source "$SCRIPT_DIR/lib/tmp_cleanup.sh"
 
 fail() { echo "FAIL: $*" >&2; exit 1; }
 pass() { echo "PASS: $*"; }
@@ -17,6 +18,7 @@ pass() { echo "PASS: $*"; }
 mk_repo() {
   local d
   d="$(mktemp -d)"
+  register_tmp_dir "$d"
   git -C "$d" init -q
   git -C "$d" config user.email t@t
   git -C "$d" config user.name t

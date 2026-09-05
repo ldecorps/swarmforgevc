@@ -29,6 +29,12 @@ forced_result_from_argv() {
 run_coder_loop_phases() {
   local work claim_dir src handoff_file
   work="$(mktemp -d "${TMPDIR:-/tmp}/bl1127-battery.XXXXXX")"
+  # BL-1289: an EXIT trap, not only the manual rm -rf before each return
+  # below - those miss a `set -e` early death between mktemp and the next
+  # guarded check. This function runs inside a `$(...)` subshell (its sole
+  # caller), so the trap fires when that subshell exits, not the outer script.
+  # shellcheck disable=SC2064
+  trap "rm -rf '$work'" EXIT
   claim_dir="$work/.swarmforge/claim"
   src="$work/src/widget.txt"
   handoff_file="$work/tmp/handoff.txt"

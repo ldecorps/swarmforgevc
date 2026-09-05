@@ -21,6 +21,10 @@
   (load-file (str (fs/path script-dir ".." "handoffd_supervisor.bb"))))
 
 (def failures (atom []))
+
+(def created-temp-dirs (atom [fixture-root]))
+(.addShutdownHook (Runtime/getRuntime)
+                   (Thread. (fn [] (doseq [d @created-temp-dirs] (try (fs/delete-tree d) (catch Exception _ nil))))))
 (defn assert= [msg expected actual]
   (when (not= expected actual)
     (swap! failures conj (str "FAIL: " msg "\n  expected: " (pr-str expected) "\n  actual:   " (pr-str actual)))))
