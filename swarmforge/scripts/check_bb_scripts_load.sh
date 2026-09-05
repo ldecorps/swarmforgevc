@@ -88,13 +88,24 @@ status=0
 failures=""
 analysed=0
 
-# The probe. `*command-line-args*` is empty and the file is load-file'd from
+# The probe. `*command-line-args*` is empty and the file is analysed from
 # the TREE's own scripts directory, so a script that load-files siblings picks
-# up that tree's siblings and not the checker's.
+# up that tree's siblings and not the checker's. BL-1427: the driver reads
+# and evaluates every top-level form except a call to -main (bare, with
+# *command-line-args*, or through apply), so the entry point is analysed
+# but never RUN - a healthy CLI whose -main has a fixed, non-zero arity no
+# longer throws an ArityException it would never hit under real args. The
+# target path travels via an env var, never a positional arg, so it is
+# invisible to the ANALYSED script's own *command-line-args*
+# (BB_LOAD_ANALYSE_TARGET, not `bb driver.bb "$file"` - see the driver's
+# own header for why that distinction matters). `</dev/null`: the probe
+# reads no stdin, so a script whose analysis-time code slurps *in* cannot
+# drain this loop the way harness_env_scrub_names.bb once did.
 analyse_one() {
   local file="$1" out rc=0
-  out="$(cd "$SCRIPTS_DIR" && BABASHKA_PRELOADS='' timeout "${BB_LOAD_TIMEOUT:-60}" \
-         bb -e "(load-file \"$file\")" 2>&1)" || rc=$?
+  out="$(cd "$SCRIPTS_DIR" && BABASHKA_PRELOADS='' BB_LOAD_ANALYSE_TARGET="$file" \
+         timeout "${BB_LOAD_TIMEOUT:-60}" \
+         bb "$SCRIPT_DIR/bb_load_analyse_driver.bb" </dev/null 2>&1)" || rc=$?
   # A non-zero exit is NOT the question. Most scripts here are CLIs that print
   # usage and exit when run without arguments - they have LOADED perfectly, and
   # failing them would make this guard refuse a healthy tree (observed on the
@@ -116,7 +127,26 @@ analyse_one() {
   fi
 }
 
-while IFS= read -r f; do
+# BL-1427: the full listed set is captured into an ARRAY, never streamed
+# through a `while read < <(process substitution)` pipe - a pipe is exactly
+# what let harness_env_scrub_names.bb's own stdin read (a script that
+# behaves this way is analysed like any other; `</dev/null` on the probe
+# below is the primary fix, but a `for` loop over an already-materialized
+# array has no shared stdin left to drain even if a future script found a
+# different way in) drain the rest of the file list out from under this
+# loop. Comparing $listed against $analysed below is the invariant this
+# ticket names directly: a listed script the probe never reached is a
+# refusal, never a silent partial pass.
+mapfile -t candidate_files < <(changed_bb_files)
+listed=0
+handoffd_listed=0
+for f in "${candidate_files[@]}"; do
+  [[ -n "$f" ]] || continue
+  listed=$((listed + 1))
+  [[ "$(basename "$f")" == "handoffd.bb" ]] && handoffd_listed=1
+done
+
+for f in "${candidate_files[@]}"; do
   [[ -n "$f" ]] || continue
   # handoffd.bb is excluded from the plain probe and covered by the BOOT step
   # below instead, and the reason is worth stating: its top level ends in
@@ -129,7 +159,13 @@ while IFS= read -r f; do
   fi
   analysed=$((analysed + 1))
   analyse_one "$f"
-done < <(changed_bb_files)
+done
+
+expected_analysed=$((listed - handoffd_listed))
+if (( analysed != expected_analysed )); then
+  failures+="  loop coverage: listed $listed script(s) (handoffd.bb $([[ $handoffd_listed == 1 ]] && echo booted || echo absent)), analysed $analysed - the guard's own loop never reached $((expected_analysed - analysed)) of them"$'\n'
+  status=1
+fi
 
 # ── handoffd is BOOTED, not merely analysed (invariant 2) ─────────────────
 #
@@ -186,7 +222,7 @@ boot_handoffd() {
           env -u GIT_DIR -u GIT_WORK_TREE -u GIT_INDEX_FILE -u GIT_OBJECT_DIRECTORY \
               -u GIT_ALTERNATE_OBJECT_DIRECTORIES -u GIT_COMMON_DIR \
               -u GIT_CEILING_DIRECTORIES -u GIT_PREFIX -u GIT_REFLOG_ACTION \
-          timeout "${BB_BOOT_TIMEOUT:-90}" bb "$daemon" "$root" --sweep-once 2>&1 )" || rc=$?
+          timeout "${BB_BOOT_TIMEOUT:-90}" bb "$daemon" "$root" --sweep-once </dev/null 2>&1 )" || rc=$?
   # An analysis banner is a refusal WHATEVER else the output holds, and the
   # ordering matters: babashka echoes the offending source in its `Context`
   # block, so a file whose last line is `(println "sweep-once done")` prints
