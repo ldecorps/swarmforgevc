@@ -513,4 +513,205 @@ pass "18: a nested shell fixture's git init + commit is isolated, not redirected
 rm -f "$NESTED_MARKER_18"
 rm -rf "$FAKE_MAIN_GITDIR"
 
+# ── 19 (BL-1407): a non-allowlisted red that passes alone is a recorded
+#    flake and the commit is allowed. The fake suite tells the main run
+#    ($# == 0, no rerun args appended) from the rerun (extra args appended
+#    by run_rerun_for_file) purely by argument count - the same seam every
+#    scenario below reuses.
+stage extension/src/pipelineBoard.ts
+FLAKY_19=(bash -c '
+if [[ "$#" -eq 0 ]]; then
+  printf "%s\n" " FAIL  test/bl1407FakeFlaky.property.test.js > x" >&2
+  exit 1
+else
+  exit 0
+fi
+')
+set +e
+OUT19="$(cd "$ROOT" && bash "$GUARD" "${FLAKY_19[@]}" 2>&1)"
+ST19=$?
+set -e
+[[ "$ST19" -eq 0 ]] || fail "19: a flake that passes alone must allow the commit, got $ST19: $OUT19"
+echo "$OUT19" | grep -q 'flake recorded' \
+  || fail "19: expected a flake-recorded line, got: $OUT19"
+FLAKE_FILE_19="$ROOT/.swarmforge/property-flakes/$(date -u +%Y-%m).jsonl"
+[[ -f "$FLAKE_FILE_19" ]] || fail "19: expected a flake record file at $FLAKE_FILE_19"
+grep -q '"file":"test/bl1407FakeFlaky.property.test.js"' "$FLAKE_FILE_19" \
+  || fail "19: flake record must name the file, got: $(cat "$FLAKE_FILE_19")"
+grep -q '"touched_by_commit":false' "$FLAKE_FILE_19" \
+  || fail "19: flake record must say the commit did not touch the file, got: $(cat "$FLAKE_FILE_19")"
+pass "19: a non-allowlisted red that passes alone is recorded as a flake and the commit is allowed"
+git -C "$ROOT" reset -q HEAD
+rm -rf "$ROOT/extension" "$ROOT/.swarmforge"
+
+# ── 20 (BL-1407): a red that fails again when run alone is a genuine
+#    regression - refused exactly as before, naming the file, no flake
+#    record written anywhere.
+stage extension/src/pipelineBoard.ts
+ALWAYS_RED_20=(bash -c '
+printf "%s\n" " FAIL  test/bl1407FakeAlwaysRed.property.test.js > x" >&2
+exit 1
+')
+set +e
+OUT20="$(cd "$ROOT" && bash "$GUARD" "${ALWAYS_RED_20[@]}" 2>&1)"
+ST20=$?
+set -e
+[[ "$ST20" -ne 0 ]] || fail "20: a red that fails alone too must still refuse"
+echo "$OUT20" | grep -q 'bl1407FakeAlwaysRed.property.test.js' \
+  || fail "20: must name the file, got: $OUT20"
+echo "$OUT20" | grep -q 'flake recorded' \
+  && fail "20: must not report a flake for a deterministic regression, got: $OUT20"
+[[ ! -d "$ROOT/.swarmforge/property-flakes" ]] \
+  || fail "20: no flake record must be written when the re-run also fails, found: $(ls "$ROOT/.swarmforge/property-flakes" 2>/dev/null)"
+pass "20: a non-allowlisted red that fails alone too refuses, naming the file, no flake record"
+git -C "$ROOT" reset -q HEAD
+rm -rf "$ROOT/extension" "$ROOT/.swarmforge"
+
+# ── 21 (BL-1407): three non-allowlisted reds are each re-run EXACTLY once;
+#    an allowlisted red among them is never re-run at all. bl632's own
+#    property file is reused as the "already allowlisted" file - the real
+#    standing-allowlist TSV names it (scenario 11 above), so no extra
+#    fixture TSV is needed here either.
+stage extension/src/pipelineBoard.ts
+COUNTER_DIR_21="$ROOT/../bl1407_counts_$$"
+rm -rf "$COUNTER_DIR_21"
+mkdir -p "$COUNTER_DIR_21"
+THREE_PLUS_ALLOW_21=(bash -c '
+COUNTER_DIR="'"$COUNTER_DIR_21"'"
+if [[ "$#" -eq 0 ]]; then
+  printf "%s\n" \
+    " FAIL  test/bl1407FakeA.property.test.js > a" \
+    " FAIL  test/bl1407FakeB.property.test.js > b" \
+    " FAIL  test/bl1407FakeC.property.test.js > c" \
+    " FAIL  test/bl632CommitTimeGuardInvariants.property.test.js > d" >&2
+  exit 1
+else
+  echo "$1" >> "$COUNTER_DIR/rerun-invocations.log"
+  exit 1
+fi
+')
+set +e
+OUT21="$(cd "$ROOT" && bash "$GUARD" "${THREE_PLUS_ALLOW_21[@]}" 2>&1)"
+ST21=$?
+set -e
+[[ "$ST21" -ne 0 ]] || fail "21: three genuine unlisted reds must still refuse"
+LOG_21="$COUNTER_DIR_21/rerun-invocations.log"
+[[ -f "$LOG_21" ]] || fail "21: expected the three non-allowlisted files to have been re-run at all"
+for f in bl1407FakeA bl1407FakeB bl1407FakeC; do
+  COUNT="$(grep -c "^test/${f}.property.test.js\$" "$LOG_21" || true)"
+  [[ "$COUNT" -eq 1 ]] || fail "21: expected exactly one re-run of $f, got $COUNT: $(cat "$LOG_21")"
+done
+grep -q 'bl632CommitTimeGuardInvariants' "$LOG_21" \
+  && fail "21: the allowlisted file must never be re-run, got: $(cat "$LOG_21")"
+TOTAL_21="$(wc -l < "$LOG_21" | tr -d ' ')"
+[[ "$TOTAL_21" -eq 3 ]] || fail "21: expected exactly 3 re-run invocations total, got $TOTAL_21: $(cat "$LOG_21")"
+pass "21: each of the three non-allowlisted files is re-run exactly once; the allowlisted one never is"
+rm -rf "$COUNTER_DIR_21"
+git -C "$ROOT" reset -q HEAD
+rm -rf "$ROOT/extension" "$ROOT/.swarmforge"
+
+# ── 22 (BL-1407): a re-run that cannot complete within its ceiling counts
+#    as a failure, never a pass - proven with a 1s ceiling override so the
+#    scenario itself does not have to wait out the fixture's 30s sleep.
+stage extension/src/pipelineBoard.ts
+HANG_22=(bash -c '
+if [[ "$#" -eq 0 ]]; then
+  printf "%s\n" " FAIL  test/bl1407FakeHang.property.test.js > x" >&2
+  exit 1
+else
+  sleep 30
+  exit 0
+fi
+')
+set +e
+OUT22="$(cd "$ROOT" && SWARMFORGE_PROPERTY_RERUN_CEILING_SECONDS=1 bash "$GUARD" "${HANG_22[@]}" 2>&1)"
+ST22=$?
+set -e
+[[ "$ST22" -ne 0 ]] || fail "22: a rerun that hangs past the ceiling must still refuse"
+echo "$OUT22" | grep -q 'bl1407FakeHang.property.test.js' \
+  || fail "22: must name the hung file, got: $OUT22"
+pass "22: a re-run past the ceiling counts as a failure and the commit is refused"
+git -C "$ROOT" reset -q HEAD
+rm -rf "$ROOT/extension" "$ROOT/.swarmforge"
+
+# ── 23 (BL-1407): the BL-1124 canary is asserted around a re-run too, not
+#    only around the main run - a re-run that mutates the shared checkout
+#    is refused citing BL-1124, the same as a main-run mutation already is.
+stage extension/src/pipelineBoard.ts
+MUTATING_RERUN_23=(bash -c '
+if [[ "$#" -eq 0 ]]; then
+  printf "%s\n" " FAIL  test/bl1407FakeMutate.property.test.js > x" >&2
+  exit 1
+else
+  git -C "'"$ROOT"'" -c user.email=t@t -c user.name=t commit -q --allow-empty -m mutated-during-rerun
+  exit 0
+fi
+')
+set +e
+OUT23="$(cd "$ROOT" && bash "$GUARD" "${MUTATING_RERUN_23[@]}" 2>&1)"
+ST23=$?
+set -e
+[[ "$ST23" -ne 0 ]] || fail "23: a re-run that mutates the shared checkout must refuse"
+echo "$OUT23" | grep -q 'BL-1124' \
+  || fail "23: expected the BL-1124 canary marker in the refusal, got: $OUT23"
+pass "23: a re-run that mutates the shared checkout is refused citing BL-1124"
+git -C "$ROOT" reset -q HEAD~1 --hard
+rm -rf "$ROOT/extension" "$ROOT/.swarmforge"
+
+# ── 24 (BL-1407, BL-1202 parity): killing the guard mid-re-run still reaps
+#    the re-run's own process group - the main run's report_canary_once is
+#    single-shot (already spent by the time reruns start), so run_bounded
+#    must be self-sufficient for this, not rely on that machinery firing
+#    again.
+stage extension/src/pipelineBoard.ts
+MARKER24="$ROOT/../bl1407_marker24_$$"
+rm -f "$MARKER24" "${MARKER24}.child"
+MUTATING_SLEEP_RERUN_24=(bash -c '
+if [[ "$#" -eq 0 ]]; then
+  printf "%s\n" " FAIL  test/bl1407FakeKill.property.test.js > x" >&2
+  exit 1
+else
+  echo $$ > "'"$MARKER24"'"
+  (sleep 30) &
+  echo $! > "'"$MARKER24"'.child"
+  sleep 30
+fi
+')
+(
+  cd "$ROOT"
+  exec bash "$GUARD" "${MUTATING_SLEEP_RERUN_24[@]}" >"$ROOT/../bl1407_out24_$$" 2>&1
+) &
+GUARD_PID_24=$!
+
+DEADLINE=$((SECONDS + 10))
+while [[ ! -s "$MARKER24" ]] && (( SECONDS < DEADLINE )); do
+  sleep 0.05
+done
+[[ -s "$MARKER24" ]] || fail "24: fake re-run never started (marker never appeared)"
+CHILD_PID_24="$(cat "$MARKER24")"
+
+kill -TERM "$GUARD_PID_24" 2>/dev/null || true
+set +e
+wait "$GUARD_PID_24"
+ST24=$?
+set -e
+[[ "$ST24" -ne 0 ]] || fail "24: a guard killed mid-re-run must exit non-zero, got $ST24"
+
+DEADLINE=$((SECONDS + 5))
+while { kill -0 "$CHILD_PID_24" 2>/dev/null || kill -0 "$(cat "${MARKER24}.child" 2>/dev/null || echo 0)" 2>/dev/null; } \
+      && (( SECONDS < DEADLINE )); do
+  sleep 0.05
+done
+if kill -0 "$CHILD_PID_24" 2>/dev/null; then
+  fail "24: the fake re-run's own process ($CHILD_PID_24) is still running after the guard was killed mid-re-run"
+fi
+GRANDCHILD_PID_24="$(cat "${MARKER24}.child" 2>/dev/null || echo "")"
+if [[ -n "$GRANDCHILD_PID_24" ]] && kill -0 "$GRANDCHILD_PID_24" 2>/dev/null; then
+  fail "24: the fake re-run's grandchild ($GRANDCHILD_PID_24) is still running after the guard was killed mid-re-run"
+fi
+pass "24: killing the guard mid-re-run still reaps the re-run's own process group"
+rm -f "$MARKER24" "${MARKER24}.child" "$ROOT/../bl1407_out24_$$"
+git -C "$ROOT" reset -q HEAD
+rm -rf "$ROOT/extension" "$ROOT/.swarmforge"
+
 echo "ALL PASS"
