@@ -143,3 +143,5 @@ source: |
   Specifier reading the same day: .worktrees/coder/.swarmforge/handoffs/inbox/completed
   headers 05:13-05:17Z and 06:00Z; done_with_current_task.bb;
   route_backlog_to_coder.sh line 132.
+
+assigned_to: coder
