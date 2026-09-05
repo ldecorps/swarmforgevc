@@ -1,0 +1,165 @@
+id: BL-1412
+title: "A text filter on the live Spec-tree console (Mini App): typing a term narrows the milestones view and every drill under it to matching tickets with BL-254's semantics, applied by the bridge through the one filterDocsTree; asked by the human ~2026-08-26, lost, resurfaced 2026-08-30 as 'the spec tip text filter'"
+milestone: M8
+type: feature
+status: todo
+epic: swarmforge-console
+priority: 12
+direction: human-requested
+depends_on: [BL-592, BL-254]
+mutation_cost: medium
+slice_size_envelope: low
+required_stages: [coder, cleaner, architect, hardender, documenter, qa]
+
+acceptance: specs/features/BL-1412-a-text-filter-on-the-live-spec-tree.feature
+
+required_wiring:
+  - 'extension/src/bridge/bridgeServer.ts::filterDocsTree(::the live /spec-tree-state route must CALL the one filter on its computed tree; docsTree.ts exporting it proves nothing (BL-1235); absent today (grep returns 0)'
+  - 'specs/pipeline/steps/bl1412SpecTreeTextFilterSteps.js::registerSteps::the handler file exists so discovery registers every scenario (BL-1371)'
+
+invariants:
+  - "Exactly one filter implementation serves the live console: docsTree.ts's filterDocsTree, applied by the bridge route; the inline Spec tree script never matches text itself, it only sends the term (the PWA's hand-kept mirror is BL-254's debt, not a licence for a third copy)."
+  - "Filtering prunes, never regroups: every ticket that matches keeps its full scenario list and the same milestone and epic placement it has in the unfiltered tree, and a ticket that does not match is absent at every level."
+  - "The screen stays read-only (BL-592 read-only-gate-06): the term rides a GET query parameter and no request other than GET exists on the spec tree surface after this parcel."
+
+human_approval: pending
+approval_context: >
+  A new feature file is authored here, so it needs a tap. No choice is posed
+  and there are no ruling_options: the filter's semantics are BL-254's, which
+  you already accepted on the static PWA, now on the live Telegram view you
+  named on 2026-09-04. Your original ~2026-08-26 wording is not on record
+  anywhere the specifier can read (support threads, topic records, operator
+  logs, intakes were searched); if it asked for something beyond BL-254's
+  match-title-description-Gherkin filter, say so in Amend.
+
+description: |
+  ## What is wanted, and by whom
+
+  The Spec tree on the live Mini App console (BL-592: `/spec-tree`, data
+  from `/spec-tree-state`) drills Milestone -> Epic -> BL item -> Gherkin
+  but has no filter box. The static backlog PWA has had a text filter
+  since BL-254 ("Phone spec search: full-text filter of the docs
+  drill-down by Gherkin (and title/description) text"), implemented once
+  in `extension/src/docs/docsTree.ts` as `filterDocsTree` and mirrored by
+  hand in `pwa/app.js`. The live console never got it.
+
+  Human sentences on record, verbatim (Article 5.3):
+  - 2026-08-30 Telegram intake `INTAKE-operator-question-1788082425603`,
+    arrived truncated: "I haven't seen any detailed around the spec tip
+    text filter..."
+  - 2026-09-04T08:27Z, SUP-17, answering which surface: "a Telegram view"
+  - Coordinator note 2026-09-05T05:08Z (handoff 20260905T050852Z_004272),
+    not the human's words: "Mint: filter for Spec-tree milestones view
+    (human asked ~08-26, lost)"
+
+  The ~2026-08-26 ask itself is not on record (searched: support threads,
+  `backlog/topics/*.json`, operator logs, intake archives, git log). "spec
+  tip" reads as "spec tree" through the truncation, and the coordinator's
+  note names the same view. This ticket mints the smallest reading:
+  BL-254's filter on the live Spec tree, starting at the milestones view.
+
+  ## Behaviour
+
+  - A filter box on the Spec tree screen, above the crumbs. Typing a term
+    narrows the tree to tickets whose title, description or scenario text
+    contains it, case-insensitively (BL-254 scenarios 01-03). Milestones
+    and epics with no matching ticket disappear; the counts on milestone
+    buttons are match counts.
+  - The term stays applied across drilling and the crumbs; clearing the
+    box restores the full tree; a term that matches nothing shows a
+    no-results state naming the term (BL-254 scenarios 05-06).
+  - The bridge applies the filter: `/spec-tree-state?q=<term>` returns
+    `filterDocsTree(computeDocsTree(...), q)` with the unchanged schema
+    (`DOCS_TREE_SCHEMA_VERSION` 2); no `q` (or blank) returns the full
+    tree. Token auth is unchanged (`q` is one more query parameter on a
+    path already in `QUERY_TOKEN_ELIGIBLE_PATHS`).
+
+  ## How (direction, not mandate)
+
+  - `bridgeServer.ts` `buildJsonRoutes`: the BL-592 entry becomes
+    `compute: (url) => filterDocsTree(computeDocsTree(targetPath, nowMs),
+    queryParams(url).get('q') ?? '')` — the GH-23 entry beside it already
+    takes `url`. Import `filterDocsTree` from `../docs/docsTree`.
+  - `specTreeUiHtml.ts`: an `<input type="search" data-testid="spec-tree-filter">`;
+    `refresh()` appends `&q=` when non-blank, debounced (~250 ms) on input;
+    `render()` shows the no-results state when the filtered tree has no
+    milestones and a term is set. Keep `q` in `location` (history.replaceState)
+    so a reload keeps the term — optional.
+  - Tests: extend `specTreeUiHtml.test.js` (jsdom harness driving the real
+    inline script — it is opaque to Stryker) and `specTreeBridge.test.js`
+    (real HTTP against `startBridge`, `?q=`). Fixtures via `mkTmpDir`, no
+    real timers (fake the debounce).
+  - Acceptance handler `specs/pipeline/steps/bl1412SpecTreeTextFilterSteps.js`
+    exporting `registerSteps`; scenario 01's `<field>` validated against
+    explicit `KNOWN_VALUES` (title, description, scenario text, title in a
+    different case).
+  - Documenter: add the filter to
+    `docs/how-to/BL-592-spec-tree-on-live-console-with-epic-tier.md`. No
+    registered diagram depicts this screen; no diagram trigger fires.
+
+  ## Out of scope
+
+  - Filtering the static PWA (BL-254, shipped) or reconciling its hand-kept
+    mirror of `filterDocsTree` with the TS original — BL-254's recorded debt.
+  - Matching on fields beyond title/description/scenario text (labels,
+    epic titles, milestone names): not in BL-254 and not asked for on
+    record; if the human's Amend names one, it is a scope change here.
+  - Any write path on the Spec tree.
+
+qa_e2e_procedure: |
+  1. From `extension/`: `npm test` green including the new cases in
+     `test/specTreeUiHtml.test.js` and `test/specTreeBridge.test.js`;
+     `specs/pipeline/scripts/run_acceptance.sh
+     specs/features/BL-1412-a-text-filter-on-the-live-spec-tree.feature`
+     passes all eight scenario runs; BL-592's feature still passes
+     (read-only-gate-06 included).
+  2. Live: open the Mini App console from Telegram, Spec tree. Type a term
+     that matches one ticket (its own id is enough, e.g. `BL-1412` once
+     this ticket is on the checkout): the milestones list shrinks to one
+     entry with count 1; drill to the ticket; clear the box; every
+     milestone returns with its full count. Type `zzzz-no-such-term`: the
+     no-results state names the term.
+  3. `curl -s '<bridge>/spec-tree-state?token=<t>&q=<term>'` returns
+     `schemaVersion: 2`, `tickets` containing only matches, and milestones
+     pruned to those tickets; the same URL without `q` returns the full
+     tree.
+  4. Invariant 1: `grep -c 'toLowerCase' extension/src/bridge/specTreeUiHtml.ts`
+     returns 0 and `grep -n 'filterDocsTree(' extension/src/bridge/bridgeServer.ts`
+     returns the route line (required_wiring).
+  5. Invariant 3: the diff adds no route whose method is not GET, and no
+     `fetch(` with a method in the inline script.
+
+notes: |
+  Minted 2026-09-05 by the specifier on the coordinator's priority-00 note
+  "Mint: filter for Spec-tree milestones view (human asked ~08-26, lost)",
+  which drains root intake `INTAKE-operator-question-1788082425603`
+  (2026-08-30, six days undrained: four of them behind a wedged ask slot,
+  BL-1352, then two waiting on the second half of the surface answer).
+  Intake archived to `backlog/archive/` in the same commit; the relayed
+  answer filed at
+  `backlog/answers-archive/ANSWER-2026-09-05-spec-tree-text-filter-via-coordinator.md`.
+
+  INVEST at mint: Independent (both depends_on landed), Negotiable (How is
+  direction), Valuable (one outcome: the human can filter the live Spec
+  tree), Estimable (route param + input + two test files + handler; low),
+  Small (five scenarios, three invariants), Testable (jsdom harness, real
+  HTTP bridge test, live curl).
+
+  Verified live integration layer at mint: `/spec-tree-state` is served by
+  `buildJsonRoutes` in `bridgeServer.ts` (line ~2073, `compute: () =>
+  computeDocsTree(targetPath, nowMs)`), token-eligible via
+  `QUERY_TOKEN_ELIGIBLE_PATHS`; the screen is `getSpecTreeUiHtml()` whose
+  inline script fetches that route in `refresh()` and renders client-side.
+  `filterDocsTree` (docsTree.ts:271, BL-254 fb5f3927c4) is exported and
+  today has no caller in the bridge (grep 0) — the wiring anchor is real.
+
+  required_wiring anchors verified with `read-required-wiring` on this file:
+  two items, both one physical line.
+
+source: |
+  Coordinator note 2026-09-05T05:08:52Z (handoff
+  20260905T050852Z_004272_from_coordinator): "Mint: filter for Spec-tree
+  milestones view (human asked ~08-26, lost)". Root intake
+  `INTAKE-operator-question-1788082425603.md` (2026-08-30, human via
+  Telegram, truncated), surface answer SUP-17 2026-09-04T08:27Z "a
+  Telegram view".
