@@ -23,6 +23,16 @@ import { FeatureHandlerTree, FEATURES_DIR, LIB_DIR, STEPS_DIR } from './featureH
 export type CheckIo = {
   /** Names directly in a repo-relative directory; [] when it does not exist. */
   listDir(relativeDir: string): string[];
+  /**
+   * BL-1400: every file at or below a repo-relative directory, as paths
+   * relative to it (`nested/bl9009XSteps.js`); [] when it does not exist.
+   * The steps directory is listed this way rather than flat: the assessor's
+   * discovery predicate has always rejected a subdirectory placement, and its
+   * header promised such a handler was "still refused", but a flat listing
+   * never put one in the tree for it to reject - the refusal could not fire
+   * and a feature whose only handler was nested passed for want of seeing it.
+   */
+  listTree(relativeDir: string): string[];
   /** Text of a repo-relative file, or null when absent or unreadable. */
   readFile(relativePath: string): string | null;
   write(text: string): void;
@@ -36,6 +46,16 @@ export function createFsIo(repoRoot: string): CheckIo {
           .readdirSync(path.join(repoRoot, relativeDir), { withFileTypes: true })
           .filter((entry) => entry.isFile() || entry.isSymbolicLink())
           .map((entry) => entry.name);
+      } catch {
+        return [];
+      }
+    },
+    listTree(relativeDir) {
+      try {
+        return fs
+          .readdirSync(path.join(repoRoot, relativeDir), { withFileTypes: true, recursive: true })
+          .filter((entry) => entry.isFile() || entry.isSymbolicLink())
+          .map((entry) => path.relative(path.join(repoRoot, relativeDir), path.join(entry.parentPath, entry.name)));
       } catch {
         return [];
       }
@@ -59,11 +79,18 @@ export function readTree(io: CheckIo): FeatureHandlerTree {
       .listDir(FEATURES_DIR)
       .filter((name) => name.endsWith('.feature'))
       .map((name) => `${FEATURES_DIR}/${name}`),
+    // BL-1400: recursive, so a handler in a subdirectory is IN the tree and
+    // the assessor's own predicate can refuse it. lib/ is excluded here
+    // rather than filtered downstream: a helper under lib/ is not a handler
+    // (it is already reported as libFiles), and admitting one whose name
+    // happens to start with a ticket id would turn a legitimate helper no
+    // feature names into an offender.
     stepFiles: io
-      .listDir(STEPS_DIR)
-      .filter((name) => name.endsWith('.js'))
-      .map((name) => `${STEPS_DIR}/${name}`),
-    libFiles: io.listDir(LIB_DIR).map((name) => `${LIB_DIR}/${name}`),
+      .listTree(STEPS_DIR)
+      .filter((name) => name.endsWith('.js') && !name.startsWith('lib/'))
+      .map((name) => `${STEPS_DIR}/${name}`)
+      .sort(),
+    libFiles: io.listTree(LIB_DIR).map((name) => `${LIB_DIR}/${name}`),
     readFile: io.readFile,
   };
 }
