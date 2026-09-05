@@ -135,3 +135,5 @@ source: |
   - "Consider whether to fold in a look at `qwenLocalTopicId` reachability
     (flagged above) as a sibling ticket or explicitly out of scope — it is the
     same defect class but a separate topic/seat, not touched by tonight's fix."
+
+assigned_to: coder
