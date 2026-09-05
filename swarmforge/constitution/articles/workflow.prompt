@@ -2,9 +2,13 @@
 
 ## How Work Moves — Normal Live Swarm, Queue-Jump, Ambulance, Expeditor (BL-715)
 - **The normal live swarm is the default path** for every ticket. Three
-  named specials exist and **none replaces it**: **queue-jump** (reorders
-  promotion only, Article 3.2.4), **ambulance** (holds other parcels for
-  one ticket, `docs/how-to/BL-655-ambulance-mode-the-hold.md`), and
+  named specials exist and **none replaces it**: **queue-jump** (the human's
+  Q jump tap, `/qjump` or pager Expedite: approve, promote PAST
+  `active_backlog_max_depth`, dispatch now; `depends_on`/hold/blocked
+  still refuse, the coordinator's own promotion stays capped — directive
+  2026-09-05, BL-1425; Article 3.2.4's defect lane only reorders),
+  **ambulance** (holds other parcels for one ticket,
+  `docs/how-to/BL-655-ambulance-mode-the-hold.md`), and
   **expeditor** (drives one ticket with the swarm stopped,
   `swarmforge/scripts/expedite.sh`). **queue-jump ≠ ambulance ≠
   expeditor.** See **workflow-detailed.prompt** for the escalation ladder.

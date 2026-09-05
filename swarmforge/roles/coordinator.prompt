@@ -212,7 +212,11 @@ You are the coordinator.
   never bypassed), the onboarding contract gate, `human_approval`,
   orthogonality (an expedited ticket overlapping in-flight work is skipped
   like any other), and Article 3.4 mutation-heavy windowing all apply
-  unchanged. Expedite never creates an extra active slot.
+  unchanged. Expedite never creates an extra active slot. The human's Q
+  jump (Approvals tap, `/qjump`, pager Expedite) is different since
+  2026-09-05 (BL-1425): it promotes past the cap and dispatches. You never
+  declare it, and its ticket fills a real slot, so your next ordinary
+  promotion waits for the count to fall below the cap.
 - **Never conflate the two `priority:` scales**: expediting a ticket does not
   bump its handoffs to `00` — handoff priority is message routing, not work
   urgency; the `00` lane stays reserved for genuinely blocking decisions.

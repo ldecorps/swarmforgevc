@@ -16,14 +16,15 @@ the most drastic special:
 | rung | name | mechanism | doc |
 |---|---|---|---|
 | — | normal live swarm | full pipeline chain, live, every gate in order | `swarmforge/PIPELINE.md` |
-| 1 | queue-jump | promotion-order only — Article 3.2.4 expedited-defects rule; paused-pager "Set highest priority, expedite" button | Article 3.2.4 (`03_backlog.md`) |
+| 1 | queue-jump | the human's explicit Q jump (Approvals tap, `/qjump`, paused-pager Expedite): approve + promote PAST `active_backlog_max_depth` + dispatch now; `depends_on`, hold and blocked still refuse; the coordinator's own promotion stays capped (directive 2026-09-05, BL-1425). Article 3.2.4's expedited-defects rule is an ORDERING lane, not queue-jump | `workflow.prompt` How Work Moves; BL-1425 |
 | 2 | ambulance | live pipeline, one ticket's parcels move, everything else holds in place | `docs/how-to/BL-655-ambulance-mode-the-hold.md` |
 | 3 | expeditor | swarm stopped, one ticket driven offline through the same role gates | `docs/how-to/BL-567-expedite-one-ticket-with-the-swarm-stopped.md`, `docs/reference/BL-567-expeditor-manual.md`, `docs/explanation/BL-567-why-the-expeditor-commands-the-stack-but-never-depends-on-it.md` |
 
 Reach for ambulance only when the pipeline is healthy and one ticket needs to
 go first without waiting its turn; reach for the expeditor only when the
 pipeline itself is the casualty. queue-jump never stops or holds anything —
-it only reorders `backlog/paused/`.
+it moves ONE ticket out of `backlog/paused/` onto the live pipeline now,
+past the depth cap (2026-09-05, BL-1425), and changes nothing else.
 
 Legacy "expedite" wording, disambiguated below into queue-jump or the
 expeditor — none of these names change in this ticket (out of scope:
@@ -32,10 +33,13 @@ seat that greps "expedite" and lands on any of them can resolve which of
 the three modes it actually means):
 - Article 3.2.4 "Expedited Defects" and `workflow.prompt`'s Concurrent Work
   Orthogonality "expedited defects first" / "expedite ordering" — name
-  **queue-jump**.
+  the **expedited-defects ORDERING lane** (reorders only, never an extra
+  slot). Since 2026-09-05 that lane is NOT queue-jump: the human's
+  queue-jump crosses the cap (BL-1425).
 - The paused-pager UI's `#expedite` button ("Set highest priority,
   expedite", `pausedPagerUiHtml.ts`) — **queue-jump** (sets priority,
-  promotes; does not stop the swarm or hold other parcels).
+  promotes past the depth cap; does not stop the swarm or hold other
+  parcels).
 - The Telegram `/expedite` and `/reexpedite` commands
   (`telegramCursorBridgeExpedite.ts`, `expedite_with_progress.sh`,
   `reexpedite_from_wip.sh`) — the **expeditor**.
@@ -601,11 +605,14 @@ subsection per `workflow.prompt` header, in the same order.
   situations that path doesn't fit — **none of them replaces that path**;
   each is a deliberate, temporary departure that walks back into, or hands
   off to, the normal live swarm once its job is done.
-- **queue-jump** — promotes sooner then walks the normal live pipeline. It
-  reorders only *when* a ticket is promoted out of `backlog/paused/`, never
-  *how* it runs afterward. Article 3.2.4's expedited-defects rule and the
-  paused-pager's "Set highest priority, expedite" button are both
-  queue-jump — "expedite" there names queue-jump, not a separate mode.
+- **queue-jump** — the human's explicit call (Approvals Q jump tap, `/qjump`,
+  paused-pager Expedite): approve, promote out of `backlog/paused/` PAST
+  `active_backlog_max_depth`, dispatch now — then the ticket walks the
+  normal live pipeline like any other, never *how* it runs afterward.
+  `depends_on`, hold and blocked still refuse it; the coordinator never
+  declares a queue-jump and its own promotion stays capped (directive
+  2026-09-05, BL-1425). Article 3.2.4's expedited-defects rule is a
+  separate ORDERING lane — "expedite" there is not queue-jump.
 - **ambulance** — holds other parcels on a live stack for one ticket. Every
   daemon, alarm, and Telegram topic stays up; only the designated ticket's
   parcels move, until released. See
