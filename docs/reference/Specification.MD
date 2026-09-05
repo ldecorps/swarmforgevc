@@ -1,5 +1,23 @@
 # SwarmForge VS Code Extension — Specification
 
+**Last Updated:** September 5, 2026 (BL-1420: BL-784's fail-closed registry
+guard refused every run of three pre-BL-784 freshness-watchdog fixtures
+since 2026-08-27 — BL-1011's acceptance feature was 0/8 and BL-1012's 0/9
+on `main`, and the bl1011 attribution property runner swallowed the
+refusal into an empty announce, so its properties held vacuously over zero
+real violations. Each fixture now derives its supervisor conf rows from
+the same `*_supervisor.bb` glob the guard walks — a new shared
+`extension/test/helpers/freshnessFixture.js` (`supervisorNames`,
+`writeGuardSatisfyingRows`) for the two JS step handlers, and an
+independent same-glob derivation in Clojure for the bb property runner —
+rather than a hand-written registry, extending BL-1399's fix (one fixture)
+to the three call sites its scope did not cover. The property runner's
+`run-checker!` also stopped swallowing a non-zero checker exit into an
+empty observation: it now fails the run naming the checker's stderr. The
+guard, the checker, and every live conf file are untouched. Acceptance:
+`specs/features/BL-1420-the-freshness-fixtures-pass-the-registry-guard.feature`.
+How-to: [BL-973](../how-to/BL-973-bb-fixture-closure-guards-and-suite-inventory.md).)
+Prior entry —
 **Last Updated:** September 5, 2026 (BL-1415: the dropped-parcel chase
 sweep's stall clock (`chase_sweep_lib.bb`) read only a dispatch's
 `created_at`/`enqueued_at`, never what the recipient did with it — a Work
