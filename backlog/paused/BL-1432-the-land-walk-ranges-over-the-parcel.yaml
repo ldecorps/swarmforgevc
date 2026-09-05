@@ -17,7 +17,9 @@ required_stages: [coder, cleaner, architect, hardender, documenter, qa]
 
 acceptance: specs/features/BL-1432-the-land-walk-ranges-over-the-parcel.feature
 
-human_approval: pending
+human_approval: approved
+human_ruling: |
+  Re-point QA branch to origin/main after each successful land (option 1).
 approval_context: >
   A new feature file is authored here, so it needs a tap, and one choice is
   yours: how the walk is kept to the parcel. QA's branch keeps 1839
