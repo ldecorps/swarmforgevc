@@ -1,5 +1,4 @@
 const assert = require('node:assert/strict');
-const { test } = require('node:test');
 const fc = require('fast-check');
 const { landPilotedTicket } = require('../out/tools/pilotAcceptanceGate');
 const { isExtensionSrcTsPath } = require('../out/tools/pilotScopedCrapCheck');
