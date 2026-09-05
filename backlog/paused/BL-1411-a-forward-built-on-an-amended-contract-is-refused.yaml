@@ -1,0 +1,177 @@
+id: BL-1411
+title: "swarm_handoff.sh refuses a git_handoff whose acceptance feature file main has amended since the sender's merge-base: the contract the parcel was built against is checked at the send, so an in-flight amendment that never reached the holder (BL-1370, 2026-09-05) or reached it after the parcel left (BL-1353) is caught by the sender instead of by a downstream bounce"
+milestone: M8
+type: feature
+status: todo
+epic: deterministic-transit-assist
+priority: 9
+direction: swarm-reported
+depends_on: [BL-1276, BL-1385]
+mutation_cost: low
+slice_size_envelope: low
+required_stages: [coder, cleaner, architect, hardender, documenter, qa]
+
+acceptance: specs/features/BL-1411-a-forward-built-on-an-amended-contract-is-refused.feature
+
+required_wiring:
+  - 'swarmforge/scripts/swarm_handoff.bb::contract-freshness-gate-lib/refusal-message::the live send path calls the gate in its validation chain the way it calls task-scope-gate-lib/refusal-message; a lib nobody calls gates nothing (BL-1235)'
+  - 'specs/pipeline/steps/bl1411ContractFreshnessGateSteps.js::registerSteps::the handler file exists so discovery registers every scenario (BL-1371)'
+
+invariants:
+  - "The gate reads main (and origin/main when it exists) against the sender's merge-base only, never the parcel tip: for each declared acceptance feature path it refuses iff that ref's copy differs from the base's copy, so a parcel-side edit of its own copy (mutation stamp, a chartered retirement) can never trip it."
+  - "Exactly one reader of acceptance: exists on the send path: the gate takes its path(s) from task-scope-gate-lib/declared-acceptance-path (BL-1276) and never parses the ticket YAML itself."
+  - "A refusal is loud and never queues (HANDOFF_NOT_QUEUED, the amending commit, the path, the remedy); a contract it cannot read (path absent on main, no merge-base) is stated in one line and never refuses, because absence is BL-761's and BL-314's to catch."
+
+human_approval: approved
+approval_context: >
+  A new feature file is authored here, so it needs a tap. No choice is posed
+  and there are no ruling_options. Minted from the 2026-09-05 closing-ceremony
+  packet (BL-820 lean pass): its one spec-gap bounce, BL-1370, was caused by
+  an amendment that never reached the parcel holder, and BL-1353 the same day
+  showed the note reaching the holder too late. Evidence:
+  backlog/evidence/closing-ceremony-2026-09-05-specifier.md.
+
+description: |
+  ## What is wrong
+
+  A ticket's acceptance contract can be amended on `main` while a role holds
+  the parcel. The constitution's remedy ("Amending An In-Flight Ticket's
+  Spec", BL-317/BL-325) is a priority-`00` note from the specifier to
+  whoever holds the parcel, and the holder merges `main` and replays. That
+  remedy depends on two humans-in-the-loop being right at the same moment:
+  the specifier must know who holds the parcel, and the holder must read the
+  note before forwarding. On 2026-09-05 both halves failed in one shift:
+
+  - **BL-1370** — the specifier amended invariant 1 and added scenarios 07/08
+    (`3daeaf5b1c`, 00:01:33Z) on the coder's own spec-gap note, wrote "Not a
+    bounce; nothing built yet" in the ticket, and sent no note. The coder was
+    mid-implementation and forwarded `5243b76535` at 00:30:55Z, built on the
+    pre-amendment contract (`merge-base --is-ancestor 3daeaf5b1c 5243b76535`
+    false; the coder's evidence at that commit does not mention the amendment).
+    The cleaner bounced it as `spec-gap` at 00:38:45Z (`12b538c4b9`), charged
+    to the coder; the re-fix and a second cleaner+architect pass cost ~30 min.
+  - **BL-1353** — the note was sent, but reached the coder after the parcel
+    had already been forwarded; the coder merged `main` and replayed the
+    handler fix at 03:04 while the cleaner made the same fix at 03:06 on its
+    own branch — two near-identical edits guaranteed to conflict at the next
+    merge.
+
+  Nothing mechanical asks, at the moment of sending, whether the contract
+  the parcel was built against is still the contract on `main`. The
+  self-audit step (Article 2.3) re-reads the *inbound*; the pre-QA gate
+  (BL-531) and the task-scope gate (BL-1276) read the ticket YAML from the
+  sender's own checkout — which is exactly the stale copy.
+
+  ## What is wanted
+
+  On every `type: git_handoff`, `swarm_handoff.sh` compares the ticket's
+  declared acceptance feature file(s) on `main` (and `origin/main` when
+  present; BL-891 — either ref can be the fresh one) against the same path at
+  the sender's merge-base with that ref. If the ref changed the path after
+  the base, the send is **refused and not queued**, and the refusal names
+  the amending commit(s), the path, and the remedy: merge `main`, replay
+  the amendment, send again. The comparison never touches the parcel tip,
+  so a mutation-stamp header, a retirement the ticket is chartered for
+  (`retires:`), or any other parcel-side change to its own copy cannot trip
+  it. When the gate cannot read the contract (the path is absent on `main`,
+  or there is no merge-base), it says so in one line and does not refuse:
+  an absent contract is BL-761's and BL-314's failure, not this one.
+
+  Only the acceptance feature file is compared. The ticket YAML is
+  bookkeeping every role appends to and merges (BL-1391), so a YAML diff
+  would false-block on every `notes:` append; and an amendment carried in
+  `notes:` alone (the hardener-or-later route, BL-1385) is outside this
+  slice — named here as the boundary, not asserted as a scenario (BL-1006).
+
+  ## How (direction, not mandate)
+
+  - A new `swarmforge/scripts/contract_freshness_gate_lib.bb`
+    (`(ns contract-freshness-gate-lib)`) with a pure findings function and a
+    `refusal-message`, loaded and called from `swarm_handoff.bb`'s validation
+    `cond->` chain beside `task-scope-gate-lib/refusal-message` — the same
+    shape as BL-1192/BL-1276.
+  - Path(s) from `task-scope-gate-lib/declared-acceptance-path` — do not add
+    a second `acceptance:` reader (invariant 2).
+  - Per ref R in `[main origin/main]` that resolves: `base = git merge-base
+    <commit> R`; refuse iff `git diff --quiet base R -- <path>` is non-zero;
+    amending commits are `git log --format=%h base..R -- <path>`. Absent
+    ref, absent path on R, or no base: record `:not-evaluated` with the
+    reason, never a finding.
+  - Output mirrors the self-audit's shape: a `CONTRACT_AMENDED_SINCE_BASE`
+    line, `HANDOFF_NOT_QUEUED`, then commit/path/remedy lines on stderr.
+  - Unit runner `swarmforge/scripts/test/contract_freshness_gate_lib_test_runner.bb`;
+    fixtures are `git init` under `mkdtemp`, proven by `rev-parse
+    --git-common-dir` before any mutating git command, never `git -C ""`
+    (BL-1390), removed in a `finally`; nothing sweeps by prefix (BL-1385).
+  - Acceptance handler `specs/pipeline/steps/bl1411ContractFreshnessGateSteps.js`
+    exporting `registerSteps` (BL-1371 discovery); scenario 03's Outline
+    validates `<state>` against explicit `KNOWN_VALUES`.
+  - Babashka has no mutation/CRAP/DRY wired (BL-472): the hardening pass
+    records the degraded fallback and gates on the runner suite.
+
+  ## Out of scope
+
+  - Ticket-YAML-level amendment detection (`invariants:`/`description:`
+    changes with no feature change), and amendments riding `notes:` at
+    hardener-or-later stages (BL-1385): a named successor if the ledger
+    shows the class.
+  - Delivering the amendment (merging `main` on the sender's behalf): the
+    refusal names the remedy; BL-667's transit-assist slices own automation.
+  - The BL-990 attribution correction for BL-1370 is recorded by the
+    specifier in this same pass, not by this ticket.
+
+qa_e2e_procedure: |
+  1. `bb swarmforge/scripts/test/contract_freshness_gate_lib_test_runner.bb`
+     passes every case; `specs/pipeline/scripts/run_acceptance.sh
+     specs/features/BL-1411-a-forward-built-on-an-amended-contract-is-refused.feature`
+     passes all five scenario runs.
+  2. Live-data probe, no mutation: from the repo root, call the lib's findings
+     function for ticket BL-1370 at commit `5243b76535` against ref `main`.
+     It returns one finding naming `3daeaf5b1c` and
+     `specs/features/BL-1370-a-role-checks-its-own-worktree-for-strays.feature`
+     (that commit's base predates the amendment). Call it at `39fe215af1`
+     (the post-bounce fix, which merged the amendment): no finding.
+  3. `grep -c 'read-yaml-field\|acceptance:' swarmforge/scripts/contract_freshness_gate_lib.bb`
+     returns 0 and `grep -c declared-acceptance-path` returns at least 1
+     (invariant 2). `grep -n 'contract-freshness-gate-lib/refusal-message'
+     swarmforge/scripts/swarm_handoff.bb` returns a line inside the
+     validation chain (required_wiring).
+  4. In a scratch clone: amend the feature on main after branching, send a
+     git_handoff from the branch with `SWARMFORGE_SKIP_DAEMON=1`: stderr
+     carries `HANDOFF_NOT_QUEUED` with the amending commit and path, and
+     `inbox/new/` gains nothing. Merge main into the branch, send again:
+     queued.
+  5. Fixture roots are gone after the runner exits; `git remote get-url
+     origin` in the live repo is unchanged (BL-1390).
+
+notes: |
+  Minted 2026-09-05 by the specifier from the closing-ceremony packet for
+  shift 2026-09-05 (BL-820 lean pass; outcome `process_ticket`, ref BL-1411).
+  Evidence: `backlog/evidence/closing-ceremony-2026-09-05-specifier.md`.
+
+  INVEST at mint: Independent (extends the live send path; both depends_on
+  landed), Negotiable (How is direction), Valuable (one outcome: a stale-
+  contract forward is refused by its sender), Estimable (one lib + runner +
+  handler; low), Small (four scenarios, three invariants), Testable (fixture
+  repo + live-data probe in the e2e).
+
+  IR-DRY (2026-09-05): 17 step occurrences, 11 unique, one medium finding —
+  "the handoff is queued" vs "the handoff is not queued". Reviewed: a
+  deliberate negation pair, not drift; kept.
+
+  Verified live integration layer at mint (specifier rule): the git_handoff
+  validation chain in `swarm_handoff.bb` (lines ~465-510) is the path that
+  runs for every send; `task-scope-gate-lib/declared-acceptance-path`
+  (BL-1276) already reads `acceptance:` there. The self-audit
+  (`audit-candidate` / `submit-after-audit!`) fingerprints the draft and the
+  commit but never looks at `main`.
+
+  required_wiring anchors verified with `read-required-wiring` on this file:
+  two items, both one physical line.
+
+source: |
+  Closing-ceremony packet `.swarmforge/lean/ceremony/2026-09-05.json`:
+  hypothesis "1 bounce(s) classed 'spec-gap' this shift — recurring failure
+  class". The bounce: BL-1370, by cleaner, commit 12b538c4b9, evidence
+  `backlog/evidence/BL-1370-cleaner-bounce-20260905.md`. Sibling case the
+  same day: BL-1353 (operator memory, coder/cleaner duplicate handler fix).
