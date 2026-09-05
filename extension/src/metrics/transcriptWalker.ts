@@ -5,13 +5,25 @@
  */
 import * as fs from 'fs';
 
-export type IntervalCategory =
-  | 'git-mechanical'
-  | 'test-run'
-  | 'file-read'
-  | 'thinking-writing'
-  | 'turn-overhead'
-  | 'provider-outage';
+/**
+ * BL-1364: the category set as a RUNTIME value, with the type derived from it.
+ * A union type alone vanishes at compile time, so anything that needed to
+ * enumerate the categories - the turn-profile series, its store, a renderer -
+ * had to restate the list and could then drift from the walker silently
+ * (BL-897). This is the one definition; nothing downstream repeats it. The
+ * six members and their order are exactly what the union declared, so no
+ * classification changes here.
+ */
+export const INTERVAL_CATEGORIES = [
+  'git-mechanical',
+  'test-run',
+  'file-read',
+  'thinking-writing',
+  'turn-overhead',
+  'provider-outage',
+] as const;
+
+export type IntervalCategory = (typeof INTERVAL_CATEGORIES)[number];
 
 export interface ClassifiedInterval {
   category: IntervalCategory;
@@ -230,12 +242,30 @@ function attributeTrail(
   });
 }
 
-function coverageFromIntervals(intervals: ClassifiedInterval[]): CoverageWindow | null {
+/**
+ * BL-1364: folded by hand rather than by `Math.min(...intervals.map(...))`.
+ * The spread passes one ARGUMENT per interval, so it throws RangeError
+ * ("Maximum call stack size exceeded") once the walk is large enough - and
+ * every caller before this ticket walked one worktree group at a time, which
+ * stayed under the limit and hid it. The first caller to walk every role's
+ * transcripts in one pass (turnProfileProducer, 2256 files on the live repo)
+ * hit it immediately. Exported so the fold itself is testable without
+ * building a quarter of a million intervals out of real files.
+ */
+export function coverageFromIntervals(intervals: ClassifiedInterval[]): CoverageWindow | null {
   if (intervals.length === 0) {
     return null;
   }
-  const startMs = Math.min(...intervals.map((row) => row.startMs));
-  const endMs = Math.max(...intervals.map((row) => row.endMs));
+  let startMs = intervals[0].startMs;
+  let endMs = intervals[0].endMs;
+  for (const row of intervals) {
+    if (row.startMs < startMs) {
+      startMs = row.startMs;
+    }
+    if (row.endMs > endMs) {
+      endMs = row.endMs;
+    }
+  }
   return { startMs, endMs };
 }
 
