@@ -490,3 +490,17 @@ You are QA.
   parcel WAITS for the ticket; it is never a bounce, the parcel did not
   cause it, and never an approval over the top of it. "Pre-existing" is a
   fact about the red, not a disposition of it.
+
+## A sync or receive merge subject names no ticket (2026-09-05, BL-1212)
+- When you merge `main` into your worktree, or merge a received parcel,
+  the subject is `Merge main <sha> into <role>.` or `Merge <role> <sha>
+  into <role>.` - never a ticket id, never the ticket's words. The
+  task-scope gate attributes a commit by the first ticket id in its
+  subject and unions its whole combined diff into that ticket's paths,
+  so a merge subject naming your ticket makes everything main brought
+  in look like your work, and every later send on that lineage is
+  refused as entangled with other tickets. It cannot be rewritten once
+  built on; the exit costs the parcel its per-role lineage
+  (`abandoned_commits:` + a tip-pure rebuild). Full text:
+  `articles/reference/workflow-detailed.prompt` "A sync or receive merge
+  carries no ticket id".
