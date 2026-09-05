@@ -331,4 +331,119 @@ pass "13: a path dropped from both sides is reported once, not twice"
 pass "13b: a path dropped from both sides names BOTH sides in its one finding"
 git -C "$ROOT" merge --abort 2>/dev/null || true
 
+# ══ BL-1403: a move is not a deletion, and attribution tries either side ═══
+#
+# Fixture topology matches the ticket's own qa_e2e_procedure: a raw intake is
+# committed with a subject naming NO ticket (the real shape - a ticket cannot
+# be named before it exists), then a second branch either archives it (a
+# move: git mv + footer) or deletes it outright, with its own commit subject
+# either naming a ticket or not.
+
+mk_no_ticket_intake_branch() {
+  local branch_suffix="$1"
+  git -C "$ROOT" checkout -q -b "intakebase$branch_suffix" "$SEED"
+  mkdir -p "$ROOT/backlog"
+  # Realistic body size matters here: a footer appended below drops
+  # similarity under git's default 50% rename threshold if the original
+  # content is only a line or two (measured while authoring this fixture -
+  # a one-line body reports as D+A, never R, even with -M explicit).
+  cat > "$ROOT/backlog/INTAKE-x$branch_suffix.md" <<'BODY'
+# Operator intake
+
+Filed via Telegram.
+
+The human asked whether the spec-tree console's live view could support a
+text filter across milestones, since scrolling through the whole tree on a
+phone screen is unusable once a few dozen tickets accumulate. This would
+mirror an existing filter already used elsewhere in the console.
+
+No further detail was given; the specifier is expected to scope the exact
+slice at mint time.
+BODY
+  git -C "$ROOT" add -A
+  git -C "$ROOT" commit -q -m "Operator: file a question as raw intake for the swarm"
+  BASE_TIP="$(git -C "$ROOT" rev-parse --short=10 HEAD)"
+}
+
+# ── 14: the archiving branch MOVES the intake (git mv + footer) - not a
+#        deletion at all, so the merge is allowed regardless of message ────
+mk_no_ticket_intake_branch a
+git -C "$ROOT" checkout -q -b "archive-move-a" "$BASE_TIP"
+mkdir -p "$ROOT/backlog/archive"
+git -C "$ROOT" mv "backlog/INTAKE-xa.md" "backlog/archive/INTAKE-xa.md"
+echo "" >> "$ROOT/backlog/archive/INTAKE-xa.md"
+echo "Archived by the specifier's drain." >> "$ROOT/backlog/archive/INTAKE-xa.md"
+git -C "$ROOT" add -A
+git -C "$ROOT" commit -q -m "Mint BL-9009: a text filter on the live spec tree; archive its intake"
+ARCHIVE_MOVE_TIP="$(git -C "$ROOT" rev-parse --short=10 HEAD)"
+git -C "$ROOT" checkout -q "intakebasea"
+set +e
+git -C "$ROOT" merge --no-ff --no-commit "$ARCHIVE_MOVE_TIP" >/dev/null 2>&1
+set -e
+echo "merge, no ticket named" > "$MSG"
+run_guard "$MSG" || fail "14: a move (git mv + footer) is not a deletion and must be allowed regardless of the message"
+pass "14: an archived (moved) intake is never reported as a deletion"
+git -C "$ROOT" merge --abort 2>/dev/null || true
+
+# ── 15: the second branch DELETES the intake outright (no new path), its
+#        own commit subject naming BL-9009 - HEAD's introducing commit names
+#        no ticket, so attribution must fall back to the incoming side ────
+mk_no_ticket_intake_branch b
+git -C "$ROOT" checkout -q -b "delete-named-b" "$BASE_TIP"
+git -C "$ROOT" rm -q "backlog/INTAKE-xb.md"
+git -C "$ROOT" commit -q -m "Mint BL-9009: a text filter on the live spec tree; archive its intake"
+DELETE_NAMED_TIP="$(git -C "$ROOT" rev-parse --short=10 HEAD)"
+git -C "$ROOT" checkout -q "intakebaseb"
+set +e
+git -C "$ROOT" merge --no-ff --no-commit "$DELETE_NAMED_TIP" >/dev/null 2>&1
+set -e
+echo "merge, no ticket named" > "$MSG"
+set +e
+OUT15="$(run_guard "$MSG" 2>&1)"
+STATUS15=$?
+set -e
+[[ "$STATUS15" -ne 0 ]] || fail "15: expected refusal - HEAD's own introducing commit names no ticket"
+echo "$OUT15" | grep -q "BL-9009" || fail "15: refusal must fall back to the incoming side's ticket id BL-9009, got: $OUT15"
+echo "$OUT15" | grep -qi "(unattributed)" && fail "15: must not be unattributed when the incoming side names a ticket, got: $OUT15"
+echo "$OUT15" | grep -qE "${DELETE_NAMED_TIP:0:7}" || echo "$OUT15" | grep -qE "[0-9a-f]{7,10}" \
+  || fail "15: refusal must name the deleting commit, got: $OUT15"
+pass "15: HEAD naming no ticket falls back to the incoming side's id (BL-9009), never (unattributed)"
+echo "BL-9009: deliberate removal" > "$MSG"
+run_guard "$MSG" || fail "15b: naming the incoming-attributed ticket must allow the merge"
+pass "15b: naming BL-9009 (found via the incoming side) allows the merge"
+git -C "$ROOT" merge --abort 2>/dev/null || true
+
+# ── 16: the second branch deletes the intake with a subject naming no
+#        ticket EITHER - neither side attributes, so (unattributed) is the
+#        correct (not a bug) outcome. BOTH sides have a real commit for this
+#        path (HEAD's own introducing commit, and the incoming side's
+#        deleting commit) - the diagnostic commit shown must be HEAD's,
+#        never the incoming side's, per attribution_for_path's own comment
+#        ("preferring HEAD's ... when it exists") ─────────────────────────
+mk_no_ticket_intake_branch c
+# Captured with the guard's OWN abbreviation format (git log --format=%h,
+# i.e. plain `rev-parse --short`, not this file's usual --short=10) so the
+# comparison below matches byte-for-byte what the guard actually prints.
+HEAD_INTRODUCING_TIP_C="$(git -C "$ROOT" rev-parse --short HEAD)"
+git -C "$ROOT" checkout -q -b "delete-unnamed-c" "$BASE_TIP"
+git -C "$ROOT" rm -q "backlog/INTAKE-xc.md"
+git -C "$ROOT" commit -q -m "chore: remove a stale intake file"
+DELETE_UNNAMED_TIP="$(git -C "$ROOT" rev-parse --short=10 HEAD)"
+DELETE_UNNAMED_TIP_SHORT="$(git -C "$ROOT" rev-parse --short HEAD)"
+git -C "$ROOT" checkout -q "intakebasec"
+set +e
+git -C "$ROOT" merge --no-ff --no-commit "$DELETE_UNNAMED_TIP" >/dev/null 2>&1
+set -e
+echo "merge, no ticket named" > "$MSG"
+set +e
+OUT16="$(run_guard "$MSG" 2>&1)"
+STATUS16=$?
+set -e
+[[ "$STATUS16" -ne 0 ]] || fail "16: expected refusal - neither side names a ticket"
+echo "$OUT16" | grep -qi "(unattributed)" || fail "16: refusal must read (unattributed) when neither side names a ticket, got: $OUT16"
+echo "$OUT16" | grep -qF "$HEAD_INTRODUCING_TIP_C" || fail "16: diagnostic commit must be HEAD's own ($HEAD_INTRODUCING_TIP_C), not the incoming side's ($DELETE_UNNAMED_TIP_SHORT), got: $OUT16"
+echo "$OUT16" | grep -qF "$DELETE_UNNAMED_TIP_SHORT" && fail "16: diagnostic commit must NOT be the incoming side's ($DELETE_UNNAMED_TIP_SHORT), got: $OUT16"
+pass "16: neither side naming a ticket still refuses, correctly as (unattributed), naming HEAD's own commit"
+git -C "$ROOT" merge --abort 2>/dev/null || true
+
 echo "ALL PASS"

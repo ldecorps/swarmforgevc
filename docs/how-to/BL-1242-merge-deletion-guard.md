@@ -1,4 +1,4 @@
-# Merge-deletion guard on `git merge --no-ff` (BL-1242, both directions since BL-1341)
+# Merge-deletion guard on `git merge --no-ff` (BL-1242, both directions since BL-1341, moves and attribution fixed BL-1403)
 
 *How-to. Task-oriented: understand why a merge commit was refused for
 silently dropping branch work, and how to clear it.*
@@ -51,6 +51,36 @@ exists) — an ordinary commit is untouched.
   guard, never doubled up.
 - A non-merge commit, or a merge that removes nothing the receiving
   branch introduced.
+- **A moved path (BL-1403).** `collect_deletions` now runs with rename
+  detection on (`git diff --name-status -M`, git's default similarity
+  threshold) and skips any `R*` status — a `git mv` (a root-drain
+  archiving a raw intake into `backlog/archive/`, plus an appended footer,
+  is the recurring real-world case) reports as a rename, never a bare `D`,
+  because its content survives at the new path. The guard exists so a
+  merge never silently drops work; a move drops nothing. Only a
+  status-only rewrite that keeps just the filename (well below the
+  similarity threshold) still reports as delete+add, correctly.
+
+## A refusal is exemptable whenever EITHER side names a ticket (BL-1403)
+
+Before this fix, attribution fell back from `HEAD` to `MERGE_HEAD` only
+when HEAD's introducing commit had **no subject at all** — but a raw
+intake's own introducing commit ("Operator: file a question as raw
+intake for the swarm") has a perfectly normal subject that, by design,
+names no ticket yet (the ticket doesn't exist at intake time). So the id
+came back empty, the exemption could never match anything, and the
+refusal always printed `(unattributed)` — even though the commit that
+later archived the same path (a root-drain "Mint BL-nnnn: ... archive its
+intake") *did* name the right ticket, on the other side of the merge.
+
+Every worktree hit this on its next merge-up after every root drain
+(recorded in `check_merge_deletion.sh`'s BL-1403 header): there was no
+commit message that could ever satisfy the guard, so the only way through
+was cherry-picking the archiving commit before merging — a recipe each
+role had to rediscover by hand. `attribution_for_path` now falls back to
+`MERGE_HEAD` whenever HEAD's subject yields **no ticket id**, not only
+when it is empty, and reports the commit from whichever side the id
+actually came from — never a commit/id pair from two different sides.
 
 ## If you hit this refusal
 
@@ -133,6 +163,9 @@ attempt. A merge that violates both now reports both in one refusal.
   `b71c941a19` dropped QA-landed work through it. Deliberately kept in
   ONE script rather than a fourth sibling guard — see the script's own
   BL-1341 header comment.
+- BL-1403 (moves are not deletions; either-side attribution) — closed the
+  recurring unexemptable block every root-drain intake archive triggered
+  on the next merge-up in every worktree.
 
 ## Verify
 
@@ -142,4 +175,7 @@ bash swarmforge/scripts/test/test_ticket_deletion_guard.sh
 node specs/pipeline/cli.js specs/features/BL-1242-merge-never-silently-drops-branch-work.feature
 ```
 
-Acceptance: `specs/features/BL-1242-merge-never-silently-drops-branch-work.feature`
+Acceptance: `specs/features/BL-1242-merge-never-silently-drops-branch-work.feature`,
+plus `specs/features/BL-1403-the-merge-deletion-guard-never-reports-a-move-and-never-refuses-unexemptably.feature`
+for the moves/attribution fix above, with a property runner
+(`swarmforge/scripts/test/bl1403_merge_deletion_guard_property_runner.bb`).
