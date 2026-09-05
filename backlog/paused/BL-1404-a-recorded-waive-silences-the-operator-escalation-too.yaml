@@ -28,7 +28,7 @@ invariants:
   - "A waive is applied to the finding set ONCE, before both channels decide: a key the waive store names never nudges and never escalates, and the sweep log still reports it as WAIVED on the record (BL-1344 invariant: suppression is a visible overlay, never an erasure)."
   - "BL-1344's three bounds hold unchanged for the escalation channel: one key one waive, only a recorded decision waives, and an unusable store escalates everything rather than going quiet."
 
-human_approval: pending
+human_approval: approved
 approval_context: >
   A new feature file is authored here, so it needs a tap. No choice is posed
   and there are no ruling_options. Raised by the coordinator on 2026-09-04
