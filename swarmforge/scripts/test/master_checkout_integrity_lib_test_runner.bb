@@ -9,6 +9,10 @@
 (load-file (str (fs/path script-dir ".." "master_checkout_integrity_lib.bb")))
 
 (def failures (atom []))
+
+(def created-temp-dirs (atom []))
+(.addShutdownHook (Runtime/getRuntime)
+                   (Thread. (fn [] (doseq [d @created-temp-dirs] (try (fs/delete-tree d) (catch Exception _ nil))))))
 (defn- assert= [msg e a]
   (when (not= e a) (swap! failures conj (str "FAIL " msg " e=" (pr-str e) " a=" (pr-str a)))))
 (defn- assert-true [msg p]
@@ -33,6 +37,7 @@
 
 (defn- mk-repo []
   (let [dir (str (fs/create-temp-dir {:prefix "bl1123-"}))]
+    (swap! created-temp-dirs conj dir)
     (sh dir "git" "init" "-q")
     (sh dir "git" "symbolic-ref" "HEAD" "refs/heads/main")
     (sh dir "git" "config" "user.email" "t@t")

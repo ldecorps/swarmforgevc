@@ -157,6 +157,14 @@
 
 (defn- p2-teardown! [] (when @p2-root (fs/delete-tree @p2-root)))
 
+;; BL-1289: the explicit teardown! calls below cover the normal path; this
+;; hook is the backstop for an unexpected exception between setup and its
+;; own teardown call - each teardown fn already guards nil/gone paths.
+(.addShutdownHook (Runtime/getRuntime)
+                   (Thread. (fn []
+                              (try (p1-teardown!) (catch Exception _ nil))
+                              (try (p2-teardown!) (catch Exception _ nil)))))
+
 (def quote-styles [(fn [v] v) (fn [v] (str "\"" v "\"")) (fn [v] (str "'" v "'"))])
 
 (defn gen-p2 [s]

@@ -9,6 +9,10 @@
 
 (def failures (atom []))
 
+(def created-temp-dirs (atom []))
+(.addShutdownHook (Runtime/getRuntime)
+                   (Thread. (fn [] (doseq [d @created-temp-dirs] (try (fs/delete-tree d) (catch Exception _ nil))))))
+
 (defn assert= [msg expected actual]
   (when (not= expected actual)
     (swap! failures conj (str "FAIL: " msg "\n  expected: " (pr-str expected) "\n  actual:   " (pr-str actual)))))
@@ -69,7 +73,9 @@
          (post-qa-branch-sweep-lib/decide-role
           {:head-sha "old" :landed-sha "new" :dirty? true :in-process? true :can-ff? true}))
 
-(let [daemon-dir (str (fs/path (fs/create-temp-dir {:prefix "bl668-test-"}) "daemon"))
+(let [bl668-root (fs/create-temp-dir {:prefix "bl668-test-"})
+      _ (swap! created-temp-dirs conj bl668-root)
+      daemon-dir (str (fs/path bl668-root "daemon"))
       landed "landed1"
       facts {"coder" {:head-sha "c1" :landed-sha landed :dirty? false :in-process? false :can-ff? true}
              "cleaner" {:head-sha "l1" :landed-sha landed :dirty? true :in-process? false :can-ff? true}
@@ -143,7 +149,8 @@
                          (swap! tells conj {:role role :reason (name reason) :text text :wake? wake?})
                          {:success true})
                 :log! (fn [& _] nil)}
-      dir (str (fs/create-temp-dir {:prefix "bl1361-tell-"}))]
+      dir (str (fs/create-temp-dir {:prefix "bl1361-tell-"}))
+      _ (swap! created-temp-dirs conj dir)]
   (post-qa-branch-sweep-lib/sweep! dir "abc1234567" ["cleaner" "architect"] adapters)
   (assert= "BL-1361: exactly the surfaced role is told - a settled one hears nothing"
            ["cleaner"] (mapv :role @tells))
@@ -164,7 +171,8 @@
                            {:success false :error "mailbox unwritable"}
                            {:success true}))
                 :log! (fn [& parts] (swap! logs conj (vec parts)))}
-      dir (str (fs/create-temp-dir {:prefix "bl1361-fail-"}))]
+      dir (str (fs/create-temp-dir {:prefix "bl1361-fail-"}))
+      _ (swap! created-temp-dirs conj dir)]
   (post-qa-branch-sweep-lib/sweep! dir "abc1234567" ["cleaner" "architect"] adapters)
   (assert= "BL-1361: a role that cannot be told does not withhold the others"
            ["cleaner" "architect"] @tells)
@@ -188,7 +196,8 @@
                            (throw (Exception. "mailbox write threw"))
                            {:success true}))
                 :log! (fn [& parts] (swap! logs conj (vec parts)))}
-      dir (str (fs/create-temp-dir {:prefix "bl1361-throw-"}))]
+      dir (str (fs/create-temp-dir {:prefix "bl1361-throw-"}))
+      _ (swap! created-temp-dirs conj dir)]
   (post-qa-branch-sweep-lib/sweep! dir "abc1234567" ["cleaner" "architect"] adapters)
   (assert= "BL-1361: a tell! that THROWS does not withhold the others either"
            ["cleaner" "architect"] @tells)
@@ -198,7 +207,8 @@
                       @logs))
   (fs/delete-tree dir))
 
-(let [dir (str (fs/create-temp-dir {:prefix "bl1361-notell-"}))]
+(let [dir (str (fs/create-temp-dir {:prefix "bl1361-notell-"}))
+_ (swap! created-temp-dirs conj dir)]
   (post-qa-branch-sweep-lib/sweep!
    dir "abc1234567" ["cleaner"]
    {:role-facts! (fn [_] {:worktree-path "/w" :head-sha "old0000000" :dirty? true
@@ -257,7 +267,8 @@
 
 (assert= "legacy state (no :told-sha) is dropped on load, self-healing instead of blocking forever"
          [] (:surfaced (post-qa-branch-sweep-lib/read-state
-                         (let [dir (str (fs/create-temp-dir {:prefix "bl1421-legacy-"}))]
+                         (let [dir (str (fs/create-temp-dir {:prefix "bl1421-legacy-"}))
+_ (swap! created-temp-dirs conj dir)]
                            (fs/create-dirs dir)
                            (spit (post-qa-branch-sweep-lib/state-path dir)
                                  "{\"landed-sha\":\"shaA\",\"settled\":{},\"surfaced\":[{\"role\":\"coder\",\"reason\":\"dirty-worktree\"}]}")
@@ -269,6 +280,7 @@
 
 (let [tells (atom [])
       dir (str (fs/create-temp-dir {:prefix "bl1421-replay-"}))
+      _ (swap! created-temp-dirs conj dir)
       adapters {:role-facts! (fn [_] {:worktree-path "/w" :head-sha "stale0000" :dirty? true
                                       :in-process? false :can-ff? false})
                 :fast-forward! (fn [_ _] {:success true})
@@ -291,6 +303,7 @@
 (let [tells (atom [])
       caught-up? (atom false)
       dir (str (fs/create-temp-dir {:prefix "bl1421-catchup-"}))
+      _ (swap! created-temp-dirs conj dir)
       adapters {:role-facts! (fn [_] {:worktree-path "/w" :head-sha "stale0000" :dirty? true
                                       :in-process? false :can-ff? false})
                 :fast-forward! (fn [_ _] {:success true})
@@ -315,6 +328,7 @@
 
 (let [tells (atom [])
       dir (str (fs/create-temp-dir {:prefix "bl1421-inprocess-"}))
+      _ (swap! created-temp-dirs conj dir)
       adapters {:role-facts! (fn [_] {:worktree-path "/w" :head-sha "stale0000" :dirty? true
                                       :in-process? true :can-ff? false})
                 :fast-forward! (fn [_ _] {:success true})

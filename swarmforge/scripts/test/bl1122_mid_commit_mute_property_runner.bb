@@ -84,6 +84,7 @@
 
 ;; I2: commit-in-flight? is read-only — observes lock only; no leftover files.
 (let [tmp (str (fs/create-temp-dir {:prefix "bl1122-prop-"}))
+      _ (.addShutdownHook (Runtime/getRuntime) (Thread. (fn [] (try (fs/delete-tree tmp) (catch Exception _ nil)))))
       git (fs/path tmp ".git")]
   (fs/create-dirs git)
   (let [before (set (map str (fs/list-dir git)))]

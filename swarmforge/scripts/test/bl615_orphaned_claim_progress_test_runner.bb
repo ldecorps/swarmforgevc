@@ -10,6 +10,10 @@
 (def failures (atom []))
 (defn fail! [m] (swap! failures conj m))
 
+(def created-temp-dirs (atom []))
+(.addShutdownHook (Runtime/getRuntime)
+                   (Thread. (fn [] (doseq [d @created-temp-dirs] (try (fs/delete-tree d) (catch Exception _ nil))))))
+
 ;; Pure: orphan detection includes claim-progress
 (let [names ["a.handoff" "a.handoff.claim-progress.json" "b.handoff.claim-progress.json"]
       orphans (chase-sweep-lib/orphaned-sidecar-filenames names)]
@@ -18,6 +22,7 @@
 
 ;; Impure reap on in_process fixture
 (let [dir (str (fs/create-temp-dir {:prefix "bl615-reap-"}))
+      _ (swap! created-temp-dirs conj dir)
       _ (spit (str (fs/path dir "orphan.handoff.claim-progress.json")) "{}")
       _ (spit (str (fs/path dir "keep.handoff")) "id: keep\n")
       _ (spit (str (fs/path dir "keep.handoff.claim-progress.json")) "{}")
@@ -31,6 +36,7 @@
 
 ;; abandon-stale! removes sidecars (mini roles.tsv fixture)
 (let [root (str (fs/create-temp-dir {:prefix "bl615-abandon-"}))
+      _ (swap! created-temp-dirs conj root)
       wt (str (fs/path root ".worktrees" "coder"))
       ip (str (fs/path wt ".swarmforge" "handoffs" "inbox" "in_process"))
       _ (fs/create-dirs ip)
