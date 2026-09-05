@@ -1001,6 +1001,17 @@
              state dispatch-trail-states]
          (str (handoff-lib/mailbox-dir role-info state)))))
 
+(defn live-mail-trail-dirs
+  "Every :new/:in_process mailbox for role-infos - the SAME scope
+   handoffd.bb's own dropped-parcel-live-mail-dirs uses for live-mail?
+   (a parcel currently sitting somewhere, not merely once dispatched),
+   exposed here (mirroring dispatch-trail-dirs's own role-infos shape) so
+   the router's/CLI's one-ticket verdict (BL-1415) reads live mail with the
+   identical scope the sweep does."
+  [role-infos]
+  (vec (for [role-info role-infos state [:new :in_process]]
+         (str (handoff-lib/mailbox-dir role-info state)))))
+
 (defn ticket-dispatched-in?
   "Full pipeline for the router's one-ticket question: reads the trail set from
    scan-dirs with the SAME reader the sweep uses, then answers for ticket-id."
@@ -1511,14 +1522,37 @@
     (some-> s str str/trim not-empty java.time.Instant/parse .toEpochMilli)
     (catch Exception _ nil)))
 
+(defn- handoff-event-ms-from-headers
+  "BL-1415: the FRESHEST of a handoff's own creation (enqueued_at, else
+   created_at) and the recipient copy's own action timestamps (dequeued_at,
+   completed_at) - never file mtime (a worktree hot-sync or archive move
+   can touch mtime without a new event happening). Reading only creation
+   time reported a dispatch as stale the instant its recipient finished it
+   (BL-1384/BL-1402, 2026-09-05): the coder dequeued and completed both
+   Work notes within a minute of picking them up, and the clock - which
+   never looked past created_at/enqueued_at - was already 1h48m past the
+   stall threshold from creation alone. nil when none parse - never a false
+   freshness signal from missing data.
+
+   Takes an already-read headers map (string keys) so this ONE derivation
+   serves both handoff-event-ms (single-file reads) and build-dropped-
+   parcel-trail-index's own single-pass loop (BL-978 invariant 2 - the two
+   must never diverge into separate copies)."
+  [headers]
+  (let [ms (keep parse-instant-ms
+                 [(get headers "enqueued_at") (get headers "created_at")
+                  (get headers "dequeued_at") (get headers "completed_at")])]
+    (when (seq ms) (apply max ms))))
+
 (defn- handoff-event-ms
-  "A handoff file's own age-source timestamp: enqueued_at if parseable,
-   else created_at - never file mtime (a worktree hot-sync or archive move
-   can touch mtime without a new event happening; mirrors mono_router_lib.
-   bb's note-aged? precedence exactly)."
+  "A handoff file's own age-source timestamp - see handoff-event-ms-from-
+   headers, the shared derivation this reads a single file's headers into."
   [file-path]
-  (or (parse-instant-ms (read-header-field file-path "enqueued_at"))
-      (parse-instant-ms (read-header-field file-path "created_at"))))
+  (handoff-event-ms-from-headers
+   {"enqueued_at" (read-header-field file-path "enqueued_at")
+    "created_at" (read-header-field file-path "created_at")
+    "dequeued_at" (read-header-field file-path "dequeued_at")
+    "completed_at" (read-header-field file-path "completed_at")}))
 
 (defn newest-trail-event-ms
   "The freshest trail-event timestamp (epoch ms) for item-id across
@@ -1606,8 +1640,9 @@
               (if-not (and trail? trail-id)
                 acc
                 (let [self-nudge? (boolean (and msg (str/includes? msg dropped-parcel-nudge-phrase)))
-                      event-ms (or (parse-instant-ms (get headers "enqueued_at"))
-                                   (parse-instant-ms (get headers "created_at")))
+                      ;; BL-1415: the SAME derivation handoff-event-ms reads
+                      ;; a single file into (invariant 2 - one definition).
+                      event-ms (handoff-event-ms-from-headers headers)
                       acc (update-in acc [:trail trail-id] #(or % {:newest-trail-ms nil}))]
                   (if (and (not self-nudge?) event-ms)
                     (update-in acc [:trail trail-id :newest-trail-ms]
@@ -1659,6 +1694,54 @@
   [active-dir all-scan-dirs live-mail-dirs now-ms stall-threshold-ms]
   (:items (dropped-parcel-evaluation active-dir all-scan-dirs live-mail-dirs
                                      now-ms stall-threshold-ms)))
+
+;; ── BL-1415: one three-way verdict for the sweep, the CLI and the router ──
+;; The dropped-parcel sweep nudges; dispatch_trail_cli.bb and
+;; route_backlog_to_coder.sh each need to ACT on the identical question for
+;; one ticket, so the router routes on the same verdict the sweep already
+;; reached rather than re-deriving it from the mailboxes (invariant 1).
+;; decide-dropped-parcel? is reused UNCHANGED - this only adds the
+;; :undispatched case (no trail at all) and the shared :dispatched fallback
+;; (live mail, a trail too fresh to call stale, or missing data - BL-1301's
+;; own fail-closed: a nil newest-trail-ms never reads :dropped).
+
+(defn ticket-dispatch-verdict
+  "Pure: {:verdict :dispatched|:dropped|:undispatched :reason string-or-nil}
+   over already-derived facts (has-trail?/live-mail?/newest-trail-ms/status
+   - dropped-parcel-evaluation's own shape). :reason is dropped-parcel-
+   note-message for :dropped - the SAME text the sweep's own nudge carries,
+   so the CLI, the router's warning and the sweep visibly agree without a
+   second copy of the message text - nil otherwise."
+  [item-id {:keys [has-trail? live-mail? newest-trail-ms status]} now-ms stall-threshold-ms]
+  (cond
+    (not has-trail?)
+    {:verdict :undispatched :reason nil}
+
+    (decide-dropped-parcel? {:has-trail? has-trail? :live-mail? live-mail?
+                              :newest-trail-ms newest-trail-ms :status status}
+                            now-ms stall-threshold-ms)
+    {:verdict :dropped :reason (dropped-parcel-note-message item-id)}
+
+    :else
+    {:verdict :dispatched :reason nil}))
+
+(defn ticket-dispatch-verdict-in
+  "Full pipeline for the router's/CLI's one-ticket question: reads has-
+   trail?/newest-trail-ms and live-mail? from all-scan-dirs/live-mail-dirs
+   with the SAME single-pass reader the sweep uses
+   (build-dropped-parcel-trail-index), then asks ticket-dispatch-verdict.
+   `status` is not read here (the router/CLI is not given a ticket path) -
+   a parked ticket the sweep would suppress still answers :dropped here,
+   which only ever widens who gets routed, never narrows past what the
+   sweep itself would have nudged for an unparked ticket."
+  [item-id all-scan-dirs live-mail-dirs now-ms stall-threshold-ms]
+  (let [{:keys [trail live-ids]} (build-dropped-parcel-trail-index all-scan-dirs live-mail-dirs)]
+    (ticket-dispatch-verdict item-id
+                             {:has-trail? (contains? trail item-id)
+                              :live-mail? (contains? live-ids item-id)
+                              :newest-trail-ms (get-in trail [item-id :newest-trail-ms])
+                              :status nil}
+                             now-ms stall-threshold-ms)))
 
 ;; ── BL-678: batch-claim-progress sidecar (live-owner half of BL-648's ──────
 ;; source near-miss) ─────────────────────────────────────────────────────────
