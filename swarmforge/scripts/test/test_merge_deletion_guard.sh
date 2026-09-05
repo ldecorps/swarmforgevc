@@ -415,12 +415,21 @@ git -C "$ROOT" merge --abort 2>/dev/null || true
 
 # ── 16: the second branch deletes the intake with a subject naming no
 #        ticket EITHER - neither side attributes, so (unattributed) is the
-#        correct (not a bug) outcome ───────────────────────────────────────
+#        correct (not a bug) outcome. BOTH sides have a real commit for this
+#        path (HEAD's own introducing commit, and the incoming side's
+#        deleting commit) - the diagnostic commit shown must be HEAD's,
+#        never the incoming side's, per attribution_for_path's own comment
+#        ("preferring HEAD's ... when it exists") ─────────────────────────
 mk_no_ticket_intake_branch c
+# Captured with the guard's OWN abbreviation format (git log --format=%h,
+# i.e. plain `rev-parse --short`, not this file's usual --short=10) so the
+# comparison below matches byte-for-byte what the guard actually prints.
+HEAD_INTRODUCING_TIP_C="$(git -C "$ROOT" rev-parse --short HEAD)"
 git -C "$ROOT" checkout -q -b "delete-unnamed-c" "$BASE_TIP"
 git -C "$ROOT" rm -q "backlog/INTAKE-xc.md"
 git -C "$ROOT" commit -q -m "chore: remove a stale intake file"
 DELETE_UNNAMED_TIP="$(git -C "$ROOT" rev-parse --short=10 HEAD)"
+DELETE_UNNAMED_TIP_SHORT="$(git -C "$ROOT" rev-parse --short HEAD)"
 git -C "$ROOT" checkout -q "intakebasec"
 set +e
 git -C "$ROOT" merge --no-ff --no-commit "$DELETE_UNNAMED_TIP" >/dev/null 2>&1
@@ -432,7 +441,9 @@ STATUS16=$?
 set -e
 [[ "$STATUS16" -ne 0 ]] || fail "16: expected refusal - neither side names a ticket"
 echo "$OUT16" | grep -qi "(unattributed)" || fail "16: refusal must read (unattributed) when neither side names a ticket, got: $OUT16"
-pass "16: neither side naming a ticket still refuses, correctly as (unattributed)"
+echo "$OUT16" | grep -qF "$HEAD_INTRODUCING_TIP_C" || fail "16: diagnostic commit must be HEAD's own ($HEAD_INTRODUCING_TIP_C), not the incoming side's ($DELETE_UNNAMED_TIP_SHORT), got: $OUT16"
+echo "$OUT16" | grep -qF "$DELETE_UNNAMED_TIP_SHORT" && fail "16: diagnostic commit must NOT be the incoming side's ($DELETE_UNNAMED_TIP_SHORT), got: $OUT16"
+pass "16: neither side naming a ticket still refuses, correctly as (unattributed), naming HEAD's own commit"
 git -C "$ROOT" merge --abort 2>/dev/null || true
 
 echo "ALL PASS"
