@@ -61,7 +61,8 @@ the operator LLM launch count stays **zero**. This replaces the
 
 If launches appear on a quiet night, check for:
 
-1. Residual `SWARM_CHECK_TIMER` or `AGENT_EXITED` events (regression).
+1. Residual `SWARM_CHECK_TIMER`, `AGENT_EXITED` or `TASK_ARRIVED` events
+   (regression — all three are retired tick sources).
 2. Undelivered Telegram traffic waking the operator legitimately.
 3. A CRIT babysitter finding you missed in `babysitterd.log`.
 
@@ -90,6 +91,17 @@ restricted operator byte-identical baseline, and pid-hold retirement.
   minutes.
 - **`night-start.sh` operator pid-hold** — cost on unattended nights now tracks
   real events only.
+- **`TASK_ARRIVED`** as a per-tick wake source (BL-1353, human ruling
+  2026-09-04) — it was never in the table above, but it was still manufactured
+  every tick from a bare mtime probe on the coordinator's `inbox/new` that never
+  asked whether the coordinator picked the handoff up. A handoff landing for the
+  coordinator is ordinary pipeline motion the coordinator handles itself, not a
+  finding that something is odd: on 2026-09-02 UTC it produced 37 of 73
+  dispatched events, over half that day's disposable Opus sessions. An unclaimed
+  handoff is still covered — by a babysitterd CRIT and BL-098 chase/nudge
+  telemetry — so the invariant below holds. The freshness probe itself stays:
+  the BL-307/BL-310 closing pass reads it to decide whether a hibernated swarm
+  should wake for new coordinator mail.
 
 ## Invariant (do not violate)
 

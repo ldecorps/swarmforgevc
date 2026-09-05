@@ -663,21 +663,31 @@
 
 (defn tick-observed-events
   "BL-653: events operator_runtime.bb may manufacture from its own tick
-   sweep. Excludes dead-agent-events and SWARM_CHECK_TIMER — liveness and
+   sweep. BL-1353 also excludes TASK_ARRIVED - a handoff landing for the
+   coordinator is ordinary pipeline motion, not a finding that something is
+   odd. Excludes dead-agent-events and SWARM_CHECK_TIMER — liveness and
    periodic patrol belong to the deterministic babysitter; the LLM Operator
    is summoned, never scheduled. BABYSITTER_ESCALATION arrives via the
    queue from babysitter_check.bb, not from this function."
-  [{:keys [reachable? command-file-exists? command-detail coordinator-inbox-fresh?]}]
+  [{:keys [reachable? command-file-exists? command-detail]}]
   (cond-> []
     (not reachable?) (conj (control-lost-event))
-    command-file-exists? (conj {:type "HUMAN_COMMAND" :detail command-detail})
-    coordinator-inbox-fresh? (conj {:type "TASK_ARRIVED"})))
+    command-file-exists? (conj {:type "HUMAN_COMMAND" :detail command-detail})))
 
 (def manufactured-tick-event-types
   "The set of :type values tick-observed-events may ever return — used by
    BL-653 property tests to prove patrol/liveness pseudo-events never
-   re-enter via the tick path."
-  #{"SWARM_CONTROL_LOST" "HUMAN_COMMAND" "TASK_ARRIVED"})
+   re-enter via the tick path.
+
+   BL-1353 removed TASK_ARRIVED (human ruling, 2026-09-04). It was
+   manufactured from a bare mtime probe on the coordinator's inbox that
+   never asked whether the coordinator picked the handoff up, so ordinary
+   pipeline motion - the thing the coordinator exists to handle by itself -
+   summoned a disposable Opus session: 37 of 73 dispatched events on
+   2026-09-02 UTC. Nothing is left uncovered: an unclaimed handoff is a
+   babysitterd CRIT (a live escalation producer, arriving via the queue)
+   and BL-098 chase/nudge telemetry, so BL-653's own invariant holds."
+  #{"SWARM_CONTROL_LOST" "HUMAN_COMMAND"})
 
 (defn babysitter-escalation-event
   "BL-653: the wire shape babysitter_check.bb appends to events.jsonl."
