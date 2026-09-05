@@ -78,6 +78,7 @@ claim_progress_lib_test_runner.bb	standing
 closing_context_clear_test_runner.bb	standing		
 commit_integrity_lib_test_runner.bb	standing		
 compliance_battery_test_runner.bb	standing		
+contract_freshness_gate_lib_test_runner.bb	standing		
 context_telemetry_test_runner.bb	standing		
 control_plane_lib_test_runner.bb	standing		
 coordinator_config_test_runner.bb	standing		
