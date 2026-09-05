@@ -3,11 +3,15 @@ import * as path from 'path';
 import * as crypto from 'crypto';
 
 /** Atomically write content to a file via temp-file + rename. */
-export function atomicWrite(filePath: string, content: string): void {
+export function atomicWrite(filePath: string, content: string | Buffer): void {
   const dir = path.dirname(filePath);
   fs.mkdirSync(dir, { recursive: true });
   const tmp = filePath + '.' + crypto.randomBytes(6).toString('hex') + '.tmp';
-  fs.writeFileSync(tmp, content, 'utf8');
+  if (typeof content === 'string') {
+    fs.writeFileSync(tmp, content, 'utf8');
+  } else {
+    fs.writeFileSync(tmp, content);
+  }
   fs.renameSync(tmp, filePath);
 }
 

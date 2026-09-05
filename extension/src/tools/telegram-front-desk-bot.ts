@@ -137,10 +137,12 @@ import {
   closeApprovalAskForBacklogId,
   roleFromAskThreadId,
   reconcileStaleApprovalAsks,
+  PhotoPersistOutcome,
 } from './telegramFrontDeskBotCore';
 import { cursorBridgeTopicIdFromMap, bubbleTopicIdFromMap, frontDeskTopicMapWithoutCursorBridge } from './telegramCursorBridgeCore';
 import { appendCursorBridgeInboundUpdate } from './cursorBridgeInboundQueue';
 import { runProviderChatSeatTurn } from './providerChatSeatLive';
+import { largestTelegramPhotoFileId, mimeTypeFromTelegramFilePath, MAX_TELEGRAM_PHOTO_BYTES } from '../bridge/cursorBridgeTelegramMedia';
 import { backlogForTopic } from '../concierge/topicRouter';
 import {
   recordApprovalReply,
@@ -1963,6 +1965,110 @@ export async function transcribeVoiceNote(botToken: string, openaiApiKey: string
   }
 }
 
+// BL-1402: the operator media store - a captioned photo the front desk
+// routes is kept under here, named by the update id so a redelivery finds
+// its own file without re-fetching (invariant 3).
+const MEDIA_STORE_REL = ['.swarmforge', 'operator', 'media'] as const;
+export const ROUTED_PHOTO_STORE_BOUND = 50;
+
+function mediaStoreDir(targetPath: string): string {
+  return path.join(targetPath, ...MEDIA_STORE_REL);
+}
+
+function extensionForPhotoMimeType(mimeType: string): string {
+  if (mimeType === 'image/png') return 'png';
+  if (mimeType === 'image/webp') return 'webp';
+  if (mimeType === 'image/gif') return 'gif';
+  return 'jpg';
+}
+
+// BL-1402 invariant 3: checked BEFORE any network call, so a redelivered
+// update costs one readdir and never re-fetches or re-writes.
+function existingMediaFile(targetPath: string, updateId: number): string | undefined {
+  let names: string[];
+  try {
+    names = fs.readdirSync(mediaStoreDir(targetPath));
+  } catch {
+    return undefined;
+  }
+  const prefix = `${updateId}.`;
+  const match = names.find((name) => name.startsWith(prefix));
+  return match ? path.posix.join(...MEDIA_STORE_REL, match) : undefined;
+}
+
+// BL-1402: keeps the newest `bound` files, oldest mtime out first. Failure
+// to prune is logged, never thrown - a store that briefly exceeds its bound
+// is cosmetic; losing a routed photo to a prune bug is not.
+function pruneMediaStore(targetPath: string, bound: number): void {
+  const dir = mediaStoreDir(targetPath);
+  let entries: string[];
+  try {
+    entries = fs.readdirSync(dir);
+  } catch {
+    return;
+  }
+  if (entries.length <= bound) {
+    return;
+  }
+  try {
+    const withMtime = entries.map((name) => ({ name, mtimeMs: fs.statSync(path.join(dir, name)).mtimeMs }));
+    withMtime.sort((a, b) => a.mtimeMs - b.mtimeMs);
+    for (const { name } of withMtime.slice(0, withMtime.length - bound)) {
+      fs.unlinkSync(path.join(dir, name));
+    }
+  } catch (err) {
+    console.error(`BL-1402: media store prune failed: ${(err as Error).message}`);
+  }
+}
+
+// Injectable so acceptance/unit fixtures can drive the REAL store/prune/
+// idempotency logic below against a real temp directory without a real
+// Telegram network call - the same DownloadTelegramPhotoDeps convention
+// cursorBridgeTelegramMedia.ts already uses for the bridge's own photo path.
+export interface PersistRoutedPhotoDeps {
+  getFileFn?: typeof getFile;
+  downloadFn?: typeof downloadTelegramFile;
+}
+
+// BL-1402: persists a routed photo's bytes once per update - Telegram's own
+// two-step getFile -> GET (mirrors resolveVoiceAudio above), written via
+// atomicWrite's temp-and-rename shape. Never throws: every failure
+// classifies into PhotoPersistOutcome so the caption still always routes
+// (invariant 1).
+export async function persistRoutedPhoto(
+  botToken: string,
+  targetPath: string,
+  update: TelegramUpdate,
+  deps: PersistRoutedPhotoDeps = {}
+): Promise<PhotoPersistOutcome> {
+  const getFileFn = deps.getFileFn ?? getFile;
+  const downloadFn = deps.downloadFn ?? downloadTelegramFile;
+  const fileId = largestTelegramPhotoFileId(update.message?.photo);
+  if (!fileId) {
+    return { kind: 'not-applicable' };
+  }
+  const existing = existingMediaFile(targetPath, update.update_id);
+  if (existing) {
+    return { kind: 'already-saved', path: existing };
+  }
+  const fileResult = await getFileFn(botToken, fileId);
+  if (!fileResult.success || !fileResult.filePath) {
+    return { kind: 'failed', reason: `getFile failed: ${fileResult.error ?? 'unknown'}` };
+  }
+  const download = await downloadFn(botToken, fileResult.filePath);
+  if (!download.success || !download.bytes) {
+    return { kind: 'failed', reason: `download failed: ${download.error ?? 'unknown'}` };
+  }
+  if (download.bytes.length > MAX_TELEGRAM_PHOTO_BYTES) {
+    return { kind: 'failed', reason: `photo exceeds ${MAX_TELEGRAM_PHOTO_BYTES} bytes (${download.bytes.length})` };
+  }
+  const ext = extensionForPhotoMimeType(mimeTypeFromTelegramFilePath(fileResult.filePath));
+  const relPath = path.posix.join(...MEDIA_STORE_REL, `${update.update_id}.${ext}`);
+  atomicWrite(path.join(targetPath, ...MEDIA_STORE_REL, `${update.update_id}.${ext}`), download.bytes);
+  pruneMediaStore(targetPath, ROUTED_PHOTO_STORE_BOUND);
+  return { kind: 'saved', path: relPath };
+}
+
 // Synthesizes the coordinator's text reply to OGG/Opus audio via OpenAI's
 // TTS endpoint. A failure here is NOT retried (deliverReply's own
 // synthesizeVoiceReplyIfNeeded already degrades gracefully to the
@@ -2458,6 +2564,7 @@ function buildPollAdapters(
       });
       return outcome.kind === 'not-mine' ? 'not-mine' : 'handled';
     },
+    persistRoutedPhoto: (update) => persistRoutedPhoto(botToken, targetPath, update),
     backlogForTopic: (topicId) => backlogForTopic(readBacklogTopicMap(targetPath), topicId),
     postOperatorContext: (backlogId, text, updateId) => postOperatorContext(targetPath, backlogId, text, updateId),
     recordApprovalReply: (backlogId) => Promise.resolve(recordApprovalReply(targetPath, backlogId)),
