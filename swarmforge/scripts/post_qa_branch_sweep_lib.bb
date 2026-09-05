@@ -26,9 +26,16 @@
      :settled (into {}
                     (map (fn [[k v]] [(if (keyword? k) (name k) (str k)) v])
                          (or (:settled raw) {})))
-     :surfaced (vec (for [e (or (:surfaced raw) [])]
+     ;; BL-1421: a legacy entry with no :told-sha (written before this
+     ;; ticket landed) has nothing a caught-up check can compare against -
+     ;; dropped on load so the very next surfacing self-heals it into a
+     ;; real, told-sha-bearing record, rather than silently blocking a
+     ;; re-tell forever.
+     :surfaced (vec (for [e (or (:surfaced raw) [])
+                          :when (:told-sha e)]
                       {:role (name (:role e))
-                       :reason (name (:reason e))}))}))
+                       :reason (name (:reason e))
+                       :told-sha (:told-sha e)}))}))
 
 (defn read-state [daemon-dir]
   (normalize-state (read-json (state-path daemon-dir))))
@@ -45,6 +52,11 @@
        (not= "master" (:worktree-name role-info))))
 
 (defn decide-role
+  "BL-1421: in-process? is read BEFORE dirty? - a role mid-parcel is dirty
+   by definition (its own uncommitted work), so checking dirty? first
+   always misclassified it as a resolvable dirty-worktree wake instead of
+   the in-process-work it actually is. A dirty worktree with NO in_process
+   parcel is what wakes, per the human's BL-1361 ruling."
   [{:keys [head-sha landed-sha dirty? in-process? can-ff?]}]
   (cond
     (or (nil? landed-sha) (nil? head-sha))
@@ -53,11 +65,11 @@
     (= head-sha landed-sha)
     {:action :already-settled}
 
-    dirty?
-    {:action :surface :reason :dirty-worktree}
-
     in-process?
     {:action :surface :reason :in-process-work}
+
+    dirty?
+    {:action :surface :reason :dirty-worktree}
 
     can-ff?
     {:action :settle}
@@ -66,21 +78,41 @@
     {:action :surface :reason :divergent-branch}))
 
 (defn normalize-state-for-landed
+  "BL-1421: a new landed sha resets :settled (a role that was fast-forwarded
+   to the OLD landed sha needs to be re-checked against the new one anyway -
+   settled-at-landed? below already compares by value, so this reset only
+   drops now-irrelevant history, not correctness) but PRESERVES :surfaced -
+   the whole point of a standing surfacing is that a newer landed sha alone
+   must never clear it. Before this fix :surfaced reset here too, so every
+   one of main's 103 commits on 2026-09-05 was a fresh telling for any role
+   still behind."
   [state landed-sha]
   (if (= (:landed-sha state) landed-sha)
     state
-    {:landed-sha landed-sha :settled {} :surfaced []}))
+    (assoc state :landed-sha landed-sha :settled {})))
 
 (defn settled-at-landed?
   [state role landed-sha]
   (let [settled (get state :settled)]
     (= (get settled role) landed-sha)))
 
-(defn surface-already-recorded?
+(defn told-sha-for
+  "The told-sha of the standing surfacing on record for (role, reason), or
+   nil when none exists yet."
   [state role reason]
   (let [reason-str (if (keyword? reason) (name reason) (str reason))]
-    (some #(and (= (str (:role %)) role) (= (str (:reason %)) reason-str))
+    (some #(and (= (str (:role %)) role) (= (str (:reason %)) reason-str) (:told-sha %))
           (:surfaced state []))))
+
+(defn surface-already-recorded?
+  "BL-1421: a record for (role, reason) blocks a re-tell only while the role
+   has NOT caught up to the sha it was told about - caught-up-to-told? is
+   the caller's own answer to that (git merge-base --is-ancestor told-sha
+   HEAD in the role's worktree; irrelevant, never asked, when no record
+   exists at all - told-sha-for already answers nil for that case, matching
+   the untouched pre-BL-1421 behavior for a role's first-ever surfacing)."
+  [state role reason caught-up-to-told?]
+  (boolean (and (told-sha-for state role reason) (not caught-up-to-told?))))
 
 (defn surface-reason-text
   [reason]
@@ -116,8 +148,47 @@
     (if (<= (count text) 80) text (subs text 0 80))))
 
 (defn record-surface!
-  [state role reason]
-  (update state :surfaced conj {:role role :reason (if (keyword? reason) (name reason) (str reason))}))
+  "Upserts the (role, reason) record: at most one entry per pair, so a
+   stale caught-up record does not linger alongside the fresh one a later
+   re-tell creates."
+  [state role reason landed-sha]
+  (let [reason-str (if (keyword? reason) (name reason) (str reason))
+        without (remove #(and (= (str (:role %)) role) (= (str (:reason %)) reason-str))
+                         (:surfaced state []))]
+    (assoc state :surfaced
+           (conj (vec without) {:role role :reason reason-str :told-sha landed-sha}))))
+
+(defn- caught-up-to-told-fact
+  "BL-1421: irrelevant, and never asked, when no record exists yet for
+   (role, reason) - told-sha-for already answers nil for a first-ever
+   surfacing, matching pre-BL-1421 behavior exactly. When a record DOES
+   exist, defer to the caller's own :caught-up-to-told? adapter; ABSENT
+   that adapter entirely (every pre-BL-1421 test fixture), default to
+   not-caught-up - the same 'no duplicate actions on a repeat sweep'
+   behavior those fixtures already assert, preserved rather than silently
+   changed by this ticket."
+  [adapters state role-name reason]
+  (when-let [told-sha (told-sha-for state role-name reason)]
+    (if-let [f (:caught-up-to-told? adapters)]
+      (boolean (f role-name told-sha))
+      false)))
+
+;; Shared by both places a surfacing can be decided (a fresh :surface
+;; action, and a :settle whose fast-forward attempt failed) - BL-1421's
+;; standing-surfacing suppression must behave identically either way, and a
+;; second copy of this exact shape drifting out of sync is precisely how
+;; the settle-fails path kept re-telling on every tick while :surface's own
+;; copy already suppressed correctly (caught auditing this ticket: the
+;; settle-fails branch used to log and return a :surfaced action
+;; UNCONDITIONALLY, even when already-recorded, so :divergent-branch alone
+;; among the three reasons kept re-telling every sweep).
+(defn- surface-or-suppress
+  [state role-name reason landed-sha adapters]
+  (if (surface-already-recorded? state role-name reason (caught-up-to-told-fact adapters state role-name reason))
+    [state nil]
+    (let [new-state (record-surface! state role-name reason landed-sha)]
+      ((:log! adapters) "post-qa-branch-sweep-surfaced" role-name (surface-reason-text reason))
+      [new-state {:type :surfaced :role role-name :reason (name reason)}])))
 
 (defn sweep-one-role
   [state landed-sha role-name facts adapters]
@@ -134,20 +205,10 @@
             (let [new-state (update state :settled assoc role-name landed-sha)]
               ((:log! adapters) "post-qa-branch-sweep-settled" role-name landed-sha)
               [new-state {:type :settled :role role-name :landed-sha landed-sha}])
-            (let [reason :divergent-branch
-                  new-state (if (surface-already-recorded? state role-name reason)
-                              state
-                              (record-surface! state role-name reason))]
-              ((:log! adapters) "post-qa-branch-sweep-surfaced" role-name (surface-reason-text reason))
-              [new-state {:type :surfaced :role role-name :reason (name reason)}]))))
+            (surface-or-suppress state role-name :divergent-branch landed-sha adapters))))
 
       :surface
-      (let [reason (:reason decision)]
-        (if (surface-already-recorded? state role-name reason)
-          [state nil]
-          (let [new-state (record-surface! state role-name reason)]
-            ((:log! adapters) "post-qa-branch-sweep-surfaced" role-name (surface-reason-text reason))
-            [new-state {:type :surfaced :role role-name :reason (name reason)}]))))))
+      (surface-or-suppress state role-name (:reason decision) landed-sha adapters))))
 
 (defn sweep!
   [daemon-dir landed-sha role-names adapters]

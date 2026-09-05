@@ -4076,6 +4076,19 @@
        :can-ff? (and head landed (git-is-ancestor? wt head landed))
        :worktree-path wt})))
 
+(defn- caught-up-to-told?
+  "BL-1421: has role-name's own HEAD caught up to told-sha, the landed sha
+   it was last told it was behind for some (role, reason) standing
+   surfacing? Reuses git-is-ancestor?, the same ancestor check :can-ff?
+   above already makes - `git merge-base --is-ancestor <told-sha> HEAD` in
+   the role's own worktree. Wired directly as the
+   post-qa-branch-sweep-lib/sweep! :caught-up-to-told? adapter."
+  [role-name told-sha]
+  (when-let [ri (handoff-lib/load-role-info role-name (str project-root))]
+    (let [wt (:worktree-path ri)
+          head (git-rev-parse-in wt "HEAD")]
+      (boolean (and head told-sha (git-is-ancestor? wt told-sha head))))))
+
 (defn- post-qa-branch-sweep-ff! [_role-name facts]
   (let [wt (:worktree-path facts)
         {:keys [exit err]} (daemon-cycle-guard-lib/sh!
@@ -4120,6 +4133,10 @@
          (str daemon-dir) landed roles
          {:role-facts! post-qa-branch-sweep-role-facts!
           :fast-forward! post-qa-branch-sweep-ff!
+          ;; BL-1421: lets the lib clear a standing surfacing once the role's
+          ;; own HEAD actually contains the sha it was told about, rather
+          ;; than reset on every newly landed commit regardless.
+          :caught-up-to-told? caught-up-to-told?
           ;; BL-1361: the send BL-668 never had. Before this, "surfaced to its
           ;; role" was a log line: 125 surfacings against 3 settles on
           ;; 2026-09-03 and not one role was ever told.
