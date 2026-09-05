@@ -1,7 +1,6 @@
 'use strict';
 
 // BL-669 declared invariants: certified-only, idle boundary, announced+logged.
-const { test } = require('node:test');
 const assert = require('node:assert/strict');
 const path = require('node:path');
 const fs = require('node:fs');
