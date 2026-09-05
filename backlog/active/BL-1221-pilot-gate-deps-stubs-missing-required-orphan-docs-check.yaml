@@ -130,3 +130,5 @@ notes: |
     they never collect, so they never reach line 609 to throw. Fixing BL-1220
     first will make those ten start reporting this error. Whichever ticket
     lands second sees the full set; neither is wrong in the meantime."
+
+assigned_to: coder
