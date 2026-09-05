@@ -101,7 +101,9 @@ TICKET_ID="$(grep -E '^id:' "$YAML" | head -1 | awk '{print $2}' | tr -d '\r')"
 
 if (( FORCE == 0 )); then
   TRAIL_RC=0
-  TRAIL_ANSWER="$(bb "$SCRIPT_DIR/dispatch_trail_cli.bb" "$ROOT" dispatched "$TICKET_ID")" || TRAIL_RC=$?
+  TRAIL_LINE="$(bb "$SCRIPT_DIR/dispatch_trail_cli.bb" "$ROOT" dispatched "$TICKET_ID")" || TRAIL_RC=$?
+  TRAIL_ANSWER="${TRAIL_LINE%% *}"
+  TRAIL_REASON="${TRAIL_LINE#* }"
   if (( TRAIL_RC != 0 )); then
     # Fail OPEN, and say so. A ticket that is never routed because the trail
     # could not be read is starved silently; a ticket routed twice is at worst
@@ -111,6 +113,13 @@ if (( FORCE == 0 )); then
   elif [[ "$TRAIL_ANSWER" == "DISPATCHED" ]]; then
     echo "route_backlog_to_coder: ${TICKET_ID} already has a dispatch trail — NOT routing. A parcel now would carry work that is already done (Article 1.9 binds the sender too; BL-1097). If the ticket is finished, close it: move it to backlog/done/. If this is a deliberate re-route, pass --force." >&2
     exit 3
+  elif [[ "$TRAIL_ANSWER" == "DROPPED" ]]; then
+    # BL-1415: the recipient acted on this dispatch (dequeued/completed it)
+    # and nothing followed - the SAME verdict the dropped-parcel sweep
+    # already reached (chase_sweep_lib.bb's ticket-dispatch-verdict), so
+    # routing here needs no --force; a human is not adjudicating a false
+    # positive, they are unblocking a real one.
+    echo "route_backlog_to_coder: ${TICKET_ID} - ${TRAIL_REASON} — routing without --force (BL-1415)." >&2
   fi
 fi
 

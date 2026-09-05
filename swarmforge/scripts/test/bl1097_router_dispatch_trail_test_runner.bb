@@ -189,9 +189,13 @@
   (assert= "bl1097-17: route script refuses with exit 3 on DISPATCHED"
            true
            (boolean (re-find #"TRAIL_ANSWER\" == \"DISPATCHED\"[\s\S]*?exit 3" route-src)))
+  ;; BL-1415: the CLI now asks the three-way ticket-dispatch-verdict-in
+  ;; (built on decide-dropped-parcel? unchanged, invariant 1) rather than
+  ;; the older two-way ticket-dispatched-in? - the source-lock follows the
+  ;; call it actually makes.
   (assert= "bl1097-18: dispatch_trail_cli prints DISPATCHED for a positive answer"
            true
-           (boolean (re-find #"ticket-dispatched-in\?[\s\S]*?\"DISPATCHED\"" cli-src))))
+           (boolean (re-find #"ticket-dispatch-verdict-in[\s\S]*?\"DISPATCHED\"" cli-src))))
 
 ;; ── report ────────────────────────────────────────────────────────────────
 
