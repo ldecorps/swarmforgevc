@@ -16,6 +16,7 @@ depends_on: []
 mutation_cost: low
 slice_size_envelope: low
 assigned_to: coder
+abandoned_commits: [907f33b823]
 required_stages: [coder, cleaner, architect, hardender, documenter, qa]
 
 acceptance: specs/features/BL-1368-an-approval-commit-names-the-decider.feature
