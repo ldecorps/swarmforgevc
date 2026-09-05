@@ -3445,3 +3445,105 @@ test('telegramCursorBridgeLive exports poll and file name constants', () => {
   assert.equal(mod.TOPIC_MAP_FILE_NAME, 'cursor-bridge-topic-map.json');
   assert.equal(mod.HEARTBEAT_FILE_NAME, 'cursor-bridge-heartbeat.json');
 });
+
+test('BL-1384: runCursorBridgePollOnce dispatches a qwen-local-seat-topic message to the local seat, never to cursor - verifies the bridge side needs no change', async () => {
+  const root = mkRoot();
+  const opDir = path.join(root, '.swarmforge', 'operator');
+  const statePath = path.join(opDir, 'cursor-bridge-state.json');
+  const topicMapPath = path.join(opDir, 'cursor-bridge-topic-map.json');
+  writeJsonFile(statePath, { updateOffset: 0, cursorTopicId: 55 });
+  const session = createMockCursorBridgeAgentSession(root);
+  const seatCalls = [];
+  const posts = [];
+  const next = await runCursorBridgePollOnce(
+    {
+      repoRoot: root,
+      botToken: 'token',
+      chatId: '-100',
+      principalUserId: '42',
+      opDir,
+      statePath,
+      topicMapPath,
+      agentSession: session,
+      qwenLocalTopicId: 4242,
+      runLocalSeatTurnFn: async (input) => {
+        seatCalls.push(input);
+        return { kind: 'answer', seat: 'qwen-local', topicId: 4242 };
+      },
+      post: async (_t, _c, _topic, text) => {
+        posts.push(text);
+      },
+      getUpdates: async () => ({
+        success: true,
+        updates: [
+          {
+            update_id: 31,
+            message: {
+              message_id: 6,
+              text: 'hello',
+              from: { id: 42 },
+              chat: { id: -100 },
+              message_thread_id: 4242,
+            },
+          },
+        ],
+      }),
+    },
+    { updateOffset: 0, cursorTopicId: 55 },
+    false,
+    0
+  );
+  assert.equal(seatCalls.length, 1);
+  assert.equal(seatCalls[0].topicId, 4242);
+  assert.equal(seatCalls[0].seatTopicId, 4242);
+  assert.equal(seatCalls[0].text, 'hello');
+  // Cursor was never asked: no prompt run started (busy never flips true).
+  assert.equal(next.busy, false);
+});
+
+test('BL-1384: runCursorBridgePollOnce in inbound-queue mode drains a FORWARDED qwen-local-seat update from the front desk feeder and answers in that topic', async () => {
+  const { appendCursorBridgeInboundUpdate } = require('../out/tools/cursorBridgeInboundQueue');
+  const root = mkRoot();
+  const opDir = path.join(root, '.swarmforge', 'operator');
+  const statePath = path.join(opDir, 'cursor-bridge-state.json');
+  const topicMapPath = path.join(opDir, 'cursor-bridge-topic-map.json');
+  writeJsonFile(statePath, { updateOffset: 0, cursorTopicId: 55 });
+  appendCursorBridgeInboundUpdate(opDir, {
+    update_id: 32,
+    message: {
+      message_id: 7,
+      text: 'hello',
+      from: { id: 42 },
+      chat: { id: -100 },
+      message_thread_id: 4242,
+    },
+  });
+  const session = createMockCursorBridgeAgentSession(root);
+  const seatCalls = [];
+  const next = await runCursorBridgePollOnce(
+    {
+      repoRoot: root,
+      botToken: 'token',
+      chatId: '-100',
+      principalUserId: '42',
+      opDir,
+      statePath,
+      topicMapPath,
+      agentSession: session,
+      useInboundQueue: true,
+      qwenLocalTopicId: 4242,
+      runLocalSeatTurnFn: async (input) => {
+        seatCalls.push(input);
+        return { kind: 'answer', seat: 'qwen-local', topicId: 4242 };
+      },
+      post: async () => {},
+      getUpdates: async () => ({ success: true, updates: [] }),
+    },
+    { updateOffset: 0, cursorTopicId: 55 },
+    false,
+    0
+  );
+  assert.equal(seatCalls.length, 1, 'the forwarded update must reach the local seat, exactly as a live-polled one does');
+  assert.equal(seatCalls[0].topicId, 4242);
+  assert.equal(next.busy, false);
+});

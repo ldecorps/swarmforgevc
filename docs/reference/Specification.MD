@@ -1,5 +1,37 @@
 # SwarmForge VS Code Extension — Specification
 
+**Last Updated:** September 5, 2026 (BL-1384: the qwen-local seat's own
+Telegram topic (BL-1235) was unreachable in production, because the
+bridge process only polls Telegram directly in a fixture — in production
+it drains a file queue the front desk feeds
+(`resolveInboundQueueFromFeeder`), and the front desk forwarded only the
+cursor-host and Bubble topics to that queue.
+`telegram-front-desk-bot.ts` never called `readQwenLocalTopicId` (already
+defined in `localQwenSeatLive.ts`), so a message in the local seat's topic
+fell through to a generic support subject even though BL-1235's own
+acceptance passed — over fakes where the bridge polls Telegram itself, a
+path production never takes (the BL-298 shape: a consumer green over
+fakes with nothing populating its store in production). Fixed on the
+feeder side only: the front desk now resolves the local seat's topic id
+the same way it resolves the cursor and Bubble topics and adds it to the
+owned-topic list `decideCursorBridgeExclusion` checks. The bridge side
+needed no code change — a drained update already took BL-1235's own
+`deps.qwenLocalTopicId` branch — it simply had no test exercising that
+path end-to-end before this ticket added one. BL-1235's own feature file
+is unchanged; it still describes the bridge side, which stays true.
+Sibling of BL-1383 (the direct-provider seats, which answer inside the
+front-desk process itself rather than being forwarded), split from the
+same 2026-09-04 intake. Acceptance:
+`specs/features/BL-1384-the-local-seat-topic-reaches-the-bridge-through-the-front-desk.feature`.
+How-to: new "Reachability in production" section in
+`docs/how-to/BL-1235-local-qwen-seat-behind-its-own-topic.md` (existing
+page, this ticket's owning doc — the feeder-side half of that seat's own
+contract, not a new mechanism), cross-linked from
+`docs/how-to/BL-1383-provider-chat-seat-behind-its-own-topic.md` and
+`docs/index.md`. No diagram edit: same call as BL-1235's and BL-1383's own
+entries — front-desk-flow.mmd does not model dispatch-level detail this
+fine. No new extension command or setting.)
+Prior entry —
 **Last Updated:** September 5, 2026 (BL-1402: a captioned photo the front
 desk routes is now saved to `.swarmforge/operator/media/<update_id>.<ext>`
 and the routed text carries a second line naming that path, right after

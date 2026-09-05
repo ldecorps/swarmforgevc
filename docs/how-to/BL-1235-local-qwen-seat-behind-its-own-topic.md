@@ -27,6 +27,34 @@ The decision logic lives in `extension/src/tools/localQwenSeat.ts`
 calling the model, posting back — lives in `localQwenSeatLive.ts`, wired
 into `processInboundUpdates` in `telegramCursorBridgeLive.ts`.
 
+## Reachability in production: the front desk must forward the topic too (BL-1384)
+
+The bridge process only polls Telegram itself in a fixture; in production
+`runCursorBridgePollOnce` drains a file queue the **front desk** feeds
+(`resolveInboundQueueFromFeeder`) while the front desk's own poll heartbeat
+is fresh. The front desk forwards a topic to that queue only when
+`attemptCursorBridgeTopicExclusion` (`telegramFrontDeskBotCore.ts`) resolves
+it as owned by the bridge — and until BL-1384, that adapter list held only
+the cursor-host and Bubble topics. `telegram-front-desk-bot.ts` never called
+`readQwenLocalTopicId` (already defined in `localQwenSeatLive.ts`) at all,
+so a message in the local seat's own topic fell through to a generic
+support subject in production, even though this ticket's own acceptance
+passed — over fakes where the bridge polls Telegram directly, a path
+production never takes.
+
+BL-1384 fixes the feeder side only: the front desk now resolves the local
+seat's topic id (`readQwenLocalTopicId`, gated by the same
+cursor-bridge-routing-enabled flag) and adds it to the owned-topic list
+`decideCursorBridgeExclusion` checks, alongside the cursor and Bubble
+topic ids. The bridge side needed **no code change** — a drained update
+already took this ticket's own `deps.qwenLocalTopicId` branch — it simply
+had no test exercising that path end-to-end before BL-1384 added one. This
+ticket's own feature file is unchanged: it still describes the bridge
+side, which stayed true throughout; BL-1384 is the feeder-side contract a
+seat-behind-a-topic mechanism needs in addition to it (recorded as the
+BL-298 shape: a consumer green over fakes while nothing populates its
+store in production).
+
 ## Cursor's surfaces are protected two ways, not one
 
 "Cursor stays behind the usual host topic and front desk" is enforced
@@ -110,4 +138,10 @@ this is the genuine second host incarnation local-engineering rule 7
 requires before that split would earn a second name, it licenses this seat
 alone, nothing else.
 
-Acceptance: `specs/features/BL-1235-local-qwen-seat-behind-its-own-topic.feature`.
+Acceptance: `specs/features/BL-1235-local-qwen-seat-behind-its-own-topic.feature`,
+plus `specs/features/BL-1384-the-local-seat-topic-reaches-the-bridge-through-the-front-desk.feature`
+for the feeder-side reachability contract above.
+
+See also: [BL-1383: a direct-provider chat seat behind its own topic](BL-1383-provider-chat-seat-behind-its-own-topic.md)
+— a sibling mechanism, minted from the same intake, that answers inside
+the front-desk process itself rather than being forwarded to the bridge.
