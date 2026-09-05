@@ -101,7 +101,7 @@ test('readRoleModelId prefers cursor-agent launch script over stale claude setti
     path.join(tmp, '.swarmforge', 'launch', 'coder.sh'),
     "#!/bin/bash\ncursor-agent --model auto --force --trust --workspace '/tmp/wt'\n"
   );
-  assert.equal(readRoleModelId(tmp, 'coder'), 'cursor/auto');
+  assert.equal(readRoleModelId(tmp, 'coder'), 'auto');
 });
 
 test('switchRoleModel rewrites the model field, preserving every other field unchanged', () => {
