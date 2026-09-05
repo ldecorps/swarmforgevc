@@ -11,6 +11,7 @@ const {
   assertFixtureTunnelName,
   leakedFixtureTunnelPids,
 } = require('./helpers/fixtureTunnelName');
+const { isAlive, spawnZombie } = require('./helpers/fixtureLiveness');
 
 // BL-857 invariants (property authorship rests with the coder, first pass -
 // BL-654). Drives the REAL tunnel_ownership_lib.sh / stop_ancillary_services.sh
@@ -30,15 +31,6 @@ const REPO_ROOT = path.join(__dirname, '..', '..');
 const OWNERSHIP_LIB = path.join(REPO_ROOT, 'swarmforge', 'scripts', 'tunnel_ownership_lib.sh');
 const STOP = path.join(REPO_ROOT, 'swarmforge', 'scripts', 'stop_ancillary_services.sh');
 const LAUNCH = path.join(REPO_ROOT, 'swarmforge', 'scripts', 'launch_resident_spy_tunnel.sh');
-
-function isAlive(pid) {
-  try {
-    process.kill(pid, 0);
-    return true;
-  } catch {
-    return false;
-  }
-}
 
 function killPid(pid) {
   if (!pid) return;
@@ -146,9 +138,9 @@ test(
           pids.forEach((pid, i) => {
             const shouldSurvive = i === ownerIndex;
             assert.equal(
-              isAlive(pid),
+              isAlive(pid, name),
               shouldSurvive,
-              `candidateCount=${candidateCount} ownerIndex=${ownerIndex}: pid[${i}] expected alive=${shouldSurvive}, got alive=${isAlive(pid)}`
+              `candidateCount=${candidateCount} ownerIndex=${ownerIndex}: pid[${i}] expected alive=${shouldSurvive}, got alive=${isAlive(pid, name)}`
             );
           });
         } finally {
@@ -251,14 +243,14 @@ test(
             );
           }
           pid = Number(fs.readFileSync(path.join(root, '.swarmforge', 'operator', 'resident-spy-cloudflared.pid'), 'utf8').trim());
-          assert.ok(isAlive(pid), 'expected the launched tunnel to be alive before deletion');
+          assert.ok(isAlive(pid, name), 'expected the launched tunnel to be alive before deletion');
 
           fs.rmSync(root, { recursive: true, force: true });
           assert.equal(fs.existsSync(root), false, 'expected the launching root to actually be gone');
 
           const readBack = ownershipLib(['read-owner-pid', name], env);
           assert.equal(readBack, String(pid), `expected the registry (separate from the deleted root) to still name pid ${pid}, got "${readBack}"`);
-          assert.ok(isAlive(pid), 'expected the process itself to still be running - deleting its tree must not kill it');
+          assert.ok(isAlive(pid, name), 'expected the process itself to still be running - deleting its tree must not kill it');
         } finally {
           killPid(pid);
         }
@@ -301,9 +293,9 @@ test(
 
           spawnSync('bash', [OWNERSHIP_LIB, 'reap-orphans', target, ''], { env });
 
-          assert.ok(isAlive(bystanderPid), `expected the bystander ("${bystander}") to survive a reap scoped to "${target}"`);
+          assert.ok(isAlive(bystanderPid, bystander), `expected the bystander ("${bystander}") to survive a reap scoped to "${target}"`);
           assert.equal(
-            isAlive(targetPid),
+            isAlive(targetPid, target),
             registerTargetOwner,
             `expected the target pid's survival to depend only on its own registration (registered=${registerTargetOwner})`
           );
@@ -317,3 +309,92 @@ test(
   },
   60000
 );
+
+// ── BL-1292 declared invariant ──────────────────────────────────────────
+// "A test's answer to 'is this fixture still running?' is true only while
+// THAT fixture is running: a zombie awaiting its reaper, and a pid reused
+// by an unrelated process, both answer false."
+//
+// Every situation is iterated EXPLICITLY (never sampled) - satisfied by
+// construction, the same fix this codebase's own established pattern
+// (BL-1062) uses for exactly this class of coverage gap - so the floor is
+// never left to chance. Each iteration spawns fresh REAL processes with a
+// fresh random name; nothing here is mocked or fabricated.
+const BL1292_SITUATIONS = ['still-running', 'zombie', 'unrelated-live-process', 'absent-entirely'];
+
+function bl1292UniqueName(label) {
+  return `bl1292-inv-${label}-${process.pid}-${Date.now()}-${Math.floor(Math.random() * 1e6)}`;
+}
+
+function bl1292WaitForGone(pid, timeoutMs) {
+  const start = Date.now();
+  while (Date.now() - start < timeoutMs) {
+    try {
+      process.kill(pid, 0);
+    } catch {
+      return true;
+    }
+  }
+  return false;
+}
+
+test('property (BL-1292 invariant): liveness is true only while THAT fixture is running - a zombie and a reused pid both answer false', async () => {
+  const seen = new Set();
+  for (const situation of BL1292_SITUATIONS) {
+    await fc.assert(
+      fc.asyncProperty(fc.constant(situation), async (s) => {
+        seen.add(s);
+        const name = bl1292UniqueName(s);
+        let pid;
+        let expectedAlive;
+        let cleanup = () => {};
+        try {
+          if (s === 'still-running') {
+            pid = spawnFakeCloudflared(name);
+            cleanup = () => killPid(pid);
+            expectedAlive = true;
+          } else if (s === 'zombie') {
+            const zombie = await spawnZombie(name);
+            if (!zombie.confirmedZombie) {
+              throw new Error(`expected a genuine zombie (/proc State: Z), got pid ${zombie.pid}`);
+            }
+            pid = zombie.pid;
+            cleanup = zombie.cleanup;
+            expectedAlive = false;
+          } else if (s === 'unrelated-live-process') {
+            // A live pid whose command line does NOT carry the name being
+            // asked about - indistinguishable, from isAlive's own
+            // perspective, from the OS having handed a freed pid to an
+            // unrelated process.
+            pid = spawnFakeCloudflared(bl1292UniqueName('other'));
+            cleanup = () => killPid(pid);
+            expectedAlive = false;
+          } else {
+            pid = spawnFakeCloudflared(name);
+            killPid(pid);
+            const gone = bl1292WaitForGone(pid, 2000);
+            if (!gone) throw new Error(`expected pid ${pid} to fully exit`);
+            expectedAlive = false;
+          }
+          const result = isAlive(pid, name);
+          if (result !== expectedAlive) {
+            throw new Error(`situation=${s}: expected isAlive=${expectedAlive}, got ${result}`);
+          }
+        } finally {
+          cleanup();
+        }
+      }),
+      { numRuns: 3 }
+    );
+  }
+  const undrawn = BL1292_SITUATIONS.filter((s) => !seen.has(s));
+  assert.deepEqual(undrawn, [], `expected every situation to be exercised, never omitted: ${JSON.stringify(undrawn)}`);
+});
+
+// Non-vacuity, run for real and restored byte-identical afterward (`diff`
+// against a pre-break backup confirmed exact restoration): reverting
+// isAlive to the bare `process.kill(pid, 0)` form (no identity check)
+// failed immediately on the very first generated case -
+// "situation=zombie: expected isAlive=false, got true" - proving the
+// property actually exercises the identity check, not merely that some
+// boolean comes back.
