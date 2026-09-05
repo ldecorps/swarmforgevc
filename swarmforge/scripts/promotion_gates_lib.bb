@@ -267,15 +267,21 @@
 ;; produces the named reason the acceptance scenarios assert on, and so a
 ;; future caller of `evaluate` below cannot skip it by construction.
 
-(defn depth-refusal
+(defn depth-exceeded?
   "BL-853: a negative max-depth is the documented no-limit sentinel
    (backlog-depth-lib/no-limit?), never a real ceiling to compare
-   active-count against - this gate must allow at every active-count under
-   it, exactly like backlog-depth-lib's own depth-exceeded?/under-depth-cap?
-   already do for their call sites."
+   active-count against - this predicate is true at every active-count at
+   or over it, exactly like backlog-depth-lib's own
+   depth-exceeded?/under-depth-cap? already do for their call sites. BL-1425:
+   shared by depth-refusal (below) and evaluate's :queue-jump? crossing
+   check, so the two never state the crossing condition twice."
   [active-count max-depth]
-  (when (and (not (backlog-depth-lib/no-limit? max-depth))
-             (>= active-count max-depth))
+  (and (not (backlog-depth-lib/no-limit? max-depth))
+       (>= active-count max-depth)))
+
+(defn depth-refusal
+  [active-count max-depth]
+  (when (depth-exceeded? active-count max-depth)
     {:gate "active_backlog_max_depth"
      :reason (format "active count %d >= cap %d - no open slot" active-count max-depth)}))
 
@@ -321,6 +327,14 @@
    is additional and never parsed by any existing caller."
   [{:keys [epic ids]}]
   (format "ADVISORY|orthogonality|epic %s is also active on %s" epic (str/join ", " ids)))
+
+(defn crossed-advisory-line
+  "The one-line ADVISORY|active_backlog_max_depth|... text for a
+   caller-declared queue-jump that crossed the depth cap (BL-1425) - same
+   stdout|stderr split BL-854 established: stdout's ALLOW contract stays
+   byte-identical, this is an additional, distinct signal on stderr."
+  [{:keys [active-count max-depth]}]
+  (format "ADVISORY|active_backlog_max_depth|queue-jump past cap: active count %d >= cap %d" active-count max-depth))
 
 ;; ── gate: hold marker ────────────────────────────────────────────────────
 ;; backlog/hold/ is a sibling of backlog/paused/, never scanned by auto-pick -
@@ -452,21 +466,31 @@
 ;; ── the chokepoint ────────────────────────────────────────────────────────
 
 (defn evaluate
-  "{:ok true} (optionally carrying :advisory) or {:ok false :gate .. :reason
-   ..} for ONE candidate against every BLOCKING gate (hold, type: epic /
-   status: blocked (BL-1145), human_approval, acceptance (BL-626),
-   slice_size_envelope (BL-634), depends_on (BL-957), active_backlog_max_depth - assignee/spec-stage is
-   not a promotion blocker; see route-target above). First failing gate
-   wins, in a fixed order, so the refusal is deterministic even when more
-   than one gate would fire. held? is checked first: a held ticket's other
-   fields are irrelevant, it is not a promotion candidate at all. Epic and
-   blocked sit next so open-slot nudge and promote share one structured
-   exclusion (BL-1145 / BL-663). BL-854 invariant 1: orthogonality is never
-   in this refusal chain - once every blocking gate passes, the result is
-   always :ok true, optionally carrying an orthogonality :advisory (never
-   instead of :ok true). Optional :root enables the BL-626 acceptance
-   existence check against the working tree."
-  [{:keys [content held? active-count max-depth active-epics done-ids root]}]
+  "{:ok true} (optionally carrying :advisory and/or :crossed) or {:ok false
+   :gate .. :reason ..} for ONE candidate against every BLOCKING gate (hold,
+   type: epic / status: blocked (BL-1145), human_approval, acceptance
+   (BL-626), slice_size_envelope (BL-634), depends_on (BL-957),
+   active_backlog_max_depth - assignee/spec-stage is not a promotion
+   blocker; see route-target above). First failing gate wins, in a fixed
+   order, so the refusal is deterministic even when more than one gate
+   would fire. held? is checked first: a held ticket's other fields are
+   irrelevant, it is not a promotion candidate at all. Epic and blocked sit
+   next so open-slot nudge and promote share one structured exclusion
+   (BL-1145 / BL-663). BL-854 invariant 1: orthogonality is never in this
+   refusal chain - once every blocking gate passes, the result is always
+   :ok true, optionally carrying an orthogonality :advisory (never instead
+   of :ok true). Optional :root enables the BL-626 acceptance existence
+   check against the working tree.
+
+   BL-1425: :queue-jump? true is a caller-DECLARED mode (human directive
+   2026-09-05, reversing BL-1083's own depth-cap row) that skips
+   active_backlog_max_depth ONLY - every other gate above stays in the
+   same order, unchanged. When the cap would otherwise have refused, the
+   result carries {:crossed {:gate .. :reason ..}} alongside :ok true, so a
+   caller can tell 'allowed past the cap' from 'allowed with room' (never
+   silent - invariant 3). No script this ticket does not name may ever
+   declare this mode (invariant 1)."
+  [{:keys [content held? active-count max-depth active-epics done-ids root queue-jump?]}]
   ;; BL-626: acceptance sits after human_approval and before depends_on — a
   ;; ticket-property refusal beats a transient global one. BL-957 depends_on
   ;; keeps the same relative place vs depth. BL-1145: epic/blocked after
@@ -479,8 +503,12 @@
       (some->> (slice-size-envelope-gate-lib/refusal content (conf-text-for root))
                (merge {:ok false}))
       (some->> (depends-on-refusal content done-ids) (merge {:ok false}))
-      (some->> (depth-refusal active-count max-depth) (merge {:ok false}))
+      (when-not queue-jump?
+        (some->> (depth-refusal active-count max-depth) (merge {:ok false})))
       (merge {:ok true}
+             (when (and queue-jump? (depth-exceeded? active-count max-depth))
+               {:crossed {:gate "active_backlog_max_depth"
+                          :reason (format "active count %d >= cap %d" active-count max-depth)}})
              (when-let [advisory (orthogonality-advisory (read-epic content) active-epics)]
                {:advisory advisory}))))
 

@@ -854,7 +854,13 @@ function handlePausedPagerExpediteRoute(
         return;
       }
       recordApprovalReply(targetPath, backlogId);
-      const promotion = promoteToActive(targetPath, backlogId);
+      // BL-1425 (human directive 2026-09-05, reversing BL-1083's depth-cap
+      // row): the paused-pager Expedite is one of the three human entry
+      // points that place the ticket on rails past the cap - queueJump:
+      // true crosses active_backlog_max_depth ONLY, every other gate above
+      // (depends_on, hold, human_approval, ...) still refuses exactly as it
+      // does without this flag.
+      const promotion = promoteToActive(targetPath, backlogId, { queueJump: true });
       if (promotion.refusal) {
         // 409, not 500: the request was well formed and the system is healthy;
         // a rule said no. The pager shows the gate's own words rather than a
@@ -874,7 +880,10 @@ function handlePausedPagerExpediteRoute(
       }
       const content = fs.readFileSync(filePath, 'utf8');
       atomicWrite(filePath, replacePriorityLine(content, 0));
-      respondJson(res, 200, { success: true, id: backlogId });
+      // BL-1425: the pager's 200 body carries the same crossed object the
+      // Telegram toast reads, so the phone UI can tell "allowed past the
+      // cap" from "allowed with room" - never silent (invariant 3).
+      respondJson(res, 200, promotion.crossed ? { success: true, id: backlogId, crossed: promotion.crossed } : { success: true, id: backlogId });
     } catch (err) {
       respondJson(res, 500, {
         success: false,

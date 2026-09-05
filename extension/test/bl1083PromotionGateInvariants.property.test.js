@@ -80,15 +80,12 @@ const REFUSING_GATES = [
       return 'paused';
     },
   },
-  {
-    gate: 'active_backlog_max_depth',
-    maxDepth: 1,
-    build: (root, id) => {
-      write(root, 'active', 'BL-8889', '');
-      write(root, 'paused', id, 'human_approval: approved\ndepends_on: []\n');
-      return 'paused';
-    },
-  },
+  // BL-1425 (human directive 2026-09-05, reversing this row): a queue-jump
+  // now crosses active_backlog_max_depth deliberately, so it is no longer a
+  // gate this property can claim ALWAYS refuses - BL-1425's own feature
+  // covers the crossing (scenario 01) and the ordinary, non-queue-jumped
+  // refusal (scenario 01's second row) that this row used to be the only
+  // coverage for.
 ];
 
 function write(root, folder, id, extra) {

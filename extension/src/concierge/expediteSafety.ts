@@ -49,3 +49,11 @@ export function findFileCollision(targetPaths: string[], inFlight: InFlightScope
 export function unsafeDispatchToastText(collidingTicketId: string): string {
   return `Forced dispatch unsafe - queued behind in-flight ${collidingTicketId} (same file), not preempted.`;
 }
+
+// BL-1425: the toast text shown when a queue-jump crossed the
+// active_backlog_max_depth cap - never silent (invariant 3): the operator
+// reads the count and the cap, the same numbers promotion_gates_lib.bb's
+// own crossed-advisory line carries.
+export function crossedCapToastText(reason: string): string {
+  return `Q jumped past the active_backlog_max_depth cap: ${reason}`;
+}
