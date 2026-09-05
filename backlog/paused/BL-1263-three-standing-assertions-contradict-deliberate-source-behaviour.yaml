@@ -1,7 +1,11 @@
 id: BL-1263
 title: "Three standing unit assertions still assert behaviour three deliberate source changes replaced: cursor/auto, allows_multiple_answers, and the ambulance active-only guard have been red since their changes landed"
 type: defect
-severity: medium
+severity: high
+# high (2026-09-05): this ticket owns a standing red on main - a broken
+# safety signal under the standing-red rule (Article 3.2.4, see
+# articles/reference/standing-red-register-amendment-2026-09-05.md);
+# re-classed from medium by the specifier. Register: backlog/standing-reds.tsv.
 # medium: three real, contained reds. No live behaviour is wrong - in all
 # three the SOURCE is the deliberate, current, correct half and the
 # assertion is the stale one. The harm is that three permanent reds sit in

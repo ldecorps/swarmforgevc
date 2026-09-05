@@ -2,7 +2,11 @@ id: BL-1221
 title: "landPilotedTicket gained a required deps member that no test stub supplies, so sixteen files throw before reaching their assertions"
 milestone: M8
 type: defect
-severity: medium
+severity: high
+# high (2026-09-05): this ticket owns a standing red on main - a broken
+# safety signal under the standing-red rule (Article 3.2.4, see
+# articles/reference/standing-red-register-amendment-2026-09-05.md);
+# re-classed from medium by the specifier. Register: backlog/standing-reds.tsv.
 # medium: real and contained. The production wiring is correct
 # (pilot-acceptance-gate.ts supplies the dep), so nothing ships broken; the
 # damage is 16 test files that throw instead of asserting, and the coverage
