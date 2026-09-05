@@ -1,0 +1,158 @@
+id: BL-1427
+title: "The BL-1395 script load guard covers a fraction of what it claims and runs what it promised to guard: its while-read loop is drained by a script that reads stdin when loaded (--all analysed 107 of 286 scripts on 2026-09-05 and reported the other 178 as clean, an unreadable file among them), and its probe executes each script's top-level entry call, so a CLI with a fixed-arity -main is refused for an arity error it never has when run; the probe's stdin is closed, the pass line claims only the coverage it got, and an entry call is analysed but never run"
+milestone: M8
+type: defect
+severity: high
+# high: a broken safety signal. The guard is the pre-commit and land-time
+# proof that no unloadable Babashka script reaches main (BL-1395, minted
+# after a daemon crash-loop); today it silently proves nothing for 178 of
+# 286 scripts, and it refuses two healthy scripts, so any commit touching
+# check_swarm_detached.bb or clear_identical_untracked_and_merge.bb is
+# blocked. Not critical: nothing is down.
+status: todo
+epic: swarm-reliability
+priority: 10
+direction: swarm-reported
+depends_on: [BL-1395]
+mutation_cost: low
+slice_size_envelope: small
+required_stages: [coder, cleaner, architect, hardender, documenter, qa]
+
+acceptance: specs/features/BL-1427-the-load-guard-covers-every-script-and-runs-none.feature
+
+human_approval: pending
+approval_context: >
+  A new feature file is authored here, so it needs a tap. No choice is
+  posed and there are no ruling_options. Sibling of BL-1426 (the unreadable
+  wrapper this guard should have caught); this ticket is why it did not,
+  found by tracing the guard: its loop stopped at script 107 of 286. The
+  second half (an entry call is never run) is what BL-1395's own invariant
+  1 already promised in the words "its -main guarded"; today it is not.
+
+invariants:
+  - "The guard's verdict covers every script it lists: a listed script the probe never reached is a refusal, never a pass, and the pass line's analysed count equals the listed count."
+  - "The probe executes no script's entry point: a top-level call to -main, bare, with *command-line-args*, or through apply, is analysed and never run, so a script's runtime behaviour (reading stdin, exiting, throwing on missing arguments) never decides the verdict."
+  - "Recall is not lowered: every reader error and every analysis failure BL-1395 scenario 01 pins still refuses naming the file, the line and the symbol."
+
+required_wiring:
+  - 'swarmforge/scripts/check_bb_scripts_load.sh::</dev/null::the probe reads no stdin, so a script that slurps it cannot drain the loop that feeds the probe; absent today (grep returns 0)'
+  - 'specs/pipeline/steps/bl1427LoadGuardCoversEveryScriptSteps.js::registerSteps::the handler file exists so discovery registers every scenario (BL-1371)'
+
+description: |
+  ## What is wrong
+
+  `swarmforge/scripts/check_bb_scripts_load.sh` (BL-1395, 2026-09-04) is
+  the cheap-tier pre-commit guard and land-replay tree guard that load-files
+  every changed `.bb` under `swarmforge/scripts` and refuses on an analysis
+  banner. Traced on 2026-09-05 with `bash -x ... --all`:
+
+  1. **Drained loop.** `analyse_one` runs `bb -e "(load-file ...)"` inside
+     `while IFS= read -r f; ... done < <(changed_bb_files)`, with the probe's
+     stdin inherited from the loop. `harness_env_scrub_names.bb` (sorted
+     107th of 286) ends in `(apply -main *command-line-args*)`, and its
+     `-main` does `(slurp *in*)`: the probe swallows the rest of the file
+     list and the loop ends. `--all` analysed 107 scripts and reported the
+     other 178 as if clean. `post_qa_branch_sweep.bb` (186th) is unreadable
+     and was never reached (BL-1426). `tool_miss_heal_hook.bb` reads stdin
+     the same way. The per-commit mode has the same loop, so any commit
+     touching one of those two files alongside later-sorted scripts skips
+     the later ones silently, and the pass line "N changed Babashka
+     script(s) analysed" counts what was listed, not what ran.
+  2. **Executed entry calls.** The probe load-files the script as-is, so the
+     trailing entry call runs with empty `*command-line-args*`. 52 scripts
+     end in `(apply -main *command-line-args*)`; those whose `-main` has a
+     fixed arity throw `ArityException` at load and are refused although
+     they load and run correctly with arguments: `check_swarm_detached.bb`
+     (`-main [ready-flag pid]`) and `clear_identical_untracked_and_merge.bb`
+     (`-main [root ref]`, proven by its own standing shell test). No commit
+     may touch either today. 37 scripts end in a bare `(-main)`, which the
+     probe RUNS - `post_qa_branch_sweep.bb` would have fetched origin and
+     swept the live worktrees from a guard probe, had it parsed. BL-1395's
+     invariant 1 says "analysis only, its -main guarded"; the guard reads
+     that of `handoffd.bb` only.
+
+  ## What changes
+
+  - The probe reads no stdin (`</dev/null` on the `bb` invocation; the boot
+    step too), and the loop's listed count and analysed count are compared:
+    a gap is a refusal naming the scripts never reached, never a pass.
+  - The probe analyses a script without running its entry point: every
+    top-level form is evaluated in order EXCEPT a call whose head is `-main`
+    (bare or with `*command-line-args*`) or `(apply -main ...)`, which is
+    read and skipped. Definitions are still analysed eagerly, so a forward
+    reference, a runtime require or an undefined symbol inside `-main` or
+    any other defn still fails exactly as BL-1395 scenario 01 pins; a
+    reader error anywhere in the file still refuses.
+  - The refusal and the pass line keep their shapes (the property test and
+    `test_bl1395_bb_scripts_load.sh` pin them); only the analysed count
+    becomes true.
+
+  ## How (direction, not mandate)
+
+  - A small driver expression or `bb` file the guard calls per script: read
+    forms with a pushback reader (a reader exception is the refusal banner),
+    then `eval` each form, skipping the entry-call shapes above by inspecting
+    the form's head symbol. Keep the discriminator on babashka's error
+    banner as today so `analyse_one`'s caller-visible contract is unchanged.
+  - Fixture per BL-1395's own handler: a temporary tree whose
+    `swarmforge/scripts` holds only fixture scripts (the guard takes
+    `<tree-root>`); a fixture `-main` that writes a marker file proves the
+    entry call was not run (scenario 03).
+  - Prove the fixture root with `rev-parse --git-common-dir` before any
+    mutating git command (BL-1390); reap by owner pid, never a prefix sweep.
+  - The hand-kept guard-chain copies (bl1252 property test,
+    `test_run_commit_guards.sh`, `land_step_lib.bb` tree-guard list) name
+    the guard by file and are untouched: the guard's name and place in the
+    chain do not change.
+
+  ## Out of scope
+
+  - The unreadable wrapper itself (BL-1426).
+  - Changing any script's own entry-call convention; the three shapes stay
+    legal and the guard learns to read them.
+  - The commit-guard chain's aggregation (BL-1252/BL-1408).
+
+qa_e2e_procedure: |
+  1. The BL-1427 feature passes (four scenarios, six runs); BL-1395's
+     feature passes unchanged; `test_bl1395_bb_scripts_load.sh` and
+     `bl1395BbScriptsLoadGuard.property.test.js` pass.
+  2. On main after BL-1426 and this land: `swarmforge/scripts/check_bb_scripts_load.sh
+     --all` exits 0 and its pass line's analysed count equals
+     `ls swarmforge/scripts/*.bb | wc -l` minus one (handoffd.bb is booted,
+     not analysed). Before this ticket the same run reported 107.
+  3. `bash -x swarmforge/scripts/check_bb_scripts_load.sh --all 2>&1 | grep -c
+     "^+ analyse_one"` equals that same count.
+  4. In a throwaway clone under mkdtemp with hooks pointed at the clone's
+     `swarmforge/git-hooks`, a whitespace-only commit to
+     `check_swarm_detached.bb` passes the pre-commit chain (refused today
+     with "Wrong number of args (0) passed to: function of arity 2").
+  5. No marker or side effect from any script appears while the guard runs:
+     `git -C <clone> status --porcelain` is empty after `--all`.
+
+notes: |
+  Minted 2026-09-05 by the specifier as the companion to BL-1426, after
+  tracing why the guard had not caught an unreadable script that had sat
+  on main for ten days. Numbers in the title and description are from that
+  trace (`bash -x ... --all`: 107 `analyse_one` calls, last
+  `harness_env_scrub_names.bb`; sorted list of 286 `.bb` files; the
+  probe's own output on the three files).
+
+  The anchor `</dev/null` is fixed at mint as the literal the probe line
+  must carry (BL-874); it names the seam, not a design.
+
+  INVEST at mint: Independent (BL-1395 landed; BL-1426 is a sibling),
+  Negotiable (driver shape and fixture reuse are direction), Valuable (one
+  outcome: the guard's verdict is true for every script it lists),
+  Estimable (one redirect, one count check, one small driver, one handler;
+  low), Small (four scenarios, six runs, three invariants at the cap),
+  Testable (fixture tree; live steps in qa_e2e_procedure).
+
+source: |
+  Same coordinator note as BL-1426 (2026-09-05T09:15Z). Specifier trace:
+  `check_bb_scripts_load.sh` lines 72-132 (loop and probe), `bash -x --all`
+  (107 analyse_one calls, last harness_env_scrub_names.bb), `grep -l "slurp
+  *in*"` (harness_env_scrub_names.bb, tool_miss_heal_hook.bb), entry-call
+  survey (52 apply -main, 37 bare -main, 6 -main *command-line-args*),
+  the probe's output on check_swarm_detached.bb and
+  clear_identical_untracked_and_merge.bb (ArityException at 37:1 / 84:1),
+  BL-1395 invariant 1 ("analysis only, its -main guarded").
