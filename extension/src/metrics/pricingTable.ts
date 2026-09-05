@@ -21,7 +21,14 @@ export const PRICING_TABLE_VERSION = 3;
 export interface Rates {
   inputPerMTok: number;
   outputPerMTok: number;
-  cacheCreatePerMTok: number;
+  /**
+   * BL-1436, optional: absent when a model's cache-creation rate is not
+   * published anywhere this table's sources have checked - never guessed,
+   * and never copied from a sibling row. `costFrom` returns null (not 0)
+   * for a turn that actually used cache-creation tokens on such a model;
+   * a turn that used none costs normally regardless.
+   */
+  cacheCreatePerMTok?: number;
   cacheReadPerMTok: number;
 }
 
@@ -61,6 +68,17 @@ export const PRICING_TABLE: Record<string, ModelPricing> = {
   },
   'claude-haiku-4-5-20251001': { inputPerMTok: 1, outputPerMTok: 5, cacheCreatePerMTok: 1.25, cacheReadPerMTok: 0.1 },
   'claude-fable-5': { inputPerMTok: 10, outputPerMTok: 50, cacheCreatePerMTok: 12.5, cacheReadPerMTok: 1.0 },
+  // BL-1436: the full-forge specifier seat's actual model since 2026-09-04
+  // (swarmforge/packs/full-forge.conf, 71f67b3fa6) - distinct from the
+  // claude-fable-5 row above. Verified against the project's Claude API
+  // reference (cached 2026-06-24): input $10, output $50, cache read $0.25
+  // per million tokens - a Fable-5.1-specific cache-read rate, NOT the
+  // 0.1x-of-input convention the other rows use. Cache-creation is not
+  // stated in that reference and is deliberately left unset rather than
+  // derived from the claude-fable-5 row above (BL-1436 invariant 1) -
+  // estimateCostUsd returns null, never a guessed or zero rate, for a turn
+  // that actually spent cache-creation tokens on this model.
+  'claude-fable-5-1': { inputPerMTok: 10, outputPerMTok: 50, cacheReadPerMTok: 0.25 },
 };
 
 export interface UsageTotalsForCost {
@@ -93,13 +111,34 @@ export function resolveRatesAt(entry: ModelPricing | undefined, at: Date): Rates
   return entry.then ?? null;
 }
 
-function costFrom(usage: UsageTotalsForCost, rates: Rates): number {
-  return (
-    (usage.inputTokens / 1_000_000) * rates.inputPerMTok +
-    (usage.outputTokens / 1_000_000) * rates.outputPerMTok +
-    (usage.cacheCreationTokens / 1_000_000) * rates.cacheCreatePerMTok +
-    (usage.cacheReadTokens / 1_000_000) * rates.cacheReadPerMTok
-  );
+/**
+ * BL-1436: a category with zero tokens contributes 0 regardless of whether
+ * its rate is known - the same "no cost, no question asked" shape every
+ * row already had for its untouched categories. A category with NONZERO
+ * tokens and no known rate (only possible for `cacheCreatePerMTok`, the
+ * only optional field) returns null for the whole estimate rather than
+ * silently costing that category at zero or guessing a rate - the same
+ * honest-null discipline this file already applies at the whole-model
+ * level.
+ */
+function costFrom(usage: UsageTotalsForCost, rates: Rates): number | null {
+  const categories: Array<[tokens: number, rate: number | undefined]> = [
+    [usage.inputTokens, rates.inputPerMTok],
+    [usage.outputTokens, rates.outputPerMTok],
+    [usage.cacheCreationTokens, rates.cacheCreatePerMTok],
+    [usage.cacheReadTokens, rates.cacheReadPerMTok],
+  ];
+  let total = 0;
+  for (const [tokens, rate] of categories) {
+    if (tokens === 0) {
+      continue;
+    }
+    if (rate === undefined) {
+      return null;
+    }
+    total += (tokens / 1_000_000) * rate;
+  }
+  return total;
 }
 
 /**
