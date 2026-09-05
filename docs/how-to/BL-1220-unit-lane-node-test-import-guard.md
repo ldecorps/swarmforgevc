@@ -23,10 +23,12 @@ longer carries a `.beforeEach`).
 
 **A file that does not pass after the import is removed is never
 allowlisted, skipped, or deleted to clear the lane.** Ten of the 24 files
-also carry BL-1221's separate `deps.checkOrphanedAuthoredDocs is not a
-function` defect; they now collect and fail honestly on that instead of
-failing to collect at all — an intermediate state this ticket calls out
-as expected, not a regression it caused or hid.
+also carried BL-1221's separate `deps.checkOrphanedAuthoredDocs is not a
+function` defect — this ticket's fix alone made them collect and fail
+honestly on that instead of failing to collect at all, an intermediate
+state called out at the time as expected, not a regression this ticket
+caused or hid. BL-1221 has since landed its own stub fix, so that
+intermediate state no longer applies — see BL-1221's own record below.
 
 ## The guard
 
@@ -77,8 +79,9 @@ standing red): `backlog/evidence/BL-1220-unit-lane-node-test-imports-20260829.md
 
 - The property lane's identical 13-15 files and
   `property_suite_standing_allowlist.tsv` — BL-1206.
-- BL-1221's `deps.checkOrphanedAuthoredDocs` stub gap, now visible on ten
-  of the 24 repaired files.
+- BL-1221's `deps.checkOrphanedAuthoredDocs` stub gap — briefly visible on
+  ten of the 24 repaired files after this ticket landed, fixed by BL-1221's
+  own stub repair.
 - The rest of the standing unit red (ambient `CURSOR_API_KEY` gap, the
   other repo-hygiene guard reds) — separate causes, separately owned.
 
