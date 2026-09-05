@@ -116,10 +116,20 @@ export interface ThrottleChangeLogEntry {
 // BL-1429: names whichever signal is actually responsible for the CURRENT
 // recommendedCap (the more restrictive of rework/standing-red, ties
 // naming standing-red since both apply at cap 1 either way), or - when
-// recommendedCap just became null - whichever signal was active in the
-// PRIOR recommendation, since that is what just cleared. A clearing with
-// no known prior cause (the pre-BL-1429 shape: rework severity cleared,
-// no standing-red block at all) keeps the original wording unchanged.
+// recommendedCap just became null - whichever signal was actually BINDING
+// in the PRIOR recommendation, since that is what just cleared.
+//
+// Architect bounce (2026-09-05): the clearing branch used to credit
+// standing-red whenever `prior.standingRed` was merely PRESENT, without
+// checking it was ever the binding (lower) cap - so a severe rework
+// diagnosis (cap 0) that was the true cause, clearing alongside a
+// co-active but non-binding standing-red signal (cap 1), got misattributed
+// to the standing-red signal. The clearing branch now runs the SAME
+// "which was actually binding" comparison the active branch already does,
+// against the prior tick's own caps. A clearing with no known prior cause
+// (the pre-BL-1429 shape: rework severity cleared, no standing-red block
+// at all, or standing-red present but never binding) keeps the original
+// generic wording unchanged.
 function describeChangeReason(rec: ThrottleRecommendation, prior: ThrottleRecommendation | null): string {
   if (rec.recommendedCap !== null) {
     const reworkCap = recommendedCapForSeverity(rec.severity);
@@ -132,8 +142,12 @@ function describeChangeReason(rec: ThrottleRecommendation, prior: ThrottleRecomm
     }
     return `degraded rework diagnosis (rate ${rec.reworkRate} vs baseline ${rec.baselineRate}) - stabilizing to one`;
   }
-  if (prior?.standingRed) {
-    return `${describeStandingRedSignal(prior.standingRed.signal)} cleared - restoring the configured cap`;
+  if (prior) {
+    const priorReworkCap = recommendedCapForSeverity(prior.severity);
+    const priorStandingCap = prior.standingRed?.recommendedCap ?? null;
+    if (priorStandingCap !== null && (priorReworkCap === null || priorStandingCap <= priorReworkCap)) {
+      return `${describeStandingRedSignal(prior.standingRed!.signal)} cleared - restoring the configured cap`;
+    }
   }
   return 'rework diagnosis cleared - restoring the configured cap';
 }

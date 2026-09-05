@@ -113,3 +113,54 @@ test('BL-1429: recovery withdraws the recommendation and logs the clearing, nami
   assert.equal(last.to, null);
   assert.match(last.reason, /red count/, `expected the clearing reason to name the red count, got: ${last.reason}`);
 });
+
+// Architect bounce (2026-09-05): a co-active but NON-binding standing-red
+// signal must never be credited for a clearing whose true (binding) cause
+// was the rework diagnosis - the clearing branch must run the same
+// "which was actually binding" comparison the active branch already does,
+// against the PRIOR tick's own caps, not merely check whether standingRed
+// was present at all.
+test('BL-1429 bounce: a clearing names the diagnosis that was actually binding, not a merely co-active signal', () => {
+  const root = mkTmp();
+  const { persistReworkSignal } = require('../out/metrics/reworkObservatoryStore');
+
+  // Tick 1: severe rework (cap 0, binding) co-active with a standing-red
+  // count signal (cap 1, present but never binding - the lower cap wins).
+  writeRegisterFixture(root, { count: 11, oldestAgeDays: 2 });
+  persistReworkSignal(root, {
+    kind: 'rework-rate',
+    version: 1,
+    computedAtIso: '2026-07-16T00:00:00Z',
+    signal: { hasSample: true, sampleCount: 10, reworkRate: 0.6, baselineRate: 0.1, topRole: null, topTicketClass: null }, // severe -> 0
+  });
+  const tick1 = emitThrottleRecommendation(root);
+  assert.equal(tick1.recommendedCap, 0, 'expected the severe rework diagnosis (0) to win over the standing-red signal (1)');
+
+  // Tick 2: both clear together.
+  fs.rmSync(path.join(root, 'backlog', 'active'), { recursive: true, force: true });
+  writeRegisterFixture(root, { count: 3, oldestAgeDays: 2 }); // back under every threshold
+  persistReworkSignal(root, {
+    kind: 'rework-rate',
+    version: 1,
+    computedAtIso: '2026-07-16T00:05:00Z',
+    signal: { hasSample: true, sampleCount: 10, reworkRate: 0.1, baselineRate: 0.1, topRole: null, topTicketClass: null }, // healthy -> no verdict
+  });
+  const tick2 = emitThrottleRecommendation(root);
+  assert.equal(tick2.recommendedCap, null, 'expected the recommendation to be fully withdrawn');
+
+  const lines = fs
+    .readFileSync(throttleChangeLogPath(root), 'utf8')
+    .trim()
+    .split('\n')
+    .filter(Boolean)
+    .map((l) => JSON.parse(l));
+  const last = lines[lines.length - 1];
+  assert.equal(last.from, 0);
+  assert.equal(last.to, null);
+  assert.match(
+    last.reason,
+    /rework diagnosis cleared/,
+    `expected the clearing reason to name the rework diagnosis (the actually-binding prior cause), not the merely co-active standing-red signal, got: ${last.reason}`
+  );
+  assert.doesNotMatch(last.reason, /red count/, `must not misattribute the clearing to the non-binding standing-red signal, got: ${last.reason}`);
+});
