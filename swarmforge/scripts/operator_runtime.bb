@@ -1715,8 +1715,13 @@
     (.toMillis (fs/last-modified-time pid-file))))
 
 (defn coordinator-inbox-has-fresh?
-  "A handoff landed for the coordinator within the last interval → TASK_ARRIVED.
-   Cheap mtime probe on the coordinator inbox/new dir."
+  "A handoff landed for the coordinator within the last interval. Cheap mtime
+   probe on the coordinator inbox/new dir.
+
+   BL-1353: this no longer manufactures a TASK_ARRIVED wake - that source is
+   retired. Its ONE remaining consumer is closing-pass-sweep!, which reads it
+   as :fresh-coordinator-mail? for the BL-307/BL-310 up-trigger, so a
+   hibernated swarm still wakes to let the coordinator triage new mail."
   []
   (let [inbox (fs/path state-dir "handoffs" "coordinator" "inbox" "new")]
     (and (fs/exists? inbox)
@@ -2265,7 +2270,12 @@
                       :command-file-exists? (fs/exists? command-file)
                       :command-detail (when (fs/exists? command-file)
                                         (str/trim (slurp (str command-file))))
-                      :coordinator-inbox-fresh? (coordinator-inbox-has-fresh?)})]
+                      ;; BL-1353: the coordinator-inbox freshness probe is
+                      ;; deliberately NOT passed here any more - it no longer
+                      ;; manufactures a wake. The probe itself stays: its other
+                      ;; consumer, closing-pass-sweep!'s BL-307/BL-310
+                      ;; hibernation decision, is untouched by this retirement.
+                      })]
       (enqueue-observed! observed))
 
     ;; BL-281 (reshaped): TELEGRAM_TOPIC_MESSAGE events now arrive here
