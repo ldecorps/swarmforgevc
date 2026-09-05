@@ -142,6 +142,7 @@ import {
 import { cursorBridgeTopicIdFromMap, bubbleTopicIdFromMap, frontDeskTopicMapWithoutCursorBridge } from './telegramCursorBridgeCore';
 import { appendCursorBridgeInboundUpdate } from './cursorBridgeInboundQueue';
 import { runProviderChatSeatTurn } from './providerChatSeatLive';
+import { readQwenLocalTopicId } from './localQwenSeatLive';
 import { largestTelegramPhotoFileId, mimeTypeFromTelegramFilePath, MAX_TELEGRAM_PHOTO_BYTES } from '../bridge/cursorBridgeTelegramMedia';
 import { backlogForTopic } from '../concierge/topicRouter';
 import {
@@ -410,13 +411,14 @@ export function readBubbleTopicId(targetPath: string): number | undefined {
   }
 }
 
-// Front-desk routing map with any stale SUP binding on the cursor / Bubble
-// topics stripped (and persisted when a collision is found).
+// Front-desk routing map with any stale SUP binding on the cursor / Bubble /
+// qwen-local-seat topics stripped (and persisted when a collision is found).
 function readFrontDeskTopicMap(targetPath: string): Record<string, string> {
   const raw = readTopicMap(targetPath);
   const cursorTopicId = readCursorBridgeTopicId(targetPath);
   const bubbleTopicId = readBubbleTopicId(targetPath);
-  const scrubbed = frontDeskTopicMapWithoutCursorBridge(raw, cursorTopicId, [bubbleTopicId]);
+  const qwenLocalSeatTopicId = readQwenLocalTopicId(targetPath);
+  const scrubbed = frontDeskTopicMapWithoutCursorBridge(raw, cursorTopicId, [bubbleTopicId, qwenLocalSeatTopicId]);
   if (Object.keys(scrubbed).length !== Object.keys(raw).length) {
     writeTopicMap(targetPath, scrubbed);
   }
@@ -2538,6 +2540,8 @@ function buildPollAdapters(
       Promise.resolve(cursorBridgeRoutingEnabled ? readCursorBridgeTopicId(targetPath) : undefined),
     bubbleTopicId: () =>
       Promise.resolve(cursorBridgeRoutingEnabled ? readBubbleTopicId(targetPath) : undefined),
+    qwenLocalSeatTopicId: () =>
+      Promise.resolve(cursorBridgeRoutingEnabled ? readQwenLocalTopicId(targetPath) : undefined),
     forwardCursorBridgeUpdate: async (update) => {
       if (!cursorBridgeRoutingEnabled) {
         return false;

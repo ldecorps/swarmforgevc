@@ -1202,3 +1202,12 @@ test('isOwnedCursorBridgeTopic: matches either the cursor or bubble topic id, an
   assert.equal(isOwnedCursorBridgeTopic(999, topics), false);
   assert.equal(isOwnedCursorBridgeTopic(undefined, topics), false);
 });
+
+test('BL-1384: front desk topic map strips the cursor, Bubble, AND the qwen-local-seat stale bindings together', () => {
+  const scrubbed = frontDeskTopicMapWithoutCursorBridge(
+    { '8435': 'SUP-12', '9001': 'SUP-34', '27182': 'SUP-56', '2286': 'BACKLOG' },
+    8435,
+    [9001, 27182]
+  );
+  assert.deepEqual(scrubbed, { '2286': 'BACKLOG' });
+});
