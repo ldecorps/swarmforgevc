@@ -46,6 +46,87 @@ warn_skipped() {
   echo "Warning: property check was skipped (toolchain unavailable)." >&2
 }
 
+# ── BL-1275: what survives a refusal ─────────────────────────────────────
+# A refusal is the one moment this run's output is worth keeping: it is the
+# evidence someone later adjudicates the red from - genuine regression,
+# known flake, or new mechanism. Until this ticket the run was captured to a
+# mktemp file, echoed to stderr and deleted, so the only surviving copy was
+# terminal scrollback. Twice that decided an investigation (a retained 53KB
+# properties.log split one vague report into four mechanisms on 2026-08-22;
+# a swept log left bl955 unadjudicated on 2026-08-29), and four different
+# files refused five commits in a single shift, so ONE fixed-name log would
+# have kept only the last - precisely the one that was not the question.
+#
+# .swarmforge/ is the established home for local, gitignored runtime state.
+REFUSAL_LOG_DIR_REL=".swarmforge/property-guard-refusals"
+REFUSAL_LOG_KEEP_DEFAULT=20
+
+refusal_log_keep() {
+  local keep="${SWARMFORGE_PROPERTY_GUARD_REFUSAL_KEEP:-$REFUSAL_LOG_KEEP_DEFAULT}"
+  if [[ "$keep" =~ ^[0-9]+$ ]] && (( keep >= 1 )); then
+    printf '%s' "$keep"
+  else
+    printf '%s' "$REFUSAL_LOG_KEEP_DEFAULT"
+  fi
+}
+
+# The index comes from the names already present, not from a clock: two
+# refusals inside the same second must still order the way they happened,
+# and `date +%N` does not exist on stock macOS. Pruning always keeps the
+# NEWEST, so the highest surviving index only ever grows.
+next_refusal_index() {
+  local dir="$1" highest=0 name idx
+  for name in "$dir"/refusal-*.log; do
+    [[ -e "$name" ]] || continue
+    idx="${name##*/refusal-}"
+    idx="${idx%%-*}"
+    [[ "$idx" =~ ^[0-9]+$ ]] || continue
+    idx=$((10#$idx))
+    (( idx > highest )) && highest=$idx
+  done
+  printf '%s' $((highest + 1))
+}
+
+# Bounded so the directory cannot grow without limit. Names carry a
+# zero-padded index, so a plain sort is creation order.
+prune_refusal_logs() {
+  local dir="$1" keep="$2" name seen=0 total=0
+  local names=()
+  for name in "$dir"/refusal-*.log; do
+    [[ -e "$name" ]] || continue
+    names+=("$name")
+  done
+  total=${#names[@]}
+  (( total > keep )) || return 0
+  while IFS= read -r name; do
+    seen=$((seen + 1))
+    (( seen > total - keep )) && break
+    rm -f "$name"
+  done < <(printf '%s\n' "${names[@]}" | sort)
+  return 0
+}
+
+# Copies the run's own output aside (never moves it - the caller still owns
+# the temp file and its own stderr echo) and prints the durable path.
+retain_refusal_log() {
+  local src="$1" dir index stamp path
+  [[ -n "${REPO_ROOT:-}" && -f "$src" ]] || return 1
+  dir="$REPO_ROOT/$REFUSAL_LOG_DIR_REL"
+  mkdir -p "$dir" 2>/dev/null || return 1
+  # Self-ignoring, so invariant 2 holds by construction rather than by the
+  # outer checkout happening to carry a .swarmforge/ rule: nothing under
+  # here can ever become a commitable artifact.
+  if [[ ! -f "$dir/.gitignore" ]]; then
+    printf '*\n' >"$dir/.gitignore" 2>/dev/null || true
+  fi
+  index="$(next_refusal_index "$dir")"
+  stamp="$(date -u +%Y%m%dT%H%M%SZ)"
+  path="$(printf '%s/refusal-%06d-%s.log' "$dir" "$index" "$stamp")"
+  cp "$src" "$path" 2>/dev/null || return 1
+  prune_refusal_logs "$dir" "$(refusal_log_keep)"
+  printf '%s' "$path"
+}
+
 path_triggers_check() {
   case "$1" in
     extension/src/*|*.property.test.js) return 0 ;;
@@ -108,6 +189,7 @@ run_default_suite() {
 # with nothing to report must not start printing one).
 BEFORE=""
 SUITE_PID=""
+SUITE_OUT_FILE=""
 CANARY_DONE=0
 CANARY_RESULT=0
 
@@ -155,7 +237,15 @@ on_interrupt() {
   exit 1
 }
 trap on_interrupt INT TERM
-trap 'report_canary_once || true' EXIT
+# BL-1275: the suite output now outlives the read into $OUT - the refusal
+# path copies it aside - so its removal moves onto the EXIT trap, which
+# every path through this script (including on_interrupt's explicit exit)
+# already runs.
+cleanup_suite_out() {
+  [[ -n "${SUITE_OUT_FILE:-}" ]] && rm -f "$SUITE_OUT_FILE"
+  return 0
+}
+trap 'report_canary_once || true; cleanup_suite_out' EXIT
 
 if [[ "${SWARMFORGE_SKIP_PROPERTY_SUITE_GUARD:-}" == "1" ]]; then
   warn_override
@@ -218,7 +308,6 @@ wait "$SUITE_PID"
 STATUS=$?
 set -e
 OUT="$(cat "$SUITE_OUT_FILE" 2>/dev/null || true)"
-rm -f "$SUITE_OUT_FILE"
 
 if (( STATUS == 127 )); then
   CANARY_DONE=1
@@ -250,6 +339,12 @@ if (( STATUS != 0 )); then
   if (( ALLOWLIST_OK == 0 )); then
     echo "property-suite-guard: allowlisted-standing-reds; unrelated green commits not refused (BL-1175)" >&2
     exit 0
+  fi
+  # BL-1275: from here the commit IS refused, so keep the run this verdict
+  # was reached from and say where it is.
+  RETAINED="$(retain_refusal_log "$SUITE_OUT_FILE" || true)"
+  if [[ -n "$RETAINED" ]]; then
+    echo "property-suite-guard: refusal output retained at $RETAINED" >&2
   fi
   if [[ -n "$UNLISTED" ]]; then
     echo "Commit rejected: property suite failed with non-allowlisted files:" >&2
