@@ -1,0 +1,149 @@
+id: BL-1431
+title: "The land step resolves origin/main by name several times inside one plan (land-plan, entangled-siblings, own-paths each call origin-main-sha) while the daemon's push sweep fetches the ref under the four-minute walk, so any mint that lands mid-walk makes own-paths diff against a newer tip than the attribution map was built on and the plan escalates with could-not-read-attribution (BL-1416 twice, BL-1407 once on 2026-09-05); origin/main is resolved once at entry and every read takes that SHA"
+milestone: M8
+type: defect
+severity: high
+# high: a live fault degrading behaviour. QA cannot land while main moves,
+# and on 2026-09-05 main moved every one to seven minutes (mints, approvals,
+# topic records) against a four-minute walk, so most lands raced. Not
+# critical: main is untouched by an escalation and nothing is lost.
+status: todo
+epic: swarm-reliability
+priority: 2
+direction: swarm-reported
+depends_on: [BL-1389, BL-1144]
+mutation_cost: low
+slice_size_envelope: small
+required_stages: [coder, cleaner, architect, hardender, documenter, qa]
+
+acceptance: specs/features/BL-1431-one-land-plan-reads-one-tip.feature
+
+human_approval: pending
+approval_context: >
+  A new feature file is authored here, so it needs a tap. No choice is
+  posed and there are no ruling_options. Reported by QA as a priority-00
+  note with its own evidence; the specifier confirmed the mechanism in the
+  code (three separate resolutions of origin/main inside one plan, and the
+  daemon fetching the ref on its sweep) before minting. The sibling
+  question of why the walk takes four minutes at all is BL-1432, which
+  poses a ruling; this ticket is the race and is the urgent half.
+
+invariants:
+  - "One plan, one tip: origin/main is resolved by name exactly once per land-step invocation, at entry, and every read the plan makes (candidate commits, the delivered diff, per-path attribution, landed-sibling verdicts, main-side ticket sources) takes that SHA; a fetch that moves the ref mid-walk changes nothing about the verdict."
+  - "The publish is unchanged: FF-only push, one rebase rematch onto the current tip, never a second, never --force (BL-1144); a moved origin is reconciled there and only there."
+  - "Fail-open posture is unchanged: an origin/main that cannot be resolved at entry is still the caller's warning, never a guessed SHA, and a read that fails mid-walk still refuses rather than narrowing (BL-1389)."
+
+required_wiring:
+  - 'swarmforge/scripts/land_step_cli.bb::origin-main-sha::the CLI resolves the tip once at entry and passes the SHA into land-plan; absent from the CLI today (grep returns 0)'
+  - 'specs/pipeline/steps/bl1431OneLandPlanOneTipSteps.js::registerSteps::the handler file exists so discovery registers every scenario (BL-1371)'
+
+description: |
+  ## What is wrong
+
+  QA's evidence (`.worktrees/QA/backlog/evidence/BL-1416-land-escalate-20260905.md`):
+  three consecutive escalations, each naming a DIFFERENT ticket that had
+  landed on origin/main while the walk ran - `c41d8ef81b`: "could not read
+  backlog/paused/BL-1426-...yaml's attribution" (BL-1426 minted and approved
+  mid-walk); after a rematch, `b959b121a5`: "could not read
+  backlog/topics/BL-1428.json's attribution" (BL-1428 minted mid-walk);
+  BL-1407 hit the same once earlier. Each `land_step_cli.bb` run on the QA
+  branch takes 3.5-4.5 minutes; main moved 14 times between 10:15 and
+  10:48 that morning.
+
+  The mechanism, read in `swarmforge/scripts/land_step_lib.bb`:
+
+  - `land-plan` resolves `(origin-main-sha root)` once, builds the per-path
+    `attribution` map over `origin-main..commit` from THAT sha, then calls
+    `entangled-siblings`, which resolves `origin-main-sha` AGAIN (line ~411),
+    then `own-paths`, which resolves it a THIRD time (line ~809) and diffs
+    `full-delivered-paths root origin-main commit` against whatever the ref
+    says now. `main-ticket-sources` (~500) and two more sites (~954, ~1211)
+    resolve it too.
+  - `handoffd.bb`'s push sweep (`git-fetch-origin-main!`), the periodic pull
+    and `main_sync_status_cli.bb` all `git fetch origin main` on the shared
+    repository; the QA worktree shares the ref.
+  - So when the ref moves between land-plan's read and own-paths' read, the
+    delivered diff includes a path that exists on the NEW main and not on
+    the tip (a mint), `attribution-of` looks it up in the map built on the
+    OLD sha, gets nil, and the plan refuses with "could not read <path>'s
+    attribution" - a refusal that is correct for a read that failed, applied
+    to a read that never happened.
+
+  ## What changes
+
+  - `land_step_cli.bb` resolves `origin-main-sha` once at entry (after
+    canonicalising the commit) and passes it into `land-plan` as
+    `:origin-main`; `land-plan` threads it to `entangled-siblings`,
+    `own-paths`, `delivered-attribution`, `sibling-path-landed-fn`,
+    `main-ticket-sources` and every other reader. No function below the CLI
+    resolves the ref by name; each takes the sha as a parameter (the
+    existing multi-arity seams already pass `origin-main` positionally in
+    several of them - finish the pattern). Direct callers that pass no sha
+    resolve once themselves at their own entry, never per read.
+  - An unresolvable ref at entry keeps today's fail-open warning
+    (invariant 3); the publish keeps its single rematch (invariant 2).
+
+  ## How (direction, not mandate)
+
+  - Scenario 01 uses the library's injected `commits-fn` seam: a wrapper
+    that, on its first call, commits an unrelated file on the fixture's
+    main and pushes it to the bare origin (and runs `git fetch origin main`
+    in the fixture), then delegates to `path-attributing-commits`. The plan
+    computed under that wrapper must equal the plan computed without it.
+  - Scenario 02 counts resolutions with a `git!`-level seam or by wrapping
+    `origin-main-sha`; the structural half (no reader calls it) is a grep
+    over the lib for `(origin-main-sha root)` expecting only the entry.
+  - Fixture per BL-1389's own handler (bare origin under mkdtemp, a QA
+    branch with a tagged parcel); prove the root with `rev-parse
+    --git-common-dir` before any mutating git command (BL-1390).
+  - Keep `land_main_publish.sh` untouched except for the scenario 04 pin.
+
+  ## Out of scope
+
+  - The walk's cost and the QA branch's 1839 never-landed merge commits
+    (BL-1432, ruling pending).
+  - Any change to what counts as entangled, landed or own (BL-1389/1375).
+
+qa_e2e_procedure: |
+  1. The BL-1431 feature passes (four scenarios); the BL-1389, BL-1375,
+     BL-1354, BL-1343 and BL-1315 land-step features still pass.
+  2. `grep -c "(origin-main-sha root)" swarmforge/scripts/land_step_lib.bb`
+     is 0 in reader functions (any remaining call is an entry point that
+     resolves once and threads the value); `grep -c origin-main-sha
+     swarmforge/scripts/land_step_cli.bb` is at least 1.
+  3. Live: land the next QA-approved parcel with `land_main_publish.sh
+     --land` while the specifier commits a mint to main during the walk (the
+     specifier will do this on request); the walk completes with no
+     could-not-read escalation, the push is rejected, the single rematch
+     runs, and LAND_PUBLISHED follows.
+
+notes: |
+  Minted 2026-09-05 by the specifier on QA's priority-00 note "BL-1416
+  land: 2x LAND_ESCALATE, mint-vs-walk race, see evidence". Diagnosis
+  confirmed in code before minting: the resolution sites are cited by line
+  in the description; the fetching sweeps are named. QA's own evidence
+  asked for (a) a faster walk, (b) a mint pause, or (c) other coordination:
+  this ticket is (c), the walk made immune to a moving ref; (a) is BL-1432;
+  (b) cannot work, since approvals and topic records are committed by the
+  front desk and the concierge, not only by the specifier.
+
+  Until this lands: the specifier's mint burst of 2026-09-05 is over; QA
+  was told to retry BL-1416 now, and a rematch plus immediate retry is the
+  BL-1144 remedy when a race does hit.
+
+  INVEST at mint: Independent (BL-1389 and BL-1144 landed; BL-1432 is a
+  sibling), Negotiable (how the sha is threaded is direction; the seams
+  exist), Valuable (one outcome: a land never escalates on a mint it did
+  not contain), Estimable (parameter threading through one lib plus the
+  CLI entry, one handler; low), Small (four scenarios, three invariants at
+  the cap), Testable (fixture with a bare origin; live step in
+  qa_e2e_procedure).
+
+source: |
+  QA note 2026-09-05T09:45Z (verbatim in notes) and
+  `.worktrees/QA/backlog/evidence/BL-1416-land-escalate-20260905.md`.
+  Specifier trace: `land_step_lib.bb` origin-main-sha call sites (411, 500,
+  809, 954, 1211) and land-plan's own resolution; `land_step_cli.bb`
+  -main; `handoffd.bb` git-fetch-origin-main!; `land_main_publish.sh`
+  rematch (rebase, one push); `git reflog show origin/main` (14 pushes
+  10:15-10:48); QA branch swarmforge-QA 1839 ahead of main, 4 behind.
