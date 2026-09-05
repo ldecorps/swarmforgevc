@@ -219,6 +219,29 @@ fixed 2026-08-02 (adopted/reviewed under BL-789; see
   no process ever having run), the other an explicit runtime-stop event —
   both are consulted, on purpose.
 
+## Reading past a NUL byte (BL-1413)
+
+`heartbeat_age_secs` reads the log with `LC_ALL=C grep -aE` (text mode,
+byte-wise), not plain `grep -E`. GNU grep treats any file containing a NUL
+byte as binary: it stops at the first NUL, prints `binary file matches` to
+stderr, and never sees a heartbeat line written after it. A crash that
+zero-fills part of a log (observed 2026-08-30, one NUL-bearing line in each
+of five supervisor logs) made the checker read the last heartbeat *before*
+that byte — sometimes days stale — while the daemon was actually healthy:
+once cron itself came back (BL-1392, above) it restarted five healthy
+supervisors and announced `FRESHNESS_VIOLATION` every two-minute tick, ~120
+false alarms an hour, until this fix. `-a` makes every heartbeat line after
+a NUL visible again, on both GNU and BSD grep.
+
+A NUL byte (or a torn line, or invalid UTF-8) can still make **that one
+line's own timestamp** fail to parse. `heartbeat_age_secs` walks the
+matched lines newest-to-oldest and uses the first one whose timestamp
+actually parses — an unparseable newest line falls back to an older,
+parseable heartbeat rather than returning the `unparseable-timestamp`
+sentinel; only a file with **no** parseable heartbeat line at all still
+returns that sentinel. A byte can make one line unreadable; it can never
+hide every line after it.
+
 ## Attribution: swarm name and violation reason (BL-1011)
 
 `heartbeat_age_secs` returns a huge sentinel age (`999999999`) for three
@@ -374,6 +397,13 @@ plus a property test that runs the real script as a subprocess against
 generated checkouts, `swarmforge/scripts/test/bl1011_freshness_attribution_property_runner.bb`
 — the defect was about which shell branch computed a variable, which only
 running the script can answer.
+The NUL-byte read above has its own,
+`specs/features/BL-1413-the-freshness-check-reads-past-a-nul-byte.feature`,
+plus a property runner
+(`swarmforge/scripts/test/bl1413_freshness_nul_byte_property_runner.bb`)
+and trimmed excerpts of the five real 2026-09-05 supervisor logs around
+their NUL-bearing line, checked in under
+`swarmforge/scripts/test/fixtures/bl1413/`.
 
 ## Consumer: cost-health sidecar's `daemonRestarts` (BL-904)
 
