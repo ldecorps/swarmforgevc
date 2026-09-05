@@ -161,6 +161,21 @@ notes: >
   feature file. Disjoint from everything except BL-1209, which it
   depends on and must not be co-active with - sequence them.
 
+  AMENDED 2026-09-05 (specifier; parcel at the coder, who reported it):
+  scenario 02 RETIRED, never reworded (BL-1006, falsified after mint).
+  BL-1317 (533da24a41, 2026-09-02) changed docsStructureRealTree.test.js's
+  REPO_ROOT from path.join(__dirname, '..', '..') to execFileSync git
+  rev-parse --show-toplevel; liveRepoDerivationGuard.js recognizes only
+  the path.join idiom (LIVE_ROOT_BINDING_RE, LIVE_ROOT_INLINE_SRC), so it
+  never inspects this file and a bare marker is not refused - the coder
+  verified all three reads return null. The exemption this ticket adds
+  is still right and stays (scenario 01); scenario 03 still holds. The
+  guard's blindness to the rev-parse idiom is BL-1435 (five unit-lane
+  tests use it today), which carries the bare-marker scenario. Coder:
+  merge main, drop scenario 02's step definitions from the handler
+  ("carries an exemption marker with no reason after it", "it is
+  reported as a violation") so no step is unreachable, and forward.
+
 approval_context: >
   One thing to sanity-check, since it is a judgement rather than a
   measurement: I concluded BL-757's real-tree gate DESERVES its
@@ -181,18 +196,3 @@ approval_context: >
   ticket's.
 
 assigned_to: coder
-
-  AMENDED 2026-09-05 (specifier; parcel at the coder, who reported it):
-  scenario 02 RETIRED, never reworded (BL-1006, falsified after mint).
-  BL-1317 (533da24a41, 2026-09-02) changed docsStructureRealTree.test.js's
-  REPO_ROOT from path.join(__dirname, '..', '..') to execFileSync git
-  rev-parse --show-toplevel; liveRepoDerivationGuard.js recognizes only
-  the path.join idiom (LIVE_ROOT_BINDING_RE, LIVE_ROOT_INLINE_SRC), so it
-  never inspects this file and a bare marker is not refused - the coder
-  verified all three reads return null. The exemption this ticket adds
-  is still right and stays (scenario 01); scenario 03 still holds. The
-  guard's blindness to the rev-parse idiom is BL-1435 (five unit-lane
-  tests use it today), which carries the bare-marker scenario. Coder:
-  merge main, drop scenario 02's step definitions from the handler
-  ("carries an exemption marker with no reason after it", "it is
-  reported as a violation") so no step is unreachable, and forward.

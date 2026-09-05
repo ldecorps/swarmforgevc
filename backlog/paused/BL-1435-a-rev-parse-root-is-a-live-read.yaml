@@ -27,7 +27,7 @@ approval_context: >
   refused because the guard never reads the file since BL-1317 changed how
   it finds the repository root. That scenario is retired from BL-1212 and
   carried here (BL-1006). depends_on names BL-1212 (active, at the coder)
-  on purpose: scenario 04 asserts the real tree is clean, which needs
+  on purpose: scenario 03 asserts the real tree is clean, which needs
   BL-1212's reasoned exemption in place, so the promotion gate holds this
   until BL-1212 lands.
 
@@ -84,9 +84,9 @@ description: |
     inline form likewise; keep `EXEMPTION_RE` and `growthPatternsFor`
     untouched so the honoured/refused decisions cannot diverge by idiom.
   - The guard's own unit test (`liveRepoDerivationGuard.test.js`) gains the
-    three call shapes and the bare-marker case; scenario 04 runs the real
+    three call shapes and the bare-marker case; scenario 03 runs the real
     guard over the parcel's `extension/test` tree.
-  - Fixture text only for scenarios 01 to 03; no repository is created.
+  - Fixture text only for scenarios 01 and 02; no repository is created.
 
   ## Out of scope
 
@@ -115,7 +115,7 @@ notes: |
   this is a separate ticket.
 
   INVEST at mint: Independent in code (BL-1038 landed); BL-1212 is named
-  as a dependency so the promotion gate orders the two, which scenario 04
+  as a dependency so the promotion gate orders the two, which scenario 03
   needs. Negotiable (regex shape is direction), Valuable (one outcome:
   the guard sees every live root it claims to), Estimable (one detection
   widening, one unit test, five file dispositions, one handler; medium),
