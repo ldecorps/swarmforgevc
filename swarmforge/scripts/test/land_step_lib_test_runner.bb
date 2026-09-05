@@ -1681,6 +1681,95 @@ RESOLVED BY THIS TICKET
                (:reason (land-step-lib/replay! {:root root :commit tip :task-ticket-id "BL-9031"
                                                  :own-paths [] :passengers #{} :origin-main nil}))))))
 
+;; ── BL-1432: land-plan's :base bounds the walk to the parcel alone ────────
+
+(with-fixture [root]
+  ;; origin-main never advances past the fixture's seed commit - the same
+  ;; shape a tip-pure-replay world produces (content lands on main under NEW
+  ;; shas, so the QA branch's own history is never an ancestor of origin-
+  ;; main's tip). An UNBOUNDED walk (origin-main..commit) would visit the
+  ;; old, already-landed parcel's review-merge commit and misreport it as an
+  ;; entangled sibling; a walk bounded to `base` (set right after it) must
+  ;; not.
+  (mark-origin-main-here! root)
+  (commit! root "backlog/active/BL-9101-old.yaml" "id: BL-9101\n" "BL-9101: an old, already-landed parcel's review merge")
+  (let [base (:out (sh! root "git" "rev-parse" "HEAD"))]
+    (commit! root "backlog/active/BL-9001-x.yaml" "id: BL-9001\n" "BL-9001: own work")
+    (let [commit (:out (sh! root "git" "rev-parse" "HEAD"))
+          unbounded (land-step-lib/land-plan {:root root :commit commit :task-ticket-id "BL-9001"})
+          bounded (land-step-lib/land-plan {:root root :commit commit :task-ticket-id "BL-9001" :base base})]
+      (assert= "land-plan (no :base): the old parcel's commit is misread as an entangled sibling"
+               :replay (:action unbounded))
+      (assert= "land-plan (no :base): names the stale sibling" #{"BL-9101"} (:entangled unbounded))
+      (assert= "land-plan :base - the SAME tip, bounded, sees nothing before base"
+               {:action :land} bounded))))
+
+(with-fixture [root]
+  (mark-origin-main-here! root)
+  (commit! root "backlog/active/BL-9102-old.yaml" "id: BL-9102\n" "BL-9102: an old, already-landed parcel")
+  (let [base (:out (sh! root "git" "rev-parse" "HEAD"))]
+    ;; A NEW sibling committed AFTER base is still caught by the bounded walk
+    ;; - narrowing the range must never hide a sibling that is genuinely
+    ;; inside the parcel's own range (invariant 2).
+    (commit! root "backlog/active/BL-9002-sibling.yaml" "id: BL-9002\n" "BL-9002: new sibling since base")
+    (commit! root "backlog/active/BL-9001-x.yaml" "id: BL-9001\n" "BL-9001: own work")
+    (let [commit (:out (sh! root "git" "rev-parse" "HEAD"))
+          plan (land-step-lib/land-plan {:root root :commit commit :task-ticket-id "BL-9001" :base base})]
+      (assert= "land-plan :base - a sibling committed since base is still entangled"
+               :replay (:action plan))
+      (assert= "land-plan :base - names the sibling" #{"BL-9002"} (:entangled plan))
+      (assert= "land-plan :base - own-paths still just the task's own file"
+               ["backlog/active/BL-9001-x.yaml"] (:own-paths plan)))))
+
+(with-fixture [root]
+  ;; Without :base, land-plan falls back to parcel-own-base (nil here, since
+  ;; this fixture has no handoff archive) -> origin-main - the pre-existing,
+  ;; unbounded behavior, unchanged.
+  (mark-origin-main-here! root)
+  (commit! root "backlog/active/BL-9001-x.yaml" "id: BL-9001\n" "BL-9001: own work only")
+  (let [commit (:out (sh! root "git" "rev-parse" "HEAD"))
+        plan (land-step-lib/land-plan {:root root :commit commit :task-ticket-id "BL-9001"})]
+    (assert= "land-plan: no :base given - unchanged fallback behavior" {:action :land} plan)))
+
+;; ── BL-1432: post-land-repoint! ───────────────────────────────────────────
+
+(with-fixture [root]
+  (mark-origin-main-here! root)
+  (let [origin-main (:out (sh! root "git" "rev-parse" "HEAD"))]
+    (commit! root "scratch.txt" "x\n" "a local commit ahead of origin/main")
+    (let [old-tip (:out (sh! root "git" "rev-parse" "HEAD"))
+          result (land-step-lib/post-land-repoint! {:root root})]
+      (assert= "post-land-repoint!: a clean worktree is repointed" :repointed (:action result))
+      (assert= "post-land-repoint!: names the old tip" old-tip (:old-tip result))
+      (assert= "post-land-repoint!: names the new tip" origin-main (:new-tip result))
+      (assert= "post-land-repoint!: the branch tip now equals origin/main"
+               origin-main (:out (sh! root "git" "rev-parse" "HEAD")))
+      (let [log (slurp (str (fs/path root ".swarmforge" "daemon" "land-repoint.log")))]
+        (assert-includes "post-land-repoint!: logs the old tip" log old-tip)
+        (assert-includes "post-land-repoint!: logs the new tip" log origin-main)))))
+
+(with-fixture [root]
+  (mark-origin-main-here! root)
+  (spit (str (fs/path root "dirty.txt")) "uncommitted\n")
+  (let [result (land-step-lib/post-land-repoint! {:root root})]
+    (assert= "post-land-repoint!: an uncommitted change is never repointed"
+             :skipped (:action result))
+    (assert= "post-land-repoint!: names the reason"
+             "an uncommitted change" (:reason result))
+    (let [log (slurp (str (fs/path root ".swarmforge" "daemon" "land-repoint.log")))]
+      (assert-includes "post-land-repoint!: logs the skip reason" log "an uncommitted change"))))
+
+(with-fixture [root]
+  (mark-origin-main-here! root)
+  (let [in-process (fs/path root ".swarmforge" "handoffs" "inbox" "in_process")]
+    (fs/create-dirs in-process)
+    (spit (str (fs/path in-process "00_x_from_a_to_b_for_b.handoff")) "task: BL-9999\n")
+    (let [result (land-step-lib/post-land-repoint! {:root root})]
+      (assert= "post-land-repoint!: a parcel in in_process is never repointed"
+               :skipped (:action result))
+      (assert= "post-land-repoint!: names the reason"
+               "a parcel in its in_process" (:reason result)))))
+
 (if (seq @failures)
   (do
     (doseq [f @failures] (println f))

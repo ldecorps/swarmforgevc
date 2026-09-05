@@ -402,7 +402,14 @@
    whose OWN subject names a DIFFERENT ticket than task-ticket-id counts;
    a commit naming no ticket at all is not counted (positive identification
    only, task_scope_gate_lib.bb's own posture - never guessed as
-   entanglement from silence)."
+   entanglement from silence).
+
+   BL-1432: `walk-base` is an OPTIONAL trailing parameter (defaults to
+   `origin-main`, the pre-existing behavior) - the commit RANGE walked for
+   candidates is bounded to it, while `origin-main` stays the tree every
+   landed/unlanded verdict is read against (a narrower walk must never
+   change what counts as landed, only how many commits are inspected to
+   find a sibling - invariant 2)."
   ([root commit task-ticket-id]
    (entangled-siblings root commit task-ticket-id nil))
   ([root commit task-ticket-id extra-paths-fn]
@@ -412,15 +419,18 @@
    ;; resolves origin/main ONCE here and threads it, never re-resolving.
    (entangled-siblings root commit task-ticket-id extra-paths-fn lines-fn (origin-main-sha root)))
   ([root commit task-ticket-id extra-paths-fn lines-fn origin-main]
+   (entangled-siblings root commit task-ticket-id extra-paths-fn lines-fn origin-main origin-main))
+  ([root commit task-ticket-id extra-paths-fn lines-fn origin-main walk-base]
    ;; BL-1431: origin-main is now ALWAYS a parameter, never resolved by name
    ;; in this function body - a caller with its own already-resolved tip
    ;; (land-plan) passes it straight through, so one land-step invocation
    ;; reads one tip everywhere, immune to main moving mid-walk.
    (if-not origin-main
      {:entangled nil :warning "land-step: origin/main could not be resolved"}
-     (let [candidates (ancestry-commits root origin-main commit)]
+     (let [walk-base (or walk-base origin-main)
+           candidates (ancestry-commits root walk-base commit)]
        (if (nil? candidates)
-         {:entangled nil :warning (str "land-step: could not read the commit range origin/main.." commit)}
+         {:entangled nil :warning (str "land-step: could not read the commit range " walk-base ".." commit)}
          (let [siblings (->> candidates
                              (keep #(commit-ticket-id root %))
                              (remove #(= % task-ticket-id))
@@ -834,9 +844,17 @@
   ([root commit task-ticket-id unlanded-siblings commits-fn approval-fn opts]
    (own-paths root commit task-ticket-id unlanded-siblings commits-fn approval-fn opts (origin-main-sha root)))
   ([root commit task-ticket-id unlanded-siblings commits-fn approval-fn opts origin-main]
+   (own-paths root commit task-ticket-id unlanded-siblings commits-fn approval-fn opts origin-main origin-main))
+  ;; BL-1432: `walk-base` bounds the delivered-diff read (`full-delivered-
+  ;; paths`) to the parcel's own base instead of walking the whole
+  ;; origin/main..tip range; defaults to origin-main so every existing
+  ;; caller/test is unaffected. `origin-main` stays what landed/approval
+  ;; checks read against - unrelated to how far back the delivered diff
+  ;; looks.
+  ([root commit task-ticket-id unlanded-siblings commits-fn approval-fn opts origin-main walk-base]
    (if-not origin-main
      {:paths nil :warning "land-step: origin/main could not be resolved"}
-     (if-let [delivered (full-delivered-paths root origin-main commit)]
+     (if-let [delivered (full-delivered-paths root (or walk-base origin-main) commit)]
        ;; BL-1375: memoized so N shared paths read one sibling's ticket file
        ;; once, and so every path in one run answers from the same read.
        ;; BL-1431: when the caller supplied no approval-fn, the default reads
@@ -964,7 +982,7 @@
                       (if (contains? (:owners attribution) task-ticket-id)
                         (into passengers (filter unlanded-siblings (:owners attribution)))
                         passengers)))))))
-       {:paths nil :warning (str "land-step: could not read the delivered diff " origin-main ".." commit)}))))
+       {:paths nil :warning (str "land-step: could not read the delivered diff " (or walk-base origin-main) ".." commit)}))))
 
 (defn land-plan
   "The land step's own decision: {:action :land} when no entanglement is
@@ -981,7 +999,20 @@
    every reader below and never re-resolved - one land-step invocation
    reads one tip, immune to main moving mid-walk. A direct/test caller that
    omits the key (the pre-existing contract, unchanged) gets it resolved
-   once, here, at this function's own entry."
+   once, here, at this function's own entry.
+
+   BL-1432: `:base` is likewise an OPTIONAL key - the parcel's own base
+   (task_scope_gate_lib.bb's own `parcel-own-base`, the same notion the
+   send-time scope gate already uses), and every range read below
+   (`ancestry-commits`, `path-attributing-commits` via `delivered-
+   attribution`, `full-delivered-paths` via `own-paths`) runs from it
+   instead of walking the whole, forever-growing origin/main..tip range.
+   Falling back to `origin-main` when this task has no recorded base (its
+   first hop) or the recorded one is abandoned only ever WIDENS the walk,
+   never narrows it past the pre-existing behavior. `origin-main` itself
+   stays exactly what it was: the tree every landed/unlanded and approval
+   verdict is read against (invariant 2 - a narrower walk must not change
+   what counts as landed, only how many commits are inspected)."
   [{:keys [root commit task-ticket-id] :as opts}]
   (if-not task-ticket-id
     {:action :escalate :reason "land-step: task name names no ticket id"}
@@ -991,7 +1022,10 @@
     ;; credited to a sibling the per-sibling walk never reported was decided
     ;; against a verdict that had not seen it.
     (let [origin-main (if (contains? opts :origin-main) (:origin-main opts) (origin-main-sha root))
-          candidates (when origin-main (ancestry-commits root origin-main commit))
+          walk-base (if (contains? opts :base)
+                      (:base opts)
+                      (or (task-scope-gate-lib/parcel-own-base root task-ticket-id) origin-main))
+          candidates (when walk-base (ancestry-commits root walk-base commit))
           ;; One read of each sibling's own diffs, shared by the landed/unlanded
           ;; split and by the per-path exclusion below. Each is every commit
           ;; that sibling authored in range, so asking twice doubles the
@@ -1000,15 +1034,15 @@
           ;; Deferred: a land with no entangled sibling never forces it, and
           ;; that is the common case. Forcing it there would add one
           ;; path-scoped walk per delivered path to every clean land.
-          attribution (when origin-main
-                        (delay (delivered-attribution root origin-main commit)))
+          attribution (when walk-base
+                        (delay (delivered-attribution root walk-base commit)))
           extra-paths-fn (when attribution
                            (fn [sibling]
                              (for [[path a] @attribution
                                    :when (and a (contains? (:owners a) sibling))]
                                path)))
           {:keys [entangled landed unlanded landed-paths warning]}
-          (entangled-siblings root commit task-ticket-id extra-paths-fn lines-of origin-main)]
+          (entangled-siblings root commit task-ticket-id extra-paths-fn lines-of origin-main walk-base)]
       (cond
         warning {:action :escalate :reason warning}
         (empty? entangled) {:action :land}
@@ -1018,7 +1052,7 @@
                          {:attribution (when attribution @attribution)
                           :path-landed-fn (when origin-main
                                             (sibling-path-landed-fn root origin-main commit lines-of))}
-                         origin-main)]
+                         origin-main walk-base)]
           (if (nil? paths)
             {:action :escalate
              :reason (or warning (str "land-step: could not compute " task-ticket-id "'s own paths to replay"))}
@@ -1309,3 +1343,66 @@
                                         " riding on a shared path (BL-1375 invariant 2 / BL-1324): "
                                         (str/join "; " refusals))})
                       {:success true :commit sha :branch branch :passengers (set passengers)})))))))))))
+
+;; ── BL-1432 option 1: re-point the QA branch after a successful land ─────
+;; QA's branch keeps every review merge and every merge-of-main as its own
+;; history forever - tip-pure replays land CONTENT under new SHAs on main,
+;; so none of that history ever becomes a main ancestor and origin/main..tip
+;; grows without bound (this file's own header measured 1839 commits ahead,
+;; 4 behind, on 2026-09-05). Re-pointing to origin/main after each land
+;; resets that growth; the human ruled this alongside the bounded-walk half
+;; above (option 3, both).
+
+(defn- log-repoint! [root entry]
+  (let [log-path (fs/path root ".swarmforge" "daemon" "land-repoint.log")]
+    (fs/create-dirs (fs/parent log-path))
+    (spit (str log-path)
+          (str (java.time.Instant/now) " " entry "\n")
+          :append true)))
+
+(defn post-land-repoint!
+  "{:action :repointed :old-tip :new-tip} on success, or {:action :skipped
+   :reason \"...\"} when it is not safe to run - NEVER a bare `reset --hard`
+   on a tree that might hold work (invariant 3): refuses on an uncommitted
+   change (`git status --porcelain` non-empty) or a parcel still in
+   `in_process`, each logged by name so a skip is never silent. Only once
+   both are verified clean does it move the branch AND the worktree to
+   origin/main - a `reset --hard`, but one the constitution's own caution
+   against that command does not forbid here: the precondition IS the
+   clean-tree guarantee that command normally lacks. Both the old and the
+   new tip are logged either way (repointed or skipped), so a bookkeeping
+   read never has to diff the branch by hand to see what happened."
+  [{:keys [root in-process-dir]}]
+  (let [in-process-dir (or in-process-dir (str (fs/path root ".swarmforge" "handoffs" "inbox" "in_process")))
+        old-tip (str/trim (:out (git! root "rev-parse" "HEAD")))
+        status (git! root "status" "--porcelain")
+        pending (when (fs/exists? in-process-dir)
+                  (remove #(str/starts-with? (fs/file-name %) ".") (fs/list-dir in-process-dir)))]
+    (cond
+      (not (zero? (:exit status)))
+      (let [r {:action :skipped :reason "land-step: could not read worktree status"}]
+        (log-repoint! root r) r)
+
+      ;; BL-1421's own ruling, same shape: in-process is checked BEFORE
+      ;; dirty - an in_process parcel's own mailbox file is untracked, which
+      ;; would otherwise misreport it as a generic "uncommitted change"
+      ;; instead of naming the real reason.
+      (seq pending)
+      (let [r {:action :skipped :reason "a parcel in its in_process" :old-tip old-tip}]
+        (log-repoint! root r) r)
+
+      (not (str/blank? (:out status)))
+      (let [r {:action :skipped :reason "an uncommitted change" :old-tip old-tip}]
+        (log-repoint! root r) r)
+
+      :else
+      (let [origin-main (origin-main-sha root)]
+        (if-not origin-main
+          (let [r {:action :skipped :reason "land-step: origin/main could not be resolved" :old-tip old-tip}]
+            (log-repoint! root r) r)
+          (let [res (git! root "reset" "--hard" origin-main)]
+            (if (zero? (:exit res))
+              (let [r {:action :repointed :old-tip old-tip :new-tip origin-main}]
+                (log-repoint! root r) r)
+              (let [r {:action :skipped :reason "land-step: branch re-point failed" :old-tip old-tip}]
+                (log-repoint! root r) r))))))))

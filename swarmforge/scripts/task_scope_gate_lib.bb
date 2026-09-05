@@ -426,6 +426,23 @@
     (when-not unreadable?
       (task-tagged-changed-paths root base commit task-ticket-id :authored))))
 
+(defn parcel-own-base
+  "BL-1432: the same notion of 'this task's own base' parcel-own-changed-
+   paths already computes for the send-time scope gate, exposed publicly so
+   the land step can bound its attribution walk to the parcel alone instead
+   of walking origin/main..tip forever-growing history - never a second
+   implementation of 'what is this parcel's own base'.
+
+   nil when this is the task's first hop (no prior handoff recorded) or when
+   the recorded base is abandoned and origin/main itself could not be
+   resolved - both cases the caller's own fail-open: falling back to
+   origin/main as the walk base only ever WIDENS the range, never narrows it
+   past what the un-based walk already covered."
+  [root task-ticket-id]
+  (when-let [raw-base (last-handoff-commit root task-ticket-id)]
+    (let [{:keys [base unreadable?]} (effective-base root task-ticket-id raw-base)]
+      (when-not unreadable? base))))
+
 (defn findings-for-git-handoff
   "The one impure entry point. Returns {:findings [{:path :ticket-id}]} on
    a clean read (possibly empty), or {:warning \"...\"} when the walk could
