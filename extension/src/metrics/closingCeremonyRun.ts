@@ -14,6 +14,7 @@ import { determinismCandidatesFromLedger } from './ritualLedger';
 import { readCeremonyRun, writeCeremonyRun, findOpenCeremonyRunsBefore, finalizeCeremonyRunAsFailed, ceremonyRunFilePath } from './closingCeremonyStore';
 import {
   CeremonyRun,
+  CeremonyDeterminismCandidate,
   buildClosingCeremonyPacket,
   isEmptyCeremonyPacket,
   buildClosingCeremonyNoteDraft,
@@ -99,6 +100,29 @@ export function readWindowModelsFromTarget(targetPath: string): Record<string, s
   return text ? parseWindowModelsFromConf(text) : {};
 }
 
+/**
+ * BL-1365 invariant 1: READ the ledger, never compute it here. The producer
+ * accrues it on the daemon's own sweep, so a shift that closes no ceremony
+ * delays this adjudication and loses no measurement - the next ceremony
+ * still sees the earlier window's commits because they are still in the
+ * store. Selection and suppression happen here, against the tickets open
+ * NOW, so a ticket minted since the last sweep silences its class
+ * immediately (invariant 2). Split out of runClosingCeremony so that
+ * function's own branching count stays at its pre-BL-1365 baseline
+ * (differential complexity gate).
+ */
+function resolveDeterminismCandidates(
+  targetPath: string,
+  deps: Pick<ClosingCeremonyRunDeps, 'readOpenTicketTexts'>
+): CeremonyDeterminismCandidate[] {
+  const ledgerRecord = readPersistedRitualLedger(path.join(targetPath, '.swarmforge', 'telemetry'));
+  if (!ledgerRecord) {
+    return [];
+  }
+  const openTicketTexts = (deps.readOpenTicketTexts ?? readOpenTicketTextsFromTarget)(targetPath);
+  return determinismCandidatesFromLedger(ledgerRecord.ledger, openTicketTexts);
+}
+
 // Human decision 5: "the packet reaches the specifier, not only the
 // briefing" - this delivers a note addressed to `to`, never merely writes
 // under docs/briefings/.
@@ -124,18 +148,7 @@ export function runClosingCeremony(targetPath: string, nowIso: string, deps: Clo
   const allEvents = readLeanLedgerEvents(targetPath);
   const windowModels = (deps.readWindowModels ?? readWindowModelsFromTarget)(targetPath);
 
-  // BL-1365 invariant 1: READ the ledger, never compute it here. The producer
-  // accrues it on the daemon's own sweep, so a shift that closes no ceremony
-  // delays this adjudication and loses no measurement - the next ceremony
-  // still sees the earlier window's commits because they are still in the
-  // store. Selection and suppression happen here, against the tickets open
-  // NOW, so a ticket minted since the last sweep silences its class
-  // immediately (invariant 2).
-  const ledgerRecord = readPersistedRitualLedger(path.join(targetPath, '.swarmforge', 'telemetry'));
-  const openTicketTexts = (deps.readOpenTicketTexts ?? readOpenTicketTextsFromTarget)(targetPath);
-  const determinismCandidates = ledgerRecord
-    ? determinismCandidatesFromLedger(ledgerRecord.ledger, openTicketTexts)
-    : [];
+  const determinismCandidates = resolveDeterminismCandidates(targetPath, deps);
 
   const packet = buildClosingCeremonyPacket(shiftKey, allEvents, windowModels, determinismCandidates);
 
