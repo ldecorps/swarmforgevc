@@ -2655,11 +2655,13 @@ test('BL-425: a failed create for one role is logged and skipped, never blocking
   assert.equal(typeof map.QA, 'number');
 });
 
-test('BL-425: ensureRoleTopics defaults to provisioning all 8 swarm roles when no role list is given', async () => {
+test('BL-425: ensureRoleTopics defaults to provisioning all 9 swarm roles when no role list is given', async () => {
+  // BL-1418: art-director joined ALL_SWARM_ROLES (a standing pane, its own
+  // topic, outside the forward chain like coordinator).
   const root = mkTmpRoot();
   const { calls, postFn } = fakeCreateSequential();
   await ensureRoleTopics(root, 'fake-token', 'fake-chat', undefined, postFn);
-  assert.equal(calls.length, 8);
+  assert.equal(calls.length, 9);
 });
 
 // ── resolveRolePaneTarget / redirectToRole (BL-425 REDIRECT execution) ───
