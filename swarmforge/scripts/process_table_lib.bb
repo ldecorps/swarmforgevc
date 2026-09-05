@@ -145,13 +145,44 @@
     (cwd-from-procfs pid)
     (cwd-from-lsof pid)))
 
+(defn- path-boundary-after?
+  "True when the character following a path match is a real path boundary -
+   end of string, a separator, whitespace, or a quote. BL-1370: without this,
+   both arms matched a bare prefix, so `.worktrees/coder` claimed
+   `.worktrees/coder-cursor2` (a live sibling on this host) and `/repo`
+   claimed `/repo-2`. For a classifier whose consumers KILL what it claims,
+   that is the wrong direction to be wrong in."
+  [s idx]
+  (or (>= idx (count s))
+      (contains? #{\/ \space \tab \" \'} (.charAt ^String s idx))))
+
+(defn- cmd-names-path?
+  "The command line mentions `path` at a path-component boundary. Every
+   occurrence is considered: a path can appear more than once in an argv, and
+   only one of them needs to be a real reference."
+  [cmd path]
+  (loop [from 0]
+    (let [idx (str/index-of cmd path from)]
+      (cond
+        (nil? idx) false
+        (path-boundary-after? cmd (+ idx (count path))) true
+        :else (recur (inc idx))))))
+
 (defn project-scoped-process?
-  "True when cmd contains any path in `paths` (str/includes?) or cwd is
-   non-nil and starts with any path in `paths` (str/starts-with?). Nil-safe
-   on both cmd and cwd. Shared 'is this process ours' classification for the
-   handoffd supervisor's crash-orphan reaper and the orphan janitor's
-   stale-process sweep, so the two can never disagree (BL-887)."
+  "True when cmd names any path in `paths`, or cwd is non-nil and is inside
+   one, matching only at a PATH-COMPONENT BOUNDARY: cwd must equal the path or
+   continue with `/`, and a command-line match must be followed by `/`,
+   whitespace, a quote, or end of string. Nil-safe on both cmd and cwd.
+
+   Shared 'is this process ours' classification for the handoffd supervisor's
+   crash-orphan reaper, the orphan janitor's stale-process sweep, and the
+   per-pass worktree stray gate (BL-1370), so the three can never disagree
+   (BL-887). The boundary requirement is BL-1370's: a prefix-sibling root is
+   never mine, in either arm."
   [cmd cwd paths]
   (boolean
-   (or (some #(str/includes? (or cmd "") %) paths)
-       (and cwd (some #(str/starts-with? cwd %) paths)))))
+   (or (some #(cmd-names-path? (or cmd "") %) paths)
+       (and cwd (some #(or (= cwd %)
+                           (and (str/starts-with? cwd %)
+                                (path-boundary-after? cwd (count %))))
+                      paths)))))
