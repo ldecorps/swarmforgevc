@@ -72,16 +72,57 @@
 (defn decide-auth-observation
   "Pure decision for one observe tick: classifies pane-text, advances the
    role's episode state, and decides the action. Returns
-   {:signal :state :action}."
+   {:signal :state :action}.
+
+   BL-1416: a pane the runtime itself reports busy is never classified
+   auth-dead, no matter what its scrollback contains - a hardener's own
+   test assertions can print 'invalid api key' while it is thirty minutes
+   into a healthy mutation run. When config carries a truthy :busy? the
+   text is never even regex-matched: the tick classifies healthy and the
+   episode state passes through UNTOUCHED (not reset the way a genuine
+   :healthy observation resets it - a busy tick is invisible to the
+   episode, so it neither counts toward the cap nor lets a run of them
+   quietly restart it)."
   ([prev-state pane-text] (decide-auth-observation prev-state pane-text default-config))
   ([prev-state pane-text config]
-   (let [cfg (merge default-config config)
-         signal (classify-auth-signal pane-text)
-         next (next-episode-state prev-state signal)]
-     (if (= signal :healthy)
-       {:signal signal :state next :action :none}
-       (let [{:keys [state action]} (decide-episode-action next (:max-attempts cfg))]
-         {:signal signal :state state :action action})))))
+   (let [cfg (merge default-config config)]
+     (if (:busy? cfg)
+       {:signal :healthy :state (or prev-state {:attempts 0 :alerted false}) :action :none}
+       (let [signal (classify-auth-signal pane-text)
+             next (next-episode-state prev-state signal)]
+         (if (= signal :healthy)
+           {:signal signal :state next :action :none}
+           (let [{:keys [state action]} (decide-episode-action next (:max-attempts cfg))]
+             {:signal signal :state state :action action})))))))
+
+(defn resolve-committed-state
+  "BL-1416 invariant 2: the episode counts only respawns that were actually
+   PERFORMED. decide-auth-observation's :respawn action proposes an
+   incremented state before anyone has tried to respawn anything; the
+   caller (handoffd.bb's observe-pane-auth!) learns whether do-auth-respawn!
+   really performed the respawn only after calling it (it can still be
+   skipped for busy at that later, independent live check, or for any other
+   reason it declines). Skipped: commit prev-state unchanged, not the
+   decision's proposed increment. Anything else (:alert, :none, or a
+   :respawn that WAS performed): commit the decision's own state exactly
+   as decided."
+  [prev-state decision performed?]
+  (if (and (= :respawn (:action decision)) (not performed?))
+    (or prev-state {:attempts 0 :alerted false})
+    (:state decision)))
+
+(defn matched-auth-line
+  "BL-1416: the first pane-text line matching the auth-error regex
+   (provider-compat-lib/provider-auth-error-text?), trimmed and capped at
+   120 chars - what a persist alert names so a human can tell a genuine
+   credential failure from text that merely mentions one. nil when no line
+   matches (a healthy pane, or callers that pass busy text through anyway)."
+  [text]
+  (some->> (str/split-lines (or text ""))
+           (filter provider-compat-lib/provider-auth-error-text?)
+           first
+           str/trim
+           (#(if (> (count %) 120) (subs % 0 120) %))))
 
 (defn parse-max-attempts
   "Pure: `config auth_respawn_max_attempts <n>` from conf text. Honors a
@@ -97,9 +138,15 @@
     (if (and n (pos? n)) n (:max-attempts default-config))))
 
 (defn format-alert-reason
-  [role max-attempts]
-  (str "Auth-class failure persists on role '" role "' after " max-attempts
-       " respawn attempt" (if (= 1 max-attempts) "" "s") " (BL-536). "
+  "BL-1416: names the matched pane line and the number of PERFORMED
+   respawns (not merely attempted - resolve-committed-state above makes
+   the persisted :attempts count exactly that), so a reader can tell a
+   genuine credential failure from text that merely mentions one.
+   matched-line may be nil (no line to quote); the sentence still reads."
+  [role matched-line performed-count]
+  (str "Auth-class failure persists on role '" role "' after " performed-count
+       " respawn attempt" (if (= 1 performed-count) "" "s") " (BL-536)"
+       (if matched-line (str ": matched \"" matched-line "\". ") ". ")
        "Provider credentials likely need manual attention."))
 
 (defn format-telegram-alert
