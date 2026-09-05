@@ -58,3 +58,20 @@ Feature: A role checks its own worktree for strays
     Given no test or mutation process is running for this worktree
     When the role checks for strays
     Then the check yields a recordable result naming what was scanned
+
+  # BL-1370 a-role-checks-its-own-worktree-for-strays-07
+  Scenario Outline: a prefix-sibling root's running suite is never reported
+    Given a test process is running for a sibling root that extends this worktree's path as <sibling>
+    When the role checks for strays
+    Then the check reports clean
+
+    Examples:
+      | sibling                                |
+      | the same name with a suffix appended   |
+      | the same name with a dash and a digit  |
+
+  # BL-1370 a-role-checks-its-own-worktree-for-strays-08
+  Scenario: reaping never touches a prefix-sibling root's processes
+    Given a test process is running for a sibling root that extends this worktree's path as the same name with a suffix appended
+    When the role reaps its strays
+    Then that process is still running
