@@ -7,7 +7,7 @@ contents do not grow as the repository does. A standing gate scans the
 test directory and fails on any file whose cost is a function of the live
 repository's size or history, unless the file records why it must be.
 
-**Last Updated:** 2026-09-02
+**Last Updated:** 2026-09-05
 
 ## Background
 
@@ -73,6 +73,25 @@ one file or a thousand; flagging a growth operation anywhere in a file
 caught BL-1039's own `git init` fixtures. The rule that held: **the growth
 operation must target the bound live root, by name** — `git log`/`rev-list`
 against it, a `readdirSync`/glob over it.
+
+**Two idioms bind a live root, both recognized by the same detection**
+(BL-1435). `path.join(__dirname, '..', '..')` is one; a `git rev-parse
+--show-toplevel` call against `__dirname` — via `execFileSync`,
+`execSync`, or `spawnSync`, with the argument as a `-C` array member or a
+trailing `{ cwd: __dirname }` option, `.trim()`ed or not — is the other.
+`__dirname` is the load-bearing tell for the rev-parse form exactly as it
+is for `path.join`: a rev-parse against some other root (a `mkTmpDir`
+fixture the file `git init`s itself, as `gitEnvGuard.test.js` does) does
+not resolve the live repository and correctly does not match. Both forms
+feed `growthPatternsFor` and `EXEMPTION_RE` identically — one alternation
+each in `LIVE_ROOT_BINDING_RE` (named binding) and `LIVE_ROOT_INLINE_SRC`
+(inline/escape-into-production), so the two idioms cannot diverge in
+which rules apply. Before BL-1435, a rev-parse-bound file was invisible to
+the guard — `docsStructureRealTree.test.js`, re-derived through
+`rev-parse --show-toplevel` by BL-1317's hardener (2026-09-02), returned
+`null` from `liveRepoDerivation`, `violationFor`, and the marker check
+alike, so BL-1038 scenario 03's "clean tree" verdict was vacuous for it
+and every other rev-parse-rooted file until then.
 
 **The indirect case (`liveRootEscapesIntoProduction`).** The four headline
 files never write a growth operation inline — they bind the live root and
