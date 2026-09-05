@@ -15,7 +15,7 @@ required_stages: [coder, cleaner, architect, hardender, documenter, qa]
 acceptance: specs/features/BL-1370-a-role-checks-its-own-worktree-for-strays.feature
 
 invariants:
-  - "Scope comes from the ONE shared classifier (process_table_lib's project-scoped-process?, BL-887): another worktree's legitimate run is never reported and never killed, and this tool never grows a second notion of what is mine."
+  - "Scope comes from the ONE shared classifier (process_table_lib's project-scoped-process?, BL-887), and that classifier matches only at a path-component boundary (AMENDED 2026-09-05): a prefix-sibling root (.worktrees/coder-cursor2 beside .worktrees/coder, /repo-2 beside /repo) is never mine, another worktree's legitimate run is never reported and never killed, and this tool never grows a second notion of what is mine."
   - "Reaping is by process group, never by pid - an orphaned run reparents to the OS and its children outlive a bare pid kill."
   - "A stray found is a refusal, not a warning: the check exits non-zero, so a pass cannot be approved with test or mutation processes still alive."
 
@@ -82,6 +82,21 @@ description: |
 
   - One entry point a role calls before and after verifying, answering about
     its own worktree only, with a separate explicit reap.
+  - AMENDED 2026-09-05 (coder spec-gap note): the shared classifier itself
+    claims prefix-sibling roots - `project-scoped-process?` tests
+    `str/includes?` on the command line and `str/starts-with?` on the cwd
+    with no separator, so `.worktrees/coder` claims `.worktrees/coder-cursor2`
+    (a live sibling on this host) and `/repo` claims `/repo-2`. Delegating
+    to it as it stands cannot satisfy invariant 1 in the killing direction.
+    FIX IT IN THIS PARCEL, in `process_table_lib.bb`, keeping it the ONE
+    classifier: a path matches the cwd only when equal or followed by `/`,
+    and matches the command line only when followed by `/`, whitespace, a
+    quote, or end of string. Extend `process_table_lib_test_runner.bb` and
+    `bl887_scope_predicate_invariants_property_runner.bb` with the sibling
+    case; run the janitor and supervisor runners - both consumers inherit
+    the narrower scope, which only ever reduces what they may reap. The
+    task-scope gate (BL-1192) flags only paths whose basename names a
+    ticket id, so touching the lib is not a scope refusal.
   - Scope must delegate to `process_table_lib`'s `project-scoped-process?` -
     the same classifier the janitor and the supervisor already share so they
     "can never disagree" (its own comment). Growing a second notion here is the
@@ -120,6 +135,19 @@ qa_e2e_procedure: |
      prefix before the run too (BL-971).
 
 notes: |
+  2026-09-05 AMENDMENT (specifier, on the coder's priority-00 note "shared
+  scope classifier claims prefix-sibling roots (/repo vs /repo-2)"): read
+  `process_table_lib.bb:148-157` - both arms match by bare prefix. The
+  janitor and the supervisor pass [canonical root + every registered
+  worktree], so on this host `.worktrees/coder` already claims
+  `.worktrees/coder-cursor2`'s processes for reaping. Invariant 1 re-worded
+  to require a path-component boundary; scenarios 07 and 08 added (a
+  prefix-sibling root is neither reported nor reaped); the boundary fix is
+  scoped INTO this parcel rather than a sibling ticket because invariant 1
+  cannot hold without it and the change is two predicates in the one
+  shared function. Not a bounce; nothing built yet. The documenter updates
+  the classifier's docstring (it still says starts-with).
+
   Minted 2026-09-03 by the specifier on the operator's direction: "another case
   to move into the deterministic camp: killing orphan processes", with a QA
   pane showing `sleep 15; ps -o pid,pgid,etimes,cmd -p 7759,7992` mid-pass.
