@@ -180,3 +180,5 @@ qa_e2e_procedure: >
   red when run alone, measured this morning); BL-1428 re-points the
   allowlist rows to their owners and this ticket drains them. Severity
   raised to high the same day under the standing-red rule.
+
+assigned_to: coder
