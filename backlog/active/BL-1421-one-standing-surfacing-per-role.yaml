@@ -142,3 +142,5 @@ source: |
   Specifier measurements the same day: coordinator sent/ counts per role,
   the coder's completed mailbox timestamps, git rev-list on origin/main,
   post_qa_branch_sweep_lib.bb normalize-state-for-landed and decide-role.
+
+assigned_to: coder
