@@ -73,6 +73,16 @@ function fixtureLine(pid, name) {
   return `${pid} bash ${os.tmpdir()}/bl1061-fixture-${pid}/cloudflared tunnel --config /x/c.yml --no-autoupdate run ${name}`;
 }
 
+// BL-1287: a name in fixtureTunnelName()'s own shape but with an EXPLICIT
+// creator pid, for constructing a synthetic "leaked by a run that is
+// gone" fixture line - fixtureTunnelName() itself always embeds THIS
+// (live) test process's own pid, which is the wrong shape for a fixture
+// meant to model one whose creator has already exited.
+function fixtureTunnelNameWithCreator(creatorPid, label) {
+  const safeLabel = String(label).replace(/[^A-Za-z0-9-]/g, '-');
+  return `sfvc-test-${creatorPid}-${Math.floor(Math.random() * 1e6)}-${safeLabel}-${Math.random().toString(36).slice(2, 8)}`;
+}
+
 // ── Invariant 1, first half: the name itself. ─────────────────────────────
 
 test('property (invariant 1): a fixture name is unique to the run and never a production name', () => {
@@ -174,12 +184,20 @@ test('property (invariant 1): a protected pid is never selected even when it ser
 
 test('property (invariant 2): the leaked-fixture sweep selects fixtures by temp path and never the real tunnel', () => {
   const reach = { withReal: 0, withoutReal: 0, withFixtures: 0, empty: 0 };
+  // BL-1287: leakedFixtureTunnelPids now also asks whether each fixture's
+  // OWN creator is still alive - a real, load-bearing question this
+  // property's synthetic fixtures must answer honestly. A dead pid,
+  // computed once (spawnSync waits for full exit before returning),
+  // models "leaked by a run that is gone" for every fixture line below;
+  // reusing one across the whole property (rather than spawning fresh per
+  // generated case) keeps this property's own cost independent of numRuns.
+  const deadCreatorPid = spawnSync('true', []).pid;
 
   fc.assert(
     fc.property(fc.integer({ min: 0, max: 4 }), fc.boolean(), (fixtureCount, includeReal) => {
       const fixturePids = Array.from({ length: fixtureCount }, (_, i) => 7000 + i);
       const lines = [
-        ...fixturePids.map((pid) => fixtureLine(pid, fixtureTunnelName('leaked'))),
+        ...fixturePids.map((pid) => fixtureLine(pid, fixtureTunnelNameWithCreator(deadCreatorPid, 'leaked'))),
         // A leaked fixture bound to the PRODUCTION name - the shape that was
         // actually on this host. It must still be swept: it is a fixture.
         ...(fixtureCount > 0 ? [fixtureLine(7900, 'swarmforge-bubble')] : []),
