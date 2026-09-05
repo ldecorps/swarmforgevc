@@ -56,10 +56,16 @@
 
 ;; hardener finding: the two prior dirty/in_process cases each set only ONE of
 ;; the two flags true, so neither can tell which branch decide-role checks
-;; FIRST when both are true - a priority-order mutant survived both. dirty?
-;; must win: it is the one reason that does not resolve itself (BL-1361).
-(assert= "dirty outranks in_process when both are true"
-         {:action :surface :reason :dirty-worktree}
+;; FIRST when both are true - a priority-order mutant survived both.
+;; BL-1421 (reversing BL-1361's own precedence here): in-process? must win.
+;; A role mid-parcel is dirty BY DEFINITION (its own uncommitted work), so
+;; checking dirty? first misclassified every in-process role as a
+;; resolvable dirty-worktree WAKE instead of the in-process-work it
+;; actually is - the human's ruling wakes for dirty-worktree specifically
+;; because "it does not resolve itself," which is false for a role that is
+;; actively mid-parcel.
+(assert= "in_process outranks dirty when both are true (BL-1421)"
+         {:action :surface :reason :in-process-work}
          (post-qa-branch-sweep-lib/decide-role
           {:head-sha "old" :landed-sha "new" :dirty? true :in-process? true :can-ff? true}))
 
@@ -200,6 +206,127 @@
     :fast-forward! (fn [_ _] {:success false})
     :log! (fn [& _] nil)})
   (assert-true "BL-1361: a caller with no :tell! adapter still sweeps" true)
+  (fs/delete-tree dir))
+
+;; ── BL-1421: a standing surfacing survives a newer landed sha ─────────────
+
+(assert= "normalize-state-for-landed keeps :surfaced across a landed-sha change"
+         [{:role "coder" :reason "dirty-worktree" :told-sha "shaA"}]
+         (:surfaced (post-qa-branch-sweep-lib/normalize-state-for-landed
+                     {:landed-sha "shaA" :settled {"coder" "shaA"}
+                      :surfaced [{:role "coder" :reason "dirty-worktree" :told-sha "shaA"}]}
+                     "shaB")))
+
+(assert= "normalize-state-for-landed still resets :settled on a landed-sha change"
+         {} (:settled (post-qa-branch-sweep-lib/normalize-state-for-landed
+                       {:landed-sha "shaA" :settled {"coder" "shaA"} :surfaced []}
+                       "shaB")))
+
+(assert= "normalize-state-for-landed is a no-op for the SAME landed-sha"
+         {:landed-sha "shaA" :settled {"coder" "shaA"} :surfaced []}
+         (post-qa-branch-sweep-lib/normalize-state-for-landed
+          {:landed-sha "shaA" :settled {"coder" "shaA"} :surfaced []}
+          "shaA"))
+
+(assert= "told-sha-for answers nil for a role/reason never surfaced"
+         nil (post-qa-branch-sweep-lib/told-sha-for {:surfaced []} "coder" :dirty-worktree))
+
+(assert= "told-sha-for answers the recorded sha"
+         "shaA" (post-qa-branch-sweep-lib/told-sha-for
+                 {:surfaced [{:role "coder" :reason "dirty-worktree" :told-sha "shaA"}]}
+                 "coder" :dirty-worktree))
+
+(assert-true "surface-already-recorded?: no record at all never blocks (caught-up-to-told? irrelevant)"
+             (not (post-qa-branch-sweep-lib/surface-already-recorded? {:surfaced []} "coder" :dirty-worktree false)))
+
+(assert-true "surface-already-recorded?: a record blocks while NOT caught up"
+             (post-qa-branch-sweep-lib/surface-already-recorded?
+              {:surfaced [{:role "coder" :reason "dirty-worktree" :told-sha "shaA"}]}
+              "coder" :dirty-worktree false))
+
+(assert-true "surface-already-recorded?: the SAME record stops blocking once caught up"
+             (not (post-qa-branch-sweep-lib/surface-already-recorded?
+                   {:surfaced [{:role "coder" :reason "dirty-worktree" :told-sha "shaA"}]}
+                   "coder" :dirty-worktree true)))
+
+(assert= "record-surface! upserts - one entry per (role,reason), never a growing duplicate list"
+         [{:role "coder" :reason "dirty-worktree" :told-sha "shaB"}]
+         (:surfaced (post-qa-branch-sweep-lib/record-surface!
+                     {:surfaced [{:role "coder" :reason "dirty-worktree" :told-sha "shaA"}]}
+                     "coder" :dirty-worktree "shaB")))
+
+(assert= "legacy state (no :told-sha) is dropped on load, self-healing instead of blocking forever"
+         [] (:surfaced (post-qa-branch-sweep-lib/read-state
+                         (let [dir (str (fs/create-temp-dir {:prefix "bl1421-legacy-"}))]
+                           (fs/create-dirs dir)
+                           (spit (post-qa-branch-sweep-lib/state-path dir)
+                                 "{\"landed-sha\":\"shaA\",\"settled\":{},\"surfaced\":[{\"role\":\"coder\",\"reason\":\"dirty-worktree\"}]}")
+                           dir))))
+
+;; ── BL-1421 a-standing-surfacing-is-not-retold-per-landed-commit-01 /
+;;    the-2026-09-05-replay-tells-once-04: a role that never merges and
+;;    never catches up is told exactly once across many landed shas ────────
+
+(let [tells (atom [])
+      dir (str (fs/create-temp-dir {:prefix "bl1421-replay-"}))
+      adapters {:role-facts! (fn [_] {:worktree-path "/w" :head-sha "stale0000" :dirty? true
+                                      :in-process? false :can-ff? false})
+                :fast-forward! (fn [_ _] {:success true})
+                :caught-up-to-told? (fn [_ _] false)
+                :tell! (fn [role reason text wake?]
+                         (swap! tells conj {:role role :reason (name reason) :wake? wake?})
+                         {:success true})
+                :log! (fn [& _] nil)}]
+  (dotimes [i 103]
+    (post-qa-branch-sweep-lib/sweep! dir (str "landed-" i) ["coder"] adapters))
+  (assert= "BL-1421: 103 successive landed shas with the role dirty and behind throughout tells exactly once"
+           1 (count @tells))
+  (assert= "BL-1421: and wakes exactly once (dirty-worktree wakes)"
+           1 (count (filter :wake? @tells)))
+  (fs/delete-tree dir))
+
+;; ── BL-1421 catching-up-clears-the-surfacing-02: caught up -> told once
+;;    more when it falls behind again ───────────────────────────────────────
+
+(let [tells (atom [])
+      caught-up? (atom false)
+      dir (str (fs/create-temp-dir {:prefix "bl1421-catchup-"}))
+      adapters {:role-facts! (fn [_] {:worktree-path "/w" :head-sha "stale0000" :dirty? true
+                                      :in-process? false :can-ff? false})
+                :fast-forward! (fn [_ _] {:success true})
+                :caught-up-to-told? (fn [_ _] @caught-up?)
+                :tell! (fn [role reason text wake?]
+                         (swap! tells conj {:role role :reason (name reason)})
+                         {:success true})
+                :log! (fn [& _] nil)}]
+  (post-qa-branch-sweep-lib/sweep! dir "shaA" ["coder"] adapters)
+  (post-qa-branch-sweep-lib/sweep! dir "shaB" ["coder"] adapters)
+  (assert= "BL-1421: still behind shaA (told-sha) - shaB landing alone does not re-tell" 1 (count @tells))
+  (reset! caught-up? true)
+  (post-qa-branch-sweep-lib/sweep! dir "shaC" ["coder"] adapters)
+  (assert= "BL-1421: caught up to shaA and dirty again (commit C lands) - told once more"
+           2 (count @tells))
+  (assert= "BL-1421: the second telling names the CURRENT landed sha (C), not the stale A"
+           "shaC" (post-qa-branch-sweep-lib/told-sha-for
+                   (post-qa-branch-sweep-lib/read-state dir) "coder" :dirty-worktree))
+  (fs/delete-tree dir))
+
+;; ── BL-1421 in-process-work-is-never-woken-03: told, deferred, not woken ──
+
+(let [tells (atom [])
+      dir (str (fs/create-temp-dir {:prefix "bl1421-inprocess-"}))
+      adapters {:role-facts! (fn [_] {:worktree-path "/w" :head-sha "stale0000" :dirty? true
+                                      :in-process? true :can-ff? false})
+                :fast-forward! (fn [_ _] {:success true})
+                :caught-up-to-told? (fn [_ _] false)
+                :tell! (fn [role reason text wake?]
+                         (swap! tells conj {:role role :reason (name reason) :wake? wake?})
+                         {:success true})
+                :log! (fn [& _] nil)}]
+  (post-qa-branch-sweep-lib/sweep! dir "shaA" ["coder"] adapters)
+  (assert= "BL-1421: a dirty AND in-process role is told for in-process-work, not dirty-worktree"
+           "in-process-work" (:reason (first @tells)))
+  (assert= "BL-1421: and never woken" false (boolean (:wake? (first @tells))))
   (fs/delete-tree dir))
 
 (when (seq @failures)
