@@ -134,3 +134,6 @@ source: |
   (27 reds) recorded in backlog/standing-reds.tsv.
 
 assigned_to: coder
+bounce_count: 1
+bounce_history:
+  - { at: 2026-09-05, by: architect, blamed: coder, class: behavior, commit: bcf7d823c9, evidence: backlog/evidence/BL-1429-bounce-20260905.md }
