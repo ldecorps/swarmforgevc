@@ -30,7 +30,7 @@ invariants:
   - "A harness never turns a checker exit it did not expect into an observation: a non-zero exit fails the run naming the checker's stderr, and no property is evaluated over its output."
   - "The guard, the checker and the live conf files are untouched: with the live required registry and a conf missing a listed daemon the guard still refuses naming it (BL-784, BL-1399 invariant 2)."
 
-human_approval: pending
+human_approval: approved
 approval_context: >
   A new feature file is authored here, so it needs a tap. No choice is posed
   and there are no ruling_options. Found by the coder while building BL-1413
