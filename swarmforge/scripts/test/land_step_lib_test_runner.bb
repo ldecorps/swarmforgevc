@@ -16,6 +16,7 @@
   (when (not= expected actual)
     (swap! failures conj (str "FAIL: " msg "\n  expected: " (pr-str expected) "\n  actual:   " (pr-str actual)))))
 (defn assert-true [msg actual] (assert= msg true actual))
+(defn assert-false [msg actual] (assert= msg false actual))
 (defn assert-includes [msg haystack needle]
   (when-not (str/includes? (str haystack) needle)
     (swap! failures conj (str "FAIL: " msg "\n  expected to include: " (pr-str needle) "\n  actual: " (pr-str haystack)))))
@@ -1593,6 +1594,92 @@ RESOLVED BY THIS TICKET
         (assert= "landed-siblings: unchanged, still the set of landed sibling ids"
                  #{"BL-9002"}
                  (land-step-lib/landed-siblings root commit om cands #{"BL-9002"}))))))
+
+;; ── BL-1431: origin/main is a threaded parameter, never re-resolved ──────
+;; A land-step invocation reads one tip: land-plan, entangled-siblings,
+;; own-paths, main-ticket-sources and ticket-approval-state all now accept
+;; an explicit origin-main and must use EXACTLY that value, never their own
+;; fresh (origin-main-sha root) call - proven below by passing a value that
+;; DIFFERS from what a fresh resolve would answer and observing the verdict
+;; change accordingly, not by merely calling the new arity and checking it
+;; does not crash.
+
+(with-fixture [root]
+  ;; C0 (origin/main, real) -> C1 (BL-9002's own commit) -> C2 (BL-9001's own).
+  (commit! root "backlog/active/BL-9010-seed.yaml" "id: BL-9010\n" "seed")
+  (mark-origin-main-here! root)
+  (let [c0 (land-step-lib/origin-main-sha root)]
+    (commit! root "backlog/active/BL-9002-x.yaml" "id: BL-9002\n" "BL-9002: sibling unlanded work")
+    (let [c1 (:out (sh! root "git" "rev-parse" "HEAD"))]
+      (commit! root "backlog/active/BL-9001-x.yaml" "id: BL-9001\n" "BL-9001: own work")
+      (let [c2 (:out (sh! root "git" "rev-parse" "HEAD"))]
+        ;; entangled-siblings: the real tip finds BL-9002 entangled against
+        ;; the REAL origin (c0)...
+        (assert= "entangled-siblings (explicit origin-main = real c0): finds the sibling"
+                 #{"BL-9002"} (:entangled (land-step-lib/entangled-siblings root c2 "BL-9001" nil nil c0)))
+        ;; ...but passing c1 (a DIFFERENT, later value than the real c0)
+        ;; changes the verdict: BL-9002's own commit is now "before" the
+        ;; base and is no longer counted. This is only possible if the
+        ;; function genuinely used the PASSED value, not its own resolve.
+        (assert= "entangled-siblings (explicit origin-main = c1, not the real c0): BL-9002 no longer entangled"
+                 #{} (:entangled (land-step-lib/entangled-siblings root c2 "BL-9001" nil nil c1)))
+        ;; own-paths: same proof, one door up.
+        (assert= "own-paths (explicit origin-main = real c0): excludes BL-9002's own file"
+                 [(str "backlog/active/BL-9001-x.yaml")]
+                 (:paths (land-step-lib/own-paths root c2 "BL-9001" #{"BL-9002"} nil nil nil c0)))
+        (assert= "own-paths (explicit origin-main = c1): BL-9002's file is no longer even delivered, so nothing is excluded on its account"
+                 (sort ["backlog/active/BL-9001-x.yaml"])
+                 (sort (:paths (land-step-lib/own-paths root c2 "BL-9001" #{} nil nil nil c1))))
+        ;; land-plan: the SAME proof through the one public entry a real
+        ;; CLI drives - :origin-main c1 (present, not the real c0) must
+        ;; change the decision to :land (no entanglement left to see).
+        (assert= "land-plan with :origin-main c0 (the real tip): decides :replay"
+                 :replay (:action (land-step-lib/land-plan {:root root :commit c2 :task-ticket-id "BL-9001" :origin-main c0})))
+        (assert= "land-plan with :origin-main c1 (present, deliberately NOT the real tip): decides :land, proving the passed value - not a fresh resolve - drove the walk"
+                 :land (:action (land-step-lib/land-plan {:root root :commit c2 :task-ticket-id "BL-9001" :origin-main c1})))
+        ;; land-plan: :origin-main key ABSENT resolves once itself (the
+        ;; pre-existing, unchanged contract for a direct/test caller).
+        (assert= "land-plan with no :origin-main key: resolves the real tip itself"
+                 :replay (:action (land-step-lib/land-plan {:root root :commit c2 :task-ticket-id "BL-9001"})))
+        ;; land-plan: :origin-main key PRESENT but nil is the CLI's own
+        ;; "entry resolution already failed" case - escalates without a
+        ;; second attempt, never silently falling back to a fresh resolve.
+        (assert= "land-plan with :origin-main explicitly nil: escalates without retrying"
+                 :escalate (:action (land-step-lib/land-plan {:root root :commit c2 :task-ticket-id "BL-9001" :origin-main nil})))
+        (assert-includes "land-plan with :origin-main explicitly nil: names the fail-open reason"
+                          (:reason (land-step-lib/land-plan {:root root :commit c2 :task-ticket-id "BL-9001" :origin-main nil}))
+                          "origin/main could not be resolved")))))
+
+;; main-ticket-sources / ticket-approval-state: explicit origin-main arity
+;; agrees with the resolve-once convenience arity on the same fixture.
+(with-fixture [root]
+  (commit! root "backlog/active/BL-9020-x.yaml" "id: BL-9020\nhuman_approval: approved\n" "BL-9020: approved sibling ticket")
+  (mark-origin-main-here! root)
+  (let [om (land-step-lib/origin-main-sha root)]
+    (assert= "main-ticket-sources (explicit origin-main): matches the resolve-once convenience arity"
+             (land-step-lib/ticket-approval-state root "BL-9020")
+             (land-step-lib/ticket-approval-state root "BL-9020" om))
+    (assert= "ticket-approval-state (explicit origin-main): approved sibling reads approved, not blocking"
+             :approved (:state (land-step-lib/ticket-approval-state root "BL-9020" om)))
+    (assert-false "ticket-approval-state (explicit origin-main): approved sibling never blocks"
+                  (:blocking? (land-step-lib/ticket-approval-state root "BL-9020" om)))))
+
+;; replay!: :origin-main threading mirrors land-plan's own contract exactly.
+(with-fixture [root]
+  (commit! root "backlog/active/BL-9030-x.yaml" "id: BL-9030\n" "seed")
+  (mark-origin-main-here! root)
+  (let [om (land-step-lib/origin-main-sha root)]
+    (commit! root "backlog/active/BL-9031-own.yaml" "id: BL-9031\n" "BL-9031: own work")
+    (let [tip (:out (sh! root "git" "rev-parse" "HEAD"))
+          result (land-step-lib/replay! {:root root :commit tip :task-ticket-id "BL-9031"
+                                          :own-paths ["backlog/active/BL-9031-own.yaml"]
+                                          :passengers #{} :origin-main om})]
+      (assert-true "replay! (explicit origin-main): still succeeds off the passed tip"
+                   (:success result))
+      (assert= "replay! (explicit origin-main nil): fails open, never guessing"
+               "land-step replay: could not resolve origin/main"
+               (:reason (land-step-lib/replay! {:root root :commit tip :task-ticket-id "BL-9031"
+                                                 :own-paths [] :passengers #{} :origin-main nil}))))))
 
 (if (seq @failures)
   (do

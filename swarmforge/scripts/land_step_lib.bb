@@ -408,34 +408,42 @@
   ([root commit task-ticket-id extra-paths-fn]
    (entangled-siblings root commit task-ticket-id extra-paths-fn nil))
   ([root commit task-ticket-id extra-paths-fn lines-fn]
-  (if-let [origin-main (origin-main-sha root)]
-    (let [candidates (ancestry-commits root origin-main commit)]
-      (if (nil? candidates)
-        {:entangled nil :warning (str "land-step: could not read the commit range origin/main.." commit)}
-        (let [siblings (->> candidates
-                            (keep #(commit-ticket-id root %))
-                            (remove #(= % task-ticket-id))
-                            set)
-              ;; BL-1389: the verdicts carry the path each rests on, so the
-              ;; report can say WHY a sibling reads landed instead of leaving
-              ;; a human to diff the tip for it.
-              verdicts (landed-sibling-verdicts root commit origin-main candidates siblings
-                                                nil lines-fn extra-paths-fn)
-              landed (->> verdicts (keep (fn [[s v]] (when (:landed? v) s))) set)]
-          ;; :entangled stays the FULL set - it is what land-plan decides on,
-          ;; and BL-1272 invariant 2 keeps that decision unchanged. :landed and
-          ;; :unlanded are the reporting split: a sibling's original commit is
-          ;; still an ancestor after its replay lands, and may carry content
-          ;; the replay deliberately excluded, so landing as cited would
-          ;; resurrect exactly what the replay severed.
-          {:entangled siblings
-           :landed landed
-           :unlanded (into #{} (remove landed siblings))
-           ;; BL-1389 invariant 3: {sibling deciding-path} for the landed ones.
-           :landed-paths (into {} (for [[s v] verdicts :when (:landed? v)]
-                                    [s (:deciding-path v)]))
-           :warning nil})))
-    {:entangled nil :warning "land-step: origin/main could not be resolved"})))
+   ;; BL-1431: this arity is a direct/standalone caller's own entry - it
+   ;; resolves origin/main ONCE here and threads it, never re-resolving.
+   (entangled-siblings root commit task-ticket-id extra-paths-fn lines-fn (origin-main-sha root)))
+  ([root commit task-ticket-id extra-paths-fn lines-fn origin-main]
+   ;; BL-1431: origin-main is now ALWAYS a parameter, never resolved by name
+   ;; in this function body - a caller with its own already-resolved tip
+   ;; (land-plan) passes it straight through, so one land-step invocation
+   ;; reads one tip everywhere, immune to main moving mid-walk.
+   (if-not origin-main
+     {:entangled nil :warning "land-step: origin/main could not be resolved"}
+     (let [candidates (ancestry-commits root origin-main commit)]
+       (if (nil? candidates)
+         {:entangled nil :warning (str "land-step: could not read the commit range origin/main.." commit)}
+         (let [siblings (->> candidates
+                             (keep #(commit-ticket-id root %))
+                             (remove #(= % task-ticket-id))
+                             set)
+               ;; BL-1389: the verdicts carry the path each rests on, so the
+               ;; report can say WHY a sibling reads landed instead of leaving
+               ;; a human to diff the tip for it.
+               verdicts (landed-sibling-verdicts root commit origin-main candidates siblings
+                                                 nil lines-fn extra-paths-fn)
+               landed (->> verdicts (keep (fn [[s v]] (when (:landed? v) s))) set)]
+           ;; :entangled stays the FULL set - it is what land-plan decides on,
+           ;; and BL-1272 invariant 2 keeps that decision unchanged. :landed and
+           ;; :unlanded are the reporting split: a sibling's original commit is
+           ;; still an ancestor after its replay lands, and may carry content
+           ;; the replay deliberately excluded, so landing as cited would
+           ;; resurrect exactly what the replay severed.
+           {:entangled siblings
+            :landed landed
+            :unlanded (into #{} (remove landed siblings))
+            ;; BL-1389 invariant 3: {sibling deciding-path} for the landed ones.
+            :landed-paths (into {} (for [[s v] verdicts :when (:landed? v)]
+                                     [s (:deciding-path v)]))
+            :warning nil}))))))
 
 
 ;; ── BL-1375: is an unlanded sibling APPROVED, or is it withheld? ─────────
@@ -495,10 +503,15 @@
    unreadable from the QA tip while their work was on main).
 
    nil signals the tree could not be listed at all, which the caller treats as
-   no source rather than as an answer."
-  [root ticket-id]
-  (when-let [origin-main (origin-main-sha root)]
-    (->> backlog-folders
+   no source rather than as an answer.
+
+   BL-1431: origin-main is a parameter (resolved once by ticket-approval-
+   state's own entry, or threaded from land-plan's single resolution),
+   never resolved by name here."
+  ([root ticket-id] (main-ticket-sources root ticket-id (origin-main-sha root)))
+  ([root ticket-id origin-main]
+   (when origin-main
+     (->> backlog-folders
          (mapcat (fn [folder]
                    ;; -r for the same reason worktree-ticket-sources walks:
                    ;; backlog/done/ nests by milestone.
@@ -512,7 +525,7 @@
                                      {:where "origin/main"
                                       :folder folder
                                       :content (when (zero? (:exit shown)) (:out shown))}))))))))
-         vec)))
+         vec))))
 
 (defn- source-verdict
   "One tree's answer about one ticket."
@@ -560,28 +573,33 @@
    :unreadable - found in no tree, filed in more than one folder within a
    tree, or a file that could not be read. Two copies in different folders is
    a state nobody can act on, and guessing which is current is precisely how a
-   withheld ticket would ride."
-  [root ticket-id]
-  (let [worktree (worktree-ticket-sources root ticket-id)
-        on-main (or (main-ticket-sources root ticket-id) [])
-        ambiguous (->> [worktree on-main]
-                       (filter #(> (count %) 1))
-                       first)]
-    (cond
-      ambiguous
-      {:state :unreadable :blocking? true
-       :reason (str ticket-id " is filed in more than one backlog folder in "
-                    (:where (first ambiguous)) " ("
-                    (str/join ", " (sort (map :folder ambiguous))) ")")}
+   withheld ticket would ride.
 
-      (empty? (concat worktree on-main))
-      {:state :unreadable :blocking? true
-       :reason (str "no backlog ticket file found for " ticket-id)}
+   BL-1431: origin-main is a parameter, resolved once by this function's own
+   entry when a caller does not already have it (own-paths threads its own
+   single resolution here instead)."
+  ([root ticket-id] (ticket-approval-state root ticket-id (origin-main-sha root)))
+  ([root ticket-id origin-main]
+   (let [worktree (worktree-ticket-sources root ticket-id)
+         on-main (or (main-ticket-sources root ticket-id origin-main) [])
+         ambiguous (->> [worktree on-main]
+                        (filter #(> (count %) 1))
+                        first)]
+     (cond
+       ambiguous
+       {:state :unreadable :blocking? true
+        :reason (str ticket-id " is filed in more than one backlog folder in "
+                     (:where (first ambiguous)) " ("
+                     (str/join ", " (sort (map :folder ambiguous))) ")")}
 
-      :else
-      (let [verdicts (map #(source-verdict ticket-id %) (concat worktree on-main))]
-        (or (first (filter :blocking? verdicts))
-            (first verdicts))))))
+       (empty? (concat worktree on-main))
+       {:state :unreadable :blocking? true
+        :reason (str "no backlog ticket file found for " ticket-id)}
+
+       :else
+       (let [verdicts (map #(source-verdict ticket-id %) (concat worktree on-main))]
+         (or (first (filter :blocking? verdicts))
+             (first verdicts)))))))
 
 (defn blocking-siblings
   "The subset of `sibling-ids` whose approval state still blocks a land,
@@ -793,12 +811,20 @@
    function computes it itself via `entangled-siblings` - so a caller that
    asks this function in isolation (a test, a future direct caller) gets the
    same answer the land step's own decision would reach, never a
-   half-applied one that skips exclusion entirely."
+   half-applied one that skips exclusion entirely.
+
+   BL-1431: origin-main is resolved ONCE, either by this function's own
+   entry (the first arity below, or the 7-arg arity when no caller has
+   already resolved it) or threaded in by land-plan's single resolution
+   (the 8-arg arity) - never re-resolved by name mid-walk, which is what let
+   a mint landing between two reads desync the attribution map this
+   function reads from the walk that built it."
   ([root commit task-ticket-id]
-   (let [{:keys [unlanded warning]} (entangled-siblings root commit task-ticket-id)]
+   (let [origin-main (origin-main-sha root)
+         {:keys [unlanded warning]} (entangled-siblings root commit task-ticket-id nil nil origin-main)]
      (if warning
        {:paths nil :warning warning}
-       (own-paths root commit task-ticket-id (or unlanded #{})))))
+       (own-paths root commit task-ticket-id (or unlanded #{}) path-attributing-commits nil nil origin-main))))
   ([root commit task-ticket-id unlanded-siblings]
    (own-paths root commit task-ticket-id unlanded-siblings path-attributing-commits))
   ([root commit task-ticket-id unlanded-siblings commits-fn]
@@ -806,11 +832,18 @@
   ([root commit task-ticket-id unlanded-siblings commits-fn approval-fn]
    (own-paths root commit task-ticket-id unlanded-siblings commits-fn approval-fn nil))
   ([root commit task-ticket-id unlanded-siblings commits-fn approval-fn opts]
-   (if-let [origin-main (origin-main-sha root)]
+   (own-paths root commit task-ticket-id unlanded-siblings commits-fn approval-fn opts (origin-main-sha root)))
+  ([root commit task-ticket-id unlanded-siblings commits-fn approval-fn opts origin-main]
+   (if-not origin-main
+     {:paths nil :warning "land-step: origin/main could not be resolved"}
      (if-let [delivered (full-delivered-paths root origin-main commit)]
        ;; BL-1375: memoized so N shared paths read one sibling's ticket file
        ;; once, and so every path in one run answers from the same read.
-       (let [blocking-for (memoize #(blocking-siblings root % approval-fn))
+       ;; BL-1431: when the caller supplied no approval-fn, the default reads
+       ;; ticket-approval-state with THIS call's already-resolved origin-main
+       ;; instead of letting it resolve a second, potentially different, tip.
+       (let [approval-fn (or approval-fn (fn [id] (ticket-approval-state root id origin-main)))
+             blocking-for (memoize #(blocking-siblings root % approval-fn))
              ;; BL-1389. `:attribution` and `:path-landed-fn` are injected by
              ;; land-plan so the same reads serve the landed/unlanded split and
              ;; this decision; absent, they are computed here so a direct
@@ -931,8 +964,7 @@
                       (if (contains? (:owners attribution) task-ticket-id)
                         (into passengers (filter unlanded-siblings (:owners attribution)))
                         passengers)))))))
-       {:paths nil :warning (str "land-step: could not read the delivered diff " origin-main ".." commit)})
-     {:paths nil :warning "land-step: origin/main could not be resolved"})))
+       {:paths nil :warning (str "land-step: could not read the delivered diff " origin-main ".." commit)}))))
 
 (defn land-plan
   "The land step's own decision: {:action :land} when no entanglement is
@@ -942,8 +974,15 @@
    itself could not be completed - a check that cannot run refuses to bless
    a land, per invariant 2, rather than defaulting to :land.
    task-ticket-id nil (task-name named no ticket) also escalates - nothing
-   to compare ancestry against."
-  [{:keys [root commit task-ticket-id]}]
+   to compare ancestry against.
+
+   BL-1431 invariant 1: `:origin-main` is an OPTIONAL key. When the caller
+   (land_step_cli.bb) already resolved it, that exact value is threaded to
+   every reader below and never re-resolved - one land-step invocation
+   reads one tip, immune to main moving mid-walk. A direct/test caller that
+   omits the key (the pre-existing contract, unchanged) gets it resolved
+   once, here, at this function's own entry."
+  [{:keys [root commit task-ticket-id] :as opts}]
   (if-not task-ticket-id
     {:action :escalate :reason "land-step: task name names no ticket id"}
     ;; BL-1389: the per-PATH attribution is computed ONCE and feeds both
@@ -951,7 +990,7 @@
     ;; used to be answered from different walks, and a path the per-path walk
     ;; credited to a sibling the per-sibling walk never reported was decided
     ;; against a verdict that had not seen it.
-    (let [origin-main (origin-main-sha root)
+    (let [origin-main (if (contains? opts :origin-main) (:origin-main opts) (origin-main-sha root))
           candidates (when origin-main (ancestry-commits root origin-main commit))
           ;; One read of each sibling's own diffs, shared by the landed/unlanded
           ;; split and by the per-path exclusion below. Each is every commit
@@ -969,7 +1008,7 @@
                                    :when (and a (contains? (:owners a) sibling))]
                                path)))
           {:keys [entangled landed unlanded landed-paths warning]}
-          (entangled-siblings root commit task-ticket-id extra-paths-fn lines-of)]
+          (entangled-siblings root commit task-ticket-id extra-paths-fn lines-of origin-main)]
       (cond
         warning {:action :escalate :reason warning}
         (empty? entangled) {:action :land}
@@ -978,7 +1017,8 @@
               (own-paths root commit task-ticket-id unlanded nil nil
                          {:attribution (when attribution @attribution)
                           :path-landed-fn (when origin-main
-                                            (sibling-path-landed-fn root origin-main commit lines-of))})]
+                                            (sibling-path-landed-fn root origin-main commit lines-of))}
+                         origin-main)]
           (if (nil? paths)
             {:action :escalate
              :reason (or warning (str "land-step: could not compute " task-ticket-id "'s own paths to replay"))}
@@ -1206,9 +1246,14 @@
    returning, success or failure alike; the branch itself survives success
    (QA's own land action reads it) and is deleted on EVERY failure - including
    a failure to create the checkout, which `worktree add -b` reaches only
-   after it has already made the branch (BL-1298)."
-  [{:keys [root commit task-ticket-id own-paths passengers tree-guards-fn]}]
-  (let [origin-main (origin-main-sha root)
+   after it has already made the branch (BL-1298).
+
+   BL-1431: `:origin-main` is an optional key, the same threading contract
+   as land-plan's - land_step_cli.bb passes the SAME sha it gave land-plan,
+   so the worktree this builds is created off the exact tip own-paths was
+   decided against, not a tip main may have moved to since."
+  [{:keys [root commit task-ticket-id own-paths passengers tree-guards-fn] :as opts}]
+  (let [origin-main (if (contains? opts :origin-main) (:origin-main opts) (origin-main-sha root))
         common-dir (git-common-dir root)
         run-guards (or tree-guards-fn (fn [tree-root _] (run-replayed-tree-guards tree-root)))]
     (cond
