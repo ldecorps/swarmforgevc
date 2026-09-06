@@ -146,3 +146,5 @@ source: |
   `model_factory_lib.bb` assign-role/assign-swarm; `models.seed.json`
   role_matrix keys; `pack_staffing_gate_lib.bb` not-on-role-matrix;
   `full-forge.conf` 245-262; `model-steward.prompt` Owns/Does Not Own.
+
+assigned_to: coder
