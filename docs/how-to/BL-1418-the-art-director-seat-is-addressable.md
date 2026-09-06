@@ -93,6 +93,41 @@ swarmforge/scripts/swarm_handoff.sh tmp/handoff.txt
 The file appears under the art director's own `inbox/new/`; its
 `ready_for_next.sh` returns it.
 
+## How the seat's work reaches main (human ruling B, 2026-09-06; BL-1444)
+
+The seat is outside the forward chain (above) and is not master-resident,
+so its commits on `primary/art-director` never reach `main` through QA's
+usual merge-up or the coordinator's bookkeeping. Instead, once the art
+director has committed (a brief, `docs/design/system.md`,
+`docs/design/artifact-inventory.md`, its own sign-off evidence), it sends
+QA a `note`, priority `50`, `message: land art-director tip <10-hex>` —
+not a parcel: no ticket, no coordinator bookkeeping, no merge-up
+broadcast.
+
+QA then, in order: confirms the sha is on `primary/art-director`; checks
+it against the seat's **lane** — `swarmforge/scripts/check_art_director_tip.sh
+--tip <sha>` must print `ART_DIRECTOR_TIP_OK` (the lane is `docs/design/**`
+plus `backlog/evidence/*art-director*.md`; a path last touched by a commit
+already on the landed `main` rides along by provenance and doesn't count);
+syncs to `origin/main` and merges the tip `--no-ff` with a subject naming
+NO ticket (`Land art-director tip <sha>`); pushes under the land lock; and
+notes the art director back `landed art-director tip <sha>`. A tip with
+content outside the lane is refused by name — QA never lands it and never
+fixes it itself. See `swarmforge/roles/QA.prompt` "Landing the Art
+Director's tip on its note" and `swarmforge/roles/art-director.prompt`
+"Landing your work" for the full recipe.
+
+**The guard.** `swarmforge/scripts/check_art_director_tip.sh` joins the
+`pre-merge-commit` hook chain (after `check_feature_handler_registration.sh`)
+so the lane is enforced at merge time, not just by QA's own reading. It has
+two entry modes: hook mode (no arguments, fired by the real merge) judges
+the incoming merge parent and exits 0 without judging anything whose
+parent isn't an art-director-side commit, or is already reachable from the
+landed main — every other worktree's routine `main` sync is untouched.
+Direct mode (`--tip <sha>`) judges an arbitrary sha against `HEAD` and
+prints `ART_DIRECTOR_TIP_OK` / `ART_DIRECTOR_TIP_REFUSED` plus the reason;
+`--print-lane` prints the lane definition.
+
 ## What this ticket does not build
 
 - The role's own first deliverables (`docs/design/artifact-inventory.md`,
@@ -105,4 +140,6 @@ Acceptance: `specs/features/BL-1418-the-art-director-seat-is-addressable.feature
 
 Related: [Article 1.10](../../swarmforge/constitution/articles/01_roles.md),
 the constitution's own definition; BL-1419 — the Art Director's first job
-(reviewing the briefing email's reflow), minted ahead of the seat existing.
+(reviewing the briefing email's reflow), minted ahead of the seat existing;
+BL-1444 — the landing-path guard, acceptance:
+`specs/features/BL-1444-the-art-directors-tip-lands-on-main-by-qa.feature`.
