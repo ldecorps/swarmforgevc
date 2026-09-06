@@ -10,7 +10,7 @@ direction: human-requested
 depends_on: []
 mutation_cost: low
 required_stages: [coder, cleaner, architect, hardender, documenter, qa]
-assigned_to: none
+assigned_to: coder
 
 invariants:
   - "The existing bound topic keeps working: the subject id CURSOR_REMOTE and the topic-map key are unchanged, so no second topic is ever created and slash verbs plus typed host prompts keep landing on the already-bound thread."
