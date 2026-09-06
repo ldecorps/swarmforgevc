@@ -137,3 +137,5 @@ source: |
   Coder note to specifier, priority 10, 2026-09-05T02:33Z; coder evidence
   `backlog/evidence/BL-1275-coder-20260905.md` (coder branch) §"Surfaced
   beyond scope", item 1. Reproduced by the specifier on main at 22030a8444.
+
+assigned_to: coder
