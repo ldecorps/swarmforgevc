@@ -1,0 +1,129 @@
+id: BL-1443
+title: "A property test's tree walk skips a file that vanished between listing and read, so a sibling run's transient fixture never fails an unrelated property (bl874 ENOENT on a bl868 fixture, QA full run 2026-09-06)"
+milestone: M8
+type: defect
+severity: medium
+# medium: a race flake in the property pool, not a standing red - it passed
+# on the very next run and takes no register row. Each hit costs QA a full
+# ~143 s suite re-run (BL-1348/BL-1349's RAM-capped pool) and can bounce a
+# clean parcel; it does not degrade any live behaviour. The 2026-09-05
+# standing-red rule addresses tests that fail on main; a race that passes on
+# rerun is judged here as a gate-reliability defect. Amend to high if you
+# read the rule as covering flakes.
+status: todo
+epic: code-quality-gates
+priority: 10
+direction: swarm-reported
+depends_on: []
+mutation_cost: low
+slice_size_envelope: low
+required_stages: [coder, cleaner, architect, hardender, documenter, qa]
+
+acceptance: specs/features/BL-1443-property-walks-tolerate-vanishing-fixtures.feature
+
+human_approval: pending
+approval_context: >
+  A new feature file is authored here, so it needs a tap. No choice is posed
+  and there are no ruling_options. Surfaced by QA's BL-1440 bounce evidence
+  (2026-09-06) as an observed, untracked flake; minted by the specifier from
+  the closing-ceremony lean pass the same shift. Severity is medium with the
+  reasoning in the ticket comment; Amend to re-class.
+
+invariants:
+  - "A file that vanishes between a directory listing and its read is skipped by every property-lane tree walk; no other read or listing error is swallowed by that tolerance."
+  - "The helper reads only: it never writes, moves or deletes a path and never sweeps by prefix (BL-1385/BL-1390)."
+
+required_wiring:
+  - 'extension/test/bl874PortableTimeInvariants.property.test.js::walkFilesTolerant(::the walk that failed on 2026-09-06 must call the shared helper; the name is fixed here so the anchor is a call site'
+  - 'specs/pipeline/steps/bl1443PropertyWalksTolerateVanishingFixturesSteps.js::registerSteps::the handler file exists so discovery registers every scenario (BL-1371)'
+
+description: |
+  ## What is wrong
+
+  QA's full property run on BL-1440 (`backlog/evidence/BL-1440-bounce-20260906.md`,
+  "Not bounced") failed `bl874PortableTimeInvariants.property.test.js` with
+  `ENOENT` opening `test/bl868-fixture-31003-odm1vbbwss.property.test.js`.
+  bl874's `findFunctionDefinitionFiles` walks the repository: `readdirSync`
+  per directory, then `readFileSync` on every `.js` it listed. bl868 and
+  bl984 create transient fixture files with exactly that name shape in
+  `extension/test/` through `extension/test/helpers/propertyLaneFixtureRunner.js`
+  (`runManyAsPropertyLaneFixtures` / `runAsPropertyLaneFixture`) and remove
+  them when their spawned vitest returns. Under the concurrent pool, bl874
+  can list a fixture that its owner removes before bl874 reads it. The
+  failure passed on the next run and is absent from the second full run:
+  a race, not a red. Nine property files carry an inline recursive walk
+  (`grep -lE 'function walk|walk\(' extension/test/*.property.test.js`);
+  any that reads under `extension/test/` or the repo root shares the race.
+
+  ## What is wanted
+
+  - One shared helper in `extension/test/helpers/` that walks a tree and
+    yields file paths (and, on request, contents), skipping a file whose
+    read or stat fails with `ENOENT` after it was listed - and ONLY that:
+    `EACCES`, `EISDIR`, or a listing error still throw, naming the path.
+  - bl874 walks through the helper (wiring anchor 1). Every other property
+    test with an inline walk over a live tree (the nine above; the coder
+    enumerates them by the grep, records the list in evidence) goes through
+    it in the same parcel; a walk over a test's own mkdtemp root may also
+    use it but is not the defect. No property test defines its own walk
+    afterwards (scenario 03, derived by grep, never a list).
+  - The helper never writes, moves or deletes anything, and never sweeps.
+
+  ## How (direction, not mandate)
+
+  - `extension/test/helpers/tolerantTreeWalk.js` exporting `walkFilesTolerant(root, { excludeDirs, extension, fsImpl })`;
+    `fsImpl` is the seam scenario 02 uses to make a read fail with a
+    non-ENOENT code without `chmod` (engineering rule: never chmod for
+    failure simulation). Reuse bl874's `EXCLUDED_DIR_NAMES` as the default
+    exclusion set if it fits the others.
+  - Scenario 03's handler greps `extension/test/*.property.test.js` for
+    `function walk(` / `readdirSync(` used recursively and for the helper
+    name; it is a structural check derived from the files, the BL-1408 /
+    BL-1398 posture (no hand-kept list of walkers).
+  - Fixture trees for scenarios 01/02 live under `fs.mkdtempSync` and are
+    removed in a `finally`; the "removed after listing" step deletes the
+    file from a listing callback or a spy on `readdirSync`, never by timing.
+  - The documenter adds a line to the property-lane how-to naming the helper.
+    No diagram trigger fires.
+
+  ## Out of scope
+
+  - Moving fixture files out of `extension/test/` (the vitest properties
+    config includes `test/**/*.property.test.js`; bl868's fixtures must be
+    where the lane-isolation guard looks).
+  - `bl1352EscalationVisibilityInvariants` failing once under host load in
+    the same run: a load flake with no mechanism in evidence, not this
+    ticket; BL-1407 closed the property-guard load-flake class.
+
+qa_e2e_procedure: |
+  1. The BL-1443 feature passes all four runs; `npm run test:properties`
+     is green.
+  2. Race reproduction: run bl868 and bl874 together five times
+     (`npx vitest run --config vitest.properties.config.mjs test/bl868PropertyLaneIsolationGuards.property.test.js test/bl874PortableTimeInvariants.property.test.js`,
+     from `extension/`): no ENOENT in any run.
+  3. `grep -lE 'function walk\(' extension/test/*.property.test.js` is
+     empty; `grep -l walkFilesTolerant extension/test/*.property.test.js`
+     lists bl874 and every file the coder's evidence enumerated.
+  4. Seam check: the helper's fs seam receiving EACCES makes the walk
+     throw naming the path (scenario 02); the live default is Node's `fs`.
+
+notes: |
+  Minted 2026-09-06 by the specifier from the closing-ceremony lean pass
+  (shift 2026-09-06, packet .swarmforge/lean/ceremony/2026-09-06.json);
+  the shift's recorded outcome is BL-1408's re-class, this is the pass's
+  second ticket. Source: QA's "Not bounced" section on BL-1440 - grepped
+  first, untracked; BL-1410 (mkTmpDir sweeps) and BL-1407 (load flakes)
+  do not cover a listing/read race.
+
+  INVEST at mint: Independent (no unbuilt sibling; the fixture runner is
+  untouched), Negotiable (helper shape and file are direction), Valuable
+  (one outcome: a sibling's fixture never fails an unrelated property),
+  Estimable (one helper, nine mechanical swaps, one handler; low), Small
+  (three scenarios, four runs, two invariants), Testable (mkdtemp trees,
+  an fs seam, a derived grep).
+
+source: |
+  backlog/evidence/BL-1440-bounce-20260906.md "Not bounced" item 2;
+  extension/test/bl874PortableTimeInvariants.property.test.js lines 84-106;
+  extension/test/helpers/propertyLaneFixtureRunner.js lines 119-152;
+  walker count by grep, 2026-09-06.
