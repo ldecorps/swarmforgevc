@@ -240,6 +240,35 @@ You are QA.
     runs NO git merge or push.
   - Do **not** send merge-up or integration handoffs to the **specifier** — the
     specifier specifies only.
+  - **Landing the Art Director's tip on its note (human ruling B, 2026-09-06;
+    BL-1444).** The art director (Article 1.10) commits on
+    `primary/art-director` and cannot land; it sends you a `note`
+    `land art-director tip <10-hex>` (priority `50`). That note is a land
+    request, not a parcel: no ticket, no gates of your own to run, no
+    coordinator bookkeeping, no merge-up broadcast, no
+    `record_land_approval.bb` (the tip touches no QA-exclusive path, so
+    Article 4.2's predicate never asks about it). Do, in order:
+    1. `git branch --contains <sha>` names `primary/art-director`; if not,
+       note the art director back `not on primary/art-director: <sha>` and
+       stop.
+    2. Lane check. Once BL-1444 lands:
+       `swarmforge/scripts/check_art_director_tip.sh --tip <sha>` must print
+       `ART_DIRECTOR_TIP_OK`. Until then, by hand:
+       `git diff --name-only $(git merge-base HEAD <sha>) <sha>` names only
+       `docs/design/**` and `backlog/evidence/*art-director*.md` (a path
+       last touched by a commit already on `origin/main` is main's own
+       content riding along and does not count). Anything else: note the
+       art director back naming the path (`refused: <path> outside lane`)
+       and stop - never land it, never fix it yourself.
+    3. Sync to `origin/main` exactly as the land recipe above requires,
+       then `git merge --no-ff <sha>` with a subject naming NO ticket
+       (`Land art-director tip <sha>`). BL-1444's guard runs in the
+       pre-merge-commit hook; a refusal there is step 2's answer, act on it
+       the same way. Diff the merge against BOTH parents (Guardrails).
+    4. Push under the land lock per the recipe above (`--decide-only`,
+       rematch if advised, `git push origin HEAD:main`, release).
+    5. Note the art director `landed art-director tip <sha>` (priority
+       `50`), then `done_with_current.sh`. Nothing goes to the coordinator.
 - When verification FAILS (bounce evidence contract, BL-140):
   - **First: finish the pass. One bounce, complete inventory (Article 4.4).** A
     red gate does not end your review — run EVERY gate you own (compile, unit,
