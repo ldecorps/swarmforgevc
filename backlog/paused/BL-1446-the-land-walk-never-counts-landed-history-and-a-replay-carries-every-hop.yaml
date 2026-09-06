@@ -1,0 +1,163 @@
+id: BL-1446
+title: "The land step's bounded walk (BL-1432) starts at the task's LAST handoff boundary: a routine origin/main sync after that hop pulls already-landed siblings into the range and manufactures an entanglement, and the replay's own-path set covers only the commits after the hop - BL-1424's replay pushed a main tip without its guard (2026-09-06); a commit reachable from origin/main is never a candidate, a replay carries every hop's work, and the bounded and wide walks agree"
+milestone: M8
+type: defect
+severity: high
+# high: the land step silently pushed a main tip that lacked a QA-approved
+# parcel's deliverable, and printed LAND_PUBLISHED for it. Caught only by
+# QA's own diff diligence, recovered by hand within nine minutes; the
+# source branch never lost the work. Not critical: main was repaired
+# before any downstream action and no data is gone. A land mechanism
+# that can drop content is a broken safety signal (Article 3.2.4).
+status: todo
+epic: swarm-reliability
+priority: 6
+direction: swarm-reported
+depends_on: []
+mutation_cost: medium
+slice_size_envelope: medium
+required_stages: [coder, cleaner, architect, hardender, documenter, qa]
+
+acceptance: specs/features/BL-1446-the-land-walk-never-counts-landed-history-and-a-replay-carries-every-hop.feature
+
+human_approval: pending
+approval_context: >
+  A new feature file is authored here, so it needs a tap. No choice is
+  posed and there are no ruling_options. Minted by the specifier on QA's
+  priority-00 note (2026-09-06T17:40Z) and its incident evidence; the
+  sibling BL-1447 is the fail-closed net that refuses an incomplete replay
+  before publish and is independent of this fix. Both touch
+  land_step_lib.bb and will be serialized by the coordinator.
+
+invariants:
+  - "A commit reachable from origin/main is never a candidate sibling, whatever the walk base: entanglement is read only from commits the landed main does not have."
+  - "For any tip, the bounded walk's verdict and its own-path set equal the always-wide origin/main..tip walk's (BL-1432's widening promise, now a checked property)."
+  - "The candidate walk still visits only the parcel's own commits (BL-1432 invariant 1 stands): correctness is restored without giving back the bound."
+
+required_wiring:
+  - 'specs/pipeline/steps/bl1446LandWalkNeverCountsLandedHistorySteps.js::registerSteps::the handler file exists so discovery registers every scenario (BL-1371)'
+
+description: |
+  ## What is wrong
+
+  `land_step_lib.bb`'s `land-plan` (BL-1432) bounds its attribution walk
+  to `walk-base` = `task_scope_gate_lib.bb`'s `parcel-own-base` = the
+  `commit` of the task's most recent handoff record (`last-handoff-commit`,
+  line 208). That boundary is right for the SEND-time scope gate, which
+  judges what one role authored since it received the parcel. It is wrong
+  for the land step, twice:
+
+  1. `entangled-siblings` (line ~423) walks `walk-base..tip` for candidates.
+     When the QA branch merges `origin/main` AFTER the last hop, that range
+     contains the merge's second-parent history - commits already on
+     `origin/main`. Any of them naming another ticket is a candidate; the
+     verdict is read against `origin/main` so it comes back LANDED, but the
+     plan still returns `:replay` (line ~1062). A landed sibling that only
+     rode in on a sync manufactured a replay.
+  2. The replay's own-path set is attributed from the same boundary, so it
+     holds only the commits AFTER the last hop - QA's evidence edits - and
+     none of the coder, cleaner, architect or hardener commits before it.
+
+  Incident 2026-09-06 (`backlog/evidence/BL-1424-land-replay-dropped-own-paths-incident-20260906.md`,
+  by QA): `land_main_publish.sh --land BL-1424-... bd1d6e097b` printed
+  `LAND_REPLAY`, `LANDED_SIBLING BL-1445`, then `LAND_PUBLISHED 002def27c6`
+  and pushed a tip holding five evidence files and no guard;
+  `git show 002def27c6:swarmforge/scripts/check_test_file_registration.sh`
+  did not exist. `land-plan` with `:base` forced to `origin-main` returned
+  `{:action :land}` for the same tip. A second unforced plan on a fix
+  commit chose a different wrong own-path set (BL-1445's own files). QA
+  hand-landed the correct tip (`2419ef1a6e`) under the lock discipline.
+  The branch shape: `a72f26cb42` (receive merge of `569c8db073`), two QA
+  evidence commits, `bd1d6e097b` (`Merge origin/main into swarmforge-QA`)
+  - the fourth such sync into the QA branch that day.
+
+  ## What is wanted
+
+  - A commit reachable from `origin/main` is never a candidate sibling,
+    whatever the walk base (scenario 01, invariant 1). The bound stays: the
+    walk visits the parcel's own commits only (invariant 3).
+  - A replay carries every path the parcel's own commits changed since its
+    FIRST hop, byte-identical to the cited tip (scenario 02): the
+    attribution for a replay is never bounded by the last hop.
+  - The bounded walk and the wide walk agree on verdict and own-paths for
+    the same tip, for 0, 1 and 2 post-hop syncs (scenario 03, invariant 2).
+
+  ## How (direction, not mandate)
+
+  - Candidate range: `ancestry-commits root walk-base commit` becomes the
+    set `commit ^walk-base ^origin-main` - excluding landed history is what
+    the wide walk did by construction and what the bound must keep doing.
+  - Replay own-paths: attribute over `commit ^origin-main` (every commit
+    naming the ticket, `:delivered`), or from the parcel's FIRST recorded
+    handoff (`salvage-lib/latest-item-handoffs` returns every record; the
+    earliest one's base is the parcel's origin) - never from the last hop.
+    Keep `parcel-own-base` itself unchanged for the send-time gate (BL-1240
+    / BL-1297 read it for one role's authorship); add a land-side accessor
+    if the two notions need distinct names, in `task_scope_gate_lib.bb`,
+    never a second implementation of the walk.
+  - Fixture: extend `swarmforge/scripts/test/land_step_lib_test_runner.bb`'s
+    BL-1432 section (line ~1684) with the incident shape - five stage
+    commits, a recorded last hop, a sibling landed on origin/main after it,
+    `git merge origin/main` into the parcel branch - and assert the plan
+    with and without `:base`. The handler drives the same fixture through
+    `land_step_cli.bb` against a mkdtemp repository with its own origin.
+  - Documenter: `docs/how-to/BL-1241-entangled-tip-at-the-land-step-has-a-reachable-remedy.md`
+    and the BL-1432 how-to (if any) gain the corrected bound; QA.prompt's
+    interim hand check (landed with this mint) is retired by BL-1447, not
+    here. No diagram trigger fires.
+
+  ## Out of scope
+
+  - The fail-closed completeness check before publish: BL-1447.
+  - The QA branch's re-point after a land (BL-1438, landed) and how many
+    syncs the branch carries.
+  - `parcel-own-base`'s meaning for the send-time gates.
+
+qa_e2e_procedure: |
+  1. `bb swarmforge/scripts/test/land_step_lib_test_runner.bb` and
+     `bb swarmforge/scripts/test/task_scope_gate_lib_test_runner.bb` pass;
+     the BL-1446 feature passes all five runs; BL-1432's, BL-1431's and
+     BL-1389's features stay green.
+  2. In a clone of the repository under mkdtemp (never the live checkout):
+     rebuild the incident shape from the real commits - check out
+     `bd1d6e097b` on a branch, point `origin/main` at `3a1acdc269`, seed
+     the handoff archive with BL-1424's last hop `569c8db073` - and run
+     `bb swarmforge/scripts/land_step_cli.bb BL-1424-a-commit-that-adds-a-test-file-registers-it bd1d6e097b <clone>`:
+     it prints `LAND_CLEAN bd1d6e097b` (the wide walk's answer), never
+     `LAND_REPLAY`.
+  3. The next real land after this ticket: the plan's verdict matches a
+     hand-forced wide plan; QA records both in its evidence.
+  4. Fixture roots are removed on the EXIT trap; nothing sweeps by prefix.
+
+notes: |
+  Minted 2026-09-06 by the specifier on QA's note "BL-1424 land-replay
+  dropped its own guard on main - see incident evidence" (priority 00,
+  17:40Z) and the incident file QA landed at b87c513a57. QA's evidence did
+  the root-cause work (wide walk forced by hand returns :land; two
+  independent wrong own-path sets in one hour); the specifier read
+  `parcel-own-base`, `last-handoff-commit`, `entangled-siblings`'
+  `walk-base` arity and `land-plan`'s :replay return to name the two
+  mechanisms above. Split from BL-1447 (the net) so each is one sitting
+  and the net can land first if the coordinator prefers.
+
+  A wiring anchor beyond the handler is deliberately absent: the fix is
+  internal to two pre-existing live functions whose consumer chain
+  (`land-plan` -> `land_step_cli.bb` -> `land_main_publish.sh`) already
+  exists, so any anchor on them would match before and after the fix and
+  gate nothing (specifier prompt, BL-1235). e2e step 2 is the live proof.
+
+  INVEST at mint: Independent (BL-1432/1431/1438 landed; BL-1447 is a
+  sibling, not a prerequisite), Negotiable (the range set and the
+  attribution base are direction), Valuable (one outcome: a land never
+  drops a parcel's work or invents an entanglement from landed history),
+  Estimable (two range changes, one fixture shape, one handler; medium for
+  the bb fixture work), Small (three scenarios, five runs, three
+  invariants), Testable (fixture repositories, the real CLI, a rebuilt
+  incident).
+
+source: |
+  QA note 2026-09-06T17:40:53Z; backlog/evidence/BL-1424-land-replay-dropped-own-paths-incident-20260906.md
+  (b87c513a57); swarmforge/scripts/task_scope_gate_lib.bb 208-216, 429-441;
+  swarmforge/scripts/land_step_lib.bb 396-432 (walk-base), 987-1062
+  (land-plan), 1269 (replay!); QA branch first-parent log 3a1acdc269..bd1d6e097b;
+  .swarmforge/land-approvals/2026-09.jsonl (002def27c6 <- bd1d6e097b, 17:31Z).
