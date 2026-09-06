@@ -518,3 +518,4 @@ test_bl1382_cron_ownership_agreement.sh	standing
 test_bl1370_worktree_strays.sh	standing		
 test_bl1401_acceptance_fixture_derives_set.sh	standing		
 test_bl1275_refusal_evidence_retained.sh	standing		
+test_bl1444_art_director_tip_guard.sh	standing		
