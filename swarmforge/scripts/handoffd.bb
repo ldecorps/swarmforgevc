@@ -43,6 +43,7 @@
 (load-file (str (fs/path (fs/parent (fs/canonicalize *file*)) "push_sweep_ahead_range_lib.bb")))
 (load-file (str (fs/path (fs/parent (fs/canonicalize *file*)) "master_main_reconcile_lib.bb")))
 (load-file (str (fs/path (fs/parent (fs/canonicalize *file*)) "post_qa_branch_sweep_lib.bb")))
+(load-file (str (fs/path (fs/parent (fs/canonicalize *file*)) "coordinator_activity_feed_lib.bb")))
 (load-file (str (fs/path (fs/parent (fs/canonicalize *file*)) "flow_watchdog_lib.bb")))
 (load-file (str (fs/path (fs/parent (fs/canonicalize *file*)) "master_checkout_drift_lib.bb")))
 (load-file (str (fs/path (fs/parent (fs/canonicalize *file*)) "master_checkout_integrity_lib.bb")))
@@ -4150,6 +4151,60 @@
     (catch Exception e
       (log! "post-qa-branch-sweep-error" (.getMessage e)))))
 
+;; GH-24: the coordinator's own activity, surfaced as compact lines on its
+;; standing Telegram topic - zero coordinator LLM tokens, derived entirely
+;; from its durable traces. Shares this cadence for the same reason every
+;; sibling sweep above does: no separate timeout, no new daemon.
+(defn- coordinator-activity-feed-list-sent-handoffs []
+  (try
+    (let [ri (handoff-lib/load-role-info "coordinator" (str project-root))
+          dir (when ri (handoff-lib/mailbox-dir ri :sent))]
+      (if (and dir (fs/directory? dir))
+        (->> (fs/list-dir dir)
+             (filter #(str/ends-with? (str (fs/file-name %)) ".handoff"))
+             (map (fn [p]
+                    {:file (str (fs/file-name p))
+                     :header (coordinator-activity-feed-lib/handoff-header-from-text (slurp (str p)))}))
+             (sort-by (comp coordinator-activity-feed-lib/handoff-sort-key :file))
+             vec)
+        []))
+    (catch Exception _ [])))
+
+;; Bounded to a recent window rather than the whole repository history - the
+;; cursor only ever needs to look back as far as the last tick, and an
+;; unbounded `git log` would grow with the repository forever for no benefit
+;; a cursor-scoped walk does not already give.
+(defn- coordinator-activity-feed-list-bookkeeping-commits []
+  (try
+    (let [{:keys [exit out]} (daemon-cycle-guard-lib/sh!
+                               ["git" "log" "--format=%H%x09%s" "--reverse" "-n" "500" "main"]
+                               {:dir (str project-root)})]
+      (if (zero? exit)
+        (->> (str/split-lines out)
+             (remove str/blank?)
+             (map (fn [line]
+                    (let [[sha subject] (str/split line #"\t" 2)]
+                      {:sha sha :subject subject}))))
+        []))
+    (catch Exception _ [])))
+
+(defn- coordinator-activity-feed-post! [text]
+  (try
+    (zero? (:exit (daemon-cycle-guard-lib/sh!
+                    ["bb" (str (fs/path (fs/parent (fs/canonicalize *file*)) "coordinator_activity_feed_post.bb"))
+                     (str project-root) text])))
+    (catch Exception _ false)))
+
+(defn coordinator-activity-feed-sweep! []
+  (try
+    (coordinator-activity-feed-lib/tick!
+     {:daemon-dir (str daemon-dir)
+      :list-sent-handoffs coordinator-activity-feed-list-sent-handoffs
+      :list-bookkeeping-commits coordinator-activity-feed-list-bookkeeping-commits
+      :post! coordinator-activity-feed-post!})
+    (catch Exception e
+      (log! "coordinator-activity-feed-error" (.getMessage e)))))
+
 (defn- coordinator-in-process-aged?
   "True when coordinator inbox/in_process holds a *.handoff older than 15 min."
   []
@@ -4950,6 +5005,11 @@
                     ;; clean pipeline role branches after origin/main advances.
                     (run-sweep! "post-qa-branch-sweep"
                         #(post-qa-branch-sweep-sweep!))
+                    ;; GH-24: coordinator activity feed shares the same
+                    ;; cadence - no separate timeout, same rationale as
+                    ;; every sibling sweep in this block.
+                    (run-sweep! "coordinator-activity-feed-sweep"
+                        #(coordinator-activity-feed-sweep!))
                     (run-sweep! "main-sync-deadlock-sweep"
                         #(main-sync-deadlock-sweep!))
                     ;; BL-437: fleet-status sweep shares the same cadence -

@@ -81,6 +81,8 @@ compliance_battery_test_runner.bb	standing
 contract_freshness_gate_lib_test_runner.bb	standing		
 context_telemetry_test_runner.bb	standing		
 control_plane_lib_test_runner.bb	standing		
+coordinator_activity_feed_lib_test_runner.bb	standing		
+coordinator_activity_feed_post_lib_test_runner.bb	standing		
 coordinator_config_test_runner.bb	standing		
 cursor_bridge_supervisor_test_runner.bb	standing		
 cursor_seat_guard_lib_test_runner.bb	standing		
