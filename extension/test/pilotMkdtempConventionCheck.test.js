@@ -6,6 +6,8 @@ const path = require('node:path');
 const {
   assessPilotMkdtempConvention,
   isExtensionTestJsPath,
+  isStepsHandlerJsPath,
+  classifyMkdtempConventionPath,
   PILOT_RAW_MKDTEMP_REFUSAL,
 } = require('../out/tools/pilotMkdtempConventionCheck');
 const { landPilotedTicket } = require('../out/tools/pilotAcceptanceGate');
@@ -16,6 +18,24 @@ test('isExtensionTestJsPath accepts extension test js and skips fixtures', () =>
   assert.equal(isExtensionTestJsPath('extension/test/foo.test.js'), true);
   assert.equal(isExtensionTestJsPath('extension/test/fixtures/foo.test.js'), false);
   assert.equal(isExtensionTestJsPath('extension/src/foo.js'), false);
+});
+
+// BL-1226 ──────────────────────────────────────────────────────────────────
+
+test('isStepsHandlerJsPath accepts touched specs/pipeline/steps js, including nested lib/', () => {
+  assert.equal(isStepsHandlerJsPath('specs/pipeline/steps/backlogDepthSteps.js'), true);
+  assert.equal(isStepsHandlerJsPath('specs/pipeline/steps/lib/socketFixtureRoot.js'), true);
+  assert.equal(isStepsHandlerJsPath('specs/pipeline/runnerAdapter.js'), false);
+  assert.equal(isStepsHandlerJsPath('extension/test/foo.test.js'), false);
+});
+
+// BL-1226 mkdtemp-convention-gate-covers-step-handlers-05, table-for-table.
+test('classifyMkdtempConventionPath matches the acceptance scenario\'s own table', () => {
+  assert.equal(classifyMkdtempConventionPath('extension/test/backlogDepth.test.js'), 'in-scope');
+  assert.equal(classifyMkdtempConventionPath('specs/pipeline/steps/backlogDepthSteps.js'), 'in-scope');
+  assert.equal(classifyMkdtempConventionPath('specs/pipeline/steps/lib/socketFixtureRoot.js'), 'exempt');
+  assert.equal(classifyMkdtempConventionPath('extension/test/tmpDirMigrationGuard.test.js'), 'exempt');
+  assert.equal(classifyMkdtempConventionPath('specs/pipeline/runnerAdapter.js'), 'out-of-scope');
 });
 
 // BL-1209: a fixture root, NOT the live repository. This test used to point
@@ -150,6 +170,106 @@ test('the detector is loaded once, however many paths are in scope', () => {
   });
   assert.equal(outcome.testFilesScanned, 3);
   assert.equal(loads, 1);
+});
+
+// BL-1226: the steps lane, route-based detection ────────────────────────────
+// Mirrors the acceptance feature's own scenario 04 outline exactly - one base
+// expression per row, split so the file's OWN text never contains the
+// contiguous literal "mkdtempSync(" (same discipline as RAW_CALL_FILE above:
+// the fixture is DATA, and a scanner that flags its own test data is
+// unsatisfiable).
+const MKDTEMP = 'mkdtemp' + 'Sync';
+const STEPS_BASE_EXPRESSION_CASES = [
+  ['os.tmpdir()', `const os = require('os'); const dir = ${MKDTEMP}(os.tmpdir() + '/x-');`],
+  ["require('os').tmpdir()", `const dir = ${MKDTEMP}(require('os').tmpdir() + '/x-');`],
+  ["require('node:os').tmpdir()", `const dir = ${MKDTEMP}(require('node:os').tmpdir() + '/x-');`],
+  ["'/tmp'", `const dir = ${MKDTEMP}('/tmp/x-');`],
+  ['a module-level base constant', `const BASE = '/tmp';\nconst dir = ${MKDTEMP}(BASE + '/x-');`],
+];
+
+for (const [label, source] of STEPS_BASE_EXPRESSION_CASES) {
+  test(`a touched steps handler with a raw mkdtemp call (${label}) is a violation regardless of spelling`, () => {
+    const rel = 'specs/pipeline/steps/exampleLeakSteps.js';
+    const root = fixtureRootWith(rel, source);
+    const outcome = assessPilotMkdtempConvention(root, [rel]);
+    assert.equal(outcome.violations.length, 1, `expected exactly one violation for ${label}: ${JSON.stringify(outcome)}`);
+    assert.equal(outcome.violations[0].file, rel);
+  });
+}
+
+test('a touched steps handler routed through the shared fixture-root helper is clean', () => {
+  const rel = 'specs/pipeline/steps/exampleCleanSteps.js';
+  const source = "const { mkSocketFixtureRoot } = require('./lib/socketFixtureRoot');\nconst dir = mkSocketFixtureRoot('x-');\n";
+  const root = fixtureRootWith(rel, source);
+  const outcome = assessPilotMkdtempConvention(root, [rel]);
+  assert.deepEqual(outcome, {
+    checked: true,
+    testFilesScanned: 1,
+    violations: [],
+    scannedPaths: [rel],
+  });
+});
+
+// BL-1226 mkdtemp-convention-gate-covers-step-handlers-03 - invariant 1.
+test('an untouched legacy steps handler holding a raw mkdtemp call is never scanned', () => {
+  const rel = 'specs/pipeline/steps/legacyUntouchedSteps.js';
+  const source = `const dir = ${MKDTEMP}('/tmp/x-');`;
+  const root = fixtureRootWith(rel, source);
+  const outcome = assessPilotMkdtempConvention(root, []);
+  assert.deepEqual(outcome, { checked: true, testFilesScanned: 0, violations: [], scannedPaths: [] });
+});
+
+test('touching the steps lane\'s own required helper or this ticket\'s acceptance handler is never itself a violation', () => {
+  for (const rel of ['specs/pipeline/steps/lib/socketFixtureRoot.js', 'specs/pipeline/steps/bl1226StepHandlerMkdtempGateSteps.js']) {
+    const source = `const dir = ${MKDTEMP}('/tmp/x-');`;
+    const root = fixtureRootWith(rel, source);
+    assert.deepEqual(assessPilotMkdtempConvention(root, [rel]), {
+      checked: true,
+      testFilesScanned: 0,
+      violations: [],
+      scannedPaths: [],
+    });
+  }
+});
+
+// The two lanes must stay independent: an exotic base expression in the
+// extension/test lane is NOT a violation there (that lane keeps BL-743's
+// narrow, unchanged pattern - out of this ticket's scope), even though the
+// identical spelling IS a violation in the steps lane above.
+test('an exotic base expression in the extension/test lane stays unflagged (that lane is unchanged by this ticket)', () => {
+  const rel = 'extension/test/subject.test.js';
+  const source = `const dir = ${MKDTEMP}('/tmp/x-');`;
+  const root = fixtureRootWith(rel, source);
+  const outcome = assessPilotMkdtempConvention(root, [rel]);
+  assert.deepEqual(outcome, {
+    checked: true,
+    testFilesScanned: 1,
+    violations: [],
+    scannedPaths: [rel],
+  });
+});
+
+test('the steps-lane detector is loaded independently of the test-lane one, and only when a steps path is in scope', () => {
+  const root = mkTmpDir('bl1226-subject-');
+  const rel = 'specs/pipeline/steps/subjectSteps.js';
+  const abs = path.join(root, rel);
+  fs.mkdirSync(path.dirname(abs), { recursive: true });
+  fs.writeFileSync(abs, `const dir = ${MKDTEMP}('/tmp/x-');`, 'utf8');
+  let testLoads = 0;
+  let stepsLoads = 0;
+  const outcome = assessPilotMkdtempConvention(root, [rel], {
+    loadDetector: () => {
+      testLoads += 1;
+      return { findRawMkdtempLines: () => [] };
+    },
+    loadStepsDetector: () => {
+      stepsLoads += 1;
+      return { findRawMkdtempLines: () => [1] };
+    },
+  });
+  assert.equal(outcome.violations.length, 1);
+  assert.equal(testLoads, 0, 'the test-lane detector must not load for a steps-only call');
+  assert.equal(stepsLoads, 1);
 });
 
 test('landPilotedTicket refuses raw-mkdtemp-outside-helper before move', async () => {
