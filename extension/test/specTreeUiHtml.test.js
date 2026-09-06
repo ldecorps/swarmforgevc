@@ -238,3 +238,133 @@ test('BL-592-10: the status line shows the short source SHA once the tree loads'
   await flush();
   assert.equal(dom.window.document.getElementById('status').textContent, 'abcdef12');
 });
+
+// ── BL-1412: the filter box ──────────────────────────────────────────────
+// The actual match logic (BL-254 text match + label match) lives entirely
+// server-side in filterSpecTree (docsTree.test.js covers it directly) - this
+// harness only proves the SCREEN wires typing to a debounced `?q=` refetch,
+// re-renders whatever the server returns, and shows a no-results state.
+// FILTERED_TREE stands in for "the server already applied the filter" -
+// never a re-implementation of the match itself.
+
+const FILTERED_TREE = {
+  sourceSha: 'abcdef1234567890',
+  milestones: [
+    {
+      milestone: 'M8',
+      epics: [
+        {
+          epicKey: 'swarmforge-console',
+          title: 'Console',
+          trackerId: 'BL-341',
+          tickets: [
+            { id: 'BL-592', title: 'spec tree', status: 'todo' },
+            { id: 'BL-593', title: 'spec tree part 2', status: 'todo' },
+          ],
+        },
+      ],
+    },
+  ],
+  tickets: [
+    { id: 'BL-592', title: 'spec tree', status: 'todo' },
+    { id: 'BL-593', title: 'spec tree part 2', status: 'todo' },
+  ],
+};
+
+const EMPTY_TREE = { sourceSha: 'abcdef1234567890', milestones: [], tickets: [] };
+
+function fetchByQuery(routes) {
+  return (url) => {
+    if (!url.startsWith('/spec-tree-state')) {
+      return Promise.reject(new Error('unexpected fetch: ' + url));
+    }
+    const q = new URLSearchParams(url.slice(url.indexOf('?') + 1)).get('q') || '';
+    if (!(q in routes)) {
+      throw new Error('unexpected q="' + q + '" - known: ' + Object.keys(routes).join(','));
+    }
+    return stateResponse(routes[q]);
+  };
+}
+
+function setFilterInput(dom, value) {
+  const input = dom.window.document.querySelector('[data-testid="spec-tree-filter"]');
+  input.value = value;
+  input.dispatchEvent(new dom.window.Event('input'));
+}
+
+test('BL-1412-01: typing a term narrows the milestones view once the debounce settles, requesting q=<term>', async () => {
+  vi.useFakeTimers();
+  try {
+    const dom = renderScreen(fetchByQuery({ '': TREE, fleet: FILTERED_TREE }));
+    await vi.advanceTimersByTimeAsync(0);
+    const { document } = dom.window;
+    assert.ok(document.querySelector('[data-testid="milestone-M8"]'));
+    assert.ok(document.querySelector('[data-testid="milestone-M9"]'));
+
+    setFilterInput(dom, 'fleet');
+    await vi.advanceTimersByTimeAsync(260);
+
+    assert.ok(document.querySelector('[data-testid="milestone-M8"]'), 'expected M8 to remain - it holds the matching ticket');
+    assert.ok(!document.querySelector('[data-testid="milestone-M9"]'), 'expected M9 to be pruned - no match there');
+  } finally {
+    vi.useRealTimers();
+  }
+});
+
+test('BL-1412-02: a rapid second keystroke cancels the pending debounced fetch for the first, never firing two', async () => {
+  vi.useFakeTimers();
+  try {
+    const dom = renderScreen(fetchByQuery({ '': TREE, fl: TREE, fleet: FILTERED_TREE }));
+    await vi.advanceTimersByTimeAsync(0);
+    const initialCalls = dom.fetchCalls.length;
+
+    setFilterInput(dom, 'fl');
+    await vi.advanceTimersByTimeAsync(100); // well under the 250ms debounce
+    setFilterInput(dom, 'fleet');
+    await vi.advanceTimersByTimeAsync(260);
+
+    const afterCalls = dom.fetchCalls.filter((c) => c.url.startsWith('/spec-tree-state')).length - initialCalls;
+    assert.equal(afterCalls, 1, 'expected exactly one debounced fetch, not one per keystroke');
+    assert.ok(dom.fetchCalls[dom.fetchCalls.length - 1].url.includes('q=fleet'), 'expected the SURVIVING fetch to carry the LATEST term');
+  } finally {
+    vi.useRealTimers();
+  }
+});
+
+test('BL-1412-03: clearing the filter box restores the full unfiltered tree', async () => {
+  vi.useFakeTimers();
+  try {
+    const dom = renderScreen(fetchByQuery({ '': TREE, fleet: FILTERED_TREE }));
+    await vi.advanceTimersByTimeAsync(0);
+    setFilterInput(dom, 'fleet');
+    await vi.advanceTimersByTimeAsync(260);
+    assert.ok(!dom.window.document.querySelector('[data-testid="milestone-M9"]'), 'sanity: filtered first');
+
+    setFilterInput(dom, '');
+    await vi.advanceTimersByTimeAsync(260);
+
+    const { document } = dom.window;
+    assert.ok(document.querySelector('[data-testid="milestone-M8"]'));
+    assert.ok(document.querySelector('[data-testid="milestone-M9"]'), 'expected the full tree back once the box is cleared');
+    assert.equal(document.querySelector('[data-testid="milestone-M8"]').textContent, 'M8 (3)', 'expected the full, unfiltered count too');
+  } finally {
+    vi.useRealTimers();
+  }
+});
+
+test('BL-1412-04: a term matching nothing shows a no-results state naming the term, not a blank page', async () => {
+  vi.useFakeTimers();
+  try {
+    const dom = renderScreen(fetchByQuery({ '': TREE, 'zzzz-no-such-term': EMPTY_TREE }));
+    await vi.advanceTimersByTimeAsync(0);
+
+    setFilterInput(dom, 'zzzz-no-such-term');
+    await vi.advanceTimersByTimeAsync(260);
+
+    const empty = dom.window.document.querySelector('[data-testid="no-results"]');
+    assert.ok(empty, 'expected a no-results element');
+    assert.match(empty.textContent, /zzzz-no-such-term/);
+  } finally {
+    vi.useRealTimers();
+  }
+});

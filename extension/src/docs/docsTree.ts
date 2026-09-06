@@ -290,6 +290,67 @@ export function filterDocsTree(tree: DocsTreeData, query: string): DocsTreeData 
   return { ...tree, tickets, milestones };
 }
 
+function labelMatches(label: string | undefined, lowerQuery: string): boolean {
+  return !!label && label.toLowerCase().includes(lowerQuery);
+}
+
+// Hardener extraction (CRAP): filterSpecTree's own per-milestone epic
+// filtering, isolated so each function's complexity is measured on its own
+// rather than compounding into one function - filterSpecTree's body dropped
+// from complexity 8 (CRAP 8.00) to complexity 4 (CRAP 4.00) by this split
+// alone, with the extracted function itself at complexity 4 (CRAP 4.00).
+// No behavior change: a milestone- or epic-label match still keeps that
+// epic's WHOLE ticket list; otherwise only tickets in ticketMatchedIds
+// survive.
+function filterMilestoneEpics(milestone: MilestoneNode, lowerQuery: string, ticketMatchedIds: Set<string>): EpicNode[] {
+  const milestoneLabelMatch = labelMatches(milestone.milestone, lowerQuery);
+  const epics: EpicNode[] = [];
+  for (const epic of milestone.epics) {
+    const keepWholeEpic = milestoneLabelMatch || labelMatches(epic.title, lowerQuery);
+    const tickets = keepWholeEpic ? epic.tickets : epic.tickets.filter((ticket) => ticketMatchedIds.has(ticket.id));
+    if (tickets.length > 0) {
+      epics.push({ ...epic, tickets });
+    }
+  }
+  return epics;
+}
+
+// BL-1412: the classic IDE tree filter, on top of BL-254's ticket-text
+// match (filterDocsTree, REUSED here - never re-implemented, never edited,
+// since pwa/app.js mirrors its body by hand). Adds a LABEL match: a
+// milestone name, an epic tracker's title, or a ticket id that contains
+// the term keeps that node with its WHOLE subtree, unfiltered - the
+// property a plain ticket-text match alone cannot express (filterDocsTree
+// prunes every epic/milestone down to only the tickets that themselves
+// matched). Rebuilds the milestone hierarchy from the UNFILTERED tree
+// rather than post-processing filterDocsTree's own (already-pruned)
+// output, which is why the ticket-text match is read as a set of ids
+// (textMatchedIds) rather than as a tree to further filter.
+export function filterSpecTree(tree: DocsTreeData, query: string): DocsTreeData {
+  const trimmed = query.trim();
+  if (!trimmed) {
+    return tree;
+  }
+  const lowerQuery = trimmed.toLowerCase();
+
+  const textMatchedIds = new Set(filterDocsTree(tree, query).tickets.map((ticket) => ticket.id));
+  const idMatchedIds = new Set(tree.tickets.filter((ticket) => labelMatches(ticket.id, lowerQuery)).map((ticket) => ticket.id));
+  const ticketMatchedIds = new Set<string>([...textMatchedIds, ...idMatchedIds]);
+
+  const milestones: MilestoneNode[] = [];
+  for (const milestone of tree.milestones) {
+    const epics = filterMilestoneEpics(milestone, lowerQuery, ticketMatchedIds);
+    if (epics.length > 0) {
+      milestones.push({ milestone: milestone.milestone, epics });
+    }
+  }
+
+  const keptTicketIds = new Set(milestones.flatMap((milestone) => milestone.epics.flatMap((epic) => epic.tickets.map((ticket) => ticket.id))));
+  const tickets = tree.tickets.filter((ticket) => keptTicketIds.has(ticket.id));
+
+  return { ...tree, tickets, milestones };
+}
+
 interface VisionDocSpec {
   id: string;
   title: string;

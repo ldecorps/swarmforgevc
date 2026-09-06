@@ -10,6 +10,7 @@ const {
   computeDocsTree,
   translateDocsTree,
   filterDocsTree,
+  filterSpecTree,
   flattenMilestoneTickets,
 } = require('../out/docs/docsTree');
 const { createTranslationSession } = require('../out/i18n/translate');
@@ -546,4 +547,128 @@ test('BL-592: flattenMilestoneTickets concatenates tickets across every epic und
   // flatten that took only the first epic (rather than flatMap-ing all of
   // them) would drop BL-100/BL-101 entirely.
   assert.deepEqual(flat.map((t) => t.id), ['BL-102', 'BL-100', 'BL-101']);
+});
+
+// ── filterSpecTree (pure, BL-1412) ───────────────────────────────────────
+// The classic IDE tree filter, on top of BL-254's filterDocsTree (reused,
+// never re-implemented/edited - pwa/app.js mirrors its body by hand): a
+// term matching a ticket's title/description/scenario text OR its id keeps
+// that ticket, and a term matching a milestone name or epic tracker title
+// keeps that whole node's subtree, unfiltered.
+
+test('BL-1412 ticket-text-match-01: a term matching only title/description/scenario text still keeps the ticket (BL-254 reused)', () => {
+  const tree = docsTreeFixture([
+    item({ id: 'BL-100', title: 'Baton fleet epic', milestone: 'M1' }),
+    item({ id: 'BL-101', title: 'no match here', milestone: 'M1' }),
+  ]);
+
+  const filtered = filterSpecTree(tree, 'fleet');
+
+  assert.deepEqual(filtered.tickets.map((t) => t.id), ['BL-100']);
+});
+
+test('BL-1412 ticket-id-match-02: a term matching only the ticket id keeps it - the label match BL-254 does not cover', () => {
+  const tree = docsTreeFixture([
+    item({ id: 'BL-1412', title: 'no textual overlap at all', milestone: 'M1' }),
+    item({ id: 'BL-9', title: 'also no overlap', milestone: 'M1' }),
+  ]);
+
+  const filtered = filterSpecTree(tree, '1412');
+
+  assert.deepEqual(filtered.tickets.map((t) => t.id), ['BL-1412']);
+  assert.deepEqual(filtered.milestones[0].epics[0].tickets.map((t) => t.id), ['BL-1412']);
+});
+
+test('BL-1412 milestone-label-match-03: a term matching only the milestone name keeps the WHOLE milestone, every ticket unfiltered', () => {
+  const tree = docsTreeFixture([
+    item({ id: 'BL-100', title: 'alpha', milestone: 'M-widgets' }),
+    item({ id: 'BL-101', title: 'beta', milestone: 'M-widgets' }),
+    item({ id: 'BL-102', title: 'gamma', milestone: 'M-other' }),
+  ]);
+
+  const filtered = filterSpecTree(tree, 'widgets');
+
+  assert.deepEqual(filtered.milestones.map((m) => m.milestone), ['M-widgets']);
+  assert.deepEqual(
+    filtered.milestones[0].epics.flatMap((e) => e.tickets.map((t) => t.id)).sort(),
+    ['BL-100', 'BL-101']
+  );
+  assert.deepEqual(filtered.tickets.map((t) => t.id).sort(), ['BL-100', 'BL-101']);
+});
+
+test('BL-1412 epic-label-match-04: a term matching only an epic tracker\'s title keeps that epic\'s WHOLE ticket list, under every milestone it appears in', () => {
+  const items = [
+    item({ id: 'EPIC-1', type: 'epic', epic: 'EPIC-1', title: 'Fleet Console Overhaul', status: 'paused', milestone: 'M8' }),
+    item({ id: 'BL-100', title: 'unrelated leaf', milestone: 'M8', epic: 'EPIC-1' }),
+    item({ id: 'BL-101', title: 'also unrelated', milestone: 'M9', epic: 'EPIC-1' }),
+    item({ id: 'BL-102', title: 'elsewhere', milestone: 'M8', epic: 'other' }),
+  ];
+  const tree = buildDocsTree(emptyVisionDocs(), items, new Map(), 'abc', '2026-07-09T00:00:00Z');
+
+  const filtered = filterSpecTree(tree, 'console overhaul');
+
+  const m8 = filtered.milestones.find((m) => m.milestone === 'M8');
+  const m9 = filtered.milestones.find((m) => m.milestone === 'M9');
+  assert.deepEqual(m8.epics.map((e) => e.epicKey), ['EPIC-1']);
+  assert.deepEqual(m8.epics[0].tickets.map((t) => t.id), ['BL-100']);
+  assert.deepEqual(m9.epics[0].tickets.map((t) => t.id), ['BL-101']);
+  assert.deepEqual(filtered.tickets.map((t) => t.id).sort(), ['BL-100', 'BL-101']);
+});
+
+test('BL-1412 case-insensitive-05: a label match is case-insensitive, same as the ticket-text match', () => {
+  const tree = docsTreeFixture([item({ id: 'BL-100', title: 'x', milestone: 'M-Widgets' })]);
+
+  const filtered = filterSpecTree(tree, 'WIDGETS');
+
+  assert.deepEqual(filtered.milestones.map((m) => m.milestone), ['M-Widgets']);
+});
+
+test('BL-1412 empty-query-06: an empty or whitespace-only query returns the full unfiltered tree unchanged', () => {
+  const tree = docsTreeFixture([item({ id: 'BL-100', milestone: 'M1' })]);
+
+  assert.deepEqual(filterSpecTree(tree, ''), tree);
+  assert.deepEqual(filterSpecTree(tree, '   '), tree);
+});
+
+// Hardener addition (CRAP extraction, Stryker survivors at docsTree.js:275/276):
+// filterSpecTree's own `query.trim()` / `if (!trimmed) return tree` is
+// REDUNDANT for any tree buildDocsTree can actually produce - filterDocsTree
+// (line ~271) already trims internally and passes a blank/whitespace query
+// straight through, and every real milestone/epic has >= 1 member by
+// construction, so filterSpecTree's own rebuild happens to reconstruct the
+// identical structure even with its own trim check deleted. Every fixture
+// above builds trees only through docsTreeFixture/buildDocsTree, so this
+// stayed invisible. The check is NOT equivalent, though: filterSpecTree is
+// an exported, general-purpose pure function, and a hand-built tree (not
+// routed through buildMilestoneNodes) CAN carry a milestone with zero epics -
+// the shape that distinguishes "return the input unchanged" (kept) from "run
+// the label-match rebuild anyway" (dropped, since filterMilestoneEpics only
+// pushes a milestone `if (epics.length > 0)`).
+test('BL-1412 empty-query-08 (hardener addition): a whitespace-only query returns even an anomalous milestone (zero epics) unchanged', () => {
+  const tree = docsTreeFixture([item({ id: 'BL-100', milestone: 'M1' })]);
+  const anomalous = { ...tree, milestones: [...tree.milestones, { milestone: 'M-empty', epics: [] }] };
+
+  assert.deepEqual(filterSpecTree(anomalous, '   '), anomalous);
+});
+
+test('BL-1412 no-results-07: a term matching nothing at all (text, id, or label) returns an empty tree, not a throw', () => {
+  const tree = docsTreeFixture([item({ id: 'BL-100', title: 'a', milestone: 'M1' })]);
+
+  const filtered = filterSpecTree(tree, 'zzzz-no-such-term');
+
+  assert.deepEqual(filtered.tickets, []);
+  assert.deepEqual(filtered.milestones, []);
+});
+
+test('BL-1412 vision docs and schema pass through untouched by filtering', () => {
+  const tree = {
+    ...docsTreeFixture([item({ id: 'BL-100', title: 'fleet console', milestone: 'M1' })]),
+    vision: [{ id: 'specification', title: 'Specification', kind: 'markdown', content: '# Spec' }],
+  };
+
+  const filtered = filterSpecTree(tree, 'fleet');
+
+  assert.deepEqual(filtered.vision, tree.vision);
+  assert.equal(filtered.schemaVersion, tree.schemaVersion);
+  assert.equal(filtered.sourceSha, tree.sourceSha);
 });
