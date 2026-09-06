@@ -40,19 +40,37 @@
   (spit (state-path daemon-dir) (json/generate-string cursor)))
 
 ;; ── Pure: new-since-cursor selection ────────────────────────────────────
-;; Handoff filenames sort by priority/timestamp/sequence (the protocol's own
-;; filename format), so lexical comparison against the last-posted filename
-;; is a correct "newer than" test - the same convention the mailbox
-;; directories themselves rely on for FIFO order.
+;; Handoff filenames are <priority>_<timestamp>_<sequence>_from_...</...>
+;; (the protocol's own format) - lexical comparison of the WHOLE filename is
+;; NOT a correct "newer than" test on its own, because the coordinator sends
+;; at several different priorities (00/10/50 all observed in practice): a
+;; priority-00 file sorts lexically before a priority-50 one regardless of
+;; which was actually created later, so a plain filename compare can skip a
+;; genuinely later trace forever once the cursor has passed a
+;; lower-numbered-priority file from earlier. The SORT KEY drops the fixed
+;; 3-character priority prefix ("NN_"), leaving <timestamp>_<sequence> -
+;; correctly chronological (with the protocol's own same-second tiebreak)
+;; independent of priority. The persisted cursor itself is still the full
+;; filename (a stable, human-legible identifier); only the COMPARISON uses
+;; the derived key.
+
+(defn handoff-sort-key
+  "The chronologically-comparable part of a sent-handoff filename - every
+   caller that needs to SORT a list of these filenames (not just filter one
+   against a cursor) must use this same key, or a mixed-priority list sorts
+   by priority first and silently misorders same-tick posting order."
+  [filename]
+  (subs filename 3))
 
 (defn new-handoffs
   "sorted-handoffs: every sent handoff for the coordinator, as {:file
    :header} maps (:file the bare filename, :header the four fields
-   format-handoff-line needs), sorted ascending by :file. cursor: the last
-   :file this feed already posted, or nil."
+   format-handoff-line needs), sorted ascending by handoff-sort-key. cursor:
+   the last :file this feed already posted, or nil."
   [sorted-handoffs cursor]
   (vec (if cursor
-         (filter #(pos? (compare (:file %) cursor)) sorted-handoffs)
+         (let [cursor-key (handoff-sort-key cursor)]
+           (filter #(pos? (compare (handoff-sort-key (:file %)) cursor-key)) sorted-handoffs))
          sorted-handoffs)))
 
 (defn new-commits

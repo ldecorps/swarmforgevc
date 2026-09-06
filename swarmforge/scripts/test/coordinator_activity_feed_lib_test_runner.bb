@@ -16,22 +16,42 @@
 (defn assert-true [msg actual] (assert= msg true (boolean actual)))
 
 ;; ── new-handoffs ─────────────────────────────────────────────────────────
+;; Realistic filenames throughout (<priority>_<rest>), never bare letters -
+;; handoff-sort-key drops a fixed 3-character prefix, so a fixture shorter
+;; than that would prove nothing about the real shape.
 
-(def h1 {:file "a" :header {:type "note" :to "coder" :task nil :message "hi"}})
-(def h2 {:file "b" :header {:type "git_handoff" :to "coder" :task "BL-1" :message nil}})
-(def h3 {:file "c" :header {:type "note" :to "specifier" :task nil :message "bye"}})
+(def h1 {:file "50_20260906T100000Z_000001_a" :header {:type "note" :to "coder" :task nil :message "hi"}})
+(def h2 {:file "50_20260906T110000Z_000002_b" :header {:type "git_handoff" :to "coder" :task "BL-1" :message nil}})
+(def h3 {:file "50_20260906T120000Z_000003_c" :header {:type "note" :to "specifier" :task nil :message "bye"}})
 
 (assert= "no cursor: every handoff is new"
          [h1 h2 h3]
          (coordinator-activity-feed-lib/new-handoffs [h1 h2 h3] nil))
 
-(assert= "cursor at a: only what sorts after a"
+(assert= "cursor at h1: only what sorts after it"
          [h2 h3]
-         (coordinator-activity-feed-lib/new-handoffs [h1 h2 h3] "a"))
+         (coordinator-activity-feed-lib/new-handoffs [h1 h2 h3] (:file h1)))
 
-(assert= "cursor at c: nothing new"
+(assert= "cursor at h3: nothing new"
          []
-         (coordinator-activity-feed-lib/new-handoffs [h1 h2 h3] "c"))
+         (coordinator-activity-feed-lib/new-handoffs [h1 h2 h3] (:file h3)))
+
+;; Non-vacuity for the priority-independence fix: a priority-00 file whose
+;; TIMESTAMP is later than an already-posted priority-50 file's must still
+;; be found as new. Before this fix, comparing raw filenames put every
+;; "00_..." before every "50_..." lexically regardless of when either was
+;; actually created - this exact shape silently dropped a genuinely later
+;; trace forever.
+(def old-p50 {:file "50_20260906T100000Z_000001_old" :header {:type "note" :to "coder" :task nil :message "old"}})
+(def new-p00 {:file "00_20260906T200000Z_000002_new" :header {:type "note" :to "coder" :task nil :message "new"}})
+
+(assert= "a later priority-00 file is still found new after a cursor at an earlier priority-50 file"
+         [new-p00]
+         (coordinator-activity-feed-lib/new-handoffs [old-p50 new-p00] (:file old-p50)))
+
+(assert= "handoff-sort-key drops only the fixed priority prefix, nothing more"
+         "20260906T100000Z_000001_old"
+         (coordinator-activity-feed-lib/handoff-sort-key (:file old-p50)))
 
 ;; ── new-commits ──────────────────────────────────────────────────────────
 

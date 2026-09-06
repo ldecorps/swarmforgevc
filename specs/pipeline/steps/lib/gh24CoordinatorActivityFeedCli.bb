@@ -15,7 +15,9 @@
 (defn -main []
   (let [input (json/parse-string (slurp *in*) true)
         daemon-dir (:daemon-dir input)
-        sent-handoffs (mapv (fn [h] {:file (:file h) :header (:header h)}) (or (:sent-handoffs input) []))
+        sent-handoffs (->> (or (:sent-handoffs input) [])
+                            (mapv (fn [h] {:file (:file h) :header (:header h)}))
+                            (sort-by (comp coordinator-activity-feed-lib/handoff-sort-key :file)))
         commits (mapv (fn [c] {:sha (:sha c) :subject (:subject c)}) (or (:commits input) []))
         remaining-fails (atom (or (:fail-first-n input) 0))
         posted (atom [])

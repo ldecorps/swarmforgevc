@@ -62,6 +62,26 @@ lines to its own standing Telegram topic, zero coordinator LLM tokens:
   unbounded walk would grow with the repository forever for no benefit a
   bounded one does not already give.
 
+## Self-audit finding, fixed before forwarding
+
+Caught on re-review, before the send: `new-handoffs`' cursor comparison
+originally compared raw sent-handoff FILENAMES lexically
+(`<priority>_<timestamp>_<sequence>_from_...`). The coordinator sends at
+several different priorities (00/10/50 all observed in this swarm's own
+mailbox) — a priority-00 filename sorts lexically before a priority-50
+one regardless of which was actually created later, so once the cursor
+passed a lower-priority-numbered file, a genuinely LATER higher-priority
+file could be silently skipped forever. Fixed with `handoff-sort-key`
+(drops the fixed 3-character priority prefix, comparing only
+`<timestamp>_<sequence>`, correctly chronological independent of
+priority) — used consistently for both the cursor filter and every
+sort-by call site (`handoffd.bb`'s real mailbox listing, the acceptance
+CLI driver's fixture). Non-vacuity proven by hand: reverted to the raw
+filename comparison, confirmed the new regression test ("a later
+priority-00 file is still found new after a cursor at an earlier
+priority-50 file") fails exactly as expected, restored (byte-identical
+via diff), reconfirmed all tests and the acceptance suite green again.
+
 ## Checks run
 
 - `bb swarmforge/scripts/test/coordinator_activity_feed_lib_test_runner.bb`:

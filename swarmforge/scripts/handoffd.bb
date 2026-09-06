@@ -4165,7 +4165,7 @@
              (map (fn [p]
                     {:file (str (fs/file-name p))
                      :header (coordinator-activity-feed-lib/handoff-header-from-text (slurp (str p)))}))
-             (sort-by :file)
+             (sort-by (comp coordinator-activity-feed-lib/handoff-sort-key :file))
              vec)
         []))
     (catch Exception _ [])))
