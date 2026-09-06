@@ -217,4 +217,15 @@ notes: |
   value depends on which option is ruled - so it cannot join the outline
   without pinning a number this ticket has no authority to pin yet.
 
+  2026-09-06 (coordinator): dropped-parcel sweep nudged "no parcel in
+  flight - possible drop" (trail stale >45m, no live mail anywhere).
+  Verified NOT a drop: coder inbox/worktree carries no BL-1348 work in
+  flight because the ticket is correctly parked on `human_approval:
+  pending` awaiting the operator's second ruling (A/B/C/D, re-pended
+  2026-09-06T19:00:32+01:00, commit 958a837d25). Telegram approval-ask
+  already posted and outstanding (topic 1785, messageId 79093 shows the
+  old 09-02 ruling text — the re-pend's new ruling_options ask may not
+  have re-posted; flagging for the specifier to confirm the ask reflects
+  the current options, not routing it myself). No action taken; holding.
+
 assigned_to: coder
