@@ -149,3 +149,6 @@ notes: |
   behaviour. The handler name is fixed HERE, at mint, so the pattern is a
   literal that will exist rather than a placeholder the gate can never match
   (BL-874).
+bounce_count: 1
+bounce_history:
+  - { at: 2026-09-06, by: QA, blamed: documenter, class: behavior, commit: 718bd15071, evidence: backlog/evidence/GH-24-QA-20260906.md }
