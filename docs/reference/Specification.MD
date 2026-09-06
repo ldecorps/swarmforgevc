@@ -1,5 +1,28 @@
 # SwarmForge VS Code Extension — Specification
 
+**Last Updated:** September 6, 2026 (BL-1226: the `/pilot` land mkdtemp
+convention gate (`assessPilotMkdtempConvention`,
+`pilotMkdtempConventionCheck.ts`, BL-743) scanned only touched
+`extension/test/*.js` paths, so `specs/pipeline/steps/` — 436 of 821 step
+handlers calling `mkdtempSync`, 277 of them removing their fixture root
+nowhere at all — had no fixture-cleanup gate at all; every leak the swarm
+caught there was caught by a human reading a diff (five in one architect
+session). The gate's scope now also covers touched
+`specs/pipeline/steps/**/*.js`, where any `mkdtemp` call outside the
+required shared helper (`specs/pipeline/steps/lib/socketFixtureRoot.js`,
+the exemption, mirroring `helpers/tmpDir.js` in the `extension/test` lane)
+is a violation — detected by ROUTE, not by spelling, so
+`require('os').tmpdir()`, `require('node:os').tmpdir()`, a bare `/tmp`
+literal, and a module-level base constant are all caught alongside the
+original `mkdtempSync(path.join(os.tmpdir()` pattern (closing a
+twelve-file blind spot the unwidened detector would have shipped with).
+Scope stays load-bearing: the gate reads only paths the parcel itself
+touched, so widening it can never turn an untouched legacy handler red —
+the 434 existing raw-mkdtemp handlers in this lane are deliberately left
+ungated, an open migration question the ticket records rather than
+resolves (a 17-handler sub-class already split off as BL-1410). Acceptance:
+`specs/features/BL-1226-mkdtemp-convention-gate-covers-step-handlers.feature`.)
+Prior entry —
 **Last Updated:** September 6, 2026 (BL-1424: a commit that adds a test
 file under `swarmforge/scripts/test/` with no `suite-manifest.tsv` row
 used to meet no gate at all outside a parcel's own `git_handoff` (BL-1240)
