@@ -109,6 +109,24 @@ test('BL-1409 P1 (invariants 1 and 3): wired iff both hops hold; a broken hop al
   );
 });
 
+// Hardener addition: the hook FILE itself missing from disk (as opposed to
+// present but not invoking the runner - the seamArb's 'absent' hookShape
+// above always writes a hook file, just one that doesn't exec the runner)
+// had zero coverage. Confirmed by hand-mutation: deleting the `!exists`
+// early-return entirely left both this file's tests and the acceptance
+// feature green (readFile would throw ENOENT, but nothing asserts on the
+// thrown error's shape). Also fixes a real mislabeling found while writing
+// this: `missing` reported the RUNNER's name for a missing HOOK file - the
+// `reason` string named the hook correctly, `missing` did not, which would
+// point a reader debugging "why is this failing" at the wrong file.
+test('BL-1409 (hardener addition): a hook FILE literally missing from disk fails naming the hook, not the runner', () => {
+  const root = mkTmpDir('sfvc-bl1409-prop-missing-hook-');
+  const result = propertyGuardIsWired({ repoRoot: root });
+  assert.equal(result.wired, false);
+  assert.equal(result.missing, 'pre-commit', `expected the missing hop named as the hook itself, got: ${JSON.stringify(result)}`);
+  assert.match(result.reason, /does not exist/, `expected the reason to say the hook does not exist, got: ${JSON.stringify(result)}`);
+});
+
 test('BL-1409 invariant 2 (structural): exactly one parser of run_guard lines - the module never greps run_guard itself', () => {
   const source = fs.readFileSync(
     path.join(__dirname, '..', '..', 'specs', 'pipeline', 'steps', 'lib', 'bl1409PropertyGuardWiring.js'),
