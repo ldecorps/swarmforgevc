@@ -122,6 +122,21 @@ description: |
     (standing lane row in `swarmforge/scripts/test/suite-manifest.tsv`,
     BL-973/BL-1240) drives direct mode and hook mode through
     `lib/fixture_isolation.sh`; the BL-1398 file is the model.
+  - **Two fixtures pin the merge chain by hand and go red when it grows
+    (amendment 2026-09-06, after the coder's unowned-red note).**
+    `swarmforge/scripts/test/test_pre_merge_commit_hook.sh` stubs
+    `MERGE_GUARDS=` (two names) and drives the real hook: your `run_guard`
+    line makes it refuse with exit 127 unless `check_art_director_tip.sh`
+    is stubbed. `test_pipeline_code_on_main_guard.sh` copies the chain
+    guard by guard (`cp` lines 33-46, 55) and is ALREADY red at case 02 on
+    main (four runner guards missing; BL-1408 owns it, register row). In
+    this parcel: add `check_art_director_tip.sh` to `MERGE_GUARDS` and add
+    one `cp` line for it beside the others, each with a one-line comment
+    `# hand edit; BL-1408 derives this set`. Do NOT derive the sets here
+    (that is BL-1408's whole deliverable and would collide with it); do
+    NOT try to make the pipeline-code test green (its other four missing
+    guards are BL-1408's). Record both edits in your evidence as the sixth
+    and seventh hand edits of the chain list.
   - Documenter: `docs/how-to/BL-1418-the-art-director-seat-is-addressable.md`
     gains "How the seat's work reaches main" (the note, QA's land, the
     lane, the two modes); the swarm-flow diagram's change-trigger FIRES
@@ -172,6 +187,11 @@ qa_e2e_procedure: |
      evidence; say so rather than fabricate a commit on primary/art-director.
   6. `git merge --no-ff main` in any role worktree still succeeds (scenario
      03 live); the guard prints nothing on that merge.
+  7. `bash swarmforge/scripts/test/test_pre_merge_commit_hook.sh` passes on
+     the parcel (it was green on main and must stay green with the hook
+     one guard longer); `test_pipeline_code_on_main_guard.sh` stays red at
+     case 02 exactly as on main - BL-1408's register row - and its `cp`
+     list names `check_art_director_tip.sh`.
 
 notes: |
   - [2026-09-06] human: Q jump via Cursor operator — promote past depth cap + priority 0 + dispatch now.
@@ -196,6 +216,13 @@ notes: |
   low), Small (six scenarios, thirteen runs, three invariants), Testable
   (fixture repositories under mkdtemp drive the real hook chain).
 
+  Amended 2026-09-06 while active (coder holds it, nothing forwarded yet):
+  the two hand-listed merge-chain fixtures must carry the new guard, see
+  "How". Scenarios, invariants and wiring unchanged; no rebuild of anything
+  already written, one `MERGE_GUARDS` entry and one `cp` line more. The
+  coder's own `unowned red` note on `test_pipeline_code_on_main_guard.sh`
+  is answered by BL-1408's register row, not by this parcel.
+
   Lane decision: the evidence pattern is included because the seat's
   sign-off record (`backlog/evidence/BL-1419-art-director-20260906.md`)
   already lives on its branch and Article 1.10 makes the verdict evidence
@@ -215,3 +242,5 @@ source: |
   check_pipeline_code_on_main.sh (BL-1096 per-path provenance),
   incoming_merge_parent_lib.sh. Merge-up recipients: QA.prompt Handoff and
   post_qa_branch_sweep_lib.bb merge-up-excluded-roles.
+
+assigned_to: coder
