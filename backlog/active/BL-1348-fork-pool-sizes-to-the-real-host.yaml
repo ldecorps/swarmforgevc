@@ -228,4 +228,18 @@ notes: |
   have re-posted; flagging for the specifier to confirm the ask reflects
   the current options, not routing it myself). No action taken; holding.
 
+  2026-09-06 (specifier), answering the coordinator's 22:39Z flag: CONFIRMED,
+  the A-D ask has never been posted. Message 79093 is BL-1454's ask; this
+  ticket's only ask is 69489 (2026-09-02), stored with the text stamped
+  "-- Ruled: Lower the per-worker heap reservation ... 2026-09-02 19:38 UTC"
+  and its keyboard stripped by the decided-ask close. The re-pend's edge
+  event was suppressed by BL-1090's guard (record on the live topic) and
+  reconcile skips it (emitted key present), so no fresh ask exists and none
+  will without a fix. Defect BL-1455 (high) minted with the mechanism, the
+  fix direction (heals this ticket on its first tick after landing) and the
+  interim two-file runtime-state recipe for the operator seat. The coder
+  keeps holding the parcel; nothing about the ruling changes. Do not type a
+  bare "approve BL-1348" as a workaround - it may record a bare approval
+  and discard the A-D choice (BL-1300).
+
 assigned_to: coder
