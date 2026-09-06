@@ -1,0 +1,193 @@
+id: BL-1442
+title: "A briefing-email list item that opens with a ticket id renders that id in bold, so a reader scanning the email on a phone finds a ticket by its weight alone (Art Director brief 2026-09-06)"
+milestone: M8
+type: defect
+severity: low
+# low: cosmetic. The content is complete and reflowed (BL-1419); what is
+# wrong is scan weight on a phone, judged by the Art Director on the real
+# render. Not medium: no reader loses information, only time.
+status: todo
+epic: art-direction
+priority: 8
+direction: swarm-reported
+depends_on: [BL-1419]
+mutation_cost: low
+slice_size_envelope: low
+required_stages: [coder, cleaner, architect, hardender, documenter, qa]
+
+acceptance: specs/features/BL-1442-briefing-list-item-leading-ticket-id-is-bold.feature
+
+human_approval: pending
+approval_context: >
+  A new feature file is authored here, so it needs a tap. No choice is
+  posed and there are no ruling_options. One scoping decision is firm
+  unless you Amend: the rule keys on the ticket ids that OPEN a list item
+  (its leading label), not on whether the list's intro sentence happens to
+  be bold. The brief names the bold-intro lists as where the defect shows
+  today, and the design-system rule the Art Director wrote the same day
+  states the label rule directly. An id inside a parenthesised aside or
+  later in the sentence stays regular, so the weight lands on the item's
+  subject. Weight only, no colour, per the brief.
+
+invariants:
+  - "The bolding is a render-time effect of the HTML part only: the markdown source on disk and the plain-text part never gain a ** or a <strong>; no briefing file is rewritten."
+  - "Every <strong> the renderer adds carries font-weight:600 inline on the element and adds no colour, border or <style> block; the HTML part with every <style> block removed is unchanged."
+  - "Stripping the <strong> tags the renderer added yields exactly the HTML BL-1419 rendered: no <li> is split, reordered or reworded, and the <li> count is unchanged."
+
+required_wiring:
+  - 'swarmforge/scripts/briefing_email_lib.bb::(bold-leading-ticket-ids ::render-briefing-html, the live layout renderer compose-and-send-one! calls, must call it on the body html; the name is fixed here so the anchor is a call site, not the defn'
+  - 'specs/pipeline/steps/bl1442BriefingListItemLeadingIdBoldSteps.js::registerSteps::the handler file exists so discovery registers every scenario (BL-1371)'
+
+description: |
+  ## What is wrong
+
+  Art Director brief, 2026-09-06
+  (`docs/design/briefs/2026-09-06-briefing-list-item-scan-weight.md`, on
+  `primary/art-director` at `98e0a7e817`; lands on `main` with this parcel,
+  see "Landing the brief" below). Reviewed on the real production path
+  (`render-markdown-to-html` then `render-briefing-html`) over the real
+  2026-09-05 briefing at ~390 px:
+
+  > Under "Business features delivered" a `<strong>` sentence introduces
+  > each themed group, then a plain, unstyled `<li>` list follows it - 15
+  > items in the largest group, each opening with a ticket ID in ordinary
+  > body text. On a phone, a reader scanning for one ticket has nothing to
+  > catch their eye against - the ID sits in the same 14-16px regular
+  > weight as the sentence around it. The bold group-intro sentence sets
+  > an expectation of visual hierarchy that the list itself doesn't deliver.
+
+  Intended result, from the brief: "The leading ticket-ID token in each
+  list item is bolded (`<strong style="font-weight:600">BL-1309</strong>:`),
+  matching the weight already used for the group-intro sentence. Verify on
+  the surface: scanning the rendered email at phone width, a reader can
+  find BL-1385 by its visual weight alone before reading the surrounding
+  sentence." Constraints: inline `style` only, no `<style>` block, no
+  colour - weight only.
+
+  Measured at mint over the 58 briefings in `docs/briefings/`: 39 list
+  items open with a ticket id; 18 as `BL-N:` and 21 as `BL-N` followed by
+  `and BL-M:`, a parenthesised aside, or prose. Only `BL-` ids open items
+  today; `GH-` ids exist in the repo and are covered by the same rule.
+
+  ## What is wanted
+
+  - In the HTML part, each ticket id in a list item's LEADING LABEL renders
+    as `<strong>` with `font-weight:600` inline. The leading label is the
+    run at the start of the item made of ticket ids (`BL-<n>`, `GH-<n>`),
+    the connectives `and`, `/`, `,`, `+`, `&`, and a parenthesised aside
+    directly after an id; it ends at the first word that is none of these.
+    So `BL-1386 and BL-1387: ...` bolds both; `BL-1413 (active) is ...`
+    bolds BL-1413 only; `BL-1398 (commit-guard fixture) and BL-1401 (BL-632
+    acceptance fixture) both ...` bolds BL-1398 and BL-1401 and leaves
+    BL-632 (inside the aside) regular; `BL-1374: ... credited BL-1385's
+    replay` bolds BL-1374 only.
+  - An item that does not open with a ticket id is untouched, including
+    one that opens with markdown bold of its own (`**Active** (6): ...`).
+  - Only `<li>` content is affected: paragraphs (the "Smaller fixes:"
+    sentence), headings and blockquotes are never touched.
+  - The plain-text part stays byte-identical to the composed markdown and
+    the markdown on disk is never rewritten (invariant 1).
+
+  ## How (direction, not mandate)
+
+  - `briefing_email_lib.bb`: a pure `bold-leading-ticket-ids` over the
+    converted body html that rewrites each `<li>...</li>` per the label
+    rule; `render-briefing-html` calls it on `body-html` BEFORE
+    `style-inline-elements`, so the existing `"strong" "font-weight:600"`
+    entry styles the new tags with no new style code. Keep
+    `markdown_to_html_lib.bb` generic (BL-393's converter / BL-1419's
+    email-presentation split): the label rule is briefing presentation.
+  - Unit cases in `swarmforge/scripts/test/briefing_email_test_runner.bb`
+    for each Examples row; the existing `<ul><li>one</li></ul>` pins stay
+    green because "one" is not a ticket id.
+  - Handler `specs/pipeline/steps/bl1442BriefingListItemLeadingIdBoldSteps.js`
+    reusing `steps/lib/briefingEmailHarnessFixture.js` and the harness at
+    `swarmforge/scripts/test/briefing_email_harness.bb`, the same drive
+    as BL-1419's handler. Scenario 03/04 reuse the existing fixture
+    `specs/pipeline/steps/fixtures/BL-1419-2026-09-05-briefing.md` - do
+    not copy it. Counts measured at mint: 24 `<li>`; 19 open with a ticket
+    id; 23 ids in leading labels (four items are `BL-A and BL-B:` pairs).
+  - Documenter: the briefing-email entry in `docs/reference/Specification.MD`
+    (the only doc naming `render-briefing-html`) gains the label rule; the
+    design-system rule itself is the Art Director's (`docs/design/system.md`,
+    landing with this parcel). No diagram trigger fires.
+
+  ## Landing the brief (in-parcel step, coder, at receive)
+
+  The Art Director works on `primary/art-director` (`docs/design/` only,
+  BL-1418 ruling) and nothing today lands that branch on `main`. Before
+  starting work, merge its tip `98e0a7e817` into the parcel with a plain
+  merge subject that names NO ticket (e.g. "Merge primary/art-director tip
+  into coder"), and diff the merge against both parents (Guardrails). That
+  commit adds four files and touches nothing else: the brief above,
+  `docs/design/system.md`, `docs/design/artifact-inventory.md`, and
+  `backlog/evidence/BL-1419-art-director-20260906.md` (the Art Director's
+  sign-off on BL-1419). Every review stage and QA: those four files in the
+  parcel's diff against `main` are the brief landing with the fix it
+  spawned (Article 4.3, "with the brief attached"), declared here - not
+  foreign scope. `task_scope_gate_lib.bb` attributes a clean merge's
+  content to its upstream commits (`:authored` semantics), so the send-time
+  gate is not tripped by the merge. This is a one-off for the first brief;
+  the standing landing path for the Art Director's commits is a question
+  raised to the human by the specifier on 2026-09-06 (see notes).
+
+  ## Out of scope
+
+  - Any other finding on the briefing email or any other artifact: one
+    brief, one ticket (art-director.prompt).
+  - Colour, size or a new element for the ids: weight only.
+  - Bolding ids in paragraphs, headings or Telegram messages.
+
+qa_e2e_procedure: |
+  1. `bb swarmforge/scripts/test/briefing_email_test_runner.bb` passes; the
+     BL-1442 feature passes all eleven scenario runs; BL-1419's and
+     BL-393's features stay green (BL-1419 scenario 06 still counts 24 <li>).
+  2. Render the real briefing through the harness
+     (`swarmforge/scripts/test/briefing_email_harness.bb`, or the BL-1419
+     procedure) over the BL-1419 fixture to `tmp/briefing.html`; open at
+     390 px. The brief's own check: BL-1385 is findable by weight alone
+     (it opens the fourth item); its second mention, mid-sentence in the
+     BL-1398 item ("as BL-1385's own new guard"), is regular; "BL-1386 and
+     BL-1387" are both bold; the "Smaller fixes:" paragraph is unchanged;
+     no colour was added anywhere.
+  3. Strip every `<style>` block (there are none to strip) and reload:
+     unchanged. `grep -c 'font-weight:600">BL-' tmp/briefing.html` is 23.
+  4. `cmp` the plain-text part against the composed markdown: identical;
+     `git status` shows no briefing file modified.
+  5. Sign-off (QA prompt, Article 1.10): send the art director a `note`
+     with the rendered result; record its `LGTM` or defect list in the QA
+     evidence. A defect list routes to the coder with the brief attached
+     (Article 4.3); an `LGTM` is recorded and the parcel lands.
+  6. The parcel's diff against `main` includes the four files of
+     `98e0a7e817` (see "Landing the brief"): expected, not a bounce.
+
+notes: |
+  Minted 2026-09-06 by the specifier from the Art Director's first brief
+  (note from art-director, priority 00: "brief
+  docs/design/briefs/2026-09-06-briefing-list-item-scan-weight.md").
+  The rule text in `docs/design/system.md` (same commit): "List items
+  needing to be scanned by a leading identifier (e.g. a ticket ID) bold
+  that identifier token."
+
+  INVEST at mint: Independent (BL-1419 landed 2026-09-05; the brief lands
+  in-parcel, no sibling), Negotiable (where the rewrite lives is
+  direction; the label grammar is the contract), Valuable (one outcome: a
+  ticket is findable by weight on a phone), Estimable (one pure function
+  plus a call, unit rows, one handler; low), Small (four scenarios, eleven
+  runs, three invariants), Testable (pure render over fixture markdown
+  through the existing harness; the real briefing as a counted fixture).
+
+  Process gap found at mint: `primary/art-director` has no landing path
+  to `main` (nothing merges it; QA lands parcels only; the merge-up
+  broadcast excludes it). This ticket carries the first tip in-parcel;
+  the standing path is a question to the human (specifier role_ask,
+  2026-09-06) and becomes its own ticket on the answer.
+
+source: |
+  Art Director brief docs/design/briefs/2026-09-06-briefing-list-item-scan-weight.md
+  and evidence backlog/evidence/BL-1419-art-director-20260906.md, both on
+  primary/art-director at 98e0a7e817 (2026-09-06). Renderer read:
+  swarmforge/scripts/markdown_to_html_lib.bb render-list-block (line 82)
+  and swarmforge/scripts/briefing_email_lib.bb tag-inline-styles /
+  render-briefing-html (lines 429-475). Label-shape counts over
+  docs/briefings/*.md and the BL-1419 fixture, measured 2026-09-06.
