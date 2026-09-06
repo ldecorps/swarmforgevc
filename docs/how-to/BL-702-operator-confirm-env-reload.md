@@ -1,7 +1,8 @@
-# How to use Cursor Remote confirm + env-reload (BL-702)
+# How to use Host confirm + env-reload (BL-702)
 
-Slice 1 of the operator command surface. Soft and hard verbs on Cursor Remote
-ask for Confirm before they mutate anything. Swarm relaunches re-read
+Slice 1 of the operator command surface. Soft and hard verbs on Host
+(the standing topic's display name since BL-725) ask for Confirm before
+they mutate anything. Swarm relaunches re-read
 `.swarmforge/swarm.env`.
 
 ## Confirm tiers
