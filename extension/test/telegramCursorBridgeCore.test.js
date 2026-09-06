@@ -85,8 +85,8 @@ test('cursor bridge: isCursorBridgeTopic matches only the bound cursor topic', (
   assert.equal(isCursorBridgeTopic(undefined, undefined), false);
 });
 
-test('cursor bridge: standing topic name is Cursor Remote', () => {
-  assert.equal(CURSOR_BRIDGE_TOPIC_NAME, 'Cursor Remote');
+test('cursor bridge: standing topic name is Host', () => {
+  assert.equal(CURSOR_BRIDGE_TOPIC_NAME, 'Host');
 });
 
 test('cursor bridge: front desk topic map strips a stale SUP binding on the cursor topic id', () => {
