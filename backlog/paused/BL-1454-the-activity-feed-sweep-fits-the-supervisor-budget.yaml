@@ -1,0 +1,184 @@
+id: BL-1454
+title: "handoffd's coordinator-activity-feed-sweep (GH-24) kills the whole swarm every ~5 min: with no cursor file it selects all 6463 sent handoffs plus 500 commits, posts one bb subprocess per trace with no bound, overruns SUPERVISOR_IN_SWEEP_BUDGET_MS (225 s) so the supervisor rules stalled and BL-144 halt-swarm! kills every role session; the cursor is written only after a full drain, so it never advances and every cycle replays from item 0. A tick seeds at the newest trace on first run, posts at most a capped batch inside its own deadline, and persists the cursor after every successful post"
+milestone: M8
+type: defect
+severity: critical
+# critical: swarm-down, recurring. Four total deaths of all nine role
+# sessions measured on 2026-09-06 (21:52:19Z, 21:59:42Z, 22:04:22Z,
+# 22:10:32Z), every failure log `reason: stalled`, babysitterd restores the
+# sessions and the next sweep kills them ~4.5 min later. Every death costs
+# every agent its in-flight context. It does not self-heal: the cursor file
+# has never been written, so the walk restarts from item 0 each cycle.
+status: todo
+epic: swarm-reliability
+priority: 5
+direction: swarm-reported
+depends_on: []
+mutation_cost: low
+# low: the fix is in coordinator_activity_feed_lib.bb / handoffd.bb.
+# Babashka has no mutation/CRAP/DRY wired (BL-472 deferred), so the
+# hardener gates on the bb unit suite and records the degraded fallback;
+# the BL-149 mutation cooldown (files GH-24 touched today) holds nothing here.
+slice_size_envelope: low
+required_stages: [coder, cleaner, architect, hardender, documenter, qa]
+
+acceptance: specs/features/BL-1454-the-activity-feed-sweep-fits-the-supervisor-budget.feature
+
+human_approval: pending
+approval_context: >
+  A new feature file is authored here, so it needs a tap. No choice is
+  posed and there are no ruling_options. One thing is FIRM and worth
+  knowing before you tap: on its first run (no cursor file) the feed posts
+  NOTHING historical - it seeds its cursors at the newest existing handoff
+  and commit and surfaces only what the coordinator does from then on.
+  Backfilling the 6463 queued handoffs is the "thousands of Telegram
+  messages" flood the operator's option B warned about, and GH-24 asked
+  for a live log of actions as they happen, not an archive dump. Minted by
+  the specifier from the operator's SUP-17 escalation of 2026-09-06 22:03Z
+  and its write-up .swarmforge/operator/NOTE-gh24-activity-feed-swarm-kill-loop.md.
+
+source: |
+  SUP-17 (Telegram supervisor thread), operator messages 2026-09-06T21:56Z,
+  22:03Z and 22:08Z, relayed through .swarmforge/operator/INTAKE-sup-17.md;
+  operator write-up .swarmforge/operator/NOTE-gh24-activity-feed-swarm-kill-loop.md;
+  daemon failure logs .swarmforge/daemon/handoffd-failure-20260906T{215219,215942,220422,221032}Z.log.
+  Regression introduced by GH-24 (c716b445b1, landed 21:45:27Z the same day).
+
+invariants:
+  - "No single tick of coordinator-activity-feed-sweep! runs past its own deadline, and that deadline is at most one quarter of SUPERVISOR_IN_SWEEP_BUDGET_MS (225000 ms default, so 56 s or less), whatever the size of coordinator/sent/ or of the git log: traces it did not reach wait for the next tick."
+  - "The persisted cursor never lags a successful post by more than one trace: after every successful post! the cursor naming that trace is on disk before the next post is attempted, so a tick killed mid-batch re-posts nothing on restart."
+  - "A tick's file reads and header parses are proportional to the number of traces NEWER than the cursor, never to the total count of sent handoffs - filtering happens on the file name (the sort key) before any file is opened."
+
+# required_wiring carries only the handler anchor. Deliberately no anchor on
+# the production consumer: handoffd.bb's poll loop ALREADY calls
+# coordinator-activity-feed-sweep! (that call is the defect's own path), so an
+# anchor there is satisfied before the fix and gates nothing (BL-1235). The
+# mechanism is reached in production today; this ticket changes its inside.
+required_wiring:
+  - 'specs/pipeline/steps/bl1454ActivityFeedSweepFitsBudgetSteps.js::registerSteps::the handler file exists so discovery registers every scenario (BL-1371)'
+
+description: |
+  ## What is wrong
+
+  GH-24 (c716b445b1, landed 2026-09-06 21:45:27Z) added
+  `coordinator-activity-feed-sweep!` to `swarmforge/scripts/handoffd.bb`
+  (lines 4158-4205), running on the shared sweep cadence with, in its own
+  words, "no separate timeout". Four things compound:
+
+  1. `coordinator-activity-feed-list-sent-handoffs` (handoffd.bb:4158) lists
+     `.swarmforge/handoffs/coordinator/sent/` - 6463 `.handoff` files today -
+     and slurps and header-parses EVERY one before the cursor is consulted.
+  2. `coordinator_activity_feed_lib.bb` `new-handoffs` (line 65) and
+     `new-commits` (line 76) return EVERYTHING when the cursor is nil. The
+     cursor file `coordinator-activity-feed-state.json` has never existed,
+     so the first tick selects all 6463 handoffs plus the 500-commit
+     `git log` window as traces to post.
+  3. `tick!` (lib lines 142-171) posts them one at a time, each post a fresh
+     `bb coordinator_activity_feed_post.bb` subprocess doing a Telegram send
+     with rate-limit retry, with no per-tick cap and no deadline.
+  4. `tick!` writes the cursor ONLY when the loop ends (all posted, or a
+     post failed). The tick never ends: `handoffd_supervisor.bb` line 102
+     `SUPERVISOR_IN_SWEEP_BUDGET_MS` (225000) is exceeded, the in-flight
+     sweep voids the heartbeat evidence, the verdict is `stalled`, and
+     BL-144's `alarm-and-halt!` -> `halt-swarm!` -> `swarm-cleanup.sh` kills
+     every role tmux session. The daemon restarts, the cursor is still
+     absent, and the walk starts again from item 0.
+
+  Measured 2026-09-06: sweep start 21:55:50.082Z + 225 s = 21:59:35Z,
+  supervisor polls every 10 s, kill landed 21:59:42Z. Deaths at 21:52:19Z,
+  21:59:42Z, 22:04:22Z, 22:10:32Z, every failure log `reason: stalled`,
+  babysitterd restoring nine sessions each time. Ruled out by the operator:
+  OOM (16 GiB free, no dmesg OOM), planned ceremony (control-pause inactive,
+  no kill-all-audit entry since 05:00Z, sessions.tsv not cleared), provider.
+
+  ## What is wanted
+
+  - First run (no cursor file): the tick seeds both cursors at the newest
+    existing handoff and the newest existing bookkeeping commit and posts
+    nothing - the feed is a live log from the moment it starts, never a
+    backfill of history (scenario 01). This is firm; see approval_context.
+  - Every tick posts at most a capped number of lines (direction: 20) and
+    stops at its own deadline (direction: 30 s, and never more than a
+    quarter of the supervisor budget), carrying the remainder to the next
+    tick in trace order with no duplicates (scenarios 02, 04; invariant 1).
+  - The cursor is persisted after EVERY successful post, not only at the end
+    of the loop, so a tick interrupted mid-batch resumes at the next unposted
+    trace (scenario 03; invariant 2). GH-24's "advances the cursor only after
+    a successful send" is preserved - it is advanced after each one.
+  - Listing is cheap: handoff files are filtered against the cursor by name
+    before any file is opened, so a tick's I/O scales with new traces, not
+    with the size of sent/ (invariant 3).
+  - Documenter: the handoffd sweep table / GH-24 reference page records the
+    cap, the deadline and the first-run seeding rule; the architecture or
+    handoff-flow diagram is untouched unless a depicted mechanism changed.
+
+  ## How (direction, not mandate)
+
+  - Keep the seams GH-24 established: `tick!` takes `post!`, `read-cursor!`,
+    `write-cursor!`; add an injected clock (`now-ms`) and the cap/deadline
+    as options with defaults, so every scenario runs against plain data and
+    stubs - never live Telegram, never a real daemon.
+  - Move the header parse behind the name filter: hand `tick!` (or a helper)
+    the sorted file NAMES, drop those at or before the cursor, then read
+    headers for the survivors only. The sort key already derives from the
+    file name (`handoff-sort-key`).
+  - Seeding on nil cursor is one branch in `tick!`: compute the newest name
+    and newest sha, write them, return `{:posted 0 :seeded true}`.
+  - Do NOT fix this by raising SUPERVISOR_IN_SWEEP_BUDGET_MS, by archiving
+    sent/, or by changing BL-144's stalled response - the first two mask the
+    unbounded walk and the third is a separate policy.
+  - The other sibling sweeps that share the "no separate timeout" comment
+    may carry the same latent shape; auditing them is a follow-up, not this
+    slice (INVEST: one observable outcome).
+
+  ## Live check the coder can run before forwarding
+
+  With the fix, a fresh `handoffd` on this repository (6463 sent handoffs,
+  no cursor file) completes its first `coordinator-activity-feed-sweep!` in
+  well under a second, writes the cursor file, and posts nothing; the
+  supervisor records no `stalled` verdict across three cycles.
+
+qa_e2e_procedure: |
+  1. bb unit suite for coordinator_activity_feed_lib.bb green, including the
+     new seeding, cap, deadline and per-post-cursor cases; acceptance suite
+     green with this ticket's four scenarios resolving.
+  2. Live, on this host: stop the daemon, remove
+     .swarmforge/daemon/coordinator-activity-feed-state.json if present,
+     start handoffd, and watch .swarmforge/daemon/handoffd.sweep-marker over
+     three full sweep cycles (~15 min): the marker never shows
+     coordinator-activity-feed-sweep running longer than 60 s, no new
+     handoffd-failure-*.log appears, no `stalled` verdict is logged, and
+     `tmux ls` still lists all role sessions with their original creation
+     time.
+  3. The cursor file exists after the first cycle and names the newest sent
+     handoff and newest bookkeeping commit; the coordinator's Telegram topic
+     received no backfill.
+  4. Have the coordinator send one note and land one bookkeeping commit:
+     within one cadence the topic shows exactly one line for each, and the
+     cursor file advances to them.
+
+out_of_scope: |
+  - BL-144's policy that a stalled daemon halts the swarm.
+  - Telegram rate limiting (coordinator_activity_feed_post_lib.bb already
+    honors 429 retry_after).
+  - Auditing the other handoffd sweeps that share the "no separate timeout"
+    cadence for the same unbounded-input shape (follow-up ticket if the
+    architect's pass finds one).
+  - Any backfill of historical coordinator activity.
+
+notes: |
+  - Routing recommendation (specifier, 2026-09-06 22:20Z): the defect is IN
+    the swarm's own delivery machinery and the swarm dies every ~5 min while
+    it stands, so this is the BL-567 expeditor's shape
+    (`swarmforge/scripts/expedite.sh BL-1454`, stack stopped) rather than a
+    parcel riding the pipeline it is repairing. The coordinator and human
+    decide; the operator's separate mitigation poll (A revert / B raise
+    budget / C archive sent/ / D leave down) is an interim measure and does
+    not replace this fix.
+  - Article 3.2.4: type defect, severity critical - expedited ordering, no
+    extra slot.
+  - IR-DRY (specifier, mint pass): two residual medium findings are kept
+    deliberately, both numeric parameters of one step - "the activity-feed
+    tick runs" / "runs twice" (a run count) and "the cursor file names the
+    20th newer trace after the first tick" / "... the 3rd newer trace" (an
+    ordinal); the coder binds each pair as one parametrized handler.
