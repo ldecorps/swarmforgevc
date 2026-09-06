@@ -46,7 +46,8 @@ STUB
   chmod +x "$GUARDS/$name"
 }
 
-MERGE_GUARDS="check_pipeline_code_on_main.sh check_feature_handler_registration.sh"
+# hand edit; BL-1408 derives this set
+MERGE_GUARDS="check_pipeline_code_on_main.sh check_feature_handler_registration.sh check_art_director_tip.sh"
 
 reset_fixture() {
   rm -rf "$GUARDS" "$RAN"
