@@ -40,6 +40,9 @@ const INDEX_GUARDS = [
   // BL-1428: joined the cheap tier 2026-09-05 - a standing-red register or
   // ledger row a commit adds or changes must name an open ticket.
   'check_standing_red_register.sh',
+  // BL-1440: joined the cheap tier 2026-09-06 - a staged constitution
+  // article must never cite a docs/ path that doesn't resolve.
+  'check_constitution_doc_citations.sh',
 ];
 const SUITE_GUARD = 'check_property_suite_drift.sh';
 const ALL_GUARDS = [...INDEX_GUARDS, SUITE_GUARD];
