@@ -48,7 +48,12 @@ function propertyGuardIsWired({
 } = {}) {
   const hookPath = path.join(repoRoot, hookRel);
   if (!exists(hookPath)) {
-    return { wired: false, missing: runnerRel, reason: `${hookRel} does not exist` };
+    // Hardener fix: the missing hop here is the hook FILE itself, not the
+    // runner it would have invoked - naming the runner would mislead a
+    // reader debugging "why is this failing" into looking at the wrong
+    // file (the `reason` string already named the hook correctly; `missing`
+    // did not).
+    return { wired: false, missing: path.basename(hookRel), reason: `${hookRel} does not exist` };
   }
   const runnerBasename = path.basename(runnerRel);
   const runnerNameRe = new RegExp(runnerBasename.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'));

@@ -141,9 +141,26 @@ function registerSteps(registry) {
     ctx.shellSuiteResult = { rc: result.status ?? 1, out: `${result.stdout || ''}${result.stderr || ''}` };
   });
 
-  scoped(/^every case passes$/, (ctx) => {
-    assert.equal(ctx.shellSuiteResult.rc, 0, `expected every case to pass, got:\n${ctx.shellSuiteResult.out}`);
-    assert.doesNotMatch(ctx.shellSuiteResult.out, /^FAIL:/m, `expected no FAIL: line, got:\n${ctx.shellSuiteResult.out}`);
+  // BL-1409 spec-gap amendment (specifier, 2026-09-06): scenario 04 used to
+  // assert the WHOLE suite's exit code (rc == 0), which BL-1409 does not
+  // own past case 07 - case 11+ belongs to BL-1448 (the live property
+  // allowlist drained to zero rows by BL-1428, hidden behind case 07's own
+  // pre-existing red until this ticket fixed it). Asserting specific
+  // PASS: N lines rather than rc keeps this scenario true once BL-1448
+  // lands, instead of silently reading red-when-correct (BL-1006).
+  scoped(/^case 07 passes$/, (ctx) => {
+    assert.match(ctx.shellSuiteResult.out, /^PASS: 07:/m, `expected a "PASS: 07:" line, got:\n${ctx.shellSuiteResult.out}`);
+  });
+
+  scoped(/^every case through 10 passes$/, (ctx) => {
+    for (let n = 1; n <= 10; n += 1) {
+      const caseNum = String(n).padStart(2, '0');
+      assert.match(
+        ctx.shellSuiteResult.out,
+        new RegExp(`^PASS: ${caseNum}:`, 'm'),
+        `expected a "PASS: ${caseNum}:" line, got:\n${ctx.shellSuiteResult.out}`
+      );
+    }
   });
 }
 
