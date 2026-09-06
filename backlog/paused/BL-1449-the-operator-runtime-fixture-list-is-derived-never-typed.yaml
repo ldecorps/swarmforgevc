@@ -1,0 +1,136 @@
+id: BL-1449
+title: "OPERATOR_RUNTIME_BB_FILES has been retyped by hand eight times (BL-944 counted five, BL-1265 was the seventh, BL-1439 fixed the eighth on 2026-09-06), each drift a standing red until someone caught the list up: the export is computed from BL-944's own closure walk at module load, plus the declared extras, so a new load-file is in the fixture the moment it exists and the list can no longer drift"
+milestone: M8
+type: defect
+severity: medium
+# medium: nothing is broken on main today (BL-1439 caught the list up).
+# What is wrong is a design that turns every new load-file into a
+# standing red in the unit suite, on a cadence of every one to two
+# weeks, each costing a ticket or a collateral fix. Not high: no safety
+# signal is broken while the list is current.
+status: todo
+epic: code-quality-gates
+priority: 30
+direction: swarm-reported
+depends_on: []
+mutation_cost: low
+slice_size_envelope: low
+required_stages: [coder, cleaner, architect, hardender, documenter, qa]
+
+acceptance: specs/features/BL-1449-the-operator-runtime-fixture-list-is-derived-never-typed.feature
+
+human_approval: pending
+approval_context: >
+  A new feature file is authored here, so it needs a tap. No choice is
+  posed and there are no ruling_options. Minted by the specifier while
+  retiring BL-1265 (superseded by BL-1439), whose own notes named this
+  pattern as "a design that wants deriving rather than declaring" and
+  raised it separately; no ticket ever followed. The five consumers keep
+  importing the same name; only the module that exports it changes.
+
+invariants:
+  - "The exported list is a pure function of the tracked source tree (the walk from operator_runtime.bb) and OPERATOR_RUNTIME_BB_DECLARED_EXTRAS; no file name is typed into the module."
+  - "BL-944's guard is unchanged in what it decides: diffClosureAgainstList and directLoadFileDeps stay as they are, and scenarios 02 and 03 of BL-944 (a seeded list with a missing or an unreachable entry is reported) keep passing against seeded lists."
+
+required_wiring:
+  - 'specs/pipeline/steps/bl1449OperatorRuntimeFixtureListDerivedSteps.js::registerSteps::the handler file exists so discovery registers every scenario (BL-1371)'
+
+description: |
+  ## What is wrong
+
+  `specs/pipeline/steps/lib/operatorRuntimeBbFixtureFiles.js` exports
+  `OPERATOR_RUNTIME_BB_FILES`, a literal array of Babashka file names that
+  five step handlers (`alwaysOnOperatorPresenceSteps`,
+  `bl647RotationRouterLivenessSteps`, `controlLossIsNotAgentDeathSteps`,
+  `noInboundMessageIsEverLostSteps`, `bl944...Steps`) copy into a
+  disposable root before running `bb operator_runtime.bb <root> --tick-once`.
+  BL-944 (2026-08-19) derives the real transitive `load-file` closure from
+  source (`specs/pipeline/steps/lib/operatorRuntimeBbClosure.js`) and
+  compares it with the list in `extension/test/operatorRuntimeBbFixtureClosure.test.js`,
+  so a drift is at least LOUD. It is still a drift: BL-944's own comment
+  counts five before it; BL-1265 (2026-08-29) found four names missing
+  (the seventh); BL-1439's coder found five missing on 2026-09-05 and
+  fixed them in passing (the eighth). Each one is a unit-suite red until a
+  human or a parcel retypes the list - the exact "hand-mirrored production
+  closure" class BL-1398, BL-1399, BL-1408 and BL-1420 closed elsewhere.
+
+  ## What is wanted
+
+  - The module exports the list COMPUTED at load: the walk from
+    `operator_runtime.bb` over `swarmforge/scripts` (the function BL-944's
+    check already uses) plus `OPERATOR_RUNTIME_BB_DECLARED_EXTRAS`, in a
+    stable order (scenario 01, invariant 1). The five consumers keep the
+    import unchanged.
+  - A load-file added anywhere in the closure is in the fixture with no
+    edit to the module (scenario 02).
+  - A fixture built from the derived list still boots the runtime (scenario
+    03, BL-944 scenario 04's own observable).
+  - BL-944's guard keeps its meaning: the check function and its seeded-list
+    scenarios are untouched (invariant 2). The vitest test's "the shipped
+    list matches the closure" assertion becomes true by construction; keep
+    it (it now guards the walk's determinism and the extras list) or
+    re-tense its name - never delete it.
+
+  ## How (direction, not mandate)
+
+  - `operatorRuntimeBbFixtureFiles.js`: `const OPERATOR_RUNTIME_BB_FILES =
+    deriveOperatorRuntimeClosure(scriptsDir).concat(OPERATOR_RUNTIME_BB_DECLARED_EXTRAS)`
+    with `scriptsDir` resolved relative to the module (the repo's
+    `swarmforge/scripts`), taking the walk from `operatorRuntimeBbClosure.js`
+    - never a second walker. Sort for a stable order. Expose the resolver
+    as a function taking the scripts dir so scenario 02 can point it at a
+    scratch copy without touching the live tree (BL-1390).
+  - Handler `specs/pipeline/steps/bl1449OperatorRuntimeFixtureListDerivedSteps.js`:
+    scenario 02's scratch copy is `fs.mkdtempSync` + a copy of
+    `swarmforge/scripts/*.bb`, one file appended with a `(load-file ...)`
+    of a new stub script; removed in a `finally`. Scenario 03 reuses
+    BL-944's fixture-root steps.
+  - Documenter: the BL-944 how-to (if any) and `docs/reference/Specification.MD`'s
+    BL-944 entry say the list is derived. No diagram trigger fires.
+
+  ## Out of scope
+
+  - The walk itself (`directLoadFileDeps`, `diffClosureAgainstList`).
+  - Any other hand-mirrored list (chain guards: BL-1408; allowlists:
+    BL-1448).
+
+qa_e2e_procedure: |
+  1. The BL-1449 feature passes all three runs; BL-944's feature passes all
+     six runs; `npx vitest run test/operatorRuntimeBbFixtureClosure.test.js`
+     passes.
+  2. `grep -c '\.bb'` over the literal-array region of
+     `operatorRuntimeBbFixtureFiles.js` is 0 (no typed names; the extras
+     list may be non-empty and is the only literal).
+  3. Live drift probe, in a scratch copy of `swarmforge/scripts` under
+     mkdtemp: append `(load-file "zz_probe_lib.bb")` to
+     `operator_runtime.bb`'s copy, create the stub, load the module against
+     the copy: the exported list contains `zz_probe_lib.bb`. The live tree
+     is untouched.
+  4. The five consumers still build a fixture that runs
+     `operator_runtime.bb --tick-once` (BL-944 scenario 04 and the
+     always-on-operator-presence feature stay green).
+
+notes: |
+  Minted 2026-09-06 by the specifier while retiring BL-1265 (superseded by
+  BL-1439). Grepped first: no live ticket names the list; BL-1265's notes
+  said the derive-not-declare proposal was "raised to the coordinator
+  separately" on 2026-08-29 and nothing followed. Eight drifts is the
+  measurement.
+
+  A wiring anchor beyond the handler is deliberately absent: the five
+  consumers are pre-existing and keep the same import, and an anchor on
+  the module's own call into the walk is satisfied by the parcel's diff
+  (BL-1235); scenario 03 and BL-944 scenario 04 are the live proof.
+
+  INVEST at mint: Independent (BL-944 landed; BL-1265 retired), Negotiable
+  (the module's shape and the resolver seam are direction), Valuable (one
+  outcome: the list cannot drift), Estimable (one module change, one
+  handler; low), Small (three scenarios, two invariants), Testable (a
+  scratch tree and the existing fixture-root steps).
+
+source: |
+  BL-1265 (retired 2026-09-06) notes and constraints; BL-944 feature and
+  operatorRuntimeBbFixtureFiles.js history (git log: ed6fb8892b BL-1439,
+  a55b5156ba BL-1029, 266adf1403 BL-967, 3da6225bd8 BL-944, ca30ddebd2
+  BL-655, d6e5f2568e BL-647); BL-1439 coder evidence "fixed in this parcel";
+  consumers by grep of OPERATOR_RUNTIME_BB_FILES under specs/pipeline/steps.
