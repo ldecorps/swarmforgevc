@@ -39,6 +39,12 @@ const WORKER_POOL_SIZE = resolveVitestWorkerPool({
   platform: os.platform(),
   override: process.env.SWARMFORGE_VITEST_MAX_FORKS,
   hostRamMB: os.totalmem() / (1024 * 1024),
+  // BL-1348, human ruling (option 2): the DEFAULT (no override set) now
+  // follows this host's own core count rather than the fixed MAX_WORKERS=6
+  // ceiling - passed in here, same as hostRamMB/platform above, so the
+  // budget module itself still reads no os/env of its own. The SAME input
+  // both lanes now pass (BL-935 invariant 3).
+  defaultCeiling: os.cpus().length,
 });
 
 export default defineConfig({
