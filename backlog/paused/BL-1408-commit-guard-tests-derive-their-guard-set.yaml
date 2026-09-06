@@ -2,13 +2,16 @@ id: BL-1408
 title: "The remaining hand-written copies of the commit-guard chain list derive from the runner or hook they exercise through BL-1398's helper: test_run_commit_guards.sh has exited 127 at case 01 since BL-1385's guard joined the runner on 2026-09-04 (BL-1395's doubled it), and test_pre_merge_commit_hook.sh and the BL-1252 property test carry the same shape, in sync only by hand"
 milestone: M8
 type: defect
-severity: medium
-# medium: real but contained. The chain decides correctly on every live
-# commit - the red is in the tests that PIN its aggregation. The runner test
-# is a standing suite row and has failed at its first case for a day, so
-# BL-1252's every-violation-in-one-refusal contract has had no executable
-# check since: a broken safety signal for one mechanism, not a live fault.
-# The two in-sync copies are prevention, not a present fault.
+severity: high
+# high (re-classed 2026-09-06 from medium under the standing-red rule of
+# 2026-09-05): test_run_commit_guards.sh is a `standing` suite row that is
+# red on main - red since 2026-09-04 (BL-1385/BL-1395 guards), hand-patched
+# by BL-1428 on 09-05, red again on 09-06 the moment BL-1440 added
+# check_constitution_doc_citations.sh (case 01, status 127). The property
+# copy bit the same day: BL-1440 was bounced at QA for INDEX_GUARDS
+# (5d6a055835), a full re-walk of five stages. A broken safety signal
+# whose owner sat at medium is exactly what the rule forbids; the register
+# row names this ticket. Was medium: "real but contained".
 status: todo
 epic: swarm-reliability
 priority: 12
@@ -119,6 +122,20 @@ description: |
   - BL-570's stale wiring assertion, red for the same family of reasons:
     BL-1409, minted the same pass.
 
+  ## Since mint (2026-09-06)
+
+  The "in sync today" copies are not. BL-1440 (landed 2026-09-06) added
+  `check_constitution_doc_citations.sh` to the runner's Tier 1:
+  - `INDEX_GUARDS` in the BL-1252 property file lacked it; QA bounced the
+    parcel (`5d6a055835`, class `unit`, `backlog/evidence/BL-1440-bounce-20260906.md`)
+    and the coder hand-added the entry - the fifth hand edit of that list.
+  - `ALL_GUARDS` in `test_run_commit_guards.sh` still lacks it: case 01
+    exits 127 on main today, the standing red this ticket's register row
+    names. Any guard the runner names between now and this landing is in
+    scope by derivation, not by a further hand edit.
+  The landing commit removes this ticket's row from `backlog/standing-reds.tsv`
+  (standing-red rule 2, 2026-09-05).
+
 qa_e2e_procedure: |
   1. On the parcel: `bash swarmforge/scripts/test/test_run_commit_guards.sh`
      passes every case (was FAIL 01, status 127, on main 2026-09-05);
@@ -164,6 +181,13 @@ notes: |
   today's runner), one sitting - three mechanical swaps onto an existing
   helper plus one seam each, no unbuilt sibling; both dependencies are in
   `backlog/done/`.
+
+  2026-09-06, specifier (closing-ceremony lean pass, shift 2026-09-06):
+  re-classed medium -> high under the 2026-09-05 standing-red rule; the
+  register row for test_run_commit_guards.sh (lane shell, first seen
+  2026-09-04) names this ticket. The shift's only bounce was this shape
+  (BL-1440 at QA, INDEX_GUARDS). Scenarios and invariants unchanged;
+  human_approval stays as approved.
 
 source: |
   Coder note to specifier, priority 10, 2026-09-05T02:33Z; coder evidence
