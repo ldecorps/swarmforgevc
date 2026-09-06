@@ -6,6 +6,11 @@
 
 Each registered model with its certification status and known limitations. See also the [Role recommendation matrix](#role-recommendation-matrix).
 
+### anthropic/claude-opus-4-8
+- **Status:** certified
+- **Known limitations:**
+  - Same-provider fallback for opus-class outages (BL-669)
+
 ### anthropic/claude-sonnet-5
 - **Status:** certified
 - **Known limitations:**
@@ -32,6 +37,26 @@ Each registered model with its certification status and known limitations. See a
 - **Known limitations:**
   - Codex-leaning; weaker on long multi-role planning without a scorecard
 
+### qwen/qwen3.6-flash
+- **Status:** candidate
+- **Known limitations:**
+  - Token Plan Lite SEA Anthropic-compat; Personal ToS interactive-only; 7-day credit window
+
+### qwen/qwen3.7-max
+- **Status:** candidate
+- **Known limitations:**
+  - Token Plan Lite SEA; Personal ToS interactive-only; 7-day credit window
+
+### qwen/qwen3.7-plus
+- **Status:** candidate
+- **Known limitations:**
+  - Token Plan Lite SEA; Personal ToS interactive-only; 7-day credit window
+
+### qwen/qwen3.8-max
+- **Status:** candidate
+- **Known limitations:**
+  - Token Plan Lite SEA Anthropic-compat; Personal ToS interactive-only; 7-day credit window
+
 ## Role recommendation matrix
 
 Live projection of the Role Recommendation Matrix (certified models only, highest score first). Query the same data via `model-steward role-matrix <role>`.
@@ -42,6 +67,10 @@ Live projection of the Role Recommendation Matrix (certified models only, highes
 ### architect
 1. anthropic/claude-sonnet-5 (score 0.95)
 2. openai/gpt-5.3-codex (score 0.9)
+3. anthropic/claude-opus-4-8 (score 0.94)
+
+### art-director
+1. anthropic/claude-sonnet-5 (score 1.0)
 
 ### cleaner
 1. anthropic/claude-sonnet-5 (score 0.9)
