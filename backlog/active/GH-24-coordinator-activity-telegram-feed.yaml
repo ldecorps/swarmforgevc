@@ -102,7 +102,7 @@ description: |
 required_wiring:
   - "specs/pipeline/steps/gh24CoordinatorActivityTelegramFeedSteps.js::registerSteps::acceptance handler registered so the runner executes this ticket's scenarios; repointed 2026-09-04 after BL-1371 discovery - the handler file IS the registration and index.js names nothing"
 
-acceptance: specs/features/GH-24-coordinator-activity-telegram-feed.feature.draft
+acceptance: specs/features/GH-24-coordinator-activity-telegram-feed.feature
 
 qa_e2e_procedure: |
   1. Swarm-script unit suite green, including the new surfacer lib tests.
