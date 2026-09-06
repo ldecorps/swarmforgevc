@@ -3,6 +3,15 @@
 ;; parcel adds a file under the bb test tree with no row in
 ;; `suite-manifest.tsv`.
 ;;
+;; BL-1424 extends this file with the SAME question asked of a raw commit
+;; instead of a parcel's git_handoff: `findings-for-staged-commit` below.
+;; BL-1240 sees only parcels, so a hotfix committed straight onto main (no
+;; handoff ever sent) was invisible to it - hotfix 27d6ab8630 left two test
+;; files unregistered for three days before a coordinator sweep noticed
+;; (BL-1423). Same lib, same `unregistered-findings`/`parcel-test-file`
+;; decision, same ONE NOTION OF REGISTERED - only the impure entry point
+;; differs (the STAGED git index instead of a parcel's own commit range).
+;;
 ;; BL-973's inventory gate asks the right question at the wrong moment. It
 ;; compares the WHOLE tree against the manifest when `run_bb_suite.sh` runs,
 ;; so the author of an unregistered file is never told and the refusal
@@ -37,6 +46,7 @@
 
 (ns unregistered-test-gate-lib
   (:require [babashka.fs :as fs]
+            [babashka.process :as process]
             [clojure.string :as str]))
 
 (load-file (str (fs/path (fs/parent (fs/canonicalize *file*)) "test" "suite_inventory_lib.bb")))
@@ -139,3 +149,83 @@
                       {:changed-paths changed-paths
                        :manifest-rows rows
                        :exists? #(fs/exists? (fs/path (str root) %))})})))))
+
+;; ── BL-1424: the SAME question, asked of a raw commit's own staged index ──
+;;
+;; The empty-tree constant lets a repo's very first commit (no HEAD yet) be
+;; judged the same way as every later one - `git diff --cached` against a
+;; real tree object rather than special-casing "no HEAD" as its own
+;; fail-open branch, which would make an init commit invisible to a guard
+;; that exists specifically to catch a commit made outside any parcel.
+(def ^:private empty-tree-sha "4b825dc642cb6eb9a060e54bf8d69288fbee4904")
+
+(defn- git! [root & args]
+  (apply process/sh (into ["git" "-C" (str root)] args)))
+
+(defn- diff-base [root]
+  (let [head (git! root "rev-parse" "-q" "--verify" "HEAD")]
+    (if (zero? (:exit head)) (str/trim (:out head)) empty-tree-sha)))
+
+(defn staged-added-test-paths
+  "Every path THIS COMMIT's own index adds (`git diff --cached
+   --diff-filter=A` against HEAD, or the empty tree on a repo's first
+   commit) - never the working tree, and never anything already on HEAD.
+   nil (never []) when the staged diff itself could not be read, so the
+   caller fails open rather than reading blindness as \"nothing added\"."
+  [root]
+  (let [base (diff-base root)
+        res (git! root "diff" "--cached" "--name-only" "--diff-filter=A" base)]
+    (when (zero? (:exit res))
+      (remove str/blank? (str/split-lines (:out res))))))
+
+(defn staged-manifest-rows
+  "The parsed STAGED manifest (`git show :<path>`, the index's own content -
+   never the working-tree file, which may differ from what is about to be
+   committed) - or nil (never []) when it cannot be read, so a manifest this
+   commit itself deletes or that was never git-added is the fail-open
+   branch, not a tree-wide refusal."
+  [root]
+  (let [manifest-path (str test-dir "/" suite-inventory-lib/manifest-name)
+        res (git! root "show" (str ":" manifest-path))]
+    (when (zero? (:exit res))
+      (suite-inventory-lib/parse-manifest (:out res)))))
+
+(defn findings-for-staged-commit
+  "The one impure entry point for a raw commit (BL-1424, the sibling of
+   findings-for-git-handoff above): {:findings [...]} on a clean read
+   (possibly empty), or {:warning \"...\"} when the staged diff or the
+   staged manifest could not be read - never both. Reads only the index
+   (`git diff --cached`, `git show :<path>`) - never unstaged working-tree
+   state (invariant 3): a file present only on disk, not staged, is
+   invisible here exactly as a file this commit did not add must be."
+  [{:keys [root]}]
+  (let [added (staged-added-test-paths root)]
+    (if (nil? added)
+      {:warning (str "unregistered-test staged-commit check could not run "
+                     "(the staged diff under " root " unreadable) - "
+                     "commit allowed, unverified (BL-1424)")}
+      (let [rows (staged-manifest-rows root)]
+        (if (nil? rows)
+          {:warning (str "unregistered-test staged-commit check could not run "
+                         "(no readable staged " suite-inventory-lib/manifest-name
+                         " under " test-dir ") - commit allowed, unverified (BL-1424)")}
+          {:findings (unregistered-findings
+                      {:changed-paths added :manifest-rows rows})})))))
+
+(defn staged-commit-refusal-message
+  "Same shape as refusal-message above (names the file AND the row it
+   needs), worded for a raw commit rather than a git_handoff send."
+  [{:keys [findings]}]
+  (let [files (map :file findings)]
+    (str
+     (format (str "Cannot commit: this commit adds %s under %s/ with no row in %s "
+                  "(BL-1424). An unregistered test file is invisible to the standing suite, "
+                  "and a hotfix committed straight onto main sends no git_handoff for BL-1240 "
+                  "to see.")
+             (if (= 1 (count files)) (str "a test file (" (first files) ")")
+                 (format "%d test files (%s)" (count files) (str/join ", " files)))
+             test-dir
+             suite-inventory-lib/manifest-name)
+     (format " Add to %s/%s:\n%s\n...or, if it should not run on every parcel, lane `excluded` with a YYYY-MM-DD date and the reason."
+             test-dir suite-inventory-lib/manifest-name
+             (str/join "\n" (map :row findings))))))

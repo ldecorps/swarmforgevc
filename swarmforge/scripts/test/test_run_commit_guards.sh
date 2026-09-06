@@ -48,7 +48,15 @@ STUB
 # with "No such file or directory" on real guards this fixture never meant
 # to exercise; check_standing_red_register.sh (this ticket) is added at
 # the same time rather than reproducing the same gap a third way.
-ALL_GUARDS="check_commit_size.sh check_ticket_deletion.sh check_pipeline_code_on_main.sh check_feature_handler_registration.sh check_handler_module_graph.sh check_bb_scripts_load.sh check_standing_red_register.sh check_property_suite_drift.sh"
+# BL-1424: check_test_file_registration.sh joined the cheap tier
+# 2026-09-06 - same hand-kept discipline, added here in the same commit
+# that adds it to run_commit_guards.sh. check_constitution_doc_citations.sh
+# (BL-1440, landed earlier the same day) is ALREADY missing from this list
+# and is the live case-01 red BL-1408 owns (its own ticket text: "do not
+# paper over that here, add the guard to its list and leave the case-01
+# red to BL-1408") - not touched by this ticket, so as not to blur which
+# ticket's fix closed it.
+ALL_GUARDS="check_commit_size.sh check_ticket_deletion.sh check_pipeline_code_on_main.sh check_feature_handler_registration.sh check_handler_module_graph.sh check_bb_scripts_load.sh check_standing_red_register.sh check_test_file_registration.sh check_property_suite_drift.sh"
 
 reset_fixture() {
   rm -rf "$GUARDS" "$RAN"
