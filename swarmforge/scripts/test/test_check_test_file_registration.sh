@@ -115,6 +115,49 @@ else
   fail "expected exit 0 with a WARNING for an unreadable manifest, got rc=$rc: $out"
 fi
 
+# ── 5b. Hardener addition: a repo's VERY FIRST commit (no HEAD yet) is
+#      judged the same way as every later one ───────────────────────────
+# unregistered_test_gate_lib.bb's diff-base falls back to the empty-tree
+# SHA when HEAD does not resolve, so a brand-new repo's first commit is
+# diffed against "nothing" rather than special-cased. Every fixture above
+# (mk_repo) seeds one commit before ever staging anything the guard judges,
+# so this branch was never reached by any test. Confirmed by hand-mutation:
+# removing the empty-tree fallback (diff-base always resolves HEAD) left
+# every existing test green.
+repo="$WORK/first-commit-refused"
+mkdir -p "$repo"
+git_ "$repo" init -q -b main
+git_ "$repo" config user.email t@t
+git_ "$repo" config user.name t
+mkdir -p "$repo/$TEST_DIR"
+printf 'existing_test_runner.bb\tstanding\t\t\n' > "$repo/$MANIFEST"
+printf '#!/usr/bin/env bash\necho probe\n' > "$repo/$TEST_DIR/test_probe.sh"
+git_ "$repo" add -A
+set +e
+out="$(cd "$repo" && bash "$GUARD" 2>&1)"; rc=$?
+set -e
+if [[ $rc -eq 1 ]] && grep -q 'test_probe.sh' <<<"$out"; then
+  pass "a repo's very first commit (no HEAD) still refuses an unregistered staged test file"
+else
+  fail "expected the first commit to be refused for an unregistered file, got rc=$rc: $out"
+fi
+
+repo="$WORK/first-commit-registered"
+mkdir -p "$repo"
+git_ "$repo" init -q -b main
+git_ "$repo" config user.email t@t
+git_ "$repo" config user.name t
+mkdir -p "$repo/$TEST_DIR"
+printf 'test_probe.sh\tstanding\t\t\n' > "$repo/$MANIFEST"
+printf '#!/usr/bin/env bash\necho probe\n' > "$repo/$TEST_DIR/test_probe.sh"
+git_ "$repo" add -A
+out="$(cd "$repo" && bash "$GUARD" 2>&1)"; rc=$?
+if [[ $rc -eq 0 ]]; then
+  pass "a repo's very first commit (no HEAD) is silent when the staged file is registered in the same commit"
+else
+  fail "expected exit 0 for a first commit registering its own file, got rc=$rc: $out"
+fi
+
 # ── 6. wiring: joins run_commit_guards.sh's Tier 1 (the pre-commit chain,
 #      the only pre-existing live consumer), before the tier's own
 #      guard_chain_has_refusal check ─────────────────────────────────────
