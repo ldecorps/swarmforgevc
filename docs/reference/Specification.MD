@@ -1,5 +1,27 @@
 # SwarmForge VS Code Extension — Specification
 
+**Last Updated:** September 6, 2026 (BL-1424: a commit that adds a test
+file under `swarmforge/scripts/test/` with no `suite-manifest.tsv` row
+used to meet no gate at all outside a parcel's own `git_handoff` (BL-1240)
+— a hotfix committed straight onto `main` (`27d6ab8630`, 2026-09-02) added
+two unregistered files and the standing suite refused every run for three
+days before anyone was told (backfilled as BL-1423). A new Tier-1
+pre-commit guard, `check_test_file_registration.sh`, asks of every commit
+exactly the question BL-1240 asks of every parcel: does THIS commit add a
+test file with no manifest row? If so, refuse, naming the file and
+quoting the row it needs. Scope is deliberately narrow and load-bearing
+(invariant 1): it judges only the commit's OWN staged additions, read from
+the staged index and the staged `suite-manifest.tsv`
+(`git show :swarmforge/scripts/test/suite-manifest.tsv`), never the tree —
+a tree-wide check would refuse every commit on pre-existing drift its
+author didn't create, exactly the shape BL-1240 already refuses to be. It
+joins `run_commit_guards.sh`'s Tier 1 (now seven guards) and deliberately
+does NOT join `land_step_lib.bb`'s tree-guard list, which runs tree-wide
+by design. Fails open (warns, exits 0) on an unreadable index or manifest.
+How-to: [BL-1252](../how-to/BL-1252-commit-guard-chain-reports-every-violation.md).
+Acceptance:
+`specs/features/BL-1424-a-commit-that-adds-a-test-file-registers-it.feature`.)
+Prior entry —
 **Last Updated:** September 6, 2026 (BL-1442: the Art Director's first
 brief (`docs/design/briefs/2026-09-06-briefing-list-item-scan-weight.md`,
 landed on `main` with BL-1444) found that under the BL-1419 phone layout, a
