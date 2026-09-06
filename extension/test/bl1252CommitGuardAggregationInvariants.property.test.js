@@ -43,6 +43,12 @@ const INDEX_GUARDS = [
   // BL-1440: joined the cheap tier 2026-09-06 - a staged constitution
   // article must never cite a docs/ path that doesn't resolve.
   'check_constitution_doc_citations.sh',
+  // BL-1424: joined the cheap tier 2026-09-06 - a commit that STAGES a new
+  // test file under swarmforge/scripts/test/ with no row in the STAGED
+  // suite-manifest.tsv is refused, the same question BL-1240 asks of a
+  // git_handoff, asked here too so a hotfix straight onto main (which
+  // sends no handoff) is caught.
+  'check_test_file_registration.sh',
 ];
 const SUITE_GUARD = 'check_property_suite_drift.sh';
 const ALL_GUARDS = [...INDEX_GUARDS, SUITE_GUARD];
