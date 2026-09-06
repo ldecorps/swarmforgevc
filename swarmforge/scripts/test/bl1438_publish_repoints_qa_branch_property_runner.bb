@@ -177,10 +177,34 @@
       (finally
         (cleanup! repo)))))
 
+;; ── Hardener addition: the BL-1390 "prove the root before any mutating
+;;    git call" precondition had zero coverage anywhere in the parcel ────
+;; land_step_cli.bb's repoint verb runs `git -C <root> rev-parse
+;; --git-common-dir` and refuses (exit 2, naming the root) BEFORE ever
+;; calling post-land-repoint! (which does `git reset --hard` on a repoint).
+;; Neither the acceptance feature nor P1/P2 above ever pass a root that
+;; fails this check - every fixture is always a real git repository.
+;; Confirmed by hand-mutation: deleting the whole guard (repoint-verb calls
+;; post-land-repoint! unconditionally on whatever string it is given) left
+;; every existing test green, because post-land-repoint! itself happens to
+;; fail its own `git status --porcelain` and `git rev-parse HEAD` calls on
+;; a non-repository path and returns a value the verb still prints and
+;; exits 0 for - a SILENT behavior change (a bad root that should refuse
+;; loudly instead gets folded into an ordinary "skipped" outcome), not a
+;; crash, which is exactly why no existing assertion caught it.
+(let [not-a-repo (str (fs/path (System/getProperty "java.io.tmpdir") (str "bl1438-prop-notrepo-" (rint 1000000000) "-does-not-exist")))
+      res (run-repoint-cli not-a-repo)]
+  (assert= "hardener addition: a root that is not a git repository exits 2" 2 (:exit res))
+  (assert-true "hardener addition: the refusal names the offending root"
+                (str/includes? (:out res) not-a-repo))
+  (assert-true "hardener addition: the refusal never prints a repoint verdict line"
+                (not (or (str/includes? (:out res) "LAND_REPOINTED")
+                         (str/includes? (:out res) "LAND_REPOINT_SKIPPED")))))
+
 ;; ── report ────────────────────────────────────────────────────────────────
 (if (seq @failures)
   (do
     (doseq [f @failures] (binding [*out* *err*] (println f)))
     (println (str "\n" (count @failures) " failure(s)"))
     (System/exit 1))
-  (println (str "ALL PASS: bl1438_publish_repoints_qa_branch_property_runner.bb (" (+ P1-RUNS P2-RUNS) " cases)")))
+  (println (str "ALL PASS: bl1438_publish_repoints_qa_branch_property_runner.bb (" (+ P1-RUNS P2-RUNS) " generated cases + 1 hardener addition)")))
