@@ -161,3 +161,5 @@ source: |
   swarmforge/scripts/land_step_lib.bb 396-432 (walk-base), 987-1062
   (land-plan), 1269 (replay!); QA branch first-parent log 3a1acdc269..bd1d6e097b;
   .swarmforge/land-approvals/2026-09.jsonl (002def27c6 <- bd1d6e097b, 17:31Z).
+
+assigned_to: coder
