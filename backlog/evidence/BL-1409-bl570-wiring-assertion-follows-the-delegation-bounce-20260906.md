@@ -35,4 +35,18 @@ Not a workmanship fault of any prior stage — the parcel was built correctly
 against the contract as minted; recorded as a misattributed-bounce correction
 alongside this bounce per BL-990.
 
+## record-bounce.js revertCheck (false positive, BL-1188 precedent)
+
+`record-bounce.js`'s own output flagged `"verdict": "violation"` with remedy
+`git revert --no-edit 6f5f21f988`, naming this evidence file itself as the
+only "live" file. NOT acted on: that commit's sole content is this
+brand-new evidence file, never part of any prior bounce-revert; the
+BL-490/BL-495 revert duty is for undoing a role's own defective commit
+before bouncing, and there is none here — the wrong scenario 04 text
+predates every pipeline role's own work (present since mint). Same
+tooling-accuracy gap already documented in
+`backlog/evidence/BL-1188-record-bounce-false-positive-on-recovery-20260827.md`;
+not re-flagged as a new note per the one-escalation-per-structural-cause
+discipline.
+
 By QA.
