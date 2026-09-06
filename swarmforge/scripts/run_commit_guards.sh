@@ -85,6 +85,13 @@ run_guard check_standing_red_register.sh
 # BL-1440: a staged constitution article must never cite a docs/ path that
 # does not resolve. Skips (cheap) when no article is staged.
 run_guard check_constitution_doc_citations.sh
+# BL-1424: a commit that STAGES a new test file under
+# swarmforge/scripts/test/ with no row in the STAGED suite-manifest.tsv is
+# refused here - the same question BL-1240 asks of a git_handoff, asked of
+# every commit so a hotfix straight onto main (which sends no handoff) is
+# caught too. Judges only this commit's own staged additions, never the
+# tree (BL-1423: pre-existing drift is not this commit's fault).
+run_guard check_test_file_registration.sh
 
 if guard_chain_has_refusal; then
   report_refusals
