@@ -12,38 +12,33 @@ slice_size_envelope: low
 required_stages: [coder, cleaner, architect, hardender, documenter, qa]
 acceptance: specs/features/BL-1348-fork-pool-sizes-to-the-real-host.feature
 
-human_approval: approved
-human_ruling: |
-  Lower the per-worker heap reservation and also raise the default ceiling so the pool follows the host core count with no override set
+human_approval: pending
 approval_context: >
-  Your directive, verbatim, is preserved in source: below. Nothing here is
-  broken and nothing is at risk either way - the pool is behaving exactly as
-  BL-422 designed it after the 13 GB OOM incident, on a RAM model that has
-  simply never been re-measured. The whole ticket is a missed opportunity to
-  use the host you have.
-
-  What needs your call is which of three shapes to take, because they differ
-  in who accepts the memory risk and on which hosts. Option 1 changes nothing
-  by default and makes SWARMFORGE_VITEST_MAX_FORKS - which already exists and
-  is already read by both lanes - genuinely effective: you opt in per run, and
-  a host that has not opted in behaves exactly as today. Option 2 additionally
-  raises the default so every host follows its cores with no opt-in, which is
-  the only shape that delivers a faster run without anyone setting an env var,
-  and also the only one that changes behaviour on hosts nobody has measured.
-  Option 3 is your own wording from the intake - the override wins outright and
-  the RAM budget becomes a warning rather than a clamp; simplest to reason
-  about, and it is the one shape where a mistyped override can genuinely
-  exhaust a small host.
-
-  One thing worth knowing before you choose, because it changes what this
-  ticket is worth on its own. The measured 143 s property run cannot fall
-  below its longest single file, and that file is 79 s. No fork count reaches
-  the 40-50 s you expect while that stands. BL-1349 is the ticket for it, and
-  it is the binding half; this one is the cheaper half.
+  Re-pended 2026-09-06 - DELIBERATELY, not an erased approval. Your ruling
+  of 2026-09-02 (56e56a0a49) chose option 2: lower the heap reservation
+  and raise the default ceiling to the host's cores. The coder built
+  exactly that and measured it on this host before forwarding: with no
+  override the pool becomes 15 (was 6), and two back-to-back full property
+  runs failed 4 then 16 files - almost all git- or bb-spawning property
+  tests timing out at 20 s while 15 forks contend with the live swarm
+  (load average 12-13 from the other role sessions). Each victim passes
+  alone; the set of victims differs every run, so bumping timeouts does not
+  converge, and BL-1407's rerun net shares one 180 s ceiling that sixteen
+  files cannot fit. The pre-ticket default of 6 was an incidental safety
+  net on a full-forge Linux host; the darwin full-forge rule (ceiling 1)
+  never fires on Linux. Memory is not the constraint - shared cores are.
+  The question is which shape you want on THIS host, where the swarm is
+  always running. B is recommended: it honours "use the cores this host
+  has" as cores the host has free, backs off while the swarm is busy, and
+  keeps one composition point for both lanes. Whatever you pick, BL-1349
+  (the 79 s longest file) remains the binding half of the wall clock, and
+  no option reaches 40-50 s while it stands. The feature gains one
+  Examples row for full-forge on linux once you rule.
 ruling_options:
-  - Lower the per-worker heap reservation to the measured footprint, leaving the default pool at six and making the existing fork override genuinely effective
-  - Lower the per-worker heap reservation and also raise the default ceiling so the pool follows the host core count with no override set
-  - Leave both constants and let an explicit operator override win outright, keeping the memory budget as a warning rather than a clamp
+  - A - full-forge keeps a fixed default on every platform (darwin 1, linux 6, today's number); the cores-following default applies to other packs; an explicit override still wins up to the RAM budget
+  - B (recommended) - the default ceiling follows the cores the host has FREE, cores minus the 5-minute load average, floor 1 and cap cores, passed in by both configs through the one composition point; override still wins up to RAM
+  - C - full-forge on linux gets a static half-cores default (10 here), darwin stays 1; other packs follow cores; override wins up to RAM
+  - D - ship as ruled, pool 15 here; the timeouts are BL-1349's and BL-1407's to absorb (measured 16 files red on the second run)
 
 invariants:
   - "Both vitest lanes size their pool through the single resolveVitestWorkerPool composition point: neither lane gains a sizing route the other does not share (BL-935 invariant 3)."
@@ -139,6 +134,25 @@ source: |
   would be speculative.
 
 notes: |
+  2026-09-06 (specifier), while the coder holds the parcel uncommitted:
+  re-pended for a second ruling on the coder's priority-00 note "BL-1348
+  risk: ceiling raise breaks props suite on full-forge+linux" and its
+  evidence `backlog/evidence/BL-1348-coder-finding-fork-ceiling-linux-full-forge-contention-20260906.md`
+  (in the coder's worktree, lands with the parcel). The original ruling,
+  verbatim, from 56e56a0a49 (2026-09-02): "Lower the per-worker heap
+  reservation and also raise the default ceiling so the pool follows the
+  host core count with no override set". It stands for the heap
+  reservation (640 MB against a measured 298 MB peak) and for hosts that
+  are not running a full-forge swarm; what it did not foresee is the
+  contention on this host. The four ruling_options above replace the
+  2026-09-02 set; the human_ruling field was cleared so the new tap lands
+  cleanly. When ruled: the specifier adds the full-forge/linux Examples row
+  to the feature the same pass (the row's pool value is the ruling's) and
+  notes the coder to merge main and re-read; invariant 3 (darwin stays 1)
+  is unchanged under every option. The coder's kept fix to
+  bl871PropertyLaneWorkerPoolCapInvariants (its expected pool derived the
+  way the config resolves it) is correct under every option and stays.
+
   2026-09-05 (specifier): priority 42 -> 14. The property gate refused five
   BL-1370 commits on five different unrelated load-dependent reds
   (2026-09-04); the pool this ticket resizes is the cause. BL-1407 makes
