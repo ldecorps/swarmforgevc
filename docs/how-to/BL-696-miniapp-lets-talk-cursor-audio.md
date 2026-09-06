@@ -1,7 +1,8 @@
 # Let's Talk — Discrete Audio Turns in the Mini App Console
 
 Use **Let's Talk** when you want to speak to the same Cursor bridge agent
-that powers the **Cursor Remote** Telegram topic, without typing in the forum
+that powers the **Host** Telegram topic (the standing display name since
+BL-725), without typing in the forum
 thread. It is part of the Telegram Mini App console and runs on the existing
 bridge host.
 
@@ -30,7 +31,7 @@ The screen shows:
 
 Successful audio turns are also mirrored (best-effort) to the standing **Bubble**
 Telegram topic when the bridge has bound one (`BUBBLE` / `bubbleTopicId`).
-When Bubble is not yet bound, the mirror falls back to the **Cursor Remote**
+When Bubble is not yet bound, the mirror falls back to the **Host**
 topic — the previous behaviour (BL-709). Numbered choice polls ride the same
 destination as the turn transcript.
 
@@ -136,18 +137,18 @@ Restart the bridge after setting env vars.
 When `LETS_TALK_AUDIO_ENGINE=openai` (or unset) and `OPENAI_API_KEY` is set,
 the bridge uses OpenAI Whisper + TTS and returns `replyAudioBase64`.
 
-## Shared Session with Cursor Remote
+## Shared Session with Host
 
-By default, Let's Talk uses the same `agentId` as the **Cursor Remote**
-Telegram topic. Context from an audio turn is visible to the text topic, and
+By default, Let's Talk uses the same `agentId` as the **Host**
+Telegram topic (the standing display name since BL-725). Context from an audio turn is visible to the text topic, and
 vice versa. After each successful turn the bridge also posts the reply text
-into the Cursor Remote topic (and a poll when the reply is a numbered choice
+into the Host topic (and a poll when the reply is a numbered choice
 list).
 
 Use **New session** when you want a fresh Cursor agent with no prior context.
 That clears the shared session the same way `/new` does on the text topic.
 
-On the Cursor Remote topic, `/redeploy miniapp` compiles the extension and
+On the Host topic, `/redeploy miniapp` compiles the extension and
 bounces the headless Mini App bridge. The operator runtime can also auto-bounce
 when `/lets-talk` stays down (see the
 [operator console amendment](../reference/specs/BL-696-amendment-lets-talk-operator-console.md)).
@@ -166,7 +167,7 @@ when `/lets-talk` stays down (see the
 
 ## What This Screen Is Not
 
-- Not a replacement for the Cursor Remote or Concierge text topics.
+- Not a replacement for the Host or Concierge text topics.
 - Not coordinator, operator, or pipeline voice.
 - Not background or lock-screen playback.
 
@@ -189,9 +190,9 @@ still serves must stay in the CRAP gate scope above; `extension/src/bridge/letsT
 `specs/features/BL-766-mini-app-lets-talk-retired-without-its-server-half.feature`
 check this against the real bridge source and route table.
 
-### Cursor Remote `/pilot` (operator)
+### Host `/pilot` (operator)
 
-On the Cursor Remote Telegram topic, `/pilot [BL-xxx]` asks the **Cursor bridge
+On the Host Telegram topic, `/pilot [BL-xxx]` asks the **Cursor bridge
 agent** to staff an offline expedition (Cursor-as-expeditor). It does **not**
 spawn `claude -p` / `expedite_cli`. `/pilot` is refused while an automated
 `/expedite` lock is held. Sibling verbs (`/hydrate`, `/autopilot`, `/land`,

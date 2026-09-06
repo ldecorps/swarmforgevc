@@ -1,22 +1,22 @@
 # Queued questions answer where they were asked (BL-767)
 
-A question typed into a bridge-owned topic (Cursor Remote or Bubble) while
+A question typed into a bridge-owned topic (Host or Bubble) while
 the bridge is busy is acknowledged where it was typed, but until this fix its
-eventual answer always posted to the Cursor Remote topic — so a Bubble-asked
+eventual answer always posted to the Host topic — so a Bubble-asked
 question queued, then went quiet in Bubble while the answer appeared on
-Cursor Remote instead.
+Host instead.
 
 ## Behaviour
 
 1. **A queued prompt records the topic it was asked in.** `originTopicId` on
    `CursorBridgeQueuedPrompt` (already used for the BL-810 TTL receipt) is
    now also read at drain time: the answer posts to that topic, falling back
-   to the Cursor Remote topic only when no origin was recorded (old state
+   to the Host topic only when no origin was recorded (old state
    files, and the boot-prompt path, which legitimately has none).
 2. **A choice-poll answer follows the same rule**, via a new
    `originTopicId` on `CursorBridgeChoicePoll`. Previously a choice-poll
    answer routed to `state.bubbleTopicId ?? state.cursorTopicId` while idle
-   (Bubble-first, regardless of where it was posted) and to Cursor Remote
+   (Bubble-first, regardless of where it was posted) and to Host
    while busy — two different wrong answers depending on load. Both now
    resolve to the topic the poll was actually answered in.
 3. **One shared function, not four independent guesses.** Every
@@ -26,15 +26,15 @@ Cursor Remote instead.
    writing its own fallback — the root cause of the original bug was exactly
    that divergence.
 4. **The busy cue follows queued work into its own topic.** A topic other
-   than Cursor Remote that is holding queued work gets its own standing,
+   than Host that is holding queued work gets its own standing,
    edit-in-place `Bridge: busy · N waiting` / `Bridge: idle · 0 waiting`
    line (`queuedWorkLivenessStatus`, `syncQueuedWorkLivenessCues`,
    `extension/src/tools/telegramCursorBridgeLiveness.ts`), so that topic
    doesn't go quiet between the queue ack and the eventual answer. This
-   mirrors, per-topic, the existing Cursor Remote-only cue from BL-764 — it
+   mirrors, per-topic, the existing Host-only cue from BL-764 — it
    does not replace it.
 5. **A state file written before this change still drains.** A missing
-   `originTopicId` is a fallback to Cursor Remote, never a parse failure and
+   `originTopicId` is a fallback to Host, never a parse failure and
    never a dropped prompt.
 
 ## Where it lives
@@ -67,7 +67,7 @@ Cursor Remote instead.
 ## Related
 
 - [Sharing one Telegram bot between the front desk and the Cursor bridge](BL-764-front-desk-shared-token-bridge-fanout.md) —
-  the original Cursor Remote-only busy cue this fix adds a per-topic sibling
+  the original Host-only busy cue this fix adds a per-topic sibling
   to.
 - [The Host question queue: selection poll, clear-all, and 72h TTL](BL-810-host-queue-selection-poll-clear-all-and-ttl.md) —
   introduced `originTopicId` on `CursorBridgeQueuedPrompt` for the TTL

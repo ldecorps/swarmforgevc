@@ -38,5 +38,5 @@ Acceptance: `specs/features/BL-833-host-agent-activity-feed.feature`
 
 ## Related
 
-- Cursor Remote commands: `docs/how-to/BL-698-telegram-cursor-operator-commands.md`
+- Host operator commands: `docs/how-to/BL-698-telegram-cursor-operator-commands.md`
 - Screen that renders this feed: BL-834 (out of scope here)

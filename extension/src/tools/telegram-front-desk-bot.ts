@@ -1858,7 +1858,7 @@ export async function openSubjectAndRecord(targetPath: string, topicId: number |
   const cursorBridgeRoutingEnabled = letsTalkProvider === '' || letsTalkProvider === 'cursor';
   if (cursorTopicId !== undefined && topicId === cursorTopicId) {
     if (cursorBridgeRoutingEnabled) {
-      throw new Error('openSubjectAndRecord: Cursor Remote topic is owned by telegram-cursor-bridge, not the front desk');
+      throw new Error('openSubjectAndRecord: Host topic is owned by telegram-cursor-bridge, not the front desk');
     }
     // Provider switched away from cursor: adopt this legacy topic into the
     // front-desk operator subject so pings continue to get answers.

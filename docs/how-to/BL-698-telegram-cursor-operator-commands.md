@@ -1,6 +1,9 @@
-# BL-698 — Telegram Cursor Remote operator commands
+# BL-698 — Telegram Host operator commands
 
-Phone-first ops on the Cursor Remote topic. Principal-only. Wrong topic or unauthorised sender never mutates swarm state.
+Phone-first ops on the **Host** topic (the standing display name since
+BL-725; the topic is bound by subject id, not by name, so this is a
+rename in place, not a new topic). Principal-only. Wrong topic or
+unauthorised sender never mutates swarm state.
 
 Full command map: [BL-698 reference spec](../reference/specs/BL-698-telegram-cursor-operator-command-surface.md).
 Confirm + env-reload note: [BL-702 how-to](BL-702-operator-confirm-env-reload.md).
@@ -72,7 +75,7 @@ the fallback text still names the same Confirm plan / Reject plan replies.
 
 ## Lifecycle leftovers (BL-698 close-out)
 
-Hard confirm on Cursor Remote (two-step), then:
+Hard confirm on Host (two-step), then:
 
 - `/stop` — stop-mode menu: **Drain-stop** (wait for empty pipeline, then kill) or **Emergency-stop** (kill now)
 - `/kill-all` — hard kill via `kill_all_swarm`

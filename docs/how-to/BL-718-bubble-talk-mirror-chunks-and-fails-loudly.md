@@ -2,18 +2,18 @@
 
 Successful Let's Talk turns leave a durable **You / Bubble** transcript in the
 standing Bubble Telegram topic. The mirror must not dump ordinary talk onto
-Cursor Remote, and it must not silently drop long replies or failed sends.
+Host, and it must not silently drop long replies or failed sends.
 
 ## Behaviour
 
 1. **Bubble topic when bound** — `mirrorLetsTalkTurnToBubble` posts to the bound
    Bubble topic (`bubbleTopicId` / topic-map `BUBBLE`) via
    `effectiveLetsTalkMirrorTopicId`. When Bubble is unbound, the mirror falls
-   back to **Cursor Remote** (BL-709 scenario 07). When Bubble and Cursor Remote
+   back to **Host** (BL-709 scenario 07). When Bubble and Host
    share the same id, treat Bubble as unbound — never duplicate into the host
    topic.
 2. **Shared chunker** — text is split with `splitTelegramChunks` (same helper
-   Cursor Remote uses). Length alone never truncates a transcript.
+   Host uses). Length alone never truncates a transcript.
 3. **Fails loudly** — when a chunk send returns `success: false` after retries,
    the bridge logs and appends an operator event
    `type: bubble-talk-mirror-failed` (topic, chunk index, error). The phone

@@ -110,3 +110,6 @@ notes: |
 source: |
   Human via Let's Talk / Cursor 2026-07-30. Drained from
   `backlog/INTAKE-rename-cursor-remote-topic-to-host.md`.
+bounce_count: 1
+bounce_history:
+  - { at: 2026-09-06, by: QA, blamed: documenter, class: behavior, commit: 6a8dddf30e, evidence: backlog/evidence/BL-725-QA-20260906.md }

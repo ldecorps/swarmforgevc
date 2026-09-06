@@ -21,7 +21,7 @@ import {
 } from './telegramCursorOperatorCore';
 
 export const CURSOR_BRIDGE_SUBJECT_ID = 'CURSOR_REMOTE';
-export const CURSOR_BRIDGE_TOPIC_NAME = 'Cursor Remote';
+export const CURSOR_BRIDGE_TOPIC_NAME = 'Host';
 /** Standing Telegram topic for Float Companion / Let's Talk discussion mirror. */
 export const BUBBLE_SUBJECT_ID = 'BUBBLE';
 export const BUBBLE_TOPIC_NAME = 'Bubble';

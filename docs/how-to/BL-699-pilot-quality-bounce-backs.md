@@ -12,7 +12,7 @@ prompt is the contract for how the agent wears every pipeline hat.
    return to that role, fix it with a clear rationale, and re-walk downstream.
    Do not paper over issues just because the run already passed that stage.
    Do not rush a QA stamp.
-3. **Human questions use a Telegram poll** on Cursor Remote — clear question
+3. **Human questions use a Telegram poll** on Host — clear question
    plus discrete options; wait for the vote. Free-text-only asks are not enough.
    **Every poll must include an extra option labeled exactly `Need more detail`**
    so the human can say they lack context to answer. If that option wins, the

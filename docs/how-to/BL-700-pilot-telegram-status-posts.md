@@ -1,6 +1,7 @@
 # How to read /pilot Telegram status posts (BL-700)
 
-When `/pilot` runs on Cursor Remote, the agent must post structured status
+When `/pilot` runs on Host (the standing topic's display name since
+BL-725), the agent must post structured status
 to the topic — not only refresh `progress.json` or playful SDK status.
 
 ## Mandatory posts
@@ -17,7 +18,7 @@ Optional short posts for interesting non-vacuous scenarios are allowed.
 
 ## Human questions
 
-Still use a native Telegram poll on Cursor Remote (BL-699 rule). Free-text-only
+Still use a native Telegram poll on Host (BL-699 rule). Free-text-only
 asks are not enough.
 
 ## Where it lives

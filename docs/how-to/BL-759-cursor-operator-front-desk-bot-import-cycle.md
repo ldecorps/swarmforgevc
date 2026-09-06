@@ -35,5 +35,5 @@ Expect **PASSED** with no forbidden edges. Acceptance:
 
 ## Related
 
-- Cursor Remote operator commands: `docs/how-to/BL-698-telegram-cursor-operator-commands.md`
+- Host operator commands: `docs/how-to/BL-698-telegram-cursor-operator-commands.md`
 - Shared-token front desk / bridge fan-out: `docs/how-to/BL-764-front-desk-shared-token-bridge-fanout.md`
