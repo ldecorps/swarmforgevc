@@ -1,5 +1,5 @@
 id: BL-1408
-title: "The remaining hand-written copies of the commit-guard chain list derive from the runner or hook they exercise through BL-1398's helper: test_run_commit_guards.sh has exited 127 at case 01 since BL-1385's guard joined the runner on 2026-09-04 (BL-1395's doubled it), and test_pre_merge_commit_hook.sh and the BL-1252 property test carry the same shape, in sync only by hand"
+title: "The remaining hand-written copies of the commit-guard chain list derive from the runner or hook they exercise through BL-1398's helper: test_run_commit_guards.sh has exited 127 at case 01 since BL-1385's guard joined the runner on 2026-09-04 (BL-1395's doubled it), test_pre_merge_commit_hook.sh and the BL-1252 property test carry the same shape, in sync only by hand, and test_pipeline_code_on_main_guard.sh copies the chain guard by guard and has failed case 02 with exit 127 since the same day (fourth copy, found 2026-09-06)"
 milestone: M8
 type: defect
 severity: high
@@ -27,6 +27,7 @@ required_wiring:
   - 'swarmforge/scripts/test/test_run_commit_guards.sh::commitGuardFixtureSet.js::the runner test must read the runner through BL-1398 helper for its stub set; absent today (grep returns 0)'
   - 'swarmforge/scripts/test/test_pre_merge_commit_hook.sh::commitGuardFixtureSet.js::the pre-merge hook test must read the hook through the same helper; absent today (grep returns 0)'
   - 'extension/test/bl1252CommitGuardAggregationInvariants.property.test.js::deriveCommitGuardFixtureSet::the BL-1252 property test must derive its guard list from the runner; absent today (grep returns 0)'
+  - 'swarmforge/scripts/test/test_pipeline_code_on_main_guard.sh::commitGuardFixtureSet.js::the pipeline-code guard test must copy both chains guard sets through the same helper; absent today (grep returns 0)'
   - 'specs/pipeline/steps/bl1408CommitGuardTestsDeriveTheirSetSteps.js::registerSteps::the handler file exists so discovery registers every scenario (BL-1371)'
 
 invariants:
@@ -34,10 +35,13 @@ invariants:
   - "Exactly one parser of run_guard lines exists in the repo (BL-1401 invariant 3, carried forward): the three tests consume BL-1398's helper and none carries a second parse."
   - "The only guard any of the three tests names by hand is the expensive tier's single member, check_property_suite_drift.sh, and each test that names it asserts it is in the derived set - so that one constant cannot drift from the runner either."
 
-human_approval: approved
+human_approval: pending
 approval_context: >
-  A new feature file is authored here, so it needs a tap. No choice is posed
-  and there are no ruling_options. Surfaced by the coder on BL-1275
+  Re-pended 2026-09-06 (deliberately - see notes): scenario 04 was added
+  for a fourth hand-written copy of the chain list found the same day; the
+  three scenarios you approved on 2026-09-05 (74012e2058) are unchanged.
+  No choice is posed and there are no ruling_options. Originally: a new
+  feature file is authored here, so it needs a tap. Surfaced by the coder on BL-1275
   (2026-09-05): the runner test exits 127 at case 01. Reproduced by the
   specifier the same pass; the two in-sync copies were found by grepping
   every file that names a chain guard.
@@ -80,9 +84,10 @@ description: |
   This ticket sweeps every remaining copy so there is no fourth. Enumerated
   2026-09-05 by grepping every file that names
   `check_feature_handler_registration.sh`; the other hits (the bl1303,
-  bl1332 and bl1375 handlers, `land_step_lib.bb`'s replay tree-guard list,
-  `test_pipeline_code_on_main_guard.sh`) reference one guard for their own
-  reasons and are not copies of the chain list.
+  bl1332 and bl1375 handlers, `land_step_lib.bb`'s replay tree-guard list)
+  reference one guard for their own reasons and are not copies of the
+  chain list. `test_pipeline_code_on_main_guard.sh` was listed among them
+  at mint and that reading was wrong - see "Since mint", the fourth copy.
 
   ## How (direction, not mandate)
 
@@ -133,14 +138,41 @@ description: |
     exits 127 on main today, the standing red this ticket's register row
     names. Any guard the runner names between now and this landing is in
     scope by derivation, not by a further hand edit.
-  The landing commit removes this ticket's row from `backlog/standing-reds.tsv`
-  (standing-red rule 2, 2026-09-05).
+  - **The fourth copy (coder note, 2026-09-06T11:56Z, `unowned red`;
+    reproduced by the specifier the same pass).**
+    `test_pipeline_code_on_main_guard.sh` builds its fixture by copying the
+    chain guard by guard (lines 33-46 and 55: eleven `cp` lines naming each
+    guard and lib) and then copies the REAL `run_commit_guards.sh` and both
+    hooks beside them. That is the chain list written as `cp` lines. The
+    runner names four guards the copy set lacks - `check_handler_module_graph.sh`
+    (BL-1385, 09-04), `check_bb_scripts_load.sh` (BL-1395, 09-04),
+    `check_standing_red_register.sh` (BL-1428, 09-05),
+    `check_constitution_doc_citations.sh` (BL-1440, 09-06) - so every
+    commit the fixture attempts under the QA role is refused with four
+    exit-127 "failed unexpectedly" lines. Case 01 passes by coincidence (a
+    refusal is what it expects); case 02 fails ("expected the QA role to be
+    allowed to commit extension/src/ on main"), and the test's `fail`
+    exits, so cases 03-07 and the BL-925 cases never run. Red since
+    2026-09-04, the day the first missing guard joined the runner
+    (`9121b628c9`). It is a `standing` manifest row; register row added
+    2026-09-06 naming this ticket. Fix by the same derivation: the copy
+    set is `deriveCommitGuardFixtureSet({ repoRoot }).files` (the pre-commit
+    chain) plus the pre-merge-commit hook's `parseRunGuardEntries` set,
+    copied in a loop - the `mkFixtureRepo` shape BL-1401 gave the BL-632
+    acceptance handler - so the eleven `cp` lines go and no guard is named
+    by hand (invariants 1 and 2 apply to it as to the other three).
+    Scenario 04 gates it.
+  The landing commit removes BOTH of this ticket's rows from
+  `backlog/standing-reds.tsv` (standing-red rule 2, 2026-09-05).
 
 qa_e2e_procedure: |
   1. On the parcel: `bash swarmforge/scripts/test/test_run_commit_guards.sh`
      passes every case (was FAIL 01, status 127, on main 2026-09-05);
-     `bash swarmforge/scripts/test/test_pre_merge_commit_hook.sh` passes; the
-     BL-1252 property file passes under the property-suite command.
+     `bash swarmforge/scripts/test/test_pre_merge_commit_hook.sh` passes;
+     `bash swarmforge/scripts/test/test_pipeline_code_on_main_guard.sh`
+     passes every case including the BL-925 cases (was FAIL 02, four
+     exit-127 lines, on main 2026-09-06); the BL-1252 property file passes
+     under the property-suite command.
   2. Seam: copy `run_commit_guards.sh` and the chain lib into a scratch tree,
      append `run_guard check_bl1408_extra.sh` with that script present beside
      it, run the runner test against the seam: it passes, its derived-set
@@ -148,8 +180,10 @@ qa_e2e_procedure: |
   3. Same with a copy of `swarmforge/git-hooks/pre-merge-commit` and a third
      `run_guard` line, against the pre-merge test.
   4. `grep -cE '^\s*(ALL_GUARDS|MERGE_GUARDS|INDEX_GUARDS)\s*=' ` on each of
-     the three files returns 0; `grep -c commitGuardFixtureSet` on each
-     returns at least 1 (invariant 2). Case 10's regex names no guard.
+     the three files returns 0; `grep -c commitGuardFixtureSet` on each of
+     the FOUR files returns at least 1 (invariant 2); `grep -c 'cp .*check_'`
+     on test_pipeline_code_on_main_guard.sh returns 0. Case 10's regex
+     names no guard.
   5. Fixture roots are removed on the EXIT trap; nothing sweeps by prefix
      (BL-1385/BL-1390).
 
@@ -188,6 +222,22 @@ notes: |
   2026-09-04) names this ticket. The shift's only bounce was this shape
   (BL-1440 at QA, INDEX_GUARDS). Scenarios and invariants unchanged;
   human_approval stays as approved.
+
+  2026-09-06, specifier, on the coder's priority-00 `unowned red` note
+  (11:56Z) from BL-1444: `test_pipeline_code_on_main_guard.sh` case 02 -
+  the fourth copy this ticket's own description had excluded. Amended
+  rather than minted (Consolidation Authority, N:1: same helper, same fix
+  shape, same root cause; the ticket exists to be the sweep). Feature file
+  gains scenario 04 (a mirror of 01 for that file), so `human_approval`
+  goes back to `pending` DELIBERATELY - not an erased approval; the
+  original approval is `74012e2058` (2026-09-05) and the three approved
+  scenarios are byte-identical. Register row for the file added the same
+  commit, first_seen 2026-09-04 (the day the runner gained the first guard
+  the copy set lacks), owner this ticket. Evidence:
+  `backlog/evidence/BL-1408-fourth-copy-pipeline-code-guard-test-20260906.md`.
+  BL-1444 (active, coder) adds a guard to the pre-merge-commit hook and was
+  amended the same pass to hand-add it to `MERGE_GUARDS` and to the `cp`
+  list - the sixth and seventh hand edits, both removed by this landing.
 
 source: |
   Coder note to specifier, priority 10, 2026-09-05T02:33Z; coder evidence
