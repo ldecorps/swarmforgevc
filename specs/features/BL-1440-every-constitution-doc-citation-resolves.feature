@@ -1,7 +1,3 @@
-# acceptance-mutation-manifest-begin
-# {"version":1,"tested_at":"2026-09-06T00:01:48.338743238Z","feature_name":"BL-1440 Every docs path a constitution article cites resolves on disk","feature_path":"/home/carillon/swarmforgevc/.worktrees/hardender/specs/features/BL-1440-every-constitution-doc-citation-resolves.feature","background_hash":"74234e98afe7498fb5daf1f36ac2d78acc339464f950703b8c019892f982b90b","implementation_hash":"unknown","scenarios":[]}
-# acceptance-mutation-manifest-end
-
 Feature: BL-1440 Every docs path a constitution article cites resolves on disk
 
   BL-945 (2026-08-19) put a dangling-citation guard in the vitest suite:

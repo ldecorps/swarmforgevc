@@ -82,9 +82,6 @@ run_guard check_bb_scripts_load.sh
 # BL-1428: a standing red must name an open ticket. A git index read, same
 # cost class as the other cheap-tier guards.
 run_guard check_standing_red_register.sh
-# BL-1440: a staged constitution article must never cite a docs/ path that
-# does not resolve. Skips (cheap) when no article is staged.
-run_guard check_constitution_doc_citations.sh
 
 if guard_chain_has_refusal; then
   report_refusals

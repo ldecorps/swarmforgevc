@@ -27,3 +27,4 @@ hardening	extension/src/tools/telegram-front-desk-bot.ts,extension/src/tools/tel
 hardening	extension/src/onboarding/negotiationTelegramRelay.ts,extension/src/onboarding/negotiationTelegramRouting.ts,extension/src/tools/telegramFrontDeskBotCore.ts	BL-1441	2026-08-19	mutation gate deferred on BL-955 (host busy); owed run is BL-1441
 hardening	extension/src/metrics/bounceRevertGitAdapter.ts,extension/src/quality/bounceRevertVerdict.ts,extension/src/tools/record-bounce.ts	BL-1441	2026-08-19	mutation gate deferred on BL-954 (host load); owed run is BL-1441
 hardening	extension/src/concierge/pipelineBoard.ts	BL-1441	2026-08-19	mutation gate deferred on BL-956 (cooldown + host busy); owed run is BL-1441
+unit	extension/test/constitutionDocCitations.test.js	BL-1440	2026-08-27	dangling docs/ citations in constitution articles (docs/deprecated/ since 08-27, docs/design/*.md since 09-05); refuses every Stryker dry run; owner BL-1440
