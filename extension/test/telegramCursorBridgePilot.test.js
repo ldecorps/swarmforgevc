@@ -64,7 +64,7 @@ test('composePilotExpeditorPrompt is the full offline-expeditor brief', () => {
       '"already past role N" as a reason to paper over defects. Do not rush to a',
       'QA stamp over fixing upstream defects.',
       '',
-      'TELEGRAM STATUS POSTS (mandatory on Cursor Remote — not only progress.json',
+      'TELEGRAM STATUS POSTS (mandatory on Host — not only progress.json',
       'or playful SDK status):',
       '- Ticket change (start, switch, or handoff to another BL): post ticket id +',
       '  object (title / one-line purpose from YAML).',
@@ -73,7 +73,7 @@ test('composePilotExpeditorPrompt is the full offline-expeditor brief', () => {
       'Optional: short posts when interesting non-vacuous scenarios appear.',
       '',
       'HUMAN QUESTIONS: if you (any hat) need a decision or answer from the human,',
-      'you MUST ask with a native Telegram poll on the Cursor Remote topic. Clear',
+      'you MUST ask with a native Telegram poll on the Host topic. Clear',
       'question + discrete options. Wait for the vote. Do not rely on free-text-only',
       'asks. EVERY poll MUST include one extra option meaning the human needs more',
       'context before they can answer — label it exactly: "Need more detail". If',
@@ -85,7 +85,7 @@ test('composePilotExpeditorPrompt is the full offline-expeditor brief', () => {
       'long-idle — hung acceptance runners (`node --test`, `*.generated.test.js`,',
       'cucumber under disposable roots), leftover Stryker / mutation jobs, and',
       'related fixture babysitter / bridge processes under `/tmp/tmp.*` spawned for',
-      'the run. Do NOT kill the host Cursor Remote bridge, Operator, or live-window',
+      'the run. Do NOT kill the Host bridge, Operator, or live-window',
       'host processes. Do not rely solely on the host orphan janitor (~2h reap).',
       '',
       'REVIEW HATS (cleaner / hardener / architect during /pilot) — BL-749:',
@@ -163,7 +163,7 @@ test('composePilotExpeditorPrompt treats bounce-backs as first-class (BL-699)', 
 
 test('composePilotExpeditorPrompt requires Telegram poll for human questions (BL-699)', () => {
   const text = composePilotExpeditorPrompt('BL-699');
-  assert.match(text, /native Telegram poll on the Cursor Remote topic/);
+  assert.match(text, /native Telegram poll on the Host topic/);
   assert.match(text, /Do not rely on free-text-only\nasks/);
   assert.match(text, /Need more detail/);
   assert.match(text, /EVERY poll MUST include one extra option/);
@@ -201,7 +201,7 @@ test('composePilotExpeditorPrompt lands through the pilot-acceptance-gate CLI, n
 // BL-700 pilot-status-01..03
 test('composePilotExpeditorPrompt requires Telegram status posts (BL-700)', () => {
   const text = composePilotExpeditorPrompt('BL-700');
-  assert.match(text, /TELEGRAM STATUS POSTS \(mandatory on Cursor Remote/);
+  assert.match(text, /TELEGRAM STATUS POSTS \(mandatory on Host/);
   assert.match(text, /not only progress\.json/);
   assert.match(text, /Ticket change/);
   assert.match(text, /Hat \/ casquette change/);
@@ -240,7 +240,7 @@ test('composePilotExpeditorPrompt requires stage-boundary orphan cleanup (BL-701
   assert.match(text, /\*\.generated\.test\.js/);
   assert.match(text, /Stryker/);
   assert.match(text, /\/tmp\/tmp\.\*/);
-  assert.match(text, /Do NOT kill the host Cursor Remote bridge/);
+  assert.match(text, /Do NOT kill the Host bridge/);
   assert.match(text, /Do not rely solely on the host orphan janitor/);
 });
 
