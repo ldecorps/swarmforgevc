@@ -1,0 +1,174 @@
+id: BL-1451
+title: "BL-670's ticket-stage entries (stage, status, asOf, healthDot) reach nothing that renders: the board's only input is a bare role-to-ids record, the live grid inverts the map back into it, and no health dot has ever appeared on the board (found by BL-940's coder, 2026-09-06) - the tick hands the board the entries, rows carry status and as-of, and the dot renders on the caption line"
+milestone: M8
+type: defect
+severity: medium
+# medium: a human-facing artifact lacks a promised element (the dot) and
+# BL-670's invariant 2 has one consumer instead of two; nothing live is
+# degraded and no safety signal is broken. Not low: the board is the
+# operator's primary phone view and the dot is what BL-670 was rescoped
+# to deliver.
+status: todo
+epic: pipeline-board
+priority: 96
+direction: swarm-reported
+depends_on: []
+mutation_cost: medium
+slice_size_envelope: low
+required_stages: [coder, cleaner, architect, hardender, documenter, qa]
+
+acceptance: specs/features/BL-1451-the-board-renders-bl670s-stage-entries.feature
+
+human_approval: pending
+approval_context: >
+  A new feature file is authored here, so it needs a tap. No choice is
+  posed and there are no ruling_options. One placement decision is firm
+  unless you Amend: the dot renders at the head of the ticket's caption
+  line (inside the board block, where captions already live), never in
+  the fixed-width stage cells, so BL-585's width budget and your 2026-08-19
+  layout ruling stand. Glyphs 🟢 🟡 🔴 are the default; the Art Director
+  may replace them by brief. BL-940 (active, parked) now depends on this
+  ticket for the as-of time its elapsed mark renders.
+
+invariants:
+  - "Every stage-entry field the board renders or carries (health dot; status and as-of for BL-940) comes from BL-670's readTicketStageMap entries, never re-derived by the board or its adapters (BL-670 invariant 2: one derivation, two consumers)."
+  - "A ticket with no entry, or an entry without a dot, renders exactly as today: the stage cells, the grid line width and every other section are byte-identical (BL-585's width budget stands)."
+
+required_wiring:
+  - 'extension/src/tools/telegram-front-desk-bot.ts::readTicketStageEntries::the production board adapters (line ~3438, the pre-existing live consumer) must supply the entries beside readRoleHeldTickets; the name is fixed here so the anchor is a call site; absent today'
+  - 'extension/src/concierge/conciergeTick.ts::readTicketStageEntries::syncBoardIfWired must thread the entries into computePipelineBoard; absent today'
+  - 'extension/src/concierge/pipelineBoard.ts::healthDot::the row builder and caption line must read the dot; absent today (grep returns 0)'
+  - 'specs/pipeline/steps/bl1451BoardRendersStageEntriesSteps.js::registerSteps::the handler file exists so discovery registers every scenario (BL-1371)'
+
+description: |
+  ## What is wrong
+
+  BL-670 (done 2026-08-30) rescoped to "semantics + health dots only": the
+  map became `{ticket -> {stage, status, asOf, healthDot}}`
+  (`extension/src/swarm/swarmState.ts` `TicketStageEntry`,
+  `readTicketStageMap`, lines 171-260), written by
+  `pipeline_stage_cli.bb report` on every tick (BL-487). Its feature
+  drives the derivation and asserts `entry.healthDot` (scenario 04); no
+  scenario renders anything, and its wiring anchors pin the bb literals
+  and the handler registration, not a renderer.
+
+  Verified 2026-09-06 (coder evidence
+  `backlog/evidence/BL-940-coder-spec-gap-20260906.md`, 73a6bafa59 on the
+  coder branch; re-read by the specifier):
+
+  - `grep -rn "healthDot\|asOf" extension/src` outside tests hits only
+    `swarmState.ts` (the definition and its normaliser).
+  - `computePipelineBoard(roleHeldTickets: Record<string, string[]>, ...)`
+    (`pipelineBoard.ts` 819-831) takes a role-to-ids record; its row builder
+    derives the stage from the role key (`idsByStageFromRoleHeldTickets`,
+    480-500). `PipelineBoardTicketMeta` (143-160) has no entry field.
+  - The tick's adapter contract is `readRoleHeldTickets?: () => Record<string, string[]>`
+    (`conciergeTick.ts` 214, 645-678); the production adapter
+    (`telegram-front-desk-bot.ts` 3438) supplies `readLiveRoleHeldTickets`.
+  - The live grid (`bridge/pipelineGridLive.ts` 49) calls
+    `readTicketStageMap` and immediately inverts it back to role-to-ids
+    (`invertTicketStageToRoleHeldTickets`), discarding status, asOf and
+    healthDot.
+  - `git log -- extension/src/concierge/pipelineBoard.ts` has no BL-670
+    commit.
+
+  So BL-670's invariant 2 ("the board and BL-659's completion ring read the
+  same stage/status/as-of") has no board consumer, and BL-940 - whose
+  elapsed-time mark "reads asOf from BL-670's derivation; do not re-derive
+  it" - cannot start: the plumbing it assumed is not there.
+
+  ## What is wanted
+
+  - The tick's board adapters gain `readTicketStageEntries` (the
+    production adapter returns `readTicketStageMap(targetPath)`), and
+    `syncBoardIfWired` threads the entries into `computePipelineBoard`
+    beside `roleHeldTickets` (wiring anchors 1-2). Optional, like the
+    other adapters: absent means "no entries", never a throw.
+  - Each board row for a mapped ticket carries the entry's `status`,
+    `asOf` and `healthDot` (scenario 03) - the data contract BL-940's mark
+    reads. Unmapped tickets carry none.
+  - The health dot renders at the head of the ticket's caption line,
+    🟢 / 🟡 / 🔴 by colour (scenario 01, wiring anchor 3). The stage cells
+    are untouched. A ticket with no entry or no dot renders exactly as
+    today (scenario 02, invariant 2).
+  - Everything the board shows comes from the entries (invariant 1): no
+    second derivation of health or as-of in `pipelineBoard.ts`.
+
+  ## How (direction, not mandate)
+
+  - `PipelineBoardRow` gains `stageEntry?: TicketStageEntry` (or the three
+    fields); `computePipelineBoard` takes `ticketStageEntries?: Record<string, TicketStageEntry>`
+    as a new optional argument in the same position family as
+    `ticketMeta`, so the existing callers and tests compile unchanged.
+  - `gridCaptionLine` (924-932) prefixes the glyph when `row.stageEntry?.healthDot`
+    is set: `${glyph} ${displayId} ...`. One glyph map, exported, so
+    BL-940 and the Art Director's brief have one place to change it.
+  - `pipelineGridLive.ts` may keep inverting for its own grid; this
+    ticket does not touch the bridge grid.
+  - Handler `specs/pipeline/steps/bl1451BoardRendersStageEntriesSteps.js`
+    builds a map and role-held record in memory and calls
+    `computePipelineBoard` / the renderer directly (pure functions), the
+    shape BL-670's and BL-585's handlers already use; nothing reads the
+    live `.swarmforge/`.
+  - Documenter: `docs/reference/Specification.MD`'s pipeline-board entry
+    gains the dot and the caption placement; the art-director inventory
+    entry for the board (docs/design/artifact-inventory.md) notes the dot.
+    No diagram trigger fires.
+  - QA: the board is an inventoried human-facing artifact (Article 1.10):
+    send the Art Director the rendered board on a phone for sign-off.
+
+  ## Out of scope
+
+  - The elapsed-time mark and the legend line: BL-940, which now depends
+    on this ticket.
+  - The bridge grid's own rendering of status or dot.
+  - BL-659's completion ring.
+
+qa_e2e_procedure: |
+  1. The BL-1451 feature passes all six runs; BL-670's, BL-585's and
+     BL-1045's features stay green; `npm test` green.
+  2. Live: with the swarm running and at least one active ticket with a
+     recorded bounce (`bounce_count` >= 1), open the pinned board in
+     Telegram on a phone: that ticket's caption line begins with 🟡 or 🔴,
+     a clean ticket's with 🟢, and the grid columns are aligned exactly as
+     before (compare with the previous pin).
+  3. `grep -c "readTicketStageEntries" extension/src/tools/telegram-front-desk-bot.ts extension/src/concierge/conciergeTick.ts`
+     is at least 1 each; `grep -c healthDot extension/src/concierge/pipelineBoard.ts`
+     is at least 1.
+  4. Sign-off: the Art Director's `LGTM` or defect list on the rendered
+     board is recorded in the QA evidence (Article 1.10).
+
+notes: |
+  Minted 2026-09-06 by the specifier on the coder's priority-00 note
+  "BL-940: asOf/healthDot from BL-670 unused anywhere; board never gets
+  it" and its evidence (73a6bafa59, coder branch). Adjudication of the
+  coder's three questions: (1) confirmed against the live tree; (2) split,
+  not folded - BL-940's contract is the legend and the elapsed mark, the
+  plumbing is BL-670's missing consumer, and BL-940 (active, unheld) is
+  parked behind this ticket; (3) BL-940's premise corrected the same pass.
+  BL-670 is not reopened: its derivation is correct and landed; this is
+  the consumer it never had - the BL-1235 shape (a mechanism shipped
+  green with zero live callers), caught here by the next ticket to need
+  it rather than by a gate.
+
+  Wiring anchors 1-3 name pre-existing consumer files and literals absent
+  today, so each gates a real call site; the handler anchor is BL-1371's.
+
+  INVEST at mint: Independent (BL-670 and BL-585 landed; BL-940 waits on
+  this, not the reverse), Negotiable (row field shape and argument
+  position are direction; the caption placement and the glyph default
+  are the contract), Valuable (one outcome: the dot BL-670 promised is on
+  the board), Estimable (one adapter, one thread-through, one row field,
+  one caption prefix, one handler; medium for the three-file touch),
+  Small (three scenarios, six runs, two invariants), Testable (pure
+  compute/render over in-memory maps; the live phone check at QA).
+
+source: |
+  Coder note 2026-09-06T21:05:28Z; backlog/evidence/BL-940-coder-spec-gap-20260906.md
+  (coder branch 73a6bafa59); extension/src/swarm/swarmState.ts 171-260;
+  extension/src/concierge/pipelineBoard.ts 143-160, 300-324, 480-500,
+  819-831, 917-935, 990; extension/src/concierge/conciergeTick.ts 214,
+  645-678; extension/src/tools/telegram-front-desk-bot.ts 3438;
+  extension/src/bridge/pipelineGridLive.ts 49; BL-670 done ticket
+  (rescoping ruling 2026-08-19, invariant 2, required_wiring) and feature
+  scenario 04; BL-940 active ticket description "How".
