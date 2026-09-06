@@ -419,6 +419,78 @@
       (str/replace "<" "&lt;")
       (str/replace ">" "&gt;")))
 
+;; BL-1442 (Art Director brief, docs/design/briefs/2026-09-06-briefing-list-item-scan-weight.md):
+;; the leading ticket-id LABEL of an <li> item - the run at its start made
+;; of ticket ids (BL-<n>, GH-<n>), the connectives "and"/"/"/","/"+"/"&",
+;; and a parenthesised aside directly after an id (its OWN content, even a
+;; ticket-id-shaped substring inside it, is never part of the label) -
+;; ending at the first word that is none of these. An item that does not
+;; OPEN with a ticket id is untouched, including one that already opens
+;; with its own markdown bold (**Active** renders <strong>Active</strong>
+;; before this ever runs - "Active" is not a ticket id, so nothing here
+;; matches at position 0 and the <li> passes through unchanged).
+;;
+;; Pure text scan, not a lexer over HTML: called on <li> inner text before
+;; any tag this function itself would add, and a leading label is always
+;; plain text in practice (ticket ids and connectives never arrive
+;; wrapped in markdown's own <code>/<strong> at the very start of an
+;; item) - the label grammar the ticket declares names only ticket ids,
+;; connectives and asides, nothing about inline code spans.
+(def ^:private ticket-id-re #"^(?:BL|GH)-\d+")
+(def ^:private label-whitespace-re #"^\s+")
+(def ^:private label-and-re #"^and\b")
+;; escape-html (markdown_to_html_lib.bb) runs BEFORE this ever sees the
+;; text, so a literal "&" from the source markdown always arrives here as
+;; the 5-character entity "&amp;" - matched whole, never as a bare "&"
+;; that would otherwise misparse as one character and leave "amp;..."
+;; behind, unrecognized, ending the label early.
+(def ^:private label-symbol-re #"^(?:&amp;|[/,+])")
+(def ^:private label-aside-re #"^\([^()]*\)")
+
+;; Returns a vector of [start end) character-offset pairs into `text` - one
+;; per ticket id in the leading label, in order - or [] when the item does
+;; not open with a ticket id. Only ticket ids the loop consumes DIRECTLY
+;; (never ones found inside an already-consumed aside) become a span.
+(defn- leading-label-bold-spans [text]
+  (if-not (re-find ticket-id-re text)
+    []
+    (loop [pos 0
+           spans []]
+      (let [rest-text (subs text pos)]
+        (if-let [m (re-find ticket-id-re rest-text)]
+          (recur (+ pos (count m)) (conj spans [pos (+ pos (count m))]))
+          (if-let [m (re-find label-whitespace-re rest-text)]
+            (recur (+ pos (count m)) spans)
+            (if-let [m (re-find label-and-re rest-text)]
+              (recur (+ pos (count m)) spans)
+              (if-let [m (re-find label-symbol-re rest-text)]
+                (recur (+ pos (count m)) spans)
+                (if-let [m (re-find label-aside-re rest-text)]
+                  (recur (+ pos (count m)) spans)
+                  spans)))))))))
+
+;; Applies the spans back-to-front so earlier offsets are never shifted by
+;; an insertion made for a later one.
+(defn- wrap-bold-spans [text spans]
+  (reduce (fn [s [start end]]
+            (str (subs s 0 start) "<strong>" (subs s start end) "</strong>" (subs s end)))
+          text
+          (reverse (sort-by first spans))))
+
+(defn- bold-leading-ticket-ids-in-li [li-inner-html]
+  (wrap-bold-spans li-inner-html (leading-label-bold-spans li-inner-html)))
+
+;; Only <li>...</li> content is ever touched - a <p>/<h1-6>/<blockquote>
+;; that happens to start with the same shape is untouched, because this
+;; only ever looks inside an <li>. render-list-block never nests a <li>
+;; inside another and never puts a newline inside one (its own wrapped-
+;; continuation lines are already joined with a single space), so a
+;; non-greedy match between one <li> and the next </li> can never span
+;; more than one real item.
+(defn- bold-leading-ticket-ids [html]
+  (str/replace html #"<li>(.*?)</li>"
+               (fn [[_ inner]] (str "<li>" (bold-leading-ticket-ids-in-li inner) "</li>"))))
+
 ;; BL-1419: every style the phone layout depends on, carried INLINE on the
 ;; element it styles - mail clients strip <style> blocks, so a <style>
 ;; block is never used at all (invariant 2: stripping every <style> block
@@ -456,7 +528,10 @@
    the first section, every block element's spacing/type style carried
    INLINE (never a <style> block), and the diagrams section under its own
    heading after the body - never before or interleaved (BL-393's own
-   body-then-diagrams ordering, kept)."
+   body-then-diagrams ordering, kept). BL-1442: each <li>'s leading
+   ticket-id label is bolded BEFORE style-inline-elements runs, so the
+   existing \"strong\" -> \"font-weight:600\" entry styles the new tags
+   with no new style code."
   [date-label body-html diagram-html]
   (let [container-style (str "margin:0;padding:16px;max-width:640px;"
                               "font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Arial,sans-serif;"
@@ -470,7 +545,7 @@
                                  (style-inline-elements diagram-html)))]
     (str "<div style=\"" container-style "\">"
          header
-         (style-inline-elements body-html)
+         (style-inline-elements (bold-leading-ticket-ids body-html))
          (or diagrams-section "")
          "</div>")))
 
