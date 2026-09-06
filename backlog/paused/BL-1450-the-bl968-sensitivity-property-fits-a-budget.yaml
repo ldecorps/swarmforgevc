@@ -1,0 +1,163 @@
+id: BL-1450
+title: "bl968MaterializedGuardSensitivity spawns a fresh process per draw over 3x2 cells x 4 runs (96 spawns, 164-193 s alone, 346 s under the lane's pool), above its own 300 s timeout and the property guard's 180 s rerun ceiling, so every full run times it out and BL-1407's rerun net cannot clear it - the guard refused BL-676's unrelated commit on 2026-09-06; the file fits a per-file budget with every cell kept and the reach floors re-derived, never dropped"
+milestone: M8
+type: defect
+severity: high
+# high (standing-red rule 2026-09-05): red in every full property-lane run
+# on this host this shift (BL-1348 coder run, BL-1409 QA run, BL-676 commit
+# run) and structurally beyond the rerun net's ceiling, so the commit-time
+# guard refuses commits that never touched it. A gate that refuses
+# unrelated work is a broken safety signal, not a contained nuisance.
+status: todo
+epic: code-quality-gates
+priority: 12
+direction: swarm-reported
+depends_on: []
+mutation_cost: low
+slice_size_envelope: low
+required_stages: [coder, cleaner, architect, hardender, documenter, qa]
+
+acceptance: specs/features/BL-1450-the-bl968-sensitivity-property-fits-a-budget.feature
+
+human_approval: pending
+approval_context: >
+  A new feature file is authored here, so it needs a tap. No choice is
+  posed and there are no ruling_options. Minted by the specifier on the
+  coder's priority-00 note from the BL-676 parcel (2026-09-06T20:26Z). It is
+  the same directive as BL-1349 ("drop numRuns on properties whose body
+  spawns a process; target no single file > 15 s") applied to a file
+  BL-1349 does not name - BL-1349 is active and names three other files,
+  so this is a sibling by file, not a widening. The budget here is 60 s
+  rather than 15 s because each of the 24 cells needs at least one real
+  spawn; the ticket says 15 s is welcome if the guard-under-test can be
+  driven in-process without losing the fresh-process property BL-968 is
+  about.
+
+invariants:
+  - "Every class x depth cell is exercised at least once per run by construction, and the reach floors are asserted after the run, re-derived from RUNS_PER_CELL (class floor = depths x runs, depth floor = classes x runs) rather than dropped: BL-1062 invariant 2 stands."
+  - "No property is deleted and no assertion is weakened: a planted load-time-binding module of any class at any depth still turns the guard red naming it, and the file still runs the guard in a fresh process."
+
+required_wiring:
+  - 'specs/pipeline/steps/bl1450Bl968SensitivityFitsBudgetSteps.js::registerSteps::the handler file exists so discovery registers every scenario (BL-1371)'
+
+description: |
+  ## What is wrong
+
+  `extension/test/bl968MaterializedGuardSensitivity.property.test.js`
+  (BL-968; cells iterated by BL-1062, f476e976a3) materializes the current
+  pipeline once, then for each of 3 classes x 2 depths draws
+  `RUNS_PER_CELL = 4` runs, each planting a load-time-binding module and
+  running the BL-761 gate's registry load in a fresh process: 96 spawns
+  per run under a 300 s test timeout. Measured this shift on this host
+  (20 cores, load average 9-13 from the live swarm):
+
+  - alone: 164-193 s (coder, BL-1348 evidence; QA, BL-1409 evidence) and
+    250 s in the specifier's own solo run at 20:27-20:31Z (passed 1/1,
+    load average 6.8-11.8): above the 180 s rerun ceiling even alone;
+  - under the lane's pool in a full run: 346 s, then `Test timed out in
+    300000ms` (the coder's retained refusal log, BL-676 commit, 20:25Z);
+  - in BL-1348's runs under a pool of 15: timed out both times.
+
+  `check_property_suite_drift.sh` re-runs each red file alone under a
+  SHARED 180 s ceiling (BL-1407, `RERUN_CEILING_SECONDS_DEFAULT=180`,
+  seam `SWARMFORGE_PROPERTY_RERUN_CEILING_SECONDS`); a file whose solo
+  time exceeds the ceiling "counts as still-failing, never as a pass"
+  (docs/how-to/BL-570-property-suite-drift-guard.md). So every full run
+  that times bl968 out refuses the commit, whatever the commit touched:
+  BL-676's coder was refused on a docs-and-report parcel.
+
+  BL-1349 (active) budgets the three files that dominated the lane's tail
+  when it was measured on 2026-09-02 (79 s, 37 s, 32 s) and scopes out
+  "the other 103 spawn-heavy files". bl968 is not among its three and is
+  now the lane's longest file by a factor of two.
+
+  ## What is wanted
+
+  - The file completes alone within 60 s on this host and passes
+    (scenario 01); 15 s if the guard-under-test can be exercised without a
+    spawn per draw while keeping BL-968's fresh-process property.
+  - Every cell is still exercised and every reach floor still asserted,
+    the floors re-derived from the run count by construction (scenario
+    02, invariant 1): with `RUNS_PER_CELL = 1` each class is drawn
+    DEPTHS x 1 = 2 times and each depth CLASSES x 1 = 3 times, so the
+    floors become 2 and 3 - computed from the constants, never typed as
+    5 and 6 again.
+  - A planted module of any class at any depth still turns the guard red
+    naming it (scenario 03, invariant 2).
+  - The landing commit removes this ticket's row from
+    `backlog/standing-reds.tsv` (standing-red rule 2).
+
+  ## How (direction, not mandate)
+
+  - `RUNS_PER_CELL` 4 -> 1 and `CLASS_FLOOR`/`DEPTH_FLOOR` derived from
+    `DEPTHS.length * RUNS_PER_CELL` and `CLASSES.length * RUNS_PER_CELL`
+    (BL-1062's own comment already states those products). Keep the
+    `materializeCurrentPipeline()` shared root. If a cell's planted module
+    and the guard run can share one spawn per cell, the budget drops
+    further; the test timeout comes down with it (never above the guard's
+    rerun ceiling: a timeout the net cannot fit is a refusal of somebody
+    else's commit).
+  - Scenario 01/02's handler spawns the real file through
+    `vitest.properties.config.mjs` and reads the coverage line the test
+    prints; scenario 03 reuses BL-968's own acceptance fixture steps for a
+    planted module.
+  - Documenter: the BL-1407 how-to (`docs/how-to/BL-570-property-suite-drift-guard.md`)
+    gains one sentence that a file's solo time must fit the shared rerun
+    ceiling, with this incident as the example. No diagram trigger fires.
+
+  ## Out of scope
+
+  - The ceiling's value and its shared-versus-per-file shape (BL-1407's
+    design; revisit only if a second file lands in the same trap).
+  - BL-1349's three files and BL-1348's pool sizing.
+  - The 54 twenty-second timeouts the same full run produced under load:
+    the BL-1407 rerun cleared every one of them except this file's; they
+    are BL-1348's and BL-1349's problem.
+
+qa_e2e_procedure: |
+  1. `cd extension && npx vitest run --config vitest.properties.config.mjs test/bl968MaterializedGuardSensitivity.property.test.js`
+     three times in the QA pane: each passes in under 60 s and prints
+     `BL-968 sensitivity coverage over 6 draws:` with every class and depth
+     present (was 164-193 s over 24 draws).
+  2. The BL-1450 feature passes all five runs; BL-968's and BL-1062's
+     features stay green.
+  3. `npm run test:properties` in the QA pane: bl968 is not among the
+     timed-out files, and a commit through the property guard on this
+     parcel is not refused for it.
+  4. The landing removes the BL-1450 row from `backlog/standing-reds.tsv`.
+
+notes: |
+  Minted 2026-09-06 by the specifier on the coder's priority-00 note
+  "BL-968 timeout now blocks unrelated commits (BL-676); see BL-1348
+  evidence". Grepped first: no ticket names bl968; BL-1349 (active) names
+  three other files and scopes the rest out; BL-1062 (done) iterated the
+  cells and pinned the floors. Register row added the same commit (lane
+  property, first_seen 2026-09-06 - first recorded, in BL-1348's coder
+  evidence). Evidence:
+  `backlog/evidence/BL-1450-unowned-red-bl968-timeout-refuses-unrelated-commits-20260906.md`.
+  Interim unblock told to the coder: the documented seam
+  `SWARMFORGE_PROPERTY_RERUN_CEILING_SECONDS=600` on its own commit,
+  recorded in its evidence - never `SWARMFORGE_SKIP_PROPERTY_SUITE_GUARD`.
+
+  A wiring anchor beyond the handler is deliberately absent: the
+  deliverable is the test file itself, already run by the lane config, so
+  any anchor on it matches before and after (BL-1235).
+
+  INVEST at mint: Independent (BL-1349 shares the epic and the directive,
+  not a file; no unbuilt sibling), Negotiable (runs-per-cell versus a
+  spawn per cell is direction; the budget and the kept floors are the
+  contract), Valuable (one outcome: the lane's longest file fits the
+  rerun net and stops refusing unrelated commits), Estimable (two
+  constants and their derivation, one handler; low), Small (three
+  scenarios, five runs, two invariants), Testable (the real file spawned
+  under the lane config; BL-968's fixture).
+
+source: |
+  Coder note 2026-09-06T20:26:24Z; coder retained refusal
+  .worktrees/coder/.swarmforge/property-guard-refusals/refusal-000012-20260906T202511Z.log
+  (bl968 346348 ms, timed out at 300000 ms; 54 twenty-second timeouts in
+  the same run); BL-1348 coder evidence (bl968 ~180 s alone, 300 s blown
+  under pool 15); BL-1409 QA evidence (bl968 164-193 s alone);
+  swarmforge/scripts/check_property_suite_drift.sh 149-156;
+  docs/how-to/BL-570-property-suite-drift-guard.md 62-76; the test file
+  lines 58-90, 143-226; BL-1349 active ticket "How" and out-of-scope.
