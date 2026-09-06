@@ -79,6 +79,25 @@ test('spec-tree Mini App shell is served without auth and includes basic UI mark
   });
 });
 
+test('BL-1412: ?q= narrows the served tree to matching tickets; the same request without q returns the full tree', async () => {
+  const target = mkTmp();
+  writeTicket(target, 'active', 'BL-592', ['status: active', 'milestone: M8', 'epic: swarmforge-console']);
+  writeTicket(target, 'active', 'BL-100', ['status: active', 'milestone: M9']);
+
+  await withBridge(target, {}, async (handle) => {
+    const full = await fetch(`http://127.0.0.1:${handle.port}/spec-tree-state?token=${TOKEN}`);
+    const fullBody = await full.json();
+    assert.deepEqual(fullBody.tickets.map((t) => t.id).sort(), ['BL-100', 'BL-592']);
+
+    const filtered = await fetch(`http://127.0.0.1:${handle.port}/spec-tree-state?token=${TOKEN}&q=BL-592+title`);
+    assert.equal(filtered.status, 200);
+    const filteredBody = await filtered.json();
+    assert.equal(filteredBody.schemaVersion, 2);
+    assert.deepEqual(filteredBody.tickets.map((t) => t.id), ['BL-592']);
+    assert.deepEqual(filteredBody.milestones.map((m) => m.milestone), ['M8']);
+  });
+});
+
 test('console menu links to the spec tree screen', async () => {
   const target = mkTmp();
   await withBridge(target, {}, async (handle) => {
