@@ -23,6 +23,21 @@ const FILE_NAME = '2026-09-05.md';
 
 const FEATURE = "BL-1442 A briefing-email list item that opens with a ticket id renders that id in bold";
 
+// Fixture-root hygiene (BL-459's acceptance sibling): the shared
+// briefingEmailHarnessFixture.js helper (also used by briefingBodyHtmlSteps.js
+// and bl1419BriefingEmailReflowSteps.js, both pre-existing and out of scope
+// here) mkdtempSyncs a fixture dir but registers no cleanup of its own -
+// every scenario in this file leaked its temp dir until now. Registered
+// here, scoped to this file's own fixture roots only; the shared helper and
+// its other two callers are untouched (BL-1442's own "one brief, one
+// ticket" scope).
+const fixtureRoots = [];
+process.on('exit', () => {
+  for (const root of fixtureRoots) {
+    fs.rmSync(root, { recursive: true, force: true });
+  }
+});
+
 // Every Examples: column value must be load-bearing (engineering.prompt):
 // "nothing" is the one non-id value the <bold> column ever takes.
 function parseBoldColumn(bold) {
@@ -30,7 +45,12 @@ function parseBoldColumn(bold) {
 }
 
 function ensureBriefingsDir(ctx) {
-  return sharedEnsureBriefingsDir(ctx, 'aps-bl1442-briefing-bold-');
+  const alreadyHad = Boolean(ctx.briefingsDir);
+  const dir = sharedEnsureBriefingsDir(ctx, 'aps-bl1442-briefing-bold-');
+  if (!alreadyHad) {
+    fixtureRoots.push(dir);
+  }
+  return dir;
 }
 
 function writeBriefing(briefingsDir, content) {
