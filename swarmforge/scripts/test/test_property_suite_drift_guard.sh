@@ -6,6 +6,7 @@
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
+REPO_ROOT="$(cd "$SCRIPT_DIR/../../.." && pwd)"
 GUARD="$SCRIPT_DIR/../check_property_suite_drift.sh"
 PRE_COMMIT_HOOK="$SCRIPT_DIR/../../git-hooks/pre-commit"
 
@@ -109,28 +110,62 @@ pass "06: override lets a red suite through with overridden warning"
 git -C "$ROOT" reset -q HEAD
 rm -rf "$ROOT/extension"
 
-# ── 07: pre-commit wiring invokes the new guard (script must exist) ───────
+# ── 07: pre-commit wiring follows the FULL delegation (BL-1409) ──────────
+# BL-1252 made pre-commit a thin wrapper execing run_commit_guards.sh, which
+# is now the file that names the guard - a literal grep of the hook alone
+# is one hop too shallow (and the OLD fixture below, which copied only four
+# guard scripts for the pre-BL-1252 hook shape, would have had the copied
+# hook exec a runner it never had). propertyGuardIsWired (BL-1409,
+# specs/pipeline/steps/lib/) is the ONE check, reused here via `node -e` -
+# never a second parser of the runner's own guard-invocation lines (invariant 2).
+
+# The check itself, against the REAL repo - never the fixture below, which
+# only proves the BEHAVIOUR the delegation produces.
+OUT07CHECK="$(node -e '
+  const { propertyGuardIsWired } = require(process.argv[1]);
+  process.stdout.write(JSON.stringify(propertyGuardIsWired({ repoRoot: process.argv[2] })));
+' "$REPO_ROOT/specs/pipeline/steps/lib/bl1409PropertyGuardWiring.js" "$REPO_ROOT" 2>&1)"
+echo "$OUT07CHECK" | grep -q '"wired":true' \
+  || fail "07: propertyGuardIsWired must report the guard wired against the real repo, got: $OUT07CHECK"
+
+# The behavioural half: hook -> runner -> the guard's own skip-paths decision,
+# end to end, through a REAL `git commit`. SWARMFORGE_COMMIT_GUARD_DIR points
+# the copied runner at a directory holding the REAL property guard (plus the
+# libs it unconditionally sources) and a passing stub for every OTHER guard
+# the REAL runner derives (BL-1398's own helper) - never handoffd, never the
+# step registry, inside a scratch repo (the ticket's own How).
 mkdir -p "$ROOT/swarmforge/scripts" "$ROOT/swarmforge/git-hooks"
-cp "$GUARD" "$ROOT/swarmforge/scripts/check_property_suite_drift.sh"
-cp "$SCRIPT_DIR/../property_suite_standing_allowlist_lib.sh" "$ROOT/swarmforge/scripts/property_suite_standing_allowlist_lib.sh"
-cp "$SCRIPT_DIR/../property_suite_standing_allowlist.tsv" "$ROOT/swarmforge/scripts/property_suite_standing_allowlist.tsv"
-cp "$SCRIPT_DIR/../property_suite_shared_repo_guard.sh" "$ROOT/swarmforge/scripts/property_suite_shared_repo_guard.sh"
-cp "$SCRIPT_DIR/../incoming_merge_parent_lib.sh" "$ROOT/swarmforge/scripts/incoming_merge_parent_lib.sh"
-cp "$SCRIPT_DIR/../check_commit_size.sh" "$ROOT/swarmforge/scripts/check_commit_size.sh"
-cp "$SCRIPT_DIR/../check_ticket_deletion.sh" "$ROOT/swarmforge/scripts/check_ticket_deletion.sh"
-cp "$SCRIPT_DIR/../check_pipeline_code_on_main.sh" "$ROOT/swarmforge/scripts/check_pipeline_code_on_main.sh"
+cp "$SCRIPT_DIR/../run_commit_guards.sh" "$ROOT/swarmforge/scripts/run_commit_guards.sh"
+cp "$SCRIPT_DIR/../commit_guard_chain_lib.sh" "$ROOT/swarmforge/scripts/commit_guard_chain_lib.sh"
 cp "$PRE_COMMIT_HOOK" "$ROOT/swarmforge/git-hooks/pre-commit"
 chmod +x "$ROOT/swarmforge/scripts/"*.sh "$ROOT/swarmforge/git-hooks/pre-commit"
-# Load-bearing: must be an executable line, not only the name in a comment
-# (commenting out the call otherwise survives a bare grep -q).
-grep -v '^[[:space:]]*#' "$ROOT/swarmforge/git-hooks/pre-commit" \
-  | grep -q 'check_property_suite_drift\.sh' \
-  || fail "07: pre-commit must invoke check_property_suite_drift.sh (non-comment)"
 git -C "$ROOT" config core.hooksPath swarmforge/git-hooks
+
+GUARD_STUB_DIR="$ROOT/.guard-stubs"
+mkdir -p "$GUARD_STUB_DIR"
+cp "$GUARD" "$GUARD_STUB_DIR/check_property_suite_drift.sh"
+cp "$SCRIPT_DIR/../property_suite_standing_allowlist_lib.sh" "$GUARD_STUB_DIR/property_suite_standing_allowlist_lib.sh"
+cp "$SCRIPT_DIR/../property_suite_standing_allowlist.tsv" "$GUARD_STUB_DIR/property_suite_standing_allowlist.tsv"
+cp "$SCRIPT_DIR/../property_suite_shared_repo_guard.sh" "$GUARD_STUB_DIR/property_suite_shared_repo_guard.sh"
+cp "$SCRIPT_DIR/../incoming_merge_parent_lib.sh" "$GUARD_STUB_DIR/incoming_merge_parent_lib.sh"
+chmod +x "$GUARD_STUB_DIR"/*.sh
+
+DERIVED_GUARDS="$(node -e '
+  const { deriveCommitGuardFixtureSet } = require(process.argv[1]);
+  const r = deriveCommitGuardFixtureSet({ repoRoot: process.argv[2] });
+  process.stdout.write(r.guards.join("\n"));
+' "$REPO_ROOT/extension/test/helpers/commitGuardFixtureSet.js" "$REPO_ROOT")"
+while IFS= read -r g; do
+  [[ -z "$g" ]] && continue
+  [[ -f "$GUARD_STUB_DIR/$g" ]] && continue
+  printf '#!/usr/bin/env bash\nexit 0\n' > "$GUARD_STUB_DIR/$g"
+  chmod +x "$GUARD_STUB_DIR/$g"
+done <<< "$DERIVED_GUARDS"
+
 stage backlog/paused/BL-999-example.yaml
-git -C "$ROOT" -c user.email=test@test -c user.name=test commit -q -m ordinary \
-  || fail "07: ordinary commit must succeed with the property guard wired"
-pass "07: pre-commit wires the property guard; docs/backlog commit still succeeds"
+SWARMFORGE_COMMIT_GUARD_DIR="$GUARD_STUB_DIR" git -C "$ROOT" -c user.email=test@test -c user.name=test commit -q -m ordinary \
+  || fail "07: ordinary commit must succeed with the property guard wired through the full delegation"
+pass "07: pre-commit wires the property guard through the full delegation; docs/backlog commit still succeeds"
 
 # ── 08: BL-1121 reconcile import (MERGE_HEAD + byte-identical) skips suite ─
 # Fixture commits must not fire the repo's pre-commit (pipeline-code on main).
