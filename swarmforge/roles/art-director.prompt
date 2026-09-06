@@ -35,9 +35,12 @@ swarm." Epic BL-1417; seat shape ruled on BL-1418.
 - Minting tickets: you send the specifier a `note` (priority `00`) naming
   the brief; the specifier mints (INVEST, acceptance, wiring) and the coder
   implements. Never write a ticket YAML.
-- Production code, templates or CSS: not unless the human's BL-1418 ruling
-  makes you a presentation stage; until then your worktree holds
-  `docs/design/` only.
+- Production code, templates or CSS: the BL-1418 ruling made you a standing
+  pane, not a presentation stage; your worktree holds `docs/design/` and
+  your own sign-off evidence (`backlog/evidence/<ticket>-art-director-<date>.md`)
+  only. That is your LANE - BL-1444's guard refuses a land that leaves it.
+- Landing on `main`: never yours. QA lands your tip on your `note` (human
+  ruling B, 2026-09-06; see "Landing your work" below).
 - Content: what the briefing SAYS is the documenter's; how it reads on a
   phone is yours.
 
@@ -64,10 +67,27 @@ renderer's shape; your first act on taking the seat is to review its
 rendered result on a phone mail client and record the verdict on BL-1419,
 then open the inventory with the briefing email as its first entry.
 
+## Landing your work (human ruling B, 2026-09-06; BL-1444)
+`primary/art-director` reaches `main` through one door: when you have
+committed (a brief, the inventory, the system, your sign-off evidence),
+send QA a `note`, priority `50` (a docs land never blocks):
+`message: land art-director tip <10-hex>` - the tip you want landed,
+usually `git rev-parse --short=10 HEAD`. QA checks the tip against your
+lane (`swarmforge/scripts/check_art_director_tip.sh --tip <sha>` once
+BL-1444 lands; by hand until then), lands it as a `--no-ff` merge, pushes
+`origin/main`, and notes you back `landed art-director tip <sha>`. Then
+merge `origin/main` into your worktree as you already do on the post-QA
+sweep's wake. A tip that touches anything outside your lane is refused
+back to you with the path named; keep code and non-design docs out of
+your commits - a brief that needs them says so and the parcel it spawns
+changes them. Send the brief note to the specifier and the land note to QA
+as two notes; one does not imply the other.
+
 ## Handoff
 Send via `swarm_handoff.sh` only; a draft is plain `field: value` lines in
 your worktree's `tmp/handoff.txt`. Notes are ≤80 chars: `type: note` /
-`to: specifier` / `priority: 00` / `message: brief docs/design/briefs/<file>`.
+`to: specifier` / `priority: 00` / `message: brief docs/design/briefs/<file>`;
+`to: QA` / `priority: 50` / `message: land art-director tip <10-hex>`.
 Receive with `ready_for_next.sh`; complete with `done_with_current.sh`.
 Every commit message ends `By art-director.` Idle behaviour: act on a
 wake-up, or run `ready_for_next.sh` once — never poll.

@@ -1,0 +1,216 @@
+id: BL-1444
+title: "The Art Director's docs/design tip lands on main by QA on its note: a pre-merge-commit guard refuses the land unless the tip's own content stays inside docs/design/ and its own evidence, content carried from the landed main is exempt by provenance, and no other worktree's main sync is ever judged (human ruling B, 2026-09-06)"
+milestone: M8
+type: feature
+status: todo
+epic: art-direction
+priority: 8
+direction: human-requested
+depends_on: []
+mutation_cost: low
+slice_size_envelope: low
+required_stages: [coder, cleaner, architect, hardender, documenter, qa]
+
+acceptance: specs/features/BL-1444-the-art-directors-tip-lands-on-main-by-qa.feature
+
+human_approval: pending
+approval_context: >
+  A new feature file is authored here, so it needs a tap. No choice is
+  posed and there are no ruling_options: you ruled the landing path on
+  2026-09-06 ("B: QA lands on AD note"), and this ticket builds exactly
+  that. One scoping decision is firm unless you Amend: the art director's
+  LANE is docs/design/ plus its own sign-off evidence files
+  (backlog/evidence/*art-director*.md); anything else in a tip refuses the
+  land, including docs/ outside design/ and other roles' evidence. The
+  prompt halves (QA.prompt, art-director.prompt, Article 1.10, the
+  PIPELINE.md row) landed with the mint and are usable by hand today; this
+  parcel builds the guard that makes the lane a gate instead of a habit.
+
+invariants:
+  - "The verdict is a function of git objects only - the tip's reachability from primary/art-director and from the landed main, and the last commit touching each path the tip introduces - never of SWARMFORGE_ROLE, the current branch name, the working tree, or who runs it."
+  - "A merge whose incoming parent is reachable from the landed main is never judged, whatever it carries; neither is one whose incoming parent is not on primary/art-director. Only an art-director-side commit is ever judged."
+  - "The guard reads only: it never writes a file, moves a ref, fetches, or pushes."
+
+required_wiring:
+  - 'swarmforge/git-hooks/pre-merge-commit::run_guard check_art_director_tip.sh::the versioned merge hook chain is the pre-existing live consumer every worktree shares; a guard script nobody runs gates nothing (BL-1235)'
+  - 'specs/pipeline/steps/bl1444ArtDirectorTipLandsSteps.js::registerSteps::the handler file exists so discovery registers every scenario (BL-1371)'
+
+description: |
+  ## What is wrong
+
+  The Art Director (Article 1.10, seated by BL-1418 as a standing pane)
+  commits on `primary/art-director` - design briefs, `docs/design/system.md`,
+  `docs/design/artifact-inventory.md`, its sign-off evidence - and nothing
+  lands that branch on `main`. QA lands approved parcels only, the merge-up
+  broadcast names the five chain roles, and the seat is not master-resident.
+  Measured 2026-09-06: `git log --oneline main..primary/art-director` is one
+  content commit (`98e0a7e817`, four files) plus five self-merges of
+  `origin/main`; `ls backlog/evidence | grep -c art-director` on `main` is 0.
+  BL-1442 carries that first tip in-parcel as a one-off; every later brief
+  and every LGTM-only review's inventory update would stay stranded.
+
+  The specifier posed three standing paths to the human on 2026-09-06
+  (A: each brief's spawned parcel merges the tip; B: the art director sends
+  QA a note naming its tip and QA lands it behind a docs-only guard; C: the
+  art director becomes master-resident behind a pre-commit guard). The human
+  ruled, verbatim: "B: QA lands on AD note (recommended)".
+
+  ## What is wanted
+
+  - **The protocol (prose, landed with this mint - see notes).** When the
+    art director has committed on its branch it sends QA a `note`
+    (priority `50`, not blocking): `land art-director tip <10-hex>`. QA
+    checks the tip with the guard, syncs to `origin/main` per its land
+    recipe, merges the tip with `--no-ff` under a subject naming NO ticket
+    (e.g. `Land art-director tip <sha>`), pushes under the land lock
+    (BL-1144), notes the art director back `landed art-director tip <sha>`,
+    and completes the inbound. No coordinator bookkeeping (no ticket), no
+    merge-up broadcast (the post-QA branch sweep tells roles to catch up),
+    no `record_land_approval.bb` (the tip touches no QA-exclusive path, so
+    Article 4.2's ancestry predicate never asks about it). Until this
+    parcel lands, QA judges the lane by hand: `git diff --name-only
+    $(git merge-base HEAD <tip>) <tip>` must name only lane paths.
+  - **The guard.** `swarmforge/scripts/check_art_director_tip.sh` judges an
+    art-director-side commit's OWN content against the lane: a path is in
+    the lane when it is under `docs/design/` or is a `backlog/evidence/`
+    file whose name contains `art-director`. A path the tip changes whose
+    last-touching commit on the tip side is reachable from the landed main
+    (`origin/main` when it resolves, else `main`) is exempt by provenance -
+    the seat merges `origin/main` every sweep and a landing branch may lag
+    it (scenario 04). Every other path outside the lane refuses, and ONE
+    refusal names every offender (Article 4.4) and the rule.
+  - **Two entry modes, one predicate.** Hook mode (no arguments): resolve
+    the incoming merge parent (`incoming_merge_parent_lib.sh`); if it is
+    not reachable from `primary/art-director`, or is reachable from the
+    landed main, exit 0 without judging (scenario 03 - every other
+    worktree's main sync is untouched). Direct mode (`--tip <sha>`): judge
+    `<sha>` against `HEAD` as the landing branch, print
+    `ART_DIRECTOR_TIP_OK` (exit 0) or `ART_DIRECTOR_TIP_REFUSED` plus the
+    reason (exit 1); a commit not on `primary/art-director` refuses saying
+    so (scenario 06). `--print-lane` prints the lane, one definition, the
+    `--list-paths` shape of `check_pipeline_code_on_main.sh`.
+  - **Wired into the shared merge hook.** The guard joins
+    `swarmforge/git-hooks/pre-merge-commit`'s chain (wiring anchor 1) after
+    `check_feature_handler_registration.sh`, under the chain lib's
+    one-report contract (BL-1303/BL-1252). It does NOT join
+    `run_commit_guards.sh` (pre-commit): the art director's own commits are
+    not judged here, and that runner's stub list is BL-1408's standing red -
+    leave it untouched.
+
+  ## How (direction, not mandate)
+
+  - Guard body: `set -euo pipefail`; branch and landed-main refs resolved
+    with `git rev-parse -q --verify`; membership via
+    `git merge-base --is-ancestor`; paths via `git diff --name-only
+    $(git merge-base <landing> <tip>) <tip>`; provenance via
+    `git log -1 --format=%H <tip> -- <path>` then `--is-ancestor` of the
+    landed main, the `pipeline_path_import_exempt` shape. Bash 3.2-safe
+    arrays (`${arr[@]+"${arr[@]}"}`, BL-801).
+  - Handler `specs/pipeline/steps/bl1444ArtDirectorTipLandsSteps.js`:
+    a fixture repository per scenario under `fs.mkdtempSync`, `git init -b
+    main`, repo-local identity, `core.hooksPath` at the fixture's copy of
+    `swarmforge/git-hooks` - the `mkFixtureRepo` shape in
+    `bl632CommitTimeGuardSteps.js`, including its empty step registry and
+    `extension/out` symlink so the sibling guards in the merge chain ask
+    their real question. Derive the guard set to copy from the hook's own
+    `run_guard` lines, never a hand list (BL-1398/BL-1401 posture). Prove
+    `git rev-parse --git-common-dir` is under the fixture before any
+    mutating git command (BL-1390). Landing and role branches are
+    non-`main` branches so `check_pipeline_code_on_main.sh` stays out of
+    the way, as in production (QA lands from `swarmforge-QA`).
+  - Shell suite `swarmforge/scripts/test/test_bl1444_art_director_tip_guard.sh`
+    (standing lane row in `swarmforge/scripts/test/suite-manifest.tsv`,
+    BL-973/BL-1240) drives direct mode and hook mode through
+    `lib/fixture_isolation.sh`; the BL-1398 file is the model.
+  - Documenter: `docs/how-to/BL-1418-the-art-director-seat-is-addressable.md`
+    gains "How the seat's work reaches main" (the note, QA's land, the
+    lane, the two modes); the swarm-flow diagram's change-trigger FIRES
+    (a new handoff direction: art-director -> QA land note -> main) and the
+    art director is absent from `docs/diagrams/swarm-flow.mmd` today, so add
+    the node with its three edges (brief -> specifier, QA sign-off note <->
+    art director, land note -> QA -> main) in this parcel; the guard joins
+    whatever list of hook-chain guards `docs/reference/Specification.MD`
+    keeps.
+
+  ## Out of scope
+
+  - Judging the art director's own commits at pre-commit (its lane at
+    commit time stays a prompt rule; a `run_commit_guards.sh` entry waits
+    for BL-1408 to derive that runner's stub list).
+  - Adding the art director to QA's merge-up broadcast: the post-QA branch
+    sweep already wakes it (`post_qa_branch_sweep_lib.bb` excludes only
+    coordinator/specifier), which is why its branch carries five
+    `origin/main` merges.
+  - BL-1442's in-parcel merge of `98e0a7e817` stays as written: if the art
+    director's tip is on `main` by the time that coder starts, the merge is
+    a no-op and the step is satisfied (noted on BL-1442).
+
+qa_e2e_procedure: |
+  1. The BL-1444 feature passes all thirteen scenario runs; BL-632, BL-1303
+     and BL-1385's features stay green (the merge chain grew by one guard);
+     `bash swarmforge/scripts/test/test_bl1444_art_director_tip_guard.sh`
+     and `test_pipeline_code_on_main_guard.sh` pass;
+     `grep test_bl1444 swarmforge/scripts/test/suite-manifest.tsv` is one row.
+  2. `grep -n 'run_guard check_art_director_tip.sh' swarmforge/git-hooks/pre-merge-commit`
+     hits once; `grep -c check_art_director_tip swarmforge/scripts/run_commit_guards.sh`
+     is 0.
+  3. Live direct mode, in the QA worktree synced to `origin/main`:
+     `swarmforge/scripts/check_art_director_tip.sh --tip $(git rev-parse primary/art-director)`
+     prints `ART_DIRECTOR_TIP_OK` (the tip is docs/design plus one
+     art-director evidence file; if BL-1442 or a hand land already put that
+     content on main, still OK - nothing outside the lane).
+     `--tip $(git rev-parse origin/main)` prints `ART_DIRECTOR_TIP_REFUSED`
+     and says the commit is not on primary/art-director.
+  4. Live land: if a `land art-director tip <sha>` note is waiting, land it
+     per QA.prompt's "Landing the Art Director's tip" section; otherwise
+     land the current tip as this ticket's own verification. Afterwards
+     `git log --oneline origin/main..primary/art-director` is empty and the
+     landing merge's `git diff --name-only <merge>^1 <merge>` names only
+     lane paths.
+  5. Live negative: the out-of-lane refusals cannot be exercised on the real
+     branch without committing to it - scenario 02 in the fixture is the
+     evidence; say so rather than fabricate a commit on primary/art-director.
+  6. `git merge --no-ff main` in any role worktree still succeeds (scenario
+     03 live); the guard prints nothing on that merge.
+
+notes: |
+  Minted 2026-09-06 by the specifier on the human's ruling to the
+  2026-09-06 role_ask (answer filed at
+  backlog/answers-archive/ANSWER-2026-09-06-art-director-landing-path-b-qa-lands-on-note.md).
+  Human, verbatim: "B: QA lands on AD note (recommended)".
+
+  Prose halves landed with this mint on main, same commit (BL-798: a
+  prompt deliverable is the specifier's to land, no gate reminds anyone):
+  QA.prompt "Landing the Art Director's tip on its note", art-director.prompt
+  "Landing your work", Article 1.10 (01_roles.md), the PIPELINE.md
+  art-director row, and section 5 of
+  articles/reference/art-director-role-amendment-2026-09-05.md. The
+  protocol is usable by hand from that commit; this parcel builds the guard.
+
+  INVEST at mint: Independent (BL-1418 landed 2026-09-05; the prose is on
+  main; no unbuilt sibling), Negotiable (the lane and the two modes are
+  the contract; the git plumbing is direction), Valuable (one outcome: the
+  art director's work reaches main through one door with a gate on it),
+  Estimable (one bash guard, one hook line, one handler, one shell suite;
+  low), Small (six scenarios, thirteen runs, three invariants), Testable
+  (fixture repositories under mkdtemp drive the real hook chain).
+
+  Lane decision: the evidence pattern is included because the seat's
+  sign-off record (`backlog/evidence/BL-1419-art-director-20260906.md`)
+  already lives on its branch and Article 1.10 makes the verdict evidence
+  QA records - the file is the seat's, its content is a verdict, not
+  code. docs/ outside design/ is refused on purpose: the documenter owns
+  it (Article 1.7), and a brief that needs a how-to changed says so and
+  the parcel it spawns changes it.
+
+source: |
+  Human ruling 2026-09-06 (specifier pane): "B: QA lands on AD note
+  (recommended)". Question text and options in
+  .swarmforge/operator/role-awaiting-archive/ (asked_at_ms 1788653963621).
+  Branch state measured 2026-09-06: git log main..primary/art-director,
+  git diff --stat main...primary/art-director (4 files, 126 insertions).
+  Hook chain: swarmforge/git-hooks/pre-merge-commit,
+  swarmforge/scripts/commit_guard_chain_lib.sh,
+  check_pipeline_code_on_main.sh (BL-1096 per-path provenance),
+  incoming_merge_parent_lib.sh. Merge-up recipients: QA.prompt Handoff and
+  post_qa_branch_sweep_lib.bb merge-up-excluded-roles.

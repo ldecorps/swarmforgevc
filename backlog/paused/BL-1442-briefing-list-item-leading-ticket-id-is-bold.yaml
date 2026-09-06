@@ -183,6 +183,13 @@ notes: |
   the standing path is a question to the human (specifier role_ask,
   2026-09-06) and becomes its own ticket on the answer.
 
+  2026-09-06, later the same day: the human ruled B ("QA lands on AD
+  note"); the standing path is BL-1444. "Landing the brief" above stays as
+  written: if the art director's tip is already on `main` when this parcel
+  starts (QA landed it on the art director's note, or BL-1444 shipped
+  first), the merge of `98e0a7e817` is a no-op and that step is satisfied -
+  every review stage reads the four files as landed, not as parcel scope.
+
 source: |
   Art Director brief docs/design/briefs/2026-09-06-briefing-list-item-scan-weight.md
   and evidence backlog/evidence/BL-1419-art-director-20260906.md, both on
