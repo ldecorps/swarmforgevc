@@ -1,3 +1,8 @@
+# mutation-stamp: sha256=846d030b353e0c5a7682454134372ef7bf38a9f452e61f97e964e00ad9d3bf03
+# acceptance-mutation-manifest-begin
+# {"version":1,"tested_at":"2026-09-06T12:27:49.149630049Z","feature_name":"the Art Director's docs/design tip lands on main by QA on its note","feature_path":"/home/carillon/swarmforgevc/.worktrees/hardender/specs/features/BL-1444-the-art-directors-tip-lands-on-main-by-qa.feature","background_hash":"df487f2cc96c7c2742ad625d434515b082d6c6054542e0d831d467d765922cf3","implementation_hash":"unknown","scenarios":[{"index":0,"name":"a tip whose own content stays inside the art director's lane merges","scenario_hash":"7e3d38641de54f910939ccbe13bcdb731f908b4c527f92cd877b69fa06fde63c","mutation_count":3,"result":{"Total":3,"Killed":3,"Survived":0,"Errors":0},"tested_at":"2026-09-06T12:27:45.479833384Z"},{"index":1,"name":"a tip whose own content leaves the lane is refused naming the path","scenario_hash":"aabc7f36ddff4c4b213b7573d044afcd6e722f0738f626d314f769e0c8f50a5f","mutation_count":5,"result":{"Total":5,"Killed":5,"Survived":0,"Errors":0},"tested_at":"2026-09-06T12:27:45.479833384Z"},{"index":4,"name":"the guard answers about a tip on request, with no merge in flight","scenario_hash":"4e3e8484d024934ccda5b92f8099dff37a41337346a8db1fa8bd7bdf5bae7274","mutation_count":6,"result":{"Total":6,"Killed":6,"Survived":0,"Errors":0},"tested_at":"2026-09-06T12:27:45.479833384Z"}]}
+# acceptance-mutation-manifest-end
+
 Feature: the Art Director's docs/design tip lands on main by QA on its note
 
   # BL-1444 (human ruling B, 2026-09-06): primary/art-director had no path to

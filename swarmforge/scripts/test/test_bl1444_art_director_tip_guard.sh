@@ -169,6 +169,58 @@ else
   fail "hook mode: expected exit 0 (provenance exemption), got rc=$rc: $out"
 fi
 
+# ── 8b. hook mode: origin/main is preferred over a lagging local main for
+#       provenance, when both resolve and diverge ───────────────────────────
+# resolve_landed_main() prefers origin/main over local main whenever both
+# resolve (guard script comment: "the seat merges origin/main every sweep,
+# and a landing branch may lag it"). Every other scenario in this suite runs
+# with no origin remote configured at all, so they only ever exercise the
+# "else main" fallback branch - a guard that always preferred local main
+# regardless of origin/main would pass every one of them. This scenario
+# builds a real refs/remotes/origin/main ref that is AHEAD of local main and
+# proves provenance is judged against IT, not the lagging local main.
+mk_repo hook-origin-preferred
+origin_bare="$WORK/hook-origin-preferred-origin.git"
+git init -q --bare "$origin_bare"
+git_ "$repo" remote add origin "$origin_bare"
+git_ "$repo" push -q origin main
+# main advances (this commit reaches origin/main via the push below) while
+# local main is reset back to the earlier tip, so origin/main is strictly
+# ahead of local main.
+early_main="$(git_ "$repo" rev-parse main)"
+write_commit "$repo" main extension/src/thing.ts
+newer_main="$(git_ "$repo" rev-parse main)"
+git_ "$repo" push -q origin main
+# Move HEAD off main before rewinding its ref: update-ref does not touch the
+# working tree, so rewinding the CHECKED-OUT branch's ref leaves the newer
+# tip's files sitting in the worktree with nothing to explain them, and the
+# next checkout refuses as an overwrite of "local changes".
+git_ "$repo" checkout -q primary/art-director
+git_ "$repo" update-ref refs/heads/main "$early_main"
+# origin/main now resolves and IS ahead of local main; local main alone
+# would not exempt extension/src/thing.ts by provenance.
+if ! git_ "$repo" rev-parse -q --verify origin/main >/dev/null 2>&1; then
+  fail "hook mode: origin/main preferred over lagging local main (setup: origin/main did not resolve)"
+elif [[ "$(git_ "$repo" rev-parse origin/main)" != "$newer_main" ]]; then
+  fail "hook mode: origin/main preferred over lagging local main (setup: origin/main is not the newer tip)"
+else
+  git_ "$repo" checkout -q primary/art-director
+  git_ "$repo" merge -q --no-ff -m "art-director merges the newer main" "$newer_main"
+  write_commit "$repo" primary/art-director docs/design/system.md
+  tip="$(git_ "$repo" rev-parse HEAD)"
+  git_ "$repo" checkout -q -b landing "$early_main"
+  git_ "$repo" merge -q --no-ff --no-commit "$tip" >/dev/null 2>&1
+  set +e
+  out="$(cd "$repo" && bash "$GUARD" 2>&1)"; rc=$?
+  set -e
+  git_ "$repo" merge --abort >/dev/null 2>&1 || true
+  if [[ $rc -eq 0 ]]; then
+    pass "hook mode: origin/main is preferred over a lagging local main for provenance"
+  else
+    fail "hook mode: expected exit 0 (origin/main provenance exemption despite lagging local main), got rc=$rc: $out"
+  fi
+fi
+
 # ── 9. wiring: joins pre-merge-commit's chain, never run_commit_guards.sh's
 #      (out of scope, BL-1444) ────────────────────────────────────────────
 if grep -q 'run_guard check_art_director_tip\.sh' "$REPO_ROOT/swarmforge/git-hooks/pre-merge-commit"; then
