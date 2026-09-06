@@ -30,6 +30,23 @@ correct.
 | `cd extension && npx vitest run test/constitutionDocCitations.test.js` | 6/6 |
 | `node specs/pipeline/cli.js BL-1440-....feature` | 4/4 |
 
+## Lineage note
+
+QA's bounce/revert commits (`5d6a055835` QA bounce, `7227eb476f` revert of
+the stale pre-fix merge, `5bce85fd10` bounce_history stamp on the ticket)
+were merged into this worktree (`Merge QA 5bce85fd10 into documenter.`)
+to satisfy the pre-QA ancestry gate. The revert's tree side (deleting the
+already-fixed doc/guard files) was NOT applied — those files were
+restored to this worktree's already-fixed content (`git checkout HEAD --
+<paths>`) before committing the merge, per "a bounce-revert merge must
+not delete in-flight rework": the revert undid QA's own stale merge on
+its branch, it does not mean the fix should un-happen here. Re-verified
+after the merge: both ancestry checks pass
+(`git merge-base --is-ancestor 5bce85fd10\|5d6a055835 HEAD`), and
+`test/constitutionDocCitations.test.js` (6/6) and
+`bl1252CommitGuardAggregationInvariants.property.test.js` (5/5) are still
+green.
+
 ## Verdict
 
 No documentation defect. Bounce fix confirmed outside documenter domain.
