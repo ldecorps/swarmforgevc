@@ -183,3 +183,6 @@ source: |
   beyond scope", item 1. Reproduced by the specifier on main at 22030a8444.
 
 assigned_to: coder
+bounce_count: 1
+bounce_history:
+  - { at: 2026-09-06, by: QA, blamed: coder, class: spec-gap, commit: 6f5f21f988, evidence: backlog/evidence/BL-1409-bl570-wiring-assertion-follows-the-delegation-bounce-20260906.md }
