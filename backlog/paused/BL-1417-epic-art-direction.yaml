@@ -32,3 +32,4 @@ notes: |
   UMBRELLA / tracking item - not directly promotable; children are promoted
   individually. Icons: this epic takes its own icon on both surfaces from
   the existing pools (local-engineering rule 6); no YAML field.
+mutation_cost: low
