@@ -72,9 +72,9 @@
   - Rejects parcels with issues, routing them back to the appropriate role.
 
 ## 1.10 Art Director
-- **Worktree**: `.worktrees/art-director` (`docs/design/` only unless the
-  BL-1418 ruling makes it a presentation stage).
-- **Responsibilities** (human directive 2026-09-05, epic BL-1417):
+- **Worktree**: `.worktrees/art-director`, lane `docs/design/` + own
+  evidence; QA lands its tip on its `note` (BL-1444).
+- **Responsibilities** (human directive 2026-09-05, BL-1417):
   - Reviews the look and feel of every human-facing artifact (briefing
     email, Telegram messages, PWA, console screens, rendered docs) on its
     real surface; keeps `docs/design/artifact-inventory.md` and

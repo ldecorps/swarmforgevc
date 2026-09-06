@@ -49,3 +49,44 @@ addition must move prose to `reference/` first.
   worktree, mailbox, launch), seat shape by ruling.
 - **BL-1419** — the first job: the daily briefing email reflows its text
   and gets a proper layout.
+
+## 5. Landing path (human ruling B, 2026-09-06)
+
+BL-1418 seated the role in `.worktrees/art-director` on
+`primary/art-director` without deciding how its output reaches `main`.
+Found 2026-09-06 while minting BL-1442 from the role's first brief: QA
+lands approved parcels only, the merge-up broadcast names the five chain
+roles, and the seat is not master-resident, so its briefs, inventory,
+design system and sign-off evidence had no path to `main` at all.
+
+The specifier posed three standing paths by `role_ask`:
+
+- **A** - each brief's spawned parcel merges the art director's tip
+  (zero machinery; an LGTM-only review's inventory update waits for the
+  next brief).
+- **B** - the art director sends QA a `note` naming its tip and QA lands
+  it behind a docs-only guard (QA stays the sole integrator; one new guard
+  plus one QA step). Recommended.
+- **C** - the art director becomes master-resident and commits on `main`
+  directly like the specifier, `docs/design` only, behind a pre-commit
+  guard (a third writer on the shared checkout; changes the BL-1418 seat
+  wiring).
+
+The human ruled, verbatim: "B: QA lands on AD note (recommended)".
+
+Decided here: the art director sends QA `land art-director tip <10-hex>`
+(priority `50`); QA lands the tip as a `--no-ff` merge whose subject names
+no ticket, pushes `origin/main` under the land lock, and notes the art
+director back. The role's **lane** is `docs/design/` plus its own
+sign-off evidence (`backlog/evidence/*art-director*.md`); a tip whose own
+content leaves the lane is refused, while content the tip carries from the
+landed `main` (the seat merges `origin/main` on every post-QA sweep wake)
+is exempt by per-path provenance, the BL-1096 shape. A merge whose
+incoming parent is reachable from the landed `main` is never judged, so no
+other worktree's main sync is touched. Prose: Article 1.10, the
+`PIPELINE.md` row, `roles/QA.prompt` "Landing the Art Director's tip on
+its note", `roles/art-director.prompt` "Landing your work". The guard and
+its hook-chain entry are **BL-1444**; until it lands QA judges the lane by
+hand as its prompt says. Not adopted: A (strands every LGTM-only review's
+inventory update until a brief happens to spawn a parcel) and C (a third
+writer on the shared master checkout, the BL-1330 hazard class).
