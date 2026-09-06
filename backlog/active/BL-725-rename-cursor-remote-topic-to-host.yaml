@@ -113,3 +113,4 @@ source: |
 bounce_count: 1
 bounce_history:
   - { at: 2026-09-06, by: QA, blamed: documenter, class: behavior, commit: 6a8dddf30e, evidence: backlog/evidence/BL-725-QA-20260906.md }
+abandoned_commits: [abe78e546b]
