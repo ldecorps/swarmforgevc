@@ -7,6 +7,15 @@
 
 (load-file (str (fs/path (fs/parent (fs/canonicalize *file*)) ".." "coordinator_activity_feed_lib.bb")))
 
+;; tempDirTrapGuard.test.js finding: the manual (fs/delete-tree tmp) calls
+;; below only run if the script reaches them - an uncaught exception
+;; anywhere between fs/create-temp-dir and the final cleanup would leak the
+;; temp root. A shutdown hook is the same belt-and-suspenders convention
+;; post_qa_branch_sweep_lib_test_runner.bb already uses.
+(def created-temp-dirs (atom []))
+(.addShutdownHook (Runtime/getRuntime)
+                   (Thread. (fn [] (doseq [d @created-temp-dirs] (try (fs/delete-tree d) (catch Exception _ nil))))))
+
 (def failures (atom []))
 
 (defn assert= [msg expected actual]
@@ -128,6 +137,7 @@
 ;; ── tick! ────────────────────────────────────────────────────────────────
 
 (def tmp (fs/create-temp-dir))
+(swap! created-temp-dirs conj tmp)
 
 (defn reset-tick-fixture! []
   (fs/delete-tree tmp)
