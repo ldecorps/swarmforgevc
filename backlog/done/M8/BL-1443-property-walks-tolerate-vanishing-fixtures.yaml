@@ -127,3 +127,5 @@ source: |
   extension/test/bl874PortableTimeInvariants.property.test.js lines 84-106;
   extension/test/helpers/propertyLaneFixtureRunner.js lines 119-152;
   walker count by grep, 2026-09-06.
+
+assigned_to: coder
