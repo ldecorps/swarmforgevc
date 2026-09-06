@@ -17,8 +17,14 @@
 ;; that does not). Fully-qualified calls below assume that binding.
 (load-file (str (fs/path (fs/parent (fs/canonicalize *file*)) "model_steward_lib.bb")))
 
+;; BL-1437: "look_and_feel" is a minimal schema extension — the five
+;; original dimensions are all about coding/agentic competency and have no
+;; concept for a REVIEWER role's own duty (visual/UX judgment on a
+;; human-facing artifact). Additive only: an existing scorecard whose
+;; competency names never match the "look"/"feel" keywords below still
+;; populates exactly the original five, unchanged.
 (def capability-dimensions
-  ["coding_quality" "protocol_compliance" "tool_usage" "autonomy" "cost_latency"])
+  ["coding_quality" "protocol_compliance" "tool_usage" "autonomy" "cost_latency" "look_and_feel"])
 
 (def passing-statuses
   #{"pass" "PASS" "swarm-compliant" "human-verdict-compliant"})
@@ -79,6 +85,9 @@
       (str/includes? c "tool") "tool_usage"
       (str/includes? c "autonom") "autonomy"
       (or (str/includes? c "cost") (str/includes? c "latenc")) "cost_latency"
+      ;; BL-1437: a reviewer role's own duty — visual/UX judgment on a
+      ;; human-facing artifact, never a coding-quality question.
+      (or (str/includes? c "look") (str/includes? c "feel")) "look_and_feel"
       :else "coding_quality")))
 
 (defn capabilities-from-scorecard
@@ -146,8 +155,14 @@
 
 (defn build-evaluate-report
   "Evidence-backed certification report: non-empty gates, scorecard/bakeoff
-   ids, optional regression diff vs prior report."
-  [provider model gates timestamp
+   ids, optional regression diff vs prior report.
+
+   BL-1437: :role records WHICH role this evaluate run was FOR - the report
+   otherwise proves only \"these gates, for this provider/model\", never
+   which role's duty they were judged against. role is nil for a caller
+   that predates this field (none exist yet); nil is omitted, never a
+   fabricated default."
+  [provider model role gates timestamp
    {:keys [scorecard-id bakeoff-run-id overall prior-report regressions]}]
   (cond-> {:provider provider
            :model model
@@ -155,6 +170,7 @@
            :result (if (seq regressions) "regressed" "certified")
            :gates (vec gates)
            :scorecard_id scorecard-id}
+    role (assoc :role role)
     bakeoff-run-id (assoc :bakeoff_run_id bakeoff-run-id)
     overall (assoc :overall overall)
     (seq regressions) (assoc :regression_diff regressions)
@@ -175,7 +191,7 @@
         regressions (regression-diff prior-report gates)
         evidence (evidence-pointer scorecard-id bakeoff-id)
         score (overall-score-from-capabilities caps)
-        report (build-evaluate-report provider model gates timestamp
+        report (build-evaluate-report provider model role gates timestamp
                                        {:scorecard-id scorecard-id
                                         :bakeoff-run-id bakeoff-id
                                         :overall (:overall scorecard)
