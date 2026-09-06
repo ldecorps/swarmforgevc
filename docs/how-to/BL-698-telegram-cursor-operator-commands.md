@@ -1,6 +1,6 @@
 # BL-698 — Telegram Cursor Remote operator commands
 
-Phone-first ops on the Cursor Remote topic. Principal-only. Wrong topic or unauthorised sender never mutates swarm state.
+Phone-first ops on the Host topic (BL-725; the Cursor Remote bridge module's own standing topic, renamed Host in live Telegram). Principal-only. Wrong topic or unauthorised sender never mutates swarm state.
 
 Full command map: [BL-698 reference spec](../reference/specs/BL-698-telegram-cursor-operator-command-surface.md).
 Confirm + env-reload note: [BL-702 how-to](BL-702-operator-confirm-env-reload.md).
