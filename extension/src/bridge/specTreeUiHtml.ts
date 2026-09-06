@@ -56,6 +56,15 @@ export function getSpecTreeUiHtml(): string {
     border: 1px solid color-mix(in srgb, var(--tg-theme-hint-color, #8b949e) 30%, transparent);
   }
   .empty { font-size: 15px; color: var(--tg-theme-hint-color, #8b949e); }
+  .filter-row { margin-bottom: 10px; }
+  .filter-row input {
+    width: 100%; box-sizing: border-box;
+    padding: 8px 10px; border-radius: 8px;
+    background: color-mix(in srgb, var(--tg-theme-bg-color, #0d1117) 92%, #fff 4%);
+    border: 1px solid color-mix(in srgb, var(--tg-theme-hint-color, #8b949e) 30%, transparent);
+    color: var(--tg-theme-text-color, #e6edf3);
+    font-size: 14px;
+  }
 </style>
 </head>
 <body>
@@ -65,6 +74,9 @@ export function getSpecTreeUiHtml(): string {
   <span class="meta" id="status">Loading…</span>
 </header>
 <main>
+  <div class="filter-row">
+    <input type="search" id="filter" data-testid="spec-tree-filter" placeholder="Filter…" autocomplete="off"/>
+  </div>
   <div class="crumbs" id="crumbs"></div>
   <div id="content"></div>
 </main>
@@ -73,11 +85,20 @@ export function getSpecTreeUiHtml(): string {
   var tg = window.Telegram && window.Telegram.WebApp;
   if (tg) { tg.ready(); tg.expand(); }
   var token = new URLSearchParams(location.search).get('bearer') || new URLSearchParams(location.search).get('token') || '';
-  var q = token ? ('?token=' + encodeURIComponent(token)) : '';
-  document.getElementById('menu').href = '/console' + q;
+  var tokenParam = token ? ('token=' + encodeURIComponent(token)) : '';
+  document.getElementById('menu').href = '/console' + (tokenParam ? '?' + tokenParam : '');
 
   var tree = null;
   var view = { level: 'milestones' };
+  var filterTerm = '';
+  var filterDebounce = null;
+
+  function stateUrl() {
+    var params = [];
+    if (tokenParam) params.push(tokenParam);
+    if (filterTerm) params.push('q=' + encodeURIComponent(filterTerm));
+    return '/spec-tree-state' + (params.length ? '?' + params.join('&') : '');
+  }
 
   function findMilestone(name) {
     return (tree.milestones || []).find(function (m) { return m.milestone === name; });
@@ -151,6 +172,14 @@ export function getSpecTreeUiHtml(): string {
       return;
     }
     if (view.level === 'milestones') {
+      if (filterTerm && (tree.milestones || []).length === 0) {
+        var empty = document.createElement('div');
+        empty.className = 'empty';
+        empty.setAttribute('data-testid', 'no-results');
+        empty.textContent = 'No matches for "' + filterTerm + '".';
+        content.appendChild(empty);
+        return;
+      }
       (tree.milestones || []).forEach(function (m) {
         var count = (m.epics || []).reduce(function (n, e) { return n + (e.tickets || []).length; }, 0);
         content.appendChild(navButton(
@@ -234,7 +263,7 @@ export function getSpecTreeUiHtml(): string {
 
   function refresh() {
     document.getElementById('status').textContent = 'Loading…';
-    fetch('/spec-tree-state' + q, { cache: 'no-store' })
+    fetch(stateUrl(), { cache: 'no-store' })
       .then(function (res) { return res.json(); })
       .then(function (data) {
         tree = data;
@@ -245,6 +274,15 @@ export function getSpecTreeUiHtml(): string {
         document.getElementById('status').textContent = 'Error';
       });
   }
+
+  document.getElementById('filter').addEventListener('input', function (e) {
+    var term = e.target.value;
+    if (filterDebounce) { clearTimeout(filterDebounce); }
+    filterDebounce = setTimeout(function () {
+      filterTerm = term;
+      refresh();
+    }, 250);
+  });
 
   refresh();
 })();
