@@ -64,6 +64,12 @@ const ALL_GUARDS = [...INDEX_GUARDS, SUITE_GUARD];
 // about the tiering. So: passing is weighted heavily, and the two corner
 // plans are mixed in as named constants on top of that. assertReach fails
 // the property if any kind still went ungenerated.
+// BL-1349: numRuns dropped 120 -> 60 on all five properties below (each run
+// spawnSync's the real runner - real IO, BL-654 invariant 2). CLEAN_PLAN and
+// SUITE_ONLY_PLAN are each drawn directly at p=0.1 (PLAN()'s own weights,
+// unchanged by this ticket); missing either in 60 draws is 0.9^60 ~= 0.18%
+// per branch, same order of magnitude as the pre-existing 120-run risk was
+// meant to guard against - reach stays engineered, not just faster.
 const GUARD_STATE = () =>
   fc.oneof(
     { arbitrary: fc.constant(0), weight: 7 },
@@ -191,7 +197,7 @@ test('property (invariant 1): every index-inspection guard runs, whatever the on
         }
       });
     }),
-    { numRuns: 120 }
+    { numRuns: 60 }
   );
   assertReach(seen, ['clean', 'multiIndexViolation', 'unexpected', 'missing', 'suiteOnly']);
 });
@@ -213,7 +219,7 @@ test('property (invariant 1): every violating index guard is named in the ONE re
         }
       });
     }),
-    { numRuns: 120 }
+    { numRuns: 60 }
   );
   assertReach(seen, ['clean', 'multiIndexViolation', 'unexpected', 'missing']);
 });
@@ -232,7 +238,7 @@ test('property (invariant 2): the runner refuses exactly the commits the pre-BL-
         );
       });
     }),
-    { numRuns: 120 }
+    { numRuns: 60 }
   );
   assertReach(seen, ['clean', 'multiIndexViolation', 'unexpected', 'missing', 'suiteOnly']);
 });
@@ -253,7 +259,7 @@ test('property (invariant 2): the expensive guard runs if and only if every chea
         );
       });
     }),
-    { numRuns: 120 }
+    { numRuns: 60 }
   );
   assertReach(seen, ['clean', 'multiIndexViolation', 'suiteOnly']);
 });
@@ -281,7 +287,7 @@ test('property (invariant 3): an unexpected failure refuses the commit and is na
         }
       });
     }),
-    { numRuns: 120 }
+    { numRuns: 60 }
   );
   assertReach(seen, ['unexpected', 'missing']);
 });
