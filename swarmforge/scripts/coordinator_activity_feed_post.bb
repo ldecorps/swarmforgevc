@@ -15,6 +15,8 @@
             [cheshire.core :as json]
             [clojure.string :as str]))
 
+(load-file (str (fs/path (fs/parent (fs/canonicalize *file*)) "coordinator_activity_feed_post_lib.bb")))
+
 (defn- usage! []
   (binding [*out* *err*] (println "Usage: coordinator_activity_feed_post.bb <project-root> <text>"))
   (System/exit 2))
@@ -33,6 +35,21 @@
     (when (fs/exists? map-file)
       (get (json/parse-string (slurp (str map-file)) true) :coordinator))))
 
+(defn post-once! [token chat topic text]
+  (try
+    (let [resp (http/post (str "https://api.telegram.org/bot" token "/sendMessage")
+                           {:form-params {:chat_id chat :text text :message_thread_id topic
+                                          :disable_web_page_preview true}
+                            :throw false})]
+      (if (< (:status resp) 300)
+        {:success true :status (:status resp) :body (:body resp)}
+        (do (binding [*out* *err*]
+              (println "coordinator-activity-feed-post: telegram returned" (:status resp) (:body resp)))
+            {:success false :status (:status resp) :body (:body resp)})))
+    (catch Exception e
+      (binding [*out* *err*] (println "coordinator-activity-feed-post: send failed:" (.getMessage e)))
+      {:success false :status nil :body nil})))
+
 (defn -main [& args]
   (let [[project-root text] args]
     (when (or (str/blank? project-root) (str/blank? text)) (usage!))
@@ -43,18 +60,9 @@
         (binding [*out* *err*]
           (println "coordinator-activity-feed-post: missing bot token, chat id, or coordinator topic id"))
         (System/exit 1))
-      (try
-        (let [resp (http/post (str "https://api.telegram.org/bot" token "/sendMessage")
-                               {:form-params {:chat_id chat :text text :message_thread_id topic
-                                              :disable_web_page_preview true}
-                                :throw false})]
-          (if (< (:status resp) 300)
-            (System/exit 0)
-            (do (binding [*out* *err*]
-                  (println "coordinator-activity-feed-post: telegram returned" (:status resp) (:body resp)))
-                (System/exit 1))))
-        (catch Exception e
-          (binding [*out* *err*] (println "coordinator-activity-feed-post: send failed:" (.getMessage e)))
-          (System/exit 1))))))
+      (let [ok? (coordinator-activity-feed-post-lib/send-with-rate-limit-retry!
+                 #(post-once! token chat topic text)
+                 (fn [seconds] (Thread/sleep (long (* 1000 seconds)))))]
+        (System/exit (if ok? 0 1))))))
 
 (apply -main *command-line-args*)
