@@ -73,7 +73,7 @@ import { computeCatchUpStateLive } from './catchUpLive';
 import { markMessageRead, readCatchUpReadState } from './catchUpReadState';
 import { getEpicReorderUiHtml } from './epicReorderUiHtml';
 import { getSpecTreeUiHtml } from './specTreeUiHtml';
-import { computeDocsTree } from '../docs/docsTree';
+import { computeDocsTree, filterSpecTree } from '../docs/docsTree';
 import { sortEpicsByPriority, computeEpicReorder, EpicPriorityItem, ReorderDirection, PriorityWrite } from './epicReorderSafety';
 import { computeMakeTopPriority, MakeTopItem, MakeTopResult, DependencyResolution } from './makeTopPrioritySafety';
 import { computeEpicTopics, filterEpicsWithTopics, resolveTopicMembership } from './epicTopicSlugMatch';
@@ -2080,8 +2080,10 @@ function buildJsonRoutes(targetPath: string, runLogPath: string, nowMs?: number)
     },
     {
       // BL-592: live spec navigation tree JSON feed for the Mini App.
+      // BL-1412: `q` narrows the tree to matching tickets/labels
+      // (filterSpecTree) - blank or absent returns the full tree unchanged.
       matches: isSpecTreeStatePath,
-      compute: () => computeDocsTree(targetPath, nowMs),
+      compute: (url) => filterSpecTree(computeDocsTree(targetPath, nowMs), queryParams(url).get('q') ?? ''),
     },
     {
       // GH-23: Context Budget dashboard JSON feed for the Mini App.
