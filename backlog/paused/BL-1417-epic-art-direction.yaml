@@ -7,12 +7,18 @@ epic: art-direction
 priority: 30
 direction: human-requested
 depends_on: []
-decomposes_into: [BL-1418, BL-1419]
+decomposes_into: [BL-1418, BL-1419, BL-1442]
 remaining_slices: |
   - BL-1418 (filed 2026-09-05): onboard the Art Director seat - role lists,
     topic icon, worktree, mailbox, launch; seat shape by human ruling.
   - BL-1419 (filed 2026-09-05): first job - the daily briefing email reflows
     its text and gets a phone layout.
+  - BL-1442 (filed 2026-09-06): the first brief - a briefing-email list
+    item that opens with a ticket id renders that id in bold. Carries the
+    Art Director's first tip (98e0a7e817) in-parcel as a one-off.
+  - Unfiled, pending the human's answer to the specifier's 2026-09-06
+    question: a standing landing path for the Art Director's docs/design
+    commits (primary/art-director has no path to main today).
   - Unfiled, from the role's own first pass once seated: Telegram message
     layouts (pipeline board, approval asks, alerts), the static PWA, the live
     console / Mini App screens, rendered docs. Each arrives as a design brief
