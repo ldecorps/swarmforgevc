@@ -146,7 +146,14 @@ retain_refusal_log() {
 # refused across 2.5 hours, a different unrelated red each time, none of
 # them a file the parcel touched.
 FLAKE_LOG_DIR_REL=".swarmforge/property-flakes"
-RERUN_CEILING_SECONDS_DEFAULT=180
+# Specifier ruling, 2026-09-06 (coder note on BL-676's own commit refusal):
+# bl968MaterializedGuardSensitivity.property.test.js alone measures
+# 164-350s depending on host load, already exceeding the old 180s shared
+# rerun budget on its own before any OTHER file's rerun gets a share of it -
+# BL-1407's self-heal net structurally could not clear it. Raised to 600s
+# as an immediate mitigation; BL-1450 owns right-sizing bl968's own
+# footprint so this ceiling does not have to keep growing to fit it.
+RERUN_CEILING_SECONDS_DEFAULT=600
 
 rerun_ceiling_seconds() {
   local v="${SWARMFORGE_PROPERTY_RERUN_CEILING_SECONDS:-$RERUN_CEILING_SECONDS_DEFAULT}"
