@@ -156,3 +156,6 @@ notes: |
   unregistered scenario, so the acceptance run is itself the gate.
 
 assigned_to: coder
+bounce_count: 1
+bounce_history:
+  - { at: 2026-09-06, by: architect, blamed: coder, class: invariant-unencoded, commit: e6cf03bf99, evidence: backlog/evidence/BL-1349-architect-bounce-20260906.md }
