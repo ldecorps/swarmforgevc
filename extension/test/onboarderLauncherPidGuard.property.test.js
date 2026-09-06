@@ -36,15 +36,6 @@ const { SUBPROCESS_HEAVY_TIMEOUT_MS } = require('./helpers/subprocessHeavyTimeou
 // simply absent, so all fifteen runs shared the lane's 20000ms default
 // regardless of the inner spawnSync allowance. SUBPROCESS_HEAVY_TIMEOUT_MS
 // is the established treatment (BL-871, same as bl760/bl787/bl797).
-// BL-1349: numRuns dropped 15 -> 2. The real cost is the "not live" branches
-// (weight 7/10) forcing the launcher past its OLD_PID_FILE fast-decline and
-// into a real `nohup bb onboarder_supervisor.bb` + poll-for-pid-claim -
-// measured at ~6s/run on this host under normal swarm contention (babashka
-// JVM start, not the fixture). numRuns=2 measured a consistent ~0s/~6s/~12s
-// depending on how many of the 2 draws land in that branch - the worst case
-// (both draws expensive) still lands near 12s, comfortably under the 15s
-// budget. This is a real IO cost (BL-654 invariant 2), not one this ticket's
-// scope permits shrinking by editing launch_onboarder.sh's own wait loop.
 const REPO_ROOT = path.join(__dirname, '..', '..');
 const LAUNCHER_SRC = path.join(REPO_ROOT, 'swarmforge', 'scripts', 'launch_onboarder.sh');
 const SUPERVISOR_SRC = path.join(REPO_ROOT, 'swarmforge', 'scripts', 'onboarder_supervisor.bb');
@@ -183,7 +174,7 @@ test(
           cleanupFixture(dir, liveChild);
         }
       }),
-      { numRuns: 2 }
+      { numRuns: 15 }
     );
   },
   SUBPROCESS_HEAVY_TIMEOUT_MS

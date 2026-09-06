@@ -136,10 +136,6 @@
 
 ;; ── tick! ────────────────────────────────────────────────────────────────
 
-;; Hardener fix (tempDirTrapGuard): registered into the file-level
-;; created-temp-dirs/shutdown-hook pair above, so an assertion failure or
-;; crash anywhere below still removes the fixture root - the tail-of-file
-;; (fs/delete-tree tmp) alone never runs on that path.
 (def tmp (fs/create-temp-dir))
 (swap! created-temp-dirs conj tmp)
 
