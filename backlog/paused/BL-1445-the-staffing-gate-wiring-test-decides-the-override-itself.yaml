@@ -19,7 +19,7 @@ required_stages: [coder, cleaner, architect, hardender, documenter, qa]
 
 acceptance: specs/features/BL-1445-the-staffing-gate-wiring-test-decides-the-override-itself.feature
 
-human_approval: pending
+human_approval: approved
 approval_context: >
   A new feature file is authored here, so it needs a tap. No choice is
   posed and there are no ruling_options. Minted by the specifier the same
