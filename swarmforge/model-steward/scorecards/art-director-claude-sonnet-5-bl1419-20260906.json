@@ -1,0 +1,40 @@
+{
+  "scorecard_id": "art-director-scorecard:bl1419-briefing-email-claude-sonnet-5-20260906",
+  "model": "claude-sonnet-5",
+  "role": "art-director",
+  "reviewed_artifact": "the briefing email (BL-1419), rendered from specs/pipeline/steps/fixtures/BL-1419-2026-09-05-briefing.md via render-markdown-to-html then render-briefing-html, read end to end at ~390px phone mail client viewport",
+  "review_source": "backlog/evidence/BL-1419-art-director-20260906.md, By art-director, 2026-09-06",
+  "overall": "approved",
+  "entries": [
+    {
+      "competency": "look-and-feel:reflow-no-fragment-paragraphs",
+      "status": "pass",
+      "reason": "An 8-line hard-wrapped blockquote in the source renders as one <blockquote>; wrapped list continuation lines join into single <li> elements."
+    },
+    {
+      "competency": "look-and-feel:inline-styling-no-style-block",
+      "status": "pass",
+      "reason": "No <style> block; every element's spacing/type style is inline."
+    },
+    {
+      "competency": "look-and-feel:bounded-phone-width-layout",
+      "status": "pass",
+      "reason": "Bounded single column (max-width:640px, padding:16px), system font stack, line-height:1.5 - nothing forces horizontal scroll at phone width."
+    },
+    {
+      "competency": "look-and-feel:header-names-artifact-and-date",
+      "status": "pass",
+      "reason": "Header names the artifact and the date before the first section."
+    },
+    {
+      "competency": "look-and-feel:diagram-placement-under-heading",
+      "status": "pass",
+      "reason": "Diagrams (when present) render under their own heading, after the body, never interleaved."
+    },
+    {
+      "competency": "look-and-feel:list-item-scan-weight",
+      "status": "pass",
+      "reason": "Filed at review time as a non-blocking follow-up (docs/design/briefs/2026-09-06-briefing-list-item-scan-weight.md): themed-group list items didn't carry their group-intro bold weight. BL-1442 (bold-leading-ticket-ids) landed and was QA-approved the same day; the render now carries it."
+    }
+  ]
+}

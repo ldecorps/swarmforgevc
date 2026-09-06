@@ -18,11 +18,12 @@
     "protocol_compliance": { "score": "0.0-1.0 or null" },
     "tool_usage": { "score": "0.0-1.0 or null" },
     "autonomy": { "score": "0.0-1.0 or null" },
-    "cost_latency": { "score": "0.0-1.0 or null" }
+    "cost_latency": { "score": "0.0-1.0 or null" },
+    "look_and_feel": { "score": "0.0-1.0 or null, BL-1437: a reviewer role's own duty - visual/UX judgment on a human-facing artifact, never a coding-quality question" }
   },
 
   "role_matrix_entry": {
-    "_key": "role name, e.g. \"coder\" (must match one of: architect, coder, cleaner, QA, hardender, documenter, specifier)",
+    "_key": "role name, e.g. \"coder\" (must match one of: architect, coder, cleaner, QA, hardender, documenter, specifier, art-director)",
     "provider": "string",
     "model": "string",
     "score": "number, higher ranks first; role_recommendations excludes non-certified models unless include-uncertified? is set",
