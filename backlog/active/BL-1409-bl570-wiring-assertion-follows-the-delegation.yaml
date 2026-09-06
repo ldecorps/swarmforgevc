@@ -104,8 +104,10 @@ qa_e2e_procedure: |
   1. On the parcel: `specs/pipeline/scripts/run_acceptance.sh
      specs/features/BL-570-property-suite-drift-guard.feature` passes all
      seven scenario runs (0/7 on main 2026-09-05).
-  2. `bash swarmforge/scripts/test/test_property_suite_drift_guard.sh` passes
-     every case, case 07 included.
+  2. `bash swarmforge/scripts/test/test_property_suite_drift_guard.sh`
+     prints `PASS: 07` and every case through 10 passes; its first failure,
+     if any, is case 11 or later - BL-1448's allowlist cases, not this
+     ticket's (amended 2026-09-06, see notes; was "passes every case").
   3. Seam: a scratch tree whose hook execs a runner copy that names the
      property guard: the check passes. Comment out the exec line in the hook
      copy: the check fails naming run_commit_guards.sh. Restore it and delete
@@ -136,6 +138,36 @@ notes: |
   today's chain, and failing loud for a genuinely broken hop), one sitting
   (one extracted function, two call sites, one fixture rework), no unbuilt
   sibling; both dependencies are in `backlog/done/`.
+
+  2026-09-06 (later), specifier, on QA's spec-gap note "BL-1409 spec-gap:
+  scenario 04 unsatisfiable given BL-1448's case 11" - SPEC AMENDMENT,
+  applied INSIDE THE PARCEL by bounce, never on main (the parcel is past
+  the coder; a main-side feature edit conflicts with the parcel's copy at
+  the land - rule of 2026-09-04, BL-1385). Scenario 04 was wrong at mint:
+  it asserts the whole shell suite passes, but cases 11, 13b, 13c, 13d and
+  21 are red for BL-1448's reason (the live allowlist drained by BL-1428),
+  hidden behind case 07 when this ticket was written. Replace scenario 04
+  in `specs/features/BL-1409-bl570-wiring-assertion-follows-the-delegation.feature`
+  with EXACTLY:
+
+      # BL-1409 case-07-follows-the-delegation-and-the-suite-runs-past-it-04
+      Scenario: case 07 passes with the delegation and the shell suite runs past it
+        Given the real pre-commit hook and runner
+        When the drift-guard shell suite runs
+        Then case 07 passes
+        And every case through 10 passes
+
+  The handler's scenario-04 steps assert the `PASS: 07` line and `PASS:
+  08`, `PASS: 09`, `PASS: 10` lines in the suite's output instead of exit
+  code 0 (`bl1409Bl570WiringFollowsTheDelegationSteps.js` ~135-146). The
+  boundary "through 10" stays true after BL-1448 lands (cases 01-10 still
+  pass), so it is not a red-when-correct assertion (BL-1006); BL-1448's own
+  scenario 01 asserts the full suite. The feature narrative's last sentence
+  needs no change. Route: QA bounces to the coder with class `spec-gap`,
+  blamed specifier (the mint did not know case 11), this amendment as the
+  remediation pointer; the coder applies the text above verbatim, updates
+  the handler, and re-forwards. Evidence:
+  `backlog/evidence/BL-1409-spec-amendment-scenario-04-20260906.md`.
 
   2026-09-06, specifier, while the coder holds this parcel: re-classed
   medium -> high and a register row added for case 07 (first_seen
