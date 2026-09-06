@@ -137,7 +137,7 @@ Restart the bridge after setting env vars.
 When `LETS_TALK_AUDIO_ENGINE=openai` (or unset) and `OPENAI_API_KEY` is set,
 the bridge uses OpenAI Whisper + TTS and returns `replyAudioBase64`.
 
-## Shared Session with Cursor Remote
+## Shared Session with Host
 
 By default, Let's Talk uses the same `agentId` as the **Host**
 Telegram topic (the standing display name since BL-725). Context from an audio turn is visible to the text topic, and
@@ -190,7 +190,7 @@ still serves must stay in the CRAP gate scope above; `extension/src/bridge/letsT
 `specs/features/BL-766-mini-app-lets-talk-retired-without-its-server-half.feature`
 check this against the real bridge source and route table.
 
-### Cursor Remote `/pilot` (operator)
+### Host `/pilot` (operator)
 
 On the Host Telegram topic, `/pilot [BL-xxx]` asks the **Cursor bridge
 agent** to staff an offline expedition (Cursor-as-expeditor). It does **not**
