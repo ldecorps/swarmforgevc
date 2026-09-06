@@ -36,6 +36,20 @@
 ;;   conflict, an unreadable range). Per QA.prompt: not a bounce to the
 ;;   author - a `note` (priority 00) to the specifier naming the
 ;;   conflicting paths, and stop.
+;;
+;; BL-1438: land_step_cli.bb repoint <repo-root>
+;;   Thin wrapper over land_step_lib.bb's post-land-repoint! (BL-1432
+;;   option 1) - the QA-branch re-point, built and tested with no live
+;;   caller until this verb. Prints exactly one line and exits 0 whichever
+;;   way post-land-repoint! decides (a skip is a decision, not a failure -
+;;   invariant 2): "LAND_REPOINTED <old-tip> <new-tip>" on success, or
+;;   "LAND_REPOINT_SKIPPED <reason>" when post-land-repoint!'s own guards
+;;   refuse (an uncommitted change, a parcel still in_process, or
+;;   origin/main not resolving - BL-1432 invariant 3; this verb adds no
+;;   second notion of clean). Exits non-zero ONLY when <repo-root> itself
+;;   cannot be read as a git repository - proved with `rev-parse
+;;   --git-common-dir` before any mutating git call, per BL-1390 - never
+;;   when the re-point itself decides to skip.
 
 (ns land-step-cli
   (:require [babashka.fs :as fs]
@@ -44,7 +58,23 @@
 
 (load-file (str (fs/path (fs/parent (fs/canonicalize *file*)) "land_step_lib.bb")))
 
-(def usage-text "Usage: land_step_cli.bb <task-name> <commit> [repo-root]")
+(def usage-text "Usage: land_step_cli.bb <task-name> <commit> [repo-root]\n   or: land_step_cli.bb repoint <repo-root>")
+
+(defn- repoint-verb [repo-root-arg]
+  (when (str/blank? repo-root-arg)
+    (binding [*out* *err*] (println usage-text))
+    (System/exit 2))
+  (let [root (str repo-root-arg)
+        common-dir-check (process/sh ["git" "-C" root "rev-parse" "--git-common-dir"])]
+    (if-not (zero? (:exit common-dir-check))
+      (do
+        (binding [*out* *err*] (println (str "Cannot read repo root as a git repository: " root)))
+        (System/exit 2))
+      (let [result (land-step-lib/post-land-repoint! {:root root})]
+        (case (:action result)
+          :repointed (println (str "LAND_REPOINTED " (:old-tip result) " " (:new-tip result)))
+          :skipped (println (str "LAND_REPOINT_SKIPPED " (:reason result))))
+        (System/exit 0)))))
 
 (defn- resolve-repo-root [explicit]
   (or explicit
@@ -55,7 +85,7 @@
   (let [res (process/sh ["git" "-C" (str project-root) "rev-parse" commit]) ]
     (when (zero? (:exit res)) (str/trim (:out res)))))
 
-(defn -main [& args]
+(defn- main-land [args]
   (let [[task-name commit repo-root-arg] args]
     (when (or (str/blank? task-name) (str/blank? commit))
       (binding [*out* *err*] (println usage-text))
@@ -142,5 +172,10 @@
               (println "LAND_ESCALATE")
               (println (:reason plan))
               (System/exit 1))))))))
+
+(defn -main [& args]
+  (if (= "repoint" (first args))
+    (repoint-verb (second args))
+    (main-land args)))
 
 (apply -main *command-line-args*)
