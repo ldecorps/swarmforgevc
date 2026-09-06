@@ -75,9 +75,13 @@ test('on the 15360MB reference host, resolves to the full MAX_WORKERS ceiling (u
   assert.equal(resolveWorkerPoolSize(15360), MAX_WORKERS);
 });
 
-test('on an 8192MB host, shrinks below the ceiling to fit the safe budget', () => {
-  // floor(8192 * 0.5 / 1280) = 3
-  assert.equal(resolveWorkerPoolSize(8192), 3);
+test('on a 4096MB host, shrinks below the ceiling to fit the safe budget', () => {
+  // BL-1348: PER_WORKER_HEAP_MB dropped from 1280 to 640 (measured 298MB
+  // peak, real margin) - an 8192MB host no longer demonstrates a shrink
+  // below MAX_WORKERS=6 at all (floor(8192*0.5/640) is exactly 6), so this
+  // moved to a smaller host that still genuinely clamps below the ceiling.
+  // floor(4096 * 0.5 / 640) = 3
+  assert.equal(resolveWorkerPoolSize(4096), 3);
 });
 
 test('never resolves below 1, even on a host too small to fit even one worker heap', () => {

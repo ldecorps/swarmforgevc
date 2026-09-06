@@ -17,8 +17,21 @@
 // per-worker heap keeps the full suite green while bounding the worst case
 // well under the reference 15360MB host - see vitestWorkerMemoryBudget.test.js's
 // own "the exported caps stay within budget" assertion.
+//
+// BL-1348, human ruling (option 2): PER_WORKER_HEAP_MB was sized against the
+// BL-422 incident host and never re-measured since. Sampled every 2s through
+// a full `npm run test:properties`: peak 298MB for the largest single fork.
+// 640 keeps real margin over that measured peak (not a round number picked
+// to hit a target) rather than removing the cap outright - a genuinely
+// misbehaving fork is still bounded, just no longer at 4x the measured
+// worst case. MAX_WORKERS itself is UNCHANGED (the fallback ceiling a caller
+// gets if it passes no defaultCeiling of its own); what "raises the default
+// ceiling so the pool follows the host core count" is both real vitest
+// configs now passing os.cpus().length as their own defaultCeiling - the
+// existing caller-passes-every-environment-input shape (hostRamMB already
+// works this way), never a second os/env read added to this module.
 export const MAX_WORKERS = 6;
-export const PER_WORKER_HEAP_MB = 1280;
+export const PER_WORKER_HEAP_MB = 640;
 
 // Worst-case footprint must stay within this fraction of the host's total
 // RAM, leaving headroom for the OS and every other swarm agent process
