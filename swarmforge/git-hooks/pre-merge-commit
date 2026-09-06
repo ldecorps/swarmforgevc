@@ -53,6 +53,13 @@ fi
 # violation reports the same guard a commit with that violation reports.
 run_guard check_pipeline_code_on_main.sh
 run_guard check_feature_handler_registration.sh
+# BL-1444: the art director's tip lands on main via a real `git merge
+# --no-ff` (QA.prompt "Landing the Art Director's tip"), which fires this
+# hook and no other commit-time guard. Own predicate, own doc comment on
+# the guard itself; skips instantly on any merge whose incoming parent is
+# not an art-director-side commit, so every other worktree's routine main
+# sync is untouched.
+run_guard check_art_director_tip.sh
 
 if guard_chain_has_refusal; then
   report_refusals

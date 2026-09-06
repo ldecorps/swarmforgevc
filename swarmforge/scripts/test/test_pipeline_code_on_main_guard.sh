@@ -44,6 +44,8 @@ cp "$SCRIPT_DIR/../run_commit_guards.sh" "$ROOT/swarmforge/scripts/run_commit_gu
 cp "$SCRIPT_DIR/../commit_guard_chain_lib.sh" "$ROOT/swarmforge/scripts/commit_guard_chain_lib.sh"
 cp "$SCRIPT_DIR/../check_feature_handler_registration.sh" "$ROOT/swarmforge/scripts/check_feature_handler_registration.sh"
 cp "$SCRIPT_DIR/../property_suite_standing_allowlist_lib.sh" "$ROOT/swarmforge/scripts/property_suite_standing_allowlist_lib.sh"
+# hand edit; BL-1408 derives this set
+cp "$SCRIPT_DIR/../check_art_director_tip.sh" "$ROOT/swarmforge/scripts/check_art_director_tip.sh"
 # An EMPTY step registry, so BL-1303's guard asks its real question here -
 # nothing in this fixture is unrunnable - rather than refusing every action
 # because a repo with no acceptance pipeline has no registry to read. Its
