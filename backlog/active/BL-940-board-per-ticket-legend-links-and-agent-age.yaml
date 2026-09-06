@@ -2,11 +2,11 @@ id: BL-940
 title: "Pipeline board: per-ticket legend line outside the code block carrying the BL-topic and gherkin deep-links, plus time-with-current-agent beside the stage mark"
 milestone: M8
 type: feature
-status: todo
+status: blocked
 epic: pipeline-board
 priority: 120
 direction: human-requested
-depends_on: [BL-585, BL-670]
+depends_on: [BL-585, BL-670, BL-1451]
 assigned_to: coder
 mutation_cost: medium
 human_approval: approved
@@ -83,7 +83,10 @@ description: |
   Whether the legend is one line per visible column or a compact run, and
   whether the elapsed value is formatted by a shared helper with the rest of
   the board's durations, is the implementer's call. `asOf` from BL-670's
-  derivation is the input for the elapsed time; do not re-derive it.
+  derivation, as BL-1451 threads it onto each board row (`stageEntry`), is
+  the input for the elapsed time; do not re-derive it. (Amended
+  2026-09-06: until BL-1451 lands no board row carries `asOf` - the coder
+  found the plumbing absent; see notes.)
 
 invariants:
   - "The board never waits on the Knowledge Explorer: an absent or unreachable explorer degrades the gherkin link (GitHub fallback, or omitted) and every other board section still renders."
@@ -92,7 +95,7 @@ invariants:
 acceptance: specs/features/BL-940-board-per-ticket-legend-links-and-agent-age.feature
 
 qa_e2e_procedure: |
-  On the live swarm host, real Telegram, with BL-585 and BL-670 landed:
+  On the live swarm host, real Telegram, with BL-585, BL-670 and BL-1451 landed:
 
   1. On a PHONE, confirm the pinned board shows a per-ticket legend line
      BELOW the code block, and that its BL-topic link is tappable and opens
@@ -128,3 +131,14 @@ notes: |
   (the asOf value the elapsed time is computed from). All three touch
   extension/src/concierge/pipelineBoard.ts, so they run in sequence, never
   concurrently — the orthogonality breach that forced the BL-670 rescope.
+
+  2026-09-06 (specifier): PARKED - `status: blocked` until BL-1451 lands
+  (depends_on amended). The coder (evidence
+  backlog/evidence/BL-940-coder-spec-gap-20260906.md, coder branch) found
+  that BL-670's asOf/healthDot reach nothing that renders: the board's
+  only input is a bare role-to-ids record. Adjudicated as a split: the
+  plumbing is BL-670's missing consumer (BL-1451), not this ticket's
+  legend-and-mark scope; this ticket's premise ("BL-670 already gives you
+  asOf") was false and is corrected above. Scenarios unchanged; the
+  elapsed mark reads `asOf` from the row entry BL-1451 adds. The
+  coordinator clears `blocked` and re-routes once BL-1451 is in done/.
