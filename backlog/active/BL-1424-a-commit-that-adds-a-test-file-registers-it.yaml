@@ -176,3 +176,5 @@ source: |
   tree-guard list, `git log --first-parent main | grep 27d6ab8630` (a
   direct commit on main), `backlog/hotfix-ledger.yaml` row for 27d6ab8630
   (stamp_ticket BL-1342, awaiting-human).
+
+assigned_to: coder
