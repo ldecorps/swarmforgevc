@@ -181,3 +181,5 @@ notes: |
 source: |
   Architect rule_proposal, scope engineering, 2026-08-28. Disposition:
   minted as this ticket rather than appended to engineering.prompt.
+
+assigned_to: coder
