@@ -15,15 +15,10 @@ in their own worktrees — no merge, rebase, stash, or reset.
 post-land chores (shares the `post-qa-branch-sweep` sweep slot). It reads the
 landed `origin/main` SHA and visits every pipeline role registered in
 `.swarmforge/roles.tsv` except `coordinator` and `specifier` (merge-up
-excluded by design).
-
-Manual invocation:
-
-```bash
-bb swarmforge/scripts/post_qa_branch_sweep.bb <project-root>
-# or
-bash swarmforge/scripts/post_qa_branch_sweep.sh <project-root>
-```
+excluded by design). `handoffd` is the only runner — the manual CLI wrapper
+was retired 2026-09-06 (BL-1426): it never parsed since its birth commit
+(one unclosed paren), nothing ever called it, and it duplicated the
+daemon's own role-fact supplier.
 
 ## What gets fast-forwarded
 
@@ -151,7 +146,6 @@ told. BL-1361 adds the send, reusing the daemon's existing
 | Piece | Location |
 | --- | --- |
 | Pure sweep logic | `swarmforge/scripts/post_qa_branch_sweep_lib.bb` |
-| CLI wrapper | `swarmforge/scripts/post_qa_branch_sweep.bb`, `post_qa_branch_sweep.sh` |
 | handoffd hook | `swarmforge/scripts/handoffd.bb` — `post-qa-branch-sweep-sweep!` |
 | Role worktree resolution | `.swarmforge/roles.tsv` (never hardcoded paths) |
 
