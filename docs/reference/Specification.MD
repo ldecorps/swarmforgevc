@@ -1,5 +1,30 @@
 # SwarmForge VS Code Extension — Specification
 
+**Last Updated:** September 6, 2026 (BL-1442: the Art Director's first
+brief (`docs/design/briefs/2026-09-06-briefing-list-item-scan-weight.md`,
+landed on `main` with BL-1444) found that under the BL-1419 phone layout, a
+list item's leading ticket id sat in the same regular weight as the
+sentence around it, giving a phone reader nothing to scan against even
+though the group-intro sentence above it was already bold. `briefing_email_lib.bb`
+gains `bold-leading-ticket-ids`, called from `render-briefing-html` on the
+body HTML before `style-inline-elements` (so the bare `<strong>` tags it
+adds are styled by the same pre-existing `"strong" "font-weight:600"`
+entry, no new style code): each list item's LEADING LABEL — the run at its
+start made of ticket ids (`BL-<n>`/`GH-<n>`), the connectives `and`, `/`,
+`,`, `+`, `&`, and a parenthesised aside directly after an id (consumed as
+one block) — renders as `<strong>`; the label ends at the first word that
+is none of these, so `BL-1386 and BL-1387: ...` bolds both ids while
+`BL-1374: ... credited BL-1385's replay` bolds only the leading `BL-1374`
+and an id inside a parenthesised aside stays regular. An item that doesn't
+open with a ticket id, including one that already opens with its own
+markdown bold, is untouched; only `<li>` content is affected, never a
+paragraph, heading or blockquote. Weight only — no colour, no new element
+— and the markdown source and plain-text part are never rewritten (the
+HTML part is a render-time effect only). Design-system rule:
+`docs/design/system.md` ("List items needing to be scanned by a leading
+identifier... bold that identifier token"). Acceptance:
+`specs/features/BL-1442-briefing-list-item-leading-ticket-id-is-bold.feature`.)
+Prior entry —
 **Last Updated:** September 6, 2026 (BL-1444: the Art Director (Article
 1.10, BL-1418) is a standing seat outside the forward chain and not
 master-resident, so its commits on `primary/art-director` had no path to
