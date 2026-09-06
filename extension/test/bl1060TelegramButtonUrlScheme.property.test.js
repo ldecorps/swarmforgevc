@@ -46,18 +46,17 @@ const {
   buildBubblePairingDeepLink,
   buildResidentSpyTunnelUrls,
 } = require('../out/concierge/residentSpyTunnelNotify');
+const { walkFilesTolerant } = require('./helpers/tolerantTreeWalk');
 
 const OUT = path.join(__dirname, '..', 'out');
 const SRC = path.join(__dirname, '..', 'src');
 
-function walk(dir, ext, acc = []) {
-  if (!fs.existsSync(dir)) return acc;
-  for (const entry of fs.readdirSync(dir, { withFileTypes: true })) {
-    const full = path.join(dir, entry.name);
-    if (entry.isDirectory()) walk(full, ext, acc);
-    else if (entry.name.endsWith(ext)) acc.push(full);
-  }
-  return acc;
+// BL-1443: a live-tree walk (extension/out, extension/src) goes through the
+// shared helper, never its own inline walk; reads files at walk time
+// (withContent) so a file removed between listing and read is skipped
+// rather than crashing every caller below.
+function walkWithContent(dir, ext) {
+  return fs.existsSync(dir) ? walkFilesTolerant(dir, { extension: ext, withContent: true }) : [];
 }
 
 // Every exported keyboard builder in the compiled tree. Named by convention
@@ -66,8 +65,7 @@ function walk(dir, ext, acc = []) {
 // letting the property pass over an empty set.
 function discoverKeyboardBuilders() {
   const found = [];
-  for (const file of walk(OUT, '.js')) {
-    const text = fs.readFileSync(file, 'utf8');
+  for (const { path: file, content: text } of walkWithContent(OUT, '.js')) {
     for (const m of text.matchAll(/exports\.(build[A-Za-z0-9_]*Buttons)\b/g)) {
       const mod = require(file);
       if (typeof mod[m[1]] === 'function') {
@@ -124,8 +122,8 @@ test('property (invariant 1): every discovered keyboard builder emits only accep
 
 test('property (invariant 1): the discovery finds every keyboard builder the compiled tree exports', () => {
   const exported = new Set();
-  for (const file of walk(OUT, '.js')) {
-    for (const m of fs.readFileSync(file, 'utf8').matchAll(/exports\.(build[A-Za-z0-9_]*Buttons)\b/g)) {
+  for (const { content: text } of walkWithContent(OUT, '.js')) {
+    for (const m of text.matchAll(/exports\.(build[A-Za-z0-9_]*Buttons)\b/g)) {
       exported.add(m[1]);
     }
   }
@@ -163,8 +161,7 @@ test('property (invariant 1): no source button literal passes a custom-scheme de
   // cannot construct would slip past it; this reads the source instead, so a
   // future call site is caught at the point it is written.
   const offenders = [];
-  for (const file of walk(SRC, '.ts')) {
-    const text = fs.readFileSync(file, 'utf8');
+  for (const { path: file, content: text } of walkWithContent(SRC, '.ts')) {
     for (const m of text.matchAll(/url:\s*([A-Za-z_$][A-Za-z0-9_$.]*)/g)) {
       if (/deeplink$/i.test(m[1].split('.').pop())) {
         offenders.push(`${path.relative(SRC, file)}: url: ${m[1]}`);
