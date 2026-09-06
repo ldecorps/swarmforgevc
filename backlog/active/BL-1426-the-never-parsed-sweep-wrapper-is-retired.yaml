@@ -161,3 +161,20 @@ source: |
   whole-tree trace (107 of 286 analysed, BL-1427).
 
 assigned_to: coder
+
+abandoned_commits: [4ee6bc1fdc]
+# 2026-09-06, QA: land_step_lib.bb's bounded-walk replay (BL-1446 root
+# cause, BL-1447 the automated net) not only dropped this ticket's own
+# evidence/handler files on its first LAND_REPLAY attempt but RE-ADDED
+# the two retired files (post_qa_branch_sweep.bb/.sh), undoing this
+# ticket's whole deliverable. Sixth occurrence this shift (after
+# BL-1424, BL-1437, BL-1412, BL-1226, BL-1409). Caught by the QA.prompt
+# interim hand cross-check; fixed by hand: merged the broken push back
+# under the correct branch (confirming the two files are absent again)
+# and pushed that merge directly (origin/main beb73d7ee1 -> a4243d8eb0);
+# every one of this ticket's own files confirmed present/absent
+# correctly on the new tip. Note: this fix required amending an
+# intermediate LOCAL, UNPUSHED merge commit whose subject had
+# accidentally named this ticket's own id (a self-referential sync-merge
+# hazard) before it was pushed anywhere - corrected before landing, not
+# left in the history.
