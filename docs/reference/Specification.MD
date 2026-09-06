@@ -1,5 +1,28 @@
 # SwarmForge VS Code Extension — Specification
 
+**Last Updated:** September 6, 2026 (BL-1444: the Art Director (Article
+1.10, BL-1418) is a standing seat outside the forward chain and not
+master-resident, so its commits on `primary/art-director` had no path to
+`main` — measured 2026-09-06, one content commit sat unlanded. Human
+ruling B (2026-09-06, recommended by the specifier's three-option
+`role_ask`): the art director sends QA a `note` (`land art-director tip
+<10-hex>`, priority `50`, not a parcel — no ticket, no coordinator
+bookkeeping, no merge-up broadcast); QA checks the tip against the seat's
+lane — `docs/design/**` plus `backlog/evidence/*art-director*.md`, a path
+already landed on `main` exempted by provenance — with the new
+`swarmforge/scripts/check_art_director_tip.sh`, then lands it `--no-ff`
+under a subject naming no ticket. The guard also joins the
+`pre-merge-commit` hook chain (after `check_pipeline_code_on_main.sh` and
+`check_feature_handler_registration.sh`, now three guards), so the lane is
+enforced at merge time and not only by QA's own reading; it judges only an
+art-director-side commit, skipping instantly on every other worktree's
+routine `main` sync. Prose (QA.prompt, art-director.prompt, Article 1.10,
+the PIPELINE.md art-director row, the reference amendment's §5) landed
+with the mint; this entry is the guard. How-to:
+[BL-1418](../how-to/BL-1418-the-art-director-seat-is-addressable.md) "How
+the seat's work reaches main". Acceptance:
+`specs/features/BL-1444-the-art-directors-tip-lands-on-main-by-qa.feature`.)
+Prior entry —
 **Last Updated:** September 6, 2026 (BL-1439: five hardening gates deferred
 2026-08-19 (Stryker mutation on BL-620's, BL-955's and BL-954's file sets,
 mutation on `pipelineBoard.ts`, and a stalled gherkin-mutation on BL-956's

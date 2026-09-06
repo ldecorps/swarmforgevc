@@ -57,6 +57,17 @@
 %% defective ticket reworks from last clean ancestor on an isolated branch;
 %% QA lands verified whole trees only (no cherry-pick/rebase-to-land). See
 %% docs/how-to/BL-588-isolate-batch-recovery-trees.md; BL-532 deferrals are input.
+%% BL-1444 (2026-09-06, human ruling B on 2026-09-05's role_ask): the Art
+%% Director (Article 1.10, BL-1418) sits outside the forward chain like the
+%% coordinator and is not master-resident, so its briefs reach the
+%% specifier directly and its own commits (docs/design/, its own sign-off
+%% evidence) reach main only via a `land art-director tip <sha>` note to
+%% QA — no ticket, no coordinator bookkeeping, no merge-up broadcast. QA
+%% checks the tip against the seat's lane
+%% (swarmforge/scripts/check_art_director_tip.sh, wired into the
+%% pre-merge-commit hook chain) and lands it `--no-ff` under a subject
+%% naming no ticket. QA also sends the art director its own sign-off `note`
+%% on artifact parcels (LGTM or a defect list), answered in kind.
 %% BL-668 (2026-08-27): after QA lands on origin/main, handoffd runs
 %% post-qa-branch-sweep-sweep! — fast-forwards clean/ff-able role branches in
 %% roles.tsv worktrees; dirty, in_process, or divergent roles are surfaced.
@@ -80,6 +91,7 @@ flowchart LR
   HARDENER["hardender\n(.worktrees/hardender, BATCH)"]
   DOCUMENTER["documenter\n(.worktrees/documenter, task)"]
   QA["QA\n(.worktrees/QA, task,\nintegration point)"]
+  ARTDIR(("art-director\n(.worktrees/art-director,\nprimary/art-director,\noutside the forward chain)"))
 
   MAIN["main branch\n(target repo)"]
 
@@ -115,6 +127,11 @@ flowchart LR
   QA -->|merge-up note| DOCUMENTER
   QA -->|notifies: approved commit\n+ task id| COORD
 
+  ARTDIR -->|design brief| SPEC
+  QA <-->|sign-off note\n(LGTM or defect list)| ARTDIR
+  ARTDIR -->|land note: land\nart-director tip sha\n(priority 50)| QA
+  QA -->|lands tip --no-ff,\nsubject names no ticket\n(BL-1444)| MAIN
+
   COORD -->|moves ticket| DONE
   COORD -.->|unblocks stalls| SPEC
   COORD -.->|rechecks depth cap,\npromotes next paused item| ACTIVE
@@ -124,7 +141,7 @@ flowchart LR
   classDef batch fill:#9a6700,color:#fff,stroke:#5c4200;
   classDef backlog fill:#57606a,color:#fff,stroke:#32383f;
   classDef target fill:#2ea043,color:#fff,stroke:#116329;
-  class COORD coordinator;
+  class COORD,ARTDIR coordinator;
   class SPEC,CODER,ARCHITECT,DOCUMENTER,QA chain;
   class CLEANER,HARDENER batch;
   class ROOT,PAUSED,ACTIVE,DONE backlog;
