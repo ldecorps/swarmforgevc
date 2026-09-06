@@ -319,6 +319,14 @@
         "score": 0.72,
         "evidence": "operator-onboard:token-plan-lite-anthropic-20260829"
       }
+    ],
+    "art-director": [
+      {
+        "provider": "anthropic",
+        "model": "claude-sonnet-5",
+        "score": 1.0,
+        "evidence": "art-director-scorecard:bl1419-briefing-email-claude-sonnet-5-20260906"
+      }
     ]
   },
   "adapters": {

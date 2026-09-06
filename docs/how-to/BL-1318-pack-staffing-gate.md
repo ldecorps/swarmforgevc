@@ -72,6 +72,20 @@ Seeded from the live packs, table-driven in `pack_staffing_gate_lib.bb`:
   the precedent this gate's escape hatch mirrors
   (`LOCAL_CODER_BATTERY_SKIP_GATE=1` → `PACK_STAFFING_SKIP_GATE=1`).
 
+## Art-director seat certified (BL-1437, 2026-09-06)
+
+The `full-forge.conf` pack's `art-director` window used to add a second,
+independent refusal reason (`not-on-role-matrix`, no role-matrix row for
+the new role) on top of the specifier seat's pre-existing
+`claude-fable-5-1` gap — the pack already launched only under
+`PACK_STAFFING_SKIP_GATE=1`. A recorded scorecard from the seat's own
+first real review (BL-1419, the briefing email) certified
+`anthropic/claude-sonnet-5` for the role through the steward CLI
+(`evaluate` then `certify`), giving `art-director` a role-matrix row like
+every other seat. The escape hatch is still needed for a full-forge launch
+today, but only for the specifier's separate, still-open gap — a launch
+now refuses (or overrides) naming `specifier` alone, never `art-director`.
+
 ## Not this slice
 
 - Auto-running the full compliance battery at launch time — capture stays
