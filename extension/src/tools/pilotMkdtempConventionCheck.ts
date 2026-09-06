@@ -138,6 +138,34 @@ function inScopePath(repoRoot: string, relativePath: string): ScopedPath | undef
   return { repoRelative: normalized, lane: isStepsHandlerJsPath(normalized) ? 'steps' : 'test' };
 }
 
+type DetectorCache = { test?: RawMkdtempDetector; steps?: RawMkdtempDetector };
+
+// Hardener extraction (CRAP): assessPilotMkdtempConvention's own per-lane
+// lazy-load resolution, isolated so each function's complexity is measured
+// independently - the parent dropped from complexity 7 (CRAP 7.00, over the
+// <= 6 threshold and a regression against main's own baseline of 5) to
+// complexity 4 (CRAP 4.00) by this split, with this function itself at
+// complexity 2. No behavior change: still loaded on the first path actually
+// in scope FOR THAT LANE, never before it, never twice.
+function detectorForLane(
+  lane: ScopedPath['lane'],
+  cache: DetectorCache,
+  loadDetector: () => RawMkdtempDetector,
+  loadStepsDetector: () => RawMkdtempDetector
+): RawMkdtempDetector {
+  if (lane === 'steps') {
+    return (cache.steps = cache.steps ?? loadStepsDetector());
+  }
+  return (cache.test = cache.test ?? loadDetector());
+}
+
+// Hardener extraction (CRAP), the other half: scanning one already-in-scope
+// file for its lane's own violations.
+function violationsInFile(repoRoot: string, repoRelative: string, detector: RawMkdtempDetector): MkdtempViolation[] {
+  const text = fs.readFileSync(path.join(repoRoot, repoRelative), 'utf8');
+  return detector.findRawMkdtempLines(text).map((line) => ({ file: repoRelative, line }));
+}
+
 /**
  * Scan touched extension/test AND specs/pipeline/steps paths for raw
  * mkdtempSync call sites outside their lane's required shared helper.
@@ -152,22 +180,16 @@ export function assessPilotMkdtempConvention(
 ): PilotMkdtempConventionCheckOutcome {
   const scannedPaths: string[] = [];
   const violations: MkdtempViolation[] = [];
-  let testDetector: RawMkdtempDetector | undefined;
-  let stepsDetector: RawMkdtempDetector | undefined;
+  const cache: DetectorCache = {};
   for (const rel of touchedRelativePaths) {
     const scoped = inScopePath(repoRoot, rel);
     if (!scoped) {
       continue;
     }
     const { repoRelative, lane } = scoped;
-    // Loaded on the first path actually in scope FOR THAT LANE, never before it.
-    const detector =
-      lane === 'steps' ? (stepsDetector = stepsDetector ?? loadStepsDetector()) : (testDetector = testDetector ?? loadDetector());
+    const detector = detectorForLane(lane, cache, loadDetector, loadStepsDetector);
     scannedPaths.push(repoRelative);
-    const text = fs.readFileSync(path.join(repoRoot, repoRelative), 'utf8');
-    for (const line of detector.findRawMkdtempLines(text)) {
-      violations.push({ file: repoRelative, line });
-    }
+    violations.push(...violationsInFile(repoRoot, repoRelative, detector));
   }
   return { checked: true, testFilesScanned: scannedPaths.length, violations, scannedPaths };
 }
