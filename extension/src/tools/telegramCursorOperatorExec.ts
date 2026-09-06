@@ -765,5 +765,5 @@ export function executeOperatorVerb(
   if (v === '/shift' || v === '/holiday' || v === '/oncall') {
     return executePolicyVerb(repoRoot, v, args, opts?.principalId);
   }
-  return { text: `${v}: no Cursor Remote execute handler yet.`, wroteBounceSentinel: false };
+  return { text: `${v}: no Host execute handler yet.`, wroteBounceSentinel: false };
 }
