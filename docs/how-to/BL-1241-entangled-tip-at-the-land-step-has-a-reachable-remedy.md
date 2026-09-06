@@ -591,24 +591,24 @@ still-unlanded sibling whose commit lies inside the parcel's own range.
 Because `land_step_cli.bb` never needed to change to pick this up, it is
 live today.
 
-**The re-point (`post-land-repoint!`) is built and unit/acceptance-tested
-in isolation but has no production call site yet.** It refuses — never
-running `git reset --hard` — on an uncommitted change or a parcel still in
-`in_process` (checked first, since an in-process parcel's own mailbox file
-is untracked and would otherwise misreport as a generic dirty tree), each
-refusal named in `.swarmforge/daemon/land-repoint.log`; on a verified-clean
-tree it moves both the branch and the worktree to `origin/main` and logs
-the old and new tip. The ticket's own `required_wiring` names only the
-acceptance step-handler file, and its "How" section calls the post-QA
-branch sweep (BL-668) only a candidate site, not a mandate — wiring a live
-caller is a separate decision QA's own `qa_e2e_procedure` step 2 checks
-for directly (timing `land_step_cli.bb` on the next real parcel, and
-confirming a deliberately dirty QA worktree skips the re-point with the
-skip logged). Until something calls `post-land-repoint!`, the QA branch's
-on-disk history keeps growing — a hygiene cost, not a correctness one; the
-bounded walk above already stops that growth from costing anything on
-every land. Acceptance:
-`specs/features/BL-1432-the-land-walk-ranges-over-the-parcel.feature`.
+**The re-point (`post-land-repoint!`) is called from the publish on every
+land (BL-1438).** It refuses — never running `git reset --hard` — on an
+uncommitted change or a parcel still in `in_process` (checked first, since
+an in-process parcel's own mailbox file is untracked and would otherwise
+misreport as a generic dirty tree), each refusal named in
+`.swarmforge/daemon/land-repoint.log`; on a verified-clean tree it moves
+both the branch and the worktree to `origin/main` and logs the old and new
+tip. `land_step_cli.bb`'s `repoint <repo-root>` verb wraps it, and
+`land_main_publish.sh`'s `run_land` invokes that verb immediately after
+`LAND_PUBLISHED`, before the issue close, printing whichever line the verb
+prints: `LAND_REPOINTED <old> <new>` on a clean re-point, or
+`LAND_REPOINT_SKIPPED <reason>` when the guards above refuse — either way
+the verb exits 0 and the publish's own outcome is unaffected (a skip is a
+decision, not a failure). The QA branch's on-disk history no longer keeps
+growing after a clean land; the bounded walk above already stops that
+growth from costing anything even when a re-point is skipped. Acceptance:
+`specs/features/BL-1432-the-land-walk-ranges-over-the-parcel.feature` and
+`specs/features/BL-1438-the-publish-re-points-the-qa-branch-after-a-land.feature`.
 
 ## What this does not change
 

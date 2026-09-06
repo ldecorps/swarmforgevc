@@ -123,6 +123,13 @@ You are QA.
     `git push origin HEAD:main`, then release the lock. On push rejection:
     fetch, rematch once (bounded), wait on the lock — never force-push and
     never unbounded tip-purity bounce loops mid-gate.
+    - **The publish re-points your branch after every land (BL-1438).**
+      Right after `LAND_PUBLISHED`, the publish prints one more line:
+      `LAND_REPOINTED <old> <new>` (your `swarmforge-QA` branch and
+      worktree moved to `origin/main`) or `LAND_REPOINT_SKIPPED <reason>`
+      (an uncommitted change or an `in_process` parcel — nothing moved).
+      Either way the land itself already succeeded; a skip is a decision,
+      never a failure, and needs no action from you.
     - **A hand-built tip-pure land must record what the land step records
       (BL-1334; gap found 2026-09-04, BL-1405).** `land_step_cli.bb` writes a
       replay-to-approved-source line to the SHARED root's
