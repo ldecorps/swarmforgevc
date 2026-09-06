@@ -36,8 +36,9 @@ Feature: BL-1409 BL-570's wiring assertion follows the delegation
       | the hook names the runner only in a comment     | run_commit_guards.sh          |
       | the runner's guard set omits the property guard | check_property_suite_drift.sh |
 
-  # BL-1409 the-drift-guard-shell-suite-is-green-04
-  Scenario: the drift-guard shell suite passes with case 07 following the same delegation
+  # BL-1409 case-07-follows-the-delegation-and-the-suite-runs-past-it-04
+  Scenario: case 07 passes with the delegation and the shell suite runs past it
     Given the real pre-commit hook and runner
     When the drift-guard shell suite runs
-    Then every case passes
+    Then case 07 passes
+    And every case through 10 passes
