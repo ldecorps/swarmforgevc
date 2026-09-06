@@ -2397,3 +2397,28 @@ You are the hardender.
   and left this prompt half to the specifier; it went unwritten from
   2026-09-04 to 2026-09-06 while every pass kept hand-composing. The bounce
   record (`record-bounce.js`) and the revert of a bounced commit are unchanged.
+
+## A `set +e`/`set -e` pair in a file that never enabled errexit turns it ON for every later test — grep `set [+-]e` before adding a case that expects a nonzero exit (rule_proposal 2026-09-06, accepted)
+- Rule (hardender, verbatim): "A test file with one earlier set+e/-e pair
+  leaves errexit ON after it. A later test expecting nonzero exit with no
+  matching wrap dies SILENTLY (no FAIL) - grep set -e/+e first."
+- Why: `set -e` after `set +e` does not RESTORE, it ENABLES. A shell test
+  that opens with `set -uo pipefail` (the BL-1242/BL-1252 chain shape) runs
+  with errexit off; the first case's "restore" switches it on, and every
+  later command that exits nonzero without an `|| st=$?` wrap kills the
+  script between two PASS lines - no FAIL, no summary, a nonzero exit whose
+  last visible line is a pass. Cost ~30 min on BL-1424 (2026-09-06): the
+  new case died with zero output; the cause was
+  `test_check_test_file_registration.sh`'s first case (`set +e` … `set -e`,
+  lines 55-57) leaving errexit ambient for everything after it. Measured
+  the same day: 80 files under `swarmforge/scripts/test/` carry a `set +e`.
+- How: before adding a case to an existing shell test, run
+  `grep -n 'set [+-]e' <file>`. If the file's opening `set` has no `-e`, any
+  `set +e` … `set -e` pair above your case is the trap. Either capture
+  status without toggling in your own case
+  (`out="$(cmd 2>&1)" && st=0 || st=$?`), or fix the pair to restore the
+  PRIOR state (`case $- in *e*) had_e=1;; esac` before `set +e`, re-enable
+  only when `had_e` is set) - never add a third `set +e` to paper over it.
+  A run whose PASS/FAIL line count is short of its case count, or whose
+  exit is nonzero while its tail reads PASS, has died this way: read the
+  exit status, never the tail alone.
