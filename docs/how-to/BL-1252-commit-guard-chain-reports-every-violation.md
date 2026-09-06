@@ -55,9 +55,16 @@ graph) and exits. So the runner groups them:
   `handoffd.bb` specifically is BOOTED against a fixture root and waited
   for one heartbeat, since SCI analyses each `defn` eagerly and only
   running the whole file in order proves a forward reference absent — see
-  "A landed daemon script is booted before it is published" below) — all
-  six always run, and if any refuses, the commit is refused with every
-  Tier-1 violation named. Tier 2 is never reached.
+  "A landed daemon script is booted before it is published" below), and
+  `check_test_file_registration.sh` (BL-1424 — a staged addition directly
+  under `swarmforge/scripts/test/` matching `suite_inventory_lib`'s
+  `test-file?` with no row in the STAGED `suite-manifest.tsv` refuses,
+  naming the file and quoting the row it needs; judges only the commit's
+  own staged additions, never pre-existing drift, so a hotfix straight
+  onto `main` — the one commit shape BL-1240's send-time gate can never
+  see — meets it too) — all seven always run, and if any refuses, the
+  commit is refused with every Tier-1 violation named. Tier 2 is never
+  reached.
 - **Tier 2 (expensive):** `check_property_suite_drift.sh` — reached only
   once every Tier-1 guard passes, so the property suite is never charged
   to a commit that is already refused for a cheap reason. It still runs
@@ -208,6 +215,11 @@ same run reported 107.
 - BL-1427 — the drained-loop and executed-entry-call fixes to this same
   guard's probe (above); BL-1426 — the unreadable wrapper
   (`post_qa_branch_sweep.bb`) the drained loop let reach `main` unseen.
+- BL-1424 (`check_test_file_registration.sh`) — the commit-time sibling of
+  BL-1240's send-time `unregistered_test_gate_lib.bb`, closing the one
+  path (a hotfix committed straight onto `main`) BL-1240 can never see;
+  deliberately NOT added to `land_step_lib.bb`'s tree-guard list (that
+  would judge the whole tree, not the commit's own additions).
 
 ## Verify
 
@@ -219,4 +231,6 @@ bash swarmforge/scripts/test/test_bl1395_bb_scripts_load.sh
 specs/pipeline/scripts/run_acceptance.sh specs/features/BL-1395-a-landed-daemon-script-is-booted-before-it-is-published.feature
 npx vitest run --config vitest.properties.config.mjs test/bl1427LoadGuardCoversEveryScriptInvariants.property.test.js
 specs/pipeline/scripts/run_acceptance.sh specs/features/BL-1427-the-load-guard-covers-every-script-and-runs-none.feature
+bash swarmforge/scripts/test/test_check_test_file_registration.sh
+specs/pipeline/scripts/run_acceptance.sh specs/features/BL-1424-a-commit-that-adds-a-test-file-registers-it.feature
 ```
