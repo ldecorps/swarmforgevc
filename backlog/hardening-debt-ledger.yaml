@@ -30,6 +30,8 @@
   detected_at: 2026-08-19
   attempted_at: 2026-09-06
   attempted_blocker: "Stryker dry run fails on a pre-existing, unrelated suite-wide red (extension/test/constitutionDocCitations.test.js, BL-1440) before any mutant of this file set is instrumented; run belongs to BL-1441"
+  discharged_at: 2026-09-06
+  discharged_evidence: backlog/evidence/BL-1441-BL-954-a-bounce-verifies-its-own-revert-mutation.md
 - parcel: BL-956-pipeline-board-caption-and-cap-hotfix
   gate: mutation
   file_set: extension/src/concierge/pipelineBoard.ts
