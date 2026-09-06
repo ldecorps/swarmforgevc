@@ -1,0 +1,151 @@
+id: BL-1448
+title: "test_property_suite_drift_guard.sh's allowlisted-standing-red cases hard-code names that were rows of the LIVE property allowlist on 2026-08-27, and BL-1428's register has drained that file to zero rows: case 11 fails (hidden behind BL-1409's case 07 since 08-30) and 13b/13c/13d/21 will follow; the suite runs the fixture's own guard copy against a fixture-owned allowlist and decides the same whatever the live file holds"
+milestone: M8
+type: defect
+severity: high
+# high (standing-red rule 2026-09-05): a standing manifest row red on main,
+# the only shell proof of the drift guard's allowlist behaviour (BL-1175 /
+# BL-1234 / BL-1407 re-run semantics). Hidden behind case 07 until BL-1409
+# fixes it, then the first thing BL-1409's parcel hits. Never medium for a
+# red.
+status: todo
+epic: code-quality-gates
+priority: 12
+direction: swarm-reported
+depends_on: [BL-1409]
+mutation_cost: low
+slice_size_envelope: low
+required_stages: [coder, cleaner, architect, hardender, documenter, qa]
+
+acceptance: specs/features/BL-1448-the-drift-guard-suite-owns-its-allowlist.feature
+
+human_approval: pending
+approval_context: >
+  A new feature file is authored here, so it needs a tap. No choice is
+  posed and there are no ruling_options. Minted by the specifier on the
+  coder's unowned-red note from the BL-1409 parcel (2026-09-06T17:57Z),
+  reproduced on main past case 07 by neutralizing that one assertion in a
+  scratch copy. depends_on BL-1409 because both edit the same test file and
+  the suite cannot be green until case 07 is; the coordinator promotes this
+  after BL-1409 lands.
+
+invariants:
+  - "Every allowlist-dependent case of the suite reads the allowlist the fixture wrote, through the guard copy the fixture installed beside it; no case reads the live property_suite_standing_allowlist.tsv, so the live file may hold any rows, including none."
+  - "The fixture's allowlisted and non-allowlisted names are disjoint by construction and never appear in the live allowlist or the standing-red register: the fixture's verdicts cannot drift with the register."
+
+required_wiring:
+  - 'specs/pipeline/steps/bl1448DriftGuardSuiteOwnsItsAllowlistSteps.js::registerSteps::the handler file exists so discovery registers every scenario (BL-1371)'
+
+description: |
+  ## What is wrong
+
+  `swarmforge/scripts/test/test_property_suite_drift_guard.sh` (`standing`
+  row 400 of `suite-manifest.tsv`) invokes the LIVE guard (`GUARD=$SCRIPT_DIR/../check_property_suite_drift.sh`)
+  for its allowlist cases, and the guard resolves its allowlist relative to
+  its own directory (`ps_allowlist_tsv_path "$SCRIPT_DIR"`,
+  `property_suite_standing_allowlist_lib.sh` line 7-13): the live
+  `swarmforge/scripts/property_suite_standing_allowlist.tsv`. Cases 11, 12,
+  13, 13b, 13c, 13d and 21 hand-write fixture reds named after files that
+  were rows of that file on 2026-08-27 (`bl632CommitTimeGuardInvariants`,
+  `alertTelemetry`, `crossFileDuplicationCheck`, `hostActivityFeed`,
+  `pilotAcceptanceGate`).
+
+  BL-1428 (`7a34298555`, 2026-09-05) made `backlog/standing-reds.tsv`
+  authoritative and removed 25 allowlist rows; the owners landed the same
+  day (BL-1206, BL-1229, BL-1263, BL-1289, BL-1290, BL-1430, BL-1434) and
+  the live allowlist now holds its header and nothing else. The guard
+  therefore treats the fixture's "allowlisted" red as non-allowlisted,
+  re-runs it alone (BL-1407), finds it still red, and refuses. Reproduced
+  2026-09-06 on main at `0ddebf8da9` with case 07's assertion neutralized
+  in a scratch copy:
+
+      FAIL: 11: all-allowlisted reds must allow, got 1: property-suite-guard: run
+       FAIL  test/bl632CommitTimeGuardInvariants.property.test.js > x
+      property-suite-guard: test/bl632CommitTimeGuardInvariants.property.test.js still fails when run alone
+      Commit rejected: property suite failed with non-allowlisted files:
+      test/bl632CommitTimeGuardInvariants.property.test.js
+
+  Cases 13b, 13c, 13d and 21 fail the same way once 11 passes. On main
+  today the suite stops at case 07 (BL-1409, red since `76dd67b692`,
+  2026-08-30), so this red has been invisible for a day; the coder on
+  BL-1409 met it the moment 07 was green in its worktree.
+
+  ## What is wanted
+
+  - The suite's allowlist cases run the guard copy the fixture already
+    installs for case 07 (`$ROOT/swarmforge/scripts/check_property_suite_drift.sh`
+    with its libs beside it) against an allowlist file the fixture writes
+    into that directory, listing the fixture's allowlisted names and
+    nothing else; the header line is copied from the live file so the
+    format never drifts (invariant 1). The non-allowlisted fixture names
+    stay absent from it (invariant 2).
+  - The suite passes every case with the live allowlist holding 0, 1 or 3
+    rows (scenario 01) and when the live file names one of the fixture's
+    non-allowlisted reds (scenario 02): the live file decides nothing.
+  - The landing commit removes this ticket's row from
+    `backlog/standing-reds.tsv` (standing-red rule 2).
+
+  ## How (direction, not mandate)
+
+  - One helper in the test, `install_guard_copy_with_allowlist <names...>`,
+    reused by every allowlist case; `GUARD_COPY=$ROOT/swarmforge/scripts/check_property_suite_drift.sh`
+    replaces `$GUARD` in those cases only. Cases 01-06 and 08-10, which do
+    not touch the allowlist, may keep the live guard or move too - one
+    invocation style is cleaner. Keep the test bash-3.2 safe and the
+    BL-1407 re-run cases (19-25) on names that are never allowlisted
+    (`bl1407Fake*` already are).
+  - Handler `specs/pipeline/steps/bl1448DriftGuardSuiteOwnsItsAllowlistSteps.js`:
+    copy the suite, the guard and its libs into a mkdtemp tree, write the
+    scratch tree's allowlist with the row's count (and, for scenario 02, a
+    row naming `test/pipelineBoard.property.test.js`), run the suite from
+    the scratch tree and assert the final `ALL CHECKS PASSED` line. Never
+    write the live allowlist (BL-1390).
+  - Documenter: one sentence in the BL-1175/BL-1234 how-to that the shell
+    suite's allowlist is fixture-owned. No diagram trigger fires.
+
+  ## Out of scope
+
+  - Case 07 and the acceptance Background handler: BL-1409.
+  - Whether the allowlist mechanism itself is superseded by the register
+    (BL-1428 kept it as the guard's input, joined to the register); a
+    retirement, if ever, is its own deprecator slice.
+
+qa_e2e_procedure: |
+  1. `bash swarmforge/scripts/test/test_property_suite_drift_guard.sh` ends
+     `ALL CHECKS PASSED` in the QA pane (BL-1409 landed first, so case 07
+     is green); the BL-1448 feature passes all four runs; BL-570's,
+     BL-1175's, BL-1234's and BL-1407's features stay green.
+  2. In a scratch copy of the tree, empty the allowlist to its header and
+     run the suite: passes; add a row `test/pipelineBoard.property.test.js`
+     and run: passes. The live allowlist is untouched (`git status` clean).
+  3. `grep -c '"\$GUARD"' swarmforge/scripts/test/test_property_suite_drift_guard.sh`
+     over the allowlist cases (11-13d, 21) is 0.
+  4. The landing removes the BL-1448 row from `backlog/standing-reds.tsv`.
+
+notes: |
+  Minted 2026-09-06 by the specifier on the coder's priority-00 note from
+  the BL-1409 parcel: "unowned-red test_property_suite_drift_guard.sh case
+  11 fails on main HEAD". Grepped first: BL-1409 (active) owns case 07 and
+  names only 07 and the Background handler; BL-1408 (paused) names the
+  file only as a non-copy of the chain list. Register rows added the same
+  commit: case 07 -> BL-1409 (first_seen 2026-08-30; the ticket had no row
+  and sat at medium, both corrected this pass under the standing-red
+  rule), case 11 -> this ticket (first_seen 2026-09-05, the day BL-1428
+  drained the allowlist). Evidence:
+  `backlog/evidence/BL-1448-unowned-red-drift-guard-case-11-20260906.md`.
+
+  INVEST at mint: Independent (BL-1409 is a landed-first prerequisite,
+  never a co-parcel), Negotiable (helper shape and which cases move are
+  direction), Valuable (one outcome: the drift guard's allowlist proof is
+  green in every lane and would go red only for a guard regression),
+  Estimable (one helper, seven case edits, one handler; low), Small (two
+  scenarios, four runs, two invariants), Testable (a scratch tree with a
+  written allowlist; the real suite spawned).
+
+source: |
+  Coder note 2026-09-06T17:57:22Z; reproduction by the specifier on main at
+  0ddebf8da9 (scratch copy with case 07's grep neutralized) and in the
+  coder's worktree (case 07 fixed there); swarmforge/scripts/check_property_suite_drift.sh
+  39-43; property_suite_standing_allowlist_lib.sh 7-13; git show 7a34298555
+  (25 rows removed); suite-manifest.tsv row 400; test history 76dd67b692
+  (BL-1252), 984a9a197b (BL-1407).
