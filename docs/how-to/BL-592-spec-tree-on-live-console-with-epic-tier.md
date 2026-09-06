@@ -52,11 +52,37 @@ milestone -> epic -> ticket when `schemaVersion >= 2`, while still reading
 the flat root `tickets[]` roll-up for lookup and search — the static PWA
 explorer keeps working, not just the live console.
 
+## Text filter (BL-1412)
+
+A filter box above the crumbs narrows the tree to a typed term, the
+classic IDE tree filter: entries whose own label matches, or that hold a
+matching descendant, stay — everything else hides, case-insensitively.
+Two match kinds, both applied by the bridge, never the inline script:
+
+- **Ticket match** — title, description or scenario text contains the
+  term (BL-254's own `filterDocsTree`, reused byte-identical — it is not
+  reimplemented here, since `pwa/app.js` mirrors it by hand and must stay
+  in sync with what it mirrors).
+- **Label match** — a milestone name, epic title, or ticket id contains
+  the term; a label match keeps that node's WHOLE subtree, not just the
+  matching node.
+
+`filterSpecTree(tree, query)` (`docsTree.ts`) composes both; the bridge's
+`/spec-tree-state` route calls it with the `?q=` query parameter
+(`GET` only — `q` rides the same token-eligible path as before, BL-592's
+read-only-gate is unchanged). No `q`, or a blank one, returns the full
+tree. Filtering PRUNES — a kept ticket keeps its full scenario list and
+its exact milestone/epic placement; it is never regrouped. Clearing the
+box restores the full tree; a term matching nothing shows a no-results
+state naming the term. Out of scope: the static PWA's own copy of the
+tree (BL-254, shipped) — this filter reaches the live console only.
+
 ## Where it lives
 
 | Piece | Location |
 | --- | --- |
 | Tree derivation (epic tier) | `extension/src/docs/docsTree.ts` — `buildEpicNodes`, `buildEpicTrackersByKey`, `buildMilestoneNodes`, `flattenMilestoneTickets` |
+| Text filter | `extension/src/docs/docsTree.ts` — `filterSpecTree` (reuses `filterDocsTree`, BL-254, unchanged) |
 | Live route | `extension/src/bridge/bridgeServer.ts` — `isSpecTreePath` / `isSpecTreeStatePath`, `/spec-tree` and `/spec-tree-state` |
 | Console menu entry | `extension/src/bridge/consoleMenuUiHtml.ts` — links the live spec tree screen |
 | Live screen markup + drill-down script | `extension/src/bridge/specTreeUiHtml.ts` |
@@ -70,6 +96,8 @@ npm test -- extension/test/docsTree.test.js extension/test/specTreeUiHtml.test.j
   extension/test/pwaLocale.test.js
 bash specs/pipeline/scripts/run_acceptance.sh \
   specs/features/BL-592-spec-tree-on-live-console-with-epic-tier.feature
+bash specs/pipeline/scripts/run_acceptance.sh \
+  specs/features/BL-1412-a-text-filter-on-the-live-spec-tree.feature
 ```
 
 ## Out of scope
