@@ -50,7 +50,7 @@ healthy.
 
 ## Liveness cue
 
-The Cursor Remote topic carries a standing, edit-in-place status line —
+The Host topic carries a standing, edit-in-place status line —
 `Bridge: busy · N waiting` / `Bridge: idle` — so a stuck queue is visible
 without checking logs (`syncCursorBridgeLivenessStatus`,
 `extension/src/tools/telegramCursorBridgeLiveness.ts`). It edits the same
@@ -87,7 +87,7 @@ process that could steal updates from the real bridge.
 ## Out of scope
 
 - Bubble remote configuration and hold-music catalog (BL-765).
-- A queued question's answer posting to the Cursor Remote topic regardless of
+- A queued question's answer posting to the Host topic regardless of
   where it was asked — this was flagged as a likely BL-765 follow-up but
   turned out to be neither BL-765 nor this ticket's mechanism; fixed
   separately, see
