@@ -10,12 +10,20 @@ direction: human-requested
 depends_on: []
 assigned_to: coder
 mutation_cost: low
+abandoned_commits: [d6344ebb98]
+# d6344ebb98 was QA's final-pass commit, cited to `land_main_publish.sh --land`.
+# The automated LAND_REPLAY (BL-1241 remedy, land_step_cli.bb) built a tip-pure
+# commit missing 13 of this ticket's own 17 files (only 4 landed) - the same
+# bounded-walk defect as BL-1424/1437/1412/1226/1409/1426 this shift, owned by
+# BL-1446/1447. Caught before push (the automated push itself hit a lock
+# timeout, so nothing reached origin). Rebuilt this tip-pure commit by hand
+# directly onto origin/main, verified against d6344ebb98's own file set.
 invariants:
   - "The proposal pass is read-only over backlog/ — it writes only its own report file."
 required_wiring:
   - "specs/pipeline/steps/bl676EpicBackfillProposalsSteps.js::registerSteps::acceptance handler registered so the runner executes this ticket's scenarios; repointed 2026-09-04 after BL-1371 discovery - the handler file IS the registration and index.js names nothing"
 
-acceptance: specs/features/BL-676-epic-backfill-proposals.feature.draft
+acceptance: specs/features/BL-676-epic-backfill-proposals.feature
 
 approval_context: >
   Operator ask 2026-07-26 (INTAKE-backfill-epic-on-done-tickets.md): 427 of
