@@ -148,3 +148,14 @@ source: |
   `full-forge.conf` 245-262; `model-steward.prompt` Owns/Does Not Own.
 
 assigned_to: coder
+
+abandoned_commits: [8fcf78215e]
+# 2026-09-06, QA: land_step_lib.bb's bounded-walk replay (BL-1446 root
+# cause, BL-1447 the automated net) again silently dropped this ticket's
+# own paths on its first LAND_REPLAY attempt (11 files, everything but two
+# docs) - second occurrence the same shift, after BL-1424's. Caught by the
+# interim hand cross-check QA.prompt now mandates (git diff <cited>
+# <new-commit> -- <this ticket's own paths>, non-empty). Fixed by hand:
+# merged the broken push back under the correct branch and pushed that
+# merge directly (origin/main e5bfdce6c3 -> 22d6fc8854); every one of this
+# ticket's 14 own files confirmed present by name on the new tip.
