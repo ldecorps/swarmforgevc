@@ -8,7 +8,7 @@ severity: medium
 priority: 153
 direction: human-requested
 depends_on: []
-assigned_to:
+assigned_to: coder
 mutation_cost: medium
 human_approval: approved
 approval_context: >
