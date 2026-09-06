@@ -1,0 +1,146 @@
+id: BL-1447
+title: "A replay tip missing any path the parcel's own commits changed is refused before it is published: the land step compares the replay against the cited tip path by path and answers LAND_ESCALATE replay-incomplete naming every missing path instead of LAND_REPLAY - the net that would have refused BL-1424's replay on 2026-09-06 before LAND_PUBLISHED"
+milestone: M8
+type: defect
+severity: high
+# high: the same incident as BL-1446 - a main tip pushed without a
+# QA-approved deliverable, LAND_PUBLISHED printed for it. This ticket is
+# the fail-closed check the publish path never had; it holds whatever
+# attribution bug comes next, which is why it is not folded into the
+# root-cause fix.
+status: todo
+epic: swarm-reliability
+priority: 6
+direction: swarm-reported
+depends_on: []
+mutation_cost: low
+slice_size_envelope: low
+required_stages: [coder, cleaner, architect, hardender, documenter, qa]
+
+acceptance: specs/features/BL-1447-a-replay-missing-a-parcel-path-is-refused-before-publish.feature
+
+human_approval: pending
+approval_context: >
+  A new feature file is authored here, so it needs a tap. No choice is
+  posed and there are no ruling_options. Minted by the specifier on QA's
+  priority-00 note (2026-09-06T17:40Z) as the sibling of BL-1446 (the root
+  cause); QA's evidence recommends exactly this cross-check. It also
+  retires the interim hand check written into QA.prompt with this mint.
+
+invariants:
+  - "LAND_REPLAY is reported only for a replay tip that carries, for every path any of the parcel's own commits changed since its first hop, the blob the cited tip carries; anything less is LAND_ESCALATE and nothing is published."
+  - "The comparison reads git objects only (trees and blobs of the cited tip and the replay tip); it never consults the attribution that built the replay, so it cannot share that attribution's blind spot."
+
+required_wiring:
+  - 'specs/pipeline/steps/bl1447ReplayMissingParcelPathRefusedSteps.js::registerSteps::the handler file exists so discovery registers every scenario (BL-1371)'
+
+description: |
+  ## What is wrong
+
+  `land_step_lib.bb`'s `replay!` (line ~1269) builds a tip-pure commit from
+  the paths `land-plan` attributed to the parcel, and `land_step_cli.bb`
+  prints `LAND_REPLAY <branch> <new-commit>`; `land_main_publish.sh` (line
+  147-149) takes that sha and pushes it, printing `LAND_PUBLISHED`. No step
+  between the build and the push asks whether the built tip carries the
+  parcel's work. On 2026-09-06 (`backlog/evidence/BL-1424-land-replay-dropped-own-paths-incident-20260906.md`)
+  the attribution was wrong (BL-1446) and the replay for BL-1424 held five
+  evidence files and none of the guard, its CLI, its lib change, its hook
+  line, its two tests, its property runner or its handler: `LAND_PUBLISHED
+  002def27c6` printed for a main tip without the deliverable. QA caught it
+  by diffing the replay against the ticket's own file list from the coder's
+  evidence, by hand, and notes that the ordinary diff-against-both-parents
+  check does not catch it - a replay is built as a fresh commit off
+  origin/main, so it diffs cleanly against its own parents.
+
+  ## What is wanted
+
+  - Before `land-plan` returns `:replay`, the land step compares the replay
+    tip against the cited tip for every path the parcel's own commits
+    changed since its first hop: each such path must exist in the replay
+    tree with the cited tip's blob (paths the parcel deleted must be absent
+    in both). Any difference is `{:action :escalate :reason
+    "replay-incomplete: <path> [<path> ...]"}` naming EVERY missing or
+    differing path in one report (Article 4.4), and `land_step_cli.bb`
+    prints `LAND_ESCALATE` then that reason as it does for every other
+    escalation - so `land_main_publish.sh` stops and pushes nothing through
+    its existing `LAND_STOPPED` branch (scenario 01, both rows).
+  - A complete replay is reported as `LAND_REPLAY` exactly as today
+    (scenario 02).
+  - The set of paths compared is derived from the parcel's commits, not
+    from the attribution that built the replay (invariant 2): `git log
+    --format=%H ^origin/main <cited>` filtered to subjects naming the
+    ticket, each commit's `diff-tree --name-status` unioned - the wide,
+    cheap, unbounded read of the parcel's own history. Its cost is the
+    parcel's own commits.
+
+  ## How (direction, not mandate)
+
+  - A pure `replay-missing-paths` in `land_step_lib.bb` taking the two
+    trees' path->blob maps and the parcel's path set, returning the sorted
+    vector of offenders (unit-testable without git); `land-plan` calls it
+    after `replay!` and before returning `:replay`. The git reads through
+    the lib's existing `sh!`/`blob-lines` shape.
+  - The escalation reason is a fixed literal prefix `replay-incomplete:`
+    followed by the paths, so QA and the wrapper can grep it; the CLI's
+    `:escalate` branch (line ~170) needs no change.
+  - Fixture: the BL-1432 section of `land_step_lib_test_runner.bb` plus a
+    seam that drops paths from the attribution (`paths-fn`, the arity
+    `entangled-siblings` already threads), so the check is exercised
+    against a deliberately wrong replay without waiting for BL-1446.
+  - Documenter: QA.prompt's interim hand check (landed 2026-09-06 with
+    this mint, "Before landing any replay ... until BL-1447 lands") is
+    retired by the specifier when this ticket lands - say so in the
+    parcel's evidence so the specifier is told;
+    `docs/how-to/BL-1241-entangled-tip-at-the-land-step-has-a-reachable-remedy.md`
+    gains the fourth outcome (`replay-incomplete`). No diagram trigger fires.
+
+  ## Out of scope
+
+  - Fixing the attribution itself: BL-1446.
+  - Any change to what counts as entangled, landed or own (BL-1389,
+    BL-1375, BL-1354).
+
+qa_e2e_procedure: |
+  1. `bb swarmforge/scripts/test/land_step_lib_test_runner.bb` passes; the
+     BL-1447 feature passes all three runs; BL-1432's, BL-1431's,
+     BL-1389's and BL-1241's features stay green.
+  2. In a clone under mkdtemp, rebuild the incident shape as BL-1446's
+     e2e step 2 does (if BL-1446 has not landed the plan still chooses
+     replay): `land_step_cli.bb` prints `LAND_ESCALATE` and a
+     `replay-incomplete:` line naming `swarmforge/scripts/check_test_file_registration.sh`
+     among others; `land_main_publish.sh --land` on the same shape prints
+     `LAND_STOPPED` and `git rev-parse origin/main` is unchanged.
+  3. The next real replay after this ticket lands (if any) prints
+     `LAND_REPLAY`, and QA's own diff of the replay against the cited tip
+     over the parcel's paths is empty - recorded in QA's evidence as the
+     last hand check before the interim rule is retired.
+
+notes: |
+  Minted 2026-09-06 by the specifier on QA's note and incident evidence
+  (see BL-1446 for the shared source). Split from BL-1446 on purpose: the
+  net reads trees, the fix reads history; the net stays valuable after the
+  fix because the next attribution bug is not this one. Both touch
+  `land_step_lib.bb`, so the coordinator serializes them (Concurrent Work
+  Orthogonality); the net is the cheaper and safer first land.
+
+  A wiring anchor beyond the handler is deliberately absent: the consumer
+  of the new check is `land-plan`'s own :replay return, a pre-existing
+  call path, and the CLI's :escalate branch already prints any reason;
+  an anchor on either would match before the fix and gate nothing
+  (BL-1235). e2e step 2 drives the surfaced line through the real CLI and
+  wrapper.
+
+  INVEST at mint: Independent (no unbuilt sibling; BL-1446 is named only
+  to keep scopes apart), Negotiable (where the compare lives and the seam
+  are direction; the literal `replay-incomplete:` is the contract),
+  Valuable (one outcome: an incomplete replay is never published),
+  Estimable (one pure function, one call, one fixture seam, one handler;
+  low), Small (two scenarios, three runs, two invariants), Testable (a seam that
+  drops a path; git objects only).
+
+source: |
+  QA note 2026-09-06T17:40:53Z; backlog/evidence/BL-1424-land-replay-dropped-own-paths-incident-20260906.md
+  (b87c513a57), "Recommendation for the specifier";
+  swarmforge/scripts/land_main_publish.sh 136-153, 193;
+  swarmforge/scripts/land_step_cli.bb 114-176; swarmforge/scripts/land_step_lib.bb
+  987-1062, 1269.
