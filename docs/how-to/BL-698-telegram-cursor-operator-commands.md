@@ -1,4 +1,4 @@
-# BL-698 — Telegram Cursor Remote operator commands
+# BL-698 — Telegram Host operator commands
 
 Phone-first ops on the **Host** topic (the standing display name since
 BL-725; the topic is bound by subject id, not by name, so this is a
