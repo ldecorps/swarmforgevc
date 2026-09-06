@@ -7,6 +7,15 @@
 
 (load-file (str (fs/path (fs/parent (fs/canonicalize *file*)) ".." "coordinator_activity_feed_lib.bb")))
 
+;; tempDirTrapGuard.test.js finding: the manual (fs/delete-tree tmp) calls
+;; below only run if the script reaches them - an uncaught exception
+;; anywhere between fs/create-temp-dir and the final cleanup would leak the
+;; temp root. A shutdown hook is the same belt-and-suspenders convention
+;; post_qa_branch_sweep_lib_test_runner.bb already uses.
+(def created-temp-dirs (atom []))
+(.addShutdownHook (Runtime/getRuntime)
+                   (Thread. (fn [] (doseq [d @created-temp-dirs] (try (fs/delete-tree d) (catch Exception _ nil))))))
+
 (def failures (atom []))
 
 (defn assert= [msg expected actual]
@@ -127,12 +136,12 @@
 
 ;; ── tick! ────────────────────────────────────────────────────────────────
 
-;; Hardener fix (tempDirTrapGuard): a shutdown hook, so an assertion failure
-;; or crash anywhere below still removes the fixture root - the tail-of-file
-;; (fs/delete-tree tmp) alone never runs on that path. Mirrors
-;; aps_equivalence_lib_test_runner.bb's own established shape.
+;; Hardener fix (tempDirTrapGuard): registered into the file-level
+;; created-temp-dirs/shutdown-hook pair above, so an assertion failure or
+;; crash anywhere below still removes the fixture root - the tail-of-file
+;; (fs/delete-tree tmp) alone never runs on that path.
 (def tmp (fs/create-temp-dir))
-(.addShutdownHook (Runtime/getRuntime) (Thread. (fn [] (try (fs/delete-tree tmp) (catch Exception _ nil)))))
+(swap! created-temp-dirs conj tmp)
 
 (defn reset-tick-fixture! []
   (fs/delete-tree tmp)
