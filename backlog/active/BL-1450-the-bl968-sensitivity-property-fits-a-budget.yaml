@@ -161,3 +161,5 @@ source: |
   swarmforge/scripts/check_property_suite_drift.sh 149-156;
   docs/how-to/BL-570-property-suite-drift-guard.md 62-76; the test file
   lines 58-90, 143-226; BL-1349 active ticket "How" and out-of-scope.
+
+assigned_to: coder
