@@ -1,0 +1,264 @@
+id: BL-1455
+title: "A ticket re-pended for a second ruling never reaches the human: the concierge counts its closed, keyboard-stripped earlier ask as still live, suppresses the fresh ApprovalRequested and never reconciles one, so BL-1348's A-D ask and BL-1408's re-approval have been dark since 2026-09-06 while the roster lists both as awaiting"
+milestone: M8
+type: defect
+severity: high
+# high, not medium: a human decision channel is silently dark. Two live
+# tickets are parked on it right now - BL-1348 (active; the coder holds an
+# uncommitted parcel waiting for the A-D ruling) and BL-1408 (paused; can no
+# longer be approved by tap at all, its only ask has no keyboard). Nothing
+# logs, nothing chases, and the Approvals roster says "awaiting approval",
+# so the human reads the swarm as waiting on THEM while nothing tappable
+# exists. Not critical: no data is lost and the swarm is up; the tickets
+# wait, they are not corrupted.
+status: todo
+epic: swarm-reliability
+priority: 12
+direction: swarm-reported
+depends_on: []
+mutation_cost: low
+# low: the change is confined to two pure TypeScript modules the tick
+# already calls (approvalAskReconcile.ts, conciergeTick.ts) plus the ask
+# store's close writer; every consumer is unit-testable over fakes.
+slice_size_envelope: low
+required_stages: [coder, cleaner, architect, hardender, documenter, qa]
+
+acceptance: specs/features/BL-1455-a-re-pended-ticket-posts-a-fresh-ruling-ask.feature
+
+human_approval: pending
+approval_context: >
+  A new feature file is authored here, so it needs a tap. No choice is posed
+  and there are no ruling_options. What is FIRM: a decided ask never counts
+  as live, and BL-1090's guarantee (an UNDECIDED ask on the live topic is
+  never duplicated) is kept - scenario 02 pins it. What you should know NOW,
+  independent of this ticket: your second ruling on BL-1348 (A/B/C/D, B
+  recommended) has never been posted to you. The Approvals roster lists
+  BL-1348 as awaiting, but the only BL-1348 message (69489, 2026-09-02)
+  is stamped "-- Ruled: ..." with its buttons stripped. Message 79093 is
+  BL-1454's ask, not BL-1348's. BL-1408 is in the same state (message
+  73813, stamped "-- Approved 2026-09-05", re-pended 2026-09-06). Do NOT
+  type "approve BL-1348" in the Approvals topic as a workaround: whether
+  that path refuses a missing ruling is unverified, and if it does not it
+  records a bare approval and discards the A-D choice (BL-1300's shape).
+  The fix direction below heals both live tickets on the first tick after
+  it lands, with no state-file surgery; the interim recipe for an operator
+  who cannot wait is in notes.
+
+invariants:
+  - "A ticket whose human_approval transitions to pending has a live buttoned ask reflecting its CURRENT ruling_options within one concierge tick, whatever ask history the store holds for that id."
+  - "A closed (decided) ask is never counted as a live ask by any consumer deciding whether to post; the edge path and reconcile answer that question through one predicate and agree (BL-1090 invariant 1 stays: at most one LIVE ask per ticket)."
+  - "BL-1090's guarantee is preserved: a crash between the Telegram post and the durable tick-state write still produces no duplicate of an undecided ask."
+
+description: |
+  ## What is wrong
+
+  `runConciergeTick` (`extension/src/concierge/conciergeTick.ts`) derives
+  `ApprovalRequested` in two ways and neither fires for a re-pend:
+
+  - **The edge path.** `diffApprovalRequested`
+    (`extension/src/events/swarmEventStream.ts`) emits on a not-pending to
+    pending transition. A re-pend IS that transition, so the event is
+    derived - and then `suppressEdgeApprovalRequestedWhenAskOnLiveTopic`
+    drops it because `approvalAskRecordedOnLiveTopic`
+    (`extension/src/concierge/approvalAskReconcile.ts`) finds a record for
+    the id whose `topicId` is the live Approvals topic. The record is the
+    OLD ask: when the first approval landed, `closeApprovalAskIfPossible`
+    (`extension/src/tools/telegramFrontDeskBotCore.ts`) edited the message
+    to append a decided stamp, stripped its keyboard (`editMessageText`
+    with `buttons: null`), and `persistClosedApprovalAskText` wrote the
+    decided text back into `telegram-approval-ask-messages.json` under the
+    same `{topicId, messageId}`. Nothing in the record says "closed"; the
+    predicate cannot tell a live ask from a dead one. The suppressed event
+    is then added to `emittedKeys`.
+  - **Reconcile.** `approvalAsksNeedingRepost` skips any id recorded on the
+    live topic (same predicate), and its no-record branch is guarded by
+    `!emittedKeys.has(ApprovalRequested:<id>)` so it never loops. Both
+    gates are closed for a re-pended ticket: the record is on the live
+    topic, and the emitted key is present (from the original ask AND
+    re-added by the suppression).
+
+  The result is a ticket listed in the Approvals roster
+  (`approvalsRosterSync.ts`, a separate text index that reads
+  `pendingApproval` and is correct) whose only Telegram message is a
+  decided, buttonless ask from days earlier. No log line, no chase, no
+  bounce. The pipeline parks on `human_approval: pending` until someone
+  notices by hand.
+
+  ## Two live instances, verified 2026-09-06
+
+  - **BL-1348.** Approved 2026-09-02 (`56e56a0a49`, via the front desk).
+    Ask store: `{"topicId":1785,"messageId":69489}`, text ending
+    `-- Ruled: Lower the per-worker heap reservation ... 2026-09-02 19:38 UTC`.
+    Re-pended 2026-09-06 (`958a837d25`) with four `ruling_options`. Topic
+    record `backlog/topics/BL-1348.json` shows one outbound ask (09-02) and
+    no second. `concierge-tick-state.json`: `pendingApproval` carries
+    BL-1348; `emittedKeys` carries `ApprovalRequested:BL-1348` once. The
+    coder holds the parcel uncommitted awaiting the ruling (coder evidence
+    `backlog/evidence/BL-1348-coder-finding-fork-ceiling-linux-full-forge-contention-20260906.md`).
+    The coordinator's dropped-parcel sweep flagged "messageId 79093 shows
+    the old 09-02 ruling text" - 79093 is in fact BL-1454's ask; the stale
+    BL-1348 message is 69489. The diagnosis stands either way.
+  - **BL-1408.** Approved 2026-09-05 (`74012e2058`), ask
+    `{"topicId":1785,"messageId":73813}` stamped
+    `-- Approved 2026-09-05 08:14 UTC`; re-pended 2026-09-06 (`03c5dea328`,
+    scenario 04 added). No `ruling_options`, so even a plain re-approval is
+    impossible by tap: the message has no keyboard.
+
+  ## How BL-1090 caused it
+
+  BL-1090 (done, 2026-08-24) fixed the opposite failure - a crash between
+  the Telegram post and the durable tick-state write re-derived the edge
+  and posted an exact duplicate. Its guard asks the ask store "is an ask for
+  this id recorded on the live topic" and treats yes as "already live". That
+  was correct for every record the store held at the time, because a record
+  was only ever written at post time. BL-484 (decided-ask close) had
+  already been persisting the CLOSED text into the same record, so the
+  predicate has been conflating two states since the day BL-1090 landed;
+  the re-pend workflow (specifier prompt, "Re-pending to collect a ruling
+  is legitimate", BL-1300) is the first caller that hits the second state.
+
+  ## How (direction, not mandate)
+
+  Make the store able to say "this ask is closed". The close writer already
+  runs once per decision (`persistClosedApprovalAskText`); a structured
+  mark on the record at that moment (a decided verdict kind and/or a
+  `closedAtMs`) is enough for `approvalAskRecordedOnLiveTopic` to answer
+  "not live" for it, and for the one predicate to keep serving both the
+  edge guard and reconcile. Then:
+
+  - The edge path posts a fresh ask for the re-pend, and the post
+    overwrites the record with the new `{topicId, messageId}` exactly as
+    `recordApprovalAskMessage` does today - which is also the loop guard
+    (scenario 05): the next tick finds an undecided record on the live
+    topic and stays quiet.
+  - Reconcile gains the fourth case: pending ticket, record on the live
+    topic but closed - re-post. This is what heals BL-1348 and BL-1408 on
+    the first tick after the fix lands, because for them the edge is gone
+    (the durable baseline already lists both as pending) and only reconcile
+    can act (scenario 06). Do not gate that case on `emittedKeys`: the key
+    is legitimately present from the first cycle.
+  - Do NOT delete the record on close. `reconcileDecidedApprovalAskCloses`
+    (BL-561), the ghost close (BL-1190) and the stale close
+    (`reconcileStaleApprovalAsks`) all locate messages through it; the
+    roster and `humanDecisionLatency` read it too. Mark, do not remove.
+  - Pre-existing records without the mark (every record written before
+    this ticket) must be classified by a safe fallback the coder chooses
+    and states: the decided text already carries a `-- Ruled:`/
+    `-- Approved`/`-- Rejected` suffix composed by `composeDecidedAskText`,
+    which is a workable one-time signal for the migration case but must not
+    become the long-term predicate (a text suffix is not a schema).
+
+  ## Why there is no required_wiring
+
+  Deliberate. The fix changes the behaviour of functions the live tick
+  already calls on every cycle (`suppressEdgeApprovalRequestedWhenAskOnLiveTopic`,
+  `synthesizeMissingApprovalAsks`, `approvalAsksNeedingRepost`,
+  `closeApprovalAskIfPossible`); there is no new call site for an anchor to
+  prove, and any anchor on those names matches identically before and after
+  the fix (BL-1235). The acceptance handler's own registration would be
+  satisfied by this parcel's diff and gates nothing. `acceptance:` points at
+  a real `.feature`, so the runner throwing on an unregistered scenario is
+  the gate.
+
+  ## Verified at mint, none taken on trust
+
+  - `approvalAskRecordedOnLiveTopic` compares only `ask.topicId ===
+    liveApprovalsTopicId` (`approvalAskReconcile.ts`, lines 25-35).
+  - `approvalAsksNeedingRepost` no-record branch: `return
+    !emittedKeys.has(approvalRequestedEmittedKey(id))` (same file).
+  - `suppressEdgeApprovalRequestedWhenAskOnLiveTopic` adds the suppressed
+    key to `alreadyEmitted` (`conciergeTick.ts`, ~line 1213).
+  - `closeApprovalAskIfPossible` -> `editApprovalAskMessage` ->
+    `editMessageText(..., null)` strips the keyboard;
+    `persistClosedApprovalAskText` -> `updateApprovalAskMessageText` keeps
+    `{topicId, messageId}` and replaces `text`
+    (`telegram-front-desk-bot.ts`, `buildApprovalAskCloseAdapterFields`).
+  - Both live store entries read as described above (topic 1785, message
+    69489 / 73813, decided suffixes present).
+
+constraints: >
+  - One predicate for "is this ask live", consumed by both the edge guard
+    and reconcile - BL-1090 invariant 1 is not to be re-broken by giving
+    one path a private notion of closed.
+  - The re-posted ask is the SAME shape a first ask has (title, approval
+    context, ruling_options keyboard when declared) - built by the existing
+    `routeApprovalRequestedEvent` path, not a second renderer.
+  - Never edit or delete the closed message: it is the durable record of
+    the earlier decision on the human's surface.
+  - Step handlers for this ticket's feature file land in THIS parcel
+    (BL-233); the acceptance runner throws on an unregistered scenario.
+
+out_of_scope: |
+  - The Approvals roster text index (already correct).
+  - The typed `approve <id>` reply path and whether it refuses
+    `ruling-required` - a separate question, noted in approval_context,
+    not settled here.
+  - A chase/alarm for "pending with no live ask" - once the predicate is
+    right the condition cannot arise; do not add a watchdog for a state
+    that no longer exists.
+  - Any change to how a re-pend is authored (specifier prompt, BL-1300).
+
+qa_e2e_procedure: >
+  On the live swarm, with the concierge running. (1) Pick a paused ticket
+  with `human_approval: approved` whose ask store record (topic 1785) has a
+  decided suffix; or use BL-1348 / BL-1408 if either is still pending at
+  land. (2) Set `human_approval: pending` (a deliberate re-pend, recorded in
+  notes:), with `ruling_options` present for at least one case and absent
+  for another. (3) Within one tick, observe in the Approvals topic exactly
+  one fresh buttoned ask per ticket - option buttons when declared, the
+  plain decision buttons otherwise - and confirm
+  `.swarmforge/operator/telegram-approval-ask-messages.json` now names the
+  new messageId for that id, with the old decided message untouched.
+  (4) Wait a further two ticks: no second ask. (5) Tap an option (or
+  Approve): the ticket records `human_ruling` / `human_approval: approved`
+  and the fresh ask closes with its stamp. (6) Regression: take a ticket
+  whose undecided ask is live, delete `concierge-tick-state.json`'s entry
+  for it (simulating BL-1090's crash window), tick: no duplicate.
+
+source: |
+  Coordinator note to specifier, priority 00, 2026-09-06T22:39Z: "BL-1348
+  re-pend ask (msgId 79093) may show stale 09-02 text, not A-D", after its
+  dropped-parcel sweep verified the BL-1348 parcel was correctly parked on
+  human_approval and flagged the Telegram ask for the specifier to confirm.
+  Confirmed by the specifier the same hour by reading the ask store, the
+  tick state, the topic record and the concierge source on main at
+  677b83882d; BL-1408 found in the same state during the check.
+
+notes: |
+  Minted 2026-09-06 by the specifier. Grepped first: BL-1090 (done) is the
+  ticket whose guard this defect lives in; no open ticket names
+  `approvalAskRecordedOnLiveTopic`, `suppressEdgeApprovalRequested` or a
+  re-pend re-post. BL-1369 (paused) is about a session-given answer
+  reaching the ticket, a different path.
+
+  IR-DRY at mint: two medium findings, both reviewed and kept - "exactly one
+  approval ask is sent" vs "no approval ask is sent" are the positive and
+  negative assertion of one outcome, and "re-pended <ruling options>" vs
+  "re-pended for a second ruling" is the outline's keyboard-bearing step
+  against scenarios that assert nothing about the keyboard.
+
+  ## Interim recipe for an operator who cannot wait for the fix
+
+  The reconcile module documents "a wiped telegram-approval-ask-messages.json"
+  as a case it re-posts for - but ONLY when the emitted key is also absent.
+  So the recovery is two runtime-state edits, done between ticks, for each
+  of BL-1348 and BL-1408:
+  1. remove the id's key from `.swarmforge/operator/telegram-approval-ask-messages.json`;
+  2. remove `ApprovalRequested:<id>` from `emittedKeys` in
+     `.swarmforge/operator/concierge-tick-state.json`.
+  The next tick's `approvalAsksNeedingRepost` then synthesizes a fresh
+  buttoned ask carrying the current ruling_options. Caveat: a tick that is
+  mid-flight when the files are edited writes its own state back over the
+  edit - do it right after a tick completes, and verify the new messageId
+  appears in the store. This is operator-seat runtime-state work, not a
+  specifier action; the specifier has NOT done it. Removing only the store
+  entry does nothing (the emitted key still blocks reconcile); removing only
+  the emitted key does nothing (the record still suppresses).
+
+  ## Why this was not caught earlier
+
+  Every re-pend before 2026-09-06 that this specifier can find (BL-1296's
+  echo-vs-worker fork, BL-1379) happened on tickets still in paused/ that
+  had NOT yet been approved, so no closed record existed. BL-1348 and
+  BL-1408 are the first two re-pends of an already-approved ticket, both
+  on the same day, both by the specifier following BL-1300's rule.
