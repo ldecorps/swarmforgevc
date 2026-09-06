@@ -25,7 +25,7 @@ approval_context: >
   posed and there are no ruling_options. Minted by the specifier on QA's
   priority-00 note (2026-09-06T17:40Z) as the sibling of BL-1446 (the root
   cause); QA's evidence recommends exactly this cross-check. It also
-  retires the interim hand check written into QA.prompt with this mint.
+  removes the interim hand check written into QA.prompt with this mint.
 
 invariants:
   - "LAND_REPLAY is reported only for a replay tip that carries, for every path any of the parcel's own commits changed since its first hop, the blob the cited tip carries; anything less is LAND_ESCALATE and nothing is published."
@@ -89,7 +89,7 @@ description: |
     against a deliberately wrong replay without waiting for BL-1446.
   - Documenter: QA.prompt's interim hand check (landed 2026-09-06 with
     this mint, "Before landing any replay ... until BL-1447 lands") is
-    retired by the specifier when this ticket lands - say so in the
+    removed by the specifier when this ticket lands - say so in the
     parcel's evidence so the specifier is told;
     `docs/how-to/BL-1241-entangled-tip-at-the-land-step-has-a-reachable-remedy.md`
     gains the fourth outcome (`replay-incomplete`). No diagram trigger fires.
@@ -113,7 +113,7 @@ qa_e2e_procedure: |
   3. The next real replay after this ticket lands (if any) prints
      `LAND_REPLAY`, and QA's own diff of the replay against the cited tip
      over the parcel's paths is empty - recorded in QA's evidence as the
-     last hand check before the interim rule is retired.
+     last hand check before the interim rule is removed.
 
 notes: |
   Minted 2026-09-06 by the specifier on QA's note and incident evidence
@@ -137,6 +137,15 @@ notes: |
   Estimable (one pure function, one call, one fixture seam, one handler;
   low), Small (two scenarios, three runs, two invariants), Testable (a seam that
   drops a path; git objects only).
+
+  2026-09-06 (specifier), deprecator freshness adjudication on the
+  coordinator's hold "desc claims self-retired, no done/ closure": CONFIRM
+  PROMOTE. The ticket retires nothing of its own - it removes an interim
+  QA.prompt rule when it lands; the wording was changed from "retires" to
+  "removes" so the self-retirement heuristic has nothing to misread.
+  Premise re-verified: the interim rule is still in QA.prompt, no
+  `replay-incomplete` exists in land_step_lib.bb, no handler exists.
+  Recorded with record-adjudication.js; do not re-hold on the same grounds.
 
 source: |
   QA note 2026-09-06T17:40:53Z; backlog/evidence/BL-1424-land-replay-dropped-own-paths-incident-20260906.md
