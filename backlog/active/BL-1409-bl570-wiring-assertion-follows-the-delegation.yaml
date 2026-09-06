@@ -186,3 +186,18 @@ assigned_to: coder
 bounce_count: 1
 bounce_history:
   - { at: 2026-09-06, by: QA, blamed: coder, class: spec-gap, commit: 6f5f21f988, evidence: backlog/evidence/BL-1409-bl570-wiring-assertion-follows-the-delegation-bounce-20260906.md }
+
+abandoned_commits: [93422415f0]
+# 2026-09-06, QA: land_step_lib.bb's bounded-walk replay (BL-1446 root
+# cause, BL-1447 the automated net) dropped this second-pass land's own
+# amendment content on its first LAND_REPLAY attempt (the spec-gap fix
+# files - coder-spec-gap-fix evidence, the amended feature/handler,
+# second-pass architect/cleaner/hardener evidence). Fifth occurrence this
+# shift (after BL-1424, BL-1437, BL-1412, BL-1226). Caught by the
+# QA.prompt interim hand cross-check; fixed by hand: merged the broken
+# push back under the correct branch and pushed that merge directly
+# (origin/main 72c78591b3 -> 889cc1e660); every one of this ticket's 21
+# own files (both passes) confirmed present by name and content on the
+# new tip. Note: BL-1446/1447/1448 gained human_approval on this same
+# origin/main advance - the automated fix for this exact bug is likely
+# imminent.
