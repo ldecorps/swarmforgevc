@@ -192,6 +192,19 @@ run_land() {
 
   echo "LAND_PUBLISHED $land_sha"
 
+  # BL-1438: the QA-branch re-point (BL-1432 option 1) runs ONLY here -
+  # after the land has genuinely published, never on a LAND_STOPPED return
+  # above and never on a rejected push (invariant 1: both return before
+  # reaching this line). Its own exit code is captured and printed but
+  # NEVER propagated into this function's own return value (invariant 2):
+  # a skipped re-point is a decision the land already survived, not a
+  # reason to fail one that already published. post-land-repoint!'s own
+  # guards (an uncommitted change, a parcel still in_process, or
+  # origin/main not resolving) are the only guards this call adds none of
+  # its own on top of (invariant 3).
+  repoint_out="$(bb "$SCRIPT_DIR/land_step_cli.bb" repoint "$ROOT" 2>&1)" || true
+  printf '%s\n' "$repoint_out"
+
   # 5. A GH-seeded ticket closes its issue; anything else attempts no issue
   #    call at all.
   if [[ -n "$issue" ]]; then
