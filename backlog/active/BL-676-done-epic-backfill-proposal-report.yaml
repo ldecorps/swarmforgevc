@@ -15,7 +15,7 @@ invariants:
 required_wiring:
   - "specs/pipeline/steps/bl676EpicBackfillProposalsSteps.js::registerSteps::acceptance handler registered so the runner executes this ticket's scenarios; repointed 2026-09-04 after BL-1371 discovery - the handler file IS the registration and index.js names nothing"
 
-acceptance: specs/features/BL-676-epic-backfill-proposals.feature.draft
+acceptance: specs/features/BL-676-epic-backfill-proposals.feature
 
 approval_context: >
   Operator ask 2026-07-26 (INTAKE-backfill-epic-on-done-tickets.md): 427 of
