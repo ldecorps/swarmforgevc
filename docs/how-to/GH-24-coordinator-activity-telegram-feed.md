@@ -33,8 +33,14 @@ chokepoint rather than an HTTP call inside the long-running process. It
 posts to the coordinator's own topic id
 (`.swarmforge/operator/role-topic-map.json`, the same standing-topic
 infrastructure every other role's topic uses — never a second mapping),
-honoring 429 `retry_after` with a bounded retry. An idle tick posts
-nothing; a send failure retries next tick without duplication.
+honoring 429 `retry_after` with an UNBOUNDED retry — mirroring
+`retryOnRateLimit`'s own reasoning (BL-342): giving up is exactly the
+failure this contract exists to close, so a 429 is waited out and retried
+for as long as Telegram keeps returning one, relying only on the daemon's
+own 60s subprocess timeout as the outer safety net, never a retry-count
+cap. A genuine, non-429 failure is reported immediately and never retried
+within the same tick. An idle tick posts nothing; a send failure retries
+next tick without duplication.
 
 ## Scope
 
