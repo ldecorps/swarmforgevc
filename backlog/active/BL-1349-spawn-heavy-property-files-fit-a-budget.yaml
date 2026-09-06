@@ -154,3 +154,5 @@ notes: |
   would gate nothing (BL-1235), and is unnecessary because `acceptance:`
   points at a real `.feature` from the start - the runner throws on an
   unregistered scenario, so the acceptance run is itself the gate.
+
+assigned_to: coder
