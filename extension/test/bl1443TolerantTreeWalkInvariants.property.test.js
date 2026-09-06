@@ -6,7 +6,7 @@ const fs = require('node:fs');
 const os = require('node:os');
 const path = require('node:path');
 const { mkTmpDir } = require('./helpers/tmpDir');
-const { walkFilesTolerant } = require('./helpers/tolerantTreeWalk');
+const { walkFilesTolerant, DEFAULT_EXCLUDED_DIR_NAMES } = require('./helpers/tolerantTreeWalk');
 
 // BL-1443 declared invariants (backlog/active/BL-1443-property-walks-tolerate-vanishing-fixtures.yaml):
 //   1. "A file that vanishes between a directory listing and its read is
@@ -100,6 +100,47 @@ test('property (invariant 1): a file vanished between listing and read is skippe
     { numRuns: 30 }
   );
 }, 30000);
+
+// ── Hardener addition: excludeDirs had zero targeted coverage ───────────
+// Neither declared invariant names excludeDirs, and no test anywhere built
+// a tree containing one of its own excluded directory names (fixtures use
+// generic "sub0"/"sub2" names) - only the REAL production call sites
+// (bl874/tempDirTrapGuard walking the whole repo, which genuinely contains
+// node_modules/.git/out/...) exercise it, incidentally and non-
+// deterministically. Confirmed by hand-mutation: deleting the
+// `if (!excludeDirs.has(entry.name))` guard (walk() always recurses) left
+// this property test, the acceptance feature, and every other property
+// test suite green. Closed here: a marker file inside an excluded-named
+// directory must never be reported, while a sibling non-excluded directory
+// at the same depth is.
+const excludedDirNameArb = fc.constantFrom(...DEFAULT_EXCLUDED_DIR_NAMES);
+
+test('property (hardener addition): a directory named in excludeDirs is never recursed into, a sibling is', () => {
+  fc.assert(
+    fc.property(excludedDirNameArb, (excludedName) => {
+      const root = mkTmpDir('bl1443-prop-excl-');
+      const excludedDir = path.join(root, excludedName);
+      fs.mkdirSync(excludedDir, { recursive: true });
+      fs.writeFileSync(path.join(excludedDir, 'marker.js'), '// should never be reported\n');
+      const keptDir = path.join(root, 'kept');
+      fs.mkdirSync(keptDir, { recursive: true });
+      const keptFile = path.join(keptDir, 'marker.js');
+      fs.writeFileSync(keptFile, '// should be reported\n');
+
+      const results = walkFilesTolerant(root, { extension: '.js' });
+
+      assert.ok(
+        !results.some((p) => p.startsWith(excludedDir + path.sep)),
+        `expected nothing under the excluded directory ${excludedDir}, got: ${results.join(', ')}`
+      );
+      assert.ok(
+        results.includes(keptFile),
+        `expected the sibling file ${keptFile} to be reported, got: ${results.join(', ')}`
+      );
+    }),
+    { numRuns: 10 }
+  );
+});
 
 // ── invariant 2 ────────────────────────────────────────────────────────
 function snapshotTree(root) {
