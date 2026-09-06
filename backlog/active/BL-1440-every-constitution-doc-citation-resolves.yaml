@@ -160,3 +160,6 @@ source: |
   (0bfd52db47); Article 1.7, 1.10, 3.6.
 
 assigned_to: coder
+bounce_count: 1
+bounce_history:
+  - { at: 2026-09-06, by: QA, blamed: coder, class: unit, commit: 5d6a055835, evidence: backlog/evidence/BL-1440-bounce-20260906.md }
