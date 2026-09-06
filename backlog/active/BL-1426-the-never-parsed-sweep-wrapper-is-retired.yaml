@@ -159,3 +159,5 @@ source: |
   wrapper); `handoffd.bb` 4029-4052 (its own supplier); BL-1421's touched
   files (handoffd.bb, the lib, the lib test runner); the load guard's
   whole-tree trace (107 of 286 analysed, BL-1427).
+
+assigned_to: coder
