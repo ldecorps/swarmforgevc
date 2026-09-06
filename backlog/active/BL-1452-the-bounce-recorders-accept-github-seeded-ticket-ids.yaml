@@ -155,3 +155,5 @@ source: |
   extension/src/metrics/swarmMetrics.ts 475-479;
   swarmforge/scripts/is_qa_ancestor.sh 10-30, 126-175; reproduction by the
   specifier (usage printed, no store written) 2026-09-06 21:2xZ.
+
+assigned_to: coder
