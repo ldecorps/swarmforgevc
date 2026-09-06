@@ -44,6 +44,13 @@ heal), not discard ahead commits.
 - Never point `GIT_DIR` at a live role or master worktree.
 - Seeding via `expedite_fixture.sh` into a path that contains
   `swarmforge/scripts/handoffd.bb` is refused.
+- Walking a live tree (the repo root, `extension/out`, `extension/src`) from
+  a property test: use `walkFilesTolerant`
+  (`extension/test/helpers/tolerantTreeWalk.js`) rather than a hand-rolled
+  recursive walk — it tolerates a file another test's fixture runner
+  (`propertyLaneFixtureRunner.js`) removed between listing and read, while
+  still throwing on any other read failure (BL-1443). A walk over a test's
+  own `mkdtemp` root is unaffected by this race and doesn't need it.
 
 ### Acceptance
 
