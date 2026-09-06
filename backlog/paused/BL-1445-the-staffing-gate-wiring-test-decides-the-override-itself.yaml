@@ -1,0 +1,161 @@
+id: BL-1445
+title: "test_pack_staffing_gate_wiring.sh inherits the pane's PACK_STAFFING_SKIP_GATE=1 (the operator escape hatch swarm.env exports into every role since ~2026-09-04), so its refusal cases read as OVERRIDE warnings and case 01 fails on main in every lane while the same file passes under env -u: each case sets or unsets the override itself, and so does every launcher-sourcing test that asserts on the gate"
+milestone: M8
+type: defect
+severity: high
+# high (standing-red rule 2026-09-05): a standing manifest row red on main
+# in every role's lane. The test is the one proof that the launcher's
+# parse_config loop calls the staffing gate at all; while it is red for
+# an environmental reason, a real regression of that wiring would be
+# invisible behind the same FAIL line. Never medium for a red.
+status: todo
+epic: swarm-intelligence-layer
+priority: 12
+direction: swarm-reported
+depends_on: []
+mutation_cost: low
+slice_size_envelope: low
+required_stages: [coder, cleaner, architect, hardender, documenter, qa]
+
+acceptance: specs/features/BL-1445-the-staffing-gate-wiring-test-decides-the-override-itself.feature
+
+human_approval: pending
+approval_context: >
+  A new feature file is authored here, so it needs a tap. No choice is
+  posed and there are no ruling_options. Minted by the specifier the same
+  pass as the coder's unowned-red note (2026-09-06T17:22Z, from the
+  BL-1437 parcel) under the standing-red rule; reproduced on main in the
+  specifier's own pane and proved environmental with env -u. The fix is in
+  the test, never in the launch environment: the escape hatch stays until
+  the seat it covers is certified (BL-1437).
+
+invariants:
+  - "Every environment variable the launcher's gate path or the gate CLI reads (PACK_STAFFING_SKIP_GATE, MODEL_STEWARD_STATE_DIR) is set or unset explicitly by each case of the wiring test; none is inherited from the pane, so the test decides identically under every launch environment."
+  - "The wiring test's own override case (03) stays the only place the override is on, and it turns it on explicitly for that case alone."
+
+required_wiring:
+  - 'specs/pipeline/steps/bl1445StaffingGateWiringTestDecidesOverrideSteps.js::registerSteps::the handler file exists so discovery registers every scenario (BL-1371)'
+
+description: |
+  ## What is wrong
+
+  `swarmforge/scripts/test/test_pack_staffing_gate_wiring.sh` (BL-1318,
+  `standing` row 387 of `suite-manifest.tsv`) sources the real
+  `swarmforge/scripts/swarmforge.sh` against fixture roots and asserts that
+  `parse_config` refuses an uncleared seat (cases 01, 03b, 04, 05a) and
+  prints no warning on a cleared one (02). Each case runs
+  `MODEL_STEWARD_STATE_DIR=... zsh -c "source ...; parse_config"` and
+  inherits every other variable from the pane.
+
+  `.swarmforge/swarm.env` line 46 exports
+  `PACK_STAFFING_SKIP_GATE="${PACK_STAFFING_SKIP_GATE:-1}"` into every
+  role pane - the documented operator escape hatch (`swarmforge.sh`
+  550-608) kept in place because the full-forge pack has a seat the gate
+  cannot resolve (BL-1437). Under it the launcher turns every refusal into
+  a `WARNING: pack staffing gate OVERRIDE ...` line and lets `parse_config`
+  return, so case 01's `RC1 -ne 0` fails first and the `set -e` test stops.
+
+  Reproduced 2026-09-06 by the specifier on main at `00372da7f0`:
+
+      FAIL: 01: an uncleared seat (cursor/nightly, no steward mapping) should have refused parse_config
+      (OUT1: WARNING: pack staffing gate OVERRIDE (PACK_STAFFING_SKIP_GATE=1) — role 'QA' staffed ...
+             PARSE_CONFIG_RETURNED)
+
+  and `env -u PACK_STAFFING_SKIP_GATE bash <the test>`: `ALL CHECKS PASSED`.
+  `test_pack_staffing_gate.sh` (the CLI adapter) and
+  `pack_staffing_gate_lib_test_runner.bb` both pass: the gate is intact;
+  the test asserts against the pane. This is the shape the hardender's
+  2026-08-12 rule names ("a shell test unsets every SWARMFORGE_* var its
+  tested script reads") for a variable outside that prefix; the rule's
+  text was widened with this mint.
+
+  Of the nine tests that source the launcher, the others (e.g.
+  `test_backlog_depth_pack_override.sh`) set the override to 1 themselves
+  or assert nothing about the gate, which is why only this file is red.
+
+  ## What is wanted
+
+  - Every case of the wiring test decides `PACK_STAFFING_SKIP_GATE` itself:
+    refusal and no-warning cases run with it unset, case 03 with it set to
+    `1`, each on the case's own invocation - never inherited (invariants).
+    The test passes every case under `PACK_STAFFING_SKIP_GATE=1`, `=0`, and
+    unset (scenario 01).
+  - Every shell test that sources `swarmforge.sh` and asserts on the gate's
+    refusal or override warning sets or unsets the variable explicitly
+    before sourcing (scenario 02, derived by grep, never a list).
+  - The landing commit removes this ticket's row from
+    `backlog/standing-reds.tsv` (standing-red rule 2).
+
+  ## How (direction, not mandate)
+
+  - In the wiring test, `env -u PACK_STAFFING_SKIP_GATE` (or an explicit
+    `PACK_STAFFING_SKIP_GATE=` assignment) on each `zsh -c` invocation, and
+    `PACK_STAFFING_SKIP_GATE=1` on case 03 as it already is; or one `unset`
+    at the top under the 2026-08-12 pattern plus the explicit `=1` on 03.
+    Keep the test bash-3.2 safe.
+  - Handler `specs/pipeline/steps/bl1445StaffingGateWiringTestDecidesOverrideSteps.js`:
+    scenario 01 spawns the real test with the variable set to the row's
+    value (or removed from the child env); scenario 02 greps
+    `swarmforge/scripts/test/*.sh` for `source .*swarmforge.sh` and, among
+    those, for `staffing gate|OVERRIDE` in assertions, then for an explicit
+    `PACK_STAFFING_SKIP_GATE` assignment or `env -u`/`unset` before the
+    source line - a structural check derived from the files (BL-1408 /
+    BL-1398 posture).
+  - Documenter: one sentence in `docs/how-to/BL-1318-*.md` (if it exists)
+    or the model-steward how-to that the wiring test is hermetic to the
+    escape hatch. No diagram trigger fires.
+
+  ## Out of scope
+
+  - Removing the escape hatch from `swarm.env`: it is the operator's, and
+    it lapses when BL-1437 certifies the seat.
+  - The launcher's own override behaviour (correct: a loud, distinct
+    warning per seat).
+  - `test_backlog_depth_pack_override.sh` and siblings that set the
+    override to 1 on purpose.
+
+qa_e2e_procedure: |
+  1. In the QA pane (which exports the override):
+     `bash swarmforge/scripts/test/test_pack_staffing_gate_wiring.sh` ends
+     `ALL CHECKS PASSED`; so does
+     `env -u PACK_STAFFING_SKIP_GATE bash ...` and
+     `PACK_STAFFING_SKIP_GATE=0 bash ...`.
+  2. The BL-1445 feature passes all four runs; BL-1318's feature stays
+     green.
+  3. `grep -c 'PACK_STAFFING_SKIP_GATE' swarmforge/scripts/test/test_pack_staffing_gate_wiring.sh`
+     is at least 6 (one decision per invoking case); the override warning
+     appears in the test's output exactly once (case 03).
+  4. The landing removes the BL-1445 row from `backlog/standing-reds.tsv`;
+     `bb swarmforge/scripts/standing_red_register_cli.bb` (BL-1428) reports
+     no row for the file.
+
+notes: |
+  Minted 2026-09-06 by the specifier on the coder's priority-00 note from
+  the BL-1437 parcel: "unowned-red test_pack_staffing_gate_wiring.sh case
+  01 fails on main HEAD" (coder evidence
+  `backlog/evidence/BL-1437-coder-pass-20260906.md`, "A standing red found,
+  unrelated"). Grepped first: no ticket in paused/active names the file;
+  BL-1437 matched on keywords only and certifies the seat, it does not
+  touch this test. Register row added the same commit, first_seen
+  2026-09-06 (first recorded; the override entered swarm.env ~09-04).
+  Evidence:
+  `backlog/evidence/BL-1445-unowned-red-staffing-gate-wiring-test-20260906.md`.
+
+  Prompt half landed with the mint: the hardender's 2026-08-12 env-scrub
+  rule now says the prefix is not the rule - any operator escape hatch the
+  tested path reads is a standing export to scrub.
+
+  INVEST at mint: Independent (no sibling; BL-1437 is orthogonal and only
+  ends the operator's need for the hatch), Negotiable (per-case `env -u`
+  versus a top-of-file unset is direction), Valuable (one outcome: the
+  wiring proof is green in every lane and would go red only for a real
+  wiring regression), Estimable (a handful of invocation edits, one
+  handler; low), Small (two scenarios, four runs, two invariants),
+  Testable (the real test spawned under controlled env; a derived grep).
+
+source: |
+  Coder note 2026-09-06T17:22:54Z (priority 00). Reproduction and env -u
+  proof by the specifier on main at 00372da7f0, 17:2xZ; launcher gate
+  function swarmforge/scripts/swarmforge.sh 554-608; .swarmforge/swarm.env
+  line 46 (gitignored launch env); suite-manifest.tsv row 387; test
+  history e5ab1c4465, 9905d38501 (BL-1318, 2026-09-01).
