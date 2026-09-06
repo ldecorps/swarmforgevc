@@ -114,3 +114,5 @@ source: |
   extension/src/tools/telegramFrontDeskBotCore.ts
   extension/src/concierge/pipelineBoard.ts` (d8690e2995, 2026-09-05);
   BL-1439 human_ruling (age from origin).
+
+assigned_to: coder
