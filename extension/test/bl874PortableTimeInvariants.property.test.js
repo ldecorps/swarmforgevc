@@ -6,6 +6,7 @@ const path = require('node:path');
 const { spawnSync } = require('node:child_process');
 const fc = require('fast-check');
 const { mkTmpDir } = require('./helpers/tmpDir');
+const { walkFilesTolerant } = require('./helpers/tolerantTreeWalk');
 const { findPortableTimeViolation } = require('../../specs/pipeline/steps/lib/portableTimeGuard');
 
 // BL-874 declared invariants (property authorship rests with the coder,
@@ -72,40 +73,22 @@ test('property (BL-874 invariant 1 converse): the shared-helper shape is never f
 // BL-654 - mirrors tempDirTrapGuard.property.test.js's invariant-2
 // treatment exactly.
 const REPO_ROOT = path.join(__dirname, '..', '..');
-// BL-1430: .worktrees holds a full linked checkout per pipeline role (each
-// with its own copy of specs/pipeline/steps/lib/portableTimeGuard.js) -
-// counting it turned "one definition" into "one per worktree present on
-// this host" (8 on 2026-09-05), a host-population artifact, not a real
-// duplication. The definition itself is single; only the walk's scope was
-// wrong - the assertion below is unchanged.
-const EXCLUDED_DIR_NAMES = new Set(['node_modules', '.git', 'out', 'coverage', '.stryker-tmp', 'vendor', '.worktrees']);
 const GUARD_MODULE_PATH = path.join(REPO_ROOT, 'specs', 'pipeline', 'steps', 'lib', 'portableTimeGuard.js');
 const STANDING_GUARD_TEST_PATH = path.join(REPO_ROOT, 'extension', 'test', 'portableTimeGuard.test.js');
 
+// BL-1443: a live-tree walk over the whole repo shares a real race with any
+// concurrent property test that drops a transient fixture file into
+// extension/test/ mid-walk (bl868/bl984, via propertyLaneFixtureRunner.js) -
+// this is exactly the ENOENT QA's full run hit on 2026-09-06. Goes through
+// the shared helper, never its own inline walk.
 function findFunctionDefinitionFiles(rootDir, functionName) {
   const pattern = new RegExp(`function\\s+${functionName}\\s*\\(`);
   const found = [];
-
-  function walk(dir) {
-    for (const entry of fs.readdirSync(dir, { withFileTypes: true })) {
-      if (entry.isDirectory()) {
-        if (!EXCLUDED_DIR_NAMES.has(entry.name)) {
-          walk(path.join(dir, entry.name));
-        }
-        continue;
-      }
-      if (!entry.name.endsWith('.js')) {
-        continue;
-      }
-      const full = path.join(dir, entry.name);
-      const text = fs.readFileSync(full, 'utf8');
-      if (pattern.test(text)) {
-        found.push(full);
-      }
+  for (const { path: full, content: text } of walkFilesTolerant(rootDir, { extension: '.js', withContent: true })) {
+    if (pattern.test(text)) {
+      found.push(full);
     }
   }
-
-  walk(rootDir);
   return found;
 }
 
