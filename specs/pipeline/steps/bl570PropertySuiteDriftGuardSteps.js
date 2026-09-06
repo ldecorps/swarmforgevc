@@ -17,6 +17,7 @@ const FEATURE = 'A shared pre-commit guard catches property-suite drift';
 
 const REPO_ROOT = path.join(__dirname, '..', '..', '..');
 const GUARD = path.join(REPO_ROOT, 'swarmforge', 'scripts', 'check_property_suite_drift.sh');
+const { propertyGuardIsWired } = require(path.join(__dirname, 'lib', 'bl1409PropertyGuardWiring.js'));
 
 const KNOWN_SUITE_STATES = new Set(['green', 'red', 'unavailable']);
 const KNOWN_SUITE_ACTIONS = new Set(['runs', 'skips']);
@@ -64,17 +65,13 @@ function registerSteps(registry) {
   registry.defineScoped(/^the shared pre-commit property guard is installed$/, (ctx) => {
     ctx.root = mkFixtureRepo();
     assert.ok(fs.existsSync(GUARD), `expected guard script at ${GUARD}`);
-    const hook = path.join(REPO_ROOT, 'swarmforge', 'git-hooks', 'pre-commit');
-    const hookBody = fs.readFileSync(hook, 'utf8');
-    const nonComment = hookBody
-      .split('\n')
-      .filter((line) => !/^\s*#/.test(line))
-      .join('\n');
-    assert.match(
-      nonComment,
-      /check_property_suite_drift\.sh/,
-      'pre-commit must invoke check_property_suite_drift.sh (not only name it in a comment)'
-    );
+    // BL-1409: "installed" is two hops - the hook reaches run_commit_guards.sh
+    // (BL-1252's delegation), and the runner's OWN guard set (BL-1398's
+    // derivation, never a second parser of the runner's own guard-invocation
+    // lines) names the guard - never a literal grep for
+    // check_property_suite_drift.sh in one file.
+    const result = propertyGuardIsWired({ repoRoot: REPO_ROOT });
+    assert.ok(result.wired, `expected the property guard installed through the full delegation, got: ${JSON.stringify(result)}`);
   }, FEATURE);
 
   registry.defineScoped(/^the property suite is "([^"]+)"$/, (ctx, state) => {
