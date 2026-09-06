@@ -630,6 +630,27 @@ test('BL-1412 empty-query-06: an empty or whitespace-only query returns the full
   assert.deepEqual(filterSpecTree(tree, '   '), tree);
 });
 
+// Hardener addition (CRAP extraction, Stryker survivors at docsTree.js:275/276):
+// filterSpecTree's own `query.trim()` / `if (!trimmed) return tree` is
+// REDUNDANT for any tree buildDocsTree can actually produce - filterDocsTree
+// (line ~271) already trims internally and passes a blank/whitespace query
+// straight through, and every real milestone/epic has >= 1 member by
+// construction, so filterSpecTree's own rebuild happens to reconstruct the
+// identical structure even with its own trim check deleted. Every fixture
+// above builds trees only through docsTreeFixture/buildDocsTree, so this
+// stayed invisible. The check is NOT equivalent, though: filterSpecTree is
+// an exported, general-purpose pure function, and a hand-built tree (not
+// routed through buildMilestoneNodes) CAN carry a milestone with zero epics -
+// the shape that distinguishes "return the input unchanged" (kept) from "run
+// the label-match rebuild anyway" (dropped, since filterMilestoneEpics only
+// pushes a milestone `if (epics.length > 0)`).
+test('BL-1412 empty-query-08 (hardener addition): a whitespace-only query returns even an anomalous milestone (zero epics) unchanged', () => {
+  const tree = docsTreeFixture([item({ id: 'BL-100', milestone: 'M1' })]);
+  const anomalous = { ...tree, milestones: [...tree.milestones, { milestone: 'M-empty', epics: [] }] };
+
+  assert.deepEqual(filterSpecTree(anomalous, '   '), anomalous);
+});
+
 test('BL-1412 no-results-07: a term matching nothing at all (text, id, or label) returns an empty tree, not a throw', () => {
   const tree = docsTreeFixture([item({ id: 'BL-100', title: 'a', milestone: 'M1' })]);
 

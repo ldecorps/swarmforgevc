@@ -294,6 +294,27 @@ function labelMatches(label: string | undefined, lowerQuery: string): boolean {
   return !!label && label.toLowerCase().includes(lowerQuery);
 }
 
+// Hardener extraction (CRAP): filterSpecTree's own per-milestone epic
+// filtering, isolated so each function's complexity is measured on its own
+// rather than compounding into one function - filterSpecTree's body dropped
+// from complexity 8 (CRAP 8.00) to complexity 4 (CRAP 4.00) by this split
+// alone, with the extracted function itself at complexity 4 (CRAP 4.00).
+// No behavior change: a milestone- or epic-label match still keeps that
+// epic's WHOLE ticket list; otherwise only tickets in ticketMatchedIds
+// survive.
+function filterMilestoneEpics(milestone: MilestoneNode, lowerQuery: string, ticketMatchedIds: Set<string>): EpicNode[] {
+  const milestoneLabelMatch = labelMatches(milestone.milestone, lowerQuery);
+  const epics: EpicNode[] = [];
+  for (const epic of milestone.epics) {
+    const keepWholeEpic = milestoneLabelMatch || labelMatches(epic.title, lowerQuery);
+    const tickets = keepWholeEpic ? epic.tickets : epic.tickets.filter((ticket) => ticketMatchedIds.has(ticket.id));
+    if (tickets.length > 0) {
+      epics.push({ ...epic, tickets });
+    }
+  }
+  return epics;
+}
+
 // BL-1412: the classic IDE tree filter, on top of BL-254's ticket-text
 // match (filterDocsTree, REUSED here - never re-implemented, never edited,
 // since pwa/app.js mirrors its body by hand). Adds a LABEL match: a
@@ -318,16 +339,7 @@ export function filterSpecTree(tree: DocsTreeData, query: string): DocsTreeData 
 
   const milestones: MilestoneNode[] = [];
   for (const milestone of tree.milestones) {
-    const milestoneLabelMatch = labelMatches(milestone.milestone, lowerQuery);
-    const epics: EpicNode[] = [];
-    for (const epic of milestone.epics) {
-      const epicLabelMatch = labelMatches(epic.title, lowerQuery);
-      const keepWholeEpic = milestoneLabelMatch || epicLabelMatch;
-      const tickets = keepWholeEpic ? epic.tickets : epic.tickets.filter((ticket) => ticketMatchedIds.has(ticket.id));
-      if (tickets.length > 0) {
-        epics.push({ ...epic, tickets });
-      }
-    }
+    const epics = filterMilestoneEpics(milestone, lowerQuery, ticketMatchedIds);
     if (epics.length > 0) {
       milestones.push({ milestone: milestone.milestone, epics });
     }
