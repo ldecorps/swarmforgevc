@@ -108,6 +108,14 @@ notes: |
   high mutation cost by nature), Small (two scenarios, five runs, two
   invariants), Testable (the parcel's own ledger, evidence and register).
 
+  Coordinator, 2026-09-06: dispatched to coder per promotion rule (both
+  depends_on landed); coder correctly declined real work citing the
+  2026-09-08 cooldown and idled with no forwarding commit (No-Op Rule).
+  The dropped-parcel sweep and a babysitterd swarm-starved CRIT both
+  fired on the resulting "no parcel in flight" / idle-pane state -
+  verified both are false positives, not a drop: no action taken, ticket
+  stays assigned_to coder until the cooldown clears.
+
 source: |
   `.worktrees/coder/backlog/evidence/BL-1439-coder-20260905.md`;
   `swarmforge/swarmforge.conf` mutation_cooldown_days 3; `git log -1 --
