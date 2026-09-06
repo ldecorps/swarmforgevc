@@ -149,3 +149,5 @@ source: |
   39-43; property_suite_standing_allowlist_lib.sh 7-13; git show 7a34298555
   (25 rows removed); suite-manifest.tsv row 400; test history 76dd67b692
   (BL-1252), 984a9a197b (BL-1407).
+
+assigned_to: coder
