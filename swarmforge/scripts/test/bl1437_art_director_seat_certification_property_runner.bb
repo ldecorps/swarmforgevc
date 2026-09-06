@@ -142,10 +142,68 @@
         (doseq [d [state-dir ref-dir factory-dir scratch]]
           (try (fs/delete-tree d) (catch Exception _ nil)))))))
 
+;; ── Hardener addition: the look_and_feel classification RESULT had zero
+;;    coverage - only its EXISTENCE (as an evidence pointer / report id)
+;;    was ever checked ────────────────────────────────────────────────────
+;; BL-1437's whole point is a distinct look_and_feel capability dimension,
+;; never folded into coding_quality (the pre-existing five's catch-all
+;; :else branch). P1-P3 above only ever check that the scorecard's OWN id
+;; shows up as evidence - never which DIMENSION KEY a look/feel-shaped
+;; competency actually lands under. Confirmed by hand-mutation: deleting
+;; the look/feel branch entirely (every competency falls through to
+;; "coding_quality") left every existing property case green, because with
+;; every scorecard entry sharing the same pass/fail status, every
+;; dimension - hit or fallback - computes the identical overall pass rate,
+;; making correct and broken classification indistinguishable.
+;;
+;; Discriminates by MIXING statuses: one look/feel-shaped entry that FAILS
+;; alongside three differently-shaped entries that all PASS. Correct
+;; classification isolates the look/feel entry into its own dimension
+;; (score 0.0, pure fail) while the untouched dimensions fall back to the
+;; overall rate (0.75); the hand-mutant instead folds the failing entry
+;; into coding_quality (0.0) and leaves look_and_feel at the fallback rate
+;; (0.75) - the two dimensions' scores swap, a difference every downstream
+;; reader of `capability <provider>/<model>` would see.
+(let [state-dir (str (fs/create-temp-dir {:prefix "bl1437-prop-classify-state-"}))
+      factory-dir (str (fs/create-temp-dir {:prefix "bl1437-prop-classify-factory-"}))
+      scratch (str (fs/create-temp-dir {:prefix "bl1437-prop-classify-scratch-"}))]
+  (try
+    (let [scorecard-id "test-scorecard:classify-mix"
+          scorecard-path (str (fs/path scratch "scorecard.json"))
+          _ (spit scorecard-path
+                  (json/generate-string
+                   {:scorecard_id scorecard-id
+                    :model "claude-sonnet-5"
+                    :entries [{:competency "look-and-feel:clarity" :status "fail" :reason "mix"}
+                              {:competency "protocol-shape-a" :status "pass" :reason "mix"}
+                              {:competency "protocol-shape-b" :status "pass" :reason "mix"}
+                              {:competency "protocol-shape-c" :status "pass" :reason "mix"}]
+                    :overall "generated"}))
+          env (base-env state-dir factory-dir)
+          {:keys [exit out]} (run! env "evaluate" "anthropic/claude-sonnet-5"
+                                    "--role" "art-director" "--scorecard" scorecard-path)]
+      (when-not (zero? exit)
+        (report-fail "hardener-classify" 0 scorecard-id (str "evaluate itself failed, exit " exit ": " out)))
+      (let [{:keys [exit out]} (run! env "capability" "anthropic/claude-sonnet-5")
+            _ (when-not (zero? exit)
+                (report-fail "hardener-classify" 0 scorecard-id (str "capability read failed: " out)))
+            caps (json/parse-string out true)
+            look-and-feel-score (get-in caps [:look_and_feel :score])
+            coding-quality-score (get-in caps [:coding_quality :score])]
+        (when-not (= 0.0 look-and-feel-score)
+          (report-fail "hardener-classify" 0 scorecard-id
+                       (str "expected look_and_feel isolated at 0.0 (its one entry failed), got " (pr-str caps))))
+        (when-not (= 0.75 coding-quality-score)
+          (report-fail "hardener-classify" 0 scorecard-id
+                       (str "expected coding_quality at the overall fallback rate 0.75 (no direct hits), got " (pr-str caps))))))
+    (finally
+      (doseq [d [state-dir factory-dir scratch]]
+        (try (fs/delete-tree d) (catch Exception _ nil))))))
+
 ;; ── report ────────────────────────────────────────────────────────────────
 (if (seq @failures)
   (do
     (doseq [f @failures] (binding [*out* *err*] (println f)))
     (println (str "\n" (count @failures) " failure(s)"))
     (System/exit 1))
-  (println (str "ALL PASS: bl1437_art_director_seat_certification_property_runner.bb (" RUNS " cases)")))
+  (println (str "ALL PASS: bl1437_art_director_seat_certification_property_runner.bb (" RUNS " generated cases + 1 hardener addition)")))
