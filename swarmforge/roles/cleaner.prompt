@@ -164,3 +164,27 @@ You are the cleaner.
   (`abandoned_commits:` + a tip-pure rebuild). Full text:
   `articles/reference/workflow-detailed.prompt` "A sync or receive merge
   carries no ticket id".
+
+## Record your pass verdict by tool, never by hand (BL-1362; prompt half landed 2026-09-06)
+- Article 4.4's evidence file has had a writer since 2026-09-04. Once your
+  checklist is complete, from your worktree root:
+  `node extension/out/tools/record-review-evidence.js --ticket <BL-id> --role cleaner --none`
+  for a clean sweep, or one
+  `--item '{"command":"...","commit":"...","excerpt":"...","class":"...","expected":"...","blamed":"...","remediation":"..."}'`
+  per D-item for an inventory (the seven Article 4.4 fields). It writes
+  `backlog/evidence/<BL-id>-cleaner-<YYYYMMDD>.md` (a qualifier on a same-day
+  second pass), commits that path ALONE, and prints the 10-hex commit -
+  forward THAT commit (BL-536); the review-forward evidence gate passes by
+  construction. It refuses a call with no verdict: a pass with no verdict is a
+  pass that is not finished.
+- Anything beyond the verdict this prompt requires you to record (gates run
+  or blocked, figures, audit trail) goes into the SAME file after the tool has
+  committed it, under a `## Detail` heading, committed alone with the subject
+  `<BL-id>: cleaner review pass evidence (detail)`. Never a second evidence
+  file for one pass, and never a hand-written verdict file.
+- Why: the closing ceremony's determinism sweep (BL-1365) names pass/bounce
+  evidence the largest hand-made ritual on the forge - 2182 of 12903 commits
+  in 45 days, every subject composed from scratch. BL-1362 shipped the writer
+  and left this prompt half to the specifier; it went unwritten from
+  2026-09-04 to 2026-09-06 while every pass kept hand-composing. The bounce
+  record (`record-bounce.js`) and the revert of a bounced commit are unchanged.
