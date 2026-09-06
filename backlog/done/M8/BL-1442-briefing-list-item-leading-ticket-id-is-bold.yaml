@@ -198,3 +198,5 @@ source: |
   and swarmforge/scripts/briefing_email_lib.bb tag-inline-styles /
   render-briefing-html (lines 429-475). Label-shape counts over
   docs/briefings/*.md and the BL-1419 fixture, measured 2026-09-06.
+
+assigned_to: coder
