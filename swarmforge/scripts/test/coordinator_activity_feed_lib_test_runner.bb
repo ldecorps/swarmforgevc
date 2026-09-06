@@ -127,7 +127,12 @@
 
 ;; ── tick! ────────────────────────────────────────────────────────────────
 
+;; Hardener fix (tempDirTrapGuard): a shutdown hook, so an assertion failure
+;; or crash anywhere below still removes the fixture root - the tail-of-file
+;; (fs/delete-tree tmp) alone never runs on that path. Mirrors
+;; aps_equivalence_lib_test_runner.bb's own established shape.
 (def tmp (fs/create-temp-dir))
+(.addShutdownHook (Runtime/getRuntime) (Thread. (fn [] (try (fs/delete-tree tmp) (catch Exception _ nil)))))
 
 (defn reset-tick-fixture! []
   (fs/delete-tree tmp)
