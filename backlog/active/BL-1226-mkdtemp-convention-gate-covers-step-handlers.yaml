@@ -183,3 +183,17 @@ source: |
   minted as this ticket rather than appended to engineering.prompt.
 
 assigned_to: coder
+
+abandoned_commits: [0c8b6f8537]
+# 2026-09-06, QA: land_step_lib.bb's bounded-walk replay (BL-1446 root
+# cause, BL-1447 the automated net) dropped most of this ticket's own
+# files on its first LAND_REPLAY attempt (9 of 12 files). Fourth
+# occurrence this shift (after BL-1424, BL-1437, BL-1412). This time the
+# tool correctly identified BL-1262/BL-1409 as unlanded ENTANGLED_SIBLINGs
+# and excluded their paths - the bug is specifically in computing
+# BL-1226's OWN surviving path set, not in the entanglement detection
+# itself. Caught by the QA.prompt interim hand cross-check; fixed by
+# hand: merged the broken push back under the correct branch and pushed
+# that merge directly (origin/main 59638c315c -> 9e320f1a15); every one
+# of this ticket's 12 own files confirmed present by name and content on
+# the new tip.
