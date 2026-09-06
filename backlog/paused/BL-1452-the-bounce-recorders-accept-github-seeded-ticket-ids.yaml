@@ -1,0 +1,157 @@
+id: BL-1452
+title: "record-bounce.js, record-qa-bounce.js and qa-sibling-check.js refuse GH-<n> ticket ids (bounceArgsCore.ts TICKET_PATTERN ^BL-\\d+$ and a copy): QA's bounce of GH-24 on 2026-09-06 wrote no JSONL record and no bounce_history entry, so the bounced commit reads as QA-approved to is_qa_ancestor.sh and the bounce is invisible to the bounce-rate metrics; one shared ticket-id predicate accepts BL-<n> and GH-<n> and the three CLIs use it"
+milestone: M8
+type: defect
+severity: high
+# high: a broken safety signal. is_qa_ancestor.sh (BL-925/BL-952) vetoes
+# approval only from the two bounce stores; a GH ticket's bounce reaches
+# neither, so its bounced commit - reachable from swarmforge-QA because QA
+# merged it to review - reads as approved to the push-sweep gate, the
+# babysitter's Article 4.2 sweep and the commit-time guard. The exact
+# path BL-945's twice-bounced code took onto origin/main. Two GH tickets
+# are live today (GH-24 at the documenter after this bounce, GH-29).
+status: todo
+epic: swarm-reliability
+priority: 10
+direction: swarm-reported
+depends_on: []
+mutation_cost: low
+slice_size_envelope: low
+required_stages: [coder, cleaner, architect, hardender, documenter, qa]
+
+acceptance: specs/features/BL-1452-the-bounce-recorders-accept-github-seeded-ticket-ids.feature
+
+human_approval: pending
+approval_context: >
+  A new feature file is authored here, so it needs a tap. No choice is
+  posed and there are no ruling_options. Minted by the specifier on QA's
+  note (2026-09-06T21:20Z) and its GH-24 evidence; the interim veto for
+  GH-24's bounced commit was written by hand into the ticket's
+  bounce_history the same pass (see notes), so the hazard is closed for
+  that one commit while this lands. BL-1453 (sibling, depends on this)
+  moves every other TypeScript tool onto the same predicate.
+
+invariants:
+  - "There is ONE definition of what a backlog ticket id is on the TypeScript side (a shared exported predicate accepting BL-<n> and GH-<n>, anchored start and end, case-insensitive); bounceArgsCore.ts and qa-sibling-check.js carry no private ticket regex."
+  - "Every record the recorders write for a GH ticket has the same shape, in both stores, as the record for a BL ticket: the id namespace changes nothing downstream (is_qa_ancestor.sh, the bounce-rate metrics, the briefing)."
+
+required_wiring:
+  - 'extension/src/tools/bounceArgsCore.ts::isBacklogTicketId::the shared validator both recorders already call must delegate to the new predicate; absent today (grep returns 0)'
+  - 'extension/src/tools/qa-sibling-check.ts::isBacklogTicketId::the sibling checker must use the same predicate, not its own copy; absent today'
+  - 'specs/pipeline/steps/bl1452BounceRecordersAcceptGhIdsSteps.js::registerSteps::the handler file exists so discovery registers every scenario (BL-1371)'
+
+description: |
+  ## What is wrong
+
+  `extension/src/tools/bounceArgsCore.ts` line 15: `const TICKET_PATTERN =
+  /^BL-\d+$/i`, used by `isValidTicket` (line 45) inside
+  `validatedCoreFields`, which `recordBounceArgs.ts` (record-bounce.js,
+  BL-635) and `recordQaBounceArgs.ts` (record-qa-bounce.js, BL-608) share.
+  `qa-sibling-check.ts` line 36 carries an identical private copy.
+  GitHub-seeded tickets are `GH-<n>` (BL-114, `.github/workflows/swarm-intake.yml`);
+  `pipeline_stage_lib.bb`, `promotion_gates_lib.bb` and
+  `extension/src/metrics/swarmMetrics.ts` (`TICKET_ID_PATTERN =
+  /^(BL|GH)-?(\d+)/i`, line 475) all accept both namespaces.
+
+  2026-09-06 (`backlog/evidence/GH-24-QA-20260906.md`, QA branch
+  0c08dc0608): QA found one documenter-owned defect on GH-24 (D1, class
+  behavior, commit `718bd15071`) and bounced it; `record-bounce.js --ticket
+  GH-24 ...` printed the usage and exited. Reproduced by the specifier
+  (exit with usage, no store written). QA skipped the record under the
+  best-effort rule and noted the same gap in `qa-sibling-check.js` had been
+  hit on GH-25 (`GH-25-qa-pass-20260825.md`, "cannot run status").
+
+  The consequence is not only a missing metric. `is_qa_ancestor.sh` (the
+  one QA-approval predicate) vetoes approval from exactly two stores: the
+  JSONL store record-bounce appends and the ticket YAML `bounce_history`
+  it writes. A GH bounce reaches neither, so the bounced commit - an
+  ancestor of `swarmforge-QA`, because QA merged it to review - reads as
+  approved to every consumer (push-sweep gate, Article 4.2 sweep,
+  commit-time guard): BL-952's hazard, reopened for one id namespace.
+
+  ## What is wanted
+
+  - One shared, exported ticket-id predicate on the TypeScript side (a new
+    small module, e.g. `extension/src/tools/backlogTicketId.ts` exporting
+    `isBacklogTicketId` and `BACKLOG_TICKET_ID_PATTERN = /^(BL|GH)-\d+$/i`),
+    consumed by `bounceArgsCore.ts` (so both recorders accept GH) and by
+    `qa-sibling-check.ts` (wiring anchors 1-2, invariant 1).
+  - A bounce recorded for a GH ticket lands in both stores with the same
+    shape as a BL bounce and vetoes the commit in `is_qa_ancestor.sh`
+    (scenario 01, invariant 2).
+  - A malformed id is still refused with the usage and nothing written
+    (scenario 02): the namespace widens, the strictness does not.
+  - `qa-sibling-check.js status GH-<n>` works (scenario 03).
+
+  ## How (direction, not mandate)
+
+  - Do not widen `swarmMetrics.ts`'s prefix-matching `TICKET_ID_PATTERN`
+    into the validator: that one matches a task name's leading id and is
+    deliberately unanchored at the end. The validator needs `$`.
+  - `record-bounce-correction.js` (BL-990) reads `--ticket` through its own
+    args module; check whether it validates the id and, if so, route it
+    through the same predicate in this parcel (it is the third recorder of
+    the same store).
+  - Fixture: the BL-635/BL-608 acceptance handlers already build a scratch
+    repository with a ticket and a commit; reuse them for scenario 01 with
+    a `GH-24` ticket file, and call `is_qa_ancestor.sh --batch` against the
+    fixture's stores.
+  - Documenter: `docs/how-to/` for record-bounce (BL-635) and the QA prompt
+    mention GH ids are accepted; the QA prompt's best-effort sentence
+    stays. No diagram trigger fires.
+
+  ## Out of scope
+
+  - Every other TypeScript tool with a private `^BL-\d+$`: BL-1453.
+  - The bb side, which already accepts both namespaces.
+
+qa_e2e_procedure: |
+  1. The BL-1452 feature passes all seven runs; BL-635's, BL-608's and
+     BL-990's features stay green; `npm test` green.
+  2. In a scratch clone under mkdtemp: `node extension/out/tools/record-bounce.js
+     --ticket GH-24 --role documenter --type feature --class behavior
+     --commit 718bd15071 --by QA --evidence backlog/evidence/GH-24-QA-20260906.md`
+     appends one JSONL line and one bounce_history entry;
+     `swarmforge/scripts/is_qa_ancestor.sh 718bd15071` in that clone
+     answers 1 with a `bounced:` line. The live checkout is untouched.
+  3. `node extension/out/tools/qa-sibling-check.js status GH-24` in the QA
+     worktree prints a status, exit 0.
+  4. `grep -rn 'BL-\\\\d+\\$' extension/src/tools/bounceArgsCore.ts extension/src/tools/qa-sibling-check.ts`
+     returns nothing.
+
+notes: |
+  Minted 2026-09-06 by the specifier on QA's priority-50 note
+  "record-bounce.js rejects GH-* ids - see GH-24-QA-20260906.md". Grepped
+  first: BL-799 (paused) is record-bounce's specifier-producer gap and
+  BL-1282 (paused) its commit validation - neither names the id namespace;
+  no ticket names GH ids. A sweep of `extension/src` found thirteen more
+  sites with a BL-only pattern (ambulance, expedite, cursor operator exec,
+  topic reconcile, catch-up, telegram control, bridge update, handler
+  registration text, deprecate-check, delivery metrics): BL-1453, which
+  depends on this ticket's predicate.
+
+  INTERIM VETO, written by hand the same pass: GH-24's YAML on main gained
+  `bounce_count: 1` and the `bounce_history` entry for `718bd15071` (at
+  2026-09-06, by QA, blamed documenter, class behavior, evidence
+  GH-24-QA-20260906.md) - the second store is_qa_ancestor.sh unions, so the
+  bounced commit vetoes today. The JSONL store still lacks the record; QA
+  must NOT re-run record-bounce for 718bd15071 once this lands (that would
+  double the YAML entry) - the missing JSONL line is accepted as the cost
+  of the incident and noted in this ticket's evidence.
+
+  INVEST at mint: Independent (no unbuilt sibling; BL-1453 waits on this),
+  Negotiable (module name and file are direction; the predicate's
+  namespaces and anchoring are the contract), Valuable (one outcome: a GH
+  bounce vetoes and is counted like a BL bounce), Estimable (one module,
+  two call sites, one handler; low), Small (three scenarios, seven runs,
+  two invariants), Testable (fixture repositories; the real CLIs and the
+  real predicate script).
+
+source: |
+  QA note 2026-09-06T21:20:33Z; .worktrees/QA/backlog/evidence/GH-24-QA-20260906.md
+  (0c08dc0608) §"record-bounce.js gap"; backlog/evidence/GH-25-qa-pass-20260825.md
+  line 5; extension/src/tools/bounceArgsCore.ts 1-48;
+  extension/src/tools/qa-sibling-check.ts 36-40;
+  extension/src/metrics/swarmMetrics.ts 475-479;
+  swarmforge/scripts/is_qa_ancestor.sh 10-30, 126-175; reproduction by the
+  specifier (usage printed, no store written) 2026-09-06 21:2xZ.
