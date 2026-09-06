@@ -4,7 +4,7 @@ milestone: M8
 type: feature
 status: todo
 epic: art-direction
-priority: 8
+priority: 0
 direction: human-requested
 depends_on: []
 mutation_cost: low
@@ -174,6 +174,7 @@ qa_e2e_procedure: |
      03 live); the guard prints nothing on that merge.
 
 notes: |
+  - [2026-09-06] human: Q jump via Cursor operator — promote past depth cap + priority 0 + dispatch now.
   Minted 2026-09-06 by the specifier on the human's ruling to the
   2026-09-06 role_ask (answer filed at
   backlog/answers-archive/ANSWER-2026-09-06-art-director-landing-path-b-qa-lands-on-note.md).
