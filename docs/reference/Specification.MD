@@ -4322,7 +4322,9 @@ role branches in their `roles.tsv` worktrees to the landed SHA; dirty worktrees,
 `in_process` parcels, and non-ff branches are surfaced with logged skip reasons
 — never merge/rebase/stash/reset. State:
 `.swarmforge/daemon/post-qa-branch-sweep-state.json`. Modules:
-`post_qa_branch_sweep_lib.bb`, `post_qa_branch_sweep.bb`, `handoffd.bb`.
+`post_qa_branch_sweep_lib.bb`, `handoffd.bb`. (The manual CLI wrapper,
+`post_qa_branch_sweep.bb`, never parsed since birth and was retired
+2026-09-06 — BL-1426.)
 Acceptance: `specs/features/BL-668-post-qa-deterministic-branch-sweep.feature`.
 How-to: `docs/how-to/BL-668-post-qa-deterministic-branch-sweep.md`.)
 Prior entry —
