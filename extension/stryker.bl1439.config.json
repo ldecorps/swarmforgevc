@@ -2,7 +2,7 @@
   "$schema": "./node_modules/@stryker-mutator/core/schema/stryker-schema.json",
   "testRunner": "vitest",
   "vitest": {
-    "configFile": "vitest.config.mjs",
+    "configFile": "vitest.bl1441.stryker.config.mjs",
     "related": false
   },
   "concurrency": 1,

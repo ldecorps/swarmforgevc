@@ -1099,6 +1099,95 @@
            (every? #(boolean (re-find (re-pattern (str "<" % " style=\"[^\"]+\">")) html))
                    ["h2" "p" "ul" "li" "blockquote"])))
 
+;; ── bold-leading-ticket-ids (BL-1442: Art Director brief, list-item scan
+;;    weight) ──────────────────────────────────────────────────────────────
+;; Each row: the list item's own text (as it would appear after "- " in the
+;; source markdown) and the ticket ids expected to render bold, in order.
+;; Every row driven through the REAL production path
+;; (render-markdown-to-html then render-briefing-html), never a call
+;; straight into the private label-parsing helpers.
+(def bl1442-item-cases
+  [["BL-1309: the one landing step QA cannot skip never asked what the tip carried"
+    ["BL-1309"]]
+   ["BL-1374: a routine named after a ticket credited BL-1385's replay with every passenger"
+    ["BL-1374"]]
+   ["BL-1386 and BL-1387: the reconcile sweep never orphans a merge it started"
+    ["BL-1386" "BL-1387"]]
+   ["BL-1413 (active) is a live operational issue right now"
+    ["BL-1413"]]
+   ["BL-1398 (commit-guard fixture) and BL-1401 (BL-632 acceptance fixture) both derive their guard set"
+    ["BL-1398" "BL-1401"]]
+   ["GH-29: an issue-seeded ticket closes its issue when it lands"
+    ["GH-29"]]
+   ["**Active** (6): BL-1365 (this session's own ticket)"
+    ["Active"]]
+   ["New tickets minted since 2026-09-03 and still open include BL-1410"
+    []]])
+
+(doseq [[item expected-bold] bl1442-item-cases]
+  (let [body-html (markdown-to-html-lib/render-markdown-to-html (str "- " item))
+        rendered (briefing-email-lib/render-briefing-html "2026-09-05" body-html nil)
+        actual-bold (mapv second (re-seq #"<strong[^>]*>([^<]*)</strong>" rendered))]
+    (assert= (str "BL-1442: " (pr-str item))
+             expected-bold
+             actual-bold)))
+
+;; Only <li> content is ever touched - a <p>, heading or <blockquote>
+;; opening with the same ticket-id shape is left alone even though the
+;; label grammar would otherwise match it.
+(let [body-html (markdown-to-html-lib/render-markdown-to-html
+                 "BL-9001: a paragraph that happens to open with a ticket id\n\n# BL-9002: a heading that happens to open with a ticket id\n\n> BL-9003: a quote that happens to open with a ticket id")
+      rendered (briefing-email-lib/render-briefing-html "2026-09-05" body-html nil)]
+  (assert= "BL-1442: a <p> opening with a ticket id is untouched"
+           false
+           (str/includes? rendered "<strong style=\"font-weight:600\">BL-9001</strong>"))
+  (assert= "BL-1442: a heading opening with a ticket id is untouched"
+           false
+           (str/includes? rendered "<strong style=\"font-weight:600\">BL-9002</strong>"))
+  (assert= "BL-1442: a <blockquote> opening with a ticket id is untouched"
+           false
+           (str/includes? rendered "<strong style=\"font-weight:600\">BL-9003</strong>")))
+
+(def ^:private strip-added-strong-re #"<strong style=\"font-weight:600\">((?:BL|GH)-\d+)</strong>")
+(defn- strip-added-strong [s] (str/replace s strip-added-strong-re "$1"))
+
+;; Invariant 2: every <strong> this feature adds carries font-weight:600
+;; inline and no colour, border or <style> block - the SAME entry BL-1419
+;; already styles every bare <strong> with, never a second style rule.
+(let [body-html (markdown-to-html-lib/render-markdown-to-html "- BL-1309: the one landing step QA cannot skip")
+      rendered (briefing-email-lib/render-briefing-html "2026-09-05" body-html nil)
+      stripped (str/replace rendered #"<style[^>]*>.*?</style>" "")
+      strong-style-attrs (map second (re-seq #"<strong style=\"([^\"]*)\">" rendered))]
+  (assert= "BL-1442 invariant 2: the added <strong> carries font-weight:600 inline"
+           true
+           (str/includes? rendered "<strong style=\"font-weight:600\">BL-1309</strong>"))
+  (assert= "BL-1442 invariant 2: no <strong> style attribute carries a colour"
+           true
+           (and (seq strong-style-attrs) (not-any? #(str/includes? % "color") strong-style-attrs)))
+  (assert= "BL-1442 invariant 2: still no <style> block at all"
+           false
+           (str/includes? rendered "<style"))
+  (assert= "BL-1442 invariant 2: stripping every <style> block leaves the layout byte-identical (there is none to strip)"
+           rendered
+           stripped))
+
+;; Invariant 3: stripping the <strong> this feature added reproduces
+;; EXACTLY what BL-1419 rendered - no <li> split, reordered or reworded,
+;; same <li> count. Compares the BODY html directly (both private helpers
+;; are reachable the same way style-inline-elements already is above),
+;; never the full wrapped output - so this test cannot be fooled by the
+;; header/container's own pre-existing, unrelated style attributes.
+(let [body-md "- BL-1309: first item\n- BL-1386 and BL-1387: second item\n- an item with no leading id"
+      body-html (markdown-to-html-lib/render-markdown-to-html body-md)
+      before-bolding (briefing-email-lib/style-inline-elements body-html)
+      after-bolding (briefing-email-lib/style-inline-elements (briefing-email-lib/bold-leading-ticket-ids body-html))]
+  (assert= "BL-1442 invariant 3: the <li> count is unchanged"
+           (count (re-seq #"<li" before-bolding))
+           (count (re-seq #"<li" after-bolding)))
+  (assert= "BL-1442 invariant 3: stripping the added <strong> reproduces BL-1419's own rendering exactly"
+           before-bolding
+           (strip-added-strong after-bolding)))
+
 ;; ── report ────────────────────────────────────────────────────────────────
 (if (seq @failures)
   (do
