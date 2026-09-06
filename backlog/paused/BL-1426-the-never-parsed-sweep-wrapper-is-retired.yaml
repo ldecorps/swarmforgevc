@@ -36,7 +36,7 @@ approval_context: >
   files BL-1421 holds. The daemon remains the only runner, as it has been.
 
 invariants:
-  - "The daemon's sweep is untouched: this parcel does not modify handoffd.bb, post_qa_branch_sweep_lib.bb or post_qa_branch_sweep_lib_test_runner.bb (BL-1421 holds them in flight)."
+  - "The daemon's sweep is untouched: this parcel does not modify handoffd.bb, post_qa_branch_sweep_lib.bb or post_qa_branch_sweep_lib_test_runner.bb (BL-1421 landed 2026-09-05; the daemon's supplier is the only one and stays so)."
 
 required_wiring:
   - 'specs/pipeline/steps/bl1426PostQaSweepWrapperRetiredSteps.js::registerSteps::the handler file exists so discovery registers every scenario (BL-1371)'
@@ -137,6 +137,18 @@ notes: |
   deletions, one doc edit, one three-scenario handler; low), Small (three
   scenarios, one invariant), Testable (read-only tree checks; live steps in
   qa_e2e_procedure).
+
+  2026-09-06, specifier, deprecator freshness adjudication (coordinator
+  hold 16:18Z, reason "ticket text still names RETIRED behaviour"):
+  CONFIRM PROMOTE. The ticket names the wrapper because retiring it IS the
+  deliverable (the BL-1271 shape). Premise re-verified on main at that
+  hour: post_qa_branch_sweep.bb and .sh still exist (last touched
+  f5b6b49f1f), a pure reader pass still fails at the same unclosed paren,
+  the how-to still carries the manual-invocation block (lines 20-26) and
+  the CLI-wrapper row (line 154). BL-668 done; BL-1421 and BL-1427 landed
+  2026-09-05, so the invariant's "in flight" parenthetical was re-tensed
+  (constraint unchanged). Recorded with record-adjudication.js; do not
+  re-hold on the same grounds.
 
 source: |
   Coordinator note to the specifier, 2026-09-05T09:15Z, verbatim: "Mint:
