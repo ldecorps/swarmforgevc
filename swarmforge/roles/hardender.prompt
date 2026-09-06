@@ -707,6 +707,14 @@ You are the hardender.
   still said PASS, because the script honoured the pane's standing
   `SWARMFORGE_SKIP_BABYSITTERD=1`; fixed in-place by the `unset` at the top
   of that test, which is the pattern to copy.)
+- **The prefix is not the rule (2026-09-06, BL-1445).** Any operator escape
+  hatch the tested path reads is a standing export too, whatever its name:
+  `.swarmforge/swarm.env` exports `PACK_STAFFING_SKIP_GATE=1` into every
+  pane, `test_pack_staffing_gate_wiring.sh` inherited it, and its refusal
+  cases read as passes-with-warning - case 01 red in every role's lane on
+  main, green under `env -u`. Enumerate what to scrub by grepping the
+  script under test for every `${VAR:-` and `getenv` on the tested path,
+  never by a name prefix.
 
 ## run_gherkin_mutation.sh takes 4 positionals — pass ALL 4, never let level fill the steps-module slot (rule_proposal 2026-08-12, accepted)
 - Signature: `run_gherkin_mutation.sh <feature-file> [work-dir]
