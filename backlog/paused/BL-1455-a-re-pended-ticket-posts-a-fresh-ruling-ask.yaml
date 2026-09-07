@@ -25,7 +25,7 @@ required_stages: [coder, cleaner, architect, hardender, documenter, qa]
 
 acceptance: specs/features/BL-1455-a-re-pended-ticket-posts-a-fresh-ruling-ask.feature
 
-human_approval: pending
+human_approval: approved
 approval_context: >
   A new feature file is authored here, so it needs a tap. No choice is posed
   and there are no ruling_options. What is FIRM: a decided ask never counts
