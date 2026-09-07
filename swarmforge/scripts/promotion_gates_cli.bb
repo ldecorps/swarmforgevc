@@ -70,6 +70,14 @@
     (println "Usage: promotion_gates_cli.bb locate|evaluate|select|route-target|gate-promotion|audit-acceptance ..."))
   (System/exit 1))
 
+;; BL-1469: the ONE place this CLI resolves "today" for the not_before
+;; gate - UTC, so a promotion decided at any hour of any timezone agrees
+;; with the date the ticket itself declares in UTC. promotion-gates-lib's
+;; own not-before-refusal never calls this itself (its docstring: "today
+;; is a caller-supplied ... string; never resolved here") - every one of
+;; this CLI's three `evaluate` call sites below threads this same value in.
+(defn- today-utc [] (str (java.time.LocalDate/now java.time.ZoneOffset/UTC)))
+
 (defn- find-in [dir bl-id]
   (let [d (fs/path dir)]
     (when (fs/exists? d)
@@ -100,7 +108,8 @@
                  :active-count (promotion-gates-lib/active-count root)
                  :max-depth max-depth
                  :active-epics (promotion-gates-lib/active-epics root)
-                 :done-ids (promotion-gates-lib/done-ids root)})]
+                 :done-ids (promotion-gates-lib/done-ids root)
+                 :today (today-utc)})]
     (print-advisory! (:advisory result))
     (if (:ok result)
       (do (println "ALLOW") (System/exit 0))
@@ -165,7 +174,8 @@
                    :max-depth max-depth
                    :active-epics (promotion-gates-lib/active-epics root)
                    :done-ids (promotion-gates-lib/done-ids root)
-                   :queue-jump? (boolean queue-jump?)})]
+                   :queue-jump? (boolean queue-jump?)
+                   :today (today-utc)})]
       (print-advisory! (:advisory result))
       (when (:crossed result)
         (binding [*out* *err*]
@@ -181,13 +191,15 @@
         active-epics (promotion-gates-lib/active-epics root)
         epic-priority-index (promotion-gates-lib/epic-priority-index root)
         done-id-set (promotion-gates-lib/done-ids root)
+        today (today-utc)
         eligible (keep (fn [f]
                           (let [content (slurp f)
                                 result (promotion-gates-lib/evaluate
                                         {:content content :held? false :root root
                                          :active-count active-count :max-depth max-depth
                                          :active-epics active-epics
-                                         :done-ids done-id-set})]
+                                         :done-ids done-id-set
+                                         :today today})]
                             (when (:ok result) {:file f :content content :advisory (:advisory result)})))
                         files)
         winner (promotion-gates-lib/rank-candidates eligible epic-priority-index)]
