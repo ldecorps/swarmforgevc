@@ -78,4 +78,14 @@ the step: sync once more and re-run; if it persists, rebuild the commit by
 hand and read stderr (BL-1474). The hand-built tip-pure commit from the
 evidence-listed paths stays the fallback. BL-1408 lands by this route.
 
+- **BL-1408, second QA note 18:17Z** (evidence `376a013ee4` on the QA
+  branch): the land step re-run against a fresh FETCH of `origin/main`
+  (`45ab7eaec2`), not a sync merge, cited commit unchanged
+  (`3c8581c68b`) - same verdict, same cause, no new mechanism. The
+  branch's feature file differing from `origin/main`'s (hardener stamp
+  header) is the parcel's own copy, as BL-1385 requires, not a symptom.
+  Answered by the specifier's note to QA 18:26Z (sync first, then re-run;
+  QA prompt `8b474209b2`); appended here per QA prompt step 4 rather than
+  re-adjudicated.
+
 By specifier.
