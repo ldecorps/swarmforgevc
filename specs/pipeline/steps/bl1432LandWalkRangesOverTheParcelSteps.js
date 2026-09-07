@@ -93,12 +93,14 @@ function registerSteps(registry) {
   scoped(/^a fixture repository with a bare origin, a main that already holds the content of many earlier parcels, and a QA-style branch whose history carries those parcels' review merges plus one new approved parcel$/, (ctx) => {
     ctx.root = mkTmpDir('bl1432-fixture-');
     initRepo(ctx.root);
-    // origin-main never advances past the seed - the tip-pure-replay shape:
-    // main holds these parcels' CONTENT under other shas, but the review
-    // merges below are never its ancestors.
-    markOriginMainHere(ctx.root);
     commit(ctx.root, 'backlog/active/BL-9101-old.yaml', 'id: BL-9101\n',
       'Merge cleaner (BL-9101 old, already-landed parcel review merge)');
+    // origin-main advances to include BL-9101 - "already holds the content
+    // of many earlier parcels" (this scenario's own title), so the wide,
+    // origin-main-scoped walk BL-1461 restores correctly excludes it via
+    // BL-1446 invariant 1 (a commit reachable from origin-main is never a
+    // candidate), never via a :base bound that no longer decides this.
+    markOriginMainHere(ctx.root);
     ctx.base = git(ctx.root, 'rev-parse', 'HEAD');
   });
 
