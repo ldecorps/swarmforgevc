@@ -11,7 +11,14 @@ severity: high
 # the integration step. It still lands nothing wrong itself.
 status: todo
 epic: swarm-reliability
-priority: 12
+priority: 5
+# 5 (was 12; specifier 2026-09-08 on the coordinator's optimizer note): the
+# last land-step fix behind which QA holds BL-1408 (approved) and BL-1348
+# un-landed since BL-1472/BL-1473 closed; every LAND_ESCALATE from a refused
+# replay misreports until it lands. Ahead of BL-1476/BL-1481 (6). Shares
+# land_step_lib.bb with BL-1470 (active, at QA) and BL-1481 (paused,
+# depends_on BL-1470): promote once BL-1470 lands; one of the three active
+# at a time (orthogonality).
 direction: swarm-reported
 depends_on: []
 mutation_cost: low
