@@ -28,7 +28,7 @@
 // — never a separate LINKS: footer.
 import { ALL_SWARM_ROLES } from './roleTopicMapStore';
 import { PIPELINE_CHAIN } from '../swarm/rolePack';
-import { stageOfSeat } from '../swarm/swarmState';
+import { stageOfSeat, TicketStageEntry, TicketHealthDot } from '../swarm/swarmState';
 
 export interface PipelineBoardRow {
   id: string;
@@ -44,6 +44,13 @@ export interface PipelineBoardRow {
   // callers/fixtures keep their row shape byte-identical when they do not
   // pass localSwarmName.
   swarm?: string;
+  // BL-1451: BL-670's own stage-map entry for this ticket (stage/status/
+  // asOf/healthDot) - never re-derived here (BL-670 invariant 2: one
+  // derivation, two consumers). Optional, and only ever set when the
+  // caller's ticketStageEntries actually names this id, so a row for an
+  // unmapped ticket (or every pre-BL-1451 caller, which passes none at
+  // all) keeps its exact pre-existing shape.
+  stageEntry?: TicketStageEntry;
 }
 
 // BL-465: shared shape for every below-grid list line (parked, root-intake,
@@ -200,6 +207,12 @@ export interface PipelineBoardExtras {
   // absent ticket swarm: defaults to it, remote rows never show a live
   // held-by-role marker, and captions badge only when >1 swarm is visible.
   localSwarmName?: string;
+  // BL-1451: BL-670's stage-map, keyed by ticket id - the tick's own
+  // readTicketStageEntries adapter. Absent means "no entries" (every
+  // pre-existing caller, which never passed this): every row renders
+  // exactly as before (invariant 2). Never merged with roleHeldTickets or
+  // re-derived; each mapped row's stageEntry comes straight from here.
+  ticketStageEntries?: Record<string, TicketStageEntry>;
 }
 
 // BL-473: the not-started sentinel column - a distinct state for an active
@@ -531,7 +544,8 @@ function buildGridRows(
   roleHeldTickets: Record<string, string[]>,
   ticketMeta: Record<string, PipelineBoardTicketMeta>,
   activeIds?: string[],
-  localSwarmName?: string
+  localSwarmName?: string,
+  ticketStageEntries?: Record<string, TicketStageEntry>
 ): PipelineBoardRow[] {
   const heldRoleById = heldRoleByTicketId(roleHeldTickets);
   const ids = activeIds ?? [...heldRoleById.keys()];
@@ -565,6 +579,9 @@ function buildGridRows(
       // meta-less row keeps its pre-BL-956 shape exactly.
       ...(meta?.title !== undefined ? { title: meta.title } : {}),
       ...(swarm !== undefined ? { swarm } : {}),
+      // BL-1451: straight from BL-670's own map, never re-derived here -
+      // absent for an unmapped ticket, same posture as title/swarm above.
+      ...(ticketStageEntries?.[id] !== undefined ? { stageEntry: ticketStageEntries[id] } : {}),
     });
   }
   return [...rowsById.values()].sort((a, b) => epicSortKey(a.epic).localeCompare(epicSortKey(b.epic)));
@@ -828,7 +845,13 @@ export function computePipelineBoard(
   // column - not even one that is somehow also role-held mid-transition.
   const heldSource = extras.held ?? [];
   const heldIds = new Set(heldSource.map((item) => item.id));
-  const rows = buildGridRows(roleHeldTickets, ticketMeta, extras.activeIds, extras.localSwarmName).filter(
+  const rows = buildGridRows(
+    roleHeldTickets,
+    ticketMeta,
+    extras.activeIds,
+    extras.localSwarmName,
+    extras.ticketStageEntries
+  ).filter(
     (row) => !heldIds.has(row.id)
   );
   const { parked: allParked, collapsedEpics, parkedOmittedCount, collapsedEpicsOmittedCount } =
@@ -914,6 +937,16 @@ export const PIPELINE_BOARD_CAPTION_DESCRIPTION_MAX = 64;
 // rather than rendering as a bare id followed by nothing.
 const NO_BACKLOG_ENTRY_LABEL = '(no backlog entry)';
 
+// BL-1451: the default glyph a stage entry's healthDot renders as, at the
+// head of the caption line - ONE map, exported, so BL-940's elapsed mark
+// and the Art Director's brief (Article 1.10) have one place to change it,
+// never a second literal set drifting from this one.
+export const HEALTH_DOT_GLYPHS: Record<TicketHealthDot, string> = {
+  green: '🟢',
+  yellow: '🟡',
+  red: '🔴',
+};
+
 function truncateCaptionDescription(text: string): string {
   if (text.length <= PIPELINE_BOARD_CAPTION_DESCRIPTION_MAX) {
     return text;
@@ -924,10 +957,15 @@ function truncateCaptionDescription(text: string): string {
 function gridCaptionLine(row: PipelineBoardRow, showSwarmBadge: boolean): string {
   const displayId = deriveDisplayTicketId(row.id);
   const description = (row.title ?? '').trim() || row.slug.trim() || NO_BACKLOG_ENTRY_LABEL;
+  // BL-1451: the dot sits at the HEAD of the caption line, outside the
+  // fixed-width stage cells (BL-585's width budget), so a ticket with no
+  // entry or no dot renders this line exactly as before (invariant 2).
+  const dot = row.stageEntry?.healthDot;
+  const dotPrefix = dot ? `${HEALTH_DOT_GLYPHS[dot]} ` : '';
   if (showSwarmBadge && row.swarm) {
-    return `${displayId} [${swarmDisplayBadge(row.swarm)}] ${truncateCaptionDescription(description)}`;
+    return `${dotPrefix}${displayId} [${swarmDisplayBadge(row.swarm)}] ${truncateCaptionDescription(description)}`;
   }
-  return `${displayId} ${truncateCaptionDescription(description)}`;
+  return `${dotPrefix}${displayId} ${truncateCaptionDescription(description)}`;
 }
 
 function captionsNeedSwarmBadges(visibleRows: PipelineBoardRow[]): boolean {
