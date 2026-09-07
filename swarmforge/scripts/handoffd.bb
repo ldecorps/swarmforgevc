@@ -2084,7 +2084,14 @@
                        ;; advisory-only in evaluate (never a refusal), so the
                        ;; active-epics scan is skipped here.
                        :active-epics nil
-                       :done-ids (promotion-gates-lib/done-ids project-root)}))
+                       :done-ids (promotion-gates-lib/done-ids project-root)
+                       ;; BL-1469 hardener bounce D1: evaluate's not_before
+                       ;; gate needs :today - resolved ONCE per sweep here
+                       ;; (never inside chase-sweep-lib's own pure functions,
+                       ;; BL-1390's no-real-clock-in-any-test posture), same
+                       ;; pattern as promotion_gates_cli.bb's own today-utc
+                       ;; and this file's own briefing-email-sweep! :today-str.
+                       :today (str (java.time.LocalDate/now java.time.ZoneOffset/UTC))}))
           pending-dirs (or (coordinator-pending-dirs roles) [])
           pending? (chase-sweep-lib/open-slot-nudge-pending? pending-dirs)
           now-ms (System/currentTimeMillis)
