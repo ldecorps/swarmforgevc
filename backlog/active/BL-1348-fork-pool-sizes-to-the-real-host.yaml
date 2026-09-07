@@ -252,4 +252,39 @@ notes: |
   bare "approve BL-1348" as a workaround - it may record a bare approval
   and discard the A-D choice (BL-1300).
 
+  2026-09-07 (specifier), spec-gap on the documenter's note: ruling B was
+  recorded on 2026-09-07 (123ae42f9c) without the feature amendment this
+  ticket's approval_context promised ("the feature gains one Examples row
+  for full-forge on linux once you rule"). The outline's columns carry no
+  cores or load, so the ruled behaviour needs its own scenario, not a row.
+  The parcel is past the coder (documenter, 16:01Z), so per BL-1385 the
+  text lives HERE and enters the feature INSIDE the parcel: documenter
+  bounces to coder (class spec-gap), the coder adds the scenario and its
+  step handler in the same commit, and the chain re-walks. Never edit the
+  feature on main for this. The bounce is caused by the specifier's
+  amendment timing, not the coder's work (BL-990 correction to follow).
+
+  Scenario to add (option B, verbatim):
+
+    # BL-1348 no-override-follows-free-cores-03
+    Scenario Outline: with no override the default ceiling is the cores the host has free
+      Given a full-forge pack on linux with <cores> cores, 19904 MB of RAM and a 5-minute load average of <load>
+      And the operator fork override is unset
+      When a vitest lane resolves its worker pool
+      Then the resolved pool is <pool>
+
+      Examples:
+        | cores | load | pool |
+        | 20    | 12   | 8    |
+        | 20    | 17   | 3    |
+        | 20    | 19.5 | 1    |
+
+  Rows stay below the host RAM cap on purpose (scenario 02 owns that
+  bound), so each expects exactly max(1, floor(cores - load)): 8, 3, 1.
+  Handler direction: a step that injects cores and the 5-minute load into
+  the composition point (or the exported free-cores ceiling function) -
+  never os.cpus()/os.loadavg() read live in a test. Add one sentence to the
+  Feature narrative: with no override the default ceiling is the cores the
+  host has free, cores minus the 5-minute load average, floor 1, cap cores.
+
 assigned_to: coder
