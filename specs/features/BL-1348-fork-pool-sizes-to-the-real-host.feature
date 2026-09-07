@@ -1,7 +1,3 @@
-# acceptance-mutation-manifest-begin
-# {"version":1,"tested_at":"2026-09-07T16:42:51.813158456Z","feature_name":"BL-1348 The vitest fork pool sizes to the host the swarm actually runs on","feature_path":"/home/carillon/swarmforgevc/.worktrees/hardender/specs/features/BL-1348-fork-pool-sizes-to-the-real-host.feature","background_hash":"74234e98afe7498fb5daf1f36ac2d78acc339464f950703b8c019892f982b90b","implementation_hash":"unknown","scenarios":[{"index":2,"name":"with no override the default ceiling is the cores the host has free","scenario_hash":"4398b2b0f9b170f1e136b5fe824048e0bef02d0576950f65c352c720c6182e45","mutation_count":9,"result":{"Total":9,"Killed":9,"Survived":0,"Errors":0},"tested_at":"2026-09-07T16:42:51.813158456Z"}]}
-# acceptance-mutation-manifest-end
-
 Feature: BL-1348 The vitest fork pool sizes to the host the swarm actually runs on
 
   Both vitest lanes size their worker pool through one shared composition,
