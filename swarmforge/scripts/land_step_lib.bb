@@ -731,7 +731,7 @@
 ;; clean one. No bounces directory in ANY root is the real "never
 ;; bounced" answer (`[]`). `store-roots` is the injection seam BL-1470's
 ;; runner fixtures use to drive a real linked worktree without relying on
-;; this function's own git resolution."
+;; this function's own git resolution.
 (defn- bounce-records-for
   ([root ticket-id] (bounce-records-for root ticket-id nil))
   ([root ticket-id store-roots]
