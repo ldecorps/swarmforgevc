@@ -41,6 +41,7 @@ const { mkTmpDir } = require('./helpers/tmpDir');
 
 const REPO_ROOT = path.join(__dirname, '..', '..');
 const LAND_STEP_LIB = path.join(REPO_ROOT, 'swarmforge', 'scripts', 'land_step_lib.bb');
+const CHECK_FEATURE_HANDLER_REGISTRATION = path.join(REPO_ROOT, 'swarmforge', 'scripts', 'check_feature_handler_registration.sh');
 const FIXTURE_PREFIX = 'bl1375-property-';
 const LANDING = 'BL-9375';
 const SIBLING = 'BL-9376';
@@ -230,27 +231,37 @@ test('BL-1375/BL-654 invariant 2: a passenger rides only through a self-consiste
           // self-consistent - which is exactly the question the rider asks.
           if (consistent) putOnMain(root, SIBLING_HANDLER, 'module.exports = { registerSteps() {} };\n');
 
+          // BL-1465: since BL-1447, land-plan builds the tip-pure commit and
+          // runs the tree guards itself before ever returning - the property
+          // now reads the refusal (or the pass) from the SAME decision point,
+          // never re-running replay! on a plan that already decided.
+          const citedTip = head(root);
           const plan = landPlan(root);
-          assert.equal(plan.action, 'replay', `the plan refused before the guard could speak: ${JSON.stringify(plan)}`);
-          const passengers = plan.passengers || [];
-          assert.ok(passengers.includes(SIBLING), `no passenger rode, so this run proves nothing about the guard`);
-
-          const result = askLandStep(
-            root,
-            `(land-step-lib/replay! {:root "${root}" :commit "${head(root)}" :task-ticket-id "${LANDING}"` +
-              ` :own-paths ${JSON.stringify(plan['own-paths'])} :passengers #{${passengers
-                .map((s) => `"${s}"`)
-                .join(' ')}}})`,
-          );
 
           if (consistent) {
             reach.resolved += 1;
-            assert.equal(result.success, true, `a self-consistent replayed tree was refused: ${JSON.stringify(result)}`);
-            git(root, 'branch', '-q', '-D', result.branch);
+            assert.equal(plan.action, 'replay', `a self-consistent replayed tree was refused: ${JSON.stringify(plan)}`);
+            const passengers = plan.passengers || [];
+            assert.ok(passengers.includes(SIBLING), `no passenger rode, so this run proves nothing about the guard`);
+            // Independently verify the built tip actually passes the guard -
+            // never trust land-plan's own internal claim alone (the same
+            // guard run-replayed-tree-guards calls, land_step_lib.bb ~1169).
+            // Checked out IN root (replay!'s own scratch worktree is already
+            // gone by the time land-plan returns), so root must be back on
+            // its original tip before the branch can be dropped.
+            git(root, 'checkout', '-q', plan.branch);
+            const guard = spawnSync('bash', [CHECK_FEATURE_HANDLER_REGISTRATION, root, '--assume-main'], { encoding: 'utf8' });
+            assert.equal(guard.status, 0, `the built tip failed its own guard: ${guard.stdout}${guard.stderr}`);
+            git(root, 'checkout', '-q', citedTip);
+            git(root, 'branch', '-q', '-D', plan.branch);
           } else {
             reach.dangling += 1;
-            assert.equal(result.success, false, `an inconsistent replayed tree was published: ${JSON.stringify(result)}`);
-            assert.ok(result.reason.includes(SIBLING), `the refusal does not name the passenger: ${result.reason}`);
+            assert.equal(plan.action, 'escalate', `an inconsistent replayed tree was published: ${JSON.stringify(plan)}`);
+            assert.ok(plan.reason.includes(SIBLING), `the refusal does not name the passenger: ${plan.reason}`);
+            assert.ok(
+              Array.isArray(plan.unlanded) && plan.unlanded.includes(SIBLING),
+              `plan.unlanded does not name the passenger: ${JSON.stringify(plan)}`,
+            );
             // Nothing is left behind for anyone to land by accident.
             assert.equal(
               git(root, 'worktree', 'list').trim().split('\n').length,
