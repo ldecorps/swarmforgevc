@@ -115,3 +115,5 @@ notes: |
   guard's (BL-1473's cause, 4 spurious deletions). Re-classed high on the
   severity comment's grounds. Appended to the class adjudication file
   named in `source:`.
+
+assigned_to: coder
