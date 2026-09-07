@@ -1,0 +1,164 @@
+id: BL-1471
+title: "A bounce revert reverses the whole review merge and is run even for an omission bounce that has nothing to revert: QA's BL-1348 spec-gap revert (108d9a46e7, 2026-09-07) removed ruling B's implementation, its tests, both vitest configs and BL-940's and BL-1468's evidence from the QA branch, and only the coder restoring them on merge stopped a silent regression; a commit-time guard refuses a revert that touches another ticket's paths and refuses any revert for an omission-class bounce"
+milestone: M8
+type: defect
+severity: high
+# high: a bounce revert silently stripped a human-ruled fix and two other
+# tickets' evidence from a review branch that broadcasts merge-ups to
+# every worktree; the coder caught it by diffing the merge, not a gate.
+# Not critical: nothing reached main, the coder restored the content and
+# the rule text now says what to do; the guard makes it mechanical.
+status: todo
+epic: swarm-reliability
+priority: 8
+direction: swarm-reported
+depends_on: [BL-1408]
+# BL-1408 (active, at QA) makes every commit-guard test derive its guard
+# set from the runner; a new guard added before it lands needs a fifth
+# hand-copied list edit (the 09-06 BL-1440 bounce). Built after it.
+mutation_cost: low
+# low: one shell guard in the Tier-1 chain, its shell test over git-init
+# fixtures, and the chain line; attribution reuses check_merge_deletion.sh's
+# subject walk and the bounce store reuses is_qa_ancestor.sh's reader.
+slice_size_envelope: low
+required_stages: [coder, cleaner, architect, hardender, documenter, qa]
+
+acceptance: specs/features/BL-1471-a-bounce-revert-touches-only-the-bounced-tickets-paths.feature
+
+required_wiring:
+  - 'swarmforge/scripts/run_commit_guards.sh::run_guard check_bounce_revert_scope.sh::the guard is reached from the shared Tier-1 chain (the same file runs check_merge_deletion.sh)'
+
+human_approval: pending
+approval_context: >
+  A new feature file is authored here, so it needs a tap. No choice is
+  posed and there are no ruling_options. What is FIRM: the rule (already
+  on main with this mint - workflow.prompt, workflow-detailed.prompt, the
+  QA prompt) is that an omission bounce reverts nothing and a due revert
+  never touches another ticket's path; this ticket is the commit-time
+  guard for both halves, in the shared chain beside the merge-deletion
+  guard. BL-490/BL-495's core - bounced wrong content leaves the bouncing
+  branch - is unchanged.
+
+invariants:
+  - "A bounce revert never removes or alters a path attributed to a ticket other than the bounced one: content another ticket delivered survives the revert unchanged, or the revert is refused naming the path and the ticket."
+  - "An omission-class bounce (the parcel lacks something; nothing it added is wrong) produces no revert commit: the guard refuses one, and a commit that is not a revert is never judged."
+
+description: |
+  ## What is wrong
+
+  The BL-490/BL-495 rule says a bounce reverts the bounced content out of
+  the bouncing branch, and names `git revert -m 1 <review-merge>` as the
+  route. A merge revert reverses the merge's entire combined diff relative
+  to the reverting branch's prior tip. QA's branch had not independently
+  taken BL-1348's earlier content (the coder's ruling-B implementation,
+  reviewed clean by the cleaner and architect) before merging the
+  documenter's tip, so the merge "introduced" all of it from QA's point of
+  view, and the revert (`108d9a46e7`, "Revert 'Merge documenter 9dd64ab8ba
+  into QA.'") took it all back out: `extension/src/tools/vitest-worker-memory-budget.ts`
+  (`resolveFreeCoresCeiling` removed), both vitest configs (`defaultCeiling`
+  back to bare `os.cpus().length`), three test files, BL-1348's own five
+  evidence files, and two files of unrelated tickets reachable through the
+  documenter's history: `backlog/evidence/BL-940-coder-spec-gap-20260906.md`
+  and `backlog/evidence/BL-1468-premature-promotion-coder-20260907.md`.
+
+  The bounce itself was for an OMISSION (class `spec-gap`: the ruled
+  scenario 03 was missing). Nothing the parcel added was wrong, so there
+  was nothing to revert; the convention did not distinguish "added
+  something wrong" from "left something out". The coder's evidence
+  (`BL-1348-qa-revert-hazard-20260907.md`, coder branch) records the
+  detection and the repair: merge accepted for the two bounce-bookkeeping
+  files only, every other path restored to the coder's HEAD, verified by
+  `git show --stat` against the first parent, suite green (`0cf47be441`).
+  QA's branch still carried the reverted tree at 16:32Z; a merge-up
+  broadcast from it before a re-sync would have propagated the regression
+  to every worktree role (`check_merge_deletion.sh` catches deletions on
+  the RECEIVING side, and only for paths the receiver introduced).
+
+  The rule text is amended with this mint (workflow.prompt by substitution
+  within the boot budget, workflow-detailed.prompt in full, the QA prompt).
+  This ticket is the guard.
+
+  ## What is wanted
+
+  `swarmforge/scripts/check_bounce_revert_scope.sh` in the Tier-1 chain of
+  `run_commit_guards.sh`: on a staged revert commit (a `Revert "..."`
+  subject / `This reverts commit <sha>` trailer), read the bounced ticket
+  (the reverted merge's parcel: the ticket its second parent's subjects
+  name, or the bouncing role's latest bounce record), then:
+  - refuse when the reverted merge's ticket's latest bounce record is of
+    an omission class - `spec-gap`, `invariant-unencoded`, and the
+    missing-doc/missing-test classes the QA prompt's table routes as gaps
+    (derive the set from the known-class list in `bounceArgsCore.ts`,
+    with the omission subset declared once) - saying an omission bounce
+    reverts nothing (scenario 03);
+  - refuse when any path in the revert's diff is attributed to a ticket
+    other than the bounced one, naming the path and the ticket (scenario
+    02); attribution by the subject of the commit that most recently
+    introduced/touched the path on the branch's own history, the walk
+    `check_merge_deletion.sh` already has;
+  - pass a revert scoped to the bounced ticket's own paths (scenario 01);
+  - exit 0 without judging on a non-revert commit (scenario 04).
+
+  ## How (direction, not mandate)
+
+  - Shell, `set -uo pipefail` with per-check status capture so every
+    offending path is named in one refusal (Article 4.4, BL-1242 shape);
+    stock bash 3.2 (BL-801).
+  - Bounce store: the shared target root's `.swarmforge/bounces/*.jsonl`
+    (git-common-dir's parent - BL-1339/BL-1470's resolution), never the
+    caller's root alone.
+  - Fixture test `swarmforge/scripts/test/test_check_bounce_revert_scope.sh`
+    over `git init` roots under mkdtemp with their own `.swarmforge/bounces/`
+    (BL-1390); chain wiring through BL-1408's derived fixture set (this
+    ticket depends on it) so no hand-copied guard list is edited.
+  - Documenter: `docs/reference/BL-1241-*.md` or the commit-guard reference
+    (BL-1252's page) gains the guard; the QA prompt's "once it lands"
+    clause is the specifier's to retire at landing.
+
+constraints: >
+  BL-490/BL-495's core (bounced wrong content leaves the bouncing branch)
+  is unchanged; the guard narrows the revert, never blocks a scoped one.
+  Fixture repositories are `git init` roots under mkdtemp, proven by
+  `rev-parse --git-common-dir` before any mutating git command. The step
+  handler lands with the feature (BL-233). No hand-edited mutation
+  manifests.
+
+out_of_scope: |
+  - Repairing QA's current branch (QA's own action on the note sent
+    2026-09-07 16:41Z: restore the reverted paths before any merge-up).
+  - The merge-deletion guard's receiving-side scope (BL-1242).
+  - Re-classifying existing bounce failure classes.
+
+qa_e2e_procedure: >
+  (1) `bash swarmforge/scripts/test/test_check_bounce_revert_scope.sh`
+  green. (2) Scratch clone with a bounce store: merge a two-ticket
+  history, write a `behavior` bounce record for ticket A, stage
+  `git revert -m 1` of the merge: the chain refuses naming ticket B's
+  path; restore B's path in the revert and re-stage: passes. (3) Write a
+  `spec-gap` record instead and stage the same revert: refused as an
+  omission bounce. (4) An ordinary commit on the same branch: the guard
+  prints nothing and exits 0. (5) `run_commit_guards.sh` lists the guard in
+  Tier 1 and BL-1408's derived fixture set includes it without a hand edit.
+
+source: |
+  Coder note to the specifier, priority 00, 2026-09-07T16:39Z: "BL-1348 QA
+  revert hazard - see backlog/evidence/BL-1348-qa-revert-hazard"; coder
+  evidence `BL-1348-qa-revert-hazard-20260907.md` (coder branch); QA's
+  bounce `3b16f8c73c` and revert `108d9a46e7` (QA branch). Adjudication:
+  `backlog/evidence/BL-1348-wholesale-bounce-revert-adjudication-specifier-20260907.md`.
+
+notes: |
+  Minted 2026-09-07 by the specifier on the coder's note, the same pass,
+  with the rule amendment on main (workflow.prompt within the boot budget,
+  workflow-detailed.prompt full wording, QA prompt bullet). QA and the
+  coordinator were told at 16:41Z to restore the QA branch before any
+  merge-up.
+
+  The BL-1348 bounce itself was caused by the specifier's amendment timing
+  (ruling B recorded without its scenario) and is corrected in the bounce
+  store per BL-990 (`record-bounce-correction.js`, 2026-09-07 16:40Z); the
+  revert's over-reach is the separate defect this ticket owns.
+
+  Grepped first: no open ticket names a revert-scope guard or the omission
+  case; check_merge_deletion.sh (BL-1242) is the nearest guard and judges
+  the receiving side of a merge, not a revert.
