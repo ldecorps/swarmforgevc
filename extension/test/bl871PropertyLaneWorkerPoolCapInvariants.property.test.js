@@ -9,7 +9,7 @@ const { mkTmpDir } = require('./helpers/tmpDir');
 const { runManyAsPropertyLaneFixtures } = require('./helpers/propertyLaneFixtureRunner');
 const { maxConcurrentSpans } = require('./helpers/maxConcurrentSpans');
 const { importsSharedBudgetModule, hasHardcodedMaxForks, hasHardcodedHeapSize, readsSharedWorkerBudgetOnly } = require('./helpers/workerPoolConfigGuard');
-const { resolveVitestWorkerPool, PER_WORKER_HEAP_MB } = require('../out/tools/vitest-worker-memory-budget');
+const { resolveVitestWorkerPool, resolveFreeCoresCeiling, PER_WORKER_HEAP_MB } = require('../out/tools/vitest-worker-memory-budget');
 
 // BL-871 declared invariants (property authorship rests with the coder,
 // first pass - BL-654). Runs ONLY via `npm run test:properties`
@@ -46,22 +46,26 @@ const { resolveVitestWorkerPool, PER_WORKER_HEAP_MB } = require('../out/tools/vi
 // workers than the ceiling) and drift in heap ceiling - a fileCount that
 // never exceeds the ceiling could pass vacuously even on a broken config.
 const HOST_RAM_MB = os.totalmem() / (1024 * 1024);
-// BL-1348: the properties lane no longer resolves its ceiling from the bare
-// MAX_WORKERS default - vitest.properties.config.mjs now composes
-// resolveVitestWorkerPool with defaultCeiling: os.cpus().length, same as the
-// unit lane. Deriving WORKER_POOL_SIZE any other way here measures a ceiling
-// the real config does not use, which is exactly what let a 20-CPU host
-// resolve 15 real workers while this test still expected only 6 (observed
-// peak concurrency 9, the invariant 1 regression BL-1348's own test run
-// caught). Mirroring the config's exact call keeps this test's expectation
-// true by construction rather than by two independently-maintained copies.
+// BL-1348, human ruling B: the properties lane no longer resolves its
+// ceiling from the bare MAX_WORKERS default, nor from the raw core count
+// (option 2, measured and rejected: 15 forks on a 20-core host contended
+// with the live swarm's own role sessions and produced a non-deterministic
+// timeout cascade). vitest.properties.config.mjs now composes
+// resolveVitestWorkerPool with defaultCeiling: resolveFreeCoresCeiling
+// (cores minus the 5-minute load average), same as the unit lane. Deriving
+// WORKER_POOL_SIZE any other way here measures a ceiling the real config
+// does not use, which is exactly what let a 20-CPU host resolve 15 real
+// workers while this test still expected only 6 (observed peak concurrency
+// 9, the invariant 1 regression BL-1348's own test run caught). Mirroring
+// the config's exact call keeps this test's expectation true by
+// construction rather than by two independently-maintained copies.
 const WORKER_POOL_SIZE = resolveVitestWorkerPool({
   pack: process.env.SWARMFORGE_PACK,
   rotation: process.env.SWARMFORGE_ROTATION,
   platform: os.platform(),
   override: process.env.SWARMFORGE_VITEST_MAX_FORKS,
   hostRamMB: HOST_RAM_MB,
-  defaultCeiling: os.cpus().length,
+  defaultCeiling: resolveFreeCoresCeiling(os.cpus().length, os.loadavg()[1]),
 });
 const BUSY_MS = 700;
 // V8's own heap accounting adds overhead beyond the requested
