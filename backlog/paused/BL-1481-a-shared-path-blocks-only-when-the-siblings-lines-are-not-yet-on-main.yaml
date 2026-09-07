@@ -1,0 +1,181 @@
+id: BL-1481
+title: "The land step refuses a path shared with a bounced sibling by commit attribution alone, even when every line that sibling added is already on origin/main - so one bounced ticket whose documenter touched Specification.MD refuses every land (BL-1470 on 2026-09-07, BL-1348 bounced, tip differed from main by BL-1470's own 20 lines); a shared path blocks only when the tip-versus-origin/main diff carries a line attributable to the blocking sibling"
+milestone: M8
+type: defect
+severity: high
+# high: integration is the swarm's throughput. Specification.MD is touched
+# by every ticket's documenter, so a single bounced sibling that reached
+# QA refuses EVERY subsequent land at the escalate step until it is
+# re-fixed - BL-1470 tonight, and BL-1408, BL-1469, BL-1451 next, each a
+# specifier round trip or a hand-built land. The refusal protected nothing:
+# the lines it feared were already on main.
+status: todo
+epic: swarm-reliability
+priority: 6
+direction: swarm-reported
+depends_on: [BL-1470]
+# depends_on BL-1470: it rewrites bounce-blocking-state and the shared-path
+# refusal in land_step_lib.bb (at QA tonight, ruled landable by the
+# specifier); this ticket changes the same refusal and must build on the
+# landed shape, not race it.
+mutation_cost: low
+# low: land_step_lib.bb (Babashka, no mutation wired - BL-472; bb unit and
+# property runners gate) plus runner fixtures where a sibling's lines are
+# already on origin/main.
+slice_size_envelope: low
+required_stages: [coder, cleaner, architect, hardender, documenter, qa]
+
+acceptance: specs/features/BL-1481-a-shared-path-blocks-only-when-the-siblings-lines-are-not-yet-on-main.feature
+
+# Handler anchor only: land_step_cli.bb already calls land-plan (the refusal
+# is the defect's own path), so a consumer anchor there is satisfied before
+# the fix and gates nothing (BL-1235).
+required_wiring:
+  - 'specs/pipeline/steps/bl1481SharedPathContentCheckSteps.js::registerSteps::the handler lands in the same parcel as the feature (BL-233)'
+
+human_approval: pending
+approval_context: >
+  A new feature file is authored here, so it needs a tap. No choice is
+  posed and there are no ruling_options. FIRM: the check becomes stricter
+  in what it lets through, never looser - a path still blocks whenever
+  the tip-versus-origin/main diff carries a line the blocking sibling
+  added (scenario 02) or removed (scenario 03), and an unreadable blame
+  fails closed (scenario 04); the only new outcome is that a sibling whose
+  every line is already on main no longer refuses a path it shares in
+  history but not in content (scenario 01). The interim in the QA prompt
+  (same pass) makes QA run that content diff by hand before escalating;
+  this ticket mechanises it and retires the interim. Minted by the
+  specifier while adjudicating BL-1470's LAND_ESCALATE, 2026-09-07 23:0x
+  BST; adjudication: backlog/evidence/BL-1470-land-escalate-specifier-adjudication-20260907.md.
+
+invariants:
+  - "The land step never replays a path whose tip-versus-origin/main diff carries a line attributable to a blocking sibling (bounced, withheld, awaiting approval, or unreadable) - added or removed - so no blocking sibling's content reaches main through another ticket's land."
+  - "A shared path whose every changed line versus origin/main is attributable to the lander (its tagged commits, or its own untagged edits per BL-1315/BL-1472) is never refused on account of that sibling, whatever the commit history says about who touched the path."
+  - "The content check fails closed: a changed line whose attribution cannot be read refuses the path, naming it - never a silent pass."
+
+description: |
+  ## What is wrong
+
+  `land_step_lib.bb` `land-plan` (~1130-1150): a path is refused when the
+  lander and an unlanded sibling both appear in `(:owners attribution)` and
+  `blocking-for` says the sibling is bounced, withheld, awaiting approval
+  or unreadable. `attribution` is `path-owner-tickets` - the union of the
+  ticket tags of every commit in `origin-main..tip` that touched the path.
+  Nothing compares CONTENT: whether the tip's version of the path differs
+  from origin/main's in any line the sibling wrote.
+
+  2026-09-07, BL-1470 at QA tip 1fe15b0e2c (`BL-1470-land-escalate-20260907.md`
+  on the QA branch): `land_step_cli.bb BL-1470 1fe15b0e2c` returned
+  LAND_ESCALATE - "docs/reference/Specification.MD is shared with unlanded
+  sibling(s) BL-1348 (bounced: BL-1348 bounced 2026-09-07T16:40:46.096Z at
+  3b16f8c73c, not re-fixed), and a replayed path is taken whole". The
+  specifier checked content: `git diff origin/main..958f98eb97 --
+  docs/reference/Specification.MD` is one hunk, 20 insertions, and `git
+  blame` of every inserted line names 6b5f16f415, BL-1470's documenter
+  commit. Both BL-1348 Specification.MD commits in the range (59f87eb5b2,
+  5c7a3fe4f2) had already reached origin/main whole at 165ecd0a5a - BL-1473's
+  21:46 BST land, made while BL-1466's bounce check read the wrong root
+  (BL-1470's own defect) - so the refusal guarded lines main already had.
+  The same holds for the other two shared paths (`land_step_lib.bb`, its
+  test runner): BL-1472's in-range commit is on main under a replay SHA,
+  and every changed line blames to BL-1470.
+
+  Why it is structural: Specification.MD receives an entry from every
+  ticket's documenter, and QA's branch carries every parcel's commits. One
+  bounced ticket that reached QA therefore taints that path for every land
+  until its rework handoff clears the bounce - BL-1470 tonight, with
+  BL-1408, BL-1469, BL-1451 and BL-1472's successors queued behind it.
+
+  ## What is wanted
+
+  - When a path's attribution names the lander and a blocking sibling, the
+    plan computes the tip-versus-origin/main diff for that path and
+    attributes each changed line: an added line by `git blame` at the tip
+    (commit -> ticket tag, with BL-1472's revert/reapply transparency and
+    BL-1315's own-untagged rule), a removed line by blame at origin/main.
+    If no changed line attributes to a blocking sibling, the path is not
+    shared in content: it rides in the replay as an ordinary own path, and
+    the report prints one line naming the sibling as content-clear for that
+    path (scenario 01; invariant 2).
+  - If any changed line - added or removed - attributes to a blocking
+    sibling, the refusal is exactly today's (scenarios 02, 03; invariant 1).
+  - A blame that cannot be read refuses the path, naming it (scenario 04;
+    invariant 3).
+  - Documenter: `docs/how-to/BL-1241-entangled-tip-at-the-land-step-has-a-reachable-remedy.md`'s
+    shared-path table gains the content rule; the QA prompt's interim
+    (landed with this mint) is retired by the specifier on QA's landing
+    note.
+
+  ## How (direction, not mandate)
+
+  - Build on BL-1470's landed `bounce-blocking-state`/`blocking-for`; add
+    the content step AFTER `blocking-for` finds a blocker, so the cheap
+    attribution path still short-circuits the common case.
+  - `git diff -U0 origin-main tip -- path` for hunks; `git blame -l -L`
+    at the tip for `+` ranges and at origin-main for `-` ranges; map each
+    commit through the same ticket-tag reader `path-owner-tickets` uses,
+    so the two never disagree on what a tag is (BL-897).
+  - Fixtures: the runner's BL-1332/BL-1375 section gains a sibling whose
+    commits are in the range but whose content already sits on origin/main
+    (a replay-landed sibling, the BL-1446 shape) - both the clear and the
+    still-blocking variants.
+  - Do NOT relax the refusal for a sibling whose approval state is unknown
+    or unreadable, and do not touch the passenger rule (BL-1375).
+
+  ## Live check the coder can run before forwarding
+
+  Replay the 2026-09-07 case: with origin/main at or after 165ecd0a5a and
+  BL-1470's QA tip 958f98eb97, `land_step_cli.bb BL-1470 958f98eb97` prints
+  LAND_REPLAY (or LAND_CLEAN once BL-1470 is landed) and a content-clear line
+  for BL-1348 on docs/reference/Specification.MD - no LAND_ESCALATE.
+
+constraints: >
+  Fixture repositories under mkdtemp with their own origin (BL-1390). No
+  change to the passenger rule (BL-1375), to the bounce store readers
+  (BL-1470), or to attribution of untagged commits (BL-1472). The step
+  handler lands with the feature (BL-233). land_step_lib.bb is shared with
+  BL-1474 (paused) - the coordinator serialises.
+
+out_of_scope: |
+  - Splitting a shared file per hunk so two unlanded tickets' lines can
+    land separately (the "better end state" named in land_step_lib.bb's
+    own comment) - a larger slice; this ticket only stops refusing lines
+    main already has.
+  - Why BL-1348's bounced lines reached main at 165ecd0a5a (BL-1466's inert
+    check, fixed by BL-1470) and whether Specification.MD should describe
+    an unlanded fix (self-heals when BL-1348 lands; recorded in the
+    adjudication evidence).
+
+qa_e2e_procedure: |
+  1. `bb swarmforge/scripts/test/land_step_lib_test_runner.bb` green with
+     the content-clear, still-blocking-added, still-blocking-removed and
+     unreadable-blame cases; acceptance resolving all four scenarios;
+     BL-1332, BL-1375, BL-1466, BL-1470 features still resolving.
+  2. Scratch clone: fork a lander branch and a sibling branch that both
+     edit one doc; land the sibling's version onto the clone's main by hand;
+     bounce the sibling (record-bounce.js); `land_step_cli.bb <lander> <tip>`
+     replays and prints the content-clear line. Then add one more sibling
+     line to the tip that main lacks: the same call escalates naming the
+     sibling.
+  3. Live: the next land after this ticket that shares Specification.MD with
+     a bounced sibling whose entry is already on main proceeds without a
+     specifier note.
+
+source: |
+  QA note to the specifier, priority 00, 2026-09-07T22:55Z: "BL-1470
+  LAND_ESCALATE - BL-1348 (bounced) shares Specification.MD"; QA evidence
+  `backlog/evidence/BL-1470-land-escalate-20260907.md` (QA branch
+  958f98eb97). Specifier adjudication the same pass:
+  `backlog/evidence/BL-1470-land-escalate-specifier-adjudication-20260907.md`.
+
+notes: |
+  - Minted 2026-09-07 by the specifier while adjudicating BL-1470's escalate.
+    Grepped first: BL-1332/BL-1375 (the refusal and its passenger rule),
+    BL-1466/BL-1470 (bounce state), BL-1446/BL-1461 (landed-history
+    exclusion for siblings that landed via replay) - none compares the
+    shared path's content against origin/main; no per-hunk ticket exists.
+  - Article 3.2.4: type defect, severity high - expedited ordering.
+  - Interim until this lands (QA prompt, same commit as the adjudication):
+    QA runs the content diff by hand before escalating a bounced-sibling
+    shared path; all-lander lines = hand-build and land per BL-1241, append
+    the instance to the adjudication evidence, no note.
