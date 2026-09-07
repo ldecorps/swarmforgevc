@@ -1,0 +1,144 @@
+id: BL-1478
+title: "handoffd's four compiled-tool sweeps (resource-sample, context-telemetry-producer, turn-profile-producer, ritual-ledger-producer) log the tool's stdout only on exit zero, so a tool that throws, is killed at the wait bound or never spawns leaves nothing in the daemon log but its sweep-boundary line: the context-telemetry producer failed every cycle for eight days unlogged (BL-1477); a failing compiled tool leaves one log line naming the sweep, the exit code and the first line of its stderr"
+milestone: M8
+type: defect
+severity: high
+# high: a broken health signal in its own right - the daemon log is the
+# instrument every incident here is read from, and this shape hid an
+# eight-day producer outage (BL-1477) behind sub-second sweep-boundary
+# lines. Low mutation cost, one sitting.
+status: todo
+epic: swarm-reliability
+priority: 8
+direction: swarm-reported
+depends_on: []
+mutation_cost: low
+# low: one helper in daemon_cycle_guard_lib.bb and four call sites in
+# handoffd.bb (Babashka: no mutation/CRAP/DRY wired, BL-472; the hardener
+# gates on the bb unit and property runners and records the fallback).
+slice_size_envelope: low
+required_stages: [coder, cleaner, architect, hardender, documenter, qa]
+
+acceptance: specs/features/BL-1478-a-compiled-tool-sweep-never-fails-silently.feature
+
+# The consumer anchor is the point here: the helper is worth nothing unless
+# the four sweeps call it. Its name is pinned at mint (BL-874) - keep it.
+required_wiring:
+  - 'swarmforge/scripts/handoffd.bb::run-compiled-tool!::the four compiled-tool sweeps route through the helper that logs a non-zero exit'
+  - 'specs/pipeline/steps/bl1478CompiledToolSweepNeverSilentSteps.js::registerSteps::the handler lands in the same parcel as the feature (BL-233)'
+
+human_approval: approved
+approval_context: >
+  A new feature file is authored here, so it needs a tap. No choice is
+  posed and there are no ruling_options. FIRM: a failing compiled tool
+  produces exactly ONE extra log line (sweep name, exit code, first stderr
+  line, cut to one line) - not the whole stderr, which for a node stack
+  trace is dozens of lines per cycle; a succeeding tool logs exactly as
+  today. Only the four sweeps that shell to a compiled node tool every
+  cycle are in scope; the other zero-exit-gated sites in handoffd.bb
+  (briefing sections, liveness probes) legitimately skip output and are not
+  touched. Minted by the specifier from the BL-1477 finding.
+
+invariants:
+  - "For every compiled-tool sweep, every non-zero exit of the tool - an ordinary failure, the wait-bound kill (124) or a spawn that never happened (127) - produces exactly one log line carrying the sweep name, the exit code and the first line of stderr; a zero exit produces the same log as before this ticket and no failure line."
+
+description: |
+  ## What is wrong
+
+  `swarmforge/scripts/handoffd.bb` has four sweeps that run a compiled node
+  tool on every cycle and share one shape:
+
+  ```
+  (let [{:keys [exit out]} (daemon-cycle-guard-lib/sh! ["node" cli-path] {:dir ...})]
+    (when (zero? exit)
+      (log! "<tool>" (str/trim out))))
+  ```
+
+  `resource-sample-sweep!` (~2792), `context-telemetry-producer-sweep!`
+  (~2806), `turn-profile-producer-sweep!` (~2827) and
+  `ritual-ledger-producer-sweep!` (~2845). `sh!` returns `:exit`, `:out`
+  and `:err` for every outcome - a real non-zero exit, 124 for a kill at
+  `SWARMFORGE_SUBPROCESS_WAIT_BOUND_MS` (60 s default), 127 with
+  `:spawn-failed? true` for ENOENT (BL-1102) - and each of the four throws
+  `:err` away and says nothing on non-zero. The `try/catch` around each
+  only catches a throw in the bb code, never a failing child.
+
+  Consequence, measured 2026-09-07: `run-context-telemetry-producer.js` has
+  exited non-zero on every cycle since 2026-08-30 (BL-1477); the live
+  `handoffd.log` has one `sweep=context-telemetry-producer-sweep ms=4xx-7xx`
+  boundary per cycle and zero `context-telemetry-producer` lines, and the
+  daemon's failure reports show the same. Nothing distinguished "ran and
+  recorded nothing new" from "threw before reading a byte" for eight days.
+  BL-1476's sweep is 21 s from the same fate: at the 60 s bound `sh!` kills
+  it and the turn-profile store would stop updating with no line saying so.
+
+  ## What is wanted
+
+  - One shared helper (direction: `run-compiled-tool!` in
+    `daemon_cycle_guard_lib.bb`, taking the log fn, the tool name, the argv
+    and the sh! opts, with `sh!` itself injectable for tests) that runs the
+    tool and: on exit zero logs stdout under the tool's key exactly as
+    today; on any non-zero exit logs ONE line under `<tool>-failed` carrying
+    `exit=<n>` and the first line of stderr (or `spawn-failed` when `sh!`
+    says so; the 124 kill already gets `on-timeout!`'s line - the failure
+    line is in addition, so the sweep's own log names it too) (scenarios
+    01-03; invariant 1).
+  - The four sweeps call it (`required_wiring`); their `try/catch` stays for
+    bb-side throws.
+  - Documenter: the "Scheduled tick" rows in
+    `docs/how-to/BL-665-context-telemetry-producer-wiring.md` and
+    `docs/how-to/BL-1364-turn-profile-producer-wiring.md` gain "a non-zero
+    exit is logged as `<tool>-failed`"; no registered diagram depicts the
+    sweep loop's logging.
+
+  ## How (direction, not mandate)
+
+  - Test in `daemon_cycle_guard_lib_test_runner.bb` with a fake `sh!`
+    returning each of the exit shapes and a capturing `log!`; the
+    acceptance handler drives the real lib through a small bb CLI under
+    `specs/pipeline/steps/lib/` the way BL-1454's does - never load-file
+    handoffd.bb (it starts the daemon).
+  - Cut stderr at the first newline and cap it (direction 200 chars) so a
+    node stack trace or a bb ex-info dump never floods the log.
+
+constraints: >
+  Babashka only. handoffd.bb is shared with BL-1476 (paused; comment-only
+  or a one-line env change there) - the coordinator serialises if both are
+  live. The other zero-exit-gated sites in handoffd.bb are untouched. The
+  step handler lands with the feature (BL-233).
+
+out_of_scope: |
+  - The briefing-section and liveness zero-exit-gated sites (18 of the 22
+    in handoffd.bb): they skip an optional section, not a producer.
+  - Retrying or alarming on a failing tool; this ticket makes the failure
+    visible, BL-144/BL-1102's policies decide what to do about it.
+  - Fixing the tools that fail (BL-1477, BL-1476).
+
+qa_e2e_procedure: |
+  1. `bb swarmforge/scripts/test/daemon_cycle_guard_lib_test_runner.bb`
+     green incl. the helper's exit 0/1/124/127 cases; acceptance resolving
+     all three scenarios.
+  2. `grep -n 'run-compiled-tool!' swarmforge/scripts/handoffd.bb` lists
+     the four sweeps and the count of `when (zero? exit)` dropped by four.
+  3. Live, on this host BEFORE BL-1477 lands (the natural fixture): start
+     handoffd; within one cycle `.swarmforge/daemon/handoffd.log` carries a
+     `context-telemetry-producer-failed exit=1 SyntaxError...` line; the
+     other three producers log their stdout as before.
+  4. If BL-1477 has already landed: set `SWARMFORGE_SUBPROCESS_WAIT_BOUND_MS=1000`
+     in the daemon env for one cycle - each of the four sweeps logs
+     `<tool>-failed exit=124`; unset it and the lines stop.
+
+source: |
+  Specifier, 2026-09-07, while reproducing BL-1477: the daemon log's
+  silence was the reason the outage went unnoticed for eight days.
+  Evidence: backlog/evidence/BL-1476-BL-1477-BL-1478-specifier-mint-measurements-20260907.md.
+
+notes: |
+  - Minted 2026-09-07 by the specifier with BL-1476 and BL-1477. Grepped
+    first: BL-1102 made a failed spawn return 127 instead of throwing, and
+    the wait-bound kill logs via on-timeout!; neither logs an ordinary
+    non-zero exit at these four sites. No live ticket names it.
+  - Article 3.2.4: type defect, severity high - expedited ordering.
+  - Routing note for QA: the wiring anchor names handoffd.bb; the gate reads
+    it at the parcel commit, so the four call sites must be in the parcel,
+    not a later cleanup.
