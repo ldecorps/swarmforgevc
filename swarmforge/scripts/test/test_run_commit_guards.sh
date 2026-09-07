@@ -81,6 +81,14 @@ STUB
 DERIVED_GUARDS="$(derive_guards swarmforge/scripts/run_commit_guards.sh)"
 echo "derived guard set: $DERIVED_GUARDS"
 
+# Invariant 3: the one guard this file names by hand is the expensive
+# tier's single member - assert it is actually in the derived set rather
+# than trusting the literal never drifts from the runner.
+case " $DERIVED_GUARDS " in
+  *" check_property_suite_drift.sh "*) : ;;
+  *) fail "check_property_suite_drift.sh (the only guard this test names by hand) is not in the derived set: $DERIVED_GUARDS" ;;
+esac
+
 reset_fixture() {
   rm -rf "$GUARDS" "$RAN"
   mkdir -p "$GUARDS" "$RAN"
