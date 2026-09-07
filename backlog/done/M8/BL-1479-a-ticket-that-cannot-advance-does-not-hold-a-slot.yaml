@@ -187,3 +187,9 @@ assigned_to: coder
 bounce_count: 1
 bounce_history:
   - { at: 2026-09-07, by: architect, blamed: coder, class: behavior, commit: d78f9213c6, evidence: backlog/evidence/BL-1479-bounce-20260907.md }
+abandoned_commits: [2309e064e1]
+# BL-1241: land_step_cli.bb LAND_ESCALATEd citing docs/reference/Specification.MD
+# shared with bounced sibling BL-1348; specifier's standing class ruling
+# (BL-1470-land-escalate-specifier-adjudication-20260907.md item 5) found
+# every changed line at 2309e064e1 was this ticket's own. Landed as
+# 38b4338db5 (own paths only, no sibling content).
