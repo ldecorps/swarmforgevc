@@ -143,3 +143,51 @@ test('BL-1451 invariant 2: no entry or a dot-less entry renders byte-identical t
   );
   assert.ok(mappedDotlessSeen >= 30, `only ${mappedDotlessSeen} boards carried a dot-less mapped ticket`);
 });
+
+// ── Invariant 2, malformed-dot addendum (hardener bounce D1, 2026-09-07) ──
+// "An entry without a dot renders exactly as today" extends to an entry
+// whose healthDot is PRESENT but not one of the three real values -
+// healthDot reaches the render straight from JSON.parse with zero runtime
+// validation (swarmState.ts), so a stale/typo'd/future-tier on-disk value
+// is entirely plausible. The pre-fix render stringified the failed
+// HEALTH_DOT_GLYPHS lookup straight into the caption ("undefined 1 ...").
+
+// Mixes plain random strings with Object.prototype's own property names BY
+// CONSTRUCTION (never left to chance - `fc.string()` alone would need an
+// astronomical number of runs to ever land on "constructor" verbatim),
+// since a bare `dot ? HEALTH_DOT_GLYPHS[dot] : undefined` lookup resolves
+// exactly these through the prototype chain to a truthy Function.
+const malformedDotArb = fc.oneof(
+  fc.string({ minLength: 1, maxLength: 12 }).filter((s) => !['green', 'yellow', 'red'].includes(s)),
+  fc.constantFrom('constructor', 'toString', 'hasOwnProperty', '__proto__', 'valueOf')
+);
+
+function buildMalformedDotEntries(shape, activeIds, malformedValues) {
+  const ticketStageEntries = {};
+  shape.forEach((t, i) => {
+    if (t.hasEntry) {
+      ticketStageEntries[activeIds[i]] = { stage: 'coder', status: t.status, healthDot: malformedValues[i] };
+    }
+  });
+  return ticketStageEntries;
+}
+
+test('BL-1451 invariant 2 addendum: an unrecognized healthDot value renders byte-identical to no entries at all, never "undefined"', () => {
+  let mappedMalformedSeen = 0;
+  fc.assert(
+    fc.property(boardArb, fc.array(malformedDotArb, { minLength: 1, maxLength: 12 }), (shape, malformedValues) => {
+      const activeIds = activeIdsFor(shape);
+      const ticketMeta = metaFor(activeIds);
+      const ticketStageEntries = buildMalformedDotEntries(shape, activeIds, malformedValues);
+      const withData = computePipelineBoard({ coder: activeIds }, [], ticketMeta, { activeIds, ticketStageEntries });
+      const baselineData = computePipelineBoard({ coder: activeIds }, [], ticketMeta, { activeIds });
+      const withBody = renderPipelineBoardBody(withData);
+      const baselineBody = renderPipelineBoardBody(baselineData);
+      assert.ok(!withBody.includes('undefined'), `expected no literal "undefined" text, got:\n${withBody}`);
+      assert.equal(withBody, baselineBody, 'a board with only unrecognized healthDot values must render byte-identical to no entries at all');
+      if (shape.some((t) => t.hasEntry)) mappedMalformedSeen += 1;
+    }),
+    { numRuns: 150 }
+  );
+  assert.ok(mappedMalformedSeen >= 30, `only ${mappedMalformedSeen} boards carried a malformed-dot mapped ticket`);
+});
