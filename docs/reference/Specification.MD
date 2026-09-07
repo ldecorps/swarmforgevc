@@ -1,5 +1,25 @@
 # SwarmForge VS Code Extension — Specification
 
+**Last Updated:** September 7, 2026 (BL-1465:
+`bl1375ApprovedSiblingsCanLandInvariants.property.test.js`'s invariant 2
+still asserted the pre-BL-1447 sequencing — call `land-plan`, expect
+`action: replay`, then run `replay!` itself and check its guard refusal.
+BL-1447 (2026-09-07) moved the build and guard INSIDE `land-plan`, which
+now escalates directly for a dangling passenger instead of returning
+`replay` for the test to build and guard itself — the property's first
+draw failed with `Expected "replay", Received "escalate"`, and because
+`check_property_suite_drift.sh` runs the full property lane for any
+staged `extension/src` path, this one file refused every `extension/src`
+commit from every role until an interim allowlist row was minted with
+this ticket. Fixed: invariant 2 now asserts the same BL-1375 invariant —
+a dangling passenger line refuses naming the passenger and the guard
+text, a resolved line publishes carrying the passenger — read from
+`land-plan`'s own `:action`/`:reason`/`:unlanded`, where BL-1447 put the
+decision, never from a second `replay!` call on an already-refused plan.
+No assertion weakened, both reach floors kept. The interim allowlist and
+register rows leave with this fix. Acceptance:
+`specs/features/BL-1465-the-bl1375-passenger-property-asserts-where-the-landed-code-decides.feature`.)
+Prior entry —
 **Last Updated:** September 7, 2026 (BL-1461: `land-plan`'s entanglement
 candidate walk was bounded to `:base` (the parcel's LAST recorded hop,
 BL-1432), so a sibling ticket's unlanded work absorbed into a shared
