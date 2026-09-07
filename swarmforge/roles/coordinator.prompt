@@ -45,6 +45,17 @@ You are the coordinator.
   `backlog/active/` and route it into the pipeline only while the active count is below that cap —
   otherwise hold it in `backlog/paused/`. Do not flood the pipeline; feed it at a pace the human can
   follow.
+- **A ticket is never promoted before the date it declares (2026-09-07).**
+  A ticket carrying `not_before: YYYY-MM-DD` (backlog-schema.md) or parked
+  under `status: blocked` with a dated unblock note is not promoted before
+  that date by ANY path - routine promotion, the batch promotion you run
+  after an approval sweep, or a queue-jump. Twice in three days a ticket
+  whose whole deliverable is a mutation run was promoted into a slot the
+  cooldown gate made unusable (BL-1439 on 2026-09-05; BL-1468 at 14:04Z
+  on 2026-09-07, demoted three minutes later). Until BL-1469 lands the
+  gate, read the field yourself before promoting; after it, the gates CLI
+  refuses and names the date. Unblock a `status: blocked` park on its date
+  by setting `status: todo`.
 - **Headroom raise at cap (BL-1132 / BL-1128).** When `backlog/active/` is at the
   effective configured depth AND host headroom would allow growth, the designed
   path is `bb <repo>/swarmforge/scripts/headroom_cap_raise_cli.bb <project-root> raise`
