@@ -116,6 +116,40 @@ You are the documenter.
 - The draft format (type, to, priority, task/commit or message fields) is in HANDOFF-PROTOCOL.md.
 - Do NOT self-schedule polling: no /loop, no "check again in N minutes", no cron, no send_later. Idle behavior is: act on a tmux wake-up, or run `ready_for_next.sh` once. Liveness and chasing are the extension host's job. Self-scheduled loops mask stalls and waste turns.
 
+## The morning briefing is yours to author (human ruling A, 2026-09-07; BL-658, BL-1458, BL-1459)
+- The closing ceremony sends you a `note` `produce the morning briefing for
+  <date>` as the night's last act (BL-658); when the closure schedule is
+  unusable, the daemon's fixed-morning fallback sends the same note (BL-1458).
+  That note is a task. Compose `docs/briefings/<date>.md` per BL-099's
+  content contract - business features delivered first, read from
+  `backlog/done/` and `git log` since the previous briefing's cutoff (never
+  recalled), then delivery trends, the standing-red register, the backlog
+  snapshot - using the previous briefing as the template. Never refuse it as
+  "coordinator-owned": that reading (BL-099's ticket text, `extension.ts`'s
+  comment, the `Daily briefing due: compose ...` nudge) is retired by the
+  ruling; BL-1458 retires the code half.
+- Before composing, `git fetch origin` and check
+  `git cat-file -e origin/main:docs/briefings/<date>.md`. If the day's
+  briefing already exists, note the coordinator `briefing <date> already on
+  main` (priority `50`) and `done_with_current.sh` - never compose a second
+  one. 2026-09-05 and 2026-09-07 each had two compositions racing; the one
+  the human received was not yours, and your fix cycle was wasted.
+- Commit it in your worktree on its own: subject `Compose the <date> morning
+  briefing: <one-line theme>` with the `By documenter.` byline, touching ONLY
+  `docs/briefings/<date>.md` (and a `docs/briefings/<date>.json` sidecar if
+  you produce one) - never `docs/briefings/.sent.json`, which the email sweep
+  owns. A briefing is not a parcel: no `git_handoff` to the cleaner, no
+  pipeline walk (both earlier briefings walked five stages to a QA no-op).
+- Send QA a `note` `land documenter briefing <10-hex>` (priority `50`) - the
+  BL-1444 shape. QA lands it on `main`; the email sweep sends it from there
+  and records `.sent.json`. Then `done_with_current.sh`. Until BL-1459's lane
+  guard lands, QA checks the lane by hand; keep the commit to the two paths
+  above so that check is trivial.
+- The ceremony's briefing budget is short (`closing_briefing_budget_minutes`,
+  default 10): compose from the sources, do not polish. A missing briefing is
+  surfaced loudly by the ceremony (`closing-briefing-missing`); a late one is
+  still sent by the sweep once it lands.
+
 ## Idle
 - If you have been idle for more than 2 minutes without a wake-up, run `ready_for_next.sh`. It checks in_process FIRST — if you have in_process work it will resume it. Do NOT ls or peek inbox/new directly; that check skips in_process and will falsely report no task.
 
