@@ -50,3 +50,36 @@ coordinator's). Telegram group separation across multiple swarms is a
 known, separate gap, untouched here.
 
 Acceptance: `specs/features/GH-24-coordinator-activity-telegram-feed.feature`.
+
+## First-run seeding, per-tick cap, and deadline (BL-1454)
+
+`tick!` (`coordinator_activity_feed_lib.bb`) never walks the whole trace
+history in one pass:
+
+- **First run (no cursor file yet)**: the tick seeds both cursors at the
+  newest existing sent handoff and the newest existing bookkeeping commit
+  and posts nothing. The feed is a live log from the moment it starts, not
+  a backfill — the 6000+ handoffs and commits already on disk when the
+  feed is first enabled are never posted.
+- **Per-tick cap**: a tick posts at most `activity-feed-post-cap` lines
+  (env `ACTIVITY_FEED_TICK_POST_CAP`, default 20), oldest-first, with no
+  duplicates; anything past the cap carries to the next tick.
+- **Per-tick deadline**: a tick stops at `activity-feed-tick-deadline-ms`
+  (env `ACTIVITY_FEED_TICK_DEADLINE_MS`, default 30000), clamped to at
+  most one quarter of `SUPERVISOR_IN_SWEEP_BUDGET_MS` (the same budget
+  `handoffd_supervisor.bb` enforces) — an override can only make the tick
+  more conservative, never large enough to risk a `stalled` verdict.
+- **Cursor durability**: the cursor is written after every successful
+  post, not only when the loop ends, so a tick killed mid-batch re-posts
+  nothing on restart.
+- Listing is cheap: handoff file names are filtered against the cursor
+  before any file is opened, so a tick's I/O scales with new traces only,
+  never with the total size of `coordinator/sent/`.
+
+The feed itself stays config-gated, default OFF
+(`config coordinator_activity_feed_enabled true` to enable; absent means
+OFF). Before BL-1454, enabling it against an absent cursor file would walk
+every historical trace in one unbounded tick and reliably overrun the
+daemon's sweep budget, tripping a `stalled` verdict and a full swarm halt.
+
+Acceptance: `specs/features/BL-1454-the-activity-feed-sweep-fits-the-supervisor-budget.feature`.

@@ -1,0 +1,148 @@
+id: BL-1460
+title: "The bridge re-broadcasts the connect snapshot on the first poll tick after a fresh start: the /events connect path computes the snapshot fresh but never seeds lastSnapshot, so broadcastSnapshotIfChanged compares against nothing and sends every connected client an identical copy - bridgeServer.test.js's idle keepalive scenario fails whenever that tick precedes the keepalive tick (3 of 6 QA runs, 2026-09-07), holding BL-1454 under Article 4.2"
+milestone: M8
+type: defect
+severity: high
+# high (standing-red rule 2026-09-05): a unit-lane file red on main on
+# about half its runs, and it held BL-1454 - the GH-24 kill-loop fix - at
+# QA twice. The production fault itself is small (one identical frame per
+# fresh start, consumers replace state), which is why the fix is one seed
+# of lastSnapshot; the severity is the red's, never medium for a red.
+status: todo
+epic: swarm-reliability
+priority: 12
+direction: swarm-reported
+depends_on: []
+mutation_cost: low
+# low: one assignment on the connect path in bridgeServer.ts and a
+# deterministic idle-stream test; the existing keepalive scenario becomes
+# deterministic without being touched.
+slice_size_envelope: low
+required_stages: [coder, cleaner, architect, hardender, documenter, qa]
+
+acceptance: specs/features/BL-1460-an-idle-events-connection-gets-one-snapshot.feature
+
+required_wiring:
+  - 'specs/pipeline/steps/bl1460IdleEventsOneSnapshotSteps.js::registerSteps::the step handler lands in the same parcel as the feature (BL-233)'
+
+human_approval: pending
+approval_context: >
+  A new feature file is authored here, so it needs a tap. No choice is
+  posed and there are no ruling_options. What is FIRM: an idle client gets
+  one snapshot, at connect; a real change still reaches every client once;
+  the keepalive scenario in bridgeServer.test.js is not rewritten around
+  the race - the race is closed in the server, and the scenario stays as
+  the end-to-end proof on real timers that BL-1350 wanted.
+
+invariants:
+  - "Every data frame a connected /events client receives after its connect snapshot differs from the previous data frame it received - the server never sends a client two identical consecutive snapshots, whatever the timer phase."
+  - "Liveness is untouched: an open /events connection is still written to within the keepalive interval whether or not anything changed (BL-1350 invariant 1), and a keepalive frame still changes no consumer state (BL-1350 invariant 2)."
+
+description: |
+  ## What is wrong
+
+  `extension/src/bridge/bridgeServer.ts`, the `/events` route: on connect
+  the server writes `data: ${resolveEventsSnapshot(lastSnapshot, ...)}`,
+  where `resolveEventsSnapshot` returns `lastSnapshot ?? buildStreamSnapshot(...)`.
+  On a fresh server `lastSnapshot` is `undefined`, so the connect frame is
+  computed fresh - and `lastSnapshot` stays `undefined`. The poll timer then
+  runs `lastSnapshot = broadcastSnapshotIfChanged(lastSnapshot)`, which
+  builds a new snapshot, compares it to `undefined`, and broadcasts it to
+  every connected client although it is byte-identical to the connect
+  frame. From then on `lastSnapshot` is seeded and the loop behaves.
+
+  The keepalive scenario in `extension/test/bridgeServer.test.js` ("an idle
+  /events connection receives a periodic keepalive comment frame, with no
+  snapshot re-sent") starts a fresh bridge with `pollIntervalMs: 20,
+  keepaliveIntervalMs: 15`, reads the connect snapshot, then reads until a
+  keepalive frame and asserts no `data:` frame is in that window. Both
+  timers started at server start, so their phase relative to the connect is
+  arbitrary: when the first poll tick lands before the first keepalive tick
+  the identical re-broadcast is in the window and the assertion fails. QA
+  measured 3 of 6 runs alone (evidence
+  `backlog/evidence/BL-1454-QA-20260907-2.md`, QA branch 42be9c533c); the
+  specifier reproduced 1 of 6 on main at mint. The test is right about the
+  invariant and is not a load flake; the server is wrong on the first tick.
+
+  Consumers (Bubble, the front-desk relay, the console) replace their view
+  on every snapshot, so the extra frame corrupts nothing; it costs one full
+  snapshot per fresh start per client (BL-1351 shrank that frame for a
+  reason) and breaks the "one producer, one frame per real change"
+  contract BL-1351 stated.
+
+  ## What is wanted
+
+  A connected client receives its connect snapshot and then a data frame
+  only when the snapshot really changed. The connect path that computes the
+  first snapshot fresh also seeds the loop's memory, so the first poll tick
+  has something true to compare against. The keepalive scenario becomes
+  deterministic without being edited.
+
+  ## How (direction, not mandate)
+
+  - In the `/events` route, when `lastSnapshot` is undefined, assign the
+    freshly built snapshot to it before writing the connect frame (one
+    line; `resolveEventsSnapshot` may return it and the caller assign, or
+    the route may build and seed directly - keep the BL-1351 single
+    producer, `buildStreamSnapshot`).
+  - Add a deterministic unit test for the idle case that does not depend on
+    timer phase: drive several poll ticks (real short intervals with a wait
+    of several periods, or the injectable-clock precedent BL-1350's other
+    tests use) and count data frames. Leave the existing keepalive scenario
+    as it is - it is the real-timer end-to-end proof and passes reliably
+    once the server is right; QA's e2e runs it repeatedly.
+  - Scenario 03 needs the fixture target to change once between ticks
+    (write to the run log or the file the stream reads) - the existing
+    bridgeServer tests already do this for the reply-relay cases.
+  - Remove the register row in the same land (scenario 04).
+  - Docs: `docs/reference/Specification.MD`'s /events description, if it
+    states the connect-then-on-change contract, gains the sentence that the
+    first poll tick after a start re-sends nothing; no registered diagram
+    depicts the stream.
+
+constraints: >
+  No change to keepalive timing, the keepalive frame, or the reply relay.
+  Fixture targets under mkdtemp, removed in finally; no real network beyond
+  127.0.0.1 as the existing bridge tests already use. The step handler
+  lands in the same commit as the feature (BL-233). No hand-edited mutation
+  manifests.
+
+out_of_scope: |
+  - Rewriting bridgeServer.test.js's keepalive scenario onto a fake clock.
+  - Snapshot content or size (BL-1351, done).
+  - Any consumer-side change (Bubble, front-desk relay, console).
+
+qa_e2e_procedure: >
+  From `extension/` on the landed commit: (1) `npx vitest run
+  test/bridgeServer.test.js -t "periodic keepalive comment frame"` twenty
+  times in a row, all green (the pre-fix rate was 1-3 failures in 6).
+  (2) `npm test` full unit suite green for `bridgeServer.test.js`.
+  (3) Live: start the bridge against a scratch target, `curl -N` /events
+  with the token, leave it idle for three poll intervals: exactly one
+  `data:` frame, then `: keepalive` comments; touch the run log once: one
+  more `data:` frame, no duplicate. (4) `backlog/standing-reds.tsv` has no
+  row for the file and `standing_red_register_cli.bb` agrees.
+
+source: |
+  QA note to specifier and coordinator, priority 00, 2026-09-07T08:52Z:
+  "BL-1454 HOLD: new unowned red bridgeServer keepalive race, see
+  42be9c533c"; evidence `backlog/evidence/BL-1454-QA-20260907-2.md` on the
+  QA branch. Adjudication:
+  `backlog/evidence/BL-1454-unowned-red-bridgeserver-adjudication-specifier-20260907.md`.
+
+notes: |
+  Minted 2026-09-07 by the specifier on QA's unowned-red note, the same
+  pass (standing-red rule: high at first sighting); register row `unit`
+  for `extension/test/bridgeServer.test.js` names this ticket, first_seen
+  2026-09-07. Grepped first: no open ticket names bridgeServer, the
+  keepalive, or lastSnapshot; BL-1350 and BL-1351 (done) are the two
+  tickets whose contracts meet here.
+
+  Cause read from source, not inferred from the flake: `/events` connect
+  writes `resolveEventsSnapshot(lastSnapshot, ...)` without assigning;
+  `broadcastSnapshotIfChanged(undefined)` always broadcasts. BL-1351 added
+  the shared producer and the compare; the seed was never added.
+
+  required_wiring names the step handler only: the fix is one assignment
+  inside a pre-existing route, so any anchor on the route would match
+  unchanged code (BL-1235); scenario 01 drives the real server.

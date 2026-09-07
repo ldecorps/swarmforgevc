@@ -17,6 +17,24 @@ const CLI = path.join(__dirname, 'lib', 'gh24CoordinatorActivityFeedCli.bb');
 
 const FEATURE = 'coordinator activity is surfaced as compact lines on its Telegram topic';
 
+// BL-1454: a first tick with NO persisted cursor now seeds (posts nothing
+// historical) rather than treating an absent cursor as "everything is
+// new" - that was the unbounded-walk defect this ticket fixed. GH-24's own
+// Background wants the OPPOSITE fixture shape ("every scenario's traces
+// are new"), so it now persists an EXPLICIT cursor positioned before every
+// trace either kind of step can push, rather than leaving the cursor file
+// absent. SEED_HANDOFF_CURSOR's sort-key (handoff-sort-key drops the fixed
+// 3-char priority prefix) is the empty string, which sorts before every
+// "00_..." name any step in this file pushes. SEED_COMMIT_SHA is injected
+// as ctx.commits[0] itself (new-commits walks the commits array by exact
+// sha match, not lexical order), so it must be a real, listed entry.
+const SEED_HANDOFF_CURSOR = '000';
+const SEED_COMMIT_SHA = 'seed0';
+
+function writeCursorFile(daemonDir, cursor) {
+  fs.writeFileSync(path.join(daemonDir, 'coordinator-activity-feed-state.json'), JSON.stringify(cursor));
+}
+
 const scratchRoots = [];
 process.on('exit', () => {
   for (const root of scratchRoots) {
@@ -58,6 +76,8 @@ function registerSteps(registry) {
 
   scoped(/^the surfacer's durable cursor starts at the beginning of the traces$/, (ctx) => {
     ensureCtx(ctx);
+    ctx.commits.push({ sha: SEED_COMMIT_SHA, subject: 'seed' });
+    writeCursorFile(ctx.daemonDir, { 'handoff-cursor': SEED_HANDOFF_CURSOR, 'commit-cursor': SEED_COMMIT_SHA });
   });
 
   scoped(/^the coordinator outbox holds a note to "([^"]+)" for task "([^"]+)" newer than the cursor$/, (ctx, to, task) => {
@@ -133,7 +153,10 @@ function registerSteps(registry) {
   });
 
   scoped(/^the cursor only advances past the trace after the successful send$/, (ctx) => {
-    assert.equal(ctx.firstRun.cursor['handoff-cursor'], null, 'expected the cursor NOT to advance after the failed send');
+    // BL-1454: the Background now seeds an explicit starting cursor (rather
+    // than leaving the cursor file absent), so "did not advance" means
+    // "unchanged from that starting cursor" - not null.
+    assert.equal(ctx.firstRun.cursor['handoff-cursor'], SEED_HANDOFF_CURSOR, 'expected the cursor NOT to advance after the failed send');
     assert.equal(ctx.secondRun.cursor['handoff-cursor'], '00_a', 'expected the cursor to advance after the successful retry');
   });
 }
