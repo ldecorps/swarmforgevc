@@ -173,6 +173,68 @@
     (assert-includes "BL-1473 (own-range-touched-paths unreadable): the refusal names own-range touched paths"
                       (:warning result) "own-range touched paths")))
 
+;; ── BL-1472: revert and reapply commits are transparent to attribution ────
+;; A bounce revert plus its reapply on a reviewing branch are untagged
+;; touches on every path the reverted merge carried - another ticket's
+;; paths - and own-paths kept a path with ANY untagged touch for the
+;; landing ticket (BL-1315), so a reverted-then-reapplied sibling merge's
+;; paths were wrongly credited to the landing ticket (live 2026-09-07,
+;; BL-1463 kept BL-1348's bounced ruling-B code this way; QA evidence
+;; BL-1463-QA-followup-two-land-step-defects-20260907.md D1).
+
+(with-fixture [root]
+  (commit! root "base.txt" "base\n" "c0 base")
+  (mark-origin-main-here! root)
+  (sh! root "git" "checkout" "-q" "-b" "sibling-line")
+  (commit! root "sibling.txt" "sib\n" "BL-9002: sibling adds sibling.txt")
+  (let [sib (:out (sh! root "git" "rev-parse" "HEAD"))]
+    (sh! root "git" "checkout" "-q" "-b" "reviewing" "main")
+    ;; The merge subject deliberately names NO ticket (the live incident's
+    ;; own shape: "Merge documenter <sha> into QA." names nobody) - a
+    ;; subject that happened to quote the sibling's id as text would make
+    ;; commit-ticket-id resolve the revert/reapply's OWN subject to BL-9002
+    ;; by accident of substring matching, masking exactly the untagged-
+    ;; touch defect this scenario exists to catch.
+    (sh! root "git" "merge" "-q" "--no-ff" "-m" "Merge sibling-line into reviewing." sib)
+    (let [merge-sha (:out (sh! root "git" "rev-parse" "HEAD"))]
+      (sh! root "git" "revert" "--no-edit" "-m" "1" merge-sha)
+      (let [revert-sha (:out (sh! root "git" "rev-parse" "HEAD"))]
+        (sh! root "git" "revert" "--no-edit" revert-sha)
+        (commit! root "backlog/active/BL-9001-x.yaml" "id: BL-9001\n" "BL-9001: own work")
+        (let [tip (:out (sh! root "git" "rev-parse" "HEAD"))
+              result (land-step-lib/own-paths root tip "BL-9001" #{"BL-9002"})
+              paths (set (:paths result))
+              sib-excl (first (filter #(= "sibling.txt" (:path %)) (:excluded result)))]
+          (assert= "BL-1472 (01): the sibling's path, reverted then reapplied on the reviewing branch, is excluded as the sibling's"
+                   false (contains? paths "sibling.txt"))
+          (assert= "BL-1472 (01): the landing ticket's own path still lands"
+                   true (contains? paths "backlog/active/BL-9001-x.yaml"))
+          (assert= "BL-1472 (01): sibling.txt is attributed ONLY to the sibling - neither the revert nor the reapply counts as an untagged touch"
+                   #{"BL-9002"} (:owners sib-excl)))))))
+
+(with-fixture [root]
+  (commit! root "base.txt" "base\n" "c0 base")
+  (mark-origin-main-here! root)
+  (let [seed (:out (sh! root "git" "rev-parse" "HEAD"))]
+    (sh! root "git" "checkout" "-q" "-b" "early-carrier" seed)
+    (commit! root "own.txt" "own content\n" "BL-9001: own work (early)")
+    (let [early (:out (sh! root "git" "rev-parse" "HEAD"))]
+      (sh! root "git" "checkout" "-q" "-b" "parcel" seed)
+      (sh! root "git" "merge" "-q" "--no-ff" "-m" "Merge early-carrier into parcel (early sync, untagged)" early)
+      (let [merge-sha (:out (sh! root "git" "rev-parse" "HEAD"))]
+        (sh! root "git" "revert" "--no-edit" "-m" "1" merge-sha)
+        (let [revert-sha (:out (sh! root "git" "rev-parse" "HEAD"))]
+          (sh! root "git" "revert" "--no-edit" revert-sha)
+          (let [tip (:out (sh! root "git" "rev-parse" "HEAD"))
+                attribution (land-step-lib/delivered-attribution root seed tip)
+                result (land-step-lib/own-paths root tip "BL-9001" #{} nil nil nil seed)]
+            (assert= "BL-1472 (04): a revert (and reapply) of a merge carrying the landing ticket's own tagged commit is attributed to the landing ticket"
+                     #{"BL-9001"} (:owners (get attribution "own.txt")))
+            (assert= "BL-1472 (04): that path carries no untagged touch - the revert/reapply are transparent, not attributed to nobody"
+                     false (:any-untagged? (get attribution "own.txt")))
+            (assert= "BL-1472 (04): the path still lands in the replay"
+                     true (contains? (set (:paths result)) "own.txt"))))))))
+
 ;; ── land-plan ────────────────────────────────────────────────────────────
 
 (with-fixture [root]
