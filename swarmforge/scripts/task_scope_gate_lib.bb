@@ -272,8 +272,15 @@
 ;; merely begins with "Revert" is a real commit by whoever wrote it and
 ;; stays attributed - exempting too broadly would let genuine foreign scope
 ;; through, which is the failure direction that actually matters here.
+;;
+;; BL-1472: `git revert` of a commit whose OWN subject already starts with
+;; `Revert "` writes `Reapply "<original subject>"` instead of nesting a
+;; second `Revert "Revert ..."` - so a bounce revert's repair (the shape
+;; land_step_lib.bb's own attribution walk needs to recognise too, per this
+;; function's own reuse contract) needs the same anchored-quote match under
+;; the other word. Same posture either way: the quoting is the signal.
 (defn revert-subject? [subject]
-  (boolean (and subject (re-find #"(?i)^\s*revert\s+\"" subject))))
+  (boolean (and subject (re-find #"(?i)^\s*(revert|reapply)\s+\"" subject))))
 
 ;; Pure half of commit-message-names-task? below, so the attribution rule is
 ;; asserted directly on subjects rather than only through a git fixture.
