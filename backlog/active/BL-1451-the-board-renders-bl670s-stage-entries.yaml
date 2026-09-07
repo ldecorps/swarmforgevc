@@ -174,3 +174,6 @@ source: |
   scenario 04; BL-940 active ticket description "How".
 
 assigned_to: coder
+bounce_count: 1
+bounce_history:
+  - { at: 2026-09-07, by: hardender, blamed: coder, class: behavior, commit: 9acbfd5d1e, evidence: backlog/evidence/BL-1451-bounce-20260907.md }
