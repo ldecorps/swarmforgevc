@@ -1,1 +1,2 @@
 file	disposition	rationale
+test/bl1375ApprovedSiblingsCanLandInvariants.property.test.js	allowlist	BL-1465: invariant 2 reads the pre-BL-1447 plan-then-guard sequencing; escalate-with-reason since ef9e8a9f19 (2026-09-07); register row names BL-1465; this row leaves with its land
