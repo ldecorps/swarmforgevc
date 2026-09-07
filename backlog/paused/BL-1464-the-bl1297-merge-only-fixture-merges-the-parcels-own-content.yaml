@@ -1,0 +1,142 @@
+id: BL-1464
+title: "BL-1297's merge-only fixture authors the merged side branch and the trunk under a foreign id (BL-9999-other), so since BL-1389 every delivered path is owned solely by an unlanded sibling and BL-1343 refuses with 'nothing of this ticket's own contribution to land' - scenario 03 ('still has content to replay') has been red since 2026-09-04, found 2026-09-07 by the coder running BL-1447's e2e; the fixture merges the parcel's own content and the old shape becomes an explicit refusal case"
+milestone: M8
+type: defect
+severity: high
+# high (standing-red rule 2026-09-05): an acceptance-lane feature red on
+# main since 09-04, never a flake, now a register row. The production
+# behaviour is right (BL-1389 + BL-1343 refusing a merge of a sibling's
+# content alone); the red is a fixture that stopped building what its
+# scenario describes, and a red safety signal is never medium.
+status: todo
+epic: swarm-reliability
+priority: 12
+direction: swarm-reported
+depends_on: []
+mutation_cost: low
+# low: one handler file's fixture authorship and one new explicit case;
+# no production line changes.
+slice_size_envelope: low
+required_stages: [coder, cleaner, architect, hardender, documenter, qa]
+
+acceptance: specs/features/BL-1464-the-bl1297-merge-only-fixture-merges-the-parcels-own-content.feature
+
+required_wiring:
+  - 'specs/pipeline/steps/bl1464MergeOnlyFixtureOwnContentSteps.js::registerSteps::the handler lands in the same parcel as the feature (BL-233)'
+
+human_approval: pending
+approval_context: >
+  A new feature file is authored here, so it needs a tap. No choice is
+  posed and there are no ruling_options. What is FIRM: BL-1297's six
+  scenarios keep their text; only its handler's fixture changes (the
+  merged content is authored as the parcel's own or by nobody, not under
+  a foreign ticket id); BL-1389's exclusion and BL-1343's refusal are
+  untouched and the old fixture shape is kept as a refusal case so the
+  two contracts are visibly consistent.
+
+invariants:
+  - "BL-1297's six scenarios keep their text; only the handler's fixture authorship changes, and scenario 03 goes green for the reason it states - the merge carries the parcel's own content."
+  - "BL-1389 and BL-1343 are unchanged: a delivered path owned solely by an unlanded sibling never rides a replay, and an empty own-path set on a tip that still differs from origin/main refuses rather than lands nothing."
+
+description: |
+  ## What is wrong
+
+  `specs/pipeline/steps/bl1297MergeCommitOwnPathsSteps.js` `mergeParcelIn`
+  builds scenario 03's parcel: `commitFile` on branch `bl1297-branch` with
+  subject `BL-9999-other: extension/src/parcel.ts arriving through the
+  merge`, `commitFile` on main with subject `BL-9999-other:
+  extension/src/trunk.ts already on the receiving branch`, then `merge
+  --no-ff` under `BL-1174-fixture: merge the parcel in`; scenario 03 then
+  appends an empty `BL-1185` commit so the tip is entangled and the land
+  step reaches its replay. Every path the merge delivers was therefore
+  authored under BL-9999, an unlanded sibling.
+
+  When BL-1297 landed (2026-08-30) that reached `{:action :replay}` with
+  the merge's delivered paths - the defect BL-1297 fixed was those paths
+  coming back empty. BL-1389 (2026-09-04) then made a path owned solely by
+  an unlanded sibling never ride another ticket's land, so both paths are
+  excluded, and BL-1343's guard (2026-09-02) refuses an empty own-path set
+  on a differing tip: on main today the plan is `{:action :escalate
+  :reason "land-step: refusing to replay BL-1174 - every delivered path
+  was attributed to an unlanded sibling ... extension/src/parcel.ts ->
+  BL-9999; extension/src/trunk.ts -> BL-9999"}` and scenario 03 fails
+  "the land step did not reach its replay". Reproduced by the specifier on
+  main 2026-09-07 (`ok 1,2,4,5,6; not ok 3`); the coder reproduced it
+  identically on the pre-BL-1447 library.
+
+  For that fixture the refusal is correct. What the scenario means - a
+  parcel whose only task-tagged first-parent commit is a merge still has
+  its own content to replay - needs the merged content to be the parcel's:
+  side-branch commits whose subject names the task (they are then
+  attributed to the parcel; the merge stays the only task-tagged
+  first-parent commit, which the handler already asserts with `rev-list
+  --first-parent`) or commits naming no ticket at all (attributed to
+  nobody; BL-1343 scenario 02 says such a path is still replayed).
+
+  ## What is wanted
+
+  BL-1297's feature passes on main with its text untouched (scenario 01);
+  scenario 03's fixture credits its merged content to the parcel or to
+  nobody (scenario 02); the old shape - a merge of a sibling's content
+  alone - is an explicit refusal case (scenario 03); the register row
+  leaves (scenario 04).
+
+  ## How (direction, not mandate)
+
+  - `mergeParcelIn`: author `PARCEL_PATH` on the side branch under the
+    TASK subject (or with no ticket id) and keep `TRUNK_PATH` on main as
+    the trunk's pre-existing content; if the trunk commit must stay foreign
+    for scenario 05's sake, keep a separate helper for scenario 03 rather
+    than bending one helper to two scenarios.
+  - Keep the `--first-parent` assertion that the merge is the only
+    task-tagged first-parent commit; add the assertion that the merge's
+    delivered paths are not all owned by an unlanded sibling (scenario 02)
+    so the fixture cannot drift back.
+  - Scenario 03 of this feature reuses the OLD helper shape (foreign id)
+    and asserts the BL-1343 refusal text - the behaviour the swarm relies
+    on, now written down next to the fixture that once contradicted it.
+  - Documenter: no registered diagram; BL-1297's how-to, if any, needs no
+    change. Remove the register row in the same land.
+
+constraints: >
+  BL-1297's, BL-1343's and BL-1389's feature files are not edited. No
+  production line changes. Fixture repositories are `git init` roots under
+  mkdtemp proven by `rev-parse --git-common-dir` (BL-1390). The step handler
+  lands with the feature (BL-233). No hand-edited mutation manifests.
+
+out_of_scope: |
+  - BL-1272's row-4 red (BL-1463, minted alongside).
+  - Any change to attribution, exclusion or the "nothing left" refusal.
+  - Whether BL-1389 should have retired or amended scenario 03 when it
+    landed (BL-1006's rule) - recorded in the adjudication evidence, not
+    re-litigated here.
+
+qa_e2e_procedure: >
+  (1) `specs/pipeline/scripts/run_acceptance.sh
+  specs/features/BL-1297-a-merge-commits-own-paths-are-not-empty.feature`
+  prints `ok 1..6`. (2) The same for BL-1343's and BL-1389's features:
+  unchanged verdicts. (3) `run_acceptance.sh` on this ticket's feature:
+  4 scenarios pass, the third printing the BL-1343 refusal for the
+  foreign-id shape. (4) `backlog/standing-reds.tsv` has no row for
+  BL-1297's feature.
+
+source: |
+  Coder note to the specifier, priority 00, 2026-09-07T11:11Z:
+  "unowned-reds BL-1272 ex4 + BL-1297 sc3: pre-existing, see BL-1447
+  evidence"; `backlog/evidence/BL-1447-unowned-reds-bl1272-bl1297-20260907.md`
+  (coder branch). Adjudication:
+  `backlog/evidence/BL-1447-unowned-reds-bl1272-bl1297-adjudication-specifier-20260907.md`.
+
+notes: |
+  Minted 2026-09-07 by the specifier on the coder's unowned-red note, the
+  same pass (standing-red rule: high at first sighting). Register row,
+  lane `acceptance`, BL-1297's feature -> this ticket, first_seen
+  2026-09-07 (red since 2026-09-04).
+
+  Not a retire: BL-1006's rule retires a boundary assertion a successor
+  falsifies; scenario 03's claim is still true of the system, only the
+  fixture stopped building the described parcel. A fixture that no longer
+  matches its scenario is the coder's, not the contract's.
+
+  Grepped first: no open ticket names `mergeParcelIn`, BL-9999-other or
+  BL-1297's scenario 03.
