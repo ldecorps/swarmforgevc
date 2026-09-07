@@ -1725,43 +1725,57 @@ RESOLVED BY THIS TICKET
                (:reason (land-step-lib/replay! {:root root :commit tip :task-ticket-id "BL-9031"
                                                  :own-paths [] :passengers #{} :origin-main nil}))))))
 
-;; ── BL-1432: land-plan's :base bounds the walk to the parcel alone ────────
+;; ── BL-1432/BL-1461: :base no longer bounds the candidate walk ───────────
+;; BL-1461: the candidate walk this section exercises used to narrow to
+;; `:base`, which is exactly the bug (a pre-hop sibling's commit sits before
+;; `:base` and was never visited). `:base` is still accepted (call-site
+;; compatibility) but decides nothing here now - bounded and unbounded
+;; always agree.
 
 (with-fixture [root]
   ;; origin-main never advances past the fixture's seed commit - the same
   ;; shape a tip-pure-replay world produces (content lands on main under NEW
   ;; shas, so the QA branch's own history is never an ancestor of origin-
-  ;; main's tip). An UNBOUNDED walk (origin-main..commit) would visit the
-  ;; old, already-landed parcel's review-merge commit and misreport it as an
-  ;; entangled sibling; a walk bounded to `base` (set right after it) must
-  ;; not.
+  ;; main's tip). BL-9101's own file never reaches origin-main in this
+  ;; fixture, so it reads unlanded (not the "already landed under a
+  ;; different sha" case) - a genuine pre-base sibling, exactly BL-1461's
+  ;; defect shape: `:base`, if it still bounded the walk, would hide it.
   (mark-origin-main-here! root)
-  (commit! root "backlog/active/BL-9101-old.yaml" "id: BL-9101\n" "BL-9101: an old, already-landed parcel's review merge")
+  (commit! root "backlog/active/BL-9101-old.yaml" "id: BL-9101\n" "BL-9101: a pre-base sibling's commit")
   (let [base (:out (sh! root "git" "rev-parse" "HEAD"))]
     (commit! root "backlog/active/BL-9001-x.yaml" "id: BL-9001\n" "BL-9001: own work")
     (let [commit (:out (sh! root "git" "rev-parse" "HEAD"))
-          unbounded (land-step-lib/land-plan {:root root :commit commit :task-ticket-id "BL-9001"})
-          bounded (land-step-lib/land-plan {:root root :commit commit :task-ticket-id "BL-9001" :base base})]
-      (assert= "land-plan (no :base): the old parcel's commit is misread as an entangled sibling"
+          unbounded (land-step-lib/land-plan {:root root :commit commit :task-ticket-id "BL-9001"})]
+      (assert= "land-plan (no :base): a pre-base sibling is entangled"
                :replay (:action unbounded))
-      (assert= "land-plan (no :base): names the stale sibling" #{"BL-9101"} (:entangled unbounded))
-      (assert= "land-plan :base - the SAME tip, bounded, sees nothing before base"
-               {:action :land} bounded))))
+      (assert= "land-plan (no :base): names the pre-base sibling" #{"BL-9101"} (:entangled unbounded))
+      ;; BL-1461: same commit, same ticket - reuses the branch `replay!`
+      ;; already built above rather than colliding on it a second time
+      ;; (replay! names the branch <ticket>-<short-commit>, deterministic
+      ;; for identical inputs); dropped first so the SECOND land-plan call
+      ;; below can build its own.
+      (sh! root "git" "branch" "-q" "-D" (:branch unbounded))
+      (let [bounded (land-step-lib/land-plan {:root root :commit commit :task-ticket-id "BL-9001" :base base})]
+        (assert= "land-plan :base - the walk is unbounded regardless: still entangled"
+                 :replay (:action bounded))
+        (assert= "land-plan :base - still names the pre-base sibling" #{"BL-9101"} (:entangled bounded))))))
 
 (with-fixture [root]
   (mark-origin-main-here! root)
-  (commit! root "backlog/active/BL-9102-old.yaml" "id: BL-9102\n" "BL-9102: an old, already-landed parcel")
+  (commit! root "backlog/active/BL-9102-old.yaml" "id: BL-9102\n" "BL-9102: a pre-base sibling's commit")
   (let [base (:out (sh! root "git" "rev-parse" "HEAD"))]
-    ;; A NEW sibling committed AFTER base is still caught by the bounded walk
-    ;; - narrowing the range must never hide a sibling that is genuinely
-    ;; inside the parcel's own range (invariant 2).
+    ;; A NEW sibling committed AFTER base is still caught, exactly as
+    ;; before BL-1461 - :base narrowing which candidates existed never
+    ;; hid this half of invariant 2; BL-1461 only widens the OTHER half
+    ;; (before base) back in.
     (commit! root "backlog/active/BL-9002-sibling.yaml" "id: BL-9002\n" "BL-9002: new sibling since base")
     (commit! root "backlog/active/BL-9001-x.yaml" "id: BL-9001\n" "BL-9001: own work")
     (let [commit (:out (sh! root "git" "rev-parse" "HEAD"))
           plan (land-step-lib/land-plan {:root root :commit commit :task-ticket-id "BL-9001" :base base})]
       (assert= "land-plan :base - a sibling committed since base is still entangled"
                :replay (:action plan))
-      (assert= "land-plan :base - names the sibling" #{"BL-9002"} (:entangled plan))
+      (assert= "land-plan :base - names both the pre-base and post-base siblings"
+               #{"BL-9102" "BL-9002"} (:entangled plan))
       (assert= "land-plan :base - own-paths still just the task's own file"
                ["backlog/active/BL-9001-x.yaml"] (:own-paths plan)))))
 
@@ -1859,6 +1873,66 @@ RESOLVED BY THIS TICKET
                  (:action wide) (:action bounded))
         (assert= (str "BL-1446 scenario 03 (" syncs " syncs): bounded and wide own-paths agree")
                  (sort (or (:own-paths wide) [])) (sort (or (:own-paths bounded) [])))))))
+
+;; ── BL-1461: the candidate walk covers the WHOLE parcel range, not just
+;;    the last hop - a sibling absorbed BEFORE the first hop or BETWEEN
+;;    hops is entangled exactly like one absorbed after the last hop
+;;    (BL-1446 scenario 02 already covers "after") ───────────────────────
+
+;; Five BL-9001 stage commits on ONE linear chain (never a merge - the
+;; sibling sits directly on the parcel's own line at `position`), the last
+;; hop recorded (parcel-own-base = the documenter commit) exactly like a
+;; real handoff archive. `position` is :before-first (sibling committed
+;; before BL-9001-a) or :between (sibling committed between BL-9001-b and
+;; BL-9001-c) - both strictly BEFORE parcel-own-base, the exact range the
+;; pre-BL-1461 walk-base-bounded walk never visited.
+(defn- bl1461-fixture! [root position sibling-commit-message]
+  (when (= position :before-first)
+    (commit! root "backlog/active/BL-9002-x.yaml" "id: BL-9002\n" sibling-commit-message))
+  (commit! root "backlog/active/BL-9001-a.yaml" "id: BL-9001\n" "BL-9001: coder")
+  (commit! root "backlog/active/BL-9001-b.yaml" "id: BL-9001\n" "BL-9001: cleaner")
+  (when (= position :between)
+    (commit! root "backlog/active/BL-9002-x.yaml" "id: BL-9002\n" sibling-commit-message))
+  (commit! root "backlog/active/BL-9001-c.yaml" "id: BL-9001\n" "BL-9001: architect")
+  (commit! root "backlog/active/BL-9001-d.yaml" "id: BL-9001\n" "BL-9001: hardener")
+  (commit! root "backlog/active/BL-9001-e.yaml" "id: BL-9001\n" "BL-9001: documenter")
+  (let [documenter-tip (:out (sh! root "git" "rev-parse" "HEAD"))
+        sibling-commit (:out (sh! root "git" "rev-list" "-1" "--all" "--grep" "^BL-9002:"))]
+    (record-handoff! root "BL-9001-fixture" documenter-tip)
+    {:documenter-tip documenter-tip :sibling-commit sibling-commit}))
+
+(doseq [position [:before-first :between]]
+  ;; Unlanded: origin/main never advances past the fixture's seed - the
+  ;; sibling's commit is genuinely inside the parcel's own range and never
+  ;; reaches origin/main by any name. The pre-BL-1461 walk (bounded to
+  ;; parcel-own-base, the documenter tip) never visits it at this position;
+  ;; the fix's own invariant 1 says it must.
+  (with-fixture [root]
+    (mark-origin-main-here! root)
+    (let [{:keys [documenter-tip sibling-commit]}
+          (bl1461-fixture! root position "BL-9002: unlanded sibling absorbed before the parcel's last hop")]
+      (let [plan (land-step-lib/land-plan {:root root :commit documenter-tip :task-ticket-id "BL-9001"})]
+        (assert= (str "BL-1461 (" (name position) ", unlanded): forces :replay")
+                 :replay (:action plan))
+        (assert= (str "BL-1461 (" (name position) ", unlanded): names the sibling")
+                 #{"BL-9002"} (:entangled plan))
+        (assert= (str "BL-1461 (" (name position) ", unlanded): its own-paths carry every one of "
+                      "the five stage commits' files and none of the sibling's")
+                 ["backlog/active/BL-9001-a.yaml" "backlog/active/BL-9001-b.yaml" "backlog/active/BL-9001-c.yaml"
+                  "backlog/active/BL-9001-d.yaml" "backlog/active/BL-9001-e.yaml"]
+                 (sort (:own-paths plan))))))
+
+  ;; Landed: the SAME sibling commit is also origin/main's own tip (BL-1446
+  ;; invariant 1 stands regardless of position - a commit reachable from
+  ;; origin/main is never a candidate, whether it sits before, between, or
+  ;; after the parcel's hops).
+  (with-fixture [root]
+    (let [{:keys [documenter-tip sibling-commit]}
+          (bl1461-fixture! root position "BL-9002: sibling, already landed at this position")]
+      (sh! root "git" "update-ref" "refs/remotes/origin/main" sibling-commit)
+      (let [plan (land-step-lib/land-plan {:root root :commit documenter-tip :task-ticket-id "BL-9001"})]
+        (assert= (str "BL-1461 (" (name position) ", landed): never entangled")
+                 {:action :land} plan)))))
 
 ;; ── BL-1432: post-land-repoint! ───────────────────────────────────────────
 
