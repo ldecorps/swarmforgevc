@@ -276,18 +276,6 @@ test('property (invariant 2): absent named-tunnel identity fails loud and never 
 // process wired into the launcher without a matching stop_ancillary_services
 // entry fails this test the same way the caffeinate pidfile would have
 // before this ticket's diff added it.
-// BL-1349: numRuns dropped 6 -> 2. The real per-run cost (measured ~4.9-6s)
-// is NOT the launcher or the fake cloudflared/caffeinate - it is
-// stop_ancillary_services.sh's own real, unconditional `sleep 1` calls for
-// front-desk/onboarder/operator-runtime (none of which this fixture ever
-// starts), paid every run because this property deliberately drives the
-// REAL stop entrypoint end-to-end rather than calling stop_tunnels directly.
-// Editing that production script's shutdown timing is out of this ticket's
-// scope. numRuns=2 keeps the worst case (~12s, two expensive draws) under
-// the 15s budget; it also means a single run of this property now covers at
-// most 2 of the 4 (mode, keepalive) combinations rather than reliably all
-// 4 - a real reach reduction, traded for the file fitting its budget. The
-// assertions themselves (pidfile removal + process death) are unchanged.
 const modeArb = fc.constantFrom('named', 'quick');
 const keepaliveArb = fc.constantFrom('enabled', 'skip');
 
@@ -395,7 +383,7 @@ test(
           killPidFile(path.join(binDir, 'caffeinate.pid'));
         }
       }),
-      { numRuns: 2 }
+      { numRuns: 6 }
     );
   },
   SUBPROCESS_HEAVY_TIMEOUT_MS
