@@ -30,6 +30,31 @@ stage() {
   git -C "$ROOT" add "$rel"
 }
 
+# BL-1448: a fresh copy of the guard plus the libs it sources, with an
+# allowlist TSV THIS CALL writes - so an allowlist-dependent case decides
+# the same whatever the live property_suite_standing_allowlist.tsv holds
+# (invariant 1). The header line is copied from the live file so the
+# format never drifts; every remaining row names one of this call's own
+# args and nothing else (invariant 2 - the fixture's allowlisted names
+# never leak into a case that did not ask for them, and the live file is
+# never written, BL-1390). Each call gets its own directory nested under
+# $ROOT, so the top-level `trap 'rm -rf "$ROOT"' EXIT` reaps it too.
+install_guard_copy_with_allowlist() {
+  local dir
+  dir="$(mktemp -d "$ROOT/bl1448-guard-XXXXXX")"
+  cp "$SCRIPT_DIR/../check_property_suite_drift.sh" "$dir/check_property_suite_drift.sh"
+  cp "$SCRIPT_DIR/../property_suite_standing_allowlist_lib.sh" "$dir/property_suite_standing_allowlist_lib.sh"
+  cp "$SCRIPT_DIR/../property_suite_shared_repo_guard.sh" "$dir/property_suite_shared_repo_guard.sh"
+  cp "$SCRIPT_DIR/../incoming_merge_parent_lib.sh" "$dir/incoming_merge_parent_lib.sh"
+  chmod +x "$dir"/*.sh
+  head -n1 "$SCRIPT_DIR/../property_suite_standing_allowlist.tsv" > "$dir/property_suite_standing_allowlist.tsv"
+  local name
+  for name in "$@"; do
+    printf 'test/%s.property.test.js\tallowlist\tBL-1448 fixture-owned allowlist row\n' "$name" >> "$dir/property_suite_standing_allowlist.tsv"
+  done
+  printf '%s' "$dir/check_property_suite_drift.sh"
+}
+
 # ── 01: docs-only staged path skips the suite ─────────────────────────────
 stage docs/diagrams/architecture.md
 set +e
@@ -237,10 +262,14 @@ echo "$OUT10" | grep -q 'skip-reconcile-import' \
 pass "10: SWARMFORGE_SKIP_PROPERTY_SUITE_GUARD remains recovery-only (distinct marker)"
 
 # ── 11: BL-1175 all-allowlisted standing reds allow without SKIP ─────────
+# BL-1448: bl632CommitTimeGuardInvariants is allowlisted by a fixture-owned
+# TSV this case writes, never the live one (which BL-1428 drained to zero
+# rows) - the guard-copy decides identically whatever the live file holds.
 stage extension/src/pipelineBoard.ts
+GUARD_COPY_11="$(install_guard_copy_with_allowlist bl632CommitTimeGuardInvariants)"
 ALLOWLISTED_RED=(bash -c 'printf "%s\n" " FAIL  test/bl632CommitTimeGuardInvariants.property.test.js > x" >&2; exit 1')
 set +e
-OUT11="$(cd "$ROOT" && bash "$GUARD" "${ALLOWLISTED_RED[@]}" 2>&1)"
+OUT11="$(cd "$ROOT" && bash "$GUARD_COPY_11" "${ALLOWLISTED_RED[@]}" 2>&1)"
 ST11=$?
 set -e
 [[ "$ST11" -eq 0 ]] || fail "11: all-allowlisted reds must allow, got $ST11: $OUT11"
@@ -253,10 +282,14 @@ git -C "$ROOT" reset -q HEAD
 rm -rf "$ROOT/extension"
 
 # ── 12: BL-1175 non-allowlisted red still blocks ─────────────────────────
+# BL-1448: guard-copy allowlists bl632 only, same as case 11 - pipelineBoard
+# stays unlisted by construction (invariant 2), so this proves the block
+# whatever the live allowlist holds too.
 stage extension/src/pipelineBoard.ts
+GUARD_COPY_12="$(install_guard_copy_with_allowlist bl632CommitTimeGuardInvariants)"
 MIXED_RED=(bash -c 'printf "%s\n" " FAIL  test/bl632CommitTimeGuardInvariants.property.test.js > x" " FAIL  test/pipelineBoard.property.test.js > y" >&2; exit 1')
 set +e
-OUT12="$(cd "$ROOT" && bash "$GUARD" "${MIXED_RED[@]}" 2>&1)"
+OUT12="$(cd "$ROOT" && bash "$GUARD_COPY_12" "${MIXED_RED[@]}" 2>&1)"
 ST12=$?
 set -e
 [[ "$ST12" -ne 0 ]] || fail "12: mixed allowlisted + non-allowlisted must block"
@@ -269,9 +302,12 @@ git -C "$ROOT" reset -q HEAD
 rm -rf "$ROOT/extension"
 
 # ── 13: BL-1175 green parcel path — ordinary run still enforced ──────────
+# BL-1448: guard-copy with an empty (header-only) allowlist - the live
+# file's own row count never decides this case's verdict.
 stage extension/src/pipelineBoard.ts
+GUARD_COPY_13="$(install_guard_copy_with_allowlist)"
 set +e
-OUT13="$(cd "$ROOT" && bash "$GUARD" "${RED[@]}" 2>&1)"
+OUT13="$(cd "$ROOT" && bash "$GUARD_COPY_13" "${RED[@]}" 2>&1)"
 ST13=$?
 set -e
 [[ "$ST13" -ne 0 ]] || fail "13: unallowlisted red must still block"
@@ -290,9 +326,10 @@ rm -rf "$ROOT/extension"
 # file). Scenario 11 above uses a single failing file and cannot catch
 # this - the count IS the boundary the defect lives on.
 stage extension/src/pipelineBoard.ts
+GUARD_COPY_13B="$(install_guard_copy_with_allowlist bl632CommitTimeGuardInvariants alertTelemetry)"
 TWO_ALLOWLISTED_RED=(bash -c 'printf "%s\n" " FAIL  test/bl632CommitTimeGuardInvariants.property.test.js > x" " FAIL  test/alertTelemetry.property.test.js > y" >&2; exit 1')
 set +e
-OUT13B="$(cd "$ROOT" && bash "$GUARD" "${TWO_ALLOWLISTED_RED[@]}" 2>&1)"
+OUT13B="$(cd "$ROOT" && bash "$GUARD_COPY_13B" "${TWO_ALLOWLISTED_RED[@]}" 2>&1)"
 ST13B=$?
 set -e
 [[ "$ST13B" -eq 0 ]] || fail "13b: two allowlisted reds together must allow, got $ST13B: $OUT13B"
@@ -306,6 +343,7 @@ rm -rf "$ROOT/extension"
 # The ticket's own example boundary (1 works, 2+ fails) - proven at the
 # TSV's actual current width, not just at two.
 stage extension/src/pipelineBoard.ts
+GUARD_COPY_13C="$(install_guard_copy_with_allowlist bl632CommitTimeGuardInvariants alertTelemetry crossFileDuplicationCheck hostActivityFeed pilotAcceptanceGate)"
 FIVE_ALLOWLISTED_RED=(bash -c 'printf "%s\n" \
   " FAIL  test/bl632CommitTimeGuardInvariants.property.test.js > a" \
   " FAIL  test/alertTelemetry.property.test.js > b" \
@@ -313,7 +351,7 @@ FIVE_ALLOWLISTED_RED=(bash -c 'printf "%s\n" \
   " FAIL  test/hostActivityFeed.property.test.js > d" \
   " FAIL  test/pilotAcceptanceGate.property.test.js > e" >&2; exit 1')
 set +e
-OUT13C="$(cd "$ROOT" && bash "$GUARD" "${FIVE_ALLOWLISTED_RED[@]}" 2>&1)"
+OUT13C="$(cd "$ROOT" && bash "$GUARD_COPY_13C" "${FIVE_ALLOWLISTED_RED[@]}" 2>&1)"
 ST13C=$?
 set -e
 [[ "$ST13C" -eq 0 ]] || fail "13c: five allowlisted reds together must allow, got $ST13C: $OUT13C"
@@ -326,12 +364,13 @@ rm -rf "$ROOT/extension"
 # ── 13d (BL-1234): two allowlisted + one real unlisted red - the refusal
 #    names the ACTUAL unlisted path, never a concatenation of all three ──
 stage extension/src/pipelineBoard.ts
+GUARD_COPY_13D="$(install_guard_copy_with_allowlist bl632CommitTimeGuardInvariants alertTelemetry)"
 THREE_MIXED_RED=(bash -c 'printf "%s\n" \
   " FAIL  test/bl632CommitTimeGuardInvariants.property.test.js > a" \
   " FAIL  test/pipelineBoard.property.test.js > b" \
   " FAIL  test/alertTelemetry.property.test.js > c" >&2; exit 1')
 set +e
-OUT13D="$(cd "$ROOT" && bash "$GUARD" "${THREE_MIXED_RED[@]}" 2>&1)"
+OUT13D="$(cd "$ROOT" && bash "$GUARD_COPY_13D" "${THREE_MIXED_RED[@]}" 2>&1)"
 ST13D=$?
 set -e
 [[ "$ST13D" -ne 0 ]] || fail "13d: a genuine unlisted red among allowlisted ones must still block"
@@ -604,10 +643,11 @@ rm -rf "$ROOT/extension" "$ROOT/.swarmforge"
 
 # ── 21 (BL-1407): three non-allowlisted reds are each re-run EXACTLY once;
 #    an allowlisted red among them is never re-run at all. bl632's own
-#    property file is reused as the "already allowlisted" file - the real
-#    standing-allowlist TSV names it (scenario 11 above), so no extra
-#    fixture TSV is needed here either.
+#    property file is reused as the "already allowlisted" file - BL-1448:
+#    a guard-copy allowlists it explicitly now, never the live TSV (which
+#    scenario 11 no longer names either, since BL-1428 drained it).
 stage extension/src/pipelineBoard.ts
+GUARD_COPY_21="$(install_guard_copy_with_allowlist bl632CommitTimeGuardInvariants)"
 COUNTER_DIR_21="$ROOT/../bl1407_counts_$$"
 rm -rf "$COUNTER_DIR_21"
 mkdir -p "$COUNTER_DIR_21"
@@ -626,7 +666,7 @@ else
 fi
 ')
 set +e
-OUT21="$(cd "$ROOT" && bash "$GUARD" "${THREE_PLUS_ALLOW_21[@]}" 2>&1)"
+OUT21="$(cd "$ROOT" && bash "$GUARD_COPY_21" "${THREE_PLUS_ALLOW_21[@]}" 2>&1)"
 ST21=$?
 set -e
 [[ "$ST21" -ne 0 ]] || fail "21: three genuine unlisted reds must still refuse"
