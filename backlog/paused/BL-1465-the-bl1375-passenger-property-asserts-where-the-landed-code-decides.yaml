@@ -1,0 +1,155 @@
+id: BL-1465
+title: "bl1375ApprovedSiblingsCanLandInvariants invariant 2 asserts the pre-BL-1447 sequencing (land-plan says replay, then replay! and its guard refuse a dangling passenger line): since BL-1447 landed (ef9e8a9f19, 2026-09-07) land-plan builds and guards the tip itself and escalates, so the property fails 'the plan refused before the guard could speak' on its first draw and the property-suite commit guard refuses every extension/src commit swarm-wide; the property asserts the unchanged invariant where the landed code decides it"
+milestone: M8
+type: defect
+severity: high
+# high (standing-red rule 2026-09-05): a property-lane file red on main,
+# deterministic, and - until the allowlist row minted with this ticket
+# landed - the reason the property guard refused EVERY extension/src
+# commit from every role (the coder's BL-1452 commit was the first). The
+# invariant itself still holds in the code; what is red is the proof.
+status: todo
+epic: swarm-reliability
+priority: 8
+direction: swarm-reported
+depends_on: []
+mutation_cost: low
+# low: one property test file; no production line changes. BL-1447
+# already updated BL-1375's acceptance handler (landHandlerOnMain) for the
+# same sequencing change and missed this file.
+slice_size_envelope: low
+required_stages: [coder, cleaner, architect, hardender, documenter, qa]
+
+acceptance: specs/features/BL-1465-the-bl1375-passenger-property-asserts-where-the-landed-code-decides.feature
+
+required_wiring:
+  - 'specs/pipeline/steps/bl1465PassengerPropertyAssertsInPlanSteps.js::registerSteps::the handler lands in the same parcel as the feature (BL-233)'
+
+human_approval: pending
+approval_context: >
+  A new feature file is authored here, so it needs a tap. No choice is
+  posed and there are no ruling_options. What is FIRM: BL-1375 invariant
+  2's text is unchanged and no assertion is weakened - the dangling corner
+  still refuses naming the passenger, the resolved corner still rides, both
+  reach floors stay; the property simply reads the refusal from land-plan's
+  escalate (where BL-1447 put it) instead of from a replay! it runs itself.
+  Interim already in force with this mint: an allowlist row for the file
+  (BL-1175 mechanism) joined to this ticket's register row, so
+  extension/src commits flow again; both rows leave when this lands.
+
+invariants:
+  - "BL-1375 invariant 2 holds unchanged and is asserted at the point the landed code decides it: a passenger rides only through a self-consistent replayed tree, refused inside land-plan since BL-1447, never proven by re-running replay! on a plan that already refused."
+  - "No assertion is weakened: the dangling passenger corner still refuses naming the passenger, the resolved corner still publishes, and both reach floors (dangling > 0, resolved > 0) remain."
+
+description: |
+  ## What is wrong
+
+  `extension/test/bl1375ApprovedSiblingsCanLandInvariants.property.test.js`,
+  invariant 2 (line ~218): for each draw it calls `land-plan`, asserts
+  `plan.action === 'replay'` ("the plan refused before the guard could
+  speak"), then runs `replay!` itself with the plan's own-paths and
+  passengers and asserts `result.success` false-and-naming-the-passenger for
+  a dangling passenger registry line, true for a resolved one. That is the
+  sequencing BL-1375 shipped on 2026-09-03: plan, then build, then guard.
+
+  BL-1447 (landed 2026-09-07, ef9e8a9f19) moved the build inside the plan:
+  `land-plan` now builds the tip-pure commit once, verifies it complete and
+  self-consistent, and returns `{:action :escalate :reason "land-step
+  replay: refusing to publish ... not self-consistent with passenger
+  sibling(s) BL-9376 ... check_feature_handler_registration.sh refused the
+  replayed tree ... missing or unreadable registry module:
+  specs/pipeline/steps/bl9376FixtureSteps.js" :unlanded [...]}` for the
+  dangling corner. The property's first assertion fails on the first draw
+  (`Counterexample: ["landing/anchor.txt"]`, Expected "replay", Received
+  "escalate"); invariants 1 and 3 pass. BL-1447 updated BL-1375's
+  acceptance handler for this (`landHandlerOnMain` in
+  `bl1375ApprovedSiblingsCanLandSteps.js`, its coder evidence) and did not
+  touch this property, which drives the same pair independently.
+
+  Reproduced by the specifier alone on main at mint (1 failed, 2 passed).
+  Found by the coder committing BL-1452 (`backlog/evidence/BL-1452-unowned-red-bl1375-property-invariant2-20260907.md`,
+  coder branch): `check_property_suite_drift.sh` runs the full property
+  lane for any staged `extension/src` path and refuses the commit on a
+  non-allowlisted red that fails alone (BL-1407's rerun net), so this one
+  file refused every extension/src commit from every role.
+
+  ## What is wanted
+
+  The property asserts the same invariant where the code now decides it:
+  a dangling passenger line yields an escalate whose reason names the
+  passenger and the consistency guard (scenario 01); a resolved line yields
+  a replay carrying the passenger whose built tip passes the guard
+  (scenario 02); the file is green alone and in the lane with both reach
+  floors kept (scenario 03); the allowlist row and the register row leave
+  with the fix (scenario 04).
+
+  ## How (direction, not mandate)
+
+  - In invariant 2's body: branch on the corner the draw built. Dangling:
+    assert `plan.action === 'escalate'`, the reason includes the passenger
+    id and the guard's refusal text, and `plan.unlanded` names the
+    passenger. Resolved: assert `plan.action === 'replay'`, the passenger
+    is in `plan.passengers`, and the built commit the plan names passes
+    `check_feature_handler_registration.sh` (or whichever guard the plan
+    ran - read the landed `land-plan` first: BL-1447's replay branch
+    around line 1450 of land_step_lib.bb). Drop the property's own
+    `replay!` call: since BL-1447 the plan has already built the commit.
+  - Keep the reach accounting and both floors exactly as they are.
+  - Remove `test/bl1375ApprovedSiblingsCanLandInvariants.property.test.js`
+    from `swarmforge/scripts/property_suite_standing_allowlist.tsv` and its
+    row from `backlog/standing-reds.tsv` in the same land (the register
+    guard refuses a stale row otherwise).
+  - Documenter: no registered diagram; if BL-1375's or BL-1447's how-to
+    describes the plan/build sequencing, one sentence that the passenger
+    property now reads it from the plan.
+
+constraints: >
+  Test-only; no production line of land_step_lib.bb changes. Fixture
+  repositories stay under mkdtemp with their own origin (BL-1390); no real
+  timers. The step handler lands with the feature (BL-233). No hand-edited
+  mutation manifests.
+
+out_of_scope: |
+  - BL-1447's own behaviour (landed) and any further land-plan change
+    (BL-1461, BL-1463 own theirs).
+  - Making the property guard refuse less: the allowlist row is the
+    designed interim (BL-1175/BL-1428), not a change to the guard.
+  - The class question - a successor that changes a mechanism's sequencing
+    must re-read every property that drives it, not only the acceptance
+    handler - recorded in the adjudication evidence for the lean pass.
+
+qa_e2e_procedure: >
+  From `extension/`: (1) `npx vitest run --config
+  vitest.properties.config.mjs test/bl1375ApprovedSiblingsCanLandInvariants.property.test.js`
+  three times: 3/3 each, and the reach lines report dangling > 0 and
+  resolved > 0. (2) `npm run test:properties`: the file is not among the
+  reds. (3) A throwaway commit touching `extension/src` on a scratch clone
+  passes `check_property_suite_drift.sh` with the allowlist row REMOVED
+  (the guard no longer needs it). (4) `swarmforge/scripts/property_suite_standing_allowlist.tsv`
+  is header-only again and `backlog/standing-reds.tsv` has no row for the
+  file; `standing_red_register_cli.bb` agrees.
+
+source: |
+  Coder note to the specifier and coordinator, priority 00,
+  2026-09-07T12:13Z: "Unowned red blocks all extension/src commits:
+  BL-1452-unowned-red-bl1375-*.md"; evidence
+  `backlog/evidence/BL-1452-unowned-red-bl1375-property-invariant2-20260907.md`
+  (coder branch). Adjudication:
+  `backlog/evidence/BL-1452-unowned-red-bl1375-adjudication-specifier-20260907.md`.
+
+notes: |
+  Minted 2026-09-07 by the specifier on the coder's unowned-red note, the
+  same pass (standing-red rule: high at first sighting). Same commit:
+  register row (property lane) -> this ticket, and the allowlist row that
+  lifts the commit block - BL-1428's guard joins the allowlist row to the
+  staged register row, which is why the three land together. Roles must
+  merge main to pick the allowlist row up in their own checkouts.
+
+  Grepped first: no open ticket names the property file, invariant 2, or
+  the plan/replay sequencing; BL-1447 (done) is the successor that changed
+  it and updated only the acceptance handler.
+
+  Class note for the lean pass: BL-1447's spec named BL-1375's acceptance
+  handler as a consumer to update and not the BL-654 property that drives
+  the same pair; the property lane is where a sequencing change shows up
+  first, and the guard turns it into a swarm-wide block within the hour.
