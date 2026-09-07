@@ -1,0 +1,144 @@
+id: BL-1467
+title: "The post-land re-point (BL-1438) resets the QA branch to origin/main and silently drops committed local-only work its guards never see - a bounce's evidence and bounce_history commits for another ticket, the BL-490/495 revert, a follow-up finding (BL-1450's, 2026-09-07 after BL-1447's land; survived only in the reflog); the re-point re-applies bookkeeping commits for tickets other than the landed one and names every commit it drops"
+milestone: M8
+type: defect
+severity: medium
+# medium: real but contained - the dropped commits survive in the reflog
+# and, when the coder has already merged the bounce, on the coder's
+# branch; the landing safety is BL-1466's. Not low: a bounce evidence
+# file that no branch retains breaks the ticket's evidence trail, and the
+# drop is silent today.
+status: todo
+epic: swarm-reliability
+priority: 12
+direction: swarm-reported
+depends_on: []
+mutation_cost: low
+# low: post-land-repoint! gains a pre-reset enumeration, a classified
+# cherry-pick loop and log lines; runner fixtures in the BL-1432/BL-1438
+# section.
+slice_size_envelope: low
+required_stages: [coder, cleaner, architect, hardender, documenter, qa]
+
+acceptance: specs/features/BL-1467-the-re-point-keeps-qa-bookkeeping-and-names-what-it-drops.feature
+
+required_wiring:
+  - 'specs/pipeline/steps/bl1467RepointKeepsBookkeepingSteps.js::registerSteps::the handler lands in the same parcel as the feature (BL-233)'
+
+human_approval: pending
+approval_context: >
+  A new feature file is authored here, so it needs a tap. No choice is
+  posed and there are no ruling_options. What is FIRM: BL-1438's promises
+  stand (guards unchanged, a skip never fails a land, once per land after
+  LAND_PUBLISHED); bookkeeping commits for other tickets survive by
+  re-application, everything else is dropped and NAMED; a revert is
+  dropped and named, never re-applied; a re-application that conflicts is
+  dropped with the conflict named and never leaves a conflicted tree.
+
+invariants:
+  - "No bookkeeping commit for a ticket other than the one landed is lost silently by a re-point: every commit reachable from the old tip and not from origin/main is either on the new tip or named in the re-point log and the publish output as dropped, with its reason."
+  - "BL-1438 stands: the re-point's guards are unchanged, a skip never fails a land, it runs once per land after LAND_PUBLISHED, and the worktree it leaves is clean."
+
+description: |
+  ## What is wrong
+
+  `land_step_lib.bb` `post-land-repoint!` checks `git status --porcelain`
+  and the in_process mailbox, then `git reset --hard origin/main`. Both
+  guards are about uncommitted state; committed local-only work passes
+  them. After a tip-pure land the QA branch's own history is not on
+  origin/main by construction, and most of it is superseded by the replay
+  - but some of it is not: a bounce's evidence file and the ticket's
+  `bounce_history` for a DIFFERENT ticket, the BL-490/495 revert of that
+  ticket's merge, a QA follow-up finding. 2026-09-07: BL-1450 bounced
+  11:48Z (`d79f003542` revert, evidence and bounce_history commits on top);
+  BL-1447 landed 12:03Z; the re-point reset `swarmforge-QA` to
+  `e25e9d7195` (`.swarmforge/daemon/land-repoint.log`, QA reflog) and the
+  three commits left every branch except the coder's, which had merged the
+  bounce. QA's evidence:
+  `backlog/evidence/BL-1452-QA-followup-repoint-discards-unlanded-bounce-work-20260907.md`.
+
+  ## What is wanted
+
+  Before the reset the re-point enumerates `old-tip ^origin-main`; after
+  it, commits whose changed paths are all bookkeeping for a ticket other
+  than the landed one (`backlog/evidence/<id>-*`, `backlog/**/<id>-*.yaml`,
+  `backlog/topics/<id>.json`) are re-applied on the new tip (scenario 01);
+  every other commit is dropped and named by sha and subject in the log
+  and in the publish output (scenario 02); a revert is dropped and named,
+  never re-applied (scenario 03); a re-application that conflicts is
+  aborted, dropped and named with the conflict, leaving a clean tree
+  (scenario 04); the existing guards and the never-fail promise stand
+  (scenario 05).
+
+  ## How (direction, not mandate)
+
+  - `git rev-list old-tip ^origin-main` before the reset; classify each
+    commit by `diff-tree --name-only -r` against the bookkeeping shape and
+    the landed ticket id (the CLI already knows the task); after the
+    reset, `git cherry-pick --keep-redundant-commits`-free loop: pick,
+    on conflict `cherry-pick --abort` and record `dropped: conflict`; an
+    empty pick (already landed via the replay) is recorded as `already
+    landed`, not dropped.
+  - Log shape: extend `log-repoint!`'s record with `:kept [...]` and
+    `:dropped [{:sha :subject :reason}]`; `land_main_publish.sh` prints
+    `LAND_REPOINT_KEPT <sha>` and `LAND_REPOINT_DROPPED <sha> <reason>`
+    lines after `LAND_REPOINTED old new`.
+  - Keep the two guards and the skip reasons byte-identical; keep the
+    cost small (the range is short since BL-1438 - 163 commits today).
+  - Documenter: `docs/how-to` for BL-1438 (or the BL-1241 reference's
+    re-point section) gains the kept/dropped lines; the QA prompt's
+    repoint bullet is the specifier's to amend at landing.
+
+constraints: >
+  Never `reset --hard` on a tree the existing guards would refuse; never
+  leave a conflicted or dirty worktree; never re-apply a revert. Fixture
+  repositories under mkdtemp with their own origin (BL-1390). The step
+  handler lands with the feature (BL-233). No hand-edited mutation
+  manifests.
+
+out_of_scope: |
+  - The landing-time bounce check (BL-1466).
+  - Pushing QA's bookkeeping to main directly (bounce evidence lands with
+    its ticket's replay, as today).
+  - Any change to what counts as clean for the guards (BL-1432 invariant 3).
+
+qa_e2e_procedure: >
+  (1) `bb swarmforge/scripts/test/land_step_lib_test_runner.bb` green with
+  the new re-point cases. (2) Scratch clone with a QA-shaped branch ahead
+  of its origin: add an evidence commit for BL-9002, a YAML edit for
+  BL-9002, a revert commit and an unrelated code commit; run
+  `land_step_cli.bb repoint <root>`: output shows LAND_REPOINTED, two
+  LAND_REPOINT_KEPT lines, two LAND_REPOINT_DROPPED lines (revert, code);
+  `git log -2` on the new tip shows the two bookkeeping commits;
+  `git status` clean. (3) Make origin change the same YAML line: the YAML
+  pick is dropped with `conflict`, the tree is clean. (4) Live: the next
+  land's publish output carries the KEPT/DROPPED lines and
+  `.swarmforge/daemon/land-repoint.log` records them.
+
+source: |
+  QA note to the specifier, priority 00, 2026-09-07T13:04Z: "Repoint
+  discards QA's unlanded bounce work, reopens BL-952 - new finding";
+  evidence `backlog/evidence/BL-1452-QA-followup-repoint-discards-unlanded-bounce-work-20260907.md`.
+  Adjudication:
+  `backlog/evidence/BL-1452-repoint-discards-bounce-work-adjudication-specifier-20260907.md`.
+
+notes: |
+  Minted 2026-09-07 by the specifier on QA's note, the same pass, with
+  BL-1466 (the land-time half). The two are independent: BL-1466 keeps
+  bounced content off main whatever the branch holds; this ticket keeps
+  QA's evidence trail intact and makes the re-point's drops visible.
+
+  Grepped first: no open ticket names post-land-repoint!'s discard or the
+  reflog recovery; BL-1432 (done) ruled the re-point, BL-1438 (done) wired
+  it, both with "clean" meaning uncommitted-clean only.
+
+  Why re-apply rather than skip: skipping whenever local commits exist
+  would skip after every tip-pure land (the branch is always ahead by its
+  own history) and return BL-1432's growth; re-applying only bookkeeping
+  keeps both promises.
+
+  required_wiring names the step handler only: the publish wrapper
+  (`land_main_publish.sh`) already calls `land_step_cli.bb repoint` and
+  echoes whatever it prints, so an anchor on the wrapper's text would name
+  a literal that never appears there (BL-874) and an anchor on the CLI is
+  the parcel's own diff (BL-1235); scenario 02 reads the real output.
