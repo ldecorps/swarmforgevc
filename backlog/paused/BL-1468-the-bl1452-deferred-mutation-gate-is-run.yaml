@@ -1,0 +1,134 @@
+id: BL-1468
+title: "BL-1452 landed with its Stryker mutation gate deferred (dry run over out/tools/backlogTicketId.js timed out twice at the 5-minute ceiling under host load 6.7-9.7/20 cores, 2026-09-07) and closed, so its hardening-debt ledger row names no open ticket and reads as an unowned red; the run over backlogTicketId.ts, bounceArgsCore.ts and qa-sibling-check.ts is completed and discharged once the cooldown on those files clears on 2026-09-10"
+milestone: M8
+type: defect
+severity: high
+# high (standing-red rule 2026-09-05): a hardening-lane row with no open
+# owner throttles intake (BL-1429) the moment it appears, and BL-1441's
+# rows are the precedent at the same severity. The code risk is low (the
+# hardener's evidence: a mechanical predicate substitution with a
+# thorough unit test), which is why the deferral was right; the register
+# needs an owner, not a verdict on the risk.
+status: todo
+epic: code-quality-gates
+priority: 8
+direction: swarm-reported
+depends_on: []
+mutation_cost: low
+# low: no code changes; one Stryker run over a compiled file set already
+# unit-tested, one ledger discharge, one register row removed.
+slice_size_envelope: low
+required_stages: [coder, cleaner, architect, hardender, documenter, qa]
+
+acceptance: specs/features/BL-1468-the-bl1452-deferred-mutation-gate-is-run.feature
+
+required_wiring:
+  - 'backlog/hardening-debt-ledger.yaml::discharged_evidence: backlog/evidence/BL-1468::the ledger, which the register and throttle read, carries this parcel evidence path (BL-1441 shape)'
+
+human_approval: pending
+approval_context: >
+  A new feature file is authored here, so it needs a tap. No choice is
+  posed and there are no ruling_options. Same shape as BL-1441 (approved)
+  for one row dated 2026-09-07: run the deferred Stryker gate, discharge
+  the row with evidence, remove the register row in the same commit. The
+  earliest it can run is 2026-09-10, when the cooldown on the three files
+  the land touched expires; promoting it before then would hold a parcel
+  at cap for days (the BL-1439 lesson), so the coordinator waits.
+
+invariants:
+  - "A ledger row leaves the outstanding debt only through a discharge that names the gate, the parcel and a committed result; a run that cannot complete is recorded as an attempt with its blocker and the row stays outstanding and owned."
+  - "The register row leaves in the same commit that discharges the ledger row, never earlier; the hardening lane holds no BL-1468 row only when the BL-1452 row is discharged."
+
+description: |
+  ## What is wrong
+
+  `backlog/hardening-debt-ledger.yaml` carries `parcel: BL-1452, gate:
+  mutation, file_set: extension/src/tools/backlogTicketId.ts,
+  extension/src/tools/bounceArgsCore.ts, extension/src/tools/qa-sibling-check.ts,
+  detected_at: 2026-09-07`, recorded by the hardener with
+  `hardening_debt_ledger_update.bb --defer` (commit a41f8c1624, evidence
+  `backlog/evidence/BL-1452-hardender-20260907.md`): the Stryker perTest
+  dry run, scoped to `out/tools/backlogTicketId.js` with concurrency 4,
+  timed out at Stryker's own 5-minute ceiling under load 6.7-9.7 on 20
+  cores, twice. BL-1452 then landed and closed (916eb5cf35). The register
+  reader joins ledger rows to register rows on (lane, file); the row's
+  parcel is closed and no register row names another owner, so
+  `standing_red_register_cli.bb` reports it UNOWNED and BL-1429's
+  throttle holds the cap at 1 while it stands. The coordinator's note
+  (2026-09-07T13:21Z) is that reading.
+
+  BL-1441 (active) owns the four 2026-08-19 rows and is in flight; a
+  ticket in the active backlog is never widened (BL-317/BL-325), so this
+  row gets its own owner.
+
+  `mutation_cooldown_gate.bb` on each of the three files at mint:
+  `skip-cooldown, file_age_days 0.00 (cooldown: 3 days)` - the land
+  itself touched them today. Earliest run: 2026-09-10.
+
+  ## What changes
+
+  - One Stryker run over the compiled file set (`--mutate` scoped to
+    `out/tools/backlogTicketId.js`, `out/tools/bounceArgsCore.js`,
+    `out/tools/qa-sibling-check.js`; `perTest`; sibling links per the
+    Verification rules), under the cooldown and host-load gates, recorded
+    as `backlog/evidence/BL-1468-BL-1452-mutation.md` with the summary
+    block, load, duration, and zero survivors or one entry per survivor
+    with the reason it stands.
+  - `hardening_debt_ledger_update.bb --discharge BL-1452 mutation
+    --evidence backlog/evidence/BL-1468-BL-1452-mutation.md`; a run that
+    cannot complete is recorded with the attempt verb and the row stays
+    outstanding and owned (invariant 1).
+  - The `hardening` register row naming BL-1468 leaves in the discharge
+    commit (invariant 2).
+
+  ## How (direction, not mandate)
+
+  - Run on a quiet host: the hardener's load signature (6.7-9.7) is the
+    "hard-crash rather than stall" case; check `uptime` and the pack's
+    activity before starting; concurrency 4 was the deferred attempt's
+    setting - lower is fine.
+  - If the dry run still times out at the ceiling, record the attempt
+    (verb from BL-1439) with load and duration and stop; do not raise the
+    ceiling or narrow the mutate scope below the three files.
+  - Documenter: nothing to write beyond the evidence file; no diagram.
+
+constraints: >
+  No production code changes. The run happens in the coder's worktree
+  against compiled `out/**` (compile first; `extension/out/` is
+  gitignored). Never `process.chdir()` under mutation; never a hand-edited
+  mutation manifest. The step handler lands with the feature (BL-233).
+
+out_of_scope: |
+  - BL-1441's four 2026-08-19 rows.
+  - Any change to the cooldown window, the ledger verbs, or the throttle.
+
+qa_e2e_procedure: >
+  (1) `bb swarmforge/scripts/mutation_cooldown_gate.bb . extension/src/tools/backlogTicketId.ts`
+  (and the other two) reports the cooldown clear before the run. (2) The
+  evidence file shows the Stryker summary block for the three compiled
+  files, load and duration, survivors explained. (3)
+  `backlog/hardening-debt-ledger.yaml`: the BL-1452 mutation row carries
+  `discharged_at` and the evidence path. (4)
+  `bb swarmforge/scripts/standing_red_register_cli.bb .`: no hardening row
+  for the three files, no unowned row. (5) `bb swarmforge/scripts/effective_backlog_depth_cli.bb .`
+  no longer reads 1 on this row's account.
+
+source: |
+  Coordinator note to the specifier, priority 00, 2026-09-07T13:21Z:
+  "unowned hardening-debt row BL-1452 (mutation, closed) needs owner".
+  Hardener evidence `backlog/evidence/BL-1452-hardender-20260907.md`;
+  ledger row detected_at 2026-09-07. Adjudication:
+  `backlog/evidence/BL-1452-hardening-row-adjudication-specifier-20260907.md`.
+
+notes: |
+  Minted 2026-09-07 by the specifier on the coordinator's note, the same
+  pass. Register row (hardening lane, the three files) -> BL-1468,
+  first_seen 2026-09-07.
+
+  Earliest run 2026-09-10 (cooldown from the 2026-09-07 land). The
+  coordinator should not promote this before then: a parcel waiting on
+  the host at cap 1 froze the swarm on 2026-09-05 (BL-1439). Promote on
+  or after 2026-09-10, on a quiet host.
+
+  Grepped first: BL-1441 (active) owns only the 2026-08-19 rows; no other
+  open ticket names the BL-1452 row or these three files' mutation gate.
