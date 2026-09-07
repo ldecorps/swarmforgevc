@@ -13,6 +13,16 @@ epic: code-quality-gates
 priority: 12
 direction: swarm-reported
 depends_on: [BL-1409]
+abandoned_commits: [07e17e6ed6]
+# BL-1446/BL-1424 shape (QA, 2026-09-07): land_step_lib.bb's tip-pure
+# replay off origin/main dropped several of this ticket's own paths
+# (the step handler, a stale-vs-fixed shell suite mismatch, bounce_history,
+# four evidence files) - hand-fixed and landed as de0bde5c61 per the
+# BL-1424 incident's established recovery recipe. last-handoff-commit for
+# this task resolves to 07e17e6ed6 (hardener's forward-to-documenter
+# merge); listed here so task_scope_gate_lib.bb/pre_qa_gate_lib.bb rebase
+# their walk on origin/main instead of refusing this ticket's later sends
+# as entangled with its own superseded lineage.
 mutation_cost: low
 slice_size_envelope: low
 required_stages: [coder, cleaner, architect, hardender, documenter, qa]
