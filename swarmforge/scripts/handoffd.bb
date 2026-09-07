@@ -4155,20 +4155,35 @@
 ;; standing Telegram topic - zero coordinator LLM tokens, derived entirely
 ;; from its durable traces. Shares this cadence for the same reason every
 ;; sibling sweep above does: no separate timeout, no new daemon.
-(defn- coordinator-activity-feed-list-sent-handoffs []
+(defn- coordinator-activity-feed-sent-dir []
   (try
-    (let [ri (handoff-lib/load-role-info "coordinator" (str project-root))
-          dir (when ri (handoff-lib/mailbox-dir ri :sent))]
+    (let [ri (handoff-lib/load-role-info "coordinator" (str project-root))]
+      (when ri (handoff-lib/mailbox-dir ri :sent)))
+    (catch Exception _ nil)))
+
+;; BL-1454 invariant 3: lists bare FILENAMES only - no file is opened here.
+;; coordinator-activity-feed-lib/tick! filters this list against the cursor
+;; BEFORE calling coordinator-activity-feed-read-handoff-header below, so a
+;; tick's I/O is proportional to what is new, never to the total count of
+;; sent handoffs (6509 today).
+(defn- coordinator-activity-feed-list-sent-handoff-names []
+  (try
+    (let [dir (coordinator-activity-feed-sent-dir)]
       (if (and dir (fs/directory? dir))
         (->> (fs/list-dir dir)
              (filter #(str/ends-with? (str (fs/file-name %)) ".handoff"))
-             (map (fn [p]
-                    {:file (str (fs/file-name p))
-                     :header (coordinator-activity-feed-lib/handoff-header-from-text (slurp (str p)))}))
-             (sort-by (comp coordinator-activity-feed-lib/handoff-sort-key :file))
+             (map #(str (fs/file-name %)))
+             (sort-by coordinator-activity-feed-lib/handoff-sort-key)
              vec)
         []))
     (catch Exception _ [])))
+
+(defn- coordinator-activity-feed-read-handoff-header [filename]
+  (try
+    (let [dir (coordinator-activity-feed-sent-dir)]
+      (coordinator-activity-feed-lib/handoff-header-from-text
+       (slurp (str (fs/path dir filename)))))
+    (catch Exception _ {:type nil :to nil :task nil :message nil})))
 
 ;; Bounded to a recent window rather than the whole repository history - the
 ;; cursor only ever needs to look back as far as the last tick, and an
@@ -4204,13 +4219,29 @@
    (try (slurp (str (backlog-depth-lib/conf-file-path project-root)))
         (catch Exception _ nil))))
 
+;; BL-1454: bounds a tick to a capped batch and a deadline well inside the
+;; supervisor's own in-flight-sweep budget - the SAME SUPERVISOR_IN_SWEEP_BUDGET_MS
+;; env var handoffd_supervisor.bb reads (both processes read the OS env, so
+;; this stays in lockstep without importing that script). Whatever
+;; ACTIVITY_FEED_TICK_DEADLINE_MS is set to, the effective deadline never
+;; exceeds one quarter of the supervisor budget (invariant 1) - a
+;; misconfigured override can only make the tick MORE conservative, never
+;; less.
+(def activity-feed-post-cap (env-ms "ACTIVITY_FEED_TICK_POST_CAP" 20))
+(def activity-feed-tick-deadline-ms
+  (min (env-ms "ACTIVITY_FEED_TICK_DEADLINE_MS" 30000)
+       (quot (env-ms "SUPERVISOR_IN_SWEEP_BUDGET_MS" 225000) 4)))
+
 (defn coordinator-activity-feed-sweep! []
   (try
     (coordinator-activity-feed-lib/tick!
      {:daemon-dir (str daemon-dir)
-      :list-sent-handoffs coordinator-activity-feed-list-sent-handoffs
+      :list-sent-handoff-names coordinator-activity-feed-list-sent-handoff-names
+      :read-handoff-header coordinator-activity-feed-read-handoff-header
       :list-bookkeeping-commits coordinator-activity-feed-list-bookkeeping-commits
-      :post! coordinator-activity-feed-post!})
+      :post! coordinator-activity-feed-post!
+      :post-cap activity-feed-post-cap
+      :deadline-ms activity-feed-tick-deadline-ms})
     (catch Exception e
       (log! "coordinator-activity-feed-error" (.getMessage e)))))
 
