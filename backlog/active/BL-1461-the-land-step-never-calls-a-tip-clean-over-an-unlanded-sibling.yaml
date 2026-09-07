@@ -165,3 +165,5 @@ notes: |
   IR-DRY at mint: the three "a sibling ticket's commit sits ..." Givens are
   one parametrised precondition (position x landed-or-not); reviewed and
   kept.
+
+assigned_to: coder

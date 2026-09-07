@@ -9,7 +9,7 @@ severity: high
 # hardener's evidence: a mechanical predicate substitution with a
 # thorough unit test), which is why the deferral was right; the register
 # needs an owner, not a verdict on the risk.
-status: todo
+status: blocked
 epic: code-quality-gates
 priority: 8
 direction: swarm-reported
@@ -133,4 +133,4 @@ notes: |
   Grepped first: BL-1441 (active) owns only the 2026-08-19 rows; no other
   open ticket names the BL-1452 row or these three files' mutation gate.
 
-assigned_to: coder
+
