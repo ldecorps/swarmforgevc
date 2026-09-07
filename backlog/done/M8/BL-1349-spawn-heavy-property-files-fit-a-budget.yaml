@@ -7,6 +7,13 @@ epic: code-quality-gates
 priority: 15
 direction: human-requested
 depends_on: []
+abandoned_commits: [8479fdf644]
+# QA, 2026-09-07: landed via a verified-complete tip-pure replay
+# (18188284d0) excluding the genuinely-unlanded sibling BL-940;
+# last-handoff-commit for this task resolves to 8479fdf644 (hardener's own
+# forward-to-documenter merge). Listed so task_scope_gate_lib.bb/
+# pre_qa_gate_lib.bb rebase their walk on origin/main instead of refusing
+# this ticket's later sends as entangled with its own superseded lineage.
 mutation_cost: medium
 slice_size_envelope: medium
 required_stages: [coder, cleaner, architect, hardender, documenter, qa]
