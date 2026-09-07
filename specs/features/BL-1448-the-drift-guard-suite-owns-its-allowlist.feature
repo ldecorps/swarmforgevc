@@ -1,3 +1,8 @@
+# mutation-stamp: sha256=0f4dd54e91d5692e8407a7fd302ccfed07f61086eff952ed5dcbe6eba43ceba8
+# acceptance-mutation-manifest-begin
+# {"version":1,"tested_at":"2026-09-07T09:14:24.221351642Z","feature_name":"BL-1448 The drift-guard suite decides its own allowlist, never the live one","feature_path":"/home/carillon/swarmforgevc/.worktrees/hardender/specs/features/BL-1448-the-drift-guard-suite-owns-its-allowlist.feature","background_hash":"74234e98afe7498fb5daf1f36ac2d78acc339464f950703b8c019892f982b90b","implementation_hash":"unknown","scenarios":[{"index":0,"name":"the drift-guard suite passes every case whatever the live allowlist holds","scenario_hash":"c113d8713fc18c9610b3785b6e1382bf1157be6c09f9aa168cef8d23c5543fda","mutation_count":3,"result":{"Total":3,"Killed":3,"Survived":0,"Errors":0},"tested_at":"2026-09-07T09:14:24.221351642Z"}]}
+# acceptance-mutation-manifest-end
+
 Feature: BL-1448 The drift-guard suite decides its own allowlist, never the live one
 
   swarmforge/scripts/test/test_property_suite_drift_guard.sh drives the real

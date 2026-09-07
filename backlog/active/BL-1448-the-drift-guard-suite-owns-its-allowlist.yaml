@@ -151,3 +151,6 @@ source: |
   (BL-1252), 984a9a197b (BL-1407).
 
 assigned_to: coder
+bounce_count: 1
+bounce_history:
+  - { at: 2026-09-07, by: architect, blamed: cleaner, class: behavior, commit: 353b5fce1f, evidence: backlog/evidence/BL-1448-architect-bounce-20260907.md }
