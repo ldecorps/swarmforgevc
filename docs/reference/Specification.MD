@@ -1,5 +1,23 @@
 # SwarmForge VS Code Extension — Specification
 
+**Last Updated:** September 7, 2026 (BL-1479: a ticket that became
+unworkable after promotion (`status: blocked`, or a `not_before` later
+than today) held its active slot indefinitely — nothing but QA approval
+or a human hand ever moved a ticket out of `backlog/active/`. Measured
+2026-09-07: two of five slots (40%) were held this way for one and two
+days, while roughly thirty approved tickets sat paused. Fixed: a new
+handoffd sweep, `parked-active-sweep!` (`chase_sweep_lib.bb`'s
+`parked-active-items`/`park-ticket!`), parks a parkable active ticket back
+to `backlog/paused/` byte-identical — one `git mv` plus one
+`commit_integrity_cli.bb` commit naming the ticket and condition — unless
+a parcel for it is in flight in any role's mailbox, in which case it is
+left alone and the refusal is logged once, never noted to the coordinator
+every cycle (the 2026-08-31 STEERING rule against demoting in-flight work
+holds by construction). A parked ticket re-enters promotion by the
+ordinary rules once its condition clears. How-to:
+`docs/how-to/BL-1479-parked-active-sweep.md`; `backlog-schema.md`'s
+`status` and `not_before` rows each gain a sentence naming the sweep.)
+Prior entry —
 **Last Updated:** September 7, 2026 (BL-1470: BL-1466's `:bounced` sibling
 check (`bounce-blocking-state`) read `.swarmforge/bounces` under the
 CALLING worktree's own root, but `record-bounce.js` writes under the
