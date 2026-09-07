@@ -1,5 +1,25 @@
 # SwarmForge VS Code Extension — Specification
 
+**Last Updated:** September 7, 2026 (BL-1470: BL-1466's `:bounced` sibling
+check (`bounce-blocking-state`) read `.swarmforge/bounces` under the
+CALLING worktree's own root, but `record-bounce.js` writes under the
+master checkout — every ordinary `land_step_cli.bb` invocation (no third
+argument) and `land_main_publish.sh`'s own internal call resolve to the
+calling worktree, so the check silently answered "never bounced" for a
+sibling QA bounced hours earlier, restoring the exact hand-check interim
+the specifier had just retired on BL-1466's own landing note. Fixed:
+`bounce-blocking-state` now resolves the SHARED TARGET ROOT the same way
+`is_qa_ancestor.sh`'s land-approval store already does (`git rev-parse
+--git-common-dir`'s parent, BL-1339 option 2), reads both that root's and
+the caller's own `.swarmforge/bounces` when distinct, and unions the
+records — a bounce recorded under either root blocks, an unreadable store
+under either blocks, and only absence under both is genuinely
+never-bounced. `is_qa_ancestor.sh`'s own bounce-store reads and the bounce
+writers are untouched. Acceptance:
+`specs/features/BL-1470-the-bounce-check-reads-the-store-where-bounces-are-written.feature`.
+How-to: `docs/how-to/BL-1241-entangled-tip-at-the-land-step-has-a-reachable-remedy.md`'s
+`:bounced` sibling-state row now names the shared-root resolution.)
+Prior entry —
 **Last Updated:** September 7, 2026 (BL-1472: `land_step_lib.bb`'s
 `path-owner-tickets` counted a bounce revert and its reapply as untagged
 touches on the REVERTED commit's paths, and `own-paths` (BL-1315) keeps a
