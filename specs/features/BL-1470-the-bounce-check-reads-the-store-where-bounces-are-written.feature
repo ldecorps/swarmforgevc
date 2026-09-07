@@ -1,3 +1,8 @@
+# mutation-stamp: sha256=f85fc3c66427d99e9c44fc23461993035e235fba80fb3ddad787cb9da73e1428
+# acceptance-mutation-manifest-begin
+# {"version":1,"tested_at":"2026-09-07T22:39:58.923292127Z","feature_name":"BL-1470 The land step's bounce check reads the store where bounces are written, from any worktree","feature_path":"/home/carillon/swarmforgevc/.worktrees/hardender/specs/features/BL-1470-the-bounce-check-reads-the-store-where-bounces-are-written.feature","background_hash":"60ca9915fc105dd3b063e31b3e84071d445b6b6842d9a26b2f05ddb9810c41d7","implementation_hash":"unknown","scenarios":[{"index":3,"name":"a store that cannot be read in either root blocks rather than passes","scenario_hash":"b1c9a64ee66a76cf0591897f26614befbca5bd806a3b3b4d384a32dce12a376b","mutation_count":2,"result":{"Total":2,"Killed":2,"Survived":0,"Errors":0},"tested_at":"2026-09-07T22:39:58.923292127Z"}]}
+# acceptance-mutation-manifest-end
+
 Feature: BL-1470 The land step's bounce check reads the store where bounces are written, from any worktree
 
   BL-1466 gave the land step a bounce-aware sibling state: a sibling whose
