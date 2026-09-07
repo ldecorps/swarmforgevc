@@ -1,5 +1,30 @@
 # SwarmForge VS Code Extension — Specification
 
+**Last Updated:** September 7, 2026 (BL-1461: `land-plan`'s entanglement
+candidate walk was bounded to `:base` (the parcel's LAST recorded hop,
+BL-1432), so a sibling ticket's unlanded work absorbed into a shared
+cleaner/architect/hardener/documenter branch BEFORE that hop — the
+ordinary Article 2.6 shape — was never visited: `land_step_cli.bb BL-1448
+6c8caf27fb` and `... d854af2126` both answered a bare `LAND_CLEAN` on
+2026-09-07 while carrying BL-1349's unlanded `bounce_history`, caught only
+by an unrelated hand content-diff (`backlog/evidence/BL-1446-QA-followup-landclean-can-miss-preexisting-entanglement-20260907.md`).
+Fixed: the candidate range (`entangled-siblings`' own walk and the
+`candidates`/`lines-of` that feed it) now always runs `origin-main..commit`
+regardless of `:base` — the same range `own-paths`/`delivered-attribution`
+already used after BL-1446, so `LAND_CLEAN` is proof again with no
+sibling ever missed, wherever its commits fall relative to the parcel's
+hops. `:base` is still accepted for call-site compatibility but decides
+nothing; BL-1432's original invariant ("bounded and wide walks agree") is
+now trivially true by construction rather than a checked coincidence.
+BL-1432's original narrowing motive (avoiding a walk over the QA branch's
+forever-growing history, 1839 commits on 2026-09-05) is met a different
+way: BL-1438's post-land re-point keeps that range short (163 commits on
+2026-09-07) by construction. Retires `QA.prompt`'s "Until BL-1461 lands"
+interim hand-walk block. Acceptance:
+`specs/features/BL-1461-the-land-step-never-calls-a-tip-clean-over-an-unlanded-sibling.feature`.
+How-to: `docs/how-to/BL-1241-entangled-tip-at-the-land-step-has-a-reachable-remedy.md`
+(gains this section after BL-1447's).)
+Prior entry —
 **Last Updated:** September 7, 2026 (BL-1452: `record-bounce.js`,
 `record-qa-bounce.js` and `qa-sibling-check.js` refused `GH-<n>`
 GitHub-seeded ticket ids — `bounceArgsCore.ts`'s `TICKET_PATTERN
