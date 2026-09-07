@@ -27,41 +27,27 @@ const fs = require('node:fs');
 const path = require('node:path');
 const { spawnSync } = require('node:child_process');
 const { mkTmpDir } = require('./tmpDir');
+const { deriveCommitGuardFixtureSet } = require('./commitGuardFixtureSet');
 
 const REPO_ROOT = path.join(__dirname, '..', '..', '..');
 const RUNNER = path.join(REPO_ROOT, 'swarmforge', 'scripts', 'run_commit_guards.sh');
 
-const INDEX_GUARDS = [
-  'check_commit_size.sh',
-  'check_ticket_deletion.sh',
-  'check_pipeline_code_on_main.sh',
-  // BL-1303: a `main`-only guard that exits before doing any work on every
-  // other branch, so it belongs to the cheap tier the aggregation is about.
-  'check_feature_handler_registration.sh',
-  // BL-1385: joined the cheap tier on 2026-09-04 (run_commit_guards.sh, "Tier
-  // 1"). This list is hand-enumerated, so a guard added to the chain and not
-  // added here is left unstubbed by the fixture: the runner then reports it
-  // missing on every plan, and these properties fail against a chain that is
-  // behaving correctly.
-  'check_handler_module_graph.sh',
-  // BL-1395: joined the cheap tier on 2026-09-04 (run_commit_guards.sh, "Tier
-  // 1") - it loads every changed Babashka script and boots handoffd.
-  'check_bb_scripts_load.sh',
-  // BL-1428: joined the cheap tier 2026-09-05 - a standing-red register or
-  // ledger row a commit adds or changes must name an open ticket.
-  'check_standing_red_register.sh',
-  // BL-1440: joined the cheap tier 2026-09-06 - a staged constitution
-  // article must never cite a docs/ path that doesn't resolve.
-  'check_constitution_doc_citations.sh',
-  // BL-1424: joined the cheap tier 2026-09-06 - a commit that STAGES a new
-  // test file under swarmforge/scripts/test/ with no row in the STAGED
-  // suite-manifest.tsv is refused, the same question BL-1240 asks of a
-  // git_handoff, asked here too so a hotfix straight onto main (which
-  // sends no handoff) is caught.
-  'check_test_file_registration.sh',
-];
+// BL-1408: the runner's OWN guard set, read at require time through
+// BL-1398's helper - never a hand-enumerated list here, which is what made
+// BL-1385/BL-1395/BL-1428/BL-1440 each a separate hand edit of this file.
+// Scoped to the runner alone (hookRels: []): this fixture exercises
+// run_commit_guards.sh, never the pre-merge-commit hook's own separate
+// chain (e.g. check_art_director_tip.sh).
 const SUITE_GUARD = 'check_property_suite_drift.sh';
-const ALL_GUARDS = [...INDEX_GUARDS, SUITE_GUARD];
+const ALL_GUARDS = deriveCommitGuardFixtureSet({ repoRoot: REPO_ROOT, hookRels: [] }).guards;
+// Invariant 3: the only guard named by hand anywhere is the expensive
+// tier's single member, and this asserts it is actually in the derived
+// set rather than trusting the constant never drifts from the runner.
+assert.ok(
+  ALL_GUARDS.includes(SUITE_GUARD),
+  `SUITE_GUARD ${SUITE_GUARD} is not in the runner-derived guard set: ${JSON.stringify(ALL_GUARDS)}`
+);
+const INDEX_GUARDS = ALL_GUARDS.filter((g) => g !== SUITE_GUARD);
 
 // 0 = passes, 1 = the guard's OWN refusal, 2/127 = an unexpected failure,
 // 'missing' = the script is not there at all. Each is a distinct branch of
