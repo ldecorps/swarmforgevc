@@ -1,5 +1,30 @@
 # SwarmForge VS Code Extension — Specification
 
+**Last Updated:** September 7, 2026 (BL-1450:
+`bl968MaterializedGuardSensitivity.property.test.js` spawns a fresh
+process per draw over 3 classes × 2 depths × `RUNS_PER_CELL` runs — at
+`RUNS_PER_CELL` 4, 96 spawns per run, measuring 164-346s under host load
+this shift, above both its own 300s test timeout and the property guard's
+180s (now 600s, BL-1450 unaffected) rerun ceiling (BL-1407) — so every
+full lane run timed it out and refused whatever commit happened to be
+running, unrelated or not (BL-676's docs-only commit refused
+2026-09-06). Fixed: `RUNS_PER_CELL` 4→1 and the two reach floors
+(`CLASS_FLOOR`/`DEPTH_FLOOR`) re-derived from `DEPTHS.length *
+RUNS_PER_CELL` / `CLASSES.length * RUNS_PER_CELL` instead of hand-typed
+constants (BL-1062's own invariant 2 stands: every class×depth cell is
+still exercised, every floor still asserted), test timeout 300000→120000ms.
+The property body, its assertions, and the fresh-process-per-draw shape
+BL-968 is about are byte-identical — no cell dropped, no assertion
+weakened. File now completes alone in 45-67s, comfortably under its 60s
+budget. Verifying this ticket's own e2e surfaced an unrelated standing red
+in a sibling BL-968 feature (a hard-coded `backlog/active/BL-968-*.yaml`
+path stale since that ticket's 2026-08-20 closure) — not fixed here, owned
+by BL-1462. Acceptance:
+`specs/features/BL-1450-the-bl968-sensitivity-property-fits-a-budget.feature`.
+How-to: `docs/how-to/BL-570-property-suite-drift-guard.md` (the rerun-
+ceiling paragraph's BL-1450 forward-reference updated from pending to
+landed).)
+Prior entry —
 **Last Updated:** September 7, 2026 (BL-1349: the property lane's wall
 clock had a hard floor no fork count could lower — `npm run
 test:properties` measured 143s wall against 532s of summed per-file work
