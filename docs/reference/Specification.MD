@@ -1,5 +1,32 @@
 # SwarmForge VS Code Extension — Specification
 
+**Last Updated:** September 7, 2026 (BL-1447: nothing between building a
+land-step replay tip and publishing it ever asked whether the tip carried
+the parcel's own work — the 2026-09-06 incident
+(`backlog/evidence/BL-1424-land-replay-dropped-own-paths-incident-20260906.md`,
+BL-1446's root cause) shipped `LAND_PUBLISHED` on a replay holding five
+evidence files and none of the actual deliverable, caught only by QA
+hand-diffing against the coder's file list — a replay is a fresh commit
+off `origin/main`, so it diffs cleanly against its own parents and the
+existing Guardrails both-parents check cannot see this failure mode.
+Fixed: `land-plan` now verifies its own replay before returning `:replay`
+— it reads the parcel's own path set independently
+(`parcel-commit-paths`, from the parcel's own commit history via
+`diff-tree`, never the attribution that built the replay, so it cannot
+share that attribution's blind spot — invariant 2) and compares it against
+the built tip (`replay-completeness-offenders`, a pure blob-map
+comparison); any missing or differing path escalates
+(`{:action :escalate :reason "replay-incomplete: <path> ..."}`, every
+offender named at once per Article 4.4) instead of publishing, deleting
+the incomplete replay branch. A complete replay still reports
+`LAND_REPLAY` exactly as before. `land_step_cli.bb` and
+`land_main_publish.sh` need no change — an escalation prints and stops
+exactly like any other. Retires QA.prompt's interim hand-check that stood
+in for this since 2026-09-06. Acceptance:
+`specs/features/BL-1447-a-replay-missing-a-parcel-path-is-refused-before-publish.feature`.
+How-to: `docs/how-to/BL-1241-entangled-tip-at-the-land-step-has-a-reachable-remedy.md`
+(gains the fourth `land-plan` outcome, after the BL-1446 section).)
+Prior entry —
 **Last Updated:** September 7, 2026 (BL-1450:
 `bl968MaterializedGuardSensitivity.property.test.js` spawns a fresh
 process per draw over 3 classes × 2 depths × `RUNS_PER_CELL` runs — at
