@@ -1,5 +1,33 @@
 # SwarmForge VS Code Extension — Specification
 
+**Last Updated:** September 7, 2026 (BL-1349: the property lane's wall
+clock had a hard floor no fork count could lower — `npm run
+test:properties` measured 143s wall against 532s of summed per-file work
+on 2026-09-02, and three files (spawning real processes inside a
+fast-check sampled property) dominated: `onboarderLauncherPidGuard.property.test.js`
+(79s, 15 samples × 7 spawns + a sleep), `bl1252CommitGuardAggregationInvariants.property.test.js`
+(37s, five properties at `numRuns` 120, each spawning), and
+`bl787NamedTunnelInvariants.property.test.js` (32s). Sampling a subprocess
+spawn 120 times buys nothing a smaller sample doesn't already buy — the
+interesting states are shaped by the spawn's arguments, not by repeat
+count. Fixed: `numRuns` reduced only on spawn-heavy properties (onboarder
+15→2, bl787 6→2, each bl1252 split 120→60), the sleep replaced with the
+existing fake-clock seam, and the one bl1252 file split into five
+(`bl1252ExpensiveGuardTieringInvariant`, `bl1252IndexGuardsAllRunInvariant`,
+`bl1252RefusalPredicateUnchangedInvariant`,
+`bl1252UnexpectedFailureNeverPassesInvariant`,
+`bl1252ViolatingGuardsAllNamedInvariant`, sharing spawn plumbing via
+`extension/test/helpers/bl1252CommitGuardFixture.js`) so the lane can
+parallelise what used to be one 37s file. All seven named files now run
+under the ticket's 15s per-file budget; no property was deleted or
+weakened — every `fc.property`/`fc.assert` present before is still
+present (invariant 1, checked by acceptance scenario 02's no-deletion
+diff). Acceptance:
+`specs/features/BL-1349-spawn-heavy-property-files-fit-a-budget.feature`.
+How-to: `docs/how-to/BL-1252-commit-guard-chain-reports-every-violation.md`
+(Related section gains a BL-1349 entry; its stale Verify command naming
+the deleted single-file test updated to the five split files).)
+Prior entry —
 **Last Updated:** September 7, 2026 (BL-1446: `land_step_lib.bb`'s land-plan
 bounded its attribution walk (BL-1432) to the task's last recorded handoff
 commit — right for the send-time scope gate, wrong for the land step twice.
