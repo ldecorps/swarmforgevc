@@ -8,11 +8,11 @@
  * CLI's own args module while everything else lives here once.
  */
 import { isKnownFailureClass, isKnownProducingRole, isKnownTicketType, QaBounceFailureClass, QaBounceProducingRole, QaBounceTicketType } from '../quality/qaBounce';
+import { isBacklogTicketId } from './backlogTicketId';
 
 export const FLAG_NAMES = ['--ticket', '--role', '--type', '--class', '--commit', '--by', '--evidence'] as const;
 export type FlagName = (typeof FLAG_NAMES)[number];
 
-const TICKET_PATTERN = /^BL-\d+$/i;
 const EVIDENCE_PATTERN = /^backlog\/evidence\/[^/]+\.md$/;
 
 // Pure - parses `--flag value` pairs (any order) into a lookup, or null on
@@ -41,10 +41,6 @@ export function isValid<T extends string>(value: string | undefined, predicate: 
   return !!value && predicate(value);
 }
 
-function isValidTicket(value: string | undefined): value is string {
-  return !!value && TICKET_PATTERN.test(value);
-}
-
 export function isValidEvidence(value: string | undefined): value is string {
   return !!value && EVIDENCE_PATTERN.test(value);
 }
@@ -63,7 +59,7 @@ export interface CoreBounceFields {
 // so each validates it in its own file.
 export function validatedCoreFields(flags: Partial<Record<FlagName, string>>): CoreBounceFields | null {
   const { '--ticket': ticket, '--role': producingRole, '--type': ticketType, '--class': failureClass, '--commit': commit } = flags;
-  if (!isValidTicket(ticket)) {
+  if (!isBacklogTicketId(ticket)) {
     return null;
   }
   if (!isValid(producingRole, isKnownProducingRole)) {
