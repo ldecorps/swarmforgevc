@@ -1,0 +1,193 @@
+id: BL-1480
+title: "Two promote_and_route_next standing shell tests have been red on main since 2026-08-20 with no owner: their fixtures hand-copy the promotion gates' 2026-08-08 bb closure, backlog_depth_lib.bb now load-files daemon_cycle_guard_lib.bb and promotion_gates_lib.bb three more libs, so the fixture's bb dies at load - the priority test fails outright and the no-limit test falls back to the default cap of 5 and asserts on the wrong thing; both fixtures derive their copy set with copy_bb_closure and are enrolled in BL-973's closure guard"
+milestone: M8
+type: defect
+severity: high
+# high: a standing red is severity high at first sighting (Article 3.2.4,
+# 2026-09-05 amendment). Two standing manifest rows red for 18 days, one of
+# them failing for the WRONG reason (default cap 5 masquerading as a real
+# gate refusal) - the false-green half BL-1279 warned about. Unowned until
+# this mint, so it throttled the register the moment the coder named it.
+status: todo
+epic: code-quality-gates
+priority: 8
+direction: swarm-reported
+depends_on: []
+mutation_cost: low
+# low: two shell fixtures switch to copy_bb_closure, two entries in
+# bbFixtureClosureGate.js FIXTURES, a load preflight in the fixtures. No
+# TypeScript; Babashka/shell have no mutation wired (BL-472).
+slice_size_envelope: low
+required_stages: [coder, cleaner, architect, hardender, documenter, qa]
+
+acceptance: specs/features/BL-1480-the-promotion-fixtures-carry-their-subjects-bb-closure.feature
+
+# The consumer anchor is the enrolment itself: a copy-list derived today rots
+# tomorrow unless the guard watches it. The literal is the fixture's own file
+# name inside the guard's FIXTURES map - absent today, present only when the
+# fixture is enrolled (BL-1279 used the same anchor shape).
+required_wiring:
+  - 'specs/pipeline/steps/lib/bbFixtureClosureGate.js::test_promote_and_route_next_priority.sh::both fixtures are enrolled in the closure guard so the lists cannot rot again'
+  - 'specs/pipeline/steps/bl1480PromoteRouteFixtureClosureSteps.js::registerSteps::the handler lands in the same parcel as the feature (BL-233)'
+
+human_approval: pending
+approval_context: >
+  A new feature file is authored here, so it needs a tap. No choice is
+  posed and there are no ruling_options. FIRM: the fix is in the two test
+  fixtures and the guard's enrolment table only - promote_and_route_next.sh
+  and the promotion gates themselves are not changed. Worth knowing: one of
+  the two tests has been failing for the WRONG reason - the fixture's
+  effective-cap CLI dies at load, promotion_gates_cli.bb silently falls
+  back to the default cap of 5, and the test reports a depth refusal it
+  never configured. Making that production fallback loud is a separate
+  slice recorded on the code-quality-gates epic, not folded in here.
+  Minted by the specifier on the coder's unowned-red note of 2026-09-07
+  20:55Z, reproduced on main.
+
+invariants:
+  - "Each promote_and_route_next fixture's disposable root contains the full transitive load-file closure of every bb entry point the fixture drives, derived at run time from the repository's own files - no fixture in this ticket's scope names a .bb file by hand."
+  - "A fixture whose bb entry point cannot load reports that load failure and passes no check: a dead subprocess is never read as a refusal, a default, or a success."
+
+description: |
+  ## What is wrong
+
+  `swarmforge/scripts/test/test_promote_and_route_next_priority.sh` (lines
+  26-34) and `test_promote_and_route_next_no_limit_depth.sh` (lines 30-36,
+  106-110) build a scratch root by `cp`-ing a hand-typed list of .bb files:
+  `promotion_gates_cli.bb`, `promotion_gates_lib.bb`, `backlog_depth_lib.bb`,
+  `swarm_identity_lib.bb`, plus (no-limit only) `backlog_depth_cli.bb`,
+  `backlog_depth_conf_path_cli.bb`, `effective_backlog_depth_cli.bb`. Both
+  were last edited 2026-08-08 (BL-853). Since then:
+
+  - `backlog_depth_lib.bb:42` load-files `daemon_cycle_guard_lib.bb`
+    (BL-966, 5c8b0835f8, 2026-08-20).
+  - `promotion_gates_lib.bb:30-33` load-files `acceptance_pointer_gate_lib.bb`
+    (BL-626, 2026-08-25), `headroom_cap_raise_lib.bb` (BL-1128, 2026-08-25)
+    and `slice_size_envelope_gate_lib.bb` (BL-634, 2026-08-27).
+
+  Reproduced by the specifier 2026-09-07 on main 75c1c7aedb, from the
+  master checkout and the coder worktree alike:
+
+  - priority test: exit 1. bb stack `promotion_gates_cli.bb:65 ->
+    promotion_gates_lib.bb:26 -> backlog_depth_lib.bb:42`,
+    `java.io.FileNotFoundException: <root>/swarmforge/scripts/daemon_cycle_guard_lib.bb`;
+    promote_and_route_next.sh then prints "Error: no eligible paused
+    ticket" and the test fails on that.
+  - no-limit test: exit 2. The copied `effective_backlog_depth_cli.bb` dies
+    at the same load edge, `promotion_gates_cli.bb:130-139` falls back to
+    `parse-max-depth` on a conf it cannot resolve in the fixture, gets the
+    default 5, and the test sees "active_backlog_max_depth gate: active
+    count 5 >= cap 5 - no open slot" against a fixture that configured -1.
+    Had the fixture held four actives instead of five, this test would be
+    GREEN over a dead CLI - the false-green half.
+
+  Both are `standing` rows in `swarmforge/scripts/test/suite-manifest.tsv`
+  (lines 399-400), so they run and the red was visible; nobody owned it.
+  BL-973 shipped `copy_bb_closure` (`swarmforge/scripts/test/lib/bb_closure_copy.sh`)
+  and the closure guard (`specs/pipeline/steps/lib/bbFixtureClosureGate.js`)
+  for this exact rot, and BL-1279 fixed four front-desk fixtures that were
+  never enrolled in it. These two were never enrolled either: the guard's
+  `FIXTURES` map is hand-enumerated (nine entries today), so a fixture it
+  does not name rots beside a green guard.
+
+  ## What is wanted
+
+  - Both fixtures replace their `cp` lists with `copy_bb_closure "$SCRIPTS"
+    "$ROOT/swarmforge/scripts" <entry points>` naming the bb entry points
+    the fixture actually drives - `promotion_gates_cli.bb` for both, plus
+    `effective_backlog_depth_cli.bb`, `backlog_depth_cli.bb` and
+    `backlog_depth_conf_path_cli.bb` for the no-limit fixture, which
+    promote_and_route_next.sh shells to directly (lines 107-113) so no walk
+    from promotion_gates_cli.bb reaches them (scenarios 01, 02; invariant 1).
+    The no-limit fixture builds two roots; both derive.
+  - Both fixtures are enrolled in `bbFixtureClosureGate.js` `FIXTURES` as
+    `kind: 'shell-copy'` with their entry point(s), so BL-973's guard fails
+    the moment a future edge is added upstream (`required_wiring`).
+  - Both standing tests exit zero on main after the parcel (scenario 03).
+  - Each fixture preflights its copied entry points (`bb <entry> --help` or
+    an equivalent load-only call) before asserting behaviour, and fails
+    naming the file that could not be loaded with no check reported as
+    passed (scenario 04; invariant 2) - the same discipline BL-1279 added
+    to the front-desk fixtures.
+  - Register: this ticket's two rows in `backlog/standing-reds.tsv` (added
+    at mint, first_seen 2026-08-20) are removed in the land that turns the
+    tests green - QA's land, or the coordinator's close if the land is
+    hand-built (BL-1272's row was missed that way on 2026-09-07).
+  - Documenter: `docs/how-to/` page for BL-973/BL-1279 gains the two
+    fixtures in its enrolled list; no registered diagram depicts this.
+
+  ## How (direction, not mandate)
+
+  - Read BL-1279's parcel first: the four front-desk fixtures are the
+    worked example of exactly this change (copy_bb_closure call, FIXTURES
+    entry, load preflight, handler shape `bl1279FrontDeskFixtureClosureSteps.js`).
+  - Scenario 02's scratch tree: copy the repo's scripts dir under mkdtemp,
+    append one `load-file` line to the copied `promotion_gates_lib.bb`, run
+    each fixture's root-building step against it, assert the new file
+    arrived. Never edit the live repository's scripts.
+  - Do NOT fix this by adding the four missing files to the `cp` lists by
+    hand - that is the 2026-08-08 shape that rotted, and the guard would
+    still not know these fixtures exist.
+  - The production fallback in `promotion_gates_cli.bb:130-139` (dead
+    effective-cap CLI -> default 5, silently) is NOT changed here; it is
+    named as its own slice on the code-quality-gates epic.
+
+constraints: >
+  Shell and JavaScript test infrastructure only; promote_and_route_next.sh,
+  promotion_gates_cli.bb and the libs are untouched. Fixture roots under
+  mkdtemp with their own git init, never the live repository (BL-1390). The
+  guard's FIXTURES map gains two entries and loses none. The step handler
+  lands with the feature (BL-233). suite-manifest.tsv rows stay `standing`.
+
+out_of_scope: |
+  - Making promotion_gates_cli.bb's fallback to parse-max-depth loud when
+    effective_backlog_depth_cli.bb fails (a dead CLI reads as cap 5 today) -
+    recorded on epic BL-541's remaining_slices, not this ticket.
+  - Deriving the closure guard's MEMBERSHIP instead of hand-enumerating it
+    (BL-1279's recorded follow-up; third occurrence now) - same epic entry.
+  - Any other unenrolled fixture: `grep -l 'cp "\$SCRIPTS/.*\.bb"'
+    swarmforge/scripts/test/*.sh` names three files today; the third is
+    checked and named in the coder's evidence but fixed only if it is red.
+
+qa_e2e_procedure: |
+  1. `bash swarmforge/scripts/test/test_promote_and_route_next_priority.sh`
+     and `bash swarmforge/scripts/test/test_promote_and_route_next_no_limit_depth.sh`
+     exit 0 from the master checkout AND from the QA worktree, with
+     `PACK_STAFFING_SKIP_GATE` both set and unset (the pane hatch, BL-1457).
+  2. Acceptance: all four BL-1480 scenarios resolve; BL-973's and BL-1279's
+     features still resolve (one feature per run_acceptance.sh call).
+  3. `grep -n 'test_promote_and_route_next' specs/pipeline/steps/lib/bbFixtureClosureGate.js`
+     shows both fixtures with `kind: 'shell-copy'`; `grep -c 'cp "\$SCRIPTS/.*\.bb"'`
+     on each fixture is 0.
+  4. Scratch check of the guard: append a `load-file` of a new empty lib to a
+     COPY of promotion_gates_lib.bb under mkdtemp and run the guard against
+     it - it names both fixtures as needing the new file; the live repo is
+     never edited.
+  5. Register: after QA lands, `backlog/standing-reds.tsv` carries no row for
+     either test and `bb swarmforge/scripts/standing_red_register_cli.bb .`
+     reports none unowned.
+
+source: |
+  Coder note to the specifier, priority 00, 2026-09-07T20:55Z: "unowned-reds
+  promote_and_route_next shell tests: stale bb copy-list (BL-973)", raised
+  while the coder worked BL-1469 (which touches promotion_gates_lib.bb).
+  Reproduced by the specifier on main 75c1c7aedb the same pass; both tests
+  exit non-zero from the master checkout and from the coder worktree.
+  Related: BL-973 (done, the helper and guard), BL-1279 (done, four
+  front-desk fixtures with the same rot), BL-966/BL-626/BL-1128/BL-634 (the
+  four load-file edges the lists lack).
+
+notes: |
+  - Minted 2026-09-07 by the specifier on the coder's unowned-red note.
+    Grepped first: no open ticket names either test; BL-973 and BL-1279 are
+    done; BL-1408 owns the commit-guard shell reds, not these.
+  - Article 3.2.4 / 4.2: type defect, severity high, standing red; two rows
+    added to backlog/standing-reds.tsv in the mint commit, first_seen
+    2026-08-20 (the BL-966 edge), so the register never reads them unowned.
+  - Not BL-1469's defect: the reds predate that parcel by 18 days and
+    reproduce on main without it. BL-1469 may proceed; QA reads these rows
+    as owned.
+  - IR-DRY (specifier, mint pass): scenarios 01 and 03 are Outlines over the
+    two fixture files by design (one handler each); scenario 04 mirrors
+    BL-1279's scenario of the same name deliberately - same discipline,
+    different fixtures.
