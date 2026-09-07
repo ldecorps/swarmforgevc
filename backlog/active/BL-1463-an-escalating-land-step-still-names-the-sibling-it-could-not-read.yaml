@@ -30,6 +30,8 @@ required_wiring:
   - 'swarmforge/scripts/land_step_cli.bb::ENTANGLED_SIBLING::the CLI prints the sibling lines on escalate as it already does on replay (line 148); this anchor pre-exists for the replay path and pins only that the literal stays'
 
 human_approval: approved
+abandoned_commits:
+  - e06fb1dbf8
 approval_context: >
   A new feature file is authored here, so it needs a tap. No choice is
   posed and there are no ruling_options. What is FIRM: BL-1343's refusal
