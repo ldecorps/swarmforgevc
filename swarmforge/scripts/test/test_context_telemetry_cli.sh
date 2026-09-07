@@ -126,4 +126,114 @@ AGENTS_OUT="$(bb "$CLI" agents)"
 
 pass "10: agents lists the distinct, sorted agents with recorded telemetry"
 
+# ── BL-1477: a torn store tail cannot silence the CLI ───────────────────────
+
+TORN_STATE_DIR="$(mktemp -d)"
+{
+  printf '{"agent":"coder","role":"coder","session_id":"t1","timestamp":"2026-01-01T00:00:00Z","input_tokens":1,"output_tokens":1,"context_utilization_pct":1,"compaction":false,"provider":"anthropic","model":"m"}\n'
+  printf '{"agent":"coder","role":"coder","session_id":"t2","timestamp":"2026-01-01T00:00:01Z","input_tokens":1,"output_tokens":1,"context_utilization_pct":1,"compaction":false,"provider":"anthropic","model":"m"}\n'
+  head -c 4000 /dev/zero
+} > "$TORN_STATE_DIR/context-events.jsonl"
+
+TORN_OUT="$(CONTEXT_TELEMETRY_STATE_DIR="$TORN_STATE_DIR" bb "$CLI" summary --agent coder 2>"$TORN_STATE_DIR/stderr.out")"
+[[ "$TORN_OUT" == *'"event_count":2'* ]] || fail "11: a NUL-byte torn tail should still read the 2 whole records"
+grep -q "torn tail dropped at line 3" "$TORN_STATE_DIR/stderr.out" \
+  || fail "11: summary did not name the torn tail line on stderr"
+rm -rf "$TORN_STATE_DIR"
+
+pass "11: a store whose final line is NUL bytes is read as every whole record before it, torn tail named"
+
+# ── 12: interior damage refuses and names the line, whatever command asks ──
+
+DAMAGE_STATE_DIR="$(mktemp -d)"
+{
+  printf '{"agent":"coder","role":"coder","session_id":"d1","timestamp":"2026-01-01T00:00:00Z","input_tokens":1,"output_tokens":1,"context_utilization_pct":1,"compaction":false,"provider":"anthropic","model":"m"}\n'
+  printf 'not valid json at all\n'
+  printf '{"agent":"coder","role":"coder","session_id":"d2","timestamp":"2026-01-01T00:00:01Z","input_tokens":1,"output_tokens":1,"context_utilization_pct":1,"compaction":false,"provider":"anthropic","model":"m"}\n'
+} > "$DAMAGE_STATE_DIR/context-events.jsonl"
+
+CONTEXT_TELEMETRY_STATE_DIR="$DAMAGE_STATE_DIR" bb "$CLI" summary --agent coder \
+  >"$DAMAGE_STATE_DIR/stdout.out" 2>"$DAMAGE_STATE_DIR/stderr.out" \
+  && fail "12: summary should exit non-zero on interior damage" || true
+[[ ! -s "$DAMAGE_STATE_DIR/stdout.out" ]] || fail "12: summary should print nothing on stdout when it refuses"
+grep -q "unparseable line 2" "$DAMAGE_STATE_DIR/stderr.out" \
+  || fail "12: summary did not name the damaged line number"
+rm -rf "$DAMAGE_STATE_DIR"
+
+pass "12: interior damage refuses to record/summarize and names the damaged line"
+
+# ── 13: the writer ensures a trailing newline before appending ─────────────
+
+NEWLINE_STATE_DIR="$(mktemp -d)"
+printf '{"agent":"coder","role":"coder","session_id":"n1","timestamp":"2026-01-01T00:00:00Z","input_tokens":1,"output_tokens":1,"context_utilization_pct":1,"compaction":false,"provider":"anthropic","model":"m"}' \
+  > "$NEWLINE_STATE_DIR/context-events.jsonl"
+[[ "$(tail -c 1 "$NEWLINE_STATE_DIR/context-events.jsonl")" != "" ]] \
+  || fail "13 setup: fixture should start with no trailing newline"
+
+CONTEXT_TELEMETRY_STATE_DIR="$NEWLINE_STATE_DIR" bb "$CLI" record --agent coder --role coder --session-id n2 \
+  --timestamp 2026-01-01T00:00:01Z --input-tokens 1 --output-tokens 1 --context-utilization-pct 1 \
+  --provider anthropic --model m >/dev/null
+[[ "$(wc -l < "$NEWLINE_STATE_DIR/context-events.jsonl")" -eq 2 ]] \
+  || fail "13: appending onto a tail with no trailing newline glued the new record onto it"
+NEWLINE_SUMMARY="$(CONTEXT_TELEMETRY_STATE_DIR="$NEWLINE_STATE_DIR" bb "$CLI" summary --agent coder)"
+[[ "$NEWLINE_SUMMARY" == *'"event_count":2'* ]] || fail "13: both records should read back cleanly"
+rm -rf "$NEWLINE_STATE_DIR"
+
+pass "13: the writer ensures a trailing newline before appending (invariant 3)"
+
+# ── 14: record-batch appends every event in one call, one spawn per tick ──
+
+BATCH_STATE_DIR="$(mktemp -d)"
+BATCH_INPUT='{"agent":"coder","role":"coder","session_id":"b1","timestamp":"2026-01-01T00:00:00Z","input_tokens":1,"output_tokens":1,"context_utilization_pct":1,"compaction":false,"provider":"anthropic","model":"m"}
+{"agent":"coder","role":"coder","session_id":"b2","timestamp":"2026-01-01T00:00:01Z","input_tokens":2,"output_tokens":2,"context_utilization_pct":2,"compaction":false,"provider":"anthropic","model":"m"}
+{"agent":"coder","role":"coder","session_id":"b3","timestamp":"2026-01-01T00:00:02Z","input_tokens":3,"output_tokens":3,"context_utilization_pct":3,"compaction":true,"provider":"anthropic","model":"m"}'
+BATCH_OUT="$(printf '%s\n' "$BATCH_INPUT" | CONTEXT_TELEMETRY_STATE_DIR="$BATCH_STATE_DIR" bb "$CLI" record-batch)"
+[[ "$BATCH_OUT" == "recorded 3" ]] || fail "14: record-batch should report recorded 3, got: $BATCH_OUT"
+[[ "$(wc -l < "$BATCH_STATE_DIR/context-events.jsonl")" -eq 3 ]] || fail "14: expected 3 lines after one record-batch call"
+BATCH_SUMMARY="$(CONTEXT_TELEMETRY_STATE_DIR="$BATCH_STATE_DIR" bb "$CLI" summary --agent coder)"
+[[ "$BATCH_SUMMARY" == *'"event_count":3'* ]] || fail "14: all 3 batched events should read back"
+rm -rf "$BATCH_STATE_DIR"
+
+pass "14: record-batch reads JSONL from stdin and appends every event in one spawn"
+
+# ── 15: record-batch validates every line BEFORE appending any (atomic) ────
+
+ATOMIC_STATE_DIR="$(mktemp -d)"
+ATOMIC_INPUT='{"agent":"coder","role":"coder","session_id":"a1","timestamp":"2026-01-01T00:00:00Z","input_tokens":1,"output_tokens":1,"context_utilization_pct":1,"compaction":false,"provider":"anthropic","model":"m"}
+{"agent":"coder","role":"coder","session_id":"a2","timestamp":"2026-01-01T00:00:01Z","input_tokens":"not-a-number","output_tokens":1,"context_utilization_pct":1,"compaction":false,"provider":"anthropic","model":"m"}'
+printf '%s\n' "$ATOMIC_INPUT" | CONTEXT_TELEMETRY_STATE_DIR="$ATOMIC_STATE_DIR" bb "$CLI" record-batch \
+  >"$ATOMIC_STATE_DIR/stdout.out" 2>"$ATOMIC_STATE_DIR/stderr.out" \
+  && fail "15: record-batch should exit non-zero when any event is invalid" || true
+grep -q "non-numeric value for field: input_tokens" "$ATOMIC_STATE_DIR/stderr.out" \
+  || fail "15: record-batch did not report the invalid field by name"
+[[ ! -f "$ATOMIC_STATE_DIR/context-events.jsonl" ]] \
+  || fail "15: record-batch must append NOTHING when any event in the batch is invalid"
+rm -rf "$ATOMIC_STATE_DIR"
+
+pass "15: record-batch validates every event before appending any (atomic)"
+
+# ── 16: appending after a torn NUL tail drops it, never leaves it as a
+#         permanent interior line (invariant 3's actual failure mode: a
+#         torn tail tolerated on read must not become interior damage the
+#         moment something new is appended) ─────────────────────────────
+
+TORN_APPEND_STATE_DIR="$(mktemp -d)"
+{
+  printf '{"agent":"coder","role":"coder","session_id":"g1","timestamp":"2026-01-01T00:00:00Z","input_tokens":1,"output_tokens":1,"context_utilization_pct":1,"compaction":false,"provider":"anthropic","model":"m"}\n'
+  head -c 4000 /dev/zero
+} > "$TORN_APPEND_STATE_DIR/context-events.jsonl"
+
+CONTEXT_TELEMETRY_STATE_DIR="$TORN_APPEND_STATE_DIR" bb "$CLI" record --agent coder --role coder --session-id g2 \
+  --timestamp 2026-01-01T00:00:01Z --input-tokens 1 --output-tokens 1 --context-utilization-pct 1 \
+  --provider anthropic --model m >/dev/null
+
+TORN_APPEND_OUT="$(CONTEXT_TELEMETRY_STATE_DIR="$TORN_APPEND_STATE_DIR" bb "$CLI" summary --agent coder 2>"$TORN_APPEND_STATE_DIR/stderr.out")"
+[[ "$TORN_APPEND_OUT" == *'"event_count":2'* ]] \
+  || fail "16: both records should read back after appending onto a torn tail, got: $TORN_APPEND_OUT"
+[[ ! -s "$TORN_APPEND_STATE_DIR/stderr.out" ]] \
+  || fail "16: a torn tail dropped by the writer should not still be reported as interior damage: $(cat "$TORN_APPEND_STATE_DIR/stderr.out")"
+rm -rf "$TORN_APPEND_STATE_DIR"
+
+pass "16: appending after a torn NUL tail drops it instead of leaving permanent interior damage"
+
 echo "ALL PASS"

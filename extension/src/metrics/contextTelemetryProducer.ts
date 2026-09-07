@@ -1,14 +1,19 @@
-import * as fs from 'fs';
 import * as path from 'path';
-import { execFileSync } from 'child_process';
 import { TranscriptUsageRecord, listTranscriptJsonlPaths, readTranscriptUsage } from './transcriptUsage';
-import { walkTranscriptFiles } from './transcriptWalker';
 import { RoleWorktree, combinedRoleKey, groupRolesByWorktreePath } from './swarmMetrics';
+import { readPersistedContextEvents, recordEventsViaCliBatch } from './contextTelemetryStore';
+
+export { stripNulBytes, readPersistedContextEvents, PersistedContextEventsRead } from './contextTelemetryStore';
 
 // BL-665: deterministic transcript-walker producer for GH-22's context-events
-// store. Reuses BL-664's walkTranscriptFiles (read-only taxonomy pass) and
-// BL-100's readTranscriptUsage (token/model/timestamp extraction) — ONE
-// walker substrate, no second parser. Idempotent via agent+session_id+timestamp.
+// store, built on BL-664's walker substrate via BL-100's readTranscriptUsage
+// (token/model/timestamp extraction) — one walker substrate, no second
+// parser. Idempotent via agent+session_id+timestamp.
+//
+// BL-1477: deriveEventsForRoleGroup used to also call walkTranscriptFiles
+// directly and discard its result (~3.4s per role of pure cost, on top of
+// readTranscriptUsage's own walk) - removed, since readTranscriptUsage
+// already provides the walker substrate this feature is built on.
 
 export const DEFAULT_CONTEXT_WINDOW_TOKENS = 200_000;
 
@@ -106,18 +111,6 @@ export function deriveContextEventsFromUsageRecords(
   return events;
 }
 
-export function readPersistedContextEvents(telemetryDir: string): ContextTelemetryRecord[] {
-  const filePath = path.join(telemetryDir, 'context-events.jsonl');
-  if (!fs.existsSync(filePath)) {
-    return [];
-  }
-  return fs
-    .readFileSync(filePath, 'utf8')
-    .split('\n')
-    .filter((line) => line.trim())
-    .map((line) => JSON.parse(line) as ContextTelemetryRecord);
-}
-
 export function filterNewContextEvents(
   existing: ContextTelemetryRecord[],
   derived: ContextTelemetryRecord[]
@@ -126,40 +119,40 @@ export function filterNewContextEvents(
   return derived.filter((event) => !seen.has(eventDedupeKey(event)));
 }
 
-function recordEventViaCli(repoRoot: string, telemetryDir: string, event: ContextTelemetryRecord): void {
-  const cli = path.join(repoRoot, 'swarmforge', 'scripts', 'context_telemetry_cli.bb');
-  execFileSync(
-    'bb',
-    [
-      cli,
-      'record',
-      '--agent',
-      event.agent,
-      '--role',
-      event.role,
-      '--session-id',
-      event.session_id,
-      '--timestamp',
-      event.timestamp,
-      '--input-tokens',
-      String(event.input_tokens),
-      '--output-tokens',
-      String(event.output_tokens),
-      '--context-utilization-pct',
-      String(event.context_utilization_pct),
-      '--compaction',
-      event.compaction ? 'true' : 'false',
-      '--provider',
-      event.provider,
-      '--model',
-      event.model,
-    ],
-    {
-      encoding: 'utf8',
-      env: { ...process.env, CONTEXT_TELEMETRY_STATE_DIR: telemetryDir },
+/**
+ * BL-1477 invariant 2: a tick records at most `cap` events, oldest first,
+ * and stops once the clock has PASSED `deadlineMs` since this call started -
+ * an event already in progress when the deadline arrives is still recorded
+ * (the deadline bounds when the NEXT one may start, not a mid-record abort).
+ * `events` must already be sorted oldest-first (invariant 2's own "in
+ * timestamp order"); `nowFn` is called once per event actually selected, so
+ * the elapsed-time check advances in lockstep with what was recorded, never
+ * with wall-clock time this function did not itself observe.
+ */
+export function selectEventsWithinLimits(
+  events: ContextTelemetryRecord[],
+  cap: number,
+  deadlineMs: number,
+  nowFn: () => number
+): { selected: ContextTelemetryRecord[]; remaining: ContextTelemetryRecord[] } {
+  const start = nowFn();
+  const selected: ContextTelemetryRecord[] = [];
+  let elapsedMs = 0;
+  for (const event of events) {
+    if (selected.length >= cap) {
+      break;
     }
-  );
+    if (elapsedMs >= deadlineMs) {
+      break;
+    }
+    selected.push(event);
+    elapsedMs = nowFn() - start;
+  }
+  return { selected, remaining: events.slice(selected.length) };
 }
+
+export const DEFAULT_CONTEXT_TELEMETRY_CAP_PER_TICK = 500;
+export const DEFAULT_CONTEXT_TELEMETRY_DEADLINE_MS = 30_000;
 
 export function deriveEventsForRoleGroup(
   group: RoleWorktree[],
@@ -173,7 +166,6 @@ export function deriveEventsForRoleGroup(
   if (transcriptPaths.length === 0) {
     return [];
   }
-  walkTranscriptFiles(transcriptPaths);
   const usageRecords = readTranscriptUsage(worktreePath, claudeProjectsDir);
   return deriveContextEventsFromUsageRecords(agent, role, provider, usageRecords);
 }
@@ -182,6 +174,10 @@ export interface ContextTelemetryProducerResult {
   recorded: number;
   skippedDuplicates: number;
   agents: string[];
+  /** Events derived and new but not recorded this tick (cap/deadline). */
+  remaining: number;
+  /** 1-based line number of a torn final line dropped from the store, or null. */
+  tornTailLine: number | null;
 }
 
 export function runContextTelemetryProducer(params: {
@@ -190,9 +186,12 @@ export function runContextTelemetryProducer(params: {
   providersByRole: Map<string, string>;
   claudeProjectsDir?: string;
   recordFn?: (event: ContextTelemetryRecord) => void;
+  nowFn?: () => number;
+  capPerTick?: number;
+  deadlineMs?: number;
 }): ContextTelemetryProducerResult {
   const telemetryDir = path.join(params.repoRoot, '.swarmforge', 'telemetry');
-  const existing = readPersistedContextEvents(telemetryDir);
+  const { events: existing, tornTailLine } = readPersistedContextEvents(telemetryDir);
   const allDerived: ContextTelemetryRecord[] = [];
 
   for (const group of groupRolesByWorktreePath(params.roleWorktrees)) {
@@ -201,17 +200,30 @@ export function runContextTelemetryProducer(params: {
     allDerived.push(...deriveEventsForRoleGroup(group, provider, params.claudeProjectsDir));
   }
 
-  const toRecord = filterNewContextEvents(existing, allDerived);
-  const recordFn =
-    params.recordFn ?? ((event) => recordEventViaCli(params.repoRoot, telemetryDir, event));
-  for (const event of toRecord) {
-    recordFn(event);
+  // BL-1477 invariant 2: "in timestamp order" across every derived event,
+  // not merely within one role group's own already-sorted slice.
+  const toRecordAll = filterNewContextEvents(existing, allDerived).sort((a, b) =>
+    a.timestamp.localeCompare(b.timestamp)
+  );
+  const cap = params.capPerTick ?? DEFAULT_CONTEXT_TELEMETRY_CAP_PER_TICK;
+  const deadlineMs = params.deadlineMs ?? DEFAULT_CONTEXT_TELEMETRY_DEADLINE_MS;
+  const nowFn = params.nowFn ?? Date.now;
+  const { selected, remaining } = selectEventsWithinLimits(toRecordAll, cap, deadlineMs, nowFn);
+
+  if (params.recordFn) {
+    for (const event of selected) {
+      params.recordFn(event);
+    }
+  } else if (selected.length > 0) {
+    recordEventsViaCliBatch(params.repoRoot, telemetryDir, selected);
   }
 
-  const agents = [...new Set([...existing, ...toRecord].map((row) => row.agent))];
+  const agents = [...new Set([...existing, ...selected].map((row) => row.agent))];
   return {
-    recorded: toRecord.length,
-    skippedDuplicates: allDerived.length - toRecord.length,
+    recorded: selected.length,
+    skippedDuplicates: allDerived.length - toRecordAll.length,
     agents,
+    remaining: remaining.length,
+    tornTailLine,
   };
 }
