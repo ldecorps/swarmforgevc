@@ -11,12 +11,10 @@
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
+LIVE_REPO_ROOT="$(cd "$SCRIPT_DIR/../../.." && pwd)"
 GUARD="$SCRIPT_DIR/../check_pipeline_code_on_main.sh"
-SIZE_GUARD="$SCRIPT_DIR/../check_commit_size.sh"
-TICKET_GUARD="$SCRIPT_DIR/../check_ticket_deletion.sh"
 IS_QA_ANCESTOR="$SCRIPT_DIR/../is_qa_ancestor.sh"
-PRE_COMMIT_HOOK="$SCRIPT_DIR/../../git-hooks/pre-commit"
-PRE_MERGE_COMMIT_HOOK="$SCRIPT_DIR/../../git-hooks/pre-merge-commit"
+HELPER="$LIVE_REPO_ROOT/extension/test/helpers/commitGuardFixtureSet.js"
 
 fail() { echo "FAIL: $*" >&2; exit 1; }
 pass() { echo "PASS: $*"; }
@@ -30,22 +28,24 @@ git -C "$ROOT" config user.name test
 git -C "$ROOT" -c user.email=test@test -c user.name=test commit -q --allow-empty -m init
 
 mkdir -p "$ROOT/swarmforge/scripts" "$ROOT/swarmforge/git-hooks"
-cp "$GUARD" "$ROOT/swarmforge/scripts/check_pipeline_code_on_main.sh"
-cp "$SIZE_GUARD" "$ROOT/swarmforge/scripts/check_commit_size.sh"
-cp "$TICKET_GUARD" "$ROOT/swarmforge/scripts/check_ticket_deletion.sh"
-cp "$SCRIPT_DIR/../check_property_suite_drift.sh" "$ROOT/swarmforge/scripts/check_property_suite_drift.sh"
-cp "$SCRIPT_DIR/../property_suite_shared_repo_guard.sh" "$ROOT/swarmforge/scripts/property_suite_shared_repo_guard.sh"
-cp "$SCRIPT_DIR/../incoming_merge_parent_lib.sh" "$ROOT/swarmforge/scripts/incoming_merge_parent_lib.sh"
-# What the hooks EXECUTE and SOURCE. BL-1252 moved pre-commit's guards behind
-# run_commit_guards.sh and BL-1303 gave pre-merge-commit a chain of its own
-# over the same sourced aggregation; without them the hook dies before any
-# guard decides anything and every case below fails for that reason instead.
-cp "$SCRIPT_DIR/../run_commit_guards.sh" "$ROOT/swarmforge/scripts/run_commit_guards.sh"
-cp "$SCRIPT_DIR/../commit_guard_chain_lib.sh" "$ROOT/swarmforge/scripts/commit_guard_chain_lib.sh"
-cp "$SCRIPT_DIR/../check_feature_handler_registration.sh" "$ROOT/swarmforge/scripts/check_feature_handler_registration.sh"
-# check_art_director_tip.sh (BL-1444): hand edit; BL-1408 derives this set
-cp "$SCRIPT_DIR/../check_art_director_tip.sh" "$ROOT/swarmforge/scripts/check_art_director_tip.sh"
-cp "$SCRIPT_DIR/../property_suite_standing_allowlist_lib.sh" "$ROOT/swarmforge/scripts/property_suite_standing_allowlist_lib.sh"
+# BL-1408: every file both chains need (guards, the runner, both hooks, and
+# the libs they source), read at run time through BL-1398's helper - never
+# an enumerated `cp` per guard, which is what let four guards
+# (check_handler_module_graph.sh/check_bb_scripts_load.sh/
+# check_standing_red_register.sh/check_constitution_doc_citations.sh) join
+# the runner unstubbed here while every other copy of the list moved on.
+# The default hookRels (both hooks) already unions the pre-commit chain's
+# guards with the pre-merge-commit chain's own (e.g. check_art_director_tip.sh).
+CHAIN_FILES="$(node -e '
+  const { deriveCommitGuardFixtureSet } = require(process.argv[1]);
+  const r = deriveCommitGuardFixtureSet({ repoRoot: process.argv[2] });
+  process.stdout.write(r.files.join("\n"));
+' "$HELPER" "$LIVE_REPO_ROOT")"
+while IFS= read -r rel; do
+  [ -n "$rel" ] || continue
+  mkdir -p "$ROOT/$(dirname "$rel")"
+  cp "$LIVE_REPO_ROOT/$rel" "$ROOT/$rel"
+done <<< "$CHAIN_FILES"
 # An EMPTY step registry, so BL-1303's guard asks its real question here -
 # nothing in this fixture is unrunnable - rather than refusing every action
 # because a repo with no acceptance pipeline has no registry to read. Its
@@ -54,9 +54,11 @@ cp "$SCRIPT_DIR/../property_suite_standing_allowlist_lib.sh" "$ROOT/swarmforge/s
 mkdir -p "$ROOT/specs/pipeline/steps" "$ROOT/extension"
 printf 'module.exports = [];\n' > "$ROOT/specs/pipeline/steps/index.js"
 ln -s "$SCRIPT_DIR/../../../extension/out" "$ROOT/extension/out" 2>/dev/null || true
+# is_qa_ancestor.sh: invoked by check_pipeline_code_on_main.sh as a
+# subprocess, never `run_guard`'d or `source`'d - outside the derived
+# chain-list class this ticket is about (a single fixed dependency, not a
+# hand-enumerated list that drifts as the chain grows).
 cp "$IS_QA_ANCESTOR" "$ROOT/swarmforge/scripts/is_qa_ancestor.sh"
-cp "$PRE_COMMIT_HOOK" "$ROOT/swarmforge/git-hooks/pre-commit"
-cp "$PRE_MERGE_COMMIT_HOOK" "$ROOT/swarmforge/git-hooks/pre-merge-commit"
 chmod +x "$ROOT"/swarmforge/scripts/*.sh "$ROOT"/swarmforge/git-hooks/*
 git -C "$ROOT" add -A
 git -C "$ROOT" -c user.email=test@test -c user.name=test commit -q -m "seed hooks"
