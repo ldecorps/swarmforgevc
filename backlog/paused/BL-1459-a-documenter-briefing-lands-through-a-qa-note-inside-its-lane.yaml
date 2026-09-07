@@ -1,0 +1,144 @@
+id: BL-1459
+title: "A documenter briefing lands on main through a QA note inside its lane, once per day: check_documenter_briefing_tip.sh in the shared pre-merge-commit chain accepts a documenter commit that changes only docs/briefings/<date>.md (and its .json sidecar), refuses any other path - .sent.json first - and refuses a briefing for a day main already carries; before this the documenter's briefings reached main by cherry-pick (09-05), by hand (09-06) or not at all (human ruling A, 2026-09-07)"
+milestone: M8
+type: defect
+severity: medium
+# medium: a briefing with no landing path is either landed by hand on the
+# shared checkout (twice already) or never sent; neither loses data, both
+# are the kind of hand ritual the forge exists to remove. Not high: the QA
+# prompt half (870d0153e6) already names the hand check for the interim.
+status: todo
+epic: swarm-reliability
+priority: 12
+direction: human-requested
+depends_on: []
+mutation_cost: low
+# low: one shell guard mirroring check_art_director_tip.sh (BL-1444), its
+# shell test, and one hook-chain line.
+slice_size_envelope: low
+required_stages: [coder, cleaner, architect, hardender, documenter, qa]
+
+acceptance: specs/features/BL-1459-a-documenter-briefing-lands-through-a-qa-note-inside-its-lane.feature
+
+required_wiring:
+  - 'swarmforge/git-hooks/pre-merge-commit::run_guard check_documenter_briefing_tip.sh::the guard is reached from the shared chain like BL-1444 (line 62 runs check_art_director_tip.sh)'
+
+human_approval: pending
+approval_context: >
+  A new feature file is authored here, so it needs a tap. No choice is
+  posed and there are no ruling_options: this is the landing half of your
+  ruling A (documenter authors; QA lands its commit on a note like the art
+  director's). What is FIRM: the lane is the day's briefing file and its
+  .json sidecar only; `.sent.json` stays the email sweep's; a day has one
+  landed briefing - a second is refused, never merged over the one you
+  were sent. BL-1444's guard is the template, including its "judge only a
+  documenter-side incoming commit" rule so every other worktree's routine
+  sync is untouched.
+
+invariants:
+  - "A day has at most one landed briefing: no land through this guard ever replaces or adds a second docs/briefings/<date>.md for a date the landed main already carries."
+  - "The guard judges only a documenter-side incoming commit; a merge whose incoming parent is not reachable from the documenter branch, or is already reachable from the landed main, exits 0 without judging (BL-1444 invariant 2)."
+
+description: |
+  ## What is wrong
+
+  The documenter authors `docs/briefings/<date>.md` in `.worktrees/documenter`
+  (BL-658; human ruling A, 2026-09-07) and, like the art director before
+  BL-1444, has no way to land it: QA lands parcels, the merge-up broadcast
+  is for parcels, and a briefing is not a parcel. What actually happened:
+  2026-09-05, the documenter's commit `533e56f53a` was cherry-picked onto
+  main by hand as `c43450a8b4`; 2026-09-06, `d70ff98523` was committed on
+  main directly; 2026-09-07, the documenter's version (`a22d9df868`,
+  `82e6413090`) was forwarded as a ticket-less `git_handoff`, walked
+  cleaner, architect, hardener and documenter, and was a no-op at QA
+  because the coordinator's own composition had already been sent. Each
+  time the briefing also risks a second text for a day the human was
+  already sent (BL-406's shape, for compose rather than send).
+
+  ## What is wanted
+
+  `swarmforge/scripts/check_documenter_briefing_tip.sh`, the BL-1444 shape
+  with its own lane, so QA lands `land documenter briefing <sha>` through
+  its ordinary land recipe and the shared hook chain judges the merge:
+
+  - `--tip <sha>` mode prints `DOCUMENTER_BRIEFING_TIP_OK` when the tip's
+    own changed paths are only `docs/briefings/<date>.md` and optionally
+    `docs/briefings/<date>.json` for one date, and the landed main does not
+    already carry `docs/briefings/<date>.md`. A path last touched by a
+    commit already on the landed main is main's content riding along and
+    does not count (BL-1444's per-path provenance).
+  - Refuses (exit 1) naming every offending path otherwise;
+    `docs/briefings/.sent.json` is outside the lane (the email sweep owns
+    it); a second briefing for a landed day is refused with
+    `docs/briefings/<date>.md already on main`.
+  - Hook mode: resolves the incoming merge parent
+    (`incoming_merge_parent_lib.sh`); exits 0 without judging when it
+    cannot be resolved, is not reachable from the documenter's branch, or
+    is already reachable from the landed main.
+  - Wired into `swarmforge/git-hooks/pre-merge-commit` beside
+    `check_art_director_tip.sh`.
+
+  ## How (direction, not mandate)
+
+  - Copy `check_art_director_tip.sh`'s structure (two entry modes, one
+    predicate, landed-main resolution `origin/main` else `main`); do not
+    generalise the two guards into one parameterised script in this parcel
+    - the lanes differ in the "already landed" rule and a shared script is
+    BL-1444's to refactor later if wanted.
+  - The documenter's branch name is pack-dependent (`swarmforge-documenter`
+    on this host; `primary/documenter` on the nested pack): read it from
+    `.swarmforge/roles.tsv` the way the daemon does, or accept `--branch`,
+    rather than hard-coding one name; the art-director guard's hard-coded
+    `primary/art-director` is its own concern.
+  - Test: `swarmforge/scripts/test/test_check_documenter_briefing_tip.sh`
+    over `git init` fixtures under mkdtemp, proven by `rev-parse
+    --git-common-dir` before any mutating git command (BL-1390) - never
+    the live repository, never `git -C ""`.
+  - QA prompt already carries the recipe (870d0153e6) with the hand check
+    for the interim; the documenter (same commit) prints the exact note.
+    The documenter updates `docs/how-to/BL-658-*.md` (landing step) and,
+    if `docs/how-to/BL-1444-*` exists, cross-links; no registered diagram
+    depicts this.
+
+constraints: >
+  Stock bash 3.2 compatible (BL-801). The guard runs under `set -uo
+  pipefail` capturing each check's status (BL-1242 shape) so every
+  offending path is named in one refusal (Article 4.4). No hand-edited
+  mutation manifests. Fixtures are `git init` roots under mkdtemp.
+
+out_of_scope: |
+  - Retargeting the briefing triggers (BL-1458).
+  - The email sweep, `.sent.json`, or BL-406's send-side duplicate guard.
+  - Merging this guard with `check_art_director_tip.sh`.
+  - Any change to the land recipe, land lock, or `record_land_approval.bb`.
+
+qa_e2e_procedure: >
+  (1) `bash swarmforge/scripts/test/test_check_documenter_briefing_tip.sh`
+  green. (2) On a scratch clone with a `swarmforge-documenter` branch:
+  commit `docs/briefings/2099-01-01.md` on it; `check_documenter_briefing_tip.sh
+  --tip <sha>` prints `DOCUMENTER_BRIEFING_TIP_OK`; amend to also touch
+  `docs/briefings/.sent.json`: refused naming that path; commit a second
+  `docs/briefings/<date>.md` for a date the clone's main already has:
+  refused `already on main`. (3) Hook mode: `git merge --no-ff` of a
+  non-documenter branch runs the chain and the guard exits 0 without
+  judging; a merge of the documenter tip runs it and judges. (4) After
+  land, on the live swarm: the next morning's `land documenter briefing
+  <sha>` note lands through QA's recipe with the guard printing OK in the
+  pre-merge-commit chain, and `git log main -- docs/briefings/<date>.md`
+  shows exactly one commit for that date.
+
+source: |
+  Human ruling A ("A documenter authors (recommended)"), 2026-09-07
+  (`backlog/answers-archive/ANSWER-2026-09-07-briefing-author-is-the-documenter-a.md`),
+  which named the landing path: "QA lands its commit on a note like the
+  art director's". Precedent: human ruling B, 2026-09-06 (BL-1444).
+
+notes: |
+  Minted 2026-09-07 by the specifier, the same pass as the ruling, sibling
+  of BL-1458 (triggers). Prompt halves landed first (870d0153e6).
+
+  Grepped first: no open ticket names a documenter landing path or
+  `check_documenter_briefing_tip`; BL-1444 (done) is the template.
+
+  The `required_wiring` anchor is the hook chain line - a pre-existing
+  consumer file gaining a call to the new guard, the BL-1444 shape.

@@ -1,0 +1,171 @@
+id: BL-1458
+title: "The morning briefing has one author: every trigger that asks an agent for it sends the documenter the ceremony's instruction note, the VS Code host's compose nudge is retired, and the instruction is one literal across the TypeScript and Babashka builders - BL-099's coordinator nudge and BL-658's documenter instruction both fired on 2026-09-05 and 2026-09-07 and the briefing was composed twice each day (human ruling A, 2026-09-07)"
+milestone: M8
+type: defect
+severity: medium
+# medium: the human still received a briefing both days and nothing was
+# lost; the cost was a second composition walking five pipeline stages to
+# a QA no-op, a wasted documenter fix cycle, and two texts for one morning.
+# Not high: the prompt halves (870d0153e6) already stop the live race;
+# this parcel retires the code that asks the wrong role.
+status: todo
+epic: swarm-reliability
+priority: 12
+direction: human-requested
+depends_on: []
+mutation_cost: medium
+# medium: one Babashka lib and its daemon adapter, one TypeScript host path
+# (retire), tests on both sides plus a BL-897 mirror test.
+slice_size_envelope: medium
+required_stages: [coder, cleaner, architect, hardender, documenter, qa]
+
+acceptance: specs/features/BL-1458-every-briefing-trigger-instructs-the-documenter.feature
+
+required_wiring:
+  - 'specs/pipeline/steps/bl1458BriefingTriggerInstructsDocumenterSteps.js::registerSteps::the step handler lands in the same parcel as the feature (BL-233)'
+
+human_approval: pending
+approval_context: >
+  A new feature file is authored here, so it needs a tap. No choice is
+  posed and there are no ruling_options: this is the code half of your
+  ruling A (documenter authors), whose prompt halves are already on main
+  (870d0153e6). What is FIRM: no trigger on any path asks the coordinator
+  (or any role but the documenter) to compose; the host's nudge is retired
+  rather than retargeted, because the daemon already owns the headless
+  trigger and a second clock is the double-compose hazard BL-214 retired
+  once for the email; BL-308's banked headless composer is untouched.
+
+invariants:
+  - "No trigger, on any path (closing ceremony, fixed-morning fallback, VS Code host), ever asks a role other than the documenter to compose the briefing; the banked headless composer (BL-308) is the only non-documenter writer and only while hibernated."
+  - "The instruction is one literal: for the same date the ceremony's note and the fallback's note are byte-identical, asserted by a test that reads both builders (BL-897 mirror rule)."
+
+description: |
+  ## What is wrong
+
+  Three code paths can ask an agent for the day's briefing, and they name
+  two different authors:
+
+  - `night-closing-ceremony-run.ts` `instructBriefing` (BL-658, BL-1393):
+    sends the documenter a `note` `produce the morning briefing for <date>`
+    (`nightClosingCeremonyLive.ts` `briefingInstruction`). Correct.
+  - `swarmforge/scripts/briefing_generation_schedule_lib.bb`
+    `briefing-due-instruction` (BL-258), delivered by handoffd's fixed-
+    morning `:notify!` adapter as a pane injection into the COORDINATOR:
+    "Daily briefing due: compose today's briefing per your role and commit
+    it to docs/briefings/<date>.md." Gated to schedules that resolve
+    absent/ambiguous (`fixedMorningTriggerFires`), so dormant today, but
+    live code and the text every role reads as "the coordinator composes".
+  - `extension/src/extension.ts` `onBriefingDue` (BL-099): the VS Code
+    host's own once-a-day nudge, same wording, into the coordinator pane
+    via `sendInstructionVerified`, plus the cost-health sidecar emit.
+
+  BL-099 (2026-07-04) had the coordinator write the briefing; BL-658
+  (2026-07-26, human directive) moved production to the documenter as the
+  night's last act and assumed - wrongly - that authorship was already
+  there ("who writes is unchanged"). Nobody retired the older two paths or
+  their wording, no role prompt stated the duty, and on 2026-09-07 the
+  documenter refused the ceremony's note citing extension.ts, the
+  coordinator composed, the documenter composed anyway, and two texts for
+  one morning landed two seconds apart (QA evidence,
+  `morning-briefing-2026-09-07-qa-noop-20260907.md`; same shape 09-05).
+
+  The human ruled A on 2026-09-07: the documenter authors. The prompt
+  halves are on main (870d0153e6). This ticket is the code half.
+
+  ## What is wanted
+
+  Every trigger that asks an agent for the briefing sends the documenter
+  the ceremony's instruction note - one literal on both sides of the
+  language boundary. The VS Code host asks nobody (it keeps emitting the
+  sidecar). The fallback's "already generated today" skip and BL-308's
+  banked headless composition are unchanged.
+
+  ## How (direction, not mandate)
+
+  - `briefing_generation_schedule_lib.bb`: `briefing-due-instruction`
+    returns `produce the morning briefing for <day-key>`; the daemon's
+    `:notify!` adapter for this sweep delivers it as a mailbox `note` to the
+    documenter (priority `00`) through `swarm_handoff.sh` - the same route
+    the night runner's `sendHandoffNote` takes - never a pane injection
+    into the coordinator. Rename the log key if `briefing-generation-nudge-
+    sent` no longer describes it.
+  - `extension.ts` `onBriefingDue`: delete the `sendInstructionVerified`
+    call and the coordinator pane lookup; keep the sidecar emit; rewrite
+    the BL-099 comment ("Composing the briefing's content is the
+    coordinator role prompt's job") to name the documenter and BL-658.
+    `briefingScheduler.ts` is unchanged (its callback still fires for the
+    sidecar).
+  - BL-897 mirror: a test that evaluates the Babashka builder for a date
+    and compares it byte-for-byte with `briefingInstruction(date)` - the
+    literal now lives in two languages.
+  - Tests to update: `briefing_generation_schedule_test_runner.bb`,
+    `test_handoffd_briefing_generation_wiring.sh`,
+    `briefingScheduler.test.js`; `test_agent_runtime_inject_mock.sh` uses
+    the old nudge wording as an arbitrary `:text` example - replace the
+    literal so scenario 03's grep stays clean without weakening that test.
+  - `Specification.MD` "Headless morning generation trigger (BL-258)" and
+    the BL-099 entry: state that the trigger instructs the documenter;
+    `docs/how-to/BL-658-*.md` gains one line that the fallback path sends
+    the same instruction. No registered diagram depicts the briefing
+    trigger; none changes.
+
+constraints: >
+  The ceremony path (`night-closing-ceremony-run.ts`) is not touched. No
+  new clock. The fixture for scenarios 01, 02 and 05 is a mkdtemp root
+  with injected adapters (the lib is already adapter-injected; keep it
+  that way) - never the live `.swarmforge/`. The step handler lands in the
+  same commit as the feature (BL-233). No hand-edited mutation manifests.
+
+out_of_scope: |
+  - The landing path for the documenter's briefing (BL-1459).
+  - The ceremony's own behaviour, budgets or `closing-briefing-missing`
+    surface (BL-658, BL-1393); the ceremony window fold (BL-1456).
+  - BL-308's banked composer content.
+  - The `BL-658: rotate resident to documenter` note the night runner sends
+    the coordinator (harmless on a standing pack; the coordinator prompt
+    now says what to do with it).
+
+qa_e2e_procedure: >
+  (1) Unit: `bb swarmforge/scripts/test/briefing_generation_schedule_test_runner.bb`
+  and `bash swarmforge/scripts/test/test_handoffd_briefing_generation_wiring.sh`
+  green; `npx vitest run test/briefingScheduler.test.js` green. (2) Mirror:
+  the new BL-897 test asserts
+  `bb -e '(load-file "swarmforge/scripts/briefing_generation_schedule_lib.bb") (print (briefing-generation-schedule-lib/briefing-due-instruction "2026-09-08"))'`
+  equals `produce the morning briefing for 2026-09-08`. (3) Static:
+  `grep -rn "compose today's briefing per your role" extension/src swarmforge/scripts`
+  prints nothing. (4) Live, on a scratch clone with a daemon-shaped root and
+  `briefing_morning_time_utc` in the past and a schedule that resolves
+  absent: run the daemon's generation sweep once (or the lib's entry
+  through a bb one-liner with real adapters) and find one note
+  `produce the morning briefing for <today>` in
+  `.swarmforge/handoffs/documenter/inbox/new/` and none in the
+  coordinator's. (5) On the live swarm after land: the next night ceremony
+  produces exactly one `docs/briefings/<date>.md` commit, authored by the
+  documenter, and the coordinator's inbox carries no compose nudge.
+
+source: |
+  Human ruling A ("A documenter authors (recommended)"), 2026-09-07, to the
+  specifier's role question on QA's spec-gap note
+  (`backlog/answers-archive/ANSWER-2026-09-07-briefing-author-is-the-documenter-a.md`).
+  BL-658's approval_context carries the original directive (2026-07-26,
+  operator): "sinon le coordinateur le rotate vers le documenter et lui
+  demande la production du morning briefing. et ensuite tout s'arrête."
+
+notes: |
+  Minted 2026-09-07 by the specifier, the same pass as the ruling. Prompt
+  halves landed first (870d0153e6): documenter authors, coordinator never
+  composes, QA lands on a note. BL-1459 is the landing-path sibling; the
+  two are independent and either may land first.
+
+  Grepped first: no open ticket names `briefing-due-instruction`,
+  `onBriefingDue` or the nudge wording. BL-406 (done) covered the SEND
+  duplicate; this is the COMPOSE duplicate.
+
+  IR-DRY at mint: the three sweep scenarios share their When line and
+  "no note is queued for any role" by design (three states of one
+  decision); reviewed and kept.
+
+  required_wiring names the step handler only: the fallback's consumer
+  (`handoffd.bb`'s generation sweep calling the lib) exists before the fix
+  and an anchor on it would match unchanged code (BL-1235); scenario 01
+  runs the sweep and reads the documenter's mailbox, which is the gate.
