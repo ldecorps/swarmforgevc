@@ -104,6 +104,28 @@ function cleanup(st) {
   if (st.root) fs.rmSync(st.root, { recursive: true, force: true });
 }
 
+// Advances origin/main to a commit that ALREADY carries SIBLING_HANDLER -
+// literally on main, rather than the handler being committed on the tip
+// where the replay would exclude it as the sibling's own path. Shared by
+// scenario 07 (its own explicit point) and scenario 01 (BL-1447: land-plan
+// now tree-guards its own build before ever deciding :replay, so a
+// scenario that is not itself about tree consistency must not incidentally
+// inherit the Background's default-inconsistent tree).
+function landHandlerOnMain(st) {
+  const base = git(st.root, 'rev-parse', 'refs/remotes/origin/main').trim();
+  const index = path.join(st.root, '.git', 'bl1375-scratch-index');
+  const env = { ...process.env, GIT_INDEX_FILE: index };
+  const plumb = (args, input) =>
+    execFileSync('git', args, { cwd: st.root, env, encoding: 'utf8', input }).trim();
+  plumb(['read-tree', base]);
+  const blob = plumb(['hash-object', '-w', '--stdin'], 'module.exports = { registerSteps() {} };\n');
+  plumb(['update-index', '--add', '--cacheinfo', `100644,${blob},${SIBLING_HANDLER}`]);
+  const tree = plumb(['write-tree']);
+  const commit = plumb(['commit-tree', tree, '-p', base, '-m', 'main already carries the handler']);
+  git(st.root, 'update-ref', 'refs/remotes/origin/main', commit);
+  fs.rmSync(index, { force: true });
+}
+
 const FEATURE = 'Approved siblings sharing a path can land';
 
 function registerSteps(registry) {
@@ -205,18 +227,7 @@ function registerSteps(registry) {
     // replay would exclude it as the sibling's own path. That distinction is
     // the whole scenario: the passenger's line is safe precisely because what
     // it reaches for is ALREADY there.
-    const base = git(st.root, 'rev-parse', 'refs/remotes/origin/main').trim();
-    const index = path.join(st.root, '.git', 'bl1375-scratch-index');
-    const env = { ...process.env, GIT_INDEX_FILE: index };
-    const plumb = (args, input) =>
-      execFileSync('git', args, { cwd: st.root, env, encoding: 'utf8', input }).trim();
-    plumb(['read-tree', base]);
-    const blob = plumb(['hash-object', '-w', '--stdin'], 'module.exports = { registerSteps() {} };\n');
-    plumb(['update-index', '--add', '--cacheinfo', `100644,${blob},${SIBLING_HANDLER}`]);
-    const tree = plumb(['write-tree']);
-    const commit = plumb(['commit-tree', tree, '-p', base, '-m', 'main already carries the handler']);
-    git(st.root, 'update-ref', 'refs/remotes/origin/main', commit);
-    fs.rmSync(index, { force: true });
+    landHandlerOnMain(st);
     st.treeShouldBeConsistent = true;
   });
 
@@ -227,20 +238,36 @@ function registerSteps(registry) {
   // through the REAL replay!, which runs the REAL guard against its own tree.
   const decide = (ctx) => {
     const st = state(ctx);
+    // BL-1447: land-plan itself now builds and tree-guards its own replay
+    // before ever deciding :replay - a scenario that never ran either
+    // tree-axis Given (06's "not on main" / 07's "on main") is not ABOUT
+    // that axis at all (e.g. scenario 01, the approval axis only) and must
+    // not incidentally inherit the Background's default-inconsistent tree
+    // (the sibling's handler sits on its own excluded path, deliberately,
+    // for 06/07's sake). Defaulting such a scenario to consistent removes
+    // that dependency without touching this feature's own Gherkin text.
+    if (st.treeShouldBeConsistent === undefined) {
+      landHandlerOnMain(st);
+    }
     st.commit = head(st.root);
     st.plan = askLandStep(
       st.root,
       `(land-step-lib/land-plan {:root "${st.root}" :commit "${st.commit}" :task-ticket-id "${LANDING}"})`,
     );
     if (st.treeShouldBeConsistent !== undefined) {
-      assert.equal(st.plan.action, 'replay', `the plan refused before the guard could speak: ${JSON.stringify(st.plan)}`);
-      st.replay = askLandStep(
-        st.root,
-        `(land-step-lib/replay! {:root "${st.root}" :commit "${st.commit}" :task-ticket-id "${LANDING}"` +
-          ` :own-paths ${JSON.stringify(st.plan['own-paths'])} :passengers #{${(st.plan.passengers || [])
-            .map((s) => `"${s}"`)
-            .join(' ')}}})`,
-      );
+      // BL-1447: land-plan itself now builds the tip-pure commit AND runs
+      // the tree guards (via its own internal replay! call) before ever
+      // deciding :replay - a tree guard refusal (BL-1375/BL-1324's own
+      // invariant 2) now surfaces as land-plan's own :escalate directly,
+      // never a separate "plan says :replay, then a second replay! call
+      // discovers the guard refused" two-step. st.replay is a thin shim
+      // over that single answer, so the assertions below read the same
+      // fields either way.
+      st.replay = {
+        success: st.plan.action === 'replay',
+        branch: st.plan.branch,
+        reason: st.plan.reason,
+      };
     }
   };
 

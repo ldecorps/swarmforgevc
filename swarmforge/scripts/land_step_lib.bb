@@ -1005,107 +1005,6 @@
                         passengers)))))))
        {:paths nil :warning (str "land-step: could not read the delivered diff " origin-main ".." commit)}))))
 
-(defn land-plan
-  "The land step's own decision: {:action :land} when no entanglement is
-   present (or the check could not tell - see below); {:action :replay
-   :entangled #{...} :own-paths [...]} when a tip-pure rebuild is the
-   remedy; {:action :escalate :reason \"...\"} when even the detection
-   itself could not be completed - a check that cannot run refuses to bless
-   a land, per invariant 2, rather than defaulting to :land.
-   task-ticket-id nil (task-name named no ticket) also escalates - nothing
-   to compare ancestry against.
-
-   BL-1431 invariant 1: `:origin-main` is an OPTIONAL key. When the caller
-   (land_step_cli.bb) already resolved it, that exact value is threaded to
-   every reader below and never re-resolved - one land-step invocation
-   reads one tip, immune to main moving mid-walk. A direct/test caller that
-   omits the key (the pre-existing contract, unchanged) gets it resolved
-   once, here, at this function's own entry.
-
-   BL-1432: `:base` is likewise an OPTIONAL key - the parcel's own base
-   (task_scope_gate_lib.bb's own `parcel-own-base`, the same notion the
-   send-time scope gate already uses) - and the CANDIDATE walk
-   (`ancestry-commits`, inside `entangled-siblings`) runs from it instead of
-   walking the whole, forever-growing origin/main..tip range: bounding this
-   walk, the one every land pays whether or not anything is entangled, is
-   what BL-1432 was for. Falling back to `origin-main` when this task has no
-   recorded base (its first hop) or the recorded one is abandoned only ever
-   WIDENS the walk, never narrows it past the pre-existing behavior.
-   `origin-main` itself stays exactly what it was: the tree every
-   landed/unlanded and approval verdict is read against (invariant 2 - a
-   narrower walk must not change what counts as landed, only how many
-   commits are inspected).
-
-   BL-1446: `:base` does NOT bound `delivered-attribution` or `own-paths`
-   (the per-path attribution and the replay's own content) - both always
-   read `origin-main..commit`, whatever `:base` is. A land only ever forces
-   these on the rare :replay path (never the common :land one, so this
-   costs nothing there), and bounding them to the LAST hop is what silently
-   dropped every earlier hop's work from a replay (the 2026-09-06 incident,
-   backlog/evidence/BL-1424-land-replay-dropped-own-paths-incident-20260906.md):
-   a replay must carry the parcel's WHOLE contribution, not the delta since
-   whichever hop happened to record `:base`. `ancestry-commits` ALSO always
-   excludes anything reachable from `origin-main` regardless of `:base`
-   (invariant 1) - a routine post-hop `git merge origin/main` must never
-   manufacture a candidate sibling out of already-landed history."
-  [{:keys [root commit task-ticket-id] :as opts}]
-  (if-not task-ticket-id
-    {:action :escalate :reason "land-step: task name names no ticket id"}
-    ;; BL-1389: the per-PATH attribution is computed ONCE and feeds both
-    ;; questions - which siblings have landed, and which paths may ride. They
-    ;; used to be answered from different walks, and a path the per-path walk
-    ;; credited to a sibling the per-sibling walk never reported was decided
-    ;; against a verdict that had not seen it.
-    (let [origin-main (if (contains? opts :origin-main) (:origin-main opts) (origin-main-sha root))
-          walk-base (if (contains? opts :base)
-                      (:base opts)
-                      (or (task-scope-gate-lib/parcel-own-base root task-ticket-id) origin-main))
-          candidates (when walk-base (ancestry-commits root walk-base commit))
-          ;; One read of each sibling's own diffs, shared by the landed/unlanded
-          ;; split and by the per-path exclusion below. Each is every commit
-          ;; that sibling authored in range, so asking twice doubles the
-          ;; slowest part of the land step.
-          lines-of (memoize #(when candidates (sibling-own-line-changes root candidates %)))
-          ;; Deferred: a land with no entangled sibling never forces it, and
-          ;; that is the common case. Forcing it there would add one
-          ;; path-scoped walk per delivered path to every clean land.
-          ;;
-          ;; BL-1446: reads from `origin-main`, never `walk-base` - the same
-          ;; fix as `own-paths` below and for the same reason (the parcel's
-          ;; WHOLE delivered diff, every hop, not just what changed since the
-          ;; last one). This is the rare :replay path only (never forced when
-          ;; `entangled` is empty, the common :land case), so widening it
-          ;; back to `origin-main` does not reintroduce BL-1432's original
-          ;; per-land cost.
-          attribution (when origin-main
-                        (delay (delivered-attribution root origin-main commit)))
-          extra-paths-fn (when attribution
-                           (fn [sibling]
-                             (for [[path a] @attribution
-                                   :when (and a (contains? (:owners a) sibling))]
-                               path)))
-          {:keys [entangled landed unlanded landed-paths warning]}
-          (entangled-siblings root commit task-ticket-id extra-paths-fn lines-of origin-main walk-base)]
-      (cond
-        warning {:action :escalate :reason warning}
-        (empty? entangled) {:action :land}
-        :else
-        (let [{:keys [paths warning passengers excluded]}
-              (own-paths root commit task-ticket-id unlanded nil nil
-                         {:attribution (when attribution @attribution)
-                          :path-landed-fn (when origin-main
-                                            (sibling-path-landed-fn root origin-main commit lines-of))}
-                         origin-main walk-base)]
-          (if (nil? paths)
-            {:action :escalate
-             :reason (or warning (str "land-step: could not compute " task-ticket-id "'s own paths to replay"))}
-            ;; BL-1375: :passengers are the approved unlanded siblings whose
-            ;; lines ride on an included shared path. replay! owes them the
-            ;; tree guards before it hands QA a commit to publish.
-            {:action :replay :entangled entangled :landed landed :unlanded unlanded
-             :landed-paths (or landed-paths {})
-             :excluded (or excluded [])
-             :own-paths paths :passengers (or passengers #{})}))))))
 
 (defn entanglement-note
   "The text QA sends when replay itself cannot be completed cleanly (BL-1241
@@ -1386,6 +1285,198 @@
                                         " riding on a shared path (BL-1375 invariant 2 / BL-1324): "
                                         (str/join "; " refusals))})
                       {:success true :commit sha :branch branch :passengers (set passengers)})))))))))))
+
+;; ── BL-1447: a built replay is verified complete before land-plan ever
+;;    returns :replay, reading git objects only - never the attribution
+;;    that built it, so this check cannot share that attribution's blind
+;;    spot (invariant 2). ─────────────────────────────────────────────────
+
+(defn replay-missing-paths
+  "Pure core of the completeness check: given `cited-blobs` and
+   `replay-blobs` (path -> blob-id, ::absent for a path missing there) and
+   `parcel-paths` (the paths to check), returns the sorted vector of paths
+   where the two disagree - unit-testable without git, per this ticket's
+   own 'How'. Empty when the replay carries the cited tip's content, byte
+   for byte, at every one of `parcel-paths`."
+  [{:keys [cited-blobs replay-blobs parcel-paths]}]
+  (vec (sort (for [p parcel-paths
+                    :let [cited (get cited-blobs p ::absent)
+                          replayed (get replay-blobs p ::absent)]
+                    :when (not= cited replayed)]
+                p))))
+
+;; Impure half: reads both trees' blobs at each of `parcel-paths` via the
+;; same `blob-at` (::absent-on-missing) every other landed/unlanded read in
+;; this file already uses, then hands plain data to the pure core above.
+;; Public (not `defn-`) so BL-1447's own acceptance handler can drive the
+;; SAME check land-plan runs internally against a deliberately truncated
+;; replay build, without a second implementation of it.
+(defn replay-completeness-offenders [root cited-commit replay-commit parcel-paths]
+  (replay-missing-paths
+   {:cited-blobs (into {} (map (fn [p] [p (blob-at root cited-commit p)])) parcel-paths)
+    :replay-blobs (into {} (map (fn [p] [p (blob-at root replay-commit p)])) parcel-paths)
+    :parcel-paths parcel-paths}))
+
+(defn- commit-changed-paths [root commit]
+  (let [res (git! root "diff-tree" "--no-commit-id" "--name-only" "-r" commit)]
+    (when (zero? (:exit res)) (remove str/blank? (str/split-lines (:out res))))))
+
+(defn- parcel-commit-paths
+  "The WIDE, attribution-independent set of paths ANY of task-ticket-id's
+   own commits (subject-tagged, over origin-main..commit) changed - BL-1447
+   invariant 2's own 'How': `git log --format=%H ^origin/main <cited>`
+   filtered to subjects naming the ticket, each commit's own diff-tree
+   unioned. Deliberately the SAME subject-based attribution
+   `entangled-siblings`/`commit-ticket-id` already use elsewhere in this
+   file, never the `own-paths`/`delivered-attribution` walk this check
+   exists to cross-check. nil (never #{}) on an unreadable range or an
+   unreadable commit's diff - the caller refuses rather than reading
+   blindness as \"the parcel touched nothing\"."
+  [root task-ticket-id origin-main commit]
+  (when-let [commits (ancestry-commits root origin-main commit)]
+    (let [own (filter #(= task-ticket-id (commit-ticket-id root %)) commits)]
+      (reduce (fn [acc c]
+                (if-let [paths (commit-changed-paths root c)]
+                  (into acc paths)
+                  (reduced nil)))
+              #{}
+              own))))
+
+(defn land-plan
+  "The land step's own decision: {:action :land} when no entanglement is
+   present (or the check could not tell - see below); {:action :replay
+   :entangled #{...} :own-paths [...] :commit sha :branch name} when a
+   tip-pure rebuild is the remedy - the commit is ALREADY BUILT (BL-1447:
+   land-plan calls replay! itself and verifies the result before ever
+   returning :replay, so the caller must publish `:commit`/`:branch`
+   directly and never call replay! again, which would collide on the same
+   branch name); {:action :escalate :reason \"...\"} when even the
+   detection itself could not be completed, the replay failed to build, or
+   the built replay is missing any path the parcel's own commits changed
+   (`replay-incomplete: <path> ...`, BL-1447 invariant 1) - a check that
+   cannot run, or cannot pass, refuses to bless a land, per invariant 2,
+   rather than defaulting to :land or publishing an incomplete tip.
+   task-ticket-id nil (task-name named no ticket) also escalates - nothing
+   to compare ancestry against.
+
+   BL-1431 invariant 1: `:origin-main` is an OPTIONAL key. When the caller
+   (land_step_cli.bb) already resolved it, that exact value is threaded to
+   every reader below and never re-resolved - one land-step invocation
+   reads one tip, immune to main moving mid-walk. A direct/test caller that
+   omits the key (the pre-existing contract, unchanged) gets it resolved
+   once, here, at this function's own entry.
+
+   BL-1432: `:base` is likewise an OPTIONAL key - the parcel's own base
+   (task_scope_gate_lib.bb's own `parcel-own-base`, the same notion the
+   send-time scope gate already uses) - and the CANDIDATE walk
+   (`ancestry-commits`, inside `entangled-siblings`) runs from it instead of
+   walking the whole, forever-growing origin/main..tip range: bounding this
+   walk, the one every land pays whether or not anything is entangled, is
+   what BL-1432 was for. Falling back to `origin-main` when this task has no
+   recorded base (its first hop) or the recorded one is abandoned only ever
+   WIDENS the walk, never narrows it past the pre-existing behavior.
+   `origin-main` itself stays exactly what it was: the tree every
+   landed/unlanded and approval verdict is read against (invariant 2 - a
+   narrower walk must not change what counts as landed, only how many
+   commits are inspected).
+
+   BL-1446: `:base` does NOT bound `delivered-attribution` or `own-paths`
+   (the per-path attribution and the replay's own content) - both always
+   read `origin-main..commit`, whatever `:base` is. A land only ever forces
+   these on the rare :replay path (never the common :land one, so this
+   costs nothing there), and bounding them to the LAST hop is what silently
+   dropped every earlier hop's work from a replay (the 2026-09-06 incident,
+   backlog/evidence/BL-1424-land-replay-dropped-own-paths-incident-20260906.md):
+   a replay must carry the parcel's WHOLE contribution, not the delta since
+   whichever hop happened to record `:base`. `ancestry-commits` ALSO always
+   excludes anything reachable from `origin-main` regardless of `:base`
+   (invariant 1) - a routine post-hop `git merge origin/main` must never
+   manufacture a candidate sibling out of already-landed history."
+  [{:keys [root commit task-ticket-id] :as opts}]
+  (if-not task-ticket-id
+    {:action :escalate :reason "land-step: task name names no ticket id"}
+    ;; BL-1389: the per-PATH attribution is computed ONCE and feeds both
+    ;; questions - which siblings have landed, and which paths may ride. They
+    ;; used to be answered from different walks, and a path the per-path walk
+    ;; credited to a sibling the per-sibling walk never reported was decided
+    ;; against a verdict that had not seen it.
+    (let [origin-main (if (contains? opts :origin-main) (:origin-main opts) (origin-main-sha root))
+          walk-base (if (contains? opts :base)
+                      (:base opts)
+                      (or (task-scope-gate-lib/parcel-own-base root task-ticket-id) origin-main))
+          candidates (when walk-base (ancestry-commits root walk-base commit))
+          ;; One read of each sibling's own diffs, shared by the landed/unlanded
+          ;; split and by the per-path exclusion below. Each is every commit
+          ;; that sibling authored in range, so asking twice doubles the
+          ;; slowest part of the land step.
+          lines-of (memoize #(when candidates (sibling-own-line-changes root candidates %)))
+          ;; Deferred: a land with no entangled sibling never forces it, and
+          ;; that is the common case. Forcing it there would add one
+          ;; path-scoped walk per delivered path to every clean land.
+          ;;
+          ;; BL-1446: reads from `origin-main`, never `walk-base` - the same
+          ;; fix as `own-paths` below and for the same reason (the parcel's
+          ;; WHOLE delivered diff, every hop, not just what changed since the
+          ;; last one). This is the rare :replay path only (never forced when
+          ;; `entangled` is empty, the common :land case), so widening it
+          ;; back to `origin-main` does not reintroduce BL-1432's original
+          ;; per-land cost.
+          attribution (when origin-main
+                        (delay (delivered-attribution root origin-main commit)))
+          extra-paths-fn (when attribution
+                           (fn [sibling]
+                             (for [[path a] @attribution
+                                   :when (and a (contains? (:owners a) sibling))]
+                               path)))
+          {:keys [entangled landed unlanded landed-paths warning]}
+          (entangled-siblings root commit task-ticket-id extra-paths-fn lines-of origin-main walk-base)]
+      (cond
+        warning {:action :escalate :reason warning}
+        (empty? entangled) {:action :land}
+        :else
+        (let [{:keys [paths warning passengers excluded]}
+              (own-paths root commit task-ticket-id unlanded nil nil
+                         {:attribution (when attribution @attribution)
+                          :path-landed-fn (when origin-main
+                                            (sibling-path-landed-fn root origin-main commit lines-of))}
+                         origin-main walk-base)]
+          (if (nil? paths)
+            {:action :escalate
+             :reason (or warning (str "land-step: could not compute " task-ticket-id "'s own paths to replay"))}
+            ;; BL-1375: :passengers are the approved unlanded siblings whose
+            ;; lines ride on an included shared path. replay! owes them the
+            ;; tree guards before it hands QA a commit to publish.
+            ;;
+            ;; BL-1447: the tip-pure commit is built HERE, once, and
+            ;; verified complete before land-plan ever returns :replay -
+            ;; never a second build in the CLI, which would collide on the
+            ;; same replay branch name `replay!` already claimed. A replay
+            ;; that fails to build, or builds but is missing any of the
+            ;; parcel's own paths, escalates instead - nothing is ever
+            ;; published for either.
+            (let [replay-result (replay! {:root root :commit commit :task-ticket-id task-ticket-id
+                                           :own-paths paths :passengers (or passengers #{})
+                                           :origin-main origin-main})]
+              (if-not (:success replay-result)
+                {:action :escalate :reason (:reason replay-result) :unlanded unlanded}
+                (let [parcel-paths (parcel-commit-paths root task-ticket-id origin-main commit)]
+                  (if (nil? parcel-paths)
+                    (do (git! root "branch" "-q" "-D" (:branch replay-result))
+                        {:action :escalate
+                         :reason (str "land-step: could not read " task-ticket-id
+                                      "'s own commit history to verify the replay")
+                         :unlanded unlanded})
+                    (let [offenders (replay-completeness-offenders root commit (:commit replay-result) parcel-paths)]
+                      (if (seq offenders)
+                        (do (git! root "branch" "-q" "-D" (:branch replay-result))
+                            {:action :escalate
+                             :reason (str "replay-incomplete: " (str/join " " offenders))
+                             :unlanded unlanded})
+                        {:action :replay :entangled entangled :landed landed :unlanded unlanded
+                         :landed-paths (or landed-paths {})
+                         :excluded (or excluded [])
+                         :own-paths paths :passengers (or passengers #{})
+                         :commit (:commit replay-result) :branch (:branch replay-result)}))))))))))))
 
 ;; ── BL-1432 option 1: re-point the QA branch after a successful land ─────
 ;; QA's branch keeps every review merge and every merge-of-main as its own

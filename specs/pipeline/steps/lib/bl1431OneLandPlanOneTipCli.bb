@@ -112,12 +112,17 @@
     {:work work :root root :bare bare :commit (head root)}))
 
 (defn- comparable-plan
-  "Strips nothing that should differ between two independently built (but
-   content-identical) fixtures - land-plan's own output is already expressed
-   in ticket ids and paths, never raw SHAs, so no scrubbing is needed. Sets
-   are sorted for a stable equality/printed comparison."
+  "Strips :commit/:branch (BL-1447: land-plan's own :replay now builds the
+   tip-pure commit itself, so two independently built - but
+   content-identical - fixtures each get their own real, freshly-built SHA
+   and branch name; comparing THOSE would fail two genuinely-equal plans
+   for a reason this scenario is not testing). Everything else land-plan
+   returns is already expressed in ticket ids and paths, never raw SHAs,
+   so no further scrubbing is needed. Sets are sorted for a stable
+   equality/printed comparison."
   [plan]
   (-> plan
+      (dissoc :commit :branch)
       (update :entangled #(some-> % sort vec))
       (update :landed #(some-> % sort vec))
       (update :unlanded #(some-> % sort vec))
@@ -206,9 +211,11 @@
     (try
       (if-not (= :replay (:action plan))
         (println (json/generate-string {:error (str "fixture did not produce a replay plan: " (pr-str plan))}))
-        (let [replay (land-step-lib/replay! {:root root :commit commit :task-ticket-id OWN
-                                              :own-paths (:own-paths plan) :passengers (:passengers plan)
-                                              :origin-main origin-main})]
+        ;; BL-1447: land-plan's own :replay already built and verified the
+        ;; tip-pure commit (:commit/:branch below) - a second replay! call
+        ;; for the same (ticket, commit) would collide on that same
+        ;; deterministic branch name.
+        (let [replay {:success true :commit (:commit plan) :branch (:branch plan)}]
           (if-not (:success replay)
             (println (json/generate-string {:error (str "fixture replay failed: " (:reason replay))}))
             (do
