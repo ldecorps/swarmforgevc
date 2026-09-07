@@ -1393,8 +1393,14 @@ RESOLVED BY THIS TICKET
 (with-fixture [root]
   ;; A replayed tree that leaves a feature file with no registered handler.
   ;; The guard refuses, so the land refuses, naming the passenger (BL-1324).
+  ;;
+  ;; BL-1447: land-plan's own :replay already built and left a branch
+  ;; (dropped immediately - this test's own direct replay! call below,
+  ;; with a test-injected tree-guards-fn, is a SEPARATE build against the
+  ;; SAME deterministic branch name and would otherwise collide with it).
   (let [commit (shared-path-fixture! root "active" "human_approval: approved\n")
         plan (land-step-lib/land-plan {:root root :commit commit :task-ticket-id "BL-9001"})
+        _ (sh! root "git" "branch" "-q" "-D" (:branch plan))
         result (land-step-lib/replay! {:root root :commit commit
                                        :task-ticket-id "BL-9001"
                                        :own-paths (:own-paths plan)
@@ -1408,6 +1414,7 @@ RESOLVED BY THIS TICKET
 (with-fixture [root]
   (let [commit (shared-path-fixture! root "active" "human_approval: approved\n")
         plan (land-step-lib/land-plan {:root root :commit commit :task-ticket-id "BL-9001"})
+        _ (sh! root "git" "branch" "-q" "-D" (:branch plan))
         result (land-step-lib/replay! {:root root :commit commit
                                        :task-ticket-id "BL-9001"
                                        :own-paths (:own-paths plan)
@@ -1659,14 +1666,25 @@ RESOLVED BY THIS TICKET
         ;; land-plan: the SAME proof through the one public entry a real
         ;; CLI drives - :origin-main c1 (present, not the real c0) must
         ;; change the decision to :land (no entanglement left to see).
-        (assert= "land-plan with :origin-main c0 (the real tip): decides :replay"
-                 :replay (:action (land-step-lib/land-plan {:root root :commit c2 :task-ticket-id "BL-9001" :origin-main c0})))
+        ;;
+        ;; BL-1447: a :replay verdict now BUILDS the replay (land-plan
+        ;; calls replay! itself) and leaves its branch behind for the CLI
+        ;; to publish - each of the two :replay-yielding calls below for
+        ;; the SAME (ticket, commit) would otherwise collide on that same
+        ;; deterministic branch name, so each drops its own branch once
+        ;; asserted on, same discipline BL-1375/06-07 already use.
+        (let [plan-c0 (land-step-lib/land-plan {:root root :commit c2 :task-ticket-id "BL-9001" :origin-main c0})]
+          (assert= "land-plan with :origin-main c0 (the real tip): decides :replay"
+                   :replay (:action plan-c0))
+          (sh! root "git" "branch" "-q" "-D" (:branch plan-c0)))
         (assert= "land-plan with :origin-main c1 (present, deliberately NOT the real tip): decides :land, proving the passed value - not a fresh resolve - drove the walk"
                  :land (:action (land-step-lib/land-plan {:root root :commit c2 :task-ticket-id "BL-9001" :origin-main c1})))
         ;; land-plan: :origin-main key ABSENT resolves once itself (the
         ;; pre-existing, unchanged contract for a direct/test caller).
-        (assert= "land-plan with no :origin-main key: resolves the real tip itself"
-                 :replay (:action (land-step-lib/land-plan {:root root :commit c2 :task-ticket-id "BL-9001"})))
+        (let [plan-noarg (land-step-lib/land-plan {:root root :commit c2 :task-ticket-id "BL-9001"})]
+          (assert= "land-plan with no :origin-main key: resolves the real tip itself"
+                   :replay (:action plan-noarg))
+          (sh! root "git" "branch" "-q" "-D" (:branch plan-noarg)))
         ;; land-plan: :origin-main key PRESENT but nil is the CLI's own
         ;; "entry resolution already failed" case - escalates without a
         ;; second attempt, never silently falling back to a fresh resolve.
@@ -1880,6 +1898,43 @@ RESOLVED BY THIS TICKET
                :skipped (:action result))
       (assert= "post-land-repoint!: names the reason"
                "a parcel in its in_process" (:reason result)))))
+
+;; ── BL-1447: replay-missing-paths (pure core, no git) ─────────────────────
+
+(assert= "replay-missing-paths: identical blobs at every path -> no offenders"
+         []
+         (land-step-lib/replay-missing-paths
+          {:cited-blobs {"a" "sha-a" "b" "sha-b"}
+           :replay-blobs {"a" "sha-a" "b" "sha-b"}
+           :parcel-paths ["a" "b"]}))
+
+(assert= "replay-missing-paths: a path missing from the replay entirely is an offender"
+         ["a"]
+         (land-step-lib/replay-missing-paths
+          {:cited-blobs {"a" "sha-a" "b" "sha-b"}
+           :replay-blobs {"b" "sha-b"}
+           :parcel-paths ["a" "b"]}))
+
+(assert= "replay-missing-paths: a path present in the replay with a DIFFERENT blob is an offender"
+         ["a"]
+         (land-step-lib/replay-missing-paths
+          {:cited-blobs {"a" "sha-a" "b" "sha-b"}
+           :replay-blobs {"a" "sha-wrong" "b" "sha-b"}
+           :parcel-paths ["a" "b"]}))
+
+(assert= "replay-missing-paths: a path the parcel deleted (absent in both) is not an offender"
+         []
+         (land-step-lib/replay-missing-paths
+          {:cited-blobs {"b" "sha-b"}
+           :replay-blobs {"b" "sha-b"}
+           :parcel-paths ["a" "b"]}))
+
+(assert= "replay-missing-paths: every offender is named, sorted, in one report"
+         ["a" "c"]
+         (land-step-lib/replay-missing-paths
+          {:cited-blobs {"a" "sha-a" "b" "sha-b" "c" "sha-c"}
+           :replay-blobs {"b" "sha-b"}
+           :parcel-paths ["c" "a" "b"]}))
 
 (if (seq @failures)
   (do
