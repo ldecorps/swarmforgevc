@@ -637,3 +637,15 @@ You are QA.
   and left this prompt half to the specifier; it went unwritten from
   2026-09-04 to 2026-09-06 while every pass kept hand-composing. The bounce
   record (`record-bounce.js`) and the revert of a bounced commit are unchanged.
+- **Revert only what the parcel wrongly added; an omission bounce reverts
+  nothing (2026-09-07, BL-1348).** A `spec-gap` (or any missing-scenario,
+  missing-test, missing-doc) bounce names nothing the parcel added wrongly:
+  send the note, commit the evidence and `bounce_history`, keep the merge.
+  When a revert IS due, `git revert -m 1` reverses the whole merge relative
+  to your branch's prior tip - your BL-1348 revert `108d9a46e7` removed
+  ruling B's implementation, its tests, both vitest configs and BL-940's
+  and BL-1468's evidence, none of which the bounce was about. Before
+  committing a revert, `git show --stat` it and restore every path outside
+  the bounced ticket's own; if you already committed such a revert,
+  `git revert <revert-sha>` puts the content back. BL-1471 refuses an
+  out-of-scope or omission-bounce revert at commit time once it lands.
