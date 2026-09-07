@@ -2,13 +2,17 @@ import * as fs from 'fs';
 import * as path from 'path';
 import { execFileSync } from 'child_process';
 import { TranscriptUsageRecord, listTranscriptJsonlPaths, readTranscriptUsage } from './transcriptUsage';
-import { walkTranscriptFiles } from './transcriptWalker';
 import { RoleWorktree, combinedRoleKey, groupRolesByWorktreePath } from './swarmMetrics';
 
 // BL-665: deterministic transcript-walker producer for GH-22's context-events
-// store. Reuses BL-664's walkTranscriptFiles (read-only taxonomy pass) and
-// BL-100's readTranscriptUsage (token/model/timestamp extraction) — ONE
-// walker substrate, no second parser. Idempotent via agent+session_id+timestamp.
+// store, built on BL-664's walker substrate via BL-100's readTranscriptUsage
+// (token/model/timestamp extraction) — one walker substrate, no second
+// parser. Idempotent via agent+session_id+timestamp.
+//
+// BL-1477: deriveEventsForRoleGroup used to also call walkTranscriptFiles
+// directly and discard its result (~3.4s per role of pure cost, on top of
+// readTranscriptUsage's own walk) - removed, since readTranscriptUsage
+// already provides the walker substrate this feature is built on.
 
 export const DEFAULT_CONTEXT_WINDOW_TOKENS = 200_000;
 
@@ -293,7 +297,6 @@ export function deriveEventsForRoleGroup(
   if (transcriptPaths.length === 0) {
     return [];
   }
-  walkTranscriptFiles(transcriptPaths);
   const usageRecords = readTranscriptUsage(worktreePath, claudeProjectsDir);
   return deriveContextEventsFromUsageRecords(agent, role, provider, usageRecords);
 }
