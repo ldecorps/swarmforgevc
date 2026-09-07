@@ -12,6 +12,12 @@ epic: code-quality-gates
 priority: 1
 direction: swarm-reported
 depends_on: [BL-1439, BL-1440]
+not_before: 2026-09-08
+# not_before (BL-1469 field, data-only until that gate lands): the mutation
+# cooldown on the files BL-1425 touched 2026-09-05 expires 2026-09-08 (this
+# ticket's own notes, "Do not start before 2026-09-08"). Added by the
+# specifier 2026-09-07 under the STEERING 2026-09-07 directive; the
+# coordinator parks this ticket to paused/ and honours the date by hand.
 mutation_cost: high
 slice_size_envelope: small
 required_stages: [coder, cleaner, architect, hardender, documenter, qa]
