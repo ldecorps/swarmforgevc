@@ -1,0 +1,154 @@
+id: BL-1463
+title: "An unreadable sibling attribution escalates without naming the sibling: land-plan's nil-paths branch returns only a reason, so the CLI prints LAND_ESCALATE with no ENTANGLED_SIBLING line and no entanglement note, and BL-1272's example row 4 ('unreadable' sibling is reported) has been red since BL-1343 made that case refuse rather than narrow (2026-09-02; found 2026-09-07 by the coder running BL-1447's e2e); every escalation names the siblings it has evidence for"
+milestone: M8
+type: defect
+severity: high
+# high (standing-red rule 2026-09-05): an acceptance-lane feature red on
+# main since 09-02, never a flake, now a register row; and a QA reading a
+# bare LAND_ESCALATE has to re-derive by hand which sibling could not be
+# read - the report BL-1272 exists to give. Not critical: the escalate
+# still refuses (fail closed); only the name is missing.
+status: todo
+epic: swarm-reliability
+priority: 10
+direction: swarm-reported
+depends_on: [BL-1446]
+# BL-1446 (at QA, its own gates green) rewrites land-plan's candidate walk;
+# this slice edits land-plan's escalate branch and the CLI's escalate
+# outcome. Built on BL-1446's landed code, never beside it; BL-1461 (paused,
+# same dependency) edits the candidate range - the coordinator serialises
+# the two, they are otherwise orthogonal.
+mutation_cost: low
+# low: one map in land_step_lib.bb, one print block in land_step_cli.bb,
+# fixture cases in the runner and BL-1272's existing handler.
+slice_size_envelope: low
+required_stages: [coder, cleaner, architect, hardender, documenter, qa]
+
+acceptance: specs/features/BL-1463-an-escalating-land-step-still-names-the-sibling-it-could-not-read.feature
+
+required_wiring:
+  - 'swarmforge/scripts/land_step_cli.bb::ENTANGLED_SIBLING::the CLI prints the sibling lines on escalate as it already does on replay (line 148); this anchor pre-exists for the replay path and pins only that the literal stays'
+
+human_approval: pending
+approval_context: >
+  A new feature file is authored here, so it needs a tap. No choice is
+  posed and there are no ruling_options. What is FIRM: BL-1343's refusal
+  stands (an unreadable attribution escalates, never narrows to a replay);
+  this parcel adds names to the refusal, not a replay. BL-1272's feature
+  text is unchanged - its row 4 goes green because the CLI now says what
+  the scenario always asked for.
+
+invariants:
+  - "Whenever the land step holds positive evidence that a sibling is unlanded - an attribution it could not read included - every outcome it prints, LAND_REPLAY or LAND_ESCALATE, names that sibling; naming never depends on which action follows."
+  - "BL-1343 scenario 06 holds: an unreadable attribution refuses rather than narrowing; the escalate map gains the sibling sets and loses nothing."
+
+description: |
+  ## What is wrong
+
+  `swarmforge/scripts/land_step_lib.bb` `land-plan`: after
+  `entangled-siblings` returns `{:entangled :landed :unlanded ...}`, the
+  cond's third branch calls `own-paths`; when it returns `paths` nil (the
+  attribution could not be read - BL-1343 scenario 06's fail-closed case)
+  the plan is `{:action :escalate :reason ...}` and nothing else. The
+  `:replay` branch two lines below carries `:entangled :landed :unlanded
+  :landed-paths :excluded :passengers`; the escalate branch carries none.
+  `land_step_cli.bb`'s `:escalate` outcome prints `LAND_ESCALATE` and the
+  reason and exits 1 - no `ENTANGLED_SIBLING` line (printed only under
+  `:replay`, line ~148) and no `entanglement-note` (printed only for a
+  failed replay, line ~166).
+
+  BL-1272's scenario 01 row 4 ("unreadable" sibling state, expected
+  "reported") reads the CLI output through `namedAsEntangled`, which looks
+  for the sibling id on an `entangled tip - sibling ticket(s)` note line.
+  Output on main (2026-09-07, reproduced by the specifier):
+  `LAND_ESCALATE` / `land-step: could not read own.txt's attribution` - the
+  sibling is never named. Rows 1-3 and scenarios 02-03 pass. The feature's
+  hardener stamp is 2026-08-30 (8/8 mutants killed); BL-1343 landed
+  2026-09-02 and turned the unreadable case from a narrowed replay (which
+  named the sibling on the replay path) into an escalate (which names
+  nobody). BL-1389 (2026-09-04) rewrote the same branch and kept the shape.
+  Found by the coder on 2026-09-07 verifying BL-1447's e2e
+  (`backlog/evidence/BL-1447-unowned-reds-bl1272-bl1297-20260907.md`, coder
+  branch), reproduced identically on the pre-BL-1447 library.
+
+  ## What is wanted
+
+  An escalating land step names the siblings it has evidence for: the
+  escalate map carries the same `:entangled :landed :unlanded` sets the
+  replay map does, and the CLI prints `ENTANGLED_SIBLING <id>` per unlanded
+  sibling plus the entanglement note on every escalate that has them
+  (scenario 01), and nothing of the kind when it has none (scenario 02).
+  The action stays escalate (scenario 03). BL-1272's feature goes green
+  with its text untouched, and its register row leaves (scenario 04).
+
+  ## How (direction, not mandate)
+
+  - `land-plan`: in the `(nil? paths)` branch, `(merge {:action :escalate
+    :reason ...} (select-keys sets [:entangled :landed :unlanded]))`; the
+    earlier `warning` escalate (entangled-siblings could not walk) has no
+    sets and stays bare; the "task name names no ticket id" escalate
+    likewise. Read the landed BL-1446 first - the branch moved.
+  - `land_step_cli.bb` `:escalate` outcome: after `LAND_ESCALATE`, print the
+    `ENTANGLED_SIBLING` lines and `(entanglement-note task-name (:unlanded
+    plan))` when `:unlanded` is non-empty, then the reason; keep exit 1.
+    Share the sibling-printing block with the replay outcome (one
+    function) rather than a second copy.
+  - Fixtures: `land_step_lib_test_runner.bb`'s BL-1343 scenario-06 case
+    asserts the escalate map now carries the sets; BL-1272's handler needs
+    no change (its `namedAsEntangled` reads the note line).
+  - Docs: `docs/reference/BL-1241-entangled-tip-at-the-land-step-has-a-reachable-remedy.md`
+    outcome table - LAND_ESCALATE lists siblings when it has them. The QA
+    prompt's land-step item describes the three outcomes; the documenter
+    adds the sibling lines to the escalate outcome there too (prose is
+    specifier-owned: the specifier lands that line at activation and
+    records the commit here). No registered diagram changes.
+
+constraints: >
+  Built on BL-1446's landed land-plan (depends_on); never in parallel with
+  its parcel. Fixture repositories under mkdtemp with their own origin
+  (BL-1390). BL-1272's and BL-1343's feature files are not edited. The
+  step handler lands with the feature (BL-233). No hand-edited mutation
+  manifests.
+
+out_of_scope: |
+  - The candidate walk's range (BL-1461) and replay completeness (BL-1447).
+  - Making an unreadable attribution replay anyway (BL-1343 decided).
+  - BL-1297's fixture red (BL-1464, minted alongside).
+
+qa_e2e_procedure: >
+  (1) `specs/pipeline/scripts/run_acceptance.sh
+  specs/features/BL-1272-a-landed-sibling-is-not-reported-as-entangled.feature`
+  prints `ok 1..6` (row 4 included). (2) `bb
+  swarmforge/scripts/test/land_step_lib_test_runner.bb` green, including
+  BL-1343's scenario-06 case. (3) In a scratch clone, make a sibling's
+  attribution unreadable the way BL-1272's handler does (an `own.txt`
+  the walk cannot read) and run `bb swarmforge/scripts/land_step_cli.bb
+  <task> <tip>`: `LAND_ESCALATE`, one `ENTANGLED_SIBLING <sibling>`, the
+  note naming it, the reason, exit 1. (4) `land_step_cli.bb no-ticket-task
+  <tip>`: `LAND_ESCALATE` and no `ENTANGLED_SIBLING` line. (5) The
+  register has no row for BL-1272's feature.
+
+source: |
+  Coder note to the specifier, priority 00, 2026-09-07T11:11Z:
+  "unowned-reds BL-1272 ex4 + BL-1297 sc3: pre-existing, see BL-1447
+  evidence"; `backlog/evidence/BL-1447-unowned-reds-bl1272-bl1297-20260907.md`
+  (coder branch). Adjudication:
+  `backlog/evidence/BL-1447-unowned-reds-bl1272-bl1297-adjudication-specifier-20260907.md`.
+
+notes: |
+  Minted 2026-09-07 by the specifier on the coder's unowned-red note, the
+  same pass (standing-red rule: high at first sighting). Register row,
+  lane `acceptance`, BL-1272's feature -> this ticket, first_seen
+  2026-09-07 (red since 2026-09-02).
+
+  Grepped first: no open ticket names the escalate branch's field set,
+  `entanglement-note` on escalate, or BL-1272's row 4; BL-1446/BL-1447
+  (active) and BL-1461 (paused) edit land-plan for other reasons.
+
+  The required_wiring anchor is a pre-existing literal on the replay path,
+  so it gates only that the literal survives; scenario 01 drives the real
+  CLI on the escalate path, which is the gate that matters (BL-1235 shape,
+  stated rather than hidden).
+
+  IR-DRY at mint: scenarios 01 and 03 share their Given by design (same
+  fixture state, CLI outcome vs plan action); reviewed and kept.
