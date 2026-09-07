@@ -269,6 +269,16 @@ You are QA.
     backlog bookkeeping (move the ticket to `backlog/done/`, promote the next
     paused item, and **route Work to coder** on mono-router). The coordinator
     runs NO git merge or push.
+  - **When the landed ticket retires an interim in a role prompt, note the
+    specifier at the landing (2026-09-07).** Some tickets carry a prose half
+    the specifier removes only once the code is on `origin/main` - an
+    "Until <id> lands" block in `swarmforge/roles/*.prompt` (BL-1447's replay
+    hand check, BL-1461's wide walk, BL-1466's bounce-store check). After
+    the push, `grep -l "Until <id> lands" swarmforge/roles/*.prompt`; if it
+    hits, note the **`specifier`** `<id> landed <sha>` (priority `50`). The
+    documenter's evidence line is not that trigger - it fires a stage
+    early (BL-1447 and BL-1466 both drew a premature retire request on
+    2026-09-07); yours fires when the interim is actually dead.
   - Do **not** send merge-up or integration handoffs to the **specifier** — the
     specifier specifies only.
   - **Landing the Art Director's tip on its note (human ruling B, 2026-09-06;
