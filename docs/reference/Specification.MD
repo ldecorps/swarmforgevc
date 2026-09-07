@@ -1,5 +1,23 @@
 # SwarmForge VS Code Extension — Specification
 
+**Last Updated:** September 7, 2026 (BL-1448: `test_property_suite_drift_guard.sh`'s
+allowlisted-standing-red cases (11, 12, 13, 13b, 13c, 13d, 21) hand-named
+property files by hand that were rows of the LIVE
+`property_suite_standing_allowlist.tsv` on 2026-08-27, so the suite's
+verdict drifted with that file's contents instead of testing the guard's
+own allowlist logic. BL-1428 drained the live file to zero rows the same
+day, and every one of those cases started failing — case 11 hidden behind
+BL-1409's unrelated case 07 red since 2026-08-30, so invisible until
+2026-09-06. Fixed: the allowlist-dependent cases now run the fixture's own
+copy of `check_property_suite_drift.sh` against a fixture-owned allowlist
+file the fixture writes itself (header copied from the live file's format,
+body listing only the fixture's own allowlisted names) — so the suite
+decides identically whatever the live file holds, the BL-1398/BL-1445
+shape again. Which reds the live guard allowlists on `main` is untouched;
+only the fixture's own self-test stopped reading live, draining state.
+Acceptance:
+`specs/features/BL-1448-the-drift-guard-suite-owns-its-allowlist.feature`.)
+Prior entry —
 **Last Updated:** September 6, 2026 (BL-1226: the `/pilot` land mkdtemp
 convention gate (`assessPilotMkdtempConvention`,
 `pilotMkdtempConventionCheck.ts`, BL-743) scanned only touched
