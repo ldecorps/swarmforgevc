@@ -100,6 +100,56 @@ demote stopped anything: real WIP went from 2 to 4 while the recorded count
 stayed at 2. Both tickets now carry their pipeline state in their own
 `notes:` so this reading cannot recur.
 
+## Standing human directive (2026-09-07 ~21:30 BST) — a ticket that cannot advance does not hold an active slot
+
+**Human, verbatim (specifier chat, 2026-09-07, on the `starved - Operator
+holding the slot, queue not draining` email):** "there has to be other
+tickets that can be primoted surely. why promote stuff that cant advance?"
+— and, to the specifier's two proposed actions below, "go".
+
+**State that prompted it (specifier, 21:20 BST):** cap 5, active 5. BL-1473
+at QA; BL-1408 and BL-1348 complete and held un-landed at QA until BL-1473
+lands (legitimate). BL-1441 promoted 09-06 while its own notes forbid
+starting before 2026-09-08 (mutation cooldown) — slot idle ~2 days, nagged
+every 30 min since 16:21Z. BL-940 `status: blocked` since 09-06 22:10 on
+BL-1451, which is paused at priority 96 — slot idle ~24 h. About 30 approved,
+unblocked tickets waiting in `paused/`. The depth cap counts every YAML in
+`active/` (`count-active-tickets`), so a parked ticket costs a slot until a
+hand moves it. Both BL-940 and BL-1441 were checked at 21:2x BST for a live
+parcel: none in any mailbox, master or worktree, and no post-promotion
+parcel commit — BL-1441's one discharged gate (2f8cea6b93) is recorded on
+`main` and survives the move.
+
+**Effect — the two authorised actions (coordinator executes once, now):**
+
+1. Demote BL-940 and BL-1441 from `active/` to `paused/`, YAML otherwise
+   untouched: BL-940 keeps `status: blocked` and `depends_on: BL-1451`;
+   BL-1441 carries `not_before: 2026-09-08` (added by the specifier on
+   `main`, data-only until BL-1469 lands — honour it by hand). One
+   bookkeeping commit per ticket through `commit_integrity_cli.bb`. The
+   08-31 rule below is satisfied, not overridden: neither has a parcel in
+   flight.
+2. Fill the two freed slots by explicit id — `promote_and_route_next.sh
+   BL-1469`, then `promote_and_route_next.sh BL-1451` — ahead of the
+   expedite lane's next candidates. BL-1469 is the `not_before` promotion
+   gate (the fix for the BL-1441 shape); BL-1451 is BL-940's blocker. The
+   lane would otherwise pick BL-1470/BL-1472, which share `land_step_lib.bb`
+   with BL-1473 (still at QA) and must serialise behind it anyway; BL-1469
+   and BL-1451 are orthogonal to everything in flight.
+
+**Standing rule from here (hand rule until BL-1479 mechanises it):** at
+every promotion pass the coordinator first sweeps `active/` for tickets
+that cannot advance — `status: blocked`, or a `not_before` later than
+today — with no parcel in any mailbox, and parks them back to `paused/`
+(fields untouched, one commit each) BEFORE counting free slots. `active/`
+means "can be worked now". A parked ticket re-enters by the ordinary rules
+when its condition clears. BL-1469 stops the date case at promotion;
+BL-1479 (paused, depends on BL-1469) turns this hand rule into a sweep.
+
+**Scope boundary:** the 08-31 section stands in full — a ticket with a
+parcel anywhere in the pipeline is never demoted, whatever its status, and
+the hold-first pull order is unchanged (`hold/` is empty today).
+
 ## Standing human preference (2026-08-25 evening) — finish local Ollama / Qwen epic
 
 **Human directive (Cursor session, 2026-08-25 ~19:31 BST):** prioritize the
