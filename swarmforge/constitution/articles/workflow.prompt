@@ -78,11 +78,11 @@
 
 ## A Bounce Must Be Reverted Out Of The Bouncing Branch (BL-490/BL-495)
 - Bouncing sends a `note` back but does NOT remove the bounced commit —
-  revert it in the same step (`git revert -m 1 <your-review-merge>`;
-  confirm CONTENT is gone, never by ancestry). EXCEPTION: already an
-  ancestor of `main` → do NOT revert; report the breach. An entangled batch
-  merge or a re-fix merge can each silently undo or re-drop the revert —
-  see **workflow-detailed.prompt** for the full pre-trim wording (BL-954/956).
+  revert what it wrongly ADDED, same step; an OMISSION bounce (spec-gap,
+  missing test/doc) reverts NOTHING, and `git revert -m 1` reverses the
+  WHOLE merge: restore every other ticket's path. EXCEPTION: already an
+  ancestor of `main` → do NOT revert; report the breach. See
+  **workflow-detailed.prompt** for the full wording (BL-954/956, 2026-09-07).
 
 ## Never Blind-Forward A Bounce You Cannot Fix (BL-425/BL-576)
 - A bounce routes to the role that owns the fix. One reaching you for a
