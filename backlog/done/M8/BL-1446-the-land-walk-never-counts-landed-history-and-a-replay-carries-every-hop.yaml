@@ -14,6 +14,13 @@ epic: swarm-reliability
 priority: 6
 direction: swarm-reported
 depends_on: []
+abandoned_commits: [f9816288b6]
+# QA, 2026-09-07: landed via a verified-complete tip-pure replay
+# (e5bff442b3) excluding genuinely-unlanded siblings BL-1349/BL-940;
+# last-handoff-commit for this task resolves to f9816288b6 (hardener's own
+# forward-to-documenter merge). Listed so task_scope_gate_lib.bb/
+# pre_qa_gate_lib.bb rebase their walk on origin/main instead of refusing
+# this ticket's later sends as entangled with its own superseded lineage.
 mutation_cost: medium
 slice_size_envelope: medium
 required_stages: [coder, cleaner, architect, hardender, documenter, qa]
