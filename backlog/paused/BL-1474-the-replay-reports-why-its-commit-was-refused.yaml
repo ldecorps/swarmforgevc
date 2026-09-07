@@ -2,10 +2,13 @@ id: BL-1474
 title: "replay! reports every non-zero git commit exit as 'nothing to commit - own-paths identical to origin/main', so a commit-time guard's refusal of a real 40-path index read as an empty diff on 2026-09-07 and QA rebuilt the commit by hand to learn the merge-deletion guard had refused it; the replay reports the guard's own message, and 'nothing to commit' only when the index is empty"
 milestone: M8
 type: defect
-severity: medium
-# medium: a wrong reason on an escalate costs an investigation (QA spent
-# it today) and can send an adjudication the wrong way; it lands nothing
-# wrong. Not low: LAND_ESCALATE is the land step's one voice to a human.
+severity: high
+# high (re-classed 2026-09-07 evening, was medium): LAND_ESCALATE is the
+# land step's one voice to a human and it misreported a guard refusal as
+# an empty diff twice in one day (BL-1463 17:29Z, BL-1408 18:14Z); until
+# BL-1473 lands every replay of a branch older than main's latest mint
+# hits a guard, so every such escalate lies. A broken health signal on
+# the integration step. It still lands nothing wrong itself.
 status: todo
 epic: swarm-reliability
 priority: 12
@@ -97,3 +100,11 @@ notes: |
   BL-1472 and BL-1473. Grepped first: BL-1343 (done) made an EMPTY own-path
   set refuse with a reason; this is the commit step's report, which
   BL-1343 did not touch.
+
+  2026-09-07 evening (specifier): second instance the same day - BL-1408's
+  land (QA tip 3c8581c68b) escalated "nothing to commit for BL-1408 -
+  own-paths identical to origin/main" while origin/main had none of the
+  parcel's guard-derivation code; the real refusal was again a deletion
+  guard's (BL-1473's cause, 4 spurious deletions). Re-classed high on the
+  severity comment's grounds. Appended to the class adjudication file
+  named in `source:`.
