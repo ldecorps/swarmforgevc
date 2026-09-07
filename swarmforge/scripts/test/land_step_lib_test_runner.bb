@@ -896,6 +896,28 @@ RESOLVED BY THIS TICKET
     (assert= "BL-1343/06: an unreadable attribution refuses" nil paths)
     (assert-includes "BL-1343/06: and names what it could not read" warning "attribution")))
 
+;; ── BL-1463: an escalating land step still names the sibling it could not
+;;    read - land-plan's own own-paths-unreadable branch had
+;;    entangled-siblings' evidence in hand (BL-9002 already found unlanded)
+;;    and dropped it from the escalate map entirely (BL-1272's own defect,
+;;    reproduced via the same real tree-object deletion its own acceptance
+;;    fixture uses - a diff that cannot be read defaults that sibling to
+;;    unlanded, per landed-sibling-verdicts' own fail-closed contract, so
+;;    entangled-siblings itself still succeeds).
+(with-fixture [root]
+  (mark-origin-main-here! root)
+  (commit! root "sib.txt" "sibling content\n" "BL-9002: sibling work")
+  (let [sibling-commit (:out (sh! root "git" "rev-parse" "HEAD"))
+        sibling-tree (:out (sh! root "git" "rev-parse" (str sibling-commit "^{tree}")))]
+    (commit! root "own.txt" "own\n" "BL-9001: own work")
+    (let [commit (:out (sh! root "git" "rev-parse" "HEAD"))
+          obj-path (fs/path root ".git" "objects" (subs sibling-tree 0 2) (subs sibling-tree 2))]
+      (fs/delete obj-path)
+      (let [plan (land-step-lib/land-plan {:root root :commit commit :task-ticket-id "BL-9001"})]
+        (assert= "BL-1463: an unreadable attribution still escalates" :escalate (:action plan))
+        (assert= "BL-1463: names the sibling in :unlanded" #{"BL-9002"} (:unlanded plan))
+        (assert-includes "BL-1463: the reason still says what it could not read" (:reason plan) "attribution")))))
+
 ;; scenario 03b: TWO paths fully subtracted - the refusal names BOTH, not
 ;; just the last one folded over. A single-excluded-path fixture (03 above)
 ;; cannot tell an accumulator that keeps every exclusion from one that keeps
