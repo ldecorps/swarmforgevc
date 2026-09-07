@@ -3,9 +3,9 @@
 // BL-1349: step handlers for "the slowest spawn-heavy property files fit a
 // per-file budget". Drives the REAL property lane (npx vitest run <file>
 // --config vitest.properties.config.mjs) for the per-file budget scenario,
-// and diffs the REAL working-tree file against the REAL parent commit
-// (git show HEAD:<path>) for the no-deletion scenario - never a
-// reimplementation of either the lane or git.
+// and diffs the REAL working-tree file against the REAL pre-tuning commit
+// for the no-deletion scenario - never a reimplementation of either the
+// lane or git.
 
 const assert = require('node:assert/strict');
 const path = require('node:path');
@@ -17,6 +17,14 @@ const REPO_ROOT = path.join(__dirname, '..', '..', '..');
 const EXTENSION_DIR = path.join(REPO_ROOT, 'extension');
 const TEST_DIR = path.join(EXTENSION_DIR, 'test');
 const BUDGET_MS = 15000;
+
+// The coder commit that tuned the three files below. The "before" state
+// must be read from immediately before THIS commit, never from HEAD:
+// every pipeline stage after coder already has this commit merged into
+// its own worktree, so by the time any later stage runs this scenario
+// `HEAD:<path>` and the on-disk file are byte-identical and the
+// comparison can never fail (BL-1349 architect bounce, 2026-09-06).
+const TUNING_COMMIT = '7f0e5766c9';
 
 // BL-421/engineering.prompt: a Scenario Outline's Examples column is
 // validated against an explicit KNOWN_VALUES lookup, never a bare
@@ -98,7 +106,7 @@ function registerBl1349SpawnHeavyPropertyBudgetSteps(registry) {
   scoped(/^their properties are compared with the parent commit$/, (ctx) => {
     ctx.propertyDiffs = ctx.tunedFiles.map((file) => {
       const relPath = path.join('extension', 'test', file).split(path.sep).join('/');
-      const before = execFileSync('git', ['show', `HEAD:${relPath}`], { cwd: REPO_ROOT, encoding: 'utf8' });
+      const before = execFileSync('git', ['show', `${TUNING_COMMIT}^:${relPath}`], { cwd: REPO_ROOT, encoding: 'utf8' });
       const after = require('node:fs').readFileSync(path.join(TEST_DIR, file), 'utf8');
       return {
         file,
