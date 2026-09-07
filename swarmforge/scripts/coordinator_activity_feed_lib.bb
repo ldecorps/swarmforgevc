@@ -87,15 +87,18 @@
   (subs filename 3))
 
 (defn new-handoffs
-  "sorted-handoffs: every sent handoff for the coordinator, as {:file
-   :header} maps (:file the bare filename, :header the four fields
-   format-handoff-line needs), sorted ascending by handoff-sort-key. cursor:
-   the last :file this feed already posted, or nil."
-  [sorted-handoffs cursor]
+  "BL-1454 invariant 3: sorted-names is a list of bare sent-handoff FILENAME
+   strings (never a header - the caller must not have opened/slurped a
+   single file to build this list), sorted ascending by handoff-sort-key.
+   cursor: the last filename this feed already posted, or nil (every
+   filename is new). The comparison is pure name-vs-name; the header for a
+   survivor is read by the caller only AFTER this filter runs, so a tick's
+   I/O scales with the count returned here, never with (count sorted-names)."
+  [sorted-names cursor]
   (vec (if cursor
          (let [cursor-key (handoff-sort-key cursor)]
-           (filter #(pos? (compare (handoff-sort-key (:file %)) cursor-key)) sorted-handoffs))
-         sorted-handoffs)))
+           (filter #(pos? (compare (handoff-sort-key %) cursor-key)) sorted-names))
+         sorted-names)))
 
 (defn new-commits
   "commits: {:sha :subject} maps in OLDEST-first order (a straight git log
@@ -158,41 +161,90 @@
     :commit (format-commit-line trace)))
 
 ;; ── Orchestration: the tick ──────────────────────────────────────────────
-;; Every IO edge (reading the sent mailbox, reading git log, sending to
-;; Telegram, reading/writing the cursor file) is injected, so this function
-;; is exercised entirely against plain data and a stub post! in tests -
-;; never live Telegram, per the ticket's own constraint.
+;; Every IO edge (listing the sent mailbox, reading one handoff's header,
+;; reading git log, sending to Telegram, the clock, reading/writing the
+;; cursor file) is injected, so this function is exercised entirely against
+;; plain data and stub seams in tests - never live Telegram, never a real
+;; daemon, per the ticket's own constraint.
+
+;; BL-1454 direction defaults - a tick never posts more than this many lines
+;; nor runs longer than this many ms, whatever the size of coordinator/sent/
+;; or of the git log. handoffd.bb's own defs additionally clamp the deadline
+;; to at most one quarter of SUPERVISOR_IN_SWEEP_BUDGET_MS (invariant 1);
+;; these are just the library's own sane defaults for a bare call.
+(def default-post-cap 20)
+(def default-tick-deadline-ms 30000)
+
+(defn- seed-cursor
+  "BL-1454: the FIRST tick ever (no cursor file, i.e. both sub-cursors nil)
+   seeds each cursor at the newest existing trace of its kind and posts
+   NOTHING historical - this feed is a live log from the moment it starts,
+   never a backfill (firm, per the ticket's approval_context). sorted-names
+   is ascending, so the newest is the last; commits is oldest-first, same."
+  [sorted-names commits]
+  {:handoff-cursor (last sorted-names)
+   :commit-cursor (:sha (last commits))})
 
 (defn tick!
-  [{:keys [daemon-dir list-sent-handoffs list-bookkeeping-commits post! read-cursor! write-cursor!]
+  [{:keys [daemon-dir list-sent-handoff-names read-handoff-header
+           list-bookkeeping-commits post! read-cursor! write-cursor!
+           now-ms post-cap deadline-ms]
     :or {read-cursor! read-cursor
-         write-cursor! write-cursor!}}]
-  (let [cursor (read-cursor! daemon-dir)
-        handoff-traces (->> (new-handoffs (list-sent-handoffs) (:handoff-cursor cursor))
-                             (map (fn [{:keys [file header]}]
-                                    (assoc header :kind :handoff :file file))))
-        commit-traces (->> (new-commits (list-bookkeeping-commits) (:commit-cursor cursor))
-                            (keep (fn [c]
-                                    (when-let [parsed (parse-bookkeeping-subject (:subject c))]
-                                      (assoc parsed :kind :commit :sha (:sha c))))))
-        ;; Handoffs first, then commits - a stable, deterministic order
-        ;; within one tick (never re-derived from wall-clock timestamps,
-        ;; which a filesystem/git pairing cannot promise agree on).
-        traces (concat handoff-traces commit-traces)]
-    (loop [remaining traces
-           cur cursor
-           posted 0]
-      (if (empty? remaining)
-        (do (write-cursor! daemon-dir cur) {:posted posted})
-        (let [trace (first remaining)
-              line (format-line trace)]
-          (if (post! line)
-            (recur (rest remaining)
-                   (case (:kind trace)
-                     :handoff (assoc cur :handoff-cursor (:file trace))
-                     :commit (assoc cur :commit-cursor (:sha trace)))
-                   (inc posted))
-            (do (write-cursor! daemon-dir cur) {:posted posted :stopped-at trace})))))))
+         write-cursor! write-cursor!
+         now-ms #(System/currentTimeMillis)
+         post-cap default-post-cap
+         deadline-ms default-tick-deadline-ms}}]
+  (let [cursor (read-cursor! daemon-dir)]
+    (if (and (nil? (:handoff-cursor cursor)) (nil? (:commit-cursor cursor)))
+      (let [seeded (seed-cursor (list-sent-handoff-names) (list-bookkeeping-commits))]
+        (write-cursor! daemon-dir seeded)
+        {:posted 0 :seeded true})
+      (let [deadline (+ (now-ms) deadline-ms)
+            ;; Invariant 3: the name filter runs BEFORE any header is read -
+            ;; read-handoff-header is called only for survivors, so a tick's
+            ;; I/O is proportional to what is new, never to the total count
+            ;; of sent handoffs.
+            new-names (new-handoffs (list-sent-handoff-names) (:handoff-cursor cursor))
+            handoff-traces (->> new-names
+                                 (map (fn [name]
+                                        (assoc (read-handoff-header name) :kind :handoff :file name))))
+            commit-traces (->> (new-commits (list-bookkeeping-commits) (:commit-cursor cursor))
+                                (keep (fn [c]
+                                        (when-let [parsed (parse-bookkeeping-subject (:subject c))]
+                                          (assoc parsed :kind :commit :sha (:sha c))))))
+            ;; Handoffs first, then commits - a stable, deterministic order
+            ;; within one tick (never re-derived from wall-clock timestamps,
+            ;; which a filesystem/git pairing cannot promise agree on).
+            traces (concat handoff-traces commit-traces)]
+        (loop [remaining traces
+               cur cursor
+               posted 0]
+          (cond
+            (empty? remaining)
+            {:posted posted}
+
+            (>= posted post-cap)
+            {:posted posted :capped true}
+
+            (>= (now-ms) deadline)
+            {:posted posted :deadline-reached true}
+
+            :else
+            (let [trace (first remaining)
+                  line (format-line trace)]
+              (if (post! line)
+                ;; Invariant 2: the cursor is persisted after EVERY
+                ;; successful post, not only when the loop ends - a tick
+                ;; killed mid-batch (process kill, thrown exception) leaves
+                ;; the disk cursor lagging the last successful post by at
+                ;; most one trace, so a restart re-posts nothing already
+                ;; sent.
+                (let [next-cur (case (:kind trace)
+                                  :handoff (assoc cur :handoff-cursor (:file trace))
+                                  :commit (assoc cur :commit-cursor (:sha trace)))]
+                  (write-cursor! daemon-dir next-cur)
+                  (recur (rest remaining) next-cur (inc posted)))
+                (do (write-cursor! daemon-dir cur) {:posted posted :stopped-at trace})))))))))
 
 (defn- header-field [text field]
   (let [prefix (str field ": ")]
