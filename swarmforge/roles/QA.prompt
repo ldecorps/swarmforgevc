@@ -289,6 +289,33 @@ You are QA.
        rematch if advised, `git push origin HEAD:main`, release).
     5. Note the art director `landed art-director tip <sha>` (priority
        `50`), then `done_with_current.sh`. Nothing goes to the coordinator.
+
+  - **Landing the documenter's morning briefing on its note (human ruling A,
+    2026-09-07; BL-1459).** The documenter authors `docs/briefings/<date>.md`
+    (BL-658) and sends you a `note` `land documenter briefing <10-hex>`
+    (priority `50`). Same shape as the art director's tip: a land request,
+    not a parcel - no ticket, no gates of your own, no coordinator
+    bookkeeping, no merge-up broadcast. Do, in order:
+    1. `git branch --contains <sha>` names the documenter's branch; if not,
+       note the documenter back `not on the documenter branch: <sha>` and stop.
+    2. Lane check. Once BL-1459 lands:
+       `swarmforge/scripts/check_documenter_briefing_tip.sh --tip <sha>` must
+       print `DOCUMENTER_BRIEFING_TIP_OK`. Until then, by hand:
+       `git diff --name-only $(git merge-base HEAD <sha>) <sha>` names only
+       `docs/briefings/<date>.md` (and `docs/briefings/<date>.json`), never
+       `docs/briefings/.sent.json` or anything else, AND
+       `git cat-file -e origin/main:docs/briefings/<date>.md` FAILS - a day
+       has one landed briefing; a second is refused
+       (`refused: docs/briefings/<date>.md already on main`), never merged
+       over the one the human was sent (BL-406's shape). Anything outside
+       the lane: `refused: <path> outside lane`, stop, never fix it yourself.
+    3. Sync to `origin/main` as the land recipe requires, then
+       `git merge --no-ff <sha>` with the subject `Land documenter briefing
+       <sha>` (no ticket named). Diff the merge against BOTH parents.
+    4. Push under the land lock per the recipe above.
+    5. Note the documenter `landed documenter briefing <sha>` (priority
+       `50`), then `done_with_current.sh`. Nothing goes to the coordinator;
+       the email sweep sends the briefing from `main` on its own.
 - When verification FAILS (bounce evidence contract, BL-140):
   - **First: finish the pass. One bounce, complete inventory (Article 4.4).** A
     red gate does not end your review — run EVERY gate you own (compile, unit,

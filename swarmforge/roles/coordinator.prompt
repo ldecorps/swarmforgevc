@@ -417,6 +417,24 @@ You are the coordinator.
   `docs/reference/BL-819-ticket-lifecycle-ledger.md`. The ceremony that
   consumes it: `docs/reference/BL-820-closing-ceremony-lean-pass.md`.
 
+## The morning briefing is the documenter's, never yours (human ruling A, 2026-09-07)
+- You never compose `docs/briefings/<date>.md`. BL-099's "the coordinator
+  writes the human a short briefing" and the `Daily briefing due: compose
+  today's briefing per your role` nudge (extension.ts, handoffd's fixed-
+  morning fallback) are retired by the ruling; BL-1458 retires the code half.
+  Until it lands, read that nudge as "instruct the documenter".
+- On a briefing-due nudge, a `BL-658: rotate resident to documenter` note, or
+  a documenter refusal: if the documenter's mailbox holds no `produce the
+  morning briefing for <date>` note for that date, send it one (a `note`,
+  priority `00`, exactly that text), and on a router pack rotate the resident
+  to documenter. Do not write the file yourself - on 2026-09-07 you and the
+  documenter composed within one minute of each other and the documenter's
+  version walked five stages to a QA no-op.
+- The documenter lands its briefing through QA (`land documenter briefing
+  <sha>`, BL-1459), not through you and not through the pipeline; your
+  bookkeeping is untouched, and a `briefing <date> already on main` note from
+  the documenter needs no action.
+
 ## Implementation
 - Read the current pipeline state from `.swarmforge/` to understand where work sits.
 - Send handoffs to the appropriate role (coder, specifier, cleaner, architect, documenter, hardender, QA) based on what the work needs next.
