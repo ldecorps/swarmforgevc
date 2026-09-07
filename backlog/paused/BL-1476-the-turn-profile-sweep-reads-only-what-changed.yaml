@@ -1,0 +1,268 @@
+id: BL-1476
+title: "handoffd's turn-profile-producer-sweep re-reads and re-parses every role transcript ever written on every daemon cycle - 2.2 GB across 8 role groups on 2026-09-07, 27-39 s of every ~60 s cycle, growing with every session ever started and never fed back by what it recorded; a tick reads only transcripts changed since the last completed tick, records exactly what a full walk would, reports read-of-listed counts, and stops at its own deadline"
+milestone: M8
+type: defect
+severity: high
+# high (not critical): a live fault degrading behaviour on a measured
+# trajectory - the sweep alone is 27-39 s of a ~60 s daemon cycle today and
+# grows with lifetime transcript volume; at the 60 s subprocess wait bound
+# (daemon_cycle_guard_lib.bb) sh! kills the CLI and the store silently stops
+# updating, and it counts against the same SUPERVISOR_IN_SWEEP_BUDGET_MS
+# BL-1454's sweep overran. Not yet swarm-down: the 2026-09-07T18:03Z stalled
+# death also carried a reconcile-sweep index-write failure, so this sweep is
+# a contributor, not the proven sole cause. Same shape as BL-1454, caught
+# earlier on the curve.
+status: todo
+epic: swarm-reliability
+priority: 6
+direction: human-reported
+depends_on: []
+not_before: 2026-09-08
+# not_before (BL-1469 field; data-only until that gate lands, so the
+# coordinator honours it by hand): turnProfileProducer.ts and
+# transcriptWalker.ts were last committed 2026-09-05 (BL-1364), inside
+# full-forge.conf's mutation_cooldown_days 3 - a hardener reaching this
+# parcel before 2026-09-08 would have to defer the mutation run and leave an
+# unowned hardening-debt row (BL-1439 and BL-1468 both did).
+mutation_cost: medium
+# medium: turnProfileProducer.ts gains a change-detection path, a persisted
+# per-transcript summary store is new, run-turn-profile-producer.ts gains a
+# deadline and a read-of-listed report; Stryker over compiled out/**; plus a
+# coder-authored property test for invariant 1. handoffd.bb changes are
+# comment-only or a one-line env pass-through (Babashka: no mutation, BL-472).
+slice_size_envelope: medium
+required_stages: [coder, cleaner, architect, hardender, documenter, qa]
+
+acceptance: specs/features/BL-1476-the-turn-profile-sweep-reads-only-what-changed.feature
+
+# required_wiring carries only the handler anchor. Deliberately no anchor on
+# the production consumer: handoffd.bb's poll loop ALREADY calls
+# turn-profile-producer-sweep!, which ALREADY shells to
+# run-turn-profile-producer.js (that call is the defect's own path), so an
+# anchor there is satisfied before the fix and gates nothing (BL-1235). The
+# mechanism is reached in production today; this ticket changes its inside.
+required_wiring:
+  - 'specs/pipeline/steps/bl1476TurnProfileSweepReadsOnlyWhatChangedSteps.js::registerSteps::the handler lands in the same parcel as the feature (BL-233)'
+
+human_approval: approved
+approval_context: >
+  A new feature file is authored here, so it needs a tap. No choice is
+  posed and there are no ruling_options. Two things are FIRM: (1) what gets
+  RECORDED does not change - turn-profile-series.jsonl keeps one row per
+  UTC day, upserted, and a completed tick's row is identical to what a full
+  walk of the same transcripts would have written; only what gets READ
+  changes. (2) A tick that reaches its deadline before finishing the walk
+  writes NO row that tick (a partial window is not a measurement - the
+  same fail-closed posture BL-1364 chose for an unreadable transcript); it
+  keeps the summaries it completed and the next tick finishes. On this
+  host the first tick after landing will rebuild summaries for ~2000
+  transcripts over two or three ticks before the store updates again.
+  Minted by the specifier from the human's root intake of 2026-09-07,
+  backlog/INTAKE-turn-profile-producer-unbounded-transcript-walk.md
+  (archived under backlog/archive/).
+
+invariants:
+  - "A completed tick's window row is identical to the row a full walk of the same transcripts would write at that moment - same window_day, window_start, window_end, complete, unreadable and truncated-tail lists, stages and shares. The persisted per-transcript summaries change what is READ, never what is RECORDED."
+  - "A tick opens for content only transcripts whose size or mtime differs from their persisted summary, or that have none; an unchanged transcript costs one stat and no read. A tick's bytes read scale with what changed since the last completed tick, never with lifetime transcript volume."
+  - "No tick runs past its own deadline, and that deadline is at most one quarter of SUPERVISOR_IN_SWEEP_BUDGET_MS (225000 ms default, so 56 s or less); a tick that stops early has persisted the summaries it completed and has written no window row."
+
+description: |
+  ## What is wrong
+
+  `swarmforge/scripts/handoffd.bb` `turn-profile-producer-sweep!` (~2827)
+  shells to `run-turn-profile-producer.js` every daemon cycle; its own
+  comment says "firing every cycle is safe" - true of its OUTPUT dedupe,
+  not its INPUT cost. `runTurnProfileProducer`
+  (`extension/src/metrics/turnProfileProducer.ts`), for every role group:
+
+  1. `listTranscriptJsonlPaths` (`transcriptUsage.ts`) lists EVERY `.jsonl`
+     ever written under `~/.claude/projects/<slug>/` - no time bound, no
+     cursor.
+  2. `assessTranscriptReadability` reads and JSON-parses every line of every
+     file; `walkTranscriptFiles` (`transcriptWalker.ts`) then reads and
+     parses every file AGAIN. Two full reads and two full parses per file
+     per tick.
+  3. `filterNewTurnProfileWindows` only decides whether the day's row is
+     new; nothing recorded feeds back into what is read. The record's own
+     comment names the shape: "the walk's window widens on every daemon
+     tick".
+
+  Measured by the specifier on 2026-09-07 (evidence file in `source:`):
+  the coder role alone is 272 transcripts / 414 MB, readability pass 2.8 s
+  plus walk 3.4 s with a warm page cache; 8 role groups, 2.2 GB in all.
+  The live daemon log shows the sweep at 27.4-32.5 s on every cycle
+  between 19:45Z and 19:53Z, and 38.9 s inside the 18:03Z `stalled`
+  failure (`.swarmforge/daemon/handoffd-failure-20260907T180330Z.log`)
+  where the next-slowest sweep was 15.8 s. Host telemetry in that window
+  showed no CPU or memory contention. Two ceilings sit above it: the 60 s
+  `SWARMFORGE_SUBPROCESS_WAIT_BOUND_MS` default in
+  `daemon_cycle_guard_lib.bb`, past which `sh!` kills the CLI (exit 124)
+  and the sweep logs nothing but its boundary line (BL-1478), and
+  `SUPERVISOR_IN_SWEEP_BUDGET_MS` (225 s), past which the supervisor rules
+  the daemon stalled and BL-144 halts every role session - the mechanism
+  BL-1454 already exists for.
+
+  ## What is wanted (the human's intake, verbatim)
+
+  - Bound the walk: persist a cursor (last-processed file + byte offset, or at
+    minimum last-processed mtime/window boundary) per role, so a tick's cost
+    scales with *new* transcript content since the last successful run, not
+    with the total lifetime volume.
+  - Keep `buildTurnProfileSeries`'s existing one-row-per-day upsert semantics
+    (`TurnProfileWindowRecord.window_day`) - this is about bounding what gets
+    *read*, not changing what gets *recorded*.
+  - A tick's own deadline/cap, same posture BL-1454 added to
+    `coordinator-activity-feed-sweep!` - do not assume dedup-on-write is
+    sufficient cost control for an unbounded-on-read walk.
+  - Audit whether `context-telemetry-producer-sweep!` (the sibling sweep
+    immediately above this one in `handoffd.bb`, walking "the same
+    transcripts") shares the identical unbounded-read shape - out of scope to
+    fix here, but worth naming rather than leaving for someone else to
+    rediscover independently.
+
+  The audit is done (specifier, this mint): the sibling DOES share the
+  shape - `deriveEventsForRoleGroup` calls `walkTranscriptFiles` over every
+  transcript and discards the result, then `readTranscriptUsage` reads every
+  file again - but it has not been paying that cost because it has been
+  throwing on a corrupt store line on every cycle since 2026-08-30
+  (BL-1477). Once BL-1477 un-darkens it, adopting this ticket's change
+  detection is the follow-up recorded on the swarm-reliability epic's
+  remaining_slices.
+
+  ## What is wanted (specifier's reading: scenarios and invariants)
+
+  - A persisted per-transcript summary (direction: one JSON file under
+    `.swarmforge/telemetry/`, keyed by path, carrying size, mtime, the
+    readability verdict, coverage start/end and the per-category duration
+    sums the series builder needs). A tick stats every listed transcript,
+    reads only those whose size or mtime differs from the summary or that
+    have none, drops summaries of files no longer listed, and assembles the
+    window from the summaries (invariants 1, 2; scenarios 01, 02).
+    Per-file aggregation is exact: `buildTurnProfileSeries` is integer
+    duration sums per category per stage over intervals the walker already
+    computes per file (`overheadIntervals` runs inside the per-file loop),
+    and with no handoff trail `attributeTrail` is the identity.
+  - One read per changed file, not two: readability and the walk consume
+    the same text.
+  - The CLI's output line reports how many transcripts it read of how many
+    it listed (scenarios 01, 02) - the live evidence for invariant 2 that
+    QA and the daemon log can see without a seam.
+  - A tick deadline (direction: 30 s default, clamped to a quarter of
+    `SUPERVISOR_IN_SWEEP_BUDGET_MS`, both read from the OS env in the CLI
+    exactly as BL-1454's `activity-feed-tick-deadline-ms` does in handoffd
+    - or handed down by handoffd as an argument, coder's call) checked
+    between files against an injected clock. On reaching it the tick
+    persists the summaries it completed, writes no row, and prints a
+    `PARTIAL` line the sweep logs on exit 0 (scenario 03; invariant 3).
+  - The handoffd.bb comment "firing every cycle is safe" is corrected to
+    say why it is now true of the input too.
+  - Documenter: `docs/how-to/BL-1364-turn-profile-producer-wiring.md` gains
+    the summary store, the deadline, the partial-tick rule and the
+    read-of-listed report; no registered diagram depicts this sweep.
+
+  ## How (direction, not mandate)
+
+  - A byte-offset resume within a still-growing transcript is a permitted
+    refinement, not required: the walker's turn-boundary logic
+    (`overheadIntervals`) needs the preceding event, so a plain per-file
+    re-read on change satisfies invariant 2 and is the minimum.
+  - Persist the summary store at deadline stop and at tick end, not after
+    every file - the first tick on this host summarises ~2000 files.
+  - Inject `nowFn`, the content-read seam and the store path so every
+    scenario runs on fixture transcripts under mkdtemp, never on
+    `~/.claude/projects/`.
+  - Do NOT fix this by raising `SUPERVISOR_IN_SWEEP_BUDGET_MS` or the
+    subprocess wait bound, by deleting transcripts, or by running the
+    sweep less often - each masks the unbounded read.
+
+  ## Live check the coder can run before forwarding
+
+  `node extension/out/tools/run-turn-profile-producer.js` on this
+  repository, three times in a row with the daemon stopped: the first one
+  or two runs print `PARTIAL ... no window recorded` inside the deadline;
+  the first complete run prints `UPDATED turn profile for 8 stage(s)` with
+  a read-of-listed count, and the day's row in
+  `.swarmforge/telemetry/turn-profile-series.jsonl` is identical to the
+  row the pre-fix build writes (diff the JSON; only
+  `truncated_tail_transcripts` may differ if an agent finished a line in
+  between); the next run reports reading only the transcripts agents wrote
+  to meanwhile and completes in single-digit seconds versus 27-39 s today.
+
+constraints: >
+  Fixture transcripts under mkdtemp. No change to the walker's
+  classification or category set (BL-664) or to the record shape and its
+  one-row-per-day upsert (BL-1364). The context-telemetry producer is
+  untouched here (BL-1477 owns un-darkening it; adopting this change
+  detection is the epic's recorded follow-up). handoffd.bb is shared with
+  BL-1478 (paused) - the coordinator serialises if both are live. The step
+  handler lands with the feature (BL-233). No hand-edited mutation
+  manifests. Mutation on turnProfileProducer.ts and transcriptWalker.ts is
+  inside the 3-day cooldown until 2026-09-08 (not_before).
+
+out_of_scope: |
+  The human's intake, verbatim:
+  - The `master-main-reconcile-sweep` merge-conflict/"Unable to write index"
+    finding from the same failure log - a separate, not-yet-confirmed-causal
+    thread; not folded into this ticket.
+  - Re-litigating BL-1454's own fix (already landed, done) - this is a
+    sibling defect of the same shape, not a regression of that ticket.
+  - Auditing every other handoffd sweep for the same shape wholesale (BL-1454
+    itself named this as a followup, not a mint-time requirement).
+  Added by the specifier:
+  - Fixing the sibling's unbounded read (follow-up on the epic; needs this
+    ticket and BL-1477 landed) and its dark store (BL-1477).
+  - Logging a non-zero CLI exit from the sweep (BL-1478).
+
+qa_e2e_procedure: |
+  1. `cd extension && npm test -- turnProfileProducer run-turn-profile-producer`
+     green, including the invariant-1 property test (bounded producer versus
+     full walk over generated transcript sets and tick sequences), and
+     `bash specs/pipeline/scripts/run_acceptance.sh
+     specs/features/BL-1476-the-turn-profile-sweep-reads-only-what-changed.feature`
+     resolving all three scenarios; BL-1364's feature still resolving
+     (run_acceptance.sh takes one feature per call, run both).
+  2. Live, on this host, daemon stopped: delete the summary store if
+     present, run the CLI until it prints a complete run; keep the row it
+     wrote, then run the pre-fix build from a scratch worktree against the
+     same transcripts and diff the two rows - identical apart from
+     truncated_tail_transcripts when an agent wrote in between.
+  3. Start handoffd and read `.swarmforge/daemon/handoffd.log` over three
+     cycles: `sweep=turn-profile-producer-sweep ms=` is under 10000 on every
+     warm cycle (27000-39000 today), no `PARTIAL` after the first complete
+     run, the `turn-profile-producer` line reports a read count no larger
+     than the number of agents that wrote since the previous cycle, and the
+     day's row still updates each cycle.
+  4. Set `SUPERVISOR_IN_SWEEP_BUDGET_MS=40000` in the daemon env for one
+     cold run (summary store deleted): the effective deadline is 10 s and
+     the CLI prints `PARTIAL`; unset it again.
+
+source: |
+  Human root intake via Claude Code, 2026-09-07,
+  backlog/INTAKE-turn-profile-producer-unbounded-transcript-walk.md
+  (committed e46d52b46d; archived to backlog/archive/ at mint with a
+  pointer to this ticket). Failure log
+  .swarmforge/daemon/handoffd-failure-20260907T180330Z.log; live daemon log
+  .swarmforge/daemon/handoffd.log 19:45Z-19:53Z. Specifier measurements:
+  backlog/evidence/BL-1476-BL-1477-BL-1478-specifier-mint-measurements-20260907.md.
+
+notes: |
+  - Minted 2026-09-07 by the specifier draining the root intake, with
+    BL-1477 (sibling dark since 08-30, found by the intake's own audit
+    bullet) and BL-1478 (the silent non-zero exit that hid it). Grepped
+    first: BL-664 (walker), BL-1364 (producer wiring), BL-666/BL-667 name
+    the series; none bounds the read. BL-1454 is the remedy this mirrors.
+  - Article 3.2.4: type defect, severity high - expedited ordering, no
+    extra slot. not_before 2026-09-08 for the mutation cooldown.
+  - Article 5.3: the intake's "What's wanted" and "Out of scope" ride the
+    ticket verbatim above; nothing was trimmed.
+  - INVEST: one outcome (the sweep's read is bounded and the record
+    unchanged); the sibling's adoption and the sweep logging are their own
+    slices so this one stays one sitting.
+  - IR-DRY (specifier, mint pass): scenarios 01 and 02 share their first
+    Given deliberately - scenario 03 starts from no summaries, so it cannot
+    move to the Background.
+  - Human approved 2026-09-07 20:05Z from the Telegram approval ask
+    (commit ac6c053838, which also committed this YAML before the mint
+    commit); the feature file is unchanged since that tap. IR-DRY: "the
+    tick reports reading 0 of 40 transcripts" and "<read> of <listed>" are
+    one parametrised step - the coder binds one handler.
