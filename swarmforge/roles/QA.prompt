@@ -378,6 +378,10 @@ You are QA.
     --role <producing role> --type <ticket type> --class <failure class>
     --commit <10-hex bounce commit> --by QA --evidence <path to the evidence
     file you just committed>`
+    - `--ticket` accepts both `BL-<n>` and `GH-<n>` (BL-1452, 2026-09-07):
+      a GitHub-seeded ticket's bounce now lands in the same stores, in the
+      same shape, as a BL ticket's — it is no longer invisible to
+      `is_qa_ancestor.sh`'s veto or the bounce-rate metrics.
     - BL-635: this is the GENERALISED recorder — `record-qa-bounce.js`
       (the QA-only tool this call site used before) is no longer invoked from
       any role prompt; every reviewing stage (architect above all — see its

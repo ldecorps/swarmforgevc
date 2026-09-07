@@ -1,5 +1,29 @@
 # SwarmForge VS Code Extension — Specification
 
+**Last Updated:** September 7, 2026 (BL-1452: `record-bounce.js`,
+`record-qa-bounce.js` and `qa-sibling-check.js` refused `GH-<n>`
+GitHub-seeded ticket ids — `bounceArgsCore.ts`'s `TICKET_PATTERN
+/^BL-\d+$/i` and a private copy in `qa-sibling-check.ts` accepted only
+`BL-<n>`, while `pipeline_stage_lib.bb`, `promotion_gates_lib.bb` and
+`swarmMetrics.ts` all already accepted both namespaces. QA's bounce of
+GH-24 on 2026-09-06 (`backlog/evidence/GH-24-QA-20260906.md`) hit
+`record-bounce.js`'s usage error and wrote no JSONL record and no
+`bounce_history` entry — so the bounced commit, reachable from
+`swarmforge-QA` because QA merged it to review, read as QA-approved to
+`is_qa_ancestor.sh`'s veto, the push-sweep gate, the Article 4.2 sweep and
+the commit-time guard alike (BL-952's hazard, reopened for one id
+namespace). Fixed: one shared, exported predicate
+(`extension/src/tools/backlogTicketId.ts`'s `isBacklogTicketId`,
+`/^(BL|GH)-\d+$/i`), consumed by `bounceArgsCore.ts` and
+`qa-sibling-check.ts` in place of each one's own private regex — the
+namespace widens, the anchoring and strictness (still `$`-anchored, still
+refusing a malformed id with the usage and nothing written) do not. A GH
+bounce now lands in both stores with the same shape as a BL bounce and
+vetoes the commit exactly as before. Acceptance:
+`specs/features/BL-1452-the-bounce-recorders-accept-github-seeded-ticket-ids.feature`.
+`swarmforge/roles/QA.prompt`'s `record-bounce.js` call site now notes both
+namespaces are accepted.)
+Prior entry —
 **Last Updated:** September 7, 2026 (BL-1447: nothing between building a
 land-step replay tip and publishing it ever asked whether the tip carried
 the parcel's own work — the 2026-09-06 incident
