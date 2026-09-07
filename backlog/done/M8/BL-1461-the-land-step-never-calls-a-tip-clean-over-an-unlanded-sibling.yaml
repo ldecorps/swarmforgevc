@@ -13,6 +13,15 @@ status: todo
 epic: swarm-reliability
 priority: 8
 direction: swarm-reported
+abandoned_commits: [f4240ecdc2]
+# QA, 2026-09-07: landed via a verified-complete tip-pure replay
+# (04049f4bb2), verified against this session's own original discovery
+# inputs (BL-1448 6c8caf27fb / d854af2126 now correctly name entangled
+# siblings instead of a bare LAND_CLEAN); last-handoff-commit for this
+# task resolves to f4240ecdc2 (hardener's own forward-to-documenter
+# merge). Listed so task_scope_gate_lib.bb/pre_qa_gate_lib.bb rebase their
+# walk on origin/main instead of refusing this ticket's later sends as
+# entangled with its own superseded lineage.
 depends_on: [BL-1446]
 # BL-1446 is at QA (approved by its own gates, 2026-09-07 10:55Z, its
 # follow-up finding is this ticket) and rewrites the same candidate range

@@ -149,3 +149,5 @@ notes: |
 
   IR-DRY at mint: the four scenarios share their When by design (one
   decision, four store states); reviewed and kept.
+
+assigned_to: coder
