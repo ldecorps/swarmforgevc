@@ -48,3 +48,9 @@
   detected_at: 2026-08-19
   discharged_at: 2026-09-05
   discharged_evidence: backlog/evidence/BL-1439-bl956-gherkin-mutation.md
+- parcel: BL-1452
+  gate: mutation
+  file_set: extension/src/tools/backlogTicketId.ts,extension/src/tools/bounceArgsCore.ts,extension/src/tools/qa-sibling-check.ts
+  reason: "Stryker perTest dry run timed out (5min) under host load 6.7-9.7/20 cores from concurrent live-swarm activity"
+  load: "9.65/10.81/8.48"
+  detected_at: 2026-09-07
