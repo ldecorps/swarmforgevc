@@ -172,3 +172,5 @@ source: |
   extension/src/bridge/pipelineGridLive.ts 49; BL-670 done ticket
   (rescoping ruling 2026-08-19, invariant 2, required_wiring) and feature
   scenario 04; BL-940 active ticket description "How".
+
+assigned_to: coder
