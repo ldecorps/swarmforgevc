@@ -1,0 +1,151 @@
+id: BL-1466
+title: "A bounced, not-yet-re-fixed sibling still reads as approved to the land step: ticket-approval-state (BL-1375) consults only the backlog folder and human_approval, never the bounce store, so a sibling QA bounced an hour earlier can ride a shared path as a passenger or have its paths counted landable; BL-1450, bounced 2026-09-07 11:48Z, came back into the QA tree via BL-1452's merge after the re-point dropped QA's revert - a sibling whose latest bounce is newer than its latest handoff is blocking and named"
+milestone: M8
+type: defect
+severity: high
+# high: the land step's sibling check is the one safety net between a
+# QA bounce and main once the re-point has reset QA's own tree, and it
+# does not know what a bounce is. Nothing wrong landed on 2026-09-07
+# because BL-1452 shared no path with BL-1450 and QA re-verified by
+# hand; a shared path would have carried bounced content as an approved
+# passenger with no check firing. Not critical: an interim hand check is
+# in the QA prompt.
+status: todo
+epic: swarm-reliability
+priority: 8
+direction: swarm-reported
+depends_on: []
+mutation_cost: medium
+# medium: one predicate in land_step_lib.bb gains a bounce-store read
+# (a bb reader of .swarmforge/bounces/<month>.jsonl already exists in
+# chase_sweep_lib.bb and is_qa_ancestor.sh reads the same files), plus
+# runner fixtures with a bounce store under the fixture root.
+slice_size_envelope: medium
+required_stages: [coder, cleaner, architect, hardender, documenter, qa]
+
+acceptance: specs/features/BL-1466-a-bounced-sibling-never-rides-another-tickets-land.feature
+
+required_wiring:
+  - 'specs/pipeline/steps/bl1466BouncedSiblingNeverRidesSteps.js::registerSteps::the handler lands in the same parcel as the feature (BL-233)'
+
+human_approval: pending
+approval_context: >
+  A new feature file is authored here, so it needs a tap. No choice is
+  posed and there are no ruling_options. What is FIRM: content QA bounced
+  never reaches main through another ticket's land; a sibling whose most
+  recent bounce names a commit in the tip, with no later handoff of that
+  sibling, is blocking for every purpose BL-1375's approval state serves
+  and is named with the bounce; an unreadable bounce store blocks (fail
+  closed); no bounce record means BL-1375's answer unchanged. BL-1375's
+  scenarios and human_approval semantics are not touched.
+
+invariants:
+  - "Content QA bounced never reaches main through another ticket's land: a sibling whose most recent bounce record names a commit reachable from the tip, with no later handoff of that sibling, is blocking for every purpose BL-1375's approval state serves - exclusive paths excluded, never a passenger - and is named with the bounce and its commit."
+  - "Fail closed and only on evidence: a bounce store that cannot be read is unreadable and blocking (BL-1375 invariant 1's shape); the absence of any bounce record changes nothing BL-1375 decides."
+
+description: |
+  ## What is wrong
+
+  `land_step_lib.bb` `ticket-approval-state` answers `:approved
+  :blocking? false` for any sibling found in active or paused with
+  `human_approval` absent or `approved`, `:withheld` for backlog/hold,
+  `:awaiting-approval` otherwise, `:unreadable` when the YAML cannot be
+  read. BL-1375 built the passenger rule on it (an approved sibling's
+  lines may ride a shared path; an unapproved one blocks and is named).
+  A QA bounce writes `.swarmforge/bounces/<YYYY-MM>.jsonl` (record-bounce
+  / record-qa-bounce, read by `is_qa_ancestor.sh` and `chase_sweep_lib.bb`)
+  and changes nothing the predicate reads: the ticket stays active and
+  approved. Until the coder re-fixes, the bounced content is kept out of
+  QA's tree only by QA's own BL-490/495 revert.
+
+  BL-1438's re-point (`post-land-repoint!`, `reset --hard origin/main`
+  after every land) drops that revert with everything else local-only.
+  2026-09-07: QA bounced BL-1450 at 11:48Z (`.swarmforge/bounces/2026-09.jsonl`,
+  commit 6e517f02a3) and reverted the merge (`d79f003542`); BL-1447 landed
+  at 12:03Z and the re-point reset the QA branch to origin/main; BL-1452's
+  documenter tip, built before the bounce, carried BL-1450's original
+  content and the merge brought it back into QA's tree with no revert
+  left to keep it out (QA evidence
+  `backlog/evidence/BL-1452-QA-followup-repoint-discards-unlanded-bounce-work-20260907.md`).
+  BL-1452 shares no path with BL-1450, so its replay carried nothing of
+  it; a ticket that did would have carried BL-1450's bounced lines as an
+  approved passenger, and no check reads the bounce.
+
+  ## What is wanted
+
+  A sibling whose most recent bounce record names a commit reachable from
+  the tip being landed, with no later handoff of that sibling on record,
+  is `:bounced :blocking? true` for every purpose the approval state
+  serves, named with the bounce's commit and date (scenario 01). A later
+  handoff citing a descendant of the bounced commit clears it (scenario
+  02). An unreadable store blocks (scenario 03). No record: BL-1375's
+  answer unchanged (scenario 04).
+
+  ## How (direction, not mandate)
+
+  - Extend `ticket-approval-state` (or wrap it in the one place `own-paths`
+    and `blocking-siblings` call it) with a bounce read: latest record for
+    the sibling across `.swarmforge/bounces/*.jsonl` - reuse the reader
+    `chase_sweep_lib.bb` already has rather than a third parser; "re-fixed"
+    is a handoff record for the sibling (`salvage-lib/latest-item-handoffs`)
+    citing a commit that descends from the bounced one, or the bounced
+    commit no longer reachable from the tip. Keep the state vocabulary
+    BL-1375's report prints; add `:bounced` beside `:withheld`.
+  - Fixtures: `land_step_lib_test_runner.bb`'s BL-1375 section with a
+    bounce store written under the fixture's own `.swarmforge/bounces/`;
+    never the live store.
+  - Report: the `blocking-siblings` line names the bounce
+    (`BL-9002 bounced 2026-09-07T11:48Z at 6e517f02a3, not re-fixed`) so QA
+    need not open the store.
+  - Documenter: `docs/reference/BL-1241-*.md` (the sibling states table)
+    and BL-1375's how-to if one exists gain the bounced state. The QA
+    prompt's interim hand check (landed with this mint) is removed by the
+    specifier at landing; say so in the parcel's evidence.
+
+constraints: >
+  The bounce store is read, never written, by the land step. BL-1375's
+  feature file and human_approval semantics are untouched. Fixture roots
+  under mkdtemp with their own origin and their own bounce store
+  (BL-1390). The step handler lands with the feature (BL-233). No
+  hand-edited mutation manifests. land_step_lib.bb is also edited by
+  BL-1461 and BL-1463 (paused): the coordinator serialises; this slice
+  touches the approval predicate, not the walk or the escalate map.
+
+out_of_scope: |
+  - The re-point's handling of QA's local commits (BL-1467, minted
+    alongside).
+  - Changing what a bounce writes, or BL-490/495's revert rule.
+  - Any inference of "bounced" from branch ancestry (BL-952 retired that
+    shape); the bounce store is the source.
+
+qa_e2e_procedure: >
+  (1) `bb swarmforge/scripts/test/land_step_lib_test_runner.bb` green with
+  the new bounce cases. (2) Scratch clone: two tickets sharing a path,
+  both approved; write a bounce record for the sibling under the clone's
+  `.swarmforge/bounces/`; `land_step_cli.bb <landing> <tip>`: the sibling
+  is named blocking with the bounce, its paths excluded, no PASSENGER line;
+  add a handoff record for the sibling citing a descendant commit: the
+  sibling reads approved again. (3) Make the store unreadable: escalate
+  naming the store. (4) BL-1375's and BL-1389's features stay green.
+  (5) `swarmforge/roles/QA.prompt` no longer carries the "Until BL-1466
+  lands" hand check.
+
+source: |
+  QA note to the specifier, priority 00, 2026-09-07T13:04Z: "Repoint
+  discards QA's unlanded bounce work, reopens BL-952 - new finding";
+  evidence `backlog/evidence/BL-1452-QA-followup-repoint-discards-unlanded-bounce-work-20260907.md`
+  (QA branch 06116e6075). Adjudication:
+  `backlog/evidence/BL-1452-repoint-discards-bounce-work-adjudication-specifier-20260907.md`.
+
+notes: |
+  Minted 2026-09-07 by the specifier on QA's note, the same pass, with
+  BL-1467 (the re-point half). Interim: QA.prompt's repoint bullet gained
+  the bounce-store hand check (same commit as this mint's prompt change).
+
+  Grepped first: no open ticket names ticket-approval-state, the bounce
+  store at land time, or a bounced state; BL-952 (done) retired
+  ancestry-inferred approval and is the class this re-opens one level up;
+  BL-1375 (done) built the predicate.
+
+  IR-DRY at mint: the four scenarios share their When by design (one
+  decision, four store states); reviewed and kept.
