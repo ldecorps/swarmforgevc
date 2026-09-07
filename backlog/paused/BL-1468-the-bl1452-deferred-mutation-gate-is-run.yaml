@@ -25,7 +25,7 @@ acceptance: specs/features/BL-1468-the-bl1452-deferred-mutation-gate-is-run.feat
 required_wiring:
   - 'backlog/hardening-debt-ledger.yaml::discharged_evidence: backlog/evidence/BL-1468::the ledger, which the register and throttle read, carries this parcel evidence path (BL-1441 shape)'
 
-human_approval: pending
+human_approval: approved
 approval_context: >
   A new feature file is authored here, so it needs a tap. No choice is
   posed and there are no ruling_options. Same shape as BL-1441 (approved)
