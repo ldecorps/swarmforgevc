@@ -488,6 +488,23 @@ same ground in pieces that no longer match the diff's own boundaries.
   QUARANTINED (forward nothing from it until the content is gone; tell the
   coordinator). Never "document the skip and carry on": **"nothing forwards it right
   now" describes an instant, not your branch, and expires at your next merge.**
+- **REVERT ONLY WHAT THE PARCEL WRONGLY ADDED; AN OMISSION BOUNCE REVERTS
+  NOTHING (2026-09-07, BL-1348).** A bounce for an omission - `spec-gap`,
+  a missing scenario, test or doc - names nothing the parcel added wrongly,
+  so there is nothing to revert: the `note`, the evidence file and the
+  `bounce_history` record carry the ask, and the merge stays. `git revert
+  -m 1` reverses the merge's WHOLE combined diff relative to YOUR branch's
+  prior tip: if your branch had not independently taken the parcel's
+  earlier (reviewed, correct) content, the revert removes that too, and
+  with it every other ticket's file that rode in through the same history.
+  On 2026-09-07 QA bounced BL-1348 for the missing free-cores scenario and
+  reverted the documenter merge wholesale (`108d9a46e7`): ruling B's
+  `resolveFreeCoresCeiling` and its tests, both vitest configs, and
+  BL-940's and BL-1468's evidence files left the QA branch; the coder
+  restored them on merge (`0cf47be441`) and flagged it. When a revert IS
+  due (the parcel added something wrong), diff the revert commit against
+  its parent before committing and restore every path outside the bounced
+  ticket's own; BL-1471 guards this at commit time.
 - If a bounced parcel is ABANDONED (not reworked), every branch that merged it
   must revert it — not only the final reviewer.
 - See **workflow-detailed.prompt** for the BL-490/BL-495 landed-without-review
@@ -726,6 +743,9 @@ subsection per `workflow.prompt` header, in the same order.
   reworked) bounced parcel must be reverted from every branch that merged
   it. See **workflow-detailed.prompt** for the full pre-trim wording and the
   BL-490/BL-495 incident.
+  An OMISSION bounce (spec-gap, missing test/doc) reverts nothing, and a
+  due revert never touches another ticket's path (2026-09-07, BL-1348 -
+  full wording above).
 
 ### Never Blind-Forward A Bounce You Cannot Fix (BL-425/BL-576)
 
