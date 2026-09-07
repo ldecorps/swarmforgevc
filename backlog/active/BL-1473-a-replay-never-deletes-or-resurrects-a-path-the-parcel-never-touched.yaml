@@ -161,3 +161,5 @@ notes: |
   all three clauses. Interim while this is open (QA prompt, same commit):
   sync origin/main into the QA branch immediately before the land step,
   so the two-tree diff has nothing of main's to delete, restore or revert.
+
+assigned_to: coder
