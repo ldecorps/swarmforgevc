@@ -33,7 +33,7 @@ required_wiring:
   - 'swarmforge/scripts/handoffd.bb::parked-active-sweep!::the daemon loop runs the park sweep on the shared cadence'
   - 'specs/pipeline/steps/bl1479ParkedActiveSweepSteps.js::registerSteps::the handler lands in the same parcel as the feature (BL-233)'
 
-human_approval: pending
+human_approval: approved
 approval_context: >
   A new feature file is authored here, so it needs a tap. No choice is
   posed and there are no ruling_options. FIRM: (1) a park moves the YAML
