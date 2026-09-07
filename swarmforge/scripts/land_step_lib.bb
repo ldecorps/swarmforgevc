@@ -81,7 +81,8 @@
 ;; :authored split left untouched: both semantics still answer nil only when
 ;; the walk could not run.)
 (defn- ancestry-commits
-  "Every commit reachable from `commit` and not from `base` - the FULL
+  "Every commit reachable from `commit` and not from `base` (nor from
+   `exclude-also`, when given and distinct from `base`) - the FULL
    ancestry, deliberately not a `--first-parent` walk.
 
    BL-1308, invariant 2: this set must include every commit the replay's
@@ -99,11 +100,22 @@
 
    Only DETECTION widens here. `own-commit-changed-paths` and
    `task-tagged-changed-paths` are untouched: the replay must still
-   reproduce what the parcel put on the branch."
-  [root base commit]
-  (let [res (git! root "rev-list" (str base ".." commit))]
-    (when (zero? (:exit res))
-      (remove str/blank? (str/split-lines (:out res))))))
+   reproduce what the parcel put on the branch.
+
+   BL-1446: `exclude-also` lets a caller bound the walk to `base` (a
+   parcel-scoped boundary, e.g. its last hop) while STILL guaranteeing no
+   commit already reachable from `exclude-also` (origin/main) is ever
+   returned as a candidate - a routine post-hop `git merge origin/main`
+   pulls already-landed history into `base..commit` that `base` alone
+   cannot exclude, since that history postdates `base` but predates
+   nothing on the parcel's own line (invariant 1)."
+  ([root base commit] (ancestry-commits root base commit nil))
+  ([root base commit exclude-also]
+   (let [args (cond-> ["rev-list" commit (str "^" base)]
+                (and exclude-also (not= exclude-also base)) (conj (str "^" exclude-also)))
+         res (apply git! root args)]
+     (when (zero? (:exit res))
+       (remove str/blank? (str/split-lines (:out res)))))))
 
 (defn- blob-at
   "The blob id `rev` holds at `path`, or ::absent when it holds none. A path
@@ -409,7 +421,14 @@
    candidates is bounded to it, while `origin-main` stays the tree every
    landed/unlanded verdict is read against (a narrower walk must never
    change what counts as landed, only how many commits are inspected to
-   find a sibling - invariant 2)."
+   find a sibling - invariant 2).
+
+   BL-1446: the candidate range also always excludes anything already
+   reachable from `origin-main`, whatever `walk-base` is - a routine
+   post-hop sync (`git merge origin/main`) pulls already-landed history
+   into `walk-base..commit` that a bound to `walk-base` alone cannot
+   exclude, and a landed commit is never a candidate sibling regardless of
+   how it entered the range (invariant 1)."
   ([root commit task-ticket-id]
    (entangled-siblings root commit task-ticket-id nil))
   ([root commit task-ticket-id extra-paths-fn]
@@ -428,7 +447,7 @@
    (if-not origin-main
      {:entangled nil :warning "land-step: origin/main could not be resolved"}
      (let [walk-base (or walk-base origin-main)
-           candidates (ancestry-commits root walk-base commit)]
+           candidates (ancestry-commits root walk-base commit origin-main)]
        (if (nil? candidates)
          {:entangled nil :warning (str "land-step: could not read the commit range " walk-base ".." commit)}
          (let [siblings (->> candidates
@@ -845,16 +864,18 @@
    (own-paths root commit task-ticket-id unlanded-siblings commits-fn approval-fn opts (origin-main-sha root)))
   ([root commit task-ticket-id unlanded-siblings commits-fn approval-fn opts origin-main]
    (own-paths root commit task-ticket-id unlanded-siblings commits-fn approval-fn opts origin-main origin-main))
-  ;; BL-1432: `walk-base` bounds the delivered-diff read (`full-delivered-
-  ;; paths`) to the parcel's own base instead of walking the whole
-  ;; origin/main..tip range; defaults to origin-main so every existing
-  ;; caller/test is unaffected. `origin-main` stays what landed/approval
-  ;; checks read against - unrelated to how far back the delivered diff
-  ;; looks.
+  ;; BL-1432 attempted to bound the delivered-diff read (`full-delivered-
+  ;; paths`) to `walk-base` (the parcel's last hop) instead of the whole
+  ;; origin/main..tip range - BL-1446: that silently dropped every hop's
+  ;; work before the last one from a replay (a replay must carry the
+  ;; PARCEL'S WHOLE contribution, this function's own docstring above:
+  ;; "since origin/main"). `walk-base` is accepted for arity/call-site
+  ;; compatibility with `land-plan` but is never used as the diff
+  ;; boundary here - only `origin-main` is, exactly as before BL-1432.
   ([root commit task-ticket-id unlanded-siblings commits-fn approval-fn opts origin-main walk-base]
    (if-not origin-main
      {:paths nil :warning "land-step: origin/main could not be resolved"}
-     (if-let [delivered (full-delivered-paths root (or walk-base origin-main) commit)]
+     (if-let [delivered (full-delivered-paths root origin-main commit)]
        ;; BL-1375: memoized so N shared paths read one sibling's ticket file
        ;; once, and so every path in one run answers from the same read.
        ;; BL-1431: when the caller supplied no approval-fn, the default reads
@@ -982,7 +1003,7 @@
                       (if (contains? (:owners attribution) task-ticket-id)
                         (into passengers (filter unlanded-siblings (:owners attribution)))
                         passengers)))))))
-       {:paths nil :warning (str "land-step: could not read the delivered diff " (or walk-base origin-main) ".." commit)}))))
+       {:paths nil :warning (str "land-step: could not read the delivered diff " origin-main ".." commit)}))))
 
 (defn land-plan
   "The land step's own decision: {:action :land} when no entanglement is
@@ -1003,16 +1024,30 @@
 
    BL-1432: `:base` is likewise an OPTIONAL key - the parcel's own base
    (task_scope_gate_lib.bb's own `parcel-own-base`, the same notion the
-   send-time scope gate already uses), and every range read below
-   (`ancestry-commits`, `path-attributing-commits` via `delivered-
-   attribution`, `full-delivered-paths` via `own-paths`) runs from it
-   instead of walking the whole, forever-growing origin/main..tip range.
-   Falling back to `origin-main` when this task has no recorded base (its
-   first hop) or the recorded one is abandoned only ever WIDENS the walk,
-   never narrows it past the pre-existing behavior. `origin-main` itself
-   stays exactly what it was: the tree every landed/unlanded and approval
-   verdict is read against (invariant 2 - a narrower walk must not change
-   what counts as landed, only how many commits are inspected)."
+   send-time scope gate already uses) - and the CANDIDATE walk
+   (`ancestry-commits`, inside `entangled-siblings`) runs from it instead of
+   walking the whole, forever-growing origin/main..tip range: bounding this
+   walk, the one every land pays whether or not anything is entangled, is
+   what BL-1432 was for. Falling back to `origin-main` when this task has no
+   recorded base (its first hop) or the recorded one is abandoned only ever
+   WIDENS the walk, never narrows it past the pre-existing behavior.
+   `origin-main` itself stays exactly what it was: the tree every
+   landed/unlanded and approval verdict is read against (invariant 2 - a
+   narrower walk must not change what counts as landed, only how many
+   commits are inspected).
+
+   BL-1446: `:base` does NOT bound `delivered-attribution` or `own-paths`
+   (the per-path attribution and the replay's own content) - both always
+   read `origin-main..commit`, whatever `:base` is. A land only ever forces
+   these on the rare :replay path (never the common :land one, so this
+   costs nothing there), and bounding them to the LAST hop is what silently
+   dropped every earlier hop's work from a replay (the 2026-09-06 incident,
+   backlog/evidence/BL-1424-land-replay-dropped-own-paths-incident-20260906.md):
+   a replay must carry the parcel's WHOLE contribution, not the delta since
+   whichever hop happened to record `:base`. `ancestry-commits` ALSO always
+   excludes anything reachable from `origin-main` regardless of `:base`
+   (invariant 1) - a routine post-hop `git merge origin/main` must never
+   manufacture a candidate sibling out of already-landed history."
   [{:keys [root commit task-ticket-id] :as opts}]
   (if-not task-ticket-id
     {:action :escalate :reason "land-step: task name names no ticket id"}
@@ -1034,8 +1069,16 @@
           ;; Deferred: a land with no entangled sibling never forces it, and
           ;; that is the common case. Forcing it there would add one
           ;; path-scoped walk per delivered path to every clean land.
-          attribution (when walk-base
-                        (delay (delivered-attribution root walk-base commit)))
+          ;;
+          ;; BL-1446: reads from `origin-main`, never `walk-base` - the same
+          ;; fix as `own-paths` below and for the same reason (the parcel's
+          ;; WHOLE delivered diff, every hop, not just what changed since the
+          ;; last one). This is the rare :replay path only (never forced when
+          ;; `entangled` is empty, the common :land case), so widening it
+          ;; back to `origin-main` does not reintroduce BL-1432's original
+          ;; per-land cost.
+          attribution (when origin-main
+                        (delay (delivered-attribution root origin-main commit)))
           extra-paths-fn (when attribution
                            (fn [sibling]
                              (for [[path a] @attribution
