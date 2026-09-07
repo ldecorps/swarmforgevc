@@ -845,6 +845,46 @@ change to attribution (BL-1472) or to `replay!`'s report (BL-1474).
 Acceptance:
 `specs/features/BL-1473-a-replay-never-deletes-or-resurrects-a-path-the-parcel-never-touched.feature`.
 
+## A revert or reapply commit is transparent to path attribution (BL-1472)
+
+`path-owner-tickets` unions the ticket ids every commit in a path's
+`git log origin-main..commit -- path` walk names, and `own-paths` (BL-1315)
+keeps a path for the landing ticket when any of those touches names no
+ticket — necessary so a lander's own conflict resolution or hotfix, which
+names no ticket, is never excluded. A bounce revert (`Revert "Merge
+documenter <sha> into QA."`) and its reapply (`Reapply "..."`, the subject
+`git revert <revert>` writes) are untagged touches too, but on every path
+the REVERTED commit carried — another ticket's paths, not the lander's own.
+
+Live 2026-09-07: QA bounced BL-1348 (spec-gap) and reverted it (`108d9a46e7`),
+then reapplied it (`adfc35e0c8`) on the specifier's adjudication. `own-paths`
+for BL-1463 against that tip (QA evidence
+`BL-1463-QA-followup-two-land-step-defects-20260907.md`, D1) kept 40 paths
+including BL-1348's own bounced, mid-rework ruling-B production code and
+tests — the revert and reapply both read as untagged touches on those
+paths, so BL-1315's "an untagged touch keeps the path" rule kept them for
+BL-1463 as if they were BL-1463's own. Against the pre-restoration tip the
+same call correctly excluded only BL-1348's two bookkeeping files. A
+BL-1463 land would have published BL-1348's unapproved code under BL-1463's
+name with no warning.
+
+Fixed: `path-owner-tickets` now recognises a revert or reapply commit by
+subject (reusing `task_scope_gate_lib.bb`'s `revert-subject?`, BL-1295's
+send-time predicate, widened to also match `Reapply "..."`, rather than a
+second regex — BL-897's mirror rule) and skips it entirely rather than
+counting it as a touch: the commit it undoes or redoes is still in the same
+path-scoped walk and attributes the path on its own terms. A revert of the
+LANDER's own tagged commit is still attributed by that commit, which is the
+right answer — the content is the lander's, now absent. Every other
+untagged commit still sets `:any-untagged?` exactly as before; BL-1315's
+lander-own-untagged-edit rule and BL-1343's nobody-attributed-path-still-
+replays rule are both unchanged. This is the land-time counterpart of
+BL-1295, which already taught the send-time scope gate not to blame a
+reverted ticket for its own revert's subject.
+
+Acceptance:
+`specs/features/BL-1472-revert-and-reapply-commits-are-transparent-to-path-attribution.feature`.
+
 ## What this does not change
 
 - BL-1192's send-time gate and its range — unchanged; this ticket only adds
