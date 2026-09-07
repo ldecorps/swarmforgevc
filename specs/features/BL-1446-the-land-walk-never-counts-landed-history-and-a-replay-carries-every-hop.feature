@@ -1,3 +1,8 @@
+# mutation-stamp: sha256=b5fcca36ba29462be18c5091db8cfcb6147a770efc36a2236dbd523c7dbac271
+# acceptance-mutation-manifest-begin
+# {"version":1,"tested_at":"2026-09-07T09:20:12.309215208Z","feature_name":"BL-1446 The land walk never counts landed history, and a replay carries every hop's work","feature_path":"/home/carillon/swarmforgevc/.worktrees/hardender/specs/features/BL-1446-the-land-walk-never-counts-landed-history-and-a-replay-carries-every-hop.feature","background_hash":"b3cf769d9395f8c75b169eba257e60da4510cc98b433257e1eca3091f68f3236","implementation_hash":"unknown","scenarios":[{"index":2,"name":"the bounded walk and the wide walk give the same verdict and the same own-paths for the same tip","scenario_hash":"82d987a77d2a54b7566a60ced1db4b30c3fef1102de32b2b0df608d78feb6f4d","mutation_count":3,"result":{"Total":3,"Killed":3,"Survived":0,"Errors":0},"tested_at":"2026-09-07T09:20:12.309215208Z"}]}
+# acceptance-mutation-manifest-end
+
 Feature: BL-1446 The land walk never counts landed history, and a replay carries every hop's work
 
   BL-1432 bounded the land step's attribution walk to the parcel by starting
