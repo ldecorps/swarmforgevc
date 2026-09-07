@@ -1,0 +1,172 @@
+id: BL-1475
+title: "The front desk's human-decision commit and the daemon's topic-record commit give up on a transient git index lock almost at once (one CLI attempt; three tries over 150 ms with stderr discarded) on a checkout whose other commits hold that lock for seconds, then alarm 'FAILED TO COMMIT - a human must land the change manually' / 'NOT yet durable' without checking whether another writer's commit already landed the change: on 2026-09-07 the BL-1472/BL-1473 approvals were swept into the specifier's mints eight seconds after the alarm, and 38 topic records sat dirty all day; both writers retry within a bound sized to the guard chain and verify durability against HEAD before alarming"
+milestone: M8
+type: defect
+severity: high
+# high: two live faults on the shared checkout every busy hour - human
+# decisions reported as needing manual landing when they are durable
+# (a false alarm to the one human), and durable-by-design topic records
+# left uncommitted (38 today, lost on a fresh clone, dirty overlap for
+# the reconcile). Not critical: no decision was lost today.
+status: todo
+epic: swarm-reliability
+priority: 8
+direction: human-requested
+depends_on: []
+mutation_cost: low
+# low: the retry loop and a post-failure `git status --porcelain -- <path>`
+# check in gitCommitScopedFile.ts and commitIntegrityRunner.ts (or the
+# commit-integrity CLI's git step), injectable clock and lock seams
+# already exist in the former; the front desk's alarm text gains the
+# "landed in <sha>" branch.
+slice_size_envelope: low
+required_stages: [coder, cleaner, architect, hardender, documenter, qa]
+
+acceptance: specs/features/BL-1475-shared-checkout-writers-retry-the-index-lock-and-verify-durability.feature
+
+required_wiring:
+  - 'specs/pipeline/steps/bl1475SharedCheckoutWritersRetryAndVerifySteps.js::registerSteps::the handler lands in the same parcel as the feature (BL-233)'
+
+human_approval: pending
+approval_context: >
+  A new feature file is authored here, so it needs a tap. No choice is
+  posed and there are no ruling_options. This is your "fix this bug" and
+  "make tap work going forward" of 2026-09-07: the two FAILED TO COMMIT
+  alarms for BL-1472 and BL-1473 were false - both approvals are on main
+  (swept into the specifier's mint commits ee234ad911 and d8930229a9 by
+  the same lock race that made the front desk's own commits fail), and
+  nothing needed manual landing. Going forward, two things: this ticket
+  (retry git's lock, verify against HEAD, "landed in <sha>" instead of a
+  manual-landing alarm), and, already in force, the specifier commits
+  through the commit-integrity CLI's application lock instead of raw git
+  so a tap's commit waits for a mint instead of losing to it. What is
+  FIRM: a durability alarm is raised only when the path is still dirty
+  against HEAD after a bounded retry; git's stderr is never discarded on
+  the final failure.
+
+invariants:
+  - "A durability alarm (FAILED TO COMMIT, NOT yet durable) is raised only when `git status --porcelain -- <path>` is non-empty after the retry budget: a change any writer's commit has landed is reported as landed, naming the sha, never as needing manual landing."
+  - "Every commit attempt these two writers make on the shared checkout is bounded (attempts x backoff at most 30 s), retries only a lock refusal, and logs git's stderr on its final failure."
+
+description: |
+  ## What is wrong
+
+  Two writers commit on the shared master checkout without a role
+  worktree of their own:
+
+  - Human decisions: `telegramFrontDeskBotCore.ts` `commitApprovalDecision`
+    -> `commitApprovalWrites` (`util/commitIntegrityRunner.ts`) ->
+    `bb commit_integrity_cli.bb ... --path <yaml>`; on `success: false` (or
+    any exception) it posts "<id>: approved recorded but FAILED TO COMMIT
+    - a human must land the change manually" to the Approvals topic. The
+    CLI's own retry budget guards ITS lock directory (`acquire-lock!`,
+    100 polls x 50 ms); a git `index.lock` refusal in its `git commit`
+    step is `commit-failed` after `default-max-retries` 3 x 50 ms.
+  - Topic records: `blTopicStore.ts` -> `commitScopedFile`
+    (`util/gitCommitScopedFile.ts`): `git add` + `git commit -- <file>`
+    with `stdio: 'ignore'`, three attempts at 25/50/75 ms - a 150 ms
+    window - then "FAILED to commit topic record ... NOT yet durable".
+
+  Every other commit on that checkout runs the pre-commit guard chain
+  (`run_commit_guards.sh`, up to the full property lane for extension/src
+  paths), holding `.git/index.lock` for seconds. 2026-09-07 18:35: the
+  human tapped Approve on BL-1472, BL-1473, BL-1474; the front desk flipped
+  all three on disk, committed BL-1474 (c360cfcaea 18:35:49), and lost
+  the lock to the specifier's raw commits for the other two (a883ab5e6b
+  18:35:55, ee234ad911 18:36:03, d8930229a9 18:36:12). Those mint commits,
+  made with `git commit --only -- <yaml>`, captured the working-tree files
+  with `human_approval: approved`: both approvals are on main, under a
+  "BL-14xx: mint ... By specifier." subject rather than BL-1368's
+  human-decision byline, and the human was told to land them by hand. The
+  front-desk-supervisor log shows the same failure for topic records
+  BL-1446, BL-1462, BL-1470, BL-1471 (16:44Z and earlier); at 18:45 the
+  checkout held 34 modified and 4 untracked topic records; the specifier
+  landed 29 with `repair-bl-topic-records.js` (one commit each) until
+  QA reported that cadence rejecting every land, and stopped it.
+
+  ## What is wanted
+
+  Both writers retry a lock refusal within a bound sized to the guard
+  chain (scenarios 01, 04), report git's own reason when the bound is
+  exceeded (scenario 02) or a hook refuses (scenario 05), and before any
+  alarm check `git status --porcelain -- <path>`: clean means another
+  writer landed it - say so with the sha (scenario 03), never "a human
+  must land the change manually".
+
+  ## How (direction, not mandate)
+
+  - `gitCommitScopedFile.ts`: raise the budget to something like 12
+    attempts with backoff capped at 5 s (total <= 30 s), retry only when
+    stderr names `index.lock` (capture stderr; log it on the final
+    failure through the existing `CommitFailureReporter`), and after a
+    failed attempt check the path's porcelain status - empty means done
+    (return true with the landing sha from `git log -1 --format=%H --
+    <path>`).
+  - `commitIntegrityRunner.ts` / `commit_integrity_cli.bb`: the same
+    lock-aware retry around the CLI's `git commit` step (the lib's
+    `:commit-fn!` seam exists; `--max-retries` already parses), and the
+    same porcelain check before `:commit-failed`; `commitApprovalDecision`
+    gets a third outcome, "landed elsewhere", and posts "<id>: approved
+    recorded; landed in <sha> by another writer" instead of the
+    manual-landing alarm.
+  - Both budgets injectable (clock and attempt-fn seams already exist in
+    gitCommitScopedFile.ts) so the runner drives them with no real wait.
+  - `repair-bl-topic-records.js` stays the backstop; it should batch
+    still-dirty records into ONE commit rather than one per record - its
+    one-per-record cadence rejected 20 of 20 QA land attempts on
+    2026-09-07 by moving origin/main every fifteen seconds.
+  - Documenter: `docs/reference` page for the front desk's approval flow
+    (BL-892's) gains the third outcome; no diagram trigger.
+
+constraints: >
+  Bounded retries only (Guardrails); never an unbounded lock spin. Retry
+  only a lock refusal - a hook refusal or any other error fails at once
+  with its stderr. No change to what is committed or to BL-1368's byline
+  on the front desk's own commits. Fixture repositories under mkdtemp
+  with an injected lock holder and clock (BL-1390; no real sleeps in
+  tests). The step handler lands with the feature (BL-233).
+
+out_of_scope: |
+  - Restoring BL-1368's byline on the two approvals swept into mint
+    commits (the flag is durable; the attribution is recorded here).
+  - Serialising all writers on the shared checkout behind one lock (the
+    specifier now uses the CLI's lock by rule; other raw writers are a
+    separate audit).
+
+qa_e2e_procedure: >
+  (1) `npx vitest run test/gitCommitScopedFile.test.js test/commitIntegrityRunner*.test.js`
+  (and the runner cases) green with the injected lock holder. (2) Live: in
+  the master checkout hold the lock by hand (`touch .git/index.lock`),
+  append a message to a ticket's topic through the bot's path or
+  `repair-bl-topic-records.js`, release the lock after 3 s: the record
+  commits, no NOT-yet-durable line in front-desk-supervisor.log. (3) Hold
+  the lock past the bound: the log line carries git's index.lock message.
+  (4) Flip a paused ticket's human_approval by hand and commit it, then
+  tap Approve on it: the Approvals topic says landed in <sha>, never
+  FAILED TO COMMIT. (5) `git status --short -- backlog/topics` stays empty
+  across a busy hour.
+
+source: |
+  Human, in the specifier pane 2026-09-07 18:40 local: "fix this bug:
+  BL-1473: approved recorded but FAILED TO COMMIT - a human must land the
+  change manually. BL-1472: ..."; and 18:47: "make tap work going
+  forward". Adjudication:
+  `backlog/evidence/approval-commit-failed-index-lock-race-adjudication-specifier-20260907.md`.
+
+notes: |
+  Minted 2026-09-07 by the specifier on the human's report. Verified
+  first: HEAD carries `human_approval: approved` for both tickets
+  (ee234ad911, d8930229a9) and the tree is clean for them; the concierge's
+  ask store holds both asks decided. 29 of the 38 dirty topic records were
+  landed with `repair-bl-topic-records.js` before its cadence blocked
+  QA's lands; the remaining 9 are landed in one commit by the specifier.
+
+  In force since this pass (specifier.prompt): the specifier commits on
+  main only through `commit_integrity_cli.bb`, whose application lock
+  the front desk's approval commit also takes, so a tap's commit queues
+  behind a mint instead of failing against it.
+
+  Grepped first: no open ticket names the index-lock race on the shared
+  checkout for these writers; BL-892 (done) made the approval commit loud
+  on failure, BL-331/BL-390 (done) made the topic record's durability
+  check fail closed - neither retried or verified against HEAD.
