@@ -4195,6 +4195,15 @@
                      (str project-root) text])))
     (catch Exception _ false)))
 
+;; Config kill switch, disabled while absent - see
+;; coordinator_activity_feed_lib.bb's own parse-enabled? for the fail-closed
+;; contract. Same reuse of conf-file-path as master-main-reconcile-enabled?
+;; just above.
+(defn- coordinator-activity-feed-enabled? []
+  (coordinator-activity-feed-lib/parse-enabled?
+   (try (slurp (str (backlog-depth-lib/conf-file-path project-root)))
+        (catch Exception _ nil))))
+
 (defn coordinator-activity-feed-sweep! []
   (try
     (coordinator-activity-feed-lib/tick!
@@ -5007,9 +5016,14 @@
                         #(post-qa-branch-sweep-sweep!))
                     ;; GH-24: coordinator activity feed shares the same
                     ;; cadence - no separate timeout, same rationale as
-                    ;; every sibling sweep in this block.
-                    (run-sweep! "coordinator-activity-feed-sweep"
-                        #(coordinator-activity-feed-sweep!))
+                    ;; every sibling sweep in this block. Config-gated
+                    ;; (default OFF, human request 2026-09-07): this feed
+                    ;; posts one line per handoff/bookkeeping commit, which
+                    ;; floods the coordinator's Telegram topic under normal
+                    ;; operation - turn on only while actively investigating.
+                    (when (coordinator-activity-feed-enabled?)
+                      (run-sweep! "coordinator-activity-feed-sweep"
+                          #(coordinator-activity-feed-sweep!)))
                     (run-sweep! "main-sync-deadlock-sweep"
                         #(main-sync-deadlock-sweep!))
                     ;; BL-437: fleet-status sweep shares the same cadence -
