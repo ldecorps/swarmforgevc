@@ -18,6 +18,8 @@
         sent-handoffs (->> (or (:sent-handoffs input) [])
                             (mapv (fn [h] {:file (:file h) :header (:header h)}))
                             (sort-by (comp coordinator-activity-feed-lib/handoff-sort-key :file)))
+        names (mapv :file sent-handoffs)
+        header-by-name (into {} (map (fn [h] [(:file h) (:header h)]) sent-handoffs))
         commits (mapv (fn [c] {:sha (:sha c) :subject (:subject c)}) (or (:commits input) []))
         remaining-fails (atom (or (:fail-first-n input) 0))
         posted (atom [])
@@ -27,7 +29,8 @@
                   (do (swap! posted conj line) true)))]
     (coordinator-activity-feed-lib/tick!
      {:daemon-dir daemon-dir
-      :list-sent-handoffs (fn [] sent-handoffs)
+      :list-sent-handoff-names (fn [] names)
+      :read-handoff-header (fn [name] (get header-by-name name))
       :list-bookkeeping-commits (fn [] commits)
       :post! post!})
     (println (json/generate-string {:posted @posted
