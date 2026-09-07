@@ -831,7 +831,21 @@
    later untagged own-chain commit read as 'every owner is the unlanded
    sibling' and was wrongly excluded. `:any-untagged?` lets the caller tell
    the two apart and keep the path when an untagged touch's contribution is
-   unaccounted for (invariant 1)."
+   unaccounted for (invariant 1).
+
+   BL-1472: a revert or reapply commit (task-scope-gate-lib/revert-subject?
+   - the same anchored-quote predicate BL-1295's send-time gate already
+   reuses, never a second regex) contributes NEITHER an owner NOR an
+   untagged touch of its own - it is skipped entirely, as if it had never
+   touched the path. The commit it undoes or redoes is still in `commits`
+   (the same path-scoped walk found it too) and attributes the path on its
+   own terms. Without this, a bounce revert plus its reapply on a reviewing
+   branch - both untagged - read as an untagged touch on every path the
+   reverted merge carried, and own-paths then kept another ticket's
+   bounced, unapproved content as the landing ticket's own (live 2026-09-07,
+   backlog/evidence/BL-1463-QA-followup-two-land-step-defects-20260907.md
+   D1: BL-1348's ruling-B code and tests rode into BL-1463's own-path set
+   this way)."
   [root origin-main commit path commits-fn]
   (when-let [commits (commits-fn root origin-main commit path)]
     ;; BL-1374. git's path-scoped walk already elides a merge TREESAME to a
@@ -845,8 +859,19 @@
     ;; can author - a conflict it resolved - because invariant 3 forbids
     ;; dropping any path this ticket's own work changed.
     (let [attributing (reduce (fn [acc c]
-                                (if-not (merge-commit? root c)
+                                (cond
+                                  ;; BL-1472: a revert/reapply is ALWAYS a
+                                  ;; single-parent commit (git revert never
+                                  ;; produces a merge, even reverting one via
+                                  ;; -m 1), so this check runs before, and
+                                  ;; independently of, merge-commit? below.
+                                  (task-scope-gate-lib/revert-subject? (commit-subject root c))
+                                  acc
+
+                                  (not (merge-commit? root c))
                                   (conj acc c)
+
+                                  :else
                                   (if-let [wrote (merge-authored-paths* root c)]
                                     (cond-> acc (contains? wrote path) (conj c))
                                     ;; unreadable combined diff: blindness, not
