@@ -207,19 +207,6 @@ You are QA.
            commit holding only this ticket's own paths now exists on
            `<branch>`, built off current `origin/main`. Review that tip and
            land `<new-commit>`, **never the originally-cited commit**, then
-           **Before landing ANY replay (incident 2026-09-06, BL-1424; in force
-           until BL-1447 lands):** list every path the parcel's own commits
-           changed since its first hop (`git log --format=%H ^origin/main
-           <cited>` filtered to subjects naming the ticket, each commit's
-           `diff-tree --name-status`; or the coder's evidence file list) and
-           confirm `git diff <cited> <new-commit> -- <those paths>` is EMPTY.
-           A replay missing or differing on any of them is LAND_ESCALATE by
-           hand: do not push it. The replay diffs cleanly against its OWN
-           parents (it is built fresh off origin/main), so the Guardrails
-           both-parents check does NOT catch this; only the cross-check
-           against the parcel's own file list does. Root cause BL-1446; the
-           net that automates this check is BL-1447. Evidence:
-           `backlog/evidence/BL-1424-land-replay-dropped-own-paths-incident-20260906.md`.
            record `abandoned_commits: [<cited commit>]` on the ticket. That
            record is not optional bookkeeping: the replay deliberately severs
            descent, and both `task_scope_gate_lib.bb` and `pre_qa_gate_lib.bb`
@@ -227,6 +214,10 @@ You are QA.
            present (`swarmforge/backlog-schema.md`, `read-abandoned-commits`).
            Omitting it turns a correct rebuild into a sibling-gate refusal.
          - exit 1, `LAND_ESCALATE` then the reason — the detection or the
+           A reason beginning `replay-incomplete:` (BL-1447, landed 2026-09-07)
+           names every parcel path the built replay lacks or differs on -
+           the automated form of the 2026-09-06 BL-1424 hand check; never
+           push that replay, it is LAND_ESCALATE like any other.
            replay could not be completed cleanly (a real conflict, an
            unreadable range). Go to 3; do not retry by hand.
       3. Rematch once, bounded, per the BL-1144 discipline above — never a
