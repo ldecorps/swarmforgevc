@@ -201,20 +201,12 @@ You are QA.
          Its three outcomes:
          - exit 0, `LAND_CLEAN <commit>` — nothing entangled. Land `<commit>`
            unchanged by your ordinary land action; the rest of this item does
-           not apply.
-           **Until BL-1461 lands (found 2026-09-07 verifying BL-1446):
-           LAND_CLEAN is not proof.** The candidate walk starts at the
-           parcel's LAST hop, so a sibling's unlanded work absorbed earlier
-           on a shared cleaner/architect branch is never visited (BL-1448's
-           tip read LAND_CLEAN while carrying BL-1349's unlanded files).
-           Before landing a LAND_CLEAN tip, run the wide walk by hand:
-           `bb -e '(load-file "swarmforge/scripts/land_step_lib.bb") (prn (land-step-lib/entangled-siblings "." "<commit>" "<BL-id>"))'`
-           (the three-argument form walks origin/main..tip). A non-empty
-           `:unlanded` means the tip is entangled after all: do not push it;
-           treat it as the LAND_REPLAY case (a tip-pure rebuild;
-           `land-plan` with `:base` set to the origin/main sha gives the
-           own-path set) and say so in your evidence. Record:
-           `backlog/evidence/BL-1446-QA-followup-landclean-can-miss-preexisting-entanglement-20260907.md`.
+           not apply. (BL-1461, 2026-09-07: the candidate walk now covers
+           every commit reachable from the tip and not from `origin/main`,
+           whatever the parcel's hops — a sibling's unlanded work absorbed
+           before the parcel's last hop is no longer invisible to this
+           check, so `LAND_CLEAN` is proof again with no hand re-walk
+           needed.)
          - exit 0, `LAND_REPLAY <branch> <new-commit>` followed by one
            `ENTANGLED_SIBLING <ticket-id>` line per **unlanded** sibling, and
            one `LANDED_SIBLING <ticket-id>` line per sibling whose own
