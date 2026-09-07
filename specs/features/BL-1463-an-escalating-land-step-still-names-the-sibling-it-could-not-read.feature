@@ -1,3 +1,8 @@
+# mutation-stamp: sha256=2b3cdd3aead77afaa0ac4d400115d355b851a4df0a34d29539c68212c64dd8e8
+# acceptance-mutation-manifest-begin
+# {"version":1,"tested_at":"2026-09-07T16:05:40.624923351Z","feature_name":"BL-1463 An escalating land step still names the sibling it could not read","feature_path":"/home/carillon/swarmforgevc/.worktrees/hardender/specs/features/BL-1463-an-escalating-land-step-still-names-the-sibling-it-could-not-read.feature","background_hash":"88c3557f1678df5ee0ea16dfd4c86a2e2f3b567ad28a61e044e4253abc3d3932","implementation_hash":"unknown","scenarios":[{"index":1,"name":"an escalation with no sibling in evidence names none","scenario_hash":"10550524b2aebd520d24f59b2881b2f64e98a9d7cc433cfe21eff9e88332f7a8","mutation_count":2,"result":{"Total":2,"Killed":2,"Survived":0,"Errors":0},"tested_at":"2026-09-07T16:05:40.624923351Z"}]}
+# acceptance-mutation-manifest-end
+
 Feature: BL-1463 An escalating land step still names the sibling it could not read
 
   BL-1272 promised that a sibling is reported as entangled on positive
