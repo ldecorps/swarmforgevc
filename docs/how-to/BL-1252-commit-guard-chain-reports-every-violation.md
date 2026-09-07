@@ -220,12 +220,18 @@ same run reported 107.
   path (a hotfix committed straight onto `main`) BL-1240 can never see;
   deliberately NOT added to `land_step_lib.bb`'s tree-guard list (that
   would judge the whole tree, not the commit's own additions).
+- BL-1349 — the property lane's spawn-heavy-file budget split this file's
+  one `bl1252CommitGuardAggregationInvariants.property.test.js` (37 s,
+  five properties at `numRuns` 120, each spawning) into five files, each
+  under the 15 s budget at `numRuns` 60, sharing the spawn plumbing via
+  `extension/test/helpers/bl1252CommitGuardFixture.js`. Same coverage,
+  same assertions — only the sample count and the file boundary changed.
 
 ## Verify
 
 ```bash
 bash swarmforge/scripts/test/test_run_commit_guards.sh
-npx vitest run --config vitest.properties.config.mjs test/bl1252CommitGuardAggregationInvariants.property.test.js
+npx vitest run --config vitest.properties.config.mjs test/bl1252ExpensiveGuardTieringInvariant.property.test.js test/bl1252IndexGuardsAllRunInvariant.property.test.js test/bl1252RefusalPredicateUnchangedInvariant.property.test.js test/bl1252UnexpectedFailureNeverPassesInvariant.property.test.js test/bl1252ViolatingGuardsAllNamedInvariant.property.test.js
 specs/pipeline/scripts/run_acceptance.sh specs/features/BL-1252-commit-guard-chain-reports-every-violation.feature
 bash swarmforge/scripts/test/test_bl1395_bb_scripts_load.sh
 specs/pipeline/scripts/run_acceptance.sh specs/features/BL-1395-a-landed-daemon-script-is-booted-before-it-is-published.feature
