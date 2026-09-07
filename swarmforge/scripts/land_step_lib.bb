@@ -55,6 +55,47 @@
 (defn- git! [root & args]
   (apply daemon-cycle-guard-lib/sh! (into ["git" "-C" (str root)] args)))
 
+(defn git-common-dir
+  "The repository's real git directory, absolute, as git itself reports it.
+
+   BL-1298: `.git` is a DIRECTORY only in the MAIN checkout. In a linked
+   worktree - the only place a pipeline role ever stands - it is a FILE
+   holding `gitdir: ...`, so a path built by joining \".git\" onto the root
+   names a child of a regular file and `git worktree add` fails outright
+   (\"could not create worktree ... off origin/main\", measured 2026-08-30
+   landing BL-1295). `--git-common-dir` answers correctly from either
+   checkout, and answers the SAME from both, which is what makes the replay
+   independent of who invoked it. It is relative to the root git resolved it
+   from, so it is absolutized here rather than trusted as given.
+
+   nil signals \"git could not answer\" - the caller refuses rather than
+   building a path from a guess, the same fail-closed posture as
+   origin-main-sha above."
+  [root]
+  (let [res (git! root "rev-parse" "--git-common-dir")]
+    (when (zero? (:exit res))
+      (let [reported (str/trim (:out res))]
+        (when (seq reported)
+          (str (fs/absolutize (fs/path root reported))))))))
+
+(defn shared-target-root
+  "BL-1339: the ONE root a land-approval record belongs at - git-common-dir's
+   parent, which answers the same from the main checkout and from any linked
+   worktree.
+
+   A pipeline role only ever stands in a linked worktree, so `git rev-parse
+   --show-toplevel` (what the CLI resolves) answers `.worktrees/<role>` and a
+   record written there reaches no consumer: handoffd's push sweep, the
+   babysitter's Article 4.2 sweep and the deploy freshness gate all resolve
+   the store from the target root. BL-1334 therefore shipped fully gated and
+   inert.
+
+   nil when git cannot answer - the caller refuses rather than guessing, since
+   a silent fallback to the caller's directory is precisely this defect."
+  [root]
+  (when-let [common (git-common-dir root)]
+    (str (fs/parent common))))
+
 ;; nil signals "origin/main could not be resolved" - the caller's fail-open,
 ;; mirroring task_scope_gate_lib.bb's own origin-main-sha exactly (never a
 ;; guessed sha).
@@ -652,12 +693,23 @@
       (->> (fs/list-dir dir)
            (filter #(and (fs/regular-file? %) (str/ends-with? (fs/file-name %) ".jsonl")))))))
 
-;; Every bounce record naming `ticket-id`, newest `:at` first, or nil when
-;; any file exists but could not be read/parsed - fail closed (invariant
-;; 2): a partially-read bounce history must never look like a clean one.
-;; No bounces directory at all is a real "never bounced" answer (`[]`),
-;; not a read failure.
-(defn- bounce-records-for [root ticket-id]
+;; BL-1470: record-bounce.js (bounceStore.ts) writes to the SHARED TARGET
+;; ROOT - the same root BL-1339 gave the land-approval store, git-common-
+;; dir's parent (shared-target-root above) - never to whatever root a
+;; pipeline role's own worktree resolves. A record filed under the
+;; caller's own root (however that came to exist) still counts: this is a
+;; union, never a narrowing. Falls back to [root] alone when git cannot
+;; resolve a shared root - shared-target-root already fails closed to nil
+;; for that case, mirroring origin-main-sha's own fallback posture.
+(defn resolve-bounce-store-roots [root]
+  (let [shared (shared-target-root root)]
+    (distinct (remove nil? [shared (str root)]))))
+
+;; Every bounce record naming `ticket-id` in ONE root, or nil when a file
+;; exists but could not be read/parsed. No bounces directory at all in
+;; THIS root is a real "nothing here" answer (`[]`) - the caller decides
+;; whether that is "never bounced" only after checking every root.
+(defn- bounce-records-in-root [root ticket-id]
   (let [files (bounce-jsonl-files root)]
     (if (nil? files)
       []
@@ -669,9 +721,27 @@
                        (catch Exception _ ::unreadable)))]
         (when-not (some #(= ::unreadable %) parsed)
           (->> parsed
-               (filter #(= ticket-id (:ticket %)))
-               (sort-by :at)
-               reverse))))))
+               (filter #(= ticket-id (:ticket %)))))))))
+
+;; Every bounce record naming `ticket-id` across ALL of `store-roots`
+;; (defaults to resolve-bounce-store-roots, above - the shared target root
+;; and, when distinct, the caller's own root), newest `:at` first, or nil
+;; when ANY root's store could not be read - fail closed (invariant 2): a
+;; partially-read bounce history at either root must never look like a
+;; clean one. No bounces directory in ANY root is the real "never
+;; bounced" answer (`[]`). `store-roots` is the injection seam BL-1470's
+;; runner fixtures use to drive a real linked worktree without relying on
+;; this function's own git resolution."
+(defn- bounce-records-for
+  ([root ticket-id] (bounce-records-for root ticket-id nil))
+  ([root ticket-id store-roots]
+   (let [roots (or store-roots (resolve-bounce-store-roots root))
+         per-root (map #(bounce-records-in-root % ticket-id) roots)]
+     (if (some nil? per-root)
+       nil
+       (->> (apply concat per-root)
+            (sort-by :at)
+            reverse)))))
 
 ;; true/false on a clean read, nil (undeterminable) on anything else -
 ;; `git merge-base --is-ancestor` exits 0/1 for a clean yes/no and >1 for
@@ -696,9 +766,16 @@
    `{:state :bounced :blocking? true :reason \"...\"}` naming the bounce
    and its commit, or `{:state :unreadable :blocking? true :reason
    \"...\"}` when the store or the ancestry check itself could not be
-   read - fail closed, never a silent pass (invariant 2)."
-  [root ticket-id commit]
-  (let [records (bounce-records-for root ticket-id)]
+   read - fail closed, never a silent pass (invariant 2).
+
+   BL-1470: the bounce history is read from the shared target root
+   record-bounce.js actually writes to, unioned with the caller's own root
+   - see resolve-bounce-store-roots above - so the answer never depends on
+   which checkout asked. `store-roots` is an optional injection seam for
+   tests; production callers omit it and get the real resolution."
+  ([root ticket-id commit] (bounce-blocking-state root ticket-id commit nil))
+  ([root ticket-id commit store-roots]
+  (let [records (bounce-records-for root ticket-id store-roots)]
     (cond
       (nil? records)
       {:state :unreadable :blocking? true
@@ -728,7 +805,7 @@
             (if refixed?
               nil
               {:state :bounced :blocking? true
-               :reason (str ticket-id " bounced " (:at latest) " at " bounce-commit ", not re-fixed")})))))))
+               :reason (str ticket-id " bounced " (:at latest) " at " bounce-commit ", not re-fixed")}))))))))
 
 (defn blocking-siblings
   "The subset of `sibling-ids` whose approval state still blocks a land,
@@ -1221,47 +1298,6 @@
           (let [res (git! root "rm" "-q" "--ignore-unmatch" "--" p)]
             (when-not (zero? (:exit res)) (reset! ok false))))))
     @ok))
-
-(defn git-common-dir
-  "The repository's real git directory, absolute, as git itself reports it.
-
-   BL-1298: `.git` is a DIRECTORY only in the MAIN checkout. In a linked
-   worktree - the only place a pipeline role ever stands - it is a FILE
-   holding `gitdir: ...`, so a path built by joining \".git\" onto the root
-   names a child of a regular file and `git worktree add` fails outright
-   (\"could not create worktree ... off origin/main\", measured 2026-08-30
-   landing BL-1295). `--git-common-dir` answers correctly from either
-   checkout, and answers the SAME from both, which is what makes the replay
-   independent of who invoked it. It is relative to the root git resolved it
-   from, so it is absolutized here rather than trusted as given.
-
-   nil signals \"git could not answer\" - the caller refuses rather than
-   building a path from a guess, the same fail-closed posture as
-   origin-main-sha above."
-  [root]
-  (let [res (git! root "rev-parse" "--git-common-dir")]
-    (when (zero? (:exit res))
-      (let [reported (str/trim (:out res))]
-        (when (seq reported)
-          (str (fs/absolutize (fs/path root reported))))))))
-
-(defn shared-target-root
-  "BL-1339: the ONE root a land-approval record belongs at - git-common-dir's
-   parent, which answers the same from the main checkout and from any linked
-   worktree.
-
-   A pipeline role only ever stands in a linked worktree, so `git rev-parse
-   --show-toplevel` (what the CLI resolves) answers `.worktrees/<role>` and a
-   record written there reaches no consumer: handoffd's push sweep, the
-   babysitter's Article 4.2 sweep and the deploy freshness gate all resolve
-   the store from the target root. BL-1334 therefore shipped fully gated and
-   inert.
-
-   nil when git cannot answer - the caller refuses rather than guessing, since
-   a silent fallback to the caller's directory is precisely this defect."
-  [root]
-  (when-let [common (git-common-dir root)]
-    (str (fs/parent common))))
 
 (defn- append-land-approval! [root c src task-ticket-id]
   (let [dir (fs/path root ".swarmforge" "land-approvals")
