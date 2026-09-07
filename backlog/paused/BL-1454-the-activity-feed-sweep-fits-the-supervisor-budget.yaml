@@ -24,7 +24,7 @@ required_stages: [coder, cleaner, architect, hardender, documenter, qa]
 
 acceptance: specs/features/BL-1454-the-activity-feed-sweep-fits-the-supervisor-budget.feature
 
-human_approval: pending
+human_approval: approved
 approval_context: >
   A new feature file is authored here, so it needs a tap. No choice is
   posed and there are no ruling_options. One thing is FIRM and worth
@@ -182,3 +182,7 @@ notes: |
     tick runs" / "runs twice" (a run count) and "the cursor file names the
     20th newer trace after the first tick" / "... the 3rd newer trace" (an
     ordinal); the coder binds each pair as one parametrized handler.
+  - Human approved 2026-09-06 ~22:48Z, via direct chat with the coordinator
+    (SUP-17's Telegram poll and the coordinator's own role_ask were both
+    still unanswered there at time of approval): approve BL-1454 and run
+    the BL-567 expeditor on it now. By coordinator.
