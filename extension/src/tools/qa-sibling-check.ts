@@ -32,12 +32,7 @@ import { KNOWN_FAILURE_CLASSES } from '../quality/qaBounce';
 import { appendSiblingDeferralRecordIfNew } from '../metrics/siblingDeferralStore';
 import { computeTicketDeferralStatus, listStrandedDeferrals } from '../metrics/siblingDeferralStatus';
 import { printJsonToStdout, resolveCliMainWorktreeContext, runCliMain } from './swarm-metrics';
-
-const TICKET_PATTERN = /^BL-\d+$/i;
-
-function isValidTicket(value: string | undefined): value is string {
-  return !!value && TICKET_PATTERN.test(value);
-}
+import { isBacklogTicketId } from './backlogTicketId';
 
 interface StatusArgs {
   command: 'status';
@@ -101,7 +96,7 @@ function parseFlags(argv: string[], allowed: readonly string[]): Record<string, 
 
 function parseStatusArgs(rest: string[]): StatusArgs | null {
   const flags = parseFlags(rest, STATUS_FLAGS);
-  if (!flags || !isValidTicket(flags['--ticket'])) {
+  if (!flags || !isBacklogTicketId(flags['--ticket'])) {
     return null;
   }
   return { command: 'status', ticket: flags['--ticket'].toUpperCase() };
@@ -113,7 +108,7 @@ function parseStatusArgs(rest: string[]): StatusArgs | null {
 // chain inline pushed parseDeferArgs's cyclomatic complexity (and thus CRAP,
 // which collapses to complexity at 100% coverage) past the <= 6 threshold.
 function hasValidDeferFields(ticket: string, blockedBy: string, failureClass: string, check: string, commit: string): failureClass is QaBounceFailureClass {
-  return isValidTicket(ticket) && isValidTicket(blockedBy) && !!failureClass && isKnownFailureClass(failureClass) && !!check && !!commit;
+  return isBacklogTicketId(ticket) && isBacklogTicketId(blockedBy) && !!failureClass && isKnownFailureClass(failureClass) && !!check && !!commit;
 }
 
 function parseDeferArgs(rest: string[]): DeferArgs | null {
@@ -134,7 +129,7 @@ function parseClearArgs(rest: string[]): ClearArgs | null {
     return null;
   }
   const { '--ticket': ticket, '--blocked-by': blockedBy, '--commit': commit } = flags;
-  if (!isValidTicket(ticket) || !isValidTicket(blockedBy) || !commit) {
+  if (!isBacklogTicketId(ticket) || !isBacklogTicketId(blockedBy) || !commit) {
     return null;
   }
   return { command: 'clear', ticket: ticket.toUpperCase(), blockedBy: blockedBy.toUpperCase(), commit };

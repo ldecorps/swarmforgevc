@@ -105,6 +105,13 @@ test('parseArgs accepts a valid status invocation and upcases the ticket', () =>
   assert.deepEqual(parseArgs(['status', '--ticket', 'bl-477']), { command: 'status', ticket: 'BL-477' });
 });
 
+// BL-1452: a GitHub-seeded ticket (GH-<n>, BL-114) is a real ticket id
+// namespace, not a malformed one - `qa-sibling-check.js status GH-25`
+// previously failed with "cannot run status" (GH-25-qa-pass-20260825.md).
+test('parseArgs accepts a status invocation for a GH-seeded ticket', () => {
+  assert.deepEqual(parseArgs(['status', '--ticket', 'gh-25']), { command: 'status', ticket: 'GH-25' });
+});
+
 test('parseArgs accepts a valid defer invocation', () => {
   assert.deepEqual(parseArgs(deferArgs()), {
     command: 'defer',
