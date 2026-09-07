@@ -81,3 +81,28 @@ immediately before building the tip-pure commit, so main's newer lines
 ride nothing as reversions.
 
 By specifier.
+
+## Instance: BL-1470 landed, then BL-1479 (2026-09-08, by QA)
+
+Executed the ruling above: hand-built BL-1470's tip-pure replay from its 12
+own paths at 958f98eb97, landed as `a02e3d45fa`, recorded the land
+approval and `abandoned_commits: [958f98eb97]` on the ticket (a follow-up
+commit `347ba79e3a`).
+
+With BL-1470 off the entangled set, re-ran `land_step_cli.bb BL-1479
+2309e064e1` (BL-1479's own QA-approved tip, after merging BL-1470's land
+back into the QA branch): still `LAND_ESCALATE`, same reason - `docs/
+reference/Specification.MD` shared with bounced BL-1348. Content-diff
+(`git diff -U0 origin/main..2309e064e1 -- docs/reference/Specification.MD`)
+showed only BL-1479's own 18-line entry - BL-1348's and BL-1470's lines
+are both now on `origin/main`. Per item 5, hand-built BL-1479's tip-pure
+replay from its own tagged-commit paths (union over every commit whose
+subject names BL-1479, verified path-by-path against `origin/main` for no
+sibling content) plus one untagged BL-1470 doc fragment (`docs/how-to/
+BL-1241-...md`'s bounced-row addition, never landed with BL-1470's own
+12 paths and orphaned once BL-1470 landed) that rode along unclaimed.
+Landed as `38b4338db5`, `abandoned_commits: [2309e064e1]` recorded
+(`09e9463c30`). No further note - both instances resolved by content-diff
+alone, per the ruling.
+
+By QA.
