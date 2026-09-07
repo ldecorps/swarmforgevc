@@ -133,6 +133,18 @@ function ownPaths(root, commitSha, taskTicketId, unlandedSiblings) {
   return JSON.parse(out);
 }
 
+// BL-1472: drives the REAL land-step-lib/delivered-attribution - the
+// {path {:owners #{...} :any-untagged? bool}} map own-paths itself
+// decides each path from. Used where a scenario needs the raw attribution
+// answer for one path (owners AND the untagged-touch bit), not just
+// own-paths' own include/exclude verdict.
+function deliveredAttribution(root, originMain, commitSha) {
+  const out = bb(libExpr(
+    `(println (json/generate-string (land-step-lib/delivered-attribution "${root}" "${originMain}" "${commitSha}")))`,
+  ));
+  return JSON.parse(out);
+}
+
 function replay(root, commitSha, taskTicketId, ownPaths, passengers) {
   const pathsForm = `[${ownPaths.map((p) => `"${p}"`).join(' ')}]`;
   const passengersForm = `#{${(passengers || []).map((p) => `"${p}"`).join(' ')}}`;
@@ -178,6 +190,7 @@ module.exports = {
   recordHandoff,
   landPlan,
   ownPaths,
+  deliveredAttribution,
   replay,
   mkTmpDir,
   buildParcelBranch,

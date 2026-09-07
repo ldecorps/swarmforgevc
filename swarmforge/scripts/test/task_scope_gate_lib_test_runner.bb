@@ -443,6 +443,20 @@
 (assert-false "revert-subject?: 'Revert' immediately followed by the quote with NO whitespace is not the git-revert shape"
               (task-scope-gate-lib/revert-subject? "Revert\"BL-1240: something\""))
 
+;; BL-1472: `git revert` of a commit whose subject already starts with
+;; `Revert "` writes `Reapply "..."` (verified live: reverting
+;; `Revert "BL-9002: change a"` produces `Reapply "BL-9002: change a"`,
+;; never a nested `Revert "Revert ...""`) - the same anchored-quote shape,
+;; under the other word.
+(assert-true "revert-subject?: the shape git revert writes when reverting a revert"
+             (task-scope-gate-lib/revert-subject? "Reapply \"BL-1240: the fixture closure resolves each idiom\""))
+(assert-true "revert-subject?: a reapply of a reverted merge"
+             (task-scope-gate-lib/revert-subject? "Reapply \"Merge documenter BL-1240 0ca3bc03c0 into QA. By QA.\""))
+(assert-false "revert-subject?: an ordinary subject that happens to start with 'Reapply' is not exempt"
+              (task-scope-gate-lib/revert-subject? "Reapply the bad merge by hand for BL-1240"))
+(assert-false "revert-subject?: 'Reapply' immediately followed by the quote with NO whitespace is not the git-reapply shape"
+              (task-scope-gate-lib/revert-subject? "Reapply\"BL-1240: something\""))
+
 (assert-true "subject-names-task?: a subject naming the task is still the task's own commit"
              (task-scope-gate-lib/subject-names-task? "BL-1240: do the thing" "BL-1240"))
 (assert-false "subject-names-task?: a revert quoting the task's subject is NOT the task's commit"
