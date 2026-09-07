@@ -10,6 +10,7 @@ severity: high
 # thorough unit test), which is why the deferral was right; the register
 # needs an owner, not a verdict on the risk.
 status: blocked
+not_before: 2026-09-10
 epic: code-quality-gates
 priority: 8
 direction: swarm-reported
@@ -132,5 +133,14 @@ notes: |
 
   Grepped first: BL-1441 (active) owns only the 2026-08-19 rows; no other
   open ticket names the BL-1452 row or these three files' mutation gate.
+
+  2026-09-07 14:04Z-14:07Z: promoted by the batch promotion after the
+  human's approval sweep despite the note above, demoted by the coordinator
+  three minutes later on the coder's note (6095faaef5) and parked under
+  `status: blocked` (the schema's coordinator-clearable park;
+  promote_and_route_next.sh refuses it). The specifier adds
+  `not_before: 2026-09-10` (data for BL-1469's gate). UNBLOCK on
+  2026-09-10: set `status: todo` - coordinator or specifier - and promote
+  on a quiet host.
 
 
