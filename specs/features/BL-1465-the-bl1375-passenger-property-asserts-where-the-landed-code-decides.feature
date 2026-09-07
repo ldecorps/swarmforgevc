@@ -1,3 +1,7 @@
+# acceptance-mutation-manifest-begin
+# {"version":1,"tested_at":"2026-09-07T14:59:43.788031542Z","feature_name":"BL-1465 BL-1375's passenger property asserts its invariant where the landed code now decides it","feature_path":"/home/carillon/swarmforgevc/.worktrees/hardender/specs/features/BL-1465-the-bl1375-passenger-property-asserts-where-the-landed-code-decides.feature","background_hash":"6db61481ecf57c29d1017e4d582c6527b8d11c2f9fd773bc458e887a26e14c9a","implementation_hash":"unknown","scenarios":[],"outcome":"inapplicable"}
+# acceptance-mutation-manifest-end
+
 Feature: BL-1465 BL-1375's passenger property asserts its invariant where the landed code now decides it
 
   BL-1375's second declared invariant - a passenger rides only through a
