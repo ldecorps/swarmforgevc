@@ -81,6 +81,14 @@
       (let [res (process/sh ["git" "rev-parse" "--show-toplevel"])]
         (when (zero? (:exit res)) (str/trim (:out res))))))
 
+;; BL-1463: one ENTANGLED_SIBLING-printing block for both outcomes that can
+;; carry :unlanded - :replay always could; :escalate now can too, when
+;; land-plan's own-paths-unreadable branch already had entangled-siblings'
+;; evidence in hand (BL-1272's own report contract: naming never depends on
+;; which action follows).
+(defn- print-entangled-siblings! [plan]
+  (doseq [id (sort (:unlanded plan))] (println (str "ENTANGLED_SIBLING " id))))
+
 (defn- canonicalize-commit [project-root commit]
   (let [res (process/sh ["git" "-C" (str project-root) "rev-parse" commit]) ]
     (when (zero? (:exit res)) (str/trim (:out res)))))
@@ -139,7 +147,7 @@
                   (binding [*out* *err*]
                     (println (str "LAND_APPROVAL_UNRECORDED " (:reason rec))))))
               (println (str "LAND_REPLAY " (:branch plan) " " (:commit plan)))
-              (doseq [id (sort (:unlanded plan))] (println (str "ENTANGLED_SIBLING " id)))
+              (print-entangled-siblings! plan)
               ;; BL-1389 invariant 3. The verdict a human would otherwise
               ;; have to re-derive by diffing the replayed tip: which path
               ;; decided each landed sibling, and which paths were left out
@@ -159,15 +167,18 @@
             :escalate
             (do
               (println "LAND_ESCALATE")
-              ;; BL-1447: an escalate that carries :unlanded (a replay was
-              ;; attempted - it failed to build, or built incomplete) still
-              ;; owes the specifier the same sibling-adjudication context
-              ;; QA.prompt's own note-writing step reads - the same text a
-              ;; direct replay! failure printed here before BL-1447 moved
-              ;; the build itself into land-plan. An escalate from earlier
-              ;; in the plan (a bare warning, no attempt made) carries no
-              ;; :unlanded and prints none.
+              ;; BL-1447/BL-1463: an escalate that carries :unlanded (own-
+              ;; paths' attribution read failed, or a replay was attempted
+              ;; and failed to build/build complete) still owes the
+              ;; specifier the same sibling-adjudication context QA.prompt's
+              ;; own note-writing step reads - the same ENTANGLED_SIBLING
+              ;; lines and note a replay would have printed for the same
+              ;; evidence (BL-1272 invariant 1: naming never depends on
+              ;; which action follows). An escalate from earlier in the plan
+              ;; (a bare warning, no entanglement evidence gathered; or no
+              ;; ticket id at all) carries no :unlanded and prints none.
               (when (contains? plan :unlanded)
+                (print-entangled-siblings! plan)
                 (println (land-step-lib/entanglement-note task-name (:unlanded plan))))
               (println (:reason plan))
               (System/exit 1))))))))
