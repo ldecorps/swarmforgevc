@@ -359,6 +359,7 @@ check now asks **which** unlanded co-owner it is, via a new
 | present and not `approved` (pending / amending / rejected / unrecognised) | **no** — still refuses |
 | filed in `backlog/hold` | **no**, regardless of what `human_approval` says — the folder decides ahead of the field, since a held ticket can still read a pre-hold `approved` |
 | found in no tree, filed in more than one backlog folder, or otherwise unreadable | **no** — fails closed |
+| `human_approval: approved`, but its most recent bounce record names a commit reachable from the tip with no later handoff on record (`:bounced`, BL-1466) | **no** — named with the bounce's commit and date; a later handoff citing a descendant of the bounced commit clears it |
 
 Both the worktree and `origin/main` are consulted for each sibling (a
 sibling's ticket file *moves* on `main` when it lands, and `backlog/done/`
@@ -719,6 +720,48 @@ wide walk this restores costs about what the bounded one did.
 
 Acceptance:
 `specs/features/BL-1461-the-land-step-never-calls-a-tip-clean-over-an-unlanded-sibling.feature`.
+
+## A bounced, not-yet-re-fixed sibling never rides as approved (BL-1466)
+
+`ticket-approval-state` (above) reads only the backlog folder and
+`human_approval` — a QA bounce writes `.swarmforge/bounces/<YYYY-MM>.jsonl`
+(the same store `record-bounce.js`/`record-qa-bounce.js` write and
+`is_qa_ancestor.sh`/`chase_sweep_lib.bb` already read) and changes neither,
+so a sibling QA bounced an hour earlier still reads `:approved` and could
+ride a shared path as a passenger, or have its paths counted landable.
+Until BL-1438's re-point, this was masked by QA's own BL-490/495 revert
+keeping the bounced content off the QA branch; the re-point (`reset --hard
+origin/main` after every land) drops that revert with everything else
+local-only. 2026-09-07: QA bounced BL-1450 at 11:48Z and reverted it;
+BL-1447 landed and the re-point reset the QA branch to `origin/main`;
+BL-1452's documenter tip, built before the bounce, still carried BL-1450's
+original content, and merging it brought that content back into QA's tree
+with no revert left to keep it out
+(`backlog/evidence/BL-1452-QA-followup-repoint-discards-unlanded-bounce-work-20260907.md`).
+BL-1452 shared no path with BL-1450, so nothing wrong actually landed —
+but a ticket that DID share a path would have carried the bounced lines in
+as an approved passenger, and no check would have fired.
+
+Fixed: `ticket-approval-state` now also reads the sibling's most recent
+bounce record (reusing `chase_sweep_lib.bb`'s existing reader, never a
+third parser). A sibling whose latest bounce names a commit reachable from
+the tip, with no later handoff of that sibling on record, answers
+`:bounced :blocking? true` — blocking for every purpose BL-1375's
+passenger rule serves, exclusive paths excluded, never eligible as a
+passenger — and the `blocking-siblings` report names the bounce itself
+(`BL-9002 bounced 2026-09-07T11:48Z at 6e517f02a3, not re-fixed`) so QA
+never has to open the store by hand. A later handoff for the sibling
+citing a descendant of the bounced commit clears it. An unreadable bounce
+store fails closed, the same shape as BL-1375's own invariant 1; a
+sibling with no bounce record on file is unaffected — BL-1375's answer for
+it is exactly what it was.
+
+Acceptance:
+`specs/features/BL-1466-a-bounced-sibling-never-rides-another-tickets-land.feature`.
+
+**Note for the record:** this ticket's own "How" names the specifier,
+not the documenter, as the one who removes `QA.prompt`'s interim "Until
+BL-1466 lands" hand-check block at landing.
 
 ## What this does not change
 
