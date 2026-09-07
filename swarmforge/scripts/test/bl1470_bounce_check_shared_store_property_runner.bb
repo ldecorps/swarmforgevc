@@ -42,7 +42,7 @@
 
 (load-file (str (fs/path (fs/parent (fs/canonicalize *file*)) ".." "land_step_lib.bb")))
 
-(def runs (or (some-> (System/getenv "PROPERTY_RUNS") parse-long) 20))
+(def runs (or (some-> (System/getenv "PROPERTY_RUNS") parse-long) 40))
 (def failures (atom []))
 
 (defn- step [s] (mod (+ (* s 1103515245) 12345) 2147483648))
@@ -60,6 +60,21 @@
         (when-not (true? result)
           (report! prop s input (str result)))
         (recur (inc i) s')))))
+
+(defn- sweep-coverage [seed0 gen-fn]
+  (loop [i 0 s seed0 acc []]
+    (if (= i runs) acc (let [[in s'] (gen-fn s)] (recur (inc i) s' (conj acc in))))))
+
+;; Asserted reachability floors, never hoped-for: each marginal bucket a
+;; property's cond branches actually distinguish must be hit at least
+;; `floor` times across `runs` draws, or the branch it feeds is
+;; untested-by-construction however many runs pass.
+(defn- assert-coverage! [prop seed inputs buckets]
+  (let [floor (max 1 (quot runs 10))]
+    (println (str "  " prop " generator coverage: " (pr-str buckets)))
+    (doseq [[k v] buckets]
+      (when (< v floor)
+        (report! (str "COVERAGE " prop " " k) seed inputs (str k " barely exercised: " v " <= floor " floor))))))
 
 (defn- sh! [dir & args]
   (let [{:keys [exit out err]} (apply process/sh {:dir (str dir) :continue true} args)]
@@ -131,16 +146,33 @@
 
 (check-all "P1: the answer never depends on which checkout asked (invariant 1)" 1470 gen-p1 p1-case)
 
+(let [p1-inputs (sweep-coverage 1470 gen-p1)]
+  (assert-coverage! "P1" 1470 p1-inputs
+                     {:bounce-true (count (filter :bounce? p1-inputs))
+                      :bounce-false (count (remove :bounce? p1-inputs))
+                      :unreadable-true (count (filter :unreadable? p1-inputs))
+                      :unreadable-false (count (remove :unreadable? p1-inputs))}))
+
 ;; ── P2: invariant 2 - union, never a narrowing; fail closed ──────────────
 
+;; A fair 4-independent-coins draw makes "all four false" (the real
+;; never-bounced state, invariant 2's own last clause) only a 1-in-16
+;; outcome - reachable, but not with an asserted floor at a sane run
+;; count. Forced to 1-in-4 explicitly, on top of whatever share the fair
+;; draw already contributes, so the state this property most needs to
+;; cover is never left to chance (BL-654's own reachability-floor
+;; requirement, not a hoped-for hit).
 (defn gen-p2 [s]
-  (let [[shared-bounce? s1] (gen-bool s)
-        [caller-bounce? s2] (gen-bool s1)
-        [shared-unreadable? s3] (gen-bool s2)
-        [caller-unreadable? s4] (gen-bool s3)]
-    [{:shared-bounce? shared-bounce? :caller-bounce? caller-bounce?
-      :shared-unreadable? shared-unreadable? :caller-unreadable? caller-unreadable?}
-     s4]))
+  (let [[force-neither? s0] (gen-int s 4)]
+    (if (zero? force-neither?)
+      [{:shared-bounce? false :caller-bounce? false :shared-unreadable? false :caller-unreadable? false} s0]
+      (let [[shared-bounce? s1] (gen-bool s0)
+            [caller-bounce? s2] (gen-bool s1)
+            [shared-unreadable? s3] (gen-bool s2)
+            [caller-unreadable? s4] (gen-bool s3)]
+        [{:shared-bounce? shared-bounce? :caller-bounce? caller-bounce?
+          :shared-unreadable? shared-unreadable? :caller-unreadable? caller-unreadable?}
+         s4]))))
 
 (defn- p2-case [{:keys [shared-bounce? caller-bounce? shared-unreadable? caller-unreadable?]}]
   (with-fixture [root wt]
@@ -174,6 +206,20 @@
           :else true)))))
 
 (check-all "P2: union never a narrowing; fail closed on either root (invariant 2)" 2470 gen-p2 p2-case)
+
+(let [p2-inputs (sweep-coverage 2470 gen-p2)
+      any-unreadable? (fn [{:keys [shared-unreadable? caller-unreadable?]}] (or shared-unreadable? caller-unreadable?))
+      any-bounce-readable? (fn [{:keys [shared-bounce? caller-bounce? shared-unreadable? caller-unreadable?]}]
+                             (and (not shared-unreadable?) (not caller-unreadable?) (or shared-bounce? caller-bounce?)))]
+  (assert-coverage! "P2" 2470 p2-inputs
+                     {:shared-bounce-true (count (filter :shared-bounce? p2-inputs))
+                      :caller-bounce-true (count (filter :caller-bounce? p2-inputs))
+                      :shared-unreadable-true (count (filter :shared-unreadable? p2-inputs))
+                      :caller-unreadable-true (count (filter :caller-unreadable? p2-inputs))
+                      :any-unreadable-true (count (filter any-unreadable? p2-inputs))
+                      :any-unreadable-false (count (remove any-unreadable? p2-inputs))
+                      :any-bounce-readable-true (count (filter any-bounce-readable? p2-inputs))
+                      :neither-true (count (remove #(or (any-unreadable? %) (any-bounce-readable? %)) p2-inputs))}))
 
 ;; ── report ────────────────────────────────────────────────────────────────
 
