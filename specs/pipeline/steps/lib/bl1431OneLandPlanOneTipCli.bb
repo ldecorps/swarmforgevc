@@ -112,12 +112,17 @@
     {:work work :root root :bare bare :commit (head root)}))
 
 (defn- comparable-plan
-  "Strips nothing that should differ between two independently built (but
-   content-identical) fixtures - land-plan's own output is already expressed
-   in ticket ids and paths, never raw SHAs, so no scrubbing is needed. Sets
-   are sorted for a stable equality/printed comparison."
+  "Strips :commit/:branch (BL-1447: land-plan's own :replay now builds the
+   tip-pure commit itself, so two independently built - but
+   content-identical - fixtures each get their own real, freshly-built SHA
+   and branch name; comparing THOSE would fail two genuinely-equal plans
+   for a reason this scenario is not testing). Everything else land-plan
+   returns is already expressed in ticket ids and paths, never raw SHAs,
+   so no further scrubbing is needed. Sets are sorted for a stable
+   equality/printed comparison."
   [plan]
   (-> plan
+      (dissoc :commit :branch)
       (update :entangled #(some-> % sort vec))
       (update :landed #(some-> % sort vec))
       (update :unlanded #(some-> % sort vec))
@@ -206,43 +211,42 @@
     (try
       (if-not (= :replay (:action plan))
         (println (json/generate-string {:error (str "fixture did not produce a replay plan: " (pr-str plan))}))
-        (let [replay (land-step-lib/replay! {:root root :commit commit :task-ticket-id OWN
-                                              :own-paths (:own-paths plan) :passengers (:passengers plan)
-                                              :origin-main origin-main})]
-          (if-not (:success replay)
-            (println (json/generate-string {:error (str "fixture replay failed: " (:reason replay))}))
-            (do
-              ;; origin/main advances by an unrelated mint AFTER the plan was
-              ;; computed and the replay built, before the push.
-              (let [side (str (fs/path work "side"))]
-                (clone-and-configure! bare side)
-                (commit! side "backlog/active/BL-9099-mint.yaml" "id: BL-9099\n" "BL-9099: mint after the plan")
-                (sh! side "git" "push" "-q" "origin" "main"))
-              (let [publish (sh! root "bash" land-main-publish root "--land" (str OWN "-fixture-task")
-                                  (:commit replay))
-                    out (str (:out publish) "\n" (:err publish))
-                    rematch-count (count (re-seq #"(?m)^LAND_REMATCH" out))
-                    published? (str/includes? out "LAND_PUBLISHED")
-                    ;; A structural check on the SCRIPT's own CODE lines, not
-                    ;; the runtime log or its comments: land_main_publish.sh's
-                    ;; "LAND_REMATCH: ... never --force." message and a
-                    ;; header comment both legitimately contain the substring
-                    ;; "--force" in prose alongside the word "push" on the
-                    ;; same line, so grepping either the output or the raw
-                    ;; source text for that pair would report "forced" on
-                    ;; every ordinary rematch or every read of the file. The
-                    ;; actual guarantee is that no CODE line (comments and
-                    ;; blanks stripped) ever constructs a `git push` with a
-                    ;; force flag.
-                    code-lines (remove #(re-matches #"^\s*(#.*)?$" %)
-                                       (str/split-lines (slurp land-main-publish)))
-                    forced? (boolean (some #(re-find #"git.*push.*(-f\b|--force)" %) code-lines))]
-                (println (json/generate-string
-                          {:exit (:exit publish)
-                           :rematchCount rematch-count
-                           :published published?
-                           :forced forced?
-                           :lines (vec (remove str/blank? (str/split-lines out)))})))))))
+        ;; BL-1447: land-plan's own :replay already built and verified the
+        ;; tip-pure commit (:commit/:branch here) - a second replay! call
+        ;; for the same (ticket, commit) would collide on that same
+        ;; deterministic branch name.
+        (do
+          ;; origin/main advances by an unrelated mint AFTER the plan was
+          ;; computed and the replay built, before the push.
+          (let [side (str (fs/path work "side"))]
+            (clone-and-configure! bare side)
+            (commit! side "backlog/active/BL-9099-mint.yaml" "id: BL-9099\n" "BL-9099: mint after the plan")
+            (sh! side "git" "push" "-q" "origin" "main"))
+          (let [publish (sh! root "bash" land-main-publish root "--land" (str OWN "-fixture-task")
+                              (:commit plan))
+                out (str (:out publish) "\n" (:err publish))
+                rematch-count (count (re-seq #"(?m)^LAND_REMATCH" out))
+                published? (str/includes? out "LAND_PUBLISHED")
+                ;; A structural check on the SCRIPT's own CODE lines, not
+                ;; the runtime log or its comments: land_main_publish.sh's
+                ;; "LAND_REMATCH: ... never --force." message and a
+                ;; header comment both legitimately contain the substring
+                ;; "--force" in prose alongside the word "push" on the
+                ;; same line, so grepping either the output or the raw
+                ;; source text for that pair would report "forced" on
+                ;; every ordinary rematch or every read of the file. The
+                ;; actual guarantee is that no CODE line (comments and
+                ;; blanks stripped) ever constructs a `git push` with a
+                ;; force flag.
+                code-lines (remove #(re-matches #"^\s*(#.*)?$" %)
+                                   (str/split-lines (slurp land-main-publish)))
+                forced? (boolean (some #(re-find #"git.*push.*(-f\b|--force)" %) code-lines))]
+            (println (json/generate-string
+                      {:exit (:exit publish)
+                       :rematchCount rematch-count
+                       :published published?
+                       :forced forced?
+                       :lines (vec (remove str/blank? (str/split-lines out)))})))))
       (finally (fs/delete-tree work)))))
 
 (let [[mode] *command-line-args*]
