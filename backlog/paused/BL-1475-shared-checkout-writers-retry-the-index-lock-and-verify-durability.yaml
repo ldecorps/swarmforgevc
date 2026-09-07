@@ -27,7 +27,7 @@ acceptance: specs/features/BL-1475-shared-checkout-writers-retry-the-index-lock-
 required_wiring:
   - 'specs/pipeline/steps/bl1475SharedCheckoutWritersRetryAndVerifySteps.js::registerSteps::the handler lands in the same parcel as the feature (BL-233)'
 
-human_approval: pending
+human_approval: approved
 approval_context: >
   A new feature file is authored here, so it needs a tap. No choice is
   posed and there are no ruling_options. This is your "fix this bug" and
