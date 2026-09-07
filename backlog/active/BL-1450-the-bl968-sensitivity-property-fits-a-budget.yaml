@@ -163,3 +163,6 @@ source: |
   lines 58-90, 143-226; BL-1349 active ticket "How" and out-of-scope.
 
 assigned_to: coder
+bounce_count: 1
+bounce_history:
+  - { at: 2026-09-07, by: QA, blamed: coder, class: behavior, commit: 6e517f02a3, evidence: backlog/evidence/BL-1450-bounce-20260907.md }

@@ -230,12 +230,15 @@ test(
       fs.rmSync(shared.root, { recursive: true, force: true });
     }
   },
-  // BL-1450: 300000 -> 120000. Measured 44-50s alone on this host across
-  // eight runs under the live swarm's own concurrent load (6 spawns, was
-  // 96), one transient spike to 110s under a heavier moment - 120s keeps
-  // margin over both while staying well under the property guard's own
-  // 180s rerun ceiling (BL-1407): a test timeout the guard's rerun net
-  // cannot fit is a refusal of somebody else's commit, the exact defect
-  // this ticket exists to close.
-  120000
+  // BL-1450: 300000 -> 120000 -> 240000 (QA bounce, 2026-09-07). 120000 was
+  // measured against SOLO runs only (44-50s alone, one 110s spike) and was
+  // hit twice under the real full-lane POOLED run (126046ms, 149518ms) -
+  // a materially different contention regime, not represented in that
+  // measurement basis. 240000 keeps margin over the worst pooled observation
+  // (149518ms) with room to spare, while staying well under the ORIGINAL
+  // 300000 this ticket lowered from. This value is independent of the
+  // property guard's own 180s RERUN-ALONE ceiling (BL-1407): a rerun-alone
+  // is uncontended and this file clears that in 50-55s regardless of its
+  // own internal timeout here.
+  240000
 );
