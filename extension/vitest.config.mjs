@@ -14,7 +14,7 @@ import { defineConfig, configDefaults } from 'vitest/config';
 // always run `tsc` before Vitest (see package.json), so out/ already exists
 // by the time this config loads.
 const require = createRequire(import.meta.url);
-const { PER_WORKER_HEAP_MB, resolveVitestWorkerPool } = require('./out/tools/vitest-worker-memory-budget');
+const { PER_WORKER_HEAP_MB, resolveVitestWorkerPool, resolveFreeCoresCeiling } = require('./out/tools/vitest-worker-memory-budget');
 // BL-1007: load-relative suite default (compile-free helper; never import out/).
 const { resolveUnitLaneTimeout } = require('../specs/pipeline/steps/lib/contentionBudget');
 const UNIT_LANE_TIMEOUT = resolveUnitLaneTimeout(20000);
@@ -40,11 +40,12 @@ const WORKER_POOL_SIZE = resolveVitestWorkerPool({
   platform: os.platform(),
   override: process.env.SWARMFORGE_VITEST_MAX_FORKS,
   hostRamMB: os.totalmem() / (1024 * 1024),
-  // BL-1348, human ruling (option 2): the DEFAULT (no override set) now
-  // follows this host's own core count rather than the fixed MAX_WORKERS=6
-  // ceiling - passed in here, same as hostRamMB/platform above, so the
+  // BL-1348, human ruling B: the DEFAULT (no override set) now follows the
+  // cores this host has FREE (cores minus the 5-minute load average, floor
+  // 1, cap cores) rather than the fixed MAX_WORKERS=6 ceiling or the raw
+  // core count - passed in here, same as hostRamMB/platform above, so the
   // budget module itself still reads no os/env of its own.
-  defaultCeiling: os.cpus().length,
+  defaultCeiling: resolveFreeCoresCeiling(os.cpus().length, os.loadavg()[1]),
 });
 
 export default defineConfig({

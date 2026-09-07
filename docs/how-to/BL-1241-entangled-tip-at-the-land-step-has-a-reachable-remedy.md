@@ -800,6 +800,51 @@ untouched and its register row leaves with the fix.
 Acceptance:
 `specs/features/BL-1463-an-escalating-land-step-still-names-the-sibling-it-could-not-read.feature`.
 
+## A replay never delivers a path no commit in the parcel's own range touched (BL-1473)
+
+BL-1315 (above) based `own-paths` on the full `origin/main..commit` two-tree
+diff so a full-range diff could not lose content depending on which parent
+edge carried it. That same two-tree diff, though, also names every path
+origin/main gained, deleted, or changed AFTER the branch forked — none of
+which any commit of the parcel ever touched, and the sibling-attribution
+exclusion below it never caught these either: an untouched path's
+attribution reads as `owners=#{}`, indistinguishable from "touched by
+nobody in particular," so it was never excluded. Three distinct shapes of
+this showed up:
+
+- **A path main gained since the fork is proposed as a deletion.**
+  2026-09-07, QA evidence `BL-1463-QA-followup-two-land-step-defects-20260907.md`
+  (D2): `land_step_cli.bb BL-1463 adfc35e0c8` built a 40-path replay whose
+  commit the merge-deletion guard (BL-1242) refused — `backlog/paused/
+  BL-1470-...yaml` and `BL-1471-...yaml` were minted on origin/main minutes
+  after BL-1463's branch forked, so no commit of it ever touched them, and
+  the guard was the only thing that caught the proposed deletion.
+- **A path main deleted since the fork is proposed as a resurrection** — the
+  mirror case, with no guard at all before this ticket.
+- **A path main CHANGED since the fork is silently reverted to its pre-fork
+  content** — found 2026-09-07 evening on a QA note against BL-1408: the
+  tip's own range touched 49 of a 114-path two-tree diff against
+  origin/main; the other 65 were spurious (4 deletions and 1 resurrection,
+  both refused by existing guards) and 60 reversions — 59 topic records
+  under `backlog/topics/` plus `swarmforge/roles/specifier.prompt`. This
+  form had already landed once: BL-1461's replay `04049f4bb2` (15:58:17)
+  put `backlog/topics/BL-1465.json` back to its pre-fork content, erasing a
+  message the daemon had appended four minutes earlier; the daemon's later
+  write did not restore it and origin/main still lacks that message.
+
+Fixed: `own-paths` now restricts the two-tree diff's delivered set to
+`own-range-touched-paths` — the union of every commit's own changes over
+`merge-base origin/main commit .. commit` (merges included, so a passenger
+ride or an early sync merge, BL-1315's own case, still names the path) —
+before any sibling-attribution decision runs. A path neither the parcel nor
+a sibling ever touched now never reaches the replay at all: it is not
+proposed as a deletion, not resurrected, and not reverted. The merge-deletion
+guard (BL-1242) stays in place as the backstop for whatever this misses; no
+change to attribution (BL-1472) or to `replay!`'s report (BL-1474).
+
+Acceptance:
+`specs/features/BL-1473-a-replay-never-deletes-or-resurrects-a-path-the-parcel-never-touched.feature`.
+
 ## What this does not change
 
 - BL-1192's send-time gate and its range — unchanged; this ticket only adds
