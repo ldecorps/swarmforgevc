@@ -112,6 +112,45 @@
     (assert= "own-paths: excludes the unlanded sibling's own path, self-computing unlanded"
              ["backlog/active/BL-9001-x.yaml"] (:paths result))))
 
+;; ── BL-1473: own-paths never delivers a path the parcel never touched ────
+;; A two-tree diff between origin/main and the tip also lists every path
+;; origin/main gained after the branch forked (absent at the tip, read as
+;; the parcel's deletion), every path it deleted since (present at the
+;; tip, read as a resurrection), and every path it changed since (the
+;; tip's pre-fork content, read as a silent reversion) - none of which any
+;; commit of the parcel ever touched. own-paths must deliver none of the
+;; three, while still delivering the parcel's own addition and its own
+;; deletion of a path origin/main still has (BL-1461's replay 04049f4bb2
+;; erased a topic-record message this way, 2026-09-07).
+
+(with-fixture [root]
+  (commit! root "shared.txt" "fork content\n" "c0 base")
+  (commit! root "untouched.txt" "will be deleted by main after the fork\n" "c0 untouched")
+  (commit! root "own-delete.txt" "will be deleted by the parcel\n" "c0 own-delete")
+  (sh! root "git" "checkout" "-q" "-b" "parcel")
+  (commit! root "backlog/active/BL-9001-x.yaml" "id: BL-9001\n" "BL-9001: own work")
+  (sh! root "git" "rm" "-q" "own-delete.txt")
+  (sh! root "git" "commit" "-q" "-m" "BL-9001: deletes own-delete.txt")
+  (let [parcel-commit (:out (sh! root "git" "rev-parse" "HEAD"))]
+    (sh! root "git" "checkout" "-q" "main")
+    (commit! root "gained.txt" "main gains a file\n" "main: gains a file after the fork")
+    (sh! root "git" "rm" "-q" "untouched.txt")
+    (sh! root "git" "commit" "-q" "-m" "main: deletes untouched.txt after the fork")
+    (commit! root "shared.txt" "main changed content\n" "main: changes shared.txt after the fork")
+    (mark-origin-main-here! root)
+    (let [result (land-step-lib/own-paths root parcel-commit "BL-9001")
+          paths (set (:paths result))]
+      (assert= "BL-1473 (01): a path main gained after the fork is never in the own-path set"
+               false (contains? paths "gained.txt"))
+      (assert= "BL-1473 (02): a path main deleted after the fork is never in the own-path set (never resurrected)"
+               false (contains? paths "untouched.txt"))
+      (assert= "BL-1473 (reversion, invariant 1's third clause): a path main changed after the fork is never in the own-path set (never reverted)"
+               false (contains? paths "shared.txt"))
+      (assert= "BL-1473 (03): the parcel's own deletion of a path origin/main still has is still delivered"
+               true (contains? paths "own-delete.txt"))
+      (assert= "BL-1473: the parcel's own addition still lands, and nothing else does"
+               #{"backlog/active/BL-9001-x.yaml" "own-delete.txt"} paths))))
+
 ;; ── land-plan ────────────────────────────────────────────────────────────
 
 (with-fixture [root]

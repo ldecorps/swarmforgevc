@@ -906,6 +906,39 @@
                                                 :main-lines (main-lines path)
                                                 :tip-lines (tip-lines path)})))))))))
 
+(defn- own-range-touched-paths
+  "BL-1473. Every path some commit in the parcel's own range
+   (`origin-main..commit`) actually touched - added, changed or deleted -
+   restricting `full-delivered-paths`' two-tree diff to what the parcel
+   itself is responsible for.
+
+   A two-tree diff against origin/main also lists (a) every path
+   origin/main gained after the branch forked, absent at the tip and so
+   read as this ticket's deletion, (b) every path origin/main deleted
+   since, present at the tip and so read as a resurrection, and (c) every
+   path origin/main CHANGED since, still at its pre-fork content at the
+   tip and so replayed as a silent reversion (BL-1461's replay 04049f4bb2
+   erased a topic-record message this way, 2026-09-07). None of the three
+   was touched by any commit of the parcel's own; intersecting against
+   this set drops all three.
+
+   Computed as `git diff --name-only <merge-base origin-main commit>
+   commit` - equivalent to the union of every own-range commit's own
+   changed paths (merges included via each parent, so a passenger ride or
+   an early sync merge still names the path, exactly what BL-1315 needs),
+   but one two-tree diff rather than one per commit.
+
+   nil (never #{}) on an unreadable merge-base or diff - this file's
+   fail-open convention throughout; the caller refuses rather than reading
+   blindness as \"the parcel touched nothing\"."
+  [root origin-main commit]
+  (let [base-res (git! root "merge-base" origin-main commit)]
+    (when (zero? (:exit base-res))
+      (let [base (str/trim (:out base-res))
+            diff-res (git! root "diff" "--name-only" base commit)]
+        (when (zero? (:exit diff-res))
+          (into #{} (remove str/blank? (str/split-lines (:out diff-res)))))))))
+
 (defn own-paths
   "This ticket's own changed paths since origin/main - the tip-pure replay
    content (BL-1241's remedy (b)).
@@ -913,12 +946,17 @@
    BL-1315: based on the FULL origin-main..commit diff (`full-delivered-
    paths` above), not the tagged merge's first-parent :delivered diff - see
    that function's docstring for why the old base silently dropped content.
-   A path is then excluded only on POSITIVE attribution to a ticket in
-   `unlanded-siblings` and no other id (this ticket's invariant 2): never
-   the landed ticket's own path (even one no commit in range tags with its
-   id - invariant 1, scenario 06), and never a path attributed to nobody at
-   all (absence is not evidence, same posture `sibling-landed?` already
-   takes one door up).
+   BL-1473: that diff is then restricted to `own-range-touched-paths` -
+   paths some commit in the parcel's own range actually touched - before
+   anything else is decided, so a path neither this ticket nor any sibling
+   ever touched (main gained, deleted or changed it after the fork) never
+   reaches the exclusion logic below at all, whichever way that logic would
+   have decided it. A path is then excluded only on POSITIVE attribution to
+   a ticket in `unlanded-siblings` and no other id (this ticket's invariant
+   2): never the landed ticket's own path (even one no commit in range tags
+   with its id - invariant 1, scenario 06), and never a path attributed to
+   nobody at all (absence is not evidence, same posture `sibling-landed?`
+   already takes one door up).
 
    {:paths [...] :warning nil} on success. paths [] is a real answer ONLY
    when the tip is identical to origin/main - nothing was delivered, so
@@ -975,17 +1013,24 @@
   ([root commit task-ticket-id unlanded-siblings commits-fn approval-fn opts origin-main walk-base]
    (if-not origin-main
      {:paths nil :warning "land-step: origin/main could not be resolved"}
-     (if-let [delivered (full-delivered-paths root origin-main commit)]
-       ;; BL-1375: memoized so N shared paths read one sibling's ticket file
-       ;; once, and so every path in one run answers from the same read.
-       ;; BL-1431: when the caller supplied no approval-fn, the default reads
-       ;; ticket-approval-state with THIS call's already-resolved origin-main
-       ;; instead of letting it resolve a second, potentially different, tip.
-       ;; BL-1466: composed with the bounce check here - the one place this
-       ;; function and blocking-siblings both read a sibling's state from -
-       ;; so a bounce not yet re-fixed blocks for every purpose BL-1375's
-       ;; approval state serves, without a second approval-reading path.
-       (let [approval-fn (or approval-fn
+     (if-let [delivered-all (full-delivered-paths root origin-main commit)]
+       ;; BL-1473: restrict the two-tree diff to what the parcel's own range
+       ;; actually touched, BEFORE any sibling-attribution decision runs - a
+       ;; path neither this ticket nor any sibling ever touched is not this
+       ;; ticket's to deliver, whatever its (empty) attribution would
+       ;; otherwise have let through.
+       (if-let [touched (own-range-touched-paths root origin-main commit)]
+       (let [delivered (filterv touched delivered-all)
+             ;; BL-1375: memoized so N shared paths read one sibling's ticket file
+             ;; once, and so every path in one run answers from the same read.
+             ;; BL-1431: when the caller supplied no approval-fn, the default reads
+             ;; ticket-approval-state with THIS call's already-resolved origin-main
+             ;; instead of letting it resolve a second, potentially different, tip.
+             ;; BL-1466: composed with the bounce check here - the one place this
+             ;; function and blocking-siblings both read a sibling's state from -
+             ;; so a bounce not yet re-fixed blocks for every purpose BL-1375's
+             ;; approval state serves, without a second approval-reading path.
+             approval-fn (or approval-fn
                               (fn [id]
                                 (let [base (ticket-approval-state root id origin-main)]
                                   (if (:blocking? base)
@@ -1112,7 +1157,9 @@
                       (if (contains? (:owners attribution) task-ticket-id)
                         (into passengers (filter unlanded-siblings (:owners attribution)))
                         passengers)))))))
-       {:paths nil :warning (str "land-step: could not read the delivered diff " origin-main ".." commit)}))))
+       {:paths nil :warning (str "land-step: could not read " task-ticket-id
+                                  "'s own-range touched paths, " origin-main ".." commit)})
+     {:paths nil :warning (str "land-step: could not read the delivered diff " origin-main ".." commit)}))))
 
 
 (defn entanglement-note
