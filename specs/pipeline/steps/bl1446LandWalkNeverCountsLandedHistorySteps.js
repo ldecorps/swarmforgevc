@@ -26,29 +26,11 @@ const STAGE_FILES = ['a', 'b', 'c', 'd', 'e'].map((c) => `backlog/active/BL-9001
 const KNOWN_SYNCS = new Set([0, 1, 2]);
 
 const FIXTURE_PREFIX = 'bl1446-fixture-';
-const STALE_FIXTURE_AGE_MS = 60 * 60 * 1000;
 
-// BL-971: a killed prior run traps nothing in its own exit handler - sweep
-// stale roots by prefix BEFORE this run too, but only ones old enough that
-// no concurrent run could still own them (never a blind prefix sweep,
-// which is a concurrency bomb against a sibling run - BL-1385/BL-1390).
-function sweepStaleFixtures() {
-  const tmp = os.tmpdir();
-  const now = Date.now();
-  for (const name of fs.readdirSync(tmp)) {
-    if (!name.startsWith(FIXTURE_PREFIX)) continue;
-    const full = path.join(tmp, name);
-    try {
-      if (now - fs.statSync(full).mtimeMs > STALE_FIXTURE_AGE_MS) {
-        fs.rmSync(full, { recursive: true, force: true });
-      }
-    } catch {
-      // Reaped by someone else between readdir and stat - fine.
-    }
-  }
-}
-sweepStaleFixtures();
-
+// qa_e2e_procedure step 4: fixture roots are removed on the EXIT trap only -
+// deliberately no prefix sweep (a blind prefix sweep is a concurrency bomb
+// against a sibling run, BL-1385/BL-1390); each process removes exactly the
+// roots IT created, nothing more.
 const fixtureRoots = [];
 process.on('exit', () => {
   for (const root of fixtureRoots) {
@@ -146,10 +128,11 @@ function landPlan(root, commitSha, taskTicketId, base) {
   return JSON.parse(out);
 }
 
-function replay(root, commitSha, taskTicketId, ownPaths) {
+function replay(root, commitSha, taskTicketId, ownPaths, passengers) {
   const pathsForm = `[${ownPaths.map((p) => `"${p}"`).join(' ')}]`;
+  const passengersForm = `#{${(passengers || []).map((p) => `"${p}"`).join(' ')}}`;
   const out = bb(libExpr(
-    `(println (json/generate-string (land-step-lib/replay! {:root "${root}" :commit "${commitSha}" :task-ticket-id "${taskTicketId}" :own-paths ${pathsForm} :passengers #{}})))`,
+    `(println (json/generate-string (land-step-lib/replay! {:root "${root}" :commit "${commitSha}" :task-ticket-id "${taskTicketId}" :own-paths ${pathsForm} :passengers ${passengersForm}})))`,
   ));
   return JSON.parse(out);
 }
@@ -241,7 +224,7 @@ function registerSteps(registry) {
     const ownPaths = ctx.plan['own-paths'] || [];
     assert.deepEqual([...ownPaths].sort(), [...STAGE_FILES].sort(),
       `expected own-paths to be exactly the five stage files, got: ${JSON.stringify(ownPaths)}`);
-    const result = replay(ctx.root, ctx.tip, 'BL-9001', ownPaths);
+    const result = replay(ctx.root, ctx.tip, 'BL-9001', ownPaths, ctx.plan.passengers);
     assert.ok(result.success, `expected replay! to succeed, got: ${JSON.stringify(result)}`);
     for (const p of STAGE_FILES) {
       const citedBlob = git(ctx.root, 'rev-parse', `${ctx.tip}:${p}`);
