@@ -17,13 +17,18 @@ empty, and trigger escalation noise.
 | Open-slot nudge | Inherits the same chain via `nudge-eligible-candidates` (BL-663) |
 | `promote_and_route_next.sh` | Unchanged explicit epic refuse via `is_epic_type` |
 
-Gate order on `evaluate`: hold → epic → blocked → human_approval →
-acceptance → depends_on → depth.
+Gate order on `evaluate`: hold → epic → blocked → not_before (BL-1469) →
+human_approval → acceptance → depends_on → depth.
 
 Refusal shapes:
 
 1. `type: epic` → `gate=epic` — trackers are never promotion or nudge candidates
 2. `status: blocked` → `gate=blocked` — matches promote auto-pick skip
+3. `not_before: <date>` before that UTC date → `gate=not_before`, naming
+   the date and how many days away it is (BL-1469) — refused on every
+   path, including a caller-declared queue-jump (BL-1425 crosses only
+   `active_backlog_max_depth`, never this gate); a malformed date refuses,
+   an absent field passes through unaffected
 
 A paused epic with higher priority than a real feature is **not** named as
 open-slot top candidate and does not accrue nudge count. When both are
