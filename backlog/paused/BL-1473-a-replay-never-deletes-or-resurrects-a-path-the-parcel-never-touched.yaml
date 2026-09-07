@@ -1,0 +1,127 @@
+id: BL-1473
+title: "own-paths starts from the two-tree diff origin/main..tip, so every path origin/main gained after the branch forked is delivered as a DELETION and every path it deleted since as an addition: BL-1463's replay on 2026-09-07 proposed deleting the freshly minted BL-1470 and BL-1471 tickets, stopped only by the merge-deletion guard; a path is the parcel's to deliver only when a commit in the parcel's own range touched it"
+milestone: M8
+type: defect
+severity: high
+# high: a land of any branch older than main's latest commits proposes
+# deleting what main gained since - ticket YAMLs, evidence, code - and
+# resurrecting what main removed; the deletion half is caught by a guard
+# that names tickets, the resurrection half by nothing. Not critical: the
+# guard held today and the QA prompt carries the interim review.
+status: todo
+epic: swarm-reliability
+priority: 6
+direction: swarm-reported
+depends_on: []
+mutation_cost: medium
+# medium: full-delivered-paths and the own-paths delivered set in
+# land_step_lib.bb, plus runner fixtures where origin/main moves after
+# the fork in both directions.
+slice_size_envelope: medium
+required_stages: [coder, cleaner, architect, hardender, documenter, qa]
+
+acceptance: specs/features/BL-1473-a-replay-never-deletes-or-resurrects-a-path-the-parcel-never-touched.feature
+
+required_wiring:
+  - 'specs/pipeline/steps/bl1473ReplayNeverDeletesUntouchedSteps.js::registerSteps::the handler lands in the same parcel as the feature (BL-233)'
+
+human_approval: approved
+approval_context: >
+  A new feature file is authored here, so it needs a tap. No choice is
+  posed and there are no ruling_options. What is FIRM: a replay delivers
+  only paths a commit in the parcel's own range touched - a deletion only
+  when the parcel deleted it, an addition only when the parcel added or
+  changed it - and never a path origin/main gained or lost after the
+  branch forked; BL-1315's guarantee that content arriving before the
+  parcel's tagged merge is still delivered stands.
+
+invariants:
+  - "A replay changes no path on origin/main that no commit in the parcel's own range (tip, not origin/main) touched: nothing main gained since the fork is deleted, nothing main deleted since the fork is resurrected."
+  - "BL-1315 stands: every path the parcel's content reached the branch through, including via a merge before its own tagged merge, is delivered."
+
+description: |
+  ## What is wrong
+
+  `land_step_lib.bb` `full-delivered-paths` = `git diff --name-only
+  origin-main commit`, the two-tree diff, chosen by BL-1315 because a
+  first-parent diff lost content that reached the branch before the
+  parcel's tagged merge. A two-tree diff also lists (a) every path
+  origin/main gained after the branch forked, which the tip lacks, and
+  (b) every path origin/main deleted since, which the tip still has.
+  `write-tree-from-paths!` then applies each own path from the cited
+  commit: a path absent there is `git rm`'d (a), a path present is
+  checked out (b). `own-paths` excludes a path only on positive
+  attribution to a sibling, so an untouched path stays in.
+
+  2026-09-07 (QA evidence `BL-1463-QA-followup-two-land-step-defects-20260907.md`,
+  D2): `land_step_cli.bb BL-1463 adfc35e0c8` built a 40-path replay whose
+  commit the merge-deletion guard refused: "commit deletes
+  backlog/paused/BL-1470-...yaml (BL-1470) ... BL-1471-...yaml (BL-1471)
+  ... not named in the commit message". Both tickets were minted on
+  origin/main minutes earlier; BL-1463's branch predates them and no
+  commit of it touched them. The guard was right; the proposal was wrong.
+  The mirror case, resurrecting a path main deleted since the fork, has
+  no guard at all.
+
+  ## What is wanted
+
+  The delivered set is the two-tree diff restricted to paths some commit
+  in `commit ^origin-main` touched (added, changed or deleted): a path
+  main gained after the fork is never a deletion (scenario 01), a path
+  main deleted after the fork is never resurrected (scenario 02), the
+  parcel's own deletion still lands (scenario 03), and BL-1315's early
+  arrival still lands (scenario 04).
+
+  ## How (direction, not mandate)
+
+  - Intersect `full-delivered-paths` with the union of `git diff-tree
+    --no-commit-id --name-only -r <c>` over every `<c>` in `git rev-list
+    commit ^origin-main` (merges included: a passenger ride or an early
+    sync merge names the path, which is what BL-1315 needs) - or,
+    equivalently, `git diff --name-only <merge-base origin-main commit>
+    commit` for the parcel's own changes - and let the two-tree diff
+    decide the content. Read the landed BL-1446/BL-1447 code first: the
+    delivered walk and the replay-completeness check both consume this
+    set.
+  - Fixtures: the runner's BL-1315 section gains an origin/main that
+    moves after the fork in both directions.
+  - Documenter: `docs/reference/BL-1241-*.md`'s "own paths" definition
+    gains the sentence; the QA prompt's interim (landed with this mint)
+    is retired by the specifier on QA's landing note together with
+    BL-1472's.
+
+constraints: >
+  Fixture repositories under mkdtemp with their own origin (BL-1390). No
+  change to attribution (BL-1472) or to replay!'s report (BL-1474). The
+  step handler lands with the feature (BL-233). No hand-edited mutation
+  manifests. land_step_lib.bb is shared with BL-1467, BL-1470 and
+  BL-1472 (paused): the coordinator serialises.
+
+out_of_scope: |
+  - The merge-deletion guard (BL-1242) - it stays as the backstop.
+  - Attribution of untagged commits (BL-1472) and the replay reason
+    (BL-1474).
+
+qa_e2e_procedure: >
+  (1) `bb swarmforge/scripts/test/land_step_lib_test_runner.bb` green with
+  the moving-origin cases. (2) Scratch clone: fork a parcel branch, then
+  on origin/main add a file and delete another the parcel never touched;
+  `land_step_cli.bb <parcel> <tip>`: the replay's `git show --stat` names
+  neither file; land it onto the clone's main: both files as main had
+  them. (3) A parcel that deletes a file itself: the replay removes it.
+  (4) BL-1315's, BL-1446's and BL-1447's features stay green. (5) On the
+  live swarm after land: a land of a branch older than the day's mints
+  proposes no ticket-YAML deletion and the merge-deletion guard has
+  nothing to refuse.
+
+source: |
+  QA note to the specifier, priority 00, 2026-09-07T17:29Z; evidence
+  `backlog/evidence/BL-1463-QA-followup-two-land-step-defects-20260907.md`
+  (QA branch 4755cbfe9b), D2's first half. Adjudication:
+  `backlog/evidence/BL-1463-two-land-step-defects-adjudication-specifier-20260907.md`.
+
+notes: |
+  Minted 2026-09-07 by the specifier on QA's note, the same pass, with
+  BL-1472 and BL-1474. Grepped first: BL-1315 (done) chose the two-tree
+  diff; BL-1446/BL-1447 (done) widened the walk and checked replay
+  completeness; none scopes the delivered set to the parcel's own touches.
