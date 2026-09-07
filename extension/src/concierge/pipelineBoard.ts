@@ -960,8 +960,25 @@ function gridCaptionLine(row: PipelineBoardRow, showSwarmBadge: boolean): string
   // BL-1451: the dot sits at the HEAD of the caption line, outside the
   // fixed-width stage cells (BL-585's width budget), so a ticket with no
   // entry or no dot renders this line exactly as before (invariant 2).
+  //
+  // Hardener bounce D1 (2026-09-07): `healthDot` reaches here straight
+  // from JSON.parse via swarmState.ts's own raw cast, with zero runtime
+  // validation - TicketHealthDot's TS union has no teeth against a
+  // stale/typo'd/future-tier value on disk. `dot` truthy but not one of
+  // HEALTH_DOT_GLYPHS' three keys used to look up `undefined` and
+  // template-literal-stringify it straight into the caption
+  // ("undefined 1 (no backlog entry)" - live human-visible garbage on the
+  // operator's primary phone view, Article 1.10). An unrecognized value
+  // now degrades to "no dot", exactly invariant 2's own contract for
+  // nothing usable to show.
   const dot = row.stageEntry?.healthDot;
-  const dotPrefix = dot ? `${HEALTH_DOT_GLYPHS[dot]} ` : '';
+  // Object.prototype.hasOwnProperty, not a bare `dot ? HEALTH_DOT_GLYPHS[dot]
+  // : undefined` lookup: an on-disk value of "constructor"/"toString"/etc.
+  // resolves through the prototype chain to a truthy Function, which the
+  // bare form would have happily rendered as a "glyph" (Object.hasOwn is
+  // the same check, but not yet available in every supported Node target).
+  const glyph = dot !== undefined && Object.prototype.hasOwnProperty.call(HEALTH_DOT_GLYPHS, dot) ? HEALTH_DOT_GLYPHS[dot] : undefined;
+  const dotPrefix = glyph ? `${glyph} ` : '';
   if (showSwarmBadge && row.swarm) {
     return `${dotPrefix}${displayId} [${swarmDisplayBadge(row.swarm)}] ${truncateCaptionDescription(description)}`;
   }
