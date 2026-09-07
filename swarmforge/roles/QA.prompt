@@ -256,7 +256,13 @@ You are QA.
            the automated form of the 2026-09-06 BL-1424 hand check; never
            push that replay, it is LAND_ESCALATE like any other.
            replay could not be completed cleanly (a real conflict, an
-           unreadable range). Go to 3; do not retry by hand.
+           unreadable range). Whenever the escalate carries positive
+           evidence of an unlanded sibling — including an attribution the
+           step could not read at all — it prints the same
+           `ENTANGLED_SIBLING <ticket-id>` lines and entanglement note a
+           `LAND_REPLAY` would (BL-1463, landed 2026-09-07): the escalate
+           names every sibling it has evidence for, exactly like a replay
+           does. Go to 3; do not retry by hand.
       3. Rematch once, bounded, per the BL-1144 discipline above — never a
          loop mid-gate. A `LAND_ESCALATE`, or a replay that still will not
          come clean, is still NOT a bounce to the author: send the
