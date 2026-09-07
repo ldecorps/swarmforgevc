@@ -646,6 +646,50 @@ bounded and wide walks still agree on verdict and own-paths for the same
 tip — now a checked property, `specs/features/BL-1446-the-land-walk-never-counts-landed-history-and-a-replay-carries-every-hop.feature`
 scenario 03).
 
+## A fourth outcome: a replay missing a parcel path is refused before publish (BL-1447)
+
+Building a correct replay tip and PUBLISHING it were two different steps
+with nothing between them checking the second followed from the first.
+The 2026-09-06 incident (`backlog/evidence/BL-1424-land-replay-dropped-own-paths-incident-20260906.md`,
+BL-1446's own root cause) shipped `LAND_PUBLISHED` on a replay tip holding
+five evidence files and none of the ticket's actual deliverable — caught
+only by QA diffing the replay against the coder's own file list by hand,
+because a replay is built as a fresh commit off `origin/main` and so diffs
+CLEANLY against its own parents; the Guardrails both-parents check (above)
+cannot see this failure mode at all.
+
+`land-plan` now verifies its own replay before ever returning `:replay`:
+after `replay!` builds the tip-pure commit, it reads the parcel's own path
+set independently — `parcel-commit-paths`, from `git log --format=%H
+^origin/main <cited>` filtered to subjects naming the ticket, each
+commit's `diff-tree --name-status` unioned (the wide, cheap, unbounded
+read of the parcel's own history, never the attribution that built the
+replay — invariant 2, so this check cannot share that attribution's blind
+spot) — and compares it against the built tip via
+`replay-completeness-offenders`, a pure function over the two trees'
+path→blob maps (unit-testable without git). Any path the parcel changed
+that the replay tip is missing, or holds a different blob for, is an
+OFFENDER; a path the parcel deleted must be absent from both.
+
+- **No offenders**: `land-plan` returns `{:action :replay ...}` exactly as
+  before — `LAND_REPLAY <branch> <new-commit>`, unchanged.
+- **Any offender**: `land-plan` deletes the just-built replay branch and
+  returns `{:action :escalate :reason "replay-incomplete: <path>
+  [<path> ...]"}` — every offending path in ONE report (Article 4.4), not
+  the first found. `land_step_cli.bb` prints this exactly like any other
+  escalation (`LAND_ESCALATE` then the reason on the next line), so
+  `land_main_publish.sh`'s existing `LAND_STOPPED` branch stops the
+  publish with no CLI or wrapper change needed.
+
+This is the fourth `land-plan` outcome alongside `:land`, `:replay`
+(complete) and the pre-existing `:escalate` for an unreadable range or a
+replay that fails to build — `replay-incomplete:` is a distinct reason
+prefix from those, greppable on its own. QA's interim hand-check (in force
+"until BL-1447 lands," `swarmforge/roles/QA.prompt`) is retired by this
+ticket landing — the check it described by hand is now this automated one.
+Acceptance:
+`specs/features/BL-1447-a-replay-missing-a-parcel-path-is-refused-before-publish.feature`.
+
 ## What this does not change
 
 - BL-1192's send-time gate and its range — unchanged; this ticket only adds
