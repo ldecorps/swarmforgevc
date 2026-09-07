@@ -151,6 +151,28 @@
       (assert= "BL-1473: the parcel's own addition still lands, and nothing else does"
                #{"backlog/active/BL-9001-x.yaml" "own-delete.txt"} paths))))
 
+;; BL-1473: own-range-touched-paths itself can fail even when the two-tree
+;; diff succeeds - `git diff --name-only` needs no common ancestor between
+;; its two trees, but `git merge-base` does. An orphan branch with no shared
+;; history with origin/main reproduces exactly that split: the diff reads
+;; fine, the merge-base read that own-range-touched-paths depends on does
+;; not. own-paths must refuse (nil paths, a warning naming the ticket) here
+;; too, never fall back to the unrestricted two-tree diff.
+(with-fixture [root]
+  (commit! root "unrelated.txt" "unrelated content\n" "main: unrelated.txt")
+  (mark-origin-main-here! root)
+  (sh! root "git" "checkout" "-q" "--orphan" "parcel")
+  (sh! root "git" "commit" "-q" "--allow-empty" "-m" "parcel: orphan root")
+  (commit! root "backlog/active/BL-9001-x.yaml" "id: BL-9001\n" "BL-9001: own work")
+  (let [parcel-commit (:out (sh! root "git" "rev-parse" "HEAD"))
+        result (land-step-lib/own-paths root parcel-commit "BL-9001")]
+    (assert= "BL-1473 (own-range-touched-paths unreadable): refuses rather than falling back to the unrestricted diff"
+             nil (:paths result))
+    (assert-includes "BL-1473 (own-range-touched-paths unreadable): the refusal names the ticket"
+                      (:warning result) "BL-9001")
+    (assert-includes "BL-1473 (own-range-touched-paths unreadable): the refusal names own-range touched paths"
+                      (:warning result) "own-range touched paths")))
+
 ;; ── land-plan ────────────────────────────────────────────────────────────
 
 (with-fixture [root]
