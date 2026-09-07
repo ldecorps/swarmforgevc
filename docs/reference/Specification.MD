@@ -1,5 +1,118 @@
 # SwarmForge VS Code Extension — Specification
 
+**Last Updated:** September 7, 2026 (BL-1473: `land_step_lib.bb`'s
+`own-paths` based its delivered set on the full two-tree diff against
+`origin/main` (BL-1315), which also names every path origin/main gained,
+deleted, or changed after the branch forked — none of which any commit of
+the parcel touched, and the sibling-attribution exclusion below it never
+caught these (an untouched path's attribution reads the same as "touched
+by nobody in particular"). A path main gained since the fork rode a
+replay as a proposed deletion (BL-1463's 40-path replay `adfc35e0c8`
+against freshly minted BL-1470/BL-1471, refused only by the
+merge-deletion guard); the mirror resurrection case had no guard at all;
+and the dominant, unguarded form — a path main CHANGED since the fork
+checked out over main's new content as a silent reversion — had already
+landed once, BL-1461's replay `04049f4bb2` rolling `backlog/topics/
+BL-1465.json` back four minutes after the daemon appended a message to
+it, still missing from origin/main. Fixed: `own-paths` now restricts the
+two-tree diff to `own-range-touched-paths` (the union of every own-range
+commit's own changes, merges included per BL-1315) before any sibling
+decision runs, so a path neither the parcel nor a sibling ever touched
+never reaches the replay. The merge-deletion guard (BL-1242) stays as the
+backstop; no change to attribution (BL-1472) or to `replay!`'s report
+(BL-1474). Acceptance:
+`specs/features/BL-1473-a-replay-never-deletes-or-resurrects-a-path-the-parcel-never-touched.feature`.
+How-to: `docs/how-to/BL-1241-entangled-tip-at-the-land-step-has-a-reachable-remedy.md`
+(new section after BL-1463's).)
+Prior entry —
+**Last Updated:** September 7, 2026 (BL-1408: three more hand-written
+copies of the commit-guard chain's guard list went red the same way
+BL-1398/BL-1401 already fixed once — `test_run_commit_guards.sh`'s
+`ALL_GUARDS=` (five names) hadn't kept pace with the runner naming seven
+after `check_handler_module_graph.sh` (BL-1385) and
+`check_bb_scripts_load.sh` (BL-1395) joined on 2026-09-04, so the two
+unstubbed guards exited 127 and every case after the first never ran
+(a `standing` suite row, red on `main`); `test_pre_merge_commit_hook.sh`'s
+`MERGE_GUARDS=` and the (already-split, BL-1349) BL-1252 property
+fixture's `INDEX_GUARDS` carried the same shape; a fourth,
+`test_pipeline_code_on_main_guard.sh`, copied the chain guard by guard and
+failed the same day. Re-pended 2026-09-06 when this fourth copy was
+found. Fixed: all four now derive their guard set at run time through
+BL-1398's shared helper (`commitGuardFixtureSet.js` /
+`deriveCommitGuardFixtureSet`) reading the real runner or hook they
+exercise, instead of a list hand-typed in the test — a guard added to or
+removed from a chain is stubbed or dropped with no test edit. The only
+guard still named by hand in any of the four is the expensive tier's sole
+member, `check_property_suite_drift.sh`, and each test that names it
+asserts it is in the derived set, so even that one constant cannot drift
+from the runner. Both standing-red register rows leave with the fix.
+Acceptance:
+`specs/features/BL-1408-commit-guard-tests-derive-their-guard-set.feature`.)
+Prior entry —
+**Last Updated:** September 7, 2026 (BL-1463: `land-plan`'s `(nil? paths)`
+escalate branch (an attribution `own-paths` could not read, BL-1343's
+fail-closed case) returned only `{:action :escalate :reason ...}`, none of
+the `:entangled`/`:landed`/`:unlanded` sets the `:replay` branch two lines
+below carries — `land_step_cli.bb`'s `:escalate` outcome printed
+`LAND_ESCALATE` and the reason with no `ENTANGLED_SIBLING` line and no
+entanglement note, so an escalate never named the sibling it had evidence
+for. BL-1272's own acceptance scenario (row 4, an "unreadable" sibling
+state expected "reported") had been red since BL-1343 landed
+(2026-09-02) turned that case from a narrowed replay — which named the
+sibling on the replay path — into a bare escalate; found 2026-09-07 by
+the coder running BL-1447's e2e. Fixed: the escalate map now merges in
+the same sibling sets the replay map does, and `land_step_cli.bb` shares
+one sibling-printing function between the replay and escalate outcomes —
+`ENTANGLED_SIBLING` lines and the note print on any escalate carrying
+`:unlanded`, never on one with no such evidence (an unreadable
+candidate-walk range, or "task name names no ticket id"). BL-1343's
+refusal is unchanged — an unreadable attribution still escalates rather
+than narrowing to a replay; this ticket only adds names to it. BL-1272's
+feature text is untouched and its standing-red register row leaves with
+the fix. Acceptance:
+`specs/features/BL-1463-an-escalating-land-step-still-names-the-sibling-it-could-not-read.feature`.
+How-to: `docs/how-to/BL-1241-entangled-tip-at-the-land-step-has-a-reachable-remedy.md`
+(outcome bullet and a new section after BL-1466's); `QA.prompt`'s
+land-step item notes the same naming on its escalate outcome.)
+
+Prior entry —
+**Last Updated:** September 7, 2026 (BL-1348: `resolveVitestWorkerPool`
+(BL-935) composed a CPU ceiling default (`MAX_WORKERS = 6`) and a RAM
+budget (`PER_WORKER_HEAP_MB = 1280`, `floor(hostRamMB * 0.5 /
+PER_WORKER_HEAP_MB)`) and returned the smaller. On this host (20 cores,
+19904 MB) the RAM budget resolved to 7, so an explicit
+`SWARMFORGE_VITEST_MAX_FORKS` override of 8, 12, or 16 all silently
+clamped to 7 — fourteen of twenty cores idle through every property run,
+and the reason the override appeared not to work at all. Sampled peak
+under a full run: 298 MB per fork, 1.26 GB total, 14 GB still free — the
+1280 MB reservation over-budgeted by roughly 4x, sized years earlier
+against a 15360 MB reference host and never re-measured. A first attempt
+(raw core count as the default ceiling, re-pended 2026-09-06) measured 15
+forks contending with the live swarm's own role sessions and two
+back-to-back full property runs failing 4 then 16 different files, mostly
+git-/bb-spawning tests timing out at 20s — memory was never the real
+constraint, shared CPU was. Human ruling B (2026-09-07, recorded directly
+per the known BL-1455 Telegram-ask-repost defect): the default ceiling
+now follows the cores the host has FREE
+(`resolveFreeCoresCeiling(cores, loadAvg5min) = max(1, min(cores,
+floor(cores - loadAvg5min)))`, pure, no os/env read — both configs pass in
+`os.cpus().length`/`os.loadavg()[1]` through the one
+`resolveVitestWorkerPool` composition point BL-935 established, no second
+sizing route), backing off while the swarm is busy rather than pinning to
+either a flat count or the raw core count. `PER_WORKER_HEAP_MB` (1280→640,
+matching the measured 298 MB peak with real margin) and `MAX_WORKERS` (6,
+unchanged fallback) were already right under every ruling option and are
+untouched by this pass. An explicit override still wins up to the RAM
+budget; the full-forge+darwin ceiling of 1 is unchanged. BL-1349 (the 79s
+longest single file, since brought to 45-67s) remains the other half of
+the wall clock this ticket does not touch. Acceptance:
+`specs/features/BL-1348-fork-pool-sizes-to-the-real-host.feature`
+(the ticket's own ruling text promised a full-forge/linux Examples row
+once ruled; flagged as still-absent to the specifier as a spec gap, added
+the same day: a new `Scenario Outline` over 3 `cores`/`load`/`pool`
+examples asserting the default ceiling follows free cores on a full-forge
+linux pack).)
+Prior entry —
 **Last Updated:** September 7, 2026 (BL-1466: `land_step_lib.bb`'s
 `ticket-approval-state` (BL-1375's passenger predicate) read only the
 backlog folder and `human_approval` — a QA bounce
