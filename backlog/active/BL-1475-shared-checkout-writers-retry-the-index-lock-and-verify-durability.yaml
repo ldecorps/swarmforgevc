@@ -170,3 +170,5 @@ notes: |
   checkout for these writers; BL-892 (done) made the approval commit loud
   on failure, BL-331/BL-390 (done) made the topic record's durability
   check fail closed - neither retried or verified against HEAD.
+
+assigned_to: coder
