@@ -78,15 +78,23 @@ const DEPTHS = ['direct', 'via-lib'];
 // qa_e2e step 3) rather than assuming, on the first version of this fix.
 const REQUIRED_CLASSES = ['git-root-resolve', 'live-repo-read', 'benign-subprocess'];
 const REQUIRED_DEPTHS = ['direct', 'via-lib'];
-const RUNS_PER_CELL = 4;
+// BL-1450: 4 -> 1. Each cell still spawns a fresh process at least once
+// (BL-968's own property, unchanged) - 96 spawns/run was the file's own
+// budget defect (164-193 s alone, 346 s under the lane's pool, over both
+// the test's own 300 s timeout and the property guard's 180 s rerun
+// ceiling), not a reach problem: the cells are already iterated (BL-1062),
+// so one draw per cell already exercises every cell by construction.
+const RUNS_PER_CELL = 1;
 const NUM_RUNS = CLASSES.length * DEPTHS.length * RUNS_PER_CELL;
 // Absolute reach floors over NUM_RUNS draws (asserted after the run).
-// Satisfied by construction: each class is drawn DEPTHS.length * RUNS_PER_CELL
-// = 8 times and each depth CLASSES.length * RUNS_PER_CELL = 12 times, so the
-// probability of a floor failing on a correct implementation is ZERO, not a
-// small number (invariant 1).
-const CLASS_FLOOR = 5;
-const DEPTH_FLOOR = 6;
+// BL-1450: derived from RUNS_PER_CELL, never typed as a literal again - a
+// floor asserted over a hand-typed constant silently stops checking
+// anything the moment RUNS_PER_CELL changes and nobody updates it to
+// match (invariant 1 stands: each class is drawn DEPTHS.length *
+// RUNS_PER_CELL times and each depth CLASSES.length * RUNS_PER_CELL
+// times, so a correct implementation cannot fail either floor).
+const CLASS_FLOOR = DEPTHS.length * RUNS_PER_CELL;
+const DEPTH_FLOOR = CLASSES.length * RUNS_PER_CELL;
 
 // Real repo files that exist in a live checkout but are NEVER part of the
 // materialized tree (only specs/pipeline is mirrored; node_modules and
@@ -222,5 +230,15 @@ test(
       fs.rmSync(shared.root, { recursive: true, force: true });
     }
   },
-  300000
+  // BL-1450: 300000 -> 120000 -> 240000 (QA bounce, 2026-09-07). 120000 was
+  // measured against SOLO runs only (44-50s alone, one 110s spike) and was
+  // hit twice under the real full-lane POOLED run (126046ms, 149518ms) -
+  // a materially different contention regime, not represented in that
+  // measurement basis. 240000 keeps margin over the worst pooled observation
+  // (149518ms) with room to spare, while staying well under the ORIGINAL
+  // 300000 this ticket lowered from. This value is independent of the
+  // property guard's own 180s RERUN-ALONE ceiling (BL-1407): a rerun-alone
+  // is uncontended and this file clears that in 50-55s regardless of its
+  // own internal timeout here.
+  240000
 );
