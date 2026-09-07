@@ -15,6 +15,7 @@ import { TopicIconAdapters, syncTopicIcon } from './topicIconSync';
 import { StalenessBucket } from './topicTitleAge';
 import { TopicTitleAdapters, syncTopicTitle } from './topicTitleSync';
 import { PipelineBoardTicketMeta, computePipelineBoard } from './pipelineBoard';
+import { TicketStageEntry } from '../swarm/swarmState';
 import { readSwarmName } from '../bridge/holisticProjections';
 import { PipelineBoardAdapters, PipelineBoardState, PipelineBoardSyncResult, syncPipelineBoard } from './pipelineBoardSync';
 import { PipelineBoardPinAdapters, PipelineBoardPinSyncResult, syncPipelineBoardPin } from './pipelineBoardPinSync';
@@ -212,6 +213,13 @@ export interface ConciergeTickAdapters {
   // the production adapter now recomputes live each tick rather than
   // reading a coordinator-written cache (see syncBoardIfWired).
   readRoleHeldTickets?: () => Record<string, string[]> | Promise<Record<string, string[]>>;
+  // BL-1451: BL-670's stage-map entries (stage/status/asOf/healthDot),
+  // beside readRoleHeldTickets above - the tick's board sync threads these
+  // into computePipelineBoard so the board's rows and caption dot come from
+  // BL-670's own derivation, never a second one (invariant 1). Optional,
+  // same posture as every adapter above: absent means no entries, and every
+  // row renders exactly as before BL-1451 (invariant 2).
+  readTicketStageEntries?: () => Record<string, TicketStageEntry>;
   // BL-452: optional (defaults to no board sync) for the same reason
   // titleAdapters above is optional - every existing adapters fixture
   // across this codebase's own acceptance step handlers was built before
@@ -643,6 +651,7 @@ async function syncBoardIfWired(
   prevBoard: PipelineBoardState | undefined,
   boardAdapters: PipelineBoardAdapters | undefined,
   readRoleHeldTickets: (() => Record<string, string[]> | Promise<Record<string, string[]>>) | undefined,
+  readTicketStageEntries: (() => Record<string, TicketStageEntry>) | undefined,
   readRootIntakeFiles: (() => { id: string; title?: string; filename: string }[]) | undefined,
   readRepoBaseUrl: (() => string | undefined) | undefined,
   nowMs: number,
@@ -692,6 +701,10 @@ async function syncBoardIfWired(
     held: heldItems(folders, readHeldSinceMs),
     nowMs,
     localSwarmName,
+    // BL-1451: readTicketStageMap already fails safe internally (any read/
+    // parse failure returns {}, never a throw) - absent adapter or absent
+    // entries both read as "no entries", never a second failure path here.
+    ticketStageEntries: readTicketStageEntries?.() ?? {},
   });
   const result = await syncPipelineBoard(data, prevBoard, boardAdapters, nowMs, repoBaseUrl);
   logBoardSyncFailure(result);
@@ -1381,6 +1394,7 @@ export async function runConciergeTick(adapters: ConciergeTickAdapters, nowMs: n
         state.pipelineBoard,
         adapters.boardAdapters,
         adapters.readRoleHeldTickets,
+        adapters.readTicketStageEntries,
         adapters.readRootIntakeFiles,
         adapters.readRepoBaseUrl,
         nowMs,
