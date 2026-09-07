@@ -1,0 +1,154 @@
+id: BL-1470
+title: "BL-1466's bounce check is silently inert: bounce-blocking-state reads .swarmforge/bounces under the root its caller passes, and land_step_cli.bb's default root is the calling worktree, where no store exists - record-bounce.js writes under the master checkout - so every ordinary land (no third argument, and land_main_publish.sh's own call) answers 'never bounced' for a sibling QA bounced hours earlier; the check reads the shared target root's store from any worktree, a record in the caller's own store also counts, and the answer never depends on who asked"
+milestone: M8
+type: defect
+severity: high
+# high: the one safety net between a QA bounce and main after a re-point
+# (BL-1466, minted for that reason this morning) never fires in the
+# invocation every land uses; the specifier had already retired the QA
+# prompt's hand check on the strength of it. Restored the same hour. Not
+# critical: nothing wrong landed - BL-1348's content was excluded by the
+# independent unlanded-commit walk - and the interim is back.
+status: todo
+epic: swarm-reliability
+priority: 6
+direction: swarm-reported
+depends_on: []
+mutation_cost: low
+# low: one root resolution in land_step_lib.bb (the shared target root,
+# is_qa_ancestor.sh's BL-1339 precedent) read alongside the caller's, and
+# runner fixtures that add a linked worktree to the fixture repository.
+slice_size_envelope: low
+required_stages: [coder, cleaner, architect, hardender, documenter, qa]
+
+acceptance: specs/features/BL-1470-the-bounce-check-reads-the-store-where-bounces-are-written.feature
+
+required_wiring:
+  - 'specs/pipeline/steps/bl1470BounceCheckReadsSharedStoreSteps.js::registerSteps::the handler lands in the same parcel as the feature (BL-233)'
+
+human_approval: approved
+approval_context: >
+  A new feature file is authored here, so it needs a tap. No choice is
+  posed and there are no ruling_options. What is FIRM: the land step's
+  bounce check reads the store record-bounce.js writes to - the shared
+  target root, git-common-dir's parent, the same resolution your BL-1339
+  ruling (option 2) gave the land-approval store - from any worktree with
+  no explicit root; a record under the caller's own root still counts
+  (the union, never a narrowing); an unreadable store in either root
+  blocks; no store in either is the real never-bounced. is_qa_ancestor.sh's
+  own bounce-store reads, which that ruling deliberately left on the
+  caller's directory, are not touched here.
+
+invariants:
+  - "The bounce check's answer never depends on which checkout asked: from the master checkout or any linked worktree, with or without an explicit root, a bounce recorded where record-bounce.js writes (the shared target root) blocks the sibling and is named."
+  - "Fail closed and never narrowing: a bounce recorded under the caller's own root also blocks; an unreadable store under either root is unreadable and blocking; only the absence of a store under both roots is never-bounced."
+
+description: |
+  ## What is wrong
+
+  `land_step_lib.bb` (BL-1466, landed 2026-09-07 as 2a26088404/b84c4ae9e3):
+  `bounces-dir [root]` = `<root>/.swarmforge/bounces`; `bounce-records-for`
+  treats a missing directory as `[]`, "never bounced" - correct for a real
+  absence, wrong for a wrong root. `land_step_cli.bb` `resolve-repo-root`
+  defaults to `git rev-parse --show-toplevel`, the CALLING worktree
+  (`.worktrees/QA`), which holds its own `.swarmforge/` for mailboxes and
+  no `bounces/`. `record-bounce.js` (`bounceStore.ts`: `targetPath/.swarmforge/bounces`)
+  writes under the master checkout, `/home/carillon/swarmforgevc/.swarmforge/bounces/`.
+
+  QA's reproduction (`backlog/evidence/BL-1466-QA-followup-bounce-check-reads-wrong-root-20260907.md`,
+  QA branch): `(bounce-blocking-state "." "BL-1348" "3bc36c000f")` from
+  the QA worktree -> `nil`; with `/home/carillon/swarmforgevc` ->
+  `{:state :bounced :blocking? true :reason "BL-1348 bounced
+  2026-09-07T16:13:29Z at 3b16f8c73c, not re-fixed"}`. The
+  `ENTANGLED_SIBLING BL-1348` QA saw on BL-1463's land came from the
+  independent unlanded-commit walk, not from this check. Every ordinary
+  invocation - `land_step_cli.bb <task> <commit>` with no third argument,
+  and `land_main_publish.sh --land`'s internal call - takes the wrong root.
+
+  `is_qa_ancestor.sh` already resolves the land-approval store from the
+  SHARED TARGET ROOT (`git rev-parse --git-common-dir`'s parent; BL-1339,
+  human ruling option 2) precisely because "a predicate that answered
+  differently depending on who asked is the property this defect is made
+  of"; its comment leaves the bounce stores on the caller's directory as
+  "ruling option 3 and its own ticket". BL-1466's spec named the reader
+  precedent and not the root precedent - the specifier's miss; BL-1466's
+  fixtures used one root for both, so its four scenarios were green.
+
+  ## What is wanted
+
+  The check reads the store where bounces are written from any worktree
+  without an explicit root (scenarios 01, 02); a record under the
+  caller's own root still counts (scenario 03); an unreadable store under
+  either root blocks (scenario 04); no store under both is never-bounced
+  (scenario 05). BL-1466's four scenarios stay green.
+
+  ## How (direction, not mandate)
+
+  - In `bounce-blocking-state` (or `bounces-dir`), resolve the shared
+    target root once: `git -C <root> rev-parse --git-common-dir`, parent
+    of that path (a linked worktree's common dir is `<master>/.git`; the
+    master's own is `.git`, whose parent is itself) - the exact recipe
+    `is_qa_ancestor.sh` uses; fall back to the caller's root when git
+    cannot answer. Read `<shared>/.swarmforge/bounces` and, when distinct,
+    `<root>/.swarmforge/bounces`; union the records; unreadable in either
+    is unreadable.
+  - Keep the resolution injectable for the runner (a `:store-roots` opt
+    or a `resolve-store-root` seam) so fixtures under mkdtemp add a
+    linked worktree (`git worktree add` inside the FIXTURE clone - its own
+    repository, never the live one) and drive the CLI from it.
+  - Restore nothing in `is_qa_ancestor.sh`; do not move the writers.
+  - Documenter: `docs/reference/BL-1241-*.md`'s sibling-state table names
+    the store root; the QA prompt's restored interim block (landed with
+    this mint) is retired by the specifier on QA's landing note.
+
+constraints: >
+  Fixture repositories are `git init`/`git clone` roots under mkdtemp,
+  proven by `rev-parse --git-common-dir` before any mutating git command;
+  the linked worktree is created inside the fixture, never `git worktree
+  add` on the live repository (BL-1390). No change to where
+  record-bounce.js writes. The step handler lands with the feature
+  (BL-233). No hand-edited mutation manifests.
+
+out_of_scope: |
+  - is_qa_ancestor.sh's bounce-store reads (the BL-1339 ruling's option 3,
+    its own ticket).
+  - Moving the bounce store or changing the writers.
+  - BL-1467 (the re-point keeping bookkeeping commits).
+
+qa_e2e_procedure: >
+  (1) `bb swarmforge/scripts/test/land_step_lib_test_runner.bb` green with
+  the linked-worktree cases. (2) From `.worktrees/QA` on the landed
+  commit, with a sibling that has a bounce record newer than its latest
+  handoff under the master checkout's store: `bb
+  swarmforge/scripts/land_step_cli.bb <landing-task> <tip>` with NO third
+  argument names the sibling as bounced-blocking; the same with
+  `/home/carillon/swarmforgevc` as the third argument prints the same
+  lines. (3) `bb -e '(load-file "swarmforge/scripts/land_step_lib.bb")
+  (println (land-step-lib/bounce-blocking-state "." "<sibling>" "<tip>"))'`
+  from the QA worktree is no longer nil. (4) BL-1466's, BL-1375's and
+  BL-1389's features stay green. (5) The QA prompt no longer carries the
+  "until BL-1470 lands" block.
+
+source: |
+  QA note to the specifier, priority 00, 2026-09-07T16:31Z: "BL-1466
+  bounce check reads wrong root, silently inert - urgent"; evidence
+  `backlog/evidence/BL-1466-QA-followup-bounce-check-reads-wrong-root-20260907.md`
+  (QA branch). Adjudication:
+  `backlog/evidence/BL-1466-inert-bounce-check-adjudication-specifier-20260907.md`.
+
+notes: |
+  Minted 2026-09-07 by the specifier on QA's urgent note, the same pass.
+  The QA prompt's interim bounce-store hand check, retired at 16:49 local
+  on BL-1466's landing note, is restored with this mint pointing at the
+  MASTER checkout's store and at passing the master root as the CLI's
+  third argument, which makes BL-1466's check fire today.
+
+  Root cause of the spec miss, recorded so the class is greppable: BL-1466
+  named the bounce READER precedent (chase_sweep_lib.bb) and not the store
+  ROOT precedent (is_qa_ancestor.sh, BL-1339); a store path that a worktree
+  role resolves from its own root is dark in production and green in a
+  one-root fixture. Same shape as BL-1462's handler reading the live
+  checkout, from the other side.
+
+  Grepped first: no open ticket names bounces-dir, the shared target root
+  for the bounce store, or BL-1339's option 3.

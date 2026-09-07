@@ -1,0 +1,139 @@
+id: BL-1472
+title: "A bounce revert plus its reapply on the reviewing branch are untagged touches on another ticket's paths, and own-paths keeps a path with any untagged touch for the landing ticket (BL-1315), so after QA restored BL-1348's merge on 2026-09-07 the land step credited BL-1348's unapproved ruling-B code and tests to BL-1463 as its own, silently; a revert or reapply commit is transparent to path attribution - the paths it undoes or redoes belong to the commits it undoes or redoes"
+milestone: M8
+type: defect
+severity: high
+# high: a land would have published another ticket's unapproved, bounced,
+# mid-rework production code under the landing ticket's name with the
+# land step reporting nothing wrong; QA caught it only by reading the
+# own-path set. Not critical: nothing landed and the QA prompt carries
+# the interim hand review.
+status: todo
+epic: swarm-reliability
+priority: 6
+direction: swarm-reported
+depends_on: []
+mutation_cost: medium
+# medium: path-owner-tickets and its walk in land_step_lib.bb, the
+# :any-untagged? contract that BL-1315 added, and runner fixtures that
+# build a revert/reapply pair on a reviewing branch.
+slice_size_envelope: medium
+required_stages: [coder, cleaner, architect, hardender, documenter, qa]
+
+acceptance: specs/features/BL-1472-revert-and-reapply-commits-are-transparent-to-path-attribution.feature
+
+required_wiring:
+  - 'specs/pipeline/steps/bl1472RevertReapplyTransparentSteps.js::registerSteps::the handler lands in the same parcel as the feature (BL-233)'
+
+human_approval: approved
+approval_context: >
+  A new feature file is authored here, so it needs a tap. No choice is
+  posed and there are no ruling_options. What is FIRM: a revert or reapply
+  commit contributes no owner and no untagged touch of its own - the
+  paths it undoes or redoes stay attributed to the commits it undoes or
+  redoes; BL-1315's protection of a lander's own untagged edits and
+  BL-1343's "a path attributed to nobody still replays" both stand. This
+  is the land-time counterpart of BL-1295 (done), which taught the
+  send-time scope gate that a revert subject does not blame the reverted
+  ticket.
+
+invariants:
+  - "A revert or reapply commit never changes a path's attribution: own-paths gives the same owners and the same untagged-touch answer for a path whether or not a revert/reapply pair sits between the commits that introduced it and the tip."
+  - "BL-1315 and BL-1343 stand: a landing ticket's own untagged edit keeps a shared path (sibling as passenger), and a path only untagged non-revert commits ever touched is still replayed."
+
+description: |
+  ## What is wrong
+
+  `land_step_lib.bb` `path-owner-tickets` unions the ticket ids named by
+  every commit `git log origin-main..commit -- path` reports and sets
+  `:any-untagged?` when any of them names no ticket; `own-paths` keeps a
+  path for the landing ticket when an untagged touch is present, because
+  a lander's own conflict resolution or hotfix names no ticket and must
+  not be excluded (BL-1315 invariant 1). A bounce revert (`Revert "Merge
+  documenter <sha> into QA."`) and its repair (`Reapply "..."`, the
+  subject `git revert <revert>` writes) are untagged touches on every path
+  the reverted merge carried - another ticket's paths.
+
+  2026-09-07, QA branch: BL-1348 bounced (spec-gap) and reverted
+  (`108d9a46e7`), then restored (`adfc35e0c8`, "Reapply ...") on the
+  specifier's adjudication. `own-paths` for BL-1463 at that tip (QA
+  evidence `BL-1463-QA-followup-two-land-step-defects-20260907.md`, D1):
+  40 paths including `extension/src/tools/vitest-worker-memory-budget.ts`,
+  `bl1348VitestWorkerPoolHostSizingInvariants.property.test.js`,
+  `bl871PropertyLaneWorkerPoolCapInvariants.property.test.js`, both vitest
+  configs and the bl1348 stryker config - BL-1348's ruling-B code, bounced
+  and mid-rework at the coder. Against the pre-restoration tip
+  (`30eeba39fd`) the same call excluded only BL-1348's two bookkeeping
+  files, correctly. A BL-1463 land would have published BL-1348's
+  unapproved production code as BL-1463's own with no warning.
+
+  ## What is wanted
+
+  A revert or reapply commit is transparent to attribution: its paths'
+  owners and untagged-touch answer come from the commits it undoes or
+  redoes (scenario 01 for a sibling's merge, scenario 04 for the lander's
+  own commit); BL-1315's lander-own untagged edit still keeps the path
+  (scenario 02); BL-1343's nobody-attributed path still replays
+  (scenario 03).
+
+  ## How (direction, not mandate)
+
+  - In `path-owner-tickets` (or the `commits-fn` it runs), recognise a
+    revert/reapply commit by its subject (`Revert "` / `Reapply "`) or its
+    `This reverts commit <sha>` trailer; do not count it as a touch at all
+    - the commits it undoes/redoes are in the same range and already
+    attribute the path. A revert of the lander's own tagged commit is
+    then attributed by that commit (scenario 04), which is the right
+    answer: the content is the lander's, now absent.
+  - Keep `:any-untagged?` semantics for every other untagged commit.
+  - Land-time and send-time agree: `task_scope_gate_lib.bb` (BL-1295)
+    already treats a revert subject as not blaming the reverted ticket;
+    if it has a predicate for "this subject is a revert", reuse it rather
+    than a second regex (BL-897 mirror rule if the literal is duplicated).
+  - Fixtures: `land_step_lib_test_runner.bb`'s BL-1315 section gains the
+    revert/reapply pair; the QA prompt's interim hand review (landed with
+    this mint) is retired by the specifier on QA's landing note.
+
+constraints: >
+  Fixture repositories under mkdtemp with their own origin (BL-1390). No
+  change to the delivered set (BL-1473) or the replay's error report
+  (BL-1474), minted alongside. The step handler lands with the feature
+  (BL-233). No hand-edited mutation manifests. land_step_lib.bb is also
+  edited by BL-1467, BL-1470 and BL-1473 (paused): the coordinator
+  serialises.
+
+out_of_scope: |
+  - The delivered-set two-tree diff (BL-1473) and replay!'s reason text
+    (BL-1474).
+  - Forbidding untagged reverts on review branches (BL-1471 guards their
+    scope).
+  - Hand-landing BL-1463 now (QA's action on the note of 2026-09-07).
+
+qa_e2e_procedure: >
+  (1) `bb swarmforge/scripts/test/land_step_lib_test_runner.bb` green with
+  the revert/reapply cases. (2) Scratch clone: merge a sibling's tagged
+  commits into a reviewing branch, `git revert -m 1` the merge, `git revert`
+  the revert, add the landing ticket's tagged commit, run
+  `land_step_cli.bb <landing> <tip>`: the sibling's paths print as
+  EXCLUDED_SIBLING_PATH (or the sibling as ENTANGLED_SIBLING), never in the
+  replay. (3) The same clone with an untagged conflict-resolution commit
+  on the landing ticket's chain: that path is kept with the sibling as
+  PASSENGER_SIBLING. (4) BL-1315's, BL-1343's, BL-1389's and BL-1375's
+  features stay green. (5) The QA prompt no longer carries the "Until
+  BL-1472 and BL-1473 land" block.
+
+source: |
+  QA note to the specifier, priority 00, 2026-09-07T17:29Z: "BL-1463
+  land: 2 new land-step defects, evidence committed - urgent"; evidence
+  `backlog/evidence/BL-1463-QA-followup-two-land-step-defects-20260907.md`
+  (QA branch 4755cbfe9b), D1. Adjudication:
+  `backlog/evidence/BL-1463-two-land-step-defects-adjudication-specifier-20260907.md`.
+
+notes: |
+  Minted 2026-09-07 by the specifier on QA's note, the same pass, with
+  BL-1473 (delivered set) and BL-1474 (replay reason). The QA prompt
+  gained the interim hand review of the own-path set with this mint.
+
+  Grepped first: BL-1295 (done) is the send-time counterpart; BL-1315
+  (done) added the untagged-touch rule this defect rides on; no open
+  ticket names revert/reapply attribution.
