@@ -1,3 +1,8 @@
+# mutation-stamp: sha256=f814a78dc1375c6a8afea7d9c088cbcae3d3930c900cc96a3dc983578c8c8e6a
+# acceptance-mutation-manifest-begin
+# {"version":1,"tested_at":"2026-09-07T11:13:51.279866451Z","feature_name":"BL-1450 The BL-968 guard-sensitivity property fits a budget with every cell and floor kept","feature_path":"/home/carillon/swarmforgevc/.worktrees/hardender/specs/features/BL-1450-the-bl968-sensitivity-property-fits-a-budget.feature","background_hash":"74234e98afe7498fb5daf1f36ac2d78acc339464f950703b8c019892f982b90b","implementation_hash":"unknown","scenarios":[{"index":2,"name":"a planted load-time-binding module of any class at any depth still turns the guard red naming it","scenario_hash":"359bd7d69a0d7d3d99af5c7aaad88836a8045f2cb91db60ccc3e4d9d9a85df58","mutation_count":6,"result":{"Total":6,"Killed":6,"Survived":0,"Errors":0},"tested_at":"2026-09-07T11:13:51.279866451Z"}]}
+# acceptance-mutation-manifest-end
+
 Feature: BL-1450 The BL-968 guard-sensitivity property fits a budget with every cell and floor kept
 
   extension/test/bl968MaterializedGuardSensitivity.property.test.js proves
