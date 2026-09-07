@@ -188,7 +188,7 @@ expects them, and are not migrated or rewritten here.
 - [Paused pager shows server failure reasons](how-to/BL-662-paused-pager-shows-server-failure-reason.md) — JSON `reason` on non-OK for Expedite/Approve (BL-662).
 - [Let's Talk — Discrete Audio Turns in the Mini App Console](how-to/BL-696-miniapp-lets-talk-cursor-audio.md)
 - [Bubble talk mirror chunks and fails loudly](how-to/BL-718-bubble-talk-mirror-chunks-and-fails-loudly.md) — Bubble topic mirror via shared chunker; `bubble-talk-mirror-failed` on send failure (BL-718).
-- [Telegram Cursor Remote operator commands](how-to/BL-698-telegram-cursor-operator-commands.md) — phone-first slash verbs on the Cursor Remote topic, danger tiers, and (BL-1113) CreatePlan **Confirm plan** / **Reject plan** progress buttons.
+- [Telegram Host operator commands](how-to/BL-698-telegram-cursor-operator-commands.md) — phone-first slash verbs on the Host topic (renamed from Cursor Remote, BL-725), danger tiers, and (BL-1113) CreatePlan **Confirm plan** / **Reject plan** progress buttons.
 - [Host-agent activity feed](how-to/BL-833-host-agent-activity-feed.md) — bounded tee of host progress lines; `GET /host-activity` + SSE `host-activity` (BL-833; screen BL-834).
 - [Coordinator activity Telegram feed](how-to/GH-24-coordinator-activity-telegram-feed.md) — deterministic, zero-token surfacer posts one compact line per coordinator handoff/bookkeeping commit to its own standing topic, two independent cursors, no daemon added (GH-24).
 - [Bubble Host thinking page on phone](how-to/BL-834-bubble-host-thinking-page.md) — watch host activity live from BL-833 feed; working / quiet / unreachable states (BL-834).

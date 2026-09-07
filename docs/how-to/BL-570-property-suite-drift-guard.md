@@ -66,7 +66,12 @@ them touched by the commit. Every non-allowlisted failing file from the
 full run is now re-run once, alone, via `npx vitest run --config
 vitest.properties.config.mjs <file>`, sequentially, under a **shared**
 wall-clock ceiling (`SWARMFORGE_PROPERTY_RERUN_CEILING_SECONDS`, default
-180s, total across all files — a file that has no budget left when its
+600s as of 2026-09-06 — raised from 180s once
+`bl968MaterializedGuardSensitivity.property.test.js` alone started
+measuring 164-350s under host load, already exceeding the old shared
+budget on its own; BL-1450 owns right-sizing that file's footprint so the
+ceiling does not have to keep growing to fit it — total across all files —
+a file that has no budget left when its
 turn comes counts as still-failing, never as a pass). A file that passes
 alone is a load flake: the commit is allowed and the flake is recorded as
 one JSON line in `.swarmforge/property-flakes/<YYYY-MM>.jsonl` (file,
