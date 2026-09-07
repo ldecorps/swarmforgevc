@@ -2209,78 +2209,6 @@
       (log! "dropped-parcel-sweep-error" (.getMessage e)))))
 
 
-;; ── BL-1479: parked-active sweep (an active ticket that cannot advance) ────
-;; active_backlog_max_depth counts every YAML in backlog/active/ and nothing
-;; moves one back out - a ticket that becomes unworkable after promotion
-;; (status: blocked, or a not_before the promotion gates would now refuse)
-;; holds its slot for as long as nobody notices (BL-940/BL-1441 held two of
-;; five slots for one and two days, 2026-09-07). This sweep parks such a
-;; ticket back to paused/ - YAML byte-identical, one commit through
-;; commit_integrity_cli.bb - unless a parcel is anywhere in the pipeline for
-;; it (STEERING 2026-08-31: never demote a ticket with work in flight).
-
-(defn- parked-active-notified-path []
-  (fs/path daemon-dir "parked-active-refusal-notified.json"))
-
-(defn- read-parked-active-refusal-log []
-  (or (try (json/parse-string (slurp (str (parked-active-notified-path))) true)
-           (catch Exception _ nil))
-      {}))
-
-;; Keyed by "<id>|<condition>", not just id: a ticket refused for one
-;; condition and later a DIFFERENT one (status: blocked today, a fresh
-;; not_before after a human edit tomorrow) logs again - the record is
-;; "this exact reason was already logged", not "this ticket was ever
-;; refused for anything".
-(defn- parked-active-refusal-key [id condition] (str id "|" condition))
-
-(defn- parked-active-refusal-already-logged? [id condition]
-  (contains? (read-parked-active-refusal-log) (keyword (parked-active-refusal-key id condition))))
-
-(defn- write-parked-active-refusal-logged! [id condition]
-  (fs/create-dirs daemon-dir)
-  (spit (str (parked-active-notified-path))
-        (json/generate-string (assoc (read-parked-active-refusal-log)
-                                      (keyword (parked-active-refusal-key id condition)) true))))
-
-(defn- nudge-coordinator-parked! [id condition]
-  (let [draft (write-scratch-draft!
-               ["type: note"
-                "to: coordinator"
-                "priority: 00"
-                (str "message: " id " parked active -> paused (" condition ")")])
-        env (merge (into {} (System/getenv)) {"SWARMFORGE_ROLE" "coordinator"})
-        result (daemon-cycle-guard-lib/sh! ["bb" (swarm-handoff-script) (str draft)] {:dir (str project-root) :env env})]
-    (if (zero? (:exit result))
-      (log! "parked-active" id condition)
-      (log! "parked-active-notify-error" id (str (:err result))))))
-
-(defn parked-active-sweep! [roles]
-  (try
-    (let [today (str (java.time.LocalDate/now java.time.ZoneOffset/UTC))
-          candidates (chase-sweep-lib/read-park-candidates (active-backlog-dir))
-          live-dirs (dropped-parcel-live-mail-dirs roles)
-          live-ids (chase-sweep-lib/collect-dispatched-ticket-ids live-dirs)
-          {:keys [to-park refused]} (chase-sweep-lib/parked-active-items candidates live-ids today)]
-      (doseq [{:keys [id condition]} refused]
-        (try
-          (when-not (parked-active-refusal-already-logged? id condition)
-            (log! "parked-active-refused" id "parcel-in-flight" condition)
-            (write-parked-active-refusal-logged! id condition))
-          (catch Exception e
-            (log! "parked-active-refused-error" id (.getMessage e)))))
-      (doseq [item to-park]
-        (try
-          (let [{:keys [success reason]} (chase-sweep-lib/park-ticket! project-root item)]
-            (if success
-              (nudge-coordinator-parked! (:id item) (:condition item))
-              (log! "parked-active-error" (:id item) reason)))
-          (catch Exception e
-            (log! "parked-active-error" (:id item) (.getMessage e))))))
-    (catch Exception e
-      (log! "parked-active-sweep-error" (.getMessage e)))))
-
-
 ;; ── BL-1104: landed-but-open QA re-notify (sibling of dispatch-gap) ─────────
 ;; Subject-anchored QA approval on origin/main + still in active/ + no Close
 ;; → one note to QA asking it to resend the coordinator notify. Never moves
@@ -4992,13 +4920,6 @@
                       ;; cadence as its dispatch-gap/open-slot siblings.
                       (run-sweep! "dropped-parcel-sweep"
                           #(dropped-parcel-sweep! (load-roles)))
-                      ;; BL-1479: parked-active sweep shares the same
-                      ;; cadence - it frees a slot open-slot-nudge-sweep
-                      ;; above already checked this cycle, so a freed slot
-                      ;; is picked up on the NEXT cadence tick, same as any
-                      ;; other promotion.
-                      (run-sweep! "parked-active-sweep"
-                          #(parked-active-sweep! (load-roles)))
                       ;; BL-1104: landed-but-open shares the same cadence —
                       ;; name MUST be the literal `landed-but-open` (required_wiring).
                       ;; BL-1392: same cadence as its siblings; the label is
