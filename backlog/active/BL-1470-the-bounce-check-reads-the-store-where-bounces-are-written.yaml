@@ -13,6 +13,12 @@ status: todo
 epic: swarm-reliability
 priority: 6
 direction: swarm-reported
+abandoned_commits: [958f98eb97]
+# BL-1241: land_step_cli.bb LAND_ESCALATEd citing docs/reference/Specification.MD
+# shared with bounced sibling BL-1348; specifier ruling (evidence
+# BL-1470-land-escalate-specifier-adjudication-20260907.md) found every
+# changed line at 958f98eb97 was BL-1470's own and directed a hand-built
+# tip-pure replay. Landed as a02e3d45fa (12 own paths, no sibling content).
 depends_on: []
 mutation_cost: low
 # low: one root resolution in land_step_lib.bb (the shared target root,
