@@ -63,14 +63,20 @@ running, unrelated or not (BL-676's docs-only commit refused
 (`CLASS_FLOOR`/`DEPTH_FLOOR`) re-derived from `DEPTHS.length *
 RUNS_PER_CELL` / `CLASSES.length * RUNS_PER_CELL` instead of hand-typed
 constants (BL-1062's own invariant 2 stands: every class×depth cell is
-still exercised, every floor still asserted), test timeout 300000→120000ms.
-The property body, its assertions, and the fresh-process-per-draw shape
-BL-968 is about are byte-identical — no cell dropped, no assertion
-weakened. File now completes alone in 45-67s, comfortably under its 60s
-budget. Verifying this ticket's own e2e surfaced an unrelated standing red
-in a sibling BL-968 feature (a hard-coded `backlog/active/BL-968-*.yaml`
-path stale since that ticket's 2026-08-20 closure) — not fixed here, owned
-by BL-1462. Acceptance:
+still exercised, every floor still asserted). The property body, its
+assertions, and the fresh-process-per-draw shape BL-968 is about are
+byte-identical — no cell dropped, no assertion weakened. File now
+completes alone in 45-67s, comfortably under its 60s budget. QA bounced
+once (2026-09-07): the file's own internal `testTimeout`, first set to
+120000ms from solo-run measurements alone (44-50s typical, one 110s
+spike), was hit twice in independent full-lane pooled runs (126s, 149s) —
+a materially different contention regime than solo execution. Raised to
+240000ms with the comment recording both measurement bases; the guard's
+separate 180s rerun-alone ceiling (an uncontended check) is unaffected and
+still cleared with room to spare. Verifying this ticket's own e2e
+surfaced an unrelated standing red in a sibling BL-968 feature (a
+hard-coded `backlog/active/BL-968-*.yaml` path stale since that ticket's
+2026-08-20 closure) — not fixed here, owned by BL-1462. Acceptance:
 `specs/features/BL-1450-the-bl968-sensitivity-property-fits-a-budget.feature`.
 How-to: `docs/how-to/BL-570-property-suite-drift-guard.md` (the rerun-
 ceiling paragraph's BL-1450 forward-reference updated from pending to
