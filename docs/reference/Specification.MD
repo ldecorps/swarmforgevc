@@ -1,5 +1,36 @@
 # SwarmForge VS Code Extension — Specification
 
+**Last Updated:** September 7, 2026 (BL-1466: `land_step_lib.bb`'s
+`ticket-approval-state` (BL-1375's passenger predicate) read only the
+backlog folder and `human_approval` — a QA bounce
+(`.swarmforge/bounces/<YYYY-MM>.jsonl`) changed neither, so a sibling QA
+bounced an hour earlier still answered `:approved` and could ride a
+shared path as a passenger, or count as landable. BL-1438's re-point
+(`reset --hard origin/main` after every land) removed the only thing that
+had been masking this — QA's own BL-490/495 revert of the bounced
+content. 2026-09-07: QA bounced BL-1450 at 11:48Z and reverted it;
+BL-1447 landed and the re-point reset the QA branch to `origin/main`;
+BL-1452's documenter tip, built before the bounce, still carried BL-1450's
+original content, and merging it brought that content back into QA's tree
+with no revert left to keep it out
+(`backlog/evidence/BL-1452-QA-followup-repoint-discards-unlanded-bounce-work-20260907.md`).
+BL-1452 shared no path with BL-1450 so nothing wrong actually landed, but
+a ticket that did share a path would have carried the bounced lines in as
+an approved passenger with no check firing. Fixed: `ticket-approval-state`
+now also reads the sibling's most recent bounce record (reusing
+`chase_sweep_lib.bb`'s existing reader) — a sibling whose latest bounce
+names a commit reachable from the tip, with no later handoff of that
+sibling on record, answers `:bounced :blocking? true`, named with the
+bounce's commit and date in the `blocking-siblings` report. A later
+handoff citing a descendant of the bounced commit clears it; an
+unreadable bounce store fails closed; no bounce record leaves BL-1375's
+answer unchanged. Acceptance:
+`specs/features/BL-1466-a-bounced-sibling-never-rides-another-tickets-land.feature`.
+How-to: `docs/how-to/BL-1241-entangled-tip-at-the-land-step-has-a-reachable-remedy.md`
+(sibling-states table gains the `:bounced` row; new section after
+BL-1461's). `QA.prompt`'s interim "Until BL-1466 lands" hand-check block
+is retired by the specifier at landing, per this ticket's own "How".)
+Prior entry —
 **Last Updated:** September 7, 2026 (BL-1465:
 `bl1375ApprovedSiblingsCanLandInvariants.property.test.js`'s invariant 2
 still asserted the pre-BL-1447 sequencing — call `land-plan`, expect
