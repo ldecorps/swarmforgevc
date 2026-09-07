@@ -26,7 +26,7 @@ acceptance: specs/features/BL-1408-commit-guard-tests-derive-their-guard-set.fea
 required_wiring:
   - 'swarmforge/scripts/test/test_run_commit_guards.sh::commitGuardFixtureSet.js::the runner test must read the runner through BL-1398 helper for its stub set; absent today (grep returns 0)'
   - 'swarmforge/scripts/test/test_pre_merge_commit_hook.sh::commitGuardFixtureSet.js::the pre-merge hook test must read the hook through the same helper; absent today (grep returns 0)'
-  - 'extension/test/bl1252CommitGuardAggregationInvariants.property.test.js::deriveCommitGuardFixtureSet::the BL-1252 property test must derive its guard list from the runner; absent today (grep returns 0)'
+  - 'extension/test/helpers/bl1252CommitGuardFixture.js::deriveCommitGuardFixtureSet::the shared fixture the five BL-1252 property files use (BL-1349 split the file on 2026-09-07) derives the guard list from the runner; absent before this parcel'
   - 'swarmforge/scripts/test/test_pipeline_code_on_main_guard.sh::commitGuardFixtureSet.js::the pipeline-code guard test must copy both chains guard sets through the same helper; absent today (grep returns 0)'
   - 'specs/pipeline/steps/bl1408CommitGuardTestsDeriveTheirSetSteps.js::registerSteps::the handler file exists so discovery registers every scenario (BL-1371)'
 
@@ -248,6 +248,14 @@ notes: |
   ticket on its first tick after landing; interim operator recipe in
   BL-1455 notes.
 
+  2026-09-07 (specifier), on the documenter's note at the QA hop: wiring
+  anchor 3 named `extension/test/bl1252CommitGuardAggregationInvariants.property.test.js`,
+  which BL-1349 (landed 18188284d0, 11:53Z today) split into five
+  `bl1252*Invariant.property.test.js` files sharing
+  `extension/test/helpers/bl1252CommitGuardFixture.js`; the parcel's
+  `deriveCommitGuardFixtureSet` call lives in that helper, so the anchor
+  is re-pointed there. The gate reads this field from the sender's
+  checkout: the documenter merges main and resends. Nothing built changes.
 source: |
   Coder note to specifier, priority 10, 2026-09-05T02:33Z; coder evidence
   `backlog/evidence/BL-1275-coder-20260905.md` (coder branch) §"Surfaced
