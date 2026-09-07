@@ -1,3 +1,8 @@
+# mutation-stamp: sha256=c6f4cbcf2908412371cb75287dc0f27d6c33d7967d10fb7ed5c52243c4d8fcc9
+# acceptance-mutation-manifest-begin
+# {"version":1,"tested_at":"2026-09-07T11:27:45.832109554Z","feature_name":"BL-1447 A replay tip missing any path the parcel changed is refused before it is published","feature_path":"/home/carillon/swarmforgevc/.worktrees/hardender/specs/features/BL-1447-a-replay-missing-a-parcel-path-is-refused-before-publish.feature","background_hash":"59a281a2988801420669fec0457f4051a6d2e651aac99549eeb2dd95726e978c","implementation_hash":"unknown","scenarios":[{"index":0,"name":"a replay whose tree lacks any path the parcel changed is refused before publish, every missing path in one report","scenario_hash":"df26fa231c1b7c48eb0354e9a0c4b08b5f1d7d81ce345d8a5c326200622a9581","mutation_count":2,"result":{"Total":2,"Killed":2,"Survived":0,"Errors":0},"tested_at":"2026-09-07T11:27:45.832109554Z"}]}
+# acceptance-mutation-manifest-end
+
 Feature: BL-1447 A replay tip missing any path the parcel changed is refused before it is published
 
   The land step's replay builds a tip-pure commit from the paths it
