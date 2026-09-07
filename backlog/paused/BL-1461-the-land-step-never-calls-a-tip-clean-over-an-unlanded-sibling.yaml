@@ -1,0 +1,167 @@
+id: BL-1461
+title: "land-plan answers LAND_CLEAN for a tip carrying a sibling's unlanded work when that work was absorbed before the parcel's last hop: the candidate walk starts at parcel-own-base (the last hop, BL-1432's bound) and never visits earlier unlanded history, so BL-1448's two real land inputs read clean on 2026-09-07 while carrying BL-1349's unlanded files - the wide walk found them, only a hand diff caught it; every commit reachable from the tip and not from origin/main is a candidate, and the cost bound is the re-point"
+milestone: M8
+type: defect
+severity: high
+# high: a LAND_CLEAN verdict is the land step's one green light, and here
+# it recommends pushing another ticket's unreviewed, unlanded content to
+# main with no sibling named - the silent BL-1241 class, reversed. QA
+# caught this instance through a content diff done for a different reason;
+# no tool or prompt check would have. Not critical: nothing was pushed
+# wrong this time, and the interim hand check is in the QA prompt.
+status: todo
+epic: swarm-reliability
+priority: 8
+direction: swarm-reported
+depends_on: [BL-1446]
+# BL-1446 is at QA (approved by its own gates, 2026-09-07 10:55Z, its
+# follow-up finding is this ticket) and rewrites the same candidate range
+# in entangled-siblings; this slice is built on top of that landed code,
+# never beside it. The coordinator promotes once BL-1446 is in done/.
+mutation_cost: medium
+# medium: one range change in land_step_lib.bb, a docstring that stops
+# lying, and fixture work in land_step_lib_test_runner.bb (a sibling commit
+# at three positions on the BL-1446 five-stage helper).
+slice_size_envelope: medium
+required_stages: [coder, cleaner, architect, hardender, documenter, qa]
+
+acceptance: specs/features/BL-1461-the-land-step-never-calls-a-tip-clean-over-an-unlanded-sibling.feature
+
+required_wiring:
+  - 'specs/pipeline/steps/bl1461LandStepNeverCleanOverUnlandedSiblingSteps.js::registerSteps::the handler lands in the same parcel as the feature (BL-233)'
+
+human_approval: pending
+approval_context: >
+  A new feature file is authored here, so it needs a tap. No choice is
+  posed and there are no ruling_options. What is FIRM: the candidate walk
+  for entanglement covers every commit reachable from the tip and not from
+  origin/main, wherever the parcel's hops fall; BL-1446's exclusion of
+  landed history stands; the send-time scope gate's parcel-own-base is
+  untouched. BL-1432's per-land cost bound is not given back by accident:
+  BL-1438's re-point keeps the QA branch short (163 commits ahead of
+  origin/main today, 1839 on 2026-09-05), which is the bound that was
+  always meant to hold.
+
+invariants:
+  - "LAND_CLEAN is answered only when every commit reachable from the tip and not from origin/main either belongs to the parcel or names no ticket: an unlanded sibling anywhere in that range, before or after any hop, forces a replay."
+  - "A commit reachable from origin/main is never a candidate (BL-1446 invariant 1 stands), and task_scope_gate_lib.bb's parcel-own-base - the send-time gate's notion of one role's authorship - is unchanged."
+
+description: |
+  ## What is wrong
+
+  `land_step_lib.bb` `land-plan` sets `walk-base` to
+  `task-scope-gate-lib/parcel-own-base` - the commit of the task's LAST
+  recorded handoff (BL-1432's bound) - and `entangled-siblings` enumerates
+  candidates from that base to the tip (BL-1446 additionally excludes
+  commits reachable from origin/main). Everything unlanded that sits BEFORE
+  the last hop is never visited: a sibling's commits absorbed into a shared
+  cleaner or architect branch while the parcel walked those stages, which
+  Article 2.6 and BL-1241 call the normal shape.
+
+  Found by QA verifying BL-1446 on 2026-09-07
+  (`backlog/evidence/BL-1446-QA-followup-landclean-can-miss-preexisting-entanglement-20260907.md`,
+  QA branch `15ead1cd52`): `land_step_cli.bb BL-1448 6c8caf27fb` and
+  `... d854af2126` both answered bare `LAND_CLEAN`, naming no sibling. Both
+  tips carried BL-1349's unlanded `bounce_history` (commits `832429ff79`,
+  `37727ac582`, `3f37abba98`, `699dcc6b87`, none on origin/main), absorbed
+  before the documenter's final hop `429f8defcc`, which is what
+  `parcel-own-base` resolved to; the walk from there visits only QA's own
+  merge commits. The three-argument `entangled-siblings` (walk base
+  origin/main) found `{:entangled #{BL-1349 BL-940 BL-1444} :unlanded
+  #{BL-1349 BL-940}}` for the same tip. QA caught it because a content
+  diff made for BL-1424's replay-completeness reason surfaced BL-1349's
+  yaml, then re-ran the CLI out of diligence. Nothing else would have.
+
+  Not BL-1446 (post-hop landed history wrongly counted; replay own-paths
+  bounded to the last hop - both fixed there) and not BL-1447 (a replay
+  missing a parcel path, checked before publish - fires on `:replay` only;
+  this defect answers `:land`, so no replay is ever built or checked).
+
+  ## What is wanted
+
+  A tip is clean only when every commit reachable from it and not from
+  origin/main belongs to the parcel or names no ticket. A sibling's
+  unlanded commit is reported wherever it sits - before the parcel's first
+  hop, between hops, after the last hop (scenario 01) - and forces a replay
+  that carries the parcel's paths and none of the sibling's (scenario 03).
+  Landed history stays out (scenario 02).
+
+  ## How (direction, not mandate)
+
+  - In `land-plan`, the candidate enumeration for `entangled-siblings` runs
+    over `commit ^origin-main` whatever `walk-base` says; read BL-1446's
+    landed code first - it already attributes replay own-paths from
+    origin/main, so the two walks should share one range helper, never a
+    second implementation. `walk-base` may survive only where it bounds a
+    cost without deciding a verdict.
+  - The cost bound: BL-1432 measured 1839 never-landed commits on the QA
+    branch; BL-1438's `land_step_cli.bb repoint` now keeps it short (163 on
+    2026-09-07). Say so in `land-plan`'s docstring in place of the
+    "instead of walking the whole, forever-growing origin/main..tip range"
+    sentence, and in `docs/reference/BL-1241-*.md`; the docstring's promise
+    "`{:action :land}` when no entanglement is present" becomes true again.
+  - Fixture: extend `land_step_lib_test_runner.bb`'s BL-1446 section (its
+    five-stage helper, line ~1763 on the BL-1446 parcel) with a sibling
+    commit inserted at the three positions of scenario 01; the landed
+    variant of scenario 02 pushes that commit to the fixture origin first.
+  - The QA prompt's interim hand check (landed by the specifier with this
+    mint) is retired by the documenter in the same parcel: delete the
+    "Until BL-1461 lands" block from `swarmforge/roles/QA.prompt`.
+
+constraints: >
+  `parcel-own-base` and the send-time scope gate are untouched. Fixture
+  repositories are `git init` roots under mkdtemp, proven by `rev-parse
+  --git-common-dir` before any mutating git call (BL-1390); never `git -C ""`.
+  The step handler lands with the feature (BL-233). No hand-edited mutation
+  manifests. Built on BL-1446's landed code (depends_on), never in parallel
+  with its parcel.
+
+out_of_scope: |
+  - Commits naming no ticket (hotfixes, merges) riding along unattributed -
+    a different class (BL-1423/BL-1424's manifest gates own hotfix
+    registration).
+  - BL-1447's replay-completeness check and BL-1446's own scope.
+  - Whether `land_step_cli.bb` should expose a `--wide` flag: unnecessary
+    once the default walk is right.
+
+qa_e2e_procedure: >
+  (1) `bb swarmforge/scripts/test/land_step_lib_test_runner.bb` green,
+  including the new three-position cases. (2) Re-run the real incident
+  inputs from a QA worktree that still has them: `bb
+  swarmforge/scripts/land_step_cli.bb BL-1448 6c8caf27fb` and `... d854af2126`
+  now print LAND_REPLAY with `ENTANGLED_SIBLING BL-1349` (and BL-940 while
+  it is unlanded), never a bare LAND_CLEAN; if those commits are gone from
+  every worktree by then, reproduce the shape on a scratch clone: sibling
+  commit, then five stage commits with a recorded last hop, then plan.
+  (3) The three-argument `entangled-siblings` and `land-plan` agree on the
+  same tip. (4) `swarmforge/roles/QA.prompt` no longer carries the "Until
+  BL-1461 lands" block.
+
+source: |
+  QA note to the specifier, priority 00, 2026-09-07T09:55Z: "BL-1446
+  followup: LAND_CLEAN can miss pre-hop entanglement, new finding";
+  evidence `backlog/evidence/BL-1446-QA-followup-landclean-can-miss-preexisting-entanglement-20260907.md`
+  (QA branch, `15ead1cd52`). QA's own recommendation names both fix
+  directions and the fourth invariant this ticket declares as invariant 1.
+
+notes: |
+  Minted 2026-09-07 by the specifier on QA's note, the same pass. Interim:
+  the QA prompt gained an "Until BL-1461 lands" wide-walk check under the
+  LAND_CLEAN outcome (same commit as this mint's prompt change); the
+  documenter deletes it when this lands.
+
+  Grepped first: BL-1446 (active, at QA) and BL-1447 (active) are the two
+  in-flight siblings and neither covers the `:land` branch's candidate
+  range; BL-1432 (done) introduced the bound with the explicit promise
+  "only ever widens, never narrows past the pre-existing behaviour", which
+  this defect falsifies for the candidate walk; BL-1438 (done) is the
+  re-point that now supplies the bound.
+
+  Why depends_on names an unlanded ticket: BL-1446 is at QA with its own
+  gates green and its follow-up finding is this ticket; the two rewrite the
+  same lines. Building this in parallel would conflict at land; the
+  promotion gate holds it until BL-1446 is done, which is the intent.
+
+  IR-DRY at mint: the three "a sibling ticket's commit sits ..." Givens are
+  one parametrised precondition (position x landed-or-not); reviewed and
+  kept.
