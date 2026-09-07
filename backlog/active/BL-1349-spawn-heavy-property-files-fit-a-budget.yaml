@@ -87,9 +87,15 @@ qa_e2e_procedure: >
   before is still present, and that no assertion inside one has been removed
   or relaxed; a reduced numRuns is the expected change, a deleted property is
   a bounce. Then the whole lane: run `npm run test:properties` and confirm the
-  wall clock is materially below the 143 s baseline, the pass/fail verdict is
-  unchanged, and the 17 pre-existing failures on the BL-1175 standing
-  allowlist are still exactly 17 - neither more, nor fewer by suppression.
+  wall clock is materially below the 143 s baseline and the set of red
+  files is exactly the property-lane rows of `backlog/standing-reds.tsv`
+  at the landed commit (each owned by an open ticket, per
+  `bb swarmforge/scripts/standing_red_register_cli.bb .`): no new red, and
+  none made to pass by a new row in
+  `swarmforge/scripts/property_suite_standing_allowlist.tsv` - that file
+  has had zero rows since BL-1428 (2026-09-05) and a row added by this
+  parcel is a bounce. (Amended 2026-09-07: the BL-1175 allowlist this step
+  cited was drained by BL-1428; the register is the standing-red source.)
 
 out_of_scope: |
   - The fork count and the per-worker memory reservation. That is BL-1348.
@@ -154,5 +160,13 @@ notes: |
   would gate nothing (BL-1235), and is unnecessary because `acceptance:`
   points at a real `.feature` from the start - the runner throws on an
   unregistered scenario, so the acceptance run is itself the gate.
+
+  Amended 2026-09-07 by the specifier on the documenter's note (parcel at
+  the documenter, past the coder - YAML only, no feature change, BL-1391):
+  qa_e2e_procedure's whole-lane check no longer counts "17 failures on the
+  BL-1175 allowlist" - BL-1428 drained that allowlist to zero rows on
+  2026-09-05 and the standing-red register owns every tolerated red. The
+  check now compares the lane's red set to the register's property rows.
+  Nothing built changes; QA runs the amended step.
 
 assigned_to: coder
