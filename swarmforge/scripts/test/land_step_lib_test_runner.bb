@@ -45,6 +45,32 @@
 (defn- mark-origin-main-here! [root]
   (sh! root "git" "update-ref" "refs/remotes/origin/main" (:out (sh! root "git" "rev-parse" "HEAD"))))
 
+;; BL-1446: records a completed handoff for task-name citing commit - the
+;; durable boundary last-handoff-commit reads back
+;; (salvage-lib/latest-item-handoffs), same shape
+;; task_scope_gate_lib_test_runner.bb's own record-handoff! already uses.
+(defn- record-handoff! [root task-name commit]
+  ;; BL-1446: excluded via .git/info/exclude (never gitignore'd content
+  ;; itself, never committed) so a LATER `commit!` elsewhere in the fixture
+  ;; - which runs `git add -A`, sweeping every untracked path in the whole
+  ;; repo - can never accidentally stage this archive onto some OTHER
+  ;; commit's line; a checkout away from that line would then delete it as
+  ;; a file tracked there and absent at the destination. Fixture-only
+  ;; concern: the real handoff archive lives beside a real .gitignore.
+  (let [exclude-file (fs/path root ".git" "info" "exclude")]
+    (when-not (and (fs/exists? exclude-file) (str/includes? (slurp (str exclude-file)) ".swarmforge/"))
+      (fs/create-dirs (fs/parent exclude-file))
+      (spit (str exclude-file) "\n.swarmforge/\n" :append true)))
+  (let [roles-tsv (fs/path root ".swarmforge" "roles.tsv")]
+    (when-not (fs/exists? roles-tsv)
+      (fs/create-dirs (fs/parent roles-tsv))
+      (spit (str roles-tsv) (str/join "\t" ["cleaner" "cleaner" (str root) "session" "Cleaner" "claude" "task"]))
+      (spit (str roles-tsv) "\n" :append true))
+    (let [completed-dir (fs/path root ".swarmforge" "handoffs" "inbox" "completed")]
+      (fs/create-dirs completed-dir)
+      (spit (str (fs/path completed-dir (str "00_" (System/nanoTime) "_from_documenter_to_qa_for_qa.handoff")))
+            (str "task: " task-name "\ncommit: " commit "\nto: qa\nfrom: documenter\n")))))
+
 ;; ── entangled-siblings ───────────────────────────────────────────────────
 
 (with-fixture [root]
@@ -1730,6 +1756,91 @@ RESOLVED BY THIS TICKET
   (let [commit (:out (sh! root "git" "rev-parse" "HEAD"))
         plan (land-step-lib/land-plan {:root root :commit commit :task-ticket-id "BL-9001"})]
     (assert= "land-plan: no :base given - unchanged fallback behavior" {:action :land} plan)))
+
+;; ── BL-1446: landed history pulled in by a post-hop sync is never
+;;    entangled, and a replay carries every hop's work ─────────────────────
+
+;; A helper shared by every BL-1446 scenario below: five stage commits for
+;; BL-9001 on origin/main's own line, the last hop recorded (walk-base =
+;; the 5th commit), then origin/main advances on an INDEPENDENT line (a
+;; sibling ticket's commit) and the parcel merges it in - the exact
+;; incident shape (backlog/evidence/BL-1424-land-replay-dropped-own-paths-
+;; incident-20260906.md): a routine post-hop sync pulling in history that
+;; is - or, in scenario 02, is not - already on origin/main.
+(defn- bl1446-fixture! [root sibling-commit-message]
+  (let [seed (:out (sh! root "git" "rev-parse" "HEAD"))]
+    (commit! root "backlog/active/BL-9001-a.yaml" "id: BL-9001\n" "BL-9001: coder")
+    (commit! root "backlog/active/BL-9001-b.yaml" "id: BL-9001\n" "BL-9001: cleaner")
+    (commit! root "backlog/active/BL-9001-c.yaml" "id: BL-9001\n" "BL-9001: architect")
+    (commit! root "backlog/active/BL-9001-d.yaml" "id: BL-9001\n" "BL-9001: hardener")
+    (commit! root "backlog/active/BL-9001-e.yaml" "id: BL-9001\n" "BL-9001: documenter")
+    (let [documenter-tip (:out (sh! root "git" "rev-parse" "HEAD"))]
+      (record-handoff! root "BL-9001-fixture" documenter-tip)
+      (sh! root "git" "checkout" "-q" seed)
+      (commit! root "backlog/active/BL-9002-x.yaml" "id: BL-9002\n" sibling-commit-message)
+      (let [sibling-commit (:out (sh! root "git" "rev-parse" "HEAD"))]
+        (sh! root "git" "checkout" "-q" documenter-tip)
+        {:documenter-tip documenter-tip :sibling-commit sibling-commit}))))
+
+;; BL-1446 landed-history-pulled-in-by-a-sync-is-not-entangled-01
+(with-fixture [root]
+  (mark-origin-main-here! root)
+  (let [{:keys [sibling-commit]} (bl1446-fixture! root "BL-9002: sibling, will land on origin/main after the hop")]
+    ;; The sibling LANDS on origin/main (not merely committed somewhere) -
+    ;; origin/main itself now carries it, same as a real land publishing it.
+    (sh! root "git" "update-ref" "refs/remotes/origin/main" sibling-commit)
+    (sh! root "git" "merge" "-q" "--no-ff" "-m" "Merge origin/main into QA." "origin/main")
+    (let [commit (:out (sh! root "git" "rev-parse" "HEAD"))
+          bounded (land-step-lib/land-plan {:root root :commit commit :task-ticket-id "BL-9001"})
+          wide (land-step-lib/land-plan {:root root :commit commit :task-ticket-id "BL-9001" :base sibling-commit})]
+      (assert= "BL-1446 scenario 01: a sibling already on origin/main, pulled in by a sync, is never entangled (bounded)"
+               {:action :land} bounded)
+      (assert= "BL-1446 scenario 01: the wide walk (forced to origin/main) agrees"
+               {:action :land} wide))))
+
+;; BL-1446 a-replay-carries-every-hops-work-02
+(with-fixture [root]
+  (mark-origin-main-here! root)
+  (let [{:keys [documenter-tip sibling-commit]} (bl1446-fixture! root "BL-9002: unlanded sibling inside the parcel's own range")]
+    ;; The sibling is NOT landed - origin/main stays at its original seed;
+    ;; the parcel branch merges it in directly (an unlanded commit genuinely
+    ;; inside the parcel's own range, not pulled in from origin/main).
+    (sh! root "git" "merge" "-q" "--no-ff" "-m" "Merge sibling into QA." sibling-commit)
+    (let [commit (:out (sh! root "git" "rev-parse" "HEAD"))
+          plan (land-step-lib/land-plan {:root root :commit commit :task-ticket-id "BL-9001"})]
+      (assert= "BL-1446 scenario 02: a genuinely unlanded sibling still forces :replay"
+               :replay (:action plan))
+      (assert= "BL-1446 scenario 02: names the sibling" #{"BL-9002"} (:entangled plan))
+      (assert= "BL-1446 scenario 02: own-paths carries every one of the five stage commits' files, not just the last hop's"
+               ["backlog/active/BL-9001-a.yaml" "backlog/active/BL-9001-b.yaml" "backlog/active/BL-9001-c.yaml"
+                "backlog/active/BL-9001-d.yaml" "backlog/active/BL-9001-e.yaml"]
+               (sort (:own-paths plan))))))
+
+;; BL-1446 bounded-and-wide-walks-agree-03 (0, 1 and 2 post-hop syncs)
+(doseq [syncs [0 1 2]]
+  (with-fixture [root]
+    (mark-origin-main-here! root)
+    (let [{:keys [documenter-tip]} (bl1446-fixture! root "BL-9002: sibling, lands on origin/main after the hop")
+          tip (atom documenter-tip)]
+      (dotimes [n syncs]
+        ;; A new commit for a DIFFERENT sibling lands on origin/main
+        ;; (based off the current origin/main, an independent line), then
+        ;; the parcel branch syncs it in - one round per sync.
+        (sh! root "git" "checkout" "-q" "origin/main")
+        (commit! root (str "backlog/active/BL-910" n "-x.yaml") (str "id: BL-910" n "\n")
+                 (str "BL-910" n ": another sibling landing on origin/main, sync " n))
+        (sh! root "git" "update-ref" "refs/remotes/origin/main" (:out (sh! root "git" "rev-parse" "HEAD")))
+        (sh! root "git" "checkout" "-q" @tip)
+        (sh! root "git" "merge" "-q" "--no-ff" "-m" (str "Merge origin/main into QA, sync " n ".") "origin/main")
+        (reset! tip (:out (sh! root "git" "rev-parse" "HEAD"))))
+      (let [commit @tip
+            origin-main (:out (sh! root "git" "rev-parse" "origin/main"))
+            bounded (land-step-lib/land-plan {:root root :commit commit :task-ticket-id "BL-9001"})
+            wide (land-step-lib/land-plan {:root root :commit commit :task-ticket-id "BL-9001" :base origin-main})]
+        (assert= (str "BL-1446 scenario 03 (" syncs " syncs): bounded and wide verdicts agree")
+                 (:action wide) (:action bounded))
+        (assert= (str "BL-1446 scenario 03 (" syncs " syncs): bounded and wide own-paths agree")
+                 (sort (or (:own-paths wide) [])) (sort (or (:own-paths bounded) [])))))))
 
 ;; ── BL-1432: post-land-repoint! ───────────────────────────────────────────
 
