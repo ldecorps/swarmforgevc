@@ -152,3 +152,5 @@ notes: |
 
   IR-DRY at mint: scenarios 01 and 03 share their Given by design (same
   fixture state, CLI outcome vs plan action); reviewed and kept.
+
+assigned_to: coder
