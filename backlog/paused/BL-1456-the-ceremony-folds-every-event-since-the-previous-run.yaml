@@ -1,0 +1,206 @@
+id: BL-1456
+title: "The closing ceremony folds every lifecycle event since the previous run: the packet folds only events stamped with the run's UTC date, and since the 24/7 schedule moved the ceremony to about 04:25Z each packet has covered a four-hour sliver of its shift - 176 of 1756 events (10%) across 2026-09-04..07 - so the lean pass read 2026-09-06 as one ticket on a day fifteen moved"
+milestone: M8
+type: defect
+severity: medium
+# medium, not high: the ledger keeps every event (append-only; nothing is
+# lost) and no other consumer reads the packet, so the fault is contained
+# to the lean pass's own view, and the first post-fix run folds forward
+# from where the last run stopped. Not low: the pass is the swarm's one
+# process-health loop and it has drawn its hypotheses from ~10% of the
+# evidence since 2026-09-05, silently - the 09-06 packet read "one ticket,
+# BL-1440" on a day fifteen tickets moved and five closed.
+status: todo
+epic: lean-aware-coordinator
+priority: 12
+direction: swarm-reported
+depends_on: []
+mutation_cost: low
+# low: pure fold logic in closingCeremony.ts and closingCeremonyRun.ts plus
+# one call-site change in night-closing-ceremony-run.ts, all unit-testable
+# over a mkdtemp fixture root with a seeded ledger and a seeded prior run.
+slice_size_envelope: low
+required_stages: [coder, cleaner, architect, hardender, documenter, qa]
+
+acceptance: specs/features/BL-1456-the-ceremony-folds-every-event-since-the-previous-run.feature
+
+required_wiring:
+  - 'specs/pipeline/steps/bl1456CeremonyFoldWindowSteps.js::registerSteps::the step handler lands in the same parcel as the feature (BL-233)'
+
+human_approval: pending
+approval_context: >
+  A new feature file is authored here, so it needs a tap. No choice is
+  posed and there are no ruling_options. What is FIRM: a ledger event is
+  folded by exactly one ceremony run - the first run after it is appended -
+  whatever its `at` stamp says; the run records the window it folded; the
+  night sleep path hands the ceremony the real instant, never a synthetic
+  midnight. What is open to the coder: how a run remembers where the
+  previous window ended (a per-file line cursor over the append-only JSONL
+  is the direction, not a mandate). Nothing here changes what the packet
+  contains or how the specifier reacts to it.
+
+invariants:
+  - "Every lifecycle ledger event is folded by exactly one ceremony run - the first run after it was appended - regardless of the date in its at stamp; no event is folded twice and none is skipped (binds every run after this lands; the single migration run is named in the evidence with its folded count)."
+  - "Consecutive ceremony runs record windows that tile the timeline: each starts where the previous run's window ended and ends at the real instant the run happened, never at a synthetic midnight."
+
+description: |
+  ## What is wrong
+
+  `runClosingCeremony` (extension/src/metrics/closingCeremonyRun.ts) takes
+  `shiftKey = nowIso.slice(0, 10)` and `buildClosingCeremonyPacket`
+  (extension/src/quality/closingCeremony.ts, `eventsForShiftKey`) folds
+  only the ledger events whose `at` date equals that key. BL-819's store
+  buckets events by calendar day and its own header says why: no shift
+  boundary existed as a computable hook when it was built, and re-bucketing
+  to a real boundary is "a mechanical follow-up" once BL-820 lands one.
+  BL-820 and BL-1393 landed it - a ceremony run IS the shift end, and every
+  run is recorded under `.swarmforge/lean/ceremony/<key>.json` - but the
+  fold was never re-bucketed. Since the continuous 24/7 schedule
+  (2026-09-05) the night path runs the ceremony at about 04:25Z, so a
+  packet covers 00:00Z to 04:25Z of its own date and everything between
+  the previous run and midnight reaches no packet, ever: the next run has a
+  new key and filters it out.
+
+  BL-1393 also made `deliverLeanPacket` and `recordEmptyOutcome`
+  (extension/src/tools/night-closing-ceremony-run.ts) pass
+  `${shiftKey}T00:00:00Z` as `nowIso`, so every run since records a
+  `deliveredAt` at a midnight that never happened.
+
+  Measured on the live ledger at mint (run instants from the coordinator's
+  packet-note files; "folded" = stamped on the run's date and not after
+  the run):
+
+  | run | instant | events folded | tickets folded | never folded |
+  |---|---|---|---|---|
+  | 2026-09-04 | 00:49Z | 13 of 526 | 9 of 27 | 513 (58 stalls, 7 closes) |
+  | 2026-09-05 | 04:25Z | 136 of 927 | 13 of 50 | 791 (55 stalls, 25 closes) |
+  | 2026-09-06 | 04:26Z | 27 of 295 | 3 of 15 | 268 (13 stalls, 5 closes) |
+  | 2026-09-07 | 04:36Z | 0 of 8 | 0 of 2 | 8 (swarm dead 21:52Z-06:04Z) |
+
+  176 of 1756 events, 10%. The 09-06 pass read the shift as "one ticket,
+  BL-1440" and computed its QA-dwell hypothesis from that one walk.
+
+  Window bounds alone would not be enough: every bounce event is stamped
+  at midnight of its date (extension/src/metrics/leanLedgerComposeBounce.ts,
+  `at: ${entry.at}T00:00:00.000Z`), so a bounce recorded at 20:00Z on day
+  D is dated before a window that starts at D 04:25Z. The fold must go by
+  when an event was appended, not by its stamp.
+
+  ## What is wanted
+
+  A shift ends when a ceremony runs. The window a run folds starts where
+  the previous run's window ended and ends at the real instant the run
+  happens; the first run on record folds the whole ledger. An event belongs
+  to the first run after it is appended, whatever its stamp. The run
+  records the window it folded. The auto no-change path for an empty
+  window is unchanged (scenario 06), and so is everything the packet
+  carries and how it is delivered.
+
+  ## How (direction, not mandate)
+
+  - The ledger files are append-only JSONL with an idempotent appender
+    (`appendLeanLedgerEventIfNew`, leanLedgerStore.ts). A per-file cursor
+    on the run - lines already folded per `<yyyy-MM-dd>.jsonl` - lets the
+    next run fold every line past the cursor in every file, which meets
+    invariant 1 without reading a stamp and without a new field on the
+    event. A `recordedAt` stamp on every event is the other honest route.
+    Either way the fold must not depend on the date in `at`.
+  - Record the window on the `CeremonyRun` (`windowStart`/`windowEnd`, or
+    the cursor plus a real `deliveredAt` as the end) so scenario 04 reads
+    from the store. Runs already on disk carry no window: the first
+    post-fix run starts where the newest prior run's `deliveredAt` says
+    (a synthetic midnight, so it may re-see the few events that run
+    folded) - never the whole 17-file ledger. Name that migration run and
+    its folded count in the evidence.
+  - `night-closing-ceremony-run.ts`: pass the real `nowMs` instant to
+    `runClosingCeremony` in `deliverLeanPacket` and `recordEmptyOutcome`.
+    The run's key may stay the caller's local day key; if the key is
+    derived from the instant instead, a `finish-shift` between 00:00 and
+    01:00 local in BST lands on the previous UTC date - pick one, test it.
+  - `shiftWorkedSinceLastCeremony` (the mtime probe), `isEmptyCeremonyPacket`
+    and the determinism candidates (BL-1365, read from a separately swept
+    ledger) are untouched.
+  - Retire the "calendar-day bucketing, no shift boundary exists yet"
+    sentences in closingCeremony.ts's fold comment and the leanLedgerStore.ts
+    header ("re-bucketing is a mechanical follow-up"): after this parcel
+    they state a false present. The store's per-day file bucketing itself
+    stays; only the fold's window changes.
+
+  ## Docs (documenter, same parcel)
+
+  - docs/reference/BL-820-closing-ceremony-lean-pass.md: "a pure fold over
+    one shift's worth of ledger events" - define the window; the Storage
+    section gains the window field.
+  - docs/reference/BL-819-ticket-lifecycle-ledger.md (lines 40-43): the
+    "shift boundary that doesn't exist yet as a computable hook" clause.
+  - No registered diagram depicts the ceremony; none changes.
+
+constraints: >
+  Pure fold logic stays in extension/src/quality/closingCeremony.ts (no
+  fs); the impure window/cursor read and write stays in the metrics store
+  layer, unit-tested over a mkdtemp fixture root proven by `rev-parse
+  --git-common-dir` before any git call (BL-1390) - never the live repo.
+  The step handler lands in the same commit as any feature-file change
+  (BL-233). No hand-edited mutation manifests. The night runner's existing
+  `--now <ms>` flag is the seam scenario 07 drives - no new env bypass.
+
+out_of_scope: |
+  - Re-folding the 2026-09-04..07 windows into fresh packets for the
+    specifier: the ledger keeps them; this pass's evidence records what
+    those windows held, and the first post-fix run folds forward.
+  - Changing the ledger's per-day file bucketing, the midnight `at` stamp
+    on bounce events, or the packet's contents and hypotheses.
+  - The `.swarmforge/shift-started` stamp that BL-1328's guard refuses
+    (recorded in BL-1393's evidence).
+  - Two ceremonies on one date (the store keys a run by date and returns
+    `already_exists` for the second) - a separate question, not posed here.
+
+qa_e2e_procedure: >
+  In a scratch clone (fixture root, never the live repo). (1) Seed
+  `.swarmforge/lean/<D>.jsonl` with stage_transition events at 03:00Z and
+  21:00Z on day D and, appended last, a bounce event stamped
+  `<D>T00:00:00.000Z`; seed `.swarmforge/lean/ceremony/<D>.json` as a
+  completed run whose window ends at D 04:25Z having folded only the 03:00Z
+  line. (2) Run `node extension/out/tools/night-closing-ceremony-run.js
+  --target <root> --sleep-path finish-shift --now <ms for D+1 04:25Z>`
+  with whatever `--conf` the runner needs. (3) Read
+  `.swarmforge/lean/ceremony/<D+1>.json`: the window runs D 04:25Z to D+1
+  04:25Z, `deliveredAt` is D+1T04:25Z (not midnight), `pathTaken` names
+  the 21:00Z transition's role, `bounceClasses` counts the
+  midnight-stamped bounce, and the 03:00Z transition is absent from dwell.
+  (4) Run again one minute later: no second fold (the run for D+1 already
+  exists). (5) Fresh root, no prior run, events on three different days:
+  the first run folds all of them. (6) After land, on the live swarm: the
+  next night ceremony's run file names a window, and its packet's ticket
+  set matches `git log --since=<windowStart> --until=<windowEnd> --
+  backlog/` for that window.
+
+source: |
+  Closing-ceremony packet 2026-09-07
+  (`.swarmforge/lean/ceremony/2026-09-07.json`), delivered to the
+  specifier by coordinator note at 04:36:05Z, empty of every lifecycle
+  signal on a night the morning briefing counted 35 swarm deaths and 13
+  closures. Lean pass outcome `process_ticket` -> BL-1456; evidence
+  backlog/evidence/closing-ceremony-2026-09-07-specifier.md.
+
+notes: |
+  Minted 2026-09-07 by the specifier as the closing-ceremony 2026-09-07
+  outcome. The feature file was drafted by the prior specifier session at
+  09:10:07 local and orphaned by the 09:10:34 swarm relaunch (every role
+  session was recreated at that second); validated here (lint clean,
+  IR-DRY reviewed) and committed unchanged.
+
+  Grepped first: no open ticket names closingCeremony, eventsForShiftKey or
+  the fold window (BL-818 epic, BL-667, BL-1013 and BL-1408 mention the
+  ceremony only in passing). BL-1393 (done) moved the trigger to every
+  sleep path and left the fold as it found it.
+
+  IR-DRY at mint: five medium possible-synonym findings, all reviewed and
+  kept - each pair is two scenarios' steps that differ in the one token
+  (03:00Z folded vs 21:00Z unfolded, window start vs window end, folds vs
+  does not fold) that IS the behaviour under test.
+
+  required_wiring names the step handler only: the production consumer
+  (night-closing-ceremony-run.ts calling runClosingCeremony) exists before
+  the fix, so an anchor on it would match unchanged code and gate nothing
+  (BL-1235); scenario 07 is the gate for that call-site change.
