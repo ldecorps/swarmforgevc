@@ -182,3 +182,5 @@ notes: |
   - IR-DRY also flags "is in backlog/paused/ and not in backlog/active/" versus
     "stays in backlog/active/" as a possible synonym; they assert opposite
     outcomes and stay distinct.
+
+assigned_to: coder
