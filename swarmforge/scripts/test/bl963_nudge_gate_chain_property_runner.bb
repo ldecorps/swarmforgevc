@@ -206,7 +206,78 @@
     (when (< v 5)
       (swap! failures conj (str "FAIL generator coverage: " k " reached only " v " of " runs " runs (floor 5)")))))
 
-(println (str "  generator coverage: " (pr-str @coverage)))
+;; ── BL-1469 addendum (hardener bounce, 2026-09-07) ─────────────────────────
+;; Invariant 1 predates the not_before gate, so this fixture never drew one -
+;; exactly what let handoffd.bb's open-slot-nudge-sweep! omit :today from its
+;; evaluate-ctx silently (backlog/evidence/BL-1469-bounce-20260907.md D1: a
+;; future not_before candidate was named, counted eligible and accrued
+;; escalation state, un-gated, while the real promotion path correctly
+;; refused it). A future not_before candidate is "any reason other than
+;; human_approval" and so is already invariant 1's OWN territory - this
+;; extends the SAME property, never a rival restatement, over the ONE
+;; ticket-property/gate combination the original fixture could not reach.
+
+(def not-before-addendum-runs 40)
+(def not-before-coverage (atom 0))
+
+(defn- gen-not-before-case [s]
+  (let [[n s1] (gen-int s 3)           ; 0..2 other, correctly-eligible candidates
+        [days s2] (gen-int s1 30)]     ; 1..30 days in the future of :today
+    [{:n-others n :days-ahead (inc days)} s2]))
+
+(defn- not-before-yaml [id days-ahead today]
+  (str "id: " id "\n"
+       "title: \"generated\"\n"
+       "type: feature\n"
+       "priority: 1\n" ; best rank, by construction - the false-escalation shape
+       "human_approval: approved\n"
+       "not_before: " (str (.plusDays (java.time.LocalDate/parse today) days-ahead)) "\n"))
+
+(def not-before-today "2026-09-07")
+
+(defn- run-not-before-case [{:keys [n-others days-ahead]}]
+  (let [nb-id "BL-777"
+        nb-candidate {:file "bl1469-nb.yaml" :id nb-id
+                      :content (not-before-yaml nb-id days-ahead not-before-today)}
+        others (for [i (range n-others)]
+                 {:file (str "bl1469-other-" i ".yaml") :id (str "BL-" (+ 800 i))
+                  :content (ticket-yaml {:id (str "BL-" (+ 800 i)) :priority (+ 10 i)
+                                         :approval "approved" :deps [] :deps-style :flow})})
+        candidates (vec (cons nb-candidate others))
+        ctx (assoc evaluate-ctx :today not-before-today)
+        eligible (chase-sweep-lib/nudge-eligible-candidates candidates ctx)
+        named (chase-sweep-lib/top-open-slot-candidate eligible)
+        states (loop [k 0 prev nil acc []]
+                 (if (= k 3)
+                   acc
+                   (let [{:keys [state]} (chase-sweep-lib/decide-open-slot-escalation prev (:id named) 3)]
+                     (recur (inc k) state (conj acc state)))))]
+    (swap! not-before-coverage inc)
+    (cond
+      (contains? (set (map :id eligible)) nb-id)
+      (str "a future not_before candidate survived nudge-eligible-candidates: " nb-id)
+
+      (and named (= (:id named) nb-id))
+      (str "a future not_before candidate was NAMED despite ranking best: " (pr-str named))
+
+      (contains? (set (keep :candidate-id states)) nb-id)
+      (str "a future not_before candidate accrued escalation state: " (pr-str states))
+
+      :else true)))
+
+(loop [i 0 s 1469]
+  (when (< i not-before-addendum-runs)
+    (let [[input s'] (gen-not-before-case s)
+          result (run-not-before-case input)]
+      (when-not (true? result)
+        (swap! failures conj (str "FAIL BL-1469 not_before addendum\n  input: " (pr-str input) "\n  " result)))
+      (recur (inc i) s'))))
+
+(when (< @not-before-coverage 5)
+  (swap! failures conj (str "FAIL generator coverage: BL-1469 not_before addendum reached only "
+                            @not-before-coverage " of " not-before-addendum-runs " runs (floor 5)")))
+
+(println (str "  generator coverage: " (pr-str @coverage) " bl1469-not-before=" @not-before-coverage))
 (if (empty? @failures)
   (do (println (str "bl963 nudge gate-chain properties: " runs " runs through the real evaluate chain and escalation machine"))
       (println "ALL PROPERTIES HOLD"))
