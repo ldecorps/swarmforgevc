@@ -24,7 +24,7 @@ acceptance: specs/features/BL-1462-the-bl968-handler-reads-its-fixture-not-the-l
 required_wiring:
   - 'specs/pipeline/steps/bl1462Bl968HandlerReadsItsFixtureSteps.js::registerSteps::the handler lands in the same parcel as the feature (BL-233)'
 
-human_approval: pending
+human_approval: approved
 approval_context: >
   A new feature file is authored here, so it needs a tap. No choice is
   posed and there are no ruling_options. What is FIRM: BL-968's four
