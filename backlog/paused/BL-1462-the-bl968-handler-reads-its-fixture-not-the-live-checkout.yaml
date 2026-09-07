@@ -1,0 +1,168 @@
+id: BL-1462
+title: "BL-968's acceptance handler reads the live checkout instead of its fixture: scenario 03 hard-codes backlog/active/BL-968-*.yaml, which moved to backlog/done on 2026-08-20 (red since, hidden by the per-feature runner, found 2026-09-07 by the coder running BL-1450's e2e), and scenario 04 asserts the CURRENT checkout is a linked worktree, so the feature is green under .worktrees/ and red from the master checkout; the handler finds the ticket wherever bookkeeping put it and locates a role worktree itself"
+milestone: M8
+type: defect
+severity: high
+# high (standing-red rule 2026-09-05): an acceptance-lane feature red on
+# main for 18 days, never a load flake, and now a register row. The
+# production code it guards (BL-968's lazy step-file loading) is untouched
+# and fine; what is broken is the safety signal, which is exactly what the
+# rule refuses to call medium.
+status: todo
+epic: code-quality-gates
+priority: 12
+direction: swarm-reported
+depends_on: []
+mutation_cost: low
+# low: one step-handler file; a ticket locator that reuses the gate
+# library's search, and a worktree locator over `git worktree list`.
+slice_size_envelope: low
+required_stages: [coder, cleaner, architect, hardender, documenter, qa]
+
+acceptance: specs/features/BL-1462-the-bl968-handler-reads-its-fixture-not-the-live-checkout.feature
+
+required_wiring:
+  - 'specs/pipeline/steps/bl1462Bl968HandlerReadsItsFixtureSteps.js::registerSteps::the handler lands in the same parcel as the feature (BL-233)'
+
+human_approval: pending
+approval_context: >
+  A new feature file is authored here, so it needs a tap. No choice is
+  posed and there are no ruling_options. What is FIRM: BL-968's four
+  scenarios keep their text and their claims - this parcel changes only how
+  the handler establishes its preconditions (where the ticket YAML is, and
+  which checkout is a role worktree), so BL-968's contract is neither
+  weakened nor reworded; the ticket lookup reuses
+  pre_qa_gate_gather_lib.bb's find-ticket-yaml-content search order rather
+  than adding a second idea of where tickets live.
+
+invariants:
+  - "No step of BL-968's handler asserts or depends on the live checkout's backlog bookkeeping state or its .git shape: every precondition is located or built by the handler, and a precondition that cannot be met fails naming it, never as a false red."
+  - "Wherever backlog bookkeeping moves a ticket (active, paused, done, done under a milestone) the handler's lookup still finds it, because it is the gate library's own search, not a second locator."
+
+description: |
+  ## What is wrong
+
+  `specs/pipeline/steps/bl968StepRegistryMaterializedTreeSteps.js`:
+
+  - Line 34: `TICKET_YAML_REL = path.join('backlog', 'active',
+    'BL-968-step-registry-loadable-from-materialized-tree.yaml')`, asserted
+    to exist in scenario 03's first step. BL-968 closed on 2026-08-20
+    (`b2e3c50ee6`, "Close BL-968: move to done"); the file has lived at
+    `backlog/done/BL-968-step-registry-loadable-from-materialized-tree.yaml`
+    since. Scenario 03 fails at its Given: "ticket yaml not found at
+    .../backlog/active/BL-968-...yaml". The gate library the scenario then
+    drives already has the right lookup:
+    `pre_qa_gate_gather_lib.bb` `find-ticket-yaml-content` searches
+    active, paused and done (milestone subdirectories included) by the
+    YAML's own `id:`; the handler bypasses it with a literal path.
+  - Scenario 04's first step asserts `REPO_ROOT/.git` is a FILE ("a
+    role-worktree checkout"), which holds under `.worktrees/<role>/` and
+    not in the master checkout. The coder (running from
+    `.worktrees/coder`) reports 1, 2 and 4 green; from the master checkout
+    the specifier gets 3 and 4 red. A precondition on where the runner
+    happens to sit is not a fixture.
+
+  Found by the coder on 2026-09-07 running BL-1450's qa_e2e step 2
+  (`backlog/evidence/BL-1450-unowned-red-bl968-scenario03-stale-yaml-path-20260907.md`,
+  coder branch); reproduced by the specifier on main at mint: `ok 1, ok 2,
+  not ok 3, not ok 4` from the master checkout. Neither BL-1450 nor any
+  parcel since 08-20 touched this handler; the runner runs one feature per
+  invocation, so a closed ticket's feature is run only when an e2e
+  procedure names it - which is why an 18-day red surfaced only now.
+
+  ## What is wanted
+
+  BL-968's feature passes from the master checkout with the ticket closed
+  (scenario 01) and from a linked role worktree (scenario 03), with all
+  four of its scenarios' text unchanged. The ticket YAML is found wherever
+  bookkeeping put it (scenario 02). The register row leaves with the fix.
+
+  ## How (direction, not mandate)
+
+  - Ticket lookup: replace the literal with a resolver that yields the path
+    of the YAML whose `id:` is BL-968 under backlog/active, paused, done
+    (recursive), in that order - the same order as
+    `find-ticket-yaml-content`. Reuse is the point: either call that
+    function through a tiny bb one-liner (the handler already shells to bb
+    for the gate) or mirror its order in a small exported JS helper with a
+    test that pins the order to the bb function (BL-897's mirror rule).
+    Export the helper so scenario 02 can drive it against a fixture
+    backlog under mkdtemp.
+  - Scenario 04's precondition: locate a linked role worktree instead of
+    asserting the current one is - `git worktree list --porcelain` from
+    REPO_ROOT, first entry whose path is not the master checkout (when the
+    runner already sits in one, that is the answer). Require the fixed
+    step file (`routingBreakEvenSteps.js`) from THAT worktree's path so its
+    lazy main-checkout resolution is exercised from a linked worktree as
+    the scenario claims. No linked worktree at all is a real missing
+    precondition: fail naming it (a real swarm install is the repo's own
+    e2e premise), never a false red about the master checkout.
+  - The scratch-commit step (`mintCurrentTreeCommit`) stages `specs` and
+    `backlog/active` through a throwaway index; it needs no change for the
+    ticket lookup (the gate receives the YAML content explicitly), but if
+    it is touched, keep it reading the live index read-only as it does.
+  - Acceptance for this ticket: scenario 01 and 03 run BL-968's feature
+    through `specs/pipeline/scripts/run_acceptance.sh` with cwd set to the
+    master checkout and to a linked worktree respectively and parse the
+    TAP summary; scenario 02 drives the exported resolver over a fixture
+    backlog tree under mkdtemp.
+  - Documenter: no registered diagram; if a BL-968 how-to exists, one line
+    that the handler locates its preconditions. Remove the register row in
+    the same land.
+
+constraints: >
+  BL-968's feature file is not edited: its four scenarios keep their text
+  (amending a landed contract to fit its handler would be the reverse of
+  the fix). Fixture backlog trees for scenario 02 live under mkdtemp and
+  are removed in finally. Never create a worktree of the live repository
+  from a test (BL-1390): scenario 03 uses one that exists. The step handler
+  lands with the feature (BL-233). No hand-edited mutation manifests.
+
+out_of_scope: |
+  - BL-968's production behaviour (lazy step-file loading) and its
+    materialized-registry guard.
+  - Running every feature file on a schedule so a closed ticket's red
+    surfaces without an e2e naming it - a process gap for the lean pass,
+    recorded in the adjudication evidence, not this slice.
+  - The other handlers the sweep found writing fixture tickets under a
+    fixture root's backlog/active: those build their own fixtures and are
+    not this defect.
+
+qa_e2e_procedure: >
+  From the master checkout: (1) `specs/pipeline/scripts/run_acceptance.sh
+  specs/features/BL-968-step-registry-loadable-from-materialized-tree.feature`
+  prints `ok 1..4`. (2) The same from `.worktrees/QA` (or any linked role
+  worktree): `ok 1..4`. (3) Move a copy of BL-968's YAML into a fixture
+  backlog under `paused/` and `done/M8/` in turn and call the exported
+  resolver: it returns each location. (4) `run_acceptance.sh` on this
+  ticket's own feature: 4 scenarios pass. (5) `backlog/standing-reds.tsv`
+  carries no row for BL-968's feature and
+  `standing_red_register_cli.bb` agrees.
+
+source: |
+  Coder note to the specifier, priority 00, 2026-09-07T10:15Z:
+  "unowned-red BL-968 accept scenario03: yaml active->done, handler path
+  stale"; evidence
+  `backlog/evidence/BL-1450-unowned-red-bl968-scenario03-stale-yaml-path-20260907.md`
+  (coder branch). Adjudication:
+  `backlog/evidence/BL-968-acceptance-unowned-red-adjudication-specifier-20260907.md`.
+
+notes: |
+  Minted 2026-09-07 by the specifier on the coder's unowned-red note, the
+  same pass (standing-red rule: high at first sighting). Register row,
+  lane `acceptance`, file BL-968's feature, names this ticket, first_seen
+  2026-09-07 (first recorded; red since 2026-08-20).
+
+  Grepped first: no open ticket names the handler, the feature, or the
+  hard-coded path; BL-1450 (active) owns the different bl968 property red.
+  A sweep of specs/pipeline/steps for `backlog/active` literals found only
+  handlers writing their OWN fixture tickets under a mkdtemp root - not
+  this shape.
+
+  Scenario 04 is included although it is red only from the master
+  checkout: the two defects are one habit in one file (a precondition
+  read from the runner's surroundings), and a fix that leaves the second
+  would leave the feature environment-dependent.
+
+  IR-DRY at mint: scenarios 01 and 03 share "all four of its scenarios
+  pass" by design (same claim from two checkouts); reviewed and kept.
