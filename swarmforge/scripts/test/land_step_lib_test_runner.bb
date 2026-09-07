@@ -1454,6 +1454,97 @@ RESOLVED BY THIS TICKET
       (assert-includes "BL-1466: and names the bounce" warning "bounced")
       (assert= "BL-1466: never named as a passenger" nil passengers))))
 
+;; ── BL-1470: the bounce check reads the store where bounces are written ──
+;; record-bounce.js writes under the SHARED TARGET ROOT (BL-1339's own
+;; resolution, git-common-dir's parent) - never under whatever root a
+;; caller's own worktree happens to resolve. bounce-blocking-state must
+;; read from BOTH: the shared root, and (when distinct) the caller's own
+;; root - a union, never a narrowing - and fail closed if either is
+;; unreadable.
+
+;; Scenario 01/02: a linked worktree's OWN root is not the shared root -
+;; resolve-bounce-store-roots must answer with both, distinct, and the
+;; plain (non-worktree) fixture root's own common-dir parent is itself,
+;; so it answers a one-element set.
+(with-fixture [root]
+  (let [wt (linked-worktree! root)]
+    (assert= "BL-1470: a plain (non-worktree) root's shared root is itself"
+             [root] (land-step-lib/resolve-bounce-store-roots root))
+    (assert= "BL-1470: a linked worktree's shared root is the main checkout, distinct from its own"
+             [root wt] (land-step-lib/resolve-bounce-store-roots wt))))
+
+;; Scenario 01: a bounce recorded under the SHARED root blocks when asked
+;; from the linked worktree with no override - the exact production bug
+;; (land_step_cli.bb's default root is the calling worktree, dark to a
+;; bounce filed at the shared root it never reads).
+(with-fixture [root]
+  (commit! root "seed.txt" "x\n" "BL-9002: seed")
+  (let [bounced-commit (:out (sh! root "git" "rev-parse" "HEAD"))
+        wt (linked-worktree! root)]
+    (write-bounce! root "BL-9002" bounced-commit "2026-09-07T11:48:00.000Z")
+    (let [state (land-step-lib/bounce-blocking-state wt "BL-9002" bounced-commit)]
+      (assert= "BL-1470/01: a bounce filed at the shared root blocks from the linked worktree"
+               true (:blocking? state))
+      (assert= "BL-1470/01: and says so" :bounced (:state state))
+      (assert-includes "BL-1470/01: names the bounce's commit" (:reason state) bounced-commit))))
+
+;; Scenario 02: the SAME tip asked from the master checkout gets the same
+;; answer - the predicate must not depend on which checkout asked.
+(with-fixture [root]
+  (commit! root "seed.txt" "x\n" "BL-9002: seed")
+  (let [bounced-commit (:out (sh! root "git" "rev-parse" "HEAD"))]
+    (write-bounce! root "BL-9002" bounced-commit "2026-09-07T11:48:00.000Z")
+    (let [from-wt (land-step-lib/bounce-blocking-state (linked-worktree! root) "BL-9002" bounced-commit)
+          from-master (land-step-lib/bounce-blocking-state root "BL-9002" bounced-commit)]
+      (assert= "BL-1470/02: the master checkout answers exactly what the linked worktree does"
+               from-wt from-master))))
+
+;; Scenario 03: a bounce recorded under the CALLER'S OWN root (the linked
+;; worktree's own .swarmforge/bounces) - nothing at the shared root - still
+;; counts. The union, never a narrowing.
+(with-fixture [root]
+  (commit! root "seed.txt" "x\n" "BL-9002: seed")
+  (let [bounced-commit (:out (sh! root "git" "rev-parse" "HEAD"))
+        wt (linked-worktree! root)]
+    (write-bounce! wt "BL-9002" bounced-commit "2026-09-07T11:48:00.000Z")
+    (let [state (land-step-lib/bounce-blocking-state wt "BL-9002" bounced-commit)]
+      (assert= "BL-1470/03: a bounce filed under the caller's own root still blocks"
+               true (:blocking? state))
+      (assert= "BL-1470/03: and says so" :bounced (:state state)))))
+
+;; Scenario 04: an unreadable store at EITHER root blocks rather than
+;; passes - fail closed, never a silent pass.
+(with-fixture [root]
+  (commit! root "seed.txt" "x\n" "BL-9001: own work")
+  (let [tip (:out (sh! root "git" "rev-parse" "HEAD"))
+        wt (linked-worktree! root)
+        shared-dir (fs/path root ".swarmforge" "bounces")]
+    (fs/create-dirs shared-dir)
+    (spit (str (fs/path shared-dir "2026-09.jsonl")) "not valid json\n")
+    (let [state (land-step-lib/bounce-blocking-state wt "BL-9002" tip)]
+      (assert= "BL-1470/04a: an unreadable store at the SHARED root blocks" true (:blocking? state))
+      (assert= "BL-1470/04a: and says so" :unreadable (:state state)))))
+
+(with-fixture [root]
+  (commit! root "seed.txt" "x\n" "BL-9001: own work")
+  (let [tip (:out (sh! root "git" "rev-parse" "HEAD"))
+        wt (linked-worktree! root)
+        own-dir (fs/path wt ".swarmforge" "bounces")]
+    (fs/create-dirs own-dir)
+    (spit (str (fs/path own-dir "2026-09.jsonl")) "not valid json\n")
+    (let [state (land-step-lib/bounce-blocking-state wt "BL-9002" tip)]
+      (assert= "BL-1470/04b: an unreadable store at the CALLER'S OWN root blocks" true (:blocking? state))
+      (assert= "BL-1470/04b: and says so" :unreadable (:state state)))))
+
+;; Scenario 05: no bounce store under either root is a real "never bounced"
+;; answer - unchanged from BL-1466's own scenario 04.
+(with-fixture [root]
+  (commit! root "seed.txt" "x\n" "BL-9001: own work")
+  (let [tip (:out (sh! root "git" "rev-parse" "HEAD"))
+        wt (linked-worktree! root)]
+    (assert= "BL-1470/05: no store anywhere - unchanged (nil)"
+             nil (land-step-lib/bounce-blocking-state wt "BL-9002" tip))))
+
 ;; backlog-schema.md: an ABSENT human_approval means "no approval needed",
 ;; which promotion_gates_lib.bb's own gate already passes. It is neither
 ;; withheld nor awaiting, so it is not one of the blocking states.
