@@ -55,10 +55,16 @@ land_step_cli.bb <task-name> <commit> [repo-root]
   sibling's ticket id, which would falsely clear a sibling that has only
   been minted or spec'd, not actually landed.
 - **`LAND_ESCALATE`** plus a reason (exit 1) — detection or replay could not
-  complete cleanly (a real conflict, an unreadable range). Per
-  `swarmforge/roles/QA.prompt`, this is still not a bounce to the author: QA
-  sends the **specifier** a `note` (priority `00`) naming the conflicting
-  paths and stops.
+  complete cleanly (a real conflict, an unreadable range). Whenever the
+  escalate carries positive evidence of an unlanded sibling — including an
+  attribution the step could not read at all (BL-1343's fail-closed case) —
+  it prints the same `ENTANGLED_SIBLING <ticket-id>` lines and
+  entanglement note a `LAND_REPLAY` would (BL-1463): naming never depends
+  on which action follows, only on whether the evidence exists. An
+  escalate with no such evidence (an unreadable range, "task name names no
+  ticket id") stays bare, reason only. Per `swarmforge/roles/QA.prompt`,
+  this is still not a bounce to the author: QA sends the **specifier** a
+  `note` (priority `00`) naming the conflicting paths and stops.
 
 The replay builds its tip-pure commit in a dedicated linked worktree, never
 in the caller's own possibly-dirty worktree, and always cleans that worktree
@@ -762,6 +768,37 @@ Acceptance:
 **Note for the record:** this ticket's own "How" names the specifier,
 not the documenter, as the one who removes `QA.prompt`'s interim "Until
 BL-1466 lands" hand-check block at landing.
+
+## An escalating land step still names the sibling it could not read (BL-1463)
+
+`land-plan`'s `(nil? paths)` branch (an attribution `own-paths` could not
+read — BL-1343's fail-closed case) returned only `{:action :escalate
+:reason ...}`, carrying none of the `:entangled`/`:landed`/`:unlanded`
+sets the `:replay` branch two lines below does. `land_step_cli.bb`'s
+`:escalate` outcome prints `LAND_ESCALATE` and the reason and exits 1 —
+no `ENTANGLED_SIBLING` line (printed only on `:replay`) and no
+entanglement note (printed only for a failed replay): an escalate never
+named the sibling it had evidence for. BL-1272's own acceptance scenario
+(row 4, an "unreadable" sibling state expected "reported") caught exactly
+this and had been red since BL-1343 landed (2026-09-02) turned the
+unreadable case from a narrowed replay — which named the sibling on the
+replay path — into a bare escalate. Found 2026-09-07 by the coder running
+BL-1447's e2e.
+
+Fixed: the `(nil? paths)` branch now merges `(select-keys sets [:entangled
+:landed :unlanded])` into its escalate map, and `land_step_cli.bb` shares
+one sibling-printing function between the replay and escalate outcomes —
+`ENTANGLED_SIBLING <ticket-id>` lines and the entanglement note print on
+ANY escalate that carries `:unlanded`, not only on replay. An escalate
+with no such evidence (an unreadable candidate-walk range, or "task name
+names no ticket id") still prints bare, reason only — the earlier
+`warning` escalates gain no sets. BL-1343's own refusal is unchanged: an
+unreadable attribution still escalates rather than narrowing to a replay;
+this ticket only adds names to that refusal. BL-1272's feature text is
+untouched and its register row leaves with the fix.
+
+Acceptance:
+`specs/features/BL-1463-an-escalating-land-step-still-names-the-sibling-it-could-not-read.feature`.
 
 ## What this does not change
 
