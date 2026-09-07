@@ -13,6 +13,13 @@ epic: swarm-reliability
 priority: 8
 direction: swarm-reported
 depends_on: []
+abandoned_commits: [9479d2aa4b]
+# QA, 2026-09-07: landed via a verified-complete tip-pure replay
+# (afa6b69f59); last-handoff-commit for this task resolves to 9479d2aa4b
+# (hardener's own forward-to-documenter merge). Listed so
+# task_scope_gate_lib.bb/pre_qa_gate_lib.bb rebase their walk on
+# origin/main instead of refusing this ticket's later sends as entangled
+# with its own superseded lineage.
 mutation_cost: low
 # low: one property test file; no production line changes. BL-1447
 # already updated BL-1375's acceptance handler (landHandlerOnMain) for the
