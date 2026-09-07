@@ -71,6 +71,17 @@ re-derive.
 
 ## Verification
 
+- **The whole lane** (`qa_e2e_procedure` step 3): the commit's own
+  pre-commit hook (`check_property_suite_drift.sh`, staged paths touch
+  `*.property.test.js`) ran the full `npm run test:properties` lane
+  automatically before this commit could land - `property-suite-guard: run`,
+  not `skip-paths`. The commit succeeded, which the guard's own logic
+  (`Commit rejected: property suite failed...` otherwise) makes a real
+  pass/fail signal, not merely an unread formality - a new failure anywhere
+  in the ~300+ file lane would have refused this exact commit. Took ~13
+  minutes under the live swarm's own concurrent host load (five other role
+  panes active throughout), consistent with this ticket's own point that
+  wall clock on this lane is highly host-contention-sensitive.
 - Acceptance: `bash specs/pipeline/scripts/run_acceptance.sh
   specs/features/BL-1349-spawn-heavy-property-files-fit-a-budget.feature`
   -> 8/8 scenarios pass: all 7 per-file-budget Outline rows (the five
