@@ -21,6 +21,30 @@
             [cheshire.core :as json]
             [clojure.string :as str]))
 
+;; ── Config kill switch ───────────────────────────────────────────────────
+;; Human request 2026-09-07: this feed floods the coordinator's Telegram
+;; topic (one line per handoff/bookkeeping commit, effectively every
+;; coordinator action) - useful when actually investigating something, pure
+;; noise otherwise. Mirrors master_main_reconcile_lib.bb's own
+;; parse-enabled? exactly: absent, empty, malformed, and "false" all fall
+;; through the same check to disabled - there is no separate "explicitly
+;; off" state, and only the literal "true" turns the feed on.
+
+(defn parse-enabled?
+  "Pure: `config coordinator_activity_feed_enabled <value>` from conf text.
+   Only the exact value \"true\" enables the feed - the line must tokenize
+   to exactly 3 whitespace-separated tokens (`config`, the key, one value
+   token); trailing garbage after the value ('true true') is malformed, not
+   an affirmative, and falls through to disabled like any other malformed
+   line."
+  [conf-text]
+  (boolean
+   (when-let [line (some->> (str/split-lines (or conf-text ""))
+                             (filter #(str/starts-with? % "config coordinator_activity_feed_enabled"))
+                             first)]
+     (let [tokens (str/split (str/trim line) #"\s+")]
+       (and (= 3 (count tokens)) (= "true" (nth tokens 2)))))))
+
 ;; ── Cursor state ────────────────────────────────────────────────────────
 
 (defn- read-json [path]
