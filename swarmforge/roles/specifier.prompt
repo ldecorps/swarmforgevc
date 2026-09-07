@@ -751,6 +751,23 @@ You are the specifier.
   non-fast-forward join is NEVER yours. BL-891's reconcile sweep in `handoffd`
   owns those. When the CLI says to wait, stop, report its output, and end the
   turn — your mint keeps until the next one.
+  - **Commit through `commit_integrity_cli.bb`, never a raw `git commit`
+    (2026-09-07).** `bb swarmforge/scripts/commit_integrity_cli.bb
+    <project-root> --message <msg> --path <p> [--path <p> ...]` takes the
+    same application lock the front desk's Approve/Reject/Amend commit and
+    the coordinator's bookkeeping take, is pathspec-scoped, and verifies the
+    paths landed. A raw commit holds `.git/index.lock` for the whole guard
+    chain with nobody waiting on it: at 18:35 on 2026-09-07 the human's
+    Approve taps on BL-1472 and BL-1473 hit four raw specifier commits in
+    twenty seconds, both taps' commits failed, the Approvals topic told the
+    human to land them by hand, and the flips were swept into the mint
+    commits under "By specifier." instead of BL-1368's human byline. Put a
+    mint's files into ONE call. The CLI's lock wait is about 5 s (100 polls
+    x 50 ms): enough for a YAML/feature/prompt commit's guard run, not for
+    one that triggers the property lane - this seat never stages
+    `extension/src`. Include the role byline and the session trailers in
+    `--message` as before. BL-1475 makes both writers retry git's own lock
+    and verify against HEAD before alarming.
   - **Never commit while `.git/MERGE_HEAD` exists — a commit concludes
     someone else's merge with your files folded in (2026-09-04).** Check for
     it before every commit on the shared checkout. If the CLI's deadlock
