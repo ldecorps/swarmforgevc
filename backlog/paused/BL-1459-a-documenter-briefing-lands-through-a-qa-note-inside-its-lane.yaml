@@ -23,7 +23,7 @@ acceptance: specs/features/BL-1459-a-documenter-briefing-lands-through-a-qa-note
 required_wiring:
   - 'swarmforge/git-hooks/pre-merge-commit::run_guard check_documenter_briefing_tip.sh::the guard is reached from the shared chain like BL-1444 (line 62 runs check_art_director_tip.sh)'
 
-human_approval: pending
+human_approval: approved
 approval_context: >
   A new feature file is authored here, so it needs a tap. No choice is
   posed and there are no ruling_options: this is the landing half of your
