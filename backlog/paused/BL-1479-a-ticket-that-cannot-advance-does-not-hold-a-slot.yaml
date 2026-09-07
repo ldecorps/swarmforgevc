@@ -1,0 +1,184 @@
+id: BL-1479
+title: "A ticket that cannot advance keeps its active slot: the depth cap counts every YAML in backlog/active/ and nothing moves a ticket back out, so BL-940 (status: blocked on a dependency paused at priority 96) and BL-1441 (promoted two days before its own earliest start date) held two of five slots for days while some thirty approved tickets waited; a sweep parks such a ticket back to paused/ byte-identical, frees the slot, tells the coordinator once, and never touches a ticket whose parcel is in flight"
+milestone: M8
+type: defect
+severity: high
+# high: a live fault degrading behaviour - on 2026-09-07 two of five slots
+# (40% of the swarm's WIP cap) were held by tickets everyone knew could not
+# move, for one and two days respectively, while the fixes for both shapes
+# (BL-1469, BL-1451) sat unpromoted behind the expedite lane. The human
+# asked "why promote stuff that cant advance?" and authorised the fix.
+status: todo
+epic: swarm-reliability
+priority: 5
+direction: human-reported
+depends_on: [BL-1469]
+# depends_on BL-1469: the not_before field reader lands there
+# (promotion_gates_lib.bb); this sweep reuses it rather than parsing the
+# date a second way (BL-897's shape). Scenario 04 is BL-1469's gate seen
+# from this side.
+mutation_cost: low
+# low: one Babashka lib plus a handoffd sweep and a commit through
+# commit_integrity_cli.bb (no mutation/CRAP/DRY wired for bb, BL-472; the
+# hardener gates on the bb unit and property runners).
+slice_size_envelope: low
+ritual_class: backlog-promotion
+required_stages: [coder, cleaner, architect, hardender, documenter, qa]
+
+acceptance: specs/features/BL-1479-a-ticket-that-cannot-advance-does-not-hold-a-slot.feature
+
+# The consumer anchor matters here: a park lib nobody schedules parks
+# nothing. The sweep name is pinned at mint (BL-874) - keep it.
+required_wiring:
+  - 'swarmforge/scripts/handoffd.bb::parked-active-sweep!::the daemon loop runs the park sweep on the shared cadence'
+  - 'specs/pipeline/steps/bl1479ParkedActiveSweepSteps.js::registerSteps::the handler lands in the same parcel as the feature (BL-233)'
+
+human_approval: pending
+approval_context: >
+  A new feature file is authored here, so it needs a tap. No choice is
+  posed and there are no ruling_options. FIRM: (1) a park moves the YAML
+  from active/ to paused/ and changes not one byte of it - status,
+  not_before, depends_on, notes, approval and bounce history all survive,
+  so nothing needs re-approving; (2) a ticket with a parcel in ANY mailbox
+  is never parked, whatever its status - the 2026-08-31 STEERING rule that
+  a demote never removes live work from the accounting holds by
+  construction; (3) a parked ticket re-enters promotion by the ordinary
+  rules once its condition clears (BL-1469's gate for the date; the
+  coordinator clearing status: blocked, as today). Minted by the specifier
+  from the human's question of 2026-09-07 ("why promote stuff that cant
+  advance?") and their "go"; the interim hand rule is recorded in
+  backlog/STEERING.md (2026-09-07 directive).
+
+invariants:
+  - "After every sweep, every ticket in backlog/active/ either can advance (no status: blocked, no not_before later than today) or has a parcel in some role's mailbox (new or in_process, master or worktree); the sweep is the only writer that moves active/ to paused/ and it never moves anything else."
+  - "A park changes a ticket's directory and nothing else: the YAML bytes and filename are preserved and the move is one rename commit through commit_integrity_cli.bb, one ticket per commit, so the ticket needs no re-approval and loses no bounce or ruling record."
+  - "A ticket with a parcel in any mailbox is never parked, whatever its status; the refusal is logged once, not noted to the coordinator every cycle, and a park itself is noted exactly once per ticket and condition."
+
+description: |
+  ## What is wrong
+
+  `backlog_depth_lib.bb` `count-active-tickets` counts every `*.yaml` in
+  `backlog/active/`; `under-depth-cap?` compares that to
+  `active_backlog_max_depth` (5 in `full-forge.conf`). `status: blocked`
+  is read by two things only: `promotion_gates_lib.bb`'s
+  `blocked-status-refusal` (never auto-promoted, BL-1145) and
+  `chase_sweep_lib.bb`'s `parked-ticket?` (the dropped-parcel nag is
+  suppressed, BL-1301). `not_before` has no reader at all until BL-1469
+  lands, and even then only at promotion. Nothing anywhere moves a ticket
+  OUT of `active/` except QA approval (to `done/`) or a human hand. So a
+  ticket that becomes unworkable after promotion holds its slot until
+  someone notices, and the coordinator, reading the 2026-08-31 STEERING
+  rule against demotion, will not move it.
+
+  Measured 2026-09-07 21:20 BST, cap 5, active 5:
+
+  - BL-940: promoted 09-06 20:46; split at 22:10 the same evening added
+    `depends_on: BL-1451` and `status: blocked`. BL-1451 is paused at
+    priority 96 with no path to promotion under expedite-first ordering.
+    Slot idle ~24 h.
+  - BL-1441: promoted 09-06 01:53; its own notes say "Do not start before
+    2026-09-08" (mutation cooldown on files BL-1425 touched 09-05). Slot
+    idle ~2 days; the dropped-parcel sweep nagged it every 30 min from
+    16:21Z (eight notes) and the coordinator dismissed each by hand.
+  - The other three slots were legitimate: BL-1473 at QA, BL-1408 and
+    BL-1348 complete and held un-landed at QA until BL-1473 lands.
+  - `backlog/paused/`: about 30 approved, unblocked tickets, including
+    BL-1469 (the not_before gate) and BL-1451 (BL-940's blocker).
+
+  ## What is wanted
+
+  - A handoffd sweep (`parked-active-sweep!`, `required_wiring`) on the
+    shared cadence: for every ticket in `active/` that declares
+    `status: blocked` or a `not_before` later than today, AND whose task
+    name appears in no role mailbox (`new` or `in_process`, master and
+    every worktree, through `handoff_lib.bb`'s `load-all-roles` and
+    `mailbox-dir`), rename it into `paused/` unchanged and commit through
+    `commit_integrity_cli.bb` with a subject naming the ticket and the
+    condition; then one `note` to the coordinator naming both (scenario
+    01; invariants 1, 2).
+  - A ticket with a parcel anywhere is left in `active/`; the refusal is a
+    daemon log line, once per ticket and condition, never a note per
+    cycle (scenario 02; invariant 3).
+  - `not_before` equal to today is workable (scenario 03) - the field is an
+    EARLIEST date (backlog-schema.md).
+  - A parked ticket is an ordinary candidate again once its condition
+    clears: BL-1469's gate admits it after the date (scenario 04); for
+    `status: blocked` the coordinator clears the status when the
+    dependency lands, as today - this ticket adds no auto-unblock.
+  - Documenter: `docs/how-to/` gets the sweep alongside BL-1301's
+    dropped-parcel page; `backlog-schema.md`'s `status` and `not_before`
+    rows gain one sentence each ("an active ticket carrying this is parked
+    back to paused/ by the sweep unless a parcel is in flight"); the
+    coordinator prompt's promotion step drops the interim hand rule
+    (specifier retires it on QA's landing note).
+
+  ## How (direction, not mandate)
+
+  - Reuse, do not re-parse: `parked-ticket?` (chase_sweep_lib.bb) for the
+    anchored `status: blocked` match, BL-1469's not_before reader, and
+    `handoff_lib.bb`'s mailbox resolver for the parcel check. Inject the
+    clock, the mailbox listing, the log fn and the commit fn so every
+    scenario runs on a mkdtemp backlog with a mkdtemp git repo of its own
+    (BL-1390; never `git -C ""`).
+  - One ticket per commit, subject `Park <id>: active -> paused (<condition>)`
+    with the role byline; the daemon already commits bookkeeping this way
+    (BL topic records).
+  - Do NOT implement this by excluding blocked tickets from the count:
+    `active/` must keep meaning "can be worked now" for every other sweep
+    that reads it (dispatch-gap, unassigned-active, dropped-parcel).
+
+constraints: >
+  Babashka only. Fixture backlog and fixture git repo under mkdtemp, proven
+  by rev-parse --git-common-dir before any mutating git command (BL-1390).
+  No change to promotion ranking, to the depth cap's value, or to what
+  status: blocked means; no auto-clearing of blocked. handoffd.bb is shared
+  with BL-1476 and BL-1478 (paused) - the coordinator serialises. The step
+  handler lands with the feature (BL-233).
+
+out_of_scope: |
+  - Promoting a blocked ticket's low-priority blocker ahead of the lane
+    (BL-940/BL-1451 today, done by human directive); whether a blocker
+    should inherit the blocked ticket's eligibility is a separate slice.
+  - The not_before promotion gate itself (BL-1469).
+  - Demoting a ticket that has a parcel in flight - never (STEERING 08-31).
+
+qa_e2e_procedure: |
+  1. bb unit runner for the park lib green (blocked, future not_before,
+     today's not_before, parcel-in-flight refusal, note-once, byte-identical
+     rename); acceptance resolving all four scenarios; BL-1469's and
+     BL-1301's features still resolving.
+  2. Live, daemon running: promote a scratch ticket with
+     `not_before: <tomorrow>` (or reuse the next real cooldown case); within
+     one cadence it is in paused/, `git log -1` on it is a rename commit
+     naming the condition, the coordinator's inbox holds exactly one note
+     about it, and a second cadence adds no second note.
+  3. Mark an active ticket whose parcel is at some role `status: blocked`
+     (scratch copy of the repo, or a fixture parcel): after one cadence it
+     is still in active/ and the daemon log carries one refusal line.
+  4. `active_backlog_max_depth` unchanged before and after; the next
+     promotion pass fills the freed slot by the ordinary rules.
+
+source: |
+  Human, specifier chat, 2026-09-07 ~21:20 BST, on the "starved - Operator
+  holding the slot" email: "there has to be other tickets that can be
+  primoted surely. why promote stuff that cant advance?" and, to the two
+  proposed actions, "go". State measured by the specifier the same pass and
+  recorded with the interim directive in backlog/STEERING.md
+  ("Standing human directive (2026-09-07)").
+
+notes: |
+  - Minted 2026-09-07 by the specifier. Grepped first: BL-1145 (blocked
+    never auto-promoted), BL-1301 (blocked suppresses the nag), BL-1469
+    (not_before gate, paused) - none frees an occupied slot. STEERING's
+    2026-08-31 section forbids demoting a ticket with a parcel in flight;
+    this ticket keeps that rule by construction (invariant 3) and
+    mechanises the safe case only.
+  - Article 3.2.4: type defect, severity high - expedited ordering.
+  - Interim (until this lands): the coordinator applies the hand rule
+    recorded in STEERING 2026-09-07 at every promotion pass.
+  - IR-DRY (specifier, mint pass): "the ticket stays in backlog/active/"
+    and "no note is sent" recur in scenarios 02 and 03 deliberately - one
+    handler each.
+  - IR-DRY also flags "is in backlog/paused/ and not in backlog/active/" versus
+    "stays in backlog/active/" as a possible synonym; they assert opposite
+    outcomes and stay distinct.
