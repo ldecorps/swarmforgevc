@@ -5,7 +5,7 @@ const fs = require('node:fs');
 const path = require('node:path');
 const fc = require('fast-check');
 
-const { resolveVitestWorkerPool } = require('../out/tools/vitest-worker-memory-budget');
+const { resolveVitestWorkerPool, resolveFreeCoresCeiling } = require('../out/tools/vitest-worker-memory-budget');
 
 // BL-1348 declared invariants:
 //   1. Both vitest lanes size their pool through the single
@@ -22,11 +22,14 @@ const { resolveVitestWorkerPool } = require('../out/tools/vitest-worker-memory-b
 //    defaultCeiling, pack=full-forge + platform=darwin always resolves to
 //    exactly 1 - unaffected by this ticket's own PER_WORKER_HEAP_MB drop
 //    or the new defaultCeiling wiring.
+// P3 (human ruling B, generative): the default ceiling both configs now
+// compute (resolveFreeCoresCeiling) never asks for fewer than 1 worker nor
+// more than the host's own core count, for any core count or load average.
 // Invariant 1 is structural (no property-shaped domain over "which config
 // file" - there are exactly two, fixed, real files): both
 // vitest.config.mjs and vitest.properties.config.mjs are read and checked
-// for the SAME resolveVitestWorkerPool call shape, including the new
-// defaultCeiling: os.cpus().length this ticket adds to both.
+// for the SAME resolveVitestWorkerPool call shape, including the
+// defaultCeiling: resolveFreeCoresCeiling(...) this ticket adds to both.
 
 const EXTENSION_ROOT = path.join(__dirname, '..');
 
@@ -63,6 +66,20 @@ test('BL-1348 P2 (invariant 3): with no override, full-forge on darwin always re
   );
 });
 
+const coresArb = fc.integer({ min: 1, max: 128 });
+const loadAvgArb = fc.double({ min: -10, max: 200, noNaN: true });
+
+test('BL-1348 P3 (human ruling B): resolveFreeCoresCeiling never resolves below 1 or above the core count', () => {
+  fc.assert(
+    fc.property(coresArb, loadAvgArb, (cores, loadAvg5min) => {
+      const ceiling = resolveFreeCoresCeiling(cores, loadAvg5min);
+      assert.ok(ceiling >= 1, `expected ceiling >= 1 for cores=${cores} loadAvg5min=${loadAvg5min}, got ${ceiling}`);
+      assert.ok(ceiling <= cores, `expected ceiling <= cores for cores=${cores} loadAvg5min=${loadAvg5min}, got ${ceiling}`);
+    }),
+    { numRuns: 300 }
+  );
+});
+
 function extractCallBlock(source, needle) {
   const idx = source.indexOf(needle);
   assert.ok(idx !== -1, `expected to find "${needle}" in the config source`);
@@ -82,6 +99,6 @@ test('BL-1348 invariant 1 (structural): both vitest lanes call resolveVitestWork
     assert.ok(unitBlock.includes(key), `expected vitest.config.mjs's call to pass "${key}"`);
     assert.ok(propsBlock.includes(key), `expected vitest.properties.config.mjs's call to pass "${key}"`);
   }
-  assert.ok(unitBlock.includes('os.cpus().length'), 'expected vitest.config.mjs to pass the real host core count as defaultCeiling');
-  assert.ok(propsBlock.includes('os.cpus().length'), 'expected vitest.properties.config.mjs to pass the real host core count as defaultCeiling');
+  assert.ok(unitBlock.includes('resolveFreeCoresCeiling(os.cpus().length, os.loadavg()[1])'), 'expected vitest.config.mjs to pass the free-cores ceiling as defaultCeiling');
+  assert.ok(propsBlock.includes('resolveFreeCoresCeiling(os.cpus().length, os.loadavg()[1])'), 'expected vitest.properties.config.mjs to pass the free-cores ceiling as defaultCeiling');
 });
