@@ -2,12 +2,15 @@ id: BL-1473
 title: "own-paths starts from the two-tree diff origin/main..tip, so every path origin/main gained after the branch forked is delivered as a DELETION and every path it deleted since as an addition: BL-1463's replay on 2026-09-07 proposed deleting the freshly minted BL-1470 and BL-1471 tickets, stopped only by the merge-deletion guard; a path is the parcel's to deliver only when a commit in the parcel's own range touched it"
 milestone: M8
 type: defect
-severity: high
-# high: a land of any branch older than main's latest commits proposes
-# deleting what main gained since - ticket YAMLs, evidence, code - and
-# resurrecting what main removed; the deletion half is caught by a guard
-# that names tickets, the resurrection half by nothing. Not critical: the
-# guard held today and the QA prompt carries the interim review.
+severity: critical
+# critical (re-classed 2026-09-07 evening, was high): the third form of
+# the defect - a path main CHANGED after the fork rides the replay as a
+# silent REVERSION to pre-fork content - has no guard at all, and it has
+# already landed: BL-1461's replay 04049f4bb2 rolled backlog/topics/
+# BL-1465.json back four minutes after the daemon appended a message to
+# it, and origin/main still lacks that message. Data loss on main by the
+# integration step itself, plus every replay land of a branch older than
+# main's latest mint refused (BL-1463, BL-1408 the same day).
 status: todo
 epic: swarm-reliability
 priority: 6
@@ -36,7 +39,7 @@ approval_context: >
   parcel's tagged merge is still delivered stands.
 
 invariants:
-  - "A replay changes no path on origin/main that no commit in the parcel's own range (tip, not origin/main) touched: nothing main gained since the fork is deleted, nothing main deleted since the fork is resurrected."
+  - "A replay changes no path on origin/main that no commit in the parcel's own range (tip, not origin/main) touched: nothing main gained since the fork is deleted, nothing main deleted since the fork is resurrected, nothing main changed since the fork is reverted."
   - "BL-1315 stands: every path the parcel's content reached the branch through, including via a merge before its own tagged merge, is delivered."
 
 description: |
@@ -63,6 +66,21 @@ description: |
   The mirror case, resurrecting a path main deleted since the fork, has
   no guard at all.
 
+  Nor has the third and dominant form (found 2026-09-07 evening, QA note
+  on BL-1408): (c) a path origin/main CHANGED after the fork, which the
+  tip still has at pre-fork content, so the replay checks the old blob
+  out over main's new one - a silent reversion. BL-1408's tip
+  3c8581c68b against origin/main 45ab7eaec2: two-tree diff 114 paths,
+  the parcel's own range 49, 65 spurious - 4 deletions and 1
+  resurrection (the guards refused), and 60 reversions: 59 topic records
+  under backlog/topics/ and swarmforge/roles/specifier.prompt (the human
+  directive landed as 20c741a4f9). And it has already landed once:
+  BL-1461's replay 04049f4bb2 (15:58:17) put backlog/topics/BL-1465.json
+  back to aefc4b0927's content, erasing the message the daemon had
+  appended at e8f00bd562 (15:54:36, seq 2); the daemon's later write
+  4966fa95d2 did not restore it and origin/main lacks it now. Adjudication:
+  `backlog/evidence/BL-1463-two-land-step-defects-adjudication-specifier-20260907.md`.
+
   ## What is wanted
 
   The delivered set is the two-tree diff restricted to paths some commit
@@ -70,7 +88,10 @@ description: |
   main gained after the fork is never a deletion (scenario 01), a path
   main deleted after the fork is never resurrected (scenario 02), the
   parcel's own deletion still lands (scenario 03), and BL-1315's early
-  arrival still lands (scenario 04).
+  arrival still lands (scenario 04). A path main CHANGED after the fork
+  is never reverted (invariant 1's third clause; gated by the runner
+  fixture and e2e step 2 - the approved feature's FIRM statement already
+  covers it, so no scenario is added to the approved file; see notes).
 
   ## How (direction, not mandate)
 
@@ -104,11 +125,12 @@ out_of_scope: |
 
 qa_e2e_procedure: >
   (1) `bb swarmforge/scripts/test/land_step_lib_test_runner.bb` green with
-  the moving-origin cases. (2) Scratch clone: fork a parcel branch, then
-  on origin/main add a file and delete another the parcel never touched;
-  `land_step_cli.bb <parcel> <tip>`: the replay's `git show --stat` names
-  neither file; land it onto the clone's main: both files as main had
-  them. (3) A parcel that deletes a file itself: the replay removes it.
+  the moving-origin cases, including a path main CHANGED after the fork.
+  (2) Scratch clone: fork a parcel branch, then on origin/main add a
+  file, delete another and change a third, none of which the parcel ever
+  touched; `land_step_cli.bb <parcel> <tip>`: the replay's `git show
+  --stat` names none of the three; land it onto the clone's main: all
+  three as main had them. (3) A parcel that deletes a file itself: the replay removes it.
   (4) BL-1315's, BL-1446's and BL-1447's features stay green. (5) On the
   live swarm after land: a land of a branch older than the day's mints
   proposes no ticket-YAML deletion and the merge-deletion guard has
@@ -125,3 +147,17 @@ notes: |
   BL-1472 and BL-1474. Grepped first: BL-1315 (done) chose the two-tree
   diff; BL-1446/BL-1447 (done) widened the walk and checked replay
   completeness; none scopes the delivered set to the parcel's own touches.
+
+  2026-09-07 evening (specifier, on QA's note 18:14Z holding BL-1408):
+  re-classed critical - see the severity comment and "What is wrong" (c).
+  Invariant 1 gained its reversion clause and e2e step 2 a changed file;
+  the approved feature file is NOT amended: its scenarios 01/02 and the
+  approval's FIRM statement ("delivers only paths a commit in the
+  parcel's own range touched") already bind the reversion case, the
+  intersect direction handles A/M/D uniformly, and a re-pend today posts
+  no fresh ask (BL-1455) - it would stall a critical fix on a tap the
+  human already gave. Coder: the runner fixture's moving-origin section
+  MUST include a changed-since-fork path; architect: invariant pass on
+  all three clauses. Interim while this is open (QA prompt, same commit):
+  sync origin/main into the QA branch immediately before the land step,
+  so the two-tree diff has nothing of main's to delete, restore or revert.
