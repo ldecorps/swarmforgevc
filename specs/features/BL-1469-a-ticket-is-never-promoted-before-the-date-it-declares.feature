@@ -1,3 +1,8 @@
+# mutation-stamp: sha256=6c6d63bc0847b0189f451af0ec407cf79500c954f12987cd31cc1fac7067f000
+# acceptance-mutation-manifest-begin
+# {"version":1,"tested_at":"2026-09-07T20:59:54.467506092Z","feature_name":"BL-1469 A ticket is never promoted before the date it declares","feature_path":"/home/carillon/swarmforgevc/.worktrees/hardender/specs/features/BL-1469-a-ticket-is-never-promoted-before-the-date-it-declares.feature","background_hash":"67731081064c73644e086050fb5ee13a66ae1c9d75b92dd366fdd2485febc6ce","implementation_hash":"unknown","scenarios":[{"index":1,"name":"on or after its date the ticket is promotable as before","scenario_hash":"dcc6b297eb42d2d1ce08da53b734330531f9dfec76f3a2fefeec15fc154408f9","mutation_count":2,"result":{"Total":2,"Killed":2,"Survived":0,"Errors":0},"tested_at":"2026-09-07T20:59:54.467506092Z"}]}
+# acceptance-mutation-manifest-end
+
 Feature: BL-1469 A ticket is never promoted before the date it declares
 
   Some tickets deliver a run the host gates by time rather than by code:
