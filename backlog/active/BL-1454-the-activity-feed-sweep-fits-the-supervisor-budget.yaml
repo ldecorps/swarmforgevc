@@ -108,6 +108,22 @@ description: |
   - Listing is cheap: handoff files are filtered against the cursor by name
     before any file is opened, so a tick's I/O scales with new traces, not
     with the size of sent/ (invariant 3).
+  - GH-24's own acceptance handler keeps resolving green (specifier, expedite
+    stage 2026-09-07): `specs/pipeline/steps/gh24CoordinatorActivityTelegramFeedSteps.js`
+    realizes its Background "the surfacer's durable cursor starts at the
+    beginning of the traces" as the ABSENT cursor file, which after this
+    ticket means "seed and post nothing", so GH-24 scenarios 01, 02, 04 and
+    05 go red the moment seeding lands. Change that Background step (and the
+    bb CLI behind it, `steps/lib/gh24CoordinatorActivityFeedCli.bb`) to
+    persist an EXPLICIT cursor positioned before every trace of both kinds.
+    `new-commits` treats a sha absent from the listed commits as "nothing
+    newer", so the commit cursor must name a listed sentinel commit; and
+    scenario 05's handler assertion "handoff cursor is null after the failed
+    send" becomes "unchanged from the starting cursor". GH-24's Gherkin text
+    stays untouched: its wording is still true, only the handler's
+    realization of it changes. The coder runs GH-24's feature green alongside
+    this ticket's four before forwarding - `run_acceptance.sh` takes ONE
+    feature per call, so nothing runs it for you.
   - Documenter: the handoffd sweep table / GH-24 reference page records the
     cap, the deadline and the first-run seeding rule; the architecture or
     handoff-flow diagram is untouched unless a depicted mechanism changed.
@@ -133,16 +149,31 @@ description: |
 
   ## Live check the coder can run before forwarding
 
-  With the fix, a fresh `handoffd` on this repository (6463 sent handoffs,
-  no cursor file) completes its first `coordinator-activity-feed-sweep!` in
-  well under a second, writes the cursor file, and posts nothing; the
-  supervisor records no `stalled` verdict across three cycles.
+  With the fix, a fresh `handoffd` on this repository (6509 sent handoffs on
+  2026-09-07, no cursor file) completes its first
+  `coordinator-activity-feed-sweep!` in well under a second, writes the
+  cursor file, and posts nothing; the supervisor records no `stalled`
+  verdict across three cycles. The sweep only runs while the feed is ON:
+  hotfix 2b8cc2d644 (2026-09-07) gated it behind
+  `config coordinator_activity_feed_enabled true` (absent = OFF, the state
+  of every conf today), so add that line to the effective conf
+  (`swarmforge/packs/full-forge.conf`) for the duration of the check and
+  remove it after - without it the sweep is skipped and the check passes
+  vacuously.
 
 qa_e2e_procedure: |
-  1. bb unit suite for coordinator_activity_feed_lib.bb green, including the
-     new seeding, cap, deadline and per-post-cursor cases; acceptance suite
-     green with this ticket's four scenarios resolving.
-  2. Live, on this host: stop the daemon, remove
+  1. bb unit suite for coordinator_activity_feed_lib.bb green
+     (swarmforge/scripts/test/coordinator_activity_feed_lib_test_runner.bb),
+     including the new seeding, cap, deadline and per-post-cursor cases;
+     acceptance green with this ticket's four scenarios resolving AND
+     GH-24's five (specs/features/GH-24-coordinator-activity-telegram-feed.feature)
+     still resolving - run_acceptance.sh takes one feature per call, so run
+     both.
+  2. Live, on this host: stop the daemon, add
+     `config coordinator_activity_feed_enabled true` to
+     swarmforge/packs/full-forge.conf (the effective conf; hotfix 2b8cc2d644
+     gates the sweep OFF while the key is absent, so without this line every
+     step below passes vacuously), remove
      .swarmforge/daemon/coordinator-activity-feed-state.json if present,
      start handoffd, and watch .swarmforge/daemon/handoffd.sweep-marker over
      three full sweep cycles (~15 min): the marker never shows
@@ -156,6 +187,9 @@ qa_e2e_procedure: |
   4. Have the coordinator send one note and land one bookkeeping commit:
      within one cadence the topic shows exactly one line for each, and the
      cursor file advances to them.
+  5. Remove the config line again and restart handoffd: the feed's default
+     stays OFF (see out_of_scope); this ticket bounds the sweep, it does not
+     re-enable it.
 
 out_of_scope: |
   - BL-144's policy that a stalled daemon halts the swarm.
@@ -165,6 +199,9 @@ out_of_scope: |
     cadence for the same unbounded-input shape (follow-up ticket if the
     architect's pass finds one).
   - Any backfill of historical coordinator activity.
+  - Turning the feed on by default: hotfix 2b8cc2d644 (2026-09-07) made it
+    config-gated, default OFF, at the human's request. Whether to re-enable
+    it once bounded is the human's call, not this ticket's.
 
 notes: |
   - Routing recommendation (specifier, 2026-09-06 22:20Z): the defect is IN
@@ -186,3 +223,20 @@ notes: |
     (SUP-17's Telegram poll and the coordinator's own role_ask were both
     still unanswered there at time of approval): approve BL-1454 and run
     the BL-567 expeditor on it now. By coordinator.
+  - Specifier, expedite stage 2026-09-07: PASS. Premise re-verified against
+    main df95dd4de8: no cursor file has ever been written, coordinator/sent/
+    holds 6509 handoffs, new-handoffs/new-commits still return everything
+    on a nil cursor, tick! still writes the cursor only at loop end with no
+    cap and no deadline, SUPERVISOR_IN_SWEEP_BUDGET_MS still 225000. Lint,
+    IR-DRY (the two recorded findings only), hygiene gate, wiring reader
+    (:items non-empty) and deprecate-check ("allow") all green. Amended this
+    pass, YAML only - the feature file is unchanged and the 2026-09-06
+    approval stands: (a) hotfix 2b8cc2d644 gated the sweep OFF (key absent
+    in every conf), so the live coder check and QA steps 2-5 now say to
+    enable the feed for the check and restore it after; (b) GH-24's handler
+    realizes its Background as the absent cursor, so the in-parcel handler
+    adjustment is scoped under "What is wanted"; (c) scenario 03's
+    "interrupts the tick" means the send seam THROWS on the fourth call (a
+    daemon killed mid-batch), distinct from GH-24-05's returned-false
+    failed-send path, which stays as is; the three cursor writes must
+    already be on disk when the throw fires.
