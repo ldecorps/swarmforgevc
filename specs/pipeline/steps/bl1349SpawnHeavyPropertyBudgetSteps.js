@@ -26,13 +26,28 @@ const BUDGET_MS = 15000;
 // comparison can never fail (BL-1349 architect bounce, 2026-09-06).
 const TUNING_COMMIT = '7f0e5766c9';
 
+// BL-1349 architect bounce (2026-09-07): the five bl1252 properties'
+// SUMMED wall clock, bundled in one file, exceeded the 15s per-file budget
+// even though each is comfortably under budget alone (measured 40-44s for
+// the file, ~8-10s each split). Split into one file per property, sharing
+// the fixture via helpers/bl1252CommitGuardFixture.js - never a second
+// implementation of it. Each of the five is its own Examples row below,
+// budgeted exactly like any other file.
+const BL1252_SPLIT_FILES = [
+  'bl1252IndexGuardsAllRunInvariant.property.test.js',
+  'bl1252ViolatingGuardsAllNamedInvariant.property.test.js',
+  'bl1252RefusalPredicateUnchangedInvariant.property.test.js',
+  'bl1252ExpensiveGuardTieringInvariant.property.test.js',
+  'bl1252UnexpectedFailureNeverPassesInvariant.property.test.js',
+];
+
 // BL-421/engineering.prompt: a Scenario Outline's Examples column is
 // validated against an explicit KNOWN_VALUES lookup, never a bare
 // passthrough - so an Examples row this ticket never named cannot silently
 // pass by resolving to a path nobody asked to budget.
 const KNOWN_FILES = [
   'onboarderLauncherPidGuard.property.test.js',
-  'bl1252CommitGuardAggregationInvariants.property.test.js',
+  ...BL1252_SPLIT_FILES,
   'bl787NamedTunnelInvariants.property.test.js',
 ];
 function knownFile(name) {
@@ -41,6 +56,17 @@ function knownFile(name) {
   }
   return name;
 }
+
+// The no-deletion check's before/after mapping: most tuned files compare
+// 1:1 against their own pre-tuning content, but bl1252's five properties
+// were pulled out of one pre-tuning file into five - "after" is their
+// UNION for that row, so a property moved to a sibling file is not
+// misread as deleted.
+const NO_DELETION_SOURCES = [
+  { before: 'onboarderLauncherPidGuard.property.test.js', after: ['onboarderLauncherPidGuard.property.test.js'] },
+  { before: 'bl1252CommitGuardAggregationInvariants.property.test.js', after: BL1252_SPLIT_FILES },
+  { before: 'bl787NamedTunnelInvariants.property.test.js', after: ['bl787NamedTunnelInvariants.property.test.js'] },
+];
 
 // A test's own name, wherever it falls relative to `test(` (bare on the
 // same line, or on its own line when a third timeout argument follows) -
@@ -100,16 +126,22 @@ function registerBl1349SpawnHeavyPropertyBudgetSteps(registry) {
 
   // ── no-property-is-dropped-02 ──────────────────────────────────────────
   scoped(/^the three tuned property files$/, (ctx) => {
-    ctx.tunedFiles = KNOWN_FILES.slice();
+    ctx.tunedFiles = NO_DELETION_SOURCES.slice();
   });
 
   scoped(/^their properties are compared with the parent commit$/, (ctx) => {
-    ctx.propertyDiffs = ctx.tunedFiles.map((file) => {
-      const relPath = path.join('extension', 'test', file).split(path.sep).join('/');
+    const fs = require('node:fs');
+    ctx.propertyDiffs = ctx.tunedFiles.map(({ before: beforeFile, after: afterFiles }) => {
+      const relPath = path.join('extension', 'test', beforeFile).split(path.sep).join('/');
       const before = execFileSync('git', ['show', `${TUNING_COMMIT}^:${relPath}`], { cwd: REPO_ROOT, encoding: 'utf8' });
-      const after = require('node:fs').readFileSync(path.join(TEST_DIR, file), 'utf8');
+      // BL-1349 architect bounce: a split row's "after" is the UNION of
+      // every file the property moved into, concatenated - namesAfter and
+      // the call counts below are then a union/sum across the split,
+      // exactly what "still present, still asserting" means for content
+      // relocated rather than removed.
+      const after = afterFiles.map((f) => fs.readFileSync(path.join(TEST_DIR, f), 'utf8')).join('\n');
       return {
-        file,
+        file: beforeFile,
         namesBefore: testNames(before),
         namesAfter: testNames(after),
         propertyCallsBefore: countOccurrences(before, 'fc.property('),
