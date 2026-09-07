@@ -1,11 +1,14 @@
-const assert = require('node:assert/strict');
-const fc = require('fast-check');
-const fs = require('node:fs');
-const path = require('node:path');
-const { spawnSync } = require('node:child_process');
-const { mkTmpDir } = require('./helpers/tmpDir');
+'use strict';
 
-// BL-1252 declared invariants:
+// BL-1349: shared fixture for BL-1252's five independent commit-guard
+// aggregation properties. Extracted so each property can live in its own
+// file (BL-1349: the original single file's summed wall clock exceeded the
+// 15s per-file budget even after its own numRuns cut, though every
+// property is comfortably under budget alone) - never a second
+// implementation of the fixture, one definition every split file imports.
+//
+// BL-1252 declared invariants (unchanged, restated for whichever property
+// file quotes them):
 // 1. No guard's refusal prevents another index-inspection guard from
 //    running: a committer never learns of a second violation only by fixing
 //    the first and re-attempting the commit.
@@ -18,7 +21,14 @@ const { mkTmpDir } = require('./helpers/tmpDir');
 //
 // Runs ONLY via `npm run test:properties`.
 
-const REPO_ROOT = path.join(__dirname, '..', '..');
+const assert = require('node:assert/strict');
+const fc = require('fast-check');
+const fs = require('node:fs');
+const path = require('node:path');
+const { spawnSync } = require('node:child_process');
+const { mkTmpDir } = require('./tmpDir');
+
+const REPO_ROOT = path.join(__dirname, '..', '..', '..');
 const RUNNER = path.join(REPO_ROOT, 'swarmforge', 'scripts', 'run_commit_guards.sh');
 
 const INDEX_GUARDS = [
@@ -175,113 +185,15 @@ function withRoot(fn) {
   }
 }
 
-test('property (invariant 1): every index-inspection guard runs, whatever the ones before it decided', () => {
-  const seen = freshSeen();
-  fc.assert(
-    fc.property(PLAN(), (plan) => {
-      tally(seen, plan);
-      withRoot((root) => {
-        const run = runRunner(root, plan);
-        for (const guard of INDEX_GUARDS) {
-          if (plan[guard] === 'missing') continue;
-          assert.ok(
-            run.ran(guard),
-            `${guard} never ran under plan ${JSON.stringify(plan)} - an earlier guard aborted the chain`
-          );
-        }
-      });
-    }),
-    { numRuns: 120 }
-  );
-  assertReach(seen, ['clean', 'multiIndexViolation', 'unexpected', 'missing', 'suiteOnly']);
-});
-
-test('property (invariant 1): every violating index guard is named in the ONE refusal', () => {
-  const seen = freshSeen();
-  fc.assert(
-    fc.property(PLAN(), (plan) => {
-      tally(seen, plan);
-      withRoot((root) => {
-        const run = runRunner(root, plan);
-        for (const guard of INDEX_GUARDS) {
-          const violated = plan[guard] !== 0;
-          assert.equal(
-            run.output.includes(guard),
-            violated,
-            `${guard} should ${violated ? '' : 'NOT '}appear in the refusal for ${JSON.stringify(plan)}: ${run.output}`
-          );
-        }
-      });
-    }),
-    { numRuns: 120 }
-  );
-  assertReach(seen, ['clean', 'multiIndexViolation', 'unexpected', 'missing']);
-});
-
-test('property (invariant 2): the runner refuses exactly the commits the pre-BL-1252 chain refused', () => {
-  const seen = freshSeen();
-  fc.assert(
-    fc.property(PLAN(), (plan) => {
-      tally(seen, plan);
-      withRoot((root) => {
-        const run = runRunner(root, plan);
-        assert.equal(
-          run.status !== 0,
-          legacyChainRefuses(plan),
-          `refusal predicate changed for ${JSON.stringify(plan)} (status ${run.status})`
-        );
-      });
-    }),
-    { numRuns: 120 }
-  );
-  assertReach(seen, ['clean', 'multiIndexViolation', 'unexpected', 'missing', 'suiteOnly']);
-});
-
-test('property (invariant 2): the expensive guard runs if and only if every cheap guard passes', () => {
-  const seen = freshSeen();
-  fc.assert(
-    fc.property(PLAN(), (plan) => {
-      tally(seen, plan);
-      withRoot((root) => {
-        const run = runRunner(root, plan);
-        const cheapAllPass = INDEX_GUARDS.every((g) => plan[g] === 0);
-        const suitePresent = plan[SUITE_GUARD] !== 'missing';
-        assert.equal(
-          run.ran(SUITE_GUARD),
-          cheapAllPass && suitePresent,
-          `property suite tiering wrong for ${JSON.stringify(plan)}`
-        );
-      });
-    }),
-    { numRuns: 120 }
-  );
-  assertReach(seen, ['clean', 'multiIndexViolation', 'suiteOnly']);
-});
-
-test('property (invariant 3): an unexpected failure refuses the commit and is named as an error, never a pass', () => {
-  const seen = freshSeen();
-  fc.assert(
-    fc.property(PLAN(), (plan) => {
-      tally(seen, plan);
-      const broken = ALL_GUARDS.filter(
-        (g) => plan[g] === 2 || plan[g] === 127 || plan[g] === 'missing'
-      );
-      // A guard that is never reached cannot be reported; only the ones the
-      // tiering actually invokes are in scope for this property.
-      const reached = broken.filter(
-        (g) => INDEX_GUARDS.includes(g) || INDEX_GUARDS.every((i) => plan[i] === 0)
-      );
-      fc.pre(reached.length > 0);
-      withRoot((root) => {
-        const run = runRunner(root, plan);
-        assert.notEqual(run.status, 0, `an unexpected guard failure was collected as a pass: ${JSON.stringify(plan)}`);
-        assert.match(run.output, /unexpected/i, `the refusal did not distinguish an error from a refusal: ${run.output}`);
-        for (const guard of reached) {
-          assert.ok(run.output.includes(guard), `the refusal did not name ${guard}: ${run.output}`);
-        }
-      });
-    }),
-    { numRuns: 120 }
-  );
-  assertReach(seen, ['unexpected', 'missing']);
-});
+module.exports = {
+  ALL_GUARDS,
+  INDEX_GUARDS,
+  SUITE_GUARD,
+  PLAN,
+  runRunner,
+  legacyChainRefuses,
+  assertReach,
+  freshSeen,
+  tally,
+  withRoot,
+};

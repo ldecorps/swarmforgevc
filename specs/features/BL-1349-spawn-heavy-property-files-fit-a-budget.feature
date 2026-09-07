@@ -18,10 +18,14 @@ Feature: BL-1349 The slowest spawn-heavy property files fit a per-file budget
     And it reports no failing test
 
     Examples:
-      | file                                                    |
-      | onboarderLauncherPidGuard.property.test.js              |
-      | bl1252CommitGuardAggregationInvariants.property.test.js |
-      | bl787NamedTunnelInvariants.property.test.js             |
+      | file                                                      |
+      | onboarderLauncherPidGuard.property.test.js                |
+      | bl1252IndexGuardsAllRunInvariant.property.test.js         |
+      | bl1252ViolatingGuardsAllNamedInvariant.property.test.js   |
+      | bl1252RefusalPredicateUnchangedInvariant.property.test.js |
+      | bl1252ExpensiveGuardTieringInvariant.property.test.js     |
+      | bl1252UnexpectedFailureNeverPassesInvariant.property.test.js |
+      | bl787NamedTunnelInvariants.property.test.js               |
 
   # BL-1349 no-property-is-dropped-02
   Scenario: no property is deleted to meet the budget
