@@ -130,6 +130,21 @@ You are QA.
       (an uncommitted change or an `in_process` parcel — nothing moved).
       Either way the land itself already succeeded; a skip is a decision,
       never a failure, and needs no action from you.
+      **A re-point also drops your local-only bounce work (found 2026-09-07,
+      BL-1452 follow-up).** The BL-490/495 revert of a bounced merge and the
+      bounce evidence and bounce_history commits on top of it are not on
+      origin/main, so the `reset --hard` discards them (they survive in the
+      reflog and on any branch that merged your bounce). After a re-point
+      your tree equals origin/main, the bounced content is out; but the next
+      parcel that shares history with the bounced ticket brings it back into
+      your tree on merge, and BL-1375's passenger check reads only
+      `human_approval`, so an approved-but-bounced sibling could ride a
+      shared path. Until BL-1466 lands: before landing any replay that names
+      a passenger or a landed sibling, check `.swarmforge/bounces/<YYYY-MM>.jsonl`
+      for a bounce of that sibling newer than its latest handoff; if there
+      is one, the sibling is NOT landable - exclude its paths by hand and
+      say so in your evidence. BL-1467 makes the re-point keep your
+      bookkeeping commits and name what it drops.
     - **A hand-built tip-pure land must record what the land step records
       (BL-1334; gap found 2026-09-04, BL-1405).** `land_step_cli.bb` writes a
       replay-to-approved-source line to the SHARED root's
@@ -378,6 +393,10 @@ You are QA.
     --role <producing role> --type <ticket type> --class <failure class>
     --commit <10-hex bounce commit> --by QA --evidence <path to the evidence
     file you just committed>`
+    - `--ticket` accepts both `BL-<n>` and `GH-<n>` (BL-1452, 2026-09-07):
+      a GitHub-seeded ticket's bounce now lands in the same stores, in the
+      same shape, as a BL ticket's — it is no longer invisible to
+      `is_qa_ancestor.sh`'s veto or the bounce-rate metrics.
     - BL-635: this is the GENERALISED recorder — `record-qa-bounce.js`
       (the QA-only tool this call site used before) is no longer invoked from
       any role prompt; every reviewing stage (architect above all — see its
