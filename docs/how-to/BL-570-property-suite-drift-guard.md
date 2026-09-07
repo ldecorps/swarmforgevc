@@ -69,12 +69,9 @@ wall-clock ceiling (`SWARMFORGE_PROPERTY_RERUN_CEILING_SECONDS`, default
 600s as of 2026-09-06 — raised from 180s once
 `bl968MaterializedGuardSensitivity.property.test.js` alone started
 measuring 164-350s under host load, already exceeding the old shared
-budget on its own. BL-1450 (2026-09-07) brought that file back down to
-45-67s alone (`RUNS_PER_CELL` 4→1, its two reach floors re-derived from
-that constant rather than hand-typed) without dropping a cell or weakening
-an assertion; the 600s default itself is untouched — right-sizing one
-file's footprint does not by itself lower a ceiling shared across all
-316 — a file that has no budget left when its
+budget on its own; BL-1450 owns right-sizing that file's footprint so the
+ceiling does not have to keep growing to fit it — total across all files —
+a file that has no budget left when its
 turn comes counts as still-failing, never as a pass). A file that passes
 alone is a load flake: the commit is allowed and the flake is recorded as
 one JSON line in `.swarmforge/property-flakes/<YYYY-MM>.jsonl` (file,

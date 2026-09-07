@@ -1,40 +1,5 @@
 # SwarmForge VS Code Extension — Specification
 
-**Last Updated:** September 7, 2026 (BL-1348: `resolveVitestWorkerPool`
-(BL-935) composed a CPU ceiling default (`MAX_WORKERS = 6`) and a RAM
-budget (`PER_WORKER_HEAP_MB = 1280`, `floor(hostRamMB * 0.5 /
-PER_WORKER_HEAP_MB)`) and returned the smaller. On this host (20 cores,
-19904 MB) the RAM budget resolved to 7, so an explicit
-`SWARMFORGE_VITEST_MAX_FORKS` override of 8, 12, or 16 all silently
-clamped to 7 — fourteen of twenty cores idle through every property run,
-and the reason the override appeared not to work at all. Sampled peak
-under a full run: 298 MB per fork, 1.26 GB total, 14 GB still free — the
-1280 MB reservation over-budgeted by roughly 4x, sized years earlier
-against a 15360 MB reference host and never re-measured. A first attempt
-(raw core count as the default ceiling, re-pended 2026-09-06) measured 15
-forks contending with the live swarm's own role sessions and two
-back-to-back full property runs failing 4 then 16 different files, mostly
-git-/bb-spawning tests timing out at 20s — memory was never the real
-constraint, shared CPU was. Human ruling B (2026-09-07, recorded directly
-per the known BL-1455 Telegram-ask-repost defect): the default ceiling
-now follows the cores the host has FREE
-(`resolveFreeCoresCeiling(cores, loadAvg5min) = max(1, min(cores,
-floor(cores - loadAvg5min)))`, pure, no os/env read — both configs pass in
-`os.cpus().length`/`os.loadavg()[1]` through the one
-`resolveVitestWorkerPool` composition point BL-935 established, no second
-sizing route), backing off while the swarm is busy rather than pinning to
-either a flat count or the raw core count. `PER_WORKER_HEAP_MB` (1280→640,
-matching the measured 298 MB peak with real margin) and `MAX_WORKERS` (6,
-unchanged fallback) were already right under every ruling option and are
-untouched by this pass. An explicit override still wins up to the RAM
-budget; the full-forge+darwin ceiling of 1 is unchanged. BL-1349 (the 79s
-longest single file, since brought to 45-67s) remains the other half of
-the wall clock this ticket does not touch. Acceptance:
-`specs/features/BL-1348-fork-pool-sizes-to-the-real-host.feature` (the
-ticket's own ruling text promised a full-forge/linux Examples row once
-ruled; still absent — flagged to the specifier as a spec gap, not fixed
-here).)
-Prior entry —
 **Last Updated:** September 7, 2026 (BL-1466: `land_step_lib.bb`'s
 `ticket-approval-state` (BL-1375's passenger predicate) read only the
 backlog folder and `human_approval` — a QA bounce

@@ -18,43 +18,20 @@
 // well under the reference 15360MB host - see vitestWorkerMemoryBudget.test.js's
 // own "the exported caps stay within budget" assertion.
 //
-// BL-1348, human ruling B: PER_WORKER_HEAP_MB was sized against the BL-422
-// incident host and never re-measured since. Sampled every 2s through a
-// full `npm run test:properties`: peak 298MB for the largest single fork.
+// BL-1348, human ruling (option 2): PER_WORKER_HEAP_MB was sized against the
+// BL-422 incident host and never re-measured since. Sampled every 2s through
+// a full `npm run test:properties`: peak 298MB for the largest single fork.
 // 640 keeps real margin over that measured peak (not a round number picked
 // to hit a target) rather than removing the cap outright - a genuinely
 // misbehaving fork is still bounded, just no longer at 4x the measured
-// worst case. MAX_WORKERS itself is UNCHANGED (the fallback ceiling a
-// caller gets if it passes no defaultCeiling of its own, and the ceiling
-// resolveVitestForkCeiling still falls back to when resolveFreeCoresCeiling
-// below is not what a caller passes); what "the default ceiling follows the
-// cores the host has FREE" is both real vitest configs now passing
-// resolveFreeCoresCeiling(os.cpus().length, os.loadavg()[1]) as their own
-// defaultCeiling - the existing caller-passes-every-environment-input shape
-// (hostRamMB already works this way), never a second os/env read added to
-// this module.
+// worst case. MAX_WORKERS itself is UNCHANGED (the fallback ceiling a caller
+// gets if it passes no defaultCeiling of its own); what "raises the default
+// ceiling so the pool follows the host core count" is both real vitest
+// configs now passing os.cpus().length as their own defaultCeiling - the
+// existing caller-passes-every-environment-input shape (hostRamMB already
+// works this way), never a second os/env read added to this module.
 export const MAX_WORKERS = 6;
 export const PER_WORKER_HEAP_MB = 640;
-
-// BL-1348, human ruling B: raising the default ceiling to the RAW core
-// count (option 2, measured and rejected) contends with the live swarm's
-// own role sessions on a full-forge host - two back-to-back full property
-// runs failed 4 then 16 different files, almost all git-/bb-spawning
-// property tests timing out at 20s while 15 forks fought the swarm's own
-// processes for the same cores (load average 12-13 measured at mint).
-// Sizing off cores FREE (cores minus the 5-minute load average) backs off
-// while the swarm is busy and widens when it is not, on both platforms,
-// through the one composition point. Floored at 1 (a pool must always have
-// at least one worker) and capped at `cores` (a negative or fractional
-// "free" reading, e.g. load already exceeding core count, never asks for
-// more workers than the host physically has). Pure over caller-supplied
-// inputs, per this module's own no-os/env-read rule - `cores` and
-// `loadAvg5min` are read by the caller (os.cpus().length, os.loadavg()[1]),
-// never here.
-export function resolveFreeCoresCeiling(cores: number, loadAvg5min: number): number {
-  const free = Math.floor(cores - loadAvg5min);
-  return Math.max(1, Math.min(cores, free));
-}
 
 // Worst-case footprint must stay within this fraction of the host's total
 // RAM, leaving headroom for the OS and every other swarm agent process

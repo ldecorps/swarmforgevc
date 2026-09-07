@@ -4,7 +4,6 @@ const {
   resolveWorkerPoolSize,
   resolveVitestForkCeiling,
   resolveVitestWorkerPool,
-  resolveFreeCoresCeiling,
   MAX_WORKERS,
   PER_WORKER_HEAP_MB,
   SAFE_HOST_RAM_FRACTION,
@@ -149,47 +148,6 @@ test('the resolved ceiling is never below 1 for any combination of inputs', () =
       for (const override of [undefined, '0', '-3', 'x', '1']) {
         assert.ok(resolveVitestForkCeiling({ pack, platform, override }) >= 1);
       }
-    }
-  }
-});
-
-// ── resolveFreeCoresCeiling (pure) - BL-1348 human ruling B ─────────────────
-// The default ceiling follows the cores the host has FREE (cores minus the
-// 5-minute load average), not the raw core count: raising the default to
-// os.cpus().length (option 2) contended with the live swarm's own role
-// sessions on a full-forge host and produced a non-deterministic timeout
-// cascade (measured: 4 then 16 different property files red across two
-// back-to-back runs, load average 12-13). Floored at 1, capped at cores.
-
-test('with no load at all, resolves to the full core count', () => {
-  assert.equal(resolveFreeCoresCeiling(20, 0), 20);
-});
-
-test('subtracts the 5-minute load average from the core count', () => {
-  assert.equal(resolveFreeCoresCeiling(20, 12.5), 7);
-});
-
-test('floors at 1 when load meets or exceeds the core count', () => {
-  assert.equal(resolveFreeCoresCeiling(20, 20), 1);
-  assert.equal(resolveFreeCoresCeiling(4, 9.7), 1);
-});
-
-test('never exceeds the core count, even with negative load (never observed, but never trusted either)', () => {
-  assert.equal(resolveFreeCoresCeiling(4, -3), 4);
-});
-
-test('floors a fractional free-cores reading down, never up', () => {
-  // 20 - 12.4 = 7.6, which must not round up to 8 - an optimistic ceiling
-  // is exactly the failure mode this ruling exists to avoid.
-  assert.equal(resolveFreeCoresCeiling(20, 12.4), 7);
-});
-
-test('is never below 1 or above cores, for a wide sweep of core counts and loads', () => {
-  for (const cores of [1, 2, 4, 8, 20, 64]) {
-    for (const load of [0, 0.5, 1, cores / 2, cores - 0.1, cores, cores + 5, -1]) {
-      const ceiling = resolveFreeCoresCeiling(cores, load);
-      assert.ok(ceiling >= 1, `cores=${cores} load=${load} resolved ${ceiling} < 1`);
-      assert.ok(ceiling <= cores, `cores=${cores} load=${load} resolved ${ceiling} > cores`);
     }
   }
 });

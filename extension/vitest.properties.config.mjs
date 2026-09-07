@@ -24,7 +24,7 @@ import { defineConfig } from 'vitest/config';
 // same createRequire bridge vitest.config.mjs's own ESM-to-CommonJS load
 // uses (this config is ESM, the budget module is CommonJS).
 const require = createRequire(import.meta.url);
-const { PER_WORKER_HEAP_MB, resolveVitestWorkerPool, resolveFreeCoresCeiling } = require('./out/tools/vitest-worker-memory-budget');
+const { PER_WORKER_HEAP_MB, resolveVitestWorkerPool } = require('./out/tools/vitest-worker-memory-budget');
 // BL-935: the SAME single pool-resolution route as vitest.config.mjs - the
 // second required call site named by this ticket's own required_wiring, and
 // historically the easy one to miss a fix in. Both lanes now call the one
@@ -39,13 +39,12 @@ const WORKER_POOL_SIZE = resolveVitestWorkerPool({
   platform: os.platform(),
   override: process.env.SWARMFORGE_VITEST_MAX_FORKS,
   hostRamMB: os.totalmem() / (1024 * 1024),
-  // BL-1348, human ruling B: the DEFAULT (no override set) now follows the
-  // cores this host has FREE (cores minus the 5-minute load average, floor
-  // 1, cap cores) rather than the fixed MAX_WORKERS=6 ceiling or the raw
-  // core count - passed in here, same as hostRamMB/platform above, so the
+  // BL-1348, human ruling (option 2): the DEFAULT (no override set) now
+  // follows this host's own core count rather than the fixed MAX_WORKERS=6
+  // ceiling - passed in here, same as hostRamMB/platform above, so the
   // budget module itself still reads no os/env of its own. The SAME input
   // both lanes now pass (BL-935 invariant 3).
-  defaultCeiling: resolveFreeCoresCeiling(os.cpus().length, os.loadavg()[1]),
+  defaultCeiling: os.cpus().length,
 });
 
 export default defineConfig({
