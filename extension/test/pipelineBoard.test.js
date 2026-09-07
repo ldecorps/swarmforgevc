@@ -1578,3 +1578,31 @@ test('BL-1040: a seat key never outranks a genuinely more downstream stage', () 
     [{ id: 'BL-993', column: 'cleaner' }]
   );
 });
+
+// BL-1451 hardener bounce D1 (2026-09-07): healthDot reaches gridCaptionLine
+// straight from JSON.parse (swarmState.ts's readTicketStageMap has zero
+// runtime validation on it), so a stale/typo'd/future-tier value on disk is
+// not guaranteed to be one of HEALTH_DOT_GLYPHS' three keys. A truthy-but-
+// unrecognized value used to look up `undefined` and stringify it straight
+// into the caption ("undefined 1 (no backlog entry)" - human-visible
+// garbage on the operator's primary phone view, Article 1.10). It must
+// degrade exactly like a dot-less/absent entry does (invariant 2).
+test('BL-1451 hardener bounce D1: an unrecognized healthDot value renders no dot at all, never "undefined "', () => {
+  const data = computePipelineBoard({}, [], {}, {
+    activeIds: ['BL-1'],
+    ticketStageEntries: { 'BL-1': { stage: 'coder', status: 'claimed', healthDot: 'blue' } },
+  });
+  const body = renderPipelineBoardBody(data);
+  assert.ok(!body.includes('undefined'), `expected no literal "undefined" text, got:\n${body}`);
+  // The caption block starts at the first blank line - searched separately
+  // from the matrix above it, whose NBSP-padded id also `includes` the
+  // bare display id.
+  const lines = body.split('\n');
+  const blankIdx = lines.indexOf('');
+  const caption = lines.slice(blankIdx).find((l) => l.includes(deriveDisplayTicketId('BL-1')));
+  assert.ok(caption, `no caption line for BL-1:\n${body}`);
+  assert.ok(
+    caption.startsWith(deriveDisplayTicketId('BL-1')),
+    `expected the caption to begin with the bare display id (no dot, no "undefined "), got: ${JSON.stringify(caption)}`
+  );
+});
