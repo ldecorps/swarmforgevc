@@ -1,0 +1,214 @@
+id: BL-1477
+title: "The context-telemetry producer has recorded nothing since 2026-08-30T08:04:46Z: the host's unclean shutdown that morning left context-events.jsonl ending in 4 KB of NUL bytes, readPersistedContextEvents and context_telemetry_store.bb read-events! both throw on that line, so run-context-telemetry-producer.js exits non-zero every cycle, the GH-23 dashboard and BL-565 cost ledger read nothing, and no log line says so; both readers tolerate a torn tail identically, interior damage fails closed but loud, and a tick records at most a capped batch inside its own deadline"
+milestone: M8
+type: defect
+severity: high
+# high: a broken health signal - the GH-22 context-events store, GH-23's
+# context budget dashboard and BL-565's cost ledger have all been dark for
+# eight days without a log line. Not critical: nothing is down and no data
+# was lost that the transcripts cannot replay. Fixing it naively WOULD be
+# critical-shaped (BL-1454): ~200000 events to backfill, one bb subprocess
+# each, no cap, no deadline, against a 60 s wait bound - hence the bound is
+# part of this ticket, not a follow-up.
+status: todo
+epic: swarm-reliability
+priority: 7
+direction: swarm-reported
+depends_on: []
+mutation_cost: medium
+# medium: contextTelemetryProducer.ts gains a tolerant store read, a cap and
+# a deadline (Stryker over compiled out/**); context_telemetry_store.bb and
+# context_telemetry_cli.bb gain the mirrored tolerance and a batch verb
+# (Babashka: no mutation wired, BL-472; the bb unit suite gates them).
+slice_size_envelope: medium
+required_stages: [coder, cleaner, architect, hardender, documenter, qa]
+
+acceptance: specs/features/BL-1477-the-context-telemetry-producer-records-again.feature
+
+# Handler anchor only: handoffd.bb already shells to
+# run-context-telemetry-producer.js every cycle (the defect's own path), so
+# a consumer anchor there is satisfied before the fix (BL-1235).
+required_wiring:
+  - 'specs/pipeline/steps/bl1477ContextTelemetryProducerRecordsAgainSteps.js::registerSteps::the handler lands in the same parcel as the feature (BL-233)'
+
+human_approval: approved
+approval_context: >
+  A new feature file is authored here, so it needs a tap. No choice is
+  posed and there are no ruling_options. FIRM and worth knowing before you
+  tap: (1) the eight-day backlog IS replayed - BL-665's contract says
+  backfill is in scope on first run and the dashboard and cost ledger are
+  the better for it - but bounded, at most a capped batch per tick inside a
+  deadline (direction 500 events and 30 s), so on this host the store
+  catches up over some hours of cycles rather than in one tick that the
+  wait bound would kill; (2) a store with INTERIOR damage refuses to record
+  and exits non-zero naming the line, because the store is the dedupe
+  cursor and recording against an unreadable cursor would duplicate;
+  (3) a torn FINAL line - NUL bytes or an unfinished record with no newline
+  after it - is dropped and named, by BOTH readers, the same way
+  turnProfileProducer treats a transcript mid-append (BL-1364). Minted by
+  the specifier from the audit the BL-1476 intake asked for.
+
+invariants:
+  - "context_telemetry_store.bb read-events! and contextTelemetryProducer.ts readPersistedContextEvents return the same records for the same store file, whatever torn bytes its tail carries - one fixture, both readers, asserted in one test (BL-897's shape across the TS/bb boundary)."
+  - "No tick of the producer records past its cap or runs past its deadline, and the deadline is at most one quarter of SUPERVISOR_IN_SWEEP_BUDGET_MS; events it did not reach are recorded by later ticks in timestamp order and no event is recorded twice (the agent:session_id:timestamp key is honoured across ticks)."
+  - "A record appended to the store always starts on its own line: the writer never glues a record onto a torn tail, so tolerance of a torn FINAL line never becomes interior damage on the next append."
+
+description: |
+  ## What is wrong
+
+  `.swarmforge/telemetry/context-events.jsonl` (61 MB, 234114 lines) has
+  234113 whole records and one final line of about 4000 NUL bytes with no
+  newline; the last whole record is stamped 2026-08-30T08:04:46Z and the
+  file's mtime is 08:05Z that day. The host booted at 09:25Z on 2026-08-30
+  (`uptime -s`), so the tail is the filesystem's zero-fill of a write that
+  was in flight at an unclean shutdown. Since then:
+
+  1. `readPersistedContextEvents` (`extension/src/metrics/contextTelemetryProducer.ts`)
+     JSON-parses every non-blank line with no tolerance;
+     `runContextTelemetryProducer` calls it first, so
+     `run-context-telemetry-producer.js` throws before deriving anything
+     and exits non-zero. Reproduced by the specifier 2026-09-07 with the
+     record seam stubbed: `SyntaxError ... is not valid JSON` at line 125
+     of the compiled module, 534 ms in.
+  2. `context-telemetry-producer-sweep!` (`handoffd.bb` ~2806) logs stdout
+     only `(when (zero? exit))`. The live log holds a sub-second
+     `sweep-boundary` line per cycle and zero `context-telemetry-producer`
+     output lines; the last `RECORDED` line anywhere is
+     2026-08-30T07:59:41Z.
+  3. `context_telemetry_store.bb` `read-events!` parses the same way and
+     throws on the same line - `bb context_telemetry_cli.bb summary`
+     stack-traces on this host - so `contextTelemetryGate.ts` (GH-23
+     dashboard) catches and shows an empty summary and
+     `llm_cost_ledger_lib.bb` (BL-565) reads nothing.
+  4. `recordEventViaCli` spawns one `bb context_telemetry_cli.bb record`
+     per event, and `runContextTelemetryProducer` records every new event
+     with no cap and no deadline. The store grew 234k records in nine days
+     before it stopped (~26k/day); eight days of backlog is ~200k events,
+     roughly 0.3 s of bb start-up each - a day of subprocess time that the
+     60 s `SWARMFORGE_SUBPROCESS_WAIT_BOUND_MS` would kill every cycle
+     (progress persists per event, so a kill loop, not a stall - but a
+     kill the sweep would not log; BL-1478).
+  5. `append-event!` spits `<json>\n` with :append. Against a tail with no
+     trailing newline the next record is glued onto the NUL bytes, and a
+     torn FINAL line becomes INTERIOR damage on the append after that.
+
+  ## What is wanted
+
+  - Both readers treat a torn final line - a line of NUL bytes, or an
+    unparseable last line with no newline after it - as not yet part of the
+    store: dropped, named in the producer's output and the CLI's stderr,
+    every whole record before it returned (scenarios 01, 02; invariant 1).
+    NUL bytes are never part of a JSONL record: strip them wherever they
+    appear before parsing, so a record glued onto a zero-filled tail still
+    parses (a belt to invariant 3's braces).
+  - Interior damage - an unparseable line with a whole line after it -
+    makes the producer refuse to record and exit non-zero naming the line
+    number; the bb reader raises the same (scenario 03). The store is the
+    dedupe cursor; recording against a cursor that cannot be read would
+    duplicate.
+  - The writer ensures the file ends in a newline before appending
+    (invariant 3).
+  - A tick records at most a cap (direction 500) of the new events, oldest
+    first, and stops at its deadline (direction 30 s, clamped to a quarter
+    of `SUPERVISOR_IN_SWEEP_BUDGET_MS`, read from the OS env as BL-1454
+    does); the remainder follows on later ticks, none twice (scenarios 04,
+    05; invariant 2).
+  - The per-event bb subprocess goes: direction, a `record-batch` verb on
+    `context_telemetry_cli.bb` reading JSONL from stdin or a file,
+    validating each event exactly as `record` does, so a tick costs one
+    spawn. 500 spawns at 0.3 s is 150 s, five times the deadline; batching
+    is what makes the cap reachable inside it.
+  - The CLI's output line names recorded, remaining and torn counts so the
+    daemon log shows the catch-up progressing.
+  - Documenter: `docs/how-to/BL-665-context-telemetry-producer-wiring.md`
+    and `docs/how-to/GH-22-context-telemetry-recorder-and-query-cli.md`
+    record the torn-tail rule, the cap, the deadline and the batch verb;
+    no registered diagram depicts this store.
+
+  ## How (direction, not mandate)
+
+  - Keep BL-665's seams: `recordFn`, `claudeProjectsDir`; add `nowFn`, the
+    cap and the deadline as options with defaults. Scenarios run on
+    fixture transcripts and a fixture store under mkdtemp.
+  - `deriveEventsForRoleGroup` calls `walkTranscriptFiles(transcriptPaths)`
+    and discards the result - ~3.4 s per role of pure cost. Remove it if
+    BL-665's feature still resolves without it (its wording is "built on
+    the BL-664 lib", satisfied by `readTranscriptUsage`'s substrate); the
+    read side stays otherwise unbounded here - adopting BL-1476's change
+    detection is the epic's recorded follow-up once both land.
+  - Do NOT repair the live store by hand as the fix: the readers must
+    survive the shape, since the same shutdown can tear it again.
+
+  ## Live check the coder can run before forwarding
+
+  Daemon stopped: `bb swarmforge/scripts/context_telemetry_cli.bb summary`
+  returns a summary, names the torn tail on stderr and exits zero;
+  `node extension/out/tools/run-context-telemetry-producer.js` records its
+  cap inside the deadline and prints how many events remain; a second run
+  records the next batch with none repeated (`summary`'s count grows by
+  exactly the cap).
+
+constraints: >
+  Fixture store and transcripts under mkdtemp; never the live
+  .swarmforge/telemetry/. No change to the event shape or the dedupe key
+  (GH-22, BL-665). The read side's unbounded transcript walk is out of
+  scope (BL-1476 builds the change detection; the follow-up adopts it).
+  handoffd.bb is not touched here - the cap and deadline are read from the
+  OS env in the CLI; sweep logging is BL-1478's. The step handler lands
+  with the feature (BL-233). No hand-edited mutation manifests.
+
+out_of_scope: |
+  - Bounding the transcript READ (BL-1476 and the epic's follow-up).
+  - Logging a non-zero CLI exit from the sweep (BL-1478).
+  - Why the 2026-08-30 shutdown was unclean (the host, not this repo).
+  - Deleting or archiving the 61 MB store; whether it should rotate monthly
+    like its siblings (alerts-, chaser-, llm-cost-YYYY-MM.jsonl) is a
+    separate question worth a note to the specifier if the coder meets it.
+
+qa_e2e_procedure: |
+  1. `cd extension && npm test -- contextTelemetryProducer` green incl. the
+     torn-tail, interior-damage, cap and deadline cases and the invariant-1
+     cross-reader test; `bb swarmforge/scripts/test/context_telemetry_test_runner.bb`
+     green incl. torn-tail read, newline-before-append and record-batch;
+     acceptance resolving all five scenarios and BL-665's feature still
+     resolving (one feature per run_acceptance.sh call).
+  2. Live, daemon stopped, on this host's real store (do not edit it):
+     `bb swarmforge/scripts/context_telemetry_cli.bb summary` exits zero and
+     names the torn tail; `node extension/out/tools/run-context-telemetry-producer.js`
+     prints the recorded count equal to the cap and a remaining count;
+     `tail -c 8` of the store ends in a newline and the last line parses.
+  3. Start handoffd; over three cycles `.swarmforge/daemon/handoffd.log`
+     shows a `context-telemetry-producer` output line each cycle with the
+     remaining count falling by the cap,
+     `sweep=context-telemetry-producer-sweep ms=` under 40000, no new
+     `handoffd-failure-*.log`, no `stalled`.
+  4. `bb swarmforge/scripts/context_telemetry_cli.bb agents` names the live
+     roles; the GH-23 dashboard gate returns a non-empty summary for one.
+  5. Corrupt a COPY of the store in a scratch dir with a mid-file bad line
+     and point CONTEXT_TELEMETRY_STATE_DIR at it: the producer exits
+     non-zero naming the line and records nothing.
+
+source: |
+  Specifier audit during the BL-1476 mint, 2026-09-07, prompted by the
+  human intake's bullet "Audit whether context-telemetry-producer-sweep!
+  ... shares the identical unbounded-read shape". Reproduction and store
+  inspection: backlog/evidence/BL-1476-BL-1477-BL-1478-specifier-mint-measurements-20260907.md.
+  Daemon failure report of that morning:
+  .swarmforge/daemon/handoffd-failure-20260830T080016Z.log (reason dead,
+  08:00:16Z); host boot 2026-08-30 09:25:43Z.
+
+notes: |
+  - Minted 2026-09-07 by the specifier with BL-1476 and BL-1478. Grepped
+    first: GH-22 (store + CLI), BL-665 (producer wiring), BL-601/BL-595
+    (consumers) are done; no live ticket names context-events.jsonl.
+  - Article 3.2.4: type defect, severity high - expedited ordering.
+  - Sequencing: no depends_on. Un-darkened, the read side costs ~20 s per
+    cycle on this host (readTranscriptUsage alone, 2.5 s per role) - within
+    every budget and the state before 08-30 - and falls further when the
+    epic follow-up adopts BL-1476's change detection.
+  - Priority 7 sits behind BL-1476 (6) deliberately: if both are live, the
+    two reads sum to ~50 s per cycle until BL-1476 lands.
+  - IR-DRY (specifier, mint pass): scenarios 04 and 05 share "the
+    transcripts hold 50 events not yet in the store" deliberately - scenario
+    01 needs 2 and scenario 02 needs none, so it cannot move to the
+    Background; the coder binds one parametrised step.
