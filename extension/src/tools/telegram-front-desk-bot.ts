@@ -205,7 +205,7 @@ import { computeRoleGateStatesLive, RoleGateState } from '../bridge/gateSnapshot
 import { computeCurrentHolders } from '../bridge/holisticProjections';
 import { readRoleHoldingWindows, TicketHoldingWindow } from '../metrics/ticketHoldingWindows';
 import { appendAvailabilityRecord } from '../metrics/availabilityLedgerStore';
-import { parseRolesTsv, invertTicketStageToRoleHeldTickets } from '../swarm/swarmState';
+import { parseRolesTsv, invertTicketStageToRoleHeldTickets, readTicketStageMap } from '../swarm/swarmState';
 import { wrapPipelineBoardHtml } from '../concierge/pipelineBoard';
 import { readTmuxSocket, readSwarmRoles, paneTarget, getPaneBaseIndex, capturePane, sendKeys } from '../swarm/tmuxClient';
 import { sendInstructionVerified } from '../swarm/verifiedInject';
@@ -3436,6 +3436,14 @@ function buildConciergeTickAdapters(targetPath: string, botToken: string, chatId
     // BL-464's original cache-backed wiring was, since `report` computes
     // the identical stage-map `sync` does.
     readRoleHeldTickets: () => readLiveRoleHeldTickets(targetPath),
+    // BL-1451: BL-670's own stage-map (ticket-stage-map.json, written by
+    // pipeline_stage_cli.bb report every tick - BL-487) - unlike
+    // readRoleHeldTickets above, this reads the CACHE directly, since the
+    // cache is exactly what carries status/asOf/healthDot and is kept
+    // fresh by the same tick already. readTicketStageMap fails safe
+    // internally (returns {} on any read/parse failure), so this adapter
+    // never throws.
+    readTicketStageEntries: () => readTicketStageMap(targetPath),
     // BL-452/BL-586: the standing "Pipeline Board" topic is created ONCE and
     // then RESOLVED, never re-minted. The original wiring leaned on
     // TickState.pipelineBoard.topicId alone for that idempotency; BL-586
