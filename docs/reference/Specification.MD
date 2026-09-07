@@ -80,10 +80,12 @@ untouched by this pass. An explicit override still wins up to the RAM
 budget; the full-forge+darwin ceiling of 1 is unchanged. BL-1349 (the 79s
 longest single file, since brought to 45-67s) remains the other half of
 the wall clock this ticket does not touch. Acceptance:
-`specs/features/BL-1348-fork-pool-sizes-to-the-real-host.feature` (the
-ticket's own ruling text promised a full-forge/linux Examples row once
-ruled; still absent — flagged to the specifier as a spec gap, not fixed
-here).)
+`specs/features/BL-1348-fork-pool-sizes-to-the-real-host.feature`
+(the ticket's own ruling text promised a full-forge/linux Examples row
+once ruled; flagged as still-absent to the specifier as a spec gap, added
+the same day: a new `Scenario Outline` over 3 `cores`/`load`/`pool`
+examples asserting the default ceiling follows free cores on a full-forge
+linux pack).)
 Prior entry —
 **Last Updated:** September 7, 2026 (BL-1466: `land_step_lib.bb`'s
 `ticket-approval-state` (BL-1375's passenger predicate) read only the
