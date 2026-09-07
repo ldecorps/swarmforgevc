@@ -1,5 +1,25 @@
 # SwarmForge VS Code Extension — Specification
 
+**Last Updated:** September 7, 2026 (BL-1472: `land_step_lib.bb`'s
+`path-owner-tickets` counted a bounce revert and its reapply as untagged
+touches on the REVERTED commit's paths, and `own-paths` (BL-1315) keeps a
+path with any untagged touch for the landing ticket — so after QA reverted
+then reapplied BL-1348's bounced merge on 2026-09-07, BL-1463's own-paths
+walk credited BL-1348's unapproved, mid-rework ruling-B code and tests to
+BL-1463 as its own, with the land step reporting nothing wrong (QA evidence
+`BL-1463-QA-followup-two-land-step-defects-20260907.md`, D1). Fixed:
+`path-owner-tickets` now recognises a revert/reapply commit by subject
+(reusing BL-1295's `task_scope_gate_lib.bb/revert-subject?`, widened to
+also match `Reapply "..."`, rather than a second regex) and skips it
+entirely — the commit it undoes or redoes is still in the same walk and
+attributes the path on its own terms; a revert of the lander's OWN tagged
+commit is still attributed to that commit. BL-1315's lander-own-untagged-
+edit rule and BL-1343's nobody-attributed-path-still-replays rule are both
+unchanged. Acceptance:
+`specs/features/BL-1472-revert-and-reapply-commits-are-transparent-to-path-attribution.feature`.
+How-to: `docs/how-to/BL-1241-entangled-tip-at-the-land-step-has-a-reachable-remedy.md`
+(new section after BL-1473's).)
+Prior entry —
 **Last Updated:** September 7, 2026 (BL-1469: a ticket whose deliverable is
 gated by a date (e.g. a Stryker run under `mutation_cooldown_days`) had no
 machine-readable earliest-promotion date, only prose in `notes:` the
