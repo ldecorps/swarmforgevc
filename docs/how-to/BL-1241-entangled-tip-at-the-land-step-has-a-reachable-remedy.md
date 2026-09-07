@@ -640,11 +640,10 @@ regardless of how it entered the `walk-base..commit` range (invariant 1).
 read from `origin-main`, never `walk-base`, restoring `own-paths`' own
 pre-BL-1432 contract ("since origin/main"). Both only run on the rare
 `:replay` path — never the common `:land` path BL-1432 was bounding — so
-this costs nothing on the case BL-1432 was written for. `:base` itself is
-unchanged as the CANDIDATE walk's bound (BL-1432's invariant 3 stands: the
-bounded and wide walks still agree on verdict and own-paths for the same
-tip — now a checked property, `specs/features/BL-1446-the-land-walk-never-counts-landed-history-and-a-replay-carries-every-hop.feature`
-scenario 03).
+this costs nothing on the case BL-1432 was written for. (`:base` itself
+went on to stop bounding the candidate walk too, on BL-1461 below — the
+bounded/wide agreement this paragraph originally leaned on became
+unconditional once that landed.)
 
 ## A fourth outcome: a replay missing a parcel path is refused before publish (BL-1447)
 
@@ -689,6 +688,37 @@ prefix from those, greppable on its own. QA's interim hand-check (in force
 ticket landing — the check it described by hand is now this automated one.
 Acceptance:
 `specs/features/BL-1447-a-replay-missing-a-parcel-path-is-refused-before-publish.feature`.
+
+## The candidate walk covers the whole parcel range, not just the last hop (BL-1461)
+
+BL-1432's `:base` bound narrowed the ENTANGLEMENT candidate walk itself, not
+only `own-paths`/`delivered-attribution` (which BL-1446 already widened
+back to `origin-main`). A sibling ticket's commit absorbed into a shared
+cleaner/architect/hardener/documenter branch BEFORE the parcel's last
+recorded hop — the ordinary shape Article 2.6 describes — sat before
+`:base` and was never visited: `land_step_cli.bb BL-1448 6c8caf27fb` and
+`... d854af2126` both answered a bare `LAND_CLEAN` on 2026-09-07 while
+carrying BL-1349's unlanded `bounce_history`, caught only by an unrelated
+hand content-diff, then confirmed with the wide (`walk-base origin-main`)
+form of `entangled-siblings`.
+
+Fixed in `land_step_lib.bb`: `land-plan`'s own candidate range
+(`entangled-siblings`' own internal walk, and the local `candidates`/
+`lines-of` that feeds it) now always runs `origin-main..commit`, never
+`:base` — the SAME range `own-paths`/`delivered-attribution` already used
+after BL-1446. `:base` is still accepted (so `own-paths`' own
+call-site-compatible trailing parameter needs no shape change) but decides
+nothing: BL-1432's original invariant 3 ("bounded and wide walks agree") is
+no longer a checked coincidence, it is now trivially true by construction.
+
+BL-1432's original motive for narrowing — avoiding a walk over the QA
+branch's forever-growing, never-landed history (1839 commits measured
+2026-09-05) — is met a different way now: BL-1438's post-land re-point
+keeps that range short (163 commits on 2026-09-07) by construction, so the
+wide walk this restores costs about what the bounded one did.
+
+Acceptance:
+`specs/features/BL-1461-the-land-step-never-calls-a-tip-clean-over-an-unlanded-sibling.feature`.
 
 ## What this does not change
 

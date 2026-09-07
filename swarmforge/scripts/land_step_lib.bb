@@ -1368,17 +1368,11 @@
 
    BL-1432: `:base` is likewise an OPTIONAL key - the parcel's own base
    (task_scope_gate_lib.bb's own `parcel-own-base`, the same notion the
-   send-time scope gate already uses) - and the CANDIDATE walk
-   (`ancestry-commits`, inside `entangled-siblings`) runs from it instead of
-   walking the whole, forever-growing origin/main..tip range: bounding this
-   walk, the one every land pays whether or not anything is entangled, is
-   what BL-1432 was for. Falling back to `origin-main` when this task has no
-   recorded base (its first hop) or the recorded one is abandoned only ever
-   WIDENS the walk, never narrows it past the pre-existing behavior.
-   `origin-main` itself stays exactly what it was: the tree every
-   landed/unlanded and approval verdict is read against (invariant 2 - a
-   narrower walk must not change what counts as landed, only how many
-   commits are inspected).
+   send-time scope gate already uses), resolved and still accepted for
+   call-site compatibility - but see BL-1461 below: it no longer bounds
+   the entanglement candidate walk. `origin-main` itself stays exactly
+   what it was: the tree every landed/unlanded and approval verdict is
+   read against.
 
    BL-1446: `:base` does NOT bound `delivered-attribution` or `own-paths`
    (the per-path attribution and the replay's own content) - both always
@@ -1391,7 +1385,25 @@
    whichever hop happened to record `:base`. `ancestry-commits` ALSO always
    excludes anything reachable from `origin-main` regardless of `:base`
    (invariant 1) - a routine post-hop `git merge origin/main` must never
-   manufacture a candidate sibling out of already-landed history."
+   manufacture a candidate sibling out of already-landed history.
+
+   BL-1461: the CANDIDATE WALK for `entangled-siblings` - the one that
+   decides LAND_CLEAN vs LAND_REPLAY - also always runs `origin-main..commit`
+   now, never `:base`. Bounding it to the parcel's last hop (BL-1432's
+   original narrowing) made a sibling's work invisible the moment it was
+   absorbed into a shared cleaner/architect/hardener/documenter branch
+   BEFORE that last hop - the ordinary shape Article 2.6 describes, not an
+   edge case: `land_step_cli.bb BL-1448 6c8caf27fb`/`d854af2126` both
+   answered a bare LAND_CLEAN on 2026-09-07 while carrying BL-1349's
+   unlanded `bounce_history`, absorbed before the documenter's last hop,
+   which only a hand content-diff caught (BL-1446's own follow-up finding).
+   BL-1432's original motive - avoiding a walk over the QA branch's
+   forever-growing, never-landed history (1839 commits measured
+   2026-09-05) - is now met a different way: BL-1438's post-land re-point
+   keeps that range short (163 commits on 2026-09-07) by construction, so
+   the wide walk this restores is cheap again. `:base` therefore never
+   decides a verdict here; it is accepted only so an existing call site
+   need not change shape."
   [{:keys [root commit task-ticket-id] :as opts}]
   (if-not task-ticket-id
     {:action :escalate :reason "land-step: task name names no ticket id"}
@@ -1404,7 +1416,13 @@
           walk-base (if (contains? opts :base)
                       (:base opts)
                       (or (task-scope-gate-lib/parcel-own-base root task-ticket-id) origin-main))
-          candidates (when walk-base (ancestry-commits root walk-base commit))
+          ;; BL-1461: origin-main..commit, never walk-base - see the
+          ;; docstring above. A narrower range here would silently starve
+          ;; `lines-of` for exactly the pre-hop siblings the wide walk below
+          ;; now reports, which would then verdict them on an empty diff
+          ;; ({} from sibling-own-line-changes, never nil) instead of their
+          ;; real one.
+          candidates (when origin-main (ancestry-commits root origin-main commit))
           ;; One read of each sibling's own diffs, shared by the landed/unlanded
           ;; split and by the per-path exclusion below. Each is every commit
           ;; that sibling authored in range, so asking twice doubles the
@@ -1428,8 +1446,13 @@
                              (for [[path a] @attribution
                                    :when (and a (contains? (:owners a) sibling))]
                                path)))
+          ;; BL-1461: no walk-base passed - entangled-siblings' own
+          ;; 6-arg arity defaults its candidate walk to origin-main, the
+          ;; wide range this ticket restores (a sibling absorbed before
+          ;; the parcel's last hop is a candidate exactly like one after
+          ;; it). walk-base still bounds nothing here; see the docstring.
           {:keys [entangled landed unlanded landed-paths warning]}
-          (entangled-siblings root commit task-ticket-id extra-paths-fn lines-of origin-main walk-base)]
+          (entangled-siblings root commit task-ticket-id extra-paths-fn lines-of origin-main)]
       (cond
         warning {:action :escalate :reason warning}
         (empty? entangled) {:action :land}
