@@ -199,6 +199,19 @@ test('parseArgs rejects a ticket id with no BL- prefix, same as the legacy CLI i
   assert.equal(parseArgs(flagArgs({ ticket: '590' })), null);
 });
 
+// BL-1452: GitHub-seeded tickets (GH-<n>, BL-114) are a real ticket id
+// namespace, not a malformed one - a GH bounce was previously refused with
+// the usage and silently wrote nothing (GH-24, 2026-09-06).
+test('parseArgs accepts a GH-seeded ticket id', () => {
+  const parsed = parseArgs(flagArgs({ ticket: 'GH-24' }));
+  assert.ok(parsed, 'expected GH-24 to parse as a valid ticket id');
+  assert.equal(parsed.ticket, 'GH-24');
+});
+
+test('parseArgs still rejects an id in neither known namespace', () => {
+  assert.equal(parseArgs(flagArgs({ ticket: 'XY-24' })), null);
+});
+
 // ── record-bounce-by-role-01: writes `by` to BOTH durable stores ──────────
 
 test('recording a bounce writes `by` to the durable log AND the ticket record', async () => {
