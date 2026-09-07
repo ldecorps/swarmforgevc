@@ -163,3 +163,4 @@ notes: |
   so the two-tree diff has nothing of main's to delete, restore or revert.
 
 assigned_to: coder
+abandoned_commits: [372b0163f8]

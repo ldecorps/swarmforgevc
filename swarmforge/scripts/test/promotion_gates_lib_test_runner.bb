@@ -256,6 +256,77 @@
                  {:content "type: epic\n" :held? true
                   :active-count 0 :max-depth 5 :active-epics {}})))
 
+;; ── BL-1469: not-before-refusal, and its place in evaluate's gate chain ──
+;; today is always caller-supplied (never LocalDate/now inside the
+;; predicate) - every case below fixes it explicitly so the assertions are
+;; immune to whatever date the test actually runs on.
+
+(assert-nil "not-before-refusal: absent field passes"
+            (promotion-gates-lib/not-before-refusal "id: BL-1\n" "2026-09-07"))
+
+(let [r (promotion-gates-lib/not-before-refusal "not_before: 2026-09-10\n" "2026-09-07")]
+  (assert= "not-before-refusal (01): a future date refuses naming gate not_before"
+           "not_before" (:gate r))
+  (assert-true "not-before-refusal (01): the refusal names the declared date"
+               (str/includes? (:reason r) "2026-09-10"))
+  (assert-true "not-before-refusal (01): the refusal names how many days away"
+               (str/includes? (:reason r) "3 day")))
+
+(assert-nil "not-before-refusal (02): today itself passes"
+            (promotion-gates-lib/not-before-refusal "not_before: 2026-09-07\n" "2026-09-07"))
+(assert-nil "not-before-refusal (02): a past date (yesterday) passes"
+            (promotion-gates-lib/not-before-refusal "not_before: 2026-09-06\n" "2026-09-07"))
+
+(let [r (promotion-gates-lib/not-before-refusal "not_before: next-tuesday\n" "2026-09-07")]
+  (assert= "not-before-refusal (03): a malformed value refuses naming gate not_before"
+           "not_before" (:gate r))
+  (assert-true "not-before-refusal (03): the refusal names the unparseable value"
+               (str/includes? (:reason r) "next-tuesday")))
+
+(assert= "not-before-refusal: a single day away is singular (\"1 day\", not \"1 days\")"
+         "not_before: 2026-09-08 is 1 day away"
+         (:reason (promotion-gates-lib/not-before-refusal "not_before: 2026-09-08\n" "2026-09-07")))
+
+;; evaluate: not_before sits beside blocked-status-refusal - ahead of
+;; human_approval and every gate after it, but behind hold/epic/blocked -
+;; and a queue-jump (BL-1425) never crosses it (only the depth cap).
+
+(assert= "BL-1469 (04): evaluate with no not_before is judged exactly as before (still refused on human_approval)"
+         "human_approval"
+         (:gate (promotion-gates-lib/evaluate
+                 {:content "type: feature\nhuman_approval: pending\n" :held? false
+                  :active-count 0 :max-depth 5 :active-epics {} :today "2026-09-07"})))
+
+(assert= "BL-1469: evaluate refuses not_before before human_approval"
+         "not_before"
+         (:gate (promotion-gates-lib/evaluate
+                 {:content "type: feature\nnot_before: 2026-09-10\nhuman_approval: pending\n" :held? false
+                  :active-count 0 :max-depth 5 :active-epics {} :today "2026-09-07"})))
+
+(assert-true "BL-1469: evaluate raises no not_before refusal once the date has arrived"
+             (:ok (promotion-gates-lib/evaluate
+                   {:content "type: feature\nnot_before: 2026-09-07\n" :held? false
+                    :active-count 0 :max-depth 5 :active-epics {} :today "2026-09-07"})))
+
+(assert= "BL-1469 (05): a caller-declared queue-jump still refuses a future not_before"
+         "not_before"
+         (:gate (promotion-gates-lib/evaluate
+                 {:content "type: feature\nnot_before: 2026-09-10\n" :held? false
+                  :active-count 0 :max-depth 5 :active-epics {} :today "2026-09-07"
+                  :queue-jump? true})))
+
+(assert= "BL-1469: blocked-status still beats a future not_before (ordering unchanged)"
+         "blocked"
+         (:gate (promotion-gates-lib/evaluate
+                 {:content "type: feature\nstatus: blocked\nnot_before: 2026-09-10\n" :held? false
+                  :active-count 0 :max-depth 5 :active-epics {} :today "2026-09-07"})))
+
+(assert= "BL-1469: hold still beats a future not_before (ordering unchanged)"
+         "hold marker"
+         (:gate (promotion-gates-lib/evaluate
+                 {:content "not_before: 2026-09-10\n" :held? true
+                  :active-count 0 :max-depth 5 :active-epics {} :today "2026-09-07"})))
+
 ;; ── BL-957: read-depends-on, the gate's OWN reader ───────────────────────
 ;; read-field is unusable here by documented design (nil for a blank value,
 ;; so a block list reads as NO dependencies - fail-open on exactly the

@@ -115,6 +115,42 @@
     {:gate "blocked"
      :reason "status: blocked is never auto-promoted"}))
 
+;; ── gate: not_before (BL-1469) ────────────────────────────────────────────
+;; A ticket whose deliverable the host gates by date (a mutation run under
+;; mutation_cooldown_days) had no machine-readable earliest promotion date -
+;; BL-1439 (2026-09-05) and BL-1468 (2026-09-07, promoted 14:04Z by the
+;; batch promotion after an approval sweep, demoted 14:07Z) were both
+;; promoted into a slot they could not use, prose in notes: being all that
+;; said otherwise. `today` is always caller-supplied (the CLI's own
+;; UTC-now default, or a test's injected constant) - this predicate never
+;; reads a clock itself, so its answer depends only on its two string
+;; arguments (BL-1390's no-real-clock-in-any-test posture, extended to the
+;; library layer this gate lives in).
+
+(defn read-not-before [content] (read-field content "not_before"))
+
+(defn- parse-iso-date [s]
+  (try (java.time.LocalDate/parse s) (catch Exception _ nil)))
+
+(defn not-before-refusal
+  "nil when content declares no not_before, or declares one that is today
+   or earlier (UTC, string-compared as calendar dates via `today`).
+   {:gate \"not_before\" :reason ...} naming the declared date when it is
+   still in the future, and (fail closed - invariant 2) when the declared
+   value does not parse as a calendar date, naming the unparseable value
+   instead. `today` is a caller-supplied YYYY-MM-DD string; never resolved
+   here."
+  [content today]
+  (when-let [raw (read-not-before content)]
+    (if-let [date (parse-iso-date raw)]
+      (let [today-date (parse-iso-date today)]
+        (when (and today-date (.isAfter date today-date))
+          (let [days (.between java.time.temporal.ChronoUnit/DAYS today-date date)]
+            {:gate "not_before"
+             :reason (format "not_before: %s is %d day%s away" raw days (if (= 1 days) "" "s"))})))
+      {:gate "not_before"
+       :reason (format "not_before: %s is not a valid YYYY-MM-DD date" raw)})))
+
 ;; ── gate: depends_on (BL-957) ─────────────────────────────────────────────
 ;; read-field is unusable here by its own documented design: it returns nil
 ;; for a blank value (`field: >`/`field: |` must read as absent), so a
@@ -468,19 +504,25 @@
 (defn evaluate
   "{:ok true} (optionally carrying :advisory and/or :crossed) or {:ok false
    :gate .. :reason ..} for ONE candidate against every BLOCKING gate (hold,
-   type: epic / status: blocked (BL-1145), human_approval, acceptance
-   (BL-626), slice_size_envelope (BL-634), depends_on (BL-957),
-   active_backlog_max_depth - assignee/spec-stage is not a promotion
-   blocker; see route-target above). First failing gate wins, in a fixed
-   order, so the refusal is deterministic even when more than one gate
-   would fire. held? is checked first: a held ticket's other fields are
-   irrelevant, it is not a promotion candidate at all. Epic and blocked sit
-   next so open-slot nudge and promote share one structured exclusion
-   (BL-1145 / BL-663). BL-854 invariant 1: orthogonality is never in this
-   refusal chain - once every blocking gate passes, the result is always
-   :ok true, optionally carrying an orthogonality :advisory (never instead
-   of :ok true). Optional :root enables the BL-626 acceptance existence
-   check against the working tree.
+   type: epic / status: blocked (BL-1145), not_before (BL-1469),
+   human_approval, acceptance (BL-626), slice_size_envelope (BL-634),
+   depends_on (BL-957), active_backlog_max_depth - assignee/spec-stage is
+   not a promotion blocker; see route-target above). First failing gate
+   wins, in a fixed order, so the refusal is deterministic even when more
+   than one gate would fire. held? is checked first: a held ticket's other
+   fields are irrelevant, it is not a promotion candidate at all. Epic and
+   blocked sit next so open-slot nudge and promote share one structured
+   exclusion (BL-1145 / BL-663). BL-854 invariant 1: orthogonality is
+   never in this refusal chain - once every blocking gate passes, the
+   result is always :ok true, optionally carrying an orthogonality
+   :advisory (never instead of :ok true). Optional :root enables the
+   BL-626 acceptance existence check against the working tree.
+
+   BL-1469: :today (a caller-supplied YYYY-MM-DD string; never resolved
+   here) feeds not-before-refusal, which sits beside blocked-status-
+   refusal - BEFORE the :queue-jump? branch below, so a caller-declared
+   queue-jump crosses active_backlog_max_depth only and never this gate
+   (BL-1425's own crossing stays exactly that narrow).
 
    BL-1425: :queue-jump? true is a caller-DECLARED mode (human directive
    2026-09-05, reversing BL-1083's own depth-cap row) that skips
@@ -490,14 +532,19 @@
    caller can tell 'allowed past the cap' from 'allowed with room' (never
    silent - invariant 3). No script this ticket does not name may ever
    declare this mode (invariant 1)."
-  [{:keys [content held? active-count max-depth active-epics done-ids root queue-jump?]}]
+  [{:keys [content held? active-count max-depth active-epics done-ids root queue-jump? today]}]
   ;; BL-626: acceptance sits after human_approval and before depends_on — a
   ;; ticket-property refusal beats a transient global one. BL-957 depends_on
   ;; keeps the same relative place vs depth. BL-1145: epic/blocked after
   ;; hold, before approval — structural non-candidates, not human signals.
+  ;; BL-1469: not_before sits beside blocked-status-refusal, still ahead of
+  ;; human_approval and every gate after it - the existing gates' own
+  ;; relative order is unchanged (constraint: "the gate order for the
+  ;; existing refusals is unchanged").
   (or (some->> (hold-refusal held?) (merge {:ok false}))
       (some->> (epic-type-refusal content) (merge {:ok false}))
       (some->> (blocked-status-refusal content) (merge {:ok false}))
+      (some->> (not-before-refusal content today) (merge {:ok false}))
       (some->> (human-approval-refusal content) (merge {:ok false}))
       (some->> (acceptance-executable-refusal content root) (merge {:ok false}))
       (some->> (slice-size-envelope-gate-lib/refusal content (conf-text-for root))

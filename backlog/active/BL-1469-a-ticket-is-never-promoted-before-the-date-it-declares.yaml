@@ -146,3 +146,6 @@ notes: |
   itself.
 
 assigned_to: coder
+bounce_count: 1
+bounce_history:
+  - { at: 2026-09-07, by: hardender, blamed: coder, class: behavior, commit: 9e719a942e, evidence: backlog/evidence/BL-1469-bounce-20260907.md }
