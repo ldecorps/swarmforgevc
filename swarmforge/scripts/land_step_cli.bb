@@ -116,60 +116,59 @@
             (do (println (str "LAND_CLEAN " canonical)) (System/exit 0))
 
             :replay
-            (let [result (land-step-lib/replay! {:root project-root :commit canonical
-                                                  :task-ticket-id task-ticket-id
-                                                  :own-paths (:own-paths plan)
-                                                  ;; BL-1375 invariant 2: replay! runs the
-                                                  ;; tree guards against the replayed tree
-                                                  ;; before handing back a commit, and only
-                                                  ;; when a passenger actually rides.
-                                                  :passengers (:passengers plan)
-                                                  :origin-main origin-main})]
-              (if (:success result)
-                (do
-                  ;; BL-1334: record WHICH approved source this replay stands
-                  ;; in for, before announcing it. The replay is a new commit
-                  ;; that no ref makes approved, so without this record every
-                  ;; ancestry-based gate reads QA's own landed work as
-                  ;; unapproved until an unrelated later merge closes the
-                  ;; window - and the override becomes the habit.
-                  ;;
-                  ;; A failure here is REPORTED, never fatal: the land itself
-                  ;; is sound, and an unrecorded land degrades to exactly the
-                  ;; pre-BL-1334 behaviour (the sanctioned --override), never
-                  ;; to a wrong approval.
-                  (let [rec (land-step-lib/record-land-approval!
-                             {:root project-root :commit (:commit result)
-                              :source canonical :task-ticket-id task-ticket-id})]
-                    (when-not (:ok? rec)
-                      (binding [*out* *err*]
-                        (println (str "LAND_APPROVAL_UNRECORDED " (:reason rec))))))
-                  (println (str "LAND_REPLAY " (:branch result) " " (:commit result)))
-                  (doseq [id (sort (:unlanded plan))] (println (str "ENTANGLED_SIBLING " id)))
-                  ;; BL-1389 invariant 3. The verdict a human would otherwise
-                  ;; have to re-derive by diffing the replayed tip: which path
-                  ;; decided each landed sibling, and which paths were left out
-                  ;; and to whom they were credited. On 2026-09-04 this report
-                  ;; printed 17 landed names and 27 entangled ones and not one
-                  ;; path, and an unlanded sibling's handler and source rode
-                  ;; into the replay unseen.
-                  (doseq [id (sort (:landed plan))]
-                    (let [deciding (get (:landed-paths plan) id)]
-                      (println (str "LANDED_SIBLING " id (when deciding (str " " deciding))))))
-                  (doseq [{:keys [path owners]} (sort-by :path (:excluded plan))
-                          owner (sort owners)]
-                    (println (str "EXCLUDED_SIBLING_PATH " path " " owner)))
-                  (doseq [id (sort (:passengers plan))] (println (str "PASSENGER_SIBLING " id)))
-                  (System/exit 0))
-                (do
-                  (println "LAND_ESCALATE")
-                  (println (land-step-lib/entanglement-note task-name (:unlanded plan)))
-                  (println (:reason result))
-                  (System/exit 1))))
+            ;; BL-1447: land-plan already built AND verified the tip-pure
+            ;; commit before returning :replay - :commit/:branch are that
+            ;; already-built result, never a second replay! call (which
+            ;; would collide on the branch name land-plan already claimed).
+            (do
+              ;; BL-1334: record WHICH approved source this replay stands
+              ;; in for, before announcing it. The replay is a new commit
+              ;; that no ref makes approved, so without this record every
+              ;; ancestry-based gate reads QA's own landed work as
+              ;; unapproved until an unrelated later merge closes the
+              ;; window - and the override becomes the habit.
+              ;;
+              ;; A failure here is REPORTED, never fatal: the land itself
+              ;; is sound, and an unrecorded land degrades to exactly the
+              ;; pre-BL-1334 behaviour (the sanctioned --override), never
+              ;; to a wrong approval.
+              (let [rec (land-step-lib/record-land-approval!
+                         {:root project-root :commit (:commit plan)
+                          :source canonical :task-ticket-id task-ticket-id})]
+                (when-not (:ok? rec)
+                  (binding [*out* *err*]
+                    (println (str "LAND_APPROVAL_UNRECORDED " (:reason rec))))))
+              (println (str "LAND_REPLAY " (:branch plan) " " (:commit plan)))
+              (doseq [id (sort (:unlanded plan))] (println (str "ENTANGLED_SIBLING " id)))
+              ;; BL-1389 invariant 3. The verdict a human would otherwise
+              ;; have to re-derive by diffing the replayed tip: which path
+              ;; decided each landed sibling, and which paths were left out
+              ;; and to whom they were credited. On 2026-09-04 this report
+              ;; printed 17 landed names and 27 entangled ones and not one
+              ;; path, and an unlanded sibling's handler and source rode
+              ;; into the replay unseen.
+              (doseq [id (sort (:landed plan))]
+                (let [deciding (get (:landed-paths plan) id)]
+                  (println (str "LANDED_SIBLING " id (when deciding (str " " deciding))))))
+              (doseq [{:keys [path owners]} (sort-by :path (:excluded plan))
+                      owner (sort owners)]
+                (println (str "EXCLUDED_SIBLING_PATH " path " " owner)))
+              (doseq [id (sort (:passengers plan))] (println (str "PASSENGER_SIBLING " id)))
+              (System/exit 0))
 
             :escalate
             (do
               (println "LAND_ESCALATE")
+              ;; BL-1447: an escalate that carries :unlanded (a replay was
+              ;; attempted - it failed to build, or built incomplete) still
+              ;; owes the specifier the same sibling-adjudication context
+              ;; QA.prompt's own note-writing step reads - the same text a
+              ;; direct replay! failure printed here before BL-1447 moved
+              ;; the build itself into land-plan. An escalate from earlier
+              ;; in the plan (a bare warning, no attempt made) carries no
+              ;; :unlanded and prints none.
+              (when (contains? plan :unlanded)
+                (println (land-step-lib/entanglement-note task-name (:unlanded plan))))
               (println (:reason plan))
               (System/exit 1))))))))
 
