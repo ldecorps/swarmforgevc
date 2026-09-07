@@ -120,6 +120,19 @@ function landPlan(root, commitSha, taskTicketId, base) {
   return JSON.parse(out);
 }
 
+// BL-1473: drives the REAL land-step-lib/own-paths, never a
+// reimplementation - the same posture landPlan/replay already take one
+// door up. unlandedSiblings defaults to none, which is every BL-1473
+// scenario's shape (no sibling ticket at all - the exclusion under test
+// is origin/main moving independently of any sibling entanglement).
+function ownPaths(root, commitSha, taskTicketId, unlandedSiblings) {
+  const unlandedForm = `#{${(unlandedSiblings || []).map((s) => `"${s}"`).join(' ')}}`;
+  const out = bb(libExpr(
+    `(println (json/generate-string (land-step-lib/own-paths "${root}" "${commitSha}" "${taskTicketId}" ${unlandedForm})))`,
+  ));
+  return JSON.parse(out);
+}
+
 function replay(root, commitSha, taskTicketId, ownPaths, passengers) {
   const pathsForm = `[${ownPaths.map((p) => `"${p}"`).join(' ')}]`;
   const passengersForm = `#{${(passengers || []).map((p) => `"${p}"`).join(' ')}}`;
@@ -164,6 +177,7 @@ module.exports = {
   markOriginMainHere,
   recordHandoff,
   landPlan,
+  ownPaths,
   replay,
   mkTmpDir,
   buildParcelBranch,
