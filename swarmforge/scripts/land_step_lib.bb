@@ -1573,8 +1573,18 @@
                                             (sibling-path-landed-fn root origin-main commit lines-of))}
                          origin-main walk-base)]
           (if (nil? paths)
-            {:action :escalate
-             :reason (or warning (str "land-step: could not compute " task-ticket-id "'s own paths to replay"))}
+            ;; BL-1463: this escalate has positive evidence of entanglement
+            ;; (entangled-siblings already succeeded above; only own-paths'
+            ;; own attribution read failed) - the CLI's ENTANGLED_SIBLING
+            ;; lines and entanglement note read :unlanded off THIS map
+            ;; exactly like the :replay map below, so an escalate never
+            ;; names fewer siblings than a replay would have for the same
+            ;; evidence (invariant 1). The two escalates above (an
+            ;; unreadable candidate walk; no ticket id at all) have no
+            ;; sibling sets to offer and stay bare.
+            (merge {:action :escalate
+                    :reason (or warning (str "land-step: could not compute " task-ticket-id "'s own paths to replay"))}
+                   {:entangled entangled :landed landed :unlanded unlanded})
             ;; BL-1375: :passengers are the approved unlanded siblings whose
             ;; lines ride on an included shared path. replay! owes them the
             ;; tree guards before it hands QA a commit to publish.
