@@ -2,13 +2,17 @@ import * as fs from 'fs';
 import * as path from 'path';
 import { execFileSync } from 'child_process';
 import { TranscriptUsageRecord, listTranscriptJsonlPaths, readTranscriptUsage } from './transcriptUsage';
-import { walkTranscriptFiles } from './transcriptWalker';
 import { RoleWorktree, combinedRoleKey, groupRolesByWorktreePath } from './swarmMetrics';
 
 // BL-665: deterministic transcript-walker producer for GH-22's context-events
-// store. Reuses BL-664's walkTranscriptFiles (read-only taxonomy pass) and
-// BL-100's readTranscriptUsage (token/model/timestamp extraction) — ONE
-// walker substrate, no second parser. Idempotent via agent+session_id+timestamp.
+// store, built on BL-664's walker substrate via BL-100's readTranscriptUsage
+// (token/model/timestamp extraction) — one walker substrate, no second
+// parser. Idempotent via agent+session_id+timestamp.
+//
+// BL-1477: deriveEventsForRoleGroup used to also call walkTranscriptFiles
+// directly and discard its result (~3.4s per role of pure cost, on top of
+// readTranscriptUsage's own walk) - removed, since readTranscriptUsage
+// already provides the walker substrate this feature is built on.
 
 export const DEFAULT_CONTEXT_WINDOW_TOKENS = 200_000;
 
@@ -106,16 +110,79 @@ export function deriveContextEventsFromUsageRecords(
   return events;
 }
 
-export function readPersistedContextEvents(telemetryDir: string): ContextTelemetryRecord[] {
+/**
+ * BL-1477: the host's unclean shutdown on 2026-08-30 left the store's final
+ * line as ~4 KB of NUL bytes with no trailing newline, and this reader threw
+ * on it unconditionally - eight days of silence. NUL bytes are stripped from
+ * every line before parsing (a record glued onto a zero-filled tail still
+ * parses), and a torn FINAL line (still unparseable after stripping, with no
+ * whole line after it) is dropped and named rather than treated as damage -
+ * the same tail-vs-interior distinction turnProfileProducer.ts's
+ * assessTranscriptReadability already draws for transcripts (BL-1364).
+ * Interior damage - an unparseable line with a whole line after it - throws,
+ * naming the 1-based line number: the store is the dedupe cursor, and
+ * recording against a cursor that cannot be read would duplicate.
+ */
+export function stripNulBytes(text: string): string {
+  return text.replace(/\u0000/g, '');
+}
+
+export interface PersistedContextEventsRead {
+  events: ContextTelemetryRecord[];
+  /** 1-based line number of a dropped torn final line, or null when none. */
+  tornTailLine: number | null;
+}
+
+export function readPersistedContextEvents(telemetryDir: string): PersistedContextEventsRead {
   const filePath = path.join(telemetryDir, 'context-events.jsonl');
   if (!fs.existsSync(filePath)) {
-    return [];
+    return { events: [], tornTailLine: null };
   }
-  return fs
-    .readFileSync(filePath, 'utf8')
-    .split('\n')
-    .filter((line) => line.trim())
-    .map((line) => JSON.parse(line) as ContextTelemetryRecord);
+  const rawLines = fs.readFileSync(filePath, 'utf8').split('\n');
+  const numbered: Array<{ line: string; lineNumber: number }> = [];
+  rawLines.forEach((raw, index) => {
+    // A genuinely blank line (empty, or whitespace only) in the RAW text is
+    // skipped silently - the ordinary gap between records. Blankness is
+    // checked on the RAW line, never the NUL-stripped one: a line of
+    // nothing but NUL bytes has real (damaged) content and must surface as
+    // a torn tail, not vanish as if it were an empty line that was never
+    // written at all.
+    if (!raw.trim()) {
+      return;
+    }
+    numbered.push({ line: stripNulBytes(raw), lineNumber: index + 1 });
+  });
+  const parsed: Array<{ ok: true; event: ContextTelemetryRecord } | { ok: false; lineNumber: number }> =
+    numbered.map(({ line, lineNumber }) => {
+      try {
+        return { ok: true, event: JSON.parse(line) as ContextTelemetryRecord };
+      } catch {
+        return { ok: false, lineNumber };
+      }
+    });
+  const badIndexes = parsed.reduce<number[]>((acc, entry, index) => {
+    if (!entry.ok) {
+      acc.push(index);
+    }
+    return acc;
+  }, []);
+  if (badIndexes.length === 0) {
+    return {
+      events: parsed.map((entry) => (entry as { ok: true; event: ContextTelemetryRecord }).event),
+      tornTailLine: null,
+    };
+  }
+  if (badIndexes.length === 1 && badIndexes[0] === parsed.length - 1) {
+    const tornTailLine = numbered[badIndexes[0]].lineNumber;
+    return {
+      events: parsed
+        .slice(0, -1)
+        .map((entry) => (entry as { ok: true; event: ContextTelemetryRecord }).event),
+      tornTailLine,
+    };
+  }
+  const firstBadLine = numbered[badIndexes[0]].lineNumber;
+  throw new Error(`context-events store: unparseable line ${firstBadLine}`);
 }
 
 export function filterNewContextEvents(
@@ -161,6 +228,63 @@ function recordEventViaCli(repoRoot: string, telemetryDir: string, event: Contex
   );
 }
 
+/**
+ * BL-1477: the default (no injected recordFn) production path. Recording
+ * used to spawn one `bb context_telemetry_cli.bb record` per event with no
+ * cap - ~200000 events backlogged behind the torn-tail defect is ~0.3s of
+ * subprocess start-up EACH, a day of subprocess time that would overrun the
+ * 60s subprocess wait bound every cycle (BL-1454's shape). One `record-batch`
+ * spawn per tick, reading JSONL from stdin, is what makes the per-tick cap
+ * reachable inside its deadline.
+ */
+function recordEventsViaCliBatch(repoRoot: string, telemetryDir: string, events: ContextTelemetryRecord[]): void {
+  if (events.length === 0) {
+    return;
+  }
+  const cli = path.join(repoRoot, 'swarmforge', 'scripts', 'context_telemetry_cli.bb');
+  const input = events.map((event) => JSON.stringify(event)).join('\n') + '\n';
+  execFileSync('bb', [cli, 'record-batch'], {
+    input,
+    encoding: 'utf8',
+    env: { ...process.env, CONTEXT_TELEMETRY_STATE_DIR: telemetryDir },
+  });
+}
+
+/**
+ * BL-1477 invariant 2: a tick records at most `cap` events, oldest first,
+ * and stops once the clock has PASSED `deadlineMs` since this call started -
+ * an event already in progress when the deadline arrives is still recorded
+ * (the deadline bounds when the NEXT one may start, not a mid-record abort).
+ * `events` must already be sorted oldest-first (invariant 2's own "in
+ * timestamp order"); `nowFn` is called once per event actually selected, so
+ * the elapsed-time check advances in lockstep with what was recorded, never
+ * with wall-clock time this function did not itself observe.
+ */
+export function selectEventsWithinLimits(
+  events: ContextTelemetryRecord[],
+  cap: number,
+  deadlineMs: number,
+  nowFn: () => number
+): { selected: ContextTelemetryRecord[]; remaining: ContextTelemetryRecord[] } {
+  const start = nowFn();
+  const selected: ContextTelemetryRecord[] = [];
+  let elapsedMs = 0;
+  for (const event of events) {
+    if (selected.length >= cap) {
+      break;
+    }
+    if (elapsedMs >= deadlineMs) {
+      break;
+    }
+    selected.push(event);
+    elapsedMs = nowFn() - start;
+  }
+  return { selected, remaining: events.slice(selected.length) };
+}
+
+export const DEFAULT_CONTEXT_TELEMETRY_CAP_PER_TICK = 500;
+export const DEFAULT_CONTEXT_TELEMETRY_DEADLINE_MS = 30_000;
+
 export function deriveEventsForRoleGroup(
   group: RoleWorktree[],
   provider: string,
@@ -173,7 +297,6 @@ export function deriveEventsForRoleGroup(
   if (transcriptPaths.length === 0) {
     return [];
   }
-  walkTranscriptFiles(transcriptPaths);
   const usageRecords = readTranscriptUsage(worktreePath, claudeProjectsDir);
   return deriveContextEventsFromUsageRecords(agent, role, provider, usageRecords);
 }
@@ -182,6 +305,10 @@ export interface ContextTelemetryProducerResult {
   recorded: number;
   skippedDuplicates: number;
   agents: string[];
+  /** Events derived and new but not recorded this tick (cap/deadline). */
+  remaining: number;
+  /** 1-based line number of a torn final line dropped from the store, or null. */
+  tornTailLine: number | null;
 }
 
 export function runContextTelemetryProducer(params: {
@@ -190,9 +317,12 @@ export function runContextTelemetryProducer(params: {
   providersByRole: Map<string, string>;
   claudeProjectsDir?: string;
   recordFn?: (event: ContextTelemetryRecord) => void;
+  nowFn?: () => number;
+  capPerTick?: number;
+  deadlineMs?: number;
 }): ContextTelemetryProducerResult {
   const telemetryDir = path.join(params.repoRoot, '.swarmforge', 'telemetry');
-  const existing = readPersistedContextEvents(telemetryDir);
+  const { events: existing, tornTailLine } = readPersistedContextEvents(telemetryDir);
   const allDerived: ContextTelemetryRecord[] = [];
 
   for (const group of groupRolesByWorktreePath(params.roleWorktrees)) {
@@ -201,17 +331,30 @@ export function runContextTelemetryProducer(params: {
     allDerived.push(...deriveEventsForRoleGroup(group, provider, params.claudeProjectsDir));
   }
 
-  const toRecord = filterNewContextEvents(existing, allDerived);
-  const recordFn =
-    params.recordFn ?? ((event) => recordEventViaCli(params.repoRoot, telemetryDir, event));
-  for (const event of toRecord) {
-    recordFn(event);
+  // BL-1477 invariant 2: "in timestamp order" across every derived event,
+  // not merely within one role group's own already-sorted slice.
+  const toRecordAll = filterNewContextEvents(existing, allDerived).sort((a, b) =>
+    a.timestamp.localeCompare(b.timestamp)
+  );
+  const cap = params.capPerTick ?? DEFAULT_CONTEXT_TELEMETRY_CAP_PER_TICK;
+  const deadlineMs = params.deadlineMs ?? DEFAULT_CONTEXT_TELEMETRY_DEADLINE_MS;
+  const nowFn = params.nowFn ?? Date.now;
+  const { selected, remaining } = selectEventsWithinLimits(toRecordAll, cap, deadlineMs, nowFn);
+
+  if (params.recordFn) {
+    for (const event of selected) {
+      params.recordFn(event);
+    }
+  } else if (selected.length > 0) {
+    recordEventsViaCliBatch(params.repoRoot, telemetryDir, selected);
   }
 
-  const agents = [...new Set([...existing, ...toRecord].map((row) => row.agent))];
+  const agents = [...new Set([...existing, ...selected].map((row) => row.agent))];
   return {
-    recorded: toRecord.length,
-    skippedDuplicates: allDerived.length - toRecord.length,
+    recorded: selected.length,
+    skippedDuplicates: allDerived.length - toRecordAll.length,
     agents,
+    remaining: remaining.length,
+    tornTailLine,
   };
 }

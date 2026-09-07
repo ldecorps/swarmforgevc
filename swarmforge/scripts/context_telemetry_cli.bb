@@ -80,6 +80,7 @@
   (println "Usage: context_telemetry_cli.bb <command> [args...]")
   (println "Commands:")
   (println "  record --agent A --role R --session-id S --timestamp T --input-tokens N --output-tokens N --context-utilization-pct N --provider P --model M [--tool-output-tokens N] [--prompt-engine-tokens N] [--system-prompt-tokens N] [--history-tokens N] [--compaction true|false] [--estimated-cost-usd N]")
+  (println "  record-batch  (reads one JSON event object per line on stdin)")
   (println "  summary --agent A [--session-id S]")
   (println "  agents")
   (System/exit 1))
@@ -93,18 +94,67 @@
       (do (context-telemetry-store/append-event! (state-dir) (context-telemetry-lib/normalize-event event))
           (println (str "recorded " (:agent event) " " (:session_id event) " " (:timestamp event)))))))
 
+;; BL-1477: one subprocess per producer TICK, not one per event - ~200000
+;; events backlogged behind the torn-tail defect at ~0.3s of bb start-up
+;; each is a day of subprocess time, five times the 60s wait bound every
+;; cycle. Reads one JSON event object per line from stdin, validates EVERY
+;; line first (never partially appends a batch some prefix of which turned
+;; out invalid), then appends all of them in one store call.
+(defn- read-stdin-event-lines []
+  (->> (line-seq (java.io.BufferedReader. *in*))
+       (remove str/blank?)))
+
+(defn run-record-batch []
+  (let [lines (read-stdin-event-lines)
+        parsed (mapv (fn [l]
+                       (try {:ok true :event (json/parse-string l true)}
+                            (catch Exception _ {:ok false :line l})))
+                     lines)]
+    (if-let [bad (first (remove :ok parsed))]
+      (do (binding [*out* *err*] (println (str "record-batch: unparseable input line: " (:line bad))))
+          (System/exit 1))
+      (let [events (mapv :event parsed)
+            invalid (some (fn [e] (let [v (context-telemetry-lib/validate-event e)]
+                                     (when-not (:valid? v) (:error v))))
+                          events)]
+        (if invalid
+          (do (binding [*out* *err*] (println invalid))
+              (System/exit 1))
+          (let [normalized (mapv context-telemetry-lib/normalize-event events)]
+            (context-telemetry-store/append-events! (state-dir) normalized)
+            (println (str "recorded " (count normalized)))))))))
+
+;; BL-1477: interior damage (an unparseable line with a whole line after it)
+;; makes read-events-report! throw rather than answer - the store is the
+;; dedupe cursor, and recording or summarizing against one that cannot be
+;; read would duplicate or silently under-report. Every reading command
+;; refuses the same way: named on stderr, exit non-zero, nothing else printed.
+(defn- read-events-report-or-exit! []
+  (try
+    (context-telemetry-store/read-events-report! (state-dir))
+    (catch Exception e
+      (binding [*out* *err*] (println (.getMessage e)))
+      (System/exit 1))))
+
+(defn- report-torn-tail! [torn-tail-line]
+  (when torn-tail-line
+    (binding [*out* *err*]
+      (println (str "context-events store: torn tail dropped at line " torn-tail-line)))))
+
 (defn run-summary [rest-args]
   (let [agent (opt-value rest-args "--agent")
         session-id (opt-value rest-args "--session-id")
-        events (context-telemetry-store/read-events! (state-dir))
+        {:keys [events torn-tail-line]} (read-events-report-or-exit!)
         scoped (cond->> events
                  agent (filter #(= agent (:agent %)))
                  session-id (filter #(= session-id (:session_id %))))
         summary (context-telemetry-lib/summarize scoped)]
+    (report-torn-tail! torn-tail-line)
     (println (json/generate-string (assoc summary :agent agent :session_id session-id)))))
 
 (defn run-agents []
-  (let [events (context-telemetry-store/read-events! (state-dir))]
+  (let [{:keys [events torn-tail-line]} (read-events-report-or-exit!)]
+    (report-torn-tail! torn-tail-line)
     (println (json/generate-string {:agents (context-telemetry-lib/distinct-agents events)}))))
 
 (let [args (cli-args)
@@ -112,6 +162,7 @@
       rest-args (vec (rest args))]
   (case cmd
     "record" (run-record rest-args)
+    "record-batch" (run-record-batch)
     "summary" (run-summary rest-args)
     "agents" (run-agents)
     (usage)))
