@@ -2301,17 +2301,33 @@
   (let [res (daemon-cycle-guard-lib/sh! ["git" "-C" (str root) "rev-parse" "--git-common-dir"])]
     (and (zero? (:exit res)) (not (str/blank? (:out res))))))
 
+;; BL-1479 architect bounce (backlog/evidence/BL-1479-bounce-20260907.md
+;; D1): `git checkout -- old new` after a `git mv` reads from the INDEX,
+;; not HEAD - the old path has no index entry any more (the mv staged its
+;; removal), so the command errors on the old path alone and never even
+;; reaches the new path's staged add, leaving the rename staged in the
+;; shared checkout indefinitely. The correct undo of an uncommitted `git
+;; mv old new` is `git reset -- old new` (unstages both sides back to
+;; their HEAD state, restoring the index) then `git checkout -- old`
+;; (restores the old path's now-unstaged working-tree content from the
+;; index/HEAD) then removing `new`, which is untracked again after the
+;; reset and so survives a plain checkout - a real file deletion, not a
+;; git operation. Verified live: `git status --short` reads completely
+;; clean afterward, not merely a returned {:success false}.
+(defn- rollback-park-mv! [root active-rel paused-rel]
+  (daemon-cycle-guard-lib/sh! ["git" "-C" (str root) "reset" "--" active-rel paused-rel])
+  (daemon-cycle-guard-lib/sh! ["git" "-C" (str root) "checkout" "--" active-rel])
+  (fs/delete-if-exists (fs/path root paused-rel)))
+
 (defn park-ticket!
   "The real park action: `git mv` active/<base> -> paused/<base>, then one
    commit through commit_integrity_cli.bb naming id and condition
    (park-commit-message) - one ticket, one commit, YAML bytes untouched
    (invariant 2). Returns {:success bool :reason ...}. A commit refusal
    (lock/verify-mismatch - a concurrent writer is live) rolls the staged
-   mv back via `git checkout --` on both paths, the same posture
-   promote_and_route_next.sh's own rollback_promotion takes for the mirror
-   direction - never leaves a half-renamed ticket staged in the shared
-   index. Fails closed (BL-1390) when root is not a real git checkout at
-   all, before touching anything."
+   mv back via rollback-park-mv! above - never leaves a half-renamed
+   ticket staged in the shared index. Fails closed (BL-1390) when root is
+   not a real git checkout at all, before touching anything."
   [root {:keys [id file condition]}]
   (if-not (confirm-git-common-dir! root)
     {:success false :reason (str "park-ticket!: " root " is not a real git checkout - refusing to mutate")}
@@ -2327,6 +2343,6 @@
           (if (zero? (:exit commit-res))
             {:success true}
             (do
-              (daemon-cycle-guard-lib/sh! ["git" "-C" (str root) "checkout" "--" active-rel paused-rel])
+              (rollback-park-mv! root active-rel paused-rel)
               {:success false :reason (str "commit_integrity_cli.bb refused: "
                                            (str/trim (or (:err commit-res) (:out commit-res) "")))})))))))

@@ -151,6 +151,40 @@
       (assert= "park-ticket!: nothing moved - the file is still exactly where it was"
                true (fs/exists? active-file)))))
 
+;; ── park-ticket!/D1 (architect bounce, BL-1479-bounce-20260907.md): a
+;; commit refusal AFTER a successful git mv rolls back COMPLETELY ─────────
+;; The original rollback (`git checkout -- old new`) reads from the INDEX,
+;; not HEAD - after `git mv`, the old path has no index entry at all, so
+;; the command errors on it and never even reaches the new path's staged
+;; add, leaving the rename staged in the shared index indefinitely. Forced
+;; here via a REAL lock-timeout (the lock directory
+;; commit_integrity_lib.bb's own acquire-lock! uses is pre-occupied before
+;; park-ticket! runs) - the exact "a concurrent writer is live" trigger the
+;; function's own docstring names, never a stubbed CLI. Asserts the
+;; checkout reads completely clean afterward (`git status --short` empty),
+;; not merely that the function returned {:success false}.
+(with-git-fixture [root]
+  (let [content "id: BL-9002\ntitle: \"t\"\nstatus: blocked\npriority: 5\n"
+        active-file (fs/path root "backlog" "active" "BL-9002-x.yaml")]
+    (spit (str active-file) content)
+    (sh! root "git" "add" "-A")
+    (sh! root "git" "commit" "-q" "-m" "seed")
+    (let [lock-dir (fs/path root ".git" "swarmforge-commit-integrity.lock")]
+      (fs/create-dirs lock-dir)
+      (let [result (try
+                     (chase-sweep-lib/park-ticket! root {:id "BL-9002" :file active-file :condition "status: blocked"})
+                     (finally (fs/delete lock-dir)))]
+        (assert= "park-ticket!/D1: a commit refusal (lock-timeout) is reported as a failure"
+                 false (:success result))
+        (assert-includes "park-ticket!/D1: names the refusal"
+                          (:reason result) "commit_integrity_cli.bb refused")
+        (assert= "park-ticket!/D1: the checkout is CLEAN afterward - git status --short reads empty"
+                 "" (:out (sh! root "git" "status" "--short")))
+        (assert= "park-ticket!/D1: the file is back in active/, byte-identical"
+                 content (slurp (str active-file)))
+        (assert= "park-ticket!/D1: nothing left in paused/"
+                 false (fs/exists? (fs/path root "backlog" "paused" "BL-9002-x.yaml")))))))
+
 ;; ── report ──────────────────────────────────────────────────────────────
 
 (if (empty? @failures)
