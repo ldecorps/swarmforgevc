@@ -1,5 +1,31 @@
 # SwarmForge VS Code Extension — Specification
 
+**Last Updated:** September 7, 2026 (BL-1463: `land-plan`'s `(nil? paths)`
+escalate branch (an attribution `own-paths` could not read, BL-1343's
+fail-closed case) returned only `{:action :escalate :reason ...}`, none of
+the `:entangled`/`:landed`/`:unlanded` sets the `:replay` branch two lines
+below carries — `land_step_cli.bb`'s `:escalate` outcome printed
+`LAND_ESCALATE` and the reason with no `ENTANGLED_SIBLING` line and no
+entanglement note, so an escalate never named the sibling it had evidence
+for. BL-1272's own acceptance scenario (row 4, an "unreadable" sibling
+state expected "reported") had been red since BL-1343 landed
+(2026-09-02) turned that case from a narrowed replay — which named the
+sibling on the replay path — into a bare escalate; found 2026-09-07 by
+the coder running BL-1447's e2e. Fixed: the escalate map now merges in
+the same sibling sets the replay map does, and `land_step_cli.bb` shares
+one sibling-printing function between the replay and escalate outcomes —
+`ENTANGLED_SIBLING` lines and the note print on any escalate carrying
+`:unlanded`, never on one with no such evidence (an unreadable
+candidate-walk range, or "task name names no ticket id"). BL-1343's
+refusal is unchanged — an unreadable attribution still escalates rather
+than narrowing to a replay; this ticket only adds names to it. BL-1272's
+feature text is untouched and its standing-red register row leaves with
+the fix. Acceptance:
+`specs/features/BL-1463-an-escalating-land-step-still-names-the-sibling-it-could-not-read.feature`.
+How-to: `docs/how-to/BL-1241-entangled-tip-at-the-land-step-has-a-reachable-remedy.md`
+(outcome bullet and a new section after BL-1466's); `QA.prompt`'s
+land-step item notes the same naming on its escalate outcome.)
+Prior entry —
 **Last Updated:** September 7, 2026 (BL-1466: `land_step_lib.bb`'s
 `ticket-approval-state` (BL-1375's passenger predicate) read only the
 backlog folder and `human_approval` — a QA bounce
