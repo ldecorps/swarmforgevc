@@ -610,6 +610,42 @@ growth from costing anything even when a re-point is skipped. Acceptance:
 `specs/features/BL-1432-the-land-walk-ranges-over-the-parcel.feature` and
 `specs/features/BL-1438-the-publish-re-points-the-qa-branch-after-a-land.feature`.
 
+## The bounded walk never counts landed history, and a replay carries every hop's work (BL-1446)
+
+BL-1432's bound was wrong in two ways the moment a QA branch synced
+`origin/main` after its last recorded hop. Incident 2026-09-06
+(`backlog/evidence/BL-1424-land-replay-dropped-own-paths-incident-20260906.md`):
+`land_main_publish.sh` printed `LAND_REPLAY`, `LANDED_SIBLING BL-1445`, then
+`LAND_PUBLISHED` on a tip holding five evidence files and no guard — a plan
+forced to `:base origin-main` returned `{:action :land}` for the same tip.
+
+1. **`entangled-siblings`' candidate walk never excluded anything already
+   reachable from `origin-main`.** A routine post-hop `git merge
+   origin/main` pulls already-landed history into `walk-base..commit` that
+   `walk-base` alone cannot exclude; any of those commits naming another
+   ticket became a candidate, verdicted LANDED against `origin-main`, but
+   still forced the plan onto the `:replay` path.
+2. **`own-paths`/`delivered-attribution` were bounded to the same
+   `walk-base`,** so a forced replay's own-paths held only the commits
+   after the LAST hop — dropping every coder/cleaner/architect/hardener
+   commit before it, since a replay must carry the parcel's whole
+   contribution, not the delta since whichever hop happened to record
+   `:base`.
+
+Fixed in `land_step_lib.bb`: `ancestry-commits` gained an optional
+`exclude-also` argument (4-arity), and `entangled-siblings` passes
+`origin-main` through it — a landed commit is never a candidate sibling
+regardless of how it entered the `walk-base..commit` range (invariant 1).
+`own-paths` and `land-plan`'s own `delivered-attribution` delay now always
+read from `origin-main`, never `walk-base`, restoring `own-paths`' own
+pre-BL-1432 contract ("since origin/main"). Both only run on the rare
+`:replay` path — never the common `:land` path BL-1432 was bounding — so
+this costs nothing on the case BL-1432 was written for. `:base` itself is
+unchanged as the CANDIDATE walk's bound (BL-1432's invariant 3 stands: the
+bounded and wide walks still agree on verdict and own-paths for the same
+tip — now a checked property, `specs/features/BL-1446-the-land-walk-never-counts-landed-history-and-a-replay-carries-every-hop.feature`
+scenario 03).
+
 ## What this does not change
 
 - BL-1192's send-time gate and its range — unchanged; this ticket only adds

@@ -1,5 +1,28 @@
 # SwarmForge VS Code Extension — Specification
 
+**Last Updated:** September 7, 2026 (BL-1446: `land_step_lib.bb`'s land-plan
+bounded its attribution walk (BL-1432) to the task's last recorded handoff
+commit — right for the send-time scope gate, wrong for the land step twice.
+A routine post-hop `git merge origin/main` pulled already-landed history
+into the candidate range, manufacturing an `ENTANGLED_SIBLING` out of a
+commit that was already LANDED (verdicted against `origin/main`) but still
+forced the plan onto `:replay`; and a forced replay's own-paths, bounded to
+the same last-hop boundary, held only the commits after it — dropping
+every earlier stage's work. Incident 2026-09-06
+(`backlog/evidence/BL-1424-land-replay-dropped-own-paths-incident-20260906.md`):
+`land_main_publish.sh` printed `LAND_PUBLISHED` on a tip missing a
+QA-approved guard; caught only by QA's own diff diligence and hand-fixed
+within nine minutes. Fixed: `ancestry-commits` gained an optional
+`exclude-also` exclusion base, `entangled-siblings` passes `origin-main`
+through it so a landed commit is never a candidate whatever the walk base,
+and `own-paths`/`delivered-attribution` now always read from `origin-main`
+rather than the bounded `walk-base` — restoring `own-paths`' pre-BL-1432
+contract. Both changes only run on the rare `:replay` path, so BL-1432's
+common-case bound is untouched. Acceptance:
+`specs/features/BL-1446-the-land-walk-never-counts-landed-history-and-a-replay-carries-every-hop.feature`.
+How-to: `docs/how-to/BL-1241-entangled-tip-at-the-land-step-has-a-reachable-remedy.md`
+(extended with a new BL-1446 section after the BL-1432 one).)
+Prior entry —
 **Last Updated:** September 7, 2026 (BL-1448: `test_property_suite_drift_guard.sh`'s
 allowlisted-standing-red cases (11, 12, 13, 13b, 13c, 13d, 21) hand-named
 property files by hand that were rows of the LIVE
