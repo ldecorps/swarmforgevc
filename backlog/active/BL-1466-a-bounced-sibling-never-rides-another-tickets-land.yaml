@@ -15,6 +15,13 @@ epic: swarm-reliability
 priority: 8
 direction: swarm-reported
 depends_on: []
+abandoned_commits: [0993da8130]
+# QA, 2026-09-07: landed via a verified-complete tip-pure replay
+# (2a26088404); last-handoff-commit for this task resolves to 0993da8130
+# (hardener's own forward-to-documenter merge). Listed so
+# task_scope_gate_lib.bb/pre_qa_gate_lib.bb rebase their walk on
+# origin/main instead of refusing this ticket's later sends as entangled
+# with its own superseded lineage.
 mutation_cost: medium
 # medium: one predicate in land_step_lib.bb gains a bounce-store read
 # (a bb reader of .swarmforge/bounces/<month>.jsonl already exists in
