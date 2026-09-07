@@ -1,0 +1,99 @@
+id: BL-1474
+title: "replay! reports every non-zero git commit exit as 'nothing to commit - own-paths identical to origin/main', so a commit-time guard's refusal of a real 40-path index read as an empty diff on 2026-09-07 and QA rebuilt the commit by hand to learn the merge-deletion guard had refused it; the replay reports the guard's own message, and 'nothing to commit' only when the index is empty"
+milestone: M8
+type: defect
+severity: medium
+# medium: a wrong reason on an escalate costs an investigation (QA spent
+# it today) and can send an adjudication the wrong way; it lands nothing
+# wrong. Not low: LAND_ESCALATE is the land step's one voice to a human.
+status: todo
+epic: swarm-reliability
+priority: 12
+direction: swarm-reported
+depends_on: []
+mutation_cost: low
+# low: one branch in replay! (index-empty check before the commit, stderr
+# in the reason) and runner cases with a refusing commit hook in the
+# scratch worktree.
+slice_size_envelope: low
+required_stages: [coder, cleaner, architect, hardender, documenter, qa]
+
+acceptance: specs/features/BL-1474-the-replay-reports-why-its-commit-was-refused.feature
+
+required_wiring:
+  - 'specs/pipeline/steps/bl1474ReplayReportsWhyRefusedSteps.js::registerSteps::the handler lands in the same parcel as the feature (BL-233)'
+
+human_approval: approved
+approval_context: >
+  A new feature file is authored here, so it needs a tap. No choice is
+  posed and there are no ruling_options. What is FIRM: a LAND_ESCALATE
+  from the replay's commit carries the refusing guard's own message when
+  there is one, says "nothing to commit" only when the index really is
+  empty, and never the one when the other is true.
+
+invariants:
+  - "The replay's escalate reason is true of the cause: 'nothing to commit' appears only when the scratch index holds no change; any other commit failure carries git's own stderr, or says the commit was refused without text when there was none."
+  - "Nothing else about replay! changes: a successful commit's flow, the passenger guards and the completeness check (BL-1447) are untouched."
+
+description: |
+  ## What is wrong
+
+  `land_step_lib.bb` `replay!` (line ~1373): after `write-tree-from-paths!`,
+  `git commit -q -m ...` in the scratch worktree; on any non-zero exit
+  the result is `{:success false :reason "land-step replay: nothing to
+  commit for <id> - own-paths identical to origin/main"}` - stderr never
+  read. The scratch worktree runs the repository's commit hooks, so a
+  guard refusal (merge-deletion, ticket-deletion, registration, ...) exits
+  non-zero with a real message and is reported as an empty diff.
+
+  2026-09-07 (QA evidence `BL-1463-QA-followup-two-land-step-defects-20260907.md`,
+  D2): every `land_step_cli.bb BL-1463 adfc35e0c8` escalated "nothing to
+  commit"; the index held 39 files; the real refusal, found by rebuilding
+  the commit by hand, was the merge-deletion guard's (BL-1473's cause).
+
+  ## What is wanted
+
+  Before the commit, `git diff --cached --quiet`: empty index -> the
+  existing "nothing to commit" reason (scenario 02); otherwise on a
+  non-zero commit exit the reason carries git's stderr verbatim, or
+  "commit refused, no message" when stderr is empty (scenarios 01, 03);
+  the CLI prints it under LAND_ESCALATE as today.
+
+  ## How (direction, not mandate)
+
+  - Two lines around the existing commit call; keep cleanup!/drop-branch!
+    order. Truncate stderr only if it exceeds a sane bound (say 2000
+    chars), naming the truncation.
+  - Runner cases: a scratch worktree whose `core.hooksPath` points at a
+    fixture hook that refuses with a message; an empty index; a refusing
+    hook with no output.
+  - Documenter: `docs/reference/BL-1241-*.md`'s LAND_ESCALATE row gains
+    "carries the refusing guard's message".
+
+constraints: >
+  Fixture repositories under mkdtemp (BL-1390); fixture hooks under the
+  fixture root, never the live hooks path. The step handler lands with the
+  feature (BL-233). No hand-edited mutation manifests.
+
+out_of_scope: |
+  - Why the guard refused (BL-1473) and attribution (BL-1472).
+  - Any change to which hooks run in the scratch worktree.
+
+qa_e2e_procedure: >
+  (1) `bb swarmforge/scripts/test/land_step_lib_test_runner.bb` green with
+  the three reason cases. (2) Scratch clone with a fixture pre-commit hook
+  that refuses: `land_step_cli.bb <parcel> <tip>` prints LAND_ESCALATE
+  and the hook's message. (3) A parcel whose own paths equal origin/main:
+  LAND_ESCALATE "nothing to commit". (4) BL-1447's feature stays green.
+
+source: |
+  QA note to the specifier, priority 00, 2026-09-07T17:29Z; evidence
+  `backlog/evidence/BL-1463-QA-followup-two-land-step-defects-20260907.md`
+  (QA branch 4755cbfe9b), D2's second half. Adjudication:
+  `backlog/evidence/BL-1463-two-land-step-defects-adjudication-specifier-20260907.md`.
+
+notes: |
+  Minted 2026-09-07 by the specifier on QA's note, the same pass, with
+  BL-1472 and BL-1473. Grepped first: BL-1343 (done) made an EMPTY own-path
+  set refuse with a reason; this is the commit step's report, which
+  BL-1343 did not touch.
