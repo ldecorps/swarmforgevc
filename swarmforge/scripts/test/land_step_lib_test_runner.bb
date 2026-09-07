@@ -390,6 +390,91 @@
         (assert= "replay!: a retry never fails for a branch the first attempt leaked"
                  nil (:reason retry))))))
 
+;; ── BL-1474: the replay's escalate reason names the true cause of a
+;;    refused commit - never "nothing to commit" for a real, non-empty
+;;    index a commit-time guard refused (BL-1463, BL-1408, 2026-09-07) ────
+;; Fixture hooks live under the fixture root, never the live hooks path
+;; (constraints), pointed at via `core.hooksPath` - shared repo config, so
+;; it applies inside the scratch worktree replay! creates too.
+
+(defn- install-refusing-hook! [root stderr-text]
+  (let [hooks-dir (fs/path root "fixture-hooks")
+        hook (fs/path hooks-dir "pre-commit")]
+    (fs/create-dirs hooks-dir)
+    (spit (str hook)
+          (str "#!/bin/sh\n"
+               (when (seq stderr-text) (str "printf '%s\\n' \"" stderr-text "\" >&2\n"))
+               "exit 1\n"))
+    (fs/set-posix-file-permissions hook "rwxr-xr-x")
+    (sh! root "git" "config" "core.hooksPath" (str hooks-dir))))
+
+;; Scenario 01: a commit-time guard refusal is reported with the guard's
+;; own message, never as an empty diff.
+(with-fixture [root]
+  (mark-origin-main-here! root)
+  (commit! root "backlog/active/BL-9001-x.yaml" "id: BL-9001\n" "BL-9001: own work")
+  (let [commit (:out (sh! root "git" "rev-parse" "HEAD"))]
+    (install-refusing-hook! root "merge-deletion guard: refusing 40 deleted paths")
+    (let [result (land-step-lib/replay! {:root root :commit commit :task-ticket-id "BL-9001"
+                                          :own-paths ["backlog/active/BL-9001-x.yaml"]})]
+      (assert= "BL-1474/01: a guard-refused commit is a failure" false (:success result))
+      (assert-includes "BL-1474/01: the reason carries the guard's own message"
+                       (:reason result) "merge-deletion guard: refusing 40 deleted paths")
+      (assert= "BL-1474/01: and never claims own-paths were identical to origin/main" false
+               (str/includes? (:reason result) "own-paths identical to origin/main")))))
+
+;; Scenario 02: an empty index (own-paths already identical to origin/main)
+;; is still reported as "nothing to commit" - unchanged behavior.
+(with-fixture [root]
+  (commit! root "backlog/active/BL-9001-x.yaml" "id: BL-9001\n" "BL-9001: already on origin/main")
+  (mark-origin-main-here! root)
+  (let [commit (:out (sh! root "git" "rev-parse" "HEAD"))
+        result (land-step-lib/replay! {:root root :commit commit :task-ticket-id "BL-9001"
+                                        :own-paths ["backlog/active/BL-9001-x.yaml"]})]
+    (assert= "BL-1474/02: an empty index is a failure" false (:success result))
+    (assert-includes "BL-1474/02: reported as nothing to commit"
+                     (:reason result) "nothing to commit for BL-9001 - own-paths identical to origin/main")))
+
+;; Scenario 03: a refusing hook that prints nothing on stderr is named as
+;; a refusal with no text, never confused with an empty index.
+(with-fixture [root]
+  (mark-origin-main-here! root)
+  (commit! root "backlog/active/BL-9001-x.yaml" "id: BL-9001\n" "BL-9001: own work")
+  (let [commit (:out (sh! root "git" "rev-parse" "HEAD"))]
+    (install-refusing-hook! root nil)
+    (let [result (land-step-lib/replay! {:root root :commit commit :task-ticket-id "BL-9001"
+                                          :own-paths ["backlog/active/BL-9001-x.yaml"]})]
+      (assert= "BL-1474/03: a silently-refusing hook is a failure" false (:success result))
+      (assert-includes "BL-1474/03: the reason names a refusal with no text"
+                       (:reason result) "commit refused for BL-9001, no text")
+      (assert= "BL-1474/03: and never claims nothing to commit" false
+               (str/includes? (:reason result) "nothing to commit")))))
+
+;; ── replay-commit-refusal-reason (pure) ──────────────────────────────────
+
+(assert= "replay-commit-refusal-reason: empty index reports nothing to commit"
+         "land-step replay: nothing to commit for BL-9001 - own-paths identical to origin/main"
+         (land-step-lib/replay-commit-refusal-reason "BL-9001" true "irrelevant stderr"))
+
+(assert= "replay-commit-refusal-reason: non-empty index with stderr carries it verbatim"
+         "land-step replay: commit refused for BL-9001 - a guard said no"
+         (land-step-lib/replay-commit-refusal-reason "BL-9001" false "a guard said no"))
+
+(assert= "replay-commit-refusal-reason: non-empty index with blank stderr names no text"
+         "land-step replay: commit refused for BL-9001, no text"
+         (land-step-lib/replay-commit-refusal-reason "BL-9001" false ""))
+
+(assert= "replay-commit-refusal-reason: nil stderr is treated the same as blank"
+         "land-step replay: commit refused for BL-9001, no text"
+         (land-step-lib/replay-commit-refusal-reason "BL-9001" false nil))
+
+(let [long-stderr (apply str (repeat 3000 "x"))
+      reason (land-step-lib/replay-commit-refusal-reason "BL-9001" false long-stderr)]
+  (assert-true "replay-commit-refusal-reason: stderr over the bound is truncated"
+               (< (count reason) (count long-stderr)))
+  (assert-includes "replay-commit-refusal-reason: a truncation is named"
+                   reason "truncated"))
+
 ;; ── entanglement-note ────────────────────────────────────────────────────
 
 (let [msg (land-step-lib/entanglement-note "BL-9001-fixture" #{"BL-9002" "BL-9003"})]
