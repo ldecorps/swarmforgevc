@@ -210,19 +210,33 @@ You are QA.
            check, so `LAND_CLEAN` is proof again with no hand re-walk
            needed.)
            **Until BL-1472 and BL-1473 land (found 2026-09-07 landing
-           BL-1463): review the replay's own-path set by hand.** A revert
-           plus reapply on your branch (a bounce, then its repair) leaves
-           untagged touches on another ticket's paths, and own-paths keeps
-           such a path for the landing ticket - BL-1463's replay would have
-           carried BL-1348's unapproved code. And the delivered set is a
-           two-tree diff against a moving origin/main, so a ticket minted
-           on main after your branch forked is proposed as a DELETION (the
-           merge-deletion guard refused it; the escalate then read "nothing
-           to commit", BL-1474). Before landing a replay: every path whose
-           only tags in range are another ticket's is excluded; every
-           proposed deletion is one the parcel's own commits made. When in
-           doubt, hand-build the tip-pure commit from the parcel's own
-           evidence-listed paths (the BL-1241 recipe) and land that.
+           BL-1463): sync first, then review the replay's own-path set by
+           hand.** A revert plus reapply on your branch (a bounce, then its
+           repair) leaves untagged touches on another ticket's paths, and
+           own-paths keeps such a path for the landing ticket - BL-1463's
+           replay would have carried BL-1348's unapproved code. And the
+           delivered set is a two-tree diff against a moving origin/main,
+           so everything main gained, lost or CHANGED after your branch
+           forked rides the replay as a deletion, a resurrection or a
+           silent REVERSION to pre-fork content. BL-1408's replay
+           (2026-09-07) carried 65 such paths, 59 of them topic records
+           and a role prompt rolled back; only the deletions have a guard
+           (it refused, and the escalate then read "nothing to commit",
+           BL-1474), and BL-1461's replay 04049f4bb2 did erase a
+           topic-record message from main. So: `git fetch origin` and
+           merge `origin/main` into your branch (a plain `Merge main <sha>
+           into QA.`) IMMEDIATELY before running the land step, and run it
+           on that tip - a tip that already contains origin/main has
+           nothing of main's to delete, restore or revert, and a clean
+           sync merge is no untagged touch (BL-1374). If the escalate still
+           says "nothing to commit", main moved in between: sync once more
+           and re-run; if it persists the refusal is something else -
+           rebuild the commit by hand and read stderr. Then, before
+           landing: every path whose only tags in range are another
+           ticket's is excluded; a path you conflict-resolved in the sync
+           rides as your own - review it. When in doubt, hand-build the
+           tip-pure commit from the parcel's own evidence-listed paths (the
+           BL-1241 recipe) and land that.
          - exit 0, `LAND_REPLAY <branch> <new-commit>` followed by one
            `ENTANGLED_SIBLING <ticket-id>` line per **unlanded** sibling, and
            one `LANDED_SIBLING <ticket-id>` line per sibling whose own
