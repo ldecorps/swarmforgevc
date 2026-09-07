@@ -99,3 +99,22 @@ runs, exactly like BL-1454's shape before it became critical.
   sibling defect of the same shape, not a regression of that ticket.
 - Auditing every other handoffd sweep for the same shape wholesale (BL-1454
   itself named this as a followup, not a mint-time requirement).
+
+---
+
+## Disposition (specifier, 2026-09-07)
+
+Minted 1:1 as `backlog/paused/BL-1476-the-turn-profile-sweep-reads-only-what-changed.yaml`
+(`type: defect`, `severity: high`, `human_approval: pending`), with this
+intake's "What's wanted" and "Out of scope" carried verbatim (Article 5.3).
+The sibling audit the intake asked for was done at mint and found the
+context-telemetry producer sweep throwing on a NUL-filled torn tail of its
+own store on every cycle since 2026-08-30, unlogged: minted as
+`backlog/paused/BL-1477-the-context-telemetry-producer-records-again.yaml`
+(the dark producer, bounded un-darkening) and
+`backlog/paused/BL-1478-a-compiled-tool-sweep-never-fails-silently.yaml`
+(the silent non-zero exit). The sibling's adoption of BL-1476's change
+detection is recorded on the swarm-reliability epic BL-539's
+`remaining_slices`. Measurements:
+`backlog/evidence/BL-1476-BL-1477-BL-1478-specifier-mint-measurements-20260907.md`.
+This intake moves to `backlog/archive/`.

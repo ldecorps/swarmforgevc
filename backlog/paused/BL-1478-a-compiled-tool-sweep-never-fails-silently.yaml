@@ -142,3 +142,8 @@ notes: |
   - Routing note for QA: the wiring anchor names handoffd.bb; the gate reads
     it at the parcel commit, so the four call sites must be in the parcel,
     not a later cleanup.
+  - Human approved 2026-09-07 20:05Z from the Telegram approval ask
+    (commit 394f65618e, which also committed this YAML before the mint
+    commit); the feature file is unchanged since that tap. IR-DRY: "exits
+    1 with a stderr of 40 lines" and "exits <exit> with stderr <stderr>"
+    are distinct steps (a line count versus a literal) - kept as written.
