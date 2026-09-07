@@ -365,7 +365,7 @@ check now asks **which** unlanded co-owner it is, via a new
 | present and not `approved` (pending / amending / rejected / unrecognised) | **no** — still refuses |
 | filed in `backlog/hold` | **no**, regardless of what `human_approval` says — the folder decides ahead of the field, since a held ticket can still read a pre-hold `approved` |
 | found in no tree, filed in more than one backlog folder, or otherwise unreadable | **no** — fails closed |
-| `human_approval: approved`, but its most recent bounce record names a commit reachable from the tip with no later handoff on record (`:bounced`, BL-1466) | **no** — named with the bounce's commit and date; a later handoff citing a descendant of the bounced commit clears it |
+| `human_approval: approved`, but its most recent bounce record names a commit reachable from the tip with no later handoff on record (`:bounced`, BL-1466) | **no** — named with the bounce's commit and date; a later handoff citing a descendant of the bounced commit clears it. The bounce store this reads is the SHARED TARGET ROOT — `git rev-parse --git-common-dir`'s parent, the same resolution `is_qa_ancestor.sh`'s land-approval store uses (BL-1339 option 2) — union'd with the caller's own root when distinct, never narrowed to just one; a record under either counts, and an unreadable store under either blocks (BL-1470: BL-1466 shipped reading only the CALLING worktree's root, where `record-bounce.js` never writes, so every ordinary `land_step_cli.bb` invocation with no explicit root answered "never bounced" for real bounces sitting under the master checkout) |
 
 Both the worktree and `origin/main` are consulted for each sibling (a
 sibling's ticket file *moves* on `main` when it lands, and `backlog/done/`
