@@ -1,3 +1,8 @@
+# mutation-stamp: sha256=723026d37bb89555e5931115bcd3615694192c14af166987062206a7c493a41d
+# acceptance-mutation-manifest-begin
+# {"version":1,"tested_at":"2026-09-07T14:43:40.605682071Z","feature_name":"BL-1461 The land step never calls a tip clean while an unlanded sibling sits anywhere in its unlanded history","feature_path":"/home/carillon/swarmforgevc/.worktrees/hardender/specs/features/BL-1461-the-land-step-never-calls-a-tip-clean-over-an-unlanded-sibling.feature","background_hash":"c427ce72467ccee0771fc39ff7c46bd9b64822580f768361dc62df0609d63d01","implementation_hash":"unknown","scenarios":[{"index":0,"name":"a sibling's unlanded commit is reported wherever it sits relative to the parcel's hops","scenario_hash":"8c7452321da02f813244516467fda1e9e5c8aa53cae44c72dbea515a18c6e12e","mutation_count":3,"result":{"Total":3,"Killed":3,"Survived":0,"Errors":0},"tested_at":"2026-09-07T14:43:40.605682071Z"}]}
+# acceptance-mutation-manifest-end
+
 Feature: BL-1461 The land step never calls a tip clean while an unlanded sibling sits anywhere in its unlanded history
 
   land-plan promises LAND_CLEAN when no entanglement is present. Its
