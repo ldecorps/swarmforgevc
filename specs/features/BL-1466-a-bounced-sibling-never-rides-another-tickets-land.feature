@@ -1,3 +1,7 @@
+# acceptance-mutation-manifest-begin
+# {"version":1,"tested_at":"2026-09-07T15:28:36.067029136Z","feature_name":"BL-1466 A bounced sibling never rides another ticket's land until it is re-fixed","feature_path":"/home/carillon/swarmforgevc/.worktrees/hardender/specs/features/BL-1466-a-bounced-sibling-never-rides-another-tickets-land.feature","background_hash":"db969aed4f6155f26855a765729451c240c19fbf827e20384ca6773be05e1107","implementation_hash":"unknown","scenarios":[],"outcome":"inapplicable"}
+# acceptance-mutation-manifest-end
+
 Feature: BL-1466 A bounced sibling never rides another ticket's land until it is re-fixed
 
   BL-1375 lets approved siblings sharing a path land together and decides
