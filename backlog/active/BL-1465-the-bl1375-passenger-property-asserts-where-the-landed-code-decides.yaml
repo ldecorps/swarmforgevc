@@ -153,3 +153,5 @@ notes: |
   handler as a consumer to update and not the BL-654 property that drives
   the same pair; the property lane is where a sequencing change shows up
   first, and the guard turns it into a swarm-wide block within the hour.
+
+assigned_to: coder

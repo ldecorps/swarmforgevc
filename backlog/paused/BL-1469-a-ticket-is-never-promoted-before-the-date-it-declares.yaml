@@ -1,0 +1,146 @@
+id: BL-1469
+title: "A ticket whose deliverable the host gates by date (a mutation run under mutation_cooldown_days) has no machine-readable earliest promotion date, so prose in notes is all that stops the coordinator promoting it into a slot it cannot use - BL-1439 on 2026-09-05 froze the swarm at cap 1, BL-1468 was promoted 14:04Z on 2026-09-07 by the batch promotion after an approval sweep and demoted three minutes later; the promotion gates refuse a candidate before its not_before date on every path, queue-jump included"
+milestone: M8
+type: defect
+severity: medium
+# medium: real and now twice-recurred, contained - BL-1468's slot was
+# freed in three minutes by the coordinator's own demote; BL-1439's cost
+# a day at cap 1. A process gap in the promotion gates, not a code fault
+# on main; the interim park (status: blocked, schema-documented) exists.
+status: todo
+epic: swarm-reliability
+priority: 10
+direction: swarm-reported
+depends_on: []
+mutation_cost: low
+# low: one refusal in promotion_gates_lib.bb beside blocked-status-refusal,
+# a clock seam for the CLI, fixture cases in its runner and one shell
+# case for promote_and_route_next.sh.
+slice_size_envelope: low
+required_stages: [coder, cleaner, architect, hardender, documenter, qa]
+
+acceptance: specs/features/BL-1469-a-ticket-is-never-promoted-before-the-date-it-declares.feature
+
+required_wiring:
+  - 'specs/pipeline/steps/bl1469NotBeforePromotionGateSteps.js::registerSteps::the handler lands in the same parcel as the feature (BL-233)'
+
+human_approval: approved
+approval_context: >
+  A new feature file is authored here, so it needs a tap. No choice is
+  posed and there are no ruling_options. What is FIRM: a ticket declaring
+  not_before is never promoted before that UTC date by any path, including
+  a caller-declared queue-jump (your 2026-09-05 directive lets a
+  queue-jump cross ONLY the depth cap - BL-1425 - and this gate sits with
+  hold and depends_on in the set it does not cross); a malformed date
+  refuses; an absent field changes nothing. The schema row and the
+  coordinator prompt line are already on main with this mint.
+
+invariants:
+  - "No path promotes a ticket before its declared not_before UTC date - routine promotion, the batch promotion after an approval sweep, or a caller-declared queue-jump - and the refusal names the date."
+  - "Fail closed on a malformed date, neutral on an absent one; the predicate exists once in promotion_gates_lib.bb and promote_and_route_next.sh reaches it through the gates CLI, never through a second regex of its own."
+
+description: |
+  ## What is wrong
+
+  `promotion_gates_lib.bb` `evaluate` runs, in order, `blocked-status-
+  refusal`, `human-approval-refusal`, the acceptance and size gates,
+  `depends-on-refusal`, then the depth cap that a caller-declared
+  queue-jump crosses (BL-1425). None of them reads a date. A ticket whose
+  whole deliverable is a Stryker run on files touched within
+  `mutation_cooldown_days` (3) cannot do anything until the cooldown
+  clears, and the only place that date lives is `notes:` and
+  `approval_context:` - prose, which the coordinator's batch promotion
+  after an approval sweep does not read (BL-1100 retired prose from
+  candidacy on purpose).
+
+  - 2026-09-05: BL-1439 promoted; three of its five runs refused by the
+    cooldown until 2026-09-08; the parcel sat at cap 1 and the swarm
+    froze; fixed by splitting off BL-1441 and amending scenario 03.
+  - 2026-09-07 14:04Z: BL-1468 (notes: "Earliest run 2026-09-10 ... The
+    coordinator should not promote this before then") promoted by the
+    batch promotion that followed the human's approval of eight tickets
+    (12f13f2589); the coder verified `skip-cooldown, file_age_days 0.04`
+    and sent a note; the coordinator demoted it at 14:07Z (6095faaef5).
+    The specifier's priority-00 note of 13:24Z saying the same had been
+    consumed forty minutes earlier.
+
+  Interim, applied 2026-09-07: BL-1468 is parked under `status: blocked`
+  (the schema's coordinator-clearable park, refused by
+  `promote_and_route_next.sh`'s anchored `is_blocked_status` and by the
+  gates) with `not_before: 2026-09-10` as data and a dated unblock note;
+  the schema documents the field; the coordinator prompt says the rule.
+
+  ## What is wanted
+
+  A `not_before: YYYY-MM-DD` field (backlog-schema.md, landed with this
+  mint) that the promotion gates refuse before that UTC date naming the
+  date (scenario 01), pass on or after it (scenario 02), refuse when
+  malformed (scenario 03), ignore when absent (scenario 04), refuse even
+  for a queue-jump (scenario 05); and `promote_and_route_next.sh` skips
+  such a candidate for the next eligible one (scenario 06).
+
+  ## How (direction, not mandate)
+
+  - `not-before-refusal` in `promotion_gates_lib.bb` beside
+    `blocked-status-refusal`, called in `evaluate` before the queue-jump
+    branch so `:queue-jump? true` never bypasses it; the reader is
+    `read-field` (a scalar) with a strict `YYYY-MM-DD` parse; today comes
+    from an injectable argument (the runner passes it; the CLI defaults
+    to the UTC date) - never `LocalDate/now` inside the predicate.
+  - `promote_and_route_next.sh` already consults the gates CLI for every
+    candidate (`gates_evaluate`); its own `is_blocked_status` pre-filter
+    must not gain a sibling regex - the CLI's refusal is the skip.
+    `promotion_gates_cli.bb gate-promotion` (the queue-jump path) gets the
+    same refusal by construction.
+  - The refusal text: `not_before: 2026-09-10 is 3 days away` so the
+    coordinator's log says why the candidate was skipped.
+  - Documenter: `docs/reference` for the promotion gates (BL-663/BL-957
+    pages) gains the gate; the schema row is already on main. Once this
+    lands, the coordinator prompt's "read the field yourself" interim is
+    retired by the specifier.
+
+constraints: >
+  Fixture backlogs under mkdtemp (BL-1390); no real clock in any test.
+  The gate order for the existing refusals is unchanged. The step handler
+  lands with the feature (BL-233). No hand-edited mutation manifests.
+
+out_of_scope: |
+  - Auto-unparking a `status: blocked` ticket on its date (the field
+    replaces the park; a park stays coordinator-cleared).
+  - Reading dates out of notes prose.
+  - The cooldown window itself (mutation_cooldown_days).
+
+qa_e2e_procedure: >
+  (1) `bb swarmforge/scripts/test/promotion_gates_lib_test_runner.bb` (or
+  the lib's runner) green with the new cases. (2) Scratch backlog: a
+  paused approved ticket with `not_before` three days ahead;
+  `bb swarmforge/scripts/promotion_gates_cli.bb evaluate <root> <file> false <cap>`
+  prints the not_before refusal naming the date; with `gate-promotion` and
+  the queue-jump flag: still refused; with the date set to today: no
+  refusal. (3) `promote_and_route_next.sh` on that scratch backlog with a
+  second eligible ticket promotes the second. (4) Live: BL-1468 (parked,
+  `not_before: 2026-09-10`) is refused by the CLI before the date and
+  promotable on it once `status:` is back to `todo`.
+
+source: |
+  Coder note to the specifier and coordinator, priority 00,
+  2026-09-07T14:06Z: "BL-1468 promoted early - cooldown clears 09-10,
+  still skip-cooldown"; coder evidence
+  `BL-1468-premature-promotion-coder-20260907.md` (coder branch);
+  coordinator commits cf8bfc89de (promote) and 6095faaef5 (demote).
+  Adjudication:
+  `backlog/evidence/BL-1468-premature-promotion-adjudication-specifier-20260907.md`.
+
+notes: |
+  Minted 2026-09-07 by the specifier on the coder's note, the same pass.
+  Landed with this mint (prose halves, BL-798): the `not_before` row in
+  backlog-schema.md and the coordinator prompt bullet; BL-1468 parked
+  under `status: blocked` + `not_before: 2026-09-10`.
+
+  Grepped first: no field or gate for a date exists (backlog-schema.md,
+  promotion_gates_lib.bb); `status: blocked` is the nearest mechanism and
+  needs a hand to clear it.
+
+  Why a field and not the park alone: a park must be cleared by someone
+  on the right day and a forgotten park never promotes; a date clears
+  itself.

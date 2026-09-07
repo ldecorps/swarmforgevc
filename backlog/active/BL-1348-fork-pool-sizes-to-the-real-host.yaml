@@ -12,7 +12,17 @@ slice_size_envelope: low
 required_stages: [coder, cleaner, architect, hardender, documenter, qa]
 acceptance: specs/features/BL-1348-fork-pool-sizes-to-the-real-host.feature
 
-human_approval: pending
+human_approval: approved
+human_ruling: |
+  B (recommended) - the default ceiling follows the cores the host has FREE,
+  cores minus the 5-minute load average, floor 1 and cap cores, passed in by
+  both configs through the one composition point; override still wins up to
+  the RAM budget.
+  Recorded via direct chat with the operator 2026-09-07 (Telegram approval-ask
+  never re-posted for this re-pend - BL-1455's known defect - so the ruling
+  is recorded here directly rather than through the broken ask/reconcile
+  path; no bare "approve" was typed, per the ticket's own note against
+  BL-1300's shape).
 approval_context: >
   Re-pended 2026-09-06 - DELIBERATELY, not an erased approval. Your ruling
   of 2026-09-02 (56e56a0a49) chose option 2: lower the heap reservation
