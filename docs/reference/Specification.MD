@@ -1,5 +1,30 @@
 # SwarmForge VS Code Extension — Specification
 
+**Last Updated:** September 7, 2026 (BL-1473: `land_step_lib.bb`'s
+`own-paths` based its delivered set on the full two-tree diff against
+`origin/main` (BL-1315), which also names every path origin/main gained,
+deleted, or changed after the branch forked — none of which any commit of
+the parcel touched, and the sibling-attribution exclusion below it never
+caught these (an untouched path's attribution reads the same as "touched
+by nobody in particular"). A path main gained since the fork rode a
+replay as a proposed deletion (BL-1463's 40-path replay `adfc35e0c8`
+against freshly minted BL-1470/BL-1471, refused only by the
+merge-deletion guard); the mirror resurrection case had no guard at all;
+and the dominant, unguarded form — a path main CHANGED since the fork
+checked out over main's new content as a silent reversion — had already
+landed once, BL-1461's replay `04049f4bb2` rolling `backlog/topics/
+BL-1465.json` back four minutes after the daemon appended a message to
+it, still missing from origin/main. Fixed: `own-paths` now restricts the
+two-tree diff to `own-range-touched-paths` (the union of every own-range
+commit's own changes, merges included per BL-1315) before any sibling
+decision runs, so a path neither the parcel nor a sibling ever touched
+never reaches the replay. The merge-deletion guard (BL-1242) stays as the
+backstop; no change to attribution (BL-1472) or to `replay!`'s report
+(BL-1474). Acceptance:
+`specs/features/BL-1473-a-replay-never-deletes-or-resurrects-a-path-the-parcel-never-touched.feature`.
+How-to: `docs/how-to/BL-1241-entangled-tip-at-the-land-step-has-a-reachable-remedy.md`
+(new section after BL-1463's).)
+Prior entry —
 **Last Updated:** September 7, 2026 (BL-1408: three more hand-written
 copies of the commit-guard chain's guard list went red the same way
 BL-1398/BL-1401 already fixed once — `test_run_commit_guards.sh`'s
