@@ -137,3 +137,5 @@ notes: |
   Grepped first: BL-1295 (done) is the send-time counterpart; BL-1315
   (done) added the untagged-touch rule this defect rides on; no open
   ticket names revert/reapply attribution.
+
+assigned_to: coder
