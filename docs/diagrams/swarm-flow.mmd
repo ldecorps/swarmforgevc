@@ -77,6 +77,14 @@
 %% (SWARMFORGE_SKIP_SYNC_INJECT). This is separate from QA's hand-composed
 %% merge-up note below; clean roles need no LLM merge-up turn either way.
 %% See docs/how-to/BL-668-post-qa-deterministic-branch-sweep.md.
+%% BL-1479 (2026-09-07): a new handoffd sweep, parked-active-sweep!, moves
+%% an active/ ticket that has become unworkable (status: blocked, or a
+%% not_before later than today) back to paused/ byte-identical, unless a
+%% parcel for it is in flight in any role's mailbox - previously nothing
+%% but QA approval or a human hand ever moved a ticket out of active/, so
+%% an unworkable ticket held its slot indefinitely. One coordinator note
+%% per park; the ticket re-enters promotion by the ordinary rules once its
+%% condition clears. See docs/how-to/BL-1479-parked-active-sweep.md.
 flowchart LR
   ROOT["backlog/ root\n(human raw intake)"]
   COORD(("coordinator\n(master, intake/routing +\nbacklog bookkeeping only,\nnever commits code,\nno git merge/push)"))
@@ -100,6 +108,7 @@ flowchart LR
   PAUSED -->|promote (promotion_gates:\nhuman_approval, acceptance,\ndepends_on, expedite lane, depth,\nhold marker refuse; epic-priority\nranks before own priority;\northogonality advises only)| COORD
   COORD -->|promotes into| ACTIVE
   PAUSED -.->|human queue-jump (Approvals-topic\ntap, /qjump verb, or paused-pager\nExpedite): crosses ONLY\nactive_backlog_max_depth -\ndepends_on/hold/blocked still\nrefuse - BL-721/BL-1425| ACTIVE
+  ACTIVE -.->|handoffd parked-active-sweep\n(BL-1479): status: blocked or\nnot_before later than today,\nno live parcel anywhere -\nbyte-identical git mv, one\nnote to coordinator| PAUSED
   COORD -->|routes first parcel| SPEC
   SPEC -->|git_handoff\npriority 00| CODER
 
