@@ -239,6 +239,15 @@ notes: |
   amended the same pass to hand-add it to `MERGE_GUARDS` and to the `cp`
   list - the sixth and seventh hand edits, both removed by this landing.
 
+  2026-09-06 (specifier): the 09-06 re-pend produced NO new Telegram ask.
+  The only ask on record is message 73813, stamped "-- Approved 2026-09-05
+  08:14 UTC" with its keyboard stripped, and BL-1090's duplicate guard
+  counts that closed record as live, so the re-pend's ApprovalRequested was
+  suppressed and reconcile never re-posts it. This ticket cannot currently
+  be approved by tap. Defect BL-1455 (high) owns the fix and heals this
+  ticket on its first tick after landing; interim operator recipe in
+  BL-1455 notes.
+
 source: |
   Coder note to specifier, priority 10, 2026-09-05T02:33Z; coder evidence
   `backlog/evidence/BL-1275-coder-20260905.md` (coder branch) §"Surfaced
