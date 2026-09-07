@@ -212,3 +212,7 @@ notes: |
     transcripts hold 50 events not yet in the store" deliberately - scenario
     01 needs 2 and scenario 02 needs none, so it cannot move to the
     Background; the coder binds one parametrised step.
+  - Human approved 2026-09-07 20:06Z from the Telegram approval ask
+    (commit 7e1c03a931, which also committed this YAML before the mint
+    commit); the feature file is unchanged since that tap. IR-DRY: "hold
+    2 events" and "hold 50 events" are one parametrised step.
