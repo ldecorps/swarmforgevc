@@ -33,6 +33,7 @@
 
 (ns land-step-lib
   (:require [babashka.fs :as fs]
+            [cheshire.core :as json]
             [clojure.string :as str]))
 
 (load-file (str (fs/path (fs/parent (fs/canonicalize *file*)) "pipeline_stage_lib.bb")))
@@ -630,6 +631,105 @@
          (or (first (filter :blocking? verdicts))
              (first verdicts)))))))
 
+;; ── BL-1466: a bounced, not-yet-re-fixed sibling never rides ─────────────
+;; ticket-approval-state (BL-1375) reads only the backlog folder and
+;; human_approval - a QA bounce (.swarmforge/bounces/<YYYY-MM>.jsonl,
+;; record-bounce.js/record-qa-bounce.js) changes neither, so a sibling QA
+;; bounced an hour ago still reads :approved. Until BL-1438's re-point,
+;; QA's own BL-490/495 revert kept the bounced content out of its tree by
+;; hand; the re-point (`git reset --hard origin/main`) drops that revert
+;; with everything else local-only, so this is the one remaining check.
+
+(defn- bounces-dir [root]
+  (str (fs/path root ".swarmforge" "bounces")))
+
+;; Only files still named *.jsonl - a quarantined corrupt file (renamed
+;; with a .corrupt-quarantine suffix, the live store's own convention) is
+;; deliberately already excluded, not re-detected as corruption here.
+(defn- bounce-jsonl-files [root]
+  (let [dir (bounces-dir root)]
+    (when (fs/exists? dir)
+      (->> (fs/list-dir dir)
+           (filter #(and (fs/regular-file? %) (str/ends-with? (fs/file-name %) ".jsonl")))))))
+
+;; Every bounce record naming `ticket-id`, newest `:at` first, or nil when
+;; any file exists but could not be read/parsed - fail closed (invariant
+;; 2): a partially-read bounce history must never look like a clean one.
+;; No bounces directory at all is a real "never bounced" answer (`[]`),
+;; not a read failure.
+(defn- bounce-records-for [root ticket-id]
+  (let [files (bounce-jsonl-files root)]
+    (if (nil? files)
+      []
+      (let [parsed (for [f files
+                          line (str/split-lines (slurp (str f)))
+                          :when (not (str/blank? line))]
+                     (try
+                       (json/parse-string line true)
+                       (catch Exception _ ::unreadable)))]
+        (when-not (some #(= ::unreadable %) parsed)
+          (->> parsed
+               (filter #(= ticket-id (:ticket %)))
+               (sort-by :at)
+               reverse))))))
+
+;; true/false on a clean read, nil (undeterminable) on anything else -
+;; `git merge-base --is-ancestor` exits 0/1 for a clean yes/no and >1 for
+;; an unreadable ref, which must never be read as "not an ancestor".
+(defn- git-is-ancestor? [root ancestor descendant]
+  (case (:exit (git! root "merge-base" "--is-ancestor" ancestor descendant))
+    0 true
+    1 false
+    nil))
+
+(defn- latest-handoff-commit [root ticket-id]
+  (some-> (salvage-lib/latest-item-handoffs root ticket-id)
+          first
+          (salvage-lib/header-field "commit")))
+
+(defn bounce-blocking-state
+  "nil when the sibling's bounce history changes nothing BL-1375's own
+   approval state already decided: no bounce record at all, the latest
+   one's commit no longer reachable from `commit` (whatever carried it
+   forward is not on this tip), or a later handoff for the sibling cites a
+   commit descending from the bounced one (re-fixed). Otherwise
+   `{:state :bounced :blocking? true :reason \"...\"}` naming the bounce
+   and its commit, or `{:state :unreadable :blocking? true :reason
+   \"...\"}` when the store or the ancestry check itself could not be
+   read - fail closed, never a silent pass (invariant 2)."
+  [root ticket-id commit]
+  (let [records (bounce-records-for root ticket-id)]
+    (cond
+      (nil? records)
+      {:state :unreadable :blocking? true
+       :reason (str ticket-id "'s bounce history could not be read")}
+
+      (empty? records)
+      nil
+
+      :else
+      (let [latest (first records)
+            bounce-commit (:commit latest)
+            reachable (git-is-ancestor? root bounce-commit commit)]
+        (cond
+          (nil? reachable)
+          {:state :unreadable :blocking? true
+           :reason (str "could not tell whether " ticket-id "'s bounced commit "
+                        bounce-commit " is an ancestor of the tip")}
+
+          (not reachable)
+          nil
+
+          :else
+          (let [handoff-commit (latest-handoff-commit root ticket-id)
+                refixed? (and handoff-commit
+                              (not= handoff-commit bounce-commit)
+                              (true? (git-is-ancestor? root bounce-commit handoff-commit)))]
+            (if refixed?
+              nil
+              {:state :bounced :blocking? true
+               :reason (str ticket-id " bounced " (:at latest) " at " bounce-commit ", not re-fixed")})))))))
+
 (defn blocking-siblings
   "The subset of `sibling-ids` whose approval state still blocks a land,
    each with the reason, sorted so a refusal reads the same twice.
@@ -881,7 +981,16 @@
        ;; BL-1431: when the caller supplied no approval-fn, the default reads
        ;; ticket-approval-state with THIS call's already-resolved origin-main
        ;; instead of letting it resolve a second, potentially different, tip.
-       (let [approval-fn (or approval-fn (fn [id] (ticket-approval-state root id origin-main)))
+       ;; BL-1466: composed with the bounce check here - the one place this
+       ;; function and blocking-siblings both read a sibling's state from -
+       ;; so a bounce not yet re-fixed blocks for every purpose BL-1375's
+       ;; approval state serves, without a second approval-reading path.
+       (let [approval-fn (or approval-fn
+                              (fn [id]
+                                (let [base (ticket-approval-state root id origin-main)]
+                                  (if (:blocking? base)
+                                    base
+                                    (or (bounce-blocking-state root id commit) base)))))
              blocking-for (memoize #(blocking-siblings root % approval-fn))
              ;; BL-1389. `:attribution` and `:path-landed-fn` are injected by
              ;; land-plan so the same reads serve the landed/unlanded split and

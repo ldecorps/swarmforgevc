@@ -1224,6 +1224,91 @@ RESOLVED BY THIS TICKET
   (assert= "BL-1375: a sibling filed in two folders at once blocks"
            :unreadable (:state (land-step-lib/ticket-approval-state root "BL-9002"))))
 
+;; ── BL-1466: a bounced, not-yet-re-fixed sibling never rides ─────────────
+
+(defn- write-bounce! [root ticket commit at]
+  (let [dir (fs/path root ".swarmforge" "bounces")]
+    (fs/create-dirs dir)
+    (spit (str (fs/path dir "2026-09.jsonl"))
+          (str "{\"ticket\":\"" ticket "\",\"producingRole\":\"coder\",\"ticketType\":\"defect\","
+               "\"failureClass\":\"behavior\",\"commit\":\"" commit "\",\"by\":\"QA\",\"at\":\"" at "\"}\n")
+          :append true)))
+
+;; Scenario 01: the bounced commit is reachable from the tip, no re-fix on
+;; record - blocking, named with the bounce and its commit.
+(with-fixture [root]
+  (commit! root "seed.txt" "x\n" "BL-9002: seed")
+  (let [bounced-commit (:out (sh! root "git" "rev-parse" "HEAD"))]
+    (commit! root "other.txt" "y\n" "BL-9001: own work")
+    (let [tip (:out (sh! root "git" "rev-parse" "HEAD"))]
+      (write-bounce! root "BL-9002" bounced-commit "2026-09-07T11:48:00.000Z")
+      (let [state (land-step-lib/bounce-blocking-state root "BL-9002" tip)]
+        (assert= "BL-1466/01: a bounced, not-yet-re-fixed sibling blocks" true (:blocking? state))
+        (assert= "BL-1466/01: and says so" :bounced (:state state))
+        (assert-includes "BL-1466/01: names the bounce's commit" (:reason state) bounced-commit)))))
+
+;; Scenario 02: a later handoff citing a descendant of the bounced commit
+;; clears it - re-fixed.
+(with-fixture [root]
+  (commit! root "seed.txt" "x\n" "BL-9002: seed")
+  (let [bounced-commit (:out (sh! root "git" "rev-parse" "HEAD"))]
+    (commit! root "fix.txt" "fixed\n" "BL-9002: re-fix")
+    (let [refix-commit (:out (sh! root "git" "rev-parse" "HEAD"))]
+      (commit! root "other.txt" "y\n" "BL-9001: own work")
+      (let [tip (:out (sh! root "git" "rev-parse" "HEAD"))]
+        (write-bounce! root "BL-9002" bounced-commit "2026-09-07T11:48:00.000Z")
+        (record-handoff! root "BL-9002-fixture" refix-commit)
+        (assert= "BL-1466/02: a later handoff citing a descendant clears the bounce"
+                 nil (land-step-lib/bounce-blocking-state root "BL-9002" tip))))))
+
+;; Scenario 02b: the bounced commit no longer reachable from the tip at all
+;; (a rebuild off main, BL-1241's own escape hatch) also clears it.
+(with-fixture [root]
+  (commit! root "seed.txt" "x\n" "BL-9002: seed")
+  (let [bounced-commit (:out (sh! root "git" "rev-parse" "HEAD"))]
+    (sh! root "git" "checkout" "-q" "--orphan" "rebuilt")
+    (sh! root "git" "commit" "-q" "--allow-empty" "-m" "BL-9001: rebuilt off main, drops the bounced commit")
+    (let [tip (:out (sh! root "git" "rev-parse" "HEAD"))]
+      (write-bounce! root "BL-9002" bounced-commit "2026-09-07T11:48:00.000Z")
+      (assert= "BL-1466/02b: a bounced commit no longer reachable from the tip clears it"
+               nil (land-step-lib/bounce-blocking-state root "BL-9002" tip)))))
+
+;; Scenario 03: an unreadable bounce store blocks - fail closed.
+(with-fixture [root]
+  (commit! root "seed.txt" "x\n" "BL-9001: own work")
+  (let [tip (:out (sh! root "git" "rev-parse" "HEAD"))
+        dir (fs/path root ".swarmforge" "bounces")]
+    (fs/create-dirs dir)
+    (spit (str (fs/path dir "2026-09.jsonl")) "not valid json\n")
+    (let [state (land-step-lib/bounce-blocking-state root "BL-9002" tip)]
+      (assert= "BL-1466/03: an unreadable bounce store blocks" true (:blocking? state))
+      (assert= "BL-1466/03: and says so" :unreadable (:state state)))))
+
+;; Scenario 04: no bounce record at all changes nothing BL-1375 decided.
+(with-fixture [root]
+  (commit! root "seed.txt" "x\n" "BL-9001: own work")
+  (let [tip (:out (sh! root "git" "rev-parse" "HEAD"))]
+    (assert= "BL-1466/04: no bounce record - unchanged (nil)"
+             nil (land-step-lib/bounce-blocking-state root "BL-9002" tip))))
+
+;; Integration: own-paths excludes an APPROVED sibling's shared path once
+;; it is bounced and not yet re-fixed - exactly like an unapproved one,
+;; never ridden as a passenger (invariant 1).
+(with-fixture [root]
+  (write-ticket! root "active" "BL-9002" "id: BL-9002\nhuman_approval: approved\n")
+  (commit! root "seed.txt" "seed\n" "seed before origin/main")
+  (mark-origin-main-here! root)
+  (commit! root "specs/pipeline/steps/index.js" "// base\n" "BL-9001: the landing ticket adds its handler")
+  (commit! root "specs/pipeline/steps/index.js" "// base\n// sibling line\n"
+           "BL-9002: the unlanded sibling adds its handler to the same file")
+  (let [commit (:out (sh! root "git" "rev-parse" "HEAD"))]
+    (write-bounce! root "BL-9002" commit "2026-09-07T11:48:00.000Z")
+    (let [{:keys [paths warning passengers]} (land-step-lib/own-paths root commit "BL-9001" #{"BL-9002"})]
+      (assert= "BL-1466: a bounced approved sibling still refuses the shared path" nil paths)
+      (assert-includes "BL-1466: and the refusal names it" warning "BL-9002")
+      (assert-includes "BL-1466: and names the bounce" warning "bounced")
+      (assert= "BL-1466: never named as a passenger" nil passengers))))
+
 ;; backlog-schema.md: an ABSENT human_approval means "no approval needed",
 ;; which promotion_gates_lib.bb's own gate already passes. It is neither
 ;; withheld nor awaiting, so it is not one of the blocking states.
