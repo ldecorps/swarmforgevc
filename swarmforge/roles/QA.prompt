@@ -130,6 +130,23 @@ You are QA.
       (an uncommitted change or an `in_process` parcel — nothing moved).
       Either way the land itself already succeeded; a skip is a decision,
       never a failure, and needs no action from you.
+      **A re-point also drops your local-only bounce work, and BL-1466's
+      bounce check is INERT until BL-1470 lands (found 2026-09-07 16:31Z).**
+      The BL-490/495 revert of a bounced merge and the bounce evidence and
+      bounce_history commits on top of it are not on origin/main, so the
+      `reset --hard` discards them; after a re-point the next parcel that
+      shares history with the bounced ticket brings the content back on
+      merge. BL-1466 landed a bounce-aware sibling state, but it reads
+      `.swarmforge/bounces/` under the CALLING worktree's root, where no
+      store exists - `record-bounce.js` writes under the master checkout -
+      so with the CLI's default root it always answers "never bounced".
+      Until BL-1470 lands: before landing any replay that names a passenger
+      or a landed sibling, read the MASTER checkout's store,
+      `$(git rev-parse --git-common-dir)/../.swarmforge/bounces/<YYYY-MM>.jsonl`
+      (never your worktree's), for a bounce of that sibling newer than its
+      latest handoff; if there is one, the sibling is NOT landable - exclude
+      its paths by hand and say so in your evidence. Passing the master
+      root as the CLI's third argument makes BL-1466's check fire today.
     - **A hand-built tip-pure land must record what the land step records
       (BL-1334; gap found 2026-09-04, BL-1405).** `land_step_cli.bb` writes a
       replay-to-approved-source line to the SHARED root's
