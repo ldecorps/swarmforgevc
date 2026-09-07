@@ -261,3 +261,8 @@ notes: |
   - IR-DRY (specifier, mint pass): scenarios 01 and 02 share their first
     Given deliberately - scenario 03 starts from no summaries, so it cannot
     move to the Background.
+  - Human approved 2026-09-07 20:05Z from the Telegram approval ask
+    (commit ac6c053838, which also committed this YAML before the mint
+    commit); the feature file is unchanged since that tap. IR-DRY: "the
+    tick reports reading 0 of 40 transcripts" and "<read> of <listed>" are
+    one parametrised step - the coder binds one handler.
