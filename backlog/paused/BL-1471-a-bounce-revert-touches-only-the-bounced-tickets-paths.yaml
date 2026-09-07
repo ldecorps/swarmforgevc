@@ -28,7 +28,7 @@ acceptance: specs/features/BL-1471-a-bounce-revert-touches-only-the-bounced-tick
 required_wiring:
   - 'swarmforge/scripts/run_commit_guards.sh::run_guard check_bounce_revert_scope.sh::the guard is reached from the shared Tier-1 chain (the same file runs check_merge_deletion.sh)'
 
-human_approval: pending
+human_approval: approved
 approval_context: >
   A new feature file is authored here, so it needs a tap. No choice is
   posed and there are no ruling_options. What is FIRM: the rule (already
