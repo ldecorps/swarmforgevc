@@ -24,7 +24,7 @@ const assert = require('node:assert/strict');
 const fc = require('fast-check');
 const fs = require('node:fs');
 const path = require('node:path');
-const { execFileSync, spawnSync } = require('node:child_process');
+const { spawnSync } = require('node:child_process');
 
 const REPO_ROOT = path.join(__dirname, '..', '..');
 const SWARMFORGE_SH = path.join(REPO_ROOT, 'swarmforge', 'scripts', 'swarmforge.sh');
@@ -122,39 +122,6 @@ test('BL-1328/BL-654 invariant 3: the asymmetry is documented at both sites and 
     'the pane-env site no longer prefers OpenRouter',
   );
 
-  // And measured, not asserted in prose: the NET change this branch makes to
-  // swarmforge.sh (origin/main..HEAD, so a bounce's revert and its reapply
-  // cancel out instead of being scanned as edits of their own) may add
-  // executable lines only inside the detection helper. A branch reordering
-  // would show up here as an added executable line outside it.
-  // origin/main against the WORKING TREE, not against HEAD: this runs as a
-  // pre-commit gate too, where the change is staged and not yet committed,
-  // and what matters is what the branch will carry either way.
-  const netDiff = execFileSync('git', ['diff', 'origin/main', '--', 'swarmforge/scripts/swarmforge.sh'], {
-    cwd: REPO_ROOT,
-    encoding: 'utf8',
-  });
-  const addedExecutable = netDiff
-    .split('\n')
-    .filter((line) => line.startsWith('+') && !line.startsWith('+++'))
-    .map((line) => line.slice(1))
-    .filter((line) => line.trim().length > 0 && !line.trim().startsWith('#'));
-  const helper = source.slice(source.indexOf('extra_cli_targets_qwen_cloud() {'));
-  const helperBody = helper.slice(0, helper.indexOf('\n}\n'));
-  for (const line of addedExecutable) {
-    assert.ok(
-      helperBody.includes(line),
-      `BL-1328 added executable swarmforge.sh code outside the detection helper: ${JSON.stringify(line)}`
-    );
-  }
-  // Once this work is on origin/main the net diff is empty and the question
-  // is settled there, not here - that is not a vacuous pass, it is the check
-  // having nothing left to measure.
-  if (netDiff.trim().length > 0) {
-    assert.ok(
-      addedExecutable.some((line) => line.includes('--model=qwen*')),
-      'the branch changes swarmforge.sh but carries no equals-form check'
-    );
-  }
-
+  // net-diff clause retired by BL-1495 (BL-1006: a whole-file diff against
+  // origin/main is a parcel-time check, red for every later edit).
 });

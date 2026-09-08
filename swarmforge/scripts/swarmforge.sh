@@ -1937,6 +1937,7 @@ RESUMECHECK
   local perplexity_guard=""
   local qwen_guard=""
   local qwen_lib_source=""
+  local bai_guard=""
   local local_model_guard=""
   # Re-apply CEREBRAS→OPENAI map inside the launch script. Panes often source
   # ~/.zshenv which re-exports the real OPENAI_API_KEY and would otherwise
@@ -1962,6 +1963,16 @@ RESUMECHECK
     qwen_guard="${qwen_lib_source}"$'\nqwen_guard_require_token_plan_endpoint || exit 1\n'
   else
     qwen_guard="${qwen_lib_source}"$'\nqwen_guard_map_if_flagged\n'
+  fi
+  # BL-1495: b.ai gateway (tencentcloud2/glm-5.3-flash) — same Perplexity-style
+  # host-sniff posture: if this role's pack CLI targets api.b.ai, ALWAYS remap
+  # (never depend solely on SWARMFORGE_USE_BAI in the launching shell), else
+  # re-apply only when the launching shell opted in, same zshenv-override
+  # posture as Cerebras/Perplexity.
+  if [[ "$extra_cli" == *api.b.ai* ]]; then
+    bai_guard=$'if [[ -n "${B_AI_API_KEY:-}" ]]; then\n  export SWARMFORGE_USE_BAI=1\n  export OPENAI_API_KEY="$B_AI_API_KEY"\n  export OPENAI_API_BASE=https://api.b.ai/v1\n  export OPENAI_BASE_URL=https://api.b.ai/v1\nelse\n  echo "SwarmForge: B_AI_API_KEY required (launch CLI targets api.b.ai)" >&2\n  exit 1\nfi\n'
+  else
+    bai_guard=$'if [[ "${SWARMFORGE_USE_BAI:-}" == "1" && -n "${B_AI_API_KEY:-}" ]]; then\n  export OPENAI_API_KEY="$B_AI_API_KEY"\n  export OPENAI_API_BASE="${OPENAI_API_BASE:-https://api.b.ai/v1}"\n  export OPENAI_BASE_URL="${OPENAI_BASE_URL:-https://api.b.ai/v1}"\nfi\n'
   fi
   # BL-1052: force the pane at the loopback OpenAI-compat endpoint. Never the
   # Token Plan cloud host — that is the aider/qwen Token Plan path. URL is
@@ -2057,7 +2068,7 @@ export SWARMFORGE_ROLE_WORKTREE='$role_worktree'
 export PATH='$role_script_dir':\$PATH
 cd '$role_worktree'
 ${resume_check}
-${billing_guard}${copilot_guard}${cerebras_guard}${perplexity_guard}${qwen_guard}${local_model_guard}${launch_body}
+${billing_guard}${copilot_guard}${cerebras_guard}${perplexity_guard}${qwen_guard}${bai_guard}${local_model_guard}${launch_body}
 LAUNCH
 
   # Only wire cleanup when a GUI terminal backend owns windows to close.
@@ -2171,6 +2182,7 @@ launch_role() {
     local use_cerebras=0
     local use_perplexity=0
     local use_qwen=0
+    local use_bai=0
     # Gemini CLI reads GEMINI_API_KEY; allow SWARMFORGE_GEMINI_API_KEY as alias
     # so operators can keep provider keys under a SwarmForge-prefixed name.
     if [[ -z "${GEMINI_API_KEY:-}" && -n "${SWARMFORGE_GEMINI_API_KEY:-}" ]]; then
@@ -2190,6 +2202,13 @@ launch_role() {
     if [[ "${SWARMFORGE_USE_QWEN:-}" == "1" && -n "${QWEN_API_KEY:-}" ]]; then
       use_qwen=1
     fi
+    # BL-1495: b.ai gateway - same launching-shell opt-in posture as
+    # Cerebras/Qwen, needed by the provisioned aider coordinator, which has
+    # no window line to sniff a host from (its base URL comes from pane env
+    # remap, not from flags).
+    if [[ "${SWARMFORGE_USE_BAI:-}" == "1" && -n "${B_AI_API_KEY:-}" ]]; then
+      use_bai=1
+    fi
     # SRE 2026-07-19: pack window --openai-api-base perplexity forces remap
     # even when the launching shell forgot SWARMFORGE_USE_PERPLEXITY=1.
     if [[ "${EXTRA_CLI_ARGS[$index]}" == *perplexity.ai* && -n "${PERPLEXITY_API_KEY:-}" ]]; then
@@ -2201,15 +2220,21 @@ launch_role() {
     if [[ "${EXTRA_CLI_ARGS[$index]}" == *dashscope.aliyuncs.com* && -n "${QWEN_API_KEY:-}" ]]; then
       use_qwen=1
     fi
+    # BL-1495: pack window --openai-api-base api.b.ai forces remap even when
+    # the launching shell forgot SWARMFORGE_USE_BAI=1 (same posture as
+    # Perplexity/Qwen above).
+    if [[ "${EXTRA_CLI_ARGS[$index]}" == *api.b.ai* && -n "${B_AI_API_KEY:-}" ]]; then
+      use_bai=1
+    fi
     # BL-1052: a local-model seat never rides the Token Plan qwen remap —
     # its endpoint is loopback, not the cloud Token Plan host.
     if [[ "$agent" == "local-model" ]]; then
       use_qwen=0
     fi
-    for provider_key in OPENAI_API_KEY MISTRAL_API_KEY CEREBRAS_API_KEY PERPLEXITY_API_KEY GEMINI_API_KEY QWEN_API_KEY; do
-      # When Cerebras/Perplexity/Qwen OpenAI-compat mode is on, do NOT forward the host
-      # OPENAI_API_KEY (real OpenAI sk-*). Panes must use the provider→OPENAI map.
-      if [[ ( "$use_cerebras" == "1" || "$use_perplexity" == "1" || "$use_qwen" == "1" ) && "$provider_key" == "OPENAI_API_KEY" ]]; then
+    for provider_key in OPENAI_API_KEY MISTRAL_API_KEY CEREBRAS_API_KEY PERPLEXITY_API_KEY GEMINI_API_KEY QWEN_API_KEY B_AI_API_KEY; do
+      # When Cerebras/Perplexity/Qwen/b.ai OpenAI-compat mode is on, do NOT forward the
+      # host OPENAI_API_KEY (real OpenAI sk-*). Panes must use the provider→OPENAI map.
+      if [[ ( "$use_cerebras" == "1" || "$use_perplexity" == "1" || "$use_qwen" == "1" || "$use_bai" == "1" ) && "$provider_key" == "OPENAI_API_KEY" ]]; then
         continue
       fi
       if [[ -n "${(P)provider_key:-}" ]]; then
@@ -2239,6 +2264,14 @@ launch_role() {
       provider_env_flags+=(-e "OPENAI_API_KEY=${QWEN_API_KEY}")
       provider_env_flags+=(-e "OPENAI_API_BASE=https://token-plan.ap-southeast-1.maas.aliyuncs.com/compatible-mode/v1")
       provider_env_flags+=(-e "OPENAI_BASE_URL=https://token-plan.ap-southeast-1.maas.aliyuncs.com/compatible-mode/v1")
+    fi
+    if [[ "$use_bai" == "1" ]]; then
+      # b.ai gateway (tencentcloud2/glm-5.3-flash, BL-1495). Same BL-130 /
+      # zshenv re-export posture as Cerebras/Perplexity/Qwen above.
+      provider_env_flags+=(-e "SWARMFORGE_USE_BAI=1")
+      provider_env_flags+=(-e "OPENAI_API_KEY=${B_AI_API_KEY}")
+      provider_env_flags+=(-e "OPENAI_API_BASE=https://api.b.ai/v1")
+      provider_env_flags+=(-e "OPENAI_BASE_URL=https://api.b.ai/v1")
     fi
     if [[ "$agent" == "local-model" ]]; then
       local lm_url

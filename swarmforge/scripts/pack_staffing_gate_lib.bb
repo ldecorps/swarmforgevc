@@ -49,6 +49,7 @@
 (def agent-model-providers
   {["claude" "claude-sonnet-5"] "anthropic"
    ["claude" "claude-opus-5"] "anthropic"
+   ["claude" "claude-fable-5-1"] "anthropic"
    ["claude" "qwen3.8-max"] "qwen"
    ["cursor" "auto"] "cursor"
    ["gemini" "gemini-2.5-pro"] "google"})
@@ -63,7 +64,8 @@
 ;; `openai/` prefix the CLI convention carries.
 (def api-base-host-providers
   {"api.deepseek.com" "deepseek"
-   "token-plan.ap-southeast-1.maas.aliyuncs.com" "qwen"})
+   "token-plan.ap-southeast-1.maas.aliyuncs.com" "qwen"
+   "api.b.ai" "tencentcloud2"})
 
 (defn flag-value
   "First token following `flag` in the window line's extra CLI args, or nil."

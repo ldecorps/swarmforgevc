@@ -275,4 +275,56 @@ DOC_SCRIPT9="$ROOT9/.swarmforge/launch/documenter.sh"
 grep -q "swarmforge-gemini-alias" "$DOC_SCRIPT9" && fail "09: alias key leaked into launch script"
 pass "09: SWARMFORGE_GEMINI_API_KEY maps to GEMINI_API_KEY on respawn-pane -e"
 
+# ── 10: b.ai gateway (BL-1495) — aider window line's --openai-api-base host
+#       sniff forces the remap even without SWARMFORGE_USE_BAI in the shell;
+#       B_AI_API_KEY reaches the pane via -e only, and the host's real
+#       OPENAI_API_KEY is excluded (same posture as Cerebras/Perplexity) ────
+ROOT10="$(mk_root)"
+cat > "$ROOT10/swarmforge/swarmforge.conf" <<'CONF'
+config active_backlog_max_depth -1
+window documenter aider master --model openai/glm-5.3-flash --openai-api-base https://api.b.ai/v1
+CONF
+
+FAKE_BIN10="$(mktemp -d)"
+register_tmp_dir "$FAKE_BIN10"
+TMUX_LOG10="$FAKE_BIN10/tmux-calls.log"
+cat > "$FAKE_BIN10/tmux" <<'FAKETMUX'
+#!/usr/bin/env bash
+echo "$@" >> "$TMUX_LOG"
+case "$1" in
+  -S)
+    case "$3" in
+      list-panes) exit 0 ;;
+      respawn-pane) exit 0 ;;
+      *) exit 0 ;;
+    esac
+    ;;
+esac
+exit 0
+FAKETMUX
+chmod +x "$FAKE_BIN10/tmux"
+
+B_AI_API_KEY=bai-secret-do-not-leak OPENAI_API_KEY=real-openai-do-not-leak \
+env -u SWARMFORGE_USE_BAI -u CEREBRAS_API_KEY -u PERPLEXITY_API_KEY -u QWEN_API_KEY -u GEMINI_API_KEY -u SWARMFORGE_GEMINI_API_KEY \
+PATH="$FAKE_BIN10:$PATH" TMUX_LOG="$TMUX_LOG10" zsh -f -c "
+  source '$SWARMFORGE_SH' '$ROOT10'
+  parse_config
+  $index_of_role_snippet
+  choose_cleanup_owner
+  launch_role \"\$(index_of_role documenter)\"
+"
+grep -q -- "-e B_AI_API_KEY=bai-secret-do-not-leak" "$TMUX_LOG10" \
+  || fail "10: expected respawn-pane -e B_AI_API_KEY; got: $(cat "$TMUX_LOG10")"
+grep -q -- "-e SWARMFORGE_USE_BAI=1" "$TMUX_LOG10" \
+  || fail "10: expected respawn-pane -e SWARMFORGE_USE_BAI=1 (host sniff, flag unset in shell); got: $(cat "$TMUX_LOG10")"
+grep -q -- "-e OPENAI_API_KEY=bai-secret-do-not-leak" "$TMUX_LOG10" \
+  || fail "10: expected -e OPENAI_API_KEY mapped to the b.ai key; got: $(cat "$TMUX_LOG10")"
+grep -q -- "-e OPENAI_API_BASE=https://api.b.ai/v1" "$TMUX_LOG10" \
+  || fail "10: expected -e OPENAI_API_BASE=https://api.b.ai/v1; got: $(cat "$TMUX_LOG10")"
+grep -q -- "-e OPENAI_API_KEY=real-openai-do-not-leak" "$TMUX_LOG10" \
+  && fail "10: the host's real OPENAI_API_KEY must be excluded once b.ai wins; got: $(cat "$TMUX_LOG10")"
+DOC_SCRIPT10="$ROOT10/.swarmforge/launch/documenter.sh"
+grep -q "bai-secret-do-not-leak" "$DOC_SCRIPT10" && fail "10: B_AI_API_KEY leaked into the launch script file"
+pass "10: b.ai host-sniff forces the remap; key reaches the pane via -e only; real OPENAI_API_KEY excluded"
+
 echo "ALL PASS"
