@@ -5,6 +5,11 @@
 # creates one - the sweep never waives anything on its own (BL-848's line).
 # Record one with babysitter_waive.bb --record; list them with --list.
 
+- key: pipeline-code-on-main-607e7fc56de4f82db66ad1892f8163a10a98a7f5
+  waived_by: coordinator
+  reason: "false positive: QA land-approval record exists (source 9558401764), content identical to landed commit, no bounce history; source orphaned from an earlier land attempt so is_qa_ancestor.sh fails until QA's next main-QA merge; evidence: backlog/evidence/babysitter-article42-bl1490-607e7fc56d-orphaned-source-false-positive-20260908.md"
+  waived_at: 2026-09-08
+
 - key: pipeline-code-on-main-a7c3ef9974a48922c0b31d31d6be02b2820ab774
   waived_by: coordinator
   reason: "False positive: a7c3ef9974 is a plain 2-parent reconcile merge (author t, resolving main<>origin/main divergence) with no diff of its own beyond its parents' union - confirmed 'git diff <parent1> a7c3ef9974' and 'git diff <parent2> a7c3ef9974' each equal exactly what the other parent added. The pipeline-touching file bl1463EscalatingLandStepNamesSiblingSteps.js entered via a90e80a669, QA's recorded hand-built tip-pure land (BL-1334 record present, is_qa_ancestor.sh a90e80a669 exits 0 approved). a90e80a669 is a git ancestor of a7c3ef9974. Article 4.2 predicate is ancestry/exact-token only and does not credit a merge commit whose ancestor already carries the BL-1334 approval record - known pattern, see memory article42-predicate-is-ancestry-only-qa-handland-always-flags."
