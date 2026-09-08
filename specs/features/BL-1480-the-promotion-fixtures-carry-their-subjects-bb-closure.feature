@@ -57,3 +57,10 @@ Feature: BL-1480 The promote_and_route_next fixtures carry their subject's real 
     When the test runs against that fixture
     Then the run fails and names the file that could not be loaded
     And no check is reported as passed
+
+  # BL-1480 the-promotion-fixtures-carry-their-subjects-bb-closure-05
+  Scenario: the closure guard's own multi-entry check unions every one of the no-limit fixture's declared entry points
+    Given the fixture copy-list in "swarmforge/scripts/test/test_promote_and_route_next_no_limit_depth.sh"
+    When the guard's own missingFromList check runs against a closure carrying an edge reachable only through the second entry point
+    Then the check covered all four of its declared entry points
+    And the closure walk reaches the edge behind the second entry point
