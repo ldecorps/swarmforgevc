@@ -247,6 +247,16 @@ Waiting on QA result before merging cleanup branch.
 
 The `message` value must be a single line no longer than 80 characters.
 
+`wake` (optional, `note`-only, BL-1494): the single accepted value is `defer`.
+A deferred note lands in the recipient's `inbox/new` like any other but
+produces no tmux wake on any path - not the sender's synchronous inject, not
+the daemon's delivery hop (which logs `deliver-notify-skip-deferred`), and
+not the chase or nudge sweeps while it is the only unread work. The
+recipient reads it on its own next `ready_for_next.sh`. Any other value, or
+the field on any other message type, is refused as an unknown header. First
+sender: the post-QA branch sweep's non-dirty-worktree reasons, per the human's
+BL-1361 ruling ("wake only for a dirty worktree and defer the other reasons").
+
 ### QA approval and merge-up (full pack)
 
 After the final QA gate passes on a parcel:
