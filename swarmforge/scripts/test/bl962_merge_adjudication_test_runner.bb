@@ -168,8 +168,15 @@
       code (strip-comments-keep-strings raw)
       ancestry-refs (count (filter #(str/includes? % "is_qa_ancestor.sh")
                                    (str/split-lines code)))]
-  (assert= "no second ancestry predicate: `merge-base`/`--is-ancestor` never appears in babysitter_check.bb's code, string arguments included"
-           nil (re-find #"merge-base|--is-ancestor" code))
+  ;; BL-1372: narrowed from the original over-broad assertion that matched ANY
+  ;; merge-base/--is-ancestor call. The legitimate call at line 852
+  ;; (merge-base HEAD origin/main) asks whether local main has diverged from
+  ;; origin - a different question from "is this a QA-approved tip". Following
+  ;; BL-1314's scoping fix for handoffd.bb, the assertion now requires
+  ;; swarmforge-QA to be present, which is the only durable anchor for "this
+  ;; call asks the QA question".
+  (assert= "no second QA-ancestry predicate: no inline `merge-base`/`--is-ancestor` call against swarmforge-QA in babysitter_check.bb"
+           nil (re-find #"(?i)(merge-base|--is-ancestor).*swarmforge-QA" code))
   (assert= "is_qa_ancestor.sh is named at exactly one code site (the qa-ancestor? resolver)"
            1 ancestry-refs))
 
