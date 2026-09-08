@@ -41,14 +41,19 @@ test('commitScopedFile commits only the named file, leaving other dirty state un
   assert.match(log, /test commit/);
 });
 
-test('commitScopedFile returns false (never throws) when there is nothing new to commit', () => {
+// BL-1475: a "nothing to commit" attempt (identical content already
+// committed) verifies as durable against HEAD before commitScopedFile
+// reports failure - true, not the previously ambiguous false (which every
+// caller here used to have to pre-check with isFileCommitted to tell apart
+// from a genuine failure).
+test('commitScopedFile returns true (already durable) when there is nothing new to commit', () => {
   const target = mkGitRepo();
   const filePath = path.join(target, 'tracked.txt');
   fs.writeFileSync(filePath, 'content');
   commitScopedFile(target, filePath, 'first commit');
 
   assert.doesNotThrow(() => commitScopedFile(target, filePath, 'second commit'));
-  assert.equal(commitScopedFile(target, filePath, 'second commit'), false);
+  assert.equal(commitScopedFile(target, filePath, 'second commit'), true);
 });
 
 test('commitScopedFile returns false (never throws) when the target is not a git repo at all', () => {
@@ -129,7 +134,7 @@ test('isFileCommitted is false for a path that was never written at all (fails c
 // are injected (mirrors CommitFailureReporter's own adapter-injected
 // testability convention) so this is provable without a real git race or a
 // real wall-clock wait.
-test('commitScopedFile retries a transient failure and succeeds once a later attempt does', () => {
+test('commitScopedFile retries a transient (retryable) failure and succeeds once a later attempt does', () => {
   const target = mkGitRepo();
   const filePath = path.join(target, 'tracked.txt');
   fs.writeFileSync(filePath, 'content');
@@ -137,7 +142,7 @@ test('commitScopedFile retries a transient failure and succeeds once a later att
   let calls = 0;
   const attemptCommit = () => {
     calls += 1;
-    return calls >= 3; // fails twice, succeeds on the 3rd attempt
+    return { committed: calls >= 3, retryable: true }; // fails twice, succeeds on the 3rd attempt
   };
   const sleeps = [];
   const sleep = (ms) => sleeps.push(ms);
@@ -148,6 +153,9 @@ test('commitScopedFile retries a transient failure and succeeds once a later att
   assert.equal(sleeps.length, 2, 'expected a backoff sleep between each failed attempt, never after success');
 });
 
+// BL-1475: raised from 3 attempts to 12 (a budget sized to the guard chain,
+// which can hold .git/index.lock for seconds) - only ever retried for a
+// retryable (lock-shaped) failure, never a real error.
 test('commitScopedFile gives up after its bounded attempt cap, never retrying unboundedly', () => {
   const target = mkGitRepo();
   const filePath = path.join(target, 'tracked.txt');
@@ -156,29 +164,68 @@ test('commitScopedFile gives up after its bounded attempt cap, never retrying un
   let calls = 0;
   const attemptCommit = () => {
     calls += 1;
-    return false; // always fails
+    return { committed: false, retryable: true }; // always fails, always retryable
   };
   const sleeps = [];
   const sleep = (ms) => sleeps.push(ms);
 
   const committed = commitScopedFile(target, filePath, 'msg', attemptCommit, sleep);
   assert.equal(committed, false);
-  assert.ok(calls >= 2 && calls <= 5, `expected a small bounded attempt count, got ${calls}`);
+  assert.equal(calls, 12, 'expected the full 12-attempt budget to be spent on a retryable failure');
   assert.equal(sleeps.length, calls - 1, 'expected one backoff sleep between each attempt, none after the last');
 });
 
-test('commitScopedFile backs off with an increasing delay between retries, never a flat/zero wait', () => {
+test('commitScopedFile does NOT retry a non-retryable (real) failure, even once', () => {
   const target = mkGitRepo();
   const filePath = path.join(target, 'tracked.txt');
   fs.writeFileSync(filePath, 'content');
 
-  const attemptCommit = () => false;
+  let calls = 0;
+  const attemptCommit = () => {
+    calls += 1;
+    return { committed: false, retryable: false, stderr: 'hook declined' };
+  };
+  const sleeps = [];
+  const sleep = (ms) => sleeps.push(ms);
+
+  const committed = commitScopedFile(target, filePath, 'msg', attemptCommit, sleep);
+  assert.equal(committed, false);
+  assert.equal(calls, 1, 'expected exactly one attempt for a non-retryable failure');
+  assert.deepEqual(sleeps, [], 'expected no backoff wait for a non-retryable failure');
+});
+
+test('commitScopedFile reports the real stderr from the final failed attempt via onFailureDetail, never on success', () => {
+  const target = mkGitRepo();
+  const filePath = path.join(target, 'tracked.txt');
+  fs.writeFileSync(filePath, 'content');
+
+  const details = [];
+  const attemptCommit = () => ({ committed: false, retryable: false, stderr: "fatal: Unable to create '.../.git/index.lock': File exists." });
+
+  const committed = commitScopedFile(target, filePath, 'msg', attemptCommit, () => {}, 3, (stderr) => details.push(stderr));
+  assert.equal(committed, false);
+  assert.deepEqual(details, ["fatal: Unable to create '.../.git/index.lock': File exists."]);
+
+  details.length = 0;
+  const successAttempt = () => ({ committed: true });
+  const succeeded = commitScopedFile(target, filePath, 'msg', successAttempt, () => {}, 3, (stderr) => details.push(stderr));
+  assert.equal(succeeded, true);
+  assert.deepEqual(details, [], 'onFailureDetail must never fire on a successful commit');
+});
+
+test('commitScopedFile backs off with an increasing delay between retries, capped, never a flat/zero wait', () => {
+  const target = mkGitRepo();
+  const filePath = path.join(target, 'tracked.txt');
+  fs.writeFileSync(filePath, 'content');
+
+  const attemptCommit = () => ({ committed: false, retryable: true });
   const sleeps = [];
   const sleep = (ms) => sleeps.push(ms);
 
   commitScopedFile(target, filePath, 'msg', attemptCommit, sleep);
   assert.ok(sleeps.every((ms) => ms > 0), `expected every backoff delay to be positive, got ${JSON.stringify(sleeps)}`);
   assert.ok(sleeps[sleeps.length - 1] >= sleeps[0], `expected a non-decreasing backoff, got ${JSON.stringify(sleeps)}`);
+  assert.ok(sleeps.every((ms) => ms <= 5000), `expected every backoff delay capped at 5000ms, got ${JSON.stringify(sleeps)}`);
 });
 
 test('commitScopedFile with the REAL default attempt/sleep still commits on the ordinary (first-try) success path', () => {
@@ -189,4 +236,47 @@ test('commitScopedFile with the REAL default attempt/sleep still commits on the 
   assert.equal(commitScopedFile(target, filePath, 'test commit'), true);
   const log = execFileSync('git', ['-C', target, 'log', '--format=%s', '--', filePath], { encoding: 'utf8' });
   assert.match(log, /test commit/);
+});
+
+// BL-1475: the real default attemptCommit captures git's own stderr and
+// flags a `.git/index.lock` refusal as retryable - proven against a REAL
+// lock file (no fake seam for the attempt itself), only sleep is faked so
+// the test never actually waits.
+test('the REAL default attemptCommit reports an index.lock refusal as retryable, with gits own stderr', () => {
+  const target = mkGitRepo();
+  const filePath = path.join(target, 'tracked.txt');
+  fs.writeFileSync(filePath, 'content');
+  const lockPath = path.join(target, '.git', 'index.lock');
+  fs.writeFileSync(lockPath, '');
+  try {
+    const sleeps = [];
+    // maxAttempts=1 so this proves only the SINGLE attempt's own
+    // classification, never depends on the lock actually being released.
+    const committed = commitScopedFile(target, filePath, 'msg', undefined, (ms) => sleeps.push(ms), 1);
+    assert.equal(committed, false, 'expected the commit to fail while the lock is held');
+  } finally {
+    fs.unlinkSync(lockPath);
+  }
+});
+
+// BL-1475: another writer's commit already carrying the EXACT content this
+// call intended to commit (simulated: the file is committed directly by a
+// second real git command before commitScopedFile ever runs) means every
+// one of THIS call's own attempts fails (nothing new to stage/commit), yet
+// the outcome is durable - true, never a false alarm.
+test('commitScopedFile reports true when another writer already committed the exact intended content', () => {
+  const target = mkGitRepo();
+  const filePath = path.join(target, 'tracked.txt');
+  fs.writeFileSync(filePath, 'content');
+  // The "other writer": commits the exact same content directly.
+  git(target, ['add', '--', filePath]);
+  git(target, ['commit', '-q', '-m', 'another writer landed it first']);
+
+  let calls = 0;
+  const attemptCommit = () => {
+    calls += 1;
+    return { committed: false, retryable: false, stderr: 'nothing to commit, working tree clean' };
+  };
+  assert.equal(commitScopedFile(target, filePath, 'msg', attemptCommit), true);
+  assert.equal(calls, 1, 'a non-retryable failure is attempted exactly once before the durability check');
 });

@@ -54,6 +54,37 @@ test('runCommitIntegrity: a missing commit_integrity_cli.bb degrades to false, n
   assert.equal(result, false);
 });
 
+// ── BL-1475: commitApprovalWrites surfaces the CLI's richer JSON (reason,
+//    sha, stderr) - never collapses "landed elsewhere" (another writer's
+//    commit already carried this call's own intended content, verified
+//    against HEAD) into a bare boolean, and never discards git's real
+//    stderr on a genuine failure. ───────────────────────────────────────
+
+function fakeTicketFile(targetPath, backlogId) {
+  fs.mkdirSync(path.join(targetPath, 'backlog', 'active'), { recursive: true });
+  fs.writeFileSync(path.join(targetPath, 'backlog', 'active', `${backlogId}-fixture.yaml`), `id: ${backlogId}\ntitle: t\n`);
+}
+
+test('commitApprovalWrites: a landed-elsewhere CLI result is success, naming the reason and sha', async () => {
+  const targetPath = mkTargetWithFakeCli('{"success":true,"reason":"landed-elsewhere","sha":"abc1234567","attempts":3}', 0);
+  fakeTicketFile(targetPath, 'BL-1475');
+  const result = await commitApprovalWrites(targetPath, 'BL-1475', 'msg');
+  assert.equal(result.success, true);
+  assert.equal(result.reason, 'landed-elsewhere');
+  assert.equal(result.sha, 'abc1234567');
+});
+
+test('commitApprovalWrites: a genuine failure carries gits own stderr, never discarded', async () => {
+  const targetPath = mkTargetWithFakeCli(
+    '{"success":false,"reason":"commit-failed","attempts":13,"stderr":"fatal: Unable to create \'.git/index.lock\': File exists."}',
+    1
+  );
+  fakeTicketFile(targetPath, 'BL-1475');
+  const result = await commitApprovalWrites(targetPath, 'BL-1475', 'msg');
+  assert.equal(result.success, false);
+  assert.match(result.stderr, /index\.lock/);
+});
+
 // ── commitApprovalWrites (BL-892): shared by every automated
 //    human_approval writer (Expedite, paused-pager Approve, Telegram
 //    Approve/Reject/Amend) - locates the ticket's CURRENT file via
@@ -83,9 +114,9 @@ test('commitApprovalWrites: commits an active ticket file through the real commi
   fs.mkdirSync(path.join(root, 'backlog', 'active'), { recursive: true });
   fs.writeFileSync(path.join(root, 'backlog', 'active', 'BL-892-fixture.yaml'), 'id: BL-892\ntitle: t\nhuman_approval: approved\n');
 
-  const ok = await commitApprovalWrites(root, 'BL-892', 'Approve BL-892: record human_approval\n\nBy coder.');
+  const result = await commitApprovalWrites(root, 'BL-892', 'Approve BL-892: record human_approval\n\nBy coder.');
 
-  assert.equal(ok, true);
+  assert.equal(result.success, true);
   const log = execFileSync('git', ['log', '-1', '--format=%s', '--', 'backlog/active/BL-892-fixture.yaml'], { cwd: root, encoding: 'utf8' });
   assert.match(log, /Approve BL-892/);
   const status = execFileSync('git', ['status', '--porcelain', '--', 'backlog'], { cwd: root, encoding: 'utf8' });
@@ -98,27 +129,27 @@ test('commitApprovalWrites: also finds and commits a PAUSED ticket file (not jus
   fs.mkdirSync(path.join(root, 'backlog', 'paused'), { recursive: true });
   fs.writeFileSync(path.join(root, 'backlog', 'paused', 'BL-892-fixture.yaml'), 'id: BL-892\ntitle: t\nhuman_approval: rejected\n');
 
-  const ok = await commitApprovalWrites(root, 'BL-892', 'Reject BL-892: record human_approval\n\nBy coder.');
+  const result = await commitApprovalWrites(root, 'BL-892', 'Reject BL-892: record human_approval\n\nBy coder.');
 
-  assert.equal(ok, true);
+  assert.equal(result.success, true);
   const log = execFileSync('git', ['log', '-1', '--format=%s', '--', 'backlog/paused/BL-892-fixture.yaml'], { cwd: root, encoding: 'utf8' });
   assert.match(log, /Reject BL-892/);
 });
 
-test('commitApprovalWrites: returns false (never throws) when the ticket file cannot be found', async () => {
+test('commitApprovalWrites: returns success:false (never throws) when the ticket file cannot be found', async () => {
   const root = gitFixture();
   copyCommitIntegrityScripts(root);
   fs.mkdirSync(path.join(root, 'backlog', 'active'), { recursive: true });
 
-  assert.equal(await commitApprovalWrites(root, 'BL-404', 'msg'), false);
+  assert.equal((await commitApprovalWrites(root, 'BL-404', 'msg')).success, false);
 });
 
-test('commitApprovalWrites: returns false (never throws) when the commit-integrity CLI is missing entirely', async () => {
+test('commitApprovalWrites: returns success:false (never throws) when the commit-integrity CLI is missing entirely', async () => {
   const root = gitFixture();
   fs.mkdirSync(path.join(root, 'backlog', 'active'), { recursive: true });
   fs.writeFileSync(path.join(root, 'backlog', 'active', 'BL-892-fixture.yaml'), 'id: BL-892\ntitle: t\n');
 
-  assert.equal(await commitApprovalWrites(root, 'BL-892', 'msg'), false);
+  assert.equal((await commitApprovalWrites(root, 'BL-892', 'msg')).success, false);
 });
 
 // BL-1091: Expedite rename must pathspec-commit the paused/ source deletion
@@ -138,8 +169,8 @@ test('BL-1091: commitApprovalWrites pathspecs destination plus rename source', a
   fs.renameSync(pausedFile, activeFile);
   fs.writeFileSync(activeFile, 'id: BL-1091\ntitle: t\nhuman_approval: approved\n');
 
-  const ok = await commitApprovalWrites(root, 'BL-1091', 'Expedite BL-1091\n\nBy coder.', [pausedFile]);
-  assert.equal(ok, true);
+  const result = await commitApprovalWrites(root, 'BL-1091', 'Expedite BL-1091\n\nBy coder.', [pausedFile]);
+  assert.equal(result.success, true);
   const names = execFileSync('git', ['show', '--name-status', '--format=', 'HEAD'], {
     cwd: root,
     encoding: 'utf8',
@@ -180,8 +211,8 @@ test('BL-1091: uniqueRelPaths dedupes extras and drops empty relatives', async (
   const file = path.join(targetPath, 'backlog', 'active', 'BL-1091-dedupe.yaml');
   fs.writeFileSync(file, 'id: BL-1091\ntitle: t\n');
   // Same abs twice + targetPath itself (relative "") must collapse to one --path.
-  const ok = await commitApprovalWrites(targetPath, 'BL-1091', 'msg', [file, targetPath]);
-  assert.equal(ok, true);
+  const result = await commitApprovalWrites(targetPath, 'BL-1091', 'msg', [file, targetPath]);
+  assert.equal(result.success, true);
   const seen = fs.readFileSync(seenPath, 'utf8').trim().split('\n').filter(Boolean);
   assert.deepEqual(seen, ['backlog/active/BL-1091-dedupe.yaml']);
 });

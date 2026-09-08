@@ -157,6 +157,11 @@
         (binding [*out* *err*]
           (println (str "commit_integrity_cli: FAILED (" (name (:reason result))
                          ") after " (:attempts result) " attempt(s)"
+                         ;; BL-1475: git's own stderr from the final failed
+                         ;; attempt, never discarded - the "landed
+                         ;; elsewhere" outcome is a :success true above and
+                         ;; never reaches this branch at all.
+                         (when (:stderr result) (str " — " (str/trim (:stderr result))))
                          (when (:index-left-dirty result)
                            " — INDEX LEFT DIRTY: restoring the caller's paths to their pre-call state also failed"))))
         (System/exit 1)))))
