@@ -106,3 +106,36 @@ Landed as `38b4338db5`, `abandoned_commits: [2309e064e1]` recorded
 alone, per the ruling.
 
 By QA.
+
+## Instance: BL-1475 (2026-09-08, by QA)
+
+`land_step_cli.bb BL-1475 8cce3c601f` (BL-1475's own QA-approved tip)
+returned `LAND_ESCALATE`: ten ENTANGLED_SIBLING ids (BL-1348, BL-1408,
+BL-1444, BL-1463, BL-1466, BL-1468, BL-1474, BL-1477, BL-940, BL-968), with
+`docs/reference/Specification.MD` named as shared with bounced BL-1348 as
+the refusal reason. Checked done/: BL-1408, BL-1444, BL-1463, BL-1466,
+BL-1474, BL-1477, BL-968 are all already `done/` (landed); only BL-1348
+(bounced), BL-940, BL-1468 (both paused) remain genuinely unlanded.
+
+Content-diff (`git diff -U0 origin/main..8cce3c601f -- docs/reference/
+Specification.MD`): one 31-line insertion block plus 3 blank-line context
+adds, and exactly one removed line ("already has. The paused-pager's...").
+`git blame` on the added block: all from BL-1475's own documenter commit
+`629443953e`. The one removed line traced by `git log -S` at origin/main to
+`b57fff42a8` (BL-892), not BL-1348 - replaced inline by BL-1475's own
+continuation of the same sentence. Attribution-only false block, per the
+ruling above.
+
+Hand-built the tip-pure replay from the union of paths touched by the 12
+commits tagged `BL-1475` in range (`2b402e0b7e..8cce3c601f`): 7 evidence
+files, Specification.MD, 8 `extension/src`/`extension/test` files, the
+BL-1475 stryker config, 3 `specs/pipeline/steps/*.js` files, 2
+`commit_integrity_*.bb` scripts and their 2 test runners (32 paths total,
+built via `git read-tree origin/main` + per-path `git update-index
+--cacheinfo` from the QA tip, avoiding a checkout in the shared worktree).
+`land_step_cli.bb BL-1475 <replay>` on the result: `LAND_CLEAN`. Landed via
+`land_main_publish.sh . --land BL-1475... <replay>` as `c34c198615`,
+`abandoned_commits: [8cce3c601f]` recorded (`3773873538`). No further note
+- resolved by content-diff alone, per the ruling.
+
+By QA.
