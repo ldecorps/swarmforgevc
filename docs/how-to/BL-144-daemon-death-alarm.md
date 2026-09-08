@@ -1,10 +1,38 @@
 # BL-144: Daemon Death Alarm — Understanding the Alert and Recovery
 
-**When the SwarmForge daemon (handoffd) dies, the swarm stops and you receive an alarm email.**
+**When the SwarmForge daemon (handoffd) dies, the supervisor first tries a
+bounded in-place restart (BL-1492); only once that restart budget is spent
+does it fall back to BL-144's original full halt.** Either way you receive
+an alarm email.
 
 This runbook explains what the alarm means and how to recover.
 
-## What You'll See
+## The restart-then-halt ladder (BL-1492)
+
+On a `:dead`/`:stalled` verdict, `handoffd_supervisor.bb` no longer halts
+the swarm on the first sighting:
+
+1. **Restart budget has headroom** (default: fewer than 2 restarts recorded
+   in the last 600s of `restart_history`): the daemon is restarted in place
+   through the one start owner, `start_handoff_daemon.sh` (BL-690) — no role
+   session or tmux server is touched. The alarm email still sends (subject
+   `SwarmForge: handoffd <verdict>, restarted in place (<outcome>)`), the
+   failure log is still written, and the restart is appended to
+   `restart_history` in the status file.
+2. **Budget exhausted**: the unchanged BL-144 halt below — same failure
+   log, same "swarm halted" email, same `halt-swarm!`, same `halted`
+   status.
+
+The budget re-arms itself once a restart's `restart_history` entry ages
+past the window (default 600s) with no further death in that window —
+there is no separate healthy-uptime timer to track. Tune the budget with
+`SUPERVISOR_RESTART_BUDGET_COUNT` and `SUPERVISOR_RESTART_BUDGET_WINDOW_MS`.
+
+The rest of this runbook (failure log contents, recovery steps) applies
+to both the restart and the halt outcome; where they differ is called out
+below.
+
+## What You'll See — the halt (budget exhausted, or the pre-BL-1492 case)
 
 You will receive an email with the subject line:
 ```
@@ -34,8 +62,14 @@ After fixing the daemon, run: swarmforge ensure /path/to/target
 
 The daemon (handoffd) is the central process that delivers handoffs between agents and performs liveness sweeps (chase/watchdog). If it dies:
 
-1. **It is not automatically restarted** — this is intentional. A dead daemon is a serious failure that requires investigation.
-2. **The swarm stops immediately** — all agent panes are halted so no work continues on a broken substrate.
+1. **It is restarted in place first, within a bounded budget (BL-1492)** —
+   the first (and, by default, second) death within a 600s window is
+   handled by restarting handoffd through the one start owner; no
+   investigation is required to keep the swarm moving. Only once the
+   budget is spent within the window does the supervisor treat it as a
+   serious failure requiring investigation and fall back to the full halt
+   below.
+2. **The swarm stops immediately on a halt** — all agent panes are halted so no work continues on a broken substrate.
 3. **Queue state is preserved** — all `.swarmforge/handoffs/` files are untouched, so work can resume from where it stopped.
 4. **A failure log is written** — diagnostic information is captured so you can understand why the daemon failed.
 5. **As of BL-1491, the halt records itself on both death-detector ledgers**,
@@ -144,4 +178,5 @@ The daemon is part of SwarmForge's reliability layer. If deaths are frequent:
 - **BL-690** — Fixed ensure's daemon repair to start the daemon instead of running the halt-authority probe; see the note under Recovery Steps above.
 - **BL-813** — Attached the failure log to the death email (see above) and hardened `ambulance_lib.bb`'s `ticket-has-file?` against the active→done glob-then-vanish race that caused this incident's crash.
 - **BL-1491** — Made every alarm-and-halt write a kill-all-audit row and an availability stop record write-ahead (see above), so the death is visible on both ledgers instead of only in a log grep.
+- **BL-1492** — Put a bounded in-place restart ahead of the halt (see "The restart-then-halt ladder" above): most deaths no longer take the swarm down at all, and the halt remains BL-144's unchanged escalation once the restart budget is spent.
 - **Daemon Status** — `.swarmforge/daemon/handoffd.status.json` tracks the daemon's health state in real time.

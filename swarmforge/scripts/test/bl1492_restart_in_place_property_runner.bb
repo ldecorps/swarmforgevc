@@ -89,6 +89,11 @@
 ;; stop-file so that loop is a no-op at load (same trick the BL-1490/BL-1491
 ;; property/acceptance fixtures rely on), then remove it.
 (def boot-root (str (fs/create-temp-dir {:prefix "bl1492-prop-boot-"})))
+;; BL-459 temp-dir trap: reclaim the root on every exit path (an exception
+;; during load-file/property runs must not leak it - the explicit
+;; delete-tree near the bottom of this file only fires on the happy path).
+(-> (Runtime/getRuntime)
+    (.addShutdownHook (Thread. #(when (fs/exists? boot-root) (fs/delete-tree boot-root)))))
 (def boot-daemon-dir (fs/path boot-root ".swarmforge" "daemon"))
 (fs/create-dirs boot-daemon-dir)
 (def boot-stop-file (fs/path boot-daemon-dir "stop"))

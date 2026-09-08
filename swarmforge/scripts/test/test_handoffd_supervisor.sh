@@ -207,6 +207,42 @@ FAILURE_LOG="$(failure_log_path)"
 grep -q "kill-session" "$TMUX_LOG" || fail "05: messy death did not still hard-stop the swarm"
 pass "05: a messy death (missing pid file, truncated status file) still alarms and halts cleanly"
 
+# ── 06: default budget headroom takes the real check!->restart path, not
+# just respond-to-verdict! called directly (BL-1492). Every other coverage
+# of the :restart leg (handoffd_supervisor_restart_budget_test_runner.bb,
+# bl1492_restart_in_place_property_runner.bb, the BL-1492 acceptance CLI)
+# calls respond-to-verdict! directly, bypassing check!'s own dispatch
+# entirely - and every other check!-level fixture in THIS file pins the
+# budget to 0 (line 53), which can only ever reach :halt. This is the one
+# case proving check! itself, with a REAL dead-pid observation and the REAL
+# SUPERVISOR_START_DAEMON_CMD subprocess seam, actually reaches :restart and
+# never touches tmux - closing the wiring gap between evaluate-health's real
+# observations and the restart-in-place response.
+make_fixture
+trap 'stop_daemon; rm -rf "$ROOT"' EXIT
+echo "999999" > "$DAEMON_DIR/handoffd.pid"   # dead pid
+queue_outbox
+
+START_MARKER="$ROOT/start-daemon-invoked"
+FAKE_START_DAEMON="$FAKE_BIN/fake-start-daemon.sh"
+cat > "$FAKE_START_DAEMON" <<EOF
+#!/usr/bin/env bash
+touch "$START_MARKER"
+EOF
+chmod +x "$FAKE_START_DAEMON"
+
+SUPERVISOR_RESTART_BUDGET_COUNT=2 SUPERVISOR_START_DAEMON_CMD="$FAKE_START_DAEMON" check_once
+
+[[ -f "$START_MARKER" ]] || fail "06: check! did not invoke the real start-daemon-owner seam"
+grep -q "kill-session" "$TMUX_LOG" && fail "06: a restart-in-place must never touch tmux"
+[[ "$(status_field state)" != "halted" ]] || fail "06: a restarted daemon must not read as halted"
+python3 -c "
+import json
+h = json.load(open('$DAEMON_DIR/handoffd.status.json')).get('restart_history', [])
+assert len(h) == 1 and h[0]['result'] == 'succeeded', h
+" || fail "06: restart_history was not recorded via the real check! path"
+pass "06: default budget headroom takes the real check!->restart path through the real start-owner seam, no tmux touched"
+
 # ── BL-081: at most one handoffd process per project root ────────────────────
 # Covers acceptance scenarios BL-081 singleton-handoffd-01..06.
 
