@@ -35,7 +35,7 @@ required_wiring:
   - 'specs/pipeline/steps/lib/bbFixtureClosureGate.js::test_bl1028_promotion_obeys_integrity_refusal.sh::the fixture is enrolled in the closure guard so its copy list cannot rot again'
   - 'specs/pipeline/steps/bl1496Bl1028FixtureClosureSteps.js::registerSteps::the handler lands in the same parcel as the feature (BL-233)'
 
-human_approval: pending
+human_approval: approved
 approval_context: >
   A new feature file is authored here, so it needs a tap. No choice is posed
   and there are no ruling_options. FIRM: the fixture derives its copy set

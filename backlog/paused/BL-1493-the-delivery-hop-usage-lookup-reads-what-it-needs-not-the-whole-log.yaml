@@ -25,7 +25,7 @@ acceptance: specs/features/BL-1493-the-delivery-hop-usage-lookup-reads-what-it-n
 required_wiring:
   - 'specs/pipeline/steps/bl1493UsageLookupBoundedSteps.js::registerSteps::the handler lands in the same parcel as the feature (BL-233)'
 
-human_approval: pending
+human_approval: approved
 approval_context: >
   A new feature file is authored here, so it needs a tap. No choice is posed
   and there are no ruling_options. FIRM: the record stamped is unchanged in
