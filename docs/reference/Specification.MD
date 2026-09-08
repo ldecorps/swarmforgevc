@@ -1,5 +1,6 @@
 # SwarmForge VS Code Extension — Specification
 
+**Last Updated:** September 9, 2026 (BL-1357: `runScenario` in `specs/pipeline/runtime.js` had no `finally` and called no teardown, so anything a step put in the context outlived the scenario whenever the walk aborted — a step handler threw, or no handler matched the step text at all, raised before the handler was called so outside even the per-step try/catch. Gherkin mutation made the second case routine; BL-1351's polling client leaked for 808 seconds after one mutated trigger. Fixed: a new `dispose(context, scenarioError)` wraps the step walk, calling each registered disposer exactly once on every exit path; disposal failures never mask the original failure. Step handlers opt in via `context.__disposables`; adoption is incremental, existing hand-rolled teardown unaffected. Feature: `specs/features/BL-1357-a-scenario-disposes-what-it-acquired-even-when-it-aborts.feature`.) Prior entry —
 **Last Updated:** September 8, 2026 (BL-1492: `check!`'s response to a
 `:dead`/`:stalled` verdict was always BL-144's full halt — kill every role
 session and the tmux server, then await a human — but `babysitterd` runs
@@ -14313,5 +14314,40 @@ prompt-text assertions). The module is required from
 - **BL-718** — Bubble talk mirror chunks and fails loudly.
 - How-to: `docs/how-to/BL-726-bl718-acceptance-feature-has-no-step-handlers.md`,
   `docs/how-to/BL-718-bubble-talk-mirror-chunks-and-fails-loudly.md`.
+
+## BL-1357 Scenario Disposal Seam
+
+`runScenario` in `specs/pipeline/runtime.js` builds a fresh `context` per
+scenario and walks Background then scenario steps, but had no `finally` and
+called no teardown — so anything a step put in that context outlived the
+scenario whenever the walk did not reach the end. Two abort paths: a step
+handler throws, or no handler matches the step text at all (raised before
+`resolved.handler` is called, so outside even the per-step try/catch).
+Gherkin mutation makes the second case routine: mutating an Outline cell is
+exactly how a step stops matching. BL-1351's Background ended with a real
+client polling a real bridge every 20ms over 1223 items; one mutated trigger
+left it connected with nothing to close it, holding a mutation worker for 808
+seconds.
+
+### Fix
+
+A new `dispose(context, scenarioError)` function wraps the step walk in a
+try/catch that always calls dispose before propagating. Step handlers opt in
+by pushing disposer functions onto `context.__disposables`; the runtime calls
+each exactly once on every exit path (completion, handler throw, no-match
+throw). Disposal failures never mask the original failure — if the scenario
+already threw, the original error propagates with any disposal failure
+appended to its message; if the scenario completed normally and disposal
+throws, that error propagates. Each disposer's outcome (success/failure) is
+recorded in `context.__disposed` so assertion steps can verify disposal
+happened. A `DISPOSAL_OUTCOME` constant is exported for step handlers.
+Adoption is incremental: existing step files that hand-roll their own
+teardown are unaffected; the seam is opt-in.
+
+### See Also
+
+- **BL-1357** — scenario disposal seam.
+- **BL-1358** — per-mutant time ceiling (sibling ticket, separate safety net).
+- Feature: `specs/features/BL-1357-a-scenario-disposes-what-it-acquired-even-when-it-aborts.feature`.
 
 
