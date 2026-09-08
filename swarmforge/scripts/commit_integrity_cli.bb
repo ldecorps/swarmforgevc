@@ -133,7 +133,15 @@
         (println (close-guard-failure-message close-check)))
       (System/exit 1))
     (let [result (commit-integrity-lib/commit-with-integrity! request)
-          ticket-ids (when (:success result) (:ticket-ids close-check))
+          ;; BL-1475: :landed-elsewhere means ANOTHER writer's commit
+          ;; represents this close (verified against HEAD, this process
+          ;; made no commit of its own) - that writer's OWN call is the one
+          ;; that already ran (or will run) this close's bookkeeping.
+          ;; Running it again here would abandon in-flight handoffs and
+          ;; record the lean ledger a second time for a close this process
+          ;; did not actually make.
+          genuinely-committed? (and (:success result) (not= (:reason result) :landed-elsewhere))
+          ticket-ids (when genuinely-committed? (:ticket-ids close-check))
           abandoned (vec (mapcat #(ticket-close-guard-lib/abandon-inflight-for-ticket! project-root %)
                                   ticket-ids))]
       (doseq [ticket-id ticket-ids]
