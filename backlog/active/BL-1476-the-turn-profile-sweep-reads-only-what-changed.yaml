@@ -268,3 +268,9 @@ notes: |
     one parametrised step - the coder binds one handler.
 
 assigned_to: coder
+abandoned_commits: [29e53e1e81]
+# BL-1241 land-step replay: the QA-cited commit 29e53e1e81 carried BL-1441
+# (paused, unlanded) entangled via a shared hunk in
+# backlog/hardening-debt-ledger.yaml. Landed instead: f0f54791c5, a
+# hand-built tip-pure commit onto origin/main excluding BL-1441's own
+# hunks in that file. By QA.
