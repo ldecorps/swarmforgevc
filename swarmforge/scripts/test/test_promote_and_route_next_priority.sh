@@ -7,6 +7,9 @@ set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 SCRIPTS="$(cd "$SCRIPT_DIR/.." && pwd)"
 HELPER="$SCRIPTS/promote_and_route_next.sh"
+source "$SCRIPT_DIR/lib/bb_closure_copy.sh"
+source "$SCRIPT_DIR/lib/bb_fixture_load_guard.sh"
+source "$SCRIPT_DIR/lib/deprecate_check_allow_stub.sh"
 
 fail() { echo "FAIL: $*" >&2; exit 1; }
 pass() { echo "PASS: $*"; }
@@ -21,17 +24,15 @@ mkdir -p "$ROOT/backlog/paused" "$ROOT/backlog/active" "$ROOT/specs/features" "$
 
 cp "$HELPER" "$ROOT/swarmforge/scripts/promote_and_route_next.sh"
 chmod +x "$ROOT/swarmforge/scripts/promote_and_route_next.sh"
-# promotion_gates (BL-663): the chokepoint promote_and_route_next.sh now
-# shells out to for every gate decision — must travel with the copy.
-cp "$SCRIPTS/promotion_gates_cli.bb" "$ROOT/swarmforge/scripts/promotion_gates_cli.bb"
-cp "$SCRIPTS/promotion_gates_lib.bb" "$ROOT/swarmforge/scripts/promotion_gates_lib.bb"
-# BL-853: promotion_gates_lib.bb's depth-refusal now load-files
-# backlog_depth_lib.bb (for the shared no-limit? sentinel predicate), which
-# in turn load-files swarm_identity_lib.bb — both must travel with the copy
-# too, or the isolated fixture's promotion_gates_lib.bb throws
-# FileNotFoundException the moment it is loaded.
-cp "$SCRIPTS/backlog_depth_lib.bb" "$ROOT/swarmforge/scripts/backlog_depth_lib.bb"
-cp "$SCRIPTS/swarm_identity_lib.bb" "$ROOT/swarmforge/scripts/swarm_identity_lib.bb"
+# BL-1480: DERIVED from promotion_gates_cli.bb's real transitive load-file
+# closure, never a hand-written cp list. The hand list this replaces went
+# stale twice after BL-853 (BL-966's daemon_cycle_guard_lib.bb edge, then
+# BL-626/BL-1128/BL-634's three more edges) and this test sat red on main
+# for 18 days, unowned, because no standing gate ran it.
+copy_bb_closure "$SCRIPTS" "$ROOT/swarmforge/scripts" promotion_gates_cli.bb \
+  || fail "could not derive promotion_gates_cli.bb's load-file closure"
+# And nothing runs until that root can actually load (BL-1480 invariant 2).
+assert_bb_closure_present "$SCRIPTS" "$ROOT/swarmforge/scripts" promotion_gates_cli.bb
 
 cat > "$ROOT/swarmforge/scripts/route_backlog_to_coder.sh" <<'EOF'
 #!/usr/bin/env bash
@@ -39,6 +40,9 @@ set -euo pipefail
 printf '%s\n' "$1" > "${ROUTE_LOG:?missing ROUTE_LOG}"
 EOF
 chmod +x "$ROOT/swarmforge/scripts/route_backlog_to_coder.sh"
+# BL-1173's deprecator freshness gate consults this path; see the stub's own
+# header comment for why a real deprecate-check.js can't travel here.
+write_deprecate_check_allow_stub "$ROOT"
 
 printf 'id: BL-516\ntitle: "higher priority number"\nstatus: paused\npriority: 8\nassigned_to:\n' \
   > "$ROOT/backlog/paused/BL-516-higher-priority-number.yaml"

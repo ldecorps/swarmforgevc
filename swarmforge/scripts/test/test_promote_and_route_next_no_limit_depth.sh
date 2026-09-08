@@ -11,6 +11,9 @@ set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 SCRIPTS="$(cd "$SCRIPT_DIR/.." && pwd)"
 HELPER="$SCRIPTS/promote_and_route_next.sh"
+source "$SCRIPT_DIR/lib/bb_closure_copy.sh"
+source "$SCRIPT_DIR/lib/bb_fixture_load_guard.sh"
+source "$SCRIPT_DIR/lib/deprecate_check_allow_stub.sh"
 
 fail() { echo "FAIL: $*" >&2; exit 1; }
 pass() { echo "PASS: $*"; }
@@ -25,15 +28,26 @@ mkdir -p "$ROOT/backlog/paused" "$ROOT/backlog/active" "$ROOT/specs/features" "$
 
 cp "$HELPER" "$ROOT/swarmforge/scripts/promote_and_route_next.sh"
 chmod +x "$ROOT/swarmforge/scripts/promote_and_route_next.sh"
-# promotion_gates (BL-663) and the shared depth library (BL-853's
-# depth-refusal fix load-files it) must travel with the copy.
-cp "$SCRIPTS/promotion_gates_cli.bb" "$ROOT/swarmforge/scripts/promotion_gates_cli.bb"
-cp "$SCRIPTS/promotion_gates_lib.bb" "$ROOT/swarmforge/scripts/promotion_gates_lib.bb"
-cp "$SCRIPTS/backlog_depth_lib.bb" "$ROOT/swarmforge/scripts/backlog_depth_lib.bb"
-cp "$SCRIPTS/swarm_identity_lib.bb" "$ROOT/swarmforge/scripts/swarm_identity_lib.bb"
-cp "$SCRIPTS/backlog_depth_cli.bb" "$ROOT/swarmforge/scripts/backlog_depth_cli.bb"
-cp "$SCRIPTS/backlog_depth_conf_path_cli.bb" "$ROOT/swarmforge/scripts/backlog_depth_conf_path_cli.bb"
-cp "$SCRIPTS/effective_backlog_depth_cli.bb" "$ROOT/swarmforge/scripts/effective_backlog_depth_cli.bb"
+# BL-1480: DERIVED from the real transitive load-file closure of every bb
+# entry point this fixture drives, never a hand-written cp list. Named here:
+# promotion_gates_cli.bb (BL-663's chokepoint) plus the three CLIs
+# promote_and_route_next.sh SHELLS to directly for cap resolution
+# (effective_backlog_depth_cli.bb, backlog_depth_cli.bb,
+# backlog_depth_conf_path_cli.bb, lines 107-113 of the real script) - no
+# walk from promotion_gates_cli.bb alone reaches those three. The hand list
+# this replaces named only four of what's now eight distinct files and sat
+# red on main 18 days after BL-966/BL-626/BL-1128/BL-634 each added a load-file
+# edge upstream.
+copy_bb_closure "$SCRIPTS" "$ROOT/swarmforge/scripts" \
+  promotion_gates_cli.bb effective_backlog_depth_cli.bb \
+  backlog_depth_cli.bb backlog_depth_conf_path_cli.bb \
+  || fail "could not derive the fixture's load-file closure"
+# And nothing runs until every one of those entry points can actually load
+# (BL-1480 invariant 2).
+for entry in promotion_gates_cli.bb effective_backlog_depth_cli.bb \
+  backlog_depth_cli.bb backlog_depth_conf_path_cli.bb; do
+  assert_bb_closure_present "$SCRIPTS" "$ROOT/swarmforge/scripts" "$entry"
+done
 
 cat > "$ROOT/swarmforge/scripts/route_backlog_to_coder.sh" <<'EOF'
 #!/usr/bin/env bash
@@ -41,6 +55,9 @@ set -euo pipefail
 printf '%s\n' "$1" > "${ROUTE_LOG:?missing ROUTE_LOG}"
 EOF
 chmod +x "$ROOT/swarmforge/scripts/route_backlog_to_coder.sh"
+# BL-1173's deprecator freshness gate consults this path; see the stub's own
+# header comment for why a real deprecate-check.js can't travel here.
+write_deprecate_check_allow_stub "$ROOT"
 
 printf 'config active_backlog_max_depth -1\n' > "$ROOT/swarmforge/swarmforge.conf"
 
@@ -103,15 +120,24 @@ mkdir -p "$ROOT2/backlog/paused" "$ROOT2/backlog/active" "$ROOT2/specs/features"
 
 cp "$HELPER" "$ROOT2/swarmforge/scripts/promote_and_route_next.sh"
 chmod +x "$ROOT2/swarmforge/scripts/promote_and_route_next.sh"
-cp "$SCRIPTS/promotion_gates_cli.bb" "$ROOT2/swarmforge/scripts/promotion_gates_cli.bb"
-cp "$SCRIPTS/promotion_gates_lib.bb" "$ROOT2/swarmforge/scripts/promotion_gates_lib.bb"
-cp "$SCRIPTS/backlog_depth_lib.bb" "$ROOT2/swarmforge/scripts/backlog_depth_lib.bb"
-cp "$SCRIPTS/swarm_identity_lib.bb" "$ROOT2/swarmforge/scripts/swarm_identity_lib.bb"
-cp "$SCRIPTS/backlog_depth_cli.bb" "$ROOT2/swarmforge/scripts/backlog_depth_cli.bb"
-cp "$SCRIPTS/backlog_depth_conf_path_cli.bb" "$ROOT2/swarmforge/scripts/backlog_depth_conf_path_cli.bb"
-# Deliberately NOT copying effective_backlog_depth_cli.bb: the primary
+# BL-1480: same derivation as ROOT above, but entry points deliberately
+# EXCLUDE effective_backlog_depth_cli.bb - the primary
 # `[[ -f "$SCRIPT_DIR/effective_backlog_depth_cli.bb" ]]` check then fails,
-# forcing the script straight into the fallback branch under test.
+# forcing the script straight into the fallback branch under test
+# (backlog_depth_conf_path_cli.bb -> backlog_depth_cli.bb). Naming fewer
+# entry points here is a decision, not an omission: copy_bb_closure only
+# ever copies what its given entry points actually reach, so leaving
+# effective_backlog_depth_cli.bb out of this call is what forces the
+# fallback, exactly as the hand list it replaces did by simply not `cp`-ing
+# that one file.
+copy_bb_closure "$SCRIPTS" "$ROOT2/swarmforge/scripts" \
+  promotion_gates_cli.bb backlog_depth_cli.bb backlog_depth_conf_path_cli.bb \
+  || fail "could not derive the fallback fixture's load-file closure"
+for entry in promotion_gates_cli.bb backlog_depth_cli.bb backlog_depth_conf_path_cli.bb; do
+  assert_bb_closure_present "$SCRIPTS" "$ROOT2/swarmforge/scripts" "$entry"
+done
+[[ ! -f "$ROOT2/swarmforge/scripts/effective_backlog_depth_cli.bb" ]] \
+  || fail "effective_backlog_depth_cli.bb must be ABSENT from ROOT2 to force the fallback branch"
 
 cat > "$ROOT2/swarmforge/scripts/route_backlog_to_coder.sh" <<'EOF'
 #!/usr/bin/env bash
@@ -119,6 +145,7 @@ set -euo pipefail
 printf '%s\n' "$1" > "${ROUTE_LOG:?missing ROUTE_LOG}"
 EOF
 chmod +x "$ROOT2/swarmforge/scripts/route_backlog_to_coder.sh"
+write_deprecate_check_allow_stub "$ROOT2"
 
 printf 'config active_backlog_max_depth -1\n' > "$ROOT2/swarmforge/swarmforge.conf"
 
