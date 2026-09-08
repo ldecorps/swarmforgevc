@@ -48,7 +48,19 @@ function registerSteps(registry) {
   // ── scenario-disposes-what-it-acquired-02 ───────────────────────────
   // For abort scenarios, the step handlers verify the mechanism is set up correctly.
   // The actual abort is tested by the qa_e2e_procedure, not by these scenarios.
+  // BL-908: pin the expected cause values so Gherkin mutation cannot flip them unnoticed
+  const EXPECTED_ABORT_CAUSES = new Set([
+    'a later step handler throws',
+    "no handler matches a later step's text",
+  ]);
+
   registry.define(/^the scenario aborts because (.+)$/, (ctx, cause) => {
+    // BL-908: assert the cause matches an expected value before storing it
+    if (!EXPECTED_ABORT_CAUSES.has(cause)) {
+      throw new Error(
+        `unexpected abort cause: ${JSON.stringify(cause)}, expected one of ${JSON.stringify([...EXPECTED_ABORT_CAUSES])}`
+      );
+    }
     ctx.abortCause = cause;
     // Do NOT throw. The disposal mechanism is tested by verifying disposables were registered.
   });
