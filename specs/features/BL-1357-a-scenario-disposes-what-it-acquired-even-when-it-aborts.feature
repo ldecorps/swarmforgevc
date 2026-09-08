@@ -1,3 +1,8 @@
+# mutation-stamp: sha256=ff65de6133338a0d86b8b5ca2f284f7cf7bc3440c1fe780b8e1bf2106ab4e7d2
+# acceptance-mutation-manifest-begin
+# {"version":1,"tested_at":"2026-09-08T23:47:46.522059599Z","feature_name":"A scenario disposes what it acquired, even when it aborts before its last step","feature_path":"/home/carillon/swarmforgevc/.worktrees/hardender/specs/features/BL-1357-a-scenario-disposes-what-it-acquired-even-when-it-aborts.feature","background_hash":"36d04a11704caf14703d30261e7948acb10ace0311edb22eea460c92318a235f","implementation_hash":"unknown","scenarios":[{"index":1,"name":"a scenario that aborts still disposes what it acquired","scenario_hash":"185ad4a5de30ac2aab6b5cce2467d43d5a90833e8cb2d9238ab715613fc8d46e","mutation_count":2,"result":{"Total":2,"Killed":2,"Survived":0,"Errors":0},"tested_at":"2026-09-08T23:47:46.522059599Z"}]}
+# acceptance-mutation-manifest-end
+
 Feature: A scenario disposes what it acquired, even when it aborts before its last step
   `runScenario` builds a fresh `context` per scenario, walks Background steps
   then scenario steps, and returns. It has no `finally` and calls no teardown -
