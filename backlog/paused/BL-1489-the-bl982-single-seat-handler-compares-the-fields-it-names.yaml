@@ -1,0 +1,159 @@
+id: BL-1489
+title: "BL-982's scenario 04 ('every session, worktree, launch script and prompt path is unchanged from before this slice') has been red on main since 2026-08-30: its handler asserts the whole roles.tsv is byte-identical between the live launcher and a pre-change launcher pinned by blob sha, and the reverse-hop column (forward-only, 44d2d42591) that every row now carries can never appear in the pinned output; the handler compares the fields the scenario names and tolerates columns it does not"
+milestone: M8
+type: defect
+severity: high
+# high (standing-red rule 2026-09-05): an acceptance-lane row red on main
+# for nine days, deterministic, hidden by the per-feature runner. The
+# production behaviour it guards (single-seat provisioning unchanged by
+# the second-seat slice) is intact; the broken thing is the signal, and
+# a pinned-blob byte comparison will break again on the next column.
+status: todo
+epic: multi-seat-stages
+priority: 12
+direction: swarm-reported
+depends_on: []
+mutation_cost: low
+# low: one comparison in one step-handler file; a seam for the launcher
+# path it already has (preChangeScriptDir); no production code, no feature
+# text.
+slice_size_envelope: low
+required_stages: [coder, cleaner, architect, hardender, documenter, qa]
+
+acceptance: specs/features/BL-1489-the-bl982-single-seat-handler-compares-the-fields-it-names.feature
+
+# One anchor: the new handler (BL-1371). No anchor on bl982SecondSeatSteps.js:
+# it edits an existing handler in place and any literal there matches before
+# and after the fix (BL-1235); scenario 01's run is the gate.
+required_wiring:
+  - 'specs/pipeline/steps/bl1489Bl982HandlerComparesNamedFieldsSteps.js::registerSteps::the handler lands in the same parcel as the feature (BL-233, BL-1371)'
+
+human_approval: pending
+approval_context: >
+  A new feature file is authored here, so it needs a tap. No choice is
+  posed and there are no ruling_options. FIRM: BL-982's feature text and
+  mutation stamp are not edited (the scenario's claim is right; the
+  handler over-asserted), and the launcher is untouched. Found by the
+  specifier's mint-time sweep for BL-1485 on 2026-09-08 (every
+  parse_config-driving feature run both ways); this row fails with and
+  without the pane hatch, so it is not the BL-1486 class.
+
+invariants:
+  - "BL-982's single-seat comparison asserts only the fields its scenario names - session, worktree, launch script names, prompt artifact names - and passes when any other roles.tsv column differs between the live and the pinned launcher."
+
+description: |
+  ## What is wrong
+
+  `specs/pipeline/steps/bl982SecondSeatSteps.js` lines 204-216, scenario
+  04's Then step: it provisions `SINGLE_SEAT_CONF` through the live
+  `swarmforge.sh` and through a pre-change copy pinned by blob sha
+  (`preChangeScriptDir`, lines 108-121), then
+
+      assert.equal(norm(ctx.root), norm(preRoot), 'single-seat roles.tsv (sessions, worktrees) must be byte-identical to the pre-change script');
+
+  over the whole `.swarmforge/roles.tsv`. Since `44d2d42591` (2026-08-30,
+  "Steal upstream reverse git_handoff hops") the live launcher writes a
+  ninth column, the reverse-hop mode, on every row:
+
+      + 'coder\tcoder\tROOT/.worktrees/coder\tswarmforge-coder\tCoder\tclaude\ttask\toff\tforward-only\n'
+      - 'coder\tcoder\tROOT/.worktrees/coder\tswarmforge-coder\tCoder\tclaude\ttask\toff\n'
+
+  The pinned launcher can never write it, so the byte comparison fails on
+  every run and always will. Reproduced by the specifier 2026-09-08 on
+  main `3dfa366fd9` from the master checkout, with and without
+  `PACK_STAFFING_SKIP_GATE`: `# pass 5`, `# fail 1` (row 04); the other
+  five rows pass WITH the hatch and five of them fail without it, which is
+  BL-1486's class and not this ticket.
+
+  The scenario's claim is narrower than the assertion: sessions,
+  worktrees, launch script names and prompt artifact names - and the
+  handler already checks the last two by name (lines 213-215). Only the
+  roles.tsv check over-reaches. This is BL-1482's shape (a handler pins a
+  whole line where the scenario names a field) and BL-1006's: an
+  "unchanged from before this slice" assertion frozen against a pinned
+  launcher goes red on the next unrelated launcher change and can only go
+  green again by reverting it.
+
+  ## What is wanted
+
+  BL-982's feature passes 6 of 6 from the master checkout and from a
+  linked role worktree with all six scenarios' text unchanged (scenario
+  01). The single-seat comparison passes when the live launcher writes a
+  column the pinned one does not (scenario 02) and still fails, naming the
+  field, when a session or worktree differs (scenario 03; invariant 1).
+  The register row leaves with the fix.
+
+  ## How (direction, not mandate)
+
+  - Compare roles.tsv by the columns the scenario names: role (1),
+    worktree (3), session (4) per row, keyed by role, with the root
+    normalised as today; leave the launch/prompt name checks as they are.
+    Parsing into rows with `rolesRows` (line 100, already there) and
+    comparing a projection is enough.
+  - Do NOT re-pin the blob to a launcher that has the ninth column: the
+    next column would turn it red again, and a pinned launcher that
+    post-dates the slice no longer proves "before this slice".
+  - Seam for scenarios 02/03: the handler already builds the pinned
+    launcher into a scratch dir (`preChangeScriptDir`); let the comparison
+    take the launcher path as a parameter so the new handler can hand it a
+    scratch copy that writes an extra column or a different session /
+    worktree for the coder row. Scratch roots under mkdtemp with their own
+    git init (BL-1390).
+  - Hardener: BL-982's feature text is unchanged, so its stamp stays; the
+    handler change is covered by the feature run.
+  - Documenter: no registered diagram depicts this; if a how-to cites the
+    single-seat comparison, one line that it compares named fields. Remove
+    the register row in the same land.
+
+constraints: >
+  BL-982's feature file is not edited: its six scenarios keep their text
+  and mutation stamp. No production code: the launcher's roles.tsv
+  columns stay as the reverse-hop work left them. The handler keeps
+  proving single-seat provisioning against a pre-change launcher pinned
+  by blob sha; it is not replaced by a self-comparison of the live
+  launcher. No hand-edited mutation manifests.
+
+out_of_scope: |
+  - The five BL-982 rows that pass only under the pane hatch: BL-1486
+    (scenario 03 there covers this handler by derivation).
+  - roles.tsv's ninth column and the reverse-hop mechanism (landed,
+    correct).
+  - A sweep of other handlers that byte-compare a generated file against
+    a pinned baseline: a lean-pass candidate recorded in the adjudication
+    evidence, not this slice.
+
+qa_e2e_procedure: >
+  From the master checkout: (1) `specs/pipeline/scripts/run_acceptance.sh
+  specs/features/BL-982-second-seat-of-a-stage-boots-with-its-own-model.feature`
+  prints `ok 1..6`, `# fail 0` (was `# fail 1`, row 04, on main
+  2026-09-08); the same from `.worktrees/QA`. (2) `git diff main --
+  specs/features/BL-982-*` is empty. (3) The BL-1489 feature passes its
+  four rows. (4) In a scratch copy of the pinned launcher that appends a
+  tenth column to every roles.tsv row, the comparison passes; in one that
+  writes a different session name for the coder row, it fails naming the
+  session. (5) `backlog/standing-reds.tsv` carries no row for BL-982's
+  feature and `standing_red_register_cli.bb` agrees.
+
+source: |
+  Specifier mint-time sweep for BL-1485 on 2026-09-08 (every
+  parse_config-driving feature run both ways on main 3dfa366fd9); BL-982's
+  row 04 red in both runs. Adjudication:
+  `backlog/evidence/acceptance-lane-sweep-unowned-reds-adjudication-specifier-20260908.md`.
+  Related: BL-982 (the feature), BL-1006 (slice-boundary assertions),
+  BL-1482 (a handler pins a whole line), 44d2d42591 (the column).
+
+notes: |
+  Minted 2026-09-08 by the specifier from its own sweep, the same pass as
+  BL-1485 and BL-1486 (standing-red rule: type defect, severity high at
+  first sighting). Register row, lane `acceptance`, file BL-982's feature,
+  first_seen 2026-09-08 (red since 2026-08-30), owner this ticket; the
+  file has one row, and this ticket owns it because its red is the one
+  that shows in a pane.
+
+  Grepped first: no open ticket names bl982SecondSeatSteps.js or the
+  comparison; BL-1002 and BL-1006 (done) touched the file for other
+  reasons; the multi-seat-stages epic BL-981 (paused) is the tracker.
+
+  Mint-time INVEST: one observable outcome (BL-982's feature green
+  against today's launcher and immune to a further column), well under
+  one sitting, no dependency. IR-DRY at mint: one possible-synonym finding reviewed and kept - 'it passes' (one comparison run) and 'it passes every scenario' (the whole feature run) name different subjects.
