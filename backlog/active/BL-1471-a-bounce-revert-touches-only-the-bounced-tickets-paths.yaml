@@ -162,3 +162,5 @@ notes: |
   Grepped first: no open ticket names a revert-scope guard or the omission
   case; check_merge_deletion.sh (BL-1242) is the nearest guard and judges
   the receiving side of a merge, not a revert.
+
+assigned_to: coder
