@@ -1,0 +1,194 @@
+id: BL-1483
+title: "BL-418's scenario 01 still asserts the front-desk standing topic's icon is the opera house (🏛) that BL-453 superseded with the human-chosen bell (🛎) on 2026-07-16, so the feature has been red on main for 54 days (hidden by the per-feature runner, found 2026-09-08 by the coder batch-verifying BL-1475); the superseded example row is retired, never reworded, and the branding doc's stale opera-house line is corrected"
+milestone: M8
+type: defect
+severity: high
+# high (standing-red rule 2026-09-05): an acceptance-lane feature red on
+# main since 2026-07-16, deterministic, now a register row. The concierge
+# behaviour is right (the bell is what the human chose); the broken thing
+# is a durable contract still asserting the superseded glyph, which is
+# exactly what the rule refuses to call medium.
+status: todo
+epic: code-quality-gates
+priority: 12
+direction: swarm-reported
+depends_on: []
+mutation_cost: low
+# low: one Examples row removed from one feature file, one narrative
+# re-tense, one doc line, a hardener re-stamp; no production code.
+slice_size_envelope: low
+required_stages: [coder, cleaner, architect, hardender, documenter, qa]
+
+# The contract this parcel must satisfy is BL-418's feature POST-retirement:
+# the superseded row gone, every remaining scenario still resolving and
+# green (the BL-1251 shape). Not a claim of ownership over BL-418's
+# contract; the file's other scenarios are not edited (see constraints).
+acceptance: specs/features/BL-418-standing-topic-icons.feature
+
+# BL-1276: the retiring ticket by construction edits the superseded
+# ticket's feature file; declared so the task-scope gate does not read the
+# edit as foreign. Exact path, one per line.
+retires:
+  - specs/features/BL-418-standing-topic-icons.feature
+
+# No required_wiring: no mechanism is built and no call site is needed.
+# The gate that proves this parcel is the feature run itself.
+
+human_approval: pending
+approval_context: >
+  A landed contract row is RETIRED here (BL-418 scenario 01, example row
+  "operator | 🏛"), which is a change to a feature file and so needs a
+  tap. No choice is posed and there are no ruling_options. What is FIRM:
+  the retirement executes the human's own 2026-07-16 ruling ("The bell is
+  fine", BL-453), whose feature already asserts the bell (concierge-icon-01);
+  the row is deleted, not reworded to the bell, because the successor's
+  scenarios are the coverage (BL-1006); the remaining example row and
+  scenarios 02 and 03 keep their text; production code is untouched.
+
+invariants:
+  - "After the parcel, no scenario in BL-418's feature asserts a glyph for the operator standing topic; the bell is asserted only by BL-453's own feature, so a future glyph change has exactly one contract to retire."
+  - "No living reference or how-to page under docs/ (docs/branding, docs/reference, docs/how-to) states the opera house as the operator standing topic's CURRENT icon; a dated changelog entry that records the supersession is not a violation."
+
+description: |
+  ## What is wrong
+
+  `specs/features/BL-418-standing-topic-icons.feature`, scenario 01
+  ("each standing topic resolves to its orchestra icon", a Scenario
+  Outline), Examples row 2:
+
+      | operator       | 🏛   |
+
+  `STANDING_TOPIC_ICON.operator` in `extension/src/concierge/topicIcon.ts`
+  has been the bell (🛎) since BL-453 (`aa6785d847`, 2026-07-16, "rebrand
+  the front-desk standing topic Operator -> Concierge"), a human-chosen
+  glyph ("The bell is fine", OPERATOR thread 2026-07-16 11:16Z) that
+  BL-453's own ticket and feature both state SUPERSEDES BL-418's
+  opera-house choice. BL-453's feature asserts the bell (concierge-icon-01,
+  green today: 3 of 3 at mint). Neither BL-453 nor any parcel since
+  touched BL-418's feature or handler (both unchanged since 2026-07-15),
+  so BL-418's row 2 has asserted the superseded glyph for 54 days.
+
+  Reproduced at mint by the specifier from the master checkout on main
+  (`379861057b`): `run_acceptance.sh` on BL-418's feature prints `ok 1`,
+  `not ok 2` (expected the "operator" standing topic's icon to be 🏛, got
+  🛎), `ok 3`, `ok 4`. Found by the coder on 2026-09-08 batch-verifying
+  BL-1475's touched features
+  (`backlog/evidence/BL-1475-unowned-reds-bl582-bl418-20260908.md`, coder
+  branch), reproduced there on the pre-BL-1475 tree as well.
+
+  This is exactly BL-1006's shape: a boundary the successor (BL-453) was
+  chartered to retire and never did, invisible because the runner runs one
+  feature per invocation and a closed ticket's feature is run only when an
+  e2e names it (the blind spot BL-1462 recorded).
+
+  Second, the living branding doc still states the superseded glyph as
+  current: `docs/branding/icon-system.md` ("standing Operator topic -> 🏛
+  (opera house - decided by the human 2026-07-15)"). BL-453's ticket
+  assigned that doc update to its documenter pass; the file's only commit
+  since 2026-07-16 is BL-945 landing it on main. Same premise, same
+  parcel (documenter domain). The Specification.MD changelog entries for
+  BL-418 and BL-453 are dated records that already state the supersession
+  and are left alone.
+
+  ## What is wanted
+
+  BL-418's feature passes in full from the master checkout and from a
+  linked role worktree (3 tests: the one remaining outline row plus
+  scenarios 02 and 03), with the superseded row gone and no bell row added
+  in its place. The Feature narrative no longer states the opera house as
+  the present. The branding doc names the bell for the front-desk standing
+  topic with BL-453 as the source. BL-453's feature stays green. The
+  register row leaves with the fix.
+
+  ## How (direction, not mandate)
+
+  - Retire, never reword: delete the `| operator | 🏛 |` row. Do NOT
+    replace it with a bell row - BL-453 concierge-icon-01 already asserts
+    the bell, and a second assertion of the same glyph is a second
+    contract to retire next time. A one-row Scenario Outline is legal;
+    keep the outline shape rather than restructuring the scenario (the
+    remaining row's text is unchanged either way).
+  - Re-tense the Feature narrative's "the Operator topic (opera house)"
+    so it does not state a false present (BL-1006: "re-tense any Feature
+    narrative that now states a false present"), e.g. note that the
+    opera house was superseded by BL-453's bell. A `RETIRE-WITH: BL-1483`
+    comment where the row stood is the human-facing convention
+    (backlog-schema.md `retires`); optional, never read by any gate.
+  - Handler (`bl418StandingTopicIconsSteps.js`): no assertion changes.
+    Its fixture sticker list and the "no 🏛" comment in scenario 03's
+    Given are prose and fixture data, not claims - scenario 03 still
+    holds because the fixture set lacks the bell too. Refreshing those
+    comments to say the bell is fine; making the fixture carry 🛎 is not
+    (it would change what scenario 03 exercises).
+  - Hardener: the feature body changes, so its mutation-stamp header is
+    invalid; re-run gherkin mutation on the feature and re-stamp it in the
+    parcel. No hand-edited manifests.
+  - Documenter: correct the icon-system.md line to the bell, citing
+    BL-453 and the 2026-07-16 ruling (docs/branding is a living reference
+    page; retired behaviour must not be described as current). No
+    registered diagram depicts topic icons. Remove the register row in
+    the same land.
+
+constraints: >
+  Retire, never reword: BL-418's remaining example row and scenarios 02
+  and 03 keep their text and their claims. No production code changes:
+  topicIcon.ts, conciergeTick.ts and the backfill tool are untouched, and
+  the StandingTopicKey 'operator' stays 'operator' (BL-453 deliberately
+  kept the durable key; renaming for purity is out of policy under the
+  interface-vs-incarnation rule). BL-453's feature is not edited. No
+  hand-edited mutation manifests.
+
+out_of_scope: |
+  - Re-running `backfill-standing-topic-icons.js` against the live
+    Telegram topic: operational, already done at BL-453's land, not a
+    contract fix.
+  - Renaming the 'operator' standing-topic key or subject id to
+    Concierge (BL-453 out-of-scope, still out of scope).
+  - Running every feature file on a cadence so a closed ticket's red
+    surfaces without an e2e naming it: recorded as a process candidate on
+    BL-1462's adjudication.
+
+qa_e2e_procedure: >
+  From the master checkout: (1) `specs/pipeline/scripts/run_acceptance.sh
+  specs/features/BL-418-standing-topic-icons.feature` prints `ok 1..3`,
+  `# fail 0`. (2) The same from `.worktrees/QA` (or any linked role
+  worktree): `ok 1..3`. (3) `grep -n '🏛' specs/features/BL-418-standing-topic-icons.feature`
+  matches no Examples row and no step line (a narrative or RETIRE-WITH
+  comment naming it as superseded is fine). (4) `run_acceptance.sh
+  specs/features/BL-453-concierge-front-desk-icon-label.feature` prints
+  `ok 1..3`. (5) `grep -n '🏛' docs/branding/icon-system.md` names the
+  opera house only as superseded; the standing front-desk topic line
+  names the bell and BL-453. (6) The feature's mutation-stamp header was
+  re-stamped by the hardener in this parcel (manifest `tested_at` later
+  than 2026-09-08). (7) `backlog/standing-reds.tsv` carries no row for
+  BL-418's feature and `standing_red_register_cli.bb` agrees
+  (`unowned: []`, count down by one).
+
+source: |
+  Coder note to the specifier and coordinator, priority 00,
+  2026-09-08T00:35Z: "unowned-red x2 (BL-582,BL-418) - see BL-1475
+  evidence file"; evidence
+  `backlog/evidence/BL-1475-unowned-reds-bl582-bl418-20260908.md` (coder
+  branch, lands with BL-1475's parcel). Adjudication:
+  `backlog/evidence/BL-418-acceptance-unowned-red-adjudication-specifier-20260908.md`.
+
+notes: |
+  Minted 2026-09-08 by the specifier on the coder's unowned-red note, the
+  same pass (standing-red rule: high at first sighting). Register row,
+  lane `acceptance`, file BL-418's feature, names this ticket, first_seen
+  2026-09-08 (first recorded; red since 2026-07-16, BL-453's land).
+
+  Grepped first: no open ticket names BL-418's feature, its handler, the
+  opera house or the operator icon; BL-453 is closed (done/) and its
+  ticket names the supersession but scoped no retirement. BL-594 (epic
+  tracker) mentions BL-582 only, in unrelated prose.
+
+  Sibling BL-1482 (same note, same pass) owns the other red, BL-582's
+  over-pinned import assertion. Two tickets because the fixes touch
+  different files with different remedies and neither depends on the
+  other.
+
+  human_approval is pending because a landed feature file changes (a row
+  is retired); it poses no choice. The specifier does not edit BL-418's
+  feature on main at mint - the retirement rides the parcel (BL-1385:
+  never amend a feature on main while a parcel may carry a stamped copy).

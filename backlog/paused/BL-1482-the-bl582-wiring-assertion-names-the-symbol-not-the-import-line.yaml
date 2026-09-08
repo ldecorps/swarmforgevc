@@ -1,0 +1,160 @@
+id: BL-1482
+title: "BL-582's acceptance handler pins the front desk's commitIntegrityRunner import as a two-token line literal, so BL-1368's second imported name (humanDecisionCommitMessage, landed 2026-09-05) turns scenario 05 red on main (hidden by the per-feature runner, found 2026-09-08 by the coder batch-verifying BL-1475); the wiring assertion names the symbol and the module it protects instead of the whole line"
+milestone: M8
+type: defect
+severity: high
+# high (standing-red rule 2026-09-05): an acceptance-lane feature red on
+# main since 2026-09-05, deterministic, now a register row. The production
+# wiring it guards (both approval commit adapters bound to the one
+# commitApprovalWrites) is intact; the broken thing is the safety signal,
+# which is exactly what the rule refuses to call medium.
+status: todo
+epic: swarm-reliability
+priority: 12
+direction: swarm-reported
+depends_on: []
+mutation_cost: low
+# low: one regex in one step-handler file; no production code, no feature
+# text.
+slice_size_envelope: low
+required_stages: [coder, cleaner, architect, hardender, documenter, qa]
+
+# The contract this parcel must satisfy is BL-582's own feature passing in
+# full (10 of 10) once the handler asserts what scenario 05 actually claims.
+# Pointing here is the BL-1251 shape, not a claim of ownership over BL-582's
+# contract; the feature file's text is not edited (see constraints).
+acceptance: specs/features/BL-582-approval-tap-never-records-or-repaints.feature
+
+# No required_wiring: the parcel edits an existing handler in place. An
+# anchor on that file matches before and after the fix and gates nothing
+# (BL-1235); the gate that proves this parcel is the feature run itself.
+
+# No human_approval: no feature file is authored or changed.
+
+invariants:
+  - "No step of BL-582's handler asserts an exact source line of production code: every source-read assertion names the symbol and the module it protects and tolerates unrelated tokens on the same line, so an unrelated edit to that line cannot turn the scenario red."
+
+description: |
+  ## What is wrong
+
+  `specs/pipeline/steps/bl582ApprovalTapObservableSteps.js` line 389, in
+  scenario 05's Then step ("the write is committed through the same
+  commit-on-decision path used by expedite writes"):
+
+      assert.match(wiring, /import \{ commitApprovalWrites \} from '\.\.\/util\/commitIntegrityRunner'/);
+
+  It reads `extension/src/tools/telegram-front-desk-bot.ts` from source and
+  requires the import line to be EXACTLY that two-token literal. Since
+  BL-1368 (`5c62e2c488`, 2026-09-05, "an approval commit names the decider,
+  not a pipeline role") the line is
+
+      import { commitApprovalWrites, humanDecisionCommitMessage } from '../util/commitIntegrityRunner';
+
+  and the regex can never match it. The wiring the step exists to guard is
+  intact: the same file still binds the plain approval adapter to
+  `commitApprovalWrites(targetPath, backlogId, message)` and the expedite
+  path to `commitApprovalWrites(targetPath, backlogId, ...Expedite...)`,
+  and the handler's other two assertions on those lines still match. Only
+  the import assertion over-specified: it pinned the whole line, not the
+  fact that `commitApprovalWrites` comes from `util/commitIntegrityRunner`.
+
+  Reproduced at mint by the specifier from the master checkout on main
+  (`379861057b`): `run_acceptance.sh` on BL-582's feature prints 9 ok, 1
+  not ok (test 8, "an approval record write commits itself instead of
+  leaving uncommitted state") with the regex above as the message. Found
+  by the coder on 2026-09-08 batch-verifying BL-1475's touched features
+  (`backlog/evidence/BL-1475-unowned-reds-bl582-bl418-20260908.md`, coder
+  branch), reproduced there on the pre-BL-1475 tree as well.
+
+  BL-1368's parcel crossed all six stages without running BL-582's
+  feature: the runner runs one feature per invocation and a closed
+  ticket's feature is run only when an e2e procedure names it, the same
+  blind spot BL-1462 recorded. This is BL-1006's shape in a handler rather
+  than a scenario: a literal frozen at BL-582's mint that the next parcel
+  to touch the line (BL-1368) was never told to retire.
+
+  ## What is wanted
+
+  BL-582's feature passes 10 of 10 from the master checkout and from a
+  linked role worktree, with all ten scenarios' text unchanged, and the
+  handler's import assertion goes red only when `commitApprovalWrites`
+  stops being imported from `util/commitIntegrityRunner` in the front-desk
+  bot - never when another name joins the same import. The register row
+  leaves with the fix.
+
+  ## How (direction, not mandate)
+
+  - Make the assertion name the symbol, not the line: match an import from
+    `'../util/commitIntegrityRunner'` whose brace list contains
+    `commitApprovalWrites` as a whole token, whatever else the list carries
+    and however it is spaced (a regex over the brace list with a word
+    boundary around the name is enough; parsing the import specifiers is
+    fine too but more than the defect needs).
+  - Leave the other two assertions on that step alone: they pin the
+    adapter binding and the Expedite call by their call shape, which is
+    what the scenario claims, and both match today.
+  - Prove the loosened check still guards: the coder's own check (and the
+    hardener's mutation pass) should show the assertion failing on a copy
+    of the file where the import comes from a different module or drops
+    the name - that is the defect it exists to catch.
+  - Hardener: BL-582's feature text is unchanged, so its mutation-stamp
+    header stays; the handler change is covered by the feature run and the
+    existing gherkin mutation manifest.
+  - Documenter: no registered diagram depicts this; if a how-to cites the
+    handler's wiring check, one line that it names the symbol. Remove the
+    register row in the same land.
+
+constraints: >
+  BL-582's feature file is not edited: its ten scenarios keep their text
+  and their mutation stamp (amending a landed contract to fit a handler
+  would be the reverse of the fix). No production code changes: the front
+  desk's import line stays as BL-1368 left it. The handler stays a
+  source-read check of the live wiring; it is not replaced by a fixture
+  that cannot see the production file. No hand-edited mutation manifests.
+
+out_of_scope: |
+  - The front desk's approval-commit behaviour (BL-582) and its decider
+    byline (BL-1368): both correct, both untouched.
+  - The other source-read assertions across specs/pipeline/steps that pin
+    a production line literally: a sweep is a lean-pass candidate
+    (recorded in the adjudication evidence), not this slice.
+  - Running every feature file on a cadence so a closed ticket's red
+    surfaces without an e2e naming it: already recorded as a process
+    candidate on BL-1462's adjudication.
+
+qa_e2e_procedure: >
+  From the master checkout: (1) `specs/pipeline/scripts/run_acceptance.sh
+  specs/features/BL-582-approval-tap-never-records-or-repaints.feature`
+  prints `ok 1..10`, `# fail 0`. (2) The same from `.worktrees/QA` (or any
+  linked role worktree): `ok 1..10`. (3) `git diff main -- specs/features/`
+  shows no change to BL-582's feature. (4) In a scratch copy of
+  `telegram-front-desk-bot.ts` with `commitApprovalWrites` imported from
+  another module (or dropped from the list), the handler's step fails
+  naming the module. (5) `backlog/standing-reds.tsv` carries no row for
+  BL-582's feature and `standing_red_register_cli.bb` agrees
+  (`unowned: []`, count down by one).
+
+source: |
+  Coder note to the specifier and coordinator, priority 00,
+  2026-09-08T00:35Z: "unowned-red x2 (BL-582,BL-418) - see BL-1475
+  evidence file"; evidence
+  `backlog/evidence/BL-1475-unowned-reds-bl582-bl418-20260908.md` (coder
+  branch, lands with BL-1475's parcel). Adjudication:
+  `backlog/evidence/BL-582-acceptance-unowned-red-adjudication-specifier-20260908.md`.
+
+notes: |
+  Minted 2026-09-08 by the specifier on the coder's unowned-red note, the
+  same pass (standing-red rule: high at first sighting). Register row,
+  lane `acceptance`, file BL-582's feature, names this ticket, first_seen
+  2026-09-08 (first recorded; red since 2026-09-05, BL-1368's land).
+
+  Grepped first: no open ticket names the handler, BL-582's feature, or the
+  import line; BL-1368 is closed and its ticket never mentions BL-582 or
+  the regex. The BL-582 property test
+  (`extension/test/bl582ApprovalTapObservable.property.test.js`) does not
+  read the import line and is not red.
+
+  Sibling BL-1483 (same note, same pass) owns the other red, BL-418's
+  superseded opera-house row. Two tickets because the fixes touch
+  different files with different remedies (a handler regex here, a
+  scenario-row retirement there) and neither depends on the other.
