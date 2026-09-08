@@ -234,6 +234,12 @@ notes: |
   same scenario. Kept: these are the scenario's whole point — two
   complementary, genuinely opposite facts about two different call sites,
   not accidental restatement of one fact.
+  - 2026-09-08: invariant 3's "measured" net-diff tail (whole swarmforge.sh
+    against origin/main) is retired inside BL-1495's parcel (BL-1006: a
+    parcel-time boundary check goes red for every later edit of the file);
+    the two precedence assertions and the both-sites documentation check
+    stay. Specifier ruling in
+    backlog/evidence/BL-1495-bl1328-inv3-whole-branch-clause-specifier-adjudication-20260908.md.
 
 assigned_to: coder
 bounce_count: 1
