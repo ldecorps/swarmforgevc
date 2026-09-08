@@ -30,7 +30,7 @@ required_wiring:
   - 'specs/pipeline/steps/lib/bbFixtureClosureGate.js::test_promote_and_route_next_priority.sh::both fixtures are enrolled in the closure guard so the lists cannot rot again'
   - 'specs/pipeline/steps/bl1480PromoteRouteFixtureClosureSteps.js::registerSteps::the handler lands in the same parcel as the feature (BL-233)'
 
-human_approval: pending
+human_approval: approved
 approval_context: >
   A new feature file is authored here, so it needs a tap. No choice is
   posed and there are no ruling_options. FIRM: the fix is in the two test
@@ -191,3 +191,5 @@ notes: |
     two fixture files by design (one handler each); scenario 04 mirrors
     BL-1279's scenario of the same name deliberately - same discipline,
     different fixtures.
+
+assigned_to: coder

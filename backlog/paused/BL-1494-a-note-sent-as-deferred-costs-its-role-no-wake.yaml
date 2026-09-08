@@ -1,0 +1,156 @@
+id: BL-1494
+title: "A note the post-QA branch sweep sends as deferred wakes its role at delivery anyway: BL-1361's ruling was wake only for a dirty worktree, its tell! sets SWARMFORGE_SKIP_SYNC_INJECT so the SEND does not wake, but handoffd's own delivery hop injects the standard wake for every new parcel, so each divergent-branch note costs the role a merge-up turn - 28 such notes to cleaner alone in four hours on 2026-09-08, one merge commit every three to five minutes, four or five wakes per landed bookkeeping commit across the pipeline; a note sent as deferred carries wake: defer and neither the delivery hop nor the chase sweep injects for it"
+milestone: M8
+type: defect
+severity: high
+# high: a human ruling silently not honoured (the BL-1300 class - the human
+# answered and the answer went nowhere), ~35 agent turns an hour spent
+# against the stated cost-control theme, and the trigger of the four-to-five
+# note bursts that get the swarm killed (BL-1490).
+status: todo
+epic: swarm-reliability
+priority: 3
+direction: human-requested
+depends_on: []
+mutation_cost: medium
+# medium: four sites (swarm_handoff.bb validation, post-qa tell!, maybe-notify!,
+# chase scan) in Babashka (no mutation/CRAP/DRY wired, BL-472; the hardener
+# gates on the bb runners and records the fallback).
+slice_size_envelope: medium
+required_stages: [coder, cleaner, architect, hardender, documenter, qa]
+
+acceptance: specs/features/BL-1494-a-note-sent-as-deferred-costs-its-role-no-wake.feature
+
+# Consumer anchor (BL-1235): maybe-notify!'s cond arms each log a
+# `deliver-notify-skip-<reason>` tag (handoffd.bb:470-497) and scenario 01
+# asserts the new one, so the tag is an observable contract, not code shape;
+# absent today (grep -c = 0 on 2026-09-08). The chase half is gated by
+# scenario 03 rather than an anchor: its decision lives in chase_sweep_lib.bb
+# and its log in handoffd.bb, and pinning either file would false-block the
+# other placement.
+required_wiring:
+  - 'swarmforge/scripts/handoffd.bb::deliver-notify-skip-deferred::the delivery hop honours the field instead of injecting the standard wake'
+  - 'specs/pipeline/steps/bl1494DeferredNoteNoWakeSteps.js::registerSteps::the handler lands in the same parcel as the feature (BL-233)'
+
+human_approval: pending
+approval_context: >
+  A new feature file and a protocol field are authored here, so it needs a
+  tap. No choice is posed and there are no ruling_options: this enforces the
+  ruling you already gave on BL-1361 ("Wake only for a dirty worktree and
+  defer the other reasons"), which the shipped code honours only at send
+  time. FIRM: dirty-worktree notes still wake exactly as today; a deferred
+  note is still delivered, filed and read on the role's next ready_for_next;
+  the field is note-only and its sole value is defer. The protocol text is
+  already landed by the specifier (swarmforge/handoff-protocol.md, note
+  section) in this mint's commit, per the rule that prose the specifier owns
+  is the specifier's to land.
+
+invariants:
+  - "A parcel carrying wake: defer produces no tmux injection on any path - the sender's sync inject, the delivery hop, the chase and nudge sweeps - for as long as it sits unread; it is read only on the recipient's own next ready_for_next."
+  - "Deferral changes only the wake: a deferred note is delivered, filed, audited, deduplicated and dequeued exactly as an undeferred note of the same type."
+
+description: |
+  ## What is wrong
+
+  BL-1361 asked the human whether a role surfaced by the post-QA branch sweep
+  should be woken; the ruling was "Wake only for a dirty worktree and defer
+  the other reasons", and BL-1361's own docstring says what defer means: "the
+  parcel lands in the role's mailbox and it reads it on its next
+  ready_for_next, costing no turn". `post-qa-branch-sweep-tell!`
+  (`handoffd.bb:4192-4213`) implements it by running `swarm_handoff.bb` with
+  `SWARMFORGE_SKIP_SYNC_INJECT=1`, which suppresses only the SENDER's
+  synchronous inject (`swarm_handoff.bb:1087`). The note then sits in the
+  coordinator's outbox; the daemon's `poll-once!` delivers it, and
+  `maybe-notify!` (`handoffd.bb:456-497`) has no arm for deferral: every new
+  delivery to an idle pane injects the standard wake.
+
+  Measured 2026-09-08 00:00-03:52Z: 27 coordinator notes to cleaner, 29 to
+  architect, 21 to hardender, 22 to documenter, 22 to coder; cleaner's
+  inbox/completed holds 28 "branch behind" notes for the day; `.worktrees/cleaner`
+  shows `Merge main <sha> into cleaner.` at 03:44, 03:49, 03:52 and 03:57Z,
+  one per note; `wake-dedup/cleaner.json` records an injection at 04:57:14Z.
+  The loop: a bookkeeping commit lands (the last five on main are approval
+  flips and topic records), every role with its own commits is divergent
+  again, the sweep tells them, the wake makes them merge (a turn each),
+  BL-1421's standing surfacing clears because they caught up, and the next
+  landed sha re-tells. Four or five wakes and merge-up turns per landed
+  commit, ~35 turns an hour, and those four or five notes are the delivery
+  burst that outruns the supervisor's window (BL-1490).
+
+  ## What is wanted
+
+  - A `note` may carry `wake: defer` (protocol field, landed with this mint
+    in `swarmforge/handoff-protocol.md`): delivered to inbox/new, no
+    injection at send, none at delivery (logged `deliver-notify-skip-deferred`),
+    none from the chase or nudge sweeps while it is the only unread work
+    (scenarios 01, 03; invariant 1).
+  - An ordinary note still wakes (scenario 02).
+  - The post-QA sweep's tell writes the field for every reason but
+    dirty-worktree (scenario 04) - the env var may stay for compatibility.
+  - `swarm_handoff.sh` refuses the field on any other type and any other
+    value as an unknown header (scenario 05).
+  - Documenter: `docs/how-to/BL-1361-*` (or the sweep's how-to) states that
+    deferred means no wake on any path; `handoff-flow.mmd` is touched only if
+    it depicts the wake decision (check its change-trigger).
+
+  ## How (direction, not mandate)
+
+  - `swarm_handoff.bb`: add `wake` to the note-only draft fields, value
+    `defer` only; `skip-sync-inject?` also true when the draft carries it.
+  - `maybe-notify!`: a cond arm before the busy check reading the delivered
+    headers; keep the wake-dedup sidecar untouched for it (no injection, no
+    record-injection!).
+  - Chase: `scan-inbox-new` (`chase_sweep_lib.bb:114`) already parses each
+    entry; a deferred note is excluded from the stale-item and stuck
+    decisions, so a mailbox holding only deferred notes reads as nothing to
+    chase. Keep the decision in the pure lib and the log in handoffd.bb.
+
+constraints: >
+  Babashka only. handoffd.bb is shared with BL-1490 (poll-once!, startup-
+  notify) - the coordinator serialises the two, BL-1490 first. The BL-1421
+  standing-surfacing rule is untouched: with no wake the role does not merge
+  until its next real turn, so one deferred note per (role, reason) stands
+  and no second is sent - that is the volume fix, and it needs no new code
+  here. Never add a header the agents cannot write: this is a draft field,
+  validated like the others, not an envelope header.
+
+out_of_scope: |
+  - Collapsing or superseding already-delivered duplicate notes in a
+    mailbox; BL-1421 prevents new ones once the wake stops.
+  - The mono-router dormant-note rule (BL-576) - it stays as is and is
+    orthogonal.
+  - Any change to what the sweep does to a branch.
+
+qa_e2e_procedure: |
+  1. Acceptance resolving all five scenarios; `test_swarm_handoff*.sh`,
+     the chase lib runner and the post-QA sweep runner green.
+  2. Live: after landing, watch one landed commit on origin/main with the
+     usual divergent branches: `.swarmforge/daemon/handoffd.log` shows the
+     four or five `delivered` lines each followed by
+     `deliver-notify-skip-deferred`; `.swarmforge/daemon/wake-dedup/<role>.json`
+     `lastInjectedAtMs` does not advance for them; no
+     `Merge main ... into <role>.` commit appears in those worktrees within
+     the next ten minutes.
+  3. Live: a dirty-worktree surfacing (make a fixture worktree dirty, or wait
+     for one) still wakes its role.
+  4. `swarm_handoff.sh` on a git_handoff draft carrying `wake: defer` prints
+     the unknown-header refusal naming `wake`.
+
+source: |
+  Specifier, 2026-09-08, while tracing the delivery burst for BL-1490 to its
+  sender. Human ruling being enforced: BL-1361 human_ruling ("Wake only for
+  a dirty worktree and defer the other reasons (recommended)"), approved
+  2026-09-03. Measurements:
+  backlog/evidence/BL-1490-BL-1494-specifier-mint-measurements-20260908.md.
+
+notes: |
+  - Minted 2026-09-08 by the specifier alongside BL-1490-1493. Grepped
+    first: BL-1361 (done) built the tell and the env-var deferral; BL-1421
+    (done) the standing surfacing; BL-1191 (done) wake dedup - its 120 s
+    cooldown and unchanged-mailbox rule do not cover a new parcel every
+    five minutes; nothing names the delivery-hop wake.
+  - Protocol prose landed by the specifier in this mint (BL-798 rule):
+    swarmforge/handoff-protocol.md, "note" section, `wake` field.
+  - Article 3.2.4: type defect, severity high - expedited ordering.
+  - IR-DRY (2026-09-08): the two note setups were folded into one step with
+    a quoted wake-field parameter ("defer"/"absent").

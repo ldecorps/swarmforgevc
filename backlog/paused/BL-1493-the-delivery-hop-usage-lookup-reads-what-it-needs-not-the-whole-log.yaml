@@ -1,0 +1,113 @@
+id: BL-1493
+title: "handoffd's delivery hop stamps an llm_invocation record per recipient by reading the whole 67 MB context-events.jsonl (258 157 rows) through read-events! to find the role's latest turn: measured 3.1 s per recipient on 2026-09-08, a third of the ~9 s each delivery costs, growing with every event ever recorded; the lookup reads from the tail and is bounded by the distance to the role's latest row, never by the file's length"
+milestone: M8
+type: defect
+severity: medium
+# medium: real but contained once BL-1490 lands - today it is a third of the
+# delivery burst that gets the swarm killed; afterwards it is three seconds
+# per delivery that grow with lifetime volume (BL-1476's shape), on a
+# cost-control theme the human has named.
+status: todo
+epic: swarm-reliability
+priority: 6
+direction: swarm-reported
+depends_on: []
+mutation_cost: low
+# low: one reader in context_telemetry_store.bb / llm_cost_ledger_lib.bb
+# (Babashka: no mutation/CRAP/DRY wired, BL-472; hardener records the fallback).
+slice_size_envelope: low
+required_stages: [coder, cleaner, architect, hardender, documenter, qa]
+
+acceptance: specs/features/BL-1493-the-delivery-hop-usage-lookup-reads-what-it-needs-not-the-whole-log.feature
+
+# The call site already exists (deliver!, handoffd.bb:565-575, since BL-551/
+# BL-565), so there is no wiring to prove; the handler entry is the BL-233 pin.
+required_wiring:
+  - 'specs/pipeline/steps/bl1493UsageLookupBoundedSteps.js::registerSteps::the handler lands in the same parcel as the feature (BL-233)'
+
+human_approval: pending
+approval_context: >
+  A new feature file is authored here, so it needs a tap. No choice is posed
+  and there are no ruling_options. FIRM: the record stamped is unchanged in
+  shape and, for any role whose latest row lies within the bounded window,
+  identical to today's answer; the only behaviour change is that a role whose
+  latest row is older than the window reads as nil (no usage), exactly as a
+  role with no row at all does today - direction sets the window at the last
+  8 MB, about a day of events at current volume.
+
+invariants:
+  - "The cost of the delivery hop's usage lookup is bounded by the distance from the file's tail to the role's latest row (or to the window's edge), never by the file's length; within the window its answer is identical to a full read's, and a role with no row in the window yields nil exactly as an absent log does."
+
+description: |
+  ## What is wrong
+
+  `deliver!` (`handoffd.bb:565-575`, BL-551/BL-565) stamps an llm_invocation
+  record per recipient before the wake. Its usage lookup,
+  `latest-role-usage-from-context-events` (`llm_cost_ledger_lib.bb:53-69`),
+  calls `context-telemetry-store/read-events!` over the WHOLE
+  `.swarmforge/telemetry/context-events.jsonl`, filters by role, sorts by
+  timestamp and takes the last. Measured 2026-09-08: the file is 67 380 109
+  bytes / 258 157 rows; one lookup for `cleaner` costs 3 104 ms in a bb
+  process (~2.8 s of it the read). Four recipient deliveries in one cycle
+  spend ~12 s on it. It grows with every event ever recorded and is never
+  fed back by what it answered - the same unbounded-read shape BL-1476 fixed
+  for the turn-profile producer.
+
+  ## What is wanted
+
+  - The lookup reads the file from its tail and stops at the role's latest
+    row or the window's edge (scenario 01: fewer than 5 percent of a
+    200 000-row log's bytes read when the row is 50 from the end; invariant 1).
+  - A role with no row in the window yields nil (scenario 02), as an absent
+    log does today.
+  - A torn NUL tail (BL-1477's shape, `llm-cost-ledger-append-error ...
+    CTRL-CHAR code 0` in the 2026-09-07T18:03Z failure report) does not hide
+    the latest intact row (scenario 03).
+  - The invariant's equivalence over generated logs is the coder's
+    property test (bb property runner), kept out of the acceptance lane.
+
+  ## How (direction, not mandate)
+
+  - A `latest-event-for-role` in `context_telemetry_store.bb` that reads
+    backwards in fixed-size chunks (RandomAccessFile), splits on newlines,
+    parses only complete lines, skips unparseable ones (torn tail, NUL),
+    and returns the first matching role; window direction 8 MB. Keep
+    `read-events!` for the callers that need everything.
+  - Test with a generated fixture log in the store's test runner; the
+    acceptance handler drives the lib through a small bb CLI under
+    `specs/pipeline/steps/lib/`, with a byte-counting reader seam.
+
+constraints: >
+  Babashka only. No change to the record's shape or to read-events!'s
+  contract for its other callers. The producer side (BL-1477, run-context-
+  telemetry-producer.js) is untouched.
+
+out_of_scope: |
+  - The remaining ~6 s of a delivery (capture-pane, inject, confirm polls):
+    measured but not attributed line by line; a separate ticket if it
+    matters after BL-1490 and BL-1494.
+  - Rotating or compacting context-events.jsonl.
+
+qa_e2e_procedure: |
+  1. Acceptance resolving all three scenarios; the store's test runner and
+     the parcel's property runner green.
+  2. Live: `time bb -e '(load-file "swarmforge/scripts/llm_cost_ledger_lib.bb") (llm-cost-ledger-lib/latest-role-usage-from-context-events ".swarmforge" "cleaner")'`
+     on this host drops from ~3.1 s to well under 0.5 s and returns the same
+     map as before the change (record both).
+  3. Live: one delivery burst in `.swarmforge/daemon/handoffd.log` shows
+     `delivered` lines closer together than the ~9 s of 2026-09-08 (record
+     the spacing).
+
+source: |
+  Specifier, 2026-09-08, while measuring the delivery burst for BL-1490.
+  Measurements: backlog/evidence/BL-1490-BL-1494-specifier-mint-measurements-20260908.md.
+
+notes: |
+  - Minted 2026-09-08 by the specifier alongside BL-1490-1492 and BL-1494.
+    Grepped first: BL-1476 (done) fixed the turn-profile producer's read;
+    BL-1477 (done) the producer's torn tail; the BL-539 epic's remaining
+    slice names the producer's per-transcript read; nothing names this
+    per-delivery read.
+  - Article 3.2.4: type defect, severity medium - ordinary priority order.
+  - IR-DRY (2026-09-08): the "cleaner"/"nobody" lookup steps are one step
+    with a quoted parameter - kept as written.

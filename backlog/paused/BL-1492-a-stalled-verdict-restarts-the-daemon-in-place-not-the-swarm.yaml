@@ -1,0 +1,148 @@
+id: BL-1492
+title: "The supervisor's response to a :stalled or :dead verdict is BL-144's full halt - kill every role session and the tmux server, then await a human - but babysitterd runs ./swarm ensure three to eight minutes later regardless, so the human gate never fires and the only lasting effect of each halt is nine agents losing their in-flight context (150 times since 2026-07-15, 26 on 2026-09-07); the supervisor restarts the daemon in place under a bounded budget, alarms and audits each restart, and keeps BL-144's full halt as the escalation once the budget is spent"
+milestone: M8
+type: defect
+severity: high
+# high: a live fault degrading behaviour - every verdict, true or false,
+# costs the full swarm and nine agents' context, and the design's own safety
+# rationale (a human looks before anything restarts) no longer holds because
+# babysitterd auto-repairs. Not critical: BL-1490 removes the false verdicts
+# that make it frequent; this is what a TRUE wedge should cost afterwards.
+status: todo
+epic: swarm-reliability
+priority: 4
+direction: swarm-reported
+depends_on: []
+mutation_cost: low
+# low: Babashka only (no mutation/CRAP/DRY wired, BL-472); the hardener gates
+# on the bb runners and records the fallback.
+slice_size_envelope: medium
+required_stages: [coder, cleaner, architect, hardender, documenter, qa]
+
+acceptance: specs/features/BL-1492-a-stalled-verdict-restarts-the-daemon-in-place-not-the-swarm.feature
+
+# Consumer anchor (BL-1235): restart_history is the status field the failure
+# report already prints (`restart_history: nil` on every report since BL-144
+# removed the writer) and the supervisor contains no writer for it today
+# (grep -c restart_history handoffd_supervisor.bb = 0 on 2026-09-08). Scenario
+# 01 makes it an observable contract, so pinning it is spec, not code shape.
+required_wiring:
+  - 'swarmforge/scripts/handoffd_supervisor.bb::restart_history::each in-place restart is recorded in the status field the failure report already prints'
+  - 'specs/pipeline/steps/bl1492RestartInPlaceSteps.js::registerSteps::the handler lands in the same parcel as the feature (BL-233)'
+
+human_approval: pending
+approval_context: >
+  Your approval here IS the decision, so this is deliberately a yes/no and
+  carries no ruling_options. Approving reverses part of your July BL-144
+  directive - "a loud alarm and a full stop, not a papered-over restart loop"
+  - and you should reject it if that posture still stands. What changed
+  since: babysitterd now repairs every halt unattended (./swarm ensure,
+  ~3-8 min later), so the "full stop until a human looks" lasts minutes and
+  nobody looks; the halt's only lasting effect is nine agents losing their
+  in-flight work, 150 times so far. What is kept: every restart still sends
+  the alarm email and writes the failure log; every restart is audited
+  (BL-1491's records plus daemon-start-audit.log); the restart budget is
+  bounded (direction: two restarts per ten-minute window, re-armed only by
+  a healthy-uptime window); budget exhaustion is the unchanged BL-144 halt.
+  Rejecting keeps BL-144 as is - BL-1491 alone then makes each halt visible.
+  FIRM either way: the daemon is restarted only through start_handoff_daemon.sh
+  (BL-690's one start owner), never a second start path.
+
+invariants:
+  - "A :stalled or :dead verdict never kills a role session while the restart budget has headroom: the daemon is restarted through the one start owner (start_handoff_daemon.sh, BL-690), and every restart, successful or failed, is alarmed and recorded in the status file."
+  - "Budget exhaustion is BL-144's halt unchanged - same failure log, same email, same halt-swarm!, same halted status - and the budget re-arms only after a healthy-uptime window, never by the passage of time while the daemon keeps dying."
+
+description: |
+  ## What is wrong
+
+  `check!` (`handoffd_supervisor.bb:571-608`) routes both `:dead` and
+  `:stalled` to `alarm-and-halt!`, whose `halt-swarm!` runs `swarm-cleanup.sh`
+  and kills every role session and the tmux server. BL-144 chose that over a
+  restart so a human would look before anything continued. Today
+  `babysitterd` (`babysitterd.log`, 2026-09-08 03:47:33Z: `REPAIR [repaired]
+  control-plane - ./swarm ensure`; 03:52:38Z `OK all checks green`) rebuilds
+  the whole swarm a few minutes after every halt, unattended. The human gate
+  is fiction; what remains is the blast radius: nine agents killed mid-parcel
+  (the specifier at 03:21:16Z mid-mint, `acceptance-lane-sweep-unowned-reds-
+  adjudication-specifier-20260908.md`), inboxes and in_process untouched but
+  every pane's context gone. 150 failure reports since 2026-07-15, 26 on
+  2026-09-07 alone. `swarm_ensure.bb:102` already states the tension: "on a
+  :dead/:stalled verdict it calls alarm-and-halt!, which kills every agent".
+
+  ## What is wanted (if approved)
+
+  - First verdict within a window: restart the daemon in place via
+    `start_handoff_daemon.sh` (idempotent, stops any pid-file process first,
+    BL-690); no role session is touched; the alarm email still goes out,
+    naming a restart rather than a halt; the failure log is still written;
+    `restart_history` in the status file records it (scenarios 01, 02, 05).
+  - Budget exhausted: the unchanged BL-144 halt (scenario 03).
+  - A healthy-uptime window re-arms the budget (scenario 04; BL-303's shape
+    for the front-desk supervisor: healthy-uptime reset + cooldown re-arm).
+  - A start owner that fails counts against the budget and is not retried
+    within the same check (scenario 05) - bounded retries (engineering
+    guardrails).
+  - Documenter: `docs/how-to/BL-144-daemon-death-alarm.md` "What Happened"
+    and the email's wording (`build-alarm-email`, `daemon_alarm_lib.bb`)
+    describe the restart-then-halt ladder; `swarm_ensure.bb:102`'s comment
+    is re-tensed.
+
+  ## How (direction, not mandate)
+
+  - Keep `evaluate-health` pure and untouched; add a pure `decide-response`
+    over (verdict, restart-history, now, budget, window) returning
+    `:restart` or `:halt`, tested in a runner like
+    `handoffd_supervisor_startup_grace_test_runner.bb`.
+  - The restart path reuses `daemon-alarm-lib/alarm-and-halt!`'s adapters
+    with `halt-swarm!` swapped for a `restart-daemon!` adapter, so the
+    failure log, email and BL-1491 records are one code path.
+  - Budget direction: 2 restarts per 600 s, re-armed after 600 s of
+    `:healthy`; record the numbers chosen and why in the parcel.
+
+constraints: >
+  Babashka only. handoffd_supervisor.bb and daemon_alarm_lib.bb are shared with
+  BL-1491 - land BL-1491 first; this ticket's restart path must call BL-1491's
+  record writer for the halt leg and write its own daemon-start audit for the
+  restart leg. Never exercise the real halt or restart against the live swarm.
+  Not to be promoted before human_approval reads approved: a pending tap here
+  is a pending decision, not a review formality.
+
+out_of_scope: |
+  - The false verdicts themselves (BL-1490) and the halt's audit rows
+    (BL-1491).
+  - babysitterd's own repair ladder and cadence.
+  - Restarting anything other than handoffd + its supervisor.
+
+qa_e2e_procedure: |
+  1. Acceptance resolving all five scenarios; the parcel's bb runner green;
+     `test_handoffd_supervisor.sh` updated for the ladder and green (note its
+     header: it fires REAL alarm emails per killed daemon unless the
+     conf/env is fixtured - keep that guard).
+  2. Fixture-only live check: a fixture root with a fake start owner
+     (`SWARM_ENSURE_SUPERVISOR_CMD`-style env seam or the parcel's own), a
+     dead pid in the pid file, no tmux socket file: `--check-once` invokes the
+     start owner once, writes `restart_history` with one entry, kills no
+     session; run it twice more within the window and the third check halts
+     (status `halted`, BL-1491's two records present).
+  3. Human-visible: the alarm email received in the fixture mailbox names a
+     restart, not a halt, for the first two checks.
+
+source: |
+  Operator intake backlog/INTAKE-operator-question-1788834810204.md ("(2)
+  the blast radius + silence: a supervisor halt should never take the tmux
+  server and 9 agents with it"), archived in this pass. Measurements:
+  backlog/evidence/BL-1490-BL-1494-specifier-mint-measurements-20260908.md.
+
+notes: |
+  - Minted 2026-09-08 by the specifier as the decision half of the intake's
+    second defect; BL-1491 is the firm half. Grepped first: BL-144 (done)
+    set the halt; BL-690 (done) made ensure START rather than halt; BL-303
+    (done) built the front-desk supervisor's healthy-uptime re-arm; nothing
+    proposes the ladder for the handoffd supervisor.
+  - Article 3.2.4: type defect, severity high - expedited ordering applies
+    only once approved; the coordinator's human_approval gate holds it
+    until then.
+  - IR-DRY (2026-09-08): the restart_history steps were folded into one
+    parameterized step ("succeeded"/"failed"); "invoked once"/"not invoked"/
+    "never invoked" are opposites and the verdict steps carry a quoted
+    parameter - kept as written.

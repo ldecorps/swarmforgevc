@@ -1,0 +1,144 @@
+id: BL-1488
+title: "BL-1476 landed on 2026-09-08 with its Stryker mutation gate deferred by the cooldown gate (transcriptWalker.ts, turnProfileProducer.ts and run-turn-profile-producer.ts read 2.95-2.97 of 3 days since BL-1364's touch at run time, then the land itself re-touched all three) and closed, so its hardening-debt ledger row names no open ticket and reads as an unowned red; the run over the three files is completed and discharged once the cooldown clears on 2026-09-11"
+milestone: M8
+type: defect
+severity: high
+# high (standing-red rule 2026-09-05): a hardening-lane row with no open
+# owner throttles intake (BL-1429) the moment it appears - the register
+# reader listed exactly this row as its only UNOWNED entry at mint - and
+# BL-1441/BL-1468 are the precedent at the same severity. The code risk is
+# low (transcriptSummaryStore.ts, the new file, was mutation-tested in the
+# same pass; the other three carry the parcel's unit and property suites),
+# which is why deferring was right; the register needs an owner, not a
+# verdict on the risk.
+status: todo
+not_before: 2026-09-11
+epic: code-quality-gates
+priority: 8
+direction: swarm-reported
+depends_on: []
+mutation_cost: low
+# low: no code changes; one Stryker run over a compiled file set already
+# unit- and property-tested, one ledger discharge, one register row removed.
+slice_size_envelope: low
+required_stages: [coder, cleaner, architect, hardender, documenter, qa]
+
+acceptance: specs/features/BL-1488-the-bl1476-deferred-mutation-gate-is-run.feature
+
+required_wiring:
+  - 'backlog/hardening-debt-ledger.yaml::discharged_evidence: backlog/evidence/BL-1488::the ledger, which the register and throttle read, carries this parcel evidence path (BL-1441 and BL-1468 shape)'
+  - 'specs/pipeline/steps/bl1488Bl1476DeferredMutationGateIsRunSteps.js::registerSteps::the handler lands in the same parcel as the feature (BL-233)'
+
+human_approval: pending
+approval_context: >
+  A new feature file is authored here, so it needs a tap. No choice is
+  posed and there are no ruling_options. Same shape as BL-1468 (approved)
+  for one row dated 2026-09-08: run the deferred Stryker gate, discharge
+  the row with evidence, remove the register row in the same commit. The
+  earliest it can run is 2026-09-11, when the three-day cooldown from the
+  2026-09-08 land expires; the ticket carries not_before for BL-1469's
+  promotion gate so it cannot be promoted early and hold a slot at cap
+  (the BL-1439 lesson, repeated on BL-1468 on 2026-09-07).
+
+invariants:
+  - "A ledger row leaves the outstanding debt only through a discharge that names the gate, the parcel and a committed result; a run that cannot complete is recorded as an attempt with its blocker and the row stays outstanding and owned."
+  - "The register row leaves in the same commit that discharges the ledger row, never earlier; the hardening lane holds no BL-1488 row only when the BL-1476 row is discharged."
+
+description: |
+  ## What is wrong
+
+  `backlog/hardening-debt-ledger.yaml` carries `parcel: BL-1476, gate:
+  mutation, file_set: extension/src/metrics/transcriptWalker.ts,
+  extension/src/metrics/turnProfileProducer.ts,
+  extension/src/tools/run-turn-profile-producer.ts, detected_at: 2026-09-08`,
+  recorded by the hardener with `hardening_debt_ledger_update.bb --defer`:
+  `mutation_cooldown_gate.bb` answered skip-cooldown because all three files
+  had last been touched on main by BL-1364 on 2026-09-05 and read 2.95-2.97
+  of 3 days at run time (BL-1476's own `not_before: 2026-09-08` undershot
+  the mark by hours). `transcriptSummaryStore.ts`, the parcel's new file,
+  was mutation-tested in that pass and is not owed. BL-1476 then landed by
+  hand-built tip-pure replay (`f0f54791c5`, 2026-09-08T02:56Z), which
+  re-touched all three files, and closed. The register reader joins ledger
+  rows to register rows on (lane, file); the row's parcel is closed and no
+  register row names another owner, so `standing_red_register_cli.bb`
+  reported it as the register's only UNOWNED row at mint and BL-1429's
+  throttle holds the cap while it stands. The coordinator's note
+  (2026-09-08T03:49Z) is that reading.
+
+  BL-1468 (paused, not_before 2026-09-10) owns the BL-1452 row and BL-1441
+  (active) the 2026-08-19 rows; neither is widened (BL-317/BL-325), so this
+  row gets its own owner.
+
+  `mutation_cooldown_gate.bb` on each of the three files at mint:
+  `file_age_days: 0.05 (cooldown: 3 days)`, host quiet (load 2.66 on 20
+  cores). Earliest run: 2026-09-11.
+
+  ## What changes
+
+  - One Stryker run over the compiled file set (`--mutate` scoped to
+    `out/metrics/transcriptWalker.js`, `out/metrics/turnProfileProducer.js`,
+    `out/tools/run-turn-profile-producer.js`; `perTest`; sibling links per
+    the Verification rules; `extension/vitest.bl1476.stryker.config.mjs`
+    already exists from the parcel), under the cooldown and host-load gates,
+    recorded as `backlog/evidence/BL-1488-BL-1476-mutation.md` with the
+    summary block, load, duration, and zero survivors or one entry per
+    survivor with the reason it stands.
+  - `hardening_debt_ledger_update.bb --discharge BL-1476 mutation
+    --evidence backlog/evidence/BL-1488-BL-1476-mutation.md`; a run that
+    cannot complete is recorded with the attempt verb and the row stays
+    outstanding and owned (invariant 1).
+  - The `hardening` register row naming BL-1488 leaves in the discharge
+    commit (invariant 2).
+
+  ## How (direction, not mandate)
+
+  - Run on a quiet host; check `uptime` and the pack's activity first. The
+    BL-1476 pass's own runner settings are the starting point.
+  - If the dry run times out at the ceiling, record the attempt (verb from
+    BL-1439) with load and duration and stop; do not raise the ceiling or
+    narrow the mutate scope below the three files.
+  - Documenter: nothing to write beyond the evidence file; no diagram.
+
+constraints: >
+  No production code changes. The run happens in the coder's worktree
+  against compiled `out/**` (compile first; `extension/out/` is
+  gitignored). Never `process.chdir()` under mutation; never a hand-edited
+  mutation manifest. The step handler lands with the feature (BL-233).
+
+out_of_scope: |
+  - BL-1441's 2026-08-19 rows and BL-1468's BL-1452 row.
+  - Any change to the cooldown window, the ledger verbs, or the throttle.
+
+qa_e2e_procedure: >
+  (1) `bb swarmforge/scripts/mutation_cooldown_gate.bb . extension/src/metrics/transcriptWalker.ts`
+  (and the other two) reports the cooldown clear before the run. (2) The
+  evidence file shows the Stryker summary block for the three compiled
+  files, load and duration, survivors explained. (3)
+  `backlog/hardening-debt-ledger.yaml`: the BL-1476 mutation row carries
+  `discharged_at` and the evidence path. (4)
+  `bb swarmforge/scripts/standing_red_register_cli.bb .`: no hardening row
+  for the three files, no unowned row. (5) `bb swarmforge/scripts/effective_backlog_depth_cli.bb .`
+  no longer reads a throttled cap on this row's account.
+
+source: |
+  Coordinator note to the specifier, priority 00, 2026-09-08T03:49Z:
+  "BL-1476 closed with unowned hardening-debt row - mint owner (BL-1468
+  pattern)". Ledger row detected_at 2026-09-08; register reader UNOWNED at
+  mint. Adjudication:
+  `backlog/evidence/BL-1487-BL-1488-standing-reds-adjudication-specifier-20260908.md`.
+
+notes: |
+  Minted 2026-09-08 by the specifier on the coordinator's note, the same
+  pass. Register row (hardening lane, the three files) -> BL-1488,
+  first_seen 2026-09-08. The id was reserved for this row by the previous
+  specifier session's evidence (acceptance-lane-sweep-unowned-reds-
+  adjudication-specifier-20260908.md) before the 03:21:16Z supervisor halt
+  killed that session (BL-1490).
+
+  Earliest run 2026-09-11 (cooldown from the 2026-09-08 land); not_before
+  carries it for BL-1469's gate. Promote on or after that date, on a
+  quiet host.
+
+  Grepped first: BL-1441 (active) owns only the 2026-08-19 rows; BL-1468
+  (paused) only the BL-1452 row; no other open ticket names the BL-1476
+  row or these three files' mutation gate.

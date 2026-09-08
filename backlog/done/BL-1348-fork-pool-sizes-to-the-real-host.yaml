@@ -3,6 +3,14 @@ title: "The vitest worker pool reserves 1280 MB a fork against a measured 298 MB
 milestone: M8
 type: feature
 status: todo
+abandoned_commits: [cd6ccc4fb0]
+# BL-1241 land-step remedy: cd6ccc4fb0 (QA-approved tip) was entangled with
+# unlanded sibling BL-1408, since landed and closed. The tool's own replay
+# (land_step_cli.bb) mis-attributed BL-1471's/BL-1475's post-fork
+# Specification.MD header entries as BL-1348's to delete (two-tree-diff
+# hazard, BL-1472/BL-1473 class); hand-built instead per QA prompt item 2 -
+# BL-1348's own Specification.MD content is already on origin/main via
+# BL-1463's carry-along, so only its QA evidence file rode the replay.
 epic: code-quality-gates
 priority: 14
 direction: human-requested
