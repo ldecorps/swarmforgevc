@@ -1,0 +1,7 @@
+{
+  "extends": "./stryker.config.json",
+  "vitest": {
+    "configFile": "vitest.bl1369.stryker.config.mjs",
+    "related": false
+  }
+}

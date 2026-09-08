@@ -2171,6 +2171,38 @@ later plain approval. Hardened: `classifyApprovalRulingRequirement` and
 How-to:
 `docs/how-to/BL-1367-approval-from-any-surface-carries-its-ruling.md`. No
 diagram depicts the approval/ruling write path.)
+**Last Updated:** September 8, 2026 (BL-1369: a human answering a ticket's
+`ruling_options` inside an agent session had no path to the ticket — the
+answer was real but no swarm store witnessed it, and an honest report was
+indistinguishable from an unverifiable claim (BL-1296 and BL-1309 both
+went this way on 2026-09-03). `extension/src/tools/relay-ruling.ts`
+(compiled to `extension/out/tools/relay-ruling.js`) is the sole CLI an
+agent runs to relay an in-session answer onto a ticket's `human_ruling:`
+field: `--ticket <id> --option <label> --relayer <role> [--target <path>]`.
+It routes through `recordRelayedRuling` in
+`extension/src/concierge/pendingApprovalReply.ts`, the same sole
+`human_ruling:` writer the bot's callback path uses — a second writer is
+how the two drift and how invariant 3 quietly stops holding. Three
+invariants enforced by construction: (1) the relay path never writes
+`human_approval` — the human's own tap stays the sole approval source; (2)
+every recorded ruling carries its provenance (relayed vs tapped, and by
+whom), so nothing pretends to be the human's own hand; (3) a relay never
+overwrites a tapped ruling, and a later tap always supersedes a relayed
+one — the human's own hand wins in both directions. The answer must match
+a declared option exactly — no fuzzy matching, no agent paraphrase — and
+refusals (`already-tapped`, `unknown-option`, `no-ruling-options`,
+`no-ticket-file`) return exit 0 with a JSON reason and (for
+`unknown-option`) the declared options, so the calling agent can surface
+them; non-zero exit is reserved for bad args or IO errors. Filing the
+human's words to `backlog/answers-archive/` stays the specifier's separate
+act. Acceptance:
+`specs/features/BL-1369-an-answer-given-in-a-session-reaches-the-ticket.feature`
+(5 scenarios: relay writes ruling+provenance, relay never flips
+human_approval, relay refused when already-tapped, unknown option refused,
+tapped ruling supersedes relay). How-to:
+`docs/how-to/BL-1369-an-answer-given-in-a-session-reaches-the-ticket.md`.
+No diagram depicts the relay-CLI path — it is a CLI an agent invokes, not
+a new component, pipeline edge, or front-desk route.)
 Prior entry —
 **Last Updated:** September 3, 2026 (BL-1375: the land step's shared-path
 refusal (BL-1332) is narrowed. `own-paths` (`land_step_lib.bb`) used to
