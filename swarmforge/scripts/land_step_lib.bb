@@ -820,6 +820,74 @@
                     (when (:blocking? state) (assoc state :ticket id)))))
           vec))))
 
+;; ── BL-1481: does a blocking sibling's CONTENT actually differ, or only its
+;; commit history? blocking-siblings (above) answers by commit-range
+;; attribution alone - which shares Specification.MD wrote every touching
+;; commit's ticket tag, but never asks whether the tip's version of the path
+;; actually differs from origin/main in a line the sibling owns. On
+;; 2026-09-07, BL-1470's land was refused because bounced BL-1348 shared
+;; Specification.MD by that reading, even though every line BL-1348 ever
+;; added to that file was already on origin/main (landed there under a
+;; different sha by BL-1473's own whole-path land).
+
+(defn path-content-blocked-ids
+  "Which of `candidate-ids` (already known to be commit-attribution
+   co-owners of `path`, per `path-owner-tickets`) really still owe the path
+   content not yet on origin/main - the SAME landed/unlanded question
+   `sibling-path-landed-fn` (BL-1389) already answers for a sibling this
+   ticket does not itself co-own, asked here of every commit-attribution
+   blocker on a path this ticket DOES co-own too (BL-1481).
+
+   Each id's own verdict comes from `sibling-path-verdict`, scored against
+   THIS path's real lines at origin-main and at the tip, over that id's own
+   tagged line changes (merges excluded - `sibling-own-line-changes`'s own
+   posture, unchanged): `:landed` clears it, the shape scenario 01 names
+   (every surviving line the id's own commits contributed is already on
+   origin/main under whatever sha put it there). `:unlanded` or `:vacuous`
+   still blocks it - UNCHANGED from before this ticket. A merge that
+   resolved a real conflict between two blocking co-owners (BL-1374/05)
+   leaves each co-owner `:unlanded` there (neither's own line survives to
+   the tip, and neither the surviving addition nor removal is on
+   origin/main either) - this narrowing changes nothing for it. The only
+   new outcome is a blocker whose own lines truly already match
+   origin/main.
+
+   Returns the subset of `candidate-ids` still blocking. #{} is a real,
+   positive answer: every one of them is `:landed` on this path - content-
+   clear, invariant 2's own shape.
+
+   nil when `origin-main`'s or the tip's blob could not be read, or any
+   candidate's own line changes could not be read - the caller fails
+   closed on nil (invariant 3): a content check that cannot complete never
+   narrows a refusal, it stays exactly as blocking as the commit-
+   attribution check alone already found.
+
+   `lines-fn` (candidate id -> {path {:added :removed}}) is injected so a
+   caller can reuse the SAME per-sibling read `land-plan` already computes
+   for `sibling-path-landed-fn` (never a second walk over the same
+   commits), and so the unreadable row is drivable in a test without
+   corrupting a repository. Defaults to the real `sibling-own-line-changes`
+   over `ancestry-commits root origin-main commit`."
+  ([root origin-main commit path candidate-ids]
+   (path-content-blocked-ids root origin-main commit path candidate-ids nil))
+  ([root origin-main commit path candidate-ids lines-fn]
+   (let [main-lines (blob-lines root origin-main path)
+         tip-lines (blob-lines root commit path)]
+     (if (or (nil? main-lines) (nil? tip-lines))
+       nil
+       (let [candidates (delay (ancestry-commits root origin-main commit))
+             lines-fn (or lines-fn #(when @candidates (sibling-own-line-changes root @candidates %)))]
+         (loop [ids (sort candidate-ids) blocked #{}]
+           (if (empty? ids)
+             blocked
+             (let [id (first ids)
+                   changes (lines-fn id)]
+               (if (nil? changes)
+                 nil
+                 (let [verdict (sibling-path-verdict {:changes (get changes path {})
+                                                       :main-lines main-lines :tip-lines tip-lines})]
+                   (recur (rest ids) (cond-> blocked (not= :landed verdict) (conj id)))))))))))))
+
 (defn- full-delivered-paths
   "The two-tree diff between origin-main and commit - literally 'what
    differs between origin/main's tree and this tip's tree', the ticket's
@@ -1150,7 +1218,7 @@
                                 #(path-owner-tickets root origin-main commit % walk)))
              path-landed? (or (:path-landed-fn opts)
                               (sibling-path-landed-fn root origin-main commit))]
-        (loop [remaining delivered acc [] excluded [] passengers #{}]
+        (loop [remaining delivered acc [] excluded [] passengers #{} content-clear []]
          (if (empty? remaining)
            ;; BL-1343. An empty set is two different answers wearing the same
            ;; face. With nothing delivered, the tip IS origin/main and "nothing
@@ -1177,7 +1245,13 @@
              ;; BL-1389 invariant 3: what was excluded, and to whom it was
              ;; credited, rides with the success answer - not only with the
              ;; refusal. QA had to diff the replayed tip by hand to see it.
-             {:paths acc :warning nil :passengers passengers :excluded excluded})
+             ;; BL-1481: :content-clear names every {:path :sibling} pair a
+             ;; commit-attribution blocker was cleared of by the content
+             ;; check - the report line QA gets instead of having to diff the
+             ;; replayed tip by hand to see why a bounced sibling's path
+             ;; still rode.
+             {:paths acc :warning nil :passengers passengers :excluded excluded
+              :content-clear content-clear})
            (let [path (first remaining)
                  attribution (attribution-of path)]
              (cond
@@ -1213,15 +1287,46 @@
                (and (contains? (:owners attribution) task-ticket-id)
                     (some unlanded-siblings (:owners attribution))
                     (seq (blocking-for (filter unlanded-siblings (:owners attribution)))))
-               (let [blockers (blocking-for (filter unlanded-siblings (:owners attribution)))]
-                 {:paths nil
-                  :warning (str "land-step: refusing to replay " task-ticket-id
-                                " - " path " is shared with unlanded sibling(s) "
-                                (str/join "; " (map (fn [{:keys [ticket state reason]}]
-                                                      (str ticket " (" (name state) ": " reason ")"))
-                                                    blockers))
-                                ", and a replayed path is taken whole, so landing it would carry "
-                                "the sibling's lines into main (BL-1332/BL-1375)")})
+               ;; BL-1481: commit-range attribution alone over-refuses when a
+               ;; blocking sibling's actual lines already MATCH origin/main
+               ;; (landed some other way, under a different sha - BL-1470's
+               ;; own Specification.MD case, 2026-09-07). The content check
+               ;; runs ONLY here, after blocking-for already found a blocker,
+               ;; so a clean land's cheap attribution-only path is untouched.
+               ;; Do NOT relax this for a sibling whose approval state is
+               ;; unknown or unreadable - `blockers` already excludes any
+               ;; sibling that is not blocking.
+               (let [blockers (blocking-for (filter unlanded-siblings (:owners attribution)))
+                     blocker-ids (into #{} (map :ticket blockers))
+                     content-blocked ((or (:content-blocked-fn opts)
+                                           (fn [p ids] (path-content-blocked-ids root origin-main commit p ids)))
+                                       path blocker-ids)]
+                 (cond
+                   (nil? content-blocked)
+                   {:paths nil
+                    :warning (str "land-step: refusing to replay " task-ticket-id
+                                  " - " path "'s content versus origin/main could not be "
+                                  "attributed for shared sibling(s) "
+                                  (str/join "," (sort blocker-ids))
+                                  " (BL-1481: an unreadable content attribution fails closed, "
+                                  "same as the commit-attribution refusal it replaces)")}
+
+                   (seq content-blocked)
+                   {:paths nil
+                    :warning (str "land-step: refusing to replay " task-ticket-id
+                                  " - " path " is shared with unlanded sibling(s) "
+                                  (str/join "; " (map (fn [{:keys [ticket state reason]}]
+                                                        (str ticket " (" (name state) ": " reason ")"))
+                                                      (filter #(content-blocked (:ticket %)) blockers)))
+                                  ", and the tip's content differs from origin/main in a line "
+                                  "attributable to the sibling, so a replayed path is taken whole "
+                                  "and would carry it into main (BL-1332/BL-1375, content-checked "
+                                  "per BL-1481)")}
+
+                   :else
+                   (recur (rest remaining) (conj acc path) excluded
+                          (into passengers (remove blocker-ids (filter unlanded-siblings (:owners attribution))))
+                          (into content-clear (map (fn [id] {:path path :sibling id}) (sort blocker-ids))))))
 
                ;; BL-1389, invariant 1. The question is asked of THIS PATH,
                ;; never of the owner's ticket-level verdict: the two walks
@@ -1249,7 +1354,7 @@
                      (not-any? #(path-landed? % path) (:owners attribution))))
                (recur (rest remaining) acc
                       (conj excluded {:path path :owners (:owners attribution)})
-                      passengers)
+                      passengers content-clear)
 
                :else
                (recur (rest remaining) (conj acc path) excluded
@@ -1258,7 +1363,8 @@
                       ;; above and boards nobody.
                       (if (contains? (:owners attribution) task-ticket-id)
                         (into passengers (filter unlanded-siblings (:owners attribution)))
-                        passengers)))))))
+                        passengers)
+                      content-clear))))))
        {:paths nil :warning (str "land-step: could not read " task-ticket-id
                                   "'s own-range touched paths, " origin-main ".." commit)})
      {:paths nil :warning (str "land-step: could not read the delivered diff " origin-main ".." commit)}))))
@@ -1711,11 +1817,18 @@
         warning {:action :escalate :reason warning}
         (empty? entangled) {:action :land}
         :else
-        (let [{:keys [paths warning passengers excluded]}
+        (let [{:keys [paths warning passengers excluded content-clear]}
               (own-paths root commit task-ticket-id unlanded nil nil
                          {:attribution (when attribution @attribution)
                           :path-landed-fn (when origin-main
-                                            (sibling-path-landed-fn root origin-main commit lines-of))}
+                                            (sibling-path-landed-fn root origin-main commit lines-of))
+                          ;; BL-1481: reuses this SAME per-sibling read
+                          ;; (`lines-of`, already computed above for the
+                          ;; landed/unlanded split) rather than a second
+                          ;; walk over the same commits.
+                          :content-blocked-fn (when origin-main
+                                                 (fn [p ids]
+                                                   (path-content-blocked-ids root origin-main commit p ids lines-of)))}
                          origin-main walk-base)]
           (if (nil? paths)
             ;; BL-1463: this escalate has positive evidence of entanglement
@@ -1762,6 +1875,7 @@
                         {:action :replay :entangled entangled :landed landed :unlanded unlanded
                          :landed-paths (or landed-paths {})
                          :excluded (or excluded [])
+                         :content-clear (or content-clear [])
                          :own-paths paths :passengers (or passengers #{})
                          :commit (:commit replay-result) :branch (:branch replay-result)}))))))))))))
 

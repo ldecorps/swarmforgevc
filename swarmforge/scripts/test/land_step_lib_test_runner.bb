@@ -2416,6 +2416,182 @@ RESOLVED BY THIS TICKET
            :replay-blobs {"b" "sha-b"}
            :parcel-paths ["c" "a" "b"]}))
 
+;; ── BL-1481: a shared path blocks only when CONTENT, not just history, is
+;; shared. blocking-siblings (BL-1375/BL-1466) answers by commit-range
+;; attribution alone - which shares Specification.MD wrote every touching
+;; commit's ticket tag, but never asks whether the tip's version of the path
+;; actually differs from origin/main in a line the blocker owns. On
+;; 2026-09-07, BL-1470's land was refused because bounced BL-1348 shared
+;; Specification.MD by that reading, even though every line BL-1348 ever
+;; added to that file was already on origin/main (landed there under a
+;; DIFFERENT sha by BL-1473's own whole-path land, so BL-1348's OWN tagged
+;; commit was never credited with it).
+
+;; Scenario 01: the sibling's lines are already on origin/main under a
+;; different sha (a replay-landed shape); the tip's only real content
+;; difference from origin/main is the lander's own line. No longer refuses,
+;; and the report names the sibling as content-clear for the path.
+;;
+;; The sibling ALSO touches a second, unrelated path that never lands -
+;; otherwise BL-1389's own ticket-level landed/unlanded split would already
+;; read the sibling as fully :landed (its one attributed path matches main)
+;; and own-paths would never even see it as an unlanded co-owner - this
+;; fixture's whole point is a sibling still genuinely unlanded OVERALL, with
+;; ONE shared path whose content specifically clears.
+(with-fixture [root]
+  (write-ticket! root "active" "BL-9002" "id: BL-9002\nhuman_approval: approved\n")
+  (commit! root "shared.txt" "base\n" "seed the shared file")
+  (mark-origin-main-here! root)
+  (commit! root "shared.txt" "base\nsibling line\n" "BL-9002: sibling adds its line")
+  (let [pre-tip (:out (sh! root "git" "rev-parse" "HEAD"))]
+    (commit! root "other.txt" "never landed\n" "BL-9002: sibling touches an unrelated path that never lands")
+    ;; A separate branch off origin/main lands the SAME content under a
+    ;; DIFFERENT sha (the BL-1446 replay shape) - origin/main advances to
+    ;; it, while the sibling's ORIGINAL commit stays reachable only from
+    ;; the tip built below.
+    (sh! root "git" "checkout" "-q" "-b" "replay-landed" (:out (sh! root "git" "rev-parse" "refs/remotes/origin/main")))
+    (commit! root "shared.txt" "base\nsibling line\n" "BL-9002: replayed tip-pure")
+    (mark-origin-main-here! root)
+    (sh! root "git" "checkout" "-q" "main")
+    (commit! root "shared.txt" "base\nsibling line\nlander line\n" "BL-9001: the lander adds its own line")
+    (write-bounce! root "BL-9002" pre-tip "2026-09-07T11:48:00.000Z")
+    (let [commit (:out (sh! root "git" "rev-parse" "HEAD"))
+          {:keys [entangled landed unlanded]} (land-step-lib/entangled-siblings root commit "BL-9001")
+          {:keys [paths warning content-clear]} (land-step-lib/own-paths root commit "BL-9001" unlanded)]
+      (assert= "BL-1481/01 premise: the sibling stays ticket-level unlanded (its OTHER path never lands)"
+               #{"BL-9002"} unlanded)
+      (assert-true "BL-1481/01: the sibling's already-on-main content clears the shared path"
+                   (contains? (set paths) "shared.txt"))
+      (assert= "BL-1481/01: and it is not a refusal" nil warning)
+      (assert= "BL-1481/01: the report names the sibling as content-clear for that path"
+               [{:path "shared.txt" :sibling "BL-9002"}] content-clear)
+      (let [plan (land-step-lib/land-plan {:root root :commit commit :task-ticket-id "BL-9001"})]
+        (assert= "BL-1481/01: land-plan still replays" :replay (:action plan))
+        (assert= "BL-1481/01: and threads the content-clear report through"
+                 [{:path "shared.txt" :sibling "BL-9002"}] (:content-clear plan))))))
+
+;; Scenario 02: a line the bounced sibling added is in the tip but absent
+;; from origin/main - still refuses.
+(with-fixture [root]
+  (write-ticket! root "active" "BL-9002" "id: BL-9002\nhuman_approval: approved\n")
+  (commit! root "seed.txt" "seed\n" "seed before origin/main")
+  (mark-origin-main-here! root)
+  (commit! root "shared.txt" "base\n" "BL-9001: lander seeds the shared file")
+  (commit! root "shared.txt" "base\nsibling line\n" "BL-9002: sibling adds a line only it owns")
+  (let [sibling-commit (:out (sh! root "git" "rev-parse" "HEAD"))]
+    (write-bounce! root "BL-9002" sibling-commit "2026-09-07T11:48:00.000Z")
+    (let [{:keys [paths warning]} (land-step-lib/own-paths root sibling-commit "BL-9001" #{"BL-9002"})]
+      (assert= "BL-1481/02: an added line absent from origin/main still refuses" nil paths)
+      (assert-includes "BL-1481/02: names the shared path" warning "shared.txt")
+      (assert-includes "BL-1481/02: names the sibling" warning "BL-9002")
+      (assert-includes "BL-1481/02: names its bounce" warning "bounced"))))
+
+;; Scenario 03: a line the bounced sibling removed is absent from the tip but
+;; origin/main still has it - also refuses.
+(with-fixture [root]
+  (write-ticket! root "active" "BL-9002" "id: BL-9002\nhuman_approval: approved\n")
+  (commit! root "shared.txt" "base\nsibling line\n" "BL-9002: sibling adds its line")
+  (mark-origin-main-here! root)
+  (commit! root "shared.txt" "base\n" "BL-9002: sibling deletes its own line")
+  (let [sibling-remove-commit (:out (sh! root "git" "rev-parse" "HEAD"))]
+    (commit! root "shared.txt" "base\nlander line\n" "BL-9001: the lander adds its own line")
+    (write-bounce! root "BL-9002" sibling-remove-commit "2026-09-07T11:48:00.000Z")
+    (let [commit (:out (sh! root "git" "rev-parse" "HEAD"))
+          {:keys [paths warning]} (land-step-lib/own-paths root commit "BL-9001" #{"BL-9002"})]
+      (assert= "BL-1481/03: a removed line origin/main still has also refuses" nil paths)
+      (assert-includes "BL-1481/03: names the shared path" warning "shared.txt")
+      (assert-includes "BL-1481/03: names the sibling" warning "BL-9002"))))
+
+;; Scenario 04: the content attribution cannot be read - fails closed, never
+;; a silent pass, and never a silent widening of the plain commit-attribution
+;; refusal it replaces.
+(with-fixture [root]
+  (commit! root "shared.txt" "base\n" "seed")
+  (mark-origin-main-here! root)
+  (commit! root "shared.txt" "base\nx\n" "BL-9002: sibling touches the path")
+  (let [commit (:out (sh! root "git" "rev-parse" "HEAD"))
+        origin-main (:out (sh! root "git" "rev-parse" "refs/remotes/origin/main"))
+        result (land-step-lib/path-content-blocked-ids
+                root origin-main commit "shared.txt" #{"BL-9002"} (fn [_] nil))]
+    (assert= "BL-1481/04 (pure): an unreadable per-sibling line-change read fails closed (nil)"
+             nil result)))
+
+(with-fixture [root]
+  (write-ticket! root "active" "BL-9002" "id: BL-9002\nhuman_approval: approved\n")
+  (commit! root "seed.txt" "seed\n" "seed before origin/main")
+  (mark-origin-main-here! root)
+  (commit! root "shared.txt" "base\n" "BL-9001: lander seeds the shared file")
+  (commit! root "shared.txt" "base\nsibling line\n" "BL-9002: sibling adds its line")
+  (let [commit (:out (sh! root "git" "rev-parse" "HEAD"))]
+    (write-bounce! root "BL-9002" commit "2026-09-07T11:48:00.000Z")
+    (let [{:keys [paths warning]}
+          (land-step-lib/own-paths root commit "BL-9001" #{"BL-9002"} nil nil
+                                    {:content-blocked-fn (fn [_ _] nil)})]
+      (assert= "BL-1481/04 (wired): an unreadable content attribution refuses (fails closed)" nil paths)
+      (assert-includes "BL-1481/04 (wired): names the shared path" warning "shared.txt")
+      (assert-includes "BL-1481/04 (wired): says the content attribution could not be read"
+                       warning "unreadable"))))
+
+;; Never relaxed for a sibling whose approval state itself is unreadable
+;; (never touching bounce/approval semantics, and BL-1374/05's regression
+;; cover, unchanged): a merge that genuinely resolved a real conflict
+;; between two blocking co-owners still refuses, since NEITHER co-owner's
+;; own lines ever land on this path (each verdicts :unlanded, not :landed) -
+;; this ticket's own "only new outcome is scenario 01" constraint.
+
+;; Scenario 05 (hardener, BL-1481): TWO blocking siblings share one path,
+;; and their content verdicts DISAGREE - BL-9002's added line never reaches
+;; origin/main (still blocks), BL-9003's lines already sit there under a
+;; different sha (content-clear). path-content-blocked-ids folds
+;; `blocking-for`'s whole candidate set through a loop, one id at a time
+;; (per-id `recur`, ids visited in SORTED order - BL-9002 before BL-9003),
+;; so a single-blocker fixture (scenarios 01-04 above) cannot tell a correct
+;; per-id fold from a bug that lets a LATER landed verdict wipe an EARLIER
+;; still-blocking one - the fold-needs-disagreeing-members shape this file's
+;; own hardening discipline names, deliberately ordered so the still-
+;; blocking id is folded first and a wipe-on-landed bug cannot hide behind
+;; visiting the landed id first. The refusal must name BL-9002 only, never
+;; BL-9003, and the pure fn's returned blocked-set must be exactly
+;; #{"BL-9002"} - not #{}, not #{"BL-9002" "BL-9003"}.
+(with-fixture [root]
+  (write-ticket! root "active" "BL-9002" "id: BL-9002\nhuman_approval: approved\n")
+  (write-ticket! root "active" "BL-9003" "id: BL-9003\nhuman_approval: approved\n")
+  (commit! root "seed.txt" "seed\n" "seed before origin/main")
+  (mark-origin-main-here! root)
+  (commit! root "shared.txt" "base\n" "BL-9001: lander seeds the shared file")
+  ;; BL-9002 adds a line of its own that never reaches origin/main - still
+  ;; blocking, and it must be the ONLY name in the refusal. Folded FIRST
+  ;; (sorted before BL-9003), so a wipe-on-landed bug in the loop would
+  ;; erase it once BL-9003 is folded in afterward.
+  (commit! root "shared.txt" "base\nsibling2 line\n" "BL-9002: sibling adds a line only it owns")
+  (let [sibling2-commit (:out (sh! root "git" "rev-parse" "HEAD"))]
+    ;; BL-9003's own line lands on origin/main under a DIFFERENT sha (the
+    ;; BL-1446 replay shape), touching an unrelated path too so it stays
+    ;; ticket-level unlanded overall (BL-1389's own split).
+    (commit! root "shared.txt" "base\nsibling2 line\nsibling3 line\n" "BL-9003: sibling adds its line")
+    (commit! root "other.txt" "never landed\n" "BL-9003: touches an unrelated path that never lands")
+    (let [pre-tip-9003 (:out (sh! root "git" "rev-parse" "HEAD~1"))]
+      (sh! root "git" "checkout" "-q" "-b" "replay-landed" (:out (sh! root "git" "rev-parse" "refs/remotes/origin/main")))
+      (commit! root "shared.txt" "base\nsibling3 line\n" "BL-9003: replayed tip-pure")
+      (mark-origin-main-here! root)
+      (sh! root "git" "checkout" "-q" "main")
+      (commit! root "shared.txt" "base\nsibling2 line\nsibling3 line\nlander line\n" "BL-9001: the lander adds its own line")
+      (write-bounce! root "BL-9002" sibling2-commit "2026-09-07T11:48:00.000Z")
+      (write-bounce! root "BL-9003" pre-tip-9003 "2026-09-07T11:49:00.000Z")
+      (let [commit (:out (sh! root "git" "rev-parse" "HEAD"))
+            origin-main (:out (sh! root "git" "rev-parse" "refs/remotes/origin/main"))
+            pure-result (land-step-lib/path-content-blocked-ids
+                         root origin-main commit "shared.txt" #{"BL-9002" "BL-9003"})]
+        (assert= "BL-1481/05 (pure): two disagreeing blockers - only the still-blocking one is returned"
+                 #{"BL-9002"} pure-result)
+        (let [{:keys [paths warning content-clear]} (land-step-lib/own-paths root commit "BL-9001" #{"BL-9002" "BL-9003"})]
+          (assert= "BL-1481/05 (wired): the path still refuses - one blocker's content is real" nil paths)
+          (assert-includes "BL-1481/05: names the still-blocking sibling" warning "BL-9002")
+          (assert-false "BL-1481/05: never names the content-clear sibling in a refusal it did not cause"
+                        (str/includes? (str warning) "BL-9003"))
+          (assert= "BL-1481/05: a refused path's own-paths call carries no content-clear key (the refusal map short-circuits before that accumulator is ever threaded back)"
+                   nil content-clear))))))
+
 (if (seq @failures)
   (do
     (doseq [f @failures] (println f))
