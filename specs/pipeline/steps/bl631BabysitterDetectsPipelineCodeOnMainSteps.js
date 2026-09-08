@@ -13,88 +13,31 @@
 
 const assert = require('node:assert/strict');
 const fs = require('node:fs');
-const os = require('node:os');
 const path = require('node:path');
 const { execFileSync } = require('node:child_process');
 const { afterEach } = require('node:test');
-const { track, reap } = require('./lib/fixtureReaper');
-const { mkSocketFixtureRoot } = require('./lib/socketFixtureRoot');
+const { track } = require('./lib/fixtureReaper');
+const {
+  REPO_ROOT,
+  SCRIPTS,
+  git,
+  mkTmp,
+  mkFixtureRepo,
+  commitFile,
+  runSweep,
+  parseFindings,
+  pipelineFindings,
+  reapAndRemove,
+  createStubScript,
+} = require('./lib/babysitterSweepFixtureHelpers');
 
-const REPO_ROOT = path.join(__dirname, '..', '..', '..');
-const SCRIPTS = path.join(REPO_ROOT, 'swarmforge', 'scripts');
-const BABYSITTER_CHECK = path.join(SCRIPTS, 'babysitter_check.bb');
 const SWEEP_LIB = path.join(SCRIPTS, 'babysitterd_sweep_lib.bb');
 
 const FEATURE = 'babysitter sweep detects pipeline code landing on main outside the QA path';
 
-// Every fixture root this file creates is tracked here and torn down in
-// afterEach - regardless of which assertion throws, matching the bl915/
-// bl938 precedent this session already established. A fixture-dir leak
-// measured at 273 directories across repeated non-vacuity runs before this
-// existed.
-//
-// QA bounce D1 (2026-08-19): reap(root) (shared fixtureReaper.js, BL-458)
-// replaces the hand-rolled tmux kill-server this file used to do inline -
-// an afterEach-only teardown installs no exit/SIGINT/SIGTERM handlers, so a
-// runner killed by timeout/Ctrl-C/OOM leaked the fake coordinator's
-// detached tmux server permanently, the exact project-wide failure mode
-// BL-458/BL-817 exist to close. reap() is a safe no-op for the roots that
-// never got a tmux server (most of them) - it only acts on a root that
-// actually has .swarmforge/tmux-socket or the front-desk pidfile/status
-// shape, neither of which the non-coordinator-pane fixtures ever write.
-let trackedRoots = [];
-
 afterEach(() => {
-  while (trackedRoots.length) {
-    const root = trackedRoots.pop();
-    reap(root);
-    fs.rmSync(root, { recursive: true, force: true });
-  }
+  reapAndRemove();
 });
-
-function git(cwd, args, extraEnv) {
-  return execFileSync('git', ['-c', 'user.email=t@t', '-c', 'user.name=t', ...args], {
-    cwd,
-    encoding: 'utf8',
-    env: { ...process.env, ...(extraEnv || {}) },
-  });
-}
-
-function mkTmp(prefix) {
-  const root = mkSocketFixtureRoot(prefix);
-  trackedRoots.push(root);
-  return root;
-}
-
-function mkFixtureRepo() {
-  const root = mkTmp('sfvc-bl631-');
-  fs.writeFileSync(path.join(root, 'README.md'), 'init\n');
-  git(root, ['init', '-q', '-b', 'main']);
-  git(root, ['add', '-A']);
-  git(root, ['commit', '-q', '-m', 'init']);
-  git(root, ['branch', 'swarmforge-QA']);
-  return root;
-}
-
-function commitFile(root, relPath, content, subject) {
-  const full = path.join(root, relPath);
-  fs.mkdirSync(path.dirname(full), { recursive: true });
-  fs.writeFileSync(full, content);
-  git(root, ['add', '-A']);
-  git(root, ['commit', '-q', '-m', subject]);
-  return git(root, ['rev-parse', 'HEAD']).trim();
-}
-
-function runSweep(root, { nudge = false, env = {} } = {}) {
-  const args = [BABYSITTER_CHECK, root];
-  if (nudge) args.push('--nudge');
-  try {
-    const stdout = execFileSync('bb', args, { encoding: 'utf8', env: { ...process.env, ...env } });
-    return { exitCode: 0, output: stdout };
-  } catch (err) {
-    return { exitCode: err.status ?? 1, output: `${err.stdout || ''}${err.stderr || ''}` };
-  }
-}
 
 // A REAL fake coordinator tmux pane, so --nudge reaches nudge-resident!'s
 // own :nudged branch for real - the ONLY path that calls write-dedup-state!
@@ -120,22 +63,6 @@ function addFakeCoordinatorPane(root) {
     `coordinator\tmaster\t${root}\tswarmforge-coordinator\tCoordinator\tclaude\ttask\n`
   );
   return sock;
-}
-
-// Parses babysitterd-sweep-lib/format-finding-line's own output shape:
-// "<ts> <SEVERITY> [<key>] <message>".
-const FINDING_LINE_RE = /^\S+ (\S+) \[([^\]]+)\] (.*)$/;
-
-function parseFindings(output) {
-  return output
-    .split('\n')
-    .map((line) => line.match(FINDING_LINE_RE))
-    .filter(Boolean)
-    .map((m) => ({ severity: m[1], key: m[2], message: m[3] }));
-}
-
-function pipelineFindings(output) {
-  return parseFindings(output).filter((f) => f.key.startsWith('pipeline-code-on-main'));
 }
 
 // Calls the REAL babysitterd-sweep-lib functions via a small bb subprocess
@@ -199,7 +126,7 @@ function registerSteps(registry) {
   registry.defineScoped(
     /^a commit reachable from main that is not an ancestor of swarmforge-QA$/,
     (ctx) => {
-      ctx.root = mkFixtureRepo();
+      ctx.root = mkFixtureRepo('sfvc-bl631-');
     },
     FEATURE
   );
@@ -259,7 +186,7 @@ function registerSteps(registry) {
   registry.defineScoped(
     /^a critical finding was produced for an offending commit$/,
     (ctx) => {
-      ctx.root = mkFixtureRepo();
+      ctx.root = mkFixtureRepo('sfvc-bl631-');
       ctx.sha = commitFile(ctx.root, 'extension/src/foo.ts', 'code\n', 'coder: merge BL-590 fix');
       ctx.result = runSweep(ctx.root);
       ctx.findings = pipelineFindings(ctx.result.output);
@@ -323,7 +250,7 @@ function registerSteps(registry) {
   registry.defineScoped(
     /^an offending commit sha was nudged as critical on the previous sweep$/,
     (ctx) => {
-      ctx.root = mkFixtureRepo();
+      ctx.root = mkFixtureRepo('sfvc-bl631-');
       ctx.coordinatorSock = addFakeCoordinatorPane(ctx.root);
       ctx.firstSha = commitFile(ctx.root, 'extension/src/foo.ts', 'code\n', 'coder: first offender');
       const first = runSweep(ctx.root, { nudge: true });
@@ -403,15 +330,8 @@ function registerSteps(registry) {
   registry.defineScoped(
     /^check_pipeline_code_on_main\.sh --list-paths reports a path set the sweep has never seen$/,
     (ctx) => {
-      ctx.root = mkFixtureRepo();
-      const stubDir = mkTmp('sfvc-bl631-stub-');
-      const stub = path.join(stubDir, 'stub-list-paths.sh');
-      fs.writeFileSync(
-        stub,
-        '#!/usr/bin/env bash\nif [[ "${1:-}" == "--list-paths" ]]; then\n  printf \'%s\\n\' "docs/custom-secret.md"\n  exit 0\nfi\nexit 0\n'
-      );
-      fs.chmodSync(stub, 0o755);
-      ctx.stubScript = stub;
+      ctx.root = mkFixtureRepo('sfvc-bl631-');
+      ctx.stubScript = createStubScript(['docs/custom-secret.md'], 'sfvc-bl631-stub-');
       ctx.stubPath = 'docs/custom-secret.md';
       ctx.stubSha = commitFile(ctx.root, ctx.stubPath, 'top secret\n', 'coder: touches a stub-only path');
       ctx.realPathSha = commitFile(ctx.root, 'extension/src/foo.ts', 'code\n', 'coder: touches the real QA-exclusive path');
@@ -531,7 +451,7 @@ function registerSteps(registry) {
   registry.defineScoped(
     /^the commit set from the 2026-07-25 BL-590 incident window$/,
     (ctx) => {
-      ctx.root = mkFixtureRepo();
+      ctx.root = mkFixtureRepo('sfvc-bl631-');
       ctx.offendingShas = [];
       ctx.offendingShas.push(commitFile(ctx.root, 'extension/src/a.ts', '1\n', 'coder: 4851901ed-shaped'));
       ctx.offendingShas.push(commitFile(ctx.root, 'extension/src/b.ts', '2\n', 'coder: 73706d79e-shaped'));
