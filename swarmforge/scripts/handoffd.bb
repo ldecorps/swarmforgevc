@@ -648,22 +648,19 @@
       ;; BL-1490: this phase runs OUTSIDE run-sweep! (before the poll loop
       ;; even starts), so it never published its own progress - notifying
       ;; several roles in series outran the 30s stall window while the
-      ;; marker still read idle. Re-stamping after EACH role notified makes
-      ;; the marker's age the time since the LAST notify, never the whole
-      ;; batch's duration.
-      (when (seq pending)
-        (daemon-cycle-guard-lib/mark-tick-phase! "startup-notify"))
-      (doseq [role-info pending
-              :let [role (:role role-info)]]
-        (log! "startup-notify" role)
-        (try
-          (handoff-wake-with-dedup! role-info wake-attribution-lib/sweep-inbox-item :new
-                                      socket (:session role-info) (:agent role-info) notify!)
-          (catch Exception e
-            (log! "startup-notify-error" role (.getMessage e))))
-        (daemon-cycle-guard-lib/mark-tick-phase! "startup-notify"))
-      (when (seq pending)
-        (daemon-cycle-guard-lib/mark-tick-idle!)))))
+      ;; marker still read idle. run-tick-phase! re-stamps after EACH role
+      ;; notified, so the marker's age is the time since the LAST notify,
+      ;; never the whole batch's duration.
+      (daemon-cycle-guard-lib/run-tick-phase!
+        "startup-notify" pending
+        (fn [role-info]
+          (let [role (:role role-info)]
+            (log! "startup-notify" role)
+            (try
+              (handoff-wake-with-dedup! role-info wake-attribution-lib/sweep-inbox-item :new
+                                          socket (:session role-info) (:agent role-info) notify!)
+              (catch Exception e
+                (log! "startup-notify-error" role (.getMessage e))))))))))
 
 ;; BL-655 site 1 (delivery): a held parcel is simply not delivered THIS
 ;; poll - it stays byte-identical in the sender's outbox/, untouched, and is
@@ -685,46 +682,43 @@
       ;; BL-1490: this phase runs OUTSIDE run-sweep! (every tick), so it
       ;; never published its own progress - a burst of several ~9s
       ;; deliveries in series outran the 30s stall window while the marker
-      ;; still read idle. Re-stamping after EACH completed delivery makes
-      ;; the marker's age the time since the LAST delivery, never the
-      ;; whole burst's duration.
-      (when (seq outbox-items)
-        (daemon-cycle-guard-lib/mark-tick-phase! "delivery"))
-      (doseq [[role path] outbox-items
-              ;; hotfix outbox-race (2026-09-02): the parcel was listed a
-              ;; moment ago but may be gone (or unreadable) by now - the
-              ;; sending role archives its own outbox entries. That read
-              ;; used to sit outside the try below and its
-              ;; FileNotFoundException escaped poll-once! and killed the
-              ;; daemon (4x on 2026-09-02, same signature 2026-08-30). A
-              ;; vanished parcel is skipped THIS poll, left exactly where it
-              ;; is, and re-evaluated next poll - never fatal.
-              :let [read-result (handoff-lib/read-envelope-if-present path)]]
-        (cond
-          (:vanished read-result)
-          (log! "outbox-parcel-unreadable" (str path) "gone or unreadable between listing and read; skipped this poll")
+      ;; still read idle. run-tick-phase! re-stamps after EACH completed
+      ;; delivery, so the marker's age is the time since the LAST delivery,
+      ;; never the whole burst's duration.
+      (daemon-cycle-guard-lib/run-tick-phase!
+        "delivery" outbox-items
+        (fn [[role path]]
+          ;; hotfix outbox-race (2026-09-02): the parcel was listed a
+          ;; moment ago but may be gone (or unreadable) by now - the
+          ;; sending role archives its own outbox entries. That read
+          ;; used to sit outside the try below and its
+          ;; FileNotFoundException escaped poll-once! and killed the
+          ;; daemon (4x on 2026-09-02, same signature 2026-08-30). A
+          ;; vanished parcel is skipped THIS poll, left exactly where it
+          ;; is, and re-evaluated next poll - never fatal.
+          (let [read-result (handoff-lib/read-envelope-if-present path)]
+            (cond
+              (:vanished read-result)
+              (log! "outbox-parcel-unreadable" (str path) "gone or unreadable between listing and read; skipped this poll")
 
-          (ambulance-lib/parcel-held? ambulance (:envelope read-result))
-          (log! "deliver-skip-ambulance" (str path) (:ticket ambulance))
+              (ambulance-lib/parcel-held? ambulance (:envelope read-result))
+              (log! "deliver-skip-ambulance" (str path) (:ticket ambulance))
 
-          :else
-          (try
-            (deliver! roles socket role path)
-            (catch Exception e
-              (log! "error" (str path) (.getMessage e))
-              (if (already-archived? (get roles role) (fs/file-name path))
-                (do
-                  (log! "already-archived" (str path))
-                  ;; The duplicate outbox copy is confirmed delivered (its
-                  ;; twin already landed in sent/); archive it too instead of
-                  ;; leaving it to be reprocessed and re-fail every poll cycle.
-                  (try
-                    (move-with-collision path (sent-dir (get roles role)))
-                    (catch Exception _ignored nil)))
-                (fail! path (.getMessage e))))))
-        (daemon-cycle-guard-lib/mark-tick-phase! "delivery"))
-      (when (seq outbox-items)
-        (daemon-cycle-guard-lib/mark-tick-idle!)))))
+              :else
+              (try
+                (deliver! roles socket role path)
+                (catch Exception e
+                  (log! "error" (str path) (.getMessage e))
+                  (if (already-archived? (get roles role) (fs/file-name path))
+                    (do
+                      (log! "already-archived" (str path))
+                      ;; The duplicate outbox copy is confirmed delivered (its
+                      ;; twin already landed in sent/); archive it too instead of
+                      ;; leaving it to be reprocessed and re-fail every poll cycle.
+                      (try
+                        (move-with-collision path (sent-dir (get roles role)))
+                        (catch Exception _ignored nil)))
+                    (fail! path (.getMessage e))))))))))))
 
 ;; ── BL-121: canary sweep - completes synthetic canary round-trips ──────────
 ;; The extension's canaryInjector.ts writes a pending marker under
@@ -747,17 +741,14 @@
                                      (str/ends-with? (fs/file-name %) ".handoff"))))]
         ;; BL-1490: this phase runs OUTSIDE run-sweep! (every tick) - see
         ;; poll-once!/startup-notify-pending! above for the same shape.
-        (when (seq files)
-          (daemon-cycle-guard-lib/mark-tick-phase! "canary-sweep"))
-        (doseq [f files]
-          (try
-            (move-with-collision f (canary-completed-dir))
-            (log! "canary-completed" (fs/file-name f))
-            (catch Exception e
-              (log! "canary-sweep-error" (str f) (.getMessage e))))
-          (daemon-cycle-guard-lib/mark-tick-phase! "canary-sweep"))
-        (when (seq files)
-          (daemon-cycle-guard-lib/mark-tick-idle!))))))
+        (daemon-cycle-guard-lib/run-tick-phase!
+          "canary-sweep" files
+          (fn [f]
+            (try
+              (move-with-collision f (canary-completed-dir))
+              (log! "canary-completed" (fs/file-name f))
+              (catch Exception e
+                (log! "canary-sweep-error" (str f) (.getMessage e))))))))))
 
 ;; The JVM only waits for registered shutdown-hook THREADS to finish before
 ;; halting - it does not wait for arbitrary other threads. A hook that only
