@@ -32,7 +32,7 @@ required_wiring:
   - 'swarmforge/scripts/handoffd.bb::deliver-notify-skip-deferred::the delivery hop honours the field instead of injecting the standard wake'
   - 'specs/pipeline/steps/bl1494DeferredNoteNoWakeSteps.js::registerSteps::the handler lands in the same parcel as the feature (BL-233)'
 
-human_approval: pending
+human_approval: approved
 approval_context: >
   A new feature file and a protocol field are authored here, so it needs a
   tap. No choice is posed and there are no ruling_options: this enforces the
