@@ -250,3 +250,5 @@ notes: |
     perfectly. It is the same non-vacuity discipline BL-1279 used as its own
     invariant 2, and it is the reason the hardener can be skipped: the guard
     against a vacuous pass is in the contract rather than added after it.
+
+assigned_to: coder
