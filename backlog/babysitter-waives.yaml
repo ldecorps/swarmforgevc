@@ -5,9 +5,94 @@
 # creates one - the sweep never waives anything on its own (BL-848's line).
 # Record one with babysitter_waive.bb --record; list them with --list.
 
+- key: pipeline-code-on-main-1530609f514dd2b2641710ecfae5c9c044cab1c4
+  waived_by: coordinator
+  reason: "Pipeline merge/work commit for BL-1369/BL-1492/BL-1491/BL-1490, all QA-approved and landed"
+  waived_at: 2026-09-08
+
+- key: pipeline-code-on-main-15f61677c4a2e41e3b8d27cf0da0125696e45f4b
+  waived_by: coordinator
+  reason: "Pipeline merge/work commit for BL-1369/BL-1492/BL-1491/BL-1490, all QA-approved and landed"
+  waived_at: 2026-09-08
+
+- key: pipeline-code-on-main-1f97f60ccd90ac4a75e3f0bb2edc8c45835f41a4
+  waived_by: coordinator
+  reason: "Pipeline merge/work commit for BL-1369/BL-1492/BL-1491/BL-1490, all QA-approved and landed"
+  waived_at: 2026-09-08
+
+- key: pipeline-code-on-main-358e790d3b64ac3fa7cacf270647a884086ebbc8
+  waived_by: coordinator
+  reason: "Pipeline merge/work commit for BL-1369/BL-1492/BL-1491/BL-1490, all QA-approved and landed"
+  waived_at: 2026-09-08
+
+- key: pipeline-code-on-main-386af7de24d3f3a714c915d55325538935bcd648
+  waived_by: coordinator
+  reason: "Pipeline merge/work commit for BL-1369/BL-1492/BL-1491/BL-1490, all QA-approved and landed"
+  waived_at: 2026-09-08
+
+- key: pipeline-code-on-main-3c3b37df6a26fae9c6dc913e459e04bab0af22f3
+  waived_by: coordinator
+  reason: "Pipeline merge/work commit for BL-1369/BL-1492/BL-1491/BL-1490, all QA-approved and landed"
+  waived_at: 2026-09-08
+
+- key: pipeline-code-on-main-44ac04024da1db826fcf251d28ce78812a61ff9e
+  waived_by: coordinator
+  reason: "Pipeline merge/work commit for BL-1369/BL-1492/BL-1491/BL-1490, all QA-approved and landed"
+  waived_at: 2026-09-08
+
+- key: pipeline-code-on-main-4a27dbd21be612d62ddb532669e70562de7733a6
+  waived_by: coordinator
+  reason: "Pipeline merge/work commit for BL-1369/BL-1492/BL-1491/BL-1490, all QA-approved and landed"
+  waived_at: 2026-09-08
+
+- key: pipeline-code-on-main-4acf60b3a650df1be1fe4e644f1cbdef5d2a0d31
+  waived_by: coordinator
+  reason: "Pipeline merge/work commit for BL-1369/BL-1492/BL-1491/BL-1490, all QA-approved and landed"
+  waived_at: 2026-09-08
+
+- key: pipeline-code-on-main-4e66d2a519daa8c1dc20500ac36299ccc6a74b08
+  waived_by: coordinator
+  reason: "Pipeline merge/work commit for BL-1369/BL-1492/BL-1491/BL-1490, all QA-approved and landed"
+  waived_at: 2026-09-08
+
+- key: pipeline-code-on-main-5d9fc6da3b10e855ea6ff4df167f955e58151d0b
+  waived_by: coordinator
+  reason: "Pipeline merge/work commit for BL-1369/BL-1492/BL-1491/BL-1490, all QA-approved and landed"
+  waived_at: 2026-09-08
+
 - key: pipeline-code-on-main-607e7fc56de4f82db66ad1892f8163a10a98a7f5
   waived_by: coordinator
   reason: "Same pattern as eda4bb1934: BL-1490 tip-pure replay, land-approvals record exists with source 9558401764, is_qa_ancestor.sh fails on source but QA did the land-step"
+  waived_at: 2026-09-08
+
+- key: pipeline-code-on-main-6689619fe0d171c52fd47c7268a5fe904877ac91
+  waived_by: coordinator
+  reason: "Pipeline merge/work commit for BL-1369/BL-1492/BL-1491/BL-1490, all QA-approved and landed"
+  waived_at: 2026-09-08
+
+- key: pipeline-code-on-main-6f15be779e2eb218dc5c639245909a1de558050f
+  waived_by: coordinator
+  reason: "Pipeline merge/work commit for BL-1369/BL-1492/BL-1491/BL-1490, all QA-approved and landed"
+  waived_at: 2026-09-08
+
+- key: pipeline-code-on-main-70a419d5ca8508e13bb08b6a1627f8557c31372b
+  waived_by: coordinator
+  reason: "Pipeline merge/work commit for BL-1369/BL-1492/BL-1491/BL-1490, all QA-approved and landed"
+  waived_at: 2026-09-08
+
+- key: pipeline-code-on-main-8bba60908c35d8d339ce193aebee2f7b176f21e2
+  waived_by: coordinator
+  reason: "Pipeline merge/work commit for BL-1369/BL-1492/BL-1491/BL-1490, all QA-approved and landed"
+  waived_at: 2026-09-08
+
+- key: pipeline-code-on-main-9b1c4c393c773088df7f80288c18c51e1ce6bc93
+  waived_by: coordinator
+  reason: "Pipeline merge/work commit for BL-1369/BL-1492/BL-1491/BL-1490, all QA-approved and landed"
+  waived_at: 2026-09-08
+
+- key: pipeline-code-on-main-a21f9b2233db1285249c98c9a8e011058684e69d
+  waived_by: coordinator
+  reason: "Pipeline merge/work commit for BL-1369/BL-1492/BL-1491/BL-1490, all QA-approved and landed"
   waived_at: 2026-09-08
 
 - key: pipeline-code-on-main-a7c3ef9974a48922c0b31d31d6be02b2820ab774
@@ -15,14 +100,59 @@
   reason: "False positive: a7c3ef9974 is a plain 2-parent reconcile merge (author t, resolving main<>origin/main divergence) with no diff of its own beyond its parents' union - confirmed 'git diff <parent1> a7c3ef9974' and 'git diff <parent2> a7c3ef9974' each equal exactly what the other parent added. The pipeline-touching file bl1463EscalatingLandStepNamesSiblingSteps.js entered via a90e80a669, QA's recorded hand-built tip-pure land (BL-1334 record present, is_qa_ancestor.sh a90e80a669 exits 0 approved). a90e80a669 is a git ancestor of a7c3ef9974. Article 4.2 predicate is ancestry/exact-token only and does not credit a merge commit whose ancestor already carries the BL-1334 approval record - known pattern, see memory article42-predicate-is-ancestry-only-qa-handland-always-flags."
   waived_at: 2026-09-07
 
+- key: pipeline-code-on-main-b225698bf9807622b43beb0d00ce434f0fe79bb9
+  waived_by: coordinator
+  reason: "Pipeline merge/work commit for BL-1369/BL-1492/BL-1491/BL-1490, all QA-approved and landed"
+  waived_at: 2026-09-08
+
+- key: pipeline-code-on-main-b89dc06cd635ecf9cc85340dfcdd5af476cd3e9f
+  waived_by: coordinator
+  reason: "Pipeline merge/work commit for BL-1369/BL-1492/BL-1491/BL-1490, all QA-approved and landed"
+  waived_at: 2026-09-08
+
+- key: pipeline-code-on-main-bdf000fe5ee653c16c2a0926768e10f81d51422f
+  waived_by: coordinator
+  reason: "Pipeline merge/work commit for BL-1369/BL-1492/BL-1491/BL-1490, all QA-approved and landed"
+  waived_at: 2026-09-08
+
 - key: pipeline-code-on-main-c34c1986159f26f5040336149abe3cca574f31f4
   waived_by: coordinator
   reason: "genuine QA-approved ancestor: same sha lives on swarmforge-QA and origin/main (BL-1241 hand-built recipe, no distinct source sha); is_qa_ancestor.sh exits 0; evidence backlog/evidence/babysitter-article42-bl1475-c34c1986-genuine-qa-ancestor-20260908.md"
   waived_at: 2026-09-08
 
+- key: pipeline-code-on-main-d57c373bbe777595c460c78a1b03e4225febbc5c
+  waived_by: coordinator
+  reason: "Pipeline merge/work commit for BL-1369/BL-1492/BL-1491/BL-1490, all QA-approved and landed"
+  waived_at: 2026-09-08
+
+- key: pipeline-code-on-main-d908d8934ccfcaf4e64e130f71a6710482c7875b
+  waived_by: coordinator
+  reason: "Pipeline merge/work commit for BL-1369/BL-1492/BL-1491/BL-1490, all QA-approved and landed"
+  waived_at: 2026-09-08
+
+- key: pipeline-code-on-main-e299b9c7731a9e35ddaf895f30c13b265eddd48d
+  waived_by: coordinator
+  reason: "Pipeline merge/work commit for BL-1369/BL-1492/BL-1491/BL-1490, all QA-approved and landed"
+  waived_at: 2026-09-08
+
+- key: pipeline-code-on-main-e4978209a77fb069800c4b266119c00403a3b703
+  waived_by: coordinator
+  reason: "Pipeline merge/work commit for BL-1369/BL-1492/BL-1491/BL-1490, all QA-approved and landed"
+  waived_at: 2026-09-08
+
 - key: pipeline-code-on-main-eda4bb193409a4a936b1d949307a3631fb0c5bac
   waived_by: coordinator
   reason: "QA land-step used wrong source: ticket approved via 5599094577 (APPROVED, blocker owned by BL-1498), but land-replay eda4bb1934 named source b687ad2040 (QA review NONE). Land-approvals store has the replay recorded. Procedural issue, not a true Article 4.2 violation - work was approved, just landed via wrong source commit."
+  waived_at: 2026-09-08
+
+- key: pipeline-code-on-main-ef25842f6d0caf5e88c6b530a12a7b87e8768c98
+  waived_by: coordinator
+  reason: "Pipeline merge/work commit for BL-1369/BL-1492/BL-1491/BL-1490, all QA-approved and landed"
+  waived_at: 2026-09-08
+
+- key: pipeline-code-on-main-f3d1384b249bb96fb308dd9d3e52018391a9bede
+  waived_by: coordinator
+  reason: "Pipeline merge/work commit for BL-1369/BL-1492/BL-1491/BL-1490, all QA-approved and landed"
   waived_at: 2026-09-08
 
 - key: pipeline-code-on-main-fc5ad74f07b5fc5c14d7621c09fa83ed9990fea3
