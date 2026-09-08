@@ -19,6 +19,17 @@ SWARMFORGE_SH="$SCRIPT_DIR/../swarmforge.sh"
 fail() { echo "FAIL: $*" >&2; exit 1; }
 pass() { echo "PASS: $*"; }
 
+# BL-1445: `.swarmforge/swarm.env` exports PACK_STAFFING_SKIP_GATE="${...:-1}"
+# into every role pane (the operator escape hatch, BL-1437), so every case
+# below inherited it and a refusal case's expected refusal silently turned
+# into an override warning instead - the hardener's 2026-08-12 rule ("a
+# shell test unsets every SWARMFORGE_* var its tested script reads") for a
+# variable outside that prefix. Unset once here, at the top, same posture as
+# every case's own explicit MODEL_STEWARD_STATE_DIR=... prefix below: no
+# case (this file's own zsh -c invocations) inherits it from the pane.
+# Case 3 turns it back on explicitly, and only for its own invocation.
+unset PACK_STAFFING_SKIP_GATE
+
 WORK="$(mktemp -d)"
 trap 'rm -rf "$WORK"' EXIT
 
