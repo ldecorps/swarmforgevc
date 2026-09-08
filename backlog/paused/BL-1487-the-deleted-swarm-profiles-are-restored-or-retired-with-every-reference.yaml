@@ -38,7 +38,9 @@ retires:
 # gated by the grep in qa_e2e_procedure; under restore it is the eight files'
 # presence, gated by the shipped-confs test going green.
 
-human_approval: pending
+human_approval: approved
+human_ruling: |
+  Restore the eight profile files from before 4695d31402 and fix the smoke test fixture
 approval_context: >
   Your call, posed as ruling_options because the two outcomes edit
   different files and only you know whether the two VS Code launch
