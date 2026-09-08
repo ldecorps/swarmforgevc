@@ -180,6 +180,29 @@ export interface ContextTelemetryProducerResult {
   tornTailLine: number | null;
 }
 
+/**
+ * Dispatches the selected batch to the injected recordFn when given (every
+ * test's fixture path), or to the real production write (BL-1477's
+ * recordEventsViaCliBatch) otherwise - extracted out of
+ * runContextTelemetryProducer's own body so that function's CRAP reflects
+ * its own logic rather than this dispatch's.
+ */
+function recordSelectedEvents(
+  params: { repoRoot: string; recordFn?: (event: ContextTelemetryRecord) => void },
+  telemetryDir: string,
+  selected: ContextTelemetryRecord[]
+): void {
+  if (params.recordFn) {
+    for (const event of selected) {
+      params.recordFn(event);
+    }
+    return;
+  }
+  if (selected.length > 0) {
+    recordEventsViaCliBatch(params.repoRoot, telemetryDir, selected);
+  }
+}
+
 export function runContextTelemetryProducer(params: {
   repoRoot: string;
   roleWorktrees: RoleWorktree[];
@@ -210,13 +233,7 @@ export function runContextTelemetryProducer(params: {
   const nowFn = params.nowFn ?? Date.now;
   const { selected, remaining } = selectEventsWithinLimits(toRecordAll, cap, deadlineMs, nowFn);
 
-  if (params.recordFn) {
-    for (const event of selected) {
-      params.recordFn(event);
-    }
-  } else if (selected.length > 0) {
-    recordEventsViaCliBatch(params.repoRoot, telemetryDir, selected);
-  }
+  recordSelectedEvents(params, telemetryDir, selected);
 
   const agents = [...new Set([...existing, ...selected].map((row) => row.agent))];
   return {

@@ -1,15 +1,17 @@
 # Context Telemetry: Recording and Querying Agent Invocations
 
-Last Updated: 2026-07-23
+Last Updated: 2026-09-08
 
 SwarmForge's **Context Telemetry** subsystem records per-invocation event data for each agent (input/output token counts, context window utilization, compaction events) and provides a query CLI to summarize telemetry across recorded invocations.
 
 ## Overview
 
-Context telemetry tracks **invocation events** — snapshots of token usage and context state whenever an agent completes a conversation turn. Events are appended to an immutable JSONL log at `.swarmforge/telemetry/context-events.jsonl`. The CLI provides two operations:
+Context telemetry tracks **invocation events** — snapshots of token usage and context state whenever an agent completes a conversation turn. Events are appended to an immutable JSONL log at `.swarmforge/telemetry/context-events.jsonl`. The CLI provides these operations:
 
 - **`record`** — Append a new invocation event to the telemetry log.
+- **`record-batch`** — Append many events from one subprocess call (BL-1477; see below).
 - **`summary`** — Query the log for telemetry statistics scoped to an agent or session.
+- **`agents`** — List distinct agents with recorded events.
 
 ## Recording an Invocation Event
 
@@ -116,6 +118,51 @@ bb swarmforge/scripts/context_telemetry_cli.bb record \
   --model claude-sonnet-5
 # Error: validation error: input-tokens must be a finite number (not NaN or Infinity)
 ```
+
+### Recording a Batch (BL-1477)
+
+For a caller recording many events in one pass (the BL-665 producer's own
+write path), `record-batch` reads one JSON event object per line from
+stdin, validates every line first — nothing is appended if any line is
+invalid or unparseable — then appends the whole batch in a single file
+open. This replaced one `record` subprocess per event, which cost ~0.3s of
+`bb` start-up each and could not keep a large backlog within a producer
+tick's deadline.
+
+```bash
+printf '%s\n%s\n' \
+  '{"agent":"coder","role":"coder","session_id":"s1","timestamp":"2026-09-08T00:00:00Z","input_tokens":1000,"output_tokens":200,"context_utilization_pct":5,"compaction":false,"provider":"anthropic","model":"claude-sonnet-5"}' \
+  '{"agent":"coder","role":"coder","session_id":"s1","timestamp":"2026-09-08T00:01:00Z","input_tokens":1200,"output_tokens":220,"context_utilization_pct":6,"compaction":false,"provider":"anthropic","model":"claude-sonnet-5"}' \
+  | bb swarmforge/scripts/context_telemetry_cli.bb record-batch
+```
+
+Output:
+```
+recorded 2
+```
+
+### Torn-Tail Tolerance and Interior Damage (BL-1477)
+
+An unclean shutdown can leave the log's final line torn (NUL bytes, or an
+unfinished record with no trailing newline). `record`, `record-batch`,
+`summary` and `agents` all read through the same tolerant reader:
+
+- A torn **final** line (still unparseable after stripping NUL bytes, with
+  nothing whole after it) is dropped silently from the returned events,
+  and named on stderr — `context-events store: torn tail dropped at line
+  N` — for `summary`/`agents`. It never blocks the command.
+- **Interior** damage — an unparseable line with a whole line after it —
+  makes every reading command refuse: the CLI prints
+  `context-events store: unparseable line N` on stderr and exits non-zero,
+  and nothing is recorded or summarized. The store is the dedupe cursor,
+  so recording against one that cannot be fully read would risk
+  duplicating records.
+- Appends always leave the file ending in a newline, so a tolerated torn
+  tail never becomes interior damage the next time something is appended.
+
+See [BL-665 context-telemetry producer wiring](BL-665-context-telemetry-producer-wiring.md#torn-tail-tolerance-cap-and-deadline-bl-1477)
+for the producer's per-tick cap and deadline, which bound how much of a
+backlog like this is recorded in one pass.
 
 ## Querying Telemetry Summary
 
