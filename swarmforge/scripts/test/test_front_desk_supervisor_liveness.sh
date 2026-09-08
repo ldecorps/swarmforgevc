@@ -17,6 +17,16 @@ fail=0
 note() { printf '%s\n' "$*"; }
 check() { if eval "$2"; then note "ok   - $1"; else note "FAIL - $1"; fail=1; fi; }
 
+# BL-1285: an extra delay before every supervisor check, so the property
+# "no verdict depends on elapsed wall-clock time" can be gated by injection
+# rather than by loading the host. Zero by default; the acceptance drives it.
+FIXTURE_DELAY_MS="${FRONT_DESK_FIXTURE_DELAY_MS:-0}"
+maybe_delay() {
+  if [[ "$FIXTURE_DELAY_MS" -gt 0 ]]; then
+    sleep "$(awk -v ms="$FIXTURE_DELAY_MS" 'BEGIN { printf "%.3f", ms / 1000 }')"
+  fi
+}
+
 make_fixture() {
   local d; d="$(mktemp -d)"
   register_tmp_dir "$d"
@@ -57,21 +67,31 @@ write_heartbeat() {
 # BL-1035 — it is a predecessor's leftover and falls into startup grace. Stamp
 # an OWN heartbeat (age 0, after spawn), then wait past the stall window so the
 # same timestamp ages in place.
-stamp_own_heartbeat_then_age_past_stall() {
+#
+# BL-1285: the old approach slept `stall_ms + 300ms` and raced the wall clock.
+# The new approach uses a tiny stall window (1ms) so the heartbeat is immediately
+# stale - no sleep needed, and extra delay only ages it further. This is called
+# only in contexts where the caller has set FRONT_DESK_STALL_MS to a small value.
+stamp_own_heartbeat_immediately_stale() {
   local root="$1"
-  local stall_ms="${FRONT_DESK_STALL_MS:-1000}"
+  # Write a fresh heartbeat (age 0). With FRONT_DESK_STALL_MS set to 1ms by the
+  # caller, this heartbeat is already past the stall window the moment it's written.
   write_heartbeat "$root" 0
-  # Fractional sleep: stall_ms + 300ms cushion (bash sleep accepts decimals).
-  sleep "$(awk -v s="$stall_ms" 'BEGIN { printf "%.3f", (s + 300) / 1000 }')"
 }
 
 # Drive stall→restart until gave-up (or 15 tries). Sets gave_up=0|1.
+# BL-1285: uses a tiny stall window (1ms) so the heartbeat is immediately stale,
+# no sleep needed to age it.
 drive_until_gave_up() {
   local root="$1"
   gave_up=0
   local _
+  # BL-1285: save and override the stall window to 1ms so each heartbeat is
+  # immediately stale - no wall-clock race.
+  local saved_stall_ms="${FRONT_DESK_STALL_MS:-}"
+  export FRONT_DESK_STALL_MS=1
   for _ in $(seq 1 15); do
-    stamp_own_heartbeat_then_age_past_stall "$root"
+    stamp_own_heartbeat_immediately_stale "$root"
     check_once "$root" > /dev/null
     sleep 0.2
     if [[ "$(jget "$root/.swarmforge/operator/front-desk-supervisor.status.json" "[:bot :status]")" == gave-up ]]; then
@@ -79,9 +99,18 @@ drive_until_gave_up() {
       break
     fi
   done
+  if [[ -n "$saved_stall_ms" ]]; then
+    export FRONT_DESK_STALL_MS="$saved_stall_ms"
+  else
+    unset FRONT_DESK_STALL_MS
+  fi
 }
 
 check_once() {
+  # BL-1285: inject the configured delay before every supervisor check, so the
+  # property "no verdict depends on elapsed wall-clock time" can be proven by
+  # injection rather than by loading the host.
+  maybe_delay
   BRIDGE_TOKEN=fake-token TELEGRAM_BOT_TOKEN=x TELEGRAM_CHAT_ID=y TELEGRAM_PRINCIPAL_USER_ID=1 \
     FRONT_DESK_MAX_ATTEMPTS="${FRONT_DESK_MAX_ATTEMPTS:-3}" \
     FRONT_DESK_BACKOFF_BASE_MS="${FRONT_DESK_BACKOFF_BASE_MS:-10}" \
@@ -103,15 +132,20 @@ check "setup: the bot starts running" \
 
 # A fresh heartbeat, well inside the (tiny, test-only) stall window - must
 # stay healthy even though nothing has "arrived" (the false-positive guard).
-write_heartbeat "$F" 10
-check_once "$F" > /dev/null
+# BL-1285: use a wide stall window (10000ms) so the heartbeat stays fresh even
+# with a large injected delay. The acceptance drives delays up to 4000ms, so
+# 10000ms is wide enough that no plausible delay reaches it.
+FRONT_DESK_STALL_MS=10000 write_heartbeat "$F" 10
+FRONT_DESK_STALL_MS=10000 check_once "$F" > /dev/null
 check "front-desk-liveness-02: a quiet-but-polling front desk is reported healthy, never stalled" \
   '[[ "$(jget "$F/.swarmforge/operator/front-desk-supervisor.status.json" "[:bot :status]")" == running ]]'
 
 # Served once (own heartbeat), then went quiet past FRONT_DESK_STALL_MS —
 # the ~9h-outage failure mode itself (BL-1089: never backdate before spawn).
-stamp_own_heartbeat_then_age_past_stall "$F"
-check_once "$F" > /dev/null
+# BL-1285: use a tiny stall window (1ms) so the heartbeat is immediately stale,
+# no wall-clock race.
+FRONT_DESK_STALL_MS=1 stamp_own_heartbeat_immediately_stale "$F"
+FRONT_DESK_STALL_MS=1 check_once "$F" > /dev/null
 check "front-desk-liveness-01: a stopped-listening bot is reported as stalled, never plain 'running'" \
   '[[ "$(jget "$F/.swarmforge/operator/front-desk-supervisor.status.json" "[:bot :status]")" == stalled ]]'
 check "the still-alive bridge is unaffected by the bot stalling" \
@@ -137,11 +171,14 @@ rm -rf "$F"
 F="$(make_fixture)"
 export FRONT_DESK_STALL_MS=1000 FRONT_DESK_MAX_ATTEMPTS=5 FRONT_DESK_BACKOFF_BASE_MS=10 FRONT_DESK_BACKOFF_MAX_MS=40
 check_once "$F" > /dev/null
-stamp_own_heartbeat_then_age_past_stall "$F"
-check_once "$F" > /dev/null
+# BL-1285: use a tiny stall window (1ms) so the heartbeat is immediately stale,
+# no wall-clock race. Temporarily override the stall window for the stall setup.
+FRONT_DESK_STALL_MS=1 stamp_own_heartbeat_immediately_stale "$F"
+FRONT_DESK_STALL_MS=1 check_once "$F" > /dev/null
 check "the bot transitions to stalled" \
   '[[ "$(jget "$F/.swarmforge/operator/front-desk-supervisor.status.json" "[:bot :status]")" == stalled ]]'
 sleep 0.2
+# After the stall is detected, restore the normal stall window for the restart check.
 check_once "$F" > /dev/null
 check "front-desk-liveness-03: a stalled front desk is restarted with no human action (attempts grows, running again)" \
   '[[ "$(jget "$F/.swarmforge/operator/front-desk-supervisor.status.json" "[:bot :status]")" == running ]] && [[ "$(jget "$F/.swarmforge/operator/front-desk-supervisor.status.json" "[:bot :attempts]")" -gt 1 ]]'
