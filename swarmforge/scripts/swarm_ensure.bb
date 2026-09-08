@@ -98,11 +98,14 @@
       (str (fs/path extension-dir "scripts" "start-extension-dev.sh"))))
 
 ;; BL-690: this must be a START action, never a health PROBE.
-;; `handoffd_supervisor.bb --check-once` is BL-144's own halt authority - on
-;; a :dead/:stalled verdict it calls alarm-and-halt!, which kills every agent
-;; tmux session. Wiring that probe up as ensure's "repair" meant a dead
-;; daemon got alarmed-and-halted instead of started, tearing down panes
-;; ensure had just respawned. start_handoff_daemon.sh is the same daemon-
+;; `handoffd_supervisor.bb --check-once` is BL-144's halt authority, now
+;; BL-1492's restart-in-place ladder in front of it: on a :dead/:stalled
+;; verdict it first tries restart-daemon! (headroom in the restart budget)
+;; and only alarm-and-halt!s - killing every agent tmux session - once that
+;; budget is spent. Wiring that probe up as ensure's "repair" meant a dead
+;; daemon got restarted-or-halted instead of started here, tearing down panes
+;; ensure had just respawned (worse before BL-1492: every check was a halt).
+;; start_handoff_daemon.sh is the same daemon-
 ;; start owner the launch paths already use (verify_daemon_lifecycle.sh's own
 ;; shape): it only ever starts handoffd + its supervisor, never touches
 ;; daemon/stop or a tmux session, and is idempotent (stops any pid-file
