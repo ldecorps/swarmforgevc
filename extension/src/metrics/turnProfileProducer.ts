@@ -1,10 +1,34 @@
 import * as fs from 'fs';
 import * as path from 'path';
-import { INTERVAL_CATEGORIES, coverageFromIntervals, walkTranscriptFiles } from './transcriptWalker';
+import {
+  INTERVAL_CATEGORIES,
+  classifyTranscriptText,
+  coverageFromIntervals,
+  walkTranscriptFiles,
+} from './transcriptWalker';
 import type { ClassifiedInterval, HandoffTrailEntry, IntervalCategory } from './transcriptWalker';
 import { buildTurnProfileSeries } from './turnProfile';
 import { listTranscriptJsonlPaths } from './transcriptUsage';
 import { RoleWorktree, groupRolesByWorktreePath } from './swarmMetrics';
+import {
+  computeTranscriptSummary,
+  readTranscriptSummaryStore,
+  statOrNull,
+  summaryIsCurrent,
+  writeTranscriptSummaryStore,
+} from './transcriptSummaryStore';
+import type { TranscriptSummary, TranscriptSummaryStore } from './transcriptSummaryStore';
+
+// Re-exported for callers that historically imported the summary-store
+// shape from this module (BL-1476 landed it here first; split out in the
+// same cleanup pass - see transcriptSummaryStore.ts's own doc comment).
+export type { TranscriptSummary, TranscriptSummaryStore } from './transcriptSummaryStore';
+export {
+  TURN_PROFILE_SUMMARY_STORE_FILE,
+  turnProfileSummaryStorePath,
+  readTranscriptSummaryStore,
+  writeTranscriptSummaryStore,
+} from './transcriptSummaryStore';
 
 /**
  * BL-1364: the production consumer of BL-664's buildTurnProfileSeries.
@@ -92,22 +116,14 @@ export function assessTranscriptReadability(transcriptPaths: string[]): Transcri
       unreadable.push(filePath);
       continue;
     }
-    const lines = text.split('\n').filter((line) => line.trim());
-    const badIndexes: number[] = [];
-    lines.forEach((line, index) => {
-      try {
-        JSON.parse(line);
-      } catch {
-        badIndexes.push(index);
-      }
-    });
-    if (badIndexes.length === 0) {
-      readable.push(filePath);
-    } else if (badIndexes.length === 1 && badIndexes[0] === lines.length - 1) {
-      readable.push(filePath);
-      truncatedTail.push(filePath);
-    } else {
+    const verdict = classifyTranscriptText(text);
+    if (verdict.unreadable) {
       unreadable.push(filePath);
+    } else {
+      readable.push(filePath);
+      if (verdict.truncatedTail) {
+        truncatedTail.push(filePath);
+      }
     }
   }
   return { readable, unreadable, truncatedTail };
@@ -258,43 +274,234 @@ function upsertWindowRecord(telemetryDir: string, record: TurnProfileWindowRecor
   );
 }
 
+interface TickOutcome {
+  /** null exactly when the tick stopped at its deadline - no row this tick. */
+  record: TurnProfileWindowRecord | null;
+  read: number;
+  listed: number;
+  partial: boolean;
+  store: TranscriptSummaryStore;
+}
+
+/**
+ * BL-1476: the summary-cached replacement for buildTurnProfileWindowForGroups'
+ * own full-walk body. Traverses groups and their transcript paths in the
+ * SAME order buildTurnProfileWindowForGroups always did (group by group, each
+ * group's paths in listing order) so a stage's first-appearance order into
+ * buildTurnProfileSeries' own `byStage` Map - and therefore the record's
+ * `stages` array order - matches a full walk exactly (invariant 1's "identical
+ * row"), never merely "the same values in some order".
+ *
+ * A path no longer listed (deleted since the last tick) has its summary
+ * dropped rather than carried forward - it must cost neither a stat nor a
+ * read, and must not linger to be mistaken for still-live content.
+ *
+ * The deadline is checked ONLY before a read that is actually needed (an
+ * unchanged file's single stat is not itself bounded - the invariant is
+ * about bytes read, not about the walk's own file-listing cost) - see
+ * invariant 3 and BL-1454's own tick-deadline precedent.
+ */
+function flattenGroupEntries(groups: TranscriptGroup[]): Array<{ stage: string; path: string }> {
+  const flat: Array<{ stage: string; path: string }> = [];
+  for (const group of groups) {
+    for (const filePath of group.transcriptPaths) {
+      flat.push({ stage: group.stage, path: filePath });
+    }
+  }
+  return flat;
+}
+
+function pruneStoreToListed(priorStore: TranscriptSummaryStore, listedPaths: Set<string>): TranscriptSummaryStore {
+  const store: TranscriptSummaryStore = {};
+  for (const [filePath, summary] of Object.entries(priorStore)) {
+    if (listedPaths.has(filePath)) {
+      store[filePath] = summary;
+    }
+  }
+  return store;
+}
+
+type TickEntryOutcome =
+  | { kind: 'deadline' }
+  | { kind: 'gone' }
+  | { kind: 'summary'; summary: TranscriptSummary; freshlyRead: boolean };
+
+/**
+ * One entry's slice of runTick's own loop, split out so runTick's CRAP stays
+ * low (BL-485/BL-1476 hardening) - the deadline check stays exactly where
+ * the doc comment on runTick promises: only before a read that is actually
+ * needed, never for an already-current summary.
+ */
+function resolveEntrySummary(
+  filePath: string,
+  store: TranscriptSummaryStore,
+  opts: { readFn: (path: string) => string; nowFn: () => number; deadlineAtMs?: number }
+): TickEntryOutcome {
+  const stat = statOrNull(filePath);
+  if (!stat) {
+    // Listed at readdir time, gone by the time this tick reached it - the
+    // exact same "cannot read at all" shape assessTranscriptReadability has
+    // always failed closed on.
+    return { kind: 'gone' };
+  }
+  if (summaryIsCurrent(store[filePath], stat)) {
+    return { kind: 'summary', summary: store[filePath], freshlyRead: false };
+  }
+  if (opts.deadlineAtMs !== undefined && opts.nowFn() >= opts.deadlineAtMs) {
+    return { kind: 'deadline' };
+  }
+  return { kind: 'summary', summary: computeTranscriptSummary(filePath, stat, opts.readFn), freshlyRead: true };
+}
+
+function flattenPerFileIntervals(
+  perFile: Array<{ stage: string; intervals: ClassifiedInterval[] }>
+): ClassifiedInterval[] {
+  const intervals: ClassifiedInterval[] = [];
+  for (const { stage, intervals: fileIntervals } of perFile) {
+    for (const row of fileIntervals) {
+      intervals.push({ ...row, stage });
+    }
+  }
+  return intervals;
+}
+
+interface TickAccumulator {
+  unreadable: string[];
+  truncatedTail: string[];
+  perFile: Array<{ stage: string; intervals: ClassifiedInterval[] }>;
+}
+
+/** The bookkeeping half of one entry's outcome, split out of runTick's own loop for CRAP. */
+function accumulateEntrySummary(entry: { stage: string; path: string }, summary: TranscriptSummary, acc: TickAccumulator): void {
+  if (summary.unreadable) {
+    acc.unreadable.push(entry.path);
+    return;
+  }
+  if (summary.truncatedTail) {
+    acc.truncatedTail.push(entry.path);
+  }
+  acc.perFile.push({ stage: entry.stage, intervals: summary.intervals });
+}
+
+function runTick(
+  groups: TranscriptGroup[],
+  priorStore: TranscriptSummaryStore,
+  opts: { readFn: (path: string) => string; nowFn: () => number; deadlineAtMs?: number }
+): TickOutcome {
+  const flat = flattenGroupEntries(groups);
+  const store = pruneStoreToListed(priorStore, new Set(flat.map((entry) => entry.path)));
+
+  let read = 0;
+  const acc: TickAccumulator = { unreadable: [], truncatedTail: [], perFile: [] };
+
+  for (const entry of flat) {
+    const outcome = resolveEntrySummary(entry.path, store, opts);
+    if (outcome.kind === 'deadline') {
+      return { record: null, read, listed: flat.length, partial: true, store };
+    }
+    if (outcome.kind === 'gone') {
+      acc.unreadable.push(entry.path);
+      continue;
+    }
+    store[entry.path] = outcome.summary;
+    if (outcome.freshlyRead) {
+      read += 1;
+    }
+    accumulateEntrySummary(entry, outcome.summary, acc);
+  }
+
+  return {
+    record: assembleWindowRecord(flattenPerFileIntervals(acc.perFile), acc.unreadable, acc.truncatedTail),
+    read,
+    listed: flat.length,
+    partial: false,
+    store,
+  };
+}
+
 export interface TurnProfileProducerResult {
   recorded: number;
   updated: number;
   stages: string[];
   complete: boolean;
+  /** Transcripts actually opened for content this tick. */
+  read: number;
+  /** Transcripts listed this tick, across every role group. */
+  listed: number;
+  /** True when the tick stopped at its deadline; no window row was written. */
+  partial: boolean;
 }
 
 /**
  * `writeFn` is the injected side-effect seam (never a *_FORCE_RESULT env
  * bypass): a test drives the real derivation and observes what would be
- * written without needing a writable telemetry dir.
+ * written without needing a writable telemetry dir. `readFn`/`nowFn` are
+ * BL-1476's own seams: every transcript this tick actually opens for content
+ * goes through `readFn`, and the deadline check goes through `nowFn`, so a
+ * test proves both "only the changed files were opened" and "a tick stops at
+ * its deadline" without a real wall-clock wait or real transcript volume.
+ * `deadlineMs` omitted means unlimited (matches BL-1454's own posture: an
+ * omitted deadline is a choice a caller makes deliberately, not a silent
+ * default of "no bound").
  */
+function resolveProducerTickOptions(params: {
+  readFn?: (path: string) => string;
+  nowFn?: () => number;
+  deadlineMs?: number;
+}): { nowFn: () => number; readFn: (path: string) => string; deadlineAtMs?: number } {
+  const nowFn = params.nowFn ?? Date.now;
+  const readFn = params.readFn ?? ((filePath: string) => fs.readFileSync(filePath, 'utf8'));
+  const deadlineAtMs = params.deadlineMs !== undefined ? nowFn() + params.deadlineMs : undefined;
+  return { nowFn, readFn, deadlineAtMs };
+}
+
+function partialProducerResult(outcome: TickOutcome): TurnProfileProducerResult {
+  return { recorded: 0, updated: 0, stages: [], complete: false, read: outcome.read, listed: outcome.listed, partial: true };
+}
+
+function completedProducerResult(record: TurnProfileWindowRecord, outcome: TickOutcome, isNew: boolean): TurnProfileProducerResult {
+  return {
+    recorded: isNew ? 1 : 0,
+    updated: isNew ? 0 : 1,
+    stages: record.stages.map((entry) => entry.stage),
+    complete: record.complete,
+    read: outcome.read,
+    listed: outcome.listed,
+    partial: false,
+  };
+}
+
 export function runTurnProfileProducer(params: {
   repoRoot: string;
   roleWorktrees: RoleWorktree[];
   claudeProjectsDir?: string;
   writeFn?: (record: TurnProfileWindowRecord) => void;
+  readFn?: (path: string) => string;
+  nowFn?: () => number;
+  deadlineMs?: number;
 }): TurnProfileProducerResult {
   const telemetryDir = path.join(params.repoRoot, '.swarmforge', 'telemetry');
   const existing = readPersistedTurnProfileWindows(telemetryDir);
+  const { nowFn, readFn, deadlineAtMs } = resolveProducerTickOptions(params);
 
   const groups: TranscriptGroup[] = groupRolesByWorktreePath(params.roleWorktrees).map((group) => ({
     stage: group[0].role,
     transcriptPaths: listTranscriptJsonlPaths(group[0].worktreePath, params.claudeProjectsDir),
   }));
 
-  const derived = buildTurnProfileWindowForGroups(groups);
-  const isNew = filterNewTurnProfileWindows(existing, [derived]).length === 1;
-  const writeFn = params.writeFn ?? ((record) => upsertWindowRecord(telemetryDir, record));
-  writeFn(derived);
+  const priorStore = readTranscriptSummaryStore(telemetryDir);
+  const outcome = runTick(groups, priorStore, { readFn, nowFn, deadlineAtMs });
+  writeTranscriptSummaryStore(telemetryDir, outcome.store);
 
-  return {
-    recorded: isNew ? 1 : 0,
-    updated: isNew ? 0 : 1,
-    stages: derived.stages.map((entry) => entry.stage),
-    complete: derived.complete,
-  };
+  if (outcome.partial || !outcome.record) {
+    return partialProducerResult(outcome);
+  }
+
+  const isNew = filterNewTurnProfileWindows(existing, [outcome.record]).length === 1;
+  const writeFn = params.writeFn ?? ((record) => upsertWindowRecord(telemetryDir, record));
+  writeFn(outcome.record);
+
+  return completedProducerResult(outcome.record, outcome, isNew);
 }
 
 /** Exposed so a consumer can enumerate categories without restating them. */
