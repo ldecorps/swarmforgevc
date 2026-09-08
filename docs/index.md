@@ -198,6 +198,7 @@ expects them, and are not migrated or rewritten here.
 - [Relaunch Resume and the Orphan-Claim Sweep](how-to/BL-648-relaunch-resume-orphan-claims.md)
 - [Stale mono-router-active-role is not topology on standing packs](how-to/BL-1020-stale-mono-router-marker-is-not-topology.md) — marker honoured only on rotation-router packs; leftovers on full-forge are ignored and reported `BL-1020 STALE` (BL-1020).
 - [Launching the Perplexity mono-router pack](how-to/perplexity-mono-router-launch.md)
+- [Launching the GLM mono-router pack](how-to/glm-mono-router-launch.md) — b.ai gateway (`tencentcloud2/glm-5.3-flash`) on coder/cleaner/architect/hardender/documenter/QA, `claude-fable-5-1` on specifier; `start-swarm-glm.sh` wrapper exports the flag the provisioned coordinator can't sniff from a window line (BL-1495).
 - [Aged-note Actionability in Mono-router: Draining Dormant Mailboxes](how-to/BL-576-aged-note-actionability-mono-router.md)
 - [GitHub Auto-Intake Scheduler](how-to/github-auto-intake-scheduler.md)
 - [Pages deploy timeout headroom and workflow action majors](how-to/BL-641-pages-deploy-timeout-and-action-majors.md) — 20m deploy timeout; action version majors pinned (BL-641).
