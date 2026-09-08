@@ -200,3 +200,11 @@ notes: |
     discipline as every other provider key in this repo." and "Do not
     touch the Qwen/DeepSeek/Perplexity/local-model cases already in either
     file - additive only."
+  - 2026-09-08 04:33Z coordinator: not promoted despite expedited
+    (defect/high) ordering. Two independent holds, either alone would
+    block: (1) human_approval is still `pending` - no tap recorded yet;
+    (2) effective_backlog_depth_cli.bb reads 0 right now (circuit-breaker
+    severe posture, Article 3.5) with backlog/active/ already holding
+    BL-1480 - under a 0 cap an expedited ticket still waits (Article
+    3.2.4). Re-check both at the next promotion decision; neither is
+    stale by itself.
