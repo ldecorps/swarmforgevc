@@ -39,6 +39,19 @@ HANDOFFD="$(cd "$SCRIPT_DIR/.." && pwd)/handoffd.bb"
 # operator env must never reach a test fixture.
 unset RESEND_API_KEY
 
+# BL-1492: a :dead/:stalled verdict now restarts the daemon in place while
+# the restart budget has headroom, escalating to BL-144's halt only once it
+# is spent - every case below asserts the immediate-halt behavior on a
+# FRESH fixture (no restart_history yet), which would otherwise now read as
+# the first restart-in-place instead. The restart ladder itself has its own
+# dedicated coverage (handoffd_supervisor_restart_budget_test_runner.bb,
+# bl1492_restart_in_place_property_runner.bb, and the BL-1492 acceptance
+# feature) - this suite's job is BL-144's original halt-when-exhausted path
+# in isolation, so the budget is pinned to 0 for the whole suite (every
+# verdict here is budget-exhausted by construction), same one-point-of-
+# control shape as the RESEND_API_KEY unset above.
+export SUPERVISOR_RESTART_BUDGET_COUNT=0
+
 fail() { echo "FAIL: $*" >&2; exit 1; }
 pass() { echo "PASS: $*"; }
 
@@ -193,6 +206,42 @@ FAILURE_LOG="$(failure_log_path)"
 [[ -f "$FAILURE_LOG" ]] || fail "05: messy death produced no failure log"
 grep -q "kill-session" "$TMUX_LOG" || fail "05: messy death did not still hard-stop the swarm"
 pass "05: a messy death (missing pid file, truncated status file) still alarms and halts cleanly"
+
+# ── 06: default budget headroom takes the real check!->restart path, not
+# just respond-to-verdict! called directly (BL-1492). Every other coverage
+# of the :restart leg (handoffd_supervisor_restart_budget_test_runner.bb,
+# bl1492_restart_in_place_property_runner.bb, the BL-1492 acceptance CLI)
+# calls respond-to-verdict! directly, bypassing check!'s own dispatch
+# entirely - and every other check!-level fixture in THIS file pins the
+# budget to 0 (line 53), which can only ever reach :halt. This is the one
+# case proving check! itself, with a REAL dead-pid observation and the REAL
+# SUPERVISOR_START_DAEMON_CMD subprocess seam, actually reaches :restart and
+# never touches tmux - closing the wiring gap between evaluate-health's real
+# observations and the restart-in-place response.
+make_fixture
+trap 'stop_daemon; rm -rf "$ROOT"' EXIT
+echo "999999" > "$DAEMON_DIR/handoffd.pid"   # dead pid
+queue_outbox
+
+START_MARKER="$ROOT/start-daemon-invoked"
+FAKE_START_DAEMON="$FAKE_BIN/fake-start-daemon.sh"
+cat > "$FAKE_START_DAEMON" <<EOF
+#!/usr/bin/env bash
+touch "$START_MARKER"
+EOF
+chmod +x "$FAKE_START_DAEMON"
+
+SUPERVISOR_RESTART_BUDGET_COUNT=2 SUPERVISOR_START_DAEMON_CMD="$FAKE_START_DAEMON" check_once
+
+[[ -f "$START_MARKER" ]] || fail "06: check! did not invoke the real start-daemon-owner seam"
+grep -q "kill-session" "$TMUX_LOG" && fail "06: a restart-in-place must never touch tmux"
+[[ "$(status_field state)" != "halted" ]] || fail "06: a restarted daemon must not read as halted"
+python3 -c "
+import json
+h = json.load(open('$DAEMON_DIR/handoffd.status.json')).get('restart_history', [])
+assert len(h) == 1 and h[0]['result'] == 'succeeded', h
+" || fail "06: restart_history was not recorded via the real check! path"
+pass "06: default budget headroom takes the real check!->restart path through the real start-owner seam, no tmux touched"
 
 # ── BL-081: at most one handoffd process per project root ────────────────────
 # Covers acceptance scenarios BL-081 singleton-handoffd-01..06.
