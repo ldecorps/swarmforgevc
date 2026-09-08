@@ -5,12 +5,30 @@ import {
   classifyTranscriptText,
   coverageFromIntervals,
   walkTranscriptFiles,
-  walkTranscriptText,
 } from './transcriptWalker';
 import type { ClassifiedInterval, HandoffTrailEntry, IntervalCategory } from './transcriptWalker';
 import { buildTurnProfileSeries } from './turnProfile';
 import { listTranscriptJsonlPaths } from './transcriptUsage';
 import { RoleWorktree, groupRolesByWorktreePath } from './swarmMetrics';
+import {
+  computeTranscriptSummary,
+  readTranscriptSummaryStore,
+  statOrNull,
+  summaryIsCurrent,
+  writeTranscriptSummaryStore,
+} from './transcriptSummaryStore';
+import type { TranscriptSummaryStore } from './transcriptSummaryStore';
+
+// Re-exported for callers that historically imported the summary-store
+// shape from this module (BL-1476 landed it here first; split out in the
+// same cleanup pass - see transcriptSummaryStore.ts's own doc comment).
+export type { TranscriptSummary, TranscriptSummaryStore } from './transcriptSummaryStore';
+export {
+  TURN_PROFILE_SUMMARY_STORE_FILE,
+  turnProfileSummaryStorePath,
+  readTranscriptSummaryStore,
+  writeTranscriptSummaryStore,
+} from './transcriptSummaryStore';
 
 /**
  * BL-1364: the production consumer of BL-664's buildTurnProfileSeries.
@@ -254,81 +272,6 @@ function upsertWindowRecord(telemetryDir: string, record: TurnProfileWindowRecor
     `${kept.map((row) => JSON.stringify(row)).join('\n')}\n`,
     'utf8'
   );
-}
-
-// BL-1476: a persisted per-transcript verdict, keyed by absolute path, so a
-// tick can skip re-reading a file whose size and mtime still match what was
-// last summarised (invariant 2). `intervals` are the RAW per-file walk
-// result (walkTranscriptText's own output, stage never attached - stage
-// comes from whichever group's listing the path currently sits in, applied
-// fresh every tick so a role-worktree reassignment is never stale). Absent
-// for an unreadable file (nothing to walk).
-export interface TranscriptSummary {
-  size: number;
-  mtimeMs: number;
-  unreadable: boolean;
-  truncatedTail: boolean;
-  intervals: ClassifiedInterval[];
-}
-
-export type TranscriptSummaryStore = Record<string, TranscriptSummary>;
-
-export const TURN_PROFILE_SUMMARY_STORE_FILE = 'turn-profile-transcript-summaries.json';
-
-export function turnProfileSummaryStorePath(telemetryDir: string): string {
-  return path.join(telemetryDir, TURN_PROFILE_SUMMARY_STORE_FILE);
-}
-
-export function readTranscriptSummaryStore(telemetryDir: string): TranscriptSummaryStore {
-  try {
-    const parsed = JSON.parse(fs.readFileSync(turnProfileSummaryStorePath(telemetryDir), 'utf8'));
-    return parsed && typeof parsed === 'object' ? (parsed as TranscriptSummaryStore) : {};
-  } catch {
-    return {};
-  }
-}
-
-export function writeTranscriptSummaryStore(telemetryDir: string, store: TranscriptSummaryStore): void {
-  fs.mkdirSync(telemetryDir, { recursive: true });
-  fs.writeFileSync(turnProfileSummaryStorePath(telemetryDir), JSON.stringify(store), 'utf8');
-}
-
-function statOrNull(filePath: string): { size: number; mtimeMs: number } | null {
-  try {
-    const stat = fs.statSync(filePath);
-    return { size: stat.size, mtimeMs: stat.mtimeMs };
-  } catch {
-    return null;
-  }
-}
-
-function summaryIsCurrent(
-  summary: TranscriptSummary | undefined,
-  stat: { size: number; mtimeMs: number }
-): summary is TranscriptSummary {
-  return !!summary && summary.size === stat.size && summary.mtimeMs === stat.mtimeMs;
-}
-
-/** One read per changed file, not two: readability and the walk consume the same text. */
-function computeTranscriptSummary(
-  filePath: string,
-  stat: { size: number; mtimeMs: number },
-  readFn: (path: string) => string
-): TranscriptSummary {
-  let text: string;
-  try {
-    text = readFn(filePath);
-  } catch {
-    return { size: stat.size, mtimeMs: stat.mtimeMs, unreadable: true, truncatedTail: false, intervals: [] };
-  }
-  const verdict = classifyTranscriptText(text);
-  return {
-    size: stat.size,
-    mtimeMs: stat.mtimeMs,
-    unreadable: verdict.unreadable,
-    truncatedTail: verdict.truncatedTail,
-    intervals: verdict.unreadable ? [] : walkTranscriptText(text),
-  };
 }
 
 interface TickOutcome {
