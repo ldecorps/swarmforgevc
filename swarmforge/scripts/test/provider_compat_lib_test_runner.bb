@@ -118,6 +118,24 @@
   (assert= "flag alone (no host match) still remaps, reason use-bai-flag"
            :use-bai-flag (:reason r)))
 
+;; ── BL-1495 hardener: compat-mismatch? covers b.ai the same way it covers
+;;    perplexity/qwen for a missing key, but deliberately has NO family-
+;;    comparison branch for a present key (no confirmed b.ai key prefix) ────
+(let [resolved (provider-compat-lib/resolve-openai-compat
+                {:use-bai "1"
+                 :bai-api-key ""
+                 :openai-api-key "sk-proj-host"
+                 :launch-cli ""})]
+  (assert-true "a missing b.ai key is reported as a mismatch"
+               (provider-compat-lib/compat-mismatch? resolved "")))
+
+(let [resolved (provider-compat-lib/resolve-openai-compat
+                {:launch-cli "--openai-api-base https://api.b.ai/v1"
+                 :bai-api-key "bai-secret"
+                 :openai-api-key "sk-proj-host"})]
+  (assert-true "a correctly-authenticated b.ai pane is never a false-positive mismatch"
+               (not (provider-compat-lib/compat-mismatch? resolved "bai-secret"))))
+
 ;; ── auth error text ─────────────────────────────────────────────────────────
 (assert-true "AuthenticationError classified"
              (provider-compat-lib/provider-auth-error-text?
@@ -131,4 +149,4 @@
     (doseq [f @failures] (println f)))
   (System/exit 1))
 
-(println (str "provider_compat_lib_test_runner: " 27 " assertions ok"))
+(println (str "provider_compat_lib_test_runner: " 31 " assertions ok"))

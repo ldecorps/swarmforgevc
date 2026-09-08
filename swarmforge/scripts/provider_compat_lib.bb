@@ -160,9 +160,18 @@
     (cond
       (= :perplexity-key-missing (:reason resolved)) true
       (= :qwen-key-missing (:reason resolved)) true
+      (= :bai-key-missing (:reason resolved)) true
       (= required :perplexity) (not= live :perplexity)
       (= required :cerebras) (not= live :cerebras)
       (= required :qwen) (not= live :qwen)
+      ;; BL-1495: no `required :bai` family-comparison branch - b.ai has no
+      ;; known/confirmed OPENAI_API_KEY prefix the way csk-/pplx-/sk-sp- do
+      ;; (registry: "exact limits unconfirmed"), so openai-key-family can
+      ;; never classify a live key as :bai. A branch here would therefore
+      ;; ALWAYS read (not= live :bai) as true and report a false mismatch on
+      ;; every correctly-authenticated b.ai pane - worse than the :else
+      ;; false this falls through to today. Revisit once a b.ai key prefix
+      ;; is confirmed and openai-key-family can recognize it.
       :else false)))
 
 (defn provider-auth-error-text?
