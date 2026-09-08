@@ -1,0 +1,257 @@
+id: BL-1498
+title: "test_handoffd_supervisor.sh has been red on main since 2026-08-22 with no owner, for two independent reasons: the operator's ~/.zshenv prepends ~/.local/bin on every zsh start, so swarm-cleanup.sh (a zsh script) resolves the real 3.7b tmux there instead of the fixture's fake and cases 01 and 05 never see kill-session; and the 2026-09-02 startup-grace hotfix reads case 02's freshly written pid file as a daemon younger than one stall window, so a lingering hung pid is healthy and never halted - the fixture isolates zsh startup files (ZDOTDIR, the BL-1305 shape) and ages its pid file past the stall window, and the file exits 0 from both checkouts"
+milestone: M8
+type: defect
+severity: high
+# high (standing-red rule 2026-09-05): a `standing` manifest row red on main
+# for 17 days, deterministic, noted as pre-existing by BL-1342 on 2026-09-02
+# ("its own chore") and never minted. The production halt is intact - the
+# real tmux IS killed; the broken thing is the safety signal for BL-144's
+# alarm-and-halt, which is exactly what the rule refuses to call medium.
+status: todo
+epic: swarm-reliability
+priority: 12
+direction: swarm-reported
+depends_on: []
+# BL-1490 (active, at coder) edits handoffd_supervisor.bb and runs this
+# file; it does not edit the file, so the two parcels do not conflict. Its
+# evidence may name this red - this ticket's register row is what lets QA
+# approve BL-1490 with that red in its evidence (Article 4.2).
+mutation_cost: low
+# low: one shell fixture gains an isolation block and one `touch -t`, one
+# step-handler file. No production code; shell has no mutation wired.
+slice_size_envelope: low
+required_stages: [coder, cleaner, architect, hardender, documenter, qa]
+
+acceptance: specs/features/BL-1498-the-supervisor-test-is-green-under-the-operators-zsh-and-the-startup-grace.feature
+
+# Anchors: the isolation must be visible in the test file itself (the
+# BL-1305 shape in test_idle_clear_respawn.sh lines 37-44 is the worked
+# example); ZDOTDIR is absent from this file today (grep returns 0). The
+# handler anchor is BL-233's: the feature lands with its handler.
+required_wiring:
+  - 'swarmforge/scripts/test/test_handoffd_supervisor.sh::ZDOTDIR::the fixture points zsh at an empty startup directory so the operator rc never reorders PATH under it; absent today (grep returns 0)'
+  - 'specs/pipeline/steps/bl1498SupervisorTestIsolatesOperatorShellSteps.js::registerSteps::the handler lands in the same parcel as the feature (BL-233, BL-1371)'
+
+human_approval: approved
+approval_context: >
+  A new feature file is authored here, so it needs a tap. No choice is
+  posed and there are no ruling_options. FIRM: the fix is in the test
+  fixture and one step handler only - handoffd_supervisor.bb,
+  swarm-cleanup.sh, swarmforge.sh's prefer_local_tmux_bin and the BL-1069
+  how-to are not edited. FIRM: the startup grace keeps BL-1342's contract
+  exactly (younger than one stall window is healthy, older is stalled,
+  unknown age grants nothing, :dead untouched); the fixture changes what
+  it presents, never what the supervisor decides. Worth knowing: seven
+  OTHER shell tests that fake tmux via PATH were red in the same census
+  and stay red with the zsh isolation applied, so their causes are
+  different; they are recorded in the adjudication evidence, not owned
+  here. Minted by the specifier on the coder's unowned-red note of
+  2026-09-08 08:12Z (raised from the BL-1490 parcel); both reds
+  reproduced on main 974f03e9e1.
+
+invariants:
+  - "No zsh script the supervisor test spawns reads the operator's own zsh startup files: every tmux resolved anywhere in the fixture's process tree is the fixture's fake, whatever ~/.zshenv or ~/.zprofile prepends to PATH."
+  - "The startup grace is neither widened nor narrowed: through the real --check-once, a live pid whose pid file is younger than one stall window with stalled delivery reads healthy and is not halted; one older than the window reads stalled and is halted (BL-1342 contract)."
+
+description: |
+  ## What is wrong
+
+  `swarmforge/scripts/test/test_handoffd_supervisor.sh` (a `standing` row,
+  `suite-manifest.tsv` line 327) fails on main for two independent reasons.
+  Reproduced by the specifier 2026-09-08 on main `974f03e9e1` from the
+  master checkout, `RESEND_API_KEY` unset:
+
+      $ bash swarmforge/scripts/test/test_handoffd_supervisor.sh
+      FAIL: 01: hard-stop never killed any tmux session
+      (exit 1; every later case never runs - `fail` exits)
+
+      $ ZDOTDIR=<empty dir> bash swarmforge/scripts/test/test_handoffd_supervisor.sh
+      PASS: 01 .. PASS: 03 .. PASS: 04 .. recovered daemon ..
+      FAIL: 02: hung pid was not terminated
+
+  **Red 1 - the fixture's fake tmux is shadowed by the operator's zsh rc.**
+  The fixture puts a logging fake `tmux` at the front of PATH and asserts
+  the halt's `kill-session` reached it (lines 123, 194). The supervisor's
+  `halt-swarm!` runs `swarm-cleanup.sh`, a `#!/usr/bin/env zsh` script.
+  zsh sources `~/.zshenv` for every invocation, shebang included, and the
+  operator's `~/.zshenv` line 7 is `export PATH="$HOME/.local/bin:$PATH"`
+  (the recipe `docs/how-to/BL-tmux-wsl-segfault-upgrade.md` line 41 gives).
+  Since BL-1069 installed the static tmux 3.7b at `~/.local/bin/tmux`
+  (2026-08-22 17:04; landed `42ae26a505` 2026-08-23) that prepend puts a
+  REAL tmux ahead of the fake: `kill-session -t swarmforge-coder` runs
+  against a real client on the fixture's dead socket, `2>/dev/null || true`
+  swallows it, and the fake's log stays empty. Measured: with the fake
+  first on PATH, `bash -c 'command -v tmux'` and `zsh -f -c ...` both
+  resolve the fake; `zsh -c ...` resolves `~/.local/bin/tmux`;
+  `ZDOTDIR=<empty dir> zsh -c ...` resolves the fake again. Case 05 asserts
+  the same grep and is red for the same reason. `swarmforge.sh`'s
+  `prefer_local_tmux_bin` (BL-1069) is NOT a second cause here: it only
+  prepends when `~/.local/bin` is absent from PATH, and the panes already
+  carry it; `swarm-cleanup.sh` does not source `swarmforge.sh` anyway.
+
+  This was seen and deferred: BL-1342 (the 27d6ab8630 stamp, 2026-09-02)
+  wrote "scenario 01 fails identically on unmodified main (tmux shim
+  shadowing) ... if it is worth fixing, that is its own chore". No chore
+  was minted; the red is 17 days old, six days after it was written down.
+  The repo already fixed this exact shape once: BL-1305 and
+  `test_idle_clear_respawn.sh` lines 34-44 export `ZDOTDIR` to an empty
+  mktemp dir, "the equivalent of `zsh -f` for this indirect invocation
+  shape".
+
+  **Red 2 - case 02 presents a newborn daemon, so the startup grace holds.**
+  Hotfix `27d6ab8630` (2026-09-02, stamped by BL-1342) added
+  `within-startup-grace?`: a live pid whose pid file is younger than one
+  stall window cannot be stalled, and reads `:healthy`. Case 02 writes
+  `echo "$HUNG_PID" > handoffd.pid` milliseconds before `check_once` with
+  `SUPERVISOR_STALL_MS=500`, ages the heartbeat and the outbox parcel to
+  2026-01-01 but not the pid file - so the daemon is 0 ms old, the grace
+  applies, no halt, and `kill -0 "$HUNG_PID"` finds the hung pid alive.
+  The grace is correct (BL-1342 verified it seven ways); the fixture's
+  observation is stale by construction. Red since 2026-09-02, hidden
+  behind red 1 (case 02 runs after 01, 03, 04).
+
+  ## Census of the class (red 1)
+
+  25 shell tests fake tmux via PATH and reach a zsh script (grep for
+  `FAKE_BIN|tmux-calls.log` intersected with the zsh entry points). All 25
+  were run on main 2026-09-08 from the master checkout, then every red one
+  again under `ZDOTDIR=<empty dir>`: only THIS file flips green on its
+  kill-session assertions. Seven others are red for other causes and stay
+  red isolated; they are enumerated with their failing assertions in the
+  adjudication evidence and are NOT in scope.
+
+  ## What is wanted
+
+  - The test's process tree never reads the operator's zsh startup files:
+    the fixture exports `ZDOTDIR` pointing at an empty mktemp directory
+    (removed on the EXIT trap) before the first `check_once`, exactly the
+    BL-1305 shape; cases 01 and 05 find `kill-session` in the fake's log
+    whatever `~/.zshenv` prepends (scenario 01; invariant 1).
+  - Case 02's fixture presents a daemon older than one stall window: the
+    pid file is aged the way the heartbeat and the outbox parcel already
+    are (`touch -t 202601010000 "$DAEMON_DIR/handoffd.pid"`), so the hung
+    pid is terminated and the state reads halted (scenario 02 row "older";
+    invariant 2).
+  - The startup grace is untouched: a pid file younger than the window with
+    stalled delivery still reads healthy through the real `--check-once`
+    (scenario 02 row "younger"; invariant 2). No edit to
+    `handoffd_supervisor.bb`.
+  - The file exits 0 on main from the master checkout and from a linked
+    worktree, with the operator's real `~/.zshenv` in place (scenario 03;
+    QA step 1).
+  - Register: this ticket's row in `backlog/standing-reds.tsv` (added at
+    mint) is removed in the land that turns the test green - QA's land, or
+    the coordinator's close if the land is hand-built.
+  - Documenter: the BL-1069 how-to's PATH recipe gains one sentence naming
+    the consequence for zsh-shebang fixtures and the ZDOTDIR remedy, next
+    to the existing hazard note; the header comment of
+    `test_handoffd_supervisor.sh` names both causes and dates. No
+    registered diagram depicts this.
+
+  ## How (direction, not mandate)
+
+  - Read `test_idle_clear_respawn.sh` lines 34-44 first and copy the shape;
+    put the export in `make_fixture` or at file scope before case 01, and
+    add `$ZDOTDIR` to the EXIT trap's removal. Do not reach for `zsh -f`
+    (the supervisor spawns the script by shebang, not a shell you control)
+    and do not override `HOME` (git and bb read it).
+  - Do NOT fix red 1 by moving the fake elsewhere, by a `SWARMFORGE_TMUX_BIN`
+    seam in `swarm-cleanup.sh`, or by editing `prefer_local_tmux_bin`:
+    production is right to prefer the 3.7b tmux; the defect is operator
+    environment reaching a fixture (BL-315/BL-326's rule).
+  - Do NOT fix red 2 by lowering the grace, by backdating via the daemon's
+    own writer, or by asserting on the failure log alone: the case's point
+    is that a lingering pid IS terminated. `touch -t` beside the two
+    existing `touch -t` lines is the whole fix.
+  - Handler: scenario 01 stages a hostile startup file in a mktemp
+    `ZDOTDIR` of ITS OWN (a `.zshenv` prepending a directory holding a
+    `tmux` that writes nowhere), exports it, runs the test file, and reads
+    its PASS lines; a fixture that does not isolate fails 01 exactly as
+    main does today. Scenario 02 drives the real `--check-once` on a
+    mkdtemp root (the bl977 handler's shape) with the pid file aged per
+    row. Scenario 03 runs the file with the process environment as it is.
+    Roots under mkdtemp, own `git init` where git is touched (BL-1390),
+    removed in `finally`; nothing sweeps by prefix (BL-1385).
+  - The run takes about two minutes (case 02's `sleep 300 &` is killed,
+    the relaunch waits on a heartbeat); two full runs per acceptance pass
+    is the budget, not three - the linked-worktree run is QA's step 1.
+
+  ## Explicitly NOT in scope
+
+  - The seven other red shell tests from the census (listed in the
+    evidence with their assertions); each needs its own diagnosis.
+  - `swarm-cleanup.sh`, `prefer_local_tmux_bin`, the BL-1069 install
+    recipe, or a shared "operator env never reaches a fixture" helper in
+    `swarmforge/scripts/test/lib/` - recorded for the lean pass as the
+    third occurrence of the shape (BL-1305, test_idle_clear_respawn,
+    this).
+  - The fixture's first-failure-stop shape (`fail` exits), which hid red 2
+    behind red 1 for six days. Noted, as BL-1484 noted it.
+
+constraints: >
+  Shell test fixture and one step handler only: test_handoffd_supervisor.sh,
+  the new handler, the two doc lines. handoffd_supervisor.bb,
+  swarm-cleanup.sh, swarmforge.sh and daemon_alarm_lib.bb are not edited.
+  RESEND_API_KEY stays unset for the whole file (BL-326). Fixture and
+  handler roots under mkdtemp, removed on EXIT/finally; the live repository
+  and the operator's real ~/.zshenv are never read for the assertion or
+  written. suite-manifest.tsv row stays `standing`. The step handler lands
+  with the feature (BL-233).
+
+out_of_scope: |
+  - A harness-wide guard that every shell fixture faking a binary via PATH
+    isolates zsh startup files (a derived census with a pinned count,
+    BL-1445's shape) - lean-pass candidate, third occurrence.
+  - Running every standing shell row on a cadence so a red surfaces the
+    day it appears (already a process candidate on BL-1462's adjudication;
+    this one sat 17 days and was written down on day 11).
+  - The seven other census reds: test_handoffd_chase_sweep_wiring (01
+    sidecar never written), test_handoffd_notify_verified (02 typed 0),
+    test_handoffd_role_context_clear_wiring (setup: initial clear never
+    fired in 30 s), test_build_freshness_cli (02/03 compiled: merge never
+    reached the running process), test_handoffd_supervisor_job_reaper (04
+    setup: no reparent to PPID 1 - may be the harness subreaper),
+    test_rotate_recomposes_role_prompt (05: no respawn-pane at the idle
+    boundary), test_redo_from (every case PASS, exit 2).
+
+qa_e2e_procedure: |
+  1. From the master checkout AND from `.worktrees/QA`, with the operator's
+     real `~/.zshenv` in place and `RESEND_API_KEY` unset:
+     `bash swarmforge/scripts/test/test_handoffd_supervisor.sh` prints
+     PASS for 01, 03, 04, the recovered-daemon line, 02, 05 and the BL-081
+     cases, and exits 0 (was FAIL 01 on main 2026-09-08; FAIL 02 under
+     isolation). `grep -c kill-session` on the fixture's tmux log is not
+     observable after the trap - read the PASS lines.
+  2. Hostile rc: `export ZDOTDIR=$(mktemp -d)`; write `$ZDOTDIR/.zshenv`
+     containing `export PATH="$ZDOTDIR/bin:$PATH"` with an executable
+     `$ZDOTDIR/bin/tmux` that is `exit 0`; run the file again: still exits
+     0 (the fixture's own ZDOTDIR wins). Remove the dir.
+  3. Grace contract: `bb swarmforge/scripts/test/handoffd_supervisor_startup_grace_test_runner.bb`
+     still passes all 7 assertions; `git diff main -- swarmforge/scripts/handoffd_supervisor.bb`
+     is empty for the parcel.
+  4. Acceptance: all BL-1498 scenarios resolve; BL-326's feature (which
+     drives this file end to end) and BL-977's still resolve, one feature
+     per run_acceptance.sh call.
+  5. `grep -c ZDOTDIR swarmforge/scripts/test/test_handoffd_supervisor.sh`
+     is at least 1; `grep -c 'touch -t 202601010000 "$DAEMON_DIR/handoffd.pid"'`
+     is at least 1.
+  6. Register: after QA lands, `backlog/standing-reds.tsv` carries no row
+     for this file and `bb swarmforge/scripts/standing_red_register_cli.bb .`
+     reports `unowned: []` with the count down by one.
+
+notes: |
+  - Minted 2026-09-08 by the specifier on the coder's priority-00 note
+    "unowned-red: test_handoffd_supervisor.sh 01 hard-stop never
+    kill-session" (08:12Z, from the BL-1490 parcel). Adjudication and the
+    25-file census: backlog/evidence/test-handoffd-supervisor-unowned-red-adjudication-specifier-20260908.md.
+  - Register row added at mint: shell / test_handoffd_supervisor.sh /
+    BL-1498 / first_seen 2026-09-02 (BL-1342's note), red since 2026-08-22.
+  - Why two reds in one ticket: the register keys one row per FILE and the
+    file is green only when both are fixed; each fix is a few lines in the
+    same fixture, one sitting.
+  - IR-DRY (2026-09-08): four medium possible-synonym findings kept as
+    written - "the dead-daemon halt case", "the messy-death halt case" and
+    "every case" are three distinct assertions (two named cases the fix
+    targets, one whole-file exit), and "runs" vs "runs under that
+    environment" differ exactly by the staged hostile startup directory.
