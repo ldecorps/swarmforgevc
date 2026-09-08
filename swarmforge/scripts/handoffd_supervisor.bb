@@ -41,6 +41,7 @@
 (load-file (str (fs/path (fs/parent (fs/canonicalize *file*)) "daemon_alarm_lib.bb")))
 (load-file (str (fs/path (fs/parent (fs/canonicalize *file*)) "process_table_lib.bb")))
 (load-file (str (fs/path (fs/parent (fs/canonicalize *file*)) "daemon_log_freshness_pulse_lib.bb")))
+(load-file (str (fs/path (fs/parent (fs/canonicalize *file*)) "daemon_cycle_guard_lib.bb")))
 
 (defn usage []
   (binding [*out* *err*]
@@ -101,6 +102,21 @@
 (def sweep-marker-file (fs/path daemon-dir "handoffd.sweep-marker"))
 (def in-sweep-budget-ms (env-ms "SUPERVISOR_IN_SWEEP_BUDGET_MS" 225000))
 
+;; BL-1490: a per-tick phase (daemon-cycle-guard-lib/tick-phase-names -
+;; delivery, startup-notify, canary-sweep) re-stamps the marker after EVERY
+;; completed unit of its own work, so its in-flight age is ordinarily just
+;; the time since the last unit finished - nowhere near in-sweep-budget-ms.
+;; Reusing that 225s heavy-sweep budget for a per-tick phase would let a
+;; genuinely wedged delivery run silent for up to 225s before being caught,
+;; far looser than the ~30s a missing marker already gets today. Bounded
+;; instead by the measured worst LEGITIMATE per-tick unit: one delivery
+;; costs ~9-11s today (BL-1490/BL-1493 measurement, 2026-09-08T03:44:28Z -
+;; four deliveries at ~9s each), floored at the 60s daemon-cycle-guard-lib/
+;; default-subprocess-wait-bound-ms one wedged tmux/git call inside a
+;; single unit can legitimately cost (BL-967) - so 60000, not a round
+;; number chosen independent of either measurement.
+(def tick-budget-ms (env-ms "SUPERVISOR_TICK_BUDGET_MS" 60000))
+
 (defn now-ms [] (System/currentTimeMillis))
 
 (defn now-iso []
@@ -152,6 +168,19 @@
 
 ;; ── the health decision, kept pure for tests ─────────────────────────────────
 
+(defn- effective-in-sweep-budget-ms
+  "BL-1490: the budget the in-flight marker age is judged against. A named
+   per-tick phase (daemon-cycle-guard-lib/tick-phase-names) uses
+   tick-budget-ms when the caller supplies one; every other marker name -
+   and every pre-BL-1490 caller, which never supplies in-flight-sweep-name
+   or tick-budget-ms at all - keeps using in-sweep-budget-ms exactly as
+   before."
+  [{:keys [in-flight-sweep-name in-sweep-budget-ms tick-budget-ms]}]
+  (if (and tick-budget-ms in-flight-sweep-name
+           (contains? daemon-cycle-guard-lib/tick-phase-names in-flight-sweep-name))
+    tick-budget-ms
+    in-sweep-budget-ms))
+
 (defn evaluate-health
   "Given observations, decide :healthy, :dead (pid gone) or :stalled (pid
    lingers but the daemon stopped polling while mail is pending).
@@ -163,7 +192,9 @@
    in-flight-sweep-age-ms is how long the daemon's published sweep marker
    says the CURRENT sweep has been running (nil when the marker is absent,
    idle, or unreadable - which leaves the pre-BL-977 verdict exactly as it
-   was). A sweep in flight within in-sweep-budget-ms is demonstrable
+   was). A sweep in flight within its budget (in-sweep-budget-ms, or
+   BL-1490's tighter tick-budget-ms when in-flight-sweep-name names a
+   per-tick phase - effective-in-sweep-budget-ms above) is demonstrable
    progress: :healthy regardless of heartbeat age. A sweep in flight PAST
    the budget voids the heartbeat evidence entirely - the verdict is then
    exactly what a missing heartbeat produces today (invariant 2: a genuine
@@ -171,8 +202,9 @@
    advances with the poll loop's own progress, so a wedged loop cannot
    forge liveness)."
   [{:keys [alive? heartbeat-age-ms pending-outbox-age-ms stall-ms
-           in-flight-sweep-age-ms in-sweep-budget-ms daemon-age-ms]}]
-  (let [in-flight? (and (number? in-flight-sweep-age-ms) (number? in-sweep-budget-ms)
+           in-flight-sweep-age-ms daemon-age-ms] :as obs}]
+  (let [in-sweep-budget-ms (effective-in-sweep-budget-ms obs)
+        in-flight? (and (number? in-flight-sweep-age-ms) (number? in-sweep-budget-ms)
                         (<= 0 in-flight-sweep-age-ms))
         under-budget? (and in-flight? (<= in-flight-sweep-age-ms in-sweep-budget-ms))
         ;; over-budget in-flight = the heartbeat evidence is void, exactly
@@ -211,6 +243,17 @@
         (when (and sweep (not= sweep "idle") (number? started_at_ms))
           (let [age (- now-ms started_at_ms)]
             (when (<= 0 age) age)))))
+    (catch Exception _ nil)))
+
+(defn read-in-flight-sweep-name
+  "BL-1490: the published sweep marker's name, or nil when absent, idle, or
+   unreadable - used to pick tick-budget-ms over in-sweep-budget-ms for a
+   per-tick phase (effective-in-sweep-budget-ms)."
+  []
+  (try
+    (when (fs/exists? sweep-marker-file)
+      (let [{:keys [sweep]} (json/parse-string (slurp (str sweep-marker-file)) true)]
+        (when (and sweep (not= sweep "idle")) sweep)))
     (catch Exception _ nil)))
 
 ;; ── status file ──────────────────────────────────────────────────────────────
@@ -586,7 +629,13 @@
                                     ;; BL-977: the daemon's published in-flight
                                     ;; sweep marker, as one more observation.
                                     :in-flight-sweep-age-ms (read-in-flight-sweep-age-ms (now-ms))
-                                    :in-sweep-budget-ms in-sweep-budget-ms})]
+                                    :in-sweep-budget-ms in-sweep-budget-ms
+                                    ;; BL-1490: the marker's name, so a named
+                                    ;; per-tick phase is judged against the
+                                    ;; tighter tick-budget-ms instead of the
+                                    ;; heavy-sweep budget above.
+                                    :in-flight-sweep-name (read-in-flight-sweep-name)
+                                    :tick-budget-ms tick-budget-ms})]
       ;; Reaping runs every cycle, independent of the tracked daemon's own
       ;; health, so a stray orphan next to a perfectly healthy tracked
       ;; daemon still gets cleaned up (BL-081 scenario 05) instead of only

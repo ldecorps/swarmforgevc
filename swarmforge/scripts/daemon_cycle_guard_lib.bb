@@ -62,6 +62,34 @@
 ;; as the atoms above. Default no-op keeps every pure test caller silent.
 (defonce sweep-marker! (atom (fn [_] nil)))
 
+;; BL-1490: the per-tick poll-cycle phases that run OUTSIDE run-sweep! -
+;; startup-notify (before the loop), outbox delivery (poll-once!, every
+;; tick) and the canary sweep (every tick) - now also publish through
+;; sweep-marker!, re-stamping it after each completed unit of their own
+;; work (one delivery, one role notified, one canary completed), so a
+;; multi-second burst of many small units is demonstrable progress rather
+;; than silence. Single source of truth for the three literal sweep names
+;; handoffd.bb publishes and handoffd_supervisor.bb classifies as
+;; "per-tick" (a tighter budget than a heavy run-sweep! sweep - see
+;; handoffd_supervisor.bb's tick-budget-ms) so the two files can never
+;; drift apart on what counts as a per-tick phase.
+(def tick-phase-names #{"delivery" "startup-notify" "canary-sweep"})
+
+(defn mark-tick-phase!
+  "BL-1490: publish (or re-stamp) sweep-marker! for a per-tick phase in
+   tick-phase-names - called once at phase start and again after EACH
+   completed unit of that phase's own work, so the marker's in-flight age
+   reflects time since the LAST completed unit, never the phase's total
+   duration."
+  [phase-name]
+  ((deref sweep-marker!) {:sweep phase-name}))
+
+(defn mark-tick-idle!
+  "BL-1490: publish idle once a per-tick phase's batch of work is done -
+   the same transition run-sweep! makes at a heavy sweep's end."
+  []
+  ((deref sweep-marker!) {:sweep "idle"}))
+
 (defn install-sweep-marker-writer!
   "Wires sweep-marker! to publish marker-path as one small JSON object:
    {\"sweep\": <name>, \"started_at_ms\": <wall-clock ms>} while a sweep is
