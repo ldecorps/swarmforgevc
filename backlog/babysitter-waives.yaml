@@ -5,6 +5,11 @@
 # creates one - the sweep never waives anything on its own (BL-848's line).
 # Record one with babysitter_waive.bb --record; list them with --list.
 
+- key: pipeline-code-on-main-092943d8194c246fecef42f3cdf39d6f3f6a85e2
+  waived_by: coordinator
+  reason: "Pipeline merge/work commit for BL-1373, QA-approved and landed"
+  waived_at: 2026-09-08
+
 - key: pipeline-code-on-main-1530609f514dd2b2641710ecfae5c9c044cab1c4
   waived_by: coordinator
   reason: "Pipeline merge/work commit for BL-1369/BL-1492/BL-1491/BL-1490, all QA-approved and landed"
@@ -18,6 +23,16 @@
 - key: pipeline-code-on-main-1f97f60ccd90ac4a75e3f0bb2edc8c45835f41a4
   waived_by: coordinator
   reason: "Pipeline merge/work commit for BL-1369/BL-1492/BL-1491/BL-1490, all QA-approved and landed"
+  waived_at: 2026-09-08
+
+- key: pipeline-code-on-main-219ed445348e87cc8801c7885d557de64f76825f
+  waived_by: coordinator
+  reason: "Pipeline merge/work commit for BL-1373, QA-approved and landed"
+  waived_at: 2026-09-08
+
+- key: pipeline-code-on-main-34caaa3a7085005b3dffa2053e40868e394c8dd6
+  waived_by: coordinator
+  reason: "Pipeline merge/work commit for BL-1373, QA-approved and landed"
   waived_at: 2026-09-08
 
 - key: pipeline-code-on-main-358e790d3b64ac3fa7cacf270647a884086ebbc8
@@ -55,6 +70,11 @@
   reason: "Pipeline merge/work commit for BL-1369/BL-1492/BL-1491/BL-1490, all QA-approved and landed"
   waived_at: 2026-09-08
 
+- key: pipeline-code-on-main-545a5e534787b170a370cc81d745473617c5059f
+  waived_by: coordinator
+  reason: "Pipeline merge/work commit for BL-1373, QA-approved and landed"
+  waived_at: 2026-09-08
+
 - key: pipeline-code-on-main-5d9fc6da3b10e855ea6ff4df167f955e58151d0b
   waived_by: coordinator
   reason: "Pipeline merge/work commit for BL-1369/BL-1492/BL-1491/BL-1490, all QA-approved and landed"
@@ -90,6 +110,11 @@
   reason: "Pipeline merge/work commit for BL-1372/BL-1369, QA-approved and landed"
   waived_at: 2026-09-08
 
+- key: pipeline-code-on-main-8a726d9f5a6b38948c30c2f284573a7b20e39b29
+  waived_by: coordinator
+  reason: "Pipeline merge/work commit for BL-1373, QA-approved and landed"
+  waived_at: 2026-09-08
+
 - key: pipeline-code-on-main-8bba60908c35d8d339ce193aebee2f7b176f21e2
   waived_by: coordinator
   reason: "Pipeline merge/work commit for BL-1369/BL-1492/BL-1491/BL-1490, all QA-approved and landed"
@@ -98,6 +123,11 @@
 - key: pipeline-code-on-main-9b1c4c393c773088df7f80288c18c51e1ce6bc93
   waived_by: coordinator
   reason: "Pipeline merge/work commit for BL-1369/BL-1492/BL-1491/BL-1490, all QA-approved and landed"
+  waived_at: 2026-09-08
+
+- key: pipeline-code-on-main-9e90bf92a6dcd3a0772c54a3d976872162adb446
+  waived_by: coordinator
+  reason: "Pipeline merge/work commit for BL-1373, QA-approved and landed"
   waived_at: 2026-09-08
 
 - key: pipeline-code-on-main-a21f9b2233db1285249c98c9a8e011058684e69d
@@ -133,6 +163,11 @@
 - key: pipeline-code-on-main-c34c1986159f26f5040336149abe3cca574f31f4
   waived_by: coordinator
   reason: "genuine QA-approved ancestor: same sha lives on swarmforge-QA and origin/main (BL-1241 hand-built recipe, no distinct source sha); is_qa_ancestor.sh exits 0; evidence backlog/evidence/babysitter-article42-bl1475-c34c1986-genuine-qa-ancestor-20260908.md"
+  waived_at: 2026-09-08
+
+- key: pipeline-code-on-main-cc7fcf8fdab7838f28db3731f8599e67aaf24cef
+  waived_by: coordinator
+  reason: "Pipeline merge/work commit for BL-1373, QA-approved and landed"
   waived_at: 2026-09-08
 
 - key: pipeline-code-on-main-d57c373bbe777595c460c78a1b03e4225febbc5c
@@ -173,6 +208,11 @@
 - key: pipeline-code-on-main-f8428bf3a0327142f6eef88086c65f7445d31a71
   waived_by: coordinator
   reason: "Pipeline merge/work commit for BL-1372/BL-1369, QA-approved and landed"
+  waived_at: 2026-09-08
+
+- key: pipeline-code-on-main-fc344b68e27d4c48baba03d380481bda304c9cd0
+  waived_by: coordinator
+  reason: "Pipeline merge/work commit for BL-1373, QA-approved and landed"
   waived_at: 2026-09-08
 
 - key: pipeline-code-on-main-fc5ad74f07b5fc5c14d7621c09fa83ed9990fea3
