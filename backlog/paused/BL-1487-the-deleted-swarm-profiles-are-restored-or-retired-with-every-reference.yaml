@@ -1,0 +1,170 @@
+id: BL-1487
+title: "swarmforge/profiles/ (eight files: stabilize-two-pack, cheap-copilot-seven-pack, mono-router-gpt) was deleted on 2026-08-23 by a QA-lane chore commit with no ticket and everything that named it was left standing: BL-939's feature fails 4 of 4 on ENOENT, test_shipped_confs_no_coordinator_window.sh fails on three missing confs, test_smoke_check_stabilize_two_pack.sh case 01 fails on its own stale coordinator-window fixture, .vscode/launch.json's two profile launch configs point at nothing, swarmforge.sh still syncs the directory and the BL-203 how-to still describes it; the human rules restore or retire and every reference is reconciled either way"
+milestone: M8
+type: defect
+severity: high
+# high (standing-red rule 2026-09-05): three tests red on main - the BL-939
+# feature since the 2026-08-23 deletion, the smoke shell test since
+# 2026-08-19 - with no owner until now; a standing red is high at first
+# sighting whatever the code risk, and the register throttles intake on
+# age until it drains.
+status: todo
+epic: code-quality-gates
+priority: 7
+direction: swarm-reported
+depends_on: []
+mutation_cost: low
+# low: under retire, deletions, two scenario retirements and a how-to move;
+# under restore, a revert of eight files and one fixture line. No new
+# TypeScript either way.
+slice_size_envelope: low
+required_stages: [coder, cleaner, architect, hardender, documenter, qa]
+
+# BL-1251 shape: this ticket's own deliverable is a retirement or a revert,
+# so acceptance points at the feature it retires FROM (under the recommended
+# ruling) or restores to green (under the other); the pointer is not a
+# claim of ownership over BL-939's contract. The two shell tests are gated by
+# qa_e2e_procedure and the register rows this mint adds.
+acceptance: specs/features/BL-939-two-pack-smoke-check-stops-demanding-a-coordinator-window.feature
+
+# BL-1276: the retirement edits BL-939's feature file (scenarios 01 and 03)
+# under the recommended ruling; declared so the task-scope gate does not
+# refuse the send. Harmless under restore (nothing is retired).
+retires:
+  - specs/features/BL-939-two-pack-smoke-check-stops-demanding-a-coordinator-window.feature
+
+# No required_wiring: neither branch builds a mechanism that needs a call
+# site. Under retire the contract is an ABSENCE (no reference survives),
+# gated by the grep in qa_e2e_procedure; under restore it is the eight files'
+# presence, gated by the shipped-confs test going green.
+
+human_approval: pending
+approval_context: >
+  Your call, posed as ruling_options because the two outcomes edit
+  different files and only you know whether the two VS Code launch
+  configs still matter to you. Retire (recommended, listed first): the
+  QA-lane chore that deleted the directory called it junk, packs/ has been
+  the live pack concept for weeks with 20 packs, the launcher only syncs
+  the directory if it exists, and nobody has restored it in sixteen days;
+  retire removes every reference, retires BL-939's scenarios 01 and 03
+  (the smoke check itself goes with the profile it checks; scenario 02
+  tests the live pack parser and stays on its own fixture), retires the two
+  shell tests with it, repoints or drops the two launch.json entries, and
+  moves the BL-203 how-to to docs/deprecated. Restore: revert the eight
+  files from before 4695d31402, fix the smoke shell test's own fixture
+  (it declares a coordinator window the launcher has rejected since
+  BL-243) and keep everything else as it was. FIRM either way: a reference
+  and its target leave or return together; the standing-red register rows
+  this mint adds leave in the land that turns the tests green.
+
+ruling_options:
+  - Retire the profiles - remove every reference, retire BL-939 scenarios 01 and 03 and the two shell tests, deprecate the BL-203 how-to (recommended)
+  - Restore the eight profile files from before 4695d31402 and fix the smoke test fixture
+
+invariants:
+  - "After this ticket lands, no tracked file outside backlog/ history and docs/deprecated/ names swarmforge/profiles/ unless that directory exists on main with the file named - a reference and its target are restored or retired together, never one without the other."
+
+description: |
+  ## What is wrong
+
+  `4695d31402` ("chore: finish junk artifact removal after swarm cleanup",
+  2026-08-23, QA lane, no ticket) deleted `swarmforge/profiles/` - eight
+  files: `stabilize-two-pack.{conf,yaml}`, `cheap-copilot-seven-pack.{conf,
+  prompt,yaml}`, `mono-router-gpt.{conf,prompt,yaml}` - and touched nothing
+  that named them. Left standing on main (grep 2026-09-08, excluding backlog
+  history):
+
+  - `specs/features/BL-939-two-pack-smoke-check-stops-demanding-a-coordinator-window.feature`
+    + `specs/pipeline/steps/daemonWorkflowSteps.js:22` (`REAL_PROFILE`):
+    4 of 4 rows fail on ENOENT - red since the deletion.
+  - `swarmforge/scripts/test/test_shipped_confs_no_coordinator_window.sh:35-37`:
+    lists the three `.conf` files and fails "expected shipped conf missing
+    entirely".
+  - `swarmforge/scripts/test/test_smoke_check_stabilize_two_pack.sh` case 01:
+    its own fixture profile declares a coordinator window, which
+    `swarmforge.sh`'s parse_config has rejected since BL-243, so the smoke
+    check fails - red since 2026-08-19, independent of the deletion.
+  - `swarmforge/scripts/smoke_check_stabilize_two_pack.sh` (the whole
+    script exists for that profile), `.vscode/launch.json:51,55,106,110`
+    (two launch configs whose `SWARMFORGE_CONFIG` points at deleted
+    files), `swarmforge/scripts/swarmforge.sh:1284-1286` (syncs the
+    directory into worktrees when present), `reset_worktrees.sh:107`,
+    `sync_worktree_scripts_lib.bb:10`, `docs/how-to/BL-203-stabilize-two-pack-smoke-check.md`,
+    `specs/features/BL-373-*.feature` and its steps, one property test.
+
+  The live pack concept is `swarmforge/packs/` (20 packs). Nothing in
+  production requires the directory; the launcher's sync is guarded by
+  `-d`.
+
+  ## What is wanted
+
+  Under **retire** (recommended): delete the smoke script, its shell test
+  and the shipped-confs test's three profile lines; retire BL-939 scenarios
+  01 and 03 (retire, never reword - BL-1006) and re-fixture scenario 02's
+  handler so it writes its own config under a fixture root and reads no
+  real profile; drop the two launch.json entries or repoint them at a pack
+  in `swarmforge/packs/` with the same shape; drop the `-d profiles` sync
+  block and the reset line; move the BL-203 how-to to `docs/deprecated/`
+  and link it from `docs/index.md`; re-tense the BL-373 feature narrative
+  if it states the directory as present. Remove the three register rows.
+
+  Under **restore**: `git checkout 4695d31402^ -- swarmforge/profiles/`
+  (eight files), drop the `window coordinator` line from the smoke shell
+  test's fixture, confirm BL-939's four rows and both shell tests green,
+  and remove the three register rows.
+
+  ## How (direction, not mandate)
+
+  - The grep that defines done under retire:
+    `grep -rln 'swarmforge/profiles' . --include='*.sh' --include='*.bb' --include='*.ts' --include='*.js' --include='*.json' --include='*.md' --include='*.feature' | grep -v 'backlog/\|docs/deprecated/\|node_modules\|.worktrees'`
+    returns nothing.
+  - Before deleting a step-handler file, grep every `.feature` for its
+    patterns (engineering rule); `daemonWorkflowSteps.js` serves BL-939
+    scenario 02 and may serve others.
+
+constraints: >
+  Not to be promoted before human_approval reads approved and human_ruling
+  is recorded: the two branches edit different files and the coder must
+  not guess (BL-1300). Retire, never reword, for any scenario that leaves.
+  The register rows leave in the same land that turns the tests green.
+
+out_of_scope: |
+  - Any change to swarmforge/packs/ or to how the launcher reads a pack.
+  - BL-939's scenario 02 semantics (the pack parser's coordinator rule).
+
+qa_e2e_procedure: |
+  1. Acceptance: BL-939's feature resolves with every remaining scenario
+     green (retire: 02's two rows; restore: all four).
+  2. `bash swarmforge/scripts/test/test_shipped_confs_no_coordinator_window.sh`
+     green (retire: the three profile lines gone; restore: files present);
+     `test_smoke_check_stabilize_two_pack.sh` green or deleted per ruling.
+  3. The grep in How returns nothing (retire) or lists only files whose
+     targets exist (restore).
+  4. `bb swarmforge/scripts/standing_red_register_cli.bb .` holds no row
+     naming BL-1487.
+  5. Retire only: `docs/deprecated/` holds the BL-203 how-to and
+     `docs/index.md` links it; the two launch configs either launch a pack
+     that exists or are gone.
+
+source: |
+  Previous specifier session's acceptance-lane sweep (2026-09-08, evidence
+  `backlog/evidence/acceptance-lane-sweep-unowned-reds-adjudication-specifier-20260908.md`,
+  row "BL-939 feature, 4 of 4 ... BL-1487 (restore or retire, human ruling;
+  every profile-path reference reconciled either way)"); that session was
+  killed by the 03:21:16Z supervisor halt (BL-1490) before minting it.
+  Reproduced by its successor on main 1216ae2151: BL-939 `# fail 4`
+  (ENOENT on the profile), shipped-confs `FAIL: expected shipped conf
+  missing entirely`, smoke shell test `FAIL: 01`. Adjudication record:
+  `backlog/evidence/BL-1487-BL-1488-standing-reds-adjudication-specifier-20260908.md`.
+
+notes: |
+  Minted 2026-09-08 by the specifier, completing the previous session's
+  plan; the id was reserved by that session's evidence. Register rows
+  added in this mint (never unowned): acceptance BL-939 feature
+  (first_seen 2026-08-23), shell test_shipped_confs_no_coordinator_window.sh
+  (2026-08-23), shell test_smoke_check_stabilize_two_pack.sh (2026-08-19).
+
+  Grepped first: BL-939 (done, M8) made the smoke check stop demanding a
+  coordinator window and is the feature's owner; BL-203 (done) built the
+  profile and the smoke check; BL-937 (done) ported the check to stock
+  bash; no open ticket names the profiles directory or these three reds.
