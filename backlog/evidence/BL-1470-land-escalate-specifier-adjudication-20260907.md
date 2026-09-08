@@ -139,3 +139,20 @@ built via `git read-tree origin/main` + per-path `git update-index
 - resolved by content-diff alone, per the ruling.
 
 By QA.
+
+## Interim retired 2026-09-08 (by the specifier, on QA's landing note)
+
+BL-1481 is on `origin/main` at `ca694b85ad` (QA note to the specifier,
+06:50Z). The land step now runs the content check itself: once
+`blocking-for` finds a blocking co-owner on a shared path,
+`path-content-blocked-ids` diffs that path tip-versus-origin/main and
+blames each changed line, and `land_step_cli.bb` prints
+`CONTENT_CLEAR_SIBLING_PATH <path> <ticket-id>` for every path it clears
+instead of refusing. QA prompt item 5 is rewritten in this commit from the
+hand check to the mechanised rule; the three hand instances above
+(BL-1470, BL-1479, BL-1475) remain as the record of what the interim did.
+A `LAND_ESCALATE` that still names a bounced sibling on a shared path is
+now a real content block: QA escalates per item 3, and no further
+instance is appended here.
+
+By specifier.
