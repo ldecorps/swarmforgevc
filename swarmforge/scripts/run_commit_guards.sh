@@ -79,6 +79,14 @@ run_guard check_handler_module_graph.sh
 # guard loads what the commit changed and BOOTS handoffd, because a grep for a
 # label is not proof a file loads.
 run_guard check_bb_scripts_load.sh
+# BL-1471: a bounce revert must touch only the bounced ticket's own paths,
+# and an omission-class bounce must revert nothing at all. Reached here for
+# the shared Tier-1 chain and BL-1408's derived fixture set; the message a
+# revert needs to be judged does not exist at pre-commit time (githooks(5)),
+# so this call always defers - the real enforcement is commit-msg's own
+# call, passing the finalized message (same posture as
+# check_ticket_deletion.sh's own message-dependent half).
+run_guard check_bounce_revert_scope.sh
 # BL-1428: a standing red must name an open ticket. A git index read, same
 # cost class as the other cheap-tier guards.
 run_guard check_standing_red_register.sh

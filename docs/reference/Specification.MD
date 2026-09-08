@@ -1,5 +1,48 @@
 # SwarmForge VS Code Extension — Specification
 
+**Last Updated:** September 8, 2026 (BL-1471: the BL-490/BL-495 bounce rule
+names `git revert -m 1 <review-merge>` as the route to strip bounced content
+back out of a reviewing branch, but a merge revert reverses the merge's
+WHOLE combined diff relative to the branch's prior tip — not just what was
+actually wrong. On 2026-09-07 QA bounced BL-1348 for a missing scenario
+(class `spec-gap`, an omission — nothing the parcel added was wrong) and ran
+that revert (`108d9a46e7`): it stripped ruling B's implementation, its
+tests, both vitest configs, BL-1348's own five evidence files, and two
+unrelated tickets' evidence files (`BL-940`, `BL-1468`) that had arrived
+through the same merged history, since QA's branch had not independently
+taken the earlier content before merging. Only the coder restoring the
+content on the next merge stopped the regression from reaching every
+worktree through QA's merge-up broadcast. Fixed: `check_bounce_revert_scope.sh`
+joins the shared Tier-1 commit-guard chain (registered in
+`run_commit_guards.sh`, enforced from `commit-msg` — a revert leaves no
+on-disk marker at pre-commit time, so that call always defers) and refuses a
+staged revert in either of two cases: any path in its diff is attributed
+(same walk BL-1242's merge-deletion guard already uses) to a ticket other
+than the one actually bounced, named per path; or the bounced ticket's
+latest bounce record (read from the shared `.swarmforge/bounces/*.jsonl`
+store, resolved at git-common-dir's parent per BL-1339/BL-1470, never the
+caller's own worktree root) is an omission class (`spec-gap`,
+`invariant-unencoded`) — an omission bounce reverts nothing at all. The
+bounced ticket is identified from the bounce store's own `commit` field
+being an ancestor of the reverted merge's second parent, never from
+"whichever ticket id appears in the newest subject" (a merge routinely
+carries more than one ticket's commits, the exact shape that let BL-1348's
+revert also take BL-940 and BL-1468's paths). BL-490/BL-495's core — bounced
+wrong content leaves the bouncing branch — is unchanged; this guard only
+narrows an over-broad or unnecessary revert, never blocks a scoped one.
+Known residual, flagged to the specifier as a spec-gap rather than fixed
+here: a clean, non-conflicting merge-revert's own auto-commit fires neither
+`pre-commit` nor `commit-msg` in this git version (only
+`prepare-commit-msg`/`post-commit` do), so the guard only reaches a
+conflicted revert resolved with a plain `git commit`, or a `git revert -n`
+staged and committed manually. Acceptance:
+`specs/features/BL-1471-a-bounce-revert-touches-only-the-bounced-tickets-paths.feature`.
+How-to: `docs/how-to/BL-1471-bounce-revert-scope-guard.md` (new, linked from
+`docs/index.md` and cross-linked from BL-1242's and BL-1252's how-to pages).
+No diagram edit: the architecture diagram's per-ticket comment log stopped
+being updated after 2026-08-27 and does not depict individual commit
+guards at this granularity.)
+Prior entry —
 **Last Updated:** September 8, 2026 (BL-1475: the front desk's human-decision
 commit (`commitApprovalDecision` -> `commitApprovalWrites`,
 `commitIntegrityRunner.ts` / `commit_integrity_cli.bb`) and the topic-record
