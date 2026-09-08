@@ -13,7 +13,7 @@ Each registered model with its certification status and known limitations. See a
   - likely rate-limited, exact limits unconfirmed
 
 ### anthropic/claude-fable-5-1
-- **Status:** candidate
+- **Status:** certified
 - **Known limitations:**
   - first-party Anthropic subscription seat
 
@@ -182,7 +182,8 @@ Live projection of the Role Recommendation Matrix (certified models only, highes
 5. qwen/qwen3.7-plus (score 0.72)
 
 ### specifier
-1. anthropic/claude-sonnet-5 (score 0.96)
-2. cursor/auto (score 0.88)
-3. qwen/qwen3.7-plus (score 0.8)
-4. qwen/qwen3.7-plus (score 0.72)
+1. anthropic/claude-fable-5-1 (score 1.0)
+2. anthropic/claude-sonnet-5 (score 0.96)
+3. cursor/auto (score 0.88)
+4. qwen/qwen3.7-plus (score 0.8)
+5. qwen/qwen3.7-plus (score 0.72)
