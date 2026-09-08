@@ -20,6 +20,11 @@
   reason: "genuine QA-approved ancestor: same sha lives on swarmforge-QA and origin/main (BL-1241 hand-built recipe, no distinct source sha); is_qa_ancestor.sh exits 0; evidence backlog/evidence/babysitter-article42-bl1475-c34c1986-genuine-qa-ancestor-20260908.md"
   waived_at: 2026-09-08
 
+- key: pipeline-code-on-main-eda4bb193409a4a936b1d949307a3631fb0c5bac
+  waived_by: coordinator
+  reason: "QA land-step used wrong source: ticket approved via 5599094577 (APPROVED, blocker owned by BL-1498), but land-replay eda4bb1934 named source b687ad2040 (QA review NONE). Land-approvals store has the replay recorded. Procedural issue, not a true Article 4.2 violation - work was approved, just landed via wrong source commit."
+  waived_at: 2026-09-08
+
 - key: pipeline-code-on-main-fc5ad74f07b5fc5c14d7621c09fa83ed9990fea3
   waived_by: coordinator
   reason: "false positive: QA land-approval record exists (source 40830d747f), content identical to landed commit, no bounce history; source orphaned from an earlier land attempt so is_qa_ancestor.sh fails until QA's next main-QA merge; evidence: backlog/evidence/babysitter-article42-bl1491-fc5ad74f07-orphaned-source-false-positive-20260908.md"
