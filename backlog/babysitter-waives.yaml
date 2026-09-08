@@ -120,6 +120,11 @@
   reason: "Pipeline merge/work commit for BL-1369/BL-1492/BL-1491/BL-1490, all QA-approved and landed"
   waived_at: 2026-09-08
 
+- key: pipeline-code-on-main-9021f12bb2657444abdecf1ffddbbc9c22c15d6b
+  waived_by: coordinator
+  reason: "False positive: commit is part of BL-1285 pipeline that was QA-approved (b9c93bdf73). Coder work commit is ancestor of QA approval, not descendant. Land-approvals store has BL-1285 approval record."
+  waived_at: 2026-09-08
+
 - key: pipeline-code-on-main-9b1c4c393c773088df7f80288c18c51e1ce6bc93
   waived_by: coordinator
   reason: "Pipeline merge/work commit for BL-1369/BL-1492/BL-1491/BL-1490, all QA-approved and landed"
