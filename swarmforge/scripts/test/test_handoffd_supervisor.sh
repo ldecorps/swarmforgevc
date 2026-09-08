@@ -394,4 +394,31 @@ grep -q "RESEND_API_KEY" "$DAEMON_DIR/handoffd-supervisor.log" \
   || fail "BL-215: expected a loud warning naming RESEND_API_KEY in the supervisor log; got: $(cat "$DAEMON_DIR/handoffd-supervisor.log" 2>/dev/null)"
 pass "BL-215: a configured-but-keyless daemon warns loudly (naming RESEND_API_KEY) instead of a silent no-op"
 
+# ── BL-1491: a halt records itself on the kill-all-audit log and the
+#    availability ledger, through the REAL supervisor (not a fake adapter).
+#    No tmux socket file at all (this ticket's own qa_e2e_procedure), so
+#    halt-swarm!'s tmux cleanup path is never reached - isolates this check
+#    from BL-1498's unrelated real-tmux/PATH-shadowing environment issue. ──
+make_fixture
+rm -f "$ROOT/.swarmforge/tmux-socket" "$ROOT/fake.sock"
+trap 'stop_daemon; rm -rf "$ROOT"' EXIT
+echo "999999" > "$DAEMON_DIR/handoffd.pid"   # dead pid
+unset RESEND_API_KEY
+
+check_once
+
+AUDIT_LOG="$DAEMON_DIR/kill-all-audit.log"
+[[ -f "$AUDIT_LOG" ]] || fail "BL-1491: kill-all-audit.log was never written"
+[[ "$(wc -l < "$AUDIT_LOG" | tr -d ' ')" == "1" ]] || fail "BL-1491: expected exactly one kill-all-audit row, got: $(cat "$AUDIT_LOG")"
+grep -q "handoffd_supervisor" "$AUDIT_LOG" || fail "BL-1491: kill-all-audit row does not name handoffd_supervisor: $(cat "$AUDIT_LOG")"
+grep -q "dead" "$AUDIT_LOG" || fail "BL-1491: kill-all-audit row does not name the verdict: $(cat "$AUDIT_LOG")"
+pass "BL-1491: the real supervisor's halt appends one kill-all-audit row naming itself and the verdict"
+
+LEDGER_FILE="$(find "$ROOT/.swarmforge/telemetry" -maxdepth 1 -name 'availability-*.jsonl' 2>/dev/null | head -1)"
+[[ -n "$LEDGER_FILE" ]] || fail "BL-1491: no availability ledger file was written"
+grep -q '"event":"stop"' "$LEDGER_FILE" || fail "BL-1491: no stop record in the availability ledger: $(cat "$LEDGER_FILE")"
+grep -q '"class":"swarm-stop"' "$LEDGER_FILE" || fail "BL-1491: stop record is not class swarm-stop: $(cat "$LEDGER_FILE")"
+grep -q '"source":"handoffd_supervisor"' "$LEDGER_FILE" || fail "BL-1491: stop record does not name handoffd_supervisor as source: $(cat "$LEDGER_FILE")"
+pass "BL-1491: the real supervisor's halt appends one availability stop record sourced from itself"
+
 echo "ALL PASS"
