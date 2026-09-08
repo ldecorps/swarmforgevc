@@ -20,6 +20,13 @@ required_stages: [coder, cleaner, architect, hardender, documenter, qa]
 
 acceptance: specs/features/BL-1495-a-b-ai-gateway-seat-launches-respawns-and-authenticates.feature
 
+# BL-1276: the bl1328 property test's whole-branch net-diff clause is
+# retired inside this parcel (notes, 2026-09-08 ruling); the path is
+# declared so the task-scope gate admits the edit - not a claim of
+# ownership over BL-1328's contract.
+retires:
+  - extension/test/bl1328QwenModelTokenFormsInvariants.property.test.js
+
 # Consumer anchors (BL-1235), every literal fixed at mint: the host and the
 # key name come from the intake, the table keys are plain strings. The
 # respawn libs and the compat resolver are gated by scenarios 02-03 rather
@@ -208,3 +215,34 @@ notes: |
     BL-1480 - under a 0 cap an expedited ticket still waits (Article
     3.2.4). Re-check both at the next promotion decision; neither is
     stale by itself.
+  - 2026-09-08 07:21Z coder note (priority 00): the property-suite commit
+    guard refused the parcel's first commit on
+    extension/test/bl1328QwenModelTokenFormsInvariants.property.test.js
+    invariant 3 - "BL-1328 added executable swarmforge.sh code outside the
+    detection helper: local bai_guard=..." - and asked for a BL-1175
+    allowlist row. Specifier ruling, same pass: NO allowlist row and NO
+    register row. The clause is not a standing red - `git diff origin/main
+    -- swarmforge/scripts/swarmforge.sh` is empty on main, so the test is
+    green there - it is BL-1006's slice-boundary assertion in the property
+    lane: the "measured, not asserted in prose" tail of invariant 3 diffs
+    the WHOLE file against origin/main and rejects any added executable
+    line outside extra_cli_targets_qwen_cloud, which every later ticket that
+    edits swarmforge.sh trips (this one is pinned to by three
+    required_wiring entries). An allowlist row is per FILE and would also
+    silence invariants 1 and 2 for every commit; a register row would
+    record a red that main does not have. Remedy, in THIS parcel (retire,
+    never reword): delete that tail - from the comment "And measured, not
+    asserted in prose" through the closing `if (netDiff.trim().length > 0)`
+    block - and keep the three assertions above it unchanged (named at both
+    sites; billing_guard prefers qwen-cloud; pane-env prefers OpenRouter),
+    which are the durable half of BL-1328 invariant 3. Leave a one-line
+    comment where the tail was: "net-diff clause retired by BL-1495
+    (BL-1006: a whole-file diff against origin/main is a parcel-time check,
+    red for every later edit)". `retires:` above declares the path so the
+    task-scope gate admits the foreign edit (BL-1276); it is not a claim
+    over BL-1328's contract. Evidence:
+    backlog/evidence/BL-1495-bl1328-inv3-whole-branch-clause-specifier-adjudication-20260908.md.
+    The precedent the coder cited (5b15512e51, bl1375 -> BL-1465) was a
+    red ON main after BL-1447 landed - the register's shape, not this one.
+
+assigned_to: coder
