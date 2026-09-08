@@ -77,6 +77,24 @@ const FIXTURES = {
     // Sourced and RUN into a scratch dir; the files that land are the answer.
     kind: 'shell-sandbox',
   },
+  // BL-1480: the two promote_and_route_next.sh standing fixtures, red on main
+  // 18 days (since BL-966, 2026-08-20) with no owner - the tenth and eleventh
+  // entries, and the first two whose entry is a LIST: promote_and_route_next.sh
+  // shells directly to three cap-resolution CLIs (lines 107-113) that no
+  // load-file walk from promotion_gates_cli.bb alone would reach.
+  'swarmforge/scripts/test/test_promote_and_route_next_priority.sh': {
+    entry: 'promotion_gates_cli.bb',
+    kind: 'shell-copy',
+  },
+  'swarmforge/scripts/test/test_promote_and_route_next_no_limit_depth.sh': {
+    entry: [
+      'promotion_gates_cli.bb',
+      'effective_backlog_depth_cli.bb',
+      'backlog_depth_cli.bb',
+      'backlog_depth_conf_path_cli.bb',
+    ],
+    kind: 'shell-copy',
+  },
 };
 
 function requireFresh(absPath, stubVitestGlobals) {
@@ -144,16 +162,26 @@ function effectiveList(scriptsDir, fixtureFile) {
     };
   }
 
-  // shell-copy: the fixture calls copy_bb_closure with this entry point, so
-  // running the shared helper the same way is what it does.
+  // shell-copy: the fixture calls copy_bb_closure with this entry point (or
+  // BL-1480: these entry points - copy_bb_closure accepts several, for a
+  // fixture whose subject SHELLS to a sibling script no load-file walk from
+  // the primary entry point would reach), so running the shared helper the
+  // same way is what it does.
   return {
     entry: spec.entry,
     files: shellCopyList(
       scriptsDir,
       `source "${path.join(REPO_ROOT, 'swarmforge', 'scripts', 'test', 'lib', 'bb_closure_copy.sh')}"`,
-      `copy_bb_closure "$SRC" "$DEST" ${spec.entry}`
+      `copy_bb_closure "$SRC" "$DEST" ${entryList(spec.entry).join(' ')}`
     ),
   };
+}
+
+// spec.entry is a bare string for every fixture but BL-1480's two - always
+// treat it as a list so callers need not special-case the common single-entry
+// case.
+function entryList(entry) {
+  return Array.isArray(entry) ? entry : [entry];
 }
 
 // The check itself: every member of the entry point's closure that the fixture
@@ -162,7 +190,10 @@ function effectiveList(scriptsDir, fixtureFile) {
 // scratch tree with one extra load-file edge prove the guard actually fires.
 function missingFromList(scriptsDir, fixtureFile, closureDir) {
   const { entry, files } = effectiveList(scriptsDir, fixtureFile);
-  const closure = computeClosure(closureDir || scriptsDir, entry);
+  const closure = new Set();
+  for (const e of entryList(entry)) {
+    for (const f of computeClosure(closureDir || scriptsDir, e)) closure.add(f);
+  }
   const have = new Set(files);
   return { entry, files, missing: [...closure].filter((f) => !have.has(f)).sort() };
 }
