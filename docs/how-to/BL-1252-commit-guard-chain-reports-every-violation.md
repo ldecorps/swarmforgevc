@@ -220,6 +220,11 @@ same run reported 107.
   path (a hotfix committed straight onto `main`) BL-1240 can never see;
   deliberately NOT added to `land_step_lib.bb`'s tree-guard list (that
   would judge the whole tree, not the commit's own additions).
+- [BL-1471 (`check_bounce_revert_scope.sh`)](BL-1471-bounce-revert-scope-guard.md) —
+  registered in this Tier-1 chain but, unlike every other guard here, its
+  pre-commit call always defers (a revert's message does not exist yet at
+  that point); the enforcing call is `commit-msg`'s own, same posture as
+  `check_ticket_deletion.sh`'s message-dependent half.
 - BL-1349 — the property lane's spawn-heavy-file budget split this file's
   one `bl1252CommitGuardAggregationInvariants.property.test.js` (37 s,
   five properties at `numRuns` 120, each spawning) into five files, each

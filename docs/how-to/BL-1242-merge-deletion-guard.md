@@ -166,6 +166,9 @@ attempt. A merge that violates both now reports both in one refusal.
 - BL-1403 (moves are not deletions; either-side attribution) — closed the
   recurring unexemptable block every root-drain intake archive triggered
   on the next merge-up in every worktree.
+- [BL-1471 (bounce-revert scope guard)](BL-1471-bounce-revert-scope-guard.md) —
+  reuses this guard's own path-attribution walk, applied to a `git revert`
+  commit instead of a merge.
 
 ## Verify
 
