@@ -133,6 +133,12 @@ export function approveHumanApprovalText(rawText: string): { text: string; chang
 }
 
 const HUMAN_RULING_BLOCK_PATTERN = /^human_ruling:\s*(?:[|>][+-]?\s*\n(?:[ \t]+.*\n?)*)?/m;
+// BL-1369: the provenance field rides alongside the ruling block. Always
+// written together with the ruling by the same call site (one writer for
+// both fields, so they cannot drift - invariant 2), but a separate field
+// so the existing readHumanRulingFromText reader stays unchanged and the
+// label stays a single line a human can grep.
+const RULING_PROVENANCE_PATTERN = /^ruling_provenance:\s*.*\r?\n?/m;
 
 function formatHumanRulingBlock(label: string): string {
   const sanitized = sanitizeForYamlComment(label);
@@ -142,21 +148,52 @@ function formatHumanRulingBlock(label: string): string {
   return `human_ruling: |\n  ${sanitized}\n`;
 }
 
-// BL-589: approve AND record which discrete option was chosen.
+// BL-1369: provenance is a single-line field. The same sanitize step as
+// every other human-supplied string spliced into this file (see
+// rejectHumanApprovalText's reason and the BL-409 incident that added it):
+// newlines collapsed so a relayer identity cannot inject a second YAML key.
+function formatRulingProvenanceField(provenance: string): string {
+  const sanitized = sanitizeForYamlComment(provenance);
+  if (!sanitized) {
+    return '';
+  }
+  return `ruling_provenance: ${sanitized}\n`;
+}
+
+// BL-1369: splice a ruling + provenance pair into the ticket text. Removes
+// any prior pair first (so a tap supersedes a relay and a second relay
+// replaces the first), then inserts the new pair immediately after the
+// human_approval line - the one line this module already anchors on for
+// every other writer, so the new fields end up in the same neighborhood
+// every time rather than drifting to the bottom of the file.
+function spliceRulingRecord(rawText: string, label: string, provenance: string): string {
+  const rulingBlock = formatHumanRulingBlock(label);
+  const provenanceField = formatRulingProvenanceField(provenance);
+  if (!rulingBlock || !provenanceField) {
+    return rawText;
+  }
+  const record = `${rulingBlock.trimEnd()}\n${provenanceField.trimEnd()}`;
+  let text = rawText.replace(HUMAN_RULING_BLOCK_PATTERN, '');
+  text = text.replace(RULING_PROVENANCE_PATTERN, '');
+  if (/^human_approval:\s*.*$/m.test(text)) {
+    text = text.replace(/^(human_approval:\s*[^\r\n]*)/m, `$1\n${record}`);
+  } else {
+    text = `${text.trimEnd()}\n${record}\n`;
+  }
+  return text;
+}
+
+// BL-589 + BL-1369: approve AND record which discrete option was chosen,
+// AND mark it tapped. The provenance field is what keeps invariant 2
+// honest on the tap side: a tapped ruling and a relayed one are visually
+// distinguishable to any reader, and invariant 3's "tap supersedes relay"
+// is just spliceRulingRecord overwriting the prior pair.
 export function rulingHumanApprovalText(rawText: string, rulingLabel: string): { text: string; changed: boolean } {
   if (!HUMAN_APPROVAL_PENDING_PATTERN.test(rawText)) {
     return { text: rawText, changed: false };
   }
-  let text = rawText.replace(HUMAN_APPROVAL_PENDING_PATTERN, 'human_approval: approved');
-  const rulingBlock = formatHumanRulingBlock(rulingLabel);
-  if (!rulingBlock) {
-    return { text, changed: true };
-  }
-  if (HUMAN_RULING_BLOCK_PATTERN.test(text)) {
-    text = text.replace(HUMAN_RULING_BLOCK_PATTERN, rulingBlock.trimEnd());
-  } else {
-    text = text.replace(/^human_approval:\s*approved\s*$/m, `human_approval: approved\n${rulingBlock.trimEnd()}`);
-  }
+  const text0 = rawText.replace(HUMAN_APPROVAL_PENDING_PATTERN, 'human_approval: approved');
+  const text = spliceRulingRecord(text0, rulingLabel, 'tapped');
   return { text, changed: true };
 }
 
@@ -467,4 +504,167 @@ export function recordAmendReply(targetPath: string, backlogId: string): boolean
     fs.writeFileSync(filePath, text);
   }
   return changed;
+}
+
+// ── BL-1369: relay an in-session answer onto the ticket ────────────────
+//
+// The three invariants this whole surface must hold:
+//
+//   1. Relaying NEVER records approval. human_approval is the human's own
+//      tap, and no relay path may write it. The relay writes only the
+//      ruling + provenance pair; human_approval is left byte-identical.
+//
+//   2. A recorded ruling always carries provenance. The pair is written
+//      atomically by spliceRulingRecord, so a ruling without provenance is
+//      not a valid output of this module.
+//
+//   3. A relay never overwrites a tapped ruling. If the ticket already
+//      carries a tapped ruling (provenance = 'tapped'), a relay is refused
+//      and the file is returned unchanged. The other direction - a tap
+//      after a relay - is just rulingHumanApprovalText overwriting the
+//      relay pair, which is the human's own hand winning.
+
+export type RelayRefusalReason =
+  | 'no-ticket-file'
+  | 'no-ruling-options'
+  | 'unknown-option'
+  | 'already-tapped';
+
+export type RelayTextResult =
+  | { kind: 'written'; text: string }
+  | {
+      kind: 'refused';
+      reason: RelayRefusalReason;
+      text: string;
+      declaredOptions?: string[];
+    };
+
+// Pure: classify whether a relay is eligible and, if so, produce the new
+// ticket text. The caller's own validation (e.g. checking the relayer
+// identity) sits upstream; this function owns the three invariants and
+// nothing else.
+export function relayRulingText(
+  rawText: string,
+  rulingLabel: string,
+  relayer: string,
+  declaredOptions: string[] | undefined
+): RelayTextResult {
+  // No options declared - the ticket never posed a choice, so there is
+  // nothing to relay an answer to.
+  if (!declaredOptions || declaredOptions.length === 0) {
+    return { kind: 'refused', reason: 'no-ruling-options', text: rawText };
+  }
+  const trimmed = rulingLabel.trim();
+  if (!trimmed) {
+    return {
+      kind: 'refused',
+      reason: 'unknown-option',
+      text: rawText,
+      declaredOptions,
+    };
+  }
+  // Exact match against declared options - never a substring match. An
+  // agent paraphrasing the human into the nearest option is the failure
+  // this surface must not enable.
+  const matches = declaredOptions.some((option) => option.trim() === trimmed);
+  if (!matches) {
+    return {
+      kind: 'refused',
+      reason: 'unknown-option',
+      text: rawText,
+      declaredOptions,
+    };
+  }
+  // Invariant 3 first direction: a tapped ruling is the human's own hand.
+  // A relay cannot overwrite it. Detection: provenance field present AND
+  // equals 'tapped'. A ticket with no provenance (legacy) or with a prior
+  // relay is fair game for a new relay.
+  if (isTappedRuling(rawText)) {
+    return { kind: 'refused', reason: 'already-tapped', text: rawText };
+  }
+  const text = spliceRulingRecord(rawText, trimmed, `relayed by ${relayer}`);
+  return { kind: 'written', text };
+}
+
+// Pure: does the ticket currently carry a tapped ruling? The relay refuses
+// on true (invariant 3); the tap path does not consult this (it always
+// overwrites, which is the human's hand winning).
+function isTappedRuling(rawText: string): boolean {
+  const match = rawText.match(/^ruling_provenance:\s*([^\r\n]*)/m);
+  if (!match) {
+    return false;
+  }
+  return match[1].trim() === 'tapped';
+}
+
+// BL-1369: the provenance reader. Mirrors readRecordedRuling's shape -
+// returns undefined when there is no ruling at all, no provenance field,
+// or no matching ticket file. A reader that cannot distinguish "no ruling"
+// from "relayed" would force callers to re-parse the field.
+export type RulingProvenance =
+  | { kind: 'tapped' }
+  | { kind: 'relayed'; by: string };
+
+function readRulingProvenanceFromText(rawText: string): RulingProvenance | undefined {
+  if (!readHumanRulingFromText(rawText)) {
+    return undefined;
+  }
+  const match = rawText.match(/^ruling_provenance:\s*([^\r\n]*)/m);
+  if (!match) {
+    return undefined;
+  }
+  const value = match[1].trim();
+  if (value === 'tapped') {
+    return { kind: 'tapped' };
+  }
+  const relayedMatch = value.match(/^relayed by\s+(.+)$/);
+  if (relayedMatch) {
+    return { kind: 'relayed', by: relayedMatch[1].trim() };
+  }
+  return undefined;
+}
+
+export function readRulingProvenance(
+  targetPath: string,
+  backlogId: string
+): RulingProvenance | undefined {
+  const filePath = findTicketFilePath(targetPath, backlogId);
+  if (!filePath) {
+    return undefined;
+  }
+  return readRulingProvenanceFromText(fs.readFileSync(filePath, 'utf8'));
+}
+
+// Impure driver: relay an answer onto the ticket. Reads declared options
+// from the ticket itself (so the caller never has to pass them in, and a
+// caller passing a stale list cannot validate against the wrong options).
+// Returns a richer result than recordApprovalReply's bare boolean: the
+// caller needs the refusal reason to surface a useful error, and the
+// declared-options list to name them in the diagnostic.
+export type RecordRelayResult =
+  | { kind: 'written' }
+  | { kind: 'refused'; reason: RelayRefusalReason; declaredOptions?: string[] };
+
+export function recordRelayedRuling(
+  targetPath: string,
+  backlogId: string,
+  rulingLabel: string,
+  relayer: string
+): RecordRelayResult {
+  const filePath = findTicketFilePath(targetPath, backlogId);
+  if (!filePath) {
+    return { kind: 'refused', reason: 'no-ticket-file' };
+  }
+  const rawText = fs.readFileSync(filePath, 'utf8');
+  const declaredOptions = parseBacklogYaml(rawText)?.rulingOptions;
+  const result = relayRulingText(rawText, rulingLabel, relayer, declaredOptions);
+  if (result.kind === 'written') {
+    fs.writeFileSync(filePath, result.text);
+    return { kind: 'written' };
+  }
+  return {
+    kind: 'refused',
+    reason: result.reason,
+    declaredOptions: result.declaredOptions,
+  };
 }
