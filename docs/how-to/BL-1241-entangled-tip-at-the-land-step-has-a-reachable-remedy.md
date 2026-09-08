@@ -845,6 +845,42 @@ change to attribution (BL-1472) or to `replay!`'s report (BL-1474).
 Acceptance:
 `specs/features/BL-1473-a-replay-never-deletes-or-resurrects-a-path-the-parcel-never-touched.feature`.
 
+## `LAND_ESCALATE` carries the refusing guard's message, not a false "nothing to commit" (BL-1474)
+
+`replay!` builds its tip-pure commit in the scratch worktree with `git
+commit -q`, which runs the repository's own commit hooks — the same
+commit-time guards (merge-deletion, ticket-deletion, registration, ...)
+that run on every other commit in the repo. Before this ticket, ANY
+non-zero exit from that commit — a guard's refusal included — was reported
+as `"land-step replay: nothing to commit for <id> - own-paths identical to
+origin/main"`, with the commit's own stderr never read. Twice on
+2026-09-07 (`BL-1463-QA-followup-two-land-step-defects-20260907.md`, D2;
+and again against BL-1408 that evening) a real, non-empty replay was
+refused by a guard and `LAND_ESCALATE` reported it as an empty diff — QA
+had to rebuild the commit by hand both times to learn what had actually
+refused it (BL-1473, above, is that same evidence's other half).
+
+Fixed: `replay!` now checks whether the scratch index was empty (`git diff
+--cached --quiet`) **before** attempting the commit, and
+`replay-commit-refusal-reason` uses that check, not the commit's exit
+code, to decide the reason:
+
+- Index empty → the original `"nothing to commit ... own-paths identical
+  to origin/main"` message, unchanged.
+- Index non-empty, commit refused, hook printed something → `"land-step
+  replay: commit refused for <id> - <stderr>"`, quoting the refusing
+  guard's own message verbatim (truncated past 2000 characters, with the
+  truncation named).
+- Index non-empty, commit refused, hook printed nothing → `"land-step
+  replay: commit refused for <id>, no text"`.
+
+A successful commit's flow, the passenger guards, and the completeness
+check are unchanged — this only changes which of the three reasons an
+already-failing commit reports.
+
+Acceptance:
+`specs/features/BL-1474-the-replay-reports-why-its-commit-was-refused.feature`.
+
 ## A revert or reapply commit is transparent to path attribution (BL-1472)
 
 `path-owner-tickets` unions the ticket ids every commit in a path's
