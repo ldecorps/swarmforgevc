@@ -172,3 +172,4 @@ notes: |
   check fail closed - neither retried or verified against HEAD.
 
 assigned_to: coder
+abandoned_commits: [8cce3c601f]
