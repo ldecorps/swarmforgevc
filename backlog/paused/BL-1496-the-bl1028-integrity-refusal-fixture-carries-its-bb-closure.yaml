@@ -1,0 +1,209 @@
+id: BL-1496
+title: "test_bl1028_promotion_obeys_integrity_refusal.sh has been red on main since 2026-08-25 with no owner: its fixture hand-lists five .bb files, promotion_gates_lib.bb has since gained three load-file edges (acceptance_pointer_gate_lib.bb, headroom_cap_raise_lib.bb, slice_size_envelope_gate_lib.bb), so the fixture's bb dies at load with FileNotFoundException and the run reports a failed check for a reason unrelated to what it tests; it is the third fixture of this surface to rot the same way and the only one BL-1480 does not own, and the fourth never enrolled in BL-973's closure guard - it derives its copy set with copy_bb_closure, is enrolled in the guard, and is green"
+milestone: M8
+type: defect
+severity: high
+# high: a standing red is severity high at first sighting (Article 3.2.4,
+# 2026-09-05 amendment). Red on main for 14 days, unowned until this mint -
+# an unowned red throttles intake (BL-1429) and blocks QA approval (Article
+# 4.2). Never medium for a red.
+status: todo
+epic: code-quality-gates
+priority: 8
+direction: swarm-reported
+depends_on: []
+mutation_cost: low
+# low: one shell fixture switches to the copy_bb_closure helper that already
+# ships (BL-973, swarmforge/scripts/test/lib/bb_closure_copy.sh), one entry
+# in bbFixtureClosureGate.js FIXTURES. No production line changes, no
+# TypeScript; Babashka/shell have no mutation/CRAP/DRY wired (BL-472), so
+# the hardener gates on the runners named below and records the fallback.
+slice_size_envelope: low
+required_stages: [coder, cleaner, architect, hardender, documenter, qa]
+
+acceptance: specs/features/BL-1496-the-bl1028-integrity-refusal-fixture-carries-its-bb-closure.feature
+
+# Consumer anchors (BL-1235). The enrolment is the real one: the closure
+# guard is a pre-existing live consumer, and the fixture's own file name is
+# absent from its FIXTURES map today and present only once enrolled - a
+# derived-today copy set rots tomorrow unless the guard watches it (BL-1480
+# and BL-1279 used the identical anchor shape). No anchor on the fixture's
+# own contents: `copy_bb_closure` already appears in four other test files,
+# and an anchor on a literal the parcel adds to its own subject would be
+# satisfied by construction and gate nothing.
+required_wiring:
+  - 'specs/pipeline/steps/lib/bbFixtureClosureGate.js::test_bl1028_promotion_obeys_integrity_refusal.sh::the fixture is enrolled in the closure guard so its copy list cannot rot again'
+  - 'specs/pipeline/steps/bl1496Bl1028FixtureClosureSteps.js::registerSteps::the handler lands in the same parcel as the feature (BL-233)'
+
+human_approval: pending
+approval_context: >
+  A new feature file is authored here, so it needs a tap. No choice is posed
+  and there are no ruling_options. FIRM: the fixture derives its copy set
+  from the entry point it drives rather than growing three more hand-typed
+  lines - the helper already ships and four other fixtures use it; the
+  fixture is enrolled in the closure guard in the same parcel, because a
+  list fixed by hand today is the same list that rotted twice already; no
+  production line of promote_and_route_next.sh, promotion_gates_lib.bb or
+  any gate changes - this is a test-fixture parcel only. One thing worth
+  knowing: BL-1480 (active) fixes the two sibling fixtures of this same
+  surface and edits the same guard file, so the two parcels must not be in
+  flight against each other - the coordinator serialises them.
+
+invariants:
+  - "The fixture's copy set is DERIVED from the entry points it drives, never hand-listed: a load-file edge added upstream tomorrow is picked up with no edit to the test."
+  - "The derivation is pinned to a census, so it cannot pass by finding nothing: the closure check names the files it requires and fails when any is absent, rather than reporting success over an empty or truncated set."
+
+description: |
+  ## What is wrong
+
+  `swarmforge/scripts/test/test_bl1028_promotion_obeys_integrity_refusal.sh`
+  fails on `main` (verified 2026-09-08 at `c90bd34027`, exit 1, identical
+  with and without `PACK_STAFFING_SKIP_GATE` so it is not a BL-1457-shape
+  environment artifact):
+
+  ```
+  FAIL: lock-timeout: the failure report does not name the reason; output:
+  java.io.FileNotFoundException
+  /tmp/tmp.XXXX/swarmforge/scripts/acceptance_pointer_gate_lib.bb (No such file or directory)
+  Location: /tmp/tmp.XXXX/swarmforge/scripts/promotion_gates_lib.bb:30:1
+  ```
+
+  The fixture hand-lists the `.bb` files it copies into its disposable root
+  (lines 63-65): `promotion_gates_cli.bb promotion_gates_lib.bb
+  backlog_depth_lib.bb swarm_identity_lib.bb daemon_cycle_guard_lib.bb`.
+  `promotion_gates_lib.bb` has since gained three `load-file` edges the list
+  was never updated for:
+
+  | edge | landed | commit |
+  |---|---|---|
+  | `acceptance_pointer_gate_lib.bb` | 2026-08-25 | `ea14fa3039` (BL-626) |
+  | `headroom_cap_raise_lib.bb` | 2026-08-25 | `798c6d630e` (BL-1128) |
+  | `slice_size_envelope_gate_lib.bb` | 2026-08-27 | `392e2cbf89` (BL-634) |
+
+  So the fixture's bb dies at load and the one check that fails
+  (`lock-timeout: the failure report does not name the reason`) fails for a
+  reason with nothing to do with integrity refusal. The false-green half is
+  the worse half, as in BL-1279: every other check in the file is reported
+  against a subject that never ran.
+
+  BL-973 shipped `copy_bb_closure`
+  (`swarmforge/scripts/test/lib/bb_closure_copy.sh`) and a closure guard for
+  exactly this rot, but WHICH fixtures the guard watches is hand-enumerated
+  in `specs/pipeline/steps/lib/bbFixtureClosureGate.js` (5 entries today,
+  all front-desk/lean), and this one was never enrolled. That is BL-1279's
+  shape a fourth time.
+
+  ## Census (the population, counted, not assumed)
+
+  `grep -ln 'promote_and_route_next\.sh\|promotion_gates_cli\.bb\|promotion_gates_lib\.bb' swarmforge/scripts/test/*.sh`
+  returns **7** files. Each run under `env -u PACK_STAFFING_SKIP_GATE` on
+  2026-09-08:
+
+  | file | exit | owner |
+  |---|---|---|
+  | `test_bl1097_router_refuses_dispatched_ticket.sh` | 0 | - |
+  | `test_backlog_depth_conf_path_cli.sh` | 0 | - |
+  | `bl1145_promotion_gates_mutation_sweep.sh` | 0 | - |
+  | `test_bl1363_close_ticket.sh` | 0 | - |
+  | `test_promote_and_route_next_priority.sh` | 1 | BL-1480 |
+  | `test_promote_and_route_next_no_limit_depth.sh` | 2 | BL-1480 |
+  | `test_bl1028_promotion_obeys_integrity_refusal.sh` | **1** | **none - this ticket** |
+
+  Three red, two already owned, one unowned. That is the whole population;
+  no other fixture of this surface needs an owner today.
+
+  ## What is wanted
+
+  - The fixture derives its copy set from the entry point it drives instead
+    of hand-listing it, so tomorrow's `load-file` edge is picked up with no
+    edit (scenarios 01, 03).
+  - The closure check is pinned to a census and cannot pass over an empty or
+    truncated derivation (scenario 02).
+  - The fixture is enrolled in the closure guard (scenario 04).
+  - The test is green (scenario 05).
+  - Documenter: no registered diagram depicts test-fixture wiring; the
+    `docs/` change, if any, is the standing-suite note.
+  - Register: after QA lands, `backlog/standing-reds.tsv` carries no row for
+    this file and `bb swarmforge/scripts/standing_red_register_cli.bb .`
+    reports it gone.
+
+  ## How (direction, not mandate)
+
+  Follow the four `test_front_desk_supervisor_*.sh` fixtures: source
+  `swarmforge/scripts/test/lib/bb_closure_copy.sh` and call `copy_bb_closure
+  "$SCRIPTS" "$root/swarmforge/scripts" promotion_gates_cli.bb ...` in place
+  of the `for dep in ...` loop. `swarm_identity_lib.bb` and
+  `daemon_cycle_guard_lib.bb` are in the current list because they are
+  reached from `promote_and_route_next.sh` / `backlog_depth_lib.bb` rather
+  than from `promotion_gates_cli.bb` - check whether the derivation still
+  covers them before dropping either. Enrol the file in `FIXTURES` in
+  `specs/pipeline/steps/lib/bbFixtureClosureGate.js` the way BL-1480 enrols
+  its two.
+
+constraints: >
+  Test-fixture parcel only: no production line of promote_and_route_next.sh,
+  promotion_gates_lib.bb, promotion_gates_cli.bb or any promotion gate
+  changes, and the other six fixtures in the census above are not touched.
+  `specs/pipeline/steps/lib/bbFixtureClosureGate.js` is shared with BL-1480
+  (active, enrolling the two sibling fixtures) - the coordinator serialises
+  the two parcels; whichever lands second merges main and re-reads the map
+  rather than replacing it.
+
+out_of_scope: |
+  - The two sibling reds `test_promote_and_route_next_priority.sh` and
+    `test_promote_and_route_next_no_limit_depth.sh` - owned by BL-1480.
+  - Making the closure guard's MEMBERSHIP derived rather than hand-enumerated
+    in `bbFixtureClosureGate.js`. That is the root cause of all four
+    recurrences (BL-973 derives each list's contents but not the roster) and
+    it is unowned, but it is a different slice and BL-1480 is actively
+    reshaping that file. Raised to the coordinator in this pass; revisit once
+    BL-1480 lands.
+  - The four green fixtures in the census: they hand-list too and may rot
+    next, but a green test is not a defect and enrolling them is the
+    membership slice above.
+
+qa_e2e_procedure: |
+  1. Acceptance resolving all five scenarios of the feature file.
+  2. `env -u PACK_STAFFING_SKIP_GATE bash swarmforge/scripts/test/test_bl1028_promotion_obeys_integrity_refusal.sh`
+     exits 0 and its output contains no `FAIL:` line and no
+     `FileNotFoundException`. Run it with the hatch set as well - the verdict
+     must be identical (BL-1457: a test whose verdict is decided by the
+     ambient environment is a broken signal in both directions).
+  3. Negative control, proving the derivation is live and not a fresh hand
+     list: in a scratch clone, add one new `load-file` line to
+     `promotion_gates_lib.bb` pointing at a new sibling `.bb`, re-run the
+     test, and confirm the new file is copied into the disposable root with
+     no edit to the test.
+  4. `node -e` (or grep) on `specs/pipeline/steps/lib/bbFixtureClosureGate.js`
+     shows `test_bl1028_promotion_obeys_integrity_refusal.sh` among FIXTURES,
+     and the closure guard run is green.
+  5. `bb swarmforge/scripts/standing_red_register_cli.bb .` reports no row
+     for this file and `"unowned":[]`.
+
+source: |
+  `unowned-red` note from the coder, priority 00, 2026-09-08 04:39Z, raised
+  while working BL-1480 ("unowned-red
+  test_bl1028_promotion_obeys_integrity_refusal.sh (BL-1480 evidence)").
+  Confirmed independently at mint by running the test on main both with and
+  without the staffing hatch, blaming the three load-file edges to their
+  commits, and censusing the surface (7 files, 3 red, 2 owned).
+
+notes: |
+  - Minted 2026-09-08 by the specifier the same pass the red was reported,
+    per the standing-red rule (Article 3.2.4, 2026-09-05 amendment):
+    type defect, severity high, register row added in the mint commit with
+    first_seen 2026-08-25, matching BL-1480's sibling rows which date from
+    when the red began rather than when it was recorded.
+  - INVEST-I: independent of BL-1480 despite the shared defect class -
+    `copy_bb_closure` already ships on main (BL-973), so nothing here waits
+    on an unbuilt sibling. `depends_on` is empty deliberately.
+  - IR-DRY: one `possible-synonym` finding survives, between scenario 01
+    ("the copy set is checked against the closure") and scenario 02 ("the
+    closure is derived"). It is not accidental drift - 01 checks the fixture's
+    set, 02 pins the derivation's own contents so an empty closure cannot
+    pass - and the checker's own guidance is to normalize only accidental
+    drift. Do not collapse them. Three other findings were real duplication
+    of the fixture's path and were normalized onto the Background at mint.
+  - Scenario 02 is the first application of the census rule landed in
+    `swarmforge/roles/specifier.prompt` at `dce5e90739` (BL-1445's bounce):
+    a scenario that derives a population states the floor it must find.
