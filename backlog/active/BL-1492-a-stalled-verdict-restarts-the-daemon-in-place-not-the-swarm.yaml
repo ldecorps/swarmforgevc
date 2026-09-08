@@ -148,3 +148,6 @@ notes: |
     parameter - kept as written.
 
 assigned_to: coder
+bounce_count: 1
+bounce_history:
+  - { at: 2026-09-08, by: architect, blamed: coder, class: behavior, commit: 41d0c7fe6c, evidence: backlog/evidence/BL-1492-architect-20260908.md }

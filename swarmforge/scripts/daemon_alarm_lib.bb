@@ -49,6 +49,24 @@
               "Failure log: " failure-log-path "\n"
               "After fixing the daemon, run: " ensure-command "\n")})
 
+;; BL-1492: a :dead/:stalled verdict within the restart budget's headroom no
+;; longer reaches build-alarm-email/halt-swarm! at all - this is the sibling
+;; email builder for that path, worded so an operator skimming subjects can
+;; tell a restart from a real halt at a glance (never the halt subject with
+;; a restart body, or vice versa).
+(defn build-restart-alarm-email
+  "Plain-text alarm email content for an in-place restart (BL-1492): names
+   the verdict, the restart outcome, and the failure log path - no role
+   session was touched, and the wording says so explicitly."
+  [{:keys [failure-log-path verdict restart-outcome]}]
+  {:subject (str "SwarmForge: handoffd " (name verdict) ", restarted in place ("
+                 (name restart-outcome) ")")
+   :text (str "The handoffd daemon was " (name verdict) ". It was restarted in "
+              "place via the one start owner (start_handoff_daemon.sh) - "
+              "outcome: " (name restart-outcome) ". No role session or tmux "
+              "server was touched.\n\n"
+              "Failure log: " failure-log-path "\n")})
+
 ;; BL-286: our own {:filename :content-id :base64} attachment descriptor
 ;; (matching build-diagram-section's shape) -> Resend's own attachment
 ;; field names ({:filename :content :content_id}, RFC-2392 inline
@@ -321,6 +339,24 @@
    :content-id "handoffd-failure-log"
    :base64 (.encodeToString (java.util.Base64/getEncoder) (.getBytes ^String content "UTF-8"))})
 
+(defn- write-failure-report!
+  "Shared by alarm-and-halt! and restart-daemon! (BL-1492): gathers the
+   death evidence (died-at, log tail, role-count snapshot) into one
+   formatted failure-log write. Both responses record the exact same
+   evidence; only what happens after differs (halt vs restart)."
+  [{:keys [reason status now-iso! log-tail! role-counts! write-failure-log!]}]
+  (let [died-at (now-iso!)
+        log-tail (or (log-tail!) [])
+        role-counts (or (role-counts!) [])
+        content (format-failure-log {:died-at died-at
+                                      :reason reason
+                                      :log-tail log-tail
+                                      :restart-history (:restart_history status)
+                                      :last-incident (:last_incident status)
+                                      :role-counts role-counts})
+        failure-log-path (write-failure-log! content)]
+    {:died-at died-at :content content :failure-log-path failure-log-path}))
+
 (defn alarm-and-halt!
   "Orchestrates the whole daemon-death response through injected adapters -
    testable with fakes for every side effect (BL-144 non-behavioral gate: no
@@ -345,16 +381,10 @@
    entirely (older caller/test) defaults to a no-op, same posture as an
    absent :html/:attachments key elsewhere in this namespace."
   [{:keys [reason status now-iso! log-tail! role-counts! write-failure-log! send-email! record-halt! halt-swarm! write-status!]}]
-  (let [died-at (now-iso!)
-        log-tail (or (log-tail!) [])
-        role-counts (or (role-counts!) [])
-        content (format-failure-log {:died-at died-at
-                                      :reason reason
-                                      :log-tail log-tail
-                                      :restart-history (:restart_history status)
-                                      :last-incident (:last_incident status)
-                                      :role-counts role-counts})
-        failure-log-path (write-failure-log! content)
+  (let [{:keys [died-at content failure-log-path]}
+        (write-failure-report! {:reason reason :status status :now-iso! now-iso!
+                                 :log-tail! log-tail! :role-counts! role-counts!
+                                 :write-failure-log! write-failure-log!})
         attachments (try
                       [(build-failure-attachment {:failure-log-path failure-log-path :content content})]
                       (catch Exception _ nil))
@@ -373,3 +403,39 @@
                           :failure_log failure-log-path
                           :alarm_email (:success email-result)))
     {:failure-log-path failure-log-path :email-result email-result}))
+
+(defn restart-daemon!
+  "BL-1492: the response to a :dead/:stalled verdict while the restart
+   budget still has headroom - the failure log, log tail and role-count
+   snapshot are the exact same evidence alarm-and-halt! gathers (one code
+   path for both responses, per the ticket's own direction), but the
+   swarm-touching half is swapped: start-daemon! (the one start owner,
+   start_handoff_daemon.sh, BL-690) replaces halt-swarm!, and there is no
+   session-kill adapter in this function's argument list at all - it
+   cannot touch a role session even by mistake, because it has nothing to
+   call to do so.
+
+   start-daemon! is called exactly once and never retried within this
+   call (BL-1492 scenario 05): its outcome (:success true/false) is
+   recorded as a \"succeeded\"/\"failed\" entry appended to
+   restart_history in the status field - the same field the failure
+   report already prints (BL-1235) - whether the start owner succeeded or
+   not. The alarm email is still sent, worded to name a restart rather
+   than a halt (build-restart-alarm-email)."
+  [{:keys [reason status now-iso! now-ms! log-tail! role-counts! write-failure-log! send-email!
+           start-daemon! write-status!]}]
+  (let [{:keys [failure-log-path]}
+        (write-failure-report! {:reason reason :status status :now-iso! now-iso!
+                                 :log-tail! log-tail! :role-counts! role-counts!
+                                 :write-failure-log! write-failure-log!})
+        start-result (try (start-daemon!) (catch Exception e {:success false :error (.getMessage e)}))
+        outcome (if (:success start-result) :succeeded :failed)
+        entry {:at (now-ms!) :result (name outcome) :reason (name reason)}
+        history (conj (vec (:restart_history status)) entry)
+        {:keys [subject text]} (build-restart-alarm-email {:failure-log-path failure-log-path
+                                                             :verdict reason
+                                                             :restart-outcome outcome})
+        email-result (send-email! subject text nil)]
+    (write-status! (assoc status :restart_history history))
+    {:failure-log-path failure-log-path :email-result email-result
+     :start-result start-result :outcome outcome}))
