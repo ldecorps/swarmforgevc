@@ -7,7 +7,7 @@
 
 - key: pipeline-code-on-main-607e7fc56de4f82db66ad1892f8163a10a98a7f5
   waived_by: coordinator
-  reason: "false positive: QA land-approval record exists (source 9558401764), content identical to landed commit, no bounce history; source orphaned from an earlier land attempt so is_qa_ancestor.sh fails until QA's next main-QA merge; evidence: backlog/evidence/babysitter-article42-bl1490-607e7fc56d-orphaned-source-false-positive-20260908.md"
+  reason: "Same pattern as eda4bb1934: BL-1490 tip-pure replay, land-approvals record exists with source 9558401764, is_qa_ancestor.sh fails on source but QA did the land-step"
   waived_at: 2026-09-08
 
 - key: pipeline-code-on-main-a7c3ef9974a48922c0b31d31d6be02b2820ab774
@@ -20,7 +20,12 @@
   reason: "genuine QA-approved ancestor: same sha lives on swarmforge-QA and origin/main (BL-1241 hand-built recipe, no distinct source sha); is_qa_ancestor.sh exits 0; evidence backlog/evidence/babysitter-article42-bl1475-c34c1986-genuine-qa-ancestor-20260908.md"
   waived_at: 2026-09-08
 
+- key: pipeline-code-on-main-eda4bb193409a4a936b1d949307a3631fb0c5bac
+  waived_by: coordinator
+  reason: "QA land-step used wrong source: ticket approved via 5599094577 (APPROVED, blocker owned by BL-1498), but land-replay eda4bb1934 named source b687ad2040 (QA review NONE). Land-approvals store has the replay recorded. Procedural issue, not a true Article 4.2 violation - work was approved, just landed via wrong source commit."
+  waived_at: 2026-09-08
+
 - key: pipeline-code-on-main-fc5ad74f07b5fc5c14d7621c09fa83ed9990fea3
   waived_by: coordinator
-  reason: "false positive: QA land-approval record exists (source 40830d747f), content identical to landed commit, no bounce history; source orphaned from an earlier land attempt so is_qa_ancestor.sh fails until QA's next main-QA merge; evidence: backlog/evidence/babysitter-article42-bl1491-fc5ad74f07-orphaned-source-false-positive-20260908.md"
+  reason: "Same pattern as eda4bb1934: BL-1491 tip-pure replay, land-approvals record exists with source 40830d747f, is_qa_ancestor.sh fails on source but QA did the land-step"
   waived_at: 2026-09-08
