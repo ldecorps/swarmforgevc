@@ -34,7 +34,7 @@ retires:
 # No required_wiring: no mechanism is built and no call site is needed.
 # The gate that proves this parcel is the feature run itself.
 
-human_approval: pending
+human_approval: approved
 approval_context: >
   A landed contract row is RETIRED here (BL-418 scenario 01, example row
   "operator | 🏛"), which is a change to a feature file and so needs a
