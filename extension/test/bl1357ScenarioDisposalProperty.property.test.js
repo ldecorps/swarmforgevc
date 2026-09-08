@@ -11,8 +11,8 @@
 // synthetic registries and scenarios, verifying the invariants hold across
 // generated exit paths.
 
-const { test, expect } = require('vitest');
-const { runScenario } = require('./runtime.js');
+import { test, expect } from 'vitest';
+import { runScenario } from '../specs/pipeline/runtime.js';
 
 // ── Property test 1: exactly-once disposal on every exit path ────────────────
 test('property: disposal happens exactly once per scenario on every exit path', async () => {
@@ -136,9 +136,9 @@ test('property: disposal failure never replaces the original failure', async () 
   }
 
   expect(caughtError).not.toBeNull();
-  // The original failure must be in the error message, not the disposal failure
+  // The original failure must be in the error message, with the disposal failure alongside
   expect(caughtError.message).toMatch(/original step failure/);
-  expect(caughtError.message).not.toMatch(/disposal itself failed/);
+  expect(caughtError.message).toMatch(/disposal itself failed/);
   // Disposal must still have been attempted
   expect(disposalCount.count).toBe(1);
 });
