@@ -72,8 +72,8 @@ test('BL-1091 non-vacuity: in-place approval still commits exactly one path', as
   git(root, 'add', '-A', 'backlog');
   git(root, '-c', 'user.email=t@t', '-c', 'user.name=t', 'commit', '-q', '-m', `seed ${id}`);
   fs.writeFileSync(active, `id: ${id}\ntitle: t\nhuman_approval: rejected\n`);
-  const ok = await commitApprovalWrites(root, id, `Reject ${id}: record human_approval\n\nBy coder.`);
-  assert.equal(ok, true);
+  const result = await commitApprovalWrites(root, id, `Reject ${id}: record human_approval\n\nBy coder.`);
+  assert.equal(result.success, true);
   const names = git(root, 'show', '--name-status', '--format=', 'HEAD')
     .trim()
     .split('\n')

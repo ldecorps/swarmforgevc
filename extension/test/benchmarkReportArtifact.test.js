@@ -59,13 +59,18 @@ test('the report can be read back from repository state alone (round-trips)', ()
   assert.deepEqual(readBack, REPORT);
 });
 
+// BL-1475: commitScopedFile now verifies against HEAD before reporting a
+// failure - a "nothing to commit" attempt (identical content already
+// committed) is durable, not a failure, so this is true rather than the
+// previously ambiguous false. The behaviour under test here - no
+// DUPLICATE commit - is unchanged; only the return value's meaning is.
 test('re-writing an unchanged report makes no duplicate commit', () => {
   const root = initRepo();
   const filePath = writeBenchmarkReport(root, REPORT, '2026-07-13');
   commitBenchmarkReport(root, filePath, REPORT.taskIds, '2026-07-13');
   writeBenchmarkReport(root, REPORT, '2026-07-13');
   const committedAgain = commitBenchmarkReport(root, filePath, REPORT.taskIds, '2026-07-13');
-  assert.equal(committedAgain, false);
+  assert.equal(committedAgain, true, 'already durable - no new commit needed, not a failure');
   const log = git(root, ['log', '--oneline', '--', filePath]);
-  assert.equal(log.trim().split('\n').filter(Boolean).length, 1);
+  assert.equal(log.trim().split('\n').filter(Boolean).length, 1, 'still no DUPLICATE commit');
 });

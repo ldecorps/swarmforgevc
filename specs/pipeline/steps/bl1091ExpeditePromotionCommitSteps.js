@@ -152,8 +152,10 @@ function registerSteps(registry) {
     ctx.verb = verb;
     approveOnDisk(ctx.ticketFile);
     const message = `${verb} ${TICKET}: record human_approval\n\nBy coder.`;
-    const ok = await commitApprovalWrites(ctx.root, TICKET, message);
-    assert.equal(ok, true);
+    // BL-1475: commitApprovalWrites now returns the richer
+    // CommitIntegrityResult (never a bare boolean).
+    const result = await commitApprovalWrites(ctx.root, TICKET, message);
+    assert.equal(result.success, true);
     ctx.headName = git(ctx.root, 'show', '--name-status', '--format=', 'HEAD');
     ctx.headMessage = git(ctx.root, 'log', '-1', '--format=%B');
     assert.ok(ctx.headMessage.startsWith(`${verb} ${TICKET}:`), 'commit subject must carry the exact verb');
