@@ -34,6 +34,13 @@ export function turnProfileSummaryStorePath(telemetryDir: string): string {
   return path.join(telemetryDir, TURN_PROFILE_SUMMARY_STORE_FILE);
 }
 
+// The `'utf8'` encoding argument here and in writeTranscriptSummaryStore
+// below is an equivalent mutant target (Stryker StringLiteral -> ''):
+// empirically verified (including multi-byte content) that Node's fs
+// module treats a falsy/empty encoding the same as 'utf8' for both
+// readFileSync and writeFileSync, and JSON.parse coerces the resulting
+// Buffer via its own ToString - no test could ever observe a difference
+// through this round trip (BL-1081 !x/typeof-guard equivalence class).
 export function readTranscriptSummaryStore(telemetryDir: string): TranscriptSummaryStore {
   try {
     const parsed = JSON.parse(fs.readFileSync(turnProfileSummaryStorePath(telemetryDir), 'utf8'));

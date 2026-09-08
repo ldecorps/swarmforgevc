@@ -17,7 +17,7 @@ import {
   summaryIsCurrent,
   writeTranscriptSummaryStore,
 } from './transcriptSummaryStore';
-import type { TranscriptSummaryStore } from './transcriptSummaryStore';
+import type { TranscriptSummary, TranscriptSummaryStore } from './transcriptSummaryStore';
 
 // Re-exported for callers that historically imported the summary-store
 // shape from this module (BL-1476 landed it here first; split out in the
@@ -301,65 +301,117 @@ interface TickOutcome {
  * about bytes read, not about the walk's own file-listing cost) - see
  * invariant 3 and BL-1454's own tick-deadline precedent.
  */
-function runTick(
-  groups: TranscriptGroup[],
-  priorStore: TranscriptSummaryStore,
-  opts: { readFn: (path: string) => string; nowFn: () => number; deadlineAtMs?: number }
-): TickOutcome {
+function flattenGroupEntries(groups: TranscriptGroup[]): Array<{ stage: string; path: string }> {
   const flat: Array<{ stage: string; path: string }> = [];
   for (const group of groups) {
     for (const filePath of group.transcriptPaths) {
       flat.push({ stage: group.stage, path: filePath });
     }
   }
-  const listedPaths = new Set(flat.map((entry) => entry.path));
+  return flat;
+}
+
+function pruneStoreToListed(priorStore: TranscriptSummaryStore, listedPaths: Set<string>): TranscriptSummaryStore {
   const store: TranscriptSummaryStore = {};
   for (const [filePath, summary] of Object.entries(priorStore)) {
     if (listedPaths.has(filePath)) {
       store[filePath] = summary;
     }
   }
+  return store;
+}
 
-  let read = 0;
-  const unreadable: string[] = [];
-  const truncatedTail: string[] = [];
-  const perFile: Array<{ stage: string; intervals: ClassifiedInterval[] }> = [];
+type TickEntryOutcome =
+  | { kind: 'deadline' }
+  | { kind: 'gone' }
+  | { kind: 'summary'; summary: TranscriptSummary; freshlyRead: boolean };
 
-  for (const entry of flat) {
-    const stat = statOrNull(entry.path);
-    if (!stat) {
-      // Listed at readdir time, gone by the time this tick reached it - the
-      // exact same "cannot read at all" shape assessTranscriptReadability
-      // has always failed closed on.
-      unreadable.push(entry.path);
-      continue;
-    }
-    if (!summaryIsCurrent(store[entry.path], stat)) {
-      if (opts.deadlineAtMs !== undefined && opts.nowFn() >= opts.deadlineAtMs) {
-        return { record: null, read, listed: flat.length, partial: true, store };
-      }
-      store[entry.path] = computeTranscriptSummary(entry.path, stat, opts.readFn);
-      read += 1;
-    }
-    const summary = store[entry.path];
-    if (summary.unreadable) {
-      unreadable.push(entry.path);
-      continue;
-    }
-    if (summary.truncatedTail) {
-      truncatedTail.push(entry.path);
-    }
-    perFile.push({ stage: entry.stage, intervals: summary.intervals });
+/**
+ * One entry's slice of runTick's own loop, split out so runTick's CRAP stays
+ * low (BL-485/BL-1476 hardening) - the deadline check stays exactly where
+ * the doc comment on runTick promises: only before a read that is actually
+ * needed, never for an already-current summary.
+ */
+function resolveEntrySummary(
+  filePath: string,
+  store: TranscriptSummaryStore,
+  opts: { readFn: (path: string) => string; nowFn: () => number; deadlineAtMs?: number }
+): TickEntryOutcome {
+  const stat = statOrNull(filePath);
+  if (!stat) {
+    // Listed at readdir time, gone by the time this tick reached it - the
+    // exact same "cannot read at all" shape assessTranscriptReadability has
+    // always failed closed on.
+    return { kind: 'gone' };
   }
+  if (summaryIsCurrent(store[filePath], stat)) {
+    return { kind: 'summary', summary: store[filePath], freshlyRead: false };
+  }
+  if (opts.deadlineAtMs !== undefined && opts.nowFn() >= opts.deadlineAtMs) {
+    return { kind: 'deadline' };
+  }
+  return { kind: 'summary', summary: computeTranscriptSummary(filePath, stat, opts.readFn), freshlyRead: true };
+}
 
+function flattenPerFileIntervals(
+  perFile: Array<{ stage: string; intervals: ClassifiedInterval[] }>
+): ClassifiedInterval[] {
   const intervals: ClassifiedInterval[] = [];
   for (const { stage, intervals: fileIntervals } of perFile) {
     for (const row of fileIntervals) {
       intervals.push({ ...row, stage });
     }
   }
+  return intervals;
+}
+
+interface TickAccumulator {
+  unreadable: string[];
+  truncatedTail: string[];
+  perFile: Array<{ stage: string; intervals: ClassifiedInterval[] }>;
+}
+
+/** The bookkeeping half of one entry's outcome, split out of runTick's own loop for CRAP. */
+function accumulateEntrySummary(entry: { stage: string; path: string }, summary: TranscriptSummary, acc: TickAccumulator): void {
+  if (summary.unreadable) {
+    acc.unreadable.push(entry.path);
+    return;
+  }
+  if (summary.truncatedTail) {
+    acc.truncatedTail.push(entry.path);
+  }
+  acc.perFile.push({ stage: entry.stage, intervals: summary.intervals });
+}
+
+function runTick(
+  groups: TranscriptGroup[],
+  priorStore: TranscriptSummaryStore,
+  opts: { readFn: (path: string) => string; nowFn: () => number; deadlineAtMs?: number }
+): TickOutcome {
+  const flat = flattenGroupEntries(groups);
+  const store = pruneStoreToListed(priorStore, new Set(flat.map((entry) => entry.path)));
+
+  let read = 0;
+  const acc: TickAccumulator = { unreadable: [], truncatedTail: [], perFile: [] };
+
+  for (const entry of flat) {
+    const outcome = resolveEntrySummary(entry.path, store, opts);
+    if (outcome.kind === 'deadline') {
+      return { record: null, read, listed: flat.length, partial: true, store };
+    }
+    if (outcome.kind === 'gone') {
+      acc.unreadable.push(entry.path);
+      continue;
+    }
+    store[entry.path] = outcome.summary;
+    if (outcome.freshlyRead) {
+      read += 1;
+    }
+    accumulateEntrySummary(entry, outcome.summary, acc);
+  }
+
   return {
-    record: assembleWindowRecord(intervals, unreadable, truncatedTail),
+    record: assembleWindowRecord(flattenPerFileIntervals(acc.perFile), acc.unreadable, acc.truncatedTail),
     read,
     listed: flat.length,
     partial: false,
@@ -392,6 +444,33 @@ export interface TurnProfileProducerResult {
  * omitted deadline is a choice a caller makes deliberately, not a silent
  * default of "no bound").
  */
+function resolveProducerTickOptions(params: {
+  readFn?: (path: string) => string;
+  nowFn?: () => number;
+  deadlineMs?: number;
+}): { nowFn: () => number; readFn: (path: string) => string; deadlineAtMs?: number } {
+  const nowFn = params.nowFn ?? Date.now;
+  const readFn = params.readFn ?? ((filePath: string) => fs.readFileSync(filePath, 'utf8'));
+  const deadlineAtMs = params.deadlineMs !== undefined ? nowFn() + params.deadlineMs : undefined;
+  return { nowFn, readFn, deadlineAtMs };
+}
+
+function partialProducerResult(outcome: TickOutcome): TurnProfileProducerResult {
+  return { recorded: 0, updated: 0, stages: [], complete: false, read: outcome.read, listed: outcome.listed, partial: true };
+}
+
+function completedProducerResult(record: TurnProfileWindowRecord, outcome: TickOutcome, isNew: boolean): TurnProfileProducerResult {
+  return {
+    recorded: isNew ? 1 : 0,
+    updated: isNew ? 0 : 1,
+    stages: record.stages.map((entry) => entry.stage),
+    complete: record.complete,
+    read: outcome.read,
+    listed: outcome.listed,
+    partial: false,
+  };
+}
+
 export function runTurnProfileProducer(params: {
   repoRoot: string;
   roleWorktrees: RoleWorktree[];
@@ -403,9 +482,7 @@ export function runTurnProfileProducer(params: {
 }): TurnProfileProducerResult {
   const telemetryDir = path.join(params.repoRoot, '.swarmforge', 'telemetry');
   const existing = readPersistedTurnProfileWindows(telemetryDir);
-  const nowFn = params.nowFn ?? Date.now;
-  const readFn = params.readFn ?? ((filePath: string) => fs.readFileSync(filePath, 'utf8'));
-  const deadlineAtMs = params.deadlineMs !== undefined ? nowFn() + params.deadlineMs : undefined;
+  const { nowFn, readFn, deadlineAtMs } = resolveProducerTickOptions(params);
 
   const groups: TranscriptGroup[] = groupRolesByWorktreePath(params.roleWorktrees).map((group) => ({
     stage: group[0].role,
@@ -417,23 +494,14 @@ export function runTurnProfileProducer(params: {
   writeTranscriptSummaryStore(telemetryDir, outcome.store);
 
   if (outcome.partial || !outcome.record) {
-    return { recorded: 0, updated: 0, stages: [], complete: false, read: outcome.read, listed: outcome.listed, partial: true };
+    return partialProducerResult(outcome);
   }
 
-  const derived = outcome.record;
-  const isNew = filterNewTurnProfileWindows(existing, [derived]).length === 1;
+  const isNew = filterNewTurnProfileWindows(existing, [outcome.record]).length === 1;
   const writeFn = params.writeFn ?? ((record) => upsertWindowRecord(telemetryDir, record));
-  writeFn(derived);
+  writeFn(outcome.record);
 
-  return {
-    recorded: isNew ? 1 : 0,
-    updated: isNew ? 0 : 1,
-    stages: derived.stages.map((entry) => entry.stage),
-    complete: derived.complete,
-    read: outcome.read,
-    listed: outcome.listed,
-    partial: false,
-  };
+  return completedProducerResult(outcome.record, outcome, isNew);
 }
 
 /** Exposed so a consumer can enumerate categories without restating them. */
