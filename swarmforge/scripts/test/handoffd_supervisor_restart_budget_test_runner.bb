@@ -8,6 +8,11 @@
 
 (def script-dir (str (fs/parent (fs/canonicalize *file*))))
 (def fixture-root (str (fs/create-temp-dir {:prefix "supervisor-restart-budget-"})))
+;; BL-459 temp-dir trap: reclaim the root on every exit path (an exception
+;; during load-file must not leak it - the explicit delete-tree two lines
+;; below only fires on the happy path).
+(-> (Runtime/getRuntime)
+    (.addShutdownHook (Thread. #(when (fs/exists? fixture-root) (fs/delete-tree fixture-root)))))
 ;; A pre-existing stop file makes the supervisor's own -main return at once
 ;; when the script is load-file'd (same trick startup-grace's runner relies on).
 (fs/create-dirs (fs/path fixture-root ".swarmforge" "daemon"))
