@@ -1,5 +1,6 @@
 id: BL-1265
 title: "The operator_runtime.bb fixture dependency list has drifted a seventh time: four real transitive load-file dependencies are undeclared, and the guard BL-944 built to catch it has been red ever since"
+milestone: M8
 type: defect
 severity: medium
 # medium: the guard is working exactly as designed and is reporting real
@@ -8,7 +9,8 @@ severity: medium
 # the state BL-944 was built to end - and while it is red it cannot report
 # the eighth drift, because a test that is already failing cannot fail
 # louder. No live operator behaviour is broken.
-status: todo
+status: superseded
+closed_as: superseded-by-BL-1439
 epic: code-quality-gates
 human_approval: approved
 priority: 35
@@ -116,6 +118,22 @@ qa_e2e_procedure: >
      this parcel.
 
 notes: >
+  RETIRED 2026-09-06 by the specifier, superseded by BL-1439 (landed
+  ed6fb8892b, 2026-09-06). On the coder's note "BL-1265 moot: guard
+  already green (BL-1439 landed the 4 deps); retire?" the premise was
+  re-verified on main: extension/test/operatorRuntimeBbFixtureClosure.test.js
+  passes 6/6; all four names (context_telemetry_store.bb,
+  role_ask_escalation_lib.bb, rotation_telemetry_lib.bb,
+  self_heal_telemetry_lib.bb) are in OPERATOR_RUNTIME_BB_FILES, added by
+  BL-1439's parcel as a collateral fix (its coder evidence names it,
+  cleaner and architect verified). Nothing remains to build; the ticket's
+  invariant holds on main. Its feature file (three scenarios, never given
+  a handler) is retired and registered in the retirement registry. The
+  eighth drift in a row is the pattern BL-1449 addresses (the list is
+  derived at load, never typed), minted the same pass. Evidence:
+  backlog/evidence/BL-1265-retired-superseded-by-BL-1439-20260906.md.
+  Milestone M8 added for close_ticket.sh's done directory (it had none).
+
   Source: QA note handoff
   00_20260829T024547Z_001889_from_QA_to_specifier_coordinator, verbatim:
   "Untracked defects (7): see BL-1244-qa-pass-unrelated-reds-20260829.md".
