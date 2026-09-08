@@ -131,3 +131,6 @@ source: |
   Architect note 2026-09-03 (priority 00), evidence
   `backlog/evidence/BL-1359-architect-pass-20260903.md`, finding 2 of 2.
   Sibling of BL-1372 (finding 1).
+bounce_count: 1
+bounce_history:
+  - { at: 2026-09-08, by: architect, blamed: coder, class: invariant-unencoded, commit: 5e0aa58184, evidence: backlog/evidence/BL-1373-architect-bounce-20260908.md }
