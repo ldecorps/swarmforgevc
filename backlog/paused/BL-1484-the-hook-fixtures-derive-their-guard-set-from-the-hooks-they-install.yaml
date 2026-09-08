@@ -1,0 +1,306 @@
+id: BL-1484
+title: "Two hook-installing shell fixtures have been red on main since 2026-08-30 with no owner: test_ticket_deletion_guard.sh case 08 and test_commit_size_guard.sh case 04 copy the real pre-commit hook beside a hand-typed guard list that never gained run_commit_guards.sh when BL-1252 made the hook exec it, so every real commit in the fixture dies 'No such file or directory' before any guard speaks; test_merge_deletion_guard.sh and test_retirement_readdition_guard.sh copy commit-msg's list the same way and are green only by hand (BL-1471 is hand-adding a fourth cp line to all three commit-msg copies today) - all four fixtures derive their copy set through BL-1398's helper, extended to read commit-msg's direct-call shape"
+milestone: M8
+type: defect
+severity: high
+# high (standing-red rule 2026-09-05): two `standing` manifest rows red on
+# main for nine days, deterministic, unowned until this mint. Both guards
+# they exercise are intact in production; the broken thing is the safety
+# signal, which is exactly what the rule refuses to call medium. The two
+# in-sync copies are the same defect one guard-addition away - BL-1471 is
+# making that addition as this is written.
+status: todo
+epic: swarm-reliability
+priority: 12
+direction: swarm-reported
+depends_on: [BL-1471]
+# BL-1471 (active, at coder) adds check_bounce_revert_scope.sh to the runner
+# AND to commit-msg, and its parcel hand-adds a `cp` line for it to the three
+# commit-msg fixtures so its own suite stays green - the eighth hand edit of
+# a chain list since 2026-09-04. This ticket removes every such line, so it
+# lands AFTER BL-1471 or the two parcels conflict on the same four files
+# (the same ordering BL-1471 itself declared on BL-1408). Not a functional
+# dependency: derivation copies whatever the hooks name at run time.
+mutation_cost: low
+# low: four shell fixtures switch to a derived copy loop, one bounded
+# extension to a test helper under extension/test/helpers (not extension/src),
+# one step-handler file. No production code; shell has no mutation wired.
+slice_size_envelope: low
+required_stages: [coder, cleaner, architect, hardender, documenter, qa]
+
+acceptance: specs/features/BL-1484-the-hook-fixtures-derive-their-guard-set.feature
+
+# Consumer anchors: each fixture must READ the helper for its copy set - the
+# literal is the helper's file name, absent from every one of the four today
+# (grep returns 0) and present only if the test calls it (BL-1398/BL-1408's
+# anchor shape). The helper anchor is the commit-msg hook path: the helper
+# names pre-commit and pre-merge-commit today and never commit-msg, so the
+# literal can appear only when commit-msg becomes a chain source it reads.
+required_wiring:
+  - 'swarmforge/scripts/test/test_ticket_deletion_guard.sh::commitGuardFixtureSet.js::the fixture reads its copy set through the BL-1398 helper; absent today (grep returns 0)'
+  - 'swarmforge/scripts/test/test_commit_size_guard.sh::commitGuardFixtureSet.js::same fixture shape, same red; absent today (grep returns 0)'
+  - 'swarmforge/scripts/test/test_merge_deletion_guard.sh::commitGuardFixtureSet.js::the commit-msg copy derives too; absent today (grep returns 0)'
+  - 'swarmforge/scripts/test/test_retirement_readdition_guard.sh::commitGuardFixtureSet.js::the commit-msg copy derives too; absent today (grep returns 0)'
+  - 'extension/test/helpers/commitGuardFixtureSet.js::swarmforge/git-hooks/commit-msg::the helper reads the commit-msg hook so its direct-call guard list is derived; absent today (grep returns 0)'
+  - 'specs/pipeline/steps/bl1484HookFixturesDeriveTheirSetSteps.js::registerSteps::the handler lands in the same parcel as the feature (BL-233, BL-1371)'
+
+human_approval: pending
+approval_context: >
+  A new feature file is authored here, so it needs a tap. No choice is
+  posed and there are no ruling_options. FIRM: the fix is in the four test
+  fixtures, the BL-1398 helper and one step handler only - no guard, no
+  hook and no runner is changed. FIRM: the two green commit-msg copies are
+  in scope with the two red ones (the BL-1408 sweep shape: one helper, one
+  fix, no ninth hand edit), not deferred until they go red. Worth knowing:
+  this is the class BL-1408's sweep declared complete on 2026-09-06; its
+  enumeration grepped for a guard these four fixtures predate, so they
+  were invisible to it. Minted by the specifier on the coder's unowned-red
+  note of 2026-09-08 02:30Z; both reds reproduced on main 1a235d3237.
+
+invariants:
+  - "Every hook-installing fixture's copy set is a function of the hooks it installs and the runner they exec, read at run time through BL-1398's helper - never a list in the test: a guard added to the pre-commit chain or to commit-msg is copied and run without editing any test."
+  - "Exactly one reader of each hook line shape exists in the repo (BL-1408 invariant 2 carried forward): the four fixtures consume BL-1398's helper and none carries a parse of its own."
+  - "A guard a hook or the runner names but the tree lacks fails the fixture loud, naming the guard - never silently skipped: no fixture runs a chain narrower than production's."
+
+description: |
+  ## What is wrong
+
+  Four shell tests install the REAL git hooks into a disposable repository
+  (`core.hooksPath swarmforge/git-hooks`) and drive a real `git commit`
+  through them, so the fixture must hold every script the hooks reach.
+  Each builds that set from a hand-typed list of `cp` lines:
+
+  - `swarmforge/scripts/test/test_ticket_deletion_guard.sh` lines 105-117
+    (case 08): pre-commit AND commit-msg, eleven `cp` lines.
+  - `swarmforge/scripts/test/test_commit_size_guard.sh` lines 62-70
+    (case 04): pre-commit, seven `cp` lines.
+  - `swarmforge/scripts/test/test_merge_deletion_guard.sh` lines 163-170:
+    commit-msg only.
+  - `swarmforge/scripts/test/test_retirement_readdition_guard.sh` lines
+    157-164: commit-msg only.
+
+  BL-1252 (`76dd67b692`, 2026-08-30) made `swarmforge/git-hooks/pre-commit`
+  a thin wrapper that `exec`s `swarmforge/scripts/run_commit_guards.sh`.
+  Neither pre-commit fixture copies the runner or its
+  `commit_guard_chain_lib.sh`, so the installed hook dies before any guard
+  runs. Reproduced by the specifier 2026-09-08 on main `1a235d3237` from
+  the master checkout, `PACK_STAFFING_SKIP_GATE` unset:
+
+      FAIL: 08: hook output must name the offending ticket id, got:
+        swarmforge/git-hooks/pre-commit: line 31:
+        /tmp/tmp.XXXX/swarmforge/scripts/run_commit_guards.sh: No such file or directory
+      FAIL: 04: hook output must name the offending file, got:
+        swarmforge/git-hooks/pre-commit: line 31:
+        /tmp/tmp.XXXX/swarmforge/scripts/run_commit_guards.sh: No such file or directory
+
+  Both cases pass their first assertion by coincidence (a dead hook is a
+  non-zero exit, and "refused" is what they expect) and fail the second,
+  which asks the guard to NAME what it refused. Each test's `fail` exits
+  under `set -e`, so the cases after (09-12; 05) never run. Both are
+  `standing` rows in `suite-manifest.tsv` (lines 481, 255): they run, the
+  red was visible, nobody owned it - red since 2026-08-30.
+
+  The two commit-msg fixtures pass today because commit-msg still calls
+  its guards directly, and each time a guard joined that hook someone
+  edited the lists by hand (BL-1242, BL-1258). BL-1471's uncommitted
+  parcel adds `check_bounce_revert_scope.sh` to commit-msg and hand-adds
+  one `cp` line to all three commit-msg copies - the copy of the list is
+  the defect, whether it is red this week or next.
+
+  This is the fifth ticket for one list. BL-1398 fixed the BL-632 property
+  fixture, BL-1401 the BL-632 acceptance handler, BL-1408 swept "every
+  remaining copy" (the runner test, the pre-merge test, the BL-1252
+  property fixture, `test_pipeline_code_on_main_guard.sh`) and shipped the
+  worked shell example. BL-1408 enumerated copies by grepping every file
+  naming `check_feature_handler_registration.sh` (BL-1303); these four
+  fixtures predate that guard and never named it, so the sweep could not
+  see them. The complete enumeration of this class is every test that
+  copies a file under `swarmforge/git-hooks/` into a fixture: ten files on
+  main today, six already derive, these four do not
+  (`test_bl1444_art_director_tip_guard.sh` only greps the hook and is not
+  a member).
+
+  `extension/test/helpers/commitGuardFixtureSet.js` reads the runner and
+  the `run_guard` lines of pre-commit and pre-merge-commit. commit-msg is
+  not one of its sources and does not use `run_guard`: it calls
+  `"$REPO_ROOT/swarmforge/scripts/check_<x>.sh" "$1"` directly, one line
+  per guard. Deriving the commit-msg copies means the helper learns that
+  shape - not that a test grows a parser of its own.
+
+  ## What is wanted
+
+  - All four fixtures build their copy set at run time from BL-1398's
+    helper: the runner, the chain lib, every guard pre-commit's chain and
+    commit-msg name, the libs those source, and the hooks themselves -
+    copied in a loop, no guard or lib named by hand (scenario 01; invariant
+    1). Each fixture prints the set it derived on one line so the handler
+    and a reader can see what the run actually installed.
+  - The helper reads `swarmforge/git-hooks/commit-msg` as a chain source
+    and recognises its direct-call line shape; a guard commit-msg names
+    that the tree lacks throws naming it, exactly as a `run_guard` guard
+    does today (scenarios 03, 04; invariants 2, 3).
+  - A guard added to the runner, or to commit-msg, is copied and run by the
+    fixture with no edit to the test (scenarios 02, 03).
+  - All four standing tests exit zero on main after the parcel, from the
+    master checkout and from a linked worktree (scenario 01).
+  - Register: this ticket's two rows in `backlog/standing-reds.tsv`
+    (added at mint, first_seen 2026-09-08) are removed in the land that
+    turns the tests green - QA's land, or the coordinator's close if the
+    land is hand-built.
+  - Documenter: the BL-973 how-to's `commitGuardFixtureSet` section names
+    the four fixtures and commit-msg as a third chain source; the BL-1252
+    how-to's "run these tests" list gains the two pre-commit fixtures. No
+    registered diagram depicts this.
+
+  ## How (direction, not mandate)
+
+  - Read `test_pipeline_code_on_main_guard.sh` lines 14-62 first: it is
+    the worked example of exactly this change for a shell fixture that
+    installs real hooks (the `node -e` derive, the `while read` copy loop,
+    the empty `specs/pipeline/steps/index.js` and `extension/out` symlink
+    that let BL-1303's and BL-1385's guards ask their real question on a
+    bare fixture instead of refusing every commit). The derived chain now
+    includes guards that read a step registry, load bb scripts, read the
+    register and the manifest: verify each SKIPS on the bare fixture so the
+    only refusal in case 08 / case 04 is the guard under test's own.
+  - Helper extension: add commit-msg to the sources and a second line
+    shape (`"$REPO_ROOT/swarmforge/scripts/<check_x.sh>" "$1"`) beside
+    `RUN_GUARD_LINE`; the guard-absent throw and the sourced-lib walk are
+    already there and apply unchanged. Keep the hooks explicit in `files`
+    as today ("they are what git runs"). Callers that pass their own
+    `hookRels` are unaffected.
+  - `retirement_registry_cli.bb` / `retirement_registry_lib.bb`
+    (check_retirement_readdition.sh shells to the CLI, which load-files the
+    lib): a bb subprocess dependency outside the `.sh` source walk, the
+    `is_qa_ancestor.sh` shape in BL-1408's example. Either keep it as one
+    named subprocess dependency with a comment saying so, or ride
+    `copy_bb_closure` (BL-973, `swarmforge/scripts/test/lib/bb_closure_copy.sh`)
+    on the CLI entry point; do not grow a second hand list of bb files.
+  - Seam for scenarios 02-04: an optional first argument naming a scratch
+    repo root to derive from (the `$1` runner-path seam
+    `test_run_commit_guards.sh` uses); default is the live repo, which is
+    never written. The handler builds the seam under mkdtemp as a copy of
+    `swarmforge/scripts/` and `swarmforge/git-hooks/` plus the planted
+    guard (BL-1398's `make_seam`/`plant_guard`), with its own `git init`
+    (BL-1390).
+  - Remove BL-1471's hand-added `cp check_bounce_revert_scope.sh` lines as
+    part of the swap: derivation copies that guard because commit-msg and
+    the runner name it.
+  - Do NOT fix this by adding `cp run_commit_guards.sh` and
+    `cp commit_guard_chain_lib.sh` to the two red lists: that is the shape
+    that rotted, and the two green copies would still be one guard away.
+
+  ## Explicitly NOT in scope
+
+  - The behaviour of any guard, hook or the runner; `check_bounce_revert_scope.sh`
+    (BL-1471) and its revert-path residual noted in commit-msg's header.
+  - The fixtures' own first-failure-stop shape (`fail` exits under `set -e`,
+    which hid cases 09-12 and 05). Noted, as BL-1408 noted it for the runner
+    test; not fixed here.
+  - Deriving the ENUMERATION of fixtures that must derive (a guard that
+    fails when a test copies a hook without calling the helper) - the
+    BL-1279/BL-1480 follow-up, fourth occurrence now; recorded in the
+    adjudication evidence for the code-quality-gates epic, not this slice.
+
+constraints: >
+  Shell and JavaScript test infrastructure only: the four fixtures, the
+  BL-1398 helper, one step handler, the how-to pages. No guard, hook or
+  runner is edited. Exactly one parser per hook line shape, in the helper
+  (invariant 2). Fixture and seam roots under mkdtemp with their own git
+  init, proven by rev-parse --git-common-dir before any mutating git
+  command; the live repository is never written (BL-1390). Roots removed on
+  the EXIT trap; nothing sweeps by prefix (BL-1385). suite-manifest.tsv rows
+  stay `standing`. The step handler lands with the feature (BL-233).
+
+out_of_scope: |
+  - A guard that refuses a test copying a hook into a fixture without
+    reading the helper (the enumeration itself is still by hand: BL-1408
+    missed these four by grepping for a guard they predate). Lean-pass /
+    epic candidate, recorded in the adjudication evidence.
+  - Running every standing shell row on a cadence so a red surfaces the
+    day it appears rather than nine days later when a coder trips over it:
+    already recorded as a process candidate on BL-1462's adjudication.
+  - Making git's clean `revert -m 1` reach commit-msg at all (BL-1471's
+    residual, flagged by the coder in that parcel): a spec-gap for BL-1471's
+    own follow-up, not a fixture matter.
+
+qa_e2e_procedure: |
+  1. From the master checkout AND from `.worktrees/QA`, with
+     `PACK_STAFFING_SKIP_GATE` both set and unset:
+     `bash swarmforge/scripts/test/test_ticket_deletion_guard.sh`,
+     `bash swarmforge/scripts/test/test_commit_size_guard.sh`,
+     `bash swarmforge/scripts/test/test_merge_deletion_guard.sh`,
+     `bash swarmforge/scripts/test/test_retirement_readdition_guard.sh`
+     all print ALL PASS and exit 0 (were FAIL 08 and FAIL 04, "No such
+     file or directory", on main 2026-09-08); each prints one line naming
+     the copy set it derived, and that set names run_commit_guards.sh,
+     commit_guard_chain_lib.sh and every guard the runner and commit-msg
+     name on that tree (compare with `grep -E '^\s*run_guard' swarmforge/scripts/run_commit_guards.sh`
+     and `grep -E 'check_[a-z_]+\.sh' swarmforge/git-hooks/commit-msg`).
+  2. Seam: copy `swarmforge/scripts/` and `swarmforge/git-hooks/` under
+     mkdtemp, append `run_guard check_bl1484_probe.sh` to the seam's
+     runner with a passing probe script beside it, run the ticket-deletion
+     fixture against the seam: ALL PASS and the derived-set line names the
+     probe. Repeat with a direct call added to the seam's commit-msg.
+     Delete the probe script and run again: the fixture fails naming
+     `check_bl1484_probe.sh` and reports no PASS after the failure. The
+     live repository is never edited.
+  3. Acceptance: all BL-1484 scenarios resolve; BL-1398, BL-1401 and
+     BL-1408's features still resolve (one feature per run_acceptance.sh
+     call); the BL-632 and BL-1252 property files pass under the
+     property-suite command (the helper changed under them).
+  4. `grep -c commitGuardFixtureSet` on each of the four fixtures is at
+     least 1; `grep -cE 'cp .*check_[a-z_]+\.sh'` on each is 0;
+     `grep -c 'swarmforge/git-hooks/commit-msg' extension/test/helpers/commitGuardFixtureSet.js`
+     is at least 1; `grep -rn 'check_[a-z_]+\.sh" "\$1"' extension/test specs/pipeline/steps swarmforge/scripts/test`
+     finds the line shape parsed in the helper only (invariant 2).
+  5. Register: after QA lands, `backlog/standing-reds.tsv` carries no row
+     for either test and `bb swarmforge/scripts/standing_red_register_cli.bb .`
+     reports `unowned: []` with the count down by two.
+
+source: |
+  Coder note to the specifier and coordinator, priority 00,
+  2026-09-08T02:30Z: "unowned-red: test_ticket_deletion_guard.sh case08
+  lacks run_commit_guards.sh cp", raised while the coder worked BL-1471
+  (whose parcel touches the same fixture). Reproduced by the specifier on
+  main 1a235d3237 the same pass; the commit-size fixture's identical red
+  and the two in-sync commit-msg copies found by enumerating every test
+  that copies a file under swarmforge/git-hooks/. Adjudication:
+  `backlog/evidence/hook-fixtures-unowned-reds-adjudication-specifier-20260908.md`.
+  Related: BL-1252 (the hook became a wrapper, 2026-08-30), BL-1398 /
+  BL-1401 / BL-1408 (the helper and the three earlier sweeps of this list),
+  BL-973 / BL-1279 / BL-1480 (the bb-closure form of the same rot).
+
+notes: |
+  Minted 2026-09-08 by the specifier on the coder's unowned-red note, the
+  same pass (standing-red rule: type defect, severity high at first
+  sighting). Two register rows, lane `shell`, first_seen 2026-09-08 (first
+  recorded; red since 2026-08-30, BL-1252's land), both naming this
+  ticket, added in the mint commit so the register never reads them
+  unowned.
+
+  Grepped first: no open ticket names any of the four fixtures; BL-1408 is
+  closed (landed bca4418b9a, 2026-09-08) and its description excludes
+  nothing it did not know of; BL-1471 (active) never names the fixtures -
+  the coder's `cp` lines there are the parcel keeping its own suite green,
+  not spec. Not BL-1471's defect: both reds predate it by nine days and
+  reproduce on main without it.
+
+  On the coder's parcel: keep BL-1471's hand-added `cp` lines - that
+  parcel must stay green through its own stages, and this ticket removes
+  them when it lands after (depends_on). A note to the coder says so.
+
+  IR-DRY (specifier, mint pass): 2 medium possible-synonym findings, all
+  among the three seam Given steps of 02/03/04 - three different seam
+  contents on one tree shape, kept. Scenarios 02, 03 and 04 share their When
+  step by design (one fixture, one seam argument, three seam contents) and
+  02/03 share their Then steps (the follows-the-chain property, proved once
+  per chain source, as BL-1408's 02/03 did). Scenario 01 is an Outline over
+  the four fixtures: one handler, four files.
+
+  Mint-time INVEST: one observable outcome (no hook-installing fixture
+  names a guard by hand, and the two red standing tests are green against
+  today's hooks); one sitting - four mechanical swaps onto an existing
+  helper following a landed worked example, one bounded helper extension,
+  one seam; the only unbuilt dependency is a merge-ordering constraint,
+  not a functional one.
