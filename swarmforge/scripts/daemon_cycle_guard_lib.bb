@@ -90,6 +90,25 @@
   []
   ((deref sweep-marker!) {:sweep "idle"}))
 
+(defn run-tick-phase!
+  "BL-1490: the mark-tick-phase!/per-item/mark-tick-idle! bracket shared by
+   handoffd.bb's three per-tick phases (startup-notify-pending!, poll-once!,
+   canary-sweep!) - stamps phase-name once before the batch (only when items
+   is non-empty, so an empty tick never touches the marker), calls
+   item-fn! once per item in items and re-stamps phase-name right after
+   each call (the marker's age is then the time since the LAST completed
+   unit, never the batch's total duration), then stamps idle once the
+   batch ends. Single place this bracket is written, so the three call
+   sites can never drift on stamp order."
+  [phase-name items item-fn!]
+  (when (seq items)
+    (mark-tick-phase! phase-name))
+  (doseq [item items]
+    (item-fn! item)
+    (mark-tick-phase! phase-name))
+  (when (seq items)
+    (mark-tick-idle!)))
+
 (defn install-sweep-marker-writer!
   "Wires sweep-marker! to publish marker-path as one small JSON object:
    {\"sweep\": <name>, \"started_at_ms\": <wall-clock ms>} while a sweep is
