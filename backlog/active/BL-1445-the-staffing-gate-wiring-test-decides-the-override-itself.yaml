@@ -159,3 +159,5 @@ source: |
   function swarmforge/scripts/swarmforge.sh 554-608; .swarmforge/swarm.env
   line 46 (gitignored launch env); suite-manifest.tsv row 387; test
   history e5ab1c4465, 9905d38501 (BL-1318, 2026-09-01).
+
+assigned_to: coder
