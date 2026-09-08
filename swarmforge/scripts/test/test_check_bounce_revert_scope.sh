@@ -29,6 +29,18 @@ record_bounce() {
     "$1" "$2" "$3" "$4" >> "$dir/2026-09.jsonl"
 }
 
+record_correction() {
+  # record_correction <ticket> <commit> <at> - a BL-990 correction record:
+  # same shape as a bounce record but with NO failureClass field at all
+  # (extension/src/tools/record-bounce-correction.ts's BounceCorrection).
+  # Every reader here must skip it via its "kind":"bounce-correction" tag,
+  # never read its absent failureClass as an empty/non-omission class.
+  local dir="$ROOT/.swarmforge/bounces"
+  mkdir -p "$dir"
+  printf '{"kind":"bounce-correction","ticket":"%s","commit":"%s","by":"QA","at":"%s","reason":"misattributed"}\n' \
+    "$1" "$2" "$3" >> "$dir/2026-09.jsonl"
+}
+
 revert_message() {
   # revert_message <original-subject> <reverted-full-sha>
   printf 'Revert "%s"\n\nThis reverts commit %s.\n' "$1" "$2"
@@ -165,5 +177,101 @@ run_guard "$MSG" || fail "06: fallback ticket identification (untagged merge his
 pass "06: an untagged second-parent history falls back to the bounce store's own latest ticket"
 git -C "$ROOT" checkout -q main
 git -C "$ROOT" reset -q --hard "$MERGEF_TIP"
+
+# ── 7: the bounce record's own `commit` field is STALE - not an ancestor
+#      of the merge's second parent at all (a rebase/amend after the bounce
+#      was recorded, or a store entry naming an unrelated commit) - the
+#      guard must fall back to a TAGGED subject in the second-parent
+#      history rather than misattributing or refusing outright. Unlike
+#      scenario 06 (whose bounce-record commit IS an ancestor, so it never
+#      leaves the primary ancestor-match path), this is the first test to
+#      actually reach the second identification path.
+#
+#      The store also carries a LATER bounce record for an unrelated
+#      ticket (BL-9999) - deliberately, so this scenario discriminates the
+#      tagged-subject fallback (path 2, correctly resolves BL-0001) from
+#      the store-wide latest-by-`at` fallback (path 3, would resolve
+#      BL-9999 instead): with only one ticket in the store, path 3 would
+#      coincidentally agree with path 2 and hand-mutating path 2 to a
+#      no-op would survive undetected. With BL-9999 present, that mutant
+#      makes the guard misidentify the ticket as BL-9999 and wrongly
+#      refuse a genuinely scoped BL-0001 revert. ──────────────────────────
+build_merge "g" "one"
+STALE_COMMIT="$(git -C "$ROOT" commit-tree -m "unrelated" "$(git -C "$ROOT" rev-parse "$BASE_TIP^{tree}")")"
+record_bounce "BL-0001" "behavior" "$STALE_COMMIT" "2026-09-07T15:00:00.000Z"
+record_bounce "BL-9999" "behavior" "$STALE_COMMIT" "2026-09-07T15:30:00.000Z"
+stage_revert
+run_guard "$MSG" || fail "07: a scoped revert must still pass when the bounce record's commit is stale, via the tagged-subject fallback (not the store-wide latest-record fallback, which would misidentify BL-9999)"
+pass "07: a stale bounce-record commit falls back to a tagged subject in the second-parent history, not to an unrelated later store record, still passing a scoped revert"
+reset_after_revert
+
+# ── 8: the bounce record's `commit` is ALSO stale AND the second-parent
+#      history carries no ticket-shaped subject at all - the guard's last
+#      resort, the bounce store's own single latest-by-`at` record across
+#      the WHOLE store, regardless of which ticket it names or whether it
+#      has anything to do with this merge. Documented in the guard's own
+#      comment as deliberately blunt, last-resort behaviour - this test
+#      pins its real, documented consequence: an unrelated ticket's LATER
+#      bounce record can hijack identification entirely, including its
+#      failureClass, and turn a genuinely due, non-omission revert into a
+#      wrongly-refused "nothing to revert". A revert this scoped, with a
+#      TICKET this misidentified, is a case the guard's own gates cannot
+#      tell apart from a real omission - not a bug this ticket's scope
+#      extends to fixing (the fallback exists only when nothing else
+#      identifies a ticket at all), but a real behaviour this suite must
+#      not leave unpinned: disabling the fallback entirely would instead
+#      leave TICKET empty and exit 0 (silently pass), the opposite
+#      failure mode, and only a scenario shaped like this one tells them
+#      apart. ───────────────────────────────────────────────────────────
+git -C "$ROOT" checkout -q -b doch "$BASE_TIP"
+mkdir -p "$ROOT/specs/pipeline/steps"
+echo "step handler" > "$ROOT/specs/pipeline/steps/bl0001ExamplehSteps.js"
+git -C "$ROOT" add specs/pipeline/steps/bl0001ExamplehSteps.js
+git -C "$ROOT" commit -q -m "chore: untagged commit, no ticket id"
+DOCH_TIP="$(git -C "$ROOT" rev-parse HEAD)"
+git -C "$ROOT" checkout -q main
+git -C "$ROOT" reset -q --hard "$BASE_TIP"
+git -C "$ROOT" merge -q --no-ff -m "Merge documenter $DOCH_TIP into QA." doch
+MERGEH_TIP="$(git -C "$ROOT" rev-parse HEAD)"
+STALE_COMMIT_H="$(git -C "$ROOT" commit-tree -m "unrelated" "$(git -C "$ROOT" rev-parse "$BASE_TIP^{tree}")")"
+# BL-0001's own bounce is a genuine, non-omission ("behavior") record -
+# nothing about THIS revert should be refused. BL-9998 is a wholly
+# unrelated ticket (no commit anywhere in this merge) whose bounce is
+# recorded LATER and is itself an omission class - the fallback's own
+# unconditional latest-by-`at` selection picks it over BL-0001 anyway.
+record_bounce "BL-0001" "behavior" "$STALE_COMMIT_H" "2026-09-07T16:00:00.000Z"
+record_bounce "BL-9998" "spec-gap" "$STALE_COMMIT_H" "2026-09-07T16:30:00.000Z"
+git -C "$ROOT" revert -n -m 1 "$MERGEH_TIP"
+revert_message "Merge documenter $DOCH_TIP into QA." "$MERGEH_TIP" > "$MSG"
+set +e
+OUT8="$(run_guard "$MSG" 2>&1)"
+STATUS8=$?
+set -e
+[[ "$STATUS8" -ne 0 ]] || fail "08: expected the store-wide fallback to misidentify BL-9998 (later 'at') and refuse via its omission class"
+echo "$OUT8" | grep -qi "nothing to revert" || fail "08: expected an omission-class refusal from the misidentified ticket, got: $OUT8"
+pass "08: with no ancestor match and no tagged subject, the guard falls back to the bounce store's single latest-by-at record, even an unrelated ticket's, and judges by ITS class"
+git -C "$ROOT" checkout -q main
+git -C "$ROOT" reset -q --hard "$MERGEH_TIP"
+
+# ── 9: a BL-990 correction record (no failureClass at all) arrives LATER
+#      than the genuine spec-gap bounce it corrects (a role/attribution
+#      fix, not a class change) - the omission-class gate must still read
+#      the genuine bounce record's class, never treat the correction's
+#      absent failureClass as some other (non-omission) class. A revert
+#      for a ticket whose latest GENUINE bounce is spec-gap must still be
+#      refused as having nothing to revert, even with a newer correction
+#      record on file. ──────────────────────────────────────────────────
+build_merge "i" "one"
+record_bounce "BL-0001" "spec-gap" "$BL0001_COMMIT" "2026-09-07T17:00:00.000Z"
+record_correction "BL-0001" "$BL0001_COMMIT" "2026-09-07T17:30:00.000Z"
+stage_revert
+set +e
+OUT9="$(run_guard "$MSG" 2>&1)"
+STATUS9=$?
+set -e
+[[ "$STATUS9" -ne 0 ]] || fail "09: expected the omission-class gate to still refuse despite a later correction record"
+echo "$OUT9" | grep -qi "nothing to revert" || fail "09: refusal must still say an omission bounce reverts nothing, got: $OUT9"
+pass "09: a later BL-990 correction record (no failureClass) does not mask the genuine bounce's omission class"
+reset_after_revert
 
 echo "ALL PASS"
