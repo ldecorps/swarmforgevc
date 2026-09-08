@@ -29,11 +29,24 @@ const {
 } = require('../../specs/pipeline/steps/lib/babysitterSweepFixtureHelpers');
 
 const REPO_ROOT = path.join(__dirname, '..', '..');
+const CACHE_FILE = path.join(REPO_ROOT, '.swarmforge', 'state', 'babysitter', 'pipeline-code-on-main-cache.json');
 
 // Clean up fixtures after each test
 afterEach(() => {
   reapAndRemove();
 });
+
+// Clear the pipeline-code-on-main cache, tolerating fd pressure (BL-fd-pressure).
+// Returns true if a cache file was removed, false if none existed or removal failed.
+function clearPipelineCache() {
+  try {
+    fs.unlinkSync(CACHE_FILE);
+    return true;
+  } catch (err) {
+    if (err.code !== 'ENOENT') throw err;
+    return false;
+  }
+}
 
 // ── invariant 1: the classified path set follows the single source at runtime ─
 // For all path sets P1, P2 where P1 ≠ P2, if a commit touches a path in P1 but not P2,
@@ -63,11 +76,7 @@ test('property (invariant 1): the classified path set follows the single source 
       const stub2 = createStubScript(paths2, 'sfvc-bl1373-stub2-');
 
       // Clear any existing cache
-      const cacheDir = path.join(REPO_ROOT, '.swarmforge', 'state', 'babysitter');
-      const cacheFile = path.join(cacheDir, 'pipeline-code-on-main-cache.json');
-      if (fs.existsSync(cacheFile)) {
-        fs.unlinkSync(cacheFile);
-      }
+      clearPipelineCache();
 
       // Create a commit touching a path that is in paths1 but not paths2
       const testFile = pathOnlyIn1.replace(/\/$/, '') + '/test-file.txt';
@@ -108,12 +117,20 @@ test('property (invariant 1): the classified path set follows the single source 
 // For all path sets P, for all paths X where X ∉ P, a commit touching only X
 // produces no finding.
 
+// Paths outside the pathSetArb's prefixes, used to generate unreported paths.
+// Must be kept disjoint from pathSetArb's constantFrom list.
+const OUTSIDE_PATHS = [
+  'README.md',
+  'package.json',
+  'extension/src-outside/file.ts',
+  'other-dir/file.js',
+];
+
 test('property (invariant 2): a path not in the reported set produces no finding', () => {
   fc.assert(
     fc.property(pathSetArb, (reportedPaths) => {
       // Generate a path that is NOT in the reported set
-      const allPossiblePaths = ['extension/src/foo.ts', 'extension/test/bar.test.ts', 'specs/pipeline/steps/baz.js', 'docs/secret.md', 'swarmforge/scripts/internal.sh', 'README.md', 'package.json'];
-      const unreportedPaths = allPossiblePaths.filter(p => !reportedPaths.some(rp => p.startsWith(rp)));
+      const unreportedPaths = OUTSIDE_PATHS.filter(p => !reportedPaths.some(rp => p.startsWith(rp)));
 
       // Skip if we can't generate an unreported path
       if (unreportedPaths.length === 0) return;
@@ -127,11 +144,7 @@ test('property (invariant 2): a path not in the reported set produces no finding
       const stub = createStubScript(reportedPaths, 'sfvc-bl1373-stub-');
 
       // Clear cache
-      const cacheDir = path.join(REPO_ROOT, '.swarmforge', 'state', 'babysitter');
-      const cacheFile = path.join(cacheDir, 'pipeline-code-on-main-cache.json');
-      if (fs.existsSync(cacheFile)) {
-        fs.unlinkSync(cacheFile);
-      }
+      clearPipelineCache();
 
       // Create a commit touching only the unreported path
       const sha = commitFile(root, unreportedPath, 'content\n', 'test: touches unreported path');
