@@ -179,3 +179,5 @@ notes: |
     QA runs the content diff by hand before escalating a bounced-sibling
     shared path; all-lander lines = hand-build and land per BL-1241, append
     the instance to the adjudication evidence, no note.
+
+assigned_to: coder
