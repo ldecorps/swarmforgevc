@@ -1,0 +1,144 @@
+id: BL-1491
+title: "A supervisor alarm-and-halt kills all nine role sessions and the tmux server but writes no kill-all-audit row and no availability stop record: the audit log last saw a stop at 2026-09-07T06:12Z and the availability ledger holds two rows for 2026-09-08 while the swarm died four times that morning, so every death-detector the operator has reads a clean swarm; every halt records itself on both ledgers, write-ahead, through the same records kill_pipeline_swarm.sh leaves"
+milestone: M8
+type: defect
+severity: high
+# high: a broken safety/health signal. The operator's four-signal death test
+# reads kill-all-audit.log and the availability ledger; a halt writes neither,
+# so 150 total deaths since 2026-07-15 are visible only by grepping the
+# supervisor log, and the availability fold (BL-823) under-reports every one.
+status: todo
+epic: swarm-reliability
+priority: 2
+direction: swarm-reported
+depends_on: []
+mutation_cost: low
+# low: two adapters in handoffd_supervisor.bb, one call in daemon_alarm_lib.bb
+# (Babashka: no mutation/CRAP/DRY wired, BL-472; hardener records the fallback).
+slice_size_envelope: low
+required_stages: [coder, cleaner, architect, hardender, documenter, qa]
+
+acceptance: specs/features/BL-1491-a-supervisor-halt-records-itself-on-the-ledgers-a-stop-already-uses.feature
+
+# Consumer anchors (BL-1235): neither literal exists in the supervisor today
+# (grep -c = 0 for both on 2026-09-08). BL-144's design injects every side
+# effect from handoffd_supervisor.bb into daemon_alarm_lib.bb's orchestrator
+# (write-failure-log-file!, send-configured-alarm-email!, halt-swarm!), so the
+# two record writers live there too and name the files they write.
+required_wiring:
+  - 'swarmforge/scripts/handoffd_supervisor.bb::kill-all-audit::the halt appends its row to the audit log kill_pipeline_swarm.sh writes'
+  - 'swarmforge/scripts/handoffd_supervisor.bb::availability::the halt appends a stop record the BL-823 ledger reader folds'
+  - 'specs/pipeline/steps/bl1491HaltRecordsItselfSteps.js::registerSteps::the handler lands in the same parcel as the feature (BL-233)'
+
+human_approval: pending
+approval_context: >
+  A new feature file is authored here, so it needs a tap. No choice is posed
+  and there are no ruling_options. FIRM: this ticket changes nothing about
+  WHEN the supervisor halts (BL-1490) or WHAT the halt kills (BL-1492, yours
+  to decide); it only makes the halt leave the two records a deliberate stop
+  already leaves, written before the first session dies. It stands whichever
+  way you rule BL-1492: after a restart budget is exhausted the full halt
+  still runs, and it must still be visible.
+
+invariants:
+  - "Every alarm-and-halt leaves exactly one kill-all-audit row naming the supervisor and its verdict and exactly one availability stop record of class swarm-stop whose source names the supervisor, both written BEFORE the first role session is killed, so a halt interrupted mid-way still leaves its trace."
+  - "A record that cannot be written never prevents the halt: the rows are best-effort (BL-823 invariant 1), the failure log, the alarm and the halt are not."
+
+description: |
+  ## What is wrong
+
+  `halt-swarm!` (`handoffd_supervisor.bb:539-556`) touches the stop file,
+  TERMs the daemon and runs `swarm-cleanup.sh`, which kill-sessions every
+  role and closes the terminal windows. `alarm-and-halt!`
+  (`daemon_alarm_lib.bb:324-362`) writes the failure log, emails, halts and
+  writes `state: halted` to the status file. Nothing on that path writes:
+
+  - `.swarmforge/daemon/kill-all-audit.log` - written only by
+    `kill_pipeline_swarm.sh:83` (`<iso> <text>` rows); its last row is
+    `2026-09-07T06:12:37Z kill_all_swarm SUCCESS - clean slate`.
+  - the availability ledger `.swarmforge/telemetry/availability-YYYY-MM.jsonl`
+    (BL-823) - the `stop` writer is `availability_ledger_lib.sh/availability_record`,
+    called only from `kill_pipeline_swarm.sh:161`; the 2026-09-08 file holds a
+    `heartbeat-inferred` stop at 00:00:00Z and a `start-swarm.sh` start at
+    00:00:02Z, nothing for the deaths at 01:47, 02:30, 03:21 and 03:44Z.
+
+  So the operator's four-signal test (tmux server, audit row, control-pause,
+  supervisor log) reads a real death as clean on two of four signals, the
+  BL-823 fold under-counts every halt, and the only proof is a grep of
+  `handoffd-supervisor.log`, which has a NUL-corruption history. babysitterd
+  then rebuilds the swarm via `./swarm ensure` (`babysitterd.log` 03:47:33Z ->
+  03:52:38Z), which leaves a `daemon-start-audit.log` row but no stop to pair
+  it with.
+
+  ## What is wanted
+
+  - One kill-all-audit row per halt, same `<iso> <text>` shape as the existing
+    rows, naming `handoffd_supervisor` and the verdict (scenario 01).
+  - One availability `stop` record per halt, class `swarm-stop`, source
+    naming the supervisor, so the reader pairs it with the next `start` into
+    a `proven` interval instead of nothing (scenario 02).
+  - Both written before `halt-swarm!` runs - write-ahead (scenario 03).
+  - A write failure never blocks the halt (scenario 04; invariant 2).
+  - Documenter: `docs/how-to/BL-144-daemon-death-alarm.md` "What Happened"
+    gains the two records and where to read them; if the operator prompt's
+    death test lists its signals, add these two.
+
+  ## How (direction, not mandate)
+
+  - Add one adapter (`:record-halt!` shape) to `alarm-and-halt!`'s injected
+    map, called before `halt-swarm!`, wrapped in try/catch like
+    `build-failure-attachment`; the supervisor supplies the implementation.
+  - Reuse the existing writers rather than a third format: shell to the sh
+    lib (`sh -c '. availability_ledger_lib.sh; availability_record ...'`
+    through `daemon-cycle-guard-lib/sh!`) or add a bb twin - if a twin, a
+    test must assert the record literal agrees with the sh writer's (BL-897:
+    a constant mirrored across a language boundary needs a test asserting
+    both literals agree). Do NOT call `kill_pipeline_swarm.sh` itself: it
+    sweeps every inbox and resets worktrees (lines 307-311), which would
+    destroy the queued work BL-144 promises to preserve.
+
+constraints: >
+  Babashka + POSIX sh only. handoffd_supervisor.bb and daemon_alarm_lib.bb are
+  shared with BL-1492 - the coordinator serialises the two, this one first.
+  The failure log, the alarm email and the halt's kill behaviour are not
+  changed. Never run the real halt against the live swarm to test this.
+
+out_of_scope: |
+  - Whether the halt should kill role sessions at all (BL-1492).
+  - The false verdicts that cause most halts (BL-1490).
+  - Writing control-pause.json on a halt: a halt is not a pause and the
+    intake's mention of it is descriptive, not a request.
+  - Pairing babysitterd's ensure with a start record: start-swarm.sh already
+    writes one when it runs; whether ensure should is its own question.
+
+qa_e2e_procedure: |
+  1. Acceptance resolving all four scenarios; the parcel's bb runner green;
+     `test_availability_ledger_lib.sh` and `test_daemon_alarm_lib.sh` still
+     green.
+  2. Fixture-only live check (never the real swarm): run
+     `handoffd_supervisor.bb <fixture-root> --check-once` against a fixture
+     root whose daemon pid file names a dead pid and whose tmux socket file
+     is absent; then `tail -1 <fixture>/.swarmforge/daemon/kill-all-audit.log`
+     names the supervisor and `dead`, and the fixture's
+     `availability-<month>.jsonl` last row is `"event":"stop"` with the
+     supervisor as source.
+  3. `bb -e` the ledger reader's `fold` over that fixture after appending a
+     start row: one interval, class swarm-stop, provenance proven.
+
+source: |
+  Operator intake backlog/INTAKE-operator-question-1788834810204.md ("(2)
+  ... if it does it MUST write a kill-all-audit row and an availability stop
+  row so the death is visible rather than inferred from a log grep"), archived
+  in this pass. Measurements:
+  backlog/evidence/BL-1490-BL-1494-specifier-mint-measurements-20260908.md.
+
+notes: |
+  - Minted 2026-09-08 by the specifier from the same intake as BL-1490 and
+    BL-1492. Grepped first: BL-823 (done) built the ledger and its two
+    writers; BL-144 (done) built the halt; no ticket joins them.
+  - Article 3.2.4: type defect, severity high - expedited ordering.
+  - The intake reads "a supervisor halt should never take the tmux server
+    and 9 agents with it" - that half is BL-1492 and reverses a human
+    directive, so it is minted separately with human_approval as the decision.
+  - IR-DRY (2026-09-08): the "dead"/"stalled" verdict steps are one step
+    with a quoted parameter - kept as written.

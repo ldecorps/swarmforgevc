@@ -1,0 +1,165 @@
+id: BL-1490
+title: "handoffd supervisor kills a PROGRESSING daemon again: the per-tick phases BL-977 never covered - outbox delivery (poll-once!) and startup-notify - publish no progress, so a burst of four or five coordinator notes delivered at ~9 s each outruns the 30 s stall window with the sweep marker reading idle and alarm-and-halt kills every role session; 7 full-swarm kills in ten hours on 2026-09-07/08 and 65 of the 150 halts on record; every poll-cycle phase publishes its progress and :stalled requires true silence across the WHOLE cycle"
+milestone: M8
+type: defect
+severity: critical
+# critical: recurring swarm-down. Every alarm-and-halt kills all nine role
+# sessions and the tmux server; this shape fired four times in eight hours on
+# 2026-09-08 (one of them killed the specifier mid-mint at 03:21:16Z) and
+# babysitterd needs ~8 min to rebuild the swarm each time. BL-977 was high as
+# a one-off false positive; this is the loop it left open.
+status: todo
+epic: swarm-reliability
+priority: 1
+direction: swarm-reported
+depends_on: []
+mutation_cost: low
+# low: Babashka only (no mutation/CRAP/DRY wired, BL-472); the hardener gates
+# on the bb runners (bl977_supervisor_progress_property_runner.bb and this
+# ticket's own) and records the fallback.
+slice_size_envelope: low
+required_stages: [coder, cleaner, architect, hardender, documenter, qa]
+
+acceptance: specs/features/BL-1490-a-poll-cycle-phase-is-never-invisible-to-the-supervisor.feature
+
+# No consumer anchor can be named honestly (BL-1235): the mechanism is the
+# implementer's (marker or heartbeat, see How), and both literals already
+# exist in handoffd.bb, so a pattern on either would pass before the fix. The
+# scenarios drive the real daemon cycle against the real supervisor check, so
+# a mechanism that never reaches the poll-once!/startup-notify phases fails
+# them. The handler entry is the BL-233 in-parcel pin.
+required_wiring:
+  - 'specs/pipeline/steps/bl1490PollPhaseNeverInvisibleSteps.js::registerSteps::the handler lands in the same parcel as the feature (BL-233)'
+
+human_approval: pending
+approval_context: >
+  A new feature file is authored here, so it needs a tap. No choice is posed
+  and there are no ruling_options. FIRM, restating your BL-967/BL-789/BL-977
+  directive: SUPERVISOR_STALL_MS stays at 30 s and a silent daemon with
+  nothing in flight still halts in 30 s (scenario 03 pins it); no
+  free-running pulser; alarm-and-halt!'s behaviour on a REAL stall is not
+  touched here (that is BL-1492's question, yours to decide separately).
+  This ticket only closes the gap BL-977 left: the phases of a poll cycle
+  that run outside run-sweep! now publish their progress too.
+
+invariants:
+  - "At every instant the daemon is executing a poll-cycle phase - startup-notify, outbox delivery, the canary sweep, or a named sweep - the supervisor's observations carry evidence of that phase's progress newer than its last completed unit of work; the cycle-start heartbeat alone is never the only evidence for a phase in flight."
+  - "Liveness evidence advances only on real poll-loop progress (a completed delivery, a completed notify, a sweep transition) - never on a timer or on mere process survival - so a phase that stops making progress is judged stalled within a bounded budget and halt-swarm! is invoked exactly once."
+
+description: |
+  ## What is wrong
+
+  BL-977 made `:stalled` require true silence by having `run-sweep!`
+  (`daemon_cycle_guard_lib.bb`) publish `.swarmforge/daemon/handoffd.sweep-marker`
+  and `evaluate-health` (`handoffd_supervisor.bb:155-198`) read it. The poll
+  cycle has phases that never go through `run-sweep!`: `startup-notify-pending!`
+  (`handoffd.bb:641`, before the loop), `poll-once!` (outbox delivery) and
+  `canary-sweep!` on every tick (`handoffd.bb:4958-4966` sets only the
+  in-memory `current-context`). During them the marker reads whatever the last
+  sweep left - `idle` - and the heartbeat file is the cycle-start write (BL-789).
+
+  Measured 2026-09-08T03:44:28Z (`handoffd-failure-20260908T034428Z.log`):
+  heartbeat `cycle=1-start` at 03:43:54.686Z, then four `delivered` lines at
+  03:44:00, :10, :19, :25 (coordinator notes to cleaner, architect, hardender,
+  documenter), a fifth still in the outbox. Heartbeat age 33.9 s, oldest
+  pending outbox 36 s, marker idle -> `:stalled` -> `alarm-and-halt` -> every
+  role session killed. 01:47:12Z, 02:30:29Z and 03:21:16Z are the same shape;
+  so are 41 `startup-notify`-ending and 15 `ambulance-inactive`-ending halts
+  on record (65 of 150; full table in the evidence file). Each delivery costs
+  ~9 s today (BL-1493) and the post-QA sweep sends four or five per landed
+  commit (BL-1494); this ticket makes the verdict correct whatever they cost.
+
+  ## What is wanted
+
+  - While a per-tick phase is in flight and making progress, the supervisor's
+    verdict is `:healthy` however old the cycle-start heartbeat is (scenario
+    01, the measured shape at a scaled clock; invariant 1).
+  - A phase that stops making progress is still caught within a bounded
+    budget and halted once (scenario 02; invariant 2).
+  - A silent daemon with nothing in flight still reads `:stalled` after one
+    stall window - the fix never loosens the detector (scenario 03).
+  - The failure report of a halt during a per-tick phase should name that
+    phase (today it ends in bare `delivered` lines); a should, not a scenario.
+
+  ## How (direction, not mandate)
+
+  - Preferred: the per-tick phases publish through the marker hook the daemon
+    already installs (`daemon-cycle-guard-lib/sweep-marker!`,
+    `install-sweep-marker-writer!`): `{"sweep":"delivery","started_at_ms":...}`
+    at phase start, re-stamped after EACH completed delivery (that is real
+    progress, not a timer), `idle` when the phase ends; same for
+    `startup-notify` per notified role and `canary-sweep`. The supervisor
+    already reads any marker name, so `evaluate-health` may not need to
+    change - but a per-tick phase deserves its own budget: derive it from
+    the measured worst legitimate unit (today ~11 s per delivery, floor = the
+    60 s BL-967 subprocess bound one wedged tmux call can cost) and RECORD the
+    measurement in the parcel, never a round number. Do not add a boundary
+    log line per tick (BL-967 invariant 2: boundaries are heavy-cycle only).
+  - Acceptable alternative: touch the BL-789 heartbeat file after each
+    completed unit of per-tick work. Satisfies both invariants; loses the
+    phase name in the report and caps a legitimate unit at 30 s.
+  - Test with `bl977_supervisor_progress_property_runner.bb`'s fixture shape
+    (a fixture daemon cycle, a delivery seam that sleeps, the real `check!`
+    with `halt-swarm!` stubbed); the acceptance handler drives it through a
+    bb CLI under `specs/pipeline/steps/lib/` like BL-1454's, never
+    load-file'ing handoffd.bb into the runner (it starts the daemon).
+
+constraints: >
+  Firm: no raise of SUPERVISOR_STALL_MS, the BL-675 300 s threshold, or any
+  existing timeout (human directive, BL-967/BL-789/BL-977). No free-running
+  pulser thread. alarm-and-halt!'s behaviour on a real stall is unchanged
+  (BL-1492 owns that question). evaluate-health stays a pure function over
+  observations. The :dead path is untouched. handoffd.bb is shared with
+  BL-1494 (maybe-notify!, post-qa tell) - the coordinator serialises the two;
+  handoffd_supervisor.bb is shared with BL-1491/BL-1492 only if the
+  supervisor side changes at all.
+
+out_of_scope: |
+  - The ~9 s cost of one delivery (BL-1493) and the four-to-five-note burst
+    per landed commit (BL-1494).
+  - The halt's blast radius (BL-1492) and its missing audit rows (BL-1491).
+  - The 35 halts of 2026-09-06/07 whose last line is
+    `sweep-boundary sweep=post-qa-branch-sweep` at a 225-234 s gap: those are
+    the in-sweep budget ruling an over-budget main-sync-deadlock-sweep stalled
+    (BL-977 invariant 2 as designed) during the deadlock the 06:12Z hand-clear
+    ended; if that sweep can legitimately exceed 225 s it is that sweep's
+    ticket, not this one.
+
+qa_e2e_procedure: |
+  1. `bb swarmforge/scripts/test/bl977_supervisor_progress_property_runner.bb`
+     still green; the parcel's own runner green; acceptance resolving all
+     three scenarios.
+  2. Live, the natural fixture is today's standing state: four role branches
+     divergent, so every landed commit makes the next daemon cycle deliver
+     four or five coordinator notes. With the fix running, land (or wait
+     for) one commit on origin/main and watch one delivery burst in
+     `.swarmforge/daemon/handoffd.log`; `handoffd-supervisor.log` records no
+     `alarm-and-halt` during it and `ls .swarmforge/daemon/handoffd-failure-*.log | wc -l`
+     does not grow.
+  3. Restart the daemon with pending inbox mail in five role mailboxes
+     (`start_handoff_daemon.sh`); the `startup-notify` phase completes with no
+     halt.
+  4. Wedge check without touching the live swarm: the runner's frozen-seam
+     case (scenario 02) is the evidence; do not freeze the live daemon.
+  5. Record the per-phase budget chosen and the log lines it was derived from.
+
+source: |
+  Operator intake backlog/INTAKE-operator-question-1788834810204.md (filed
+  2026-09-08T02:33Z, "(1) the false stall verdict itself (a progressing
+  daemon judged stalled)"), archived to backlog/archive/ in this pass.
+  Measurements: backlog/evidence/BL-1490-BL-1494-specifier-mint-measurements-20260908.md.
+
+notes: |
+  - Minted 2026-09-08 by the specifier, splitting the intake 1:N
+    (Consolidation Authority): BL-1490 the verdict, BL-1491 the silence,
+    BL-1492 the blast radius; BL-1493/BL-1494 found underneath. Grepped
+    first: BL-977 (done) covers run-sweep! sweeps only; BL-1342 (done)
+    covers daemon age <= 30 s only; BL-1454 (done) was one over-budget
+    sweep; nothing live names the per-tick phases.
+  - Article 3.2.4: type defect, severity critical - expedited ordering.
+  - Ids BL-1490-1492 were reserved for this intake by the earlier specifier
+    session's evidence (acceptance-lane-sweep-unowned-reds-adjudication-
+    specifier-20260908.md) before the 03:21:16Z halt killed it.
+  - IR-DRY (2026-09-08): "becomes stalled" (eventual, past a budget) and
+    "reads stalled" (one evaluation) are distinct assertions; "invoked once"
+    and "never invoked" are opposites - kept as written, as BL-977 did.
