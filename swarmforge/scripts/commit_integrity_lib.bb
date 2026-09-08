@@ -49,13 +49,47 @@
             [babashka.process :as process]
             [clojure.string :as str]))
 
-(def default-max-retries 3)
-(def default-retry-delay-ms 50)
+;; BL-1475: raised from 3 attempts / a flat 50ms to a budget actually sized
+;; to the guard chain every other commit on the shared checkout runs
+;; (run_commit_guards.sh, up to the full property lane), which can hold
+;; `.git/index.lock` for SECONDS - this budget is now also what an
+;; add/commit step retries against (not only a post-commit verify
+;; mismatch, see commit-with-integrity! below). Capped backoff keeps the
+;; total bound well inside 30s even at max-retries (12 gaps of
+;; min(attempt*250, 5000)ms sums to 19.5s).
+(def default-max-retries 12)
+(def default-base-retry-delay-ms 250)
+(def default-max-retry-delay-ms 5000)
 (def default-lock-max-attempts 100)
 (def default-lock-poll-delay-ms 50)
 
 (defn- run-git [project-root args]
   (process/sh (into ["git" "-C" (str project-root)] args)))
+
+;; BL-1475: the ONE failure worth retrying - every other add/commit error
+;; (a hook rejection, a missing path, "nothing to commit") fails at once.
+(defn lock-refusal? [res]
+  (boolean (and res (:err res) (re-find #"index\.lock" (:err res)))))
+
+;; BL-1475: before reporting add-failed/commit-failed, check whether the
+;; caller's OWN intended content is already on HEAD - not because this call
+;; committed it, but because another writer's commit landed it in the
+;; meantime (the exact 2026-09-07 race: a front-desk commit lost the lock
+;; to the specifier's mint, which carried the same flip). Requires every
+;; expected value to be REAL content (never nil) - a path this caller never
+;; actually wrote content for (e.g. `read-fn` found nothing on disk) must
+;; never be treated as "landed" merely because `show-fn` ALSO returns nil
+;; for a path absent at HEAD (the identical BL-390 nil-vs-nil trap
+;; gitCommitScopedFile.ts's isFileCommitted already guards against on the
+;; TS side of this same ticket).
+(defn- landed-sha-if-matching [project-root expected rev-parse-fn show-fn]
+  (when (every? (fn [[_ content]] (some? content)) expected)
+    (let [sha (rev-parse-fn project-root)]
+      (when (and sha
+                 (every? (fn [[path expected-content]]
+                           (= expected-content (show-fn project-root sha path)))
+                         expected))
+        sha))))
 
 (defn absolute-git-dir
   "The real, per-checkout git directory - `.git` for an ordinary checkout,
@@ -188,8 +222,8 @@
    in, and verified+retried against a dropped/clobbered edit.
 
    Required opts: :project-root, :paths (non-empty seq of repo-relative
-   pathspecs), :message. Optional: :max-retries (default 3 - i.e. up to 4
-   total attempts) and injectable seams (:add-fn!, :commit-fn!,
+   pathspecs), :message. Optional: :max-retries (default 12 - i.e. up to 13
+   total attempts, BL-1475) and injectable seams (:add-fn!, :commit-fn!,
    :rev-parse-fn, :show-fn, :read-fn, :git-dir-fn, :lock-fn!, :unlock-fn!,
    :retry-delay-fn!, :snapshot-index-fn, :restore-index-fn!), each
    defaulting to the real git-backed implementation above.
@@ -201,13 +235,24 @@
    unstaged again. If the restore itself cannot complete, the result carries
    `:index-left-dirty true` rather than silently reporting a clean failure.
 
-   Returns {:success true :sha <str> :attempts n}
-        or {:success false :reason kw :attempts n [:mismatched-paths [...]]
-            [:index-left-dirty true]}
+   BL-1475: an add/commit failure that looks like a transient
+   `.git/index.lock` refusal (lock-refusal?) is retried within max-retries,
+   same as a verify mismatch - every OTHER add/commit failure (a hook
+   rejection, a missing path) fails at once. Before reporting either
+   failure, checks whether the caller's own intended content already
+   matches HEAD (landed-sha-if-matching): true means another writer's
+   commit already landed it, reported as success with :reason
+   :landed-elsewhere and the landing :sha, never as a failure needing
+   manual intervention. A genuine failure's result also carries :stderr
+   (the failing step's own git stderr, never discarded).
+
+   Returns {:success true :sha <str> :attempts n [:reason :landed-elsewhere]}
+        or {:success false :reason kw :attempts n [:stderr <str>]
+            [:mismatched-paths [...]] [:index-left-dirty true]}
    `:reason` is one of :no-git-dir, :lock-timeout, :add-failed,
-   :commit-failed, :verify-mismatch. Never throws for an ordinary git
-   failure - only for a caller-shape error (a missing/blank required
-   option)."
+   :commit-failed, :verify-mismatch (failure), or :landed-elsewhere
+   (success). Never throws for an ordinary git failure - only for a
+   caller-shape error (a missing/blank required option)."
   [{:keys [project-root paths message max-retries
            add-fn! commit-fn! rev-parse-fn show-fn read-fn
            git-dir-fn lock-fn! unlock-fn! retry-delay-fn!
@@ -221,7 +266,7 @@
          git-dir-fn absolute-git-dir
          lock-fn! acquire-lock!
          unlock-fn! release-lock!
-         retry-delay-fn! (fn [attempt] (Thread/sleep (* attempt default-retry-delay-ms)))
+         retry-delay-fn! (fn [attempt] (Thread/sleep (min (* attempt default-base-retry-delay-ms) default-max-retry-delay-ms)))
          snapshot-index-fn default-snapshot-index
          restore-index-fn! default-restore-index!}}]
   (when (or (str/blank? project-root) (empty? paths) (str/blank? message))
@@ -264,10 +309,20 @@
                 (let [pre-add-snapshot (snapshot-index-fn project-root paths)
                       add-res (add-fn! project-root paths)]
                   (if-not (zero? (:exit add-res))
-                    (fail-restoring :add-failed attempt pre-add-snapshot {})
+                    (if (and (lock-refusal? add-res) (< attempt (inc max-retries)))
+                      (do (retry-delay-fn! attempt) (recur (inc attempt)))
+                      (if-let [sha (landed-sha-if-matching project-root expected rev-parse-fn show-fn)]
+                        (do (restore-index-fn! project-root paths pre-add-snapshot)
+                            {:success true :reason :landed-elsewhere :sha sha :attempts attempt})
+                        (fail-restoring :add-failed attempt pre-add-snapshot (when (:err add-res) {:stderr (:err add-res)}))))
                     (let [commit-res (commit-fn! project-root message paths)]
                       (if-not (zero? (:exit commit-res))
-                        (fail-restoring :commit-failed attempt pre-add-snapshot {})
+                        (if (and (lock-refusal? commit-res) (< attempt (inc max-retries)))
+                          (do (retry-delay-fn! attempt) (recur (inc attempt)))
+                          (if-let [sha (landed-sha-if-matching project-root expected rev-parse-fn show-fn)]
+                            (do (restore-index-fn! project-root paths pre-add-snapshot)
+                                {:success true :reason :landed-elsewhere :sha sha :attempts attempt})
+                            (fail-restoring :commit-failed attempt pre-add-snapshot (when (:err commit-res) {:stderr (:err commit-res)}))))
                         (let [post-commit-snapshot (snapshot-index-fn project-root paths)
                               sha (rev-parse-fn project-root)
                               mismatched (vec (keep (fn [[path expected-content]]

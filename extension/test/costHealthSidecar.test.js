@@ -886,7 +886,12 @@ test('commitCostHealthSidecar commits only the sidecar file, scoped, into a real
   assert.match(log, /2026-07-09/);
 });
 
-test('commitCostHealthSidecar returns false (never throws) when there is nothing to commit', () => {
+// BL-1475: commitScopedFile now verifies against HEAD before reporting a
+// failure - a "nothing to commit" attempt (identical content already
+// committed) is durable, not a failure, so this is true rather than the
+// previously ambiguous false (which callers used to have to pre-check
+// with isFileCommitted to disambiguate from a real failure).
+test('commitCostHealthSidecar returns true (already durable, no new commit needed) when there is nothing to commit', () => {
   const target = mkTmp();
   copySeededRepoInto(target);
 
@@ -896,7 +901,7 @@ test('commitCostHealthSidecar returns false (never throws) when there is nothing
   git(target, ['commit', '-q', '-m', 'already committed']);
 
   assert.doesNotThrow(() => commitCostHealthSidecar(target, filePath, '2026-07-09'));
-  assert.equal(commitCostHealthSidecar(target, filePath, '2026-07-09'), false);
+  assert.equal(commitCostHealthSidecar(target, filePath, '2026-07-09'), true);
 });
 
 // ── computeCostHealthSidecar (impure orchestrator, real fs/git) ─────────

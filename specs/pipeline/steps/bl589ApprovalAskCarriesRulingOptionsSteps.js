@@ -189,7 +189,7 @@ function registerSteps(registry) {
       },
       readRecordedApprovalVerdict: async () => ctx.recordedVerdict,
       explainApprovalRecordNoOp: async () => undefined,
-      commitApprovalWrites: async () => true,
+      commitApprovalWrites: async () => ({ success: true }),
     });
   });
 

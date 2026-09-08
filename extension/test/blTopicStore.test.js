@@ -10,6 +10,7 @@ const {
   appendMessage,
   recordPath,
   commitTopicRecord,
+  reportCommitFailureToStderr,
   hasCompletionRecord,
   isRecordCommitted,
   hasUpdateId,
@@ -198,6 +199,54 @@ test('commitTopicRecord returns false (never throws) when the target is not a gi
   const filePath = recordPath(target, 'BL-900');
   assert.doesNotThrow(() => commitTopicRecord(target, filePath, 'BL-900'));
   assert.equal(commitTopicRecord(target, filePath, 'BL-900'), false);
+});
+
+// BL-1475: commitTopicRecord's default recordFn now carries commitScopedFile's
+// captured stderr through to reportCommitFailure's third argument - proven
+// against a REAL index.lock refusal (maxAttempts=1 so this proves only the
+// single attempt's own capture, never depends on the lock being released).
+test('commitTopicRecord surfaces gits real stderr to a custom reportCommitFailure via its detail argument', () => {
+  const target = mkGitRepo();
+  const filePath = recordPath(target, 'BL-900');
+  fs.mkdirSync(path.dirname(filePath), { recursive: true });
+  fs.writeFileSync(filePath, JSON.stringify({ id: 'BL-900', messages: [] }));
+  const lockPath = path.join(target, '.git', 'index.lock');
+  fs.writeFileSync(lockPath, '');
+  const calls = [];
+  const reporter = (ticketId, fp, detail) => calls.push({ ticketId, fp, detail });
+  let committed;
+  try {
+    committed = commitTopicRecord(target, filePath, 'BL-900', reporter, undefined, () => {}, 1);
+  } finally {
+    fs.unlinkSync(lockPath);
+  }
+  assert.equal(committed, false);
+  assert.equal(calls.length, 1);
+  assert.equal(calls[0].ticketId, 'BL-900');
+  assert.equal(calls[0].fp, filePath);
+  assert.match(calls[0].detail, /index\.lock/, `expected gits real stderr naming index.lock, got: ${JSON.stringify(calls[0].detail)}`);
+});
+
+// BL-1475: reportCommitFailureToStderr's own formatting - the parenthetical
+// detail is trimmed and included when present, and entirely absent (never
+// an empty "()") when there is none.
+test('reportCommitFailureToStderr writes the trimmed detail in parentheses when given, and omits the parenthetical entirely when not', () => {
+  const originalWrite = process.stderr.write;
+  const writes = [];
+  process.stderr.write = (chunk) => {
+    writes.push(chunk);
+    return true;
+  };
+  try {
+    reportCommitFailureToStderr('BL-900', '/x/backlog/topics/BL-900.json', '  fatal: index.lock exists  \n');
+    reportCommitFailureToStderr('BL-901', '/x/backlog/topics/BL-901.json', undefined);
+  } finally {
+    process.stderr.write = originalWrite;
+  }
+  assert.equal(writes.length, 2);
+  assert.match(writes[0], /\(git commit failed \(fatal: index\.lock exists\)\)/, `expected the trimmed detail nested in parens, got: ${JSON.stringify(writes[0])}`);
+  assert.match(writes[1], /\(git commit failed\)/, `expected the bare reason with no detail suffix, got: ${JSON.stringify(writes[1])}`);
+  assert.doesNotMatch(writes[1], /index\.lock/, `expected no leaked detail text when none was given, got: ${JSON.stringify(writes[1])}`);
 });
 
 // ── BL-390: a-churn-rewrite-does-not-mint-a-commit ──────────────────────

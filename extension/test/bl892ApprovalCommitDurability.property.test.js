@@ -67,6 +67,9 @@ function runVerdict(root, kind) {
     recordApprovalReply: async (backlogId) => recordApprovalReply(root, backlogId),
     recordRejectionReply: async (backlogId, reason) => recordRejectionReply(root, backlogId, reason),
     recordAmendReply: async (backlogId) => recordAmendReply(root, backlogId),
+    // BL-1475: commitApprovalWrites now returns the richer
+    // CommitIntegrityResult (never a bare boolean) - exactly what
+    // PollAdapters.commitApprovalWrites wants.
     commitApprovalWrites: (backlogId, message) => commitApprovalWrites(root, backlogId, message),
   };
   if (kind === 'approved') {
