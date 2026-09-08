@@ -285,21 +285,24 @@ You are QA.
          another; every one after the first cost a full specifier round trip
          and told it nothing it had not already recorded and answered.
          Adjudication: `backlog/evidence/BL-1296-land-deadlock-shared-registry-20260903.md`.
-      5. **A bounced-sibling shared path is a real block only in CONTENT
-         (specifier adjudication 2026-09-07, interim until BL-1481 lands).**
-         The step decides "shared" by commit attribution; QA's branch carries
-         every parcel, so one bounced sibling that touched
-         `docs/reference/Specification.MD` (every documenter does) refuses
-         every land until it is re-fixed - BL-1470 on 2026-09-07, while every
-         line BL-1348 had added was already on `origin/main`. Before
-         escalating a `bounced`/withheld/awaiting-approval shared path, run
-         `git diff -U0 origin/main..<tip> -- <path>` and blame each changed
-         line (added: at the tip; removed: at `origin/main`). If every line
-         is this ticket's own (its tagged commits, or its own untagged edits),
-         the refusal is attribution-only: hand-build the tip-pure commit per
-         BL-1241 from your own paths, land it, and append the instance to
-         `backlog/evidence/BL-1470-land-escalate-specifier-adjudication-20260907.md`
-         - no note. If ANY changed line is the sibling's, escalate as in 3.
+      5. **A bounced-sibling shared path blocks only in CONTENT (BL-1481,
+         landed 2026-09-08 at ca694b85ad).** The step decides "shared" by
+         commit attribution first; only once a bounced / withheld /
+         awaiting-approval / unreadable co-owner is found does it diff that
+         one path tip-versus-`origin/main` and blame every changed line
+         (added: at the tip; removed: at `origin/main`). A path whose every
+         changed line is this ticket's own rides in the replay as an
+         ordinary own path, and the CLI prints one
+         `CONTENT_CLEAR_SIBLING_PATH <path> <ticket-id>` line per clearance;
+         a path still carrying one of the sibling's lines, or whose blame
+         cannot be read, refuses exactly as before. Do NOT re-run that
+         content diff by hand: a refusal that survives the step is a real
+         content block - escalate as in 3 (append per 4 if the class is
+         already adjudicated). The 2026-09-07 hand check this replaces, and
+         its three instances, are on record in
+         `backlog/evidence/BL-1470-land-escalate-specifier-adjudication-20260907.md`;
+         mechanism: `docs/how-to/BL-1241-entangled-tip-at-the-land-step-has-a-reachable-remedy.md`
+         (BL-1481 section).
       Name every entangled sibling ticket in whatever you send — the CLI's
       `ENTANGLED_SIBLING` lines are that list. A silent rebuild loses the
       signal that the branch was entangled at all, which is the signal the

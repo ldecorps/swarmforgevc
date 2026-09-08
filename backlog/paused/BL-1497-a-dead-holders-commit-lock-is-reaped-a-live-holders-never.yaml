@@ -1,0 +1,183 @@
+id: BL-1497
+title: "commit_integrity_lib's checkout lock outlives a holder that dies mid-commit and no caller ever reaps it: the specifier's commit was in flight at 07:53:29 BST on 2026-09-08 when the swarm respawned, `.git/swarmforge-commit-integrity.lock` stayed behind empty, and every shared-checkout writer failed lock-timeout attempts:0 until it was rmdir'd by hand; acquire-lock! records its owner and reaps a lock whose owner is dead or whose record-less directory is past an age bound, never a live one"
+milestone: M8
+type: defect
+severity: high
+# high: a live fault that degrades every writer on the shared checkout at
+# once - the coordinator's close, the human's Approve/Reject/Amend taps
+# (which then alarm "FAILED TO COMMIT"), operator_file_question.bb,
+# specifier mints - and it stays until someone hand-clears it. Not
+# critical: the swarm stays up, no content is lost (the CLI's
+# landed-elsewhere and index-restore paths still hold), and recovery is one
+# rmdir. The trigger is any kill or respawn inside a commit's seconds-long
+# locked window, and respawns are frequent (7 full-swarm kills in ten hours
+# on 2026-09-07/08, BL-1490).
+status: todo
+epic: swarm-reliability
+priority: 3
+direction: swarm-reported
+depends_on: []
+mutation_cost: low
+# low: Babashka only (no mutation/CRAP/DRY wired, BL-472); the hardener
+# gates on test_commit_integrity_lib.sh / test_commit_integrity_cli.sh and
+# this ticket's own runner, and records the fallback.
+slice_size_envelope: low
+required_stages: [coder, cleaner, architect, hardender, documenter, qa]
+
+acceptance: specs/features/BL-1497-a-dead-holders-commit-lock-is-reaped-a-live-holders-never.feature
+
+# No consumer anchor can be named honestly (BL-1235): the fix lives inside
+# acquire-lock!, the default lock-fn! every existing caller already reaches
+# (commit_integrity_cli.bb -> commit-with-integrity! -> acquire-lock!;
+# operator_file_question.bb the same), so an anchor on any of those
+# literals matches before the fix and gates nothing. Scenarios 01-03 drive
+# the REAL production CLI against a planted lock, which is the wiring
+# proof. The handler entry is the BL-233 in-parcel pin.
+required_wiring:
+  - 'specs/pipeline/steps/bl1497DeadHolderCommitLockReapedSteps.js::registerSteps::the handler lands in the same parcel as the feature (BL-233)'
+
+human_approval: approved
+approval_context: >
+  A new feature file is authored here, so it needs a tap. No choice is posed
+  and there are no ruling_options. FIRM: a lock whose recorded owner is
+  alive is never removed, whatever its age (scenario 02, invariant 1); the
+  age bound for a record-less lock is never below ten times the CLI's own
+  maximum bounded run (about 30 s today, BL-1475), so a pre-fix holder
+  still inside its budget is never reaped; the lock's path and name do not
+  change. The exact bound and the record's format are the implementer's.
+
+invariants:
+  - "A lock directory is removed by a process other than its creator only when its recorded owner is not alive, or when it carries no record and is older than the age bound; a lock whose recorded owner is alive is never removed, whatever its age."
+  - "A reap never admits two writers at once: when two callers judge the same lock stale concurrently, at most one acquires (fs/create-dir decides), and a caller whose re-acquisition loses treats the fresh lock as held and waits or times out."
+
+description: |
+  ## What is wrong
+
+  `acquire-lock!` (`swarmforge/scripts/commit_integrity_lib.bb:200`) is a
+  bounded `fs/create-dir` poll - 100 attempts x 50 ms - on
+  `.git/swarmforge-commit-integrity.lock`, and `release-lock!` is the only
+  thing that ever removes that directory. The lib's own header names the
+  case it left open: "a process that dies mid-lock (kill -9, OOM, host
+  reboot) would have orphaned the lock directory forever" - BL-419's
+  hardener bounded the WAIT so callers fail loud instead of hanging, but
+  no caller and no sweep ever clears the orphan, so every subsequent
+  commit on the checkout fails the same way until a human or agent
+  removes the directory by hand.
+
+  Measured 2026-09-08 (specifier pane, BST): the pre-respawn specifier's
+  `commit_integrity_cli.bb` run had staged `swarmforge/roles/QA.prompt` and
+  two backlog files (its add step) when the swarm respawned; every role's
+  claude process restarted at 07:55:09-07:55:12, the lock directory's
+  mtime read 07:53:29, and it was empty. The next specifier's identical
+  CLI call printed `{"success":false,"reason":"lock-timeout","attempts":0}`
+  twice; `pgrep` found no bb holder; `rmdir` of the directory and a third
+  call landed `4092fd2d88` on attempt 1. Between 07:53 and 07:59 every
+  other writer on the checkout would have failed identically - the
+  coordinator's close (`coordinator.prompt` step 2), a front-desk Approve
+  tap (BL-1475's `commitIntegrityRunner`), `operator_file_question.bb`.
+
+  ## What is wanted
+
+  - A caller that finds the lock held learns who holds it, and a lock whose
+    recorded owner is dead is reaped and re-acquired in the same call, with
+    the reap visible in the CLI's JSON line (scenario 01; invariant 1).
+  - A lock whose recorded owner is alive is never touched, whatever its
+    age; the call still fails `lock-timeout` after the bounded poll
+    (scenario 02; invariant 1).
+  - A record-less lock (a pre-fix holder, or today's orphan shape) is
+    reaped only past an age bound that a live pre-fix holder cannot reach
+    (scenario 03; invariant 1).
+  - Every acquirer records its ownership inside the lock directory for as
+    long as it holds it, so the next orphan carries a pid, not just an
+    mtime (scenario 04).
+
+  ## How (direction, not mandate)
+
+  - Keep the change inside `acquire-lock!` / `release-lock!` so every
+    caller - the CLI, `operator_file_question.bb`, any lib consumer using
+    the default `lock-fn!` - gets it with no call-site change. Right after
+    `fs/create-dir` succeeds, write a one-line owner record inside the
+    directory (`owner.json`: pid, `created_at_ms`, argv or role for
+    diagnosis). On `FileAlreadyExistsException`, read the record: if its
+    pid is not alive (`kill -0` via `process/sh`, portable to stock macOS
+    and Linux - not `/proc`), or there is no readable record and the
+    directory's mtime is older than the bound, `fs/delete-tree` it and
+    retry `fs/create-dir` once more inside the same bounded loop; the
+    atomic `create-dir` is what settles a concurrent reap (invariant 2).
+    Surface the reap in the result the CLI already prints -
+    `"reaped-lock":{"pid":...,"age_ms":...,"reason":"dead-owner"|"record-less-past-bound"}`.
+  - Derive the age bound from the CLI's own maximum bounded run
+    (`default-lock-max-attempts` x poll plus the BL-1475 retry sum, about
+    30 s) with a wide margin - never below 300 s - and RECORD the
+    derivation in the parcel; a live pre-fix holder must never be reaped.
+  - Tests: scenarios 01-03 through the real `commit_integrity_cli.bb`
+    against a planted lock directory in a mkdtemp `git init` fixture
+    (dead pid = a subshell that has already exited; live pid = a `sleep`
+    the test owns and kills in `finally`; age = `touch -d` on the
+    directory). Scenario 04 through a seam CLI mirroring
+    `commit_integrity_1475_scenarios_cli.bb`, injecting ONLY `commit-fn!`
+    to snapshot the lock directory mid-commit. Never plant a lock in the
+    live checkout; prove the fixture root with `rev-parse --git-common-dir`
+    before any mutating git command (BL-1390).
+
+constraints: >
+  Firm: a live owner's lock is never removed. The bounded poll stays
+  bounded (no unbounded wait, no free-running reaper thread). The lock
+  directory's path and name are unchanged - coordinator.prompt, the
+  Specification and operator notes reference it. Do not touch
+  land_main_publish.sh's --acquire-lock/--release-lock (BL-1366, a
+  different lock). commit_integrity_lib.bb is shared with nothing active
+  on 2026-09-08; the coordinator serialises against any later sibling.
+
+out_of_scope: |
+  - The `.git/index.lock` retry and landed-elsewhere verification
+    (BL-1475, landed 2026-09-08).
+  - A daemon-side sweep that reaps orphaned locks proactively: the
+    caller-side reap suffices and a second owner of the same rule would
+    drift from it.
+  - Why the respawn killed a writer mid-commit at all (babysitterd /
+    supervisor halt, BL-1490-BL-1492).
+
+qa_e2e_procedure: |
+  1. `swarmforge/scripts/test/test_commit_integrity_lib.sh` and
+     `test_commit_integrity_cli.sh` green; the parcel's own runner green;
+     acceptance resolving all four scenarios.
+  2. On a scratch `git init` repository under mkdtemp - NEVER the live
+     checkout; confirm `git rev-parse --git-common-dir` points inside the
+     fixture first (BL-1390) - make one commit, edit a file, then
+     `mkdir .git/swarmforge-commit-integrity.lock` and write an owner
+     record naming a pid that has exited (`sh -c 'echo $$'` gives one).
+     Run `bb swarmforge/scripts/commit_integrity_cli.bb <fixture> --message m --path <file>`:
+     expect `"success":true`, the reap field naming that pid, and the
+     lock directory gone.
+  3. Repeat with the pid of `sleep 300 &`: expect
+     `"success":false,"reason":"lock-timeout","attempts":0`, the directory
+     intact with the same record; then kill the sleep.
+  4. Record-less: `mkdir` the directory and `touch -d '-10 minutes'` it,
+     expect success with reason record-less-past-bound; `mkdir` it fresh,
+     expect lock-timeout and the directory intact.
+  5. Do not plant a lock directory in the live `.git`; the live check is
+     that the CLI's next real commits on main carry no reap field.
+
+source: |
+  Specifier observation 2026-09-08 07:56-07:59 BST while landing the
+  BL-1481 QA-prompt retirement (commit 4092fd2d88): two lock-timeout
+  refusals with attempts 0 against an empty lock directory created
+  07:53:29, older than every live role process (respawn 07:55). Grepped
+  first: BL-1475 (done) retries git's index.lock and states the CLI's own
+  budget "guards ITS lock directory" - the wait, not the orphan; BL-1366
+  (done) and BL-667 name land_main_publish.sh's separate --acquire-lock;
+  nothing live names a reap.
+
+notes: |
+  - Minted 2026-09-08 by the specifier. Article 3.2.4: type defect,
+    severity high - expedited ordering.
+  - The BL-419 hardener pass (Specification.MD, BL-419 entry) explicitly
+    chose to BOUND the wait and leave the orphan for a caller to clear;
+    this ticket adds the clear, keeping that bound.
+  - IR-DRY (2026-09-08): three near-duplicate/synonym findings, all kept as
+    written - "has exited" vs "is still running" are opposite owner states
+    (scenarios 01/02), "<state> afterwards" is the outline's parameterised
+    form of "absent afterwards" (03 vs 01/04), and "owner record names a
+    process" vs "no owner record" are the two lock shapes the reap must
+    tell apart; the wording difference is the assertion, as BL-1490 did.

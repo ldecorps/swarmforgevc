@@ -179,5 +179,8 @@ notes: |
     QA runs the content diff by hand before escalating a bounced-sibling
     shared path; all-lander lines = hand-build and land per BL-1241, append
     the instance to the adjudication evidence, no note.
+  - 2026-09-08: QA landed ca694b85ad (note 06:50Z). The specifier retired
+    the QA prompt item 5 interim the same pass and recorded it in the
+    BL-1470 adjudication evidence; nothing in the parcel changes.
 
 assigned_to: coder
