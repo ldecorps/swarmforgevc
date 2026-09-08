@@ -27,7 +27,17 @@
 ;;      (pure) is proven time-translation-invariant - shifting every
 ;;      history timestamp AND now-ms by the same random offset never
 ;;      changes the verdict, since only relative recency (age = now - at)
-;;      may ever matter, never an absolute calendar anchor.
+;;      may ever matter, never an absolute calendar anchor. P4 is the
+;;      second half of Invariant 2's fail-safe clause ("uncertain
+;;      accounting fails toward :halt, never silently toward more
+;;      restarts", BL-1492 D1): a budget-exhausting history whose entries
+;;      are a random mix of valid-in-window, malformed (non-numeric :at),
+;;      and future (:at after now-ms, e.g. post clock-skew) :at values
+;;      must always read :halt - none of P1/P2/P3's generators ever put a
+;;      malformed/future entry inside a history whose COUNT already
+;;      exhausts the budget, which is exactly where D1's bug (excluding
+;;      such an entry from the count instead of counting it as recent)
+;;      could hide.
 ;;
 ;; Same deterministic-seeded-LCG shape as
 ;; bl1491_halt_records_itself_property_runner.bb (BL-472: no
@@ -60,6 +70,13 @@
 ;;     never generated an :at/offset combination able to straddle the
 ;;     threshold in either direction: 0/20000 diffs before the fix,
 ;;     15/150 after).
+;;   - decide-response's filter reverted to D1's actual shipped bug
+;;     (`(and (number? at) (<= 0 age) (< age budget-window-ms))`, which
+;;     EXCLUDES a malformed/future entry from the recent count instead of
+;;     including it) - caught by P4: every generated case whose mix
+;;     included a malformed or future entry read :restart instead of the
+;;     required :halt (confirmed by hand at authoring time; restored
+;;     before this commit).
 
 (ns bl1492-restart-in-place-property-runner
   (:require [babashka.fs :as fs]
@@ -242,6 +259,51 @@
         true
         (str "shifting every timestamp by " offset "ms changed the verdict: " base " -> " shifted)))))
 
+;; ── P4: a malformed or future :at inside an otherwise budget-exhausting
+;;    history still reads :halt (Invariant 2's fail-safe clause, BL-1492
+;;    D1). This is the exact gap the architect's bounce named: P1/P2 only
+;;    ever generate valid, in-window :at values, and P3 straddles the
+;;    window with signed offsets but never mixes in a malformed (non-
+;;    numeric) entry - none of them ever put a malformed/future :at inside
+;;    a history whose COUNT already exhausts the budget, which is the only
+;;    place D1's bug (excluding such an entry from the count, biasing
+;;    toward :restart) could ever surface. Generates exactly
+;;    budget-count..budget-count+2 entries, each independently a valid
+;;    in-window restart, a malformed :at (nil or a non-numeric string), or
+;;    a future :at (age negative, e.g. after a clock correction) - every
+;;    kind must count AS recent, so the verdict must always be :halt
+;;    regardless of the mix ─────────────────────────────────────────────
+
+(def at-kind-pool [:valid :malformed :future])
+
+(defn- gen-entry [s]
+  (let [[kind s1] (pick s at-kind-pool)]
+    (case kind
+      :valid (let [[age s2] (gen-int s1 WINDOW)] [{:at (- NOW age) :kind kind} s2])
+      :future (let [[delta s2] (gen-int s1 WINDOW)] [{:at (+ NOW delta 1) :kind kind} s2])
+      :malformed (let [[which s2] (gen-int s1 2)]
+                   [{:at (if (zero? which) nil "not-a-number") :kind kind} s2]))))
+
+(defn gen-p4 [s]
+  (let [[extra s1] (gen-int s 3) ;; 0..2 entries beyond the budget
+        n (+ BUDGET extra)]
+    (loop [i 0 s s1 acc []]
+      (if (= i n)
+        [{:history acc} s]
+        (let [[entry s'] (gen-entry s)]
+          (recur (inc i) s' (conj acc entry)))))))
+
+(check-all "P4: a malformed or future :at inside a budget-exhausting history still reads :halt (BL-1492 D1)"
+  gen-p4
+  (fn [{:keys [history]}]
+    (let [result (handoffd-supervisor/decide-response
+                  {:restart-history history :now-ms NOW
+                   :budget-window-ms WINDOW :budget-count BUDGET})]
+      (if (= :halt result)
+        true
+        (str "expected :halt with " (count history)
+             " budget-exhausting entries (kinds: " (pr-str (map :kind history)) "), got " result)))))
+
 ;; ── generator coverage (asserted reachability floors) ────────────────────────
 
 (defn- sweep-coverage [seed0 gen-fn]
@@ -251,6 +313,7 @@
 (let [p1-inputs (sweep-coverage 31 gen-p1)
       p2-inputs (sweep-coverage 31 gen-p2)
       p3-inputs (sweep-coverage 31 gen-p3)
+      p4-inputs (sweep-coverage 31 gen-p4)
       p1-distinct-verdicts (count (distinct (map :verdict p1-inputs)))
       p1-both-outcomes? (and (some :succeeds? p1-inputs) (some (complement :succeeds?) p1-inputs))
       p2-distinct-verdicts (count (distinct (map :verdict p2-inputs)))
@@ -259,11 +322,13 @@
                                      (handoffd-supervisor/decide-response
                                       {:restart-history history :now-ms now-ms
                                        :budget-window-ms WINDOW :budget-count BUDGET})))
-                              p3-inputs)]
+                              p3-inputs)
+      p4-kinds (into #{} (mapcat (fn [{:keys [history]}] (map :kind history))) p4-inputs)]
   (println (str "  generator coverage: p1-distinct-verdicts=" p1-distinct-verdicts
                 " p1-both-outcomes=" p1-both-outcomes?
                 " p2-distinct-verdicts=" p2-distinct-verdicts
-                " p3-distinct-base-verdicts=" (count p3-base-verdicts)))
+                " p3-distinct-base-verdicts=" (count p3-base-verdicts)
+                " p4-kinds=" (pr-str p4-kinds)))
   (when (< p1-distinct-verdicts 2)
     (report! "COVERAGE p1-verdicts" 31 p1-inputs "fewer than 2 distinct verdicts generated"))
   (when-not p1-both-outcomes?
@@ -271,7 +336,9 @@
   (when (< p2-distinct-verdicts 2)
     (report! "COVERAGE p2-verdicts" 31 p2-inputs "fewer than 2 distinct verdicts generated"))
   (when (< (count p3-base-verdicts) 2)
-    (report! "COVERAGE p3-base-verdicts" 31 p3-inputs "generated cases never reached both :restart and :halt")))
+    (report! "COVERAGE p3-base-verdicts" 31 p3-inputs "generated cases never reached both :restart and :halt"))
+  (when (not= (set at-kind-pool) p4-kinds)
+    (report! "COVERAGE p4-kinds" 31 p4-inputs (str "did not generate all of " at-kind-pool ", got " p4-kinds))))
 
 ;; ── report ────────────────────────────────────────────────────────────────
 (try (fs/delete-tree boot-root) (catch Exception _ nil))

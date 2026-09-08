@@ -52,11 +52,17 @@
 (assert= "one entry just inside, one just outside the window: only the inside one counts, headroom remains"
          :restart (decide [{:at (- 1000000 WINDOW 1)} {:at (- 1000000 WINDOW -1)}] 1000000))
 
-(assert= "a malformed :at (non-numeric) never counts as recent - fails toward :halt-safe accounting, not toward more restarts"
-         :restart (decide [{:at "not-a-number"} {:at nil}] 1000000))
+(assert= "a malformed :at (non-numeric) counts AS recent - fails toward :halt-safe accounting, not toward more restarts"
+         :halt (decide [{:at "not-a-number"} {:at nil}] 1000000))
 
-(assert= "a future :at (negative age) never counts as recent"
-         :restart (decide [{:at 2000000} {:at 3000000}] 1000000))
+(assert= "a future :at (negative age, e.g. after a clock correction) counts AS recent, never re-arming the budget"
+         :halt (decide [{:at 2000000} {:at 3000000}] 1000000))
+
+(assert= "BL-1492 D1 repro: a genuinely exhausted budget stays :halt across a clock skew that makes its entries read as future"
+         :halt (decide [{:at (+ 1000000 1000)} {:at (+ 1000000 2000)}] 1000000))
+
+(assert= "a mix of one genuinely-old (excluded) and one malformed (counted-recent) entry, budget 2: still headroom"
+         :restart (decide [{:at (- 1000000 WINDOW 1)} {:at "garbage"}] 1000000))
 
 (assert= "budget-count of 0 always halts, even with no history"
          :halt (handoffd-supervisor/decide-response {:restart-history [] :now-ms 1000000

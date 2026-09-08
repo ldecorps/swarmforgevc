@@ -263,14 +263,18 @@
    dying (each new death refreshes the window by adding a fresh, recent
    entry).
 
-   A malformed or future :at (age negative, or not a number) never counts
-   as recent - fails toward :halt, the safer BL-144 posture, never
-   silently toward more restarts."
+   A malformed or future :at (age negative, or not a number) always counts
+   AS recent - only an entry whose :at is a real number AND genuinely older
+   than budget-window-ms is excluded. Uncertain accounting fails toward
+   :halt, the safer BL-144 posture, never silently toward more restarts
+   (BL-1492 D1: the opposite filter shape - excluding a malformed/future
+   entry from the count - LOWERS the count and so biases toward :restart,
+   letting a genuinely exhausted budget re-arm itself under a clock
+   anomaly such as an NTP step)."
   [{:keys [restart-history now-ms budget-window-ms budget-count]}]
-  (let [recent (filter (fn [{:keys [at]}]
+  (let [recent (remove (fn [{:keys [at]}]
                           (and (number? at)
-                               (let [age (- now-ms at)]
-                                 (and (<= 0 age) (< age budget-window-ms)))))
+                               (<= budget-window-ms (- now-ms at))))
                         restart-history)]
     (if (< (count recent) budget-count) :restart :halt)))
 
