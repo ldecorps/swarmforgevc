@@ -38,7 +38,7 @@ acceptance: specs/features/BL-1500-the-bl977-wedge-check-presents-a-daemon-older
 required_wiring:
   - 'specs/pipeline/steps/bl1500WedgeCheckPidAgeSteps.js::registerSteps::the handler lands in the same parcel as the feature (BL-233, BL-1371)'
 
-human_approval: pending
+human_approval: approved
 approval_context: >
   A new feature file is authored here, so it needs a tap. No choice is
   posed and there are no ruling_options. FIRM: the fix is in the BL-977 step
