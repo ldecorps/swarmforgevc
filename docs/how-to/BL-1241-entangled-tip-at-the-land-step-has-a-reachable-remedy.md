@@ -921,6 +921,62 @@ reverted ticket for its own revert's subject.
 Acceptance:
 `specs/features/BL-1472-revert-and-reapply-commits-are-transparent-to-path-attribution.feature`.
 
+## A shared path blocks only when the tip's content, not just its history, still carries a blocking sibling's line (BL-1481)
+
+BL-1332/BL-1375/BL-1466 (above) decide whether a co-owner of a shared path
+still blocks by COMMIT ATTRIBUTION alone — every commit in
+`origin-main..tip` that touched the path, unioned into a set of owning
+ticket ids. That answers "did this sibling's commit ever touch the path,"
+never "does the tip's actual content still carry a line of theirs." A
+sibling whose commits are in range but whose own lines are already on
+`origin/main` under a different SHA (a replayed land, BL-1272's shape) still
+read as blocking by attribution alone.
+
+Live 2026-09-07: `land_step_cli.bb BL-1470 958f98eb97` returned
+`LAND_ESCALATE` — `docs/reference/Specification.MD` shared with bounced
+sibling BL-1348 — but `git diff origin/main..958f98eb97 --
+docs/reference/Specification.MD` was one hunk, 20 insertions, every line
+blaming to BL-1470's own documenter commit; BL-1348's two Specification.MD
+commits in the range had already reached `origin/main` whole, via a
+different SHA, the day before. The refusal guarded lines `origin/main`
+already had. The specifier's adjudication
+(`backlog/evidence/BL-1470-land-escalate-specifier-adjudication-20260907.md`)
+put an interim in force — QA content-diffs a bounced-sibling shared path by
+hand before escalating — until this ticket mechanised it.
+
+Fixed: once `blocking-for` (BL-1375/BL-1466's table, above) finds a path
+still has a blocking co-owner by attribution, `path-content-blocked-ids`
+now asks a further question of the tip-versus-`origin/main` diff for that
+one path: does any CHANGED line — added, by blame at the tip, or removed,
+by blame at `origin/main` — actually belong to that blocking sibling
+(`sibling-own-line-changes`/`sibling-path-verdict`, reused from BL-1354/
+BL-1470 rather than a second reader)? This runs strictly AFTER
+`blocking-for` finds a blocker, so the cheap attribution-only path for an
+ordinary clean land is untouched.
+
+- **No changed line attributes to the blocking sibling** — the path is
+  content-clear for that sibling: it rides in the replay as an ordinary own
+  path, and `land_step_cli.bb` prints one `CONTENT_CLEAR_SIBLING_PATH <path>
+  <ticket-id>` line per clearance instead of refusing.
+- **Any changed line — added or removed — still attributes to the blocking
+  sibling** — the refusal is exactly as before (BL-1332/BL-1375/BL-1466's
+  message, naming the path and the sibling).
+- **The line-change read is unreadable** — fails closed, refusing the path
+  exactly as the attribution-only check already would, never narrowing to a
+  clearance on an answer it could not confirm.
+
+This only NARROWS an existing refusal to one a content read can affirmatively
+clear — it never widens what blocks. A path shared with a still-genuinely-
+unresolved co-owner (a line the sibling actually still owns at the tip)
+refuses exactly as BL-1332/BL-1375/BL-1466 already decided; only a co-owner
+whose commit-attribution and tip-content have diverged — because that
+content already reached `origin/main` some other way — stops blocking.
+
+None of `land_step_cli.bb`'s three top-level outcomes change — this only
+adds the `CONTENT_CLEAR_SIBLING_PATH` line to a `LAND_REPLAY`/`LAND_CLEAN`
+report and removes some refusals that content no longer supports. Acceptance:
+`specs/features/BL-1481-a-shared-path-blocks-only-when-the-siblings-lines-are-not-yet-on-main.feature`.
+
 ## What this does not change
 
 - BL-1192's send-time gate and its range — unchanged; this ticket only adds
