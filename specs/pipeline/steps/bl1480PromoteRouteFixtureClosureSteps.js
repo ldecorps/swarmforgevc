@@ -20,7 +20,7 @@ const { spawnSync } = require('node:child_process');
 const REPO_ROOT = path.join(__dirname, '..', '..', '..');
 const SCRIPTS = path.join(REPO_ROOT, 'swarmforge', 'scripts');
 const TEST_LIB = path.join(SCRIPTS, 'test', 'lib');
-const { effectiveList, FIXTURES } = require('./lib/bbFixtureClosureGate.js');
+const { effectiveList, missingFromList, FIXTURES } = require('./lib/bbFixtureClosureGate.js');
 const { computeClosure } = require('./lib/operatorRuntimeBbClosure.js');
 
 const FEATURE_NAME = "BL-1480 The promote_and_route_next fixtures carry their subject's real bb closure";
@@ -225,6 +225,100 @@ function registerSteps(registry) {
     const passed = `${stdout}${stderr}`.split('\n').filter((l) => l.startsWith('ok'));
     assert.deepEqual(passed, [], `checks reported as passed against a subprocess that never ran:\n${passed.join('\n')}`);
     discard(ctx);
+  });
+
+  // ── 05 ────────────────────────────────────────────────────────────────
+  // missingFromList is the guard's own convenience entry point - the thing a
+  // future maintainer reaches for to check a fixture, not the raw
+  // effectiveList+computeClosure pairing scenario 01 exercises by hand. For a
+  // single-entry fixture the two paths are the same call; for the no-limit
+  // fixture's four-entry list they are not - missingFromList must UNION every
+  // declared entry point's closure, and nothing else in this suite drives
+  // that union path for a real multi-entry fixture (BL-973's and BL-1279's
+  // own Outlines never name these two fixtures).
+  //
+  // A plain "missing is empty" check on the REAL fixture cannot discriminate
+  // a mutant that collapses the union to entry[0] alone: the real fixture's
+  // copy step (bb_closure_copy.sh, unaffected by this mutation) already
+  // copies the full four-entry closure, so closure(entry[0]) - being a
+  // subset of that - reads as fully satisfied either way (confirmed by
+  // hand-mutating the union loop to `entryList(entry)[0]` and re-running:
+  // this scenario still passed). So the probe is run against a SEPARATE
+  // closureDir (same technique as scenario 02) carrying one new load-file
+  // edge reachable ONLY through the second entry point - a mutant that
+  // drops entries 2-4 from the union then fails to report it as missing.
+  // BL-921/BL-922/BL-931: every throw in this step runs discard(ctx) first -
+  // the scratch dir is created several statements before the last assertion
+  // that can fail here, and this scenario's own Then step is a "must throw"
+  // assertion (it exists to prove a mutant makes it fail), so a leak on this
+  // path is not a hypothetical, it is the scenario's own passing behaviour.
+  scoped(/^the guard's own missingFromList check runs against a closure carrying an edge reachable only through the second entry point$/, (ctx) => {
+    const scratch = mkTmp(ctx, 'bl1480-union-probe-');
+    try {
+      for (const name of fs.readdirSync(SCRIPTS)) {
+        const from = path.join(SCRIPTS, name);
+        if (fs.statSync(from).isFile()) {
+          fs.copyFileSync(from, path.join(scratch, name));
+        }
+      }
+      const probe = 'bl1480_union_probe_lib.bb';
+      fs.writeFileSync(path.join(scratch, probe), '(def bl1480-union-probe true)\n');
+      const target = path.join(scratch, 'effective_backlog_depth_cli.bb');
+      const source = fs.readFileSync(target, 'utf8');
+      const anchor =
+        '(load-file (str (fs/path (fs/parent (fs/canonicalize *file*)) "backlog_depth_lib.bb")))';
+      if (!source.includes(anchor)) {
+        discard(ctx);
+        assert.fail('the load-file idiom this scenario extends has changed');
+      }
+      fs.writeFileSync(
+        target,
+        source.replace(
+          anchor,
+          `${anchor}\n(load-file (str (fs/path (fs/parent (fs/canonicalize *file*)) "${probe}")))`
+        )
+      );
+      ctx.bl1480.probe = probe;
+      const result = missingFromList(SCRIPTS, ctx.bl1480.file, scratch);
+      ctx.bl1480.entry = result.entry;
+      ctx.bl1480.files = result.files;
+      ctx.bl1480.missing = result.missing;
+    } catch (err) {
+      discard(ctx);
+      throw err;
+    }
+  });
+
+  scoped(/^the check covered all four of its declared entry points$/, (ctx) => {
+    try {
+      assert.ok(Array.isArray(ctx.bl1480.entry), `expected a multi-entry fixture, got: ${ctx.bl1480.entry}`);
+      assert.equal(
+        ctx.bl1480.entry.length,
+        4,
+        `expected all four declared entry points to be unioned, got: ${ctx.bl1480.entry.join(', ')}`
+      );
+    } catch (err) {
+      discard(ctx);
+      throw err;
+    }
+  });
+
+  scoped(/^the closure walk reaches the edge behind the second entry point$/, (ctx) => {
+    // The probe edge is reachable only through the SECOND entry point
+    // (effective_backlog_depth_cli.bb). If missingFromList's union ever
+    // collapsed to just entry[0], this file would never be walked and
+    // "missing" would stay empty despite the fixture never copying it -
+    // confirmed by hand-mutating the union loop to `entryList(entry)[0]`
+    // and re-running this scenario: it failed to report the probe as
+    // missing until the union was restored.
+    try {
+      assert.ok(
+        ctx.bl1480.missing.includes(ctx.bl1480.probe),
+        `expected the union to reach the probe edge via the second entry point; missing was: ${ctx.bl1480.missing.join(', ')}`
+      );
+    } finally {
+      discard(ctx);
+    }
   });
 }
 
