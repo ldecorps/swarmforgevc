@@ -12,12 +12,16 @@ epic: code-quality-gates
 priority: 1
 direction: swarm-reported
 depends_on: [BL-1439, BL-1440]
-not_before: 2026-09-08
-# not_before (BL-1469 field, data-only until that gate lands): the mutation
-# cooldown on the files BL-1425 touched 2026-09-05 expires 2026-09-08 (this
-# ticket's own notes, "Do not start before 2026-09-08"). Added by the
-# specifier 2026-09-07 under the STEERING 2026-09-07 directive; the
-# coordinator parks this ticket to paused/ and honours the date by hand.
+not_before: 2026-09-11
+# not_before (BL-1469 field, data-only until that gate lands): the coder's
+# 2026-09-08 re-check (f3dcf2050) found the original 2026-09-08 cooldown
+# window moot - BL-1475 re-touched telegram-front-desk-bot.ts and
+# telegramFrontDeskBotCore.ts (~09-08 01:58), and BL-1451 re-touched
+# pipelineBoard.ts (09-07 22:47), each resetting its own file's 3-day
+# mutation_cooldown_gate.bb window. Latest of the two new clears is
+# ~2026-09-11 02:00 (the front-desk pair). Updated by the coordinator
+# 2026-09-08 under the same 2026-09-07 STEERING directive: the coordinator
+# parks this ticket to paused/ and honours the date by hand.
 mutation_cost: high
 slice_size_envelope: small
 required_stages: [coder, cleaner, architect, hardender, documenter, qa]
@@ -121,6 +125,16 @@ notes: |
   fired on the resulting "no parcel in flight" / idle-pane state -
   verified both are false positives, not a drop: no action taken, ticket
   stays assigned_to coder until the cooldown clears.
+
+  Coordinator, 2026-09-08: the 2026-09-08 date arrived and the ticket
+  re-promoted; coder's re-check (f3dcf2050) found three of four gates
+  freshly re-blocked (BL-1475/BL-1451 re-touched the same files, resetting
+  their cooldowns) and correctly did not forward (No-Op Rule). This is a
+  new dropped-parcel sweep firing, not the same 09-06 false positive: the
+  ticket genuinely cannot advance until ~2026-09-11. Per the 2026-09-07
+  STEERING directive (an unadvanceable active ticket does not hold a
+  slot), parked back to paused/ with not_before updated to 2026-09-11 and
+  the freed slot promoted forward.
 
 source: |
   `.worktrees/coder/backlog/evidence/BL-1439-coder-20260905.md`;
