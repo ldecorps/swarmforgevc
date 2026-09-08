@@ -274,6 +274,64 @@ export function profileIntervalKind(kind: string): IntervalCategory {
   return classifyIntervalKind(kind);
 }
 
+export interface TranscriptTextReadability {
+  /** Cannot be trusted at all - a bad line with a complete line after it. */
+  unreadable: boolean;
+  /** Readable, but its FINAL line was torn - an in-progress append, not damage. */
+  truncatedTail: boolean;
+}
+
+/**
+ * BL-1476: the per-file body of turnProfileProducer.ts's own
+ * assessTranscriptReadability, extracted to operate on ALREADY-READ text -
+ * see walkTranscriptText's own doc comment for why (one read per changed
+ * file, not two). Never used the file's own fs.readFileSync itself: a
+ * caller that cannot read the file at all reports that failure separately
+ * (see computeTranscriptSummary), never through this function.
+ */
+export function classifyTranscriptText(text: string): TranscriptTextReadability {
+  const lines = text.split('\n').filter((line) => line.trim());
+  const badIndexes: number[] = [];
+  lines.forEach((line, index) => {
+    try {
+      JSON.parse(line);
+    } catch {
+      badIndexes.push(index);
+    }
+  });
+  if (badIndexes.length === 0) {
+    return { unreadable: false, truncatedTail: false };
+  }
+  if (badIndexes.length === 1 && badIndexes[0] === lines.length - 1) {
+    return { unreadable: false, truncatedTail: true };
+  }
+  return { unreadable: true, truncatedTail: false };
+}
+
+/**
+ * BL-1476: the per-file body of walkTranscriptFiles' own loop, extracted so a
+ * caller that has ALREADY read a file's text once (a summary-cache builder,
+ * so readability and the walk consume the same read - see
+ * turnProfileProducer.ts's computeTranscriptSummary) can classify it without
+ * a second `fs.readFileSync`. attributeTrail is a pure per-interval map (each
+ * row's own startMs against the trail, independent of any other interval in
+ * the batch), so applying it per-file here and concatenating is exactly
+ * equivalent to walkTranscriptFiles' own prior single call over the
+ * concatenation of every file's intervals - never a behavior change.
+ */
+export function walkTranscriptText(
+  text: string,
+  handoffTrail: HandoffTrailEntry[] = [],
+  defaultDurationMs = 1000
+): ClassifiedInterval[] {
+  const events = parseTimedEvents(text, defaultDurationMs);
+  const intervals: ClassifiedInterval[] = [...overheadIntervals(events)];
+  for (const event of events) {
+    intervals.push(...event.intervals);
+  }
+  return attributeTrail(intervals, handoffTrail);
+}
+
 /** Read-only walk over transcript JSONL paths; never modifies files. */
 export function walkTranscriptFiles(
   transcriptPaths: string[],
@@ -288,16 +346,11 @@ export function walkTranscriptFiles(
     }
     resolvedPaths.push(filePath);
     const text = fs.readFileSync(filePath, 'utf8');
-    const events = parseTimedEvents(text, defaultDurationMs);
-    intervals.push(...overheadIntervals(events));
-    for (const event of events) {
-      intervals.push(...event.intervals);
-    }
+    intervals.push(...walkTranscriptText(text, handoffTrail, defaultDurationMs));
   }
-  const attributed = attributeTrail(intervals, handoffTrail);
   return {
-    coverageWindow: coverageFromIntervals(attributed),
-    intervals: attributed,
+    coverageWindow: coverageFromIntervals(intervals),
+    intervals,
     transcriptPaths: resolvedPaths,
     extrapolated: false,
   };
