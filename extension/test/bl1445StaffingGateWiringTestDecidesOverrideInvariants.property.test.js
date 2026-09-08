@@ -20,15 +20,22 @@
 //
 // GENERATOR REACH (the asserted floor, never a hoped-for one). The 2026-09-06
 // incident needed the pane to export PACK_STAFFING_SKIP_GATE=1 specifically
-// (`.swarmforge/swarm.env`'s own default), so the pane-value generator is
-// drawn from a fixed set that GUARANTEES 1, 0, an unset pane, and an
-// arbitrary garbage string are all exercised on every run - never merely
-// possible. A garbage MODEL_STEWARD_STATE_DIR in the pane is crossed in
-// independently, proving the wiring test's own per-case override of that
-// variable holds regardless of what the pane sets it to.
+// (`.swarmforge/swarm.env`'s own default), so every one of 1, 0, an unset
+// pane, and an arbitrary garbage string must be exercised, crossed
+// independently against a garbage vs. unset pane MODEL_STEWARD_STATE_DIR -
+// 4*2 = 8 combinations, small and fully enumerable. This is a DETERMINISTIC
+// exhaustive sweep over that Cartesian product, not fc.property sampling:
+// `fc.constantFrom(...PANE_GATE_VALUES)` drawn i.i.d. across `numRuns` only
+// GUARANTEES reach statistically, and at the 4-way/numRuns:12 shape this file
+// originally used, missing any one value has a (3/4)^12 ~ 3.2% chance per
+// value, ~13% summed across all four - confirmed empirically (BL-1445/
+// BL-654 hardening, 2026-09-08): 4 of 5 consecutive real runs failed the
+// reach assertion below on `reach.zero`/`reach.garbage`, contradicting this
+// very comment's "GUARANTEES ... on every run". A finite, small domain like
+// this one gets full coverage from enumeration, not from hoping fast-check's
+// RNG lands on every constant within a handful of runs.
 
 const assert = require('node:assert/strict');
-const fc = require('fast-check');
 const fs = require('node:fs');
 const path = require('node:path');
 const os = require('node:os');
@@ -59,34 +66,29 @@ function runWiringTest(gateValue, staleStateDir) {
   return { status: r.status, out: `${r.stdout || ''}${r.stderr || ''}` };
 }
 
-const caseArb = fc.record({
-  gateValue: fc.constantFrom(...PANE_GATE_VALUES),
-  staleStateDir: fc.boolean(),
-});
+const STALE_STATE_DIR_VALUES = [false, true];
 
 test('BL-1445/BL-654 invariant 1: the wiring test decides PACK_STAFFING_SKIP_GATE and MODEL_STEWARD_STATE_DIR itself, never inheriting either from the pane', () => {
   const reach = { unset: 0, one: 0, zero: 0, garbage: 0, staleStateDir: 0, freshStateDir: 0 };
 
-  fc.assert(
-    fc.property(caseArb, (c) => {
-      if (c.gateValue === undefined) reach.unset += 1;
-      else if (c.gateValue === '1') reach.one += 1;
-      else if (c.gateValue === '0') reach.zero += 1;
+  for (const gateValue of PANE_GATE_VALUES) {
+    for (const staleStateDir of STALE_STATE_DIR_VALUES) {
+      if (gateValue === undefined) reach.unset += 1;
+      else if (gateValue === '1') reach.one += 1;
+      else if (gateValue === '0') reach.zero += 1;
       else reach.garbage += 1;
-      if (c.staleStateDir) reach.staleStateDir += 1;
+      if (staleStateDir) reach.staleStateDir += 1;
       else reach.freshStateDir += 1;
 
-      const { status, out } = runWiringTest(c.gateValue, c.staleStateDir);
+      const { status, out } = runWiringTest(gateValue, staleStateDir);
       assert.equal(
         status,
         0,
-        `the wiring test must pass regardless of the pane's own PACK_STAFFING_SKIP_GATE=${JSON.stringify(c.gateValue)} / stale-state-dir=${c.staleStateDir}:\n${out}`
+        `the wiring test must pass regardless of the pane's own PACK_STAFFING_SKIP_GATE=${JSON.stringify(gateValue)} / stale-state-dir=${staleStateDir}:\n${out}`
       );
       assert.match(out, /ALL CHECKS PASSED/, `expected every case to pass:\n${out}`);
-      return true;
-    }),
-    { numRuns: 12 }
-  );
+    }
+  }
 
   assert.ok(reach.unset > 0, 'never exercised an unset pane export');
   assert.ok(reach.one > 0, 'never exercised the real incident value (PACK_STAFFING_SKIP_GATE=1)');
