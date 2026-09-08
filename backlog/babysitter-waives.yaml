@@ -7,7 +7,7 @@
 
 - key: pipeline-code-on-main-607e7fc56de4f82db66ad1892f8163a10a98a7f5
   waived_by: coordinator
-  reason: "false positive: QA land-approval record exists (source 9558401764), content identical to landed commit, no bounce history; source orphaned from an earlier land attempt so is_qa_ancestor.sh fails until QA's next main-QA merge; evidence: backlog/evidence/babysitter-article42-bl1490-607e7fc56d-orphaned-source-false-positive-20260908.md"
+  reason: "Same pattern as eda4bb1934: BL-1490 tip-pure replay, land-approvals record exists with source 9558401764, is_qa_ancestor.sh fails on source but QA did the land-step"
   waived_at: 2026-09-08
 
 - key: pipeline-code-on-main-a7c3ef9974a48922c0b31d31d6be02b2820ab774
@@ -27,5 +27,5 @@
 
 - key: pipeline-code-on-main-fc5ad74f07b5fc5c14d7621c09fa83ed9990fea3
   waived_by: coordinator
-  reason: "false positive: QA land-approval record exists (source 40830d747f), content identical to landed commit, no bounce history; source orphaned from an earlier land attempt so is_qa_ancestor.sh fails until QA's next main-QA merge; evidence: backlog/evidence/babysitter-article42-bl1491-fc5ad74f07-orphaned-source-false-positive-20260908.md"
+  reason: "Same pattern as eda4bb1934: BL-1491 tip-pure replay, land-approvals record exists with source 40830d747f, is_qa_ancestor.sh fails on source but QA did the land-step"
   waived_at: 2026-09-08
