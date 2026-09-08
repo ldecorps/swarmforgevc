@@ -144,3 +144,13 @@ notes: |
     with a quoted parameter - kept as written.
 
 assigned_to: coder
+
+abandoned_commits: [40830d747f]
+# QA approved 40830d747f. land_step_cli.bb's BL-1241 remedy found two
+# ENTANGLED_SIBLING entries (BL-1471, BL-1476, both still unlanded as
+# ancestors) plus five LANDED_SIBLING entries already on origin/main; the
+# tip-pure replay (built off origin/main, carrying only this ticket's own
+# paths plus the harmless already-landed-sibling bookkeeping addenda for
+# BL-1348/BL-1480/BL-1481/BL-1490/BL-1495) is what actually landed on
+# origin/main (45c5c20b25..fc5ad74f07), per the QA prompt's "never the
+# originally-cited commit" instruction.
