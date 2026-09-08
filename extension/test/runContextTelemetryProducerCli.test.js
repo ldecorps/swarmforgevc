@@ -69,6 +69,17 @@ test('formatProducerResult names a dropped torn tail even when nothing new was r
   assert.equal(out, 'RECORDED 0 event(s) for 0 agent(s), 0 remaining (torn tail dropped at line 4)');
 });
 
+test('formatProducerResult never reports SKIPPED on the strength of one clause alone - each of the three must hold', () => {
+  // Isolates each conjunct of the SKIPPED guard in turn: forcing any ONE of
+  // the other two false must still yield RECORDED, proving the guard is a
+  // genuine three-way AND and not effectively reducible to fewer clauses.
+  const skippedRecorded = formatProducerResult({ recorded: 5, skippedDuplicates: 0, agents: [], remaining: 0, tornTailLine: null });
+  assert.equal(skippedRecorded, 'RECORDED 5 event(s) for 0 agent(s), 0 remaining');
+
+  const skippedAgents = formatProducerResult({ recorded: 0, skippedDuplicates: 0, agents: ['coder'], remaining: 0, tornTailLine: null });
+  assert.equal(skippedAgents, 'RECORDED 0 event(s) for 1 agent(s), 0 remaining');
+});
+
 test('resolveDeadlineMs defaults with no env overrides set', () => {
   withEnv({ CONTEXT_TELEMETRY_TICK_DEADLINE_MS: undefined, SUPERVISOR_IN_SWEEP_BUDGET_MS: undefined }, () => {
     assert.equal(resolveDeadlineMs(), DEFAULT_CONTEXT_TELEMETRY_DEADLINE_MS);
