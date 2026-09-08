@@ -31,9 +31,9 @@
 
 ;; ── the scrub set is the observed leak, exactly ───────────────────────────
 
-(assert= "the provider-secret set is the fifteen names observed on the live socket"
+(assert= "the provider-secret set is the fifteen names observed on the live socket, plus BL-1495's B_AI_API_KEY"
          #{"BAILIAN_API_KEY" "BAILIAN_CODING_PLAN_API_KEY" "BAILIAN_TOKEN_PLAN_API_KEY"
-           "CEREBRAS_API_KEY" "CURSOR_API_KEY" "DASHSCOPE_API_KEY" "DEEPSEEK_API_KEY"
+           "B_AI_API_KEY" "CEREBRAS_API_KEY" "CURSOR_API_KEY" "DASHSCOPE_API_KEY" "DEEPSEEK_API_KEY"
            "GEMINI_API_KEY" "MISTRAL_API_KEY" "OPENAI_API_KEY" "OPENROUTER_API_KEY"
            "PERPLEXITY_API_KEY" "QWEN_API_KEY" "RESEND_API_KEY" "TELEGRAM_BOT_TOKEN"}
          lib/provider-secret-vars)
@@ -58,6 +58,17 @@
 (assert= "the openrouter pseudo-backend (SWARMFORGE_OPENROUTER_ROLES) keeps its token"
          (conj lib/keep-vars "OPENROUTER_API_KEY")
          (lib/provider-keep-names #{"claude" "openrouter"}))
+
+;; ── BL-1495: b.ai reaches an aider pane only, same as every other aider key ─
+
+(assert-true "B_AI_API_KEY is in the aider backend's own keep set"
+             (contains? (get lib/backend-provider-vars "aider") "B_AI_API_KEY"))
+
+(assert-true "one aider window keeps B_AI_API_KEY"
+             (contains? (lib/provider-keep-names #{"aider"}) "B_AI_API_KEY"))
+
+(assert-false "a claude-only configuration still scrubs B_AI_API_KEY"
+              (contains? (lib/provider-keep-names #{"claude"}) "B_AI_API_KEY"))
 
 ;; ── the scrub list is the leak minus what the configuration needs ─────────
 
