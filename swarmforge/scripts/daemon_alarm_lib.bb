@@ -333,8 +333,18 @@
    build-failure-attachment above. Building it is wrapped in try/catch: a
    failure there (e.g. huge log content, encoding error) degrades to no
    attachment rather than ever preventing halt-swarm! below - BL-144's
-   alarm-and-halt posture must survive an attachment-building bug."
-  [{:keys [reason status now-iso! log-tail! role-counts! write-failure-log! send-email! halt-swarm! write-status!]}]
+   alarm-and-halt posture must survive an attachment-building bug.
+
+   BL-1491: record-halt! (1-arg: reason) is called write-ahead - BEFORE
+   halt-swarm! - so a halt interrupted mid-way still leaves its trace on the
+   kill-all-audit log and the availability ledger a deliberate stop already
+   uses. Wrapped in try/catch (invariant 2: a record that cannot be written
+   never prevents the halt) even though today's only caller
+   (handoffd_supervisor.bb's record-halt!) is itself already fail-safe -
+   this orchestrator must survive a future adapter that is not. Missing
+   entirely (older caller/test) defaults to a no-op, same posture as an
+   absent :html/:attachments key elsewhere in this namespace."
+  [{:keys [reason status now-iso! log-tail! role-counts! write-failure-log! send-email! record-halt! halt-swarm! write-status!]}]
   (let [died-at (now-iso!)
         log-tail (or (log-tail!) [])
         role-counts (or (role-counts!) [])
@@ -351,6 +361,9 @@
         {:keys [subject text]} (build-alarm-email {:failure-log-path failure-log-path
                                                      :ensure-command "./swarm ensure"})
         email-result (send-email! subject text attachments)]
+    (try
+      (when record-halt! (record-halt! reason))
+      (catch Exception _ nil))
     (halt-swarm!)
     (write-status! (assoc status
                           :state "halted"
