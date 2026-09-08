@@ -1,5 +1,29 @@
 # SwarmForge VS Code Extension — Specification
 
+**Last Updated:** September 7, 2026 (BL-1408: three more hand-written
+copies of the commit-guard chain's guard list went red the same way
+BL-1398/BL-1401 already fixed once — `test_run_commit_guards.sh`'s
+`ALL_GUARDS=` (five names) hadn't kept pace with the runner naming seven
+after `check_handler_module_graph.sh` (BL-1385) and
+`check_bb_scripts_load.sh` (BL-1395) joined on 2026-09-04, so the two
+unstubbed guards exited 127 and every case after the first never ran
+(a `standing` suite row, red on `main`); `test_pre_merge_commit_hook.sh`'s
+`MERGE_GUARDS=` and the (already-split, BL-1349) BL-1252 property
+fixture's `INDEX_GUARDS` carried the same shape; a fourth,
+`test_pipeline_code_on_main_guard.sh`, copied the chain guard by guard and
+failed the same day. Re-pended 2026-09-06 when this fourth copy was
+found. Fixed: all four now derive their guard set at run time through
+BL-1398's shared helper (`commitGuardFixtureSet.js` /
+`deriveCommitGuardFixtureSet`) reading the real runner or hook they
+exercise, instead of a list hand-typed in the test — a guard added to or
+removed from a chain is stubbed or dropped with no test edit. The only
+guard still named by hand in any of the four is the expensive tier's sole
+member, `check_property_suite_drift.sh`, and each test that names it
+asserts it is in the derived set, so even that one constant cannot drift
+from the runner. Both standing-red register rows leave with the fix.
+Acceptance:
+`specs/features/BL-1408-commit-guard-tests-derive-their-guard-set.feature`.)
+Prior entry —
 **Last Updated:** September 7, 2026 (BL-1479: a ticket that became
 unworkable after promotion (`status: blocked`, or a `not_before` later
 than today) held its active slot indefinitely — nothing but QA approval
