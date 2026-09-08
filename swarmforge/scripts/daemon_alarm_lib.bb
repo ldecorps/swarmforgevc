@@ -339,6 +339,24 @@
    :content-id "handoffd-failure-log"
    :base64 (.encodeToString (java.util.Base64/getEncoder) (.getBytes ^String content "UTF-8"))})
 
+(defn- write-failure-report!
+  "Shared by alarm-and-halt! and restart-daemon! (BL-1492): gathers the
+   death evidence (died-at, log tail, role-count snapshot) into one
+   formatted failure-log write. Both responses record the exact same
+   evidence; only what happens after differs (halt vs restart)."
+  [{:keys [reason status now-iso! log-tail! role-counts! write-failure-log!]}]
+  (let [died-at (now-iso!)
+        log-tail (or (log-tail!) [])
+        role-counts (or (role-counts!) [])
+        content (format-failure-log {:died-at died-at
+                                      :reason reason
+                                      :log-tail log-tail
+                                      :restart-history (:restart_history status)
+                                      :last-incident (:last_incident status)
+                                      :role-counts role-counts})
+        failure-log-path (write-failure-log! content)]
+    {:died-at died-at :content content :failure-log-path failure-log-path}))
+
 (defn alarm-and-halt!
   "Orchestrates the whole daemon-death response through injected adapters -
    testable with fakes for every side effect (BL-144 non-behavioral gate: no
@@ -363,16 +381,10 @@
    entirely (older caller/test) defaults to a no-op, same posture as an
    absent :html/:attachments key elsewhere in this namespace."
   [{:keys [reason status now-iso! log-tail! role-counts! write-failure-log! send-email! record-halt! halt-swarm! write-status!]}]
-  (let [died-at (now-iso!)
-        log-tail (or (log-tail!) [])
-        role-counts (or (role-counts!) [])
-        content (format-failure-log {:died-at died-at
-                                      :reason reason
-                                      :log-tail log-tail
-                                      :restart-history (:restart_history status)
-                                      :last-incident (:last_incident status)
-                                      :role-counts role-counts})
-        failure-log-path (write-failure-log! content)
+  (let [{:keys [died-at content failure-log-path]}
+        (write-failure-report! {:reason reason :status status :now-iso! now-iso!
+                                 :log-tail! log-tail! :role-counts! role-counts!
+                                 :write-failure-log! write-failure-log!})
         attachments (try
                       [(build-failure-attachment {:failure-log-path failure-log-path :content content})]
                       (catch Exception _ nil))
@@ -412,16 +424,10 @@
    than a halt (build-restart-alarm-email)."
   [{:keys [reason status now-iso! now-ms! log-tail! role-counts! write-failure-log! send-email!
            start-daemon! write-status!]}]
-  (let [died-at (now-iso!)
-        log-tail (or (log-tail!) [])
-        role-counts (or (role-counts!) [])
-        content (format-failure-log {:died-at died-at
-                                      :reason reason
-                                      :log-tail log-tail
-                                      :restart-history (:restart_history status)
-                                      :last-incident (:last_incident status)
-                                      :role-counts role-counts})
-        failure-log-path (write-failure-log! content)
+  (let [{:keys [failure-log-path]}
+        (write-failure-report! {:reason reason :status status :now-iso! now-iso!
+                                 :log-tail! log-tail! :role-counts! role-counts!
+                                 :write-failure-log! write-failure-log!})
         start-result (try (start-daemon!) (catch Exception e {:success false :error (.getMessage e)}))
         outcome (if (:success start-result) :succeeded :failed)
         entry {:at (now-ms!) :result (name outcome) :reason (name reason)}
