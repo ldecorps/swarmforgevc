@@ -29,7 +29,7 @@ required_wiring:
   - 'backlog/hardening-debt-ledger.yaml::discharged_evidence: backlog/evidence/BL-1488::the ledger, which the register and throttle read, carries this parcel evidence path (BL-1441 and BL-1468 shape)'
   - 'specs/pipeline/steps/bl1488Bl1476DeferredMutationGateIsRunSteps.js::registerSteps::the handler lands in the same parcel as the feature (BL-233)'
 
-human_approval: pending
+human_approval: approved
 approval_context: >
   A new feature file is authored here, so it needs a tap. No choice is
   posed and there are no ruling_options. Same shape as BL-1468 (approved)
