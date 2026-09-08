@@ -2539,6 +2539,59 @@ RESOLVED BY THIS TICKET
 ;; own lines ever land on this path (each verdicts :unlanded, not :landed) -
 ;; this ticket's own "only new outcome is scenario 01" constraint.
 
+;; Scenario 05 (hardener, BL-1481): TWO blocking siblings share one path,
+;; and their content verdicts DISAGREE - BL-9002's added line never reaches
+;; origin/main (still blocks), BL-9003's lines already sit there under a
+;; different sha (content-clear). path-content-blocked-ids folds
+;; `blocking-for`'s whole candidate set through a loop, one id at a time
+;; (per-id `recur`, ids visited in SORTED order - BL-9002 before BL-9003),
+;; so a single-blocker fixture (scenarios 01-04 above) cannot tell a correct
+;; per-id fold from a bug that lets a LATER landed verdict wipe an EARLIER
+;; still-blocking one - the fold-needs-disagreeing-members shape this file's
+;; own hardening discipline names, deliberately ordered so the still-
+;; blocking id is folded first and a wipe-on-landed bug cannot hide behind
+;; visiting the landed id first. The refusal must name BL-9002 only, never
+;; BL-9003, and the pure fn's returned blocked-set must be exactly
+;; #{"BL-9002"} - not #{}, not #{"BL-9002" "BL-9003"}.
+(with-fixture [root]
+  (write-ticket! root "active" "BL-9002" "id: BL-9002\nhuman_approval: approved\n")
+  (write-ticket! root "active" "BL-9003" "id: BL-9003\nhuman_approval: approved\n")
+  (commit! root "seed.txt" "seed\n" "seed before origin/main")
+  (mark-origin-main-here! root)
+  (commit! root "shared.txt" "base\n" "BL-9001: lander seeds the shared file")
+  ;; BL-9002 adds a line of its own that never reaches origin/main - still
+  ;; blocking, and it must be the ONLY name in the refusal. Folded FIRST
+  ;; (sorted before BL-9003), so a wipe-on-landed bug in the loop would
+  ;; erase it once BL-9003 is folded in afterward.
+  (commit! root "shared.txt" "base\nsibling2 line\n" "BL-9002: sibling adds a line only it owns")
+  (let [sibling2-commit (:out (sh! root "git" "rev-parse" "HEAD"))]
+    ;; BL-9003's own line lands on origin/main under a DIFFERENT sha (the
+    ;; BL-1446 replay shape), touching an unrelated path too so it stays
+    ;; ticket-level unlanded overall (BL-1389's own split).
+    (commit! root "shared.txt" "base\nsibling2 line\nsibling3 line\n" "BL-9003: sibling adds its line")
+    (commit! root "other.txt" "never landed\n" "BL-9003: touches an unrelated path that never lands")
+    (let [pre-tip-9003 (:out (sh! root "git" "rev-parse" "HEAD~1"))]
+      (sh! root "git" "checkout" "-q" "-b" "replay-landed" (:out (sh! root "git" "rev-parse" "refs/remotes/origin/main")))
+      (commit! root "shared.txt" "base\nsibling3 line\n" "BL-9003: replayed tip-pure")
+      (mark-origin-main-here! root)
+      (sh! root "git" "checkout" "-q" "main")
+      (commit! root "shared.txt" "base\nsibling2 line\nsibling3 line\nlander line\n" "BL-9001: the lander adds its own line")
+      (write-bounce! root "BL-9002" sibling2-commit "2026-09-07T11:48:00.000Z")
+      (write-bounce! root "BL-9003" pre-tip-9003 "2026-09-07T11:49:00.000Z")
+      (let [commit (:out (sh! root "git" "rev-parse" "HEAD"))
+            origin-main (:out (sh! root "git" "rev-parse" "refs/remotes/origin/main"))
+            pure-result (land-step-lib/path-content-blocked-ids
+                         root origin-main commit "shared.txt" #{"BL-9002" "BL-9003"})]
+        (assert= "BL-1481/05 (pure): two disagreeing blockers - only the still-blocking one is returned"
+                 #{"BL-9002"} pure-result)
+        (let [{:keys [paths warning content-clear]} (land-step-lib/own-paths root commit "BL-9001" #{"BL-9002" "BL-9003"})]
+          (assert= "BL-1481/05 (wired): the path still refuses - one blocker's content is real" nil paths)
+          (assert-includes "BL-1481/05: names the still-blocking sibling" warning "BL-9002")
+          (assert-false "BL-1481/05: never names the content-clear sibling in a refusal it did not cause"
+                        (str/includes? (str warning) "BL-9003"))
+          (assert= "BL-1481/05: a refused path's own-paths call carries no content-clear key (the refusal map short-circuits before that accumulator is ever threaded back)"
+                   nil content-clear))))))
+
 (if (seq @failures)
   (do
     (doseq [f @failures] (println f))
