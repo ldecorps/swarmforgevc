@@ -1,5 +1,36 @@
 # SwarmForge VS Code Extension — Specification
 
+**Last Updated:** September 8, 2026 (BL-1475: the front desk's human-decision
+commit (`commitApprovalDecision` -> `commitApprovalWrites`,
+`commitIntegrityRunner.ts` / `commit_integrity_cli.bb`) and the topic-record
+commit (`blTopicStore.ts` -> `commitScopedFile`, `gitCommitScopedFile.ts`)
+each gave up on a transient `.git/index.lock` refusal almost at once — one
+CLI attempt, or three tries over a 150 ms window with stderr discarded —
+on a shared checkout where every guarded commit (the full property lane for
+`extension/src` paths) can hold that lock for seconds, then alarmed "FAILED
+TO COMMIT — a human must land the change manually" / "NOT yet durable"
+without ever checking whether another writer's commit had already landed
+the change: on 2026-09-07 the BL-1472/BL-1473 approvals were swept into the
+specifier's mint commits eight seconds after the alarm fired, and 38 topic
+records sat dirty all day. Fixed: both writers now retry a lock refusal
+within a bound sized to the guard chain (up to ~30 s total, backing off,
+retrying only when git's stderr names `index.lock`) and, on a retry
+exhausted, check `git status --porcelain -- <path>` before alarming — a
+clean path means another writer already landed the change, reported by sha
+("approved recorded; landed in `<sha>` by another writer") rather than as
+needing manual landing. A genuine failure (a hook refusal, or the path
+still dirty after the bound) still alarms as before, now with git's own
+stderr always logged rather than discarded on the final attempt.
+`repair-bl-topic-records.js` (the backstop for any topic record still
+dirty) now batches its still-dirty records into one commit instead of one
+per record, since the one-per-record cadence had itself rejected 20 of 20
+QA land attempts on 2026-09-07 by moving `origin/main` every fifteen
+seconds. BL-892's approval-commit durability contract (below) gains this
+third outcome; BL-1368's byline on the front desk's own commits and BL-331/
+BL-390's fail-closed durability check for topic records are unchanged.
+Acceptance:
+`specs/features/BL-1475-shared-checkout-writers-retry-the-index-lock-and-verify-durability.feature`.)
+Prior entry —
 **Last Updated:** September 7, 2026 (BL-1408: three more hand-written
 copies of the commit-guard chain's guard list went red the same way
 BL-1398/BL-1401 already fixed once — `test_run_commit_guards.sh`'s
@@ -171,6 +202,7 @@ the fix. Acceptance:
 How-to: `docs/how-to/BL-1241-entangled-tip-at-the-land-step-has-a-reachable-remedy.md`
 (outcome bullet and a new section after BL-1466's); `QA.prompt`'s
 land-step item notes the same naming on its escalate outcome.)
+
 Prior entry —
 **Last Updated:** September 7, 2026 (BL-1348: `resolveVitestWorkerPool`
 (BL-935) composed a CPU ceiling default (`MAX_WORKERS = 6`) and a RAM
@@ -208,6 +240,7 @@ once ruled; flagged as still-absent to the specifier as a spec gap, added
 the same day: a new `Scenario Outline` over 3 `cores`/`load`/`pool`
 examples asserting the default ceiling follows free cores on a full-forge
 linux pack).)
+
 Prior entry —
 **Last Updated:** September 7, 2026 (BL-1466: `land_step_lib.bb`'s
 `ticket-approval-state` (BL-1375's passenger predicate) read only the
@@ -10337,7 +10370,12 @@ failure posts a loud Approvals-topic notice ("recorded but FAILED TO
 COMMIT — a human must land the change manually") rather than the prior
 unqualified success, while the adapter being altogether unwired degrades
 silently, the same no-op posture every other optional `PollAdapters` field
-already has. The paused-pager's `handlePausedPagerApproveRoute` commits
+already has. (BL-1475, 2026-09-08: this commit path retries a transient
+`index.lock` refusal within a bounded budget and, if still dirty after the
+bound, checks whether another writer already landed the change before
+alarming — a landed-elsewhere path now posts "approved recorded; landed in
+`<sha>` by another writer" instead of the manual-landing alarm; the alarm
+above fires only when the path is still genuinely dirty.) The paused-pager's `handlePausedPagerApproveRoute` commits
 synchronously in the same request and returns HTTP 500 with `reason:
 'approved but failed to commit'` on failure — already covered by the
 pager's existing generic non-OK-reason contract

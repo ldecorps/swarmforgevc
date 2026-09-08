@@ -41,6 +41,31 @@ function parseCommitIntegrityResult(stdout: string): CommitIntegrityResult {
   }
 }
 
+// A non-zero CLI exit rejects execFileAsync, but Node still attaches the
+// child's own stdout to the error - the CLI always prints its JSON line
+// before exiting non-zero, so a genuine failure's :reason/:stderr is still
+// recoverable here for diagnostics. `success` is forced false regardless of
+// what that JSON claims: a non-zero exit is NEVER a success, even when
+// stdout carries a stale/malformed success:true. Extracted out of
+// runCommitIntegrityDetailed's own body so that function's CRAP reflects
+// its own logic rather than this error-unwrapping's.
+//
+// `err && typeof err === 'object' && 'stdout' in err` and the `?? ''`
+// fallback for `err.stdout` are typeof/nullish guards over `unknown` - the
+// TypeScript catch-clause type, not a real production shape. The only
+// caller is `await execFileAsync(...)` (util.promisify of child_process's
+// execFile), and empirically every rejection it can produce - a non-zero
+// exit, ENOENT (missing bb), a `timeout` kill, and a signal kill - already
+// attaches a defined string `stdout` (verified '' on ENOENT/signal, never
+// undefined). So every branch these guards could reject on is unreachable
+// through this call site; each is an equivalent mutant of the BL-1081
+// !x/typeof-guard class (Hardener Order lesson), same reasoning as the
+// pre-existing `?? '{}'` fallback in parseCommitIntegrityResult above.
+function commitIntegrityFailureFromError(err: unknown): CommitIntegrityResult {
+  const stdout = err && typeof err === 'object' && 'stdout' in err ? String((err as { stdout?: string }).stdout ?? '') : '';
+  return stdout ? { ...parseCommitIntegrityResult(stdout), success: false } : { success: false };
+}
+
 async function runCommitIntegrityDetailed(targetPath: string, relPaths: string[], message: string): Promise<CommitIntegrityResult> {
   const args = [
     commitIntegrityCliPath(targetPath),
@@ -53,14 +78,7 @@ async function runCommitIntegrityDetailed(targetPath: string, relPaths: string[]
     const { stdout } = await execFileAsync('bb', args);
     return parseCommitIntegrityResult(stdout);
   } catch (err) {
-    // A non-zero CLI exit rejects execFileAsync, but Node still attaches the
-    // child's own stdout to the error - the CLI always prints its JSON line
-    // before exiting non-zero, so a genuine failure's :reason/:stderr is
-    // still recoverable here for diagnostics. `success` is forced false
-    // regardless of what that JSON claims: a non-zero exit is NEVER a
-    // success, even when stdout carries a stale/malformed success:true.
-    const stdout = err && typeof err === 'object' && 'stdout' in err ? String((err as { stdout?: string }).stdout ?? '') : '';
-    return stdout ? { ...parseCommitIntegrityResult(stdout), success: false } : { success: false };
+    return commitIntegrityFailureFromError(err);
   }
 }
 
