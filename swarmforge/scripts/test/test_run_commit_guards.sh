@@ -12,10 +12,44 @@
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
-RUNNER="$SCRIPT_DIR/../run_commit_guards.sh"
+LIVE_REPO_ROOT="$(cd "$SCRIPT_DIR/../../.." && pwd)"
+# BL-1408: an optional seam - a scratch runner copy's path (BL-1398's own
+# make_seam shape: <seam>/swarmforge/scripts/run_commit_guards.sh), never
+# the live one. The derivation's repoRoot follows the seam so an added
+# guard's fixture requirements (existing as a real file beside the runner)
+# are checked against the SAME tree the runner itself will exec from - the
+# live tree is the default and is never written by this test.
+if [ -n "${1:-}" ]; then
+  RUNNER="$1"
+  REPO_ROOT="$(cd "$(dirname "$RUNNER")/../.." && pwd)"
+else
+  RUNNER="$SCRIPT_DIR/../run_commit_guards.sh"
+  REPO_ROOT="$LIVE_REPO_ROOT"
+fi
+HELPER="$LIVE_REPO_ROOT/extension/test/helpers/commitGuardFixtureSet.js"
 
 fail() { echo "FAIL: $*" >&2; exit 1; }
 pass() { echo "PASS: $*"; }
+
+# BL-1408: the runner's OWN guard set, read at run time through BL-1398's
+# helper - never a hand-written list here, which is what let two joined
+# guards (check_handler_module_graph.sh, check_bb_scripts_load.sh,
+# 2026-09-04) leave this fixture running a narrower chain than production
+# and every case fail with "No such file or directory" the moment the
+# runner named a guard the fixture never stubbed. Scoped to the runner
+# ALONE (hookRels: []) - this test exercises run_commit_guards.sh's own
+# aggregation, never the hooks, and a guard the pre-merge-commit hook runs
+# on its own separate chain (e.g. check_art_director_tip.sh) is not this
+# fixture's concern. The seam argument is what BL-1408's own scenarios
+# 02/04 use to point the derivation at a scratch runner copy instead of
+# the live one.
+derive_guards() {  # derive_guards <runner-rel-to-repo-root>
+  node -e '
+    const { deriveCommitGuardFixtureSet } = require(process.argv[1]);
+    const r = deriveCommitGuardFixtureSet({ repoRoot: process.argv[2], runnerRel: process.argv[3], hookRels: [] });
+    process.stdout.write(r.guards.join(" "));
+  ' "$HELPER" "$REPO_ROOT" "$1"
+}
 
 ROOT="$(cd "$(mktemp -d)" && pwd -P)"
 trap 'rm -rf "$ROOT"' EXIT
@@ -40,29 +74,26 @@ STUB
   chmod +x "$GUARDS/$name"
 }
 
-# BL-1428: hand-kept in step with run_commit_guards.sh's own Tier 1 list
-# (the same discipline bl1252CommitGuardAggregationInvariants.property.test.js's
-# own INDEX_GUARDS constant states) - check_handler_module_graph.sh and
-# check_bb_scripts_load.sh (both landed 2026-09-04) were already missing
-# here before this ticket, which left every stub-driven case below failing
-# with "No such file or directory" on real guards this fixture never meant
-# to exercise; check_standing_red_register.sh (this ticket) is added at
-# the same time rather than reproducing the same gap a third way.
-# BL-1424: check_test_file_registration.sh joined the cheap tier
-# 2026-09-06 - same hand-kept discipline, added here in the same commit
-# that adds it to run_commit_guards.sh. check_constitution_doc_citations.sh
-# (BL-1440, landed earlier the same day) is ALREADY missing from this list
-# and is the live case-01 red BL-1408 owns (its own ticket text: "do not
-# paper over that here, add the guard to its list and leave the case-01
-# red to BL-1408") - not touched by this ticket, so as not to blur which
-# ticket's fix closed it.
-ALL_GUARDS="check_commit_size.sh check_ticket_deletion.sh check_pipeline_code_on_main.sh check_feature_handler_registration.sh check_handler_module_graph.sh check_bb_scripts_load.sh check_standing_red_register.sh check_test_file_registration.sh check_property_suite_drift.sh"
+# BL-1408: derived from the real runner, never hand-kept - a guard the
+# runner gains or loses is stubbed or dropped here with no test edit. The
+# derived set is printed once so a reader can see what this run actually
+# exercised.
+DERIVED_GUARDS="$(derive_guards swarmforge/scripts/run_commit_guards.sh)"
+echo "derived guard set: $DERIVED_GUARDS"
+
+# Invariant 3: the one guard this file names by hand is the expensive
+# tier's single member - assert it is actually in the derived set rather
+# than trusting the literal never drifts from the runner.
+case " $DERIVED_GUARDS " in
+  *" check_property_suite_drift.sh "*) : ;;
+  *) fail "check_property_suite_drift.sh (the only guard this test names by hand) is not in the derived set: $DERIVED_GUARDS" ;;
+esac
 
 reset_fixture() {
   rm -rf "$GUARDS" "$RAN"
   mkdir -p "$GUARDS" "$RAN"
   rm -f "$ROOT"/exit-*
-  for g in $ALL_GUARDS; do write_stub "$g"; done
+  for g in $DERIVED_GUARDS; do write_stub "$g"; done
 }
 
 set_exit() { echo "$2" > "$ROOT/exit-$1"; }
@@ -77,12 +108,14 @@ run_runner() {
 ran()     { [ -f "$RAN/$1" ]; }
 names()   { printf '%s' "$OUT" | grep -q -- "$1"; }
 
-# ── case 01: nothing violates - allowed, and the property guard DID run ──────
+# ── case 01: nothing violates - allowed, and EVERY derived guard ran ────────
 reset_fixture
 run_runner
 [ "$STATUS" -eq 0 ] || fail "01: a clean commit was refused (status $STATUS): $OUT"
-ran check_property_suite_drift.sh || fail "01: deferring the property guard silently skipped it"
-pass "01 a clean commit is allowed and still pays for the property suite"
+for g in $DERIVED_GUARDS; do
+  ran "$g" || fail "01: a clean commit never ran $g - derived from the runner, so this is not just the property guard"
+done
+pass "01 a clean commit is allowed and every derived guard ran"
 
 # ── case 02: one index guard refuses - named, and the suite is NOT paid ──────
 reset_fixture
@@ -106,15 +139,22 @@ names check_commit_size.sh || fail "03: refusal omitted check_commit_size.sh: $O
 names check_ticket_deletion.sh || fail "03: refusal omitted check_ticket_deletion.sh: $OUT"
 pass "03 two violations are both run and both named in ONE refusal"
 
-# ── case 04: every cheap guard refuses ──────────────────────────────────────
+# ── case 04: every derived guard except the suite guard refuses ────────────
+# BL-1408: "the cheap tier" is every derived guard MINUS the expensive
+# tier's one named member (check_property_suite_drift.sh, invariant 3 -
+# the only guard this test or the property test names by hand) - never a
+# separately hand-kept "cheap" list that could itself drift from the
+# runner's actual membership.
 reset_fixture
-set_exit check_commit_size.sh 1
-set_exit check_ticket_deletion.sh 1
-set_exit check_pipeline_code_on_main.sh 1
-set_exit check_feature_handler_registration.sh 1
+CHEAP_GUARDS=""
+for g in $DERIVED_GUARDS; do
+  [ "$g" = "check_property_suite_drift.sh" ] && continue
+  CHEAP_GUARDS="$CHEAP_GUARDS $g"
+  set_exit "$g" 1
+done
 run_runner
-[ "$STATUS" -ne 0 ] || fail "04: a quadruply-violating commit was allowed"
-for g in check_commit_size.sh check_ticket_deletion.sh check_pipeline_code_on_main.sh check_feature_handler_registration.sh; do
+[ "$STATUS" -ne 0 ] || fail "04: a commit violating every cheap guard was allowed"
+for g in $CHEAP_GUARDS; do
   ran "$g" || fail "04: $g never ran"
   names "$g" || fail "04: refusal omitted $g: $OUT"
 done
@@ -179,7 +219,10 @@ pass "09 guard order is preserved in the report"
 # ── case 10: the hook actually INVOKES the runner (BL-419 wiring) ───────────
 HOOK="$SCRIPT_DIR/../../git-hooks/pre-commit"
 grep -q 'run_commit_guards.sh' "$HOOK" || fail "10: pre-commit does not invoke run_commit_guards.sh"
-grep -qE '^\s*"\$REPO_ROOT/swarmforge/scripts/check_(commit_size|ticket_deletion|pipeline_code_on_main|feature_handler_registration|property_suite_drift)\.sh"' "$HOOK" \
+# BL-1408: matches ANY check_*.sh invoked directly, whatever the runner's
+# current membership - no guard is named here by hand, so a guard joining
+# or leaving the chain needs no edit to this case either.
+grep -qE '^\s*"\$REPO_ROOT/swarmforge/scripts/check_[a-z_]+\.sh"' "$HOOK" \
   && fail "10: pre-commit still calls a guard directly, bypassing the runner"
 pass "10 the pre-commit hook delegates to run_commit_guards.sh"
 

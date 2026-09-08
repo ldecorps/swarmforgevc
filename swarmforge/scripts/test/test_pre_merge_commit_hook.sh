@@ -15,10 +15,32 @@
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
-HOOK="$SCRIPT_DIR/../../git-hooks/pre-merge-commit"
+LIVE_REPO_ROOT="$(cd "$SCRIPT_DIR/../../.." && pwd)"
+# BL-1408: an optional seam - a scratch hook copy's path, never the live
+# one (BL-1398's own make_seam shape). The live hook is the default and is
+# never written by this test.
+if [ -n "${1:-}" ]; then
+  HOOK="$1"
+else
+  HOOK="$SCRIPT_DIR/../../git-hooks/pre-merge-commit"
+fi
+HELPER="$LIVE_REPO_ROOT/extension/test/helpers/commitGuardFixtureSet.js"
 
 fail() { echo "FAIL: $*" >&2; exit 1; }
 pass() { echo "PASS: $*"; }
+
+# BL-1408: the hook's OWN run_guard lines, read at run time through
+# BL-1398's helper's shared parseRunGuardEntries - never a hand-written
+# list, and never a second parser (invariant 2). check_art_director_tip.sh
+# (BL-1444) was the sixth hand edit of this list; derivation ends the class.
+derive_merge_guards() {  # derive_merge_guards <hook-path>
+  node -e '
+    const fs = require("node:fs");
+    const { parseRunGuardEntries } = require(process.argv[1]);
+    const entries = parseRunGuardEntries(fs.readFileSync(process.argv[2], "utf8"));
+    process.stdout.write(entries.map((e) => e.script).join(" "));
+  ' "$HELPER" "$1"
+}
 
 ROOT="$(cd "$(mktemp -d)" && pwd -P)"
 trap 'rm -rf "$ROOT"' EXIT
@@ -46,14 +68,14 @@ STUB
   chmod +x "$GUARDS/$name"
 }
 
-# check_art_director_tip.sh (BL-1444): hand edit; BL-1408 derives this set
-MERGE_GUARDS="check_pipeline_code_on_main.sh check_feature_handler_registration.sh check_art_director_tip.sh"
+DERIVED_MERGE_GUARDS="$(derive_merge_guards "$HOOK")"
+echo "derived merge guard set: $DERIVED_MERGE_GUARDS"
 
 reset_fixture() {
   rm -rf "$GUARDS" "$RAN"
   mkdir -p "$GUARDS" "$RAN"
   rm -f "$ROOT"/exit-*
-  for g in $MERGE_GUARDS; do write_stub "$g"; done
+  for g in $DERIVED_MERGE_GUARDS; do write_stub "$g"; done
 }
 
 set_exit() { echo "$2" > "$ROOT/exit-$1"; }
@@ -67,14 +89,15 @@ run_hook() {
 ran()   { [ -f "$RAN/$1" ]; }
 names() { printf '%s' "$OUT" | grep -q -- "$1"; }
 
-# ── case 01: the merge path reaches BOTH guards, not just the legacy one ────
+# ── case 01: the merge path reaches EVERY derived guard, not just the ───────
+#    legacy one.
 reset_fixture
 run_hook
 [ "$STATUS" -eq 0 ] || fail "01: a clean merge was refused (status $STATUS): $OUT"
-ran check_pipeline_code_on_main.sh || fail "01: the pipeline-code guard did not run on the merge path"
-ran check_feature_handler_registration.sh \
-  || fail "01: the feature-handler guard is NOT reached on the merge path - the hole BL-1303 closes"
-pass "01 a clean merge runs both guards and is allowed"
+for g in $DERIVED_MERGE_GUARDS; do
+  ran "$g" || fail "01: a clean merge never ran $g - derived from the hook, so this is not just the legacy guard"
+done
+pass "01 a clean merge runs every derived guard and is allowed"
 
 # ── case 02: the feature-handler guard alone refuses the merge ──────────────
 reset_fixture
