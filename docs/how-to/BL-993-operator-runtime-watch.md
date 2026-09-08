@@ -18,12 +18,14 @@ normal entry point, with no human action required.
 
 ## Tell + restart, not tell-only
 
-Unlike `handoffd_supervisor.bb`'s alarm-and-halt posture (BL-144) — right for
-the swarm's single transport, wrong here — this watch **restarts** on a
-bounded schedule and **announces** every restart on the human channel. The
-human directive was explicit: leaving operator-runtime dead silently would
-also defeat the babysitterd watchdog it hosts (BL-906), so restart is the
-default rather than tell-only.
+Unlike `handoffd_supervisor.bb`'s escalation to a full swarm halt once its
+own restart budget is spent (BL-144, bounded by BL-1492's restart-in-place
+ladder) — right for the swarm's single transport, wrong here — this watch
+**restarts** on a bounded schedule and **announces** every restart on the
+human channel, with no halt escalation at all. The human directive was
+explicit: leaving operator-runtime dead silently would also defeat the
+babysitterd watchdog it hosts (BL-906), so restart is the default rather
+than tell-only.
 
 ## What counts as healthy
 
