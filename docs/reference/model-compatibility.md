@@ -6,84 +6,184 @@
 
 Each registered model with its certification status and known limitations. See also the [Role recommendation matrix](#role-recommendation-matrix).
 
-### anthropic/claude-opus-4-8
+### alibabacloud/qwen3.8-flash
+- **Status:** candidate
+- **Known limitations:**
+  - free tier via b.ai gateway (chat.b.ai)
+  - likely rate-limited, exact limits unconfirmed
+
+### anthropic/claude-fable-5-1
 - **Status:** certified
 - **Known limitations:**
-  - Same-provider fallback for opus-class outages (BL-669)
+  - first-party Anthropic subscription seat
 
 ### anthropic/claude-sonnet-5
 - **Status:** certified
 - **Known limitations:**
-  - Prefer structured tool use over free-form shell when both work
+  - (none recorded)
 
 ### cerebras/llama-3.3-70b
 - **Status:** candidate
 - **Known limitations:**
-  - Not certified for production role assignment
-  - Smaller context window than swarm defaults
+  - (none recorded)
 
 ### cursor/auto
-- **Status:** candidate
+- **Status:** certified
 - **Known limitations:**
-  - Routing target is host-chosen; do not pin as a production default without certify
+  - (none recorded)
 
-### mistral/mistral-medium-3.5
+### deepseek/deepseek-v4-flash
 - **Status:** candidate
 - **Known limitations:**
-  - Alias over vibe CLI latest — re-check underlying_name on price/name drift
+  - free tier via b.ai gateway (chat.b.ai)
+  - likely rate-limited, exact limits unconfirmed
+
+### local/qwen2.5-coder:7b-instruct
+- **Status:** certified
+- **Known limitations:**
+  - Operator-elevated 2026-08-25: third-choice local; lighter/faster than 14B
+  - 7B — weaker multi-role planning than qwen3:14b*
+
+### local/qwen3:14b
+- **Status:** certified
+- **Known limitations:**
+  - Operator-elevated 2026-08-25: second-choice local Ollama Qwen3 14B
+  - Use think:false or /no_think for usable answers on CPU
+
+### local/qwen3:14b-q6_k
+- **Status:** certified
+- **Known limitations:**
+  - Operator-elevated 2026-08-25: preferred quality+cheap default on this host (Ollama)
+  - HF GGUF Q6_K aliased as qwen3:14b-q6_k; wire /no_think for usable answers
+  - 12GB weights — host RAM sensitive; still cost_class=low (on-host)
+
+### mixai/mimo-v2.5
+- **Status:** candidate
+- **Known limitations:**
+  - free tier via b.ai gateway (chat.b.ai)
+  - likely rate-limited, exact limits unconfirmed
+
+### moonshotai/kimi-k3
+- **Status:** certified
+- **Known limitations:**
+  - Qwen Cloud Model Studio slug kimi-k3 (DashScope intl)
+  - use BAILIAN_API_KEY sk-ws not Token Plan sk-sp
+  - always-on reasoning
+  - OpenRouter moonshotai/kimi-k3 is a separate path
+
+### nvidia/nemotron-3-ultra-550b-a55b
+- **Status:** candidate
+- **Known limitations:**
+  - NVIDIA NIM integrate.api.nvidia.com
+  - needs NVIDIA_API_KEY (absent 2026-08-31)
+  - free/ultra naming on OpenRouter was nvidia/nemotron-3-ultra-550b-a55b:free — not on OpenCode Go catalog
+  - do not certify until live NIM smoke passes
 
 ### openai/gpt-5.3-codex
 - **Status:** certified
 - **Known limitations:**
-  - Codex-leaning; weaker on long multi-role planning without a scorecard
+  - (none recorded)
+
+### opencode/nemotron-3-ultra-free
+- **Status:** certified
+- **Known limitations:**
+  - OpenCode Zen free model (opencode.ai/zen/v1)
+  - same OPENCODE_API_KEY as other Zen models
+  - $0 on gateway
+  - not on OpenCode Go catalog
+  - slow cold start possible
 
 ### qwen/qwen3.6-flash
 - **Status:** candidate
 - **Known limitations:**
-  - Token Plan Lite SEA Anthropic-compat; Personal ToS interactive-only; 7-day credit window
+  - Token Plan Lite SEA
+  - Anthropic-compat apps/anthropic
+  - Personal ToS interactive-only
+  - 7-day credit window
 
 ### qwen/qwen3.7-max
 - **Status:** candidate
 - **Known limitations:**
-  - Token Plan Lite SEA; Personal ToS interactive-only; 7-day credit window
+  - Token Plan Lite SEA
+  - Personal ToS interactive-only
+  - 7-day credit window
 
 ### qwen/qwen3.7-plus
-- **Status:** candidate
+- **Status:** certified
 - **Known limitations:**
-  - Token Plan Lite SEA; Personal ToS interactive-only; 7-day credit window
+  - Token Plan Lite SEA
+  - Personal ToS interactive-only
+  - 7-day credit window
 
 ### qwen/qwen3.8-max
 - **Status:** candidate
 - **Known limitations:**
-  - Token Plan Lite SEA Anthropic-compat; Personal ToS interactive-only; 7-day credit window
+  - Token Plan Lite SEA Anthropic-compat
+  - Personal ToS interactive-only
+  - 7-day credit window
+
+### tencentcloud2/glm-5.3-flash
+- **Status:** certified
+- **Known limitations:**
+  - free tier via b.ai gateway (chat.b.ai)
+  - likely rate-limited, exact limits unconfirmed
+
+### tencentcloud2/hy3
+- **Status:** candidate
+- **Known limitations:**
+  - free tier via b.ai gateway (chat.b.ai)
+  - likely rate-limited, exact limits unconfirmed
 
 ## Role recommendation matrix
 
 Live projection of the Role Recommendation Matrix (certified models only, highest score first). Query the same data via `model-steward role-matrix <role>`.
 
 ### QA
-1. anthropic/claude-sonnet-5 (score 0.93)
+1. tencentcloud2/glm-5.3-flash (score 1.0)
+2. anthropic/claude-sonnet-5 (score 0.93)
+3. cursor/auto (score 0.87)
+4. qwen/qwen3.7-plus (score 0.8)
+5. qwen/qwen3.7-plus (score 0.72)
 
 ### architect
-1. anthropic/claude-sonnet-5 (score 0.95)
-2. openai/gpt-5.3-codex (score 0.9)
-3. anthropic/claude-opus-4-8 (score 0.94)
-
-### art-director
-1. anthropic/claude-sonnet-5 (score 1.0)
+1. tencentcloud2/glm-5.3-flash (score 1.0)
+2. anthropic/claude-sonnet-5 (score 0.95)
+3. openai/gpt-5.3-codex (score 0.9)
+4. cursor/auto (score 0.87)
+5. qwen/qwen3.7-plus (score 0.8)
+6. qwen/qwen3.7-plus (score 0.72)
 
 ### cleaner
-1. anthropic/claude-sonnet-5 (score 0.9)
+1. tencentcloud2/glm-5.3-flash (score 1.0)
+2. anthropic/claude-sonnet-5 (score 0.9)
+3. cursor/auto (score 0.86)
 
 ### coder
-1. anthropic/claude-sonnet-5 (score 0.95)
-2. openai/gpt-5.3-codex (score 0.92)
+1. tencentcloud2/glm-5.3-flash (score 1.0)
+2. anthropic/claude-sonnet-5 (score 0.95)
+3. openai/gpt-5.3-codex (score 0.92)
+4. cursor/auto (score 0.9)
+5. qwen/qwen3.7-plus (score 0.8)
+6. opencode/nemotron-3-ultra-free (score 0.72)
+7. qwen/qwen3.7-plus (score 0.72)
 
 ### documenter
-1. anthropic/claude-sonnet-5 (score 0.85)
+1. tencentcloud2/glm-5.3-flash (score 1.0)
+2. cursor/auto (score 0.88)
+3. anthropic/claude-sonnet-5 (score 0.85)
+4. qwen/qwen3.7-plus (score 0.8)
+5. qwen/qwen3.7-plus (score 0.72)
 
 ### hardender
-1. anthropic/claude-sonnet-5 (score 0.91)
+1. tencentcloud2/glm-5.3-flash (score 1.0)
+2. anthropic/claude-sonnet-5 (score 0.91)
+3. cursor/auto (score 0.86)
+4. qwen/qwen3.7-plus (score 0.8)
+5. qwen/qwen3.7-plus (score 0.72)
 
 ### specifier
-1. anthropic/claude-sonnet-5 (score 0.96)
+1. anthropic/claude-fable-5-1 (score 1.0)
+2. anthropic/claude-sonnet-5 (score 0.96)
+3. cursor/auto (score 0.88)
+4. qwen/qwen3.7-plus (score 0.8)
+5. qwen/qwen3.7-plus (score 0.72)
