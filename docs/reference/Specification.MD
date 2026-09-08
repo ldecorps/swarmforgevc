@@ -1,5 +1,22 @@
 # SwarmForge VS Code Extension — Specification
 
+**Last Updated:** September 8, 2026 (BL-1491: an alarm-and-halt left no
+kill-all-audit row and no availability stop record, so the operator's
+death-detector signals read a halted swarm as clean on two of four signals —
+only a grep of `handoffd-supervisor.log` proved it happened. Fixed:
+`handoffd_supervisor.bb`'s new `record-halt!` adapter, called by
+`daemon_alarm_lib.bb`'s `alarm-and-halt!` write-ahead before `halt-swarm!`
+runs, appends one `<iso> handoffd_supervisor alarm-and-halt verdict=<reason>`
+row to `kill-all-audit.log` and, via the existing shell `availability_record`
+writer, one `stop` record of class `swarm-stop` sourced `handoffd_supervisor`
+to the BL-823 availability ledger. Both writes are best-effort — a write
+failure never blocks the halt. Neither `alarm-and-halt!`'s verdicts nor
+`halt-swarm!`'s kill behaviour changed. See the "Swarm Availability Ledger
+(BL-823)" Writers list below and
+`docs/how-to/BL-144-daemon-death-alarm.md`. No diagram edit: same reasoning
+as the prior entry — internal daemon-supervisor detail below the
+architecture diagram's depicted granularity.)
+Prior entry —
 **Last Updated:** September 8, 2026 (BL-1490: BL-977 made `:stalled` require
 true silence by having `run-sweep!` publish `.swarmforge/daemon/handoffd.sweep-marker`
 and `evaluate-health` read it — but three per-tick phases never went through
@@ -12126,6 +12143,12 @@ sites to hunt down:
 - **Shell** — `swarmforge/scripts/availability_ledger_lib.sh`'s
   `availability_record`, called from `kill_pipeline_swarm.sh` (a `stop`) and
   `start-swarm.sh` (a `start`).
+- **BL-1491** — `handoffd_supervisor.bb`'s `record-halt!` also reaches this
+  same shell writer (via a bounded subprocess, never a bb reimplementation of
+  the record shape) to append a `stop` record of class `swarm-stop`, source
+  `handoffd_supervisor`, write-ahead before an alarm-and-halt kills any role
+  session. Before this, an alarm-and-halt left no `stop` record at all — see
+  `docs/how-to/BL-144-daemon-death-alarm.md`.
 
 **A ledger write failure never blocks, fails, or alters the transition it
 observes** — both writers swallow their own errors.
