@@ -1425,6 +1425,41 @@
                             (str/trim (str (:err res) " " (:out res))))))))))
        vec))
 
+;; BL-1474: the number of stderr characters an escalate reason will quote
+;; verbatim before naming a truncation - a sane bound, not a hard limit on
+;; what a refusing hook could print.
+(def ^:private replay-commit-stderr-truncate-limit 2000)
+
+(defn replay-commit-refusal-reason
+  "BL-1474: the replay's escalate reason, true of the actual cause. Pure -
+   takes what replay! already observed before and after the commit attempt
+   (whether the scratch index was empty, and the commit's raw stderr), no
+   git calls of its own, so the three cases (empty index; a refusing guard
+   with a message; a refusing hook with none) are unit-testable without a
+   repository.
+
+   'nothing to commit' is reported ONLY when the index itself was empty -
+   never inferred from the commit's exit code alone, which is exactly the
+   bug this ticket fixes: a commit-time guard (merge-deletion, ticket-
+   deletion, registration, ...) refuses a REAL, non-empty index with its
+   own non-zero exit, and that refusal must never be reported as an empty
+   diff (BL-1463, BL-1408, both 2026-09-07)."
+  [task-ticket-id index-empty? stderr]
+  (cond
+    index-empty?
+    (str "land-step replay: nothing to commit for " task-ticket-id " - own-paths identical to origin/main")
+
+    (str/blank? stderr)
+    (str "land-step replay: commit refused for " task-ticket-id ", no text")
+
+    :else
+    (let [trimmed (str/trim stderr)
+          over-limit? (> (count trimmed) replay-commit-stderr-truncate-limit)
+          body (if over-limit?
+                 (str (subs trimmed 0 replay-commit-stderr-truncate-limit) " ... (truncated)")
+                 trimmed)]
+      (str "land-step replay: commit refused for " task-ticket-id " - " body))))
+
 (defn replay!
   "Builds a tip-pure commit for task-ticket-id's own-paths, on top of
    origin/main, in a DEDICATED linked worktree
@@ -1478,12 +1513,14 @@
               (do (cleanup!)
                   (drop-branch!)
                   {:success false :reason (str "land-step replay: could not apply " task-ticket-id "'s own paths from " commit)})
-              (let [commit-res (git! scratch "-c" "user.email=t@t" "-c" "user.name=t"
+              (let [index-empty? (zero? (:exit (git! scratch "diff" "--cached" "--quiet")))
+                    commit-res (git! scratch "-c" "user.email=t@t" "-c" "user.name=t"
                                       "commit" "-q" "-m" (str task-ticket-id ": tip-pure replay onto origin/main (BL-1241 land-step remedy)"))]
                 (if-not (zero? (:exit commit-res))
                   (do (cleanup!)
                       (drop-branch!)
-                      {:success false :reason (str "land-step replay: nothing to commit for " task-ticket-id " - own-paths identical to origin/main")})
+                      {:success false
+                       :reason (replay-commit-refusal-reason task-ticket-id index-empty? (:err commit-res))})
                   (let [sha (str/trim (:out (git! scratch "rev-parse" "HEAD")))
                         ;; BL-1375 invariant 2. Run ONLY when a passenger's
                         ;; lines actually ride: with nothing riding, the tree
