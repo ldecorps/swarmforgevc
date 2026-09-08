@@ -288,3 +288,6 @@ notes: |
   host has free, cores minus the 5-minute load average, floor 1, cap cores.
 
 assigned_to: coder
+bounce_count: 1
+bounce_history:
+  - { at: 2026-09-07, by: QA, blamed: coder, class: spec-gap, commit: 3b16f8c73c, evidence: backlog/evidence/BL-1348-bounce-20260907.md }
