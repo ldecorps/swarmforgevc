@@ -207,3 +207,9 @@ notes: |
   - Scenario 02 is the first application of the census rule landed in
     `swarmforge/roles/specifier.prompt` at `dce5e90739` (BL-1445's bounce):
     a scenario that derives a population states the floor it must find.
+  - 2026-09-08 04:46Z coordinator: not promoted despite expedited
+    (defect/high) ordering. Two independent holds: (1) human_approval is
+    `pending`; (2) effective_backlog_depth_cli.bb reads 0 (Article 3.5
+    severe circuit-breaker) with backlog/active/ already at 1 (BL-1480) -
+    under a 0 cap an expedited ticket still waits (Article 3.2.4). Same
+    posture as BL-1495, checked the same wake.
