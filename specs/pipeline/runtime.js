@@ -1,5 +1,12 @@
 'use strict';
 
+// BL-1357: disposal outcome markers, recorded in context.__disposed so assertion
+// steps can verify disposal happened. Exported for use by step handlers.
+const DISPOSAL_OUTCOME = {
+  SUCCESS: 'disposed',
+  FAILURE: 'failed',
+};
+
 // BL-259: a Scenario Outline Examples column name may legitimately contain
 // spaces (e.g. "forbidden edge", "what is checked") - matches ANY
 // non-angle-bracket text between < and >, not just [A-Za-z0-9_]+, so a
@@ -36,9 +43,9 @@ async function dispose(context, scenarioError) {
   for (const disposeFn of disposables) {
     try {
       await disposeFn();
-      context.__disposed.push('disposed');
+      context.__disposed.push(DISPOSAL_OUTCOME.SUCCESS);
     } catch (err) {
-      context.__disposed.push('failed');
+      context.__disposed.push(DISPOSAL_OUTCOME.FAILURE);
       if (!disposalError) {
         disposalError = err;
       }
@@ -81,4 +88,4 @@ async function runScenario(registry, feature, scenario, exampleRow) {
   }
 }
 
-module.exports = { runScenario, substitute, scenarioSteps };
+module.exports = { runScenario, substitute, scenarioSteps, DISPOSAL_OUTCOME };

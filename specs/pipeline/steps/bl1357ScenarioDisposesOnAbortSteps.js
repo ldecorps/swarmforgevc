@@ -4,13 +4,24 @@
 // it aborts before its last step". These handlers drive the REAL runScenario
 // from specs/pipeline/runtime.js, verifying that the teardown seam works
 // correctly across every exit path.
-//
-// The disposal mechanism records what was disposed in context.__disposed so
-// that assertion steps can verify disposal happened, even though disposal
-// itself runs in the finally block after all steps complete.
+
+const { DISPOSAL_OUTCOME } = require('../runtime.js');
 
 // Module-level disposal log for cross-scenario verification
 const disposalLog = [];
+
+// Helper: assert that disposables were registered for disposal.
+function assertDisposablesRegistered(ctx, expectedCount = null) {
+  if (!ctx.__disposables || ctx.__disposables.length === 0) {
+    const got = ctx.__disposables ? ctx.__disposables.length : 0;
+    throw new Error(`expected disposables to be registered, got ${got}`);
+  }
+  if (expectedCount !== null && ctx.__disposables.length !== expectedCount) {
+    throw new Error(
+      `expected exactly ${expectedCount} disposable(s) registered, got ${ctx.__disposables.length}`
+    );
+  }
+}
 
 function registerSteps(registry) {
   // ── Background ───────────────────────────────────────────────────────
@@ -31,9 +42,7 @@ function registerSteps(registry) {
     // The disposal happens in the finally block after this step runs, so we
     // verify that disposables were registered. The actual disposal verification
     // happens externally by checking the disposalLog.
-    if (!ctx.__disposables || ctx.__disposables.length !== 1) {
-      throw new Error(`expected exactly one disposable registered, got ${ctx.__disposables ? ctx.__disposables.length : 0}`);
-    }
+    assertDisposablesRegistered(ctx, 1);
   });
 
   // ── scenario-disposes-what-it-acquired-02 ───────────────────────────
@@ -46,9 +55,7 @@ function registerSteps(registry) {
 
   registry.define(/^the resource is disposed$/, (ctx) => {
     // Verify that disposables were registered for disposal.
-    if (!ctx.__disposables || ctx.__disposables.length === 0) {
-      throw new Error('expected disposables to be registered, but none were');
-    }
+    assertDisposablesRegistered(ctx);
   });
 
   registry.define(/^the original failure is still what the runner reports$/, (ctx) => {
@@ -73,6 +80,7 @@ function registerSteps(registry) {
     }
   });
 
+
   // ── scenario-disposes-what-it-acquired-04 ───────────────────────────
   registry.define(/^a scenario whose disposal itself throws$/, (ctx) => {
     // Register a disposal, but don't make it throw in the step handler.
@@ -86,9 +94,7 @@ function registerSteps(registry) {
 
   registry.define(/^the disposal mechanism is set up correctly$/, (ctx) => {
     // Verify that disposables were registered.
-    if (!ctx.__disposables || ctx.__disposables.length === 0) {
-      throw new Error('expected disposables to be registered, but none were');
-    }
+    assertDisposablesRegistered(ctx);
   });
 
   // ── scenario-disposes-what-it-acquired-05 ───────────────────────────
@@ -106,9 +112,7 @@ function registerSteps(registry) {
 
   registry.define(/^every row's resource is disposed exactly once$/, (ctx) => {
     // Verify that disposables were registered for this row.
-    if (!ctx.__disposables || ctx.__disposables.length === 0) {
-      throw new Error('expected disposables to be registered for this row, but none were');
-    }
+    assertDisposablesRegistered(ctx);
   });
 }
 
