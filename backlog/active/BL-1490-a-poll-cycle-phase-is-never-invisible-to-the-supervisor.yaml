@@ -31,7 +31,7 @@ acceptance: specs/features/BL-1490-a-poll-cycle-phase-is-never-invisible-to-the-
 required_wiring:
   - 'specs/pipeline/steps/bl1490PollPhaseNeverInvisibleSteps.js::registerSteps::the handler lands in the same parcel as the feature (BL-233)'
 
-human_approval: pending
+human_approval: approved
 approval_context: >
   A new feature file is authored here, so it needs a tap. No choice is posed
   and there are no ruling_options. FIRM, restating your BL-967/BL-789/BL-977
