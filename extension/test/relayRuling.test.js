@@ -285,3 +285,43 @@ test('BL-1369 invariant 3 other direction: tapping after a relay replaces both f
     fs.rmSync(dir, { recursive: true, force: true });
   }
 });
+
+// ── parseArgs (CLI argument parser) ──────────────────────────────────────
+
+const { parseArgs } = require('../out/tools/relay-ruling');
+
+test('BL-1369: parseArgs extracts all required flags', () => {
+  const argv = ['node', 'relay-ruling.js', '--ticket', 'BL-1369', '--option', 'one', '--relayer', 'coder'];
+  const result = parseArgs(argv);
+  assert.deepEqual(result, { ticket: 'BL-1369', option: 'one', relayer: 'coder', target: undefined });
+});
+
+test('BL-1369: parseArgs extracts optional --target flag', () => {
+  const argv = ['node', 'relay-ruling.js', '--ticket', 'BL-1369', '--option', 'two', '--relayer', 'QA', '--target', '/tmp/test'];
+  const result = parseArgs(argv);
+  assert.deepEqual(result, { ticket: 'BL-1369', option: 'two', relayer: 'QA', target: '/tmp/test' });
+});
+
+test('BL-1369: parseArgs returns null when --ticket is missing', () => {
+  const argv = ['node', 'relay-ruling.js', '--option', 'one', '--relayer', 'coder'];
+  const result = parseArgs(argv);
+  assert.equal(result, null);
+});
+
+test('BL-1369: parseArgs returns null when --option is missing', () => {
+  const argv = ['node', 'relay-ruling.js', '--ticket', 'BL-1369', '--relayer', 'coder'];
+  const result = parseArgs(argv);
+  assert.equal(result, null);
+});
+
+test('BL-1369: parseArgs returns null when --relayer is missing', () => {
+  const argv = ['node', 'relay-ruling.js', '--ticket', 'BL-1369', '--option', 'one'];
+  const result = parseArgs(argv);
+  assert.equal(result, null);
+});
+
+test('BL-1369: parseArgs handles flags in any order', () => {
+  const argv = ['node', 'relay-ruling.js', '--relayer', 'coder', '--ticket', 'BL-1369', '--option', 'three'];
+  const result = parseArgs(argv);
+  assert.deepEqual(result, { ticket: 'BL-1369', option: 'three', relayer: 'coder', target: undefined });
+});
