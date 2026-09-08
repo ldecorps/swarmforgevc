@@ -1,5 +1,35 @@
 # SwarmForge VS Code Extension — Specification
 
+**Last Updated:** September 8, 2026 (BL-1492: `check!`'s response to a
+`:dead`/`:stalled` verdict was always BL-144's full halt — kill every role
+session and the tmux server, then await a human — but `babysitterd` runs
+`./swarm ensure` unattended 3-8 minutes later regardless, so the human gate
+never fired and the only lasting effect of each halt was nine agents losing
+their in-flight context (150 times since 2026-07-15, 26 on 2026-09-07
+alone). Fixed, with human approval (reversing part of the July BL-144
+directive on the operator's own reasoning that babysitterd's auto-repair
+made the human gate fiction): a new pure `decide-response` in
+`handoffd_supervisor.bb`, given a verdict's `restart_history` and a bounded
+budget (default 2 restarts per 600s, re-armed once a restart entry ages out
+of the window with no further death — no separate healthy-since field),
+returns `:restart` while headroom remains or `:halt` once spent.
+`respond-to-verdict!` consults it before ever reaching `alarm-and-halt!`;
+on `:restart` a new `restart-daemon!` adapter (mirroring
+`alarm-and-halt!`'s own shape in `daemon_alarm_lib.bb`) restarts handoffd
+through the one start owner (`start_handoff_daemon.sh`, BL-690) — no role
+session or tmux server touched — still sends an alarm email (worded for a
+restart, `build-restart-alarm-email`), still writes the failure log, and
+appends the attempt to `restart_history` in the status file (BL-1235's
+already-printed but previously nil field). Budget exhaustion is the
+unchanged BL-144 halt: same failure log, same halt email, same
+`halt-swarm!`, same `halted` status, and BL-1491's audit records via the
+shared `record-halt!`. `swarm_ensure.bb:100-109`'s comment is re-tensed to
+describe the ladder rather than a bare halt authority. See
+`docs/how-to/BL-144-daemon-death-alarm.md` "The restart-then-halt ladder"
+and its updated "What Happened". No diagram edit: same reasoning as the
+prior entries — internal daemon-supervisor detail below the architecture
+diagram's depicted granularity.)
+Prior entry —
 **Last Updated:** September 8, 2026 (BL-1491: an alarm-and-halt left no
 kill-all-audit row and no availability stop record, so the operator's
 death-detector signals read a halted swarm as clean on two of four signals —
