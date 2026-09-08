@@ -90,6 +90,7 @@
   #{"BAILIAN_API_KEY"
     "BAILIAN_CODING_PLAN_API_KEY"
     "BAILIAN_TOKEN_PLAN_API_KEY"
+    "B_AI_API_KEY"
     "CEREBRAS_API_KEY"
     "CURSOR_API_KEY"
     "DASHSCOPE_API_KEY"
@@ -123,7 +124,8 @@
    "aider"      #{"OPENAI_API_KEY" "MISTRAL_API_KEY" "CEREBRAS_API_KEY"
                   "PERPLEXITY_API_KEY" "QWEN_API_KEY" "DASHSCOPE_API_KEY"
                   "DEEPSEEK_API_KEY" "BAILIAN_API_KEY"
-                  "BAILIAN_CODING_PLAN_API_KEY" "BAILIAN_TOKEN_PLAN_API_KEY"}})
+                  "BAILIAN_CODING_PLAN_API_KEY" "BAILIAN_TOKEN_PLAN_API_KEY"
+                  "B_AI_API_KEY"}})
 
 (defn provider-keep-names
   "Every provider secret the given window backends can read, plus BL-657's

@@ -16,6 +16,7 @@
 (def perplexity-host-re #"(?i)api\.perplexity\.ai")
 (def cerebras-host-re #"(?i)api\.cerebras\.ai")
 (def qwen-host-re #"(?i)(token-plan\.[a-z0-9-]+\.maas\.aliyuncs\.com|dashscope\.aliyuncs\.com)")
+(def bai-host-re #"(?i)api\.b\.ai")
 
 (defn launch-cli-implies-perplexity?
   "True when the role's extra CLI / launch body targets Perplexity's OpenAI-compat host."
@@ -32,6 +33,11 @@
   [launch-cli]
   (boolean (and (string? launch-cli)
                 (re-find qwen-host-re launch-cli))))
+
+(defn launch-cli-implies-bai?
+  [launch-cli]
+  (boolean (and (string? launch-cli)
+                (re-find bai-host-re launch-cli))))
 
 (defn openai-key-family
   "Coarse family for an OPENAI_API_KEY value. Never logs the key."
@@ -64,15 +70,22 @@
       (= "1" use-qwen)
       (launch-cli-implies-qwen? launch-cli)))
 
+(defn must-remap-to-bai?
+  [{:keys [use-bai launch-cli]}]
+  (or (= true use-bai)
+      (= "1" use-bai)
+      (launch-cli-implies-bai? launch-cli)))
+
 (def qwen-openai-base "https://token-plan.ap-southeast-1.maas.aliyuncs.com/compatible-mode/v1")
+(def bai-openai-base "https://api.b.ai/v1")
 
 (defn resolve-openai-compat
   "Returns {:openai-api-key :openai-api-base :openai-base-url :provider :reason}
-   for the pane. Prefer Cerebras over Perplexity over Qwen if multiple somehow
-   apply (explicit flag order matches swarmforge.sh). Never embeds secrets into
-   reason strings beyond family labels."
-  [{:keys [use-perplexity use-cerebras use-qwen
-           perplexity-api-key cerebras-api-key qwen-api-key openai-api-key
+   for the pane. Prefer Cerebras over Perplexity over Qwen over b.ai if multiple
+   somehow apply (explicit flag order matches swarmforge.sh). Never embeds
+   secrets into reason strings beyond family labels."
+  [{:keys [use-perplexity use-cerebras use-qwen use-bai
+           perplexity-api-key cerebras-api-key qwen-api-key bai-api-key openai-api-key
            launch-cli]
     :as opts}]
   (cond
@@ -114,6 +127,22 @@
      :openai-base-url qwen-openai-base
      :provider :qwen
      :reason :qwen-key-missing}
+
+    (and (must-remap-to-bai? opts) (not (str/blank? bai-api-key)))
+    {:openai-api-key bai-api-key
+     :openai-api-base bai-openai-base
+     :openai-base-url bai-openai-base
+     :provider :bai
+     :reason (if (launch-cli-implies-bai? launch-cli)
+               :launch-cli-bai
+               :use-bai-flag)}
+
+    (and (must-remap-to-bai? opts) (str/blank? bai-api-key))
+    {:openai-api-key nil
+     :openai-api-base bai-openai-base
+     :openai-base-url bai-openai-base
+     :provider :bai
+     :reason :bai-key-missing}
 
     :else
     {:openai-api-key openai-api-key

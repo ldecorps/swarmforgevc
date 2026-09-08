@@ -792,21 +792,25 @@
 
 (defn openrouter-pane-env-args
   "BL-130 ephemeral -e injection for launch_role / chase / ensure / rotate.
-   Must not drop OpenRouter/OpenAI/Mistral/Cerebras/Perplexity/Gemini/Qwen auth on respawn.
-   When SWARMFORGE_USE_CEREBRAS=1, SWARMFORGE_USE_PERPLEXITY=1, or SWARMFORGE_USE_QWEN=1,
-   that provider key wins for OPENAI_* (host OPENAI_API_KEY must not shadow the compat path).
+   Must not drop OpenRouter/OpenAI/Mistral/Cerebras/Perplexity/Gemini/Qwen/b.ai auth on respawn.
+   When SWARMFORGE_USE_CEREBRAS=1, SWARMFORGE_USE_PERPLEXITY=1, SWARMFORGE_USE_QWEN=1, or
+   SWARMFORGE_USE_BAI=1, that provider key wins for OPENAI_* (host OPENAI_API_KEY must not
+   shadow the compat path).
    Gemini: GEMINI_API_KEY, or SWARMFORGE_GEMINI_API_KEY mapped to GEMINI_API_KEY.
-   Qwen: QWEN_API_KEY, or BAILIAN_CODING_PLAN_API_KEY mapped to QWEN_API_KEY."
+   Qwen: QWEN_API_KEY, or BAILIAN_CODING_PLAN_API_KEY mapped to QWEN_API_KEY.
+   b.ai: B_AI_API_KEY (BL-1495)."
   []
   (let [use-cerebras (= "1" (System/getenv "SWARMFORGE_USE_CEREBRAS"))
         use-perplexity (= "1" (System/getenv "SWARMFORGE_USE_PERPLEXITY"))
         use-qwen (= "1" (System/getenv "SWARMFORGE_USE_QWEN"))
+        use-bai (= "1" (System/getenv "SWARMFORGE_USE_BAI"))
         cerebras (System/getenv "CEREBRAS_API_KEY")
         perplexity (System/getenv "PERPLEXITY_API_KEY")
         qwen (let [q (System/getenv "QWEN_API_KEY")]
                (if (str/blank? q)
                  (System/getenv "BAILIAN_CODING_PLAN_API_KEY")
                  q))
+        bai (System/getenv "B_AI_API_KEY")
         gemini (let [g (System/getenv "GEMINI_API_KEY")]
                  (if (str/blank? g)
                    (System/getenv "SWARMFORGE_GEMINI_API_KEY")
@@ -815,16 +819,19 @@
                  (and use-cerebras (not (str/blank? cerebras))) cerebras
                  (and use-perplexity (not (str/blank? perplexity))) perplexity
                  (and use-qwen (not (str/blank? qwen))) qwen
+                 (and use-bai (not (str/blank? bai))) bai
                  :else (System/getenv "OPENAI_API_KEY"))
         openai-base (cond
                       (and use-cerebras (not (str/blank? cerebras))) "https://api.cerebras.ai/v1"
                       (and use-perplexity (not (str/blank? perplexity))) "https://api.perplexity.ai"
                       (and use-qwen (not (str/blank? qwen))) "https://token-plan.ap-southeast-1.maas.aliyuncs.com/compatible-mode/v1"
+                      (and use-bai (not (str/blank? bai))) "https://api.b.ai/v1"
                       :else (System/getenv "OPENAI_API_BASE"))
         openai-base-url (cond
                           (and use-cerebras (not (str/blank? cerebras))) "https://api.cerebras.ai/v1"
                           (and use-perplexity (not (str/blank? perplexity))) "https://api.perplexity.ai"
                           (and use-qwen (not (str/blank? qwen))) "https://token-plan.ap-southeast-1.maas.aliyuncs.com/compatible-mode/v1"
+                          (and use-bai (not (str/blank? bai))) "https://api.b.ai/v1"
                           :else (System/getenv "OPENAI_BASE_URL"))]
     (cond-> []
       (not (str/blank? (System/getenv "OPENROUTER_API_KEY")))
@@ -839,6 +846,8 @@
       (concat ["-e" (str "PERPLEXITY_API_KEY=" perplexity)])
       (not (str/blank? qwen))
       (concat ["-e" (str "QWEN_API_KEY=" qwen)])
+      (not (str/blank? bai))
+      (concat ["-e" (str "B_AI_API_KEY=" bai)])
       (not (str/blank? gemini))
       (concat ["-e" (str "GEMINI_API_KEY=" gemini)])
       use-cerebras
@@ -847,6 +856,8 @@
       (concat ["-e" "SWARMFORGE_USE_PERPLEXITY=1"])
       use-qwen
       (concat ["-e" "SWARMFORGE_USE_QWEN=1"])
+      use-bai
+      (concat ["-e" "SWARMFORGE_USE_BAI=1"])
       (not (str/blank? openai))
       (concat ["-e" (str "OPENAI_API_KEY=" openai)])
       (not (str/blank? openai-base))
