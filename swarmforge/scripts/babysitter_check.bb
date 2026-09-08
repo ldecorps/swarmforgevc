@@ -663,14 +663,21 @@
                 (assemble-offending-commits rows)))))))))
 
 (defn gather-pipeline-code-on-main-cached
-  "BL-1086: gather-pipeline-code-on-main, memoised on the three tips.
+  "BL-1086: gather-pipeline-code-on-main, memoised on the three tips AND the qa-exclusive-paths.
 
    The live path goes through HERE - a cache that exists while the gather still
-   walks unconditionally would be this ticket's own failure mode repeated."
+   walks unconditionally would be this ticket's own failure mode repeated.
+
+   BL-1373: the cache was keyed only on tips, but the result depends on both
+   tips and qa-exclusive-paths. When qa-exclusive-paths changed (e.g., via the
+   BABYSITTER_QA_EXCLUSIVE_PATHS_SCRIPT env var in tests, or when BL-632's
+   script output changed), the cache returned stale results. Now the cache
+   keys on both."
   []
   (let [tips (pipeline-code-on-main-tips)
+        qa-paths (qa-exclusive-paths)
         cached (read-pipeline-code-on-main-cache)]
-    (if (and cached (= tips (:tips cached)) (some? (:result cached)))
+    (if (and cached (= tips (:tips cached)) (= qa-paths (:qa-paths cached)) (some? (:result cached)))
       ;; The cached result is reconstructed rather than trusted as-is: JSON
       ;; round-trips :offending-commits' keys as keywords but loses nothing
       ;; else, and stating the two fields explicitly means a cache written by
@@ -682,7 +689,7 @@
         ;; is a hole, and a hole cached as clean would outlive the condition
         ;; that caused it.
         (when-not (:ancestry-unavailable? result)
-          (write-pipeline-code-on-main-cache! {:tips tips :result result}))
+          (write-pipeline-code-on-main-cache! {:tips tips :qa-paths qa-paths :result result}))
         result))))
 
 ;; ── handoffd / dead-letters / stuck parcels ──────────────────────────────
