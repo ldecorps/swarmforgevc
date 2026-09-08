@@ -33,7 +33,7 @@ required_wiring:
   - 'swarmforge/scripts/test/test_handoffd_supervisor.sh::ZDOTDIR::the fixture points zsh at an empty startup directory so the operator rc never reorders PATH under it; absent today (grep returns 0)'
   - 'specs/pipeline/steps/bl1498SupervisorTestIsolatesOperatorShellSteps.js::registerSteps::the handler lands in the same parcel as the feature (BL-233, BL-1371)'
 
-human_approval: pending
+human_approval: approved
 approval_context: >
   A new feature file is authored here, so it needs a tap. No choice is
   posed and there are no ruling_options. FIRM: the fix is in the test
