@@ -164,7 +164,7 @@ notes: |
     "reads stalled" (one evaluation) are distinct assertions; "invoked once"
     and "never invoked" are opposites - kept as written, as BL-977 did.
 
-assigned_to: QA
+assigned_to: coder
 
 abandoned_commits: [9558401764]
 # QA approved 9558401764. land_step_cli.bb's BL-1241 remedy found two
