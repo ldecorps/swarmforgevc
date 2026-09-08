@@ -38,6 +38,23 @@ The daemon (handoffd) is the central process that delivers handoffs between agen
 2. **The swarm stops immediately** — all agent panes are halted so no work continues on a broken substrate.
 3. **Queue state is preserved** — all `.swarmforge/handoffs/` files are untouched, so work can resume from where it stopped.
 4. **A failure log is written** — diagnostic information is captured so you can understand why the daemon failed.
+5. **As of BL-1491, the halt records itself on both death-detector ledgers**,
+   write-ahead — before the first role session is killed, not after:
+   - A row is appended to `.swarmforge/daemon/kill-all-audit.log`, the same
+     `<iso> <text>` shape a deliberate `kill_pipeline_swarm.sh` stop already
+     writes: `<iso> handoffd_supervisor alarm-and-halt verdict=<reason>`.
+   - A `stop` record of class `swarm-stop`, source `handoffd_supervisor`, is
+     appended to the availability ledger
+     (`.swarmforge/telemetry/availability-YYYY-MM.jsonl`, BL-823) via the same
+     `availability_record` writer a deliberate stop uses.
+
+   Both writes are best-effort: if a write fails (e.g. an unwritable
+   telemetry directory), the halt still proceeds — a broken record never
+   blocks the alarm-and-halt. Before BL-1491, an alarm-and-halt left neither
+   record, so the operator's death-detector signals (audit log, availability
+   fold) read a halted swarm as clean; only a grep of `handoffd-supervisor.log`
+   proved it happened. Both rows are now written before either signal check
+   would run, so an interrupted halt still leaves its trace.
 
 ## Failure Log Contents
 
@@ -126,4 +143,5 @@ The daemon is part of SwarmForge's reliability layer. If deaths are frequent:
 - **BL-145** — Swarmforge ensure command: details on `swarmforge ensure` recovery.
 - **BL-690** — Fixed ensure's daemon repair to start the daemon instead of running the halt-authority probe; see the note under Recovery Steps above.
 - **BL-813** — Attached the failure log to the death email (see above) and hardened `ambulance_lib.bb`'s `ticket-has-file?` against the active→done glob-then-vanish race that caused this incident's crash.
+- **BL-1491** — Made every alarm-and-halt write a kill-all-audit row and an availability stop record write-ahead (see above), so the death is visible on both ledgers instead of only in a log grep.
 - **Daemon Status** — `.swarmforge/daemon/handoffd.status.json` tracks the daemon's health state in real time.
