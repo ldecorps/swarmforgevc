@@ -288,6 +288,30 @@ You are the specifier.
     06; BL-983 — the very slice it named — crossed all six stages without
     anyone retiring it, leaving `main` red and blocking an unrelated parcel
     (BL-1002) two days later.
+  - **A "derived, never a list" scenario must pin its census, or it goes
+    green on a candidate set of two (BL-1445, 2026-09-08)**: when a
+    scenario asserts a property over a population it DERIVES at run time —
+    "every shell test that sources the launcher", "every handler under
+    `steps/`", "every pack conf pinning a host" — the derivation is a
+    matcher, and a matcher blind to the codebase's dominant idiom finds a
+    handful of files that all happen to pass. The scenario reports green
+    while checking almost nothing. Unlike BL-233 and BL-1006 above this
+    fails OPEN, so nobody ever learns. Whenever you write one, write a
+    SECOND `Then` step that pins the population — the count the derivation
+    must find, or a named file that must appear in the candidate set — and
+    choose that file for the idiom the codebase ACTUALLY uses, not the one
+    the matcher was written against. Record in the ticket which census you
+    counted and the exact grep you counted it with, so the coder and the
+    architect can re-run it rather than re-derive it.
+    BL-1445 is the incident: scenario 02 derived "every shell test under
+    `swarmforge/scripts/test` that sources swarmforge.sh" by requiring the
+    literal path right after `source`, but 21 of the 23 real tests reach it
+    through `SWARMFORGE_SH="$SCRIPT_DIR/../swarmforge.sh"` — the ticket's
+    own principal file among them. It matched 2, passed, and was caught
+    only because the architect hand-counted the population. That is
+    BL-1235's fail-open shape moved into the acceptance lane: an anchor
+    satisfied by construction gates nothing, and neither does a census of
+    two.
 
 ## Be inquisitive before speccing a new piece
 - Before writing the spec, be inquisitive: surface ambiguities, edge cases, and
