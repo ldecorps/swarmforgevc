@@ -76,14 +76,38 @@ function registerSteps(registry) {
   });
 
   // ── scenario 02 ─────────────────────────────────────────────────────
+  // BL-1445 architect bounce (2026-09-08): the codebase's dominant idiom is
+  // never `source .../swarmforge.sh` as a literal token - it is
+  // `SWARMFORGE_SH="$SCRIPT_DIR/../swarmforge.sh"` followed by
+  // `source '$SWARMFORGE_SH' ...`, which the literal-adjacency regex never
+  // matched (21 of 23 real SWARMFORGE_SH-sourcing tests were invisible to
+  // it, including this ticket's own principal file). A file is now a
+  // candidate when it both has a `source` statement AND mentions the
+  // literal `swarmforge.sh` substring ANYWHERE (the variable's own
+  // assignment line always carries it) - a structural grep, never a shell
+  // parse, matching the BL-1408/BL-1398 "derived by grep, never a list"
+  // posture the scenario's own wording calls for.
   scoped(registry, /^every shell test under swarmforge\/scripts\/test that sources swarmforge\.sh is inspected$/, (ctx) => {
     const files = fs.readdirSync(TEST_DIR).filter((f) => f.endsWith('.sh'));
     ctx.candidates = [];
     for (const f of files) {
       const abs = path.join(TEST_DIR, f);
       const content = fs.readFileSync(abs, 'utf8');
-      if (!/source\s+['"]?\S*swarmforge\.sh/.test(content)) continue;
-      const assertsOnGate = /staffing gate|OVERRIDE/i.test(content);
+      const hasSourceStatement = /(^|[;\n])\s*source\s+\S/.test(content);
+      const mentionsSwarmforgeSh = /swarmforge\.sh/.test(content);
+      if (!hasSourceStatement || !mentionsSwarmforgeSh) continue;
+      // Neither the bare word "override" nor the bare env-var name is a
+      // reliable signal: several fixtures export PACK_STAFFING_SKIP_GATE=1
+      // themselves to bypass the gate entirely (deliberate, out of scope -
+      // the ticket's own description names these) without ever checking
+      // its refusal/warning text, and one (test_bl982_multi_seat_identity.sh)
+      // merely names a sibling file in a comment. The real gate's own
+      // refusal ("pack staffing gate refused role ...") and override
+      // warning ("WARNING: pack staffing gate OVERRIDE ...") both carry the
+      // literal phrase "pack staffing gate" - true only for a test that
+      // actually asserts on that text (verified: zero of the sixteen
+      // deliberate-bypass fixtures contain it).
+      const assertsOnGate = /pack staffing gate/i.test(content);
       if (!assertsOnGate) continue;
       ctx.candidates.push({ file: f, content });
     }
