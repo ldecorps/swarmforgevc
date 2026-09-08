@@ -44,7 +44,7 @@ required_wiring:
   - 'extension/test/helpers/commitGuardFixtureSet.js::swarmforge/git-hooks/commit-msg::the helper reads the commit-msg hook so its direct-call guard list is derived; absent today (grep returns 0)'
   - 'specs/pipeline/steps/bl1484HookFixturesDeriveTheirSetSteps.js::registerSteps::the handler lands in the same parcel as the feature (BL-233, BL-1371)'
 
-human_approval: pending
+human_approval: approved
 approval_context: >
   A new feature file is authored here, so it needs a tap. No choice is
   posed and there are no ruling_options. FIRM: the fix is in the four test
