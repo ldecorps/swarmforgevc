@@ -1,0 +1,251 @@
+id: BL-1500
+title: "BL-977's acceptance scenario 05 (a wedged poll loop is still caught within the in-sweep budget) has been red on main since the 2026-09-02 startup-grace hotfix with no owner: mkSupervisorFixture in bl977SupervisorProgressSteps.js ages the heartbeat, the sweep marker and the outbox parcel but writes handoffd.pid fresh, so the real --check-once reads a daemon younger than one stall window, grants the grace and answers healthy before the wedge branch is reached - BL-977's own invariant 2 is unverified by its suite; the fixture presents a daemon at least as old as the silence it stages and the feature resolves all ten scenarios"
+milestone: M8
+type: defect
+severity: high
+# high (standing-red rule 2026-09-05): an acceptance row red on main for six
+# days, deterministic, hidden by the per-feature runner. The production
+# wedge detection is intact (BL-1490's architect reproduced it through the
+# real check with an aged fixture); the broken thing is the safety signal
+# that proves it, which is exactly what the rule refuses to call medium.
+status: todo
+epic: swarm-reliability
+priority: 12
+direction: swarm-reported
+depends_on: []
+# BL-1490 (active, past architect) edits handoffd_supervisor.bb,
+# daemon_cycle_guard_lib.bb and handoffd.bb and adds its own handler; it does
+# not touch bl977SupervisorProgressSteps.js or the BL-977 feature (verified
+# 2026-09-08 against the architect tip 8b49be5b2f), so the two parcels do not
+# conflict. BL-1498 (paused) fixes the same grace-vs-fresh-pid shape in the
+# SHELL lane (test_handoffd_supervisor.sh case 02); different file, different
+# lane, no shared path. This ticket's register row is what lets QA approve
+# BL-1490 with this red in its evidence (Article 4.2).
+mutation_cost: low
+# low: one step-handler fixture gains one fs.utimesSync, plus one new
+# step-handler file. No production code; Babashka/JS handlers have no
+# mutation wired (BL-472).
+slice_size_envelope: low
+required_stages: [coder, cleaner, architect, hardender, documenter, qa]
+
+acceptance: specs/features/BL-1500-the-bl977-wedge-check-presents-a-daemon-older-than-the-startup-grace.feature
+
+# One anchor only, BL-233's: the handler lands with the feature. No anchor on
+# the fixture itself - `handoffd.pid` and `utimesSync` both already appear in
+# bl977SupervisorProgressSteps.js (lines 117 and 123), so a pattern on either
+# passes before the fix and gates nothing (BL-1235); scenario 02 is the real
+# proof, it runs the BL-977 feature and counts ten passes.
+required_wiring:
+  - 'specs/pipeline/steps/bl1500WedgeCheckPidAgeSteps.js::registerSteps::the handler lands in the same parcel as the feature (BL-233, BL-1371)'
+
+human_approval: pending
+approval_context: >
+  A new feature file is authored here, so it needs a tap. No choice is
+  posed and there are no ruling_options. FIRM: the fix is in the BL-977 step
+  handler's fixture and one new step handler only - handoffd_supervisor.bb
+  is not edited, and the BL-977 feature file itself is not edited (it
+  carries the hardener's mutation stamp; the scenarios are right, the
+  fixture under them is stale). FIRM: the startup grace keeps BL-1342's
+  contract exactly (younger than one stall window is healthy, older is
+  judged on the evidence, unknown age grants nothing, :dead untouched); the
+  fixture changes what it presents, never what the supervisor decides.
+  Minted by the specifier on the architect's priority-00 note of
+  2026-09-08 09:31Z (out-of-parcel finding from the BL-1490 review);
+  reproduced on main 1a7132810a from the master checkout, 9 of 10 pass,
+  scenario 05 logs "recovered daemon healthy".
+
+invariants:
+  - "Every BL-977 scenario that drives the real --check-once presents a daemon whose pid file is at least as old as the oldest silence it stages (heartbeat, marker, outbox), so no BL-977 verdict is ever decided by the startup grace."
+  - "The startup grace is neither widened nor narrowed: through the real --check-once, a wedged loop whose pid file is younger than one stall window reads healthy and is not halted; one older than the window reads stalled and is halted exactly once across repeated checks (BL-1342 and BL-977 invariant 2 together)."
+
+description: |
+  ## What is wrong
+
+  `specs/features/BL-977-supervisor-never-halts-a-progressing-daemon.feature`
+  scenario 05, "a wedged poll loop is still caught within the in-sweep
+  budget", fails on main. Reproduced by the specifier 2026-09-08 on main
+  `1a7132810a` from the master checkout:
+
+      $ node specs/pipeline/cli.js specs/features/BL-977-supervisor-never-halts-a-progressing-daemon.feature
+      ok 1 .. ok 9
+      not ok 10 - a wedged poll loop is still caught within the in-sweep budget
+        failed at step "Then the verdict becomes "stalled"": expected a stalled halt in the log:
+        2026-09-08T10:04:26.489159126Z heartbeat
+        2026-09-08T10:04:26.501789606Z recovered daemon healthy
+      # pass 9 / fail 1
+
+  `mkSupervisorFixture` (`bl977SupervisorProgressSteps.js` lines 90-124)
+  spawns a placeholder `sleep 300`, writes its pid into `handoffd.pid` and
+  ages the outbox parcel with `fs.utimesSync` (line 123); `ageHeartbeat`
+  (line 126) and `writeMarker` (line 133) age the heartbeat and the marker.
+  The pid file is never aged. Hotfix `27d6ab8630` (2026-09-02, stamped by
+  BL-1342) added `within-startup-grace?` to `evaluate-health`
+  (`handoffd_supervisor.bb` line 188): `check!` now feeds it
+  `:daemon-age-ms (file-age-ms pid-file)` (line 582), and a daemon younger
+  than one stall window reads `:healthy` (line 194) before the wedged-marker
+  / stale-heartbeat branch is reached. Scenario 05's fixture therefore
+  presents a 0 ms old daemon with a 300 s old marker, the grace applies, no
+  halt, and the log carries `recovered daemon healthy` instead of
+  `alarm-and-halt stalled`. Scenario 03 also drives the real check on this
+  fixture (`replayFixture`), and today its `healthy` verdict is ALSO the
+  grace's, not the marker's - it passes for the wrong reason. Scenarios
+  01-02 evaluate the pure function with explicit observations and scenario
+  04 reads the marker file only; neither is affected.
+
+  Found by BL-1490's architect on 2026-09-08 (evidence
+  `BL-1490-architect-20260908.md`, "Out-of-parcel finding"), who reproduced
+  it identically with the pre-BL-1490 versions of the three changed `.bb`
+  files and grepped `backlog/` and the register for an owner: none. The
+  grace is correct (BL-1342 verified it seven ways and
+  `handoffd_supervisor_startup_grace_test_runner.bb` pins it); the
+  fixture's observation is stale by construction, red since 2026-09-02 and
+  first recorded 2026-09-08. Same shape as BL-1498's red 2 in the shell
+  lane; different file.
+
+  ## Census of the class
+
+  Every acceptance handler and shell test that invokes a supervisor's
+  `--check-once` was listed (`grep -rln "check-once" specs/pipeline/steps
+  swarmforge/scripts/test`, 30 files) and intersected with those naming
+  `stalled` (13 files). Of those, six are step handlers: three drive
+  `front_desk_supervisor.bb` or `onboarder_supervisor.bb`, which have no
+  pid-file grace; `bl690` and `lib/bl886SupervisorFixture.js` name
+  `stalled` in a comment only and assert nothing on it; `bl977` is the one
+  acceptance fixture that drives `handoffd_supervisor.bb` expecting a stall
+  on a freshly written pid. The shell lane's instance is BL-1498's case 02.
+  Re-run the two greps rather than re-deriving them.
+
+  ## What is wanted
+
+  - The BL-977 fixture presents a daemon at least as old as the silence it
+    stages: `mkSupervisorFixture` ages `handoffd.pid` past the stall window
+    the way it already ages the outbox parcel (one `fs.utimesSync` beside
+    line 123), so scenario 05 reaches the wedge branch, reads `stalled`,
+    and halts exactly once across two checks; scenario 03 keeps its
+    `healthy` verdict, now earned by the under-budget marker (scenario 01
+    row "older"; invariant 1).
+  - The startup grace is untouched: the same wedge with a pid file younger
+    than one stall window still reads `healthy` through the real
+    `--check-once` and never halts (scenario 01 row "younger"; invariant 2).
+    No edit to `handoffd_supervisor.bb`.
+  - The BL-977 feature resolves all ten scenarios from the checkout the run
+    is in (scenario 02; QA step 1). The BL-977 `.feature` file is NOT
+    edited: it carries the hardener's mutation stamp and its scenarios are
+    correct as written.
+  - Register: this ticket's row in `backlog/standing-reds.tsv` (added at
+    mint) is removed in the land that turns the feature green - QA's land,
+    or the coordinator's close if the land is hand-built.
+  - Documenter: the header comment of `bl977SupervisorProgressSteps.js`
+    (lines 1-20) names the pid-file age as part of the fixture's contract
+    and dates the red; `docs/reference/` for BL-977 or BL-1342, if either
+    describes the fixture, gains the same sentence. No registered diagram
+    depicts this.
+
+  ## How (direction, not mandate)
+
+  - Age the pid file in `mkSupervisorFixture` itself, not only in scenario
+    05's step: scenario 03 drives the same fixture through the real check
+    and should earn its verdict from the marker, not the grace (invariant
+    1). Use the outbox parcel's own age (`STALL_MS + 30000` ms) so the
+    fixture's daemon is exactly as old as its oldest pending mail.
+  - Do NOT fix it by lowering or bypassing the grace, by deleting the pid
+    file (an unknown age grants nothing but also changes what scenario 03
+    presents), or by asserting on `recovered daemon healthy`: the
+    scenario's point is that a wedged loop IS halted.
+  - Handler (`bl1500WedgeCheckPidAgeSteps.js`): scenario 01 builds its own
+    mkdtemp root in the bl977 handler's shape (fake tmux on PATH, live
+    placeholder pid, outbox parcel/heartbeat/marker all past the 225000 ms
+    budget), ages the pid file per row (`older`: past `STALL_MS`;
+    `younger`: written fresh), runs the real `--check-once` twice, reads
+    `handoffd.status.json` for `<state>` and counts `alarm-and-halt` in
+    `handoffd-supervisor.log` for `<halts>`. Scenario 02 spawns
+    `node specs/pipeline/cli.js <BL-977 feature>` from the checkout root
+    the run is in (never a hard-coded path, BL-1462) and parses the TAP
+    summary for `pass 10` and `fail 0`. The nested run costs about 20 s
+    and must be sequential with the outer run (Verification rule), never
+    concurrent. Roots under mkdtemp, removed in `finally`; kill the
+    placeholder pids in the same `finally`; nothing sweeps by prefix
+    (BL-1385).
+  - Tokens: `<state>` validates against {healthy, halted} and
+    `<pid_file_age>` against {older, younger} as explicit `KNOWN_VALUES`,
+    no passthrough (engineering.prompt, Acceptance Pipeline).
+
+  ## Explicitly NOT in scope
+
+  - `handoffd_supervisor.bb`, the grace window, `SUPERVISOR_STALL_MS`, or
+    the in-sweep budget (human directive BL-967/BL-789/BL-977; BL-1490
+    owns the per-tick phases).
+  - The BL-977 feature file's text or its mutation stamp.
+  - BL-1498's shell-lane instance of the same shape (own ticket, own file).
+  - A harness-wide guard that every supervisor fixture ages its pid file
+    (lean-pass candidate: second occurrence of the grace-vs-fresh-pid
+    shape after BL-1498, both born on 2026-09-02 from one hotfix that
+    changed what the check reads without re-running the fixtures that
+    stage its inputs).
+
+constraints: >
+  Step handlers only: bl977SupervisorProgressSteps.js's fixture, the new
+  bl1500WedgeCheckPidAgeSteps.js and its index.js registration, the header
+  comment, the doc sentence. handoffd_supervisor.bb and the BL-977 feature
+  file are not edited. RESEND_API_KEY stays unset for the whole run
+  (BL-326; the bl977 handler's checkEnv already strips it). Fixture roots
+  under mkdtemp, removed in finally; the live repository is never written
+  by the handler. The step handler lands with the feature (BL-233).
+
+out_of_scope: |
+  - Anything in handoffd_supervisor.bb, daemon_cycle_guard_lib.bb or
+    handoffd.bb (BL-1490 is in flight on all three).
+  - BL-1498 (shell lane, test_handoffd_supervisor.sh case 02).
+  - The other five check-once handlers in the census: none asserts a stall
+    against handoffd_supervisor.bb on a fresh pid file.
+  - Running every acceptance feature on a cadence so a red surfaces the day
+    it appears (process candidate already recorded on BL-1462's and
+    BL-1498's adjudications; this one sat six days).
+
+qa_e2e_procedure: |
+  1. From the master checkout AND from `.worktrees/QA`, `RESEND_API_KEY`
+     unset: `node specs/pipeline/cli.js specs/features/BL-977-supervisor-never-halts-a-progressing-daemon.feature`
+     prints `# pass 10` / `# fail 0` (was pass 9 / fail 1 on main
+     2026-09-08); the scenario-05 log excerpt in a failure would read
+     `recovered daemon healthy` - it must not.
+  2. `git diff main -- swarmforge/scripts/handoffd_supervisor.bb specs/features/BL-977-supervisor-never-halts-a-progressing-daemon.feature`
+     is empty for the parcel.
+  3. Grace contract: `bb swarmforge/scripts/test/handoffd_supervisor_startup_grace_test_runner.bb`
+     still passes all 7 assertions; `bb swarmforge/scripts/test/bl977_supervisor_progress_property_runner.bb`
+     still prints `ALL PROPERTIES HOLD`.
+  4. Acceptance: all BL-1500 scenarios resolve; one feature per
+     run_acceptance.sh call, BL-1500's nested BL-977 run included in its
+     own budget.
+  5. `grep -c 'handoffd.pid' specs/pipeline/steps/bl977SupervisorProgressSteps.js`
+     is at least 2 (the write and the ageing) and a `utimesSync` on that
+     path is present in `mkSupervisorFixture`, not only in a scenario step.
+  6. Register: after QA lands, `backlog/standing-reds.tsv` carries no row
+     for the BL-977 feature and `bb swarmforge/scripts/standing_red_register_cli.bb .`
+     reports `unowned: []` with the count down by one.
+
+source: |
+  Architect note 2026-09-08T09:31Z (priority 00, from the BL-1490 review):
+  "BL-977 scen05 pid unbackdated masks wedge check;
+  BL-1490-architect-20260908.md". Adjudication:
+  backlog/evidence/BL-977-scenario05-unowned-red-adjudication-specifier-20260908.md.
+
+notes: |
+  - Minted 2026-09-08 by the specifier on the architect's unowned-red note.
+    Grepped first: BL-977 (done) owns the feature but is closed; BL-1342
+    (done) shipped the grace and its 09-03 QA evidence ran the property
+    runner, not this feature; BL-1490 (active) names BL-977 as done and
+    untouched; BL-1498 (paused) owns the shell-lane twin only; the register
+    carried no row for the feature. Nothing live owned it.
+  - Register row added at mint: acceptance / BL-977 feature / BL-1500 /
+    first_seen 2026-09-08 (first recorded by the architect), red since
+    2026-09-02 (the hotfix).
+  - Why not fold into BL-1498: different lane, different file, and BL-1498
+    is already approved - widening an approved ticket re-pends it (BL-1455)
+    and INVEST's I and S both say two one-line fixes in two files are two
+    tickets that share a register note, not one.
+  - IR-DRY (2026-09-08): "the status reads <state>" and "the swarm halt
+    count across both checks is <halts>" are two assertions on two
+    artifacts (status file, supervisor log); scenario 02's "ten scenarios
+    passed and none failed" is one pinned count, BL-1445's census shape
+    (the BL-977 outline contributes six subtests, the four scenarios one
+    each: 10).
