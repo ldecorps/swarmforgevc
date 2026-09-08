@@ -1,3 +1,8 @@
+# mutation-stamp: sha256=147fa00de4ecf007c7711038f2691cef3b7138bbaa5059f11eda1ad94479f1d1
+# acceptance-mutation-manifest-begin
+# {"version":1,"tested_at":"2026-09-08T03:32:51.322015028Z","feature_name":"BL-1445 The staffing-gate wiring test decides the operator override itself","feature_path":"/home/carillon/swarmforgevc/.worktrees/hardender/specs/features/BL-1445-the-staffing-gate-wiring-test-decides-the-override-itself.feature","background_hash":"74234e98afe7498fb5daf1f36ac2d78acc339464f950703b8c019892f982b90b","implementation_hash":"unknown","scenarios":[{"index":0,"name":"the wiring test passes every case whatever the pane exports for the override","scenario_hash":"064d3eff338891f42cfca680a3618b06c5dc9154b5a5cff40158871deaa499fa","mutation_count":3,"result":{"Total":3,"Killed":3,"Survived":0,"Errors":0},"tested_at":"2026-09-08T03:32:51.322015028Z"}]}
+# acceptance-mutation-manifest-end
+
 Feature: BL-1445 The staffing-gate wiring test decides the operator override itself
 
   swarmforge/scripts/test/test_pack_staffing_gate_wiring.sh (BL-1318) sources
