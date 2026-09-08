@@ -193,3 +193,11 @@ notes: |
     different fixtures.
 
 assigned_to: coder
+
+abandoned_commits: [de5b6aa6cc]
+# de5b6aa6cc: QA's own worktree tip cited to land_main_publish.sh --land.
+# land_step_cli.bb answered LAND_REPLAY (a landed sibling, BL-1348, shared
+# docs/briefings/2026-09-08.md), so a tip-pure replay
+# (e274174322776d669eca71a3dff00bcf1ee7a61c on land-replay/BL-1480-de5b6aa6cc)
+# was built off origin/main and pushed instead. de5b6aa6cc is off the
+# parcel's landed lineage; do not read it as stranded.
