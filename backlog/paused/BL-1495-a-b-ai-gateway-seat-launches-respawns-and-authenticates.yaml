@@ -1,0 +1,202 @@
+id: BL-1495
+title: "The b.ai gateway (tencentcloud2/glm-5.3-flash, certified for every pipeline role on 2026-09-08) cannot be seated: pack_staffing_gate_lib.bb's api-base host table has no api.b.ai entry so the launch gate refuses the seat as unresolved, swarmforge.sh's pane-launch provider map has no case for it so an aider pane boots with no OPENAI_API_KEY while B_AI_API_KEY sits unused in the shell, the respawn and scrub paths know nothing of it, and a claude seat on claude-fable-5-1 (certified for specifier the same day) is unresolved too; a b.ai seat resolves, launches, survives a respawn and authenticates, and the glm-mono-router pack the operator asked for ships with it"
+milestone: M8
+type: defect
+severity: high
+# high: a live fault - the launch gate refuses a model the steward has
+# certified, and the pane that would boot has no credential at all - and it
+# blocks a launch the operator asked for today. Not critical: nothing
+# running is degraded, only the requested pack cannot start.
+status: todo
+epic: swarm-intelligence-layer
+priority: 3
+direction: human-requested
+depends_on: []
+mutation_cost: low
+# low: Babashka and shell only (no mutation/CRAP/DRY wired, BL-472); the
+# hardener gates on the bb runners named below and records the fallback.
+slice_size_envelope: medium
+required_stages: [coder, cleaner, architect, hardender, documenter, qa]
+
+acceptance: specs/features/BL-1495-a-b-ai-gateway-seat-launches-respawns-and-authenticates.feature
+
+# Consumer anchors (BL-1235), every literal fixed at mint: the host and the
+# key name come from the intake, the table keys are plain strings. The
+# respawn libs and the compat resolver are gated by scenarios 02-03 rather
+# than anchored - a regex there escapes the dot, and a DRY pass may move the
+# env read between the two duplicate respawn mappings, so an anchor on
+# either would false-block a correct parcel.
+required_wiring:
+  - 'swarmforge/scripts/pack_staffing_gate_lib.bb::api.b.ai::the launch gate resolves an api.b.ai seat to steward provider tencentcloud2'
+  - 'swarmforge/scripts/pack_staffing_gate_lib.bb::claude-fable-5-1::the specifier seat resolves to anthropic instead of unresolved'
+  - 'swarmforge/scripts/swarmforge.sh::api.b.ai::pane launch sniffs the host in the window line and maps the key onto OPENAI_*'
+  - 'swarmforge/scripts/swarmforge.sh::B_AI_API_KEY::the key is forwarded per pane and re-applied by the launch-script guard'
+  - 'swarmforge/scripts/harness_env_scrub_lib.bb::B_AI_API_KEY::scrubbed from the tmux server, kept for the aider backend'
+  - 'swarmforge/scripts/harness_env_scrub.sh::B_AI_API_KEY::the shell twin agrees (BL-897)'
+  - 'swarmforge/packs/glm-mono-router.conf::api.b.ai::the pack the operator asked for exists and pins the gateway'
+  - 'specs/pipeline/steps/bl1495BaiGatewaySeatSteps.js::registerSteps::the handler lands in the same parcel as the feature (BL-233)'
+
+human_approval: pending
+approval_context: >
+  A new feature file and a new pack are authored here, so it needs a tap.
+  No choice is posed and there are no ruling_options. FIRM: B_AI_API_KEY
+  is never written into any committed file - names only, value from the
+  environment, same discipline as every other provider key; every existing
+  provider case (Cerebras, Perplexity, Qwen, local-model) is untouched -
+  additive only; the pane flag is SWARMFORGE_USE_BAI, following the
+  SWARMFORGE_USE_CEREBRAS/PERPLEXITY/QWEN family; the pack is GLM on every
+  seat including the provisioned coordinator, and claude-fable-5-1 on the
+  specifier, as the intake states. One thing the intake did not say and
+  you should know: the provisioned aider coordinator has no window line to
+  sniff a host from (provision_coordinator: "base URL comes from pane env
+  remap, not from flags"), so it takes the flag from the launching shell -
+  the parcel therefore ships a start wrapper in the start-swarm-qwen.sh
+  shape that exports it; `SWARMFORGE_PACK=glm-mono-router ./start-swarm.sh`
+  alone would seat the workers and leave the coordinator without a base.
+
+invariants:
+  - "Every path that maps a provider key onto a pane's OPENAI_* - the launch injection, the in-pane launch-script guard, the respawn env derivation (both mappings), the compat resolver - treats api.b.ai exactly as it treats api.cerebras.ai: same flag posture, the host's real OPENAI_API_KEY excluded, so a b.ai seat that authenticates at launch authenticates again after a respawn."
+  - "B_AI_API_KEY reaches a pane only by explicit per-pane -e passthrough; it never sticks to the tmux server's global environment and never appears in a committed file."
+
+description: |
+  ## What is wrong
+
+  On 2026-09-08 `tencentcloud2/glm-5.3-flash` was certified in the model
+  steward registry for coder, cleaner, architect, hardender, documenter and
+  QA, and `anthropic/claude-fable-5-1` for specifier
+  (`docs/reference/model-compatibility.md`, `6caa0e402c`;
+  `.swarmforge/model-steward/registry.json` reads `"status": "certified"`
+  for both). The operator asked for a GLM mono-router pack. It cannot
+  launch, for three code gaps in the launch tooling (verified on main
+  `b6b86d1839`):
+
+  1. `pack_staffing_gate_lib.bb:64-66` `api-base-host-providers` maps only
+     `api.deepseek.com` and the Alibaba Token Plan host. `resolve-seat`
+     (`:84-110`) answers `:unresolved` for a window line carrying
+     `--openai-api-base https://api.b.ai/v1`, and BL-1318's gate refuses
+     the seat (`seat-model-unresolved`) though the model is certified.
+  2. The same table's sibling `agent-model-providers` (`:49-54`) knows
+     `claude-sonnet-5` and `claude-opus-5` only; a `claude` seat pinning
+     `--model claude-fable-5-1` is unresolved the same way. (The intake
+     missed this one; the anthropic packs' `claude-fable-5` specifier seat
+     is in the same state and is noted below, out of scope.)
+  3. `swarmforge.sh`'s pane-launch provider map (`:2185-2246`) sniffs
+     `perplexity.ai`, the Token Plan host and `dashscope.aliyuncs.com` in
+     the window's extra CLI and maps that provider's key onto
+     `OPENAI_API_KEY`/`OPENAI_API_BASE`/`OPENAI_BASE_URL`; the in-pane
+     launch-script guards (`:1936-1975`) re-apply the map after `~/.zshenv`
+     re-exports the real OpenAI key. Neither knows `api.b.ai`, so a b.ai
+     pane boots with the shell's real `OPENAI_API_KEY` (or none) and fails
+     its first live call - the 2026-07-19 Perplexity incident's shape
+     (`provider_compat_lib.bb` header).
+
+  Beyond the intake's two gaps, the same host is absent from every sibling
+  site a provider needs to survive the day: `provider_compat_lib.bb` (the
+  "single decision point" the respawn path consults),
+  `provider_respawn_env_lib.bb` and `handoff_lib.bb:790-830` (two
+  hand-rolled copies of the respawn env mapping - a respawned b.ai seat
+  would come back unauthenticated, which babysitterd does after every
+  supervisor halt), `harness_env_scrub_lib.bb` + `harness_env_scrub.sh`
+  (`B_AI_API_KEY` would neither be scrubbed from the tmux server's global
+  environment nor listed under the aider backend's keep set),
+  `ancillary_provider_lib.sh:104-106` (pack-prefix -> flag) and
+  `failover_to_gpt.sh:13` (flags unset on failover).
+
+  ## What is wanted
+
+  - The gate resolves an `api.b.ai` seat to `tencentcloud2` and a `claude`
+    + `claude-fable-5-1` seat to `anthropic` (scenario 01).
+  - The compat resolver knows the host: key present -> the b.ai triple with
+    reason `launch-cli-bai` / `use-bai-flag`; key blank -> `bai-key-missing`
+    and a mismatch (scenario 02).
+  - Both respawn mappings derive the same triple from `SWARMFORGE_USE_BAI=1`
+    + `B_AI_API_KEY`, excluding the shell's real key (scenario 03).
+  - Both scrub twins list `B_AI_API_KEY` in the scrub map and the aider
+    keep set (scenario 04).
+  - `swarmforge/packs/glm-mono-router.conf` ships: `config rotation router`,
+    `coordinator_agent aider`, `coordinator_model openai/glm-5.3-flash`,
+    every worker window `aider ... --model openai/glm-5.3-flash
+    --openai-api-base https://api.b.ai/v1 --no-gitignore
+    --no-show-model-warnings --no-check-update`, the specifier window
+    `claude master --model claude-fable-5-1 --dangerously-skip-permissions
+    --effort high`; a `start-swarm-glm.sh` wrapper in start-swarm-qwen.sh's
+    shape (source zshenv, unset the other USE flags, require B_AI_API_KEY,
+    export SWARMFORGE_USE_BAI=1 and SWARMFORGE_PACK) (scenario 05 for the
+    pack; the wrapper is gated by the e2e procedure).
+  - Documenter: `docs/how-to/glm-mono-router-launch.md` in the shape of
+    `docs/how-to/perplexity-mono-router-launch.md`; `model-compatibility.md`
+    is already regenerated. No registered diagram depicts provider wiring.
+
+  ## How (direction, not mandate)
+
+  - Follow the Qwen precedent file by file; the swarmforge.sh case is a
+    Perplexity-style host sniff (always remap when the CLI targets the
+    host, exit 1 naming B_AI_API_KEY when the key is unset), plus the flag
+    branch for the provisioned coordinator; add B_AI_API_KEY to the
+    forwarded `provider_key` list and SWARMFORGE_USE_BAI to the
+    "do not forward the real OPENAI_API_KEY" condition.
+  - Tests: `pack_staffing_gate_lib_test_runner.bb`,
+    `bl1318_pack_staffing_gate_property_runner.bb`,
+    `bl1049_provider_env_scrub_test_runner.bb`, `harness_env_scrub_lib_test_runner.bb`,
+    and the swarmforge.sh provider-env shell tests (`test_bl1328_qwen_model_token_forms.sh`'s
+    shape) each gain the b.ai rows; the acceptance handler drives the pure
+    libs through a bb CLI under `specs/pipeline/steps/lib/` and the shipped
+    pack through `pack_staffing_gate_cli.bb` with a fixture registry.
+
+constraints: >
+  B_AI_API_KEY: names only in any committed file, never a value. Additive
+  only - the Cerebras, Perplexity, Qwen and local-model cases are not
+  touched. The registry and certification evidence are runtime state
+  (gitignored) and are not the parcel's to write; the acceptance uses a
+  fixture registry. swarmforge.sh is shared with nothing active today;
+  pack_staffing_gate_lib.bb is shared with BL-1486 (paused) - the
+  coordinator serialises if both go live.
+
+out_of_scope: |
+  - The anthropic packs' `claude-fable-5` specifier seat, unresolved by the
+    same table today (observed at mint; launches use the override hatch).
+  - The b.ai provider CHAT seat behind a Telegram topic (BL-1383, done).
+  - Rate limits or quotas on the b.ai free tier ("likely rate-limited,
+    exact limits unconfirmed" in the registry): the outage and failover
+    machinery already owns that.
+
+qa_e2e_procedure: |
+  1. Acceptance resolving all five scenarios; the runners named in How
+     green.
+  2. Live, with B_AI_API_KEY exported in the shell and no other swarm
+     running: `./start-swarm-glm.sh`. The staffing gate's log answers
+     `pass` for every seat (not `override`, not `refuse`); the provisioned
+     coordinator and every worker pane show aider bound to
+     `openai/glm-5.3-flash` at `https://api.b.ai/v1`; the specifier pane
+     runs claude on claude-fable-5-1; the first live call in each aider
+     pane succeeds with no "Wrong API Key" / missing-key error.
+  3. `tmux -S <swarm socket> show-environment -g | grep -c B_AI_API_KEY`
+     prints 0 (scrubbed from the server); `tmux -S <socket> show-environment
+     -t swarmforge-coder | grep -c '^OPENAI_API_BASE=https://api.b.ai/v1'`
+     prints 1.
+  4. Kill one worker session and let babysitterd (or the chase respawn)
+     bring it back: its first call authenticates again.
+  5. `git grep -n B_AI_API_KEY` lists names only, never a value.
+
+source: |
+  Root intake `backlog/INTAKE-wire-b-ai-gateway-provider-into-launch-tooling.md`
+  (coordinator, 2026-09-08, commit 8454949252, "following an operator
+  request to build and start a GLM mono-router pack"), archived to
+  backlog/archive/ in this pass; coordinator note to the specifier, priority
+  00, 04:18Z. The two gaps it names were verified at mint; the third
+  (claude-fable-5-1 unresolved) and the respawn/scrub sites were found by
+  reading resolve-seat and the Qwen precedent.
+
+notes: |
+  - Minted 2026-09-08 by the specifier from the intake, one ticket rather
+    than a launch/respawn split: a seat that authenticates at launch and
+    not after a respawn is exactly the dark path BL-1235 warns about, and
+    babysitterd respawns roles after every supervisor halt (BL-1490).
+    Grepped first: no ticket names b.ai, glm-5.3-flash or tencentcloud2
+    in the launch tooling; BL-1383 (done) is the chat seat only.
+  - Article 3.2.4: type defect, severity high - expedited ordering.
+  - Intake constraint carried verbatim: "Never write `B_AI_API_KEY` into
+    any committed file, pack conf, or launch script - env var only, same
+    discipline as every other provider key in this repo." and "Do not
+    touch the Qwen/DeepSeek/Perplexity/local-model cases already in either
+    file - additive only."
