@@ -39,19 +39,6 @@ HANDOFFD="$(cd "$SCRIPT_DIR/.." && pwd)/handoffd.bb"
 # operator env must never reach a test fixture.
 unset RESEND_API_KEY
 
-# BL-1492: a :dead/:stalled verdict now restarts the daemon in place while
-# the restart budget has headroom, escalating to BL-144's halt only once it
-# is spent - every case below asserts the immediate-halt behavior on a
-# FRESH fixture (no restart_history yet), which would otherwise now read as
-# the first restart-in-place instead. The restart ladder itself has its own
-# dedicated coverage (handoffd_supervisor_restart_budget_test_runner.bb,
-# bl1492_restart_in_place_property_runner.bb, and the BL-1492 acceptance
-# feature) - this suite's job is BL-144's original halt-when-exhausted path
-# in isolation, so the budget is pinned to 0 for the whole suite (every
-# verdict here is budget-exhausted by construction), same one-point-of-
-# control shape as the RESEND_API_KEY unset above.
-export SUPERVISOR_RESTART_BUDGET_COUNT=0
-
 fail() { echo "FAIL: $*" >&2; exit 1; }
 pass() { echo "PASS: $*"; }
 
