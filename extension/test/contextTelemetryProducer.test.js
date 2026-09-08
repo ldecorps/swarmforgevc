@@ -1,6 +1,8 @@
 const assert = require('node:assert/strict');
 const fs = require('node:fs');
+const os = require('node:os');
 const path = require('node:path');
+const { execFileSync } = require('node:child_process');
 const { mkTmpDir } = require('./helpers/tmpDir');
 const {
   contextUtilizationPct,
@@ -10,8 +12,39 @@ const {
   isCompactionAfterPrior,
   readPersistedContextEvents,
   runContextTelemetryProducer,
+  selectEventsWithinLimits,
+  stripNulBytes,
 } = require('../out/metrics/contextTelemetryProducer');
 const { listTranscriptJsonlPaths, projectSlug } = require('../out/metrics/transcriptUsage');
+const { recordEventsViaCliBatch } = require('../out/metrics/contextTelemetryStore');
+
+const REPO_ROOT = path.join(__dirname, '..', '..');
+const CONTEXT_TELEMETRY_STORE_LIB = path.join(REPO_ROOT, 'swarmforge', 'scripts', 'context_telemetry_store.bb');
+
+function bbReadEvents(stateDir) {
+  const out = execFileSync(
+    'bb',
+    ['-e', `(load-file "${CONTEXT_TELEMETRY_STORE_LIB}") (println (cheshire.core/generate-string (context-telemetry-store/read-events! "${stateDir}")))`],
+    { encoding: 'utf8' }
+  );
+  return JSON.parse(out.trim().split('\n').pop());
+}
+
+function wholeEvent(overrides = {}) {
+  return {
+    agent: 'coder',
+    role: 'coder',
+    session_id: overrides.session_id ?? 'm1',
+    timestamp: overrides.timestamp ?? '2026-07-09T11:38:10.165Z',
+    input_tokens: 1,
+    output_tokens: 1,
+    context_utilization_pct: 1,
+    compaction: false,
+    provider: 'anthropic',
+    model: 'claude-sonnet-5',
+    ...overrides,
+  };
+}
 
 function assistantLine(overrides = {}) {
   return JSON.stringify({
@@ -118,7 +151,7 @@ test('runContextTelemetryProducer backfills transcript history and is idempotent
     `${recorded.map((row) => JSON.stringify(row)).join('\n')}\n`,
     'utf8'
   );
-  assert.equal(readPersistedContextEvents(telemetryDir).length, 2);
+  assert.equal(readPersistedContextEvents(telemetryDir).events.length, 2);
 
   const second = runContextTelemetryProducer({
     repoRoot: projectRoot,
@@ -131,4 +164,385 @@ test('runContextTelemetryProducer backfills transcript history and is idempotent
   });
   assert.equal(second.recorded, 0);
   assert.equal(second.skippedDuplicates, 2);
+});
+
+// ── BL-1477: a torn store tail cannot silence the producer ──────────────────
+
+test('stripNulBytes removes embedded NUL bytes without touching anything else', () => {
+  assert.equal(stripNulBytes('abc\u0000\u0000\u0000def'), 'abcdef');
+  assert.equal(stripNulBytes('no nulls here'), 'no nulls here');
+});
+
+test('readPersistedContextEvents reads every whole record before a NUL-byte tail and names the torn line', () => {
+  const telemetryDir = mkTmpDir('ctx-torn-tail-');
+  const whole = [wholeEvent({ session_id: 'w1' }), wholeEvent({ session_id: 'w2' }), wholeEvent({ session_id: 'w3' })];
+  const body = whole.map((e) => JSON.stringify(e)).join('\n') + '\n' + '\u0000'.repeat(4000);
+  fs.writeFileSync(path.join(telemetryDir, 'context-events.jsonl'), body, 'utf8');
+
+  const result = readPersistedContextEvents(telemetryDir);
+  assert.equal(result.events.length, 3);
+  assert.equal(result.tornTailLine, 4);
+});
+
+test('readPersistedContextEvents reports no torn tail for an ordinarily-terminated store (its own trailing newline is never mistaken for damage)', () => {
+  const telemetryDir = mkTmpDir('ctx-clean-tail-');
+  const whole = [wholeEvent({ session_id: 'c1' }), wholeEvent({ session_id: 'c2' })];
+  const body = whole.map((e) => JSON.stringify(e)).join('\n') + '\n';
+  fs.writeFileSync(path.join(telemetryDir, 'context-events.jsonl'), body, 'utf8');
+
+  const result = readPersistedContextEvents(telemetryDir);
+  assert.equal(result.events.length, 2);
+  assert.equal(result.tornTailLine, null);
+});
+
+test('a whitespace-only interior line (non-empty raw, blank after trim) is skipped like an ordinary gap, not treated as damage', () => {
+  const telemetryDir = mkTmpDir('ctx-whitespace-line-');
+  const whole = [wholeEvent({ session_id: 'ws1' }), wholeEvent({ session_id: 'ws2' })];
+  // The blankness check is on raw.trim(), never bare raw: a line of nothing
+  // but spaces is non-empty raw text but must still be skipped exactly like
+  // an empty line, never parsed (which would fail) and never counted as a
+  // torn tail or interior damage.
+  const body = `${JSON.stringify(whole[0])}\n   \n${JSON.stringify(whole[1])}\n`;
+  fs.writeFileSync(path.join(telemetryDir, 'context-events.jsonl'), body, 'utf8');
+
+  const result = readPersistedContextEvents(telemetryDir);
+  assert.equal(result.events.length, 2);
+  assert.equal(result.tornTailLine, null);
+});
+
+test('the bb reader agrees with the TS reader on the same torn-tail store (invariant 1)', () => {
+  const telemetryDir = mkTmpDir('ctx-torn-tail-cross-');
+  const whole = [wholeEvent({ session_id: 'x1' }), wholeEvent({ session_id: 'x2' })];
+  const body = whole.map((e) => JSON.stringify(e)).join('\n') + '\n' + '\u0000'.repeat(4000);
+  fs.writeFileSync(path.join(telemetryDir, 'context-events.jsonl'), body, 'utf8');
+
+  const tsEvents = readPersistedContextEvents(telemetryDir).events;
+  const bbEvents = bbReadEvents(telemetryDir);
+  assert.equal(tsEvents.length, 2);
+  assert.equal(bbEvents.length, 2);
+  assert.deepEqual(
+    tsEvents.map((e) => e.session_id).sort(),
+    bbEvents.map((e) => e.session_id).sort()
+  );
+});
+
+test('readPersistedContextEvents throws naming the line on interior damage (a whole line follows the bad one)', () => {
+  const telemetryDir = mkTmpDir('ctx-interior-damage-');
+  const body = [
+    JSON.stringify(wholeEvent({ session_id: 'd1' })),
+    'not valid json at all',
+    JSON.stringify(wholeEvent({ session_id: 'd2' })),
+  ].join('\n') + '\n';
+  fs.writeFileSync(path.join(telemetryDir, 'context-events.jsonl'), body, 'utf8');
+
+  assert.throws(() => readPersistedContextEvents(telemetryDir), /line 2/);
+});
+
+test('interior damage is still named when the store ALSO ends in a torn NUL tail (more than one bad line, not just the last)', () => {
+  const telemetryDir = mkTmpDir('ctx-interior-damage-multi-');
+  const body =
+    [
+      JSON.stringify(wholeEvent({ session_id: 'm1' })),
+      'not valid json at all',
+      JSON.stringify(wholeEvent({ session_id: 'm2' })),
+    ].join('\n') +
+    '\n' +
+    '\u0000'.repeat(4000);
+  fs.writeFileSync(path.join(telemetryDir, 'context-events.jsonl'), body, 'utf8');
+
+  assert.throws(() => readPersistedContextEvents(telemetryDir), /line 2/);
+});
+
+test('selectEventsWithinLimits caps a tick at the given count, oldest first', () => {
+  const events = Array.from({ length: 50 }, (_, i) =>
+    wholeEvent({ session_id: `e${i}`, timestamp: `2026-07-09T00:${String(i).padStart(2, '0')}:00.000Z` })
+  );
+  const { selected, remaining } = selectEventsWithinLimits(events, 20, 30_000, () => 0);
+  assert.equal(selected.length, 20);
+  assert.equal(remaining.length, 30);
+  assert.equal(selected[0].session_id, 'e0');
+  assert.equal(selected[19].session_id, 'e19');
+  assert.equal(remaining[0].session_id, 'e20');
+});
+
+test('selectEventsWithinLimits stops once the clock passes the deadline, leaving the rest for later', () => {
+  const events = Array.from({ length: 50 }, (_, i) => wholeEvent({ session_id: `e${i}` }));
+  let elapsed = 0;
+  const nowFn = () => {
+    const v = elapsed;
+    elapsed += 10_000;
+    return v;
+  };
+  const { selected, remaining } = selectEventsWithinLimits(events, 500, 30_000, nowFn);
+  assert.equal(selected.length, 3);
+  assert.equal(remaining.length, 47);
+});
+
+test('runContextTelemetryProducer records at most the cap per tick and the remainder follows on the next tick, none twice', () => {
+  const projectRoot = mkTmpDir('ctx-cap-');
+  const worktreePath = path.join(projectRoot, '.worktrees', 'coder');
+  const claudeProjectsDir = mkTmpDir('ctx-cap-projects-');
+  fs.mkdirSync(worktreePath, { recursive: true });
+  writeRolesTsv(projectRoot, worktreePath);
+  writeFixtureTranscript(
+    claudeProjectsDir,
+    worktreePath,
+    Array.from({ length: 50 }, (_, i) =>
+      assistantLine({ messageId: `cap-${i}`, timestamp: `2026-01-01T00:${String(i).padStart(2, '0')}:00.000Z` })
+    )
+  );
+
+  const telemetryDir = path.join(projectRoot, '.swarmforge', 'telemetry');
+  const persisted = [];
+  const recordFn = (event) => {
+    persisted.push(event);
+    fs.mkdirSync(telemetryDir, { recursive: true });
+    fs.writeFileSync(
+      path.join(telemetryDir, 'context-events.jsonl'),
+      persisted.map((row) => JSON.stringify(row)).join('\n') + '\n',
+      'utf8'
+    );
+  };
+
+  const first = runContextTelemetryProducer({
+    repoRoot: projectRoot,
+    roleWorktrees: [{ role: 'coder', worktreePath }],
+    providersByRole: new Map([['coder', 'claude']]),
+    claudeProjectsDir,
+    capPerTick: 20,
+    recordFn,
+  });
+  assert.equal(first.recorded, 20);
+  assert.equal(first.remaining, 30);
+  assert.equal(persisted[0].session_id, 'cap-0');
+  assert.equal(persisted[19].session_id, 'cap-19');
+
+  const second = runContextTelemetryProducer({
+    repoRoot: projectRoot,
+    roleWorktrees: [{ role: 'coder', worktreePath }],
+    providersByRole: new Map([['coder', 'claude']]),
+    claudeProjectsDir,
+    capPerTick: 20,
+    recordFn,
+  });
+  assert.equal(second.recorded, 20);
+  assert.equal(second.remaining, 10);
+  assert.equal(persisted.length, 40);
+  const ids = persisted.map((e) => e.session_id);
+  assert.equal(new Set(ids).size, ids.length);
+});
+
+test('runContextTelemetryProducer selects the globally oldest events first across MULTIPLE role groups (invariant 2: timestamp order, not group-derivation order)', () => {
+  const projectRoot = mkTmpDir('ctx-cross-group-order-');
+  const worktreeA = path.join(projectRoot, '.worktrees', 'coder');
+  const worktreeB = path.join(projectRoot, '.worktrees', 'cleaner');
+  const claudeProjectsDir = mkTmpDir('ctx-cross-group-order-projects-');
+  fs.mkdirSync(worktreeA, { recursive: true });
+  fs.mkdirSync(worktreeB, { recursive: true });
+  // Group A (derived first, per roleWorktrees order below) holds the LATER
+  // event; group B (derived second) holds the EARLIER one. Each group's own
+  // derivation is already sorted (deriveContextEventsFromUsageRecords), so
+  // only a sort ACROSS the combined allDerived array - invariant 2's own
+  // "in timestamp order" - can put B's event ahead of A's.
+  writeFixtureTranscript(claudeProjectsDir, worktreeA, [
+    assistantLine({ messageId: 'a-late', timestamp: '2026-02-01T00:10:00.000Z' }),
+  ]);
+  writeFixtureTranscript(claudeProjectsDir, worktreeB, [
+    assistantLine({ messageId: 'b-early', timestamp: '2026-02-01T00:00:00.000Z' }),
+  ]);
+
+  const recorded = [];
+  const result = runContextTelemetryProducer({
+    repoRoot: projectRoot,
+    roleWorktrees: [
+      { role: 'coder', worktreePath: worktreeA },
+      { role: 'cleaner', worktreePath: worktreeB },
+    ],
+    providersByRole: new Map([
+      ['coder', 'claude'],
+      ['cleaner', 'claude'],
+    ]),
+    claudeProjectsDir,
+    capPerTick: 1,
+    recordFn: (event) => recorded.push(event),
+  });
+
+  assert.equal(result.recorded, 1);
+  assert.equal(recorded[0].session_id, 'b-early');
+  assert.equal(recorded[0].timestamp, '2026-02-01T00:00:00.000Z');
+});
+
+test('runContextTelemetryProducer counts skippedDuplicates as derived-minus-newlyRecordable, not derived-plus-newlyRecordable', () => {
+  const projectRoot = mkTmpDir('ctx-skip-count-');
+  const worktreePath = path.join(projectRoot, '.worktrees', 'coder');
+  const claudeProjectsDir = mkTmpDir('ctx-skip-count-projects-');
+  fs.mkdirSync(worktreePath, { recursive: true });
+  writeFixtureTranscript(
+    claudeProjectsDir,
+    worktreePath,
+    Array.from({ length: 5 }, (_, i) =>
+      assistantLine({ messageId: `skip-${i}`, timestamp: `2026-02-01T00:${String(i * 10).padStart(2, '0')}:00.000Z` })
+    )
+  );
+
+  const telemetryDir = path.join(projectRoot, '.swarmforge', 'telemetry');
+  // Pre-persist only the first 2 of the 5 events that would be derived, so a
+  // second run finds 5 derived, 3 genuinely new - a value distinguishable
+  // between derived-3-of-5 (subtraction) and derived-plus-recorded (addition).
+  const preRecorded = [
+    wholeEvent({ session_id: 'skip-0', timestamp: '2026-02-01T00:00:00.000Z' }),
+    wholeEvent({ session_id: 'skip-1', timestamp: '2026-02-01T00:10:00.000Z' }),
+  ];
+  fs.mkdirSync(telemetryDir, { recursive: true });
+  fs.writeFileSync(
+    path.join(telemetryDir, 'context-events.jsonl'),
+    `${preRecorded.map((row) => JSON.stringify(row)).join('\n')}\n`,
+    'utf8'
+  );
+
+  const recorded = [];
+  const second = runContextTelemetryProducer({
+    repoRoot: projectRoot,
+    roleWorktrees: [{ role: 'coder', worktreePath }],
+    providersByRole: new Map([['coder', 'claude']]),
+    claudeProjectsDir,
+    recordFn: (event) => recorded.push(event),
+  });
+  assert.equal(second.recorded, 3);
+  assert.equal(second.skippedDuplicates, 2);
+});
+
+test('runContextTelemetryProducer honours the DEFAULT deadline when neither capPerTick nor deadlineMs is given explicitly', () => {
+  const projectRoot = mkTmpDir('ctx-default-deadline-');
+  const worktreePath = path.join(projectRoot, '.worktrees', 'coder');
+  const claudeProjectsDir = mkTmpDir('ctx-default-deadline-projects-');
+  fs.mkdirSync(worktreePath, { recursive: true });
+  writeFixtureTranscript(
+    claudeProjectsDir,
+    worktreePath,
+    Array.from({ length: 5 }, (_, i) =>
+      assistantLine({ messageId: `dl-${i}`, timestamp: `2026-02-02T00:${String(i * 10).padStart(2, '0')}:00.000Z` })
+    )
+  );
+
+  // Simulated elapsed time grows 20s per event selected: against the real
+  // DEFAULT_CONTEXT_TELEMETRY_DEADLINE_MS (30s), the 3rd event's check trips
+  // the deadline (40s elapsed >= 30s) and only 2 of the 5 are selected.
+  let elapsed = 0;
+  const nowFn = () => {
+    const v = elapsed;
+    elapsed += 20_000;
+    return v;
+  };
+  const recorded = [];
+  const result = runContextTelemetryProducer({
+    repoRoot: projectRoot,
+    roleWorktrees: [{ role: 'coder', worktreePath }],
+    providersByRole: new Map([['coder', 'claude']]),
+    claudeProjectsDir,
+    nowFn,
+    recordFn: (event) => recorded.push(event),
+  });
+
+  assert.equal(result.recorded, 2);
+  assert.equal(result.remaining, 3);
+});
+
+test('deriveEventsForRoleGroup (via the producer) derives nothing, without throwing, for a role with zero transcripts', () => {
+  const projectRoot = mkTmpDir('ctx-no-transcripts-');
+  const worktreePath = path.join(projectRoot, '.worktrees', 'coder');
+  const claudeProjectsDir = mkTmpDir('ctx-no-transcripts-projects-');
+  fs.mkdirSync(worktreePath, { recursive: true });
+  // No writeFixtureTranscript call at all: listTranscriptJsonlPaths finds
+  // zero files for this role, and deriveEventsForRoleGroup's early return
+  // must produce no events (and no crash) rather than falling through to
+  // readTranscriptUsage on a directory that was never populated.
+
+  const recorded = [];
+  const result = runContextTelemetryProducer({
+    repoRoot: projectRoot,
+    roleWorktrees: [{ role: 'coder', worktreePath }],
+    providersByRole: new Map([['coder', 'claude']]),
+    claudeProjectsDir,
+    recordFn: (event) => recorded.push(event),
+  });
+
+  assert.equal(result.recorded, 0);
+  assert.deepEqual(result.agents, []);
+});
+
+// BL-1038-EXEMPT: the tests below hand REPO_ROOT to recordEventsViaCliBatch
+// (production code) so the real bb subprocess wiring - cli path, argv,
+// stdin input, env - is proved against the genuine CLI rather than assumed
+// from every other test's injected fake recordFn. recordEventsViaCliBatch
+// reads exactly one fixed file (swarmforge/scripts/context_telemetry_cli.bb)
+// off that root and spawns one subprocess against a FIXTURE telemetryDir;
+// its cost is fixed, never a function of live repo size (BL-1038's own
+// "reading one named file" exemption, one call of indirection deep).
+// ── BL-1477: the real production write path (no injected recordFn) ─────────
+// runContextTelemetryProducer's default recordFn is recordEventsViaCliBatch,
+// which spawns the real `bb context_telemetry_cli.bb record-batch` — every
+// scenario and test above injects a fake recordFn instead, so this is the
+// only place that path's own wiring (cli path, argv, input, env) is proved
+// against the real subprocess rather than assumed from the fixture calls.
+
+test('recordEventsViaCliBatch (the real production recordFn) actually appends to the store via the real bb CLI', () => {
+  const telemetryDir = mkTmpDir('ctx-real-write-');
+  const event = wholeEvent({ session_id: 'real-write-1' });
+  recordEventsViaCliBatch(REPO_ROOT, telemetryDir, [event]);
+  const result = readPersistedContextEvents(telemetryDir);
+  assert.equal(result.events.length, 1);
+  assert.equal(result.events[0].session_id, 'real-write-1');
+  assert.equal(result.events[0].input_tokens, event.input_tokens);
+});
+
+test('recordEventsViaCliBatch joins multiple events with a real newline, one spawn for the whole batch', () => {
+  const telemetryDir = mkTmpDir('ctx-real-write-multi-');
+  const events = [wholeEvent({ session_id: 'real-write-multi-1' }), wholeEvent({ session_id: 'real-write-multi-2' })];
+  recordEventsViaCliBatch(REPO_ROOT, telemetryDir, events);
+  const result = readPersistedContextEvents(telemetryDir);
+  assert.equal(result.events.length, 2);
+  assert.deepEqual(
+    result.events.map((e) => e.session_id).sort(),
+    ['real-write-multi-1', 'real-write-multi-2']
+  );
+});
+
+test('recordEventsViaCliBatch never even attempts to spawn bb when given zero events', () => {
+  const telemetryDir = mkTmpDir('ctx-real-write-empty-');
+  // A repoRoot with no swarmforge/scripts/context_telemetry_cli.bb under it:
+  // if the events.length === 0 guard were gone, execFileSync would try to
+  // load that nonexistent path and bb would exit non-zero, throwing. It must
+  // not throw here, which is what proves the subprocess is never attempted.
+  const bogusRepoRoot = path.join(telemetryDir, 'not-a-real-repo-root');
+  assert.doesNotThrow(() => recordEventsViaCliBatch(bogusRepoRoot, telemetryDir, []));
+  assert.equal(fs.existsSync(path.join(telemetryDir, 'context-events.jsonl')), false);
+});
+
+test('runContextTelemetryProducer with NO recordFn records end-to-end through the real bb CLI (the actual production default path)', () => {
+  const projectRoot = mkTmpDir('ctx-e2e-default-path-');
+  const worktreePath = path.join(projectRoot, '.worktrees', 'coder');
+  const claudeProjectsDir = mkTmpDir('ctx-e2e-default-path-projects-');
+  fs.mkdirSync(worktreePath, { recursive: true });
+  writeFixtureTranscript(claudeProjectsDir, worktreePath, [
+    assistantLine({ messageId: 'e2e-default-1', timestamp: '2026-02-03T00:00:00.000Z' }),
+  ]);
+  // recordEventsViaCliBatch resolves its CLI path off the SAME repoRoot this
+  // call receives, so a symlink to the real swarmforge/ tree lets the real
+  // bb subprocess run against this fixture root without ever touching the
+  // live .swarmforge/telemetry/ (telemetryDir stays under projectRoot).
+  fs.symlinkSync(path.join(REPO_ROOT, 'swarmforge'), path.join(projectRoot, 'swarmforge'));
+
+  const result = runContextTelemetryProducer({
+    repoRoot: projectRoot,
+    roleWorktrees: [{ role: 'coder', worktreePath }],
+    providersByRole: new Map([['coder', 'claude']]),
+    claudeProjectsDir,
+  });
+  assert.equal(result.recorded, 1);
+
+  const telemetryDir = path.join(projectRoot, '.swarmforge', 'telemetry');
+  const stored = readPersistedContextEvents(telemetryDir);
+  assert.equal(stored.events.length, 1);
+  assert.equal(stored.events[0].session_id, 'e2e-default-1');
 });

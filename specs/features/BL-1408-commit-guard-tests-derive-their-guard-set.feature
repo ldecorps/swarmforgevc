@@ -1,3 +1,7 @@
+# acceptance-mutation-manifest-begin
+# {"version":1,"tested_at":"2026-09-07T16:33:26.296724501Z","feature_name":"BL-1408 The commit-guard tests derive their guard set from the chain they exercise","feature_path":"/home/carillon/swarmforgevc/.worktrees/hardender/specs/features/BL-1408-commit-guard-tests-derive-their-guard-set.feature","background_hash":"74234e98afe7498fb5daf1f36ac2d78acc339464f950703b8c019892f982b90b","implementation_hash":"unknown","scenarios":[],"outcome":"inapplicable"}
+# acceptance-mutation-manifest-end
+
 Feature: BL-1408 The commit-guard tests derive their guard set from the chain they exercise
 
   Four tests still pin the commit-guard chain against a list written by

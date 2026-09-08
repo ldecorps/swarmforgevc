@@ -1,0 +1,305 @@
+'use strict';
+
+// BL-1477: the context-telemetry producer records again, and a torn store
+// tail cannot silence it. Drives the REAL producer (runContextTelemetryProducer,
+// formatProducerResult) and the REAL context_telemetry_cli.bb for the one
+// scenario that names it directly - never re-implements the torn-tail /
+// interior-damage / cap / deadline decisions here.
+const assert = require('node:assert/strict');
+const fs = require('node:fs');
+const os = require('node:os');
+const path = require('node:path');
+const { spawnSync } = require('node:child_process');
+const {
+  runContextTelemetryProducer,
+} = require('../../../extension/out/metrics/contextTelemetryProducer');
+const { formatProducerResult } = require('../../../extension/out/tools/run-context-telemetry-producer');
+const { projectSlug } = require('../../../extension/out/metrics/transcriptUsage');
+
+const FEATURE = 'BL-1477 The context-telemetry producer records again and a torn store tail cannot silence it';
+const REPO_ROOT = path.join(__dirname, '..', '..', '..');
+const CLI = path.join(REPO_ROOT, 'swarmforge', 'scripts', 'context_telemetry_cli.bb');
+const BASE_EPOCH_MS = Date.parse('2026-01-01T00:00:00Z');
+
+function scoped(registry, pattern, handler) {
+  registry.defineScoped(pattern, handler, FEATURE);
+}
+
+function isoAt(offsetMs) {
+  return new Date(BASE_EPOCH_MS + offsetMs).toISOString();
+}
+
+function telemetryDir(ctx) {
+  return path.join(ctx.fixtureRoot, '.swarmforge', 'telemetry');
+}
+
+function storeFile(ctx) {
+  return path.join(telemetryDir(ctx), 'context-events.jsonl');
+}
+
+function wholeEvent(sessionId, timestamp) {
+  return {
+    agent: 'coder',
+    role: 'coder',
+    session_id: sessionId,
+    timestamp,
+    input_tokens: 1,
+    output_tokens: 1,
+    context_utilization_pct: 1,
+    compaction: false,
+    provider: 'anthropic',
+    model: 'claude-sonnet-5',
+  };
+}
+
+function assistantLine({ messageId, timestamp }) {
+  return JSON.stringify({
+    type: 'assistant',
+    timestamp,
+    message: {
+      id: messageId,
+      model: 'claude-sonnet-5',
+      usage: {
+        input_tokens: 12000,
+        output_tokens: 400,
+        cache_creation_input_tokens: 0,
+        cache_read_input_tokens: 0,
+      },
+    },
+  });
+}
+
+function writeTranscript(ctx, lines) {
+  const dir = path.join(ctx.claudeProjectsDir, projectSlug(ctx.worktreePath));
+  fs.mkdirSync(dir, { recursive: true });
+  fs.writeFileSync(path.join(dir, 'session.jsonl'), `${lines.join('\n')}\n`, 'utf8');
+}
+
+function writePersistedEvents(ctx) {
+  fs.mkdirSync(telemetryDir(ctx), { recursive: true });
+  const body = ctx.persistedEvents.map((event) => JSON.stringify(event)).join('\n');
+  fs.writeFileSync(storeFile(ctx), body.length > 0 ? `${body}\n` : '', 'utf8');
+}
+
+function runProducerTick(ctx) {
+  const result = runContextTelemetryProducer({
+    repoRoot: ctx.fixtureRoot,
+    roleWorktrees: [{ role: 'coder', worktreePath: ctx.worktreePath }],
+    providersByRole: new Map([['coder', 'claude']]),
+    claudeProjectsDir: ctx.claudeProjectsDir,
+    recordFn: ctx.recordFn,
+    nowFn: ctx.nowFn,
+    capPerTick: ctx.capPerTick,
+    deadlineMs: ctx.deadlineMs,
+  });
+  // selectEventsWithinLimits measures elapsed time as (nowFn() - start) taken
+  // right after each SELECTED event, so with a fixed per-event clock step
+  // and a start of 0 that is exactly `recorded * clockStepMs` - the clock
+  // reading the loop itself acted on, not this test's own call count (which
+  // includes one more nowFn() call than that, for the failed check that
+  // stopped the loop).
+  ctx.lastElapsedMs = result.recorded * ctx.clockStepMs;
+  ctx.lastOutput = formatProducerResult(result);
+  ctx.tickResults = ctx.tickResults || [];
+  ctx.tickResults.push(result);
+  ctx.lastResult = result;
+  return result;
+}
+
+function attemptProducerTick(ctx) {
+  try {
+    runProducerTick(ctx);
+    ctx.producerError = null;
+  } catch (err) {
+    ctx.producerError = err;
+    ctx.lastResult = null;
+  }
+}
+
+function registerSteps(registry) {
+  scoped(registry, /^a scratch telemetry directory and fixture transcripts for one role$/, (ctx) => {
+    ctx.fixtureRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'aps-bl1477-'));
+    ctx.worktreePath = path.join(ctx.fixtureRoot, '.worktrees', 'coder');
+    ctx.claudeProjectsDir = fs.mkdtempSync(path.join(os.tmpdir(), 'aps-bl1477-projects-'));
+    fs.mkdirSync(ctx.worktreePath, { recursive: true });
+    fs.mkdirSync(telemetryDir(ctx), { recursive: true });
+    fs.mkdirSync(path.join(ctx.fixtureRoot, '.swarmforge'), { recursive: true });
+    fs.writeFileSync(
+      path.join(ctx.fixtureRoot, '.swarmforge', 'roles.tsv'),
+      `coder\tcoder\t${ctx.worktreePath}\tcoder\tcoder\tclaude\n`,
+      'utf8'
+    );
+    ctx.persistedEvents = [];
+  });
+
+  scoped(
+    registry,
+    /^the producer's record seam and clock are injected so recording spawns no subprocess$/,
+    (ctx) => {
+      ctx.clockMs = 0;
+      ctx.clockStepMs = 0;
+      ctx.nowFn = () => {
+        const value = ctx.clockMs;
+        ctx.clockMs += ctx.clockStepMs;
+        return value;
+      };
+      ctx.recordFn = (event) => {
+        ctx.persistedEvents.push(event);
+        writePersistedEvents(ctx);
+      };
+      ctx.capPerTick = undefined;
+      ctx.deadlineMs = undefined;
+    }
+  );
+
+  scoped(
+    registry,
+    /^a store of (\d+) whole records followed by a final line of NUL bytes and no newline$/,
+    (ctx, countText) => {
+      const count = Number(countText);
+      const whole = Array.from({ length: count }, (_, i) => wholeEvent(`store-${i}`, isoAt(i * 1000)));
+      ctx.persistedEvents = whole.slice();
+      const body = `${whole.map((event) => JSON.stringify(event)).join('\n')}\n${'\u0000'.repeat(4000)}`;
+      fs.mkdirSync(telemetryDir(ctx), { recursive: true });
+      fs.writeFileSync(storeFile(ctx), body, 'utf8');
+      ctx.expectedWholeCount = count;
+    }
+  );
+
+  scoped(registry, /^the transcripts hold (\d+) events? not yet in the store$/, (ctx, countText) => {
+    const count = Number(countText);
+    const lines = Array.from({ length: count }, (_, i) =>
+      assistantLine({ messageId: `new-${i}`, timestamp: isoAt(1_000_000 + i * 1000) })
+    );
+    writeTranscript(ctx, lines);
+    ctx.expectedNewEventCount = count;
+  });
+
+  scoped(registry, /^the per-tick record cap is (\d+)$/, (ctx, capText) => {
+    ctx.capPerTick = Number(capText);
+  });
+
+  scoped(registry, /^the clock advances (\d+) seconds per recorded event$/, (ctx, secText) => {
+    ctx.clockStepMs = Number(secText) * 1000;
+  });
+
+  scoped(registry, /^the tick deadline is (\d+) seconds$/, (ctx, secText) => {
+    ctx.deadlineMs = Number(secText) * 1000;
+  });
+
+  scoped(registry, /^a store with an unparseable line followed by whole records$/, (ctx) => {
+    const whole = [wholeEvent('interior-1', isoAt(0)), wholeEvent('interior-2', isoAt(1000))];
+    const body = `not valid json at all\n${whole.map((event) => JSON.stringify(event)).join('\n')}\n`;
+    fs.mkdirSync(telemetryDir(ctx), { recursive: true });
+    fs.writeFileSync(storeFile(ctx), body, 'utf8');
+    ctx.expectedBadLine = 1;
+  });
+
+  scoped(registry, /^the producer tick runs$/, (ctx) => {
+    attemptProducerTick(ctx);
+  });
+
+  scoped(registry, /^the producer tick runs twice$/, (ctx) => {
+    attemptProducerTick(ctx);
+    if (ctx.producerError) {
+      throw ctx.producerError;
+    }
+    attemptProducerTick(ctx);
+  });
+
+  scoped(registry, /^context_telemetry_cli\.bb summary reads that store$/, (ctx) => {
+    const res = spawnSync('bb', [CLI, 'summary'], {
+      encoding: 'utf8',
+      env: { ...process.env, CONTEXT_TELEMETRY_STATE_DIR: telemetryDir(ctx) },
+    });
+    ctx.cliExitCode = res.status;
+    ctx.cliStdout = res.stdout;
+    ctx.cliStderr = res.stderr;
+  });
+
+  scoped(
+    registry,
+    /^the (\d+) new events? are recorded and the (\d+) whole records? are not recorded again$/,
+    (ctx, newCountText, wholeCountText) => {
+      assert.equal(ctx.producerError, null, `the producer should not have refused: ${ctx.producerError}`);
+      assert.equal(ctx.lastResult.recorded, Number(newCountText));
+      assert.equal(ctx.persistedEvents.length, Number(wholeCountText) + Number(newCountText));
+    }
+  );
+
+  scoped(registry, /^the producer's output names the torn tail$/, (ctx) => {
+    assert.match(ctx.lastOutput, /torn tail dropped at line \d+/);
+    assert.equal(typeof ctx.lastResult.tornTailLine, 'number');
+  });
+
+  scoped(registry, /^it reports the (\d+) whole records and exits zero$/, (ctx, countText) => {
+    assert.equal(ctx.cliExitCode, 0, `expected exit zero, stderr: ${ctx.cliStderr}`);
+    const parsed = JSON.parse(ctx.cliStdout);
+    assert.equal(parsed.event_count, Number(countText));
+  });
+
+  scoped(registry, /^nothing is recorded$/, (ctx) => {
+    assert.ok(ctx.producerError, 'expected the producer to refuse rather than record');
+    assert.equal(ctx.persistedEvents.length, 0, 'recordFn should never have been called on interior damage');
+  });
+
+  scoped(registry, /^the run exits non-zero naming the damaged line number$/, (ctx) => {
+    assert.ok(ctx.producerError, 'expected the producer to throw');
+    const expected = ctx.expectedBadLine;
+    assert.match(ctx.producerError.message, new RegExp(`line ${expected}\\b`));
+  });
+
+  scoped(registry, /^the first tick records exactly (\d+) events in timestamp order$/, (ctx, countText) => {
+    const count = Number(countText);
+    const first = ctx.tickResults[0];
+    assert.equal(first.recorded, count);
+    const firstBatch = ctx.persistedEvents.slice(0, count);
+    for (let i = 1; i < firstBatch.length; i += 1) {
+      assert.ok(
+        firstBatch[i - 1].timestamp <= firstBatch[i].timestamp,
+        'the first tick did not record its events in timestamp order'
+      );
+    }
+  });
+
+  scoped(registry, /^the second tick records the next (\d+) and none is repeated$/, (ctx, countText) => {
+    const count = Number(countText);
+    const second = ctx.tickResults[1];
+    assert.equal(second.recorded, count);
+    const ids = ctx.persistedEvents.map((event) => event.session_id);
+    assert.equal(new Set(ids).size, ids.length, 'an event was recorded twice across ticks');
+    assert.equal(ctx.persistedEvents.length, ctx.tickResults[0].recorded + count);
+  });
+
+  scoped(registry, /^at most (\d+) events? are recorded$/, (ctx, countText) => {
+    assert.equal(ctx.producerError, null, `the producer should not have refused: ${ctx.producerError}`);
+    assert.ok(ctx.lastResult.recorded <= Number(countText));
+  });
+
+  scoped(registry, /^the tick returns before the clock passes the deadline$/, (ctx) => {
+    assert.ok(
+      ctx.lastElapsedMs <= ctx.deadlineMs,
+      `tick ran ${ctx.lastElapsedMs}ms, past its ${ctx.deadlineMs}ms deadline`
+    );
+  });
+
+  scoped(registry, /^the unrecorded events are recorded by later ticks in order$/, (ctx) => {
+    const total = ctx.expectedNewEventCount;
+    let guard = 0;
+    while (ctx.persistedEvents.length < total && guard < total + 2) {
+      runProducerTick(ctx);
+      guard += 1;
+    }
+    assert.equal(ctx.persistedEvents.length, total, 'not every event was eventually recorded');
+    const ids = ctx.persistedEvents.map((event) => event.session_id);
+    assert.equal(new Set(ids).size, ids.length, 'a later tick repeated an already-recorded event');
+    for (let i = 1; i < ctx.persistedEvents.length; i += 1) {
+      assert.ok(
+        ctx.persistedEvents[i - 1].timestamp <= ctx.persistedEvents[i].timestamp,
+        'events were not recorded across ticks in timestamp order'
+      );
+    }
+  });
+}
+
+module.exports = { registerSteps };
