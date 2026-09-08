@@ -105,7 +105,6 @@ gh25_role_ask_escalation_test_runner.bb	standing
 gherkin_lint_gate_lib_test_runner.bb	standing		
 handoff_lib_test_runner.bb	standing		
 handoff_wake_session_test_runner.bb	standing		
-handoffd_supervisor_restart_budget_test_runner.bb	standing		
 handoffd_supervisor_startup_grace_test_runner.bb	standing		
 hardening_debt_ledger_lib_test_runner.bb	standing		
 harness_env_scrub_lib_test_runner.bb	standing		
