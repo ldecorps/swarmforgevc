@@ -54,3 +54,9 @@
   reason: "Stryker perTest dry run timed out (5min) under host load 6.7-9.7/20 cores from concurrent live-swarm activity"
   load: "9.65/10.81/8.48"
   detected_at: 2026-09-07
+- parcel: BL-1476
+  gate: mutation
+  file_set: extension/src/metrics/transcriptWalker.ts,extension/src/metrics/turnProfileProducer.ts,extension/src/tools/run-turn-profile-producer.ts
+  reason: "mutation_cooldown_gate.bb: skip-cooldown - turnProfileProducer.ts file_age_days 2.95 of 3, transcriptWalker.ts 2.97 of 3, run-turn-profile-producer.ts 2.97 of 3 (all last touched on main by BL-1364, 2026-09-05; not_before 2026-09-08 undershoots the 3-day mark by hours at this run time); transcriptSummaryStore.ts is exempt (new file, no main history) and was mutation-tested this pass"
+  load: "2.73/7.11/10.08"
+  detected_at: 2026-09-08
