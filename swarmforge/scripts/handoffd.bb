@@ -2897,12 +2897,18 @@
 ;; .swarmforge/telemetry/turn-profile-series.jsonl. The series builder had zero
 ;; production importers for a month, so no mechanical-share trend existed and
 ;; two epics that sequenced themselves behind that number proceeded without it.
-;; Idempotent across reruns (window dedupe), so firing every cycle is safe —
-;; same posture as the context-telemetry sweep directly above, whose var
-;; definitions this one deliberately follows rather than precedes (a sweep
-;; defined above its dependencies loads, registers and greps fine, then throws
-;; the first time it actually fires, where its own try/catch swallows it —
-;; BL-1392).
+;; Idempotent across reruns (window dedupe), so firing every cycle is safe on
+;; its OUTPUT — but until BL-1476, that was not true of its INPUT: every tick
+;; re-listed and re-read every transcript ever written (2.2 GB / 27-39 s on
+;; 2026-09-07), growing with lifetime session volume regardless of how little
+;; had changed. BL-1476 gave the CLI its own persisted per-transcript summary
+;; store and tick deadline (read from the OS env inside the CLI, not here),
+;; so a tick's real cost now scales with what changed since the last
+;; completed tick — same posture as the context-telemetry sweep directly
+;; above, whose var definitions this one deliberately follows rather than
+;; precedes (a sweep defined above its dependencies loads, registers and
+;; greps fine, then throws the first time it actually fires, where its own
+;; try/catch swallows it — BL-1392).
 (defn turn-profile-producer-sweep! []
   (try
     (let [cli-path (node-tool-path "run-turn-profile-producer.js")
