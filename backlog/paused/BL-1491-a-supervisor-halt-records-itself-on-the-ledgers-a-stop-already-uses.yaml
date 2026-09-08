@@ -30,7 +30,7 @@ required_wiring:
   - 'swarmforge/scripts/handoffd_supervisor.bb::availability::the halt appends a stop record the BL-823 ledger reader folds'
   - 'specs/pipeline/steps/bl1491HaltRecordsItselfSteps.js::registerSteps::the handler lands in the same parcel as the feature (BL-233)'
 
-human_approval: pending
+human_approval: approved
 approval_context: >
   A new feature file is authored here, so it needs a tap. No choice is posed
   and there are no ruling_options. FIRM: this ticket changes nothing about
