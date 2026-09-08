@@ -1,0 +1,16 @@
+# backlog/babysitter-waives.yaml - BL-1344 babysitter finding waives.
+# One entry per finding key an investigation closed out: the finding is
+# legitimate, or already remediated, and its nudge should stop. A waive
+# names ONE key and suppresses nothing else, and only a recorded decision
+# creates one - the sweep never waives anything on its own (BL-848's line).
+# Record one with babysitter_waive.bb --record; list them with --list.
+
+- key: pipeline-code-on-main-a7c3ef9974a48922c0b31d31d6be02b2820ab774
+  waived_by: coordinator
+  reason: "False positive: a7c3ef9974 is a plain 2-parent reconcile merge (author t, resolving main<>origin/main divergence) with no diff of its own beyond its parents' union - confirmed 'git diff <parent1> a7c3ef9974' and 'git diff <parent2> a7c3ef9974' each equal exactly what the other parent added. The pipeline-touching file bl1463EscalatingLandStepNamesSiblingSteps.js entered via a90e80a669, QA's recorded hand-built tip-pure land (BL-1334 record present, is_qa_ancestor.sh a90e80a669 exits 0 approved). a90e80a669 is a git ancestor of a7c3ef9974. Article 4.2 predicate is ancestry/exact-token only and does not credit a merge commit whose ancestor already carries the BL-1334 approval record - known pattern, see memory article42-predicate-is-ancestry-only-qa-handland-always-flags."
+  waived_at: 2026-09-07
+
+- key: pipeline-code-on-main-c34c1986159f26f5040336149abe3cca574f31f4
+  waived_by: coordinator
+  reason: "genuine QA-approved ancestor: same sha lives on swarmforge-QA and origin/main (BL-1241 hand-built recipe, no distinct source sha); is_qa_ancestor.sh exits 0; evidence backlog/evidence/babysitter-article42-bl1475-c34c1986-genuine-qa-ancestor-20260908.md"
+  waived_at: 2026-09-08
