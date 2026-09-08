@@ -47,9 +47,9 @@ function commitOrReport(
   backlogId: string,
   reportCommitFailure: CommitFailureReporter
 ): void {
-  if (!commitTopicRecord(targetPath, filePath, backlogId)) {
-    reportCommitFailure(backlogId, filePath);
-  }
+  // BL-1475: commitTopicRecord now reports failure itself (carrying git's
+  // real stderr, never discarded) - reporting it again here would double-report.
+  commitTopicRecord(targetPath, filePath, backlogId, reportCommitFailure);
 }
 
 // BL-407: the durability-only backfill described in the file header above.

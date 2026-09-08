@@ -467,6 +467,97 @@
       (assert-true "the unrelated writer's own commit carries its own file" (str/includes? stat other-path))
       (assert-false "the unrelated writer's commit carries NONE of the caller's abandoned edit" (str/includes? stat caller-path)))))
 
+;; ── BL-1475: a lock refusal is retried (bounded), a real error is not ──
+
+;; A commit-fn! that fails with an index.lock-shaped stderr twice, then
+;; succeeds, is retried within the budget - no real wait (retry-delay-fn!
+;; injected as a no-op) and no landed-elsewhere detour (the 3rd attempt's
+;; own commit is what lands it).
+(let [dir (real-git-repo)
+      commit-calls (atom 0)
+      delay-calls (atom [])
+      result (commit-integrity-lib/commit-with-integrity!
+              {:project-root dir :paths ["notes.txt"] :message "m"
+               :add-fn! (fn [& _] {:exit 0})
+               :commit-fn! (fn [& _]
+                             (swap! commit-calls inc)
+                             (if (< @commit-calls 3)
+                               {:exit 1 :err "fatal: Unable to create '/repo/.git/index.lock': File exists."}
+                               {:exit 0}))
+               :rev-parse-fn (fn [_] (str "sha-" @commit-calls))
+               :read-fn (fn [_ _] nil)
+               :show-fn (fn [_ _ _] nil)
+               :retry-delay-fn! (fn [attempt] (swap! delay-calls conj attempt))})]
+  (assert= "an index.lock refusal is retried until it succeeds" {:success true :sha "sha-3" :attempts 3} result)
+  (assert= "commit was retried twice before the succeeding attempt" 3 @commit-calls)
+  (assert= "a retry delay was taken before each retry" [1 2] @delay-calls))
+
+;; A commit-fn! that ALWAYS refuses with an index.lock error exhausts the
+;; retry budget and fails loudly, carrying git's own stderr - never a hang,
+;; never silently discarding the real reason.
+(let [dir (real-git-repo)
+      commit-calls (atom 0)
+      result (commit-integrity-lib/commit-with-integrity!
+              {:project-root dir :paths ["notes.txt"] :message "m" :max-retries 2
+               :add-fn! (fn [& _] {:exit 0})
+               :commit-fn! (fn [& _] (swap! commit-calls inc) {:exit 1 :err "fatal: Unable to create '/repo/.git/index.lock': File exists."})
+               :read-fn (fn [_ _] nil)
+               :show-fn (fn [_ _ _] nil)
+               :retry-delay-fn! (fn [_] nil)})]
+  (assert= "a lock refusal held past the retry bound fails, never succeeds" false (:success result))
+  (assert= "the reason is :commit-failed" :commit-failed (:reason result))
+  (assert= "attempts = max-retries + 1" 3 (:attempts result))
+  (assert= "commit was attempted on every retry, up to the cap" 3 @commit-calls)
+  (assert-true "git's own stderr is carried on the final failure, never discarded"
+               (str/includes? (:stderr result) "index.lock")))
+
+;; A real (non-lock) commit failure is never retried, even once - only a
+;; lock refusal is worth the wait.
+(let [dir (real-git-repo)
+      commit-calls (atom 0)
+      result (commit-integrity-lib/commit-with-integrity!
+              {:project-root dir :paths ["notes.txt"] :message "m"
+               :add-fn! (fn [& _] {:exit 0})
+               :commit-fn! (fn [& _] (swap! commit-calls inc) {:exit 1 :err "hook declined"})
+               :read-fn (fn [_ _] nil)
+               :show-fn (fn [_ _ _] nil)})]
+  (assert= "a real, non-lock failure is attempted exactly once" 1 @commit-calls)
+  (assert= "attempts is 1" 1 (:attempts result))
+  (assert-true "the hook's own stderr is carried on the failure" (str/includes? (:stderr result) "hook declined")))
+
+;; ── BL-1475: landed-elsewhere - another writer's commit already carries
+;;    this call's own intended content, verified against HEAD ───────────
+
+(let [dir (real-git-repo)
+      restore-calls (atom [])
+      result (commit-integrity-lib/commit-with-integrity!
+              {:project-root dir :paths ["approval.yaml"] :message "m"
+               :add-fn! (fn [& _] {:exit 1 :err "fatal: Unable to create '/repo/.git/index.lock': File exists."})
+               :read-fn (fn [_ _] "human_approval: approved\n")
+               :rev-parse-fn (fn [_] "landed-sha")
+               :show-fn (fn [_ sha path] (when (and (= sha "landed-sha") (= path "approval.yaml")) "human_approval: approved\n"))
+               :restore-index-fn! (fn [_ paths snapshot] (swap! restore-calls conj [paths snapshot]) true)
+               :max-retries 0})]
+  (assert= "content already on HEAD is reported as landed-elsewhere, not a failure"
+           {:success true :reason :landed-elsewhere :sha "landed-sha" :attempts 1} result)
+  (assert= "the index is restored to its pre-call state (this call never committed anything itself)"
+           1 (count @restore-calls)))
+
+;; A path this caller never wrote real content for (read-fn found nothing)
+;; must NEVER be treated as landed merely because show-fn also finds
+;; nothing at HEAD for a path that plain doesn't exist there - the exact
+;; nil-vs-nil trap BL-390 already guards on the TS side of this ticket.
+(let [dir (real-git-repo)
+      result (commit-integrity-lib/commit-with-integrity!
+              {:project-root dir :paths ["never-written.txt"] :message "m"
+               :add-fn! (fn [& _] {:exit 1 :err "fatal: Unable to create '/repo/.git/index.lock': File exists."})
+               :read-fn (fn [_ _] nil)
+               :rev-parse-fn (fn [_] "sha-1")
+               :show-fn (fn [_ _ _] nil)
+               :max-retries 0})]
+  (assert= "a never-written path is never reported as landed by nil-vs-nil coincidence" :add-failed (:reason result))
+  (assert-false "never reported as success" (:success result)))
+
 ;; ── report ────────────────────────────────────────────────────────────────
 (if (empty? @failures)
   (println "commit_integrity_lib (BL-419): ALL TESTS PASSED")

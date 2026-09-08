@@ -3883,7 +3883,7 @@ test('recordApprovalDecisionAndClose: a successful commit is reported and never 
   const adapters = closingFixtureAdapters({
     commitApprovalWrites: async (backlogId, message) => {
       commitCalls.push({ backlogId, message });
-      return true;
+      return { success: true };
     },
     notifyApprovalsTopic: async (topicId, text) => {
       notified.push({ topicId, text });
@@ -3903,7 +3903,7 @@ test('recordApprovalDecisionAndClose: a successful commit is reported and never 
 test('recordApprovalDecisionAndClose: a GENUINE commit failure (adapter wired, returns false) is reported and surfaced loudly', async () => {
   const notified = [];
   const adapters = closingFixtureAdapters({
-    commitApprovalWrites: async () => false,
+    commitApprovalWrites: async () => ({ success: false }),
     notifyApprovalsTopic: async (topicId, text) => {
       notified.push({ topicId, text });
       return true;
@@ -3917,6 +3917,49 @@ test('recordApprovalDecisionAndClose: a GENUINE commit failure (adapter wired, r
   assert.equal(notified.length, 1);
   assert.match(notified[0].text, /BL-892/);
   assert.match(notified[0].text, /FAILED TO COMMIT/);
+});
+
+// BL-1475: a commit that lost the lock race to ANOTHER writer landing the
+// exact same content is durable - it must never read as a failure needing
+// manual landing, and must name the landing writer's own sha.
+test('recordApprovalDecisionAndClose: content landed by another writer is reported as landed, never as FAILED TO COMMIT', async () => {
+  const notified = [];
+  const adapters = closingFixtureAdapters({
+    commitApprovalWrites: async () => ({ success: true, reason: 'landed-elsewhere', sha: 'abc1234567' }),
+    notifyApprovalsTopic: async (topicId, text) => {
+      notified.push({ topicId, text });
+      return true;
+    },
+  });
+
+  const result = await recordApprovalDecisionAndClose(adapters, 'BL-892', { kind: 'approved' }, 0);
+
+  assert.equal(result.changed, true);
+  assert.equal(result.committed, true, 'landed-elsewhere is durable, so the decision counts as committed');
+  assert.equal(notified.length, 1);
+  assert.match(notified[0].text, /BL-892/);
+  assert.match(notified[0].text, /landed in abc1234567/);
+  assert.doesNotMatch(notified[0].text, /FAILED TO COMMIT/);
+});
+
+// BL-1475: a GENUINE failure's own message names git's real reason
+// (never discarded) instead of a bare, generic alarm.
+test('recordApprovalDecisionAndClose: a genuine failure names gits own stderr in the alarm', async () => {
+  const notified = [];
+  const adapters = closingFixtureAdapters({
+    commitApprovalWrites: async () => ({ success: false, stderr: "fatal: Unable to create '.../.git/index.lock': File exists." }),
+    notifyApprovalsTopic: async (topicId, text) => {
+      notified.push({ topicId, text });
+      return true;
+    },
+  });
+
+  const result = await recordApprovalDecisionAndClose(adapters, 'BL-892', { kind: 'approved' }, 0);
+
+  assert.equal(result.committed, false);
+  assert.equal(notified.length, 1);
+  assert.match(notified[0].text, /FAILED TO COMMIT/);
+  assert.match(notified[0].text, /index\.lock/);
 });
 
 test('recordApprovalDecisionAndClose: commitApprovalWrites ABSENT (not wired) degrades silently - never surfaces a failure notice', async () => {
@@ -3939,7 +3982,7 @@ test('recordAmendDecisionAndClose: a GENUINE commit failure is reported and surf
   const notified = [];
   const adapters = amendFixtureAdapters({
     readApprovalAskMessage: async () => ({ topicId: 800, messageId: 999, text: 'BL-892 needs your approval...' }),
-    commitApprovalWrites: async () => false,
+    commitApprovalWrites: async () => ({ success: false }),
     notifyApprovalsTopic: async (topicId, text) => {
       notified.push({ topicId, text });
       return true;
@@ -7079,7 +7122,7 @@ test('BL-582 repaint-02: a repaint failure after a successful record is reported
     editApprovalAskMessage: async () => ({ success: false, error: 'message to edit not found' }),
     commitApprovalWrites: async (backlogId) => {
       commits.push(backlogId);
-      return true;
+      return { success: true };
     },
   });
   const result = await pollAndForward(0, PRINCIPAL_ID, adapters);
@@ -7155,7 +7198,7 @@ test('BL-582: the Approve tap is answered as soon as the record outcome is known
     },
     commitApprovalWrites: async () => {
       order.push('commit');
-      return true;
+      return { success: true };
     },
     readApprovalAskMessage: async () => ({ topicId: 800, messageId: 9, text: 'BL-123 needs your approval' }),
     editApprovalAskMessage: async () => {

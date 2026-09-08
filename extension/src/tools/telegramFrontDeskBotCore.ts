@@ -13,7 +13,7 @@ import { computeTelegramRetryBackoffMs } from '../notify/telegramRetry';
 // second copy of the same arithmetic.
 import { formatDurationMs } from '../metrics/swarmMetrics';
 import { classifyApprovalReplyAction, classifyApprovalsTopicReply } from '../concierge/pendingApprovalReply';
-import { humanDecisionCommitMessage } from '../util/commitIntegrityRunner';
+import { humanDecisionCommitMessage, CommitIntegrityResult } from '../util/commitIntegrityRunner';
 import {
   ApprovalDecisionVerdict,
   composeDecidedAskText,
@@ -807,7 +807,11 @@ export interface PollAdapters {
   // degrades to the pre-fix uncommitted behavior, the same "new
   // capability defaults to a no-op" posture every other optional adapter
   // in this file already has - never a crash.
-  commitApprovalWrites?: (backlogId: string, message: string) => Promise<boolean>;
+  // BL-1475: CommitIntegrityResult, not a bare boolean - a durable decision
+  // whose OWN commit lost a transient index.lock race to another writer
+  // that landed the exact same content is reported as `landed-elsewhere`
+  // (with that writer's sha), never as a failure needing manual landing.
+  commitApprovalWrites?: (backlogId: string, message: string) => Promise<CommitIntegrityResult>;
   // FILE-LEVEL SAFETY CHECK: reads whether an in-flight build touches the
   // same file(s) this ticket's own scope names (expediteSafety.ts's pure
   // findFileCollision, driven by real active-ticket/in-flight-handoff reads
@@ -1384,10 +1388,18 @@ async function commitApprovalDecision(adapters: PollAdapters, backlogId: string,
   }
   const verb = kind === 'approved' ? 'Approve' : kind === 'rejected' ? 'Reject' : 'Amend';
   // BL-1368: one shared byline for the whole human-decision commit class.
-  const committed = await adapters.commitApprovalWrites(backlogId, humanDecisionCommitMessage(`${verb} ${backlogId}: record human_approval`));
-  if (!committed) {
-    await adapters.notifyApprovalsTopic?.(undefined, `${backlogId}: ${kind} recorded but FAILED TO COMMIT — a human must land the change manually.`);
+  const result = await adapters.commitApprovalWrites(backlogId, humanDecisionCommitMessage(`${verb} ${backlogId}: record human_approval`));
+  // BL-1475: a durability alarm is raised only for a GENUINE failure - a
+  // commit that lost the lock race to another writer landing the exact
+  // same content is durable, and is told so by naming that writer's sha,
+  // never reported as needing manual landing.
+  if (result.success && result.reason === 'landed-elsewhere') {
+    await adapters.notifyApprovalsTopic?.(undefined, `${backlogId}: ${kind} recorded; landed in ${result.sha} by another writer.`);
+  } else if (!result.success) {
+    const reason = result.stderr ? ` (${result.stderr.trim()})` : '';
+    await adapters.notifyApprovalsTopic?.(undefined, `${backlogId}: ${kind} recorded but FAILED TO COMMIT — a human must land the change manually${reason}.`);
   }
+  const committed = result.success;
   return committed;
 }
 
