@@ -142,3 +142,5 @@ notes: |
     directive, so it is minted separately with human_approval as the decision.
   - IR-DRY (2026-09-08): the "dead"/"stalled" verdict steps are one step
     with a quoted parameter - kept as written.
+
+assigned_to: coder

@@ -54,6 +54,7 @@
                   (spit (str (fs/path fixture-root "email-text.txt")) text)
                   (spit (str (fs/path fixture-root "email-attachments.json")) (json/generate-string attachments))
                   {:success true})
+   :record-halt! (fn [reason] (log-call! "record-halt" (name reason)))
    :halt-swarm! (fn [] (log-call! "halt-swarm"))
    :write-status! (fn [status]
                      (spit status-file (json/generate-string status)))})

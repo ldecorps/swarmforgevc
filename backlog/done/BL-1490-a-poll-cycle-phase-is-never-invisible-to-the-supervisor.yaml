@@ -163,3 +163,5 @@ notes: |
   - IR-DRY (2026-09-08): "becomes stalled" (eventual, past a budget) and
     "reads stalled" (one evaluation) are distinct assertions; "invoked once"
     and "never invoked" are opposites - kept as written, as BL-977 did.
+
+assigned_to: coder

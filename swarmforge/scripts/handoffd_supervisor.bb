@@ -81,6 +81,12 @@
 (def tmux-socket-file (fs/path state-dir "tmux-socket"))
 (def window-ids-file (fs/path state-dir "window-ids"))
 (def conf-file (fs/path script-dir ".." "swarmforge.conf"))
+;; BL-1491: the same audit log kill_pipeline_swarm.sh's log() writes rows to,
+;; and the same availability_ledger_lib.sh availability_record already
+;; called from kill_pipeline_swarm.sh/start-swarm.sh - a halt reuses both
+;; existing writers/files rather than a third format (BL-897).
+(def kill-all-audit-file (fs/path daemon-dir "kill-all-audit.log"))
+(def availability-lib-path (str (fs/path script-dir "availability_ledger_lib.sh")))
 
 (defn env-ms [name default]
   (or (some-> (System/getenv name) parse-long) default))
@@ -554,6 +560,50 @@
     (spit (str path) content)
     (str path)))
 
+;; BL-1491: seconds-precision UTC "Z"-suffixed timestamp - the same shape
+;; kill_pipeline_swarm.sh's `log()` gets from `date -u +%Y-%m-%dT%H:%M:%SZ`
+;; (no fractional seconds), so a row this writes and a row that writes are
+;; visually and lexically indistinguishable in the shared audit log.
+(defn- seconds-iso []
+  (.format (java.time.format.DateTimeFormatter/ISO_INSTANT)
+           (.truncatedTo (java.time.Instant/now) java.time.temporal.ChronoUnit/SECONDS)))
+
+;; BL-1491: one kill-all-audit row per halt, same `<iso> <text>` shape the
+;; existing rows already use, naming the supervisor and the verdict.
+;; Best-effort (invariant 2) - a write failure here must never prevent the
+;; halt, so alarm-and-halt!'s own try/catch around record-halt! is not
+;; relied on alone; this writer never throws on its own account either.
+(defn write-kill-all-audit-row! [reason]
+  (try
+    (fs/create-dirs daemon-dir)
+    (spit (str kill-all-audit-file)
+          (str (seconds-iso) " handoffd_supervisor alarm-and-halt verdict=" (name reason) "\n")
+          :append true)
+    (catch Exception _ nil)))
+
+;; BL-1491: reuses availability_ledger_lib.sh's own availability_record
+;; (the same writer kill_pipeline_swarm.sh's deliberate stop already calls)
+;; via a bounded subprocess through daemon-cycle-guard-lib/sh! - never a bb
+;; reimplementation of the record shape (BL-897), and never
+;; kill_pipeline_swarm.sh itself (that sweeps every inbox and resets
+;; worktrees). availability_record is itself already fail-safe (BL-823
+;; invariant 1: mkdir/write wrapped, always returns 0), so an unwritable
+;; telemetry dir degrades to a silent no-op rather than a thrown exception.
+(defn write-availability-stop-record! []
+  (try
+    (daemon-cycle-guard-lib/sh!
+     "sh" "-c" ". \"$1\"; availability_record \"$2\" stop swarm-stop handoffd_supervisor"
+     "sh" availability-lib-path project-root)
+    (catch Exception _ nil)))
+
+(defn record-halt!
+  "The :record-halt! adapter daemon-alarm-lib/alarm-and-halt! calls
+   write-ahead, before halt-swarm! - both records exist before the first
+   role session dies (BL-1491 scenario 03)."
+  [reason]
+  (write-kill-all-audit-row! reason)
+  (write-availability-stop-record!))
+
 ;; BL-215: one-shot per process - the daemon's launch environment does not
 ;; change mid-process, so a repeated warning across polls/sweeps would just
 ;; be spam once the operator has already been told once.
@@ -607,6 +657,7 @@
     :role-counts! snapshot-role-counts
     :write-failure-log! write-failure-log-file!
     :send-email! send-configured-alarm-email!
+    :record-halt! record-halt!
     :halt-swarm! halt-swarm!
     :write-status! write-status!}))
 
