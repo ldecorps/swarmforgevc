@@ -191,3 +191,5 @@ notes: |
     two fixture files by design (one handler each); scenario 04 mirrors
     BL-1279's scenario of the same name deliberately - same discipline,
     different fixtures.
+
+assigned_to: coder
