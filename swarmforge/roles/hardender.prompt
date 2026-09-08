@@ -2430,3 +2430,49 @@ You are the hardender.
   A run whose PASS/FAIL line count is short of its case count, or whose
   exit is nonzero while its tail reads PASS, has died this way: read the
   exit status, never the tail alone.
+
+## A hand-mutated `.bb` function is verified by the ONE test that pins it, run alone — never the whole property lane, and never a bare `bb -e` observation in its place (rule_proposal 2026-09-08, accepted with amendment)
+- Rule (hardender, verbatim): "Verify a hand-mutated .bb fn via one short
+  bb -e call, not the vitest property harness - other roles' concurrent
+  host tests can make a mutant look hung, and pkill cleanup then risks
+  their work."
+- Accepted for its scope, amended on its substitute. What verifies a hand
+  mutant is a TEST rejecting it - `expedite_mutation_sweep.sh`'s own line,
+  "a mutant is KILLED if either suite rejects it" (BL-567, this prompt's
+  `.bb` fallback above). A bare `bb -e` call is the right FIRST step: it
+  proves the mutant is non-equivalent (the function's output differs). It
+  is not the verdict: it shows the code changed, not that any test
+  notices, which is the one thing hardening exists to establish. So: run
+  the bb-native unit/property runner for that lib when one exists
+  (`swarmforge/scripts/test/*_property_runner.bb`, e.g.
+  `bl1405_hand_built_land_records_approval_property_runner.bb` for
+  `land_step_lib.bb`), otherwise the ONE vitest property file that pins the
+  behaviour, alone: `cd extension && npx vitest run --config
+  vitest.properties.config.mjs test/<file>.property.test.js`. Never
+  `npm run test:properties` for a hand mutant - that is the whole lane
+  (100+ files, RAM-capped, minutes under load) when one file is the
+  question. Record in the hardening notes WHICH test rejected the mutant
+  (file and case), the same line the sweep prints. "A `bb -e` call
+  confirmed this is what the property's at-limit case pins" is an
+  inference about a test that was never run against the mutant; the
+  record needs the red run.
+- Why: BL-1474 (2026-09-08). Mutant 2 (the truncation guard's `>` weakened
+  to `>=`) was confirmed by a direct `bb -e` at exactly 2000 chars, and the
+  property's `at-limit` case was cited as the killer without ever running
+  against the mutant. The same pass put a 60 s ad hoc timeout on the vitest
+  harness at load 8-9, saw it expire, and traced the slowness to a process
+  tree under the live front-desk/handoffd supervisor - nothing the pass
+  had started. The reflexive `pkill -f "vitest run"` that follows such a
+  timeout sweeps every role's property run on the host; the engineering
+  guardrail already says reap only what no live run owns (BL-1385,
+  BL-1390), and that binds processes exactly as it binds fixture roots.
+- How: (1) `bb -e` the mutated function first to show non-equivalence; a
+  mutant whose output does not differ is a candidate equivalent, not a
+  gap. (2) Run the pinning test alone against the mutant, in the
+  foreground, with no ad hoc timeout - or one above that file's last
+  measured duration scaled by the current load (`uptime`). (3) A run that
+  looks hung: `pgrep -af vitest` and `ps -o pid,ppid,etimes,args --forest`
+  first, then end ONLY pids whose tree roots at your own shell - never a
+  pattern kill. (4) Restore the mutant and re-run the same file green.
+  (5) Write "killed by <test file> <case>" in the hardening notes; a mutant
+  with no such line is unverified, whatever `bb -e` showed.
