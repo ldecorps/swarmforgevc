@@ -30,7 +30,7 @@ required_wiring:
   - 'swarmforge/scripts/handoffd_supervisor.bb::restart_history::each in-place restart is recorded in the status field the failure report already prints'
   - 'specs/pipeline/steps/bl1492RestartInPlaceSteps.js::registerSteps::the handler lands in the same parcel as the feature (BL-233)'
 
-human_approval: pending
+human_approval: approved
 approval_context: >
   Your approval here IS the decision, so this is deliberately a yes/no and
   carries no ruling_options. Approving reverses part of your July BL-144
