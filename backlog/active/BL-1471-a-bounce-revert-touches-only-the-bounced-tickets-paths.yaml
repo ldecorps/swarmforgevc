@@ -9,6 +9,13 @@ severity: high
 # Not critical: nothing reached main, the coder restored the content and
 # the rule text now says what to do; the guard makes it mechanical.
 status: todo
+abandoned_commits: [87c4b6a4dc]
+# BL-1241 land-step remedy: 87c4b6a4dc (documenter's tip) was entangled with
+# unlanded siblings BL-1441 and BL-1475 (BL-1475 already on origin/main via
+# its own replay c34c198615 - a false ENTANGLED_SIBLING, per the sibling
+# detector's known BL-1272 gap on hand-built replays). land_step_cli.bb
+# built a tip-pure replay a9af82309e off origin/main containing only this
+# ticket's own paths; that is the commit landed, not 87c4b6a4dc.
 epic: swarm-reliability
 priority: 8
 direction: swarm-reported
