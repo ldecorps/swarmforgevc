@@ -181,3 +181,10 @@ notes: |
     the instance to the adjudication evidence, no note.
 
 assigned_to: coder
+
+abandoned_commits: [05c18b484f]
+# QA approved 05c18b484f; land_step_cli.bb's BL-1241 remedy found only
+# LANDED_SIBLING (informational, already-landed) entries in its ancestry
+# and built tip-pure replay ca694b85ad off origin/main - that replay is
+# what actually landed (df0a270382..ca694b85ad on origin/main), per the
+# QA prompt's "never the originally-cited commit" instruction.
