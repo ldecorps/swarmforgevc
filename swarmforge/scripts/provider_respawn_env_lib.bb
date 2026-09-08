@@ -18,7 +18,7 @@
 
 (defn provider-respawn-env-args
   "BL-130 pane -e passthrough for ensure/respawn repairs — same keys rotate/chase
-   need so a repair never strips OpenRouter/OpenAI/Mistral/Cerebras/Perplexity/Gemini/Qwen
+   need so a repair never strips OpenRouter/OpenAI/Mistral/Cerebras/Perplexity/Gemini/Qwen/b.ai
    auth from a live alternate-runtime pane.
 
    SRE 2026-07-19: when role's launch script CLI targets api.perplexity.ai,
@@ -26,6 +26,7 @@
    in the calling process (provider_compat_lib/must-remap-to-perplexity?).
    Gemini: GEMINI_API_KEY, or SWARMFORGE_GEMINI_API_KEY mapped to GEMINI_API_KEY.
    Qwen: QWEN_API_KEY, or BAILIAN_CODING_PLAN_API_KEY mapped to QWEN_API_KEY.
+   b.ai: B_AI_API_KEY, same launch-cli-wins posture (BL-1495).
 
    state-dir is passed explicitly (never a bound global) so both callers -
    swarm_ensure.bb's own process-arg state-dir and handoffd.bb's daemon-wide
@@ -39,12 +40,14 @@
          use-cerebras (= "1" (System/getenv "SWARMFORGE_USE_CEREBRAS"))
          use-perplexity (= "1" (System/getenv "SWARMFORGE_USE_PERPLEXITY"))
          use-qwen (= "1" (System/getenv "SWARMFORGE_USE_QWEN"))
+         use-bai (= "1" (System/getenv "SWARMFORGE_USE_BAI"))
          cerebras (System/getenv "CEREBRAS_API_KEY")
          perplexity (System/getenv "PERPLEXITY_API_KEY")
          qwen (let [q (System/getenv "QWEN_API_KEY")]
                 (if (str/blank? q)
                   (System/getenv "BAILIAN_CODING_PLAN_API_KEY")
                   q))
+         bai (System/getenv "B_AI_API_KEY")
          gemini (let [g (System/getenv "GEMINI_API_KEY")]
                   (if (str/blank? g)
                     (System/getenv "SWARMFORGE_GEMINI_API_KEY")
@@ -53,9 +56,11 @@
                    {:use-cerebras use-cerebras
                     :use-perplexity use-perplexity
                     :use-qwen use-qwen
+                    :use-bai use-bai
                     :cerebras-api-key cerebras
                     :perplexity-api-key perplexity
                     :qwen-api-key qwen
+                    :bai-api-key bai
                     :openai-api-key (System/getenv "OPENAI_API_KEY")
                     :launch-cli launch-cli})
          openai (:openai-api-key resolved)
@@ -63,7 +68,8 @@
          openai-base-url (:openai-base-url resolved)
          force-perplexity (= :perplexity (:provider resolved))
          force-cerebras (= :cerebras (:provider resolved))
-         force-qwen (= :qwen (:provider resolved))]
+         force-qwen (= :qwen (:provider resolved))
+         force-bai (= :bai (:provider resolved))]
      (cond-> []
        (not (str/blank? (System/getenv "OPENROUTER_API_KEY")))
        (concat ["-e" (str "OPENROUTER_API_KEY=" (System/getenv "OPENROUTER_API_KEY"))])
@@ -77,6 +83,8 @@
        (concat ["-e" (str "PERPLEXITY_API_KEY=" perplexity)])
        (not (str/blank? qwen))
        (concat ["-e" (str "QWEN_API_KEY=" qwen)])
+       (not (str/blank? bai))
+       (concat ["-e" (str "B_AI_API_KEY=" bai)])
        (not (str/blank? gemini))
        (concat ["-e" (str "GEMINI_API_KEY=" gemini)])
        (or use-cerebras force-cerebras)
@@ -85,6 +93,8 @@
        (concat ["-e" "SWARMFORGE_USE_PERPLEXITY=1"])
        (or use-qwen force-qwen)
        (concat ["-e" "SWARMFORGE_USE_QWEN=1"])
+       (or use-bai force-bai)
+       (concat ["-e" "SWARMFORGE_USE_BAI=1"])
        (not (str/blank? openai))
        (concat ["-e" (str "OPENAI_API_KEY=" openai)])
        (not (str/blank? openai-base))
