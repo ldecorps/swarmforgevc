@@ -8,8 +8,10 @@ const {
   buildTurnProfileWindowRecord,
   filterNewTurnProfileWindows,
   readPersistedTurnProfileWindows,
+  readTranscriptSummaryStore,
   runTurnProfileProducer,
   turnProfileStorePath,
+  turnProfileSummaryStorePath,
   TURN_PROFILE_STORE_FILE,
   windowDedupeKey,
 } = require('../out/metrics/turnProfileProducer');
@@ -497,4 +499,203 @@ test('a role with no transcripts at all is absent from the multi-stage window', 
 
   assert.equal(record.complete, true);
   assert.deepEqual(record.stages.map((entry) => entry.stage), ['coder']);
+});
+
+// ── BL-1476: a tick reads only transcripts changed since the last completed
+//    tick, records exactly what a full walk would, reports read-of-listed,
+//    and stops at its own deadline. ─────────────────────────────────────
+
+// Wraps the REAL fs.readFileSync so a test can observe exactly which paths
+// were opened for content, without faking the content itself - the producer's
+// own change-detection decides whether to call this at all; this only
+// records that it did.
+function observingReadFn(opened) {
+  return (filePath) => {
+    opened.push(filePath);
+    return fs.readFileSync(filePath, 'utf8');
+  };
+}
+
+function setupProducer(prefix) {
+  const repoRoot = mkTmpDir(`sfvc-bl1476-${prefix}-repo-`);
+  const claudeProjectsDir = mkTmpDir(`sfvc-bl1476-${prefix}-projects-`);
+  const coderPath = path.join(repoRoot, '.worktrees', 'coder');
+  fs.mkdirSync(coderPath, { recursive: true });
+  const roleWorktrees = [{ role: 'coder', worktreePath: coderPath }];
+  const transcriptsDir = path.join(claudeProjectsDir, projectSlug(coderPath));
+  return { repoRoot, claudeProjectsDir, roleWorktrees, transcriptsDir };
+}
+
+test('BL-1476-01: a tick after nothing changed reads no transcript and writes the same row', () => {
+  const { repoRoot, claudeProjectsDir, roleWorktrees, transcriptsDir } = setupProducer('noop');
+  for (let i = 0; i < 40; i += 1) {
+    writeTranscript(transcriptsDir, `t${i}.jsonl`, [gitLine(BASE_MS + i * 1000)]);
+  }
+  const first = runTurnProfileProducer({ repoRoot, roleWorktrees, claudeProjectsDir });
+  assert.equal(first.listed, 40);
+  assert.equal(first.read, 40, 'the first tick has no summaries yet, so every transcript must be opened once');
+
+  const telemetryDir = path.join(repoRoot, '.swarmforge', 'telemetry');
+  const rowBefore = readPersistedTurnProfileWindows(telemetryDir)[0];
+
+  const opened = [];
+  const second = runTurnProfileProducer({ repoRoot, roleWorktrees, claudeProjectsDir, readFn: observingReadFn(opened) });
+
+  assert.deepEqual(opened, [], 'no transcript is opened for content');
+  assert.equal(second.read, 0, 'the tick reports reading 0');
+  assert.equal(second.listed, 40, 'of 40 transcripts');
+  assert.deepEqual(readPersistedTurnProfileWindows(telemetryDir)[0], rowBefore, 'the day\'s row is written again unchanged');
+});
+
+test('BL-1476-02a: a transcript that grew by appended lines is the only one read, and the row equals a full walk', () => {
+  const { repoRoot, claudeProjectsDir, roleWorktrees, transcriptsDir } = setupProducer('grew');
+  const paths = [];
+  for (let i = 0; i < 40; i += 1) {
+    paths.push(writeTranscript(transcriptsDir, `t${i}.jsonl`, [gitLine(BASE_MS + i * 1000)]));
+  }
+  runTurnProfileProducer({ repoRoot, roleWorktrees, claudeProjectsDir });
+
+  fs.appendFileSync(paths[7], `\n${writingLine(BASE_MS + 999_000)}\n`, 'utf8');
+  const opened = [];
+  const result = runTurnProfileProducer({ repoRoot, roleWorktrees, claudeProjectsDir, readFn: observingReadFn(opened) });
+
+  assert.equal(result.read, 1);
+  assert.equal(result.listed, 40);
+  assert.deepEqual(opened, [paths[7]], 'no transcript other than the changed one is opened for content');
+
+  const telemetryDir = path.join(repoRoot, '.swarmforge', 'telemetry');
+  const row = readPersistedTurnProfileWindows(telemetryDir)[0];
+  const fullWalk = buildTurnProfileWindowForGroups([{ stage: 'coder', transcriptPaths: paths }]);
+  assert.deepEqual(row, fullWalk);
+});
+
+test('BL-1476-02b: a newly created transcript is the only one read, listed grows by one', () => {
+  const { repoRoot, claudeProjectsDir, roleWorktrees, transcriptsDir } = setupProducer('created');
+  const paths = [];
+  for (let i = 0; i < 40; i += 1) {
+    paths.push(writeTranscript(transcriptsDir, `t${i}.jsonl`, [gitLine(BASE_MS + i * 1000)]));
+  }
+  runTurnProfileProducer({ repoRoot, roleWorktrees, claudeProjectsDir });
+
+  const created = writeTranscript(transcriptsDir, 't40.jsonl', [testRunLine(BASE_MS + 999_000)]);
+  const opened = [];
+  const result = runTurnProfileProducer({ repoRoot, roleWorktrees, claudeProjectsDir, readFn: observingReadFn(opened) });
+
+  assert.equal(result.read, 1);
+  assert.equal(result.listed, 41);
+  assert.deepEqual(opened, [created]);
+
+  const telemetryDir = path.join(repoRoot, '.swarmforge', 'telemetry');
+  const row = readPersistedTurnProfileWindows(telemetryDir)[0];
+  const fullWalk = buildTurnProfileWindowForGroups([{ stage: 'coder', transcriptPaths: [...paths, created] }]);
+  assert.deepEqual(row, fullWalk);
+});
+
+test('BL-1476-02c: a deleted transcript is read zero times, listed shrinks by one, its summary is dropped', () => {
+  const { repoRoot, claudeProjectsDir, roleWorktrees, transcriptsDir } = setupProducer('deleted');
+  const paths = [];
+  for (let i = 0; i < 40; i += 1) {
+    paths.push(writeTranscript(transcriptsDir, `t${i}.jsonl`, [gitLine(BASE_MS + i * 1000)]));
+  }
+  runTurnProfileProducer({ repoRoot, roleWorktrees, claudeProjectsDir });
+  const telemetryDir = path.join(repoRoot, '.swarmforge', 'telemetry');
+  assert.ok(
+    Object.prototype.hasOwnProperty.call(readTranscriptSummaryStore(telemetryDir), paths[3]),
+    'the file must have a summary before deletion'
+  );
+
+  fs.unlinkSync(paths[3]);
+  const remaining = paths.filter((_, i) => i !== 3);
+  const opened = [];
+  const result = runTurnProfileProducer({ repoRoot, roleWorktrees, claudeProjectsDir, readFn: observingReadFn(opened) });
+
+  assert.equal(result.read, 0);
+  assert.equal(result.listed, 39);
+  assert.deepEqual(opened, []);
+  assert.ok(
+    !Object.prototype.hasOwnProperty.call(readTranscriptSummaryStore(telemetryDir), paths[3]),
+    'the deleted file\'s summary must not linger in the store'
+  );
+
+  const row = readPersistedTurnProfileWindows(telemetryDir)[0];
+  const fullWalk = buildTurnProfileWindowForGroups([{ stage: 'coder', transcriptPaths: remaining }]);
+  assert.deepEqual(row, fullWalk);
+});
+
+test('BL-1476-03: a tick that reaches its deadline opens at most the affordable transcripts, writes no row, and persists what it completed', () => {
+  const { repoRoot, claudeProjectsDir, roleWorktrees, transcriptsDir } = setupProducer('deadline');
+  const paths = [];
+  for (let i = 0; i < 40; i += 1) {
+    paths.push(writeTranscript(transcriptsDir, `t${i}.jsonl`, [gitLine(BASE_MS + i * 1000)]));
+  }
+
+  let clockMs = 0;
+  const opened = [];
+  const readFn = (filePath) => {
+    opened.push(filePath);
+    clockMs += 10_000; // the clock advances 10 seconds per transcript read
+    return fs.readFileSync(filePath, 'utf8');
+  };
+  const nowFn = () => clockMs;
+
+  const result = runTurnProfileProducer({
+    repoRoot,
+    roleWorktrees,
+    claudeProjectsDir,
+    readFn,
+    nowFn,
+    deadlineMs: 30_000,
+  });
+
+  assert.ok(opened.length <= 3, `expected at most 3 transcripts opened for content, got ${opened.length}`);
+  assert.equal(result.partial, true, 'the tick reports a partial walk');
+
+  const telemetryDir = path.join(repoRoot, '.swarmforge', 'telemetry');
+  assert.deepEqual(readPersistedTurnProfileWindows(telemetryDir), [], 'no row is written');
+
+  const store = readTranscriptSummaryStore(telemetryDir);
+  assert.equal(
+    Object.keys(store).length,
+    opened.length,
+    'the summaries of the transcripts it completed are persisted, no more'
+  );
+
+  // A following tick with an unlimited deadline opens only the transcripts
+  // without a summary, and that tick's row equals a full walk of all 40.
+  const secondOpened = [];
+  const second = runTurnProfileProducer({
+    repoRoot,
+    roleWorktrees,
+    claudeProjectsDir,
+    readFn: observingReadFn(secondOpened),
+  });
+
+  assert.equal(second.partial, false);
+  assert.equal(secondOpened.length, 40 - opened.length, 'only the transcripts without a summary are opened');
+  const finalRow = readPersistedTurnProfileWindows(telemetryDir)[0];
+  const fullWalk = buildTurnProfileWindowForGroups([{ stage: 'coder', transcriptPaths: paths }]);
+  assert.deepEqual(finalRow, fullWalk);
+});
+
+test('BL-1476: the summary store file lives at telemetryDir/turn-profile-transcript-summaries.json', () => {
+  assert.equal(
+    turnProfileSummaryStorePath('/some/telemetry/dir'),
+    path.join('/some/telemetry/dir', 'turn-profile-transcript-summaries.json')
+  );
+});
+
+test('BL-1476: an unreadable transcript never has its bad content re-read once its summary is current', () => {
+  const { repoRoot, claudeProjectsDir, roleWorktrees, transcriptsDir } = setupProducer('unreadable-cached');
+  const good = writeTranscript(transcriptsDir, 'good.jsonl', [gitLine(BASE_MS)]);
+  const bad = path.join(transcriptsDir, 'bad.jsonl');
+  fs.writeFileSync(bad, `garbage\n${gitLine(BASE_MS + 1000)}\n`, 'utf8');
+
+  const first = runTurnProfileProducer({ repoRoot, roleWorktrees, claudeProjectsDir });
+  assert.equal(first.complete, false, 'an unreadable transcript makes the window incomplete');
+
+  const opened = [];
+  const second = runTurnProfileProducer({ repoRoot, roleWorktrees, claudeProjectsDir, readFn: observingReadFn(opened) });
+  assert.deepEqual(opened, [], 'the unchanged (still bad) transcript must not be re-opened');
+  assert.equal(second.complete, false, 'still incomplete - the bad file did not vanish, only its re-read did');
+  void good;
 });
