@@ -96,6 +96,13 @@
 (def kill-timeout-ms (env-ms "SUPERVISOR_KILL_TIMEOUT_MS" 2000))
 (def kill-poll-ms 50)
 
+;; BL-1492: the restart-in-place budget - direction chosen and recorded per
+;; the ticket's own "How": 2 restarts per 600s, re-armed after 600s with no
+;; further restart (see decide-response below - the re-arm falls out of the
+;; sliding window for free, with no separate healthy-since field to track).
+(def restart-budget-count (env-ms "SUPERVISOR_RESTART_BUDGET_COUNT" 2))
+(def restart-budget-window-ms (env-ms "SUPERVISOR_RESTART_BUDGET_WINDOW_MS" 600000))
+
 ;; BL-977: how long ONE named in-flight sweep may legitimately run. This is
 ;; deliberately NOT a raise of SUPERVISOR_STALL_MS - a silent daemon with
 ;; nothing in flight still halts in 30s, unchanged. Derived from the
@@ -236,6 +243,40 @@
       :stalled
 
       :else :healthy)))
+
+(defn decide-response
+  "BL-1492, kept pure like evaluate-health above: given a :dead/:stalled
+   verdict's restart-history (status's own :restart_history - a seq of
+   {:at epoch-ms ...} maps, any order, any prior shape treated as empty by
+   the caller), decides :restart (headroom remains) or :halt (budget
+   spent - BL-144's unchanged escalation).
+
+   Only entries within budget-window-ms of now-ms count against the
+   budget - counting by RECENCY rather than a fixed calendar window
+   anchored to the first restart is also how a long-enough healthy
+   stretch re-arms the budget for free: every verdict that is not
+   :healthy appends its own restart-history entry (restart-daemon! below,
+   or the halt path via alarm-and-halt!/write-status!), so an entry
+   aging out of the window IS the healthy-uptime window having elapsed -
+   no separate healthy-since field to track, and no way for the mere
+   passage of wall-clock time to re-arm the budget while the daemon keeps
+   dying (each new death refreshes the window by adding a fresh, recent
+   entry).
+
+   A malformed or future :at (age negative, or not a number) always counts
+   AS recent - only an entry whose :at is a real number AND genuinely older
+   than budget-window-ms is excluded. Uncertain accounting fails toward
+   :halt, the safer BL-144 posture, never silently toward more restarts
+   (BL-1492 D1: the opposite filter shape - excluding a malformed/future
+   entry from the count - LOWERS the count and so biases toward :restart,
+   letting a genuinely exhausted budget re-arm itself under a clock
+   anomaly such as an NTP step)."
+  [{:keys [restart-history now-ms budget-window-ms budget-count]}]
+  (let [recent (remove (fn [{:keys [at]}]
+                          (and (number? at)
+                               (<= budget-window-ms (- now-ms at))))
+                        restart-history)]
+    (if (< (count recent) budget-count) :restart :halt)))
 
 (defn read-in-flight-sweep-age-ms
   "The published sweep marker's in-flight age in ms, or nil when the marker
@@ -661,6 +702,53 @@
     :halt-swarm! halt-swarm!
     :write-status! write-status!}))
 
+;; BL-1492: the one start owner (start_handoff_daemon.sh, BL-690) invoked as
+;; a bounded subprocess - mirrors swarm_ensure.bb's own supervisor-cmd,
+;; including its SWARM_ENSURE_SUPERVISOR_CMD-shaped env override, so a test
+;; fixture can substitute a fake start owner without ever touching a real
+;; daemon or tmux. Idempotent (stops any pid-file process first), so a
+;; restart never leaves two daemons behind.
+(def start-daemon-cmd
+  (or (System/getenv "SUPERVISOR_START_DAEMON_CMD")
+      (str "bash " (fs/path script-dir "start_handoff_daemon.sh") " " project-root)))
+
+(defn start-daemon! []
+  (let [{:keys [exit]} (daemon-cycle-guard-lib/sh! start-daemon-cmd)]
+    {:success (zero? exit)}))
+
+(defn restart-daemon! [reason status]
+  (daemon-alarm-lib/restart-daemon!
+   {:reason reason
+    :status status
+    :now-iso! now-iso
+    :now-ms! now-ms
+    :log-tail! #(read-log-tail 200)
+    :role-counts! snapshot-role-counts
+    :write-failure-log! write-failure-log-file!
+    :send-email! send-configured-alarm-email!
+    :start-daemon! start-daemon!
+    :write-status! write-status!}))
+
+;; BL-1492: the dead/:stalled response, now consulted against the restart
+;; budget before ever reaching BL-144's hard halt. Extracted from check!
+;; below so an acceptance/property driver can exercise the decision (and
+;; the wiring behind it) against an arbitrary verdict/status pair, without
+;; first fabricating the pid/heartbeat/outbox observations evaluate-health
+;; would otherwise require.
+(defn respond-to-verdict! [verdict status]
+  (let [response (decide-response {:restart-history (:restart_history status)
+                                    :now-ms (now-ms)
+                                    :budget-window-ms restart-budget-window-ms
+                                    :budget-count restart-budget-count})]
+    (case response
+      :restart
+      (do (log! "restart-in-place" (name verdict))
+          (restart-daemon! verdict status))
+
+      :halt
+      (do (log! "alarm-and-halt" (name verdict))
+          (alarm-and-halt! verdict status)))))
+
 ;; ── one health check ─────────────────────────────────────────────────────────
 
 (defn check! []
@@ -703,9 +791,7 @@
         (log! "skip" "already halted; awaiting human recovery")
 
         :else
-        (do
-          (log! "alarm-and-halt" (name verdict))
-          (alarm-and-halt! verdict status))))))
+        (respond-to-verdict! verdict status)))))
 
 (defn -main []
   (if check-once?
