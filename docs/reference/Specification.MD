@@ -1,5 +1,37 @@
 # SwarmForge VS Code Extension — Specification
 
+**Last Updated:** September 8, 2026 (BL-1490: BL-977 made `:stalled` require
+true silence by having `run-sweep!` publish `.swarmforge/daemon/handoffd.sweep-marker`
+and `evaluate-health` read it — but three per-tick phases never went through
+`run-sweep!`: `startup-notify-pending!` (before the poll loop), `poll-once!`
+(outbox delivery) and `canary-sweep!` (every tick). During them the marker
+read whatever the last sweep left (`idle`) and the BL-789 heartbeat was only
+the cycle-start write, so a burst of deliveries each costing ~9s could outrun
+the 30s stall window while genuinely progressing — measured
+2026-09-08T03:44:28Z: four `delivered` lines 9-10s apart, heartbeat age
+33.9s, marker `idle`, `:stalled` → `alarm-and-halt!` killed every role
+session (7 full-swarm kills in ten hours 2026-09-07/08; 65 of 150 halts on
+record share this shape). Fixed: the three per-tick phases now publish
+through the same marker hook (`{"sweep":"delivery"|"startup-notify"|"canary",
+"started_at_ms":...}` at phase start, re-stamped after each completed unit —
+one delivery, one notified role, one canary transition — `idle` when the
+phase ends) via a new `run-tick-phase!` wrapper in `daemon_cycle_guard_lib.bb`
+covering all three call sites in `handoffd.bb`. Each per-tick phase gets its
+own budget (`effective-in-sweep-budget-ms`) derived from the measured worst
+legitimate delivery unit with headroom over the BL-967 60s wedged-subprocess
+floor — evaluate-health's signature is otherwise unchanged and stays a pure
+function over observations. `SUPERVISOR_STALL_MS` (30s) and the BL-675 300s
+threshold are untouched (human directive, firm): a silent daemon with
+nothing in flight still reads `:stalled` after one stall window exactly as
+before; only a genuinely progressing per-tick phase is now believed.
+`alarm-and-halt!`'s behaviour on a real stall and the `:dead` path are both
+untouched. Acceptance:
+`specs/features/BL-1490-a-poll-cycle-phase-is-never-invisible-to-the-supervisor.feature`.
+No new extension command or setting — a swarm-substrate daemon fix. No
+diagram edit: the architecture diagram's per-ticket comment log stopped
+being updated after 2026-08-27 and does not depict individual daemon
+supervisor internals at this granularity.)
+Prior entry —
 **Last Updated:** September 8, 2026 (BL-1471: the BL-490/BL-495 bounce rule
 names `git revert -m 1 <review-merge>` as the route to strip bounced content
 back out of a reviewing branch, but a merge revert reverses the merge's
