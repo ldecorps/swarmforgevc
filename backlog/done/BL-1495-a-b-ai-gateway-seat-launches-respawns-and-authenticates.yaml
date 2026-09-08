@@ -246,3 +246,17 @@ notes: |
     red ON main after BL-1447 landed - the register's shape, not this one.
 
 assigned_to: coder
+
+abandoned_commits: [14ec0690a5]
+# QA approved 14ec0690a5. land_step_cli.bb's BL-1241 remedy found two
+# ENTANGLED_SIBLING entries (BL-1471, BL-1476) that are in fact both
+# already landed on origin/main (BL-1272 gap: a replay-landed sibling's
+# original commit never becomes an ancestor of origin/main, so the
+# detector re-reports it as unlanded forever) - confirmed by hand against
+# origin/main before landing. The built replay also carried one stray
+# path, backlog/done/BL-1481-...yaml (an uncommitted-to-origin bookkeeping
+# addendum from this branch's own history, not BL-1495's own work); QA
+# hand-amended the replay to drop it before landing, per BL-506 (an
+# approval authorizes only its own ticket's work). The tip-pure replay
+# b4b54e1a37 (25 files, content-identical to 14ec0690a5 for every path) is
+# what actually landed on origin/main, not 14ec0690a5.
