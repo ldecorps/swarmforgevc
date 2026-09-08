@@ -1,0 +1,212 @@
+id: BL-1499
+title: "test_handoffd_notify_verified.sh case 02 has been red on main since 2026-07-22 with no owner: its fake tmux answers the FIRST capture-pane with the idle pane and every later one with the stuck wake text, but since 36ae0a8e23 the startup-notify path probes the pane once for busyness before notify-agent! takes its own pre-inject capture, so the second probe reads the wake text as pre-existing input and the daemon never types (typed 0, expected 1) - the fixture's pane state follows what was typed into it, never how many times it was read, and the file exits 0 from both checkouts"
+milestone: M8
+type: defect
+severity: high
+# high (standing-red rule 2026-09-05): a `standing` manifest row red on main
+# for 48 days, deterministic, listed as failing by the architect on
+# 2026-07-23 (BL-576 review) and by QA on 2026-08-29 (BL-1273 pass, "known
+# red") and never minted. Production is right - the busy probe and the
+# stacked-input check are two different questions - but BL-093's verified
+# submit has had no green safety signal for the lost-Enter case since July.
+status: todo
+epic: swarm-reliability
+priority: 12
+direction: swarm-reported
+depends_on: []
+mutation_cost: low
+# low: one shell fixture's fake tmux keys its reply on a typed marker
+# instead of a call count; one step-handler file. No production code;
+# shell has no mutation wired.
+slice_size_envelope: low
+required_stages: [coder, cleaner, architect, hardender, documenter, qa]
+
+acceptance: specs/features/BL-1499-the-notify-fixture-pane-state-follows-what-was-typed-not-how-often-it-was-read.feature
+
+# Anchors: the fake keys its flip on a marker the literal send writes; the
+# marker file variable is named here at mint (TYPED_FILE, the same way a
+# handler name is chosen at mint, BL-874) so the pattern is a literal that
+# will exist; absent from the file today (grep returns 0). The handler
+# anchor is BL-233's.
+required_wiring:
+  - 'swarmforge/scripts/test/test_handoffd_notify_verified.sh::TYPED_FILE::the fake pane flips from idle to stuck when the literal send has happened, not on a capture count; absent today (grep returns 0)'
+  - 'specs/pipeline/steps/bl1499NotifyFixturePaneStateFollowsTypingSteps.js::registerSteps::the handler lands in the same parcel as the feature (BL-233, BL-1371)'
+
+human_approval: pending
+approval_context: >
+  A new feature file is authored here, so it needs a tap. No choice is
+  posed and there are no ruling_options. FIRM: the fix is in the test
+  fixture and one step handler only - handoffd.bb's startup-notify busy
+  gate and agent_runtime_inject.bb's pre-inject check are not edited; two
+  captures per wake stay as they are. FIRM: BL-093's contract is asserted
+  unchanged - type once, retry submit, log notify-delivery-failed, never
+  re-type. Worth knowing: this is the second of the census reds from the
+  BL-1498 pass (evidence there); it is a fixture that encoded HOW MANY
+  times the daemon would look at the pane, and the daemon started looking
+  twice the week after the test was written. Minted by the specifier on
+  the coder's unowned-red note of 2026-09-08 08:19Z (from the BL-1490
+  parcel); reproduced on main 974f03e9e1 with the call order captured.
+
+invariants:
+  - "The fixture's pane content is a function of what has been typed into the pane, never of how many times it has been read: any number of capture-pane calls before the literal send return the idle pane, and every call after it returns the scenario's post-typing pane."
+  - "BL-093's verified-submit contract is unchanged on the lost-Enter path: exactly one literal send, submit retried up to the configured maximum, notify-delivery-failed logged, no second copy typed."
+
+description: |
+  ## What is wrong
+
+  `swarmforge/scripts/test/test_handoffd_notify_verified.sh` (a `standing`
+  row, `suite-manifest.tsv` line 311) drives the real `notify!` through
+  `handoffd.bb --startup-notify-only` against a fake `tmux` whose
+  `capture-pane` reply is SEQUENCED by a call count: the first call returns
+  `BEFORE_STDOUT_FILE`, every later call `AFTER_STDOUT_FILE` (lines 39-64).
+  Case 02 sets before = idle prompt, after = the typed wake text, and
+  expects one literal send, a submit retry loop and a logged failure.
+  Reproduced by the specifier 2026-09-08 on main `974f03e9e1` from the
+  master checkout, `RESEND_API_KEY` unset:
+
+      PASS: 01: healthy pane confirms submit on the first try, no failure logged
+      FAIL: 02: must type the wake message exactly once, never re-type on retry, got 0
+      (exit 1; cases 03-05 never run)
+
+  The fake's call log for case 02, captured from a debug copy of the test:
+
+      has-session x2, capture-pane          <- startup-notify-pending!: recipient-pane-busy?
+      has-session x2, capture-pane          <- notify-agent!: the BL-093 pre-inject check
+      send-keys C-m, send-keys C-j, capture-pane   (x3: the submit retry loop)
+
+  and `handoffd.log`: `notify-delivery-failed swarmforge-coder pane already
+  held undelivered input and it still would not submit`. The busy probe
+  (`handoffd.bb:428-437`, called at line 646) consumed the fixture's one
+  "idle" reply; `notify-agent!`'s own `before` capture
+  (`agent_runtime_inject.bb:95`) then read the AFTER pane - the wake text -
+  as pre-existing input (`stacked?`), skipped typing, and went straight to
+  the recovery submits. Zero literal sends, exactly what the assertion
+  refuses.
+
+  The busy gate entered the startup-notify path in `36ae0a8e23` (2026-07-22,
+  "Skip handoff delivery wakes when recipient pane is busy"), one week after
+  the test's last edit (`09ccb47342`, 2026-07-15). Case 01 passes by
+  coincidence: before and after are the same idle pane, so it does not
+  matter which probe read which. Red since 2026-07-22. Written down twice
+  and minted never: BL-576's architect review (2026-07-23) lists
+  "test_handoffd_notify_verified.sh case 02" among the failures; BL-1273's
+  QA pass (2026-08-29) lists it among six handoffd tests that "reproduced
+  byte-for-byte identically" before and after that parcel.
+
+  Production is not wrong. The busy probe asks "is the role mid-turn?" and
+  the pre-inject check asks "is there undelivered input?"; they read the
+  same pane for two different reasons, and BL-970 (2026-08-30) reworked the
+  first without touching the second. The defect is a fixture that encoded
+  how many times the daemon would look, which is an implementation detail
+  no scenario in the file claims.
+
+  ## What is wanted
+
+  - The fake pane's reply is keyed on whether the literal send has
+    happened: every `capture-pane` before the first `send-keys -l` returns
+    `BEFORE_STDOUT_FILE`, every one after it returns `AFTER_STDOUT_FILE`
+    (invariant 1). The fake records the literal send in a marker file the
+    test names `TYPED_FILE`, reset by `run_notify` like the call log and the
+    count are today (scenario 01).
+  - Cases 01-05 all pass against the real `--startup-notify-only` as it
+    stands, with its two pre-inject probes, and the file exits 0 on main
+    from the master checkout and from a linked worktree (scenario 02; QA
+    step 1).
+  - Case 02 still proves the lost-Enter contract: exactly one literal send,
+    `C-m` retried, `notify-delivery-failed` logged (scenario 01; invariant
+    2). Cases 03 and 04 (input already pending BEFORE anything is typed)
+    keep their meaning: with before = stuck text, both probes read stuck,
+    nothing is typed, as today.
+  - Register: this ticket's row in `backlog/standing-reds.tsv` (added at
+    mint) is removed in the land that turns the test green - QA's land, or
+    the coordinator's close if the land is hand-built.
+  - Documenter: the test's header comment (lines 39-44) describes the new
+    keying and names the two probes; no how-to or registered diagram
+    depicts this.
+
+  ## How (direction, not mandate)
+
+  - In the fake (lines 52-64): when an argument is `-l`, `touch "$TYPED_FILE"`
+    before logging; in the `capture-pane` branch, `cat` BEFORE if
+    `$TYPED_FILE` is absent, AFTER if present. Drop `CAPTURE_COUNT_FILE`
+    or leave it as a diagnostic - it must no longer decide the reply.
+    `run_notify` removes `$TYPED_FILE`.
+  - Do NOT fix this by raising the count threshold to two: that re-encodes
+    the probe count and rots the next time a probe is added or removed
+    (BL-970 changed the busy gate once already). Do NOT fix it by removing
+    the busy gate from `startup-notify-pending!` or by passing the busy
+    verdict into `notify-agent!` to skip its capture: production behaviour
+    is out of scope and the two questions are different.
+  - Handler: scenario 01 runs the test file and reads its PASS lines for
+    case 02 plus the daemon log it prints on failure; scenario 02 runs the
+    file and asserts exit 0 and PASS for every case (the file prints one
+    PASS line per case, five today). Roots under mkdtemp, removed in
+    `finally`; nothing sweeps by prefix (BL-1385). The whole file runs in
+    under a minute, so two runs per acceptance pass are the budget.
+  - `test_handoffd_startup_notify.sh` drives the same path and is green
+    (its fake is not sequenced); leave it alone.
+
+  ## Explicitly NOT in scope
+
+  - The two captures per wake in production (busy gate + pre-inject check):
+    a cost observation for the BL-1493 family, recorded in the evidence,
+    not a change here.
+  - The other census reds from the BL-1498 pass; each is diagnosed on its
+    own note.
+  - The fixture's first-failure-stop shape (`fail` exits), which has hidden
+    whether cases 03-05 pass since July. Noted, as BL-1484 and BL-1498
+    noted it.
+
+constraints: >
+  Shell test fixture and one step handler only: test_handoffd_notify_verified.sh
+  and the new handler. handoffd.bb, agent_runtime_inject.bb,
+  handoff_inject_lib.bb and chase_sweep_lib.bb are not edited.
+  RESEND_API_KEY unset for the run (BL-326). Fixture and handler roots under
+  mkdtemp, removed on EXIT/finally; the live repository is never written.
+  suite-manifest.tsv row stays `standing`. The step handler lands with the
+  feature (BL-233).
+
+out_of_scope: |
+  - A guard that refuses a shell fixture whose fake tmux sequences replies
+    by call count (the class: a fake that encodes the caller's probe
+    count) - lean-pass candidate; BL-1498's evidence carries the census.
+  - Collapsing the startup-notify busy probe and notify-agent!'s pre-inject
+    capture into one read per wake.
+  - Running every standing shell row on a cadence so a red surfaces the
+    day it appears: already a process candidate on BL-1462's adjudication;
+    this one was written down on day 1 and day 38 and owned on day 48.
+
+qa_e2e_procedure: |
+  1. From the master checkout AND from `.worktrees/QA`, `RESEND_API_KEY`
+     unset: `bash swarmforge/scripts/test/test_handoffd_notify_verified.sh`
+     prints PASS for 01, 02, 03, 04 and 05 and exits 0 (was FAIL 02 "got 0"
+     on main 2026-09-08).
+  2. Contract check on case 02: run a debug copy that prints the fake's
+     call log after case 02 (the recipe in BL-1498's sibling evidence):
+     exactly one `send-keys ... -l` line, `capture-pane` lines before it
+     returning the idle pane, `notify-delivery-failed` in the daemon log,
+     no second `-l` line after any `C-m`.
+  3. Probe-count independence: in the debug copy, add a third
+     `capture-pane` call to the fake before the daemon runs (a plain
+     `PATH=$FAKE_BIN:$PATH tmux capture-pane -p -t x` in `run_notify`):
+     case 02 still passes. Revert the copy.
+  4. Acceptance: all BL-1499 scenarios resolve; BL-1191's and BL-970's
+     features still resolve, one feature per run_acceptance.sh call.
+  5. `grep -c TYPED_FILE swarmforge/scripts/test/test_handoffd_notify_verified.sh`
+     is at least 1; `git diff main -- swarmforge/scripts/handoffd.bb swarmforge/scripts/agent_runtime_inject.bb`
+     is empty for the parcel.
+  6. Register: after QA lands, `backlog/standing-reds.tsv` carries no row
+     for this file and `bb swarmforge/scripts/standing_red_register_cli.bb .`
+     reports `unowned: []` with the count down by one.
+
+notes: |
+  - Minted 2026-09-08 by the specifier on the coder's priority-00 note
+    "unowned-red: test_handoffd_notify_verified.sh 02 wake typed once check
+    got 0" (08:19Z, from the BL-1490 parcel). Adjudication:
+    backlog/evidence/test-handoffd-notify-verified-unowned-red-adjudication-specifier-20260908.md;
+    the 25-file census that first sighted it is in BL-1498's evidence.
+  - Register row added at mint: shell / test_handoffd_notify_verified.sh /
+    BL-1499 / first_seen 2026-07-23 (BL-576 architect review), red since
+    2026-07-22 (36ae0a8e23).
+  - IR-DRY (2026-09-08): "the file exits zero" and "reports every case as
+    passed" are distinct assertions (exit status vs per-case lines); kept.
