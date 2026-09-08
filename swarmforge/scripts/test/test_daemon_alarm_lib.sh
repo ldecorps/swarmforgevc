@@ -108,6 +108,58 @@ pass "BL-813 attach-01: the death alarm email carries exactly one attachment who
 grep -q "^halt-swarm" "$ROOT/calls.log" || fail "03: halt-swarm! was never invoked"
 pass "03: halt-swarm! invoked as part of the orchestration"
 
+# ── BL-1491 record-halt-01: record-halt! is invoked, write-ahead of halt-swarm! ─
+grep -q "^record-halt dead" "$ROOT/calls.log" || fail "BL-1491 record-halt-01: record-halt! was never invoked with the reason"
+RECORD_LINE="$(grep -n "^record-halt" "$ROOT/calls.log" | head -1 | cut -d: -f1)"
+HALT_LINE="$(grep -n "^halt-swarm" "$ROOT/calls.log" | head -1 | cut -d: -f1)"
+[[ "$RECORD_LINE" -lt "$HALT_LINE" ]] || fail "BL-1491 record-halt-01: record-halt! must be called BEFORE halt-swarm!, got record@$RECORD_LINE halt@$HALT_LINE"
+pass "BL-1491 record-halt-01: record-halt! is invoked with the verdict, write-ahead of halt-swarm!"
+
+# ── BL-1491 record-halt-02: a throwing record-halt! never blocks halt-swarm!/write-status! ─
+cat > "$ROOT/record_halt_throws_test.bb" <<EOF
+(load-file "$SCRIPT_DIR/../daemon_alarm_lib.bb")
+(let [halted (atom false)
+      written (atom nil)]
+  (daemon-alarm-lib/alarm-and-halt!
+   {:reason :dead
+    :status {}
+    :now-iso! (fn [] "2026-07-07T08:00:00Z")
+    :log-tail! (fn [] [])
+    :role-counts! (fn [] [])
+    :write-failure-log! (fn [_content] "$ROOT/rh-throws-failure.log")
+    :send-email! (fn [_subject _text _attachments] {:success true})
+    :record-halt! (fn [_reason] (throw (ex-info "record-halt boom" {})))
+    :halt-swarm! (fn [] (reset! halted true))
+    :write-status! (fn [status] (reset! written status))})
+  (assert (true? @halted) "expected halt-swarm! to still run after record-halt! throws")
+  (assert (= "halted" (:state @written)) "expected write-status! to still run after record-halt! throws")
+  (println "record-halt-throws-ok"))
+EOF
+bb "$ROOT/record_halt_throws_test.bb" | grep -q "record-halt-throws-ok" \
+  || fail "BL-1491 record-halt-02: a throwing record-halt! must never prevent halt-swarm!/write-status!"
+pass "BL-1491 record-halt-02: a throwing record-halt! never blocks halt-swarm! or the terminal status write"
+
+# ── BL-1491 record-halt-03: an absent :record-halt! (older caller) is a no-op, never a throw ─
+cat > "$ROOT/record_halt_absent_test.bb" <<EOF
+(load-file "$SCRIPT_DIR/../daemon_alarm_lib.bb")
+(let [halted (atom false)]
+  (daemon-alarm-lib/alarm-and-halt!
+   {:reason :dead
+    :status {}
+    :now-iso! (fn [] "2026-07-07T08:00:00Z")
+    :log-tail! (fn [] [])
+    :role-counts! (fn [] [])
+    :write-failure-log! (fn [_content] "$ROOT/rh-absent-failure.log")
+    :send-email! (fn [_subject _text _attachments] {:success true})
+    :halt-swarm! (fn [] (reset! halted true))
+    :write-status! (fn [_status] nil)})
+  (assert (true? @halted) "expected halt-swarm! to run when :record-halt! is absent entirely")
+  (println "record-halt-absent-ok"))
+EOF
+bb "$ROOT/record_halt_absent_test.bb" | grep -q "record-halt-absent-ok" \
+  || fail "BL-1491 record-halt-03: an absent :record-halt! adapter must default to a no-op, never throw"
+pass "BL-1491 record-halt-03: an absent :record-halt! adapter (older caller/test) is a silent no-op"
+
 # ── 04: terminal status is 'halted', not a restart state ────────────────────
 STATE="$(python3 -c "import json; print(json.load(open('$ROOT/status.json'))['state'])")"
 [[ "$STATE" == "halted" ]] || fail "04: expected terminal state 'halted', got '$STATE'"
