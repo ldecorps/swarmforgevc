@@ -161,3 +161,6 @@ source: |
   history e5ab1c4465, 9905d38501 (BL-1318, 2026-09-01).
 
 assigned_to: coder
+bounce_count: 1
+bounce_history:
+  - { at: 2026-09-08, by: architect, blamed: coder, class: behavior, commit: 5ebca5d530, evidence: backlog/evidence/BL-1445-architect-bounce-20260908.md }
