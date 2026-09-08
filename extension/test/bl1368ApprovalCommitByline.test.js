@@ -46,7 +46,7 @@ function commitRecordingAdapters(extra = {}) {
       recordAmendReply: async () => true,
       commitApprovalWrites: async (backlogId, message) => {
         commitCalls.push({ backlogId, message });
-        return true;
+        return { success: true };
       },
       ...extra,
     },
