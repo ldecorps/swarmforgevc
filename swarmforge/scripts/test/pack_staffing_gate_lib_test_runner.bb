@@ -100,6 +100,15 @@
          (pack-staffing-gate-lib/resolve-seat
           "aider" "--model openai/deepseek-v4-flash --openai-api-base https://api.deepseek.com"))
 
+(assert= "aider openai/glm-5.3-flash on the b.ai base resolves to tencentcloud2/glm-5.3-flash (BL-1495)"
+         {:status :resolved :provider "tencentcloud2" :model "glm-5.3-flash"}
+         (pack-staffing-gate-lib/resolve-seat
+          "aider" "--model openai/glm-5.3-flash --openai-api-base https://api.b.ai/v1 --no-gitignore --no-show-model-warnings --no-check-update"))
+
+(assert= "claude --model claude-fable-5-1 resolves to anthropic/claude-fable-5-1 (BL-1495)"
+         {:status :resolved :provider "anthropic" :model "claude-fable-5-1"}
+         (pack-staffing-gate-lib/resolve-seat "claude" "--model claude-fable-5-1 --dangerously-skip-permissions --effort high"))
+
 (assert= "an api-base host the table does not cover is unresolved, not guessed"
          :unresolved
          (:status (pack-staffing-gate-lib/resolve-seat
