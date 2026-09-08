@@ -13,7 +13,21 @@
 # it only fires on a merge (MERGE_HEAD present) and needs the finalized
 # message to apply its ticket-naming exemption. BL-1258:
 # check_retirement_readdition.sh is its addition-side sibling, same
-# posture. No longer a single `exec`: every guard must run every time, so
+# posture.
+#
+# BL-1471 KNOWN RESIDUAL: the "commit-msg always runs when pre-commit
+# passed" guarantee above holds for an ordinary commit and for a merge -
+# it does NOT hold for `git revert` (measured against this repo's own git:
+# a clean, non-conflicting `git revert -m 1 <merge>` fires neither
+# pre-commit nor commit-msg, only prepare-commit-msg and post-commit).
+# check_bounce_revert_scope.sh below still catches a CONFLICTED revert
+# finished with a plain `git commit` (that path is an ordinary commit and
+# fires normally), but a clean merge-revert's own auto-commit is
+# unreachable by any guard wired here in this git version - flagged to the
+# specifier as a spec-gap alongside BL-1471's own evidence, not something
+# that ticket's scope extended to fixing.
+#
+# No longer a single `exec`: every guard must run every time, so
 # a real failure from any one is never masked by another's exit code. That
 # requires NOT using `set -e` across the calls: under it, a failing
 # earlier call would abort the script before a later one ever ran, hiding
@@ -29,5 +43,9 @@ status=0
 "$REPO_ROOT/swarmforge/scripts/check_ticket_deletion.sh" "$1" || status=$?
 "$REPO_ROOT/swarmforge/scripts/check_merge_deletion.sh" "$1" || status=$?
 "$REPO_ROOT/swarmforge/scripts/check_retirement_readdition.sh" "$1" || status=$?
+# BL-1471: a revert commit is judged only here - see
+# check_bounce_revert_scope.sh's own header for why pre-commit's call
+# (run_commit_guards.sh) always defers.
+"$REPO_ROOT/swarmforge/scripts/check_bounce_revert_scope.sh" "$1" || status=$?
 
 exit "$status"
