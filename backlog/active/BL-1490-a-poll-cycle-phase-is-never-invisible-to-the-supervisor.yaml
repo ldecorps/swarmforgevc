@@ -163,3 +163,17 @@ notes: |
   - IR-DRY (2026-09-08): "becomes stalled" (eventual, past a budget) and
     "reads stalled" (one evaluation) are distinct assertions; "invoked once"
     and "never invoked" are opposites - kept as written, as BL-977 did.
+
+assigned_to: QA
+
+abandoned_commits: [9558401764]
+# QA approved 9558401764. land_step_cli.bb's BL-1241 remedy found two
+# ENTANGLED_SIBLING entries (BL-1471, BL-1476, both still unlanded as
+# ancestors) plus four LANDED_SIBLING entries already on origin/main; the
+# tip-pure replay 607e7fc56d (built off origin/main, carrying only this
+# ticket's own paths plus the harmless already-landed-sibling bookkeeping
+# addenda for BL-1481/BL-1495) is what actually landed on origin/main
+# (7277a420a3..607e7fc56d), per the QA prompt's "never the originally-cited
+# commit" instruction. This pass also lifted an earlier hold
+# (backlog/evidence/BL-1490-QA-20260908.md): Article 4.2's standing-red
+# block cleared once the specifier minted BL-1500 and registered the row.
