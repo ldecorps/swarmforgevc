@@ -1,0 +1,188 @@
+id: BL-1486
+title: "Six acceptance features (BL-1052, BL-1218, BL-1320, BL-1418, BL-961, BL-628) and the shipped-confs shell test drive the launcher's parse_config on fixtures with no role matrix and pass only under the pane's PACK_STAFFING_SKIP_GATE=1: green in every role pane, red in any shell without the hatch (27 scenario rows red under env -u on main 2026-09-08), so an offline expedite run of any parcel whose e2e names them holds under Article 4.2; each handler declares the override in the environment it spawns - the acceptance-lane sibling of BL-1457"
+milestone: M8
+type: defect
+severity: high
+# high (standing-red rule 2026-09-05): seven files whose verdict is decided
+# by the ambient environment, red in any shell without the operator hatch -
+# the offline expedite shell that held BL-1454 at QA on 2026-09-07 for the
+# same shape (BL-1457). A test that passes only because a pane exports a
+# bypass is a broken safety signal in both directions. Never medium for a
+# red.
+status: todo
+epic: code-quality-gates
+priority: 11
+direction: swarm-reported
+depends_on: []
+mutation_cost: low
+# low: one env line at one or two spawn sites in each of seven test files
+# (bl1324's shape already in the tree); no production line changes.
+slice_size_envelope: low
+required_stages: [coder, cleaner, architect, hardender, documenter, qa]
+
+acceptance: specs/features/BL-1486-every-launcher-driving-handler-decides-the-staffing-gate-itself.feature
+
+# One anchor: the new handler must exist so discovery registers the four
+# scenarios (BL-1371). No anchor on the seven fixed files: an anchor on an
+# existing file whose literal may already appear matches before and after
+# the fix and gates nothing (BL-1235); scenario 01's six runs and scenario
+# 02's run are the gate.
+required_wiring:
+  - 'specs/pipeline/steps/bl1486LauncherHandlersDecideStaffingGateSteps.js::registerSteps::the handler lands in the same parcel as the feature (BL-233, BL-1371)'
+
+human_approval: pending
+approval_context: >
+  A new feature file is authored here, so it needs a tap. No choice is
+  posed and there are no ruling_options. FIRM: each of the seven files
+  declares PACK_STAFFING_SKIP_GATE=1 inside its own spawn (or admits its
+  fixture's models through a fixture role matrix - the coder's choice, as
+  BL-1457 left it); no lane-wide export in the acceptance runner; no
+  production line of the launcher, the gate or swarm.env changes. FIRM:
+  BL-1318's own handler is NOT in this ticket - it needs the opposite
+  decision (the variable REMOVED for its refusal rows) and is BL-1485.
+  Found by the specifier's mint-time sweep for BL-1485 on 2026-09-08:
+  every handler that drives parse_config, run both ways.
+
+invariants:
+  - "For every step handler under specs/pipeline/steps that drives parse_config on a fixture root, and for the shipped-confs shell test, the verdict with PACK_STAFFING_SKIP_GATE unset equals the verdict with it set to 1."
+  - "The staffing gate's own refusal is untouched: no production line of swarmforge.sh or pack_staffing_gate_lib.bb changes, and no lane-wide export hides the gate from any handler that asserts on it (BL-1318, BL-1485)."
+
+description: |
+  ## What is wrong
+
+  `grep -ln parse_config specs/pipeline/steps/*.js` names 19 handlers. The
+  specifier ran each BL-prefixed one's feature from the master checkout on
+  main `3dfa366fd9`, 2026-09-08, under `env -u PACK_STAFFING_SKIP_GATE`
+  and under `PACK_STAFFING_SKIP_GATE=1` (the pane). Six pass only WITH the
+  hatch:
+
+  | feature | rows red without the hatch |
+  |---|---|
+  | BL-1052 a-role-seat-can-be-staffed-by-a-downloaded-local-model | 5 |
+  | BL-1218 config-off-is-honored-over-an-explicit-window-flag | 7 |
+  | BL-1320 operator-step-for-adding-a-seat-to-a-bottleneck-stage | 3 |
+  | BL-1418 the-art-director-seat-is-addressable | 7 |
+  | BL-961 launcher-exports-swarmforge-pack-into-role-shells | 4 |
+  | BL-628 bare-host-bootstrap-for-autonomous-swarm | 1 |
+
+  Each spawns `zsh -c "source swarmforge.sh <fixture>; parse_config; ..."`
+  with `{ ...process.env, ... }` and a fixture root that carries no
+  steward registry, so BL-1318's gate refuses the fixture's window line
+  ("failed check 'not-on-role-matrix'") the moment the pane's hatch is not
+  inherited. `bl1324ClaudeSeatQwenCloudContextWindowSteps.js` line 181 is
+  the fixed shape (`env.PACK_STAFFING_SKIP_GATE = '1'`) and passes both
+  ways; so do BL-1108, BL-1078, BL-1299 and BL-448.
+
+  The shell test `swarmforge/scripts/test/test_shipped_confs_no_coordinator_window.sh`
+  (standing row 446) parses every shipped conf through the real launcher
+  and is refused the same way under `env -u` ("pack staffing gate refused
+  role 'coder' (line 15): ... claude-haiku-4-5-20251001"). It has a second,
+  unrelated red WITH the hatch (a deleted profile, owned by BL-1487); this
+  ticket owns only the gate half. BL-1445's scenario 02 covers shell tests
+  that ASSERT on the gate; this one asserts nothing about it.
+
+  BL-982's feature has five rows in the same class and one row red for an
+  unrelated reason (BL-1489 owns the file and its register row); its
+  handler is in this ticket's scenario 03 by derivation.
+
+  ## What is wanted
+
+  - Scenario 01: the six features pass every row with the variable absent
+    from the environment. Scenario 02: the shipped-confs test parses every
+    shipped conf the same way.
+  - Scenario 03: every handler under `specs/pipeline/steps` that drives
+    `parse_config` and does not assert on the gate declares the override
+    in its own spawn - derived by grep at test time, never a list, so the
+    five handlers with no BL prefix in their file name
+    (`coordinatorProvisioningSteps.js`, `coordinatorProviderConfigurableSteps.js`,
+    `coordinatorModelConfigurableSteps.js`, `swarmSocketNotInTmpSteps.js`,
+    `syncWorktreeScriptsNeverClobbersSteps.js`), which the mint-time sweep
+    could not map to a feature, are covered if they qualify.
+  - Scenario 04: no lane-wide export.
+  - Register: this ticket's six `acceptance` rows leave in the land that
+    turns them green.
+  - Documenter: one sentence in `docs/how-to/BL-1318-pack-staffing-gate.md`
+    (BL-1445 and BL-1485 each add a sentence there for their lane; if
+    theirs has landed, extend it rather than add a third).
+
+  ## How (direction, not mandate)
+
+  - The cheapest honest fix is bl1324's: `PACK_STAFFING_SKIP_GATE: '1'` in
+    the env of each spawn that sources the launcher, with a one-line
+    comment naming BL-1318's gate. These tests are not about staffing.
+  - The alternative - a fixture steward registry whose role matrix admits
+    the models each fixture names - proves the same thing on merit at the
+    cost of coupling unrelated tests to the registry's shape; take it only
+    if the first route is refused at review (BL-1457's ruling).
+  - For the shell test, `export PACK_STAFFING_SKIP_GATE=1` before it
+    sources the launcher, with the same comment.
+  - Do NOT export the variable in `specs/pipeline/runtime.js`,
+    `run_acceptance.sh` or a shared steps lib (scenario 04): a lane-wide
+    hatch is the pane's mistake moved one level down, and it would blind
+    BL-1318's and BL-1485's handlers.
+  - Handler for this feature: scenario 01/02 spawn the real runner / real
+    test with the variable removed from the child env (BL-1457's handler
+    shape); scenario 03 greps for `swarmforge.sh` + `parse_config` in each
+    handler, excludes those matching `staffing gate|OVERRIDE` in
+    assertions (BL-1485's set), and requires `PACK_STAFFING_SKIP_GATE`
+    with an explicit value in the remainder.
+
+  ## Explicitly NOT in scope
+
+  - BL-1318's handler (BL-1485) and the shell wiring test (BL-1445): they
+    need the variable REMOVED for their refusal cases.
+  - The deleted-profile red in the shipped-confs test and the BL-939 orbit
+    (BL-1487); BL-982's roles.tsv row (BL-1489).
+  - Whether swarm.env should export the hatch at all (BL-1437).
+
+constraints: >
+  Test-only change across seven test files and one new handler; no
+  production line of the launcher, the gate lib or the gate CLI; no
+  feature text under test changes. Fixture roots stay under mkdtemp and
+  are removed in each handler's cleanup as today. The step handler lands
+  with the feature (BL-233). No hand-edited mutation manifests.
+
+qa_e2e_procedure: |
+  1. From the master checkout on the landed commit, for each of the six
+     features: `env -u PACK_STAFFING_SKIP_GATE specs/pipeline/scripts/run_acceptance.sh <feature>`
+     prints `# fail 0`; the same with `PACK_STAFFING_SKIP_GATE=1`; the
+     same under `env -i PATH="$PATH" HOME="$(mktemp -d)"` for at least two
+     of them (the offline-expedite shape).
+  2. `env -u PACK_STAFFING_SKIP_GATE bash swarmforge/scripts/test/test_shipped_confs_no_coordinator_window.sh`
+     shows no "pack staffing gate refused" line (its remaining red, if
+     BL-1487 has not landed, is the missing profile - not this ticket).
+  3. The BL-1486 feature passes all four scenarios; BL-1318's, BL-1324's
+     and BL-1485's features are unchanged in verdict.
+  4. `grep -rn PACK_STAFFING specs/pipeline/runtime.js specs/pipeline/scripts/`
+     prints nothing.
+  5. The landing removes this ticket's six rows from
+     `backlog/standing-reds.tsv`; `bb swarmforge/scripts/standing_red_register_cli.bb .`
+     reports none of the six files.
+
+source: |
+  Specifier mint-time sweep for BL-1485 (coder unowned-red note
+  2026-09-08T03:00Z): every parse_config-driving handler's feature run
+  both ways on main 3dfa366fd9, recorded in
+  `backlog/evidence/bl1318-acceptance-unowned-red-adjudication-specifier-20260908.md`;
+  the shipped-confs shell test measured the same pass. Adjudication of the
+  follow-on mints:
+  `backlog/evidence/acceptance-lane-sweep-unowned-reds-adjudication-specifier-20260908.md`.
+  Related: BL-1318, BL-1445 (shell lane), BL-1457 (vitest lane), BL-1485
+  (BL-1318's own handler), BL-1437 (the seat the hatch covers).
+
+notes: |
+  Minted 2026-09-08 by the specifier from its own sweep, the same pass as
+  BL-1485 (standing-red rule: type defect, severity high at first
+  sighting). Six `acceptance` register rows, first_seen 2026-09-08 (red
+  under env -u since ~2026-09-04, the swarm.env export), owner this
+  ticket. The shipped-confs shell test's row names BL-1487, whose red is
+  the one seen WITH the hatch; this ticket's scenario 02 is its gate half.
+
+  Grepped first: no open ticket names any of the six handlers or the
+  shell test's gate refusal. BL-1457 (approved, paused) is the vitest-lane
+  twin and was not amended: a re-pend posts no fresh ask (BL-1455).
+
+  Mint-time INVEST: one observable outcome (every launcher-driving test
+  is green whatever the pane exports), one sitting (seven one-line env
+  decisions following a shape already in the tree, one handler), no
+  unbuilt dependency. IR-DRY at mint: 0 findings (11 step occurrences, 10 unique).
