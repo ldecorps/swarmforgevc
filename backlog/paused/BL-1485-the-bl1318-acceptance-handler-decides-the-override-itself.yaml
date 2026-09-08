@@ -1,0 +1,238 @@
+id: BL-1485
+title: "BL-1318's own acceptance feature is red in every role pane: its handler spawns the launcher with the pane environment spread in, so the operator escape hatch PACK_STAFFING_SKIP_GATE=1 that swarm.env exports into every pane (since ~2026-09-04) turns every refusal row into an OVERRIDE warning and 4 of 7 rows fail, while the same feature is green under env -u (found 2026-09-08 by the coder on BL-1445's own e2e); the handler sets or removes the variable itself in the environment it spawns - the acceptance-lane sibling of BL-1445 (shell) and BL-1457 (vitest)"
+milestone: M8
+type: defect
+severity: high
+# high (standing-red rule 2026-09-05): the one acceptance proof that the
+# launcher refuses an uncleared seat is red in every pane for an
+# environmental reason; a real regression of that refusal would hide
+# behind the same four "not ok" lines. Green in an offline shell, so it
+# passed every offline expedite and was never seen. Never medium for a
+# red.
+status: todo
+epic: swarm-intelligence-layer
+priority: 12
+direction: swarm-reported
+depends_on: []
+# BL-1445 (active, cleaner batch since 03:01Z) is the shell-lane sibling and
+# adds one sentence to the same how-to page; the coordinator's orthogonality
+# rule serialises them. Not a functional dependency either way.
+mutation_cost: low
+# low: one spawn site in one existing step handler decides a variable; one
+# new handler file. No production code, no feature text under test changes.
+slice_size_envelope: low
+required_stages: [coder, cleaner, architect, hardender, documenter, qa]
+
+acceptance: specs/features/BL-1485-the-bl1318-acceptance-handler-decides-the-override-itself.feature
+
+# One anchor: the new handler must exist so discovery registers scenario 01
+# and 02 (BL-1371). No anchor on bl1318PackStaffingGateSteps.js: the literal
+# PACK_STAFFING_SKIP_GATE is already in that file (line 278, the override
+# row), so it matches before and after the fix and gates nothing (BL-1235);
+# the gate that proves this parcel is scenario 01's three runs.
+required_wiring:
+  - 'specs/pipeline/steps/bl1485Bl1318HandlerDecidesOverrideSteps.js::registerSteps::the handler lands in the same parcel as the feature (BL-233, BL-1371)'
+
+human_approval: pending
+approval_context: >
+  A new feature file is authored here, so it needs a tap. No choice is
+  posed and there are no ruling_options. FIRM: the fix is inside
+  bl1318PackStaffingGateSteps.js's own spawn - the refusal rows run with
+  the variable removed from the child environment, the override row with
+  it set to 1 - and BL-1318's feature text, its mutation stamp, the
+  launcher, the gate and swarm.env's hatch are all untouched. FIRM: no
+  lane-wide unset in the acceptance runner (the mirror of BL-1457's "no
+  lane-wide export"). This is the third lane of one defect: BL-1445 owns
+  the shell test, BL-1457 the two property files, neither names this
+  handler and neither can be amended (BL-1445 is in flight, BL-1457 is
+  approved and a re-pend posts no fresh ask - BL-1455). Minted by the
+  specifier on the coder's unowned-red note of 2026-09-08 03:00Z;
+  reproduced on main 3dfa366fd9 both ways.
+
+invariants:
+  - "BL-1318's acceptance verdict never depends on whether PACK_STAFFING_SKIP_GATE is present in the ambient environment: every spawn of the launcher in its handler sets or removes the variable explicitly, and the feature's result with it unset equals the result with it set to 1 and with it set to 0."
+  - "The override scenario (BL-1318 row 04) stays the only place the override is on in that handler, and it turns it on explicitly for that scenario alone."
+
+description: |
+  ## What is wrong
+
+  `specs/pipeline/steps/bl1318PackStaffingGateSteps.js` drives the real
+  launcher's `parse_config` (`runRealParse`, lines 195-201) with
+  `env: { ...process.env, MODEL_STEWARD_STATE_DIR, ...extraEnv }`, and
+  `extraEnv` carries `PACK_STAFFING_SKIP_GATE: '1'` only for the override
+  row (line 278). Every role pane exports the operator escape hatch
+  (`.swarmforge/swarm.env` line 46,
+  `export PACK_STAFFING_SKIP_GATE="${PACK_STAFFING_SKIP_GATE:-1}"`, kept
+  until BL-1437 certifies the full-forge seat), so inside the swarm the
+  refusal rows inherit `=1`, `swarmforge.sh` lines 567-608 turn the
+  refusal into `WARNING: pack staffing gate OVERRIDE ...` and let
+  `parse_config` return, and the rows that assert a refusal fail.
+
+  Reproduced by the specifier 2026-09-08 on main `3dfa366fd9` from the
+  master checkout, `specs/pipeline/scripts/run_acceptance.sh
+  specs/features/BL-1318-pack-launch-steward-staffing-gate.feature`:
+
+  - `PACK_STAFFING_SKIP_GATE=1` (every pane): `# pass 3`, `# fail 4` -
+    rows 01 [1], [2], [3] ("launch refuses a seat the steward has not
+    cleared for that role") and 02 ("a window whose provider and model
+    cannot be resolved refuses rather than staffing") not ok; 03, 04, 05 ok.
+  - `env -u PACK_STAFFING_SKIP_GATE`: `# pass 7`, `# fail 0`.
+
+  So the feature is red in every role pane and green in every offline
+  shell - the exact inverse of BL-1457's two property files, which is why
+  no offline expedite ever saw it. Red since swarm.env began exporting the
+  hatch (~2026-09-04, per BL-1445); hidden by the per-feature runner
+  (BL-1462's blind spot) until the coder ran it for BL-1445's own e2e step
+  2 ("BL-1318's feature stays green") on 2026-09-08.
+
+  The gate CLI (`pack_staffing_gate_cli.bb`, spawned at line 183) never
+  reads the variable - `pack_staffing_gate_lib.bb` line 173 mentions it in
+  a comment only; the launcher is the sole reader.
+
+  BL-1445 fixed this inheritance for the shell lane (scenario 02 is scoped
+  to `swarmforge/scripts/test/*.sh`) and BL-1457 for the vitest lane
+  (invariant 1 is scoped to `extension/test`). Neither names a step
+  handler. This is the acceptance lane.
+
+  ## What is wanted
+
+  - BL-1318's feature passes all seven rows with `PACK_STAFFING_SKIP_GATE`
+    exported as `1`, as `0`, and unset (scenario 01; invariant 1) - from a
+    role pane, from the master checkout, and under `env -i`.
+  - Inside `bl1318PackStaffingGateSteps.js`, every spawn of the launcher
+    decides the variable: removed from the child environment for the
+    refusal, unresolvable, cleared-seat and evidence rows; set to `1` for
+    the override row alone (invariant 2).
+  - Every step handler that spawns `swarmforge.sh` AND asserts on the
+    gate's refusal or override warning decides the variable explicitly in
+    the environment it spawns (scenario 02, derived by grep at test time,
+    never a list). On main today that set is this handler and
+    `bl1324ClaudeSeatQwenCloudContextWindowSteps.js`, which already pins
+    `env.PACK_STAFFING_SKIP_GATE = '1'` (line 181) and passes both ways.
+  - The landing commit removes this ticket's row from
+    `backlog/standing-reds.tsv` (standing-red rule 2).
+  - Documenter: one sentence in `docs/how-to/BL-1318-pack-staffing-gate.md`
+    that the feature's handler is hermetic to the escape hatch (BL-1445
+    adds the matching sentence for the wiring test; if it has landed,
+    extend that sentence rather than add a second). No registered diagram
+    depicts this.
+
+  ## How (direction, not mandate)
+
+  - In `runRealParse`, build the child env from `process.env`, `delete`
+    `PACK_STAFFING_SKIP_GATE` from it, then apply `extraEnv` - so the
+    override row's `'1'` is the only way the variable reaches the launcher.
+    Doing the same at the gate-CLI spawn (line 183) costs one line and
+    makes invariant 1 literally true of every spawn; take it.
+  - Handler `specs/pipeline/steps/bl1485Bl1318HandlerDecidesOverrideSteps.js`:
+    scenario 01 spawns `specs/pipeline/scripts/run_acceptance.sh` on
+    BL-1318's feature with the variable set to the row's value or removed
+    from the child env, and asserts `# fail 0` and seven `ok` lines - the
+    BL-1445 handler's shape for the shell test, one lane over. Scenario 02
+    greps `specs/pipeline/steps/*.js` for a `swarmforge.sh` spawn and,
+    among those, for `staffing gate|OVERRIDE|PACK_STAFFING` in assertions,
+    then for an explicit assignment or `delete` of the variable in the
+    spawn env - structural, derived from the files (BL-1408 / BL-1398
+    posture).
+  - Do NOT `delete process.env.PACK_STAFFING_SKIP_GATE` in the acceptance
+    runner or in a shared steps lib: a lane-wide unset is the pane's
+    mistake moved one level down, and it would silently change what every
+    other launcher-spawning handler tests.
+  - BL-1318's feature file is not edited: its rows and its mutation stamp
+    stay (amending a landed contract to fit its handler would be the
+    reverse of the fix).
+
+  ## Explicitly NOT in scope
+
+  - Removing the hatch from `swarm.env` (the operator's; lapses with
+    BL-1437) and the launcher's own override behaviour (correct: a loud,
+    distinct warning per seat).
+  - BL-1445 (shell lane, in flight) and BL-1457 (vitest lane, approved):
+    separate parcels, separate lanes, same principle.
+  - The other handlers that drive `parse_config` but assert nothing about
+    the gate. The specifier ran every parse_config-driving handler both ways
+    at mint (adjudication evidence): six pass only WITH the hatch - bl1052,
+    bl1218, bl1320, bl1418, bl961, bl628 - the BL-1457 shape in this lane,
+    owned by BL-1486 (minted the same pass, opposite fix direction); BL-939
+    and BL-982 are red in the pane for reasons unrelated to the hatch and
+    are owned separately. None of that is this ticket.
+
+constraints: >
+  Test infrastructure only: one existing step handler, one new step
+  handler, the how-to sentence. No production line of swarmforge.sh, the
+  gate lib or the gate CLI; no change to BL-1318's feature text or stamp;
+  no lane-wide export or unset in any runner or config. Fixture roots
+  under mkdtemp, removed in the handler's cleanup as today. The new
+  handler's runs of BL-1318's feature are real run_acceptance.sh
+  invocations under a controlled child environment, never a stubbed
+  verdict. The step handler lands with the feature (BL-233). No
+  hand-edited mutation manifests.
+
+out_of_scope: |
+  - Whether the launch environment should export the hatch into every
+    pane at all: an operator/steward question (BL-1437), not test hygiene.
+  - A runner-level rule that every handler spawning the launcher must
+    decide every operator hatch: forty-five handlers spawn it today and
+    most never touch the gate; the derived scenario 02 covers the ones
+    that assert on it, which is the class that can go red.
+  - Running every feature on a cadence so a red that lives only inside the
+    panes surfaces without a sibling's e2e tripping over it: recorded on
+    BL-1462's adjudication as a process candidate.
+
+qa_e2e_procedure: |
+  1. In the QA pane (which exports the hatch) and from the master checkout:
+     `specs/pipeline/scripts/run_acceptance.sh specs/features/BL-1318-pack-launch-steward-staffing-gate.feature`
+     prints `# pass 7`, `# fail 0` (was `# pass 3`, `# fail 4` on main
+     2026-09-08); the same under `env -u PACK_STAFFING_SKIP_GATE`, under
+     `PACK_STAFFING_SKIP_GATE=0`, and under
+     `env -i PATH="$PATH" HOME="$(mktemp -d)"` (the offline-expedite shape).
+  2. The BL-1485 feature passes both scenarios (one feature per
+     run_acceptance.sh call); BL-1324's feature still passes both ways.
+  3. `git diff main -- specs/features/BL-1318-pack-launch-steward-staffing-gate.feature`
+     is empty; `grep -c 'PACK_STAFFING_SKIP_GATE' specs/pipeline/steps/bl1318PackStaffingGateSteps.js`
+     is at least 3 (a removal per spawn site and the override row's set);
+     `grep -rn 'PACK_STAFFING' specs/pipeline/runtime.js specs/pipeline/scripts/` prints nothing.
+  4. Regression on the gate itself, in the pane: a scratch conf with an
+     uncleared seat still refuses `./swarm` without the hatch and still
+     warns OVERRIDE with it (the launcher is untouched).
+  5. The landing removes the BL-1485 row from `backlog/standing-reds.tsv`;
+     `bb swarmforge/scripts/standing_red_register_cli.bb .` reports no row
+     for BL-1318's feature and `unowned: []`.
+
+source: |
+  Coder note to the specifier and coordinator, priority 00,
+  2026-09-08T03:00:18Z: "unowned-red bl1318PackStaffingGateSteps.js
+  inherits pane PACK_STAFFING_SKIP_GATE", raised from the BL-1445 parcel
+  (forwarded to the cleaner at 03:01Z), whose e2e step 2 runs BL-1318's
+  feature. Reproduced by the specifier on main 3dfa366fd9 the same pass,
+  both directions. Adjudication:
+  `backlog/evidence/bl1318-acceptance-unowned-red-adjudication-specifier-20260908.md`.
+  Related: BL-1318 (the gate and its feature), BL-1445 (shell lane),
+  BL-1457 (vitest lane), BL-1437 (certifies the seat the hatch covers),
+  BL-1462 (the per-feature runner's blind spot).
+
+notes: |
+  Minted 2026-09-08 by the specifier on the coder's unowned-red note, the
+  same pass (standing-red rule: type defect, severity high at first
+  sighting). Register row, lane `acceptance`, file BL-1318's feature,
+  first_seen 2026-09-08 (first recorded; red since ~2026-09-04, the
+  swarm.env export), added in the mint commit so the register never reads
+  it unowned.
+
+  Grepped first: no open ticket names the handler. BL-1445's scenario 02
+  is scoped to `swarmforge/scripts/test/*.sh` and BL-1457's invariant 1 to
+  `extension/test`; both exclude this file by construction. Not amended
+  into either: BL-1445 is in flight (rewriting an active ticket is the
+  BL-317/BL-325 hazard, and its own e2e step 2 is what found this), and
+  BL-1457 is approved - re-pending an approved ticket posts no fresh ask
+  (BL-1455), so an amendment there could never be re-approved by tap.
+
+  On BL-1445 at QA: its e2e step 2 says "BL-1318's feature stays green",
+  which is false in a pane for this reason alone. With this row in the
+  register the red is OWNED, so Article 4.2 does not hold BL-1445; QA
+  reads the row. A note to the coder says so.
+
+  Mint-time INVEST: one observable outcome (BL-1318's feature is green
+  whatever the pane exports), one sitting (one env decision at one spawn
+  site plus a two-scenario handler following BL-1445's shape), no unbuilt
+  dependency. IR-DRY at mint: 0 findings.
