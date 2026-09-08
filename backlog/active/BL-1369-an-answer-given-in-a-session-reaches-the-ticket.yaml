@@ -17,6 +17,7 @@ mutation_cost: low
 slice_size_envelope: low
 assigned_to: coder
 required_stages: [coder, cleaner, architect, hardender, documenter, qa]
+abandoned_commits: [70a419d5ca]
 
 acceptance: specs/features/BL-1369-an-answer-given-in-a-session-reaches-the-ticket.feature
 
