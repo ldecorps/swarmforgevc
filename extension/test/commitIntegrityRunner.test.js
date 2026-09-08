@@ -48,6 +48,12 @@ test('runCommitIntegrity: a non-zero exit degrades to false even when stdout car
   assert.equal(result, false);
 });
 
+test('runCommitIntegrity: exit 0 with malformed (non-JSON) stdout degrades to false, never throws', async () => {
+  const targetPath = mkTargetWithFakeCli('not json at all', 0);
+  const result = await runCommitIntegrity(targetPath, ['backlog/paused/BL-1.yaml'], 'msg');
+  assert.equal(result, false);
+});
+
 test('runCommitIntegrity: a missing commit_integrity_cli.bb degrades to false, never throws', async () => {
   const targetPath = mkTmpDir('sfvc-commit-integrity-runner-missing-');
   const result = await runCommitIntegrity(targetPath, ['backlog/paused/BL-1.yaml'], 'msg');
