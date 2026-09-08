@@ -99,17 +99,38 @@ description: |
   mktemp dir, "the equivalent of `zsh -f` for this indirect invocation
   shape".
 
-  **Red 2 - case 02 presents a newborn daemon, so the startup grace holds.**
-  Hotfix `27d6ab8630` (2026-09-02, stamped by BL-1342) added
-  `within-startup-grace?`: a live pid whose pid file is younger than one
-  stall window cannot be stalled, and reads `:healthy`. Case 02 writes
-  `echo "$HUNG_PID" > handoffd.pid` milliseconds before `check_once` with
-  `SUPERVISOR_STALL_MS=500`, ages the heartbeat and the outbox parcel to
-  2026-01-01 but not the pid file - so the daemon is 0 ms old, the grace
+  **Red 2 - three fixtures present a newborn daemon, so the startup grace
+  holds, in three separate cases.** Hotfix `27d6ab8630` (2026-09-02,
+  stamped by BL-1342) added `within-startup-grace?`: a live pid whose pid
+  file is younger than one stall window cannot be stalled, and reads
+  `:healthy` - `evaluate-health` checks `(not alive?) :dead` first, so this
+  only ever masks a LIVE-but-stalled pid, never a truly dead one. Case 02
+  writes `echo "$HUNG_PID" > handoffd.pid` milliseconds before `check_once`
+  with `SUPERVISOR_STALL_MS=500`, ages the heartbeat and the outbox parcel
+  to 2026-01-01 but not the pid file - so the daemon is 0 ms old, the grace
   applies, no halt, and `kill -0 "$HUNG_PID"` finds the hung pid alive.
   The grace is correct (BL-1342 verified it seven ways); the fixture's
   observation is stale by construction. Red since 2026-09-02, hidden
   behind red 1 (case 02 runs after 01, 03, 04).
+
+  The identical construction defect recurs TWICE more in the BL-081
+  section (line ~222 and ~254), each its own live daemon fixture that
+  never ages `handoffd.pid`: BL-081 scenario 01 (`SLOW_PID`, 0.8s TERM
+  delay) ages only the heartbeat and outbox, not the pid file, so
+  `check_once` reads `:healthy` and returns before the daemon is even
+  signalled - reproduced 2026-09-08 in isolation, `STATE= healthy`,
+  `ELAPSED` 88-99ms against the assertion's `>= 700`, "it did not wait for
+  a confirmed exit"; and BL-081 scenario 03 (`STUBBORN_PID`, ignores TERM)
+  the same way, reproduced the same pass, `FAIL: 03: TERM-ignoring daemon
+  was not force-killed`. Found by the specifier reproducing QA's
+  2026-09-08 14:01Z priority-00 note "unowned-red:
+  test_handoffd_supervisor.sh BL-081 scen01 halt no-confirm" - the note is
+  the SAME root cause as this ticket's already-scoped case 02 fix, not a
+  fourth one, so it is folded in here rather than minted separately.
+  Scenarios 02 and 05 in that section are unaffected: 02's tracked daemon
+  is force-killed (genuinely dead, bypasses the grace per
+  `evaluate-health`'s ordering above) before `check_once` runs, and 05
+  asserts no stall condition at all.
 
   ## Census of the class (red 1)
 
@@ -133,6 +154,13 @@ description: |
     are (`touch -t 202601010000 "$DAEMON_DIR/handoffd.pid"`), so the hung
     pid is terminated and the state reads halted (scenario 02 row "older";
     invariant 2).
+  - The same one-line fix applies to the BL-081 section's scenario 01
+    (`SLOW_PID`) and scenario 03 (`STUBBORN_PID`) fixtures: age
+    `handoffd.pid` there too, so `check_once`/the real `--check-once` sees
+    a daemon outside the grace window and actually exercises the
+    wait-for-confirmed-exit / force-kill path each scenario means to test
+    (invariant 2 covers these the same way it covers case 02 - the grace
+    itself is not touched).
   - The startup grace is untouched: a pid file younger than the window with
     stalled delivery still reads healthy through the real `--check-once`
     (scenario 02 row "younger"; invariant 2). No edit to
@@ -235,7 +263,7 @@ qa_e2e_procedure: |
      per run_acceptance.sh call.
   5. `grep -c ZDOTDIR swarmforge/scripts/test/test_handoffd_supervisor.sh`
      is at least 1; `grep -c 'touch -t 202601010000 "$DAEMON_DIR/handoffd.pid"'`
-     is at least 1.
+     is at least 3 (case 02, and the BL-081 section's scenarios 01 and 03).
   6. Register: after QA lands, `backlog/standing-reds.tsv` carries no row
      for this file and `bb swarmforge/scripts/standing_red_register_cli.bb .`
      reports `unowned: []` with the count down by one.
@@ -245,6 +273,21 @@ notes: |
     "unowned-red: test_handoffd_supervisor.sh 01 hard-stop never
     kill-session" (08:12Z, from the BL-1490 parcel). Adjudication and the
     25-file census: backlog/evidence/test-handoffd-supervisor-unowned-red-adjudication-specifier-20260908.md.
+  - Amended 2026-09-08 14:11Z by the specifier on QA's priority-00 note
+    "unowned-red: test_handoffd_supervisor.sh BL-081 scen01 halt
+    no-confirm" (14:01Z). Not a new/fourth red: reproduced in isolation
+    (extracted lines 1-107+213-214+219-252, and separately 254-275, run
+    standalone against main) and confirmed both the BL-081 section's
+    scenario 01 and scenario 03 fail for the identical fresh-pid-file/
+    startup-grace construction defect already scoped here as case 02's
+    fix - `evaluate-health`'s `(not alive?) :dead` ordering rules out any
+    other cause for a live-daemon fixture. Scope, "What is wanted", and
+    the QA e2e procedure's grep count updated from 1 to 3 occurrences of
+    the pid-aging `touch -t` line. Register row left as-is (already names
+    this file under this ticket); no reply owed to QA - this note closes
+    by the amendment itself, per the constitution's "does not receive QA
+    merge work" / paused-ticket amendment posture (nobody holds this
+    parcel yet, so no in-flight-role notification is needed).
   - Register row added at mint: shell / test_handoffd_supervisor.sh /
     BL-1498 / first_seen 2026-09-02 (BL-1342's note), red since 2026-08-22.
   - Why two reds in one ticket: the register keys one row per FILE and the
