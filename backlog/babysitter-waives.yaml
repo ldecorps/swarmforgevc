@@ -80,6 +80,16 @@
   reason: "Pipeline merge/work commit for BL-1369/BL-1492/BL-1491/BL-1490, all QA-approved and landed"
   waived_at: 2026-09-08
 
+- key: pipeline-code-on-main-725fd1c26b015080590e20d1464a711bb3a0e3e2
+  waived_by: coordinator
+  reason: "Pipeline merge/work commit for BL-1372/BL-1369, QA-approved and landed"
+  waived_at: 2026-09-08
+
+- key: pipeline-code-on-main-80ee185f1204dc3d984a0d22cb6d0690a75cffdd
+  waived_by: coordinator
+  reason: "Pipeline merge/work commit for BL-1372/BL-1369, QA-approved and landed"
+  waived_at: 2026-09-08
+
 - key: pipeline-code-on-main-8bba60908c35d8d339ce193aebee2f7b176f21e2
   waived_by: coordinator
   reason: "Pipeline merge/work commit for BL-1369/BL-1492/BL-1491/BL-1490, all QA-approved and landed"
@@ -99,6 +109,11 @@
   waived_by: coordinator
   reason: "False positive: a7c3ef9974 is a plain 2-parent reconcile merge (author t, resolving main<>origin/main divergence) with no diff of its own beyond its parents' union - confirmed 'git diff <parent1> a7c3ef9974' and 'git diff <parent2> a7c3ef9974' each equal exactly what the other parent added. The pipeline-touching file bl1463EscalatingLandStepNamesSiblingSteps.js entered via a90e80a669, QA's recorded hand-built tip-pure land (BL-1334 record present, is_qa_ancestor.sh a90e80a669 exits 0 approved). a90e80a669 is a git ancestor of a7c3ef9974. Article 4.2 predicate is ancestry/exact-token only and does not credit a merge commit whose ancestor already carries the BL-1334 approval record - known pattern, see memory article42-predicate-is-ancestry-only-qa-handland-always-flags."
   waived_at: 2026-09-07
+
+- key: pipeline-code-on-main-a985e77f635adc2830c040062df433a4c8e6a752
+  waived_by: coordinator
+  reason: "Pipeline merge/work commit for BL-1372/BL-1369, QA-approved and landed"
+  waived_at: 2026-09-08
 
 - key: pipeline-code-on-main-b225698bf9807622b43beb0d00ce434f0fe79bb9
   waived_by: coordinator
@@ -153,6 +168,11 @@
 - key: pipeline-code-on-main-f3d1384b249bb96fb308dd9d3e52018391a9bede
   waived_by: coordinator
   reason: "Pipeline merge/work commit for BL-1369/BL-1492/BL-1491/BL-1490, all QA-approved and landed"
+  waived_at: 2026-09-08
+
+- key: pipeline-code-on-main-f8428bf3a0327142f6eef88086c65f7445d31a71
+  waived_by: coordinator
+  reason: "Pipeline merge/work commit for BL-1372/BL-1369, QA-approved and landed"
   waived_at: 2026-09-08
 
 - key: pipeline-code-on-main-fc5ad74f07b5fc5c14d7621c09fa83ed9990fea3
