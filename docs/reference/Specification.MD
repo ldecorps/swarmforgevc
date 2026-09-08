@@ -147,6 +147,7 @@ the fix. Acceptance:
 How-to: `docs/how-to/BL-1241-entangled-tip-at-the-land-step-has-a-reachable-remedy.md`
 (outcome bullet and a new section after BL-1466's); `QA.prompt`'s
 land-step item notes the same naming on its escalate outcome.)
+
 Prior entry —
 **Last Updated:** September 7, 2026 (BL-1348: `resolveVitestWorkerPool`
 (BL-935) composed a CPU ceiling default (`MAX_WORKERS = 6`) and a RAM
@@ -184,6 +185,7 @@ once ruled; flagged as still-absent to the specifier as a spec gap, added
 the same day: a new `Scenario Outline` over 3 `cores`/`load`/`pool`
 examples asserting the default ceiling follows free cores on a full-forge
 linux pack).)
+
 Prior entry —
 **Last Updated:** September 7, 2026 (BL-1466: `land_step_lib.bb`'s
 `ticket-approval-state` (BL-1375's passenger predicate) read only the
