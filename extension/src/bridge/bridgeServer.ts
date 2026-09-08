@@ -959,8 +959,10 @@ async function computePausedPagerApproveOutcome(
     return { status: 200, body: { success: false, id: backlogId, reason: 'not pending approval' }, conciergeTick: false };
   }
   // BL-1368: the byline names the human who decided, never a pipeline role.
-  const committed = await commitApprovalWrites(targetPath, backlogId, humanDecisionCommitMessage(`Approve ${backlogId}: record human_approval`));
-  if (!committed) {
+  // BL-1475: commitApprovalWrites now returns the richer CommitIntegrityResult
+  // (never a bare boolean) - a "landed elsewhere" outcome is still success.
+  const result = await commitApprovalWrites(targetPath, backlogId, humanDecisionCommitMessage(`Approve ${backlogId}: record human_approval`));
+  if (!result.success) {
     return { status: 500, body: { success: false, changed: true, id: backlogId, reason: 'approved but failed to commit' }, conciergeTick: false };
   }
   return { status: 200, body: { success: true, id: backlogId }, conciergeTick: true };

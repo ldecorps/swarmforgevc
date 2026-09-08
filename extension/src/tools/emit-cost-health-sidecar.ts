@@ -14,6 +14,7 @@
  */
 import { resolveCliMainWorktreeContext, runCliMain } from './swarm-metrics';
 import { computeCostHealthSidecar, writeCostHealthSidecar, commitCostHealthSidecar } from '../notify/costHealthSidecar';
+import { isFileCommitted } from '../util/gitCommitScopedFile';
 import { parseSnapshotPath } from './briefingSnapshotArgs';
 
 // Exported (same "CLI main() run only via execFileSync is coverage-invisible"
@@ -30,8 +31,17 @@ export function main(): void {
   const snapshotPath = parseSnapshotPath(process.argv.slice(2));
   const sidecar = computeCostHealthSidecar(mainWorktreePath, roleWorktrees, Date.now(), undefined, snapshotPath);
   const filePath = writeCostHealthSidecar(mainWorktreePath, sidecar);
-  const committed = commitCostHealthSidecar(mainWorktreePath, filePath, sidecar.dateIso);
-  console.log(formatEmitResult(committed, filePath));
+  // BL-1475: checked BEFORE the commit attempt, right after the write - an
+  // already-durable path here means the just-written content is
+  // byte-identical to what HEAD already carries (an unchanged day), so
+  // nothing NEW will be committed. commitCostHealthSidecar's own return
+  // now means "is it durable" (true for this exact no-op case too, since
+  // it verifies against HEAD rather than reporting a false alarm) - a
+  // DIFFERENT question from "did THIS call mint a new commit", which is
+  // what EMITTED/NOOP actually reports to the operator.
+  const wasAlreadyDurable = isFileCommitted(mainWorktreePath, filePath);
+  commitCostHealthSidecar(mainWorktreePath, filePath, sidecar.dateIso);
+  console.log(formatEmitResult(!wasAlreadyDurable, filePath));
 }
 
 if (require.main === module) {

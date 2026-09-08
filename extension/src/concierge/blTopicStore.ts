@@ -9,7 +9,7 @@
 import * as fs from 'fs';
 import * as path from 'path';
 import { atomicWrite } from '../util/atomicWrite';
-import { commitScopedFile, isFileCommitted } from '../util/gitCommitScopedFile';
+import { commitScopedFile, isFileCommitted, CommitAttemptFn, SleepFn } from '../util/gitCommitScopedFile';
 import {
   UnboundThreadReporter,
   isStorableTopicId,
@@ -169,16 +169,6 @@ export function readRecord(targetPath: string, ticketId: string): TopicRecord {
 // commitScopedFile's own shared semantics (costHealthSidecar's caller relies
 // on ITS false meaning "no-op, do not report EMITTED", which stays exactly
 // as it was).
-export function commitTopicRecord(targetPath: string, filePath: string, ticketId: string): boolean {
-  if (!mayWriteTrackedTopicRecord(ticketId)) {
-    return true;
-  }
-  if (isFileCommitted(targetPath, filePath)) {
-    return true;
-  }
-  return commitScopedFile(targetPath, filePath, `BL topic record for ${ticketId}\n\nBy coder.`);
-}
-
 // BL-348: commitTopicRecord fails open by design (never throws, so
 // appendMessage's own write always succeeds regardless of whether the
 // commit does) - but a caller that then DISCARDS the boolean, as
@@ -193,13 +183,59 @@ export function commitTopicRecord(targetPath: string, filePath: string, ticketId
 // the failure was reported without polluting real stderr, and a future
 // caller could route it somewhere richer than stderr without touching
 // appendMessage's own logic.
-export type CommitFailureReporter = (ticketId: string, filePath: string) => void;
+// BL-1475: detail (git's own stderr from the final failed attempt, never
+// discarded) is a third, optional argument - additive, so an existing
+// custom reporter that only takes (ticketId, filePath) stays perfectly
+// valid (JS/TS callbacks are never required to consume every argument).
+export type CommitFailureReporter = (ticketId: string, filePath: string, detail?: string) => void;
 
-export const reportCommitFailureToStderr: CommitFailureReporter = (ticketId, filePath) => {
+export const reportCommitFailureToStderr: CommitFailureReporter = (ticketId, filePath, detail) => {
+  const reason = detail ? ` (${detail.trim()})` : '';
   process.stderr.write(
-    `blTopicStore: FAILED to commit topic record for ${ticketId} at ${filePath} - the write succeeded locally but is NOT yet durable (git commit failed). It will be lost on a fresh checkout until a later successful commit.\n`
+    `blTopicStore: FAILED to commit topic record for ${ticketId} at ${filePath} - the write succeeded locally but is NOT yet durable (git commit failed${reason}). It will be lost on a fresh checkout until a later successful commit.\n`
   );
 };
+
+// BL-1475: reportCommitFailure now lives here (rather than at appendMessage/
+// recordSwarmIconId's own call sites) so it can carry the real stderr
+// commitScopedFile captured on its final failed attempt (never discarded) -
+// the one place both quantities (the boolean outcome and its detail) are
+// already in scope together. attemptCommit/sleep/maxAttempts pass straight
+// through to commitScopedFile (undefined keeps its own production
+// defaults) so a test can drive this exact write path with an injected
+// lock/clock, same seam convention as commitScopedFile's own callers.
+export function commitTopicRecord(
+  targetPath: string,
+  filePath: string,
+  ticketId: string,
+  reportCommitFailure: CommitFailureReporter = reportCommitFailureToStderr,
+  attemptCommit?: CommitAttemptFn,
+  sleep?: SleepFn,
+  maxAttempts?: number
+): boolean {
+  if (!mayWriteTrackedTopicRecord(ticketId)) {
+    return true;
+  }
+  if (isFileCommitted(targetPath, filePath)) {
+    return true;
+  }
+  let detail: string | undefined;
+  const committed = commitScopedFile(
+    targetPath,
+    filePath,
+    `BL topic record for ${ticketId}\n\nBy coder.`,
+    attemptCommit,
+    sleep,
+    maxAttempts,
+    (stderr) => {
+      detail = stderr;
+    }
+  );
+  if (!committed) {
+    reportCommitFailure(ticketId, filePath, detail);
+  }
+  return committed;
+}
 
 // seq is assigned from the CURRENT record's own length at append time - the
 // record is always read fresh immediately before writing (never cached
@@ -237,10 +273,7 @@ export function appendMessage(
   record.messages.push(entry);
   const filePath = recordPath(targetPath, ticketId);
   atomicWrite(filePath, JSON.stringify(record));
-  const committed = commitTopicRecord(targetPath, filePath, ticketId);
-  if (!committed) {
-    reportCommitFailure(ticketId, filePath);
-  }
+  commitTopicRecord(targetPath, filePath, ticketId, reportCommitFailure);
   return entry;
 }
 
@@ -303,9 +336,6 @@ export function recordSwarmIconId(
   atomicWrite(filePath, JSON.stringify(record));
   // BL-390: setting the SAME iconId again (no real state change) commits
   // nothing - commitTopicRecord's own no-op guard, reused here for free.
-  const committed = commitTopicRecord(targetPath, filePath, ticketId);
-  if (!committed) {
-    reportCommitFailure(ticketId, filePath);
-  }
+  commitTopicRecord(targetPath, filePath, ticketId, reportCommitFailure);
   return 'recorded';
 }
