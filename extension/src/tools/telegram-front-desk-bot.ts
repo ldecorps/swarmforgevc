@@ -2476,7 +2476,10 @@ export async function commitExpediteWrites(
 ): Promise<boolean> {
   // BL-1091: a paused→active rename must pathspec-commit BOTH ends. Naming
   // only the destination leaves the paused/ deletion uncommitted.
-  return commitApprovalWrites(
+  // BL-1475: commitApprovalWrites now returns the richer CommitIntegrityResult
+  // (never a bare boolean) - Expedite has no use for the extra detail
+  // (landed-elsewhere/sha/stderr), so it reduces to success/failure here.
+  const result = await commitApprovalWrites(
     targetPath,
     backlogId,
     // BL-1368: Expedite records human_approval too, so it composes the same
@@ -2485,6 +2488,7 @@ export async function commitExpediteWrites(
     humanDecisionCommitMessage(`Expedite ${backlogId}: record approval + promotion`),
     sourcePath ? [sourcePath] : []
   );
+  return result.success;
 }
 
 function buildApprovalAskCloseAdapterFields(botToken: string, targetPath: string, chatId: string) {
@@ -2593,6 +2597,8 @@ function buildPollAdapters(
     // BL-892: every other automated human_approval writer's own commit
     // step - shares commitApprovalWrites (util/commitIntegrityRunner.ts)
     // with commitExpediteWrites above, never a second locate-file path.
+    // BL-1475: commitApprovalWrites now returns the richer
+    // CommitIntegrityResult, which is exactly what PollAdapters wants.
     commitApprovalWrites: (backlogId, message) => commitApprovalWrites(targetPath, backlogId, message),
     checkExpediteFileCollision: (backlogId) => Promise.resolve(findExpediteFileCollision(targetPath, backlogId)),
     dispatchExpediteBuild: (backlogId) => runExpediteDispatch(targetPath, backlogId),
