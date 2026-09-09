@@ -128,13 +128,20 @@
     (assert-false "acquire-lock! gives up (returns false) against an already-held lock instead of spinning forever" acquired?))
   (fs/delete lock-dir))
 
-;; and it succeeds (returns true) once the lock is actually free.
+;; and it succeeds (a truthy {:acquired true :reaped ...} map - BL-1497)
+;; once the lock is actually free, writing an owner record inside the
+;; lock dir for as long as it is held (BL-1497 scenario 04's mechanism).
 (let [dir (real-git-repo)
       lock-dir (str (fs/path dir ".git" "sfvc-test-free.lock"))]
   (let [acquired? (commit-integrity-lib/acquire-lock! lock-dir 3 0)]
     (assert-true "acquire-lock! succeeds against a free lock path" acquired?)
-    (assert-true "acquire-lock! actually created the lock dir" (fs/exists? lock-dir)))
-  (fs/delete lock-dir))
+    (assert-true "acquire-lock! actually created the lock dir" (fs/exists? lock-dir))
+    (assert-true "the acquired lock carries an owner record inside it"
+                 (fs/exists? (fs/path lock-dir "owner.json"))))
+  ;; delete-tree, not delete: the dir now legitimately contains owner.json -
+  ;; a bare fs/delete would throw DirectoryNotEmptyException (BL-1497, the
+  ;; same trap release-lock! itself was fixed for).
+  (fs/delete-tree lock-dir))
 
 ;; ── :add-failed / :commit-failed short-circuit before any verify ───────
 
