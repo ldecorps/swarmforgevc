@@ -112,3 +112,5 @@ notes: |
   would break the referent.
 
 source: "Observed by the specifier on 2026-08-29 while checking the concierge's own approval card for the freshly minted BL-1277 (topic record backlog/topics/BL-1277.json, commit 75de17dec)."
+
+assigned_to: coder
