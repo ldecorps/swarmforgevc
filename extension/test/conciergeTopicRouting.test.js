@@ -219,6 +219,104 @@ test('approval-ask-content-06: TaskStarted/TaskCompleted/NeedsApproval renders a
   assert.equal(messageTextForEvent(event({ type: 'NeedsApproval' })), 'NeedsApproval: BL-123');
 });
 
+// ── BL-1278: "What it solves" shows description, not notes ────────────────
+
+test('BL-1278: approval card shows the ticket description when present, not the notes', () => {
+  const text = messageTextForEvent(
+    event({
+      type: 'ApprovalRequested',
+      payload: {
+        title: 'a fine feature',
+        description: 'This is the problem statement that explains what the ticket solves.',
+        notes: 'Verification done at mint: read the code, confirmed the behavior.',
+      },
+    })
+  );
+  assert.match(text, /What it solves: This is the problem statement/);
+  assert.ok(!text.includes('Verification done at mint'), 'expected notes (mint provenance) to NOT appear in "What it solves"');
+});
+
+test('BL-1278: approval card falls back to notes when description is missing', () => {
+  const text = messageTextForEvent(
+    event({
+      type: 'ApprovalRequested',
+      payload: {
+        title: 'a fine feature',
+        notes: 'This fixes the widget.\n\nSecond paragraph.',
+      },
+    })
+  );
+  assert.match(text, /What it solves: This fixes the widget\./);
+  assert.ok(!text.includes('Second paragraph'), 'expected only the first paragraph of notes (fallback)');
+});
+
+test('BL-1278: TaskStarted card follows the same rule - shows description when present', () => {
+  const text = messageTextForEvent(
+    event({
+      type: 'TaskStarted',
+      payload: {
+        title: 'a fine feature',
+        description: 'This is the problem statement that explains what the ticket solves.',
+        notes: 'Verification done at mint: read the code, confirmed the behavior.',
+        firstAcceptanceStep: 'The first step',
+      },
+    })
+  );
+  assert.match(text, /What it solves: This is the problem statement/);
+  assert.ok(!text.includes('Verification done at mint'), 'expected notes (mint provenance) to NOT appear in "What it solves"');
+});
+
+test('BL-1278: TaskStarted card falls back to notes when description is missing', () => {
+  const text = messageTextForEvent(
+    event({
+      type: 'TaskStarted',
+      payload: {
+        title: 'a fine feature',
+        notes: 'This fixes the widget.',
+        firstAcceptanceStep: 'The first step',
+      },
+    })
+  );
+  assert.match(text, /What it solves: This fixes the widget\./);
+});
+
+test('BL-1278: description gets the same firstParagraph treatment as notes', () => {
+  const text = messageTextForEvent(
+    event({
+      type: 'ApprovalRequested',
+      payload: {
+        title: 'a fine feature',
+        description: 'First paragraph of description.\n\nSecond paragraph should be dropped.',
+      },
+    })
+  );
+  assert.match(text, /What it solves: First paragraph of description\./);
+  assert.ok(!text.includes('Second paragraph'), 'expected only the first paragraph of description');
+});
+
+test('BL-1278: card stays within message-length budget even with very long description, notes, and approval context', () => {
+  const longDescription = 'A'.repeat(1000);
+  const longNotes = 'B'.repeat(1000);
+  const longApprovalContext = 'C'.repeat(1000);
+  const text = messageTextForEvent(
+    event({
+      type: 'ApprovalRequested',
+      payload: {
+        title: 'a fine feature',
+        description: longDescription,
+        notes: longNotes,
+        approvalContext: longApprovalContext,
+      },
+    })
+  );
+  // Telegram's limit is 4096, but the card's own budget is 1000 chars for the body
+  // plus the frozen line appended after. The key invariant: the message is truncated
+  // and never exceeds a reasonable bound.
+  assert.ok(text.length < 4096, `expected message to be under Telegram's 4096 limit, got ${text.length}`);
+  // The frozen approval line must always survive, even with oversized content
+  assert.ok(text.includes('before it can proceed'), 'expected frozen approval line to survive truncation');
+});
+
 // ── BL-410: ApprovalRequested carries Approve/Amend/Reject buttons ───────
 
 test('BL-410: decideTopicAction attaches Approve/Amend/Reject inline-keyboard buttons for ApprovalRequested', () => {
