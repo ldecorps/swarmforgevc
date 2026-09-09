@@ -98,6 +98,20 @@ function buildSummaryBody(event: SwarmEvent, leadingLine: string, fields: Array<
 // within one tick, but never a crash) - the {} case falls back to the
 // pre-BL-322 bare "TaskStarted: BL-XXX" line, the ONE shape this function
 // can compose with no real data at all.
+// BL-1278: resolve the problem statement for the "What it solves" line -
+// prefer description (the problem statement) over notes (mint provenance),
+// with notes as the fallback for tickets predating the description field
+// or carrying no description. Returns a modified event with the resolved
+// value in the description field, ready for buildSummaryBody.
+function withResolvedProblemStatement(event: SwarmEvent): SwarmEvent {
+  const description = stringPayloadField(event, 'description');
+  const notes = stringPayloadField(event, 'notes');
+  const problemStatement = description ?? notes;
+  return problemStatement !== undefined
+    ? { ...event, payload: { ...event.payload, description: problemStatement } }
+    : event;
+}
+
 // BL-1278: "What it solves" now prefers description (the problem statement)
 // over notes (mint provenance), with notes as the fallback for tickets
 // predating the description field or carrying no description.
@@ -106,14 +120,7 @@ function taskStartedText(event: SwarmEvent): string {
   if (!title) {
     return `${event.type}: ${event.backlogId}`;
   }
-  // BL-1278: resolve the problem statement - prefer description, fallback to notes
-  const description = stringPayloadField(event, 'description');
-  const notes = stringPayloadField(event, 'notes');
-  const problemStatement = description ?? notes;
-  // Build a modified event payload with the resolved problemStatement
-  const resolvedEvent = problemStatement !== undefined
-    ? { ...event, payload: { ...event.payload, description: problemStatement } }
-    : event;
+  const resolvedEvent = withResolvedProblemStatement(event);
   return buildSummaryBody(resolvedEvent, `What it is: ${title}`, [
     { label: 'What it solves', field: 'description' },
     { label: 'How it works', field: 'firstAcceptanceStep' },
@@ -193,14 +200,7 @@ function approvalRequestedText(event: SwarmEvent): string {
   if (!title) {
     return frozen;
   }
-  // BL-1278: resolve the problem statement - prefer description, fallback to notes
-  const description = stringPayloadField(event, 'description');
-  const notes = stringPayloadField(event, 'notes');
-  const problemStatement = description ?? notes;
-  // Build a modified event payload with the resolved problemStatement
-  const resolvedEvent = problemStatement !== undefined
-    ? { ...event, payload: { ...event.payload, description: problemStatement } }
-    : event;
+  const resolvedEvent = withResolvedProblemStatement(event);
   const body = buildSummaryBody(resolvedEvent, `${id} — ${title}`, [
     { label: 'What it solves', field: 'description' },
     { label: 'First acceptance signal', field: 'firstAcceptanceStep' },
