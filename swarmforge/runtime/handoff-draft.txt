@@ -1,4 +1,4 @@
 type: note
-to: coder
+to: documenter
 priority: 00
-message: BL-1278 no parcel in flight — if you hold it resume+forward, else name holder
+message: QA merge-up stuck in_process 2h+ — resume or surface blocker, never sit on it
