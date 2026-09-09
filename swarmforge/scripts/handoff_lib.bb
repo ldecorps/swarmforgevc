@@ -6,6 +6,7 @@
 
 (ns handoff-lib
   (:require [babashka.fs :as fs]
+            [babashka.process :as process]
             [cheshire.core :as json]
             [clojure.string :as str])
   (:import [java.nio.channels FileChannel]
@@ -61,6 +62,7 @@
 ;; that already load-files it directly, e.g. ready_for_next_task.bb, just
 ;; re-evaluates the same defns).
 (load-file (str (fs/path (fs/parent (fs/canonicalize *file*)) "seat_difficulty_lib.bb")))
+(load-file (str (fs/path (fs/parent (fs/canonicalize *file*)) "respawn_bootstrap_lib.bb")))
 
 (defn worktree-root
   "Handoff state lives at the worktree root even when invoked from a
@@ -1144,6 +1146,28 @@
    (fs/path (target-root) ".swarmforge")
    (str (fs/path (target-root) "swarmforge" "swarmforge.conf"))))
 
+(defn run-respawn-bootstrap!
+  "Hotfix 2026-09-09: after the resident pane is respawned as another role,
+   give it the post-launch bootstrap a first launch would have given it.
+   Rotation already recomposes that role's prompt just above; until now
+   nothing ever pasted it into the new session, so an aider seat rotated
+   into a role booted with an empty chat - no role, no constitution - and
+   answered wakes with 'I have no shell, git, or filesystem tools in this
+   session'. Fire-and-forget and never throwing: a rotation must not fail
+   because its bootstrap did. A no-op by construction for :embedded
+   providers, whose bootstrap-steps are empty."
+  [socket session target-role]
+  (try
+    (when-let [argv (respawn-bootstrap-lib/argv-for-role
+                     {:scripts-dir (str (fs/path (target-root) "swarmforge" "scripts"))
+                      :state-dir (str (fs/path (target-root) ".swarmforge"))
+                      :socket socket
+                      :session session
+                      :agent (:agent (load-role-info target-role))
+                      :role target-role})]
+      (process/process argv {:out :discard :err :discard}))
+    (catch Exception _ nil)))
+
 (defn rotate-resident-to!
   "Rotate the resident pane to <target-role>. Optional <reason> labels the
    telemetry event (default rotate, or SWARMFORGE_ROTATION_REASON env).
@@ -1214,6 +1238,12 @@
                  {:type "rotation-respawn"
                   :subject "mono-router-resident"
                   :reason "persona swap"})
+                ;; Hotfix 2026-09-09: the pane that just booted is a new
+                ;; agent process. Paste it the prompt recomposed above -
+                ;; this is the shared chokepoint, so both the
+                ;; resident-invoked (respawn-as!) and daemon-chase drivers
+                ;; are covered by this one call.
+                (run-respawn-bootstrap! socket session target-role)
                 {:ok true})
               {:ok false :reason (or (not-empty (str/trim (str (:err result))))
                                      (str "tmux-exit-" (:exit result)))}))))))

@@ -181,3 +181,5 @@ notes: |
     form of "absent afterwards" (03 vs 01/04), and "owner record names a
     process" vs "no owner record" are the two lock shapes the reap must
     tell apart; the wording difference is the assertion, as BL-1490 did.
+
+assigned_to: coder

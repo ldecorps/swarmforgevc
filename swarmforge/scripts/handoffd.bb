@@ -23,6 +23,7 @@
 (load-file (str (fs/path (fs/parent (fs/canonicalize *file*)) "cron_heartbeat_lib.bb")))
 (load-file (str (fs/path (fs/parent (fs/canonicalize *file*)) "ambulance_lib.bb")))
 (load-file (str (fs/path (fs/parent (fs/canonicalize *file*)) "chase_sweep_lib.bb")))
+(load-file (str (fs/path (fs/parent (fs/canonicalize *file*)) "landed_ticket_autoclose_lib.bb")))
 (load-file (str (fs/path (fs/parent (fs/canonicalize *file*)) "mono_router_lib.bb")))
 (load-file (str (fs/path (fs/parent (fs/canonicalize *file*)) "backlog_depth_lib.bb")))
 (load-file (str (fs/path (fs/parent (fs/canonicalize *file*)) "agent_runtime_lib.bb")))
@@ -1082,22 +1083,43 @@
     (catch Exception e
       (log! "wake-attribution-error" (:role role-info) (.getMessage e)))))
 
+(defn wake-target-epoch
+  "Hotfix 2026-09-09 (fresh-target): identity of the live seat behind a wake
+   session - the pane's root process pid, which changes on every respawn or
+   rotation. nil when tmux cannot answer (fixture fakes, a gone session), in
+   which case wake-dedup-lib decides exactly as before the hotfix."
+  [socket session]
+  (try
+    (let [res (tmux! "-S" socket "list-panes" "-t" session "-F" "#{pane_pid}")
+          pid (some-> (:out res) str/split-lines first str/trim)]
+      (when (and (zero? (:exit res)) (not (str/blank? pid)) (re-matches #"\d+" pid))
+        (str "pane-pid:" pid)))
+    (catch Exception _ nil)))
+
 (defn handoff-wake-with-dedup!
   "BL-1191: gate HANDOFF_WAKE_MESSAGE injects on mailbox fingerprint + cooldown.
    Records BL-870 attribution for every inject and skip. Returns true when a
-   wake was delivered."
+   wake was delivered.
+   Hotfix 2026-09-09: the decision also sees the wake pane's seat epoch, so a
+   respawned/rotated seat whose mailbox did not change is still woken once
+   (logged `wake-fresh-target`) instead of inheriting the old pane's
+   unchanged-mailbox suppression forever."
   [role-info sweep mailbox-dir-key socket session agent notify-fn!]
   (let [now-ms (System/currentTimeMillis)
-        dedup (wake-dedup-lib/load-decision (str state-dir) role-info now-ms)]
+        epoch (wake-target-epoch socket (handoff-lib/wake-session socket session))
+        dedup (wake-dedup-lib/load-decision (str state-dir) role-info now-ms
+                                            :target-epoch epoch)]
     (if (= (:action dedup) :suppress)
       (do (log! "wake-dedup-skip" (:role role-info) (:skip-reason dedup))
           (record-wake-attribution! role-info sweep mailbox-dir-key
                                     wake-attribution-lib/outcome-skipped
                                     :skip-reason (:skip-reason dedup))
           false)
-      (do (notify-fn! socket session agent)
+      (do (when (:inject-reason dedup)
+            (log! "wake-fresh-target" (:role role-info) (str epoch)))
+          (notify-fn! socket session agent)
           (wake-dedup-lib/record-injection! (str state-dir) (:role role-info)
-                                              (:fingerprint dedup) now-ms)
+                                              (:fingerprint dedup) now-ms epoch)
           (record-wake-attribution! role-info sweep mailbox-dir-key
                                     wake-attribution-lib/outcome-landed)
           true))))
@@ -1728,10 +1750,17 @@
       :rotate (let [performed (boolean (:ok (chase-rotate-to! socket roles role)))]
                 (when performed (reset! resident-wake-suppressed? true))
                 performed)
-      :wake (do (when (:resident-budget? plan)
-                  (reset! resident-wake-suppressed? true))
-                (handoff-wake-with-dedup! ri sweep mailbox-dir-key socket
-                                          (:session ri) (:agent ri) notify-fn!)))))
+      ;; Hotfix 2026-09-09: consume the per-sweep resident budget only when
+      ;; the wake actually landed - the docstring's own starvation rule. It
+      ;; was consumed BEFORE the dedup gate, so one role's suppressed wake
+      ;; (coder, unchanged-mailbox) starved every other role sharing the
+      ;; resident pane (documenter: chase-wake-skip-dedup x477 in 2h).
+      :wake (let [performed (boolean (handoff-wake-with-dedup!
+                                      ri sweep mailbox-dir-key socket
+                                      (:session ri) (:agent ri) notify-fn!))]
+              (when (and performed (:resident-budget? plan))
+                (reset! resident-wake-suppressed? true))
+              performed))))
 
 (defn- head-commit-10
   "Exactly 10 hex chars for swarm_handoff.bb's git_handoff commit contract."
@@ -2319,13 +2348,90 @@
       (log! "landed-but-open-nudge-error" (:id item) (str (:err result))))))
 
 
+;; Hotfix 2026-09-09 (landed auto-close): the daemon closes a landed ticket
+;; itself. Two gaps met on BL-1278: the subject-only detector above never saw
+;; QA's "BL-1278: QA review pass evidence" land (it wants "QA-approved" /
+;; "QA pass inventory"), and even a detected ticket only produced a note to
+;; QA - the active/ → done/ move stayed the coordinator's, and the GLM
+;; coordinator completed QA's git_handoff without ever doing it. The land
+;; record QA writes at land time (.swarmforge/land-approvals/*.jsonl, the
+;; store is_qa_ancestor.sh reads) is now a second landed signal, and the
+;; close runs through close_ticket.sh - i.e. commit_integrity_cli.bb and
+;; ticket_close_guard_lib.bb, the same guarded path the coordinator uses, so
+;; the guard still decides. One attempt per tick, per-ticket cooldown; a
+;; refusal falls through to the legacy QA nudge unchanged.
+
+(defn landed-commit-on-origin-main? [commit]
+  (try
+    (zero? (:exit (daemon-cycle-guard-lib/sh!
+                   ["git" "merge-base" "--is-ancestor" (str commit) "origin/main"]
+                   {:dir (str project-root)})))
+    (catch Exception _ false)))
+
+(defn close-landed-ticket! [item]
+  (let [env (merge (into {} (System/getenv)) {"SWARMFORGE_ROLE" "coordinator"})
+        script (str (fs/path project-root "swarmforge" "scripts" "close_ticket.sh"))
+        res (daemon-cycle-guard-lib/sh! ["bash" script (str project-root) (str (:id item))]
+                                        {:dir (str project-root) :env env})
+        tail (->> (str (:out res) "\n" (:err res))
+                  str/split-lines
+                  (remove str/blank?)
+                  last)]
+    {:ok? (zero? (:exit res)) :detail (str tail)}))
+
+(defn notify-coordinator-auto-closed! [item]
+  (let [draft (write-scratch-draft!
+               (landed-ticket-autoclose-lib/coordinator-draft-lines (:id item) (:approval-commit item)))
+        env (merge (into {} (System/getenv)) {"SWARMFORGE_ROLE" "coordinator"})
+        result (daemon-cycle-guard-lib/sh! ["bb" (swarm-handoff-script) (str draft)]
+                                           {:dir (str project-root) :env env})]
+    (if (zero? (:exit result))
+      (log! "landed-auto-close-notified" (:id item))
+      (log! "landed-auto-close-notify-error" (:id item) (str (:err result))))))
+
+(defn auto-close-landed-tickets!
+  "At most ONE close attempt per tick (a guarded commit runs hooks and can
+   take tens of seconds; the tick must stay inside its stall window).
+   Returns the set of ids closed this tick."
+  [active-ids commits]
+  (let [store-approvals (landed-ticket-autoclose-lib/index-store-approvals
+                         (landed-ticket-autoclose-lib/read-land-approval-rows (str project-root))
+                         active-ids landed-commit-on-origin-main?)
+        approvals (merge (chase-sweep-lib/index-qa-approvals commits) store-approvals)
+        closed-ids (chase-sweep-lib/index-closed-tickets commits)
+        candidates (landed-ticket-autoclose-lib/auto-close-candidates active-ids approvals closed-ids)
+        now-ms (System/currentTimeMillis)
+        attempts (landed-ticket-autoclose-lib/read-attempts (str daemon-dir))
+        due (filter #(landed-ticket-autoclose-lib/attempt-due?
+                      attempts (:id %) now-ms landed-ticket-autoclose-lib/default-cooldown-ms)
+                    candidates)]
+    (when (seq candidates)
+      (log! "landed-auto-close-candidates"
+            (str/join "," (map #(str (:id %) "=" (:approval-commit %)) candidates))))
+    (if-let [item (first due)]
+      (let [r (landed-ticket-autoclose-lib/attempt-auto-close!
+               {:item item :now-ms now-ms :attempts attempts
+                :cooldown-ms landed-ticket-autoclose-lib/default-cooldown-ms
+                :close! close-landed-ticket!
+                :notify! notify-coordinator-auto-closed!
+                :log! (fn [tag & details] (apply log! tag details))
+                :record-attempt! (fn [id] (landed-ticket-autoclose-lib/write-attempt! (str daemon-dir) id now-ms))})]
+        (if (= :closed (:outcome r)) #{(:id r)} #{}))
+      #{})))
+
 (defn landed-but-open-sweep! [roles]
   (try
     (let [git-ref (chase-sweep-lib/resolve-landed-main-ref (str project-root))
           commits (chase-sweep-lib/read-ref-subject-commits (str project-root) git-ref)
           scan-dirs (dispatch-gap-scan-dirs roles)
-          items (chase-sweep-lib/landed-but-open-items
-                 (active-backlog-dir) commits scan-dirs)]
+          active-ids (chase-sweep-lib/read-active-ticket-ids (active-backlog-dir))
+          closed-now (try (auto-close-landed-tickets! active-ids commits)
+                          (catch Exception e
+                            (log! "landed-auto-close-error" (.getMessage e))
+                            #{}))
+          items (remove #(contains? closed-now (:id %))
+                        (chase-sweep-lib/landed-but-open-items
+                         (active-backlog-dir) commits scan-dirs))]
       ;; Always one named boundary detail (action or none) — diagnosable without re-run.
       (log! "landed-but-open" (chase-sweep-lib/landed-but-open-boundary-detail items))
       (doseq [item items]

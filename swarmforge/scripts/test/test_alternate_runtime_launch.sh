@@ -327,4 +327,51 @@ DOC_SCRIPT10="$ROOT10/.swarmforge/launch/documenter.sh"
 grep -q "bai-secret-do-not-leak" "$DOC_SCRIPT10" && fail "10: B_AI_API_KEY leaked into the launch script file"
 pass "10: b.ai host-sniff forces the remap; key reaches the pane via -e only; real OPENAI_API_KEY excluded"
 
+# ── 11: hotfix 2026-09-09 — the OPT-IN variant (no api.b.ai in the window's
+#       CLI, SWARMFORGE_USE_BAI=1 in the launching shell) must set the b.ai
+#       BASE unconditionally. The coordinator was respawned with a stale
+#       api.cerebras.ai base already in its environment; the old
+#       `${OPENAI_API_BASE:-…}` kept it while the key switched to b.ai, and
+#       aider failed every turn with "Wrong API Key". ─────────────────────
+ROOT11="$(mk_root)"
+cat > "$ROOT11/swarmforge/swarmforge.conf" <<'CONF'
+config active_backlog_max_depth -1
+window documenter aider master --model openai/glm-5.3-flash
+CONF
+FAKE_BIN11="$(mktemp -d)"
+register_tmp_dir "$FAKE_BIN11"
+TMUX_LOG11="$FAKE_BIN11/tmux-calls.log"
+cp "$FAKE_BIN10/tmux" "$FAKE_BIN11/tmux"
+chmod +x "$FAKE_BIN11/tmux"
+
+SWARMFORGE_USE_BAI=1 B_AI_API_KEY=bai-secret-do-not-leak \
+env -u CEREBRAS_API_KEY -u PERPLEXITY_API_KEY -u QWEN_API_KEY -u GEMINI_API_KEY -u SWARMFORGE_GEMINI_API_KEY -u SWARMFORGE_USE_CEREBRAS \
+PATH="$FAKE_BIN11:$PATH" TMUX_LOG="$TMUX_LOG11" zsh -f -c "
+  source '$SWARMFORGE_SH' '$ROOT11'
+  parse_config
+  $index_of_role_snippet
+  choose_cleanup_owner
+  launch_role \"\$(index_of_role documenter)\"
+"
+DOC_SCRIPT11="$ROOT11/.swarmforge/launch/documenter.sh"
+[[ -f "$DOC_SCRIPT11" ]] || fail "11: launch script not written"
+grep -q 'SWARMFORGE_USE_BAI:-' "$DOC_SCRIPT11" \
+  || fail "11: expected the opt-in b.ai guard (no api.b.ai in the CLI) in the launch script"
+grep -q "bai-secret-do-not-leak" "$DOC_SCRIPT11" && fail "11: B_AI_API_KEY leaked into the launch script file"
+# Isolate the b.ai guard block (the Cerebras/Perplexity guards above it keep
+# their own `${OPENAI_API_BASE:-…}` shape; only the honoured b.ai flag is
+# under test here), then execute it against a STALE Cerebras base, as the
+# respawned coordinator pane saw it: the base must follow the key.
+BAI_BLOCK11="$FAKE_BIN11/bai-block.sh"
+awk '/SWARMFORGE_USE_BAI:-/{p=1} p{print} p&&/^fi$/{exit}' "$DOC_SCRIPT11" > "$BAI_BLOCK11"
+[[ -s "$BAI_BLOCK11" ]] || fail "11: could not extract the b.ai guard block from the launch script"
+grep -q 'OPENAI_API_BASE:-' "$BAI_BLOCK11" \
+  && fail "11: the opt-in b.ai guard must not inherit a pre-set OPENAI_API_BASE; got: $(cat "$BAI_BLOCK11")"
+RESOLVED11="$(SWARMFORGE_USE_BAI=1 B_AI_API_KEY=bai-secret-do-not-leak \
+  OPENAI_API_BASE=https://api.cerebras.ai/v1 OPENAI_BASE_URL=https://api.cerebras.ai/v1 \
+  zsh -f -c "source '$BAI_BLOCK11'; printf '%s %s %s' \"\$OPENAI_API_KEY\" \"\$OPENAI_API_BASE\" \"\$OPENAI_BASE_URL\"")"
+[[ "$RESOLVED11" == "bai-secret-do-not-leak https://api.b.ai/v1 https://api.b.ai/v1" ]] \
+  || fail "11: with a stale Cerebras base in the environment the honoured b.ai flag must yield the b.ai key AND base; got: $RESOLVED11"
+pass "11: opt-in b.ai guard sets the b.ai base unconditionally - a stale Cerebras base cannot outlive the flag"
+
 echo "ALL PASS"
