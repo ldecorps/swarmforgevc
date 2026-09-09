@@ -17,6 +17,7 @@ const fs = require('node:fs');
 const os = require('node:os');
 const path = require('node:path');
 const { execFileSync } = require('node:child_process');
+const { mkSocketFixtureRoot } = require('./lib/socketFixtureRoot');
 
 const FEATURE = 'BL-1432 The land walk ranges over the parcel, not the branch\'s history';
 
@@ -83,15 +84,12 @@ function postLandRepoint(root) {
   return JSON.parse(out);
 }
 
-function mkTmpDir(prefix) {
-  return fs.mkdtempSync(path.join(os.tmpdir(), prefix));
-}
 
 function registerSteps(registry) {
   const scoped = (re, fn) => registry.defineScoped(re, fn, FEATURE);
 
   scoped(/^a fixture repository with a bare origin, a main that already holds the content of many earlier parcels, and a QA-style branch whose history carries those parcels' review merges plus one new approved parcel$/, (ctx) => {
-    ctx.root = mkTmpDir('bl1432-fixture-');
+    ctx.root = mkSocketFixtureRoot('bl1432-fixture-');
     initRepo(ctx.root);
     commit(ctx.root, 'backlog/active/BL-9101-old.yaml', 'id: BL-9101\n',
       'Merge cleaner (BL-9101 old, already-landed parcel review merge)');
