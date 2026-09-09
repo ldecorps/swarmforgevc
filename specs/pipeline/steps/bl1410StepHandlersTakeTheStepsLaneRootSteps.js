@@ -12,20 +12,24 @@ const { execFileSync } = require('node:child_process');
 
 const REPO_ROOT = path.join(__dirname, '..', '..', '..');
 const STEPS_DIR = path.join(REPO_ROOT, 'specs', 'pipeline', 'steps');
+const FEATURES_DIR = path.join(REPO_ROOT, 'specs', 'features');
 const RUN_ACCEPTANCE = path.join(REPO_ROOT, 'specs', 'pipeline', 'scripts', 'run_acceptance.sh');
+
+function findFeatureFile(ticket) {
+  const features = fs.readdirSync(FEATURES_DIR)
+    .filter(f => f.startsWith(ticket) && f.endsWith('.feature'));
+  if (features.length === 0) {
+    throw new Error(`No feature file found for ${ticket}`);
+  }
+  return path.join(FEATURES_DIR, features[0]);
+}
 
 // Scenario 01: verify migrated features clean up their fixture roots
 function registerSteps(registry) {
   registry.define(
     /^the feature for "([^"]+)" runs under the acceptance runner with fixture-root creation traced$/,
     (ctx, ticket) => {
-      // Find the feature file for this ticket
-      const features = fs.readdirSync(path.join(REPO_ROOT, 'specs', 'features'))
-        .filter(f => f.startsWith(ticket) && f.endsWith('.feature'));
-      if (features.length === 0) {
-        throw new Error(`No feature file found for ${ticket}`);
-      }
-      const featureFile = path.join(REPO_ROOT, 'specs', 'features', features[0]);
+      const featureFile = findFeatureFile(ticket);
 
       // Create a preload script that traces mkdtempSync calls
       const preloadScript = `
@@ -193,11 +197,13 @@ function registerSteps(registry) {
       if (!match) continue;
       const ticket = `BL-${match[1]}`;
 
-      const features = fs.readdirSync(path.join(REPO_ROOT, 'specs', 'features'))
-        .filter(f => f.startsWith(ticket) && f.endsWith('.feature'));
-      if (features.length === 0) continue;
+      let featureFile;
+      try {
+        featureFile = findFeatureFile(ticket);
+      } catch {
+        continue; // No feature file for this ticket, skip
+      }
 
-      const featureFile = path.join(REPO_ROOT, 'specs', 'features', features[0]);
       try {
         execFileSync(RUN_ACCEPTANCE, [featureFile], { stdio: 'pipe' });
       } catch (err) {
