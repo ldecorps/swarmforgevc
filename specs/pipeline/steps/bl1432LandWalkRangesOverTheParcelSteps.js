@@ -84,7 +84,6 @@ function postLandRepoint(root) {
   return JSON.parse(out);
 }
 
-
 function registerSteps(registry) {
   const scoped = (re, fn) => registry.defineScoped(re, fn, FEATURE);
 

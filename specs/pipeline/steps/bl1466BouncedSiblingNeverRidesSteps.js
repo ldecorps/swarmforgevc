@@ -70,7 +70,6 @@ function recordHandoff(root, ticket, commit) {
   );
 }
 
-
 function bb(expr) {
   const r = spawnSync('bb', ['-e', expr], { encoding: 'utf8' });
   assert.equal(r.status, 0, `bb failed: ${r.stderr}`);

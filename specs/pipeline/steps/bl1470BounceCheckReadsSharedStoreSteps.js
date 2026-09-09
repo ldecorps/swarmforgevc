@@ -34,7 +34,6 @@ process.on('exit', () => {
   }
 });
 
-
 function git(root, ...args) {
   return execFileSync('git', args, { cwd: root, encoding: 'utf8' }).trim();
 }

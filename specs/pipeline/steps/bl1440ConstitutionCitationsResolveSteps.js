@@ -25,7 +25,6 @@ const { findUnresolvedCitations } = require(RESOLVER_JS);
 
 const KNOWN_OUTCOMES = new Set(['refuses', 'passes']);
 
-
 function git(root, ...args) {
   return execFileSync('git', ['-C', root, ...args], { encoding: 'utf8' }).trim();
 }

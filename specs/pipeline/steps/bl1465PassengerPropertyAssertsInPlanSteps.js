@@ -46,7 +46,6 @@ function commitFile(root, rel, body, message) {
   git(root, 'commit', '-q', '-m', message);
 }
 
-
 // The Background: a landing ticket's own work sharing a registry file with
 // an approved, unlanded passenger sibling whose registry line reaches for
 // a handler file EXCLUDED from the replay (the sibling's own path) - the
