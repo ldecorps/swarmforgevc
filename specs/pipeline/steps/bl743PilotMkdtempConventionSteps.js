@@ -90,6 +90,8 @@ function baseDeps(ctx) {
     checkUnreachableStepHandlers: () => ({ checked: true, stepFilesScanned: 0, patternsChecked: 0 }),
     checkMultiBranchParserCoverage: () => ({ checked: true, parsersScanned: 0 }),
     checkPerHatRolePromptEvidence: () => ({ checked: true, verdictsScanned: 0 }),
+    checkOrphanedAuthoredDocs: () => ({ checked: true, docsScanned: 0 }),
+    checkOriginMainLanding: () => ({ checked: true, landingVerified: true }),
     moveTicketToDone: () => {
       ctx.calls.move += 1;
       ctx.yamlMoved = true;

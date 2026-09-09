@@ -11,6 +11,7 @@ const fs = require('node:fs');
 const os = require('node:os');
 const path = require('node:path');
 const { execFileSync, spawnSync } = require('node:child_process');
+const { mkSocketFixtureRoot } = require('./lib/socketFixtureRoot');
 
 const FEATURE = "BL-1465 BL-1375's passenger property asserts its invariant where the landed code now decides it";
 
@@ -45,16 +46,13 @@ function commitFile(root, rel, body, message) {
   git(root, 'commit', '-q', '-m', message);
 }
 
-function mkTmpDir(prefix) {
-  return fs.mkdtempSync(path.join(os.tmpdir(), prefix));
-}
 
 // The Background: a landing ticket's own work sharing a registry file with
 // an approved, unlanded passenger sibling whose registry line reaches for
 // a handler file EXCLUDED from the replay (the sibling's own path) - the
 // shape that actually froze main (BL-1324).
 function buildFixture(ctx) {
-  const root = mkTmpDir('bl1465-fixture-');
+  const root = mkSocketFixtureRoot('bl1465-fixture-');
   git(root, 'init', '-q', '-b', 'main', '.');
   git(root, 'config', 'user.email', 't@t');
   git(root, 'config', 'user.name', 't');

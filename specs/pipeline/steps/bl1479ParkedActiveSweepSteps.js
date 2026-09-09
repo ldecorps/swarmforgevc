@@ -17,6 +17,7 @@ const fs = require('node:fs');
 const os = require('node:os');
 const path = require('node:path');
 const { execFileSync } = require('node:child_process');
+const { mkSocketFixtureRoot } = require('./lib/socketFixtureRoot');
 
 const FEATURE = 'BL-1479 A ticket that cannot advance does not hold an active slot';
 const REPO_ROOT = path.join(__dirname, '..', '..', '..');
@@ -29,11 +30,6 @@ process.on('exit', () => {
   }
 });
 
-function mkTmpDir(prefix) {
-  const root = fs.mkdtempSync(path.join(os.tmpdir(), prefix));
-  fixtureRoots.push(root);
-  return root;
-}
 
 function git(root, ...args) {
   return execFileSync('git', ['-C', root, ...args], { encoding: 'utf8' }).trim();
@@ -103,7 +99,7 @@ function registerSteps(registry) {
   const scoped = (re, fn) => registry.defineScoped(re, fn, FEATURE);
 
   scoped(/^a fixture backlog under a scratch root with an active depth cap of (\d+)$/, (ctx, cap) => {
-    ctx.root = mkTmpDir('bl1479-fixture-');
+    ctx.root = mkSocketFixtureRoot('bl1479-fixture-');
     initRepo(ctx.root);
     ctx.cap = Number(cap);
     ctx.today = '2026-09-07';

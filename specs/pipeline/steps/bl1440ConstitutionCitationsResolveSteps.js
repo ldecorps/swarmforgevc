@@ -12,6 +12,7 @@ const fs = require('node:fs');
 const os = require('node:os');
 const path = require('node:path');
 const { execFileSync, spawnSync } = require('node:child_process');
+const { mkSocketFixtureRoot } = require('./lib/socketFixtureRoot');
 
 const FEATURE = 'BL-1440 Every docs path a constitution article cites resolves on disk';
 
@@ -24,16 +25,13 @@ const { findUnresolvedCitations } = require(RESOLVER_JS);
 
 const KNOWN_OUTCOMES = new Set(['refuses', 'passes']);
 
-function mkTmpDir(prefix) {
-  return fs.mkdtempSync(path.join(os.tmpdir(), prefix));
-}
 
 function git(root, ...args) {
   return execFileSync('git', ['-C', root, ...args], { encoding: 'utf8' }).trim();
 }
 
 function initFixtureRepo() {
-  const root = mkTmpDir('bl1440-fixture-');
+  const root = mkSocketFixtureRoot('bl1440-fixture-');
   git(root, 'init', '-q', '-b', 'main', '.');
   git(root, 'config', 'user.email', 't@t');
   git(root, 'config', 'user.name', 't');
