@@ -166,3 +166,6 @@ source: |
   Hardener note to specifier, priority 00, 2026-09-05T04:15Z: "spec-gap: 17
   step files use mkTmpDir (leaks under acceptance), see BL-1364". Cleaner
   note to hardener on BL-1364 (priority 50) first caught the instance.
+bounce_count: 1
+bounce_history:
+  - { at: 2026-09-09, by: architect, blamed: coder, class: behavior, commit: c2311cf20b, evidence: backlog/evidence/BL-1410-architect-20260909-2.md }
