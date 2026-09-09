@@ -527,3 +527,4 @@ test_bl1275_refusal_evidence_retained.sh	standing
 test_bl1444_art_director_tip_guard.sh	standing
 test_check_test_file_registration.sh	standing
 test_handoffd_startup_notify_fresh_target.sh	standing		
+landed_ticket_autoclose_test_runner.bb	standing		

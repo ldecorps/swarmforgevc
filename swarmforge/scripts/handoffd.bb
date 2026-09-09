@@ -23,6 +23,7 @@
 (load-file (str (fs/path (fs/parent (fs/canonicalize *file*)) "cron_heartbeat_lib.bb")))
 (load-file (str (fs/path (fs/parent (fs/canonicalize *file*)) "ambulance_lib.bb")))
 (load-file (str (fs/path (fs/parent (fs/canonicalize *file*)) "chase_sweep_lib.bb")))
+(load-file (str (fs/path (fs/parent (fs/canonicalize *file*)) "landed_ticket_autoclose_lib.bb")))
 (load-file (str (fs/path (fs/parent (fs/canonicalize *file*)) "mono_router_lib.bb")))
 (load-file (str (fs/path (fs/parent (fs/canonicalize *file*)) "backlog_depth_lib.bb")))
 (load-file (str (fs/path (fs/parent (fs/canonicalize *file*)) "agent_runtime_lib.bb")))
@@ -2347,13 +2348,90 @@
       (log! "landed-but-open-nudge-error" (:id item) (str (:err result))))))
 
 
+;; Hotfix 2026-09-09 (landed auto-close): the daemon closes a landed ticket
+;; itself. Two gaps met on BL-1278: the subject-only detector above never saw
+;; QA's "BL-1278: QA review pass evidence" land (it wants "QA-approved" /
+;; "QA pass inventory"), and even a detected ticket only produced a note to
+;; QA - the active/ → done/ move stayed the coordinator's, and the GLM
+;; coordinator completed QA's git_handoff without ever doing it. The land
+;; record QA writes at land time (.swarmforge/land-approvals/*.jsonl, the
+;; store is_qa_ancestor.sh reads) is now a second landed signal, and the
+;; close runs through close_ticket.sh - i.e. commit_integrity_cli.bb and
+;; ticket_close_guard_lib.bb, the same guarded path the coordinator uses, so
+;; the guard still decides. One attempt per tick, per-ticket cooldown; a
+;; refusal falls through to the legacy QA nudge unchanged.
+
+(defn landed-commit-on-origin-main? [commit]
+  (try
+    (zero? (:exit (daemon-cycle-guard-lib/sh!
+                   ["git" "merge-base" "--is-ancestor" (str commit) "origin/main"]
+                   {:dir (str project-root)})))
+    (catch Exception _ false)))
+
+(defn close-landed-ticket! [item]
+  (let [env (merge (into {} (System/getenv)) {"SWARMFORGE_ROLE" "coordinator"})
+        script (str (fs/path project-root "swarmforge" "scripts" "close_ticket.sh"))
+        res (daemon-cycle-guard-lib/sh! ["bash" script (str project-root) (str (:id item))]
+                                        {:dir (str project-root) :env env})
+        tail (->> (str (:out res) "\n" (:err res))
+                  str/split-lines
+                  (remove str/blank?)
+                  last)]
+    {:ok? (zero? (:exit res)) :detail (str tail)}))
+
+(defn notify-coordinator-auto-closed! [item]
+  (let [draft (write-scratch-draft!
+               (landed-ticket-autoclose-lib/coordinator-draft-lines (:id item) (:approval-commit item)))
+        env (merge (into {} (System/getenv)) {"SWARMFORGE_ROLE" "coordinator"})
+        result (daemon-cycle-guard-lib/sh! ["bb" (swarm-handoff-script) (str draft)]
+                                           {:dir (str project-root) :env env})]
+    (if (zero? (:exit result))
+      (log! "landed-auto-close-notified" (:id item))
+      (log! "landed-auto-close-notify-error" (:id item) (str (:err result))))))
+
+(defn auto-close-landed-tickets!
+  "At most ONE close attempt per tick (a guarded commit runs hooks and can
+   take tens of seconds; the tick must stay inside its stall window).
+   Returns the set of ids closed this tick."
+  [active-ids commits]
+  (let [store-approvals (landed-ticket-autoclose-lib/index-store-approvals
+                         (landed-ticket-autoclose-lib/read-land-approval-rows (str project-root))
+                         active-ids landed-commit-on-origin-main?)
+        approvals (merge (chase-sweep-lib/index-qa-approvals commits) store-approvals)
+        closed-ids (chase-sweep-lib/index-closed-tickets commits)
+        candidates (landed-ticket-autoclose-lib/auto-close-candidates active-ids approvals closed-ids)
+        now-ms (System/currentTimeMillis)
+        attempts (landed-ticket-autoclose-lib/read-attempts (str daemon-dir))
+        due (filter #(landed-ticket-autoclose-lib/attempt-due?
+                      attempts (:id %) now-ms landed-ticket-autoclose-lib/default-cooldown-ms)
+                    candidates)]
+    (when (seq candidates)
+      (log! "landed-auto-close-candidates"
+            (str/join "," (map #(str (:id %) "=" (:approval-commit %)) candidates))))
+    (if-let [item (first due)]
+      (let [r (landed-ticket-autoclose-lib/attempt-auto-close!
+               {:item item :now-ms now-ms :attempts attempts
+                :cooldown-ms landed-ticket-autoclose-lib/default-cooldown-ms
+                :close! close-landed-ticket!
+                :notify! notify-coordinator-auto-closed!
+                :log! (fn [tag & details] (apply log! tag details))
+                :record-attempt! (fn [id] (landed-ticket-autoclose-lib/write-attempt! (str daemon-dir) id now-ms))})]
+        (if (= :closed (:outcome r)) #{(:id r)} #{}))
+      #{})))
+
 (defn landed-but-open-sweep! [roles]
   (try
     (let [git-ref (chase-sweep-lib/resolve-landed-main-ref (str project-root))
           commits (chase-sweep-lib/read-ref-subject-commits (str project-root) git-ref)
           scan-dirs (dispatch-gap-scan-dirs roles)
-          items (chase-sweep-lib/landed-but-open-items
-                 (active-backlog-dir) commits scan-dirs)]
+          active-ids (chase-sweep-lib/read-active-ticket-ids (active-backlog-dir))
+          closed-now (try (auto-close-landed-tickets! active-ids commits)
+                          (catch Exception e
+                            (log! "landed-auto-close-error" (.getMessage e))
+                            #{}))
+          items (remove #(contains? closed-now (:id %))
+                        (chase-sweep-lib/landed-but-open-items
+                         (active-backlog-dir) commits scan-dirs))]
       ;; Always one named boundary detail (action or none) — diagnosable without re-run.
       (log! "landed-but-open" (chase-sweep-lib/landed-but-open-boundary-detail items))
       (doseq [item items]
