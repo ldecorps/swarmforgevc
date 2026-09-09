@@ -59,6 +59,7 @@
 ;; BL-1018: the ONE definition of what a single-role repair may resolve to,
 ;; shared with babysitter_check.bb's own ensure-role-session!.
 (load-file (str (fs/path (fs/parent (fs/canonicalize *file*)) "single_role_repair_lib.bb")))
+(load-file (str (fs/path (fs/parent (fs/canonicalize *file*)) "respawn_bootstrap_lib.bb")))
 (load-file (str (fs/path (fs/parent (fs/canonicalize *file*)) "mono_router_lib.bb")))
 (load-file (str (fs/path (fs/parent (fs/canonicalize *file*)) "remote_control_health_lib.bb")))
 (load-file (str (fs/path (fs/parent (fs/canonicalize *file*)) "agent_process_marker_lib.bb")))
@@ -252,6 +253,26 @@
   ([] (provider-respawn-env-args nil))
   ([role] (provider-respawn-env-lib/provider-respawn-env-args state-dir role)))
 
+(defn- run-respawn-bootstrap!
+  "Hotfix 2026-09-09: give a respawned pane the post-launch bootstrap its
+   first launch got. Fire-and-forget: bootstrap-steps open with a startup
+   sleep while the agent CLI comes up, exactly as swarmforge.sh's own
+   launch-time run-bootstrap is backgrounded. Never throws and never gates
+   the repair - a repaired pane with no bootstrap is still better than no
+   pane, and the argv builder refuses rather than guessing when the composed
+   prompt is missing."
+  [socket role session]
+  (try
+    (when-let [argv (respawn-bootstrap-lib/argv-for-role
+                     {:scripts-dir script-dir
+                      :state-dir (str state-dir)
+                      :socket socket
+                      :session session
+                      :agent (role-agent-token role)
+                      :role role})]
+      (process/process argv {:out :discard :err :discard}))
+    (catch Exception _ nil)))
+
 ;; BL-1018: WHAT to run comes from single-role-repair-lib (pure, one
 ;; definition); this only RUNS it. `session-present?` is the observed state,
 ;; read once by the caller - the resolver never looks at tmux itself.
@@ -271,7 +292,17 @@
           :session-present? session-present?})]
     (if (not= :ok status)
       {:exit 1 :err (str "single-role repair refused: " (name status))}
-      (reduce (fn [_ cmd] (apply process/sh {:continue true} cmd)) nil commands))))
+      (let [result (reduce (fn [_ cmd] (apply process/sh {:continue true} cmd)) nil commands)]
+        ;; Hotfix 2026-09-09: a repaired pane is a NEW agent process, so it
+        ;; needs the same post-launch bootstrap launch_role gives a fresh
+        ;; one. Without it an aider seat boots with an empty chat - no role,
+        ;; no constitution - and answers wakes with "I have no shell, git,
+        ;; or filesystem tools in this session". Fire-and-forget (the
+        ;; bootstrap sleeps for the CLI to come up, exactly as swarmforge.sh
+        ;; backgrounds its own run-bootstrap), and a no-op by construction
+        ;; for :embedded providers, whose bootstrap-steps are empty.
+        (run-respawn-bootstrap! socket role session)
+        result))))
 
 (defn respawn-role! [socket role session]
   (run-single-role-repair! socket role session true))
