@@ -27,7 +27,7 @@ function findFeatureFile(ticket) {
 // Scenario 01: verify migrated features clean up their fixture roots
 function registerSteps(registry) {
   registry.define(
-    /^the feature for "([^"]+)" runs under the acceptance runner with fixture-root creation traced$/,
+    /^the feature for "([^\x22]+)" runs under the acceptance runner with fixture-root creation traced$/,
     (ctx, ticket) => {
       const featureFile = findFeatureFile(ticket);
 
