@@ -286,3 +286,10 @@
   stamp_ticket: null
   human_decision: null
   decided_at: null
+- commit: d9a4d0b888
+  subject: "Hotfix: the daemon closes a QA-landed ticket itself (landed auto-close), reading QA's land record."
+  detected_at: 2026-09-09
+  state: pending
+  stamp_ticket: null
+  human_decision: null
+  decided_at: null
