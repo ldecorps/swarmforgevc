@@ -15,6 +15,7 @@ const fs = require('node:fs');
 const os = require('node:os');
 const path = require('node:path');
 const { execFileSync, spawnSync } = require('node:child_process');
+const { mkSocketFixtureRoot } = require('./lib/socketFixtureRoot');
 
 const FEATURE = "BL-1481 A shared path blocks a land only when the sibling's lines are not yet on main";
 
@@ -33,12 +34,6 @@ process.on('exit', () => {
     fs.rmSync(root, { recursive: true, force: true });
   }
 });
-
-function mkTmpDir(prefix) {
-  const root = fs.mkdtempSync(path.join(os.tmpdir(), prefix));
-  fixtureRoots.push(root);
-  return root;
-}
 
 function git(root, ...args) {
   return execFileSync('git', args, { cwd: root, encoding: 'utf8' }).trim();
@@ -107,7 +102,7 @@ function registerSteps(registry) {
   scoped(
     /^a fixture repository under a scratch root with its own origin, a lander ticket and a bounced sibling that both touched one path$/,
     (ctx) => {
-      const root = mkTmpDir('bl1481-fixture-');
+      const root = mkSocketFixtureRoot('bl1481-fixture-');
       git(root, 'init', '-q', '-b', 'main', '.');
       git(root, 'config', 'user.email', 't@t');
       git(root, 'config', 'user.name', 't');

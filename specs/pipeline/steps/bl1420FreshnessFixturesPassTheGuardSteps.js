@@ -20,6 +20,7 @@ const os = require('node:os');
 const path = require('node:path');
 const { execFileSync, spawnSync } = require('node:child_process');
 const { writeGuardSatisfyingRows } = require('../../../extension/test/helpers/freshnessFixture');
+const { mkSocketFixtureRoot } = require('./lib/socketFixtureRoot');
 
 const FEATURE = 'BL-1420 Every freshness-check fixture passes the fail-closed registry guard, and a refused checker is a red run';
 
@@ -46,10 +47,6 @@ const KNOWN_SUPERVISOR_COUNTS = new Map([
   ['the BL-1012 handler', 3],
   ['the bl1011 property runner', 2],
 ]);
-
-function mkTmpDir(prefix) {
-  return fs.mkdtempSync(path.join(os.tmpdir(), prefix));
-}
 
 function runAcceptance(featureGlob) {
   const feature = fs.readdirSync(path.join(REPO_ROOT, 'specs', 'features'))
@@ -100,7 +97,7 @@ function registerSteps(registry) {
 
   // ── Scenario 03 ──────────────────────────────────────────────────────
   scoped(/^a bl1011 fixture whose registry names a daemon its conf lacks$/, (ctx) => {
-    ctx.root = mkTmpDir('bl1420-badreg-');
+    ctx.root = mkSocketFixtureRoot('bl1420-badreg-');
     fs.writeFileSync(path.join(ctx.root, 'freshness.conf'),
       'handoffd|120|.swarmforge/daemon/handoffd.log|.swarmforge/daemon/handoffd.pid|start_handoff_daemon.sh\n');
     writeGuardSatisfyingRows({
@@ -147,14 +144,14 @@ function registerSteps(registry) {
 
   // ── Scenario 04 (Outline) ─────────────────────────────────────────────
   scoped(/^a scratch scripts directory holding the guard, the checker and (\d+) supervisor scripts$/, (ctx, count) => {
-    ctx.scratchScripts = mkTmpDir('bl1420-scratch-scripts-');
+    ctx.scratchScripts = mkSocketFixtureRoot('bl1420-scratch-scripts-');
     fs.copyFileSync(GUARD_SH, path.join(ctx.scratchScripts, 'daemon_log_freshness_registry_guard.sh'));
     fs.copyFileSync(CHECKER_SH, path.join(ctx.scratchScripts, 'daemon_log_freshness_check.sh'));
     ctx.supervisorCount = Number(count);
     for (let i = 0; i < ctx.supervisorCount; i += 1) {
       fs.writeFileSync(path.join(ctx.scratchScripts, `bl1420fake${i}_supervisor.bb`), ';; fake\n');
     }
-    ctx.fixtureRoot = mkTmpDir('bl1420-scratch-fixture-');
+    ctx.fixtureRoot = mkSocketFixtureRoot('bl1420-scratch-fixture-');
     // The row under test - present in every fixture's conf, distinct from
     // the injected supervisor scripts, so "supervisors rows plus the row
     // under test" is checkable unambiguously.
