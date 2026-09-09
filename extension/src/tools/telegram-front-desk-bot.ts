@@ -3095,6 +3095,9 @@ export function toFoldersSnapshot(targetPath: string): BacklogFoldersSnapshot {
     items.map((item) => ({
       id: item.id,
       title: item.title,
+      // BL-1278: description from ticket YAML (BL-117) — the problem statement,
+      // preferred over notes: for the "What it solves" line.
+      description: item.description,
       notes: item.notes,
       firstAcceptanceStep: item.firstAcceptanceStep,
       approvalContext: item.approvalContext,

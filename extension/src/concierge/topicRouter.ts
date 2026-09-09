@@ -77,12 +77,15 @@ function firstParagraph(text: string): string {
 // shape taskStartedText already had, plus one more optional field -
 // carrying that as two near-duplicate function bodies would have DRY'd
 // worse with every future field either one grows.
+// BL-1278: description and notes both get firstParagraph treatment - the
+// problem statement (description) or mint provenance (notes) can both be
+// multi-paragraph, and the card only shows the opening.
 function buildSummaryBody(event: SwarmEvent, leadingLine: string, fields: Array<{ label: string; field: string }>): string {
   const lines = [leadingLine];
   for (const { label, field } of fields) {
     const value = stringPayloadField(event, field);
     if (value) {
-      const text = field === 'notes' ? firstParagraph(value) : value;
+      const text = field === 'notes' || field === 'description' ? firstParagraph(value) : value;
       lines.push(`${label}: ${truncate(text, TASK_STARTED_FIELD_MAX_LENGTH)}`);
     }
   }
@@ -95,13 +98,24 @@ function buildSummaryBody(event: SwarmEvent, leadingLine: string, fields: Array<
 // within one tick, but never a crash) - the {} case falls back to the
 // pre-BL-322 bare "TaskStarted: BL-XXX" line, the ONE shape this function
 // can compose with no real data at all.
+// BL-1278: "What it solves" now prefers description (the problem statement)
+// over notes (mint provenance), with notes as the fallback for tickets
+// predating the description field or carrying no description.
 function taskStartedText(event: SwarmEvent): string {
   const title = stringPayloadField(event, 'title');
   if (!title) {
     return `${event.type}: ${event.backlogId}`;
   }
-  return buildSummaryBody(event, `What it is: ${title}`, [
-    { label: 'What it solves', field: 'notes' },
+  // BL-1278: resolve the problem statement - prefer description, fallback to notes
+  const description = stringPayloadField(event, 'description');
+  const notes = stringPayloadField(event, 'notes');
+  const problemStatement = description ?? notes;
+  // Build a modified event payload with the resolved problemStatement
+  const resolvedEvent = problemStatement !== undefined
+    ? { ...event, payload: { ...event.payload, description: problemStatement } }
+    : event;
+  return buildSummaryBody(resolvedEvent, `What it is: ${title}`, [
+    { label: 'What it solves', field: 'description' },
     { label: 'How it works', field: 'firstAcceptanceStep' },
   ]);
 }
@@ -169,6 +183,9 @@ function frozenApprovalAskLine(id: string): string {
 // locator substring always survive intact, satisfying
 // approval-ask-content-04's truncation case without also breaking -02's
 // byte-identical requirement.
+// BL-1278: "What it solves" now prefers description (the problem statement)
+// over notes (mint provenance), with notes as the fallback for tickets
+// predating the description field or carrying no description.
 function approvalRequestedText(event: SwarmEvent): string {
   const id = event.backlogId ?? 'unknown';
   const frozen = frozenApprovalAskLine(id);
@@ -176,8 +193,16 @@ function approvalRequestedText(event: SwarmEvent): string {
   if (!title) {
     return frozen;
   }
-  const body = buildSummaryBody(event, `${id} — ${title}`, [
-    { label: 'What it solves', field: 'notes' },
+  // BL-1278: resolve the problem statement - prefer description, fallback to notes
+  const description = stringPayloadField(event, 'description');
+  const notes = stringPayloadField(event, 'notes');
+  const problemStatement = description ?? notes;
+  // Build a modified event payload with the resolved problemStatement
+  const resolvedEvent = problemStatement !== undefined
+    ? { ...event, payload: { ...event.payload, description: problemStatement } }
+    : event;
+  const body = buildSummaryBody(resolvedEvent, `${id} — ${title}`, [
+    { label: 'What it solves', field: 'description' },
     { label: 'First acceptance signal', field: 'firstAcceptanceStep' },
     { label: 'Approval context', field: 'approvalContext' },
   ]);
