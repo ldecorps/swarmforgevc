@@ -1510,6 +1510,28 @@ extra_cli_targets_qwen_cloud() {
   return 1
 }
 
+# 2026-09-09: same shape as extra_cli_targets_qwen_cloud, for a claude-agent
+# seat pointed at b.ai's Anthropic-compat surface via a bare --model glm*
+# (b.ai is the only glm* source wired into this repo - see
+# bai_launch_guard_lib.sh). A non-glm --model stays undetected, exactly the
+# qwen-cloud precedent.
+extra_cli_targets_bai_cloud() {
+  local extra_cli="$1"
+  local -a parts
+  local i=1
+  parts=(${=extra_cli})
+  while (( i <= ${#parts} )); do
+    if [[ "${parts[i]}" == "--model" && "${parts[i+1]:-}" == glm* ]]; then
+      return 0
+    fi
+    if [[ "${parts[i]}" == --model=glm* ]]; then
+      return 0
+    fi
+    (( i++ ))
+  done
+  return 1
+}
+
 claude_settings_and_flags_from_extra_cli() {
   local extra_cli="$1"
   local -a parts cli_flags
@@ -1937,6 +1959,7 @@ RESUMECHECK
   local perplexity_guard=""
   local qwen_guard=""
   local qwen_lib_source=""
+  local bai_lib_source=""
   local bai_guard=""
   local local_model_guard=""
   # Re-apply CEREBRAS→OPENAI map inside the launch script. Panes often source
@@ -1964,6 +1987,11 @@ RESUMECHECK
   else
     qwen_guard="${qwen_lib_source}"$'\nqwen_guard_map_if_flagged\n'
   fi
+  # 2026-09-09: same shared-source posture as qwen_lib_source, for the new
+  # b.ai Anthropic-compat guard (see bai_launch_guard_lib.sh / the claude-agent
+  # branch below). Declared here (not inline in the branch) so it is sourced
+  # exactly once per launch script, same as qwen_lib_source.
+  bai_lib_source="source '${SCRIPT_DIR}/bai_launch_guard_lib.sh'"
   # BL-1495: b.ai gateway (tencentcloud2/glm-5.3-flash) — same Perplexity-style
   # host-sniff posture: if this role's pack CLI targets api.b.ai, ALWAYS remap
   # (never depend solely on SWARMFORGE_USE_BAI in the launching shell), else
@@ -2010,6 +2038,15 @@ export OPENAI_BASE_URL='${lm_url}'
       # Claude Code assume a tiny window and auto-compact ~50k; Token Plan
       # qwen3.* is officially 1M — declare it so one ticket can breathe.
       billing_guard="${qwen_lib_source}"$'\nqwen_guard_map_anthropic_compat || exit 1\nexport CLAUDE_CODE_MAX_CONTEXT_TOKENS="${CLAUDE_CODE_MAX_CONTEXT_TOKENS:-1000000}"\n'
+    elif [[ "${SWARMFORGE_USE_BAI:-}" == "1" ]] || extra_cli_targets_bai_cloud "$extra_cli"; then
+      # 2026-09-09: b.ai Anthropic-compat (Claude Code → api.b.ai/v1, GLM).
+      # Same host-sniff posture as the qwen-cloud branch above (a mixed pack
+      # can put GLM on this seat via a bare --model glm* without
+      # SWARMFORGE_USE_BAI=1 remapping every other Anthropic seat). Key
+      # arrives via pane -e as B_AI_API_KEY (BL-130); never written here.
+      # No CLAUDE_CODE_MAX_CONTEXT_TOKENS override - see bai_launch_guard_lib.sh
+      # for why (glm-5.3-flash's real context window is unconfirmed).
+      billing_guard="${bai_lib_source}"$'\nbai_guard_map_anthropic_compat || exit 1\n'
     elif role_uses_openrouter "$role"; then
       # OpenRouter-backed claude role: do NOT unset the auth token (that unset
       # is what forces subscription auth for every other claude role). Point the
