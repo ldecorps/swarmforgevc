@@ -2046,12 +2046,24 @@ export OPENAI_BASE_URL='${lm_url}'
       # Claude Code assume a tiny window and auto-compact ~50k; Token Plan
       # qwen3.* is officially 1M — declare it so one ticket can breathe.
       billing_guard="${qwen_lib_source}"$'\nqwen_guard_map_anthropic_compat || exit 1\nexport CLAUDE_CODE_MAX_CONTEXT_TOKENS="${CLAUDE_CODE_MAX_CONTEXT_TOKENS:-1000000}"\n'
-    elif [[ "${SWARMFORGE_USE_BAI:-}" == "1" ]] || extra_cli_targets_bai_cloud "$extra_cli"; then
+    elif extra_cli_targets_bai_cloud "$extra_cli"; then
       # 2026-09-09: b.ai Anthropic-compat (Claude Code → api.b.ai/v1, GLM).
-      # Same host-sniff posture as the qwen-cloud branch above (a mixed pack
-      # can put GLM on this seat via a bare --model glm* without
-      # SWARMFORGE_USE_BAI=1 remapping every other Anthropic seat). Key
-      # arrives via pane -e as B_AI_API_KEY (BL-130); never written here.
+      # HOST-SNIFF ONLY, deliberately no SWARMFORGE_USE_BAI=1 disjunct here
+      # (unlike the qwen-cloud branch above with SWARMFORGE_USE_QWEN=1):
+      # SWARMFORGE_USE_BAI is ALREADY the flag the aider/OpenAI-compat b.ai
+      # path uses, required in the launching shell for every worker seat in
+      # a pack like bob-multi-provider-mono-router - a bare disjunct on it
+      # here would hijack ANY claude-agent seat (e.g. coordinator on
+      # claude-sonnet-5) the moment that pack launches, regardless of that
+      # seat's own --model. Caught live 2026-09-09: coordinator's
+      # claude-sonnet-5 process picked up ANTHROPIC_BASE_URL=api.b.ai purely
+      # because the launching shell had SWARMFORGE_USE_BAI=1 set for its
+      # aider siblings. Host-sniffing --model glm* is both necessary and
+      # sufficient - a mixed pack can put GLM on this seat via a bare
+      # --model glm* without remapping every other Anthropic seat, and no
+      # global flag is needed since b.ai's own OpenAI-compat flag already
+      # exists and must not double as this path's trigger too.
+      # Key arrives via pane -e as B_AI_API_KEY (BL-130); never written here.
       # No CLAUDE_CODE_MAX_CONTEXT_TOKENS override - see bai_launch_guard_lib.sh
       # for why (glm-5.3-flash's real context window is unconfirmed).
       billing_guard="${bai_lib_source}"$'\nbai_guard_map_anthropic_compat || exit 1\n'
