@@ -51,28 +51,30 @@ function registerSteps(registry) {
 
       // Run the acceptance runner with the preload
       try {
-        execFileSync(RUN_ACCEPTANCE, [featureFile], {
-          env: { ...process.env, NODE_OPTIONS: `--require ${preloadFile}` },
-          stdio: 'inherit'
-        });
-        ctx.acceptancePassed = true;
-      } catch (err) {
-        ctx.acceptancePassed = false;
-        ctx.acceptanceError = err.message;
-      }
+        try {
+          execFileSync(RUN_ACCEPTANCE, [featureFile], {
+            env: { ...process.env, NODE_OPTIONS: `--require ${preloadFile}` },
+            stdio: 'inherit'
+          });
+          ctx.acceptancePassed = true;
+        } catch (err) {
+          ctx.acceptancePassed = false;
+          ctx.acceptanceError = err.message;
+        }
 
-      // Read the traced roots
-      const tracedRootsFile = '/tmp/bl1410-traced-roots.json';
-      if (fs.existsSync(tracedRootsFile)) {
-        ctx.createdRoots = JSON.parse(fs.readFileSync(tracedRootsFile, 'utf8'));
-        fs.unlinkSync(tracedRootsFile);
-      } else {
-        ctx.createdRoots = [];
-      }
-
-      // Clean up preload
-      if (fs.existsSync(preloadFile)) {
-        fs.unlinkSync(preloadFile);
+        // Read the traced roots
+        const tracedRootsFile = '/tmp/bl1410-traced-roots.json';
+        if (fs.existsSync(tracedRootsFile)) {
+          ctx.createdRoots = JSON.parse(fs.readFileSync(tracedRootsFile, 'utf8'));
+          fs.unlinkSync(tracedRootsFile);
+        } else {
+          ctx.createdRoots = [];
+        }
+      } finally {
+        // Clean up preload (always runs, even on exception)
+        if (fs.existsSync(preloadFile)) {
+          fs.unlinkSync(preloadFile);
+        }
       }
     }
   );
