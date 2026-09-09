@@ -11,6 +11,7 @@ const fs = require('node:fs');
 const os = require('node:os');
 const path = require('node:path');
 const { execFileSync, spawnSync } = require('node:child_process');
+const { mkSocketFixtureRoot } = require('./lib/socketFixtureRoot');
 
 const FEATURE = "BL-1466 A bounced sibling never rides another ticket's land until it is re-fixed";
 
@@ -69,10 +70,6 @@ function recordHandoff(root, ticket, commit) {
   );
 }
 
-function mkTmpDir(prefix) {
-  return fs.mkdtempSync(path.join(os.tmpdir(), prefix));
-}
-
 function bb(expr) {
   const r = spawnSync('bb', ['-e', expr], { encoding: 'utf8' });
   assert.equal(r.status, 0, `bb failed: ${r.stderr}`);
@@ -107,7 +104,7 @@ function registerSteps(registry) {
   scoped(
     /^a fixture repository with an origin, a main branch, a landing ticket, and an approved sibling ticket sharing a path with it$/,
     (ctx) => {
-      const root = mkTmpDir('bl1466-fixture-');
+      const root = mkSocketFixtureRoot('bl1466-fixture-');
       git(root, 'init', '-q', '-b', 'main', '.');
       git(root, 'config', 'user.email', 't@t');
       git(root, 'config', 'user.name', 't');

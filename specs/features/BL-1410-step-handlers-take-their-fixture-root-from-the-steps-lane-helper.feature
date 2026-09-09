@@ -1,3 +1,8 @@
+# mutation-stamp: sha256=80381189fb8e9899b8679a83ae5d1111618015d320e55ec08526aa81627ee807
+# acceptance-mutation-manifest-begin
+# {"version":1,"tested_at":"2026-09-09T01:37:36.076027825Z","feature_name":"BL-1410 Acceptance step handlers take their fixture roots from the steps-lane helper","feature_path":"/home/carillon/swarmforgevc/.worktrees/hardender/specs/features/BL-1410-step-handlers-take-their-fixture-root-from-the-steps-lane-helper.feature","background_hash":"74234e98afe7498fb5daf1f36ac2d78acc339464f950703b8c019892f982b90b","implementation_hash":"unknown","scenarios":[{"index":0,"name":"a migrated feature's acceptance run removes every fixture root it created","scenario_hash":"90fae3777179f1c5c6fb95eeb38c44732419bc7bbf38c24d0f944e9ecaa1c25b","mutation_count":4,"result":{"Total":4,"Killed":4,"Survived":0,"Errors":0},"tested_at":"2026-09-09T01:37:36.076027825Z"}]}
+# acceptance-mutation-manifest-end
+
 Feature: BL-1410 Acceptance step handlers take their fixture roots from the steps-lane helper
 
   Seventeen step handlers reference mkTmpDir, extension/test's fixture helper.

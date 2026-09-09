@@ -16,7 +16,6 @@ const { formatSampleResult, main } = require('../../../extension/out/tools/sampl
 const { installInProcessTmux } = require('../../../extension/test/helpers/fakeTmux');
 const { spawnFakeAgentTree } = require('../../../extension/test/helpers/fakeAgentTree');
 const { copySeededRepoInto } = require('../../../extension/test/helpers/sharedRepoFixture');
-const { mkTmpDir } = require('../../../extension/test/helpers/tmpDir');
 const { mkSocketFixtureRoot } = require('./lib/socketFixtureRoot');
 
 const FEATURE = 'BL-1112 standing unit reds in sampleResourcesCli and strykerSandboxSiblingsLib';
@@ -35,7 +34,7 @@ function git(cwd, args) {
 }
 
 function initSampleFixture() {
-  const root = fs.realpathSync(mkTmpDir('bl1112-sample-'));
+  const root = fs.realpathSync(mkSocketFixtureRoot('bl1112-sample-'));
   copySeededRepoInto(root);
   fs.mkdirSync(path.join(root, 'backlog', 'active'), { recursive: true });
   git(root, ['add', '-A']);

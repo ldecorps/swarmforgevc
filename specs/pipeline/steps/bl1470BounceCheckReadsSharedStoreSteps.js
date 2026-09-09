@@ -16,6 +16,7 @@ const fs = require('node:fs');
 const os = require('node:os');
 const path = require('node:path');
 const { execFileSync, spawnSync } = require('node:child_process');
+const { mkSocketFixtureRoot } = require('./lib/socketFixtureRoot');
 
 const FEATURE = "BL-1470 The land step's bounce check reads the store where bounces are written, from any worktree";
 
@@ -32,12 +33,6 @@ process.on('exit', () => {
     fs.rmSync(root, { recursive: true, force: true });
   }
 });
-
-function mkTmpDir(prefix) {
-  const root = fs.mkdtempSync(path.join(os.tmpdir(), prefix));
-  fixtureRoots.push(root);
-  return root;
-}
 
 function git(root, ...args) {
   return execFileSync('git', args, { cwd: root, encoding: 'utf8' }).trim();
@@ -97,7 +92,7 @@ function registerSteps(registry) {
   scoped(
     /^a fixture repository with an origin, a linked role worktree of that repository, a landing ticket, and an approved sibling ticket sharing a path$/,
     (ctx) => {
-      const root = mkTmpDir('bl1470-fixture-');
+      const root = mkSocketFixtureRoot('bl1470-fixture-');
       git(root, 'init', '-q', '-b', 'main', '.');
       git(root, 'config', 'user.email', 't@t');
       git(root, 'config', 'user.name', 't');

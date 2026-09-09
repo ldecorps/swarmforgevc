@@ -9,6 +9,7 @@ const path = require('node:path');
 const fs = require('node:fs');
 const os = require('node:os');
 const { execFileSync } = require('node:child_process');
+const { mkSocketFixtureRoot } = require('./lib/socketFixtureRoot');
 
 const REPO_ROOT = path.join(__dirname, '..', '..', '..');
 const EXT_OUT = path.join(REPO_ROOT, 'extension', 'out');
@@ -39,10 +40,6 @@ const HANDOFFD = path.join(REPO_ROOT, 'swarmforge', 'scripts', 'handoffd.bb');
 
 const BRIDGE_TOKEN = 'bl565-token';
 const FEATURE = 'Cost ledger captures Max-billed role tokens and synthetic list-price dollars';
-
-function mkTmpDir(prefix) {
-  return fs.mkdtempSync(path.join(os.tmpdir(), prefix));
-}
 
 function llmOrigin(overrides = {}) {
   return {
@@ -226,7 +223,7 @@ function registerSteps(registry) {
   // ── rollups-separate-columns-05 ─────────────────────────────────────────────
   registry.defineScoped(/^priced billed records and Max-billed records with syntheticCostUsd in the same window$/, (ctx) => {
     ctx.nowMs = Date.parse('2026-07-22T18:00:00Z');
-    ctx.rollupRoot = mkTmpDir('bl565-rollup-');
+    ctx.rollupRoot = mkSocketFixtureRoot('bl565-rollup-');
     ctx.records = [
       llmInvocation({ at: '2026-07-22T17:00:00Z', costUsd: null, origin: llmOrigin({ role: 'coder' }) }),
       llmInvocation({
@@ -409,7 +406,7 @@ function registerSteps(registry) {
   }, FEATURE);
 
   registry.defineScoped(/^the daily cost health sidecar is emitted$/, (ctx) => {
-    ctx.sidecarRoot = mkTmpDir('bl565-sidecar-');
+    ctx.sidecarRoot = mkSocketFixtureRoot('bl565-sidecar-');
     execFileSync('git', ['init', '-q'], { cwd: ctx.sidecarRoot });
     execFileSync('git', ['config', 'user.email', 't@t'], { cwd: ctx.sidecarRoot });
     execFileSync('git', ['config', 'user.name', 't'], { cwd: ctx.sidecarRoot });

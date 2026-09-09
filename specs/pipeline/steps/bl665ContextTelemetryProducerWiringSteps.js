@@ -6,7 +6,7 @@ const fs = require('node:fs');
 const os = require('node:os');
 const path = require('node:path');
 const { execFileSync } = require('node:child_process');
-const { mkTmpDir } = require('../../../extension/test/helpers/tmpDir');
+const { mkSocketFixtureRoot } = require('./lib/socketFixtureRoot');
 const { startBridge } = require('../../../extension/out/bridge/bridgeServer');
 const { runContextTelemetryProducer } = require('../../../extension/out/metrics/contextTelemetryProducer');
 const { projectSlug } = require('../../../extension/out/metrics/transcriptUsage');
@@ -26,7 +26,7 @@ function slugFor(worktreePath) {
 }
 
 function ensureCtx(ctx) {
-  ctx.fixtureRoot = ctx.fixtureRoot || mkTmpDir('aps-bl665-');
+  ctx.fixtureRoot = ctx.fixtureRoot || mkSocketFixtureRoot('aps-bl665-');
   ctx.worktreePath = path.join(ctx.fixtureRoot, '.worktrees', 'coder');
   ctx.claudeProjectsDir = ctx.claudeProjectsDir || fs.mkdtempSync(path.join(os.tmpdir(), 'aps-bl665-projects-'));
   fs.mkdirSync(ctx.worktreePath, { recursive: true });

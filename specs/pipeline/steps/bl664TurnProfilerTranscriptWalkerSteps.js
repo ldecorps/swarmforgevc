@@ -3,7 +3,7 @@
 // BL-664: deterministic transcript walker — interval taxonomy and turnProfile.
 const fs = require('node:fs');
 const path = require('node:path');
-const { mkTmpDir } = require('../../../extension/test/helpers/tmpDir');
+const { mkSocketFixtureRoot } = require('./lib/socketFixtureRoot');
 const {
   profileIntervalKind,
   walkTranscriptFiles,
@@ -19,7 +19,7 @@ function scoped(registry, pattern, handler) {
 }
 
 function ensureCtx(ctx) {
-  ctx.fixtureRoot = ctx.fixtureRoot || mkTmpDir('aps-bl664-');
+  ctx.fixtureRoot = ctx.fixtureRoot || mkSocketFixtureRoot('aps-bl664-');
   ctx.transcriptDir = path.join(ctx.fixtureRoot, 'transcripts');
   fs.mkdirSync(ctx.transcriptDir, { recursive: true });
   return ctx;

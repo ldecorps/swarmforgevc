@@ -12,7 +12,7 @@ const fs = require('node:fs');
 const path = require('node:path');
 
 const EXT_DIR = path.join(__dirname, '..', '..', '..', 'extension');
-const { mkTmpDir } = require(path.join(EXT_DIR, 'test', 'helpers', 'tmpDir'));
+const { mkSocketFixtureRoot } = require('./lib/socketFixtureRoot');
 const { ensureBacklogTopic } = require(path.join(EXT_DIR, 'out', 'tools', 'telegram-front-desk-bot'));
 
 const OTHER_STANDING_TOPICS = {
@@ -53,7 +53,7 @@ function registerSteps(registry) {
   // When, needs to observe.
   registry.define(/^the front desk ensures its standing topics at boot$/, async (ctx) => {
     if (!ctx.root) {
-      ctx.root = mkTmpDir('sfvc-bl492-');
+      ctx.root = mkSocketFixtureRoot('sfvc-bl492-');
       ctx.calls = [];
       return;
     }

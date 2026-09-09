@@ -13,6 +13,7 @@ const fs = require('node:fs');
 const os = require('node:os');
 const path = require('node:path');
 const { execFileSync } = require('node:child_process');
+const { mkSocketFixtureRoot } = require('./lib/socketFixtureRoot');
 
 const FEATURE = 'BL-1415 The dropped-parcel clock starts when the recipient acts on a dispatch, and the router acts on the same verdict';
 
@@ -86,10 +87,6 @@ function runDispatchTrailCli(root, ticketId) {
   return execFileSync('bb', [DISPATCH_CLI, root, 'dispatched', ticketId], { encoding: 'utf8' }).trim();
 }
 
-function mkTmpDir(prefix) {
-  return fs.mkdtempSync(path.join(os.tmpdir(), prefix));
-}
-
 function initFixture(root) {
   fs.mkdirSync(root, { recursive: true });
   git(root, 'init', '-q', '-b', 'main', '.');
@@ -149,7 +146,7 @@ function registerSteps(registry) {
   const scoped = (re, fn) => registry.defineScoped(re, fn, FEATURE);
 
   scoped(/^a fixture mailbox tree for coordinator and coder with an active ticket BL-9001 and a fixture clock$/, (ctx) => {
-    ctx.root = mkTmpDir('bl1415-fixture-');
+    ctx.root = mkSocketFixtureRoot('bl1415-fixture-');
     initFixture(ctx.root);
   });
 

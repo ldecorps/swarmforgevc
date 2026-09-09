@@ -11,7 +11,7 @@ const {
   resolveFeatureFilePath,
   assessPilotMkdtempConvention,
 } = require(path.join(EXT_DIR, 'out', 'tools', 'pilotAcceptanceGate'));
-const { mkTmpDir } = require(path.join(EXT_DIR, 'test', 'helpers', 'tmpDir'));
+const { mkSocketFixtureRoot } = require('./lib/socketFixtureRoot');
 
 const HARDENDER = path.join(REPO_ROOT, 'swarmforge', 'roles', 'hardender.prompt');
 
@@ -33,7 +33,7 @@ function ensureMkdtempGuardTree(ctx) {
 function ensureCtx(ctx) {
   ctx.ticketId = ctx.ticketId || 'BL-743-FIXTURE';
   ctx.calls = ctx.calls || { move: 0, receipt: 0 };
-  ctx.repoRootFixture = ctx.repoRootFixture || mkTmpDir('aps-bl743-');
+  ctx.repoRootFixture = ctx.repoRootFixture || mkSocketFixtureRoot('aps-bl743-');
   ensureMkdtempGuardTree(ctx);
   ctx.acceptanceDeclaration =
     ctx.acceptanceDeclaration || 'specs/features/bl743-fixture.feature';
@@ -90,6 +90,8 @@ function baseDeps(ctx) {
     checkUnreachableStepHandlers: () => ({ checked: true, stepFilesScanned: 0, patternsChecked: 0 }),
     checkMultiBranchParserCoverage: () => ({ checked: true, parsersScanned: 0 }),
     checkPerHatRolePromptEvidence: () => ({ checked: true, verdictsScanned: 0 }),
+    checkOrphanedAuthoredDocs: () => ({ checked: true, docsScanned: 0 }),
+    checkOriginMainLanding: () => ({ checked: true, landingVerified: true }),
     moveTicketToDone: () => {
       ctx.calls.move += 1;
       ctx.yamlMoved = true;
