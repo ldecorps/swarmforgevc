@@ -1,0 +1,185 @@
+expedite-with-progress: telegram notifier pid=21202
+expedite-with-progress: preflight compile + scoped vitest
+expedite-notify watching /home/carillon/swarmforgevc/.swarmforge/expedite/BL-1371/progress.json
+expedite-notify [BL-1371] • done — failed
+ticket=failed restart=held
+
+> swarmforge-vc@0.1.0 compile
+> tsc -p ./
+
+
+> swarmforge-vc@0.1.0 postcompile
+> node scripts/stampBuildSha.js
+
+
+ RUN  v3.2.6 /home/carillon/swarmforgevc/extension
+
+ ✓ test/letsTalkLocalAudio.test.js (25 tests) 106ms
+ ✓ test/letsTalkAudio.test.js (32 tests) 68ms
+ ✓ test/telegramCursorBridgeCore.test.js (130 tests) 55ms
+stderr | test/letsTalkBridge.test.js > BL-718 mirror: exhausted send failure surfaces operator event
+Bubble talk mirror failed (topic 91, chunk 1/1): Telegram API error: 400 bad request
+
+ ✓ test/letsTalkBridge.test.js (44 tests) 156ms
+ ✓ test/cursorBridgeTelegramHtml.test.js (59 tests) 24ms
+ ✓ test/letsTalkAudioPreference.test.js (22 tests) 27ms
+stdout | test/telegramCursorBridgeCli.test.js > telegram-cursor-bridge --help exits 0 without Telegram env and without starting the app
+Usage: node telegram-cursor-bridge.js <repo-root>
+Telegram ↔ Cursor SDK remote control. Prefer start_cursor_bridge.sh.
+Shared TELEGRAM_BOT_TOKEN with front desk: drains inbound queue (no getUpdates).
+
+
+stdout | test/telegramCursorBridgeCli.test.js > telegram-cursor-bridge -h exits 0 without starting the app
+Usage: node telegram-cursor-bridge.js <repo-root>
+Telegram ↔ Cursor SDK remote control. Prefer start_cursor_bridge.sh.
+Shared TELEGRAM_BOT_TOKEN with front desk: drains inbound queue (no getUpdates).
+
+
+ ✓ test/telegramCursorBridgeRedeploy.test.js (10 tests) 22ms
+ ✓ test/letsTalkRoutes.test.js (32 tests) 39ms
+ ✓ test/letsTalkUiBundle.test.js (18 tests) 23ms
+ ✓ test/startBridgeHeadlessCli.test.js (13 tests) 282ms
+ ✓ test/letsTalkCore.test.js (26 tests) 10ms
+ ✓ test/letsTalkAudioEngineRoutes.test.js (11 tests) 9ms
+ ✓ test/telegramCursorBridgePilot.test.js (21 tests) 10ms
+ ✓ test/telegramCursorBridgeLiveness.test.js (22 tests) 9ms
+ ✓ test/telegramCursorBridgeExpedite.test.js (7 tests) 8ms
+ ✓ test/cursorBridgeRunLog.test.js (18 tests) 7ms
+ ✓ test/bridgeAuth.test.js (16 tests) 6ms
+ ✓ test/cursorBridgeInboundQueue.test.js (7 tests) 7ms
+ ✓ test/telegramCursorBridgeRedeployTargets.test.js (4 tests) 5ms
+ ✓ test/telegramCursorBridgeUpdate.test.js (6 tests) 5ms
+ ✓ test/letsTalkBubbleConfig.test.js (4 tests) 5ms
+ ✓ test/cursorBridgeProgress.test.js (5 tests) 3ms
+ ✓ test/telegramCursorBridgeLogs.test.js (5 tests) 4ms
+ ✓ test/cursorBridgeTelegramMedia.test.js (5 tests) 2ms
+ ✓ test/cursorBridgeRunTracker.test.js (1 test) 1ms
+ ✓ test/swarmEnv.test.js (2 tests) 2ms
+ ✓ test/letsTalkMetaRoutes.test.js (5 tests) 2ms
+ ✓ test/telegramCursorBridgeCli.test.js (11 tests) 457ms
+ ✓ test/cursorBridgeAgentSession.test.js (67 tests) 1384ms
+   ✓ cursorBridgeAgentSession: withAgentLock waits for a contended lock to clear  962ms
+ ✓ test/telegramCursorBridgeLive.test.js (121 tests) 1880ms
+   ✓ runCursorBridgePollOnce sleeps on poll failure without custom handler  1003ms
+
+ Test Files  30 passed (30)
+      Tests  749 passed (749)
+   Start at  17:21:57
+   Duration  2.41s (transform 229ms, setup 160ms, collect 1.54s, tests 4.62s, environment 1ms, prepare 325ms)
+
+expedite liveness {:stopped? true, :alive []}
+expedite bookkeep {:action :ready, :ticket "BL-1371", :folder "active"}
+expedite-notify [BL-1371] • init — running
+teardown + worktree
+expedite teardown {:clean? true, :alive [], :exit-code-lied? false}
+expedite worktree /home/carillon/swarmforgevc/.worktrees/expedite-BL-1371 on expedite/BL-1371
+expedite bounce bound 3 (default)
+expedite-notify [BL-1371] 📝 specifier — running
+stage 1/7
+expedite-notify [BL-1371] 💻 coder — running
+stage 2/7
+expedite-notify [BL-1371] 🧹 cleaner — running
+stage 3/7
+expedite-notify [BL-1371] 🏛 architect — running
+stage 4/7
+expedite-notify [BL-1371] 🛡 hardender — running
+stage 5/7
+expedite-notify [BL-1371] 📚 documenter — running
+stage 6/7
+expedite-notify [BL-1371] ✅ QA — running
+stage 7/7
+expedite recorded QA-hat verdict pass for a4b5641249 -> /home/carillon/swarmforgevc/.swarmforge/expedite-approvals/2026-09.jsonl
+expedite ticket done | restart held | FAILED HALF: restart
+{
+  "failed-half" : "restart",
+  "exit-code" : 1,
+  "restart" : {
+    "outcome" : "held",
+    "marker-path" : "/home/carillon/swarmforgevc/.swarmforge/operator/control-pause.json",
+    "hold-reason" : "active"
+  },
+  "exhaustion" : null,
+  "history" : [ {
+    "stage" : "specifier",
+    "verdict" : "pass",
+    "reason" : "spec-gate-passed"
+  }, {
+    "stage" : "coder",
+    "verdict" : "pass",
+    "reason" : "coder-stage re-verification passed: 0 handlers lost, 0 steps resolving differently, 0 unit or property regressions against a baseline measured this pass, all 5 acceptance scenarios green, and all three declared invariants encoded non-vacuously."
+  }, {
+    "stage" : "cleaner",
+    "verdict" : "pass",
+    "reason" : "cleaner-stage re-verification passed: all checklist items green against the current branch tip, no functional change needed, no-op forward is correct per the No-Op Rule."
+  }, {
+    "stage" : "architect",
+    "verdict" : "pass"
+  }, {
+    "stage" : "hardender",
+    "verdict" : "pass"
+  }, {
+    "stage" : "documenter",
+    "verdict" : "pass"
+  }, {
+    "stage" : "QA",
+    "verdict" : "pass",
+    "reason" : "qa-verification-passed: every independently re-run gate (acceptance, unit, property, wiring anchor, registration-check CLI and shell suite) is green on the current tip a4b5641249, production code confirmed byte-identical to the original coder commit, no sibling deferral is open, no orphaned test/mutation process before or after, and the one outstanding finding (two ticket-yaml copies) is a documented land-time bookkeeping hazard already carried forward by every prior stage, not a functional or behavioral defect in this parcel."
+  } ],
+  "parked-report" : {
+    "parked" : [ ],
+    "still-held" : [ ],
+    "promoted" : [ ],
+    "note" : "left in hold/ deliberately; promotion is not the expeditor's call"
+  },
+  "finished-at-ms" : 1788454484783,
+  "deferred" : [ "bl-topic-record", "briefing-hooks", "pipeline-stage-sync" ],
+  "bookkeep" : {
+    "action" : "ready",
+    "ticket" : "BL-1371",
+    "folder" : "active"
+  },
+  "bound" : {
+    "bound" : 3,
+    "default" : 3,
+    "raised?" : false,
+    "explicit?" : false
+  },
+  "ticket" : "done",
+  "override-used?" : false,
+  "ticket-ok?" : true,
+  "park" : {
+    "park" : [ ],
+    "destination" : "hold",
+    "nothing-to-park?" : true
+  },
+  "teardown" : {
+    "clean?" : true,
+    "alive" : [ ],
+    "exit-code-lied?" : false
+  },
+  "branch" : "expedite/BL-1371",
+  "ticket-id" : "BL-1371",
+  "restart-ok?" : false,
+  "outstanding" : [ {
+    "subject" : "the uncommitted backlog moves",
+    "moves" : [ "backlog/active/ -> backlog/done/  (BL-1371)" ],
+    "owner" : "whoever next commits in the master checkout - do it deliberately, or an unrelated commit sweeps them"
+  } ]
+}
+expedite OUTSTANDING - this run left work for someone else:
+expedite   the uncommitted backlog moves:
+expedite     backlog/active/ -> backlog/done/  (BL-1371)
+expedite     owner: whoever next commits in the master checkout - do it deliberately, or an unrelated commit sweeps them
+expedite   no tickets are held - this run parked nothing
+expedite-notify watching /home/carillon/swarmforgevc/.swarmforge/expedite/BL-1371/progress.json
+expedite-notify [BL-1371] • done — passed
+ticket=done restart=held
+expedite-with-progress: final progress:
+{
+  "ticket" : "BL-1371",
+  "stage" : "done",
+  "status" : "passed",
+  "detail" : "ticket=done restart=held",
+  "line" : "[BL-1371] • done — passed\nticket=done restart=held",
+  "updated-at-ms" : 1788454484783
+}

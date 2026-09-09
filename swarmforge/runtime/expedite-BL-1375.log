@@ -1,0 +1,117 @@
+expedite liveness {:stopped? false, :alive ["tmux-server" "role-agents" "babysitterd"]}
+expedite swarm is live: tmux-server,role-agents,babysitterd - initiation will stop it
+expedite bookkeep {:action :adopt, :ticket "BL-1375", :folder "paused"}
+expedite ADOPT run ticket BL-1375 from backlog/paused/ into backlog/active/ so teardown can close it
+expedite park BL-1309 -> backlog/hold/
+expedite park BL-1296 -> backlog/hold/
+expedite park BL-1360 -> backlog/hold/
+expedite park BL-1359 -> backlog/hold/
+expedite park BL-1356 -> backlog/hold/
+expedite teardown {:clean? true, :alive [], :exit-code-lied? false}
+expedite worktree /home/carillon/swarmforgevc/.worktrees/expedite-BL-1375 on expedite/BL-1375
+expedite bounce bound 3 (default)
+expedite recorded QA-hat verdict pass for c370d1e28a -> /home/carillon/swarmforgevc/.swarmforge/expedite-approvals/2026-09.jsonl
+expedite ticket done | restart ok 
+{
+  "failed-half" : null,
+  "exit-code" : 0,
+  "restart" : {
+    "outcome" : "ok",
+    "exit" : 0,
+    "error" : null,
+    "live-set-delta" : { }
+  },
+  "exhaustion" : null,
+  "history" : [ {
+    "stage" : "specifier",
+    "verdict" : "pass"
+  }, {
+    "stage" : "coder",
+    "verdict" : "pass"
+  }, {
+    "stage" : "cleaner",
+    "verdict" : "pass"
+  }, {
+    "stage" : "architect",
+    "verdict" : "pass"
+  }, {
+    "stage" : "hardender",
+    "verdict" : "pass"
+  }, {
+    "stage" : "documenter",
+    "verdict" : "pass"
+  }, {
+    "stage" : "QA",
+    "verdict" : "pass"
+  } ],
+  "parked-report" : {
+    "parked" : [ {
+      "ticket" : "BL-1309"
+    }, {
+      "ticket" : "BL-1296"
+    }, {
+      "ticket" : "BL-1360"
+    }, {
+      "ticket" : "BL-1359"
+    }, {
+      "ticket" : "BL-1356"
+    } ],
+    "still-held" : [ "BL-1309", "BL-1296", "BL-1360", "BL-1359", "BL-1356" ],
+    "promoted" : [ ],
+    "note" : "left in hold/ deliberately; promotion is not the expeditor's call"
+  },
+  "finished-at-ms" : 1788433395116,
+  "deferred" : [ "bl-topic-record", "briefing-hooks", "pipeline-stage-sync" ],
+  "bookkeep" : {
+    "action" : "adopt",
+    "ticket" : "BL-1375",
+    "folder" : "paused",
+    "from" : "paused",
+    "to" : "active",
+    "message" : "ADOPT run ticket BL-1375 from backlog/paused/ into backlog/active/ so teardown can close it"
+  },
+  "bound" : {
+    "bound" : 3,
+    "default" : 3,
+    "raised?" : false,
+    "explicit?" : false
+  },
+  "ticket" : "done",
+  "override-used?" : false,
+  "ticket-ok?" : true,
+  "park" : {
+    "park" : [ "BL-1309", "BL-1296", "BL-1360", "BL-1359", "BL-1356" ],
+    "destination" : "hold",
+    "nothing-to-park?" : false
+  },
+  "teardown" : {
+    "clean?" : true,
+    "alive" : [ ],
+    "exit-code-lied?" : false
+  },
+  "branch" : "expedite/BL-1375",
+  "ticket-id" : "BL-1375",
+  "restart-ok?" : true,
+  "outstanding" : [ {
+    "subject" : "the parked tickets",
+    "tickets" : [ "BL-1309", "BL-1296", "BL-1360", "BL-1359", "BL-1356" ],
+    "folder" : "backlog/hold/",
+    "owner" : "a human - Article 3.1 makes backlog/hold/ human-held and forbids the coordinator promoting from it"
+  }, {
+    "subject" : "the uncommitted backlog moves",
+    "moves" : [ "backlog/active/ -> backlog/hold/  (BL-1309)", "backlog/active/ -> backlog/hold/  (BL-1296)", "backlog/active/ -> backlog/hold/  (BL-1360)", "backlog/active/ -> backlog/hold/  (BL-1359)", "backlog/active/ -> backlog/hold/  (BL-1356)", "backlog/active/ -> backlog/done/  (BL-1375)" ],
+    "owner" : "whoever next commits in the master checkout - do it deliberately, or an unrelated commit sweeps them"
+  } ]
+}
+expedite OUTSTANDING - this run left work for someone else:
+expedite   the parked tickets:
+expedite     BL-1309, BL-1296, BL-1360, BL-1359, BL-1356  held in backlog/hold/
+expedite     owner: a human - Article 3.1 makes backlog/hold/ human-held and forbids the coordinator promoting from it
+expedite   the uncommitted backlog moves:
+expedite     backlog/active/ -> backlog/hold/  (BL-1309)
+expedite     backlog/active/ -> backlog/hold/  (BL-1296)
+expedite     backlog/active/ -> backlog/hold/  (BL-1360)
+expedite     backlog/active/ -> backlog/hold/  (BL-1359)
+expedite     backlog/active/ -> backlog/hold/  (BL-1356)
+expedite     backlog/active/ -> backlog/done/  (BL-1375)
+expedite     owner: whoever next commits in the master checkout - do it deliberately, or an unrelated commit sweeps them

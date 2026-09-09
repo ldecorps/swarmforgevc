@@ -1,29 +1,35 @@
-# Article 4.2 escalation adjudication — BL-1370 tip-pure land
+# Article 4.2 escalation on 4409993daf (BL-1370) — FALSE POSITIVE, close-out recorded
 
-**Finding:** babysitter health sweep flagged `4409993daf6c52d630a67f394faa2ca2246e8183`
-("BL-1370: tip-pure land -- own paths only, replayed onto origin/main",
-touching `extension/test/bl1370WorktreeStrayCheck.property.test.js`,
-`specs/pipeline/steps/bl1370WorktreeStrayCheckSteps.js`) as pipeline code
-landed on `main` outside QA (Article 4.2/BL-247).
+- **Escalation subject:** `pipeline-code-on-main-4409993daf6c52d630a67f394faa2ca2246e8183`
+- **Adjudicated:** 2026-09-05T02:12Z by the Operator
+- **Verdict:** false positive. Land-approval IS on record; no action needed.
 
-**Investigation (2026-09-05):**
-- `.swarmforge/land-approvals/2026-09.jsonl:28` already carries a correct
-  land-approval record: `{"ticket":"BL-1370","commit":"4409993daf","source":"c981dc13e9"}`.
-- First run of `is_qa_ancestor.sh 4409993daf` returned rc=1 ("source
-  c981dc13e9 ... not itself approved") — a transient race: `c981dc13e9`
-  (QA's own merge of documenter `d6e44499b7` into the QA worktree) had not
-  yet landed on `swarmforge-QA` at that instant.
-- Re-run moments later: rc=**0**, "approved: 4409993daf is a land-step
-  replay of approved source c981dc13e9 ... BL-1334". `git merge-base
-  --is-ancestor c981dc13e9 swarmforge-QA` now confirms true.
-- No bounce record for this sha or ticket.
+## Evidence
 
-**Verdict:** false positive — the standard tip-pure-land ancestry race
-(source in the `.worktrees/QA` land-approval record needed its own
-merge-back into `swarmforge-QA` to complete; it has now completed). Same
-class as prior 09-04 reproductions
-([[article42-predicate-is-ancestry-only-qa-handland-always-flags]]).
+```
+$ ./swarmforge/scripts/is_qa_ancestor.sh 4409993daf6c52d630a67f394faa2ca2246e8183
+approved: 4409993daf is a land-step replay of approved source c981dc13e9
+  (.swarmforge/land-approvals/2026-09.jsonl, recorded as 4409993daf) - BL-1334
+exit=0
+```
 
-**Action taken:** none — self-cleared on re-check. No revert, no
-escalation to the human. Recorded here per the "first check on any Art 4.2
-wake" convention so a re-fire on this sha is recognized as already owned.
+Commit `4409993daf` "BL-1370: tip-pure land -- own paths only, replayed onto
+origin/main" (t <t@t>, 2026-09-05T02:06:10Z) touches
+`extension/test/bl1370WorktreeStrayCheck.property.test.js` and
+`specs/pipeline/steps/bl1370WorktreeStrayCheckSteps.js`. Both are BL-1370's own
+paths, replayed onto origin/main from QA-approved source `c981dc13e9`.
+
+## Why it fired anyway
+
+Standing known class: the Article 4.2 predicate is **ancestry-only**, so a
+tip-pure / replayed land always flags even when the land-approval line exists
+(see `babysitter-article42-qa-handland-on-main-false-positive-20260904.md`,
+`article42-predicate-is-ancestry-only`). Tracked as **BL-1404** (escalation
+channel ignores recorded close-outs) and **BL-1405** (hand-lands not writing
+the approval line — not the case here; this one DID write it).
+
+## Close-out
+
+This file is the recorded close-out. A re-delivery of the same
+`pipeline-code-on-main-4409993daf...` subject should be dismissed against this
+file without re-deriving; do not chase QA or the coordinator.

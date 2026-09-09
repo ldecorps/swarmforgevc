@@ -1,0 +1,127 @@
+expedite liveness {:stopped? false, :alive ["tmux-server" "role-agents" "handoffd" "handoffd-supervisor" "babysitterd"]}
+expedite swarm is live: tmux-server,role-agents,handoffd,handoffd-supervisor,babysitterd - initiation will stop it
+expedite bookkeep {:action :adopt, :ticket "BL-1315", :folder "paused"}
+expedite ADOPT run ticket BL-1315 from backlog/paused/ into backlog/active/ so teardown can close it
+expedite park BL-1298 -> backlog/hold/
+expedite park BL-1303 -> backlog/hold/
+expedite park BL-1316 -> backlog/hold/
+expedite teardown {:clean? true, :alive [], :exit-code-lied? false}
+expedite worktree /home/carillon/swarmforgevc/.worktrees/expedite-BL-1315 on expedite/BL-1315
+expedite bounce bound 3 (default)
+expedite no-verdict recovery coder attempt 1 of 2
+expedite bounce hardender round 1 -> re-enter coder
+expedite recorded QA-hat verdict pass for 0abe4701d1 -> /home/carillon/swarmforgevc/.swarmforge/expedite-approvals/2026-08.jsonl
+expedite ticket done | restart not-attempted 
+{
+  "failed-half" : null,
+  "exit-code" : 0,
+  "restart" : {
+    "outcome" : "not-attempted"
+  },
+  "exhaustion" : null,
+  "history" : [ {
+    "stage" : "specifier",
+    "verdict" : "pass",
+    "reason" : "spec_verified_unchanged",
+    "class" : "no-amendment-needed"
+  }, {
+    "stage" : "coder",
+    "verdict" : "pass"
+  }, {
+    "stage" : "cleaner",
+    "verdict" : "pass"
+  }, {
+    "stage" : "architect",
+    "verdict" : "pass"
+  }, {
+    "stage" : "hardender",
+    "verdict" : "bounce",
+    "reason" : "own-paths drops a path shared between an unlanded sibling's tagged commit and a later untagged own-chain commit - invariant 1 violated. path-owner-tickets' `keep` silently drops an untagged touching commit's contribution to the owners set, so the exclusion cond sees only the sibling's id and reads 'every owner is unlanded' even though the own chain also touched the same path. Verified live twice; deterministic RED regression added as scenario 07 in land_step_lib_test_runner.bb (committed 64156b80cf, not yet fixed).",
+    "class" : "behavior"
+  }, {
+    "stage" : "coder",
+    "verdict" : "pass",
+    "class" : "behavior"
+  }, {
+    "stage" : "cleaner",
+    "verdict" : "pass",
+    "class" : "behavior"
+  }, {
+    "stage" : "architect",
+    "verdict" : "pass",
+    "class" : "behavior"
+  }, {
+    "stage" : "hardender",
+    "verdict" : "pass"
+  }, {
+    "stage" : "documenter",
+    "verdict" : "pass"
+  }, {
+    "stage" : "QA",
+    "verdict" : "pass"
+  } ],
+  "parked-report" : {
+    "parked" : [ {
+      "ticket" : "BL-1298"
+    }, {
+      "ticket" : "BL-1303"
+    }, {
+      "ticket" : "BL-1316"
+    } ],
+    "still-held" : [ "BL-1298", "BL-1303", "BL-1316" ],
+    "promoted" : [ ],
+    "note" : "left in hold/ deliberately; promotion is not the expeditor's call"
+  },
+  "finished-at-ms" : 1788213140258,
+  "deferred" : [ "bl-topic-record", "briefing-hooks", "pipeline-stage-sync" ],
+  "bookkeep" : {
+    "action" : "adopt",
+    "ticket" : "BL-1315",
+    "folder" : "paused",
+    "from" : "paused",
+    "to" : "active",
+    "message" : "ADOPT run ticket BL-1315 from backlog/paused/ into backlog/active/ so teardown can close it"
+  },
+  "bound" : {
+    "bound" : 3,
+    "default" : 3,
+    "raised?" : false,
+    "explicit?" : false
+  },
+  "ticket" : "done",
+  "override-used?" : false,
+  "ticket-ok?" : true,
+  "park" : {
+    "park" : [ "BL-1298", "BL-1303", "BL-1316" ],
+    "destination" : "hold",
+    "nothing-to-park?" : false
+  },
+  "teardown" : {
+    "clean?" : true,
+    "alive" : [ ],
+    "exit-code-lied?" : false
+  },
+  "branch" : "expedite/BL-1315",
+  "ticket-id" : "BL-1315",
+  "restart-ok?" : true,
+  "outstanding" : [ {
+    "subject" : "the parked tickets",
+    "tickets" : [ "BL-1298", "BL-1303", "BL-1316" ],
+    "folder" : "backlog/hold/",
+    "owner" : "a human - Article 3.1 makes backlog/hold/ human-held and forbids the coordinator promoting from it"
+  }, {
+    "subject" : "the uncommitted backlog moves",
+    "moves" : [ "backlog/active/ -> backlog/hold/  (BL-1298)", "backlog/active/ -> backlog/hold/  (BL-1303)", "backlog/active/ -> backlog/hold/  (BL-1316)", "backlog/active/ -> backlog/done/  (BL-1315)" ],
+    "owner" : "whoever next commits in the master checkout - do it deliberately, or an unrelated commit sweeps them"
+  } ]
+}
+expedite OUTSTANDING - this run left work for someone else:
+expedite   the parked tickets:
+expedite     BL-1298, BL-1303, BL-1316  held in backlog/hold/
+expedite     owner: a human - Article 3.1 makes backlog/hold/ human-held and forbids the coordinator promoting from it
+expedite   the uncommitted backlog moves:
+expedite     backlog/active/ -> backlog/hold/  (BL-1298)
+expedite     backlog/active/ -> backlog/hold/  (BL-1303)
+expedite     backlog/active/ -> backlog/hold/  (BL-1316)
+expedite     backlog/active/ -> backlog/done/  (BL-1315)
+expedite     owner: whoever next commits in the master checkout - do it deliberately, or an unrelated commit sweeps them
