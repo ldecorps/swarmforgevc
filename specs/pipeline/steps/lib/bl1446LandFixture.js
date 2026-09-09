@@ -9,26 +9,14 @@
 // `bb -e` - never a reimplementation of the walk or the replay.
 
 const fs = require('node:fs');
-const os = require('node:os');
 const path = require('node:path');
 const { execFileSync } = require('node:child_process');
+const { mkSocketFixtureRoot } = require('./socketFixtureRoot');
 
 const REPO_ROOT = path.join(__dirname, '..', '..', '..', '..');
 const LIB = path.join(REPO_ROOT, 'swarmforge', 'scripts', 'land_step_lib.bb');
 
 const STAGE_FILES = ['a', 'b', 'c', 'd', 'e'].map((c) => `backlog/active/BL-9001-${c}.yaml`);
-
-// Every caller's fixture roots, tracked here so ONE process-exit handler
-// (registered once, at require time) cleans up regardless of which
-// feature's handler created a given root. qa_e2e_procedure-style
-// discipline (BL-1446): removed on the EXIT trap only, never a prefix
-// sweep of a live sibling run's own roots (BL-1385/BL-1390).
-const fixtureRoots = [];
-process.on('exit', () => {
-  for (const root of fixtureRoots) {
-    fs.rmSync(root, { recursive: true, force: true });
-  }
-});
 
 function git(root, ...args) {
   return execFileSync('git', ['-C', root, ...args], { encoding: 'utf8' }).trim();
@@ -155,9 +143,7 @@ function replay(root, commitSha, taskTicketId, ownPaths, passengers) {
 }
 
 function mkTmpDir(prefix) {
-  const root = fs.mkdtempSync(path.join(os.tmpdir(), prefix));
-  fixtureRoots.push(root);
-  return root;
+  return mkSocketFixtureRoot(prefix);
 }
 
 // The five stage commits (coder, cleaner, architect, hardener, documenter)
