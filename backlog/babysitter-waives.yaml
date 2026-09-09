@@ -5,6 +5,11 @@
 # creates one - the sweep never waives anything on its own (BL-848's line).
 # Record one with babysitter_waive.bb --record; list them with --list.
 
+- key: pipeline-code-on-main-091ac7d273e801d86dc7e53ee68d233b38056f61
+  waived_by: coordinator
+  reason: "Pipeline work commit for BL-1357, QA-approved and landed"
+  waived_at: 2026-09-09
+
 - key: pipeline-code-on-main-092943d8194c246fecef42f3cdf39d6f3f6a85e2
   waived_by: coordinator
   reason: "Pipeline merge/work commit for BL-1373, QA-approved and landed"
@@ -84,6 +89,11 @@
   waived_by: coordinator
   reason: "Same pattern as eda4bb1934: BL-1490 tip-pure replay, land-approvals record exists with source 9558401764, is_qa_ancestor.sh fails on source but QA did the land-step"
   waived_at: 2026-09-08
+
+- key: pipeline-code-on-main-622f69af653f1ee8cac482f612aed760cc2e53a3
+  waived_by: coordinator
+  reason: "Pipeline work commit for BL-1357, QA-approved and landed"
+  waived_at: 2026-09-09
 
 - key: pipeline-code-on-main-6689619fe0d171c52fd47c7268a5fe904877ac91
   waived_by: coordinator
@@ -185,6 +195,11 @@
   reason: "Pipeline merge/work commit for BL-1369/BL-1492/BL-1491/BL-1490, all QA-approved and landed"
   waived_at: 2026-09-08
 
+- key: pipeline-code-on-main-ddb3b680e000cbaed6ec572a5e4e51a1463c549f
+  waived_by: coordinator
+  reason: "Pipeline work commit for BL-1357, QA-approved and landed"
+  waived_at: 2026-09-09
+
 - key: pipeline-code-on-main-e299b9c7731a9e35ddaf895f30c13b265eddd48d
   waived_by: coordinator
   reason: "Pipeline merge/work commit for BL-1369/BL-1492/BL-1491/BL-1490, all QA-approved and landed"
@@ -204,6 +219,11 @@
   waived_by: coordinator
   reason: "Pipeline merge/work commit for BL-1369/BL-1492/BL-1491/BL-1490, all QA-approved and landed"
   waived_at: 2026-09-08
+
+- key: pipeline-code-on-main-f2ac34ebea1d9346fafa868c8a723b13903fed03
+  waived_by: coordinator
+  reason: "Pipeline work commit for BL-1357, QA-approved and landed"
+  waived_at: 2026-09-09
 
 - key: pipeline-code-on-main-f3d1384b249bb96fb308dd9d3e52018391a9bede
   waived_by: coordinator
