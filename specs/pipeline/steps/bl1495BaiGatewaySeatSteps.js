@@ -43,12 +43,6 @@ process.on('exit', () => {
   }
 });
 
-function mkTmpDir(prefix) {
-  const root = fs.mkdtempSync(path.join(os.tmpdir(), prefix));
-  fixtureRoots.push(root);
-  return root;
-}
-
 function bbEval(expr) {
   const r = spawnSync('bb', ['-e', expr], { encoding: 'utf8' });
   assert.equal(r.status, 0, `bb failed: ${r.stderr}`);
@@ -85,7 +79,7 @@ function bbLiteral(value) {
 }
 
 function buildStateDir() {
-  const stateDir = mkTmpDir('bl1495-staffing-state-');
+  const stateDir = mkSocketFixtureRoot('bl1495-staffing-state-');
   fs.mkdirSync(path.join(stateDir, 'scorecards'), { recursive: true });
   const roleMatrix = {};
   for (const role of PIPELINE_ROLES_ON_GLM) {
@@ -119,7 +113,7 @@ function buildStateDir() {
 }
 
 function gateWindows(stateDir, lines) {
-  const wf = path.join(mkTmpDir('bl1495-windows-'), 'windows.tsv');
+  const wf = path.join(mkSocketFixtureRoot('bl1495-windows-'), 'windows.tsv');
   fs.writeFileSync(wf, lines.join('\n') + '\n');
   const r = spawnSync('bb', [GATE_CLI, REPO_ROOT, wf], {
     encoding: 'utf8',
@@ -227,7 +221,7 @@ function registerSteps(registry) {
   scoped(
     /^the respawn pane environment is derived for role "([^"]+)" by both respawn mappings$/,
     (ctx, role) => {
-      const stateDir = mkTmpDir('bl1495-respawn-state-');
+      const stateDir = mkSocketFixtureRoot('bl1495-respawn-state-');
       const env = { ...ctx.respawnEnv, OPENAI_API_KEY: ctx.shellOpenaiKey || '' };
 
       const respawnExpr = `

@@ -1,0 +1,109 @@
+expedite liveness {:stopped? false, :alive ["tmux-server" "role-agents" "handoffd" "handoffd-supervisor" "babysitterd"]}
+expedite swarm is live: tmux-server,role-agents,handoffd,handoffd-supervisor,babysitterd - initiation will stop it
+expedite bookkeep {:action :adopt, :ticket "BL-1310", :folder "paused"}
+expedite ADOPT run ticket BL-1310 from backlog/paused/ into backlog/active/ so teardown can close it
+expedite park BL-1311 -> backlog/hold/
+expedite teardown {:clean? true, :alive [], :exit-code-lied? false}
+expedite worktree /home/carillon/swarmforgevc/.worktrees/expedite-BL-1310 on expedite/BL-1310
+expedite bounce bound 3 (default)
+expedite REFUSE bounce-without-reason architect - a bounce must carry an actionable reason or class
+expedite ticket failed | restart failed | FAILED HALF: ticket
+expedite live-set delta (observed vs expected): {:tmux-servers {:expected 1, :observed 0}, :handoffd {:expected 1, :observed 0}, :handoffd-supervisor {:expected 1, :observed 0}, :role-agents {:expected 8, :observed 0}}
+{
+  "failed-half" : "ticket",
+  "exit-code" : 1,
+  "restart" : {
+    "outcome" : "failed",
+    "exit" : 1,
+    "error" : "=== BL-657 launch failure diagnosis 2026-09-01T20:11Z ===\nwanted_sessions=2\ntarget=/home/carillon/swarmforgevc\nsocket file missing or empty at /home/carillon/swarmforgevc/.swarmforge/tmux-socket\n--- tail start-swarm-launch.log ---\nsync_worktree_scripts.bb: left to git (tracked): swarmforge/scripts/expedite_announce_lib.bb\nsync_worktree_scripts.bb: left to git (tracked): swarmforge/scripts/inject_note_to_role.sh\nsync_worktree_scripts.bb: left to git (tracked): swarmforge/scripts/backlog_depth_lib.bb\nsync_worktree_scripts.bb: left to git (tracked): swarmforge/scripts/role_ask_escalation_lib.bb\nsync_worktree_scripts.bb: left to git (tracked): swarmforge/scripts/remote_wakeup_periodic_pull.sh\nsync_worktree_scripts.bb: left to git (tracked): swarmforge/scripts/issue_specced.sh\nsync_worktree_scripts.bb: left to git (tracked): swarmforge/scripts/process_table_lib.bb\nsync_worktree_scripts.bb: left to git (tracked): swarmforge/scripts/portable_stat_lib.sh\nsync_worktree_scripts.bb: left to git (tracked): swarmforge/scripts/bob_starting_cast_cli.bb\nsync_worktree_scripts.bb: left to git (tracked): swarmforge/scripts/landed_ticket_lib.bb\nsync_worktree_scripts.bb: left to git (tracked): swarmforge/scripts/qwen_launch_guard_lib.sh\nsync_worktree_scripts.bb: left to git (tracked): swarmforge/scripts/main_sync_status_cli.bb\nsync_worktree_scripts.bb: left to git (tracked): swarmforge/scripts/quiet_period_gate_cli.bb\nsync_worktree_scripts.bb: left to git (tracked): swarmforge/scripts/loop_detect_lib.bb\nsync_worktree_scripts.bb: left to git (tracked): swarmforge/scripts/ambulance_cli.bb\nsync_worktree_scripts.bb: left to git (tracked): swarmforge/scripts/bounded_delete_sweep_lib.bb\nsync_worktree_scripts.bb: left to git (tracked): swarmforge/scripts/done_with_current_batch.sh\nsync_worktree_scripts.bb: left to git (tracked): swarmforge/scripts/telegram_topic_lib.bb\nsync_worktree_scripts.bb: left to git (tracked): swarmforge/scripts/bridge_headless_supervisor.bb\nsync_worktree_scripts.bb: left to git (tracked): swarmforge/scripts/shared-articles/workflow.prompt\nsync_worktree_scripts.bb: left to git (tracked): swarmforge/scripts/shared-articles/engineering.prompt\nsync_worktree_scripts.bb: left to git (tracked): swarmforge/scripts/shared-articles/handoffs.prompt\nsync_worktree_scripts.bb: left to git (tracked): swarmforge/scripts/front_desk_supervisor.bb\nsync_worktree_scripts.bb: left to git (tracked): swarmforge/scripts/legacy_operator_schedule_lib.bb\nsync_worktree_scripts.bb: left to git (tracked): swarmforge/scripts/issue_done.sh\nsync_worktree_scripts.bb: left to git (tracked): swarmforge/scripts/expedite_with_progress.sh\nsync_worktree_scripts.bb: left to git (tracked): swarmforge/scripts/fleet_telegram_creds_cli.bb\nsync_worktree_scripts.bb: left to git (tracked): swarmforge/scripts/hardening_debt_ledger_update.bb\nsync_worktree_scripts.bb: left to git (tracked): swarmforge/scripts/smoke_check_stabilize_two_pack.sh\nsync_worktree_scripts.bb: left to git (tracked): swarmforge/scripts/rotation_telemetry_lib.bb\nsync_worktree_scripts.bb: left to git (tracked): swarmforge/scripts/effective_backlog_depth_cli.bb\nsync_worktree_scripts.bb: left to git (tracked): swarmforge/scripts/proc_fd_scan_lib.bb\nsync_worktree_scripts.bb: left to git (tracked): swarmforge/scripts/gherkin_lint_gate_cli.bb\nsync_worktree_scripts.bb: left to git (tracked): swarmforge/scripts/rescue_orphaned_work.bb\nsync_worktree_scripts.bb: left to git (tracked): swarmforge/scripts/daemon_log_freshness_pulse_lib.bb\nsync_worktree_scripts.bb: left to git (tracked): swarmforge/scripts/onboarder_supervisor.bb\nsync_worktree_scripts.bb: left to git (tracked): swarmforge/scripts/swarm_identity_lib.bb\nsync_worktree_scripts.bb: left to git (tracked): swarmforge/scripts/check_feature_handler_registration.sh\nsync_worktree_scripts.bb: left to git (tracked): swarmforge/scripts/headroom_cap_raise_lib.bb\nsync_worktree_scripts.bb: left to git (tracked): swarmforge/scripts/provider_compat_lib.bb\nsync_worktree_scripts.bb: left to git (tracked): swarmforge/scripts/start_ancillary_services.sh\nsync_worktree_scripts.bb: left to git (tracked): swarmforge/scripts/check_property_suite_drift.sh\nsync_worktree_scripts.bb: left to git (tracked): swarmforge/scripts/list_remote_control_sessions.sh\nsync_worktree_scripts.bb: left to git (tracked): swarmforge/scripts/specifier_backlog_hygiene_gate.sh\nsync_worktree_scripts.bb: left to git (tracked): swarmforge/scripts/kill_all_swarm.sh\nsync_worktree_scripts.bb: left to git (tracked): swarmforge/scripts/support_thread.bb\nStarted handoff daemon (pid 4845) and supervisor.\n\u001B[0;36mStarting operator runtime...\u001B[0m\nStarted operator runtime (pid 4919).\n\u001B[0;36mStarting Telegram front desk (bridge + bot)...\u001B[0m\nStarted front-desk supervisor (pid 5000); bridge port 8765.\n\u001B[0;36mcache-warm: rewarm (pack=bob-multi-provider-mono-router.conf)\u001B[0m\n\u001B[0;32mStarting agents...\u001B[0m\n  \u001B[0;36m[Coder]\u001B[0m started in session swarmforge-coder\n  \u001B[0;36m[Coordinator]\u001B[0m started in session swarmforge-coordinator\n  \u001B[0;36m[Specifier]\u001B[0m launch script pre-generated (dormant, router rotation target)\n  \u001B[0;36m[Cleaner]\u001B[0m launch script pre-generated (dormant, router rotation target)\n  \u001B[0;36m[Architect]\u001B[0m launch script pre-generated (dormant, router rotation target)\n  \u001B[0;36m[Hardender]\u001B[0m launch script pre-generated (dormant, router rotation target)\n  \u001B[0;36m[Documenter]\u001B[0m launch script pre-generated (dormant, router rotation target)\n  \u001B[0;36m[Qa]\u001B[0m launch script pre-generated (dormant, router rotation target)\n\n\u001B[0;32m\u001B[1mSwarmForge is ready.\u001B[0m\n\u001B[0;36mTip: './swarm ensure' repairs agents, handoffd, operator, and Telegram front desk.\u001B[0m\nWorking directory: /home/carillon/swarmforgevc\nSessions:\n  Coder: swarmforge-coder\n  Specifier: swarmforge-specifier\n  Cleaner: swarmforge-cleaner\n  Architect: swarmforge-architect\n  Hardender: swarmforge-hardender\n  Documenter: swarmforge-documenter\n  Qa: swarmforge-QA\n  Coordinator: swarmforge-coordinator\n\n\u001B[0;32mTip: Write a handoff draft and run swarm_handoff.sh while the swarm is running.\u001B[0m\n\u001B[0;32mTip: Reattach manually with 'tmux -S /home/carillon/swarmforgevc/.swarmforge/tmux/1523266553.sock attach-session -t <session-name>' if needed.\u001B[0m\n\n\u001B[0;32mRunning headless (SWARMFORGE_TERMINAL=none). Attach manually if needed.\u001B[0m\n\u001B[0;31mError:\u001B[0m pack staffing gate refused role 'coder' (line 60): qwen/qwen3.8-max failed check 'role-gate-not-pass'. Run: bb swarmforge/scripts/compliance_battery.bb gate coder (then record the verdict: bb swarmforge/scripts/model_steward_cli.bb show qwen/qwen3.8-max)\n=== end diagnosis; full copy: /home/carillon/swarmforgevc/.swarmforge/start-swarm-fail-diag.txt ===\nERROR: swarm did not become ready (wanted 2 sessions); diagnosis: /home/carillon/swarmforgevc/.swarmforge/start-swarm-fail-diag.txt",
+    "live-set-delta" : {
+      "tmux-servers" : {
+        "expected" : 1,
+        "observed" : 0
+      },
+      "handoffd" : {
+        "expected" : 1,
+        "observed" : 0
+      },
+      "handoffd-supervisor" : {
+        "expected" : 1,
+        "observed" : 0
+      },
+      "role-agents" : {
+        "expected" : 8,
+        "observed" : 0
+      }
+    }
+  },
+  "exhaustion" : null,
+  "history" : [ {
+    "stage" : "specifier",
+    "verdict" : "PASS"
+  }, {
+    "stage" : "coder",
+    "verdict" : "pass"
+  }, {
+    "stage" : "cleaner",
+    "verdict" : "pass"
+  }, {
+    "stage" : "architect",
+    "verdict" : "bounce"
+  } ],
+  "parked-report" : {
+    "parked" : [ {
+      "ticket" : "BL-1311"
+    } ],
+    "still-held" : [ "BL-1311" ],
+    "promoted" : [ ],
+    "note" : "left in hold/ deliberately; promotion is not the expeditor's call"
+  },
+  "finished-at-ms" : 1788293510481,
+  "deferred" : [ "bl-topic-record", "briefing-hooks", "pipeline-stage-sync" ],
+  "bookkeep" : {
+    "action" : "adopt",
+    "ticket" : "BL-1310",
+    "folder" : "paused",
+    "from" : "paused",
+    "to" : "active",
+    "message" : "ADOPT run ticket BL-1310 from backlog/paused/ into backlog/active/ so teardown can close it"
+  },
+  "bound" : {
+    "bound" : 3,
+    "default" : 3,
+    "raised?" : false,
+    "explicit?" : false
+  },
+  "ticket" : "failed",
+  "override-used?" : false,
+  "ticket-ok?" : false,
+  "park" : {
+    "park" : [ "BL-1311" ],
+    "destination" : "hold",
+    "nothing-to-park?" : false
+  },
+  "teardown" : {
+    "clean?" : true,
+    "alive" : [ ],
+    "exit-code-lied?" : false
+  },
+  "branch" : "expedite/BL-1310",
+  "ticket-id" : "BL-1310",
+  "restart-ok?" : false,
+  "outstanding" : [ {
+    "subject" : "the parked tickets",
+    "tickets" : [ "BL-1311" ],
+    "folder" : "backlog/hold/",
+    "owner" : "a human - Article 3.1 makes backlog/hold/ human-held and forbids the coordinator promoting from it"
+  }, {
+    "subject" : "the uncommitted backlog moves",
+    "moves" : [ "backlog/active/ -> backlog/hold/  (BL-1311)" ],
+    "owner" : "whoever next commits in the master checkout - do it deliberately, or an unrelated commit sweeps them"
+  } ]
+}
+expedite OUTSTANDING - this run left work for someone else:
+expedite   the parked tickets:
+expedite     BL-1311  held in backlog/hold/
+expedite     owner: a human - Article 3.1 makes backlog/hold/ human-held and forbids the coordinator promoting from it
+expedite   the uncommitted backlog moves:
+expedite     backlog/active/ -> backlog/hold/  (BL-1311)
+expedite     owner: whoever next commits in the master checkout - do it deliberately, or an unrelated commit sweeps them

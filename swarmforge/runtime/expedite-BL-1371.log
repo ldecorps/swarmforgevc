@@ -1,0 +1,9 @@
+expedite liveness {:stopped? false, :alive ["tmux-server" "role-agents" "handoffd" "handoffd-supervisor" "babysitterd"]}
+expedite swarm is live: tmux-server,role-agents,handoffd,handoffd-supervisor,babysitterd - initiation will stop it
+expedite bookkeep {:action :adopt, :ticket "BL-1371", :folder "paused"}
+expedite ADOPT run ticket BL-1371 from backlog/paused/ into backlog/active/ so teardown can close it
+expedite park BL-1378 -> backlog/hold/
+expedite park BL-1374 -> backlog/hold/
+expedite park BL-1377 -> backlog/hold/
+expedite park BL-1367 -> backlog/hold/
+expedite park BL-1376 -> backlog/hold/
