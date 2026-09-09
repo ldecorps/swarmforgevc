@@ -41,6 +41,67 @@
           {:fingerprint "fp-b" :last-fingerprint "fp-a" :last-injected-at-ms 1000
            :now-ms 5000 :cooldown-ms 120000}))
 
+;; Hotfix 2026-09-09 (fresh-target): a seat the sidecar never woke is woken
+;; even when the mailbox is unchanged or the cooldown is running - a
+;; respawned/rotated pane is a different pane (documenter 07:54Z incident).
+(assert= "same fp outside cooldown, new target epoch -> inject fresh-target"
+         {:action :inject :skip-reason nil :fingerprint "fp-a" :inject-reason "fresh-target"}
+         (wake-dedup-lib/decide-wake-dedup
+          {:fingerprint "fp-a" :last-fingerprint "fp-a" :last-injected-at-ms 1000
+           :now-ms 200000 :cooldown-ms 120000
+           :target-epoch "pane-pid:222" :last-target-epoch "pane-pid:111"}))
+
+(assert= "same fp within cooldown, new target epoch -> inject fresh-target"
+         {:action :inject :skip-reason nil :fingerprint "fp-a" :inject-reason "fresh-target"}
+         (wake-dedup-lib/decide-wake-dedup
+          {:fingerprint "fp-a" :last-fingerprint "fp-a" :last-injected-at-ms 1000
+           :now-ms 2000 :cooldown-ms 120000
+           :target-epoch "pane-pid:222" :last-target-epoch "pane-pid:111"}))
+
+(assert= "sidecar predating the hotfix (blank last epoch) + known target -> inject fresh-target"
+         {:action :inject :skip-reason nil :fingerprint "fp-a" :inject-reason "fresh-target"}
+         (wake-dedup-lib/decide-wake-dedup
+          {:fingerprint "fp-a" :last-fingerprint "fp-a" :last-injected-at-ms 1000
+           :now-ms 200000 :cooldown-ms 120000
+           :target-epoch "pane-pid:222" :last-target-epoch ""}))
+
+(assert= "same fp, same target epoch -> unchanged-mailbox (unchanged behaviour)"
+         {:action :suppress :skip-reason "unchanged-mailbox" :fingerprint "fp-a"}
+         (wake-dedup-lib/decide-wake-dedup
+          {:fingerprint "fp-a" :last-fingerprint "fp-a" :last-injected-at-ms 1000
+           :now-ms 200000 :cooldown-ms 120000
+           :target-epoch "pane-pid:111" :last-target-epoch "pane-pid:111"}))
+
+(assert= "blank target epoch (tmux cannot answer) -> pre-hotfix decision"
+         {:action :suppress :skip-reason "unchanged-mailbox" :fingerprint "fp-a"}
+         (wake-dedup-lib/decide-wake-dedup
+          {:fingerprint "fp-a" :last-fingerprint "fp-a" :last-injected-at-ms 1000
+           :now-ms 200000 :cooldown-ms 120000
+           :target-epoch "" :last-target-epoch "pane-pid:111"}))
+
+(assert= "empty mailbox still suppresses for a fresh target"
+         {:action :suppress :skip-reason "empty-mailbox" :fingerprint ""}
+         (wake-dedup-lib/decide-wake-dedup
+          {:fingerprint "" :last-fingerprint "" :last-injected-at-ms 0
+           :now-ms 1000 :cooldown-ms 120000
+           :target-epoch "pane-pid:222" :last-target-epoch ""}))
+
+;; sidecar round-trip carries the epoch, and a legacy sidecar reads blank
+(let [dir (str (fs/create-temp-dir))]
+  (wake-dedup-lib/record-injection! dir "coder" "fp-a" 1000 "pane-pid:111")
+  (assert= "sidecar round-trips lastTargetEpoch"
+           {:fingerprint "fp-a" :lastInjectedAtMs 1000 :lastTargetEpoch "pane-pid:111"}
+           (wake-dedup-lib/read-sidecar dir "coder"))
+  (wake-dedup-lib/record-injection! dir "cleaner" "fp-b" 2000)
+  (assert= "record-injection! without an epoch stores blank (3-arg callers unchanged)"
+           {:fingerprint "fp-b" :lastInjectedAtMs 2000 :lastTargetEpoch ""}
+           (wake-dedup-lib/read-sidecar dir "cleaner"))
+  (spit (str (wake-dedup-lib/sidecar-path dir "qa"))
+        "{\"fingerprint\":\"fp-c\",\"lastInjectedAtMs\":3000}")
+  (assert= "legacy sidecar (no epoch key) reads a blank epoch"
+           {:fingerprint "fp-c" :lastInjectedAtMs 3000 :lastTargetEpoch ""}
+           (wake-dedup-lib/read-sidecar dir "qa")))
+
 ;; BL-755: parser-arm markers for touched handoffd.bb cond branches (≥3 arms).
 (doseq [arm ["--abort"
              "--name-only"

@@ -1082,22 +1082,43 @@
     (catch Exception e
       (log! "wake-attribution-error" (:role role-info) (.getMessage e)))))
 
+(defn wake-target-epoch
+  "Hotfix 2026-09-09 (fresh-target): identity of the live seat behind a wake
+   session - the pane's root process pid, which changes on every respawn or
+   rotation. nil when tmux cannot answer (fixture fakes, a gone session), in
+   which case wake-dedup-lib decides exactly as before the hotfix."
+  [socket session]
+  (try
+    (let [res (tmux! "-S" socket "list-panes" "-t" session "-F" "#{pane_pid}")
+          pid (some-> (:out res) str/split-lines first str/trim)]
+      (when (and (zero? (:exit res)) (not (str/blank? pid)) (re-matches #"\d+" pid))
+        (str "pane-pid:" pid)))
+    (catch Exception _ nil)))
+
 (defn handoff-wake-with-dedup!
   "BL-1191: gate HANDOFF_WAKE_MESSAGE injects on mailbox fingerprint + cooldown.
    Records BL-870 attribution for every inject and skip. Returns true when a
-   wake was delivered."
+   wake was delivered.
+   Hotfix 2026-09-09: the decision also sees the wake pane's seat epoch, so a
+   respawned/rotated seat whose mailbox did not change is still woken once
+   (logged `wake-fresh-target`) instead of inheriting the old pane's
+   unchanged-mailbox suppression forever."
   [role-info sweep mailbox-dir-key socket session agent notify-fn!]
   (let [now-ms (System/currentTimeMillis)
-        dedup (wake-dedup-lib/load-decision (str state-dir) role-info now-ms)]
+        epoch (wake-target-epoch socket (handoff-lib/wake-session socket session))
+        dedup (wake-dedup-lib/load-decision (str state-dir) role-info now-ms
+                                            :target-epoch epoch)]
     (if (= (:action dedup) :suppress)
       (do (log! "wake-dedup-skip" (:role role-info) (:skip-reason dedup))
           (record-wake-attribution! role-info sweep mailbox-dir-key
                                     wake-attribution-lib/outcome-skipped
                                     :skip-reason (:skip-reason dedup))
           false)
-      (do (notify-fn! socket session agent)
+      (do (when (:inject-reason dedup)
+            (log! "wake-fresh-target" (:role role-info) (str epoch)))
+          (notify-fn! socket session agent)
           (wake-dedup-lib/record-injection! (str state-dir) (:role role-info)
-                                              (:fingerprint dedup) now-ms)
+                                              (:fingerprint dedup) now-ms epoch)
           (record-wake-attribution! role-info sweep mailbox-dir-key
                                     wake-attribution-lib/outcome-landed)
           true))))
@@ -1728,10 +1749,17 @@
       :rotate (let [performed (boolean (:ok (chase-rotate-to! socket roles role)))]
                 (when performed (reset! resident-wake-suppressed? true))
                 performed)
-      :wake (do (when (:resident-budget? plan)
-                  (reset! resident-wake-suppressed? true))
-                (handoff-wake-with-dedup! ri sweep mailbox-dir-key socket
-                                          (:session ri) (:agent ri) notify-fn!)))))
+      ;; Hotfix 2026-09-09: consume the per-sweep resident budget only when
+      ;; the wake actually landed - the docstring's own starvation rule. It
+      ;; was consumed BEFORE the dedup gate, so one role's suppressed wake
+      ;; (coder, unchanged-mailbox) starved every other role sharing the
+      ;; resident pane (documenter: chase-wake-skip-dedup x477 in 2h).
+      :wake (let [performed (boolean (handoff-wake-with-dedup!
+                                      ri sweep mailbox-dir-key socket
+                                      (:session ri) (:agent ri) notify-fn!))]
+              (when (and performed (:resident-budget? plan))
+                (reset! resident-wake-suppressed? true))
+              performed))))
 
 (defn- head-commit-10
   "Exactly 10 hex chars for swarm_handoff.bb's git_handoff commit contract."
