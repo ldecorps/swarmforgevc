@@ -11,6 +11,7 @@ const path = require('node:path');
 const fs = require('node:fs');
 const os = require('node:os');
 const { execFileSync } = require('node:child_process');
+const { mkSocketFixtureRoot } = require('./lib/socketFixtureRoot');
 
 const REPO_ROOT = path.join(__dirname, '..', '..', '..');
 const EXT_OUT = path.join(REPO_ROOT, 'extension', 'out');
@@ -44,10 +45,6 @@ const FEATURE = 'LLM invocation cost ledger ranks expensive calls by origin over
 const KNOWN_HORIZONS = new Set(['3h', '24h', '7d']);
 
 const ORIGIN_FIELDS = ['subsystem', 'role', 'stage', 'trigger', 'ticketId', 'handoffId', 'handoffType', 'script', 'pack', 'model', 'provider'];
-
-function mkTmpDir(prefix) {
-  return fs.mkdtempSync(path.join(os.tmpdir(), prefix));
-}
 
 function llmOrigin(overrides = {}) {
   return {
@@ -309,7 +306,7 @@ function registerSteps(registry) {
 
   // ── bridge-08 ─────────────────────────────────────────────────────────────
   registry.defineScoped(/^llm_invocation records in the ledger$/, (ctx) => {
-    ctx.bridgeRoot = mkTmpDir('bl551-bridge-');
+    ctx.bridgeRoot = mkSocketFixtureRoot('bl551-bridge-');
     ctx.bridgeNowMs = Date.parse('2026-07-22T18:00:00Z');
     writeLedger(ctx.bridgeRoot, [
       llmInvocation({ at: '2026-07-22T17:00:00Z', costUsd: 1, origin: llmOrigin({ role: 'coder' }) }),
@@ -350,7 +347,7 @@ function registerSteps(registry) {
 
   // ── sidecar-09 ────────────────────────────────────────────────────────────
   registry.defineScoped(/^llm_invocation records across the last week$/, (ctx) => {
-    ctx.sidecarRoot = mkTmpDir('bl551-sidecar-');
+    ctx.sidecarRoot = mkSocketFixtureRoot('bl551-sidecar-');
     execFileSync('git', ['init', '-q'], { cwd: ctx.sidecarRoot });
     execFileSync('git', ['config', 'user.email', 't@t'], { cwd: ctx.sidecarRoot });
     execFileSync('git', ['config', 'user.name', 't'], { cwd: ctx.sidecarRoot });

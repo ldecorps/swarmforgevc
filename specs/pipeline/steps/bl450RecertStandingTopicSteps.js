@@ -32,7 +32,7 @@ const { execFileSync } = require('node:child_process');
 
 const REPO_ROOT = path.join(__dirname, '..', '..', '..');
 const EXT_DIR = path.join(REPO_ROOT, 'extension');
-const { mkTmpDir } = require(path.join(EXT_DIR, 'test', 'helpers', 'tmpDir'));
+const { mkSocketFixtureRoot } = require('./lib/socketFixtureRoot');
 const { runConciergeTick } = require(path.join(EXT_DIR, 'out', 'concierge', 'conciergeTick'));
 const { pollAndForward } = require(path.join(EXT_DIR, 'out', 'tools', 'telegramFrontDeskBotCore'));
 const {
@@ -237,7 +237,7 @@ function readRecertState(ctx) {
 // recert posting runs" without one) can build the SAME ctx shape rather
 // than reimplementing this fixture wiring a second time.
 function initRecertTopicFixture(ctx) {
-  ctx.targetPath = mkTmpDir('sfvc-bl450-');
+  ctx.targetPath = mkSocketFixtureRoot('sfvc-bl450-');
   git(ctx.targetPath, ['init', '-q']);
   git(ctx.targetPath, ['config', 'user.email', 't@t']);
   git(ctx.targetPath, ['config', 'user.name', 't']);

@@ -7,7 +7,7 @@
 const path = require('node:path');
 
 const EXT_TEST = path.join(__dirname, '..', '..', '..', 'extension', 'test');
-const { mkTmpDir, sweepPendingTmpDirs } = require(path.join(EXT_TEST, 'helpers', 'tmpDir'));
+const { mkSocketFixtureRoot, _removeStragglersForTesting } = require('./lib/socketFixtureRoot');
 const { findRawMkdtempCallSites } = require(path.join(EXT_TEST, 'helpers', 'rawMkdtempGuard'));
 
 function registerSteps(registry) {
@@ -19,11 +19,11 @@ function registerSteps(registry) {
 
   // ── test-helpers-clean-up-tmp-dirs-01 ───────────────────────────────────
   registry.define(/^the helper created a temp directory for the test$/, (ctx) => {
-    ctx.dir = mkTmpDir('sfvc-bl420-acceptance-');
+    ctx.dir = mkSocketFixtureRoot('sfvc-bl420-acceptance-');
   });
 
   registry.define(/^the test's teardown runs$/, () => {
-    sweepPendingTmpDirs();
+    _removeStragglersForTesting();
   });
 
   registry.define(/^that exact directory no longer exists$/, (ctx) => {
@@ -35,7 +35,7 @@ function registerSteps(registry) {
 
   // ── test-helpers-clean-up-tmp-dirs-02 ───────────────────────────────────
   registry.define(/^the test body throws after the helper created its temp directory$/, (ctx) => {
-    ctx.dir = mkTmpDir('sfvc-bl420-acceptance-throw-');
+    ctx.dir = mkSocketFixtureRoot('sfvc-bl420-acceptance-throw-');
     try {
       throw new Error('simulated test-body failure');
     } catch {
@@ -45,7 +45,7 @@ function registerSteps(registry) {
   });
 
   registry.define(/^teardown runs$/, () => {
-    sweepPendingTmpDirs();
+    _removeStragglersForTesting();
   });
 
   // "Then that exact directory no longer exists" reuses the SAME handler

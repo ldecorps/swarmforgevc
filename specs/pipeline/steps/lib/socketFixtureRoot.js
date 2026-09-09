@@ -94,4 +94,6 @@ module.exports = {
   WORST_CASE_SOCKET_SUFFIX,
   mkSocketFixtureRoot,
   releaseSocketFixtureRoot,
+  // Exported for testing only - production code relies on the exit hook
+  _removeStragglersForTesting: removeStragglers,
 };

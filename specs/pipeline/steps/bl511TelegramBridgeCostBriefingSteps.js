@@ -33,7 +33,7 @@ const EXT_OUT = path.join(__dirname, '..', '..', '..', 'extension', 'out');
 const REPO_ROOT = path.join(__dirname, '..', '..', '..');
 const { computeTelegramBridgeCostForDay, formatTelegramBridgeCostLine } = require(path.join(EXT_OUT, 'metrics', 'telegramBridgeCost'));
 const { bridgeCostLogPath } = require(path.join(EXT_OUT, 'tools', 'telegram-bridge-cost-line'));
-const { mkTmpDir } = require('../../../extension/test/helpers/tmpDir');
+const { mkSocketFixtureRoot } = require('./lib/socketFixtureRoot');
 
 const CAPTURE_RUNNER = path.join(REPO_ROOT, 'swarmforge', 'scripts', 'test', 'bl511_bridge_cost_capture_acceptance_runner.sh');
 const CLI = path.join(EXT_OUT, 'tools', 'telegram-bridge-cost-line.js');
@@ -44,7 +44,7 @@ function git(cwd, args) {
 }
 
 function mkRepoFixture() {
-  const root = mkTmpDir('sfvc-bl511-acceptance-');
+  const root = mkSocketFixtureRoot('sfvc-bl511-acceptance-');
   git(root, ['init', '-q']);
   git(root, ['config', 'user.email', 't@t']);
   git(root, ['config', 'user.name', 't']);

@@ -11,7 +11,7 @@ const fs = require('node:fs');
 
 const REPO_ROOT = path.join(__dirname, '..', '..', '..');
 const EXT_TEST = path.join(REPO_ROOT, 'extension', 'test');
-const { mkTmpDir, sweepPendingTmpDirs } = require(path.join(EXT_TEST, 'helpers', 'tmpDir'));
+const { mkSocketFixtureRoot, _removeStragglersForTesting } = require('./lib/socketFixtureRoot');
 const { findRawMkdtempCallSites, SELF_EXEMPT_RELATIVE_PATHS } = require(path.join(EXT_TEST, 'helpers', 'rawMkdtempGuard'));
 const { checkPricingCoverage } = require(path.join(REPO_ROOT, 'extension', 'out', 'metrics', 'pricingTable'));
 
@@ -49,7 +49,7 @@ function registerSteps(registry) {
   );
 
   registry.define(/^it still flags a raw mkdtemp call planted in a fixture copy of pricingTable\.test\.js$/, () => {
-    const root = mkTmpDir('sfvc-bl771-acceptance-fixture-');
+    const root = mkSocketFixtureRoot('sfvc-bl771-acceptance-fixture-');
     const offender = path.join(root, 'pricingTable.test.js');
     try {
       fs.writeFileSync(offender, "const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'bl627-unpriced-'));\n");
@@ -64,7 +64,7 @@ function registerSteps(registry) {
 
   // ── shared-tmpdir-helper-03 ─────────────────────────────────────────────
   registry.define(/^a fixture repo whose swarmforge\.conf names a model absent from the pricing table$/, (ctx) => {
-    ctx.fixtureRoot = mkTmpDir('sfvc-bl771-coverage-fixture-');
+    ctx.fixtureRoot = mkSocketFixtureRoot('sfvc-bl771-coverage-fixture-');
     ctx.fixtureModel = 'claude-bl771-unpriced-fixture-model';
     fs.mkdirSync(path.join(ctx.fixtureRoot, 'swarmforge', 'packs'), { recursive: true });
     fs.writeFileSync(
@@ -84,7 +84,7 @@ function registerSteps(registry) {
   });
 
   registry.define(/^the fixture temp root does not survive the test file's teardown$/, (ctx) => {
-    sweepPendingTmpDirs();
+    _removeStragglersForTesting();
     if (fs.existsSync(ctx.fixtureRoot)) {
       throw new Error(`expected ${ctx.fixtureRoot} to have been removed by teardown, but it still exists`);
     }
