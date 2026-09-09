@@ -2000,7 +2000,15 @@ RESUMECHECK
   if [[ "$extra_cli" == *api.b.ai* ]]; then
     bai_guard=$'if [[ -n "${B_AI_API_KEY:-}" ]]; then\n  export SWARMFORGE_USE_BAI=1\n  export OPENAI_API_KEY="$B_AI_API_KEY"\n  export OPENAI_API_BASE=https://api.b.ai/v1\n  export OPENAI_BASE_URL=https://api.b.ai/v1\nelse\n  echo "SwarmForge: B_AI_API_KEY required (launch CLI targets api.b.ai)" >&2\n  exit 1\nfi\n'
   else
-    bai_guard=$'if [[ "${SWARMFORGE_USE_BAI:-}" == "1" && -n "${B_AI_API_KEY:-}" ]]; then\n  export OPENAI_API_KEY="$B_AI_API_KEY"\n  export OPENAI_API_BASE="${OPENAI_API_BASE:-https://api.b.ai/v1}"\n  export OPENAI_BASE_URL="${OPENAI_BASE_URL:-https://api.b.ai/v1}"\nfi\n'
+    # Hotfix 2026-09-09: when the opt-in flag is honoured, the BASE follows
+    # the KEY unconditionally. This variant used `${OPENAI_API_BASE:-…}`, so
+    # a pane respawned with a stale base already in its environment (the
+    # coordinator: SWARMFORGE_USE_CEREBRAS=1 + api.cerebras.ai from the
+    # respawner, plus SWARMFORGE_USE_BAI=1) kept the Cerebras base while
+    # switching to the b.ai key - aider then failed every turn with
+    # "OpenAIException - Wrong API Key". A key and an endpoint that name
+    # different providers is never what the flag meant.
+    bai_guard=$'if [[ "${SWARMFORGE_USE_BAI:-}" == "1" && -n "${B_AI_API_KEY:-}" ]]; then\n  export OPENAI_API_KEY="$B_AI_API_KEY"\n  export OPENAI_API_BASE=https://api.b.ai/v1\n  export OPENAI_BASE_URL=https://api.b.ai/v1\nfi\n'
   fi
   # BL-1052: force the pane at the loopback OpenAI-compat endpoint. Never the
   # Token Plan cloud host — that is the aider/qwen Token Plan path. URL is
