@@ -31,6 +31,10 @@ import {
 export interface BacklogFolderItem {
   id: string;
   title: string;
+  // BL-1278: the ticket's `description` field (BL-117) - the problem statement.
+  // Read straight off BacklogItem.description (backlogReader.ts), never a
+  // second parse. Preferred over notes: for the "What it solves" line.
+  description?: string;
   // BL-322: the topic-opening summary's own two derived sources (readFolders'
   // real wrapper - telegram-front-desk-bot.ts's toFoldersSnapshot - reads
   // these straight off panel/backlogReader.ts's own BacklogItem, never a
@@ -310,6 +314,9 @@ function ticketSummariesFor(active: BacklogFolderItem[], paused: BacklogFolderIt
   for (const item of [...active, ...paused]) {
     summaries[item.id] = {
       title: item.title,
+      // BL-1278: description from ticket YAML (BL-117) — the problem statement,
+      // preferred over notes: for the "What it solves" line.
+      description: item.description,
       notes: item.notes,
       firstAcceptanceStep: item.firstAcceptanceStep,
       approvalContext: item.approvalContext,

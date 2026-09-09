@@ -33,6 +33,12 @@ export interface GateSignal {
 // that actually composes/truncates the rendered summary text.
 export interface TicketSummary {
   title: string;
+  // BL-1278: the ticket's `description` field (BL-117) - the problem statement
+  // the specifier writes for the docs drill-down. Preferred over notes: for
+  // the "What it solves" line because notes: carries mint provenance, not the
+  // problem statement. Falls back to notes: when absent (tickets predating
+  // this field, or genuinely carrying no description).
+  description?: string;
   notes?: string;
   firstAcceptanceStep?: string;
   // BL-480: the ticket's `approval_context` field (BL-479) - the specifier's
