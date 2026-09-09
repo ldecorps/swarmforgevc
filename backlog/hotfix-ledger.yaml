@@ -300,3 +300,10 @@
   stamp_ticket: null
   human_decision: null
   decided_at: null
+- commit: 32fb1ff7e1
+  subject: "Hotfix: a respawned pane gets the same bootstrap its first launch got."
+  detected_at: 2026-09-09
+  state: pending
+  stamp_ticket: null
+  human_decision: null
+  decided_at: null
