@@ -279,3 +279,10 @@
   stamp_ticket: BL-1346
   human_decision: null
   decided_at: null
+- commit: 6e05b02dd3
+  subject: "Hotfix: wake dedup is seat-aware (fresh-target) and the resident wake budget is consumed only by a landed wake."
+  detected_at: 2026-09-09
+  state: pending
+  stamp_ticket: null
+  human_decision: null
+  decided_at: null
