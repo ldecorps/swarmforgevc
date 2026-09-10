@@ -35,6 +35,12 @@ write_handoff() {
   printf 'id: t\nfrom: specifier\nto: coder\npriority: 50\ntype: note\nmessage: hi\ncreated_at: 2026-07-01T00:00:00Z\n\nhi\n' > "$path"
 }
 
+write_deferred_note() {
+  # BL-1494: a note carrying wake: defer, otherwise identical to write_handoff.
+  local path="$1"
+  printf 'id: t\nfrom: coordinator\nto: coder\npriority: 10\ntype: note\nmessage: hi\nwake: defer\ncreated_at: 2026-07-01T00:00:00Z\n\nhi\n' > "$path"
+}
+
 trap 'rm -rf "${ROOT:-}"' EXIT
 
 NOW_MS=$((1751500000 * 1000))
@@ -330,5 +336,18 @@ run_sweep "alive" $(( NOW_MS - (STUCK_TIMEOUT_S + 100) * 1000 ))
 
 grep -q "^wake-up coder$" "$ROOT/calls.log" || fail "16: a task no seat worked is a real stall and must still be chased"
 pass "16 (BL-1004): the hold is not a blanket mute - an unworked task's parcel is still chased"
+
+# ── 17: a deferred note (wake: defer) past the chase threshold is HELD -
+#         no chase, no sidecar, same treatment as an ambulance/deferral
+#         hold (BL-1494 acceptance scenario 03) ─────────────────────────────
+make_fixture
+write_deferred_note "$ROOT/inbox/new/00_deferred.handoff"
+set_mtime "$ROOT/inbox/new/00_deferred.handoff" $(( (NOW_MS / 1000) - CHASE_TIMEOUT_S - 5 ))
+run_sweep "alive" $(( NOW_MS - (STUCK_TIMEOUT_S + 100) * 1000 ))
+
+grep -q "^wake-up coder$" "$ROOT/calls.log" 2>/dev/null && fail "17: a deferred note past the chase threshold must not be chased (zero injections)"
+[[ -f "$ROOT/inbox/new/00_deferred.handoff.chase.json" ]] && fail "17: a deferred note must not accrue a chase sidecar"
+[[ -f "$ROOT/inbox/new/00_deferred.handoff" ]] || fail "17: the deferred note must stay untouched in new/"
+pass "17 (BL-1494): a deferred note past the chase threshold is held, not chased - zero injections"
 
 echo "ALL PASS"
