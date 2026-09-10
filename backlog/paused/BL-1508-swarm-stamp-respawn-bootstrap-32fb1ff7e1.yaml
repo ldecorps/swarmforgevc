@@ -1,0 +1,127 @@
+id: BL-1508
+title: "Swarm stamp-off: hotfix 32fb1ff7e1 made both respawn drivers (swarm ensure's single-role repair and the mono-router rotation) run the launcher's own post-launch bootstrap for an aider seat, after a respawned seat began with an empty chat and refused its work - review the landed diff, confirm or refute, open narrow follow-ups; never rewrite it and never write the ledger decision"
+milestone: M8
+type: defect
+severity: medium
+# medium: the fault is already fixed on main (a respawned aider seat began
+# with an empty chat and refused its work, 2026-09-09); what is open is the
+# review the constitution owes a hotfix (BL-848). Not high: nothing is
+# degraded today; the claude seats in the live pack never had the gap.
+status: todo
+epic: swarm-reliability
+priority: 20
+direction: swarm-reported
+depends_on: []
+mutation_cost: low
+# low: review-only; the code under review is shell (swarmforge.sh) and
+# Babashka - no mutation/CRAP/DRY wired; one step-handler file.
+slice_size_envelope: low
+required_stages: [coder, cleaner, architect, hardender, documenter, qa]
+
+acceptance: specs/features/BL-1508-swarm-stamp-respawn-bootstrap-32fb1ff7e1.feature
+
+# A review parcel adds no production call site; the mechanism under review
+# is already wired and its own standing tests are green on main
+# 60623ebf02 (specifier, 2026-09-10). The handler entry is the BL-233 pin.
+required_wiring:
+  - 'specs/pipeline/steps/bl1508SwarmStampRespawnBootstrapSteps.js::registerSteps::the handler lands in the same parcel as the feature (BL-233, BL-1371)'
+
+human_approval: approved
+approval_context: >
+  A new feature file is authored here, so it needs a tap. No choice is
+  posed and there are no ruling_options. What needs sign-off is the
+  DISPOSITION only: that reviewing the landed diff of 32fb1ff7e1 (BL-811 /
+  BL-849 posture) rather than re-implementing it is right, and that
+  medium is the right severity for a review of a fault already fixed.
+  FIRM: the parcel changes no file under swarmforge/ except to add
+  evidence; a refuted scenario is a narrow follow-up via note to the
+  specifier, never an in-parcel rewrite. FIRM: the parcel never writes
+  human_decision into backlog/hotfix-ledger.yaml (the last scenario).
+  Minted by the specifier on the coordinator's ledger note of 2026-09-10
+  07:11Z; the ledger row is linked to this ticket in the mint commit.
+
+invariants:
+  - "The stamp never rewrites the hotfix: every file the parcel touches is evidence, a feature, or a step handler; swarmforge/scripts/* and swarmforge/swarmforge.sh are byte-identical to the received commit."
+
+source: |
+  backlog/hotfix-ledger.yaml row `32fb1ff7e1` (detected 2026-09-09, state
+  pending, no stamp ticket) surfaced by the certification sweep as a
+  coordinator note, forwarded to the specifier 2026-09-10 07:11Z. Hotfix
+  landed by the operator (human-directed, Claude Code) 2026-09-09 with the
+  `Hotfix-Certification: pending` trailer.
+
+description: |
+  ## What
+
+  An operator hotfix is live on main and has never been through a gate.
+  This ticket is that gate: a REVIEW ticket, not a rewrite ticket -
+  confirm or refute, and open narrow follow-ups for anything found.
+
+  ## The failure it fixed
+
+  An aider seat's identity arrives only through the post-launch tmux
+  bootstrap: `/add swarmforge/constitution.prompt swarmforge/PIPELINE.md
+  swarmforge/roles/<role>.prompt`, then the composed prompt
+  (`.swarmforge/prompts/<role>.md`). Only `swarmforge.sh`'s `launch_role`
+  ran it (`agent_runtime_cli.bb run-bootstrap`). Every later respawn
+  re-executed the launch script and stopped, so the new aider process
+  began with an empty chat - no role, no constitution, nothing saying it
+  may run shell commands - and answered its wake with "I have no shell,
+  git, or filesystem tools in this session". A claude seat hides the gap:
+  its launch script carries `--append-system-prompt-file`.
+
+  ## What landed (files to review)
+
+  - `swarmforge/scripts/respawn_bootstrap_lib.bb` (new, pure): builds the
+    argv for the SAME run-bootstrap verb the launcher uses, reading the
+    composed prompt and the compose sidecar
+    (`.swarmforge/prompts/<role>.md.metadata.json`) so `two-pack?` and
+    `overlay-prompt` stay faithful; names no provider; `bootstrap-steps`
+    yields no steps for `:embedded` providers.
+  - `swarmforge/scripts/swarm_ensure.bb` `run-single-role-repair!` and
+    `swarmforge/scripts/handoff_lib.bb` `rotate-resident-to!`: both call
+    it after a successful respawn, fire-and-forget, never throwing.
+  - `swarmforge/scripts/test/respawn_bootstrap_test_runner.bb` (24 cases,
+    registered standing): green on main 60623ebf02 (specifier,
+    2026-09-10). NOTE: this hotfix's new `load-file` edge in
+    `handoff_lib.bb` is what broke
+    `bl1313BatchGuardVisibilityInvariants.property.test.js` (owned by
+    BL-1503) - out of this stamp's scope, named here so the reviewer does
+    not re-find it.
+
+  ## Review goals
+
+  1. Confirm both drivers bootstrap and that the argv order equals the
+     launcher's (scenario 01) - a drift here is the exact class the
+     hotfix closed.
+  2. Confirm the embedded-provider no-op (scenario 02): the live pack is
+     all-claude today, so this is the path that actually runs.
+  3. Confirm a refusal never fails the repair (scenario 03).
+  4. Refute-worthy question for the architect, evidence only: the
+     bootstrap steps open with a startup sleep and are backgrounded; a
+     respawn followed within seconds by a daemon wake (6e05b02dd3's
+     fresh-target inject) can race the paste. Say in evidence whether
+     the order is guaranteed or merely likely; a follow-up if not.
+
+  ## Scenario notes for the coder
+
+  - Scenarios 01-03 are the runner's own shape (`bb -e` against a fixture
+    root with a fake `agent_runtime_cli.bb` capturing argv); the driver
+    rows spawn the real `swarm_ensure.bb` repair and the real
+    `handoff_lib.bb` rotation with fakes for tmux.
+  - The last scenario's handler reads `backlog/hotfix-ledger.yaml` for the
+    row `commit: 32fb1ff7e1` and asserts `human_decision` is null.
+
+notes: |
+  Ledger: linked to row 32fb1ff7e1 via `hotfix_ledger_update.bb --link` in the
+  mint commit.
+
+qa_e2e_procedure: |
+  On the parcel commit:
+  1. `git diff main...HEAD --name-only` names only evidence, the feature,
+     the step handler + index.js registration (invariant 1).
+  2. `run_acceptance.sh` on the BL-1508 feature -> every scenario green.
+  3. `bb swarmforge/scripts/test/respawn_bootstrap_test_runner.bb` -> all 24 PASS.
+  4. `backlog/hotfix-ledger.yaml` row 32fb1ff7e1: `human_decision: null`.
+  5. After done: the human runs `bb swarmforge/scripts/hotfix_ledger_update.bb .
+     --decide 32fb1ff7e1 approved|waived` and commits the ledger.

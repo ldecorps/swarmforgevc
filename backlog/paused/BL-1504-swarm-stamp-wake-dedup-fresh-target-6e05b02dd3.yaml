@@ -1,0 +1,140 @@
+id: BL-1504
+title: "Swarm stamp-off: hotfix 6e05b02dd3 made wake dedup seat-aware (a respawned or rotated seat with an unchanged mailbox is woken once, fresh-target) and made the chase sweep consume the per-sweep resident wake budget only when a wake landed - review the landed diff, confirm or refute, open narrow follow-ups; never rewrite it and never write the ledger decision"
+milestone: M8
+type: defect
+severity: medium
+# medium: the faults are already fixed on main (the 2026-09-09 documenter
+# flow-stall root causes); what is open is the review the constitution owes
+# a hotfix (BL-848). Not high: nothing is degraded today, and the ledger's
+# resurfacing keeps the ask alive without the expedite lane.
+status: todo
+epic: swarm-reliability
+priority: 20
+direction: swarm-reported
+depends_on: []
+mutation_cost: low
+# low: review-only; Babashka only (no mutation/CRAP/DRY wired, BL-472); one
+# step-handler file drives the real wake_dedup_lib.bb and handoffd.bb.
+slice_size_envelope: low
+required_stages: [coder, cleaner, architect, hardender, documenter, qa]
+
+acceptance: specs/features/BL-1504-swarm-stamp-wake-dedup-fresh-target-6e05b02dd3.feature
+
+# A review parcel adds no production call site; the mechanism under review
+# is already wired (handoffd.bb -> handoff-wake-with-dedup! -> wake-target-epoch
+# and wake_dedup_lib.bb/load-decision :target-epoch). The handler entry is
+# the BL-233 in-parcel pin.
+required_wiring:
+  - 'specs/pipeline/steps/bl1504SwarmStampWakeDedupFreshTargetSteps.js::registerSteps::the handler lands in the same parcel as the feature (BL-233, BL-1371)'
+
+human_approval: approved
+approval_context: >
+  A new feature file is authored here, so it needs a tap. No choice is
+  posed and there are no ruling_options. What needs sign-off is the
+  DISPOSITION only: that reviewing the landed diff of 6e05b02dd3 (BL-811 /
+  BL-849 posture) rather than re-implementing it is right, and that medium
+  is the right severity for a review of a fault already fixed. FIRM: the
+  parcel changes no file under swarmforge/scripts except to add evidence;
+  a refuted scenario is a narrow follow-up ticket via note to the
+  specifier, never an in-parcel rewrite. FIRM: the parcel never writes
+  human_decision into backlog/hotfix-ledger.yaml (scenario 04) - the human
+  records certify or waive with hotfix_ledger_update.bb --decide after
+  this reaches done. Minted by the specifier on the coordinator's ledger
+  note of 2026-09-10 07:11Z; the ledger row is linked to this ticket in
+  the mint commit.
+
+invariants:
+  - "The stamp never rewrites the hotfix: every file the parcel touches is evidence, a feature, or a step handler; swarmforge/scripts/*.bb are byte-identical to the received commit."
+
+source: |
+  backlog/hotfix-ledger.yaml row `6e05b02dd3` (detected 2026-09-09,
+  state pending, no stamp ticket) surfaced by the certification sweep as a
+  coordinator note, forwarded to the specifier 2026-09-10 07:11Z. Hotfix
+  landed by the operator (human-directed, Claude Code) 2026-09-09 10:45
+  BST with the `Hotfix-Certification: pending` trailer.
+
+description: |
+  ## What
+
+  An operator hotfix is live on main and has never been through a gate.
+  This ticket is that gate: a REVIEW ticket, not a rewrite ticket -
+  confirm or refute, and open narrow follow-ups for anything found.
+
+  ## The failures it fixed (from the commit message and the daemon log)
+
+  1. `wake_dedup_lib/decide-wake-dedup` suppressed on `unchanged-mailbox`
+     / `cooldown` from a per-role sidecar holding only a mailbox
+     fingerprint and a timestamp. The documenter seat was rotated at
+     07:54Z on 2026-09-09 with its parcel still in in_process;
+     startup-notify read the pre-rotation sidecar and skipped, and the
+     fresh aider session never received
+     `! ./swarmforge/scripts/ready_for_next.sh` (2h28m flow-stall
+     escalation). Claude seats mask this by running the script at boot.
+  2. In `chase-poke-and-notify!`'s `:wake` branch the per-sweep resident
+     budget (`resident-wake-suppressed?`) was set BEFORE
+     `handoff-wake-with-dedup!` decided, so the coder's suppressed wake
+     (`wake-dedup-skip coder unchanged-mailbox` x171) starved every other
+     role sharing the resident pane (`chase-wake-skip-dedup documenter`
+     x477 in 2h).
+
+  ## What landed (files to review)
+
+  - `swarmforge/scripts/wake_dedup_lib.bb`: sidecar gains
+    `lastTargetEpoch`; `decide-wake-dedup` takes `:target-epoch` /
+    `:last-target-epoch` and answers `{:action :inject :inject-reason
+    "fresh-target"}` when the epoch is non-blank and differs from the
+    sidecar's; an empty mailbox still suppresses; a blank epoch keeps the
+    pre-hotfix decision; `record-injection!` stores the epoch.
+  - `swarmforge/scripts/handoffd.bb`: `wake-target-epoch` probes
+    `tmux list-panes -t <wake-session> -F '#{pane_pid}'` -> `pane-pid:<n>`
+    (nil when tmux cannot answer); `handoff-wake-with-dedup!` passes it
+    and logs `wake-fresh-target`; the `:wake` branch consumes the budget
+    only when `performed`.
+  - Tests: `wake_dedup_lib_test_runner.bb` (+9 cases),
+    `test_handoffd_startup_notify_fresh_target.sh` (new, registered
+    standing in suite-manifest.tsv), both green on main 60623ebf02
+    (specifier, 2026-09-10).
+
+  ## Review goals
+
+  1. Confirm a rotated/respawned seat with an unchanged mailbox is woken
+     exactly once and then deduplicated on the new epoch (scenario 01).
+  2. Confirm a legacy sidecar (no `lastTargetEpoch`) decides exactly as
+     before the hotfix (scenario 02) - the compatibility claim.
+  3. Confirm the budget rule: a suppressed wake for one resident-pane role
+     leaves the budget for the next role in the same sweep (scenario 03).
+  4. Note, do not fix: `wake_dedup_lib_test_runner.bb` leaks a temp root
+     (owned by BL-1501); `test_handoffd_wake_attribution_wiring.sh` case
+     05 is red since BL-1191 (owned by BL-1505) - both are pre-existing,
+     registered, and out of this stamp's scope.
+
+  ## Scenario notes for the coder
+
+  - Scenario 01 drives `wake_dedup_lib.bb` directly through
+    `load-decision` / `decide-wake-dedup` with a seeded sidecar and a
+    fake mailbox, the runner's own shape; the "blank" row is the fixture-
+    fake case (tmux cannot answer) and must equal the pre-hotfix answer.
+  - Scenario 03 is `test_handoffd_startup_notify_fresh_target.sh`'s fake-
+    tmux shape extended to two roles; the fake answers `list-panes` with
+    one pid per session. Assert on the daemon log lines
+    (`wake-dedup-skip` for the first, a landed wake for the second in the
+    same sweep) or on the attribution jsonl.
+  - Scenario 04's handler reads `backlog/hotfix-ledger.yaml` for the row
+    `commit: 6e05b02dd3` and asserts `state` is not certified/waived and
+    `human_decision` is null; BL-1346's handler is the precedent.
+
+notes: |
+  Ledger: linked to row 6e05b02dd3 via `hotfix_ledger_update.bb --link` in
+  the mint commit (state pending -> stamp-open).
+
+qa_e2e_procedure: |
+  On the parcel commit:
+  1. `git diff main...HEAD --name-only` names only evidence, the feature,
+     the step handler + index.js registration; no swarmforge/scripts/*.bb
+     (invariant 1).
+  2. `run_acceptance.sh` on the BL-1504 feature -> 4 scenarios green.
+  3. `bash swarmforge/scripts/test/test_handoffd_startup_notify_fresh_target.sh`
+     and `bb swarmforge/scripts/test/wake_dedup_lib_test_runner.bb` green.
+  4. `backlog/hotfix-ledger.yaml` row 6e05b02dd3: `human_decision: null`.
+  5. After done: the human runs `bb swarmforge/scripts/hotfix_ledger_update.bb .
+     --decide 6e05b02dd3 approved|waived` and commits the ledger.

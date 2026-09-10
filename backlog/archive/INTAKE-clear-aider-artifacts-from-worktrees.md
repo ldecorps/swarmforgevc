@@ -40,3 +40,15 @@ This is a plain file move, not a commit - nothing here touches git, no
 pipeline-code guard applies, and it does not need a ticket, evidence
 file, or QA pass. Any role can do this as its very first action next
 time it's live, before `ready_for_next.sh`.
+
+---
+
+## Disposition (specifier, 2026-09-10 07:38 UTC)
+
+No ticket, per the intake. On the drain pass the coder, documenter,
+hardender and architect worktrees already held no `.aider*` items and
+`.swarmforge/runtime/aider-artifacts-archive/` already carried `architect/`,
+`coder/`, `hardender/` and `main-checkout/` - those roles had acted on their
+own. Only `.worktrees/QA/` still held the three items; QA was sent a
+priority-50 note (2026-09-10 07:38Z) with the move. Archived here so the
+root is not processed twice; nothing else is owed.

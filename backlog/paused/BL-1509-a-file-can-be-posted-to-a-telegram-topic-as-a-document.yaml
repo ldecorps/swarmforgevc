@@ -1,0 +1,118 @@
+id: BL-1509
+title: "A file can be posted to a Telegram topic as a document attachment: telegramClient.ts gains sendDocument on the multipart pattern sendVoiceNote already uses, and a headless CLI posts any file to the standing Concierge topic the way notify-dead-letters posts a line there - the delivery leg the operator's scoring-report attachment (BL-1510) rides"
+milestone: M8
+type: feature
+status: todo
+epic: best-of-breed-swarm
+priority: 10
+direction: human-requested
+depends_on: []
+mutation_cost: medium
+# medium: extension/src TypeScript under Stryker - one client function, one
+# thin CLI main over exported helpers (engineering.prompt: main() is a thin
+# wrapper, side effects injected via postFn seams, TELEGRAM_NOTIFY_FORCE_RESULT
+# honoured for the no-network path).
+slice_size_envelope: low
+required_stages: [coder, cleaner, architect, hardender, documenter, qa]
+
+acceptance: specs/features/BL-1509-a-file-can-be-posted-to-a-telegram-topic-as-a-document.feature
+
+# Wiring, honestly stated (BL-1235): the only pre-existing consumer this
+# mechanism could anchor to does not exist yet - the operator-facing report
+# that needs it is BL-1510, the named sibling slice, which depends on this
+# ticket. The CLI here is the parcel's own, so an anchor on it proves nothing
+# beyond BL-233; it is listed for that pin only. BL-1510 carries the real
+# consumer anchor (its renderer calling sendDocument).
+required_wiring:
+  - 'specs/pipeline/steps/bl1509FilePostedAsTelegramDocumentSteps.js::registerSteps::the handler lands in the same parcel as the feature (BL-233, BL-1371)'
+
+human_approval: pending
+approval_context: >
+  A new feature file is authored here, so it needs a tap. No choice is
+  posed and there are no ruling_options. FIRM: the upload extends
+  extension/src/notify/telegramClient.ts beside sendVoiceNote (multipart,
+  same redacted-token error shape, an injectable post function) - not a
+  second HTTP client and not a new module for one call. FIRM: the CLI
+  resolves the Concierge topic the way notify-dead-letters.ts does
+  (topicForSubject over the topic map with OPERATOR_SUBJECT_ID) and reads
+  the token and chat id from the environment only; nothing secret is
+  written anywhere. FIRM: this is pipeline code (extension/src), a real
+  ticket through the normal path, as the intake says. Split by the
+  specifier from the operator's 2026-09-09 intake (1:N, Consolidation
+  Authority): this is the mechanism half of its section 1; BL-1510 is the
+  report half and depends on this one.
+
+invariants:
+  - "The bot token never appears in any error string, log line or thrown message the document upload path or the CLI produces - success and failure both carry the redacted shape every other telegramClient call uses."
+
+source: |
+  backlog/INTAKE-model-score-report-and-resilience-tiered-confs.md
+  (operator, 2026-09-09), section 1, split 1:N by the specifier on
+  2026-09-10 into BL-1509 (this: the upload + CLI) and BL-1510 (the
+  report). Operator directive, verbatim:
+
+  > **Deliverable**: render the table above (re-pulled fresh, not copy-pasted
+  > stale) as a properly formatted FILE ATTACHMENT delivered to the operator's
+  > Concierge Telegram topic - not inline chat text. There is currently no
+  > `sendDocument`-equivalent in `extension/src/notify/telegramClient.ts`; the
+  > closest existing precedent is `sendVoiceNote` (same file), which already
+  > does a multipart file upload to the Telegram Bot API - extend that same
+  > pattern for a generic document upload rather than inventing a new one.
+  > This is pipeline code (`extension/src/`) - a real ticket through the
+  > normal specifier -> coder -> ... -> QA path, not a hotfix.
+
+description: |
+  ## What
+
+  `sendDocument` in `extension/src/notify/telegramClient.ts`: token, chat
+  id, file bytes, filename, optional `message_thread_id`, optional
+  caption, an injectable post function (the `SendVoicePostFn` seam
+  sendVoiceNote already has - reuse or generalise it), returning the same
+  `{ success, error? }` shape with `formatApiFailureError` /
+  `formatNetworkError` redaction. Bot API method `sendDocument`, field
+  `document`.
+
+  A headless CLI under `extension/src/tools/` (name is the implementer's;
+  `send-telegram-document.ts` fits the neighbours): `<project-root> <file>
+  [--caption <text>]`, resolves the Concierge topic exactly as
+  `notify-dead-letters.ts` does (`topicForSubject(readTopicMap(root),
+  OPERATOR_SUBJECT_ID)`), exits non-zero with
+  `operator-topic-not-yet-created` when the map has no such topic, reads
+  `TELEGRAM_BOT_TOKEN` / `TELEGRAM_CHAT_ID` from the environment, honours
+  `TELEGRAM_NOTIFY_FORCE_RESULT` for the no-network path. `main()` is a
+  thin wrapper over an exported helper driven in-process by the tests
+  with stubbed argv and env.
+
+  ## Why
+
+  Nothing in the swarm can hand the operator a file today; the scoring
+  table the operator asked for (BL-1510) is the first consumer, and a
+  generic upload serves the briefing and evidence exports later.
+
+  ## Scenario notes for the coder
+
+  - Scenario 01: the fake post function captures the URL and the FormData;
+    assert the endpoint ends in `/sendDocument`, and the form's `chat_id`,
+    `message_thread_id` and the `document` entry's filename.
+  - Scenario 02: mirror telegramClient's existing failure tests for
+    sendVoiceNote (non-ok status with description; thrown network error);
+    assert the token substring is absent from the error.
+  - Scenario 03: drive the exported helper with a fixture root whose topic
+    map does / does not name the Concierge subject; the send function is
+    injected, so no network.
+
+  ## Not in scope
+
+  - The scoring report itself (BL-1510).
+  - A Telegram /command that triggers uploads; the front desk is untouched.
+
+qa_e2e_procedure: |
+  On the parcel commit, from `extension/`:
+  1. `npm test` green; Stryker over the compiled client and CLI helpers
+     with no surviving mutants on the new functions.
+  2. Live, from the repo root with the front desk's token and chat in the
+     environment: `node extension/out/tools/send-telegram-document.js .
+     README.md --caption "BL-1509 e2e"` -> the file appears in the
+     Concierge topic as an attachment; exit 0.
+  3. With a scratch root whose topic map lacks the Concierge subject the
+     same command exits non-zero printing operator-topic-not-yet-created.
