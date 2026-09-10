@@ -39,7 +39,7 @@ retires:
 # No required_wiring: no mechanism is built and no call site is needed.
 # The gate that proves this parcel is the feature runs themselves.
 
-human_approval: pending
+human_approval: approved
 approval_context: >
   Landed contract rows are RETIRED here (BL-368 scenario 03, BL-359
   scenario 05, and the whole of BL-647's feature file) and an unwired
