@@ -1,0 +1,127 @@
+id: BL-1507
+title: "Swarm stamp-off: hotfix a4b30d454b made the launcher's opt-in b.ai guard set the b.ai base unconditionally (base follows key), after a coordinator pane respawned with a stale Cerebras base presented the b.ai key to api.cerebras.ai and failed every aider turn - review the landed diff, confirm or refute, open narrow follow-ups; never rewrite it and never write the ledger decision"
+milestone: M8
+type: defect
+severity: medium
+# medium: the fault is already fixed on main (the coordinator pane, respawned
+# with a stale Cerebras base, failed every aider turn on 2026-09-09); what
+# is open is the review the constitution owes a hotfix (BL-848). Not high:
+# nothing is degraded today.
+status: todo
+epic: swarm-reliability
+priority: 20
+direction: swarm-reported
+depends_on: []
+mutation_cost: low
+# low: review-only; the code under review is shell (swarmforge.sh) and
+# Babashka - no mutation/CRAP/DRY wired; one step-handler file.
+slice_size_envelope: low
+required_stages: [coder, cleaner, architect, hardender, documenter, qa]
+
+acceptance: specs/features/BL-1507-swarm-stamp-bai-base-follows-key-a4b30d454b.feature
+
+# A review parcel adds no production call site; the mechanism under review
+# is already wired and its own standing tests are green on main
+# 60623ebf02 (specifier, 2026-09-10). The handler entry is the BL-233 pin.
+required_wiring:
+  - 'specs/pipeline/steps/bl1507SwarmStampBaiBaseFollowsKeySteps.js::registerSteps::the handler lands in the same parcel as the feature (BL-233, BL-1371)'
+
+human_approval: approved
+approval_context: >
+  A new feature file is authored here, so it needs a tap. No choice is
+  posed and there are no ruling_options. What needs sign-off is the
+  DISPOSITION only: that reviewing the landed diff of a4b30d454b (BL-811 /
+  BL-849 posture) rather than re-implementing it is right, and that
+  medium is the right severity for a review of a fault already fixed.
+  FIRM: the parcel changes no file under swarmforge/ except to add
+  evidence; a refuted scenario is a narrow follow-up via note to the
+  specifier, never an in-parcel rewrite. FIRM: the parcel never writes
+  human_decision into backlog/hotfix-ledger.yaml (the last scenario).
+  Minted by the specifier on the coordinator's ledger note of 2026-09-10
+  07:11Z; the ledger row is linked to this ticket in the mint commit.
+
+invariants:
+  - "The stamp never rewrites the hotfix: every file the parcel touches is evidence, a feature, or a step handler; swarmforge/scripts/* and swarmforge/swarmforge.sh are byte-identical to the received commit."
+
+source: |
+  backlog/hotfix-ledger.yaml row `a4b30d454b` (detected 2026-09-09, state
+  pending, no stamp ticket) surfaced by the certification sweep as a
+  coordinator note, forwarded to the specifier 2026-09-10 07:11Z. Hotfix
+  landed by the operator (human-directed, Claude Code) 2026-09-09 with the
+  `Hotfix-Certification: pending` trailer.
+
+description: |
+  ## What
+
+  An operator hotfix is live on main and has never been through a gate.
+  This ticket is that gate: a REVIEW ticket, not a rewrite ticket -
+  confirm or refute, and open narrow follow-ups for anything found.
+
+  ## The failure it fixed
+
+  `swarmforge.sh` emits one of two b.ai guard blocks into a role's launch
+  script: the host-sniff variant when the window's CLI names api.b.ai
+  (base set unconditionally), or the opt-in variant when
+  `SWARMFORGE_USE_BAI=1` is honoured without it. The auto-provisioned
+  coordinator has no such CLI, so it got the opt-in variant, which
+  exported `OPENAI_API_BASE="${OPENAI_API_BASE:-https://api.b.ai/v1}"`.
+  When `swarm ensure` respawned that pane at 10:54 on 2026-09-09 the
+  respawner's shell still carried `SWARMFORGE_USE_CEREBRAS=1` and
+  `OPENAI_API_BASE=https://api.cerebras.ai/v1` (`provider_respawn_env_lib`
+  forwards every `SWARMFORGE_USE_*` it sees, and
+  `provider_compat_lib/resolve-openai-compat` checks Cerebras first), so
+  the KEY switched to b.ai while the BASE stayed Cerebras, and aider
+  failed every turn with `OpenAIException - Wrong API Key`.
+
+  ## What landed (files to review)
+
+  - `swarmforge/swarmforge.sh`: the opt-in `bai_guard` now exports
+    `OPENAI_API_BASE=https://api.b.ai/v1` and `OPENAI_BASE_URL=...`
+    unconditionally (10 lines changed).
+  - `swarmforge/scripts/test/test_alternate_runtime_launch.sh` case 11:
+    opt-in launch with a stale Cerebras base; the guard block, extracted
+    and executed in isolation, must yield the b.ai key AND base. Green on
+    main 60623ebf02 with cases 1-10 unchanged (specifier, 2026-09-10).
+
+  ## Review goals
+
+  1. Confirm both guard variants agree (scenario 01, rows 1-2) and that
+     the flag unset leaves the environment alone (row 3).
+  2. Confirm the secret never reaches the launch script file (scenario
+     02) - the existing case 10/11 discipline.
+  3. Refute-worthy question for the architect, evidence only: the
+     Cerebras and Perplexity opt-in guards above the b.ai one keep the
+     `${OPENAI_API_BASE:-...}` shape the hotfix removed for b.ai. "A key
+     and an endpoint naming different providers is never what the flag
+     meant" applies to them too; the respawn env forwarding that put a
+     stale opt-in into the coordinator's shell is the root, and a
+     follow-up may want either every opt-in guard base-follows-key or the
+     respawner to forward only the opt-in in force. Name it in evidence
+     as a follow-up; do not fix here.
+
+  ## Scenario notes for the coder
+
+  - Scenarios 01-02 are case 11's shape: `zsh -f` sources `swarmforge.sh`
+    against a fixture root, `launch_role` writes
+    `.swarmforge/launch/<role>.sh`, the handler extracts the guard block
+    with the same awk and executes it in isolation with the stale base
+    exported. Scenario 01's second row uses a window line carrying
+    `--openai-api-base https://api.b.ai/v1` (the host-sniff variant, case
+    10's shape).
+  - The last scenario's handler reads `backlog/hotfix-ledger.yaml` for the
+    row `commit: a4b30d454b` and asserts `human_decision` is null;
+    BL-1346's handler is the precedent.
+
+notes: |
+  Ledger: linked to row a4b30d454b via `hotfix_ledger_update.bb --link` in the
+  mint commit.
+
+qa_e2e_procedure: |
+  On the parcel commit:
+  1. `git diff main...HEAD --name-only` names only evidence, the feature,
+     the step handler + index.js registration (invariant 1).
+  2. `run_acceptance.sh` on the BL-1507 feature -> every scenario green.
+  3. `bash swarmforge/scripts/test/test_alternate_runtime_launch.sh` -> 11/11 PASS.
+  4. `backlog/hotfix-ledger.yaml` row a4b30d454b: `human_decision: null`.
+  5. After done: the human runs `bb swarmforge/scripts/hotfix_ledger_update.bb .
+     --decide a4b30d454b approved|waived` and commits the ledger.

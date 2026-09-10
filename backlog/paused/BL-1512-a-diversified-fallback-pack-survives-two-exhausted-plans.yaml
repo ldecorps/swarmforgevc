@@ -1,0 +1,166 @@
+id: BL-1512
+title: "A diversified fallback pack survives b.ai and Anthropic being exhausted together: swarmforge/packs/candidate-diversified-fallback-mono-router.conf staffs every pipeline seat from a third plan (Cursor, OpenAI, Alibaba Token Plan) with a model certified for that role, passes the staffing gate without the override hatch, and states in its header why each seat was chosen and how to launch it - the coordinator seat follows the operator's ruling because no non-Anthropic, non-b.ai coordinator pick has been proven live"
+milestone: M8
+type: feature
+status: todo
+epic: best-of-breed-swarm
+priority: 13
+direction: human-requested
+depends_on: []
+mutation_cost: low
+# low: one new pack conf and its header; gated by the staffing gate CLI, the
+# steward's eligible command and pack parse tests; no TypeScript.
+slice_size_envelope: low
+required_stages: [coder, cleaner, architect, hardender, documenter, qa]
+
+acceptance: specs/features/BL-1512-a-diversified-fallback-pack-survives-two-exhausted-plans.feature
+
+# A conf change has no code call site to anchor; the consumers (launcher,
+# staffing gate) already read every pack under swarmforge/packs/. Handler
+# pin only.
+required_wiring:
+  - 'specs/pipeline/steps/bl1512DiversifiedFallbackPackSteps.js::registerSteps::the handler lands in the same parcel as the feature (BL-233, BL-1371)'
+
+human_approval: approved
+human_ruling: |
+  Coordinator stays claude-sonnet-5 (Anthropic) with a header caveat that the seat is not diversified (recommended)
+ruling_provenance: tapped
+approval_context: >
+  A new feature file is authored here, so it needs a tap, and the one
+  open question the intake itself raises is recorded as ruling_options
+  below - the coordinator seat. The intake's own discipline is "don't list
+  an untested pick as a real option", and only Anthropic (claude-sonnet-5)
+  and b.ai (glm-5.3-flash) are proven live on coordinator, both of which
+  this pack exists to survive. Option 1 keeps claude-sonnet-5 on the
+  coordinator with a header caveat that this seat is NOT diversified;
+  option 2 holds this ticket until a real coordinator trial of cursor/auto
+  (or claude-fable-5-1) lands as a separate ticket the specifier mints on
+  your reply. FIRM, the seven pipeline seats (the intake's Fallback 2
+  column, with one deviation flagged): specifier cursor/auto; coder
+  openai gpt-5.3-codex via the codex agent; cleaner cursor/auto; architect
+  gpt-5.3-codex; hardender cursor/auto; documenter qwen/qwen3.7-plus on
+  the Alibaba Token Plan - the intake's table names claude-sonnet-5 here,
+  which is Anthropic and so cannot serve a pack for "BOTH b.ai and
+  Anthropic unavailable"; qwen3.7-plus is the documenter's next certified
+  non-Anthropic pick (0.72-0.8) - Amend if you prefer another; QA
+  cursor/auto. FIRM: every seat's model must be certified for its role
+  (steward eligible, no override) and the staffing gate must pass without
+  PACK_STAFFING_SKIP_GATE; if a pick fails either, the coder reports it
+  via note rather than substituting silently. Split by the specifier from
+  the operator's 2026-09-09 intake (1:N): section 3.
+ruling_options:
+  - Coordinator stays claude-sonnet-5 (Anthropic) with a header caveat that the seat is not diversified (recommended)
+  - Hold this pack until a real coordinator trial of cursor/auto lands as a separate ticket
+
+invariants:
+  - "No pipeline seat of the diversified pack resolves to the anthropic or the tencentcloud2 provider, whatever the coordinator seat is ruled to be."
+
+source: |
+  backlog/INTAKE-model-score-report-and-resilience-tiered-confs.md
+  (operator, 2026-09-09), section 3, split 1:N by the specifier on
+  2026-09-10. Operator directive, verbatim:
+
+  > ## 3. Fallback tiers - several candidates per seat, from different plans
+  >
+  > Per-seat ranked alternates, chosen for PROVIDER diversity (never repeat a
+  > plan two seats in a row where a same-or-better-scoring alternate from a
+  > different plan exists), so one exhausted plan degrades one tier, not the
+  > whole swarm:
+  >
+  > | Seat | Primary (plan) | Fallback 1 (plan) | Fallback 2 (plan) |
+  > |---|---|---|---|
+  > | specifier | claude-fable-5-1 / glm-5.3-flash (Anthropic / b.ai) | claude-sonnet-5 (Anthropic) | cursor/auto (Cursor) |
+  > | coder | glm-5.3-flash (b.ai) | claude-sonnet-5 (Anthropic) | gpt-5.3-codex (OpenAI) |
+  > | cleaner | glm-5.3-flash (b.ai) | claude-sonnet-5 (Anthropic) | cursor/auto (Cursor) |
+  > | architect | glm-5.3-flash (b.ai) | claude-sonnet-5 (Anthropic) | gpt-5.3-codex (OpenAI) |
+  > | hardender | glm-5.3-flash (b.ai) | claude-sonnet-5 (Anthropic) | cursor/auto (Cursor) |
+  > | documenter | glm-5.3-flash (b.ai) | cursor/auto (Cursor) | claude-sonnet-5 (Anthropic) |
+  > | QA | glm-5.3-flash (b.ai) | claude-sonnet-5 (Anthropic) | cursor/auto (Cursor) |
+  > | coordinator | claude-sonnet-5 (Anthropic) - not role-matrix-scored, but proven live this session | glm-5.3-flash (b.ai) - also proven live this session | - |
+  >
+  > Every seat's "Fallback 1" is `claude-sonnet-5`/`claude-fable-5-1`
+  > (Anthropic) - meaning **`swarmforge/packs/anthropic-mono-router.conf`,
+  > which already exists, already IS the tier-1 fallback conf**: if b.ai's
+  > plan is exhausted, switching to that pack (no new file needed) restores
+  > every seat to its #2 choice at once. What's still missing is a genuine
+  > tier-2/3 diversified conf (Fallback 2 column, mixing Cursor/OpenAI/Qwen
+  > per seat) for the case where BOTH b.ai and Anthropic are unavailable at
+  > once - build that as
+  > `swarmforge/packs/candidate-diversified-fallback-mono-router.conf`,
+  > following the header-comment-rationale convention already established in
+  > `bob-multi-provider-mono-router.conf` (state why each seat's pick was
+  > chosen, plan-diversity intent, and how to launch it).
+  >
+  > Coordinator's fallback is thin (only Anthropic and b.ai proven live this
+  > session, no role-matrix data at all) - if a third tier is wanted, run a
+  > real trial for `claude-fable-5-1` or `cursor/auto` on coordinator before
+  > promising it as a fallback; don't list an untested pick as a real option
+  > (same discipline as `[[glm-bai-specifier-lite-20260909]]` - only score
+  > what was actually run).
+
+description: |
+  ## What
+
+  New file `swarmforge/packs/candidate-diversified-fallback-mono-router.conf`,
+  a `config rotation router` pack with the same config block as
+  anthropic-mono-router.conf, whose window lines are (agent syntax per
+  the shipped packs: `window <role> cursor <role> --model auto`,
+  `window <role> codex <role> --model gpt-5.3-codex`, the Qwen Token Plan
+  line as qwen-mono-router.conf writes it):
+
+  | seat | agent | model | plan |
+  |---|---|---|---|
+  | coder (HOME) | codex | gpt-5.3-codex | OpenAI |
+  | specifier | cursor | auto | Cursor |
+  | cleaner | cursor | auto | Cursor |
+  | architect | codex | gpt-5.3-codex | OpenAI |
+  | hardender | cursor | auto | Cursor |
+  | documenter | aider or the qwen line the shipped qwen pack uses | qwen3.7-plus | Alibaba Token Plan |
+  | QA | cursor | auto | Cursor |
+  | coordinator | per human_ruling | | |
+
+  Header: the role -> agent -> model table with one line of rationale per
+  seat (score and evidence ref from the steward, why this plan and not a
+  repeat of the previous seat's), the plan-diversity intent, which
+  coordinator picks were proven live and which were not, PREREQ (keys
+  by env var name only, never a value), and the LAUNCH line - the
+  bob-multi-provider-mono-router.conf convention.
+
+  ## Why
+
+  anthropic-mono-router.conf is the tier-1 fallback already; this is the
+  tier-2 pack for two plans down at once, so the swarm degrades one tier
+  per exhausted plan instead of stopping.
+
+  ## Scenario notes for the coder
+
+  - Scenario 01 parses the pack with the launcher's `parse_config` and
+    resolves each line's provider through `pack_staffing_gate_lib.bb`'s
+    own lookups (agent-model-providers, api-base-host-providers).
+  - Scenario 02 runs `bb model_steward_cli.bb eligible <provider>/<model>
+    --role <role>` per line, no `--override-uncertified`.
+  - Scenario 03: `env -u PACK_STAFFING_SKIP_GATE bb pack_staffing_gate_cli.bb
+    <root> <conf>` - every window row `pass` (decide the variable in the
+    handler; BL-1485).
+  - Scenario 04 reads the header and the coordinator config lines against
+    the ticket's `human_ruling`.
+  - If gpt-5.3-codex or qwen3.7-plus fails the gate or eligibility on the
+    real registry, STOP and note the specifier with the verdict - the
+    pick is the operator's to change, not the coder's.
+
+  ## Not in scope
+
+  - Running a coordinator trial (a separate ticket if option 2 is ruled).
+  - Changing any existing pack; automatic switching between packs.
+
+qa_e2e_procedure: |
+  1. `env -u PACK_STAFFING_SKIP_GATE bb swarmforge/scripts/pack_staffing_gate_cli.bb
+     . swarmforge/packs/candidate-diversified-fallback-mono-router.conf`
+     -> every window line `pass`.
+  2. For each line: `bb swarmforge/scripts/model_steward_cli.bb eligible
+     <provider>/<model> --role <role>` -> eligible.
+  3. `SWARMFORGE_TERMINAL=none ./swarm <scratch-root> --pack
+     candidate-diversified-fallback-mono-router` on a scratch root with
+     fake keys reaches the staffing gate with every seat `pass` (the
+     launcher may then fail on missing real keys - that is after the
+     gate, and expected).
