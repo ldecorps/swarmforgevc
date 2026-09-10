@@ -183,6 +183,15 @@
 (defn header-value [file field default]
   (or (header-field file field) default))
 
+;; BL-1494: the one place "is this parcel a deferred note" is decided - the
+;; delivery hop (handoffd.bb's maybe-notify!) and the send path
+;; (swarm_handoff.bb's skip-sync-inject?) both need the identical answer, so
+;; neither hand-rolls its own copy of the (type, wake) match. Pure and
+;; string-based, no file I/O, so it is directly bb-eval-testable the same
+;; way mono_router_lib.bb's own pure decisions already are.
+(defn deferred-note? [{:keys [parcel-type wake-field]}]
+  (boolean (and (= "note" parcel-type) (= "defer" wake-field))))
+
 (defn non-forwarding?
   "True when file carries the reverse-hop merge-only marker (Article 2.4).
    BL-1302: the ONE spelling of this check. Two callers need it — the send
