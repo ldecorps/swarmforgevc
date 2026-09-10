@@ -29,7 +29,7 @@ required_wiring:
   - 'swarmforge/scripts/expedite_cli.bb::project_root_arg_lib.bb::the CLI that wrote unpark/ sources the check'
   - 'specs/pipeline/steps/bl1517ProjectRootArgSteps.js::registerSteps::the handler lands in the same parcel as the feature (BL-233, BL-1371)'
 
-human_approval: pending
+human_approval: approved
 approval_context: >
   A new feature file is authored here, so it needs a tap. No choice is posed
   and there are no ruling_options. FIRM: a root argument that begins with
