@@ -1,0 +1,184 @@
+id: BL-1523
+title: "transcriptWalker.ts has carried 89 survived and 45 no-coverage mutants (394 instrumented, score 58.77%) through two hardener passes - BL-1364 measured 94 survivors on 2026-09-05 and recorded them as pre-existing, BL-1488's deferred-gate run re-measured them on 2026-09-10 - and no ticket owns them; this ticket owns all 134, drives the 45 no-coverage mutants and the 7 module-level table survivors to zero over the full unit suite, and records a disposition for every remaining function-body survivor under the BL-1519 ruling"
+milestone: M8
+type: chore
+severity: medium
+# medium (chore, not a defect): no live fault and no broken safety signal -
+# BL-1488 discharges the gate on a completed run. A real, contained test
+# gap on the transcript walker that classifies every agent turn.
+status: todo
+epic: first-run-mutation-debt
+priority: 30
+direction: swarm-proposed
+depends_on: []
+# BL-1488 is active and discharges the ledger row; it is not a dependency -
+# this ticket re-measures over the full suite at its own start and takes
+# whatever BL-1488's hardener did not kill in-pass.
+mutation_cost: medium
+# medium: tests only, one 389-line module, full Stryker run over the unit
+# suite; a production change only if a seam is genuinely missing.
+slice_size_envelope: low
+required_stages: [coder, cleaner, architect, hardender, documenter, qa]
+
+acceptance: specs/features/BL-1523-transcript-walker-uncovered-regions-and-tables-to-zero.feature
+
+required_wiring:
+  - 'specs/pipeline/steps/bl1523TranscriptWalkerUncoveredToZeroSteps.js::registerSteps::the handler lands in the same parcel as the feature (BL-233, BL-1371)'
+# No production anchor is declared on purpose (BL-1235): the module and its
+# consumers already exist, so any pattern on them matches before and after
+# the work and gates nothing. The evidence file is the contract.
+
+human_approval: pending
+approval_context: >
+  A new feature file is authored here, so it needs a tap, and the tap also
+  records one ruling. The 134 mutants split three ways in the census
+  (backlog/evidence/BL-1488-survivor-census-specifier-20260911.md): 45
+  no-coverage (against BL-1476's 4-file include set - re-measured over
+  the full suite first), 7 survivors on module-level tables
+  (INTERVAL_KIND_TO_CATEGORY, PROVIDER_OUTAGE_RE, TEST_RUN_RE,
+  GIT_MECHANICAL_RE), and 82 survivors inside function bodies, 48 of them
+  in the tool and line classifiers (classifyToolName 23, classifyLine 9,
+  classifyShellCommand 6, inputAsText 5, toolBlocks 5). FIRM either way:
+  the 45 + 7 go to zero here, one sitting. The ruling is what happens to
+  the 82: your BL-1519 ruling for the three large front-desk files
+  (chase the untested regions and the tables, grandfather the rest under
+  the BL-1164 changed-path gate) is applied to this file by analogy as
+  the recommended option; the other option chases all 82 to zero too, in
+  a successor slice the specifier mints from the census (two function
+  groups of 48 and 34). No survivor is suppressed or hand-edited out of a
+  manifest under either option.
+ruling_options:
+  - Apply the BL-1519 ruling by analogy - chase the 45 no-coverage mutants and the 7 module-level table survivors to zero here, and record the 82 function-body survivors as grandfathered debt guarded by the changed-path gate (recommended)
+  - Chase all 134 to zero - this ticket takes the 45 + 7 and the specifier mints one successor slice for the 82 function-body survivors, in two function groups of 48 and 34
+
+invariants:
+  - "Every mutant Stryker reports for out/metrics/transcriptWalker.js at the parcel commit is killed, recorded as an accepted equivalent with the code-level reason, recorded as grandfathered under the BL-1519 ruling, or named as owned by another ticket; none is silent."
+
+description: |
+  ## What is wrong
+
+  `extension/src/metrics/transcriptWalker.ts` (BL-664, 2026-08-27) is the
+  deterministic walker that classifies every line of an agent transcript
+  into tool, test, git, provider-outage and overhead intervals; the turn
+  profiler, the briefing's mechanical-share figure and the turn-profile
+  producer all read its output. It has been mutation-tested twice and
+  owned by nobody both times:
+
+  - BL-1364's hardener pass (2026-09-05,
+    `backlog/evidence/BL-1364-hardener-pass-20260905.md`) ran a scoped
+    Stryker over it, found 94 survivors, cross-referenced every one to
+    code BL-1364 did not touch (`classifyToolName`, `classifyLine`, ...)
+    and recorded them as "pre-existing, out of scope".
+  - BL-1488's deferred-gate run (2026-09-10, coder tip `c3a021a917`,
+    `backlog/evidence/BL-1488-coder-mutation-run1-20260910.md`) measured
+    394 mutants, 191 killed, 89 survived, 45 no-coverage, score 58.77%.
+    The specifier's ruling on that run (BL-1488 `notes:`, 2026-09-11) is
+    that the ledger row discharges on the completed run and that every
+    survivor leaves owned. This is the owner for this file.
+
+  The census, per enclosing function
+  (`backlog/evidence/BL-1488-survivor-census-specifier-20260911.md`,
+  exact command and script inside): no-coverage 45 = classifyLine 13,
+  classifyToolName 11, transcriptsUnchanged 9, inputAsText 4,
+  classifyShellCommand 2, parseTimedEvents 2, classifyIntervalKind 2,
+  walkTranscriptFiles 1, parseTimestampMs 1. Module-level table survivors
+  7 = INTERVAL_KIND_TO_CATEGORY 3, PROVIDER_OUTAGE_RE 2, TEST_RUN_RE 1,
+  GIT_MECHANICAL_RE 1. Function-body survivors 82 = classifyToolName 23,
+  classifyLine 9, overheadIntervals 7, attributeTrail 6,
+  classifyShellCommand 6, inputAsText 5, parseTimedEvents 5, toolBlocks 5,
+  transcriptsUnchanged 4, walkTranscriptFiles 3, classifyIntervalKind 2,
+  coverageFromIntervals 2, classifyTranscriptText 2, parseTimestampMs 1,
+  walkTranscriptText 1, snapshotTranscriptFiles 1. Three of those
+  (classifyTranscriptText 2, walkTranscriptText 1) are BL-1476's own
+  lines and are BL-1488's hardener's to chase in-pass first; the
+  re-measure here takes whatever remains.
+
+  ## What changes
+
+  - The run is repeated over the FULL unit suite (BL-1488's row used
+    BL-1476's 4-file include set, so a no-coverage mutant there may
+    already be reached by a test outside it); the evidence records the
+    include set, the summary block, load and duration, and at least 380
+    instrumented mutants (the BL-1445 census pin; 394 at mint).
+  - Every no-coverage mutant goes to zero: behaviour tests reach the
+    uncovered branches of the classifiers (which interval kind a tool
+    name, a shell command or a transcript line maps to, for the inputs
+    that distinguish each branch), the snapshot comparison
+    (`transcriptsUnchanged` on a deleted, added, and rewritten file) and
+    the timestamp parser.
+  - Each module-level table survivor is killed through the call that
+    consumes it (which category a kind maps to; which line each regex
+    matches and does not), never by pinning the literal for its own sake;
+    where Stryker's cached-module artifact makes a killed static export
+    read as survived, the evidence carries the hand-mutation run that
+    proves the suite fails (BL-1364's protocol, 2026-09-05).
+  - Every remaining survived mutant is listed with its enclosing function
+    and one disposition: killed, accepted equivalent with the code-level
+    reason and the consumer grep (BL-234), grandfathered under the
+    BL-1519 ruling, or owned by a named successor ticket (scenario 03).
+  - Evidence path: `backlog/evidence/BL-1523-transcriptWalker-mutation.md`.
+
+  ## How (direction, not mandate)
+
+  - `--mutate` scoped to `out/metrics/transcriptWalker.js`, `perTest`,
+    sibling links per the Verification rules; check
+    `mutation_cooldown_gate.bb` first and record its decision (BL-1488's
+    land may re-touch nothing here, but the gate is the reader, not this
+    text). `stryker.bl1488.config.json` in BL-1488's parcel is the
+    starting point; widen its vitest config to the whole suite.
+  - Documenter: nothing beyond the evidence file; no diagram trigger fires.
+
+constraints: >
+  Tests only unless a seam is missing, in which case the smallest
+  extraction that exposes the behaviour to an in-process test. Never
+  `process.chdir()` under mutation; never a hand-edited manifest; no
+  mutant suppressed. The step handler lands with the feature (BL-233).
+  Classification behaviour does not change: a test that needs a different
+  category for an input is a spec-gap note, not an edit.
+
+out_of_scope: |
+  - turnProfileProducer.ts and run-turn-profile-producer.ts: their 40
+    survivors are BL-1488's hardener's in-pass work (30 sit on BL-1476's
+    own lines; the rest were BL-1364's accepted equivalents).
+  - The successor slice for the 82 function-body survivors, if the tap
+    picks the second ruling option - minted separately from the census.
+  - BL-1519's three front-desk and pipeline-board files.
+
+qa_e2e_procedure: |
+  1. The BL-1523 feature passes (three scenarios).
+  2. `backlog/evidence/BL-1523-transcriptWalker-mutation.md` shows a
+     completed Stryker summary over the full unit suite with at least 380
+     mutants, zero no-coverage, and the four table constants each with a
+     killing test case or a hand-mutation proof.
+  3. Every survived mutant in that summary appears in the evidence with
+     its function and a disposition; the count of listed rows equals the
+     summary's survived count.
+  4. `npm test` from `extension/` is green.
+
+source: |
+  Coder note to the specifier, priority 00, 2026-09-10T22:43Z: "BL-1488:
+  174 unresolved mutants found, not low-cost, see coder evidence".
+  Coordinator note, same minute: "BL-1488 premise false: 174 unresolved
+  mutants, not low-cost discharge". Coder evidence
+  backlog/evidence/BL-1488-coder-mutation-run1-20260910.md; BL-1364
+  hardener evidence backlog/evidence/BL-1364-hardener-pass-20260905.md;
+  census backlog/evidence/BL-1488-survivor-census-specifier-20260911.md.
+  Rule: hardender.prompt tail section, accepted a17bc78d43 (2026-09-10).
+
+notes: |
+  Minted 2026-09-11 by the specifier while answering the coder's and the
+  coordinator's BL-1488 notes, the same pass. INVEST: Independent (BL-1488
+  is not a dependency; the re-measure is this ticket's own first step),
+  Negotiable (test shapes are direction), Valuable (the walker's mutation
+  gate goes from 58.77% with 45 unreached mutants to a full account),
+  Estimable (52 mutants to kill on 389 lines, one sitting; the 82 are a
+  recorded disposition, not work, under the recommended option), Small
+  (three scenarios, one invariant), Testable (the parcel's own evidence).
+  The census pin (at least 380 mutants) is BL-1445's discipline.
+
+  Why a ruling and not a plain tap: the human already answered exactly
+  this budget question for the three large files on BL-1519 (recommended
+  option tapped); asking it again for a 389-line file would be churn, but
+  silently deciding it would be the BL-1300 shape. The recommended option
+  applies that ruling by analogy and says so; the other option is one
+  line to tap.

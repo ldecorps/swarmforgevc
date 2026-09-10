@@ -7,7 +7,7 @@ epic: first-run-mutation-debt
 priority: 40
 direction: swarm-proposed
 depends_on: []
-decomposes_into: [BL-1520, BL-1521]
+decomposes_into: [BL-1520, BL-1521, BL-1523]
 remaining_slices:
   - "extension/src/tools/telegram-front-desk-bot.ts - 285 survived, 654 no-coverage (against a 17-file include set), 1945 mutants, score 51.72%. The no-coverage mass sits in the extension-host adapter builders (buildPollAdapters 156, buildConciergeTickAdapters 125, applyHotfixStampAnswer 84, connectAndRelayReplies 37, main 15): the CLI main() is not the thin wrapper engineering.prompt requires. Slicing waits on the human ruling below."
   - "extension/src/tools/telegramFrontDeskBotCore.ts - 288 survived, 91 no-coverage, 2048 mutants, score 81.49% (BL-955's row; BL-620's row read 262/78 against a different include set). 89 of them are module-level constant and pattern tables, then answerIfAlreadyDecided 21, recordRulingDecisionAndClose 16, CONTROL_DECISION_EFFECTS 16, dispatchRuleCallback 12 no-coverage. Slicing waits on the human ruling below."
@@ -85,3 +85,15 @@ notes: |
   and mints or retires slices from the census; a slice for either large
   telegram file also names its function group and count in its title so
   the epic's remaining_slices stays a subtraction, not a guess.
+
+  Specifier, 2026-09-11: BL-1523 joins this epic. It owns the 134
+  survivors BL-1488's deferred-gate run measured on
+  extension/src/metrics/transcriptWalker.ts (89 survived, 45 no-coverage;
+  first measured at 94 by BL-1364's hardener on 2026-09-05 and left
+  unowned) - not a front-desk file, but the same class of debt and the
+  same ruling shape: BL-1523's own tap applies this epic's recorded
+  human_ruling by analogy as its recommended option. Census:
+  backlog/evidence/BL-1488-survivor-census-specifier-20260911.md. The
+  epic's three remaining_slices above are unchanged and still wait on
+  their own slicing from the 2026-09-10 census under the ruling.
+

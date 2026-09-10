@@ -28,9 +28,13 @@ epic: code-quality-gates
 priority: 8
 direction: swarm-reported
 depends_on: []
-mutation_cost: low
-# low: no code changes; one Stryker run over a compiled file set already
-# unit- and property-tested, one ledger discharge, one register row removed.
+mutation_cost: medium
+# medium (AMENDED 2026-09-11 by the specifier on the coder's note): the
+# run itself is one Stryker pass, but it surfaced 174 survivors, and 40 of
+# them (turnProfileProducer.ts 38, run-turn-profile-producer.ts 2 - 30 on
+# BL-1476's own lines) are this parcel's hardener's in-pass chase under
+# hardender.prompt's accepted rule (a17bc78d43). Tests only, one sitting.
+# The other 134 (transcriptWalker.ts) are owned by BL-1523, not chased here.
 slice_size_envelope: low
 required_stages: [coder, cleaner, architect, hardender, documenter, qa]
 
@@ -165,5 +169,46 @@ notes: |
   Grepped first: BL-1441 (active) owns only the 2026-08-19 rows; BL-1468
   (paused) only the BL-1452 row; no other open ticket names the BL-1476
   row or these three files' mutation gate.
+
+  Specifier, 2026-09-11 (answering the coder's note 2026-09-10T22:43Z
+  "174 unresolved mutants found, not low-cost" and the coordinator's
+  "premise false" note of the same minute): the premise was wrong about
+  the COUNT, not the shape. The run COMPLETED (400 killed / 120 survived /
+  54 no-coverage, reproduced byte-for-byte by the specifier on
+  2026-09-11 with a JSON reporter), so under the rule accepted on
+  2026-09-10 (a17bc78d43, hardender.prompt tail; specifier.prompt
+  companion bullet) the ledger row DISCHARGES on this run - "reason per
+  survivor" is satisfied by "killed in this pass", "accepted equivalent
+  with the code-level proof", or "first-run debt, owned by <id>", never
+  by holding the row until survivors reach zero, and never by the
+  coder's alternative of fabricating 174 equivalences (right call to
+  refuse that). Census, per-function blame and one disposition row per
+  mutant: backlog/evidence/BL-1488-survivor-census-specifier-20260911.md.
+  The split:
+  - turnProfileProducer.ts (31/7) + run-turn-profile-producer.ts (0/2) =
+    40: HARDENER, IN-PASS. 30 sit on BL-1476's own commits (49a716ed2a,
+    55b3eda9d3: resolveEntrySummary 10, the four re-export getters 10,
+    runTick 4, accumulateEntrySummary 2, resolveProducerTickOptions 2,
+    partialProducerResult 2) - the owed gate itself, rule item 2, mapping
+    done. The other 8 were among BL-1364's 9 accepted equivalents and main()'s
+    2 no-coverage were accepted the same day (2026-09-05); re-kill or
+    re-accept each with the reason. If any leave neither killed nor accepted, send the
+    unowned-survivors note and the specifier mints the owner.
+  - transcriptWalker.ts (89/45) = 134: OWNED BY BL-1523 (paused, tap
+    pending). Reason per row: "first-run debt, owned by BL-1523". The 3 on
+    BL-1476's lines (classifyTranscriptText 2, walkTranscriptText 1) are
+    in-pass first; BL-1523 re-measures and takes what remains.
+  Discharge shape: the evidence carries `Survivors: 120`, one `- ` row per
+  survived AND no-coverage mutant with its final verb (the step handler
+  counts `- ` rows against the Survivors line), `Load:` and `Duration:`;
+  `hardening_debt_ledger_update.bb --discharge BL-1476 mutation`; the
+  register row leaves in the same commit (invariant 2). mutation_cost
+  amended low -> medium above; slice_size_envelope stays low (tests and
+  evidence only). Nothing in the feature file changed - scenario 02's
+  wording already admits a reason per survivor - and the parcel is at the
+  coder (tip c3a021a917, unforwarded), so this YAML rides forward once
+  the coder merges main. Not a bounce: the coder's pass was right to run,
+  right to refuse fabricating reasons, and right to ask; the bounce
+  ledger records nothing for it.
 
 assigned_to: coder
