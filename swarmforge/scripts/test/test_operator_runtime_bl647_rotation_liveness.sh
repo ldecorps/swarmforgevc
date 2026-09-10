@@ -1,12 +1,12 @@
 #!/usr/bin/env bash
-# BL-647: `dead-agent-events` was blind to the rotation router — under the
-# DEFAULT mono-router pack it fired 6 permanent AGENT_EXITED (one per
-# dormant role, which never held a session by design) on every single tick,
-# 525 times against the real operator log. This is the WIRING half of the
-# fix: operator_runtime.bb's tick! must resolve rotation-mode from the conf
-# (swarm-identity's launch_pack -> swarmforge/packs/<pack>.conf), the active
-# resident role, and the resident session, and pass all three through to
-# operator-lib/dead-agent-events — never leave the pure fix unwired.
+# BL-647 (historical): `dead-agent-events` was blind to the rotation router —
+# under the DEFAULT mono-router pack it fired 6 permanent AGENT_EXITED (one
+# per dormant role, which never held a session by design) on every single
+# tick, 525 times against the real operator log. BL-653 (2026-08-26) retired
+# the tick's liveness patrol entirely — deterministic liveness now belongs to
+# the babysitter, never the LLM Operator's tick — and BL-1514 removed
+# `dead-agent-events` itself as dead logic; this file now asserts the
+# resulting zero-event behaviour on every one of these fixtures.
 #
 # cd's into the fixture before every tick: handoff-lib's target-root/
 # roles-tsv-path/mono-router-active-role-path resolve via `git
@@ -93,8 +93,8 @@ tmux -S "$SOCK1" kill-server 2>/dev/null || true
 rm -rf "$SOCK1_DIR" "$F1"
 
 # ── 2. BL-653: operator tick no longer wires dead-agent-events — resident
-#    death is escalated by babysitter_check.bb instead. Pure BL-647 logic
-#    remains covered by operator_lib_test_runner.bb. ───────────────────────
+#    death is escalated by babysitter_check.bb instead (BL-1514: the pure
+#    dead-agent-events function itself is gone). ───────────────────────────
 F2="$(make_fixture)"
 write_router_roles_tsv "$F2"
 write_router_identity "$F2"
@@ -127,8 +127,7 @@ check "BL-653/BL-647-wire-03: coordinator death does not manufacture AGENT_EXITE
 tmux -S "$SOCK3" kill-server 2>/dev/null || true
 rm -rf "$SOCK3_DIR" "$F3"
 
-# ── 4. non-rotation pack — operator tick stays quiet (BL-653); pure
-#    dead-agent-events for full-forge remains in operator_lib tests. ───────
+# ── 4. non-rotation pack — operator tick stays quiet (BL-653). ─────────────
 F4="$(make_fixture)"
 write_router_roles_tsv "$F4"
 SOCK4_DIR="$(mktemp -d)"; register_tmp_dir "$SOCK4_DIR"

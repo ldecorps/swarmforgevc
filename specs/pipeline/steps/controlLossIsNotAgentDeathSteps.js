@@ -13,7 +13,6 @@ const os = require('node:os');
 const { execFileSync, spawnSync, spawn } = require('node:child_process');
 
 const { OPERATOR_RUNTIME_BB_FILES } = require('./lib/operatorRuntimeBbFixtureFiles');
-const { track } = require('./lib/fixtureReaper');
 const { mkSocketFixtureRoot } = require('./lib/socketFixtureRoot');
 
 const REPO_ROOT = path.join(__dirname, '..', '..', '..');
@@ -180,52 +179,6 @@ function registerSteps(registry) {
         ctx.liveProcess.kill();
       }
     }
-  });
-
-  // ── control-loss-is-not-agent-death-03: the real detection must survive ──
-  registry.define(/^a role's agent process has really died$/, (ctx) => {
-    ctx.roles = ['coder', 'QA'];
-    ctx.runtimeTarget = mkRuntimeFixture();
-    // BL-817: registered BEFORE the tmux server below is spawned, so even a
-    // crash mid-launch is covered.
-    track(ctx.runtimeTarget);
-    writeRolesTsv(ctx.runtimeTarget, ctx.roles);
-    ctx.sockDir = mkTmp('sfvc-bl368-real-sock-');
-    ctx.sock = path.join(ctx.sockDir, 'bl368.sock');
-    execFileSync('tmux', ['-S', ctx.sock, 'new-session', '-d', '-s', 'swarmforge-coder', '-n', 'agent']);
-    execFileSync('tmux', ['-S', ctx.sock, 'new-session', '-d', '-s', 'swarmforge-QA', '-n', 'agent']);
-    fs.writeFileSync(path.join(ctx.runtimeTarget, '.swarmforge', 'tmux-socket'), ctx.sock);
-    execFileSync('tmux', ['-S', ctx.sock, 'kill-session', '-t', 'swarmforge-QA']);
-  });
-
-  registry.define(/^the swarm checks the health of its roles$/, (ctx) => {
-    ctx.tickOutput = tick(ctx.runtimeTarget);
-    ctx.events = eventsText(ctx.runtimeTarget);
-  });
-
-  registry.define(/^it reports that role as exited$/, (ctx) => {
-    if (!ctx.events.includes('"AGENT_EXITED","subject":"QA"')) {
-      throw new Error(`expected QA reported as AGENT_EXITED, got: ${ctx.events}`);
-    }
-    if (ctx.events.includes('SWARM_CONTROL_LOST')) {
-      throw new Error('expected no SWARM_CONTROL_LOST - the socket is genuinely reachable here');
-    }
-  });
-
-  registry.define(/^it recovers it$/, (ctx) => {
-    // "Recovers" at the scripted layer means dispatched into the launch
-    // pipeline for the disposable Operator to act on - actually respawning
-    // the pane is LLM-mediated by design (this architecture's own "the
-    // runtime detects, the disposable Operator decides" split). The
-    // dispatch itself is what OPERATOR_SKIP_LAUNCH=1 still proves: the
-    // event reached the inflight batch, exactly the same proof this
-    // repo's own pre-existing AGENT_EXITED tests already rely on.
-    if (!ctx.tickOutput.includes('"launched?":true')) {
-      throw new Error(`expected the tick to have dispatched the exited role into the launch pipeline, got: ${ctx.tickOutput}`);
-    }
-    // Cleanup only - the server may have already exited on its own once
-    // its last live pane's process ended; that is not this step's concern.
-    spawnSync('tmux', ['-S', ctx.sock, 'kill-server']);
   });
 
   // ── control-loss-is-not-agent-death-04 ──────────────────────────────

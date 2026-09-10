@@ -601,55 +601,6 @@
        (filter :role)
        vec))
 
-(defn dead-agent-events
-  "Given the sessions roles.tsv expects and the set of sessions tmux
-   actually reports live, produce one AGENT_EXITED event per missing role.
-   The runtime decides nothing about recovery — that is the LLM's call; this
-   only surfaces the fact.
-
-   BL-368: only ever called when the control channel itself is CONFIRMED
-   reachable (tmux answered, however few sessions it reported) - never on a
-   guess. A caller with an unreachable tmux socket must use
-   control-lost-event below instead, never this function with whatever
-   stale/empty session list it has lying around - the two are DIFFERENT
-   FACTS about the world (agents dead vs. control lost) and must never
-   collapse to the same N x AGENT_EXITED shape.
-
-   BL-647: under `rotation-mode` \"router\" exactly TWO tmux sessions exist
-   by design — the coordinator, and the ONE resident pane currently rotated
-   to `active-role`. The other roles in roles.tsv are dormant: they were
-   never expected to hold a session this tick, which is a different fact
-   from a role that had one and lost it, so a dormant role never produces an
-   event here. `rotation-mode` must be resolved by the caller from the conf
-   (never inferred from how many sessions happen to be live — that would
-   silently reclassify a real multi-agent-pack storm as normal) and passed
-   through unchanged. `resident-session` (roles.tsv's first non-coordinator
-   row — see handoff-lib/mono-router-resident-session) is what actually gets
-   checked for the active role: `respawn-pane -k` re-execs the pane in place
-   on every rotation and never renames the tmux session, so the active
-   role's OWN roles.tsv session name would read \"not live\" the moment it
-   isn't the home role. The coordinator is never a rotation target and is
-   always checked against its own session, rotation-mode or not. Omitting
-   the options map (or any non-\"router\" rotation-mode) reproduces the
-   pre-BL-647 behaviour exactly, for every role including the coordinator."
-  [expected-roles live-sessions
-   & [{:keys [rotation-mode active-role resident-session]}]]
-  (let [live (set live-sessions)
-        router? (= rotation-mode "router")
-        dormant? (fn [role] (and router? (not= role "coordinator") (not= role active-role)))
-        expected-session (fn [{:keys [role session]}]
-                            (if (and router? (not= role "coordinator"))
-                              resident-session
-                              session))]
-    (->> expected-roles
-         (remove (fn [{:keys [role] :as r}]
-                   (or (dormant? role)
-                       (contains? live (expected-session r)))))
-         (map (fn [{:keys [role] :as r}]
-                {:type "AGENT_EXITED" :subject role
-                 :detail (str "tmux session " (expected-session r) " not live")}))
-         vec)))
-
 ;; BL-368: the single loud signal for "the control channel itself did not
 ;; respond" (socket file missing, unix socket unlinked, tmux errored) -
 ;; deliberately NEVER N x AGENT_EXITED, which the Operator prompt's own
@@ -665,7 +616,8 @@
   "BL-653: events operator_runtime.bb may manufacture from its own tick
    sweep. BL-1353 also excludes TASK_ARRIVED - a handoff landing for the
    coordinator is ordinary pipeline motion, not a finding that something is
-   odd. Excludes dead-agent-events and SWARM_CHECK_TIMER — liveness and
+   odd. Excludes per-tick dead-agent liveness patrol and SWARM_CHECK_TIMER
+   entirely (BL-1514: the retired producer itself is gone) — liveness and
    periodic patrol belong to the deterministic babysitter; the LLM Operator
    is summoned, never scheduled. BABYSITTER_ESCALATION arrives via the
    queue from babysitter_check.bb, not from this function."

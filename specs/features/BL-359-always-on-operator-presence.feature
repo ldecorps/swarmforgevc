@@ -13,7 +13,8 @@ Feature: The Operator is always reachable, and being reachable never costs the s
 # `nohup` children; no systemd unit is installed anywhere), so a crash, an OOM or a reboot takes the
 # surface down for good and nothing brings it back. The presence is only "always on" if it outlives
 # the terminal, the crash and the reboot — and if it never quietly holds the single Operator slot
-# that the swarm's health sweeps, dead-pane respawns and stall nudges need.
+# that the swarm's own liveness owner, the deterministic babysitter (health sweeps, dead-pane
+# respawns and stall nudges), needs.
 
 Background:
   Given the swarm is running
@@ -45,11 +46,7 @@ Scenario Outline: The Operator presence comes back by itself, with no human to r
     | a crash       |
     | a host reboot |
 
-# BL-359 always-on-operator-presence-05
-Scenario: An always-on Operator never suspends the swarm's own recovery
-  Given the Operator presence is live
-  When a role's pane dies and a handoff is left unattended
-  Then the swarm still detects and recovers them
+# RETIRE-WITH: BL-1514
 
 # BL-359 always-on-operator-presence-06
 Scenario: An interactive Operator session can never go unseen by the swarm
