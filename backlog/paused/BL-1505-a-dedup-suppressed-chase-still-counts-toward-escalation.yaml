@@ -1,0 +1,160 @@
+id: BL-1505
+title: "test_handoffd_wake_attribution_wiring.sh case 05 has been red on main since 2026-08-27 with no owner, and it is detecting a live defect: since the wake dedup landed (cbe63cceba) a chase whose wake text is withheld as unchanged-mailbox returns false from the wake adapter, chase_sweep_lib writes the chase sidecar and logs the chase only on true, so a parcel in an unchanged inbox is woken once and never counted again - chaseCount stays 0 and the respawn and dead-letter rungs are unreachable for a live pane that ignores its wake; a chase attempt counts whether or not its text was injected"
+milestone: M8
+type: defect
+severity: high
+# high (standing-red rule 2026-09-05): a `standing` shell test red on main
+# for fourteen days is a broken safety signal; and the thing it detects is a
+# live degradation - the chase ladder above the first wake is inert for any
+# role whose inbox does not change, which is precisely the stuck-role case
+# the ladder exists for. The operator's own hotfix message on 2026-09-09
+# named this red as pre-existing and it stayed unowned.
+status: todo
+epic: swarm-reliability
+priority: 6
+direction: swarm-reported
+depends_on: []
+mutation_cost: low
+# low: Babashka only (no mutation/CRAP/DRY wired, BL-472) - chase_sweep_lib.bb
+# and/or handoffd.bb's chase path, gated by their own runners and the
+# standing wiring tests; one step-handler file.
+slice_size_envelope: low
+required_stages: [coder, cleaner, architect, hardender, documenter, qa]
+
+acceptance: specs/features/BL-1505-a-dedup-suppressed-chase-still-counts-toward-escalation.feature
+
+# No consumer anchor is honest here (BL-1235): the fix lives inside the
+# chase path every sweep already reaches (handoffd.bb :send-wake-up! ->
+# chase-poke-and-notify! -> chase_sweep_lib/apply-inbox-item-action!), so
+# an anchor on any of those literals matches before the fix and gates
+# nothing. Scenario 01 drives the REAL daemon through the standing wiring
+# test, which is the wiring proof. The handler entry is the BL-233 pin.
+required_wiring:
+  - 'specs/pipeline/steps/bl1505DedupSuppressedChaseStillCountsSteps.js::registerSteps::the handler lands in the same parcel as the feature (BL-233, BL-1371)'
+
+human_approval: pending
+approval_context: >
+  A new feature file is authored here, so it needs a tap. No choice is
+  posed and there are no ruling_options. FIRM (and the one thing to read
+  before tapping): a chase attempt whose wake text the dedup withheld
+  COUNTS toward the ladder - sidecar chaseCount advances, `chase`
+  telemetry is logged, and the wake itself stays attributed as skipped
+  (BL-870 stays truthful about what reached the pane). The rationale is
+  that unchanged-mailbox suppression has no time bound
+  (wake_dedup_lib.bb decide-wake-dedup), so without this a live pane that
+  ignores its wake is never respawned and its parcel never dead-lettered;
+  the pane already carries the wake text, so the attempt was made. The
+  test's case 05 has asserted exactly this contract since BL-870 and
+  BL-1191 never retired it. If you would rather keep suppressed chases
+  uncounted and retire case 05 instead, Amend - but then the ladder above
+  the first wake needs another owner. FIRM: no change to the dedup
+  decision itself, no change to attribution outcomes, no new wake text.
+  Minted by the specifier 2026-09-10 while stamping 6e05b02dd3 (BL-1504);
+  reproduced on main 60623ebf02: PASS 01, FAIL 05 "chase sidecar was never
+  written".
+
+invariants:
+  - "For any parcel and any sequence of chase sweeps, the chase count the sidecar records equals the number of sweeps that decided to chase it, independent of whether each wake's text was injected or dedup-suppressed."
+
+description: |
+  ## What is wrong
+
+  `chase_sweep_lib.bb` `apply-inbox-item-action!` (line 441):
+
+  ```
+  "chased" (when ((:send-wake-up! adapters) role)
+             (let [count (inc (:chaseCount item))]
+               (write-chase-count! (:filePath item) count now-ms)
+               ((:log-telemetry! adapters) {:type "chase" ...} now-ms)))
+  ```
+
+  `:send-wake-up!` (handoffd.bb line 1845) is `chase-poke-and-notify!`,
+  whose `:wake` branch returns `handoff-wake-with-dedup!`'s verdict -
+  `false` whenever `decide-wake-dedup` answers `:suppress`. Since
+  cbe63cceba (2026-08-27, BL-1191's dedup) an unchanged mailbox
+  suppresses with NO time bound, and a cooldown suppresses inside its
+  window. So the first wake for a parcel lands, and every chase after it
+  for the same unchanged inbox is suppressed and NOT counted: no sidecar,
+  no `chase` telemetry, `chaseCount` 0 forever. `decide-stale-item-action`
+  (line 159) answers "chased" while `chaseCount < maxChases`, so the
+  respawn and dead-letter rungs are unreachable for a live pane that
+  ignores its wake - the exact case the ladder exists for. The
+  2026-09-09 hotfix 6e05b02dd3 wakes a RESPAWNED seat once more
+  (fresh-target) but does not touch this.
+
+  `test_handoffd_wake_attribution_wiring.sh` case 05 detects it: a 45s-old
+  note in inbox/new, real daemon, fake idle tmux; case 01 sees the
+  inbox-item wake land (attribution `landed`), then case 05 asserts the
+  chase sidecar `<handoff>.chase.json` exists - it does not, because the
+  chase seconds later was suppressed as unchanged-mailbox. Last recorded
+  green: BL-970's architect review 2026-08-20. The operator's hotfix
+  message on 2026-09-09 named it "a pre-existing red on main"; it carried
+  no ticket and no register row until this mint. Reproduced by the
+  specifier on main 60623ebf02: `bash
+  swarmforge/scripts/test/test_handoffd_wake_attribution_wiring.sh` ->
+  PASS 01, FAIL 05, exit 1.
+
+  ## What is wanted
+
+  A chase attempt counts whether or not its wake text was injected. When
+  the sweep decides "chased" the sidecar's chaseCount advances and a
+  `chase` telemetry event is logged; the wake attribution still records
+  what happened to the text (`landed` or `skipped unchanged-mailbox` /
+  `cooldown`); the dedup decision itself is unchanged. Case 05 goes green
+  without editing the test; the register row this ticket adds is removed
+  in the same land.
+
+  ## How (direction, not mandate)
+
+  - Split "attempted" from "injected": have the chase path's "chased"
+    branch write the sidecar and log the chase when the adapter was
+    INVOKED and the pane was reachable, and let the adapter's boolean
+    keep meaning "text landed" for the budget (6e05b02dd3's rule). One
+    shape: `:send-wake-up!` returns `{:attempted true :landed bool}` and
+    `apply-inbox-item-action!` keys the count on `:attempted`; another:
+    count in the "chased" branch unconditionally when the adapter is not
+    disabled (`tmux-inject-disabled?` still returns false and must still
+    not count). Keep `chase-poke-and-notify!`'s `:skip` branch (pane busy,
+    resident woken this sweep) UNCOUNTED - no attempt was made there; only
+    the dedup-suppressed `:wake` outcome is an attempt.
+  - `wake_attribution_lib_test_runner.bb`, `chase_sweep_lib`'s own runner
+    and `test_handoffd_startup_notify_fresh_target.sh` must stay green;
+    the budget rule from 6e05b02dd3 must stay exactly as landed.
+
+  ## Scenario notes for the coder
+
+  - Scenario 01 is the standing test itself, run through the handler.
+  - Scenario 02 is a fixture in the wiring test's own shape (real daemon,
+    fake idle tmux, sidecar pre-seeded with the current mailbox fingerprint
+    so the chase is dedup-suppressed); assert the `.chase.json` count, the
+    `chase` telemetry line, and the attribution `skipped`.
+  - Scenario 03 drives `decide-stale-item-action` / `decide-item-action`
+    with a chaseCount reached through suppressed chases and asserts the
+    same verdict as one reached through landed wakes - a pure call, no
+    daemon.
+
+  ## Not in scope
+
+  - Bounding unchanged-mailbox suppression in time, or any change to
+    which wakes inject. If the review of 6e05b02dd3 (BL-1504) finds the
+    dedup rule itself wrong, that is a follow-up from the stamp.
+
+notes: |
+  Register: backlog/standing-reds.tsv gains one `shell` row naming this
+  ticket (same commit as this mint), first_seen 2026-08-27; QA removes it
+  in the land that turns case 05 green.
+
+qa_e2e_procedure: |
+  On the parcel commit, from the repo root:
+  1. `bash swarmforge/scripts/test/test_handoffd_wake_attribution_wiring.sh`
+     -> every case PASS, exit 0.
+  2. `bash swarmforge/scripts/test/test_handoffd_startup_notify_fresh_target.sh`
+     and `bb swarmforge/scripts/test/wake_attribution_lib_test_runner.bb`
+     green.
+  3. Live: in the running swarm, plant nothing; read
+     `.swarmforge/daemon/runtime.log` (or handoffd's log) after a role has
+     had a parcel in inbox/new past chaseTimeoutSeconds with an unchanged
+     mailbox, and confirm `chase` telemetry lines with an increasing count
+     alongside `wake-dedup-skip <role> unchanged-mailbox`.
+  4. The `shell` row for test_handoffd_wake_attribution_wiring.sh is gone
+     from backlog/standing-reds.tsv in the land.
