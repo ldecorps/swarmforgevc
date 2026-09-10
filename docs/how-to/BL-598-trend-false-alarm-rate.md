@@ -1,10 +1,12 @@
 # Reading false-alarm rate trends on alerts (BL-598)
 
-Self-cancelling alerts (AGENT_EXITED false positives, steady-state
-`active-backlog-depth` warnings under a cap-of-1, and similar NO-OP noise)
-now append to an append-only ledger with the verdict the emitting sweep
-already assigned — so "the logs are noisy" becomes a per-type false-positive
-rate you can trend down over time.
+Self-cancelling alerts (AGENT_EXITED false positives — a class the operator
+tick's dead-agent patrol produced before BL-653/BL-1514 retired that
+producer, dated example — steady-state `active-backlog-depth` warnings
+under a cap-of-1, and similar NO-OP noise) now append to an append-only
+ledger with the verdict the emitting sweep already assigned — so "the logs
+are noisy" becomes a per-type false-positive rate you can trend down over
+time.
 
 **This only measures.** It does not suppress or rewrite the underlying alerts.
 

@@ -1,7 +1,7 @@
 # Keeping the operator_runtime.bb JS fixture list honest (BL-944)
 
-Five acceptance step handlers (driving `BL-647-rotation-router-liveness`,
-`BL-368-control-loss-is-not-agent-death`, `BL-359-always-on-operator-presence`,
+Five acceptance step handlers (driving `BL-368-control-loss-is-not-agent-death`,
+`BL-359-always-on-operator-presence`, `BL-369-no-inbound-message-is-ever-lost`,
 BL-944's own feature, and BL-1449's own feature) build a disposable fixture
 root by copying a list of Babashka files, then shell out to a real
 `bb operator_runtime.bb <root> --tick-once`. Babashka resolves every
