@@ -113,20 +113,38 @@ told. BL-1361 adds the send, reusing the daemon's existing
   that.
 - **Wake vs. defer** (human ruling 2026-09-04, `wake-for-reason?`): only
   `:dirty-worktree` wakes the role immediately. `:divergent-branch` and
-  `:in-process-work` are told but deferred —
-  `SWARMFORGE_SKIP_SYNC_INJECT=1` on the `swarm_handoff.bb` call — because a
-  divergent branch is merged anyway the next time that role receives a
-  parcel (a forwarded commit must carry the received commit as an
-  ancestor), so waking for it would spend a turn on something the role gets
-  for free. A dirty worktree does not resolve itself and is the one reason
-  worth a turn now. Since `decide-role` checks in-process work first
-  (BL-1421, above), `:dirty-worktree` — and its wake — is only ever reached
-  for a role with **no** parcel in in_process; a role mid-parcel is always
+  `:in-process-work` are told but deferred — because a divergent branch is
+  merged anyway the next time that role receives a parcel (a forwarded
+  commit must carry the received commit as an ancestor), so waking for it
+  would spend a turn on something the role gets for free. A dirty worktree
+  does not resolve itself and is the one reason worth a turn now. Since
+  `decide-role` checks in-process work first (BL-1421, above),
+  `:dirty-worktree` — and its wake — is only ever reached for a role with
+  **no** parcel in in_process; a role mid-parcel is always
   `:in-process-work` (deferred) even though its own tree is dirty by
   definition. And since `:holds-landed` (BL-1433, above) is checked before
   either, none of this — wake or defer — is ever reached at all for a role
   whose HEAD already contains the landed commit; it is logged and left
   alone regardless of what its worktree holds.
+  - **Deferral now holds at every wake path, not just send (BL-1494).**
+    Before this fix `post-qa-branch-sweep-tell!` suppressed only the
+    SENDER's synchronous inject (`SWARMFORGE_SKIP_SYNC_INJECT=1`) — the
+    note still sat in the coordinator's outbox, and the daemon's own
+    delivery hop (`maybe-notify!`) injected the standard wake for it
+    anyway on arrival, at four or five notes per landed commit across the
+    pipeline (BL-1494 measurement, 2026-09-08). The tell now also writes
+    `wake: defer` on the draft itself (protocol field,
+    `swarmforge/handoff-protocol.md` "note" section), and three paths
+    honor it: the delivery hop logs `deliver-notify-skip-deferred` and
+    injects nothing; the chase sweep (`item-deferred-note-held?`,
+    `chase_sweep_lib.bb`) excludes a deferred note from its stale-item and
+    stuck decisions, so a mailbox holding only deferred notes reads as
+    nothing to chase; the nudge sweep is likewise silent. A deferred note
+    is still delivered, filed, audited, deduplicated and dequeued exactly
+    as an undeferred note — only the wake is suppressed, and only until the
+    recipient's own next `ready_for_next` reads it.
+    `SWARMFORGE_SKIP_SYNC_INJECT` stays set alongside `wake: defer` for
+    compatibility with anything still reading the env var alone.
 - **One unreachable mailbox never withholds the rest** (invariant 3): the
   `tell!` call is wrapped so a thrown exception or a non-zero `swarm_handoff`
   exit is caught, logged as `post-qa-branch-sweep-tell-failed`, and the
@@ -163,6 +181,9 @@ bash specs/pipeline/scripts/run_acceptance.sh \
   specs/features/BL-1421-one-standing-surfacing-per-role.feature
 bash specs/pipeline/scripts/run_acceptance.sh \
   specs/features/BL-1433-a-branch-that-holds-the-landed-commit-is-not-behind.feature
+bash specs/pipeline/scripts/run_acceptance.sh \
+  specs/features/BL-1494-a-note-sent-as-deferred-costs-its-role-no-wake.feature
+bash swarmforge/scripts/test/test_bl1494_deferred_note_no_wake.sh
 ```
 
 ## Siblings
@@ -181,4 +202,7 @@ bash specs/pipeline/scripts/run_acceptance.sh \
   minutes) — this page's "What gets fast-forwarded" and "Wake vs. defer"
   sections
 - BL-1360 — the hand-composed QA merge-up note; independent, same epic
+- BL-1494 — `wake: defer` honored at the delivery hop, chase sweep, and
+  nudge sweep, not just at send — closes the gap BL-1361 left open (this
+  page's "Wake vs. defer" section)
 - Pipeline diagram: `docs/diagrams/swarm-flow.mmd` (post-land sweep + surfaced merge-up notes)

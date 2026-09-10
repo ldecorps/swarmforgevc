@@ -13,9 +13,11 @@ flowchart TD
   DEPTH["prints active-backlog-depth\nWARNING if over cap"]
 
   DAEMON["handoffd sweeps:\nreplicates into each role's own\n.worktrees/<role> mailbox"]
+  DEFERCHECK{"note carries\nwake: defer?\n(BL-1494)"}
   CHASE{"recipient idle\nwith pending mail?"}
   WAKE["chase sweep wakes it\n(mono-router: rotate resident\ninto that role - respawn)"]
   WAIT(["stays queued in new/\nuntil the role next looks"])
+  DEFERRED(["delivery/chase/nudge skip:\ndeliver-notify-skip-deferred -\nread only on the role's own\nnext ready_for_next.sh"])
 
   READY["recipient runs ready_for_next.sh"]
   PICK{"any dequeueable\nfile in new/ ?"}
@@ -37,11 +39,14 @@ flowchart TD
   WRITE --> SENT
   WRITE --> DEPTH
   WRITE --> DAEMON
-  DAEMON --> CHASE
+  DAEMON --> DEFERCHECK
+  DEFERCHECK -->|yes| DEFERRED
+  DEFERCHECK -->|no| CHASE
   CHASE -->|yes| WAKE
   CHASE -->|no - busy mid-turn| WAIT
   WAKE --> READY
   WAIT --> READY
+  DEFERRED --> READY
   READY --> PICK
   PICK -->|none| NOTASK
   PICK -->|lowest priority prefix wins| CLAIM
@@ -61,8 +66,8 @@ flowchart TD
   classDef store fill:#57606a,color:#fff,stroke:#32383f;
   classDef act fill:#1f6feb,color:#fff,stroke:#0b3d91;
   classDef daemon fill:#8250df,color:#fff,stroke:#4c2889;
-  class VALIDATE,CHASE,PICK,GUARD gate;
+  class VALIDATE,CHASE,PICK,GUARD,DEFERCHECK gate;
   class REJECT,REQUEUE,STALE bad;
-  class WRITE,SENT,CLAIM,DONE,WAIT store;
+  class WRITE,SENT,CLAIM,DONE,WAIT,DEFERRED store;
   class DRAFT,READY,WORK,FORWARD,AUTOFIX,DEPTH act;
   class DAEMON,WAKE daemon;
