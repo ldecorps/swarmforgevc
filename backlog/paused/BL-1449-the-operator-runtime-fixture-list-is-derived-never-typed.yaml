@@ -2,12 +2,15 @@ id: BL-1449
 title: "OPERATOR_RUNTIME_BB_FILES has been retyped by hand eight times (BL-944 counted five, BL-1265 was the seventh, BL-1439 fixed the eighth on 2026-09-06), each drift a standing red until someone caught the list up: the export is computed from BL-944's own closure walk at module load, plus the declared extras, so a new load-file is in the fixture the moment it exists and the list can no longer drift"
 milestone: M8
 type: defect
-severity: medium
-# medium: nothing is broken on main today (BL-1439 caught the list up).
-# What is wrong is a design that turns every new load-file into a
-# standing red in the unit suite, on a cadence of every one to two
-# weeks, each costing a ticket or a collateral fix. Not high: no safety
-# signal is broken while the list is current.
+severity: high
+# high (standing-red rule 2026-09-05, re-classed 2026-09-10): minted
+# medium on 2026-09-06 on the ground that nothing was broken on main.
+# Since hotfix 32fb1ff7e1 (2026-09-09) that is false: handoff_lib.bb
+# load-files respawn_bootstrap_lib.bb, the list does not name it, and
+# extension/test/operatorRuntimeBbFixtureClosure.test.js is red on main
+# (2 failed / 4 passed, reproduced by the specifier on 0a4b497a58) - a
+# standing unit-suite red is a broken safety signal and blocks QA
+# approval (Article 4.2). The register row names this ticket.
 status: todo
 epic: code-quality-gates
 priority: 30
@@ -54,6 +57,27 @@ description: |
   human or a parcel retypes the list - the exact "hand-mirrored production
   closure" class BL-1398, BL-1399, BL-1408 and BL-1420 closed elsewhere.
 
+  ## Ninth drift, live on main (folded in 2026-09-10)
+
+  Hotfix `32fb1ff7e1` (2026-09-09) made `handoff_lib.bb` (line 65)
+  load-file `respawn_bootstrap_lib.bb`. It went straight to `main`, so no
+  stage ran the unit suite; `OPERATOR_RUNTIME_BB_FILES` does not name the
+  file and `extension/test/operatorRuntimeBbFixtureClosure.test.js` fails
+  two of six on `main` ("expected zero missing dependencies, found:
+  respawn_bootstrap_lib.bb"; QA unowned-red note 2026-09-10 11:30Z,
+  reproduced by the specifier on `0a4b497a58`). The register row for
+  that file names this ticket. The same hotfix also broke the bl1313
+  property test's own hand-typed copy - that is BL-1503, a different
+  list and a different file; not this ticket's.
+
+  Do NOT clear the red by adding `respawn_bootstrap_lib.bb` to the
+  literal array: that is the ninth retype, the gesture this ticket exists
+  to end, and `approval_context` marks "no typed names" FIRM. The derived
+  export contains the file by construction the moment the walk runs, and
+  BL-944's assertion goes green with it. If a TENTH load-file lands while
+  this parcel is in flight, the derived list absorbs it too - re-run the
+  vitest file against merged `main` before forwarding, never retype.
+
   ## What is wanted
 
   - The module exports the list COMPUTED at load: the walk from
@@ -97,7 +121,8 @@ description: |
 qa_e2e_procedure: |
   1. The BL-1449 feature passes all three runs; BL-944's feature passes all
      six runs; `npx vitest run test/operatorRuntimeBbFixtureClosure.test.js`
-     passes.
+     passes 6 of 6 - on main today it is 2 failed / 4 passed (missing
+     respawn_bootstrap_lib.bb), and that is the red this land turns green.
   2. `grep -c '\.bb'` over the literal-array region of
      `operatorRuntimeBbFixtureFiles.js` is 0 (no typed names; the extras
      list may be non-empty and is the only literal).
@@ -109,8 +134,20 @@ qa_e2e_procedure: |
   4. The five consumers still build a fixture that runs
      `operator_runtime.bb --tick-once` (BL-944 scenario 04 and the
      always-on-operator-presence feature stay green).
+  5. `backlog/standing-reds.tsv` no longer carries the `unit` row for
+     `extension/test/operatorRuntimeBbFixtureClosure.test.js` - removed in
+     the SAME land that turns it green (register header rule), and
+     `grep -c respawn_bootstrap_lib operatorRuntimeBbFixtureFiles.js` is
+     0 (the name arrived by derivation, not by typing).
 
 notes: |
+  2026-09-10, specifier: folded in the ninth drift (QA unowned-red note
+  11:30Z, hotfix 32fb1ff7e1, respawn_bootstrap_lib.bb; reproduced on main
+  0a4b497a58). Re-classed severity medium -> high under the standing-red
+  rule; register row added naming this ticket; feature file, scenarios and
+  human_approval untouched - no new scenario, no new choice. Evidence:
+  backlog/evidence/BL-1449-ninth-drift-fold-in-specifier-20260910.md.
+
   Minted 2026-09-06 by the specifier while retiring BL-1265 (superseded by
   BL-1439). Grepped first: no live ticket names the list; BL-1265's notes
   said the derive-not-declare proposal was "raised to the coordinator
