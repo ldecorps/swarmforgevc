@@ -143,6 +143,66 @@
   ;; same trap release-lock! itself was fixed for).
   (fs/delete-tree lock-dir))
 
+;; ── BL-1497: acquire-lock! reaps a lock whose owner is dead, and only a
+;;    dead owner's - invariant 1, driven at the acquire-lock! level (the
+;;    property runner drives reap-decision/reap-stale-lock! directly; this
+;;    proves the whole acquire loop wires them together). Small
+;;    max-attempts/poll-delay-ms keep this instant, same posture as the
+;;    already-held test above. ──────────────────────────────────────────
+
+;; A dead pid: a real subprocess's own pid, read after process/sh has
+;; already waited for it to exit - a random integer is not safe (PID
+;; recycling can coincidentally collide with a currently-live process).
+(defn- dead-pid! []
+  (Integer/parseInt (str/trim (:out (process/sh "sh" "-c" "echo $$")))))
+
+(let [dir (real-git-repo)
+      lock-dir (str (fs/path dir ".git" "sfvc-test-dead-owner.lock"))]
+  (fs/create-dirs lock-dir)
+  (spit (str (fs/path lock-dir "owner.json"))
+        (str "{\"pid\":" (dead-pid!) ",\"created_at_ms\":" (System/currentTimeMillis) "}"))
+  (let [result (commit-integrity-lib/acquire-lock! lock-dir 5 0)]
+    (assert-true "acquire-lock! reaps a dead owner's lock and re-acquires within the same bounded loop" result)
+    (assert-true "the result names the reap as :dead-owner" (= :dead-owner (get-in result [:reaped :reason])))
+    (assert-true "the re-acquired lock carries THIS process's own fresh owner record"
+                 (fs/exists? (fs/path lock-dir "owner.json"))))
+  (fs/delete-tree lock-dir))
+
+;; A live owner's lock (this process's OWN pid - always alive) is never
+;; reaped, whatever its age - acquire-lock! must exhaust its attempts and
+;; give up, exactly like the plain already-held case above.
+(let [dir (real-git-repo)
+      lock-dir (str (fs/path dir ".git" "sfvc-test-live-owner.lock"))
+      self-pid (.pid (java.lang.ProcessHandle/current))]
+  (fs/create-dirs lock-dir)
+  (spit (str (fs/path lock-dir "owner.json"))
+        (str "{\"pid\":" self-pid ",\"created_at_ms\":0}")) ; created_at_ms=0: an ancient timestamp - must still never be reaped
+  (let [result (commit-integrity-lib/acquire-lock! lock-dir 5 0)]
+    (assert-false "acquire-lock! never reaps a live owner's lock, whatever its age" result))
+  (assert-true "the live owner's lock directory is untouched" (fs/exists? lock-dir))
+  (fs/delete-tree lock-dir))
+
+;; A record-less lock (no owner.json at all - a pre-fix holder, or the
+;; window before a fresh holder's own record write lands) past the age
+;; bound is reaped; the identical lock within the bound is not.
+(let [dir (real-git-repo)
+      lock-dir (str (fs/path dir ".git" "sfvc-test-recordless-past.lock"))]
+  (fs/create-dirs lock-dir)
+  (fs/set-last-modified-time lock-dir
+                              (- (System/currentTimeMillis) commit-integrity-lib/record-less-lock-age-bound-ms 60000))
+  (let [result (commit-integrity-lib/acquire-lock! lock-dir 5 0)]
+    (assert-true "acquire-lock! reaps a record-less lock past the age bound" result)
+    (assert-true "the result names the reap as :record-less-past-bound" (= :record-less-past-bound (get-in result [:reaped :reason]))))
+  (fs/delete-tree lock-dir))
+
+(let [dir (real-git-repo)
+      lock-dir (str (fs/path dir ".git" "sfvc-test-recordless-within.lock"))]
+  (fs/create-dirs lock-dir) ; fresh mtime - well within the age bound
+  (let [result (commit-integrity-lib/acquire-lock! lock-dir 5 0)]
+    (assert-false "acquire-lock! never reaps a record-less lock still within the age bound" result))
+  (assert-true "the record-less lock within the bound is untouched" (fs/exists? lock-dir))
+  (fs/delete-tree lock-dir))
+
 ;; ── :add-failed / :commit-failed short-circuit before any verify ───────
 
 (let [dir (real-git-repo)
