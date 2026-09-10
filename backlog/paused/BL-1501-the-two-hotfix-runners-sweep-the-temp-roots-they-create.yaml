@@ -1,0 +1,165 @@
+id: BL-1501
+title: "tempDirTrapGuard.test.js's real-tree scan has been red on main since the 2026-09-09 hotfixes with no owner: landed_ticket_autoclose_test_runner.bb (d9a4d0b888) and wake_dedup_lib_test_runner.bb (6e05b02dd3) build fixtures with fs/create-temp-dir and carry no shutdown hook and no try/finally delete-tree, leaking four and one directories per run - both runners adopt the sibling runners' shutdown-hook sweep so the standing guard earns its green from the files themselves"
+milestone: M8
+type: defect
+severity: high
+# high (standing-red rule 2026-09-05): a `unit`-lane test red on main is a
+# broken safety signal whatever its size - the whole-tree scan is the ONE
+# place the temp-dir-trap migration (BL-459/BL-872) is enforced, and while
+# it is red every parcel that runs the standing guards sees a failure it
+# must explain away (BL-1497's hardener spent a full inventory item on it).
+# Not critical: nothing in production is affected; two test runners leak
+# five directories per run into the system temp dir.
+status: todo
+epic: swarm-reliability
+priority: 8
+direction: swarm-reported
+depends_on: []
+mutation_cost: low
+# low: two Babashka test runners gain the shutdown-hook idiom (no
+# mutation/CRAP/DRY wired for Babashka, BL-472); one step-handler file. No
+# production code.
+slice_size_envelope: low
+required_stages: [coder, cleaner, architect, hardender, documenter, qa]
+
+acceptance: specs/features/BL-1501-the-two-hotfix-runners-sweep-the-temp-roots-they-create.feature
+
+# No consumer anchor is needed or honest here (BL-1235): the live consumer
+# already exists and already reaches both files - the standing unit suite's
+# extension/test/tempDirTrapGuard.test.js scans swarmforge/scripts on every
+# `npm test`, and it is the thing that is red. An anchor on the idiom the
+# parcel adds (addShutdownHook in each runner) would be satisfied by the
+# parcel's own diff and gate nothing. The handler entry is the BL-233
+# in-parcel pin.
+required_wiring:
+  - 'specs/pipeline/steps/bl1501HotfixRunnersSweepTempRootsSteps.js::registerSteps::the handler lands in the same parcel as the feature (BL-233, BL-1371)'
+
+human_approval: pending
+approval_context: >
+  A new feature file is authored here, so it needs a tap. No choice is
+  posed and there are no ruling_options. FIRM: the fix is in the two test
+  runners and one step handler only - the guard
+  (specs/pipeline/steps/lib/tempDirTrapGuard.js), its exempt list, its
+  standing test and the two libs under test are not changed, and neither
+  runner is removed from the standing lane of suite-manifest.tsv. FIRM: both
+  runners keep their mkdtemp fixtures; the green is earned by sweeping them,
+  not by dropping them (scenario 01's census pin). Direction, not mandate:
+  the idiom the sibling runners use - a created-temp-dirs atom, one
+  addShutdownHook on Runtime/getRuntime that delete-trees every entry, and
+  a mk-tmp helper that registers each root - is the shape the guard already
+  recognises; a try/finally delete-tree is the guard's other accepted shape.
+  Minted by the specifier on the hardener's unowned-red note of 2026-09-10
+  06:45Z from the BL-1497 parcel; the red reproduced on main 60623ebf02
+  (1 failed | 3 passed) and the leak measured by running each runner under
+  bb -Djava.io.tmpdir=<empty dir>: four roots and one root left behind.
+
+invariants: []
+
+description: |
+  ## What is wrong
+
+  `extension/test/tempDirTrapGuard.test.js` (BL-872's standing home for the
+  BL-459 temp-dir-trap gate) asserts that `scanForTempDirTrapViolations`
+  over the real `swarmforge/scripts` tree returns nothing. Since
+  2026-09-09 it returns two entries, both reading "creates a temp root
+  (fs/create-temp-dir) but has no shutdown hook and no try/finally
+  delete-tree":
+
+  - `swarmforge/scripts/test/landed_ticket_autoclose_test_runner.bb`,
+    added by hotfix d9a4d0b888 (2026-09-09 13:12 BST). Four
+    `fs/create-temp-dir` sites (lines 30, 40, 79, 82), no cleanup.
+  - `swarmforge/scripts/test/wake_dedup_lib_test_runner.bb`, first added by
+    BL-1191 (cbe63cceba) WITHOUT a temp dir, then given one by hotfix
+    6e05b02dd3 (2026-09-09 10:45 BST) at line 90, no cleanup.
+
+  Both hotfixes went straight to `main` (hotfix-ledger.yaml rows, state
+  `pending`, `stamp_ticket: null`), so no stage ran the standing guards
+  against them. The BL-1497 hardener found the red on 2026-09-10 while
+  running the whole-tree guards its parcel's `specs/pipeline/steps/`
+  touch obliges, confirmed both files outside its diff and pre-existing on
+  `main`, and sent the unowned-red note rather than fixing out of scope.
+  Reproduced by the specifier on main 60623ebf02:
+  `cd extension && npx vitest run test/tempDirTrapGuard.test.js` ->
+  1 failed | 3 passed. Running each runner with
+  `bb -Djava.io.tmpdir=<empty dir> <runner>` exits 0 and leaves four
+  (autoclose) and one (wake dedup) directories in that dir.
+
+  ## What is wanted
+
+  Both runners sweep every temp root they create before the process
+  exits, so the standing guard's whole-tree scan is green on `main`, the
+  register row this ticket adds is removed in the same land, and neither
+  runner leaks into the system temp dir.
+
+  ## How (direction, not mandate)
+
+  The sibling runners' idiom is already in the tree, e.g.
+  `availability_ledger_lib_test_runner.bb` lines 23-30 and
+  `aps_equivalence_lib_test_runner.bb` lines 21-27:
+
+  ```
+  (def created-temp-dirs (atom []))
+  (.addShutdownHook (Runtime/getRuntime)
+                    (Thread. (fn [] (doseq [d @created-temp-dirs] (try (fs/delete-tree d) (catch Exception _ nil))))))
+  (defn mk-tmp []
+    (let [d (str (fs/create-temp-dir {:prefix "bl1501-"}))]
+      (swap! created-temp-dirs conj d)
+      d))
+  ```
+
+  Route every `(str (fs/create-temp-dir))` in both files through such a
+  helper. The guard recognises `addShutdownHook` OR a `(try ... (finally
+  ... delete-tree` shape (`tempDirTrapGuard.js` lines 34-35); either earns
+  the green honestly. Do NOT touch the guard, its `SELF_EXEMPT_BASENAMES`,
+  or the two libs under test.
+
+  ## Scenario notes for the coder
+
+  - Scenario 01 drives the SAME module the standing test drives
+    (`specs/pipeline/steps/lib/tempDirTrapGuard.js`'s
+    `scanForTempDirTrapViolations`) over the real tree. Its census pin
+    (BL-1445): the two named files must still be under the scanned root
+    and still match the guard's creation trigger (`fs/create-temp-dir`),
+    so a green cannot come from deleting the fixtures or the files.
+  - Scenario 02: `bb -Djava.io.tmpdir=<dir>` steers `fs/create-temp-dir`
+    (verified 2026-09-10; `TMPDIR` does NOT). The handler makes an empty
+    dir under the acceptance run's own mkdtemp root, spawns
+    `bb -Djava.io.tmpdir=<dir> <runner>` from `swarmforge/scripts/test`
+    with cwd there (the runners load their libs by relative path), asserts
+    exit 0 and an empty dir after. A shutdown hook runs on normal exit,
+    which is what this scenario exercises; SIGKILL is out of scope, as it
+    is for every sibling runner.
+  - Scenario 03 reads the guard's exempt list (`SELF_EXEMPT_BASENAMES`,
+    exported or read from source - the implementer's call) and plants one
+    offending `.bb` file in a scratch tree, the standing test's own
+    break-then-fix shape.
+
+  ## Not in scope
+
+  - Stamping the two hotfixes through the pipeline. Their ledger rows are
+    still `stamp_ticket: null`; whoever mints those stamp tickets should
+    list this ticket in `depends_on` or schedule them non-concurrently -
+    a stamp parcel's hardener will otherwise run the same guard and touch
+    the same two runner files.
+
+notes: |
+  Register: backlog/standing-reds.tsv gains one `unit` row naming this
+  ticket (same commit as this mint); QA removes it in the land that turns
+  the guard green.
+
+qa_e2e_procedure: |
+  On the parcel commit, from the repo root:
+  1. `cd extension && npx vitest run test/tempDirTrapGuard.test.js` ->
+     4 passed, 0 failed.
+  2. For each runner R in landed_ticket_autoclose_test_runner.bb and
+     wake_dedup_lib_test_runner.bb: `D=$(mktemp -d); (cd
+     swarmforge/scripts/test && bb -Djava.io.tmpdir=$D R); echo exit=$?;
+     ls -A $D | wc -l; rmdir $D` -> exit=0 and 0.
+  3. `git diff main...HEAD --stat` touches only the two runners, the
+     step handler + index.js registration, the feature file, evidence,
+     and the register row removal; `specs/pipeline/steps/lib/tempDirTrapGuard.js`
+     and `extension/test/tempDirTrapGuard.test.js` are unchanged.
+  4. `swarmforge/scripts/run_bb_suite.sh` (or the two runners directly)
+     still green; suite-manifest.tsv rows for both unchanged.
+  5. The `unit` row for extension/test/tempDirTrapGuard.test.js is gone
+     from backlog/standing-reds.tsv in the land.
