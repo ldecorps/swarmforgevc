@@ -156,3 +156,6 @@ notes: |
     a quoted wake-field parameter ("defer"/"absent").
 
 assigned_to: coder
+bounce_count: 1
+bounce_history:
+  - { at: 2026-09-10, by: QA, blamed: coder, class: unit, commit: ad01597db9, evidence: backlog/evidence/BL-1494-QA-20260910.md }
