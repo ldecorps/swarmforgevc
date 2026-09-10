@@ -60,6 +60,8 @@
   reason: "Stryker perTest dry run timed out (5min) under host load 6.7-9.7/20 cores from concurrent live-swarm activity"
   load: "9.65/10.81/8.48"
   detected_at: 2026-09-07
+  discharged_at: 2026-09-10
+  discharged_evidence: backlog/evidence/BL-1468-BL-1452-mutation.md
 - parcel: BL-1476
   gate: mutation
   file_set: extension/src/metrics/transcriptWalker.ts,extension/src/metrics/turnProfileProducer.ts,extension/src/tools/run-turn-profile-producer.ts
