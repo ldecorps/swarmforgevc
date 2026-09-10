@@ -14,6 +14,8 @@
   detected_at: 2026-08-19
   attempted_at: 2026-09-08
   attempted_blocker: "mutation_cooldown_gate.bb: skip-cooldown, telegram-front-desk-bot.ts at file_age_days 0.13 of 3 (BL-1475, 2b402e0b7e, ~25min before this attempt) and telegramFrontDeskBotCore.ts at file_age_days 2.22 of 3 (BL-1425's original 2026-09-05 touch would have cleared today, but BL-1475 re-touched it too); run belongs to BL-1441"
+  discharged_at: 2026-09-10
+  discharged_evidence: backlog/evidence/BL-1441-BL-620-mutation.md
 - parcel: BL-955
   gate: mutation
   file_set: extension/src/onboarding/negotiationTelegramRelay.ts,extension/src/onboarding/negotiationTelegramRouting.ts,extension/src/tools/telegramFrontDeskBotCore.ts
@@ -22,6 +24,8 @@
   detected_at: 2026-08-19
   attempted_at: 2026-09-08
   attempted_blocker: "mutation_cooldown_gate.bb: skip-cooldown, telegramFrontDeskBotCore.ts (shared with BL-620's set) at file_age_days 2.22 of 3 (BL-1425's original 2026-09-05 touch would have cleared today, but BL-1475, 2b402e0b7e, re-touched it ~25min before this attempt); run belongs to BL-1441"
+  discharged_at: 2026-09-10
+  discharged_evidence: backlog/evidence/BL-1441-BL-955-mutation.md
 - parcel: BL-954-a-bounce-verifies-its-own-revert
   gate: mutation
   file_set: extension/src/metrics/bounceRevertGitAdapter.ts,extension/src/quality/bounceRevertVerdict.ts,extension/src/tools/record-bounce.ts
@@ -40,6 +44,8 @@
   detected_at: 2026-08-19
   attempted_at: 2026-09-08
   attempted_blocker: "mutation_cooldown_gate.bb: skip-cooldown, pipelineBoard.ts at file_age_days 0.13 of 3 (BL-1425's original 2026-09-05 touch would have cleared today, but BL-1451, a101045f63, re-touched it 2026-09-07 22:47, unrelated to this ticket); run belongs to BL-1441"
+  discharged_at: 2026-09-10
+  discharged_evidence: backlog/evidence/BL-1441-BL-956-pipeline-board-caption-and-cap-hotfix-mutation.md
 - parcel: BL-956-pipeline-board-caption-and-cap-hotfix
   gate: gherkin-mutation
   file_set: specs/features/BL-956-pipeline-board-caption-and-cap-hotfix.feature
