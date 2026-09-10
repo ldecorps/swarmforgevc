@@ -1,0 +1,163 @@
+id: BL-1518
+title: "A unit test under mutation posts live handoffs: the BL-607 enqueueRoleAnswerNote test shells the real swarm_handoff.bb with cwd and SWARMFORGE_ROLE in one options object, a mutant that empties it inherits the coder pane's cwd and role, and every BL-1441 mutation run on the front-desk file set delivered a priority-00 `use staging please` note from `coder` into the live specifier inbox (4 on 2026-09-10); the CLI refuses a draft that lies outside its resolved project root, and the test cannot reach a live mailbox under any mutant"
+milestone: M8
+type: defect
+severity: high
+# high: a live fault degrading behaviour. Each mutation run of the
+# front-desk file set (BL-1441 is running it now, and the file set stays
+# in the standing rotation) injects fake priority-00 traffic into a live
+# role's inbox: it rotated the specifier in, cost a full boot and a
+# multi-hour trace on 2026-09-10, and the phrase it carries is a retired
+# human directive (ANSWER-2026-08-27) that reads as an operator order.
+# Not critical: nothing is down and no data is lost.
+status: todo
+epic: swarm-reliability
+priority: 8
+direction: swarm-reported
+depends_on: []
+mutation_cost: medium
+# medium: one TypeScript function gains an explicit root/env contract and
+# its test loses its cwd dependence (TS lane, full mutation); one bb CLI
+# gains a fail-closed root check (bb lane, BL-472 fallback recorded).
+slice_size_envelope: low
+required_stages: [coder, cleaner, architect, hardender, documenter, qa]
+
+acceptance: specs/features/BL-1518-a-handoff-cli-never-writes-outside-the-root-its-draft-lives-in.feature
+
+required_wiring:
+  - 'specs/pipeline/steps/bl1518HandoffDraftRootGuardSteps.js::registerSteps::the handler lands in the same parcel as the feature (BL-233, BL-1371)'
+# No production anchor is declared on purpose (BL-1235): swarm_handoff.bb
+# already calls handoff-lib/my-mailbox-base-dir on every live send and
+# telegram-front-desk-bot.ts already shells swarm_handoff.bb, so a pattern
+# on either matches before and after the fix and gates nothing.
+
+human_approval: pending
+approval_context: >
+  A new feature file is authored here, so it needs a tap. No choice is
+  posed and there are no ruling_options. FIRM: the guard is fail-closed
+  (a draft outside the resolved project root is refused, never rerouted),
+  the retired phrase `use staging please` stays out of any fixture that
+  can reach a live mailbox, and no live mailbox file is deleted by this
+  parcel - the four delivered copies were completed by the specifier.
+
+invariants:
+  - "A handoff CLI writes only under the project root it resolved, and it refuses (non-zero, naming both paths) when the draft it was given lies outside that root - in production every draft (a worktree's tmp/handoff.txt, master's swarmforge/runtime/handoff-draft.txt) is under the root, so a draft outside it is only ever a fixture escape."
+  - "No unit test, under any mutant of the code it drives, creates a file outside its own mkdtemp root: a test that shells a real CLI hands that CLI its root explicitly and the CLI enforces it; the caller's cwd and inherited environment are never what keeps the test inside its fixture."
+
+description: |
+  ## What is wrong
+
+  `enqueueRoleAnswerNote` (`extension/src/tools/telegram-front-desk-bot.ts`
+  ~line 1812) writes a `type: note` draft under `targetPath` and shells the
+  real CLI: `execFileAsync('bb', [cli, draftPath], { cwd: targetPath, env:
+  { ...process.env, SWARMFORGE_ROLE: 'coordinator' } })`. The BL-607 unit
+  tests (`extension/test/telegramFrontDeskBotCli.test.js` ~2456, ~2525)
+  drive that real CLI against a mkdtemp fixture whose `roles.tsv` names
+  `specifier` and `coordinator` at the fixture root, and assert on the
+  fixture's outbox record - deliberately, "never a hand-rolled substitute
+  for the CLI it shells to".
+
+  Under mutation the options object is a mutant target. With it emptied
+  (or `cwd` alone dropped) the child runs with the TEST PROCESS's cwd -
+  `.worktrees/coder/extension` under a coder-pane mutation run - and its
+  inherited env, where the coder launch script exports
+  `SWARMFORGE_ROLE=coder`. `swarm_handoff.bb` then resolves its project
+  root from cwd (`git rev-parse --show-toplevel`, which finds the coder
+  worktree and its own `.swarmforge/roles.tsv`), finds the `coder` row,
+  stamps `from: coder`, files the sent copy under
+  `.worktrees/coder/.swarmforge/handoffs/sent/`, and delivers `to:
+  specifier` through the live tmux socket into the live master inbox
+  `.swarmforge/handoffs/specifier/inbox/new/`. The assertion on the fixture
+  outbox then fails, so the mutant is KILLED and the report is green - the
+  side effect has already escaped. The script that ran was the fixture's
+  own copy (`copyCommitIntegrityScripts`); the path it takes is decided by
+  cwd, not by where the script lives.
+
+  Evidence, 2026-09-10 (UTC): the coder (BL-1441, session in
+  `.worktrees/coder`) ran `npm run mutation -- stryker.bl1441bl620.config.json`
+  (mutate: `telegram-front-desk-bot.js`, `telegramFrontDeskBotCore.js`,
+  `telegramTopicDecisions.js`) at 18:01:19, 18:06:33 and 18:11:44, plus a
+  run from an earlier interrupted session it killed at ~18:05. Notes
+  `001856` (17:26:24), `001857` (18:03:25), `001858` (18:08:33) and
+  `001859` (18:13:40), each `from: coder`, `priority: 00`, `message: use
+  staging please`, reached the specifier - one per run, each about two
+  minutes after the run started. The coder's own transcript contains no
+  handoff send and no such phrase; every daemon and bot process runs as
+  `coordinator`; the only source of the literal is the test file. The
+  phrase is the retired 2026-08-27 human directive
+  (`backlog/answers-archive/ANSWER-2026-08-27-use-staging-please-dropped.md`),
+  which is why a fixture string was read as an operator order for five
+  weeks of replay history before this cause was found.
+
+  Also observed, not attributed by this ticket: the front-desk bot was
+  restarted by its supervisor at 18:03:40, 18:08:29, 18:11:11 and 18:13:41
+  (attempts 1-4, no stderr) - the same minutes. The coder's first task is
+  to say from the run's json report and the supervisor log whether the
+  same test set (or the run's load) is what took the live bot down; if it
+  is, it is in scope, and if it is a separate cause it becomes its own
+  defect by note to the specifier.
+
+  ## What is wanted
+
+  1. `swarm_handoff.bb` (the CLI, not only the TS caller) resolves its
+     project root as today, then checks that the draft path it was given
+     lies under that root; a draft outside it is refused before any
+     mailbox write, exit non-zero, one line naming the draft path and the
+     resolved root. Every production draft is under the root (a worktree
+     role's `tmp/handoff.txt` sits in its worktree, which is under the
+     master root and is itself a root when it carries its own
+     `.swarmforge/roles.tsv`; master roles write
+     `swarmforge/runtime/handoff-draft.txt`), so no live send changes.
+  2. `enqueueRoleAnswerNote` no longer depends on the caller's cwd or
+     inherited role to stay inside `targetPath`: pass the root to the CLI
+     in a form the CLI honours independently of cwd (direction below) and
+     keep the coordinator identity explicit. Its BL-607 tests keep driving
+     the real CLI, and additionally run once with the parent env carrying
+     `SWARMFORGE_ROLE=coder` and cwd inside a second, unrelated fixture
+     project - the escape's exact shape - asserting the record lands in the
+     first fixture and nothing appears under the second.
+  3. The two BL-607 tests stop using `use staging please` as their answer
+     text; any literal that reaches a real CLI is one no human ever typed
+     as a directive. (`agentNotesCore.test.js` and the property test use
+     the phrase against pure functions and are out of scope.)
+  4. The mutation run for the BL-620 file set is re-run once by the
+     hardener with a census of the live specifier inbox taken before and
+     after (`ls .swarmforge/handoffs/specifier/inbox/new | wc -l` and the
+     sent dir under `.worktrees/coder/.swarmforge/handoffs/sent/`); both
+     counts unchanged is the evidence the escape is closed. Record the
+     census in the hardener evidence, not only the green report.
+
+  ## How (direction, not mandate)
+
+  The root check belongs in the CLI because that is what every caller
+  reaches; the TS fix alone protects one call site. Prefer deriving the
+  root from the draft's location when cwd disagrees, or refusing, over a
+  new flag; if a flag is added it must be the ONLY thing the caller relies
+  on. Do not replace the real-CLI test with a stub - BL-607's reason for
+  driving the real CLI stands; make the real CLI safe to drive.
+
+  ## QA e2e (qa_e2e)
+
+  From a mkdtemp clone with a second mkdtemp project beside it: write a
+  valid note draft under project A, run `swarm_handoff.bb` on it with cwd
+  inside project B and `SWARMFORGE_ROLE=coder`, confirm a non-zero exit
+  naming both paths and no new file under B's `.swarmforge`; run it with
+  cwd at A and `SWARMFORGE_ROLE=coordinator`, confirm the outbox record.
+  On the live install, from the coder worktree with the coder launch env
+  sourced: count the specifier's `inbox/new` and the coder's `sent`, run
+  `npm run mutation -- stryker.bl1441bl620.config.json` to completion, and
+  confirm both counts are unchanged and the report is green.
+
+notes: |
+  - 2026-09-10 (specifier): minted from the four `use staging please`
+    notes received 17:26-18:13 UTC. Traced by elimination: no Claude
+    transcript in any project dir carried the phrase or a send in the
+    window; `handoffd`, its supervisor, the front-desk supervisor and the
+    operator runtime all carry `SWARMFORGE_ROLE=coordinator`; the coder's
+    session log shows the three `npm run mutation` launches two minutes
+    before each note. The exact mutant is not on record (the coder deleted
+    `reports/mutation/mutation.json` before each run and the last run was
+    cut by the rotation at 18:16); the coder names it from a fresh run
+    rather than trusting this reconstruction. The specifier's earlier note
+    to the coder (`001489`, "never relay it") was wrong about the sender
+    and is withdrawn by this ticket.

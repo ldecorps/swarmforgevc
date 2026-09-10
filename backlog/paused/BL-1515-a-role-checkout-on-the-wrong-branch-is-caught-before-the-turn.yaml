@@ -1,0 +1,133 @@
+id: BL-1515
+title: "A role's worktree can sit on a branch that is not the one roles.tsv names and nothing notices (the coder has been on `side` since 2026-09-03 12:46:29 while roles.tsv says `swarmforge-coder`, and the local `swarmforge-coder` ref no longer exists); ready_for_next.bb gains a pre-turn branch-identity guard that repairs the one provably safe shape by renaming and refuses every other mismatch fail-closed, and the live coder worktree is put back on its declared branch in this parcel"
+milestone: M8
+type: defect
+severity: high
+# high: a broken safety signal. Every guard that resolves a role's branch
+# from roles.tsv's session column (tree_collapse_guard_lib.bb's
+# recipient-branch-ref, the land walk's `git log main..swarmforge-coder`
+# recipe) has resolved to a ref that does not exist for a week, degrading to
+# "send allowed, unverified" or an empty range - the guard reads green while
+# checking nothing. Nothing was lost (side is a strict descendant of
+# origin/swarmforge-coder), which is why it is not critical.
+status: todo
+epic: swarm-reliability
+priority: 8
+direction: swarm-reported
+depends_on: []
+mutation_cost: low
+# low: one pure decision lib plus one wiring site in ready_for_next.bb and
+# one step handler; the bb lane has no mutation/CRAP/DRY wired (BL-472), so
+# the hardener records the degraded fallback.
+slice_size_envelope: low
+required_stages: [coder, cleaner, architect, hardender, documenter, qa]
+
+acceptance: specs/features/BL-1515-a-role-checkout-on-the-wrong-branch-is-caught-before-the-turn.feature
+
+required_wiring:
+  - 'swarmforge/scripts/ready_for_next.bb::branch_identity_guard_lib.bb::the live pre-turn path sources the guard lib, next to the BL-1195 worktree-drift guard'
+  - 'specs/pipeline/steps/bl1515BranchIdentityGuardSteps.js::registerSteps::the handler lands in the same parcel as the feature (BL-233, BL-1371)'
+
+human_approval: approved
+approval_context: >
+  A new feature file is authored here, so it needs a tap. No choice is posed
+  and there are no ruling_options. FIRM: the guard changes a ref in exactly
+  one shape - the declared local branch is absent AND the checked-out branch
+  contains origin/<declared>'s tip (or no origin/<declared> exists) - and
+  then only by renaming the checked-out branch; every other mismatch is a
+  refusal that touches nothing. The one-shot repair of the live coder
+  worktree (`side` -> `swarmforge-coder`) is that same safe shape and is
+  done in this parcel, recorded in evidence with before/after `git worktree
+  list` output.
+
+invariants:
+  - "The guard changes a ref only when the declared local branch is absent and the checked-out branch's tip contains origin/<declared>'s tip or no origin/<declared> exists, and then only by `git branch -m <actual> <declared>` (HEAD's commit is unchanged); every other mismatch - declared ref present, detached HEAD, any git read error - is a refusal that leaves every ref, HEAD and the index byte-identical."
+  - "The guard runs before the inbox is read: a refused turn dequeues nothing, moves nothing into in_process/, and prints one BRANCH_DRIFT_DETECTED line naming role, declared branch, actual branch and both tips."
+
+description: |
+  ## What is wrong
+
+  `.swarmforge/roles.tsv` names each role's branch by convention as its
+  session column (`swarmforge-coder`), and that is what the guards read:
+  `tree_collapse_guard_lib.bb`'s `recipient-branch-ref` returns
+  `(:session (handoff-lib/load-role-info ...))`, and the operator's land
+  recipe is `git log main..swarmforge-<role>`. Since 2026-09-03 12:46:29
+  `.worktrees/coder` has been on a branch called `side` (`git reflog show
+  side`: "branch: Created from HEAD" at that second, from the merge commit
+  0f88e62b85), the local ref `refs/heads/swarmforge-coder` is GONE
+  (`git rev-parse --verify refs/heads/swarmforge-coder` fails; only
+  `origin/swarmforge-coder` at f2dc90267f, 2026-08-29, and a stale
+  filter-branch backup under `refs/original/` remain), and every parcel the
+  coder has produced since (BL-1378, BL-1429..BL-1438, BL-1475 ...) was
+  committed on `side`. `ready_for_next.sh` ran clean the whole time: the
+  BL-1195 worktree-drift guard compares tracked CONTENT to HEAD, and nothing
+  compares the checked-out BRANCH to the declared one.
+
+  The branch was created by a test fixture that reached the live checkout
+  (that defect is BL-1516's; this ticket is the missing guard and the
+  repair). Verified 2026-09-10: `side` contains `origin/swarmforge-coder`
+  (`git merge-base --is-ancestor origin/swarmforge-coder side` is true) and
+  `main...side` is 0/0, so a rename loses nothing.
+
+  ## What is wanted
+
+  1. `swarmforge/scripts/branch_identity_guard_lib.bb` - a pure decision lib
+     in the BL-1195 shape (`worktree_drift_lib.bb`): given the role's
+     declared branch (roles.tsv session column, read through the SAME
+     accessor `tree_collapse_guard_lib.bb` uses, so the two can never drift -
+     BL-897), the actual `git rev-parse --abbrev-ref HEAD`, whether the
+     declared local ref exists, and whether the actual tip contains
+     `origin/<declared>` (or that ref is absent), decide one of:
+     `:ok` (match), `:repair` (rename, the safe shape in invariant 1),
+     `:refuse` (everything else, with the reason and both tips).
+  2. `ready_for_next.bb` wires it as a pre-turn guard beside the BL-1195
+     drift guard, BEFORE the inbox is read (invariant 2). `:repair` runs
+     `git branch -m <actual> <declared>` in the role's worktree, prints
+     `BRANCH_DRIFT_REPAIRED role=<r> from=<actual> to=<declared> at=<sha>`
+     and continues the turn; `:refuse` prints `BRANCH_DRIFT_DETECTED
+     role=<r> declared=<b> actual=<a> declared_tip=<sha|absent>
+     actual_tip=<sha> reason=<...>` and exits 2 with a one-line recipe
+     (which ref a human should keep) - never `reset`, never `checkout`.
+     A role with no roles.tsv row, or a row without a session, is not judged
+     (unchanged behaviour, same as BL-1205's "no roles.tsv branch entry").
+  3. The live repair: with the lib landed, the coder runs the guard in its
+     own worktree (or the same rename by hand, recorded), verifies `git
+     worktree list` shows `.worktrees/coder` on `swarmforge-coder` at the
+     same commit, and records before/after in the parcel evidence.
+
+  ## How (direction, not mandate)
+
+  Mirror `worktree_drift_lib.bb` exactly: decision in the lib, git calls in
+  `ready_for_next.bb`, degrade to `:refuse` on any git read failure.
+  Detached HEAD (`abbrev-ref` prints `HEAD`) is a refusal. Do not touch
+  `check_branch_namespace.bb` (BL-106's `<swarm>/<role>` namespace is a
+  different, unmigrated scheme and deliberately not a launch gate) - the
+  declared branch here is roles.tsv's session column, today's live
+  convention. The repair must be idempotent: a second run after the rename
+  is `:ok`.
+
+  ## QA e2e (qa_e2e)
+
+  In a mkdtemp clone with a roles.tsv row for `coder` whose session is
+  `swarmforge-coder`: (a) `git branch -m swarmforge-coder side` in the
+  coder worktree, run `ready_for_next.sh` as coder, expect
+  `BRANCH_DRIFT_REPAIRED` and the worktree back on `swarmforge-coder` at the
+  same sha; (b) create `swarmforge-coder` at a different tip and check out
+  `side`, run again, expect exit 2, `BRANCH_DRIFT_DETECTED`, both refs
+  unchanged, nothing in `in_process/`. Then, on the live install, confirm
+  `git -C .worktrees/coder rev-parse --abbrev-ref HEAD` prints
+  `swarmforge-coder` and the parcel evidence carries the before/after
+  `git worktree list` lines.
+
+notes: |
+  - 2026-09-10 (specifier): minted from the coordinator's note "coder
+    worktree on branch 'side' + root mkdir pollution, mint cleanup".
+    Companion tickets: BL-1516 (the fixture that created `side` in the live
+    checkout, and the stray root directories), BL-1517 (CLIs that accept a
+    flag or literal as their project root). Forensics: `git reflog show
+    side` shows creation at 2026-09-03 12:46:29 from 0f88e62b85 with an
+    empty commit "work that never reached main" (19ce7b76f8, now an ancestor
+    of main - harmless, empty), the exact fixture commit message in
+    `swarmforge/scripts/test/test_bl1378_expedite_close_guard.sh`'s
+    `unlanded_commit`. How the local `swarmforge-coder` ref was deleted is
+    not on record; the repair does not depend on knowing.
