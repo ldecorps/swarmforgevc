@@ -171,3 +171,5 @@ source: |
   a55b5156ba BL-1029, 266adf1403 BL-967, 3da6225bd8 BL-944, ca30ddebd2
   BL-655, d6e5f2568e BL-647); BL-1439 coder evidence "fixed in this parcel";
   consumers by grep of OPERATOR_RUNTIME_BB_FILES under specs/pipeline/steps.
+
+assigned_to: coder
