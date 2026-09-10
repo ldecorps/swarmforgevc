@@ -123,6 +123,7 @@ SWARM_HANDOFF="$SCRIPT_DIR/../swarm_handoff.bb"
 scenario_05() {
   local ROOT
   ROOT="$(mktemp -d)"
+  trap 'rm -rf "${ROOT:-}"' EXIT
 
   git -C "$ROOT" init -q
   git -C "$ROOT" config user.email "test@test"
@@ -151,8 +152,6 @@ EOF
   local OUT STATUS
   OUT="$(cd "$ROOT" && SWARMFORGE_ROLE=coordinator SWARMFORGE_SKIP_DAEMON=1 bb "$SWARM_HANDOFF" "$DRAFT" 2>&1)" && STATUS=0 || STATUS=$?
 
-  rm -rf "$ROOT"
-
   [[ "$STATUS" == "2" ]] || fail "05: expected exit 2 (HANDOFF INVALID) for a git_handoff carrying wake: defer, got $STATUS:\n$OUT"
   echo "$OUT" | grep -qE "Header 'wake' is refused as an unknown header" \
     || fail "05: expected the wake header refused as unknown, got:\n$OUT"
@@ -160,3 +159,19 @@ EOF
 }
 
 scenario_05
+
+# ── D2 (QA BL-1494 bounce): wire the coder-authored property runner proving
+#    this ticket's declared invariants (BL-654) into the standing suite. A
+#    property runner has its own lane and is never a legal suite-manifest
+#    row itself (suite_inventory_lib.bb, unregistered_test_gate_lib.bb) - it
+#    runs standing by being invoked from an already-registered test file,
+#    same shape as bl1497_lock_reap_property_runner.bb from
+#    test_commit_integrity_1497_lock_reap.sh. Without this it passes when
+#    run by hand but never runs on its own. ─────────────────────────────────
+PROPERTY_RUNNER="$SCRIPT_DIR/bl1494_deferred_note_no_wake_property_runner.bb"
+PROPERTY_OUT="$(bb "$PROPERTY_RUNNER")" \
+  || fail "bl1494_deferred_note_no_wake_property_runner.bb exited non-zero"
+echo "$PROPERTY_OUT" | grep -q "^ALL PROPERTIES HOLD$" \
+  || fail "expected ALL PROPERTIES HOLD from bl1494_deferred_note_no_wake_property_runner.bb, got:
+$PROPERTY_OUT"
+pass "bl1494_deferred_note_no_wake_property_runner.bb (BL-654 invariants 1 and 2)"
