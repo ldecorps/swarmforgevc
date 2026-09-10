@@ -1,5 +1,33 @@
 # SwarmForge VS Code Extension — Specification
 
+**Last Updated:** September 10, 2026 (BL-1505: `chase_sweep_lib.bb`'s
+`apply-inbox-item-action!` wrote the chase sidecar and logged `chase`
+telemetry only when `:send-wake-up!` (`chase-poke-and-notify!` in
+`handoffd.bb`) returned `true` — but since the wake dedup landed
+(cbe63cceba, BL-1191) that adapter returns `false` for every dedup-
+suppressed wake (`decide-wake-dedup`'s `unchanged-mailbox` and `cooldown`
+labels both suppress with no time bound), so a chase against an unchanged
+mailbox was attempted but never counted: `chaseCount` stayed 0 forever and
+the respawn/dead-letter rungs below were unreachable for a live pane that
+kept ignoring its wake — the exact stuck-role case the ladder exists for.
+Two standing reds detected it (`test_handoffd_wake_attribution_wiring.sh`
+case 05 on `unchanged-mailbox`, red since 2026-08-27; and
+`test_handoffd_chase_sweep_wiring.sh` case 01/01b/01c on `cooldown`, also
+red since 2026-08-27 and unregistered until this ticket). Fixed by
+splitting "attempted" from "landed": `:send-wake-up!` now reports both,
+and the chase path counts the sidecar/telemetry on `:attempted` — whether
+or not the wake text was injected — while every existing budget/dedup
+consumer (`apply-rate-limit-expiry-wake!`, `wake-role-delivered?`) stays
+keyed on `:landed` unchanged. The dedup decision itself, and every wake-
+attribution outcome (`landed`/`skipped`) BL-870 records, are unchanged —
+this only fixes what gets counted toward the chase ladder. Both register
+rows naming this ticket are removed from `backlog/standing-reds.tsv` in
+this land. Acceptance:
+`specs/features/BL-1505-a-dedup-suppressed-chase-still-counts-toward-escalation.feature`.
+No new extension command, setting, or UI. No diagram edit — internal
+chase/wake daemon logic below the architecture and handoff-flow diagrams'
+depicted granularity.)
+Prior entry —
 **Last Updated:** September 10, 2026 (BL-1449: `OPERATOR_RUNTIME_BB_FILES`
 (`specs/pipeline/steps/lib/operatorRuntimeBbFixtureFiles.js`) — the list of
 Babashka files five step handlers copy into a disposable fixture root before
