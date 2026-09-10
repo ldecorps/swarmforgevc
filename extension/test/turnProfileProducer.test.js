@@ -13,8 +13,14 @@ const {
   turnProfileStorePath,
   turnProfileSummaryStorePath,
   TURN_PROFILE_STORE_FILE,
+  TURN_PROFILE_SUMMARY_STORE_FILE,
   windowDedupeKey,
+  writeTranscriptSummaryStore,
 } = require('../out/metrics/turnProfileProducer');
+const {
+  TURN_PROFILE_SUMMARY_STORE_FILE: DIRECT_SUMMARY_STORE_FILE,
+  writeTranscriptSummaryStore: directWriteTranscriptSummaryStore,
+} = require('../out/metrics/transcriptSummaryStore');
 const { INTERVAL_CATEGORIES, coverageFromIntervals } = require('../out/metrics/transcriptWalker');
 const { projectSlug } = require('../out/metrics/transcriptUsage');
 
@@ -647,8 +653,14 @@ test('BL-1476-03: a tick that reaches its deadline opens at most the affordable 
     deadlineMs: 30_000,
   });
 
-  assert.ok(opened.length <= 3, `expected at most 3 transcripts opened for content, got ${opened.length}`);
+  // BL-1488 (hardener, in-pass): tightened from "<= 3" to the exact count a
+  // deterministic clock produces. A loose upper bound cannot discriminate the
+  // deadline-check's own condition from a mutant that fires it immediately
+  // (0 opened) or never (40 opened) - both still satisfy "<= 3" alone.
+  assert.equal(opened.length, 3, `expected exactly 3 transcripts opened for content, got ${opened.length}`);
   assert.equal(result.partial, true, 'the tick reports a partial walk');
+  assert.deepEqual(result.stages, [], 'a partial tick reports no stages');
+  assert.equal(result.complete, false, 'a partial tick is never complete');
 
   const telemetryDir = path.join(repoRoot, '.swarmforge', 'telemetry');
   assert.deepEqual(readPersistedTurnProfileWindows(telemetryDir), [], 'no row is written');
@@ -682,6 +694,96 @@ test('BL-1476: the summary store file lives at telemetryDir/turn-profile-transcr
     turnProfileSummaryStorePath('/some/telemetry/dir'),
     path.join('/some/telemetry/dir', 'turn-profile-transcript-summaries.json')
   );
+});
+
+// BL-1488 (hardener, in-pass): a file listed at the start of the tick can be
+// gone by the time this tick's loop actually reaches it (deleted between
+// listing and the per-entry stat, resolveEntrySummary's own 'gone' branch -
+// distinct from BL-1476-02c above, which deletes BEFORE a tick even starts
+// and so never lists the file at all). Every entry on a first-ever tick has
+// no cached summary, so readFn is invoked in listing order for every one;
+// deleting a LATER path from inside an EARLIER path's readFn reaches that
+// exact mid-tick race deterministically, with no real timing dependency.
+test('BL-1476-02d: a transcript deleted mid-tick (after listing, before its own stat) is treated as gone, not read, and the window is incomplete', () => {
+  const { repoRoot, claudeProjectsDir, roleWorktrees, transcriptsDir } = setupProducer('mid-tick-gone');
+  const first = writeTranscript(transcriptsDir, 't0.jsonl', [gitLine(BASE_MS)]);
+  const second = writeTranscript(transcriptsDir, 't1.jsonl', [gitLine(BASE_MS + 1000)]);
+
+  const opened = [];
+  const readFn = (filePath) => {
+    opened.push(filePath);
+    if (filePath === first) {
+      fs.unlinkSync(second);
+    }
+    return fs.readFileSync(filePath, 'utf8');
+  };
+
+  const result = runTurnProfileProducer({ repoRoot, roleWorktrees, claudeProjectsDir, readFn });
+
+  assert.equal(result.listed, 2, 'both paths were listed at tick start');
+  assert.deepEqual(opened, [first], 'the vanished path is never opened for content');
+  assert.equal(result.read, 1, 'only the surviving transcript counts as read');
+  assert.equal(result.complete, false, 'a gone transcript makes the window incomplete, same as an unreadable one');
+
+  const telemetryDir = path.join(repoRoot, '.swarmforge', 'telemetry');
+  const row = readPersistedTurnProfileWindows(telemetryDir)[0];
+  assert.deepEqual(row.unreadable_transcripts, [second], 'the gone path is reported the same way a truly unreadable one is');
+  assert.ok(
+    !Object.prototype.hasOwnProperty.call(readTranscriptSummaryStore(telemetryDir), second),
+    'a gone transcript never gets a persisted summary'
+  );
+});
+
+// BL-1488 (hardener, in-pass): a torn-tail transcript reaching the window
+// record through runTick/accumulateEntrySummary - the BL-1476 tick path -
+// rather than through buildTurnProfileWindowForGroups (the pre-BL-1476
+// full-walk path the earlier torn-tail tests above all use). Both paths
+// share classifyTranscriptText/computeTranscriptSummary, but only a test
+// that actually drives runTurnProfileProducer exercises
+// accumulateEntrySummary's own `if (summary.truncatedTail)` branch.
+test('BL-1476-04: a torn-tail transcript reaching the window through a tick is still reported as complete with its tail recorded', () => {
+  const { repoRoot, claudeProjectsDir, roleWorktrees, transcriptsDir } = setupProducer('tick-tail');
+  const whole = writeTranscript(transcriptsDir, 'whole.jsonl', [gitLine(BASE_MS)]);
+  const tail = path.join(transcriptsDir, 'tail.jsonl');
+  fs.mkdirSync(transcriptsDir, { recursive: true });
+  fs.writeFileSync(tail, `${gitLine(BASE_MS + 1000)}\n{"type":"assis`, 'utf8');
+
+  const result = runTurnProfileProducer({ repoRoot, roleWorktrees, claudeProjectsDir });
+
+  assert.equal(result.complete, true, 'a torn final line is a sampling artifact, not damage');
+  const telemetryDir = path.join(repoRoot, '.swarmforge', 'telemetry');
+  const row = readPersistedTurnProfileWindows(telemetryDir)[0];
+  assert.deepEqual(row.truncated_tail_transcripts, [tail], 'the tail condition is still recorded through the tick path');
+  assert.deepEqual(row.unreadable_transcripts, []);
+  void whole;
+});
+
+// BL-1488 (hardener, in-pass): TURN_PROFILE_SUMMARY_STORE_FILE and
+// writeTranscriptSummaryStore are re-exported from this module's own barrel
+// (BL-1476's doc comment: "for callers that historically imported the
+// summary-store shape from this module") but until now nothing imported
+// either of them THROUGH the barrel - readTranscriptSummaryStore and
+// turnProfileSummaryStorePath were, leaving those two re-export getters
+// dark. Property-access mutants on an unread re-export are unobservable no
+// matter what; a value/behavior mutant on one only dies once something
+// actually reads it through this path.
+test('BL-1488: TURN_PROFILE_SUMMARY_STORE_FILE and writeTranscriptSummaryStore are usable through the turnProfileProducer barrel', () => {
+  assert.equal(
+    TURN_PROFILE_SUMMARY_STORE_FILE,
+    DIRECT_SUMMARY_STORE_FILE,
+    'the barrel re-export must name the same literal as the module it forwards from'
+  );
+
+  const telemetryDir = mkTmpDir('sfvc-bl1488-barrel-write-');
+  const store = { '/some/path.jsonl': { size: 1, mtimeMs: 1, unreadable: false, truncatedTail: false, intervals: [] } };
+  writeTranscriptSummaryStore(telemetryDir, store);
+
+  assert.deepEqual(
+    readTranscriptSummaryStore(telemetryDir),
+    store,
+    'a store written through the barrel export round-trips through the direct module the same way'
+  );
+  assert.equal(directWriteTranscriptSummaryStore, writeTranscriptSummaryStore, 'the barrel getter forwards the identical function');
 });
 
 test('BL-1476: an unreadable transcript never has its bad content re-read once its summary is current', () => {
