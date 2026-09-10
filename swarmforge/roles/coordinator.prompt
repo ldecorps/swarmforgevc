@@ -536,6 +536,18 @@ or `note` referencing that ticket id. A coder or architect "bookkeeping stale"
 successful close, the CLI also abandons every role's pending `new/` and
 `in_process/` handoffs for that ticket so the pipeline cannot keep routing
 closed work.
+**The daemon may have closed it already (landed auto-close, hotfix
+d9a4d0b888, 2026-09-09; stamp BL-1506).** `handoffd` reads QA's land record
+(`.swarmforge/land-approvals/*.jsonl`) and, for an active ticket whose latest
+row names a commit already on `origin/main`, runs `close_ticket.sh` itself as
+`SWARMFORGE_ROLE=coordinator` - through `commit_integrity_cli.bb` and
+`ticket_close_guard_lib.bb`, the same guarded path as step 2 below, so the
+guard still decides and Article 3.3 still holds: it is your close, executed
+for you. One attempt per tick, 30-minute per-ticket cooldown. Before step 2,
+check `backlog/done/` for the ticket; a note reading `BL-x closed by handoffd
+after QA land <sha> - promote next` means skip to step 3. A refusal is logged
+`landed-auto-close-refused <id> <detail>` and the legacy QA nudge still
+fires - read the detail, do not re-run the close blind.
 0. **Absorb `origin/main` before anything else (gate on `behind=0`).** QA lands
    approved commits on `origin/main`; your checkout must contain that tip before
    freshness sync or any backlog move on `main`. Run:

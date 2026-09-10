@@ -7,7 +7,7 @@ epic: best-of-breed-swarm
 priority: 0
 direction: human-requested
 depends_on: [BL-1176]
-decomposes_into: [BL-1181, BL-1182, BL-1183]
+decomposes_into: [BL-1181, BL-1182, BL-1183, BL-1509, BL-1510, BL-1511, BL-1512]
 mutation_cost: high
 human_approval: approved
 approval_context: >
@@ -41,3 +41,4 @@ source: |
 
 notes: |
   - [2026-08-27] specifier: minted; reuses BL-547/525/556/669 — not a registry rewrite.
+  - [2026-09-10] specifier: operator intake INTAKE-model-score-report-and-resilience-tiered-confs.md (2026-09-09) split 1:N into this orbit - BL-1509 (Telegram document upload + CLI), BL-1510 (scoring table as a fresh attachment, depends on BL-1509), BL-1511 (BoB pack seats a specifier again, ruling), BL-1512 (diversified tier-2 fallback pack, coordinator ruling). Intake archived to backlog/archive/ with the mapping.

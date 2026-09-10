@@ -1,0 +1,127 @@
+id: BL-1502
+title: "bl1089FrontDeskLivenessFixture.property.test.js has been red on main since 2026-09-08 with no owner: its fixture-source contract pins the helper name stamp_own_heartbeat_then_age_past_stall, which BL-1285 (9021f12bb2) renamed to stamp_own_heartbeat_immediately_stale while keeping the age-0 stamp the contract exists to guard - the contract asserts the property (an own heartbeat at age 0, never a 5000ms backdate) and follows the fixture as it stands, so a rename never reads as a regression while a real backdate still does"
+milestone: M8
+type: defect
+severity: high
+# high (standing-red rule 2026-09-05): a property-lane test red on main is a
+# broken safety signal; it blocked BL-1497's QA approval on 2026-09-10
+# (Article 4.2) and throttles intake until owned. The front desk itself is
+# unaffected: BL-1285's fixture still stamps age 0, so the guarded property
+# holds - only the pin on a retired NAME is false.
+status: todo
+epic: code-quality-gates
+priority: 8
+direction: swarm-reported
+depends_on: []
+mutation_cost: low
+# low: one property test file and one small helper under extension/test
+# (never extension/src), one step-handler file. No production code, so no
+# Stryker target; the hardener records the fallback.
+slice_size_envelope: low
+required_stages: [coder, cleaner, architect, hardender, documenter, qa]
+
+acceptance: specs/features/BL-1502-the-bl1089-fixture-source-contract-follows-the-liveness-fixture.feature
+
+# No consumer anchor is honest here (BL-1235): the live consumer is the
+# properties lane itself (`npm run test:properties`, vitest.properties.config.mjs),
+# which already collects this file and is the thing that is red. The
+# handler entry is the BL-233 in-parcel pin.
+required_wiring:
+  - 'specs/pipeline/steps/bl1502FixtureSourceContractFollowsFixtureSteps.js::registerSteps::the handler lands in the same parcel as the feature (BL-233, BL-1371)'
+
+human_approval: pending
+approval_context: >
+  A new feature file is authored here, so it needs a tap. No choice is
+  posed and there are no ruling_options. FIRM: the liveness fixture
+  (swarmforge/scripts/test/test_front_desk_supervisor_liveness.sh) is not
+  edited - BL-1285's shape stands; the fix is in the property test's
+  fixture-source contract only. FIRM: the contract keeps refusing a 5000ms
+  backdate (scenario 02, backdate row) - BL-1089 invariant 1 forbids a green bought by
+  asserting less. FIRM: the file is not added to
+  property_suite_standing_allowlist.tsv. Direction, not mandate: pin the
+  property, not the helper's name - "the helper that models served-then-
+  stopped stamps write_heartbeat "$root" 0" can be matched on the stamp
+  line itself, or on a stamp_own_heartbeat* helper whose body contains it.
+  Minted by the specifier on QA's unowned-red note of 2026-09-10 07:08Z
+  from the BL-1497 parcel (evidence dcbfd47ffc); reproduced on main
+  60623ebf02: 1 failed | 2 passed, "aging helper must exist".
+
+invariants:
+  - "One implementation of the fixture-source contract: the property test and the acceptance handler evaluate the same predicate over the same fixture text, never two hand-written copies of the regexes."
+
+description: |
+  ## What is wrong
+
+  `extension/test/bl1089FrontDeskLivenessFixture.property.test.js` line 166:
+
+  ```
+  assert.match(src, /stamp_own_heartbeat_then_age_past_stall/, 'aging helper must exist');
+  ```
+
+  BL-1285 (`9021f12bb2`, landed 2026-09-08 22:41 BST, now in
+  `backlog/done/`) rewrote the fixture so it no longer sleeps past the
+  stall window: the helper became `stamp_own_heartbeat_immediately_stale`
+  (fixture line 75), still writing `write_heartbeat "$root" 0` (line 79),
+  and every caller sets `FRONT_DESK_STALL_MS=1` so the age-0 stamp is
+  stale the moment it is written. The renamed helper satisfies every
+  other line of the contract - the age-0 stamp, the absence of
+  `write_heartbeat "$F" 5000`, the healthy-poll `write_heartbeat "$F"
+  10` - only the name pin fails. BL-1285's parcel did not re-read the
+  property that drives the fixture it changed (the BL-1465 shape); this
+  ticket is the retirement it owed.
+
+  Reproduced by the specifier on main 60623ebf02:
+  `cd extension && npx vitest run --config vitest.properties.config.mjs
+  test/bl1089FrontDeskLivenessFixture.property.test.js` -> 1 failed | 2
+  passed, `AssertionError: aging helper must exist`. QA's isolated re-run
+  the same morning read identically (dcbfd47ffc).
+
+  ## What is wanted
+
+  The contract asserts what BL-1089 actually owns - the served-then-
+  stopped helper stamps an OWN heartbeat at age 0 and never a 5000ms
+  backdate - phrased so it holds for the fixture BL-1285 landed and still
+  fails for a backdating copy. The property lane is green on `main`; the
+  register row this ticket adds is removed in the same land.
+
+  ## How (direction, not mandate)
+
+  - Match the stamp line, not the helper name: the fixture must contain a
+    `stamp_own_heartbeat` helper whose body reaches `write_heartbeat
+    "$root" 0`, and must not contain `write_heartbeat "$F" 5000`. Keep the
+    healthy-poll `write_heartbeat "$F" 10` check.
+  - Put the predicate in one small helper under `extension/test/helpers/`
+    (name is the implementer's) that takes the fixture TEXT and returns a
+    verdict naming the failing rule; the property test and the BL-1502
+    step handler both require it (invariant 1). Scenario 02's backdate row feeds it a
+    copy of the real fixture with the age-0 stamp replaced by a 5000ms
+    backdate, the file's own documented "break 2".
+  - Do not touch `test_front_desk_supervisor_liveness.sh`; BL-1285's
+    feature (`specs/features/BL-1285-*.feature`) is that fixture's
+    contract now.
+
+  ## Not in scope
+
+  - BL-1285's parcel not re-reading this property is the BL-1465 shape;
+    no process change is minted here, the closing ceremony will see the
+    ledger row.
+
+notes: |
+  Register: backlog/standing-reds.tsv gains one `property` row naming this
+  ticket (same commit as this mint), first_seen 2026-09-08; QA removes it
+  in the land that turns the file green.
+
+qa_e2e_procedure: |
+  On the parcel commit, from `extension/`:
+  1. `npx vitest run --config vitest.properties.config.mjs
+     test/bl1089FrontDeskLivenessFixture.property.test.js` -> 3 passed.
+  2. `git diff main...HEAD --name-only` names the property test, one
+     helper under extension/test/helpers, the step handler + index.js
+     registration, the feature, evidence, and the register row removal;
+     `swarmforge/scripts/test/test_front_desk_supervisor_liveness.sh`
+     and `property_suite_standing_allowlist.tsv` are unchanged.
+  3. Break-then-restore: in a scratch copy of the fixture replace
+     `write_heartbeat "$root" 0` with `write_heartbeat "$root" 5000`,
+     point the predicate at it, confirm it fails; restore.
+  4. `bash swarmforge/scripts/test/test_front_desk_supervisor_liveness.sh`
+     still passes (the fixture is untouched, this is the control).
