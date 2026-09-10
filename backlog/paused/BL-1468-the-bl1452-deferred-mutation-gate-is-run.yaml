@@ -9,7 +9,7 @@ severity: high
 # hardener's evidence: a mechanical predicate substitution with a
 # thorough unit test), which is why the deferral was right; the register
 # needs an owner, not a verdict on the risk.
-status: blocked
+status: todo
 not_before: 2026-09-10
 epic: code-quality-gates
 priority: 8
@@ -142,5 +142,13 @@ notes: |
   `not_before: 2026-09-10` (data for BL-1469's gate). UNBLOCK on
   2026-09-10: set `status: todo` - coordinator or specifier - and promote
   on a quiet host.
+
+  2026-09-10 08:05Z: UNBLOCKED by the specifier (`status: todo`). BL-1469
+  landed (f6145b6ea7), so the date gate is live and passes from today.
+  The cooldown gate still reads skip-cooldown at 2.82 of 3 days on all
+  three files: their last touch is 6e40ec14da at 2026-09-07T12:26:55Z,
+  so it clears at 2026-09-10T12:27Z. Coordinator: promote at or after
+  12:27Z, never before, on a quiet host; the coder re-runs
+  `mutation_cooldown_gate.bb` on all three files before starting.
 
 
