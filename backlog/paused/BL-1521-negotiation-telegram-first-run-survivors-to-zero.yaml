@@ -1,0 +1,126 @@
+id: BL-1521
+title: "BL-1441's first-ever Stryker run over negotiationTelegramRelay.ts and negotiationTelegramRouting.ts left 15 survived mutants (four string-literal mutants on the relay's four operator-facing message constants; six on AMBIGUOUS_INTENT_PATTERN, four on AGREEMENT_PATTERN and one in renderBulletList), discharged with a reason each and owned by nobody; the run is repeated over the full unit suite and every survivor is killed by a behaviour test or recorded as an accepted equivalent with its code-level proof"
+milestone: M8
+type: chore
+severity: medium
+# medium (chore, not a defect): no live fault and no broken safety signal -
+# the gate ran and its row is discharged. A real, contained test gap on the
+# onboarding negotiation's Telegram relay text and intent routing.
+status: todo
+epic: first-run-mutation-debt
+priority: 30
+direction: swarm-proposed
+depends_on: []
+mutation_cost: medium
+# medium: tests only, two modules of 141 and 135 lines, full Stryker run
+# over the unit suite; regex-alternative mutants need discriminating
+# examples, which is judgment, not volume.
+slice_size_envelope: low
+required_stages: [coder, cleaner, architect, hardender, documenter, qa]
+
+acceptance: specs/features/BL-1521-negotiation-telegram-first-run-survivors-to-zero.feature
+
+required_wiring:
+  - 'specs/pipeline/steps/bl1521NegotiationTelegramSurvivorsToZeroSteps.js::registerSteps::the handler lands in the same parcel as the feature (BL-233, BL-1371)'
+# No production anchor is declared on purpose (BL-1235): both modules and
+# their consumers already exist, so any pattern on them matches before and
+# after the work and gates nothing. The evidence file is the contract.
+
+human_approval: approved
+approval_context: >
+  A new feature file is authored here, so it needs a tap. No choice is
+  posed and there are no ruling_options; the budget question for the
+  three large files lives on BL-1519. FIRM: a message constant is killed
+  by a test asserting the text the operator actually reads through the
+  relay's render path (a `StringLiteral -> ""` mutant on operator-facing
+  text is behaviour, not trivia); a regex-alternative mutant is killed by
+  an input that one alternative matches and the mutant does not, or is
+  recorded as an accepted equivalent with the inputs that prove no
+  observable difference (BL-234); no mutant is suppressed and no manifest
+  is hand-edited.
+
+invariants:
+  - "Every mutant Stryker reports for either file at the parcel commit is either killed by a test in the unit suite or recorded in the evidence as an accepted equivalent with the code-level reason; none is silent."
+
+description: |
+  ## What is wrong
+
+  On 2026-09-10 BL-1441 ran the Stryker gate BL-955 deferred on
+  2026-08-19 over BL-955's file set and discharged the ledger row on a
+  completed run (`backlog/evidence/BL-1441-BL-955-mutation.md`, hardender
+  tip 5112a3fa5b). It was the first mutation run ever over
+  `out/onboarding/negotiationTelegramRelay.js` (61 mutants, 57 killed, 4
+  survived, score 93.44%) and `out/onboarding/negotiationTelegramRouting.js`
+  (86 mutants, 75 killed, 11 survived, 87.21%); neither had a no-coverage
+  mutant. The discharge names each survivor with the covering-test count
+  that failed to catch it, and the specifier's ruling on the hardender's
+  rule proposal of the same day is that such a discharge is legitimate
+  only when a ticket owns the survivors. This is that ticket for these
+  two files.
+
+  The 15, by enclosing declaration (census
+  `backlog/evidence/BL-1519-first-run-survivor-census-20260910.md`):
+  relay - CONTRACT_AGREED_MESSAGE, ROUND_LIMIT_MESSAGE,
+  CLARIFY_INTENT_MESSAGE, COULD_NOT_DERIVE_CHANGE_MESSAGE, one each;
+  routing - AMBIGUOUS_INTENT_PATTERN 6, AGREEMENT_PATTERN 4,
+  renderBulletList 1. Three and two test files reference the modules.
+
+  ## What changes
+
+  - The run is repeated over the FULL unit suite (BL-955's row used a
+    9-file include set); the evidence records the include set used, the
+    summary block per file, load and duration, and either zero survived
+    and zero no-coverage per file, or one accepted-equivalent record per
+    remaining survivor with the code-level reason and the inputs or grep
+    that prove it (BL-234).
+  - Behaviour tests kill the rest: each message constant through the
+    relay call that sends it, asserting the text; each pattern through
+    the routing decision, with one input per alternative the mutant
+    drops or widens; renderBulletList through its rendered output.
+  - The evidence lists, for each of the four message constants, the test
+    file and case that asserts its text (scenario 02).
+  - Evidence path: `backlog/evidence/BL-1521-negotiationTelegram-mutation.md`
+    (one file, one summary block per module).
+
+  ## How (direction, not mandate)
+
+  - `--mutate` scoped to the two compiled files, `perTest`, sibling links
+    per the Verification rules; check `mutation_cooldown_gate.bb` first
+    (22 days quiet at mint) and record its decision.
+  - Documenter: nothing beyond the evidence file; no diagram trigger fires.
+
+constraints: >
+  Tests only unless a seam is missing, in which case the smallest
+  extraction that exposes the behaviour to an in-process test. Never
+  `process.chdir()` under mutation; never a hand-edited manifest. The step
+  handler lands with the feature (BL-233).
+
+out_of_scope: |
+  - telegramFrontDeskBotCore.ts, the third file of BL-955's set (BL-1519).
+  - Any change to the message texts or to what the patterns accept.
+
+qa_e2e_procedure: |
+  1. The BL-1521 feature passes (three runs: two outline rows, one scenario).
+  2. `backlog/evidence/BL-1521-negotiationTelegram-mutation.md` shows a
+     completed Stryker summary over the full unit suite with at least 60
+     mutants on the relay and 85 on the routing file, zero no-coverage,
+     and either zero survived or one accepted-equivalent record per
+     survivor with its proof.
+  3. Each of the four message constants appears in the evidence with the
+     killing test file and case.
+  4. `npm test` from `extension/` is green.
+
+source: |
+  Hardender rule_proposal 2026-09-10 (inbound 00_20260910T202509Z_001262),
+  accepted with amendment; BL-1441 discharge evidence
+  backlog/evidence/BL-1441-BL-955-mutation.md; census
+  backlog/evidence/BL-1519-first-run-survivor-census-20260910.md.
+
+notes: |
+  Minted 2026-09-10 by the specifier while adjudicating the hardender's
+  rule proposal. INVEST: Independent (no unbuilt sibling), Negotiable
+  (test shapes are direction), Valuable (two files' gates go to a full
+  account), Estimable (15 mutants on 276 lines, one sitting), Small (two
+  scenarios, one invariant), Testable (the parcel's own evidence). The
+  census pins (60 and 85) are BL-1445's discipline against a run scoped
+  to the wrong file or a stale compile.

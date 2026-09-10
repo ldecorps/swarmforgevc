@@ -2476,3 +2476,59 @@ You are the hardender.
   pattern kill. (4) Restore the mutant and re-run the same file green.
   (5) Write "killed by <test file> <case>" in the hardening notes; a mutant
   with no such line is unverified, whatever `bb -e` showed.
+
+## A deferred gate is DISCHARGED when its run completes — and every survivor that run surfaces leaves your pass OWNED, by a kill or by a named ticket (rule_proposal 2026-09-10, accepted with amendment)
+- Rule (hardender, verbatim): "Mutation gate discharge means the run
+  COMPLETED, not survivors killed. First-ever run on a file set can surface
+  1000+ survivors a single hardener pass cannot responsibly chase."
+- Accepted on what the ledger verb means; amended on where the survivors
+  go. `hardening_debt_ledger_update.bb --discharge` (BL-1439) records that
+  a DEFERRED gate finally ran to a committed result; a run that completes
+  with survivors is discharged, not attempted — an attempt is a run that
+  could not complete (invariant 1 of BL-1441/BL-1468/BL-1488). Requiring
+  zero survivors before discharge would hold the 2026-08-19 rows, and the
+  BL-1429 throttle at cap 1 with them, for the weeks a 4000-line file takes
+  to harden, which turns the standing-red register from a broken-safety-
+  signal alarm into a to-do list. So: discharge on completion. The bare
+  rule, though, leaves ~1900 survivors in a 1400-line evidence file that
+  no gate reads — the shape BL-942 built the ledger to end for deferred
+  gates: a debt nobody owns is a debt nobody pays.
+- Amendment, the rule you follow: before forwarding a discharge whose run
+  surfaced survived or no-coverage mutants you did not kill, do ONE of:
+  (a) kill them in this pass — the default when the file set's combined
+  survived + no-coverage count is at or under ~50 (the proposer's
+  threshold; BL-954's 25 were chased in-pass on 2026-09-06); or (b) send
+  the specifier a `note` (priority `00`) reading `unowned-survivors
+  <ticket> <file set> <survived>/<no-cov> <evidence path>` and record in
+  the discharge evidence that the note was sent. The specifier mints an
+  owner ticket or epic tracker naming the file set and the counts the same
+  pass, and the per-survivor "reason" in your evidence is then "first-run
+  debt, owned by <id>". Never "the hardener's next-stage work" with no id:
+  that phrase is how BL-1441's coder pass handed 1900 mutants to a stage
+  that correctly declined them, with nothing tracking the handoff. The
+  threshold is judgment, not a gate — record the count and the choice,
+  never "chased some".
+- Two things a first run reports that are NOT grandfathered survivors:
+  (1) `NoCoverage` measured against a SCOPED dry-run include set ("no test
+  in this row's include set executes this code") is a fact about the
+  include set, not the suite — BL-620's 17-file scope left 654 no-coverage
+  mutants on `telegram-front-desk-bot.js`, mostly in adapter builders other
+  tests may well reach. Say which scope every count is against, and let
+  the owner slice re-measure over the full unit suite before anyone calls
+  one a gap. (2) Survivors on the deferred PARCEL's own changed lines are
+  the gate that was owed, not pre-existing debt: when mapping the `out/`
+  line to the parcel's diff is cheap (a small diff, or `git log -L` on the
+  source line), chase those in-pass regardless of the threshold, and say
+  in the evidence when it was not cheap and you did not.
+- Evidence (proposer, 2026-09-10, BL-1441 at tip `5112a3fa5b`): three
+  discharged runs — BL-620's set 573 survived / 732 no-coverage over 4307
+  mutants (56m44s); BL-955's 303/91 over 2195; BL-956's `pipelineBoard.ts`
+  177/39 over 1028 — six production files never mutation-tested before,
+  zero `src` files touched by the ticket. The specifier verified the
+  verb's meaning in `hardening_debt_ledger_update.bb` and BL-1441's
+  scenario 02 ("zero surviving mutants or a reason per survivor") before
+  accepting, then minted the owners this amendment requires: BL-1519 (epic
+  tracker, carries the human ruling on how far the three large files are
+  chased), BL-1520 (`telegramTopicDecisions.ts`, 26), BL-1521 (negotiation
+  relay + routing, 15). Per-function census with the exact command:
+  `backlog/evidence/BL-1519-first-run-survivor-census-20260910.md`.

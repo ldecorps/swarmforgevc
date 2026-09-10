@@ -1,0 +1,87 @@
+id: BL-1519
+title: "EPIC — First-run mutation debt on the front-desk and pipeline-board files: BL-1441's discharge of the 2026-08-19 gates was the first Stryker run ever over six production files and left 1,900 survived and no-coverage mutants that no ticket owned; this tracker owns them, carries the human ruling on how far the three large files are chased, and decomposes into per-file slices; do not promote directly"
+milestone: M8
+status: todo
+type: epic
+epic: first-run-mutation-debt
+priority: 40
+direction: swarm-proposed
+depends_on: []
+decomposes_into: [BL-1520, BL-1521]
+remaining_slices:
+  - "extension/src/tools/telegram-front-desk-bot.ts - 285 survived, 654 no-coverage (against a 17-file include set), 1945 mutants, score 51.72%. The no-coverage mass sits in the extension-host adapter builders (buildPollAdapters 156, buildConciergeTickAdapters 125, applyHotfixStampAnswer 84, connectAndRelayReplies 37, main 15): the CLI main() is not the thin wrapper engineering.prompt requires. Slicing waits on the human ruling below."
+  - "extension/src/tools/telegramFrontDeskBotCore.ts - 288 survived, 91 no-coverage, 2048 mutants, score 81.49% (BL-955's row; BL-620's row read 262/78 against a different include set). 89 of them are module-level constant and pattern tables, then answerIfAlreadyDecided 21, recordRulingDecisionAndClose 16, CONTROL_DECISION_EFFECTS 16, dispatchRuleCallback 12 no-coverage. Slicing waits on the human ruling below."
+  - "extension/src/concierge/pipelineBoard.ts - 177 survived, 39 no-coverage, 1028 mutants, score 78.99%, 41 functions, the five HTML renderers holding 86 (formatCollapsedEpicLineHtml 20, composePipelineBoardHtml 19, renderListSectionHtml 17, renderParkedSectionHtml 16, renderGridTapLinesHtml 14). Slicing waits on the human ruling below."
+
+human_approval: approved
+human_ruling: |
+  Chase the untested logic only - the no-coverage regions (make the CLI adapter builders thin wrappers or cover them) and the module-level decision tables - and accept the remaining first-run survivors as grandfathered debt guarded by the changed-path gate (recommended)
+ruling_provenance: tapped
+approval_context: >
+  This tracker asks one question and mints nothing on its own. BL-1441
+  discharged three deferred mutation gates on completed runs, as its spec
+  allows, and those runs were the first time six production files had
+  ever been mutation-tested. The two small files are owned by BL-1520 and
+  BL-1521 (26 and 15 survivors, one sitting each, minted alongside and
+  asking their own taps). The three large files hold about 1,530 survived
+  and no-coverage mutants between them (census, with the exact command:
+  backlog/evidence/BL-1519-first-run-survivor-census-20260910.md). How
+  far to chase them is a budget call, yours: at roughly 60 mutants per
+  hardener sitting, chasing all of it is on the order of 25 slices. The
+  ruling options below are the alternatives; your tap records one as
+  human_ruling and the specifier mints the slices from the census
+  accordingly. FIRM regardless of the ruling: the BL-1164 changed-path
+  gate keeps guarding every future edit to these files, the ledger rows
+  stay discharged (the gates ran), and no survivor is suppressed or
+  hand-edited out of a manifest.
+ruling_options:
+  - Chase the untested logic only - the no-coverage regions (make the CLI adapter builders thin wrappers or cover them) and the module-level decision tables - and accept the remaining first-run survivors as grandfathered debt guarded by the changed-path gate (recommended)
+  - Chase everything to zero in function-group slices of at most about 60 mutants each, minted from the census as the epic drains
+  - Accept all first-run survivors on the three large files as grandfathered debt guarded by the changed-path gate and close this epic once BL-1520 and BL-1521 land
+
+acceptance:
+  none: "tracker only - see decomposes_into children for acceptance"
+mutation_cost: high
+# high: the children are hardening work on 4000-line front-desk files; the
+# seat that slices or hardens them must reason across a large source and
+# test surface (BL-1001 keeps it off easy seats). Not a size estimate.
+slice_size_envelope: low
+# low: the tracker itself carries no work; each child declares its own.
+
+source: |
+  Hardender `rule_proposal` 2026-09-10 (scope role:hardender, inbound
+  00_20260910T202509Z_001262), verbatim: "Mutation gate discharge means the
+  run COMPLETED, not survivors killed. First-ever run on a file set can
+  surface 1000+ survivors a single hardener pass cannot responsibly chase."
+  Rationale, verbatim: "BL-1441 discharged 4 gates, 6 never-hardened files,
+  ~1900 survivors, 0 src files touched. Recommend a follow-up ticket per
+  file set when survivor+no-cov exceeds ~50 on a first run." Accepted with
+  amendment into swarmforge/roles/hardender.prompt the same pass; this epic
+  and BL-1520/BL-1521 are the owner tickets that amendment requires.
+  Discharge evidence on the hardender's tip 5112a3fa5b:
+  backlog/evidence/BL-1441-BL-620-mutation.md, BL-1441-BL-955-mutation.md,
+  BL-1441-BL-956-pipeline-board-caption-and-cap-hotfix-mutation.md.
+
+notes: |
+  UMBRELLA / tracking item (type: epic), NOT directly promotable - the
+  coordinator promotes CHILD slices, never this. Children carry
+  `epic: first-run-mutation-debt` and are listed in `decomposes_into`.
+
+  Specifier, 2026-09-10 (mint): the survivors are not a defect in BL-1441 -
+  its scenario 02 reads "zero surviving mutants or a reason per survivor",
+  every line carries one, and holding the 2026-08-19 ledger rows (and the
+  BL-1429 throttle at cap 1) for the weeks a 4000-line file takes to
+  harden would turn the standing-red register into a to-do list. The
+  defect was that nothing owned the survivors once the rows were
+  discharged; this tracker is that owner of record. No-coverage counts
+  are against each row's scoped include set (17 and 9 test files), so a
+  slice re-measures over the full unit suite before chasing. Two files
+  named here also carry unrelated open work (BL-1518 touches
+  telegram-front-desk-bot.ts; BL-940 touches pipelineBoard.ts): a child
+  slice that reaches a function one of those tickets is changing waits
+  for that ticket to land (Concurrent Work Orthogonality).
+
+  Ruling pending. When human_ruling arrives, the specifier records it here
+  and mints or retires slices from the census; a slice for either large
+  telegram file also names its function group and count in its title so
+  the epic's remaining_slices stays a subtraction, not a guess.
