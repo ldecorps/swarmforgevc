@@ -21,7 +21,10 @@ acceptance: specs/features/BL-1512-a-diversified-fallback-pack-survives-two-exha
 required_wiring:
   - 'specs/pipeline/steps/bl1512DiversifiedFallbackPackSteps.js::registerSteps::the handler lands in the same parcel as the feature (BL-233, BL-1371)'
 
-human_approval: pending
+human_approval: approved
+human_ruling: |
+  Coordinator stays claude-sonnet-5 (Anthropic) with a header caveat that the seat is not diversified (recommended)
+ruling_provenance: tapped
 approval_context: >
   A new feature file is authored here, so it needs a tap, and the one
   open question the intake itself raises is recorded as ruling_options
