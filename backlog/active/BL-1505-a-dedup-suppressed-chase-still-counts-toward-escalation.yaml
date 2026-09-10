@@ -222,3 +222,5 @@ qa_e2e_procedure: |
      AND test_handoffd_chase_sweep_wiring.sh - are gone from
      backlog/standing-reds.tsv in the land. Leaving either behind leaves a
      row naming a closed ticket, which is an unowned red in its own right.
+
+assigned_to: coder
