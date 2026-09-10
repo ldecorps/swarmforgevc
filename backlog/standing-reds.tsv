@@ -16,16 +16,16 @@
 # under vitest.properties.config.mjs; the unit suite run once (16 files / 26
 # tests red per vitest; 7 distinct files). Five allowlist rows were green and
 # are not registered (BL-1428 removes them from the allowlist).
-# Hardening lane (2026-09-06): the four STILL-outstanding gates in
-# backlog/hardening-debt-ledger.yaml from 2026-08-19 (BL-956's gherkin-
-# mutation discharged 2026-09-05 and its row correctly carries none here -
-# a discharged row has no register row). BL-1428 joins a ledger row to a
-# register row on (lane, file). Owed run = BL-1441 (BL-1439's time-split
-# successor, minted 2026-09-06 once the coder's evidence showed these four
-# blocked by cooldown/BL-1440, not by BL-1439's own work).
-hardening	extension/src/tools/telegram-front-desk-bot.ts,extension/src/tools/telegramFrontDeskBotCore.ts,extension/src/tools/telegramTopicDecisions.ts	BL-1441	2026-08-19	mutation gate deferred on BL-620 (host busy); owed run is BL-1441
-hardening	extension/src/onboarding/negotiationTelegramRelay.ts,extension/src/onboarding/negotiationTelegramRouting.ts,extension/src/tools/telegramFrontDeskBotCore.ts	BL-1441	2026-08-19	mutation gate deferred on BL-955 (host busy); owed run is BL-1441
-hardening	extension/src/concierge/pipelineBoard.ts	BL-1441	2026-08-19	mutation gate deferred on BL-956 (cooldown + host busy); owed run is BL-1441
+# Hardening lane: the four gates in backlog/hardening-debt-ledger.yaml from
+# 2026-08-19 have all discharged (BL-956's gherkin-mutation 2026-09-05;
+# BL-954's mutation 2026-09-06; BL-620/BL-955/BL-956's mutation 2026-09-10,
+# backlog/evidence/BL-1441-BL-620-mutation.md,
+# backlog/evidence/BL-1441-BL-955-mutation.md,
+# backlog/evidence/BL-1441-BL-956-pipeline-board-caption-and-cap-hotfix-mutation.md) -
+# a discharged row carries no register row (BL-1428 joins a ledger row to a
+# register row on (lane, file)). The hardening lane is empty of BL-1441's
+# rows as of this commit (invariant 2: a register row leaves in the same
+# commit that discharges it).
 property	extension/test/bl1218RemoteControlConfigInvariants.property.test.js	BL-1457	2026-09-07	invariant 2 spawns parse_config on a fixture with no role matrix and inherits the pane PACK_STAFFING_SKIP_GATE=1; without it the staffing gate refuses the model line and no launch script is written (QA offline expedite 09-07, BL-1454 hold); owner BL-1457 makes the file decide the gate itself
 property	extension/test/bl1320DocumentedStepsAreExecutedInvariants.property.test.js	BL-1457	2026-09-07	same shape: the how-to seat line --seat-tier hard is refused not-on-role-matrix without the pane PACK_STAFFING_SKIP_GATE=1 (QA offline expedite 09-07, BL-1454 hold); owner BL-1457
 unit	extension/test/bridgeServer.test.js	BL-1460	2026-09-07	"an idle /events connection receives a periodic keepalive comment frame" fails when the first poll tick after a fresh start precedes the first keepalive tick: the connect path never seeds lastSnapshot, so broadcastSnapshotIfChanged re-broadcasts an identical snapshot (QA 3 of 6, specifier 1 of 6, 09-07; BL-1454 hold); owner BL-1460 seeds it
