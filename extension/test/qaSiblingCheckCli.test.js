@@ -221,6 +221,10 @@ test('parseArgs rejects list with an unrecognized flag (list takes none)', () =>
   assert.equal(parseArgs(['list', '--ticket', 'BL-477']), null);
 });
 
+test('parseArgs rejects list even when the sole odd-length argument is Stryker\'s own array-mutation placeholder (guards LIST_FLAGS staying empty)', () => {
+  assert.equal(parseArgs(['list', 'Stryker was here', 'x']), null);
+});
+
 // ── status: exit codes ────────────────────────────────────────────────────
 
 test('status on an unknown ticket (no deferral ever recorded) exits 0 VERIFY', async () => {
@@ -351,6 +355,8 @@ test('defer refuses a --check reading the blocker file under backlog/active/, na
   assert.match(result.stderr, /REFUSED/);
   assert.match(result.stderr, /BL-469/);
   assert.match(result.stderr, /backlog\/active\//);
+  assert.match(result.stderr, /backlog\/done\//);
+  assert.match(result.stderr, /Record a check that does not depend on/);
   assert.equal(readSiblingDeferralRecords(root).length, 0);
 });
 
@@ -376,7 +382,7 @@ test('an invalid invocation exits 2 with a usage message, never a raw crash', as
   assert.equal(result.exitCode, 2);
 });
 
-test('the usage message on exit 2 names all three subcommands and the --class enum, not an empty string', async () => {
+test('the usage message on exit 2 names all four subcommands and the --class enum, not an empty string', async () => {
   const root = mkRepo();
   const result = await runCli(root, ['bogus']);
   assert.equal(result.exitCode, 2);
@@ -384,6 +390,7 @@ test('the usage message on exit 2 names all three subcommands and the --class en
   assert.match(usage, /qa-sibling-check\.js status --ticket <id>/);
   assert.match(usage, /qa-sibling-check\.js defer --ticket <id> --blocked-by <id> --class <failureClass> --check "<command>" --commit <hex>/);
   assert.match(usage, /qa-sibling-check\.js clear --ticket <id> --blocked-by <id> --commit <hex>/);
+  assert.match(usage, /qa-sibling-check\.js list/);
   assert.match(usage, /--class: compile\|unit\|integration\|acceptance\|behavior\|invariant-unencoded\|spec-gap/);
 });
 
