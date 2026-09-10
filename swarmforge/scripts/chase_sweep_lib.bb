@@ -523,6 +523,18 @@
     (handoff-lib/default-ambulance-held? (slurp file-path))
     (catch Exception _ false)))
 
+;; BL-1494: a note carrying wake: defer is excluded from the stale-item
+;; ladder for as long as it sits unread - the recipient reads it on its own
+;; next ready_for_next, so chasing/respawning/dead-lettering it would cost
+;; exactly the turn the human's BL-1361 ruling avoided. Same fail-open-false
+;; posture as item-ambulance-held?/item-deferral-held? above: an unreadable
+;; file is never treated as held, only a positive (type, wake) match is.
+(defn item-deferred-note-held? [file-path]
+  (try
+    (handoff-lib/deferred-note? {:parcel-type (handoff-lib/header-field file-path "type")
+                                 :wake-field (handoff-lib/header-field file-path "wake")})
+    (catch Exception _ false)))
+
 ;; BL-1004 stall-alarm exemption (architect bounce 2026-08-21): a rework a
 ;; SIBLING seat worked, still inside cross_seat_claim_deadline_ms (age via
 ;; its enqueued_at/created_at header, never mtime), is DESIGNED to sit in
@@ -581,7 +593,8 @@
             ;; the hold, so there's nothing to protect either way.
             held? (and (not already-terminal?)
                        (or (item-ambulance-held? (:filePath item))
-                           (item-deferral-held? @deferral-ctx (:filePath item) now-ms)))
+                           (item-deferral-held? @deferral-ctx (:filePath item) now-ms)
+                           (item-deferred-note-held? (:filePath item))))
             decided (decide-item-action (:mtimeMs item) (:chaseCount item) now-ms config
                                          liveness last-activity-ms (:lastChasedAtMs item) already-terminal? held?)
             action (if (and (= decided "respawned") (is-cooling-down? respawn-cooldown-until-ms now-ms))
