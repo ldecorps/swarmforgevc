@@ -1,0 +1,23 @@
+{
+  "$schema": "./node_modules/@stryker-mutator/core/schema/stryker-schema.json",
+  "testRunner": "vitest",
+  "vitest": {
+    "configFile": "vitest.bl1476.stryker.config.mjs",
+    "related": false
+  },
+  "concurrency": 4,
+  "timeoutMS": 60000,
+  "timeoutFactor": 3,
+  "incremental": false,
+  "coverageAnalysis": "perTest",
+  "appendPlugins": ["./out/mutation/stryker-plugin.js"],
+  "ignorers": ["entrypoint-boilerplate"],
+  "reporters": ["clear-text", "progress", "mutation-progress"],
+  "tempDirName": ".stryker-tmp",
+  "cleanTempDir": true,
+  "mutate": [
+    "out/metrics/transcriptWalker.js",
+    "out/metrics/turnProfileProducer.js",
+    "out/tools/run-turn-profile-producer.js"
+  ]
+}
