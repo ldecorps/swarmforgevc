@@ -133,21 +133,83 @@ description: |
     same verdict as one reached through landed wakes - a pure call, no
     daemon.
 
+  ## A SECOND standing test detects the same defect (added 2026-09-10)
+
+  `swarmforge/scripts/test/test_handoffd_chase_sweep_wiring.sh` case 01
+  ("the consolidated daemon itself performed the chase sweep") is red on
+  main for the same reason, and was unregistered until this amendment.
+  Coder unowned-red note 2026-09-10T09:04:46Z; reproduced by the specifier
+  on main 4f16c4dd66: `FAIL: 01: chase sidecar was never written - the
+  daemon's sweep did not run`.
+
+  It is the same gate, reached by the OTHER suppression label. The fixture
+  starts a real daemon over a fresh 45s-old note, so the delivery wake
+  lands and the chase's own wake fires 31 ms later against an unchanged
+  fingerprint INSIDE the cooldown window. The fixture's wake-attribution
+  log carries exactly two lines:
+
+  ```
+  {"sweep":"inbox-item","outcome":"landed",  "at":"...T09:06:32.585Z"}
+  {"sweep":"inbox-item","outcome":"skipped","skipReason":"cooldown",
+                                            "at":"...T09:06:32.616Z"}
+  ```
+
+  `decide-wake-dedup` (wake_dedup_lib.bb) answers `:suppress` with THREE
+  labels - `empty-mailbox` (line 101), `cooldown` (lines 108 and 118) and
+  `unchanged-mailbox` (line 114). Case 05 hits `unchanged-mailbox`; this
+  case hits `cooldown`. Both return false from the adapter and both are
+  swallowed by the same `when`, so the fix must key on the ATTEMPT, not on
+  any one label - a repair written against `unchanged-mailbox` alone
+  leaves this file red. `send-keys` IS in the fixture's tmux log (from the
+  delivery wake), so case 01's third assertion already passes; what fails
+  is the sidecar and, behind it, 01b/01c's `chase` telemetry event.
+
+  Cases 01b (BL-098 telemetry) and 01c (BL-208 provider field) fail as
+  consequences of the same missing write - they need no separate repair
+  and are not separate reds.
+
   ## Not in scope
 
   - Bounding unchanged-mailbox suppression in time, or any change to
     which wakes inject. If the review of 6e05b02dd3 (BL-1504) finds the
     dedup rule itself wrong, that is a follow-up from the stamp.
+  - Any edit to `test_handoffd_chase_sweep_wiring.sh`. Like case 05 it is
+    asserting correct behaviour and goes green on the production fix alone.
+  - The six OTHER census reds listed in BL-1498's `out_of_scope` (notify_verified
+    02, role_context_clear_wiring, build_freshness_cli, supervisor_job_reaper,
+    rotate_recomposes_role_prompt, redo_from). Only the chase_sweep_wiring
+    entry on that list is this defect; the rest are unrelated and separately
+    unowned.
 
 notes: |
   Register: backlog/standing-reds.tsv gains one `shell` row naming this
   ticket (same commit as this mint), first_seen 2026-08-27; QA removes it
   in the land that turns case 05 green.
 
+  Amended 2026-09-10 by the specifier on a coder unowned-red note
+  (09:04:46Z) naming test_handoffd_chase_sweep_wiring.sh case 01. Folded
+  into this ticket rather than minted separately: reproduced on main
+  4f16c4dd66 and traced to the identical `when` in
+  apply-inbox-item-action!, differing only in which of
+  decide-wake-dedup's three suppress labels is returned (`cooldown` here,
+  `unchanged-mailbox` in case 05). No extra production work - the same
+  repair turns both files green - so the slice size is unchanged and a
+  second ticket would have been a duplicate owner for one defect.
+  A SECOND register row was added for that file, also naming BL-1505,
+  first_seen 2026-08-27 (the dedup landing, cbe63cceba); the register is
+  keyed per test FILE, so without its own row the file reads as an
+  unowned red to BL-1429's throttle and Article 4.2. BOTH rows leave in
+  the land.
+
 qa_e2e_procedure: |
   On the parcel commit, from the repo root:
   1. `bash swarmforge/scripts/test/test_handoffd_wake_attribution_wiring.sh`
      -> every case PASS, exit 0.
+  1b. `bash swarmforge/scripts/test/test_handoffd_chase_sweep_wiring.sh`
+     -> every case PASS, exit 0. Specifically 01 (chase sidecar written,
+     chaseCount >= 1), 01b (chaser telemetry line for role coder) and 01c
+     (that event carries provider `claude`). On main 4f16c4dd66 this file
+     stops at `FAIL: 01: chase sidecar was never written`.
   2. `bash swarmforge/scripts/test/test_handoffd_startup_notify_fresh_target.sh`
      and `bb swarmforge/scripts/test/wake_attribution_lib_test_runner.bb`
      green.
@@ -156,5 +218,7 @@ qa_e2e_procedure: |
      had a parcel in inbox/new past chaseTimeoutSeconds with an unchanged
      mailbox, and confirm `chase` telemetry lines with an increasing count
      alongside `wake-dedup-skip <role> unchanged-mailbox`.
-  4. The `shell` row for test_handoffd_wake_attribution_wiring.sh is gone
-     from backlog/standing-reds.tsv in the land.
+  4. BOTH `shell` rows naming BL-1505 - test_handoffd_wake_attribution_wiring.sh
+     AND test_handoffd_chase_sweep_wiring.sh - are gone from
+     backlog/standing-reds.tsv in the land. Leaving either behind leaves a
+     row naming a closed ticket, which is an unowned red in its own right.
