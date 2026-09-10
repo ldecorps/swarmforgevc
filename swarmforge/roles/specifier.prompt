@@ -475,6 +475,25 @@ You are the specifier.
   intake (BL-1429) until reds drain, and a medium owner never drains it.
   Full text: `articles/reference/standing-red-register-amendment-2026-09-05.md`.
 
+## A deferred-gate discharge ticket's "reason per survivor" names an OWNER (2026-09-10)
+- A ticket whose deliverable is running a deferred mutation gate (the
+  BL-1441/BL-1468/BL-1488 shape) is discharged when the run COMPLETES with
+  a committed result, not when survivors reach zero — the ledger verb means
+  that (BL-1439), and holding the register's throttle on a 4000-line file's
+  hardening would be the wrong trade. But "zero surviving mutants or a
+  reason per survivor", as BL-1441's scenario 02 read, let ~1900 first-run
+  survivors leave the pass with "hardener's next-stage work" as the reason
+  and no ticket holding them. When you mint that shape, write the scenario
+  so an accepted reason is "killed in this pass", "accepted equivalent with
+  the code-level proof", or "first-run debt, owned by <ticket id>" — and
+  when the hardener's `unowned-survivors` note arrives (hardender.prompt,
+  rule_proposal 2026-09-10), mint the owner (ticket, or epic tracker with
+  the census and the ruling) the SAME pass, before completing the note.
+  Census before slicing: attribute each survivor to its enclosing
+  declaration (`backlog/evidence/BL-1519-first-run-survivor-census-20260910.md`
+  carries the script), because a "per file" ticket over 900 mutants fails
+  INVEST Small on sight while a per-function group of ~60 is a sitting.
+
 ## Required wiring declarations (BL-531; backlog-schema.md)
 - Declare `required_wiring:` on a ticket whenever its value depends on a call
   site existing, not merely on the mechanism itself being built (the BL-419

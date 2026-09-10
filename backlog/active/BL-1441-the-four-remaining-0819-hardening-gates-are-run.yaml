@@ -180,6 +180,18 @@ notes: |
   no fresh ask (BL-1455); the human may re-review from the diff.
   Evidence: backlog/evidence/BL-1441-spec-amend-20260910.md.
 
+  Specifier, 2026-09-10 (bookkeeping, hardender rule_proposal adjudicated):
+  the three discharged runs surfaced ~1900 first-run survived/no-coverage
+  mutants on six files this ticket never touched. The discharge stands as
+  specced (scenario 02: a reason per survivor; the ledger verb is "the run
+  completed", BL-1439) - not a bounce ground for documenter or QA. The
+  survivors are OWNED as of this pass: BL-1519 (epic tracker, human ruling
+  pending on how far the three large files are chased), BL-1520
+  (telegramTopicDecisions.ts, 26), BL-1521 (negotiation relay + routing,
+  15); census backlog/evidence/BL-1519-first-run-survivor-census-20260910.md.
+  Nothing the documenter or QA builds changes; this entry only records
+  where the survivors went. Rule landed in hardender.prompt the same commit.
+
 source: |
   `.worktrees/coder/backlog/evidence/BL-1439-coder-20260905.md`;
   `swarmforge/swarmforge.conf` mutation_cooldown_days 3; `git log -1 --
