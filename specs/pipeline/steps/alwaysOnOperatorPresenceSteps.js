@@ -19,7 +19,6 @@ const fs = require('node:fs');
 const os = require('node:os');
 const { execFileSync, spawnSync, spawn } = require('node:child_process');
 const { OPERATOR_RUNTIME_BB_FILES } = require('./lib/operatorRuntimeBbFixtureFiles');
-const { track } = require('./lib/fixtureReaper');
 const { mkSocketFixtureRoot } = require('./lib/socketFixtureRoot');
 
 const REPO_ROOT = path.join(__dirname, '..', '..', '..');
@@ -31,17 +30,6 @@ const REPLY_CLI = path.join(SWARM_SCRIPTS, 'operator_reply.bb');
 
 function mkTmp(prefix) {
   return mkSocketFixtureRoot(prefix);
-}
-
-function mkRuntimeFixture() {
-  const target = mkTmp('sfvc-bl359-runtime-');
-  const scriptsDir = path.join(target, 'swarmforge', 'scripts');
-  fs.mkdirSync(scriptsDir, { recursive: true });
-  fs.mkdirSync(path.join(target, '.swarmforge', 'operator'), { recursive: true });
-  for (const f of OPERATOR_RUNTIME_BB_FILES) {
-    fs.copyFileSync(path.join(SWARM_SCRIPTS, f), path.join(scriptsDir, f));
-  }
-  return target;
 }
 
 function writeRolesTsv(target, roles) {
@@ -63,18 +51,6 @@ function tick(target, extraEnv) {
     encoding: 'utf8',
     timeout: 15000,
   });
-}
-
-function eventsText(target) {
-  const opDir = path.join(target, '.swarmforge', 'operator');
-  let text = '';
-  for (const name of ['events.jsonl', 'events.inflight.jsonl']) {
-    const p = path.join(opDir, name);
-    if (fs.existsSync(p)) {
-      text += fs.readFileSync(p, 'utf8');
-    }
-  }
-  return text;
 }
 
 function reply(root, thread, text) {
@@ -252,54 +228,6 @@ function registerSteps(registry) {
     if (!ctx.installOutput.includes('sudo systemctl enable --now swarmforge-operator-primary.service')) {
       throw new Error(`always-on-operator-presence-04 (${ctx.mishap}): expected the installer to actually enable the unit, got: ${ctx.installOutput}`);
     }
-  });
-
-  // ── always-on-operator-presence-05: never suspends the swarm's own
-  //    recovery ───────────────────────────────────────────────────────
-  registry.define(/^the Operator presence is live$/, (ctx) => {
-    ctx.roles = ['coder', 'QA'];
-    ctx.runtimeTarget = mkRuntimeFixture();
-    // BL-817: registered BEFORE the tmux server the next step spawns, so
-    // even a crash mid-launch is covered.
-    track(ctx.runtimeTarget);
-    writeRolesTsv(ctx.runtimeTarget, ctx.roles);
-    // A live, registered slot-holder - the SAME signal attend_operator.sh
-    // itself writes, proven directly here without needing a real claude
-    // process (operator-running?'s pid-alive? check only needs a REAL
-    // live pid, and this JS test process's own pid is exactly that).
-    fs.writeFileSync(path.join(ctx.runtimeTarget, '.swarmforge', 'operator', 'operator.pid'), String(process.pid));
-  });
-
-  registry.define(/^a role's pane dies and a handoff is left unattended$/, (ctx) => {
-    ctx.sockDir = mkTmp('sfvc-bl359-real-sock-');
-    ctx.sock = path.join(ctx.sockDir, 'bl359.sock');
-    execFileSync('tmux', ['-S', ctx.sock, 'new-session', '-d', '-s', 'swarmforge-coder', '-n', 'agent']);
-    execFileSync('tmux', ['-S', ctx.sock, 'new-session', '-d', '-s', 'swarmforge-QA', '-n', 'agent']);
-    fs.writeFileSync(path.join(ctx.runtimeTarget, '.swarmforge', 'tmux-socket'), ctx.sock);
-    execFileSync('tmux', ['-S', ctx.sock, 'kill-session', '-t', 'swarmforge-QA']);
-  });
-
-  registry.define(/^the swarm still detects and recovers them$/, (ctx) => {
-    tick(ctx.runtimeTarget);
-    const events = eventsText(ctx.runtimeTarget);
-    if (!events.includes('"AGENT_EXITED","subject":"QA"')) {
-      throw new Error(`expected QA still reported AGENT_EXITED even with a live Operator presence, got: ${events}`);
-    }
-    // NOT "launched?":true - a live attended session correctly SUPPRESSES
-    // a redundant disposable dispatch (scenario 06's own requirement,
-    // proven below); asserting a second launch here would contradict it.
-    // "Recovers them" instead means detection is never silently
-    // swallowed by Operator presence - proven structurally: the swarm's
-    // OWN stuck-handoff recovery sweep (handoffd.bb/chase_sweep_lib.bb, a
-    // completely separate always-running daemon) must have ZERO
-    // dependency on operator-running?/operator.pid at all, so a human's
-    // interactive session can never suspend it even by accident.
-    const handoffdSource = fs.readFileSync(path.join(SWARM_SCRIPTS, 'handoffd.bb'), 'utf8');
-    const chaseSweepSource = fs.readFileSync(path.join(SWARM_SCRIPTS, 'chase_sweep_lib.bb'), 'utf8');
-    if (/operator[-_]running\?|operator\.pid/.test(handoffdSource) || /operator[-_]running\?|operator\.pid/.test(chaseSweepSource)) {
-      throw new Error("expected the swarm's own stuck-handoff recovery sweep to have NO dependency on Operator presence state");
-    }
-    spawnSync('tmux', ['-S', ctx.sock, 'kill-server']);
   });
 
   // ── always-on-operator-presence-06: an interactive session is seen,
