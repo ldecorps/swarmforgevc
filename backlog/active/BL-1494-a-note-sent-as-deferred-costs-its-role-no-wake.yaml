@@ -154,3 +154,5 @@ notes: |
   - Article 3.2.4: type defect, severity high - expedited ordering.
   - IR-DRY (2026-09-08): the two note setups were folded into one step with
     a quoted wake-field parameter ("defer"/"absent").
+
+assigned_to: coder
