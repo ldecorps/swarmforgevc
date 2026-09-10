@@ -1,100 +1,50 @@
 'use strict';
 
-// BL-486 cleanup: this list was duplicated verbatim across three step
-// files (controlLossIsNotAgentDeathSteps, alwaysOnOperatorPresenceSteps,
-// noInboundMessageIsEverLostSteps), each building an isolated
-// operator_runtime.bb fixture dir by copying exactly these named files.
-// A file operator_runtime.bb depends on that's missing from this list
-// throws FileNotFoundException on first load in every one of those
-// scenarios at once (BL-412/413/458 predate this list catching up).
+// BL-1449: OPERATOR_RUNTIME_BB_FILES used to be a hand-typed array that
+// five step handlers copy into a disposable root before running
+// operator_runtime.bb. BL-944 (2026-08-19) added a check comparing that
+// array against the real transitive load-file closure computed from
+// source (operatorRuntimeBbClosure.js) - the check caught every drift
+// LOUDLY, but the list still drifted nine times
+// (BL-412/413/458/647/655/944/1265/1439, plus the tenth folded into this
+// ticket) because a maintained-by-hand list is only ever a snapshot of
+// the real closure at the moment someone last retyped it. The fix is to
+// stop maintaining a snapshot: the export below IS the closure, computed
+// at module load, so a new load-file anywhere in operator_runtime.bb's
+// transitive chain is in the fixture the moment it exists, with no edit
+// to this file.
 //
-// BL-944: this list drifted from the real transitive load-file closure
-// FIVE times before this comment existed (BL-412/413/458/647/655) and a
-// sixth time silently, for fourteen days, before this ticket (BL-805
-// added mono_router_lib.bb to handoff_lib.bb on 2026-08-05; nobody
-// noticed until 2026-08-19). A "kept in sync" comment was never a gate -
-// extension/test/operatorRuntimeBbFixtureClosure.test.js now derives the
-// real closure from source on every parcel and fails naming exactly what
-// drifted, closing the gap this comment used to paper over.
-//
-// operator_ask.bb was dropped here (BL-944): verified it is not reachable
-// from operator_runtime.bb by ANY load-file chain, and none of the four
-// step files that build this fixture spawn it from the fixture root
-// either (the two callers that do run that CLI invoke it from REPO_ROOT,
-// never through this list). OPERATOR_RUNTIME_BB_DECLARED_EXTRAS below is
-// the deliberate escape hatch for a FUTURE file that legitimately needs to
-// ride this fixture for a non-load-file reason - empty today because none
-// exists; an entry there must say why, not just that it's needed.
-const OPERATOR_RUNTIME_BB_FILES = [
-  'operator_lib.bb',
-  'operator_runtime.bb',
-  // BL-647: operator_runtime.bb load-files both of these directly (lines
-  // 50 and 77) - added 2026-07-22 (dc917a1e6) after this list was last
-  // deduped (2026-07-17, 2c0e98bcf), so every existing consumer's fixture
-  // was silently missing them until the rotation-router liveness wiring
-  // needed swarm_identity_lib.bb and this fix closed the gap.
-  'llm_cost_ledger_lib.bb',
-  'swarm_identity_lib.bb',
-  'telegram_topic_lib.bb',
-  'support_lib.bb',
-  'support_thread_store.bb',
-  'operator_memory_lib.bb',
-  'operator_memory_store.bb',
-  'ticket_status_lib.bb',
-  'handoff_lib.bb',
-  // BL-1029: handoff_lib.bb now loads the one place a launch path becomes a
-  // shell word, so it is in operator_runtime.bb's closure too.
-  'shell_quote_lib.bb',
-  // BL-655: handoff_lib.bb now load-files this too (ambulance mode's hold
-  // predicate) - same "a new load-file dependency throws in every consumer
-  // fixture at once" gap this list exists to close.
-  'ambulance_lib.bb',
-  // BL-944: handoff_lib.bb load-files both of these too (BL-805's
-  // rotation-router-pack?, BL-546's recompose-role-prompt!) - the first
-  // two of the seven files this ticket's closure walk found missing.
-  'mono_router_lib.bb',
-  'prompt_engine_lib.bb',
-  // BL-967: handoff_lib.bb now load-files the bounded-wait chokepoint every
-  // in-cycle subprocess call routes through - the seventh drift this list
-  // has taken, and the first the closure gate above caught the same day.
-  'daemon_cycle_guard_lib.bb',
-  'daemon_alarm_lib.bb',
-  'disk_space_lib.bb',
-  'sandbox_sweep_lib.bb',
-  'bounded_delete_sweep_lib.bb',
-  'proc_fd_scan_lib.bb',
-  'fixture_reaper_lib.bb',
-  'fixture_reaper_sweep_lib.bb',
-  'orphan_agent_reaper_lib.bb',
-  'orphan_agent_reaper_sweep_lib.bb',
-  // BL-944: operator_runtime.bb load-files all four of these directly
-  // (its own periodic sweeps section) - the remaining five of the seven
-  // missing files (orphan_janitor_lib.bb arrives transitively via
-  // orphan_janitor_sweep_lib.bb, never a direct load-file of
-  // operator_runtime.bb itself).
-  'orphan_janitor_sweep_lib.bb',
-  'orphan_janitor_lib.bb',
-  'hotfix_certification_lib.bb',
-  'process_table_lib.bb',
-  'babysitterd_freshness_lib.bb',
-  // BL-1439: found blocking this ticket's own Stryker dry run (an
-  // unrelated pre-existing drift, the same shape as every entry above -
-  // five more load-file dependencies added to operator_runtime.bb's
-  // closure since this list was last caught up, never fixed here before
-  // because nothing gated it until this parcel needed the whole suite
-  // green to run a scoped mutation pass).
-  'context_telemetry_store.bb',
-  'role_ask_escalation_lib.bb',
-  'rotation_telemetry_lib.bb',
-  'seat_difficulty_lib.bb',
-  'self_heal_telemetry_lib.bb',
-];
+// operator_ask.bb is not part of the closure (BL-944 verified it is not
+// reachable from operator_runtime.bb by any load-file chain, and no
+// consumer of this list spawns it from the fixture root either), so it is
+// correctly absent from the derived list.
+const path = require('node:path');
+const { computeClosure } = require('./operatorRuntimeBbClosure');
 
-// BL-944 scenario 03: a file listed here but NOT reached by any load-file
-// chain from operator_runtime.bb must be either dropped (operator_ask.bb's
-// own resolution) or explicitly declared here with a reason - an
-// undeclared extra is exactly how a list starts being treated as folklore
-// instead of data. {file, reason} per entry.
+const SCRIPTS_DIR = path.join(__dirname, '..', '..', '..', '..', 'swarmforge', 'scripts');
+const ENTRY_FILE = 'operator_runtime.bb';
+
+// A file named here but NOT reached by any load-file chain from
+// operator_runtime.bb rides the fixture anyway, for a non-load-file
+// reason that must be stated - BL-944 scenario 03's undeclared-extra
+// check still runs against whatever is here. {file, reason} per entry.
+// Empty today: no such file exists.
 const OPERATOR_RUNTIME_BB_DECLARED_EXTRAS = [];
 
-module.exports = { OPERATOR_RUNTIME_BB_FILES, OPERATOR_RUNTIME_BB_DECLARED_EXTRAS };
+// Pure given a stable scriptsDir: the transitive load-file closure of
+// operator_runtime.bb within it, sorted for a stable order. Takes the
+// scripts dir as a parameter (rather than assuming SCRIPTS_DIR) so a
+// scratch copy of the tree can be probed without touching the live one
+// (BL-1390).
+function deriveOperatorRuntimeClosure(scriptsDir) {
+  return [...computeClosure(scriptsDir, ENTRY_FILE)].sort();
+}
+
+const OPERATOR_RUNTIME_BB_FILES = deriveOperatorRuntimeClosure(SCRIPTS_DIR).concat(OPERATOR_RUNTIME_BB_DECLARED_EXTRAS);
+
+module.exports = {
+  OPERATOR_RUNTIME_BB_FILES,
+  OPERATOR_RUNTIME_BB_DECLARED_EXTRAS,
+  deriveOperatorRuntimeClosure,
+  SCRIPTS_DIR,
+};
