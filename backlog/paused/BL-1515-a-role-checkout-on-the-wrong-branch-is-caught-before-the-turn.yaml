@@ -28,7 +28,7 @@ required_wiring:
   - 'swarmforge/scripts/ready_for_next.bb::branch_identity_guard_lib.bb::the live pre-turn path sources the guard lib, next to the BL-1195 worktree-drift guard'
   - 'specs/pipeline/steps/bl1515BranchIdentityGuardSteps.js::registerSteps::the handler lands in the same parcel as the feature (BL-233, BL-1371)'
 
-human_approval: pending
+human_approval: approved
 approval_context: >
   A new feature file is authored here, so it needs a tap. No choice is posed
   and there are no ruling_options. FIRM: the guard changes a ref in exactly
