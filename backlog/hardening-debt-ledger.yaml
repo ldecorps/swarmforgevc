@@ -68,3 +68,5 @@
   reason: "mutation_cooldown_gate.bb: skip-cooldown - turnProfileProducer.ts file_age_days 2.95 of 3, transcriptWalker.ts 2.97 of 3, run-turn-profile-producer.ts 2.97 of 3 (all last touched on main by BL-1364, 2026-09-05; not_before 2026-09-08 undershoots the 3-day mark by hours at this run time); transcriptSummaryStore.ts is exempt (new file, no main history) and was mutation-tested this pass"
   load: "2.73/7.11/10.08"
   detected_at: 2026-09-08
+  discharged_at: 2026-09-11
+  discharged_evidence: backlog/evidence/BL-1488-BL-1476-mutation.md
