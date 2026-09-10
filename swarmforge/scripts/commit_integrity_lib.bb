@@ -47,6 +47,7 @@
 (ns commit-integrity-lib
   (:require [babashka.fs :as fs]
             [babashka.process :as process]
+            [cheshire.core :as json]
             [clojure.string :as str]))
 
 ;; BL-1475: raised from 3 attempts / a flat 50ms to a budget actually sized
@@ -62,6 +63,26 @@
 (def default-max-retry-delay-ms 5000)
 (def default-lock-max-attempts 100)
 (def default-lock-poll-delay-ms 50)
+
+;; BL-1497: the record-less-lock age bound, DERIVED so it can never fall
+;; behind the budget it must protect: ten times the CLI's own maximum
+;; bounded run - the lock wait itself (default-lock-max-attempts x
+;; default-lock-poll-delay-ms = 5 s) plus the BL-1475 add/commit retry
+;; budget (12 gaps of min(attempt*250, 5000)ms = 19.5 s), about 25-30 s
+;; total - floored at 300000 ms (5 min) per the ticket's approval context.
+;; A pre-fix holder (no owner record) still inside its own bounded budget
+;; is therefore never reaped, and the floor keeps that guarantee even if
+;; the constants above are later shrunk. Derivation recorded here per the
+;; ticket; the property runner asserts the floor.
+(def bl-1475-retry-budget-ms
+  (reduce + (map #(min (* % default-base-retry-delay-ms)
+                       default-max-retry-delay-ms)
+                 (range 1 (inc default-max-retries)))))
+
+(def record-less-lock-age-bound-ms
+  (max (* 10 (+ (* default-lock-max-attempts default-lock-poll-delay-ms)
+                bl-1475-retry-budget-ms))
+       300000))
 
 (defn- run-git [project-root args]
   (process/sh (into ["git" "-C" (str project-root)] args)))
@@ -197,22 +218,136 @@
 ;; this helper exists to fix. Gives up and returns false after
 ;; `max-attempts` polls rather than blocking forever; the caller turns
 ;; that into a loud, non-throwing failure (:lock-timeout).
+(def ^:private owner-record-name "owner.json")
+
+;; Best-effort: a record write that fails (disk full, permissions) leaves
+;; this holder record-less, protected by the age bound exactly like a
+;; pre-fix holder - never a thrown failure mid-acquire.
+(defn- write-owner-record! [lock-dir]
+  (try
+    (let [role (System/getenv "SWARMFORGE_ROLE")
+          record (cond-> {:pid (.pid (java.lang.ProcessHandle/current))
+                          :created_at_ms (System/currentTimeMillis)}
+                   role (assoc :role role))]
+      (spit (str (fs/path lock-dir owner-record-name))
+            (json/generate-string record)))
+    (catch Exception _ nil)))
+
+;; A record without a positive integer pid AND created_at_ms is not a
+;; readable record (the caller falls to the record-less age-bound rule) -
+;; the same nil-vs-nil discipline as landed-sha-if-matching above.
+(defn- read-owner-record [lock-dir]
+  (try
+    (let [record (json/parse-string
+                  (slurp (str (fs/path lock-dir owner-record-name))) true)]
+      (when (and (map? record)
+                 (pos-int? (:pid record))
+                 (pos-int? (:created_at_ms record)))
+        record))
+    (catch Exception _ nil)))
+
+;; kill -0 via process/sh: portable to stock macOS and Linux (never /proc).
+;; Exit 0 = the pid can be signalled, i.e. is alive; anything else reads as
+;; dead. Every writer on a checkout runs as the same user, so kill -0's
+;; cross-user EPERM-means-alive nuance does not arise here.
+(defn- pid-alive? [pid]
+  (try
+    (zero? (:exit (process/sh "kill" "-0" (str pid))))
+    (catch Exception _ false)))
+
+(defn- lock-age-ms [lock-dir record]
+  (let [now (System/currentTimeMillis)
+        start (or (:created_at_ms record)
+                  (try (.toMillis (fs/last-modified-time lock-dir))
+                       (catch Exception _ nil)))]
+    (max 0 (- now (or start now)))))
+
+;; BL-1497 invariant 1 as a pure decision, so the property runner
+;; (bl1497_lock_reap_property_runner.bb) can hold it against generated lock
+;; states with the liveness predicate injected - no processes needed:
+;;   - readable record, live owner  -> nil (never reaped, whatever the age)
+;;   - readable record, dead owner  -> {:reason :dead-owner ...}
+;;   - no readable record, age >= bound -> {:reason :record-less-past-bound ...}
+;;   - no readable record, younger  -> nil
+(defn reap-decision
+  [{:keys [record age-ms alive-fn] :or {alive-fn pid-alive?}}]
+  (cond
+    (and record (alive-fn (:pid record))) nil
+    record {:reason :dead-owner :pid (:pid record) :age_ms age-ms}
+    (>= age-ms record-less-lock-age-bound-ms)
+    {:reason :record-less-past-bound :pid nil :age_ms age-ms}
+    :else nil))
+
+;; The reap itself is best-effort and re-verifies immediately before
+;; deleting: between this caller's decision and now, the stale lock may
+;; already have been reaped and re-created by a live holder - invariant 2's
+;; loser must never delete the winner's fresh lock. The re-check shrinks
+;; that window to the delete call itself; fs/create-dir stays the final
+;; arbiter of who actually holds the lock. Never throws: a failed delete
+;; just leaves this caller polling as if the lock were held.
+(defn- reap-stale-lock! [lock-dir]
+  (try
+    (when (fs/exists? lock-dir)
+      (let [record (read-owner-record lock-dir)]
+        (when (reap-decision {:record record :age-ms (lock-age-ms lock-dir record)})
+          (fs/delete-tree lock-dir))))
+    (catch Exception _ nil)))
+
 (defn acquire-lock!
+  "BL-1497: bounded acquire that also owns the orphan problem. On a win,
+   records this process inside the lock directory (owner.json: pid,
+   created_at_ms, role) before returning, so the next orphan carries a pid,
+   not just an mtime. On contention, inspects the holder: a readable record
+   naming a DEAD pid, or NO readable record on a directory older than
+   record-less-lock-age-bound-ms, is a provably stale lock - reaped
+   (delete-tree) and retried inside the same bounded loop. A lock whose
+   recorded owner is alive is never removed, whatever its age (invariant
+   1); a record-less lock inside the bound (a pre-fix holder still inside
+   its own budget, or a fresh holder that has not yet written its record)
+   is waited on, never reaped. The reap is settled by fs/create-dir alone:
+   a concurrent reaper that wins the create leaves this caller treating
+   the fresh lock as held (invariant 2).
+
+   Returns {:acquired true :reaped <nil or {:pid :age_ms :reason}>} (a
+   truthy map) on success and false (falsy) on timeout - the same
+   truthiness contract every existing caller relies on. :reason is
+   :dead-owner or :record-less-past-bound. Still bounded: max-attempts
+   polls, no unbounded wait, no free-running reaper."
   ([lock-dir] (acquire-lock! lock-dir default-lock-max-attempts default-lock-poll-delay-ms))
   ([lock-dir max-attempts poll-delay-ms]
    (fs/create-dirs (fs/parent lock-dir))
-   (loop [attempt 1]
+   (loop [attempt 1, reaped nil]
      (if (try
            (fs/create-dir lock-dir)
            true
            (catch java.nio.file.FileAlreadyExistsException _ false))
-       true
-       (if (< attempt max-attempts)
-         (do (Thread/sleep poll-delay-ms) (recur (inc attempt)))
-         false)))))
+       (do
+         ;; Own the lock on record before returning: the next orphan must
+         ;; carry a pid, not just an mtime (BL-1497 scenario 04).
+         (write-owner-record! lock-dir)
+         {:acquired true :reaped reaped})
+       (let [record (read-owner-record lock-dir)
+             decision (reap-decision {:record record
+                                      :age-ms (lock-age-ms lock-dir record)})]
+         (if decision
+           ;; Provably stale: reap, then let the loop's next create-dir
+           ;; decide between this caller and any concurrent reaper. The
+           ;; retry consumes the next attempt like any other poll - the
+           ;; wait stays bounded.
+           (do (reap-stale-lock! lock-dir)
+               (if (< attempt max-attempts)
+                 (recur (inc attempt) (or reaped decision))
+                 false))
+           (if (< attempt max-attempts)
+             (do (Thread/sleep poll-delay-ms) (recur (inc attempt) reaped))
+             false)))))))
 
 (defn release-lock! [lock-dir]
-  (try (fs/delete lock-dir) (catch Exception _ nil)))
+  ;; BL-1497: the directory now carries owner.json, so a bare fs/delete
+  ;; (Files.delete) would throw DirectoryNotEmptyException, be swallowed by
+  ;; this catch, and leak a live-owned lock every later caller must wait
+  ;; out - delete-tree removes record and directory together.
+  (try (fs/delete-tree lock-dir) (catch Exception _ nil)))
 
 (defn commit-with-integrity!
   "Commits `paths` (repo-relative pathspecs whose on-disk content the
@@ -246,9 +381,13 @@
    manual intervention. A genuine failure's result also carries :stderr
    (the failing step's own git stderr, never discarded).
 
-   Returns {:success true :sha <str> :attempts n [:reason :landed-elsewhere]}
+   Returns {:success true :sha <str> :attempts n [:reason :landed-elsewhere]
+            [:reaped-lock {:pid :age_ms :reason}]}
         or {:success false :reason kw :attempts n [:stderr <str>]
             [:mismatched-paths [...]] [:index-left-dirty true]}
+   BL-1497: a success that first reaped a provably stale checkout lock
+   (dead owner, or record-less past the age bound) also carries
+   :reaped-lock, which the CLI's JSON line surfaces verbatim.
    `:reason` is one of :no-git-dir, :lock-timeout, :add-failed,
    :commit-failed, :verify-mismatch (failure), or :landed-elsewhere
    (success). Never throws for an ordinary git failure - only for a
@@ -276,8 +415,14 @@
     (if-not git-dir
       {:success false :reason :no-git-dir :attempts 0}
       (let [lock-dir (str (fs/path git-dir "swarmforge-commit-integrity.lock"))
-            expected (into {} (map (fn [p] [p (read-fn project-root p)])) paths)]
-        (if-not (lock-fn! lock-dir)
+            expected (into {} (map (fn [p] [p (read-fn project-root p)])) paths)
+            ;; BL-1497: the default lock-fn! returns {:acquired true
+            ;; :reaped {...}} on success and false on timeout; injected
+            ;; seams may still return a bare boolean - (:reaped true) is
+            ;; nil, so both shapes read the same here.
+            lock-result (lock-fn! lock-dir)
+            reaped-lock (:reaped lock-result)]
+        (if-not lock-result
           {:success false :reason :lock-timeout :attempts 0}
           (try
             (let [fail-restoring (fn [reason attempt attempt-snapshot extra]
@@ -313,7 +458,8 @@
                       (do (retry-delay-fn! attempt) (recur (inc attempt)))
                       (if-let [sha (landed-sha-if-matching project-root expected rev-parse-fn show-fn)]
                         (do (restore-index-fn! project-root paths pre-add-snapshot)
-                            {:success true :reason :landed-elsewhere :sha sha :attempts attempt})
+                            (cond-> {:success true :reason :landed-elsewhere :sha sha :attempts attempt}
+                              reaped-lock (assoc :reaped-lock reaped-lock)))
                         (fail-restoring :add-failed attempt pre-add-snapshot (when (:err add-res) {:stderr (:err add-res)}))))
                     (let [commit-res (commit-fn! project-root message paths)]
                       (if-not (zero? (:exit commit-res))
@@ -321,7 +467,8 @@
                           (do (retry-delay-fn! attempt) (recur (inc attempt)))
                           (if-let [sha (landed-sha-if-matching project-root expected rev-parse-fn show-fn)]
                             (do (restore-index-fn! project-root paths pre-add-snapshot)
-                                {:success true :reason :landed-elsewhere :sha sha :attempts attempt})
+                                (cond-> {:success true :reason :landed-elsewhere :sha sha :attempts attempt}
+                                  reaped-lock (assoc :reaped-lock reaped-lock)))
                             (fail-restoring :commit-failed attempt pre-add-snapshot (when (:err commit-res) {:stderr (:err commit-res)}))))
                         (let [post-commit-snapshot (snapshot-index-fn project-root paths)
                               sha (rev-parse-fn project-root)
@@ -330,7 +477,8 @@
                                                          path))
                                                      expected))]
                           (if (empty? mismatched)
-                            {:success true :sha sha :attempts attempt}
+                            (cond-> {:success true :sha sha :attempts attempt}
+                              reaped-lock (assoc :reaped-lock reaped-lock))
                             (if (< attempt (inc max-retries))
                               (do (retry-delay-fn! attempt)
                                   (recur (inc attempt)))
