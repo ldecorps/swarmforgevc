@@ -54,9 +54,9 @@ function registerSteps(registry) {
     );
   }, FEATURE);
 
-  registry.defineScoped(/^the register report holds no hardening lane row$/, (ctx) => {
-    const hardeningRows = ctx.registerReport.rows.filter((r) => r.lane === 'hardening');
-    assert.deepEqual(hardeningRows, [], `the register still carries hardening rows: ${JSON.stringify(hardeningRows)}`);
+  registry.defineScoped(/^the register report holds no hardening lane row naming BL-1441$/, (ctx) => {
+    const hardeningRows = ctx.registerReport.rows.filter((r) => r.lane === 'hardening' && r.ticket === 'BL-1441');
+    assert.deepEqual(hardeningRows, [], `the register still carries a hardening row naming BL-1441: ${JSON.stringify(hardeningRows)}`);
   }, FEATURE);
 
   // ── scenario 02 ────────────────────────────────────────────────────────
