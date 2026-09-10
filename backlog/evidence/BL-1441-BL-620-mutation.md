@@ -1,0 +1,1404 @@
+# BL-1441 — mutation gate discharge — BL-620
+
+Gate: `mutation`. File set: `extension/src/tools/telegram-front-desk-bot.ts`,
+`extension/src/tools/telegramFrontDeskBotCore.ts`,
+`extension/src/tools/telegramTopicDecisions.ts` (deferred 2026-08-19, blocked
+first by BL-1425's 2026-09-05 cooldown reset, then by BL-1475's 2026-09-08
+01:55 re-touch of the first two files — see
+`backlog/evidence/BL-1441-coder-pass-20260908.md`).
+
+## Eligibility, checked fresh before the run (2026-09-10)
+
+Re-run per the ticket's own "How" (`not_before` amended 2026-09-10 by the
+specifier's deprecator freshness pass, Article 3.6 — the operator lowered
+`mutation_cooldown_days` from 3 to 1 that morning, `df25be597b`):
+
+| file | `mutation_cooldown_gate.bb` decision | file_age_days |
+|---|---|---|
+| telegram-front-desk-bot.ts | run | 1.55 |
+| telegramFrontDeskBotCore.ts | run | 2.73 |
+| telegramTopicDecisions.ts | run | 19.93 |
+
+Host load at check time: `load_avg 1.66` on 20 cores, busy threshold `2.00x`
+— quiet. Re-checked immediately before launch: `1.35 2.35 6.44` — still
+quiet.
+
+## The run
+
+`npm run compile` (fresh), `node scripts/ensureStrykerSandboxSiblings.js`
+(sibling links verified present, none newly created), then
+`npx stryker run stryker.bl1441bl620.config.json` (concurrency 1, `perTest`
+coverage analysis, `vitest.bl1441bl620.stryker.config.mjs` scoping the dry
+run to the 17 test files that import these three modules by path — same
+precedent as `vitest.bl1081/bl1348/bl1365/bl1383/bl1402/bl1439.stryker.config.mjs`).
+
+Dry run: 920 tests, 16 seconds, all green. Mutation phase: **56 minutes 44
+seconds**. 4307 mutants instrumented (245 static, warned as ~80% of runtime).
+
+```
+Ran 25.85 tests per mutant on average.
+                              | % Mutation score |          |           |            |          |          |
+File                         |  total | covered | # killed | # timeout | # survived | # no cov | # errors |
+All files                    |  69.13 |   83.61 |     2911 |        11 |        573 |      732 |        0 |
+ telegram-front-desk-bot.js  |  51.72 |   77.92 |     1001 |         5 |        285 |      654 |        0 |
+ telegramFrontDeskBotCore.js |  83.40 |   86.70 |     1702 |         6 |        262 |       78 |        0 |
+ telegramTopicDecisions.js   |  88.89 |   88.89 |      208 |         0 |         26 |        0 |        0 |
+```
+
+0 errors — the run **completed**, not merely attempted. Per invariant 1
+("a run that cannot complete is recorded as an attempt and stays
+outstanding, never discharged by assertion"), a completed run with
+survivors is discharged, not attempted — same shape as
+`BL-1441-BL-954-a-bounce-verifies-its-own-revert-mutation.md`.
+
+## Every survivor and every no-coverage gap, named
+
+This row's survivor count (573) plus no-coverage count (732) is far past
+BL-954's precedent (25, with 0 no-coverage) — `telegram-front-desk-bot.ts`
+is the front-desk bot's CLI/dispatch entrypoint file and is over 3900 lines
+of compiled output; its 51.72%/77.92% scores are a real, previously
+unmeasured coverage gap, not a run defect. Every mutant is named below with
+its exact location, the mutation applied, and the objective fact of why it
+stands (no covering test reached it, or it ran against covering test(s)/the
+whole suite and none caught it) — generated directly from
+`reports/mutation/mutation.json` (gitignored, not committed; this table is
+the durable record) by
+`/tmp/.../scratchpad/gen_evidence_table.js`, not hand-transcribed, so no
+location or mutator is dropped or miscounted.
+
+**Not force-discharged, not force-killed.** No mutant was suppressed, no
+assertion loosened to manufacture a kill, no test authored here to chase
+these down — closing this gap (killing survivors, adding coverage for
+`NoCoverage` locations) is the hardener's domain (Article 1.6), the next
+stage in this very ticket's `required_stages`. This discharge records what
+ran, completely and accurately, per invariant 1.
+
+Survivors: 573
+
+## Survived mutants (573), one line each
+- `out/tools/telegram-front-desk-bot.js:190:32` StringLiteral -> `""` — ran against whole suite, 920 tests, none caught it
+- `out/tools/telegram-front-desk-bot.js:190:54` ObjectLiteral -> `{}` — ran against whole suite, 920 tests, none caught it
+- `out/tools/telegram-front-desk-bot.js:190:68` BooleanLiteral -> `false` — ran against whole suite, 920 tests, none caught it
+- `out/tools/telegram-front-desk-bot.js:246:71` BooleanLiteral -> `false` — ran against whole suite, 920 tests, none caught it
+- `out/tools/telegram-front-desk-bot.js:248:65` BooleanLiteral -> `false` — ran against whole suite, 920 tests, none caught it
+- `out/tools/telegram-front-desk-bot.js:249:32` StringLiteral -> `""` — ran against whole suite, 920 tests, none caught it
+- `out/tools/telegram-front-desk-bot.js:249:52` ObjectLiteral -> `{}` — ran against whole suite, 920 tests, none caught it
+- `out/tools/telegram-front-desk-bot.js:249:66` BooleanLiteral -> `false` — ran against whole suite, 920 tests, none caught it
+- `out/tools/telegram-front-desk-bot.js:268:30` BlockStatement -> `{}` — ran against 2 covering test(s), none caught it
+- `out/tools/telegram-front-desk-bot.js:307:34` StringLiteral -> `""` — ran against 5 covering test(s), none caught it
+- `out/tools/telegram-front-desk-bot.js:307:49` StringLiteral -> `""` — ran against 5 covering test(s), none caught it
+- `out/tools/telegram-front-desk-bot.js:307:61` StringLiteral -> `""` — ran against 5 covering test(s), none caught it
+- `out/tools/telegram-front-desk-bot.js:325:26` StringLiteral -> ```` — ran against 5 covering test(s), none caught it
+- `out/tools/telegram-front-desk-bot.js:345:69` StringLiteral -> `""` — ran against 89 covering test(s), none caught it
+- `out/tools/telegram-front-desk-bot.js:371:9` BlockStatement -> `{}` — ran against 6 covering test(s), none caught it
+- `out/tools/telegram-front-desk-bot.js:372:86` StringLiteral -> `""` — ran against 6 covering test(s), none caught it
+- `out/tools/telegram-front-desk-bot.js:382:85` StringLiteral -> `""` — ran against 6 covering test(s), none caught it
+- `out/tools/telegram-front-desk-bot.js:383:16` ConditionalExpression -> `true` — ran against 4 covering test(s), none caught it
+- `out/tools/telegram-front-desk-bot.js:385:11` BlockStatement -> `{}` — ran against 2 covering test(s), none caught it
+- `out/tools/telegram-front-desk-bot.js:391:86` StringLiteral -> `""` — ran against 9 covering test(s), none caught it
+- `out/tools/telegram-front-desk-bot.js:401:85` StringLiteral -> `""` — ran against 8 covering test(s), none caught it
+- `out/tools/telegram-front-desk-bot.js:404:11` BlockStatement -> `{}` — ran against 3 covering test(s), none caught it
+- `out/tools/telegram-front-desk-bot.js:444:34` StringLiteral -> `""` — ran against 4 covering test(s), none caught it
+- `out/tools/telegram-front-desk-bot.js:444:49` StringLiteral -> `""` — ran against 4 covering test(s), none caught it
+- `out/tools/telegram-front-desk-bot.js:444:61` StringLiteral -> `""` — ran against 4 covering test(s), none caught it
+- `out/tools/telegram-front-desk-bot.js:448:80` StringLiteral -> `""` — ran against 4 covering test(s), none caught it
+- `out/tools/telegram-front-desk-bot.js:523:34` StringLiteral -> `""` — ran against 8 covering test(s), none caught it
+- `out/tools/telegram-front-desk-bot.js:523:49` StringLiteral -> `""` — ran against 8 covering test(s), none caught it
+- `out/tools/telegram-front-desk-bot.js:531:70` StringLiteral -> `""` — ran against 8 covering test(s), none caught it
+- `out/tools/telegram-front-desk-bot.js:555:16` BooleanLiteral -> `false` — ran against 2 covering test(s), none caught it
+- `out/tools/telegram-front-desk-bot.js:557:71` StringLiteral -> `""` — ran against 3 covering test(s), none caught it
+- `out/tools/telegram-front-desk-bot.js:558:72` StringLiteral -> `""` — ran against 3 covering test(s), none caught it
+- `out/tools/telegram-front-desk-bot.js:558:87` StringLiteral -> `""` — ran against 3 covering test(s), none caught it
+- `out/tools/telegram-front-desk-bot.js:559:12` BooleanLiteral -> `false` — ran against 3 covering test(s), none caught it
+- `out/tools/telegram-front-desk-bot.js:583:9` ConditionalExpression -> `true` — ran against 3 covering test(s), none caught it
+- `out/tools/telegram-front-desk-bot.js:590:9` ConditionalExpression -> `true` — ran against 1 covering test(s), none caught it
+- `out/tools/telegram-front-desk-bot.js:660:39` StringLiteral -> `""` — ran against 1 covering test(s), none caught it
+- `out/tools/telegram-front-desk-bot.js:660:53` StringLiteral -> `""` — ran against 1 covering test(s), none caught it
+- `out/tools/telegram-front-desk-bot.js:660:64` StringLiteral -> `""` — ran against 1 covering test(s), none caught it
+- `out/tools/telegram-front-desk-bot.js:661:44` StringLiteral -> `""` — ran against 1 covering test(s), none caught it
+- `out/tools/telegram-front-desk-bot.js:661:68` StringLiteral -> `""` — ran against 1 covering test(s), none caught it
+- `out/tools/telegram-front-desk-bot.js:661:76` StringLiteral -> `""` — ran against 1 covering test(s), none caught it
+- `out/tools/telegram-front-desk-bot.js:661:89` StringLiteral -> `""` — ran against 1 covering test(s), none caught it
+- `out/tools/telegram-front-desk-bot.js:661:101` StringLiteral -> `""` — ran against 1 covering test(s), none caught it
+- `out/tools/telegram-front-desk-bot.js:669:12` ConditionalExpression -> `false` — ran against 33 covering test(s), none caught it
+- `out/tools/telegram-front-desk-bot.js:696:80` StringLiteral -> `""` — ran against 15 covering test(s), none caught it
+- `out/tools/telegram-front-desk-bot.js:715:77` StringLiteral -> `""` — ran against 16 covering test(s), none caught it
+- `out/tools/telegram-front-desk-bot.js:723:9` ConditionalExpression -> `false` — ran against 13 covering test(s), none caught it
+- `out/tools/telegram-front-desk-bot.js:723:37` BlockStatement -> `{}` — ran against 3 covering test(s), none caught it
+- `out/tools/telegram-front-desk-bot.js:740:30` StringLiteral -> ```` — ran against 2 covering test(s), none caught it
+- `out/tools/telegram-front-desk-bot.js:774:9` LogicalOperator -> `!created.success && created.messageThreadId === undefined` — ran against 9 covering test(s), none caught it
+- `out/tools/telegram-front-desk-bot.js:774:29` ConditionalExpression -> `false` — ran against 6 covering test(s), none caught it
+- `out/tools/telegram-front-desk-bot.js:775:30` StringLiteral -> ```` — ran against 3 covering test(s), none caught it
+- `out/tools/telegram-front-desk-bot.js:775:91` LogicalOperator -> `created.error && 'no messageThreadId returned'` — ran against 3 covering test(s), none caught it
+- `out/tools/telegram-front-desk-bot.js:804:9` ConditionalExpression -> `false` — ran against 8 covering test(s), none caught it
+- `out/tools/telegram-front-desk-bot.js:804:27` StringLiteral -> `""` — ran against 8 covering test(s), none caught it
+- `out/tools/telegram-front-desk-bot.js:804:37` BlockStatement -> `{}` — ran against 5 covering test(s), none caught it
+- `out/tools/telegram-front-desk-bot.js:814:61` BlockStatement -> `{}` — ran against 1 covering test(s), none caught it
+- `out/tools/telegram-front-desk-bot.js:815:17` ConditionalExpression -> `false` — ran against 1 covering test(s), none caught it
+- `out/tools/telegram-front-desk-bot.js:825:9` LogicalOperator -> `!created.success && created.messageThreadId === undefined` — ran against 5 covering test(s), none caught it
+- `out/tools/telegram-front-desk-bot.js:825:29` ConditionalExpression -> `false` — ran against 4 covering test(s), none caught it
+- `out/tools/telegram-front-desk-bot.js:826:30` StringLiteral -> ```` — ran against 1 covering test(s), none caught it
+- `out/tools/telegram-front-desk-bot.js:826:93` LogicalOperator -> `created.error && 'no messageThreadId returned'` — ran against 1 covering test(s), none caught it
+- `out/tools/telegram-front-desk-bot.js:843:76` BlockStatement -> `{}` — ran against 1 covering test(s), none caught it
+- `out/tools/telegram-front-desk-bot.js:845:13` BooleanLiteral -> `Number.isFinite(n)` — ran against 1 covering test(s), none caught it
+- `out/tools/telegram-front-desk-bot.js:845:13` ConditionalExpression -> `true` — ran against 1 covering test(s), none caught it
+- `out/tools/telegram-front-desk-bot.js:845:13` ConditionalExpression -> `false` — ran against 1 covering test(s), none caught it
+- `out/tools/telegram-front-desk-bot.js:848:13` ConditionalExpression -> `true` — ran against 1 covering test(s), none caught it
+- `out/tools/telegram-front-desk-bot.js:848:13` ConditionalExpression -> `false` — ran against 1 covering test(s), none caught it
+- `out/tools/telegram-front-desk-bot.js:848:13` LogicalOperator -> `(subject === telegramFrontDeskBotCore_1.APPROVALS_SUBJECT_ID \ — ran against subject === telegramFron` covering test(s), none caught it
+- `out/tools/telegram-front-desk-bot.js:848:13` ConditionalExpression -> `false` — ran against 1 covering test(s), none caught it
+- `out/tools/telegram-front-desk-bot.js:848:13` LogicalOperator -> `(subject === telegramFrontDeskBotCore_1.APPROVALS_SUBJECT_ID \ — ran against subject === telegramFron` covering test(s), none caught it
+- `out/tools/telegram-front-desk-bot.js:848:13` ConditionalExpression -> `false` — ran against 1 covering test(s), none caught it
+- `out/tools/telegram-front-desk-bot.js:848:13` LogicalOperator -> `(subject === telegramFrontDeskBotCore_1.APPROVALS_SUBJECT_ID \ — ran against subject === telegramFron` covering test(s), none caught it
+- `out/tools/telegram-front-desk-bot.js:848:13` ConditionalExpression -> `false` — ran against 1 covering test(s), none caught it
+- `out/tools/telegram-front-desk-bot.js:848:13` LogicalOperator -> `(subject === telegramFrontDeskBotCore_1.APPROVALS_SUBJECT_ID \ — ran against subject === telegramFron` covering test(s), none caught it
+- `out/tools/telegram-front-desk-bot.js:848:13` ConditionalExpression -> `false` — ran against 1 covering test(s), none caught it
+- `out/tools/telegram-front-desk-bot.js:848:13` LogicalOperator -> `(subject === telegramFrontDeskBotCore_1.APPROVALS_SUBJECT_ID \ — ran against subject === telegramFron` covering test(s), none caught it
+- `out/tools/telegram-front-desk-bot.js:848:13` ConditionalExpression -> `false` — ran against 1 covering test(s), none caught it
+- `out/tools/telegram-front-desk-bot.js:848:13` LogicalOperator -> `subject === telegramFrontDeskBotCore_1.APPROVALS_SUBJECT_ID && subject === telegramFrontDe` — ran against 1 covering test(s), none caught it
+- `out/tools/telegram-front-desk-bot.js:848:13` ConditionalExpression -> `false` — ran against 1 covering test(s), none caught it
+- `out/tools/telegram-front-desk-bot.js:848:13` EqualityOperator -> `subject !== telegramFrontDeskBotCore_1.APPROVALS_SUBJECT_ID` — ran against 1 covering test(s), none caught it
+- `out/tools/telegram-front-desk-bot.js:849:13` ConditionalExpression -> `false` — ran against 1 covering test(s), none caught it
+- `out/tools/telegram-front-desk-bot.js:849:13` EqualityOperator -> `subject !== telegramFrontDeskBotCore_1.OPERATOR_SUBJECT_ID` — ran against 1 covering test(s), none caught it
+- `out/tools/telegram-front-desk-bot.js:854:75` BlockStatement -> `{}` — ran against 1 covering test(s), none caught it
+- `out/tools/telegram-front-desk-bot.js:860:26` ArrayDeclaration -> `[]` — ran against 5 covering test(s), none caught it
+- `out/tools/telegram-front-desk-bot.js:860:36` BlockStatement -> `{}` — ran against 1 covering test(s), none caught it
+- `out/tools/telegram-front-desk-bot.js:861:22` MethodExpression -> `Math.min(1, anchor - 80)` — ran against 1 covering test(s), none caught it
+- `out/tools/telegram-front-desk-bot.js:861:34` ArithmeticOperator -> `anchor + 80` — ran against 1 covering test(s), none caught it
+- `out/tools/telegram-front-desk-bot.js:861:48` ConditionalExpression -> `false` — ran against 1 covering test(s), none caught it
+- `out/tools/telegram-front-desk-bot.js:861:48` EqualityOperator -> `i < anchor + 20` — ran against 1 covering test(s), none caught it
+- `out/tools/telegram-front-desk-bot.js:861:48` EqualityOperator -> `i > anchor + 20` — ran against 1 covering test(s), none caught it
+- `out/tools/telegram-front-desk-bot.js:861:53` ArithmeticOperator -> `anchor - 20` — ran against 1 covering test(s), none caught it
+- `out/tools/telegram-front-desk-bot.js:861:71` BlockStatement -> `{}` — ran against 1 covering test(s), none caught it
+- `out/tools/telegram-front-desk-bot.js:865:12` MethodExpression -> `[...ids]` — ran against 5 covering test(s), none caught it
+- `out/tools/telegram-front-desk-bot.js:865:12` ArrayDeclaration -> `[]` — ran against 5 covering test(s), none caught it
+- `out/tools/telegram-front-desk-bot.js:865:26` ArrowFunction -> `() => undefined` — ran against 5 covering test(s), none caught it
+- `out/tools/telegram-front-desk-bot.js:865:36` ArithmeticOperator -> `a + b` — ran against 1 covering test(s), none caught it
+- `out/tools/telegram-front-desk-bot.js:867:80` BlockStatement -> `{}` — ran against 5 covering test(s), none caught it
+- `out/tools/telegram-front-desk-bot.js:868:19` ArrayDeclaration -> `["Stryker was here"]` — ran against 5 covering test(s), none caught it
+- `out/tools/telegram-front-desk-bot.js:869:62` BlockStatement -> `{}` — ran against 1 covering test(s), none caught it
+- `out/tools/telegram-front-desk-bot.js:871:13` ConditionalExpression -> `false` — ran against 1 covering test(s), none caught it
+- `out/tools/telegram-front-desk-bot.js:891:9` LogicalOperator -> `!created.success && created.messageThreadId === undefined` — ran against 4 covering test(s), none caught it
+- `out/tools/telegram-front-desk-bot.js:891:29` ConditionalExpression -> `false` — ran against 3 covering test(s), none caught it
+- `out/tools/telegram-front-desk-bot.js:892:30` StringLiteral -> ```` — ran against 1 covering test(s), none caught it
+- `out/tools/telegram-front-desk-bot.js:892:87` LogicalOperator -> `created.error && 'no messageThreadId returned'` — ran against 1 covering test(s), none caught it
+- `out/tools/telegram-front-desk-bot.js:913:9` LogicalOperator -> `!created.success && created.messageThreadId === undefined` — ran against 4 covering test(s), none caught it
+- `out/tools/telegram-front-desk-bot.js:913:29` ConditionalExpression -> `false` — ran against 3 covering test(s), none caught it
+- `out/tools/telegram-front-desk-bot.js:914:30` StringLiteral -> ```` — ran against 1 covering test(s), none caught it
+- `out/tools/telegram-front-desk-bot.js:914:104` LogicalOperator -> `created.error && 'no messageThreadId returned'` — ran against 1 covering test(s), none caught it
+- `out/tools/telegram-front-desk-bot.js:934:9` LogicalOperator -> `!created.success && created.messageThreadId === undefined` — ran against 4 covering test(s), none caught it
+- `out/tools/telegram-front-desk-bot.js:934:29` ConditionalExpression -> `false` — ran against 3 covering test(s), none caught it
+- `out/tools/telegram-front-desk-bot.js:935:30` StringLiteral -> ```` — ran against 1 covering test(s), none caught it
+- `out/tools/telegram-front-desk-bot.js:935:95` LogicalOperator -> `created.error && 'no messageThreadId returned'` — ran against 1 covering test(s), none caught it
+- `out/tools/telegram-front-desk-bot.js:969:9` ConditionalExpression -> `true` — ran against 1 covering test(s), none caught it
+- `out/tools/telegram-front-desk-bot.js:986:110` LogicalOperator -> `contractPhaseAdapters && (0, contractPhaseRealAdapters_1.createRealContractPhaseAdapters)(` — ran against 8 covering test(s), none caught it
+- `out/tools/telegram-front-desk-bot.js:987:52` ConditionalExpression -> `false` — ran against 7 covering test(s), none caught it
+- `out/tools/telegram-front-desk-bot.js:987:69` StringLiteral -> `""` — ran against 7 covering test(s), none caught it
+- `out/tools/telegram-front-desk-bot.js:1017:9` LogicalOperator -> `!created.success && created.messageThreadId === undefined` — ran against 4 covering test(s), none caught it
+- `out/tools/telegram-front-desk-bot.js:1017:29` ConditionalExpression -> `false` — ran against 3 covering test(s), none caught it
+- `out/tools/telegram-front-desk-bot.js:1018:30` StringLiteral -> ```` — ran against 1 covering test(s), none caught it
+- `out/tools/telegram-front-desk-bot.js:1018:89` LogicalOperator -> `created.error && 'no messageThreadId returned'` — ran against 1 covering test(s), none caught it
+- `out/tools/telegram-front-desk-bot.js:1038:9` LogicalOperator -> `!created.success && created.messageThreadId === undefined` — ran against 4 covering test(s), none caught it
+- `out/tools/telegram-front-desk-bot.js:1038:29` ConditionalExpression -> `false` — ran against 3 covering test(s), none caught it
+- `out/tools/telegram-front-desk-bot.js:1039:30` StringLiteral -> ```` — ran against 1 covering test(s), none caught it
+- `out/tools/telegram-front-desk-bot.js:1039:89` LogicalOperator -> `created.error && 'no messageThreadId returned'` — ran against 1 covering test(s), none caught it
+- `out/tools/telegram-front-desk-bot.js:1056:9` ConditionalExpression -> `false` — ran against 1 covering test(s), none caught it
+- `out/tools/telegram-front-desk-bot.js:1056:9` LogicalOperator -> `!created.success && created.messageThreadId === undefined` — ran against 1 covering test(s), none caught it
+- `out/tools/telegram-front-desk-bot.js:1056:29` ConditionalExpression -> `false` — ran against 1 covering test(s), none caught it
+- `out/tools/telegram-front-desk-bot.js:1091:13` ConditionalExpression -> `true` — ran against 3 covering test(s), none caught it
+- `out/tools/telegram-front-desk-bot.js:1098:9` LogicalOperator -> `!created.success && created.messageThreadId === undefined` — ran against 5 covering test(s), none caught it
+- `out/tools/telegram-front-desk-bot.js:1098:29` ConditionalExpression -> `false` — ran against 3 covering test(s), none caught it
+- `out/tools/telegram-front-desk-bot.js:1111:57` BlockStatement -> `{}` — ran against 1 covering test(s), none caught it
+- `out/tools/telegram-front-desk-bot.js:1112:13` ConditionalExpression -> `false` — ran against 1 covering test(s), none caught it
+- `out/tools/telegram-front-desk-bot.js:1128:9` ConditionalExpression -> `false` — ran against 3 covering test(s), none caught it
+- `out/tools/telegram-front-desk-bot.js:1128:32` BlockStatement -> `{}` — ran against 1 covering test(s), none caught it
+- `out/tools/telegram-front-desk-bot.js:1143:34` StringLiteral -> `""` — ran against 4 covering test(s), none caught it
+- `out/tools/telegram-front-desk-bot.js:1143:49` StringLiteral -> `""` — ran against 4 covering test(s), none caught it
+- `out/tools/telegram-front-desk-bot.js:1143:61` StringLiteral -> `""` — ran against 4 covering test(s), none caught it
+- `out/tools/telegram-front-desk-bot.js:1153:68` StringLiteral -> `""` — ran against 4 covering test(s), none caught it
+- `out/tools/telegram-front-desk-bot.js:1177:125` StringLiteral -> `""` — ran against 10 covering test(s), none caught it
+- `out/tools/telegram-front-desk-bot.js:1180:11` BlockStatement -> `{}` — ran against 4 covering test(s), none caught it
+- `out/tools/telegram-front-desk-bot.js:1193:34` StringLiteral -> `""` — ran against 33 covering test(s), none caught it
+- `out/tools/telegram-front-desk-bot.js:1193:49` StringLiteral -> `""` — ran against 33 covering test(s), none caught it
+- `out/tools/telegram-front-desk-bot.js:1193:61` StringLiteral -> `""` — ran against 33 covering test(s), none caught it
+- `out/tools/telegram-front-desk-bot.js:1197:85` StringLiteral -> `""` — ran against 12 covering test(s), none caught it
+- `out/tools/telegram-front-desk-bot.js:1199:11` BlockStatement -> `{}` — ran against 8 covering test(s), none caught it
+- `out/tools/telegram-front-desk-bot.js:1263:134` StringLiteral -> `""` — ran against 2 covering test(s), none caught it
+- `out/tools/telegram-front-desk-bot.js:1264:20` OptionalChaining -> `stampAsks[threadId].options` — ran against 1 covering test(s), none caught it
+- `out/tools/telegram-front-desk-bot.js:1266:15` BlockStatement -> `{}` — ran against 1 covering test(s), none caught it
+- `out/tools/telegram-front-desk-bot.js:1274:34` StringLiteral -> `""` — ran against 4 covering test(s), none caught it
+- `out/tools/telegram-front-desk-bot.js:1274:49` StringLiteral -> `""` — ran against 4 covering test(s), none caught it
+- `out/tools/telegram-front-desk-bot.js:1274:61` StringLiteral -> `""` — ran against 4 covering test(s), none caught it
+- `out/tools/telegram-front-desk-bot.js:1278:72` StringLiteral -> `""` — ran against 4 covering test(s), none caught it
+- `out/tools/telegram-front-desk-bot.js:1304:86` StringLiteral -> `""` — ran against 27 covering test(s), none caught it
+- `out/tools/telegram-front-desk-bot.js:1318:144` ObjectLiteral -> `{}` — ran against 10 covering test(s), none caught it
+- `out/tools/telegram-front-desk-bot.js:1328:34` StringLiteral -> `""` — ran against 6 covering test(s), none caught it
+- `out/tools/telegram-front-desk-bot.js:1328:49` StringLiteral -> `""` — ran against 6 covering test(s), none caught it
+- `out/tools/telegram-front-desk-bot.js:1328:61` StringLiteral -> `""` — ran against 6 covering test(s), none caught it
+- `out/tools/telegram-front-desk-bot.js:1332:90` StringLiteral -> `""` — ran against 5 covering test(s), none caught it
+- `out/tools/telegram-front-desk-bot.js:1333:16` ConditionalExpression -> `true` — ran against 2 covering test(s), none caught it
+- `out/tools/telegram-front-desk-bot.js:1335:11` BlockStatement -> `{}` — ran against 3 covering test(s), none caught it
+- `out/tools/telegram-front-desk-bot.js:1363:16` BooleanLiteral -> `true` — ran against 1 covering test(s), none caught it
+- `out/tools/telegram-front-desk-bot.js:1366:9` ConditionalExpression -> `false` — ran against 4 covering test(s), none caught it
+- `out/tools/telegram-front-desk-bot.js:1366:9` LogicalOperator -> `!created.success && created.messageThreadId === undefined` — ran against 4 covering test(s), none caught it
+- `out/tools/telegram-front-desk-bot.js:1366:29` ConditionalExpression -> `false` — ran against 4 covering test(s), none caught it
+- `out/tools/telegram-front-desk-bot.js:1366:68` BlockStatement -> `{}` — ran against 1 covering test(s), none caught it
+- `out/tools/telegram-front-desk-bot.js:1367:30` StringLiteral -> ```` — ran against 1 covering test(s), none caught it
+- `out/tools/telegram-front-desk-bot.js:1367:89` LogicalOperator -> `created.error && 'no messageThreadId returned'` — ran against 1 covering test(s), none caught it
+- `out/tools/telegram-front-desk-bot.js:1368:16` BooleanLiteral -> `true` — ran against 1 covering test(s), none caught it
+- `out/tools/telegram-front-desk-bot.js:1383:19` BooleanLiteral -> `true` — ran against 4 covering test(s), none caught it
+- `out/tools/telegram-front-desk-bot.js:1389:9` ConditionalExpression -> `true` — ran against 4 covering test(s), none caught it
+- `out/tools/telegram-front-desk-bot.js:1403:9` ConditionalExpression -> `false` — ran against 6 covering test(s), none caught it
+- `out/tools/telegram-front-desk-bot.js:1403:22` BlockStatement -> `{}` — ran against 3 covering test(s), none caught it
+- `out/tools/telegram-front-desk-bot.js:1427:30` StringLiteral -> ```` — ran against 2 covering test(s), none caught it
+- `out/tools/telegram-front-desk-bot.js:1434:20` ConditionalExpression -> `true` — ran against 1 covering test(s), none caught it
+- `out/tools/telegram-front-desk-bot.js:1434:20` ConditionalExpression -> `false` — ran against 1 covering test(s), none caught it
+- `out/tools/telegram-front-desk-bot.js:1434:20` EqualityOperator -> `captured.exitCode !== 0` — ran against 1 covering test(s), none caught it
+- `out/tools/telegram-front-desk-bot.js:1436:99` BooleanLiteral -> `false` — ran against 1 covering test(s), none caught it
+- `out/tools/telegram-front-desk-bot.js:1437:26` BlockStatement -> `{}` — ran against 1 covering test(s), none caught it
+- `out/tools/telegram-front-desk-bot.js:1438:60` StringLiteral -> `""` — ran against 1 covering test(s), none caught it
+- `out/tools/telegram-front-desk-bot.js:1442:9` ConditionalExpression -> `false` — ran against 1 covering test(s), none caught it
+- `out/tools/telegram-front-desk-bot.js:1457:12` EqualityOperator -> `text.length < ROLE_ANSWER_NOTE_MAX_LEN` — ran against 19 covering test(s), none caught it
+- `out/tools/telegram-front-desk-bot.js:1469:90` StringLiteral -> `""` — ran against 19 covering test(s), none caught it
+- `out/tools/telegram-front-desk-bot.js:1472:11` BlockStatement -> `{}` — ran against 11 covering test(s), none caught it
+- `out/tools/telegram-front-desk-bot.js:1493:48` StringLiteral -> `""` — ran against 22 covering test(s), none caught it
+- `out/tools/telegram-front-desk-bot.js:1495:11` BlockStatement -> `{}` — ran against 17 covering test(s), none caught it
+- `out/tools/telegram-front-desk-bot.js:1517:9` ConditionalExpression -> `true` — ran against 15 covering test(s), none caught it
+- `out/tools/telegram-front-desk-bot.js:1520:9` ConditionalExpression -> `true` — ran against 15 covering test(s), none caught it
+- `out/tools/telegram-front-desk-bot.js:1522:52` ArrayDeclaration -> `["Stryker was here"]` — ran against 7 covering test(s), none caught it
+- `out/tools/telegram-front-desk-bot.js:1523:32` MethodExpression -> `seen` — ran against 7 covering test(s), none caught it
+- `out/tools/telegram-front-desk-bot.js:1525:14` ConditionalExpression -> `true` — ran against 9 covering test(s), none caught it
+- `out/tools/telegram-front-desk-bot.js:1561:9` ConditionalExpression -> `false` — ran against 8 covering test(s), none caught it
+- `out/tools/telegram-front-desk-bot.js:1561:9` LogicalOperator -> `answer.askedAtMs === undefined && askedAtMs === undefined` — ran against 8 covering test(s), none caught it
+- `out/tools/telegram-front-desk-bot.js:1561:9` ConditionalExpression -> `false` — ran against 8 covering test(s), none caught it
+- `out/tools/telegram-front-desk-bot.js:1561:43` ConditionalExpression -> `false` — ran against 6 covering test(s), none caught it
+- `out/tools/telegram-front-desk-bot.js:1592:9` ConditionalExpression -> `true` — ran against 15 covering test(s), none caught it
+- `out/tools/telegram-front-desk-bot.js:1592:35` OptionalChaining -> `existing?.seenUpdateIds.includes` — ran against 7 covering test(s), none caught it
+- `out/tools/telegram-front-desk-bot.js:1597:44` StringLiteral -> `""` — ran against 15 covering test(s), none caught it
+- `out/tools/telegram-front-desk-bot.js:1599:78` MethodExpression -> `Math.random().toString(36)` — ran against 15 covering test(s), none caught it
+- `out/tools/telegram-front-desk-bot.js:1607:30` StringLiteral -> ```` — ran against 6 covering test(s), none caught it
+- `out/tools/telegram-front-desk-bot.js:1627:9` MethodExpression -> `process.env.SWARMFORGE_LETS_TALK_PROVIDER` — ran against 1 covering test(s), none caught it
+- `out/tools/telegram-front-desk-bot.js:1627:9` OptionalChaining -> `process.env.SWARMFORGE_LETS_TALK_PROVIDER.trim` — ran against 1 covering test(s), none caught it
+- `out/tools/telegram-front-desk-bot.js:1629:40` ConditionalExpression -> `false` — ran against 3 covering test(s), none caught it
+- `out/tools/telegram-front-desk-bot.js:1629:61` StringLiteral -> `"Stryker was here!"` — ran against 3 covering test(s), none caught it
+- `out/tools/telegram-front-desk-bot.js:1630:9` ConditionalExpression -> `true` — ran against 3 covering test(s), none caught it
+- `out/tools/telegram-front-desk-bot.js:1630:9` LogicalOperator -> `cursorTopicId !== undefined \ — ran against topicId === cursorTopicId` covering test(s), none caught it
+- `out/tools/telegram-front-desk-bot.js:1630:9` ConditionalExpression -> `true` — ran against 3 covering test(s), none caught it
+- `out/tools/telegram-front-desk-bot.js:1630:40` ConditionalExpression -> `true` — ran against 2 covering test(s), none caught it
+- `out/tools/telegram-front-desk-bot.js:1640:67` ObjectLiteral -> `{}` — ran against 1 covering test(s), none caught it
+- `out/tools/telegram-front-desk-bot.js:1640:75` StringLiteral -> `""` — ran against 1 covering test(s), none caught it
+- `out/tools/telegram-front-desk-bot.js:1667:26` StringLiteral -> `""` — ran against whole suite, 920 tests, none caught it
+- `out/tools/telegram-front-desk-bot.js:1668:26` StringLiteral -> `""` — ran against whole suite, 920 tests, none caught it
+- `out/tools/telegram-front-desk-bot.js:1669:26` StringLiteral -> `""` — ran against whole suite, 920 tests, none caught it
+- `out/tools/telegram-front-desk-bot.js:1680:9` ConditionalExpression -> `false` — ran against 8 covering test(s), none caught it
+- `out/tools/telegram-front-desk-bot.js:1680:9` LogicalOperator -> `!fileResult.success && !fileResult.filePath` — ran against 8 covering test(s), none caught it
+- `out/tools/telegram-front-desk-bot.js:1680:54` BlockStatement -> `{}` — ran against 1 covering test(s), none caught it
+- `out/tools/telegram-front-desk-bot.js:1684:9` LogicalOperator -> `!download.success && !download.bytes` — ran against 7 covering test(s), none caught it
+- `out/tools/telegram-front-desk-bot.js:1701:16` ConditionalExpression -> `true` — ran against 2 covering test(s), none caught it
+- `out/tools/telegram-front-desk-bot.js:1701:33` EqualityOperator -> `status <= 500` — ran against 2 covering test(s), none caught it
+- `out/tools/telegram-front-desk-bot.js:1720:21` StringLiteral -> `""` — ran against 5 covering test(s), none caught it
+- `out/tools/telegram-front-desk-bot.js:1720:38` ArrayDeclaration -> `[]` — ran against 5 covering test(s), none caught it
+- `out/tools/telegram-front-desk-bot.js:1720:54` StringLiteral -> `""` — ran against 5 covering test(s), none caught it
+- `out/tools/telegram-front-desk-bot.js:1721:21` StringLiteral -> `""` — ran against 5 covering test(s), none caught it
+- `out/tools/telegram-front-desk-bot.js:1723:21` StringLiteral -> `""` — ran against 5 covering test(s), none caught it
+- `out/tools/telegram-front-desk-bot.js:1777:9` ConditionalExpression -> `false` — ran against 5 covering test(s), none caught it
+- `out/tools/telegram-front-desk-bot.js:1777:9` EqualityOperator -> `entries.length < bound` — ran against 5 covering test(s), none caught it
+- `out/tools/telegram-front-desk-bot.js:1777:34` BlockStatement -> `{}` — ran against 4 covering test(s), none caught it
+- `out/tools/telegram-front-desk-bot.js:1782:9` MethodExpression -> `withMtime` — ran against 1 covering test(s), none caught it
+- `out/tools/telegram-front-desk-bot.js:1782:24` ArrowFunction -> `() => undefined` — ran against 1 covering test(s), none caught it
+- `out/tools/telegram-front-desk-bot.js:1782:34` ArithmeticOperator -> `a.mtimeMs + b.mtimeMs` — ran against 1 covering test(s), none caught it
+- `out/tools/telegram-front-desk-bot.js:1799:80` OptionalChaining -> `update.message.photo` — ran against 9 covering test(s), none caught it
+- `out/tools/telegram-front-desk-bot.js:1808:9` LogicalOperator -> `!fileResult.success && !fileResult.filePath` — ran against 8 covering test(s), none caught it
+- `out/tools/telegram-front-desk-bot.js:1812:9` LogicalOperator -> `!download.success && !download.bytes` — ran against 7 covering test(s), none caught it
+- `out/tools/telegram-front-desk-bot.js:1815:9` EqualityOperator -> `download.bytes.length >= cursorBridgeTelegramMedia_1.MAX_TELEGRAM_PHOTO_BYTES` — ran against 6 covering test(s), none caught it
+- `out/tools/telegram-front-desk-bot.js:1832:21` StringLiteral -> `""` — ran against 3 covering test(s), none caught it
+- `out/tools/telegram-front-desk-bot.js:1833:81` StringLiteral -> `""` — ran against 3 covering test(s), none caught it
+- `out/tools/telegram-front-desk-bot.js:1834:34` ObjectLiteral -> `{}` — ran against 3 covering test(s), none caught it
+- `out/tools/telegram-front-desk-bot.js:1834:116` StringLiteral -> `""` — ran against 3 covering test(s), none caught it
+- `out/tools/telegram-front-desk-bot.js:1836:13` ConditionalExpression -> `false` — ran against 2 covering test(s), none caught it
+- `out/tools/telegram-front-desk-bot.js:1836:22` BlockStatement -> `{}` — ran against 1 covering test(s), none caught it
+- `out/tools/telegram-front-desk-bot.js:1852:45` StringLiteral -> `""` — ran against whole suite, 920 tests, none caught it
+- `out/tools/telegram-front-desk-bot.js:1857:12` LogicalOperator -> `Number.isFinite(parsed) \ — ran against parsed > 0` covering test(s), none caught it
+- `out/tools/telegram-front-desk-bot.js:1857:39` ConditionalExpression -> `true` — ran against 1 covering test(s), none caught it
+- `out/tools/telegram-front-desk-bot.js:1857:39` EqualityOperator -> `parsed >= 0` — ran against 1 covering test(s), none caught it
+- `out/tools/telegram-front-desk-bot.js:1894:34` StringLiteral -> `""` — ran against 5 covering test(s), none caught it
+- `out/tools/telegram-front-desk-bot.js:1894:48` StringLiteral -> `""` — ran against 5 covering test(s), none caught it
+- `out/tools/telegram-front-desk-bot.js:1894:59` StringLiteral -> `""` — ran against 5 covering test(s), none caught it
+- `out/tools/telegram-front-desk-bot.js:1899:36` MethodExpression -> `stdout` — ran against 4 covering test(s), none caught it
+- `out/tools/telegram-front-desk-bot.js:1941:34` StringLiteral -> `""` — ran against 5 covering test(s), none caught it
+- `out/tools/telegram-front-desk-bot.js:1956:56` StringLiteral -> `"Stryker was here!"` — ran against 2 covering test(s), none caught it
+- `out/tools/telegram-front-desk-bot.js:1964:12` ConditionalExpression -> `true` — ran against 1 covering test(s), none caught it
+- `out/tools/telegram-front-desk-bot.js:1975:64` StringLiteral -> `""` — ran against 4 covering test(s), none caught it
+- `out/tools/telegram-front-desk-bot.js:1978:12` EqualityOperator -> `now() <= deadline` — ran against 4 covering test(s), none caught it
+- `out/tools/telegram-front-desk-bot.js:1980:20` ConditionalExpression -> `true` — ran against 3 covering test(s), none caught it
+- `out/tools/telegram-front-desk-bot.js:2013:40` ObjectLiteral -> `{}` — ran against 4 covering test(s), none caught it
+- `out/tools/telegram-front-desk-bot.js:2015:9` OptionalChaining -> `config.enabled` — ran against 4 covering test(s), none caught it
+- `out/tools/telegram-front-desk-bot.js:2022:75` BooleanLiteral -> `false` — ran against whole suite, 920 tests, none caught it
+- `out/tools/telegram-front-desk-bot.js:2034:9` ConditionalExpression -> `false` — ran against 5 covering test(s), none caught it
+- `out/tools/telegram-front-desk-bot.js:2037:42` LogicalOperator -> `item.notes && ''` — ran against 5 covering test(s), none caught it
+- `out/tools/telegram-front-desk-bot.js:2037:56` StringLiteral -> `"Stryker was here!"` — ran against 5 covering test(s), none caught it
+- `out/tools/telegram-front-desk-bot.js:2052:9` ConditionalExpression -> `false` — ran against 5 covering test(s), none caught it
+- `out/tools/telegram-front-desk-bot.js:2052:35` BlockStatement -> `{}` — ran against 1 covering test(s), none caught it
+- `out/tools/telegram-front-desk-bot.js:2059:91` ConditionalExpression -> `true` — ran against 2 covering test(s), none caught it
+- `out/tools/telegram-front-desk-bot.js:2064:34` StringLiteral -> `""` — ran against 4 covering test(s), none caught it
+- `out/tools/telegram-front-desk-bot.js:2064:48` StringLiteral -> `""` — ran against 4 covering test(s), none caught it
+- `out/tools/telegram-front-desk-bot.js:2064:59` StringLiteral -> `""` — ran against 4 covering test(s), none caught it
+- `out/tools/telegram-front-desk-bot.js:2386:29` ObjectLiteral -> `{}` — ran against whole suite, 920 tests, none caught it
+- `out/tools/telegram-front-desk-bot.js:2569:40` ObjectLiteral -> `{}` — ran against whole suite, 920 tests, none caught it
+- `out/tools/telegram-front-desk-bot.js:2728:9` ConditionalExpression -> `false` — ran against 7 covering test(s), none caught it
+- `out/tools/telegram-front-desk-bot.js:2784:69` StringLiteral -> `""` — ran against 2 covering test(s), none caught it
+- `out/tools/telegram-front-desk-bot.js:2790:37` Regex -> `/\.md/` — ran against 1 covering test(s), none caught it
+- `out/tools/telegram-front-desk-bot.js:2796:30` MethodExpression -> `l` — ran against 1 covering test(s), none caught it
+- `out/tools/telegram-front-desk-bot.js:2797:33` MethodExpression -> `firstLine.replace(/^#+\s*/, '')` — ran against 1 covering test(s), none caught it
+- `out/tools/telegram-front-desk-bot.js:2797:51` Regex -> `/#+\s*/` — ran against 1 covering test(s), none caught it
+- `out/tools/telegram-front-desk-bot.js:2797:51` Regex -> `/^#\s*/` — ran against 1 covering test(s), none caught it
+- `out/tools/telegram-front-desk-bot.js:2797:51` Regex -> `/^#+\s/` — ran against 1 covering test(s), none caught it
+- `out/tools/telegram-front-desk-bot.js:2797:51` Regex -> `/^#+\S*/` — ran against 1 covering test(s), none caught it
+- `out/tools/telegram-front-desk-bot.js:2814:33` Regex -> `/github\.com[:/]([^/]+)\/(.+?)(\.git)$/` — ran against 2 covering test(s), none caught it
+- `out/tools/telegram-front-desk-bot.js:2817:11` BlockStatement -> `{}` — ran against 2 covering test(s), none caught it
+- `out/tools/telegram-front-desk-bot.js:2851:15` StringLiteral -> ```` — ran against 5 covering test(s), none caught it
+- `out/tools/telegram-front-desk-bot.js:2852:21` StringLiteral -> `""` — ran against 5 covering test(s), none caught it
+- `out/tools/telegram-front-desk-bot.js:2862:17` BlockStatement -> `{}` — ran against 4 covering test(s), none caught it
+- `out/tools/telegram-front-desk-bot.js:3162:9` ConditionalExpression -> `true` — ran against 4 covering test(s), none caught it
+- `out/tools/telegram-front-desk-bot.js:3162:9` ConditionalExpression -> `false` — ran against 4 covering test(s), none caught it
+- `out/tools/telegramFrontDeskBotCore.js:70:66` BooleanLiteral -> `false` — ran against whole suite, 920 tests, none caught it
+- `out/tools/telegramFrontDeskBotCore.js:71:65` BooleanLiteral -> `false` — ran against whole suite, 920 tests, none caught it
+- `out/tools/telegramFrontDeskBotCore.js:72:62` BooleanLiteral -> `false` — ran against whole suite, 920 tests, none caught it
+- `out/tools/telegramFrontDeskBotCore.js:73:59` BooleanLiteral -> `false` — ran against whole suite, 920 tests, none caught it
+- `out/tools/telegramFrontDeskBotCore.js:74:63` BooleanLiteral -> `false` — ran against whole suite, 920 tests, none caught it
+- `out/tools/telegramFrontDeskBotCore.js:75:69` BooleanLiteral -> `false` — ran against whole suite, 920 tests, none caught it
+- `out/tools/telegramFrontDeskBotCore.js:76:65` BooleanLiteral -> `false` — ran against whole suite, 920 tests, none caught it
+- `out/tools/telegramFrontDeskBotCore.js:77:65` BooleanLiteral -> `false` — ran against whole suite, 920 tests, none caught it
+- `out/tools/telegramFrontDeskBotCore.js:78:67` BooleanLiteral -> `false` — ran against whole suite, 920 tests, none caught it
+- `out/tools/telegramFrontDeskBotCore.js:79:69` BooleanLiteral -> `false` — ran against whole suite, 920 tests, none caught it
+- `out/tools/telegramFrontDeskBotCore.js:80:70` BooleanLiteral -> `false` — ran against whole suite, 920 tests, none caught it
+- `out/tools/telegramFrontDeskBotCore.js:81:32` StringLiteral -> `""` — ran against whole suite, 920 tests, none caught it
+- `out/tools/telegramFrontDeskBotCore.js:81:54` ObjectLiteral -> `{}` — ran against whole suite, 920 tests, none caught it
+- `out/tools/telegramFrontDeskBotCore.js:81:68` BooleanLiteral -> `false` — ran against whole suite, 920 tests, none caught it
+- `out/tools/telegramFrontDeskBotCore.js:82:69` BooleanLiteral -> `false` — ran against whole suite, 920 tests, none caught it
+- `out/tools/telegramFrontDeskBotCore.js:83:69` BooleanLiteral -> `false` — ran against whole suite, 920 tests, none caught it
+- `out/tools/telegramFrontDeskBotCore.js:84:81` BooleanLiteral -> `false` — ran against whole suite, 920 tests, none caught it
+- `out/tools/telegramFrontDeskBotCore.js:85:78` BooleanLiteral -> `false` — ran against whole suite, 920 tests, none caught it
+- `out/tools/telegramFrontDeskBotCore.js:86:70` BooleanLiteral -> `false` — ran against whole suite, 920 tests, none caught it
+- `out/tools/telegramFrontDeskBotCore.js:87:70` BooleanLiteral -> `false` — ran against whole suite, 920 tests, none caught it
+- `out/tools/telegramFrontDeskBotCore.js:88:82` BooleanLiteral -> `false` — ran against whole suite, 920 tests, none caught it
+- `out/tools/telegramFrontDeskBotCore.js:89:75` BooleanLiteral -> `false` — ran against whole suite, 920 tests, none caught it
+- `out/tools/telegramFrontDeskBotCore.js:90:75` BooleanLiteral -> `false` — ran against whole suite, 920 tests, none caught it
+- `out/tools/telegramFrontDeskBotCore.js:91:86` BooleanLiteral -> `false` — ran against whole suite, 920 tests, none caught it
+- `out/tools/telegramFrontDeskBotCore.js:92:67` BooleanLiteral -> `false` — ran against whole suite, 920 tests, none caught it
+- `out/tools/telegramFrontDeskBotCore.js:93:67` BooleanLiteral -> `false` — ran against whole suite, 920 tests, none caught it
+- `out/tools/telegramFrontDeskBotCore.js:94:79` BooleanLiteral -> `false` — ran against whole suite, 920 tests, none caught it
+- `out/tools/telegramFrontDeskBotCore.js:95:76` BooleanLiteral -> `false` — ran against whole suite, 920 tests, none caught it
+- `out/tools/telegramFrontDeskBotCore.js:96:76` BooleanLiteral -> `false` — ran against whole suite, 920 tests, none caught it
+- `out/tools/telegramFrontDeskBotCore.js:97:87` BooleanLiteral -> `false` — ran against whole suite, 920 tests, none caught it
+- `out/tools/telegramFrontDeskBotCore.js:98:68` BooleanLiteral -> `false` — ran against whole suite, 920 tests, none caught it
+- `out/tools/telegramFrontDeskBotCore.js:99:68` BooleanLiteral -> `false` — ran against whole suite, 920 tests, none caught it
+- `out/tools/telegramFrontDeskBotCore.js:100:80` BooleanLiteral -> `false` — ran against whole suite, 920 tests, none caught it
+- `out/tools/telegramFrontDeskBotCore.js:101:68` BooleanLiteral -> `false` — ran against whole suite, 920 tests, none caught it
+- `out/tools/telegramFrontDeskBotCore.js:102:68` BooleanLiteral -> `false` — ran against whole suite, 920 tests, none caught it
+- `out/tools/telegramFrontDeskBotCore.js:103:80` BooleanLiteral -> `false` — ran against whole suite, 920 tests, none caught it
+- `out/tools/telegramFrontDeskBotCore.js:104:71` BooleanLiteral -> `false` — ran against whole suite, 920 tests, none caught it
+- `out/tools/telegramFrontDeskBotCore.js:105:32` StringLiteral -> `""` — ran against whole suite, 920 tests, none caught it
+- `out/tools/telegramFrontDeskBotCore.js:105:57` ObjectLiteral -> `{}` — ran against whole suite, 920 tests, none caught it
+- `out/tools/telegramFrontDeskBotCore.js:105:71` BooleanLiteral -> `false` — ran against whole suite, 920 tests, none caught it
+- `out/tools/telegramFrontDeskBotCore.js:106:83` BooleanLiteral -> `false` — ran against whole suite, 920 tests, none caught it
+- `out/tools/telegramFrontDeskBotCore.js:107:73` BooleanLiteral -> `false` — ran against whole suite, 920 tests, none caught it
+- `out/tools/telegramFrontDeskBotCore.js:108:73` BooleanLiteral -> `false` — ran against whole suite, 920 tests, none caught it
+- `out/tools/telegramFrontDeskBotCore.js:109:84` BooleanLiteral -> `false` — ran against whole suite, 920 tests, none caught it
+- `out/tools/telegramFrontDeskBotCore.js:110:77` BooleanLiteral -> `false` — ran against whole suite, 920 tests, none caught it
+- `out/tools/telegramFrontDeskBotCore.js:111:71` BooleanLiteral -> `false` — ran against whole suite, 920 tests, none caught it
+- `out/tools/telegramFrontDeskBotCore.js:112:71` BooleanLiteral -> `false` — ran against whole suite, 920 tests, none caught it
+- `out/tools/telegramFrontDeskBotCore.js:113:83` BooleanLiteral -> `false` — ran against whole suite, 920 tests, none caught it
+- `out/tools/telegramFrontDeskBotCore.js:140:37` OptionalChaining -> `update.message.photo` — ran against 9 covering test(s), none caught it
+- `out/tools/telegramFrontDeskBotCore.js:150:10` OptionalChaining -> `update.message.photo` — ran against 68 covering test(s), none caught it
+- `out/tools/telegramFrontDeskBotCore.js:185:9` ConditionalExpression -> `true` — ran against 6 covering test(s), none caught it
+- `out/tools/telegramFrontDeskBotCore.js:314:62` BlockStatement -> `{}` — ran against 48 covering test(s), none caught it
+- `out/tools/telegramFrontDeskBotCore.js:315:9` BooleanLiteral -> `adapters.humanLoopRoot` — ran against 48 covering test(s), none caught it
+- `out/tools/telegramFrontDeskBotCore.js:315:9` ConditionalExpression -> `true` — ran against 48 covering test(s), none caught it
+- `out/tools/telegramFrontDeskBotCore.js:315:9` ConditionalExpression -> `false` — ran against 48 covering test(s), none caught it
+- `out/tools/telegramFrontDeskBotCore.js:319:51` BlockStatement -> `{}` — ran against 21 covering test(s), none caught it
+- `out/tools/telegramFrontDeskBotCore.js:320:9` BooleanLiteral -> `adapters.humanLoopRoot` — ran against 21 covering test(s), none caught it
+- `out/tools/telegramFrontDeskBotCore.js:320:9` ConditionalExpression -> `true` — ran against 21 covering test(s), none caught it
+- `out/tools/telegramFrontDeskBotCore.js:320:9` ConditionalExpression -> `false` — ran against 21 covering test(s), none caught it
+- `out/tools/telegramFrontDeskBotCore.js:324:43` BlockStatement -> `{}` — ran against 7 covering test(s), none caught it
+- `out/tools/telegramFrontDeskBotCore.js:325:9` BooleanLiteral -> `root` — ran against 7 covering test(s), none caught it
+- `out/tools/telegramFrontDeskBotCore.js:325:9` ConditionalExpression -> `true` — ran against 7 covering test(s), none caught it
+- `out/tools/telegramFrontDeskBotCore.js:325:9` ConditionalExpression -> `false` — ran against 7 covering test(s), none caught it
+- `out/tools/telegramFrontDeskBotCore.js:343:9` ConditionalExpression -> `false` — ran against 1 covering test(s), none caught it
+- `out/tools/telegramFrontDeskBotCore.js:343:25` StringLiteral -> `""` — ran against 1 covering test(s), none caught it
+- `out/tools/telegramFrontDeskBotCore.js:378:9` ConditionalExpression -> `false` — ran against 19 covering test(s), none caught it
+- `out/tools/telegramFrontDeskBotCore.js:413:9` ConditionalExpression -> `false` — ran against 16 covering test(s), none caught it
+- `out/tools/telegramFrontDeskBotCore.js:413:27` StringLiteral -> `""` — ran against 16 covering test(s), none caught it
+- `out/tools/telegramFrontDeskBotCore.js:413:38` BlockStatement -> `{}` — ran against 6 covering test(s), none caught it
+- `out/tools/telegramFrontDeskBotCore.js:414:16` ObjectLiteral -> `{}` — ran against 6 covering test(s), none caught it
+- `out/tools/telegramFrontDeskBotCore.js:416:22` ObjectLiteral -> `{}` — ran against 8 covering test(s), none caught it
+- `out/tools/telegramFrontDeskBotCore.js:416:31` BooleanLiteral -> `true` — ran against 8 covering test(s), none caught it
+- `out/tools/telegramFrontDeskBotCore.js:471:22` ObjectLiteral -> `{}` — ran against 23 covering test(s), none caught it
+- `out/tools/telegramFrontDeskBotCore.js:506:38` StringLiteral -> `""` — ran against 8 covering test(s), none caught it
+- `out/tools/telegramFrontDeskBotCore.js:507:40` StringLiteral -> `""` — ran against 8 covering test(s), none caught it
+- `out/tools/telegramFrontDeskBotCore.js:534:11` ObjectLiteral -> `{}` — ran against 2 covering test(s), none caught it
+- `out/tools/telegramFrontDeskBotCore.js:535:25` BlockStatement -> `{}` — ran against 17 covering test(s), none caught it
+- `out/tools/telegramFrontDeskBotCore.js:598:15` OptionalChaining -> `adapters.notifyApprovalsTopic(undefined, `${backlogId}: ${kind} recorded; landed in ${resu` — ran against 1 covering test(s), none caught it
+- `out/tools/telegramFrontDeskBotCore.js:601:45` MethodExpression -> `result.stderr` — ran against 1 covering test(s), none caught it
+- `out/tools/telegramFrontDeskBotCore.js:601:71` StringLiteral -> `"Stryker was here!"` — ran against 2 covering test(s), none caught it
+- `out/tools/telegramFrontDeskBotCore.js:602:15` OptionalChaining -> `adapters.notifyApprovalsTopic(undefined, `${backlogId}: ${kind} recorded but FAILED TO COM` — ran against 3 covering test(s), none caught it
+- `out/tools/telegramFrontDeskBotCore.js:639:45` BooleanLiteral -> `true` — ran against 7 covering test(s), none caught it
+- `out/tools/telegramFrontDeskBotCore.js:642:40` StringLiteral -> `""` — ran against 42 covering test(s), none caught it
+- `out/tools/telegramFrontDeskBotCore.js:649:9` ConditionalExpression -> `false` — ran against 1 covering test(s), none caught it
+- `out/tools/telegramFrontDeskBotCore.js:654:9` ConditionalExpression -> `false` — ran against 1 covering test(s), none caught it
+- `out/tools/telegramFrontDeskBotCore.js:657:73` StringLiteral -> `""` — ran against 1 covering test(s), none caught it
+- `out/tools/telegramFrontDeskBotCore.js:658:21` ObjectLiteral -> `{}` — ran against 1 covering test(s), none caught it
+- `out/tools/telegramFrontDeskBotCore.js:658:29` StringLiteral -> `""` — ran against 1 covering test(s), none caught it
+- `out/tools/telegramFrontDeskBotCore.js:659:40` StringLiteral -> `""` — ran against 1 covering test(s), none caught it
+- `out/tools/telegramFrontDeskBotCore.js:662:12` ObjectLiteral -> `{}` — ran against 1 covering test(s), none caught it
+- `out/tools/telegramFrontDeskBotCore.js:662:23` BooleanLiteral -> `false` — ran against 1 covering test(s), none caught it
+- `out/tools/telegramFrontDeskBotCore.js:679:45` BooleanLiteral -> `true` — ran against 2 covering test(s), none caught it
+- `out/tools/telegramFrontDeskBotCore.js:728:99` ObjectLiteral -> `{}` — ran against 8 covering test(s), none caught it
+- `out/tools/telegramFrontDeskBotCore.js:728:112` BooleanLiteral -> `false` — ran against 8 covering test(s), none caught it
+- `out/tools/telegramFrontDeskBotCore.js:739:15` OptionalChaining -> `adapters.notifyApprovalsTopic(undefined, `${backlogId}: Expedite refused by the ${promotio` — ran against 2 covering test(s), none caught it
+- `out/tools/telegramFrontDeskBotCore.js:740:63` ObjectLiteral -> `{}` — ran against 2 covering test(s), none caught it
+- `out/tools/telegramFrontDeskBotCore.js:740:71` StringLiteral -> `""` — ran against 2 covering test(s), none caught it
+- `out/tools/telegramFrontDeskBotCore.js:744:9` ConditionalExpression -> `false` — ran against 14 covering test(s), none caught it
+- `out/tools/telegramFrontDeskBotCore.js:763:15` OptionalChaining -> `adapters.clearPendingButtonAction(backlogId)` — ran against 5 covering test(s), none caught it
+- `out/tools/telegramFrontDeskBotCore.js:774:75` StringLiteral -> `""` — ran against 3 covering test(s), none caught it
+- `out/tools/telegramFrontDeskBotCore.js:791:9` ConditionalExpression -> `false` — ran against 30 covering test(s), none caught it
+- `out/tools/telegramFrontDeskBotCore.js:791:29` StringLiteral -> `""` — ran against 30 covering test(s), none caught it
+- `out/tools/telegramFrontDeskBotCore.js:813:15` OptionalChaining -> `adapters.notifyApprovalsTopic(topicId, `${backlogId} isn't awaiting approval.`)` — ran against 1 covering test(s), none caught it
+- `out/tools/telegramFrontDeskBotCore.js:814:16` StringLiteral -> `""` — ran against 1 covering test(s), none caught it
+- `out/tools/telegramFrontDeskBotCore.js:816:9` ConditionalExpression -> `true` — ran against 5 covering test(s), none caught it
+- `out/tools/telegramFrontDeskBotCore.js:817:15` OptionalChaining -> `adapters.notifyApprovalsTopic(topicId, (0, expediteSafety_1.unsafeDispatchToastText)(resul` — ran against 1 covering test(s), none caught it
+- `out/tools/telegramFrontDeskBotCore.js:830:11` OptionalChaining -> `adapters.notifyApprovalsTopic(topicId, result.text)` — ran against 3 covering test(s), none caught it
+- `out/tools/telegramFrontDeskBotCore.js:831:35` StringLiteral -> `""` — ran against 2 covering test(s), none caught it
+- `out/tools/telegramFrontDeskBotCore.js:835:16` StringLiteral -> `""` — ran against 2 covering test(s), none caught it
+- `out/tools/telegramFrontDeskBotCore.js:850:77` StringLiteral -> `""` — ran against 4 covering test(s), none caught it
+- `out/tools/telegramFrontDeskBotCore.js:853:16` StringLiteral -> `""` — ran against 2 covering test(s), none caught it
+- `out/tools/telegramFrontDeskBotCore.js:864:9` ConditionalExpression -> `false` — ran against 19 covering test(s), none caught it
+- `out/tools/telegramFrontDeskBotCore.js:864:29` StringLiteral -> `""` — ran against 19 covering test(s), none caught it
+- `out/tools/telegramFrontDeskBotCore.js:876:29` OptionalChaining -> `adapters.getPendingRecertDelete()` — ran against 2 covering test(s), none caught it
+- `out/tools/telegramFrontDeskBotCore.js:878:16` StringLiteral -> `""` — ran against 1 covering test(s), none caught it
+- `out/tools/telegramFrontDeskBotCore.js:880:11` OptionalChaining -> `adapters.clearPendingRecertDelete()` — ran against 1 covering test(s), none caught it
+- `out/tools/telegramFrontDeskBotCore.js:881:26` OptionalChaining -> `adapters.queueRecertDeleteProposal(pendingId)` — ran against 1 covering test(s), none caught it
+- `out/tools/telegramFrontDeskBotCore.js:882:9` ConditionalExpression -> `false` — ran against 1 covering test(s), none caught it
+- `out/tools/telegramFrontDeskBotCore.js:895:31` OptionalChaining -> `adapters.isScenarioUpForRecert(scenarioId)` — ran against 1 covering test(s), none caught it
+- `out/tools/telegramFrontDeskBotCore.js:896:9` ConditionalExpression -> `false` — ran against 1 covering test(s), none caught it
+- `out/tools/telegramFrontDeskBotCore.js:900:11` OptionalChaining -> `adapters.setPendingRecertDelete(scenarioId)` — ran against 1 covering test(s), none caught it
+- `out/tools/telegramFrontDeskBotCore.js:901:11` OptionalChaining -> `adapters.notifyRecertTopic(topicId, `Reply "confirm" to delete ${scenarioId}, or anything ` — ran against 1 covering test(s), none caught it
+- `out/tools/telegramFrontDeskBotCore.js:915:9` ConditionalExpression -> `false` — ran against 10 covering test(s), none caught it
+- `out/tools/telegramFrontDeskBotCore.js:915:29` StringLiteral -> `""` — ran against 10 covering test(s), none caught it
+- `out/tools/telegramFrontDeskBotCore.js:915:52` BlockStatement -> `{}` — ran against 1 covering test(s), none caught it
+- `out/tools/telegramFrontDeskBotCore.js:916:16` StringLiteral -> `""` — ran against 1 covering test(s), none caught it
+- `out/tools/telegramFrontDeskBotCore.js:927:17` OptionalChaining -> `adapters.recordRecertValidate(scenarioId)` — ran against 4 covering test(s), none caught it
+- `out/tools/telegramFrontDeskBotCore.js:928:17` OptionalChaining -> `adapters.queueRecertAmendProposal(scenarioId, annotateRoutedMediaText(decision.newText, up` — ran against 2 covering test(s), none caught it
+- `out/tools/telegramFrontDeskBotCore.js:931:16` StringLiteral -> `""` — ran against 2 covering test(s), none caught it
+- `out/tools/telegramFrontDeskBotCore.js:955:31` Regex -> `/(approve\ — ran against amend\ covering test(s), none caught it
+- `out/tools/telegramFrontDeskBotCore.js:955:31` Regex -> `/^(approve\ — ran against amend\ covering test(s), none caught it
+- `out/tools/telegramFrontDeskBotCore.js:962:35` Regex -> `/ask:([^:]+):(\d+)$/` — ran against whole suite, 920 tests, none caught it
+- `out/tools/telegramFrontDeskBotCore.js:962:35` Regex -> `/^ask:([^:]+):(\d+)/` — ran against whole suite, 920 tests, none caught it
+- `out/tools/telegramFrontDeskBotCore.js:962:35` Regex -> `/^ask:([^:]+):(\d)$/` — ran against whole suite, 920 tests, none caught it
+- `out/tools/telegramFrontDeskBotCore.js:963:36` Regex -> `/rule:([^:]+):(\d+)$/` — ran against whole suite, 920 tests, none caught it
+- `out/tools/telegramFrontDeskBotCore.js:963:36` Regex -> `/^rule:([^:]+):(\d+)/` — ran against whole suite, 920 tests, none caught it
+- `out/tools/telegramFrontDeskBotCore.js:963:36` Regex -> `/^rule:([^:]+):(\d)$/` — ran against whole suite, 920 tests, none caught it
+- `out/tools/telegramFrontDeskBotCore.js:971:22` OptionalChaining -> `callbackQuery.message?.chat.id` — ran against 57 covering test(s), none caught it
+- `out/tools/telegramFrontDeskBotCore.js:971:22` OptionalChaining -> `callbackQuery.message.chat` — ran against 57 covering test(s), none caught it
+- `out/tools/telegramFrontDeskBotCore.js:972:12` ConditionalExpression -> `true` — ran against 57 covering test(s), none caught it
+- `out/tools/telegramFrontDeskBotCore.js:975:20` OptionalChaining -> `callbackQuery.from.id` — ran against 54 covering test(s), none caught it
+- `out/tools/telegramFrontDeskBotCore.js:976:12` ConditionalExpression -> `true` — ran against 54 covering test(s), none caught it
+- `out/tools/telegramFrontDeskBotCore.js:1038:12` ConditionalExpression -> `true` — ran against 42 covering test(s), none caught it
+- `out/tools/telegramFrontDeskBotCore.js:1070:9` ConditionalExpression -> `false` — ran against 26 covering test(s), none caught it
+- `out/tools/telegramFrontDeskBotCore.js:1070:9` LogicalOperator -> `(decision.action === 'drop' \ — ran against decision.action === 'answer-ask') && decision.action === ` covering test(s), none caught it
+- `out/tools/telegramFrontDeskBotCore.js:1070:9` ConditionalExpression -> `false` — ran against 26 covering test(s), none caught it
+- `out/tools/telegramFrontDeskBotCore.js:1070:9` LogicalOperator -> `decision.action === 'drop' && decision.action === 'answer-ask'` — ran against 26 covering test(s), none caught it
+- `out/tools/telegramFrontDeskBotCore.js:1070:9` ConditionalExpression -> `false` — ran against 26 covering test(s), none caught it
+- `out/tools/telegramFrontDeskBotCore.js:1070:29` StringLiteral -> `""` — ran against 26 covering test(s), none caught it
+- `out/tools/telegramFrontDeskBotCore.js:1070:39` ConditionalExpression -> `false` — ran against 24 covering test(s), none caught it
+- `out/tools/telegramFrontDeskBotCore.js:1070:59` StringLiteral -> `""` — ran against 24 covering test(s), none caught it
+- `out/tools/telegramFrontDeskBotCore.js:1070:75` ConditionalExpression -> `false` — ran against 24 covering test(s), none caught it
+- `out/tools/telegramFrontDeskBotCore.js:1070:95` StringLiteral -> `""` — ran against 24 covering test(s), none caught it
+- `out/tools/telegramFrontDeskBotCore.js:1070:103` BlockStatement -> `{}` — ran against 4 covering test(s), none caught it
+- `out/tools/telegramFrontDeskBotCore.js:1073:9` ConditionalExpression -> `true` — ran against 22 covering test(s), none caught it
+- `out/tools/telegramFrontDeskBotCore.js:1073:9` ConditionalExpression -> `false` — ran against 22 covering test(s), none caught it
+- `out/tools/telegramFrontDeskBotCore.js:1073:9` EqualityOperator -> `decision.action !== 'rule'` — ran against 22 covering test(s), none caught it
+- `out/tools/telegramFrontDeskBotCore.js:1073:29` StringLiteral -> `""` — ran against 22 covering test(s), none caught it
+- `out/tools/telegramFrontDeskBotCore.js:1107:9` ConditionalExpression -> `false` — ran against 10 covering test(s), none caught it
+- `out/tools/telegramFrontDeskBotCore.js:1107:19` BlockStatement -> `{}` — ran against 7 covering test(s), none caught it
+- `out/tools/telegramFrontDeskBotCore.js:1110:11` OptionalChaining -> `adapters.editAskMessage(message.topicId, message.messageId, composeText(message.text))` — ran against 3 covering test(s), none caught it
+- `out/tools/telegramFrontDeskBotCore.js:1123:9` ConditionalExpression -> `false` — ran against 13 covering test(s), none caught it
+- `out/tools/telegramFrontDeskBotCore.js:1124:16` BooleanLiteral -> `true` — ran against 1 covering test(s), none caught it
+- `out/tools/telegramFrontDeskBotCore.js:1168:26` OptionalChaining -> `enqueueRoleAnswerNote(role, answerText, updateId)` — ran against 9 covering test(s), none caught it
+- `out/tools/telegramFrontDeskBotCore.js:1251:9` ConditionalExpression -> `true` — ran against 1 covering test(s), none caught it
+- `out/tools/telegramFrontDeskBotCore.js:1252:25` OptionalChaining -> `callbackQuery.message.message_thread_id` — ran against 1 covering test(s), none caught it
+- `out/tools/telegramFrontDeskBotCore.js:1271:23` OptionalChaining -> `adapters.notifyApprovalsTopic(callbackQuery.message?.message_thread_id, text)` — ran against 2 covering test(s), none caught it
+- `out/tools/telegramFrontDeskBotCore.js:1271:55` OptionalChaining -> `callbackQuery.message.message_thread_id` — ran against 2 covering test(s), none caught it
+- `out/tools/telegramFrontDeskBotCore.js:1320:44` StringLiteral -> `""` — ran against 2 covering test(s), none caught it
+- `out/tools/telegramFrontDeskBotCore.js:1331:47` OptionalChaining -> `callbackQuery.message.message_thread_id` — ran against 1 covering test(s), none caught it
+- `out/tools/telegramFrontDeskBotCore.js:1333:12` StringLiteral -> `""` — ran against 4 covering test(s), none caught it
+- `out/tools/telegramFrontDeskBotCore.js:1345:9` ConditionalExpression -> `false` — ran against 22 covering test(s), none caught it
+- `out/tools/telegramFrontDeskBotCore.js:1345:29` StringLiteral -> `""` — ran against 22 covering test(s), none caught it
+- `out/tools/telegramFrontDeskBotCore.js:1376:44` StringLiteral -> `""` — ran against 3 covering test(s), none caught it
+- `out/tools/telegramFrontDeskBotCore.js:1409:9` ConditionalExpression -> `false` — ran against 1 covering test(s), none caught it
+- `out/tools/telegramFrontDeskBotCore.js:1453:16` StringLiteral -> `""` — ran against 2 covering test(s), none caught it
+- `out/tools/telegramFrontDeskBotCore.js:1462:20` ConditionalExpression -> `false` — ran against 15 covering test(s), none caught it
+- `out/tools/telegramFrontDeskBotCore.js:1462:43` BooleanLiteral -> `false` — ran against 15 covering test(s), none caught it
+- `out/tools/telegramFrontDeskBotCore.js:1465:27` ObjectLiteral -> `{}` — ran against 15 covering test(s), none caught it
+- `out/tools/telegramFrontDeskBotCore.js:1488:9` LogicalOperator -> `!adapters.readRoleTopicMap && !adapters.redirectToRole` — ran against 110 covering test(s), none caught it
+- `out/tools/telegramFrontDeskBotCore.js:1497:12` ConditionalExpression -> `true` — ran against 12 covering test(s), none caught it
+- `out/tools/telegramFrontDeskBotCore.js:1524:58` StringLiteral -> `""` — ran against 1 covering test(s), none caught it
+- `out/tools/telegramFrontDeskBotCore.js:1535:16` StringLiteral -> `""` — ran against 1 covering test(s), none caught it
+- `out/tools/telegramFrontDeskBotCore.js:1551:15` OptionalChaining -> `adapters.setPendingControlConfirm({   kind: 'stop-modes' })` — ran against 2 covering test(s), none caught it
+- `out/tools/telegramFrontDeskBotCore.js:1552:15` OptionalChaining -> `adapters.postControlStopModesMenu()` — ran against 2 covering test(s), none caught it
+- `out/tools/telegramFrontDeskBotCore.js:1555:15` OptionalChaining -> `adapters.setPendingControlConfirm({   kind: 'restart-confirm' })` — ran against 1 covering test(s), none caught it
+- `out/tools/telegramFrontDeskBotCore.js:1556:15` OptionalChaining -> `adapters.postControlRestartConfirm()` — ran against 1 covering test(s), none caught it
+- `out/tools/telegramFrontDeskBotCore.js:1559:15` OptionalChaining -> `adapters.setPendingControlConfirm(undefined)` — ran against 1 covering test(s), none caught it
+- `out/tools/telegramFrontDeskBotCore.js:1560:15` OptionalChaining -> `adapters.postControlCancelled()` — ran against 1 covering test(s), none caught it
+- `out/tools/telegramFrontDeskBotCore.js:1563:15` OptionalChaining -> `adapters.setPendingControlConfirm(undefined)` — ran against 1 covering test(s), none caught it
+- `out/tools/telegramFrontDeskBotCore.js:1564:15` OptionalChaining -> `adapters.executeEmergencyStop()` — ran against 1 covering test(s), none caught it
+- `out/tools/telegramFrontDeskBotCore.js:1567:15` OptionalChaining -> `adapters.setPendingControlConfirm(undefined)` — ran against 1 covering test(s), none caught it
+- `out/tools/telegramFrontDeskBotCore.js:1568:15` OptionalChaining -> `adapters.executeDrainStop()` — ran against 1 covering test(s), none caught it
+- `out/tools/telegramFrontDeskBotCore.js:1571:15` OptionalChaining -> `adapters.setPendingControlConfirm(undefined)` — ran against 1 covering test(s), none caught it
+- `out/tools/telegramFrontDeskBotCore.js:1572:15` OptionalChaining -> `adapters.executeRestart()` — ran against 1 covering test(s), none caught it
+- `out/tools/telegramFrontDeskBotCore.js:1575:15` OptionalChaining -> `adapters.postControlPauseMenu()` — ran against 1 covering test(s), none caught it
+- `out/tools/telegramFrontDeskBotCore.js:1578:15` OptionalChaining -> `adapters.resumeNow()` — ran against 1 covering test(s), none caught it
+- `out/tools/telegramFrontDeskBotCore.js:1586:15` OptionalChaining -> `adapters.applyPause(decision.durationMs)` — ran against 2 covering test(s), none caught it
+- `out/tools/telegramFrontDeskBotCore.js:1589:9` ConditionalExpression -> `false` — ran against 8 covering test(s), none caught it
+- `out/tools/telegramFrontDeskBotCore.js:1589:29` StringLiteral -> `""` — ran against 8 covering test(s), none caught it
+- `out/tools/telegramFrontDeskBotCore.js:1593:9` ConditionalExpression -> `false` — ran against 8 covering test(s), none caught it
+- `out/tools/telegramFrontDeskBotCore.js:1593:29` StringLiteral -> `""` — ran against 8 covering test(s), none caught it
+- `out/tools/telegramFrontDeskBotCore.js:1605:35` OptionalChaining -> `adapters.getPendingControlConfirm()` — ran against 14 covering test(s), none caught it
+- `out/tools/telegramFrontDeskBotCore.js:1606:31` OptionalChaining -> `adapters.getPauseState()` — ran against 14 covering test(s), none caught it
+- `out/tools/telegramFrontDeskBotCore.js:1626:12` ConditionalExpression -> `false` — ran against 7 covering test(s), none caught it
+- `out/tools/telegramFrontDeskBotCore.js:1646:9` ConditionalExpression -> `false` — ran against 6 covering test(s), none caught it
+- `out/tools/telegramFrontDeskBotCore.js:1649:27` StringLiteral -> `""` — ran against 6 covering test(s), none caught it
+- `out/tools/telegramFrontDeskBotCore.js:1649:64` OptionalChaining -> `update.message?.from.id` — ran against 6 covering test(s), none caught it
+- `out/tools/telegramFrontDeskBotCore.js:1649:64` OptionalChaining -> `update.message.from` — ran against 6 covering test(s), none caught it
+- `out/tools/telegramFrontDeskBotCore.js:1668:38` OptionalChaining -> `callbackQuery.data.startsWith` — ran against 10 covering test(s), none caught it
+- `out/tools/telegramFrontDeskBotCore.js:1675:32` OptionalChaining -> `callbackQuery.from.id` — ran against 9 covering test(s), none caught it
+- `out/tools/telegramFrontDeskBotCore.js:1676:18` OptionalChaining -> `callbackQuery.message.message_thread_id` — ran against 9 covering test(s), none caught it
+- `out/tools/telegramFrontDeskBotCore.js:1681:16` StringLiteral -> `""` — ran against 1 covering test(s), none caught it
+- `out/tools/telegramFrontDeskBotCore.js:1685:16` StringLiteral -> `""` — ran against 1 covering test(s), none caught it
+- `out/tools/telegramFrontDeskBotCore.js:1709:16` StringLiteral -> `""` — ran against 1 covering test(s), none caught it
+- `out/tools/telegramFrontDeskBotCore.js:1711:35` OptionalChaining -> `adapters.getPendingAgentQuestionThread()` — ran against 3 covering test(s), none caught it
+- `out/tools/telegramFrontDeskBotCore.js:1738:16` StringLiteral -> `""` — ran against 1 covering test(s), none caught it
+- `out/tools/telegramFrontDeskBotCore.js:1740:9` ConditionalExpression -> `false` — ran against 2 covering test(s), none caught it
+- `out/tools/telegramFrontDeskBotCore.js:1740:9` LogicalOperator -> `!adapters.handleOnboarderMessage && topicId === undefined` — ran against 2 covering test(s), none caught it
+- `out/tools/telegramFrontDeskBotCore.js:1740:45` ConditionalExpression -> `false` — ran against 2 covering test(s), none caught it
+- `out/tools/telegramFrontDeskBotCore.js:1785:12` ConditionalExpression -> `true` — ran against 173 covering test(s), none caught it
+- `out/tools/telegramFrontDeskBotCore.js:1791:9` ConditionalExpression -> `false` — ran against 173 covering test(s), none caught it
+- `out/tools/telegramFrontDeskBotCore.js:1791:49` BlockStatement -> `{}` — ran against 158 covering test(s), none caught it
+- `out/tools/telegramFrontDeskBotCore.js:1813:66` BlockStatement -> `{}` — ran against 110 covering test(s), none caught it
+- `out/tools/telegramFrontDeskBotCore.js:1814:9` ConditionalExpression -> `true` — ran against 110 covering test(s), none caught it
+- `out/tools/telegramFrontDeskBotCore.js:1833:68` ConditionalExpression -> `false` — ran against 62 covering test(s), none caught it
+- `out/tools/telegramFrontDeskBotCore.js:1833:88` StringLiteral -> `""` — ran against 62 covering test(s), none caught it
+- `out/tools/telegramFrontDeskBotCore.js:1834:30` OptionalChaining -> `update.message.photo` — ran against 42 covering test(s), none caught it
+- `out/tools/telegramFrontDeskBotCore.js:1835:16` ObjectLiteral -> `{}` — ran against 71 covering test(s), none caught it
+- `out/tools/telegramFrontDeskBotCore.js:1835:24` StringLiteral -> `""` — ran against 71 covering test(s), none caught it
+- `out/tools/telegramFrontDeskBotCore.js:1838:9` ConditionalExpression -> `true` — ran against 3 covering test(s), none caught it
+- `out/tools/telegramFrontDeskBotCore.js:1839:9` OptionalChaining -> `adapters.logDropAudit(formatPhotoPersistFailureAuditLine(update.update_id, outcome.reason)` — ran against 1 covering test(s), none caught it
+- `out/tools/telegramFrontDeskBotCore.js:1849:9` ConditionalExpression -> `false` — ran against 110 covering test(s), none caught it
+- `out/tools/telegramFrontDeskBotCore.js:1956:9` StringLiteral -> `""` — ran against 12 covering test(s), none caught it
+- `out/tools/telegramFrontDeskBotCore.js:1970:37` StringLiteral -> `""` — ran against whole suite, 920 tests, none caught it
+- `out/tools/telegramFrontDeskBotCore.js:2066:32` ConditionalExpression -> `false` — ran against 10 covering test(s), none caught it
+- `out/tools/telegramFrontDeskBotCore.js:2067:31` LogicalOperator -> `offsetAdvanced && result.failed === 0` — ran against 10 covering test(s), none caught it
+- `out/tools/telegramFrontDeskBotCore.js:2067:49` ConditionalExpression -> `false` — ran against 9 covering test(s), none caught it
+- `out/tools/telegramFrontDeskBotCore.js:2071:30` BooleanLiteral -> `true` — ran against 10 covering test(s), none caught it
+- `out/tools/telegramFrontDeskBotCore.js:2117:68` StringLiteral -> `"Stryker was here!"` — ran against 4 covering test(s), none caught it
+- `out/tools/telegramFrontDeskBotCore.js:2118:13` StringLiteral -> ```` — ran against 7 covering test(s), none caught it
+- `out/tools/telegramFrontDeskBotCore.js:2119:29` ConditionalExpression -> `true` — ran against 7 covering test(s), none caught it
+- `out/tools/telegramFrontDeskBotCore.js:2119:29` ConditionalExpression -> `false` — ran against 7 covering test(s), none caught it
+- `out/tools/telegramFrontDeskBotCore.js:2119:79` StringLiteral -> `""` — ran against 3 covering test(s), none caught it
+- `out/tools/telegramFrontDeskBotCore.js:2119:88` StringLiteral -> `""` — ran against 3 covering test(s), none caught it
+- `out/tools/telegramFrontDeskBotCore.js:2119:105` StringLiteral -> `""` — ran against 4 covering test(s), none caught it
+- `out/tools/telegramFrontDeskBotCore.js:2173:12` ConditionalExpression -> `true` — ran against 2 covering test(s), none caught it
+- `out/tools/telegramFrontDeskBotCore.js:2223:9` ConditionalExpression -> `true` — ran against 8 covering test(s), none caught it
+- `out/tools/telegramFrontDeskBotCore.js:2223:9` EqualityOperator -> `cycle.delayMs >= 0` — ran against 8 covering test(s), none caught it
+- `out/tools/telegramFrontDeskBotCore.js:2241:9` OptionalChaining -> `onFault(name, error)` — ran against 2 covering test(s), none caught it
+- `out/tools/telegramFrontDeskBotCore.js:2256:20` MethodExpression -> `buffer` — ran against 34 covering test(s), none caught it
+- `out/tools/telegramFrontDeskBotCore.js:2260:63` OptionalChaining -> `dataLine.slice` — ran against 34 covering test(s), none caught it
+- `out/tools/telegramFrontDeskBotCore.js:2275:9` LogicalOperator -> `(!adapters.isVoiceOriginatedTurn \ — ran against !adapters.synthesizeVoice) && !adapters.sendVoice` covering test(s), none caught it
+- `out/tools/telegramFrontDeskBotCore.js:2275:9` ConditionalExpression -> `false` — ran against 15 covering test(s), none caught it
+- `out/tools/telegramFrontDeskBotCore.js:2275:9` LogicalOperator -> `!adapters.isVoiceOriginatedTurn && !adapters.synthesizeVoice` — ran against 15 covering test(s), none caught it
+- `out/tools/telegramFrontDeskBotCore.js:2320:30` StringLiteral -> `"Stryker was here!"` — ran against 6 covering test(s), none caught it
+- `out/tools/telegramFrontDeskBotCore.js:2322:74` StringLiteral -> `"Stryker was here!"` — ran against 4 covering test(s), none caught it
+- `out/tools/telegramFrontDeskBotCore.js:2323:23` ArithmeticOperator -> `index - 1` — ran against 6 covering test(s), none caught it
+- `out/tools/telegramFrontDeskBotCore.js:2325:16` StringLiteral -> `"Stryker was here!"` — ran against 6 covering test(s), none caught it
+- `out/tools/telegramFrontDeskBotCore.js:2326:23` StringLiteral -> `""` — ran against 6 covering test(s), none caught it
+- `out/tools/telegramFrontDeskBotCore.js:2383:27` OptionalChaining -> `adapters.agentQuestionsTopicId()` — ran against 4 covering test(s), none caught it
+- `out/tools/telegramFrontDeskBotCore.js:2401:27` OptionalChaining -> `adapters.roleTopicIdFor(role)` — ran against 9 covering test(s), none caught it
+- `out/tools/telegramTopicDecisions.js:32:20` OptionalChaining -> `update.message?.from.id` — ran against 144 covering test(s), none caught it
+- `out/tools/telegramTopicDecisions.js:32:20` OptionalChaining -> `update.message.from` — ran against 144 covering test(s), none caught it
+- `out/tools/telegramTopicDecisions.js:33:12` ConditionalExpression -> `true` — ran against 144 covering test(s), none caught it
+- `out/tools/telegramTopicDecisions.js:38:26` OptionalChaining -> `update.message?.chat.id` — ran against 149 covering test(s), none caught it
+- `out/tools/telegramTopicDecisions.js:38:26` OptionalChaining -> `update.message.chat` — ran against 149 covering test(s), none caught it
+- `out/tools/telegramTopicDecisions.js:39:12` ConditionalExpression -> `true` — ran against 149 covering test(s), none caught it
+- `out/tools/telegramTopicDecisions.js:50:12` OptionalChaining -> `update.message.text` — ran against 134 covering test(s), none caught it
+- `out/tools/telegramTopicDecisions.js:50:36` OptionalChaining -> `update.message.caption` — ran against 29 covering test(s), none caught it
+- `out/tools/telegramTopicDecisions.js:53:31` StringLiteral -> `""` — ran against whole suite, 920 tests, none caught it
+- `out/tools/telegramTopicDecisions.js:96:19` MethodExpression -> `(liveTopicIdsNamedApprovals ?? []).filter(id => typeof id === 'number' && Number.isFinite(` — ran against 18 covering test(s), none caught it
+- `out/tools/telegramTopicDecisions.js:96:19` MethodExpression -> `liveTopicIdsNamedApprovals ?? []` — ran against 18 covering test(s), none caught it
+- `out/tools/telegramTopicDecisions.js:96:50` ArrayDeclaration -> `["Stryker was here"]` — ran against 14 covering test(s), none caught it
+- `out/tools/telegramTopicDecisions.js:97:25` ConditionalExpression -> `true` — ran against 3 covering test(s), none caught it
+- `out/tools/telegramTopicDecisions.js:97:25` LogicalOperator -> `typeof id === 'number' \ — ran against Number.isFinite(id)` covering test(s), none caught it
+- `out/tools/telegramTopicDecisions.js:97:25` ConditionalExpression -> `true` — ran against 3 covering test(s), none caught it
+- `out/tools/telegramTopicDecisions.js:98:15` ArrowFunction -> `() => undefined` — ran against 18 covering test(s), none caught it
+- `out/tools/telegramTopicDecisions.js:98:25` ArithmeticOperator -> `a + b` — ran against 2 covering test(s), none caught it
+- `out/tools/telegramTopicDecisions.js:140:33` StringLiteral -> `""` — ran against whole suite, 920 tests, none caught it
+- `out/tools/telegramTopicDecisions.js:141:33` StringLiteral -> `""` — ran against whole suite, 920 tests, none caught it
+- `out/tools/telegramTopicDecisions.js:150:90` ObjectLiteral -> `{}` — ran against 5 covering test(s), none caught it
+- `out/tools/telegramTopicDecisions.js:150:98` StringLiteral -> `""` — ran against 5 covering test(s), none caught it
+- `out/tools/telegramTopicDecisions.js:172:37` StringLiteral -> `""` — ran against whole suite, 920 tests, none caught it
+- `out/tools/telegramTopicDecisions.js:190:24` ConditionalExpression -> `true` — ran against 9 covering test(s), none caught it
+- `out/tools/telegramTopicDecisions.js:190:24` ConditionalExpression -> `false` — ran against 9 covering test(s), none caught it
+- `out/tools/telegramTopicDecisions.js:190:24` EqualityOperator -> `lastKnownTopicId === undefined` — ran against 9 covering test(s), none caught it
+- `out/tools/telegramTopicDecisions.js:191:43` ConditionalExpression -> `true` — ran against 3 covering test(s), none caught it
+
+## No-coverage mutants (732), one line each — real coverage gaps, not "survivors" in Stryker's own sense but reported for completeness
+- `out/tools/telegram-front-desk-bot.js:190:91` BlockStatement -> `{}` — no test in this row's include set executes this code
+- `out/tools/telegram-front-desk-bot.js:249:89` BlockStatement -> `{}` — no test in this row's include set executes this code
+- `out/tools/telegram-front-desk-bot.js:293:49` BlockStatement -> `{}` — no test in this row's include set executes this code
+- `out/tools/telegram-front-desk-bot.js:294:34` StringLiteral -> `""` — no test in this row's include set executes this code
+- `out/tools/telegram-front-desk-bot.js:294:49` StringLiteral -> `""` — no test in this row's include set executes this code
+- `out/tools/telegram-front-desk-bot.js:294:61` StringLiteral -> `""` — no test in this row's include set executes this code
+- `out/tools/telegram-front-desk-bot.js:296:50` BlockStatement -> `{}` — no test in this row's include set executes this code
+- `out/tools/telegram-front-desk-bot.js:297:91` ObjectLiteral -> `{}` — no test in this row's include set executes this code
+- `out/tools/telegram-front-desk-bot.js:374:13` ConditionalExpression -> `true` — no test in this row's include set executes this code
+- `out/tools/telegram-front-desk-bot.js:374:13` ConditionalExpression -> `false` — no test in this row's include set executes this code
+- `out/tools/telegram-front-desk-bot.js:374:13` EqualityOperator -> `fromMap === undefined` — no test in this row's include set executes this code
+- `out/tools/telegram-front-desk-bot.js:374:36` BlockStatement -> `{}` — no test in this row's include set executes this code
+- `out/tools/telegram-front-desk-bot.js:410:44` BlockStatement -> `{}` — no test in this row's include set executes this code
+- `out/tools/telegram-front-desk-bot.js:415:111` ArrayDeclaration -> `[]` — no test in this row's include set executes this code
+- `out/tools/telegram-front-desk-bot.js:416:9` ConditionalExpression -> `true` — no test in this row's include set executes this code
+- `out/tools/telegram-front-desk-bot.js:416:9` ConditionalExpression -> `false` — no test in this row's include set executes this code
+- `out/tools/telegram-front-desk-bot.js:416:9` EqualityOperator -> `Object.keys(scrubbed).length === Object.keys(raw).length` — no test in this row's include set executes this code
+- `out/tools/telegram-front-desk-bot.js:416:67` BlockStatement -> `{}` — no test in this row's include set executes this code
+- `out/tools/telegram-front-desk-bot.js:428:47` BlockStatement -> `{}` — no test in this row's include set executes this code
+- `out/tools/telegram-front-desk-bot.js:429:34` StringLiteral -> `""` — no test in this row's include set executes this code
+- `out/tools/telegram-front-desk-bot.js:429:49` StringLiteral -> `""` — no test in this row's include set executes this code
+- `out/tools/telegram-front-desk-bot.js:429:61` StringLiteral -> `""` — no test in this row's include set executes this code
+- `out/tools/telegram-front-desk-bot.js:431:47` BlockStatement -> `{}` — no test in this row's include set executes this code
+- `out/tools/telegram-front-desk-bot.js:432:9` BlockStatement -> `{}` — no test in this row's include set executes this code
+- `out/tools/telegram-front-desk-bot.js:433:81` StringLiteral -> `""` — no test in this row's include set executes this code
+- `out/tools/telegram-front-desk-bot.js:435:11` BlockStatement -> `{}` — no test in this row's include set executes this code
+- `out/tools/telegram-front-desk-bot.js:439:57` BlockStatement -> `{}` — no test in this row's include set executes this code
+- `out/tools/telegram-front-desk-bot.js:440:70` ObjectLiteral -> `{}` — no test in this row's include set executes this code
+- `out/tools/telegram-front-desk-bot.js:440:83` BooleanLiteral -> `false` — no test in this row's include set executes this code
+- `out/tools/telegram-front-desk-bot.js:460:68` BlockStatement -> `{}` — no test in this row's include set executes this code
+- `out/tools/telegram-front-desk-bot.js:463:9` BooleanLiteral -> `existing` — no test in this row's include set executes this code
+- `out/tools/telegram-front-desk-bot.js:463:9` ConditionalExpression -> `true` — no test in this row's include set executes this code
+- `out/tools/telegram-front-desk-bot.js:463:9` ConditionalExpression -> `false` — no test in this row's include set executes this code
+- `out/tools/telegram-front-desk-bot.js:463:20` BlockStatement -> `{}` — no test in this row's include set executes this code
+- `out/tools/telegram-front-desk-bot.js:466:27` ObjectLiteral -> `{}` — no test in this row's include set executes this code
+- `out/tools/telegram-front-desk-bot.js:475:46` BlockStatement -> `{}` — no test in this row's include set executes this code
+- `out/tools/telegram-front-desk-bot.js:476:34` StringLiteral -> `""` — no test in this row's include set executes this code
+- `out/tools/telegram-front-desk-bot.js:476:49` StringLiteral -> `""` — no test in this row's include set executes this code
+- `out/tools/telegram-front-desk-bot.js:476:61` StringLiteral -> `""` — no test in this row's include set executes this code
+- `out/tools/telegram-front-desk-bot.js:478:46` BlockStatement -> `{}` — no test in this row's include set executes this code
+- `out/tools/telegram-front-desk-bot.js:479:9` BlockStatement -> `{}` — no test in this row's include set executes this code
+- `out/tools/telegram-front-desk-bot.js:480:88` StringLiteral -> `""` — no test in this row's include set executes this code
+- `out/tools/telegram-front-desk-bot.js:483:11` BlockStatement -> `{}` — no test in this row's include set executes this code
+- `out/tools/telegram-front-desk-bot.js:487:59` BlockStatement -> `{}` — no test in this row's include set executes this code
+- `out/tools/telegram-front-desk-bot.js:488:69` ObjectLiteral -> `{}` — no test in this row's include set executes this code
+- `out/tools/telegram-front-desk-bot.js:488:82` BooleanLiteral -> `false` — no test in this row's include set executes this code
+- `out/tools/telegram-front-desk-bot.js:489:87` ObjectLiteral -> `{}` — no test in this row's include set executes this code
+- `out/tools/telegram-front-desk-bot.js:498:37` BlockStatement -> `{}` — no test in this row's include set executes this code
+- `out/tools/telegram-front-desk-bot.js:499:34` StringLiteral -> `""` — no test in this row's include set executes this code
+- `out/tools/telegram-front-desk-bot.js:499:49` StringLiteral -> `""` — no test in this row's include set executes this code
+- `out/tools/telegram-front-desk-bot.js:499:61` StringLiteral -> `""` — no test in this row's include set executes this code
+- `out/tools/telegram-front-desk-bot.js:501:37` BlockStatement -> `{}` — no test in this row's include set executes this code
+- `out/tools/telegram-front-desk-bot.js:502:9` BlockStatement -> `{}` — no test in this row's include set executes this code
+- `out/tools/telegram-front-desk-bot.js:503:71` StringLiteral -> `""` — no test in this row's include set executes this code
+- `out/tools/telegram-front-desk-bot.js:505:11` BlockStatement -> `{}` — no test in this row's include set executes this code
+- `out/tools/telegram-front-desk-bot.js:509:45` BlockStatement -> `{}` — no test in this row's include set executes this code
+- `out/tools/telegram-front-desk-bot.js:604:81` BlockStatement -> `{}` — no test in this row's include set executes this code
+- `out/tools/telegram-front-desk-bot.js:605:9` BlockStatement -> `{}` — no test in this row's include set executes this code
+- `out/tools/telegram-front-desk-bot.js:606:33` StringLiteral -> ```` — no test in this row's include set executes this code
+- `out/tools/telegram-front-desk-bot.js:606:66` ObjectLiteral -> `{}` — no test in this row's include set executes this code
+- `out/tools/telegram-front-desk-bot.js:607:21` StringLiteral -> `""` — no test in this row's include set executes this code
+- `out/tools/telegram-front-desk-bot.js:608:22` ObjectLiteral -> `{}` — no test in this row's include set executes this code
+- `out/tools/telegram-front-desk-bot.js:608:40` StringLiteral -> `""` — no test in this row's include set executes this code
+- `out/tools/telegram-front-desk-bot.js:608:75` StringLiteral -> ```` — no test in this row's include set executes this code
+- `out/tools/telegram-front-desk-bot.js:609:34` ObjectLiteral -> `{}` — no test in this row's include set executes this code
+- `out/tools/telegram-front-desk-bot.js:609:56` StringLiteral -> `""` — no test in this row's include set executes this code
+- `out/tools/telegram-front-desk-bot.js:613:11` BlockStatement -> `{}` — no test in this row's include set executes this code
+- `out/tools/telegram-front-desk-bot.js:614:16` BooleanLiteral -> `true` — no test in this row's include set executes this code
+- `out/tools/telegram-front-desk-bot.js:619:68` BlockStatement -> `{}` — no test in this row's include set executes this code
+- `out/tools/telegram-front-desk-bot.js:620:9` BooleanLiteral -> `threadId.startsWith('hotfix-')` — no test in this row's include set executes this code
+- `out/tools/telegram-front-desk-bot.js:620:9` ConditionalExpression -> `true` — no test in this row's include set executes this code
+- `out/tools/telegram-front-desk-bot.js:620:9` ConditionalExpression -> `false` — no test in this row's include set executes this code
+- `out/tools/telegram-front-desk-bot.js:620:10` MethodExpression -> `threadId.endsWith('hotfix-')` — no test in this row's include set executes this code
+- `out/tools/telegram-front-desk-bot.js:620:30` StringLiteral -> `""` — no test in this row's include set executes this code
+- `out/tools/telegram-front-desk-bot.js:620:42` BlockStatement -> `{}` — no test in this row's include set executes this code
+- `out/tools/telegram-front-desk-bot.js:621:16` BooleanLiteral -> `true` — no test in this row's include set executes this code
+- `out/tools/telegram-front-desk-bot.js:623:20` MethodExpression -> `threadId` — no test in this row's include set executes this code
+- `out/tools/telegram-front-desk-bot.js:623:35` StringLiteral -> `""` — no test in this row's include set executes this code
+- `out/tools/telegram-front-desk-bot.js:624:9` BooleanLiteral -> `/^[0-9a-f]{7,40}$/i.test(commit)` — no test in this row's include set executes this code
+- `out/tools/telegram-front-desk-bot.js:624:9` ConditionalExpression -> `true` — no test in this row's include set executes this code
+- `out/tools/telegram-front-desk-bot.js:624:9` ConditionalExpression -> `false` — no test in this row's include set executes this code
+- `out/tools/telegram-front-desk-bot.js:624:10` Regex -> `/[0-9a-f]{7,40}$/i` — no test in this row's include set executes this code
+- `out/tools/telegram-front-desk-bot.js:624:10` Regex -> `/^[0-9a-f]{7,40}/i` — no test in this row's include set executes this code
+- `out/tools/telegram-front-desk-bot.js:624:10` Regex -> `/^[0-9a-f]$/i` — no test in this row's include set executes this code
+- `out/tools/telegram-front-desk-bot.js:624:10` Regex -> `/^[^0-9a-f]{7,40}$/i` — no test in this row's include set executes this code
+- `out/tools/telegram-front-desk-bot.js:624:44` BlockStatement -> `{}` — no test in this row's include set executes this code
+- `out/tools/telegram-front-desk-bot.js:625:16` BooleanLiteral -> `true` — no test in this row's include set executes this code
+- `out/tools/telegram-front-desk-bot.js:627:19` MethodExpression -> `answerLabel.toUpperCase()` — no test in this row's include set executes this code
+- `out/tools/telegram-front-desk-bot.js:629:9` ConditionalExpression -> `true` — no test in this row's include set executes this code
+- `out/tools/telegram-front-desk-bot.js:629:9` ConditionalExpression -> `false` — no test in this row's include set executes this code
+- `out/tools/telegram-front-desk-bot.js:629:9` LogicalOperator -> `(lower.includes('waive') \ — no test in this row's include set executes this code
+- `out/tools/telegram-front-desk-bot.js:629:9` ConditionalExpression -> `false` — no test in this row's include set executes this code
+- `out/tools/telegram-front-desk-bot.js:629:9` LogicalOperator -> `(lower.includes('waive') \ — no test in this row's include set executes this code
+- `out/tools/telegram-front-desk-bot.js:629:9` ConditionalExpression -> `false` — no test in this row's include set executes this code
+- `out/tools/telegram-front-desk-bot.js:629:9` LogicalOperator -> `(lower.includes('waive') \ — no test in this row's include set executes this code
+- `out/tools/telegram-front-desk-bot.js:629:9` ConditionalExpression -> `false` — no test in this row's include set executes this code
+- `out/tools/telegram-front-desk-bot.js:629:9` LogicalOperator -> `lower.includes('waive') && lower === 'no'` — no test in this row's include set executes this code
+- `out/tools/telegram-front-desk-bot.js:629:24` StringLiteral -> `""` — no test in this row's include set executes this code
+- `out/tools/telegram-front-desk-bot.js:629:36` ConditionalExpression -> `false` — no test in this row's include set executes this code
+- `out/tools/telegram-front-desk-bot.js:629:36` EqualityOperator -> `lower !== 'no'` — no test in this row's include set executes this code
+- `out/tools/telegram-front-desk-bot.js:629:46` StringLiteral -> `""` — no test in this row's include set executes this code
+- `out/tools/telegram-front-desk-bot.js:629:54` MethodExpression -> `lower.endsWith('no ')` — no test in this row's include set executes this code
+- `out/tools/telegram-front-desk-bot.js:629:71` StringLiteral -> `""` — no test in this row's include set executes this code
+- `out/tools/telegram-front-desk-bot.js:629:81` MethodExpression -> `lower.endsWith('n —')` — no test in this row's include set executes this code
+- `out/tools/telegram-front-desk-bot.js:629:98` StringLiteral -> `""` — no test in this row's include set executes this code
+- `out/tools/telegram-front-desk-bot.js:629:108` MethodExpression -> `lower.endsWith('n -')` — no test in this row's include set executes this code
+- `out/tools/telegram-front-desk-bot.js:629:125` StringLiteral -> `""` — no test in this row's include set executes this code
+- `out/tools/telegram-front-desk-bot.js:629:133` BlockStatement -> `{}` — no test in this row's include set executes this code
+- `out/tools/telegram-front-desk-bot.js:630:20` StringLiteral -> `""` — no test in this row's include set executes this code
+- `out/tools/telegram-front-desk-bot.js:632:14` ConditionalExpression -> `true` — no test in this row's include set executes this code
+- `out/tools/telegram-front-desk-bot.js:632:14` ConditionalExpression -> `false` — no test in this row's include set executes this code
+- `out/tools/telegram-front-desk-bot.js:632:14` LogicalOperator -> `(lower.includes('certify') \ — no test in this row's include set executes this code
+- `out/tools/telegram-front-desk-bot.js:632:14` ConditionalExpression -> `false` — no test in this row's include set executes this code
+- `out/tools/telegram-front-desk-bot.js:632:14` LogicalOperator -> `(lower.includes('certify') \ — no test in this row's include set executes this code
+- `out/tools/telegram-front-desk-bot.js:632:14` ConditionalExpression -> `false` — no test in this row's include set executes this code
+- `out/tools/telegram-front-desk-bot.js:632:14` LogicalOperator -> `(lower.includes('certify') \ — no test in this row's include set executes this code
+- `out/tools/telegram-front-desk-bot.js:632:14` ConditionalExpression -> `false` — no test in this row's include set executes this code
+- `out/tools/telegram-front-desk-bot.js:632:14` LogicalOperator -> `(lower.includes('certify') \ — no test in this row's include set executes this code
+- `out/tools/telegram-front-desk-bot.js:632:14` ConditionalExpression -> `false` — no test in this row's include set executes this code
+- `out/tools/telegram-front-desk-bot.js:632:14` LogicalOperator -> `lower.includes('certify') && lower.includes('approve')` — no test in this row's include set executes this code
+- `out/tools/telegram-front-desk-bot.js:632:29` StringLiteral -> `""` — no test in this row's include set executes this code
+- `out/tools/telegram-front-desk-bot.js:632:58` StringLiteral -> `""` — no test in this row's include set executes this code
+- `out/tools/telegram-front-desk-bot.js:632:72` ConditionalExpression -> `false` — no test in this row's include set executes this code
+- `out/tools/telegram-front-desk-bot.js:632:72` EqualityOperator -> `lower !== 'yes'` — no test in this row's include set executes this code
+- `out/tools/telegram-front-desk-bot.js:632:82` StringLiteral -> `""` — no test in this row's include set executes this code
+- `out/tools/telegram-front-desk-bot.js:632:91` MethodExpression -> `lower.endsWith('yes ')` — no test in this row's include set executes this code
+- `out/tools/telegram-front-desk-bot.js:632:108` StringLiteral -> `""` — no test in this row's include set executes this code
+- `out/tools/telegram-front-desk-bot.js:632:119` MethodExpression -> `lower.endsWith('y —')` — no test in this row's include set executes this code
+- `out/tools/telegram-front-desk-bot.js:632:136` StringLiteral -> `""` — no test in this row's include set executes this code
+- `out/tools/telegram-front-desk-bot.js:632:146` MethodExpression -> `lower.endsWith('y -')` — no test in this row's include set executes this code
+- `out/tools/telegram-front-desk-bot.js:632:163` StringLiteral -> `""` — no test in this row's include set executes this code
+- `out/tools/telegram-front-desk-bot.js:632:171` BlockStatement -> `{}` — no test in this row's include set executes this code
+- `out/tools/telegram-front-desk-bot.js:633:20` StringLiteral -> `""` — no test in this row's include set executes this code
+- `out/tools/telegram-front-desk-bot.js:635:9` BooleanLiteral -> `decision` — no test in this row's include set executes this code
+- `out/tools/telegram-front-desk-bot.js:635:9` ConditionalExpression -> `true` — no test in this row's include set executes this code
+- `out/tools/telegram-front-desk-bot.js:635:9` ConditionalExpression -> `false` — no test in this row's include set executes this code
+- `out/tools/telegram-front-desk-bot.js:635:20` BlockStatement -> `{}` — no test in this row's include set executes this code
+- `out/tools/telegram-front-desk-bot.js:636:16` BooleanLiteral -> `true` — no test in this row's include set executes this code
+- `out/tools/telegram-front-desk-bot.js:638:9` BlockStatement -> `{}` — no test in this row's include set executes this code
+- `out/tools/telegram-front-desk-bot.js:639:43` StringLiteral -> `""` — no test in this row's include set executes this code
+- `out/tools/telegram-front-desk-bot.js:639:57` StringLiteral -> `""` — no test in this row's include set executes this code
+- `out/tools/telegram-front-desk-bot.js:639:68` StringLiteral -> `""` — no test in this row's include set executes this code
+- `out/tools/telegram-front-desk-bot.js:640:55` StringLiteral -> `""` — no test in this row's include set executes this code
+- `out/tools/telegram-front-desk-bot.js:640:61` ArrayDeclaration -> `[]` — no test in this row's include set executes this code
+- `out/tools/telegram-front-desk-bot.js:640:79` StringLiteral -> `""` — no test in this row's include set executes this code
+- `out/tools/telegram-front-desk-bot.js:640:110` ObjectLiteral -> `{}` — no test in this row's include set executes this code
+- `out/tools/telegram-front-desk-bot.js:640:122` StringLiteral -> `""` — no test in this row's include set executes this code
+- `out/tools/telegram-front-desk-bot.js:641:16` ConditionalExpression -> `true` — no test in this row's include set executes this code
+- `out/tools/telegram-front-desk-bot.js:641:16` ConditionalExpression -> `false` — no test in this row's include set executes this code
+- `out/tools/telegram-front-desk-bot.js:641:16` EqualityOperator -> `result.status !== 0` — no test in this row's include set executes this code
+- `out/tools/telegram-front-desk-bot.js:643:11` BlockStatement -> `{}` — no test in this row's include set executes this code
+- `out/tools/telegram-front-desk-bot.js:644:16` BooleanLiteral -> `true` — no test in this row's include set executes this code
+- `out/tools/telegram-front-desk-bot.js:647:106` BlockStatement -> `{}` — no test in this row's include set executes this code
+- `out/tools/telegram-front-desk-bot.js:648:9` ConditionalExpression -> `true` — no test in this row's include set executes this code
+- `out/tools/telegram-front-desk-bot.js:648:9` ConditionalExpression -> `false` — no test in this row's include set executes this code
+- `out/tools/telegram-front-desk-bot.js:648:9` MethodExpression -> `subjectId.endsWith('hotfix-')` — no test in this row's include set executes this code
+- `out/tools/telegram-front-desk-bot.js:648:30` StringLiteral -> `""` — no test in this row's include set executes this code
+- `out/tools/telegram-front-desk-bot.js:648:42` BlockStatement -> `{}` — no test in this row's include set executes this code
+- `out/tools/telegram-front-desk-bot.js:775:108` StringLiteral -> `""` — no test in this row's include set executes this code
+- `out/tools/telegram-front-desk-bot.js:815:78` BlockStatement -> `{}` — no test in this row's include set executes this code
+- `out/tools/telegram-front-desk-bot.js:826:110` StringLiteral -> `""` — no test in this row's include set executes this code
+- `out/tools/telegram-front-desk-bot.js:838:50` BlockStatement -> `{}` — no test in this row's include set executes this code
+- `out/tools/telegram-front-desk-bot.js:839:13` ConditionalExpression -> `true` — no test in this row's include set executes this code
+- `out/tools/telegram-front-desk-bot.js:839:13` ConditionalExpression -> `false` — no test in this row's include set executes this code
+- `out/tools/telegram-front-desk-bot.js:839:13` LogicalOperator -> `typeof value === 'number' \ — no test in this row's include set executes this code
+- `out/tools/telegram-front-desk-bot.js:839:13` ConditionalExpression -> `true` — no test in this row's include set executes this code
+- `out/tools/telegram-front-desk-bot.js:839:13` EqualityOperator -> `typeof value !== 'number'` — no test in this row's include set executes this code
+- `out/tools/telegram-front-desk-bot.js:839:30` StringLiteral -> `""` — no test in this row's include set executes this code
+- `out/tools/telegram-front-desk-bot.js:839:66` BlockStatement -> `{}` — no test in this row's include set executes this code
+- `out/tools/telegram-front-desk-bot.js:845:34` BlockStatement -> `{}` — no test in this row's include set executes this code
+- `out/tools/telegram-front-desk-bot.js:850:13` ConditionalExpression -> `false` — no test in this row's include set executes this code
+- `out/tools/telegram-front-desk-bot.js:850:13` EqualityOperator -> `subject !== telegramFrontDeskBotCore_1.BACKLOG_SUBJECT_ID` — no test in this row's include set executes this code
+- `out/tools/telegram-front-desk-bot.js:851:13` ConditionalExpression -> `false` — no test in this row's include set executes this code
+- `out/tools/telegram-front-desk-bot.js:851:13` EqualityOperator -> `subject !== telegramFrontDeskBotCore_1.RECERT_SUBJECT_ID` — no test in this row's include set executes this code
+- `out/tools/telegram-front-desk-bot.js:852:13` ConditionalExpression -> `false` — no test in this row's include set executes this code
+- `out/tools/telegram-front-desk-bot.js:852:13` EqualityOperator -> `subject !== telegramFrontDeskBotCore_1.AGENT_QUESTIONS_SUBJECT_ID` — no test in this row's include set executes this code
+- `out/tools/telegram-front-desk-bot.js:853:13` ConditionalExpression -> `false` — no test in this row's include set executes this code
+- `out/tools/telegram-front-desk-bot.js:853:13` EqualityOperator -> `subject !== telegramFrontDeskBotCore_1.CONTROL_SUBJECT_ID` — no test in this row's include set executes this code
+- `out/tools/telegram-front-desk-bot.js:854:13` ConditionalExpression -> `false` — no test in this row's include set executes this code
+- `out/tools/telegram-front-desk-bot.js:854:13` EqualityOperator -> `subject !== telegramFrontDeskBotCore_1.BABYSITTER_SUBJECT_ID` — no test in this row's include set executes this code
+- `out/tools/telegram-front-desk-bot.js:871:71` BlockStatement -> `{}` — no test in this row's include set executes this code
+- `out/tools/telegram-front-desk-bot.js:892:104` StringLiteral -> `""` — no test in this row's include set executes this code
+- `out/tools/telegram-front-desk-bot.js:914:121` StringLiteral -> `""` — no test in this row's include set executes this code
+- `out/tools/telegram-front-desk-bot.js:935:112` StringLiteral -> `""` — no test in this row's include set executes this code
+- `out/tools/telegram-front-desk-bot.js:1018:106` StringLiteral -> `""` — no test in this row's include set executes this code
+- `out/tools/telegram-front-desk-bot.js:1039:106` StringLiteral -> `""` — no test in this row's include set executes this code
+- `out/tools/telegram-front-desk-bot.js:1056:68` BlockStatement -> `{}` — no test in this row's include set executes this code
+- `out/tools/telegram-front-desk-bot.js:1057:30` StringLiteral -> ```` — no test in this row's include set executes this code
+- `out/tools/telegram-front-desk-bot.js:1057:98` LogicalOperator -> `created.error && 'no messageThreadId returned'` — no test in this row's include set executes this code
+- `out/tools/telegram-front-desk-bot.js:1057:115` StringLiteral -> `""` — no test in this row's include set executes this code
+- `out/tools/telegram-front-desk-bot.js:1099:42` StringLiteral -> `""` — no test in this row's include set executes this code
+- `out/tools/telegram-front-desk-bot.js:1112:36` BlockStatement -> `{}` — no test in this row's include set executes this code
+- `out/tools/telegram-front-desk-bot.js:1367:106` StringLiteral -> `""` — no test in this row's include set executes this code
+- `out/tools/telegram-front-desk-bot.js:1434:64` StringLiteral -> `"Stryker was here!"` — no test in this row's include set executes this code
+- `out/tools/telegram-front-desk-bot.js:1442:40` BlockStatement -> `{}` — no test in this row's include set executes this code
+- `out/tools/telegram-front-desk-bot.js:1443:30` StringLiteral -> ```` — no test in this row's include set executes this code
+- `out/tools/telegram-front-desk-bot.js:1443:90` LogicalOperator -> `result.reason && 'unknown'` — no test in this row's include set executes this code
+- `out/tools/telegram-front-desk-bot.js:1443:107` StringLiteral -> `""` — no test in this row's include set executes this code
+- `out/tools/telegram-front-desk-bot.js:1444:16` ObjectLiteral -> `{}` — no test in this row's include set executes this code
+- `out/tools/telegram-front-desk-bot.js:1444:24` StringLiteral -> `""` — no test in this row's include set executes this code
+- `out/tools/telegram-front-desk-bot.js:1444:47` LogicalOperator -> `result.reason && 'unknown'` — no test in this row's include set executes this code
+- `out/tools/telegram-front-desk-bot.js:1444:64` StringLiteral -> `""` — no test in this row's include set executes this code
+- `out/tools/telegram-front-desk-bot.js:1628:9` StringLiteral -> `"Stryker was here!"` — no test in this row's include set executes this code
+- `out/tools/telegram-front-desk-bot.js:1648:63` ObjectLiteral -> `{}` — no test in this row's include set executes this code
+- `out/tools/telegram-front-desk-bot.js:1648:71` StringLiteral -> `""` — no test in this row's include set executes this code
+- `out/tools/telegram-front-desk-bot.js:1658:76` BlockStatement -> `{}` — no test in this row's include set executes this code
+- `out/tools/telegram-front-desk-bot.js:1659:9` BlockStatement -> `{}` — no test in this row's include set executes this code
+- `out/tools/telegram-front-desk-bot.js:1774:11` BlockStatement -> `{}` — no test in this row's include set executes this code
+- `out/tools/telegram-front-desk-bot.js:1787:17` BlockStatement -> `{}` — no test in this row's include set executes this code
+- `out/tools/telegram-front-desk-bot.js:1788:23` StringLiteral -> ```` — no test in this row's include set executes this code
+- `out/tools/telegram-front-desk-bot.js:1809:81` StringLiteral -> `""` — no test in this row's include set executes this code
+- `out/tools/telegram-front-desk-bot.js:1813:80` StringLiteral -> `""` — no test in this row's include set executes this code
+- `out/tools/telegram-front-desk-bot.js:1938:105` StringLiteral -> ```` — no test in this row's include set executes this code
+- `out/tools/telegram-front-desk-bot.js:1964:46` StringLiteral -> `""` — no test in this row's include set executes this code
+- `out/tools/telegram-front-desk-bot.js:1973:105` ArrowFunction -> `() => undefined` — no test in this row's include set executes this code
+- `out/tools/telegram-front-desk-bot.js:2034:16` BlockStatement -> `{}` — no test in this row's include set executes this code
+- `out/tools/telegram-front-desk-bot.js:2035:16` StringLiteral -> `"Stryker was here!"` — no test in this row's include set executes this code
+- `out/tools/telegram-front-desk-bot.js:2037:35` StringLiteral -> `"Stryker was here!"` — no test in this row's include set executes this code
+- `out/tools/telegram-front-desk-bot.js:2110:129` ArrayDeclaration -> `[]` — no test in this row's include set executes this code
+- `out/tools/telegram-front-desk-bot.js:2113:75` BlockStatement -> `{}` — no test in this row's include set executes this code
+- `out/tools/telegram-front-desk-bot.js:2114:12` ObjectLiteral -> `{}` — no test in this row's include set executes this code
+- `out/tools/telegram-front-desk-bot.js:2115:33` ArrowFunction -> `() => undefined` — no test in this row's include set executes this code
+- `out/tools/telegram-front-desk-bot.js:2116:33` ArrowFunction -> `() => undefined` — no test in this row's include set executes this code
+- `out/tools/telegram-front-desk-bot.js:2117:66` BlockStatement -> `{}` — no test in this row's include set executes this code
+- `out/tools/telegram-front-desk-bot.js:2122:120` BlockStatement -> `{}` — no test in this row's include set executes this code
+- `out/tools/telegram-front-desk-bot.js:2123:30` MethodExpression -> `((0, swarmEnv_1.readSwarmEnvValue)(targetPath, 'SWARMFORGE_LETS_TALK_PROVIDER') \ — no test in this row's include set executes this code
+- `out/tools/telegram-front-desk-bot.js:2123:31` ConditionalExpression -> `true` — no test in this row's include set executes this code
+- `out/tools/telegram-front-desk-bot.js:2123:31` ConditionalExpression -> `false` — no test in this row's include set executes this code
+- `out/tools/telegram-front-desk-bot.js:2123:31` LogicalOperator -> `((0, swarmEnv_1.readSwarmEnvValue)(targetPath, 'SWARMFORGE_LETS_TALK_PROVIDER') \ — no test in this row's include set executes this code
+- `out/tools/telegram-front-desk-bot.js:2123:31` ConditionalExpression -> `false` — no test in this row's include set executes this code
+- `out/tools/telegram-front-desk-bot.js:2123:31` LogicalOperator -> `(0, swarmEnv_1.readSwarmEnvValue)(targetPath, 'SWARMFORGE_LETS_TALK_PROVIDER') && process.` — no test in this row's include set executes this code
+- `out/tools/telegram-front-desk-bot.js:2123:77` StringLiteral -> `""` — no test in this row's include set executes this code
+- `out/tools/telegram-front-desk-bot.js:2124:9` MethodExpression -> `process.env.SWARMFORGE_LETS_TALK_PROVIDER` — no test in this row's include set executes this code
+- `out/tools/telegram-front-desk-bot.js:2124:9` OptionalChaining -> `process.env.SWARMFORGE_LETS_TALK_PROVIDER.trim` — no test in this row's include set executes this code
+- `out/tools/telegram-front-desk-bot.js:2125:9` StringLiteral -> `"Stryker was here!"` — no test in this row's include set executes this code
+- `out/tools/telegram-front-desk-bot.js:2126:40` ConditionalExpression -> `true` — no test in this row's include set executes this code
+- `out/tools/telegram-front-desk-bot.js:2126:40` ConditionalExpression -> `false` — no test in this row's include set executes this code
+- `out/tools/telegram-front-desk-bot.js:2126:40` LogicalOperator -> `letsTalkProvider === '' && letsTalkProvider === 'cursor'` — no test in this row's include set executes this code
+- `out/tools/telegram-front-desk-bot.js:2126:40` ConditionalExpression -> `false` — no test in this row's include set executes this code
+- `out/tools/telegram-front-desk-bot.js:2126:40` EqualityOperator -> `letsTalkProvider !== ''` — no test in this row's include set executes this code
+- `out/tools/telegram-front-desk-bot.js:2126:61` StringLiteral -> `"Stryker was here!"` — no test in this row's include set executes this code
+- `out/tools/telegram-front-desk-bot.js:2126:67` ConditionalExpression -> `false` — no test in this row's include set executes this code
+- `out/tools/telegram-front-desk-bot.js:2126:67` EqualityOperator -> `letsTalkProvider !== 'cursor'` — no test in this row's include set executes this code
+- `out/tools/telegram-front-desk-bot.js:2126:88` StringLiteral -> `""` — no test in this row's include set executes this code
+- `out/tools/telegram-front-desk-bot.js:2127:12` ObjectLiteral -> `{}` — no test in this row's include set executes this code
+- `out/tools/telegram-front-desk-bot.js:2137:23` ArrowFunction -> `() => undefined` — no test in this row's include set executes this code
+- `out/tools/telegram-front-desk-bot.js:2138:24` ArrowFunction -> `() => undefined` — no test in this row's include set executes this code
+- `out/tools/telegram-front-desk-bot.js:2139:36` ArrowFunction -> `() => undefined` — no test in this row's include set executes this code
+- `out/tools/telegram-front-desk-bot.js:2140:33` BlockStatement -> `{}` — no test in this row's include set executes this code
+- `out/tools/telegram-front-desk-bot.js:2147:23` ArrowFunction -> `() => undefined` — no test in this row's include set executes this code
+- `out/tools/telegram-front-desk-bot.js:2148:26` ArrowFunction -> `() => undefined` — no test in this row's include set executes this code
+- `out/tools/telegram-front-desk-bot.js:2149:30` ArrowFunction -> `() => undefined` — no test in this row's include set executes this code
+- `out/tools/telegram-front-desk-bot.js:2150:24` ArrowFunction -> `() => undefined` — no test in this row's include set executes this code
+- `out/tools/telegram-front-desk-bot.js:2151:31` ArrowFunction -> `() => undefined` — no test in this row's include set executes this code
+- `out/tools/telegram-front-desk-bot.js:2152:54` BlockStatement -> `{}` — no test in this row's include set executes this code
+- `out/tools/telegram-front-desk-bot.js:2153:17` BooleanLiteral -> `cursorBridgeRoutingEnabled` — no test in this row's include set executes this code
+- `out/tools/telegram-front-desk-bot.js:2153:17` ConditionalExpression -> `true` — no test in this row's include set executes this code
+- `out/tools/telegram-front-desk-bot.js:2153:17` ConditionalExpression -> `false` — no test in this row's include set executes this code
+- `out/tools/telegram-front-desk-bot.js:2153:46` BlockStatement -> `{}` — no test in this row's include set executes this code
+- `out/tools/telegram-front-desk-bot.js:2154:24` BooleanLiteral -> `true` — no test in this row's include set executes this code
+- `out/tools/telegram-front-desk-bot.js:2156:17` BlockStatement -> `{}` — no test in this row's include set executes this code
+- `out/tools/telegram-front-desk-bot.js:2157:103` StringLiteral -> `""` — no test in this row's include set executes this code
+- `out/tools/telegram-front-desk-bot.js:2157:118` StringLiteral -> `""` — no test in this row's include set executes this code
+- `out/tools/telegram-front-desk-bot.js:2158:24` BooleanLiteral -> `false` — no test in this row's include set executes this code
+- `out/tools/telegram-front-desk-bot.js:2160:19` BlockStatement -> `{}` — no test in this row's include set executes this code
+- `out/tools/telegram-front-desk-bot.js:2161:24` BooleanLiteral -> `true` — no test in this row's include set executes this code
+- `out/tools/telegram-front-desk-bot.js:2164:31` ArrowFunction -> `() => undefined` — no test in this row's include set executes this code
+- `out/tools/telegram-front-desk-bot.js:2170:55` BlockStatement -> `{}` — no test in this row's include set executes this code
+- `out/tools/telegram-front-desk-bot.js:2171:87` ObjectLiteral -> `{}` — no test in this row's include set executes this code
+- `out/tools/telegram-front-desk-bot.js:2175:23` ArrowFunction -> `() => undefined` — no test in this row's include set executes this code
+- `out/tools/telegram-front-desk-bot.js:2177:20` ConditionalExpression -> `true` — no test in this row's include set executes this code
+- `out/tools/telegram-front-desk-bot.js:2177:20` ConditionalExpression -> `false` — no test in this row's include set executes this code
+- `out/tools/telegram-front-desk-bot.js:2177:20` EqualityOperator -> `outcome.kind !== 'not-mine'` — no test in this row's include set executes this code
+- `out/tools/telegram-front-desk-bot.js:2177:37` StringLiteral -> `""` — no test in this row's include set executes this code
+- `out/tools/telegram-front-desk-bot.js:2177:50` StringLiteral -> `""` — no test in this row's include set executes this code
+- `out/tools/telegram-front-desk-bot.js:2177:63` StringLiteral -> `""` — no test in this row's include set executes this code
+- `out/tools/telegram-front-desk-bot.js:2179:29` ArrowFunction -> `() => undefined` — no test in this row's include set executes this code
+- `out/tools/telegram-front-desk-bot.js:2180:26` ArrowFunction -> `() => undefined` — no test in this row's include set executes this code
+- `out/tools/telegram-front-desk-bot.js:2181:30` ArrowFunction -> `() => undefined` — no test in this row's include set executes this code
+- `out/tools/telegram-front-desk-bot.js:2182:30` ArrowFunction -> `() => undefined` — no test in this row's include set executes this code
+- `out/tools/telegram-front-desk-bot.js:2183:31` ArrowFunction -> `() => undefined` — no test in this row's include set executes this code
+- `out/tools/telegram-front-desk-bot.js:2184:27` ArrowFunction -> `() => undefined` — no test in this row's include set executes this code
+- `out/tools/telegram-front-desk-bot.js:2185:28` ArrowFunction -> `() => undefined` — no test in this row's include set executes this code
+- `out/tools/telegram-front-desk-bot.js:2186:31` ArrowFunction -> `() => undefined` — no test in this row's include set executes this code
+- `out/tools/telegram-front-desk-bot.js:2187:29` ArrowFunction -> `() => undefined` — no test in this row's include set executes this code
+- `out/tools/telegram-front-desk-bot.js:2188:35` ArrowFunction -> `() => undefined` — no test in this row's include set executes this code
+- `out/tools/telegram-front-desk-bot.js:2189:39` ArrowFunction -> `() => undefined` — no test in this row's include set executes this code
+- `out/tools/telegram-front-desk-bot.js:2199:32` ArrowFunction -> `() => undefined` — no test in this row's include set executes this code
+- `out/tools/telegram-front-desk-bot.js:2200:31` ArrowFunction -> `() => undefined` — no test in this row's include set executes this code
+- `out/tools/telegram-front-desk-bot.js:2206:31` ArrowFunction -> `() => undefined` — no test in this row's include set executes this code
+- `out/tools/telegram-front-desk-bot.js:2207:37` ArrowFunction -> `() => undefined` — no test in this row's include set executes this code
+- `out/tools/telegram-front-desk-bot.js:2208:32` ArrowFunction -> `() => undefined` — no test in this row's include set executes this code
+- `out/tools/telegram-front-desk-bot.js:2211:38` ArrowFunction -> `() => undefined` — no test in this row's include set executes this code
+- `out/tools/telegram-front-desk-bot.js:2214:31` ArrowFunction -> `() => undefined` — no test in this row's include set executes this code
+- `out/tools/telegram-front-desk-bot.js:2214:152` ArrowFunction -> `() => undefined` — no test in this row's include set executes this code
+- `out/tools/telegram-front-desk-bot.js:2215:31` ArrowFunction -> `() => undefined` — no test in this row's include set executes this code
+- `out/tools/telegram-front-desk-bot.js:2220:32` ArrowFunction -> `() => undefined` — no test in this row's include set executes this code
+- `out/tools/telegram-front-desk-bot.js:2221:31` ArrowFunction -> `() => undefined` — no test in this row's include set executes this code
+- `out/tools/telegram-front-desk-bot.js:2222:35` ArrowFunction -> `() => undefined` — no test in this row's include set executes this code
+- `out/tools/telegram-front-desk-bot.js:2223:36` ArrowFunction -> `() => undefined` — no test in this row's include set executes this code
+- `out/tools/telegram-front-desk-bot.js:2224:33` ArrowFunction -> `() => undefined` — no test in this row's include set executes this code
+- `out/tools/telegram-front-desk-bot.js:2225:49` BlockStatement -> `{}` — no test in this row's include set executes this code
+- `out/tools/telegram-front-desk-bot.js:2229:41` BlockStatement -> `{}` — no test in this row's include set executes this code
+- `out/tools/telegram-front-desk-bot.js:2233:28` ArrowFunction -> `() => undefined` — no test in this row's include set executes this code
+- `out/tools/telegram-front-desk-bot.js:2233:149` ArrowFunction -> `() => undefined` — no test in this row's include set executes this code
+- `out/tools/telegram-front-desk-bot.js:2234:33` ArrowFunction -> `() => undefined` — no test in this row's include set executes this code
+- `out/tools/telegram-front-desk-bot.js:2239:15` ObjectLiteral -> `{}` — no test in this row's include set executes this code
+- `out/tools/telegram-front-desk-bot.js:2240:34` ArrowFunction -> `() => undefined` — no test in this row's include set executes this code
+- `out/tools/telegram-front-desk-bot.js:2241:57` BlockStatement -> `{}` — no test in this row's include set executes this code
+- `out/tools/telegram-front-desk-bot.js:2243:40` BooleanLiteral -> `false` — no test in this row's include set executes this code
+- `out/tools/telegram-front-desk-bot.js:2249:50` BlockStatement -> `{}` — no test in this row's include set executes this code
+- `out/tools/telegram-front-desk-bot.js:2255:54` BlockStatement -> `{}` — no test in this row's include set executes this code
+- `out/tools/telegram-front-desk-bot.js:2261:30` ArrowFunction -> `() => undefined` — no test in this row's include set executes this code
+- `out/tools/telegram-front-desk-bot.js:2262:27` ArrowFunction -> `() => undefined` — no test in this row's include set executes this code
+- `out/tools/telegram-front-desk-bot.js:2263:25` ArrowFunction -> `() => undefined` — no test in this row's include set executes this code
+- `out/tools/telegram-front-desk-bot.js:2264:26` ArrowFunction -> `() => undefined` — no test in this row's include set executes this code
+- `out/tools/telegram-front-desk-bot.js:2264:147` ArrowFunction -> `() => undefined` — no test in this row's include set executes this code
+- `out/tools/telegram-front-desk-bot.js:2267:33` ArrowFunction -> `() => undefined` — no test in this row's include set executes this code
+- `out/tools/telegram-front-desk-bot.js:2267:59` ConditionalExpression -> `true` — no test in this row's include set executes this code
+- `out/tools/telegram-front-desk-bot.js:2267:59` ConditionalExpression -> `false` — no test in this row's include set executes this code
+- `out/tools/telegram-front-desk-bot.js:2267:59` EqualityOperator -> `readRoleAwaitingAnswer(targetPath, role) === undefined` — no test in this row's include set executes this code
+- `out/tools/telegram-front-desk-bot.js:2268:45` BlockStatement -> `{}` — no test in this row's include set executes this code
+- `out/tools/telegram-front-desk-bot.js:2272:32` ArrowFunction -> `() => undefined` — no test in this row's include set executes this code
+- `out/tools/telegram-front-desk-bot.js:2278:46` BlockStatement -> `{}` — no test in this row's include set executes this code
+- `out/tools/telegram-front-desk-bot.js:2283:42` BlockStatement -> `{}` — no test in this row's include set executes this code
+- `out/tools/telegram-front-desk-bot.js:2285:64` BlockStatement -> `{}` — no test in this row's include set executes this code
+- `out/tools/telegram-front-desk-bot.js:2286:21` ConditionalExpression -> `true` — no test in this row's include set executes this code
+- `out/tools/telegram-front-desk-bot.js:2286:21` ConditionalExpression -> `false` — no test in this row's include set executes this code
+- `out/tools/telegram-front-desk-bot.js:2286:21` EqualityOperator -> `entry.menuAnswer?.role !== role` — no test in this row's include set executes this code
+- `out/tools/telegram-front-desk-bot.js:2286:21` OptionalChaining -> `entry.menuAnswer.role` — no test in this row's include set executes this code
+- `out/tools/telegram-front-desk-bot.js:2286:54` BlockStatement -> `{}` — no test in this row's include set executes this code
+- `out/tools/telegram-front-desk-bot.js:2287:28` ObjectLiteral -> `{}` — no test in this row's include set executes this code
+- `out/tools/telegram-front-desk-bot.js:2287:39` BooleanLiteral -> `false` — no test in this row's include set executes this code
+- `out/tools/telegram-front-desk-bot.js:2290:20` ObjectLiteral -> `{}` — no test in this row's include set executes this code
+- `out/tools/telegram-front-desk-bot.js:2290:31` BooleanLiteral -> `true` — no test in this row's include set executes this code
+- `out/tools/telegram-front-desk-bot.js:2292:32` ArrowFunction -> `() => undefined` — no test in this row's include set executes this code
+- `out/tools/telegram-front-desk-bot.js:2293:40` ArrowFunction -> `() => undefined` — no test in this row's include set executes this code
+- `out/tools/telegram-front-desk-bot.js:2293:62` OptionalChaining -> `readAwaitingAnswer(targetPath).threadId` — no test in this row's include set executes this code
+- `out/tools/telegram-front-desk-bot.js:2294:28` ArrowFunction -> `() => undefined` — no test in this row's include set executes this code
+- `out/tools/telegram-front-desk-bot.js:2296:28` ArrowFunction -> `() => undefined` — no test in this row's include set executes this code
+- `out/tools/telegram-front-desk-bot.js:2297:25` ArrowFunction -> `() => undefined` — no test in this row's include set executes this code
+- `out/tools/telegram-front-desk-bot.js:2298:25` ArrowFunction -> `() => undefined` — no test in this row's include set executes this code
+- `out/tools/telegram-front-desk-bot.js:2298:161` ArrowFunction -> `() => undefined` — no test in this row's include set executes this code
+- `out/tools/telegram-front-desk-bot.js:2300:25` ArrowFunction -> `() => undefined` — no test in this row's include set executes this code
+- `out/tools/telegram-front-desk-bot.js:2301:35` ArrowFunction -> `() => undefined` — no test in this row's include set executes this code
+- `out/tools/telegram-front-desk-bot.js:2302:48` BlockStatement -> `{}` — no test in this row's include set executes this code
+- `out/tools/telegram-front-desk-bot.js:2306:24` ArrowFunction -> `() => undefined` — no test in this row's include set executes this code
+- `out/tools/telegram-front-desk-bot.js:2307:47` BlockStatement -> `{}` — no test in this row's include set executes this code
+- `out/tools/telegram-front-desk-bot.js:2309:72` StringLiteral -> `""` — no test in this row's include set executes this code
+- `out/tools/telegram-front-desk-bot.js:2311:48` BlockStatement -> `{}` — no test in this row's include set executes this code
+- `out/tools/telegram-front-desk-bot.js:2313:72` StringLiteral -> `""` — no test in this row's include set executes this code
+- `out/tools/telegram-front-desk-bot.js:2315:43` BlockStatement -> `{}` — no test in this row's include set executes this code
+- `out/tools/telegram-front-desk-bot.js:2317:72` StringLiteral -> `""` — no test in this row's include set executes this code
+- `out/tools/telegram-front-desk-bot.js:2319:43` BlockStatement -> `{}` — no test in this row's include set executes this code
+- `out/tools/telegram-front-desk-bot.js:2321:72` StringLiteral -> `""` — no test in this row's include set executes this code
+- `out/tools/telegram-front-desk-bot.js:2323:43` BlockStatement -> `{}` — no test in this row's include set executes this code
+- `out/tools/telegram-front-desk-bot.js:2325:77` StringLiteral -> `""` — no test in this row's include set executes this code
+- `out/tools/telegram-front-desk-bot.js:2327:39` BlockStatement -> `{}` — no test in this row's include set executes this code
+- `out/tools/telegram-front-desk-bot.js:2329:77` StringLiteral -> `""` — no test in this row's include set executes this code
+- `out/tools/telegram-front-desk-bot.js:2331:37` BlockStatement -> `{}` — no test in this row's include set executes this code
+- `out/tools/telegram-front-desk-bot.js:2335:43` BlockStatement -> `{}` — no test in this row's include set executes this code
+- `out/tools/telegram-front-desk-bot.js:2339:32` BlockStatement -> `{}` — no test in this row's include set executes this code
+- `out/tools/telegram-front-desk-bot.js:2343:44` BlockStatement -> `{}` — no test in this row's include set executes this code
+- `out/tools/telegram-front-desk-bot.js:2347:53` BlockStatement -> `{}` — no test in this row's include set executes this code
+- `out/tools/telegram-front-desk-bot.js:2348:78` ArrowFunction -> `() => undefined` — no test in this row's include set executes this code
+- `out/tools/telegram-front-desk-bot.js:2351:39` BlockStatement -> `{}` — no test in this row's include set executes this code
+- `out/tools/telegram-front-desk-bot.js:2355:54` BlockStatement -> `{}` — no test in this row's include set executes this code
+- `out/tools/telegram-front-desk-bot.js:2356:74` ArrowFunction -> `() => undefined` — no test in this row's include set executes this code
+- `out/tools/telegram-front-desk-bot.js:2360:17` ConditionalExpression -> `true` — no test in this row's include set executes this code
+- `out/tools/telegram-front-desk-bot.js:2360:17` ConditionalExpression -> `false` — no test in this row's include set executes this code
+- `out/tools/telegram-front-desk-bot.js:2360:44` BlockStatement -> `{}` — no test in this row's include set executes this code
+- `out/tools/telegram-front-desk-bot.js:2361:77` ArrowFunction -> `() => undefined` — no test in this row's include set executes this code
+- `out/tools/telegram-front-desk-bot.js:2363:30` ConditionalExpression -> `true` — no test in this row's include set executes this code
+- `out/tools/telegram-front-desk-bot.js:2363:30` ConditionalExpression -> `false` — no test in this row's include set executes this code
+- `out/tools/telegram-front-desk-bot.js:2363:30` EqualityOperator -> `outcome !== 'drained'` — no test in this row's include set executes this code
+- `out/tools/telegram-front-desk-bot.js:2363:42` StringLiteral -> `""` — no test in this row's include set executes this code
+- `out/tools/telegram-front-desk-bot.js:2364:23` StringLiteral -> `""` — no test in this row's include set executes this code
+- `out/tools/telegram-front-desk-bot.js:2365:23` StringLiteral -> `""` — no test in this row's include set executes this code
+- `out/tools/telegram-front-desk-bot.js:2370:28` ArrowFunction -> `() => undefined` — no test in this row's include set executes this code
+- `out/tools/telegram-front-desk-bot.js:2371:33` ArrowFunction -> `() => undefined` — no test in this row's include set executes this code
+- `out/tools/telegram-front-desk-bot.js:2390:46` BlockStatement -> `{}` — no test in this row's include set executes this code
+- `out/tools/telegram-front-desk-bot.js:2391:12` ObjectLiteral -> `{}` — no test in this row's include set executes this code
+- `out/tools/telegram-front-desk-bot.js:2402:64` BlockStatement -> `{}` — no test in this row's include set executes this code
+- `out/tools/telegram-front-desk-bot.js:2404:9` BooleanLiteral -> `result.success` — no test in this row's include set executes this code
+- `out/tools/telegram-front-desk-bot.js:2404:9` ConditionalExpression -> `true` — no test in this row's include set executes this code
+- `out/tools/telegram-front-desk-bot.js:2404:9` ConditionalExpression -> `false` — no test in this row's include set executes this code
+- `out/tools/telegram-front-desk-bot.js:2404:26` BlockStatement -> `{}` — no test in this row's include set executes this code
+- `out/tools/telegram-front-desk-bot.js:2405:25` LogicalOperator -> `result.error && 'sendMessage failed'` — no test in this row's include set executes this code
+- `out/tools/telegram-front-desk-bot.js:2405:41` StringLiteral -> `""` — no test in this row's include set executes this code
+- `out/tools/telegram-front-desk-bot.js:2414:134` BlockStatement -> `{}` — no test in this row's include set executes this code
+- `out/tools/telegram-front-desk-bot.js:2417:17` ObjectLiteral -> `{}` — no test in this row's include set executes this code
+- `out/tools/telegram-front-desk-bot.js:2417:89` ObjectLiteral -> `{}` — no test in this row's include set executes this code
+- `out/tools/telegram-front-desk-bot.js:2417:102` BooleanLiteral -> `true` — no test in this row's include set executes this code
+- `out/tools/telegram-front-desk-bot.js:2419:5` ConditionalExpression -> `for (; false;) {   const cycle = await (0, telegramFrontDeskBotCore_1.runPollCycle)(state,` — no test in this row's include set executes this code
+- `out/tools/telegram-front-desk-bot.js:2419:14` BlockStatement -> `{}` — no test in this row's include set executes this code
+- `out/tools/telegram-front-desk-bot.js:2422:75` ArrowFunction -> `() => undefined` — no test in this row's include set executes this code
+- `out/tools/telegram-front-desk-bot.js:2422:126` ArrowFunction -> `() => undefined` — no test in this row's include set executes this code
+- `out/tools/telegram-front-desk-bot.js:2422:188` ArrowFunction -> `() => undefined` — no test in this row's include set executes this code
+- `out/tools/telegram-front-desk-bot.js:2431:54` BlockStatement -> `{}` — no test in this row's include set executes this code
+- `out/tools/telegram-front-desk-bot.js:2432:29` StringLiteral -> ```` — no test in this row's include set executes this code
+- `out/tools/telegram-front-desk-bot.js:2432:55` ObjectLiteral -> `{}` — no test in this row's include set executes this code
+- `out/tools/telegram-front-desk-bot.js:2433:17` StringLiteral -> `""` — no test in this row's include set executes this code
+- `out/tools/telegram-front-desk-bot.js:2434:18` ObjectLiteral -> `{}` — no test in this row's include set executes this code
+- `out/tools/telegram-front-desk-bot.js:2434:36` StringLiteral -> `""` — no test in this row's include set executes this code
+- `out/tools/telegram-front-desk-bot.js:2434:71` StringLiteral -> ```` — no test in this row's include set executes this code
+- `out/tools/telegram-front-desk-bot.js:2435:30` ObjectLiteral -> `{}` — no test in this row's include set executes this code
+- `out/tools/telegram-front-desk-bot.js:2437:9` BooleanLiteral -> `res.ok` — no test in this row's include set executes this code
+- `out/tools/telegram-front-desk-bot.js:2437:9` ConditionalExpression -> `true` — no test in this row's include set executes this code
+- `out/tools/telegram-front-desk-bot.js:2437:9` ConditionalExpression -> `false` — no test in this row's include set executes this code
+- `out/tools/telegram-front-desk-bot.js:2437:18` BlockStatement -> `{}` — no test in this row's include set executes this code
+- `out/tools/telegram-front-desk-bot.js:2438:25` StringLiteral -> ```` — no test in this row's include set executes this code
+- `out/tools/telegram-front-desk-bot.js:2447:78` BlockStatement -> `{}` — no test in this row's include set executes this code
+- `out/tools/telegram-front-desk-bot.js:2449:11` ObjectLiteral -> `{}` — no test in this row's include set executes this code
+- `out/tools/telegram-front-desk-bot.js:2450:36` ArrowFunction -> `() => undefined` — no test in this row's include set executes this code
+- `out/tools/telegram-front-desk-bot.js:2450:66` ConditionalExpression -> `true` — no test in this row's include set executes this code
+- `out/tools/telegram-front-desk-bot.js:2450:66` ConditionalExpression -> `false` — no test in this row's include set executes this code
+- `out/tools/telegram-front-desk-bot.js:2450:66` EqualityOperator -> `readVoiceTurns(targetPath)[threadId] !== true` — no test in this row's include set executes this code
+- `out/tools/telegram-front-desk-bot.js:2450:107` BooleanLiteral -> `false` — no test in this row's include set executes this code
+- `out/tools/telegram-front-desk-bot.js:2451:53` BlockStatement -> `{}` — no test in this row's include set executes this code
+- `out/tools/telegram-front-desk-bot.js:2457:30` ArrowFunction -> `() => undefined` — no test in this row's include set executes this code
+- `out/tools/telegram-front-desk-bot.js:2458:24` ArrowFunction -> `() => undefined` — no test in this row's include set executes this code
+- `out/tools/telegram-front-desk-bot.js:2462:130` BlockStatement -> `{}` — no test in this row's include set executes this code
+- `out/tools/telegram-front-desk-bot.js:2463:29` StringLiteral -> ```` — no test in this row's include set executes this code
+- `out/tools/telegram-front-desk-bot.js:2463:52` ObjectLiteral -> `{}` — no test in this row's include set executes this code
+- `out/tools/telegram-front-desk-bot.js:2463:63` ObjectLiteral -> `{}` — no test in this row's include set executes this code
+- `out/tools/telegram-front-desk-bot.js:2463:80` StringLiteral -> ```` — no test in this row's include set executes this code
+- `out/tools/telegram-front-desk-bot.js:2469:9` BlockStatement -> `{}` — no test in this row's include set executes this code
+- `out/tools/telegram-front-desk-bot.js:2470:63` StringLiteral -> `"Stryker was here!"` — no test in this row's include set executes this code
+- `out/tools/telegram-front-desk-bot.js:2470:67` ObjectLiteral -> `{}` — no test in this row's include set executes this code
+- `out/tools/telegram-front-desk-bot.js:2471:36` BlockStatement -> `{}` — no test in this row's include set executes this code
+- `out/tools/telegram-front-desk-bot.js:2473:24` ObjectLiteral -> `{}` — no test in this row's include set executes this code
+- `out/tools/telegram-front-desk-bot.js:2473:46` StringLiteral -> `"Stryker was here!"` — no test in this row's include set executes this code
+- `out/tools/telegram-front-desk-bot.js:2473:73` ObjectLiteral -> `{}` — no test in this row's include set executes this code
+- `out/tools/telegram-front-desk-bot.js:2473:83` BooleanLiteral -> `false` — no test in this row's include set executes this code
+- `out/tools/telegram-front-desk-bot.js:2485:24` ArrowFunction -> `() => undefined` — no test in this row's include set executes this code
+- `out/tools/telegram-front-desk-bot.js:2485:176` BlockStatement -> `{}` — no test in this row's include set executes this code
+- `out/tools/telegram-front-desk-bot.js:2487:21` ConditionalExpression -> `true` — no test in this row's include set executes this code
+- `out/tools/telegram-front-desk-bot.js:2487:21` ConditionalExpression -> `false` — no test in this row's include set executes this code
+- `out/tools/telegram-front-desk-bot.js:2487:32` BlockStatement -> `{}` — no test in this row's include set executes this code
+- `out/tools/telegram-front-desk-bot.js:2488:78` ObjectLiteral -> `{}` — no test in this row's include set executes this code
+- `out/tools/telegram-front-desk-bot.js:2488:88` StringLiteral -> `""` — no test in this row's include set executes this code
+- `out/tools/telegram-front-desk-bot.js:2488:103` StringLiteral -> `""` — no test in this row's include set executes this code
+- `out/tools/telegram-front-desk-bot.js:2499:30` ArrowFunction -> `() => undefined` — no test in this row's include set executes this code
+- `out/tools/telegram-front-desk-bot.js:2500:23` ArrowFunction -> `() => undefined` — no test in this row's include set executes this code
+- `out/tools/telegram-front-desk-bot.js:2510:23` ArrowFunction -> `() => undefined` — no test in this row's include set executes this code
+- `out/tools/telegram-front-desk-bot.js:2510:145` ArrowFunction -> `() => undefined` — no test in this row's include set executes this code
+- `out/tools/telegram-front-desk-bot.js:2510:153` ObjectLiteral -> `{}` — no test in this row's include set executes this code
+- `out/tools/telegram-front-desk-bot.js:2511:63` BlockStatement -> `{}` — no test in this row's include set executes this code
+- `out/tools/telegram-front-desk-bot.js:2513:31` ObjectLiteral -> `{}` — no test in this row's include set executes this code
+- `out/tools/telegram-front-desk-bot.js:2519:29` ArrowFunction -> `() => undefined` — no test in this row's include set executes this code
+- `out/tools/telegram-front-desk-bot.js:2519:168` ArrowFunction -> `() => undefined` — no test in this row's include set executes this code
+- `out/tools/telegram-front-desk-bot.js:2519:176` ObjectLiteral -> `{}` — no test in this row's include set executes this code
+- `out/tools/telegram-front-desk-bot.js:2520:71` BlockStatement -> `{}` — no test in this row's include set executes this code
+- `out/tools/telegram-front-desk-bot.js:2524:36` ArrowFunction -> `() => undefined` — no test in this row's include set executes this code
+- `out/tools/telegram-front-desk-bot.js:2528:29` ArrowFunction -> `() => undefined` — no test in this row's include set executes this code
+- `out/tools/telegram-front-desk-bot.js:2533:73` BlockStatement -> `{}` — no test in this row's include set executes this code
+- `out/tools/telegram-front-desk-bot.js:2540:13` BlockStatement -> `{}` — no test in this row's include set executes this code
+- `out/tools/telegram-front-desk-bot.js:2543:13` BlockStatement -> `{}` — no test in this row's include set executes this code
+- `out/tools/telegram-front-desk-bot.js:2578:135` BlockStatement -> `{}` — no test in this row's include set executes this code
+- `out/tools/telegram-front-desk-bot.js:2579:9` BlockStatement -> `{}` — no test in this row's include set executes this code
+- `out/tools/telegram-front-desk-bot.js:2583:19` BlockStatement -> `{}` — no test in this row's include set executes this code
+- `out/tools/telegram-front-desk-bot.js:2593:115` BlockStatement -> `{}` — no test in this row's include set executes this code
+- `out/tools/telegram-front-desk-bot.js:2596:17` ObjectLiteral -> `{}` — no test in this row's include set executes this code
+- `out/tools/telegram-front-desk-bot.js:2596:60` ObjectLiteral -> `{}` — no test in this row's include set executes this code
+- `out/tools/telegram-front-desk-bot.js:2596:73` BooleanLiteral -> `true` — no test in this row's include set executes this code
+- `out/tools/telegram-front-desk-bot.js:2597:5` ConditionalExpression -> `for (; false;) {   const errorMessage = await attemptReplyRelayConnection(botToken, chatId` — no test in this row's include set executes this code
+- `out/tools/telegram-front-desk-bot.js:2597:14` BlockStatement -> `{}` — no test in this row's include set executes this code
+- `out/tools/telegram-front-desk-bot.js:2599:91` ConditionalExpression -> `true` — no test in this row's include set executes this code
+- `out/tools/telegram-front-desk-bot.js:2599:91` ConditionalExpression -> `false` — no test in this row's include set executes this code
+- `out/tools/telegram-front-desk-bot.js:2599:91` EqualityOperator -> `errorMessage !== undefined` — no test in this row's include set executes this code
+- `out/tools/telegram-front-desk-bot.js:2601:95` ArrowFunction -> `() => undefined` — no test in this row's include set executes this code
+- `out/tools/telegram-front-desk-bot.js:2601:146` ArrowFunction -> `() => undefined` — no test in this row's include set executes this code
+- `out/tools/telegram-front-desk-bot.js:2662:32` BlockStatement -> `{}` — no test in this row's include set executes this code
+- `out/tools/telegram-front-desk-bot.js:2663:81` ArrowFunction -> `() => undefined` — no test in this row's include set executes this code
+- `out/tools/telegram-front-desk-bot.js:2664:81` ArrowFunction -> `() => undefined` — no test in this row's include set executes this code
+- `out/tools/telegram-front-desk-bot.js:2664:89` ObjectLiteral -> `{}` — no test in this row's include set executes this code
+- `out/tools/telegram-front-desk-bot.js:2728:69` BlockStatement -> `{}` — no test in this row's include set executes this code
+- `out/tools/telegram-front-desk-bot.js:2729:16` StringLiteral -> `""` — no test in this row's include set executes this code
+- `out/tools/telegram-front-desk-bot.js:2767:57` BlockStatement -> `{}` — no test in this row's include set executes this code
+- `out/tools/telegram-front-desk-bot.js:2768:12` ObjectLiteral -> `{}` — no test in this row's include set executes this code
+- `out/tools/telegram-front-desk-bot.js:2769:22` ArrowFunction -> `() => undefined` — no test in this row's include set executes this code
+- `out/tools/telegram-front-desk-bot.js:2769:143` ArrowFunction -> `() => undefined` — no test in this row's include set executes this code
+- `out/tools/telegram-front-desk-bot.js:2770:22` ArrowFunction -> `() => undefined` — no test in this row's include set executes this code
+- `out/tools/telegram-front-desk-bot.js:2770:130` ArrowFunction -> `() => undefined` — no test in this row's include set executes this code
+- `out/tools/telegram-front-desk-bot.js:2799:15` BlockStatement -> `{}` — no test in this row's include set executes this code
+- `out/tools/telegram-front-desk-bot.js:2874:67` BlockStatement -> `{}` — no test in this row's include set executes this code
+- `out/tools/telegram-front-desk-bot.js:2875:12` ObjectLiteral -> `{}` — no test in this row's include set executes this code
+- `out/tools/telegram-front-desk-bot.js:2876:22` ArrowFunction -> `() => undefined` — no test in this row's include set executes this code
+- `out/tools/telegram-front-desk-bot.js:2881:26` ArrowFunction -> `() => undefined` — no test in this row's include set executes this code
+- `out/tools/telegram-front-desk-bot.js:2881:86` ArrowFunction -> `() => undefined` — no test in this row's include set executes this code
+- `out/tools/telegram-front-desk-bot.js:2881:130` StringLiteral -> `""` — no test in this row's include set executes this code
+- `out/tools/telegram-front-desk-bot.js:2881:143` ObjectLiteral -> `{}` — no test in this row's include set executes this code
+- `out/tools/telegram-front-desk-bot.js:2881:172` StringLiteral -> `""` — no test in this row's include set executes this code
+- `out/tools/telegram-front-desk-bot.js:2882:20` ArrowFunction -> `() => undefined` — no test in this row's include set executes this code
+- `out/tools/telegram-front-desk-bot.js:2883:25` ArrowFunction -> `() => undefined` — no test in this row's include set executes this code
+- `out/tools/telegram-front-desk-bot.js:2884:24` ArrowFunction -> `() => undefined` — no test in this row's include set executes this code
+- `out/tools/telegram-front-desk-bot.js:2885:25` ArrowFunction -> `() => undefined` — no test in this row's include set executes this code
+- `out/tools/telegram-front-desk-bot.js:2886:24` ObjectLiteral -> `{}` — no test in this row's include set executes this code
+- `out/tools/telegram-front-desk-bot.js:2887:26` ArrowFunction -> `() => undefined` — no test in this row's include set executes this code
+- `out/tools/telegram-front-desk-bot.js:2888:42` BlockStatement -> `{}` — no test in this row's include set executes this code
+- `out/tools/telegram-front-desk-bot.js:2890:24` ObjectLiteral -> `{}` — no test in this row's include set executes this code
+- `out/tools/telegram-front-desk-bot.js:2892:52` BlockStatement -> `{}` — no test in this row's include set executes this code
+- `out/tools/telegram-front-desk-bot.js:2897:26` ArrowFunction -> `() => undefined` — no test in this row's include set executes this code
+- `out/tools/telegram-front-desk-bot.js:2897:165` ArrowFunction -> `() => undefined` — no test in this row's include set executes this code
+- `out/tools/telegram-front-desk-bot.js:2898:25` ArrowFunction -> `() => undefined` — no test in this row's include set executes this code
+- `out/tools/telegram-front-desk-bot.js:2898:108` ArrowFunction -> `() => undefined` — no test in this row's include set executes this code
+- `out/tools/telegram-front-desk-bot.js:2899:49` BlockStatement -> `{}` — no test in this row's include set executes this code
+- `out/tools/telegram-front-desk-bot.js:2900:74` ObjectLiteral -> `{}` — no test in this row's include set executes this code
+- `out/tools/telegram-front-desk-bot.js:2900:84` StringLiteral -> `""` — no test in this row's include set executes this code
+- `out/tools/telegram-front-desk-bot.js:2900:99` StringLiteral -> `""` — no test in this row's include set executes this code
+- `out/tools/telegram-front-desk-bot.js:2902:34` ArrowFunction -> `() => undefined` — no test in this row's include set executes this code
+- `out/tools/telegram-front-desk-bot.js:2903:35` ArrowFunction -> `() => undefined` — no test in this row's include set executes this code
+- `out/tools/telegram-front-desk-bot.js:2913:64` BlockStatement -> `{}` — no test in this row's include set executes this code
+- `out/tools/telegram-front-desk-bot.js:2915:21` BooleanLiteral -> `r.success` — no test in this row's include set executes this code
+- `out/tools/telegram-front-desk-bot.js:2915:21` ConditionalExpression -> `true` — no test in this row's include set executes this code
+- `out/tools/telegram-front-desk-bot.js:2915:21` ConditionalExpression -> `false` — no test in this row's include set executes this code
+- `out/tools/telegram-front-desk-bot.js:2915:33` BlockStatement -> `{}` — no test in this row's include set executes this code
+- `out/tools/telegram-front-desk-bot.js:2916:42` StringLiteral -> ```` — no test in this row's include set executes this code
+- `out/tools/telegram-front-desk-bot.js:2916:89` LogicalOperator -> `r.error && 'unknown'` — no test in this row's include set executes this code
+- `out/tools/telegram-front-desk-bot.js:2916:100` StringLiteral -> `""` — no test in this row's include set executes this code
+- `out/tools/telegram-front-desk-bot.js:2918:24` ObjectLiteral -> `{}` — no test in this row's include set executes this code
+- `out/tools/telegram-front-desk-bot.js:2920:41` ArrowFunction -> `() => undefined` — no test in this row's include set executes this code
+- `out/tools/telegram-front-desk-bot.js:2923:33` ArrowFunction -> `() => undefined` — no test in this row's include set executes this code
+- `out/tools/telegram-front-desk-bot.js:2928:36` ArrowFunction -> `() => undefined` — no test in this row's include set executes this code
+- `out/tools/telegram-front-desk-bot.js:2929:36` ArrowFunction -> `() => undefined` — no test in this row's include set executes this code
+- `out/tools/telegram-front-desk-bot.js:2931:23` ObjectLiteral -> `{}` — no test in this row's include set executes this code
+- `out/tools/telegram-front-desk-bot.js:2932:30` ArrowFunction -> `() => undefined` — no test in this row's include set executes this code
+- `out/tools/telegram-front-desk-bot.js:2933:27` ArrowFunction -> `() => undefined` — no test in this row's include set executes this code
+- `out/tools/telegram-front-desk-bot.js:2933:123` ObjectLiteral -> `{}` — no test in this row's include set executes this code
+- `out/tools/telegram-front-desk-bot.js:2933:151` ArrowFunction -> `() => undefined` — no test in this row's include set executes this code
+- `out/tools/telegram-front-desk-bot.js:2934:30` ArrowFunction -> `() => undefined` — no test in this row's include set executes this code
+- `out/tools/telegram-front-desk-bot.js:2935:32` ArrowFunction -> `() => undefined` — no test in this row's include set executes this code
+- `out/tools/telegram-front-desk-bot.js:2937:29` ArrowFunction -> `() => undefined` — no test in this row's include set executes this code
+- `out/tools/telegram-front-desk-bot.js:2938:25` ArrowFunction -> `() => undefined` — no test in this row's include set executes this code
+- `out/tools/telegram-front-desk-bot.js:2952:24` ObjectLiteral -> `{}` — no test in this row's include set executes this code
+- `out/tools/telegram-front-desk-bot.js:2953:33` ArrowFunction -> `() => undefined` — no test in this row's include set executes this code
+- `out/tools/telegram-front-desk-bot.js:2954:28` ArrowFunction -> `() => undefined` — no test in this row's include set executes this code
+- `out/tools/telegram-front-desk-bot.js:2954:130` ObjectLiteral -> `{}` — no test in this row's include set executes this code
+- `out/tools/telegram-front-desk-bot.js:2965:30` ArrowFunction -> `() => undefined` — no test in this row's include set executes this code
+- `out/tools/telegram-front-desk-bot.js:2973:33` ArrowFunction -> `() => undefined` — no test in this row's include set executes this code
+- `out/tools/telegram-front-desk-bot.js:2981:24` ObjectLiteral -> `{}` — no test in this row's include set executes this code
+- `out/tools/telegram-front-desk-bot.js:2988:31` ArrowFunction -> `() => undefined` — no test in this row's include set executes this code
+- `out/tools/telegram-front-desk-bot.js:2992:27` ArrowFunction -> `() => undefined` — no test in this row's include set executes this code
+- `out/tools/telegram-front-desk-bot.js:2995:36` ArrowFunction -> `() => undefined` — no test in this row's include set executes this code
+- `out/tools/telegram-front-desk-bot.js:2996:26` ArrowFunction -> `() => undefined` — no test in this row's include set executes this code
+- `out/tools/telegram-front-desk-bot.js:2996:116` LogicalOperator -> `boardHtml && (0, pipelineBoard_1.wrapPipelineBoardHtml)(text)` — no test in this row's include set executes this code
+- `out/tools/telegram-front-desk-bot.js:2996:221` StringLiteral -> `""` — no test in this row's include set executes this code
+- `out/tools/telegram-front-desk-bot.js:2996:234` ArrowFunction -> `() => undefined` — no test in this row's include set executes this code
+- `out/tools/telegram-front-desk-bot.js:2996:254` ObjectLiteral -> `{}` — no test in this row's include set executes this code
+- `out/tools/telegram-front-desk-bot.js:2996:283` ObjectLiteral -> `{}` — no test in this row's include set executes this code
+- `out/tools/telegram-front-desk-bot.js:3000:28` ArrowFunction -> `() => undefined` — no test in this row's include set executes this code
+- `out/tools/telegram-front-desk-bot.js:3000:122` ArrowFunction -> `() => undefined` — no test in this row's include set executes this code
+- `out/tools/telegram-front-desk-bot.js:3005:31` ArrowFunction -> `() => undefined` — no test in this row's include set executes this code
+- `out/tools/telegram-front-desk-bot.js:3010:27` ObjectLiteral -> `{}` — no test in this row's include set executes this code
+- `out/tools/telegram-front-desk-bot.js:3011:36` ArrowFunction -> `() => undefined` — no test in this row's include set executes this code
+- `out/tools/telegram-front-desk-bot.js:3011:110` ArrowFunction -> `() => undefined` — no test in this row's include set executes this code
+- `out/tools/telegram-front-desk-bot.js:3012:31` ArrowFunction -> `() => undefined` — no test in this row's include set executes this code
+- `out/tools/telegram-front-desk-bot.js:3012:103` ArrowFunction -> `() => undefined` — no test in this row's include set executes this code
+- `out/tools/telegram-front-desk-bot.js:3013:25` ArrowFunction -> `() => undefined` — no test in this row's include set executes this code
+- `out/tools/telegram-front-desk-bot.js:3013:111` ArrowFunction -> `() => undefined` — no test in this row's include set executes this code
+- `out/tools/telegram-front-desk-bot.js:3015:30` ArrowFunction -> `() => undefined` — no test in this row's include set executes this code
+- `out/tools/telegram-front-desk-bot.js:3016:31` ArrowFunction -> `() => undefined` — no test in this row's include set executes this code
+- `out/tools/telegram-front-desk-bot.js:3019:31` ArrowFunction -> `() => undefined` — no test in this row's include set executes this code
+- `out/tools/telegram-front-desk-bot.js:3020:26` ArrowFunction -> `() => undefined` — no test in this row's include set executes this code
+- `out/tools/telegram-front-desk-bot.js:3024:27` ArrowFunction -> `() => undefined` — no test in this row's include set executes this code
+- `out/tools/telegram-front-desk-bot.js:3029:25` ObjectLiteral -> `{}` — no test in this row's include set executes this code
+- `out/tools/telegram-front-desk-bot.js:3030:35` ArrowFunction -> `() => undefined` — no test in this row's include set executes this code
+- `out/tools/telegram-front-desk-bot.js:3036:34` ArrowFunction -> `() => undefined` — no test in this row's include set executes this code
+- `out/tools/telegram-front-desk-bot.js:3040:29` ArrowFunction -> `() => undefined` — no test in this row's include set executes this code
+- `out/tools/telegram-front-desk-bot.js:3045:32` ObjectLiteral -> `{}` — no test in this row's include set executes this code
+- `out/tools/telegram-front-desk-bot.js:3046:32` ArrowFunction -> `() => undefined` — no test in this row's include set executes this code
+- `out/tools/telegram-front-desk-bot.js:3049:61` BlockStatement -> `{}` — no test in this row's include set executes this code
+- `out/tools/telegram-front-desk-bot.js:3051:93` ObjectLiteral -> `{}` — no test in this row's include set executes this code
+- `out/tools/telegram-front-desk-bot.js:3052:42` ArrowFunction -> `() => undefined` — no test in this row's include set executes this code
+- `out/tools/telegram-front-desk-bot.js:3053:35` ArrowFunction -> `() => undefined` — no test in this row's include set executes this code
+- `out/tools/telegram-front-desk-bot.js:3054:35` ArrowFunction -> `() => undefined` — no test in this row's include set executes this code
+- `out/tools/telegram-front-desk-bot.js:3055:36` ArrowFunction -> `() => undefined` — no test in this row's include set executes this code
+- `out/tools/telegram-front-desk-bot.js:3058:59` BlockStatement -> `{}` — no test in this row's include set executes this code
+- `out/tools/telegram-front-desk-bot.js:3060:78` ObjectLiteral -> `{}` — no test in this row's include set executes this code
+- `out/tools/telegram-front-desk-bot.js:3061:42` ArrowFunction -> `() => undefined` — no test in this row's include set executes this code
+- `out/tools/telegram-front-desk-bot.js:3062:35` ArrowFunction -> `() => undefined` — no test in this row's include set executes this code
+- `out/tools/telegram-front-desk-bot.js:3063:35` ArrowFunction -> `() => undefined` — no test in this row's include set executes this code
+- `out/tools/telegram-front-desk-bot.js:3064:36` ArrowFunction -> `() => undefined` — no test in this row's include set executes this code
+- `out/tools/telegram-front-desk-bot.js:3067:50` BlockStatement -> `{}` — no test in this row's include set executes this code
+- `out/tools/telegram-front-desk-bot.js:3068:85` StringLiteral -> `""` — no test in this row's include set executes this code
+- `out/tools/telegram-front-desk-bot.js:3069:26` LogicalOperator -> `(0, swarmforgeConfig_1.readEffectiveConfigValue)(targetPath, 'notify_email_from') && 'onbo` — no test in this row's include set executes this code
+- `out/tools/telegram-front-desk-bot.js:3069:87` StringLiteral -> `""` — no test in this row's include set executes this code
+- `out/tools/telegram-front-desk-bot.js:3069:111` StringLiteral -> `""` — no test in this row's include set executes this code
+- `out/tools/telegram-front-desk-bot.js:3070:73` ObjectLiteral -> `{}` — no test in this row's include set executes this code
+- `out/tools/telegram-front-desk-bot.js:3074:141` StringLiteral -> `""` — no test in this row's include set executes this code
+- `out/tools/telegram-front-desk-bot.js:3075:139` StringLiteral -> `""` — no test in this row's include set executes this code
+- `out/tools/telegram-front-desk-bot.js:3076:16` ObjectLiteral -> `{}` — no test in this row's include set executes this code
+- `out/tools/telegram-front-desk-bot.js:3077:24` ArrowFunction -> `() => undefined` — no test in this row's include set executes this code
+- `out/tools/telegram-front-desk-bot.js:3078:33` ArrowFunction -> `() => undefined` — no test in this row's include set executes this code
+- `out/tools/telegram-front-desk-bot.js:3078:112` ObjectLiteral -> `{}` — no test in this row's include set executes this code
+- `out/tools/telegram-front-desk-bot.js:3079:46` BlockStatement -> `{}` — no test in this row's include set executes this code
+- `out/tools/telegram-front-desk-bot.js:3081:32` ConditionalExpression -> `true` — no test in this row's include set executes this code
+- `out/tools/telegram-front-desk-bot.js:3081:32` ConditionalExpression -> `false` — no test in this row's include set executes this code
+- `out/tools/telegram-front-desk-bot.js:3081:32` EqualityOperator -> `record.messages.length !== 0` — no test in this row's include set executes this code
+- `out/tools/telegram-front-desk-bot.js:3083:38` ArrowFunction -> `() => undefined` — no test in this row's include set executes this code
+- `out/tools/telegram-front-desk-bot.js:3085:28` ArrowFunction -> `() => undefined` — no test in this row's include set executes this code
+- `out/tools/telegram-front-desk-bot.js:3085:77` ConditionalExpression -> `true` — no test in this row's include set executes this code
+- `out/tools/telegram-front-desk-bot.js:3085:77` ConditionalExpression -> `false` — no test in this row's include set executes this code
+- `out/tools/telegram-front-desk-bot.js:3085:77` LogicalOperator -> `process.env.RESEND_API_KEY && ''` — no test in this row's include set executes this code
+- `out/tools/telegram-front-desk-bot.js:3085:107` StringLiteral -> `"Stryker was here!"` — no test in this row's include set executes this code
+- `out/tools/telegram-front-desk-bot.js:3086:33` ArrowFunction -> `() => undefined` — no test in this row's include set executes this code
+- `out/tools/telegram-front-desk-bot.js:3087:34` ArrowFunction -> `() => undefined` — no test in this row's include set executes this code
+- `out/tools/telegram-front-desk-bot.js:3088:29` ArrowFunction -> `() => undefined` — no test in this row's include set executes this code
+- `out/tools/telegram-front-desk-bot.js:3089:42` BlockStatement -> `{}` — no test in this row's include set executes this code
+- `out/tools/telegram-front-desk-bot.js:3090:35` StringLiteral -> `""` — no test in this row's include set executes this code
+- `out/tools/telegram-front-desk-bot.js:3096:20` BlockStatement -> `{}` — no test in this row's include set executes this code
+- `out/tools/telegram-front-desk-bot.js:3097:24` ArrowFunction -> `() => undefined` — no test in this row's include set executes this code
+- `out/tools/telegram-front-desk-bot.js:3119:60` BlockStatement -> `{}` — no test in this row's include set executes this code
+- `out/tools/telegram-front-desk-bot.js:3120:12` ObjectLiteral -> `{}` — no test in this row's include set executes this code
+- `out/tools/telegram-front-desk-bot.js:3124:30` ArrowFunction -> `() => undefined` — no test in this row's include set executes this code
+- `out/tools/telegram-front-desk-bot.js:3133:67` BlockStatement -> `{}` — no test in this row's include set executes this code
+- `out/tools/telegram-front-desk-bot.js:3134:12` ObjectLiteral -> `{}` — no test in this row's include set executes this code
+- `out/tools/telegram-front-desk-bot.js:3135:22` ArrowFunction -> `() => undefined` — no test in this row's include set executes this code
+- `out/tools/telegram-front-desk-bot.js:3136:21` ArrowFunction -> `() => undefined` — no test in this row's include set executes this code
+- `out/tools/telegram-front-desk-bot.js:3137:28` ArrowFunction -> `() => undefined` — no test in this row's include set executes this code
+- `out/tools/telegram-front-desk-bot.js:3138:22` ArrowFunction -> `() => undefined` — no test in this row's include set executes this code
+- `out/tools/telegram-front-desk-bot.js:3138:106` ArrowFunction -> `() => undefined` — no test in this row's include set executes this code
+- `out/tools/telegram-front-desk-bot.js:3139:27` ArrowFunction -> `() => undefined` — no test in this row's include set executes this code
+- `out/tools/telegram-front-desk-bot.js:3140:49` BlockStatement -> `{}` — no test in this row's include set executes this code
+- `out/tools/telegram-front-desk-bot.js:3141:34` StringLiteral -> ```` — no test in this row's include set executes this code
+- `out/tools/telegram-front-desk-bot.js:3162:24` BlockStatement -> `{}` — no test in this row's include set executes this code
+- `out/tools/telegram-front-desk-bot.js:3163:74` ArithmeticOperator -> `Date.now() + tickStartedMs` — no test in this row's include set executes this code
+- `out/tools/telegram-front-desk-bot.js:3177:82` BlockStatement -> `{}` — no test in this row's include set executes this code
+- `out/tools/telegram-front-desk-bot.js:3178:5` ConditionalExpression -> `for (; false;) {   await scheduler.runNow();   await sleep(intervalMs);   if ((0, concierg` — no test in this row's include set executes this code
+- `out/tools/telegram-front-desk-bot.js:3178:14` BlockStatement -> `{}` — no test in this row's include set executes this code
+- `out/tools/telegram-front-desk-bot.js:3181:13` ConditionalExpression -> `true` — no test in this row's include set executes this code
+- `out/tools/telegram-front-desk-bot.js:3181:13` ConditionalExpression -> `false` — no test in this row's include set executes this code
+- `out/tools/telegram-front-desk-bot.js:3181:82` BlockStatement -> `{}` — no test in this row's include set executes this code
+- `out/tools/telegram-front-desk-bot.js:3186:69` BlockStatement -> `{}` — no test in this row's include set executes this code
+- `out/tools/telegram-front-desk-bot.js:3190:64` ArrowFunction -> `() => undefined` — no test in this row's include set executes this code
+- `out/tools/telegram-front-desk-bot.js:3192:60` BlockStatement -> `{}` — no test in this row's include set executes this code
+- `out/tools/telegram-front-desk-bot.js:3206:31` BlockStatement -> `{}` — no test in this row's include set executes this code
+- `out/tools/telegram-front-desk-bot.js:3209:36` BlockStatement -> `{}` — no test in this row's include set executes this code
+- `out/tools/telegram-front-desk-bot.js:3210:26` StringLiteral -> ```` — no test in this row's include set executes this code
+- `out/tools/telegram-front-desk-bot.js:3227:32` StringLiteral -> `""` — no test in this row's include set executes this code
+- `out/tools/telegram-front-desk-bot.js:3228:41` StringLiteral -> `""` — no test in this row's include set executes this code
+- `out/tools/telegram-front-desk-bot.js:3229:37` StringLiteral -> `""` — no test in this row's include set executes this code
+- `out/tools/telegram-front-desk-bot.js:3230:38` StringLiteral -> `""` — no test in this row's include set executes this code
+- `out/tools/telegram-front-desk-bot.js:3249:98` ObjectLiteral -> `{}` — no test in this row's include set executes this code
+- `out/tools/telegram-front-desk-bot.js:3250:31` ArrowFunction -> `() => undefined` — no test in this row's include set executes this code
+- `out/tools/telegram-front-desk-bot.js:3251:47` BlockStatement -> `{}` — no test in this row's include set executes this code
+- `out/tools/telegram-front-desk-bot.js:3291:35` ArrowFunction -> `() => undefined` — no test in this row's include set executes this code
+- `out/tools/telegram-front-desk-bot.js:3299:23` ArrayDeclaration -> `[]` — no test in this row's include set executes this code
+- `out/tools/telegram-front-desk-bot.js:3300:58` StringLiteral -> `""` — no test in this row's include set executes this code
+- `out/tools/telegram-front-desk-bot.js:3300:66` ArrowFunction -> `() => undefined` — no test in this row's include set executes this code
+- `out/tools/telegram-front-desk-bot.js:3301:58` StringLiteral -> `""` — no test in this row's include set executes this code
+- `out/tools/telegram-front-desk-bot.js:3301:73` ArrowFunction -> `() => undefined` — no test in this row's include set executes this code
+- `out/tools/telegram-front-desk-bot.js:3302:58` StringLiteral -> `""` — no test in this row's include set executes this code
+- `out/tools/telegram-front-desk-bot.js:3302:76` ArrowFunction -> `() => undefined` — no test in this row's include set executes this code
+- `out/tools/telegramFrontDeskBotCore.js:81:91` BlockStatement -> `{}` — no test in this row's include set executes this code
+- `out/tools/telegramFrontDeskBotCore.js:105:94` BlockStatement -> `{}` — no test in this row's include set executes this code
+- `out/tools/telegramFrontDeskBotCore.js:343:41` BlockStatement -> `{}` — no test in this row's include set executes this code
+- `out/tools/telegramFrontDeskBotCore.js:344:40` StringLiteral -> ```` — no test in this row's include set executes this code
+- `out/tools/telegramFrontDeskBotCore.js:344:80` StringLiteral -> `""` — no test in this row's include set executes this code
+- `out/tools/telegramFrontDeskBotCore.js:345:16` StringLiteral -> ```` — no test in this row's include set executes this code
+- `out/tools/telegramFrontDeskBotCore.js:456:34` BlockStatement -> `{}` — no test in this row's include set executes this code
+- `out/tools/telegramFrontDeskBotCore.js:457:24` ArrowFunction -> `() => undefined` — no test in this row's include set executes this code
+- `out/tools/telegramFrontDeskBotCore.js:544:82` BlockStatement -> `{}` — no test in this row's include set executes this code
+- `out/tools/telegramFrontDeskBotCore.js:649:24` BlockStatement -> `{}` — no test in this row's include set executes this code
+- `out/tools/telegramFrontDeskBotCore.js:650:16` ObjectLiteral -> `{}` — no test in this row's include set executes this code
+- `out/tools/telegramFrontDeskBotCore.js:650:27` BooleanLiteral -> `true` — no test in this row's include set executes this code
+- `out/tools/telegramFrontDeskBotCore.js:650:45` BooleanLiteral -> `true` — no test in this row's include set executes this code
+- `out/tools/telegramFrontDeskBotCore.js:654:19` BlockStatement -> `{}` — no test in this row's include set executes this code
+- `out/tools/telegramFrontDeskBotCore.js:655:16` ObjectLiteral -> `{}` — no test in this row's include set executes this code
+- `out/tools/telegramFrontDeskBotCore.js:655:27` BooleanLiteral -> `true` — no test in this row's include set executes this code
+- `out/tools/telegramFrontDeskBotCore.js:655:45` BooleanLiteral -> `true` — no test in this row's include set executes this code
+- `out/tools/telegramFrontDeskBotCore.js:744:28` BlockStatement -> `{}` — no test in this row's include set executes this code
+- `out/tools/telegramFrontDeskBotCore.js:749:15` OptionalChaining -> `adapters.notifyApprovalsTopic(undefined, `${backlogId}: ${(0, expediteSafety_1.crossedCapT` — no test in this row's include set executes this code
+- `out/tools/telegramFrontDeskBotCore.js:749:58` StringLiteral -> ```` — no test in this row's include set executes this code
+- `out/tools/telegramFrontDeskBotCore.js:882:18` BlockStatement -> `{}` — no test in this row's include set executes this code
+- `out/tools/telegramFrontDeskBotCore.js:883:15` OptionalChaining -> `adapters.notifyRecertTopic(topicId, `${pendingId} isn't awaiting recertification.`)` — no test in this row's include set executes this code
+- `out/tools/telegramFrontDeskBotCore.js:883:53` StringLiteral -> ```` — no test in this row's include set executes this code
+- `out/tools/telegramFrontDeskBotCore.js:884:16` StringLiteral -> `""` — no test in this row's include set executes this code
+- `out/tools/telegramFrontDeskBotCore.js:896:23` BlockStatement -> `{}` — no test in this row's include set executes this code
+- `out/tools/telegramFrontDeskBotCore.js:897:15` OptionalChaining -> `adapters.notifyRecertTopic(topicId, `${scenarioId} isn't awaiting recertification.`)` — no test in this row's include set executes this code
+- `out/tools/telegramFrontDeskBotCore.js:897:53` StringLiteral -> ```` — no test in this row's include set executes this code
+- `out/tools/telegramFrontDeskBotCore.js:898:16` StringLiteral -> `""` — no test in this row's include set executes this code
+- `out/tools/telegramFrontDeskBotCore.js:1073:37` BlockStatement -> `{}` — no test in this row's include set executes this code
+- `out/tools/telegramFrontDeskBotCore.js:1074:38` OptionalChaining -> `adapters.readRecordedRuling(decision.backlogId)` — no test in this row's include set executes this code
+- `out/tools/telegramFrontDeskBotCore.js:1075:13` ConditionalExpression -> `true` — no test in this row's include set executes this code
+- `out/tools/telegramFrontDeskBotCore.js:1075:13` ConditionalExpression -> `false` — no test in this row's include set executes this code
+- `out/tools/telegramFrontDeskBotCore.js:1075:29` BlockStatement -> `{}` — no test in this row's include set executes this code
+- `out/tools/telegramFrontDeskBotCore.js:1077:20` BooleanLiteral -> `false` — no test in this row's include set executes this code
+- `out/tools/telegramFrontDeskBotCore.js:1201:101` ObjectLiteral -> `{}` — no test in this row's include set executes this code
+- `out/tools/telegramFrontDeskBotCore.js:1201:109` StringLiteral -> `""` — no test in this row's include set executes this code
+- `out/tools/telegramFrontDeskBotCore.js:1255:35` StringLiteral -> `""` — no test in this row's include set executes this code
+- `out/tools/telegramFrontDeskBotCore.js:1271:107` BooleanLiteral -> `true` — no test in this row's include set executes this code
+- `out/tools/telegramFrontDeskBotCore.js:1302:72` BlockStatement -> `{}` — no test in this row's include set executes this code
+- `out/tools/telegramFrontDeskBotCore.js:1303:27` OptionalChaining -> `adapters.resolveRulingOptions(decision.backlogId)` — no test in this row's include set executes this code
+- `out/tools/telegramFrontDeskBotCore.js:1304:19` OptionalChaining -> `options[decision.optionIndex]` — no test in this row's include set executes this code
+- `out/tools/telegramFrontDeskBotCore.js:1305:9` BooleanLiteral -> `label` — no test in this row's include set executes this code
+- `out/tools/telegramFrontDeskBotCore.js:1305:9` ConditionalExpression -> `true` — no test in this row's include set executes this code
+- `out/tools/telegramFrontDeskBotCore.js:1305:9` ConditionalExpression -> `false` — no test in this row's include set executes this code
+- `out/tools/telegramFrontDeskBotCore.js:1305:17` BlockStatement -> `{}` — no test in this row's include set executes this code
+- `out/tools/telegramFrontDeskBotCore.js:1307:60` StringLiteral -> `""` — no test in this row's include set executes this code
+- `out/tools/telegramFrontDeskBotCore.js:1308:16` StringLiteral -> `""` — no test in this row's include set executes this code
+- `out/tools/telegramFrontDeskBotCore.js:1310:104` ArrowFunction -> `() => undefined` — no test in this row's include set executes this code
+- `out/tools/telegramFrontDeskBotCore.js:1311:29` StringLiteral -> `""` — no test in this row's include set executes this code
+- `out/tools/telegramFrontDeskBotCore.js:1311:40` StringLiteral -> `""` — no test in this row's include set executes this code
+- `out/tools/telegramFrontDeskBotCore.js:1345:37` BlockStatement -> `{}` — no test in this row's include set executes this code
+- `out/tools/telegramFrontDeskBotCore.js:1409:37` BlockStatement -> `{}` — no test in this row's include set executes this code
+- `out/tools/telegramFrontDeskBotCore.js:1410:16` StringLiteral -> `""` — no test in this row's include set executes this code
+- `out/tools/telegramFrontDeskBotCore.js:1463:11` ObjectLiteral -> `{}` — no test in this row's include set executes this code
+- `out/tools/telegramFrontDeskBotCore.js:1463:19` StringLiteral -> `""` — no test in this row's include set executes this code
+- `out/tools/telegramFrontDeskBotCore.js:1580:46` BlockStatement -> `{}` — no test in this row's include set executes this code
+- `out/tools/telegramFrontDeskBotCore.js:1581:15` OptionalChaining -> `adapters.releaseAmbulance()` — no test in this row's include set executes this code
+- `out/tools/telegramFrontDeskBotCore.js:1589:49` BlockStatement -> `{}` — no test in this row's include set executes this code
+- `out/tools/telegramFrontDeskBotCore.js:1590:15` OptionalChaining -> `adapters.engageAmbulance(decision.ticket)` — no test in this row's include set executes this code
+- `out/tools/telegramFrontDeskBotCore.js:1593:56` BlockStatement -> `{}` — no test in this row's include set executes this code
+- `out/tools/telegramFrontDeskBotCore.js:1594:15` OptionalChaining -> `adapters.executeSharedOperator(decision.verb, decision.args)` — no test in this row's include set executes this code
+- `out/tools/telegramFrontDeskBotCore.js:1606:62` ObjectLiteral -> `{}` — no test in this row's include set executes this code
+- `out/tools/telegramFrontDeskBotCore.js:1606:72` BooleanLiteral -> `true` — no test in this row's include set executes this code
+- `out/tools/telegramFrontDeskBotCore.js:1614:18` StringLiteral -> `"Stryker was here!"` — no test in this row's include set executes this code
+- `out/tools/telegramFrontDeskBotCore.js:1646:16` BlockStatement -> `{}` — no test in this row's include set executes this code
+- `out/tools/telegramFrontDeskBotCore.js:1647:16` StringLiteral -> `""` — no test in this row's include set executes this code
+- `out/tools/telegramFrontDeskBotCore.js:1740:68` BlockStatement -> `{}` — no test in this row's include set executes this code
+- `out/tools/telegramFrontDeskBotCore.js:1741:16` StringLiteral -> `""` — no test in this row's include set executes this code
+- `out/tools/telegramFrontDeskBotCore.js:1817:105` LogicalOperator -> `update.message?.text && ''` — no test in this row's include set executes this code
+- `out/tools/telegramFrontDeskBotCore.js:1817:105` OptionalChaining -> `update.message.text` — no test in this row's include set executes this code
+- `out/tools/telegramFrontDeskBotCore.js:1817:129` StringLiteral -> `"Stryker was here!"` — no test in this row's include set executes this code
+- `out/tools/telegramFrontDeskBotCore.js:1818:12` ConditionalExpression -> `true` — no test in this row's include set executes this code
+- `out/tools/telegramFrontDeskBotCore.js:1818:12` ConditionalExpression -> `false` — no test in this row's include set executes this code
+- `out/tools/telegramFrontDeskBotCore.js:1818:12` EqualityOperator -> `outcome !== 'not-mine'` — no test in this row's include set executes this code
+- `out/tools/telegramFrontDeskBotCore.js:1818:24` StringLiteral -> `""` — no test in this row's include set executes this code
+- `out/tools/telegramFrontDeskBotCore.js:1818:49` StringLiteral -> `""` — no test in this row's include set executes this code
+- `out/tools/telegramFrontDeskBotCore.js:1849:34` BlockStatement -> `{}` — no test in this row's include set executes this code
+- `out/tools/telegramFrontDeskBotCore.js:2260:99` StringLiteral -> `"Stryker was here!"` — no test in this row's include set executes this code
+
+## Verification
+
+| check | result |
+|---|---|
+| `mutation_cooldown_gate.bb` × 3 files | `run` (1.55 / 2.73 / 19.93 days) |
+| host load, pre-check | `1.66/20` (quiet) |
+| host load, pre-launch | `1.35 2.35 6.44/20` (quiet) |
+| `npm run compile` | clean |
+| `node scripts/ensureStrykerSandboxSiblings.js` | all 6 siblings verified, none newly created |
+| `npx stryker run stryker.bl1441bl620.config.json` | 4307 mutants, 2911 killed, 573 survived, 732 no coverage, 11 timeout, 0 errors — completed run, 56m44s |
+| `bb hardening_debt_ledger_read.bb .` (before discharge) | BL-620 row: `attempted_at: 2026-09-08`, `discharged_at: null` |
+
+## Scope
+
+Nothing in `out_of_scope` touched: the cooldown gate, its window, and
+BL-1440's fix are untouched (only relied upon). No mutant suppressed, no
+test authored to chase survivors — that is the hardener's next-stage work
+against this evidence file, not this parcel's.
