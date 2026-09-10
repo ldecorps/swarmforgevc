@@ -23,7 +23,10 @@ required_wiring:
   - 'extension/src/tools/render-model-scoring-report.ts::sendDocument::the report is delivered through BL-1509 upload, the mechanism first live consumer; absent today (grep returns 0)'
   - 'specs/pipeline/steps/bl1510ScoringTableReachesOperatorSteps.js::registerSteps::the handler lands in the same parcel as the feature (BL-233, BL-1371)'
 
-human_approval: pending
+human_approval: approved
+human_ruling: |
+  Markdown table file (.md) (recommended)
+ruling_provenance: tapped
 approval_context: >
   A new feature file is authored here, so it needs a tap, and one choice is
   posed - the attachment's file format - as ruling_options below: the
