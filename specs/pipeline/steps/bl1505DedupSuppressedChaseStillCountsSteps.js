@@ -30,7 +30,6 @@
 const assert = require('node:assert/strict');
 const crypto = require('node:crypto');
 const fs = require('node:fs');
-const os = require('node:os');
 const path = require('node:path');
 const { spawn, spawnSync, execFileSync } = require('node:child_process');
 const { mkSocketFixtureRoot, releaseSocketFixtureRoot } = require('./lib/socketFixtureRoot');
@@ -282,8 +281,13 @@ const CHASE_TIMEOUT_SECONDS = 30;
 const STALE_MTIME_MS = BASE_MS - (CHASE_TIMEOUT_SECONDS + 5) * 1000;
 const SWEEP_STEP_MS = 200000;
 
+// mkSocketFixtureRoot (not os.tmpdir()) even though this fixture builds no
+// socket of its own: the file-level socket-fixture-root guard scopes on
+// ANY tmpdir()-rooted mkdtempSync call co-occurring with a socket reference
+// ANYWHERE in the file (scenario 02's tmux-socket fixture), so a long base
+// here still trips it (BL-948).
 function mkPureFixture() {
-  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'bl1505-pure-'));
+  const root = mkSocketFixtureRoot('bl1505-pure-');
   for (const sub of ['new', 'in_process', 'completed', 'abandoned']) {
     fs.mkdirSync(path.join(root, 'inbox', sub), { recursive: true });
   }
@@ -334,6 +338,7 @@ function reachMaxChasesCount(landed) {
     return sidecar.chaseCount;
   } finally {
     fs.rmSync(root, { recursive: true, force: true });
+    releaseSocketFixtureRoot(root);
   }
 }
 
