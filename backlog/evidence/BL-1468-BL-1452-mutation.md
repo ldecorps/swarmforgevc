@@ -53,6 +53,16 @@ happens to equal Stryker's own `ArrayDeclaration` placeholder, guarding
 Second run (after the fix): 250 mutants tested, 249 killed, **1
 survived** (mutation score 99.60% / 99.44% on `qa-sibling-check.js`).
 
+```
+Ran 4.61 tests per mutant on average.
+                     | % Mutation score |          |           |            |          |          |
+File                 |  total | covered | # killed | # timeout | # survived | # no cov | # errors |
+All files            |  99.60 |   99.60 |      249 |         0 |          1 |        0 |        0 |
+ backlogTicketId.js  | 100.00 |  100.00 |       10 |         0 |          0 |        0 |        0 |
+ bounceArgsCore.js   | 100.00 |  100.00 |       62 |         0 |          0 |        0 |        0 |
+ qa-sibling-check.js |  99.44 |   99.44 |      177 |         0 |          1 |        0 |        0 |
+```
+
 ## The one remaining survivor — reason
 
 ```
@@ -74,6 +84,35 @@ odd-length pair, and every `parse*Args` function already rejects an
 undefined/falsy value for each of its required fields downstream, so the
 short-circuit only moves the rejection one call deeper. This ticket adds
 no new reasoning; it cites the existing one.
+
+## Invariants (BL-654) — both admit no new encoding in this parcel
+
+Same shape as BL-1441's coder pass (`backlog/evidence/BL-1441-coder-pass-20260906.md`);
+this ticket's invariants are BL-1441's invariant 1/2 restated (the
+ticket's own description: "invariant 1 of BL-1441/BL-1468/BL-1488"):
+
+1. *"A ledger row leaves the outstanding debt only through a discharge
+   that names the gate, the parcel and a committed result; a run that
+   cannot complete is recorded as an attempt with its blocker and the row
+   stays outstanding and owned."* This is the ledger MECHANISM's own
+   contract, built and property-tested by BL-1439/BL-942
+   (`bl942_hardening_debt_ledger_property_runner.bb`, re-run this pass:
+   **ok**, unmodified). This parcel is a CONSUMER of that mechanism
+   (`--discharge` via the CLI), not a modifier of it — no ledger code
+   changed here. Writing a second property test asserting the same
+   mechanism BL-1439's own suite already covers would be a duplicate test
+   of code this parcel does not touch, not a new encoding of anything
+   this parcel adds.
+2. *"The register row leaves in the same commit that discharges the
+   ledger row, never earlier; the hardening lane holds no BL-1468 row
+   only when the BL-1452 row is discharged."* This quantifies over a GIT
+   WORKFLOW discipline (which lines a commit's diff contains, together, in
+   one commit) — process, not a pure module a property test can exercise
+   (BL-654's own carve-out: "record a stated reason... when a declared
+   invariant admits no executable encoding"). Honoured directly instead:
+   the `backlog/standing-reds.tsv` line removal is staged in the SAME
+   commit as the ledger discharge and this evidence file (commit
+   `d458b242bc`).
 
 ## Discharge
 
