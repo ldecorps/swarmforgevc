@@ -293,12 +293,28 @@
 ;; ── impure sweep application (adapters map, mirrors ChaserAdapters) ─────────
 ;; adapters keys: :get-liveness :send-wake-up! :trigger-respawn! :log-dead-letter!
 ;;                :get-last-activity-ms :on-stuck-escalation! :log-telemetry!
-;; :send-wake-up! and :send-in-process-resume! return truthy only when a pane
-;; wake was actually delivered (skipped-busy/dedup/recent/failed => false).
+;; :send-in-process-resume! returns a plain boolean, truthy only when a pane
+;; wake was actually delivered (skipped-busy/dedup/recent/failed => false) -
+;; unchanged, the nudge ladder is not this ticket's concern.
+;; :send-wake-up! (BL-1505) returns either that same legacy boolean, or a map
+;; {:attempted bool :landed bool} - :landed keeps the old boolean's exact
+;; meaning (text actually injected); :attempted is true whenever the adapter
+;; was invoked with a reachable pane (chase-poke-and-notify!'s :wake mode was
+;; entered), even when the dedup gate then withheld the text. A plain
+;; boolean result (every existing fake adapter, and any adapter that never
+;; distinguishes the two) is read as :attempted = :landed = that boolean, so
+;; nothing pre-BL-1505 changes meaning. wake-result->attempted?/
+;; wake-result->landed? below are the only places that read this shape.
 ;;                :get-role-head-commit   — BL-528: returns current 10-char HEAD
 ;;                                          for a role's worktree, or "" on error
 ;;                :on-claim-idle-bounce!  — BL-528: called when reclaims reach bounce threshold
 ;;                :on-claim-idle-halt!    — BL-528: called when reclaims reach halt threshold
+
+(defn- wake-result->attempted? [result]
+  (if (map? result) (boolean (:attempted result)) (boolean result)))
+
+(defn- wake-result->landed? [result]
+  (if (map? result) (boolean (:landed result)) (boolean result)))
 
 ;; BL-098: durable per-role chase/nudge/dead-letter/respawn counts. The
 ;; existing sidecars (.chase.json/.nudge) are ephemeral - abandoned once an
@@ -310,10 +326,9 @@
   (fs/file-name file-path))
 
 (defn- wake-role-delivered? [adapters role]
-  (boolean
-   (if-let [resume! (:send-in-process-resume! adapters)]
-     (resume! role)
-     ((:send-wake-up! adapters) role))))
+  (if-let [resume! (:send-in-process-resume! adapters)]
+    (boolean (resume! role))
+    (wake-result->landed? ((:send-wake-up! adapters) role))))
 
 (defn- apply-stuck-nudge! [role held adapters now-ms]
   ;; Prefer an in-process resume wake when the adapter provides one — re-running
@@ -439,7 +454,13 @@
 
 (defn- apply-inbox-item-action! [role item action adapters now-ms]
   (case action
-    "chased" (when ((:send-wake-up! adapters) role)
+    ;; BL-1505: a chase attempt counts whether or not its wake text was
+    ;; injected - the adapter was invoked and the pane was reachable
+    ;; (:attempted), independent of whether the dedup gate then withheld the
+    ;; text (:landed). Keys on :attempted, never on the raw return value, so
+    ;; a dedup-suppressed wake still advances the ladder toward respawn/
+    ;; dead-letter for a live pane that ignores its wake text.
+    "chased" (when (wake-result->attempted? ((:send-wake-up! adapters) role))
                (let [count (inc (:chaseCount item))]
                  (write-chase-count! (:filePath item) count now-ms)
                  ((:log-telemetry! adapters) {:type "chase" :role role :handoffId (handoff-id (:filePath item)) :count count} now-ms)))
@@ -658,7 +679,7 @@
             (json/generate-string (update state role-kw assoc :wokenForUntilMs until-ms))))))
 
 (defn- apply-rate-limit-expiry-wake! [role adapters cooldown-until-ms]
-  (when ((:send-wake-up! adapters) role)
+  (when (wake-result->landed? ((:send-wake-up! adapters) role))
     ((:mark-rate-limit-cooldown-woken! adapters) role cooldown-until-ms)))
 
 (defn- sweep-role! [role inbox-new-dir in-process-dir completed-dir abandoned-dir now-ms config adapters]

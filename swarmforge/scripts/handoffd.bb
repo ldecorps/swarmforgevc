@@ -1718,7 +1718,14 @@
    next role in the same sweep (architect starvation, 2026-07-23). A
    not-preferred poke now REDIRECTS to the preferred role (chase-rotate-to!)
    rather than consuming nothing and dropping the opportunity.
-   Returns true only when a wake or successful rotate was performed.
+   Returns {:attempted bool :landed bool} (BL-1505): :landed is true only
+   when a wake or successful rotate was performed (the pre-BL-1505 boolean's
+   exact meaning - still what the per-sweep resident budget above consumes
+   on); :attempted is true whenever :mode was :wake or a performed :rotate -
+   the pane was reachable and the adapter was invoked, even when the dedup
+   gate inside handoff-wake-with-dedup! then withheld the text. :skip stays
+   {:attempted false :landed false} - no attempt was made there (pane busy,
+   resident woken this sweep, or a refused rotate).
 
    BL-870: `sweep` (wake-attribution-lib/sweep-inbox-item or
    sweep-stuck-in-process) and `mailbox-dir-key` (:new or :in_process) are
@@ -1754,21 +1761,25 @@
                 (record-wake-attribution! ri sweep mailbox-dir-key
                                            wake-attribution-lib/outcome-skipped
                                            :skip-reason (name (:skip-reason plan)))
-                false)
+                {:attempted false :landed false})
       :rotate (let [performed (boolean (:ok (chase-rotate-to! socket roles role)))]
                 (when performed (reset! resident-wake-suppressed? true))
-                performed)
+                {:attempted performed :landed performed})
       ;; Hotfix 2026-09-09: consume the per-sweep resident budget only when
       ;; the wake actually landed - the docstring's own starvation rule. It
       ;; was consumed BEFORE the dedup gate, so one role's suppressed wake
       ;; (coder, unchanged-mailbox) starved every other role sharing the
       ;; resident pane (documenter: chase-wake-skip-dedup x477 in 2h).
-      :wake (let [performed (boolean (handoff-wake-with-dedup!
-                                      ri sweep mailbox-dir-key socket
-                                      (:session ri) (:agent ri) notify-fn!))]
-              (when (and performed (:resident-budget? plan))
+      ;; BL-1505: :attempted is unconditionally true here - reaching :wake
+      ;; mode already means the pane was reachable and the adapter is about
+      ;; to be invoked; handoff-wake-with-dedup!'s own dedup gate (and its
+      ;; BL-870 attribution) decides :landed, not whether an attempt happened.
+      :wake (let [landed (boolean (handoff-wake-with-dedup!
+                                   ri sweep mailbox-dir-key socket
+                                   (:session ri) (:agent ri) notify-fn!))]
+              (when (and landed (:resident-budget? plan))
                 (reset! resident-wake-suppressed? true))
-              performed))))
+              {:attempted true :landed landed}))))
 
 (defn- head-commit-10
   "Exactly 10 hex chars for swarm_handoff.bb's git_handoff commit contract."
@@ -1850,9 +1861,14 @@
   (let [now-ms (System/currentTimeMillis)
         resident-wake-suppressed? (atom false)
         adapters {:get-liveness get-liveness
+                  ;; BL-1505: returns chase-poke-and-notify!'s {:attempted
+                  ;; :landed} map (or {:attempted false :landed false} when
+                  ;; injection is disabled/errors) - chase_sweep_lib.bb's
+                  ;; "chased" branch keys the ladder on :attempted, never on
+                  ;; a raw truthy return.
                   :send-wake-up! (fn [role]
                                     (if (tmux-inject-disabled?)
-                                      false
+                                      {:attempted false :landed false}
                                       (try
                                         (chase-poke-and-notify!
                                          socket roles role resident-wake-suppressed?
@@ -1861,16 +1877,20 @@
                                         (catch Exception e
                                           (log! "chase-wake-error" role (.getMessage e))
                                           (note-chase-control-plane-failure! socket roles)
-                                          false))))
+                                          {:attempted false :landed false}))))
+                  ;; Kept a plain boolean (:landed only) - the nudge ladder
+                  ;; (apply-stuck-nudge!) is unchanged by BL-1505.
                   :send-in-process-resume! (fn [role]
                                               (if (tmux-inject-disabled?)
                                                 false
                                                 (try
-                                                  (chase-poke-and-notify!
-                                                   socket roles role resident-wake-suppressed?
-                                                   (fn [s sess agent]
-                                                     (notify-in-process-resume! s sess agent))
-                                                   wake-attribution-lib/sweep-stuck-in-process :in_process)
+                                                  (boolean
+                                                   (:landed
+                                                    (chase-poke-and-notify!
+                                                     socket roles role resident-wake-suppressed?
+                                                     (fn [s sess agent]
+                                                       (notify-in-process-resume! s sess agent))
+                                                     wake-attribution-lib/sweep-stuck-in-process :in_process)))
                                                   (catch Exception e
                                                     (log! "chase-in-process-resume-error" role (.getMessage e))
                                                     (note-chase-control-plane-failure! socket roles)
