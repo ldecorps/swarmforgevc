@@ -1,5 +1,42 @@
 # SwarmForge VS Code Extension — Specification
 
+**Last Updated:** September 10, 2026 (BL-1497: `acquire-lock!`'s checkout
+lock (`.git/swarmforge-commit-integrity.lock`) had only `release-lock!` ever
+remove it, so a holder that died mid-commit — kill or respawn inside the
+lock's seconds-long window — orphaned the directory forever; every
+subsequent writer on the shared checkout (the coordinator's close, a
+front-desk Approve/Reject/Amend tap, `operator_file_question.bb`, any
+`commit_integrity_cli.bb` caller) then failed `lock-timeout` until a human
+`rmdir`'d it by hand. Measured 2026-09-08 07:53-07:59 BST: a specifier
+commit in flight when the swarm respawned left the lock directory empty at
+07:53:29, and the next call failed `lock-timeout` with `attempts:0` twice
+before a hand `rmdir` and a third call landed. Fixed: every `acquire-lock!`
+winner now writes an `owner.json` record (pid, `created_at_ms`, role) inside
+the lock directory before returning; a caller finding the lock held reads
+that record and reaps (`fs/delete-tree`, then retries `fs/create-dir` inside
+the same bounded loop) only when the recorded pid is not alive (`kill -0`,
+portable — never `/proc`) or the directory carries no readable record and is
+older than `record-less-lock-age-bound-ms` — derived from the CLI's own
+maximum bounded run with a wide margin, floored at 300 s, so a live pre-fix
+holder is never reached. A lock whose recorded owner is alive is never
+touched, whatever its age; the atomic `fs/create-dir` still settles a race
+between two callers judging the same lock stale concurrently — the loser
+treats the fresh lock as held and waits or times out. A successful
+`commit-with-integrity!` that first reaped a stale lock now carries
+`:reaped-lock {:pid :age_ms :reason}`, which `commit_integrity_cli.bb`'s
+JSON line surfaces verbatim (`"reaped-lock":{...}`) for diagnosis.
+`release-lock!` now `delete-tree`s rather than `delete`s, since the
+directory carries `owner.json` and a bare `Files.delete` on a non-empty
+directory would throw and be silently swallowed, leaking a live-owned lock.
+The BL-419 bounded-wait behavior and every existing caller's call site are
+unchanged — the fix lives entirely inside `acquire-lock!`/`release-lock!`.
+Acceptance:
+`specs/features/BL-1497-a-dead-holders-commit-lock-is-reaped-a-live-holders-never.feature`.
+No new extension command, setting, or UI change — a swarm-substrate lock
+fix. No diagram edit: same reasoning as the BL-1490/1491/1492 entries —
+internal commit-lock detail below the architecture diagram's depicted
+granularity.)
+Prior entry —
 **Last Updated:** September 9, 2026 (BL-1278: the concierge's approval ask and TaskStarted cards both built the "What it solves" line from the ticket's `notes:` field (mint provenance/bookkeeping), when they should show the `description:` field (the problem statement). The human was asked to approve a ticket while reading its bookkeeping. `topicRouter.ts` now prefers `description` over `notes`, with `notes` as the fallback for tickets predating the description field or carrying no description. Both `taskStartedText` and `approvalRequestedText` resolve the problem statement the same way, and `buildSummaryBody` applies `firstParagraph` to both fields so multi-paragraph descriptions and notes both truncate to their opening. Acceptance: `specs/features/BL-1278-approval-card-shows-the-description-not-the-mint-notes.feature` (three scenarios: description-present shows description; description-absent falls back to notes; message-length budget holds for long description/notes/context).) Prior entry —
 **Last Updated:** September 9, 2026 (BL-1410: the 17 step handlers the BL-1226 gate's audit split off as a targeted sub-class — eleven importing `mkTmpDir` from `extension/test/helpers/tmpDir.js` and calling it (so leaking under the acceptance runner, which is `node --test` and loads no Vitest `afterEach`), plus two defining a local `mkTmpDir` over a bare `mkdtempSync` with no cleanup under any runner — have been migrated to `specs/pipeline/steps/lib/socketFixtureRoot.js`'s `mkSocketFixtureRoot`, whose process exit hook removes every root it hands out. The four convention-gate handlers among the audited seventeen (bl1066, bl1209, bl1280, bl868) — which carry the helper's name as string-literal test data rather than calling it — are left byte-for-byte, per the migration invariant that test DATA is never rewritten. The remaining two handlers whose only mention was the name inside a string (bl1038, bl1071) were out of scope and unchanged. `socketFixtureRoot.js` exports `_removeStragglersForTesting` for the new feature's own tests; production code still relies on the exit hook. The hardener added a Gherkin mutation manifest to the feature file (`# mutation-stamp: sha256=...` plus `# acceptance-mutation-manifest-begin` / `-end` wrapping the per-scenario JSON result, 4 mutants killed, 0 survived on scenario 01). Acceptance: `specs/features/BL-1410-step-handlers-take-their-fixture-root-from-the-steps-lane-helper.feature` (three scenarios: every migrated feature's run removes every root it created; no handler imports `mkTmpDir` or defines a local `mkTmpDir` over raw `mkdtemp`; string-literal test data is preserved and its features still pass).) Prior entry —
 **Last Updated:** September 9, 2026 (BL-1357: `runScenario` in `specs/pipeline/runtime.js` had no `finally` and called no teardown, so anything a step put in the context outlived the scenario whenever the walk aborted — a step handler threw, or no handler matched the step text at all, raised before the handler was called so outside even the per-step try/catch. Gherkin mutation made the second case routine; BL-1351's polling client leaked for 808 seconds after one mutated trigger. Fixed: a new `dispose(context, scenarioError)` wraps the step walk, calling each registered disposer exactly once on every exit path; disposal failures never mask the original failure. Step handlers opt in via `context.__disposables`; adoption is incremental, existing hand-rolled teardown unaffected. Feature: `specs/features/BL-1357-a-scenario-disposes-what-it-acquired-even-when-it-aborts.feature`.) Prior entry —
