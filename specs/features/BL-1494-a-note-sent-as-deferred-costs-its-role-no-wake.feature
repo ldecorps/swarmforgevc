@@ -1,3 +1,8 @@
+# mutation-stamp: sha256=635aebcb586e4e5712c6907d6972306e6df3995aa54f075f2112cc3b7627e2ec
+# acceptance-mutation-manifest-begin
+# {"version":1,"tested_at":"2026-09-10T09:31:21.305132523Z","feature_name":"BL-1494 a note sent as deferred costs its role no wake","feature_path":"/home/carillon/swarmforgevc/.worktrees/hardender/specs/features/BL-1494-a-note-sent-as-deferred-costs-its-role-no-wake.feature","background_hash":"2ac8ad6e01685497324fd9f0b9e4f1fea134e9966cd477b5849b9383c2cfb491","implementation_hash":"unknown","scenarios":[{"index":3,"name":"the post-QA branch sweep defers every reason but a dirty worktree","scenario_hash":"8f74889f3dc1db2cb53c72ea42050ce0ece4bcf43c98ec9ca247d88dbc2688f4","mutation_count":6,"result":{"Total":6,"Killed":6,"Survived":0,"Errors":0},"tested_at":"2026-09-10T09:31:21.305132523Z"}]}
+# acceptance-mutation-manifest-end
+
 Feature: BL-1494 a note sent as deferred costs its role no wake
 
   The human ruled on BL-1361 that the post-QA branch sweep wakes a role only
