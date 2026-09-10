@@ -27,7 +27,7 @@ acceptance: specs/features/BL-1504-swarm-stamp-wake-dedup-fresh-target-6e05b02dd
 required_wiring:
   - 'specs/pipeline/steps/bl1504SwarmStampWakeDedupFreshTargetSteps.js::registerSteps::the handler lands in the same parcel as the feature (BL-233, BL-1371)'
 
-human_approval: pending
+human_approval: approved
 approval_context: >
   A new feature file is authored here, so it needs a tap. No choice is
   posed and there are no ruling_options. What needs sign-off is the
