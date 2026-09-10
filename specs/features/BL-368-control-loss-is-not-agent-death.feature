@@ -1,3 +1,7 @@
+# acceptance-mutation-manifest-begin
+# {"version":1,"tested_at":"2026-09-10T14:45:30.637110384Z","feature_name":"Losing the control channel is never mistaken for every agent dying","feature_path":"/home/carillon/swarmforgevc/.worktrees/hardender/specs/features/BL-368-control-loss-is-not-agent-death.feature","background_hash":"87173bfff9b528e3acf74152f5c0e9f06afdd03f175cb1612b5ee98e77be3355","implementation_hash":"unknown","scenarios":[],"outcome":"inapplicable"}
+# acceptance-mutation-manifest-end
+
 Feature: Losing the control channel is never mistaken for every agent dying
 
 # BL-368: when the tmux socket vanished (BL-367), the health sweep read `agents_running: 0` and
