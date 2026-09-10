@@ -12,16 +12,24 @@ Feature: BL-1441 The four hardening gates BL-1439 could not run are run and disc
   owned while it waits. The cooldown clears on 2026-09-08.
 
   This feature is that each of the four runs completes and is discharged
-  with evidence, and that the hardening lane of the register is then
-  empty. Both scenarios read the parcel's own committed ledger, evidence
-  and register, a read-only live-tree read justified because they are the
-  contract at this commit.
+  with evidence, and that the register's hardening lane then holds no row
+  naming BL-1441. Rows other tickets own (BL-1468 and BL-1488, deferred
+  after this ticket was minted) are theirs to discharge, not this
+  ticket's. Both scenarios read the parcel's own committed ledger,
+  evidence and register, a read-only live-tree read justified because
+  they are the contract at this commit.
 
   # BL-1441 every-remaining-0819-row-is-discharged-01
-  Scenario: every 2026-08-19 ledger row is discharged and the register's hardening lane is empty
+  # Amended 2026-09-10: at mint the second assertion required the whole hardening
+  # lane to be empty, because on 2026-09-06 this ticket's four rows were the only
+  # hardening debt in existence. BL-1468 (BL-1452's deferred gate, 2026-09-07) and
+  # BL-1488 (BL-1476's, 2026-09-08) accrued their own rows while this ticket sat
+  # parked on cooldown; those runs belong to those tickets. The assertion is scoped
+  # to the rows this ticket owns, the same shape BL-1468 and BL-1488 already use.
+  Scenario: every 2026-08-19 ledger row is discharged and the register holds no hardening row naming BL-1441
     When the parcel's own hardening-debt ledger and standing-red register are read
     Then no outstanding row is dated 2026-08-19
-    And the register report holds no hardening lane row
+    And the register report holds no hardening lane row naming BL-1441
 
   # BL-1441 each-run-completed-with-no-unexplained-survivor-02
   Scenario Outline: each discharged row points at evidence of a completed run

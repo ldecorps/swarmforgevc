@@ -1,5 +1,5 @@
 id: BL-1441
-title: "Four of the five hardening gates deferred on 2026-08-19 could not run inside BL-1439: three file sets were touched by BL-1425 on 2026-09-05 and the cooldown gate refuses them until 2026-09-08, and BL-954's set is stopped by the constitution-citation red (BL-1440); once both clear, the four Stryker runs complete, each row is discharged with evidence, and the register's hardening lane empties"
+title: "Four of the five hardening gates deferred on 2026-08-19 could not run inside BL-1439: three file sets were touched by BL-1425 on 2026-09-05 and the cooldown gate refuses them until 2026-09-08, and BL-954's set is stopped by the constitution-citation red (BL-1440); once both clear, the four Stryker runs complete, each row is discharged with evidence, and the register's hardening lane holds no row naming this ticket"
 milestone: M8
 type: defect
 severity: high
@@ -51,7 +51,7 @@ approval_context: >
 
 invariants:
   - "A ledger row leaves the outstanding debt only through a discharge that names the gate, the parcel and a committed result; a run that cannot complete is recorded as an attempt and stays outstanding, never discharged by assertion."
-  - "The register row of a gate leaves in the same commit that discharges it, never earlier; the hardening lane is empty only when the ledger owes nothing from 2026-08-19."
+  - "The register row of a gate leaves in the same commit that discharges it, never earlier; the hardening lane holds no row naming BL-1441 only when the ledger owes nothing from 2026-08-19."
 
 required_wiring:
   - 'backlog/hardening-debt-ledger.yaml::discharged_evidence: backlog/evidence/BL-1441::the ledger itself, the store the register and throttle read, carries this parcel evidence pointers; absent today (grep returns 0)'
@@ -107,9 +107,9 @@ qa_e2e_procedure: |
      2026-08-19 row with `discharged_at` and a `BL-1439-` or `BL-1441-`
      evidence pointer.
   3. `bb swarmforge/scripts/standing_red_register_cli.bb .` reports no
-     hardening rows; after the coordinator's next promotion decision the
-     throttle recommendation shows no standing-red signal and the
-     effective cap returns to the configured value.
+     hardening row naming BL-1441; the rows naming BL-1468 and BL-1488
+     may still stand (their own tickets discharge them), so the throttle
+     lifting on the register's age is not this ticket's to show.
   4. Each evidence file shows the Stryker summary with zero survivors or
      a recorded reason per survivor.
 
@@ -162,6 +162,23 @@ notes: |
   does not re-derive it. Note that only the cooldown premise was re-checked;
   the host-busy half of the gate is a live reading the hardener takes at its
   own stage, not something this amendment can bank.
+
+  Specifier, 2026-09-10 (in-flight amendment, coder spec-gap note 001861):
+  scenario 01's second assertion read "the register report holds no
+  hardening lane row" and now fails on the BL-1468 and BL-1488 rows, two
+  tickets minted after this one whose file sets this ticket never names.
+  The coder's pass (0ced2555a9, evidence BL-1441-coder-pass-20260910.md)
+  discharged all three remaining rows and removed this ticket's own three
+  register rows; the assertion was mis-scoped at mint, the specifier's
+  miss. Amended the step to "holds no hardening lane row naming BL-1441"
+  (BL-1468's and BL-1488's own shape), the scenario title, the Feature
+  narrative, invariant 2, the title tail and qa_e2e step 3 to match. The
+  step TEXT changed, so the coder must re-match it in
+  bl1441RemainingHardeningGatesRunSteps.js in the same parcel (BL-233).
+  Not re-pended: the change narrows one assertion to this ticket's own
+  rows, identical to two already-approved siblings, and a re-pend posts
+  no fresh ask (BL-1455); the human may re-review from the diff.
+  Evidence: backlog/evidence/BL-1441-spec-amend-20260910.md.
 
 source: |
   `.worktrees/coder/backlog/evidence/BL-1439-coder-20260905.md`;

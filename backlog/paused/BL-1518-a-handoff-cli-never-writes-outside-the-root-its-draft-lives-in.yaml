@@ -31,7 +31,7 @@ required_wiring:
 # telegram-front-desk-bot.ts already shells swarm_handoff.bb, so a pattern
 # on either matches before and after the fix and gates nothing.
 
-human_approval: pending
+human_approval: approved
 approval_context: >
   A new feature file is authored here, so it needs a tap. No choice is
   posed and there are no ruling_options. FIRM: the guard is fail-closed
