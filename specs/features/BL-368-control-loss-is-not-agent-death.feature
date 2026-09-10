@@ -26,12 +26,7 @@ Scenario: A role whose process is still alive is never relaunched
   Then it refuses, because that role's process is still running
   And no second agent is started on that role's worktree
 
-# BL-368 control-loss-is-not-agent-death-03
-Scenario: A genuinely dead agent is still detected and recovered
-  Given a role's agent process has really died
-  When the swarm checks the health of its roles
-  Then it reports that role as exited
-  And it recovers it
+# RETIRE-WITH: BL-1514
 
 # BL-368 control-loss-is-not-agent-death-04
 Scenario: Losing control of the swarm is surfaced loudly

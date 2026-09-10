@@ -22,9 +22,8 @@
 ;; Deterministic by construction: PART A is EXHAUSTIVE (claim-reclaim?'s
 ;; whole input domain is 3 booleans - 8 rows - so full enumeration is
 ;; strictly stronger than any sample and needs no seed at all). PART B uses
-;; a seeded LCG, never rand, matching expedite_lib_property_runner.bb /
-;; operator_lib_bl647_property_runner.bb's own discipline: a property test
-;; that flakes is worse than none.
+;; a seeded LCG, never rand, matching expedite_lib_property_runner.bb's own
+;; discipline: a property test that flakes is worse than none.
 ;;
 ;; NON-VACUITY, made permanent rather than a one-off manual check: every
 ;; property below also runs against at least one DEFECTIVE variant that a
