@@ -1,0 +1,269 @@
+id: BL-1514
+title: "Three acceptance features still assert the operator tick's per-tick AGENT_EXITED producer that BL-653 retired on 2026-08-26 (BL-368 scenario 03, BL-359 scenario 05, BL-647 scenarios 02-05): red on main for 15 days, hidden by the per-feature runner and, since 2026-09-09, by the ninth fixture-list drift aborting the tick before the assertion; the superseded scenarios are retired, never reworded, and the unwired dead-agent-events producer leaves with them"
+milestone: M8
+type: defect
+severity: high
+# high (standing-red rule 2026-09-05): three acceptance-lane features red
+# on main since 2026-08-26, deterministic (pass 3 / fail 1, pass 2 / fail
+# 5, pass 6 / fail 1 at mint), now three register rows. The runtime is
+# right (BL-653 is the human's own wake-model ruling); the broken thing is
+# three durable contracts still asserting the mechanism it retired, which
+# is exactly what the rule refuses to call medium.
+status: todo
+epic: code-quality-gates
+priority: 12
+direction: swarm-reported
+depends_on: []
+mutation_cost: low
+# low: scenario rows deleted from three feature files, one feature file
+# and its handler deleted outright, one unwired defn and its own tests
+# deleted, two dead let-bindings dropped, two narratives re-tensed, a
+# hardener re-stamp of two features; no new production logic anywhere.
+slice_size_envelope: low
+required_stages: [coder, cleaner, architect, hardender, documenter, qa]
+
+# The contract this parcel must satisfy is the two surviving features
+# POST-retirement: the superseded scenarios gone, every remaining one
+# still resolving and green (the BL-1251 shape). Not a claim of ownership
+# over BL-368's or BL-359's contract; their other scenarios are not edited.
+acceptance: specs/features/BL-368-control-loss-is-not-agent-death.feature
+
+# BL-1276: the retiring ticket by construction edits the superseded
+# tickets' feature files; declared so the task-scope gate does not read
+# the edits (and BL-647's deletion) as foreign. Exact path, one per line.
+retires:
+  - specs/features/BL-368-control-loss-is-not-agent-death.feature
+  - specs/features/BL-359-always-on-operator-presence.feature
+  - specs/features/BL-647-rotation-router-liveness.feature
+
+# No required_wiring: no mechanism is built and no call site is needed.
+# The gate that proves this parcel is the feature runs themselves.
+
+human_approval: pending
+approval_context: >
+  Landed contract rows are RETIRED here (BL-368 scenario 03, BL-359
+  scenario 05, and the whole of BL-647's feature file) and an unwired
+  production function is deleted, which is a change to feature files and
+  so needs a tap. No choice is posed and there are no ruling_options.
+  What is FIRM: the retirement executes the human's own 2026-07-25 ruling
+  that BL-653 shipped ("il ne devrait demarrer que s'il y a un message
+  telegram qui est arrive, ou si le babysitter le reveille, non?"), whose
+  feature already asserts no fabricated AGENT_EXITED (BL-653 scenario 05)
+  and whose shell tests already assert zero AGENT_EXITED from the tick;
+  the scenarios are deleted, not reworded to the babysitter, because the
+  successor's scenarios are the coverage (BL-1006: BL-611, BL-1017,
+  BL-804); the remaining scenarios of BL-368 and BL-359 keep their text;
+  the babysitter, handoffd and operator_runtime's wake model are untouched.
+
+invariants:
+  - "After the parcel, no scenario under specs/features/ and no step handler under specs/pipeline/steps/ asserts that operator_runtime.bb's tick emits an AGENT_EXITED event; the only AGENT_EXITED assertions left in the acceptance lane are BL-653's and BL-368's negative ones (no event alongside SWARM_CONTROL_LOST)."
+  - "operator_lib.bb exports no function that no production caller reaches: dead-agent-events is gone and nothing under swarmforge/scripts (outside test/) is left referencing it."
+
+description: |
+  ## What is wrong
+
+  BL-653 (`309e11bdef`, landed 2026-08-26, "escalation-driven operator -
+  no tick patrol pseudo-events") retired the operator tick's dead-agent
+  patrol: `tick!` in `swarmforge/scripts/operator_runtime.bb` no longer
+  calls `operator-lib/dead-agent-events`, and `tick-observed-events`'s own
+  docstring says so ("liveness and periodic patrol belong to the
+  deterministic babysitter; the LLM Operator is summoned, never
+  scheduled"). BL-653 updated the SHELL lane to match: both
+  `test_operator_runtime_control_lost.sh` ("BL-653: dead-agent-events no
+  longer runs from operator tick") and
+  `test_operator_runtime_bl647_rotation_liveness.sh` ("BL-653/BL-647-wire-
+  02: operator tick emits zero AGENT_EXITED when resident is absent") now
+  assert ZERO events and pass. It never touched the three ACCEPTANCE
+  features whose handlers drive the same `--tick-once` and assert the
+  opposite:
+
+  - `specs/features/BL-368-control-loss-is-not-agent-death.feature`
+    scenario 03 (`control-loss-is-not-agent-death-03`, "A genuinely dead
+    agent is still detected and recovered"): handler
+    `controlLossIsNotAgentDeathSteps.js` steps "it reports that role as
+    exited" / "it recovers it" expect `"AGENT_EXITED","subject":"QA"` and
+    `"launched?":true` from the tick. Got: nothing.
+  - `specs/features/BL-359-always-on-operator-presence.feature` scenario
+    05 (`always-on-operator-presence-05`, run index 6, "An always-on
+    Operator never suspends the swarm's own recovery"): handler
+    `alwaysOnOperatorPresenceSteps.js` step "the swarm still detects and
+    recovers them" expects `"AGENT_EXITED","subject":"QA"` from the tick.
+    Got: nothing.
+  - `specs/features/BL-647-rotation-router-liveness.feature` scenarios 02
+    (both outline rows), 03, 04 and 05: handler
+    `bl647RotationRouterLivenessSteps.js` expects one, one, seven and six
+    AGENT_EXITED events from the tick. Got: `[]`. Scenarios 01 and 06
+    ("reports no AGENT_EXITED events") are green VACUOUSLY: nothing in the
+    tick can emit one any more, so they gate nothing (BL-1445's shape).
+    The whole feature describes "the operator's liveness producer", a
+    mechanism that no longer exists; its successor contract is BL-804's
+    feature (babysitter topology awareness: "dormant-role absence is quiet
+    on a green router sweep", "a missing required session is still CRIT
+    under router mode").
+
+  Reproduced at mint by the specifier on a detached throwaway checkout of
+  the coder's BL-1449 tip `b099da3351` (needed only so the ninth
+  fixture-list drift, BL-1449's own subject, stops aborting the tick at
+  load), `extension/out` linked in: BL-368 pass 3 / fail 1 ("expected QA
+  reported as AGENT_EXITED, got: "), BL-647 pass 2 / fail 5 ("expected
+  exactly one AGENT_EXITED event, got: []"), BL-359 pass 6 / fail 1
+  ("expected QA still reported AGENT_EXITED even with a live Operator
+  presence"). Found by the coder on 2026-09-10 running BL-1449's
+  qa_e2e_procedure (evidence
+  `backlog/evidence/UNOWNED-RED-agent-exited-detection-coder-20260910.md`,
+  coder branch `92210ba912`, lands with BL-1449's parcel), reproduced
+  there on `origin/main` `c82509179d` plus the fix.
+
+  Why nobody saw it for 15 days: the runner runs one feature per
+  invocation and a closed ticket's feature runs only when an e2e names it
+  (BL-1462's blind spot), and since 2026-09-09 hotfix `32fb1ff7e1` made
+  every one of these ticks die at load with FileNotFoundException before
+  reaching any assertion. BL-1449 removes the mask; this ticket removes the
+  lie.
+
+  Second, the producer itself is now dead logic. `dead-agent-events`
+  (`operator_lib.bb`, the BL-368/BL-647 function) has NO caller outside
+  `swarmforge/scripts/test/` and `specs/pipeline/steps/`
+  (`grep -rn dead-agent-events swarmforge/scripts/*.bb` hits only its
+  defn and a comment in `tick!`), and `tick!` still computes
+  `rotation-mode` / `rotation-opts` (lines 2237-2240 at mint) for a call
+  that is not there. Article 3.6: dead logic is removed, not re-shipped.
+
+  ## What is wanted
+
+  BL-368's and BL-359's features pass in full from the master checkout
+  and from a linked role worktree (3 and 6 tests respectively), with the
+  superseded scenarios gone and no babysitter-driven rewrite in their
+  place. BL-647's feature file and its handler no longer exist. The two
+  surviving Feature narratives no longer state a false present.
+  `dead-agent-events` and its own tests are gone; `tick!` no longer binds
+  what it does not use. The three register rows leave with the fix.
+
+  ## How (direction, not mandate)
+
+  - Retire, never reword: delete BL-368 scenario 03 and BL-359 scenario
+    05 (comment line and scenario together) and delete
+    `specs/features/BL-647-rotation-router-liveness.feature` outright.
+    Do NOT re-target any of them at babysitterd: BL-1017 ("a standing role
+    with no pane asks for its session to be recreated"), BL-611 (the
+    pane+process check per role) and BL-804 already assert the successor
+    behaviour, and a second assertion of the same property is a second
+    contract to retire next time. A `RETIRE-WITH: BL-1514` comment where
+    a scenario stood is the human-facing convention (backlog-schema.md
+    `retires`); optional, never read by any gate.
+  - Handlers: the step definitions that only the retired scenarios used
+    become orphans; drop them (the registry auto-discovers step files, so
+    deleting `bl647RotationRouterLivenessSteps.js` needs no index edit -
+    grep every `.feature` for its patterns first, the shared-engineering
+    rule; at mint only BL-647's own feature uses them). Keep the
+    `--tick-once` helper and the control-lost steps BL-368 scenarios 01,
+    02 and 04 still drive, and everything BL-359's other scenarios drive.
+    BL-359's retired step also carried a static source grep (handoffd.bb
+    and chase_sweep_lib.bb name no `operator-running?`/`operator.pid`);
+    that check is a grep, not behaviour, and goes with the scenario -
+    record in evidence that it was true at removal.
+  - Re-tense the Feature narratives that now state a false present: BL-368's
+    "the health sweep ... enqueued EIGHT false AGENT_EXITED events" is a
+    dated incident record and may stay; BL-359's "the swarm's health
+    sweeps, dead-pane respawns and stall nudges need [the Operator slot]"
+    describes the pre-BL-653 wake model and is re-tensed to name the
+    babysitter as the owner (BL-1006).
+  - Dead logic: delete `dead-agent-events` from `operator_lib.bb`, the
+    `rotation-mode`/`rotation-opts` bindings in `tick!` (verify nothing
+    else in `tick!` reads them - at mint nothing does; the `prev-conf`
+    use at line 1381 is a different site and stays), the
+    `dead-agent-events` cases in `operator_lib_test_runner.bb`, and
+    `operator_lib_bl647_property_runner.bb` whole. Keep
+    `control-lost-event` and `parse-roles-tsv` (still called). Keep
+    `test_operator_runtime_control_lost.sh` and
+    `test_operator_runtime_bl647_rotation_liveness.sh`: they now assert
+    BL-653's zero-event behaviour and stay green; update their comments
+    that still describe dead-agent-events as a live lib function.
+  - Hardener: BL-368's and BL-359's feature bodies change, so their
+    mutation-stamp headers are invalid; re-run gherkin mutation and
+    re-stamp both in the parcel. No hand-edited manifests.
+  - Documenter: `docs/how-to/BL-653-operator-escalation-driven-wake-model.md`
+    is the living page and already describes the wake model; check it
+    names the babysitter as the liveness owner. The Specification.MD
+    entries for BL-368 and BL-647 are dated changelog records and stay.
+    `docs/how-to/BL-598-trend-false-alarm-rate.md` line 3 names
+    "AGENT_EXITED false positives" as a live alert class; re-tense or
+    leave with a dated note. No registered diagram depicts the operator
+    tick's event set. Remove the three register rows in the same land.
+
+constraints: >
+  Retire, never reword: BL-368 scenarios 01, 02 and 04 and BL-359
+  scenarios 01-04 and 06 keep their text and their claims. No change to
+  the wake model: operator_runtime.bb's tick emits the same events after
+  the parcel as before (SWARM_CONTROL_LOST, provider edges, escalations);
+  babysitterd, handoffd and chase_sweep_lib are untouched. The
+  AGENT_EXITED TYPE stays in operator_lib.bb's event catalogue and its
+  consumers (concierge topic routing, the operator prompt) are untouched:
+  this parcel removes the dead PRODUCER, not the vocabulary. No
+  hand-edited mutation manifests.
+
+out_of_scope: |
+  - Retiring the AGENT_EXITED event type from the catalogue and its
+    consumers (telegram_topic_lib.bb, conciergeTopicRouting, the operator
+    prompt): a deprecator scan of its own, since a future babysitter
+    escalation may legitimately carry the type.
+  - Re-targeting BL-368 scenario 03 or BL-359 scenario 05 at babysitterd:
+    considered and rejected at mint (BL-1006, successor coverage exists;
+    see approval_context).
+  - Running every feature file on a cadence so a closed ticket's red
+    surfaces without an e2e naming it: recorded as a process candidate on
+    BL-1462's adjudication.
+
+qa_e2e_procedure: >
+  From the master checkout: (1) `specs/pipeline/scripts/run_acceptance.sh
+  specs/features/BL-368-control-loss-is-not-agent-death.feature` prints
+  `ok 1..3`, `# fail 0`; (2) the same for
+  `specs/features/BL-359-always-on-operator-presence.feature` prints
+  `ok 1..6`, `# fail 0`; (3) both again from `.worktrees/QA` (or any
+  linked role worktree), same result; (4) `ls
+  specs/features/BL-647-rotation-router-liveness.feature
+  specs/pipeline/steps/bl647RotationRouterLivenessSteps.js` reports
+  neither exists, and `grep -rln 'dead-agent liveness sweep runs'
+  specs/features` is empty; (5) `grep -rn dead-agent-events
+  swarmforge/scripts specs/pipeline` matches nothing outside a dated
+  comment; (6) `bash
+  swarmforge/scripts/test/test_operator_runtime_control_lost.sh` and
+  `bash swarmforge/scripts/test/test_operator_runtime_bl647_rotation_liveness.sh`
+  print ALL CHECKS PASSED, and `bb
+  swarmforge/scripts/test/operator_lib_test_runner.bb` passes; (7) the
+  two surviving features' mutation-stamp headers were re-stamped by the
+  hardener in this parcel (manifest `tested_at` later than 2026-09-10);
+  (8) `backlog/standing-reds.tsv` carries no row for any of the three
+  features and `standing_red_register_cli.bb` agrees (`unowned: []`,
+  count down by three).
+
+source: |
+  Coder note to the specifier and coordinator, priority 00,
+  2026-09-10T12:15Z: "unowned-red: AGENT_EXITED not reported (BL-359 s6,
+  BL-647 s2-6, BL-368 s3)"; evidence
+  `backlog/evidence/UNOWNED-RED-agent-exited-detection-coder-20260910.md`
+  (coder branch `92210ba912`, lands with BL-1449's parcel). Adjudication:
+  `backlog/evidence/UNOWNED-RED-agent-exited-adjudication-specifier-20260910.md`.
+
+notes: |
+  Minted 2026-09-10 by the specifier on the coder's unowned-red note, the
+  same pass (standing-red rule: high at first sighting). Three register
+  rows, lane `acceptance`, one per feature file, each naming this ticket,
+  first_seen 2026-09-10 (first recorded; red since 2026-08-26, BL-653's
+  land).
+
+  Grepped first: no open ticket names any of the three features, their
+  handlers, dead-agent-events or the operator tick's liveness; BL-653 is
+  closed (done/M8) and its out_of_scope says "BL-647's fix. It lands
+  first and stays valid: liveness producers must be pack-aware whoever
+  hosts them" - a statement about the babysitter (BL-804 delivered it),
+  not a charter to keep BL-647's operator-tick contract. BL-594 (epic
+  tracker) and BL-659 mention AGENT_EXITED only in unrelated prose. One
+  ticket, not three: one cause, one remedy, and the three files share the
+  hardener re-stamp and the same land.
+
+  human_approval is pending because landed feature files change (rows are
+  retired, one file is deleted); it poses no choice. The specifier does
+  not edit the features on main at mint - the retirement rides the parcel
+  (BL-1385: never amend a feature on main while a parcel may carry a
+  stamped copy).
