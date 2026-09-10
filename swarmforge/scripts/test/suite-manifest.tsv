@@ -529,3 +529,4 @@ test_check_test_file_registration.sh	standing
 test_handoffd_startup_notify_fresh_target.sh	standing		
 landed_ticket_autoclose_test_runner.bb	standing		
 respawn_bootstrap_test_runner.bb	standing		
+test_commit_integrity_1497_lock_reap.sh	standing		
