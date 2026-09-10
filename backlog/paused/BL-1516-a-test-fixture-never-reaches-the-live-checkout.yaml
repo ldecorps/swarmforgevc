@@ -28,7 +28,7 @@ required_wiring:
   - 'swarmforge/scripts/test/test_bl1378_expedite_close_guard.sh::--git-common-dir::the fixture that created side must prove its root before mutating'
   - 'specs/pipeline/steps/bl1516FixtureRootProofSteps.js::registerSteps::the handler lands in the same parcel as the feature (BL-233, BL-1371)'
 
-human_approval: pending
+human_approval: approved
 approval_context: >
   A new feature file is authored here, so it needs a tap, and this ticket
   authorises DELETIONS in the coder worktree that no agent created this
