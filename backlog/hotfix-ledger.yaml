@@ -297,13 +297,13 @@
   subject: "Hotfix: an honoured SWARMFORGE_USE_BAI=1 sets the b.ai base unconditionally (base follows key)."
   detected_at: 2026-09-09
   state: pending
-  stamp_ticket: null
+  stamp_ticket: BL-1507
   human_decision: null
   decided_at: null
 - commit: 32fb1ff7e1
   subject: "Hotfix: a respawned pane gets the same bootstrap its first launch got."
   detected_at: 2026-09-09
   state: pending
-  stamp_ticket: null
+  stamp_ticket: BL-1508
   human_decision: null
   decided_at: null
