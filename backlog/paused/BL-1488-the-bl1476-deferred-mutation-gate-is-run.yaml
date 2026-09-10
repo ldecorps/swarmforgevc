@@ -1,5 +1,5 @@
 id: BL-1488
-title: "BL-1476 landed on 2026-09-08 with its Stryker mutation gate deferred by the cooldown gate (transcriptWalker.ts, turnProfileProducer.ts and run-turn-profile-producer.ts read 2.95-2.97 of 3 days since BL-1364's touch at run time, then the land itself re-touched all three) and closed, so its hardening-debt ledger row names no open ticket and reads as an unowned red; the run over the three files is completed and discharged once the cooldown clears on 2026-09-11"
+title: "BL-1476 landed on 2026-09-08 with its Stryker mutation gate deferred by the cooldown gate (transcriptWalker.ts, turnProfileProducer.ts and run-turn-profile-producer.ts read 2.95-2.97 of 3 days since BL-1364's touch at run time, then the land itself re-touched all three) and closed, so its hardening-debt ledger row names no open ticket and reads as an unowned red; the run over the three files is completed and discharged now that the cooldown has cleared (it cleared on 2026-09-09 when mutation_cooldown_days was lowered 3->1)"
 milestone: M8
 type: defect
 severity: high
@@ -12,7 +12,18 @@ severity: high
 # which is why deferring was right; the register needs an owner, not a
 # verdict on the risk.
 status: todo
-not_before: 2026-09-11
+not_before: 2026-09-10
+# not_before (BL-1469's gate): AMENDED 2026-09-10 by the specifier's
+# deprecator freshness pass (Article 3.6). The 2026-09-11 date was
+# arithmetic over `config mutation_cooldown_days 3` against the 2026-09-08
+# land; the operator lowered that key to 1 in swarmforge/swarmforge.conf on
+# 2026-09-10 (df25be597b), so the window closed on 2026-09-09. Re-measured
+# with the authoritative reader, `bb swarmforge/scripts/mutation_cooldown_gate.bb
+# . <file>`: transcriptWalker.ts 2.28d, turnProfileProducer.ts 2.25d,
+# run-turn-profile-producer.ts 2.28d, all DECISION: run against a 1-day
+# cooldown, host quiet (1.42/20 cores). Re-run the gate rather than trust
+# these numbers - a land that re-touches one of the three resets its clock,
+# which is what put this ticket here in the first place.
 epic: code-quality-gates
 priority: 8
 direction: swarm-reported
@@ -135,9 +146,21 @@ notes: |
   adjudication-specifier-20260908.md) before the 03:21:16Z supervisor halt
   killed that session (BL-1490).
 
-  Earliest run 2026-09-11 (cooldown from the 2026-09-08 land); not_before
-  carries it for BL-1469's gate. Promote on or after that date, on a
-  quiet host.
+  Earliest run was 2026-09-11 (3-day cooldown from the 2026-09-08 land);
+  not_before carried it for BL-1469's gate.
+
+  Specifier, 2026-09-10 (deprecator freshness pass, Article 3.6 - amend):
+  that date is stale. The operator lowered `mutation_cooldown_days` 3 -> 1
+  this morning (df25be597b), so the window closed 2026-09-09. Nothing else
+  about the ticket changed - same three files, same ledger row, same owed
+  run. Verified rather than inferred:
+  `promotion_gates_cli.bb gate-promotion . BL-1488` answered
+  `REFUSE|not_before|not_before: 2026-09-11 is 1 day away`, and all three
+  files answer DECISION: run under the new key. not_before moved
+  2026-09-11 -> 2026-09-10, which releases the gate today. Adjudication
+  recorded machine-readably (BL-1267). Only the cooldown half was
+  re-checked; host-busy is a live reading the hardener takes at its own
+  stage.
 
   Grepped first: BL-1441 (active) owns only the 2026-08-19 rows; BL-1468
   (paused) only the BL-1452 row; no other open ticket names the BL-1476
