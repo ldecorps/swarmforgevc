@@ -1,0 +1,162 @@
+id: BL-1506
+title: "Swarm stamp-off: hotfix d9a4d0b888 made handoffd close a QA-landed ticket itself (landed auto-close) by reading QA's land record and running close_ticket.sh through the same guarded path the coordinator uses, one attempt per tick with a 30-minute cooldown - review the landed diff, confirm or refute, open narrow follow-ups; never rewrite it and never write the ledger decision"
+milestone: M8
+type: defect
+severity: medium
+# medium: the fault is already fixed on main (BL-1278 sat in active/ after
+# QA landed it, 2026-09-09); what is open is the review the constitution owes
+# a hotfix (BL-848). Not high: nothing is degraded today. The one thing this
+# hotfix changed in the ROLES - the daemon executing the coordinator's close -
+# is recorded in coordinator.prompt by the specifier at mint (BL-798).
+status: todo
+epic: swarm-reliability
+priority: 20
+direction: swarm-reported
+depends_on: []
+mutation_cost: low
+# low: review-only; Babashka only (no mutation/CRAP/DRY wired, BL-472); one
+# step-handler file drives the real landed_ticket_autoclose_lib.bb and the
+# daemon's adapters with fakes.
+slice_size_envelope: low
+required_stages: [coder, cleaner, architect, hardender, documenter, qa]
+
+acceptance: specs/features/BL-1506-swarm-stamp-landed-auto-close-d9a4d0b888.feature
+
+# A review parcel adds no production call site; the mechanism under review
+# is already wired (handoffd.bb auto-close-landed-tickets! inside the
+# landed-but-open sweep). The handler entry is the BL-233 in-parcel pin.
+required_wiring:
+  - 'specs/pipeline/steps/bl1506SwarmStampLandedAutoCloseSteps.js::registerSteps::the handler lands in the same parcel as the feature (BL-233, BL-1371)'
+
+human_approval: approved
+approval_context: >
+  A new feature file is authored here, so it needs a tap. No choice is
+  posed and there are no ruling_options. What needs sign-off is the
+  DISPOSITION only: that reviewing the landed diff of d9a4d0b888 (BL-811 /
+  BL-849 posture) rather than re-implementing it is right, and that
+  medium is the right severity for a review of a fault already fixed.
+  Worth knowing: this hotfix moves the ACT of closing from the
+  coordinator's turn into the daemon, but not the authority - the daemon
+  runs close_ticket.sh as SWARMFORGE_ROLE=coordinator through
+  commit_integrity_cli.bb and ticket_close_guard_lib.bb, so Article 3.3
+  reads unchanged and the specifier recorded the mechanism in
+  coordinator.prompt in the mint commit rather than amending the
+  constitution (boot prefix at budget, BL-859). Reject if you want the
+  close to stay a coordinator-turn act. FIRM: the parcel changes no file
+  under swarmforge/scripts except to add evidence; a refuted scenario is
+  a narrow follow-up via note to the specifier. FIRM: the parcel never
+  writes human_decision into backlog/hotfix-ledger.yaml (scenario 06).
+  Minted by the specifier on the coordinator's ledger note of 2026-09-10
+  07:11Z; the ledger row is linked to this ticket in the mint commit.
+
+invariants:
+  - "The stamp never rewrites the hotfix: every file the parcel touches is evidence, a feature, or a step handler; swarmforge/scripts/*.bb are byte-identical to the received commit."
+
+source: |
+  backlog/hotfix-ledger.yaml row `d9a4d0b888` (detected 2026-09-09,
+  state pending, no stamp ticket) surfaced by the certification sweep as a
+  coordinator note, forwarded to the specifier 2026-09-10 07:11Z. Hotfix
+  landed by the operator (human-directed, Claude Code) 2026-09-09 13:12
+  BST with the `Hotfix-Certification: pending` trailer; human ruling
+  quoted in the operator's note: "hotfix, the coordinator can't deal with
+  it".
+
+description: |
+  ## What
+
+  An operator hotfix is live on main and has never been through a gate.
+  This ticket is that gate: a REVIEW ticket, not a rewrite ticket -
+  confirm or refute, and open narrow follow-ups for anything found.
+
+  ## The failure it fixed
+
+  BL-1278 went through every stage on the all-GLM pack; QA landed it
+  (land-approvals row, commit on origin/main, git_handoff to the
+  coordinator), but the aider/GLM coordinator completed QA's parcel
+  without the active/ -> done/ move, lost track, and chased a phantom
+  "possible drop". Two gaps let that stand: the landed-but-open sweep
+  detected landings by commit SUBJECT only ("QA-approved" / "QA pass
+  inventory"; QA's "BL-1278: QA review pass evidence" never matched, so
+  the sweep logged "none" 458 times that day), and a detected ticket only
+  produced a note to QA.
+
+  ## What landed (files to review)
+
+  - `swarmforge/scripts/landed_ticket_autoclose_lib.bb` (new, pure):
+    `parse-land-approval-lines` / `read-land-approval-rows` (one corrupt
+    row never blinds the sweep), `index-store-approvals` (latest row per
+    ACTIVE ticket whose commit passes an injected ancestry probe, asked
+    once per ticket), `auto-close-candidates` (approved, active, no Close
+    subject on main), `attempt-due?` with `default-cooldown-ms` 30 min in
+    `.swarmforge/daemon/landed-auto-close-attempts.json`,
+    `coordinator-note-message` capped at 80 chars, `attempt-auto-close!`
+    through adapters `close!` / `notify!` / `log!` / `record-attempt!`.
+  - `swarmforge/scripts/handoffd.bb`: `landed-commit-on-origin-main?`
+    (`git merge-base --is-ancestor`), `close-landed-ticket!` (`bash
+    close_ticket.sh <root> <id>` with `SWARMFORGE_ROLE=coordinator`),
+    `notify-coordinator-auto-closed!` (swarm_handoff draft),
+    `auto-close-landed-tickets!` (ONE attempt per tick; store approvals
+    merged over the subject index; closed ids removed from the legacy
+    landed-but-open items). Log tags: `landed-auto-close-candidates`,
+    `landed-auto-close`, `-refused`, `-error`, `-notified`.
+  - Tests: `landed_ticket_autoclose_test_runner.bb` (23 cases, registered
+    standing) - green on main 60623ebf02 (specifier, 2026-09-10); it leaks
+    temp roots, owned by BL-1501, out of scope here.
+
+  ## Review goals
+
+  1. Confirm candidate selection (scenario 01): the store row is a second
+     signal, never a replacement for the guard; a ticket with a Close
+     subject on main or already in done/ is never re-closed.
+  2. Confirm the tick budget (scenario 02) - a guarded commit runs hooks
+     and must stay inside the tick's stall window (BL-1490's supervisor).
+  3. Confirm a refusal moves nothing and the legacy QA nudge still fires
+     (scenario 03); read `ticket_close_guard_lib.bb`'s `close-verdict` to
+     see which refusals are expected in production (no QA git_handoff /
+     note in the coordinator mailbox yet is the common one) and say so in
+     evidence.
+  4. Confirm the coordinator note and the cooldown (scenario 04); check
+     that a note the coordinator never consumes does not re-fire every
+     tick.
+  5. Confirm the prompt currency the specifier landed (scenario 05).
+  6. Refute-worthy question for the architect: with the daemon closing as
+     `SWARMFORGE_ROLE=coordinator`, does the close gate ("mailbox contains
+     a QA git_handoff or note referencing the ticket") still see QA's
+     parcel when the coordinator has ALREADY completed it, as on BL-1278?
+     If the guard refuses exactly the incident case, the hotfix fixed
+     detection but not the close - a follow-up, not a rewrite.
+
+  ## Scenario notes for the coder
+
+  - Scenarios 01-04 drive `landed_ticket_autoclose_lib.bb` directly with
+    fake adapters and a fake ancestry probe - the runner's own shape
+    (`bb -e` from a fixture root). Scenario 03's "legacy nudge still
+    fires" is the runner's wiring check on `handoffd.bb` (closed ids are
+    removed from the landed-but-open items; a refused id is not).
+  - Scenario 05 reads `swarmforge/roles/coordinator.prompt` and asserts
+    the literal `landed auto-close` and `d9a4d0b888` occur before the
+    line beginning `2. **Close**`.
+  - Scenario 06's handler reads `backlog/hotfix-ledger.yaml` for the row
+    `commit: d9a4d0b888` and asserts `human_decision` is null; BL-1346's
+    handler is the precedent.
+
+notes: |
+  Ledger: linked to row d9a4d0b888 via `hotfix_ledger_update.bb --link` in
+  the mint commit. Prompt: coordinator.prompt paragraph "The daemon may
+  have closed it already" landed in the same commit (BL-798: a prompt
+  deliverable is the specifier's to land at mint).
+
+qa_e2e_procedure: |
+  On the parcel commit:
+  1. `git diff main...HEAD --name-only` names only evidence, the feature,
+     the step handler + index.js registration; no swarmforge/scripts/*.bb
+     (invariant 1).
+  2. `run_acceptance.sh` on the BL-1506 feature -> 6 scenarios green.
+  3. `bb swarmforge/scripts/test/landed_ticket_autoclose_test_runner.bb`
+     green.
+  4. Live: `.swarmforge/daemon/landed-auto-close-attempts.json` exists on
+     the running host and the daemon log shows `landed-auto-close-candidates`
+     lines only for active tickets with a land row.
+  5. `backlog/hotfix-ledger.yaml` row d9a4d0b888: `human_decision: null`.
+  6. After done: the human runs `bb swarmforge/scripts/hotfix_ledger_update.bb .
+     --decide d9a4d0b888 approved|waived` and commits the ledger.
