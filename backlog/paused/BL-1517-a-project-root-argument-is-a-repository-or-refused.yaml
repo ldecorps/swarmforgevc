@@ -1,0 +1,109 @@
+id: BL-1517
+title: "Babashka CLIs that take `<project-root>` positionally accept a flag or a literal as the root and create it under cwd: `main_sync_status_cli.bb --help` wrote `--help/.swarmforge/daemon/` (2026-09-04), `operator_runtime.bb --tick-once` wrote `--tick-once/.swarmforge/operator/` (2026-07-13), `expedite_cli.bb` created `unpark/.swarmforge/expedite/` (2026-09-04); a shared root-argument check refuses a root that is not an existing git checkout before any directory is created"
+milestone: M8
+type: defect
+severity: medium
+# medium: real but contained. Each run wrote state to a wrong, ignored
+# place and reported on it (a `--help` invocation returned a sync verdict
+# about an empty directory); no live decision was taken on that state that
+# we can find, and the misplaced files are removed by BL-1516. It is the
+# fail-open shape - a wrong root answers instead of refusing - which is why
+# it is not low.
+status: todo
+epic: swarm-reliability
+priority: 14
+direction: swarm-reported
+depends_on: []
+mutation_cost: low
+# low: one small pure lib, three one-line wiring sites, one step handler;
+# the bb lane has no mutation/CRAP/DRY wired (BL-472), the hardener records
+# the degraded fallback.
+slice_size_envelope: low
+required_stages: [coder, cleaner, architect, hardender, documenter, qa]
+
+acceptance: specs/features/BL-1517-a-project-root-argument-is-a-repository-or-refused.feature
+
+required_wiring:
+  - 'swarmforge/scripts/main_sync_status_cli.bb::project_root_arg_lib.bb::the CLI that wrote --help/ sources the check'
+  - 'swarmforge/scripts/operator_runtime.bb::project_root_arg_lib.bb::the CLI that wrote --tick-once/ and --check-once/ sources the check'
+  - 'swarmforge/scripts/expedite_cli.bb::project_root_arg_lib.bb::the CLI that wrote unpark/ sources the check'
+  - 'specs/pipeline/steps/bl1517ProjectRootArgSteps.js::registerSteps::the handler lands in the same parcel as the feature (BL-233, BL-1371)'
+
+human_approval: pending
+approval_context: >
+  A new feature file is authored here, so it needs a tap. No choice is posed
+  and there are no ruling_options. FIRM: a root argument that begins with
+  `-`, is blank, or is not an existing directory inside a git checkout is
+  refused with usage and exit 2 before any directory is created; the three
+  named CLIs are the wiring sites and their behaviour on a valid root is
+  unchanged.
+
+invariants:
+  - "No CLI wired to the check creates a directory, file or log under a root argument that failed the check; the refusal happens before the first write and names the offending argument verbatim."
+
+description: |
+  ## What is wrong
+
+  Several Babashka CLIs bind their project root as `(first
+  *command-line-args*)` (or `(or (first args) ".")`), canonicalise it
+  against cwd, and `fs/create-dirs` under it before anything checks it is
+  a repository. A flag in the root position, or a subcommand word, becomes
+  a directory. Specimens found at the top level of `.worktrees/coder` on
+  2026-09-10 (all under a gitignored `.swarmforge/`, so invisible to `git
+  status`):
+
+  - `--help/.swarmforge/daemon/{main-sync-deadlock.json,
+    master-main-reconcile-state.json}` - 2026-09-04 11:41:
+    `main_sync_status_cli.bb --help` (line 32: `(fs/canonicalize (or (first
+    args) "."))`) treated `--help` as the root, fetched nothing, and printed
+    a sync verdict for an empty directory.
+  - `--tick-once/.swarmforge/operator/{status.json,heartbeat,
+    starvation.json,...}` and `--check-once/.swarmforge/operator/...` -
+    2026-07-12/13: `operator_runtime.bb` (line 129: `(def project-root (or
+    (first *command-line-args*) (usage)))`) invoked with the flag first.
+  - `unpark/.swarmforge/expedite/tmp/bl1379-8Zak/repo/progress.json` -
+    2026-09-04 12:59: `expedite_cli.bb`'s ordinary parse
+    (`expedite_lib.bb` `parse-args`: `:project-root (first pos)`) took the
+    word `unpark` as the root and `tmp/bl1379-8Zak/repo` as the ticket, and
+    `-main` ran `(fs/create-dirs run-dir)` on it.
+  - `undefined/.swarmforge/board/ticket-stage-map.json` - 2026-07-17, a
+    Node tool with an unset argv. `telegram-front-desk-bot.ts`'s
+    `parseCliArgs` now returns null on a missing arg; this instance is
+    historical and NOT in scope - recorded so nobody re-derives it.
+
+  ## What is wanted
+
+  `swarmforge/scripts/project_root_arg_lib.bb`, one function that takes
+  the raw root argument and answers `{:ok true :root <canonical>}` or
+  `{:ok false :reason <keyword> :arg <verbatim>}`: refuse when the argument
+  is blank, begins with `-`, is not an existing directory, or `git -C <arg>
+  rev-parse --git-common-dir` fails. Wire it into the three CLIs above at
+  the point they bind their root, so a refusal prints the CLI's own usage
+  line plus `REFUSED project-root <arg verbatim>: <reason>` to stderr and
+  exits 2 before any `create-dirs`, log open or fetch. `expedite_cli.bb`'s
+  `unpark` subcommand keeps its own `[_ root run-dir]` parse but runs the
+  same check on `root`. A valid root behaves exactly as today, including
+  main_sync_status_cli.bb's `.` default.
+
+  ## How (direction, not mandate)
+
+  Pure lib, IO at the wiring site, like every `*_lib.bb`. Do not sweep
+  every CLI in the tree in this slice - the three named are the ones with
+  a specimen; a follow-up can adopt the lib elsewhere once it exists.
+
+  ## QA e2e (qa_e2e)
+
+  From a mkdtemp directory that is NOT a git checkout: run each of
+  `bb swarmforge/scripts/main_sync_status_cli.bb --help`,
+  `bb swarmforge/scripts/operator_runtime.bb --tick-once`,
+  `bb swarmforge/scripts/expedite_cli.bb unpark` (no further args) and
+  `bb swarmforge/scripts/expedite_cli.bb unpark tmp/x` and confirm exit 2,
+  a `REFUSED project-root` line naming the argument, and `ls -A` of that
+  directory unchanged. From a real checkout, confirm each CLI's happy path
+  is unchanged (main_sync_status_cli.bb prints its JSON verdict).
+
+notes: |
+  - 2026-09-10 (specifier): minted from the coordinator's note "coder
+    worktree on branch 'side' + root mkdir pollution, mint cleanup",
+    alongside BL-1515 (branch guard + repair) and BL-1516 (fixture proofs,
+    suite census, and the removal of the stray entries this class left).

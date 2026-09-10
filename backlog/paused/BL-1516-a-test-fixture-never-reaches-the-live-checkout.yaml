@@ -1,0 +1,156 @@
+id: BL-1516
+title: "Test fixtures reach the live checkout they run from: BL-1378's fixture ran `git checkout -b side` and committed inside `.worktrees/coder` (2026-09-03), the BL-1494 field runner writes daemon logs under a `bl1395-load-probe-no-root/` placeholder in cwd on every run (2026-09-10), and a bootstrap run from the coder worktree registered six nested `primary/<role>` worktrees (2026-08-30); every fixture root is proven under its mkdtemp before the first mutating git command, the probe placeholder never resolves to cwd, the standing suite fails loud on any new top-level entry it leaves behind, and the thirteen stray entries are removed"
+milestone: M8
+type: defect
+severity: medium
+# medium: real but contained. The one live consequence (the coder's
+# checkout drifting to `side`) is BL-1515's high; what remains here is a
+# fixture class that re-fires on every suite run (today's
+# bl1395-load-probe-no-root/ is from 09:42 this morning) and pollutes the
+# checkout with ignored files, plus thirteen stray entries. No safety
+# signal is broken by this ticket's own defect and no data is lost.
+status: todo
+epic: swarm-reliability
+priority: 12
+direction: swarm-reported
+depends_on: []
+mutation_cost: low
+# low: two shell tests gain a root proof, one bb harness passes a root, one
+# runner gains a before/after census, one step handler; shell and bb lanes
+# have no mutation/CRAP/DRY wired (BL-472), the hardener records the fallback.
+slice_size_envelope: low
+required_stages: [coder, cleaner, architect, hardender, documenter, qa]
+
+acceptance: specs/features/BL-1516-a-test-fixture-never-reaches-the-live-checkout.feature
+
+required_wiring:
+  - 'swarmforge/scripts/test/run_bb_suite.sh::ROOT_POLLUTION_DETECTED::the standing suite runner is the pre-existing consumer that must emit the sentinel'
+  - 'swarmforge/scripts/test/test_bl1378_expedite_close_guard.sh::--git-common-dir::the fixture that created side must prove its root before mutating'
+  - 'specs/pipeline/steps/bl1516FixtureRootProofSteps.js::registerSteps::the handler lands in the same parcel as the feature (BL-233, BL-1371)'
+
+human_approval: pending
+approval_context: >
+  A new feature file is authored here, so it needs a tap, and this ticket
+  authorises DELETIONS in the coder worktree that no agent created this
+  turn, so the tap is also the authority for them. No choice is posed and
+  there are no ruling_options. FIRM: the thirteen entries listed under
+  "Cleanup" are removed only after each precondition beside them is
+  re-verified in the parcel and recorded in evidence; nothing else is
+  deleted; `git stash` and `git clean` are never used.
+
+invariants:
+  - "No standing test, run from any checkout, creates or removes a top-level entry of that checkout, a ref in its repository, or a registered worktree of it; every fixture root is proven (git rev-parse --git-common-dir resolves under the fixture's mkdtemp) before the fixture's first mutating git command, and a root that fails the proof aborts the test naming the path."
+  - "A bb script loaded under a probe (load-file, not invoked) never writes to a path derived from its placeholder root; the placeholder is an absolute temp directory or the write is refused - it is never a relative name resolved against cwd."
+
+description: |
+  ## What is wrong
+
+  Three fixtures wrote into the checkout they ran from instead of their
+  mkdtemp, each a different shape of the same missing proof (engineering
+  Guardrails: a fixture root is proven by `rev-parse --git-common-dir`
+  before any mutating git command; BL-1390):
+
+  1. `swarmforge/scripts/test/test_bl1378_expedite_close_guard.sh` -
+     `mk_fixture` does `git -C "$root" init/add/commit` and
+     `unlanded_commit` does `git -C "$root" checkout -q -b side; commit
+     --allow-empty -m "work that never reached main"` with no proof that
+     `$root` is a repository under `$TMPROOT`. On 2026-09-03 12:46:29 it ran
+     from `.worktrees/coder` with a `$root` that was not one: the coder
+     worktree now carries a directory literally named `On branch main\n
+     nothing to commit, working tree clean\n` containing
+     `/tmp/bl1378-expedite-close.XP3dI3/...` (git status output used as a
+     path), and git walked up from that non-repository into the LIVE coder
+     worktree: `git reflog show side` shows `side` "Created from HEAD"
+     (0f88e62b85) at that exact second and the empty commit 19ce7b76f8 with
+     the fixture's message, now an ancestor of main. The coder has worked
+     on `side` ever since (BL-1515 owns the guard and the repair).
+  2. `swarmforge/scripts/test/bl1494_post_qa_sweep_wake_field_test_runner.bb`
+     load-files `handoffd.bb`, whose BL-1395 probe placeholder root is the
+     RELATIVE name `"bl1395-load-probe-no-root"` (handoffd.bb line ~131),
+     then drives the real `post-qa-branch-sweep-tell!`, which writes
+     `<root>/.swarmforge/daemon/handoffd.log` and
+     `dispatch-gap-drafts/draft-*.txt`. Every run leaves
+     `bl1395-load-probe-no-root/` at the cwd's top level (coder worktree:
+     created 2026-09-10 09:42:57, 10 drafts).
+  3. `.worktrees/coder/.worktrees/{coder,cleaner,architect,hardender,
+     documenter,QA}` are REGISTERED worktrees of the live repository on
+     branches `primary/<role>`, all at 2e519c4a8f "Initial swarmforge
+     repository" (2026-08-30 10:29:53, the commit `swarmforge.sh` line 471
+     makes at bootstrap) - a bootstrap run from inside the coder worktree,
+     which the workflow rules forbid. 2e519c4a8f is an ancestor of main;
+     the six branches hold nothing else.
+
+  Older stray entries at the same top level, from the CLI class BL-1517
+  fixes: `--check-once/`, `--tick-once/` (2026-07-12/13, operator runtime
+  state), `--help/` (2026-09-04, main-sync deadlock/reconcile state),
+  `undefined/` (2026-07-17, `.swarmforge/board/ticket-stage-map.json`),
+  `unpark/` (2026-09-04, `.swarmforge/expedite/tmp/bl1379-8Zak/repo/`).
+  All are gitignored (`.swarmforge/` matches at any depth) so `git status`
+  never showed them; only `ls` does.
+
+  ## What is wanted
+
+  1. `test_bl1378_expedite_close_guard.sh`: `mk_fixture` and
+     `unlanded_commit` prove their root before the first mutating git
+     command - `git -C "$root" rev-parse --git-common-dir` succeeds and
+     resolves under `$TMPROOT` - and abort the whole test (non-zero, one
+     line naming the path) otherwise. Use the idiom
+     `test_bl1390_post_commit_push.sh` already carries (its `common=...`
+     check), not a new one.
+  2. `handoffd.bb`'s probe placeholder never resolves against cwd: under a
+     probe the root is an absolute temp directory (or writes through it are
+     refused) so a harness that drives a real writer leaves nothing at the
+     top level of the checkout; the BL-1494 runner supplies its own mkdtemp
+     root explicitly. Invoked directly with no root, `usage` exits exactly
+     as before (BL-1395's own contract).
+  3. `run_bb_suite.sh` takes a census of the top-level entries of the
+     checkout it runs from (`ls -A` of `git rev-parse --show-toplevel`)
+     before the run and after each test; a test that adds one fails the
+     suite with `ROOT_POLLUTION_DETECTED test=<name> entry=<name>` and the
+     run's exit is non-zero, even when every test itself passed. A clean
+     run prints no such line.
+  4. Cleanup, in the coder worktree, each after its precondition is
+     re-verified and recorded in the evidence (these entries were not
+     created by any agent this turn; this ticket's approval is the
+     authority):
+     - remove `--check-once/`, `--help/`, `--tick-once/`, `undefined/`,
+       `unpark/`, `bl1395-load-probe-no-root/`, and the `On branch main...`
+       directory - precondition: `git ls-files -- <entry>` is empty and
+       `git check-ignore` names `.gitignore:4` for their contents;
+     - `git worktree remove --force` the six nested worktrees and `git
+       branch -D` their six `primary/<role>` branches - precondition per
+       branch: tip is 2e519c4a8f and `git merge-base --is-ancestor
+       2e519c4a8f main` is true. `primary/art-director` (28f6302d32) and
+       `primary/coder-cursor2` are NOT in this list and are not touched.
+
+  ## How (direction, not mandate)
+
+  The census is the only new mechanism; it is the BL-1445 discipline
+  applied to fixture hygiene - a derived population, pinned. Keep it in
+  the runner, not in every test. The probe root fix belongs in
+  handoffd.bb's `project-root` def, not in the runner alone: the runner
+  fix stops today's writer, the def stops the next one.
+
+  ## QA e2e (qa_e2e)
+
+  From a mkdtemp clone: run `bb swarmforge/scripts/test/
+  bl1494_post_qa_sweep_wake_field_test_runner.bb` and confirm no
+  `bl1395-load-probe-no-root` entry appears at the top level; run
+  `run_bb_suite.sh` with a planted test that does `mkdir planted-entry`
+  and confirm `ROOT_POLLUTION_DETECTED test=... entry=planted-entry` and a
+  non-zero exit; run `test_bl1378_expedite_close_guard.sh` with `TMPROOT`
+  forced to a non-repository and confirm it aborts naming the path with no
+  new branch in the clone. On the live install: `ls -A .worktrees/coder`
+  shows none of the seven names, `git worktree list` shows none of the six
+  nested paths, `git branch --list 'primary/*'` shows only
+  `primary/art-director` and `primary/coder-cursor2`.
+
+notes: |
+  - 2026-09-10 (specifier): minted from the coordinator's note "coder
+    worktree on branch 'side' + root mkdir pollution, mint cleanup",
+    alongside BL-1515 (guard + repair) and BL-1517 (CLI root argument).
+    Census taken 2026-09-10 with `ls -A .worktrees/coder`, `git worktree
+    list`, `git branch --list 'primary/*'`; re-run those three to re-derive
+    the list rather than trusting this text. How `$root` came to hold git
+    status output in the BL-1378 run is not on record; the proof makes the
+    cause irrelevant - a bad root aborts instead of walking up.
