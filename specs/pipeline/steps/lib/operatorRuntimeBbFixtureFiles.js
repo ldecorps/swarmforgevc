@@ -40,11 +40,22 @@ function deriveOperatorRuntimeClosure(scriptsDir) {
   return [...computeClosure(scriptsDir, ENTRY_FILE)].sort();
 }
 
-const OPERATOR_RUNTIME_BB_FILES = deriveOperatorRuntimeClosure(SCRIPTS_DIR).concat(OPERATOR_RUNTIME_BB_DECLARED_EXTRAS);
+// Pure: appends declaredExtras onto a derived closure to produce the flat
+// filename list every consumer copies into a fixture root. Extracted so the
+// append itself is unit-testable independent of the live, currently-empty
+// OPERATOR_RUNTIME_BB_DECLARED_EXTRAS (hardener, BL-1449: a hand-mutation
+// check found the concat step had zero coverage while extras stays empty -
+// nothing distinguishes "appended" from "dropped").
+function buildOperatorRuntimeBbFiles(closure, declaredExtras) {
+  return closure.concat(declaredExtras);
+}
+
+const OPERATOR_RUNTIME_BB_FILES = buildOperatorRuntimeBbFiles(deriveOperatorRuntimeClosure(SCRIPTS_DIR), OPERATOR_RUNTIME_BB_DECLARED_EXTRAS);
 
 module.exports = {
   OPERATOR_RUNTIME_BB_FILES,
   OPERATOR_RUNTIME_BB_DECLARED_EXTRAS,
   deriveOperatorRuntimeClosure,
+  buildOperatorRuntimeBbFiles,
   SCRIPTS_DIR,
 };
