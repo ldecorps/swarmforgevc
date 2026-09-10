@@ -1,5 +1,31 @@
 # SwarmForge VS Code Extension — Specification
 
+**Last Updated:** September 10, 2026 (BL-1449: `OPERATOR_RUNTIME_BB_FILES`
+(`specs/pipeline/steps/lib/operatorRuntimeBbFixtureFiles.js`) — the list of
+Babashka files five step handlers copy into a disposable fixture root before
+running `bb operator_runtime.bb <root> --tick-once` — used to be a hand-typed
+array that BL-944 (August 19, 2026) added a standing guard against, comparing
+it to the real transitive `load-file` closure computed from source. The guard
+caught every drift loudly, but the list still drifted ten times
+(BL-412/413/458/647/655/944/1265/1439, plus a ninth on 2026-09-09 when hotfix
+`32fb1ff7e1` added a `load-file` the list did not name, live on `main` as a
+standing red until this ticket) because a hand-maintained list is only ever a
+snapshot of the closure at the moment someone last retyped it. The export is
+now the closure itself, computed at module load
+(`deriveOperatorRuntimeClosure`, sorted) plus
+`OPERATOR_RUNTIME_BB_DECLARED_EXTRAS`, so a new `load-file` anywhere in
+`operator_runtime.bb`'s transitive chain is in the fixture the moment it
+exists, with no edit to this module — the tenth retype BL-1449 exists to make
+the last one. The five consumers keep the same import; BL-944's guard, its
+seeded-list scenarios, and `extension/test/operatorRuntimeBbFixtureClosure.test.js`
+are unchanged in what they decide (its "list matches the closure" assertion
+is now true by construction, guarding the walk's determinism and the extras
+list instead of catching a retype). Acceptance:
+`specs/features/BL-1449-the-operator-runtime-fixture-list-is-derived-never-typed.feature`.
+No new extension command, setting, or UI. No diagram edit — internal fixture
+detail below the architecture diagram's depicted granularity. See
+[Keeping the operator_runtime.bb JS fixture list honest](../how-to/BL-944-operator-runtime-fixture-closure-guard.md).)
+Prior entry —
 **Last Updated:** September 10, 2026 (BL-1497: `acquire-lock!`'s checkout
 lock (`.git/swarmforge-commit-integrity.lock`) had only `release-lock!` ever
 remove it, so a holder that died mid-commit — kill or respawn inside the
