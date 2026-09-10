@@ -12,16 +12,28 @@ epic: code-quality-gates
 priority: 1
 direction: swarm-reported
 depends_on: [BL-1439, BL-1440]
-not_before: 2026-09-11
-# not_before (BL-1469 field, data-only until that gate lands): the coder's
-# 2026-09-08 re-check (f3dcf2050) found the original 2026-09-08 cooldown
-# window moot - BL-1475 re-touched telegram-front-desk-bot.ts and
-# telegramFrontDeskBotCore.ts (~09-08 01:58), and BL-1451 re-touched
-# pipelineBoard.ts (09-07 22:47), each resetting its own file's 3-day
-# mutation_cooldown_gate.bb window. Latest of the two new clears is
-# ~2026-09-11 02:00 (the front-desk pair). Updated by the coordinator
-# 2026-09-08 under the same 2026-09-07 STEERING directive: the coordinator
-# parks this ticket to paused/ and honours the date by hand.
+not_before: 2026-09-10
+# not_before (BL-1469's gate): AMENDED 2026-09-10 by the specifier's
+# deprecator freshness pass (Article 3.6). The 2026-09-11 date was computed
+# under `config mutation_cooldown_days 3`; the operator lowered it to 1 in
+# swarmforge/swarmforge.conf on 2026-09-10 (df25be597b), which retires the
+# premise. Re-measured the same morning with the authoritative reader,
+# `bb swarmforge/scripts/mutation_cooldown_gate.bb . <file>`: all six files
+# answer DECISION: run - telegram-front-desk-bot.ts 1.14d,
+# telegramFrontDeskBotCore.ts 2.32d, telegramTopicDecisions.ts 19.52d,
+# negotiationTelegramRelay.ts 21.70d, negotiationTelegramRouting.ts 21.70d,
+# pipelineBoard.ts 2.45d, all against a 1-day cooldown, host quiet
+# (1.38/20 cores). Re-run the gate rather than trust these numbers: a land
+# that re-touches one of the six resets that file's clock, which is exactly
+# what happened on 2026-09-08.
+#
+# History (why the date moved twice): the coder's 2026-09-08 re-check
+# (f3dcf2050) found the original 2026-09-08 window moot - BL-1475 re-touched
+# telegram-front-desk-bot.ts and telegramFrontDeskBotCore.ts (~09-08 01:58)
+# and BL-1451 re-touched pipelineBoard.ts (09-07 22:47), each resetting its
+# own file's then-3-day window; the coordinator parked the ticket back to
+# paused/ with not_before 2026-09-11 under the 2026-09-07 STEERING directive
+# (an unadvanceable active ticket does not hold a slot).
 mutation_cost: high
 slice_size_envelope: small
 required_stages: [coder, cleaner, architect, hardender, documenter, qa]
@@ -135,6 +147,21 @@ notes: |
   STEERING directive (an unadvanceable active ticket does not hold a
   slot), parked back to paused/ with not_before updated to 2026-09-11 and
   the freed slot promoted forward.
+
+  Specifier, 2026-09-10 (deprecator freshness pass, Article 3.6 - amend):
+  the 2026-09-11 date is stale. It was arithmetic over
+  `config mutation_cooldown_days 3`, and the operator lowered that key to 1
+  in swarmforge/swarmforge.conf this morning (df25be597b). Nothing else about
+  the ticket changed: the six files are the same, the four rows are the same,
+  and the run the ticket owes is the same. Verified rather than inferred -
+  `promotion_gates_cli.bb gate-promotion . BL-1441` answered
+  `REFUSE|not_before|not_before: 2026-09-11 is 1 day away`, and all six files
+  answer DECISION: run under the new key (numbers in the not_before comment).
+  not_before moved 2026-09-11 -> 2026-09-10, which releases the gate today.
+  Adjudication recorded machine-readably (BL-1267) so the next promotion pass
+  does not re-derive it. Note that only the cooldown premise was re-checked;
+  the host-busy half of the gate is a live reading the hardener takes at its
+  own stage, not something this amendment can bank.
 
 source: |
   `.worktrees/coder/backlog/evidence/BL-1439-coder-20260905.md`;
