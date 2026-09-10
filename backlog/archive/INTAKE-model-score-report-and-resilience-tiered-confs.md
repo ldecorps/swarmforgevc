@@ -122,3 +122,19 @@ real trial for `claude-fable-5-1` or `cursor/auto` on coordinator before
 promising it as a fallback; don't list an untested pick as a real option
 (same discipline as `[[glm-bai-specifier-lite-20260909]]` - only score
 what was actually run).
+
+---
+
+## Disposition (specifier, 2026-09-10 07:45 UTC) - split 1:N
+
+| Intake section | Ticket | What went there |
+|---|---|---|
+| 1 (attachment) - mechanism | BL-1509 | `sendDocument` in telegramClient.ts on the sendVoiceNote pattern + a headless CLI posting any file to the Concierge topic |
+| 1 (attachment) - report | BL-1510 | the role-matrix table re-pulled at run time, certified marked, coordinator footer, delivered through BL-1509 (depends_on); file format is a `ruling_options` ask |
+| 2 (best-of-breed conf) | BL-1511 | bob pack regains its specifier line; the model is a `ruling_options` ask (claude-fable-5-1 recommended vs all-GLM) |
+| 3 (fallback tiers) | BL-1512 | `candidate-diversified-fallback-mono-router.conf` with the Fallback 2 column (documenter deviates to qwen3.7-plus, flagged); coordinator seat is a `ruling_options` ask per the intake's own caveat |
+
+Every operator directive above is carried verbatim into the ticket's
+`source:` block (Article 5.3). The 2026-09-09 snapshot table stays here as
+the reference the renderer must reproduce fresh. Epic: best-of-breed-swarm
+(BL-1180, `decomposes_into` updated).

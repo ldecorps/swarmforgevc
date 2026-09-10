@@ -1,0 +1,114 @@
+id: BL-1511
+title: "The BoB mono-router pack seats a specifier again: bob-multi-provider-mono-router.conf regains its specifier window on the model the operator rules (claude-fable-5-1 first-party recommended; all-GLM the alternative), its header stops saying nothing can rotate there, and its stale PACK_STAFFING_SKIP_GATE launch prerequisite goes - the gate passes every b.ai line today"
+milestone: M8
+type: feature
+status: todo
+epic: best-of-breed-swarm
+priority: 12
+direction: human-requested
+depends_on: []
+mutation_cost: low
+# low: one pack conf and its header; gated by the pack staffing gate CLI,
+# the bl931 rotate-pack router gate runner and pack parse tests; no
+# TypeScript.
+slice_size_envelope: low
+required_stages: [coder, cleaner, architect, hardender, documenter, qa]
+
+acceptance: specs/features/BL-1511-the-bob-pack-seats-a-specifier-again.feature
+
+# A conf change has no code call site to anchor; the consumers (launcher,
+# rotate_to_role, staffing gate) already read every pack. Handler pin only.
+required_wiring:
+  - 'specs/pipeline/steps/bl1511BobPackSeatsASpecifierSteps.js::registerSteps::the handler lands in the same parcel as the feature (BL-233, BL-1371)'
+
+human_approval: pending
+approval_context: >
+  A new feature file is authored here, so it needs a tap, and the one
+  choice the intake poses is recorded as ruling_options below: reinstate
+  the specifier on claude-fable-5-1 (Anthropic first-party; the deeper
+  evidence - a live production battery - and the seat this ticket is
+  itself being written from), or go uniform all-GLM including the
+  specifier via aider on b.ai (thinner evidence: one synthetic gate; and
+  aider's whole edit format cannot run shell, see the pack header's own
+  2026-09-09 note). FIRM: only the specifier line, the header's role
+  table / prose about the absent specifier, and the stale launch
+  prerequisite change; every worker line stays as it is. Worth knowing:
+  the master checkout carries an UNCOMMITTED operator edit to this same
+  file today (coder line gains --edit-format diff, 2026-09-10) - the
+  coder's parcel edits its own worktree copy and must not revert that
+  line when it lands; commit the operator edit first if you want it kept.
+  Split by the specifier from the operator's 2026-09-09 intake (1:N):
+  section 2.
+ruling_options:
+  - Reinstate specifier on claude-fable-5-1 via the claude agent, Anthropic first-party (recommended)
+  - Uniform all-GLM, specifier on aider glm-5.3-flash at b.ai, accepting the thinner evidence
+
+invariants: []
+
+source: |
+  backlog/INTAKE-model-score-report-and-resilience-tiered-confs.md
+  (operator, 2026-09-09), section 2, split 1:N by the specifier on
+  2026-09-10. Operator directive, verbatim:
+
+  > ## 2. Candidate "best-of-breed" swarm conf
+  >
+  > By raw score alone, `tencentcloud2/glm-5.3-flash` (b.ai) is the top or
+  > tied-top scorer on every single seat, coder through QA, and ties
+  > `anthropic/claude-fable-5-1` on specifier. A pure best-of-breed conf is
+  > therefore close to what's already running
+  > (`bob-multi-provider-mono-router.conf`, minus specifier being disabled
+  > there). Recommend: reinstate specifier with `claude-fable-5-1` (deeper
+  > evidence: real live-battery production observation vs. GLM's fresh
+  > single-gate synthetic trial - see the caveat on that trial in
+  > `.swarmforge/model-steward/trials/glm-bai-specifier-lite-20260909/`) unless
+  > whoever finalizes this prefers uniform-provider simplicity (all-GLM,
+  > including specifier, accepting the thinner evidence).
+
+description: |
+  ## What
+
+  `swarmforge/packs/bob-multi-provider-mono-router.conf` gains a
+  `window specifier ...` line on the ruled model, placed after the coder
+  home line like every other mono-router pack (e.g.
+  anthropic-mono-router.conf: `window specifier claude master --model
+  claude-fable-5-1 --dangerously-skip-permissions --effort high`). The
+  header's "Role -> agent -> model" table gets the specifier row; the
+  "specifier is deliberately ABSENT" sentence and the window-block
+  comment go; the PREREQ line claiming `PACK_STAFFING_SKIP_GATE=1` is
+  needed because the table lacks an aider/glm entry is retired -
+  measured 2026-09-10 by the specifier, `pack_staffing_gate_cli.bb` reads
+  `pass` on every b.ai line (api-base-host-providers maps api.b.ai), so
+  the hatch is not required and the LAUNCH line drops it. If the human
+  rules all-GLM, the prerequisite for the specifier seat is the same
+  B_AI_API_KEY the workers use; if Claude, the Anthropic subscription the
+  coordinator seat already needs.
+
+  ## Why
+
+  With no specifier line, `rotate_to_role.sh specifier` has nothing to
+  resolve on this pack: root intakes and unowned-red notes cannot be
+  drained by a swarm running it (four such notes were structurally
+  undeliverable on 2026-09-09).
+
+  ## Scenario notes for the coder
+
+  - Scenario 01/03 parse the pack with the launcher's own `parse_config`
+    (the test_alternate_runtime_launch.sh shape) and read the header
+    text; the ruled agent/model comes from the ticket's `human_ruling`.
+  - Scenario 02 runs `bb swarmforge/scripts/pack_staffing_gate_cli.bb
+    <root> <conf>` with `env -u PACK_STAFFING_SKIP_GATE` and asserts every
+    window row's verdict column is `pass` (BL-1485's lesson: decide the
+    variable in the handler, never inherit the pane's).
+
+  ## Not in scope
+
+  - Any worker seat change; the diversified fallback pack (BL-1512).
+
+qa_e2e_procedure: |
+  1. `env -u PACK_STAFFING_SKIP_GATE bb swarmforge/scripts/pack_staffing_gate_cli.bb
+     . swarmforge/packs/bob-multi-provider-mono-router.conf` -> every
+     window line `pass`, the specifier line among them.
+  2. On a scratch root, `swarmforge/scripts/rotate_to_role.sh specifier`
+     dry shape (bl931 runner) resolves a launch line for the pack.
+  3. Header read: role table lists specifier; no "deliberately ABSENT";
+     LAUNCH line carries no PACK_STAFFING_SKIP_GATE.

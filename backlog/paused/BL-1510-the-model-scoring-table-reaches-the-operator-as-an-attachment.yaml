@@ -1,0 +1,127 @@
+id: BL-1510
+title: "The model-scoring table reaches the operator as a fresh attachment: a headless renderer pulls model_steward_cli.bb role-matrix --include-uncertified for every scored role at run time, writes one table file with certified models marked and a footer explaining the coordinator's absence, and delivers it to the Concierge topic through BL-1509's document upload - never a copy of a hand-made table"
+milestone: M8
+type: feature
+status: todo
+epic: best-of-breed-swarm
+priority: 11
+direction: human-requested
+depends_on: [BL-1509]
+mutation_cost: medium
+# medium: extension/src TypeScript under Stryker - a pure renderer over the
+# steward CLI's line output (injected runner), one thin CLI main.
+slice_size_envelope: low
+required_stages: [coder, cleaner, architect, hardender, documenter, qa]
+
+acceptance: specs/features/BL-1510-the-model-scoring-table-reaches-the-operator-as-an-attachment.feature
+
+# Consumer anchor for BL-1509's mechanism: this renderer is the first live
+# caller of sendDocument. The literal is the function name, absent from
+# every tools/ file today (grep returns 0) and present only when the
+# renderer calls it. Handler entry is the BL-233 pin.
+required_wiring:
+  - 'extension/src/tools/render-model-scoring-report.ts::sendDocument::the report is delivered through BL-1509 upload, the mechanism first live consumer; absent today (grep returns 0)'
+  - 'specs/pipeline/steps/bl1510ScoringTableReachesOperatorSteps.js::registerSteps::the handler lands in the same parcel as the feature (BL-233, BL-1371)'
+
+human_approval: pending
+approval_context: >
+  A new feature file is authored here, so it needs a tap, and one choice is
+  posed - the attachment's file format - as ruling_options below: the
+  intake says "properly formatted FILE ATTACHMENT" without naming a
+  format. Markdown is recommended: Telegram previews it as text, git
+  diffs it, and the steward's evidence references stay readable; CSV
+  suits a spreadsheet; HTML renders the widest but is opaque in chat.
+  FIRM: the scored roles are the steward's seven (specifier, coder,
+  cleaner, architect, hardender, documenter, QA) and the coordinator is
+  excluded with a footer saying why, exactly as the intake's coordinator
+  note states. FIRM: the report is re-pulled at run time through the
+  steward CLI (`role-matrix <role> --include-uncertified`), never a
+  committed copy of the intake's table. FIRM: delivery is one-shot on
+  demand from a headless CLI the operator or a role runs; a Telegram
+  /command that triggers it is not in scope (say so if you want it and it
+  becomes a follow-up). Split by the specifier from the operator's
+  2026-09-09 intake (1:N, Consolidation Authority): this is the report
+  half of its section 1; BL-1509 is the mechanism half.
+ruling_options:
+  - Markdown table file (.md) (recommended)
+  - CSV file (.csv)
+  - HTML file (.html)
+
+invariants: []
+
+source: |
+  backlog/INTAKE-model-score-report-and-resilience-tiered-confs.md
+  (operator, 2026-09-09), section 1, split 1:N by the specifier on
+  2026-09-10 into BL-1509 (the upload + CLI) and BL-1510 (this: the
+  report). Operator directives, verbatim:
+
+  > ## 1. A properly formatted attachment of current scoring, all seats x all models
+  >
+  > Full `model_steward_cli.bb role-matrix <role> --include-uncertified` pull
+  > across all 7 scored roles, taken 2026-09-09 (`coordinator` is NOT part of
+  > this - the model steward does not track it as a role-matrix role at all;
+  > see the coordinator note at the bottom). Certified models are marked *;
+  > uncertified (candidate) are plain.
+
+  > Full registry also carries uncertified candidates never role-matrix-scored
+  > at all: `alibabacloud/qwen3.8-flash`, `cerebras/llama-3.3-70b`,
+  > `mixai/mimo-v2.5`, `nvidia/nemotron-3-ultra-550b-a55b`,
+  > `tencentcloud2/hy3`, `moonshotai/kimi-k3` (certified but also unscored on
+  > any role) - worth a `role-matrix ... --include-uncertified` re-pull at
+  > delivery time in case new trials landed between now and then.
+
+  > **Deliverable**: render the table above (re-pulled fresh, not copy-pasted
+  > stale) as a properly formatted FILE ATTACHMENT delivered to the operator's
+  > Concierge Telegram topic - not inline chat text.
+
+  The intake's 2026-09-09 snapshot table (40 rows) is data the renderer
+  re-derives; it is preserved in the archived intake, not restated here.
+
+description: |
+  ## What
+
+  A headless CLI under `extension/src/tools/` (`render-model-scoring-report.ts`
+  is the name the wiring anchor pins) that, for each of the seven scored
+  roles, runs `bb swarmforge/scripts/model_steward_cli.bb role-matrix
+  <role> --include-uncertified` (the runner is injected so tests feed
+  fixture lines), parses the line shape the CLI prints today
+  (`<provider>/<model> <score> <evidence>`, verified 2026-09-10), joins
+  with the registry's certified set to mark `*`, renders one table file
+  in the ruled format under the project's `tmp/` (or a `--out` path), and
+  sends it to the Concierge topic through BL-1509's `sendDocument`.
+  Columns: Role, Model, Score, Provider/plan (from the registry entry),
+  Evidence. A footer line states the coordinator is not a role-matrix
+  role. A `--no-send` flag renders only.
+
+  ## Why
+
+  The operator asked for the current scoring as an attachment, fresh at
+  delivery, and named the two halves (a document upload; the report).
+
+  ## Scenario notes for the coder
+
+  - Scenario 01/02/03 drive the exported renderer with an injected steward
+    runner returning fixture lines and an injected registry reader;
+    scenario 02 changes one fixture score between two renders.
+  - Scenario 04 injects the send function and asserts one call to the
+    Concierge topic id from a fixture topic map, carrying the rendered
+    bytes and filename.
+  - The certified mark: read the registry the steward CLI reads
+    (`model_steward_cli.bb status` or the registry JSON) - do not parse
+    the mark out of prose.
+
+  ## Not in scope
+
+  - The upload mechanism (BL-1509). A /command trigger. Any change to
+    the steward's scoring.
+
+qa_e2e_procedure: |
+  On the parcel commit, from the repo root with the front desk's token and
+  chat in the environment:
+  1. `node extension/out/tools/render-model-scoring-report.js .` -> the
+     attachment appears in the Concierge topic; open it: seven roles, the
+     coordinator footer, `*` on certified rows, evidence refs intact.
+  2. `--no-send --out tmp/report.<ext>` writes the same file locally; diff
+     it against a fresh `bb model_steward_cli.bb role-matrix coder
+     --include-uncertified` for one role - every line present.
+  3. `npm test` green; Stryker over the renderer with no survivors.
