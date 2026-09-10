@@ -21,7 +21,10 @@ acceptance: specs/features/BL-1511-the-bob-pack-seats-a-specifier-again.feature
 required_wiring:
   - 'specs/pipeline/steps/bl1511BobPackSeatsASpecifierSteps.js::registerSteps::the handler lands in the same parcel as the feature (BL-233, BL-1371)'
 
-human_approval: pending
+human_approval: approved
+human_ruling: |
+  Reinstate specifier on claude-fable-5-1 via the claude agent, Anthropic first-party (recommended)
+ruling_provenance: tapped
 approval_context: >
   A new feature file is authored here, so it needs a tap, and the one
   choice the intake poses is recorded as ruling_options below: reinstate
