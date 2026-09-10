@@ -2230,14 +2230,6 @@
         control (tmux-control-status)
         live-sessions (:sessions control)
         agents-running (count (remove #{operator-session} live-sessions))
-        roles (operator-lib/parse-roles-tsv
-               (when (fs/exists? roles-file) (slurp (str roles-file))))
-        ;; BL-647: resolved from the conf, never inferred from live-sessions'
-        ;; size — dead-agent-events trusts these unchanged.
-        rotation-mode (swarm-identity-lib/conf-rotation-mode (active-launch-config-path))
-        rotation-opts {:rotation-mode rotation-mode
-                       :active-role (handoff-lib/read-mono-router-active-role)
-                       :resident-session (handoff-lib/mono-router-resident-session)}
         prov (scan-provider-state now)
         provider-state (:state prov)]
 

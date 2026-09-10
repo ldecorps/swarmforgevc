@@ -1,3 +1,7 @@
+# acceptance-mutation-manifest-begin
+# {"version":1,"tested_at":"2026-09-10T14:45:30.637110384Z","feature_name":"Losing the control channel is never mistaken for every agent dying","feature_path":"/home/carillon/swarmforgevc/.worktrees/hardender/specs/features/BL-368-control-loss-is-not-agent-death.feature","background_hash":"87173bfff9b528e3acf74152f5c0e9f06afdd03f175cb1612b5ee98e77be3355","implementation_hash":"unknown","scenarios":[],"outcome":"inapplicable"}
+# acceptance-mutation-manifest-end
+
 Feature: Losing the control channel is never mistaken for every agent dying
 
 # BL-368: when the tmux socket vanished (BL-367), the health sweep read `agents_running: 0` and
@@ -26,12 +30,7 @@ Scenario: A role whose process is still alive is never relaunched
   Then it refuses, because that role's process is still running
   And no second agent is started on that role's worktree
 
-# BL-368 control-loss-is-not-agent-death-03
-Scenario: A genuinely dead agent is still detected and recovered
-  Given a role's agent process has really died
-  When the swarm checks the health of its roles
-  Then it reports that role as exited
-  And it recovers it
+# RETIRE-WITH: BL-1514
 
 # BL-368 control-loss-is-not-agent-death-04
 Scenario: Losing control of the swarm is surfaced loudly
