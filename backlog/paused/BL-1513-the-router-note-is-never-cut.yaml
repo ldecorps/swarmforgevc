@@ -1,0 +1,181 @@
+id: BL-1513
+title: "route_backlog_to_coder.sh composes its Work note from the ticket file's basename and cuts it to the 80-char message limit, so 52 of 107 live tickets reach their first role with the instruction's tail gone (BL-1494 arrived as `read file in backlo` at 07:51Z on 2026-09-10, was completed unworked at 07:55Z and re-routed by hand at 08:21Z); the note names the ticket id and its path, fits for every id, and a message that cannot fit is refused whole, never sent cut"
+milestone: M8
+type: defect
+severity: medium
+# medium: real but contained. The ticket id at the head of the note survives
+# every live case (the slug is cut only past 75 characters, the id never),
+# both parsers that read the note (dispatch trail, BL-1422 completion guard)
+# match verb-plus-id and still see a dispatch, and the coordinator recovered
+# by hand in one round trip. The cost is the instruction: the only active
+# ticket at cap 1 sat unworked for thirty minutes. No safety signal is
+# broken and no data is lost.
+status: todo
+epic: swarm-reliability
+priority: 9
+direction: swarm-reported
+depends_on: []
+mutation_cost: low
+# low: one shell script's message composition and one refusal branch, one
+# step handler; shell and bb lanes have no mutation/CRAP/DRY wired (BL-472),
+# so the hardener records the degraded fallback.
+slice_size_envelope: low
+required_stages: [coder, cleaner, architect, hardender, documenter, qa]
+
+acceptance: specs/features/BL-1513-the-router-note-is-never-cut.feature
+
+required_wiring:
+  - 'specs/pipeline/steps/bl1513RouterNoteFitsSteps.js::registerSteps::the handler lands in the same parcel as the feature (BL-233, BL-1371)'
+
+human_approval: pending
+approval_context: >
+  A new feature file is authored here, so it needs a tap. No choice is posed
+  and there are no ruling_options. FIRM: the router composes its dispatch
+  note from the ticket id and refuses, never cuts, a message over the
+  80-character limit; the parsers that read the note are untouched and notes
+  already on record in the old shape stay readable.
+
+invariants:
+  - "A note route_backlog_to_coder.sh sends is delivered byte-for-byte as composed: a message over the 80-character header limit is refused with the limit and its length named and nothing is queued; the router never shortens a message."
+  - "The routed message keeps the verb-first `Work <ticket-id>` form that chase_sweep_lib.bb's spec-work-ticket-id-pattern and BL-1422's completion guard parse, and notes already on record in the old `Work <basename>: read file in backlog/active` shape stay readable by every parser unchanged."
+
+description: |
+  ## What is wrong
+
+  `swarmforge/scripts/route_backlog_to_coder.sh` composes the coordinator's
+  dispatch note as `Work <ticket-file-basename>: read file in backlog/active`
+  and, because a note's `message` header is capped at 80 characters
+  (`swarmforge/handoff-protocol.md`; `swarm_handoff.bb` refuses longer), cuts
+  the string to 80 before sending (`MSG="${MSG:0:80}"`, line 142). The
+  basename is the whole slug, so any ticket whose file name is longer than 46
+  characters loses the tail of its instruction, and one longer than 75 loses
+  part of its own slug. Measured 2026-09-10 across `backlog/paused` and
+  `backlog/active`: 52 of 107 live tickets are over 46; BL-1498 (82) and
+  BL-1499 (86) are over 75.
+
+  Incident: BL-1494 was promoted at 07:51:41Z on 2026-09-10. The coder's copy
+  (`.worktrees/coder/.swarmforge/handoffs/inbox/completed/10_20260910T075141Z_007657_from_coordinator_to_coder_for_coder.handoff`)
+  carries the 80-character message
+  `Work BL-1494-a-note-sent-as-deferred-costs-its-role-no-wake: read file in backlo`.
+  The coder dequeued it at 07:54:40Z and completed it at 07:55:30Z with no
+  BL-1494 evidence anywhere; at 08:21:20Z the coordinator re-routed by hand
+  with `Work BL-1494: read backlog/active/BL-1494-*.yaml` (48 characters) and
+  reported the defect. The only active ticket at cap 1 sat unworked for
+  thirty minutes.
+
+  Not broken: the two consumers that parse the note - `spec-work-ticket-id-pattern`
+  in `chase_sweep_lib.bb` (the dispatch trail, BL-1223) and BL-1422's
+  completion guard through `work_note_evidence_lib.bb` - match
+  `Work <PREFIX>-<digits>` and read the cut note as a dispatch
+  (`dispatch_trail_cli.bb . dispatched BL-1494` prints DISPATCHED today). The
+  instruction is what is lost.
+
+  ## What changes
+
+  - The note names the ticket id, not the file basename, and states where
+    the file is (`backlog/active`); it is under the 80-character limit for
+    every id the swarm mints (`BL-`/`GH-` plus digits), so no live ticket is
+    cut.
+  - The silent cut goes: a composed message that would still exceed the
+    limit is refused before anything is queued, naming the limit and the
+    length; the router never sends a shortened note (invariant 1).
+  - The verb-first `Work <ticket-id>` form stays, so the dispatch trail and
+    the completion guard read the new note exactly as they read the old one,
+    and notes already on record in the old shape stay parseable - no parser
+    changes (invariant 2).
+  - `swarmforge/scripts/done_with_current_task.bb`'s comment (line 96) and
+    `docs/how-to/BL-652-done-with-current-arg-rejection.md` (line 32) quote
+    the old message shape; they say the new one. The fixtures that feed the
+    old shape TO the parsers (`bl1097_router_dispatch_trail_test_runner.bb`,
+    `bl1422_work_note_not_completed_without_work_property_runner.bb`,
+    `bl1097_router_no_op_origination_property_runner.bb`,
+    `test_done_with_current_work_note_evidence.sh`,
+    `test_bl1097_router_refuses_dispatched_ticket.sh`,
+    `dispatch_gap_test_runner.bb`, `bl1415LostDispatchSteps.js`,
+    `bl1422WorkNoteNotCompletedWithoutWorkSteps.js`,
+    `bl1185WorkNoteMissingTaskHeaderSteps.js`, `residentPaneSpy.test.js`)
+    are inputs to the parsers, not assertions on the router's output; they
+    stay as they are.
+
+  ## How (direction, not mandate)
+
+  - `TICKET_ID` is already resolved from the ticket's `id:` field before the
+    message is composed (falls back to the basename only when no id can be
+    read); compose from it. The coordinator's hand-typed
+    `Work BL-1494: read backlog/active/BL-1494-*.yaml` is one form that fits
+    and names both.
+  - Replace the `${MSG:0:80}` branch with a refusal: non-zero exit, stderr
+    naming 80 and `${#MSG}`, before the draft is written and before the
+    `assigned_to` rewrite would be left behind by a route that never happened
+    (the BL-1097 posture already in the script).
+  - Step handler `specs/pipeline/steps/bl1513RouterNoteFitsSteps.js` drives
+    the REAL script against a fixture repo the way
+    `bl1415LostDispatchSteps.js` does (`mkSocketFixtureRoot`,
+    `SWARMFORGE_SKIP_DAEMON=1`), reading the delivered note from the coder's
+    `new` mailbox. A slug of 90 characters makes the old composition 128
+    characters and the new one unchanged. Scenario 03's 70-digit id makes
+    `Work BL-<id>` alone 78 characters, so any composition that also names a
+    path exceeds the limit whatever wording the coder picks; the id is read
+    from the fixture ticket's `id:` field, which is where the script reads it.
+  - Shell and bb lanes have no mutation/CRAP/DRY wired (BL-472): the hardener
+    records the degraded fallback and runs the shell tests.
+
+constraints: >
+  No change to the message limit, the note type, the note priority, or any
+  parser (`chase_sweep_lib.bb`, `work_note_evidence_lib.bb`, the logic of
+  `done_with_current_task.bb`). The note keeps the verb-first `Work <id>`
+  form. Stock macOS bash 3.2 (BL-801, BL-937). The step handler lands with the
+  feature in the same commit (BL-233). The fixture is a `git init` under
+  mkdtemp proven by `rev-parse --git-common-dir` before any mutating git call
+  (BL-1390).
+
+out_of_scope: |
+  - Why the coder completed the cut note at 07:55:30Z with no evidence when
+    BL-1422's guard reads the cut note as a Work note and should have refused
+    the completion - not established here; a separate defect if it recurs on
+    an uncut note.
+  - The chase sweep's own note composers that also `subs` to 80
+    (`open-slot-nudge`, dropped-parcel, batch-claim in `chase_sweep_lib.bb`):
+    they compose from bare ids and fixed phrases and stay under the limit.
+  - The day-shift log's display truncation (its own `...` at about 70
+    characters is presentation, not the delivered note).
+
+qa_e2e_procedure: >
+  (1) Acceptance: the BL-1513 feature runs green through
+  `specs/pipeline/runtime.js` and `bl1513RouterNoteFitsSteps.js` is
+  registered. (2) Live: on the next promotion the coordinator makes of a
+  ticket whose basename is over 46 characters (52 qualify), read the coder's
+  `new` mailbox copy: its `message:` header begins `Work BL-<id>`, names
+  `backlog/active`, and the header value is at most 80 characters and ends in
+  a whole word. (3) `bb swarmforge/scripts/dispatch_trail_cli.bb . dispatched <that id>`
+  prints DISPATCHED. (4) `grep -n 'MSG:0:80' swarmforge/scripts/route_backlog_to_coder.sh`
+  returns nothing. (5) `swarmforge/scripts/test/test_route_backlog_role_label_bash32.sh`
+  and `test_bl1097_router_refuses_dispatched_ticket.sh` still pass.
+
+source: |
+  Coordinator note to the specifier, priority 00, 2026-09-10T08:21:33Z:
+  "route_backlog_to_coder.sh 80-char note truncation drops path".
+  Coder mailbox copy 10_20260910T075141Z_007657 (message cut to
+  `...read file in backlo`; dequeued 07:54:40Z, completed 07:55:30Z);
+  the coordinator's hand re-route 10_20260910T082120Z_007684
+  (`Work BL-1494: read backlog/active/BL-1494-*.yaml`).
+
+notes: |
+  Minted 2026-09-10 by the specifier on the coordinator's note, the same
+  pass. Grepped first: no open ticket names the router's message or its
+  truncation (backlog/paused, backlog/active); BL-1097, BL-1223, BL-1415 and
+  BL-1422 are the router's landed neighbours and none touched the
+  composition.
+
+  Census (BL-1445): `for f in backlog/paused/*.yaml backlog/active/*.yaml; do
+  b=$(basename "$f" .yaml); echo ${#b}; done | awk '$1>46{c++} END{print c, NR}'`
+  gives `52 107` on 2026-09-10; over 75 (slug itself cut): BL-1498 (82),
+  BL-1499 (86). Re-run it rather than re-derive it.
+
+  This ticket's own file name is deliberately short (36 characters) so its
+  own dispatch note fits under the unfixed router.
+
+  IR-DRY (2026-09-10): one residual finding, the outline's parameterized
+  Given reused concretely (`slug of 90 characters`) in scenario 02 - one
+  step handler serves both, by design; the four Given/When and synonym
+  findings were resolved by sharing one `routes the ticket` action step.
