@@ -13,7 +13,10 @@ remaining_slices:
   - "extension/src/tools/telegramFrontDeskBotCore.ts - 288 survived, 91 no-coverage, 2048 mutants, score 81.49% (BL-955's row; BL-620's row read 262/78 against a different include set). 89 of them are module-level constant and pattern tables, then answerIfAlreadyDecided 21, recordRulingDecisionAndClose 16, CONTROL_DECISION_EFFECTS 16, dispatchRuleCallback 12 no-coverage. Slicing waits on the human ruling below."
   - "extension/src/concierge/pipelineBoard.ts - 177 survived, 39 no-coverage, 1028 mutants, score 78.99%, 41 functions, the five HTML renderers holding 86 (formatCollapsedEpicLineHtml 20, composePipelineBoardHtml 19, renderListSectionHtml 17, renderParkedSectionHtml 16, renderGridTapLinesHtml 14). Slicing waits on the human ruling below."
 
-human_approval: pending
+human_approval: approved
+human_ruling: |
+  Chase the untested logic only - the no-coverage regions (make the CLI adapter builders thin wrappers or cover them) and the module-level decision tables - and accept the remaining first-run survivors as grandfathered debt guarded by the changed-path gate (recommended)
+ruling_provenance: tapped
 approval_context: >
   This tracker asks one question and mints nothing on its own. BL-1441
   discharged three deferred mutation gates on completed runs, as its spec
