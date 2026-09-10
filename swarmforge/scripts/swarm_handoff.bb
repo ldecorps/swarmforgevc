@@ -43,7 +43,8 @@
        "type: note\n"
        "to: <role>[,<role>...]\n"
        "priority: NN\n"
-       "message: <one line, max 80 chars>\n\n"
+       "message: <one line, max 80 chars>\n"
+       "wake: defer  (optional, note-only, BL-1494)\n\n"
        "type: rule_proposal\n"
        "to: <role>[,<role>...]\n"
        "priority: NN\n"
@@ -52,7 +53,7 @@
        "rationale: <why the rule is needed, max 200 chars>"))
 
 (def reserved-fields #{"id" "from" "role" "recipient" "created_at" "enqueued_at" "dequeued_at" "completed_at" "routing_skipped" "non-forwarding"})
-(def allowed-fields #{"type" "to" "priority" "task" "commit" "message" "rejection_reason" "reroute_reason" "scope" "body" "rationale"})
+(def allowed-fields #{"type" "to" "priority" "task" "commit" "message" "wake" "rejection_reason" "reroute_reason" "scope" "body" "rationale"})
 (def allowed-types #{"awake" "git_handoff" "note" "rule_proposal"})
 (def valid-scope-pattern #"constitution|engineering|project|role:[a-zA-Z][a-zA-Z0-9]*")
 
@@ -288,7 +289,12 @@
         commit (get headers "commit")
         task-name (get headers "task")
         note-message (get headers "message")
+        wake-value (get headers "wake")
         [recipients recipient-errors] (validate-recipients to)
+        ;; BL-1494: "wake" is excluded from this generic type/field matrix -
+        ;; its only legal shape is a note carrying exactly "defer", so any
+        ;; deviation (wrong type OR wrong value) is refused below as an
+        ;; unknown header, never as a per-type "not allowed" mismatch.
         field-errors (for [field ordered
                            :let [valid? (case [type field]
                                           ["awake" "type"] true
@@ -314,8 +320,15 @@
                                           ["rule_proposal" "body"] true
                                           ["rule_proposal" "rationale"] true
                                           false)]
-                           :when (and type (not valid?))]
+                           :when (and type (not valid?) (not= field "wake"))]
                        (format "Header '%s' is not allowed for type '%s'." field type))
+        ;; BL-1494: the sole accepted shape is type note, value "defer" -
+        ;; everything else (wrong type, wrong value, or both) is refused
+        ;; uniformly as an unknown header, per the protocol prose.
+        wake-errors (cond
+                      (nil? wake-value) []
+                      (and (= "note" type) (= "defer" wake-value)) []
+                      :else [(format "Header 'wake' is refused as an unknown header (note-only, value must be 'defer'; got type '%s' value '%s')." type wake-value)])
         base-errors (cond-> []
                       (str/blank? type) (conj "Missing required header 'type'.")
                       (str/blank? to) (conj "Missing required header 'to'.")
@@ -573,7 +586,7 @@
                                (conj "Header 'rationale' is only allowed for rule_proposal."))]
     {:recipients recipients
      :canonical-commit canonical
-     :errors (vec (concat base-errors recipient-errors field-errors git-errors note-errors rule-proposal-errors))}))
+     :errors (vec (concat base-errors recipient-errors field-errors git-errors note-errors rule-proposal-errors wake-errors))}))
 
 (defn next-sequence []
   (let [dir (state-dir)
@@ -1025,6 +1038,8 @@
                       (str "commit: " canonical-commit))
                 (= "note" type)
                 (conj (str "message: " (get headers "message")))
+                (and (= "note" type) (some? (get headers "wake")))
+                (conj (str "wake: " (get headers "wake")))
                 (= "rule_proposal" type)
                 (conj (str "scope: " (get headers "scope"))
                       (str "body: " (get headers "body"))
@@ -1084,9 +1099,17 @@
 (defn mailbox-only? []
   (= "1" (System/getenv "SWARMFORGE_MAILBOX_ONLY")))
 
-(defn skip-sync-inject? []
-  (or (mailbox-only?)
-      (= "1" (System/getenv "SWARMFORGE_SKIP_SYNC_INJECT"))))
+(defn skip-sync-inject?
+  "BL-1494: also true when the draft itself carries wake: defer - a
+   deferred note gets no sync inject at send time, same as the
+   SWARMFORGE_SKIP_SYNC_INJECT env switch the post-QA sweep already uses,
+   but decided from the parcel's own content rather than the caller's env."
+  ([] (skip-sync-inject? nil))
+  ([headers]
+   (or (mailbox-only?)
+       (= "1" (System/getenv "SWARMFORGE_SKIP_SYNC_INJECT"))
+       (handoff-lib/deferred-note? {:parcel-type (get headers "type")
+                                    :wake-field (get headers "wake")}))))
 
 (defn deliver-sync! [outbox-file sender]
   (let [root (project-root)]
@@ -1157,7 +1180,7 @@
                               submit!)
                              (submit!))]
           (when outbox-files
-            (let [sync-results (if (skip-sync-inject?)
+            (let [sync-results (if (skip-sync-inject? headers)
                                  (vec (repeat (count outbox-files) :skipped))
                                  (deliver-all! outbox-files sender))]
               (fs/delete draft)

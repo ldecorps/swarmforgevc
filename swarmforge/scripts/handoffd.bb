@@ -459,11 +459,15 @@
    the inbox file already existed (duplicate delivery), the recipient pane
    is actively working a turn (BL-135 / mono-router resident mid-task), this
    parcel already woke the same tmux session for another recipient
-   (broadcast merge-up notes), or (BL-576) the parcel is a note landing in a
+   (broadcast merge-up notes), (BL-576) the parcel is a note landing in a
    dormant mailbox while the resident is live as a DIFFERENT role — the
    aged-note chase now guarantees eventual pickup, so the wake that would
-   only re-run ready_for_next as the wrong identity and NO_TASK is skipped."
-  [socket roles session role recipient-path agent & {:keys [new-delivery? notified-sessions parcel-type]
+   only re-run ready_for_next as the wrong identity and NO_TASK is skipped
+   — or (BL-1494) the note itself carries wake: defer, honoring the
+   human's BL-1361 ruling at the delivery hop, not only at send time: it
+   lands in inbox/new and is read on the recipient's own next
+   ready_for_next, at the cost of no turn."
+  [socket roles session role recipient-path agent & {:keys [new-delivery? notified-sessions parcel-type wake-field]
                                                      :or {new-delivery? true
                                                           notified-sessions (atom #{})}}]
   (let [wake-sess (handoff-lib/wake-session socket session)]
@@ -482,6 +486,9 @@
             {:parcel-type parcel-type
              :chase-action (chase-poke-action roles socket role)}))
       (log! "deliver-notify-skip-dormant-note" role (str recipient-path))
+
+      (handoff-lib/deferred-note? {:parcel-type parcel-type :wake-field wake-field})
+      (log! "deliver-notify-skip-deferred" role (str recipient-path))
 
       (recipient-pane-busy? socket roles role)
       (log! "deliver-notify-skip-busy" role (str recipient-path))
@@ -583,7 +590,8 @@
                   (maybe-notify! socket roles (:session role-info) recipient (str target)
                                  (:agent role-info) :new-delivery? new-delivery?
                                  :notified-sessions notified-sessions
-                                 :parcel-type (get headers "type")))))
+                                 :parcel-type (get headers "type")
+                                 :wake-field (get headers "wake")))))
             (when (= "rule_proposal" (get headers "type"))
               (append-rule-proposal! headers))
             (move-with-collision path (sent-dir (get roles sender-role)))
@@ -4324,15 +4332,16 @@
    never by writing a mailbox directly.
 
    The human's ruling decides the WAKE, not the send: every reason is told, and
-   only a dirty worktree wakes. The deferred case rides
-   SWARMFORGE_SKIP_SYNC_INJECT, a switch swarm_handoff.bb already has - the
-   parcel lands in the role's mailbox and it reads it on its next
-   ready_for_next, costing no turn."
+   only a dirty worktree wakes. The deferred case now carries wake: defer on
+   the draft itself (BL-1494) - honored at delivery, chase, and nudge as well
+   as at send - alongside SWARMFORGE_SKIP_SYNC_INJECT, which stays set for
+   compatibility with anything still reading the env var."
   [role reason text wake?]
-  (let [draft (write-scratch-draft! ["type: note"
-                                     (str "to: " role)
-                                     "priority: 10"
-                                     (str "message: " text)])
+  (let [draft (write-scratch-draft! (cond-> ["type: note"
+                                             (str "to: " role)
+                                             "priority: 10"
+                                             (str "message: " text)]
+                                      (not wake?) (conj "wake: defer")))
         env (cond-> (merge (into {} (System/getenv)) {"SWARMFORGE_ROLE" "coordinator"})
               (not wake?) (assoc "SWARMFORGE_SKIP_SYNC_INJECT" "1"))
         result (daemon-cycle-guard-lib/sh! ["bb" (swarm-handoff-script) (str draft)]

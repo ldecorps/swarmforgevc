@@ -50,7 +50,8 @@ bl1138_rematch_bookkeeping_test_runner.bb	standing
 bl1141_refuse_rematch_test_runner.bb	standing		
 bl1313_handoff_files_with_batches_test_runner.bb	standing		
 bl1359_merge_charged_test_runner.bb	standing		
-bl1479_parked_active_sweep_test_runner.bb	standing		
+bl1479_parked_active_sweep_test_runner.bb	standing
+bl1494_post_qa_sweep_wake_field_test_runner.bb	standing
 bl556_evaluate_ingest_test_runner.bb	standing		
 bl568_menu_blocked_test_runner.bb	standing		
 bl615_orphaned_claim_progress_test_runner.bb	standing		
@@ -525,6 +526,7 @@ test_bl1370_worktree_strays.sh	standing
 test_bl1401_acceptance_fixture_derives_set.sh	standing		
 test_bl1275_refusal_evidence_retained.sh	standing		
 test_bl1444_art_director_tip_guard.sh	standing
+test_bl1494_deferred_note_no_wake.sh	standing
 test_check_test_file_registration.sh	standing
 test_handoffd_startup_notify_fresh_target.sh	standing		
 landed_ticket_autoclose_test_runner.bb	standing		
