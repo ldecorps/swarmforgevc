@@ -10,6 +10,7 @@
 (load-file (str (fs/path (fs/parent *file*) "supersede_lib.bb")))
 (load-file (str (fs/path (fs/parent *file*) "handoff_lib.bb")))
 (load-file (str (fs/path (fs/parent *file*) "worktree_drift_lib.bb")))
+(load-file (str (fs/path (fs/parent *file*) "branch_identity_guard_lib.bb")))
 
 
 ;; BL-640: pre-turn freshness guard. ready_for_next.sh is the one entry
@@ -212,6 +213,75 @@
               (dispatch-lib/exit! 2 (worktree-drift-lib/drift-report drift)))))))))
 
 (enforce-worktree-drift-guard!)
+
+;; BL-1515: pre-turn branch-identity guard. Same posture and insertion point
+;; as BL-1195 above (before the inbox is read) - a role's worktree can sit
+;; on a branch that is not the one roles.tsv's session column declares (the
+;; coder's own worktree sat on `side` instead of `swarmforge-coder` for a
+;; week; every guard that resolves a role's branch via handoff-lib/
+;; load-role-info's :session degraded silently, reading a ref that no
+;; longer existed). Reads the SAME accessor tree_collapse_guard_lib.bb uses
+;; so the two can never drift (BL-897): (:session (handoff-lib/
+;; load-role-info role root)). A role with no roles.tsv row, or a row with
+;; no session, is not judged (BL-1205's own "no roles.tsv branch entry"
+;; posture, unchanged). Degrades to :refuse (never a silent pass) on any
+;; git read failure - unlike the drift guard above, a wrong branch identity
+;; is exactly the kind of thing that must never be waved through just
+;; because a git call hiccuped.
+(defn- git-read [root & args]
+  (let [result (apply sh/sh "git" "-C" (str root) args)]
+    (when (zero? (:exit result)) (str/trim (:out result)))))
+
+(defn- git-ref-exists? [root ref]
+  (zero? (:exit (sh/sh "git" "-C" (str root) "rev-parse" "--verify" "--quiet" ref))))
+
+(defn- git-ancestor? [root ancestor-ref descendant-ref]
+  (zero? (:exit (sh/sh "git" "-C" (str root) "merge-base" "--is-ancestor" ancestor-ref descendant-ref))))
+
+(defn- branch-identity-facts [root declared]
+  (let [actual (git-read root "rev-parse" "--abbrev-ref" "HEAD")
+        actual-tip (git-read root "rev-parse" "HEAD")]
+    (if (or (nil? actual) (nil? actual-tip))
+      {:declared declared :actual actual :actual-tip actual-tip :git-read-error? true}
+      (let [declared-ref (str "refs/heads/" declared)
+            declared-ref-exists? (git-ref-exists? root declared-ref)
+            declared-tip (when declared-ref-exists? (git-read root "rev-parse" declared-ref))
+            origin-ref (str "refs/remotes/origin/" declared)
+            origin-ref-exists? (git-ref-exists? root origin-ref)]
+        {:declared declared
+         :actual actual
+         :actual-tip actual-tip
+         :declared-ref-exists? declared-ref-exists?
+         :declared-tip declared-tip
+         :origin-ref-exists? origin-ref-exists?
+         :origin-tip-ancestor-of-actual? (boolean (and origin-ref-exists?
+                                                        (git-ancestor? root origin-ref actual-tip)))
+         :git-read-error? false}))))
+
+(defn- enforce-branch-identity-guard! []
+  (let [root (dispatch-lib/git-root)
+        role-name (handoff-lib/current-role)
+        role-info (and root role-name (handoff-lib/load-role-info role-name root))
+        declared (:session role-info)]
+    (when (and root (not (str/blank? declared)))
+      (let [facts (branch-identity-facts root declared)
+            verdict (branch-identity-guard-lib/decide facts)]
+        (case (:status verdict)
+          :ok nil
+          :repair
+          (let [{:keys [from to]} verdict
+                rename-result (sh/sh "git" "-C" (str root) "branch" "-m" from to)]
+            (if (zero? (:exit rename-result))
+              (println (branch-identity-guard-lib/repaired-line
+                        {:role role-name :from from :to to :at (:actual-tip facts)}))
+              (dispatch-lib/exit! 2 (branch-identity-guard-lib/refusal-line
+                                     (assoc facts :role role-name
+                                            :reason (str "rename-failed: " (str/trim (:err rename-result))))))))
+          :refuse
+          (dispatch-lib/exit! 2 (branch-identity-guard-lib/refusal-line
+                                 (assoc verdict :role role-name))))))))
+
+(enforce-branch-identity-guard!)
 
 ;; BL-226: this receive helper's sole job is dispatch. Promoting paused
 ;; items into backlog/active/ is the coordinator's exclusive duty
