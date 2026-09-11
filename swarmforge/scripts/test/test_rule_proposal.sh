@@ -140,16 +140,23 @@ assert_queued "03b" "$OUT"
 
 PATH="$FAKE_BIN:$PATH" bb "$HANDOFFD" "$ROOT" &
 DAEMON_PID=$!
+# BL-1530: wait on the evidence this case actually reads next (the second
+# audit line), not the outbox count alone - a loaded host (e.g. a mutation
+# run sharing the box) can starve the outbox-drain poll past its deadline
+# while delivery has in fact completed underneath it. Same 40 x 0.25 s =
+# 10 s floor as before, polling the real evidence instead of guessing a
+# longer bare sleep.
+delivered=0
 for _ in $(seq 1 40); do
-  remaining="$(find "$CODER_OUTBOX" -maxdepth 1 -name '*.handoff' 2>/dev/null | wc -l | tr -d ' ')"
-  [[ "$remaining" == "0" ]] && break
+  if [[ -f "$AUDIT_FILE" ]] && [[ "$(wc -l < "$AUDIT_FILE" | tr -d ' ')" == "2" ]]; then
+    delivered=1
+    break
+  fi
   sleep 0.25
 done
 touch "$ROOT/.swarmforge/daemon/stop"
 wait "$DAEMON_PID" 2>/dev/null || true
-[[ "$remaining" == "0" ]] || fail "03b: daemon did not drain the outbox"
-
-[[ "$(wc -l < "$AUDIT_FILE" | tr -d ' ')" == "2" ]] || fail "03b: expected a second audit line to be appended"
+[[ "$delivered" == "1" ]] || fail "03b: daemon did not append the second audit line"
 LAST_LINE="$(tail -n1 "$AUDIT_FILE")"
 python3 -c "import json, sys; json.loads(sys.argv[1])" "$LAST_LINE" \
   || fail "03b: audit line with a control character in body is not valid JSON: $LAST_LINE"
@@ -203,13 +210,27 @@ pass "02: invalid rule_proposal drafts are rejected at the validation gate, nami
 # ── 04: existing message types are unaffected ────────────────────────────────
 for draft_lines in \
   "type: awake|to: specifier|priority: 50" \
-  "type: git_handoff|to: specifier|priority: 50|task: bl-035-regress|commit: $COMMIT" \
   "type: note|to: specifier|priority: 50|message: unaffected by rule_proposal"; do
   IFS='|' read -ra LINES <<< "$draft_lines"
   DRAFT="$(make_draft "$CODER_WT" "${LINES[@]}")"
   OUT="$(run_swarm_handoff "$DRAFT")"
   assert_queued "04 [$draft_lines]" "$OUT"
 done
+
+# git_handoff speaks the two-call self-audit (Article 2.3, BL-1306): the
+# first invocation of a new draft challenges and queues nothing, the
+# identical second call queues. Tolerate either exit convention on the
+# first call - BL-1529 may still change it.
+GIT_HANDOFF_DRAFT="$(make_draft "$CODER_WT" \
+  'type: git_handoff' 'to: specifier' 'priority: 50' \
+  'task: bl-035-regress' "commit: $COMMIT")"
+FIRST_OUT="$(run_swarm_handoff "$GIT_HANDOFF_DRAFT")" || true
+grep -q "^AUDIT_REQUIRED$" <<< "$FIRST_OUT" \
+  || fail "04 [git_handoff]: first call did not print AUDIT_REQUIRED; got: $FIRST_OUT"
+grep -q "^HANDOFF_NOT_QUEUED$" <<< "$FIRST_OUT" \
+  || fail "04 [git_handoff]: first call still queued a handoff; got: $FIRST_OUT"
+SECOND_OUT="$(run_swarm_handoff "$GIT_HANDOFF_DRAFT")"
+assert_queued "04 [git_handoff]" "$SECOND_OUT"
 pass "04: awake, git_handoff, and note drafts still validate and queue exactly as before"
 
 echo "ALL PASS"

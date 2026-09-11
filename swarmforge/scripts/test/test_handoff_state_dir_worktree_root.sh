@@ -93,8 +93,16 @@ queue_inbox_task() {
     "$name" "$recipient" "$recipient" "$COMMIT" "$name" > "$inbox_new/50_${name}.handoff"
 }
 
+# BL-1530: git_handoff speaks the two-call self-audit (Article 2.3,
+# BL-1306) - the first invocation of a new draft challenges and queues
+# nothing, the identical second call queues. Tolerate either exit
+# convention on the first call - BL-1529 may still change it.
+
 # ── 01: handoff created from a worktree subdirectory lands in the root outbox ─
 DRAFT="$(make_draft "$CODER_WT")"
+(cd "$CODER_WT/extension" && SWARMFORGE_ROLE=coder bb "$SWARM_HANDOFF" "$DRAFT" > /dev/null) || true
+[[ "$(outbox_count)" == "0" ]] || fail "01: the audit challenge call queued a handoff"
+[[ ! -e "$NESTED_STATE" ]] || fail "01: the audit challenge call created nested $NESTED_STATE"
 (cd "$CODER_WT/extension" && SWARMFORGE_ROLE=coder bb "$SWARM_HANDOFF" "$DRAFT" > /dev/null)
 
 [[ "$(outbox_count)" == "1" ]] || fail "01: handoff from subdir did not land in worktree-root outbox"
@@ -103,6 +111,8 @@ pass "01: handoff from subdir lands in worktree-root outbox, no nested tree"
 
 # ── 02: handoff created from the worktree root is unchanged ──────────────────
 DRAFT="$(make_draft "$CODER_WT")"
+(cd "$CODER_WT" && SWARMFORGE_ROLE=coder bb "$SWARM_HANDOFF" "$DRAFT" > /dev/null) || true
+[[ "$(outbox_count)" == "1" ]] || fail "02: the audit challenge call queued a handoff"
 (cd "$CODER_WT" && SWARMFORGE_ROLE=coder bb "$SWARM_HANDOFF" "$DRAFT" > /dev/null)
 [[ "$(outbox_count)" == "2" ]] || fail "02: handoff from worktree root did not land in the same root outbox"
 pass "02: handoff from worktree root lands in the same root outbox"
@@ -139,6 +149,8 @@ STALE_DIR="$NESTED_STATE/handoffs/outbox"
 mkdir -p "$STALE_DIR"
 printf 'type: git_handoff\n\nstale\n' > "$STALE_DIR/50_stale.handoff"
 DRAFT="$(make_draft "$CODER_WT")"
+(cd "$CODER_WT/extension" && SWARMFORGE_ROLE=coder bb "$SWARM_HANDOFF" "$DRAFT" > /dev/null) || true
+[[ "$(outbox_count)" == "2" ]] || fail "04: the audit challenge call queued a handoff"
 (cd "$CODER_WT/extension" && SWARMFORGE_ROLE=coder bb "$SWARM_HANDOFF" "$DRAFT" > /dev/null)
 [[ "$(outbox_count)" == "3" ]] || fail "04: handoff from subdir stopped landing in root outbox"
 [[ -f "$STALE_DIR/50_stale.handoff" ]] || fail "04: stale nested outbox file was moved or deleted"
