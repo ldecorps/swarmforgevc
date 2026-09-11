@@ -258,12 +258,23 @@
                                                         (git-ancestor? root origin-ref actual-tip)))
          :git-read-error? false}))))
 
+;; Exempts master-resident roles for the same structural reason as the
+;; BL-1195 drift guard above: a master-resident role (`:worktree-name
+;; "master"`) shares its ONE physical checkout with every other
+;; master-resident role, each declaring its own `:session` branch name
+;; against that single shared, actual branch - there is no single "declared
+;; branch identity" for the checkout to be judged against, and a `:repair`
+;; verdict would rename the shared checkout's actual branch (e.g. `main`)
+;; out from under every other master-resident role and every guard
+;; elsewhere that assumes that name exists (BL-1515 hardener bounce D1,
+;; 2026-09-11).
 (defn- enforce-branch-identity-guard! []
   (let [root (dispatch-lib/git-root)
         role-name (handoff-lib/current-role)
         role-info (and root role-name (handoff-lib/load-role-info role-name root))
         declared (:session role-info)]
-    (when (and root (not (str/blank? declared)))
+    (when (and root (not (str/blank? declared))
+               (not= (:worktree-name role-info) "master"))
       (let [facts (branch-identity-facts root declared)
             verdict (branch-identity-guard-lib/decide facts)]
         (case (:status verdict)
