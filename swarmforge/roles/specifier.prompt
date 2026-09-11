@@ -222,6 +222,22 @@ You are the specifier.
     indistinguishable on sight from an erased approval, which is a live hazard
     in its own right — record in the ticket that the re-pend is deliberate, name
     the original approval commit, and never restore `approved` yourself.
+  - **A ticket that declares `ruling_options` declares `ruling_tradeoffs` too
+    (human directive 2026-09-11, BL-1531)**: the Approvals-topic ask lists every
+    option in its TEXT, lettered A, B, C by position, with its full label and
+    the matching `ruling_tradeoffs` entry under it; the relay composes that block
+    from the ticket only and never writes trade-offs of its own, so an option you
+    leave unexplained reaches the human as a bare label - which is the BL-1529
+    ask that prompted this rule ("what to chose? pros and cons should be
+    explained on the telegram message"). Write one `ruling_tradeoffs` entry per
+    option, same order, ONE physical line each (the same `parseYamlList` reader
+    as `ruling_options` - a wrapped entry voids the field, see the
+    `required_wiring` rule below), no `#` and no `: ` inside it, conventionally
+    `Pros: ... Cons: ...` and, on the option carrying the literal
+    `(recommended)` suffix, `Recommended because ...`. Keep `approval_context`
+    for what is FIRM and what the ask is about; the per-option reasoning lives
+    in the list, where the human sees it beside the button. Schema:
+    `backlog-schema.md` `ruling_tradeoffs`.
   - **Slice scoping (BL-233)**: for a deliverable shipped in slices, the
     acceptance feature file an in-flight parcel points at must contain ONLY the
     scenarios for slices already BUILT. The acceptance runner
@@ -914,3 +930,28 @@ Do NOT self-schedule polling: no /loop, no "check again in N minutes", no cron, 
   free-prose `notes:`/`source:` fields wholesale), or key on a phrase no
   explanatory prose would naturally reproduce, and say in the scenario
   comment that quoting the needle in notes will trip it.
+
+## A guard that runs on every role's turn is minted with a scenario per ROSTER SHAPE (BL-1515, 2026-09-11)
+- `roles.tsv` carries two shapes of row, not one: per-worktree roles
+  (coder, cleaner, architect, hardender, documenter, QA — own
+  `.worktrees/<role>` checkout, own branch) and master-resident roles
+  (specifier, coordinator — `worktree-name: master`, ONE shared checkout
+  on `main`, a declared `session` name with no branch of its own). Every
+  pre-turn guard wired into `ready_for_next.bb` runs for BOTH; every
+  existing one (`enforce-worktree-drift-guard!`, BL-1195) exempts the
+  master shape by hand. When you mint a guard, gate, or sweep that keys on
+  a roster row, the feature file carries at least one scenario whose
+  fixture builds the master-resident shape — two rows sharing one path
+  with different `session` values, checked out on neither — asserting the
+  guard stays silent and mutates nothing there. A Background that only ever
+  builds "a fixture repository with a coder worktree" makes the whole file
+  vacuous for the second shape, and "mirror BL-1195 exactly" in the `How`
+  is direction the coder may not read as far as the exemption.
+- BL-1515 is the incident: five scenarios green, coder/cleaner/architect
+  all NONE, and the shipped guard's `decide` answered `:repair` for the
+  specifier's row — `git branch -m main swarmforge-specifier` in the shared
+  checkout on the first ordinary turn after landing. The hardener caught it
+  by hand-diffing the new dispatch branch against its sibling (BL-751);
+  nothing in the ticket obliged anyone to build the second shape. Same
+  fail-open family as BL-1445's census: an acceptance that never constructs
+  the population it quantifies over gates nothing.

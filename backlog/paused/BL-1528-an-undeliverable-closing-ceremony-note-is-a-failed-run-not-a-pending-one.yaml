@@ -1,0 +1,188 @@
+id: BL-1528
+title: "An undeliverable closing-ceremony note is a FAILED run, never a pending one: when swarm_handoff.sh refuses the lean-packet note (recipient absent from the roster, tmux inject failed, any non-zero exit) runClosingCeremony stores the run as failed with the refusal text, appends closing-lean-packet-undeliverable to the loud log, and the night sequence still advances - today the run is written BEFORE the send, the CLI fatals, the next sweep sees already_exists and moves on, and the failure surfaces two days later as a note to the same absent role"
+milestone: M8
+type: defect
+severity: high
+# high: the "a silent ceremony is a failed ceremony" detector is itself
+# silent here - a broken safety signal (Article 3.2.4 severity table). Two
+# shifts' packets (2026-09-07, 2026-09-09) produced nothing and nobody was
+# told until the next ceremony that happened to have a reachable specifier.
+status: todo
+epic: lean-aware-coordinator
+priority: 9
+direction: swarm-reported
+depends_on: []
+mutation_cost: medium
+# medium: extension/src TypeScript under Stryker - closingCeremonyRun.ts's
+# send/record ordering, one store field, one step-handler file. Small
+# surface, but the store's state machine (pending/complete/failed) is
+# exactly what mutants attack.
+slice_size_envelope: low
+required_stages: [coder, cleaner, architect, hardender, documenter, qa]
+
+acceptance: specs/features/BL-1528-an-undeliverable-closing-ceremony-note-is-a-failed-run.feature
+
+# The live consumer already exists and already calls the function this
+# ticket changes (night-closing-ceremony-run.ts deliverLeanPacket ->
+# runClosingCeremony), so a consumer anchor there matches before and after
+# the fix and gates nothing (BL-1235). Handler pin only.
+required_wiring:
+  - 'specs/pipeline/steps/bl1528UndeliverableLeanPacketIsLoudSteps.js::registerSteps::the handler lands in the same parcel as the feature (BL-233, BL-1371)'
+
+human_approval: approved
+approval_context: >
+  A new feature file is authored here, so it needs a tap. No choice is
+  posed and there are no ruling_options. FIRM: the store's pending state
+  keeps its meaning "the packet note was accepted by swarm_handoff.sh" -
+  the fix makes a refused send a failed run, it does not add a fourth
+  state or retry the send. FIRM: the night sequence keeps advancing past
+  lean-packet on a refused send (the ceremony must still stop the swarm);
+  the failure is recorded and surfaced, never allowed to wedge bedtime.
+  FIRM: no Telegram/email path is added - the surface is the existing
+  closing-ceremony-loud.log line the sequence already uses for
+  closing-briefing-missing; whether that log reaches the operator is a
+  separate question this ticket names but does not build. Minted by the
+  specifier as the BL-820 outcome of the 2026-09-09 ceremony pass, whose
+  own run had already been finalized as failed and could not be recorded
+  (evidence backlog/evidence/closing-ceremony-2026-09-09-specifier.md).
+
+invariants:
+  - "A ceremony run is stored as pending only when its packet note was accepted by swarm_handoff.sh (exit 0): a run whose send was refused is failed at write time, with the refusal text on the record, never pending-as-if-delivered."
+  - "A refused ceremony send never throws out of the night sequence: the lean-packet step completes, the state is written, and a later sweep re-running the step finds the failed run and sends nothing again."
+
+description: |
+  ## What is wrong
+
+  `runClosingCeremony` (`extension/src/metrics/closingCeremonyRun.ts`,
+  ~line 172-176) writes the shift's `CeremonyRun` to
+  `.swarmforge/lean/ceremony/<shift>.json` with `outcome: null,
+  failedAt: null` and THEN calls `deps.sendNote`, which is
+  `sendNoteViaHandoff` (`extension/src/tools/closing-ceremony-run.ts`
+  ~line 33): an `execFileSync` of `swarm_handoff.sh` that throws on any
+  non-zero exit. `swarm_handoff.bb` exits 1 on `Unknown recipient role
+  'specifier'.` (line ~207) and on a failed tmux inject. So on a refused
+  send:
+
+  1. the run record already exists, indistinguishable from a delivered one;
+  2. the exception leaves `applyAction` in
+     `night-closing-ceremony-run.ts` (~line 401-407) before
+     `deps.writeState`, so the daemon logs `closing-ceremony-run-error`
+     once and the sequence state is not written;
+  3. the daemon's next sweep re-runs the `lean-packet` action;
+     `runClosingCeremony` finds the run and returns `already_exists`
+     WITHOUT sending, so this time nothing throws, the state is written
+     with `lean-packet` in its sequence, and the ceremony proceeds to stop
+     the swarm as if the packet had been delivered.
+
+  The run then sits `pending` until the next ceremony's
+  `findOpenCeremonyRunsBefore` finalizes it as failed - and sends the
+  failure note (`buildCeremonyFailureNoteDraft`) to the SAME `to` role, by
+  the same throwing path. If that role is still absent the failure is
+  swallowed the same way; if it has come back, the specifier learns of a
+  failed run it can no longer record an outcome against
+  (`recordCeremonyOutcome` refuses a non-pending run,
+  `closingCeremonyStore.ts` ~line 92).
+
+  Observed: shift 2026-09-09. The bob pack had no specifier window
+  (`bob-multi-provider-mono-router.conf`, "specifier's window line stays
+  REMOVED", since 26579c166e on 09-08). The run was created with
+  `deliveredAt: 2026-09-09T00:00:00Z`; no handoff anywhere under
+  `.swarmforge/handoffs/` cites `lean/ceremony/2026-09-09.json`; the
+  night state for 2026-09-09 lists `lean-packet` as done; the daemon's
+  07:54Z run reports `advanced: false, actions: []`. On 2026-09-11 the
+  coordinator's ceremony finalized it (`failedAt: 2026-09-11T00:00:00Z`)
+  and the failure note reached the specifier only because BL-1511's
+  precondition happened to hold by then (the anthropic mono-router pack
+  seats a specifier). Shift 2026-09-07 shows the other refusal in the
+  same path: `closing-ceremony-run-error exit=1 Fatal error: Command
+  failed: .../swarm_handoff.sh ... HANDOFF SYNC INJECT FAILED: tmux
+  send-literal failed` (handoffd-failure-20260907T052832Z.log).
+
+  ## What is wanted
+
+  A refused packet note makes the run FAILED at write time, with the
+  refusal recorded on it, and the failure is visible on the ceremony's
+  own loud surface the same day - not two days later, not to the absent
+  role. Concretely, when `sendNote` fails:
+
+  - the stored run has `failedAt` set (the same `nowIso` the run was
+    delivered at) and carries the refusal text (a new optional
+    `deliveryFailure: string` on `CeremonyRun`, or equivalent) so a
+    reader can tell "undeliverable" from "delivered, nobody answered";
+  - `closing-ceremony-loud.log` gains one line
+    `closing-lean-packet-undeliverable <shift>` through the same
+    `surface` mechanism `closing-briefing-missing` uses, and the daemon's
+    `closing-ceremony-run` log line carries it in `loudSurfaces`;
+  - `runClosingCeremony` returns a status naming the failure (e.g.
+    `created_undeliverable`) instead of throwing, so the `lean-packet`
+    step completes and `writeState` runs on the FIRST sweep;
+  - the same treatment for the stale-run failure note at ~line 140: a
+    refused `buildCeremonyFailureNoteDraft` send appends
+    `closing-ceremony-failure-undeliverable <shift>` and does not throw.
+
+  A delivered note changes nothing: the run stays `pending`, the note is
+  queued, no loud line. `recordCeremonyOutcome`'s refusal of a failed run
+  is correct and stays.
+
+  ## How (direction, not mandate)
+
+  - Catch in `runClosingCeremony` around each `deps.sendNote`, not in the
+    CLI: the pure function decides the run's state from the send result,
+    and tests drive it with an injected `sendNote` that throws.
+  - `finalizeCeremonyRunAsFailed` already exists in the store; extend it
+    (or add a sibling) to carry the reason. Keep `ceremonyRunState`
+    unchanged - a run with `failedAt` is `failed`; the reason is extra
+    data, not a fourth state.
+  - Surface through `RunDeps.surface` (already wired to the loud log) by
+    letting `deliverLeanPacket` inspect the result, or by returning the
+    loud code from `runClosingCeremony` for the caller to surface.
+  - `docs/reference/BL-820-closing-ceremony-lean-pass.md` "Storage" gains
+    the field and the two loud codes (documenter).
+
+  ## Not in scope
+
+  - Making `closing-ceremony-loud.log` reach the operator on Telegram or
+    email. Nothing reads that log today except the daemon's own log line;
+    that is a real gap and a separate ticket if the operator wants it.
+  - Choosing a fallback recipient (coordinator) when the specifier is
+    absent from the roster. A pack without a specifier is a pack decision
+    (BL-1511 restores the seat); the ceremony's job is to fail loudly, not
+    to route around the roster.
+  - Reopening or recording an outcome on the 2026-09-07 or 2026-09-09
+    runs; both are terminal and stay so.
+
+notes: |
+  Minted 2026-09-11 by the specifier as the BL-820 outcome for the
+  2026-09-09 ceremony pass; that run was already `failed` when its packet
+  reached the specifier, so the outcome could not be recorded in the
+  store (recordCeremonyOutcome refuses) and this ticket plus
+  backlog/evidence/closing-ceremony-2026-09-09-specifier.md are the
+  record. Epic BL-818's decomposes_into gains this id in the same commit.
+
+qa_e2e_procedure: |
+  On the parcel commit, from the repo root after `npm run compile` in
+  `extension/`. Fixture root per BL-1390: `git init` under mkdtemp, prove
+  it with `git rev-parse --git-common-dir` before anything else.
+  1. Seed the fixture with a `.swarmforge/roles.tsv` holding coder and
+     coordinator rows only, a `.swarmforge/lean/` lifecycle ledger with at
+     least one dwell event for today's shift, and the night-ceremony state
+     that makes `lean-packet` the next action; run
+     `node extension/out/tools/night-closing-ceremony-run.js --target <fixture>`
+     once. Expect exit 0; `.swarmforge/lean/ceremony/<today>.json` has
+     `failedAt` non-null and a delivery-failure text containing
+     `Unknown recipient role 'specifier'`; `.swarmforge/daemon/closing-ceremony-loud.log`
+     ends with `closing-lean-packet-undeliverable <today>`; the written
+     night state lists `lean-packet` in its sequence.
+  2. Run the same command again. Expect exit 0, no second loud line, no
+     handoff written under `.swarmforge/handoffs/`.
+  3. Add a specifier row to the fixture's roles.tsv, delete the run file
+     and the night state, run once more. Expect the run `pending`
+     (`failedAt: null`), one handoff under
+     `.swarmforge/handoffs/specifier/inbox/new/` citing the packet path,
+     and no new loud line.
+  4. `node extension/out/tools/closing-ceremony-outcome.js --target <fixture>
+     --shift <today> --outcome no_change` against the step-1 record still
+     refuses with "already failed".
+  5. Break-then-restore: restore the write-before-send order (or drop the
+     catch); scenario 01 fails on `failedAt`, scenario 03 fails on the
+     sequence advancing; restore.
