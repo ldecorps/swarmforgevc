@@ -1,3 +1,8 @@
+# mutation-stamp: sha256=547def44b1a32cb6e4606fb2e79186cf1d58600718138b65d15f49ec3e8f90d5
+# acceptance-mutation-manifest-begin
+# {"version":1,"tested_at":"2026-09-11T12:39:16.436944902Z","feature_name":"BL-1534 The bl1373 property bounds its sweeps and counts decisive draws","feature_path":"/home/carillon/swarmforgevc/.worktrees/hardender/specs/features/BL-1534-the-bl1373-property-bounds-its-sweeps-and-counts-decisive-draws.feature","background_hash":"ba97987da0b1d4f8e82dc57971768b184deb8e37d91dffaf2d4a19e0fa732bf3","implementation_hash":"unknown","scenarios":[{"index":1,"name":"each test states and keeps a sweep budget that fits its timeout on a busy host","scenario_hash":"730732b3d06262ba54f607878a41e5fa9c10835c614e4111b48c95dc142f6e17","mutation_count":3,"result":{"Total":3,"Killed":3,"Survived":0,"Errors":0},"tested_at":"2026-09-11T12:39:16.436944902Z"},{"index":2,"name":"every draw that sweeps is decisive and the run says how many there were","scenario_hash":"a4f7fe2e994b9c6087b7466e8305a7f926b0d3091ac11a29f5f26a268593ea0e","mutation_count":3,"result":{"Total":3,"Killed":3,"Survived":0,"Errors":0},"tested_at":"2026-09-11T12:39:16.436944902Z"}]}
+# acceptance-mutation-manifest-end
+
 Feature: BL-1534 The bl1373 property bounds its sweeps and counts decisive draws
 
   extension/test/bl1373PathSetCacheInvariants.property.test.js spawns the
