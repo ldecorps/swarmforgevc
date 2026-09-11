@@ -98,6 +98,37 @@ const decisivePairArb = fc
     })
   );
 
+// Shared by invariant 1 and the cache-invalidation test: both build a fixture
+// commit touching x (in paths1, never in paths2), then sweep once with each
+// path set - a finding from the paths2 sweep is always a hard bug, never an
+// environmental flake, by construction of decisivePairArb. `beforeSweeps`,
+// when given, runs after the commit and before either sweep, so the
+// cache-invalidation test can seed a manual cache entry there; the sweep and
+// assertion plumbing itself is identical either way.
+function runDecisivePairSweeps(fixturePrefix, { paths1, x, paths2 }, reach, beforeSweeps) {
+  const root = mkFixtureRepo(fixturePrefix);
+  const stub1 = createStubScript(paths1, 'sfvc-bl1373-stub1-');
+  const stub2 = createStubScript(paths2, 'sfvc-bl1373-stub2-');
+  clearPipelineCache(root);
+
+  const testFile = x.replace(/\/$/, '') + '/test-file.txt';
+  const sha = commitFile(root, testFile, 'content\n', 'test: touches path only in paths1');
+
+  if (beforeSweeps) beforeSweeps(root, sha);
+
+  const result1 = runSweep(root, { env: { BABYSITTER_QA_EXCLUSIVE_PATHS_SCRIPT: stub1 } });
+  reach.sweeps += 1;
+  assert.equal(result1.exitCode, 0, `sweep 1 failed with exit code ${result1.exitCode}: ${result1.output}`);
+  const finding1 = pipelineFindings(result1.output).find((f) => f.key === `pipeline-code-on-main-${sha}`);
+
+  const result2 = runSweep(root, { env: { BABYSITTER_QA_EXCLUSIVE_PATHS_SCRIPT: stub2 } });
+  reach.sweeps += 1;
+  assert.equal(result2.exitCode, 0, `sweep 2 failed with exit code ${result2.exitCode}: ${result2.output}`);
+  const finding2 = pipelineFindings(result2.output).find((f) => f.key === `pipeline-code-on-main-${sha}`);
+
+  return { sha, finding1, finding2, root };
+}
+
 // invariant 2 only needs one reported path set - drawn the way pathSetArb
 // always has.
 const pathSetArb = fc
@@ -119,33 +150,7 @@ test('property (invariant 1): the classified path set follows the single source 
     fc.property(decisivePairArb, ({ paths1, x, paths2 }) => {
       reach.draws += 1;
 
-      // Create a fixture repo
-      const root = mkFixtureRepo('sfvc-bl1373-inv1-');
-
-      // Create stub scripts for both path sets
-      const stub1 = createStubScript(paths1, 'sfvc-bl1373-stub1-');
-      const stub2 = createStubScript(paths2, 'sfvc-bl1373-stub2-');
-
-      // Clear any existing cache
-      clearPipelineCache(root);
-
-      // Create a commit touching x, which is in paths1 and never in paths2
-      const testFile = x.replace(/\/$/, '') + '/test-file.txt';
-      const sha = commitFile(root, testFile, 'content\n', 'test: touches path only in paths1');
-
-      // First sweep with paths1 - should find the commit
-      const result1 = runSweep(root, { env: { BABYSITTER_QA_EXCLUSIVE_PATHS_SCRIPT: stub1 } });
-      reach.sweeps += 1;
-      assert.equal(result1.exitCode, 0, `sweep 1 failed with exit code ${result1.exitCode}: ${result1.output}`);
-      const finding1 = pipelineFindings(result1.output).find((f) => f.key === `pipeline-code-on-main-${sha}`);
-
-      // Second sweep with paths2 - must NOT find the commit: x is not in
-      // paths2 by construction, so any finding here is a real cache/path-set
-      // bug, never an environmental flake.
-      const result2 = runSweep(root, { env: { BABYSITTER_QA_EXCLUSIVE_PATHS_SCRIPT: stub2 } });
-      reach.sweeps += 1;
-      assert.equal(result2.exitCode, 0, `sweep 2 failed with exit code ${result2.exitCode}: ${result2.output}`);
-      const finding2 = pipelineFindings(result2.output).find((f) => f.key === `pipeline-code-on-main-${sha}`);
+      const { sha, finding1, finding2 } = runDecisivePairSweeps('sfvc-bl1373-inv1-', { paths1, x, paths2 }, reach);
 
       if (finding2) {
         assert.fail(
@@ -238,54 +243,33 @@ test('property (cache invalidation): the cache invalidates when qa-paths changes
     fc.property(decisivePairArb, ({ paths1, x, paths2 }) => {
       reach.draws += 1;
 
-      // Create a fixture repo
-      const root = mkFixtureRepo('sfvc-bl1373-cache-');
-
-      // Create stub scripts for both path sets
-      const stub1 = createStubScript(paths1, 'sfvc-bl1373-stub1-');
-      const stub2 = createStubScript(paths2, 'sfvc-bl1373-stub2-');
-
-      // Clear cache
-      clearPipelineCache(root);
-
-      // Create a commit touching x, which is in paths1 and never in paths2
-      const testFile = x.replace(/\/$/, '') + '/test-file.txt';
-      const sha = commitFile(root, testFile, 'content\n', 'test: touches path only in paths1');
-
-      // Get the actual tips from the fixture
-      const mainTip = execFileSync('git', ['-C', root, 'rev-parse', 'main'], { encoding: 'utf8' }).trim();
-      let originMainTip;
-      try {
-        originMainTip = execFileSync('git', ['-C', root, 'rev-parse', 'origin/main'], { encoding: 'utf8' }).trim();
-      } catch (e) {
-        // origin/main might not exist in fixtures
-        originMainTip = mainTip;
-      }
-
-      // Manually write a cache entry that says "this commit is an offender"
-      // with qa-paths=paths1 and the ACTUAL tips from the fixture.
-      writePipelineCache(root, {
-        tips: { main: mainTip, 'origin/main': originMainTip },
-        'qa-paths': paths1,
-        result: {
-          'offending-commits': [{ sha, subject: 'test', paths: [testFile] }],
-          'ancestry-unavailable?': false
+      // Before either sweep, manually write a cache entry that says "this
+      // commit is an offender" with qa-paths=paths1 and the ACTUAL tips from
+      // the fixture - the first sweep (paths1) should use it, the second
+      // (paths2) must invalidate it on the qa-paths mismatch.
+      const { sha, finding1, finding2 } = runDecisivePairSweeps(
+        'sfvc-bl1373-cache-',
+        { paths1, x, paths2 },
+        reach,
+        (root, commitSha) => {
+          const mainTip = execFileSync('git', ['-C', root, 'rev-parse', 'main'], { encoding: 'utf8' }).trim();
+          let originMainTip;
+          try {
+            originMainTip = execFileSync('git', ['-C', root, 'rev-parse', 'origin/main'], { encoding: 'utf8' }).trim();
+          } catch (e) {
+            // origin/main might not exist in fixtures
+            originMainTip = mainTip;
+          }
+          writePipelineCache(root, {
+            tips: { main: mainTip, 'origin/main': originMainTip },
+            'qa-paths': paths1,
+            result: {
+              'offending-commits': [{ sha: commitSha, subject: 'test', paths: [x.replace(/\/$/, '') + '/test-file.txt'] }],
+              'ancestry-unavailable?': false
+            }
+          });
         }
-      });
-
-      // First sweep with paths1 - should use the cache and find the commit
-      const result1 = runSweep(root, { env: { BABYSITTER_QA_EXCLUSIVE_PATHS_SCRIPT: stub1 } });
-      reach.sweeps += 1;
-      assert.equal(result1.exitCode, 0, `sweep 1 failed with exit code ${result1.exitCode}: ${result1.output}`);
-      const finding1 = pipelineFindings(result1.output).find((f) => f.key === `pipeline-code-on-main-${sha}`);
-
-      // Second sweep with paths2 - must NOT use the cache (qa-paths mismatch):
-      // x is not in paths2 by construction, so any finding here means the
-      // cache did not invalidate on the qa-paths change.
-      const result2 = runSweep(root, { env: { BABYSITTER_QA_EXCLUSIVE_PATHS_SCRIPT: stub2 } });
-      reach.sweeps += 1;
-      assert.equal(result2.exitCode, 0, `sweep 2 failed with exit code ${result2.exitCode}: ${result2.output}`);
-      const finding2 = pipelineFindings(result2.output).find((f) => f.key === `pipeline-code-on-main-${sha}`);
+      );
 
       if (finding2) {
         assert.fail(
