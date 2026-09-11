@@ -1,5 +1,34 @@
 # SwarmForge VS Code Extension — Specification
 
+**Last Updated:** September 11, 2026 (BL-1526: the daemon closure walk's
+last FAIL line — `bl1022: every spawn target in the daemon's closure
+resolved` in `daemon_cycle_guard_lib_test_runner.bb` — retired, red since
+306509a6b0 (2026-08-25) with no owner. The resolver
+(`master_checkout_drift_lib.bb`) gains a fourth shape: a file may declare a
+bare-symbol spawn target genuinely dynamic (no literal anywhere) via a
+top-level `daemon-spawn-declared-dynamic-targets` map naming the symbol and
+a reason; declaring one name never resolves another undeclared bare symbol
+in the same file. `expedite_cli.bb`'s `runner` (the `EXPEDITE_STAGE_RUNNER`
+test seam) is declared dynamic this way — `stage-cmd`'s production
+behaviour (spawn `claude -p` directly) is unchanged. The three let-bound
+sites (`handoffd.bb`'s `launcher`/`script`, `chase_sweep_lib.bb`'s `cli`)
+needed no resolver change — the literal is now inlined directly into the
+spawn vector, the same "path plumbing" shape the resolver already reads.
+Unplanned but required: resolving `chase_sweep_lib.bb`'s target newly
+brought `commit_integrity_cli.bb` and `commit_integrity_lib.bb` into the
+daemon's spawn-reachable closure, which tripped BL-1031's banned-API
+ratchet as a new offender — both now route through the existing
+`daemon-cycle-guard-lib/sh!` chokepoint too. `daemon_api_ban_lib.bb`'s
+exempt set stays `daemon_cycle_guard_lib.bb` only. With BL-1524 and
+BL-1525 already landed, all three FAIL lines in
+`daemon_cycle_guard_lib_test_runner.bb` are now green; the two
+`backlog/standing-reds.tsv` rows this ticket held are removed in this
+land. Complements BL-967/BL-1021/BL-1022/BL-1031/BL-1102/BL-1103/BL-1524/
+BL-1525. Acceptance:
+`specs/features/BL-1526-every-daemon-spawn-target-resolves-statically.feature`.
+Diagram note: `docs/diagrams/architecture.mmd`. No new extension command,
+setting, or UI change.)
+Prior entry —
 **Last Updated:** September 11, 2026 (BL-1525: the daemon's
 spawn-reachable subtree's last banned-API debt retired — the assertion
 `bl1031: spawn-reachable subtree carries no banned-API debt (ratchet

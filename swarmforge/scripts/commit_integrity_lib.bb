@@ -46,9 +46,16 @@
 
 (ns commit-integrity-lib
   (:require [babashka.fs :as fs]
-            [babashka.process :as process]
             [cheshire.core :as json]
             [clojure.string :as str]))
+
+;; BL-1526: chase_sweep_lib.bb spawns commit_integrity_cli.bb, which
+;; load-files this lib - handoffd.bb load-files chase_sweep_lib.bb, so a
+;; plain process/sh here was a spawn-reachable banned-API offender (BL-1031's
+;; ratchet), invisible until BL-1526 taught the walk to resolve that spawn
+;; target. Self-load-filed rather than relying on a loader to have brought
+;; it in first, same convention as every other daemon-reachable lib.
+(load-file (str (fs/path (fs/parent (fs/canonicalize *file*)) "daemon_cycle_guard_lib.bb")))
 
 ;; BL-1475: raised from 3 attempts / a flat 50ms to a budget actually sized
 ;; to the guard chain every other commit on the shared checkout runs
@@ -85,7 +92,7 @@
        300000))
 
 (defn- run-git [project-root args]
-  (process/sh (into ["git" "-C" (str project-root)] args)))
+  (daemon-cycle-guard-lib/sh! (into ["git" "-C" (str project-root)] args)))
 
 ;; BL-1475: the ONE failure worth retrying - every other add/commit error
 ;; (a hook rejection, a missing path, "nothing to commit") fails at once.
@@ -246,13 +253,13 @@
         record))
     (catch Exception _ nil)))
 
-;; kill -0 via process/sh: portable to stock macOS and Linux (never /proc).
-;; Exit 0 = the pid can be signalled, i.e. is alive; anything else reads as
-;; dead. Every writer on a checkout runs as the same user, so kill -0's
-;; cross-user EPERM-means-alive nuance does not arise here.
+;; kill -0 via the chokepoint: portable to stock macOS and Linux (never
+;; /proc). Exit 0 = the pid can be signalled, i.e. is alive; anything else
+;; reads as dead. Every writer on a checkout runs as the same user, so
+;; kill -0's cross-user EPERM-means-alive nuance does not arise here.
 (defn- pid-alive? [pid]
   (try
-    (zero? (:exit (process/sh "kill" "-0" (str pid))))
+    (zero? (:exit (daemon-cycle-guard-lib/sh! "kill" "-0" (str pid))))
     (catch Exception _ false)))
 
 (defn- lock-age-ms [lock-dir record]
