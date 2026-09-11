@@ -42,7 +42,6 @@ banked_briefing_test_runner.bb	standing
 batch_claim_progress_lib_test_runner.bb	standing		
 batch_claim_progress_sweep_test_runner.bb	standing		
 bb_load_closure_agreement_test_runner.bb	standing		
-branch_identity_guard_lib_test_runner.bb	standing		
 bl1049_provider_env_scrub_test_runner.bb	standing		
 bl1053_local_provider_routing_test_runner.bb	standing		
 bl1081_acp_snapshot_agreement_test_runner.bb	standing		
@@ -66,6 +65,7 @@ boot_prefix_budget_gate_lib_test_runner.bb	standing
 bounded_delete_sweep_lib_test_runner.bb	standing		
 bounded_run_lib_test_runner.bb	standing		
 branch_claim_guard_test_runner.bb	standing		
+branch_identity_guard_lib_test_runner.bb	standing		
 branch_naming_test_runner.bb	standing		
 bridge_headless_supervisor_test_runner.bb	standing		
 bridge_supervisor_env_test_runner.bb	standing		

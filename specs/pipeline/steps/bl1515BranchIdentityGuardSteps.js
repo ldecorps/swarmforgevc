@@ -38,6 +38,14 @@ function refExists(cwd, ref) {
   return result.status === 0;
 }
 
+function ensureCheckout(cwd, branch) {
+  if (refExists(cwd, `refs/heads/${branch}`)) {
+    git(cwd, ['checkout', branch]);
+  } else {
+    git(cwd, ['checkout', '-b', branch]);
+  }
+}
+
 function installScripts(wt) {
   const dest = path.join(wt, 'swarmforge', 'scripts');
   fs.mkdirSync(dest, { recursive: true });
@@ -140,11 +148,7 @@ function registerSteps(registry) {
   });
 
   scoped(/^the coder worktree is checked out on "([^"]+)"$/, (ctx, branch) => {
-    if (refExists(ctx.coderWt, `refs/heads/${branch}`)) {
-      git(ctx.coderWt, ['checkout', branch]);
-    } else {
-      git(ctx.coderWt, ['checkout', '-b', branch]);
-    }
+    ensureCheckout(ctx.coderWt, branch);
   });
 
   scoped(/^the local ref "([^"]+)" does not exist$/, (ctx, ref) => {
@@ -159,11 +163,7 @@ function registerSteps(registry) {
   });
 
   scoped(/^"origin\/([^"]+)" is an ancestor of the checked-out branch "([^"]+)"$/, (ctx, declared, branch) => {
-    if (refExists(ctx.coderWt, `refs/heads/${branch}`)) {
-      git(ctx.coderWt, ['checkout', branch]);
-    } else {
-      git(ctx.coderWt, ['checkout', '-b', branch]);
-    }
+    ensureCheckout(ctx.coderWt, branch);
     const tip = gitOut(ctx.coderWt, ['rev-parse', 'HEAD']).trim();
     git(ctx.coderWt, ['update-ref', `refs/remotes/origin/${declared}`, tip]);
     ctx.preRunTip = tip;
@@ -187,11 +187,7 @@ function registerSteps(registry) {
   scoped(/^the guard has already renamed "([^"]+)" to "([^"]+)"$/, (ctx, from, to) => {
     const currentBranch = gitOut(ctx.coderWt, ['rev-parse', '--abbrev-ref', 'HEAD']).trim();
     if (currentBranch !== from) {
-      if (refExists(ctx.coderWt, `refs/heads/${from}`)) {
-        git(ctx.coderWt, ['checkout', from]);
-      } else {
-        git(ctx.coderWt, ['checkout', '-b', from]);
-      }
+      ensureCheckout(ctx.coderWt, from);
     }
     if (refExists(ctx.coderWt, `refs/heads/${to}`)) {
       git(ctx.coderWt, ['branch', '-D', to]);
