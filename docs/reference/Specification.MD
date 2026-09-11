@@ -1,5 +1,35 @@
 # SwarmForge VS Code Extension — Specification
 
+**Last Updated:** September 11, 2026 (BL-1518: `swarm_handoff.sh` refuses
+every message type — not only `git_handoff` — before any mailbox write,
+when the draft file it was given does not lie under the project root the
+invocation resolved (`handoff_draft_root_guard_lib.bb`'s
+`draft-root-guard!`, wired at the top of `swarm_handoff.bb`). Closes a
+2026-09-10 mutation-test fixture escape: a BL-607 unit test shelled the
+real `swarm_handoff.bb` with `cwd` and `SWARMFORGE_ROLE` bundled into one
+options object; a mutant of that test (surfaced by a BL-1441 mutation run
+over the front-desk file set) that emptied or dropped the options object
+let the child process inherit the test process's own real cwd and
+environment — the coder pane's live worktree, `SWARMFORGE_ROLE=coder` —
+so the CLI resolved a real, valid project root even though the draft it
+was actually handed lived under an unrelated `mkdtemp` fixture, and
+delivered the fixture's contents as a live priority-00 handoff. Four such
+notes reached the live specifier inbox before this was traced. Containment
+is checked at a path-separator boundary (never a bare string prefix) on
+already-canonicalized paths, so a sibling directory sharing the root's
+name as a text prefix is never mistaken for containment; every production
+draft (`tmp/handoff.txt` under a worktree role's own worktree, or
+master's `swarmforge/runtime/handoff-draft.txt`) is under its role's
+resolved root by construction, so this refuses only a fixture escape,
+never a live send. No new extension command or setting — Babashka
+handoff-CLI guard. Acceptance:
+`specs/features/BL-1518-a-handoff-cli-never-writes-outside-the-root-its-draft-lives-in.feature`.
+Mechanics: `swarmforge/handoff-protocol.md` Draft-Root Guard section.
+How-to: `docs/how-to/BL-1518-handoff-draft-root-guard.md`. No diagram edit
+— this is a new send-time refusal check alongside the other
+`swarm_handoff.bb` guards (BL-760, BL-953, BL-1192, BL-1205, BL-1213,
+BL-1240), below handoff-flow.mmd's depicted granularity, same as those.)
+Prior entry —
 **Last Updated:** September 10, 2026 (BL-1505: `chase_sweep_lib.bb`'s
 `apply-inbox-item-action!` wrote the chase sidecar and logged `chase`
 telemetry only when `:send-wake-up!` (`chase-poke-and-notify!` in

@@ -895,6 +895,53 @@ known-good ref, not a parcel routed through it.
 
 How-to: `docs/how-to/BL-1205-tree-collapse-guard.md`.
 
+## Draft-Root Guard (BL-1518)
+
+`swarm_handoff.sh` refuses to run at all — before any mailbox or sender
+logic, for every message type — when the draft file it was given does not
+lie at or under the project root it resolves for the invocation. This
+closes a fixture-escape shape found on 2026-09-10: a unit test under
+mutation shells the real `swarm_handoff.bb` with `cwd`/`SWARMFORGE_ROLE`
+bundled into one options object; a mutant that drops or empties that
+object lets the child process inherit the *test process's* real cwd and
+environment (the coder pane's live worktree, `SWARMFORGE_ROLE=coder`), so
+the CLI resolves a real, valid project root and happily delivers a live
+handoff whose draft actually lived under an unrelated `mkdtemp` fixture —
+four such notes reached the live specifier inbox before this was traced.
+
+Mechanics (`handoff_draft_root_guard_lib.bb`, called from
+`swarm_handoff.bb`'s `draft-root-guard!`):
+
+- **Asks a question the CLI can actually answer.** Not "is `cwd` correct"
+  (unfixable from inside the CLI — it never learns what its caller meant
+  to pass) but "does the draft this invocation was actually given live
+  under the root this invocation actually resolved" — answerable from data
+  already in hand regardless of how it got there.
+- **Containment at a path-separator boundary**, never a bare string
+  prefix — a sibling directory that merely shares the root's name as a
+  text prefix (root `/a/b` vs draft `/a/bc/x`) is never mistaken for
+  containment. Exact equality counts as inside.
+- Both paths are canonicalized (`fs/canonicalize`, resolving `..` and
+  symlinks) before the comparison, so a relative draft argument or a
+  symlinked worktree cannot slip past a naive string compare.
+- Every production draft (a worktree role's own `tmp/handoff.txt`,
+  master's `swarmforge/runtime/handoff-draft.txt`) is under its role's
+  resolved root by construction — this refuses only a fixture escape,
+  never a live send.
+
+Refusal message names both paths, so the reader can tell at a glance which
+side is the surprising one:
+
+```text
+HANDOFF_DRAFT_OUTSIDE_ROOT
+draft: /tmp/some-mkdtemp-fixture/tmp/handoff.txt
+root:  /home/carillon/swarmforgevc/.worktrees/coder
+Refusing: the draft file does not lie under the project root this
+invocation resolved. Run swarm_handoff.sh with a draft that lives under
+your own worktree (or master's swarmforge/runtime/), or from the correct
+project directory.
+```
+
 ## Unregistered-Test Send-Time Gate (BL-1240)
 
 `swarm_handoff.bb` refuses a `git_handoff` whose own parcel adds a file
