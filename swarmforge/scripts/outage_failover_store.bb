@@ -3,7 +3,6 @@
 ;; announcements, and COST-root experiment-log annotations.
 (ns outage-failover-store
   (:require [babashka.fs :as fs]
-            [babashka.process :as process]
             [cheshire.core :as json]
             [clojure.string :as str]))
 
@@ -13,6 +12,11 @@
 (def active-swap-file-name "active-swap.json")
 
 (def ^:private this-file (fs/canonicalize *file*))
+
+;; BL-1524: the seat respawn runs under the bounded chokepoint
+;; (daemon-cycle-guard-lib/sh!), not a direct babashka.process call - this
+;; file joins handoffd.bb's load closure via outage_failover_cli.bb.
+(load-file (str (fs/path (fs/parent this-file) "daemon_cycle_guard_lib.bb")))
 
 (defn repo-root [] (fs/parent (fs/parent (fs/parent this-file))))
 
@@ -87,6 +91,6 @@
   (when (and socket (not= "1" (System/getenv "SWARMFORGE_SKIP_TMUX_INJECT")))
     (let [launch (fs/path project-root ".swarmforge" "launch" (str role ".sh"))]
       (when (fs/exists? launch)
-        @(process/process ["tmux" "-S" socket "respawn-pane" "-k" "-t" (str role ":0.0")
-                           "bash" (str launch)]
-                          {:dir (str project-root) :out :inherit :err :inherit})))))
+        (daemon-cycle-guard-lib/sh! ["tmux" "-S" socket "respawn-pane" "-k" "-t" (str role ":0.0")
+                                     "bash" (str launch)]
+                                    {:dir (str project-root) :out :inherit :err :inherit})))))
