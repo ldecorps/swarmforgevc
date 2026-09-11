@@ -1,0 +1,183 @@
+id: BL-1531
+title: "The Telegram approval ask explains each ruling option: every option is lettered and listed in the text with its label and the specifier's stated trade-offs (new ruling_tradeoffs list), the approval context runs to Telegram's limit instead of a fixed 300 characters, and each option button carries its letter - BL-1529's ask showed a context cut mid-sentence and two buttons both starting 'The challenge ...'"
+milestone: M8
+type: feature
+status: todo
+epic: question-attention-path
+priority: 12
+direction: human-directive
+depends_on: []
+mutation_cost: medium
+# medium: TypeScript in the concierge (topicRouter.ts composer, two
+# payload narrowings) and the lenient backlog reader; all pure and
+# unit-testable over fixtures, Stryker-covered. Not low because the
+# composer's truncation ordering is new branchy logic.
+slice_size_envelope: medium
+required_stages: [coder, cleaner, architect, hardender, documenter, qa]
+
+acceptance: specs/features/BL-1531-the-approval-ask-explains-each-ruling-option.feature
+
+# Task-scope declaration only (BL-1276), not ownership: scenario 06 prefixes
+# each option button with its letter, and BL-589's handler asserts the button
+# text equals the bare label (bl589ApprovalAskCarriesRulingOptionsSteps.js
+# ~line 126). That assertion is re-tensed in this parcel; BL-589's scenario
+# text ("one inline button per ruling option alongside the default verbs")
+# stays true and is not reworded.
+retires:
+  - specs/pipeline/steps/bl589ApprovalAskCarriesRulingOptionsSteps.js
+
+# Two summary builders narrow BacklogFolderItem into the ApprovalRequested
+# payload, and a field missing from either is dark against the live backlog
+# while every unit test stays green (the BL-341 note in situ at
+# telegram-front-desk-bot.ts toFoldersSnapshot). These anchors are satisfied
+# by this parcel's own diff (BL-1235 caveat) - they pin the two live
+# narrowings the composer depends on, not a consumer of the composer.
+required_wiring:
+  - 'extension/src/tools/telegram-front-desk-bot.ts::rulingTradeoffs::toFoldersSnapshot narrows the live backlog into the tick snapshot - a field not picked here never reaches the ask'
+  - 'extension/src/concierge/conciergeTick.ts::rulingTradeoffs::ticketSummariesFor carries the field into the ApprovalRequested payload the composer reads'
+  - 'specs/pipeline/steps/bl1531ApprovalAskExplainsEachRulingOptionSteps.js::registerSteps::the handler lands in the same parcel as the feature (BL-233, BL-1371)'
+
+human_approval: pending
+approval_context: >
+  A new feature file is authored here, so it needs a tap. No choice is
+  posed: the specifier chose the trade-off source (a structured
+  ruling_tradeoffs list, positionally paired with ruling_options) over
+  prose headings inside approval_context, because approval_context is a
+  folded scalar whose line structure is lost on read and because every
+  reader of ruling_options today - strict YAML, backlogReader.ts's
+  parseYamlList, relay-ruling.js, the tap recorder - keeps working
+  unchanged. FIRM: the relay composes the option block from ticket content
+  only and never invents pros or cons - a ticket with options and no
+  trade-offs lists bare lettered labels. FIRM: the frozen reply-grammar
+  line (BL-480) and the five default verb buttons (BL-589) are
+  byte-identical to today. FIRM: under any truncation the option letters
+  and labels and the frozen line survive; approval_context is cut first,
+  and the message never exceeds Telegram's 4096. Typing a letter to choose
+  ("approve BL-1529 A") is BL-1532, minted alongside and depending on this
+  ticket. Human directive quoted verbatim in description.
+
+invariants:
+  - "Every character of the option block is drawn from the ticket's ruling_options and ruling_tradeoffs; the relay never composes trade-off prose of its own, and an absent ruling_tradeoffs renders as absence, not as a placeholder."
+  - "Under any truncation the frozen reply-grammar line and every option's letter and label survive intact; approval_context is cut before either, and the sent message never exceeds Telegram's 4096-character limit."
+  - "An option's letter is derived from its position in ruling_options (index 0 is A) by one definition shared by the text block, the button label, and the rule:<id>:<index> callback - the three can never name the same option differently."
+
+description: |
+  ## Human directive (2026-09-11, verbatim)
+
+  "intake : what to chose? pros and cons should be explained on the
+  telegram message."
+
+  ## What is wrong
+
+  `approvalRequestedText` (extension/src/concierge/topicRouter.ts) composes
+  the Approvals-topic ask as: `<id> — <title>`, `What it solves:`, `First
+  acceptance signal:`, `Approval context:` - each field cut at
+  TASK_STARTED_FIELD_MAX_LENGTH (300), the body cut at
+  TASK_STARTED_MESSAGE_MAX_LENGTH (1000) - then the frozen reply line.
+  `ruling_options` reach the message only as inline buttons
+  (`rulingOptionButtonRows`, BL-589), each label cut at 64 characters, and
+  are named nowhere in the text. On BL-1529 (title ~430 characters, two
+  ~150-character options) the human received a title, a context cut
+  mid-sentence ("the audit is an agent-discipline …"), a reply hint that
+  says nothing about choosing, and two buttons both reading "The challenge
+  …". The specifier's "(recommended)" marker sat past the 64th character
+  of its label. They had to have the yaml read out before they could tap.
+
+  ## What is wanted
+
+  When a ticket carries `ruling_options`, the ask's TEXT lists every
+  option, lettered A, B, C... in declared order, each with its full label
+  and - when the ticket declares one - its `ruling_tradeoffs` line (the
+  specifier's pros, cons, and the why behind a "(recommended)" marker).
+  The text tells the human how to pick (by the letters; BL-1532 adds the
+  typed form to that hint). Each option button is prefixed with its letter
+  so the truncated buttons are tellable apart and match the text. The
+  approval context is shown whole, cut only when the whole message would
+  exceed Telegram's limit - and then it is what gets cut, never the
+  options or the frozen line.
+
+  ## The new field
+
+  `ruling_tradeoffs:` - a block list, ONE physical line per entry, same
+  order and count as `ruling_options`; entry i explains option i. Free
+  text, conventionally `Pros: ... Cons: ...` and, on the recommended
+  option, `Recommended because ...`. No `#` and no `: ` inside an entry
+  (parseYamlList strips from `#`; a `: ` makes strict YAML read a map).
+  Parsed by backlogReader.ts with the SAME lenient reader as
+  `ruling_options` and carried as `rulingTradeoffs?: string[]` through
+  BacklogItem, both payload narrowings, and the ApprovalRequested payload.
+  A count mismatch renders what pairs and drops the surplus silently -
+  never a crash, never a placeholder. The schema row and the specifier
+  prompt rule landed with this mint (see notes).
+
+  ## How (direction, not mandate)
+
+  - Composer: after the summary fields and before the frozen line, an
+    option block `Your call - pick one:` then per option `A) <label>` and,
+    indented, the trade-offs line; then a pick hint naming the letters.
+    Letter from index via one helper (`optionLetter(index)`), used by the
+    text block AND `rulingOptionButtonRows` (`A) <label>` truncated at 64
+    as today; callback_data unchanged).
+  - Budget: keep the 300 field cap for title / what-it-solves /
+    first-acceptance. Lift it for approvalContext and the option block.
+    Compose, measure against a shared 4096 constant
+    (telegramCursorBridgeCore.ts exports TELEGRAM_MESSAGE_MAX_LENGTH -
+    import it or hoist it; a second literal needs the BL-897 both-agree
+    test), and when over, truncate approvalContext's tail with `…` by the
+    overflow; only if still over, truncate trade-offs lines; labels and the
+    frozen line are never cut.
+  - BL-480 approval-ask-content-04 asserts an oversized notes block still
+    yields a truncated ask (`…`) - the 300 cap on what-it-solves keeps it
+    green; do not remove that cap.
+  - Reader: `parseYamlFlowOrBlockList(content, 'ruling_tradeoffs')` beside
+    line 226 and the strict-YAML branch beside line 349.
+
+  ## Not in scope
+
+  - Typing a letter to choose (`approve BL-1529 A`): BL-1532.
+  - The paused-pager Mini App and the PWA option rendering
+    (bridgeServer.ts / streamSnapshot.ts carry rulingOptions for another
+    surface); a later slice may show trade-offs there.
+  - Re-pended tickets never posting a fresh ask: BL-1455 (independent).
+  - Retrofitting `ruling_tradeoffs` onto the 10 paused tickets that carry
+    `ruling_options` today; they render as scenario 02 until amended.
+
+notes: |
+  Minted 2026-09-11 by the specifier from the human's intake
+  `backlog/archive/INTAKE-approval-asks-carry-pros-and-cons-per-option-20260911.md`
+  (filed 05:20Z after the BL-1529 ask; coordinator note 06:05Z). The
+  intake was split 1:2 - the message content and the button lettering are
+  this ticket; the typed letter grammar is BL-1532. Specifier-owned prose
+  landed in the SAME mint commit: `swarmforge/backlog-schema.md` rows for
+  approval_context, ruling_options, ruling_tradeoffs, human_ruling and
+  ruling_provenance, and the specifier.prompt rule that a ticket declaring
+  ruling_options declares ruling_tradeoffs too (BL-798 posture: no gate
+  reminds anyone of prose halves).
+  Documenter: docs/how-to/BL-589-approval-ask-carries-ruling-options.md
+  describes the ask; extend it with the lettered block and the new field.
+  No registered diagram depicts the ask composition.
+
+qa_e2e_procedure: |
+  On the parcel commit, from `extension/`, after `npm run compile`.
+  1. `node specs/pipeline/cli.js specs/features/BL-1531-the-approval-ask-explains-each-ruling-option.feature`
+     is green; BL-480, BL-589 and BL-1278 feature files still green.
+  2. Fixture ticket under a mkdtemp root (BL-1390 fixture rules) with
+     `human_approval: pending`, two `ruling_options` of ~150 characters
+     (the second marked "(recommended)"), two `ruling_tradeoffs` lines and
+     a ~1400-character `approval_context`. Drive one concierge tick over it
+     with a captured sendMessage adapter: the captured text lists `A)` and
+     `B)` with both full labels and both trade-offs lines, the approval
+     context appears whole, the frozen "needs your approval" line is the
+     last line, the total is under 4096, and the keyboard's first two rows
+     read `A) ...` / `B) ...` with callback_data `rule:<id>:0` / `rule:<id>:1`
+     followed by the Approve/Amend/Reject/Q jump and More/Ambulance rows.
+  3. Same fixture with `ruling_tradeoffs` removed: the text lists `A)` and
+     `B)` labels and no trade-offs line; nothing reads like a placeholder.
+  4. Same fixture with a 6000-character approval_context: text length
+     4096 or less, context ends with `…`, both labels and the frozen line
+     present in full.
+  5. Fixture without ruling_options: text has no option block, keyboard is
+     the five-button default (BL-589 scenario 03 byte-for-byte).
+  6. Tap `rule:<id>:1` on the captured ask: the ticket records
+     `human_ruling` with the bare second label (no `B)` prefix) and
+     `ruling_provenance: tapped`, as before.

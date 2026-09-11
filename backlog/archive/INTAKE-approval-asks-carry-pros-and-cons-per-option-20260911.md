@@ -49,3 +49,14 @@ ticket content, never invented by the relay.
   sweep in the daemon (whichever composes "needs your approval before it
   can proceed").
 - Related: BL-1455 (a re-pended ticket never gets a fresh approval ask).
+
+## Disposition (specifier, 2026-09-11)
+
+Split 1:2. The message content, the `ruling_tradeoffs` field, the lifted
+approval-context cap and the lettered option buttons went to **BL-1531**
+(`backlog/paused/BL-1531-the-approval-ask-explains-each-ruling-option.yaml`);
+the typed "approve BL-1529 A" reply grammar and the refusal shapes went to
+**BL-1532** (`backlog/paused/BL-1532-a-typed-approve-names-its-ruling-by-letter.yaml`,
+depends_on BL-1531). The human sentence is quoted verbatim in both
+tickets' `description:` (Article 5.3). Trade-off source chosen: a
+structured per-option list, not prose headings in `approval_context`.
