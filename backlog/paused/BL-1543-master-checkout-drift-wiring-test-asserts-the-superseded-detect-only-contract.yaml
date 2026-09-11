@@ -1,0 +1,195 @@
+id: BL-1543
+title: "test_handoffd_master_checkout_drift_wiring.sh has been red on main since 2026-08-25 with no owner: it boots the real handoffd.bb and asserts BL-839's detect-only contract (first MASTER CHECKOUT DRIFT line says 'not the code', file left modified), but BL-1139's auto-repair makes the real daemon restore durable drift silently and emit only a RESTORED note; re-tense the test to the live contract - restored branch, in-flight WARN branch, launcher bounce observed without starting anything - and leave no fixture daemon behind"
+milestone: M8
+type: defect
+severity: high
+# high: a standing red is severity high at first sighting (Article 3.2.4,
+# 2026-09-05 amendment). This test is the ONLY proof that the real daemon
+# fires the drift sweep and repairs; while it is red the swarm's
+# self-repair of its own executed code has no end-to-end signal.
+status: todo
+epic: swarm-reliability
+priority: 8
+direction: swarm-reported
+depends_on: []
+mutation_cost: low
+# low: one shell test changes what it asserts; no production line changes.
+# Shell has no mutation/CRAP/DRY wired (BL-472); the hardener gates on the
+# test itself plus the new acceptance handler and records the fallback.
+slice_size_envelope: low
+required_stages: [coder, cleaner, architect, hardender, documenter, qa]
+
+acceptance: specs/features/BL-1543-the-drift-wiring-test-asserts-the-daemons-live-repair-contract.feature
+
+# No consumer anchor (BL-1235): the test is the subject; an anchor on the
+# RESTORED literal inside it is satisfied by the parcel's own edit and gates
+# nothing. The real daemon is the live consumer and the test proves it.
+required_wiring:
+  - 'specs/pipeline/steps/bl1543DriftWiringLiveContractSteps.js::registerSteps::the handler lands in the same parcel as the feature (BL-233)'
+
+human_approval: pending
+approval_context: >
+  A new feature file is authored here, so it needs a tap. No choice is posed
+  and there are no ruling_options. FIRM: no production code changes - the
+  daemon already does what BL-1139 (human-approved 2026-08-25) specified;
+  only the BL-839 wiring test is re-tensed to assert it. FIRM: the test keeps
+  booting the REAL handoffd.bb (the BL-577 wiring pattern) - a version that
+  drives the lib with fakes would duplicate BL-1139's acceptance and prove
+  nothing about the daemon. FIRM: the test must leave no process rooted in
+  its fixture behind, so the daemon's deferred bounce is observed through the
+  launcher's audit line under SWARMFORGE_SKIP_DAEMON=1, never by letting a
+  second daemon start.
+
+invariants:
+  - "After the test exits, no process whose command line names its fixture root exists - the daemon it spawned, the launcher its repair bounced, and anything they started are all gone (pgrep -af <root> empty)."
+
+description: |
+  ## What is wrong
+
+  `swarmforge/scripts/test/test_handoffd_master_checkout_drift_wiring.sh`
+  (BL-839) fails on `main` (verified 2026-09-11 at `41bacc37a1`):
+
+  ```
+  AssertionError: alarm text missing the stakes statement: 'MASTER CHECKOUT DRIFT RESTORED: swarmforge/scripts/handoffd_supervisor.bb'
+  exit 1
+  ```
+
+  The test boots the real `handoffd.bb` against a disposable repository with
+  an uncommitted edit to `swarmforge/scripts/handoffd_supervisor.bb` and
+  asserts BL-839's detect-only contract: the first OPERATOR-topic outbox line
+  containing `MASTER CHECKOUT DRIFT` carries `not the code` (case 01), and
+  the drifted file is still modified afterwards (case 02). BL-1139
+  (`849e9fc4e6`, 2026-08-25, human: "the swarm must deal with durable
+  daemon-script drift without human intervention") made the daemon's
+  `master-checkout-drift-sweep!` call `repair-master-checkout-drift!`: on
+  durable drift with no commit in flight the check runs silently (no WARN is
+  written for the episode), every drifted path in the daemon-executed closure
+  is restored with `git checkout main -- <path>`, ONE `MASTER CHECKOUT DRIFT
+  RESTORED: <paths>` line goes to the same outbox, and a bounce of
+  `start_handoff_daemon.sh <root>` is deferred by 2 s. Both of the test's
+  cases therefore assert the old world. BL-1139's own acceptance drives the
+  lib with fakes; nothing re-tensed the one test that boots the real daemon
+  (BL-1006's shape: the successor never retired the boundary its predecessor
+  froze). BL-1273's QA saw it red on 2026-08-29 and ruled it pre-existing;
+  it was never minted.
+
+  The coder's note reads it as a race ("the DRIFT alarm never landed before
+  the repair fired"). It is not: on a successful repair no WARN is emitted by
+  design (`run-repair-attempt!` -> `finish-successful-restore!` emits only
+  the RESTORED note). The daemon is right; the test is stale.
+
+  Evidence: `backlog/evidence/BL-1543-specifier-unowned-red-repro-20260911.md`.
+
+  ## What is wanted
+
+  The test is re-tensed to the live contract and proves it THROUGH THE REAL
+  DAEMON, printing one `PASS: NN: ...` line per case (scenario 01):
+
+  - case 01: on durable drift (uncommitted edit, no lock, no live git) the
+    OPERATOR outbox carries exactly one `MASTER CHECKOUT DRIFT RESTORED:`
+    line naming `swarmforge/scripts/handoffd_supervisor.bb`;
+  - case 02: that file matches `main` again after the sweep (`git status`
+    no longer lists it; content is main's);
+  - case 03: no `MASTER CHECKOUT DRIFT:` WARN line was written for that
+    episode (the RESTORED line is the only `MASTER CHECKOUT DRIFT` line);
+  - case 04: in a SECOND fixture where `.git/index.lock` exists (commit in
+    flight) and the same edit is present, the outbox carries a `MASTER
+    CHECKOUT DRIFT:` line naming the path and stating the running code is
+    not the landed code (`not the code`), and the file is STILL modified -
+    BL-839's stakes assertion survives here, where it is still true;
+  - case 05: the repair's bounce reached the launcher chokepoint: the
+    fixture's `.swarmforge/daemon/daemon-start-audit.log` carries
+    `start_handoff_daemon invoked root=<fixture root>` with `SKIP_DAEMON=1`,
+    and nothing was started (no second daemon, no supervisor).
+  - The test prints its fixture root(s) on stdout (`fixture root: <path>`)
+    so the acceptance handler can check the leak invariant (scenario 02).
+  - Documenter: no registered diagram depicts this test; `docs/` change, if
+    any, is the note on the standing shell suite. If a how-to for BL-839 /
+    BL-1139 describes the wiring test's cases, it names the new ones.
+  - Register: after QA lands, `backlog/standing-reds.tsv` carries no row for
+    the test and `bb swarmforge/scripts/standing_red_register_cli.bb .`
+    reports it gone (a row leaves in the land that turns the test green).
+
+  ## How (direction, not mandate)
+
+  Keep the file's shape (BL-577 pattern: real `bb $HANDOFFD $ROOT &`,
+  `SWARMFORGE_ALLOW_TMP_DAEMON=1`, poll the outbox, touch
+  `.swarmforge/daemon/stop`, wait). Export `SWARMFORGE_SKIP_DAEMON=1` for the
+  whole test: `handoffd.bb` never reads it (so the test's own daemon is
+  unaffected) while `start_handoff_daemon.sh` writes its audit line and then
+  exits 0 without starting anything (lines 32-48). The bounce thread sleeps
+  2 s before running the launcher, so poll for the audit line (a few seconds)
+  BEFORE touching the stop marker, or the daemon may exit with the thread.
+  The RESTORED note rides `flow-watchdog-emit-alarm!` into the same
+  `telegram-reply-outbox.jsonl` the test already parses (`threadId`
+  `OPERATOR`). For case 04, `touch "$ROOT2/.git/index.lock"` before starting
+  the daemon is enough for `commit-in-flight?` (`index-lock-present?`); an
+  `:uncommitted-edit` still WARNs in flight (`should-alarm-on-result?`, only
+  a lone staged reversion is muted). Two daemon boots are expected; keep
+  each bounded by the existing 60x0.25 s poll. The acceptance handler can
+  follow `bl1480PromoteRouteFixtureClosureSteps.js` (`the standing suite
+  runs "<file>"` / `the run exits zero and reports no failed check`) and
+  parse the PASS lines and the printed fixture roots.
+
+constraints: >
+  Test-only parcel: `handoffd.bb`, `master_checkout_drift_lib.bb` and
+  `start_handoff_daemon.sh` are not edited (BL-1526, active, edits the lib's
+  resolver; this parcel and it share no path). The test keeps executing the
+  REAL handoffd.bb - it is a wiring test, not a lib test. Every case asserts
+  an observable of the daemon process (outbox line, file content, audit
+  line), never a lib return value. The BL-839 feature file is not edited by
+  the coder; its scenario 05 binds the write-free CHECK verb (BL-1139
+  invariant 1) and stays green.
+
+out_of_scope: |
+  - Any change to what the daemon does on drift (BL-1139 is done and
+    human-approved).
+  - Retiring BL-839 scenario 05: its steps assert the check verb, which is
+    still write-free; the specifier re-tensed the feature narrative at mint
+    so it no longer reads as a system-level "never repaired".
+  - Putting the standing shell suite into a gated lane so the next stale
+    wiring test is seen the day its mechanism changes (the same gap
+    BL-1524/BL-1526 record for the bb suite).
+
+qa_e2e_procedure: |
+  1. Acceptance resolving both scenarios of the feature file.
+  2. `bash swarmforge/scripts/test/test_handoffd_master_checkout_drift_wiring.sh`
+     exits 0 and prints five `PASS: 0N:` lines and the ALL TESTS PASSED
+     line; total wall time under two minutes.
+  3. Read the fixture outbox for the first fixture (print it in the test or
+     rerun with `set -x`): exactly one line with `MASTER CHECKOUT DRIFT`,
+     and it is the RESTORED line naming the supervisor script.
+  4. Negative control: in a scratch copy of the test, drop the
+     `SWARMFORGE_SKIP_DAEMON=1` export and confirm case 05 fails (the audit
+     line reads `SKIP_DAEMON=` empty) - then `pgrep -af <fixture root>` and
+     kill anything the control leaked before moving on.
+  5. After step 2, `pgrep -af "$(the printed fixture root)"` is empty and
+     the root no longer exists.
+  6. `bb swarmforge/scripts/standing_red_register_cli.bb .` reports no row
+     for the test and `"unowned":[]`.
+
+source: |
+  Coder `unowned-red` note 2026-09-11 18:27Z (priority 00) from the BL-1526
+  parcel, evidence `backlog/evidence/BL-1526-unowned-red-coder-20260911.md`
+  (coder worktree). Reproduced by the specifier on main 41bacc37a1 the same
+  pass; cause traced to BL-1139's landing 849e9fc4e6 (2026-08-25).
+
+notes: |
+  - Minted 2026-09-11 by the specifier the same pass the note arrived, per
+    the standing-red rule (Article 3.2.4, 2026-09-05 amendment): type
+    defect, severity high, register row added in the mint commit with
+    first_seen 2026-08-25 (BL-1139's landing; BL-1273 QA recorded the red
+    on 2026-08-29 without minting).
+  - Not a fold-in: no open ticket names the test. BL-839 and BL-1139 are
+    done. BL-1526 (active) edits master_checkout_drift_lib.bb's resolver
+    and does not touch this test; orthogonal by path.
+  - The specifier re-tensed the BL-839 feature narrative in the mint commit
+    (one sentence: the sweep restores since BL-1139; scenario 05 binds the
+    check verb) - no scenario reworded or retired.
+  - Human sentence preserved from BL-1139: "the swarm must deal with
+    durable daemon-script drift without human intervention."
+  - IR-DRY at mint: one `possible-synonym` (medium) between the Background's
+    "the wiring test <path> which boots..." (Given, names the subject) and
+    both scenarios' "the standing suite runs <path>" (When, executes it) -
+    different meanings sharing the path literal; do not collapse. The When
+    is repeated in both scenarios on purpose: each scenario is its own run.
