@@ -7,7 +7,7 @@ epic: lean-aware-coordinator
 priority: 10
 direction: human-requested
 depends_on: []
-decomposes_into: [BL-819, BL-820, BL-1365]
+decomposes_into: [BL-819, BL-820, BL-1365, BL-1528]
 source: |
   Raw intake `backlog/INTAKE-lean-aware-coordinator.md` (human via Cursor
   2026-08-05 ~09:55 CEST, amended ~09:58 for the shift-closing ceremony),
