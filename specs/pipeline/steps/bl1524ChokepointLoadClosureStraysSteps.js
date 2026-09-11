@@ -93,6 +93,16 @@ function pidAlive(pid) {
   }
 }
 
+// A throw between setup() and the terminal "no process ... is still alive"
+// step (which owns cleanup in its own `finally`) would otherwise leak
+// st.dir/st.pathDir - the intervening assertion step below can throw on a
+// genuine regression (wrong exit, elapsed over budget), and that throw
+// must not skip cleanup.
+function cleanupFixtureDirs(st) {
+  if (st.dir) fs.rmSync(st.dir, { recursive: true, force: true });
+  if (st.pathDir) fs.rmSync(st.pathDir, { recursive: true, force: true });
+}
+
 function waitForPidfile(pidfile, deadlineMs) {
   const deadline = Date.now() + deadlineMs;
   while (Date.now() < deadline) {
@@ -224,13 +234,18 @@ function registerSteps(registry) {
 
   registry.defineScoped(/^the call returns within 5 seconds with a non-zero exit$/, (ctx) => {
     const st = ensureState(ctx);
-    assert.equal(st.callResult.status, 0, `bb itself failed:\n${st.callResult.stderr}\n${st.callResult.stdout}`);
-    const m = /EXIT=(-?\d+) ELAPSED=(\d+)/.exec(st.callResult.stdout);
-    assert.ok(m, st.callResult.stdout);
-    st.exit = Number(m[1]);
-    st.elapsed = Number(m[2]);
-    assert.ok(st.elapsed < 5000, `elapsed ${st.elapsed}ms`);
-    assert.notEqual(st.exit, 0, 'expected a non-zero (bound-hit) exit');
+    try {
+      assert.equal(st.callResult.status, 0, `bb itself failed:\n${st.callResult.stderr}\n${st.callResult.stdout}`);
+      const m = /EXIT=(-?\d+) ELAPSED=(\d+)/.exec(st.callResult.stdout);
+      assert.ok(m, st.callResult.stdout);
+      st.exit = Number(m[1]);
+      st.elapsed = Number(m[2]);
+      assert.ok(st.elapsed < 5000, `elapsed ${st.elapsed}ms`);
+      assert.notEqual(st.exit, 0, 'expected a non-zero (bound-hit) exit');
+    } catch (e) {
+      cleanupFixtureDirs(st);
+      throw e;
+    }
   }, FEATURE);
 
   registry.defineScoped(/^no process of the fake (.+) is still alive$/, (ctx) => {
@@ -240,8 +255,7 @@ function registerSteps(registry) {
       assert.ok(pid, `fake child never wrote its pidfile at ${st.pidfile}`);
       assert.equal(pidAlive(pid), false, `fake child pid ${pid} is still alive - the bound hit did not kill its tree`);
     } finally {
-      if (st.dir) fs.rmSync(st.dir, { recursive: true, force: true });
-      if (st.pathDir) fs.rmSync(st.pathDir, { recursive: true, force: true });
+      cleanupFixtureDirs(st);
     }
   }, FEATURE);
 
