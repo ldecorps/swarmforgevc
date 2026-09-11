@@ -182,3 +182,5 @@ qa_e2e_procedure: |
      handoff_lib.bb's rotate-resident-to! and respawn-as! are unchanged
      (`git diff main...HEAD -- swarmforge/scripts/handoff_lib.bb` is empty
      or docstring-only).
+
+assigned_to: coder
