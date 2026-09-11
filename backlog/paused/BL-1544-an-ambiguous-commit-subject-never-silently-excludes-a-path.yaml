@@ -1,0 +1,197 @@
+id: BL-1544
+title: "The land step credits a commit to the FIRST ticket id in its subject, so a subject that names two tickets and leads with neither (the documenter's 'Update BL-967 stall-diagnosis how-to for BL-1525's chokepoint fold', a89a03ee45) is BL-967's - a done ticket whose lineage never reads landed - and the path is silently excluded as the sibling's; BL-1525's approved paragraph was dropped from main by BL-1525's own land and again by BL-1526's, and nothing reported it; an ambiguous subject keeps the path when the landing ticket touches it itself and otherwise refuses by name, never a silent exclusion"
+milestone: M8
+type: defect
+severity: high
+# high: approved, QA-gated content is silently absent from main after two
+# lands, and the same attributor governs every path the land step
+# replays, code included - a broken safety signal at the integration
+# point. Not critical: the drop is an omission on a docs/how-to path;
+# nothing on main was destroyed and the land itself proceeded.
+status: todo
+epic: swarm-reliability
+priority: 7
+direction: swarm-reported
+depends_on: []
+mutation_cost: medium
+# medium: commit-ticket-id / path-owner-tickets and the own-paths decision
+# in land_step_lib.bb, plus land_step_lib_test_runner.bb fixtures that
+# build the three subject shapes on a reviewing branch.
+slice_size_envelope: medium
+required_stages: [coder, cleaner, architect, hardender, documenter, qa]
+
+acceptance: specs/features/BL-1544-an-ambiguous-commit-subject-never-silently-excludes-a-path.feature
+
+required_wiring:
+  - 'specs/pipeline/steps/bl1544AmbiguousSubjectNeverSilentlyExcludesSteps.js::registerSteps::the handler lands in the same parcel as the feature (BL-233)'
+
+human_approval: pending
+approval_context: >
+  A new feature file is authored here, so it needs a tap. No choice is
+  posed and there are no ruling_options. What is FIRM: a subject that
+  LEADS with a ticket id stays that id's alone whatever else the line
+  mentions (the send-time gate's shape 2, task_scope_gate_lib.bb, is
+  unchanged and land-time keeps agreeing with it); a subject that names
+  more than one id and leads with none is ambiguous and is never decided
+  silently - kept for the landing ticket when the landing ticket's own
+  tagged commit touches the path, otherwise a LAND_ESCALATE that names
+  the commit, the ids and the path. The dropped BL-1525 paragraph is
+  restored by this parcel's documenter stage (see description), not by a
+  hand edit on main.
+
+invariants:
+  - "A path is never silently excluded from a replay on the strength of a commit whose subject names more than one ticket id and leads with none: it is kept for the landing ticket, or the land refuses naming that commit, its ids and the path."
+  - "A subject that leads with a ticket id is attributed to that id alone, whatever the rest of the line mentions - land-time and send-time (task_scope_gate_lib.bb subject-names-task?) agree."
+
+description: |
+  ## What is wrong
+
+  `land_step_lib.bb` `commit-ticket-id` reads a commit's subject through
+  `pipeline_stage_lib.bb`'s `extract-ticket-id`: single match, first token
+  wins. `path-owner-tickets` unions those ids over every commit that
+  touched the path in origin-main..tip, and `own-paths` excludes a path
+  whose every owner is an unlanded sibling (BL-1389: whose no owner can be
+  shown to have landed THIS path). First-token-wins is right for a subject
+  that leads with its id - `task_scope_gate_lib.bb` chose it precisely so
+  "BL-1227: ... decouple unlanded BL-1192 gate wiring" stays BL-1227's -
+  and wrong for a subject that leads with none.
+
+  2026-09-11: the documenter committed a89a03ee45, subject "Update BL-967
+  stall-diagnosis how-to for BL-1525's chokepoint fold", adding BL-1525's
+  own fifteen-line paragraph to
+  `docs/how-to/BL-967-handoffd-cycle-stall-diagnosis.md`. BL-967 comes
+  first in that sentence only because it is the file's name. The
+  attributor made the commit BL-967's; BL-967 is done, but its original
+  merge predates the tip-pure land machinery, so the ancestor check never
+  finds it landed (the BL-1338 class,
+  `land-escalate-sibling-list-inflated-by-replay-landed-done-tickets`).
+  BL-1525's own replay (961cbaa563, 22 files) excluded the path as
+  BL-967's, and BL-1526's land (evidence 7ddf201006) printed
+  `EXCLUDED_SIBLING_PATH docs/how-to/BL-967-handoffd-cycle-stall-diagnosis.md BL-967`
+  and excluded it again. `git log origin/main -- <that doc>` tops out at
+  0bd8e04b36; the paragraph (lines 100-114 at eb306c607c) is on every role
+  branch and on no landed commit. The send-time gate did not see it
+  either: `docs/how-to/**` is exempt from task scope there (its lines
+  88-94), so nothing between the documenter's keyboard and origin/main
+  ever asked whose commit that was.
+
+  ## What is wanted
+
+  A subject that leads with a ticket id is that id's alone (scenario 01,
+  today's behaviour pinned). A subject that names more than one id and
+  leads with none is AMBIGUOUS. An ambiguous commit's path is kept for the
+  landing ticket when a commit that leads with the landing ticket's id
+  also touches it, the other named tickets riding as passengers under the
+  existing blocking-for/approval walk (scenario 02). When no commit of the
+  landing ticket's touches the path and its tip content is not already on
+  origin/main, the land refuses: LAND_ESCALATE, reason naming the commit,
+  every id its subject names, and the path - never a silent
+  EXCLUDED_SIBLING_PATH (scenario 03). When the content is already on
+  origin/main there is nothing at stake and the path neither refuses nor
+  excludes (scenario 04).
+
+  ## The dropped paragraph rides THIS parcel - the documenter's own tagged edit
+
+  Every role branch already carries a89a03ee45, so this parcel's range
+  will too, and at this ticket's own land that doc path is ambiguous with
+  no own touch - scenario 03 would refuse BL-1544's own land. The
+  documenter stage therefore makes its OWN tagged edit on
+  `docs/how-to/BL-967-handoffd-cycle-stall-diagnosis.md` in this parcel,
+  subject leading with `BL-1544:`. There is real content to change: the
+  BL-1525 paragraph's last sentence says the unresolved-spawn-targets FAIL
+  line "is BL-1526's, still open", and BL-1526 is done (843bd13cde); re-
+  tense it. With that own touch the path is BL-1544's (scenario 02's
+  shape, BL-967 and BL-1525 as passengers - both done and approved) and
+  the paragraph lands with the parcel. QA's e2e step 3 checks origin/main
+  carries it after the land. No hand edit on main.
+
+  ## How (direction, not mandate)
+
+  - Define "leads with" once: the subject's first id-shaped token sits at
+    the start of the line, allowing the conventional `TICKET: ` and a
+    short verb prefix such as `Close BL-n:` / `Promote BL-n:` only if the
+    existing tagged-subject corpus needs it - measure on `git log
+    origin/main --format=%s -500` before choosing, and record the count of
+    subjects that would read ambiguous under the chosen rule in the
+    coder's evidence. Reuse `pipeline_stage_lib.bb`'s
+    `extract-ticket-ids` for the every-id read (never a second regex,
+    BL-897) and keep `extract-ticket-id` itself untouched - chase_sweep,
+    done_with_current and the board readers depend on its single-match
+    contract.
+  - In `path-owner-tickets`, an ambiguous commit contributes ALL its named
+    ids as owners (so the passenger/blocking-for/BL-1481 content machinery
+    still runs) plus a per-path `:any-ambiguous?` flag, the `:any-untagged?`
+    pattern of BL-1315. In `own-paths`, the BL-1389 exclusion branch
+    consults that flag: an ambiguous path with no landing-ticket owner and
+    no landed content returns `{:paths nil :warning ...}` naming commit,
+    ids and path, the refusal shape BL-1481 already uses; `land_step_cli.bb`
+    prints it under LAND_ESCALATE as it prints every other refusal
+    (BL-1474). A revert/reapply subject stays transparent (BL-1472) and is
+    never read as ambiguous.
+  - `task_scope_gate_lib.bb` is NOT changed: its shape-2 rule is the
+    leading-id rule, and `commit-ticket-id`'s docstring already promises
+    the two agree - keep that promise, assert it in the runner.
+  - Fixtures: `land_step_lib_test_runner.bb` gains a section building the
+    three subject shapes (leading id + mention; two ids, leads with
+    neither, with and without an own touch; content-identical tip) on a
+    reviewing branch, under mkdtemp with its own origin (BL-1390).
+
+constraints: >
+  Fixture repositories under mkdtemp with their own origin (BL-1390). No
+  change to the delivered set (BL-1473), the replay's report (BL-1474),
+  revert transparency (BL-1472) or the send-time scope gate. The step
+  handler lands with the feature (BL-233). No hand-edited mutation
+  manifests. land_step_lib.bb is also edited by BL-1467 (paused): the
+  coordinator serialises. The documenter's doc edit is an own-scope path
+  (docs/how-to is task-scope exempt at send time, BL-1276) but is a
+  required deliverable of this parcel, not a courtesy.
+
+out_of_scope: |
+  - Making a done ticket's pre-machinery lineage read as landed (the
+    BL-1338 class) - the ambiguity rule is deliberately independent of it.
+  - Refusing multi-id subjects at send time (task_commit_coherence_gate_lib
+    asks its own multi-id question; not widened here).
+  - Rewriting a89a03ee45's subject on any branch.
+
+qa_e2e_procedure: >
+  (1) `bb swarmforge/scripts/test/land_step_lib_test_runner.bb` green with
+  the new section. (2) Scratch clone: on a reviewing branch commit a doc
+  path under a subject naming two ids and leading with neither, run
+  `land_step_cli.bb <landing> <tip>`: LAND_ESCALATE whose reason names the
+  commit, both ids and the path, and no EXCLUDED_SIBLING_PATH line; add a
+  commit leading with the landing id on the same path, re-run: LAND_REPLAY
+  with the path included and PASSENGER_SIBLING lines for the named ids.
+  (3) After this ticket's own land, `git show origin/main:docs/how-to/BL-967-handoffd-cycle-stall-diagnosis.md`
+  contains the "Update, BL-1525" paragraph with its BL-1526 sentence
+  re-tensed; before the land it does not. (4) BL-1315, BL-1343, BL-1374,
+  BL-1389, BL-1472, BL-1473, BL-1481 features stay green. (5) The
+  documenter.prompt commit-subject rule (landed with this mint) is on
+  origin/main.
+
+source: |
+  QA note to the specifier, priority 00, 2026-09-11T20:18Z: "BL-1526 land:
+  BL-967 misattrib drops BL-1525 doc content, evidence 7ddf201006";
+  evidence
+  `backlog/evidence/BL-1526-land-replay-misattributed-BL-967-excludes-BL-1525-doc-content-20260911.md`.
+
+notes: |
+  Minted 2026-09-11 by the specifier on QA's note, the same pass. Grepped
+  first: BL-1472 (done) made revert/reapply transparent to the same
+  attributor; BL-1315 (done) added :any-untagged?; BL-1389/BL-1481 (done)
+  own the per-path landed/content checks this rides on; no open ticket
+  names subject ambiguity or first-token attribution. BL-1467 (paused)
+  edits the same lib.
+
+  Verified 2026-09-11: `diff <(git show origin/main:docs/how-to/BL-967-...)
+  <(git show eb306c607c:...)` = origin/main lacks lines 100-114; the doc's
+  latest landed commit is 0bd8e04b36; BL-1525's replay 961cbaa563 does
+  not touch the doc; a89a03ee45 is on all six role branches.
+
+  Landed with this mint (BL-798 rule, prose the specifier owns): a
+  commit-subject line in `swarmforge/roles/documenter.prompt` - lead the
+  subject with the ticket the change belongs to, name a file's ticket
+  after it. Commit named in the mint commit body.
+
+  IR-DRY on the feature: five medium findings, all antonym or variant
+  pairs that are the variables under test (differs/identical content,
+  leads-with/leads-with-neither, own touch/no own touch); kept as written.
