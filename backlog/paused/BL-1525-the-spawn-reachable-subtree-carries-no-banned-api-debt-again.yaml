@@ -33,7 +33,7 @@ required_wiring:
   - 'swarmforge/scripts/expedite_cli.bb::daemon-cycle-guard-lib/sh!::the driver sh helper runs under the bounded chokepoint'
   - 'specs/pipeline/steps/bl1525SpawnSubtreeBannedApiDebtSteps.js::registerSteps::the handler lands in the same parcel as the feature (BL-233)'
 
-human_approval: pending
+human_approval: approved
 ruling_options:
   - A - one chokepoint, sh! gains a per-call bound and run-bounded! becomes a thin wrapper over it (recommended)
   - B - two sanctioned chokepoints, daemon_api_ban_lib exempts bounded_run_lib.bb beside daemon_cycle_guard_lib.bb
