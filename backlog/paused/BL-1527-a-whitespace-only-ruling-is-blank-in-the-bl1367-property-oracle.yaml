@@ -1,0 +1,165 @@
+id: BL-1527
+title: "bl1367ApprovalCarriesItsRuling.property.test.js is flaky red on main with no owner: its P3 oracle decides 'is a ruling present' on the UNTRIMMED string (`if (!ruling)`) while classifyApprovalRulingRequirement and recordApprovalReply both trim first, so a whitespace-only draw from fc.string is a ruling to the oracle and a blank to the code under test - the oracle agrees with the classifier's own definition of blank, and the whitespace-only draw is constructed and reach-asserted instead of hoped for"
+milestone: M8
+type: defect
+severity: high
+# high (standing-red rule 2026-09-05): a property-lane test red on main is a
+# broken safety signal; it held BL-1478's QA approval on 2026-09-11 (Article
+# 4.2) and throttles intake until owned. Production is unaffected: the
+# classifier and the writer agree with each other ("Blank is not an answer"
+# is BL-1367's own contract) - only the test's oracle disagrees with both.
+status: todo
+epic: code-quality-gates
+priority: 8
+direction: swarm-reported
+depends_on: []
+mutation_cost: low
+# low: one property test file and one small oracle helper under
+# extension/test (never extension/src), one step-handler file. No production
+# code, so no Stryker target; the hardener records the fallback.
+slice_size_envelope: low
+required_stages: [coder, cleaner, architect, hardender, documenter, qa]
+
+acceptance: specs/features/BL-1527-a-whitespace-only-ruling-is-blank-in-the-bl1367-property-oracle.feature
+
+# No consumer anchor is honest here (BL-1235): the live consumer is the
+# properties lane itself (`npm run test:properties`, vitest.properties.config.mjs),
+# which already collects this file and is the thing that is red. The
+# handler entry is the BL-233 in-parcel pin.
+required_wiring:
+  - 'specs/pipeline/steps/bl1527BlankRulingOracleSteps.js::registerSteps::the handler lands in the same parcel as the feature (BL-233, BL-1371)'
+
+human_approval: pending
+approval_context: >
+  A new feature file is authored here, so it needs a tap. No choice is
+  posed and there are no ruling_options. FIRM: extension/src is not
+  edited - classifyApprovalRulingRequirement's trim ("Blank is not an
+  answer", pendingApprovalReply.ts ~line 419) and recordApprovalReply's
+  trim (line 452) are BL-1367's landed contract and they agree with each
+  other; the fix is in the property test's oracle only. FIRM: the
+  whitespace-only ruling is NOT filtered out of the generator - it is a
+  real input (a surface that sent an empty field) and the property must
+  keep quantifying over it; the fix makes the oracle agree with the code,
+  never makes the disagreeing input vanish. FIRM: the file is not added to
+  property_suite_standing_allowlist.tsv. Direction, not mandate: one
+  helper under extension/test/helpers/ holds the oracle for a ticket
+  posing no choice (blank iff trim is empty -> ok, otherwise
+  unknown-option); the property and the step handler both require it.
+  Minted by the specifier on QA's unowned-red note of 2026-09-11 01:18Z
+  from the BL-1478 parcel (evidence 2fcc61bdfc on swarmforge-QA); QA saw
+  3 of 6 standalone runs fail, the specifier saw 0 of 17 on main
+  d69a5c251b, and the deterministic call below disagrees on every run.
+
+invariants:
+  - "One definition of blank: the property oracle and classifyApprovalRulingRequirement decide 'no ruling was given' by the same predicate (trimmed string is empty), never two hand-written copies of the rule that can drift apart again."
+
+description: |
+  ## What is wrong
+
+  `extension/test/bl1367ApprovalCarriesItsRuling.property.test.js` lines
+  ~121-127 (the P3 branch, a ticket declaring no options):
+
+  ```
+  if (!ruling) {
+    assert.equal(recorded, true, ...); assert.equal(requirement.kind, 'ok');
+  } else {
+    assert.equal(requirement.kind, 'unknown-option'); assert.equal(recorded, false);
+  }
+  ```
+
+  `ruling` there is either a declared option or `freeRuling`, drawn from
+  `fc.option(fc.string({ minLength: 1, maxLength: 12 }))`. `fc.string` can
+  draw `" "` or `"\t"`: truthy, so the oracle takes the `else` branch and
+  expects `unknown-option`. But `classifyApprovalRulingRequirement`
+  (`extension/src/concierge/pendingApprovalReply.ts` ~414-432) trims first -
+  "Blank is not an answer" - and with no options declared returns `ok` for a
+  blank; `recordApprovalReply` (line 452) trims the same way and records a
+  plain approval with no ruling. Production is self-consistent; the oracle
+  is the one party that reads whitespace as an answer.
+
+  fast-check draws a fresh seed per invocation, so the counterexample is hit
+  on some runs and not others - QA saw 3 failures in 6 standalone runs on
+  the BL-1478 parcel (`Expected: "unknown-option" / Received: "ok"`, test
+  line 131); the specifier saw 0 in 17 on main `d69a5c251b`. The
+  disagreement itself is deterministic:
+
+  ```
+  cd extension && node -e '
+  const m = require("./out/concierge/pendingApprovalReply");
+  console.log(JSON.stringify(m.classifyApprovalRulingRequirement(undefined, " ")));'
+  # -> {"kind":"ok"}   (the oracle expects unknown-option)
+  ```
+
+  Latent since BL-1367 landed (`07a8d4b9b5`, 2026-09-03, now in
+  `backlog/done/`); first recorded 2026-09-11 (QA evidence
+  `backlog/evidence/BL-1478-unowned-red-qa-20260911.md`, commit
+  `2fcc61bdfc` on `swarmforge-QA`; specifier repro
+  `backlog/evidence/BL-1527-specifier-unowned-red-repro-20260911.md`).
+
+  ## What is wanted
+
+  The property's oracle agrees with the classifier on what a blank ruling is
+  (trimmed string empty), so a whitespace-only draw on a ticket posing no
+  choice expects a plain approval and `ok`. The whitespace-only draw stays
+  in the generated world and is CONSTRUCTED and reach-asserted, the way the
+  file already constructs the accepted-option case, so the fix cannot be
+  "the input is never drawn any more". The property lane is green on
+  `main`; the register row this ticket adds is removed in the same land.
+
+  ## How (direction, not mandate)
+
+  - Put the no-choice oracle in one small helper under
+    `extension/test/helpers/` (name is the implementer's): given the ruling
+    string (or undefined), answer the expected requirement kind - `ok` when
+    the trimmed string is empty, `unknown-option` otherwise. The property
+    test's P3 branch and the BL-1527 step handler both require it
+    (invariant 1). Do not re-implement the classifier in it; it is the
+    oracle's one line, stated once.
+  - Construct the blank draw: add a generator arm (a boolean beside
+    `choosesDeclared`, or an `fc.constantFrom(' ', '\t', '  ')` arm) that
+    substitutes a whitespace-only ruling, and add its outcome to the
+    reach-floor list at the end of the first test (e.g.
+    `no-options:ok-blank`), so a run that never generated it fails the same
+    way `no-options:unknown-option` already would.
+  - `extension/src/concierge/pendingApprovalReply.ts` is not touched;
+    scenario 03 below drives the real classifier + writer to pin that the
+    production contract is what the oracle now expects.
+  - `specs/pipeline/steps/bl1367ApprovalCarriesItsRulingSteps.js` and
+    `specs/features/BL-1367-*.feature` are not touched: BL-1367's own
+    acceptance is not red and is not this ticket's.
+
+  ## Not in scope
+
+  - The BL-1367 parcel shipped a property whose oracle disagreed with the
+    code it exercised and no stage caught it - a fast-check property that
+    passes on most seeds is the same fail-open shape BL-1445 names for
+    derived censuses. No process change is minted here; the closing
+    ceremony will see the ledger row.
+
+notes: |
+  Register: backlog/standing-reds.tsv gains one `property` row naming this
+  ticket (same commit as this mint), first_seen 2026-09-11; QA removes it
+  in the land that turns the file green. BL-1478 (held at QA under Article
+  4.2 on this red, not bounced) may be approved once this ticket is open -
+  the row names it.
+
+qa_e2e_procedure: |
+  On the parcel commit, from `extension/`:
+  1. `for i in $(seq 1 10); do npx vitest run --config
+     vitest.properties.config.mjs
+     test/bl1367ApprovalCarriesItsRuling.property.test.js || echo FAIL;
+     done` -> 2 passed every run, no FAIL line.
+  2. `node -e 'const h=require("<the helper>"); console.log(h(" "), h("\t"),
+     h(undefined), h(""), h("a free answer"))'` -> ok ok ok ok
+     unknown-option, and each equals
+     `classifyApprovalRulingRequirement(undefined, <same>).kind`.
+  3. `git diff main...HEAD --name-only` names the property test, one helper
+     under extension/test/helpers, the step handler, the feature, evidence,
+     and the register row removal; `extension/src/`,
+     `property_suite_standing_allowlist.tsv`, the BL-1367 feature and
+     handler are unchanged.
+  4. Break-then-restore: in the helper make `" "` answer `unknown-option`;
+     the BL-1527 acceptance run fails scenario 02's whitespace rows;
+     restore. Then delete the `no-options:ok-blank` (or as named) outcome
+     from the reach floor and remove the constructing arm; scenario 04
+     fails; restore.
