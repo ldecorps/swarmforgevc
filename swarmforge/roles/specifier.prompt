@@ -914,3 +914,28 @@ Do NOT self-schedule polling: no /loop, no "check again in N minutes", no cron, 
   free-prose `notes:`/`source:` fields wholesale), or key on a phrase no
   explanatory prose would naturally reproduce, and say in the scenario
   comment that quoting the needle in notes will trip it.
+
+## A guard that runs on every role's turn is minted with a scenario per ROSTER SHAPE (BL-1515, 2026-09-11)
+- `roles.tsv` carries two shapes of row, not one: per-worktree roles
+  (coder, cleaner, architect, hardender, documenter, QA — own
+  `.worktrees/<role>` checkout, own branch) and master-resident roles
+  (specifier, coordinator — `worktree-name: master`, ONE shared checkout
+  on `main`, a declared `session` name with no branch of its own). Every
+  pre-turn guard wired into `ready_for_next.bb` runs for BOTH; every
+  existing one (`enforce-worktree-drift-guard!`, BL-1195) exempts the
+  master shape by hand. When you mint a guard, gate, or sweep that keys on
+  a roster row, the feature file carries at least one scenario whose
+  fixture builds the master-resident shape — two rows sharing one path
+  with different `session` values, checked out on neither — asserting the
+  guard stays silent and mutates nothing there. A Background that only ever
+  builds "a fixture repository with a coder worktree" makes the whole file
+  vacuous for the second shape, and "mirror BL-1195 exactly" in the `How`
+  is direction the coder may not read as far as the exemption.
+- BL-1515 is the incident: five scenarios green, coder/cleaner/architect
+  all NONE, and the shipped guard's `decide` answered `:repair` for the
+  specifier's row — `git branch -m main swarmforge-specifier` in the shared
+  checkout on the first ordinary turn after landing. The hardener caught it
+  by hand-diffing the new dispatch branch against its sibling (BL-751);
+  nothing in the ticket obliged anyone to build the second shape. Same
+  fail-open family as BL-1445's census: an acceptance that never constructs
+  the population it quantifies over gates nothing.
