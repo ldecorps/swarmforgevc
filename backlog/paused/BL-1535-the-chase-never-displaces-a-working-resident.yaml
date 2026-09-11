@@ -1,0 +1,184 @@
+id: BL-1535
+title: "The mono-router chase rotates the resident away from a role that is mid-parcel: should-rotate-resident? judges busy from the pane footer alone, so a role holding a real in_process parcel whose turn is inside a detached command, or whose forward stands between the two self-audit calls, reads idle and is respawned as another role - three times on 2026-09-11 (hardender 05:29:58Z, 06:17:07Z, 07:09:38Z; one hand-rotation, one orphaned 15-minute mutation run) - the chase gate consults the departing role's in_process box and a working signal, refuses to depart a working holder for a different target, still yields an idle holder, and writes a telemetry row per refusal"
+milestone: M8
+type: defect
+severity: high
+# high: a live fault degrading behaviour - a rotation that kills a role's
+# session mid-parcel strands its draft or its running command, costs a
+# coordinator hand-rotation (06:25Z) or a redone mutation run, and it fired
+# three times in one shift. Not critical: the held parcel stays actionable
+# and the chase brings the role back, so nothing is lost for good.
+status: todo
+epic: swarm-reliability
+priority: 8
+direction: swarm-reported
+depends_on: []
+mutation_cost: medium
+# medium: Babashka only (mono_router_lib.bb decide, handoffd.bb gather), no
+# TS production code, so no Stryker target - the hardener records the bb
+# fallback (engineering.prompt Startup Tools); a bb runner case per branch
+# and one acceptance handler. Medium rather than low because the gather
+# probes a tmux pane's process tree through the fixture's fake tmux.
+slice_size_envelope: medium
+required_stages: [coder, cleaner, architect, hardender, documenter, qa]
+
+acceptance: specs/features/BL-1535-the-chase-never-displaces-a-working-resident.feature
+
+# The first anchor is the CONSUMER call (BL-1235): handoffd.bb's
+# attempt-resident-rotate! is the only live chase caller of
+# should-rotate-resident?, and the key is chosen here so the literal exists
+# only once the gather feeds the new input. The second is the BL-233
+# in-parcel handler pin.
+required_wiring:
+  - 'swarmforge/scripts/handoffd.bb::departing-working?::the live chase gather passes the new input into should-rotate-resident? (attempt-resident-rotate!, ~line 1646)'
+  - 'specs/pipeline/steps/bl1535ChaseNeverDisplacesAWorkingResidentSteps.js::registerSteps::the handler lands in the same parcel as the feature (BL-233, BL-1371)'
+
+human_approval: approved
+approval_context: >
+  A new feature file is authored here, so it needs a tap. No choice is
+  posed and there are no ruling_options. FIRM: the gate lives in the chase
+  DECISION (mono-router-lib/should-rotate-resident?, fed by handoffd.bb
+  attempt-resident-rotate!), never in handoff-lib/rotate-resident-to! -
+  BL-805 scenario 04 and test_rotate_to_role_stuck_parcel_gate.sh case 04
+  pin that function ungated and both stay as they are. FIRM: an idle
+  holder still yields exactly as the 2026-08-31 seated-preferred hotfix
+  decided (mono_router_lib.bb chase-rotate-decision) - a seated role with
+  a held parcel, an idle footer, no live command and no fresh challenge
+  rotates away for dependency mail, so this cannot reintroduce the QA-hold
+  / specifier-note starvation. FIRM: a working signal with NO held parcel
+  never refuses - a stray watcher process must not pin the router. FIRM:
+  no new swarmforge.conf key; the challenge freshness bound reuses
+  note_actionable_after_ms. Direction, not mandate: "working" = pane
+  footer busy (as today) OR a live process descended from the resident
+  pane's #{pane_pid} OR a standing audit challenge for the departing role
+  younger than the bound; the coder chooses the probe. Minted by the
+  specifier on the coordinator's 2026-09-11 06:40:55Z note after the
+  specifier reconstructed three displacements from the rotation and chase
+  telemetry (backlog/evidence/BL-1535-specifier-displaced-resident-timeline-20260911.md),
+  the third of which - 07:09:38Z, killing the hardener's BL-1518-a rework
+  one minute into its mutation rerun - was the rotation that seated this
+  specifier.
+
+invariants:
+  - "A chase rotation never departs a role that holds a real in_process parcel while that role is working (pane footer busy, a command it launched still running, or its own forward mid-audit) for a DIFFERENT target; the only exceptions are the ambulance patient override and rotating into that same role (BL-926)."
+  - "An idle holder still yields: a seated role with a held parcel, an idle footer, no live command and no fresh challenge rotates away exactly as the 2026-08-31 seated-preferred yield decided, so dependency mail never starves behind a dead or waiting holder."
+  - "Every refusal is observable: a refused chase rotation writes one telemetry row naming the departing role, its parcel, and the working signal that held it."
+
+description: |
+  ## What is wrong
+
+  `swarmforge/scripts/handoffd.bb` `attempt-resident-rotate!` (~line 1646)
+  decides a chase rotation through `mono-router-lib/should-rotate-resident?`
+  (`mono_router_lib.bb` line 483) with `:resident-busy?` =
+  `resident-pane-busy?` = `chase-sweep-lib/actively-processing?` over the
+  captured pane tail, plus the ambulance override, the BL-921 already-active
+  check and the rotate cooldown. Nothing reads the departing role's
+  `inbox/in_process` box - the input BL-805 gave the resident-invoked path
+  (`respawn-as!` -> `departing-role-blocking-handoff` ->
+  `rotate-gate-decision`), whose docstring records the choice: "the daemon's
+  own rotate-resident-to! call ... never routes through this ... (invariant:
+  daemon rotation always fails open)".
+
+  A role whose turn is inside a detached command shows an idle footer, and
+  so does a role that has written its draft and stands between the two
+  `swarm_handoff.sh` calls of the self-audit (a standing challenge under
+  `.swarmforge/handoffs/audit_pending/<sha(sender)>/`). On 2026-09-11 the
+  aged-note chase for a coordinator->specifier note pulled the resident out
+  of the hardender three times:
+
+  | at (Z) | hardender had been seated | what was stranded |
+  |---|---|---|
+  | 05:29:58 | 3 min | a held parcel; 40 min until the hardender was seated again |
+  | 06:17:07 | 8 min | its git_handoff draft to the documenter, unsent; the coordinator noticed at 06:25 and asked the specifier to rotate back by hand |
+  | 07:09:38 | 2.5 min | the BL-1518-a rework: a detached mutation rerun that finished at 07:23 (`Done in 14 minutes and 46 seconds`) into a worktree whose session had been killed |
+
+  Full reconstruction, rows quoted from `rotation-2026-09.jsonl` and the
+  chase telemetry:
+  `backlog/evidence/BL-1535-specifier-displaced-resident-timeline-20260911.md`.
+  The held parcel stays actionable (`role-mail-row` counts `in_process` as
+  `held`), so the chase eventually brings the role back; the loss is the
+  interrupted work, the orphaned run and the wait.
+
+  ## What is wanted
+
+  The chase refuses to rotate the resident away from a role that holds a
+  real `in_process` parcel while that role is WORKING, for any target other
+  than that role itself, and says so: decision `:departing-mid-parcel`, a
+  `chase-rotate-departing-mid-parcel` log line as the other refusals have,
+  and one telemetry row naming the departing role, the parcel and the
+  signal. A holder that is merely idle - idle footer, no live command, no
+  fresh challenge - still rotates away, as the 2026-08-31 seated-preferred
+  yield requires. A working signal without a held parcel never refuses.
+  `rotate-resident-to!` itself stays ungated (BL-805 scenario 04 holds);
+  the `rotate-gate-decision` docstring's "daemon rotation always fails
+  open" sentence is re-tensed to name this ticket's gate, because a
+  docstring stating a false present is still a lie (BL-1006).
+
+  ## How (direction, not mandate)
+
+  - `should-rotate-resident?` gains two inputs: `:departing-parcel?` (the
+    departing role's in_process holds a real `*.handoff`, sidecars
+    excluded - `departing-role-blocking-handoff` already computes this) and
+    `:departing-working?`. Refuse `:departing-mid-parcel` when both are
+    true, the target differs from the departing role, and `:ignore-busy?`
+    is false. Order it after `:busy` and before `:already-active`.
+  - "Working" for the gather in `attempt-resident-rotate!`: the existing
+    footer probe, OR a live process descended from the resident pane's
+    `#{pane_pid}` (handoffd.bb already reads it at ~line 1101;
+    `orphan_agent_reaper_sweep_lib.bb` walks a pane's tree), OR a standing
+    challenge file for the departing role's sender under
+    `audit_pending/` whose mtime is younger than `note_actionable_after_ms`.
+    Any one suffices; a stale challenge alone does not.
+  - The `:already-active` branch is untouched and BL-926's same-role case is
+    handled by the target check, not by a new branch.
+  - Tests: one `mono_router_lib_test_runner.bb` case per new branch (refuse,
+    idle-holder yield, same-target proceed, no-parcel proceed, stale
+    challenge proceed); the acceptance handler drives the real gather
+    through a rotation-router fixture with a fake `tmux` on PATH whose
+    `list-panes -F #{pane_pid}` answers a fixture process (a `bash -c 'sleep
+    300'` whose child is the "still running command"), the fixture pattern
+    `test_rotate_to_role_stuck_parcel_gate.sh` already uses.
+
+  ## Not in scope
+
+  - Bringing a displaced role back FIRST once the resident is idle (a
+    displacement stack). The held parcel is already actionable and
+    priority-ranked; if the wait after a legitimate yield proves too long,
+    that is its own slice.
+  - A role-prompt rule against ending a turn with a detached job running.
+    The machinery must not depend on it, and a role that waits in the
+    foreground reads busy today already.
+  - The 06:15:28Z nudge that judged the hardender stalled six minutes into
+    a real pass is a separate stall heuristic and not this ticket's.
+
+notes: |
+  The coordinator's 06:40:55Z note asked "mint-worthy?"; this is the
+  answer. The chase that seated this specifier at 07:09:38Z displaced the
+  hardender's BL-1518-a rework (in_process
+  batch_20260911T070708Z_000001, a coordinator note also waiting in its
+  inbox/new); the coordinator is told in the same pass so the hardender is
+  rotated back rather than left to the next sweep.
+
+qa_e2e_procedure: |
+  On the parcel commit, from the repo root:
+  1. `bb swarmforge/scripts/test/mono_router_lib_test_runner.bb` -> exit 0,
+     the new should-rotate-resident? cases listed as pass.
+  2. `bash swarmforge/scripts/test/test_rotate_to_role_stuck_parcel_gate.sh`
+     -> exit 0; case 04 ("daemon-initiated rotation is never gated on a
+     stuck parcel") still passes unchanged - rotate-resident-to! is not
+     where the gate went.
+  3. `bash specs/pipeline/scripts/run_acceptance.sh
+     specs/features/BL-1535-the-chase-never-displaces-a-working-resident.feature`
+     -> every scenario passes; then run the BL-805, BL-926 and BL-938
+     features the same way -> unchanged, all pass.
+  4. Live: with the swarm up on a rotation-router pack, seat the resident
+     as any worktree role holding a parcel, start `sleep 600` from its pane
+     and let the turn end, then queue a priority-00 note to a dormant role
+     and wait past note_actionable_after_ms. Expect a
+     `chase-rotate-departing-mid-parcel` log line and a telemetry row, no
+     respawn; kill the sleep; expect the rotation on the next sweep.
+  5. `git diff main...HEAD --name-only` names mono_router_lib.bb,
+     handoffd.bb, the bb runner, the handler, the feature, evidence;
+     handoff_lib.bb's rotate-resident-to! and respawn-as! are unchanged
+     (`git diff main...HEAD -- swarmforge/scripts/handoff_lib.bb` is empty
+     or docstring-only).
