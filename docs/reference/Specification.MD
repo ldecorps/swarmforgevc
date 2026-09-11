@@ -1,5 +1,25 @@
 # SwarmForge VS Code Extension — Specification
 
+**Last Updated:** September 11, 2026 (BL-1530: the three standing shell
+tests that drive `swarm_handoff.sh` with a `type: git_handoff` draft now
+speak the two-call self-audit landed by BL-1306/44d2d42591 (2026-08-30) —
+`test_rule_proposal.sh` (case 04, plus 03b's control-character case),
+`test_handoff_state_dir_worktree_root.sh` (case 01), and
+`test_required_stages_ticket_lookup_collision.sh` each send the identical
+draft twice, tolerate the first call's `AUDIT_REQUIRED` /
+`HANDOFF_NOT_QUEUED` exit, and assert the mailbox-only queue grammar on
+the second. `test_rule_proposal.sh`'s `git_handoff` case additionally
+pins the first call's `AUDIT_REQUIRED` and empty queue rather than papering
+over it, and its control-character case's drain wait is bounded on the
+daemon's own delivery evidence with a deadline no shorter than the prior
+fixed wait. `swarm_handoff.bb` itself is unchanged — no audit bypass. The
+three `backlog/standing-reds.tsv` rows this defect held are removed in
+this same land. Test-only; no product behavior change, no new extension
+command or setting. Acceptance:
+`specs/features/BL-1530-the-shell-tests-that-drive-swarm-handoff-once-speak-the-two-call-audit.feature`.
+No diagram edit — below handoff-flow.mmd's depicted granularity, same as
+the audit landing itself.)
+Prior entry —
 **Last Updated:** September 11, 2026 (BL-1518: `swarm_handoff.sh` refuses
 every message type — not only `git_handoff` — before any mailbox write,
 when the draft file it was given does not lie under the project root the
