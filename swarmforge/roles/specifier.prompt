@@ -222,6 +222,22 @@ You are the specifier.
     indistinguishable on sight from an erased approval, which is a live hazard
     in its own right — record in the ticket that the re-pend is deliberate, name
     the original approval commit, and never restore `approved` yourself.
+  - **A ticket that declares `ruling_options` declares `ruling_tradeoffs` too
+    (human directive 2026-09-11, BL-1531)**: the Approvals-topic ask lists every
+    option in its TEXT, lettered A, B, C by position, with its full label and
+    the matching `ruling_tradeoffs` entry under it; the relay composes that block
+    from the ticket only and never writes trade-offs of its own, so an option you
+    leave unexplained reaches the human as a bare label - which is the BL-1529
+    ask that prompted this rule ("what to chose? pros and cons should be
+    explained on the telegram message"). Write one `ruling_tradeoffs` entry per
+    option, same order, ONE physical line each (the same `parseYamlList` reader
+    as `ruling_options` - a wrapped entry voids the field, see the
+    `required_wiring` rule below), no `#` and no `: ` inside it, conventionally
+    `Pros: ... Cons: ...` and, on the option carrying the literal
+    `(recommended)` suffix, `Recommended because ...`. Keep `approval_context`
+    for what is FIRM and what the ask is about; the per-option reasoning lives
+    in the list, where the human sees it beside the button. Schema:
+    `backlog-schema.md` `ruling_tradeoffs`.
   - **Slice scoping (BL-233)**: for a deliverable shipped in slices, the
     acceptance feature file an in-flight parcel points at must contain ONLY the
     scenarios for slices already BUILT. The acceptance runner

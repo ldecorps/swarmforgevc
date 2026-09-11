@@ -1,0 +1,133 @@
+id: BL-1532
+title: "A typed approve in the Approvals topic can name its ruling by letter: 'approve BL-1529 A' records option A as human_ruling with provenance typed and approves, a bare approve on a ticket posing a choice is refused with the letters named, and a letter that names no option is never interpreted"
+milestone: M8
+type: feature
+status: todo
+epic: question-attention-path
+priority: 12
+direction: human-directive
+depends_on: [BL-1531]
+mutation_cost: low
+# low: one regex and one branch in pendingApprovalReply.ts's pure
+# classifier, a ruling argument threaded through the bot's existing
+# recordApprovalReply adapter, and reply text; everything unit-testable
+# over the fakes the classifier already has.
+slice_size_envelope: low
+required_stages: [coder, cleaner, architect, hardender, documenter, qa]
+
+acceptance: specs/features/BL-1532-a-typed-approve-names-its-ruling-by-letter.feature
+
+# Handler pin only. The live consumer of the grammar already exists
+# (telegramFrontDeskBotCore.ts ~line 325 calls classifyApprovalsTopicReply,
+# and the bot's recordApprovalReply adapter at telegram-front-desk-bot.ts
+# ~line 2578 reaches recordApprovalReply) - an anchor there matches before
+# and after the fix and gates nothing (BL-1235). The threading of the
+# ruling through that adapter is the coder's call; scenario 01 fails
+# unless it is wired.
+required_wiring:
+  - 'specs/pipeline/steps/bl1532TypedApproveNamesItsRulingByLetterSteps.js::registerSteps::the handler lands in the same parcel as the feature (BL-233, BL-1371)'
+
+human_approval: approved
+approval_context: >
+  A new feature file is authored here, so it needs a tap. No choice is
+  posed. FIRM: a letter that names no declared option, or a letter on a
+  ticket with no ruling_options, is refused and nothing is recorded - the
+  swarm never interprets a guess (front-desk posture since BL-434). FIRM:
+  a ruling already recorded is never overwritten by a typed letter
+  (BL-1367 scenario 04's typed twin). FIRM: the recorded human_ruling is
+  the bare option label exactly as relay-ruling.js and the tap record it,
+  never the letter, so every existing reader of human_ruling is
+  unaffected; provenance is the new value `typed`. Depends on BL-1531,
+  which defines the letter from the option's position. Human directive
+  quoted verbatim in description.
+
+invariants:
+  - "The letter-to-option mapping is the one BL-1531 defines from position in ruling_options; the typed grammar never carries its own table."
+  - "A typed approve records a ruling only when the letter resolves to exactly one declared option; every other shape (bare approve on a ticket with options, unknown letter, letter with no options) records nothing and the reply says which letters exist."
+
+description: |
+  ## Human directive (2026-09-11, verbatim, from the same intake as BL-1531)
+
+  "intake : what to chose? pros and cons should be explained on the
+  telegram message."
+
+  The intake's stated want includes: "The reply hint names how to pick one
+  ("approve BL-1529 A" or equivalent)."
+
+  ## What is wrong
+
+  `classifyApprovalsTopicReply` (extension/src/concierge/pendingApprovalReply.ts)
+  accepts `approve <id>`, `reject <id> <reason>`, `/qjump <id>` and
+  `/ambulance <id>`; `APPROVALS_TOPIC_APPROVE_PATTERN` is
+  `/^approve\s+(\S+)\s*$/i`, so `approve BL-1529 A` falls through to
+  `none` and is surfaced as not acted on. A bare `approve BL-1529` on a
+  ticket declaring `ruling_options` reaches `recordApprovalReply` with no
+  ruling, which BL-1367 correctly refuses (`ruling-required`) - so the
+  human who answers by typing has no route at all, and the ask's reply
+  hint tells them to type exactly the thing that is refused. The only
+  working route is the button keyboard.
+
+  ## What is wanted
+
+  `approve <id> <letter>` (letter case-insensitive) on a ticket whose
+  `ruling_options` has an entry at that letter's position records that
+  entry's LABEL as `human_ruling`, `ruling_provenance: typed`, flips
+  `human_approval` to `approved`, and confirms naming the label - the same
+  one-writer splice the tap uses (`spliceRulingRecord`). Bare `approve <id>`
+  on a ticket with options is refused and the reply lists the letters and
+  labels to choose from. An unknown letter is refused the same way. A
+  letter on a ticket without options is refused and the reply names the
+  plain form. An already-recorded ruling is never overwritten. The
+  BL-1531 pick hint gains the typed form ("or reply approve <id> <letter>").
+  Every other verb is unchanged.
+
+  ## How (direction, not mandate)
+
+  - Classifier: `APPROVALS_TOPIC_APPROVE_PATTERN` becomes
+    `/^approve\s+(\S+)(?:\s+([A-Za-z]))?\s*$/i`, returning
+    `{ kind: 'approve', backlogId, letter? }`; the reject pattern stays
+    checked first, as today.
+  - Resolve the letter to a label via BL-1531's shared helper (index from
+    letter), against `readRulingOptions`; hand the label to
+    `recordApprovalReply(targetPath, backlogId, ruling)` - the seam BL-1367
+    already widened - with provenance `typed` (`spliceRulingRecord` takes
+    the provenance string; add the value, not a second writer).
+  - Reply text on refusal: reuse the `ruling-required` / `unknown-option`
+    outcomes `classifyApprovalRulingRequirement` already distinguishes
+    (bridgeServer.ts ~line 912 renders them for the pager) so the two
+    surfaces say the same thing.
+  - The per-ticket-topic grammar (bare `approve`, `isApprovalReplyText`)
+    is NOT changed here; a ticket topic ask still routes a choice to the
+    keyboard.
+
+  ## Not in scope
+
+  - The pager / PWA typed path (bridgeServer.ts) - it already carries a
+    ruling and needs no letter.
+  - The message content and button lettering: BL-1531.
+
+notes: |
+  Minted 2026-09-11 by the specifier as the second half of the 1:2 split
+  of `backlog/archive/INTAKE-approval-asks-carry-pros-and-cons-per-option-20260911.md`;
+  BL-1531 is the first half. depends_on BL-1531 because the letter is
+  defined there and BL-1531's pick hint is what this ticket extends.
+  Documenter: docs/how-to/BL-1367-approval-from-any-surface-carries-its-ruling.md
+  and the BL-589 how-to gain the typed form; handoff-protocol is untouched.
+
+qa_e2e_procedure: |
+  On the parcel commit, from `extension/`, after `npm run compile`.
+  1. `node specs/pipeline/cli.js specs/features/BL-1532-a-typed-approve-names-its-ruling-by-letter.feature`
+     green; BL-1367, BL-434 and BL-721 feature files still green.
+  2. Fixture ticket under a mkdtemp root (BL-1390 rules), pending, two
+     ruling_options. Feed the bot's Approvals-topic reply path
+     `approve <id> b` with a captured reply adapter: the yaml gains
+     `human_ruling: |` with the SECOND label verbatim, `ruling_provenance:
+     typed`, `human_approval: approved`; the captured reply names that
+     label; the approve commit carries the human byline (BL-1368).
+  3. Fresh fixture, `approve <id>`: yaml unchanged; reply lists `A)` and
+     `B)` with labels. `approve <id> c`: same. Fixture without options,
+     `approve <id> a`: yaml unchanged; reply names `approve <id>`.
+  4. Fixture already carrying `human_ruling` for A, `approve <id> b`:
+     human_ruling still A; reply names A.
+  5. `reject <id> not now` on a fixture with options: `human_approval:
+     rejected` with the reason, no human_ruling written.
