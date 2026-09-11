@@ -160,3 +160,15 @@ qa_e2e_procedure: |
      15 with two sweeps per draw; scenario 02 fails on `sweeps`; restore.
 
 assigned_to: coder
+
+abandoned_commits: [72cf2ac906]
+# BL-1241 land-step remedy: 72cf2ac906 (QA's originally-built commit) was cited
+# entangled with BL-1530 by land_step_cli.bb (ENTANGLED_SIBLING), but BL-1530's
+# own paths (test_rule_proposal.sh, test_handoff_state_dir_worktree_root.sh,
+# test_required_stages_ticket_lookup_collision.sh, the BL-1530 feature,
+# bl1530ShellTestsSpeakTheAuditSteps.js, docs/explanation/handoff-dual-path.md,
+# docs/reference/Specification.MD) are all byte-identical to origin/main
+# already (BL-1530 landed via its own earlier tip-pure replay, different SHAs,
+# same content) - verified by hand, 2026-09-11. Landed 2066f84e0a instead, a
+# tip-pure replay built by land_step_cli.bb carrying only this ticket's own
+# paths.
