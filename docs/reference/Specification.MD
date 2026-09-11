@@ -1,5 +1,31 @@
 # SwarmForge VS Code Extension — Specification
 
+**Last Updated:** September 11, 2026 (BL-1525: the daemon's
+spawn-reachable subtree's last banned-API debt retired — the assertion
+`bl1031: spawn-reachable subtree carries no banned-API debt (ratchet
+retired empty)` in `daemon_cycle_guard_lib_test_runner.bb` had been red on
+main since 2026-09-03 (BL-1378) with no owner. `ticket_close_guard_lib.bb`'s
+two git calls and `unregistered_test_gate_lib.bb`'s git helper (both
+reached via `swarm_handoff.bb`'s load, itself spawned by `handoffd.bb`)
+and `expedite_cli.bb`'s own `sh` helper (spawned directly by `handoffd.bb`)
+now route through the existing `daemon-cycle-guard-lib/sh!` chokepoint,
+same call shapes as BL-1031's earlier conversions. Per human ruling A,
+`bounded_run_lib.bb` (BL-1103's shared wall-clock-bounded runner) no
+longer holds its own private subprocess-launch call and setsid/group-kill
+trap — `sh!` gained a per-call `:bound-ms` override and a `:kill-mode
+:group` option (setsid + whole-process-group kill, for the one caller
+that needs it), and `run-bounded!` is now a thin wrapper delegating to
+`sh!` with its signature unchanged, so `expedite_cli.bb` and
+`babysitter_check.bb` change nothing at their call sites.
+`daemon_api_ban_lib.bb`'s exempt set stays `daemon_cycle_guard_lib.bb`
+only — `bounded_run_lib.bb` no longer needs an exemption. The runner's
+other two FAIL lines (load-closure strays, unresolved spawn targets) are
+unowned by this ticket — BL-1524 (landed)/BL-1526. Complements
+BL-967/BL-1021/BL-1022/BL-1031/BL-1102/BL-1103. Acceptance:
+`specs/features/BL-1525-the-spawn-reachable-subtree-carries-no-banned-api-debt-again.feature`.
+Diagram note: `docs/diagrams/architecture.mmd`. No new extension command,
+setting, or UI change.)
+Prior entry —
 **Last Updated:** September 11, 2026 (BL-1524: four more files on
 `handoffd.bb`'s load-closure — `process_table_lib.bb` (Darwin `lsof` cwd
 probe), `model_factory_store.bb` (launch seam), `outage_failover_store.bb`

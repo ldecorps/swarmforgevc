@@ -218,6 +218,14 @@
 %% via sh!; handoff_lib's rotation bootstrap via new verb spawn-detached!,
 %% fire-and-forget, never waited on). daemon_api_ban_lib exempt set
 %% unchanged.
+%% BL-1525 (2026-09-11, human ruling A): spawn-reachable subtree's last
+%% banned-API debt retired — ticket_close_guard_lib/unregistered_test_gate_lib's
+%% git calls and expedite_cli's sh helper now route through sh!; bounded_run_lib
+%% (BL-1103) folds INTO the chokepoint instead of staying a second caller of
+%% babashka.process — sh! gains :bound-ms (per-call override) and :kill-mode
+%% :group (setsid + whole-process-group kill), run-bounded! becomes a thin
+%% wrapper over sh! with its signature unchanged. BL-1031 ratchet: spawn-only
+%% banned-API census now [].
 %% BL-1096 (2026-08-24): check_pipeline_code_on_main QA-import exemption
 %% anchors is_qa_ancestor per path last-touch, not merge tip alone.
 %% BL-1107 (2026-08-24): property lane — bl796 inv 2–3 enumerate finite
