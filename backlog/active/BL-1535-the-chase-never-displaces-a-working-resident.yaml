@@ -184,6 +184,7 @@ qa_e2e_procedure: |
      or docstring-only).
 
 assigned_to: coder
-bounce_count: 1
+bounce_count: 2
 bounce_history:
   - { at: 2026-09-11, by: architect, blamed: coder, class: behavior, commit: 4483ad7e57, evidence: backlog/evidence/BL-1535-architect-bounce-20260911.md }
+  - { at: 2026-09-11, by: architect, blamed: coder, class: invariant-unencoded, commit: e3178fd17d, evidence: backlog/evidence/BL-1535-architect-20260911.md }
