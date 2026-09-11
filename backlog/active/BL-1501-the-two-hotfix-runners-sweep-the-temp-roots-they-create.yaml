@@ -163,3 +163,5 @@ qa_e2e_procedure: |
      still green; suite-manifest.tsv rows for both unchanged.
   5. The `unit` row for extension/test/tempDirTrapGuard.test.js is gone
      from backlog/standing-reds.tsv in the land.
+
+assigned_to: coder
