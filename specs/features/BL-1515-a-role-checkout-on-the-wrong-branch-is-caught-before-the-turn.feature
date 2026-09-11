@@ -49,3 +49,12 @@ Feature: BL-1515 a role checkout on the wrong branch is caught before the turn
     When ready_for_next runs as coder
     Then no BRANCH_DRIFT line is printed
     And the turn proceeds to read the inbox
+
+  # BL-1515 branch-identity-guard-06
+  Scenario: a master-resident role is exempt even when checked out on neither declared session
+    Given roles.tsv declares two master-resident roles "specifier" and "coordinator" sharing one worktree with sessions "swarmforge-specifier" and "swarmforge-coordinator"
+    And the shared master worktree is checked out on "main"
+    When ready_for_next runs as "specifier" in the shared master worktree
+    Then no BRANCH_DRIFT line is printed
+    And no ref is renamed in the shared master worktree
+    And the turn proceeds to read the inbox
