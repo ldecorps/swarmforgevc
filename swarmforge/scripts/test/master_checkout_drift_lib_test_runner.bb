@@ -113,12 +113,12 @@
 ;; daemon. These cases hold the spawn half.
 
 (assert= "bl1022: a spawn with a literal .bb target resolves to that script"
-         {:resolved #{"swarm_handoff.bb"} :unresolved #{} :non-bb #{}}
+         {:resolved #{"swarm_handoff.bb"} :unresolved #{} :non-bb #{} :declared-dynamic #{}}
          (master-checkout-drift-lib/extract-spawn-targets
           "(sh! [\"bb\" \"swarm_handoff.bb\" (str draft)])"))
 
 (assert= "bl1022: a spawn whose target is built with fs/path resolves through to the literal"
-         {:resolved #{"swarm_handoff.bb"} :unresolved #{} :non-bb #{}}
+         {:resolved #{"swarm_handoff.bb"} :unresolved #{} :non-bb #{} :declared-dynamic #{}}
          (master-checkout-drift-lib/extract-spawn-targets
           "(sh! [\"bb\" (str (fs/path dir \"swarm_handoff.bb\")) x])"))
 
@@ -126,7 +126,7 @@
 ;; literal in the spawn form at all. Resolving it needs the helper's own body,
 ;; which is in the same file.
 (assert= "bl1022: a spawn whose target is a same-file zero-arg helper resolves through the helper's body"
-         {:resolved #{"swarm_handoff.bb"} :unresolved #{} :non-bb #{}}
+         {:resolved #{"swarm_handoff.bb"} :unresolved #{} :non-bb #{} :declared-dynamic #{}}
          (master-checkout-drift-lib/extract-spawn-targets
           (str "(defn swarm-handoff-script []\n"
                "  (str (fs/path (fs/parent (fs/canonicalize *file*)) \"swarm_handoff.bb\")))\n"
@@ -136,14 +136,14 @@
 ;; walk cannot resolve is REPORTED, never skipped. Silently dropping it is the
 ;; same class of blind spot one level up.
 (assert= "bl1022: a target that cannot be resolved statically is reported, never silently skipped"
-         {:resolved #{} :unresolved #{"(pick-a-script-at-runtime cfg)"} :non-bb #{}}
+         {:resolved #{} :unresolved #{"(pick-a-script-at-runtime cfg)"} :non-bb #{} :declared-dynamic #{}}
          (master-checkout-drift-lib/extract-spawn-targets
           "(sh! [\"bb\" (pick-a-script-at-runtime cfg) x])"))
 
 ;; A helper that exists but yields no .bb literal is NOT resolvable - it must
 ;; not silently read as "no edge".
 (assert= "bl1022: a same-file helper with no .bb literal in its body is unresolved, not empty"
-         {:resolved #{} :unresolved #{"(script-from-config)"} :non-bb #{}}
+         {:resolved #{} :unresolved #{"(script-from-config)"} :non-bb #{} :declared-dynamic #{}}
          (master-checkout-drift-lib/extract-spawn-targets
           (str "(defn script-from-config [] (get cfg :script))\n"
                "(sh! [\"bb\" (script-from-config) x])")))
@@ -152,18 +152,51 @@
 ;; bash script cannot reference a Clojure namespace. It is RECORDED so the
 ;; scope of the gate is visible rather than assumed.
 (assert= "bl1022: a bash spawn is recorded as out-of-ban-scope, not dropped and not mistaken for a .bb edge"
-         {:resolved #{} :unresolved #{} :non-bb #{"kill_all_swarm.sh"}}
+         {:resolved #{} :unresolved #{} :non-bb #{"kill_all_swarm.sh"} :declared-dynamic #{}}
          (master-checkout-drift-lib/extract-spawn-targets
           "(sh! [\"bash\" (str (fs/path script-dir \"kill_all_swarm.sh\")) root])"))
 
 (assert= "bl1022: a commented-out spawn is never an edge, exactly as for load-file"
-         {:resolved #{} :unresolved #{} :non-bb #{}}
+         {:resolved #{} :unresolved #{} :non-bb #{} :declared-dynamic #{}}
          (master-checkout-drift-lib/extract-spawn-targets
           ";; (sh! [\"bb\" \"swarm_handoff.bb\" x])"))
 
 (assert= "bl1022: content with no spawn at all yields nothing"
-         {:resolved #{} :unresolved #{} :non-bb #{}}
+         {:resolved #{} :unresolved #{} :non-bb #{} :declared-dynamic #{}}
          (master-checkout-drift-lib/extract-spawn-targets "(defn foo [] (+ 1 2))"))
+
+;; ── BL-1526: a bare-local spawn target that carries NO literal anywhere in
+;; the file (e.g. an env-var test seam) can be DECLARED dynamic by name and
+;; reason, and resolves without being reported as unresolved.
+
+(assert= "bl1526: a bb-runtime bare symbol the file declares dynamic resolves via the declaration, not as unresolved"
+         {:resolved #{} :unresolved #{} :non-bb #{} :declared-dynamic #{"runner — test seam, no literal"}}
+         (master-checkout-drift-lib/extract-spawn-targets
+          (str "(def daemon-spawn-declared-dynamic-targets\n"
+               "  {\"runner\" \"test seam, no literal\"})\n"
+               "(sh! [\"bb\" runner x])")))
+
+(assert= "bl1526: a bash-runtime bare symbol the file declares dynamic resolves via the declaration, not as unresolved"
+         {:resolved #{} :unresolved #{} :non-bb #{} :declared-dynamic #{"runner — test seam, no literal"}}
+         (master-checkout-drift-lib/extract-spawn-targets
+          (str "(def daemon-spawn-declared-dynamic-targets\n"
+               "  {\"runner\" \"test seam, no literal\"})\n"
+               "(sh! [\"bash\" runner x])")))
+
+;; Declaring ONE name never launders an unrelated bare symbol the file did
+;; NOT declare - "declared dynamic" can never be earned by accident.
+(assert= "bl1526: a bare symbol NOT named in the file's declaration map is still reported unresolved"
+         {:resolved #{} :unresolved #{"mystery"} :non-bb #{} :declared-dynamic #{}}
+         (master-checkout-drift-lib/extract-spawn-targets
+          (str "(def daemon-spawn-declared-dynamic-targets\n"
+               "  {\"runner\" \"test seam, no literal\"})\n"
+               "(sh! [\"bb\" mystery x])")))
+
+;; A file with no declaration map at all: the old behaviour, unchanged.
+(assert= "bl1526: a bare symbol in a file with no declaration map at all is unresolved"
+         {:resolved #{} :unresolved #{"mystery"} :non-bb #{} :declared-dynamic #{}}
+         (master-checkout-drift-lib/extract-spawn-targets
+          "(sh! [\"bb\" mystery x])"))
 
 ;; ── BL-1022: reachability over BOTH edge kinds ────────────────────────────
 
