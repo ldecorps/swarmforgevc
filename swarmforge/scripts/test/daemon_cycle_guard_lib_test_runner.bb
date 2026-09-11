@@ -319,6 +319,45 @@
            [["resource-sample" "hi"]]
            @logged))
 
+;; ── spawn-detached! (BL-1524): the fire-and-forget launch verb ────────────
+;; handoff_lib.bb's rotation bootstrap is deliberately fire-and-forget - a
+;; rotation must not fail because its bootstrap outlives a bound. Unlike
+;; sh!, this returns immediately and never waits on the child at all.
+
+(let [d (str (fs/create-temp-dir {:prefix "bl1524-detached-"}))
+      marker (str (fs/path d "child-ran"))]
+  (try
+    (let [t0 (System/currentTimeMillis)
+          _ (daemon-cycle-guard-lib/spawn-detached!
+             ["bash" "-c" (str "sleep 1; echo done > '" marker "'")])
+          elapsed (- (System/currentTimeMillis) t0)]
+      (assert-true "spawn-detached! returns immediately - it never waits on the child"
+                   (< elapsed 500)))
+    ;; Outlast the child's own delay by a wide margin so a genuinely started
+    ;; child has every chance to write its marker.
+    (Thread/sleep 3000)
+    (assert-true "spawn-detached! actually started the child - it is not silently swallowed"
+                 (fs/exists? marker))
+    (finally
+      (fs/delete-tree d))))
+
+(let [r (daemon-cycle-guard-lib/spawn-detached! ["definitely-not-a-real-binary-bl1524"])]
+  (assert= "spawn-detached! swallows a spawn failure - never throws" nil r))
+
+(let [d (str (fs/create-temp-dir {:prefix "bl1524-opts-"}))
+      marker (str (fs/path d "child-ran"))]
+  (try
+    ;; A RELATIVE target path: only resolves under marker's dir if :dir was
+    ;; actually passed through to the child, proving opts survive the merge
+    ;; (sh!'s same {:out :discard :err :discard} <- caller-opts shape).
+    (daemon-cycle-guard-lib/spawn-detached!
+     ["bash" "-c" "echo hi > 'child-ran'"] {:dir d})
+    (Thread/sleep 1000)
+    (assert-true "spawn-detached! honors caller-supplied opts (:dir), same merge shape as sh!"
+                 (fs/exists? marker))
+    (finally
+      (fs/delete-tree d))))
+
 ;; ── invariant 1's structural half (BL-967 architect bounce D2) ────────────
 ;; The routing half of invariant 1 - the daemon reaches no subprocess path
 ;; outside this chokepoint - was previously a stated claim, and a false one:
