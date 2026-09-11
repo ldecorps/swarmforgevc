@@ -161,3 +161,5 @@ notes: |
     rather than trusting this reconstruction. The specifier's earlier note
     to the coder (`001489`, "never relay it") was wrong about the sender
     and is withdrawn by this ticket.
+
+assigned_to: coder
