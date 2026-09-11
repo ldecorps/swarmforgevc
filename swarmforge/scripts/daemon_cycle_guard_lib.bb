@@ -207,6 +207,24 @@
       (spawn-failure-result e)
       (await-bounded-process (::ok spawned) cmd bound))))
 
+(defn spawn-detached!
+  "BL-1524: fire-and-forget launch for a call site that must legitimately
+   outlive sh!'s wait bound - today, handoff_lib.bb's rotation bootstrap,
+   which pastes a recomposed prompt into a fresh agent session and can run
+   longer than the 60s default bound. Starts `cmd` and returns immediately,
+   never deref'ing or waiting on it - unlike sh!, a hang here costs nothing
+   because nothing here ever waits. A spawn failure (ENOENT, EACCES, …) is
+   swallowed exactly as the bare `process/process` call sites this replaces
+   did: fire-and-forget by construction, so a caller with no way to observe
+   a failure has no way to act on one either. `:out`/`:err` default to
+   :discard, same as every existing detached-bootstrap call site; opts
+   override."
+  ([cmd] (spawn-detached! cmd {}))
+  ([cmd opts]
+   (try
+     (process/process cmd (merge {:out :discard :err :discard} opts))
+     (catch Exception _ nil))))
+
 (defn run-sweep!
   "Runs one sweep thunk under boundary observability (invariant 2): sets
    current-context to sweep-name for timeout attribution, catches and logs

@@ -15,9 +15,13 @@
 ;;     project)
 (ns model-factory-store
   (:require [babashka.fs :as fs]
-            [babashka.process :as process]
             [cheshire.core :as json]
             [clojure.string :as str]))
+
+;; BL-1524: the cold-apply launch seam runs under the bounded chokepoint
+;; (daemon-cycle-guard-lib/sh!), not a direct babashka.process call - this
+;; file joins handoffd.bb's load closure via outage_failover_cli.bb.
+(load-file (str (fs/path (fs/parent (fs/canonicalize *file*)) "daemon_cycle_guard_lib.bb")))
 
 (def default-state-dir-rel ".swarmforge/model-factory")
 
@@ -103,8 +107,8 @@
    cold-apply-plan-08 acceptance scenario: \"invoked with a stubbed launch
    seam\"). Returns the seam process's exit code."
   [seam-path plan project-root]
-  (:exit @(process/process [seam-path (json/generate-string plan)]
-                            {:dir project-root :out :inherit :err :inherit})))
+  (:exit (daemon-cycle-guard-lib/sh! [seam-path (json/generate-string plan)]
+                                      {:dir project-root :out :inherit :err :inherit})))
 
 (def default-launch-seam-rel "swarmforge/scripts/model_factory_default_launch_seam.sh")
 
