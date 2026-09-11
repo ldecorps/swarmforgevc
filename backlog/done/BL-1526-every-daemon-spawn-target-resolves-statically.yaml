@@ -192,3 +192,11 @@ qa_e2e_procedure: |
 source: "Coder unowned-red note 2026-09-11 00:10Z from the BL-1478 parcel; standing-red rule 2026-09-05; specifier bisect 2026-09-11."
 
 assigned_to: coder
+
+abandoned_commits: [eb306c607c]
+# QA-cited eb306c607c carried BL-967 (done) as an entangled unlanded
+# sibling via land_step_cli.bb's BL-1241 remedy. Landed instead:
+# 109a720abf (tip-pure replay onto origin/main, land-replay/BL-1526-eb306c607c),
+# excluding docs/how-to/BL-967-handoffd-cycle-stall-diagnosis.md (see
+# specifier note re: misattribution of that path's BL-1525 content to
+# BL-967). By QA, 2026-09-11.
