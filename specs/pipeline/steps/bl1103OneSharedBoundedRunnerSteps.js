@@ -11,6 +11,12 @@ const { spawnSync } = require('node:child_process');
 
 const REPO_ROOT = path.join(__dirname, '..', '..', '..');
 const LIB = path.join(REPO_ROOT, 'swarmforge', 'scripts', 'bounded_run_lib.bb');
+const CHOKEPOINT = path.join(
+  REPO_ROOT,
+  'swarmforge',
+  'scripts',
+  'daemon_cycle_guard_lib.bb'
+);
 const FEATURE =
   'one shared bounded runner, sourced by both callers that hand-copied it';
 
@@ -80,9 +86,23 @@ function registerSteps(registry) {
       'utf8'
     );
     const lib = fs.readFileSync(LIB, 'utf8');
+    const chokepoint = fs.readFileSync(CHOKEPOINT, 'utf8');
     assert.ok(expedite.includes('bounded_run_lib.bb'), 'expedite must load-file bounded_run_lib.bb');
     assert.ok(babysitter.includes('bounded_run_lib.bb'), 'babysitter must load-file bounded_run_lib.bb');
-    assert.ok(/"kill" "-KILL" "--"/.test(lib), 'lib must carry the load-bearing group-kill');
+    // BL-1525 (human ruling A): run-bounded! is a thin wrapper over
+    // daemon-cycle-guard-lib/sh!, so the group-kill trap itself now lives in
+    // daemon_cycle_guard_lib.bb's :kill-mode :group - that file is checked
+    // for carrying it, never a second copy in bounded_run_lib.bb or a caller.
+    assert.ok(
+      /"kill" "-KILL" "--"/.test(chokepoint),
+      'the chokepoint must carry the load-bearing group-kill'
+    );
+    assert.equal(
+      (lib.match(/"kill" "-KILL" "--"/g) || []).length,
+      0,
+      'bounded_run_lib.bb must not keep a second copy of the group-kill'
+    );
+    assert.ok(lib.includes(':kill-mode :group'), 'run-bounded! must request the chokepoint\'s group-kill mode');
     assert.equal(
       (expedite.match(/"kill" "-KILL" "--"/g) || []).length,
       0,
@@ -137,7 +157,10 @@ function registerSteps(registry) {
     (ctx) => {
       const r = ctx.bl1103.result;
       assert.equal(r.timedOut, true, `expected timed-out?: ${r.raw}`);
-      assert.equal(r.exit, null, `expected exit nil: ${r.raw}`);
+      // BL-1525: sh!'s bound-hit exit is 124 (the chokepoint's coreutils-
+      // timeout(1) convention), not nil - see bounded_run_lib.bb's own
+      // {:exit (:exit result) ...} and its test runner's matching case.
+      assert.equal(r.exit, 124, `expected exit 124: ${r.raw}`);
       assert.ok(r.elapsed !== null && r.elapsed < 5000, `did not return promptly: ${r.raw}`);
       // Give reaped grandchildren a beat to disappear from ps.
       spawnSync('bash', ['-c', 'sleep 0.5']);
