@@ -1,0 +1,146 @@
+id: BL-1530
+title: "The three standing shell tests that drive swarm_handoff.sh with a git_handoff draft speak the two-call self-audit: test_rule_proposal.sh (case 04, and 03b's fixed 10 s drain deadline), test_handoff_state_dir_worktree_root.sh (case 01) and test_required_stages_ticket_lookup_collision.sh have been red on main since the AUDIT_REQUIRED landing of 2026-08-30 (44d2d42591) because each asserts a queue on the FIRST call, which now prints HANDOFF_NOT_QUEUED by design"
+milestone: M8
+type: defect
+severity: high
+# high (standing-red rule 2026-09-05): three shell-lane test files red on
+# main are broken safety signals and throttle intake until owned. The
+# code under test is right; the tests never learned the protocol.
+status: todo
+epic: code-quality-gates
+priority: 8
+direction: swarm-reported
+depends_on: []
+mutation_cost: low
+# low: three shell test files under swarmforge/scripts/test and one
+# step-handler file; no production code, no Stryker target (BL-472); the
+# hardener records the fallback.
+slice_size_envelope: low
+required_stages: [coder, cleaner, architect, hardender, documenter, qa]
+
+acceptance: specs/features/BL-1530-the-shell-tests-that-drive-swarm-handoff-once-speak-the-two-call-audit.feature
+
+# No consumer anchor is honest (BL-1235): the live consumer is whoever
+# runs the standing shell suite, and nothing does (suite-manifest.tsv
+# marks them `standing`; no runner loops swarmforge/scripts/test/test_*.sh
+# - the same gap BL-1526 recorded for the bb suite). Handler pin only.
+required_wiring:
+  - 'specs/pipeline/steps/bl1530ShellTestsSpeakTheAuditSteps.js::registerSteps::the handler lands in the same parcel as the feature (BL-233, BL-1371)'
+
+human_approval: approved
+approval_context: >
+  A new feature file is authored here, so it needs a tap. No choice is
+  posed and there are no ruling_options. FIRM: swarm_handoff.bb is not
+  edited and no audit bypass (env or fixture marker) is added - each test
+  makes the identical second call the protocol requires, and asserts the
+  first call's AUDIT_REQUIRED where the case is about the send itself.
+  FIRM: the first call is tolerated under both exit conventions (`|| true`
+  on the challenge call) so this parcel is green whether or not BL-1529's
+  ruling changes the challenge's exit code; the two tickets stay
+  independent. FIRM: 03b's drain wait becomes a bounded wait on the
+  daemon's own delivery evidence with a deadline no shorter than today's,
+  never a bare sleep extension. FIRM: the three register rows this mint
+  adds are removed in the land that turns the files green. Minted by the
+  specifier on 2026-09-11 from the coder's two unowned-red notes (04:36Z,
+  from the BL-1518 parcel) plus a census that found the third file;
+  evidence backlog/evidence/BL-1529-BL-1530-specifier-unowned-red-census-20260911.md.
+
+invariants:
+  - "Every shell test that sends a git_handoff through swarm_handoff.sh asserts the queue on the second identical invocation, never the first, and none reaches the queue by bypassing the audit."
+
+description: |
+  ## What is wrong
+
+  Since 44d2d42591 (2026-08-30) `swarm_handoff.bb` answers the first
+  invocation of any `type: git_handoff` draft with `AUDIT_REQUIRED` /
+  `HANDOFF_NOT_QUEUED`, queues nothing, and exits 0; the identical second
+  call queues (Article 2.3, BL-1306). Three standing shell tests send
+  once and assert a queue, and have been red since (reproduced on `main`
+  4d019c0f91, 2026-09-11):
+
+  - `swarmforge/scripts/test/test_rule_proposal.sh` case 04
+    (`run_swarm_handoff` once per draft, `assert_queued` greps `^HANDOFF
+    QUEUED (mailbox only, no tmux inject):`): the `git_handoff` row of the
+    loop gets the challenge text. Cases 01/03/03b/02 pass. 03b was the
+    coder's sighting (04:36Z, "daemon did not drain the outbox"): its
+    drain wait is a fixed 40 x 0.25 s poll on the outbox count, which a
+    loaded host (the coder's mutation run beside it) can miss; the
+    specifier's two runs on `main` passed it. Same file, same row.
+  - `swarmforge/scripts/test/test_handoff_state_dir_worktree_root.sh`
+    case 01 (`bb swarm_handoff.bb "$DRAFT" > /dev/null` from
+    `$CODER_WT/extension`, then `outbox_count == 1`): 0.
+  - `swarmforge/scripts/test/test_required_stages_ticket_lookup_collision.sh`
+    `send` helper (~line 70-73): one call, then `sed` for a `.handoff`
+    path in the output - "no installed handoff file reported for
+    task=BL-900-demo-task".
+
+  None is in `backlog/standing-reds.tsv`; all three are `standing` in
+  `suite-manifest.tsv`; nothing runs the standing shell suite, which is
+  why a 12-day red surfaced only when the coder ran the files by hand.
+
+  Census (BL-1445): shell tests that invoke `swarm_handoff.(sh|bb)` AND
+  contain a `type: git_handoff` draft -
+  `for f in $(grep -l -E 'swarm_handoff\.(sh|bb)' swarmforge/scripts/test/test_*.sh); do grep -q 'type: git_handoff' "$f" && echo "$f"; done`
+  - 11 files. Run on 2026-09-11: 6 green, these 3 red on the audit, 2 red
+  on BL-1529's production fault (`test_redo_from.sh`, `test_reroute.sh`).
+
+  ## What is wanted
+
+  The three files are green on `main` without any change to
+  `swarm_handoff.bb`: each sends the identical draft twice (a small
+  `send_twice`/`queue_after_audit` helper per file, or one shared under
+  `swarmforge/scripts/test/lib/`), tolerates the first call's exit code,
+  and asserts the queue grammar on the second. Where a case is about the
+  send itself (test_rule_proposal.sh 04's `git_handoff` row), it also
+  asserts the first call printed `AUDIT_REQUIRED` and queued nothing, so
+  the protocol is pinned rather than papered over. 03b waits on delivery
+  evidence (the specifier inbox file or the audit line the case then
+  reads) with a bounded deadline at least as long as today's 10 s. The
+  three register rows go in the same land.
+
+  ## How (direction, not mandate)
+
+  - `test_rule_proposal.sh`: `run_swarm_handoff` gains a second call for
+    the `git_handoff` row only (awake/note stay single-call, which is the
+    point of case 04). Keep the mailbox-only grammar assertion.
+  - `test_handoff_state_dir_worktree_root.sh`: case 01 and 02 both send;
+    call twice in each and keep the nested-state assertion (the audit
+    challenge must not create `extension/.swarmforge` either - assert it
+    after the FIRST call too, that is the ticket's own BL-056 property).
+  - `test_required_stages_ticket_lookup_collision.sh`: `send` calls twice
+    and parses the second output; the first output is asserted to carry
+    `HANDOFF_NOT_QUEUED` (BL-1306's reroute-after-audit contract, which
+    this file's collision case exercises for real).
+  - The step handler runs the three files and greps them for the
+    two-call shape; do not make it re-implement the tests.
+
+  ## Not in scope
+
+  - `test_redo_from.sh` and `test_reroute.sh`: red for a production
+    reason (BL-1529), not a test one.
+  - Wiring a runner for the standing shell suite (BL-541's
+    remaining_slices already carry "nothing runs the shell test suite").
+
+notes: |
+  Register: backlog/standing-reds.tsv gains three `shell` rows naming this
+  ticket, first_seen 2026-08-30 (the audit landing; the coder's sighting
+  is 2026-09-11), same commit as this mint. The coder's notes 001873 and
+  001874 of 2026-09-11 04:36Z are both folded here.
+
+qa_e2e_procedure: |
+  On the parcel commit, from the repo root:
+  1. `for t in test_rule_proposal.sh test_handoff_state_dir_worktree_root.sh
+     test_required_stages_ticket_lookup_collision.sh; do bash
+     swarmforge/scripts/test/$t || echo "FAIL $t"; done` -> ALL PASS each,
+     no FAIL line, five runs in a row for test_rule_proposal.sh.
+  2. `git diff main...HEAD --name-only` names only the three test files,
+     an optional shared helper under swarmforge/scripts/test/lib/, the
+     step handler, the feature, evidence, and the register rows;
+     `swarmforge/scripts/swarm_handoff.bb` is unchanged.
+  3. `grep -n -E 'AUDIT|SKIP' swarmforge/scripts/swarm_handoff.bb` shows no
+     new env-var read.
+  4. Break-then-restore: in test_rule_proposal.sh drop the second call for
+     the git_handoff row; the file goes red on 04 and the BL-1530
+     acceptance scenario 01 fails; restore.
+  5. `git diff main...HEAD -- backlog/standing-reds.tsv` shows the three
+     rows removed and nothing else in that file.
