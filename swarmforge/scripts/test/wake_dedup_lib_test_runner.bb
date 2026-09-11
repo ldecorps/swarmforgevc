@@ -11,6 +11,17 @@
     (System/exit 1))
   (println (str "PASS " label)))
 
+;; BL-1501: sweep every temp root this runner creates before the process
+;; exits, same idiom as availability_ledger_lib_test_runner.bb etc.
+(def created-temp-dirs (atom []))
+(.addShutdownHook (Runtime/getRuntime)
+                  (Thread. (fn [] (doseq [d @created-temp-dirs] (try (fs/delete-tree d) (catch Exception _ nil))))))
+
+(defn mk-tmp []
+  (let [d (str (fs/create-temp-dir {:prefix "bl1501-"}))]
+    (swap! created-temp-dirs conj d)
+    d))
+
 (assert= "empty mailbox suppresses"
          {:action :suppress :skip-reason "empty-mailbox" :fingerprint ""}
          (wake-dedup-lib/decide-wake-dedup
@@ -87,7 +98,7 @@
            :target-epoch "pane-pid:222" :last-target-epoch ""}))
 
 ;; sidecar round-trip carries the epoch, and a legacy sidecar reads blank
-(let [dir (str (fs/create-temp-dir))]
+(let [dir (mk-tmp)]
   (wake-dedup-lib/record-injection! dir "coder" "fp-a" 1000 "pane-pid:111")
   (assert= "sidecar round-trips lastTargetEpoch"
            {:fingerprint "fp-a" :lastInjectedAtMs 1000 :lastTargetEpoch "pane-pid:111"}
