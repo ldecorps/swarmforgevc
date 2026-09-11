@@ -131,3 +131,5 @@ notes: |
     `swarmforge/scripts/test/test_bl1378_expedite_close_guard.sh`'s
     `unlanded_commit`. How the local `swarmforge-coder` ref was deleted is
     not on record; the repair does not depend on knowing.
+
+assigned_to: coder
