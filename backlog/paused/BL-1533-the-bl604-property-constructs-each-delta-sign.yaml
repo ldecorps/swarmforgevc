@@ -1,0 +1,147 @@
+id: BL-1533
+title: "bl604TrendAnalysisInvariants.property.test.js is flaky red on main with no owner: invariant 1 asserts a reach floor of 10 on the up and down delta signs but only ever SAMPLES them (12 draws of small series sets in the many bucket, expectation near the floor), so the file fails on roughly one seed in seven with 'reach floor: delta sign up drawn 9 < 10' - the sign is constructed the way the length buckets already are, and the floors stay"
+milestone: M8
+type: defect
+severity: high
+# high (standing-red rule 2026-09-05): a property-lane test red on main is a
+# broken safety signal; it held BL-1518-a's QA approval on 2026-09-11
+# (Article 4.2) and throttles intake until owned. Production is unaffected:
+# buildTrendAnalysis and renderTrendAnalysisSection agree with computeTrend
+# on every draw - the failing assertion is the generator's own reach, not
+# the invariant.
+status: todo
+epic: code-quality-gates
+priority: 8
+direction: swarm-reported
+depends_on: []
+mutation_cost: low
+# low: one property test file and one small generator helper under
+# extension/test (never extension/src), one step-handler file. No production
+# code, so no Stryker target; the hardener records the fallback.
+slice_size_envelope: low
+required_stages: [coder, cleaner, architect, hardender, documenter, qa]
+
+acceptance: specs/features/BL-1533-the-bl604-property-constructs-each-delta-sign.feature
+
+# No consumer anchor is honest here (BL-1235): the live consumer is the
+# properties lane itself (`npm run test:properties`, vitest.properties.config.mjs),
+# which already collects this file and is the thing that is red. The
+# handler entry is the BL-233 in-parcel pin.
+required_wiring:
+  - 'specs/pipeline/steps/bl1533SignedSeriesReachSteps.js::registerSteps::the handler lands in the same parcel as the feature (BL-233, BL-1371)'
+
+human_approval: pending
+approval_context: >
+  A new feature file is authored here, so it needs a tap. No choice is
+  posed and there are no ruling_options. FIRM: extension/src is not
+  edited - computeTrend, buildTrendAnalysis and renderTrendAnalysisSection
+  are BL-604's landed contract and the property agrees with them on every
+  draw; the fix is in the test's generator only. FIRM: the reach floors
+  are not lowered, not dropped, and not made rarer-to-miss by inflating
+  numRuns - BL-1062's rule is that a floor is met BY CONSTRUCTION, and a
+  floor that is merely usually met is still a flake. FIRM: the file is not
+  added to property_suite_standing_allowlist.tsv. Direction, not mandate:
+  one helper under extension/test/helpers/ holds a generator that builds a
+  trendable series whose final delta has a CHOSEN sign; the property and
+  the step handler both require it. Minted by the specifier on QA's
+  unowned-red note of 2026-09-11 07:02Z from the BL-1518-a parcel
+  (evidence f88b2f4ed5 on swarmforge-QA); the specifier reproduced it
+  alone on main 8a1a02c8a9, 2 failures in 15 runs, and BL-1354's QA saw
+  the same miss on 2026-09-03.
+
+invariants:
+  - "A reach floor is met by construction: every value a floor names is produced by a generator arm that yields it on every draw of that arm, never by a uniform draw the floor merely hopes will cover it."
+
+description: |
+  ## What is wrong
+
+  `extension/test/bl604TrendAnalysisInvariants.property.test.js`, invariant
+  1 ("states computeTrend own direction and delta, as printed"): the
+  length buckets `none`/`one`/`many` are iterated explicitly and each
+  asserted to reach `LENGTH_FLOOR = 12` - constructed, as BL-1062 asks.
+  But `coverage.up` and `coverage.down` are incremented per RENDERED
+  bullet inside that same loop, and only the `many` bucket renders any.
+  So the two sign floors (`SIGN_FLOOR = 10`) are a uniform sample: 12
+  draws of 1..6 series (fast-check biases toward small arrays), each
+  bullet up or down with probability about one half. The expectation sits
+  near the floor and nothing constructs either sign.
+
+  fast-check draws a fresh seed per invocation, so some runs miss:
+
+  | who | where | result |
+  |---|---|---|
+  | BL-1354 QA, 2026-09-03 | full lane | `delta sign down drawn 8 < 10` |
+  | BL-1518-a QA, 2026-09-11 | full lane, runs 1 and 3 of 3 | `delta sign up drawn 7 < 10` |
+  | specifier, 2026-09-11 | alone, main `8a1a02c8a9`, 15 runs | 2 failed (`down drawn 8`, `up drawn 9`) |
+
+  The 2026-09-03 sighting attributed it to host load. A generator draw does
+  not depend on load; the isolated repro is the proof. Latent since
+  BL-604/BL-654 landed the file (`4d8bf05993`, 2026-08-30). Evidence:
+  `backlog/evidence/BL-1533-specifier-unowned-red-repro-20260911.md`.
+
+  ## What is wanted
+
+  Invariant 1 reaches its `up` and `down` floors on every run because the
+  sign of a trendable series' final delta is CHOSEN by the generator, the
+  way the length bucket already is - not sampled. The floors stay at their
+  values and stay asserted. The run prints its reach map (the BL-1371
+  `reach over N draws:` shape) so a reader, and scenario 03, can see the
+  counts. The property lane is green on `main`; the register row this
+  ticket adds is removed in the same land.
+
+  ## How (direction, not mandate)
+
+  - Put a signed-series generator in one small helper under
+    `extension/test/helpers/` (name is the implementer's): given a sign
+    (`up` | `down` | `flat`), an arbitrary that yields a trendable series
+    (2..8 points) whose LAST two points have that ordering, so
+    `computeTrend(points).direction` equals the sign on every draw. The
+    property's `many` arm and the BL-1533 step handler both require it
+    (invariant 1).
+  - Iterate the sign the way the length buckets are iterated: run the
+    `many` bucket once per sign with `runsPerCell` (from
+    `test/helpers/reachFloors.js`) or an explicit per-sign loop, and keep
+    `assertReachFloor(coverage, ['up', 'down'], SIGN_FLOOR, ...)` exactly
+    as it stands. The `none`/`one` buckets are untouched.
+  - Print the coverage map at the end of invariant 1 with `console.log`
+    (BL-1371's `reach over` line is the precedent) so the acceptance can
+    read the counts from the run rather than re-deriving them.
+  - `extension/src/metrics/trend.ts` and `trendAnalysis.ts` are not
+    touched; `specs/features/BL-604-*.feature` and its handler are not
+    touched - BL-604's own acceptance is not red and is not this ticket's.
+
+  ## Not in scope
+
+  - Invariant 2's `trendable`/`untrendable` floors and the throwing-loader
+    floor are met by construction today and are not changed.
+  - The BL-654 parcel shipped a sampled floor and no stage caught it; the
+    same fail-open shape BL-1445 names. No process change is minted here;
+    the closing ceremony will see the ledger row.
+
+notes: |
+  Register: backlog/standing-reds.tsv gains one `property` row naming this
+  ticket (same commit as this mint), first_seen 2026-09-03; QA removes it
+  in the land that turns the file green. BL-1518-a (held at QA under
+  Article 4.2 on this red and BL-1534's, and separately bounced to the
+  hardener on its own defects) may be approved on the red once this
+  ticket is open - the row names it.
+
+qa_e2e_procedure: |
+  On the parcel commit, from `extension/`:
+  1. `for i in $(seq 1 15); do npx vitest run --config
+     vitest.properties.config.mjs
+     test/bl604TrendAnalysisInvariants.property.test.js || echo FAIL;
+     done` -> 4 passed every run, no FAIL line (the unfixed file fails
+     about 2 of 15).
+  2. In each run's stdout the printed reach map shows `up` >= 10 and
+     `down` >= 10.
+  3. `git diff main...HEAD --name-only` names the property test, one
+     helper under extension/test/helpers, the step handler, the feature,
+     evidence, and the register row removal; `extension/src/`,
+     `property_suite_standing_allowlist.tsv`, the BL-604 feature and
+     handler are unchanged. `grep -n "SIGN_FLOOR = 10" <the test>` still
+     matches and `assertReachFloor(coverage, ['up', 'down'], SIGN_FLOOR`
+     is still called.
+  4. Break-then-restore: in the helper make the `down` arm build an
+     ascending pair; scenario 02's `down` row fails and the property's
+     own reach floor for `down` fails; restore.

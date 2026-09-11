@@ -1,0 +1,160 @@
+id: BL-1534
+title: "bl1373PathSetCacheInvariants.property.test.js is red on main whenever the host is busy, with no owner: 40 fast-check draws each spawn one or two REAL babysitter_check.bb sweeps (1.6 s each at load 33, up to 30 per test) against a 20 s per-test timeout, so the verdict is host load (79 s / 22 s / 42 s alone at load 33; 3 of 3 pass at load 2), and invariant 1 and the cache test return green when neither sweep finds anything - the sweeps per test are bounded and stated, every draw that sweeps is decisive by construction, and a run with no decisive draw fails"
+milestone: M8
+type: defect
+severity: high
+# high (standing-red rule 2026-09-05): a property-lane test red on main is a
+# broken safety signal; it held BL-1518-a's QA approval on 2026-09-11
+# (Article 4.2), timed out inside the full lane on every QA pass since
+# 2026-09-09, and throttles intake until owned. Production is unaffected:
+# BL-1373's sweep and cache key are not in question - the test's budget and
+# its vacuous-pass branch are.
+status: todo
+epic: code-quality-gates
+priority: 8
+direction: swarm-reported
+depends_on: []
+mutation_cost: low
+# low: one property test file under extension/test (never extension/src,
+# never swarmforge/scripts), one step-handler file. No TS production code,
+# so no Stryker target; the hardener records the fallback.
+slice_size_envelope: low
+required_stages: [coder, cleaner, architect, hardender, documenter, qa]
+
+acceptance: specs/features/BL-1534-the-bl1373-property-bounds-its-sweeps-and-counts-decisive-draws.feature
+
+# No consumer anchor is honest here (BL-1235): the live consumer is the
+# properties lane itself (`npm run test:properties`, vitest.properties.config.mjs),
+# which already collects this file and is the thing that is red. The
+# handler entry is the BL-233 in-parcel pin.
+required_wiring:
+  - 'specs/pipeline/steps/bl1534BoundedSweepReachSteps.js::registerSteps::the handler lands in the same parcel as the feature (BL-233, BL-1371)'
+
+human_approval: pending
+approval_context: >
+  A new feature file is authored here, so it needs a tap. No choice is
+  posed and there are no ruling_options. FIRM: the fix is not a larger
+  per-test timeout - at load 33 invariant 1 took 79 s, and a budget sized
+  to the busiest host still makes the verdict a function of load (BL-871
+  invariant 1); the WORK is bounded instead. FIRM: the fix is not more
+  skipped draws - a draw that returns without sweeping proves nothing, and
+  the existing both-not-found branch is retired, never widened. FIRM:
+  swarmforge/scripts/babysitter_check.bb, its fixture helpers under
+  specs/pipeline/steps/lib/, and extension/src are not edited; the file is
+  not added to property_suite_standing_allowlist.tsv. Direction, not
+  mandate: the generator builds a decisive pair by construction (a path in
+  P1 and not in P2 chosen up front) so no draw is skipped, and numRuns
+  drops to what a 5-prefix space needs; the sweep count per test is at
+  most 10. Minted by the specifier on QA's unowned-red note of 2026-09-11
+  07:02Z from the BL-1518-a parcel (evidence f88b2f4ed5 on swarmforge-QA);
+  the specifier reproduced it alone on main 8a1a02c8a9 at load 33 (3 of 3
+  timed out) and measured one sweep at 1.59 s.
+
+invariants:
+  - "The file's verdict is a function of the code under test, not of host load: the real sweeps a test runs are bounded and stated (at most 10 per test), so its work fits its own 20 s timeout with headroom on a busy host."
+  - "No vacuous green: every draw that reaches a sweep is decisive by construction (the commit's path is in P1 and not in P2), and a run whose decisive-draw count is zero fails."
+
+description: |
+  ## What is wrong
+
+  `extension/test/bl1373PathSetCacheInvariants.property.test.js` runs
+  `numRuns` 15 + 10 + 15 = 40 draws. Each draw makes a fixture repo and
+  spawns the REAL `bb swarmforge/scripts/babysitter_check.bb` once
+  (invariant 2) or twice (invariant 1, cache test) through the
+  `BABYSITTER_QA_EXCLUSIVE_PATHS_SCRIPT` seam. One sweep measured 1.59 s on
+  a bare fixture at load 33; invariant 1 alone can spawn 30 of them, against
+  `testTimeout: 20000` (vitest.properties.config.mjs). The generator space is
+  five constant prefixes in subsets of size 1..4, and a draw whose two sets
+  are equal, or where `paths1` has no path outside `paths2`, returns
+  without sweeping - so many of the 40 draws are wasted and the rest overrun
+  the budget.
+
+  | host | isolated run | result |
+  |---|---|---|
+  | QA, load ~2.3, 2026-09-11 | 3 runs | 3/3 pass |
+  | specifier, load 32-36, 2026-09-11, main `8a1a02c8a9` | 1 run | 79263 ms / 22274 ms / 41929 ms, all three timed out at 20000 ms |
+  | full lane, every QA pass 2026-09-09 .. 2026-09-11 | BL-1278, BL-1410, BL-1449, BL-1468, BL-1494, BL-1497, BL-1514, BL-1518-a evidence | timed out |
+
+  Beside the budget sits a fail-OPEN branch: invariant 1 and the cache
+  test `return` green when NEITHER sweep found the commit ("might be OK if
+  the sweep can't run in fixtures"). A sweep that never reports anything
+  passes both properties, and nothing counts how many draws were decisive.
+
+  Present since BL-1373 landed the file (`9e90bf92a6`, 2026-09-08). First
+  recorded 2026-09-09 (BL-1278 QA). Evidence:
+  `backlog/evidence/BL-1534-specifier-unowned-red-repro-20260911.md`.
+
+  ## What is wanted
+
+  Each of the three tests runs a bounded, stated number of real sweeps -
+  at most 10 - so the file passes its own timeout on a busy host, and
+  every draw that sweeps is decisive by construction: the commit's path is
+  chosen from `P1 \ P2` up front, the both-not-found branch is gone, and a
+  run with zero decisive draws fails at a reach floor. Each test prints its
+  sweep count and decisive-draw count (the BL-1371 `reach over N draws:`
+  shape) so scenarios 02 and 03 read them from the run. The property lane
+  is green on `main`; the register row this ticket adds is removed in the
+  same land.
+
+  ## How (direction, not mandate)
+
+  - Build the decisive pair by construction: draw `P1` as a non-empty
+    subset, draw `x` from `P1`, draw `P2` as a subset of the remaining
+    prefixes (so `x` is in `P1` and not in `P2` on every draw); the
+    invariant-1 and cache-test properties then never skip. Invariant 2 can
+    draw its unreported path the same way from `OUTSIDE_PATHS`.
+  - Size `numRuns` to the space: 4-5 draws per test over five constant
+    prefixes is a sharp handful; with two sweeps per draw that is 8-10
+    sweeps per test, 13-16 s at 1.6 s per sweep, inside 20 s. State the
+    arithmetic in a comment where `numRuns` is set.
+  - Count `sweeps` and `decisive` in a coverage map per test, print it at
+    the end of the test (`console.log` of JSON, BL-1371's precedent), and
+    `assertReachFloor(coverage, ['decisive'], <the numRuns>, ...)` from
+    `test/helpers/reachFloors.js` so a run where no draw was decisive
+    fails naming it. Retire the `!finding1 && !finding2 -> return` branch:
+    with a constructed pair, "P1 finds it and P2 does not" is the only
+    green.
+  - `mkFixtureRepo`/`runSweep`/`createStubScript` in
+    `specs/pipeline/steps/lib/babysitterSweepFixtureHelpers.js` are used as
+    they stand; `babysitter_check.bb` is not touched.
+
+  ## Not in scope
+
+  - The other eleven property files that spawn `babysitter_check.bb`
+    (`grep -l runSweep extension/test/*.property.test.js`) each have their
+    own budget; a full-lane timing census of them is a separate ticket if
+    the ceremony packet asks for one.
+  - The BL-1373 parcel shipped a property whose work exceeded its timeout
+    on any busy host and whose skip branch made a green vacuous, and no
+    stage caught either. No process change is minted here; the closing
+    ceremony will see the ledger row.
+
+notes: |
+  Register: backlog/standing-reds.tsv gains one `property` row naming this
+  ticket (same commit as this mint), first_seen 2026-09-09; QA removes it
+  in the land that turns the file green. BL-1518-a (held at QA under
+  Article 4.2 on this red and BL-1533's, and separately bounced to the
+  hardener on its own defects) may be approved on the red once this
+  ticket is open - the row names it.
+
+qa_e2e_procedure: |
+  On the parcel commit, from `extension/`:
+  1. `for i in 1 2 3; do npx vitest run --config
+     vitest.properties.config.mjs
+     test/bl1373PathSetCacheInvariants.property.test.js || echo FAIL;
+     done` -> 3 passed every run, no FAIL line; every per-test duration
+     vitest prints is under 20000 ms, and under 10000 ms when the host's
+     1-minute load average is below the core count.
+  2. In each run's stdout, each of the three printed reach maps shows
+     `sweeps` <= 10 and `decisive` equal to that test's `numRuns`.
+  3. `git diff main...HEAD --name-only` names the property test, the step
+     handler, the feature, evidence, and the register row removal;
+     `extension/src/`, `swarmforge/scripts/`,
+     `specs/pipeline/steps/lib/babysitterSweepFixtureHelpers.js`,
+     `property_suite_standing_allowlist.tsv`, the BL-1373 feature and
+     handler are unchanged. `grep -c "finding1 && !finding2" <the test>`
+     -> 0 for the both-not-found branch (the decisive branch may remain).
+  4. Break-then-restore: make the stub path script in the test print no
+     paths at all (an empty `P1`); the reach floor fails naming `decisive`
+     and scenario 03 fails; restore. Then set invariant 1's `numRuns` to
+     15 with two sweeps per draw; scenario 02 fails on `sweeps`; restore.
