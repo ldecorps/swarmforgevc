@@ -11,7 +11,7 @@ fills `.swarmforge/telemetry/context-events.jsonl` through the existing
 | --- | --- | --- |
 | Core producer | `extension/src/metrics/contextTelemetryProducer.ts` | Walks role transcripts (BL-664 substrate + BL-100 usage extraction), derives events, dedupes by `agent:session_id:timestamp` |
 | Headless CLI | `extension/src/tools/run-context-telemetry-producer.ts` | One-shot producer run for operators and acceptance |
-| Scheduled tick | `swarmforge/scripts/handoffd.bb` | `context-telemetry-producer-sweep!` on the shared sweep cadence — idempotent every tick |
+| Scheduled tick | `swarmforge/scripts/handoffd.bb` | `context-telemetry-producer-sweep!` on the shared sweep cadence — idempotent every tick; a non-zero exit is logged as `context-telemetry-producer-failed` with the exit code and first stderr line, so a failing tool no longer leaves only the sweep-boundary line behind (BL-1478) |
 | Write path | `swarmforge/scripts/context_telemetry_cli.bb record-batch` | GH-22 store append, one subprocess per tick (BL-1477) — producer never bypasses this |
 | Dashboard | GH-23 context budget gate | Read-only; shows data once the store fills |
 
