@@ -1642,24 +1642,122 @@
                                ticket))
                   (chase-sweep-lib/scan-inbox-new new-dir)))))))
 
+(defn- resident-pane-pid
+  "The resident pane's OWN process id, per `#{pane_pid}` - same probe
+   wake-target-epoch above reads, kept separate here since this callsite
+   needs the raw pid (for a child-process walk), not the epoch string."
+  [socket session]
+  (try
+    (let [res (tmux! "-S" socket "list-panes" "-t" session "-F" "#{pane_pid}")
+          pid (some-> (:out res) str/split-lines first str/trim)]
+      (when (and (zero? (:exit res)) (not (str/blank? pid)) (re-matches #"\d+" pid))
+        pid))
+    (catch Exception _ nil)))
+
+(defn- resident-pane-live-descendant?
+  "BL-1535: true when the resident pane's own pid has at least one live
+   child process - a command the role launched (e.g. a detached mutation
+   rerun) that outlives its turn and keeps the footer reading idle.
+   `pgrep -P` mirrors orphan_agent_reaper_sweep_lib.bb's child-pids! probe;
+   only direct children matter here, not the full descendant tree - the
+   fixture pattern is `bash -c 'sleep N'` (the pane) with one child (the
+   still-running command)."
+  [socket session]
+  (boolean
+   (when-let [pid (resident-pane-pid socket session)]
+     (let [res (daemon-cycle-guard-lib/sh! ["pgrep" "-P" pid])]
+       (and (zero? (:exit res))
+            (not (str/blank? (str/trim (str (:out res))))))))))
+
+(defn- sha256-hex [text]
+  (let [digest (.digest (java.security.MessageDigest/getInstance "SHA-256")
+                        (.getBytes (str text) "UTF-8"))]
+    (apply str (map #(format "%02x" (bit-and (int %) 0xff)) digest))))
+
+(defn- fresh-audit-challenge?
+  "BL-1535: true when a standing self-audit challenge file
+   (`.swarmforge/handoffs/audit_pending/<sha256(role)>/*.edn`, the same
+   dir swarm_handoff.sh's self-audit writes under the sender's own role
+   name) exists for `role` and is younger than note_actionable_after_ms -
+   the departing role's own forward stands mid-audit between the two
+   swarm_handoff.sh calls. A stale challenge alone never counts."
+  [role]
+  (boolean
+   (when-not (str/blank? (str role))
+     (let [dir (fs/path project-root ".swarmforge" "handoffs" "audit_pending" (sha256-hex role))]
+       (when (fs/directory? dir)
+         (let [bound (note-actionable-after-ms)
+               now (System/currentTimeMillis)]
+           (boolean
+            (some (fn [f]
+                    (and (fs/regular-file? f)
+                         (str/ends-with? (str f) ".edn")
+                         (< (- now (.toMillis (fs/last-modified-time f))) bound)))
+                  (fs/list-dir dir)))))))))
+
+(defn- departing-working-signal
+  "BL-1535: which 'this role is actually doing something' signal (if any)
+   holds the departing role - the existing footer probe (already computed
+   by the caller, not recomputed here), a live process descended from the
+   resident pane, or a fresh standing audit challenge. Any one suffices;
+   checked in that order. Returns nil when none apply (an idle holder)."
+  [socket session role footer-busy?]
+  (cond
+    footer-busy? "busy-footer"
+    (resident-pane-live-descendant? socket session) "live-descendant-process"
+    (fresh-audit-challenge? role) "fresh-audit-challenge"
+    :else nil))
+
 (defn- attempt-resident-rotate!
   "Shared gate+rotate for chase. Returns the rotate-resident-to! result map,
-   or {:ok false :reason ...} when the busy/cooldown/already-active gate
-   refuses. Logs the same chase-rotate-* lines the single-target path used."
+   or {:ok false :reason ...} when the busy/cooldown/departing-mid-parcel/
+   already-active gate refuses. Logs the same chase-rotate-* lines the
+   single-target path used.
+   BL-1535: also feeds should-rotate-resident? :departing-parcel? (the
+   departing role's in_process holds a real *.handoff -
+   departing-role-blocking-handoff already computes this) and
+   :departing-working? (departing-working-signal above) so a working
+   holder mid-parcel is never displaced for a DIFFERENT target; a refusal
+   on that gate additionally appends one chaser-telemetry row naming the
+   departing role, the held parcel and the signal that held it.
+   BL-1535 architect bounce (D1): departing-role-blocking-handoff is
+   BL-927-aware — when the active-role marker disagrees with the resident
+   pane's live identity, it resolves :role from the LIVE identity, not the
+   raw marker. Both :role and :blocking-file are destructured from that
+   ONE call and the resolved role (falling back to the marker only when
+   it is nil, matching departing-role-blocking-handoff's own fail-open
+   contract) is what feeds departing-working-signal and the telemetry
+   :role field, so :departing-parcel? and :departing-working?/telemetry
+   always describe the SAME role. :active-role fed to
+   should-rotate-resident? stays the raw marker (pre-existing, shared
+   with the untouched :already-active/:busy branches)."
   [socket target-role]
-  (let [gate (mono-router-lib/should-rotate-resident?
-              {:active-role (handoff-lib/read-mono-router-active-role)
+  (let [marker-role (handoff-lib/read-mono-router-active-role)
+        session (handoff-lib/mono-router-resident-session)
+        {:keys [role blocking-file]} (handoff-lib/departing-role-blocking-handoff)
+        departing-role (or role marker-role)
+        footer-busy? (resident-pane-busy? socket)
+        working-signal (departing-working-signal socket session departing-role footer-busy?)
+        gate (mono-router-lib/should-rotate-resident?
+              {:active-role marker-role
                :target-role target-role
                ;; BL-921: a stale marker claiming the resident is already
                ;; target-role must not refuse the very rotate that would fix it.
-               :live-role (handoff-lib/resident-live-role socket (handoff-lib/mono-router-resident-session))
-               :resident-busy? (resident-pane-busy? socket)
+               :live-role (handoff-lib/resident-live-role socket session)
+               :resident-busy? footer-busy?
                :ignore-busy? (ambulance-patient-waiting-at? target-role)
+               :departing-parcel? (some? blocking-file)
+               :departing-working? (some? working-signal)
                :last-rotate-at-ms @last-chase-rotate-at-ms
                :now-ms (System/currentTimeMillis)
                :cooldown-ms mono-router-lib/default-rotate-cooldown-ms})]
     (if (not= gate :rotate)
       (do (log! (str "chase-rotate-" (name gate)) target-role)
+          (when (= gate :departing-mid-parcel)
+            (log-chaser-telemetry!
+             {:type "departing-mid-parcel" :role departing-role
+              :handoffId (str (fs/file-name blocking-file)) :signal working-signal}
+             (System/currentTimeMillis)))
           {:ok false :reason (name gate)})
       (let [result (handoff-lib/rotate-resident-to! target-role)]
         (when (:ok result)
