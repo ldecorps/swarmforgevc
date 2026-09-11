@@ -1,0 +1,159 @@
+id: BL-1540
+title: "test_shell_fixture_dispatch_isolation.sh has been red on main since 2026-09-03 with no owner: test_ceremony_handoff_cli.sh (BL-1360) and test_bl1097_router_refuses_dispatched_ticket.sh (BL-1415) each execute a self-rooting helper through the REAL scripts dir - ceremony_handoff.sh and route_backlog_to_coder.sh both cd to their own dirname - so they dispatch into this checkout instead of their fixture; both dispatch through a fixture copy and the guard is green"
+milestone: M8
+type: defect
+severity: high
+# high: a standing red is severity high at first sighting (Article 3.2.4,
+# 2026-09-05 amendment). The guard's rule exists because a test that
+# dispatches into the real checkout can claim a live parcel out of a real
+# role's mailbox (BL-998) - the red is a live hazard's signal, not cosmetic.
+status: todo
+epic: code-quality-gates
+priority: 8
+direction: swarm-reported
+depends_on: []
+mutation_cost: low
+# low: two shell tests change how they reach their subject (a fixture copy
+# via the existing install_scripts helper, or an equivalent copy of the one
+# script into the fixture); no production line changes. Shell has no
+# mutation/CRAP/DRY wired (BL-472); the hardener gates on the two tests and
+# the guard and records the fallback.
+slice_size_envelope: low
+required_stages: [coder, cleaner, architect, hardender, documenter, qa]
+
+acceptance: specs/features/BL-1540-two-shell-tests-dispatch-a-self-rooting-helper-through-the-real-scripts-dir.feature
+
+# No consumer anchor (BL-1235): the two tests are the subjects; an anchor on
+# `install_scripts` inside either would be satisfied by the parcel's own edit
+# and gate nothing. The pre-existing guard is the live consumer that proves
+# the repair - scenario 02.
+required_wiring:
+  - 'specs/pipeline/steps/bl1540DispatchIsolationOffendersSteps.js::registerSteps::the handler lands in the same parcel as the feature (BL-233)'
+
+human_approval: pending
+approval_context: >
+  A new feature file is authored here, so it needs a tap. No choice is posed
+  and there are no ruling_options. FIRM: both tests keep asserting exactly
+  what they assert today and only change how they reach ceremony_handoff.sh
+  and route_backlog_to_coder.sh - through a copy inside their own fixture,
+  never a $SCRIPT_DIR/../ path; neither production script changes; the
+  guard itself is not edited here (its derivation defect is BL-1539, a
+  separate ticket that does not change which tests are flagged).
+
+invariants: []
+
+description: |
+  ## What is wrong
+
+  `swarmforge/scripts/test/test_shell_fixture_dispatch_isolation.sh` (the
+  BL-998 guard) fails on `main` (verified 2026-09-11 at `84067ea1ce`):
+
+  ```
+  FAIL: these shell tests execute a self-rooting helper from the REAL scripts dir,
+        so they dispatch into this checkout instead of their own fixture - and can
+        claim a live parcel out of a real role's mailbox:
+          test_bl1097_router_refuses_dispatched_ticket.sh:$ROUTE_SH -> route_backlog_to_coder.sh
+          test_ceremony_handoff_cli.sh:$CEREMONY -> ceremony_handoff.sh
+  exit 1
+  ```
+
+  Both are genuine offences by the guard's rule. `test_ceremony_handoff_cli.sh`
+  binds `CEREMONY="$SCRIPT_DIR/../ceremony_handoff.sh"` (line 19) and runs
+  it (line 61); `ceremony_handoff.sh` does `cd "$(dirname "$0")"` on line
+  4. `test_bl1097_router_refuses_dispatched_ticket.sh` binds
+  `ROUTE_SH="$SCRIPT_DIR/../route_backlog_to_coder.sh"` (line 21) and runs
+  it (line 45); `route_backlog_to_coder.sh` does the same on line 27. Both
+  tests postdate the guard (0ad07895b1 BL-1360 2026-09-03; 3c8e08e3e4
+  BL-1415 2026-09-05) and the guard runs in no standing lane, so nothing
+  said so for eight days.
+
+  Both tests do pass a fixture `$ROOT` and set `SWARMFORGE_ROLE`; the
+  guard's rule is nonetheless that a helper which cd's to its own dirname
+  is invoked ONLY through a copy that lives inside the fixture, because
+  which root such a helper ends up acting on is decided by where the script
+  file sits, not by an argument - the BL-998 incident.
+
+  ## Census (the population, counted, not assumed)
+
+  Evidence: `backlog/evidence/BL-1538-BL-1541-specifier-unowned-red-census-20260911.md`
+  §3. The guard's own offence derivation IS the census: two offenders on
+  main today. Previewed with BL-1539's two derivation fixes applied to a
+  scratch copy of the guard, the list is the SAME two files - repairing them
+  greens the guard both before and after BL-1539 lands.
+
+  ## What is wanted
+
+  - Each of the two tests reaches its subject through a copy inside its own
+    fixture, never a `$SCRIPT_DIR/../` path (scenario 01).
+  - The guard is green on main (scenario 02).
+  - Each repaired test is itself still green (scenario 03).
+  - Documenter: no registered diagram depicts shell-test fixtures; `docs/`
+    change, if any, is the standing-suite note.
+  - Register: after QA lands, `backlog/standing-reds.tsv` carries no row for
+    the guard and `bb swarmforge/scripts/standing_red_register_cli.bb .`
+    reports it gone.
+
+  ## How (direction, not mandate)
+
+  The guard's own FAIL text names the fix: `source lib/install_scripts.sh`
+  and `install_scripts "$ROOT"` (BL-998's shared helper, five call sites
+  already - `test_ready_for_next_no_promotion.sh` lines 34/52 is one), then
+  bind the helper from `$ROOT/swarmforge/scripts/`. If copying the whole
+  scripts tree is heavier than a test wants, copying the ONE script plus
+  whatever it sources into the fixture's `swarmforge/scripts/` is the same
+  shape at smaller cost - what matters to the guard is that the executed
+  path is not anchored at the real dir. Check that each test's assertions
+  still hold against the copy (the router test counts emitted parcels under
+  `$ROOT/.swarmforge/handoffs`; the ceremony test stubs its PATH).
+
+constraints: >
+  Test-only parcel: `ceremony_handoff.sh`, `route_backlog_to_coder.sh` and
+  the guard are not edited; every existing check in both tests keeps its
+  meaning (a check that goes green only because the copy no longer does what
+  the real script does is a regression, not a fix). BL-1539 edits the guard
+  and is independent - the coordinator need not serialise the two.
+
+out_of_scope: |
+  - The guard's fail-open derivation (`grep -q` under pipefail, the regex
+    gap) - BL-1539.
+  - Putting the guard into a standing lane so the next offence is seen the
+    day it lands - the same gap BL-1524/BL-1526 record for the bb suite.
+
+qa_e2e_procedure: |
+  1. Acceptance resolving all three scenarios of the feature file.
+  2. `bash swarmforge/scripts/test/test_shell_fixture_dispatch_isolation.sh`
+     exits 0 and prints the PASS line.
+  3. `bash swarmforge/scripts/test/test_ceremony_handoff_cli.sh` and
+     `bash swarmforge/scripts/test/test_bl1097_router_refuses_dispatched_ticket.sh`
+     each exit 0 with every check reported as before the parcel (compare the
+     check names against the pre-parcel run).
+  4. `grep -n 'SCRIPT_DIR/\.\./' ` on both tests shows no line binding
+     `ceremony_handoff.sh` or `route_backlog_to_coder.sh` through the real
+     dir; the executed path is under the fixture root.
+  5. Negative control: revert one test's change in a scratch copy of the
+     test dir and confirm the guard names it again.
+  6. `bb swarmforge/scripts/standing_red_register_cli.bb .` reports no row
+     for the guard and `"unowned":[]`.
+
+source: |
+  Specifier sighting, 2026-09-11, while running the BL-998 guard by hand to
+  trace bl998_guard_membership_property_runner.bb's red (BL-1539): the guard
+  itself exited 1 naming the two tests. Both offences confirmed by reading
+  the tests and their targets; evidence file above, §3.
+
+notes: |
+  - Minted 2026-09-11 by the specifier the same pass the red was sighted,
+    per the standing-red rule (Article 3.2.4, 2026-09-05 amendment): type
+    defect, severity high, register row added in the mint commit with
+    first_seen 2026-09-03 (the ceremony test's landing, the earlier of the
+    two offences).
+  - Not a fold-in: no open ticket names the guard or either test. BL-1360
+    and BL-1415, which wrote the tests, are done.
+  - BL-1539 (the guard's derivation) and this ticket are independent by
+    construction: the preview in the evidence file shows the fixed
+    derivation names the same two offenders and no others.
+  - IR-DRY: one `near-duplicate` (scenario 02's "runs the guard" versus
+    03's "runs <test>") was accidental drift and was normalized onto the
+    quoted-path form at mint. One `possible-synonym` survives - "reports no
+    failed check" (03) versus "reports no offending shell test" (02) - the
+    two runs report different things; do not collapse.

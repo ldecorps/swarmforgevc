@@ -1,0 +1,153 @@
+id: BL-1541
+title: "five bb property runners have been red on main since 2026-08-30 with no owner - bl983_stage_queue, bl982_multi_seat_identity, bl992_declaration_ref_lookup, bl991_binding_stages, bl951_stage_skip_recording - because each drafts a git_handoff and asserts the queue after ONE swarm_handoff.bb call, which the two-call self-audit (44d2d42591) answers with AUDIT_REQUIRED at exit 0 and queues nothing; each runner answers the challenge with the identical draft and asserts the second call, and all five are green"
+milestone: M8
+type: defect
+severity: high
+# high: a standing red is severity high at first sighting (Article 3.2.4,
+# 2026-09-05 amendment). Five property suites over stage routing, seat
+# identity, declaration lookup, binding stages and skip recording have
+# asserted nothing for twelve days.
+status: todo
+epic: code-quality-gates
+priority: 8
+direction: swarm-reported
+depends_on: []
+mutation_cost: low
+# low: the same mechanical change in five test runners' send helpers (call
+# the CLI twice with the identical draft, assert the second); no production
+# line changes. Babashka has no mutation/CRAP/DRY wired (BL-472); the
+# hardener gates on the five runners and records the fallback.
+slice_size_envelope: low
+required_stages: [coder, cleaner, architect, hardender, documenter, qa]
+
+acceptance: specs/features/BL-1541-five-bb-property-runners-answer-the-self-audit-challenge-before-asserting-the-queue.feature
+
+# No consumer anchor (BL-1235): swarm_handoff.bb is the pre-existing live
+# mechanism and the runners are the subjects; any anchor on a runner's own
+# send helper would be satisfied by the parcel's edit. Handler anchor is the
+# BL-233 pin only.
+required_wiring:
+  - 'specs/pipeline/steps/bl1541GitHandoffRunnersAnswerAuditSteps.js::registerSteps::the handler lands in the same parcel as the feature (BL-233)'
+
+human_approval: pending
+approval_context: >
+  A new feature file is authored here, so it needs a tap. No choice is posed
+  and there are no ruling_options. FIRM: the self-audit stays exactly as it
+  is (no bypass flag, no test-only shortcut in swarm_handoff.bb - the audit
+  is what BL-1306 and BL-1529 defend); each runner answers the challenge the
+  way a live sender does, by re-invoking with the byte-identical draft, and
+  asserts the second call; every property the five runners already state
+  keeps its meaning.
+
+invariants:
+  - "A runner's send helper never reports a queued parcel it did not observe: the queue assertion reads the mailbox, not the CLI's exit code, after the second call."
+
+description: |
+  ## What is wrong
+
+  Five bb property runners fail on `main` (verified 2026-09-11 at
+  `84067ea1ce`), all for one cause:
+
+  | runner | failure |
+  |---|---|
+  | `bl983_stage_queue_property_runner.bb` | every draw `N parcels sent but 0 accounted for`; `redeliver`/`forward` coverage 0 of 16 |
+  | `bl982_multi_seat_identity_property_runner.bb` | `stage-addressed parcel did not land in the bare seat's inbox` every draw |
+  | `bl992_declaration_ref_lookup_property_runner.bb` | dies printing the audit challenge text |
+  | `bl991_binding_stages_property_runner.bb` | `Cannot open <nil> as a Reader` at `send!` line 176 - slurps the queued file the CLI output names, and none is named |
+  | `bl951_stage_skip_recording_property_runner.bb` | same, line 120 |
+
+  Each runner drafts a `type: git_handoff` and calls the REAL
+  `swarm_handoff.bb` ONCE, then asserts the queue. Since `44d2d42591`
+  (2026-08-30, "two-call AUDIT_REQUIRED") the first invocation of a
+  `git_handoff` draft fingerprint is answered with the self-audit challenge
+  - `AUDIT_REQUIRED` / `HANDOFF_NOT_QUEUED`, exit 0, nothing queued - and
+  only an identical second invocation queues. Replicated with bl983's exact
+  shape (fixture git root, roles.tsv, one draft under the sender's seat dir,
+  one call): challenge printed, exit 0, zero `.handoff` files. All five
+  runners predate the landing and were never updated. BL-1529 owns the same
+  landing's effect on script VERBS (`redo_from`, `reroute`) and their two
+  shell tests; these five runners are themselves the senders, a different
+  site, so a separate owner.
+
+  ## Census (the population, counted, not assumed)
+
+  Evidence: `backlog/evidence/BL-1538-BL-1541-specifier-unowned-red-census-20260911.md`
+  §4. bb runners under `swarmforge/scripts/test/` invoking `swarm_handoff.bb`
+  = 28 (`grep -ln swarm_handoff.bb *.bb`); of those drafting `git_handoff`
+  = 12 (`grep -l git_handoff` over the 28). All 12 run: the five above are
+  red; `bl1306_audit_reroute_test_runner.bb` is green because it tests the
+  two-call audit itself; the other six are green. That is the whole
+  population.
+
+  ## What is wanted
+
+  - Each of the five runners is green (scenario 01).
+  - The population is pinned: the set of bb runners that draft a
+    `git_handoff` and invoke `swarm_handoff.bb` contains the five (scenario
+    02), so a renamed or deleted runner cannot make this ticket green by
+    absence.
+  - Documenter: no registered diagram depicts test runners; `docs/` change,
+    if any, is the standing-suite note.
+  - Register: after QA lands, `backlog/standing-reds.tsv` carries no row for
+    any of the five and `bb swarmforge/scripts/standing_red_register_cli.bb .`
+    reports them gone.
+
+  ## How (direction, not mandate)
+
+  `bl1306_audit_reroute_test_runner.bb` already shows the shape: first call
+  asserted to print `AUDIT_REQUIRED` and queue nothing, second call with the
+  same draft asserted to queue. In each runner's send helper (`send!` in
+  bl991/bl983/bl951, the equivalent in bl982/bl992) invoke the CLI twice
+  with the identical draft file and take the second call's output as the
+  send result. A small shared helper under `swarmforge/scripts/test/lib/`
+  (a bb `send-through-audit!`) is welcome if it stays a test lib; do not
+  add a bypass to `swarm_handoff.bb`. Each runner's property assertions
+  (parcel accounting, seat delivery, ref lookup, binding stages, skip
+  recording) stay exactly as written - they are the oracle, and they must
+  go green on their merits, not be loosened.
+
+constraints: >
+  Test-only parcel: `swarm_handoff.bb`, `handoff_lib.bb` and the self-audit
+  are not edited; no production script under swarmforge/scripts/ changes.
+  Every existing property in the five runners keeps its meaning and its
+  coverage floors. The seven green runners in the census are not touched.
+
+out_of_scope: |
+  - `test_redo_from.sh` / `test_reroute.sh` and the script verbs - BL-1529.
+  - Wiring the bb runner suite into a standing lane so the next landing that
+    changes the CLI's contract is seen the day it lands - the gap
+    BL-1524/BL-1526 record.
+
+qa_e2e_procedure: |
+  1. Acceptance resolving both scenarios of the feature file.
+  2. Each of the five runners, run by name with `bb`, exits 0 and prints its
+     own ALL-HOLD / coverage line; bl983's coverage line shows `redeliver`
+     and `forward` at or above their floors (4 of 16). Run each twice.
+  3. `git diff <base>..<parcel> -- swarmforge/scripts/swarm_handoff.bb
+     swarmforge/scripts/handoff_lib.bb` is empty.
+  4. Negative control: in a scratch copy, make one runner's send helper call
+     the CLI once again and confirm that runner is red again with its
+     original failure - proving the second call, not a loosened assertion,
+     is what greened it.
+  5. `bb swarmforge/scripts/standing_red_register_cli.bb .` reports no row
+     for any of the five and `"unowned":[]`.
+
+source: |
+  Specifier sighting, 2026-09-11, while censusing bb runners for the coder's
+  bl1028 unowned-red note (BL-1538): bl983 was red in the `fs/copy` sweep;
+  tracing it to the single `swarm_handoff.bb` call led to censusing all 12
+  `git_handoff`-drafting bb runners, five red for the one cause. Evidence
+  file above, §4.
+
+notes: |
+  - Minted 2026-09-11 by the specifier the same pass the reds were sighted,
+    per the standing-red rule (Article 3.2.4, 2026-09-05 amendment): type
+    defect, severity high, five register rows added in the mint commit with
+    first_seen 2026-08-30 (the two-call audit's landing).
+  - One ticket for five files, not five tickets: the register is keyed per
+    file (five rows) but the defect is one site-shape repeated - a
+    mechanical change in five send helpers is one sitting (INVEST-S), and
+    five parcels would each re-derive the same census.
+  - Not a fold-in to BL-1529: its deliverable is the script verbs' sending
+    path and it names only the two shell tests; the runners are their own
+    senders.
