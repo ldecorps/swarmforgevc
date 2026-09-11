@@ -158,3 +158,5 @@ qa_e2e_procedure: |
      paths at all (an empty `P1`); the reach floor fails naming `decisive`
      and scenario 03 fails; restore. Then set invariant 1's `numRuns` to
      15 with two sweeps per draw; scenario 02 fails on `sweeps`; restore.
+
+assigned_to: coder
