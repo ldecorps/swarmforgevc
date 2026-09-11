@@ -1719,15 +1719,27 @@
    :departing-working? (departing-working-signal above) so a working
    holder mid-parcel is never displaced for a DIFFERENT target; a refusal
    on that gate additionally appends one chaser-telemetry row naming the
-   departing role, the held parcel and the signal that held it."
+   departing role, the held parcel and the signal that held it.
+   BL-1535 architect bounce (D1): departing-role-blocking-handoff is
+   BL-927-aware — when the active-role marker disagrees with the resident
+   pane's live identity, it resolves :role from the LIVE identity, not the
+   raw marker. Both :role and :blocking-file are destructured from that
+   ONE call and the resolved role (falling back to the marker only when
+   it is nil, matching departing-role-blocking-handoff's own fail-open
+   contract) is what feeds departing-working-signal and the telemetry
+   :role field, so :departing-parcel? and :departing-working?/telemetry
+   always describe the SAME role. :active-role fed to
+   should-rotate-resident? stays the raw marker (pre-existing, shared
+   with the untouched :already-active/:busy branches)."
   [socket target-role]
-  (let [departing-role (handoff-lib/read-mono-router-active-role)
+  (let [marker-role (handoff-lib/read-mono-router-active-role)
         session (handoff-lib/mono-router-resident-session)
-        blocking-file (:blocking-file (handoff-lib/departing-role-blocking-handoff))
+        {:keys [role blocking-file]} (handoff-lib/departing-role-blocking-handoff)
+        departing-role (or role marker-role)
         footer-busy? (resident-pane-busy? socket)
         working-signal (departing-working-signal socket session departing-role footer-busy?)
         gate (mono-router-lib/should-rotate-resident?
-              {:active-role departing-role
+              {:active-role marker-role
                :target-role target-role
                ;; BL-921: a stale marker claiming the resident is already
                ;; target-role must not refuse the very rotate that would fix it.
