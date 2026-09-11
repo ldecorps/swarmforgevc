@@ -6,6 +6,8 @@
 flowchart TD
   START(["sender role finishes work\nand commits"])
   DRAFT["writes a handoff draft\n(field: value headers, not JSON)"]
+  ROOTGUARD{"draft-root-guard!:\ndraft path lies under the\nresolved project root?"}
+  OUTSIDEROOT(["HANDOFF_DRAFT_OUTSIDE_ROOT:\nrefused before any write,\nnames draft path + resolved root"])
   VALIDATE{"swarm_handoff.bb validates:\ntype / to / priority present,\ncommit resolves to exactly\nONE commit object"}
   REJECT(["rejected: nothing is written,\nsender fixes the draft"])
   WRITE["writes NN_<ts>_<seq>_from_X_to_Y.handoff\ninto recipient inbox/new/\n(NN = priority prefix, 00 = highest)"]
@@ -33,7 +35,9 @@ flowchart TD
   DONE["done_with_current.sh:\nin_process/ -> completed/\n(BL-652: any argv fails fast,\nzero side effects)"]
   STALE(["skipping this leaves a stale claim\nthat re-shows on the next wake"])
 
-  START --> DRAFT --> VALIDATE
+  START --> DRAFT --> ROOTGUARD
+  ROOTGUARD -->|outside root| OUTSIDEROOT
+  ROOTGUARD -->|inside root| VALIDATE
   VALIDATE -->|invalid| REJECT
   VALIDATE -->|valid| WRITE
   WRITE --> SENT
@@ -66,8 +70,8 @@ flowchart TD
   classDef store fill:#57606a,color:#fff,stroke:#32383f;
   classDef act fill:#1f6feb,color:#fff,stroke:#0b3d91;
   classDef daemon fill:#8250df,color:#fff,stroke:#4c2889;
-  class VALIDATE,CHASE,PICK,GUARD,DEFERCHECK gate;
-  class REJECT,REQUEUE,STALE bad;
+  class VALIDATE,CHASE,PICK,GUARD,DEFERCHECK,ROOTGUARD gate;
+  class REJECT,REQUEUE,STALE,OUTSIDEROOT bad;
   class WRITE,SENT,CLAIM,DONE,WAIT,DEFERRED store;
   class DRAFT,READY,WORK,FORWARD,AUTOFIX,DEPTH act;
   class DAEMON,WAKE daemon;
