@@ -16,6 +16,17 @@
         (println (str "  actual:   " (pr-str actual)))
         (swap! failures inc))))
 
+;; BL-1501: sweep every temp root this runner creates before the process
+;; exits, same idiom as availability_ledger_lib_test_runner.bb etc.
+(def created-temp-dirs (atom []))
+(.addShutdownHook (Runtime/getRuntime)
+                  (Thread. (fn [] (doseq [d @created-temp-dirs] (try (fs/delete-tree d) (catch Exception _ nil))))))
+
+(defn mk-tmp []
+  (let [d (str (fs/create-temp-dir {:prefix "bl1501-"}))]
+    (swap! created-temp-dirs conj d)
+    d))
+
 ;; ── land record parsing ─────────────────────────────────────────────────────
 (assert= "parse: valid rows in order, blank + corrupt lines skipped"
          [{:ticket "BL-1278" :commit "67200bad87"} {:ticket "BL-1376" :commit "049161fc03"}]
@@ -27,7 +38,7 @@
 
 (assert= "parse: empty text -> no rows" [] (landed-ticket-autoclose-lib/parse-land-approval-lines ""))
 
-(let [root (str (fs/create-temp-dir))
+(let [root (mk-tmp)
       dir (fs/path root ".swarmforge" "land-approvals")]
   (fs/create-dirs dir)
   (spit (str (fs/path dir "2026-09.jsonl")) "{\"ticket\":\"BL-2\",\"commit\":\"bbbbbbbbbb\"}\n")
@@ -37,7 +48,7 @@
            (landed-ticket-autoclose-lib/read-land-approval-rows root)))
 
 (assert= "read rows: missing store -> []"
-         [] (landed-ticket-autoclose-lib/read-land-approval-rows (str (fs/create-temp-dir))))
+         [] (landed-ticket-autoclose-lib/read-land-approval-rows (mk-tmp)))
 
 ;; ── store index ─────────────────────────────────────────────────────────────
 (let [rows [{:ticket "BL-1" :commit "1111111111aaaa"}
@@ -76,10 +87,10 @@
          (take 3 (landed-ticket-autoclose-lib/coordinator-draft-lines "BL-1278" "67200bad87")))
 
 ;; ── attempts file round trip ────────────────────────────────────────────────
-(let [dir (str (fs/create-temp-dir))]
+(let [dir (mk-tmp)]
   (landed-ticket-autoclose-lib/write-attempt! dir "BL-1278" 1234)
   (assert= "attempts round-trip" {:BL-1278 1234} (landed-ticket-autoclose-lib/read-attempts dir))
-  (assert= "attempts: missing file -> {}" {} (landed-ticket-autoclose-lib/read-attempts (str (fs/create-temp-dir)))))
+  (assert= "attempts: missing file -> {}" {} (landed-ticket-autoclose-lib/read-attempts (mk-tmp))))
 
 ;; ── one attempt through fakes ───────────────────────────────────────────────
 (defn run-attempt [close-result & {:keys [attempts now]}]
