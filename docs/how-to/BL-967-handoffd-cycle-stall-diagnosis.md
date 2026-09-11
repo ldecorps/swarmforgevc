@@ -97,6 +97,21 @@ exempt set stays exactly `#{"daemon_cycle_guard_lib.bb"}`. The runner's
 other two FAIL lines (unresolved spawn targets, spawn-reachable subtree
 debt) are separate, still-open tickets (BL-1525/BL-1526).
 
+**Update, BL-1525 (2026-09-11):** the spawn-reachable subtree's `bl1031`
+FAIL line (`ticket_close_guard_lib.bb`'s two git calls,
+`unregistered_test_gate_lib.bb`'s git helper, `expedite_cli.bb`'s own `sh`
+helper) is closed the same way — all four now route through `sh!`. Per
+human ruling A, `bounded_run_lib.bb` (BL-1103's shared bounded runner,
+used by `expedite_cli.bb` and `babysitter_check.bb`) no longer holds its
+own private `babashka.process` call and setsid/group-kill trap either:
+`sh!` gained a per-call `:bound-ms` override and a `:kill-mode :group`
+option (setsid + whole-process-group kill), and `run-bounded!` is now a
+thin wrapper over `sh!` with its external signature unchanged — callers
+see no difference. `daemon_api_ban_lib.bb`'s exempt set is unchanged
+(still `#{"daemon_cycle_guard_lib.bb"}` only — `bounded_run_lib.bb` never
+needed an entry of its own). The runner's remaining FAIL line (unresolved
+spawn targets) is BL-1526's, still open.
+
 **Update, BL-1021 (2026-08-21):** the bound above used to cover only the
 *exit-code* wait — `(deref proc bound ::timed-out)`. If the direct child
 exited promptly but something it spawned kept the inherited stdout/stderr

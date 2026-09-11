@@ -13,7 +13,6 @@
 
 (ns ticket-close-guard-lib
   (:require [babashka.fs :as fs]
-            [babashka.process :as process]
             [cheshire.core :as json]
             [clojure.string :as str]))
 
@@ -21,6 +20,13 @@
 (load-file (str (fs/path (fs/parent (fs/canonicalize *file*)) "ticket_status_lib.bb")))
 (load-file (str (fs/path (fs/parent (fs/canonicalize *file*)) "handoff_lib.bb")))
 (load-file (str (fs/path (fs/parent (fs/canonicalize *file*)) "salvage_lib.bb")))
+;; BL-1525: the two git waits below route through the bounded chokepoint -
+;; handoffd.bb spawns handoff_inject.bb/etc reaching swarm_handoff.bb, which
+;; load-files this lib, so a plain process/sh here was a spawn-reachable
+;; banned-API offender (BL-1031's ratchet). Self-load-filed rather than
+;; relying on a loader to have brought it in first, same convention as
+;; every other daemon-reachable lib.
+(load-file (str (fs/path (fs/parent (fs/canonicalize *file*)) "daemon_cycle_guard_lib.bb")))
 
 (defn ticket-id-from-backlog-path
   "Extract BL-551 / GH-22 from a backlog yaml path or filename."
@@ -213,11 +219,11 @@
    (BL-891); a yes from either is a yes."
   [root commit]
   (let [ask (fn [ref]
-              (let [{:keys [exit]} (process/sh {:dir (str root) :continue true}
+              (let [{:keys [exit]} (daemon-cycle-guard-lib/sh! {:dir (str root) :continue true}
                                                "git" "merge-base" "--is-ancestor" commit ref)]
                 exit))
         resolvable? (fn [ref]
-                      (zero? (:exit (process/sh {:dir (str root) :continue true}
+                      (zero? (:exit (daemon-cycle-guard-lib/sh! {:dir (str root) :continue true}
                                                 "git" "rev-parse" "--verify" "--quiet" (str ref "^{commit}")))))
         refs (filter resolvable? ["main" "origin/main"])]
     (cond

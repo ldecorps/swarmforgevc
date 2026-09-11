@@ -35,11 +35,15 @@
 
 (ns expedite-cli
   (:require [babashka.fs :as fs]
-            [babashka.process :as process]
             [cheshire.core :as json]
             [clojure.string :as str]))
 
 (def scripts-dir (fs/parent (fs/canonicalize *file*)))
+;; BL-1525: this file's own `sh` helper (below) and bounded_run_lib.bb's
+;; run-bounded! both route through the bounded chokepoint - loaded here
+;; directly rather than relying on bounded_run_lib.bb's own load-file of it
+;; to have run first.
+(load-file (str (fs/path scripts-dir "daemon_cycle_guard_lib.bb")))
 (load-file (str (fs/path scripts-dir "expedite_lib.bb")))
 ;; BL-1249: reuse backlog_depth_lib's own control-pause.json path resolution
 ;; (resolve-identity-root — the MASTER checkout, found from any worktree)
@@ -77,8 +81,11 @@
   (or (some-> (System/getenv "EXPEDITE_NOW_MS") parse-long)
       (System/currentTimeMillis)))
 
+;; BL-1525: routed through the bounded chokepoint - handoffd.bb spawns this
+;; file directly, so a plain process/sh here was a spawn-reachable
+;; banned-API offender (BL-1031's ratchet).
 (defn- sh [opts & cmd]
-  (apply process/sh (assoc opts :continue true) cmd))
+  (apply daemon-cycle-guard-lib/sh! (assoc opts :continue true) cmd))
 
 ;; BL-1103: private name kept at call sites; body lives in bounded_run_lib.bb.
 ;; The expeditor needs an ENFORCED bound (not a post-hoc report): by stopping
