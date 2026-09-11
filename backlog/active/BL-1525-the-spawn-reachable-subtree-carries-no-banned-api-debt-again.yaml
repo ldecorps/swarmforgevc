@@ -34,6 +34,9 @@ required_wiring:
   - 'specs/pipeline/steps/bl1525SpawnSubtreeBannedApiDebtSteps.js::registerSteps::the handler lands in the same parcel as the feature (BL-233)'
 
 human_approval: approved
+human_ruling: |
+  A - one chokepoint, sh! gains a per-call bound and run-bounded! becomes a thin wrapper over it (recommended)
+ruling_provenance: relayed by specifier
 ruling_options:
   - A - one chokepoint, sh! gains a per-call bound and run-bounded! becomes a thin wrapper over it (recommended)
   - B - two sanctioned chokepoints, daemon_api_ban_lib exempts bounded_run_lib.bb beside daemon_cycle_guard_lib.bb
@@ -165,6 +168,12 @@ notes: |
   present. BL-1478 landed 2026-09-11, so option A's "promote after
   BL-1478" precondition is satisfied either way. ruling_tradeoffs added
   the same pass per the 2026-09-11 rule (BL-1531).
+  2026-09-11 15:34Z (specifier): human answered the role_ask with "A - one
+  chokepoint (recommended)". Recorded via relay-ruling.js as human_ruling
+  (option A's full label, ruling_provenance relayed by specifier); answer
+  filed at backlog/answers-archive/ANSWER-2026-09-11-bl1525-one-chokepoint-ruling-a.md.
+  Coder may start: sh! gains the per-call bound, run-bounded! becomes a
+  thin wrapper over it, bounded_run_lib.bb stops naming babashka.process.
   Register: no row of its own; the `bb`-lane and `acceptance`-lane rows
   for this runner name BL-1526, which depends on this ticket and BL-1524
   (see BL-1524 notes for why the row names the last-landing sibling).
