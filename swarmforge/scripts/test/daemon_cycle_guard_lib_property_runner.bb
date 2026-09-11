@@ -99,6 +99,24 @@
 ;;     :err corroboration) from being decorative: BREAK 1 alone would leave
 ;;     them unexercised, because under it nothing ever reaches the branch.
 
+;; BL-1478 (declared invariant, coder-authored per BL-654):
+;;
+;;   "For every compiled-tool sweep, every non-zero exit of the tool - an
+;;   ordinary failure, the wait-bound kill (124) or a spawn that never
+;;   happened (127) - produces exactly one log line carrying the sweep
+;;   name, the exit code and the first line of stderr; a zero exit produces
+;;   the same log as before this ticket and no failure line." P4 below.
+;;
+;; Non-vacuity proven at authoring time (2026-09-11), each break restored:
+;;   - BREAK A: the (if (zero? exit) ...) branch collapsed to always log
+;;     under tool-name -> failed every non-zero draw ("a non-zero exit
+;;     logged under \"<tool>\", not \"<tool>-failed\"");
+;;   - BREAK B: first-stderr-line-capped changed to return the whole err
+;;     string unmodified -> failed every multi-line draw ("expected
+;;     \"exit=1 aaa\", got \"exit=1 aaa\\nbbb\"");
+;;   - BREAK C: the 200-char cap removed -> failed every draw whose first
+;;     stderr line exceeded 200 chars.
+
 (require '[babashka.fs :as fs]
          '[clojure.string :as str])
 
@@ -461,6 +479,95 @@
   (doseq [k sweep-kinds]
     (when (< (get tally-p2 k 0) (quot runs 20))
       (report! (str "COVERAGE P2 " k) 7 {:count (get tally-p2 k 0)} "this sweep kind is barely exercised"))))
+
+;; ── P4: run-compiled-tool! never leaves a non-zero exit silent (BL-1478) ──
+
+(def tool-names ["resource-sample" "context-telemetry-producer"
+                 "turn-profile-producer" "ritual-ledger-producer"])
+(def exit-codes [0 1 2 124 127 137])
+
+(defn- gen-stderr
+  "Draws 0-4 lines, each 0-260 chars, so both the multi-line cut and the
+   per-line 200-char cap are reached BY CONSTRUCTION, not by luck."
+  [s]
+  (let [[n-lines s1] (gen-int s 5)]
+    (loop [i 0 s' s1 lines []]
+      (if (= i n-lines)
+        [(str/join "\n" lines) s']
+        (let [[len s2] (gen-int s' 261)
+              [ci s3] (gen-int s2 26)
+              ch (char (+ (int \a) ci))]
+          (recur (inc i) s3 (conj lines (apply str (repeat len ch)))))))))
+
+(defn- gen-run-compiled-tool-input [s]
+  (let [[tool-name s1] (gen-pick s tool-names)
+        [exit s2] (gen-pick s1 exit-codes)
+        [out-len s3] (gen-int s2 40)
+        [oc s4] (gen-int s3 26)
+        stdout (apply str (repeat out-len (char (+ (int \a) oc))))
+        [stderr s5] (gen-stderr s4)]
+    [{:tool-name tool-name :exit exit :stdout stdout :stderr stderr} s5]))
+
+(defn- build-p4-draws [n]
+  (loop [i 0 s 7 acc []]
+    (if (= i n)
+      acc
+      (let [[input s'] (gen-run-compiled-tool-input s)]
+        (recur (inc i) s' (conj acc (assoc input :index i)))))))
+
+(def p4-runs runs)
+(def p4-draws (build-p4-draws p4-runs))
+
+(check-draws
+ "P4 (BL-1478): a non-zero exit ALWAYS produces exactly one <tool>-failed line naming the exit and the first stderr line, cut and capped at 200 chars; a zero exit logs stdout under the tool's own key and nothing else"
+ p4-draws
+ (fn [{:keys [tool-name exit stdout stderr]}]
+   (let [logged (atom [])
+         log-fn (fn [event detail] (swap! logged conj [event detail]))]
+     (daemon-cycle-guard-lib/run-compiled-tool!
+      log-fn tool-name ["node" "x.js"] {}
+      (fn [_cmd _opts] {:exit exit :out stdout :err stderr}))
+     (cond
+       (not= 1 (count @logged))
+       (str "expected exactly one log line, got " (count @logged) ": " (pr-str @logged))
+
+       (zero? exit)
+       (let [[[event detail]] @logged]
+         (cond
+           (not= tool-name event)
+           (str "a zero exit logged under " (pr-str event) ", not the tool's own key " (pr-str tool-name))
+           (not= (str/trim stdout) detail)
+           (str "a zero exit's logged detail " (pr-str detail) " does not match trimmed stdout " (pr-str (str/trim stdout)))
+           :else true))
+
+       :else
+       (let [[[event detail]] @logged
+             first-line (first (str/split-lines stderr))
+             expected-first-line (if (and first-line (> (count first-line) 200))
+                                    (subs first-line 0 200)
+                                    first-line)
+             expected (str "exit=" exit " " expected-first-line)]
+         (cond
+           (not= (str tool-name "-failed") event)
+           (str "a non-zero exit logged under " (pr-str event) ", not " (pr-str (str tool-name "-failed")))
+           (not= expected detail)
+           (str "expected " (pr-str expected) ", got " (pr-str detail))
+           (and expected-first-line (> (count expected-first-line) 200))
+           (str "the capped first line still exceeds 200 chars: " (count expected-first-line))
+           :else true))))))
+
+(let [tally-exit (frequencies (map :exit p4-draws))
+      long-line-count (count (filter (fn [d] (some #(> (count %) 200) (str/split-lines (:stderr d)))) p4-draws))
+      multi-line-count (count (filter (fn [d] (> (count (str/split-lines (:stderr d))) 1)) p4-draws))]
+  (println (str "  generator coverage: P4 exit codes " (pr-str tally-exit)
+                ", long-first-line draws " long-line-count ", multi-line draws " multi-line-count))
+  (doseq [e exit-codes]
+    (when (< (get tally-exit e 0) 5)
+      (report! (str "COVERAGE P4 exit-" e) 7 {:count (get tally-exit e 0)} "this exit code is barely exercised")))
+  (when (< long-line-count 5)
+    (report! "COVERAGE P4 long-first-line" 7 {:count long-line-count} "a first stderr line over the 200-char cap is barely reached"))
+  (when (< multi-line-count 5)
+    (report! "COVERAGE P4 multi-line" 7 {:count multi-line-count} "multi-line stderr is barely reached")))
 
 ;; ── report ────────────────────────────────────────────────────────────────
 ;; Every spawned pipe-holder is reaped and the fixture tree removed BEFORE
