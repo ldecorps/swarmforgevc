@@ -144,3 +144,5 @@ qa_e2e_procedure: |
      acceptance scenario 01 fails; restore.
   5. `git diff main...HEAD -- backlog/standing-reds.tsv` shows the three
      rows removed and nothing else in that file.
+
+assigned_to: coder

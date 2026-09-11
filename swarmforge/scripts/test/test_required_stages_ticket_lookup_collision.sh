@@ -66,6 +66,15 @@ send() {
   local task="$1"
   local draft="$ROOT/draft.txt"
   printf 'type: git_handoff\nto: cleaner\npriority: 50\ntask: %s\ncommit: %s\n' "$task" "$HEAD10" > "$draft"
+  # BL-1530: git_handoff speaks the two-call self-audit (Article 2.3,
+  # BL-1306) - the first invocation challenges and queues nothing
+  # (BL-1306's reroute-after-audit contract), the identical second call
+  # queues. Tolerate either exit convention on the first call - BL-1529
+  # may still change it.
+  local first
+  first="$(cd "$ROOT" && SWARMFORGE_ROLE=coder SWARMFORGE_SKIP_SYNC_INJECT=1 SWARMFORGE_REQUIRED_STAGES_ROUTING=1 bb "$SWARM_HANDOFF" draft.txt 2>&1)" || true
+  grep -q "^HANDOFF_NOT_QUEUED$" <<< "$first" \
+    || fail "task=$task: first call did not print HANDOFF_NOT_QUEUED; got: $first"
   local out
   out="$(cd "$ROOT" && SWARMFORGE_ROLE=coder SWARMFORGE_SKIP_SYNC_INJECT=1 SWARMFORGE_REQUIRED_STAGES_ROUTING=1 bb "$SWARM_HANDOFF" draft.txt)"
   local outfile
