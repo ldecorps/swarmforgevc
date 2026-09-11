@@ -188,3 +188,11 @@ bounce_count: 2
 bounce_history:
   - { at: 2026-09-11, by: architect, blamed: coder, class: behavior, commit: 4483ad7e57, evidence: backlog/evidence/BL-1535-architect-bounce-20260911.md }
   - { at: 2026-09-11, by: architect, blamed: coder, class: invariant-unencoded, commit: e3178fd17d, evidence: backlog/evidence/BL-1535-architect-20260911.md }
+abandoned_commits: [9cb2ba8dde9629d57b1631aa3c1cd247e6933a73]
+# BL-1241: the cited commit was an ancestor of unlanded siblings BL-1526 and
+# BL-967 (their own lineage predates the tip-pure land machinery, per the
+# BL-1338 class); land_step_cli.bb built a tip-pure replay off origin/main
+# containing only BL-1535's own 17 paths, landed as 75fbbc40c771ae158ba08b40364e710de01d826a
+# instead. BL-1526 rides as a passenger (already done, its own content
+# landed elsewhere); BL-967 is done and pre-machinery. No content of
+# either sibling is carried by the landed commit.
