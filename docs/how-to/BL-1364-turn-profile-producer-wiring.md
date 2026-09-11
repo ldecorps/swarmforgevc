@@ -15,7 +15,7 @@ below.*
 | Core producer | `extension/src/metrics/turnProfileProducer.ts` | Walks role transcripts via BL-664's `transcriptWalker`, folds them through `buildTurnProfileSeries`, dedupes by window |
 | Summary store | `extension/src/metrics/transcriptSummaryStore.ts` | Persists one verdict per transcript path (BL-1476) — see "Bounded reads" |
 | Headless CLI | `extension/src/tools/run-turn-profile-producer.ts` | One-shot producer run for operators and acceptance |
-| Scheduled tick | `swarmforge/scripts/handoffd.bb` | `turn-profile-producer-sweep!`, defined directly after `context-telemetry-producer-sweep!` (deliberately — a sweep defined above its dependencies still loads and registers, then throws the first time it fires; BL-1392) |
+| Scheduled tick | `swarmforge/scripts/handoffd.bb` | `turn-profile-producer-sweep!`, defined directly after `context-telemetry-producer-sweep!` (deliberately — a sweep defined above its dependencies still loads and registers, then throws the first time it fires; BL-1392); a non-zero exit is logged as `turn-profile-producer-failed` with the exit code and first stderr line (BL-1478) |
 | Write path | `.swarmforge/telemetry/turn-profile-series.jsonl` (`turnProfileStorePath`) | One JSON record per window, appended directly — no separate CLI wraps this store yet |
 | Summary store path | `.swarmforge/telemetry/turn-profile-transcript-summaries.json` (`turnProfileSummaryStorePath`) | Per-transcript `{size, mtimeMs, unreadable, truncatedTail, intervals}`, keyed by absolute path (BL-1476) |
 
