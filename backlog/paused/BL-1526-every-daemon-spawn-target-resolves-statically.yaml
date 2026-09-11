@@ -1,0 +1,192 @@
+id: BL-1526
+title: "daemon_cycle_guard_lib_test_runner.bb's spawn-target assertion (bl1022: every spawn target resolved) has been red on main since 306509a6b0 (2026-08-25, BL-1139's drift auto-repair bounce spawned a let-bound `launcher`) with no owner, and four spawn sites now name a target the closure walk cannot resolve statically - handoffd.bb `launcher` and `script`, chase_sweep_lib.bb `cli`, expedite_cli.bb `runner` (the EXPEDITE_STAGE_RUNNER seam); every daemon spawn target resolves, the fail-loud contract for a truly unresolvable one is kept, and this ticket owns the register rows for the runner and BL-1031's feature"
+milestone: M8
+type: defect
+severity: high
+# high (standing-red rule 2026-09-05): a `bb`-lane test red on main is a
+# broken safety signal whatever its size. This assertion is the one that
+# says the walk skipped nothing - while it is red, four spawn edges are
+# invisible to the ban, which is exactly the blind spot BL-1022 was built
+# to close after it took production down. Not critical: three of the four
+# targets are known scripts (start_handoff_daemon.sh, close_ticket.sh,
+# commit_integrity_cli.bb) already reached by other edges or gated on
+# their own.
+status: todo
+epic: swarm-reliability
+priority: 8
+direction: swarm-reported
+depends_on: [BL-1524, BL-1525]
+mutation_cost: low
+# low: three same-file refactors (or one resolver extension with its own
+# unit cases in master_checkout_drift_lib_test_runner.bb), one seam
+# decision in expedite_cli.bb (Babashka: no mutation/CRAP/DRY wired,
+# BL-472; the hardener gates on the bb unit and property runners and
+# records the fallback). One step-handler file.
+slice_size_envelope: low
+required_stages: [coder, cleaner, architect, hardender, documenter, qa]
+
+acceptance: specs/features/BL-1526-every-daemon-spawn-target-resolves-statically.feature
+
+# No consumer anchor is honest here (BL-1235): the live consumer already
+# exists and is the thing that is red - the runner's walk over handoffd.bb.
+# The only anchor is the handler landing with the feature (BL-233).
+required_wiring:
+  - 'specs/pipeline/steps/bl1526SpawnTargetsResolveStaticallySteps.js::registerSteps::the handler lands in the same parcel as the feature (BL-233)'
+
+human_approval: pending
+approval_context: >
+  A new feature file is authored here, so it needs a tap. No choice is
+  posed and there are no ruling_options. FIRM: the walk's fail-loud
+  contract survives - a spawn target it genuinely cannot resolve is still
+  reported, never dropped (scenario 03); and the green is never earned by
+  hiding a site from the walk (rewriting `["bash" x ...]` so the runtime
+  literal is no longer first, or building the vector where the scan does
+  not look). FIRM: the spawn edges still land where they do today -
+  scenario 02 pins the census: start_handoff_daemon.sh and close_ticket.sh
+  in the walk's non-bb record, commit_integrity_cli.bb in the closure by
+  a spawn edge from chase_sweep_lib.bb, expedite_cli.bb by a spawn edge
+  from handoffd.bb. Direction, not mandate: the resolver already reads
+  three shapes (a bare literal, a literal wrapped in path plumbing, a
+  zero-arg same-file helper) and handoffd.bb's other spawns use the third
+  (`(swarm-handoff-script)`), so the three let-bound sites can simply take
+  that shape; teaching the resolver a let-bound-literal shape instead is
+  acceptable if master_checkout_drift_lib_test_runner.bb gains the cases.
+  The fourth site is different in kind: `runner` is the
+  EXPEDITE_STAGE_RUNNER test seam, a runtime value with no literal
+  anywhere - either the seam is re-expressed so the production spawn is
+  the literal `claude` invocation (tests shadow `claude` on PATH, which 13
+  existing tests and handlers that set the env var would have to follow),
+  or the site declares itself dynamic in a form the resolver reads and the
+  runner asserts (a declared dynamic target with a reason is resolved;
+  an undeclared one is still unresolved). The architect rules within the
+  parcel; the constraint is only that "declared dynamic" can never be
+  earned by accident. Minted by the specifier on the coder's unowned-red
+  note of 2026-09-11 00:10Z from the BL-1478 parcel; bisect and reach map
+  in backlog/evidence/BL-1524-BL-1525-BL-1526-specifier-unowned-red-bisect-20260911.md.
+
+invariants:
+  - The closure walk never silently drops a spawn edge - every bb/bash/sh/zsh spawn vector in a reached file is either resolved to a file, recorded as a non-bb script, or reported as unresolved by name (BL-1022, restated for the shapes this ticket adds).
+
+description: |
+  ## What is wrong
+
+  `bb swarmforge/scripts/test/daemon_cycle_guard_lib_test_runner.bb` on
+  main 7c5e39a8b4 prints three FAIL lines and exits 1. This ticket owns the
+  SECOND:
+
+  ```
+  FAIL bl1022: every spawn target in the daemon's closure resolved - an unresolvable one fails loudly, never silently
+    expected: []
+    actual:   [{:from "handoffd.bb", :target "launcher"} {:from "handoffd.bb", :target "script"}
+               {:from "chase_sweep_lib.bb", :target "cli"} {:from "expedite_cli.bb", :target "runner"}]
+  ```
+
+  `master_checkout_drift_lib.bb`'s `extract-spawn-targets` scans every
+  `["bb" ...]` / `["bash" ...]` / `["sh" ...]` / `["zsh" ...]` vector in a
+  reached file and resolves the second element through
+  `resolve-spawn-target`: a string literal naming a `.bb` (followed) or
+  `.sh`/`.bash`/`.zsh` (recorded as non-bb), a literal inside path
+  plumbing, or a zero-arg helper defined in the same file whose body
+  carries the literal. Anything else is reported - "a skipped target is
+  the same class of blind spot one level up". `git bisect` from
+  3d5346c256 (green) with this assertion as predicate names
+  **306509a6b0** (2026-08-25, "fix(BL-1139): auto-repair durable
+  master-checkout daemon-script drift") as the first red: it added
+  `(let [launcher (str (fs/path ... "start_handoff_daemon.sh"))] ...
+  (sh! ["bash" launcher root]))` to handoffd.bb - a let-bound local the
+  resolver does not follow. Three more sites of the same shape have
+  accumulated. Today, main 7c5e39a8b4:
+
+  | site | target | what it really is |
+  |---|---|---|
+  | `handoffd.bb` ~2668 `defer-handoffd-bounce-after-drift-repair!` | `launcher` | let-bound `start_handoff_daemon.sh` |
+  | `handoffd.bb` ~2401 | `script` | let-bound `close_ticket.sh` |
+  | `chase_sweep_lib.bb` ~2372 | `cli` | let-bound `commit_integrity_cli.bb` |
+  | `expedite_cli.bb` ~756 `stage-cmd` | `runner` | the `EXPEDITE_STAGE_RUNNER` env seam: nil in production (the stage spawns `claude -p`), a stub script under test |
+
+  Nobody owned it because nothing runs the standing bb suite as a gate
+  (see BL-1524). BL-1364's architect and hardener saw it on 2026-09-05
+  and misattributed it to BL-1331.
+
+  ## What this ticket delivers
+
+  1. The three let-bound sites resolve. Simplest: each takes the zero-arg
+     same-file helper shape the resolver already reads and handoffd.bb
+     already uses for `swarm-handoff-script` - e.g. `(defn-
+     start-handoff-daemon-script [] (str (fs/path ... "start_handoff_daemon.sh")))`
+     spawned as `["bash" (start-handoff-daemon-script) root]`. Extending
+     the resolver to follow a let-bound literal is equally acceptable if
+     `master_checkout_drift_lib_test_runner.bb` gains a case per new shape
+     and the fail-loud case (scenario 03) still holds.
+  2. The expedite seam site resolves or is honestly declared, per the
+     architect's ruling in the parcel (approval_context). Either way
+     `stage-cmd`'s production behaviour (spawn `claude -p ...`) is
+     unchanged and the existing seam consumers keep passing (the census
+     of `EXPEDITE_STAGE_RUNNER` users on main 7c5e39a8b4: 4 shell tests,
+     6 step handlers or their libs, 3 property tests -
+     `grep -rl EXPEDITE_STAGE_RUNNER swarmforge/scripts/test specs/pipeline/steps extension/test`).
+  3. The runner's bl1022 assertion passes on the parcel commit with the
+     walk's `:unresolved` empty, and scenario 02's census pinned.
+  4. **Register rows (this ticket owns them):** `backlog/standing-reds.tsv`
+     carries a `bb` row for
+     `swarmforge/scripts/test/daemon_cycle_guard_lib_test_runner.bb` and
+     an `acceptance` row for
+     `specs/features/BL-1031-bounded-chokepoint-covers-the-spawn-reachable-subtree.feature`
+     (its scenario 01 drives the same runner and is red for the same
+     three reasons: pass 6 / fail 1 on main), both naming BL-1526. This
+     ticket `depends_on` BL-1524 and BL-1525, so it is the LAST of the
+     three to land and the one whose land turns both files green: QA
+     removes both rows in that land (register invariant 2).
+
+  ## Not in scope
+
+  - The load-closure strays (BL-1524) and the spawn-subtree debt
+    (BL-1525). By the time this ticket promotes both have landed; if
+    either FAIL line still prints on this parcel's commit, that is a
+    regression to bounce on, not this ticket's to absorb.
+  - Changing which files the daemon spawns. This is about the walk
+    SEEING every edge it already has.
+
+  ## Source
+
+  Coder unowned-red note 2026-09-11 00:10Z (BL-1478 parcel). Specifier
+  reproduction, bisect and reach map:
+  `backlog/evidence/BL-1524-BL-1525-BL-1526-specifier-unowned-red-bisect-20260911.md`.
+
+notes: |
+  Register: the two rows named above were added in the same commit as
+  this mint (first_seen 2026-08-25 for both - the runner's oldest FAIL
+  line dates from ceda945b23 that day; the BL-1031 feature's scenario 01
+  went red with it, hidden by the per-feature runner). QA removes both in
+  this ticket's land. The rows name THIS ticket rather than the oldest
+  sibling because a register row must name an OPEN ticket: had they
+  named BL-1524, its close would have left the still-red file unowned
+  and throttled intake (BL-1429) until someone re-pointed the row.
+  Orthogonality: touches handoffd.bb (BL-1478 active edits it too) and
+  expedite_cli.bb (BL-1525 edits it too) - the depends_on handles the
+  second; the coordinator holds this ticket until BL-1478 lands as well.
+
+qa_e2e_procedure: |
+  On the parcel commit, from the repo root:
+  1. `bb swarmforge/scripts/test/daemon_cycle_guard_lib_test_runner.bb`
+     -> ALL PASS, exit 0 (BL-1524 and BL-1525 have landed; all three
+     lines green). The `BL-1022 closure:` line still reports more than
+     60 files and "reached by spawn" >= 4; `non-bb spawns recorded`
+     now includes start_handoff_daemon.sh and close_ticket.sh alongside
+     kill_all_swarm.sh and is_qa_ancestor.sh.
+  2. `node specs/pipeline/cli.js specs/features/BL-1031-bounded-chokepoint-covers-the-spawn-reachable-subtree.feature`
+     -> 7 pass, 0 fail.
+  3. `node specs/pipeline/cli.js specs/features/BL-1526-*.feature` -> all
+     scenarios pass.
+  4. `bb swarmforge/scripts/test/master_checkout_drift_lib_test_runner.bb`
+     green, with a case per resolver shape the parcel added (if any).
+  5. `bash swarmforge/scripts/test/test_expedite_cli.sh` and
+     `bash swarmforge/scripts/test/test_bl1376_expedite_branch_handover.sh`
+     green; `EXPEDITE_STAGE_RUNNER=<stub> bb swarmforge/scripts/expedite_cli.bb ...`
+     still runs the stub (or the replacement seam the parcel documents).
+  6. Both register rows naming BL-1526 are gone from
+     backlog/standing-reds.tsv in the land, and
+     `bb swarmforge/scripts/standing_red_register_cli.bb .` reports no
+     row for either file.
+
+source: "Coder unowned-red note 2026-09-11 00:10Z from the BL-1478 parcel; standing-red rule 2026-09-05; specifier bisect 2026-09-11."
