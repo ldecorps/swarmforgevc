@@ -71,6 +71,20 @@ or scrub ambient env) and assert the matching full literal. Asserting
 `set -e` before later scenarios run (BL-778 / BL-035 `test_rule_proposal.sh`).
 Sibling references: `test_mailbox_only_delivery.sh`, `test_swarm_handoff_daemon_backup.sh`.
 
+**Two-call self-audit for `type: git_handoff` drafts.** Since the
+AUDIT_REQUIRED landing of 2026-08-30 (44d2d42591, Article 2.3), the FIRST
+`swarm_handoff.sh`/`.bb` call for a given `git_handoff` draft fingerprint
+prints `AUDIT_REQUIRED` / `HANDOFF_NOT_QUEUED` and queues nothing; the
+IDENTICAL second call queues. A shell fixture that sends a `git_handoff`
+draft once and asserts a queue grammar will red on the first call forever
+— send the draft twice (tolerate the first call's exit code) and assert
+the queue grammar on the second; where the case is about the send itself,
+also assert the first call's `AUDIT_REQUIRED` and empty queue, so the
+protocol is pinned rather than papered over (BL-1530:
+`test_rule_proposal.sh` case 04, `test_handoff_state_dir_worktree_root.sh`
+case 01, `test_required_stages_ticket_lookup_collision.sh`). `note` drafts
+are unaffected — single call.
+
 ## Pane narration — mail is silent unless novel
 
 **Default (happy path):** After a tmux wake, the agent runs `ready_for_next.sh`
