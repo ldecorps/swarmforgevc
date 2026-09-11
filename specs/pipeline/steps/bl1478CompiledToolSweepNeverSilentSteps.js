@@ -15,6 +15,23 @@ const CLI = path.join(__dirname, 'lib', 'bl1478CompiledToolSweepCli.bb');
 
 const FEATURE = 'BL-1478 A compiled-tool sweep that fails is logged, never silent';
 
+// BL-1478 hardening (BL-113 Gherkin mutation survivors m1-m6): the Outline's
+// Given and Then steps both interpolate the SAME Examples column value
+// (<exit>, <stderr>), so an assertion built by recomposing those same
+// captured params (`exit=${exit} ${stderr}`) can never diverge from what the
+// mutated row actually drove into the CLI - any mutation of an Examples cell
+// changes stimulus and expectation identically, killing nothing (survived
+// every value-level mutant but one, and that one only failed on an
+// unrelated regex non-match). Pinning the expected detail here, independent
+// of the Then step's own text capture, is the engineering rules' explicit
+// KNOWN_VALUES requirement for Scenario Outline handlers - a lookup miss
+// (mutated exit) or a literal mismatch (mutated stderr) now fails loud.
+const KNOWN_VALUES = {
+  1: 'exit=1 SyntaxError: Unexpected token in JSON',
+  124: 'exit=124 wait bound exceeded',
+  127: 'exit=127 spawn failed: ENOENT',
+};
+
 function runSweep(ctx) {
   const input = JSON.stringify({
     sweep: ctx.sweep,
@@ -58,11 +75,13 @@ function registerSteps(registry) {
     runSweep(ctx);
   });
 
-  scoped(/^exactly one log line names the sweep, exit (\d+) and "([^"]*)"$/, (ctx, exit, stderr) => {
+  scoped(/^exactly one log line names the sweep, exit (\d+) and "([^"]*)"$/, (ctx, exit) => {
     assert.equal(ctx.logged.length, 1, `expected exactly one log line, got ${JSON.stringify(ctx.logged)}`);
     const [event, detail] = ctx.logged[0];
     assert.equal(event, `${ctx.sweep}-failed`, `expected the event to name the sweep, got ${event}`);
-    assert.equal(detail, `exit=${exit} ${stderr}`, `expected the detail to carry the exit and stderr, got ${detail}`);
+    const known = KNOWN_VALUES[Number(exit)];
+    assert.ok(known, `exit ${exit} is not a known Outline row - KNOWN_VALUES needs a matching entry`);
+    assert.equal(detail, known, `expected the pinned detail ${JSON.stringify(known)}, got ${JSON.stringify(detail)}`);
   });
 
   scoped(/^the log carries the tool's stdout line and no failure line$/, (ctx) => {
