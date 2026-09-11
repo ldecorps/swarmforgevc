@@ -30,7 +30,10 @@ acceptance: specs/features/BL-1529-a-script-originated-git-handoff-is-never-swal
 required_wiring:
   - 'specs/pipeline/steps/bl1529ScriptSendersSpeakTheAuditProtocolSteps.js::registerSteps::the handler lands in the same parcel as the feature (BL-233, BL-1371)'
 
-human_approval: pending
+human_approval: approved
+human_ruling: |
+  The challenge exits non-zero with HANDOFF_NOT_QUEUED so every single-call caller fails loud, and the two script callers resubmit the identical draft (recommended)
+ruling_provenance: tapped
 approval_context: >
   A new feature file is authored here, so it needs a tap, and one choice
   is posed as ruling_options below: whether the self-audit challenge keeps
