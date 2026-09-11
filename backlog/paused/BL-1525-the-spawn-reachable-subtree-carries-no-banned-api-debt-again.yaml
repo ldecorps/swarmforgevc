@@ -1,0 +1,185 @@
+id: BL-1525
+title: "daemon_cycle_guard_lib_test_runner.bb's spawn-subtree assertion (bl1031: ratchet retired empty) has been red on main since abdf283ece (2026-09-03, BL-1378 landed ticket_close_guard_lib.bb into swarm_handoff.bb's closure) with no owner, and the debt set is now four files: ticket_close_guard_lib.bb and unregistered_test_gate_lib.bb (git via process/sh, reached through the daemon's swarm_handoff.bb spawn), expedite_cli.bb (its own process/sh helper) and bounded_run_lib.bb (a second wall-clock-bounded runner, BL-1103); the three plain waits route through the chokepoint and the human rules whether the second runner folds into it or is sanctioned beside it"
+milestone: M8
+type: defect
+severity: high
+# high (standing-red rule 2026-09-05): a `bb`-lane test red on main is a
+# broken safety signal whatever its size, and this assertion is the one
+# BL-1031 wrote so the ratchet could never go stale - it has been stale
+# for eight days. Not critical: the four sites are git calls, the expedite
+# driver and a runner that already bounds its own waits; the deadlock class
+# (BL-1021) needs a pipe-holding grandchild, which none has shown.
+status: todo
+epic: swarm-reliability
+priority: 8
+direction: swarm-reported
+depends_on: []
+mutation_cost: low
+# low: three Babashka call sites, one ruling-driven change to either
+# bounded_run_lib.bb or daemon_api_ban_lib.bb's exempt set (Babashka: no
+# mutation/CRAP/DRY wired, BL-472; the hardener gates on the bb unit and
+# property runners and records the fallback). One step-handler file.
+slice_size_envelope: low
+required_stages: [coder, cleaner, architect, hardender, documenter, qa]
+
+acceptance: specs/features/BL-1525-the-spawn-reachable-subtree-carries-no-banned-api-debt-again.feature
+
+# Consumer anchors are the pre-existing, spawn-reached files that must call
+# the chokepoint (BL-1235). bounded_run_lib.bb is deliberately NOT anchored:
+# under ruling B it keeps naming the API and an anchor would false-block.
+required_wiring:
+  - 'swarmforge/scripts/ticket_close_guard_lib.bb::daemon-cycle-guard-lib/sh!::both git calls run under the bounded chokepoint'
+  - 'swarmforge/scripts/unregistered_test_gate_lib.bb::daemon-cycle-guard-lib/sh!::the git helper runs under the bounded chokepoint'
+  - 'swarmforge/scripts/expedite_cli.bb::daemon-cycle-guard-lib/sh!::the driver sh helper runs under the bounded chokepoint'
+  - 'specs/pipeline/steps/bl1525SpawnSubtreeBannedApiDebtSteps.js::registerSteps::the handler lands in the same parcel as the feature (BL-233)'
+
+human_approval: pending
+ruling_options:
+  - A - one chokepoint, sh! gains a per-call bound and run-bounded! becomes a thin wrapper over it (recommended)
+  - B - two sanctioned chokepoints, daemon_api_ban_lib exempts bounded_run_lib.bb beside daemon_cycle_guard_lib.bb
+approval_context: >
+  A new feature file is authored here, so it needs a tap, and ONE question
+  is genuinely yours: what to do about bounded_run_lib.bb. It is BL-1103's
+  fold of two private bounded runners (expedite's and the babysitter's)
+  and it names babashka.process by design - its run-bounded! wraps the
+  command in setsid and kills the whole process GROUP at an explicit,
+  per-call timeout, which is stricter than the chokepoint's sh! (env-wide
+  60 s bound, destroy-tree of live descendants only). The gate is textual
+  and does not know that; it sees a second file naming the API inside the
+  daemon's spawn subtree (handoffd.bb spawns expedite_cli.bb, which loads
+  bounded_run_lib.bb). Option A keeps BL-1031's premise - exactly ONE
+  place names the subprocess API - by giving sh! what run-bounded! has
+  (a per-call bound; the group kill is the architect's call) and making
+  run-bounded! delegate; it touches the chokepoint file, which BL-1478
+  (active) is also editing, so it promotes after BL-1478 lands. Option B
+  is smaller and honest about what exists today: the exempt set names
+  both runner files, the runner asserts the exempt set is exactly those
+  two, and the swarm carries two bounded runners with different kill
+  semantics indefinitely. A is recommended because two chokepoints is the
+  BL-571 hand-copy shape BL-1103 folded the runners to escape. FIRM in
+  either case: ticket_close_guard_lib.bb, unregistered_test_gate_lib.bb
+  and expedite_cli.bb's own `sh` helper stop naming the API and route
+  through the chokepoint; the green is never earned by dropping the
+  handoffd.bb -> expedite_cli.bb or swarm_handoff.bb -> ticket_close_guard
+  spawn/load edges (scenario 01 pins them); a fixture file with a new
+  direct call in the subtree still fails the gate (scenario 03). Minted by
+  the specifier on the coder's unowned-red note of 2026-09-11 00:10Z from
+  the BL-1478 parcel; bisect and reach map in
+  backlog/evidence/BL-1524-BL-1525-BL-1526-specifier-unowned-red-bisect-20260911.md.
+
+invariants:
+  - Every file the daemon reaches by a spawn edge is held to the same subprocess-API ban as the files it reaches by load-file (BL-1022/BL-1031); a sanctioned exception, if any, is named in daemon_api_ban_lib's exempt set and asserted by the runner, never implied by a passing scan.
+
+description: |
+  ## What is wrong
+
+  `bb swarmforge/scripts/test/daemon_cycle_guard_lib_test_runner.bb` on
+  main 7c5e39a8b4 prints three FAIL lines and exits 1. This ticket owns the
+  THIRD:
+
+  ```
+  FAIL bl1031: spawn-reachable subtree carries no banned-API debt (ratchet retired empty)
+    expected: #{}
+    actual:   #{"bounded_run_lib.bb" "expedite_cli.bb" "ticket_close_guard_lib.bb" "unregistered_test_gate_lib.bb"}
+  ```
+
+  BL-1022 taught the daemon's closure walk to follow SPAWN edges as well as
+  load-file edges; BL-1031 routed the three spawn-reached offenders it
+  found through `daemon-cycle-guard-lib/sh!` and retired the ratchet to
+  the empty set, so a new offender in the subtree fails loudly.
+  `git bisect` from 3d5346c256 (green) to 5e4fb269d6 with this assertion
+  as the predicate names **abdf283ece** (2026-09-03, "BL-1378: tip-pure
+  replay onto origin/main") as the first red: BL-1378 gave
+  `ticket_close_guard_lib.bb` two `process/sh git ...` calls, and
+  `swarm_handoff.bb` - which handoffd.bb spawns - load-files that lib.
+  Today's debt set, with how each file is reached (main 7c5e39a8b4):
+
+  | file | site | reached by |
+  |---|---|---|
+  | `ticket_close_guard_lib.bb` | lines 216 and 220: `process/sh {:dir root :continue true} git ...` | `[:load swarm_handoff.bb]`, swarm_handoff.bb by `[:spawn handoffd.bb]` |
+  | `unregistered_test_gate_lib.bb` | line 163: `(apply process/sh (into ["git" "-C" root] args))` | `[:load swarm_handoff.bb]` |
+  | `expedite_cli.bb` | line 81: its own `sh` helper, `(apply process/sh (assoc opts :continue true) cmd)` | `[:spawn handoffd.bb]` (line 4249) |
+  | `bounded_run_lib.bb` | `run-bounded!` - the BL-1103 shared wall-clock-bounded runner, names the API by design | `[:load expedite_cli.bb]` |
+
+  Nobody owned it because nothing runs the standing bb suite as a gate
+  (see BL-1524's description; same finding). BL-1364's architect and
+  hardener saw it on 2026-09-05 and misattributed it to BL-1331.
+
+  ## What this ticket delivers
+
+  1. The three plain waits route through the chokepoint exactly as
+     BL-1031's conversions did: `ticket_close_guard_lib.bb`'s two git
+     calls, `unregistered_test_gate_lib.bb`'s git helper, and
+     `expedite_cli.bb`'s `sh` helper all call `daemon-cycle-guard-lib/sh!`
+     (same call shapes, same result map; `:dir` and `:continue true`
+     survive the merge). `swarm_handoff.bb` already load-files the
+     chokepoint, so the two libs it loads can reach it; `expedite_cli.bb`
+     loads what it needs itself.
+  2. `bounded_run_lib.bb` per the human ruling:
+     - **A** (recommended): `sh!` accepts a per-call bound (an opt such as
+       `:bound-ms`, falling back to the env seam), and `run-bounded!`
+       becomes a wrapper that delegates to it - keeping its signature so
+       expedite and the babysitter change nothing. Whether the group kill
+       (setsid + `kill -- -pgid`) moves into the chokepoint or `sh!`'s
+       destroy-tree is judged sufficient is the architect's call; the two
+       traps `run-bounded!`'s docstring records (direct-child-only kill,
+       the load-bearing `--`) must survive as runner cases wherever the
+       kill lives. Touches `daemon_cycle_guard_lib.bb`: promote after
+       BL-1478 lands.
+     - **B**: `daemon_api_ban_lib.bb`'s default exempt set becomes
+       `#{"daemon_cycle_guard_lib.bb" "bounded_run_lib.bb"}` and the
+       runner asserts that set literally, so a third entry fails.
+  3. The runner's bl1031 assertion passes on the parcel commit while the
+     spawn-only subtree still contains expedite_cli.bb,
+     ticket_close_guard_lib.bb and unregistered_test_gate_lib.bb
+     (scenario 01's census pin).
+
+  ## Not in scope
+
+  - The runner's two other FAIL lines (load-closure strays: BL-1524;
+    unresolved spawn targets: BL-1526). Scenario 01 asserts only the
+    bl1031 line.
+  - `expedite_cli.bb`'s `EXPEDITE_STAGE_RUNNER` seam and the `runner`
+    spawn target the walk cannot resolve - that is BL-1526's, and it also
+    touches expedite_cli.bb, so the coordinator serialises the two.
+  - The babysitter's use of `run-bounded!` changes only if ruling A
+    changes the runner's signature, which it must not.
+
+  ## Source
+
+  Coder unowned-red note 2026-09-11 00:10Z (BL-1478 parcel). Specifier
+  reproduction, bisect and reach map:
+  `backlog/evidence/BL-1524-BL-1525-BL-1526-specifier-unowned-red-bisect-20260911.md`.
+
+notes: |
+  Register: no row of its own; the `bb`-lane and `acceptance`-lane rows
+  for this runner name BL-1526, which depends on this ticket and BL-1524
+  (see BL-1524 notes for why the row names the last-landing sibling).
+  Ruling: the tap records `human_ruling`; the coder reads it before
+  touching bounded_run_lib.bb or daemon_api_ban_lib.bb. Under A the
+  `required_wiring` entries above are unchanged (bounded_run_lib.bb is
+  deliberately unanchored either way).
+
+qa_e2e_procedure: |
+  On the parcel commit, from the repo root:
+  1. `bb swarmforge/scripts/test/daemon_cycle_guard_lib_test_runner.bb 2>&1 | grep '^FAIL'`
+     -> no line containing "bl1031: spawn-reachable subtree"; the
+     `BL-1031 spawn-only banned-API debt:` census line prints `[]`. The
+     other two FAIL lines may still print until BL-1524/BL-1526 land.
+  2. `grep -nE 'babashka\.process|clojure\.java\.shell' swarmforge/scripts/{ticket_close_guard_lib,unregistered_test_gate_lib,expedite_cli}.bb`
+     -> no output. Under ruling A the same grep over bounded_run_lib.bb
+     is also empty; under B it still hits and
+     `grep -n 'bounded_run_lib.bb' swarmforge/scripts/test/daemon_api_ban_lib.bb`
+     shows the exempt entry.
+  3. `node specs/pipeline/cli.js specs/features/BL-1525-*.feature` -> all
+     scenarios pass.
+  4. `bash swarmforge/scripts/test/test_expedite_cli.sh`,
+     `bash swarmforge/scripts/test/test_bl1376_expedite_branch_handover.sh`,
+     the ticket_close_guard and unregistered_test_gate runners under
+     swarmforge/scripts/test/, and the babysitter's bounded-run cases all
+     still green.
+  5. `git diff main...HEAD --stat` touches only the three libs, the
+     ruling's file(s), the step handler + index.js registration, the
+     feature file and evidence.
+
+source: "Coder unowned-red note 2026-09-11 00:10Z from the BL-1478 parcel; standing-red rule 2026-09-05; specifier bisect 2026-09-11."

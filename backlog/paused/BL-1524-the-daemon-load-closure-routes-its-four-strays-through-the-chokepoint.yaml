@@ -1,0 +1,219 @@
+id: BL-1524
+title: "daemon_cycle_guard_lib_test_runner.bb's load-closure assertion (invariant 1 structural half) has been red on main since ceda945b23 (2026-08-25, BL-1134's cleaner pass load-filed process_table_lib.bb into master_checkout_drift_lib.bb) with no owner, and three more files joined the offender list since: process_table_lib.bb, handoff_lib.bb (hotfix 32fb1ff7e1), model_factory_store.bb and outage_failover_store.bb each call babashka.process directly inside handoffd.bb's load closure; the four sites route through the bounded chokepoint so the load-closure ban earns its green from the files themselves"
+milestone: M8
+type: defect
+severity: high
+# high (standing-red rule 2026-09-05): a `bb`-lane test red on main is a
+# broken safety signal whatever its size - and this one is the gate BL-967/
+# BL-1022/BL-1031 built after an unbounded subprocess wait deadlocked the
+# daemon in production. While it is red every parcel that runs it explains
+# the failure away (BL-1364's architect and hardener did on 2026-09-05,
+# attributing it to BL-1331, which is a TypeScript require-cycle ticket and
+# owns none of it). Not critical: the four strays are short-lived calls
+# (lsof, tmux respawn-pane, the launch seam, the respawn bootstrap); none
+# has hung in production yet.
+status: todo
+epic: swarm-reliability
+priority: 8
+direction: swarm-reported
+depends_on: []
+mutation_cost: low
+# low: four Babashka call sites and one small chokepoint addition at most
+# (Babashka: no mutation/CRAP/DRY wired, BL-472; the hardener gates on the
+# bb unit and property runners and records the fallback). One step-handler
+# file.
+slice_size_envelope: low
+required_stages: [coder, cleaner, architect, hardender, documenter, qa]
+
+acceptance: specs/features/BL-1524-the-daemon-load-closure-routes-its-four-strays-through-the-chokepoint.feature
+
+# The consumer anchors are the four pre-existing, daemon-loaded files that
+# must reach the chokepoint (BL-1235: the consumer's call, not the
+# declaration). The handler anchor lands the feature's steps in the same
+# parcel (BL-233). One physical line per entry.
+required_wiring:
+  - 'swarmforge/scripts/process_table_lib.bb::daemon-cycle-guard-lib/sh!::the Darwin lsof cwd probe runs under the bounded chokepoint'
+  - 'swarmforge/scripts/model_factory_store.bb::daemon-cycle-guard-lib/::the launch seam runs under the chokepoint (sh! or the detached variant)'
+  - 'swarmforge/scripts/outage_failover_store.bb::daemon-cycle-guard-lib/sh!::the seat respawn runs under the bounded chokepoint'
+  - 'swarmforge/scripts/handoff_lib.bb::daemon-cycle-guard-lib/::the rotation bootstrap spawn goes through the chokepoint'
+  - 'specs/pipeline/steps/bl1524ChokepointLoadClosureStraysSteps.js::registerSteps::the handler lands in the same parcel as the feature (BL-233)'
+
+human_approval: pending
+approval_context: >
+  A new feature file is authored here, so it needs a tap. No choice is
+  posed and there are no ruling_options. FIRM: the green is earned by
+  routing the four sites through the chokepoint, never by widening
+  daemon_api_ban_lib's exempt set, unloading a file from the daemon's
+  closure, or weakening the runner's assertion (scenario 01 pins the
+  closure census; scenario 02 pins each file's presence in it). FIRM: the
+  runner's other two red assertions (unresolved spawn targets, spawn-only
+  subtree debt) are BL-1526's and BL-1525's - this parcel leaves them red
+  and its scenario 01 asserts only the load-closure line. Direction, not
+  mandate: three sites are plain waits and take `sh!` as BL-1031's
+  conversions did (opts such as :dir, :out :inherit survive - sh! merges
+  them); the handoff_lib.bb site is a deliberately fire-and-forget
+  bootstrap spawn (rotation must not block on it, its docstring says so),
+  and a bounded WAIT is the wrong verb for it - the chokepoint likely
+  wants a detached-spawn variant (one place, one file, with its own runner
+  cases) rather than a `future` around `sh!` that would kill the bootstrap
+  at the wait bound. The architect rules on that within the parcel; it is
+  not a human question. Minted by the specifier on the coder's unowned-red
+  note of 2026-09-11 00:10Z from the BL-1478 parcel; the red reproduced
+  on main 7c5e39a8b4 (3 FAIL lines, exit 1) and was bisected to three
+  distinct first-red commits, one per assertion
+  (backlog/evidence/BL-1524-BL-1525-BL-1526-specifier-unowned-red-bisect-20260911.md).
+
+invariants:
+  - Every subprocess wait on handoffd.bb's load-file closure is wall-clock bounded, and the chokepoint file is the only place the subprocess namespace is named (BL-1031 invariant 1, restated for the files this ticket touches and every file it does not).
+
+description: |
+  ## What is wrong
+
+  `bb swarmforge/scripts/test/daemon_cycle_guard_lib_test_runner.bb` on
+  main 7c5e39a8b4 prints three FAIL lines and exits 1. This ticket owns the
+  FIRST of them:
+
+  ```
+  FAIL invariant 1 structural half: no subprocess path outside the chokepoint anywhere in handoffd.bb's reachability closure
+    expected: []
+    actual:   ["handoff_lib.bb:9: [babashka.process :as process]"
+               "handoff_lib.bb:1177: (process/process argv {:out :discard :err :discard}))"
+               "model_factory_store.bb:18: [babashka.process :as process]"
+               "model_factory_store.bb:106: (:exit @(process/process [seam-path (json/generate-string plan)]"
+               "outage_failover_store.bb:6: [babashka.process :as process]"
+               "outage_failover_store.bb:90: @(process/process [\"\" \"\" socket ...  (str role \"\")"
+               "process_table_lib.bb:9: [babashka.process :as process]"
+               "process_table_lib.bb:132: (let [{:keys [out]} (process/sh {:continue true} ... (str pid) ...)]"]
+  ```
+
+  The assertion walks handoffd.bb's load-file closure (67 files today) and
+  bans `babashka.process` / `clojure.java.shell` everywhere but
+  `daemon_cycle_guard_lib.bb`, the bounded chokepoint BL-967 built after an
+  unbounded wait deadlocked the daemon (BL-1021). It was green on
+  2026-08-22 (BL-1010 hardener evidence, 54-file closure). `git bisect`
+  with the runner as the test, from BL-1031's last runner commit
+  3d5346c256 (green) to 5e4fb269d6, names **ceda945b23** (2026-08-25,
+  "refactor(BL-1134): share process-table for post-add mute") as the first
+  red: it load-filed `process_table_lib.bb` into
+  `master_checkout_drift_lib.bb`, which handoffd.bb loads, and
+  process_table_lib.bb has called `process/sh lsof` directly since
+  2026-08-07. At that commit the offender list was process_table_lib.bb
+  alone (59-file closure). Three files joined it later, each by an edge
+  that pulled an older direct call into view or added a new one:
+
+  | file | site | how it is reached | since |
+  |---|---|---|---|
+  | `process_table_lib.bb` | `cwd-from-lsof` (line 132): `process/sh lsof -a -p <pid> -d cwd -Fn` (Darwin-only path) | `[:load master_checkout_drift_lib.bb]` | ceda945b23, 2026-08-25 |
+  | `model_factory_store.bb` | `invoke-launch-seam!` (line 106): `@(process/process [seam-path plan] {:dir :out :inherit :err :inherit})` | `[:load outage_failover_cli.bb]` (handoffd.bb loads outage_failover_cli.bb) | the direct call dates from 2026-07-22 |
+  | `outage_failover_store.bb` | `respawn-seat!` (line 90): `@(process/process ["tmux" "-S" socket "respawn-pane" "-k" ...])` | `[:load outage_failover_cli.bb]` | 2026-08-25 (BL-669 rematch) |
+  | `handoff_lib.bb` | rotation bootstrap (line 1177): `(process/process argv {:out :discard :err :discard})`, fire-and-forget by design | loaded by handoffd.bb and 14 other closure files | hotfix 32fb1ff7e1, 2026-09-09 |
+
+  Nobody owned it because nothing runs the standing bb suite as a gate:
+  `run_bb_suite.sh` is invoked by no commit guard and no role prompt, so the
+  runner is executed only when a parcel's own qa_e2e_procedure names it.
+  BL-1364's architect and hardener saw the identical three failures on
+  2026-09-05, reverted handoffd.bb to prove their parcel was not the cause,
+  and recorded it as "already tracked in BL-1331/BL-539" - BL-1331 is the
+  bl726 TypeScript require-cycle defect and mentions this runner nowhere;
+  the BL-539 epic tracker names it nowhere either. The coder's BL-1478
+  parcel ran the runner on 2026-09-11 as its qa_e2e step 1, grepped for an
+  owner, found none, and filed the unowned-red note this ticket answers.
+
+  ## What this ticket delivers
+
+  The four sites run under the chokepoint, and the runner's load-closure
+  assertion passes on the parcel commit while the closure census is
+  unchanged (the four files are still loaded; the green is not earned by
+  unloading anything).
+
+  - `process_table_lib.bb` `cwd-from-lsof`, `outage_failover_store.bb`
+    `respawn-seat!`, `model_factory_store.bb` `invoke-launch-seam!`: plain
+    bounded waits. `daemon-cycle-guard-lib/sh!` takes the same call shapes
+    and returns the same result-map shape; `:dir`, `:out :inherit`,
+    `:continue true` survive because sh! merges the caller's opts over its
+    `{:out :string :err :string}` default. A bound hit returns `{:exit 124}`
+    and the callers' existing `(:exit ...)` checks treat it as an ordinary
+    failure - scenario 03 proves it for the two sites a test can hang.
+  - `handoff_lib.bb` rotation bootstrap: this one is fire-and-forget on
+    purpose ("a rotation must not fail because its bootstrap did"; the
+    bootstrap pastes the recomposed prompt into a fresh agent session and
+    can legitimately outlive a 60 s wait bound). Do NOT turn it into a
+    bounded wait that kills the bootstrap. Direction: the chokepoint gains
+    the missing verb - a detached spawn that never waits, in
+    `daemon_cycle_guard_lib.bb` (the one file allowed to name the API),
+    with its own cases in the runner - and the site calls that. A `future`
+    wrapping `sh!` is the shape to avoid: it would still destroy the
+    bootstrap's tree at the bound. The architect rules between "detached
+    variant" and any better shape found in the parcel; either way the
+    site's file must stop naming `babashka.process`.
+  - Loading the chokepoint from these files: `process_table_lib.bb` is
+    loaded by `master_checkout_drift_lib.bb`, which already load-files
+    `daemon_cycle_guard_lib.bb`; `handoff_lib.bb` already loads it too.
+    `model_factory_store.bb` and `outage_failover_store.bb` reach it via
+    `outage_failover_cli.bb` or load it themselves - check the existing
+    load order before adding an edge (bb load-file is not cycle-safe;
+    BL-1022's closure walk will show any new edge in `reached-by`).
+
+  ## Not in scope
+
+  - The runner's other two FAIL lines: `bl1022: every spawn target ...
+    resolved` is BL-1526; `bl1031: spawn-reachable subtree carries no
+    banned-API debt` is BL-1525. This parcel's scenario 01 asserts only
+    the load-closure line and leaves the other two red; BL-1526 carries
+    the register rows and depends on both siblings.
+  - `daemon_api_ban_lib.bb`'s exempt set (`#{"daemon_cycle_guard_lib.bb"}`)
+    is not widened here. If the architect's ruling above needs a second
+    verb in the chokepoint file, that is still the same one exempt file.
+  - Anything in `handoffd.bb`. BL-1478 (active) edits
+    `daemon_cycle_guard_lib.bb` (adds `run-compiled-tool!`) and handoffd.bb
+    - the coordinator promotes this ticket after BL-1478 lands, or the
+    coder merges main before touching the chokepoint file.
+  - Gating the standing bb suite on commit. That it is gated nowhere is a
+    process finding recorded in the evidence file; it is not this slice.
+
+  ## Source
+
+  Coder unowned-red note 2026-09-11 00:10Z (BL-1478 parcel,
+  `.worktrees/coder` evidence `BL-1478-unowned-red-coder-20260911.md`).
+  Specifier reproduction, bisect and reach map:
+  `backlog/evidence/BL-1524-BL-1525-BL-1526-specifier-unowned-red-bisect-20260911.md`.
+
+notes: |
+  Register: this ticket carries no register row of its own. The
+  `bb`-lane row for daemon_cycle_guard_lib_test_runner.bb and the
+  `acceptance`-lane row for BL-1031's feature (its scenario 01 drives the
+  same runner) both name BL-1526, which `depends_on` this ticket and
+  BL-1525 and therefore cannot close before the file is green (a register
+  row must name an OPEN ticket; a row naming a closed one reads as unowned
+  and throttles intake, BL-1429). QA removes both rows in the land that
+  turns the runner green, which is BL-1526's.
+  Standing-red age: first_seen 2026-08-25 is already past the register's
+  7-day trend line (Article 3.5) - the coordinator weighs that, not this
+  ticket.
+
+qa_e2e_procedure: |
+  On the parcel commit, from the repo root:
+  1. `bb swarmforge/scripts/test/daemon_cycle_guard_lib_test_runner.bb 2>&1 | grep '^FAIL'`
+     -> no line containing "invariant 1 structural half"; the two other
+     FAIL lines (bl1022 unresolved, bl1031 spawn-only debt) may still
+     print until BL-1525/BL-1526 land. The `BL-1022 closure:` census line
+     still reports more than 60 files.
+  2. `grep -nE 'babashka\.process|clojure\.java\.shell' swarmforge/scripts/{process_table_lib,handoff_lib,model_factory_store,outage_failover_store}.bb`
+     -> no output.
+  3. `grep -c 'daemon_cycle_guard_lib.bb' swarmforge/scripts/test/daemon_api_ban_lib.bb`
+     unchanged and the exempt set still `#{"daemon_cycle_guard_lib.bb"}`.
+  4. `node specs/pipeline/cli.js specs/features/BL-1524-*.feature` -> all
+     scenarios pass; scenario 03 completes in well under 60 s (the fake
+     children are bounded at 300 ms).
+  5. Existing runners for the touched libs still green:
+     `bb swarmforge/scripts/test/process_table_lib_test_runner.bb`,
+     `bb swarmforge/scripts/test/outage_failover_test_runner.bb`, the
+     model-factory runner(s) and handoff_lib's, whichever exist under
+     swarmforge/scripts/test/ (list them with `ls | grep -E
+     'process_table|outage_failover|model_factory|handoff_lib'`).
+  6. `git diff main...HEAD --stat` touches only the four libs, at most
+     daemon_cycle_guard_lib.bb and its test runner (the detached verb),
+     the step handler + index.js registration, the feature file and
+     evidence. handoffd.bb is unchanged.
+
+source: "Coder unowned-red note 2026-09-11 00:10Z from the BL-1478 parcel; standing-red rule 2026-09-05; specifier bisect 2026-09-11."
