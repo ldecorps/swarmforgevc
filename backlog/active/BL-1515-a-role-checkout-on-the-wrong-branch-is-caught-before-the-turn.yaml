@@ -133,3 +133,6 @@ notes: |
     not on record; the repair does not depend on knowing.
 
 assigned_to: coder
+bounce_count: 1
+bounce_history:
+  - { at: 2026-09-11, by: architect, blamed: coder, class: behavior, commit: 34ded6fbfc, evidence: backlog/evidence/BL-1515-architect-bounce-20260911.md }
