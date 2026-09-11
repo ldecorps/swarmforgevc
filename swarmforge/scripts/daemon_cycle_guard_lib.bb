@@ -148,10 +148,31 @@
   [e]
   {:exit 127 :out "" :err (or (.getMessage e) "exec-failed") :spawn-failed? true})
 
+(defn- destroy-timed-out-process!
+  "BL-1525: how a bound hit reclaims the tracked process. :tree (default,
+   unchanged from before this ticket) destroys the tracked process's live
+   descendants via process/destroy-tree - sufficient for the daemon's own
+   git/tmux/node waits. :group additionally kills the WHOLE process GROUP
+   (setsid + `kill -KILL -- -<pgid>`) before destroyForcibly - the trap
+   bounded-run-lib/run-bounded! needs (BL-1103) for a grandchild that
+   reparents past a live-descendants walk's reach, e.g. when the immediate
+   child has already exited and a background grandchild is now owned by
+   init. The `--` is load-bearing: without it /usr/bin/kill reads -<pid> as
+   an option, exits 0, and silently kills only the leader."
+  [proc kill-mode]
+  (if (= kill-mode :group)
+    (do
+      (try
+        (let [pid (.pid (:proc proc))]
+          (process/sh {:continue true} "kill" "-KILL" "--" (str "-" pid)))
+        (catch Exception _ nil))
+      (try (.destroyForcibly (:proc proc)) (catch Exception _ nil)))
+    (try (process/destroy-tree proc) (catch Exception _ nil))))
+
 (defn- await-bounded-process
   "BL-1021: one deadline over exit wait AND stream drain. Timed-out → exit
    124; drain throws propagate; otherwise the process result map."
-  [proc cmd bound]
+  [proc cmd bound kill-mode]
   ;; ONE deadline over the WHOLE call - BL-1021. `(deref proc bound ...)`
   ;; bounds only the EXIT-CODE wait. When the direct child exits
   ;; promptly the timeout branch is never taken, and babashka.process
@@ -178,7 +199,7 @@
         ;; releases itself when the pipe-holder finally exits. Not capturing
         ;; the streams at all is the call site's fix, not the bound's.
         (future-cancel drain)
-        (try (process/destroy-tree proc) (catch Exception _ nil))
+        (destroy-timed-out-process! proc kill-mode)
         ((deref on-timeout!) {:context @current-context :cmd cmd :bound-ms bound})
         {:exit 124 :out ""
          :err (str "daemon-cycle-guard: bounded-wait timeout after " bound "ms: "
@@ -196,16 +217,27 @@
    BL-1102: a spawn that never happened (ENOENT/EACCES/…) returns
    {:exit 127 :spawn-failed? true …} instead of throwing — distinguishable
    from a real non-zero exit and from exit 124. Drain-time throws still
-   propagate unchanged."
+   propagate unchanged.
+   BL-1525: two opts are consumed HERE, never forwarded to
+   process/process (which does not know them):
+     :bound-ms   per-call override of the wait bound, falling back to the
+                 SWARMFORGE_SUBPROCESS_WAIT_BOUND_MS env seam / 60s default
+                 exactly as before when omitted.
+     :kill-mode  :tree (default, unchanged) or :group - see
+                 destroy-timed-out-process! above. bounded-run-lib/run-bounded!
+                 is the one caller that needs :group; every pre-existing sh!
+                 call site is untouched by this option's addition."
   [& args]
-  (let [[cmd opts] (split-sh-args args)
-        bound (subprocess-wait-bound-ms)
+  (let [[cmd raw-opts] (split-sh-args args)
+        bound (or (:bound-ms raw-opts) (subprocess-wait-bound-ms))
+        kill-mode (or (:kill-mode raw-opts) :tree)
+        opts (dissoc raw-opts :bound-ms :kill-mode)
         spawned (try
                   {::ok (process/process cmd (merge {:out :string :err :string} opts))}
                   (catch Exception e {::spawn-failed e}))]
     (if-let [e (::spawn-failed spawned)]
       (spawn-failure-result e)
-      (await-bounded-process (::ok spawned) cmd bound))))
+      (await-bounded-process (::ok spawned) cmd bound kill-mode))))
 
 (defn spawn-detached!
   "BL-1524: fire-and-forget launch for a call site that must legitimately

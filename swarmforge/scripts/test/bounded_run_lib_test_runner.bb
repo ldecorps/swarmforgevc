@@ -1,7 +1,11 @@
 #!/usr/bin/env bb
-;; Unit tests for bounded_run_lib.bb (BL-1103): one shared wall-clock-bounded
-;; runner. Locks the three feature scenarios and the single-implementation
-;; invariant (no second copy of the group-kill / no-deref traps).
+;; Unit tests for bounded_run_lib.bb (BL-1103, folded into the chokepoint by
+;; BL-1525): one shared wall-clock-bounded runner. Locks the three feature
+;; scenarios and the single-implementation invariant (no second copy of the
+;; group-kill / no-deref traps) - since BL-1525 those traps live in
+;; daemon_cycle_guard_lib.bb's :kill-mode :group (the human ruling's chosen
+;; home for them), so the source-scan assertions below check THAT file, not
+;; this one; run-bounded! itself is checked for requesting :kill-mode :group.
 
 (require '[babashka.fs :as fs]
          '[babashka.process :as process]
@@ -39,7 +43,7 @@
              "bash" "-c" "sleep 3600 & sleep 3600")
           elapsed (- (System/currentTimeMillis) t0)]
       (assert-true "01: timed-out? true" (:timed-out? r))
-      (assert= "01: exit nil on timeout" nil (:exit r))
+      (assert= "01: exit 124 on timeout (the chokepoint's bound-hit convention)" 124 (:exit r))
       (assert-true "01: returns promptly (well under the child's sleep)" (< elapsed 5000))
       (Thread/sleep 500)
       (assert= "01: no sleep 3600 grandchild survived the group kill"
@@ -80,15 +84,26 @@
                    (str/includes? (slurp err) "fail-err")))))
 
 ;; ── single implementation: callers source the lib, do not re-copy traps ───
+;; BL-1525 (human ruling A): run-bounded! is a thin wrapper over
+;; daemon-cycle-guard-lib/sh!, so the group-kill trap itself now lives in
+;; daemon_cycle_guard_lib.bb's :kill-mode :group - THAT file is checked for
+;; carrying it, never a second copy in bounded_run_lib.bb or a caller.
 (let [scripts (str (fs/path (fs/parent (fs/canonicalize *file*)) ".."))
+      chokepoint (slurp (str (fs/path scripts "daemon_cycle_guard_lib.bb")))
       lib (slurp (str (fs/path scripts "bounded_run_lib.bb")))
       expedite (slurp (str (fs/path scripts "expedite_cli.bb")))
       babysitter (slurp (str (fs/path scripts "babysitter_check.bb")))
-      ;; The load-bearing group-kill argument list, unique to this runner.
+      ;; The load-bearing group-kill argument list, unique to the chokepoint.
       kill-needle #"\"kill\" \"-KILL\" \"--\""
       setsid-needle #"\[\"setsid\"\]"]
-  (assert-true "lib carries the group-kill" (re-find kill-needle lib))
-  (assert-true "lib wraps with setsid" (re-find setsid-needle lib))
+  (assert-true "the chokepoint carries the group-kill" (re-find kill-needle chokepoint))
+  (assert= "bounded_run_lib.bb has no second copy of the group-kill"
+           0 (count (re-seq kill-needle lib)))
+  (assert-true "run-bounded! wraps its cmd with setsid" (re-find setsid-needle lib))
+  (assert-true "run-bounded! requests the chokepoint's group-kill mode"
+               (str/includes? lib ":kill-mode :group"))
+  (assert-true "run-bounded! delegates to daemon-cycle-guard-lib/sh!"
+               (str/includes? lib "daemon-cycle-guard-lib/sh!"))
   (assert= "expedite_cli.bb has no second copy of the group-kill"
            0 (count (re-seq kill-needle expedite)))
   (assert= "babysitter_check.bb has no second copy of the group-kill"

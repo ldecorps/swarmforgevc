@@ -46,12 +46,17 @@
 
 (ns unregistered-test-gate-lib
   (:require [babashka.fs :as fs]
-            [babashka.process :as process]
             [clojure.string :as str]))
 
 (load-file (str (fs/path (fs/parent (fs/canonicalize *file*)) "test" "suite_inventory_lib.bb")))
 (load-file (str (fs/path (fs/parent (fs/canonicalize *file*)) "pipeline_stage_lib.bb")))
 (load-file (str (fs/path (fs/parent (fs/canonicalize *file*)) "task_scope_gate_lib.bb")))
+;; BL-1525: git! below routed through daemon-cycle-guard-lib/sh! - swarm_handoff.bb
+;; load-files this lib, and handoffd.bb spawns swarm_handoff.bb, so a plain
+;; process/sh here was a spawn-reachable banned-API offender (BL-1031's
+;; ratchet). Self-load-filed rather than relying on task_scope_gate_lib.bb's
+;; own load-file above to have brought it in first.
+(load-file (str (fs/path (fs/parent (fs/canonicalize *file*)) "daemon_cycle_guard_lib.bb")))
 
 (def test-dir
   "The one tree this manifest governs. The TypeScript and Gherkin lanes have
@@ -160,7 +165,7 @@
 (def ^:private empty-tree-sha "4b825dc642cb6eb9a060e54bf8d69288fbee4904")
 
 (defn- git! [root & args]
-  (apply process/sh (into ["git" "-C" (str root)] args)))
+  (apply daemon-cycle-guard-lib/sh! (into ["git" "-C" (str root)] args)))
 
 (defn- diff-base [root]
   (let [head (git! root "rev-parse" "-q" "--verify" "HEAD")]
