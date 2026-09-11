@@ -25,7 +25,10 @@ acceptance: specs/features/BL-1542-live-screen-ticket-strip-collapse-control.fea
 required_wiring:
   - 'specs/pipeline/steps/bl1542TicketStripCollapseSteps.js::registerSteps::the handler lands in the same parcel as the feature (BL-233)'
 
-human_approval: pending
+human_approval: approved
+human_ruling: |
+  Remembered per surface through the bridge preference store, the way the pane text size is (recommended)
+ruling_provenance: tapped
 approval_context: >
   A new feature file is authored here, so it needs a tap, and one choice is
   posed. FIRM: the control is a separate element from the existing +/- pane
