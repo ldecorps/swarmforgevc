@@ -1,3 +1,8 @@
+# mutation-stamp: sha256=89c87d2374378e82db78a84e544b1a506706907eb5fb7b79169da86504c425e7
+# acceptance-mutation-manifest-begin
+# {"version":1,"tested_at":"2026-09-11T23:25:11.520159169Z","feature_name":"BL-1535 The chase never displaces a working resident","feature_path":"/home/carillon/swarmforgevc/.worktrees/hardender/specs/features/BL-1535-the-chase-never-displaces-a-working-resident.feature","background_hash":"4b3607830aecc541d749d2ef2888d9c2afa70c58aa510c4083f8707bc00b8a1e","implementation_hash":"unknown","scenarios":[{"index":0,"name":"a working holder is not rotated away for a different target","scenario_hash":"bc668437836c1b6b6c0e9050f9f64327ee080edf2ed6eaa18e7ba1bd2202fd3c","mutation_count":2,"result":{"Total":2,"Killed":2,"Survived":0,"Errors":0},"tested_at":"2026-09-11T23:25:11.520159169Z"}]}
+# acceptance-mutation-manifest-end
+
 Feature: BL-1535 The chase never displaces a working resident
 
   On a rotation-router pack the handoff daemon's chase rotates the single
