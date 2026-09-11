@@ -3028,10 +3028,9 @@
 ;; gate, not two independently-tuned timers).
 (defn resource-sample-sweep! []
   (try
-    (let [cli-path (node-tool-path "sample-resources.js")
-          {:keys [exit out]} (daemon-cycle-guard-lib/sh! ["node" cli-path] {:dir (str project-root)})]
-      (when (zero? exit)
-        (log! "resource-sample" (str/trim out))))
+    (let [cli-path (node-tool-path "sample-resources.js")]
+      (daemon-cycle-guard-lib/run-compiled-tool!
+       log! "resource-sample" ["node" cli-path] {:dir (str project-root)}))
     (catch Exception e
       (log! "resource-sample-sweep-error" (.getMessage e)))))
 
@@ -3042,10 +3041,9 @@
 ;; firing every cycle like sibling sweeps is safe.
 (defn context-telemetry-producer-sweep! []
   (try
-    (let [cli-path (node-tool-path "run-context-telemetry-producer.js")
-          {:keys [exit out]} (daemon-cycle-guard-lib/sh! ["node" cli-path] {:dir (str project-root)})]
-      (when (zero? exit)
-        (log! "context-telemetry-producer" (str/trim out))))
+    (let [cli-path (node-tool-path "run-context-telemetry-producer.js")]
+      (daemon-cycle-guard-lib/run-compiled-tool!
+       log! "context-telemetry-producer" ["node" cli-path] {:dir (str project-root)}))
     (catch Exception e
       (log! "context-telemetry-producer-sweep-error" (.getMessage e)))))
 
@@ -3069,10 +3067,9 @@
 ;; try/catch swallows it — BL-1392).
 (defn turn-profile-producer-sweep! []
   (try
-    (let [cli-path (node-tool-path "run-turn-profile-producer.js")
-          {:keys [exit out]} (daemon-cycle-guard-lib/sh! ["node" cli-path] {:dir (str project-root)})]
-      (when (zero? exit)
-        (log! "turn-profile-producer" (str/trim out))))
+    (let [cli-path (node-tool-path "run-turn-profile-producer.js")]
+      (daemon-cycle-guard-lib/run-compiled-tool!
+       log! "turn-profile-producer" ["node" cli-path] {:dir (str project-root)}))
     (catch Exception e
       (log! "turn-profile-producer-sweep-error" (.getMessage e)))))
 
@@ -3087,10 +3084,9 @@
 ;; reason, same as the sweep above.
 (defn ritual-ledger-producer-sweep! []
   (try
-    (let [cli-path (node-tool-path "run-ritual-ledger-producer.js")
-          {:keys [exit out]} (daemon-cycle-guard-lib/sh! ["node" cli-path] {:dir (str project-root)})]
-      (when (zero? exit)
-        (log! "ritual-ledger-producer" (str/trim out))))
+    (let [cli-path (node-tool-path "run-ritual-ledger-producer.js")]
+      (daemon-cycle-guard-lib/run-compiled-tool!
+       log! "ritual-ledger-producer" ["node" cli-path] {:dir (str project-root)}))
     (catch Exception e
       (log! "ritual-ledger-producer-sweep-error" (.getMessage e)))))
 
