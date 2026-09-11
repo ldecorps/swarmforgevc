@@ -1,3 +1,8 @@
+# mutation-stamp: sha256=5244bfec82c6143e4ad5a8fbfd80a808b6c900f5f23915fe895cce70988f91aa
+# acceptance-mutation-manifest-begin
+# {"version":1,"tested_at":"2026-09-11T17:35:43.156990824Z","feature_name":"BL-1525 The spawn-reachable subtree carries no banned-API debt again","feature_path":"/home/carillon/swarmforgevc/.worktrees/hardender/specs/features/BL-1525-the-spawn-reachable-subtree-carries-no-banned-api-debt-again.feature","background_hash":"74234e98afe7498fb5daf1f36ac2d78acc339464f950703b8c019892f982b90b","implementation_hash":"unknown","scenarios":[{"index":1,"name":"a formerly indebted file names no banned subprocess API","scenario_hash":"80df5dbc06f9bca56910109ba7629c0316ebd27508602958cbd6d973e328609c","mutation_count":3,"result":{"Total":3,"Killed":3,"Survived":0,"Errors":0},"tested_at":"2026-09-11T17:35:43.156990824Z"}]}
+# acceptance-mutation-manifest-end
+
 Feature: BL-1525 The spawn-reachable subtree carries no banned-API debt again
 
   BL-1022 taught the daemon's closure walk to follow spawn edges and BL-1031
