@@ -294,4 +294,38 @@ OUT="$(bb -e "
   || fail "06: expected a standing-pack conf to resolve non-router, got: $OUT"
 pass "06: a standing pack's own topology resolution stays non-router - chase never reaches this gate"
 
+# ── 07: marker/live divergence — refusal and telemetry follow the LIVE role, not the stale marker ──
+# BL-1535 architect bounce (D1): every scenario above keeps the
+# mono-router-active-role marker and the resident pane's live identity
+# (BL-927) in agreement, so it never proves departing-role-blocking-
+# handoff's divergence branch actually feeds attempt-resident-rotate!'s
+# :departing-parcel?/:departing-working? and telemetry :role from the
+# resolved LIVE role rather than the raw marker. Here the marker claims
+# specifier while the pane is actually live as hardender - which holds the
+# real in_process parcel and a live descendant process. Rotating onto a
+# THIRD role (coder, named by neither the marker nor the live identity)
+# must still refuse, and the refusal/telemetry must name hardender, never
+# the stale marker specifier.
+echo "specifier" > "$ROOT/.swarmforge/mono-router-active-role"
+LIVE_ROLE="hardender"
+PANE_PID="$WORKING_PANE_PID"
+queue_hardender_parcel case07
+: > "$TMUX_LOG"
+rm -f "$ROOT/.swarmforge/telemetry"/chaser-*.jsonl
+OUT="$(run_attempt_rotate coder 2>&1)"
+echo "$OUT" | grep -q ":ok false" || fail "07: expected refusal, got: $OUT"
+echo "$OUT" | grep -q "departing-mid-parcel" || fail "07: expected :reason departing-mid-parcel, got: $OUT"
+grep -q "respawn-pane" "$TMUX_LOG" && fail "07: pane must NOT be respawned on refusal, log: $(cat "$TMUX_LOG")"
+TFILE="$(telemetry_file)"
+[[ -n "$TFILE" ]] || fail "07: expected a chaser telemetry file to exist"
+grep -q '"role":"hardender"' "$TFILE" \
+  || fail "07: telemetry row must name the LIVE role hardender, not the stale marker specifier: $(cat "$TFILE")"
+grep -q '"role":"specifier"' "$TFILE" \
+  && fail "07: telemetry row must NOT name the stale marker specifier: $(cat "$TFILE")"
+pass "07: marker/live divergence - refusal and telemetry follow the LIVE role (hardender), never the stale marker (specifier)"
+clear_hardender_parcels
+rm -f "$ROOT/.swarmforge/telemetry"/chaser-*.jsonl
+echo "hardender" > "$ROOT/.swarmforge/mono-router-active-role"
+LIVE_ROLE="hardender"
+
 echo "test_chase_departing_mid_parcel_gate: ALL CHECKS PASSED"
