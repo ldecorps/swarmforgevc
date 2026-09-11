@@ -2207,6 +2207,77 @@ the boot-origin question is a separate slice if it proves real.
 
 Acceptance: `specs/features/BL-921-chase-verifies-live-pane-identity.feature`.
 
+### Chase never departs a working mid-parcel resident (BL-1535)
+
+`should-rotate-resident?` gates every chase-driven rotation, but nothing
+read the departing role's own `inbox/in_process` box or whether it was
+actually doing something — only the aggregate footer-busy signal and the
+active/cooldown checks. A role whose turn was inside a detached command
+(a mutation rerun, say) or whose forward stood between the two
+`swarm_handoff.sh` calls of a self-audit challenge read as idle from the
+footer alone, so an aged-note chase for a different target could rotate it
+away mid-turn. Measured live 2026-09-11: the aged-note chase for a
+coordinator→specifier note pulled the resident out of the hardener three
+times (05:29:58Z, 06:17:07Z, 07:09:38Z), stranding a held parcel, an unsent
+`git_handoff` draft, and a detached mutation rerun in turn — the last one
+killing a worktree session 2.5 minutes into a run that finished 14 minutes
+later with nowhere to report to. Full reconstruction:
+`backlog/evidence/BL-1535-specifier-displaced-resident-timeline-20260911.md`.
+
+**The fix.** `should-rotate-resident?` (`mono_router_lib.bb`) gains two
+inputs, checked as a new `:departing-mid-parcel` branch ordered after
+`:busy` and before `:already-active` (so a same-role rotate, BL-926, and
+the ambulance override still proceed unchanged):
+
+- `:departing-parcel?` — the departing role's `inbox/in_process` holds a
+  real `*.handoff` (sidecars excluded); `handoff-lib/departing-role-blocking-handoff`
+  already computed this for the BL-926/BL-805 gate and is reused, not
+  reimplemented.
+- `:departing-working?` — `departing-working-signal` (`handoffd.bb`)
+  answers true on the FIRST of: the existing pane-footer-busy probe, a live
+  process descended from the resident pane (`resident-pane-live-descendant?`,
+  walking the pane's own `#{pane_pid}`), or a standing self-audit challenge
+  file for the departing role younger than `note_actionable_after_ms`
+  (`fresh-audit-challenge?`) — a stale challenge alone does not count.
+
+Both must be true, the rotation target must differ from the departing role,
+and `:ignore-busy?` (the ambulance override) must be false, or the gate
+refuses `:departing-mid-parcel`. A departing role with no held parcel never
+refuses on this branch alone, even while working — a stray watcher process
+has nothing to lose by being displaced. An idle holder — idle footer, no
+live command, no fresh challenge — still yields exactly as the 2026-08-31
+seated-preferred hotfix decided, so dependency mail never starves behind a
+dead or waiting holder.
+
+`departing-role-blocking-handoff` is itself BL-927-aware: when the
+`mono-router-active-role` marker disagrees with the resident pane's live
+identity, it resolves the departing role from the LIVE identity, and
+`attempt-resident-rotate!` feeds that same resolved role into both
+`departing-working-signal` and the telemetry row, so `:departing-parcel?`
+and `:departing-working?` always describe the same role even under a
+diverged marker. `:active-role` fed to `should-rotate-resident?` itself
+stays the raw marker, unchanged, shared with the pre-existing
+`:already-active`/`:busy` branches.
+
+`rotate-resident-to!` and `respawn-as!` (the resident-invoked rotation
+entry, BL-805/BL-926) are untouched — this gate lives entirely in the
+chase's own `should-rotate-resident?`/`attempt-resident-rotate!` path,
+upstream of `rotate-resident-to!`, which this ticket's callers still never
+touch (`rotate-gate-decision`'s docstring is re-tensed to name this gate
+rather than claim daemon rotation is ungated everywhere).
+
+**Observing it:** a refusal logs `chase-rotate-departing-mid-parcel
+<target-role>` and appends one chaser-telemetry row (`{:type
+"departing-mid-parcel" :role <departing-role> :handoffId <blocking file
+name> :signal <"busy-footer" | "live-descendant-process" |
+"fresh-audit-challenge">}`).
+
+Acceptance:
+`specs/features/BL-1535-the-chase-never-displaces-a-working-resident.feature`;
+`swarmforge/scripts/test/test_chase_departing_mid_parcel_gate.sh` drives
+the real gate through a fixture git repo, a fake `tmux` on PATH, and real
+child processes.
+
 ### Dispatch-gap sweep
 
 The daemon's existing chase/nudge sweep only watches inbox mail (queued or
