@@ -6,8 +6,13 @@
 
 (ns process-table-lib
   (:require [babashka.fs :as fs]
-            [babashka.process :as process]
             [clojure.string :as str]))
+
+;; BL-1524: the Darwin lsof cwd probe runs under the bounded chokepoint
+;; (daemon-cycle-guard-lib/sh!), not a direct babashka.process call - this
+;; file is load-filed into handoffd.bb's closure via
+;; master_checkout_drift_lib.bb.
+(load-file (str (fs/path (fs/parent (fs/canonicalize *file*)) "daemon_cycle_guard_lib.bb")))
 
 (defn procfs-available?
   []
@@ -129,7 +134,7 @@
   "Darwin (and other non-procfs hosts): lsof reports cwd as an `n…` path line."
   [pid]
   (try
-    (let [{:keys [out]} (process/sh {:continue true} "lsof" "-a" "-p" (str pid) "-d" "cwd" "-Fn")]
+    (let [{:keys [out]} (daemon-cycle-guard-lib/sh! {:continue true} "lsof" "-a" "-p" (str pid) "-d" "cwd" "-Fn")]
       (->> (str/split-lines (or out ""))
            (keep (fn [line]
                    (when (str/starts-with? line "n")

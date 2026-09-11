@@ -79,6 +79,24 @@ A wait-bound hit while gathering the acceptance-contract (gherkin-parser /
 resolve_contract_steps) fails the pre-QA gate CLOSED with a finding that
 names the wait-bound — it must never look like a clean contract pass.
 
+**Update, BL-1524 (2026-09-11):** `daemon_cycle_guard_lib_test_runner.bb`'s
+load-closure assertion (the structural half locking in every file this
+chokepoint must be the only one naming `babashka.process`) had been red on
+main since 2026-08-25 with no owner: `process_table_lib.bb`'s Darwin `lsof`
+cwd probe, `model_factory_store.bb`'s launch seam, and
+`outage_failover_store.bb`'s seat respawn each called `babashka.process`
+directly and now route through `sh!` like every other bounded wait above.
+`handoff_lib.bb`'s rotation bootstrap spawn is different on purpose — it
+pastes a recomposed prompt into a fresh agent session and can legitimately
+outlive the 60s bound — so it gets a new chokepoint verb instead of a
+bounded wait: `daemon-cycle-guard-lib/spawn-detached!` starts the child and
+returns immediately, never deref'ing or waiting on it, so a slow bootstrap
+never trips `subprocess-timeout` and a spawn failure is swallowed exactly
+as the bare `process/process` call it replaces did. `daemon_api_ban_lib.bb`'s
+exempt set stays exactly `#{"daemon_cycle_guard_lib.bb"}`. The runner's
+other two FAIL lines (unresolved spawn targets, spawn-reachable subtree
+debt) are separate, still-open tickets (BL-1525/BL-1526).
+
 **Update, BL-1021 (2026-08-21):** the bound above used to cover only the
 *exit-code* wait — `(deref proc bound ::timed-out)`. If the direct child
 exited promptly but something it spawned kept the inherited stdout/stderr

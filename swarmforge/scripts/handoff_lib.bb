@@ -6,7 +6,6 @@
 
 (ns handoff-lib
   (:require [babashka.fs :as fs]
-            [babashka.process :as process]
             [cheshire.core :as json]
             [clojure.string :as str])
   (:import [java.nio.channels FileChannel]
@@ -1174,7 +1173,7 @@
                       :session session
                       :agent (:agent (load-role-info target-role))
                       :role target-role})]
-      (process/process argv {:out :discard :err :discard}))
+      (daemon-cycle-guard-lib/spawn-detached! argv))
     (catch Exception _ nil)))
 
 (defn rotate-resident-to!

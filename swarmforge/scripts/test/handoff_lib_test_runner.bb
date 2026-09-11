@@ -716,6 +716,30 @@
   (fs/set-posix-file-permissions unreadable "rw-------")
   (fs/delete-tree tmp))
 
+;; ── run-respawn-bootstrap! routes through the chokepoint (BL-1524) ─────────
+;; The static respawn_bootstrap_test_runner.bb checks only source TEXT (the
+;; call appears in the function body); it cannot see whether the runtime
+;; wiring actually reaches daemon-cycle-guard-lib/spawn-detached! with the
+;; built argv. with-redefs proves the real call, not the text.
+(let [captured (atom ::not-called)]
+  (with-redefs [daemon-cycle-guard-lib/spawn-detached!
+                (fn [argv] (reset! captured argv) {:stubbed true})
+                handoff-lib/load-role-info (fn [_] {:agent "aider"})
+                respawn-bootstrap-lib/argv-for-role (fn [_] ["node" "bootstrap.js" "--role" "coder"])]
+    (handoff-lib/run-respawn-bootstrap! "fake-socket" "fake-session" "coder"))
+  (assert= "run-respawn-bootstrap!: routes the built argv through daemon-cycle-guard-lib/spawn-detached!"
+           ["node" "bootstrap.js" "--role" "coder"] @captured))
+
+;; A no-op provider (argv-for-role returns nil) must never call spawn-detached!
+;; at all, and must not throw.
+(let [captured (atom ::not-called)]
+  (with-redefs [daemon-cycle-guard-lib/spawn-detached! (fn [_] (reset! captured :called) {:stubbed true})
+                handoff-lib/load-role-info (fn [_] {:agent "embedded"})
+                respawn-bootstrap-lib/argv-for-role (fn [_] nil)]
+    (handoff-lib/run-respawn-bootstrap! "fake-socket" "fake-session" "coder"))
+  (assert= "run-respawn-bootstrap!: no argv means spawn-detached! is never called"
+           ::not-called @captured))
+
 ;; ── report ────────────────────────────────────────────────────────────────
 (if (empty? @failures)
   (println "handoff_lib (BL-365): ALL TESTS PASSED")
