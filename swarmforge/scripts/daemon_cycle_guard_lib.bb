@@ -227,3 +227,31 @@
     (log-fn "sweep-boundary" (str "sweep=" sweep-name " ms=" (- (now-fn) t0)))
     (reset! current-context "outside-sweep")
     ((deref sweep-marker!) {:sweep "idle"})))
+
+(defn- first-stderr-line-capped
+  "BL-1478: cuts stderr to its first line and caps it at 200 chars, so a
+   node stack trace or a bb ex-info dump never floods the daemon log."
+  [err]
+  (let [line (first (str/split-lines (or err "")))]
+    (if (> (count line) 200) (subs line 0 200) line)))
+
+(defn run-compiled-tool!
+  "BL-1478: runs a compiled node tool through sh! (or sh-fn when injected for
+   tests) and logs exactly one line either way, closing the silence the four
+   handoffd sweeps shared before this ticket (BL-1477's eight-day unlogged
+   outage). Exit zero: logs stdout under tool-name, exactly as every call
+   site did before this ticket. Any non-zero exit - an ordinary failure, the
+   124 wait-bound kill, or the 127 spawn-never-happened case (BL-1102) - logs
+   ONE line under \"<tool-name>-failed\" carrying the exit code and the first
+   line of stderr, cut and capped so a multi-line stack trace never floods
+   the log. The 124 case ALSO gets on-timeout!'s own line from sh! itself -
+   this is an ADDITIONAL line, not a replacement, so the sweep's own log
+   names it too."
+  ([log-fn tool-name cmd sh-opts]
+   (run-compiled-tool! log-fn tool-name cmd sh-opts sh!))
+  ([log-fn tool-name cmd sh-opts sh-fn]
+   (let [{:keys [exit out err]} (sh-fn cmd sh-opts)]
+     (if (zero? exit)
+       (log-fn tool-name (str/trim out))
+       (log-fn (str tool-name "-failed")
+               (str "exit=" exit " " (first-stderr-line-capped err)))))))
