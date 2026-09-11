@@ -33,7 +33,7 @@ acceptance: specs/features/BL-1526-every-daemon-spawn-target-resolves-statically
 required_wiring:
   - 'specs/pipeline/steps/bl1526SpawnTargetsResolveStaticallySteps.js::registerSteps::the handler lands in the same parcel as the feature (BL-233)'
 
-human_approval: pending
+human_approval: approved
 approval_context: >
   A new feature file is authored here, so it needs a tap. No choice is
   posed and there are no ruling_options. FIRM: the walk's fail-loud

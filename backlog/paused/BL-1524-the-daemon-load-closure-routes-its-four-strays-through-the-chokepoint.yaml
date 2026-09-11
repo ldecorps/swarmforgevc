@@ -38,7 +38,7 @@ required_wiring:
   - 'swarmforge/scripts/handoff_lib.bb::daemon-cycle-guard-lib/::the rotation bootstrap spawn goes through the chokepoint'
   - 'specs/pipeline/steps/bl1524ChokepointLoadClosureStraysSteps.js::registerSteps::the handler lands in the same parcel as the feature (BL-233)'
 
-human_approval: pending
+human_approval: approved
 approval_context: >
   A new feature file is authored here, so it needs a tap. No choice is
   posed and there are no ruling_options. FIRM: the green is earned by
