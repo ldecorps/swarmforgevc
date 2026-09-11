@@ -1,0 +1,222 @@
+id: BL-1537
+title: "Every production sender of swarm_handoff.sh builds its draft under the project root it sends from: promote_and_route_next.sh (freshness-hold note), route_backlog_to_coder.sh, mailbox_note_to_role.sh and inject_note_to_role.sh mktemp their draft under ${TMPDIR:-/tmp}, and closing-ceremony-run.ts, night-closing-ceremony-run.ts and tracer-bullet-launcher.ts write theirs under os.tmpdir(), so BL-1518-a's fail-closed root guard (landed 2026-09-11) refuses all seven - every coordinator promotion route, the freshness-hold note, both ceremony notes and the tracer seed - and BL-1518's premise 'every production draft is under the root by construction' was false for seven senders; the seven draft under <root>/tmp/ as the Babashka senders already do"
+milestone: M8
+type: defect
+severity: high
+# high: a live fault in the delivery machinery. Since BL-1518-a landed
+# (2026-09-11, done/BL-1518-a) the coordinator's promotion route is refused:
+# promote_and_route_next.sh moves the ticket to backlog/active/, then
+# route_backlog_to_coder.sh's send is refused and the Work note is never
+# queued (promote-without-route stranding, PIPELINE.md step 6). The
+# freshness-hold note to the specifier is swallowed by `2>/dev/null ||`
+# and only echoed to stderr; the 05:00/shift-close ceremony notes and any
+# tracer bullet are refused the same way. Not critical: in-flight parcels
+# keep moving, nothing is lost, and the coordinator can route by hand with
+# a draft written under swarmforge/runtime/ (it did so for BL-1530 at
+# 10:13Z on 2026-09-11 and reported the defect at 10:13:46Z).
+status: todo
+epic: swarm-reliability
+priority: 8
+direction: swarm-reported
+depends_on: []
+mutation_cost: medium
+# medium: three TypeScript thin-wrapper tools each gain a root-relative draft
+# path (TS lane, full Stryker over the compiled tools - the path builder
+# becomes an exported pure helper so the mutant that reverts it is killed by
+# a unit test, never by shelling the CLI); four shell scripts change one
+# mktemp line each (shell lane, one end-to-end test under a git fixture with
+# TMPDIR pointed outside it; BL-472 fallback recorded, no mutation for shell).
+slice_size_envelope: medium
+required_stages: [coder, cleaner, architect, hardender, documenter, qa]
+
+acceptance: specs/features/BL-1537-every-production-sender-drafts-under-the-root-it-sends-from.feature
+
+# No production anchor is declared on purpose (BL-1235): all seven senders
+# already invoke swarm_handoff.sh and already exist, so a pattern on any of
+# them matches before and after the fix and gates nothing. Reachability is
+# proven by the shell test below, which runs the real scripts against a git
+# fixture with TMPDIR outside it and reads the installed parcel. Both
+# entries are BL-233 in-parcel pins; the names are chosen here so the
+# literals exist (BL-874).
+required_wiring:
+  - 'specs/pipeline/steps/bl1537ProductionSenderDraftsUnderRootSteps.js::registerSteps::the handler lands in the same parcel as the feature (BL-233, BL-1371)'
+  - 'swarmforge/scripts/test/test_production_sender_drafts_under_root.sh::TMPDIR::the shell test points TMPDIR outside the fixture root and asserts each script-built note is queued'
+
+human_approval: pending
+approval_context: >
+  A new feature file is authored here, so it needs a tap. No choice is
+  posed and there are no ruling_options. FIRM: BL-1518-a's guard is NOT
+  relaxed - a draft outside the resolved root stays refused, because the
+  system temp dir is exactly where mkdtemp fixtures live and letting it
+  through would reopen the 2026-09-10 fixture escape. The seven callers
+  move their draft under <root>/tmp/, the convention salvage_lib.bb,
+  operator_handoff.bb and ceremony_handoff.bb already follow. No draft
+  becomes a tracked file.
+
+invariants:
+  - "A production sender of swarm_handoff.sh or swarm_handoff.bb creates its draft under the project root the CLI will resolve for that send - never under TMPDIR, /tmp or os.tmpdir() - so BL-1518-a's guard refuses only ever a fixture escape and never a live send; the system temp dir is never what decides where a draft lives."
+  - "A draft a sender creates for one send is removed by that sender on every exit path (queued, refused, signalled) and never lands in a tracked path: under <root>/tmp/ (gitignored at the repo root) or beside the role's own draft file, never a new tracked file under swarmforge/runtime/."
+
+description: |
+  ## What is wrong
+
+  BL-1518-a (done 2026-09-11) added `draft-root-guard!` to
+  `swarmforge/scripts/swarm_handoff.bb`: the CLI canonicalizes the draft it
+  was handed and the project root it resolved, and refuses with
+  `HANDOFF_DRAFT_OUTSIDE_ROOT` (naming both paths) when the draft is not
+  under the root. Its premise, written into the ticket's invariant 1, the
+  guard lib's header and the feature narrative, was: "in production every
+  draft (a worktree's tmp/handoff.txt, master's
+  swarmforge/runtime/handoff-draft.txt) is under the root, so a draft
+  outside it is only ever a fixture escape."
+
+  That premise held for drafts a ROLE writes by hand and for the three
+  Babashka senders (`salvage_lib.bb` line 149, `operator_handoff.bb` line
+  71, `ceremony_handoff.bb` line 40 - all under `<root>/tmp/`). It was
+  false for seven script-built drafts, census 2026-09-11 11:30Z:
+
+  | # | sender | draft site | send |
+  |---|---|---|---|
+  | 1 | `swarmforge/scripts/promote_and_route_next.sh` line 280 | `mktemp` (bare, so `${TMPDIR:-/tmp}`) | deprecator freshness-hold note to specifier, priority 00 |
+  | 2 | `swarmforge/scripts/route_backlog_to_coder.sh` line 149 | `mktemp "${TMPDIR:-/tmp}/swarmforge-route.XXXXXX.handoff"` | the Work note that routes every promoted ticket (called by promote_and_route_next.sh line 441) |
+  | 3 | `swarmforge/scripts/mailbox_note_to_role.sh` line 49 | `mktemp "${TMPDIR:-/tmp}/swarmforge-mailbox.XXXXXX.handoff"` | mailbox-only note |
+  | 4 | `swarmforge/scripts/inject_note_to_role.sh` line 45 | `mktemp "${TMPDIR:-/tmp}/swarmforge-inject.XXXXXX.handoff"` | injected note |
+  | 5 | `extension/src/tools/closing-ceremony-run.ts` line 34 (`sendNoteViaHandoff`) | `path.join(os.tmpdir(), ...)` | closing-ceremony outcome note to specifier |
+  | 6 | `extension/src/tools/night-closing-ceremony-run.ts` line 118 | `path.join(os.tmpdir(), ...)` | lean-packet note to specifier (BL-820) |
+  | 7 | `extension/src/tools/tracer-bullet-launcher.ts` line 174 | `path.join(os.tmpdir(), ...)` | tracer-bullet seed note |
+
+  Each of the seven now ends in the refusal. Two consequences are already
+  live:
+
+  - **Promotion strands.** `promote_and_route_next.sh` moves the ticket
+    into `backlog/active/`, then line 441's route is refused. The script
+    labels any non-zero from the router as "already has a dispatch trail
+    (BL-1097)" (line 443), so the printed diagnosis is wrong as well. The
+    coordinator reported it at 10:13:46Z on 2026-09-11 ("promote_and_route_next.sh
+    drafts to /tmp - BL-1518 guard now refuses it") after routing BL-1530
+    by a hand-written draft.
+  - **The freshness-hold note is silent.** Sender 1 runs the CLI under
+    `2>/dev/null ||` and falls back to a stderr echo, so a held promotion
+    never reaches the specifier's inbox (Article 3.6 requires the note).
+
+  Senders 5-7 fail on their next run: the shift-close and 05:00 ceremony
+  notes (the BL-1528 "ceremony note undeliverable" shape, by a new cause)
+  and any tracer bullet.
+
+  ## What is wanted
+
+  1. Each of the seven senders creates its draft under `<root>/tmp/` of the
+     project root the send will resolve (creating the directory; it is
+     gitignored by the repo root's `/tmp/` rule), exactly as
+     `salvage_lib.bb` and `operator_handoff.bb` do. The shell scripts keep
+     `mktemp` for uniqueness (`mktemp "$ROOT/tmp/swarmforge-route.XXXXXX.handoff"`);
+     the TypeScript tools build the path from the `targetPath` / `target` /
+     `repoRoot` they already hold, never from `os.tmpdir()`.
+  2. Every sender still removes its draft on every exit path (the shell
+     `trap ... EXIT` and the TS `finally`/`unlinkSync` stay). Nothing new
+     is tracked.
+  3. The guard is NOT relaxed. Do not add the system temp dir, `TMPDIR`
+     or any allowlist to `handoff_draft_root_guard_lib.bb` - that is the
+     2026-09-10 fixture escape reopened.
+  4. Documenter: correct the two narratives that state the false premise
+     - the header comment of `swarmforge/scripts/handoff_draft_root_guard_lib.bb`
+     and the `Feature:` comment block of
+     `specs/features/BL-1518-a-handoff-cli-never-writes-outside-the-root-its-draft-lives-in.feature`
+     (comment lines only; no scenario changes - BL-1518-a is landed, so
+     the BL-1385 in-flight rule does not apply) - to say the premise held
+     for role-authored and Babashka-built drafts and that the seven
+     script-built drafts were moved under `<root>/tmp/` by BL-1537. A
+     durable contract carrying a false sentence is still a lie (BL-1006).
+
+  ## How (direction, not mandate)
+
+  - Shell: `ROOT` is already resolved in each script (`git rev-parse
+    --show-toplevel` in inject_note_to_role.sh line 44; the others carry
+    `$ROOT`/`SCRIPT_DIR/..`). `mkdir -p "$ROOT/tmp"` then `mktemp
+    "$ROOT/tmp/<prefix>.XXXXXX.handoff"`. Under a linked worktree
+    `--show-toplevel` is the worktree, which is also what the CLI resolves,
+    so the draft and the root agree by construction.
+  - TypeScript: export a small pure helper per tool (or one shared in
+    `extension/src/swarm/`) such as `draftPathUnder(root, prefix)` returning
+    `<root>/tmp/<prefix>-<pid>-<nonce>`, and have the send call it. The
+    unit test asserts the helper's output is under the root it was given
+    and never under `os.tmpdir()`; that kills the reverting mutant without
+    shelling the CLI (BL-1518 invariant 2: a unit test never reaches a live
+    mailbox under any mutant).
+  - Scenario 01's shell test (`test_production_sender_drafts_under_root.sh`)
+    builds a git fixture under mkdtemp (proven by `rev-parse
+    --git-common-dir`, BL-1390), exports `TMPDIR` to a SIBLING directory
+    outside the fixture, sets `SWARMFORGE_MAILBOX_ONLY=1` /
+    `SWARMFORGE_SKIP_DAEMON=1` as each script expects, runs each of the four
+    shell senders, and reads the recipient's `inbox/new`. For the three TS
+    rows the acceptance handler drives the compiled `extension/out/tools/`
+    entry against the same fixture. Note `mailbox_note_to_role.sh` refuses
+    under `SWARMFORGE_SKIP_DAEMON=1` (line 40) - run it without that
+    variable. Note also the sends are `note`s, so the BL-1530 two-call
+    self-audit does not apply (git_handoff only).
+  - Scenario 02 replaces `swarm_handoff.sh` in the fixture with a recorder
+    that prints its argv and exits 0, so the test can see the draft path
+    the sender chose while the draft still exists.
+  - Scenario 03's census grep, as counted at mint (re-run it, do not
+    re-derive):
+    `grep -rlE 'swarm_handoff\.(sh|bb)' swarmforge/scripts extension/src --include='*.sh' --include='*.ts' --include='*.bb' | grep -v /test/ | xargs grep -lE 'mktemp|os\.tmpdir\(\)|fs/create-temp|fs/path (root|project-root|tmp-dir) "tmp"|fs/path "tmp"'`
+    lists 13 files; reading each, 10 build a draft for a send
+    (the 7 above + salvage_lib.bb, operator_handoff.bb, ceremony_handoff.bb)
+    and 3 use temp files for something else (pre_qa_gate_gather_lib.bb,
+    inject_traffic.sh, swarm_handoff.bb's own audit temp). Of the 10, the 3
+    Babashka ones already draft under `<root>/tmp/`; the 7 do not. The
+    post-fix negative check is `grep -nE 'mktemp\)"$|mktemp "\$\{TMPDIR|os\.tmpdir\(\)'`
+    over the seven files returning nothing.
+
+  ## Out of scope
+
+  - `promote_and_route_next.sh` line 443 attributing every router non-zero
+    to BL-1097's dispatch-trail refusal. Once the send succeeds the wrong
+    label stops firing; making the message carry the router's own reason
+    is a separate low-severity slice if anyone wants it.
+  - Any change to `swarm_handoff.bb` or the guard lib.
+
+qa_e2e_procedure: |
+  1. In the live master checkout on the approved commit, with the swarm up:
+     `TMPDIR=/tmp swarmforge/scripts/inject_note_to_role.sh coordinator coder "BL-1537 e2e probe"`
+     (or the script's documented argument order) - the note appears in
+     `.swarmforge/handoffs/coder/inbox/new/`, no HANDOFF_DRAFT_OUTSIDE_ROOT
+     line is printed, and `ls /tmp | grep swarmforge-inject` is empty.
+     Complete the probe note from the coder side (or let the coordinator).
+  2. `ls <root>/tmp/` shows no leftover `swarmforge-*.handoff` after step 1.
+  3. Run the shell test `swarmforge/scripts/test/test_production_sender_drafts_under_root.sh`
+     and the acceptance suite; scenario 01 has seven green rows.
+  4. `git status` shows nothing new under `swarmforge/runtime/` and
+     `<root>/tmp/` is ignored (`git check-ignore tmp/x`).
+  5. Read `handoff_draft_root_guard_lib.bb`'s header and BL-1518-a's feature
+     comment: neither still claims every production draft was under the root
+     before this ticket.
+
+source: |
+  Coordinator note 2026-09-11T10:13:46Z (handoff id
+  20260911T101346Z_007831_from_coordinator): "promote_and_route_next.sh
+  drafts to /tmp - BL-1518 guard now refuses it". Census and the six other
+  senders by the specifier the same pass.
+
+notes: |
+  - Minted 2026-09-11 by the specifier from the coordinator's note. The
+    coordinator routed BL-1530 by hand (draft under swarmforge/runtime/,
+    00_20260911T101338Z_007830_from_coordinator_to_coder) - that is the
+    workaround until this lands: write the Work note draft under
+    `swarmforge/runtime/handoff-draft.txt` and send it with swarm_handoff.sh.
+    Do not point TMPDIR under the root as a workaround; sender 1 uses a bare
+    `mktemp` and senders 5-7 use os.tmpdir(), and TMPDIR does not reach a
+    cron-started ceremony anyway.
+  - Expedited lane (Article 3.2.4): type defect, severity high. The
+    coordinator may also judge this the expeditor shape (defect IN the
+    delivery machinery, PIPELINE.md "Same gates, no machinery") since the
+    normal route to the coder is the thing that is broken; the hand-written
+    draft above makes the normal live swarm viable too.
+  - BL-1445 census pin: scenario 01 enumerates the population explicitly and
+    scenario 03 pins the count and the grep, so a matcher blind to one idiom
+    cannot go green on a subset.
+  - Related, not overlapping: BL-1530 (active) fixes three shell tests that
+    drive swarm_handoff.sh with a git_handoff draft for the two-call audit;
+    it does not touch the four scripts here. BL-1528/1529 cover ceremony
+    note delivery and the audit swallowing script sends - both assume the
+    draft is accepted; this ticket is the cause that predates their gate.
