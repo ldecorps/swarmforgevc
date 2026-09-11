@@ -2398,9 +2398,10 @@
 
 (defn close-landed-ticket! [item]
   (let [env (merge (into {} (System/getenv)) {"SWARMFORGE_ROLE" "coordinator"})
-        script (str (fs/path project-root "swarmforge" "scripts" "close_ticket.sh"))
-        res (daemon-cycle-guard-lib/sh! ["bash" script (str project-root) (str (:id item))]
-                                        {:dir (str project-root) :env env})
+        res (daemon-cycle-guard-lib/sh!
+             ["bash" (str (fs/path project-root "swarmforge" "scripts" "close_ticket.sh"))
+              (str project-root) (str (:id item))]
+             {:dir (str project-root) :env env})
         tail (->> (str (:out res) "\n" (:err res))
                   str/split-lines
                   (remove str/blank?)
@@ -2665,14 +2666,14 @@
 
 (defn- defer-handoffd-bounce-after-drift-repair! []
   ;; BL-1139: bounce after this sweep tick finishes (deferred).
-  (let [launcher (str (fs/path (fs/parent (fs/canonicalize *file*)) "start_handoff_daemon.sh"))
-        root (str project-root)]
+  (let [root (str project-root)]
     (.start
      (Thread.
       (fn []
         (try
           (Thread/sleep 2000)
-          (daemon-cycle-guard-lib/sh! ["bash" launcher root])
+          (daemon-cycle-guard-lib/sh!
+           ["bash" (str (fs/path (fs/parent (fs/canonicalize *file*)) "start_handoff_daemon.sh")) root])
           (catch Exception e
             (log! "master-checkout-drift-bounce-error" (.getMessage e)))))))))
 
