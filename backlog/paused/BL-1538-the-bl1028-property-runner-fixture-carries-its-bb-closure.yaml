@@ -1,0 +1,192 @@
+id: BL-1538
+title: "bl1028_promotion_refusal_property_runner.bb has been red on main since 2026-08-25 with no owner: its fixture hand-lists five .bb files, promotion_gates_lib.bb has since gained three load-file edges (acceptance_pointer_gate_lib.bb, headroom_cap_raise_lib.bb, slice_size_envelope_gate_lib.bb), so the control promotion dies at load - P0 fails and control-commit coverage is 0 while every refusal property passes vacuously; the runner derives its copy set from the closure of the entry point it drives, the closure guard gains a kind that can read a bb-authored fixture, the runner is enrolled, and it is green"
+milestone: M8
+type: defect
+severity: high
+# high: a standing red is severity high at first sighting (Article 3.2.4,
+# 2026-09-05 amendment). Red on main 17 days, unowned until this mint - an
+# unowned red throttles intake (BL-1429) and blocks QA approval (Article
+# 4.2). Never medium for a red.
+status: todo
+epic: code-quality-gates
+priority: 8
+direction: swarm-reported
+depends_on: []
+mutation_cost: low
+# low: one bb fixture switches from a hand list to bb_load_closure_lib.bb's
+# compute-closure (already shipped, BL-973), one new `kind` branch plus one
+# FIXTURES entry in bbFixtureClosureGate.js. No production line changes;
+# Babashka has no mutation/CRAP/DRY wired (BL-472), so the hardener gates
+# on the runner and the guard's own tests and records the fallback.
+slice_size_envelope: low
+required_stages: [coder, cleaner, architect, hardender, documenter, qa]
+
+acceptance: specs/features/BL-1538-the-bl1028-property-runner-fixture-carries-its-bb-closure.feature
+
+# Consumer anchor (BL-1235): the closure guard is a pre-existing live
+# consumer and the runner's file name is absent from its FIXTURES map today
+# - present only once enrolled. No anchor on the runner's own contents: a
+# literal the parcel adds to its own subject is satisfied by construction.
+required_wiring:
+  - 'specs/pipeline/steps/lib/bbFixtureClosureGate.js::bl1028_promotion_refusal_property_runner.bb::enrolled in the closure guard so the copy list cannot rot again'
+  - 'specs/pipeline/steps/bl1538Bl1028RunnerClosureSteps.js::registerSteps::the handler lands in the same parcel as the feature (BL-233)'
+
+human_approval: approved
+approval_context: >
+  A new feature file is authored here, so it needs a tap. No choice is posed
+  and there are no ruling_options. FIRM: the runner derives its copy set
+  from the entry point it drives rather than growing three more hand-typed
+  lines; the closure guard gains a kind that reads a bb-authored fixture's
+  copy set BEHAVIOURALLY (the runner prints it under a flag, or exposes it
+  the way the module kind does) - never by grepping the runner's source;
+  the runner is enrolled in the same parcel; no production line of
+  promote_and_route_next.sh, promotion_gates_lib.bb or any gate changes.
+  Worth knowing: BL-1496 (paused, approved) is the same defect on the
+  sibling SHELL fixture and edits the same guard file - the coordinator
+  serialises the two; whichever lands second merges main and re-reads the
+  FIXTURES map rather than replacing it.
+
+invariants:
+  - "The fixture's copy set is DERIVED from the entry point it drives, never hand-listed: a load-file edge added upstream tomorrow is picked up with no edit to the runner."
+  - "The closure guard reads what a fixture actually copies, never what its source says it copies: a runner whose printed set and real copy set disagree fails the guard."
+
+description: |
+  ## What is wrong
+
+  `swarmforge/scripts/test/bl1028_promotion_refusal_property_runner.bb`
+  fails on `main` (verified 2026-09-11 at `84067ea1ce`, exit 1):
+
+  ```
+  FAIL P0 (control: an accepted promotion really does commit in this fixture)
+    exit=1 head-moved=false
+  FAIL coverage: the generator reached :control-commit only 0 time(s), floor 1
+  ```
+
+  `make-fixture!` (lines 94-96) copies a hand list of five `.bb` files into
+  the disposable root. `promotion_gates_lib.bb` has since gained three
+  `load-file` edges the list was never updated for:
+
+  | edge | landed | commit |
+  |---|---|---|
+  | `acceptance_pointer_gate_lib.bb` | 2026-08-25 | `ea14fa3039` (BL-626) |
+  | `headroom_cap_raise_lib.bb` | 2026-08-25 | `798c6d630e` (BL-1128) |
+  | `slice_size_envelope_gate_lib.bb` | 2026-08-27 | `392e2cbf89` (BL-634) |
+
+  So the control promotion's `promotion_gates_cli.bb` dies at load
+  (`FileNotFoundException ... acceptance_pointer_gate_lib.bb`, replicated in
+  a scratch root with the same five files). The runner's OWN design is what
+  surfaced it: P0 is a control that an accepted promotion really commits.
+  Without it every refusal property P1-P3 passes vacuously, because a
+  promotion that dies at load also produces no commit and leaves the index
+  alone. That vacuity is the worse half, as in BL-1279 and BL-1496.
+
+  BL-1496 owns the identical rot in the sibling shell fixture
+  (`test_bl1028_promotion_obeys_integrity_refusal.sh`), but its census
+  grepped `*.sh` only. And this runner could not have been enrolled in the
+  closure guard even if someone had tried: `bbFixtureClosureGate.js` knows
+  `module`, `vitest-module`, `shell-copy` and `shell-sandbox` - no kind can
+  read what a bb-authored fixture copies.
+
+  ## Census (the population, counted, not assumed)
+
+  Evidence: `backlog/evidence/BL-1538-BL-1541-specifier-unowned-red-census-20260911.md`
+  §1. `grep -ln 'promotion_gates\|promote_and_route_next'
+  swarmforge/scripts/test/*.bb` returns 11 runners; `grep -ln fs/copy
+  swarmforge/scripts/test/*.bb` returns 5. All 15 run on 2026-09-11: this
+  runner is the only closure-rot red. bl998 and bl983 are red for unrelated
+  causes and are owned by BL-1539 / BL-1541.
+
+  ## What is wanted
+
+  - The runner derives its copy set from the entry point it drives
+    (`promotion_gates_cli.bb`) instead of hand-listing it, so tomorrow's
+    `load-file` edge is picked up with no edit (scenarios 01, 03).
+  - The derivation is pinned to a census and cannot pass over an empty or
+    truncated set (scenario 02).
+  - The closure guard can read a bb-authored fixture's effective copy set
+    behaviourally, and this runner is enrolled (scenario 04).
+  - The runner is green with `:control-commit` reached (scenario 05).
+  - Documenter: no registered diagram depicts test-fixture wiring; the
+    `docs/` change, if any, is the standing-suite note beside BL-1496's.
+  - Register: after QA lands, `backlog/standing-reds.tsv` carries no row
+    for this file and `bb swarmforge/scripts/standing_red_register_cli.bb .`
+    reports it gone.
+
+  ## How (direction, not mandate)
+
+  `swarmforge/scripts/bb_load_closure_lib.bb` already ships
+  `compute-closure` (BL-973) and is `load-file`-able from a runner the same
+  way every lib here is; `bb_load_closure_cli.bb` is its CLI twin. Replace
+  the `doseq [dep [...]]` with the closure of `promotion_gates_cli.bb`.
+  `swarm_identity_lib.bb` and `daemon_cycle_guard_lib.bb` are in the
+  closure today via `backlog_depth_lib.bb`, so nothing is lost. For the
+  guard: a new `kind` (say `bb-copy`) whose effective list comes from
+  RUNNING the runner with a print-the-copy-set flag into a scratch dir - the
+  behavioural read the file's header comment insists on - is the smallest
+  honest shape; a `BB_FIXTURE_CLOSURE`-style export has no bb analogue. The
+  `bb_load_closure_agreement_test_runner.bb` (BL-897) already asserts the
+  JS and bb closures agree; if you add an entry point there, keep it.
+
+constraints: >
+  Test-fixture and test-gate parcel only: no production line of
+  promote_and_route_next.sh, promotion_gates_lib.bb, promotion_gates_cli.bb
+  or any promotion gate changes; the other 14 runners in the census are not
+  touched. bbFixtureClosureGate.js is shared with BL-1496 (paused) - the
+  coordinator serialises the two; whichever lands second merges main and
+  re-reads the FIXTURES map rather than replacing it. The runner's P0
+  control and its coverage floors stay exactly as they are - they are what
+  caught this.
+
+out_of_scope: |
+  - The sibling shell fixture `test_bl1028_promotion_obeys_integrity_refusal.sh`
+    - owned by BL-1496.
+  - Deriving the closure guard's MEMBERSHIP (which fixtures it watches)
+    instead of hand-enumerating it - the root cause of every recurrence, still
+    unowned, revisit once BL-1496 lands (its own out_of_scope names it).
+  - The other four `fs/copy` bb runners: green today; enrolling them is the
+    membership slice above.
+
+qa_e2e_procedure: |
+  1. Acceptance resolving all five scenarios of the feature file.
+  2. `bb swarmforge/scripts/test/bl1028_promotion_refusal_property_runner.bb`
+     exits 0, prints `ALL PROPERTIES HOLD`, and its coverage line shows
+     `:control-commit 1` (or more). Run it twice - the second run must not
+     depend on state the first left behind.
+  3. Negative control, proving the derivation is live: in a scratch clone,
+     add one new `load-file` line to `promotion_gates_lib.bb` pointing at a
+     new sibling `.bb`, re-run the runner, and confirm the new file lands in
+     the disposable root with no edit to the runner.
+  4. `node -e` (or grep) on `specs/pipeline/steps/lib/bbFixtureClosureGate.js`
+     shows `bl1028_promotion_refusal_property_runner.bb` among FIXTURES, and
+     the closure guard run is green for it; then, in a scratch copy, make
+     the runner drop one closure file from what it copies and confirm the
+     guard names that file (the behavioural read is real).
+  5. `bb swarmforge/scripts/standing_red_register_cli.bb .` reports no row
+     for this file and `"unowned":[]`.
+
+source: |
+  `unowned-red` note from the coder, priority 00, 2026-09-11 16:04Z:
+  "unowned red bl1028_promotion_refusal_property_runner.bb: P0 fails on
+  main". Reproduced by the specifier on main 84067ea1ce, blamed to the three
+  load-file edges by replicating the five-file copy in a scratch root, and
+  censused across the 15 bb runners of the surface (evidence file above).
+
+notes: |
+  - Minted 2026-09-11 by the specifier the same pass the red was reported,
+    per the standing-red rule (Article 3.2.4, 2026-09-05 amendment): type
+    defect, severity high, register row added in the mint commit with
+    first_seen 2026-08-25 (the first missing edge's landing), matching
+    BL-1496's row for the sibling fixture.
+  - Sibling mint, not a fold-in: BL-1496 is human-approved with a Background
+    that names the shell fixture, and re-pending an approved ticket posts no
+    fresh ask (BL-1455). The two share a defect class and a guard file, not
+    a contract.
+  - INVEST-I: independent of BL-1496 and BL-1480 - `compute-closure` and the
+    guard already ship on main, so nothing here waits on an unbuilt sibling.
+    `depends_on` is empty deliberately.
+  - Scenario 02 applies the census rule (specifier.prompt, BL-1445): a
+    scenario that derives a population states what it must find.
+  - IR-DRY: one `possible-synonym` finding survives, between scenario 01
+    (the fixture's copy set is checked against the closure) and scenario 02
+    (the closure itself is derived and pinned) - the same deliberate pair
+    BL-1496 records; not accidental drift, do not collapse them.

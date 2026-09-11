@@ -1,0 +1,186 @@
+id: BL-1539
+title: "the dispatch-isolation guard's self-rooting derivation is fail-open, so bl998_guard_membership_property_runner.bb has been red on main since 2026-08-25 with no owner: `code_only | grep -q` under set -euo pipefail reports no match when sed dies of SIGPIPE after grep's early exit (ready_for_next.bb, 16 KB, kept 0 of 20 times), and SELF_ROOTING_RE names run-dispatch! but done_with_current.bb has called run-dispatch-forwarding-args! since BL-652 - the derivation names both dispatchers, is pinned to a census, and the runner is green"
+milestone: M8
+type: defect
+severity: high
+# high: a standing red is severity high at first sighting (Article 3.2.4,
+# 2026-09-05 amendment), and this one is a broken safety signal in its own
+# right: the guard exists to stop a shell test claiming a live parcel out of
+# a real role's mailbox, and today it cannot see the two dispatchers that do
+# exactly that.
+status: todo
+epic: code-quality-gates
+priority: 8
+direction: swarm-reported
+depends_on: []
+mutation_cost: low
+# low: two lines of one shell guard (a pipeline shape and a regex
+# alternative) plus the runner's own pins. Shell has no mutation/CRAP/DRY
+# wired (BL-472); the hardener gates on the guard's runner and records the
+# fallback.
+slice_size_envelope: low
+required_stages: [coder, cleaner, architect, hardender, documenter, qa]
+
+acceptance: specs/features/BL-1539-the-dispatch-isolation-guard-derives-every-self-rooting-dispatcher.feature
+
+# No consumer anchor (BL-1235): the guard is the subject and its consumer is
+# the pre-existing runner, which already invokes it; an anchor on the guard's
+# own contents would be satisfied by construction and gate nothing. The
+# handler anchor is the BL-233 pin only.
+required_wiring:
+  - 'specs/pipeline/steps/bl1539DispatchIsolationDerivationSteps.js::registerSteps::the handler lands in the same parcel as the feature (BL-233)'
+
+human_approval: approved
+approval_context: >
+  A new feature file is authored here, so it needs a tap. No choice is posed
+  and there are no ruling_options. FIRM: the derivation must not let grep
+  close the pipe early under pipefail (drop -q and redirect, or grep -c, or
+  read the stripped text into a variable first - the coder's call), and the
+  regex must name run-dispatch-forwarding-args! beside run-dispatch!; the
+  guard's rule, its offence detection and its output are unchanged; the two
+  offending tests the guard names today are BL-1540's, not this ticket's.
+
+invariants:
+  - "The derivation's verdict on a file is a function of the file's text alone, never of its size or of process scheduling: the same file yields the same self-rooting decision on every run."
+
+description: |
+  ## What is wrong
+
+  `swarmforge/scripts/test/bl998_guard_membership_property_runner.bb`
+  fails on `main` (verified 2026-09-11 at `84067ea1ce`, exit 1):
+
+  ```
+  FAIL membership  case: {:helper "ready_for_next.bb", :helper-kind :direct, :anchor :real-dir, :executed? true ...}
+    expected flagged=true got=false
+  FAIL membership  case: {:helper "done_with_current.bb", :helper-kind :direct, :anchor :real-dir, :executed? true ...}
+    expected flagged=true got=false
+  4 property check(s) failed
+  ```
+
+  The runner copies seven real helpers into a sandbox and drives the REAL
+  guard `swarmforge/scripts/test/test_shell_fixture_dispatch_isolation.sh`
+  (unchanged since 2026-08-21). A hand-written test that binds
+  `H1_VAR="$SCRIPT_DIR/../ready_for_next.bb"` and executes it is answered
+  `PASS`, exit 0; `bash -x` shows the derived `SELF_ROOTING` set holds only
+  the two `.sh` wrappers. Two independent causes, both in step 1
+  (`self_rooting_scripts`: `code_only "$f" | grep -qE "$SELF_ROOTING_RE"`
+  under `set -euo pipefail`):
+
+  - **SIGPIPE under pipefail.** `grep -q` exits at its first match while
+    `sed` is still writing the rest of the 16 377-byte `ready_for_next.bb`;
+    `sed` dies of SIGPIPE, `pipefail` reports 141, the `if` reads "no
+    match". Measured: the `-q` pipeline kept the file 0 of 20 runs against
+    the real scripts dir and 1 of 20 in the sandbox; the same pipeline with
+    `grep -E ... >/dev/null` kept it 20 of 20. This is the runner's
+    `ready_for_next.bb` case - and over the REAL scripts dir the guard also
+    derives without that file today, so a shell test executing the live
+    `ready_for_next.bb` through `$SCRIPT_DIR/../` would not be flagged.
+  - **Regex gap.** `SELF_ROOTING_RE` names `run-dispatch!`;
+    `done_with_current.bb` has called
+    `dispatch-lib/run-dispatch-forwarding-args!` since `206381f7e9`
+    (BL-652, 2026-08-25), which does not contain that substring. This is the
+    runner's `done_with_current.bb` case and dates the row.
+
+  Both fail OPEN: a dispatcher silently leaves the self-rooting set and the
+  guard prints `PASS`. The runner is the only thing that noticed, and it
+  runs in no standing lane.
+
+  ## Census (the population, counted, not assumed)
+
+  Evidence: `backlog/evidence/BL-1538-BL-1541-specifier-unowned-red-census-20260911.md`
+  §2. Over the real scripts dir the derivation finds 31 self-rooting scripts
+  with today's pipeline, 31 with the pipe fixed, 32 with the regex extended;
+  the one addition is `done_with_current.bb`. `run-dispatch-forwarding-args!`
+  is defined in `dispatch_lib.bb` and called only from `done_with_current.bb`
+  (`grep -l run-dispatch-forwarding-args! swarmforge/scripts/*.bb`).
+
+  ## What is wanted
+
+  - The derivation over the real scripts dir names `ready_for_next.bb` and
+    `done_with_current.bb` (scenario 01) and finds at least 30 self-rooting
+    scripts, so an empty or truncated derivation fails rather than passes
+    (scenario 02).
+  - A test executing either dispatcher through the real scripts dir is
+    flagged (scenario 03).
+  - The verdict on a large self-rooting file is stable - derived on every
+    one of 20 runs (scenario 04).
+  - `bl998_guard_membership_property_runner.bb` is green (scenario 05).
+  - Documenter: no registered diagram depicts the shell-test guard; `docs/`
+    change, if any, is the standing-suite note.
+  - Register: after QA lands, `backlog/standing-reds.tsv` carries no row for
+    the runner and `bb swarmforge/scripts/standing_red_register_cli.bb .`
+    reports it gone. The GUARD's own row (BL-1540) is not this ticket's and
+    stays until BL-1540 lands.
+
+  ## How (direction, not mandate)
+
+  In `self_rooting_scripts`, let grep consume the whole stream:
+  `code_only "$f" | grep -E "$SELF_ROOTING_RE" >/dev/null 2>&1`, or capture
+  `code_only` into a variable and grep that. Add
+  `run-dispatch-forwarding-args!` to `SELF_ROOTING_RE`. Leave
+  `execution_re` and `offences_in` alone - they are not what failed. Expect
+  the guard's real-repo verdict to stay red after this lands: it names two
+  offenders today (BL-1540) and, previewed with both fixes applied, names
+  the same two - no more - so this ticket does not change which tests are
+  flagged, only whether the derivation can be trusted.
+
+constraints: >
+  Test-guard parcel only: the guard's rule, its offence detection, its
+  messages and its exit codes are unchanged; no production script under
+  swarmforge/scripts/ changes; `test_ceremony_handoff_cli.sh` and
+  `test_bl1097_router_refuses_dispatched_ticket.sh` are BL-1540's and are
+  not touched here. The runner's case list and its expectations stay as
+  they are - they are the oracle.
+
+out_of_scope: |
+  - The two shell tests the guard flags on main - BL-1540.
+  - Wiring the guard or the runner into a standing lane so a red is seen when
+    it begins; today both run only when someone runs them by hand (the same
+    gap BL-1524/BL-1526 record for the bb suite).
+
+qa_e2e_procedure: |
+  1. Acceptance resolving all five scenarios of the feature file.
+  2. `bb swarmforge/scripts/test/bl998_guard_membership_property_runner.bb`
+     exits 0 and prints no `FAIL membership` line; run it twice.
+  3. `bash -x swarmforge/scripts/test/test_shell_fixture_dispatch_isolation.sh 2>&1 | grep -A40 '^+ SELF_ROOTING='`
+     lists `ready_for_next.bb` and `done_with_current.bb`; count the list -
+     at least 30 entries. Repeat the run 5 times; the list is identical each
+     time.
+  4. Negative control: in a scratch copy of `swarmforge/scripts/test/`,
+     drop a test that binds `X="$SCRIPT_DIR/../ready_for_next.bb"` and runs
+     `bb "$X"`; the guard exits 1 and names it. Same for
+     `done_with_current.bb`.
+  5. The guard's verdict on the real repo still names exactly
+     `test_bl1097_router_refuses_dispatched_ticket.sh` and
+     `test_ceremony_handoff_cli.sh` (BL-1540's offenders) and nothing else -
+     if a third name appears, that is a new sighting for the specifier, not
+     a reason to pass or fail this parcel.
+  6. `bb swarmforge/scripts/standing_red_register_cli.bb .` reports no row
+     for the runner and `"unowned":[]`.
+
+source: |
+  Specifier sighting, 2026-09-11, while censusing the `fs/copy` bb runners
+  for the coder's bl1028 unowned-red note (BL-1538): this runner was red in
+  the same sweep. Reproduced by hand against the real guard, traced with
+  `bash -x` to the derivation set, both causes measured (20-run counts and
+  the regex grep) - evidence file above, §2.
+
+notes: |
+  - Minted 2026-09-11 by the specifier the same pass the red was sighted,
+    per the standing-red rule (Article 3.2.4, 2026-09-05 amendment): type
+    defect, severity high, register row added in the mint commit with
+    first_seen 2026-08-25 (BL-652's rename of the dispatch call, the
+    deterministic half; the SIGPIPE half's onset is when the file outgrew
+    the race window, at latest 2026-09-11 with BL-1515).
+  - Same fail-open family as BL-1235's anchor and BL-1445's census: a guard
+    whose population is derived by a matcher that quietly finds less than
+    is there. Scenario 02 pins the census (specifier.prompt, BL-1445).
+  - Not a fold-in: no open ticket names the guard's derivation; BL-1540
+    owns the guard's OWN red (two offending tests), a different defect in a
+    different file, and neither waits on the other.
+  - IR-DRY: two `possible-synonym` findings survive and are deliberate:
+    "derives ... of swarmforge/scripts" (01, 02) versus "of that sandbox 20
+    times" (04) differ in population and repetition, which is the point of
+    04; "a sandbox holding only the real ready_for_next.bb" (04) versus
+    "holding the real <dispatcher> and the guard" (03) differ in what the
+    sandbox contains. Do not collapse either pair.
