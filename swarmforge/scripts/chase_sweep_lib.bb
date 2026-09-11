@@ -2369,9 +2369,8 @@
           mv-res (daemon-cycle-guard-lib/sh! ["git" "-C" (str root) "mv" active-rel paused-rel])]
       (if-not (zero? (:exit mv-res))
         {:success false :reason (str "git mv failed: " (str/trim (or (:err mv-res) "")))}
-        (let [cli (str (fs/path own-script-dir "commit_integrity_cli.bb"))
-              commit-res (daemon-cycle-guard-lib/sh!
-                          ["bb" cli (str root)
+        (let [commit-res (daemon-cycle-guard-lib/sh!
+                          ["bb" (str (fs/path own-script-dir "commit_integrity_cli.bb")) (str root)
                            "--message" (park-commit-message id condition)
                            "--path" active-rel "--path" paused-rel])]
           (if (zero? (:exit commit-res))

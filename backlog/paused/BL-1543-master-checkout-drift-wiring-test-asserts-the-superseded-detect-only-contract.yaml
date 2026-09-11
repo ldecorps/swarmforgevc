@@ -27,7 +27,7 @@ acceptance: specs/features/BL-1543-the-drift-wiring-test-asserts-the-daemons-liv
 required_wiring:
   - 'specs/pipeline/steps/bl1543DriftWiringLiveContractSteps.js::registerSteps::the handler lands in the same parcel as the feature (BL-233)'
 
-human_approval: pending
+human_approval: approved
 approval_context: >
   A new feature file is authored here, so it needs a tap. No choice is posed
   and there are no ruling_options. FIRM: no production code changes - the

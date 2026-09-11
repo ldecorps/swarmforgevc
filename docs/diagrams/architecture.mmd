@@ -226,6 +226,17 @@
 %% :group (setsid + whole-process-group kill), run-bounded! becomes a thin
 %% wrapper over sh! with its signature unchanged. BL-1031 ratchet: spawn-only
 %% banned-API census now [].
+%% BL-1526 (2026-09-11): closure walk's spawn-target resolver gains a
+%% declared-dynamic shape — a file names a bare-symbol spawn target with no
+%% literal (the EXPEDITE_STAGE_RUNNER test seam) via a
+%% daemon-spawn-declared-dynamic-targets map; declaring one name never
+%% resolves another undeclared bare symbol in the same file. handoffd.bb's
+%% and chase_sweep_lib.bb's three let-bound targets now inline the literal
+%% into the spawn vector (existing "path plumbing" shape, no resolver
+%% change). Resolving chase_sweep_lib.bb's target newly brought
+%% commit_integrity_{cli,lib}.bb into the spawn-reachable closure, which
+%% tripped BL-1031's ratchet as a new offender — both now route through
+%% sh! too. bl1022 unresolved-spawn-target ratchet retired.
 %% BL-1096 (2026-08-24): check_pipeline_code_on_main QA-import exemption
 %% anchors is_qa_ancestor per path last-touch, not merge tip alone.
 %% BL-1107 (2026-08-24): property lane — bl796 inv 2–3 enumerate finite
