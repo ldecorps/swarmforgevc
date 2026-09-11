@@ -207,6 +207,10 @@ qa_e2e_procedure: |
 source: "Coder unowned-red note 2026-09-11 00:10Z from the BL-1478 parcel; standing-red rule 2026-09-05; specifier bisect 2026-09-11."
 
 assigned_to: coder
+abandoned_commits: [99df6f0eb4]
+# BL-1241: 99df6f0eb4 was QA-approved but entangled with BL-967's already-
+# landed doc path; land_step_cli.bb built a tip-pure replay (961cbaa563)
+# onto origin/main excluding that path, and that replay is what landed.
 bounce_count: 1
 bounce_history:
   - { at: 2026-09-11, by: architect, blamed: coder, class: acceptance, commit: afb4d930d3, evidence: backlog/evidence/BL-1525-architect-20260911.md }
