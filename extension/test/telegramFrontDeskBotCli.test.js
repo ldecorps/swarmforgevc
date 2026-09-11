@@ -2450,16 +2450,24 @@ function readQueuedOutboxNote(root) {
   return fs.readFileSync(path.join(outboxDir, files[0]), 'utf8');
 }
 
+// A refused send must leave no outbox at all - unlike listOutboxFiles below
+// (BL-1203, used only once a first successful send has created the
+// directory), this must not throw when the directory was never created.
+function listOutboxFilesIfPresent(root) {
+  const outboxDir = path.join(root, '.swarmforge', 'handoffs', 'outbox');
+  return fs.existsSync(outboxDir) ? fs.readdirSync(outboxDir).length : 0;
+}
+
 test('BL-607: enqueueRoleAnswerNote queues a real `type: note` handoff into the role\'s own inbox, inlining a short answer verbatim', async () => {
   const root = swarmHandoffFixture();
 
-  const ok = await enqueueRoleAnswerNote(root, 'specifier', 'use staging please');
+  const ok = await enqueueRoleAnswerNote(root, 'specifier', 'sample answer alpha');
 
   assert.equal(ok, true);
   const content = readQueuedOutboxNote(root);
   assert.match(content, /^type: note$/m);
   assert.match(content, /^to: specifier$/m);
-  assert.match(content, /^message: use staging please$/m);
+  assert.match(content, /^message: sample answer alpha$/m);
 });
 
 test('BL-607: enqueueRoleAnswerNote falls back to a file pointer + writes the full answer alongside, for an answer over the 80-char cap', async () => {
@@ -2473,6 +2481,52 @@ test('BL-607: enqueueRoleAnswerNote falls back to a file pointer + writes the fu
   assert.match(content, /^message: answer ready: .*--role specifier$/m);
   const stored = JSON.parse(fs.readFileSync(path.join(root, roleAnswerFilePointerPath('specifier')), 'utf8'));
   assert.equal(stored.text, longAnswer);
+});
+
+// BL-1518: the actual mutation-escape shape, exercised directly against the
+// real CLI enqueueRoleAnswerNote shells to. A mutant of the options object
+// enqueueRoleAnswerNote passes to execFileAsync (cwd + env dropped or
+// emptied) makes the child process inherit whatever the CALLING process's
+// own cwd and SWARMFORGE_ROLE happen to be - here reproduced by spawning
+// swarm_handoff.bb with an EXPLICIT wrong cwd/env (a subprocess spawn
+// option, never a real process.chdir() - Node disallows chdir() inside a
+// worker thread and Stryker's own runner always runs in one; see this
+// file's sibling CLI test files for the same constraint). The CLI must
+// refuse rather than deliver into the wrong project's mailbox.
+test('BL-1518: swarm_handoff.bb refuses a draft that lies outside the project root a wrong cwd/env resolves, and delivers normally once cwd/env point at the draft\'s own root', () => {
+  const root = swarmHandoffFixture();
+  const otherRoot = swarmHandoffFixture();
+  const cli = path.join(root, 'swarmforge', 'scripts', 'swarm_handoff.bb');
+  const draftPath = path.join(root, 'tmp', 'handoff.txt');
+  fs.mkdirSync(path.dirname(draftPath), { recursive: true });
+  fs.writeFileSync(draftPath, 'type: note\nto: specifier\npriority: 00\nmessage: sample answer gamma\n');
+
+  assert.throws(
+    () => execFileSync('bb', [cli, draftPath], {
+      cwd: otherRoot,
+      env: { ...process.env, SWARMFORGE_ROLE: 'coder' },
+      stdio: 'pipe',
+    }),
+    (err) => {
+      const stderr = err.stderr ? err.stderr.toString() : '';
+      assert.match(stderr, /HANDOFF_DRAFT_OUTSIDE_ROOT/);
+      assert.ok(stderr.includes(draftPath), 'the refusal must name the draft path');
+      assert.ok(stderr.includes(otherRoot), 'the refusal must name the wrongly-resolved root');
+      return true;
+    },
+    'a draft outside the resolved root must be refused, non-zero exit'
+  );
+  assert.equal(listOutboxFilesIfPresent(otherRoot), 0, 'nothing must be queued under the unrelated second fixture');
+  assert.equal(listOutboxFilesIfPresent(root), 0, 'the refused send must not have queued anything under the correct fixture either');
+
+  execFileSync('bb', [cli, draftPath], {
+    cwd: root,
+    env: { ...process.env, SWARMFORGE_ROLE: 'coordinator' },
+    stdio: 'pipe',
+  });
+
+  const content = readQueuedOutboxNote(root);
+  assert.match(content, /^message: sample answer gamma$/m);
 });
 
 test('BL-607: enqueueRoleAnswerNote returns false, never throws, when the target has no roles.tsv at all', async () => {
@@ -2522,8 +2576,8 @@ function listOutboxFiles(root) {
 test('BL-1203: enqueueRoleAnswerNote with the same updateId twice queues only one note', async () => {
   const root = swarmHandoffFixture();
 
-  const first = await enqueueRoleAnswerNote(root, 'specifier', 'use staging please', 42);
-  const second = await enqueueRoleAnswerNote(root, 'specifier', 'use staging please', 42);
+  const first = await enqueueRoleAnswerNote(root, 'specifier', 'sample answer alpha', 42);
+  const second = await enqueueRoleAnswerNote(root, 'specifier', 'sample answer alpha', 42);
 
   assert.equal(first, true);
   assert.equal(second, true, 'a duplicate delivery of an already-captured answer still reports success, just queues nothing new');
