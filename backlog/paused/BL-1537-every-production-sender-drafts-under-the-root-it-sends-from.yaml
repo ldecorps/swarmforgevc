@@ -42,7 +42,7 @@ required_wiring:
   - 'specs/pipeline/steps/bl1537ProductionSenderDraftsUnderRootSteps.js::registerSteps::the handler lands in the same parcel as the feature (BL-233, BL-1371)'
   - 'swarmforge/scripts/test/test_production_sender_drafts_under_root.sh::TMPDIR::the shell test points TMPDIR outside the fixture root and asserts each script-built note is queued'
 
-human_approval: pending
+human_approval: approved
 approval_context: >
   A new feature file is authored here, so it needs a tap. No choice is
   posed and there are no ruling_options. FIRM: BL-1518-a's guard is NOT
