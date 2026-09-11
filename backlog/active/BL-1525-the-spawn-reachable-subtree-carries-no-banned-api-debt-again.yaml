@@ -37,6 +37,9 @@ human_approval: approved
 ruling_options:
   - A - one chokepoint, sh! gains a per-call bound and run-bounded! becomes a thin wrapper over it (recommended)
   - B - two sanctioned chokepoints, daemon_api_ban_lib exempts bounded_run_lib.bb beside daemon_cycle_guard_lib.bb
+ruling_tradeoffs:
+  - Pros - exactly one file names the subprocess API so BL-1031 premise holds and the ratchet stays empty by construction, expedite and the babysitter keep the run-bounded! signature unchanged, every future bounded wait gets the per-call bound for free. Cons - touches daemon_cycle_guard_lib.bb (BL-1478 has now landed so the file is free), the architect must decide whether the setsid group kill moves into the chokepoint or destroy-tree suffices, and both docstring traps must survive as runner cases. Recommended because two chokepoints is the BL-571 hand-copy shape BL-1103 folded the runners to escape.
+  - Pros - smallest diff and honest about today, no change to the chokepoint file, lands in one sitting with no architect kill-semantics call. Cons - the swarm carries two bounded runners with different kill semantics indefinitely, the exempt set becomes a two-entry list that every later exemption can extend, and the per-call bound never reaches the git and expedite waits that route through sh!.
 approval_context: >
   A new feature file is authored here, so it needs a tap, and ONE question
   is genuinely yours: what to do about bounded_run_lib.bb. It is BL-1103's
@@ -152,6 +155,16 @@ description: |
   `backlog/evidence/BL-1524-BL-1525-BL-1526-specifier-unowned-red-bisect-20260911.md`.
 
 notes: |
+  2026-09-11 (specifier): the 05:03Z approval (8c0e82f136, typed via the
+  operator seat, not a lettered tap) recorded human_approval only; the
+  coder correctly refused to guess (note 14:01Z) and this ticket waits on
+  the ruling. The specifier raised the A/B question via role_ask on
+  2026-09-11 with the trade-offs above and will record the answer with
+  relay-ruling.js (provenance relayed) - the coder starts on
+  bounded_run_lib.bb / daemon_api_ban_lib.bb only once human_ruling is
+  present. BL-1478 landed 2026-09-11, so option A's "promote after
+  BL-1478" precondition is satisfied either way. ruling_tradeoffs added
+  the same pass per the 2026-09-11 rule (BL-1531).
   Register: no row of its own; the `bb`-lane and `acceptance`-lane rows
   for this runner name BL-1526, which depends on this ticket and BL-1524
   (see BL-1524 notes for why the row names the last-landing sibling).
