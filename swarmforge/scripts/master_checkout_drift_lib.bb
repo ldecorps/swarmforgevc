@@ -124,6 +124,27 @@
               (some bb-basename (string-literals-in (read-string (subs content i))))
               (catch Exception _ nil)))))))
 
+;; BL-1526: a fourth shape, deliberately NOT a literal-resolution shape. Some
+;; spawn targets are bare locals holding a genuinely runtime value (an env-var
+;; test seam) with NO literal anywhere in the file - expedite_cli.bb's
+;; `stage-cmd` is the one that occurs today. Rewriting the walk to somehow
+;; "resolve" that would be fiction; instead a file may DECLARE such a target
+;; by name and reason in a `daemon-spawn-declared-dynamic-targets` top-level
+;; map, so the claim is a visible, reviewable line of source rather than a
+;; silent gap - and an UNDECLARED bare symbol still fails loud (scenario 03).
+(defn- declared-dynamic-reason
+  "If THIS file (`content`) defines `daemon-spawn-declared-dynamic-targets`
+   naming `target-name` as a key, its reason string; nil otherwise, including
+   when the file declares no such map at all or the declaration fails to
+   parse."
+  [target-name content]
+  (when-let [i (str/index-of content "(def daemon-spawn-declared-dynamic-targets")]
+    (try
+      (let [form (read-string (subs content i))
+            m (last form)]
+        (when (map? m) (get m target-name)))
+      (catch Exception _ nil))))
+
 (defn- spawn-forms
   "Every `[\"<runtime>\" ...]` vector in `content`, read as data, paired with the
    runtime. Comment lines are blanked first so a documentation example is never
@@ -151,33 +172,45 @@
 
 (defn extract-spawn-targets
   "Pure text scan of one script's source: which scripts it SPAWNS.
-     :resolved   - bare .bb filenames, real edges to follow
-     :unresolved - spawn targets this walk could not resolve statically,
-                   as source text. Reported LOUDLY by the caller and never
+     :resolved         - bare .bb filenames, real edges to follow
+     :unresolved       - spawn targets this walk could not resolve
+                   statically AND that the file did not declare dynamic, as
+                   source text. Reported LOUDLY by the caller and never
                    silently dropped: a skipped target is the same class of
                    blind spot one level up.
-     :non-bb     - scripts spawned under another runtime (bash). These are
-                   real edges, but the Clojure subprocess-namespace ban cannot
-                   speak about a shell script, so they are RECORDED to make the
-                   gate's scope visible rather than left to be assumed."
+     :non-bb           - scripts spawned under another runtime (bash). These
+                   are real edges, but the Clojure subprocess-namespace ban
+                   cannot speak about a shell script, so they are RECORDED to
+                   make the gate's scope visible rather than left to be
+                   assumed.
+     :declared-dynamic - bare-symbol targets the file itself names in
+                   `daemon-spawn-declared-dynamic-targets` (BL-1526): a
+                   genuinely runtime value with no literal anywhere, never
+                   earned by accident since only a name the file explicitly
+                   declared, with a reason, is excluded from :unresolved."
   [content]
   (reduce
     (fn [acc [runtime form]]
-      (let [target (second form)]
+      (let [target (second form)
+            target-name (when (symbol? target) (name target))
+            dyn-reason (when target-name (declared-dynamic-reason target-name content))]
         (if (= runtime "bb")
           (if-let [b (resolve-spawn-target target content)]
             (update acc :resolved conj b)
-            ;; A `bb -e "<expr>"` runs an inline expression rather than a repo
-            ;; script - it has no file to reach, and the expression itself is
-            ;; already inside the file being scanned.
-            (if (= "-e" target)
-              acc
-              (update acc :unresolved conj (pr-str target))))
+            (cond
+              ;; A `bb -e "<expr>"` runs an inline expression rather than a
+              ;; repo script - it has no file to reach, and the expression
+              ;; itself is already inside the file being scanned.
+              (= "-e" target) acc
+              dyn-reason (update acc :declared-dynamic conj (str target-name " — " dyn-reason))
+              :else (update acc :unresolved conj (pr-str target))))
           (if-let [sh (some #(re-find #"[^/\"]+\.(sh|bash|zsh)$" (str %))
                             (string-literals-in target))]
             (update acc :non-bb conj (first sh))
-            (update acc :unresolved conj (pr-str target))))))
-    {:resolved #{} :unresolved #{} :non-bb #{}}
+            (if dyn-reason
+              (update acc :declared-dynamic conj (str target-name " — " dyn-reason))
+              (update acc :unresolved conj (pr-str target)))))))
+    {:resolved #{} :unresolved #{} :non-bb #{} :declared-dynamic #{}}
     (spawn-forms content)))
 
 ;; ── pure (given an injected reader): the transitive closure ────────────────
@@ -186,10 +219,11 @@
   "BFS over the daemon's reachability graph from `entrypoints`, following the
    edge kinds in `edge-kinds` (default both `:load` and `:spawn`). Returns
 
-     {:closure    #{bare .bb filenames, entrypoints included}
-      :reached-by {filename #{:entrypoint | [:load from] | [:spawn from]}}
-      :unresolved [{:from filename :target source-text}]
-      :non-bb     #{scripts spawned under another runtime}}
+     {:closure          #{bare .bb filenames, entrypoints included}
+      :reached-by       {filename #{:entrypoint | [:load from] | [:spawn from]}}
+      :unresolved       [{:from filename :target source-text}]
+      :non-bb           #{scripts spawned under another runtime}
+      :declared-dynamic #{{:from filename :declared \"name — reason\"}}}
 
    `reached-by` is what makes scenario 04 answerable: a gate that reports only
    a COUNT passes for the wrong reason when its closure silently shrinks - which
@@ -206,14 +240,15 @@
            visited #{}
            reached-by (into {} (map (fn [e] [e #{:entrypoint}]) entrypoints))
            unresolved []
-           non-bb #{}]
+           non-bb #{}
+           declared-dynamic #{}]
       (if-let [f (first frontier)]
         (if (contains? visited f)
-          (recur (subvec frontier 1) visited reached-by unresolved non-bb)
+          (recur (subvec frontier 1) visited reached-by unresolved non-bb declared-dynamic)
           (let [content (read-one f)
                 loads (if (and content (kinds :load)) (extract-load-file-basenames content) #{})
                 spawn (if (and content (kinds :spawn)) (extract-spawn-targets content)
-                          {:resolved #{} :unresolved #{} :non-bb #{}})
+                          {:resolved #{} :unresolved #{} :non-bb #{} :declared-dynamic #{}})
                 spawns (:resolved spawn)]
             (recur (into (subvec frontier 1) (concat loads spawns))
                    (conj visited f)
@@ -221,11 +256,13 @@
                      (reduce (fn [m d] (update m d (fnil conj #{}) [:load f])) rb loads)
                      (reduce (fn [m d] (update m d (fnil conj #{}) [:spawn f])) rb spawns))
                    (into unresolved (map (fn [t] {:from f :target t}) (sort (:unresolved spawn))))
-                   (into non-bb (:non-bb spawn)))))
+                   (into non-bb (:non-bb spawn))
+                   (into declared-dynamic (map (fn [t] {:from f :declared t}) (sort (:declared-dynamic spawn)))))))
         {:closure visited
          :reached-by (select-keys reached-by visited)
          :unresolved unresolved
-         :non-bb non-bb}))))
+         :non-bb non-bb
+         :declared-dynamic declared-dynamic}))))
 
 (defn resolve-daemon-executed-paths
   "BFS closure of (load-file ...) dependencies starting from `entrypoints`
