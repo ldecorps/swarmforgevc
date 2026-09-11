@@ -27,7 +27,7 @@ acceptance: specs/features/BL-1532-a-typed-approve-names-its-ruling-by-letter.fe
 required_wiring:
   - 'specs/pipeline/steps/bl1532TypedApproveNamesItsRulingByLetterSteps.js::registerSteps::the handler lands in the same parcel as the feature (BL-233, BL-1371)'
 
-human_approval: pending
+human_approval: approved
 approval_context: >
   A new feature file is authored here, so it needs a tap. No choice is
   posed. FIRM: a letter that names no declared option, or a letter on a
