@@ -204,6 +204,53 @@ function registerSteps(registry) {
     }
   });
 
+  // BL-1515 hardener bounce D1: a master-resident role (roles.tsv
+  // worktree-name "master") shares ONE physical checkout with every other
+  // master-resident role - each declares its own :session against that
+  // single shared, actual branch, so there is no per-role "declared branch"
+  // for the guard to judge, and a repair would rename the shared checkout's
+  // actual branch out from under every other master-resident role.
+  scoped(/^roles\.tsv declares two master-resident roles "([^"]+)" and "([^"]+)" sharing one worktree with sessions "([^"]+)" and "([^"]+)"$/,
+    (ctx, roleA, roleB, sessionA, sessionB) => {
+      installScripts(ctx.root);
+      const line =
+        `${roleA}\tmaster\t${ctx.root}\t${sessionA}\t${roleA}\tclaude\tguard-boundary-only\n` +
+        `${roleB}\tmaster\t${ctx.root}\t${sessionB}\t${roleB}\tclaude\tguard-boundary-only\n`;
+      const identity = 'swarm_name\tprimary\nswarm_mode\tautonomous\n';
+      fs.mkdirSync(path.join(ctx.root, '.swarmforge'), { recursive: true });
+      fs.writeFileSync(path.join(ctx.root, '.swarmforge', 'roles.tsv'), line);
+      fs.writeFileSync(path.join(ctx.root, '.swarmforge', 'swarm-identity'), identity);
+      ctx.masterRole = roleA;
+    });
+
+  scoped(/^the shared master worktree is checked out on "([^"]+)"$/, (ctx, branch) => {
+    ensureCheckout(ctx.root, branch);
+  });
+
+  scoped(/^ready_for_next runs as "([^"]+)" in the shared master worktree$/, (ctx, role) => {
+    try {
+      const readyPath = path.join(ctx.root, 'swarmforge', 'scripts', 'ready_for_next.bb');
+      const env = { ...gitEnv(), SWARMFORGE_ROLE: role };
+      ctx.preSnapshot = snapshotRefs(ctx.root);
+      const result = spawnSync('bb', [readyPath], { cwd: ctx.root, env, encoding: 'utf8' });
+      ctx.rc = result.status;
+      ctx.stdout = result.stdout || '';
+      ctx.stderr = result.stderr || '';
+    } catch (e) {
+      cleanup(ctx);
+      throw e;
+    }
+  });
+
+  scoped(/^no ref is renamed in the shared master worktree$/, (ctx) => {
+    const post = snapshotRefs(ctx.root);
+    assert.deepEqual(
+      post,
+      ctx.preSnapshot,
+      `expected no ref/HEAD change for an exempt master-resident role, before=${JSON.stringify(ctx.preSnapshot)} after=${JSON.stringify(post)}`
+    );
+  });
+
   scoped(/^no BRANCH_DRIFT line is printed$/, (ctx) => {
     assert.ok(
       !/BRANCH_DRIFT_(REPAIRED|DETECTED)/.test(ctx.stdout + ctx.stderr),
