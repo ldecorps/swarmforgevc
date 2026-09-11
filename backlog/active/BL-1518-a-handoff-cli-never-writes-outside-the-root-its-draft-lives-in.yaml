@@ -163,3 +163,6 @@ notes: |
     and is withdrawn by this ticket.
 
 assigned_to: coder
+bounce_count: 1
+bounce_history:
+  - { at: 2026-09-11, by: QA, blamed: hardender, class: acceptance, commit: d8704979b4, evidence: backlog/evidence/BL-1518-a-QA-20260911.md }
