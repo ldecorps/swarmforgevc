@@ -41,12 +41,19 @@
               "/tmp/bl1518-fixture-xyz/tmp/handoff.txt"
               "/home/carillon/swarmforgevc/.worktrees/coder"))
 
-;; ── refusal-message: names both paths ────────────────────────────────────
+;; ── refusal-message: names both paths, UNDER THE RIGHT LABEL ─────────────
+;; A bare "includes somewhere" check cannot catch the two labels being
+;; swapped - both paths would still appear in the message. Anchor each
+;; path to its own "draft: "/"root:  " prefix so a swap fails loudly.
 
 (let [msg (handoff-draft-root-guard-lib/refusal-message "/fixture/tmp/handoff.txt" "/worktree")]
   (assert-includes "the refusal names the draft path" msg "/fixture/tmp/handoff.txt")
   (assert-includes "the refusal names the resolved root" msg "/worktree")
-  (assert-includes "the refusal is unambiguous about refusing" msg "Refusing"))
+  (assert-includes "the refusal is unambiguous about refusing" msg "Refusing")
+  (assert-includes "the draft path is labeled \"draft: \", not swapped with root"
+                    msg "draft: /fixture/tmp/handoff.txt")
+  (assert-includes "the root path is labeled \"root:  \", not swapped with draft"
+                    msg "root:  /worktree"))
 
 (if (empty? @failures)
   (println "ALL PASS: handoff_draft_root_guard_lib.bb")
