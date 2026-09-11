@@ -28,6 +28,7 @@
 (load-file (str (fs/path (fs/parent (fs/canonicalize *file*)) "contract_freshness_gate_lib.bb")))
 (load-file (str (fs/path (fs/parent (fs/canonicalize *file*)) "unregistered_test_gate_lib.bb")))
 (load-file (str (fs/path (fs/parent (fs/canonicalize *file*)) "reverse_hop_lib.bb")))
+(load-file (str (fs/path (fs/parent (fs/canonicalize *file*)) "handoff_draft_root_guard_lib.bb")))
 
 (def usage-text
   (str "Usage: swarm_handoff.sh <draft-file>\n\n"
@@ -108,6 +109,15 @@
             (exit! 1 "Cannot find SwarmForge project root")))
         (exit! 1 "Cannot find SwarmForge project root")))
     (exit! 1 "Cannot find SwarmForge project root")))
+
+;; BL-1518: fail-closed before any mailbox write - see
+;; handoff_draft_root_guard_lib.bb for why this refuses only ever a
+;; fixture escape in practice, never a live send.
+(defn- draft-root-guard! [draft root]
+  (let [draft-real (str (fs/canonicalize draft))
+        root-real (str (fs/canonicalize root))]
+    (when (handoff-draft-root-guard-lib/outside-root? draft-real root-real)
+      (exit! 1 (handoff-draft-root-guard-lib/refusal-message draft-real root-real)))))
 
 (defn roles-file []
   (fs/path (project-root) ".swarmforge" "roles.tsv"))
@@ -1135,6 +1145,7 @@
   (let [draft (fs/path (first args))]
     (when-not (fs/regular-file? draft)
       (exit! 1 (str "Draft file not found: " draft)))
+    (draft-root-guard! draft (project-root))
     (let [sender (sender-role)]
       (when-not (role-known? sender)
         (exit! 1 (str "Unknown sender role: " sender)))
