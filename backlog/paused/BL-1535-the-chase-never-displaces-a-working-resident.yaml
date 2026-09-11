@@ -33,7 +33,7 @@ required_wiring:
   - 'swarmforge/scripts/handoffd.bb::departing-working?::the live chase gather passes the new input into should-rotate-resident? (attempt-resident-rotate!, ~line 1646)'
   - 'specs/pipeline/steps/bl1535ChaseNeverDisplacesAWorkingResidentSteps.js::registerSteps::the handler lands in the same parcel as the feature (BL-233, BL-1371)'
 
-human_approval: pending
+human_approval: approved
 approval_context: >
   A new feature file is authored here, so it needs a tap. No choice is
   posed and there are no ruling_options. FIRM: the gate lives in the chase
