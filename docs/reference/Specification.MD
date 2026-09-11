@@ -1,5 +1,27 @@
 # SwarmForge VS Code Extension — Specification
 
+**Last Updated:** September 11, 2026 (BL-1524: four more files on
+`handoffd.bb`'s load-closure — `process_table_lib.bb` (Darwin `lsof` cwd
+probe), `model_factory_store.bb` (launch seam), `outage_failover_store.bb`
+(seat respawn), and `handoff_lib.bb` (rotation bootstrap spawn) — routed
+through the bounded chokepoint, closing the `daemon_cycle_guard_lib_test_runner.bb`
+load-closure assertion that had been red on main since 2026-08-25 with no
+owner. The first three are plain bounded waits via the existing
+`daemon-cycle-guard-lib/sh!`. The fourth is deliberately fire-and-forget
+(a rotation bootstrap that can legitimately outlive a 60s bound) and gets
+a new chokepoint verb instead, `daemon-cycle-guard-lib/spawn-detached!` —
+starts the child and returns immediately, never deref'ing or waiting, so a
+slow bootstrap costs nothing and a spawn failure is swallowed exactly as
+the bare `process/process` call it replaces did. `daemon_api_ban_lib.bb`'s
+exempt set is unchanged (`daemon_cycle_guard_lib.bb` only). The runner's
+other two FAIL lines (unresolved spawn targets, spawn-reachable subtree
+debt) are unowned by this ticket — BL-1525/BL-1526. Complements
+BL-967/BL-1021/BL-1022/BL-1031/BL-1102. Acceptance:
+`specs/features/BL-1524-the-daemon-load-closure-routes-its-four-strays-through-the-chokepoint.feature`.
+Runbook note: `docs/how-to/BL-967-handoffd-cycle-stall-diagnosis.md`.
+Diagram note: `docs/diagrams/architecture.mmd`. No new extension command,
+setting, or UI change.)
+Prior entry —
 **Last Updated:** September 11, 2026 (BL-1530: the three standing shell
 tests that drive `swarm_handoff.sh` with a `type: git_handoff` draft now
 speak the two-call self-audit landed by BL-1306/44d2d42591 (2026-08-30) —
