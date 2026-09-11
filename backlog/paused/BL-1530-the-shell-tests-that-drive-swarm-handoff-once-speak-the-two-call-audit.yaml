@@ -27,7 +27,7 @@ acceptance: specs/features/BL-1530-the-shell-tests-that-drive-swarm-handoff-once
 required_wiring:
   - 'specs/pipeline/steps/bl1530ShellTestsSpeakTheAuditSteps.js::registerSteps::the handler lands in the same parcel as the feature (BL-233, BL-1371)'
 
-human_approval: pending
+human_approval: approved
 approval_context: >
   A new feature file is authored here, so it needs a tap. No choice is
   posed and there are no ruling_options. FIRM: swarm_handoff.bb is not
