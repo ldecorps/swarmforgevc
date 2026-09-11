@@ -1,0 +1,178 @@
+id: BL-1536
+title: "A QA bounce is delivered as a bounce, never as a merge-only handback: swarm_handoff.bb stamps non-forwarding: true on every git_handoff whose SENDER is the last code-worktree role (with-non-forwarding keys on last-pack-role? alone, since 2026-08-30 b27d9f6639), so QA's bounce to an earlier role carries the terminal marker and Article 2.4 tells the recipient to merge and send nothing - seven QA bounces stamped since 2026-09-02, five recovered only by the recipient disobeying the marker, BL-1518-a dropped outright by a hardender obeying it (2026-09-11 07:07-07:35Z) - the stamp follows the hop's DIRECTION: a git_handoff to a role earlier in roles.tsv pipeline order is never stamped, a terminal forward to a non-pipeline recipient still is"
+milestone: M8
+type: defect
+severity: high
+# high: a live fault in the delivery machinery and a broken safety signal -
+# a QA bounce, the pipeline's last correction path, reaches its owner as
+# "merge, send nothing". Every QA bounce since 2026-09-02 was affected; the
+# only reason five of them landed is that coder/cleaner ignored the marker.
+# Not critical: nothing is lost for good (the bounce commit is in the
+# recipient's tree, a coordinator note re-routes it) and the swarm keeps
+# moving.
+status: todo
+epic: swarm-reliability
+priority: 8
+direction: swarm-reported
+depends_on: []
+mutation_cost: medium
+# medium: Babashka only (reverse_hop_lib.bb / swarm_handoff.bb), no TS
+# production code, so no Stryker target - the hardener records the bb
+# fallback (engineering.prompt Startup Tools); a bb runner case per outline
+# row, one acceptance handler driving the production decision function, and
+# one shell test driving swarm_handoff.bb end to end in a git fixture.
+# Medium rather than low because the shell test runs the two-call self-audit.
+slice_size_envelope: small
+required_stages: [coder, cleaner, architect, hardender, documenter, qa]
+
+acceptance: specs/features/BL-1536-a-bounce-from-the-terminal-role-is-never-stamped-merge-only.feature
+
+# No consumer anchor is declared on purpose (BL-1235): the live consumer of
+# the stamping decision - swarm_handoff.bb's write-handoffs! and main, via
+# with-non-forwarding - already exists and already reaches the function being
+# corrected, so any pattern on it matches before and after the fix and gates
+# nothing. Reachability is proven instead by the shell test below, which
+# drives swarm_handoff.bb itself and reads the installed parcel. Both entries
+# are BL-233 in-parcel pins; the names are chosen here so the literals exist.
+required_wiring:
+  - 'specs/pipeline/steps/bl1536BounceIsNeverStampedMergeOnlySteps.js::registerSteps::the handler lands in the same parcel as the feature (BL-233, BL-1371)'
+  - 'swarmforge/scripts/test/test_swarm_handoff_bounce_never_stamped.sh::non-forwarding::the end-to-end shell test asserts the installed QA-to-earlier-role parcel carries no marker'
+
+human_approval: pending
+approval_context: >
+  A new feature file is authored here, so it needs a tap. No choice is
+  posed and there are no ruling_options. FIRM: the terminal ROLE is still
+  derived from roles.tsv exactly as BL-1299 decided (last code-worktree
+  row; master-resident rows excluded) - BL-1299 scenario 03 and the
+  reverse_audit runner's "terminal pack role is QA" stay unchanged. FIRM:
+  reverse copies (back-one/back-all) keep their marker - the BL-1302 and
+  BL-1313 tests are not touched. FIRM: the receive side (Article 2.4,
+  inbound-non-forwarding?) is correct and is not where the fix goes - the
+  hardender that dropped BL-1518-a did what the protocol says. FIRM: no new
+  swarmforge.conf key, no new handoff header; the fix removes a wrong stamp,
+  it adds nothing to the envelope. Direction, not mandate: move the stamping
+  decision into reverse_hop_lib.bb as a pure function of (roles-table lines,
+  sender, recipients) so the handler and the bb runner drive the one
+  production implementation the way BL-1299's handler does; "earlier in
+  pipeline order" = the recipient's index in pipeline-roles is below the
+  sender's. Minted by the specifier on the coordinator's 2026-09-11
+  07:56:50Z note after a census of every QA git_handoff carrying the marker
+  (backlog/evidence/BL-1536-specifier-stamped-qa-bounce-census-20260911.md).
+
+invariants:
+  - "A git_handoff addressed to a role that precedes its sender in roles.tsv pipeline order (a bounce) never carries non-forwarding: true, whatever the sender's seat, so the recipient's own later git_handoff is never refused by the inbound-non-forwarding send guard on its account."
+  - "Everything else keeps its marker: a last-pipeline-role git_handoff to a non-pipeline recipient (QA to coordinator) is still stamped terminal, and every back-one/back-all reverse copy is still stamped, so nothing downstream of BL-1299/BL-1302/BL-1313 changes."
+
+description: |
+  ## What is wrong
+
+  `swarmforge/scripts/swarm_handoff.bb` `with-non-forwarding` (~line 839)
+  stamps `non-forwarding: true` on a `git_handoff` when the SENDER is the
+  last code-worktree role in roles.tsv (`last-pack-role?` ->
+  `reverse-hop-lib/last-pipeline-role`, `QA` on the live table). It never
+  looks at the recipient. The stamp exists for QA's terminal FORWARD - the
+  approved commit sent to the coordinator, which nobody forwards again -
+  and Article 2.3 words it that way ("the last non-coordinator pack role's
+  FORWARD git_handoff is also stamped"). But QA's BOUNCE to an earlier role
+  is the same `type: git_handoff` from the same sender, so it gets the same
+  marker, and Article 2.4 then tells the recipient a marked inbound is
+  merge-only: merge, `done_with_current.sh`, send no git_handoff -
+  `inbound-non-forwarding?` refuses one while it is in_process.
+
+  A role that obeys the protocol therefore drops the bounce. On 2026-09-11
+  QA sent `00_20260911T070138Z_002574_from_QA_to_hardender` for BL-1518-a
+  (commit `d8704979b4`, D1 hardender, D2 documenter) with
+  `non-forwarding: true`; the hardender dequeued it 07:07:08Z in batch
+  `batch_20260911T070708Z_000001`, completed it merge-only 07:35:33Z and
+  forwarded nothing. The coordinator noticed at 07:56 and hand-routed the
+  rework. The census (evidence file) shows every QA bounce since 2026-09-02
+  carried the marker: seven bounces, five of which landed only because the
+  coder/cleaner ignored it, one re-forwarded 34 minutes later under a bare
+  task name, one dropped.
+
+  ## What is wanted
+
+  The stamp follows the hop's DIRECTION. A `git_handoff` whose recipient
+  is earlier than its sender in `pipeline-roles` order is a bounce and is
+  never stamped, from any sender. A `git_handoff` from the last pipeline
+  role to a recipient outside the pipeline (the coordinator) is a terminal
+  forward and keeps the stamp. Reverse copies are unaffected (they are
+  stamped on their own path in `write-handoffs!`). The receive side is
+  unchanged.
+
+  ## How (direction, not mandate)
+
+  - Put the decision where BL-1299 put its siblings: a pure function in
+    `reverse_hop_lib.bb` taking the roles-table lines, the sender and the
+    recipient list, so the acceptance handler and
+    `reverse_audit_handoff_test_runner.bb` drive the ONE production
+    implementation (BL-1299's handler shows the shape - never a second
+    copy of the math). `with-non-forwarding` delegates to it.
+  - "Earlier" = the recipient's index in `pipeline-roles` is below the
+    sender's. A recipient absent from `pipeline-roles` (coordinator, a
+    master-resident row) is not earlier. Any earlier recipient in a
+    multi-recipient `to:` makes the parcel a bounce.
+  - Shell test `swarmforge/scripts/test/test_swarm_handoff_bounce_never_stamped.sh`
+    in the shape of `test_swarm_handoff_inbound_non_forwarding.sh`: a git
+    fixture, a roles.tsv whose last code-worktree row is QA, `SWARMFORGE_ROLE=QA`,
+    `SWARMFORGE_SKIP_DAEMON=1`, the two-call self-audit (BL-1530: the first
+    call prints HANDOFF_NOT_QUEUED by design), then assert the parcel
+    installed in the earlier role's `inbox/new` has NO `non-forwarding`
+    header and the parcel to `coordinator` HAS it. Fixture roots under
+    mkdtemp, proven by `rev-parse --git-common-dir` (BL-1390).
+  - Docs: `swarmforge/handoff-protocol.md` 2.3 "Reverse hops" / the
+    terminal-stamp sentence gains the direction clause; Article 2.3's
+    wording is already right ("forward") and stays. `docs/diagrams/handoff-flow.mmd`
+    does not depict the stamp (grep: no `non-forwarding`), so no diagram
+    trigger fires - the documenter confirms rather than assumes.
+
+  ## Scope boundary
+
+  - Not this ticket: the recipient-side behaviour on a marked inbound
+    (Article 2.4, BL-1302 guard) - correct as is.
+  - Not this ticket: why coder/cleaner forwarded past a marked inbound five
+    times (a prompt-obedience question, not a code defect) - the census
+    records it; no rule change is proposed here.
+  - Not this ticket: BL-1518-a's own rework - already re-routed by the
+    coordinator on 2026-09-11 07:56.
+
+qa_e2e_procedure: |
+  On the parcel commit, from the repo root:
+  1. `bb swarmforge/scripts/test/reverse_audit_handoff_test_runner.bb` ->
+     ALL PASS; "terminal pack role is QA" still listed, plus the new
+     direction cases (QA->hardender none, QA->coordinator stamped,
+     documenter-terminal table variant).
+  2. `bash swarmforge/scripts/test/test_swarm_handoff_bounce_never_stamped.sh`
+     -> exit 0: the fixture parcel QA->hardender has no `non-forwarding`
+     header, QA->coordinator has `non-forwarding: true`.
+  3. `bash swarmforge/scripts/test/test_swarm_handoff_inbound_non_forwarding.sh`
+     -> exit 0 unchanged (receive-side refusal intact).
+  4. `bash specs/pipeline/scripts/run_acceptance.sh
+     specs/features/BL-1536-a-bounce-from-the-terminal-role-is-never-stamped-merge-only.feature`
+     -> every scenario passes; then run the BL-1299, BL-1302 and BL-1313
+     features the same way -> unchanged, all pass.
+  5. Live: with the swarm up, as QA draft a `git_handoff` to any earlier
+     worktree role for a throwaway task in a fixture root (never the live
+     mailboxes - BL-1518), or read the next real QA bounce's file under
+     `.worktrees/<role>/.swarmforge/handoffs/inbox/new/`: no
+     `non-forwarding:` line; the recipient's `ready_for_next.sh` prints the
+     ordinary 1)/2)/3) git_handoff action block, not merge-only.
+  6. `git diff main...HEAD --name-only` names reverse_hop_lib.bb,
+     swarm_handoff.bb, the bb runner, the new shell test, the handler, the
+     feature, handoff-protocol.md, evidence; handoff_lib.bb's
+     non-forwarding? and swarm_handoff.bb's inbound-non-forwarding? are
+     unchanged.
+
+notes: |
+  2026-09-11 specifier: minted on coordinator note 20260911T075650Z_007812
+  ("QA sent BL-1518-a bounce as non-forwarding merge-only - dropped,
+  mint?"). Census of all 13 marker-carrying QA sends and the BL-1518-a
+  timeline: backlog/evidence/BL-1536-specifier-stamped-qa-bounce-census-20260911.md.
+  BL-1518-a needs no spec amendment; its rework was re-routed by the
+  coordinator at 07:56:43Z and the bounce commit d8704979b4 is already an
+  ancestor of the hardender tip 7fbe02a365. Related, not duplicate: BL-1530
+  (shell tests that assert a first-call queue) - the new shell test speaks
+  the two-call audit from the start; BL-1302 (marker skipped by the
+  duplicate-chain guard) - once a QA bounce is unstamped it is counted as
+  an ordinary chain link again, which is the pre-2026-08-30 behaviour and
+  the correct one.
