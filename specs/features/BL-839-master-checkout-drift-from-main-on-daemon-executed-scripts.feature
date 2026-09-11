@@ -9,6 +9,11 @@ Feature: The swarm notices when the code it is executing is not the code that la
   reversion on `main`. BL-373 already protects the role worktrees from this class;
   the master checkout, which is the one that actually executes, has no such guard.
   Source: found by the specifier 2026-08-06 while scoping BL-650.
+  Since BL-1139 (2026-08-25) the daemon's sweep RESTORES durable drift on the
+  daemon-executed closure from main and emits a RESTORED note; the scenarios
+  below bind the write-free check verb (scenario 05 is that the CHECK never
+  writes, BL-1139 invariant 1), not the sweep. The real-daemon wiring proof is
+  test_handoffd_master_checkout_drift_wiring.sh (re-tensed by BL-1543).
 
   Background:
     Given the daemons execute scripts from the master checkout's working tree
