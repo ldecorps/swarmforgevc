@@ -1,0 +1,178 @@
+id: BL-1529
+title: "A script-originated git_handoff is never swallowed by the self-audit challenge: salvage_lib's queue-handoff! (redo_from.bb, reroute.bb, reroute_resume.bb) and handoffd.bb's dispatch-gap auto-route! call swarm_handoff.sh ONCE, and since the two-call AUDIT_REQUIRED landed (44d2d42591, 2026-08-30) that first call prints HANDOFF_NOT_QUEUED and exits 0 - every one of them reports success, logs a checkpoint or 'git_handoff', and queues nothing"
+milestone: M8
+type: defect
+severity: high
+# high: a live fault in delivery machinery that reports success while
+# doing nothing - the operator's /redo and /reroute salvage verbs and the
+# daemon's dispatch-gap repair are exactly the tools reached for when a
+# parcel is already lost. Also owns two standing shell reds
+# (test_redo_from.sh, test_reroute.sh) under the 2026-09-05 register rule.
+status: todo
+epic: swarm-reliability
+priority: 9
+direction: swarm-reported
+depends_on: []
+mutation_cost: low
+# low: Babashka only (salvage_lib.bb, handoffd.bb auto-route!, swarm_handoff.bb
+# exit path) - no mutation/CRAP/DRY wired (BL-472); gated by the existing
+# shell tests, bl1306's runner and the new acceptance handler. The hardener
+# records the degraded fallback.
+slice_size_envelope: low
+required_stages: [coder, cleaner, architect, hardender, documenter, qa]
+
+acceptance: specs/features/BL-1529-a-script-originated-git-handoff-is-never-swallowed-by-the-audit.feature
+
+# The two live consumers already call the function this ticket fixes
+# (redo_from.bb / reroute.bb / reroute_resume.bb -> queue-handoff!, and
+# dispatch-gap-sweep! -> auto-route!), so a consumer anchor matches before
+# and after the fix and gates nothing (BL-1235). Handler pin only.
+required_wiring:
+  - 'specs/pipeline/steps/bl1529ScriptSendersSpeakTheAuditProtocolSteps.js::registerSteps::the handler lands in the same parcel as the feature (BL-233, BL-1371)'
+
+human_approval: pending
+approval_context: >
+  A new feature file is authored here, so it needs a tap, and one choice
+  is posed as ruling_options below: whether the self-audit challenge keeps
+  exiting 0. FIRM either way: no env-var bypass of the audit is added
+  (engineering.prompt forbids FORCE_RESULT-style seams; the audit is an
+  agent-discipline gate and a script that has no agent to self-audit
+  submits the identical draft twice, which is the protocol as written).
+  FIRM: queue-handoff! and auto-route! treat "nothing queued" as failure -
+  a non-empty outbox path in the output, or a non-zero exit, never the
+  absence of an error. FIRM: the two register rows this mint adds
+  (test_redo_from.sh, test_reroute.sh) are removed in the land that turns
+  them green. Minted by the specifier on 2026-09-11 from the census run for
+  the coder's unowned-red notes on test_rule_proposal.sh and
+  test_handoff_state_dir_worktree_root.sh (those three test-lane reds are
+  BL-1530); evidence backlog/evidence/BL-1529-BL-1530-specifier-unowned-red-census-20260911.md.
+ruling_options:
+  - The challenge exits non-zero with HANDOFF_NOT_QUEUED so every single-call caller fails loud, and the two script callers resubmit the identical draft (recommended)
+  - The challenge keeps exiting 0; the two script callers parse HANDOFF_NOT_QUEUED and resubmit, and the exit code is left as it is
+
+invariants:
+  - "A script-originated git_handoff send reports success only when a handoff file exists in the sender's outbox at return: the audit challenge, a refusal, and a queue are three distinguishable outcomes to every caller of swarm_handoff.sh."
+
+description: |
+  ## What is wrong
+
+  `swarm_handoff.bb` (~line 1176) routes every `type: git_handoff` through
+  `submit-after-audit!` (~line 979): the first invocation for a draft
+  fingerprint writes a challenge under `.swarmforge/handoffs/audit_pending/`,
+  prints `AUDIT_REQUIRED` / `HANDOFF_NOT_QUEUED`, returns nil, and `-main`
+  falls off the end - exit 0 (44d2d42591, 2026-08-30, "two-call
+  AUDIT_REQUIRED"; Article 2.3). An agent reads the text and calls again.
+  Two production callers never learned to:
+
+  - `salvage_lib.bb` `queue-handoff!` (~line 142-168): drafts a
+    `git_handoff`, runs `swarm_handoff.sh` once through the chokepoint,
+    treats any zero exit as queued, and returns the trimmed stdout - the
+    challenge text - which `redo_from.bb` (~line 50-64), `reroute.bb`
+    (~line 106-125) and `reroute_resume.bb` (~line 39) print after their
+    own `REDO:`/`REROUTE:` + `CHECKPOINT:` lines. The checkpoint tag is
+    made, the stale parcels are abandoned, the run-log gets its event,
+    and NO fresh handoff exists. Last live use was 2026-08-29
+    (`run-log.jsonl`, three manual redos), the day before the audit
+    landed; the verbs have not been exercised live since, so this is
+    latent, not observed - the tests below observed it.
+  - `handoffd.bb` `auto-route!` (~line 2035-2050): drafts the BL-222
+    dispatch-gap `git_handoff` via `chase_sweep_lib/dispatch-gap-draft-lines`,
+    runs `swarm_handoff.bb` once as `coordinator`, and logs
+    `dispatch-gap-autoroute <id> <role> git_handoff` on exit 0. The daemon
+    log would show a successful repair for a ticket that received
+    nothing. No `dispatch-gap-autoroute` line since 2026-08-30 in the logs
+    on disk, so no live instance is known; the shape is the same.
+
+  Tests that caught it, both `standing` in `suite-manifest.tsv` and both
+  red on `main` at 4d019c0f91 with no register row:
+  - `swarmforge/scripts/test/test_redo_from.sh` exits 2 after case 02:
+    `ls "$OUTBOX"/*.handoff` finds nothing (its case 01 "no fresh handoff
+    queued").
+  - `swarmforge/scripts/test/test_reroute.sh` exits 2 after case 00:
+    `ls -t outbox/*.handoff` finds nothing after `REROUTE: BL-900 from
+    coder to cleaner (commit ..., detour 1/3)` was printed.
+  Both were last touched 2026-07-23 (BL-606) and passed until 08-30.
+
+  Census (BL-1445): every non-test script that drafts a `type: git_handoff`
+  and runs it through `swarm_handoff` - counted with
+  `grep -l 'type: git_handoff' swarmforge/scripts/*.bb swarmforge/scripts/*.sh`
+  (6 files), then reading each: `salvage_lib.bb` (the one sender, three
+  verbs) and `chase_sweep_lib.bb` (draft only; the send is `handoffd.bb`
+  `auto-route!`). `handoff_lib.bb` and `task_scope_gate_lib.bb` match in
+  comments only, `swarm_handoff.bb` is the callee, and
+  `local_coder_battery.sh` writes a draft it never sends. Population: 2
+  senders, 4 call sites.
+
+  ## What is wanted
+
+  Every script-originated `git_handoff` either lands in the sender's
+  outbox or fails loud. `redo_from`, `reroute`, `reroute_resume` and the
+  dispatch-gap auto-route queue a real handoff again under the audit as it
+  stands (no bypass), and none of them can report success on a challenge.
+  `test_redo_from.sh` and `test_reroute.sh` are green on `main`; the two
+  register rows go in the same land.
+
+  ## How (direction, not mandate)
+
+  - `queue-handoff!`: after the first call, if the output carries
+    `HANDOFF_NOT_QUEUED` (or the exit is non-zero under ruling A), run the
+    identical draft once more - the protocol's own second call - and then
+    require a `HANDOFF QUEUED`/`DELIVERED`/`HELD` line naming an outbox
+    path; anything else is `exit! 1` with the output, as the existing
+    non-zero branch already does. Return the outbox path, not raw stdout.
+  - `auto-route!`: same two-call shape; log `dispatch-gap-autoroute` only
+    on a queued path and `dispatch-gap-autoroute-error` otherwise.
+  - Under ruling A, `print-audit-required!`'s caller exits 1 (or a
+    distinct code) after printing; `bl1306_audit_reroute_test_runner.bb`
+    asserts on text and keeps passing; check `swarm_handoff.sh` propagates
+    the code. Article 2.3 / `handoff-protocol.md` gain one sentence naming
+    the exit (documenter).
+  - Prefer a single helper in `salvage_lib.bb` (or `handoff_lib.bb`) that
+    both callers use, so the two-call rule is stated once.
+
+  ## Not in scope
+
+  - The three test-lane reds from the same landing
+    (`test_rule_proposal.sh`, `test_handoff_state_dir_worktree_root.sh`,
+    `test_required_stages_ticket_lookup_collision.sh`): BL-1530. They
+    drive `swarm_handoff` directly and need no production change.
+  - `sendNoteViaHandoff` and every `note` sender: notes are single-call
+    and unaffected.
+  - Any change to what the audit challenges or how it fingerprints
+    (BL-1306's contract stands).
+
+notes: |
+  Register: backlog/standing-reds.tsv gains two `shell` rows naming this
+  ticket (test_redo_from.sh, test_reroute.sh), first_seen 2026-08-30 -
+  the audit landing - same commit as this mint. Minted 2026-09-11 by the
+  specifier from the census behind the coder's two unowned-red notes
+  (04:36Z); those notes' files are BL-1530's.
+
+qa_e2e_procedure: |
+  On the parcel commit, from the repo root. Fixture roots per BL-1390
+  (`git init` under mkdtemp, `rev-parse --git-common-dir` proven first).
+  1. `bash swarmforge/scripts/test/test_redo_from.sh` and
+     `bash swarmforge/scripts/test/test_reroute.sh`: both print ALL PASS,
+     exit 0.
+  2. In a fixture root with a coder worktree and roles.tsv (copy the
+     shape test_reroute.sh builds), run
+     `bb swarmforge/scripts/redo_from.bb <item> cleaner` once: exactly one
+     `*.handoff` appears in the coder outbox, `to: cleaner`, and stdout's
+     last line names that path. `find <root>/.swarmforge/handoffs/audit_pending -type f`
+     is empty afterwards (the challenge was consumed, not left standing).
+  3. Same fixture: point `swarm_handoff.sh` at a stub that always prints
+     `AUDIT_REQUIRED` / `HANDOFF_NOT_QUEUED` (PATH or a copied scripts
+     dir); `redo_from.bb` exits non-zero with `Failed to queue handoff`
+     and no CHECKPOINT-only success line stands alone.
+  4. Under ruling A: `bb swarmforge/scripts/swarm_handoff.bb <fresh
+     git_handoff draft>` as coder in the fixture exits non-zero and prints
+     HANDOFF_NOT_QUEUED; the identical second call exits 0 and queues.
+     `bb swarmforge/scripts/test/bl1306_audit_reroute_test_runner.bb`
+     still ALL PASS.
+  5. `bash swarmforge/scripts/test/test_handoffd_*.sh` that cover the
+     dispatch-gap sweep still pass; a fixture active ticket with an
+     assignee and no dispatch trail gets one real outbox file after one
+     sweep, and the daemon log line for it says `git_handoff`, not the
+     error form.
+  6. `git diff main...HEAD -- backlog/standing-reds.tsv` shows the two
+     rows removed and nothing else in that file.
