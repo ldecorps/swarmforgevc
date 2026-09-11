@@ -147,3 +147,5 @@ notes: |
     commit); the feature file is unchanged since that tap. IR-DRY: "exits
     1 with a stderr of 40 lines" and "exits <exit> with stderr <stderr>"
     are distinct steps (a line count versus a literal) - kept as written.
+
+assigned_to: coder
