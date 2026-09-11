@@ -65,6 +65,7 @@ boot_prefix_budget_gate_lib_test_runner.bb	standing
 bounded_delete_sweep_lib_test_runner.bb	standing		
 bounded_run_lib_test_runner.bb	standing		
 branch_claim_guard_test_runner.bb	standing		
+branch_identity_guard_lib_test_runner.bb	standing		
 branch_naming_test_runner.bb	standing		
 bridge_headless_supervisor_test_runner.bb	standing		
 bridge_supervisor_env_test_runner.bb	standing		
