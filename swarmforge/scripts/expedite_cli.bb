@@ -753,6 +753,15 @@
   (when (fs/exists? verdict-file)
     (fs/delete verdict-file)))
 
+;; BL-1526: `runner` below is the EXPEDITE_STAGE_RUNNER test seam - nil in
+;; production (the stage spawns `claude -p` directly, never through bash),
+;; a stub script path under test. No literal names it anywhere in this file,
+;; so master_checkout_drift_lib's closure walk cannot resolve it statically;
+;; this declares it instead of leaving the walk to silently drop the edge or
+;; report it as an unowned red forever.
+(def daemon-spawn-declared-dynamic-targets
+  {"runner" "EXPEDITE_STAGE_RUNNER test seam: nil in production (stage-cmd spawns claude -p directly), a stub script path under test"})
+
 (defn- stage-cmd
   [runner settings role ticket prompt-file verdict-file transcript attempt]
   (let [recovery? (pos? attempt)
