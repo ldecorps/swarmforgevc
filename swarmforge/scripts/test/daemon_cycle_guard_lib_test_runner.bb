@@ -261,6 +261,64 @@
     (assert= "current-context resets after the sweep" "outside-sweep"
              @daemon-cycle-guard-lib/current-context)))
 
+;; ── run-compiled-tool! (BL-1478): a failing compiled tool is never silent ──
+;; Acceptance scenario 02: a succeeding tool logs its stdout, no failure line.
+(let [logged (atom [])
+      log-fn (fn [event detail] (swap! logged conj [event detail]))]
+  (daemon-cycle-guard-lib/run-compiled-tool!
+   log-fn "resource-sample" ["node" "x.js"] {}
+   (fn [_cmd _opts] {:exit 0 :out "RECORDED 12 event(s) for 7 agent(s)\n" :err ""}))
+  (assert= "a succeeding tool logs its stdout under the tool's key, no failure line"
+           [["resource-sample" "RECORDED 12 event(s) for 7 agent(s)"]]
+           @logged))
+
+;; Acceptance scenario 01 (Outline): exit 1 / 124 / 127 each produce exactly
+;; one "<tool>-failed" line carrying the exit and the first stderr line.
+(doseq [[exit stderr] [[1 "SyntaxError: Unexpected token in JSON"]
+                       [124 "wait bound exceeded"]
+                       [127 "spawn failed: ENOENT"]]]
+  (let [logged (atom [])
+        log-fn (fn [event detail] (swap! logged conj [event detail]))]
+    (daemon-cycle-guard-lib/run-compiled-tool!
+     log-fn "context-telemetry-producer" ["node" "y.js"] {}
+     (fn [_cmd _opts] {:exit exit :out "" :err stderr}))
+    (assert= (str "a tool exiting " exit " logs exactly one failure line naming the sweep, exit and stderr")
+             [["context-telemetry-producer-failed" (str "exit=" exit " " stderr)]]
+             @logged)))
+
+;; Acceptance scenario 03: a multi-line stderr is cut to its first line.
+(let [logged (atom [])
+      log-fn (fn [event detail] (swap! logged conj [event detail]))
+      forty-lines (str/join "\n" (map #(str "stack frame " %) (range 40)))]
+  (daemon-cycle-guard-lib/run-compiled-tool!
+   log-fn "turn-profile-producer" ["node" "z.js"] {}
+   (fn [_cmd _opts] {:exit 1 :out "" :err forty-lines}))
+  (assert= "a multi-line stderr is cut to only its first line"
+           [["turn-profile-producer-failed" "exit=1 stack frame 0"]]
+           @logged))
+
+;; A single-line stderr longer than the cap is truncated too, not just a
+;; multi-line one - a giant one-line JSON dump cannot flood the log either.
+(let [logged (atom [])
+      log-fn (fn [event detail] (swap! logged conj [event detail]))
+      long-line (apply str (repeat 500 "x"))]
+  (daemon-cycle-guard-lib/run-compiled-tool!
+   log-fn "ritual-ledger-producer" ["node" "w.js"] {}
+   (fn [_cmd _opts] {:exit 1 :out "" :err long-line}))
+  (let [[[event detail]] @logged]
+    (assert= "a long single-line stderr still names the -failed event" "ritual-ledger-producer-failed" event)
+    (assert-true "the capped detail is well under the uncapped stderr length"
+                 (< (count detail) (count long-line)))))
+
+;; The 4-arity form (no injected sh-fn) is the real call-site shape: it goes
+;; through the real sh! by default.
+(let [logged (atom [])
+      log-fn (fn [event detail] (swap! logged conj [event detail]))]
+  (daemon-cycle-guard-lib/run-compiled-tool! log-fn "resource-sample" ["echo" "hi"] {})
+  (assert= "the 4-arity form (no injected sh-fn) uses the real sh! and logs stdout on exit 0"
+           [["resource-sample" "hi"]]
+           @logged))
+
 ;; ── invariant 1's structural half (BL-967 architect bounce D2) ────────────
 ;; The routing half of invariant 1 - the daemon reaches no subprocess path
 ;; outside this chokepoint - was previously a stated claim, and a false one:
