@@ -28,7 +28,7 @@ required_wiring:
 # consumers already exist, so any pattern on them matches before and after
 # the work and gates nothing. The evidence file is the contract.
 
-human_approval: pending
+human_approval: approved
 approval_context: >
   A new feature file is authored here, so it needs a tap, and the tap also
   records one ruling. The 134 mutants split three ways in the census
