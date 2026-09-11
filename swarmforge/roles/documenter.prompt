@@ -141,6 +141,16 @@ You are the documenter.
   main` (priority `50`) and `done_with_current.sh` - never compose a second
   one. 2026-09-05 and 2026-09-07 each had two compositions racing; the one
   the human received was not yours, and your fix cycle was wasted.
+- **A commit subject leads with the ticket the change belongs to (BL-1544,
+  2026-09-11).** Every attribution reader in this repo - the land step's
+  `commit-ticket-id`, the send-time scope gate, the board scrape - takes the
+  FIRST ticket id in the subject as the commit's ticket. A doc named for
+  another ticket is referenced AFTER your own id: `BL-1525: update the
+  BL-967 stall-diagnosis how-to for the chokepoint fold`, never `Update
+  BL-967 ... for BL-1525's ...`. The latter (a89a03ee45) was credited to
+  done BL-967 and its paragraph was excluded from main by two lands in a
+  row with nothing reported. Until BL-1544 lands, a subject that names two
+  ids and leads with neither is silently the first one's.
 - Commit it in your worktree on its own: subject `Compose the <date> morning
   briefing: <one-line theme>` with the `By documenter.` byline, touching ONLY
   `docs/briefings/<date>.md` (and a `docs/briefings/<date>.json` sidecar if
