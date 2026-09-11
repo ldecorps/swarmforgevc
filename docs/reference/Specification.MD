@@ -1,5 +1,30 @@
 # SwarmForge VS Code Extension — Specification
 
+**Last Updated:** September 12, 2026 (BL-1535: the mono-router chase's
+`should-rotate-resident?` (`mono_router_lib.bb`) gains a
+`:departing-mid-parcel` refusal — a chase-driven rotation for a different
+target no longer displaces a resident whose current role holds a real
+`inbox/in_process` parcel while that role is actually working (pane footer
+busy, a live process descended from the resident pane, or a fresh standing
+self-audit challenge). Previously only the footer probe fed the busy check,
+so a role whose turn was inside a detached command or standing between the
+two `swarm_handoff.sh` calls of a self-audit read as idle and could be
+rotated away — measured live 2026-09-11, an aged-note chase pulled the
+resident out of the hardener three times in one shift, stranding a held
+parcel, an unsent handoff draft, and a detached mutation rerun in turn, the
+last killing a worktree session 2.5 minutes into a run that finished 14
+minutes later with no session to report to. A departing role with no held
+parcel never refuses on the new branch even while working, and an idle
+holder — idle footer, no live command, no fresh challenge — still yields
+exactly as the 2026-08-31 seated-preferred hotfix requires, so dependency
+mail never starves behind a dead or waiting holder. `rotate-resident-to!`
+and the resident-invoked rotation entry (BL-805/BL-926) are untouched — the
+new gate lives entirely upstream, in the chase's own decision path. A
+refusal logs `chase-rotate-departing-mid-parcel` and appends one
+chaser-telemetry row naming the departing role, its held parcel, and the
+signal that held it. See the new "Chase never departs a working mid-parcel
+resident (BL-1535)" section in `swarmforge/handoff-protocol.md`.)
+Prior entry —
 **Last Updated:** September 11, 2026 (BL-1526: the daemon closure walk's
 last FAIL line — `bl1022: every spawn target in the daemon's closure
 resolved` in `daemon_cycle_guard_lib_test_runner.bb` — retired, red since
