@@ -1,0 +1,157 @@
+id: BL-1542
+title: "Bubble live screen: the top ticket strip gets a collapse control so a several-hundred-character ticket title no longer pushes the pane grid off a phone screen - distinct from the +/- text-size control, remembered through the bridge like the text size, never browser storage"
+milestone: M8
+type: feature
+status: todo
+epic: swarmforge-console
+priority: 170
+direction: human-requested
+depends_on: []
+mutation_cost: medium
+# medium: the page module (residentSpyUiHtml.ts, an HTML-string shell driven
+# under jsdom like BL-609) plus, under ruling A, one new key in the
+# web-ui preference store and its read/write routes - all TypeScript under
+# the Stryker/CRAP/jscpd gates. Not low: two modules and a route shape
+# change, not one.
+slice_size_envelope: low
+required_stages: [coder, cleaner, architect, hardender, documenter, qa]
+
+acceptance: specs/features/BL-1542-live-screen-ticket-strip-collapse-control.feature
+
+# No consumer anchor (BL-1235): the only pre-existing live consumer is
+# bridgeServer.ts's dispatch of the web-ui preference route, which already
+# matches before and after this parcel and so gates nothing; the page's own
+# fetch is the parcel's own diff. Handler pin is the BL-233 anchor only.
+required_wiring:
+  - 'specs/pipeline/steps/bl1542TicketStripCollapseSteps.js::registerSteps::the handler lands in the same parcel as the feature (BL-233)'
+
+human_approval: pending
+approval_context: >
+  A new feature file is authored here, so it needs a tap, and one choice is
+  posed. FIRM: the control is a separate element from the existing +/- pane
+  text-size control (which changes font size, not visibility); collapsed
+  means the title on ONE ellipsized line with the ticket id and the
+  role/model/claim-age line still shown; a live refresh never flips the
+  state; no browser storage is ever written (Architecture Rule 3, BL-609
+  scenario 06). THE CHOICE is whether the collapsed state survives a reload.
+  Under B the specifier retires scenario 05 and adds "each load starts
+  expanded" before promotion; the coder builds nothing until the ruling is
+  recorded in human_ruling.
+ruling_options:
+  - Remembered per surface through the bridge preference store, the way the pane text size is (recommended)
+  - In-page only, every load of the live screen starts expanded
+ruling_tradeoffs:
+  - Pros - one tap ever, survives every reopen of Bubble, reuses the BL-1153 preference file and route shape beside fontSizePx, keeps Rule 3. Cons - touches the preference module and its routes as well as the page, a slightly larger parcel. Recommended because the phone reopens Bubble many times a day and a per-load tap defeats the ask.
+  - Pros - smallest parcel, page-only, no bridge change, no new stored preference. Cons - every reopen of Bubble shows the full title again until tapped, which on a phone is the exact complaint being filed.
+
+invariants:
+  - "The strip's collapsed or expanded state changes only on a human tap or on loading a stored preference - never on a pane-data refresh, a claim-age tick, or a layout re-check."
+
+description: |
+  ## What was observed (human, 2026-09-11, Bubble screenshots)
+
+  Human, verbatim: "any chance to add a collapse button on the header? the
+  description is so verbose we can see the panes below."
+
+  The card at the top of Bubble's live screen is the `#ticket-strip` that
+  `getResidentSpyUiHtml()` (`extension/src/bridge/residentSpyUiHtml.ts`)
+  renders on a rotation-pack layout: ticket id, the working ticket's TITLE,
+  and a `role · model · entered Nm ago` meta line. What the human reads as
+  "the description" is the title itself - BL-1525's `title:` is 668
+  characters, and recent tickets routinely carry titles that long. The strip
+  has no way to shrink, so on a phone-sized viewport it fills the screen and
+  the COORDINATOR / RESIDENT pane grid under it is reachable only by
+  scrolling past the whole title. The `-`/`+` control the human already tried
+  is BL-609's pane text-size control: it changes the font size of the pane
+  OUTPUT, not the strip's visibility, and must stay as it is.
+
+  Bubble and the Telegram Mini App render this one bridge-side page (BL-774's
+  2026-08-06 remote-HTML ruling), so one change reaches both. This is the
+  LIVE holistic UI (Architecture Rule 5), not the static PWA.
+
+  ## What is wanted
+
+  - The strip carries a collapse control of its own (scenario 01). Collapsed
+    clamps the title to a single ellipsized line and keeps the id and meta
+    line (02); tapping again restores the full title (03).
+  - A pane-data refresh (the 4 s poll) and the claim-age tick never change
+    the state (04, invariant).
+  - Under ruling A the state is remembered per surface through the bridge
+    and never through browser storage (05); under ruling B scenario 05 is
+    retired by the specifier and replaced with "each load starts expanded".
+  - No ticket working: the strip hides and takes the control with it (06).
+  - Documenter: no registered diagram depicts the live screen's markup;
+    the live-screen how-to or reference page that describes the strip (if
+    any names it) gains one sentence on the control.
+  - Look and feel: Article 1.10 makes Bubble's look and feel the
+    art-director's domain. The art-director is not on the running roster
+    (`.swarmforge/roles.tsv`, 2026-09-11), so this is specced directly per
+    the intake's own instruction; if the role is staffed when the parcel
+    reaches QA, QA's sign-off note applies as for any artifact parcel.
+
+  ## How (direction, not mandate)
+
+  A small chevron button inside `.ticket-strip` (its own element, not in
+  `#fs-font-ctrl`), toggling an `is-collapsed` class on `#ticket-strip`;
+  CSS on `.ticket-strip.is-collapsed .ticket-strip-title` does the one-line
+  ellipsis. `updateTicketStrip` and the 1 s age tick must leave the class
+  alone (they rewrite text, not state). Under ruling A, follow BL-1153's
+  shape: a `ticketStripCollapsed` boolean beside `fontSizePx` for the
+  `live-screen` surface in `web-ui-font-size-preferences.json` and its
+  read/write routes, or a sibling preference key of the same store - the
+  coder's call, but one store, not a second file. The step handler drives
+  the REAL page under jsdom exactly as `bl609ResidentSpyFontSizeControlSteps.js`
+  does (extractInlineScript, window.eval, close windows before returning).
+
+constraints: >
+  BL-609's six scenarios stay green unchanged - the text-size control is
+  not moved, restyled or merged with this one. The fullscreen head
+  (`#fs-head`, built at ~line 665) is out of scope. No browser storage is
+  written by the live screen, ever. Bubble's Android app code is not
+  touched - the change is in the bridge-served page.
+
+out_of_scope: |
+  - Collapsing the fullscreen pane's own head - a follow-up if the human
+    asks; the complaint is the grid view.
+  - Shortening ticket titles at mint - a specifier-discipline matter, not a
+    UI one.
+  - Any change to the static backlog-dashboard PWA (Rule 5).
+
+qa_e2e_procedure: |
+  1. Acceptance resolving all six scenarios of the feature file, and the
+     BL-609 feature still green.
+  2. On a phone-width viewport (~400 px) open the live screen from Bubble
+     at its real URL while a rotation pack has a working ticket whose title
+     exceeds 300 characters (any of BL-1524..BL-1541 qualifies). Before the
+     tap the pane grid is below the fold; after one tap on the strip's
+     collapse control the title is one ellipsized line and the COORDINATOR
+     and RESIDENT tiles are on screen without scrolling.
+  3. Wait 10 s (two refreshes): still collapsed, claim age still ticking.
+  4. Ruling A only: reload the page - it renders collapsed; open the
+     Telegram Mini App Live Screen - same state (one bridge-side preference
+     per surface). Ruling B: reload renders expanded.
+  5. The `-`/`+` text-size control still changes pane output size in both
+     states, and the browser's storage inspector shows no keys written by
+     the page.
+  6. `git diff <base>..<parcel> -- bubble/ extension/src/bridge/webUiFontSize*`
+     touches the preference modules only under ruling A.
+
+source: |
+  backlog/INTAKE-bubble-pane-header-collapse-20260911.md - human via Claude
+  Code, 2026-09-11T18:02Z, two Bubble screenshots (bble.musicalsifu.com,
+  BL-1525 working, Architect · Sonnet 5). Archived to
+  backlog/archive/INTAKE-bubble-pane-header-collapse-20260911.md pointing
+  here (1:1, no consolidation).
+
+notes: |
+  - Minted 2026-09-11 by the specifier draining the root intake the
+    coordinator's note named (870979d). One intake, one ticket.
+  - The verbose "description" in the screenshots is the ticket `title:`
+    (668 chars on BL-1525), confirmed by reading `updateTicketStrip` - the
+    strip never renders `description:`. The ticket says so, so the coder
+    does not go looking for a description renderer that does not exist.
+  - IR-DRY (vendored checker) reported near-duplicate step pairs; all are
+    deliberate Given/Then and collapse/expand mirrors, not drift.
+  - Epic `swarmforge-console`, as BL-609 and BL-1189 (the live screen's
+    other slices); `bubble-live-screen` (BL-774) is the duplication epic,
+    and this change lands in the shared page both entry points render.

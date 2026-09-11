@@ -38,3 +38,10 @@ Local Engineering Architecture Rule 5 — not the static backlog-dashboard
 PWA. Per Article 1.10, look-and-feel review of Bubble is the art-director's
 domain (design brief), which the specifier mints tickets from; route
 accordingly if art-director is staffed, or spec it directly if not.
+
+## Disposition (specifier, 2026-09-11)
+
+Specced 1:1 as `backlog/paused/BL-1542-live-screen-ticket-strip-collapse-control.yaml`
+(feature `specs/features/BL-1542-live-screen-ticket-strip-collapse-control.feature`).
+The verbose text is the ticket TITLE rendered in the live screen ticket strip;
+the ruling on whether the collapsed state survives a reload is posed on the ticket.
