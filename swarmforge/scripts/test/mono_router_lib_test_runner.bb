@@ -442,48 +442,6 @@
           {:active-role "coder" :target-role "QA" :resident-busy? true :ignore-busy? false
            :last-rotate-at-ms 0 :now-ms 100000 :cooldown-ms 30000}))
 
-;; ── BL-1535: the chase never displaces a working resident ────────────────
-;; A departing role that holds a real in_process parcel AND is working
-;; (footer, a live descended process, or a fresh audit challenge) refuses
-;; the rotate for a DIFFERENT target - :departing-mid-parcel, ordered after
-;; :busy and before :already-active.
-(assert= "BL-1535: departing role mid-parcel and working refuses for a different target"
-         :departing-mid-parcel
-         (mono-router-lib/should-rotate-resident?
-          {:active-role "hardender" :target-role "specifier" :resident-busy? false
-           :departing-parcel? true :departing-working? true
-           :last-rotate-at-ms 0 :now-ms 100000 :cooldown-ms 30000}))
-(assert= "BL-1535: idle holder (not working) still yields"
-         :rotate
-         (mono-router-lib/should-rotate-resident?
-          {:active-role "hardender" :target-role "specifier" :resident-busy? false
-           :departing-parcel? true :departing-working? false
-           :last-rotate-at-ms 0 :now-ms 100000 :cooldown-ms 30000}))
-(assert= "BL-1535: same-role rotation (BL-926) is never a displacement"
-         :rotate
-         (mono-router-lib/should-rotate-resident?
-          {:active-role "hardender" :target-role "hardender" :resident-busy? false
-           :departing-parcel? true :departing-working? true
-           :last-rotate-at-ms 0 :now-ms 100000 :cooldown-ms 30000}))
-(assert= "BL-1535: no held parcel never refuses even while working"
-         :rotate
-         (mono-router-lib/should-rotate-resident?
-          {:active-role "hardender" :target-role "specifier" :resident-busy? false
-           :departing-parcel? false :departing-working? true
-           :last-rotate-at-ms 0 :now-ms 100000 :cooldown-ms 30000}))
-(assert= "BL-1535: ambulance ignore-busy? overrides the mid-parcel refuse too"
-         :rotate
-         (mono-router-lib/should-rotate-resident?
-          {:active-role "hardender" :target-role "specifier" :resident-busy? false
-           :departing-parcel? true :departing-working? true :ignore-busy? true
-           :last-rotate-at-ms 0 :now-ms 100000 :cooldown-ms 30000}))
-(assert= "BL-1535: :busy still wins over the mid-parcel branch (ordering)"
-         :busy
-         (mono-router-lib/should-rotate-resident?
-          {:active-role "hardender" :target-role "specifier" :resident-busy? true
-           :departing-parcel? true :departing-working? true
-           :last-rotate-at-ms 0 :now-ms 100000 :cooldown-ms 30000}))
-
 (assert-true "non-home role with mail stays put"
              (not (mono-router-lib/rotate-home?
                    {:rotation-router? true :role "cleaner" :home-role "coder"

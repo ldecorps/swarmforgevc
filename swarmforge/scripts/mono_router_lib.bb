@@ -159,10 +159,7 @@
    (rotate_to_role.bb -> handoff-lib/respawn-as!). The daemon's own
    rotate-resident-to! call (handoffd.bb chase) never routes through this -
    gating it would risk deadlocking chase-driven drain on the very parcel
-   it is trying to clear (invariant: daemon rotation is never gated HERE;
-   BL-1535's should-rotate-resident? :departing-mid-parcel is the daemon
-   chase's own separate gate, upstream of rotate-resident-to! itself, which
-   this function's caller still never touches).
+   it is trying to clear (invariant: daemon rotation always fails open).
    blocking-file = the departing role's inbox/in_process/*.handoff path, or
    nil when that box holds no real parcel (missing, empty, or holding only
    claim-progress/nudge/chase sidecars - callers pass handoff-lib's already
@@ -492,24 +489,12 @@
    See live-role-agrees? for the unreadable-is-divergence rule; omitting
    live-role treats it as unreadable, never as agreement.
    BL-691 D2: :ignore-busy? true skips the busy refuse when the ambulance
-   patient's dequeueable parcel waits at target-role — patient work interrupts.
-   BL-1535: :departing-parcel? (the departing/active role's inbox/in_process
-   holds a real *.handoff, sidecars excluded) and :departing-working? (the
-   gather's OR of pane-footer-busy, a live process descended from the
-   resident pane, or a fresh standing audit challenge) together refuse
-   :departing-mid-parcel when the target differs from active-role and
-   :ignore-busy? is false - ordered after :busy and before :already-active
-   so a same-role rotate (BL-926) or the ambulance override still proceed.
-   A departing role with no held parcel never refuses on this branch alone,
-   even while working - only a stray watcher process with nothing to lose."
+   patient's dequeueable parcel waits at target-role — patient work interrupts."
   [{:keys [active-role target-role live-role resident-busy? ignore-busy?
-           departing-parcel? departing-working?
            last-rotate-at-ms now-ms cooldown-ms]}]
   (let [cooldown (or cooldown-ms default-rotate-cooldown-ms)]
     (cond
       (and resident-busy? (not ignore-busy?)) :busy
-      (and departing-parcel? departing-working? (not ignore-busy?)
-           (not= (str active-role) (str target-role))) :departing-mid-parcel
       (and active-role target-role (= (str active-role) (str target-role))
            (live-role-agrees? live-role target-role)) :already-active
       (and last-rotate-at-ms (pos? last-rotate-at-ms)
