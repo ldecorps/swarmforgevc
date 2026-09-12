@@ -86,3 +86,50 @@ test('removeDraftIfPresent property: idempotent cleanup regardless of whether th
     )
   );
 });
+
+// BL-1550 declared invariant 1: removeDraftIfPresent removes only a regular
+// file at the exact path it is given - never a directory, never recursing
+// into one, never throwing whether the path is a regular file, absent, or
+// a directory. Generator-reach: `kind` is drawn from all four states the
+// helper's contract distinguishes (file / absent / empty directory /
+// non-empty directory), each paired with a fresh generated name, so every
+// run exercises a real state the three production callers can hand the
+// helper on their own exit paths - not just the one shape a hand-picked
+// example would reach.
+test('removeDraftIfPresent property: removes only a regular file, never a directory, never throws (BL-1550 invariant 1)', () => {
+  fc.assert(
+    fc.property(
+      fc.constantFrom('file', 'absent', 'emptyDir', 'dirWithFile'),
+      fc
+        .string({ minLength: 1, maxLength: 24 })
+        .filter((s) => !s.includes('\0') && !s.includes('/'))
+        .filter((s) => path.dirname(path.join('/bl1550-fixture-dir', s)) === '/bl1550-fixture-dir'),
+      (kind, name) => {
+        const dir = mkTmpDir('draft-path-under-invariant1-property-');
+        const draftPath = path.join(dir, name);
+        let innerFile = null;
+        if (kind === 'file') {
+          fs.writeFileSync(draftPath, 'type: note\n');
+        } else if (kind === 'emptyDir') {
+          fs.mkdirSync(draftPath);
+        } else if (kind === 'dirWithFile') {
+          fs.mkdirSync(draftPath);
+          innerFile = path.join(draftPath, 'inner');
+          fs.writeFileSync(innerFile, 'x');
+        }
+
+        assert.doesNotThrow(() => removeDraftIfPresent(draftPath));
+
+        if (kind === 'file' || kind === 'absent') {
+          assert.equal(fs.existsSync(draftPath), false, `expected ${draftPath} to be gone for kind=${kind}`);
+        } else {
+          assert.ok(fs.existsSync(draftPath), `expected ${draftPath} to still exist for kind=${kind}`);
+          assert.ok(fs.statSync(draftPath).isDirectory(), `expected ${draftPath} to still be a directory for kind=${kind}`);
+          if (kind === 'dirWithFile') {
+            assert.ok(fs.existsSync(innerFile), `expected ${innerFile} to still exist`);
+          }
+        }
+      }
+    )
+  );
+});
