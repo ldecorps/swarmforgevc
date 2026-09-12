@@ -2816,6 +2816,25 @@ RESOLVED BY THIS TICKET
     (assert-false "BL-1546 (02): never printed as a silent EXCLUDED_SIBLING_PATH-style success"
                   (some? (some #{{:path "docs/shared.md" :owners #{"BL-9002"}}} (or (:excluded result) []))))))
 
+;; 02b (hardening, BL-1315's own guard reused): a closed-owner path ALSO
+;; touched by a later UNTAGGED commit is never refused - the untagged touch
+;; may be the landing ticket's own uncredited work (BL-1315's exact corner),
+;; and "closed" must not override that uncertainty. Kept, not refused.
+(with-fixture [root]
+  (commit! root "backlog/done/M8/BL-9002-x.yaml" "id: BL-9002\nhuman_approval: approved\n" "BL-9002: done sibling ticket file")
+  (mark-origin-main-here! root)
+  (commit! root "docs/shared.md" "v1\n" "Update the shared doc for BL-9002's chokepoint fold")
+  (commit! root "docs/shared.md" "v2\n" "an untagged follow-up touch, no ticket id at all")
+  (commit! root "backlog/active/BL-9001-x.yaml" "id: BL-9001\n" "BL-9001: own ticket file")
+  (let [commit (:out (sh! root "git" "rev-parse" "HEAD"))
+        result (land-step-lib/own-paths root commit "BL-9001" #{"BL-9002"})]
+    (assert= "BL-1546 (02b): an untagged touch on a closed-owner path is kept, never refused"
+             nil (:warning result))
+    (assert-true "BL-1546 (02b): the shared path is kept"
+                 (boolean (some #{"docs/shared.md"} (:paths result))))
+    (assert-false "BL-1546 (02b): the shared doc path itself is never excluded"
+                  (boolean (some #(= "docs/shared.md" (:path %)) (:excluded result))))))
+
 ;; 03: a closed-owner path whose content nets back to origin/main's own
 ;; never reaches own-paths' decision at all (full-delivered-paths is a
 ;; two-tree diff) - neither refuses nor excludes.

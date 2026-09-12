@@ -1485,7 +1485,14 @@
                ;; exactly like any other co-owner. Otherwise it refuses,
                ;; naming the path and the closed owner(s) - never a silent
                ;; EXCLUDED_SIBLING_PATH.
+               ;;
+               ;; BL-1315's own guard is reused unchanged: an untagged touch
+               ;; is skipped here exactly as it is below, since it may be
+               ;; the landing ticket's own uncredited work - "closed" never
+               ;; overrides that uncertainty, it only sharpens what happens
+               ;; once the BL-1389 clause below would otherwise apply.
                (and (seq (:owners attribution))
+                    (not (:any-untagged? attribution))
                     (not (contains? (:owners attribution) task-ticket-id))
                     (every? #(closed-on-main? root origin-main %) (:owners attribution)))
                {:paths nil
