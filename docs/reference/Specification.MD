@@ -1,5 +1,28 @@
 # SwarmForge VS Code Extension — Specification
 
+**Last Updated:** September 13, 2026 (BL-1550: `removeDraftIfPresent`
+(`extension/src/swarm/draftPathUnder.ts`, BL-1537) removed only a regular
+file it found at the draft path, but `extension/test/draftPathUnder.property.test.js`'s
+invariant-2 property drew a draft NAME from an unfiltered `fc.string`, which
+can draw `"."` or `".."`; `path.join(dir, ".")` is `dir` itself, so on those
+seeds the helper's bare `existsSync`/`unlinkSync` was handed the fixture
+directory and threw `EISDIR` — a property-lane red on some seeds and green
+on others. Fixed on both sides: the helper now `lstatSync`s the path first
+and returns without throwing (and without removing anything) unless the
+path is a regular file, swallowing `ENOENT` from both the `lstat` and the
+`unlink` (the CLI can delete the draft between the two); and the property's
+generator is filtered to strict children of the fixture directory
+(`path.dirname(path.join(dir, s)) === dir`), so `.` and `..` can no longer
+reach it. The directory case moves to a pinned example (scenario 02) so it
+runs every time rather than on a fraction of seeds. The three production
+callers (`closing-ceremony-run.ts`, `night-closing-ceremony-run.ts`,
+`tracer-bullet-launcher.ts`) and BL-1537's own feature/handler are
+unchanged; production was never at risk since `draftPathUnder` never
+returns a bare directory. No new extension command or setting; no diagram
+edit — below `handoff-flow.mmd`'s depicted granularity, same as BL-1537's
+own landing. Acceptance:
+`specs/features/BL-1550-a-draft-cleanup-never-unlinks-a-directory.feature`.)
+Prior entry —
 **Last Updated:** September 12, 2026 (BL-1455: a ticket re-pended for a
 second ruling now gets a fresh buttoned ask instead of staying parked on a
 decided, buttonless message. BL-1090's duplicate guard (`approvalAskRecordedOnLiveTopic`)
