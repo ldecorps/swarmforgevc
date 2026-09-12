@@ -42,6 +42,12 @@ function passLines(run) {
   return (run.stdout || '').split('\n').filter((l) => l.startsWith('PASS:'));
 }
 
+function findPassLine(ctx, caseNum) {
+  const line = ctx.bl1543.passes.find((l) => l.startsWith(`PASS: ${caseNum}:`));
+  assert.ok(line, `no PASS: ${caseNum}: line in:\n${ctx.bl1543.passes.join('\n')}`);
+  return line;
+}
+
 function registerSteps(registry) {
   const scoped = (pattern, handler) => registry.defineScoped(pattern, handler, FEATURE_NAME);
 
@@ -79,28 +85,24 @@ function registerSteps(registry) {
   });
 
   scoped(/^case "(\d+)" reports the OPERATOR outbox carrying one "(.+)" line naming "(.+)"$/, (ctx, caseNum, restoredPrefix, drivenPath) => {
-    const line = ctx.bl1543.passes.find((l) => l.startsWith(`PASS: ${caseNum}:`));
-    assert.ok(line, `no PASS: ${caseNum}: line in:\n${ctx.bl1543.passes.join('\n')}`);
+    const line = findPassLine(ctx, caseNum);
     assert.ok(line.includes(restoredPrefix), `case ${caseNum} PASS line missing "${restoredPrefix}": ${line}`);
     assert.ok(line.includes(drivenPath), `case ${caseNum} PASS line missing "${drivenPath}": ${line}`);
   });
 
   scoped(/^case "(\d+)" reports the drifted script matching main after the sweep$/, (ctx, caseNum) => {
-    const line = ctx.bl1543.passes.find((l) => l.startsWith(`PASS: ${caseNum}:`));
-    assert.ok(line, `no PASS: ${caseNum}: line in:\n${ctx.bl1543.passes.join('\n')}`);
+    const line = findPassLine(ctx, caseNum);
     assert.ok(line.includes('matches main after the sweep'), `case ${caseNum} PASS line does not report a match against main: ${line}`);
   });
 
   scoped(/^case "(\d+)" reports no "(.+)" warning line for the restored episode$/, (ctx, caseNum, warnPrefix) => {
-    const line = ctx.bl1543.passes.find((l) => l.startsWith(`PASS: ${caseNum}:`));
-    assert.ok(line, `no PASS: ${caseNum}: line in:\n${ctx.bl1543.passes.join('\n')}`);
+    const line = findPassLine(ctx, caseNum);
     assert.ok(line.includes(warnPrefix), `case ${caseNum} PASS line missing "${warnPrefix}": ${line}`);
     assert.ok(line.includes('no'), `case ${caseNum} PASS line does not read as a negative report: ${line}`);
   });
 
   scoped(/^case "(\d+)" reports a warning stating the running code is not the landed code while "(.+)" is present, with the script left modified$/, (ctx, caseNum, lockPath) => {
-    const line = ctx.bl1543.passes.find((l) => l.startsWith(`PASS: ${caseNum}:`));
-    assert.ok(line, `no PASS: ${caseNum}: line in:\n${ctx.bl1543.passes.join('\n')}`);
+    const line = findPassLine(ctx, caseNum);
     assert.ok(line.includes(lockPath), `case ${caseNum} PASS line missing "${lockPath}": ${line}`);
     assert.ok(line.includes('not the landed code'), `case ${caseNum} PASS line missing the stakes statement: ${line}`);
     assert.ok(line.includes('modified'), `case ${caseNum} PASS line does not report the file left modified: ${line}`);
