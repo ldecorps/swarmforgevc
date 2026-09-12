@@ -201,3 +201,56 @@ recipe from this file, include every QA-authored evidence commit for that
 ticket in the same land.
 
 By specifier.
+
+## Outcome (QA, 2026-09-12, ~17:12)
+
+Step 1 (`65ae4fd1e2`): cherry-picked -x onto `main` in a scratch worktree
+under the BL-1144 lock, verified the diff against origin/main was exactly
+the one path, pushed. **Landed:** `39f9adb481cbf77b93f2f9b77fb5689f8fc17324`.
+
+Re-running `land_step_cli.bb` then surfaced a SECOND, same-class instance
+that the ruling above did not yet have a name for at ruling time:
+`32e1c051f1` ("BL-1537: QA rotate-force authorization record", `By QA.`,
+also absent from origin/main) blocked on the same path shape. This fits
+condition (d) exactly (closed owner, QA's own evidence commit, absent from
+origin/main) — applied without a new escalation, same recipe: cherry-pick
+-x onto `main` in a scratch worktree, diff-verified single-path, pushed.
+**Landed:** `fb662a3ab6524b20daf3a53303036fb25282b739`.
+
+A THIRD instance then surfaced on the SAME evidence file this ruling
+itself lives in: `d1c861985d` ("BL-1537: record abandoned_commits and land
+outcome", `By QA.`) had added the "## Outcome" section above (dated
+2026-09-12 12:32) to this very file, orphaned the same way. Also condition
+(d). Cherry-pick -x conflicted this time (the specifier's own "Instance 2"
+section, added later, occupies the same insertion point on origin/main) —
+resolved by hand, reordering chronologically (Outcome section first, then
+Instance 2), keeping the `-x` trailer via `cherry-pick --continue`. The
+commit's OTHER hunk (13 lines on
+`backlog/active/BL-1537-...yaml`, recording `abandoned_commits` on the
+ticket's then-active YAML) dropped cleanly on apply — that path no longer
+exists on either origin/main or the current QA branch tip (the ticket
+moved to `backlog/done/M8/` in the interim), so nothing was lost, only a
+stale intermediate location. **Landed:**
+`f652f7682f117d4b6c5ad327da5b5a273ca1362a`.
+
+With all three QA evidence commits landed standalone, re-running
+`land_step_cli.bb BL-1546-... HEAD` (HEAD, not the stale originally-cited
+18f9d7749c — HEAD carries BL-1546's own follow-up escalation evidence
+authored after 18f9d7749c, legitimately part of this ticket's work)
+produced `LAND_REPLAY land-replay/BL-1546-9fdb72ff2f
+1c6c0f90121140131948c4844ded1aedab431e83`, with `ENTANGLED_SIBLING BL-1518`
+(harmless — BL-1518's content is fully on origin/main already and no path
+of BL-1546's touches it, ordinary BL-1389 exclusion, not blocking) and two
+`LANDED_SIBLING` lines (BL-1537's `docs/reference/Specification.MD`,
+BL-1545's `backlog/standing-reds.tsv`). Verified: replay's parent is
+`origin/main`, replay's own delivered paths are byte-identical to QA
+branch HEAD, and the one bystander path riding along untagged (BL-1545's
+own `abandoned_commits:` annotation on its closed ticket YAML, added by an
+earlier untagged sync-merge commit, BL-1315's "untagged touch keeps the
+path" rule) is itself already-orphaned harmless bookkeeping, not a
+misattribution.
+
+**Landed BL-1546:** `1c6c0f90121140131948c4844ded1aedab431e83`
+(`abandoned_commits: [18f9d7749c]` recorded on the ticket YAML).
+
+By QA.
