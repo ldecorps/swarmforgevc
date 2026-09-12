@@ -5,6 +5,10 @@ const path = require('node:path');
 const { mkTmpDir } = require('./helpers/tmpDir');
 const { draftPathUnder, removeDraftIfPresent } = require('../out/swarm/draftPathUnder');
 
+afterEach(() => {
+  vi.restoreAllMocks();
+});
+
 // BL-1537: BL-1518-a's fail-closed guard in swarm_handoff.bb refuses any
 // draft not under the project root the CLI resolved. This pure helper is
 // what the three TypeScript senders (closing-ceremony-run.ts,
@@ -90,4 +94,56 @@ test('removeDraftIfPresent does not throw when the path never existed', () => {
   const draftPath = path.join(dir, 'never-existed.handoff');
   assert.doesNotThrow(() => removeDraftIfPresent(draftPath));
   assert.ok(!fs.existsSync(draftPath));
+});
+
+// BL-1550: the lstat try/catch swallows only ENOENT and rethrows anything
+// else (e.g. EACCES on a permission-denied ancestor) - the untested rethrow
+// branch had CRAP > 6 with only the ENOENT/file/directory shapes covered.
+test('removeDraftIfPresent rethrows a non-ENOENT error from lstat', () => {
+  const dir = mkTmpDir('draft-path-under-test-');
+  const draftPath = path.join(dir, 'unreadable.handoff');
+  const err = Object.assign(new Error('permission denied'), { code: 'EACCES' });
+  const spy = vi.spyOn(fs, 'lstatSync').mockImplementation(() => {
+    throw err;
+  });
+  try {
+    assert.throws(() => removeDraftIfPresent(draftPath), /permission denied/);
+  } finally {
+    spy.mockRestore();
+  }
+});
+
+// BL-1550: the CLI can delete the draft between the stat and the unlink -
+// the unlink's own ENOENT must be swallowed there too, distinct from the
+// lstat-level ENOENT the other no-op tests already exercise.
+test('removeDraftIfPresent swallows ENOENT from unlink itself (race between stat and unlink)', () => {
+  const dir = mkTmpDir('draft-path-under-test-');
+  const draftPath = path.join(dir, 'raced-away.handoff');
+  fs.writeFileSync(draftPath, 'type: note\n');
+  const err = Object.assign(new Error('no such file'), { code: 'ENOENT' });
+  const spy = vi.spyOn(fs, 'unlinkSync').mockImplementation(() => {
+    throw err;
+  });
+  try {
+    assert.doesNotThrow(() => removeDraftIfPresent(draftPath));
+  } finally {
+    spy.mockRestore();
+  }
+});
+
+// BL-1550: a non-ENOENT unlink failure (e.g. EACCES) must not be swallowed
+// - only the race-window ENOENT is safe to ignore.
+test('removeDraftIfPresent rethrows a non-ENOENT error from unlink', () => {
+  const dir = mkTmpDir('draft-path-under-test-');
+  const draftPath = path.join(dir, 'locked.handoff');
+  fs.writeFileSync(draftPath, 'type: note\n');
+  const err = Object.assign(new Error('permission denied'), { code: 'EACCES' });
+  const spy = vi.spyOn(fs, 'unlinkSync').mockImplementation(() => {
+    throw err;
+  });
+  try {
+    assert.throws(() => removeDraftIfPresent(draftPath), /permission denied/);
+  } finally {
+    spy.mockRestore();
+  }
 });
