@@ -30,7 +30,7 @@ acceptance: specs/features/BL-1549-swarm-stamp-consult-session-5bdf93beed.featur
 required_wiring:
   - 'specs/pipeline/steps/bl1549SwarmStampConsultSessionSteps.js::registerSteps::the handler lands in the same parcel as the feature (BL-233, BL-1371)'
 
-human_approval: pending
+human_approval: approved
 approval_context: >
   A new feature file is authored here, so it needs a tap. No choice is
   posed and there are no ruling_options. What needs sign-off is the
