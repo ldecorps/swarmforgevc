@@ -2683,6 +2683,24 @@ RESOLVED BY THIS TICKET
     (assert-false "BL-1544 (04): never appears in the delivered own-paths set either - it never changed"
                   (boolean (some #{"docs/shared.md"} (:paths result))))))
 
+;; BL-1544: commit-ticket-id's own docstring promise, asserted directly -
+;; task_scope_gate_lib.bb is NOT changed by this ticket, and its own
+;; leading-id rule (subject-names-task?, shape 2) must still agree with
+;; land_step_lib.bb's own leading-ticket-id/subject-attribution for a
+;; subject that genuinely leads with an id. (Property-tested exhaustively
+;; in bl1544_ambiguous_subject_property_runner.bb; these are the same
+;; claim as plain worked examples.)
+(let [leading "BL-1227: decouple unlanded BL-1192 gate wiring"]
+  (assert= "BL-1544: subject-attribution credits only the leading id, mentioning another later"
+           {:ids #{"BL-1227"} :ambiguous? false} (land-step-lib/subject-attribution leading))
+  (assert-true "BL-1544: task_scope_gate_lib.bb's subject-names-task? agrees for the leading id"
+               (task-scope-gate-lib/subject-names-task? leading "BL-1227"))
+  (assert-false "BL-1544: task_scope_gate_lib.bb's subject-names-task? disagrees for the merely-mentioned id"
+                (task-scope-gate-lib/subject-names-task? leading "BL-1192")))
+(let [ambiguous "Update BL-967 stall-diagnosis how-to for BL-1525's chokepoint fold"]
+  (assert= "BL-1544: this ticket's own motivating incident subject reads ambiguous, not BL-967's alone"
+           {:ids #{"BL-967" "BL-1525"} :ambiguous? true} (land-step-lib/subject-attribution ambiguous)))
+
 (if (seq @failures)
   (do
     (doseq [f @failures] (println f))
