@@ -2750,6 +2750,165 @@ RESOLVED BY THIS TICKET
   (assert= "BL-1544 (hardening): a single, non-leading ticket mention is that id's alone, never ambiguous"
            {:ids #{"BL-9005"} :ambiguous? false} (land-step-lib/subject-attribution single-non-leading)))
 
+;; ── BL-1546: closed-on-main? is a positive finding from origin/main's own
+;; backlog/done/ tree, fail-closed otherwise ───────────────────────────────
+
+(with-fixture [root]
+  (commit! root "backlog/done/M8/BL-9002-x.yaml" "id: BL-9002\nstatus: done\n" "BL-9002: done ticket file")
+  (mark-origin-main-here! root)
+  (assert-true "BL-1546: a ticket filed only under backlog/done/ on origin/main reads closed"
+               (boolean (land-step-lib/closed-on-main? root (:out (sh! root "git" "rev-parse" "HEAD")) "BL-9002"))))
+
+(with-fixture [root]
+  (commit! root "backlog/active/BL-9002-x.yaml" "id: BL-9002\n" "BL-9002: active ticket file")
+  (mark-origin-main-here! root)
+  (assert-false "BL-1546: a ticket filed under backlog/active/ (not done) on origin/main does not read closed"
+                (boolean (land-step-lib/closed-on-main? root (:out (sh! root "git" "rev-parse" "HEAD")) "BL-9002"))))
+
+(with-fixture [root]
+  (mark-origin-main-here! root)
+  (assert-false "BL-1546: a ticket with no file at all on origin/main does not read closed"
+                (boolean (land-step-lib/closed-on-main? root (:out (sh! root "git" "rev-parse" "HEAD")) "BL-9002"))))
+
+(with-fixture [root]
+  (commit! root "backlog/done/M8/BL-9002-x.yaml" "id: BL-9002\n" "BL-9002: done ticket file")
+  (commit! root "backlog/active/BL-9002-x.yaml" "id: BL-9002\n" "BL-9002: also filed active - ambiguous")
+  (mark-origin-main-here! root)
+  (assert-false "BL-1546: a ticket filed under BOTH backlog/done/ and backlog/active/ on origin/main is ambiguous, not a positive done reading"
+                (boolean (land-step-lib/closed-on-main? root (:out (sh! root "git" "rev-parse" "HEAD")) "BL-9002"))))
+
+;; ── BL-1546: a path whose every owner is CLOSED on origin/main is never
+;; silently excluded - specs/features/BL-1546-....feature's four scenarios
+;; (01-04) directly, mirroring the BL-1544 test block's own shape ─────────
+
+;; 01: a closed-owner path the landing ticket also touched is kept, the
+;; closed sibling riding as a passenger - never excluded, never refused.
+(with-fixture [root]
+  (commit! root "backlog/done/M8/BL-9002-x.yaml" "id: BL-9002\nhuman_approval: approved\n" "BL-9002: done sibling ticket file")
+  (mark-origin-main-here! root)
+  (commit! root "docs/shared.md" "v1\n" "Update the shared doc for BL-9002's chokepoint fold")
+  (commit! root "docs/shared.md" "v2\n" "BL-9001: own touch on the shared doc")
+  (commit! root "backlog/active/BL-9001-x.yaml" "id: BL-9001\n" "BL-9001: own ticket file")
+  (let [commit (:out (sh! root "git" "rev-parse" "HEAD"))
+        result (land-step-lib/own-paths root commit "BL-9001" #{"BL-9002"})]
+    (assert= "BL-1546 (01): a closed-owner path the landing ticket also touched is kept, no refusal"
+             nil (:warning result))
+    (assert-true "BL-1546 (01): the shared path is kept for the landing ticket"
+                 (boolean (some #{"docs/shared.md"} (:paths result))))
+    (assert-true "BL-1546 (01): the closed sibling rides as a passenger"
+                 (contains? (:passengers result) "BL-9002"))
+    (assert-false "BL-1546 (01): the shared doc path itself is never excluded"
+                  (boolean (some #(= "docs/shared.md" (:path %)) (:excluded result))))))
+
+;; 02: a closed-owner path with NO commit of the landing ticket's own
+;; refuses by name - never a silent EXCLUDED_SIBLING_PATH.
+(with-fixture [root]
+  (commit! root "backlog/done/M8/BL-9002-x.yaml" "id: BL-9002\nhuman_approval: approved\n" "BL-9002: done sibling ticket file")
+  (mark-origin-main-here! root)
+  (commit! root "docs/shared.md" "v1\n" "Update the shared doc for BL-9002's chokepoint fold")
+  (commit! root "backlog/active/BL-9001-x.yaml" "id: BL-9001\n" "BL-9001: own ticket file")
+  (let [commit (:out (sh! root "git" "rev-parse" "HEAD"))
+        result (land-step-lib/own-paths root commit "BL-9001" #{"BL-9002"})]
+    (assert= "BL-1546 (02): a closed-owner path no commit of the landing ticket touched refuses, never a silent success map"
+             nil (:paths result))
+    (assert-includes "BL-1546 (02): the refusal names the path" (:warning result) "docs/shared.md")
+    (assert-includes "BL-1546 (02): the refusal names the closed sibling's id" (:warning result) "BL-9002")
+    (assert-false "BL-1546 (02): never printed as a silent EXCLUDED_SIBLING_PATH-style success"
+                  (some? (some #{{:path "docs/shared.md" :owners #{"BL-9002"}}} (or (:excluded result) []))))))
+
+;; 02b (hardening, BL-1315's own guard reused): a closed-owner path ALSO
+;; touched by a later UNTAGGED commit is never refused - the untagged touch
+;; may be the landing ticket's own uncredited work (BL-1315's exact corner),
+;; and "closed" must not override that uncertainty. Kept, not refused.
+(with-fixture [root]
+  (commit! root "backlog/done/M8/BL-9002-x.yaml" "id: BL-9002\nhuman_approval: approved\n" "BL-9002: done sibling ticket file")
+  (mark-origin-main-here! root)
+  (commit! root "docs/shared.md" "v1\n" "Update the shared doc for BL-9002's chokepoint fold")
+  (commit! root "docs/shared.md" "v2\n" "an untagged follow-up touch, no ticket id at all")
+  (commit! root "backlog/active/BL-9001-x.yaml" "id: BL-9001\n" "BL-9001: own ticket file")
+  (let [commit (:out (sh! root "git" "rev-parse" "HEAD"))
+        result (land-step-lib/own-paths root commit "BL-9001" #{"BL-9002"})]
+    (assert= "BL-1546 (02b): an untagged touch on a closed-owner path is kept, never refused"
+             nil (:warning result))
+    (assert-true "BL-1546 (02b): the shared path is kept"
+                 (boolean (some #{"docs/shared.md"} (:paths result))))
+    (assert-false "BL-1546 (02b): the shared doc path itself is never excluded"
+                  (boolean (some #(= "docs/shared.md" (:path %)) (:excluded result))))))
+
+;; 03: a closed-owner path whose content nets back to origin/main's own
+;; never reaches own-paths' decision at all (full-delivered-paths is a
+;; two-tree diff) - neither refuses nor excludes.
+(with-fixture [root]
+  (commit! root "docs/shared.md" "v1\n" "seed: shared doc's original content")
+  (commit! root "backlog/done/M8/BL-9002-x.yaml" "id: BL-9002\nhuman_approval: approved\n" "BL-9002: done sibling ticket file")
+  (mark-origin-main-here! root)
+  (commit! root "docs/shared.md" "v2\n" "Update the shared doc for BL-9002's chokepoint fold")
+  (commit! root "docs/shared.md" "v1\n" "revert the shared doc back to its original content")
+  (commit! root "backlog/active/BL-9001-x.yaml" "id: BL-9001\n" "BL-9001: own ticket file")
+  (let [commit (:out (sh! root "git" "rev-parse" "HEAD"))
+        result (land-step-lib/own-paths root commit "BL-9001" #{"BL-9002"})]
+    (assert= "BL-1546 (03): a content-identical closed-owner path never blocks the land"
+             nil (:warning result))
+    (assert-false "BL-1546 (03): never named as excluded"
+                  (boolean (some #(= "docs/shared.md" (:path %)) (or (:excluded result) []))))
+    (assert-false "BL-1546 (03): never appears in the delivered own-paths set either - it never changed"
+                  (boolean (some #{"docs/shared.md"} (:paths result))))))
+
+;; 04: a path whose only owner is filed under backlog/active/ (not closed)
+;; is excluded exactly as before this ticket - closed-on-main? is false, so
+;; this clause never fires and the pre-existing BL-1389 exclusion decides.
+(with-fixture [root]
+  (commit! root "backlog/active/BL-9002-x.yaml" "id: BL-9002\nhuman_approval: approved\n" "BL-9002: active sibling ticket file")
+  (mark-origin-main-here! root)
+  (commit! root "docs/shared.md" "v1\n" "Update the shared doc for BL-9002's chokepoint fold")
+  (commit! root "backlog/active/BL-9001-x.yaml" "id: BL-9001\n" "BL-9001: own ticket file")
+  (let [commit (:out (sh! root "git" "rev-parse" "HEAD"))
+        result (land-step-lib/own-paths root commit "BL-9001" #{"BL-9002"})]
+    (assert= "BL-1546 (04): an open (not closed) owner's exclusive path is excluded exactly as before this ticket"
+             ["backlog/active/BL-9001-x.yaml"] (:paths result))
+    (assert-true "BL-1546 (04): excluded as the (open) sibling's alone"
+                 (boolean (some #{{:path "docs/shared.md" :owners #{"BL-9002"}}} (:excluded result))))))
+
+;; 05 (hardening): a path owned by a MIX of a closed and a still-open
+;; sibling is never refused by the BL-1546 clause - "every owner is closed"
+;; means every, not any (a single closed co-owner must not make a path with
+;; a still-open co-owner read as decided). Falls through to the pre-existing
+;; BL-1389 exclusion, exactly as an all-open path would.
+(with-fixture [root]
+  (commit! root "backlog/done/M8/BL-9002-x.yaml" "id: BL-9002\nhuman_approval: approved\n" "BL-9002: done sibling ticket file")
+  (commit! root "backlog/active/BL-9003-x.yaml" "id: BL-9003\nhuman_approval: approved\n" "BL-9003: active sibling ticket file")
+  (mark-origin-main-here! root)
+  (commit! root "docs/shared.md" "v1\n" "Update the shared doc for BL-9002's chokepoint fold")
+  (commit! root "docs/shared.md" "v2\n" "Update the shared doc for BL-9003's related fold")
+  (commit! root "backlog/active/BL-9001-x.yaml" "id: BL-9001\n" "BL-9001: own ticket file")
+  (let [commit (:out (sh! root "git" "rev-parse" "HEAD"))
+        result (land-step-lib/own-paths root commit "BL-9001" #{"BL-9002" "BL-9003"})]
+    (assert= "BL-1546 (05): a mixed closed/open-owner path is never refused by the closed-owner clause"
+             nil (:warning result))
+    (assert-true "BL-1546 (05): excluded as an unlanded sibling path, unchanged by this ticket"
+                 (boolean (some #(= "docs/shared.md" (:path %)) (:excluded result))))))
+
+;; 06 (hardening): a path with NO owners at all (every touching commit in
+;; range is a revert/reapply, BL-1472 - contributing neither an owner nor
+;; an untagged touch, path-owner-tickets' own docstring) is never refused
+;; by the BL-1546 clause - the same `(seq (:owners attribution))` guard the
+;; adjacent BL-1389 clause already carries. Here the original tagged
+;; addition predates origin/main's marker (so it is outside the range and
+;; never contributes an owner), and only its in-range REVERT is attributed
+;; - net owners is #{}, not a vacuous "every owner closed".
+(with-fixture [root]
+  (commit! root "sibling.txt" "sib\n" "BL-9002: sibling adds sibling.txt")
+  (mark-origin-main-here! root)
+  (let [original (:out (sh! root "git" "rev-parse" "HEAD"))]
+    (sh! root "git" "revert" "--no-edit" original)
+    (commit! root "backlog/active/BL-9001-x.yaml" "id: BL-9001\n" "BL-9001: own ticket file")
+    (let [commit (:out (sh! root "git" "rev-parse" "HEAD"))
+          result (land-step-lib/own-paths root commit "BL-9001" #{"BL-9002"})]
+      (assert= "BL-1546 (06): a path with no attributable owner at all is never refused by the closed-owner clause"
+               nil (:warning result))
+      (assert-true "BL-1546 (06): kept (no owner to blame it on, exactly as before this ticket)"
+                   (boolean (some #{"sibling.txt"} (:paths result)))))))
+
 (if (seq @failures)
   (do
     (doseq [f @failures] (println f))
