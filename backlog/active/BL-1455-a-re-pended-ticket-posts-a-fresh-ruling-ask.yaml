@@ -262,3 +262,5 @@ notes: |
   had NOT yet been approved, so no closed record existed. BL-1348 and
   BL-1408 are the first two re-pends of an already-approved ticket, both
   on the same day, both by the specifier following BL-1300's rule.
+
+assigned_to: coder
