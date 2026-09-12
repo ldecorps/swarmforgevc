@@ -1,0 +1,233 @@
+id: BL-1545
+title: "test_bl1374_sync_merge_passengers.sh has been red on main since 2026-09-04 with no owner, and the BL-1374 feature file with it (its handler runs the test): case 01 greps the WHOLE own-paths map for the passenger file and trips on the `:excluded` report key BL-1389 added, and case 05 walks from the LIVE origin/main to a pinned tip that origin/main has since absorbed, so its range is empty and two absent checks pass vacuously; neither is a misattribution - the lib still delivers own.txt alone and still names BL-1296 alone with the base pinned; the test reads `:paths`, pins both ends of the live walk and asserts the range is non-empty, and proves each fixture root before mutating (it created a stray `tA` branch in the live repository under git bisect run's GIT_DIR)"
+milestone: M8
+type: defect
+severity: high
+# high: a standing red is severity high at first sighting (Article 3.2.4,
+# 2026-09-05 amendment). This test and the BL-1374 feature it backs are the
+# only proof that a sync merge's passengers are not replayed as the landing
+# ticket's own paths - the narrowing every tip-pure land relies on since the
+# human's 2026-09-03 ruling. While red, a regression there has no signal, and
+# two register rows throttle intake (BL-1429).
+status: todo
+epic: swarm-reliability
+priority: 8
+direction: swarm-reported
+depends_on: []
+mutation_cost: low
+# low: one shell test changes what it asserts and gains a root proof; no
+# production line changes. Shell has no mutation/CRAP/DRY wired (BL-472);
+# the hardener gates on the test itself plus the new acceptance handler and
+# records the fallback.
+slice_size_envelope: low
+required_stages: [coder, cleaner, architect, hardender, documenter, qa]
+
+acceptance: specs/features/BL-1545-the-sync-merge-passenger-test-reads-paths-and-pins-its-base.feature
+
+# No consumer anchor (BL-1235): the test is the subject; an anchor on a
+# literal inside it is satisfied by the parcel's own edit and gates nothing.
+# The BL-1374 handler is the live consumer and goes green when the test does.
+required_wiring:
+  - 'specs/pipeline/steps/bl1545SyncMergePassengerTestOraclesSteps.js::registerSteps::the handler lands in the same parcel as the feature (BL-233)'
+
+human_approval: pending
+approval_context: >
+  A new feature file is authored here, so it needs a tap. No choice is posed
+  and there are no ruling_options. FIRM: no production code changes -
+  land_step_lib.bb already delivers own.txt alone (case 01) and, with the
+  base pinned where it stood at the sync, names BL-1296 alone (case 05); only
+  the test's two oracles are wrong. FIRM: case 01 keeps asserting that the
+  passenger is NOT delivered and additionally asserts it IS reported excluded
+  as the siblings' - BL-1389's report is part of the contract now. FIRM: case
+  05 keeps driving the LIVE history (BL-1374's qa_e2e step 6 asked for a
+  measured regression) but with BOTH ends pinned and a non-empty-range check,
+  so it can never again go green on a walk of zero commits. FIRM: the test
+  proves each fixture root under its mkdtemp before the first mutating git
+  command (BL-1390) and clears inherited GIT_DIR / GIT_WORK_TREE, because
+  under `git bisect run` it committed fixtures into the checkout it ran from
+  and left a `tA` branch in the live repository (specifier, 2026-09-12).
+
+invariants:
+  - "Every assertion in the test about which paths the replay DELIVERS reads the `:paths` value of own-paths' answer, never the printed whole map: a report key that names a path (`:excluded`, `:passengers`, `:content-clear`) is not a delivery of it."
+  - "The live-history case fixes both ends of its walk to pinned commits and asserts the walked range is non-empty before any absent check runs; no case's verdict depends on where origin/main points today."
+  - "The test creates no ref, commit or working-tree change in the repository it runs from, whatever GIT_DIR / GIT_WORK_TREE it inherits: every fixture root is proven under the test's mkdtemp (git rev-parse --git-common-dir resolves beneath it) before that fixture's first mutating git command, and a failed proof aborts the run naming the root."
+
+description: |
+  ## What is wrong
+
+  `swarmforge/scripts/test/test_bl1374_sync_merge_passengers.sh` (BL-1374,
+  landed 2026-09-03) fails on `main` (verified 2026-09-12 at `dbcab2ffb2`):
+
+  ```
+  FAIL 01: the passenger file is not this ticket's own path (unexpectedly found 'shared.txt')
+  FAIL 05: the passenger's own ticket still owns its file (missing 'BL-1296')
+  test_bl1374_sync_merge_passengers: 2 FAILURE(S)
+  ```
+
+  `specs/features/BL-1374-a-sync-merge-is-not-credited-with-its-passengers.feature`
+  is red with it: `bl1374SyncMergePassengersSteps.js` spawns this test and
+  throws on a non-zero exit, so all four scenarios fail. The companion
+  `bl1374_sync_merge_passengers_property_runner.bb` is green.
+
+  The coder's note reads the two failures as "misattribute path". They are
+  not; the lib is right in both cases and the test's oracles are stale:
+
+  - **Case 01** greps the WHOLE printed `own-paths` map for `shared.txt`.
+    The raw answer at HEAD is `{:paths ["own.txt"], :warning nil,
+    :passengers #{}, :excluded [{:path "shared.txt", :owners #{"BL-9003"
+    "BL-9002"}}], :content-clear []}` - the passenger is NOT delivered;
+    it is REPORTED excluded, under the `:excluded` key BL-1389 added
+    (`06f1babcaf`, 2026-09-04 16:07; land_step_cli.bb prints it as
+    EXCLUDED_SIBLING_PATH). Walked every land_step_lib.bb commit since
+    BL-1374's self-audit in a scratch worktree: `ok` through BL-1385,
+    `FAIL` from BL-1389 onward. A report of an exclusion read as a delivery.
+  - **Case 05** calls `path-owner-tickets root (origin-main-sha root)
+    "522584ed85" <BL-1296 yaml>`: the tip is pinned, the base is the LIVE
+    `origin/main`. `git rev-list --count origin/main..522584ed85` is 0
+    today - origin/main has absorbed the tip - so the walk visits no commit,
+    `:owners` is `#{}`, the `contains BL-1296` check fails and the two
+    `absent BL-1309 / BL-1328` checks pass VACUOUSLY (BL-1445's census-of-
+    zero shape). With the base pinned to `3ea55a2e46` (`5d4486eb08^2`, the
+    sync merge's main-side parent; 249 commits in range) the CURRENT lib
+    answers `{:owners #{"BL-1296"}}`. QA ran this case green on 2026-09-04;
+    it went red when origin/main moved, which no lib commit caused.
+
+  Reproducing it also surfaced a BL-1390 violation: under `git bisect run`,
+  which exports `GIT_DIR`, the fixture builders' un-proven `git -C "$root"
+  init/add/commit/checkout -b tA/merge` operated on the checkout the test
+  ran from - the scratch worktree's HEAD became fixture commit `aea94c41ed`
+  and a `tA` branch appeared in the LIVE repository's refs. The specifier
+  removed it; `main` and every role branch were untouched.
+
+  Evidence: `backlog/evidence/BL-1545-specifier-unowned-red-repro-20260912.md`.
+
+  ## What is wanted
+
+  The test is green on `main` again and its oracles cannot rot the same
+  way, printing one `ok` line per check as today (scenario 01):
+
+  - case 01 reads the `:paths` value and asserts `shared.txt` is not in
+    it and `own.txt` is; it ALSO asserts the `:excluded` report names
+    `shared.txt` with owners `BL-9002` and `BL-9003` (scenario 02) - the
+    same fixture, one more observable, no reworded meaning;
+  - case 05 pins its base to `3ea55a2e46` (the sync merge's main-side
+    parent) alongside the pinned tip `522584ed85`, asserts the walked range
+    is non-empty (`git rev-list --count <base>..<tip` > 0) BEFORE any
+    absent check, and keeps asserting BL-1296 owns its file while BL-1309
+    and BL-1328 do not (scenario 03); it still skips, as today, when the
+    pinned commits are unreachable from the checkout;
+  - every fixture builder proves its root (`git -C "$root" rev-parse
+    --git-common-dir` resolves under `$TMPROOT`) before its first mutating
+    git command and aborts naming the root otherwise; the test clears
+    `GIT_DIR` / `GIT_WORK_TREE` at start so an inherited value cannot
+    redirect a fixture (scenario 04). Under a `git bisect run`-shaped
+    environment the repository the test runs from gains no ref, no commit
+    and no working-tree change.
+  - Documenter: no registered diagram depicts this test; if a how-to or
+    reference names the test's cases or case 05's live regression, it
+    names the pinned base. The BL-1374 feature file is NOT edited by the
+    coder: its four scenarios are the contract this test proves and they
+    go green with it.
+  - Register: after QA lands, `backlog/standing-reds.tsv` carries neither
+    row this mint adds (shell: the test; acceptance: the BL-1374 feature)
+    and `bb swarmforge/scripts/standing_red_register_cli.bb .` reports
+    both gone (a row leaves in the land that turns the test green).
+
+  ## How (direction, not mandate)
+
+  Extract the `:paths` vector from the printed map once (the map is
+  `pr-str`ed by the `ask` helper; a second `println` of `(:paths ...)` on
+  its own `OWN-PATHS-DELIVERED` line is simplest and keeps the map print
+  for the exclusion assertion). For the exclusion, grep the `:excluded`
+  entry for `:path "shared.txt"` and both owner ids. For case 05, replace
+  `(land-step-lib/origin-main-sha root)` with the literal base and add a
+  `git rev-list --count` premise check on the range, printed as an `ok`
+  line like the other premises; keep the `cat-file -e` skip for both
+  pinned commits. For the root proof, a `prove_root` helper called right
+  after each `mktemp -d` in `mk_autofix` / `mk_entangled`, mirroring
+  BL-1516's wording (`rev-parse --git-common-dir` beneath `$TMPROOT`),
+  plus `unset GIT_DIR GIT_WORK_TREE` next to `set -uo pipefail`. The
+  acceptance handler can follow `bl1543DriftWiringLiveContractSteps.js`'s
+  shape (run the standing test, parse the `ok` lines); scenario 04's
+  fixture is a scratch `git clone` of a tiny mkdtemp repository whose
+  `.git` is exported as `GIT_DIR` for the run, then `git for-each-ref` and
+  `git status --porcelain` are compared before and after.
+
+constraints: >
+  Test-only parcel: `land_step_lib.bb`, `land_step_cli.bb` and
+  `pipeline_stage_lib.bb` are not edited (BL-1544, active, and BL-1467,
+  paused, edit the lib; this parcel shares no path with either). The
+  BL-1374 feature file and `bl1374SyncMergePassengersSteps.js` are not
+  edited. Case 05 keeps reading the live repository's history - a fixture
+  rebuild of the 2026-09-03 shape would prove nothing about the report
+  that produced BL-1374. Fixture repositories stay under the test's
+  mkdtemp with their own origin (BL-1390). The step handler lands with the
+  feature (BL-233). No hand-edited mutation manifests.
+
+out_of_scope: |
+  - Any change to what own-paths delivers or reports (BL-1374, BL-1389,
+    BL-1473, BL-1481 are done and the lib is right in both red cases).
+  - The repository-wide fixture-root census and the removal of stray
+    entries (BL-1516, paused): this ticket proves the one file it edits;
+    BL-1516 remains the systematic backstop and need not touch this file
+    once it lands.
+  - Putting the standing shell suite into a gated lane so the next stale
+    oracle is seen the day its mechanism changes (the gap BL-1524/BL-1526
+    record for the bb suite; a shell test can go red on a landing of
+    another ticket, as this one did, with nothing running it).
+
+qa_e2e_procedure: |
+  1. Acceptance resolving all four scenarios of the BL-1545 feature file,
+     and `specs/pipeline/scripts/run_acceptance.sh
+     specs/features/BL-1374-a-sync-merge-is-not-credited-with-its-passengers.feature`
+     4/4 green with no edit to that feature or its handler.
+  2. `bash swarmforge/scripts/test/test_bl1374_sync_merge_passengers.sh`
+     exits 0, prints no FAIL line and the ALL PASS line; the case-01 lines
+     include the exclusion report naming shared.txt, BL-9002 and BL-9003;
+     the case-05 lines include the non-empty-range premise.
+  3. Negative control (oracle): in a scratch copy, revert case 05's base to
+     `origin-main-sha` and confirm the range premise FAILS (count 0) - the
+     vacuous pass is gone.
+  4. Negative control (root proof): `git clone` a tiny mkdtemp repository,
+     run the test with `GIT_DIR=<clone>/.git` exported, and confirm
+     `git -C <clone> for-each-ref` and `git -C <clone> status --porcelain`
+     are byte-identical before and after (or the run aborts naming a
+     fixture root); the live repository shows no `tA` branch
+     (`git branch --list tA` empty).
+  5. `bb swarmforge/scripts/test/bl1374_sync_merge_passengers_property_runner.bb`
+     still reports ALL PROPERTIES HOLD.
+  6. `bb swarmforge/scripts/standing_red_register_cli.bb .` reports no row
+     for either file and `"unowned":[]`.
+
+source: |
+  Coder `unowned-red` note 2026-09-12 00:15Z (priority 00) from the BL-1544
+  parcel, evidence `.worktrees/coder/backlog/evidence/BL-1544-coder-20260912.md`
+  lines 105-115. Reproduced by the specifier on main dbcab2ffb2 the same
+  pass; case 01 bisected to BL-1389's landing 06f1babcaf (2026-09-04); case
+  05 traced to the live origin/main absorbing the pinned tip 522584ed85.
+
+notes: |
+  - Minted 2026-09-12 by the specifier the same pass the note arrived, per
+    the standing-red rule (Article 3.2.4, 2026-09-05 amendment): type
+    defect, severity high, two register rows added in the mint commit
+    (shell: the test; acceptance: the BL-1374 feature) with first_seen
+    2026-09-04 (BL-1389's landing; QA's green run of the file is dated the
+    same day).
+  - Not a fold-in: no open ticket names the test or the BL-1374 feature.
+    BL-1374 and BL-1389 are done. BL-1544 (active, coder) edits
+    land_step_lib.bb's subject attributor, a different site, and the coder
+    confirmed the red persists with its change stashed; orthogonal by path.
+  - The coder's "misattribute path" reading is corrected here, not
+    adopted: both cases are stale test oracles over a lib that answers
+    correctly (evidence file, raw own-paths map and the two-base
+    comparison). No production change is wanted.
+  - Fixture-root proof is scoped to this file only because this file is
+    the one being edited and the escape was observed on it; BL-1516
+    (paused) owns the repository-wide census.
+  - IR-DRY at mint: two `possible-synonym` (medium) findings, both kept on
+    purpose. (1) The When "the standing suite runs <path>" (scenarios 01-03,
+    each its own run reading a different case) vs scenario 04's "... with
+    GIT_DIR exported as that clone's git directory" - a different
+    environment is the whole point of 04. (2) Case 01's "shared.txt absent
+    from the delivered :paths value" vs "own.txt present in" it - present
+    and absent are opposite assertions over the same value; do not collapse.
