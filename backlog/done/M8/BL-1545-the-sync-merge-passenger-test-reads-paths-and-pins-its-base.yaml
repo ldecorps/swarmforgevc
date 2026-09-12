@@ -233,3 +233,19 @@ notes: |
     and absent are opposite assertions over the same value; do not collapse.
 
 assigned_to: coder
+
+abandoned_commits: [81514656ee]
+# 81514656ee was QA's approved commit. land_step_cli.bb read it as an
+# entangled tip (ENTANGLED_SIBLING BL-1518, BL-1537) and built a tip-pure
+# replay instead. Verified both are false-positive entanglements, the same
+# shape as land-escalate-sibling-list-inflated-by-replay-landed-done-tickets:
+# BL-1518 is fully on origin/main (guard code, tests, docs, feature) with no
+# path touched by this replay; BL-1537 is in backlog/done/M8 with its core
+# deliverable already landed by an earlier QA replay (e7faa7af5c, already an
+# ancestor of origin/main) - the replay additionally carried BL-1537's own
+# trailing bookkeeping commit (an `abandoned_commits:` annotation on its own
+# done ticket file) that had not yet been pushed, and correctly excluded two
+# of BL-1537's own evidence .md files (EXCLUDED_SIBLING_PATH) as not this
+# ticket's to deliver. Landed instead: 94e7c682331cb269a66d9f3804fa1dd399a8bfd2,
+# a tip-pure replay of BL-1545's own paths, `is_qa_ancestor.sh` confirms
+# approved.

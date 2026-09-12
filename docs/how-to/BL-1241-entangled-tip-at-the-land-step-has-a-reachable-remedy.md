@@ -1042,6 +1042,62 @@ touch so it lands with BL-967 and BL-1525 riding as passengers — no hand
 edit on `main`. Acceptance:
 `specs/features/BL-1544-an-ambiguous-commit-subject-never-silently-excludes-a-path.feature`.
 
+## A path owned only by a closed ticket is never silently excluded (BL-1546)
+
+The BL-1389 clause above excludes a delivered path when every owner named
+by the commits that touched it is an unlanded sibling — "unlanded" decided
+on content, per BL-1354: are the owner's own added lines already on
+`origin/main`? For a commit the parcel itself authored, they never are —
+that content is the parcel's own new work, not yet landed anywhere. So a
+commit whose subject names only a ticket already CLOSED (its YAML filed
+under `backlog/done/` on `origin/main`) has an owner that reads unlanded
+**forever**: no parcel touching that path could ever land it again.
+
+Live 2026-09-12: BL-1537's land carried the documenter's `5dbd34f27f`,
+subject "docs: BL-1518 guard how-to and feature narrative no longer
+overclaim every draft's location" — BL-1537's own task-4 deliverable, but
+attributed entirely to BL-1518, done since `9d5aa7cef2`. The path was
+dropped with one `EXCLUDED_SIBLING_PATH ... BL-1518` line and the content
+was orphaned (evidence
+`backlog/evidence/BL-1537-QA-land-escalate-BL1518-misattribution-20260912.md`;
+adjudication
+`backlog/evidence/BL-1537-specifier-land-escalate-adjudication-closed-owner-20260912.md`).
+
+Fixed: `land_step_lib.bb` gains `closed-on-main?`, a positive finding —
+`ticket-id`'s file is found under `backlog/done/` on `origin/main` and
+under no other backlog folder there, reusing `main-ticket-sources` rather
+than a second `ls-tree` (nil, never true, when the tree can't be listed at
+all; false when the file is missing or filed in more than one folder — the
+same fail-closed posture `ticket-approval-state` already takes, BL-1272
+invariant 1). `own-paths` gains a `cond` clause ahead of the BL-1389
+exclusion, keyed on this finding — BL-1315's untagged-touch guard is reused
+unchanged, since an untagged touch may be the landing ticket's own
+uncredited work and "closed" never overrides that uncertainty:
+
+- **The landing ticket is itself an owner** (a separate commit leading with
+  the landing ticket's own id also touched the path) — the path is kept
+  through the ordinary logic below exactly as before, the closed owner(s)
+  riding as passengers like any other co-owner.
+- **The landing ticket is not an owner, and the tip content differs from
+  `origin/main`** — refuses (`LAND_ESCALATE`, the BL-1481/BL-1544 shape)
+  naming the commit, the closed owner(s), and the path — never a silent
+  `EXCLUDED_SIBLING_PATH`.
+- **The tip content already matches `origin/main`** — nothing is at stake;
+  a two-tree diff with no net change never reaches `delivered` in the first
+  place (BL-1473, above), so the path neither refuses nor excludes.
+- **An owner is not closed** (its file is still under `backlog/active/` or
+  `backlog/paused/` on `origin/main`) — this clause does not apply; the
+  pre-existing BL-1389 exclusion fires exactly as before.
+
+`sibling-landed?` / `sibling-path-verdict` are untouched — the content
+verdict (unlanded) was always right; only the CONSEQUENCE of a closed
+owner's unlanded verdict changes. A closed ticket is still never read as
+"landed" (BL-1272 invariant 1 stands).
+
+BL-1537's own two excluded paths are not re-landed by this ticket — they
+were landed by the adjudicated hand recipe cited above. Acceptance:
+`specs/features/BL-1546-a-path-owned-only-by-a-closed-ticket-is-never-silently-excluded.feature`.
+
 ## What this does not change
 
 - BL-1192's send-time gate and its range — unchanged; this ticket only adds
@@ -1063,3 +1119,6 @@ tree, and leaves no stray worktree registered).
 `specs/pipeline/steps/bl1241EntangledTipRemedySteps.js` drives the real
 `land_step_cli.bb` end to end, backing
 `specs/features/BL-1241-entangled-tip-at-the-land-step-has-a-reachable-remedy.feature`.
+`specs/pipeline/steps/bl1546ClosedOwnerNeverSilentlyExcludesSteps.js` backs
+`specs/features/BL-1546-a-path-owned-only-by-a-closed-ticket-is-never-silently-excluded.feature`
+the same way.

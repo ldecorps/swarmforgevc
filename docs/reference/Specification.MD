@@ -1,5 +1,29 @@
 # SwarmForge VS Code Extension — Specification
 
+**Last Updated:** September 12, 2026 (BL-1546: `land_step_lib.bb`'s
+`own-paths` excluded a delivered path when every owner named by the
+commits that touched it was an unlanded sibling — decided on content, per
+BL-1354. A commit the parcel itself authored never has its lines on
+`origin/main` yet, so a commit whose subject named only a ticket already
+CLOSED (its YAML filed under `backlog/done/`) had an owner that read
+unlanded forever: no parcel could ever land that ticket's own content
+again. Live 2026-09-12: BL-1537's land carried the documenter's
+`5dbd34f27f`, its own task-4 deliverable, attributed entirely to the done
+BL-1518 and dropped with one silent `EXCLUDED_SIBLING_PATH ... BL-1518`
+line. Fixed: a new `closed-on-main?` positive finding (the ticket's file
+under `backlog/done/` on `origin/main` and no other backlog folder there)
+feeds a `cond` clause ahead of the BL-1389 exclusion — a closed-owner path
+is kept when the landing ticket's own commit also touches it (the closed
+owner riding as a passenger), otherwise `LAND_ESCALATE`s naming the
+commit, the closed owner(s), and the path, never a silent exclusion; a
+path whose tip content already matches `origin/main` neither refuses nor
+excludes. An owner still filed under `backlog/active/` or `backlog/paused/`
+keeps today's exclusion unchanged. See the new "A path owned only by a
+closed ticket is never silently excluded (BL-1546)" section in
+`docs/how-to/BL-1241-entangled-tip-at-the-land-step-has-a-reachable-remedy.md`.
+No new extension command, setting, or UI change; no diagram edit — below
+every registered diagram's depicted granularity.)
+Prior entry —
 **Last Updated:** September 12, 2026 (BL-1537: BL-1518-a's `draft-root-guard!`
 (landed 2026-09-11) assumed every production draft lived under the project
 root the CLI resolves; that held for a role's own hand-written draft and
