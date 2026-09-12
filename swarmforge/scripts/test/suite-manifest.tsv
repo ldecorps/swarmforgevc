@@ -466,7 +466,8 @@ test_stop_swarm_freshness_cron.sh	standing
 test_suite_baseline_cli.sh	standing		
 test_supersede_guard.sh	standing		
 test_support_runtime_tick.sh	standing		
-test_swarm_ensure.sh	standing		
+test_swarm_ensure.sh	standing
+test_swarm_handoff_bounce_never_stamped.sh	standing
 test_swarm_handoff_daemon_backup.sh	standing
 test_swarm_handoff_inbound_non_forwarding.sh	standing
 test_swarm_handoff_inbound_non_forwarding_batch.sh	standing
