@@ -1202,7 +1202,7 @@
                                                (:canonical-commit validation))
                               submit!)
                              (submit!))]
-          (when outbox-files
+          (if outbox-files
             (let [sync-results (if (skip-sync-inject? headers)
                                  (vec (repeat (count outbox-files) :skipped))
                                  (deliver-all! outbox-files sender))]
@@ -1227,6 +1227,13 @@
                                 "See inject-traffic.log. File: " outbox-file))
 
                   :else
-                  (println (str "HANDOFF QUEUED (daemon backup will deliver):" (str outbox-file))))))))))))
+                  (println (str "HANDOFF QUEUED (daemon backup will deliver):" (str outbox-file))))))
+            ;; BL-1529: submit-after-audit! already printed AUDIT_REQUIRED /
+            ;; HANDOFF_NOT_QUEUED and queued nothing - falling off here used
+            ;; to exit 0, so every single-call caller (a script with no
+            ;; agent to read the challenge and resubmit) read "success" on a
+            ;; parcel that was never queued. Exit non-zero so the challenge,
+            ;; a refusal, and a queue are three distinguishable outcomes.
+            (System/exit 1)))))))
 
 (apply -main *command-line-args*)

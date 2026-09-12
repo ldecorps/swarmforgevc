@@ -78,17 +78,29 @@ function trySend(root, commit, withExempt) {
     SWARMFORGE_SKIP_SYNC_INJECT: '1',
   };
   if (withExempt) env[ENV_NAME] = '1';
-  try {
-    execFileSync('bb', [SWARM_HANDOFF, draft], {
-      cwd: root,
-      env,
-      encoding: 'utf8',
-      stdio: ['ignore', 'pipe', 'pipe'],
-    });
-    return { ok: true, err: '' };
-  } catch (e) {
-    return { ok: false, err: String(e.stderr || e.message || e) };
+  const attempt = () => {
+    try {
+      execFileSync('bb', [SWARM_HANDOFF, draft], {
+        cwd: root,
+        env,
+        encoding: 'utf8',
+        stdio: ['ignore', 'pipe', 'pipe'],
+      });
+      return { ok: true, err: '' };
+    } catch (e) {
+      return { ok: false, err: String(e.stderr || e.message || e) };
+    }
+  };
+  const first = attempt();
+  // BL-1529: a brand-new draft's first invocation always speaks the
+  // self-audit challenge (Article 2.3) and now exits non-zero rather than
+  // the pre-fix exit 0 - this is a direct single-call sender, not through
+  // salvage_lib's two-call queue-handoff!, so it must speak the protocol
+  // itself: the identical second call on the same draft queues.
+  if (!first.ok && /AUDIT_REQUIRED/.test(first.err)) {
+    return attempt();
   }
+  return first;
 }
 
 test(
