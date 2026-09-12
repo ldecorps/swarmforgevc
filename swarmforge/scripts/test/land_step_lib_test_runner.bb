@@ -2592,6 +2592,164 @@ RESOLVED BY THIS TICKET
           (assert= "BL-1481/05: a refused path's own-paths call carries no content-clear key (the refusal map short-circuits before that accumulator is ever threaded back)"
                    nil content-clear))))))
 
+;; ── BL-1544: a subject that names more than one ticket id and leads with
+;; none is AMBIGUOUS - never silently excluded ────────────────────────────
+;; The three subject shapes this ticket's fixtures build, on a reviewing
+;; branch under mkdtemp with its own origin (BL-1390), mirroring
+;; specs/features/BL-1544-....feature's four scenarios (01-04) directly:
+;; a leading-id subject (01, pinned unchanged), an ambiguous subject with
+;; an own touch (02), an ambiguous subject with no own touch (03), and an
+;; ambiguous subject whose path never reaches own-paths at all because its
+;; content nets out identical to origin/main (04).
+
+;; Scenario 01: a subject that LEADS with the sibling's id and mentions the
+;; landing ticket's id later is the sibling's alone - the send-time gate's
+;; own shape-2 rule, unchanged.
+(with-fixture [root]
+  (mark-origin-main-here! root)
+  (commit! root "backlog/active/BL-9002-x.yaml" "id: BL-9002\nhuman_approval: approved\n" "BL-9002: sibling ticket file")
+  (commit! root "docs/shared.md" "v1\n" "BL-9002: fix the doc, related to BL-9001's own chokepoint fold")
+  (commit! root "backlog/active/BL-9001-x.yaml" "id: BL-9001\n" "BL-9001: own ticket file")
+  (let [commit (:out (sh! root "git" "rev-parse" "HEAD"))
+        result (land-step-lib/own-paths root commit "BL-9001")]
+    (assert= "BL-1544 (01): a subject that leads with the sibling's id, mentioning the landing ticket later, is the sibling's alone - excluded, same as before this ticket"
+             ["backlog/active/BL-9001-x.yaml"] (:paths result))
+    (assert-true "BL-1544 (01): excluded as the sibling's alone"
+                 (boolean (some #{{:path "docs/shared.md" :owners #{"BL-9002"}}} (:excluded result))))))
+
+;; Scenario 02: an ambiguous subject (names the sibling's id and the
+;; landing ticket's id, leads with neither) on a path the landing ticket
+;; ALSO touched (via a commit that leads with its own id) keeps the path,
+;; the sibling riding as a passenger - never excluded, never refused.
+(with-fixture [root]
+  (mark-origin-main-here! root)
+  (commit! root "backlog/active/BL-9002-x.yaml" "id: BL-9002\nhuman_approval: approved\n" "BL-9002: sibling ticket file")
+  (commit! root "docs/shared.md" "v1\n" "Update the shared doc for BL-9002 and BL-9001's chokepoint fold")
+  (commit! root "docs/shared.md" "v2\n" "BL-9001: own touch on the shared doc")
+  (commit! root "backlog/active/BL-9001-x.yaml" "id: BL-9001\n" "BL-9001: own ticket file")
+  (let [commit (:out (sh! root "git" "rev-parse" "HEAD"))
+        result (land-step-lib/own-paths root commit "BL-9001")]
+    (assert= "BL-1544 (02): an ambiguous path the landing ticket also touched is kept, no refusal"
+             nil (:warning result))
+    (assert-true "BL-1544 (02): the shared path is kept for the landing ticket"
+                 (boolean (some #{"docs/shared.md"} (:paths result))))
+    (assert-true "BL-1544 (02): the named sibling rides as a passenger"
+                 (contains? (:passengers result) "BL-9002"))
+    (assert-false "BL-1544 (02): the shared doc path itself is never excluded"
+                  (boolean (some #(= "docs/shared.md" (:path %)) (:excluded result))))))
+
+;; Scenario 03: an ambiguous subject (names the sibling's id and a third
+;; ticket's id, leads with neither) with NO commit of the landing ticket's
+;; own touching the path refuses the land by name - never a silent
+;; EXCLUDED_SIBLING_PATH.
+(with-fixture [root]
+  (mark-origin-main-here! root)
+  (commit! root "backlog/active/BL-9002-x.yaml" "id: BL-9002\nhuman_approval: approved\n" "BL-9002: sibling ticket file")
+  (commit! root "backlog/active/BL-9003-x.yaml" "id: BL-9003\nhuman_approval: approved\n" "BL-9003: third-ticket ticket file")
+  (commit! root "docs/shared.md" "v1\n" "Update the shared doc for BL-9002 and BL-9003's chokepoint fold")
+  (commit! root "backlog/active/BL-9001-x.yaml" "id: BL-9001\n" "BL-9001: own ticket file")
+  (let [commit (:out (sh! root "git" "rev-parse" "HEAD"))
+        result (land-step-lib/own-paths root commit "BL-9001")]
+    (assert= "BL-1544 (03): an ambiguous path no commit of the landing ticket touched refuses, never a silent success map"
+             nil (:paths result))
+    (assert-includes "BL-1544 (03): the refusal names the path" (:warning result) "docs/shared.md")
+    (assert-includes "BL-1544 (03): the refusal names the sibling's id" (:warning result) "BL-9002")
+    (assert-includes "BL-1544 (03): the refusal names the third ticket's id" (:warning result) "BL-9003")
+    (assert-false "BL-1544 (03): never printed as a silent EXCLUDED_SIBLING_PATH-style success"
+                  (some? (some #{{:path "docs/shared.md" :owners #{"BL-9002" "BL-9003"}}} (or (:excluded result) []))))))
+
+;; Scenario 03b (hardener, BL-1544): :any-ambiguous? is a `some`-fold over
+;; every attributing commit, not an `every?`-fold - a path touched by TWO
+;; commits, one genuinely ambiguous (names BL-9002/BL-9003, leads with
+;; neither) and one that itself leads with a THIRD, non-landing, non-
+;; ambiguous ticket's own id (BL-9004), must still refuse by name. Neither
+;; scenario 01-04 nor the P1 property fixture ever attributes a path to
+;; more than one commit unless the second one is the landing ticket's own
+;; touch, so an `every?` mutant there survives every other case in this
+;; file: with `every?`, [true false] -> false, :any-ambiguous? flips to
+;; false, and this path falls through into the BL-1389 clause instead -
+;; every owner (BL-9002, BL-9003, BL-9004) is an approved, unlanded
+;; sibling, so BL-1389 silently EXCLUDES it, exactly the defect this
+;; ticket exists to close. Verified by hand: reverting :any-ambiguous? to
+;; `every?` turns this case's refusal into a success map with docs/shared.md
+;; silently excluded, while leaving every other BL-1544 assertion in this
+;; file and the property runner green.
+(with-fixture [root]
+  (mark-origin-main-here! root)
+  (commit! root "backlog/active/BL-9002-x.yaml" "id: BL-9002\nhuman_approval: approved\n" "BL-9002: sibling ticket file")
+  (commit! root "backlog/active/BL-9003-x.yaml" "id: BL-9003\nhuman_approval: approved\n" "BL-9003: third-ticket ticket file")
+  (commit! root "backlog/active/BL-9004-x.yaml" "id: BL-9004\nhuman_approval: approved\n" "BL-9004: fourth-ticket ticket file")
+  (commit! root "docs/shared.md" "v1\n" "Update the shared doc for BL-9002 and BL-9003's chokepoint fold")
+  (commit! root "docs/shared.md" "v2\n" "BL-9004: unrelated later touch on the same shared doc")
+  (commit! root "backlog/active/BL-9001-x.yaml" "id: BL-9001\n" "BL-9001: own ticket file")
+  (let [commit (:out (sh! root "git" "rev-parse" "HEAD"))
+        result (land-step-lib/own-paths root commit "BL-9001")]
+    (assert= "BL-1544 (03b): a genuinely ambiguous touch is never silenced by a second, non-ambiguous co-touch on the same path"
+             nil (:paths result))
+    (assert-includes "BL-1544 (03b): the refusal still names the path" (:warning result) "docs/shared.md")
+    (assert-includes "BL-1544 (03b): the refusal still names the ambiguous commit's sibling id" (:warning result) "BL-9002")
+    (assert-false "BL-1544 (03b): never a silent EXCLUDED_SIBLING_PATH-style success"
+                  (boolean (some #(= "docs/shared.md" (:path %)) (or (:excluded result) []))))))
+
+;; Scenario 04: an ambiguous subject whose path content at the tip is
+;; identical to origin/main (a later commit reverts it back) never reaches
+;; own-paths' decision at all - full-delivered-paths is a two-tree diff, so
+;; a net-zero path is absent from `delivered` from the start. Neither
+;; refuses nor excludes: the land proceeds, and this path is simply not
+;; named anywhere in the result.
+(with-fixture [root]
+  (commit! root "docs/shared.md" "v1\n" "seed: shared doc's original content")
+  (mark-origin-main-here! root)
+  (commit! root "backlog/active/BL-9002-x.yaml" "id: BL-9002\nhuman_approval: approved\n" "BL-9002: sibling ticket file")
+  (commit! root "backlog/active/BL-9003-x.yaml" "id: BL-9003\nhuman_approval: approved\n" "BL-9003: third-ticket ticket file")
+  (commit! root "docs/shared.md" "v2\n" "Update the shared doc for BL-9002 and BL-9003's chokepoint fold")
+  ;; Nets back out to origin/main's own content - untagged, so it also
+  ;; proves this is not merely BL-1315's own-untagged-touch shape.
+  (commit! root "docs/shared.md" "v1\n" "revert the shared doc back to its original content")
+  (commit! root "backlog/active/BL-9001-x.yaml" "id: BL-9001\n" "BL-9001: own ticket file")
+  (let [commit (:out (sh! root "git" "rev-parse" "HEAD"))
+        result (land-step-lib/own-paths root commit "BL-9001")]
+    (assert= "BL-1544 (04): a content-identical ambiguous path never blocks the land"
+             nil (:warning result))
+    (assert-false "BL-1544 (04): never named as excluded"
+                  (boolean (some #(= "docs/shared.md" (:path %)) (or (:excluded result) []))))
+    (assert-false "BL-1544 (04): never appears in the delivered own-paths set either - it never changed"
+                  (boolean (some #{"docs/shared.md"} (:paths result))))))
+
+;; BL-1544: commit-ticket-id's own docstring promise, asserted directly -
+;; task_scope_gate_lib.bb is NOT changed by this ticket, and its own
+;; leading-id rule (subject-names-task?, shape 2) must still agree with
+;; land_step_lib.bb's own leading-ticket-id/subject-attribution for a
+;; subject that genuinely leads with an id. (Property-tested exhaustively
+;; in bl1544_ambiguous_subject_property_runner.bb; these are the same
+;; claim as plain worked examples.)
+(let [leading "BL-1227: decouple unlanded BL-1192 gate wiring"]
+  (assert= "BL-1544: subject-attribution credits only the leading id, mentioning another later"
+           {:ids #{"BL-1227"} :ambiguous? false} (land-step-lib/subject-attribution leading))
+  (assert-true "BL-1544: task_scope_gate_lib.bb's subject-names-task? agrees for the leading id"
+               (task-scope-gate-lib/subject-names-task? leading "BL-1227"))
+  (assert-false "BL-1544: task_scope_gate_lib.bb's subject-names-task? disagrees for the merely-mentioned id"
+                (task-scope-gate-lib/subject-names-task? leading "BL-1192")))
+(let [ambiguous "Update BL-967 stall-diagnosis how-to for BL-1525's chokepoint fold"]
+  (assert= "BL-1544: this ticket's own motivating incident subject reads ambiguous, not BL-967's alone"
+           {:ids #{"BL-967" "BL-1525"} :ambiguous? true} (land-step-lib/subject-attribution ambiguous)))
+
+;; BL-1544 hardening: a subject naming EXACTLY ONE ticket id, but not
+;; leading with it, is that one id's alone - NOT ambiguous. Ambiguity per
+;; the ticket's own invariant 1 requires "more than one ticket id" named;
+;; a single non-leading mention has only one candidate, so there is
+;; nothing to be ambiguous between. No scenario 01-04 fixture, and no P2
+;; property case, ever builds a subject naming only one id with no leading
+;; structure (P2 always leads with its one generated id) - so a `(count
+;; named) 1)` boundary mistakenly widened to `>=` (making every single,
+;; non-leading mention read as ambiguous) survives every other assertion
+;; in this file and the property runner. Verified by hand: widening `>`
+;; to `>=` on subject-attribution's ambiguous-count guard turns this exact
+;; case ambiguous and is caught by nothing else.
+(let [single-non-leading "docs: cross-link the BL-9005 epic tracker from the README"]
+  (assert= "BL-1544 (hardening): a single, non-leading ticket mention is that id's alone, never ambiguous"
+           {:ids #{"BL-9005"} :ambiguous? false} (land-step-lib/subject-attribution single-non-leading)))
+
 (if (seq @failures)
   (do
     (doseq [f @failures] (println f))
