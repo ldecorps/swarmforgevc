@@ -9,7 +9,6 @@
  */
 import * as fs from 'fs';
 import * as path from 'path';
-import * as os from 'os';
 import { execFileSync } from 'child_process';
 import { atomicWrite } from '../util/atomicWrite';
 import { writeControlPauseState } from './telegram-front-desk-bot';
@@ -26,6 +25,7 @@ import { resolveCliMainWorktreeContext, printJsonToStdout, runCliMain } from './
 // makes "one ceremony" true rather than asserted.
 import { runClosingCeremony } from '../metrics/closingCeremonyRun';
 import { sendNoteViaHandoff } from './closing-ceremony-run';
+import { draftPathUnder, removeDraftIfPresent } from '../swarm/draftPathUnder';
 
 export type RunDeps = {
   readConf: (confPath: string) => string;
@@ -114,27 +114,31 @@ function briefingSent(target: string, dayKey: string): boolean {
   }
 }
 
-function sendHandoffNote(target: string, to: string, message: string): void {
-  const draftPath = path.join(os.tmpdir(), `closing-ceremony-${process.pid}-${Math.random().toString(36).slice(2)}.handoff`);
+export function sendHandoffNote(target: string, to: string, message: string): void {
+  const draftPath = draftPathUnder(target, 'closing-ceremony');
+  fs.mkdirSync(path.dirname(draftPath), { recursive: true });
   fs.writeFileSync(
     draftPath,
     `type: note\nto: ${to}\npriority: 00\nmessage: ${message.slice(0, 80)}\n`,
     'utf8'
   );
-  const script = path.join(target, 'swarmforge', 'scripts', 'swarm_handoff.sh');
-  if (!fs.existsSync(script)) {
-    // Fixture roots may lack scripts — write a loud marker instead.
-    const marker = path.join(target, '.swarmforge', 'daemon', 'closing-ceremony-notes.log');
-    fs.mkdirSync(path.dirname(marker), { recursive: true });
-    fs.appendFileSync(marker, `${to}: ${message}\n`);
-    fs.unlinkSync(draftPath);
-    return;
+  try {
+    const script = path.join(target, 'swarmforge', 'scripts', 'swarm_handoff.sh');
+    if (!fs.existsSync(script)) {
+      // Fixture roots may lack scripts — write a loud marker instead.
+      const marker = path.join(target, '.swarmforge', 'daemon', 'closing-ceremony-notes.log');
+      fs.mkdirSync(path.dirname(marker), { recursive: true });
+      fs.appendFileSync(marker, `${to}: ${message}\n`);
+      return;
+    }
+    execFileSync(script, [draftPath], {
+      cwd: target,
+      env: { ...process.env, SWARMFORGE_ROLE: 'coordinator', SWARMFORGE_SKIP_DAEMON: '1' },
+      stdio: 'pipe',
+    });
+  } finally {
+    removeDraftIfPresent(draftPath);
   }
-  execFileSync(script, [draftPath], {
-    cwd: target,
-    env: { ...process.env, SWARMFORGE_ROLE: 'coordinator', SWARMFORGE_SKIP_DAEMON: '1' },
-    stdio: 'pipe',
-  });
 }
 
 function applyAction(target: string, action: LiveAction, deps: RunDeps, dryRun: boolean): void {
