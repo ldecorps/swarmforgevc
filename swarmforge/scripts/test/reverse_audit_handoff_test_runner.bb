@@ -1,7 +1,7 @@
 #!/usr/bin/env bb
 ;; Unit coverage for reverse-hop recipient selection, terminal stamping and
 ;; propagation parsing - reverse_hop_lib.bb, the single implementation
-;; swarm_handoff.bb's last-pack-role? / role-propagation / reverse-roles
+;; swarm_handoff.bb's with-non-forwarding / role-propagation / reverse-roles
 ;; all delegate to.
 ;;
 ;; BL-1299: this file previously called handoff-lib/role-propagation and
@@ -106,6 +106,39 @@
        "QA"
        (reverse-hop-lib/last-pipeline-role
          (conj (vec live-table) (row "auditor" "master" "forward-only"))))
+
+;; ── terminal stamp follows the hop's DIRECTION, not the sender's seat
+;;    (BL-1536 feature scenarios 01/02) ───────────────────────────────────
+(check "QA bouncing to hardender is never stamped"
+       false (reverse-hop-lib/terminal-forward? live-table "QA" ["hardender"]))
+(check "QA bouncing to coder is never stamped"
+       false (reverse-hop-lib/terminal-forward? live-table "QA" ["coder"]))
+(check "QA's terminal forward to the coordinator is still stamped"
+       true (reverse-hop-lib/terminal-forward? live-table "QA" ["coordinator"]))
+(check "a non-terminal sender's git_handoff is never stamped, whatever the recipient"
+       false (reverse-hop-lib/terminal-forward? live-table "hardender" ["coder"]))
+(check "documenter addressing QA (its own forward hop) is never stamped"
+       false (reverse-hop-lib/terminal-forward? live-table "documenter" ["QA"]))
+(check "one earlier recipient in a multi-recipient to: makes the whole parcel a bounce"
+       false (reverse-hop-lib/terminal-forward? live-table "QA" ["coordinator" "hardender"]))
+
+;; documenter-terminal table variant: QA is master-resident, so documenter -
+;; not QA - is the last pipeline role and the same direction rule must hold.
+(def documenter-terminal-table
+  [(row "specifier" "master" "forward-only")
+   (row "coder" "coder" "forward-only")
+   (row "cleaner" "cleaner" "back-one")
+   (row "architect" "architect" "back-all")
+   (row "hardender" "hardender" "forward-only")
+   (row "documenter" "documenter" "forward-only")
+   (row "QA" "master" "forward-only")
+   (row "coordinator" "master" "forward-only")])
+(check "terminal pack role is documenter when QA is master-resident"
+       "documenter" (reverse-hop-lib/last-pipeline-role documenter-terminal-table))
+(check "documenter's terminal forward to the coordinator is stamped"
+       true (reverse-hop-lib/terminal-forward? documenter-terminal-table "documenter" ["coordinator"]))
+(check "documenter bouncing to hardender is never stamped, even though documenter is terminal here"
+       false (reverse-hop-lib/terminal-forward? documenter-terminal-table "documenter" ["hardender"]))
 
 ;; ── residency is DERIVED, not a role-name list (feature scenario 04) ────
 (check "an ordinary role made master-resident by its row drops out"
