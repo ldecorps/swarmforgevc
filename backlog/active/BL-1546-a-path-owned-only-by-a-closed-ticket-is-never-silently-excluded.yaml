@@ -181,3 +181,5 @@ notes: |
   IR-DRY on the feature: findings are the variables under test
   (own touch / no own touch, differs / identical, closed / not closed);
   kept as written.
+
+assigned_to: coder
