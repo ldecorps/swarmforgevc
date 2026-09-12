@@ -110,7 +110,8 @@ thin wrapper over `sh!` with its external signature unchanged — callers
 see no difference. `daemon_api_ban_lib.bb`'s exempt set is unchanged
 (still `#{"daemon_cycle_guard_lib.bb"}` only — `bounded_run_lib.bb` never
 needed an entry of its own). The runner's remaining FAIL line (unresolved
-spawn targets) is BL-1526's, still open.
+spawn targets) was BL-1526's; BL-1526 closed this line by resolving every
+daemon spawn target statically.
 
 **Update, BL-1021 (2026-08-21):** the bound above used to cover only the
 *exit-code* wait — `(deref proc bound ::timed-out)`. If the direct child
