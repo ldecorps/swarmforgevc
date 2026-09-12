@@ -1,5 +1,35 @@
 # SwarmForge VS Code Extension — Specification
 
+**Last Updated:** September 12, 2026 (BL-1544: the land step's
+`commit-ticket-id` read a commit's subject through
+`pipeline_stage_lib.bb`'s `extract-ticket-id` — single match, first token
+anywhere wins — right for a subject that LEADS with its id but wrong for
+one naming several ids and leading with none: on 2026-09-11 the
+documenter's own commit `a89a03ee45`, subject "Update BL-967
+stall-diagnosis how-to for BL-1525's chokepoint fold," was read as BL-967's
+alone because BL-967 named the file first; BL-967's pre-tip-pure-machinery
+lineage never reads landed, so two later lands (BL-1525's, BL-1526's) each
+printed `EXCLUDED_SIBLING_PATH ... BL-967` and silently dropped BL-1525's
+own paragraph from `origin/main`, unreported. `land_step_lib.bb` gains
+`subject-attribution`: a subject leading with an id reads exactly as
+before; one naming more than one id and leading with none is AMBIGUOUS,
+every named id an owner. `own-paths` now keeps an ambiguous path only when
+the landing ticket's own (leading-id) commit also touches it — the other
+named ids riding as passengers — and otherwise `LAND_ESCALATE`s naming the
+commit, every id, and the path, never a silent exclusion; a path whose tip
+content already matches `origin/main` neither refuses nor excludes.
+`task_scope_gate_lib.bb`'s send-time leading-id rule is unchanged and
+provably agrees (nothing precedes position 0). This parcel's own doc path
+carries `a89a03ee45` and would itself read ambiguous with no own touch, so
+the documenter stage makes its own tagged `BL-1544:` edit on
+`docs/how-to/BL-967-handoffd-cycle-stall-diagnosis.md`, re-tensing the
+BL-1525 paragraph's closing sentence now that BL-1526 has landed — giving
+the path an own touch so it rides in with this parcel, no hand edit on
+`main`. See the new "An ambiguous commit subject never silently excludes a
+path (BL-1544)" section in
+`docs/how-to/BL-1241-entangled-tip-at-the-land-step-has-a-reachable-remedy.md`.
+No new extension command, setting, or UI change.)
+Prior entry —
 **Last Updated:** September 12, 2026 (BL-1535: the mono-router chase's
 `should-rotate-resident?` (`mono_router_lib.bb`) gains a
 `:departing-mid-parcel` refusal — a chase-driven rotation for a different

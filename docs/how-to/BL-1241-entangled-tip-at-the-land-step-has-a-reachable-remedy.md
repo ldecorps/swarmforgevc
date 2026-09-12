@@ -977,6 +977,71 @@ adds the `CONTENT_CLEAR_SIBLING_PATH` line to a `LAND_REPLAY`/`LAND_CLEAN`
 report and removes some refusals that content no longer supports. Acceptance:
 `specs/features/BL-1481-a-shared-path-blocks-only-when-the-siblings-lines-are-not-yet-on-main.feature`.
 
+## An ambiguous commit subject never silently excludes a path (BL-1544)
+
+Every prior owner check above reads attribution through `commit-ticket-id`
+(`pipeline_stage_lib.bb`'s `extract-ticket-id`): single match, first token
+anywhere in the subject wins. That reading is right for a subject that
+LEADS with its id — `task_scope_gate_lib.bb`'s send-time gate relies on the
+same rule and the two are meant to agree — but a subject that names more
+than one ticket id and leads with NEITHER was silently attributed to
+whichever id happened to appear first in the sentence, however incidental.
+
+Live 2026-09-11: the documenter's commit `a89a03ee45`, subject "Update
+BL-967 stall-diagnosis how-to for BL-1525's chokepoint fold," added
+BL-1525's own paragraph to this doc's sibling,
+`docs/how-to/BL-967-handoffd-cycle-stall-diagnosis.md`. BL-967 leads the
+sentence only because it names the file; `commit-ticket-id` read the
+commit as BL-967's alone. BL-967 was done, but its original merge
+predates the tip-pure land machinery (the BL-1338 class) so the ancestor
+check never finds it landed. Two later lands (BL-1525's own
+replay 961cbaa563, then BL-1526's 7ddf201006) each read the path as
+BL-967's unlanded and printed `EXCLUDED_SIBLING_PATH ... BL-967`, silently
+dropping BL-1525's paragraph from `origin/main` both times, with nothing
+reported — the send-time gate never sees it either, since `docs/how-to/**`
+is task-scope exempt there.
+
+Fixed: `land_step_lib.bb` gains `subject-attribution`, asking a strict,
+POSITIONAL question `commit-ticket-id` never did — does the subject's own
+structure place a ticket id at the very start of the line (a bare
+`TICKET-n: ...`, or one of the corpus's three bookkeeping verb prefixes,
+`Close`/`Promote`/`Approve`, immediately before the id)? A subject with one
+id, or one that leads among several (e.g. "BL-1524, BL-1525, BL-1526:
+mint ..."), reads exactly as `commit-ticket-id` always has. A subject
+naming more than one id and leading with none is now AMBIGUOUS — every
+named id rides as an owner in `path-owner-tickets`, and `own-paths` gains a
+`cond` clause ahead of the existing BL-1389 exclusion:
+
+- **The landing ticket is among the path's owners** (a separate commit that
+  itself leads with the landing ticket's id also touched the path) — the
+  path is kept through the existing logic exactly as before, the ambiguous
+  commit's other named ids riding as ordinary passengers (BL-1375/BL-1466's
+  table, above).
+- **The landing ticket is not an owner and the path's tip content is not
+  already on `origin/main`** — refuses (`LAND_ESCALATE`, same shape
+  BL-1481 already uses) naming the commit, every id its subject names, and
+  the path — never the old silent `EXCLUDED_SIBLING_PATH`.
+- **The tip content already matches `origin/main`** — nothing is at stake;
+  a two-tree diff with no net change never reaches `delivered` in the
+  first place (BL-1473, above), so the path neither refuses nor excludes.
+
+`task_scope_gate_lib.bb`'s `subject-names-task?` (the send-time leading-id
+rule) is untouched and, by construction, already agrees: nothing can occur
+earlier in a string than position 0, so whenever the new positional check
+finds a leading id, the old first-token check finds that same id first. A
+revert/reapply subject (BL-1472, above) stays transparent and is never read
+as ambiguous.
+
+This parcel's own land carries `a89a03ee45` on every role branch, so its
+own doc path would itself read ambiguous with no own touch — refused by
+the very rule this ticket adds. The documenter stage makes its own tagged
+edit on `docs/how-to/BL-967-handoffd-cycle-stall-diagnosis.md` in this same
+parcel (subject leading `BL-1544:`, re-tensing the BL-1525 paragraph's
+closing sentence now that BL-1526 has landed), giving the path an own
+touch so it lands with BL-967 and BL-1525 riding as passengers — no hand
+edit on `main`. Acceptance:
+`specs/features/BL-1544-an-ambiguous-commit-subject-never-silently-excludes-a-path.feature`.
+
 ## What this does not change
 
 - BL-1192's send-time gate and its range — unchanged; this ticket only adds
