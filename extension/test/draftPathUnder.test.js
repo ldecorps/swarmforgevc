@@ -27,6 +27,20 @@ test('draftPathUnder embeds the given prefix and produces distinct paths on repe
   assert.notEqual(a, b, 'two calls must not collide on the same draft path');
 });
 
+// A dropped `.slice(2)` on the nonce still produces a distinct, root-anchored
+// path (the two tests above cannot see it), but it leaves the leading `0.`
+// from Math.random().toString(36) baked into the file name - a stray `.` in
+// what must be a single path segment. Pin the basename's shape directly.
+test('draftPathUnder\'s basename is prefix-pid-nonce with no stray characters (no leading "0." from an un-sliced nonce)', () => {
+  const p = draftPathUnder('/fixture/root', 'tracer-bullet-seed');
+  const base = path.basename(p);
+  assert.match(
+    base,
+    new RegExp(`^tracer-bullet-seed-${process.pid}-[0-9a-z]+$`),
+    `expected basename ${base} to be prefix-pid-nonce with only [0-9a-z] in the nonce`
+  );
+});
+
 // swarm_handoff.bb deletes a draft itself once it queues or delivers it
 // (swarm_handoff.bb's own `(fs/delete draft)` on the success path), so a
 // sender calling removeDraftIfPresent in a `finally` after a successful send
