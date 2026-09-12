@@ -277,16 +277,20 @@ deprecate_check_cli() {
 notify_specifier_freshness_hold() {
   local reason="$1"
   local draft
-  draft="$(mktemp)"
+  mkdir -p "$ROOT/tmp"
+  draft="$(mktemp "$ROOT/tmp/swarmforge-freshness-hold.XXXXXX.handoff")"
+  # A note draft carries headers only (`task:` and a free-text body are
+  # git_handoff-only) - message truncated to swarm_handoff.bb's 80-char cap,
+  # same as every other script-built note in this ticket.
+  local msg="Freshness HOLD for ${ID}: ${reason}"
+  if [[ ${#msg} -gt 80 ]]; then
+    msg="${msg:0:80}"
+  fi
   cat > "$draft" <<EOF
 type: note
 to: specifier
 priority: 00
-task: ${ID}-deprecator-freshness-hold
-
-Deprecator freshness gate HOLD for ${ID} at promote time.
-Reason: ${reason}
-Ticket remains in backlog/paused/. Adjudicate (amend / retire / split / confirm).
+message: ${msg}
 EOF
   if [[ -x "$SCRIPT_DIR/swarm_handoff.sh" ]]; then
     "$SCRIPT_DIR/swarm_handoff.sh" "$draft" 2>/dev/null || \

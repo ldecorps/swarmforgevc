@@ -41,7 +41,7 @@ Feature: every production sender of the handoff CLI builds its draft under the p
       | swarmforge/scripts/inject_note_to_role.sh       | an injected note                        | coder     |
       | extension/src/tools/closing-ceremony-run.ts     | the closing-ceremony outcome note       | specifier |
       | extension/src/tools/night-closing-ceremony-run.ts | the lean-packet note                  | specifier |
-      | extension/src/tools/tracer-bullet-launcher.ts   | the tracer-bullet seed note             | specifier |
+      | extension/src/tools/tracer-bullet-launcher.ts   | the tracer-bullet seed note             | coordinator |
 
   # BL-1537 draft-lives-under-the-root-tmp-directory-02
   Scenario: A script-built draft lives under the root's own tmp directory while the send runs
