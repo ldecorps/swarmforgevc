@@ -193,3 +193,5 @@ qa_e2e_procedure: |
      filter, is what keeps production safe); restore the filter and
      confirm invariant 2's assertion (resolved dirname is the fixture dir)
      is present inside the property body.
+
+assigned_to: coder
