@@ -151,11 +151,18 @@ MAIN_CONTENT="$(git -C "$ROOT" show main:swarmforge/scripts/handoffd_supervisor.
 pass "02: swarmforge/scripts/handoffd_supervisor.bb matches main after the sweep"
 
 # ── 03: the RESTORED line was the only MASTER CHECKOUT DRIFT line ──────────
+# Two distinct checks: no WARN-shaped ("MASTER CHECKOUT DRIFT:") line was
+# written for the episode, AND the RESTORED line found in case 01 is the
+# ONLY line naming "MASTER CHECKOUT DRIFT" at all (a sibling sweep - the
+# tip-floor integrity check - does share this outbox but never this
+# substring, confirmed against a real run).
 python3 - "$OUTBOX1" <<'PY'
 import json, sys
 lines = [json.loads(l) for l in open(sys.argv[1]) if l.strip()]
-warn_lines = [l["text"] for l in lines if l.get("threadId") == "OPERATOR" and "MASTER CHECKOUT DRIFT:" in l.get("text", "")]
+drift_lines = [l["text"] for l in lines if l.get("threadId") == "OPERATOR" and "MASTER CHECKOUT DRIFT" in l.get("text", "")]
+warn_lines = [t for t in drift_lines if "MASTER CHECKOUT DRIFT:" in t]
 assert warn_lines == [], f"a MASTER CHECKOUT DRIFT: warning line was written for a restored episode: {warn_lines!r}"
+assert len(drift_lines) == 1, f"expected the RESTORED line to be the only MASTER CHECKOUT DRIFT line, got: {drift_lines!r}"
 PY
 pass "03: no \"MASTER CHECKOUT DRIFT:\" warning line was written for the restored episode"
 
