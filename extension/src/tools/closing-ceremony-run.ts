@@ -12,12 +12,12 @@
  * Usage: node closing-ceremony-run.js [--target <path>] [--at <iso-timestamp>]
  */
 import * as fs from 'fs';
-import * as os from 'os';
 import * as path from 'path';
 import { execFileSync } from 'child_process';
 import { printJsonToStdout, makeArgsGuardedMain, runCliMain, resolveTargetAndNow } from './swarm-metrics';
 import { runClosingCeremony, ClosingCeremonyRunDeps } from '../metrics/closingCeremonyRun';
 import { parseArgs, USAGE, ClosingCeremonyRunArgs } from './closingCeremonyRunArgs';
+import { draftPathUnder, removeDraftIfPresent } from '../swarm/draftPathUnder';
 
 // Re-export for tests
 export { parseArgs, ClosingCeremonyRunArgs };
@@ -31,14 +31,19 @@ export { parseArgs, ClosingCeremonyRunArgs };
 // the ambient shell happens to carry (a live agent pane's own role, for
 // instance), which would send as the wrong role or an unknown one.
 export function sendNoteViaHandoff(targetPath: string, draft: string): void {
-  const draftPath = path.join(os.tmpdir(), `closing-ceremony-note-${process.pid}-${Math.random().toString(36).slice(2)}.txt`);
+  const draftPath = draftPathUnder(targetPath, 'closing-ceremony-note');
+  fs.mkdirSync(path.dirname(draftPath), { recursive: true });
   fs.writeFileSync(draftPath, draft, 'utf-8');
-  const handoffScript = path.join(targetPath, 'swarmforge', 'scripts', 'swarm_handoff.sh');
-  execFileSync(handoffScript, [draftPath], {
-    cwd: targetPath,
-    env: { ...process.env, SWARMFORGE_ROLE: 'coordinator' },
-    stdio: 'pipe',
-  });
+  try {
+    const handoffScript = path.join(targetPath, 'swarmforge', 'scripts', 'swarm_handoff.sh');
+    execFileSync(handoffScript, [draftPath], {
+      cwd: targetPath,
+      env: { ...process.env, SWARMFORGE_ROLE: 'coordinator' },
+      stdio: 'pipe',
+    });
+  } finally {
+    removeDraftIfPresent(draftPath);
+  }
 }
 
 export const REAL_DEPS: ClosingCeremonyRunDeps = {

@@ -46,7 +46,8 @@ export SWARMFORGE_MAILBOX_ONLY=1
 export SWARMFORGE_SKIP_SYNC_INJECT=1
 export SWARMFORGE_ROLE="$SENDER"
 
-DRAFT="$(mktemp "${TMPDIR:-/tmp}/swarmforge-mailbox.XXXXXX.handoff")"
+mkdir -p "$ROOT/tmp"
+DRAFT="$(mktemp "$ROOT/tmp/swarmforge-mailbox.XXXXXX.handoff")"
 trap 'rm -f "$DRAFT"' EXIT
 
 cat > "$DRAFT" <<EOF
