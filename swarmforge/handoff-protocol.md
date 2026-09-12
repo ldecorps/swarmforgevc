@@ -363,6 +363,12 @@ Responsibilities:
 - Preserve `task` from the draft for `git_handoff`.
 - Generate the canonical body.
 - Atomically install the completed file into `outbox/`.
+- For `git_handoff`, run every draft through the self-audit challenge
+  (Article 2.3): the first invocation for a given draft fingerprint prints
+  `AUDIT_REQUIRED` / `HANDOFF_NOT_QUEUED`, queues nothing, and exits
+  non-zero (BL-1529) — never a silent exit 0 — so a script-originated
+  sender with no agent to read and resubmit the challenge cannot mistake
+  it for success.
 
 Atomic outbound write sequence:
 
