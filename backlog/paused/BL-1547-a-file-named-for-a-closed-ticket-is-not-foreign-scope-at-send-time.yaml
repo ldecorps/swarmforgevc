@@ -26,7 +26,7 @@ acceptance: specs/features/BL-1547-a-file-named-for-a-closed-ticket-is-not-forei
 required_wiring:
   - 'specs/pipeline/steps/bl1547ClosedTicketFileIsNotForeignSteps.js::registerSteps::the handler lands in the same parcel as the feature (BL-233)'
 
-human_approval: pending
+human_approval: approved
 approval_context: >
   A new feature file is authored here, so it needs a tap. No choice is
   posed and there are no ruling_options. What is FIRM: a changed path
