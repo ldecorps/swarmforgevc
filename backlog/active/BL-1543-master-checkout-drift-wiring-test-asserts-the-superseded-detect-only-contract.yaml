@@ -231,3 +231,18 @@ notes: |
     is repeated in both scenarios on purpose: each scenario is its own run.
 
 assigned_to: coder
+
+abandoned_commits: [97baa4febb, e7aea499f8]
+# Both were QA-approved (BL-1241 land-step remedy): land_step_cli.bb read
+# each as an entangled tip (ENTANGLED_SIBLING BL-1518, BL-1546 at first;
+# BL-1518 only after the second land). BL-1518 and BL-1546 are both
+# backlog/done already with their own content byte-identical to
+# origin/main - the tool's per-ticket aggregation flags BL-1518 on a
+# trailing bookkeeping/evidence commit that never needed to reach
+# origin/main, a harmless false positive (same class as the BL-1354
+# residual gap). Landed instead, via two tip-pure replays:
+# b08a6e03679e3714ff9773ef5312842b6cd4283c (the four-case test +
+# feature + step handler + evidence) and
+# b09de9cedabce689b35729043e3f9650f57ee863 (the standing-reds.tsv row
+# removal, forgotten in the first commit). Both confirmed by
+# is_qa_ancestor.sh.
