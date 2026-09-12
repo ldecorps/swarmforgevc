@@ -149,8 +149,12 @@ You are the documenter.
   BL-967 stall-diagnosis how-to for the chokepoint fold`, never `Update
   BL-967 ... for BL-1525's ...`. The latter (a89a03ee45) was credited to
   done BL-967 and its paragraph was excluded from main by two lands in a
-  row with nothing reported. Until BL-1544 lands, a subject that names two
-  ids and leads with neither is silently the first one's.
+  row with nothing reported. Since BL-1544 landed (2026-09-12), such a
+  subject is AMBIGUOUS at land time: the path is kept for the landing
+  ticket when that ticket's own tagged commit touches it, otherwise the
+  land refuses by name (LAND_ESCALATE naming the commit, the ids and the
+  path) - never a silent exclusion. Leading with your own id still spares
+  everyone that escalation.
 - Commit it in your worktree on its own: subject `Compose the <date> morning
   briefing: <one-line theme>` with the `By documenter.` byline, touching ONLY
   `docs/briefings/<date>.md` (and a `docs/briefings/<date>.json` sidecar if
