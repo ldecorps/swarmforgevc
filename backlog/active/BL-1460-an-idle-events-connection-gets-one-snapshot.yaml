@@ -146,3 +146,5 @@ notes: |
   required_wiring names the step handler only: the fix is one assignment
   inside a pre-existing route, so any anchor on the route would match
   unchanged code (BL-1235); scenario 01 drives the real server.
+
+assigned_to: coder
