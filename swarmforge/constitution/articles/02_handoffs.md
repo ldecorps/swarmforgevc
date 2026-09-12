@@ -39,7 +39,11 @@ invocation for a given draft fingerprint prints `AUDIT_REQUIRED` /
 `HANDOFF_NOT_QUEUED` and does **not** queue. Re-read the inbound, diff,
 and checks; fix and commit if needed; invoke the helper again with an
 identical draft to queue. A changed draft invalidates the prior challenge.
-Notes are unchanged (single call).
+Notes are unchanged (single call). The challenge exits non-zero (BL-1529)
+so a challenge, a refusal, and a queue are three distinguishable outcomes
+to every caller — a script sender with no agent to read and resubmit
+speaks the same two-call protocol itself via `handoff_lib.bb`'s
+`queue-git-handoff!`.
 
 **Reverse hops.** Pack windows may declare `forward-only` (default),
 `back-one`, or `back-all` after the receive mode. On a queued `git_handoff`,
