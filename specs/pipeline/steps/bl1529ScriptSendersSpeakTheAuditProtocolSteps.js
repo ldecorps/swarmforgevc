@@ -37,8 +37,30 @@ function git(cwd, args) {
   return execFileSync('git', ['-c', 'user.email=t@t', '-c', 'user.name=t', ...args], { cwd, encoding: 'utf8' }).trim();
 }
 
+// Fixture-root hygiene (BL-971/BL-1228 pattern): every root the Background
+// creates is registered for removal at process exit, so a scenario that
+// throws mid-assertion (e.g. "exactly one handoff file exists...") - not
+// only the terminal step's own try/finally - still cannot leak the tmp dir.
+// The per-scenario cleanup(ctx) calls below remain as the eager, common-case
+// path; this is the backstop for the cross-step throw the 2026-08-18/08-19
+// hardening rule warns about.
+const fixtureRoots = [];
+function registerFixtureRoot(root) {
+  fixtureRoots.push(root);
+}
+process.on('exit', () => {
+  for (const root of fixtureRoots) {
+    try {
+      fs.rmSync(root, { recursive: true, force: true });
+    } catch {
+      /* ignore */
+    }
+  }
+});
+
 function mkFixture(ctx) {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), 'bl1529-acc-'));
+  registerFixtureRoot(root);
   git(root, ['init', '-q', '-b', 'main']);
   git(root, ['commit', '-q', '--allow-empty', '-m', 'seed']);
   fs.mkdirSync(path.join(root, '.swarmforge'), { recursive: true });
