@@ -678,6 +678,22 @@
                                       :content (when (zero? (:exit shown)) (:out shown))}))))))))
          vec))))
 
+(defn- closed-on-main?
+  "BL-1546. A positive finding: `ticket-id`'s file is found under
+   backlog/done/ on `origin-main` and under no other backlog folder there -
+   reusing `main-ticket-sources` (it already walks the nested
+   backlog/done/<milestone>/ layout) rather than a second ls-tree.
+
+   nil (never true) when origin-main's tree could not be listed at all;
+   false when the ticket has no file there, or is filed under any other
+   folder there too (found in both done and active, say - genuinely
+   ambiguous, not a positive `done` reading). Fail-closed throughout, the
+   same posture ticket-approval-state already takes for an unreadable or
+   ambiguous ticket file (BL-1272 invariant 1)."
+  [root origin-main ticket-id]
+  (when-let [sources (main-ticket-sources root ticket-id origin-main)]
+    (= #{"done"} (into #{} (map :folder) sources))))
+
 (defn- source-verdict
   "One tree's answer about one ticket."
   [ticket-id {:keys [where folder content]}]
@@ -1450,6 +1466,42 @@
                                                   (:ambiguous attribution)))
                               ", and no commit of " task-ticket-id "'s own touches " path
                               " - never decided silently (BL-1544)")}
+
+               ;; BL-1546. A path whose every owner is CLOSED on origin/main
+               ;; (backlog/done/ there) is never silently excluded on the
+               ;; BL-1389 clause below's strength alone: an owner's own-
+               ;; authored commit's lines can never read as "landed" (they
+               ;; are the parcel's own new work, sibling-path-landed? asks
+               ;; whether the OWNER's lines are already on origin/main, and
+               ;; a closed owner's commit is never an ancestor of the branch
+               ;; that authored it) - so a closed owner's path would exclude
+               ;; forever under BL-1389's rule, and no parcel of a closed
+               ;; ticket could ever land its own content again (2026-09-12,
+               ;; BL-1537's 5dbd34f27f dropped this way). When a commit that
+               ;; leads with the landing ticket's own id also touches this
+               ;; path, task-ticket-id is among :owners and this clause does
+               ;; not apply - the path falls through to the ordinary keep
+               ;; logic below, the closed sibling(s) riding as passengers
+               ;; exactly like any other co-owner. Otherwise it refuses,
+               ;; naming the path and the closed owner(s) - never a silent
+               ;; EXCLUDED_SIBLING_PATH.
+               ;;
+               ;; BL-1315's own guard is reused unchanged: an untagged touch
+               ;; is skipped here exactly as it is below, since it may be
+               ;; the landing ticket's own uncredited work - "closed" never
+               ;; overrides that uncertainty, it only sharpens what happens
+               ;; once the BL-1389 clause below would otherwise apply.
+               (and (seq (:owners attribution))
+                    (not (:any-untagged? attribution))
+                    (not (contains? (:owners attribution) task-ticket-id))
+                    (every? #(closed-on-main? root origin-main %) (:owners attribution)))
+               {:paths nil
+                :warning (str "land-step: refusing to replay " task-ticket-id
+                              " - " path "'s only owner(s) "
+                              (str/join "," (sort (:owners attribution)))
+                              " are closed on origin/main (backlog/done/) and no commit of "
+                              task-ticket-id "'s own touches " path
+                              " - never decided silently (BL-1546)")}
 
                ;; BL-1389, invariant 1. The question is asked of THIS PATH,
                ;; never of the owner's ticket-level verdict: the two walks
