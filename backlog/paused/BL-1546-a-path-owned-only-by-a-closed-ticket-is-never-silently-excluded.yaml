@@ -1,0 +1,183 @@
+id: BL-1546
+title: "The land step excludes a path whose only owner is a ticket CLOSED on origin/main (the documenter's 'docs: BL-1518 guard how-to and feature narrative ...', 5dbd34f27f, inside BL-1537's own parcel): a closed ticket can never land again, so the content is orphaned and one EXCLUDED_SIBLING_PATH line is all that reports it; a closed-owner path is kept when the landing ticket touches it itself and otherwise refuses by name, never a silent exclusion"
+milestone: M8
+type: defect
+severity: high
+# high: approved, QA-gated content is silently absent from main after a
+# land, and the same attributor governs every path the land step replays,
+# code included - a broken safety signal at the integration point (the
+# BL-1544 grade). Not critical: the drop is an omission; nothing on main
+# was destroyed and QA held the land on sight.
+status: todo
+epic: swarm-reliability
+priority: 7
+direction: swarm-reported
+depends_on: []
+mutation_cost: medium
+# medium: one new positive read (owner closed on origin/main) threaded
+# into own-paths' BL-1389 clause in land_step_lib.bb, plus
+# land_step_lib_test_runner.bb fixtures that file the sibling under
+# backlog/done/ on the fixture origin.
+slice_size_envelope: medium
+required_stages: [coder, cleaner, architect, hardender, documenter, qa]
+
+acceptance: specs/features/BL-1546-a-path-owned-only-by-a-closed-ticket-is-never-silently-excluded.feature
+
+required_wiring:
+  - 'specs/pipeline/steps/bl1546ClosedOwnerNeverSilentlyExcludesSteps.js::registerSteps::the handler lands in the same parcel as the feature (BL-233)'
+
+human_approval: pending
+approval_context: >
+  A new feature file is authored here, so it needs a tap. No choice is
+  posed and there are no ruling_options. What is FIRM: the shape mirrors
+  BL-1544 exactly - a path whose every owner is a ticket filed under
+  backlog/done/ on origin/main (a positive read, never inferred from an
+  unreadable folder) and whose tip content differs from origin/main is
+  kept for the landing ticket when a commit leading with the landing
+  ticket's id also touches it, and otherwise refuses the land by name
+  (LAND_ESCALATE naming the commit, the closed owner and the path) - never
+  a silent EXCLUDED_SIBLING_PATH. BL-1537's own two paths are landed by
+  the adjudicated hand recipe, not by this parcel.
+
+invariants:
+  - "A path is never silently excluded from a replay on the strength of owners that are all closed on origin/main: it is kept for the landing ticket, or the land refuses naming the commit, the closed owner and the path."
+  - "Closed is a positive finding - the owner's ticket file read under backlog/done/ on origin/main; an owner whose folder cannot be read is not closed and the pre-existing exclusion rule applies unchanged."
+
+description: |
+  ## What is wrong
+
+  `land_step_lib.bb` `own-paths` (BL-1389 clause) excludes a delivered
+  path when every owner its touching commits' subjects name is an
+  unlanded sibling, no touching commit is untagged, and none leads with
+  the landing ticket's id. "Unlanded" is decided on CONTENT (BL-1354): are
+  the owner's own added lines already on origin/main? For a commit that
+  the landing parcel itself authored, they never are - that is the
+  parcel's new work. So a commit inside the parcel whose subject names
+  only a ticket that is CLOSED (filed under `backlog/done/` on origin/main)
+  has an owner that reads unlanded and will read unlanded forever: no
+  parcel of a closed ticket will ever land. The path is excluded, one
+  `EXCLUDED_SIBLING_PATH <path> <closed-id>` line is printed, and the
+  content is orphaned.
+
+  2026-09-12, BL-1537's land (QA evidence 65ae4fd1e2): the documenter's
+  5dbd34f27f, subject `docs: BL-1518 guard how-to and feature narrative
+  no longer overclaim every draft's location`, corrected
+  `docs/how-to/BL-1518-handoff-draft-root-guard.md` and the `Feature:`
+  comment of
+  `specs/features/BL-1518-a-handoff-cli-never-writes-outside-the-root-its-draft-lives-in.feature`
+  - BL-1537's own task 4. BL-1518-a is done on origin/main (9d5aa7cef2).
+  `land_step_cli.bb` printed `LAND_REPLAY ... 4a3521969047`,
+  `ENTANGLED_SIBLING BL-1518` and two `EXCLUDED_SIBLING_PATH ... BL-1518`
+  lines; `git diff --name-only 4a3521969047 f4b5a5f612` is exactly those
+  two paths. BL-1544 (done) handles a subject naming TWO ids and leading
+  with none; this subject names one, which BL-1544's `subject-attribution`
+  returns unambiguously, and BL-1544's own out_of_scope named "the BL-1338
+  class" as not covered. The subject shape is not an accident: the
+  send-time gate refuses a `BL-1537:`-led commit on those basenames
+  (BL-1547 owns that half), so the documenter had to drop its own id.
+
+  ## What is wanted
+
+  A path whose every owner is closed on origin/main and whose tip content
+  differs from origin/main is never decided silently. When a commit that
+  leads with the landing ticket's id also touches it, the path is kept for
+  the landing ticket, the closed owner riding as a passenger (it reads
+  `:approved` under ticket-approval-state already) - scenario 01. When no
+  commit of the landing ticket's touches it, the land refuses:
+  LAND_ESCALATE, reason naming the commit, the closed owner and the path -
+  never an EXCLUDED_SIBLING_PATH line - scenario 02. When the tip content
+  is already on origin/main there is nothing at stake and the path neither
+  refuses nor excludes - scenario 03. An owner that is NOT closed (its
+  file read under `backlog/active/` or `backlog/paused/` on origin/main)
+  keeps today's behaviour byte-for-byte: excluded as the unlanded
+  sibling's - scenario 04, the fail-closed side pinned.
+
+  ## How (direction, not mandate)
+
+  - "Closed on origin/main" is a positive finding from the trees
+    `main-ticket-sources` already lists (`ls-tree -r origin/main
+    backlog/<folder>/`): the id's ticket file found under `done` and under
+    no other folder of origin/main. Reuse that reader - it already walks
+    the nested `backlog/done/<milestone>/` layout - rather than a second
+    ls-tree; the worktree's copy does not decide (a landed ticket moves to
+    done/ on main while the branch predates the move).
+  - In `path-owner-tickets` / `own-paths`, thread the finding the way
+    BL-1544 threaded `:any-ambiguous?`: the BL-1389 exclusion branch gains
+    a preceding clause for `(every? closed-on-main? owners)` with no
+    landing-ticket owner and content that differs, returning `{:paths nil
+    :warning ...}` naming commit(s), owner(s) and path - the refusal shape
+    BL-1481/BL-1544 use, printed under LAND_ESCALATE by land_step_cli.bb
+    as every other refusal is (BL-1474). With a landing-ticket owner the
+    path falls through to the ordinary keep logic and the closed owner
+    boards as a passenger.
+  - Do not touch `sibling-landed?` / `sibling-path-verdict` - the content
+    verdict is right, it is the CONSEQUENCE that is wrong. Do not make a
+    closed ticket read "landed" (BL-1272 invariant 1: landed is a positive
+    content finding, never inferred).
+  - Fixtures: `land_step_lib_test_runner.bb` gains a section whose fixture
+    origin files the sibling's YAML under `backlog/done/M8/` (nested, as
+    the live repo does) and builds the four shapes above on the reviewing
+    branch; mkdtemp with its own origin (BL-1390).
+  - Documenter: the BL-1241 how-to gains a section beside BL-1544's
+    ("A path owned only by a closed ticket is never silently excluded").
+
+constraints: >
+  Fixture repositories under mkdtemp with their own origin (BL-1390). No
+  change to the delivered set (BL-1473), the replay's report lines
+  (BL-1474), revert transparency (BL-1472), the BL-1544 ambiguity rule, or
+  the send-time scope gate (BL-1547 owns it; this ticket lands with or
+  without it). The step handler lands with the feature (BL-233; handlers
+  are discovered from their own file, BL-1371 - no index.js edit).
+  land_step_lib.bb is also edited by BL-1467 and BL-1545 (paused): the
+  coordinator serialises. No hand-edited mutation manifests.
+
+out_of_scope: |
+  - Landing BL-1537's two excluded paths - done by the adjudicated hand
+    recipe (backlog/evidence/BL-1537-specifier-land-escalate-adjudication-closed-owner-20260912.md).
+  - Making the send-time gate accept a closed ticket's basename as own
+    scope (BL-1547).
+  - Making a done ticket's pre-machinery LINEAGE read as landed (the
+    BL-1338 lineage class proper) - this ticket keys on the owner's
+    backlog folder, not on ancestry.
+  - Re-subjecting 5dbd34f27f on any branch.
+
+qa_e2e_procedure: >
+  (1) `bb swarmforge/scripts/test/land_step_lib_test_runner.bb` green with
+  the new section. (2) Scratch clone with its own origin: file a sibling
+  ticket under backlog/done/M8/ on origin/main; on a reviewing branch
+  commit a doc path under a subject naming only that sibling and leading
+  with none; run `land_step_cli.bb <landing> <tip>`: LAND_ESCALATE whose
+  reason names the commit, the closed sibling and the path, and no
+  EXCLUDED_SIBLING_PATH line; add a commit leading with the landing id on
+  the same path, re-run: LAND_REPLAY with the path included and a
+  PASSENGER_SIBLING line for the closed id. Move the sibling's YAML to
+  backlog/active/ on origin/main, re-run the first shape: EXCLUDED_SIBLING_PATH
+  as before this ticket. (3) BL-1315, BL-1343, BL-1374, BL-1389, BL-1472,
+  BL-1473, BL-1481, BL-1544 features stay green. (4)
+  `node specs/pipeline/cli.js specs/features/BL-1546-...feature` passes.
+
+source: |
+  QA note to the specifier, priority 00, 2026-09-12T10:20Z: "BL-1537 land:
+  BL-1518 single-id misattrib drops doc content, ev 65ae4fd1e2"; evidence
+  `backlog/evidence/BL-1537-QA-land-escalate-BL1518-misattribution-20260912.md`.
+  Adjudication: `backlog/evidence/BL-1537-specifier-land-escalate-adjudication-closed-owner-20260912.md`.
+
+notes: |
+  Minted 2026-09-12 by the specifier on QA's note, the same pass. Grepped
+  first: BL-1544 (done) owns the two-id ambiguity rule and scoped this
+  class out by name; BL-1343 (done) own-path subtraction; BL-1315 (done)
+  untagged touch keeps the path; BL-1389/BL-1481 (done) per-path checks;
+  no open ticket names a closed/done owner at the land step. Companion
+  BL-1547 (send gate) minted the same pass; independent - each is gateable
+  and valuable alone, and with both landed the documenter leads with its
+  own id and neither rule fires.
+
+  Verified 2026-09-12: 5dbd34f27f is not an ancestor of origin/main and
+  postdates the parcel's fork (4bd04a8a92); `subject-attribution` on its
+  subject is single-id, not ambiguous; BL-1518-a's YAML is under
+  backlog/done/ on origin/main; the replay differs from the tip in exactly
+  the two paths.
+
+  IR-DRY on the feature: findings are the variables under test
+  (own touch / no own touch, differs / identical, closed / not closed);
+  kept as written.
