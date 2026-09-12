@@ -1,0 +1,207 @@
+id: BL-1549
+title: "Swarm stamp-off: hotfix 5bdf93beed spawns an ephemeral consult session for a role whose mail is stuck behind a :departing-mid-parcel refusal (the target's OWN roles.tsv session, created through resolve-single-role-repair, torn down once idle with nothing actionable) - review the landed diff, confirm or refute, open narrow follow-ups; never rewrite it and never write the ledger decision"
+milestone: M8
+type: defect
+severity: medium
+# medium: the fault is already fixed on main (the QA-asks-specifier deadlock
+# behind BL-1535's departing-mid-parcel refusal); what is open is the review
+# the constitution owes a hotfix (BL-848). Not high: nothing is degraded
+# today, and the ledger's resurfacing keeps the ask alive without the
+# expedite lane.
+status: todo
+epic: swarm-reliability
+priority: 20
+direction: swarm-reported
+depends_on: []
+mutation_cost: low
+# low: review-only; Babashka only (no mutation/CRAP/DRY wired, BL-472); one
+# step-handler file drives the real mono_router_lib.bb, handoff_lib.bb and
+# handoffd.bb through the fake-tmux shape test_chase_departing_mid_parcel_gate.sh
+# already uses.
+slice_size_envelope: low
+required_stages: [coder, cleaner, architect, hardender, documenter, qa]
+
+acceptance: specs/features/BL-1549-swarm-stamp-consult-session-5bdf93beed.feature
+
+# A review parcel adds no production call site; the mechanism under review
+# is already wired (handoffd.bb attempt-resident-rotate! :departing-mid-parcel
+# branch -> spawn-consult-session!, and the daemon cadence block ->
+# consult-teardown-sweep!). The handler entry is the BL-233 in-parcel pin.
+required_wiring:
+  - 'specs/pipeline/steps/bl1549SwarmStampConsultSessionSteps.js::registerSteps::the handler lands in the same parcel as the feature (BL-233, BL-1371)'
+
+human_approval: pending
+approval_context: >
+  A new feature file is authored here, so it needs a tap. No choice is
+  posed and there are no ruling_options. What needs sign-off is the
+  DISPOSITION only: that reviewing the landed diff of 5bdf93beed (BL-811 /
+  BL-849 posture) rather than re-implementing it is right, and that medium
+  is the right severity for a review of a fault already fixed. FIRM: the
+  parcel changes no file under swarmforge/scripts except to add evidence
+  and, if the coder extends it, the fake-tmux TEST fixture; a refuted
+  scenario or a confirmed review-goal-4 finding is a narrow follow-up
+  ticket via note to the specifier, never an in-parcel rewrite. FIRM: the
+  parcel never writes human_decision into backlog/hotfix-ledger.yaml
+  (scenario 06) - the human records certify or waive with
+  hotfix_ledger_update.bb --decide after this reaches done. Minted by the
+  specifier on the coordinator's ledger note of 2026-09-12 17:26Z; the
+  ledger row is linked to this ticket in the mint commit.
+
+invariants:
+  - "The stamp never rewrites the hotfix: every file the parcel touches is evidence, a feature, a step handler, or a test fixture; swarmforge/scripts/handoffd.bb, mono_router_lib.bb, handoff_lib.bb and single_role_repair_lib.bb are byte-identical to the received commit."
+
+source: |
+  backlog/hotfix-ledger.yaml row `5bdf93beed` (detected 2026-09-12, state
+  pending, no stamp ticket) surfaced by the certification sweep as a
+  coordinator note, forwarded to the specifier 2026-09-12 17:26Z. Hotfix
+  landed by the operator (human-directed, Claude Code) 2026-09-12 16:10
+  BST. The operator's ask is recorded only in the commit message: "That is
+  exactly the deadlock the operator asked to fix (observed live: QA
+  resident sent specifier a priority-00 note and sat 'in_process pending
+  that reply' while chase logged chase-rotate-seated-preferred-yield
+  followed by chase-rotate-departing-mid-parcel, forever)."
+
+description: |
+  ## What
+
+  An operator hotfix is live on main and has never been through a gate.
+  This ticket is that gate: a REVIEW ticket, not a rewrite ticket -
+  confirm or refute, and open narrow follow-ups for anything found.
+
+  ## The failure it fixed (from the commit message and the daemon log)
+
+  BL-1535 (done 2026-09-12) taught the mono-router chase to refuse rotating
+  the resident away from a role that is mid-parcel
+  (`should-rotate-resident?` -> `:departing-mid-parcel`). Correct - but the
+  target role's mail, often a direct question FROM the departing role (QA
+  asking the specifier to adjudicate a hold), then had no live pane to
+  answer it until the resident happened to go idle. Live on 2026-09-12: QA
+  resident sent the specifier a priority-00 note and sat in_process
+  pending that reply while chase logged `chase-rotate-seated-preferred-
+  yield` then `chase-rotate-departing-mid-parcel`, forever.
+
+  ## What landed (files to review)
+
+  - `swarmforge/scripts/mono_router_lib.bb`: `consult-eligible?` (pure) -
+    true only for gate `:departing-mid-parcel`, a target role distinct from
+    the departing role, a target session that is not the resident's, and
+    no consult already active for that role. Never for `:busy`,
+    `:cooldown`, `:already-active`.
+  - `swarmforge/scripts/handoffd.bb`: `spawn-consult-session!` fires from
+    `attempt-resident-rotate!`'s existing `:departing-mid-parcel` branch
+    (the refusal, its reason and its telemetry row are untouched). When
+    eligible and `handoff-lib/session-exists?` says the target's own
+    roles.tsv session is absent, it asks
+    `single-role-repair-lib/resolve-single-role-repair` (BL-1018, the same
+    one-atomic-command lib `swarm_ensure.bb` uses) for the commands with
+    `:session-present? false` - ONE `new-session -d -s <session>` carrying
+    `.swarmforge/launch/<role>.sh` and the openrouter env args - runs them
+    through `daemon-cycle-guard-lib/sh!`, writes the marker
+    `.swarmforge/daemon/consult/<role>.json` (`role`, `requested_by`,
+    `started_at_ms`) and logs `consult-spawn <role> requested-by=<role>`.
+    `consult-teardown-sweep!` runs on the daemon's no-extra-timeout cadence
+    block (next to `cooldown-sweep`): per marker, a role/session that no
+    longer resolves is cleared as `consult-teardown-stale`; a live session
+    whose pane is not busy (`chase-sweep-lib/actively-processing?` on
+    `capture-pane`) AND whose mailbox has nothing actionable
+    (`role-mail-row` `:actionable?` - inbox/new git_handoff, rule_proposal,
+    aged note, or any in_process claim) is `kill-session`ed and its marker
+    cleared, logged `consult-teardown`; otherwise it is left alone.
+  - Tests: `mono_router_lib_test_runner.bb` +7 assertions for
+    `consult-eligible?`; green on main 705b6e8ed1 (specifier, 2026-09-12).
+    `test_chase_departing_mid_parcel_gate.sh` 8 checks unchanged and green
+    - NOTE for the coder: its fake tmux answers every unlisted subcommand
+    with exit 0, so `has-session` reads as "present" and the spawn path is
+    never reached in those checks. The spawn side has NO automated
+    coverage today; scenarios 02-05 are that coverage.
+
+  ## Review goals
+
+  1. Confirm the gate: `consult-eligible?` is true for exactly the
+     departing-mid-parcel shape and false for every sibling refusal, the
+     same-session case, the same-role case and an active consult
+     (scenario 01).
+  2. Confirm the spawn: on the refusal, with the target's session absent,
+     exactly one `new-session` carrying the target's launch script, never
+     a `respawn-pane` (the resident's pane is untouched), marker written,
+     and a second refusal while the marker stands spawns nothing
+     (scenario 02).
+  3. Confirm the consult session is actually reached: the target role's
+     ordinary chase wake resolves through `handoff-lib/wake-session` ->
+     `resolve-wake-session`, which prefers the configured session when it
+     exists - so once the consult session is up, the wake for that role
+     lands THERE, not on the resident (scenario 03). This is the step the
+     commit message does not mention; without it an aider seat would sit
+     on its mail forever (BL-1504's lesson) and the teardown sweep would
+     keep the session alive on `:actionable?` indefinitely.
+  4. PROBE, do not fix: `resolve-single-role-repair` refuses only a BLANK
+     `:launch-script`, and `spawn-consult-session!` never checks that
+     `.swarmforge/launch/<role>.sh` exists on disk. On a pack whose target
+     role has no launch script (the aider mono-router pack deliberately
+     omits the specifier window) the reading of the code is: new-session
+     with a nonexistent command, the session exits at once, next sweep
+     clears the marker as stale, next refusal spawns again - a spawn loop
+     at chase cadence. Reproduce it in the fake-tmux fixture (two
+     consecutive refusal calls with the marker cleared between, launch
+     file absent) and RECORD the outcome in evidence. Confirmed -> note the
+     specifier; the follow-up is a `consult-spawn-refused <role>
+     no-launch-script` guard before the spawn, minted separately. Refuted
+     -> say why in evidence. Either way, no in-parcel change.
+  5. Confirm teardown: idle + nothing actionable -> `kill-session` +
+     marker cleared; busy pane -> kept; actionable mail -> kept; session
+     gone -> marker cleared, no kill (scenario 04).
+  6. Note, do not fix: `consult-teardown-sweep!` is handed the daemon's
+     boot-time `roles` map while its sibling sweeps call `(load-roles)`
+     per cycle; the `(or (get roles role) (load-role-info role))` fallback
+     covers a role added after boot, so this is a consistency remark for
+     evidence only.
+
+  ## Scenario notes for the coder
+
+  - Scenario 01 calls `mono-router-lib/consult-eligible?` directly, the
+    runner's own shape. Scenario 03 calls `handoff-lib/resolve-wake-session`
+    (pure) directly.
+  - Scenarios 02 and 04 drive the REAL `handoffd.bb` through the
+    `test_chase_departing_mid_parcel_gate.sh` fixture shape (fixture git
+    root under mkdtemp proven by `rev-parse --git-common-dir`, fake tmux
+    on PATH, `SWARMFORGE_ALLOW_TMP_DAEMON=1`, `bb -e` calling
+    `@#'handoffd/attempt-resident-rotate!` and
+    `@#'handoffd/consult-teardown-sweep!`). Extend the FAKE, not the
+    daemon: `has-session -t <target>` must exit 1 when an env var names
+    that session absent (default exit 0 so the 8 existing checks stay
+    byte-for-byte unchanged); `capture-pane` must print a busy footer when
+    an env var says so; `new-session`/`kill-session` go to TMUX_LOG as
+    today. Assert on TMUX_LOG lines, the marker file, and
+    `.swarmforge/daemon/handoffd.log` lines.
+  - Scenario 04's "actionable mail" row seeds one `git_handoff` file in
+    the target's inbox/new; its "idle" row seeds an empty mailbox.
+  - Scenario 06's handler reads `backlog/hotfix-ledger.yaml` for the row
+    `commit: 5bdf93beed` and asserts `state` is not certified/waived and
+    `human_decision` is null; BL-1346's handler is the precedent.
+  - The step handler is `bl1549SwarmStampConsultSessionSteps.js`,
+    registered in `specs/pipeline/steps/index.js` in the SAME commit as
+    the feature (BL-233); shared fixture helpers go under
+    `specs/pipeline/steps/lib/`.
+
+notes: |
+  Ledger: linked to row 5bdf93beed via `hotfix_ledger_update.bb --link` in
+  the mint commit. The mint commit also carries the coordinator's
+  uncommitted ledger edits (the row itself, and four sibling rows
+  normalised pending -> stamp-open) because the file is committed whole.
+
+qa_e2e_procedure: |
+  On the parcel commit:
+  1. `git diff main...HEAD --name-only` names only evidence, the feature,
+     the step handler + index.js registration, and optionally
+     `swarmforge/scripts/test/test_chase_departing_mid_parcel_gate.sh` or
+     a new sibling test; none of handoffd.bb, mono_router_lib.bb,
+     handoff_lib.bb, single_role_repair_lib.bb (invariant 1).
+  2. `run_acceptance.sh` on the BL-1549 feature -> 6 scenarios green.
+  3. `bash swarmforge/scripts/test/test_chase_departing_mid_parcel_gate.sh`
+     (8 original checks still pass) and
+     `bb swarmforge/scripts/test/mono_router_lib_test_runner.bb` green.
+  4. The evidence file records review goal 4's probe outcome explicitly
+     (confirmed with the log lines, or refuted with the reason).
+  5. `backlog/hotfix-ledger.yaml` row 5bdf93beed: `human_decision: null`.
+  6. After done: the human runs `bb swarmforge/scripts/hotfix_ledger_update.bb .
+     --decide 5bdf93beed approved|waived` and commits the ledger.
