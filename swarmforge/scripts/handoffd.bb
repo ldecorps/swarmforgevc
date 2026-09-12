@@ -17,6 +17,7 @@
 (load-file (str (fs/path (fs/parent (fs/canonicalize *file*)) "shell_quote_lib.bb")))
 (load-file (str (fs/path (fs/parent (fs/canonicalize *file*)) "node_tool_bringup_lib.bb")))
 (load-file (str (fs/path (fs/parent (fs/canonicalize *file*)) "handoff_lib.bb")))
+(load-file (str (fs/path (fs/parent (fs/canonicalize *file*)) "single_role_repair_lib.bb")))
 (load-file (str (fs/path (fs/parent (fs/canonicalize *file*)) "self_heal_telemetry_lib.bb")))
 ;; BL-1392: the cron-heartbeat decision - pure, so this file keeps only the
 ;; clock, the filesystem and the escalation channel.
@@ -1624,6 +1625,108 @@
           (chase-sweep-lib/pane-recently-active?
            activity-role now-ms chase-resident-recent-activity-ms)))))
 
+;; Hotfix 2026-09-12: ephemeral consult sessions (operator-directed). See
+;; mono-router-lib/consult-eligible? for the full rationale - this is the IO
+;; side: spawn target-role's OWN roles.tsv session (untouched by the mono-
+;; router resident) just long enough to answer the mail that would otherwise
+;; sit stuck behind a :departing-mid-parcel refusal, then tear it back down
+;; once it goes quiet. Session create/respawn goes through
+;; single-role-repair-lib/resolve-single-role-repair exclusively (BL-1018) -
+;; the SAME one-atomic-command-per-state lib swarm_ensure.bb's
+;; ensure-standing-role! uses - specifically to inherit its guarantee that a
+;; missing session is created WITH its launch command in one tmux call and
+;; never a create-then-respawn-into-it sequence (the 2026-08-21 incident that
+;; took the whole pack tmux server down). A present session is never
+;; consult-spawned into; consult-eligible? and the session-exists? check
+;; below both refuse before this runs.
+(defn- consult-dir [] (fs/path daemon-dir "consult"))
+
+(defn- consult-marker-path [role] (fs/path (consult-dir) (str role ".json")))
+
+(defn- consult-active? [role]
+  (boolean (fs/exists? (consult-marker-path role))))
+
+(defn- write-consult-marker! [role requested-by now-ms]
+  (fs/create-dirs (consult-dir))
+  (spit (str (consult-marker-path role))
+        (json/generate-string {:role role :requested_by requested-by
+                                :started_at_ms now-ms})))
+
+(defn- clear-consult-marker! [role]
+  (try (fs/delete-if-exists (consult-marker-path role))
+       (catch Exception _ nil)))
+
+(defn- pane-busy?
+  "Generic version of resident-pane-busy? for an arbitrary (session, not
+   necessarily the mono-router resident) - a consult session runs on its OWN
+   session name, never the resident's."
+  [socket session]
+  (let [pane (try (capture-pane-text socket session) (catch Exception _ ""))]
+    (chase-sweep-lib/actively-processing? pane)))
+
+(defn spawn-consult-session!
+  "Fires from attempt-resident-rotate!'s :departing-mid-parcel branch only.
+   No-op (returns nil) whenever consult-eligible? refuses, the role has no
+   roles.tsv row, or its session already exists (owned by us or not - either
+   way this is not the create path, resolve-single-role-repair's own
+   session-present? branch is for a role's normal respawn, not this one)."
+  [socket target-role departing-role]
+  (try
+    (let [role-info (handoff-lib/load-role-info target-role)
+          target-session (:session role-info)
+          resident-session (handoff-lib/mono-router-resident-session)
+          eligible? (mono-router-lib/consult-eligible?
+                     {:gate :departing-mid-parcel
+                      :target-role target-role
+                      :departing-role departing-role
+                      :target-session target-session
+                      :resident-session resident-session
+                      :consult-already-active? (consult-active? target-role)})]
+      (when (and eligible? role-info
+                 (not (handoff-lib/session-exists? socket target-session)))
+        (let [launch-script (fs/path state-dir "launch" (str target-role ".sh"))
+              {:keys [status commands]}
+              (single-role-repair-lib/resolve-single-role-repair
+               {:socket socket :session target-session
+                :launch-script (str launch-script)
+                :env-args (openrouter-respawn-env-args)
+                :session-present? false})]
+          (if (not= :ok status)
+            (log! "consult-spawn-refused" target-role (name status))
+            (do
+              (doseq [cmd commands] (apply daemon-cycle-guard-lib/sh! cmd))
+              (write-consult-marker! target-role departing-role (System/currentTimeMillis))
+              (log! "consult-spawn" target-role (str "requested-by=" departing-role)))))))
+    (catch Exception e
+      (log! "consult-spawn-error" target-role (.getMessage e)))))
+
+(defn consult-teardown-sweep!
+  "Periodic: tear a consult session back down once it has gone quiet AND its
+   own mailbox no longer holds actionable mail (mirrors role-mail-row's
+   :actionable? - the same signal chase itself would otherwise be waiting on).
+   A marker whose role or session no longer resolves is stale and is cleared
+   outright - never left to accumulate."
+  [socket roles]
+  (doseq [marker (try (fs/list-dir (consult-dir)) (catch Exception _ []))
+          :when (str/ends-with? (str marker) ".json")
+          :let [role (str/replace (fs/file-name marker) #"\.json$" "")]]
+    (try
+      (let [role-info (or (get roles role) (handoff-lib/load-role-info role))
+            session (:session role-info)]
+        (cond
+          (or (nil? role-info) (str/blank? (str session))
+              (not (handoff-lib/session-exists? socket session)))
+          (do (clear-consult-marker! role)
+              (log! "consult-teardown-stale" role))
+
+          (and (not (pane-busy? socket session))
+               (not (:actionable? (role-mail-row role role-info))))
+          (do (tmux! "-S" socket "kill-session" "-t" session)
+              (clear-consult-marker! role)
+              (log! "consult-teardown" role))
+
+          :else nil))
+      (catch Exception e (log! "consult-teardown-error" role (.getMessage e))))))
 
 (defn- ambulance-patient-waiting-at?
   "True when ambulance is engaged and target-role inbox/new holds a parcel
@@ -1757,7 +1860,12 @@
             (log-chaser-telemetry!
              {:type "departing-mid-parcel" :role departing-role
               :handoffId (str (fs/file-name blocking-file)) :signal working-signal}
-             (System/currentTimeMillis)))
+             (System/currentTimeMillis))
+            ;; Hotfix 2026-09-12: the resident correctly stays put, but
+            ;; target-role's mail still deserves an answer - spawn its own
+            ;; ephemeral consult session rather than leave it stuck behind
+            ;; a resident that may not go idle for a while.
+            (spawn-consult-session! socket target-role departing-role))
           {:ok false :reason (name gate)})
       (let [result (handoff-lib/rotate-resident-to! target-role)]
         (when (:ok result)
@@ -5430,7 +5538,13 @@
                     ;; BL-258/BL-309/BL-316/BL-339/BL-353/BL-350/BL-356/
                     ;; BL-437/BL-440/BL-423 above.
                     (run-sweep! "cooldown-sweep"
-                        #(cooldown-sweep!)))
+                        #(cooldown-sweep!))
+                    ;; Hotfix 2026-09-12: consult-teardown sweep shares the
+                    ;; same cadence - no separate timeout, same rationale as
+                    ;; BL-222/BL-214/BL-258/BL-309/BL-316/BL-339/BL-353/
+                    ;; BL-350/BL-356/BL-437/BL-440/BL-423/BL-617 above.
+                    (run-sweep! "consult-teardown-sweep"
+                        #(consult-teardown-sweep! socket roles)))
                   (spit (str heartbeat-file) (str (now) "\n"))
                   (when (zero? (mod cycle heartbeat-log-every-cycles))
                     (log! "heartbeat" (str "cycle=" cycle)))
