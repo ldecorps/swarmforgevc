@@ -44,10 +44,16 @@ actually resolved?
 - Both paths are canonicalized (`fs/canonicalize`) before the compare, so
   a relative draft argument or a symlinked worktree can't slip past a
   naive string comparison.
-- Every production draft — a worktree role's own `tmp/handoff.txt`, or
-  master's `swarmforge/runtime/handoff-draft.txt` — is under its role's
-  resolved root by construction, so this refuses only ever a fixture
-  escape, never a live send.
+- Every production draft — a worktree role's own `tmp/handoff.txt`,
+  master's `swarmforge/runtime/handoff-draft.txt`, or a script sender's own
+  `<root>/tmp/` draft — is under its role's resolved root by construction,
+  so this refuses only ever a fixture escape, never a live send. Seven
+  script-built senders (`promote_and_route_next.sh`,
+  `route_backlog_to_coder.sh`, `mailbox_note_to_role.sh`,
+  `inject_note_to_role.sh`, and the three closing-ceremony/tracer-bullet TS
+  tools) originally drafted under `${TMPDIR:-/tmp}` / `os.tmpdir()` and
+  were refused once this guard landed; BL-1537 moved all seven under
+  `<root>/tmp/` to match.
 
 ## If you hit this refusal
 

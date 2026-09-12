@@ -17,9 +17,13 @@ Feature: a handoff CLI invocation whose draft lies outside the project root it r
   # regardless of how a caller's cwd/env got corrupted: does the draft this
   # invocation was actually given live under the root this invocation
   # actually resolved? Every production draft (a worktree role's own
-  # tmp/handoff.txt, master's swarmforge/runtime/handoff-draft.txt) is
-  # under its role's resolved root by construction, so this refuses only
-  # ever a fixture escape, never a live send.
+  # tmp/handoff.txt, master's swarmforge/runtime/handoff-draft.txt, and the
+  # Babashka senders' own <root>/tmp/ drafts) is under its role's resolved
+  # root by construction, so this refuses only ever a fixture escape,
+  # never a live send. Seven other script-built senders (four shell, three
+  # TypeScript) drafted under ${TMPDIR:-/tmp} / os.tmpdir() instead and
+  # were refused once this guard landed; BL-1537 moved all seven under
+  # <root>/tmp/ to match.
 
   Background:
     Given a role's own project has a valid roles.tsv
