@@ -57,14 +57,26 @@ test('draftPathUnder property: the draft directory depends only on root, never o
 // half the runs exercise "the CLI already removed it" and half exercise
 // "the CLI never got that far" - both real exit shapes, not a corner case
 // hoped to come up by chance.
+//
+// BL-1550: this invariant quantifies only over names that resolve to a
+// STRICT CHILD of the fixture directory. "." and ".." are excluded by
+// construction - a filter that checks the resolved path's dirname is the
+// fixture dir, never by hoping the seed avoids them - because
+// path.join(dir, '.') is dir itself, not a draft name, and the directory
+// case (BL-1550's own example, scenario 02) is a different shape this
+// property does not own.
 test('removeDraftIfPresent property: idempotent cleanup regardless of whether the draft still exists (BL-1537 invariant 2)', () => {
   fc.assert(
     fc.property(
       fc.boolean(),
-      fc.string({ minLength: 1, maxLength: 24 }).filter((s) => !s.includes('\0') && !s.includes('/')),
+      fc
+        .string({ minLength: 1, maxLength: 24 })
+        .filter((s) => !s.includes('\0') && !s.includes('/'))
+        .filter((s) => path.dirname(path.join('/bl1550-fixture-dir', s)) === '/bl1550-fixture-dir'),
       (existedBefore, name) => {
         const dir = mkTmpDir('draft-path-under-property-');
         const draftPath = path.join(dir, name);
+        assert.equal(path.dirname(draftPath), dir, `expected ${name} to resolve to a strict child of ${dir}`);
         if (existedBefore) {
           fs.writeFileSync(draftPath, 'type: note\n');
         }

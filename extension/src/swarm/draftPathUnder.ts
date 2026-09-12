@@ -17,10 +17,31 @@ export function draftPathUnder(root: string, prefix: string): string {
  * swarm_handoff.bb deletes the draft itself once it queues or delivers it,
  * so a sender's own cleanup must be idempotent - a plain unlinkSync throws
  * ENOENT on exactly the success path, the one outcome that most needs the
- * draft to be gone.
+ * draft to be gone. BL-1550: it deletes only the regular file the sender
+ * wrote - never a directory, not with unlinkSync (EISDIR) and not with a
+ * recursive removal (which would delete a tree the sender never created).
+ * A directory at the draft path is left untouched; the call still does not
+ * throw. The CLI can also delete the draft between the stat and the
+ * unlink, so ENOENT is swallowed at both steps.
  */
 export function removeDraftIfPresent(draftPath: string): void {
-  if (fs.existsSync(draftPath)) {
+  let stat: fs.Stats;
+  try {
+    stat = fs.lstatSync(draftPath);
+  } catch (err) {
+    if ((err as NodeJS.ErrnoException).code === 'ENOENT') {
+      return;
+    }
+    throw err;
+  }
+  if (!stat.isFile()) {
+    return;
+  }
+  try {
     fs.unlinkSync(draftPath);
+  } catch (err) {
+    if ((err as NodeJS.ErrnoException).code !== 'ENOENT') {
+      throw err;
+    }
   }
 }
