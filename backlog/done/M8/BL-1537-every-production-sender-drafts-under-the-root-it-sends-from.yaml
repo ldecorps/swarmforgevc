@@ -225,3 +225,16 @@ assigned_to: coder
 bounce_count: 1
 bounce_history:
   - { at: 2026-09-12, by: architect, blamed: coder, class: behavior, commit: e300226fae, evidence: backlog/evidence/BL-1537-architect-20260912-2.md }
+
+abandoned_commits: [f4b5a5f612]
+# f4b5a5f612 was QA's approved commit; land_step_cli.bb's own-paths logic
+# attributed docs/how-to/BL-1518-handoff-draft-root-guard.md and
+# specs/features/BL-1518-a-*.feature to closed-but-unrecognized-as-landed
+# sibling BL-1518, excluding them from the replay. Specifier adjudicated
+# (backlog/evidence/BL-1537-specifier-land-escalate-adjudication-closed-owner-20260912.md):
+# both paths ARE BL-1537's own (task 4 of this ticket's own description).
+# Landed instead: e7faa7af5c, a hand-built tip-pure commit carrying all 29
+# of this ticket's own paths (content-identical to f4b5a5f612 on every one
+# of them), built fresh off origin/main after it advanced past BL-1546/1547
+# (minted by the same adjudication). See BL-1546/BL-1547 for the machinery
+# fix that makes this recipe unnecessary going forward.

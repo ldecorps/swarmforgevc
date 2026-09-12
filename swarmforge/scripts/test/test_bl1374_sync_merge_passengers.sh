@@ -14,6 +14,10 @@
 # never wrote.
 
 set -uo pipefail
+# BL-1545: an inherited GIT_DIR / GIT_WORK_TREE (as `git bisect run` exports)
+# must not be able to redirect a fixture's git commands into the repository
+# the test runs from - cleared before anything else touches git.
+unset GIT_DIR GIT_WORK_TREE
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 REPO_ROOT="$(cd "$SCRIPT_DIR/../../.." && pwd)"
@@ -23,6 +27,28 @@ PREFIX="bl1374-sync-merge"
 rm -rf "${TMPDIR:-/tmp}/${PREFIX}".* 2>/dev/null || true
 TMPROOT="$(mktemp -d "${TMPDIR:-/tmp}/${PREFIX}.XXXXXX")"
 trap 'rm -rf "$TMPROOT"' EXIT
+
+# BL-1545/BL-1390: proves `$1` is not already inside SOME OTHER git
+# repository before its first mutating git command runs. With GIT_DIR/
+# GIT_WORK_TREE cleared above this always finds nothing (git-common-dir
+# fails outright) unless the fixture root itself has escaped $TMPROOT - the
+# defect this guards is a redirected mutation, not an expected failure mode,
+# so it aborts loudly rather than returning a status the caller might ignore.
+prove_root() {
+  local root="$1" common
+  if common="$(git -C "$root" rev-parse --git-common-dir 2>/dev/null)"; then
+    case "$common" in
+      /*) : ;;
+      *) common="$root/$common" ;;
+    esac
+    case "$common" in
+      "$TMPROOT"/*) return 0 ;;
+    esac
+    echo "ABORT: fixture root '$root' resolves to a git-common-dir outside \$TMPROOT: '$common'" >&2
+    exit 2
+  fi
+  return 0
+}
 
 fails=0
 pass() { echo "  ok   $1"; }
@@ -40,6 +66,7 @@ git_s() { git -C "$1" "${@:2}" >/dev/null 2>&1; }
 # named after the ticket being worked on that combines them.
 mk_autofix() {
   local root; root="$(mktemp -d "$TMPROOT/fix.XXXXXX")"
+  prove_root "$root"
   git_s "$root" init -q -b main .
   git_s "$root" config user.email t@t
   git_s "$root" config user.name t
@@ -61,6 +88,7 @@ mk_autofix() {
 # The same branch, except this ticket's OWN commit edits the shared file.
 mk_entangled() {
   local root; root="$(mktemp -d "$TMPROOT/fix.XXXXXX")"
+  prove_root "$root"
   git_s "$root" init -q -b main .
   git_s "$root" config user.email t@t
   git_s "$root" config user.name t
@@ -79,14 +107,20 @@ mk_entangled() {
 
 ask() {
   # <root> <commit> <ticket> -> the own-paths answer, printed
+  # BL-1545 invariant 1: OWN-PATHS-DELIVERED carries ONLY the `:paths` value -
+  # the answer to "which paths does the replay deliver". OWN-PATHS keeps
+  # printing the whole map for the :excluded/:warning observables, which are
+  # reports ABOUT a path, never a delivery of it.
   bb -e "
 (require '[babashka.fs :as fs])
 (load-file \"$REPO_ROOT/swarmforge/scripts/land_step_lib.bb\")
 (let [root \"$1\" commit \"$2\" ticket \"$3\"
-      {:keys [unlanded warning]} (land-step-lib/entangled-siblings root commit ticket)]
+      {:keys [unlanded warning]} (land-step-lib/entangled-siblings root commit ticket)
+      own-paths (land-step-lib/own-paths root commit ticket (or unlanded #{}))]
   (println \"UNLANDED\" (pr-str (sort (or unlanded #{}))))
   (println \"DETECT-WARNING\" (pr-str warning))
-  (println \"OWN-PATHS\" (pr-str (land-step-lib/own-paths root commit ticket (or unlanded #{})))))"
+  (println \"OWN-PATHS\" (pr-str own-paths))
+  (println \"OWN-PATHS-DELIVERED\" (pr-str (:paths own-paths))))"
 }
 
 # ═══════════════════════════════════════════════════════════════════════════
@@ -104,12 +138,27 @@ CCPATCH="$(git_q "$R" diff-tree --no-commit-id --cc -r "$COMMIT")"
 if [[ -z "$CCPATCH" ]]; then pass "01 premise: and the merge authored no line anywhere"; else fail "01 premise: the merge authored content: $CCPATCH"; fi
 
 OUT="$(ask "$R" "$COMMIT" BL-9001)"
-absent "01: the passenger file is not this ticket's own path" "$(sed -n 's/^OWN-PATHS //p' <<<"$OUT")" "shared.txt"
+# Echoed (not only captured) so the acceptance layer can read the real
+# delivered/excluded content directly, rather than trusting this script's own
+# pass/fail labels for what they claim to have checked.
+echo "$OUT"
+# BL-1545 invariant 1: every assertion about which paths the replay DELIVERS
+# reads the DELIVERED (:paths) line, never the whole OWN-PATHS map - a report
+# key that NAMES a path (:excluded here) is not a delivery of it.
+DELIVERED="$(sed -n 's/^OWN-PATHS-DELIVERED //p' <<<"$OUT")"
+absent "01: the passenger file is not this ticket's own path" "$DELIVERED" "shared.txt"
 contains "01: so the land is not refused" "$OUT" ":warning nil"
-contains "02: and this ticket's own work still replays" "$OUT" "own.txt"
+contains "02: and this ticket's own work still replays" "$DELIVERED" "own.txt"
 contains "04: the first passenger's ticket is still reported as unlanded" "$OUT" "BL-9002"
 contains "04: and the second passenger's" "$OUT" "BL-9003"
 contains "04: detection itself read cleanly" "$OUT" "DETECT-WARNING nil"
+# The passenger is not merely absent from :paths - it is REPORTED excluded,
+# under the :excluded key BL-1389 added. A report of an exclusion is not a
+# delivery (this is the check case 01 lacked - a whole-map grep for
+# "shared.txt" could not tell "delivered" from "reported excluded" apart).
+contains "01: the exclusion report names the passenger path" "$OUT" ":path \"shared.txt\""
+contains "01: crediting the first sibling" "$OUT" "\"BL-9002\""
+contains "01: and the second sibling" "$OUT" "\"BL-9003\""
 
 # ═══════════════════════════════════════════════════════════════════════════
 # 03: a genuine entanglement is still refused
@@ -128,13 +177,29 @@ contains "03: and naming the path" "$OUT2" "shared.txt"
 echo "05: the live tip that produced the report"
 REPORTED_MERGE="5d4486eb08"
 REPORTED_PATH="backlog/active/BL-1296-bubble-answers-from-its-own-seat.yaml"
-if git -C "$REPO_ROOT" cat-file -e "${REPORTED_MERGE}^{commit}" 2>/dev/null; then
+# BL-1545: BOTH ends of the live walk are pinned - the base is no longer the
+# LIVE origin/main (which absorbs a pinned tip over time, walking a range of
+# zero commits and passing the absent checks below VACUOUSLY). 3ea55a2e46 is
+# 5d4486eb08^2, the sync merge's main-side parent at the time of the report.
+PINNED_BASE="3ea55a2e46"
+PINNED_TIP="522584ed85"
+if git -C "$REPO_ROOT" cat-file -e "${REPORTED_MERGE}^{commit}" 2>/dev/null \
+   && git -C "$REPO_ROOT" cat-file -e "${PINNED_BASE}^{commit}" 2>/dev/null \
+   && git -C "$REPO_ROOT" cat-file -e "${PINNED_TIP}^{commit}" 2>/dev/null; then
+  # The premise BEFORE any absent check: the walk is non-empty. A range of
+  # zero commits makes every "absent" check pass with nothing examined - this
+  # is the exact vacuous-pass shape that let the live origin/main base rot.
+  RANGE_COUNT="$(git -C "$REPO_ROOT" rev-list --count "${PINNED_BASE}..${PINNED_TIP}")"
+  if [[ "$RANGE_COUNT" -gt 0 ]]; then
+    pass "05 premise: the walk from $PINNED_BASE to $PINNED_TIP is a non-empty range ($RANGE_COUNT commit(s))"
+  else
+    fail "05 premise: the walk from $PINNED_BASE to $PINNED_TIP is an EMPTY range"
+  fi
   LIVE="$(bb -e "
 (require '[babashka.fs :as fs])
 (load-file \"$REPO_ROOT/swarmforge/scripts/land_step_lib.bb\")
-(let [root \"$REPO_ROOT\"
-      om (land-step-lib/origin-main-sha root)]
-  (println (pr-str (#'land-step-lib/path-owner-tickets root om \"522584ed85\" \"$REPORTED_PATH\"
+(let [root \"$REPO_ROOT\"]
+  (println (pr-str (#'land-step-lib/path-owner-tickets root \"$PINNED_BASE\" \"$PINNED_TIP\" \"$REPORTED_PATH\"
                                                        #'land-step-lib/path-attributing-commits))))")"
   contains "05: the passenger's own ticket still owns its file" "$LIVE" "BL-1296"
   absent "05: and the landing ticket is no longer credited with it" "$LIVE" "BL-1309"
@@ -145,7 +210,7 @@ if git -C "$REPO_ROOT" cat-file -e "${REPORTED_MERGE}^{commit}" 2>/dev/null; the
   NAMES="$(git -C "$REPO_ROOT" diff-tree --no-commit-id --cc --name-only -r "$REPORTED_MERGE")"
   contains "05 premise: while its --cc NAME list does name the path - the trap" "$NAMES" "$REPORTED_PATH"
 else
-  echo "  skip 05: $REPORTED_MERGE is not reachable from this checkout"
+  echo "  skip 05: pinned commits are not reachable from this checkout"
 fi
 
 if [[ $fails -gt 0 ]]; then
