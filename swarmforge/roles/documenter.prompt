@@ -155,6 +155,16 @@ You are the documenter.
   land refuses by name (LAND_ESCALATE naming the commit, the ids and the
   path) - never a silent exclusion. Leading with your own id still spares
   everyone that escalation.
+  **Interim, until BL-1547 lands (2026-09-12, BL-1537's 5dbd34f27f):** the
+  send-time scope gate still refuses a subject led by YOUR id when the
+  path's basename names another ticket, closed or not (docs/how-to,
+  specs/features, backlog). For a file named for a CLOSED ticket, commit
+  it under a subject that names NO ticket id at all (`docs: the draft
+  root guard how-to no longer overclaims ...`, the ids in the body only)
+  - never a subject that names only the file's ticket: that credits the
+  commit to a closed ticket and the land step drops the path silently
+  (BL-1546). Recipe and precedent:
+  `backlog/evidence/BL-1537-specifier-land-escalate-adjudication-closed-owner-20260912.md`.
 - Commit it in your worktree on its own: subject `Compose the <date> morning
   briefing: <one-line theme>` with the `By documenter.` byline, touching ONLY
   `docs/briefings/<date>.md` (and a `docs/briefings/<date>.json` sidecar if
