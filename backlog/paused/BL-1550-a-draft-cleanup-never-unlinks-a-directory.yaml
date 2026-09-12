@@ -1,0 +1,195 @@
+id: BL-1550
+title: "draftPathUnder.property.test.js is flaky red on main with no owner: invariant 2's generator draws `.` as a draft name, so the joined path IS the fixture directory and removeDraftIfPresent's bare unlinkSync throws EISDIR - the helper removes only a regular file and leaves a directory in place without throwing, and the property quantifies only over names that are a strict child of the fixture directory"
+milestone: M8
+type: defect
+severity: high
+# high (standing-red rule 2026-09-05): a property-lane test red on main is a
+# broken safety signal; it is holding BL-1529's QA approval on 2026-09-12
+# (Article 4.2) and throttles intake until owned. Production is unaffected
+# in practice: draftPathUnder always returns <root>/tmp/<prefix>-<pid>-<nonce>,
+# never a directory - but the helper's contract on a directory (throw EISDIR
+# out of a cleanup path) is wrong on its own terms, see description.
+status: todo
+epic: swarm-reliability
+priority: 8
+direction: swarm-reported
+depends_on: []
+mutation_cost: low
+# low: one ~10-line function in extension/src/swarm/draftPathUnder.ts (the
+# only Stryker target, scoped to out/swarm/draftPathUnder.js), one property
+# test file, one step-handler file.
+slice_size_envelope: low
+required_stages: [coder, cleaner, architect, hardender, documenter, qa]
+
+acceptance: specs/features/BL-1550-a-draft-cleanup-never-unlinks-a-directory.feature
+
+# No consumer anchor is honest here (BL-1235): the live consumers of
+# removeDraftIfPresent (closing-ceremony-run.ts, night-closing-ceremony-run.ts,
+# tracer-bullet-launcher.ts) already call it and are not changed; the thing
+# that is red is the properties lane itself. The handler entry is the BL-233
+# in-parcel pin.
+required_wiring:
+  - 'specs/pipeline/steps/bl1550DraftCleanupNeverUnlinksADirectorySteps.js::registerSteps::the handler lands in the same parcel as the feature (BL-233, BL-1371)'
+
+human_approval: pending
+approval_context: >
+  A new feature file is authored here, so it needs a tap. No choice is
+  posed and there are no ruling_options. FIRM: removeDraftIfPresent never
+  removes a directory - not with unlinkSync (which throws EISDIR) and not
+  with rmSync recursive (which would delete a tree the sender did not
+  create); a directory at the draft path is left untouched and the call
+  returns without throwing. FIRM: the property keeps quantifying over
+  generated names, but only names that resolve to a strict child of the
+  fixture directory - `.` and `..` name the directory or its parent, not
+  a draft, and are excluded by construction (a filter that checks the
+  resolved path's dirname is the fixture dir), never by hoping the seed
+  avoids them. The directory case moves to an explicit example (scenario
+  02) so it is checked on every run instead of one run in three. FIRM:
+  the file is not added to property_suite_standing_allowlist.tsv.
+  Direction, not mandate: lstat, unlink only a regular file, swallow
+  ENOENT from the unlink (the CLI may delete the draft between the stat
+  and the unlink), rethrow anything else. Minted by the specifier on QA's
+  unowned-red note of 2026-09-12 19:53Z from the BL-1529 parcel (evidence
+  6e8792c53c on swarmforge-QA); QA saw 2 of 6 isolated runs fail, the
+  specifier saw 0 of 6 on main e76e486205, and the direct call below
+  throws on every run.
+
+invariants:
+  - "removeDraftIfPresent removes only a regular file at the exact path it is given: it never removes a directory, never recurses into one, and never throws when the path is a regular file, absent, or a directory."
+  - "Every draw of the invariant-2 property is a strict child of the fixture directory (path.dirname(draftPath) === dir and draftPath !== dir), so no generated input can name the directory itself or its parent."
+
+description: |
+  ## What is wrong
+
+  `extension/test/draftPathUnder.property.test.js`, second test (BL-1537
+  invariant 2):
+
+  ```
+  fc.string({ minLength: 1, maxLength: 24 }).filter((s) => !s.includes('\0') && !s.includes('/'))
+  ...
+  const draftPath = path.join(dir, name);
+  ```
+
+  `fc.string` draws `"."` (and `".."`). `path.join(dir, ".")` is `dir`
+  itself, so with `existedBefore === false` the helper is called on the
+  fixture directory. `removeDraftIfPresent`
+  (`extension/src/swarm/draftPathUnder.ts`, landed by BL-1537 `e300226fae6`)
+  is `if (fs.existsSync(p)) fs.unlinkSync(p)`: existsSync is true for a
+  directory and unlinkSync throws `EISDIR`. fast-check picks a fresh seed
+  per run, so the counterexample is hit on some runs and not others - QA
+  saw `Counterexample: [false,"."]` on 2 of 6 isolated runs from the BL-1529
+  parcel at `2a158f5a5c`; the specifier saw 0 of 6 on main `e76e486205`.
+  The failure itself is deterministic:
+
+  ```
+  cd <repo-root> && node -e '
+  const fs=require("fs"),os=require("os"),path=require("path");
+  const {removeDraftIfPresent}=require("./extension/out/swarm/draftPathUnder");
+  const d=fs.mkdtempSync(path.join(os.tmpdir(),"bl1550-"));
+  removeDraftIfPresent(path.join(d,"."));'
+  # -> Error: EISDIR: illegal operation on a directory, unlink ...
+  ```
+
+  Two things are wrong, one on each side of the call:
+
+  - The helper's contract. It is a cleanup called on every exit path of
+    three production senders (`closing-ceremony-run.ts`,
+    `night-closing-ceremony-run.ts`, `tracer-bullet-launcher.ts`) - the
+    idempotency BL-1537 invariant 2 exists for. A cleanup that throws out
+    of a `finally` masks the exit it was cleaning up after. It must never
+    remove a directory either: `fs.rmSync(p, { force: true })` (QA's
+    suggested guard) throws `ERR_FS_EISDIR` on a directory, and adding
+    `recursive: true` would let a stray path delete a tree the sender
+    never created.
+  - The property's population. A draft name is a single path component
+    naming a child of its directory; `.` and `..` are not draft names. The
+    generator quantified over them by accident, which is how the
+    directory case reached the helper at all - and why it was found only
+    on some seeds (BL-1445's fail-open shape, mirrored: an input that
+    should be an explicit example was left to the seed).
+
+  Latent since BL-1537 landed (`e300226fae6`, replayed by BL-1537's land
+  `e7faa7af5c`, now in `backlog/done/M8/`); first recorded 2026-09-12 (QA
+  evidence `backlog/evidence/BL-1529-QA-unowned-red-draftPathUnder-20260912.md`,
+  commit `6e8792c53c` on `swarmforge-QA`; specifier repro
+  `backlog/evidence/BL-1550-specifier-unowned-red-repro-20260912.md`).
+
+  ## What is wanted
+
+  `removeDraftIfPresent` removes a regular file at the path, returns
+  without throwing when nothing is there, and returns without throwing -
+  and without removing anything - when the path is a directory (empty or
+  not). The property quantifies only over names that resolve to a strict
+  child of the fixture directory (invariant 2), and the directory case is a
+  pinned example (scenario 02) so it runs every time. The properties lane
+  is green on `main`; the register row this ticket adds is removed in the
+  same land.
+
+  ## How (direction, not mandate)
+
+  - In `draftPathUnder.ts`: `lstatSync` in a try; ENOENT -> return; a
+    regular file -> `unlinkSync`, swallowing ENOENT there too (the CLI can
+    delete the draft between the stat and the unlink); anything else
+    (directory, symlink, other) -> return, untouched. Rethrow any other
+    error. Update the doc comment: the helper deletes only the regular
+    file the sender wrote.
+  - In the property test: tighten the name generator with a filter such as
+    `(s) => path.dirname(path.join('/x', s)) === '/x' && path.join('/x', s) !== '/x'`
+    (or equivalently exclude `.` and `..` explicitly and assert the
+    resolved dirname inside the property), so invariant 2 holds by
+    construction. Add a plain (non-property) unit case for the directory
+    shape in `extension/test/draftPathUnder.test.js` if the coder prefers
+    it there; scenario 02 drives the real helper either way.
+  - `specs/pipeline/steps/bl1550DraftCleanupNeverUnlinksADirectorySteps.js`
+    is the step handler (required_wiring pins it; lands in the same
+    parcel as the feature). Scenario 01's "runs alone under the properties
+    config" step spawns `npx vitest run --config vitest.properties.config.mjs
+    test/draftPathUnder.property.test.js` from `extension/` and reads the
+    exit status; scenario 02 builds each state under a mkdtemp fixture
+    root and calls the compiled helper twice.
+  - The three production callers are not changed. BL-1537's feature and
+    step handler are not changed: its own acceptance is not red and is not
+    this ticket's.
+
+  ## Not in scope
+
+  - Whether a symlink at the draft path should be unlinked: a draft is
+    never a symlink; "left in place" is the safe answer and needs no
+    scenario.
+  - The BL-1537 parcel shipped a property whose generator reached outside
+    the population its invariant names and no stage caught it. No process
+    change is minted here; the closing ceremony will see the ledger row.
+
+notes: |
+  Register: backlog/standing-reds.tsv gains one `property` row naming this
+  ticket (same commit as this mint), first_seen 2026-09-12; QA removes it
+  in the land that turns the file green. BL-1529 (held at QA under Article
+  4.2 on this red, not bounced) may be approved once this ticket is open -
+  the row names it.
+
+qa_e2e_procedure: |
+  On the parcel commit, from `extension/`:
+  1. `for i in $(seq 1 10); do npx vitest run --config
+     vitest.properties.config.mjs test/draftPathUnder.property.test.js
+     || echo FAIL; done` -> 2 passed every run, no FAIL line.
+  2. From the repo root: `node -e 'const fs=require("fs"),os=require("os"),
+     path=require("path"); const {removeDraftIfPresent}=require("./extension/out/swarm/draftPathUnder");
+     const d=fs.mkdtempSync(path.join(os.tmpdir(),"bl1550-"));
+     fs.writeFileSync(path.join(d,"inner"),"x");
+     removeDraftIfPresent(path.join(d,".")); removeDraftIfPresent(d);
+     console.log(fs.existsSync(path.join(d,"inner")));
+     const f=path.join(d,"draft"); fs.writeFileSync(f,"type: note\n");
+     removeDraftIfPresent(f); removeDraftIfPresent(f); console.log(fs.existsSync(f));
+     fs.rmSync(d,{recursive:true});'` -> prints `true` then `false`, no throw.
+  3. `git diff main...HEAD --name-only` names draftPathUnder.ts, the
+     property test (and optionally draftPathUnder.test.js), the step
+     handler, the feature, evidence, and the register row removal;
+     `property_suite_standing_allowlist.tsv`, the three callers, and the
+     BL-1537 feature and handler are unchanged.
+  4. Break-then-restore: in draftPathUnder.ts restore the bare
+     `existsSync`/`unlinkSync` body; scenario 02's two directory rows fail;
+     restore. Then drop the generator filter and run step 1 twenty times;
+     with the helper fixed every run still passes (the helper, not the
+     filter, is what keeps production safe); restore the filter and
+     confirm invariant 2's assertion (resolved dirname is the fixture dir)
+     is present inside the property body.
