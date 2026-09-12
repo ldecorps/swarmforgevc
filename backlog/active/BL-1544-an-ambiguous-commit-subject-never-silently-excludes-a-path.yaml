@@ -195,3 +195,5 @@ notes: |
   IR-DRY on the feature: five medium findings, all antonym or variant
   pairs that are the variables under test (differs/identical content,
   leads-with/leads-with-neither, own touch/no own touch); kept as written.
+
+assigned_to: coder
