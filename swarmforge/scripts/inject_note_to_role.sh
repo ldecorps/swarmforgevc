@@ -42,7 +42,8 @@ export SWARMFORGE_SKIP_DAEMON="${SWARMFORGE_SKIP_DAEMON:-1}"
 export SWARMFORGE_ROLE="$SENDER"
 
 ROOT="$(git rev-parse --show-toplevel 2>/dev/null || pwd)"
-DRAFT="$(mktemp "${TMPDIR:-/tmp}/swarmforge-inject.XXXXXX.handoff")"
+mkdir -p "$ROOT/tmp"
+DRAFT="$(mktemp "$ROOT/tmp/swarmforge-inject.XXXXXX.handoff")"
 trap 'rm -f "$DRAFT"' EXIT
 
 cat > "$DRAFT" <<EOF

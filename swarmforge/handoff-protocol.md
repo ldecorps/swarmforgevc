@@ -925,9 +925,12 @@ Mechanics (`handoff_draft_root_guard_lib.bb`, called from
   symlinks) before the comparison, so a relative draft argument or a
   symlinked worktree cannot slip past a naive string compare.
 - Every production draft (a worktree role's own `tmp/handoff.txt`,
-  master's `swarmforge/runtime/handoff-draft.txt`) is under its role's
-  resolved root by construction — this refuses only a fixture escape,
-  never a live send.
+  master's `swarmforge/runtime/handoff-draft.txt`, or a script sender's own
+  `<root>/tmp/` draft) is under its role's resolved root by construction —
+  this refuses only a fixture escape, never a live send. Seven
+  script-built senders drafted under `${TMPDIR:-/tmp}` / `os.tmpdir()`
+  instead and were refused once this guard landed; BL-1537 moved all seven
+  under `<root>/tmp/` to match.
 
 Refusal message names both paths, so the reader can tell at a glance which
 side is the surprising one:

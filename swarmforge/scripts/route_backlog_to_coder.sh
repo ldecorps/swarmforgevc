@@ -146,7 +146,8 @@ fi
 export SWARMFORGE_SKIP_DAEMON="${SWARMFORGE_SKIP_DAEMON:-1}"
 export SWARMFORGE_ROLE="${SWARMFORGE_ROLE:-coordinator}"
 
-DRAFT="$(mktemp "${TMPDIR:-/tmp}/swarmforge-route.XXXXXX.handoff")"
+mkdir -p "$ROOT/tmp"
+DRAFT="$(mktemp "$ROOT/tmp/swarmforge-route.XXXXXX.handoff")"
 trap 'rm -f "$DRAFT"' EXIT
 
 cat > "$DRAFT" <<EOF

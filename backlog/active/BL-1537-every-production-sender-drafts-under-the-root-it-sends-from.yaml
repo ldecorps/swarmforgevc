@@ -220,11 +220,8 @@ notes: |
     it does not touch the four scripts here. BL-1528/1529 cover ceremony
     note delivery and the audit swallowing script sends - both assume the
     draft is accepted; this ticket is the cause that predates their gate.
-  - 2026-09-12 land hold adjudicated (specifier): 5dbd34f27f's two
-    BL-1518-named paths are BL-1537's own (task 4); QA lands by the hand
-    recipe in
-    backlog/evidence/BL-1537-specifier-land-escalate-adjudication-closed-owner-20260912.md
-    and records abandoned_commits. Machinery: BL-1546 (land step),
-    BL-1547 (send gate). No rework of this ticket.
 
 assigned_to: coder
+bounce_count: 1
+bounce_history:
+  - { at: 2026-09-12, by: architect, blamed: coder, class: behavior, commit: e300226fae, evidence: backlog/evidence/BL-1537-architect-20260912-2.md }

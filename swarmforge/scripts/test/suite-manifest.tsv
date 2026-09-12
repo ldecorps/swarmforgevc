@@ -402,6 +402,7 @@ test_portable_daemon_spawn_lib.sh	standing
 test_portable_stat_lib.sh	standing		
 test_pre_merge_commit_hook.sh	standing		
 test_prepare_handoff_dirs_mailbox_split.sh	standing		
+test_production_sender_drafts_under_root.sh	standing		
 test_project_socket_id_lib.sh	standing		
 test_promote_and_route_next_no_limit_depth.sh	standing		
 test_promote_and_route_next_priority.sh	standing		

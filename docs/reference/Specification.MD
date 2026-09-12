@@ -1,5 +1,40 @@
 # SwarmForge VS Code Extension — Specification
 
+**Last Updated:** September 12, 2026 (BL-1537: BL-1518-a's `draft-root-guard!`
+(landed 2026-09-11) assumed every production draft lived under the project
+root the CLI resolves; that held for a role's own hand-written draft and
+for the three Babashka senders (`salvage_lib.bb`, `operator_handoff.bb`,
+`ceremony_handoff.bb`), which already draft under `<root>/tmp/`, but was
+false for seven other senders: `promote_and_route_next.sh`,
+`route_backlog_to_coder.sh`, `mailbox_note_to_role.sh`, and
+`inject_note_to_role.sh` built their draft with a bare `mktemp` under
+`${TMPDIR:-/tmp}`, and `closing-ceremony-run.ts`, `night-closing-ceremony-run.ts`,
+and `tracer-bullet-launcher.ts` built theirs under `os.tmpdir()`. Every one
+of the seven was refused once the guard landed — the coordinator's
+promote-then-route path (`promote_and_route_next.sh` calling
+`route_backlog_to_coder.sh`) stranded a promoted ticket with no Work note
+queued, the Article 3.6 freshness-hold note to the specifier was silently
+swallowed, and both closing-ceremony notes plus any tracer-bullet seed
+would have failed on their next run. Fixed: the four shell scripts now
+`mkdir -p "$ROOT/tmp"` and `mktemp "$ROOT/tmp/<prefix>.XXXXXX.handoff"`
+against the project root each already resolves; the three TypeScript tools
+build their draft path through a new shared pure helper,
+`extension/src/swarm/draftPathUnder.ts` (`draftPathUnder(root, prefix)` →
+`<root>/tmp/<prefix>-<pid>-<nonce>`), replacing their `os.tmpdir()` calls.
+Every sender still removes its draft on every exit path; nothing new is
+tracked (`<root>/tmp/` stays gitignored). The guard itself
+(`handoff_draft_root_guard_lib.bb`) is unchanged — the fixture-escape
+refusal is not relaxed. The false "every production draft" premise is
+corrected in the guard lib's header comment, in
+`specs/features/BL-1518-a-handoff-cli-never-writes-outside-the-root-its-draft-lives-in.feature`'s
+comment block, in `swarmforge/handoff-protocol.md`'s Draft-Root Guard
+section, and in `docs/how-to/BL-1518-handoff-draft-root-guard.md` — all now
+say the premise held for role-authored and Babashka-built drafts and that
+BL-1537 moved the remaining seven under `<root>/tmp/` to match. No new
+extension command or setting. No diagram edit — below
+handoff-flow.mmd's depicted granularity, same as the guard's own landing.
+Acceptance: `specs/features/BL-1537-every-production-sender-drafts-under-the-root-it-sends-from.feature`.)
+Prior entry —
 **Last Updated:** September 12, 2026 (BL-1544: the land step's
 `commit-ticket-id` read a commit's subject through
 `pipeline_stage_lib.bb`'s `extract-ticket-id` — single match, first token

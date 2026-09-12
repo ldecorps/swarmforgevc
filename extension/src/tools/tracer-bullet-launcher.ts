@@ -23,7 +23,6 @@
  */
 
 import * as fs from 'fs';
-import * as os from 'os';
 import * as path from 'path';
 import { execFileSync } from 'child_process';
 import {
@@ -36,6 +35,7 @@ import {
   parseFullTraceLog,
   computeTraceReport,
 } from '../swarm/tracer';
+import { draftPathUnder, removeDraftIfPresent } from '../swarm/draftPathUnder';
 
 const SWARMFORGE_DIR = path.join(process.cwd(), '.swarmforge');
 const TRACES_DIR = path.join(SWARMFORGE_DIR, 'traces');
@@ -170,15 +170,20 @@ export function buildSeedDraft(traceId: string): string {
  * and never actually enqueue anything, so `--watch` silently never started
  * the live pipeline; a human had to inject the note by hand.
  */
-function sendSeedNote(traceId: string, repoRoot: string): void {
-  const draftPath = path.join(os.tmpdir(), `tracer-bullet-seed-${traceId}.txt`);
+export function sendSeedNote(traceId: string, repoRoot: string): void {
+  const draftPath = draftPathUnder(repoRoot, `tracer-bullet-seed-${traceId}`);
+  fs.mkdirSync(path.dirname(draftPath), { recursive: true });
   fs.writeFileSync(draftPath, buildSeedDraft(traceId), 'utf-8');
-  const handoffScript = path.join(repoRoot, 'swarmforge', 'scripts', 'swarm_handoff.sh');
-  execFileSync(handoffScript, [draftPath], {
-    cwd: repoRoot,
-    env: { ...process.env, SWARMFORGE_ROLE: process.env.SWARMFORGE_ROLE || 'coordinator' },
-    stdio: 'pipe',
-  });
+  try {
+    const handoffScript = path.join(repoRoot, 'swarmforge', 'scripts', 'swarm_handoff.sh');
+    execFileSync(handoffScript, [draftPath], {
+      cwd: repoRoot,
+      env: { ...process.env, SWARMFORGE_ROLE: process.env.SWARMFORGE_ROLE || 'coordinator' },
+      stdio: 'pipe',
+    });
+  } finally {
+    removeDraftIfPresent(draftPath);
+  }
 }
 
 async function watchLive(traceId: string, maxWaitSeconds: number): Promise<void> {
