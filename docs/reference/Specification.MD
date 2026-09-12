@@ -1,5 +1,34 @@
 # SwarmForge VS Code Extension — Specification
 
+**Last Updated:** September 12, 2026 (BL-1455: a ticket re-pended for a
+second ruling now gets a fresh buttoned ask instead of staying parked on a
+decided, buttonless message. BL-1090's duplicate guard (`approvalAskRecordedOnLiveTopic`)
+answered "recorded on the live topic" as "already live", which was correct
+until BL-484's close writer (`persistClosedApprovalAskText`) started
+persisting the DECIDED message's `{topicId, messageId}` into that same
+record — so a re-pend's not-pending→pending edge was suppressed as a
+duplicate of an ask that was in fact closed, and reconcile's no-record
+branch stayed shut behind the emitted key the first, now-decided ask had
+already earned. The store now marks a record `closed: true` at close time
+(`updateApprovalAskMessageText`, `telegram-front-desk-bot.ts`); a record
+predating this fix (no `closed` field) falls back to scanning its stored
+text for BL-484's decided-verdict suffix (`approvalAskTextShowsDecidedVerdict`,
+a one-time migration signal, never the long-term predicate).
+`approvalAskRecordedOnLiveTopic` now answers "live" only for an undecided
+record, so the edge path posts the re-pend's fresh ask and overwrites the
+record — which doubles as the existing loop guard. Reconcile
+(`approvalAsksNeedingRepost`) gains a fourth case, a closed ask still on the
+live topic, that reposts unconditionally, never gated on `emittedKeys` (that
+key was earned by the first ask, not this one) — this is what heals a
+durable baseline that already lists the ticket pending. The closed message
+itself is never edited or deleted; it remains the audit trail every other
+consumer (`reconcileDecidedApprovalAskCloses`, the ghost/stale-close sweeps,
+the roster, `humanDecisionLatency`) already locates through the same record.
+No new extension command, setting, or UI change; no diagram edit — the fix
+changes the behaviour of functions the live tick already calls each cycle,
+not the front-desk routing topology `front-desk-flow.mmd` depicts. Acceptance:
+`specs/features/BL-1455-a-re-pended-ticket-posts-a-fresh-ruling-ask.feature`.)
+Prior entry —
 **Last Updated:** September 12, 2026 (BL-1529: a script-originated
 `git_handoff` — no agent present to read and resubmit — is never swallowed
 by the two-call self-audit that landed with BL-1306/44d2d42591

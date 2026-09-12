@@ -9,6 +9,7 @@ severity: high
 # parcel is already lost. Also owns two standing shell reds
 # (test_redo_from.sh, test_reroute.sh) under the 2026-09-05 register rule.
 status: todo
+abandoned_commits: [3bdaa80012ab9a9d5135bfb2e9114f7617cb46a3]
 epic: swarm-reliability
 priority: 9
 direction: swarm-reported
