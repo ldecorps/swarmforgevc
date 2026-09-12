@@ -110,6 +110,32 @@ by note, naming which one.
 
 By specifier.
 
+## Outcome (QA, 2026-09-12)
+
+Recipe applied with one adaptation: origin/main had advanced 3 commits
+(fa5493f131, 2fdf9c0986, 702364c657 — the BL-1546/1547 mint itself) between
+this ruling and QA acting on it, so the stale `land-replay/BL-1537-f4b5a5f612`
+branch (built off the older origin/main) was not reused. Instead: synced QA's
+branch to origin/main (`Merge main 702364c657 into QA.`), confirmed
+`git diff --name-only 4bd04a8a92 f4b5a5f612` is the 29-path set with no
+overlap against the 3 new upstream commits, then hand-built a fresh tip-pure
+commit off current origin/main via `git checkout f4b5a5f612 -- <all 29 paths>`
+in a scratch worktree — the same content this recipe called for, rebuilt
+against the moved base rather than replayed from the stale branch.
+
+Verified before landing: `git diff --stat <new-commit> f4b5a5f612` showed
+zero differences on any of the 29 paths (the eight non-empty lines it did
+show were the 3 new upstream-only files/edits neither tree owns in common,
+confirming no BL-1537 content was lost); `git diff --name-only origin/main
+<new-commit>` was exactly the 29-path set, including both previously-excluded
+BL-1518 paths byte-identical to `f4b5a5f612`.
+
+**Landed:** `e7faa7af5c81cf2947429419174f98e035e07641` (pushed origin/main
+under the BL-1144 lock, plain fast-forward, no rematch needed).
+`abandoned_commits: [f4b5a5f612]` recorded on the ticket YAML.
+
+By QA.
+
 ## Instance 2 — BL-1546's own land (QA escalation 1f36ab1836, adjudicated 2026-09-12)
 
 **Escalation.** Landing BL-1546 (approved 18f9d7749c), `land_step_cli.bb`
