@@ -117,11 +117,24 @@ grep -q "^commit: $HEAD10$" "$QUEUED" || fail "01-coder: coder redo must use cur
 pass "01-coder: redo from coder uses current HEAD"
 
 # ── 04: QA rejection_reason is accepted by swarm_handoff and captured ────────
+# BL-1529: a brand-new draft's first invocation always speaks the self-audit
+# challenge (Article 2.3) and now exits non-zero rather than the pre-fix
+# exit 0 - this test calls swarm_handoff.bb directly, not through
+# salvage_lib's two-call queue-handoff!, so it must speak the protocol
+# itself: the first call is expected to challenge, the identical second
+# call queues.
 mkdir -p "$ROOT/tmp"
 printf 'type: git_handoff\nto: coder\npriority: 00\ntask: %s\ncommit: %s\nrejection_reason: acceptance scenario 3 fails on empty input\n' \
   "$TASK" "$C1" > "$ROOT/tmp/reject-draft.txt"
+set +e
+FIRST_OUT="$(cd "$ROOT" && SWARMFORGE_ROLE=QA bb "$SWARM_HANDOFF" "$ROOT/tmp/reject-draft.txt" 2>&1)"
+FIRST_RC=$?
+set -e
+[[ $FIRST_RC -ne 0 ]] || fail "04: first invocation of a brand-new draft queued instead of challenging"
+grep -q "HANDOFF_NOT_QUEUED" <<< "$FIRST_OUT" \
+  || fail "04: first invocation did not print HANDOFF_NOT_QUEUED; got: $FIRST_OUT"
 (cd "$ROOT" && SWARMFORGE_ROLE=QA bb "$SWARM_HANDOFF" "$ROOT/tmp/reject-draft.txt" > /dev/null) \
-  || fail "04: swarm_handoff rejected a draft carrying rejection_reason"
+  || fail "04: swarm_handoff rejected the identical second invocation of a draft carrying rejection_reason"
 # QA's own worktree-name ("QA", not "master") keeps QA's flat, unprefixed
 # outbox layout - distinct from $OUTBOX above, which is coordinator's.
 QA_OUTBOX="$ROOT/.swarmforge/handoffs/outbox"

@@ -1,5 +1,31 @@
 # SwarmForge VS Code Extension — Specification
 
+**Last Updated:** September 12, 2026 (BL-1529: a script-originated
+`git_handoff` — no agent present to read and resubmit — is never swallowed
+by the two-call self-audit that landed with BL-1306/44d2d42591
+(2026-08-30). That challenge answered a brand-new draft's first
+`swarm_handoff.sh` invocation with `AUDIT_REQUIRED` / `HANDOFF_NOT_QUEUED`
+and fell off the end at exit 0, so `salvage_lib.bb`'s `queue-handoff!`
+(the `redo_from.bb`/`reroute.bb`/`reroute_resume.bb` salvage verbs) and
+`handoffd.bb`'s dispatch-gap `auto-route!` each read the zero exit as
+queued, logged a checkpoint/repair, and queued nothing. Fixed:
+`swarm_handoff.bb` now exits non-zero on the audit-required path (a
+challenge, a refusal, and a queue are three distinguishable outcomes to
+every caller); a new shared `handoff_lib.bb`/`queue-git-handoff!` speaks
+the two-call protocol itself — one definition, both callers use it — by
+resubmitting the identical draft once on a challenge and returning a
+queued outbox path or a failure, never a lingering challenge. No bypass
+of the audit itself (BL-1306's contract stands); notes are unaffected
+(single-call). `test_redo_from.sh` and `test_reroute.sh` are green again
+and their two `backlog/standing-reds.tsv` rows are removed in this land.
+Protocol: `swarmforge/handoff-protocol.md` (`swarm_handoff.sh`
+responsibilities) and Article 2.3 (`02_handoffs.md`) each name the
+non-zero exit. Acceptance:
+`specs/features/BL-1529-a-script-originated-git-handoff-is-never-swallowed-by-the-audit.feature`.
+No new extension command, setting, or UI change; no diagram edit — below
+handoff-flow.mmd's depicted granularity, same as the audit landing
+itself.)
+Prior entry —
 **Last Updated:** September 12, 2026 (BL-1546: `land_step_lib.bb`'s
 `own-paths` excluded a delivered path when every owner named by the
 commits that touched it was an unlanded sibling — decided on content, per

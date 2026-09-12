@@ -1652,3 +1652,49 @@
         (println (str "2) Implement " task-name " from backlog/active/ with your edit/test tools.")))
       (println "3) Commit, git_handoff to the next role, then done_with_current / ready_for_next.")
       (println "USE YOUR TOOLS NOW. Narrating or re-printing this TASK is not progress."))))
+
+;; BL-1529: the shared two-call protocol every script-originated git_handoff
+;; sender must speak. swarm_handoff.bb's own self-audit challenge (Article
+;; 2.3) answers a brand-new draft's first invocation with AUDIT_REQUIRED /
+;; HANDOFF_NOT_QUEUED and a non-zero exit, expecting the caller to resubmit
+;; the identical draft once more. An agent reading the text does that by
+;; hand; a script has no agent to read it, so salvage_lib.bb's
+;; queue-handoff! (redo_from.bb, reroute.bb, reroute_resume.bb) and
+;; handoffd.bb's auto-route! both need the identical retry-once shape - one
+;; definition here, so the rule is stated once (BL-1529's own suggestion).
+(def queued-line-pattern
+  #"(?m)^HANDOFF (?:DELIVERED|HELD \(ambulance\)|QUEUED \([^)]*\)):(.+)$")
+
+(defn classify-handoff-run
+  "Pure: given a daemon-cycle-guard-lib/sh! result map from one
+   swarm_handoff invocation, decides which of the three outcomes it was -
+   :queued (a real outbox file was written; :outbox-file names it),
+   :audit-required (the self-audit challenge fired; retry the identical
+   draft once), or :failed (anything else, :output carries the combined
+   stdout+stderr for the caller to report). Never conflates a challenge
+   with a queue or a refusal, per BL-1529's invariant."
+  [{:keys [out err]}]
+  (let [out (str out)
+        text (str out err)
+        queued-path (second (re-find queued-line-pattern out))]
+    (cond
+      queued-path {:status :queued :outbox-file (str/trim queued-path)}
+      (str/includes? text "AUDIT_REQUIRED") {:status :audit-required :output text}
+      :else {:status :failed :output text})))
+
+(defn queue-git-handoff!
+  "Runs run-once (a no-arg fn invoking swarm_handoff once and returning a
+   daemon-cycle-guard-lib/sh! result map) and, on an :audit-required first
+   call, runs it exactly once more against the same draft file - the
+   protocol's own second call, never a bypass of the audit. Returns
+   {:status :queued :outbox-file <path>} or {:status :failed :output
+   <text>}; :audit-required never escapes this function; a caller sees
+   only a queue or a failure."
+  [run-once]
+  (let [first-result (classify-handoff-run (run-once))]
+    (if (= :audit-required (:status first-result))
+      (let [second-result (classify-handoff-run (run-once))]
+        (if (= :audit-required (:status second-result))
+          {:status :failed :output (:output second-result)}
+          second-result))
+      first-result)))

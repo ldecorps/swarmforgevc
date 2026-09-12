@@ -143,7 +143,14 @@
   "Queues a fresh git_handoff at role for task/commit via swarm_handoff.sh.
    extra-headers is an optional map of additional draft header lines (e.g.
    {\"rejection_reason\" \"...\"} for redo, {\"reroute_reason\" \"...\"} for
-   reroute — both validated fields swarm_handoff.bb already allows)."
+   reroute — both validated fields swarm_handoff.bb already allows).
+   BL-1529: swarm_handoff.sh's self-audit challenges a brand-new draft's
+   first invocation (Article 2.3) - this has no agent to read the
+   challenge and resubmit, so it speaks the protocol itself via
+   handoff-lib/queue-git-handoff!, which runs the identical draft a second
+   time on that challenge before ever reporting failure. Returns the
+   queued outbox-file path (never the raw stdout - the challenge text
+   would otherwise be mistaken for a result)."
   ([root role task commit] (queue-handoff! root role task commit nil))
   ([root role task commit extra-headers]
    (let [tmp-dir (fs/path root "tmp")
@@ -157,15 +164,17 @@
                 "task: " task "\n"
                 "commit: " commit "\n"
                 extra-lines))
-     (let [result (daemon-cycle-guard-lib/sh! {:dir root
+     (let [result (handoff-lib/queue-git-handoff!
+                   (fn []
+                     (daemon-cycle-guard-lib/sh! {:dir root
                                :extra-env {"SWARMFORGE_ROLE"
                                            (or (not-empty (System/getenv "SWARMFORGE_ROLE"))
                                                "coordinator")}}
                               (str (fs/path script-dir "swarm_handoff.sh"))
-                              (str draft))]
-       (when-not (zero? (:exit result))
-         (exit! 1 (str "Failed to queue handoff:\n" (:err result))))
-       (str/trim (:out result))))))
+                              (str draft))))]
+       (if (= :queued (:status result))
+         (:outbox-file result)
+         (exit! 1 (str "Failed to queue handoff:\n" (:output result))))))))
 
 (defn log-event! [root entry]
   (spit (str (fs/path root ".swarmforge" "run-log.jsonl"))

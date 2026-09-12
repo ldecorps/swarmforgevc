@@ -55,6 +55,10 @@
 ;; session, and real delivery (the tmux-dependent half of swarm_handoff.bb)
 ;; is already covered by that script's own test suite - this harness scopes
 ;; to what BL-222/BL-1094 add, same posture as test_dispatch_gap_autoroute.sh.
+;; BL-1529: mirrors handoffd.bb's own auto-route! exactly, including the
+;; two-call self-audit protocol (handoff-lib/queue-git-handoff!) - a bare
+;; single call would now read the challenge's non-zero exit as a refusal
+;; and never exercise what this harness exists to drive.
 (defn auto-route! [item]
   (let [commit (or (head-commit-10) "")
         lines (chase-sweep-lib/dispatch-gap-draft-lines item commit)]
@@ -64,10 +68,11 @@
                        {"SWARMFORGE_ROLE" "coordinator"
                         "SWARMFORGE_SKIP_SYNC_INJECT" "1"
                         task-commit-coherence-gate-lib/dispatch-gap-autoroute-env "1"})
-            result (process/sh ["bb" swarm-handoff-script (str draft)] {:dir project-root :env env})]
-        (println "AUTO-ROUTED" (:id item) "exit=" (:exit result)
-                 (when-not (zero? (:exit result))
-                   (task-commit-coherence-gate-lib/operator-refusal-log-line (:err result))))))))
+            result (handoff-lib/queue-git-handoff!
+                    (fn [] (process/sh ["bb" swarm-handoff-script (str draft)] {:dir project-root :env env})))]
+        (println "AUTO-ROUTED" (:id item) "status=" (name (:status result))
+                 (when (= :failed (:status result))
+                   (task-commit-coherence-gate-lib/operator-refusal-log-line (:output result))))))))
 
 (defn -main []
   (let [roles (load-roles)

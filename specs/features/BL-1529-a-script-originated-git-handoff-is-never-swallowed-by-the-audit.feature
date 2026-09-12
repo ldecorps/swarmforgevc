@@ -1,3 +1,8 @@
+# mutation-stamp: sha256=200aab4b331f8d91562900a0aa81028b97c5ac11c08d5e639164f05370a1a864
+# acceptance-mutation-manifest-begin
+# {"version":1,"tested_at":"2026-09-12T19:29:18.574502083Z","feature_name":"BL-1529 A script-originated git_handoff is never swallowed by the audit","feature_path":"/home/carillon/swarmforgevc/.worktrees/hardender/specs/features/BL-1529-a-script-originated-git-handoff-is-never-swallowed-by-the-audit.feature","background_hash":"2d4e152dd4e3b2b309fc933d8e682bdb1d9ef085640f4ca3acd5f48e3cddac2d","implementation_hash":"unknown","scenarios":[{"index":0,"name":"a salvage verb queues a real handoff under the two-call audit","scenario_hash":"8f9c13a4a4e6f245d5208a757ca0efc031dfc5f753e5b1399ffc0bb4ce3102e6","mutation_count":4,"result":{"Total":4,"Killed":4,"Survived":0,"Errors":0},"tested_at":"2026-09-12T19:29:18.574502083Z"}]}
+# acceptance-mutation-manifest-end
+
 Feature: BL-1529 A script-originated git_handoff is never swallowed by the audit
 
   swarm_handoff.sh answers the first invocation of a git_handoff draft with

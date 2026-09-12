@@ -2248,12 +2248,19 @@
             env (merge (into {} (System/getenv))
                        {"SWARMFORGE_ROLE" "coordinator"
                         task-commit-coherence-gate-lib/dispatch-gap-autoroute-env "1"})
-            result (daemon-cycle-guard-lib/sh! ["bb" (swarm-handoff-script) (str draft)] {:dir (str project-root) :env env})]
-        (if (zero? (:exit result))
+            ;; BL-1529: same two-call self-audit protocol every
+            ;; script-originated git_handoff sender must speak
+            ;; (handoff-lib/queue-git-handoff!) - a bare single sh! call
+            ;; read the challenge's zero exit as success and logged a
+            ;; repair for a ticket that received nothing.
+            result (handoff-lib/queue-git-handoff!
+                    (fn []
+                      (daemon-cycle-guard-lib/sh! ["bb" (swarm-handoff-script) (str draft)] {:dir (str project-root) :env env})))]
+        (if (= :queued (:status result))
           (log! "dispatch-gap-autoroute" (:id item) (:assigned-to item)
                 (if (str/blank? commit) "note-fallback" "git_handoff"))
           (log! "dispatch-gap-autoroute-error" (:id item) (:assigned-to item)
-                (task-commit-coherence-gate-lib/operator-refusal-log-line (:err result))))))))
+                (task-commit-coherence-gate-lib/operator-refusal-log-line (:output result))))))))
 
 (defn dispatch-gap-sweep! [roles]
   (doseq [item (chase-sweep-lib/dispatch-gap-items (active-backlog-dir) (dispatch-gap-scan-dirs roles))]
