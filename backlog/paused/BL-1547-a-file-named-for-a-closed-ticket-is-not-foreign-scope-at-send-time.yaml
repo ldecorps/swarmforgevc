@@ -1,0 +1,155 @@
+id: BL-1547
+title: "The send-time task-scope gate refuses a task-tagged commit touching a docs/how-to, specs/features or backlog file whose basename names a ticket already CLOSED on origin/main, so the only subject that passes drops the sender's own id - and the land step then credits the commit to the closed ticket and drops the path (BL-1537's 5dbd34f27f); a file named for a closed ticket is not foreign scope"
+milestone: M8
+type: defect
+severity: medium
+# medium: real and recurring (every doc/feature maintenance edit on a
+# shipped ticket's file hits it), but contained - the refusal is loud and
+# names the path; the silent half is BL-1546's. Together they make the
+# compliant subject shape ("lead with your own id", documenter.prompt
+# BL-1544 rule) impossible today, which is why both are minted.
+status: todo
+epic: swarm-reliability
+priority: 6
+direction: swarm-reported
+depends_on: []
+mutation_cost: medium
+# medium: one positive read (basename ticket closed on the freshest ref)
+# in task_scope_gate_lib.bb's foreign-scope decision, plus
+# task_scope_gate_lib_test_runner.bb fixtures filing the foreign ticket
+# under backlog/done/ on the fixture origin.
+slice_size_envelope: small
+required_stages: [coder, cleaner, architect, hardender, documenter, qa]
+
+acceptance: specs/features/BL-1547-a-file-named-for-a-closed-ticket-is-not-foreign-scope-at-send-time.feature
+
+required_wiring:
+  - 'specs/pipeline/steps/bl1547ClosedTicketFileIsNotForeignSteps.js::registerSteps::the handler lands in the same parcel as the feature (BL-233)'
+
+human_approval: pending
+approval_context: >
+  A new feature file is authored here, so it needs a tap. No choice is
+  posed and there are no ruling_options. What is FIRM: a changed path
+  whose basename names a ticket whose YAML is filed under backlog/done/ on
+  the freshest of main/origin-main (BL-891 - compared, never trusted) is
+  not a foreign-scope finding for a task-tagged commit; a basename naming
+  a ticket under active/, paused/ or hold/, or one whose file cannot be
+  found at all, is refused exactly as today (fail-closed on the refusing
+  side, as BL-1192 chose). The documenter then leads such a commit with
+  its own ticket id, as documenter.prompt already instructs.
+
+invariants:
+  - "A foreign-scope finding names a ticket that is OPEN: its YAML read under backlog/active, paused or hold on the freshest ref, or not found at all. A basename whose ticket is read under backlog/done on that ref is never a finding."
+
+description: |
+  ## What is wrong
+
+  `task_scope_gate_lib.bb` (BL-1192) `ticket-id-for-path` maps a changed
+  path under `backlog/**`, `specs/features/**` or `docs/how-to/**` to the
+  id in its own basename, and `foreign-scope-findings` refuses a
+  `git_handoff` whose task-tagged commits touch a path mapped to any id
+  other than the task's (own evidence paths and the declared `acceptance:`
+  path excepted, BL-1276). It never asks whether that ticket is still
+  open. But a closed ticket's how-to, feature narrative and YAML are
+  maintained by whoever later changes the behaviour they describe -
+  BL-1006 makes the successor retire a sibling feature's boundary
+  scenarios; BL-1544 tells the documenter to name such a file AFTER its
+  own leading id. Today that instruction is refused at send time, and the
+  workaround that passes - a subject naming no ticket id, or naming only
+  the file's ticket - is exactly what the land step then credits to the
+  closed ticket and silently drops (BL-1546; BL-1537's 5dbd34f27f on
+  2026-09-12, documenter evidence ed9bcc56ce: "Split the doc fix into two
+  commits per the task-scope gate (BL-1192)"). BL-1544's own constraints
+  said docs/how-to is task-scope exempt at send time; it is not, and this
+  ticket corrects that record.
+
+  ## What is wanted
+
+  A changed path whose basename names a ticket that is CLOSED - its YAML
+  found under `backlog/done/` (nested by milestone) on the freshest of
+  main/origin-main, and under no other folder there - is not a foreign
+  finding for a task-tagged commit (scenario 01), so a subject leading
+  with the task's own id can touch a shipped ticket's how-to or feature.
+  A basename naming a ticket under `backlog/active/`, `paused/` or `hold/`
+  on that ref is refused exactly as today (scenario 02); one whose YAML is
+  found in no folder is refused as today too - absence is not closure
+  (scenario 03). The refusal message for an open ticket is unchanged.
+
+  ## How (direction, not mandate)
+
+  - Closure is a POSITIVE read from the freshest ref, never the sender's
+    working tree (BL-992 / BL-891: a role merges main only at hop
+    boundaries; either of main/origin-main may be the stale one).
+    `landed_ticket_lib.bb` already resolves the freshest ref for this
+    gate's acceptance-path read and `pre_qa_gate_gather_lib.bb`
+    `find-ticket-yaml-content` already locates a ticket's YAML across
+    folders - extend one of those readers to answer "which folder", never
+    a third ref-freshness walk. `backlog/done/` nests by milestone
+    (`backlog/done/M8/BL-....yaml`); list recursively, as
+    land_step_lib.bb's `main-ticket-sources` does.
+  - `foreign-scope-findings` stays pure: pass it the set of closed ids (or
+    a `closed?` predicate) the way `declared` is passed today, so the
+    BL-654-style property target keeps no git inside it.
+  - `task_scope_gate_lib_test_runner.bb` gains a section whose fixture
+    origin files the foreign ticket under `backlog/done/M8/`, and the
+    open/absent shapes beside it; mkdtemp with its own origin (BL-1390).
+  - Documenter: `docs/how-to/BL-1192-pre-handoff-task-scope-gate.md` gains
+    the closed-ticket exemption beside the BL-1276 one; the BL-1241 how-to
+    already carries BL-1546's half.
+
+constraints: >
+  Fixture repositories under mkdtemp with their own origin (BL-1390). No
+  change to the land step (BL-1546 owns it), to `extract-ticket-id`
+  (BL-897), to the BL-1276 acceptance-path exemption, or to the revert
+  transparency rule (BL-1295/BL-1472). Fail-closed on the refusing side:
+  an unreadable ref, an unreadable folder listing, or a ticket found in
+  two folders is NOT closed. The step handler lands with the feature
+  (BL-233; discovered from its own file, BL-1371). No hand-edited mutation
+  manifests.
+
+out_of_scope: |
+  - The land step's treatment of a closed owner (BL-1546).
+  - Widening the exemption to hold/ or paused/ tickets, or to a ticket
+    merely mentioned in a subject - basename only, closed only.
+  - Retiring the interim documenter.prompt sentence landed with this mint
+    (name NO ticket id in such a subject until this lands) - the
+    documenter retires it in THIS parcel, since the rule it replaces is
+    this ticket's deliverable.
+
+qa_e2e_procedure: >
+  (1) `bb swarmforge/scripts/test/task_scope_gate_lib_test_runner.bb`
+  green with the new section; `bb swarmforge/scripts/test/task_scope_gate_acceptance_exemption_property_runner.bb`
+  still green. (2) Scratch clone with its own origin: file ticket X under
+  backlog/done/M8/ on origin/main, add docs/how-to/X-....md there; on a
+  role branch commit an edit to that how-to under a subject leading with
+  the task's id and send a git_handoff draft through swarm_handoff.sh:
+  accepted, no foreign-scope refusal. Move X's YAML to backlog/active/ on
+  origin/main, repeat: refused naming the path and X, as before this
+  ticket. Delete X's YAML entirely, repeat: refused. (3)
+  `node specs/pipeline/cli.js specs/features/BL-1547-...feature` passes.
+  (4) BL-1192, BL-1276, BL-1295 features stay green. (5) The interim
+  documenter.prompt sentence is gone from origin/main after this land.
+
+source: |
+  QA note to the specifier, priority 00, 2026-09-12T10:20Z: "BL-1537 land:
+  BL-1518 single-id misattrib drops doc content, ev 65ae4fd1e2";
+  documenter evidence ed9bcc56ce (the two-commit split). Adjudication:
+  `backlog/evidence/BL-1537-specifier-land-escalate-adjudication-closed-owner-20260912.md`.
+
+notes: |
+  Minted 2026-09-12 by the specifier on QA's note, the same pass, as the
+  send-side companion of BL-1546. Grepped first: BL-1276 (done) exempts
+  only the declared acceptance path; BL-1295/BL-1472 (done) revert
+  transparency; no open ticket names closed/done tickets at the send gate.
+  Independent of BL-1546: each is gateable alone; with both landed the
+  documenter leads with its own id and neither rule fires.
+
+  Landed with this mint (BL-798 rule, prose the specifier owns): an
+  interim sentence in `swarmforge/roles/documenter.prompt`'s BL-1544
+  commit-subject rule - until this ticket lands, a file named for a CLOSED
+  ticket is committed under a subject naming NO ticket id at all, never
+  the file's ticket, with the ticket named in the body. Commit named in
+  the mint commit body. This parcel's documenter retires that sentence.
+
+  IR-DRY on the feature: findings are the variables under test (done /
+  active / absent); kept as written.
