@@ -106,6 +106,30 @@
   [lines]
   (last (pipeline-roles lines)))
 
+(defn bounce-recipient?
+  "BL-1536: true when recipient sits earlier than sender in pipeline-roles
+   order - the git_handoff is addressed backward through the pipeline (a
+   bounce). A recipient absent from pipeline-roles (the coordinator, a
+   master-resident row) is never earlier, whatever the sender's seat."
+  [roles sender recipient]
+  (let [sender-idx (.indexOf roles sender)
+        recipient-idx (.indexOf roles recipient)]
+    (and (not (neg? sender-idx))
+         (not (neg? recipient-idx))
+         (< recipient-idx sender-idx))))
+
+(defn terminal-forward?
+  "BL-1536: true when a git_handoff from sender to recipients should carry
+   the terminal non-forwarding stamp - sender is the last pipeline role AND
+   none of recipients is a bounce target. The stamp follows the hop's
+   DIRECTION, not the sender's seat alone: any earlier recipient in a
+   multi-recipient to: makes the whole parcel a bounce, so it is never
+   stamped even when the sender is the last pipeline role."
+  [lines sender recipients]
+  (let [roles (pipeline-roles lines)]
+    (and (= sender (last roles))
+         (not-any? #(bounce-recipient? roles sender %) recipients))))
+
 (defn reverse-recipients
   "Roles that receive a non-forwarding reverse copy of sender's git_handoff.
    back-one is the immediately preceding code-worktree role; back-all is
