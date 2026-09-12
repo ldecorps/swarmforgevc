@@ -484,6 +484,54 @@
            :departing-parcel? true :departing-working? true
            :last-rotate-at-ms 0 :now-ms 100000 :cooldown-ms 30000}))
 
+;; Hotfix 2026-09-12: ephemeral consult sessions (consult-eligible?).
+(assert-true "consult: eligible on a plain departing-mid-parcel refusal"
+             (mono-router-lib/consult-eligible?
+              {:gate :departing-mid-parcel :target-role "specifier"
+               :departing-role "QA" :target-session "swarmforge-specifier"
+               :resident-session "swarmforge-coder"
+               :consult-already-active? false}))
+(assert-true "consult: not eligible off the mid-parcel gate"
+             (not (mono-router-lib/consult-eligible?
+                   {:gate :busy :target-role "specifier" :departing-role "QA"
+                    :target-session "swarmforge-specifier"
+                    :resident-session "swarmforge-coder"
+                    :consult-already-active? false})))
+(assert-true "consult: not eligible for :cooldown or :already-active gates either"
+             (and (not (mono-router-lib/consult-eligible?
+                        {:gate :cooldown :target-role "specifier" :departing-role "QA"
+                         :target-session "swarmforge-specifier"
+                         :resident-session "swarmforge-coder"
+                         :consult-already-active? false}))
+                  (not (mono-router-lib/consult-eligible?
+                        {:gate :already-active :target-role "specifier" :departing-role "QA"
+                         :target-session "swarmforge-specifier"
+                         :resident-session "swarmforge-coder"
+                         :consult-already-active? false}))))
+(assert-true "consult: not eligible targeting the departing role itself"
+             (not (mono-router-lib/consult-eligible?
+                   {:gate :departing-mid-parcel :target-role "QA" :departing-role "QA"
+                    :target-session "swarmforge-QA" :resident-session "swarmforge-coder"
+                    :consult-already-active? false})))
+(assert-true "consult: not eligible with no distinct roles.tsv session for the target"
+             (not (mono-router-lib/consult-eligible?
+                   {:gate :departing-mid-parcel :target-role "specifier"
+                    :departing-role "QA" :target-session nil
+                    :resident-session "swarmforge-coder"
+                    :consult-already-active? false})))
+(assert-true "consult: not eligible when the target's own session IS the resident's"
+             (not (mono-router-lib/consult-eligible?
+                   {:gate :departing-mid-parcel :target-role "specifier"
+                    :departing-role "QA" :target-session "swarmforge-coder"
+                    :resident-session "swarmforge-coder"
+                    :consult-already-active? false})))
+(assert-true "consult: dedupe - not eligible while a consult session is already active"
+             (not (mono-router-lib/consult-eligible?
+                   {:gate :departing-mid-parcel :target-role "specifier"
+                    :departing-role "QA" :target-session "swarmforge-specifier"
+                    :resident-session "swarmforge-coder"
+                    :consult-already-active? true})))
+
 (assert-true "non-home role with mail stays put"
              (not (mono-router-lib/rotate-home?
                    {:rotation-router? true :role "cleaner" :home-role "coder"

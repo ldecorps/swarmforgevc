@@ -516,6 +516,28 @@
            (< (- now-ms last-rotate-at-ms) cooldown)) :cooldown
       :else :rotate)))
 
+;; Hotfix 2026-09-12: ephemeral consult sessions. A :departing-mid-parcel
+;; refusal above correctly keeps the resident on its own unfinished parcel,
+;; but it also leaves the target role's mail (often a direct question FROM
+;; the departing role, e.g. QA asking specifier to adjudicate) stuck with no
+;; live pane to answer it until the resident happens to go idle later - the
+;; deadlock the operator was asked to fix. consult-eligible? is the pure gate
+;; for the alternative: spin up target-role's OWN roles.tsv session
+;; (untouched by the resident) just long enough to answer, then tear it down
+;; (see handoffd.bb's spawn-consult-session!/consult-teardown-sweep!). Only
+;; fires on that exact refusal, never for :busy/:cooldown/:already-active -
+;; those already resolve on their own without a second session.
+(defn consult-eligible?
+  [{:keys [gate target-role departing-role target-session resident-session
+           consult-already-active?]}]
+  (boolean
+   (and (= gate :departing-mid-parcel)
+        target-role
+        (not= (str target-role) (str departing-role))
+        target-session
+        (not= (str target-session) (str resident-session))
+        (not consult-already-active?))))
+
 ;; Hotfix 2026-08-31: seated-preferred yield (QA hold / specifier note deadlock).
 ;; BL-795 redirect recovers when preferred is NOT seated. When preferred IS
 ;; already the live resident (idle with in_process held), redirect loops into
