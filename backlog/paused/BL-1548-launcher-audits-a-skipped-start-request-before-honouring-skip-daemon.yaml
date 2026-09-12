@@ -1,0 +1,206 @@
+id: BL-1548
+title: "start_handoff_daemon.sh honours SWARMFORGE_SKIP_DAEMON=1 before its audit machinery exists, so a skipped start request leaves no line in daemon-start-audit.log and the line's own SKIP_DAEMON= field can only ever read empty; audit the invocation first, then skip (still starting nothing, still not re-arming the stopped marker), and add the drift wiring test's case 05 proving the drift-repair bounce reached the launcher"
+milestone: M8
+type: defect
+severity: medium
+# medium: real but contained. The audit log is the launcher chokepoint's
+# ledger and its invocation line carries a `SKIP_DAEMON=` field that is
+# dead by construction - the =1 branch exits at line 32-35 before the
+# field is written at line 48. A start request refused by the skip flag is
+# invisible after the fact (postmortems read this log; a supervisor-chain
+# relaunch under an inherited SKIP=1 would look like it never happened),
+# and BL-1543's mint tripped on exactly that invisibility. No live fault,
+# no data loss, no safety signal broken: not high.
+status: todo
+epic: swarm-reliability
+priority: 6
+direction: swarm-reported
+depends_on: [BL-1543]
+# BL-1543 (active) re-tenses the same test file to four cases; this ticket
+# adds its case 05. Shared path, so this waits for BL-1543 to land.
+mutation_cost: low
+# low: a few shell lines reordered in the launcher plus one case in one
+# shell test. Shell has no mutation/CRAP/DRY wired (BL-472); the hardener
+# gates on the launcher's own tests, the wiring test, and the acceptance
+# handler, and records the fallback.
+slice_size_envelope: low
+required_stages: [coder, cleaner, architect, hardender, documenter, qa]
+
+acceptance: specs/features/BL-1548-the-launcher-audits-a-skipped-start-request.feature
+
+# No consumer anchor (BL-1235): the launcher IS the live consumer and the
+# reorder is inside it; a pattern on its existing audit literal matches
+# before and after the fix and gates nothing. The handler anchor is for
+# BL-233 only (feature and handler land in the same parcel).
+required_wiring:
+  - 'specs/pipeline/steps/bl1548LauncherAuditsSkippedStartSteps.js::registerSteps::the handler lands in the same parcel as the feature (BL-233)'
+
+human_approval: pending
+approval_context: >
+  A new feature file is authored and one production script changes, so it
+  needs a tap. No choice is posed and there are no ruling_options. FIRM: under
+  SWARMFORGE_SKIP_DAEMON=1 the launcher still starts nothing and still exits
+  0, and it still does NOT clear the freshness stopped marker (a skipped start
+  must not re-arm watching, BL-785) - only the audit line moves ahead of the
+  skip check. FIRM: the drift wiring test keeps SWARMFORGE_SKIP_DAEMON=1
+  exported and observes the bounce through the audit line only, never by
+  letting a second daemon start (this is the audit-line half of BL-1543's
+  approved FIRM sentence, moved here because the line did not exist when
+  BL-1543 was minted). The one new side effect - `.swarmforge/daemon/` is
+  created under the skip flag so the log has somewhere to go - is gitignored
+  runtime state; say if that is not acceptable.
+
+invariants:
+  - "Every invocation of start_handoff_daemon.sh <root> that gets past argument parsing appends exactly one `start_handoff_daemon invoked root=<root>` line to <root>/.swarmforge/daemon/daemon-start-audit.log, whether or not SWARMFORGE_SKIP_DAEMON=1 is set."
+  - "Under SWARMFORGE_SKIP_DAEMON=1 the launcher mutates nothing under <root> except creating .swarmforge/daemon/ and appending to that audit log: no pid file, no handoffd.log, no stopped marker cleared, no process started."
+
+description: |
+  ## What is wrong
+
+  `swarmforge/scripts/start_handoff_daemon.sh` is the one start owner for
+  handoffd + supervisor and keeps a ledger of every start request at
+  `<root>/.swarmforge/daemon/daemon-start-audit.log`:
+
+  ```
+  start_handoff_daemon invoked root=<root> pid=<pid> SKIP_DAEMON=<value> caller=<caller>
+  ```
+
+  The line has a `SKIP_DAEMON=` field, so a skipped invocation was meant to
+  be ledgered. It never is: the skip branch (lines 32-35) prints "Skipping
+  handoff daemon (SWARMFORGE_SKIP_DAEMON=1)." to stdout and `exit 0`s before
+  `AUDIT_LOG` is defined (line 42) or the line is written (line 48). Verified
+  2026-09-12 by the coder (BL-1543 parcel):
+
+  ```
+  $ SWARMFORGE_SKIP_DAEMON=1 bash swarmforge/scripts/start_handoff_daemon.sh /tmp/skiptest
+  Skipping handoff daemon (SWARMFORGE_SKIP_DAEMON=1).
+  $ cat /tmp/skiptest/.swarmforge/daemon/daemon-start-audit.log
+  cat: ... No such file or directory
+  ```
+
+  So the field can only ever read empty, and a start request refused by the
+  flag is invisible after the fact: `collect_daemon_postmortem.sh` tails this
+  log, and a supervisor-chain relaunch inheriting SKIP=1 would leave no trace.
+  BL-1543 is the case that surfaced it: its mint assumed the audit line was
+  written before the skip and specced the drift wiring test's case 05 - "the
+  daemon's drift-repair bounce reached the launcher" - on that line. The
+  daemon's bounce thread (`handoffd.bb`
+  `defer-handoffd-bounce-after-drift-repair!`) runs the launcher through
+  `daemon-cycle-guard-lib/sh!` with `:out :string` and logs nothing on
+  success, so under the skip flag the bounce leaves no observable anywhere,
+  and the case was dropped from BL-1543 (amended 2026-09-12).
+
+  Evidence: `backlog/evidence/BL-1543-coder-spec-gap-skip-daemon-audit-ordering-20260912.md`
+  (coder), `backlog/evidence/BL-1543-specifier-spec-gap-adjudication-20260912.md`.
+
+  ## What is wanted
+
+  1. The launcher audits first, then skips. Under `SWARMFORGE_SKIP_DAEMON=1`
+     an invocation against `<root>` creates `<root>/.swarmforge/daemon/`,
+     appends the `start_handoff_daemon invoked root=<root> ... SKIP_DAEMON=1
+     ...` line, prints the existing "Skipping handoff daemon" line, and
+     exits 0 having started nothing (no handoffd, no supervisor, no pid
+     file, no `handoffd.log`) and having left a pre-existing freshness
+     stopped marker (`.swarmforge/daemon/freshness-stopped/handoffd.stopped`,
+     BL-785) in place - `freshness_clear_stopped` stays AFTER the skip
+     check, because a skipped start must not re-arm watching (scenario 01).
+     Without the flag, behaviour is byte-for-byte what it is today
+     (scenario 02 pins the ordering: the audit line still precedes the
+     operator-env-file audit lines).
+  2. The drift wiring test
+     (`swarmforge/scripts/test/test_handoffd_master_checkout_drift_wiring.sh`,
+     four cases after BL-1543) gains case 05: in the first fixture (durable
+     drift, restored), after the RESTORED line and at least ~3 s for the
+     deferred bounce, `<fixture root>/.swarmforge/daemon/daemon-start-audit.log`
+     carries `start_handoff_daemon invoked root=<fixture root>` with
+     `SKIP_DAEMON=1`, and nothing was started (no second daemon, no
+     supervisor: `pgrep -af <fixture root>` shows only the test's own daemon
+     while it runs, nothing after). The test prints `PASS: 05: ...` and
+     reports five cases (scenario 03). BL-1543's leak invariant is unchanged
+     and still gates this test.
+  3. Documenter: `docs/how-to/BL-1139-master-checkout-drift-auto-repair.md`
+     names the audit line as the observable of the deferred bounce, and any
+     how-to describing the launcher's skip path (grep `SWARMFORGE_SKIP_DAEMON`
+     under `docs/`) says a skipped request is now ledgered. No registered
+     diagram depicts the launcher's internal ordering.
+
+  ## How (direction, not mandate)
+
+  Move `mkdir -p "$DAEMON_DIR"`, the `AUDIT_LOG=` assignment, the `audit()`
+  definition and the first `audit "start_handoff_daemon invoked ..."` call
+  ABOVE the `SWARMFORGE_SKIP_DAEMON` check; keep `freshness_clear_stopped`
+  and everything else BELOW it. Consider a second line `audit "skipping:
+  SWARMFORGE_SKIP_DAEMON=1"` before the exit so the ledger states the
+  outcome, not only the field. Before touching the file, grep the shell
+  suite for any test asserting that `.swarmforge/daemon/` or the audit log
+  is ABSENT after a skipped launch (none found at mint: `grep -rln
+  'daemon-start-audit' swarmforge/scripts/test/` lists
+  `test_swarm_ensure.sh`, `test_bl976_launch_sources_operator_env.sh`,
+  `test_daemon_heartbeat_portable_stat.sh` and two property runners, all
+  asserting presence) and re-run each. For case 05, BL-1543's ticket "How"
+  already tells the test to hold the first fixture's daemon ~3 s past the
+  RESTORED line before touching the stop marker; the case is then one grep
+  on the audit log plus the existing leak check. The acceptance handler
+  reuses BL-1543's `the standing suite runs`, `the run exits zero` and
+  `the run reports exactly N passed cases` steps and adds the launcher
+  fixture steps.
+
+constraints: >
+  `handoffd.bb` and `master_checkout_drift_lib.bb` are not edited (the bounce
+  thread's silence on success is fine once the launcher ledgers the request).
+  The launcher's non-skip path does not change order or content. The wiring
+  test still boots the REAL handoffd.bb and the REAL launcher; case 05
+  asserts an observable of the daemon process (the audit line the daemon's
+  bounce produced), never a lib return value. Waits for BL-1543 to land
+  (shared test file).
+
+out_of_scope: |
+  - Making the daemon's bounce thread log its launcher invocation
+    (`log!` on success) - a second observable for the same event; the
+    launcher's ledger is the chokepoint and is enough.
+  - Any change to what the daemon does on drift (BL-1139).
+  - The standing shell suite's gating gap (BL-1524/BL-1526 record it).
+
+qa_e2e_procedure: |
+  1. Acceptance resolving all three scenarios of the feature file.
+  2. In a mktemp root with `.swarmforge/daemon/freshness-stopped/handoffd.stopped`
+     pre-placed: `SWARMFORGE_SKIP_DAEMON=1 bash swarmforge/scripts/start_handoff_daemon.sh <root>`
+     exits 0, prints the Skipping line, `<root>/.swarmforge/daemon/daemon-start-audit.log`
+     has exactly one `start_handoff_daemon invoked root=<root>` line and it
+     contains `SKIP_DAEMON=1`, the stopped marker still exists, no
+     `handoffd.pid`/`handoffd.log` exists, and `pgrep -af <root>` is empty.
+  3. `bash swarmforge/scripts/test/test_handoffd_master_checkout_drift_wiring.sh`
+     exits 0 with five `PASS: 0N:` lines; afterwards `pgrep -af <printed
+     fixture root>` is empty and the root is gone.
+  4. Negative control on the ORDERING (safe, no daemon): in a scratch copy
+     of the launcher, move the invocation `audit` call back below the skip
+     check and confirm scenario 01 / step 2 fails on the missing line.
+     Never run the wiring test with the SKIP export dropped (BL-1543 step 4).
+  5. `bash swarmforge/scripts/test/test_bl976_launch_sources_operator_env.sh`
+     and `test_swarm_ensure.sh` still pass (they read the same log).
+
+source: |
+  Coder spec-gap note on BL-1543, 2026-09-12 16:21Z (priority 00), evidence
+  `backlog/evidence/BL-1543-coder-spec-gap-skip-daemon-audit-ordering-20260912.md`
+  (coder worktree 820215c1e8). Split out of BL-1543 by the specifier the
+  same pass; BL-1543 keeps four cases and stays test-only.
+
+notes: |
+  - Minted 2026-09-12 by the specifier as the 1:N split of BL-1543's
+    spec-gap: the case-05 half needs a production edit to a file BL-1543's
+    approval marked out of scope, so it rides its own approval here
+    rather than re-pending BL-1543 (BL-1455: a re-pend posts no fresh ask).
+  - Human sentence preserved from BL-1543's approved context: "the test
+    must leave no process rooted in its fixture behind, so the daemon's
+    deferred bounce is observed through the launcher's audit line under
+    SWARMFORGE_SKIP_DAEMON=1, never by letting a second daemon start."
+  - IR-DRY at mint: two near-duplicates folded into parameterised steps
+    (the SKIP_DAEMON value "1" / "" - empty and unset are the same to the
+    launcher's `${SWARMFORGE_SKIP_DAEMON:-} == 1` test). Two
+    `possible-synonym` findings kept apart on purpose: scenario 03's Given
+    names the subject and its When runs it (same pair as BL-1543); scenario
+    01's Given places the stopped marker and its Then asserts it survived.
+  - INVEST: Independent (depends_on names BL-1543, active and expected to
+    land first; nothing unbuilt is bundled), Small (a reorder of ~6 shell
+    lines + one test case), Testable (three scenarios, each an observable
+    file/process state).

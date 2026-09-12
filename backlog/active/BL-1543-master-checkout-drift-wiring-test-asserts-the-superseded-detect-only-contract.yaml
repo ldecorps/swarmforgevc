@@ -39,6 +39,12 @@ approval_context: >
   its fixture behind, so the daemon's deferred bounce is observed through the
   launcher's audit line under SWARMFORGE_SKIP_DAEMON=1, never by letting a
   second daemon start.
+  (Specifier amendment 2026-09-12, after approval: the audit-line half of
+  that last FIRM sentence was a false premise of the mint - the launcher
+  writes no audit line under the skip flag - and moves to BL-1548 unchanged
+  in intent; the "never by letting a second daemon start" half stays FIRM
+  here and is what the leak invariant gates. Nothing else the human approved
+  changes; no re-pend, per BL-1455.)
 
 invariants:
   - "After the test exits, no process whose command line names its fixture root exists - the daemon it spawned, the launcher its repair bounced, and anything they started are all gone (pgrep -af <root> empty)."
@@ -96,11 +102,19 @@ description: |
     flight) and the same edit is present, the outbox carries a `MASTER
     CHECKOUT DRIFT:` line naming the path and stating the running code is
     not the landed code (`not the code`), and the file is STILL modified -
-    BL-839's stakes assertion survives here, where it is still true;
-  - case 05: the repair's bounce reached the launcher chokepoint: the
-    fixture's `.swarmforge/daemon/daemon-start-audit.log` carries
-    `start_handoff_daemon invoked root=<fixture root>` with `SKIP_DAEMON=1`,
-    and nothing was started (no second daemon, no supervisor).
+    BL-839's stakes assertion survives here, where it is still true.
+  - (Amended 2026-09-12, coder spec-gap note.) There is NO case 05 in this
+    parcel. The mint's case 05 asserted a launcher audit line under
+    `SWARMFORGE_SKIP_DAEMON=1`; that line does not exist - the launcher's
+    skip branch (`start_handoff_daemon.sh` lines 32-35) exits before
+    `AUDIT_LOG` is defined (line 42) or written (line 48), and the daemon's
+    bounce thread captures the launcher's stdout (`daemon-cycle-guard-lib/sh!`
+    is `:out :string`) and logs nothing on success. Under the skip flag the
+    bounce leaves no trace anywhere a test can read. Proving "the bounce
+    reached the launcher" is BL-1548's deliverable (launcher audits the
+    invocation BEFORE honouring the skip flag, then adds case 05 to this
+    test). This parcel proves only that the bounce started NOTHING - the
+    leak invariant below and scenario 02 - which is the real hazard.
   - The test prints its fixture root(s) on stdout (`fixture root: <path>`)
     so the acceptance handler can check the leak invariant (scenario 02).
   - Documenter: no registered diagram depicts this test; `docs/` change, if
@@ -116,10 +130,18 @@ description: |
   `SWARMFORGE_ALLOW_TMP_DAEMON=1`, poll the outbox, touch
   `.swarmforge/daemon/stop`, wait). Export `SWARMFORGE_SKIP_DAEMON=1` for the
   whole test: `handoffd.bb` never reads it (so the test's own daemon is
-  unaffected) while `start_handoff_daemon.sh` writes its audit line and then
-  exits 0 without starting anything (lines 32-48). The bounce thread sleeps
-  2 s before running the launcher, so poll for the audit line (a few seconds)
-  BEFORE touching the stop marker, or the daemon may exit with the thread.
+  unaffected) while `start_handoff_daemon.sh` prints "Skipping handoff
+  daemon" and exits 0 WITHOUT starting anything and WITHOUT writing any
+  audit line (lines 32-35 run before the audit machinery at 42-48; corrected
+  2026-09-12). The export is not optional: without it the deferred bounce
+  starts a real handoffd + supervisor rooted in the fixture, which is the
+  leaked-fixture-daemon shape babysitterd has mistaken for the live daemon.
+  The bounce thread sleeps 2 s before running the launcher; give the first
+  fixture's daemon at least ~3 s after the RESTORED line appears BEFORE
+  touching the stop marker, so the thread runs to completion inside the
+  test's lifetime rather than after `rm -rf $ROOT` (the launcher would then
+  be invoked against a deleted root - harmless under the skip flag, but the
+  leak check must observe the settled state, not a thread still sleeping).
   The RESTORED note rides `flow-watchdog-emit-alarm!` into the same
   `telegram-reply-outbox.jsonl` the test already parses (`threadId`
   `OPERATOR`). For case 04, `touch "$ROOT2/.git/index.lock"` before starting
@@ -154,18 +176,19 @@ out_of_scope: |
 qa_e2e_procedure: |
   1. Acceptance resolving both scenarios of the feature file.
   2. `bash swarmforge/scripts/test/test_handoffd_master_checkout_drift_wiring.sh`
-     exits 0 and prints five `PASS: 0N:` lines and the ALL TESTS PASSED
+     exits 0 and prints four `PASS: 0N:` lines and the ALL TESTS PASSED
      line; total wall time under two minutes.
   3. Read the fixture outbox for the first fixture (print it in the test or
      rerun with `set -x`): exactly one line with `MASTER CHECKOUT DRIFT`,
      and it is the RESTORED line naming the supervisor script.
-  4. Negative control: in a scratch copy of the test, drop the
-     `SWARMFORGE_SKIP_DAEMON=1` export and confirm case 05 fails (the audit
-     line reads `SKIP_DAEMON=` empty) - then `pgrep -af <fixture root>` and
-     kill anything the control leaked before moving on.
-  5. After step 2, `pgrep -af "$(the printed fixture root)"` is empty and
-     the root no longer exists.
-  6. `bb swarmforge/scripts/standing_red_register_cli.bb .` reports no row
+  4. After step 2, `pgrep -af "$(the printed fixture root)"` is empty and
+     the root no longer exists. This is the ONLY control on the
+     `SWARMFORGE_SKIP_DAEMON=1` export: do NOT run a copy of the test with
+     the export dropped - that starts a real second daemon + supervisor
+     rooted in a mktemp directory (the mint's step 4 negative control was
+     wrong and is withdrawn 2026-09-12). Instead read the test source and
+     confirm the export is set before the first `bb $HANDOFFD` line.
+  5. `bb swarmforge/scripts/standing_red_register_cli.bb .` reports no row
      for the test and `"unowned":[]`.
 
 source: |
@@ -188,6 +211,19 @@ notes: |
     check verb) - no scenario reworded or retired.
   - Human sentence preserved from BL-1139: "the swarm must deal with
     durable daemon-script drift without human intervention."
+  - Amended 2026-09-12 by the specifier on the coder's spec-gap note
+    (coder evidence
+    `backlog/evidence/BL-1543-coder-spec-gap-skip-daemon-audit-ordering-20260912.md`,
+    coder worktree 820215c1e8; specifier adjudication
+    `backlog/evidence/BL-1543-specifier-spec-gap-adjudication-20260912.md`).
+    The coder is right and the mint was wrong: case 05's premise ("the
+    launcher writes its audit line and then exits 0" under
+    SWARMFORGE_SKIP_DAEMON=1) is false - the skip branch exits before the
+    audit machinery is defined. Ruling: case 05 is dropped from this
+    parcel (four cases, scenario 01 amended to "exactly 4"); the launcher
+    change and the case-05 re-add are split to BL-1548 (paused,
+    depends_on BL-1543). Constraints unchanged: still test-only, still no
+    edit to the launcher. The coder merges main and builds the four cases.
   - IR-DRY at mint: one `possible-synonym` (medium) between the Background's
     "the wiring test <path> which boots..." (Given, names the subject) and
     both scenarios' "the standing suite runs <path>" (When, executes it) -
