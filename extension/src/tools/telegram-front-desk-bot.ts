@@ -464,6 +464,12 @@ export interface StoredApprovalAskMessage {
   topicId: number;
   messageId: number;
   text: string;
+  // BL-1455: set by updateApprovalAskMessageText (the close writer's own
+  // storage step) so approvalAskRecordedOnLiveTopic can tell a decided ask
+  // from a still-open one without re-parsing text. Absent on a record a
+  // fresh post just wrote (recordApprovalAskMessage never sets it), and on
+  // every record persisted before this ticket.
+  closed?: boolean;
 }
 
 export function approvalAskMessagesPath(targetPath: string): string {
@@ -485,13 +491,21 @@ export function recordApprovalAskMessage(targetPath: string, backlogId: string, 
   fs.writeFileSync(approvalAskMessagesPath(targetPath), JSON.stringify(messages));
 }
 
+// BL-1455: this is the close writer's own storage step (its only caller is
+// persistClosedApprovalAskText, invoked once per decision from
+// closeApprovalAskIfPossible after the Telegram edit succeeds) — the text it
+// writes always already carries composeDecidedAskText's decision-line
+// suffix, so marking the record closed here is exactly the "structured mark
+// at that moment" the ticket calls for. approvalAskRecordedOnLiveTopic reads
+// this flag to answer "not live" for it; recordApprovalAskMessage (a fresh
+// post) never sets it, so a re-pend's post naturally clears it again.
 export function updateApprovalAskMessageText(targetPath: string, backlogId: string, text: string): void {
   const messages = readApprovalAskMessages(targetPath);
   const existing = messages[backlogId];
   if (!existing) {
     return;
   }
-  messages[backlogId] = { ...existing, text };
+  messages[backlogId] = { ...existing, text, closed: true };
   fs.writeFileSync(approvalAskMessagesPath(targetPath), JSON.stringify(messages));
 }
 
