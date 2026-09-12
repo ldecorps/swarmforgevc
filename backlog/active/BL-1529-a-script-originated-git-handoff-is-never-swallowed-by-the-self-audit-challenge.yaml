@@ -179,3 +179,5 @@ qa_e2e_procedure: |
      error form.
   6. `git diff main...HEAD -- backlog/standing-reds.tsv` shows the two
      rows removed and nothing else in that file.
+
+assigned_to: coder
