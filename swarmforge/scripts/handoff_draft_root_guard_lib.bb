@@ -19,9 +19,13 @@
 ;; the root this invocation actually resolved" - a question answerable
 ;; from data the CLI already has in hand, regardless of how it got there.
 ;; Every production draft (a worktree role's own `tmp/handoff.txt`,
-;; master's `swarmforge/runtime/handoff-draft.txt`) is under its role's
-;; resolved root by construction, so this refuses only ever a fixture
-;; escape, never a live send (BL-1518-a's own "What is wanted" #1).
+;; master's `swarmforge/runtime/handoff-draft.txt`, and the Babashka
+;; senders' own `<root>/tmp/` drafts) is under its role's resolved root by
+;; construction, so this refuses only ever a fixture escape, never a live
+;; send (BL-1518-a's own "What is wanted" #1). Seven script-built senders
+;; (four shell, three TypeScript) drafted under `${TMPDIR:-/tmp}` /
+;; `os.tmpdir()` instead and were refused after this guard landed; BL-1537
+;; moved all seven under `<root>/tmp/` to match.
 ;;
 ;; PURE: both functions below take already-resolved, already-canonical
 ;; absolute path strings - the impure caller (swarm_handoff.bb) does the
