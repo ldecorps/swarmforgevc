@@ -43,3 +43,73 @@ test('approvalAskRecordedOnLiveTopic: true only when ask topicId matches live Ap
   assert.equal(approvalAskRecordedOnLiveTopic('BL-525', {}, 3857), false);
   assert.equal(approvalAskRecordedOnLiveTopic('BL-525', { 'BL-525': { topicId: 3857 } }, undefined), false);
 });
+
+// BL-1455: a decided (closed) ask is never "live", even though its
+// topicId still names the live Approvals topic — that record is the
+// audit trail of an EARLIER decision, not a still-open ask.
+test('approvalAskRecordedOnLiveTopic: false when the recorded ask on the live topic is explicitly marked closed', () => {
+  assert.equal(approvalAskRecordedOnLiveTopic('BL-525', { 'BL-525': { topicId: 3857, closed: true } }, 3857), false);
+});
+
+// Hardening (BL-1455 mutation pass): the liveApprovalsTopicId===undefined
+// early return is not just defensive dead weight - a record whose OWN
+// topicId is also undefined (a malformed/corrupt store entry) would
+// otherwise fall through to `ask.topicId === liveApprovalsTopicId`
+// (undefined === undefined => true) and read as live. The early return is
+// what keeps "no live Approvals topic bound yet" from ever counting a
+// malformed record as a live ask.
+test('approvalAskRecordedOnLiveTopic: false when the Approvals topic is unbound, even for a malformed record whose own topicId is also undefined', () => {
+  assert.equal(approvalAskRecordedOnLiveTopic('BL-525', { 'BL-525': { topicId: undefined } }, undefined), false);
+});
+
+test('approvalAskRecordedOnLiveTopic: an explicit closed:false on the live topic is still live', () => {
+  assert.equal(approvalAskRecordedOnLiveTopic('BL-525', { 'BL-525': { topicId: 3857, closed: false } }, 3857), true);
+});
+
+// Pre-BL-1455 records carry no `closed` field at all — fall back to
+// scanning the stored text for BL-484's decided-verdict suffix.
+test('approvalAskRecordedOnLiveTopic: legacy record (no closed field) falls back to the decided-verdict text suffix', () => {
+  assert.equal(
+    approvalAskRecordedOnLiveTopic('BL-525', { 'BL-525': { topicId: 3857, text: 'ask\n-- Approved 2026-09-05 08:14 UTC' } }, 3857),
+    false
+  );
+  assert.equal(
+    approvalAskRecordedOnLiveTopic('BL-525', { 'BL-525': { topicId: 3857, text: 'ask\n-- Ruled: pick B 2026-09-02 19:38 UTC' } }, 3857),
+    false
+  );
+});
+
+test('approvalAskRecordedOnLiveTopic: legacy record (no closed field) with undecided text is still live', () => {
+  assert.equal(approvalAskRecordedOnLiveTopic('BL-525', { 'BL-525': { topicId: 3857, text: 'BL-525 needs your approval' } }, 3857), true);
+});
+
+// BL-1455 scenario 06: a closed ask still sitting on the live topic must
+// repost even when emittedKeys already carries the key from the FIRST,
+// now-decided ask — that key was earned by a different ask.
+test('approvalAsksNeedingRepost: a CLOSED ask on the live topic reposts even when emittedKeys already has the key', () => {
+  const emitted = new Set([approvalRequestedEmittedKey('BL-525')]);
+  assert.deepEqual(
+    approvalAsksNeedingRepost(['BL-525'], { 'BL-525': { topicId: 3857, closed: true } }, 3857, emitted),
+    ['BL-525']
+  );
+});
+
+test('approvalAsksNeedingRepost: a legacy closed ask (decided-verdict text, no closed field) on the live topic reposts', () => {
+  const emitted = new Set([approvalRequestedEmittedKey('BL-525')]);
+  assert.deepEqual(
+    approvalAsksNeedingRepost(
+      ['BL-525'],
+      { 'BL-525': { topicId: 3857, text: 'ask\n-- Approved 2026-09-05 08:14 UTC' } },
+      3857,
+      emitted
+    ),
+    ['BL-525']
+  );
+});
+
+test('approvalAsksNeedingRepost: an UNDECIDED ask on the live topic never reposts, even with no emittedKeys entry', () => {
+  assert.deepEqual(
+    approvalAsksNeedingRepost(['BL-525'], { 'BL-525': { topicId: 3857, text: 'BL-525 needs your approval' } }, 3857, new Set()),
+    []
+  );
+});
