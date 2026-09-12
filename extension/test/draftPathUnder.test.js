@@ -58,3 +58,36 @@ test('removeDraftIfPresent deletes the draft when it still exists', () => {
   removeDraftIfPresent(draftPath);
   assert.ok(!fs.existsSync(draftPath), 'expected the draft file to be removed');
 });
+
+// BL-1550: fc.string draws "." (and "..") as a draft name, and
+// path.join(dir, ".") is dir itself - the property's Counterexample
+// [false,"."]. A bare `existsSync`/`unlinkSync` throws EISDIR on a
+// directory; the helper must instead leave it untouched, never throwing.
+test('removeDraftIfPresent leaves an empty directory in place without throwing', () => {
+  const dir = mkTmpDir('draft-path-under-test-');
+  const sub = path.join(dir, 'a-directory');
+  fs.mkdirSync(sub);
+  assert.doesNotThrow(() => removeDraftIfPresent(sub));
+  assert.ok(fs.existsSync(sub), 'expected the directory to still exist');
+});
+
+test('removeDraftIfPresent leaves a directory holding a file in place without throwing or recursing', () => {
+  const dir = mkTmpDir('draft-path-under-test-');
+  const sub = path.join(dir, 'a-directory');
+  fs.mkdirSync(sub);
+  const inner = path.join(sub, 'inner');
+  fs.writeFileSync(inner, 'x');
+  assert.doesNotThrow(() => removeDraftIfPresent(sub));
+  assert.ok(fs.existsSync(sub), 'expected the directory to still exist');
+  assert.ok(fs.existsSync(inner), 'expected the file inside the directory to still exist');
+});
+
+// The CLI can delete the draft between the stat and the unlink; the
+// helper's own unlink must swallow ENOENT there too, not just the earlier
+// existsSync check the old implementation relied on.
+test('removeDraftIfPresent does not throw when the path never existed', () => {
+  const dir = mkTmpDir('draft-path-under-test-');
+  const draftPath = path.join(dir, 'never-existed.handoff');
+  assert.doesNotThrow(() => removeDraftIfPresent(draftPath));
+  assert.ok(!fs.existsSync(draftPath));
+});
