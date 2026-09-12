@@ -833,24 +833,29 @@
     (reverse-hop-lib/propagation-for (roles-table-lines) role-name)
     "forward-only"))
 
-;; BL-1299: both of these read the pipeline order through
-;; reverse_hop_lib.bb, which drops the coordinator AND every MASTER-RESIDENT
-;; row. A role whose roles-table worktree is the master checkout - the
-;; specifier as well as the coordinator - holds no code worktree of its own,
-;; so a merge-only reverse copy addressed to it would land unapproved
-;; in-flight work on the published branch. Residency is read from the table,
-;; never from a second hardcoded role name.
-(defn last-pack-role? [role]
-  (= role (reverse-hop-lib/last-pipeline-role (roles-table-lines))))
-
+;; BL-1299: reads the pipeline order through reverse_hop_lib.bb, which drops
+;; the coordinator AND every MASTER-RESIDENT row. A role whose roles-table
+;; worktree is the master checkout - the specifier as well as the
+;; coordinator - holds no code worktree of its own, so a merge-only reverse
+;; copy addressed to it would land unapproved in-flight work on the
+;; published branch. Residency is read from the table, never from a second
+;; hardcoded role name.
 (defn reverse-roles [sender]
   (reverse-hop-lib/reverse-recipients (roles-table-lines) sender (role-propagation sender)))
 
-(defn with-non-forwarding [headers sender]
+;; BL-1536: the terminal non-forwarding stamp follows the hop's DIRECTION,
+;; not the sender's seat alone (the old last-pack-role? check this replaced
+;; looked only at sender) - reverse_hop_lib/terminal-forward? is the single
+;; production implementation (BL-1299's siblings' shape); this delegates
+;; rather than re-deriving "sender is last pipeline role" here. dissoc
+;; rather than leaving a stale header alone makes the result depend only on
+;; (sender, recipients) on every call, whatever "non-forwarding" already
+;; held.
+(defn with-non-forwarding [headers sender recipients]
   (if (and (= "git_handoff" (get headers "type"))
-           (last-pack-role? sender))
+           (reverse-hop-lib/terminal-forward? (roles-table-lines) sender recipients))
     (assoc headers "non-forwarding" "true")
-    headers))
+    (dissoc headers "non-forwarding")))
 
 (defn inbound-non-forwarding? []
   (boolean
@@ -1078,7 +1083,7 @@
     outbox-file))
 
 (defn write-handoffs! [ctx]
-  (let [headers (with-non-forwarding (:headers ctx) (:sender ctx))
+  (let [headers (with-non-forwarding (:headers ctx) (:sender ctx) (:recipients ctx))
         ctx (assoc ctx :headers headers)
         forward (write-handoff! (assoc ctx :reverse? false
                                        :non-forwarding (= "true" (get headers "non-forwarding"))))
@@ -1150,7 +1155,6 @@
       (when-not (role-known? sender)
         (exit! 1 (str "Unknown sender role: " sender)))
       (let [{:keys [headers ordered errors]} (parse-draft draft)
-            headers (with-non-forwarding headers sender)
             validation (validate headers ordered sender)
             all-errors (vec (concat errors (:errors validation)))]
         (when (seq all-errors)
@@ -1165,6 +1169,14 @@
                                              :root (project-root)
                                              :headers headers
                                              :sender sender})
+              ;; BL-1536: decided from the FINAL, post-routing recipients -
+              ;; required_stages routing (BL-606) can rewrite `to:` before a
+              ;; parcel is ever written, and the stamp must follow where the
+              ;; parcel actually goes, not the literal draft header. This is
+              ;; also the headers audit-candidate/invocation-fingerprint see
+              ;; below, so their :non-forwarding field agrees with what
+              ;; write-handoffs! will install.
+              headers (with-non-forwarding headers sender (:recipients routed))
               submit! (fn []
                         (let [files (write-handoffs! {:headers headers
                                                       :recipients (:recipients routed)
