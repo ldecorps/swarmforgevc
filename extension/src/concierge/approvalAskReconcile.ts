@@ -58,6 +58,26 @@ export function approvalAskRecordedOnLiveTopic(
   return ask !== undefined && ask.topicId === liveApprovalsTopicId && !isAskClosed(ask);
 }
 
+// BL-1455: a CLOSED ask still sitting on the live topic (a re-pend after the
+// earlier decision) must repost unconditionally — never gated on
+// emittedKeys, whose key was earned by the FIRST, now-decided ask, not this
+// one. Without this, a durable baseline that already lists the ticket
+// pending (and the key already emitted from the first cycle) would stay
+// silent forever.
+function isClosedAskOnLiveTopic(
+  ask: RecordedApprovalAsk | undefined,
+  liveApprovalsTopicId: number
+): boolean {
+  return ask !== undefined && ask.topicId === liveApprovalsTopicId && isAskClosed(ask);
+}
+
+// Remint / wrong-topic ask: always re-post onto the live Approvals id, even
+// if emittedKeys still carries ApprovalRequested:<id> from the dead-thread
+// post.
+function isAskOnWrongTopic(ask: RecordedApprovalAsk | undefined, liveApprovalsTopicId: number): boolean {
+  return ask !== undefined && ask.topicId !== liveApprovalsTopicId;
+}
+
 // Returns backlog ids that should synthesize an ApprovalRequested this tick.
 // Deterministic sort so tick routing order stays stable.
 export function approvalAsksNeedingRepost(
@@ -75,19 +95,7 @@ export function approvalAsksNeedingRepost(
         return false;
       }
       const ask = recordedAsks[id];
-      // BL-1455: a CLOSED ask still sitting on the live topic (a re-pend
-      // after the earlier decision) must repost unconditionally — never
-      // gated on emittedKeys, whose key was earned by the FIRST, now-decided
-      // ask, not this one. Without this branch a durable baseline that
-      // already lists the ticket pending (and the key already emitted from
-      // the first cycle) would stay silent forever.
-      if (ask !== undefined && ask.topicId === liveApprovalsTopicId && isAskClosed(ask)) {
-        return true;
-      }
-      // Remint / wrong-topic ask: always re-post onto the live Approvals id,
-      // even if emittedKeys still carries ApprovalRequested:<id> from the
-      // dead-thread post.
-      if (ask !== undefined && ask.topicId !== liveApprovalsTopicId) {
+      if (isClosedAskOnLiveTopic(ask, liveApprovalsTopicId) || isAskOnWrongTopic(ask, liveApprovalsTopicId)) {
         return true;
       }
       // No recorded ask: only re-fire when the edge-trigger also would not
