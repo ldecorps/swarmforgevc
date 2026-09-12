@@ -30,7 +30,7 @@ export SWARMFORGE_ALLOW_TMP_DAEMON=1  # BL-406: opt in - this ROOT is an intenti
 
 ROOT="$(cd "$(mktemp -d)" && pwd -P)"
 OUTSIDE="$(cd "$(mktemp -d)" && pwd -P)"
-cleanup() { rm -rf "$ROOT" "$OUTSIDE"; }
+cleanup() { rm -rf "$ROOT" "$OUTSIDE" "${STUBDIR:-}"; }
 trap cleanup EXIT
 
 git -C "$ROOT" init -q
@@ -165,5 +165,59 @@ AFTER="$(inbox_count coder)"
 (( AFTER > BEFORE )) || fail "04: expected an injected note in coder's inbox/new; out: $OUT"
 assert_common "04 [inject_note_to_role.sh]" "$OUT"
 pass "04: inject_note_to_role.sh drafts its note under \$ROOT/tmp/ although TMPDIR is outside the root"
+
+# ── 05: notify_specifier_freshness_hold removes its draft even when signalled
+# mid-send (declared invariant 2's "signalled" exit path, BL-1537 architect
+# bounce D1, 2026-09-12): unlike the other three shell senders, this
+# function had no `trap ... EXIT` around its draft, so a SIGTERM between the
+# mktemp and the swarm_handoff.sh call left the draft under $ROOT/tmp/
+# forever. SCRIPT_DIR inside promote_and_route_next.sh is derived from
+# `dirname "$0"`, so invoking it through a symlink in a scratch dir makes
+# `$SCRIPT_DIR/swarm_handoff.sh` resolve to a stub we control, in place of
+# the real sender, without touching the real script's resolution logic.
+STUBDIR="$(mktemp -d)"
+for f in "$SCRIPTS"/*; do
+  [[ -f "$f" ]] && ln -s "$f" "$STUBDIR/$(basename "$f")"
+done
+rm -f "$STUBDIR/swarm_handoff.sh"
+cat > "$STUBDIR/swarm_handoff.sh" <<'EOF'
+#!/usr/bin/env bash
+sleep 10
+EOF
+chmod +x "$STUBDIR/swarm_handoff.sh"
+
+PROMOTE_OUT="$(mktemp)"
+(
+  cd "$ROOT"
+  unset SWARMFORGE_MAILBOX_ONLY SWARMFORGE_SKIP_DAEMON
+  export TMPDIR="$OUTSIDE" SWARMFORGE_ROLE=coordinator SWARMFORGE_SKIP_DAEMON=0 SWARMFORGE_MAILBOX_ONLY=1
+  exec bash "$STUBDIR/promote_and_route_next.sh" "$ROOT"
+) >"$PROMOTE_OUT" 2>&1 &
+PROMOTE_PID=$!
+
+DRAFT=""
+for _ in $(seq 1 100); do
+  DRAFT="$(find "$ROOT/tmp" -maxdepth 1 -type f -name 'swarmforge-freshness-hold.*.handoff' 2>/dev/null | head -1)"
+  [[ -n "$DRAFT" ]] && break
+  sleep 0.1
+done
+[[ -n "$DRAFT" ]] || fail "05: expected a freshness-hold draft to appear under \$ROOT/tmp/ before signalling; out: $(cat "$PROMOTE_OUT")"
+
+kill -TERM "$PROMOTE_PID" 2>/dev/null || true
+wait "$PROMOTE_PID" 2>/dev/null || true
+pkill -f "$STUBDIR/swarm_handoff.sh" 2>/dev/null || true
+
+STILL_PRESENT=1
+for _ in $(seq 1 50); do
+  if [[ -e "$DRAFT" ]]; then
+    sleep 0.1
+  else
+    STILL_PRESENT=0
+    break
+  fi
+done
+[[ "$STILL_PRESENT" -eq 0 ]] || fail "05: draft $DRAFT survived SIGTERM - notify_specifier_freshness_hold has no trap guarding its draft"
+rm -rf "$STUBDIR" "$PROMOTE_OUT"
+pass "05: notify_specifier_freshness_hold removes its draft even when signalled mid-send"
 
 echo "ALL PASS"
