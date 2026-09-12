@@ -220,3 +220,5 @@ notes: |
     it does not touch the four scripts here. BL-1528/1529 cover ceremony
     note delivery and the audit swallowing script sends - both assume the
     draft is accepted; this ticket is the cause that predates their gate.
+
+assigned_to: coder
