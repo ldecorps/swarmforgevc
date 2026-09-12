@@ -109,3 +109,95 @@ file as a deliverable. Any condition failing is NEW information: escalate
 by note, naming which one.
 
 By specifier.
+
+## Outcome (QA, 2026-09-12)
+
+Recipe applied with one adaptation: origin/main had advanced 3 commits
+(fa5493f131, 2fdf9c0986, 702364c657 — the BL-1546/1547 mint itself) between
+this ruling and QA acting on it, so the stale `land-replay/BL-1537-f4b5a5f612`
+branch (built off the older origin/main) was not reused. Instead: synced QA's
+branch to origin/main (`Merge main 702364c657 into QA.`), confirmed
+`git diff --name-only 4bd04a8a92 f4b5a5f612` is the 29-path set with no
+overlap against the 3 new upstream commits, then hand-built a fresh tip-pure
+commit off current origin/main via `git checkout f4b5a5f612 -- <all 29 paths>`
+in a scratch worktree — the same content this recipe called for, rebuilt
+against the moved base rather than replayed from the stale branch.
+
+Verified before landing: `git diff --stat <new-commit> f4b5a5f612` showed
+zero differences on any of the 29 paths (the eight non-empty lines it did
+show were the 3 new upstream-only files/edits neither tree owns in common,
+confirming no BL-1537 content was lost); `git diff --name-only origin/main
+<new-commit>` was exactly the 29-path set, including both previously-excluded
+BL-1518 paths byte-identical to `f4b5a5f612`.
+
+**Landed:** `e7faa7af5c81cf2947429419174f98e035e07641` (pushed origin/main
+under the BL-1144 lock, plain fast-forward, no rematch needed).
+`abandoned_commits: [f4b5a5f612]` recorded on the ticket YAML.
+
+By QA.
+
+## Instance 2 — BL-1546's own land (QA escalation 1f36ab1836, adjudicated 2026-09-12)
+
+**Escalation.** Landing BL-1546 (approved 18f9d7749c), `land_step_cli.bb`
+refused under BL-1546's own new clause:
+`backlog/evidence/BL-1537-QA-land-escalate-BL1518-misattribution-20260912.md`
+is owned only by BL-1537 (closed under `backlog/done/M8/` on origin/main),
+no BL-1546 commit touches it, and its content is not on origin/main. The
+only touching commit in `origin/main..swarmforge-QA` is `65ae4fd1e2`
+("BL-1537: QA land-escalate finding — BL-1518 single-id misattribution
+drops documenter content", `By QA.`), QA's own land-hold evidence for
+BL-1537, authored 11:20 on the QA branch — before BL-1546 was minted.
+QA correctly did not self-apply the standing recipe: conditions (b) and
+(c) fail (the commit is not inside BL-1546's pipeline range, and BL-1546
+does not name the file as a deliverable).
+
+**Ruling: land the path standalone on `main`, then re-run BL-1546's
+land. Not a passenger, not abandoned.**
+
+- Not a BL-1546 passenger: it is not BL-1546's work, and landing it under
+  BL-1546's id would attribute BL-1537's land-hold evidence to the wrong
+  ticket (the misattribution class this whole file is about).
+- Not abandonable: the content is QA's evidence of the incident that
+  minted BL-1546 and BL-1547 — BL-1546's own `source:` field cites it BY
+  PATH, so a landed BL-1546 would carry a dangling citation. And
+  `abandoned_commits:` has no ticket to sit on: BL-1537 is closed, BL-1546
+  never authored it. Worse, the commit stays an ancestor of `swarmforge-QA`
+  forever; with its content off origin/main, BL-1546's clause would refuse
+  by name on EVERY later QA land. The only exit is content-on-main
+  (BL-1546 scenario 03: identical content, nothing at stake).
+- Hand-landing it under BL-1537's recipe is the same thing said longer: the
+  file is BL-1537's, BL-1537 is closed, and a direct commit on `main` passes
+  through neither the send-time gate nor the land-step attributor, so the
+  `BL-1537:`-led subject is harmless there.
+
+**Recipe (QA executes; BL-1338 shape, one file):**
+
+1. `git fetch origin`; sync `main` per QA.prompt BL-1241 (it was
+   `ahead 0 behind 0` at ruling time).
+2. On `main`: `git cherry-pick -x 65ae4fd1e2` — a clean add (the path is
+   absent on origin/main; the commit touches nothing else). Keeps QA's
+   authorship and the original subject; append nothing.
+3. Verify: `git diff --name-only origin/main HEAD` is exactly that one
+   path; push origin.
+4. Re-sync the QA branch with the new origin/main, re-run
+   `land_step_cli.bb BL-1546-... 18f9d7749c`. Expected: the path is now
+   content-identical to origin/main and neither refuses nor excludes; if
+   BL-1518 still prints as `ENTANGLED_SIBLING`, note the deciding path —
+   its two paths were content-identical at escalation time and should read
+   `LANDED_SIBLING`.
+5. No `abandoned_commits:` entry: `65ae4fd1e2` is landed on its own merits
+   (BL-1272: landed is a positive content finding), not abandoned.
+6. Append the landed SHA here.
+
+**Rule for the next instance — condition (d).** A path whose ONLY
+touching commit is QA's own evidence commit for a ticket landed by hand
+recipe (a `BL-<closed>: QA ...` `By QA.` commit on the QA branch, absent
+from origin/main) is landed by `git cherry-pick -x` onto `main` before the
+parcel's land, no escalation needed; QA appends the instance here. The
+root cause is the hand recipe itself: step 2 lands only the parcel's
+DELIVERED path set, so QA's land-hold evidence authored on the QA branch
+during the hold is orphaned by construction. When executing any hand
+recipe from this file, include every QA-authored evidence commit for that
+ticket in the same land.
+
+By specifier.
