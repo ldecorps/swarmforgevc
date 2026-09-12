@@ -2869,6 +2869,46 @@ RESOLVED BY THIS TICKET
     (assert-true "BL-1546 (04): excluded as the (open) sibling's alone"
                  (boolean (some #{{:path "docs/shared.md" :owners #{"BL-9002"}}} (:excluded result))))))
 
+;; 05 (hardening): a path owned by a MIX of a closed and a still-open
+;; sibling is never refused by the BL-1546 clause - "every owner is closed"
+;; means every, not any (a single closed co-owner must not make a path with
+;; a still-open co-owner read as decided). Falls through to the pre-existing
+;; BL-1389 exclusion, exactly as an all-open path would.
+(with-fixture [root]
+  (commit! root "backlog/done/M8/BL-9002-x.yaml" "id: BL-9002\nhuman_approval: approved\n" "BL-9002: done sibling ticket file")
+  (commit! root "backlog/active/BL-9003-x.yaml" "id: BL-9003\nhuman_approval: approved\n" "BL-9003: active sibling ticket file")
+  (mark-origin-main-here! root)
+  (commit! root "docs/shared.md" "v1\n" "Update the shared doc for BL-9002's chokepoint fold")
+  (commit! root "docs/shared.md" "v2\n" "Update the shared doc for BL-9003's related fold")
+  (commit! root "backlog/active/BL-9001-x.yaml" "id: BL-9001\n" "BL-9001: own ticket file")
+  (let [commit (:out (sh! root "git" "rev-parse" "HEAD"))
+        result (land-step-lib/own-paths root commit "BL-9001" #{"BL-9002" "BL-9003"})]
+    (assert= "BL-1546 (05): a mixed closed/open-owner path is never refused by the closed-owner clause"
+             nil (:warning result))
+    (assert-true "BL-1546 (05): excluded as an unlanded sibling path, unchanged by this ticket"
+                 (boolean (some #(= "docs/shared.md" (:path %)) (:excluded result))))))
+
+;; 06 (hardening): a path with NO owners at all (every touching commit in
+;; range is a revert/reapply, BL-1472 - contributing neither an owner nor
+;; an untagged touch, path-owner-tickets' own docstring) is never refused
+;; by the BL-1546 clause - the same `(seq (:owners attribution))` guard the
+;; adjacent BL-1389 clause already carries. Here the original tagged
+;; addition predates origin/main's marker (so it is outside the range and
+;; never contributes an owner), and only its in-range REVERT is attributed
+;; - net owners is #{}, not a vacuous "every owner closed".
+(with-fixture [root]
+  (commit! root "sibling.txt" "sib\n" "BL-9002: sibling adds sibling.txt")
+  (mark-origin-main-here! root)
+  (let [original (:out (sh! root "git" "rev-parse" "HEAD"))]
+    (sh! root "git" "revert" "--no-edit" original)
+    (commit! root "backlog/active/BL-9001-x.yaml" "id: BL-9001\n" "BL-9001: own ticket file")
+    (let [commit (:out (sh! root "git" "rev-parse" "HEAD"))
+          result (land-step-lib/own-paths root commit "BL-9001" #{"BL-9002"})]
+      (assert= "BL-1546 (06): a path with no attributable owner at all is never refused by the closed-owner clause"
+               nil (:warning result))
+      (assert-true "BL-1546 (06): kept (no owner to blame it on, exactly as before this ticket)"
+                   (boolean (some #{"sibling.txt"} (:paths result)))))))
+
 (if (seq @failures)
   (do
     (doseq [f @failures] (println f))
