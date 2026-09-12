@@ -183,3 +183,17 @@ notes: |
   kept as written.
 
 assigned_to: coder
+
+abandoned_commits: [18f9d7749c]
+# 18f9d7749c was QA's approved commit. land_step_cli.bb read it as an
+# entangled tip (ENTANGLED_SIBLING BL-1518, BL-1537 at first) - QA's own
+# BL-1537 land-hold evidence commits, absent from origin/main, were an
+# unrecognized closed-owner class instance (specifier-adjudicated,
+# ev 4aacff9aad: cherry-pick -x each onto main standalone, condition (d)
+# for the two later ones). After landing those three commits standalone,
+# re-running against current HEAD (9fdb72ff2f, which also carries this
+# ticket's own follow-up escalation evidence) produced a clean tip-pure
+# replay with BL-1518 as a harmless EXCLUDED_SIBLING (fully on origin/main
+# already, no path of this ticket's touches it) and BL-1537/BL-1545 as
+# LANDED_SIBLING passengers. Landed instead: 1c6c0f90121140131948c4844ded1aedab431e83,
+# `is_qa_ancestor.sh` confirms approved.
