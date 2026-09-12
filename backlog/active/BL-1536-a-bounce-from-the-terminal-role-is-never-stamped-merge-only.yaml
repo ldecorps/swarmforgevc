@@ -176,3 +176,5 @@ notes: |
   duplicate-chain guard) - once a QA bounce is unstamped it is counted as
   an ordinary chain link again, which is the pre-2026-08-30 behaviour and
   the correct one.
+
+assigned_to: coder
