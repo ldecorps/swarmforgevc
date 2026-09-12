@@ -117,6 +117,86 @@
   (when-let [subject (commit-subject root commit)]
     (pipeline-stage-lib/extract-ticket-id subject)))
 
+;; ── BL-1544: a subject that leads with a ticket id vs. one that merely
+;; mentions one first ──────────────────────────────────────────────────────
+;;
+;; extract-ticket-id (pipeline-stage-lib, untouched, BL-897/BL-488) resolves
+;; the FIRST id-shaped token ANYWHERE in a subject's text - right for the
+;; "TICKET: description" convention, where that first token really is the
+;; subject's own leading id, but silently right for the WRONG reason when a
+;; subject merely mentions a ticket id first within ordinary prose: "Update
+;; BL-967 stall-diagnosis how-to for BL-1525's chokepoint fold" (a89a03ee45,
+;; 2026-09-11) names BL-967 as if it led, because it is the first token
+;; found, when in fact neither id leads this subject at all - the subject
+;; starts with the word "Update".
+;;
+;; `leading-ticket-id` asks the stricter, POSITIONAL question: does the
+;; subject's own structure place an id at the very start of the line -
+;; either bare ("BL-1227: ...") or after one of this codebase's own
+;; short verb-prefixed bookkeeping subjects. Measured against `git log
+;; origin/main --format=%s -500` (backlog/evidence/BL-1544-coder-
+;; 20260912.md): of 500 subjects, "Close", "Promote" and "Approve" each
+;; lead a ticket id dozens of times (the coordinator's/specifier's own
+;; promote/close/approve bookkeeping commits); exactly ONE bare-word-then-id
+;; subject occurs outside that set - "Update BL-967 ..." above, this
+;; ticket's own motivating incident - so "Update" (and every other verb) is
+;; deliberately left OUT of the allowlist rather than widened to swallow it
+;; back in. Of the 500, only 4 name more than one ticket id and lead with
+;; none (recorded in the evidence file).
+(def ^:private leading-verb-prefixes ["close" "promote" "approve"])
+
+(def ^:private leading-ticket-id-pattern
+  (re-pattern (str "(?i)^\\s*(?:(?:" (str/join "|" leading-verb-prefixes) ")\\s+)?("
+                   (str/join "|" pipeline-stage-lib/known-ticket-prefixes) ")-?(\\d+)\\b")))
+
+(defn- leading-ticket-id
+  "The ticket id `subject`'s own leading structure names at the very start
+   of the line, or nil when nothing sits there. Distinct from extract-
+   ticket-id's own contract (untouched): that one asks 'what id is named
+   first in the text'; this one asks 'does the subject's own structure
+   position an id at the start' - the two agree whenever the answer here is
+   non-nil (nothing can occur earlier in the string than position 0), and
+   this one alone answers nil for a subject that merely mentions an id
+   first within ordinary prose."
+  [subject]
+  (when subject
+    (when-let [[_ prefix digits] (re-find leading-ticket-id-pattern subject)]
+      (str/upper-case (str prefix "-" digits)))))
+
+(defn- subject-attribution
+  "BL-1544. {:ids #{...} :ambiguous? bool} for one commit subject - the
+   ownership contribution `path-owner-tickets` credits it with:
+
+   - No id named at all: {:ids #{} :ambiguous? false} (untagged, same as
+     commit-ticket-id returning nil).
+   - The subject names more than one id and its own leading structure names
+     NONE of them: AMBIGUOUS - {:ids (every named id) :ambiguous? true}, so
+     every named id rides as an owner (the passenger/blocking-for/BL-1481
+     content machinery still runs for each); own-paths, not this function,
+     decides what an ambiguous path means for a land.
+   - Otherwise (one id named, or several but the subject leads with one of
+     them - e.g. \"BL-1524, BL-1525, BL-1526: mint ...\" leads with
+     BL-1524 and is that id's alone, exactly like a single-id subject):
+     {:ids #{that-one-id} :ambiguous? false}, byte-identical to what
+     commit-ticket-id already returns for the same subject - the two must
+     agree (task_scope_gate_lib.bb's shape-2 rule is this same leading-id
+     rule and is unchanged)."
+  [subject]
+  (let [named (pipeline-stage-lib/extract-ticket-ids subject)
+        leading (leading-ticket-id subject)]
+    (cond
+      (empty? named) {:ids #{} :ambiguous? false}
+      (and (> (count named) 1) (nil? leading)) {:ids (set named) :ambiguous? true}
+      leading {:ids #{leading} :ambiguous? false}
+      :else {:ids (set named) :ambiguous? false})))
+
+(defn- commit-subject-attribution
+  "subject-attribution, read from git for `commit`. An unreadable commit
+   reads as fully untagged - same fail-open posture commit-ticket-id takes
+   for the identical case."
+  [root commit]
+  (subject-attribution (commit-subject root commit)))
+
 ;; nil (never []) signals "the walk itself failed" - same fail-open
 ;; contract task_scope_gate_lib.bb's own task-tagged-changed-paths uses.
 ;; (That contract is the nil-vs-empty one, which BL-1297's :delivered /
@@ -958,17 +1038,23 @@
 
 (defn- path-owner-tickets
   "The attribution of `path`'s changes: every commit `commits-fn` reports for
-   `path`, run through this file's own commit-ticket-id extractor.
+   `path`, run through this file's own subject-attribution (BL-1544: single-
+   owner via commit-ticket-id's contract, or every named id when a subject
+   is ambiguous - see subject-attribution's own docstring).
    `commits-fn` is injected (defaults to the real git walk) so the unreadable
    row is drivable in a test without corrupting a repository, the same
    posture `landed-siblings`' `paths-fn` already takes.
 
    nil propagates a read failure (never a silent 'no attribution'). On a
-   successful read, returns {:owners #{...} :any-untagged? bool}: `:owners`
+   successful read, returns {:owners #{...} :any-untagged? bool
+   :any-ambiguous? bool :ambiguous [{:commit :ids} ...]}: `:owners`
    is the set of ticket ids named by a touching commit's subject (#{} is a
    real answer - every touching commit named no ticket at all, positive
    information, not blindness); `:any-untagged?` is true when at least one
-   touching commit's subject named no ticket.
+   touching commit's subject named no ticket; `:any-ambiguous?` and
+   `:ambiguous` (BL-1544) report a touching commit whose subject names more
+   than one ticket id and leads with none - own-paths, not this function,
+   decides what that means for the land.
 
    BL-1315 hardener finding: an untagged touch used to contribute nothing to
    `:owners`, making it indistinguishable from 'no commit touched this path'
@@ -1025,9 +1111,16 @@
                               []
                               commits)]
       (when attributing
-        (let [ids (map #(commit-ticket-id root %) attributing)]
-          {:owners (into #{} (remove nil? ids))
-           :any-untagged? (boolean (some nil? ids))})))))
+        (let [per-commit (map (fn [c] (assoc (commit-subject-attribution root c) :commit c)) attributing)]
+          {:owners (into #{} (mapcat :ids per-commit))
+           :any-untagged? (boolean (some #(empty? (:ids %)) per-commit))
+           ;; BL-1544: true when at least one attributing commit's subject
+           ;; names more than one ticket id and leads with none of them.
+           ;; `:ambiguous` carries the {:commit :ids} detail for each such
+           ;; commit so own-paths' refusal can name it.
+           :any-ambiguous? (boolean (some :ambiguous? per-commit))
+           :ambiguous (into [] (comp (filter :ambiguous?) (map #(select-keys % [:commit :ids])))
+                            per-commit)})))))
 
 (defn delivered-attribution
   "BL-1389. Every delivered path in origin/main..commit, with the attribution
@@ -1327,6 +1420,36 @@
                    (recur (rest remaining) (conj acc path) excluded
                           (into passengers (remove blocker-ids (filter unlanded-siblings (:owners attribution))))
                           (into content-clear (map (fn [id] {:path path :sibling id}) (sort blocker-ids))))))
+
+               ;; BL-1544. A path whose attribution is AMBIGUOUS (some
+               ;; touching commit's subject names more than one ticket id
+               ;; and leads with none) is never silently excluded on the
+               ;; strength of commit-range attribution alone, the way the
+               ;; BL-1389 clause just below would otherwise treat it once
+               ;; task-ticket-id is not among its owners. This path is
+               ;; already known to genuinely differ from origin/main -
+               ;; `delivered` above is a two-tree diff, so a path with no
+               ;; real content difference never reaches this loop at all -
+               ;; so there is no "nothing at stake" branch to special-case
+               ;; here; the refusal names the ambiguous commit(s), every id
+               ;; each one's subject names, and the path (never a silent
+               ;; EXCLUDED_SIBLING_PATH). When task-ticket-id IS among this
+               ;; path's owners (a commit that itself leads with the
+               ;; landing ticket's id also touched it) this clause does not
+               ;; apply and the path falls through to the ordinary keep
+               ;; logic below, the named ambiguous siblings riding as
+               ;; passengers exactly like any other co-owner.
+               (and (:any-ambiguous? attribution)
+                    (not (contains? (:owners attribution) task-ticket-id)))
+               {:paths nil
+                :warning (str "land-step: refusing to replay " task-ticket-id
+                              " - " path "'s attribution is ambiguous: "
+                              (str/join "; " (map (fn [{:keys [commit ids]}]
+                                                    (str commit " names " (str/join "," (sort ids))
+                                                         " and leads with neither"))
+                                                  (:ambiguous attribution)))
+                              ", and no commit of " task-ticket-id "'s own touches " path
+                              " - never decided silently (BL-1544)")}
 
                ;; BL-1389, invariant 1. The question is asked of THIS PATH,
                ;; never of the owner's ticket-level verdict: the two walks
