@@ -279,6 +279,7 @@ notify_specifier_freshness_hold() {
   local draft
   mkdir -p "$ROOT/tmp"
   draft="$(mktemp "$ROOT/tmp/swarmforge-freshness-hold.XXXXXX.handoff")"
+  trap 'rm -f "$draft"' EXIT
   # A note draft carries headers only (`task:` and a free-text body are
   # git_handoff-only) - message truncated to swarm_handoff.bb's 80-char cap,
   # same as every other script-built note in this ticket.
@@ -299,6 +300,7 @@ EOF
     echo "promote_and_route_next: freshness HOLD for ${ID}: ${reason}" >&2
   fi
   rm -f "$draft"
+  trap - EXIT
 }
 
 FRESHNESS_RAW="$(deprecate_check_cli)"
