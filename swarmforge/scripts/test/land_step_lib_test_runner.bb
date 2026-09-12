@@ -2658,6 +2658,39 @@ RESOLVED BY THIS TICKET
     (assert-false "BL-1544 (03): never printed as a silent EXCLUDED_SIBLING_PATH-style success"
                   (some? (some #{{:path "docs/shared.md" :owners #{"BL-9002" "BL-9003"}}} (or (:excluded result) []))))))
 
+;; Scenario 03b (hardener, BL-1544): :any-ambiguous? is a `some`-fold over
+;; every attributing commit, not an `every?`-fold - a path touched by TWO
+;; commits, one genuinely ambiguous (names BL-9002/BL-9003, leads with
+;; neither) and one that itself leads with a THIRD, non-landing, non-
+;; ambiguous ticket's own id (BL-9004), must still refuse by name. Neither
+;; scenario 01-04 nor the P1 property fixture ever attributes a path to
+;; more than one commit unless the second one is the landing ticket's own
+;; touch, so an `every?` mutant there survives every other case in this
+;; file: with `every?`, [true false] -> false, :any-ambiguous? flips to
+;; false, and this path falls through into the BL-1389 clause instead -
+;; every owner (BL-9002, BL-9003, BL-9004) is an approved, unlanded
+;; sibling, so BL-1389 silently EXCLUDES it, exactly the defect this
+;; ticket exists to close. Verified by hand: reverting :any-ambiguous? to
+;; `every?` turns this case's refusal into a success map with docs/shared.md
+;; silently excluded, while leaving every other BL-1544 assertion in this
+;; file and the property runner green.
+(with-fixture [root]
+  (mark-origin-main-here! root)
+  (commit! root "backlog/active/BL-9002-x.yaml" "id: BL-9002\nhuman_approval: approved\n" "BL-9002: sibling ticket file")
+  (commit! root "backlog/active/BL-9003-x.yaml" "id: BL-9003\nhuman_approval: approved\n" "BL-9003: third-ticket ticket file")
+  (commit! root "backlog/active/BL-9004-x.yaml" "id: BL-9004\nhuman_approval: approved\n" "BL-9004: fourth-ticket ticket file")
+  (commit! root "docs/shared.md" "v1\n" "Update the shared doc for BL-9002 and BL-9003's chokepoint fold")
+  (commit! root "docs/shared.md" "v2\n" "BL-9004: unrelated later touch on the same shared doc")
+  (commit! root "backlog/active/BL-9001-x.yaml" "id: BL-9001\n" "BL-9001: own ticket file")
+  (let [commit (:out (sh! root "git" "rev-parse" "HEAD"))
+        result (land-step-lib/own-paths root commit "BL-9001")]
+    (assert= "BL-1544 (03b): a genuinely ambiguous touch is never silenced by a second, non-ambiguous co-touch on the same path"
+             nil (:paths result))
+    (assert-includes "BL-1544 (03b): the refusal still names the path" (:warning result) "docs/shared.md")
+    (assert-includes "BL-1544 (03b): the refusal still names the ambiguous commit's sibling id" (:warning result) "BL-9002")
+    (assert-false "BL-1544 (03b): never a silent EXCLUDED_SIBLING_PATH-style success"
+                  (boolean (some #(= "docs/shared.md" (:path %)) (or (:excluded result) []))))))
+
 ;; Scenario 04: an ambiguous subject whose path content at the tip is
 ;; identical to origin/main (a later commit reverts it back) never reaches
 ;; own-paths' decision at all - full-delivered-paths is a two-tree diff, so
@@ -2700,6 +2733,22 @@ RESOLVED BY THIS TICKET
 (let [ambiguous "Update BL-967 stall-diagnosis how-to for BL-1525's chokepoint fold"]
   (assert= "BL-1544: this ticket's own motivating incident subject reads ambiguous, not BL-967's alone"
            {:ids #{"BL-967" "BL-1525"} :ambiguous? true} (land-step-lib/subject-attribution ambiguous)))
+
+;; BL-1544 hardening: a subject naming EXACTLY ONE ticket id, but not
+;; leading with it, is that one id's alone - NOT ambiguous. Ambiguity per
+;; the ticket's own invariant 1 requires "more than one ticket id" named;
+;; a single non-leading mention has only one candidate, so there is
+;; nothing to be ambiguous between. No scenario 01-04 fixture, and no P2
+;; property case, ever builds a subject naming only one id with no leading
+;; structure (P2 always leads with its one generated id) - so a `(count
+;; named) 1)` boundary mistakenly widened to `>=` (making every single,
+;; non-leading mention read as ambiguous) survives every other assertion
+;; in this file and the property runner. Verified by hand: widening `>`
+;; to `>=` on subject-attribution's ambiguous-count guard turns this exact
+;; case ambiguous and is caught by nothing else.
+(let [single-non-leading "docs: cross-link the BL-9005 epic tracker from the README"]
+  (assert= "BL-1544 (hardening): a single, non-leading ticket mention is that id's alone, never ambiguous"
+           {:ids #{"BL-9005"} :ambiguous? false} (land-step-lib/subject-attribution single-non-leading)))
 
 (if (seq @failures)
   (do
