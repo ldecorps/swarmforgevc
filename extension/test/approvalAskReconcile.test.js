@@ -51,6 +51,17 @@ test('approvalAskRecordedOnLiveTopic: false when the recorded ask on the live to
   assert.equal(approvalAskRecordedOnLiveTopic('BL-525', { 'BL-525': { topicId: 3857, closed: true } }, 3857), false);
 });
 
+// Hardening (BL-1455 mutation pass): the liveApprovalsTopicId===undefined
+// early return is not just defensive dead weight - a record whose OWN
+// topicId is also undefined (a malformed/corrupt store entry) would
+// otherwise fall through to `ask.topicId === liveApprovalsTopicId`
+// (undefined === undefined => true) and read as live. The early return is
+// what keeps "no live Approvals topic bound yet" from ever counting a
+// malformed record as a live ask.
+test('approvalAskRecordedOnLiveTopic: false when the Approvals topic is unbound, even for a malformed record whose own topicId is also undefined', () => {
+  assert.equal(approvalAskRecordedOnLiveTopic('BL-525', { 'BL-525': { topicId: undefined } }, undefined), false);
+});
+
 test('approvalAskRecordedOnLiveTopic: an explicit closed:false on the live topic is still live', () => {
   assert.equal(approvalAskRecordedOnLiveTopic('BL-525', { 'BL-525': { topicId: 3857, closed: false } }, 3857), true);
 });

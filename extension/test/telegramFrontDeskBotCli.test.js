@@ -2074,6 +2074,19 @@ test('BL-1455: updateApprovalAskMessageText marks the stored record closed along
   });
 });
 
+// Hardening (BL-1455 mutation pass): the `!existing` guard had zero test
+// coverage - every existing test calls updateApprovalAskMessageText only
+// after a prior recordApprovalAskMessage for the SAME id, so the early
+// `return` (no-op for an id with no recorded ask at all) was never
+// exercised. Proves it stays a true no-op rather than writing a partial
+// record (`{...undefined, text, closed: true}` would silently create one
+// missing topicId/messageId).
+test('BL-1455: updateApprovalAskMessageText is a no-op when there is no existing record for the id', () => {
+  const root = mkTmpRoot();
+  updateApprovalAskMessageText(root, 'BL-999', 'BL-999 needs your approval...\n-- Approved 2026-09-05 08:14 UTC');
+  assert.deepEqual(readApprovalAskMessages(root), {});
+});
+
 // A fresh post (recordApprovalAskMessage, e.g. the re-pend's new ask)
 // overwrites the whole record with no `closed` field — the loop guard
 // (BL-1090) that keeps the re-pend from being re-posted every subsequent
