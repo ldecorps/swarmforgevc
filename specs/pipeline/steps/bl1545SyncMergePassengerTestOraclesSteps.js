@@ -97,6 +97,14 @@ function registerSteps(registry) {
     s.clone = clone;
     s.refsBefore = spawnSync('git', ['-C', clone, 'for-each-ref'], { encoding: 'utf8' }).stdout;
     s.statusBefore = spawnSync('git', ['-C', clone, 'status', '--porcelain'], { encoding: 'utf8' }).stdout;
+    // BL-1357: registered so the framework's own scenario-teardown removes
+    // these regardless of which assertion (if any) throws first - a failed
+    // Then step must not leak the scratch clone.
+    ctx.__disposables = ctx.__disposables || [];
+    ctx.__disposables.push(() => {
+      fs.rmSync(clone, { recursive: true, force: true });
+      fs.rmSync(src, { recursive: true, force: true });
+    });
   });
 
   // ── Then ──────────────────────────────────────────────────────────────
@@ -229,8 +237,6 @@ function registerSteps(registry) {
         assert.equal(refsAfter, s.refsBefore, "the clone's refs changed under an inherited GIT_DIR");
         assert.equal(statusAfter, s.statusBefore, "the clone's status changed under an inherited GIT_DIR");
       }
-      fs.rmSync(s.clone, { recursive: true, force: true });
-      fs.rmSync(s.cloneSrc, { recursive: true, force: true });
     }
   );
 
