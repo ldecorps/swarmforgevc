@@ -773,6 +773,206 @@ test('approval ask edge: recorded ask on STALE topic still re-posts via edge (re
   assert.ok(state.emittedKeys.includes('ApprovalRequested:BL-525'));
 });
 
+// ── BL-1455: a re-pended (previously approved-and-closed) ticket posts a
+//    fresh buttoned ask instead of staying dark behind a decided message ──
+
+// A closed ask's record carries the decided-verdict text BL-484 appends on
+// close, exactly as persistClosedApprovalAskText/updateApprovalAskMessageText
+// leave it - marked `closed: true` going forward, but this fixture also sets
+// the legacy text suffix so the SAME fixture doubles as the pre-fix-record
+// migration case wherever a test does not care which signal fires.
+function closedAskRecord(topicId, messageId, text) {
+  return { topicId, messageId, text: `${text}\n-- Ruled: pick B 2026-09-02 19:38 UTC`, closed: true };
+}
+
+test('BL-1455 scenario 01a: a ticket approved earlier and re-pended WITH ruling options is asked again with one button per option', async () => {
+  const { adapters, setFolders, state } = fakeAdapters();
+  setFolders(
+    folders({
+      paused: [{ id: 'BL-1348', title: 'Heap tuning', humanApproval: 'pending', rulingOptions: ['A', 'B', 'C', 'D'] }],
+    })
+  );
+  adapters.writeTickState({
+    snapshot: {
+      backlog: { active: [], paused: ['BL-1348'], done: [] },
+      gates: [],
+      roleTicket: {},
+      ticketSummaries: { 'BL-1348': { title: 'Heap tuning' } },
+      pendingApproval: [],
+    },
+    emittedKeys: ['ApprovalRequested:BL-1348'],
+  });
+  const asks = [];
+  adapters.routeAdapters.sendApprovalAsk = async (topicId, text, buttons) => {
+    asks.push({ topicId, text, buttons });
+    return { success: true, messageId: 79999 };
+  };
+  adapters.readApprovalAskMessages = () => ({ 'BL-1348': closedAskRecord(750, 69489, 'BL-1348 needs your approval') });
+
+  const result = await runConciergeTick(adapters);
+
+  assert.equal(result.routed, 1, 'the re-pend must post exactly one fresh ask');
+  assert.equal(asks.length, 1);
+  assert.equal(asks[0].topicId, 750, 'the fresh ask must target the live Approvals topic');
+  assert.deepEqual(asks[0].buttons.slice(0, 4), [
+    [{ text: 'A', callbackData: 'rule:BL-1348:0' }],
+    [{ text: 'B', callbackData: 'rule:BL-1348:1' }],
+    [{ text: 'C', callbackData: 'rule:BL-1348:2' }],
+    [{ text: 'D', callbackData: 'rule:BL-1348:3' }],
+  ]);
+});
+
+test('BL-1455 scenario 01b: a ticket approved earlier and re-pended with NO ruling options is asked again with the plain decision buttons', async () => {
+  const { adapters, setFolders } = fakeAdapters();
+  setFolders(folders({ paused: [{ id: 'BL-1408', title: 'Front-desk retry', humanApproval: 'pending' }] }));
+  adapters.writeTickState({
+    snapshot: {
+      backlog: { active: [], paused: ['BL-1408'], done: [] },
+      gates: [],
+      roleTicket: {},
+      ticketSummaries: { 'BL-1408': { title: 'Front-desk retry' } },
+      pendingApproval: [],
+    },
+    emittedKeys: ['ApprovalRequested:BL-1408'],
+  });
+  const asks = [];
+  adapters.routeAdapters.sendApprovalAsk = async (topicId, text, buttons) => {
+    asks.push({ topicId, text, buttons });
+    return { success: true, messageId: 90000 };
+  };
+  adapters.readApprovalAskMessages = () => ({ 'BL-1408': closedAskRecord(750, 73813, 'BL-1408 needs your approval') });
+
+  const result = await runConciergeTick(adapters);
+
+  assert.equal(result.routed, 1);
+  assert.equal(asks.length, 1);
+  assert.equal(asks[0].topicId, 750);
+  assert.ok(asks[0].buttons[0].some((b) => b.text === 'Approve'), 'no ruling options => the plain decision buttons, no option row');
+});
+
+test('BL-1455 scenario 03: a closed ask on a ticket that STAYS approved posts nothing', async () => {
+  const { adapters, setFolders } = fakeAdapters();
+  setFolders(folders({ active: [{ id: 'BL-1348', title: 'Heap tuning', humanApproval: 'approved' }] }));
+  adapters.writeTickState({
+    snapshot: {
+      backlog: { active: ['BL-1348'], paused: [], done: [] },
+      gates: [],
+      roleTicket: {},
+      ticketSummaries: { 'BL-1348': { title: 'Heap tuning' } },
+      pendingApproval: [],
+    },
+    emittedKeys: ['ApprovalRequested:BL-1348'],
+  });
+  const asks = [];
+  adapters.routeAdapters.sendApprovalAsk = async (topicId, text, buttons) => {
+    asks.push({ topicId, text, buttons });
+    return { success: true, messageId: 1 };
+  };
+  adapters.readApprovalAskMessages = () => ({ 'BL-1348': closedAskRecord(750, 69489, 'BL-1348 needs your approval') });
+
+  const result = await runConciergeTick(adapters);
+
+  assert.equal(result.routed, 0);
+  assert.equal(asks.length, 0);
+});
+
+test('BL-1455 scenario 04: the fresh ask becomes the ticket live ask, and the closed message is never re-edited', async () => {
+  const { adapters, setFolders, state } = fakeAdapters();
+  setFolders(folders({ paused: [{ id: 'BL-1348', title: 'Heap tuning', humanApproval: 'pending' }] }));
+  adapters.writeTickState({
+    snapshot: {
+      backlog: { active: [], paused: ['BL-1348'], done: [] },
+      gates: [],
+      roleTicket: {},
+      ticketSummaries: { 'BL-1348': { title: 'Heap tuning' } },
+      pendingApproval: [],
+    },
+    emittedKeys: ['ApprovalRequested:BL-1348'],
+  });
+  const asks = [];
+  const recordedAskIds = [];
+  adapters.routeAdapters.sendApprovalAsk = async (topicId, text, buttons) => {
+    asks.push({ topicId, text, buttons });
+    return { success: true, messageId: 79999 };
+  };
+  adapters.routeAdapters.recordApprovalAskMessageId = (backlogId, topicId, messageId, text) => {
+    recordedAskIds.push({ backlogId, topicId, messageId, text });
+  };
+  adapters.readApprovalAskMessages = () => ({ 'BL-1348': closedAskRecord(750, 69489, 'BL-1348 needs your approval') });
+
+  const result = await runConciergeTick(adapters);
+
+  assert.equal(result.routed, 1);
+  assert.equal(recordedAskIds.length, 1, 'the fresh send must record itself as the ticket live ask');
+  assert.equal(recordedAskIds[0].backlogId, 'BL-1348');
+  assert.equal(recordedAskIds[0].topicId, 750);
+  assert.equal(recordedAskIds[0].messageId, 79999, 'the NEW messageId, never the old closed one (69489)');
+  // No close-routine adapter (editApprovalAskMessage/persistClosedApprovalAskText)
+  // is wired in this fixture at all - the old message 69489 is provably
+  // never touched by this tick, since nothing in the wiring could touch it.
+});
+
+test('BL-1455 scenario 05: the tick after the fresh ask sends nothing (loop guard)', async () => {
+  const { adapters, setFolders } = fakeAdapters();
+  setFolders(folders({ paused: [{ id: 'BL-1348', title: 'Heap tuning', humanApproval: 'pending' }] }));
+  adapters.writeTickState({
+    snapshot: {
+      backlog: { active: [], paused: ['BL-1348'], done: [] },
+      gates: [],
+      roleTicket: {},
+      ticketSummaries: { 'BL-1348': { title: 'Heap tuning' } },
+      // The previous tick already observed the re-pend transition and
+      // recorded the durable baseline as pending.
+      pendingApproval: ['BL-1348'],
+    },
+    emittedKeys: ['ApprovalRequested:BL-1348'],
+  });
+  const asks = [];
+  adapters.routeAdapters.sendApprovalAsk = async (topicId, text, buttons) => {
+    asks.push({ topicId, text, buttons });
+    return { success: true, messageId: 80001 };
+  };
+  // The previous tick's fresh post already replaced the closed record with
+  // an unclosed one on the live topic (recordApprovalAskMessage's own
+  // overwrite behaviour - BL-1455).
+  adapters.readApprovalAskMessages = () => ({ 'BL-1348': { topicId: 750, messageId: 79999, text: 'BL-1348 needs your approval' } });
+
+  const result = await runConciergeTick(adapters);
+
+  assert.equal(result.routed, 0);
+  assert.equal(asks.length, 0);
+});
+
+test('BL-1455 scenario 06: durable baseline already pending with a closed ask AND the key already emitted still gets asked about', async () => {
+  const { adapters, setFolders } = fakeAdapters();
+  setFolders(folders({ paused: [{ id: 'BL-1408', title: 'Front-desk retry', humanApproval: 'pending' }] }));
+  adapters.writeTickState({
+    snapshot: {
+      backlog: { active: [], paused: ['BL-1408'], done: [] },
+      gates: [],
+      roleTicket: {},
+      ticketSummaries: { 'BL-1408': { title: 'Front-desk retry' } },
+      // The durable baseline already lists this ticket as pending (no edge
+      // will fire this tick) - only reconcile can act, and it must not be
+      // gated on emittedKeys already carrying the FIRST ask's key.
+      pendingApproval: ['BL-1408'],
+    },
+    emittedKeys: ['ApprovalRequested:BL-1408'],
+  });
+  const asks = [];
+  adapters.routeAdapters.sendApprovalAsk = async (topicId, text, buttons) => {
+    asks.push({ topicId, text, buttons });
+    return { success: true, messageId: 90000 };
+  };
+  adapters.readApprovalAskMessages = () => ({ 'BL-1408': closedAskRecord(750, 73813, 'BL-1408 needs your approval') });
+
+  const result = await runConciergeTick(adapters);
+
+  assert.equal(result.routed, 1, 'a closed ask on the live topic must repost even with the key already emitted');
+  assert.equal(asks.length, 1);
+  assert.equal(asks[0].topicId, 750);
+});
+
 test('BL-434: an ApprovalRequested that fails to post is retried on a later tick', async () => {
   const { adapters, setFolders, state } = fakeAdapters();
   // Isolate to ONLY the ApprovalRequested transition: not newly active this
