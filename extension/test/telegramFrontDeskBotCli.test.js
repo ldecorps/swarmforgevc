@@ -80,6 +80,7 @@ const {
   readRepoBaseUrl,
   readApprovalAskMessages,
   recordApprovalAskMessage,
+  updateApprovalAskMessageText,
   approvalAskMessagesPath,
   resolveAskOptions,
   readAskMessages,
@@ -2052,6 +2053,51 @@ test('BL-484: recordApprovalAskMessage adds a new entry alongside an existing on
   assert.deepEqual(readApprovalAskMessages(root), {
     'BL-1': { topicId: 800, messageId: 1, text: 'BL-1 needs your approval...' },
     'BL-2': { topicId: 800, messageId: 2, text: 'BL-2 needs your approval...' },
+  });
+});
+
+// BL-1455: updateApprovalAskMessageText is the close writer's own storage
+// step (persistClosedApprovalAskText's real implementation) — proves it
+// marks the record `closed: true` alongside the decided text, which is the
+// signal approvalAskRecordedOnLiveTopic reads to stop treating it as live.
+test('BL-1455: updateApprovalAskMessageText marks the stored record closed alongside the decided text', () => {
+  const root = mkTmpRoot();
+  recordApprovalAskMessage(root, 'BL-1348', 1785, 69489, 'BL-1348 needs your approval...');
+  updateApprovalAskMessageText(root, 'BL-1348', 'BL-1348 needs your approval...\n-- Ruled: pick B 2026-09-02 19:38 UTC');
+  assert.deepEqual(readApprovalAskMessages(root), {
+    'BL-1348': {
+      topicId: 1785,
+      messageId: 69489,
+      text: 'BL-1348 needs your approval...\n-- Ruled: pick B 2026-09-02 19:38 UTC',
+      closed: true,
+    },
+  });
+});
+
+// Hardening (BL-1455 mutation pass): the `!existing` guard had zero test
+// coverage - every existing test calls updateApprovalAskMessageText only
+// after a prior recordApprovalAskMessage for the SAME id, so the early
+// `return` (no-op for an id with no recorded ask at all) was never
+// exercised. Proves it stays a true no-op rather than writing a partial
+// record (`{...undefined, text, closed: true}` would silently create one
+// missing topicId/messageId).
+test('BL-1455: updateApprovalAskMessageText is a no-op when there is no existing record for the id', () => {
+  const root = mkTmpRoot();
+  updateApprovalAskMessageText(root, 'BL-999', 'BL-999 needs your approval...\n-- Approved 2026-09-05 08:14 UTC');
+  assert.deepEqual(readApprovalAskMessages(root), {});
+});
+
+// A fresh post (recordApprovalAskMessage, e.g. the re-pend's new ask)
+// overwrites the whole record with no `closed` field — the loop guard
+// (BL-1090) that keeps the re-pend from being re-posted every subsequent
+// tick depends on this clearing the prior close mark.
+test('BL-1455: recordApprovalAskMessage overwrites a closed record with an unclosed one (the re-pend post)', () => {
+  const root = mkTmpRoot();
+  recordApprovalAskMessage(root, 'BL-1348', 1785, 69489, 'BL-1348 needs your approval...');
+  updateApprovalAskMessageText(root, 'BL-1348', 'BL-1348 needs your approval...\n-- Ruled: pick B 2026-09-02 19:38 UTC');
+  recordApprovalAskMessage(root, 'BL-1348', 1785, 71000, 'BL-1348 needs your approval (re-pended)...');
+  assert.deepEqual(readApprovalAskMessages(root), {
+    'BL-1348': { topicId: 1785, messageId: 71000, text: 'BL-1348 needs your approval (re-pended)...' },
   });
 });
 
