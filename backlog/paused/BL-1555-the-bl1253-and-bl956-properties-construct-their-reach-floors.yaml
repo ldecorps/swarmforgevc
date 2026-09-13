@@ -97,7 +97,7 @@ description: |
 
   Both floors are met by construction on every run and stay asserted at
   their values. Each fixed test prints its reach map (the BL-1371 /
-  BL-1534 `reach map` shape) so a reader, and scenarios 02 and 04, can see
+  BL-1534 `reach map` shape) so a reader, and scenario 02, can see
   the counts from the run. The property lane is green on `main`; the two
   register rows this ticket adds are removed in the same land.
 
@@ -121,7 +121,7 @@ description: |
   - Step handler `specs/pipeline/steps/bl1555ReachFloorsConstructedSteps.js`
     runs each file alone under the properties config as a real subprocess
     (the bl1534BoundedSweepReachSteps.js shape), parses the two reach maps,
-    and reads the source for scenario 05's literals. Land it in the same
+    and reads the source for scenario 03's literals. Land it in the same
     commit as the feature (BL-233).
 
   ## Not in scope
@@ -159,7 +159,7 @@ qa_e2e_procedure: |
      step handler, the feature, evidence, and the register row removals;
      `extension/src/`, `property_suite_standing_allowlist.tsv`, the
      BL-1253/BL-956 features and handlers are unchanged. The four floor
-     literals of scenario 05 are still present in the sources.
+     literals of scenario 03 are still present in the sources.
   5. Break-then-restore: make the flapping arbitrary omit its dead state
      again; the `handovers >= 1` assertion fails under the QA seed on the
      first run; restore. Narrow bl956's overflow cell to 1..12; the

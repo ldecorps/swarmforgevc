@@ -12,33 +12,35 @@ Feature: BL-1555 The bl1253 and bl956 properties construct their reach floors
   floor a uniform draw misses about one run in 370. This feature is that
   each floor is met by construction on every run, the way BL-1553 iterates
   the damage kind and BL-1533 the delta sign, and stays asserted at its
-  value.
+  value. The grid-overflow floor of 50 below is deliberately above what a
+  uniform 1..15 draw averages (30), so only a constructed overflow cell
+  reaches it; the flapping test's own per-sequence assertion (scenario 03)
+  is what makes 24 counted sequences mean 24 handovers.
 
   # BL-1555 constructs-their-reach-floors-01
-  Scenario: the bl1253 property file is green on the tree as it stands
-    When extension/test/bl1253TokenOwnershipInvariants.property.test.js runs alone under the properties config
+  Scenario Outline: each property file is green on the tree as it stands
+    When <file> runs alone under the properties config
     Then every test in it passes
+
+    Examples:
+      | file                                                                  |
+      | extension/test/bl1253TokenOwnershipInvariants.property.test.js        |
+      | extension/test/bl956PipelineBoardCaptionCapInvariants.property.test.js |
 
   # BL-1555 constructs-their-reach-floors-02
-  Scenario: every flapping sequence hands the token over at least once
-    When extension/test/bl1253TokenOwnershipInvariants.property.test.js runs alone under the properties config
-    Then the run prints a reach map for the flapping test
-    And that reach map counts at least 24 sequences
-    And every sequence in that reach map produced at least one handover
+  Scenario Outline: each constructed arm reports reaching its floor from the run itself
+    When <file> runs alone under the properties config
+    Then the run prints a reach map for <test>
+    And that reach map counts at least <floor> <population>
+
+    Examples:
+      | file                                                                  | test              | floor | population             |
+      | extension/test/bl1253TokenOwnershipInvariants.property.test.js        | the flapping test | 24    | sequences              |
+      | extension/test/bl956PipelineBoardCaptionCapInvariants.property.test.js | invariant 3       | 50    | grid overflow boards   |
+      | extension/test/bl956PipelineBoardCaptionCapInvariants.property.test.js | invariant 3       | 20    | parked overflow boards |
+      | extension/test/bl956PipelineBoardCaptionCapInvariants.property.test.js | invariant 3       | 20    | epic overflow boards   |
 
   # BL-1555 constructs-their-reach-floors-03
-  Scenario: the bl956 property file is green on the tree as it stands
-    When extension/test/bl956PipelineBoardCaptionCapInvariants.property.test.js runs alone under the properties config
-    Then every test in it passes
-
-  # BL-1555 constructs-their-reach-floors-04
-  Scenario: invariant 3 overflows the grid on more boards than a uniform draw could
-    When extension/test/bl956PipelineBoardCaptionCapInvariants.property.test.js runs alone under the properties config
-    Then the run prints a reach map for invariant 3
-    And that reach map counts at least 50 grid overflow boards
-    And that reach map counts at least 20 parked overflow boards and at least 20 epic overflow boards
-
-  # BL-1555 constructs-their-reach-floors-05
   Scenario Outline: each reach floor is still asserted in its test source
     When the source of <file> is read
     Then it still asserts the floor <floor>
