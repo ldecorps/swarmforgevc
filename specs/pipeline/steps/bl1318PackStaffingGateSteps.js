@@ -180,7 +180,13 @@ function writeConf(fx, qaWindowLine) {
 function runGateCli(fx, windows, extraArgs = []) {
   const wf = path.join(fx.root, `windows-${Date.now()}-${Math.random().toString(36).slice(2)}.tsv`);
   fs.writeFileSync(wf, windows.map((w) => w.join('\t')).join('\n') + '\n');
-  const r = spawnSync('bb', [GATE_CLI, REPO_ROOT, wf, ...extraArgs], { encoding: 'utf8', env: { ...process.env, MODEL_STEWARD_STATE_DIR: fx.stateDir } });
+  // The CLI never reads PACK_STAFFING_SKIP_GATE (the launcher is the sole
+  // reader), but a step handler that spawns it must still decide the
+  // variable itself rather than inherit whichever pane spawned this
+  // process - invariant 1 covers every spawn site, not only the launcher's.
+  const env = { ...process.env, MODEL_STEWARD_STATE_DIR: fx.stateDir };
+  delete env.PACK_STAFFING_SKIP_GATE;
+  const r = spawnSync('bb', [GATE_CLI, REPO_ROOT, wf, ...extraArgs], { encoding: 'utf8', env });
   assert.equal(r.status, 0, `pack_staffing_gate_cli.bb exited nonzero: ${r.stderr}`);
   // NEVER .trim() the whole blob first - a trailing empty TSV field (a
   // "pass" decision's failing-check/steward-command columns) is a literal
@@ -194,10 +200,14 @@ function runGateCli(fx, windows, extraArgs = []) {
 
 function runRealParse(fx, projectRoot, extraEnv) {
   const cmd = `source '${SWARMFORGE_SH}' '${projectRoot}'; parse_config; echo "ROLE_COUNT=\${#ROLES[@]}"; echo PARSE_CONFIG_RETURNED`;
-  const r = spawnSync('zsh', ['-c', cmd], {
-    encoding: 'utf8',
-    env: { ...process.env, MODEL_STEWARD_STATE_DIR: fx.stateDir, ...extraEnv },
-  });
+  // Never inherit the pane's own PACK_STAFFING_SKIP_GATE export (every role
+  // pane sets it since ~2026-09-04) - remove it from the child env first, so
+  // extraEnv's own '1' (the override row alone, see the-pack's-QA-window
+  // caller above) is the only way the launcher ever sees it set.
+  const env = { ...process.env, MODEL_STEWARD_STATE_DIR: fx.stateDir };
+  delete env.PACK_STAFFING_SKIP_GATE;
+  Object.assign(env, extraEnv);
+  const r = spawnSync('zsh', ['-c', cmd], { encoding: 'utf8', env });
   return { status: r.status, out: `${r.stdout}\n${r.stderr}` };
 }
 
