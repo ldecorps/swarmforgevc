@@ -170,3 +170,5 @@ notes: |
   coordinator window and is the feature's owner; BL-203 (done) built the
   profile and the smoke check; BL-937 (done) ported the check to stock
   bash; no open ticket names the profiles directory or these three reds.
+
+assigned_to: coder
