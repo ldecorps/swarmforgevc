@@ -73,12 +73,42 @@ interface CeremonyRun {
   outcome: CeremonyOutcome | null;         // { type, ref, recordedAt }
   adjustments: CeremonyAdjustment[];       // { kind, detail, record, recordedAt }
   failedAt: string | null;
+  deliveryFailure?: string | null;         // BL-1528: refusal text, or null
 }
 ```
 
 `CeremonyOutcome.type` is one of `process_ticket | spec_gate_tweak |
 no_change`. `CeremonyAdjustment.kind` is one of `promotion_order |
 throttle_posture`. Both closed vocabularies — no passthrough.
+
+### A refused packet note is a FAILED run at write time, not a pending one (BL-1528)
+
+`runClosingCeremony` writes the run's state from the result of `deps.sendNote`,
+never before it. When `swarm_handoff.sh` refuses the lean-packet note (unknown
+recipient role, a failed tmux inject, or any other non-zero exit), the run is
+written already `failed`: `failedAt` is set to the same `nowIso` the run was
+created at, `deliveryFailure` carries the refusal text, and
+`runClosingCeremony` returns status `created_undeliverable` instead of
+throwing — the `lean-packet` night-sequence step completes and its state is
+written on the first sweep, not two days later. `deliveryFailure` is `null`
+on every ordinary delivered run, distinguishing "undeliverable" from
+"delivered, nobody answered". The stale-run failure note
+(`buildCeremonyFailureNoteDraft`) gets the same treatment when refused: the
+run stays `failed`, `finalizedFailedUndeliverable` records the shift.
+
+Both cases surface the same day, through the existing loud-log mechanism
+(`closing-briefing-missing`'s surface), never by adding a Telegram/email
+path:
+
+- `closing-lean-packet-undeliverable <shiftKey>` — this shift's own packet
+  note was refused.
+- `closing-ceremony-failure-undeliverable <shiftKey>` — an earlier shift's
+  run was finalized failed and its failure note was also refused.
+
+Both lines land in `.swarmforge/daemon/closing-ceremony-loud.log`, and the
+daemon's `closing-ceremony-run` log line carries them in `loudSurfaces`. A
+run recorded `created_undeliverable` is terminal like any other failed run:
+`recordCeremonyOutcome` still refuses to record an outcome against it.
 
 ### `dwellHotspots` is occupied time, not summed parcel time (BL-923)
 

@@ -77,8 +77,13 @@ export function findOpenCeremonyRunsBefore(targetPath: string, shiftKey: string)
   return listCeremonyRuns(targetPath).filter((r) => r.shiftKey < shiftKey && ceremonyRunState(r) === 'pending');
 }
 
-export function finalizeCeremonyRunAsFailed(targetPath: string, run: CeremonyRun, atIso: string): CeremonyRun {
-  const failed: CeremonyRun = { ...run, failedAt: atIso };
+export function finalizeCeremonyRunAsFailed(
+  targetPath: string,
+  run: CeremonyRun,
+  atIso: string,
+  deliveryFailure?: string
+): CeremonyRun {
+  const failed: CeremonyRun = { ...run, failedAt: atIso, deliveryFailure: deliveryFailure ?? run.deliveryFailure ?? null };
   writeCeremonyRun(targetPath, failed);
   return failed;
 }
