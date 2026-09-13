@@ -14,7 +14,7 @@ abandoned_commits: [29ada9a5f8]
 # three closed-and-already-landed siblings (BL-1498, BL-1499, BL-1518) as
 # ancestors, so the land step's attribution walk read them as entangled
 # rather than landed and built a tip-pure replay off origin/main instead of
-# 29ada9a5f8. Landed commit: d007600a535ebc642e5e3122b66d0ee193753301.
+# 29ada9a5f8. Landed commit: 6671ee88652b5f6eb510f6e7fd5ff35af1118764.
 epic: multi-seat-stages
 priority: 12
 direction: swarm-reported
