@@ -122,6 +122,27 @@ test('finalizeCeremonyRunAsFailed sets failedAt and persists it', () => {
   assert.equal(ceremonyRunState(readCeremonyRun(target, '2026-08-06')), 'failed');
 });
 
+// BL-1528: the extra data distinguishing "undeliverable" from "delivered,
+// nobody answered" - still a single `failed` state (ceremonyRunState), never
+// a fourth one.
+test('finalizeCeremonyRunAsFailed records an optional deliveryFailure reason and persists it', () => {
+  const target = mkTmp();
+  const r = run('2026-08-06');
+  writeCeremonyRun(target, r);
+  const failed = finalizeCeremonyRunAsFailed(target, r, '2026-08-08T00:00:00.000Z', "Unknown recipient role 'specifier'.");
+  assert.equal(failed.deliveryFailure, "Unknown recipient role 'specifier'.");
+  assert.equal(readCeremonyRun(target, '2026-08-06').deliveryFailure, "Unknown recipient role 'specifier'.");
+  assert.equal(ceremonyRunState(readCeremonyRun(target, '2026-08-06')), 'failed', 'still a single failed state, not a fourth one');
+});
+
+test('finalizeCeremonyRunAsFailed with no reason leaves deliveryFailure at whatever the run already carried', () => {
+  const target = mkTmp();
+  const r = run('2026-08-06');
+  writeCeremonyRun(target, r);
+  const failed = finalizeCeremonyRunAsFailed(target, r, '2026-08-08T00:00:00.000Z');
+  assert.equal(failed.deliveryFailure, null);
+});
+
 // ── recordCeremonyOutcome ────────────────────────────────────────────
 
 test('recordCeremonyOutcome records a valid outcome against a pending run', () => {

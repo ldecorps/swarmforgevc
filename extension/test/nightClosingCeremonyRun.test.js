@@ -33,8 +33,15 @@ function makeDeps(over = {}) {
       surface: (_t, code) => actions.push(['surface', code]),
       recordCnp: (_t, held) => actions.push(['cnp', held]),
       // BL-1393: the lean pass is a step of this sequence now.
-      deliverLeanPacket: (_t, shiftKey) => actions.push(['lean', shiftKey]),
-      recordEmptyOutcome: (_t, shiftKey) => actions.push(['empty', shiftKey]),
+      // BL-1528: real deps return the loud codes a refused send produced.
+      deliverLeanPacket: (_t, shiftKey) => {
+        actions.push(['lean', shiftKey]);
+        return [];
+      },
+      recordEmptyOutcome: (_t, shiftKey) => {
+        actions.push(['empty', shiftKey]);
+        return [];
+      },
       workedAShift: () => true,
       ...over,
     },
@@ -109,4 +116,56 @@ test('BL-1393: a sleep after no shift of work records an empty outcome and sends
   assert.ok(kinds.includes('stop'), 'the swarm still goes to sleep');
   assert.ok(!kinds.includes('instruct'), 'no briefing is instructed');
   assert.ok(!kinds.includes('lean'), 'no packet is delivered');
+});
+
+// ── BL-1528: a lean-packet send's own outcome is surfaced and folded into state ──
+
+test('BL-1528: a loud code from deliverLeanPacket is surfaced through deps.surface and joins loudSurfaces', () => {
+  const { deps, actions, state } = makeDeps({
+    deliverLeanPacket: (_t, shiftKey) => {
+      actions.push(['lean', shiftKey]);
+      return ['closing-lean-packet-undeliverable 2026-09-13'];
+    },
+  });
+  runNightClosingCeremony('/tmp/bl1528', '/tmp/conf', Date.now(), deps);
+  const result = runNightClosingCeremony('/tmp/bl1528', '/tmp/conf', Date.now() + 1000, deps);
+
+  assert.ok(
+    actions.some((a) => a[0] === 'surface' && a[1] === 'closing-lean-packet-undeliverable 2026-09-13'),
+    `expected the code to be surfaced through deps.surface: ${JSON.stringify(actions)}`
+  );
+  assert.ok(
+    result.state.loudSurfaces.includes('closing-lean-packet-undeliverable 2026-09-13'),
+    `expected the written state's loudSurfaces to include the code: ${JSON.stringify(result.state.loudSurfaces)}`
+  );
+  assert.ok(
+    state.current.loudSurfaces.includes('closing-lean-packet-undeliverable 2026-09-13'),
+    'expected the persisted state (deps.writeState) to also carry it'
+  );
+});
+
+test('BL-1528: a lean-packet send with no loud codes leaves loudSurfaces untouched', () => {
+  const { deps, actions } = makeDeps();
+  runNightClosingCeremony('/tmp/bl1528b', '/tmp/conf', Date.now(), deps);
+  const result = runNightClosingCeremony('/tmp/bl1528b', '/tmp/conf', Date.now() + 1000, deps);
+
+  assert.ok(!actions.some((a) => a[0] === 'surface'), 'expected no surface call when deliverLeanPacket reports nothing');
+  assert.deepEqual(result.state.loudSurfaces, []);
+});
+
+test('BL-1528: a loud code from recordEmptyOutcome is surfaced the same way', () => {
+  const { deps, actions } = makeDeps({
+    workedAShift: () => false,
+    recordEmptyOutcome: (_t, shiftKey) => {
+      actions.push(['empty', shiftKey]);
+      return ['closing-lean-packet-undeliverable 2026-09-13'];
+    },
+  });
+  const result = runNightClosingCeremony('/tmp/bl1528c', '/tmp/conf', Date.now(), deps, false, 'finish-shift');
+
+  assert.ok(
+    actions.some((a) => a[0] === 'surface' && a[1] === 'closing-lean-packet-undeliverable 2026-09-13'),
+    `expected the code to be surfaced: ${JSON.stringify(actions)}`
+  );
+  assert.ok(result.state.loudSurfaces.includes('closing-lean-packet-undeliverable 2026-09-13'));
 });
