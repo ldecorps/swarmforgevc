@@ -125,6 +125,9 @@ notes: |
   in the land that turns the file green. BL-1499 (held at QA under Article
   4.2 on this red alone; its own gates are all green) may be approved on
   the red now that this ticket is open - the row names it.
+  2026-09-13 later pass: the bl1272LandedSiblingInvariants timeout listed
+  under Not in scope is now owned by BL-1556 (QA's second unowned-red note,
+  evidence dfc2a60b23; it failed alone on main for the specifier).
 
 qa_e2e_procedure: |
   On the parcel commit, from `extension/`:
