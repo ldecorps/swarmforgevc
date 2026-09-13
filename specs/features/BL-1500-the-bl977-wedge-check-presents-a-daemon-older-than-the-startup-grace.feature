@@ -1,3 +1,8 @@
+# mutation-stamp: sha256=cb19b8d09c156e9bc4caaabb27b4d070b7a0c40c19d17c8b8114877ff54b419d
+# acceptance-mutation-manifest-begin
+# {"version":1,"tested_at":"2026-09-13T11:59:39.908915338Z","feature_name":"BL-1500 The BL-977 wedge check presents a daemon older than the startup grace","feature_path":"/home/carillon/swarmforgevc/.worktrees/hardender/specs/features/BL-1500-the-bl977-wedge-check-presents-a-daemon-older-than-the-startup-grace.feature","background_hash":"74234e98afe7498fb5daf1f36ac2d78acc339464f950703b8c019892f982b90b","implementation_hash":"unknown","scenarios":[{"index":0,"name":"a wedged poll loop is judged by its pid file's age against one stall window","scenario_hash":"f77c977660a49ce3106867788f705ce8c11ff11feee93e54c00a7bb84fe4d0b9","mutation_count":6,"result":{"Total":6,"Killed":6,"Survived":0,"Errors":0},"tested_at":"2026-09-13T11:59:39.908915338Z"}]}
+# acceptance-mutation-manifest-end
+
 Feature: BL-1500 The BL-977 wedge check presents a daemon older than the startup grace
 
   BL-977's fifth scenario proves that a poll loop which stops advancing while
