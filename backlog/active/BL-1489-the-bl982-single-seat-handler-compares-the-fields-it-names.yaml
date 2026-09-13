@@ -157,3 +157,5 @@ notes: |
   Mint-time INVEST: one observable outcome (BL-982's feature green
   against today's launcher and immune to a further column), well under
   one sitting, no dependency. IR-DRY at mint: one possible-synonym finding reviewed and kept - 'it passes' (one comparison run) and 'it passes every scenario' (the whole feature run) name different subjects.
+
+assigned_to: coder
