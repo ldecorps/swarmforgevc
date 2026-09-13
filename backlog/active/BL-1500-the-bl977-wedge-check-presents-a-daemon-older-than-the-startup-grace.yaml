@@ -249,3 +249,5 @@ notes: |
     passed and none failed" is one pinned count, BL-1445's census shape
     (the BL-977 outline contributes six subtests, the four scenarios one
     each: 10).
+
+assigned_to: coder

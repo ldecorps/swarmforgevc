@@ -24,7 +24,7 @@ acceptance: specs/features/BL-1554-qa-gathers-its-mechanical-checklist-in-one-ca
 required_wiring:
   - 'specs/pipeline/steps/bl1554QaGatherReportSteps.js::registerSteps::the handler lands in the same parcel as the feature (BL-233, BL-1371)'
 
-human_approval: pending
+human_approval: approved
 approval_context: >
   A new feature file and a new tool QA will run on every parcel, so it needs
   a tap. No choice is posed and there are no ruling_options. FIRM (your own
