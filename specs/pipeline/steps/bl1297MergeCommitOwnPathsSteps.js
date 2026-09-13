@@ -87,6 +87,42 @@ function mergeParcelIn(ctx, branchPath) {
   return ctx.commit;
 }
 
+// BL-1464: a merge whose delivered content is the parcel's OWN, not a
+// sibling's. `mergeParcelIn` above is shared by scenarios 01 and 05, and
+// 05's whole premise is a branch commit authored under a FOREIGN id - so
+// that helper cannot change without breaking 05. This is a separate helper
+// for scenario 03 alone: the branch commit names the task itself (the land
+// step's path-scoped attribution walk credits a path to whichever commit
+// actually introduced it, not to the merge's own subject - see
+// land_step_lib.bb's `path-attributing-commits`), so `branchPath` survives
+// BL-1389's unlanded-sibling exclusion instead of being excluded with it.
+//
+// TRUNK_PATH is folded into origin/main itself BEFORE the branch forks -
+// truly "the trunk's pre-existing content", not merely a same-range commit
+// under a foreign subject. Measured (BL-1464): a TRUNK_PATH committed AFTER
+// origin/main, as the old helper does, still shows up in the land step's
+// own full origin-main..tip delivered diff and is attributed solely to its
+// foreign subject - a real, if harmless, "delivered path owned solely by an
+// unlanded sibling" that BL-1464's own scenario 02 refuses to tolerate even
+// though it never blocks scenario 03's replay. Moving it before origin/main
+// removes it from that diff entirely rather than leaving it there excluded.
+function mergeOwnParcelIn(ctx, branchPath) {
+  commitFile(ctx.root, TRUNK_PATH, `${OTHER}: ${TRUNK_PATH} already on the receiving branch`);
+  ctx.base = git(ctx.root, 'rev-parse', 'HEAD').trim();
+  git(ctx.root, 'update-ref', 'refs/remotes/origin/main', ctx.base);
+
+  git(ctx.root, 'checkout', '-q', '-b', 'bl1297-own-branch');
+  commitFile(ctx.root, branchPath, `${TASK}: ${branchPath} arriving through the merge`);
+  git(ctx.root, 'checkout', '-q', 'main');
+  git(ctx.root, '-c', 'core.hooksPath=/dev/null', 'merge', '--no-ff', '-q', '--no-verify', '-m', MERGE_SUBJECT, 'bl1297-own-branch');
+  ctx.commit = git(ctx.root, 'rev-parse', 'HEAD').trim();
+
+  // The premise, asserted rather than assumed - same guard as mergeParcelIn.
+  const old = git(ctx.root, 'diff-tree', '--no-commit-id', '--name-only', '-r', '--first-parent', ctx.commit).trim();
+  assert.equal(old, '', `the old invocation no longer suppresses a merge's diff: ${old}`);
+  return ctx.commit;
+}
+
 // A merge whose OWN resolution writes `resolvedPath` - content on neither
 // parent, so --cc names it and the merger is answerable for it. `branchPath`
 // merely rides in through the merge and must not be charged to the merger.
@@ -198,7 +234,7 @@ function registerSteps(registry) {
 
   // ── Scenario 03 ───────────────────────────────────────────────────────────
   scoped(/^the only commit attributed to the task in the walk is a merge$/, (ctx) => {
-    mergeParcelIn(ctx, PARCEL_PATH);
+    mergeOwnParcelIn(ctx, PARCEL_PATH);
     // Asserted, not assumed: an empty answer downstream could then only come
     // from the merge blind spot, never from the walk finding nothing tagged.
     const tagged = git(ctx.root, 'rev-list', '--first-parent', `${ctx.base}..${ctx.commit}`)
@@ -299,4 +335,22 @@ function registerSteps(registry) {
   });
 }
 
-module.exports = { registerSteps };
+// Exported for BL-1464's own feature (specs/pipeline/steps/
+// bl1464MergeOnlyFixtureOwnContentSteps.js), which asks about the SAME
+// fixtures rather than building a second copy of them: scenario 02 asks
+// what this scenario 03 fixture's tip attributes; scenario 03 asks about
+// the OLD (foreign) shape `mergeParcelIn` still builds for scenario 01/05.
+module.exports = {
+  registerSteps,
+  git,
+  bb,
+  initRepo,
+  cleanup,
+  mergeParcelIn,
+  mergeOwnParcelIn,
+  TASK,
+  TASK_ID,
+  OTHER,
+  PARCEL_PATH,
+  TRUNK_PATH,
+};
