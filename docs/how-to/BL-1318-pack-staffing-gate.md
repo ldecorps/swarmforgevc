@@ -54,6 +54,12 @@ readable at all, a warning that no evidence exists). An override is never
 indistinguishable from a pass in either the operator-facing output or the
 recorded decision.
 
+This feature's own acceptance handler (`bl1318PackStaffingGateSteps.js`) is
+hermetic to the hatch: every spawn of the launcher it drives explicitly sets
+or removes `PACK_STAFFING_SKIP_GATE` in the child environment rather than
+inheriting whatever the pane exports, so the feature's verdict never depends
+on the ambient environment (BL-1485).
+
 ## Identity resolution shapes
 
 Seeded from the live packs, table-driven in `pack_staffing_gate_lib.bb`:
