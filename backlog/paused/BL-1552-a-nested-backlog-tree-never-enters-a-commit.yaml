@@ -33,7 +33,7 @@ required_wiring:
   - 'swarmforge/scripts/run_commit_guards.sh::run_guard check_nested_backlog_path.sh::the cheap tier must reach the guard, a present-but-unchained guard gates nothing'
   - 'specs/pipeline/steps/bl1552NestedBacklogTreeNeverEntersACommitSteps.js::registerSteps::the handler lands in the same parcel as the feature (BL-233, BL-1371)'
 
-human_approval: pending
+human_approval: approved
 approval_context: >
   A new feature file is authored here, so it needs a tap. No choice is
   posed and there are no ruling_options. FIRM: the guard keys on a backlog
@@ -136,6 +136,9 @@ description: |
     guard on the source branch already checked.
 
 notes: |
+  2026-09-13: human_approval approved by the operator (direct chat
+  instruction to the coordinator, scoped to this ticket by name).
+
   Minted 2026-09-13 by the specifier as a second finding of the BL-820
   pass for shift 2026-09-13 (the recorded outcome is `process_ticket`
   BL-1551; this ticket is named in the same evidence file). Epic BL-541's
