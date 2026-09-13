@@ -1,0 +1,174 @@
+id: BL-1556
+title: "bl1272LandedSiblingInvariants.property.test.js is red on main under load with no owner: invariant 1 spawns one bb process per fast-check draw (60 per run, 0.19 s each quiet) against a CLI whose header promises one process per property run, so the 20 s testTimeout holds only on a quiet host (29.2 s FAIL then 19.5 s pass, alone on main) - the draws are judged in one landed-batch query and the fixture's git steps fail loud instead of surfacing as an unexplained origin/main error"
+milestone: M8
+type: defect
+severity: high
+# high (standing-red rule 2026-09-05): a property-lane file whose verdict on
+# main is a function of host load is a broken safety signal; it has now been
+# seen red from two QA parcels (BL-1499 on 2026-09-13 10:25Z, BL-1485 on
+# 2026-09-13 13:54Z) and by the specifier alone on main, and an unowned red
+# throttles intake (BL-1429). Production is unaffected: land_step_lib.bb is
+# not touched and every judged case agrees with it - the cost is the test's
+# own process-per-draw shape.
+status: todo
+epic: code-quality-gates
+priority: 8
+direction: swarm-reported
+depends_on: []
+mutation_cost: low
+# low: one property test file under extension/test (never extension/src),
+# one pipeline fixture CLI under specs/pipeline/steps/lib, one step-handler
+# file. No production code, so no Stryker target; the hardener records the
+# fallback.
+slice_size_envelope: low
+required_stages: [coder, cleaner, architect, hardender, documenter, qa]
+
+acceptance: specs/features/BL-1556-the-bl1272-property-costs-one-bb-process-per-query.feature
+
+# No consumer anchor is honest here (BL-1235): the live consumer is the
+# properties lane itself (`npm run test:properties`, vitest.properties.config.mjs),
+# which already collects this file and is the thing that is red. The
+# handler entry is the BL-233 in-parcel pin.
+required_wiring:
+  - 'specs/pipeline/steps/bl1556OneBbProcessPerQuerySteps.js::registerSteps::the handler lands in the same parcel as the feature (BL-233, BL-1371)'
+
+human_approval: pending
+approval_context: >
+  A new feature file is authored here, so it needs a tap. No choice is
+  posed and there are no ruling_options. FIRM: the 20 s testTimeout in
+  vitest.properties.config.mjs is not raised and no per-test timeout is
+  added - BL-871 raised budgets for tests whose cost was real subprocess
+  work, this cost is 59 redundant bb boots. FIRM: numRuns 60 is not
+  reduced and every drawn case is still judged; swarmforge/scripts/
+  land_step_lib.bb is not touched; the file is not added to
+  property_suite_standing_allowlist.tsv; invariant 2's four enumerated
+  cases stay one action-batch call. Direction, not mandate: draw the 60
+  cases up front (fc.sample with a logged seed) and answer them in ONE
+  landed-batch query, asserting each case with its inputs in the message;
+  wrap the fixture's process/sh calls so a non-zero exit stops the
+  fixture and names the step. Minted by the specifier on QA's unowned-red
+  note of 2026-09-13 13:54Z from the BL-1485 parcel (evidence dfc2a60b23
+  on swarmforge-QA); the specifier reproduced the red alone on main
+  ccd3ff6e63 (29.2 s fail, then 19.5 s pass).
+
+invariants:
+  - "The number of bb processes a run of this file starts is bounded by its number of queries, never by its number of fast-check draws."
+  - "A fixture git step that exits non-zero stops the fixture and names itself; no later step runs on its result."
+
+description: |
+  ## What is wrong
+
+  `extension/test/bl1272LandedSiblingInvariants.property.test.js` drives
+  `swarmforge/scripts/land_step_lib.bb` through
+  `specs/pipeline/steps/lib/bl1272LandDecisionCli.bb`. The CLI's header
+  says both queries are "batched so a whole property run costs one bb
+  process", and `landed-batch` takes a JSON array of cases for exactly
+  that. Invariant 1's property (lines 31-71) instead calls
+  `batch('landed-batch', [oneCase])` INSIDE `fc.property` with
+  `numRuns: 60`: 60 bb processes, each `load-file`-ing the 2118-line
+  library and its 307-line dependency, 0.19 s each on a quiet host
+  (measured, three identical runs; bare `bb -e` is 0.00 s). The 20 s
+  `testTimeout` is therefore met at 0.19 s per boot and missed at 0.34 s:
+
+  | who | where | invariant 1 | verdict |
+  |---|---|---|---|
+  | BL-1499 QA, 2026-09-13 | full lane | > 20 s | fail (noted on BL-1553, not minted) |
+  | BL-1485 QA, 2026-09-13 | full lane, run 2 of 3 | 20000 ms timeout, `fatal: ambiguous argument 'origin/main'` from the fixture | fail |
+  | BL-1485 QA, 2026-09-13 | alone | (10.9 s whole file) | pass |
+  | specifier, 2026-09-13 | alone, main `ccd3ff6e63`, load 5-10 of 20 cores | 29225 ms | **fail** |
+  | specifier, 2026-09-13 | alone, same tree, minutes later | 19545 ms | pass by 455 ms |
+
+  Invariant 2 already uses the CLI as designed (four enumerated cases,
+  ONE `action-batch` call, 3-7 s building four real repositories with a
+  real bare origin) and is not the problem.
+
+  The `origin/main` message: every fixture git step in `build-case!`
+  runs through `(process/sh {:dir .. :continue true} ..)`, so a non-zero
+  exit is ignored and its stderr captured into a result nobody reads. The
+  bare init, both pushes, the clone and the fetch each publish or read
+  the `origin/main` the land plan then resolves; when one fails under
+  load the fixture continues and the library reports a ref that does not
+  exist. Which step failed cannot be recovered from QA's run, nor from the
+  next one, until the fixture fails loud.
+
+  Latent since BL-1272 landed the file (`ec0584131b`, 2026-08-30).
+  Evidence: `backlog/evidence/BL-1556-specifier-unowned-red-repro-20260913.md`.
+
+  ## What is wanted
+
+  Invariant 1 costs one bb process for all 60 cases and still judges every
+  one of them, both halves of its assertion intact (the equivalence and
+  the fail-closed clause). A fixture git step that fails stops the fixture
+  with a non-zero exit and a message naming the step. The run prints the
+  case count (`BL-1556 reach map (invariant 1): {"cases":60,...}`) so the
+  acceptance can see the property was not thinned. The file is green on
+  `main` alone and in the full lane; the register row this ticket adds is
+  removed in the same land.
+
+  ## How (direction, not mandate)
+
+  - Draw the 60 cases up front - `fc.sample(caseArb, { numRuns: 60, seed })`
+    with the seed logged so a failure is replayable - make ONE
+    `batch('landed-batch', cases)` call, and assert each case against the
+    same `expected` equivalence and the same fail-closed clause, naming the
+    case's inputs and index in the assertion message (shrinking is lost;
+    the cases are four-field records and read fine as printed). Keep the
+    non-vacuity `it` and invariant 2 as they are.
+  - In the CLI, replace bare `(process/sh {:continue true} ..)` for
+    fixture steps with a helper that checks `:exit` and, on non-zero,
+    prints `fixture step failed: git <args>: <stderr>` to stderr and exits
+    non-zero (or throws so the CLI dies naming it). The test's
+    `execFileSync` then throws with that text instead of a later ref error.
+  - Step handler `specs/pipeline/steps/bl1556OneBbProcessPerQuerySteps.js`
+    puts a counting `bb` shim first on `PATH` (a shell script that appends
+    a line to a counter file under a `mkProcessTmpDir` root, then execs the
+    real `bb` found by `command -v` on the ORIGINAL PATH) and runs the
+    property file alone under the properties config as a real subprocess
+    (the bl1534BoundedSweepReachSteps.js shape); for scenario 04 it puts a
+    `git` shim first that exits 1 on `push` and delegates every other
+    subcommand, runs the CLI's `action-batch` for one case, and asserts
+    non-zero exit and `push` in stderr. Land it in the same commit as the
+    feature (BL-233).
+
+  ## Not in scope
+
+  - `swarmforge/scripts/land_step_lib.bb`, `vitest.properties.config.mjs`,
+    and BL-1272's own acceptance feature and handler are not touched.
+  - The BL-1272 parcel shipped a per-draw subprocess property against a
+    CLI documented as one-per-run and no stage caught it; no process
+    change is minted here.
+
+notes: |
+  Register: backlog/standing-reds.tsv gains one `property` row naming this
+  ticket (same commit as this mint), first_seen 2026-09-13; QA removes it
+  in the land that turns the file green. BL-1553's "Not in scope" recorded
+  this timeout as not minted on the earlier 2026-09-13 pass; it is minted
+  now because it failed ALONE on main for the specifier. Sibling: BL-1555
+  owns the other two files in QA's note (a reach-floor class).
+
+qa_e2e_procedure: |
+  On the parcel commit, from `extension/`:
+  1. Make a counting shim: `mkdir -p tmp/shim && printf '#!/bin/sh\necho x >> "$BL1556_COUNT"\nexec /usr/bin/env bb "$@"\n' > tmp/shim/bb`
+     with the real bb resolved OUTSIDE the shim dir (adjust the exec line
+     to the absolute real path from `command -v bb`), `chmod +x`, then
+     `BL1556_COUNT=$PWD/tmp/count PATH=$PWD/tmp/shim:$PATH npx vitest run
+     --config vitest.properties.config.mjs
+     test/bl1272LandedSiblingInvariants.property.test.js` five times ->
+     green every time, `wc -l < tmp/count` at most 3 per run (unfixed: 62).
+  2. Each run's stdout prints `BL-1556 reach map (invariant 1)` with
+     `cases` >= 60; vitest's per-test duration for invariant 1's property
+     is a small fraction of the 20 s budget (about 1 s on a quiet host,
+     against 11-29 s unfixed).
+  3. `bb specs/pipeline/steps/lib/bl1272LandDecisionCli.bb action-batch
+     '[{"land":[]}]'` with a `git` shim first on PATH that exits 1 on
+     `push` -> non-zero exit, stderr names `push`; without the shim the
+     same query answers `replay` with both siblings unlanded.
+  4. `git diff main...HEAD --name-only` names the property test, the CLI,
+     the step handler, the feature, evidence, and the register row removal;
+     `extension/src/`, `swarmforge/scripts/land_step_lib.bb`,
+     `vitest.properties.config.mjs`, `property_suite_standing_allowlist.tsv`
+     are unchanged; `grep -n 'numRuns: 60\|numRuns: runsPerCell' <the test>`
+     still shows 60 cases.
+  5. Break-then-restore: move the batch call back inside `fc.property`;
+     the shim count returns to 62 and scenario 02 fails on the first run;
+     restore.
