@@ -80,8 +80,18 @@ function registerSteps(registry) {
     for (const f of files) {
       const abs = path.join(STEPS_DIR, f);
       const content = fs.readFileSync(abs, 'utf8');
-      const spawnsSwarmforgeSh = /swarmforge\.sh/.test(content);
-      if (!spawnsSwarmforgeSh) continue;
+      // "Spawns swarmforge.sh": an actual child-process call, not merely a
+      // file that names it in a comment (e.g. bl1495BaiGatewaySeatSteps.js
+      // parses parse_config's grammar as plain text and never sources it).
+      const spawnsProcess = /spawnSync|execSync|require\(['"]node:child_process['"]\)/.test(content);
+      const mentionsSwarmforgeSh = /swarmforge\.sh/.test(content);
+      if (!spawnsProcess || !mentionsSwarmforgeSh) continue;
+      // "Asserts on the gate's refusal or override warning": the literal
+      // phrase "pack staffing gate" appears in both the launcher's refusal
+      // message and its override warning - true only for a handler that
+      // actually asserts on that text (verified: none of the many other
+      // handlers that merely spawn swarmforge.sh and happen to mention the
+      // generic word "override" for an unrelated reason contain it).
       const assertsOnGate = /pack staffing gate/i.test(content);
       if (!assertsOnGate) continue;
       ctx.candidates.push({ file: f, content });
