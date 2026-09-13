@@ -25,6 +25,7 @@ const fs = require('node:fs');
 const path = require('node:path');
 const fc = require('fast-check');
 const { mkTmpDir } = require('./helpers/tmpDir');
+const { expectedNoChoiceRulingKind } = require('./helpers/noChoiceBlankRulingOracle');
 const {
   classifyApprovalRulingRequirement,
   recordApprovalReply,
@@ -77,11 +78,15 @@ test('BL-1367 P1/P2/P3: an approval either carries its ruling or is not recorded
       fc.boolean(),
       fc.boolean(),
       fc.option(fc.string({ minLength: 1, maxLength: 12 }), { nil: undefined }),
-      (options, declaresOptions, choosesDeclared, freeRuling) => {
+      fc.boolean(),
+      fc.constantFrom(' ', '\t', '  '),
+      (options, declaresOptions, choosesDeclared, freeRuling, substitutesWhitespace, whitespaceRuling) => {
         const declared = declaresOptions ? options : [];
         // CONSTRUCTED, never drawn beside them: the accepted case is reachable
-        // only if the chosen label comes FROM the option list.
-        const ruling = choosesDeclared ? declared[0] : freeRuling;
+        // only if the chosen label comes FROM the option list. The
+        // whitespace-only case (BL-1527) is likewise constructed rather than
+        // hoped for from fc.string's own draws.
+        const ruling = choosesDeclared ? declared[0] : substitutesWhitespace ? whitespaceRuling : freeRuling;
         const existingRuling = 'an answer given earlier';
 
         const dir = mkTmpDir('bl1367-prop-');
@@ -91,6 +96,13 @@ test('BL-1367 P1/P2/P3: an approval either carries its ruling or is not recorded
           const { recorded, requirement } = approveThroughASurface(dir, { options: declared, ruling });
           const after = fs.readFileSync(filePath, 'utf8');
           reached.add(`${declared.length ? 'options' : 'no-options'}:${requirement.kind}`);
+          // BL-1527: named separately from the general key above so the reach
+          // floor can assert this specific draw was constructed, not merely
+          // that SOME no-options:ok outcome occurred (which the undefined-
+          // ruling draw already provides).
+          if (!declared.length && typeof ruling === 'string' && ruling.length > 0 && !ruling.trim()) {
+            reached.add('no-options:ok-blank');
+          }
 
           const approved = /^human_approval: approved$/m.test(after);
           const recordedRuling = readRecordedRuling(dir, 'BL-9367');
@@ -123,12 +135,20 @@ test('BL-1367 P1/P2/P3: an approval either carries its ruling or is not recorded
           // ── P3 ────────────────────────────────────────────────────────
           if (!declared.length) {
             // A ticket posing no choice: a bare approval always goes through,
-            // and a ruling nobody offered never does.
-            if (!ruling) {
+            // and a ruling nobody actually gave never does. BL-1527: "gave"
+            // means the trimmed string is non-empty - the SAME predicate
+            // classifyApprovalRulingRequirement and recordApprovalReply use
+            // ("Blank is not an answer"), read from the shared oracle helper
+            // rather than re-typed here.
+            const expectedKind = expectedNoChoiceRulingKind(ruling);
+            assert.equal(
+              requirement.kind,
+              expectedKind,
+              `oracle/classifier disagreed on ruling ${JSON.stringify(ruling)}: expected ${expectedKind}, classifier said ${requirement.kind}`
+            );
+            if (expectedKind === 'ok') {
               assert.equal(recorded, true, 'a ticket posing no choice failed to approve');
-              assert.equal(requirement.kind, 'ok');
             } else {
-              assert.equal(requirement.kind, 'unknown-option');
               assert.equal(recorded, false);
             }
           }
@@ -142,13 +162,20 @@ test('BL-1367 P1/P2/P3: an approval either carries its ruling or is not recorded
 
   // The reachability floor: each outcome must actually have been generated, or
   // the property above asserted on a narrower world than it claims.
-  for (const outcome of [
+  const floor = [
     'options:ok',
     'options:ruling-required',
     'options:unknown-option',
     'no-options:ok',
     'no-options:unknown-option',
-  ]) {
+    'no-options:ok-blank',
+  ];
+  // BL-1527 acceptance scenario 04 reads this line from the run's own
+  // output, not from re-deriving reach by inspecting the source - printed
+  // before the floor assertions so a failing floor still leaves the actual
+  // reached set on record.
+  console.log(`BL-1527 reach: ${JSON.stringify([...reached].sort())}`);
+  for (const outcome of floor) {
     assert.ok(reached.has(outcome), `generator reach: ${outcome} was never generated`);
   }
 });
