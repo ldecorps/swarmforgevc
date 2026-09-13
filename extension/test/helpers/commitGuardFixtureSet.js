@@ -20,6 +20,11 @@ const path = require('node:path');
 
 const RUNNER_REL = 'swarmforge/scripts/run_commit_guards.sh';
 const HOOK_RELS = ['swarmforge/git-hooks/pre-commit', 'swarmforge/git-hooks/pre-merge-commit'];
+// commit-msg is not in the default HOOK_RELS: it runs no runner, and a
+// caller that wants it names it explicitly via `hookRels` (BL-1484) -
+// existing callers on the default (or on their own explicit hookRels) are
+// unaffected.
+const COMMIT_MSG_REL = 'swarmforge/git-hooks/commit-msg';
 const SCRIPTS_REL = 'swarmforge/scripts';
 
 // `run_guard <script> [args...]` is the one line shape the chain uses to run a
@@ -27,6 +32,12 @@ const SCRIPTS_REL = 'swarmforge/scripts';
 // own chain. Comments are skipped: a line that merely MENTIONS run_guard is
 // prose, not a guard the chain runs.
 const RUN_GUARD_LINE = /^[ \t]*run_guard[ \t]+(\S+)([^\n]*)$/;
+
+// commit-msg (BL-1484) calls each of its guards directly instead of through
+// the chain lib: `"$REPO_ROOT/swarmforge/scripts/<script>" "$1" || status=$?`.
+// No chain-lib indirection means no extra positional args beyond the
+// message-file placeholder, so this shape carries none.
+const DIRECT_CALL_LINE = /^[ \t]*"\$REPO_ROOT\/swarmforge\/scripts\/([A-Za-z0-9_.-]+\.sh)"[ \t]+"\$1"/;
 
 // `source X` / `. X`, taking the last *.sh path segment on the line - the
 // forms in use are "$SCRIPT_DIR/x.sh", "$SCRIPTS_DIR/x.sh" and
@@ -40,13 +51,19 @@ function linesOf(text) {
 
 // The guards a file's chain runs, in order, with the arguments it passes them
 // (check_commit_size.sh takes a size limit; warming the executable wants the
-// same shape the chain uses).
+// same shape the chain uses). Recognises both call shapes the chain uses -
+// `run_guard` (the chain lib) and commit-msg's direct call - so a chain
+// source is never restricted to one shape or the other.
 function parseRunGuardEntries(text) {
   const out = [];
   for (const line of linesOf(text)) {
-    const m = RUN_GUARD_LINE.exec(line);
-    if (!m) continue;
-    out.push({ script: m[1], args: m[2].trim() ? m[2].trim().split(/\s+/) : [] });
+    const runGuard = RUN_GUARD_LINE.exec(line);
+    if (runGuard) {
+      out.push({ script: runGuard[1], args: runGuard[2].trim() ? runGuard[2].trim().split(/\s+/) : [] });
+      continue;
+    }
+    const direct = DIRECT_CALL_LINE.exec(line);
+    if (direct) out.push({ script: direct[1], args: [] });
   }
   return out;
 }
@@ -86,8 +103,11 @@ function deriveCommitGuardFixtureSet({
   };
 
   // The chain's entry points. The two hooks stay explicit: they are what git
-  // runs, not what the runner lists.
-  const chainSources = [runnerRel, ...hookRels];
+  // runs, not what the runner lists. `runnerRel: null` (BL-1484) drops the
+  // runner for a caller whose fixture never installs pre-commit at all -
+  // commit-msg's own guards are named directly, with no runner in their
+  // chain.
+  const chainSources = [...(runnerRel ? [runnerRel] : []), ...hookRels];
 
   const guards = [];
   for (const rel of chainSources) {
@@ -103,7 +123,7 @@ function deriveCommitGuardFixtureSet({
     const rel = `${SCRIPTS_REL}/${script}`;
     if (!exists(abs(rel))) {
       throw new Error(
-        `commit-guard fixture: ${runnerRel} names the guard ${script}, which is absent from the tree at ${abs(rel)}. ` +
+        `commit-guard fixture: the derived chain names the guard ${script}, which is absent from the tree at ${abs(rel)}. ` +
           'The fixture never skips a guard the chain runs - that would test a narrower chain than production.',
       );
     }
@@ -134,7 +154,7 @@ function deriveCommitGuardFixtureSet({
     }
   }
 
-  add(runnerRel);
+  if (runnerRel) add(runnerRel);
   for (const rel of hookRels) add(rel);
 
   return { files, guards: guards.map((g) => g.script), warmArgs, missingLibs };
@@ -143,6 +163,7 @@ function deriveCommitGuardFixtureSet({
 module.exports = {
   RUNNER_REL,
   HOOK_RELS,
+  COMMIT_MSG_REL,
   deriveCommitGuardFixtureSet,
   parseRunGuardEntries,
   parseSourcedScripts,
