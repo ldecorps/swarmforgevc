@@ -202,3 +202,5 @@ qa_e2e_procedure: |
   5. Break-then-restore: restore the write-before-send order (or drop the
      catch); scenario 01 fails on `failedAt`, scenario 03 fails on the
      sequence advancing; restore.
+
+assigned_to: coder
