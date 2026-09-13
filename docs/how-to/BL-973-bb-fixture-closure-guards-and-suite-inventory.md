@@ -1,6 +1,6 @@
-# Eleven guarded fixture copy-lists, and a standing test-suite inventory (BL-973)
+# Twelve guarded fixture copy-lists, and a standing test-suite inventory (BL-973)
 
-Eleven fixtures build a disposable root by copying a named list of `.bb` files,
+Twelve fixtures build a disposable root by copying a named list of `.bb` files,
 then shell out to a real `bb <entry-point>` subprocess. Babashka resolves
 every `load-file` relative to the loading file, so a file missing from the
 copied set is missing from the fixture, and the subprocess dies at load time —
@@ -40,10 +40,10 @@ each fixture with the entry point it actually drives:
 | `swarmforge/scripts/test/test_front_desk_supervisor_fleet_creds.sh` | `front_desk_supervisor.bb` | runs `bb_closure_copy.sh`'s `copy_bb_closure` and reads what lands |
 | `swarmforge/scripts/test/test_promote_and_route_next_priority.sh` | `promotion_gates_cli.bb` | runs `bb_closure_copy.sh`'s `copy_bb_closure` and reads what lands |
 | `swarmforge/scripts/test/test_promote_and_route_next_no_limit_depth.sh` | `promotion_gates_cli.bb`, `effective_backlog_depth_cli.bb`, `backlog_depth_cli.bb`, `backlog_depth_conf_path_cli.bb` | runs `bb_closure_copy.sh`'s `copy_bb_closure` (one call per entry point) and reads what lands |
+| `swarmforge/scripts/test/test_bl1028_promotion_obeys_integrity_refusal.sh` | `promotion_gates_cli.bb` | runs `bb_closure_copy.sh`'s `copy_bb_closure` and reads what lands |
 
-The last two (BL-1480, 2026-09-08) are the tenth and eleventh guarded
-fixtures, and the first two whose entry is a **list** rather than a single
-CLI: `promote_and_route_next.sh` shells directly to three cap-resolution
+The tenth and eleventh (BL-1480, 2026-09-08) are the first two whose entry is
+a **list** rather than a single CLI: `promote_and_route_next.sh` shells directly to three cap-resolution
 CLIs (`effective_backlog_depth_cli.bb`, `backlog_depth_cli.bb`,
 `backlog_depth_conf_path_cli.bb`) that no `load-file` walk starting from
 `promotion_gates_cli.bb` alone would reach. Both fixtures replaced a
@@ -56,6 +56,14 @@ the test passed for the wrong reason until it happened to assert against
 that same default. Both fixtures now call `assert_bb_closure_present`
 before asserting any behavior, so a future dead load reports the missing
 file by name rather than a default or a false pass.
+
+The twelfth (BL-1496, 2026-09-13) is a third `promotion_gates_cli.bb` fixture
+of the same surface: its copy-list had drifted out from under three upstream
+`load-file` edges (`acceptance_pointer_gate_lib.bb`,
+`headroom_cap_raise_lib.bb`, `slice_size_envelope_gate_lib.bb`) and sat red
+on `main` for 19 days, unowned. Fixed the same way as the BL-1480 pair —
+`copy_bb_closure` replacing the hand-`for dep in ...` loop — and enrolled
+here so a future edge is picked up with no test edit.
 
 The effective list is read **behaviorally** — what the fixture actually
 copies or actually exports — never by grepping its source for a literal. A
@@ -153,7 +161,7 @@ list's closure check, and that it fires on a new upstream edge), `04`/`05`
 
 ## Related — the commit-guard property fixture (BL-1398)
 
-The same rot recurred outside this page's eleven `.bb`-closure fixtures:
+The same rot recurred outside this page's twelve `.bb`-closure fixtures:
 `extension/test/bl632CommitTimeGuardInvariants.property.test.js` built its
 fixture repository by copying the real commit guards from a hand-written
 `EXEC_FIXTURE_FILES` list (five `check_*.sh` scripts, the runner, its
