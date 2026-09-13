@@ -1,5 +1,24 @@
 # SwarmForge VS Code Extension — Specification
 
+**Last Updated:** September 13, 2026 (BL-1460: the bridge's `/events` route
+seeds `lastSnapshot` with the connect frame instead of leaving it
+`undefined` — `broadcastSnapshotIfChanged` always broadcasts against
+`undefined`, so on a fresh start the first poll tick after connect
+re-sent every client a byte-identical copy of the connect snapshot,
+breaking BL-1351's one-producer/one-frame-per-real-change contract. A
+connected client now receives its connect snapshot and then a data frame
+only when the snapshot actually changed; a later client that connects
+after the seed still gets the cached snapshot, and a real change still
+reaches every connected client exactly once. `extension/test/bridgeServer.test.js`'s
+keepalive scenario (asserting no `data:` frame during an idle window) is
+now deterministic instead of failing whenever the first poll tick landed
+before the first keepalive tick — 3 of 6 QA runs on 2026-09-07 held
+BL-1454 at QA under Article 4.2 (evidence
+`backlog/evidence/BL-1454-QA-20260907-2.md`). No timer, keepalive, or
+reply-relay behavior changed; no consumer-side change. Acceptance:
+`specs/features/BL-1460-an-idle-events-connection-gets-one-snapshot.feature`.
+No registered diagram depicts the stream at this granularity.)
+Prior entry —
 **Last Updated:** September 13, 2026 (BL-1550: `removeDraftIfPresent`
 (`extension/src/swarm/draftPathUnder.ts`, BL-1537) removed only a regular
 file it found at the draft path, but `extension/test/draftPathUnder.property.test.js`'s
