@@ -18,7 +18,8 @@ make_good_fixture() {
   cat > "$ROOT/swarmforge/profiles/stabilize-two-pack.conf" <<'EOF'
 config active_backlog_max_depth 1
 
-window coordinator claude master --model claude-opus-4-6 --dangerously-skip-permissions
+# BL-243/BL-939: coordinator is reserved infrastructure, provisioned
+# automatically by ./swarm - never declared as a window here.
 window coder claude coder --model claude-opus-4-6 --dangerously-skip-permissions
 window cleaner claude cleaner batch --model claude-sonnet-5 --dangerously-skip-permissions
 EOF

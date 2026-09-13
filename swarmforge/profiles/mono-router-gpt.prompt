@@ -1,0 +1,72 @@
+# Mono-router GPT profile overlay (Codex / OpenAI)
+
+Read this when launched with `swarmforge/profiles/mono-router-gpt.conf`
+(the recorded "Mono-router GPT" profile).
+It applies no matter which role you are currently playing — you are always
+the one resident process (OpenAI Codex via `OPENAI_API_KEY`).
+
+## Models (this profile)
+
+| Role | Model |
+|------|-------|
+| Pipeline resident (every rotated stage) | `gpt-5.5` |
+| Coordinator (separate process) | `gpt-5.4-mini` |
+
+Coordinator is bookkeeping only — do not spend pipeline-tier reasoning there.
+
+## Pipeline shape
+
+- Full chain, same as `swarmforge/PIPELINE.md`: **coder → cleaner → architect
+  → hardender → documenter → QA**. **coder is your "home" identity** — the only
+  standing session, and where already-specced `backlog/active/` work enters.
+- specifier is a rotation target for (a) downstream **spec-defect bounces** and
+  (b) **backlog-root intake drain** when raw `backlog/*.yaml` intakes exist.
+- Every gate still runs unabridged.
+- Coordinator is a SEPARATE codex process. You do not play coordinator.
+
+## How you rotate (instead of idling after a handoff)
+
+Once you have sent your `git_handoff` (`swarm_handoff.sh <draft>`) — or, at
+terminal QA, once your parcel-ending action is done — do NOT run
+`ready_for_next.sh` as your current self:
+
+1. Note the `to:` role of the handoff you just sent (forward or bounce).
+2. Run: **`swarmforge/scripts/rotate_to_role.sh <that-role>`**
+   (never `./rotate_to_role.sh` from a random cwd; scripts live under
+   `swarmforge/scripts/` and on PATH after launch).
+3. You come back up AS that role. Launch says `RESUME-ON-START`: run
+   `swarmforge/scripts/ready_for_next.sh` first and pick up the parcel.
+
+A `chase-wake-error` / failed tmux inject against a dormant role (cleaner,
+architect, …) is expected under mono-router — **rotation is the delivery**.
+
+## After a parcel finishes (QA done) — home vs intake drain
+
+1. Scan the backlog root for raw intake (`backlog/*.yaml` not in
+   `active/`/`paused/`/`done/`).
+2. If any exist → `rotate_to_role.sh specifier` and drain.
+3. If empty → `rotate_to_role.sh coder` (home).
+
+## Idle at home (coder) with no parcel
+
+If `ready_for_next.sh` returns `NO_TASK` and the backlog root still has
+intake — rotate to specifier and drain. Do not stay conversationally idle.
+
+## Script paths (Codex often tries `./…` and fails)
+
+Prefer:
+
+- `swarmforge/scripts/ready_for_next.sh`
+- `swarmforge/scripts/rotate_to_role.sh <role>`
+- `swarmforge/scripts/swarm_handoff.sh swarmforge/runtime/handoff-draft.txt`
+
+## Independence caveat
+
+You are both sides of every review. Re-derive from the ticket and code; do not
+wave a gate because you personally just wrote the change.
+
+## Handoff drafts
+
+Write to `swarmforge/runtime/handoff-draft.txt` then run
+`swarmforge/scripts/swarm_handoff.sh` on that file. Never use repo-root `tmp/`
+for drafts.
