@@ -147,9 +147,18 @@ export function sendHandoffNote(target: string, to: string, message: string): vo
   }
 }
 
+// BL-1528: a 'lean-packet'/'record-empty-outcome' action's own send outcome
+// is handed to deps.surface, same as a statically-decided 'surface' action,
+// then returned for applyAction's caller to fold into loudSurfaces.
+function surfaceLoudCodes(target: string, deps: RunDeps, codes: string[]): string[] {
+  for (const code of codes) {
+    deps.surface(target, code);
+  }
+  return codes;
+}
+
 // BL-1528: returns the loud codes a 'lean-packet'/'record-empty-outcome'
-// action's own send outcome produced (each is also handed to deps.surface,
-// same as a statically-decided 'surface' action) - [] for every other kind.
+// action's own send outcome produced - [] for every other kind.
 function applyAction(target: string, action: LiveAction, deps: RunDeps, dryRun: boolean): string[] {
   if (dryRun) {
     return [];
@@ -170,20 +179,10 @@ function applyAction(target: string, action: LiveAction, deps: RunDeps, dryRun: 
     case 'instruct-briefing':
       deps.instructBriefing(target, action.dayKey);
       return [];
-    case 'lean-packet': {
-      const codes = deps.deliverLeanPacket(target, action.shiftKey);
-      for (const code of codes) {
-        deps.surface(target, code);
-      }
-      return codes;
-    }
-    case 'record-empty-outcome': {
-      const codes = deps.recordEmptyOutcome(target, action.shiftKey);
-      for (const code of codes) {
-        deps.surface(target, code);
-      }
-      return codes;
-    }
+    case 'lean-packet':
+      return surfaceLoudCodes(target, deps, deps.deliverLeanPacket(target, action.shiftKey));
+    case 'record-empty-outcome':
+      return surfaceLoudCodes(target, deps, deps.recordEmptyOutcome(target, action.shiftKey));
     case 'night-stop':
       deps.nightStop(target);
       return [];
