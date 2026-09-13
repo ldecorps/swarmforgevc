@@ -157,6 +157,13 @@ function surfaceLoudCodes(target: string, deps: RunDeps, codes: string[]): strin
   return codes;
 }
 
+// BL-1528: fold runtime-discovered loud codes into a state's loudSurfaces -
+// split out so runNightClosingCeremony's own branching count stays at its
+// pre-BL-1528 baseline (differential complexity gate, hardener.prompt).
+function withRuntimeLoudCodes(state: LiveState, runtimeLoudCodes: string[]): LiveState {
+  return runtimeLoudCodes.length > 0 ? { ...state, loudSurfaces: [...state.loudSurfaces, ...runtimeLoudCodes] } : state;
+}
+
 // BL-1528: returns the loud codes a 'lean-packet'/'record-empty-outcome'
 // action's own send outcome produced - [] for every other kind.
 function applyAction(target: string, action: LiveAction, deps: RunDeps, dryRun: boolean): string[] {
@@ -429,7 +436,7 @@ export function runNightClosingCeremony(
   // BL-1528: a send's own outcome (unlike a 'surface' action) is unknown
   // until applyAction runs it, so these codes join loudSurfaces here rather
   // than inside advanceNightClosingCeremony's pure decision.
-  const finalState = runtimeLoudCodes.length > 0 ? { ...state, loudSurfaces: [...state.loudSurfaces, ...runtimeLoudCodes] } : state;
+  const finalState = withRuntimeLoudCodes(state, runtimeLoudCodes);
   if (!dryRun) {
     deps.writeState(target, finalState);
   }

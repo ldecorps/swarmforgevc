@@ -73,6 +73,10 @@ test('live run night-stops once briefing is marked sent', () => {
   assert.ok(actions.some((a) => a[0] === 'stop'));
   assert.equal(state.current.phase, 'done');
   assert.ok(state.current.sequence.includes('send-confirmed'));
+  // BL-1528: a clean run (deliverLeanPacket/recordEmptyOutcome report no
+  // loud codes) must never pick up a stray loudSurfaces entry from a
+  // non-lean-packet action (freeze/rotate/instruct/night-stop) along the way.
+  assert.deepEqual(state.current.loudSurfaces, []);
 });
 
 // ── BL-1393 ──────────────────────────────────────────────────────────────
