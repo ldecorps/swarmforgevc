@@ -32,7 +32,7 @@ acceptance: specs/features/BL-1551-a-skipped-respawn-is-not-a-respawn.feature
 required_wiring:
   - 'specs/pipeline/steps/bl1551SkippedRespawnIsNotARespawnSteps.js::registerSteps::the handler lands in the same parcel as the feature (BL-233, BL-1371)'
 
-human_approval: pending
+human_approval: approved
 approval_context: >
   A new feature file is authored here, so it needs a tap. No choice is
   posed and there are no ruling_options. FIRM: a chaser telemetry row of
@@ -119,6 +119,9 @@ description: |
     half of WAKES; this ticket is the respawn rung's telemetry only.
 
 notes: |
+  2026-09-13: human_approval approved by the operator (direct chat
+  instruction to the coordinator, scoped to this ticket by name).
+
   Minted 2026-09-13 by the specifier as the BL-820 outcome for the
   2026-09-13 ceremony pass (`process_ticket`, this id). Epic BL-818's
   decomposes_into gains this id in the same commit. The 2026-09-12
