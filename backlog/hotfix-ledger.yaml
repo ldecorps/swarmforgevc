@@ -310,7 +310,7 @@
 - commit: 5bdf93beed
   subject: "Mono-router: spawn an ephemeral consult session instead of stranding a departing role's mail"
   detected_at: 2026-09-12
-  state: pending
+  state: stamp-open
   stamp_ticket: BL-1549
   human_decision: null
   decided_at: null
