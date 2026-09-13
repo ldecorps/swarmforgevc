@@ -210,3 +210,5 @@ notes: |
     2026-07-22 (36ae0a8e23).
   - IR-DRY (2026-09-08): "the file exits zero" and "reports every case as
     passed" are distinct assertions (exit status vs per-case lines); kept.
+
+assigned_to: coder

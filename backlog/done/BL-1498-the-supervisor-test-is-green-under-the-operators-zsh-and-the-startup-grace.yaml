@@ -300,3 +300,10 @@ notes: |
     environment" differ exactly by the staged hostile startup directory.
 
 assigned_to: coder
+
+# BL-1546 land guard refused 2fdf240eef (docs/briefings/2026-09-13.md's only
+# owner, closed BL-1518, absent from origin/main - never decided silently).
+# Applied the BL-1386 land-escalate adjudication's structural route: hand-
+# built tip-pure replay d78b09f10b dropping the sidecar, recorded via
+# record_land_approval.bb. abandoned_commits below per that recipe.
+abandoned_commits: [2fdf240eef]
