@@ -2094,6 +2094,17 @@ resident to that dormant role to drain it.
   regardless of priority.
 - **One rotation per sweep.** Busy gates, cooldown, and per-sweep resident budget
   all apply unchanged. Home-role return (`ROTATE_HOME`) is automatic.
+- **The resident follows the parcel it forwarded (hotfix 2026-09-13, human
+  ruling).** When a non-home role's mailbox empties right after it sent a
+  `git_handoff`, `ready_for_next` prints `ROTATE_TO: <recipient>` under the
+  `ROTATE_HOME` signal and the wrapper rotates straight to that seat instead
+  of hopping home and waiting for the next chase sweep. The recipient must be
+  a roles.tsv role other than the coordinator and must still hold the parcel
+  (or the parcel must still be in the sender's outbox, in which case
+  `rotate_to_role` waits for delivery); otherwise the rotation falls back to
+  home exactly as before. The chase sweep keeps its priority choice: an urgent
+  or starved mailbox elsewhere still redirects the resident on its next sweep.
+  `config rotation_after_forward home` restores the BL-550 home hop.
 
 **Configuration:** `note_actionable_after_ms` (positive integer, milliseconds).
 Read at daemon startup via the effective config (BL-216); absent, malformed,

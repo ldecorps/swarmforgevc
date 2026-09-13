@@ -483,6 +483,71 @@
         (not= (str role) "coordinator")
         (not= (str role) (str home-role)))))
 
+;; ── Hotfix 2026-09-13 (human directive): rotate to the forward recipient ──
+;; BL-550's ROTATE_HOME sent every non-home role back to `rotation_home`
+;; after it forwarded its parcel, and the daemon's chase sweep then rotated
+;; the resident on to the recipient minutes later (telemetry 2026-09-13:
+;; every "handoff-forward" event lands on coder, a separate "rotate" event
+;; follows 1.5-20 min later). Two respawns per stage, and the home hop lets
+;; a freshly promoted coder ticket jump ahead of the current ticket's
+;; downstream stages (QA->coder 21:51, coder->architect 22:11 that night).
+;; The human ruled: the resident rotates to the seat it just handed the
+;; parcel to. `config rotation_after_forward home` restores BL-550's hop.
+;; The chase sweep's priority choice is untouched - it still redirects the
+;; resident on its next sweep if a better (urgent) mailbox exists.
+
+(def default-rotation-after-forward "recipient")
+
+(defn parse-rotation-after-forward
+  "Pure: `config rotation_after_forward recipient|home` from conf text.
+   Anything other than a literal `home` (absent, malformed) is the default
+   `recipient`."
+  [conf-text]
+  (let [v (some-> (re-find #"(?m)^(?:config\s+)?rotation_after_forward\s+(\S+)" (str conf-text))
+                  second
+                  str/lower-case)]
+    (if (= v "home") "home" default-rotation-after-forward)))
+
+(defn forward-rotate-target
+  "Pure: which role a non-home resident with an empty mailbox rotates to.
+
+   :policy      - parse-rotation-after-forward's value.
+   :home-role   - the pack's rotation_home.
+   :role        - the departing role.
+   :recipients  - the `to:` roles of this role's NEWEST own git_handoff
+                  (outbox/ or sent/), or nil/empty when it never sent one.
+   :known-roles - every role in roles.tsv.
+   :delivered?  - false while that parcel still sits in the sender's
+                  outbox/ (the daemon has not moved it yet - rotate_to_role
+                  waits for delivery itself), true once it is in sent/.
+   :holding     - the recipient roles whose inbox new/ or in_process/
+                  currently holds that parcel (by id), only meaningful when
+                  :delivered? is true.
+
+   The candidate is the first recipient that is a known role, not the
+   coordinator (never a rotation target, BL-614) and not the departing role
+   itself. Returns {:target <role> :reason <keyword>}; every path that is
+   not a confirmed recipient falls back to home exactly as BL-550 did, so a
+   stale or already-consumed forward can never strand the resident on an
+   empty seat."
+  [{:keys [policy home-role role recipients known-roles delivered? holding]}]
+  (let [known (set (map str known-roles))
+        candidate (->> (or recipients [])
+                       (map #(str/trim (str %)))
+                       (remove str/blank?)
+                       (filter #(contains? known %))
+                       (remove #(= % "coordinator"))
+                       (remove #(= % (str role)))
+                       first)]
+    (cond
+      (= policy "home")                 {:target home-role :reason :policy-home}
+      (nil? candidate)                  {:target home-role :reason :no-recipient}
+      (= candidate (str home-role))     {:target home-role :reason :recipient-is-home}
+      (not delivered?)                  {:target candidate :reason :forward-recipient-undelivered}
+      (contains? (set (map str holding)) candidate)
+                                        {:target candidate :reason :forward-recipient}
+      :else                             {:target home-role :reason :recipient-not-holding})))
+
 (defn should-rotate-resident?
   "Gate resident rotation during chase — avoid mid-turn thrash and burst
    rotates. BL-921: :already-active additionally requires live-role (a live

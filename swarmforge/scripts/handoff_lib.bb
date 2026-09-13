@@ -385,6 +385,57 @@
   [state]
   (apply fs/path (my-mailbox-base-dir) (mailbox-state->relative-segments state)))
 
+;; ── Hotfix 2026-09-13: facts for mono-router-lib/forward-rotate-target ────
+;; IO only - the decision is pure and lives in mono_router_lib.bb, which
+;; loads AFTER this file, so the dispatchers (ready_for_next_task/batch)
+;; are the ones that join these facts to the decision.
+
+(defn newest-own-git-handoff
+  "This role's most recently created git_handoff, looked for in its own
+   outbox/ (not yet delivered) and sent/ (delivered) mailboxes. Newest by
+   the `created_at` header, falling back to the file name's timestamp
+   prefix. Returns {:file :id :recipients :delivered?} or nil when this
+   role never sent one. `recipients` is the `to:` header split on commas."
+  []
+  (let [me (current-role)
+        candidates (concat
+                    (map (fn [f] {:file f :delivered? false}) (handoff-files (my-mailbox-dir :outbox)))
+                    (map (fn [f] {:file f :delivered? true}) (handoff-files (my-mailbox-dir :sent))))
+        own (->> candidates
+                 (filter (fn [{:keys [file]}]
+                           (and (= "git_handoff" (header-field file "type"))
+                                (or (nil? me) (= me (header-field file "from"))))))
+                 (map (fn [{:keys [file] :as c}]
+                        (assoc c
+                               :id (header-field file "id")
+                               :recipients (->> (str/split (or (header-field file "to") "") #",")
+                                                (map str/trim)
+                                                (remove str/blank?)
+                                                vec)
+                               ;; ISO timestamps sort lexicographically; the
+                               ;; file-name fallback carries the same
+                               ;; timestamp after its priority prefix.
+                               :sort-key (or (header-field file "created_at") (fs/file-name file))))))]
+    (when (seq own)
+      (dissoc (last (sort-by :sort-key own)) :sort-key))))
+
+(defn roles-holding-parcel-id
+  "The subset of role-names whose inbox new/ or in_process/ (batch
+   subdirectories included) currently holds a parcel whose `id:` header is
+   parcel-id. Reads every role's own mailbox through the shared resolver
+   (BL-128). Unknown roles (no roles.tsv row) are skipped."
+  [parcel-id role-names]
+  (if (str/blank? (str parcel-id))
+    #{}
+    (into #{}
+          (for [role role-names
+                :let [info (load-role-info role)]
+                :when info
+                :when (some (fn [f] (= parcel-id (header-field f "id")))
+                            (concat (handoff-files-with-batches (mailbox-dir info :new))
+                                    (handoff-files-with-batches (mailbox-dir info :in_process))))]
+            role))))
+
 (defn mine?
   "True when this handoff's recipient matches the current role. Roles that share
    a worktree (e.g. coordinator + specifier on master) share one physical inbox,

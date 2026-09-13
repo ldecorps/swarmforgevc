@@ -1020,6 +1020,45 @@
           {:preferred "QA" :poked-role "specifier"
            :active-role "QA" :poked-actionable? true}))
 
+;; ── Hotfix 2026-09-13: rotate to the forward recipient ─────────────────────
+(assert= "rotation_after_forward defaults to recipient" "recipient"
+         (mono-router-lib/parse-rotation-after-forward "config rotation router\n"))
+(assert= "rotation_after_forward home is honoured" "home"
+         (mono-router-lib/parse-rotation-after-forward "config rotation router\nconfig rotation_after_forward home\n"))
+(assert= "rotation_after_forward garbage degrades to recipient" "recipient"
+         (mono-router-lib/parse-rotation-after-forward "config rotation_after_forward sideways\n"))
+
+(def fwd-base {:policy "recipient" :home-role "coder" :role "QA"
+               :known-roles roles :delivered? true :holding #{"architect"}})
+
+(assert= "delivered parcel held by recipient -> recipient"
+         {:target "architect" :reason :forward-recipient}
+         (mono-router-lib/forward-rotate-target (assoc fwd-base :recipients ["architect"])))
+(assert= "undelivered parcel (still in outbox) -> recipient, rotate waits for delivery"
+         {:target "architect" :reason :forward-recipient-undelivered}
+         (mono-router-lib/forward-rotate-target (assoc fwd-base :recipients ["architect"] :delivered? false :holding #{})))
+(assert= "delivered but recipient no longer holds it (stale sent/) -> home"
+         {:target "coder" :reason :recipient-not-holding}
+         (mono-router-lib/forward-rotate-target (assoc fwd-base :recipients ["architect"] :holding #{})))
+(assert= "no git_handoff ever sent -> home"
+         {:target "coder" :reason :no-recipient}
+         (mono-router-lib/forward-rotate-target (assoc fwd-base :recipients nil)))
+(assert= "recipient is the coordinator -> home (BL-614, never a rotation target)"
+         {:target "coder" :reason :no-recipient}
+         (mono-router-lib/forward-rotate-target (assoc fwd-base :recipients ["coordinator"])))
+(assert= "recipient not in roles.tsv -> home"
+         {:target "coder" :reason :no-recipient}
+         (mono-router-lib/forward-rotate-target (assoc fwd-base :recipients ["art-director"])))
+(assert= "recipient is home -> home with its own reason"
+         {:target "coder" :reason :recipient-is-home}
+         (mono-router-lib/forward-rotate-target (assoc fwd-base :recipients ["coder"] :holding #{"coder"})))
+(assert= "broadcast to: skips coordinator and self, takes the first eligible"
+         {:target "hardender" :reason :forward-recipient}
+         (mono-router-lib/forward-rotate-target (assoc fwd-base :recipients ["coordinator" "QA" "hardender" "documenter"] :holding #{"hardender" "documenter"})))
+(assert= "policy home restores BL-550 even with a held recipient"
+         {:target "coder" :reason :policy-home}
+         (mono-router-lib/forward-rotate-target (assoc fwd-base :policy "home" :recipients ["architect"])))
+
 (when (seq @failures)
   (binding [*out* *err*]
     (doseq [f @failures] (println f)))

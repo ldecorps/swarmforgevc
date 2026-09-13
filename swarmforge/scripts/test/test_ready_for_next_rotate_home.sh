@@ -166,4 +166,76 @@ echo "$OUT" | grep -q '^NO_TASK$' || fail "09: expected NO_TASK for coordinator 
 echo "$OUT" | grep -q '^ROTATE_HOME$' && fail "09: coordinator must never ROTATE_HOME, even with a sidecar-only in_process"
 pass "09: coordinator with only an orphaned claim-progress sidecar prints NO_TASK, never rotates"
 
+# ── Hotfix 2026-09-13: the resident follows the parcel it forwarded ────────
+# A non-home role whose mailbox is empty and whose newest own git_handoff
+# is held by its recipient rotates TO that recipient (ROTATE_TO), not home.
+# The first line stays ROTATE_HOME and HOME_ROLE is still printed, so every
+# pre-existing consumer of the signal is unaffected.
+
+ARCH_WT="$(setup_role architect)"
+printf 'architect\tarchitect\t%s\tswarmforge-architect\tArchitect\tclaude\ttask\n' "$ARCH_WT" >> "$ROOT/.swarmforge/roles.tsv"
+mkdir -p "$DOC_WT/.swarmforge/handoffs/outbox" "$DOC_WT/.swarmforge/handoffs/sent"
+
+# The documenter's delivered forward: a copy in its own sent/ and the
+# delivered copy (same id) in the architect's inbox/new.
+FWD_ID="20260913T220000Z_000777_from_documenter"
+write_forward() {
+  local path="$1"
+  printf 'id: %s\nfrom: documenter\nto: architect\npriority: 00\ntype: git_handoff\nrole: documenter\ntask: bl1-thing\ncommit: 0123456789\ncreated_at: 2026-09-13T22:00:00.000000000Z\n\nmerge_and_process documenter 0123456789\n' \
+    "$FWD_ID" > "$path"
+}
+write_forward "$DOC_WT/.swarmforge/handoffs/sent/00_${FWD_ID}_to_architect.handoff"
+write_forward "$ARCH_WT/.swarmforge/handoffs/inbox/new/00_${FWD_ID}_to_architect_for_architect.handoff"
+
+# 10: delivered forward held by the recipient -> ROTATE_TO architect
+OUT="$(cd "$DOC_WT" && SWARMFORGE_ROLE=documenter bb "$READY_TASK")"
+echo "$OUT" | head -n1 | grep -q '^ROTATE_HOME$' || fail "10: expected ROTATE_HOME first line, got: $OUT"
+echo "$OUT" | grep -q '^HOME_ROLE: coder$' || fail "10: HOME_ROLE must still be printed, got: $OUT"
+echo "$OUT" | grep -q '^ROTATE_TO: architect$' || fail "10: expected ROTATE_TO: architect, got: $OUT"
+echo "$OUT" | grep -q '^ROTATE_REASON: forward-recipient$' || fail "10: expected ROTATE_REASON: forward-recipient, got: $OUT"
+pass "10: non-home role rotates to the recipient of the parcel it just forwarded"
+
+# 11: the wrapper hands ROTATE_TO (not HOME_ROLE) to rotate_to_role.sh
+: > "$ROTATE_LOG"
+OUT="$(cd "$DOC_WT" && SWARMFORGE_ROTATE_TO_ROLE="$FAKE_BIN/rotate_to_role.sh" SWARMFORGE_ROLE=documenter bash "$DOC_WT/swarmforge/scripts/ready_for_next.sh")"
+grep -q 'rotate architect' "$ROTATE_LOG" || fail "11: wrapper must call rotate_to_role.sh architect, log=$(cat "$ROTATE_LOG")"
+grep -q 'rotate coder' "$ROTATE_LOG" && fail "11: wrapper must not rotate home when a recipient is confirmed"
+pass "11: ready_for_next.sh hands ROTATE_TO to rotate_to_role.sh"
+
+# 12: the recipient consumed the parcel already (stale sent/) -> home
+rm -f "$ARCH_WT/.swarmforge/handoffs/inbox/new/00_${FWD_ID}_to_architect_for_architect.handoff"
+OUT="$(cd "$DOC_WT" && SWARMFORGE_ROLE=documenter bb "$READY_TASK")"
+echo "$OUT" | grep -q '^ROTATE_TO: coder$' || fail "12: expected ROTATE_TO: coder for a consumed forward, got: $OUT"
+echo "$OUT" | grep -q '^ROTATE_REASON: recipient-not-holding$' || fail "12: expected recipient-not-holding, got: $OUT"
+pass "12: a forward the recipient already consumed falls back to home"
+
+# 13: forward still in the sender's outbox (daemon has not delivered yet)
+# -> recipient anyway; rotate_to_role waits for delivery itself.
+mv "$DOC_WT/.swarmforge/handoffs/sent/00_${FWD_ID}_to_architect.handoff" "$DOC_WT/.swarmforge/handoffs/outbox/"
+OUT="$(cd "$DOC_WT" && SWARMFORGE_ROLE=documenter bb "$READY_TASK")"
+echo "$OUT" | grep -q '^ROTATE_TO: architect$' || fail "13: expected ROTATE_TO: architect for an undelivered forward, got: $OUT"
+echo "$OUT" | grep -q '^ROTATE_REASON: forward-recipient-undelivered$' || fail "13: expected forward-recipient-undelivered, got: $OUT"
+pass "13: an undelivered forward still names the recipient"
+mv "$DOC_WT/.swarmforge/handoffs/outbox/00_${FWD_ID}_to_architect.handoff" "$DOC_WT/.swarmforge/handoffs/sent/"
+write_forward "$ARCH_WT/.swarmforge/handoffs/inbox/new/00_${FWD_ID}_to_architect_for_architect.handoff"
+
+# 14: `config rotation_after_forward home` restores BL-550's hop
+printf 'config rotation router\nconfig rotation_home coder\nconfig rotation_after_forward home\n' > "$ROOT/swarmforge/swarmforge.conf"
+OUT="$(cd "$DOC_WT" && SWARMFORGE_ROLE=documenter bb "$READY_TASK")"
+echo "$OUT" | grep -q '^ROTATE_TO: coder$' || fail "14: expected ROTATE_TO: coder under policy home, got: $OUT"
+echo "$OUT" | grep -q '^ROTATE_REASON: policy-home$' || fail "14: expected policy-home, got: $OUT"
+pass "14: rotation_after_forward home rotates home even with a held recipient"
+printf 'config rotation router\nconfig rotation_home coder\n' > "$ROOT/swarmforge/swarmforge.conf"
+
+# 15: batch dispatcher wires the same decision
+mkdir -p "$HARD_WT/.swarmforge/handoffs/sent"
+HFWD_ID="20260913T220100Z_000778_from_hardener"
+printf 'id: %s\nfrom: hardener\nto: architect\npriority: 00\ntype: git_handoff\nrole: hardener\ntask: bl1-thing\ncommit: 0123456789\ncreated_at: 2026-09-13T22:01:00.000000000Z\n\nmerge_and_process hardener 0123456789\n' "$HFWD_ID" > "$HARD_WT/.swarmforge/handoffs/sent/00_${HFWD_ID}_to_architect.handoff"
+printf 'id: %s\nfrom: hardener\nto: architect\npriority: 00\ntype: git_handoff\nrole: hardener\ntask: bl1-thing\ncommit: 0123456789\ncreated_at: 2026-09-13T22:01:00.000000000Z\n\nmerge_and_process hardener 0123456789\n' "$HFWD_ID" > "$ARCH_WT/.swarmforge/handoffs/inbox/new/00_${HFWD_ID}_to_architect_for_architect.handoff"
+rm -rf "$HARD_WT/.swarmforge/handoffs/inbox/in_process"/batch_* "$HARD_WT/.swarmforge/handoffs/inbox/new"/*.handoff
+OUT="$(cd "$HARD_WT" && SWARMFORGE_ROLE=hardener bb "$READY_BATCH")"
+echo "$OUT" | head -n1 | grep -q '^ROTATE_HOME$' || fail "15: batch expected ROTATE_HOME first line, got: $OUT"
+echo "$OUT" | grep -q '^ROTATE_TO: architect$' || fail "15: batch expected ROTATE_TO: architect, got: $OUT"
+pass "15: batch-mode role rotates to the recipient of the parcel it just forwarded"
+
 echo "test_ready_for_next_rotate_home: ALL CHECKS PASSED"
