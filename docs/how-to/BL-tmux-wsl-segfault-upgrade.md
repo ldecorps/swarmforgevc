@@ -46,6 +46,12 @@ tmux -S "$(cat .swarmforge/tmux-socket)" display-message -p '#{version}'
 # expect: 3.7b (not 3.4)
 ```
 
+Once this PATH prepend lives in `~/.zshenv`, it also reaches every `#!/usr/bin/env
+zsh` script the operator's shell spawns, shebang included - which shadowed a
+shell test fixture's own fake `tmux` with this real one (BL-1498); a fixture
+invoking such a script isolates itself with an empty `ZDOTDIR` (the BL-1305
+remedy) rather than relying on PATH order.
+
 `./swarm ensure` and full launch also set `focus-events off` as a soft
 mitigation; it does **not** replace the version upgrade, which is the only
 thing that actually protects this host.

@@ -12,6 +12,17 @@
 # Covers acceptance scenarios BL-061 supervise-handoffd-01..05 (00 is covered
 # by test_handoffd_per_recipient_delivery.sh, 06 by extension tests) and
 # BL-144 daemon-death-alarm-01..05.
+#
+# BL-1498: this file was red on main from 2026-08-22 to 2026-09-13 for two
+# independent reasons, now fixed. (1) the halt's swarm-cleanup.sh is a zsh
+# script, and zsh sources ~/.zshenv even via shebang - the operator's own
+# ~/.zshenv (BL-1069, landed 2026-08-23) shadowed this file's fake tmux with
+# the real one, so kill-session never reached the fake's log. Fixed by
+# pointing ZDOTDIR at an empty mktemp dir before the first check_once (the
+# BL-1305 shape). (2) the 2026-09-02 startup-grace hotfix read a
+# newly-written handoffd.pid as a daemon younger than one stall window, so a
+# fixture that aged only the heartbeat/outbox read healthy instead of
+# stalled - fixed by aging handoffd.pid the same way.
 
 set -euo pipefail
 
