@@ -1,0 +1,166 @@
+id: BL-1554
+title: "QA gathers its mechanical checklist in one call: the pass routine re-types the same seven always-identical checks (stragglers, sibling status, register row, required_wiring gate, unit suite, property lane, acceptance run) as ad-hoc shell on every parcel - one CLI runs them in order and prints a structured report that gathers and reports only, never the verdict"
+milestone: M8
+type: feature
+status: todo
+epic: deterministic-transit-assist
+priority: 6
+direction: human-requested
+source: "backlog/archive/INTAKE-operator-question-1789295080850.md (operator relay of a Telegram suggestion, 2026-09-13 10:24Z)"
+depends_on: []
+mutation_cost: medium
+# medium: one new module under extension/src/quality plus a thin CLI under
+# extension/src/tools, both Stryker targets; the child-process seam is
+# injected so every check is exercised over a fake runner.
+slice_size_envelope: medium
+required_stages: [coder, cleaner, architect, hardender, documenter, qa]
+
+acceptance: specs/features/BL-1554-qa-gathers-its-mechanical-checklist-in-one-call.feature
+
+# No production consumer anchor is honest here (BL-1235): the live consumer
+# is the QA role itself, reading swarmforge/roles/QA.prompt, and that prose
+# half is the specifier's to land (BL-798) - it landed in this ticket's own
+# mint commit, see notes. The handler entry is the BL-233 in-parcel pin.
+required_wiring:
+  - 'specs/pipeline/steps/bl1554QaGatherReportSteps.js::registerSteps::the handler lands in the same parcel as the feature (BL-233, BL-1371)'
+
+human_approval: pending
+approval_context: >
+  A new feature file and a new tool QA will run on every parcel, so it needs
+  a tap. No choice is posed and there are no ruling_options. FIRM (your own
+  words in the intake, kept verbatim in the description): the tool gathers
+  and reports only, never renders the pass/bounce verdict itself. FIRM: every
+  check is the EXISTING owner CLI or npm script run as a child process, never
+  a reimplementation of what it checks (BL-897's mirror rule; engineering
+  prompt's never-reimplement-APS shape). FIRM: the suites run one after
+  another, never concurrently, and a check that cannot start is reported
+  blocked, never omitted (Article 4.4's run-or-blocked). Direction, not
+  mandate: the check list, the report shape and the register join are
+  described below; names are the implementer's.
+
+invariants:
+  - "The report and the tool's exit status never encode a verdict: every check row carries the command run, its exit status and its excerpt, the report has no summary judgment field, and the tool exits 0 whenever a report was printed regardless of what any check returned (2 is usage only)."
+  - "Every check runs the existing CLI or npm script that owns it as a child process through one injected runner seam, and the register join reads the register CLI's JSON - nothing a check verifies is reimplemented inside the tool."
+  - "Checks start in the fixed order, each only after the previous has ended; a check that cannot start is reported blocked with its reason and every later check still runs - no check is ever omitted from the report."
+
+description: |
+  ## What is wrong
+
+  Operator relay, 2026-09-13 10:24Z, quoted in full and kept verbatim
+  (Article 5.3):
+
+  > Suggestion (not urgent): QA's pass routine repeats several mechanical,
+  > always-identical steps by hand each time as separate ad-hoc shell
+  > commands (observed live: check 'standing' status, grep required_wiring
+  > for the step handler file, check backlog/standing-reds.tsv for this
+  > ticket's register row, run the full unit test suite, re-run the
+  > property test suite). Precedent: BL-1362's record-review-evidence.js
+  > already replaced QA's hand-composed verdict files with a deterministic
+  > writer for the exact same reason (2182/12903 commits in 45 days were
+  > that one hand-made ritual). Recommend specifier scope a similar bundled
+  > 'QA gather' script/CLI that runs QA's standard mechanical checklist
+  > steps in one call and prints a structured report - it should gather
+  > and report only, never render the pass/bounce verdict itself (QA still
+  > has to read the output and judge pre-existing-red vs new, bounce vs
+  > pass - a script that also decided the verdict would let QA rubber-stamp
+  > green output instead of reviewing). Operator observed this live in the
+  > QA pane and is relaying it as a backlog-worthy efficiency idea, not a
+  > bug report.
+
+  Read against `swarmforge/roles/QA.prompt`, the mechanical half of the
+  pass is: the straggler check (`pgrep -fl 'node --test|stryker|vitest'`
+  before and after), the sibling-deferral status
+  (`qa-sibling-check.js status --ticket`), the standing-red register
+  (`standing_red_register_cli.bb`), the pre-QA gate that reads
+  `required_wiring` (`pre_qa_gate.sh <task> <commit>`), the unit suite
+  (`npm test`), the property lane (`npm run test:properties`), and the
+  ticket's acceptance run (`run_acceptance.sh` per `acceptance:` path).
+  Each has an owner CLI already; what does not exist is the one call that
+  runs them in order and hands QA the results side by side.
+
+  ## What is wanted
+
+  `node extension/out/tools/qa-gather.js --ticket <BL-id> [--task <name>]
+  [--commit <10-hex>] [--root <path>]`, run from the QA worktree root
+  (`--root` defaults to cwd, `--commit` to that tree's HEAD), runs the
+  fixed checklist below in this order, sequentially, and prints ONE JSON
+  report to stdout:
+
+  | id | command (from the tree root unless noted) |
+  |---|---|
+  | `stragglers_before` | `pgrep -fl 'node --test\|stryker\|vitest'` |
+  | `sibling` | `node extension/out/tools/qa-sibling-check.js status --ticket <id>` |
+  | `register` | `bb swarmforge/scripts/standing_red_register_cli.bb <root>` |
+  | `wiring` | `swarmforge/scripts/pre_qa_gate.sh <task> <commit> <root>` (blocked with reason when `--task` is absent) |
+  | `unit` | `npm test` in `extension/` |
+  | `properties` | `npm run test:properties` in `extension/` |
+  | `acceptance` | `specs/pipeline/scripts/run_acceptance.sh <feature>` once per path the ticket's `acceptance:` names |
+  | `stragglers_after` | as `stragglers_before` |
+
+  Each check row: `id`, `command`, `cwd`, `status` (`ran` | `blocked`),
+  `exit`, `duration_ms`, `excerpt` (the tail of combined output, bounded),
+  and for `blocked` the `reason`. After the suites, a `register_join`
+  section lists every failing test file the `unit`, `properties` and
+  `acceptance` outputs name, each as `owned` (register row with
+  `owned:true`, carrying the ticket id), `unowned` (row present,
+  `owned:false`) or `absent` (no row) - a lookup QA does by hand today,
+  not a judgment. The report has no verdict; the tool exits 0 when it
+  printed a report, 2 on usage.
+
+  QA reads the report, judges, and records the verdict as it does today
+  through `record-review-evidence.js` (BL-1362); this tool feeds the
+  `## Detail` section, it does not write it.
+
+  ## How (direction, not mandate)
+
+  - One module under `extension/src/quality/` holds the checklist
+    definition, the runner loop and the register join, taking the
+    child-process runner as an injected seam (`runFn`) so every scenario
+    drives it over a fake; `main()` in `extension/src/tools/qa-gather.ts`
+    is the thin wrapper (engineering prompt's CLI rule).
+  - Sequential means the loop awaits each check before starting the next;
+    the unit and property lanes must never overlap (engineering prompt,
+    Test Speed And Isolation), and the acceptance run never overlaps the
+    unit run (QA.prompt).
+  - Parse the failing-file names from vitest's `FAIL`/`❯` lines and the
+    acceptance runner's scenario failure lines by the test file path
+    only; do not parse pass/fail counts into a summary.
+  - The prose half - QA.prompt naming the tool as the way to run the
+    mechanical checklist - is the specifier's and landed in this mint.
+
+  ## Not in scope
+
+  - Deciding the verdict, writing the evidence file, or calling
+    `record-review-evidence.js`/`record-bounce.js` - QA does those.
+  - The land recipe, the merge-up broadcast, mutation runs (QA does not
+    run mutation), or any check whose input QA must read and judge (docs
+    currency, changed behaviour against intent).
+  - Adding the tool to any daemon or sweep.
+
+notes: |
+  Prose half (BL-798): `swarmforge/roles/QA.prompt` gained the section
+  "Gather the mechanical checklist by tool (BL-1554)" in this ticket's own
+  mint commit, phrased so it binds once `extension/out/tools/qa-gather.js`
+  exists; nothing QA does changes until this lands.
+  Consolidation record: 1:1 from
+  `backlog/archive/INTAKE-operator-question-1789295080850.md`; the
+  operator's paragraph is quoted verbatim above.
+
+qa_e2e_procedure: |
+  On the parcel commit, from the QA worktree root:
+  1. `node extension/out/tools/qa-gather.js --ticket BL-1554 --task <this
+     parcel's task name>` -> one JSON document on stdout with eight check
+     rows in the order stragglers_before, sibling, register, wiring, unit,
+     properties, acceptance, stragglers_after, each with command, cwd,
+     status, exit, duration_ms, excerpt; a register_join section; exit 0.
+  2. `jq 'keys'` on the report shows no verdict/pass/bounce/approve key;
+     `grep -ci '"verdict"'` on it is 0.
+  3. With the properties lane red on a registered file (any current
+     standing-red row), the register_join names that file as owned with
+     its ticket id; with `--task` omitted the wiring row is `blocked` with
+     a reason and the remaining rows still ran.
+  4. `node extension/out/tools/qa-gather.js` with no `--ticket` exits 2.
+  5. `git diff main...HEAD --name-only` names the quality module, the CLI,
+     their unit tests, the step handler, the feature, evidence and docs;
+     nothing under `swarmforge/scripts/` is changed (no check was
+     reimplemented).
