@@ -22,8 +22,18 @@ printf '%s\n' "$OUT"
 
 if [[ "$(printf '%s\n' "$OUT" | head -n1)" == "ROTATE_HOME" ]]; then
   HOME_ROLE="$(printf '%s\n' "$OUT" | sed -n 's/^HOME_ROLE: //p' | head -n1)"
+  # Hotfix 2026-09-13: the dispatcher names the seat the resident just
+  # forwarded its parcel to (ROTATE_TO); it is home only when there is no
+  # confirmed recipient or the pack sets `rotation_after_forward home`.
+  ROTATE_TO="$(printf '%s\n' "$OUT" | sed -n 's/^ROTATE_TO: //p' | head -n1)"
+  TARGET="${ROTATE_TO:-${HOME_ROLE:-coder}}"
+  if [[ -n "$ROTATE_TO" && "$ROTATE_TO" != "${HOME_ROLE:-coder}" ]]; then
+    REASON=rotate-forward
+  else
+    REASON=rotate-home
+  fi
   ROTATE_BIN="${SWARMFORGE_ROTATE_TO_ROLE:-$SCRIPT_DIR/rotate_to_role.sh}"
-  SWARMFORGE_ROTATION_REASON=rotate-home exec "$ROTATE_BIN" "${HOME_ROLE:-coder}"
+  SWARMFORGE_ROTATION_REASON="$REASON" exec "$ROTATE_BIN" "$TARGET"
 fi
 
 exit "$RC"

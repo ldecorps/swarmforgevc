@@ -107,15 +107,32 @@
 
 (defn report-no-task-or-rotate! []
   (let [conf-text (mono-router-conf-text)
-        home-role (mono-router-lib/parse-rotation-home conf-text)]
+        home-role (mono-router-lib/parse-rotation-home conf-text)
+        role (handoff-lib/current-role)]
     (if (mono-router-lib/rotate-home?
          {:rotation-router? (mono-router-lib/conf-rotation-router? conf-text)
-          :role (handoff-lib/current-role)
+          :role role
           :home-role home-role
           :mailbox-empty? true})
-      (do
+      ;; Hotfix 2026-09-13: the resident follows the parcel it just
+      ;; forwarded (ROTATE_TO) instead of hopping home first; the wrapper
+      ;; prefers ROTATE_TO over HOME_ROLE. The first line stays ROTATE_HOME
+      ;; so every existing consumer of the signal keeps working.
+      (let [forward (handoff-lib/newest-own-git-handoff)
+            known (map :role (handoff-lib/load-all-roles))
+            decision (mono-router-lib/forward-rotate-target
+                      {:policy (mono-router-lib/parse-rotation-after-forward conf-text)
+                       :home-role home-role
+                       :role role
+                       :recipients (:recipients forward)
+                       :known-roles known
+                       :delivered? (boolean (:delivered? forward))
+                       :holding (when (:delivered? forward)
+                                  (handoff-lib/roles-holding-parcel-id (:id forward) (:recipients forward)))})]
         (println "ROTATE_HOME")
-        (println (str "HOME_ROLE: " home-role)))
+        (println (str "HOME_ROLE: " home-role))
+        (println (str "ROTATE_TO: " (:target decision)))
+        (println (str "ROTATE_REASON: " (name (:reason decision)))))
       (do
         (println "NO_TASK")
         (maybe-clear-at-idle-boundary!)))))
