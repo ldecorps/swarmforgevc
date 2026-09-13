@@ -32,6 +32,7 @@
 const assert = require('node:assert/strict');
 const fc = require('fast-check');
 const { assertReachFloor } = require('./helpers/reachFloors');
+const { signedSeriesArb } = require('./helpers/signedTrendSeries');
 const { computeTrend } = require('../out/metrics/trend');
 const {
   buildTrendAnalysis,
@@ -102,8 +103,43 @@ describe('BL-604 invariant 1: the narrative renders the computed trend', () => {
         { numRuns: LENGTH_FLOOR }
       );
     }
+
+    // BL-1533: the sign of a trendable series' final delta is CHOSEN by the
+    // generator, the way the length bucket already is - not sampled. Each of
+    // these SIGN_FLOOR draws is guaranteed by construction to land in
+    // coverage.up / coverage.down, so the floor below is met on every run
+    // rather than merely usually met.
+    for (const sign of ['up', 'down']) {
+      fc.assert(
+        fc.property(signedSeriesArb(sign), (points) => {
+          const loaded = [{ id: 's0', label: 'Series 0', points }];
+          const bullets = buildTrendAnalysis(loaded, loaded.length);
+          const rendered = parseBullets(renderTrendAnalysisSection(bullets));
+          const own = computeTrend(points);
+
+          assert.equal(
+            own.direction,
+            sign,
+            `signedSeriesArb(${sign}) built a series whose own direction is ${own.direction}`
+          );
+          assert.equal(rendered.length, 1, 'a single trendable series did not render exactly one bullet');
+          assert.equal(rendered[0].direction, own.direction);
+          assert.equal(rendered[0].delta, own.delta);
+          assert.equal(rendered[0].current, own.currentValue);
+          assert.equal(rendered[0].prior, own.priorValue);
+
+          coverage[sign] = (coverage[sign] || 0) + 1;
+          return true;
+        }),
+        { numRuns: SIGN_FLOOR }
+      );
+    }
+
     assertReachFloor(coverage, Object.keys(LENGTHS), LENGTH_FLOOR, 'series length bucket');
     assertReachFloor(coverage, ['up', 'down'], SIGN_FLOOR, 'delta sign');
+    // BL-1533 acceptance scenario 03 reads this line from the run's own
+    // stdout rather than re-deriving reach by inspecting the source.
+    console.log(`BL-1533 invariant 1 reach: ${JSON.stringify(coverage)}`);
   });
 });
 
