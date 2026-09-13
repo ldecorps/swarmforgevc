@@ -22,6 +22,7 @@ const fs = require('node:fs');
 const os = require('node:os');
 const path = require('node:path');
 const { execFileSync, spawnSync } = require('node:child_process');
+const { COMMIT_APPROVAL_WRITES_IMPORT, ADAPTER_BINDING, EXPEDITE_COMMIT_CALL } = require('./bl582WiringPatterns');
 
 const FEATURE = 'every approval tap produces an observable, durable outcome';
 
@@ -386,9 +387,15 @@ function registerSteps(registry) {
       // commit path. Read from source, because the defect this guards is a
       // future edit pointing one of them somewhere else.
       const wiring = fs.readFileSync(path.join(REPO_ROOT, 'extension', 'src', 'tools', 'telegram-front-desk-bot.ts'), 'utf8');
-      assert.match(wiring, /import \{ commitApprovalWrites \} from '\.\.\/util\/commitIntegrityRunner'/);
-      assert.match(wiring, /commitApprovalWrites: \(backlogId, message\) => commitApprovalWrites\(targetPath, backlogId, message\)/);
-      assert.match(wiring, /return commitApprovalWrites\(targetPath, backlogId, `Expedite/);
+      assert.match(wiring, COMMIT_APPROVAL_WRITES_IMPORT);
+      assert.match(wiring, ADAPTER_BINDING);
+      // BL-1475 (same-day as this ticket's mint) reshaped the Expedite call
+      // into a multi-line richer-result form, so pinning it to a single
+      // `return commitApprovalWrites(targetPath, backlogId, \`Expedite` line
+      // is stale the same way the import line was: match the call's first
+      // two args and that "Expedite" names the commit message it composes,
+      // tolerant of reformatting between them (BL-1482).
+      assert.match(wiring, EXPEDITE_COMMIT_CALL);
     } catch (e) {
       cleanup(ctx);
       throw e;
