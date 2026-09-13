@@ -1,0 +1,4 @@
+type: note
+to: documenter
+priority: 00
+message: QA merge-up stuck in_process 2h+ — resume or surface blocker, never sit on it
