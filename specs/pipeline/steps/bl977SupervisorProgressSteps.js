@@ -80,14 +80,32 @@ function evaluateHealth(obs) {
 }
 
 function checkEnv() {
-  const env = { ...process.env, SWARMFORGE_ALLOW_TMP_DAEMON: '1', SWARMFORGE_TERMINAL_BACKEND: 'none' };
+  const env = {
+    ...process.env,
+    SWARMFORGE_ALLOW_TMP_DAEMON: '1',
+    SWARMFORGE_TERMINAL_BACKEND: 'none',
+    // BL-1500: same posture as the shell lane's equivalent fixture
+    // (test_handoffd_supervisor.sh) - a :stalled verdict escalates to
+    // alarm-and-halt! on the very first check reached, never to
+    // restart-daemon!, which would start a REAL second supervisor process
+    // against this fixture root instead of the halt scenarios 05 and the
+    // BL-1500 outline assert on.
+    SUPERVISOR_RESTART_BUDGET_COUNT: '0',
+  };
   delete env.RESEND_API_KEY;
   delete env.SUPERVISOR_STALL_MS;
   delete env.SUPERVISOR_IN_SWEEP_BUDGET_MS;
   return env;
 }
 
-function mkSupervisorFixture(ctx) {
+// BL-1500: pidAgeMs defaults to the same age as the pending outbox mail
+// below, so the fixture never presents a daemon younger than the silence
+// it stages - a fresh pid file reads as a newborn daemon under the
+// 2026-09-02 startup grace and grants :healthy before the wedge/marker
+// evidence is ever reached (scenario 05's own bug). Passing 0 keeps the
+// pid file at its natural fresh mtime, for a caller that is deliberately
+// testing the grace boundary itself (BL-1500 scenario 01's "younger" row).
+function mkSupervisorFixture(ctx, { pidAgeMs = STALL_MS + 30000 } = {}) {
   ctx.root = fs.realpathSync(mkSocketFixtureRoot('bl977-'));
   trackedRoots.push(ctx.root);
   ctx.daemonDir = path.join(ctx.root, '.swarmforge', 'daemon');
@@ -111,10 +129,15 @@ function mkSupervisorFixture(ctx) {
   spawnSync(fakeTmux, [], { encoding: 'utf8' });
   ctx.fakeBin = fakeBin;
 
-  // A live placeholder "daemon" pid.
+  // A live placeholder "daemon" pid, aged past the stall window so the
+  // startup grace never masks the wedge/marker verdict this fixture stages.
   const child = spawn('sleep', ['300'], { detached: false, stdio: 'ignore' });
   trackedPids.push(child.pid);
   fs.writeFileSync(path.join(ctx.daemonDir, 'handoffd.pid'), `${child.pid}\n`);
+  if (pidAgeMs > 0) {
+    const pidSec = (Date.now() - pidAgeMs) / 1000;
+    fs.utimesSync(path.join(ctx.daemonDir, 'handoffd.pid'), pidSec, pidSec);
+  }
 
   // Pending outbox mail older than the stall threshold.
   const outboxFile = path.join(ctx.outboxDir, '50_bl977.handoff');
@@ -312,4 +335,8 @@ function registerSteps(registry) {
   });
 }
 
-module.exports = { registerSteps };
+// BL-1500: exported so its own handler can build a fixture in this file's
+// shape (fake tmux, live placeholder pid, aged heartbeat/marker/outbox)
+// without duplicating it, while parameterizing the one thing its scenario
+// varies that this file's own scenarios never do - the pid file's age.
+module.exports = { registerSteps, mkSupervisorFixture, ageHeartbeat, writeMarker, runCheckOnce, supervisorLog, STALL_MS };
