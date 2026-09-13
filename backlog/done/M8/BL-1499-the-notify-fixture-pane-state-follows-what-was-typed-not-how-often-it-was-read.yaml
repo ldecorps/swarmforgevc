@@ -1,4 +1,8 @@
 id: BL-1499
+abandoned_commits: [002e9965dd855e910b3ed0ba42ba29f4d2c22c7d]
+# QA-approved commit superseded by a BL-1241 land-step tip-pure replay
+# (70c14905e4, landed on origin/main 2026-09-13) after LAND_REPLAY named
+# BL-1518 as an entangled unlanded sibling on the QA branch's history.
 title: "test_handoffd_notify_verified.sh case 02 has been red on main since 2026-07-22 with no owner: its fake tmux answers the FIRST capture-pane with the idle pane and every later one with the stuck wake text, but since 36ae0a8e23 the startup-notify path probes the pane once for busyness before notify-agent! takes its own pre-inject capture, so the second probe reads the wake text as pre-existing input and the daemon never types (typed 0, expected 1) - the fixture's pane state follows what was typed into it, never how many times it was read, and the file exits 0 from both checkouts"
 milestone: M8
 type: defect
