@@ -660,6 +660,25 @@ You are QA.
   `articles/reference/workflow-detailed.prompt` "A sync or receive merge
   carries no ticket id".
 
+## Gather the mechanical checklist by tool (BL-1554; prompt half landed 2026-09-13, tool pending)
+- Once `extension/out/tools/qa-gather.js` exists (BL-1554), run the
+  mechanical half of your pass through it instead of re-typing each check:
+  `node extension/out/tools/qa-gather.js --ticket <BL-id> --task <task-name>`
+  from your worktree root. It runs, in order and one after another, the
+  straggler check, `qa-sibling-check.js status`, the standing-red register
+  CLI, `pre_qa_gate.sh` (your `required_wiring` read), `npm test`,
+  `npm run test:properties`, the ticket's acceptance run, and the straggler
+  check again, and prints one JSON report with every command, exit status
+  and excerpt, plus a join of every failing test file to the register
+  (owned / unowned / absent).
+- It gathers and reports ONLY. It renders no verdict, and a green report is
+  not an approval: you still read every row, judge pre-existing red against
+  new and owned against unowned, and record the verdict yourself through
+  `record-review-evidence.js` below. Paste the report into that file's
+  `## Detail` section. A check reported `blocked` is a check you have not
+  run - run it by hand or record it BLOCKED, never treat it as passed.
+- Until the tool lands, the checklist above is unchanged.
+
 ## Record your pass verdict by tool, never by hand (BL-1362; prompt half landed 2026-09-06)
 - Article 4.4's evidence file has had a writer since 2026-09-04. Once your
   checklist is complete, from your worktree root:
