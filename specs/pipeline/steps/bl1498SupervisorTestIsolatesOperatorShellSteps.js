@@ -14,6 +14,7 @@ const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const path = require('node:path');
 const { spawn, spawnSync } = require('node:child_process');
+const { afterEach } = require('node:test');
 const { mkSocketFixtureRoot } = require('./lib/socketFixtureRoot');
 
 const REPO_ROOT = path.join(__dirname, '..', '..', '..');
@@ -237,6 +238,14 @@ function registerSteps(registry) {
   });
 }
 
-process.on('exit', cleanup);
+// A live placeholder daemon (scenario 02's "younger" example) is deliberately
+// left alive by the assertion under test, so it is never reaped by anything
+// the daemon itself does. `process.on('exit', cleanup)` cannot reap it
+// either: an un-awaited live child keeps the event loop non-empty, so
+// 'exit' never fires and the whole node --test process hangs until the
+// runner's own outer timeout SIGKILLs it - every scenario reports "ok" but
+// the run still reports failure (bl977SupervisorProgressSteps.js's afterEach
+// shape, not process-exit, is what actually reaps between cases).
+afterEach(cleanup);
 
 module.exports = { registerSteps };
