@@ -125,3 +125,5 @@ qa_e2e_procedure: |
      point the predicate at it, confirm it fails; restore.
   4. `bash swarmforge/scripts/test/test_front_desk_supervisor_liveness.sh`
      still passes (the fixture is untouched, this is the control).
+
+assigned_to: coder
