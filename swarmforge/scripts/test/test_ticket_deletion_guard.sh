@@ -16,6 +16,8 @@ BB_LOAD_ANALYSE_DRIVER="$SCRIPT_DIR/../bb_load_analyse_driver.bb"
 HELPER="$LIVE_REPO_ROOT/extension/test/helpers/commitGuardFixtureSet.js"
 # shellcheck source=lib/bb_closure_copy.sh
 source "$SCRIPT_DIR/lib/bb_closure_copy.sh"
+# shellcheck source=lib/commit_guard_fixture_copy.sh
+source "$SCRIPT_DIR/lib/commit_guard_fixture_copy.sh"
 
 # BL-1484: an optional first argument naming a scratch repo root to derive
 # the copy set from (the $1 seam shape test_run_commit_guards.sh's own
@@ -115,20 +117,8 @@ git -C "$ROOT" checkout -q -- backlog/done/M8/BL-893-approvals-ambulance-choice.
 # verbatim, dying "No such file or directory" on every real commit (red
 # since 2026-08-30).
 mkdir -p "$ROOT/swarmforge/scripts" "$ROOT/swarmforge/git-hooks"
-CHAIN_FILES="$(node -e '
-  const { deriveCommitGuardFixtureSet } = require(process.argv[1]);
-  const r = deriveCommitGuardFixtureSet({
-    repoRoot: process.argv[2],
-    hookRels: ["swarmforge/git-hooks/pre-commit", "swarmforge/git-hooks/commit-msg"],
-  });
-  process.stdout.write(r.files.join("\n"));
-' "$HELPER" "$DERIVE_ROOT")"
-echo "derived copy set: $(echo "$CHAIN_FILES" | tr '\n' ' ')"
-while IFS= read -r rel; do
-  [ -n "$rel" ] || continue
-  mkdir -p "$ROOT/$(dirname "$rel")"
-  cp "$DERIVE_ROOT/$rel" "$ROOT/$rel"
-done <<< "$CHAIN_FILES"
+derive_and_copy_chain_files "$HELPER" "$DERIVE_ROOT" "$ROOT" \
+  '{"hookRels":["swarmforge/git-hooks/pre-commit","swarmforge/git-hooks/commit-msg"]}'
 # An EMPTY step registry, so BL-1303's guard asks its real question here
 # rather than refusing every commit because a repo with no acceptance
 # pipeline has no registry to read (BL-1408's worked example). Its compiled

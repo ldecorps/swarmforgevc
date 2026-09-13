@@ -12,6 +12,8 @@ GUARD="$SCRIPT_DIR/../check_merge_deletion.sh"
 HELPER="$LIVE_REPO_ROOT/extension/test/helpers/commitGuardFixtureSet.js"
 # shellcheck source=lib/bb_closure_copy.sh
 source "$SCRIPT_DIR/lib/bb_closure_copy.sh"
+# shellcheck source=lib/commit_guard_fixture_copy.sh
+source "$SCRIPT_DIR/lib/commit_guard_fixture_copy.sh"
 
 # BL-1484: an optional first argument naming a scratch repo root to derive
 # the copy set from (the $1 seam shape test_run_commit_guards.sh's own
@@ -175,17 +177,8 @@ git -C "$ROOT" merge --abort 2>/dev/null || git -C "$ROOT" reset -q --hard "$FEA
 # line each time a guard joined commit-msg (BL-1242, BL-1258, and again for
 # check_bounce_revert_scope.sh at BL-1471).
 mkdir -p "$ROOT/swarmforge/scripts" "$ROOT/swarmforge/git-hooks"
-CHAIN_FILES="$(node -e '
-  const { deriveCommitGuardFixtureSet, COMMIT_MSG_REL } = require(process.argv[1]);
-  const r = deriveCommitGuardFixtureSet({ repoRoot: process.argv[2], runnerRel: null, hookRels: [COMMIT_MSG_REL] });
-  process.stdout.write(r.files.join("\n"));
-' "$HELPER" "$DERIVE_ROOT")"
-echo "derived copy set: $(echo "$CHAIN_FILES" | tr '\n' ' ')"
-while IFS= read -r rel; do
-  [ -n "$rel" ] || continue
-  mkdir -p "$ROOT/$(dirname "$rel")"
-  cp "$DERIVE_ROOT/$rel" "$ROOT/$rel"
-done <<< "$CHAIN_FILES"
+derive_and_copy_chain_files "$HELPER" "$DERIVE_ROOT" "$ROOT" \
+  '{"runnerRel":null,"hookRels":["swarmforge/git-hooks/commit-msg"]}'
 # retirement_registry_cli.bb: check_retirement_readdition.sh SHELLS to it (a
 # bb subprocess dependency, outside the .sh source walk the helper follows),
 # and the CLI itself load-files retirement_registry_lib.bb. Its whole
