@@ -152,3 +152,5 @@ qa_e2e_procedure: |
      handler + index.js registration, the feature, evidence, and the
      register row removal; no swarmforge/scripts/*.bb and no allowlist
      change.
+
+assigned_to: coder
