@@ -251,3 +251,4 @@ notes: |
     each: 10).
 
 assigned_to: coder
+abandoned_commits: [4d48cbda6f]
