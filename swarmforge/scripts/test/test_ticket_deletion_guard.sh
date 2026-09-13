@@ -9,11 +9,22 @@
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
+LIVE_REPO_ROOT="$(cd "$SCRIPT_DIR/../../.." && pwd)"
 GUARD="$SCRIPT_DIR/../check_ticket_deletion.sh"
-SIZE_GUARD="$SCRIPT_DIR/../check_commit_size.sh"
-MERGE_GUARD="$SCRIPT_DIR/../check_merge_deletion.sh"
-PRE_COMMIT_HOOK="$SCRIPT_DIR/../../git-hooks/pre-commit"
-COMMIT_MSG_HOOK="$SCRIPT_DIR/../../git-hooks/commit-msg"
+IS_QA_ANCESTOR="$SCRIPT_DIR/../is_qa_ancestor.sh"
+BB_LOAD_ANALYSE_DRIVER="$SCRIPT_DIR/../bb_load_analyse_driver.bb"
+HELPER="$LIVE_REPO_ROOT/extension/test/helpers/commitGuardFixtureSet.js"
+# shellcheck source=lib/bb_closure_copy.sh
+source "$SCRIPT_DIR/lib/bb_closure_copy.sh"
+# shellcheck source=lib/commit_guard_fixture_copy.sh
+source "$SCRIPT_DIR/lib/commit_guard_fixture_copy.sh"
+
+# BL-1484: an optional first argument naming a scratch repo root to derive
+# the copy set from (the $1 seam shape test_run_commit_guards.sh's own
+# runner-path argument uses) - a handler's seam scenario builds one under
+# mkdtemp with an extra guard planted. The live repo is the default and is
+# never written by this test.
+DERIVE_ROOT="${1:-$LIVE_REPO_ROOT}"
 
 fail() { echo "FAIL: $*" >&2; exit 1; }
 pass() { echo "PASS: $*"; }
@@ -98,24 +109,40 @@ git -C "$ROOT" checkout -q -- backlog/done/M8/BL-893-approvals-ambulance-choice.
 
 # ── 8: wired as real pre-commit + commit-msg hooks via core.hooksPath, an
 #       actual `git commit` is blocked - not just the standalone script ──
-# BL-632: pre-commit also calls check_pipeline_code_on_main.sh
-# unconditionally; this fixture's default branch is never `main`, so that
-# guard is a no-op here, but the script must still exist to be invoked.
-# BL-570: same for check_property_suite_drift.sh.
+# BL-1484: every file BOTH chains need (the runner, the chain lib, every
+# guard pre-commit's chain and commit-msg name, and the libs those source),
+# read at run time through BL-1398's helper - never an enumerated `cp` per
+# guard, which is what let the runner's own file (run_commit_guards.sh,
+# BL-1252) go uncopied here while the hook that `exec`s it was copied
+# verbatim, dying "No such file or directory" on every real commit (red
+# since 2026-08-30).
 mkdir -p "$ROOT/swarmforge/scripts" "$ROOT/swarmforge/git-hooks"
-cp "$GUARD" "$ROOT/swarmforge/scripts/check_ticket_deletion.sh"
-cp "$MERGE_GUARD" "$ROOT/swarmforge/scripts/check_merge_deletion.sh"
-cp "$SCRIPT_DIR/../check_retirement_readdition.sh" "$ROOT/swarmforge/scripts/check_retirement_readdition.sh"
-cp "$SCRIPT_DIR/../check_bounce_revert_scope.sh" "$ROOT/swarmforge/scripts/check_bounce_revert_scope.sh"
-cp "$SCRIPT_DIR/../retirement_registry_cli.bb" "$ROOT/swarmforge/scripts/retirement_registry_cli.bb"
-cp "$SCRIPT_DIR/../retirement_registry_lib.bb" "$ROOT/swarmforge/scripts/retirement_registry_lib.bb"
-cp "$SIZE_GUARD" "$ROOT/swarmforge/scripts/check_commit_size.sh"
-cp "$SCRIPT_DIR/../check_pipeline_code_on_main.sh" "$ROOT/swarmforge/scripts/check_pipeline_code_on_main.sh"
-cp "$SCRIPT_DIR/../check_property_suite_drift.sh" "$ROOT/swarmforge/scripts/check_property_suite_drift.sh"
-cp "$SCRIPT_DIR/../property_suite_shared_repo_guard.sh" "$ROOT/swarmforge/scripts/property_suite_shared_repo_guard.sh"
-cp "$SCRIPT_DIR/../incoming_merge_parent_lib.sh" "$ROOT/swarmforge/scripts/incoming_merge_parent_lib.sh"
-cp "$PRE_COMMIT_HOOK" "$ROOT/swarmforge/git-hooks/pre-commit"
-cp "$COMMIT_MSG_HOOK" "$ROOT/swarmforge/git-hooks/commit-msg"
+derive_and_copy_chain_files "$HELPER" "$DERIVE_ROOT" "$ROOT" \
+  '{"hookRels":["swarmforge/git-hooks/pre-commit","swarmforge/git-hooks/commit-msg"]}'
+# An EMPTY step registry, so BL-1303's guard asks its real question here
+# rather than refusing every commit because a repo with no acceptance
+# pipeline has no registry to read (BL-1408's worked example). Its compiled
+# checker resolves relative to the guard's own script dir, so link the real
+# out tree beside the copied guard.
+mkdir -p "$ROOT/specs/pipeline/steps" "$ROOT/extension"
+printf 'module.exports = [];\n' > "$ROOT/specs/pipeline/steps/index.js"
+ln -s "$SCRIPT_DIR/../../../extension/out" "$ROOT/extension/out" 2>/dev/null || true
+# is_qa_ancestor.sh: invoked by check_pipeline_code_on_main.sh as a
+# subprocess, never `run_guard`'d or `source`'d - outside the derived
+# chain-list class this ticket is about (a single fixed dependency, not a
+# hand-enumerated list that drifts as the chain grows).
+cp "$IS_QA_ANCESTOR" "$ROOT/swarmforge/scripts/is_qa_ancestor.sh"
+# bb_load_analyse_driver.bb: check_bb_scripts_load.sh SHELLS to it (`bb
+# "$SCRIPT_DIR/bb_load_analyse_driver.bb"`) whenever the commit stages any
+# .bb file to analyse - the same subprocess-dependency shape as
+# is_qa_ancestor.sh above, needed here because the retirement_registry .bb
+# files below get staged too.
+cp "$BB_LOAD_ANALYSE_DRIVER" "$ROOT/swarmforge/scripts/bb_load_analyse_driver.bb"
+# retirement_registry_cli.bb: check_retirement_readdition.sh SHELLS to it (a
+# bb subprocess dependency, outside the .sh source walk the helper follows),
+# and the CLI itself load-files retirement_registry_lib.bb. Its whole
+# load-file closure, computed rather than hand-listed (BL-973).
+copy_bb_closure "$DERIVE_ROOT/swarmforge/scripts" "$ROOT/swarmforge/scripts" retirement_registry_cli.bb
 chmod +x "$ROOT/swarmforge/scripts/"*.sh "$ROOT/swarmforge/git-hooks/"*
 git -C "$ROOT" add -A
 git -C "$ROOT" -c user.email=test@test -c user.name=test commit -q -m "install hooks fixture"

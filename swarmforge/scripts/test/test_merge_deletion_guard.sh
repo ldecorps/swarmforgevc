@@ -7,9 +7,20 @@
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
+LIVE_REPO_ROOT="$(cd "$SCRIPT_DIR/../../.." && pwd)"
 GUARD="$SCRIPT_DIR/../check_merge_deletion.sh"
-TICKET_GUARD="$SCRIPT_DIR/../check_ticket_deletion.sh"
-COMMIT_MSG_HOOK="$SCRIPT_DIR/../../git-hooks/commit-msg"
+HELPER="$LIVE_REPO_ROOT/extension/test/helpers/commitGuardFixtureSet.js"
+# shellcheck source=lib/bb_closure_copy.sh
+source "$SCRIPT_DIR/lib/bb_closure_copy.sh"
+# shellcheck source=lib/commit_guard_fixture_copy.sh
+source "$SCRIPT_DIR/lib/commit_guard_fixture_copy.sh"
+
+# BL-1484: an optional first argument naming a scratch repo root to derive
+# the copy set from (the $1 seam shape test_run_commit_guards.sh's own
+# runner-path argument uses) - a handler's seam scenario builds one under
+# mkdtemp with an extra guard planted. The live repo is the default and is
+# never written by this test.
+DERIVE_ROOT="${1:-$LIVE_REPO_ROOT}"
 
 fail() { echo "FAIL: $*" >&2; exit 1; }
 pass() { echo "PASS: $*"; }
@@ -160,14 +171,19 @@ git -C "$ROOT" merge --abort 2>/dev/null || git -C "$ROOT" reset -q --hard "$FEA
 
 # ── 7: wired as the real commit-msg hook, an actual `git merge --no-ff`
 #       is blocked - not just the standalone script ───────────────────────
+# BL-1484: the commit-msg copy set, read at run time through BL-1398's
+# helper (extended to recognise commit-msg's direct-call line shape) -
+# never a hand-typed list, which is the shape that needed a hand-added `cp`
+# line each time a guard joined commit-msg (BL-1242, BL-1258, and again for
+# check_bounce_revert_scope.sh at BL-1471).
 mkdir -p "$ROOT/swarmforge/scripts" "$ROOT/swarmforge/git-hooks"
-cp "$TICKET_GUARD" "$ROOT/swarmforge/scripts/check_ticket_deletion.sh"
-cp "$GUARD" "$ROOT/swarmforge/scripts/check_merge_deletion.sh"
-cp "$SCRIPT_DIR/../check_retirement_readdition.sh" "$ROOT/swarmforge/scripts/check_retirement_readdition.sh"
-cp "$SCRIPT_DIR/../check_bounce_revert_scope.sh" "$ROOT/swarmforge/scripts/check_bounce_revert_scope.sh"
-cp "$SCRIPT_DIR/../retirement_registry_cli.bb" "$ROOT/swarmforge/scripts/retirement_registry_cli.bb"
-cp "$SCRIPT_DIR/../retirement_registry_lib.bb" "$ROOT/swarmforge/scripts/retirement_registry_lib.bb"
-cp "$COMMIT_MSG_HOOK" "$ROOT/swarmforge/git-hooks/commit-msg"
+derive_and_copy_chain_files "$HELPER" "$DERIVE_ROOT" "$ROOT" \
+  '{"runnerRel":null,"hookRels":["swarmforge/git-hooks/commit-msg"]}'
+# retirement_registry_cli.bb: check_retirement_readdition.sh SHELLS to it (a
+# bb subprocess dependency, outside the .sh source walk the helper follows),
+# and the CLI itself load-files retirement_registry_lib.bb. Its whole
+# load-file closure, computed rather than hand-listed (BL-973).
+copy_bb_closure "$DERIVE_ROOT/swarmforge/scripts" "$ROOT/swarmforge/scripts" retirement_registry_cli.bb
 chmod +x "$ROOT/swarmforge/scripts/"*.sh "$ROOT/swarmforge/git-hooks/"*
 git -C "$ROOT" checkout -q feature
 git -C "$ROOT" reset -q --hard "$FEATURE_TIP"
