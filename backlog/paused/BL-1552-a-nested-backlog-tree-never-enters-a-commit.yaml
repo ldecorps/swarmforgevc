@@ -1,0 +1,171 @@
+id: BL-1552
+title: "Review-pass evidence written under extension/backlog/evidence/ enters main as if it were under backlog/evidence/: five commits by four roles since 2026-09-07 (BL-1448, BL-1278, BL-1478, BL-1464, BL-1484), three still on main with no copy of that pass under backlog/evidence/, because a role whose shell sits in extension/ resolves the relative path against npm's cwd and no commit guard refuses a second backlog tree; a cheap-tier pre-commit guard refuses any staged path whose backlog area directory is not at the root and names the root path, and the three strays move home"
+milestone: M8
+type: defect
+severity: medium
+# medium, not high: nothing is lost - the files exist and git keeps them -
+# and the review-forward evidence gate (BL-1307) already refuses a forward
+# whose ONLY evidence is a stray (the 09-07 and 09-13 self-reverts within
+# a minute are that gate working). Not low: three parcels crossed QA and
+# landed with a review pass's inventory outside the directory every gate,
+# grep and doc names as the evidence trail (Article 4.4), so for BL-1278
+# (hardender) and BL-1478 (cleaner) the trail reads as missing.
+status: todo
+epic: code-quality-gates
+priority: 12
+direction: swarm-reported
+depends_on: []
+mutation_cost: low
+# low: one bash guard script plus its shell test (no mutation tooling for
+# shell), one line in run_commit_guards.sh, three file moves, one
+# step-handler file. The guard reads only the staged path list.
+slice_size_envelope: low
+required_stages: [coder, cleaner, architect, hardender, documenter, qa]
+
+acceptance: specs/features/BL-1552-a-nested-backlog-tree-never-enters-a-commit.feature
+
+# First entry anchors the pre-existing consumer (the cheap tier of the
+# chain) reaching the new guard by name - a guard file that exists but is
+# not chained gates nothing (BL-1235). The guard name is chosen here so
+# the pattern is a literal that will exist (BL-874). Second entry is the
+# handler pin.
+required_wiring:
+  - 'swarmforge/scripts/run_commit_guards.sh::run_guard check_nested_backlog_path.sh::the cheap tier must reach the guard, a present-but-unchained guard gates nothing'
+  - 'specs/pipeline/steps/bl1552NestedBacklogTreeNeverEntersACommitSteps.js::registerSteps::the handler lands in the same parcel as the feature (BL-233, BL-1371)'
+
+human_approval: pending
+approval_context: >
+  A new feature file is authored here, so it needs a tap. No choice is
+  posed and there are no ruling_options. FIRM: the guard keys on a backlog
+  AREA directory (paused, active, done, hold, evidence, archive,
+  answers-archive, debt, topics) whose backlog/ parent is not the
+  repository root - never on the bare word backlog, so
+  extension/src/backlog/ and a docs file named backlog-*.md stay allowed.
+  FIRM: the guard joins the cheap tier of run_commit_guards.sh and reports
+  through the chain (every violation at once, BL-1252); it is not a second
+  hook. FIRM: the three stray files move to backlog/evidence/ in this
+  parcel and extension/backlog/ is removed; the BL-1464 stray gets a
+  -summary qualifier because a detail file of the same date already
+  exists. No role prompt is edited: the refusal text teaches the fix at
+  the moment it matters. Minted by the specifier as a second finding of
+  the 2026-09-13 ceremony pass (evidence
+  backlog/evidence/closing-ceremony-2026-09-13-specifier.md).
+
+invariants:
+  - "No commit reaching main adds or modifies a path whose backlog area directory (paused, active, done, hold, evidence, archive, answers-archive, debt, topics) sits under a backlog/ that is not the repository root; the refusal names the root-relative path the file belongs at."
+
+description: |
+  ## What is wrong
+
+  `git ls-files | grep -E '(^|/)backlog/' | grep -v '^backlog/'` on main
+  today prints one directory: `extension/backlog/evidence/`, holding
+  `BL-1278-hardender-20260909.md`, `BL-1478-cleaner-20260911.md` and
+  `BL-1464-QA-20260913.md`. Each is a review-pass NONE inventory
+  (Article 4.4) that the role meant to write to `backlog/evidence/`; the
+  role's shell was in `extension/` (npm runs from there,
+  local-engineering.prompt) and the relative path resolved against it.
+  `git log --all -- extension/backlog/` shows five such commits by four
+  roles: BL-1448 cleaner 2026-09-07 (reverted 4 min later), BL-1278
+  hardender 09-09, BL-1478 cleaner 09-11, BL-1464 QA 09-13, BL-1484
+  architect 09-13 (reverted 30 s later and rewritten at the root path).
+
+  Nothing at commit time refuses the path. The pre-commit chain
+  (`swarmforge/scripts/run_commit_guards.sh`, hook at
+  `swarmforge/git-hooks/pre-commit` via `core.hooksPath`, shared by every
+  worktree) checks size, ticket deletion, pipeline code on main, handler
+  registration and module graph - none looks at where a backlog path
+  sits. The forward-time gate (`review_forward_evidence_gate_lib.bb`,
+  BL-1307) keys on `backlog/evidence/` and so refuses a forward whose only
+  evidence is a stray - which is what the two self-reverts look like -
+  but a stray beside a proper file (BL-1278 wrote a detail file at the
+  root path a minute later; BL-1464 QA wrote its detail at the root path)
+  rides through, and for BL-1478 no cleaner file exists under
+  `backlog/evidence/` at all and the parcel still reached the architect
+  eight minutes later. Whether that last case is the gate's fail-open on
+  a batch role's received-commit lookup is for the coder to confirm; the
+  commit-time guard is upstream of every one of these shapes.
+
+  ## What is wanted
+
+  - `swarmforge/scripts/check_nested_backlog_path.sh`: reads the staged
+    added/modified paths (`git diff --cached --name-only
+    --diff-filter=AM`, the same read `check_commit_size.sh` does) and
+    exits 1 when any path contains a backlog AREA segment - `backlog/`
+    followed by one of `paused`, `active`, `done`, `hold`, `evidence`,
+    `archive`, `answers-archive`, `debt`, `topics` - that is not at the
+    repository root. The refusal names each offending path and, beside
+    it, the root-relative path it belongs at (the substring from
+    `backlog/` on). Exits 0 otherwise; a path that merely contains the
+    word `backlog` (`extension/src/backlog/…`, `docs/…/backlog-*.md`,
+    `backlog/backlog-schema.md`) is never refused.
+  - The guard joins Tier 1 of `run_commit_guards.sh` (`run_guard
+    check_nested_backlog_path.sh`), so the chain reports it beside every
+    other violation in one refusal (BL-1252).
+  - `swarmforge/scripts/test/test_check_nested_backlog_path.sh`, in a
+    mkdtemp fixture proven by `git rev-parse --git-common-dir` (BL-1390),
+    registered in `swarmforge/scripts/test/suite-manifest.tsv` (BL-1424).
+  - The three strays move: `git mv` to `backlog/evidence/BL-1278-hardender-20260909.md`,
+    `backlog/evidence/BL-1478-cleaner-20260911.md`, and
+    `backlog/evidence/BL-1464-QA-20260913-summary.md` (a
+    `BL-1464-QA-20260913.md` detail file already exists there; the
+    qualifier is the role prompts' same-day convention). `extension/backlog/`
+    is gone afterwards.
+  - `docs/reference/BL-632-commit-time-guard-refuses-pipeline-code-on-main.md`'s
+    guard list gains the guard (documenter).
+
+  ## How (direction, not mandate)
+
+  - Model the script on `check_ticket_deletion.sh` (bash 3.2-safe `case`
+    globs, `set -euo pipefail` inside the guard only). The area list is
+    one literal in the script, quoted by the refusal.
+  - BL-1252's handler (`bl1252CommitGuardCompleteInventorySteps.js`) and
+    `test/lib/commit_guard_fixture_copy.sh` already build a fixture with
+    the chain and a second refusing guard; scenario 03 reuses that shape
+    rather than staging a 50 MB file.
+  - Scenario 04's last step is the census pin (BL-1445): the handler
+    re-runs the `git ls-files` grep above against the parcel tree and
+    expects zero hits.
+
+  ## Not in scope
+
+  - Editing role prompts to say "run from the repo root"; the guard's
+    refusal is the teaching moment and reaches the role that needs it.
+  - Changing the forward-time evidence gate (BL-1307) or explaining its
+    BL-1478 pass beyond what the coder confirms while building.
+  - The pre-merge-commit hook: a merge brings in paths a commit-time
+    guard on the source branch already checked.
+
+notes: |
+  Minted 2026-09-13 by the specifier as a second finding of the BL-820
+  pass for shift 2026-09-13 (the recorded outcome is `process_ticket`
+  BL-1551; this ticket is named in the same evidence file). Epic BL-541's
+  decomposes_into gains this id in the same commit. Census counted with
+  `git ls-files | grep -E '(^|/)backlog/' | grep -v '^backlog/'` and
+  `git log --all --format='%h %aI %s' -- extension/backlog/` on main at
+  083d055ece.
+
+qa_e2e_procedure: |
+  On the parcel commit, from the repo root. Fixture root per BL-1390:
+  `git init` under mkdtemp, prove it with `git rev-parse --git-common-dir`
+  before anything else.
+  1. `bash swarmforge/scripts/test/test_check_nested_backlog_path.sh` -
+     ALL PASS; `grep -n test_check_nested_backlog_path
+     swarmforge/scripts/test/suite-manifest.tsv` prints one standing row.
+  2. `bash swarmforge/scripts/test/test_run_commit_guards.sh` - ALL PASS
+     (the chain still reports every guard, now six in the cheap tier).
+  3. In the fixture with the guard scripts copied in: stage
+     `extension/backlog/evidence/BL-1-x.md`, run
+     `swarmforge/scripts/run_commit_guards.sh`; expect exit non-zero and a
+     refusal naming `check_nested_backlog_path.sh` and
+     `backlog/evidence/BL-1-x.md`. Stage `extension/src/backlog/x.ts` and
+     `docs/how-to/backlog-notes.md` instead; expect exit 0.
+  4. `git ls-tree -r --name-only <parcel-commit> | grep -E '(^|/)backlog/'
+     | grep -v '^backlog/'` prints nothing; the three moved files exist
+     under `backlog/evidence/` with the stray files' content
+     (`git diff <parcel-commit>~1:extension/backlog/evidence/BL-1278-hardender-20260909.md
+     <parcel-commit>:backlog/evidence/BL-1278-hardender-20260909.md` is
+     empty, same for the other two).
+  5. `swarmforge/scripts/run_acceptance.sh` on this ticket's feature: 7/7
+     (outline 01 x2, outline 02 x3, scenarios 03 and 04).
+  6. Break-then-restore: remove the `run_guard` line from Tier 1; scenario
+     03 fails (the chain no longer names the guard); restore.

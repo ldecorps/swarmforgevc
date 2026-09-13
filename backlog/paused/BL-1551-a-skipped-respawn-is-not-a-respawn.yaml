@@ -1,0 +1,150 @@
+id: BL-1551
+title: "A skipped respawn is recorded as a respawn: chase_sweep_lib's apply-inbox-item-action! writes a respawn telemetry row right after calling trigger-respawn!, whatever the adapter did, and handoffd's adapter returns after chase-respawn-skip-busy (or chase-respawn-error) without touching a pane - so the lifecycle ledger and the closing-ceremony packet count respawns that never happened (QA x12 on 2026-09-12, cleaner and architect x1 on 2026-09-13, every one a skip-busy); a respawn row means a launch script or rotation was invoked, a skipped attempt is its own type"
+milestone: M8
+type: defect
+severity: medium
+# medium, not high: no pane is touched wrongly and the chase ladder itself
+# is correct - the fault is a false label in the telemetry the lean
+# instruments read, contained to the lifecycle ledger and the packet. Not
+# low: the closing-ceremony pass is the swarm's one process-health loop,
+# and "the chaser respawned QA twelve times while it hand-landed BL-1546"
+# is a serious claim (BL-1546's land, 2026-09-12 15:26Z-15:44Z) that the
+# 2026-09-12 ledger makes and that never happened.
+status: todo
+epic: lean-aware-coordinator
+priority: 12
+direction: swarm-reported
+depends_on: []
+mutation_cost: low
+# low: one branch in chase_sweep_lib.bb (Babashka - no mutation/CRAP/DRY
+# wired, BL-472; gated by chase_sweep_test_runner.bb), one array literal in
+# leanLedgerComposeStall.ts under Stryker, one step-handler file.
+slice_size_envelope: low
+required_stages: [coder, cleaner, architect, hardender, documenter, qa]
+
+acceptance: specs/features/BL-1551-a-skipped-respawn-is-not-a-respawn.feature
+
+# The live consumer already exists and already calls the adapter this
+# ticket changes (chase_sweep_lib.bb apply-inbox-item-action! ->
+# :trigger-respawn!, wired in handoffd.bb), so a consumer anchor there
+# matches before and after the fix and gates nothing (BL-1235). Handler
+# pin only.
+required_wiring:
+  - 'specs/pipeline/steps/bl1551SkippedRespawnIsNotARespawnSteps.js::registerSteps::the handler lands in the same parcel as the feature (BL-233, BL-1371)'
+
+human_approval: pending
+approval_context: >
+  A new feature file is authored here, so it needs a tap. No choice is
+  posed and there are no ruling_options. FIRM: a chaser telemetry row of
+  type respawn keeps its meaning "the adapter invoked a launch script or a
+  rotation"; an attempt the adapter did not carry out is recorded as
+  respawn-skipped with a reason, never as respawn and never dropped.
+  FIRM: the chase ladder's decisions are untouched - only the telemetry
+  written after the adapter returns changes. FIRM: ledger rows and packets
+  already written are not rewritten; the evidence names the affected
+  shifts. Minted by the specifier as the BL-820 outcome of the 2026-09-13
+  ceremony pass (evidence
+  backlog/evidence/closing-ceremony-2026-09-13-specifier.md).
+
+invariants:
+  - "A chaser telemetry row of type respawn exists only for a sweep in which the trigger-respawn adapter invoked a launch script or a rotation; every attempt the adapter declined or failed is recorded as respawn-skipped, never as respawn and never omitted."
+
+description: |
+  ## What is wrong
+
+  `apply-inbox-item-action!` in `swarmforge/scripts/chase_sweep_lib.bb`
+  (~line 468) handles the ladder's `"respawned"` action as
+  `(do ((:trigger-respawn! adapters) role) ((:log-telemetry! adapters)
+  {:type "respawn" ...}))` - the telemetry row is unconditional. The live
+  adapter in `swarmforge/scripts/handoffd.bb` (~line 2104) has three
+  outcomes and only two of them respawn: a busy shared resident logs
+  `chase-respawn-skip-busy` and returns; a caught exception logs
+  `chase-respawn-error` and returns; otherwise it rotates
+  (`chase-rotate-to!`) or runs the launch script (`do-respawn!`). The
+  adapter's return value carries nothing, and the caller does not look.
+
+  Downstream, `extension/src/metrics/leanLedgerComposeStall.ts` folds every
+  `respawn` row into a `stall` event (`CHASER_ATTENTION_SIGNAL_TYPES`),
+  `computeStalls` in `extension/src/quality/closingCeremony.ts` sums them
+  per role and eventType, and the BL-820 pass reads the result.
+
+  Observed: `.swarmforge/lean/2026-09-12.jsonl` holds 12 QA `respawn`
+  stalls (BL-1546, 15:28Z-16:0xZ) and 5 cleaner ones; every one coincides
+  with a `chase-respawn-skip-busy` line in the daemon log and no
+  `chase-respawn` line - QA was resident 14:18Z-16:16Z hand-landing
+  BL-1546 and was never respawned. `2026-09-13.jsonl` holds one each for
+  cleaner (00:14:09Z, BL-1460) and architect (02:05:48Z, BL-1482), both
+  `chase-respawn-skip-busy` at the same second. The 2026-09-13 packet
+  reports them as `respawn` stalls.
+
+  ## What is wanted
+
+  - The adapter reports what it did. `:trigger-respawn!` returns a value
+    the caller can key on: carried out (launch script invoked, or the
+    resident rotated to the role) versus not carried out, with the reason
+    (`busy`, `error`).
+  - `apply-inbox-item-action!` writes `{:type "respawn"}` only when the
+    adapter carried the respawn out, and `{:type "respawn-skipped" :reason
+    <busy|error>}` otherwise - same role, handoffId, count and provider
+    fields as today, so the row is attributable to a ticket window exactly
+    like a `respawn` row.
+  - `respawn-skipped` joins `CHASER_ATTENTION_SIGNAL_TYPES` so the ledger
+    composes it as a stall with `eventType: respawn-skipped` and BL-918's
+    unrecognised-type report does not flag it. The packet's `stalls`
+    already fold by eventType, so it appears there under its own name with
+    no packet change.
+  - `docs/reference/BL-819-ticket-lifecycle-ledger.md`'s attention-signal
+    table gains the type and its meaning (documenter).
+
+  ## How (direction, not mandate)
+
+  - Mirror BL-1505's shape for chases: that slice made the chase row key
+    on `wake-result->attempted?` rather than on the raw adapter return.
+    Here a small map (`{:respawned? bool :reason kw}`) or a keyword from
+    the adapter, read by the caller, is enough; keep `chase_sweep_lib.bb`
+    agent-agnostic (BL-208) - the reason is a plain keyword, not a
+    provider or pane detail.
+  - `chase_sweep_test_runner.bb` already stubs `:trigger-respawn!`
+    (`(log-call! "respawn" role)`); the stub returns the outcome each case
+    needs. The composer and packet scenarios are Vitest over fixture
+    JSONL, the same seams BL-918 and BL-923 used.
+
+  ## Not in scope
+
+  - Changing when the ladder decides to respawn, the busy predicate, or
+    what a busy resident does with the attempt (BL-1416 owns the busy-pane
+    contract).
+  - Rewriting ledger rows or ceremony packets already on disk.
+  - The wake-attribution log (BL-870), which already records the skipped
+    half of WAKES; this ticket is the respawn rung's telemetry only.
+
+notes: |
+  Minted 2026-09-13 by the specifier as the BL-820 outcome for the
+  2026-09-13 ceremony pass (`process_ticket`, this id). Epic BL-818's
+  decomposes_into gains this id in the same commit. The 2026-09-12
+  evidence (closing-ceremony-2026-09-12-specifier.md) already noted the
+  twelve QA rows as counters, not respawns; this ticket is the fix, not a
+  re-mint of that observation.
+
+qa_e2e_procedure: |
+  On the parcel commit, from the repo root after `npm run compile` in
+  `extension/`. Fixture root per BL-1390: `git init` under mkdtemp, prove
+  it with `git rev-parse --git-common-dir` before anything else.
+  1. `bb swarmforge/scripts/test/chase_sweep_test_runner.bb` - ALL PASS,
+     including the outline's four rows: busy and error skipped, launch
+     script and rotation carried out.
+  2. `bb swarmforge/scripts/test/test_handoffd_chase_sweep_wiring.sh` (or
+     its bb sibling) - ALL PASS: the live adapter in handoffd.bb returns a
+     result the lib reads.
+  3. Under `extension/`: `npx vitest run leanLedgerComposeStall` and the
+     closingCeremony packet test - ALL PASS; `respawn-skipped` is composed
+     as a stall and not reported as unrecognised.
+  4. `swarmforge/scripts/run_acceptance.sh` on this ticket's feature: 6/6
+     (one outline x4, two scenarios).
+  5. Live check, read-only: in the fixture, seed a chaser-telemetry file
+     with one `respawn-skipped` row inside a role window and run
+     `node extension/out/tools/lean-ledger-record.js` for that ticket;
+     the ledger gains a stall with `eventType: respawn-skipped`.
+  6. Break-then-restore: make the adapter stub report busy and drop the
+     caller's keying; scenario 01 fails on "no row of type respawn";
+     restore.
