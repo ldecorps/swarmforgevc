@@ -108,6 +108,42 @@ function rolesRows(root) {
     .map((l) => l.split('\t'));
 }
 
+// BL-1489: the named fields BL-982's single-seat scenario actually claims -
+// session (roles.tsv col 4, index 3) and worktree (col 3, index 2) - keyed
+// by role (col 1, index 0). Any other column (e.g. the reverse-hop
+// propagation mode added by 44d2d42591) is out of scope by construction.
+function singleSeatFieldsByRole(root) {
+  const byRole = {};
+  for (const row of rolesRows(root)) {
+    // Root-relative, same as the old whole-file norm(): two fixture roots
+    // are two different mkdtemp paths even when the row is otherwise
+    // identical (e.g. a 'master'-worktree role's worktree IS its root).
+    byRole[row[0]] = { worktree: row[2].split(root).join('ROOT'), session: row[3] };
+  }
+  return byRole;
+}
+
+// BL-1489: BL-982's scenario 04 claims only session, worktree, launch
+// script and prompt path are unchanged from before the slice - not the
+// whole roles.tsv line. Comparing named-field projections keeps this
+// immune to a column a later, unrelated ticket adds to every row.
+function compareSingleSeatRolesTsv(liveRoot, preRoot) {
+  const live = singleSeatFieldsByRole(liveRoot);
+  const pre = singleSeatFieldsByRole(preRoot);
+  const roles = new Set([...Object.keys(live), ...Object.keys(pre)]);
+  for (const role of roles) {
+    assert.ok(live[role], `role '${role}' is missing from the live roles.tsv`);
+    assert.ok(pre[role], `role '${role}' is missing from the pre-change roles.tsv`);
+    for (const field of ['worktree', 'session']) {
+      assert.equal(
+        live[role][field],
+        pre[role][field],
+        `single-seat roles.tsv ${field} for role '${role}' must be unchanged from before this slice`
+      );
+    }
+  }
+}
+
 function preChangeScriptDir(ctx) {
   const dir = mkSocketFixtureRoot('bl982-pre-sh-');
   ctx.roots.push(dir);
@@ -207,9 +243,7 @@ function registerSteps(registry) {
       const preRoot = mkRoot(ctx, SINGLE_SEAT_CONF);
       const pre = zshSource(preRoot, preSh, "parse_config; write_roles_file; generate_dormant_role_launch_artifacts $(( ${ROLE_INDEX[coder]} + 1 ))");
       assert.equal(pre.status, 0, `pre-change provisioning failed: ${pre.stderr}`);
-      const norm = (root) =>
-        fs.readFileSync(path.join(root, '.swarmforge', 'roles.tsv'), 'utf8').split(root).join('ROOT');
-      assert.equal(norm(ctx.root), norm(preRoot), 'single-seat roles.tsv (sessions, worktrees) must be byte-identical to the pre-change script');
+      compareSingleSeatRolesTsv(ctx.root, preRoot);
       const names = (root, sub) => fs.readdirSync(path.join(root, '.swarmforge', sub)).sort();
       assert.deepEqual(names(ctx.root, 'launch'), names(preRoot, 'launch'), 'launch script names must be unchanged');
       assert.deepEqual(names(ctx.root, 'prompts'), names(preRoot, 'prompts'), 'prompt artifact names must be unchanged');
@@ -237,4 +271,13 @@ function registerSteps(registry) {
   });
 }
 
-module.exports = { registerSteps };
+module.exports = {
+  registerSteps,
+  // BL-1489: exported so its own step handlers can drive BL-982's single-
+  // seat comparison against a seam launcher, instead of restating it.
+  SINGLE_SEAT_CONF,
+  mkRoot,
+  cleanupRoots,
+  zshSource,
+  compareSingleSeatRolesTsv,
+};
