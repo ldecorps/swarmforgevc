@@ -159,6 +159,22 @@ notes: |
   backlog/evidence/closing-ceremony-2026-09-09-specifier.md are the
   record. Epic BL-818's decomposes_into gains this id in the same commit.
 
+  2026-09-13 (specifier, BL-820 pass for shift 2026-09-12): third
+  occurrence, new cause. At 2026-09-12T04:25:29Z the daemon logged
+  `closing-ceremony-run-error exit=1 ... swarm_handoff.sh
+  /tmp/closing-ceremony-note-9263-byok0bg4xi.txt`. The night sequence took
+  the no-shift-since-last-ceremony -> record-empty-outcome path, the packet
+  was not empty (QA dwell on BL-1544, 1 nudge + 1 chase), the run was
+  written pending, and the draft under os.tmpdir() was refused by
+  BL-1518-a's root guard - the "new cause" BL-1537 predicted for its
+  senders 5-7 (landed e300226fae the same day, after this run). The next
+  sweep saw already_exists, the state advanced with empty-outcome-recorded
+  done, and the 2026-09-13 ceremony finalized the run failed; the failure
+  note reached the specifier a day late and recordCeremonyOutcome refused
+  it. BL-1537 removes this trigger; this ticket still owns the shape. The
+  2026-09-12 run is terminal and stays so, like 09-07 and 09-09. Evidence:
+  backlog/evidence/closing-ceremony-2026-09-12-specifier.md.
+
 qa_e2e_procedure: |
   On the parcel commit, from the repo root after `npm run compile` in
   `extension/`. Fixture root per BL-1390: `git init` under mkdtemp, prove
