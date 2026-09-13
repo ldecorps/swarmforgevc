@@ -8,6 +8,14 @@ severity: high
 # shifts' packets (2026-09-07, 2026-09-09) produced nothing and nobody was
 # told until the next ceremony that happened to have a reachable specifier.
 status: todo
+abandoned_commits: [b4caa92cd3]
+# BL-1241 land-step remedy: b4caa92cd3 (QA's approved worktree tip) carried
+# three closed-and-already-landed siblings (BL-1498, BL-1499, BL-1518) as
+# ancestors, so the land step's attribution walk read them as entangled
+# rather than landed and built a tip-pure replay off origin/main instead of
+# pushing this commit directly. The replay (f0665ed63b) is what landed;
+# b4caa92cd3 itself never reached main and is exempted here from the
+# pre-QA gate's stranded-commit ancestry check.
 epic: lean-aware-coordinator
 priority: 9
 direction: swarm-reported
