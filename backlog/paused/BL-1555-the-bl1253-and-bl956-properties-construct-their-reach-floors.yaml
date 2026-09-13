@@ -1,0 +1,166 @@
+id: BL-1555
+title: "bl1253TokenOwnershipInvariants and bl956PipelineBoardCaptionCapInvariants property files are flaky red on main with no owner: each asserts a reach floor over a population it only samples - bl1253's flapping arbitrary can draw every state fresh so no handover exists (QA seed -1747880424, about 1 run in 21), bl956's activeCount 1..15 can overflow the 12-row grid on fewer than 20 of 150 boards (about 1 run in 370) - both floors are constructed the way BL-1553 iterates the damage kind, and stay asserted"
+milestone: M8
+type: defect
+severity: high
+# high (standing-red rule 2026-09-05): two property-lane files red on main are
+# broken safety signals; QA saw each fail once in three full-lane runs while
+# verifying BL-1485 (evidence dfc2a60b23 on swarmforge-QA), and an unowned
+# red throttles intake (BL-1429). Production is unaffected: on every drawn
+# sequence the bridge holds the token correctly and on every drawn board the
+# caps announce themselves - the failing assertions are the generators' own
+# reach, not the invariants.
+status: todo
+epic: code-quality-gates
+priority: 8
+direction: swarm-reported
+depends_on: []
+mutation_cost: low
+# low: two property test files under extension/test (never extension/src),
+# one step-handler file. No production code, so no Stryker target; the
+# hardener records the fallback.
+slice_size_envelope: low
+required_stages: [coder, cleaner, architect, hardender, documenter, qa]
+
+acceptance: specs/features/BL-1555-the-bl1253-and-bl956-properties-construct-their-reach-floors.feature
+
+# No consumer anchor is honest here (BL-1235): the live consumer is the
+# properties lane itself (`npm run test:properties`, vitest.properties.config.mjs),
+# which already collects both files and is the thing that is red. The
+# handler entry is the BL-233 in-parcel pin.
+required_wiring:
+  - 'specs/pipeline/steps/bl1555ReachFloorsConstructedSteps.js::registerSteps::the handler lands in the same parcel as the feature (BL-233, BL-1371)'
+
+human_approval: pending
+approval_context: >
+  A new feature file is authored here, so it needs a tap. No choice is
+  posed and there are no ruling_options. FIRM: extension/src is not
+  edited - telegramCursorBridgeLive and pipelineBoard are landed contracts
+  and both properties agree with them on every draw; the fixes are in the
+  two tests' own draws only. FIRM: no reach floor is lowered, dropped, or
+  made rarer-to-miss by inflating numRuns - BL-1062's rule is that a floor
+  is met BY CONSTRUCTION, and a floor that is merely usually met is still a
+  flake. FIRM: neither file is added to
+  property_suite_standing_allowlist.tsv. Direction, not mandate: splice a
+  dead state into every flapping sequence by shape; iterate bl956
+  invariant 3 over an overflow cell (activeCount 13..15) and a fitting cell
+  (1..12) with runsPerCell from test/helpers/reachFloors.js. Minted by the
+  specifier on QA's unowned-red note of 2026-09-13 13:54Z from the BL-1485
+  parcel; the bl1253 seed reproduces at run 20 of 24 on main ccd3ff6e63,
+  the bl956 cause is read off the source (4 of 1500 simulated seeds miss,
+  12 of 12 real runs green).
+
+invariants:
+  - "A reach floor is met by construction: every value a floor names is produced by a test arm that yields it on every run of that arm, never by a uniform draw the floor merely hopes will cover it."
+
+description: |
+  ## What is wrong
+
+  Two files under `extension/test`, same defect class as BL-1553 and
+  BL-1533: a reach floor asserted after a sampled draw.
+
+  **`bl1253TokenOwnershipInvariants.property.test.js`**, test "the token
+  can change hands repeatedly in one process": `flappingArb` (lines
+  199-201) is `fc.array(fc.constantFrom('fresh', ...DEAD_STATES), {
+  minLength: 4, maxLength: 6 })` wrapped in `fresh` at both ends, and the
+  test asserts `handovers >= 1`. A draw of four `fresh` yields a six-`fresh`
+  sequence in which the bridge never takes the token, so no handover
+  exists and the floor fails while `checkSequence` passes. The same file's
+  `recoveryArb` and `takeoverArb` construct their transition by shape;
+  this arm hopes.
+
+  | who | where | result |
+  |---|---|---|
+  | BL-1485 QA, 2026-09-13 | full lane, run 2 of 3 | `seed: -1747880424`, counterexample `["fresh" x6]` |
+  | BL-1485 QA, 2026-09-13 | alone, and a 3-file batch | green |
+  | specifier, 2026-09-13 | `fc.check` on `flappingArb`, that seed, 24 runs | fails at run 20, same counterexample |
+  | specifier, 2026-09-13 | 2000 fresh seeds, 24 runs each | 93 fail (about 1 in 21) |
+
+  **`bl956PipelineBoardCaptionCapInvariants.property.test.js`**, invariant
+  3: `boardArb.activeCount` is `fc.integer({ min: 1, max: 15 })` and the
+  test asserts `gridOverflowSeen >= 20` over 150 boards, where a board
+  overflows only when `activeCount > PIPELINE_BOARD_GRID_MAX_ROWS` (12).
+  Three values of fifteen overflow; 150 uniform draws give about 30
+  overflow boards and about one seed in 370 gives fewer than 20 (1500
+  simulated seeds: 4 misses, minimum 18). The other five floors in the
+  file sit far from their line (0 misses in 1500). QA saw the file fail
+  once in three full-lane runs and did not record the text; the file is
+  pure (no clock, no fs, no subprocess) and 12 of 12 specifier runs alone
+  were green, so the cause is read off the source and this is the only
+  way the file can fail.
+
+  Both latent since landing (bl1253: `026ae2aa3e`, 2026-08-30; bl956:
+  `294d46406a`, 2026-08-19). Evidence:
+  `backlog/evidence/BL-1555-specifier-unowned-red-repro-20260913.md`.
+
+  ## What is wanted
+
+  Both floors are met by construction on every run and stay asserted at
+  their values. Each fixed test prints its reach map (the BL-1371 /
+  BL-1534 `reach map` shape) so a reader, and scenarios 02 and 04, can see
+  the counts from the run. The property lane is green on `main`; the two
+  register rows this ticket adds are removed in the same land.
+
+  ## How (direction, not mandate)
+
+  - bl1253: build every flapping sequence to contain at least one dead
+    state by shape - e.g. `fc.tuple(prefix, deadArb, suffix)` spliced, or
+    draw the inner array and a dead state plus an index and insert it.
+    Keep `numRuns: RUNS` (24), keep the `handovers >= 1` assertion, and
+    print `BL-1555 reach map (flapping): {"sequences":N,"withHandover":M}`
+    after the assert.
+  - bl956 invariant 3: iterate an overflow cell (`activeCount` 13..15)
+    and a fitting cell (1..12), `runsPerCell(150, 2)` each from
+    `test/helpers/reachFloors.js`, so the total number of boards is not
+    reduced; keep the three `>= 20` floors as they stand (or route them
+    through `assertReachFloor`), and print
+    `BL-1555 reach map (invariant 3): {"gridOverflow":a,"parkedOverflow":b,"epicsOverflow":c}`.
+    Invariants 1 and 2 are sampled too but their floors are unreachable
+    by a miss; constructing them in the same pass is welcome if it is one
+    edit, leaving them is not a defect.
+  - Step handler `specs/pipeline/steps/bl1555ReachFloorsConstructedSteps.js`
+    runs each file alone under the properties config as a real subprocess
+    (the bl1534BoundedSweepReachSteps.js shape), parses the two reach maps,
+    and reads the source for scenario 05's literals. Land it in the same
+    commit as the feature (BL-233).
+
+  ## Not in scope
+
+  - `extension/src/tools/telegramCursorBridgeLive.ts`,
+    `extension/src/concierge/pipelineBoard.ts`, and both tickets' own
+    acceptance features and handlers are not touched.
+  - The BL-1253 and BL-956 parcels shipped sampled floors and no stage
+    caught either; the same fail-open shape BL-1445 names. No process
+    change is minted here.
+
+notes: |
+  Register: backlog/standing-reds.tsv gains two `property` rows naming
+  this ticket (same commit as this mint), first_seen 2026-09-13; QA
+  removes both in the land that turns the files green. BL-1485's own
+  approval was not held on these (QA's evidence: none of the three files
+  is BL-1485's). Sibling: BL-1556 owns the third file in QA's note
+  (bl1272LandedSiblingInvariants), a different class.
+
+qa_e2e_procedure: |
+  On the parcel commit, from `extension/`:
+  1. `for f in bl1253TokenOwnershipInvariants bl956PipelineBoardCaptionCapInvariants; do
+     for i in $(seq 1 15); do npx vitest run --config vitest.properties.config.mjs
+     test/$f.property.test.js || echo FAIL $f; done; done` -> every run
+     green, no FAIL line (the unfixed bl1253 fails about 1 in 21).
+  2. In each bl1253 run's stdout the printed flapping reach map shows
+     `withHandover` equal to `sequences` and `sequences` >= 24; in each
+     bl956 run the invariant 3 reach map shows `gridOverflow` >= 50 (a
+     uniform 1..15 draw averages 30 and cannot reach 50), `parkedOverflow`
+     and `epicsOverflow` >= 20.
+  3. Deterministic seed check: `fc.check` (or a temporary `seed:
+     -1747880424` on the flapping assert) no longer fails at run 20 - the
+     constructed arbitrary yields a dead state in every sequence.
+  4. `git diff main...HEAD --name-only` names the two property tests, the
+     step handler, the feature, evidence, and the register row removals;
+     `extension/src/`, `property_suite_standing_allowlist.tsv`, the
+     BL-1253/BL-956 features and handlers are unchanged. The four floor
+     literals of scenario 05 are still present in the sources.
+  5. Break-then-restore: make the flapping arbitrary omit its dead state
+     again; the `handovers >= 1` assertion fails under the QA seed on the
+     first run; restore. Narrow bl956's overflow cell to 1..12; the
+     `gridOverflowSeen >= 20` floor fails on the first run; restore.
