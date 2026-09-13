@@ -1,0 +1,143 @@
+id: BL-1558
+title: "Resident-invoked rotation drops the wrapper's SWARMFORGE_ROTATION_REASON: respawn-as! passes the literal handoff-forward, so no rotation row has ever read rotate-home and none can read rotate-forward; make the wrapper's label win, keep handoff-forward for a bare rotate_to_role.sh call and rotate for the daemon"
+milestone: M8
+type: defect
+severity: medium
+# medium: a measurement defect, not a routing one - rotations go where they
+# should; only the telemetry label is wrong, so rotationDynamics.ts's
+# stranded-time metric has read zero since BL-550 and the hotfix's
+# rotate-forward adoption is invisible. Not high: the metric feeds the
+# briefing trend only, no gate or throttle keys on it.
+status: todo
+epic: swarm-reliability
+priority: 30
+direction: specifier-found
+depends_on: []
+mutation_cost: low
+# low: Babashka only (no mutation/CRAP/DRY wired, BL-472); a pure label
+# helper unit-tested in mono_router_lib_test_runner.bb plus a fake-tmux
+# fixture run of the real entry.
+slice_size_envelope: low
+required_stages: [coder, cleaner, architect, hardender, documenter, qa]
+
+acceptance: specs/features/BL-1558-resident-rotation-reason-honours-wrapper-env.feature
+
+# The consumer is respawn-as! in handoff_lib.bb, and the defect IS the
+# literal it passes today - a presence anchor on the pre-fix line would gate
+# the wrong direction, and `SWARMFORGE_ROTATION_REASON` already occurs in
+# that file (rotate-resident-to!), so it matches before and after the fix
+# and gates nothing (BL-1235). Scenario 01 executes the real entry instead;
+# the handler entry is the BL-233 in-parcel pin.
+required_wiring:
+  - 'specs/pipeline/steps/bl1558ResidentRotationReasonSteps.js::registerSteps::the handler lands in the same parcel as the feature (BL-233, BL-1371)'
+
+human_approval: pending
+approval_context: >
+  A new feature file is authored here, so it needs a tap. No choice is
+  posed and there are no ruling_options. FIRM: the fix is to the label
+  only - which role a rotation goes to, the BL-805 in_process gate, the
+  delivery wait and the daemon's chase rotation are untouched. FIRM: the
+  label set is exactly rotate (daemon default), handoff-forward (bare
+  resident call, unchanged), rotate-home and rotate-forward (the wrapper's
+  two). Found by the specifier while minting BL-1557 (the stamp-off of
+  hotfix 92ecf4aea3), 2026-09-13.
+
+invariants:
+  - "A resident-invoked rotation's telemetry reason is the wrapper's non-blank SWARMFORGE_ROTATION_REASON when set and handoff-forward otherwise; a daemon-driven rotation's reason stays rotate; the label never decides where the rotation goes or whether it happens."
+
+source: |
+  Specifier finding 2026-09-13 while minting BL-1557. `ready_for_next.sh`
+  sets `SWARMFORGE_ROTATION_REASON=rotate-home` (BL-550) or
+  `rotate-forward` (hotfix 92ecf4aea3) before exec'ing `rotate_to_role.sh`;
+  `rotate_to_role.bb` calls `handoff-lib/respawn-as!`, which calls
+  `(rotate-resident-to! target-role "handoff-forward")`;
+  `rotate-resident-to!` computes `emit-reason (or reason (env
+  SWARMFORGE_ROTATION_REASON) default)`, so the literal wins. Count on
+  `.swarmforge/telemetry/rotation-2026-09.jsonl`: 498 handoff-forward,
+  545 rotate, 0 rotate-home. `extension/src/metrics/rotationDynamics.ts`
+  `strandedMsForEvent` returns 0 unless `reason === 'rotate-home'`.
+
+description: |
+  ## What
+
+  The wrapper's rotation label must reach the rotation telemetry row.
+  Today two writers disagree: `ready_for_next.sh` labels its rotations
+  and `respawn-as!` overwrites the label with `handoff-forward` before the
+  event is appended. Every resident-invoked rotation this month is logged
+  as a forward, the stranded-time metric that BL-550's label was written
+  for has never counted anything, and hotfix 92ecf4aea3's new
+  `rotate-forward` label - the one observable that would show the hotfix
+  working live - can never appear.
+
+  ## Wanted
+
+  - `SWARMFORGE_ROTATION_REASON` set and non-blank when the resident
+    rotates through `rotate_to_role.sh` -> the appended row carries that
+    value (`rotate-home`, `rotate-forward`).
+  - Unset or blank (an agent running `rotate_to_role.sh <role>` by hand,
+    as the mono-router pack prompts instruct) -> `handoff-forward`, as
+    today.
+  - The daemon's chase rotation (`handoffd.bb` calling
+    `rotate-resident-to!` with no explicit reason and no env label) ->
+    `rotate`, as today.
+  - Nothing else about a rotation changes: target, BL-805 in_process
+    gate, `wait-for-delivery!`, respawn bootstrap.
+
+  ## How (direction, not mandate)
+
+  A pure `resident-rotation-reason` helper in `mono_router_lib.bb` (env
+  value -> label, blank -> `handoff-forward`) that `respawn-as!` passes
+  as the explicit reason keeps the choice unit-testable in
+  `mono_router_lib_test_runner.bb`; alternatively `respawn-as!` passes
+  nil and `rotate-resident-to!`'s existing `(or reason env default)`
+  does the work, but then the bare-call default becomes `rotate`, which
+  changes the label set - the pure helper is the smaller change. While in
+  `handoff_lib.bb`, amend the `required-envelope-headers` comment ("id is
+  audit-only metadata ... never read by delivery/dequeue routing") to say
+  `id` is now read by forward-rotate targeting (`roles-holding-parcel-id`,
+  hotfix 92ecf4aea3) and still never by delivery or dequeue - BL-1557's
+  review goal 6, a one-line comment.
+
+  ## Scenario notes for the coder
+
+  - Scenario 01 drives the REAL `respawn-as!` through `rotate_to_role.bb`
+    to a successful rotation, so it needs a fake tmux on PATH that answers
+    `has-session`, `respawn-pane`, `send-keys` and friends with exit 0
+    (the `test_chase_departing_mid_parcel_gate.sh` fixture shape:
+    fixture git root under mkdtemp proven by `rev-parse --git-common-dir`,
+    roles.tsv, `config rotation router`, a launch script for the target
+    role, `SWARMFORGE_ALLOW_TMP_DAEMON=1`, mono-router-active-role marker,
+    an empty departing in_process so the BL-805 gate passes) and a parcel
+    already in the target's inbox so `wait-for-delivery!` returns at once.
+    Assert on the LAST line of the fixture's
+    `.swarmforge/telemetry/rotation-<yyyy-MM>.jsonl`. `unset` means the
+    variable is absent from the environment; `blank` means set to the
+    empty string.
+  - Scenario 02 calls `handoff-lib/rotate-resident-to!` with one argument
+    under the same fixture and no env label.
+  - The step handler is `bl1558ResidentRotationReasonSteps.js`, landing
+    in the SAME commit as the feature (BL-233); `steps/index.js`
+    discovers `*Steps.js` by directory scan.
+
+notes: |
+  Minted alongside BL-1557 (the stamp-off of hotfix 92ecf4aea3), whose
+  review goal 4 re-counts the telemetry and confirms or refutes this
+  ticket's premise; BL-1557's evidence is the place to look before
+  starting this one. Independent of BL-1557 (depends_on empty): the fix
+  is a label, the stamp is a review. Grep both ids before minting anything
+  about rotation telemetry labels.
+
+qa_e2e_procedure: |
+  On the parcel commit:
+  1. `run_acceptance.sh` on the BL-1558 feature -> 2 scenarios green
+     (scenario 01 = 4 rows).
+  2. `bb swarmforge/scripts/test/mono_router_lib_test_runner.bb` ok;
+     `bash swarmforge/scripts/test/test_ready_for_next_rotate_home.sh`
+     ALL CHECKS PASSED (the wrapper's REASON lines are unchanged).
+  3. `git diff main...HEAD -- swarmforge/scripts/handoff_lib.bb` touches
+     only respawn-as!'s reason argument and the id comment.
+  After landing, on the live rotation-router pack: the first
+  ready_for_next.sh-driven rotation appends a row whose reason is
+  rotate-home or rotate-forward -
+  `grep -c '"reason":"rotate-forward"' .swarmforge/telemetry/rotation-<yyyy-MM>.jsonl`
+  goes above zero after the first non-home forward.
