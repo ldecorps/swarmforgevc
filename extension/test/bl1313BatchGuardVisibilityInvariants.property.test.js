@@ -49,26 +49,10 @@ const fs = require('node:fs');
 const path = require('node:path');
 const { spawnSync } = require('node:child_process');
 const { mkTmpDir, mkSharedTmpDir } = require('./helpers/tmpDir');
+const { computeClosure } = require('../../specs/pipeline/steps/lib/operatorRuntimeBbClosure.js');
 
 const REPO_ROOT = path.join(__dirname, '..', '..');
 const SCRIPTS_DIR = path.join(REPO_ROOT, 'swarmforge', 'scripts');
-
-// The full load-file closure seeded once into the isolated dir (verified:
-// handoff_lib.bb loads the first eight, duplicate_chain_guard_lib.bb adds
-// pipeline_stage_lib.bb, and every listed dep is itself load-file-closed).
-const LIB_CLOSURE = [
-  'handoff_lib.bb',
-  'duplicate_chain_guard_lib.bb',
-  'pipeline_stage_lib.bb',
-  'ambulance_lib.bb',
-  'shell_quote_lib.bb',
-  'daemon_cycle_guard_lib.bb',
-  'mono_router_lib.bb',
-  'prompt_engine_lib.bb',
-  'rotation_telemetry_lib.bb',
-  'seat_difficulty_lib.bb',
-  'self_heal_telemetry_lib.bb',
-];
 
 const TICKETS = ['BL-901', 'BL-902', 'BL-903'];
 const HOLDER_ROLES = ['cleaner', 'hardender'];
@@ -78,7 +62,11 @@ let LIB_DIR = null;
 
 beforeAll(() => {
   LIB_DIR = mkSharedTmpDir('sfvc-bl1313-libs-');
-  for (const name of LIB_CLOSURE) {
+  const closure = new Set([
+    ...computeClosure(SCRIPTS_DIR, 'handoff_lib.bb'),
+    ...computeClosure(SCRIPTS_DIR, 'duplicate_chain_guard_lib.bb'),
+  ]);
+  for (const name of closure) {
     fs.cpSync(path.join(SCRIPTS_DIR, name), path.join(LIB_DIR, name));
   }
 });
