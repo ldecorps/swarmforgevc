@@ -145,3 +145,5 @@ qa_e2e_procedure: |
   4. Break-then-restore: in the helper make the `down` arm build an
      ascending pair; scenario 02's `down` row fails and the property's
      own reach floor for `down` fails; restore.
+
+assigned_to: coder
