@@ -2,7 +2,7 @@ const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const path = require('node:path');
 const { mkTmpDir } = require('./helpers/tmpDir');
-const { runClosingCeremony, readOpenTicketTextsFromTarget } = require('../out/metrics/closingCeremonyRun');
+const { runClosingCeremony, readOpenTicketTextsFromTarget, closingCeremonyLoudCodes } = require('../out/metrics/closingCeremonyRun');
 const { readCeremonyRun } = require('../out/metrics/closingCeremonyStore');
 const { appendLeanLedgerEventIfNew } = require('../out/metrics/leanLedgerStore');
 const { recordCeremonyOutcome } = require('../out/metrics/closingCeremonyStore');
@@ -84,6 +84,12 @@ test('a prior shift left pending is finalized as failed, and surfaced, when a la
 
   const result = runClosingCeremony(target, '2026-08-08T22:00:00.000Z', deps); // a later shift, no gap-day activity
   assert.deepEqual(result.finalizedFailed, ['2026-08-06']);
+  // BL-1528: the failure note's send SUCCEEDED here (fakeDeps' sendNote never
+  // throws) - a delivered notification must never be reported as
+  // undeliverable, which is exactly what surfaces a bogus
+  // closing-ceremony-failure-undeliverable loud line for a ceremony that
+  // actually told someone.
+  assert.deepEqual(result.finalizedFailedUndeliverable, []);
   const stale = readCeremonyRun(target, '2026-08-06');
   assert.ok(stale.failedAt, 'expected the stale run to be finalized as failed');
   assert.ok(
@@ -109,6 +115,106 @@ test('a prior shift that DID receive an outcome before the next shift runs is le
   const result = runClosingCeremony(target, '2026-08-08T22:00:00.000Z', deps);
   assert.deepEqual(result.finalizedFailed, []);
   assert.equal(readCeremonyRun(target, '2026-08-06').failedAt, null);
+});
+
+// ── BL-1528: a refused send is a failed run at write time, not a wedge ────
+
+function throwingDeps(message) {
+  return { deps: { sendNote: () => { throw new Error(message); } } };
+}
+
+test('BL-1528: a refused packet send stores the run as failed with the refusal text, never pending', () => {
+  const target = mkTmp();
+  appendLeanLedgerEventIfNew(target, {
+    ticket: 'BL-900',
+    type: 'stage_transition',
+    source: 'stage-dwell',
+    at: '2026-08-08T09:00:00.000Z',
+    role: 'coder',
+    data: { processingMs: 1000 },
+  });
+  const { deps } = throwingDeps("Unknown recipient role 'specifier'.");
+  const result = runClosingCeremony(target, '2026-08-08T22:00:00.000Z', deps);
+  assert.equal(result.status, 'created_undeliverable');
+  assert.equal(result.run.failedAt, '2026-08-08T22:00:00.000Z');
+  assert.match(result.run.deliveryFailure, /Unknown recipient role 'specifier'\./);
+  const stored = readCeremonyRun(target, '2026-08-08');
+  assert.equal(stored.failedAt, '2026-08-08T22:00:00.000Z', 'the stored record must never sit pending after a refused send');
+  assert.match(stored.deliveryFailure, /Unknown recipient role 'specifier'\./);
+});
+
+test('BL-1528: a refused packet send does not throw and does not wedge a second run', () => {
+  const target = mkTmp();
+  appendLeanLedgerEventIfNew(target, {
+    ticket: 'BL-900',
+    type: 'stage_transition',
+    source: 'stage-dwell',
+    at: '2026-08-08T09:00:00.000Z',
+    role: 'coder',
+    data: { processingMs: 1000 },
+  });
+  const sent = [];
+  const deps = { sendNote: () => { sent.push(1); throw new Error('tmux send-literal failed'); } };
+  assert.doesNotThrow(() => runClosingCeremony(target, '2026-08-08T22:00:00.000Z', deps));
+  const second = runClosingCeremony(target, '2026-08-08T23:00:00.000Z', deps);
+  assert.equal(second.status, 'already_exists', 'the failed record must be found on a second sweep, never re-sent');
+  assert.equal(sent.length, 1, 'no second send attempt for the same shift');
+});
+
+test('BL-1528: closingCeremonyLoudCodes names an undeliverable packet send', () => {
+  const target = mkTmp();
+  appendLeanLedgerEventIfNew(target, {
+    ticket: 'BL-900',
+    type: 'stage_transition',
+    source: 'stage-dwell',
+    at: '2026-08-08T09:00:00.000Z',
+    role: 'coder',
+    data: { processingMs: 1000 },
+  });
+  const { deps } = throwingDeps('refused');
+  const result = runClosingCeremony(target, '2026-08-08T22:00:00.000Z', deps);
+  assert.deepEqual(closingCeremonyLoudCodes(result), ['closing-lean-packet-undeliverable 2026-08-08']);
+});
+
+test('BL-1528: a delivered packet send is unchanged - status created, run pending, no loud codes', () => {
+  const target = mkTmp();
+  appendLeanLedgerEventIfNew(target, {
+    ticket: 'BL-900',
+    type: 'stage_transition',
+    source: 'stage-dwell',
+    at: '2026-08-08T09:00:00.000Z',
+    role: 'coder',
+    data: { processingMs: 1000 },
+  });
+  const { deps, sent } = fakeDeps();
+  const result = runClosingCeremony(target, '2026-08-08T22:00:00.000Z', deps);
+  assert.equal(result.status, 'created');
+  assert.equal(result.run.failedAt, null);
+  assert.equal(result.run.deliveryFailure, null);
+  assert.equal(sent.length, 1);
+  assert.deepEqual(closingCeremonyLoudCodes(result), []);
+});
+
+test('BL-1528: a refused stale-run failure note finalizes the run failed and is reported, not thrown', () => {
+  const target = mkTmp();
+  appendLeanLedgerEventIfNew(target, {
+    ticket: 'BL-900',
+    type: 'stage_transition',
+    source: 'stage-dwell',
+    at: '2026-08-06T09:00:00.000Z',
+    role: 'coder',
+    data: { processingMs: 1000 },
+  });
+  const { deps } = fakeDeps();
+  runClosingCeremony(target, '2026-08-06T22:00:00.000Z', deps); // creates a pending run for 2026-08-06, never given an outcome
+
+  const failingDeps = { sendNote: () => { throw new Error("Unknown recipient role 'specifier'."); } };
+  const result = runClosingCeremony(target, '2026-08-08T22:00:00.000Z', failingDeps);
+  assert.deepEqual(result.finalizedFailed, ['2026-08-06']);
+  assert.deepEqual(result.finalizedFailedUndeliverable, ['2026-08-06']);
+  const stale = readCeremonyRun(target, '2026-08-06');
+  assert.ok(stale.failedAt, 'expected the stale run to still be finalized as failed');
+  assert.deepEqual(closingCeremonyLoudCodes(result), ['closing-ceremony-failure-undeliverable 2026-08-06']);
 });
 
 test('BL-1119: runClosingCeremony with auto window model holds despite stalls (wired path)', () => {
