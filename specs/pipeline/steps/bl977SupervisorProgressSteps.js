@@ -7,6 +7,14 @@
 // 05 run the REAL `--check-once` path over a fixture root (fake tmux bin,
 // aged heartbeat/outbox files, a live placeholder pid); 04 watches the
 // REAL run-sweep! + installed marker writer from OUTSIDE the process.
+//
+// Fixture contract (BL-1500): mkSupervisorFixture's `handoffd.pid` must be
+// at least as old as the oldest silence it stages (heartbeat, marker,
+// outbox) — a fresh pid reads within the BL-1342 startup grace and the
+// verdict comes from the grace, not from the wedge check under test. This
+// was wrong from 2026-09-02 (the BL-1342 startup-grace hotfix) to
+// 2026-09-13 (BL-1500): the pid file was written fresh and never aged, so
+// scenario 05 read "recovered daemon healthy" instead of "stalled".
 
 const assert = require('node:assert/strict');
 const fs = require('node:fs');
