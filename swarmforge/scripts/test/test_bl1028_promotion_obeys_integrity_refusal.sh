@@ -22,6 +22,9 @@ set -uo pipefail
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 SCRIPTS="$(cd "$SCRIPT_DIR/.." && pwd)"
 HELPER="$SCRIPTS/promote_and_route_next.sh"
+source "$SCRIPT_DIR/lib/bb_closure_copy.sh"
+source "$SCRIPT_DIR/lib/bb_fixture_load_guard.sh"
+source "$SCRIPT_DIR/lib/deprecate_check_allow_stub.sh"
 
 fail() { echo "FAIL: $*" >&2; exit 1; }
 pass() { echo "PASS: $*"; }
@@ -53,17 +56,14 @@ mk_root() {
 
   cp "$HELPER" "$root/swarmforge/scripts/promote_and_route_next.sh"
   chmod +x "$root/swarmforge/scripts/promote_and_route_next.sh"
-  # promotion_gates (BL-663) is the chokepoint the script shells every gate
-  # decision through, and its own load-file chain must travel with the copy:
-  # promotion_gates_lib -> backlog_depth_lib -> swarm_identity_lib +
-  # daemon_cycle_guard_lib (BL-967). A missing link throws on load and the
-  # script reports "no eligible paused ticket", which would look like a
-  # promotion decision rather than a broken fixture.
-  local dep
-  for dep in promotion_gates_cli.bb promotion_gates_lib.bb backlog_depth_lib.bb \
-             swarm_identity_lib.bb daemon_cycle_guard_lib.bb; do
-    cp "$SCRIPTS/$dep" "$root/swarmforge/scripts/$dep"
-  done
+  # BL-1496: promotion_gates_cli.bb's real transitive load-file closure,
+  # DERIVED rather than hand-listed - the hand list this replaced went stale
+  # three times (BL-626, BL-1128, BL-634 each added a load-file edge with
+  # nothing to update it) and this test sat red on main for 19 days, unowned.
+  copy_bb_closure "$SCRIPTS" "$root/swarmforge/scripts" promotion_gates_cli.bb \
+    || fail "could not derive promotion_gates_cli.bb's load-file closure"
+  # And nothing runs until that root can actually load (BL-1279 invariant 2).
+  assert_bb_closure_present "$SCRIPTS" "$root/swarmforge/scripts" promotion_gates_cli.bb
   printf 'config active_backlog_max_depth 5\n' > "$root/swarmforge/swarmforge.conf"
 
   cat > "$root/swarmforge/scripts/route_backlog_to_coder.sh" <<'EOF'
@@ -77,7 +77,16 @@ EOF
     > "$root/backlog/paused/$TICKET"
   : > "$root/specs/features/BL-9028-fixture-ticket.feature"
 
-  git -C "$root" add backlog specs swarmforge
+  # BL-1173 (2026-08-27) added a fail-closed deprecator freshness gate to
+  # promote_and_route_next.sh, landed three weeks after this fixture and
+  # never exercised by it because the bb-closure rot above made every run
+  # die before reaching this gate - the same masking BL-1480 found for its
+  # two sibling fixtures, fixed there with this same stub. Committed here
+  # (not left untracked) so it does not read as fixture drift against the
+  # "index left exactly as it found it" assertions below.
+  write_deprecate_check_allow_stub "$root"
+
+  git -C "$root" add backlog specs swarmforge extension
   git -C "$root" commit -q -m "fixture paused backlog"
   # The route log lives OUTSIDE the repo: written inside it, it shows up as an
   # untracked entry and the "index holds nothing staged" assertion would be

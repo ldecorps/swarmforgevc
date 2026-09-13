@@ -95,6 +95,12 @@ const FIXTURES = {
     ],
     kind: 'shell-copy',
   },
+  // BL-1496: the third promote_and_route_next.sh fixture of this surface to
+  // rot the same way (BL-1480 owns the other two) - the twelfth entry.
+  'swarmforge/scripts/test/test_bl1028_promotion_obeys_integrity_refusal.sh': {
+    entry: 'promotion_gates_cli.bb',
+    kind: 'shell-copy',
+  },
 };
 
 function requireFresh(absPath, stubVitestGlobals) {
