@@ -52,6 +52,19 @@ unset RESEND_API_KEY
 # control shape as the RESEND_API_KEY unset above.
 export SUPERVISOR_RESTART_BUDGET_COUNT=0
 
+# BL-1498: the halt runs swarm-cleanup.sh, a `#!/usr/bin/env zsh` script, and
+# zsh sources ~/.zshenv unconditionally even for a shebang invocation. On a
+# host whose ~/.zshenv prepends a real tool directory onto PATH (e.g.
+# BL-1069's ~/.local/bin/tmux), that prepend lands ahead of this file's own
+# $FAKE_BIN and the REAL tmux runs instead of the fixture fake, so
+# kill-session never reaches the fake's log (cases 01 and 05). ZDOTDIR from
+# the inherited environment is honoured by zsh even via shebang, so pointing
+# it at an empty directory with no .zshenv is the equivalent of `zsh -f` for
+# this indirect invocation shape - same remedy as test_idle_clear_respawn.sh
+# lines 34-44 (BL-1305's shape).
+ZDOTDIR="$(mktemp -d)"
+export ZDOTDIR
+
 fail() { echo "FAIL: $*" >&2; exit 1; }
 pass() { echo "PASS: $*"; }
 
@@ -121,7 +134,7 @@ stop_daemon() {
 
 # ── 01: dead daemon triggers alarm+halt instead of a restart ─────────────────
 make_fixture
-trap 'stop_daemon; rm -rf "$ROOT"' EXIT
+trap 'stop_daemon; rm -rf "$ROOT" "$ZDOTDIR"' EXIT
 echo "999999" > "$DAEMON_DIR/handoffd.pid"   # dead pid
 echo "old log line" > "$DAEMON_DIR/handoffd.log"
 queue_outbox
@@ -176,7 +189,7 @@ rm -rf "$ROOT"
 
 # ── 02: lingering pid with stalled delivery also triggers alarm+halt ────────
 make_fixture
-trap 'stop_daemon; rm -rf "$ROOT"' EXIT
+trap 'stop_daemon; rm -rf "$ROOT" "$ZDOTDIR"' EXIT
 # a process that is alive but is not the daemon: simulates a hung daemon pid
 sleep 300 &
 HUNG_PID=$!
@@ -184,6 +197,7 @@ echo "$HUNG_PID" > "$DAEMON_DIR/handoffd.pid"
 queue_outbox
 touch -t 202601010000 "$CODER_WT/.swarmforge/handoffs/outbox/50_supervisor_test.handoff"
 touch -t 202601010000 "$DAEMON_DIR/handoffd.heartbeat"
+touch -t 202601010000 "$DAEMON_DIR/handoffd.pid"
 
 check_once
 
@@ -194,7 +208,7 @@ pass "02: stalled delivery with a lingering pid is declared unhealthy, alarmed, 
 
 # ── 05: messy death (missing pid file, truncated status) still alarms+halts ─
 make_fixture
-trap 'stop_daemon; rm -rf "$ROOT"' EXIT
+trap 'stop_daemon; rm -rf "$ROOT" "$ZDOTDIR"' EXIT
 rm -f "$DAEMON_DIR/handoffd.pid"                    # no pid file at all
 printf '{"state":"healthy"' > "$DAEMON_DIR/handoffd.status.json"   # truncated JSON
 queue_outbox
@@ -219,7 +233,7 @@ pass "05: a messy death (missing pid file, truncated status file) still alarms a
 # never touches tmux - closing the wiring gap between evaluate-health's real
 # observations and the restart-in-place response.
 make_fixture
-trap 'stop_daemon; rm -rf "$ROOT"' EXIT
+trap 'stop_daemon; rm -rf "$ROOT" "$ZDOTDIR"' EXIT
 echo "999999" > "$DAEMON_DIR/handoffd.pid"   # dead pid
 queue_outbox
 
@@ -266,7 +280,7 @@ now_ms() { python3 -c "import time; print(int(time.time()*1000))"; }
 stop_daemon
 rm -rf "$ROOT"
 make_fixture
-trap 'stop_daemon; rm -rf "$ROOT"' EXIT
+trap 'stop_daemon; rm -rf "$ROOT" "$ZDOTDIR"' EXIT
 
 # ── 01: halt confirms the old daemon's exit before hard-stopping proceeds ──
 # A fake daemon that takes 0.8s to exit once TERM'd. bash's own `trap` does
@@ -287,6 +301,7 @@ echo "$SLOW_PID" > "$DAEMON_DIR/handoffd.pid"
 queue_outbox
 touch -t 202601010000 "$CODER_WT/.swarmforge/handoffs/outbox/50_supervisor_test.handoff"
 touch -t 202601010000 "$DAEMON_DIR/handoffd.heartbeat"
+touch -t 202601010000 "$DAEMON_DIR/handoffd.pid"
 rm -f "$DAEMON_DIR/handoffd.status.json"
 
 START_MS="$(now_ms)"
@@ -314,6 +329,7 @@ echo "$STUBBORN_PID" > "$DAEMON_DIR/handoffd.pid"
 queue_outbox
 touch -t 202601010000 "$CODER_WT/.swarmforge/handoffs/outbox/50_supervisor_test.handoff"
 touch -t 202601010000 "$DAEMON_DIR/handoffd.heartbeat"
+touch -t 202601010000 "$DAEMON_DIR/handoffd.pid"
 rm -f "$DAEMON_DIR/handoffd.status.json" "$DAEMON_DIR/stop"
 
 SUPERVISOR_KILL_TIMEOUT_MS=500 SUPERVISOR_STALL_MS=500 SWARMFORGE_TERMINAL_BACKEND=none \
@@ -431,7 +447,7 @@ stop_daemon
 #     (like every daemon_alarm_lib.bb wiring test here) is the repo's real
 #     swarmforge.conf, which already configures notify_email_to. ──────────
 make_fixture
-trap 'stop_daemon; rm -rf "$ROOT"' EXIT
+trap 'stop_daemon; rm -rf "$ROOT" "$ZDOTDIR"' EXIT
 echo "999999" > "$DAEMON_DIR/handoffd.pid"
 echo "old log line" > "$DAEMON_DIR/handoffd.log"
 
@@ -450,7 +466,7 @@ pass "BL-215: a configured-but-keyless daemon warns loudly (naming RESEND_API_KE
 #    from BL-1498's unrelated real-tmux/PATH-shadowing environment issue. ──
 make_fixture
 rm -f "$ROOT/.swarmforge/tmux-socket" "$ROOT/fake.sock"
-trap 'stop_daemon; rm -rf "$ROOT"' EXIT
+trap 'stop_daemon; rm -rf "$ROOT" "$ZDOTDIR"' EXIT
 echo "999999" > "$DAEMON_DIR/handoffd.pid"   # dead pid
 unset RESEND_API_KEY
 
