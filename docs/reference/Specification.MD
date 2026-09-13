@@ -1,5 +1,23 @@
 # SwarmForge VS Code Extension — Specification
 
+**Last Updated:** September 13, 2026 (BL-1496:
+`test_bl1028_promotion_obeys_integrity_refusal.sh` hand-listed the `.bb`
+files it copies into its disposable root, and `promotion_gates_lib.bb`
+gained three `load-file` edges the list was never updated for
+(`acceptance_pointer_gate_lib.bb`, `headroom_cap_raise_lib.bb`,
+`slice_size_envelope_gate_lib.bb`) — the fixture died at load and the one
+failing check reported a reason unrelated to what it tests, the third
+fixture of this `promote_and_route_next.sh` surface to rot the same way
+(BL-1480 owns the other two). The fixture now derives its copy set from
+`promotion_gates_cli.bb` via `copy_bb_closure` (`swarmforge/scripts/test/lib/bb_closure_copy.sh`,
+BL-973) instead of hand-listing it, and is enrolled as the twelfth entry in
+`bbFixtureClosureGate.js`'s `FIXTURES` map so a future upstream edge is
+picked up with no test edit. No production line changed. Acceptance:
+`specs/features/BL-1496-the-bl1028-integrity-refusal-fixture-carries-its-bb-closure.feature`.
+How-to: `docs/how-to/BL-973-bb-fixture-closure-guards-and-suite-inventory.md`
+(twelve guarded fixtures). No registered diagram depicts test-fixture
+wiring.)
+Prior entry —
 **Last Updated:** September 13, 2026 (BL-1460: the bridge's `/events` route
 seeds `lastSnapshot` with the connect frame instead of leaving it
 `undefined` — `broadcastSnapshotIfChanged` always broadcasts against
