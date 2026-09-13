@@ -68,6 +68,50 @@ function errorMessage(err: unknown): string {
   return err instanceof Error ? err.message : String(err);
 }
 
+/**
+ * BL-1528: attempt a note send, reporting refusal instead of throwing - the
+ * one place either call site's try/catch lives, so runClosingCeremony's own
+ * branching count stays at its pre-BL-1528 baseline (differential complexity
+ * gate, hardener.prompt).
+ */
+function trySendNote(targetPath: string, draft: string, deps: Pick<ClosingCeremonyRunDeps, 'sendNote'>): string | null {
+  try {
+    deps.sendNote(targetPath, draft);
+    return null;
+  } catch (err) {
+    return errorMessage(err);
+  }
+}
+
+/**
+ * BL-1528: finalize every stale pending run as failed and attempt its own
+ * failure note, reporting which shifts' notes were refused - split out so
+ * runClosingCeremony's own loop/catch count stays at baseline (same
+ * differential-complexity reasoning as trySendNote above).
+ */
+function finalizeStaleCeremonyRuns(
+  targetPath: string,
+  shiftKey: string,
+  nowIso: string,
+  deps: Pick<ClosingCeremonyRunDeps, 'sendNote'>,
+  to: string
+): { finalizedFailed: string[]; finalizedFailedUndeliverable: string[] } {
+  const finalizedFailed: string[] = [];
+  const finalizedFailedUndeliverable: string[] = [];
+  for (const stale of findOpenCeremonyRunsBefore(targetPath, shiftKey)) {
+    finalizeCeremonyRunAsFailed(targetPath, stale, nowIso);
+    finalizedFailed.push(stale.shiftKey);
+    const failure = trySendNote(targetPath, buildCeremonyFailureNoteDraft(to, stale.shiftKey), deps);
+    if (failure) {
+      // BL-1528: the run is already finalized as failed above regardless -
+      // only the notification bounced. Surfaced by the caller via
+      // closingCeremonyLoudCodes, never thrown out of this function.
+      finalizedFailedUndeliverable.push(stale.shiftKey);
+    }
+  }
+  return { finalizedFailed, finalizedFailedUndeliverable };
+}
+
 function readPackConfText(targetPath: string): string | null {
   try {
     const identityPath = path.join(targetPath, '.swarmforge', 'swarm-identity');
@@ -157,20 +201,7 @@ export function runClosingCeremony(targetPath: string, nowIso: string, deps: Clo
   // shift's own pass runs, finalize any earlier shift left pending - a
   // ceremony that produced nothing must never sit indistinguishable from
   // one that never ran (the ticket's own declared invariant).
-  const finalizedFailed: string[] = [];
-  const finalizedFailedUndeliverable: string[] = [];
-  for (const stale of findOpenCeremonyRunsBefore(targetPath, shiftKey)) {
-    finalizeCeremonyRunAsFailed(targetPath, stale, nowIso);
-    finalizedFailed.push(stale.shiftKey);
-    try {
-      deps.sendNote(targetPath, buildCeremonyFailureNoteDraft(to, stale.shiftKey));
-    } catch {
-      // BL-1528: the run is already finalized as failed above regardless -
-      // only the notification bounced. Surfaced by the caller via
-      // closingCeremonyLoudCodes, never thrown out of this function.
-      finalizedFailedUndeliverable.push(stale.shiftKey);
-    }
-  }
+  const { finalizedFailed, finalizedFailedUndeliverable } = finalizeStaleCeremonyRuns(targetPath, shiftKey, nowIso, deps, to);
 
   const existing = readCeremonyRun(targetPath, shiftKey);
   if (existing) {
@@ -209,10 +240,9 @@ export function runClosingCeremony(targetPath: string, nowIso: string, deps: Clo
   const packetRelPath = path.relative(targetPath, ceremonyRunFilePath(targetPath, shiftKey));
   const draft = buildClosingCeremonyNoteDraft(to, packetRelPath);
   const pendingRun: CeremonyRun = { shiftKey, packet, deliveredAt: nowIso, outcome: null, adjustments: [], failedAt: null, deliveryFailure: null };
-  try {
-    deps.sendNote(targetPath, draft);
-  } catch (err) {
-    const failedRun = finalizeCeremonyRunAsFailed(targetPath, pendingRun, nowIso, errorMessage(err));
+  const failure = trySendNote(targetPath, draft, deps);
+  if (failure) {
+    const failedRun = finalizeCeremonyRunAsFailed(targetPath, pendingRun, nowIso, failure);
     return { shiftKey, status: 'created_undeliverable', run: failedRun, finalizedFailed, finalizedFailedUndeliverable };
   }
   writeCeremonyRun(targetPath, pendingRun);
