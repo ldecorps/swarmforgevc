@@ -1,0 +1,236 @@
+id: BL-1557
+title: "Swarm stamp-off: hotfix 92ecf4aea3 makes the mono-router resident rotate to the seat it just forwarded its parcel to (ROTATE_TO under ROTATE_HOME, home on every unconfirmed path, `config rotation_after_forward home` restores BL-550) - review the landed diff, confirm or refute, open narrow follow-ups; never rewrite it and never write the ledger decision"
+milestone: M8
+type: defect
+severity: medium
+# medium: the behaviour is already live on main and adopted by every
+# worktree (merge-up ab2fe228ac); what is open is the review the
+# constitution owes a hotfix (BL-848). Not high: nothing is degraded today
+# and the ledger's resurfacing keeps the ask alive without the expedite lane.
+status: todo
+epic: swarm-reliability
+priority: 20
+direction: human-directive
+depends_on: []
+mutation_cost: low
+# low: review-only; Babashka + bash only (no mutation/CRAP/DRY wired,
+# BL-472); one step-handler file drives the real mono_router_lib.bb and the
+# real dispatchers through the fixture shape
+# test_ready_for_next_rotate_home.sh already builds.
+slice_size_envelope: low
+required_stages: [coder, cleaner, architect, hardender, documenter, qa]
+
+acceptance: specs/features/BL-1557-swarm-stamp-forward-rotate-92ecf4aea3.feature
+
+# A review parcel adds no production call site; the mechanism under review
+# is already wired (ready_for_next_task.bb / ready_for_next_batch.bb
+# report-no-task-or-rotate! -> mono-router-lib/forward-rotate-target, and
+# ready_for_next.sh's ROTATE_TO branch). The handler entry is the BL-233
+# in-parcel pin; steps/index.js discovers *Steps.js by directory scan.
+required_wiring:
+  - 'specs/pipeline/steps/bl1557SwarmStampForwardRotateSteps.js::registerSteps::the handler lands in the same parcel as the feature (BL-233, BL-1371)'
+
+human_approval: pending
+approval_context: >
+  A new feature file is authored here, so it needs a tap. No choice is
+  posed and there are no ruling_options. What needs sign-off is the
+  DISPOSITION only: that reviewing the landed diff of 92ecf4aea3 (BL-811 /
+  BL-849 posture) rather than re-implementing it is right, and that medium
+  is the right severity for a review of behaviour already live. FIRM: the
+  parcel changes no file under swarmforge/scripts except to add evidence
+  and, where the coder extends it, TEST files under swarmforge/scripts/test/;
+  a refuted scenario or a confirmed probe finding is a narrow follow-up via
+  note to the specifier, never an in-parcel rewrite. FIRM: the parcel never
+  writes human_decision into backlog/hotfix-ledger.yaml (scenario 04) - the
+  human records certify or waive with hotfix_ledger_update.bb --decide after
+  this reaches done. FIRM: review goal 4's fix is NOT this parcel's - BL-1558
+  (minted alongside) owns it. Minted by the specifier on the coordinator's
+  ledger note of 2026-09-13 22:33Z; the ledger row is linked in the mint
+  commit.
+
+invariants:
+  - "The stamp never rewrites the hotfix: every file the parcel touches is evidence, a feature, a step handler (plus its lib/ helpers), or a file under swarmforge/scripts/test/; swarmforge/scripts/mono_router_lib.bb, handoff_lib.bb, ready_for_next.sh, ready_for_next_task.bb, ready_for_next_batch.bb, swarmforge.conf and handoff-protocol.md are byte-identical to the received commit."
+
+source: |
+  backlog/hotfix-ledger.yaml row `92ecf4aea3` (detected 2026-09-13, state
+  pending, no stamp ticket) surfaced by the certification sweep as a
+  coordinator note to the specifier, 2026-09-13 22:33Z: "Hotfix 92ecf4aea3
+  landed: resident rotates to forward recipient; stamp it". Hotfix landed by
+  the operator (human-directed, Claude Code) 2026-09-13 23:31 BST. The human
+  ruling, quoted verbatim from the commit message: "the default should be
+  that the pipeline seats rotate where they push the parcel."
+
+description: |
+  ## What
+
+  An operator hotfix is live on main and has never been through a gate.
+  This ticket is that gate: a REVIEW ticket, not a rewrite ticket -
+  confirm or refute, and open narrow follow-ups for anything found.
+
+  ## The failure it fixed (from the commit message and rotation telemetry)
+
+  BL-550 sent every non-home mono-router role back to `rotation_home`
+  after it forwarded its parcel (`ROTATE_HOME` from the dispatcher, the
+  wrapper exec'ing `rotate_to_role.sh <home>`), and the daemon's chase
+  sweep then rotated the resident on to the recipient one to twenty
+  minutes later. Rotation telemetry 2026-09-13: every `handoff-forward`
+  row lands on coder and a separate `rotate` row follows. Two respawns per
+  stage, and the home hop let a freshly promoted coder ticket jump ahead
+  of the current ticket's downstream stages (QA->coder 21:51,
+  coder->architect 22:11 that night).
+
+  ## What landed (files to review)
+
+  - `swarmforge/scripts/mono_router_lib.bb`: `parse-rotation-after-forward`
+    (pure; `config rotation_after_forward recipient|home`, anything but the
+    literal `home` is `recipient`, `default-rotation-after-forward` is the
+    single source of truth) and `forward-rotate-target` (pure). The
+    candidate is the FIRST `to:` recipient of this role's newest own
+    git_handoff that is a roles.tsv role, not `coordinator` (BL-614) and
+    not the departing role. Outcomes: `:policy-home`, `:no-recipient`,
+    `:recipient-is-home`, `:forward-recipient-undelivered` (parcel still
+    in the sender's outbox/), `:forward-recipient` (recipient's inbox
+    new/ or in_process/ holds the parcel by `id:`), `:recipient-not-holding`
+    (delivered but consumed) - every non-confirmed path is home.
+  - `swarmforge/scripts/handoff_lib.bb`: `newest-own-git-handoff` (outbox/
+    + sent/ of the CURRENT role's own mailbox, filtered to `type:
+    git_handoff` and `from: <me>`, newest by `created_at` then file-name
+    timestamp) and `roles-holding-parcel-id` (recipients' new/ +
+    in_process/, batch subdirectories included, matched on the `id:`
+    header). IO only; the decision stays pure.
+  - `swarmforge/scripts/ready_for_next_task.bb` and
+    `ready_for_next_batch.bb`: `report-no-task-or-rotate!` prints
+    `ROTATE_TO: <role>` and `ROTATE_REASON: <keyword>` UNDER the unchanged
+    `ROTATE_HOME` / `HOME_ROLE:` lines, so every existing consumer of the
+    first-line signal keeps working.
+  - `swarmforge/scripts/ready_for_next.sh`: rotates to `ROTATE_TO` when
+    present, `HOME_ROLE` otherwise; sets `SWARMFORGE_ROTATION_REASON` to
+    `rotate-forward` when the target differs from home, else `rotate-home`.
+  - `swarmforge/swarmforge.conf` documents the knob (commented, default
+    lives in the lib); `swarmforge/handoff-protocol.md` documents the
+    rule and the fallbacks.
+  - Tests: `mono_router_lib_test_runner.bb` +11 pure cases;
+    `test_ready_for_next_rotate_home.sh` cases 10-15 (delivered forward
+    -> ROTATE_TO architect; wrapper hands ROTATE_TO not HOME_ROLE;
+    consumed forward -> home; undelivered forward -> recipient; policy
+    home; batch dispatcher). Both green on main ab2fe228ac (specifier,
+    2026-09-13 23:40Z).
+
+  ## Review goals
+
+  1. Confirm the pure decision (scenario 01): every row of the outline
+     against the real `mono-router-lib/forward-rotate-target`, called
+     directly the way `mono_router_lib_test_runner.bb` does.
+  2. Confirm the live wiring (scenario 02): the real task and batch
+     dispatchers and the real wrapper carry the decision - run
+     `swarmforge/scripts/test/test_ready_for_next_rotate_home.sh` and
+     assert ALL CHECKS PASSED AND that cases 10 through 15 are among the
+     PASS lines (the census pin, BL-1445: a test that silently lost its
+     hotfix cases would still report all-passed).
+  3. Confirm the master-resident roster shape (scenario 03, BL-1515): the
+     hotfix runs on EVERY role's empty-mailbox turn, and the specifier is
+     a rotating master-resident role (`rotate-home?` is true for it;
+     telemetry shows coder->specifier rotations). BL-128 gives each
+     master-resident role its own `.swarmforge/handoffs/<role>/` subtree.
+     Build a fixture with the specifier and coordinator rows sharing one
+     checkout, seed the coordinator's git_handoff to architect in
+     `.swarmforge/handoffs/coordinator/sent/` and a stray one in the
+     flat pre-BL-128 `.swarmforge/handoffs/sent/`, architect holding both
+     in its inbox new/; run `ready_for_next_task.bb` as
+     `SWARMFORGE_ROLE=specifier` and expect `ROTATE_TO: coder` with
+     `ROTATE_REASON: no-recipient`, no mailbox file created, moved or
+     modified. A wrong resolver prints architect.
+  4. PROBE, do not fix - BL-1558 owns the fix: the wrapper's
+     `SWARMFORGE_ROTATION_REASON` never reaches telemetry. `respawn-as!`
+     (handoff_lib.bb, the only path under `rotate_to_role.bb`) calls
+     `(rotate-resident-to! target-role "handoff-forward")`, and
+     `rotate-resident-to!` computes `emit-reason` as `(or reason env
+     default)`, so the explicit literal wins. Specifier's count on
+     2026-09-13: `grep -o '"reason":"[a-z-]*"'
+     .swarmforge/telemetry/rotation-2026-09.jsonl | sort | uniq -c` gives
+     498 handoff-forward, 545 rotate, ZERO rotate-home; `rotate-forward`
+     can never appear. `extension/src/metrics/rotationDynamics.ts`
+     `strandedMsForEvent` keys on `rotate-home`, so that metric has read
+     zero since BL-550. Re-run the count on the parcel's day and RECORD it
+     in evidence with the two source lines; confirmed -> BL-1558's premise
+     stands, nothing to note; refuted -> note the specifier with why.
+  5. Confirm the undelivered path's safety net, note only: the
+     `:forward-recipient-undelivered` outcome rotates before the daemon
+     has moved the parcel out of the sender's outbox/. It relies on
+     `rotate-resident-to!`'s `wait-for-delivery!` (30 s, then a loud
+     WARNING and proceed). Record in evidence what happens after the
+     timeout (the target boots, its own dispatcher prints ROTATE_HOME/
+     ROTATE_TO home, the chase sweep redirects once the parcel lands) and
+     whether 30 s covers the daemon's outbox poll cadence (name it).
+  6. Note, do not fix: `roles-holding-parcel-id` matches on the `id:`
+     header, which handoff_lib.bb's `required-envelope-headers` comment
+     (~line 1426) still describes as "audit-only metadata ... never read
+     by delivery/dequeue routing". A git_handoff without `id` (only a
+     hand-crafted fixture can lack it; swarm_handoff.bb stamps it as a
+     reserved field) yields an empty holding set -> `recipient-not-holding`
+     -> home, the safe fallback. The one-line comment amendment rides
+     BL-1558, which touches that file anyway.
+  7. Interplay remarks for evidence only: a batch role (cleaner, hardender)
+     that forwarded two parcels to different recipients rotates to the
+     NEWEST one's recipient and the chase sweep's priority/starve redirect
+     (untouched) brings the resident to the other; the BL-805 in_process
+     gate in `respawn-as!` still refuses the rotate while the departing
+     role's own inbox holds an undrained parcel, so `done_with_current.sh`
+     ordering is unchanged; a recipient of `coordinator` (QA's terminal
+     forward) is home, matching the 22:47Z QA->coder row.
+
+  ## Scenario notes for the coder
+
+  - Scenario 01 calls `mono-router-lib/forward-rotate-target` directly
+    through a small `bb` CLI under `specs/pipeline/steps/lib/` (the
+    BL-1321 shape, `bl1321ChaseRotateDecisionCli.bb`) - a source-text
+    assertion cannot tell a wired decision from a dead one. `reviewer`
+    is a role absent from roles.tsv; `nobody / never sent` passes nil
+    recipients. Validate every Outline column against explicit
+    KNOWN_VALUES.
+  - Scenario 02 executes the real shell test and parses its PASS lines;
+    the census assertion names the six case numbers literally.
+  - Scenario 03 needs the two-master-rows fixture. Prefer adding it as a
+    new case to `test_ready_for_next_rotate_home.sh` (its `setup_role`
+    helper and `install_scripts.sh` copy already keep `cd "$(dirname
+    "$0")"` inside the fixture) with the handler asserting that case's
+    PASS line, or build the same shape in the handler; either way the
+    fixture root is `git init` under mkdtemp and proven by `rev-parse
+    --git-common-dir` before any mutating git command (BL-1390). Master
+    rows: `specifier<TAB>master<TAB><root><TAB>swarmforge-specifier...`
+    and `coordinator<TAB>master<TAB><root><TAB>swarmforge-coordinator...`
+    sharing `<root>`. Snapshot the mailbox tree (paths + sizes) before and
+    after for the last step.
+  - Scenario 04's handler reads `backlog/hotfix-ledger.yaml` for the row
+    `commit: 92ecf4aea3` and asserts `state` is not certified/waived and
+    `human_decision` is null; BL-1549 / BL-1346 are the precedents.
+  - The step handler is `bl1557SwarmStampForwardRotateSteps.js`, landing
+    in the SAME commit as the feature (BL-233); `steps/index.js`
+    discovers `*Steps.js` by directory scan, no registration edit.
+
+notes: |
+  Ledger: linked to row 92ecf4aea3 via `hotfix_ledger_update.bb --link` in
+  the mint commit. Sibling: BL-1558 (same mint pass) owns the review goal 4
+  fix - the wrapper's rotation reason dropped by respawn-as!. Grep both ids
+  before minting anything about forward rotation or rotation telemetry
+  labels. Live state at mint: all six worktrees carry 92ecf4aea3; because
+  of goal 4 no `rotate-forward` row can appear until BL-1558 lands, so a
+  live forward-rotation is identified by a `handoff-forward` row whose
+  `to` is not coder following a git_handoff send.
+
+qa_e2e_procedure: |
+  On the parcel commit:
+  1. `git diff main...HEAD --name-only` names only evidence, the feature,
+     the step handler (+ lib/), and files under swarmforge/scripts/test/;
+     none of the seven hotfix production/doc files (invariant 1).
+  2. `run_acceptance.sh` on the BL-1557 feature -> 4 scenarios green
+     (scenario 01 = 8 rows).
+  3. `bash swarmforge/scripts/test/test_ready_for_next_rotate_home.sh`
+     ALL CHECKS PASSED with cases 10-15 (and the new master-rows case if
+     added) in its PASS lines; `bb
+     swarmforge/scripts/test/mono_router_lib_test_runner.bb` ok.
+  4. The evidence file records review goal 4's count and goal 5's
+     post-timeout trace explicitly.
+  5. `backlog/hotfix-ledger.yaml` row 92ecf4aea3: `human_decision: null`.
+  6. After done: the human runs `bb swarmforge/scripts/hotfix_ledger_update.bb .
+     --decide 92ecf4aea3 approved|waived` and commits the ledger.
