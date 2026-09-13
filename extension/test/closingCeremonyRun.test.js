@@ -84,6 +84,12 @@ test('a prior shift left pending is finalized as failed, and surfaced, when a la
 
   const result = runClosingCeremony(target, '2026-08-08T22:00:00.000Z', deps); // a later shift, no gap-day activity
   assert.deepEqual(result.finalizedFailed, ['2026-08-06']);
+  // BL-1528: the failure note's send SUCCEEDED here (fakeDeps' sendNote never
+  // throws) - a delivered notification must never be reported as
+  // undeliverable, which is exactly what surfaces a bogus
+  // closing-ceremony-failure-undeliverable loud line for a ceremony that
+  // actually told someone.
+  assert.deepEqual(result.finalizedFailedUndeliverable, []);
   const stale = readCeremonyRun(target, '2026-08-06');
   assert.ok(stale.failedAt, 'expected the stale run to be finalized as failed');
   assert.ok(
