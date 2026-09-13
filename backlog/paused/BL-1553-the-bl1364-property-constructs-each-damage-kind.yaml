@@ -1,0 +1,147 @@
+id: BL-1553
+title: "bl1364TurnProfileSeriesInvariants.property.test.js is flaky red on main with no owner: invariant 2 asserts every damage kind (interior, missing, unreadable path) was generated at least once but only SAMPLES the kind from fc.integer 0..2 over 15 draws, so about one run in ten never draws one and fails 'never generated an unreadable path' - the kind is iterated the way BL-1533 iterates the delta sign, and the floors stay"
+milestone: M8
+type: defect
+severity: high
+# high (standing-red rule 2026-09-05): a property-lane test red on main is a
+# broken safety signal; it held BL-1499's QA approval on 2026-09-13
+# (Article 4.2) and throttles intake until owned. Production is unaffected:
+# buildTurnProfileWindowRecord refuses the window on every damage kind that
+# IS drawn - the failing assertion is the generator's own reach, not the
+# invariant.
+status: todo
+epic: code-quality-gates
+priority: 8
+direction: swarm-reported
+depends_on: []
+mutation_cost: low
+# low: one property test file under extension/test (never extension/src),
+# one step-handler file. No production code, so no Stryker target; the
+# hardener records the fallback.
+slice_size_envelope: low
+required_stages: [coder, cleaner, architect, hardender, documenter, qa]
+
+acceptance: specs/features/BL-1553-the-bl1364-property-constructs-each-damage-kind.feature
+
+# No consumer anchor is honest here (BL-1235): the live consumer is the
+# properties lane itself (`npm run test:properties`, vitest.properties.config.mjs),
+# which already collects this file and is the thing that is red. The
+# handler entry is the BL-233 in-parcel pin.
+required_wiring:
+  - 'specs/pipeline/steps/bl1553DamageKindReachSteps.js::registerSteps::the handler lands in the same parcel as the feature (BL-233, BL-1371)'
+
+human_approval: pending
+approval_context: >
+  A new feature file is authored here, so it needs a tap. No choice is
+  posed and there are no ruling_options. FIRM: extension/src is not
+  edited - buildTurnProfileWindowRecord and the transcript walker are
+  BL-1364's landed contract and the property agrees with them on every
+  draw; the fix is in the test's own draw only. FIRM: the three reach
+  floors are not lowered, not dropped, and not made rarer-to-miss by
+  inflating numRuns - BL-1062's rule is that a floor is met BY
+  CONSTRUCTION, and a floor that is merely usually met is still a flake.
+  FIRM: the file is not added to property_suite_standing_allowlist.tsv.
+  Direction, not mandate: iterate the damage kind explicitly (one
+  fc.assert per kind, or runsPerCell from test/helpers/reachFloors.js) so
+  each kind is exercised on every run, and keep the seen counts and their
+  floor assertions. Minted by the specifier on QA's unowned-red note of
+  2026-09-13 10:25Z from the BL-1499 parcel (evidence 1ad3cf5cd6 on
+  swarmforge-QA, 1 of 10 alone); the specifier's 12 runs alone on main
+  fdb19b9bf0 were all green, which a seed miss does not contradict - the
+  cause is read off the test source.
+
+invariants:
+  - "A reach floor is met by construction: every value a floor names is produced by a test arm that yields it on every run of that arm, never by a uniform draw the floor merely hopes will cover it."
+
+description: |
+  ## What is wrong
+
+  `extension/test/bl1364TurnProfileSeriesInvariants.property.test.js`,
+  invariant 2 ("one damaged transcript refuses the whole window"): the
+  damage kind is drawn INSIDE the property with
+  `fc.integer({ min: 0, max: 2 })` (0 interior garbage line, 1 missing
+  file, 2 a directory in place of the file), `numRuns: 15`, and after the
+  run three floors assert each kind was seen at least once. Nothing
+  constructs any kind, so a seed that never draws one of three values in
+  15 tries fails the file:
+
+  | who | where | result |
+  |---|---|---|
+  | BL-1499 QA, 2026-09-13 | full lane, 2 of 2 runs | `never generated an unreadable path: {"interior":6,"missing":9,"unreadablePath":0}` |
+  | BL-1499 QA, 2026-09-13 | alone, quiet host, 10 runs | 1 failed, same assertion |
+  | specifier, 2026-09-13 | alone, main `fdb19b9bf0`, 12 runs | 0 failed |
+
+  A generator draw does not depend on load; QA's isolated repro is the
+  proof, and the miss is read off the source. Latent since BL-1364 landed
+  the file (2026-09-05). Evidence:
+  `backlog/evidence/BL-1553-specifier-unowned-red-repro-20260913.md`.
+  Same class as BL-1533 (`bl604TrendAnalysisInvariants`, the delta sign)
+  and BL-1527 (`bl1367ApprovalCarriesItsRuling`).
+
+  ## What is wanted
+
+  Invariant 2 reaches its three damage-kind floors on every run because
+  the kind is ITERATED by the test, the way BL-1533 iterates the sign and
+  the way the same file's invariant 1 could iterate its own floors - not
+  sampled. The floors stay at their values and stay asserted. The run
+  prints its reach map (the BL-1371 `reach over N draws:` shape) so a
+  reader, and scenario 02, can see the counts. The property lane is green
+  on `main`; the register row this ticket adds is removed in the same land.
+
+  ## How (direction, not mandate)
+
+  - Replace the `fc.integer({ min: 0, max: 2 })` arm with an explicit loop
+    over the three kinds: one `fc.assert` per kind with
+    `numRuns: runsPerCell(15, 3)` (from `test/helpers/reachFloors.js`), or
+    an equivalent per-kind loop, so every kind runs on every invocation
+    and the total number of draws is not reduced. Keep the `seen` counts
+    and the three `assert.ok(seen.<kind> >= 1, ...)` lines exactly as they
+    stand (or route them through `assertReachFloor`, which prints the
+    same shape).
+  - Print the reach map at the end of invariant 2 with `console.log`
+    (BL-1371's `reach over` line is the precedent) so the acceptance can
+    read the counts from the run rather than re-deriving them.
+  - Invariant 1's `someUnworked`/`multiWorked` floors are the same shape
+    but sit far from their line (at most 4 of 7 stages can be worked, so
+    `someUnworked` is always met; `multiWorked` misses only if all 25
+    draws have length 1). Constructing them in the same pass is welcome
+    if it is one edit; leaving them is not a defect.
+  - `extension/src/metrics/turnProfileProducer.ts` and
+    `transcriptWalker.ts` are not touched; `specs/features/BL-1364-*.feature`
+    and its handler are not touched - BL-1364's own acceptance is not red
+    and is not this ticket's.
+
+  ## Not in scope
+
+  - The `bl1272LandedSiblingInvariants` 20 s timeout QA saw in the same
+    full-lane run: passes alone in 10.9 s, BL-871's contention shape, not
+    registered, not minted (QA asked for none).
+  - The BL-1364 parcel shipped a sampled floor and no stage caught it; the
+    same fail-open shape BL-1445 names. No process change is minted here.
+
+notes: |
+  Register: backlog/standing-reds.tsv gains one `property` row naming this
+  ticket (same commit as this mint), first_seen 2026-09-13; QA removes it
+  in the land that turns the file green. BL-1499 (held at QA under Article
+  4.2 on this red alone; its own gates are all green) may be approved on
+  the red now that this ticket is open - the row names it.
+
+qa_e2e_procedure: |
+  On the parcel commit, from `extension/`:
+  1. `for i in $(seq 1 15); do npx vitest run --config
+     vitest.properties.config.mjs
+     test/bl1364TurnProfileSeriesInvariants.property.test.js || echo FAIL;
+     done` -> 4 passed every run, no FAIL line (the unfixed file fails
+     about 1 of 10).
+  2. In each run's stdout the printed reach map for invariant 2 shows
+     `interior`, `missing` and `unreadablePath` each >= 1 and summing to
+     >= 15.
+  3. `git diff main...HEAD --name-only` names the property test, the step
+     handler, the feature, evidence, and the register row removal;
+     `extension/src/`, `property_suite_standing_allowlist.tsv`, the
+     BL-1364 feature and handler are unchanged. `grep -n "seen.unreadablePath >= 1\|unreadablePath" <the test>`
+     still shows the floor asserted.
+  4. Break-then-restore: make the unreadable-path arm build a plain
+     readable file instead of a directory; the property's own assertion
+     `a window with an unreadable transcript claimed completeness` fails on
+     that arm on the FIRST run (not one in ten); restore.
