@@ -213,3 +213,5 @@ notes: |
     severe circuit-breaker) with backlog/active/ already at 1 (BL-1480) -
     under a 0 cap an expedited ticket still waits (Article 3.2.4). Same
     posture as BL-1495, checked the same wake.
+
+assigned_to: coder
