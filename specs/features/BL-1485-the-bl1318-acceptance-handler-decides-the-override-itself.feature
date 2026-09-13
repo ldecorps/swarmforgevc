@@ -1,3 +1,8 @@
+# mutation-stamp: sha256=34d2ac73c94d4475221b9a1bf0abfa0d9b778d36da9e66e9fde9852af6a99977
+# acceptance-mutation-manifest-begin
+# {"version":1,"tested_at":"2026-09-13T13:06:07.220648402Z","feature_name":"BL-1485 The BL-1318 acceptance handler decides the operator override itself","feature_path":"/home/carillon/swarmforgevc/.worktrees/hardender/specs/features/BL-1485-the-bl1318-acceptance-handler-decides-the-override-itself.feature","background_hash":"74234e98afe7498fb5daf1f36ac2d78acc339464f950703b8c019892f982b90b","implementation_hash":"unknown","scenarios":[{"index":0,"name":"BL-1318's feature passes every scenario whatever the pane exports for the override","scenario_hash":"5976ff145eb09b8596a343a103b783f682ebcfdd683d2671eb2b213823e4843a","mutation_count":3,"result":{"Total":3,"Killed":3,"Survived":0,"Errors":0},"tested_at":"2026-09-13T13:06:07.220648402Z"}]}
+# acceptance-mutation-manifest-end
+
 Feature: BL-1485 The BL-1318 acceptance handler decides the operator override itself
 
   specs/pipeline/steps/bl1318PackStaffingGateSteps.js drives the real

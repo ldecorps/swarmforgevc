@@ -236,3 +236,5 @@ notes: |
   whatever the pane exports), one sitting (one env decision at one spawn
   site plus a two-scenario handler following BL-1445's shape), no unbuilt
   dependency. IR-DRY at mint: 0 findings.
+
+assigned_to: coder
