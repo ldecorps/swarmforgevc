@@ -152,8 +152,12 @@ function registerSteps(registry) {
   });
 
   scoped(/^the ticket records no human ruling$/, (ctx) => {
-    const ruling = readRecordedRuling(ctx.bl1527.dir, 'BL-9527');
-    assert.ok(!ruling, `ticket recorded a ruling: ${JSON.stringify(ruling)}`);
+    try {
+      const ruling = readRecordedRuling(ctx.bl1527.dir, 'BL-9527');
+      assert.ok(!ruling, `ticket recorded a ruling: ${JSON.stringify(ruling)}`);
+    } finally {
+      fs.rmSync(ctx.bl1527.dir, { recursive: true, force: true });
+    }
   });
 }
 
