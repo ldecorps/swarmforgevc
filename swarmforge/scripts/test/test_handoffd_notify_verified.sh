@@ -36,28 +36,35 @@ printf 'type: git_handoff\nto: coder\npriority: 50\ntask: BL-093\n' \
 FAKE_BIN="$ROOT/bin"
 mkdir -p "$FAKE_BIN"
 CALL_LOG="$ROOT/tmux-calls.log"
-# capture-pane's reply is sequenced: the FIRST call (the pre-inject "is
-# anything already pending?" check) returns BEFORE_STDOUT_FILE; every call
-# after that (post-Enter verification, retried as many times as configured)
-# returns AFTER_STDOUT_FILE. This lets a scenario simulate "idle pane, then
-# the typed text gets stuck" distinctly from "already stuck before we even
-# typed anything".
+# capture-pane's reply follows what has been SENT into the pane, never how
+# many times it has been read (BL-1499): every call before the first
+# send-keys returns BEFORE_STDOUT_FILE, every call after it returns
+# AFTER_STDOUT_FILE. The marker flips on any send-keys call - a literal
+# type (-l) or a bare submit (C-m/C-j) - because notify-agent! skips typing
+# altogether when the pane already looks stacked (cases 03/04) and relies
+# on the submit alone to clear it; keying only on -l would leave those
+# cases reading BEFORE forever. This is independent of how many probes read
+# the pane before anything is sent (the startup-notify busy gate and
+# notify-agent!'s own pre-inject check both read the pane before any send).
 BEFORE_STDOUT_FILE="$ROOT/before-stdout.txt"
 AFTER_STDOUT_FILE="$ROOT/after-stdout.txt"
-CAPTURE_COUNT_FILE="$ROOT/capture-count"
-export CALL_LOG BEFORE_STDOUT_FILE AFTER_STDOUT_FILE CAPTURE_COUNT_FILE
+TYPED_FILE="$ROOT/typed-marker"
+export CALL_LOG BEFORE_STDOUT_FILE AFTER_STDOUT_FILE TYPED_FILE
 
 cat > "$FAKE_BIN/tmux" <<'TMUX'
 #!/usr/bin/env bash
 echo "$*" >> "$CALL_LOG"
 for arg in "$@"; do
+  if [[ "$arg" == "send-keys" ]]; then
+    touch "$TYPED_FILE"
+  fi
+done
+for arg in "$@"; do
   if [[ "$arg" == "capture-pane" ]]; then
-    count="$(cat "$CAPTURE_COUNT_FILE" 2>/dev/null || echo 0)"
-    echo $((count + 1)) > "$CAPTURE_COUNT_FILE"
-    if [[ "$count" == "0" ]]; then
-      cat "$BEFORE_STDOUT_FILE" 2>/dev/null
-    else
+    if [[ -e "$TYPED_FILE" ]]; then
       cat "$AFTER_STDOUT_FILE" 2>/dev/null
+    else
+      cat "$BEFORE_STDOUT_FILE" 2>/dev/null
     fi
     exit 0
   fi
@@ -68,7 +75,7 @@ chmod +x "$FAKE_BIN/tmux"
 
 run_notify() {
   : > "$CALL_LOG"
-  echo 0 > "$CAPTURE_COUNT_FILE"
+  rm -f "$TYPED_FILE"
   rm -rf "$ROOT/.swarmforge/daemon"
   PATH="$FAKE_BIN:$PATH" bb "$HANDOFFD" "$ROOT" --startup-notify-only >/dev/null 2>&1
 }
