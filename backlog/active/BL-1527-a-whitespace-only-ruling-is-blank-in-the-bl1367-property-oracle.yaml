@@ -163,3 +163,5 @@ qa_e2e_procedure: |
      restore. Then delete the `no-options:ok-blank` (or as named) outcome
      from the reach floor and remove the constructing arm; scenario 04
      fails; restore.
+
+assigned_to: coder
