@@ -23,7 +23,7 @@ import { resolveCliMainWorktreeContext, printJsonToStdout, runCliMain } from './
 // BL-1393: the lean pass is a STEP of this sequence now, not a second
 // mechanism that finish-shift called on its own. Importing it here is what
 // makes "one ceremony" true rather than asserted.
-import { runClosingCeremony } from '../metrics/closingCeremonyRun';
+import { runClosingCeremony, closingCeremonyLoudCodes } from '../metrics/closingCeremonyRun';
 import { sendNoteViaHandoff } from './closing-ceremony-run';
 import { draftPathUnder, removeDraftIfPresent } from '../swarm/draftPathUnder';
 
@@ -42,10 +42,16 @@ export type RunDeps = {
   nightStop: (target: string) => void;
   surface: (target: string, code: string) => void;
   recordCnp: (target: string, held: string[]) => void;
-  /** BL-1393: the lean pass, run as a step of this sequence. */
-  deliverLeanPacket: (target: string, shiftKey: string) => void;
-  /** BL-1393: a sleep after no work still ends in a recorded outcome. */
-  recordEmptyOutcome: (target: string, shiftKey: string) => void;
+  /**
+   * BL-1393: the lean pass, run as a step of this sequence.
+   * BL-1528: returns the loud-log codes its own run produced (e.g. an
+   * undeliverable packet send) so the caller can surface them AND fold them
+   * into the written night state's `loudSurfaces` - the pure state machine
+   * cannot predict these ahead of the send, unlike its own `surface` actions.
+   */
+  deliverLeanPacket: (target: string, shiftKey: string) => string[];
+  /** BL-1393: a sleep after no work still ends in a recorded outcome. BL-1528: see deliverLeanPacket. */
+  recordEmptyOutcome: (target: string, shiftKey: string) => string[];
   /**
    * BL-1393: has the swarm worked a shift since the last ceremony? True when a
    * shift-start stamp is newer than the newest recorded ceremony outcome.
@@ -141,37 +147,47 @@ export function sendHandoffNote(target: string, to: string, message: string): vo
   }
 }
 
-function applyAction(target: string, action: LiveAction, deps: RunDeps, dryRun: boolean): void {
+// BL-1528: a 'lean-packet'/'record-empty-outcome' action's own send outcome
+// is handed to deps.surface, same as a statically-decided 'surface' action,
+// then returned for applyAction's caller to fold into loudSurfaces.
+function surfaceLoudCodes(target: string, deps: RunDeps, codes: string[]): string[] {
+  for (const code of codes) {
+    deps.surface(target, code);
+  }
+  return codes;
+}
+
+// BL-1528: returns the loud codes a 'lean-packet'/'record-empty-outcome'
+// action's own send outcome produced - [] for every other kind.
+function applyAction(target: string, action: LiveAction, deps: RunDeps, dryRun: boolean): string[] {
   if (dryRun) {
-    return;
+    return [];
   }
   switch (action.kind) {
     case 'freeze':
       deps.applyFreeze(target, action.untilMs);
-      return;
+      return [];
     case 'surface':
       deps.surface(target, action.code);
-      return;
+      return [];
     case 'record-cnp':
       deps.recordCnp(target, action.heldParcelIds);
-      return;
+      return [];
     case 'rotate-documenter':
       deps.rotateDocumenter(target);
-      return;
+      return [];
     case 'instruct-briefing':
       deps.instructBriefing(target, action.dayKey);
-      return;
+      return [];
     case 'lean-packet':
-      deps.deliverLeanPacket(target, action.shiftKey);
-      return;
+      return surfaceLoudCodes(target, deps, deps.deliverLeanPacket(target, action.shiftKey));
     case 'record-empty-outcome':
-      deps.recordEmptyOutcome(target, action.shiftKey);
-      return;
+      return surfaceLoudCodes(target, deps, deps.recordEmptyOutcome(target, action.shiftKey));
     case 'night-stop':
       deps.nightStop(target);
-      return;
+      return [];
     default:
-      return;
+      return [];
   }
 }
 
@@ -233,13 +249,16 @@ export function buildRealDeps(): RunDeps {
     deliverLeanPacket: (target, shiftKey) => {
       // The BL-820 pass itself, unchanged: it folds the lifecycle ledger into
       // the shift packet and delivers it to the specifier, or records an
-      // explicit no-change outcome for an empty shift.
-      runClosingCeremony(target, `${shiftKey}T00:00:00Z`, { sendNote: sendNoteViaHandoff });
+      // explicit no-change outcome for an empty shift. BL-1528: a refused
+      // send is reported back as a loud code, never thrown.
+      const result = runClosingCeremony(target, `${shiftKey}T00:00:00Z`, { sendNote: sendNoteViaHandoff });
+      return closingCeremonyLoudCodes(result);
     },
     recordEmptyOutcome: (target, shiftKey) => {
       // Same recorder, same store: a sleep after no work is one auto_no_change
       // run, distinguishable from a ceremony that never happened at all.
-      runClosingCeremony(target, `${shiftKey}T00:00:00Z`, { sendNote: sendNoteViaHandoff });
+      const result = runClosingCeremony(target, `${shiftKey}T00:00:00Z`, { sendNote: sendNoteViaHandoff });
+      return closingCeremonyLoudCodes(result);
     },
     workedAShift: (target) => shiftWorkedSinceLastCeremony(target),
   };
@@ -403,13 +422,18 @@ export function runNightClosingCeremony(
   }
 
   const { state, actions } = advanceNightClosingCeremony(prev, obs);
+  const runtimeLoudCodes: string[] = [];
   for (const action of actions) {
-    applyAction(target, action, deps, dryRun);
+    runtimeLoudCodes.push(...applyAction(target, action, deps, dryRun));
   }
+  // BL-1528: a send's own outcome (unlike a 'surface' action) is unknown
+  // until applyAction runs it, so these codes join loudSurfaces here rather
+  // than inside advanceNightClosingCeremony's pure decision.
+  const finalState = runtimeLoudCodes.length > 0 ? { ...state, loudSurfaces: [...state.loudSurfaces, ...runtimeLoudCodes] } : state;
   if (!dryRun) {
-    deps.writeState(target, state);
+    deps.writeState(target, finalState);
   }
-  return { gateMode: gateModeLabel(gate.mode, sleepPath), advanced: actions.length > 0 || state.phase !== (prev?.phase ?? 'idle'), state, actions };
+  return { gateMode: gateModeLabel(gate.mode, sleepPath), advanced: actions.length > 0 || finalState.phase !== (prev?.phase ?? 'idle'), state: finalState, actions };
 }
 
 export async function main(): Promise<void> {
