@@ -10,7 +10,6 @@ set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 LIVE_REPO_ROOT="$(cd "$SCRIPT_DIR/../../.." && pwd)"
 GUARD="$SCRIPT_DIR/../check_commit_size.sh"
-PRE_COMMIT_HOOK="$SCRIPT_DIR/../../git-hooks/pre-commit"
 IS_QA_ANCESTOR="$SCRIPT_DIR/../is_qa_ancestor.sh"
 HELPER="$LIVE_REPO_ROOT/extension/test/helpers/commitGuardFixtureSet.js"
 

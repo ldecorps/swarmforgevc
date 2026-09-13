@@ -11,8 +11,6 @@ set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 LIVE_REPO_ROOT="$(cd "$SCRIPT_DIR/../../.." && pwd)"
 GUARD="$SCRIPT_DIR/../check_ticket_deletion.sh"
-PRE_COMMIT_HOOK="$SCRIPT_DIR/../../git-hooks/pre-commit"
-COMMIT_MSG_HOOK="$SCRIPT_DIR/../../git-hooks/commit-msg"
 IS_QA_ANCESTOR="$SCRIPT_DIR/../is_qa_ancestor.sh"
 BB_LOAD_ANALYSE_DRIVER="$SCRIPT_DIR/../bb_load_analyse_driver.bb"
 HELPER="$LIVE_REPO_ROOT/extension/test/helpers/commitGuardFixtureSet.js"
