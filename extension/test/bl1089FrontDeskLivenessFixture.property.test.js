@@ -37,6 +37,7 @@ const fc = require('fast-check');
 const fs = require('node:fs');
 const path = require('node:path');
 const { pollHeartbeatStale } = require('../../specs/pipeline/steps/lib/pollHeartbeatStale');
+const { checkFixtureSourceContract } = require('./helpers/bl1089FixtureSourceContract');
 
 const REPO_ROOT = path.join(__dirname, '..', '..');
 const FIXTURE = path.join(
@@ -45,6 +46,13 @@ const FIXTURE = path.join(
   'scripts',
   'test',
   'test_front_desk_supervisor_liveness.sh'
+);
+const BL1502_STEP_HANDLER = path.join(
+  REPO_ROOT,
+  'specs',
+  'pipeline',
+  'steps',
+  'bl1502FixtureSourceContractFollowsFixtureSteps.js'
 );
 
 function stale(args) {
@@ -161,16 +169,32 @@ test('BL-1089/BL-654 invariant 2: a served stamp is never backdated before spawn
   assert.ok(draws >= 100, `served-stamp reach floor unmet: ${draws}`);
 });
 
-test('BL-1089 fixture source: stall paths stamp own age-0 then age; no 5000ms backdate', () => {
+test('BL-1089/BL-1502 fixture source: stall paths stamp own age-0 then age; no 5000ms backdate', () => {
   const src = fs.readFileSync(FIXTURE, 'utf8');
-  assert.match(src, /stamp_own_heartbeat_then_age_past_stall/, 'aging helper must exist');
-  assert.match(src, /write_heartbeat "\$root" 0/, 'helper must stamp age 0');
-  assert.doesNotMatch(
-    src,
-    /write_heartbeat "\$F" 5000/,
-    'stall paths must not backdate by 5000ms (predecessor-shaped)'
+  const verdict = checkFixtureSourceContract(src);
+  assert.equal(verdict.ok, true, verdict.message || 'fixture-source contract failed');
+});
+
+// BL-1502 hardening (BL-638 hand-authored sweep — no Stryker target under
+// extension/test/helpers/): the shared predicate's third rule,
+// healthy-poll-retained, was reached by no Examples row and its removal
+// mutant survived every other test in this file. Closed here rather than
+// left a curiosity (this prompt's Hardening Order, "A SURVIVED hand-authored
+// mutant is a real test gap").
+test('BL-1089/BL-1502 fixture source: a fixture missing the healthy-poll check is rejected, not silently accepted', () => {
+  const src = fs.readFileSync(FIXTURE, 'utf8');
+  const withoutHealthyPoll = src.replace('write_heartbeat "$F" 10', 'write_heartbeat "$F" 999');
+  assert.notEqual(withoutHealthyPoll, src, 'expected the healthy-poll line to be present and replaceable in the real fixture');
+  const verdict = checkFixtureSourceContract(withoutHealthyPoll);
+  assert.equal(verdict.ok, false, 'expected the contract to reject a fixture missing the healthy-poll check');
+  assert.equal(verdict.rule, 'healthy-poll-retained');
+});
+
+test('BL-1502/BL-654 invariant 1: property test and step handler share one fixture-source predicate', () => {
+  const stepHandlerSrc = fs.readFileSync(BL1502_STEP_HANDLER, 'utf8');
+  assert.match(
+    stepHandlerSrc,
+    /require\(['"][^'"]*helpers[/\\]bl1089FixtureSourceContract['"]\)/,
+    'step handler must require the same shared predicate module this file uses, never a second copy of the regexes'
   );
-  // Healthy-poll check may still use a tiny age; that is after spawn and
-  // inside the stall window — not a "served then stopped" simulation.
-  assert.match(src, /write_heartbeat "\$F" 10/, 'fresh-poll healthy check remains');
 });
