@@ -2382,7 +2382,12 @@ export function startBridge(
           'cache-control': 'no-cache',
           connection: 'keep-alive',
         });
+        // BL-1460: seed lastSnapshot with the connect frame so the first poll
+        // tick compares against something real instead of undefined - a fresh
+        // start no longer re-broadcasts an identical copy of the connect
+        // snapshot to every client on its first tick.
         const snapshot = resolveEventsSnapshot(lastSnapshot, targetPath, runLogPath);
+        lastSnapshot = snapshot;
         res.write(`data: ${snapshot}\n\n`);
         sseClients.add(res);
         req.on('close', () => sseClients.delete(res));

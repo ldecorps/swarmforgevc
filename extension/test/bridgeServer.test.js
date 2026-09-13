@@ -1071,6 +1071,42 @@ test('an idle /events connection receives a periodic keepalive comment frame, wi
   });
 });
 
+// BL-1460: a deterministic proof that does not depend on which timer fires
+// first (unlike the scenario above, which needs the poll and keepalive
+// timers to race to expose the bug). The connect path seeds lastSnapshot, so
+// however many poll ticks fire against an unchanged target, none of them
+// re-broadcasts a second copy of the connect snapshot.
+test('an idle /events connection receives exactly one data frame across many poll ticks, whatever the first tick\'s phase', async () => {
+  const target = mkTmp();
+  await withBridge(target, { pollIntervalMs: 5 }, async (handle) => {
+    const controller = new AbortController();
+    const res = await fetch(`http://127.0.0.1:${handle.port}/events`, {
+      headers: { authorization: `Bearer ${TOKEN}` },
+      signal: controller.signal,
+    });
+    const reader = res.body.getReader();
+    const decoder = new TextDecoder();
+    let buffer = '';
+    const pump = (async () => {
+      try {
+        for (;;) {
+          const { done, value } = await reader.read();
+          if (done) return;
+          buffer += decoder.decode(value, { stream: true });
+        }
+      } catch {
+        // aborted below - expected
+      }
+    })();
+    // ~40 poll ticks at 5 ms each.
+    await new Promise((resolve) => setTimeout(resolve, 200));
+    controller.abort();
+    await pump;
+    const dataFrames = buffer.match(/^data: /gm) || [];
+    assert.equal(dataFrames.length, 1, `expected exactly one data frame across many poll ticks with no state change, saw ${dataFrames.length}`);
+  });
+});
+
 test('a disconnected client is dropped from the keepalive loop without throwing, and later clients are unaffected', async () => {
   const target = mkTmp();
   await withBridge(target, { pollIntervalMs: 20, keepaliveIntervalMs: 15 }, async (handle) => {
