@@ -35,13 +35,37 @@ export interface ClosingCeremonyRunDeps {
   readWindowModels?: (targetPath: string) => Record<string, string>;
 }
 
-export type ClosingCeremonyRunStatus = 'created' | 'already_exists' | 'auto_no_change';
+export type ClosingCeremonyRunStatus = 'created' | 'already_exists' | 'auto_no_change' | 'created_undeliverable';
 
 export interface ClosingCeremonyRunResult {
   shiftKey: string;
   status: ClosingCeremonyRunStatus;
   run: CeremonyRun;
   finalizedFailed: string[];
+  /**
+   * BL-1528: shift keys among `finalizedFailed` whose own failure note
+   * (`buildCeremonyFailureNoteDraft`) was refused by `deps.sendNote` - the
+   * finalize-as-failed still happened, only the notification bounced.
+   */
+  finalizedFailedUndeliverable: string[];
+}
+
+/**
+ * BL-1528: the loud-log codes this result implies, for a caller (the night
+ * sequence's `deliverLeanPacket`/`recordEmptyOutcome`) to surface through
+ * its own `RunDeps.surface` - kept out of this pure/testable module's own
+ * side effects so unit tests here never need a fake loud log.
+ */
+export function closingCeremonyLoudCodes(result: ClosingCeremonyRunResult): string[] {
+  const codes = result.finalizedFailedUndeliverable.map((shiftKey) => `closing-ceremony-failure-undeliverable ${shiftKey}`);
+  if (result.status === 'created_undeliverable') {
+    codes.push(`closing-lean-packet-undeliverable ${result.shiftKey}`);
+  }
+  return codes;
+}
+
+function errorMessage(err: unknown): string {
+  return err instanceof Error ? err.message : String(err);
 }
 
 function readPackConfText(targetPath: string): string | null {
@@ -134,15 +158,23 @@ export function runClosingCeremony(targetPath: string, nowIso: string, deps: Clo
   // ceremony that produced nothing must never sit indistinguishable from
   // one that never ran (the ticket's own declared invariant).
   const finalizedFailed: string[] = [];
+  const finalizedFailedUndeliverable: string[] = [];
   for (const stale of findOpenCeremonyRunsBefore(targetPath, shiftKey)) {
     finalizeCeremonyRunAsFailed(targetPath, stale, nowIso);
     finalizedFailed.push(stale.shiftKey);
-    deps.sendNote(targetPath, buildCeremonyFailureNoteDraft(to, stale.shiftKey));
+    try {
+      deps.sendNote(targetPath, buildCeremonyFailureNoteDraft(to, stale.shiftKey));
+    } catch {
+      // BL-1528: the run is already finalized as failed above regardless -
+      // only the notification bounced. Surfaced by the caller via
+      // closingCeremonyLoudCodes, never thrown out of this function.
+      finalizedFailedUndeliverable.push(stale.shiftKey);
+    }
   }
 
   const existing = readCeremonyRun(targetPath, shiftKey);
   if (existing) {
-    return { shiftKey, status: 'already_exists', run: existing, finalizedFailed };
+    return { shiftKey, status: 'already_exists', run: existing, finalizedFailed, finalizedFailedUndeliverable };
   }
 
   const allEvents = readLeanLedgerEvents(targetPath);
@@ -164,14 +196,25 @@ export function runClosingCeremony(targetPath: string, nowIso: string, deps: Clo
       outcome: { type: 'no_change', ref: null, recordedAt: nowIso },
       adjustments: [],
       failedAt: null,
+      deliveryFailure: null,
     };
     writeCeremonyRun(targetPath, run);
-    return { shiftKey, status: 'auto_no_change', run, finalizedFailed };
+    return { shiftKey, status: 'auto_no_change', run, finalizedFailed, finalizedFailedUndeliverable };
   }
 
-  const run: CeremonyRun = { shiftKey, packet, deliveredAt: nowIso, outcome: null, adjustments: [], failedAt: null };
-  writeCeremonyRun(targetPath, run);
+  // BL-1528: decide the record's shape from the send's OWN outcome, never
+  // write-then-fix - "pending" must keep meaning "the note was accepted by
+  // swarm_handoff.sh" (declared invariant). packetRelPath is a pure path
+  // computation (path.relative/path.join), so it needs no file on disk yet.
   const packetRelPath = path.relative(targetPath, ceremonyRunFilePath(targetPath, shiftKey));
-  deps.sendNote(targetPath, buildClosingCeremonyNoteDraft(to, packetRelPath));
-  return { shiftKey, status: 'created', run, finalizedFailed };
+  const draft = buildClosingCeremonyNoteDraft(to, packetRelPath);
+  const pendingRun: CeremonyRun = { shiftKey, packet, deliveredAt: nowIso, outcome: null, adjustments: [], failedAt: null, deliveryFailure: null };
+  try {
+    deps.sendNote(targetPath, draft);
+  } catch (err) {
+    const failedRun = finalizeCeremonyRunAsFailed(targetPath, pendingRun, nowIso, errorMessage(err));
+    return { shiftKey, status: 'created_undeliverable', run: failedRun, finalizedFailed, finalizedFailedUndeliverable };
+  }
+  writeCeremonyRun(targetPath, pendingRun);
+  return { shiftKey, status: 'created', run: pendingRun, finalizedFailed, finalizedFailedUndeliverable };
 }

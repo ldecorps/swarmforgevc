@@ -121,6 +121,14 @@ export interface CeremonyRun {
   outcome: CeremonyOutcome | null;
   adjustments: CeremonyAdjustment[];
   failedAt: string | null;
+  /**
+   * BL-1528: the refusal text from a send that made this run failed at
+   * write time (e.g. "Unknown recipient role 'specifier'."), so a reader
+   * can tell "undeliverable" from "delivered, nobody answered" - both are
+   * `failed` under ceremonyRunState, this is the extra data distinguishing
+   * them, never a fourth state.
+   */
+  deliveryFailure: string | null;
 }
 
 // ── packet: a pure fold over one shift's worth of ledger events ───────────
