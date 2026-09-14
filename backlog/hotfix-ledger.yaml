@@ -317,7 +317,7 @@
 - commit: 92ecf4aea3
   subject: "Hotfix: mono-router resident rotates to the seat it forwarded its parcel to"
   detected_at: 2026-09-13
-  state: pending
+  state: stamp-open
   stamp_ticket: BL-1557
   human_decision: null
   decided_at: null
