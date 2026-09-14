@@ -175,3 +175,5 @@ qa_e2e_procedure: |
   5. Break-then-restore: comment out the `git-handoff-recipient-guard-lib/decide`
      call in `swarm_handoff.bb`; step 1 now prints AUDIT_REQUIRED and
      scenario 02 fails; restore.
+
+assigned_to: coder
