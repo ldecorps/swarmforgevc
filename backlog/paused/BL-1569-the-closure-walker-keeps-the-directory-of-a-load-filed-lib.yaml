@@ -1,0 +1,171 @@
+id: BL-1569
+title: "test_operator_runtime_hotfix_certification_sweep.sh is red on main with no owner: the fixture's sandbox copy of swarm_handoff.bb cannot load because both load-file closure walkers (bb_load_closure_lib.bb and its JS twin) capture only the last string of a multi-segment load-file and drop the directory, and copy_bb_closure silently skips a member it cannot find - unregistered_test_gate_lib.bb's test/suite_inventory_lib.bb (62109c3f75) never reaches the sandbox, the coordinator nudge throws FileNotFoundException, and the BL-897 agreement gate passes because both twins agree on the wrong answer"
+milestone: M8
+type: defect
+severity: high
+# high (standing-red rule 2026-09-05): a shell-lane test file red on main is
+# a broken safety signal and throttles intake until owned. Beyond the red:
+# a derived copy-list that silently drops a member and a copy step that
+# silently skips it is the fail-open shape BL-973 replaced hand lists to
+# prevent, and every one of the 28 shell fixtures sourcing copy_bb_closure
+# inherits it.
+status: todo
+epic: code-quality-gates
+priority: 8
+direction: swarm-reported
+depends_on: []
+mutation_cost: medium
+# medium: two closure walkers (bb + JS), a shell copy helper, the agreement
+# runner, one step handler. The JS twin lives under specs/pipeline/steps/lib
+# (acceptance infrastructure, not extension/src) so no Stryker target; bb
+# has none (BL-472); the hardener records the fallback but the BL-897
+# agreement runner and bl973's closure property runner must both stay green.
+slice_size_envelope: low
+required_stages: [coder, cleaner, architect, hardender, documenter, qa]
+
+acceptance: specs/features/BL-1569-the-closure-walker-keeps-the-directory-of-a-load-filed-lib.feature
+
+# The consumer anchors are pre-existing callers of the changed helpers
+# (BL-1235): operator_runtime_sandbox.sh calls copy_bb_closure, and the
+# agreement runner drives both twins. Handler pin per BL-233.
+required_wiring:
+  - 'swarmforge/scripts/test/lib/operator_runtime_sandbox.sh::copy_bb_closure::the red fixture reaches the sandbox copy through this pre-existing call'
+  - 'swarmforge/scripts/test/bb_load_closure_agreement_test_runner.bb::suite_inventory_lib.bb::the BL-897 agreement runner pins the multi-segment case in both twins'
+  - 'specs/pipeline/steps/bl1569ClosureKeepsDirectorySteps.js::registerSteps::the handler lands in the same parcel as the feature (BL-233, BL-1371)'
+
+human_approval: pending
+approval_context: >
+  A new feature file is authored here, so it needs a tap. No choice is
+  posed and there are no ruling_options. FIRM: both walkers keep emitting
+  bare filenames for single-segment load-files (every existing consumer
+  copies those by name into a flat dir) and emit the directory-qualified
+  relative path only for a multi-segment form, so today's 45-entry closure
+  of swarm_handoff.bb changes in exactly one entry. FIRM: copy_bb_closure
+  fails loud (non-zero, naming the path) when a closure member does not
+  exist under the source dir - a silent skip is the defect. FIRM:
+  unregistered_test_gate_lib.bb's load-file line is not rewritten to dodge
+  the walker; the walker learns the form. Minted by the specifier on the
+  coder's unowned-red note of 2026-09-14 14:30Z (BL-1565 parcel), root
+  cause traced by the specifier on main 674d50539a; evidence
+  backlog/evidence/BL-1567-BL-1571-specifier-unowned-red-census-20260914.md.
+
+invariants:
+  - "Every file a walker reports in a load-file closure exists at the reported path under the scripts dir, and a copy of that closure either places every member at the same relative path or fails loud - never a partial copy."
+  - "The bb walker and the JS walker report the identical closure for every entry point under swarmforge/scripts, including the multi-segment load-file form (BL-897)."
+
+description: |
+  ## What is wrong
+
+  `swarmforge/scripts/test/test_operator_runtime_hotfix_certification_sweep.sh`
+  (BL-848, lane shell, `standing`) fails on `main` 674d50539a:
+
+  ```
+  FAIL - 01: the pre-seeded pending entry (no stamp ticket) triggered a coordinator nudge
+  ```
+
+  The fixture's `runtime.log` has the reason the check greps past:
+
+  ```
+  hotfix-certification-nudge-error 0000000001 ----- Error ---
+  Type:     java.io.FileNotFoundException
+  Message:  <fixture>/swarmforge/scripts/test/suite_inventory_lib.bb (No such file or directory)
+  Location: <fixture>/swarmforge/scripts/unregistered_test_gate_lib.bb:51:1
+  ```
+
+  The sandbox is built by `lib/operator_runtime_sandbox.sh` ->
+  `copy_bb_closure`, which derives the copy list from
+  `bb_load_closure_cli.bb` (BL-973). `swarm_handoff.bb` load-files
+  `unregistered_test_gate_lib.bb` (31ffc314a0, 2026-08-31), whose line 51
+  is the codebase's only multi-segment load-file:
+
+  ```
+  (load-file (str (fs/path (fs/parent (fs/canonicalize *file*)) "test" "suite_inventory_lib.bb")))
+  ```
+
+  Both walkers - `bb_load_closure_lib.bb`'s
+  `#"(?s)\(load-file\b.*?\"([^\"]+\.bb)\""` and the JS twin
+  `operatorRuntimeBbClosure.js`'s `/\(load-file\b[\s\S]*?"([^"]+\.bb)"/g` -
+  capture the last string only and report the bare `suite_inventory_lib.bb`
+  (verified: `bb bb_load_closure_cli.bb swarmforge/scripts swarm_handoff.bb`
+  and `computeClosure('swarmforge/scripts','swarm_handoff.bb')` both list
+  it, 45 entries). `copy_bb_closure` then does
+  `[[ -f "$src/$dep" ]] && cp "$src/$dep" "$dest/"` - the file lives under
+  `$src/test/`, so it is skipped without a word. The BL-897 agreement
+  runner passes because both twins agree on the wrong answer. Red since
+  2026-08-31 and unseen for 14 days because nothing runs the standing
+  shell suite (BL-1526's gap).
+
+  Blast radius today: 28 shell tests source `copy_bb_closure`; only this
+  one both copies `swarm_handoff.bb` and exercises a send inside the tick
+  (the sibling `babysitterd-watchdog-nudge-error` in the same fixture log
+  is the same cause but not asserted). `operator_runtime.bb`'s own closure
+  does not reach the gate lib, so the 15 JS handlers copying
+  `OPERATOR_RUNTIME_BB_FILES` by name see no subpath today.
+
+  ## What is wanted
+
+  Both walkers report a multi-segment load-file as the directory-qualified
+  relative path (`test/suite_inventory_lib.bb`) and keep reporting
+  single-segment ones as bare names; the closure of `swarm_handoff.bb`
+  names `unregistered_test_gate_lib.bb` and `test/suite_inventory_lib.bb`
+  and no bare `suite_inventory_lib.bb`. `copy_bb_closure` places each
+  member at the same relative path under the destination (creating the
+  directory) and exits non-zero naming the path when a member is absent
+  under the source. The agreement runner pins the multi-segment case.
+  `test_operator_runtime_hotfix_certification_sweep.sh` prints
+  `ALL CHECKS PASSED` on `main` and the register row this ticket adds is
+  removed in the same land.
+
+  ## How (direction, not mandate)
+
+  - Capture the whole `(fs/path (fs/parent (fs/canonicalize *file*)) ...)`
+    argument list and join every string literal after the parent with `/`;
+    one segment yields today's bare name, so no existing consumer output
+    changes. Mirror the same in the JS twin; add the multi-segment fixture
+    to `bb_load_closure_agreement_test_runner.bb` and to bl973's property
+    runner's DAG generator so a future divergence fails there.
+  - In `copy_bb_closure`, `mkdir -p "$dest/$(dirname "$dep")"` before the
+    copy, and replace the `[[ -f ]] &&` guard with a loud failure.
+  - JS handlers that copy `OPERATOR_RUNTIME_BB_FILES` by name are NOT
+    switched in this parcel: their list carries no subpath today and a
+    future one fails closed (`copyFileSync` throws ENOENT on a missing
+    directory). Record that census in the evidence, not as scope.
+  - Step handler `specs/pipeline/steps/bl1569ClosureKeepsDirectorySteps.js`
+    drives both CLIs, `copy_bb_closure` into a mkdtemp dest, and the real
+    shell test as a subprocess; it lands in the same commit as the feature
+    (BL-233).
+
+  ## Not in scope
+
+  - `unregistered_test_gate_lib.bb`, `swarm_handoff.bb`, `operator_runtime.bb`
+    and `hotfix_certification_lib.bb` are not touched.
+  - The 15 JS handlers copying the operator_runtime closure by name.
+
+notes: |
+  Register: backlog/standing-reds.tsv gains one `shell` row naming this
+  ticket (same commit as this mint), first_seen 2026-09-14; QA removes it
+  in the land that turns the file green. Found by the coder in the
+  BL-1565 parcel; the coder confirmed the failure is identical with its
+  own swarm_handoff.bb changes stashed out. Siblings minted the same pass:
+  BL-1567, BL-1568, BL-1570, BL-1571.
+
+qa_e2e_procedure: |
+  On the parcel commit, from the repo root:
+  1. `bb swarmforge/scripts/bb_load_closure_cli.bb swarmforge/scripts swarm_handoff.bb | tr ' ' '\n' | grep suite_inventory`
+     prints exactly `test/suite_inventory_lib.bb`; the same for
+     `node -e "const {computeClosure}=require('./specs/pipeline/steps/lib/operatorRuntimeBbClosure.js');console.log([...computeClosure('swarmforge/scripts','swarm_handoff.bb')].filter(n=>/suite_inventory/.test(n)))"`.
+  2. `bb swarmforge/scripts/test/bb_load_closure_agreement_test_runner.bb`
+     and `bb swarmforge/scripts/test/bl973_closure_guard_property_runner.bb`
+     exit 0.
+  3. `d=$(mktemp -d); source swarmforge/scripts/test/lib/bb_closure_copy.sh; copy_bb_closure swarmforge/scripts "$d" swarm_handoff.bb; ls "$d/test/suite_inventory_lib.bb"`
+     exists, and `bb -e "(load-file \"$d/unregistered_test_gate_lib.bb\")"` exits 0.
+  4. `bash swarmforge/scripts/test/test_operator_runtime_hotfix_certification_sweep.sh`
+     three times -> `ALL CHECKS PASSED`; its fixture log carries
+     `hotfix-certification-nudge 0000000001` and no `-nudge-error`.
+  5. Break-then-restore: in a scratch scripts dir, make `a.bb` load-file
+     `"missing" "b.bb"` with no such file; `copy_bb_closure` exits non-zero
+     naming `missing/b.bb`. Restore nothing (scratch).
+  6. All 17 shell tests sourcing `operator_runtime_sandbox.sh` still exit
+     as they did on main apart from this one (BL-1570 and BL-1571 own the
+     other three reds); the row for this file is gone from
+     `backlog/standing-reds.tsv`.

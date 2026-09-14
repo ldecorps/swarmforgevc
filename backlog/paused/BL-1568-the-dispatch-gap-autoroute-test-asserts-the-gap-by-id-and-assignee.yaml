@@ -1,0 +1,110 @@
+id: BL-1568
+title: "test_dispatch_gap_autoroute.sh is red on main with no owner: its case 01 asserts exact map equality against {:id :assigned-to} and BL-1301 (393634823a, 2026-09-02) added :status to read-active-items for the parked-ticket sweep, so dispatch-gap-items now returns one more key than the assertion tolerates - the case asserts the gap by its id and assignee, the keys the auto-route draft consumes"
+milestone: M8
+type: defect
+severity: high
+# high (standing-red rule 2026-09-05): a shell-lane test file red on main is
+# a broken safety signal and throttles intake until owned. The sweep is
+# right (four bb runners over the same functions are green); the shell
+# test pins a key set the reader was deliberately widened past.
+status: todo
+epic: code-quality-gates
+priority: 8
+direction: swarm-reported
+depends_on: []
+mutation_cost: low
+# low: one shell test file under swarmforge/scripts/test and one
+# step-handler file; no production code, no Stryker target (BL-472); the
+# hardener records the fallback.
+slice_size_envelope: low
+required_stages: [coder, cleaner, architect, hardender, documenter, qa]
+
+acceptance: specs/features/BL-1568-the-dispatch-gap-autoroute-test-asserts-the-gap-by-id-and-assignee.feature
+
+# No consumer anchor is honest (BL-1235): nothing runs the standing shell
+# suite (BL-1526's gap). Handler pin only (BL-233).
+required_wiring:
+  - 'specs/pipeline/steps/bl1568DispatchGapAssertsByIdSteps.js::registerSteps::the handler lands in the same parcel as the feature (BL-233, BL-1371)'
+
+human_approval: pending
+approval_context: >
+  A new feature file is authored here, so it needs a tap. No choice is
+  posed and there are no ruling_options. FIRM: chase_sweep_lib.bb is not
+  edited - read-active-items keeps carrying :status (BL-1301's parked-ticket
+  sweep and BL-1479 read it) and dispatch-gap-items keeps passing the
+  reader's maps through; the fix is the test's assertion, which pins the
+  two keys the auto-route draft (dispatch-gap-draft-lines) consumes and
+  tolerates any other. FIRM: case 01 still asserts exactly ONE gap, id
+  BL-217, assignee coder - it does not weaken to "some gap". Minted by
+  the specifier on the coder's unowned-red note of 2026-09-14 14:30Z
+  (BL-1565 parcel); reproduced on main 674d50539a; evidence
+  backlog/evidence/BL-1567-BL-1571-specifier-unowned-red-census-20260914.md.
+
+invariants: []
+
+description: |
+  ## What is wrong
+
+  `swarmforge/scripts/test/test_dispatch_gap_autoroute.sh` (BL-222, lane
+  shell, `standing`) fails on `main` 674d50539a at its first assertion,
+  a pure data-shape check with no send involved:
+
+  ```
+  Assert failed: unexpected gaps: [{:id "BL-217", :assigned-to "coder", :status "todo"}]
+  (= [{:id "BL-217" :assigned-to "coder"}] gaps)
+  FAIL: 01: expected dispatch-gap-items to detect BL-217 as an undispatched gap
+  ```
+
+  `dispatch-gap-items` is `decide-dispatch-gaps` over `read-active-items`,
+  and passes the reader's maps through unchanged. BL-1301 (393634823a,
+  2026-09-02) added `:status` to `read-active-items` so the parked-ticket
+  sweep can read a deliberate park from the same single read; BL-1479
+  reads it too. The test's exact-equality assertion has been red since
+  that landing - 12 days - because nothing runs the standing shell suite
+  (BL-1526's gap). The four bb runners over the same functions
+  (`dispatch_gap_test_runner.bb`, `bl1097_router_dispatch_trail_test_runner.bb`,
+  `bl1479_parked_active_sweep_test_runner.bb`, `dropped_parcel_test_runner.bb`)
+  are green on main; only this file pins the full key set.
+
+  ## What is wanted
+
+  Case 01 asserts that `dispatch-gap-items` returns exactly one gap whose
+  `:id` is `BL-217` and whose `:assigned-to` is `coder`, tolerating any
+  further keys the reader carries. Cases 02 and 03 are unchanged. The
+  file prints `ALL PASS` on `main` and the register row this ticket adds
+  is removed in the same land.
+
+  ## How (direction, not mandate)
+
+  - Compare `(mapv #(select-keys % [:id :assigned-to]) gaps)` with the
+    expected vector, or assert `(count gaps)`, `(:id (first gaps))` and
+    `(:assigned-to (first gaps))` - either keeps the one-gap, right-gap
+    property; the assertion message still prints the full maps.
+  - Step handler `specs/pipeline/steps/bl1568DispatchGapAssertsByIdSteps.js`
+    runs the real shell test as a subprocess and diffs `chase_sweep_lib.bb`
+    against `main` (unchanged); it lands in the same commit as the feature
+    (BL-233).
+
+  ## Not in scope
+
+  - `chase_sweep_lib.bb`, `handoffd.bb`, and the bb runners are not touched.
+
+notes: |
+  Register: backlog/standing-reds.tsv gains one `shell` row naming this
+  ticket (same commit as this mint), first_seen 2026-09-14; QA removes it
+  in the land that turns the file green. Found by the coder in the
+  BL-1565 parcel; reproduced by the specifier on main. Siblings minted the
+  same pass: BL-1567, BL-1569, BL-1570, BL-1571.
+
+qa_e2e_procedure: |
+  On the parcel commit, from the repo root:
+  1. `bash swarmforge/scripts/test/test_dispatch_gap_autoroute.sh` three
+     times -> `ALL PASS`, exit 0.
+  2. `git diff main...HEAD -- swarmforge/scripts/chase_sweep_lib.bb` is
+     empty; `git diff main...HEAD --name-only` names the shell test, the
+     handler, `specs/pipeline/steps/index.js`, the feature, evidence, and
+     the register-row removal.
+  3. `bb swarmforge/scripts/test/dispatch_gap_test_runner.bb` still exits 0.
+  4. Break-then-restore: change the fixture's `assigned_to: coder` to
+     `assigned_to: cleaner`; case 01 fails naming the assignee; restore.
+  5. The row for this file is gone from `backlog/standing-reds.tsv`.

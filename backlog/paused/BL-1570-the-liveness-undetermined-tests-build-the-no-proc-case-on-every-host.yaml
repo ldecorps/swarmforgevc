@@ -1,0 +1,118 @@
+id: BL-1570
+title: "test_operator_runtime_fixture_reaper_sweep_liveness_undetermined.sh and test_operator_runtime_sandbox_sweep_liveness_undetermined.sh are red on every Linux host with no owner: both construct the liveness-undetermined case by forcing lsof absent and RELYING on /proc being absent (a macOS assumption written into their headers), so on Linux/WSL liveness is determined and the orphan is reaped - they point SWARMFORGE_PROC_DIR, the seam BL-877 shipped in the same commit, at a directory that does not exist"
+milestone: M8
+type: defect
+severity: high
+# high (standing-red rule 2026-09-05): two shell-lane test files red on the
+# host the swarm runs on are broken safety signals and throttle intake
+# until owned. The sweeps are right (both files pass with the seam set);
+# the tests only ever built their case on macOS.
+status: todo
+epic: code-quality-gates
+priority: 8
+direction: swarm-reported
+depends_on: []
+mutation_cost: low
+# low: two shell test files under swarmforge/scripts/test and one
+# step-handler file; no production code, no Stryker target (BL-472); the
+# hardener records the fallback.
+slice_size_envelope: low
+required_stages: [coder, cleaner, architect, hardender, documenter, qa]
+
+acceptance: specs/features/BL-1570-the-liveness-undetermined-tests-build-the-no-proc-case-on-every-host.feature
+
+# No consumer anchor is honest (BL-1235): nothing runs the standing shell
+# suite (BL-1526's gap). Handler pin only (BL-233).
+required_wiring:
+  - 'specs/pipeline/steps/bl1570LivenessUndeterminedProcDirSteps.js::registerSteps::the handler lands in the same parcel as the feature (BL-233, BL-1371)'
+
+human_approval: pending
+approval_context: >
+  A new feature file is authored here, so it needs a tap. No choice is
+  posed and there are no ruling_options. FIRM: proc_fd_scan_lib.bb,
+  fixture_reaper_sweep_lib.bb and sandbox_sweep_lib.bb are not touched -
+  the SWARMFORGE_PROC_DIR seam already exists and already makes both
+  files pass (verified on main 674d50539a by rerunning each with
+  SWARMFORGE_PROC_DIR=/nonexistent-proc: ALL CHECKS PASSED). FIRM: the
+  seam is set for the undetermined tick only; the files' headers are
+  re-tensed to say the case is CONSTRUCTED on every host, never assumed
+  from the host. Minted by the specifier from the BL-1445 census run on
+  the coder's unowned-red note of 2026-09-14 (BL-1565 parcel); evidence
+  backlog/evidence/BL-1567-BL-1571-specifier-unowned-red-census-20260914.md.
+
+invariants:
+  - "A test of a host-conditional branch constructs the condition through a seam on every supported host (macOS and Linux); it never relies on the host it was written on."
+
+description: |
+  ## What is wrong
+
+  Two BL-877 shell tests (lane shell, `standing`) fail on `main`
+  674d50539a on this Linux/WSL host:
+
+  - `test_operator_runtime_fixture_reaper_sweep_liveness_undetermined.sh`:
+    `FAIL - undetermined: the process rooted in the reaped root survives`
+    and `... records its own distinct liveness-undetermined message`.
+  - `test_operator_runtime_sandbox_sweep_liveness_undetermined.sh`:
+    `FAIL - undetermined: a stale sandbox with nothing rooted in it is KEPT`
+    and `... the sweep records that liveness could not be determined`.
+
+  Both headers say "On this host /proc is already absent (macOS). Pointing
+  SWARMFORGE_LSOF_BIN at a nonexistent path ... simulates total
+  unavailability". On Linux `/proc` exists, `proc-fd-scan-lib/live-pid-paths!`
+  answers from it, liveness IS determined, and the sweeps correctly reap
+  the stale orphan - the opposite of what the undetermined case asserts.
+  The same commit that landed the tests (184f6ac467, 2026-08-11) gave
+  `proc_fd_scan_lib.bb` a `SWARMFORGE_PROC_DIR` override "so a test" can
+  point it elsewhere; neither test uses it. Rerun with
+  `SWARMFORGE_PROC_DIR=/nonexistent-proc`, both print `ALL CHECKS PASSED`.
+  Red on every Linux host since 2026-08-11, 34 days, unseen because
+  nothing runs the standing shell suite (BL-1526's gap) and the files
+  were written and last run on macOS.
+
+  ## What is wanted
+
+  Each file's undetermined tick exports `SWARMFORGE_PROC_DIR` naming a
+  directory that does not exist (alongside the nonexistent lsof it already
+  forces), so the case is constructed identically on macOS and Linux; the
+  header comment describes the construction instead of the host. Both
+  files print `ALL CHECKS PASSED` on `main` on this host, and the two
+  register rows this ticket adds are removed in the same land.
+
+  ## How (direction, not mandate)
+
+  - Add `SWARMFORGE_PROC_DIR="$REAP_ROOT/.no-proc"` (any path under the
+    fixture that is never created) to the `run_tick` env of each file, on
+    the undetermined tick; a green tick elsewhere in the same file, if any,
+    keeps the real `/proc`.
+  - Step handler `specs/pipeline/steps/bl1570LivenessUndeterminedProcDirSteps.js`
+    runs both shell tests as subprocesses and greps each FILE for the seam;
+    it lands in the same commit as the feature (BL-233).
+
+  ## Not in scope
+
+  - `proc_fd_scan_lib.bb`, `fixture_reaper_sweep_lib.bb`,
+    `sandbox_sweep_lib.bb`, `process_table_lib.bb` and the determined-case
+    siblings (`test_operator_runtime_fixture_reaper_sweep.sh`,
+    `test_operator_runtime_sandbox_sweep.sh`, green) are not touched.
+
+notes: |
+  Register: backlog/standing-reds.tsv gains two `shell` rows naming this
+  ticket (same commit as this mint), first_seen 2026-09-14; QA removes
+  both in the land that turns the files green. Found by the specifier's
+  census of the 17 shell tests sourcing operator_runtime_sandbox.sh, run
+  on the coder's BL-1565 unowned-red note. Siblings minted the same pass:
+  BL-1567, BL-1568, BL-1569, BL-1571.
+
+qa_e2e_procedure: |
+  On the parcel commit, from the repo root, on this Linux host:
+  1. `bash swarmforge/scripts/test/test_operator_runtime_fixture_reaper_sweep_liveness_undetermined.sh`
+     and `bash swarmforge/scripts/test/test_operator_runtime_sandbox_sweep_liveness_undetermined.sh`
+     three times each -> `ALL CHECKS PASSED`, exit 0.
+  2. `grep -n SWARMFORGE_PROC_DIR <each file>` shows the seam on the
+     undetermined tick; `git diff main...HEAD -- swarmforge/scripts/proc_fd_scan_lib.bb swarmforge/scripts/fixture_reaper_sweep_lib.bb swarmforge/scripts/sandbox_sweep_lib.bb`
+     is empty.
+  3. `bash swarmforge/scripts/test/test_operator_runtime_fixture_reaper_sweep.sh`
+     and `..._sandbox_sweep.sh` (the determined-case siblings) still pass.
+  4. Break-then-restore: remove the seam from one file; on this host its
+     undetermined checks fail again; restore.
+  5. Both rows are gone from `backlog/standing-reds.tsv`.

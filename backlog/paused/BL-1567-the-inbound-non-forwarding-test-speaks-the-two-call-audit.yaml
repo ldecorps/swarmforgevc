@@ -1,0 +1,140 @@
+id: BL-1567
+title: "test_swarm_handoff_inbound_non_forwarding.sh is red on main with no owner: its case 03 asserts exit 0 on the FIRST call of a git_handoff draft, which has been the AUDIT_REQUIRED challenge since 2026-08-30 and exits non-zero since BL-1529 (7115aa7595, 2026-09-12); the case was green before only because the challenge exited 0 before delivery - it makes the protocol's second call and queues mailbox-only, without any audit bypass"
+milestone: M8
+type: defect
+severity: high
+# high (standing-red rule 2026-09-05): a shell-lane test file red on main is
+# a broken safety signal and throttles intake until owned. The code under
+# test is right; the test never learned the two-call protocol, the same
+# class as BL-1530's three files.
+status: todo
+epic: code-quality-gates
+priority: 8
+direction: swarm-reported
+depends_on: []
+mutation_cost: low
+# low: one shell test file under swarmforge/scripts/test and one
+# step-handler file; no production code, no Stryker target (BL-472); the
+# hardener records the fallback.
+slice_size_envelope: low
+required_stages: [coder, cleaner, architect, hardender, documenter, qa]
+
+acceptance: specs/features/BL-1567-the-inbound-non-forwarding-test-speaks-the-two-call-audit.feature
+
+# No consumer anchor is honest (BL-1235): nothing runs the standing shell
+# suite (BL-1526's gap). Handler pin only (BL-233).
+required_wiring:
+  - 'specs/pipeline/steps/bl1567InboundNonForwardingTwoCallSteps.js::registerSteps::the handler lands in the same parcel as the feature (BL-233, BL-1371)'
+
+human_approval: pending
+approval_context: >
+  A new feature file is authored here, so it needs a tap. No choice is
+  posed and there are no ruling_options. FIRM: swarm_handoff.bb is not
+  edited and no audit bypass (env var or fixture marker) is added - case 03
+  makes the identical second call the protocol requires and asserts the
+  first call's AUDIT_REQUIRED. FIRM: cases 01 and 02 (the refusals) keep
+  their single call - a refusal exits before the audit and needs no second
+  call. FIRM: the queueing send rides SWARMFORGE_MAILBOX_ONLY=1 with
+  SWARMFORGE_SKIP_DAEMON unset (test_mailbox_only_delivery.sh's shape),
+  because SKIP_DAEMON turns the fixture's missing tmux socket into a fatal
+  exit 1 on the delivery leg. Minted by the specifier on the coder's
+  unowned-red note of 2026-09-14 14:30Z (BL-1565 parcel); reproduced on
+  main 674d50539a; evidence
+  backlog/evidence/BL-1567-BL-1571-specifier-unowned-red-census-20260914.md.
+
+invariants:
+  - "Every shell test that sends a git_handoff through swarm_handoff asserts the queue on the second identical invocation, never the first, and none reaches the queue by bypassing the audit (BL-1530's invariant, one file more)."
+
+description: |
+  ## What is wrong
+
+  `swarmforge/scripts/test/test_swarm_handoff_inbound_non_forwarding.sh`
+  (BL-1302, lane shell, `standing` in suite-manifest.tsv) fails on `main`
+  674d50539a at its third case:
+
+  ```
+  PASS: a lone non-forwarding inbound blocks the forward
+  PASS: a non-forwarding inbound still blocks alongside an ordinary forwardable inbound
+  FAIL: ordinary-only in_process: expected exit 0, got 1: ... AUDIT_REQUIRED
+  HANDOFF_NOT_QUEUED
+  ```
+
+  Its `run_send` invokes `swarm_handoff.bb` ONCE per case. The first
+  invocation of any git_handoff draft is the self-audit challenge
+  (Article 2.3): it prints `AUDIT_REQUIRED` / `HANDOFF_NOT_QUEUED`,
+  queues nothing, and since BL-1529 (7115aa7595, 2026-09-12) exits
+  non-zero. Case 03's `[[ "$rc3" -eq 0 ]]` therefore cannot pass. Before
+  BL-1529 it passed because the challenge exited 0 BEFORE the delivery
+  leg - the case never verified a queue at all, so it was vacuous from
+  the day it landed (2026-08-30). BL-1530 fixed the three files that
+  were red on 2026-09-11; this one was still green then and turned red
+  the day after.
+
+  A second identical call is necessary but not sufficient in this
+  fixture: `run_send` exports `SWARMFORGE_SKIP_DAEMON=1` and the fixture
+  creates no `.swarmforge/tmux-socket`, so `deliver-parcel!` throws
+  "tmux socket file missing", which `swarm_handoff.bb` makes fatal
+  (exit 1) under SKIP_DAEMON. The established escape is
+  `test_mailbox_only_delivery.sh`'s `SWARMFORGE_MAILBOX_ONLY=1` with
+  `SWARMFORGE_SKIP_DAEMON` unset, which takes the `:skipped` sync
+  result and prints `HANDOFF QUEUED (mailbox only, no tmux inject):`.
+
+  Census (BL-1445, evidence file): 12 shell tests draft a git_handoff
+  and invoke swarm_handoff; 11 are green on main; this is the only red.
+
+  ## What is wanted
+
+  Case 03 tolerates the first call under both exit conventions
+  (`|| true`), asserts it printed `AUDIT_REQUIRED` and queued nothing,
+  then makes the identical second call and asserts exit 0 and the
+  mailbox-only queue grammar, with the non-forwarding refusal still
+  asserted absent on both calls. Cases 01 and 02 are unchanged: a
+  refusal exits before the audit. The file prints `ALL PASS` on `main`
+  and the register row this ticket adds is removed in the same land.
+
+  ## How (direction, not mandate)
+
+  - Give `run_send` a mode: the refusal cases keep `SWARMFORGE_SKIP_DAEMON=1`
+    (they never reach delivery); the queueing case exports
+    `SWARMFORGE_MAILBOX_ONLY=1` and unsets `SWARMFORGE_SKIP_DAEMON`, the
+    shape `test_swarm_handoff_refuses_coordinator_git_handoff.sh` (BL-1565,
+    in flight) and `test_handoff_state_dir_worktree_root.sh` (BL-1530) use.
+  - Assert the queue on the second call's stdout (`HANDOFF QUEUED (mailbox
+    only, no tmux inject):`) and on the outbox file existing, not on exit
+    code alone.
+  - Step handler `specs/pipeline/steps/bl1567InboundNonForwardingTwoCallSteps.js`
+    runs the real shell test as a subprocess and greps the FILE for the
+    two-call shape (bl1530ShellTestsSpeakTheAuditSteps.js's shape); it
+    lands in the same commit as the feature (BL-233).
+
+  ## Not in scope
+
+  - `swarm_handoff.bb`, `handoff_lib.bb` and the audit protocol are not
+    touched; no env var that skips the audit is added or read.
+  - The sibling `test_swarm_handoff_inbound_non_forwarding_batch.sh` is
+    green and untouched.
+
+notes: |
+  Register: backlog/standing-reds.tsv gains one `shell` row naming this
+  ticket (same commit as this mint), first_seen 2026-09-14; QA removes it
+  in the land that turns the file green. Found by the coder in the
+  BL-1565 parcel (evidence on the coder branch d0a3809e40); the specifier
+  reproduced it on main and ran the BL-1530 census again (12 files, this
+  the only red). Siblings minted the same pass from the same note and
+  census: BL-1568, BL-1569, BL-1570, BL-1571.
+
+qa_e2e_procedure: |
+  On the parcel commit, from the repo root:
+  1. `bash swarmforge/scripts/test/test_swarm_handoff_inbound_non_forwarding.sh`
+     five times -> `ALL PASS`, exit 0 every time; the output of case 03
+     shows `AUDIT_REQUIRED` once and `HANDOFF QUEUED (mailbox only, no tmux
+     inject):` once.
+  2. `git diff main...HEAD --name-only` names the shell test, the step
+     handler, `specs/pipeline/steps/index.js`, the feature, evidence, and
+     the register-row removal; `swarmforge/scripts/swarm_handoff.bb` and
+     `handoff_lib.bb` are unchanged (`git diff main...HEAD -- <path>` empty).
+  3. `grep -n 'SKIP_DAEMON\|MAILBOX_ONLY' <the test>` shows SKIP_DAEMON only
+     on the refusal cases and MAILBOX_ONLY on the queueing send.
+  4. Break-then-restore: delete the second call in case 03; the test fails
+     on `expected exit 0` and the feature's scenario 01 goes red; restore.
+  5. The row for this file is gone from `backlog/standing-reds.tsv`.
