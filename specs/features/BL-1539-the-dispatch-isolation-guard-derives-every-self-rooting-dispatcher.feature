@@ -1,3 +1,8 @@
+# mutation-stamp: sha256=a9a297307a23f05285f0a2c7b75bd1042fe95030b12e0b16e7e3718b2d3573ee
+# acceptance-mutation-manifest-begin
+# {"version":1,"tested_at":"2026-09-14T01:35:45.807510131Z","feature_name":"BL-1539 The dispatch-isolation guard derives every self-rooting dispatcher","feature_path":"/home/carillon/swarmforgevc/.worktrees/hardender/specs/features/BL-1539-the-dispatch-isolation-guard-derives-every-self-rooting-dispatcher.feature","background_hash":"5836a5966ed73230330761fc2f5d2409f3f1d5dad0569bc144aecead8e16826c","implementation_hash":"unknown","scenarios":[{"index":0,"name":"the derivation over the real scripts dir names each bb dispatcher","scenario_hash":"7b0a385a9f397d208f4f242b252cd5e97136662d89e8fe53ea3f2f8e134321da","mutation_count":2,"result":{"Total":2,"Killed":2,"Survived":0,"Errors":0},"tested_at":"2026-09-14T01:35:45.807510131Z"},{"index":2,"name":"a test executing a bb dispatcher through the real scripts dir is flagged","scenario_hash":"6c94196d6e083bb9d43073adfab6888e93d8b733edba4b60750c883e224b0963","mutation_count":2,"result":{"Total":2,"Killed":2,"Survived":0,"Errors":0},"tested_at":"2026-09-14T01:35:45.807510131Z"}]}
+# acceptance-mutation-manifest-end
+
 Feature: BL-1539 The dispatch-isolation guard derives every self-rooting dispatcher
 
   test_shell_fixture_dispatch_isolation.sh (BL-998) keeps shell tests from
