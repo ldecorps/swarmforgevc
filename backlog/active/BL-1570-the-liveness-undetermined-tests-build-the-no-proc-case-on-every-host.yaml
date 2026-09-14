@@ -116,3 +116,5 @@ qa_e2e_procedure: |
   4. Break-then-restore: remove the seam from one file; on this host its
      undetermined checks fail again; restore.
   5. Both rows are gone from `backlog/standing-reds.tsv`.
+
+assigned_to: coder
