@@ -1,5 +1,25 @@
 # SwarmForge VS Code Extension — Specification
 
+**Last Updated:** September 14, 2026 (BL-1538:
+`bl1028_promotion_refusal_property_runner.bb` hand-listed the `.bb` files it
+copies into its disposable root, and `promotion_gates_lib.bb` gained the same
+three `load-file` edges BL-1496 named for its shell sibling
+(`acceptance_pointer_gate_lib.bb`, `headroom_cap_raise_lib.bb`,
+`slice_size_envelope_gate_lib.bb`) — the control promotion died at load, P0
+failed, and every refusal property passed vacuously over a promotion that
+never ran. This runner is bb-authored, and the closure guard had no `kind`
+that could read what a bb fixture copies, so it could not have been enrolled
+even after being found. The runner now derives its copy set from
+`promotion_gates_cli.bb`'s transitive `load-file` closure instead of a hand
+list, exposes it behaviourally via a `--copy-into <dir>` flag, and is
+enrolled as the thirteenth entry in `bbFixtureClosureGate.js`'s `FIXTURES`
+map under a new `bb-copy` kind that runs the fixture and reads what actually
+lands, never its source. No production line changed. Acceptance:
+`specs/features/BL-1538-the-bl1028-property-runner-fixture-carries-its-bb-closure.feature`.
+How-to: `docs/how-to/BL-973-bb-fixture-closure-guards-and-suite-inventory.md`
+(thirteen guarded fixtures). No registered diagram depicts test-fixture
+wiring.)
+Prior entry —
 **Last Updated:** September 13, 2026 (BL-1496:
 `test_bl1028_promotion_obeys_integrity_refusal.sh` hand-listed the `.bb`
 files it copies into its disposable root, and `promotion_gates_lib.bb`
