@@ -472,6 +472,7 @@ test_swarm_handoff_bounce_never_stamped.sh	standing
 test_swarm_handoff_daemon_backup.sh	standing
 test_swarm_handoff_inbound_non_forwarding.sh	standing
 test_swarm_handoff_inbound_non_forwarding_batch.sh	standing
+test_swarm_handoff_refuses_coordinator_git_handoff.sh	standing
 test_swarm_handoff_sync_deliver.sh	standing
 test_swarm_heal_push_before_reset.sh	standing		
 test_swarm_identity_conf_parsing.sh	standing		

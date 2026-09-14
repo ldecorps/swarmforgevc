@@ -1,5 +1,34 @@
 # SwarmForge VS Code Extension — Specification
 
+**Last Updated:** September 14, 2026 (BL-1565: a `git_handoff` whose `to:`
+names `coordinator` — alone or among others, from any sender, whether that
+recipient came from the draft's own header or from BL-606 `required_stages`
+routing rewriting `to:` afterward — is now refused by `swarm_handoff.sh`
+before any mailbox write and before the self-audit challenge. The
+coordinator holds no code worktree and integrates nothing (Article 1.1);
+Article 2.4 makes a `non-forwarding: true` inbound merge-only, and QA's
+post-land close previously reached the coordinator in exactly that shape,
+swallowed merge-only twice in one day (BL-1527, parcel 002673, 2026-09-13;
+BL-1563, parcel 002698, 2026-09-14) and starved the whole mono-router swarm
+at `active_backlog_max_depth: 1` until an operator hand-note named the
+parcel as the close — three prose sites (`QA.prompt`, `coordinator.prompt`,
+`handoff-protocol.md`) had sanctioned the `git_handoff` shape for that hop
+even though Article 2.2 already names it a `note`. A pure decision lib,
+`git_handoff_recipient_guard_lib.bb` (`decide`), is consulted twice in
+`swarm_handoff.bb`'s sender: once on the literal draft `to:` header, once
+on the post-routing recipient set. A `note`, `awake`, or `rule_proposal` to
+the coordinator is unaffected, as is a `git_handoff` to any other role
+including the specifier. In the same parcel, BL-1536's feature file loses
+the two example rows asserting a stamped QA-to-coordinator forward
+(retired, never reworded — that shape can no longer reach a mailbox) and
+BL-950's four QA-to-coordinator scenarios plus their handler steps are
+retired the same way; BL-806's feature keeps the generic
+`non-forwarding` coverage. Acceptance:
+`specs/features/BL-1565-a-git-handoff-to-the-coordinator-is-refused-at-send.feature`.
+How-to: `docs/how-to/BL-1565-git-handoff-to-coordinator-refused-at-send.md`.
+`docs/diagrams/handoff-flow.mmd` gains the new send-time gate between
+`VALIDATE` and `WRITE`.)
+Prior entry —
 **Last Updated:** September 14, 2026 (BL-1538:
 `bl1028_promotion_refusal_property_runner.bb` hand-listed the `.bb` files it
 copies into its disposable root, and `promotion_gates_lib.bb` gained the same
