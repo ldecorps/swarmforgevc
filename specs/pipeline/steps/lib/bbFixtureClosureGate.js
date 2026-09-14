@@ -101,6 +101,15 @@ const FIXTURES = {
     entry: 'promotion_gates_cli.bb',
     kind: 'shell-copy',
   },
+  // BL-1538: the fourth promote_and_route_next.sh fixture of this surface to
+  // rot the same way, and the first one that is bb-authored rather than
+  // shell - no existing kind could read what it copies, which is why it
+  // could not have been enrolled even after it was found (the thirteenth
+  // entry, kind 'bb-copy').
+  'swarmforge/scripts/test/bl1028_promotion_refusal_property_runner.bb': {
+    entry: 'promotion_gates_cli.bb',
+    kind: 'bb-copy',
+  },
 };
 
 function requireFresh(absPath, stubVitestGlobals) {
@@ -119,6 +128,21 @@ function requireFresh(absPath, stubVitestGlobals) {
       if (saved[n] === undefined) delete global[n];
       else global[n] = saved[n];
     }
+  }
+}
+
+// BL-1538: the bb-side twin of shellCopyList - runs a bb-authored fixture
+// with `--copy-into <dir>` (the flag it exposes for exactly this) into a
+// scratch dir and returns what actually landed. Never reads the fixture's
+// source: a bb-copy fixture whose printed claim and real copy disagree is
+// caught because this runs the copy, not the claim.
+function bbCopyList(fixtureAbsPath) {
+  const dest = fs.mkdtempSync(path.join(os.tmpdir(), 'bl1538-gate-'));
+  try {
+    execFileSync('bb', [fixtureAbsPath, '--copy-into', dest], { encoding: 'utf8' });
+    return fs.readdirSync(dest).filter((f) => f.endsWith('.bb')).sort();
+  } finally {
+    fs.rmSync(dest, { recursive: true, force: true });
   }
 }
 
@@ -155,6 +179,10 @@ function effectiveList(scriptsDir, fixtureFile) {
       );
     }
     return { entry: declared.entry, files: [...declared.files].sort() };
+  }
+
+  if (spec.kind === 'bb-copy') {
+    return { entry: spec.entry, files: bbCopyList(abs) };
   }
 
   if (spec.kind === 'shell-sandbox') {
