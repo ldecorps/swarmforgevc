@@ -10,6 +10,8 @@ flowchart TD
   OUTSIDEROOT(["HANDOFF_DRAFT_OUTSIDE_ROOT:\nrefused before any write,\nnames draft path + resolved root"])
   VALIDATE{"swarm_handoff.bb validates:\ntype / to / priority present,\ncommit resolves to exactly\nONE commit object"}
   REJECT(["rejected: nothing is written,\nsender fixes the draft"])
+  RECIPIENTGUARD{"git-handoff-recipient-guard-lib:\ntype: git_handoff naming\ncoordinator - draft header\nor post-routing set (BL-1565)?"}
+  COORDREFUSED(["refused before any write,\nbefore AUDIT_REQUIRED: names\nthe close shape - type: note /\n'QA-approved <task> landed\n<sha> - bookkeep to done'"])
   WRITE["writes NN_<ts>_<seq>_from_X_to_Y.handoff\ninto recipient inbox/new/\n(NN = priority prefix, 00 = highest)"]
   SENT["copy retained in sender sent/"]
   DEPTH["prints active-backlog-depth\nWARNING if over cap"]
@@ -39,7 +41,10 @@ flowchart TD
   ROOTGUARD -->|outside root| OUTSIDEROOT
   ROOTGUARD -->|inside root| VALIDATE
   VALIDATE -->|invalid| REJECT
-  VALIDATE -->|valid| WRITE
+  VALIDATE -->|valid, type: git_handoff| RECIPIENTGUARD
+  VALIDATE -->|valid, type: note/\nrule_proposal/awake| WRITE
+  RECIPIENTGUARD -->|names coordinator| COORDREFUSED
+  RECIPIENTGUARD -->|other recipient| WRITE
   WRITE --> SENT
   WRITE --> DEPTH
   WRITE --> DAEMON
@@ -70,8 +75,8 @@ flowchart TD
   classDef store fill:#57606a,color:#fff,stroke:#32383f;
   classDef act fill:#1f6feb,color:#fff,stroke:#0b3d91;
   classDef daemon fill:#8250df,color:#fff,stroke:#4c2889;
-  class VALIDATE,CHASE,PICK,GUARD,DEFERCHECK,ROOTGUARD gate;
-  class REJECT,REQUEUE,STALE,OUTSIDEROOT bad;
+  class VALIDATE,CHASE,PICK,GUARD,DEFERCHECK,ROOTGUARD,RECIPIENTGUARD gate;
+  class REJECT,REQUEUE,STALE,OUTSIDEROOT,COORDREFUSED bad;
   class WRITE,SENT,CLAIM,DONE,WAIT,DEFERRED store;
   class DRAFT,READY,WORK,FORWARD,AUTOFIX,DEPTH act;
   class DAEMON,WAKE daemon;
