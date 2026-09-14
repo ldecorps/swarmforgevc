@@ -148,3 +148,5 @@ qa_e2e_procedure: |
      readable file instead of a directory; the property's own assertion
      `a window with an unreadable transcript claimed completeness` fails on
      that arm on the FIRST run (not one in ten); restore.
+
+assigned_to: coder
