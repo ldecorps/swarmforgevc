@@ -321,3 +321,10 @@
   stamp_ticket: BL-1557
   human_decision: null
   decided_at: null
+- commit: 1fc9065605
+  subject: "Hotfix: seats stop hunting for ready_for_next.sh at the worktree root"
+  detected_at: 2026-09-14
+  state: pending
+  stamp_ticket: null
+  human_decision: null
+  decided_at: null
