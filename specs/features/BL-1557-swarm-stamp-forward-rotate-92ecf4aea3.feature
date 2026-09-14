@@ -51,6 +51,10 @@ Feature: BL-1557 Stamp-off review of the resident-follows-its-forward hotfix
     And every mailbox file on the shared checkout is unchanged
 
   # BL-1557 swarm-stamp-forward-rotate-04
+  # Undecided means: state is neither certified nor waived, human_decision
+  # is null and decided_at is null. The row moves pending -> stamp-open the
+  # moment the mint links the stamp ticket, so the literal state pending is
+  # unreachable from inside the parcel (BL-1560 cleaner D1, 2026-09-14).
   Scenario: the stamp leaves the certification decision to the human
     When the review parcel completes
-    Then the ledger row for the reviewed commit still reads "pending"
+    Then the ledger row for the reviewed commit carries no human decision
