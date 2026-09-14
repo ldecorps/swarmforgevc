@@ -206,3 +206,5 @@ source: |
   flake, NOT a lane-timeout artifact." QA withheld BL-1570 under Article
   4.2, completed the parcel merge-only, and waits for a resume once the
   owning ticket exists.
+
+assigned_to: coder
