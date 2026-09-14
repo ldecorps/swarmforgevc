@@ -1,3 +1,8 @@
+# mutation-stamp: sha256=7ff802fce9cc9f47eb40cedeb589b6587986856d5f1ef6668a322e3732d2998a
+# acceptance-mutation-manifest-begin
+# {"version":1,"tested_at":"2026-09-14T00:42:01.911094805Z","feature_name":"BL-1538 The BL-1028 property runner's fixture carries its subject's bb closure","feature_path":"/home/carillon/swarmforgevc/.worktrees/hardender/specs/features/BL-1538-the-bl1028-property-runner-fixture-carries-its-bb-closure.feature","background_hash":"d0365ab4fd6962a1785d2a9126b56adf25ff4ecf2725c9adbdf97b89c8288b68","implementation_hash":"unknown","scenarios":[{"index":1,"name":"the closure the check derives is pinned, so an empty derivation cannot pass","scenario_hash":"c7d3a334b7247800634f237ea4f0320540b778c924eae60ffaeda97ae4b602e6","mutation_count":5,"result":{"Total":5,"Killed":5,"Survived":0,"Errors":0},"tested_at":"2026-09-14T00:42:01.911094805Z"}]}
+# acceptance-mutation-manifest-end
+
 Feature: BL-1538 The BL-1028 property runner's fixture carries its subject's bb closure
 
   bl1028_promotion_refusal_property_runner.bb builds a disposable root for
