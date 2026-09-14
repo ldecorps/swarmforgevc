@@ -1,5 +1,36 @@
 # SwarmForge VS Code Extension — Specification
 
+**Last Updated:** September 14, 2026 (BL-1566: an Article 4.2 hold is now a
+durable record, not an evidence-file sentence. QA withheld BL-1555 on a red
+with no open ticket, completed the withheld parcel so the rotation resident
+could move on (Article 4.2's own parking exception), and when the owner
+ticket was minted and a resume note reached QA, QA dequeued and completed
+that note in ten seconds with nothing to re-gate (2026-09-14, 12:16:49Z–
+12:16:59Z) — the swarm starved at `active_backlog_max_depth: 1` for eleven
+minutes until an operator hand-note named the parcel. `qa_hold_lib.bb`'s
+pure `release?` now decides a hold releases only when every red it names
+has a standing-red register row whose owner ticket sits in
+`backlog/paused/` or `backlog/active/` (a `backlog/done/` ticket owns
+nothing, an unnamed red is unowned); `status-lines` prints a `RELEASED
+<task> <commit>` line ahead of the per-red `HOLD <task> <commit>
+red=<path> owner=<id|none>` detail; `blocks-completion?` refuses to let a
+`note` inbound complete while a released hold is open, never a
+`git_handoff` inbound (the parking exception is unchanged). Two one-line
+calls wire the decisions into the live QA paths: `ready_for_next_task.bb`
+prints `status-lines` before in_process resume and before `NO_TASK` on
+every QA turn while the store is non-empty; `done_with_current_task.bb`
+refuses a `note` completion with `HOLD_RELEASED <task> <commit>` and
+leaves the note in `in_process`. `qa_hold_cli.bb` gives QA three verbs
+(`open`, `status`, `close --outcome approved|bounced|abandoned`) over
+`.swarmforge/qa-holds/<task>.json` at the project root (never
+worktree-local, so the record is visible from the master checkout
+regardless of which worktree opened it); `close` is the only exit from the
+open store, moving the record to `.../qa-holds/closed/<task>.json`. No
+per-red parsing of note text anywhere. Acceptance:
+`specs/features/BL-1566-an-article-42-hold-is-a-record-qa-resumes-from.feature`.
+How-to: `docs/how-to/BL-1566-article-42-hold-is-a-durable-record.md`. No
+diagram depicts QA hold-store internals.)
+Prior entry —
 **Last Updated:** September 14, 2026 (BL-1565: a `git_handoff` whose `to:`
 names `coordinator` — alone or among others, from any sender, whether that
 recipient came from the draft's own header or from BL-606 `required_stages`
