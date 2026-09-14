@@ -93,6 +93,10 @@ OUT="$(cd "$CLEAN_WT" && SWARMFORGE_ROLE=cleaner bb "$READY_TASK")"
 echo "$OUT" | grep -q '^TASK:' || fail "03: expected TASK with in_process work, got: $OUT"
 echo "$OUT" | grep -q '^ROTATE_HOME$' && fail "03: must not ROTATE_HOME while in_process holds work"
 pass "03: non-home role with in_process work prints TASK"
+# Hotfix 2026-09-14: the cleaner's held parcel above is actionable mail, and
+# a seat with no parcel to follow now rotates to the router's preferred
+# mailbox (case 16). Clear it so 04 still exercises the pure home fallback.
+rm -f "$CLEAN_WT/.swarmforge/handoffs/inbox/in_process/10_claim1.handoff"
 
 # 04: ready_for_next.sh wrapper execs rotate_to_role on ROTATE_HOME
 FAKE_BIN="$ROOT/bin"
@@ -128,6 +132,9 @@ OUT="$(cd "$HARD_WT" && SWARMFORGE_ROLE=hardener bb "$READY_BATCH")"
 echo "$OUT" | grep -q '^BATCH:' || fail "06: expected BATCH with dequeueable new work, got: $OUT"
 echo "$OUT" | grep -q '^ROTATE_HOME$' && fail "06: must not ROTATE_HOME while new/ holds dequeueable batch work"
 pass "06: batch-mode non-home role with dequeueable new work prints BATCH"
+# Hotfix 2026-09-14: same isolation as after 03 - the batch 06 claimed is
+# held in_process work the router would now send an idle seat to.
+rm -rf "$HARD_WT/.swarmforge/handoffs/inbox/in_process"/batch_*
 
 # 07: ready_for_next.sh wrapper dispatches a batch-mode role's ROTATE_HOME
 # too - proves the dispatcher's task/batch routing (dispatch_lib.bb) doesn't
@@ -237,5 +244,63 @@ OUT="$(cd "$HARD_WT" && SWARMFORGE_ROLE=hardener bb "$READY_BATCH")"
 echo "$OUT" | head -n1 | grep -q '^ROTATE_HOME$' || fail "15: batch expected ROTATE_HOME first line, got: $OUT"
 echo "$OUT" | grep -q '^ROTATE_TO: architect$' || fail "15: batch expected ROTATE_TO: architect, got: $OUT"
 pass "15: batch-mode role rotates to the recipient of the parcel it just forwarded"
+
+# ── Hotfix 2026-09-14: no parcel to follow -> the router's own next target ─
+# The documenter's forward to the architect is consumed (gone from the
+# architect's inbox), so forward-rotate-target falls back to home; the
+# dispatcher then asks the router (mono_router_rows_lib) where the chase
+# sweep would send the resident and goes there directly.
+rm -f "$ARCH_WT/.swarmforge/handoffs/inbox/new/00_${FWD_ID}_to_architect_for_architect.handoff"
+# ... and case 15's hardener forward too: an older priority-00 parcel there
+# would legitimately win the router's starve rule over anything newer.
+rm -f "$ARCH_WT/.swarmforge/handoffs/inbox/new/00_${HFWD_ID}_to_architect_for_architect.handoff"
+NOW_ISO="$(date -u +%Y-%m-%dT%H:%M:%S.000000000Z)"
+OLD_ISO="$(date -u -d '25 minutes ago' +%Y-%m-%dT%H:%M:%S.000000000Z 2>/dev/null || date -u -v-25M +%Y-%m-%dT%H:%M:%S.000000000Z)"
+
+# 16: a priority-00 git_handoff waits at the hardener -> ROTATE_TO hardener
+printf 'id: rt16\nfrom: cleaner\nto: hardener\npriority: 00\ntype: git_handoff\ntask: bl2-thing\ncommit: 0123456789\ncreated_at: %s\n\nmerge_and_process cleaner 0123456789\n' "$NOW_ISO" \
+  > "$HARD_WT/.swarmforge/handoffs/inbox/new/00_rt16_from_cleaner_to_hardener_for_hardener.handoff"
+OUT="$(cd "$DOC_WT" && SWARMFORGE_ROLE=documenter bb "$READY_TASK")"
+echo "$OUT" | head -n1 | grep -q '^ROTATE_HOME$' || fail "16: expected ROTATE_HOME first line, got: $OUT"
+echo "$OUT" | grep -q '^ROTATE_TO: hardener$' || fail "16: expected ROTATE_TO: hardener from the router, got: $OUT"
+echo "$OUT" | grep -q '^ROTATE_REASON: router-preferred$' || fail "16: expected router-preferred, got: $OUT"
+pass "16: with no parcel to follow, the resident rotates to the router's preferred mailbox"
+rm -f "$HARD_WT/.swarmforge/handoffs/inbox/new/00_rt16_from_cleaner_to_hardener_for_hardener.handoff"
+
+# 17: only a FRESH note waits anywhere -> not actionable (BL-576) -> home
+printf 'id: rt17\nfrom: coordinator\nto: hardener\npriority: 10\ntype: note\nmessage: fresh broadcast\ncreated_at: %s\n\nbody\n' "$NOW_ISO" \
+  > "$HARD_WT/.swarmforge/handoffs/inbox/new/10_rt17_from_coordinator_to_hardener_for_hardener.handoff"
+OUT="$(cd "$DOC_WT" && SWARMFORGE_ROLE=documenter bb "$READY_TASK")"
+echo "$OUT" | grep -q '^ROTATE_TO: coder$' || fail "17: expected ROTATE_TO: coder when only a fresh note waits, got: $OUT"
+echo "$OUT" | grep -q '^ROTATE_REASON: recipient-not-holding$' || fail "17: expected recipient-not-holding, got: $OUT"
+pass "17: a fresh note is not actionable, so the fallback is still home"
+rm -f "$HARD_WT/.swarmforge/handoffs/inbox/new/10_rt17_from_coordinator_to_hardener_for_hardener.handoff"
+
+# 18: an AGED note (past note_actionable_after_ms) at the hardener -> hardener
+printf 'id: rt18\nfrom: coordinator\nto: hardener\npriority: 10\ntype: note\nmessage: aged broadcast\ncreated_at: %s\n\nbody\n' "$OLD_ISO" \
+  > "$HARD_WT/.swarmforge/handoffs/inbox/new/10_rt18_from_coordinator_to_hardener_for_hardener.handoff"
+OUT="$(cd "$DOC_WT" && SWARMFORGE_ROLE=documenter bb "$READY_TASK")"
+echo "$OUT" | grep -q '^ROTATE_TO: hardener$' || fail "18: expected ROTATE_TO: hardener for an aged note, got: $OUT"
+echo "$OUT" | grep -q '^ROTATE_REASON: router-preferred$' || fail "18: expected router-preferred, got: $OUT"
+pass "18: an aged note is actionable and the resident goes straight to it"
+
+# 19: the CLI answers the same question the dispatcher asked
+CLI_OUT="$(bb "$SCRIPT_DIR/../mono_router_rows_cli.bb" "$ROOT")"
+[[ "$CLI_OUT" == "hardener" ]] || fail "19: mono_router_rows_cli.bb expected hardener, got '$CLI_OUT'"
+rm -f "$HARD_WT/.swarmforge/handoffs/inbox/new/10_rt18_from_coordinator_to_hardener_for_hardener.handoff"
+CLI_OUT="$(bb "$SCRIPT_DIR/../mono_router_rows_cli.bb" "$ROOT")"
+[[ "$CLI_OUT" == "none" ]] || fail "19: mono_router_rows_cli.bb expected none on an idle swarm, got '$CLI_OUT'"
+pass "19: mono_router_rows_cli.bb prints the router's target, or none"
+
+# 20: the batch dispatcher wires the same router fallback
+rm -rf "$HARD_WT/.swarmforge/handoffs/inbox/in_process"/batch_* "$HARD_WT/.swarmforge/handoffs/inbox/new"/*.handoff
+rm -f "$ARCH_WT/.swarmforge/handoffs/inbox/new/00_${HFWD_ID}_to_architect_for_architect.handoff"
+printf 'id: rt20\nfrom: cleaner\nto: documenter\npriority: 00\ntype: git_handoff\ntask: bl2-thing\ncommit: 0123456789\ncreated_at: %s\n\nmerge_and_process cleaner 0123456789\n' "$NOW_ISO" \
+  > "$DOC_WT/.swarmforge/handoffs/inbox/new/00_rt20_from_cleaner_to_documenter_for_documenter.handoff"
+OUT="$(cd "$HARD_WT" && SWARMFORGE_ROLE=hardener bb "$READY_BATCH")"
+echo "$OUT" | grep -q '^ROTATE_TO: documenter$' || fail "20: batch expected ROTATE_TO: documenter from the router, got: $OUT"
+echo "$OUT" | grep -q '^ROTATE_REASON: router-preferred$' || fail "20: batch expected router-preferred, got: $OUT"
+pass "20: batch-mode role with no parcel to follow rotates to the router's preferred mailbox"
+rm -f "$DOC_WT/.swarmforge/handoffs/inbox/new/00_rt20_from_cleaner_to_documenter_for_documenter.handoff"
 
 echo "test_ready_for_next_rotate_home: ALL CHECKS PASSED"
