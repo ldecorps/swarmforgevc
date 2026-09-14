@@ -139,3 +139,5 @@ qa_e2e_procedure: |
   5. Diff the parcel's merge into main against BOTH parents; the
      operator_runtime.bb hunk survives. The row for this file is gone from
      `backlog/standing-reds.tsv`.
+
+assigned_to: coder
