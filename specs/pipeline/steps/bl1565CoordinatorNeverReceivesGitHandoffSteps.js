@@ -22,10 +22,10 @@
 
 const assert = require('node:assert/strict');
 const fs = require('node:fs');
-const os = require('node:os');
 const path = require('node:path');
 const { execFileSync, spawnSync } = require('node:child_process');
 const { afterEach } = require('node:test');
+const { mkSocketFixtureRoot, SHORT_FIXTURE_BASE } = require('./lib/socketFixtureRoot');
 
 const REPO_ROOT = path.join(__dirname, '..', '..', '..');
 const SCRIPTS_DIR = path.join(REPO_ROOT, 'swarmforge', 'scripts');
@@ -70,15 +70,22 @@ function bbDecide(type, recipients) {
 }
 
 // ── fixture project (Background, scenarios 02/03) ──────────────────────
-const FIXTURE_PREFIX = 'aps-bl1565-coordinator-refused-';
+// BL-948: this fixture builds a placeholder `.swarmforge/tmux-socket`
+// pointer file (see initFixture below), so its root must come from the
+// short-base helper, never a raw os.tmpdir()-rooted mkdtemp - the guard
+// (socketFixtureShortRootGuard.test.js) refuses any step file that builds
+// or references a tmux-socket path while rooted at the long macOS
+// os.tmpdir() base, whether or not the socket is ever live.
+const FIXTURE_PREFIX = 'bl1565-coord-';
+
 let trackedRoots = [];
 
 // BL-971: sweep by prefix BEFORE the run too - a killed run traps nothing.
 function sweepStaleFixtures() {
-  const tmp = os.tmpdir();
-  for (const entry of fs.readdirSync(tmp)) {
+  const base = SHORT_FIXTURE_BASE;
+  for (const entry of fs.readdirSync(base)) {
     if (entry.startsWith(FIXTURE_PREFIX)) {
-      fs.rmSync(path.join(tmp, entry), { recursive: true, force: true });
+      fs.rmSync(path.join(base, entry), { recursive: true, force: true });
     }
   }
 }
@@ -109,7 +116,7 @@ function writeRolesTsv(state) {
 }
 
 function initFixture() {
-  const root = fs.mkdtempSync(path.join(os.tmpdir(), FIXTURE_PREFIX));
+  const root = mkSocketFixtureRoot(FIXTURE_PREFIX);
   trackedRoots.push(root);
   execFileSync('git', ['init', '-q'], { cwd: root });
   execFileSync('git', ['-c', 'user.email=t@t', '-c', 'user.name=t', 'commit', '-q', '--allow-empty', '-m', 'seed'], { cwd: root });
