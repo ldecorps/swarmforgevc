@@ -1,3 +1,8 @@
+# mutation-stamp: sha256=e2696386fe05e6ca79a321e84aff8c475ce4f7ac3316b78778d8a100bced6b4a
+# acceptance-mutation-manifest-begin
+# {"version":1,"tested_at":"2026-09-14T09:26:21.261826002Z","feature_name":"BL-1560 Stamp-off review of the seats-stop-hunting-for-ready_for_next hotfix","feature_path":"/home/carillon/swarmforgevc/.worktrees/hardender/specs/features/BL-1560-swarm-stamp-missing-script-path-1fc9065605.feature","background_hash":"74234e98afe7498fb5daf1f36ac2d78acc339464f950703b8c019892f982b90b","implementation_hash":"unknown","scenarios":[{"index":0,"name":"the classifier names the new class only for a root-level script miss and keeps the older classes' precedence","scenario_hash":"be3dad3df18eb61e30f8c9348b9601358db8572c0ff8c9fd44f39c7e8376f633","mutation_count":12,"result":{"Total":12,"Killed":12,"Survived":0,"Errors":0},"tested_at":"2026-09-14T09:26:21.261826002Z"},{"index":1,"name":"the heal repoints only bare root-level helper tokens and declines otherwise","scenario_hash":"d2796ca5981772496c8c2ee73c0bf0375da59124310352bc504b643faef3fbf7","mutation_count":10,"result":{"Total":10,"Killed":10,"Survived":0,"Errors":0},"tested_at":"2026-09-14T09:26:21.261826002Z"}]}
+# acceptance-mutation-manifest-end
+
 Feature: BL-1560 Stamp-off review of the seats-stop-hunting-for-ready_for_next hotfix
 
   BL-848 review-only certification of landed commit 1fc9065605 (2026-09-14).
