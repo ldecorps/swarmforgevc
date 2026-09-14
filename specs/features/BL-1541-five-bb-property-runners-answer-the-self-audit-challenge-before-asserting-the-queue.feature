@@ -1,3 +1,8 @@
+# mutation-stamp: sha256=6daf755a169c2eb44cdef3ec748390a04134f097093efe7ba94f31940deef42c
+# acceptance-mutation-manifest-begin
+# {"version":1,"tested_at":"2026-09-14T05:45:55.711171253Z","feature_name":"BL-1541 Five bb property runners answer the self-audit challenge before asserting the queue","feature_path":"/home/carillon/swarmforgevc/.worktrees/hardender/specs/features/BL-1541-five-bb-property-runners-answer-the-self-audit-challenge-before-asserting-the-queue.feature","background_hash":"645ac87eff921ad223fca6d76ff40344c5efd88c8477ad8bded75939d82599a4","implementation_hash":"unknown","scenarios":[{"index":0,"name":"the population of git_handoff-drafting bb runners is pinned, so a missing runner cannot pass by absence","scenario_hash":"e77152d09f1480df6d90860b9ce2adf8770ddfe18c143eee6b9ed06ef4da67f6","mutation_count":5,"result":{"Total":5,"Killed":5,"Survived":0,"Errors":0},"tested_at":"2026-09-14T05:45:46.099350957Z"},{"index":1,"name":"the helper returns only the identical second call's result, queued or refused","scenario_hash":"a3a18ca66763c1cf958a49524ac03f019f7a24dde6c836a92db9ff79d16a64c4","mutation_count":4,"result":{"Total":4,"Killed":4,"Survived":0,"Errors":0},"tested_at":"2026-09-14T05:45:46.099350957Z"}]}
+# acceptance-mutation-manifest-end
+
 Feature: BL-1541 Five bb property runners answer the self-audit challenge before asserting the queue
 
   Since 44d2d42591 (2026-08-30) the first swarm_handoff.bb invocation of a
