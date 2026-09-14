@@ -1,0 +1,198 @@
+id: BL-1559
+title: "bl983_stage_queue_property_runner.bb is flaky red on main with no owner: its two-seat reach floor (>= 6 of 16) is asserted over a fair 50/50 seat-count draw it only samples, so about one run in ten fails on generator coverage with every property holding (architect 2 of 4 runs at two-seat 5, 2026-09-14) - the runner's draw schedule is constructed so every floor is met on every run and stays asserted"
+milestone: M8
+type: defect
+severity: high
+# high (standing-red rule 2026-09-05): a bb standing-suite file that fails on
+# main about one run in ten is a broken safety signal, and its register row
+# names a closed ticket so it reads unowned and throttles intake (BL-1429).
+# Production is unaffected: on every drawn pack the three BL-983 invariants
+# hold; the failing assertion is the generator's own reach.
+status: todo
+epic: code-quality-gates
+priority: 8
+direction: swarm-reported
+depends_on: []
+mutation_cost: low
+# low: one bb test runner and one new bb test lib under
+# swarmforge/scripts/test, one step-handler file. No production code, so no
+# Stryker target and Babashka has no mutation/CRAP/DRY wired (BL-472); the
+# hardener records the fallback.
+slice_size_envelope: low
+required_stages: [coder, cleaner, architect, hardender, documenter, qa]
+
+acceptance: specs/features/BL-1559-the-bl983-runner-constructs-its-seat-schedule.feature
+
+# No consumer anchor is honest here (BL-1235): the live consumer is the bb
+# standing suite, run by name, which is the thing that flakes; an anchor on
+# the runner's own load-file line would be satisfied by this parcel's edit.
+# The handler entry is the BL-233 in-parcel pin.
+required_wiring:
+  - 'specs/pipeline/steps/bl1559SeatScheduleConstructedSteps.js::registerSteps::the handler lands in the same parcel as the feature (BL-233)'
+
+human_approval: pending
+approval_context: >
+  A new feature file is authored here, so it needs a tap. No choice is
+  posed and there are no ruling_options. FIRM: no floor in the runner is
+  lowered, dropped, or made rarer-to-miss by raising the draw count -
+  BL-1062's rule is that a floor is met BY CONSTRUCTION, and a floor that is
+  merely usually met is still a flake (same FIRM line as BL-1555). FIRM: the
+  three BL-983 invariants and every assertion in the runner keep their text
+  and meaning; only how each draw's seat count and parcel count are chosen
+  changes. FIRM: swarm_handoff.bb, ready_for_next_task.bb and every other
+  production script are untouched, and the helper is a test lib under
+  swarmforge/scripts/test/lib/. Minted by the specifier on the architect's
+  spec-gap note of 2026-09-14 05:42Z from the BL-1541 parcel (e85b74df4d).
+
+invariants:
+  - "A reach floor is met by construction: every value a floor names is produced by a draw plan that yields it on every run, never by a uniform draw the floor merely hopes will cover it."
+
+description: |
+  ## What is wrong
+
+  `swarmforge/scripts/test/bl983_stage_queue_property_runner.bb` draws its seat count per iteration as `n-seats (+ 2 (rand-int* 2))`, a
+  fair coin between a two-seat and a three-seat pack, over `runs` = 16
+  iterations, and then asserts the absolute reach floors
+  `{:two-seat 6 :three-seat 3 :all-busy 4 :redeliver 4 :forward 4}`
+  (line 203). Sixteen fair coins land on two-seat fewer than 6 times with
+  probability 6885/65536, about 10.5%; three-seat below 3 adds 0.2%. So
+  about one run in ten fails with
+  `generator coverage: two-seat reached only 5 of 16 (floor 6)` while all
+  three invariants held on every draw. Same defect class as BL-1555 and
+  BL-1553 (a reach floor asserted after a sampled draw), in the bb lane.
+
+  The all-busy floor is sampled the same way: a draw is all-busy when
+  `n-parcels` (`1 + rand-int (n-seats + 1)`) reaches `n-seats`, which a
+  two-seat draw does 2 times in 3 and a three-seat draw 1 time in 2; 16
+  draws miss the floor of 4 about one run in 650 (simulated). Rarer, but
+  the same shape, and it rides the same draw plan, so it is constructed in
+  the same edit. The redeliver and forward floors cannot be missed: their
+  condition (some seat holds an in_process parcel after the polls) is true
+  on every draw with at least one parcel.
+
+  | who | where | result |
+  |---|---|---|
+  | architect, 2026-09-14 | BL-1541 parcel, 4 full runs | 2 of 4 fail at `:two-seat 5`, 2 pass |
+  | specifier, 2026-09-14 | exact binomial on the source | P(two-seat < 6 of 16) = 0.1051, P(three-seat < 3) = 0.0021 |
+  | specifier, 2026-09-14 | 6 full runs on main f939c2f357 | 6 green, two-seat 7..9 (floor 6) - with the architect's runs, 10 runs, 2 misses, both at two-seat 5 |
+
+  Latent since the runner landed with BL-983 (2026-08-20) but unobservable
+  until 2026-09-14: from 2026-08-30 the runner died earlier every run on
+  the single-call audit miscount (BL-1541), and only its fix let the run
+  reach the coverage check. The register row for this file (keyed per
+  file) named BL-1541, which closed on 2026-09-14, so the row read
+  unowned; this ticket takes the row over rather than adding a second.
+  Evidence:
+  `backlog/evidence/BL-1559-specifier-unowned-red-repro-20260914.md`.
+
+  ## What is wanted
+
+  - Every floor in the runner is met by construction on every run and
+    stays asserted at its value: two-seat >= 6, three-seat >= 3, all-busy
+    >= 4, redeliver >= 4, forward >= 4, absolute and never scaled.
+  - The draw plan lives in a bb test lib the acceptance can drive in
+    milliseconds without shelling the whole runner (the runner takes a
+    minute or more per run and cannot be shelled per mutant inside the
+    BL-1358 ceiling - the BL-1541 amendment of 2026-09-14 retired exactly
+    that scenario shape; do not reintroduce it):
+    `swarmforge/scripts/test/lib/draw_schedule.bb`, ns `draw-schedule-lib`,
+    fn `(seat-schedule runs rng)` returning a vector of `runs` draw plans,
+    each `{:n-seats 2|3 :n-parcels k}` with `k` in 1..n-seats+1 (the
+    runner's existing ranges), in an order shuffled with `rng`. For any
+    `runs` >= 9 the vector holds at least 6 plans with `:n-seats 2`, at
+    least 3 with `:n-seats 3`, and at least 4 with `:n-parcels >=
+    :n-seats`. Below 9 draws the quotas cannot fit and the runner's
+    absolute floors fail as they do today; that is not a defect.
+  - The runner consumes the schedule for its per-draw `n-seats` and
+    `n-parcels` and prints its existing `generator coverage:` line from the
+    counts it actually reached.
+  - The runner is green on `main`, run by name with `bb`, 15 of 15 times
+    (QA e2e step 1), and the register row for this file is removed in the
+    same land that turns it green.
+
+  ## How (direction, not mandate)
+
+  - Build the schedule from quota cells - six two-seat plans, three
+    three-seat plans, and enough plans with `n-parcels >= n-seats` to reach
+    four (an all-busy cell can overlap a seat cell: a two-seat plan with
+    2 or 3 parcels is both) - fill the remaining `runs - 9` plans from
+    the runner's existing uniform draw, then `shuffle*` the vector with the
+    runner's `rng` so the interleaving of pack shapes across draws stays
+    random. The runner's `dotimes` body then destructures the plan for
+    draw `i` instead of calling `rand-int*` for `n-seats`/`n-parcels`.
+    Everything after the draw (seat names, tasks, sends, polls, the three
+    invariants, the all-busy/redeliver/forward probes) is untouched.
+  - Step handler `specs/pipeline/steps/bl1559SeatScheduleConstructedSteps.js`
+    drives the REAL helper: one `bb -e` per scenario row that load-files
+    `draw_schedule.bb` and prints the schedules for 20 fixed seeds as EDN
+    or JSON; the handler counts cells per schedule. Scenario 03 reads the
+    runner's source for the floor literals and the helper's load-file
+    line. Land the handler in the same commit as the feature (BL-233).
+  - Restate the runner's header: the reach floors paragraph says the seat
+    and parcel counts are scheduled by `draw_schedule.bb`, and the
+    non-vacuity list gains the break-then-restore of QA step 4.
+
+  ## Not in scope
+
+  - The BL-983 feature file and its handlers, `swarm_handoff.bb`,
+    `ready_for_next_task.bb`, `send_through_audit.bb`.
+  - The other four runners BL-1541 greened (bl982, bl992, bl991, bl951):
+    each was re-run green on main by the specifier on 2026-09-14 and their
+    stale register rows are retired in a sibling commit, no owner minted
+    (a green test needs none, 2026-09-07 rule).
+  - Wiring the bb runner suite into a standing lane (BL-1524/BL-1526).
+
+notes: |
+  - Minted 2026-09-14 by the specifier the same pass the architect's note
+    arrived (BL-1541 parcel, e85b74df4d, "bl983 two-seat floor ~10%
+    flakes"), per the standing-red rule (Article 3.2.4, 2026-09-05
+    amendment): type defect, severity high. The register's existing bb row
+    for bl983 (first_seen 2026-08-30, owner BL-1541) is rewritten in the
+    sibling retirement commit 28db2441b0 to name this ticket with first_seen 2026-09-14 - the date
+    THIS red was first sighted; the earlier red on the same file was
+    BL-1541's and is closed.
+  - Not folded into BL-1555 (paused, approved): same defect class, but
+    BL-1555 is two vitest property files under extension/test driven by the
+    properties lane, and this is a bb runner driven by `bb` by name - a
+    different lane, different helper (`test/helpers/reachFloors.js` cannot
+    serve a bb file), and BL-1555 is already approved (re-pending posts no
+    fresh ask, BL-1455). Its invariant is reused here word-for-word so the
+    architect reviews both against the same property.
+  - Scenario 01 deliberately drives the helper, not the runner: shelling
+    bl983 per mutant is what the BL-1541 amendment had to retire against
+    the BL-1358 300 s ceiling. The runner's own green is QA's e2e step 1.
+
+qa_e2e_procedure: |
+  On the parcel commit, from the repo root:
+  1. `for i in $(seq 1 15); do bb swarmforge/scripts/test/bl983_stage_queue_property_runner.bb || echo FAIL; done`
+     -> 15 of 15 print `ALL PROPERTIES HOLD` and no FAIL line; every
+     `generator coverage:` line shows `:two-seat` >= 6, `:three-seat` >= 3
+     and `:all-busy` >= 4 (the unfixed runner fails about 1 run in 10;
+     15 green runs of the unfixed runner happen about 1 time in 5, so the
+     coverage counts, not the pass count alone, are the evidence).
+  2. `PROPERTY_RUNS=9 bb swarmforge/scripts/test/bl983_stage_queue_property_runner.bb`
+     twice -> green both times with `:two-seat 6 :three-seat 3` exactly and
+     `:all-busy` >= 4 (the quotas fill the whole schedule at 9 draws; the
+     unfixed runner cannot pass this).
+  3. Acceptance resolving all three scenarios of the feature file.
+  4. Break-then-restore: make `seat-schedule` return only three-seat plans;
+     step 1's first run fails with
+     `generator coverage: two-seat reached only 0 of 16 (floor 6)`; restore.
+  5. `git diff main...HEAD --name-only` names the runner, the new lib, the
+     step handler, the feature, evidence and the register row removal;
+     `swarmforge/scripts/*.bb` outside `test/` is unchanged and the five
+     floor literals of scenario 03 are still present in the runner.
+  6. `bb swarmforge/scripts/standing_red_register_cli.bb .` after landing
+     reports no row for `bl983_stage_queue_property_runner.bb` and
+     `"unowned":[]`.
+
+source: |
+  Architect note, 2026-09-14 05:42Z, from the BL-1541 parcel (evidence
+  e85b74df4d): "bl983's :two-seat coverage floor (>= 6 of 16 draws,
+  n-seats = 2 + rand-int*(2), i.e. a fair 50/50 draw per iteration) has a
+  Binomial(16, 0.5) chance of ~10.5% of legitimately landing below 6 on
+  any given run - pre-existing on main, unrelated to this fix, and newly
+  OBSERVABLE only because the two-call fix lets the runner reach this
+  check at all. Reproduced: 2 of 4 full local runs hit exactly :two-seat
+  5." Routed as a note, not a bounce, because BL-1541's constraints forbade
+  loosening any floor - correctly.
