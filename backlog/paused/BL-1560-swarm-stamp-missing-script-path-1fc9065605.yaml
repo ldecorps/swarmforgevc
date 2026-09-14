@@ -36,7 +36,7 @@ acceptance: specs/features/BL-1560-swarm-stamp-missing-script-path-1fc9065605.fe
 required_wiring:
   - 'specs/pipeline/steps/bl1560SwarmStampMissingScriptPathSteps.js::registerSteps::the handler lands in the same parcel as the feature (BL-233, BL-1371)'
 
-human_approval: pending
+human_approval: approved
 approval_context: >
   A new feature file is authored here, so it needs a tap. No choice is
   posed and there are no ruling_options. What needs sign-off is the
@@ -283,3 +283,9 @@ qa_e2e_procedure: |
      script carries the nudge).
   7. After done: the human runs `bb swarmforge/scripts/hotfix_ledger_update.bb .
      --decide 1fc9065605 approved|waived` and commits the ledger.
+
+  2026-09-14T08:16:43Z coordinator recheck: promote_and_route_next.sh
+  refused (human_approval: pending). An approval ask for BL-1560 is already
+  posted on Telegram (telegram-approval-ask-messages.json); siblings
+  BL-1561/BL-1562 are also pending the same gate. Holding all three in
+  paused/ until human_approval flips to approved.
