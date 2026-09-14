@@ -1,10 +1,11 @@
-# Twelve guarded fixture copy-lists, and a standing test-suite inventory (BL-973)
+# Thirteen guarded fixture copy-lists, and a standing test-suite inventory (BL-973)
 
-Twelve fixtures build a disposable root by copying a named list of `.bb` files,
-then shell out to a real `bb <entry-point>` subprocess. Babashka resolves
-every `load-file` relative to the loading file, so a file missing from the
-copied set is missing from the fixture, and the subprocess dies at load time —
-before the scenario or test reaches the behavior it means to exercise.
+Thirteen fixtures build a disposable root by copying a named list of `.bb`
+files, then shell out to a real `bb <entry-point>` subprocess. Babashka
+resolves every `load-file` relative to the loading file, so a file missing
+from the copied set is missing from the fixture, and the subprocess dies at
+load time — before the scenario or test reaches the behavior it means to
+exercise.
 
 This is the same failure mode [BL-944](BL-944-operator-runtime-fixture-closure-guard.md)
 closed for one list (`operatorRuntimeBbFixtureFiles.js`, driving
@@ -41,6 +42,7 @@ each fixture with the entry point it actually drives:
 | `swarmforge/scripts/test/test_promote_and_route_next_priority.sh` | `promotion_gates_cli.bb` | runs `bb_closure_copy.sh`'s `copy_bb_closure` and reads what lands |
 | `swarmforge/scripts/test/test_promote_and_route_next_no_limit_depth.sh` | `promotion_gates_cli.bb`, `effective_backlog_depth_cli.bb`, `backlog_depth_cli.bb`, `backlog_depth_conf_path_cli.bb` | runs `bb_closure_copy.sh`'s `copy_bb_closure` (one call per entry point) and reads what lands |
 | `swarmforge/scripts/test/test_bl1028_promotion_obeys_integrity_refusal.sh` | `promotion_gates_cli.bb` | runs `bb_closure_copy.sh`'s `copy_bb_closure` and reads what lands |
+| `swarmforge/scripts/test/bl1028_promotion_refusal_property_runner.bb` | `promotion_gates_cli.bb` | runs the fixture itself with `--copy-into <dir>` and reads what lands |
 
 The tenth and eleventh (BL-1480, 2026-09-08) are the first two whose entry is
 a **list** rather than a single CLI: `promote_and_route_next.sh` shells directly to three cap-resolution
@@ -64,6 +66,18 @@ of the same surface: its copy-list had drifted out from under three upstream
 on `main` for 19 days, unowned. Fixed the same way as the BL-1480 pair —
 `copy_bb_closure` replacing the hand-`for dep in ...` loop — and enrolled
 here so a future edge is picked up with no test edit.
+
+The thirteenth (BL-1538, 2026-09-14) is a fourth `promotion_gates_cli.bb`
+fixture of the same surface, and the first that is **bb-authored** rather
+than shell: `bl1028_promotion_refusal_property_runner.bb` hand-listed the
+same five files as its shell sibling and rotted the same way, sitting red on
+`main` 20 days, unowned. No existing `kind` could read what a bb-authored
+fixture copies, so it could not have been enrolled even after being found.
+The runner now derives its copy set via `bb_load_closure_lib.bb`'s
+`compute-closure` (BL-973) instead of the hand `doseq`, and exposes its
+effective set behaviourally through a `--copy-into <dir>` flag the fixture
+itself accepts — running the fixture and reading what lands, never parsing
+its source. `bbFixtureClosureGate.js` gained a `bb-copy` kind for this.
 
 The effective list is read **behaviorally** — what the fixture actually
 copies or actually exports — never by grepping its source for a literal. A
