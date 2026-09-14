@@ -53,6 +53,29 @@
 (def helper (str (fs/path scripts-dir "promote_and_route_next.sh")))
 (def ticket "BL-9028-fixture-ticket.yaml")
 
+(load-file (str (fs/path scripts-dir "bb_load_closure_lib.bb")))
+
+;; BL-1538: the fixture's copy set is DERIVED from promotion_gates_cli.bb's
+;; own transitive load-file closure (BL-973's bb_load_closure_lib.bb) instead
+;; of a hand list - a hand list is what let the fixture rot silently three
+;; times as promotion_gates_lib.bb gained load-file edges no one updated it
+;; for (invariant 1).
+(def bb-closure-entry "promotion_gates_cli.bb")
+(def promotion-gate-deps (bb-load-closure-lib/compute-closure scripts-dir bb-closure-entry))
+
+;; BL-1538: the closure guard's behavioural read for a bb-authored fixture.
+;; `--copy-into <dir>` performs ONLY this fixture's copy step - the exact set
+;; `make-fixture!` below copies - into the given directory and exits, so the
+;; guard sees what this fixture actually copies to disk, never a claim its
+;; source makes about that (invariant 2). No git init, no property runs: the
+;; guard only needs the copy.
+(let [args (vec *command-line-args*)]
+  (when-let [dest (second (drop-while #(not= "--copy-into" %) args))]
+    (fs/create-dirs dest)
+    (doseq [dep promotion-gate-deps]
+      (fs/copy (fs/path scripts-dir dep) (fs/path dest dep) {:replace-existing true}))
+    (System/exit 0)))
+
 (def runs (or (some-> (System/getenv "PROPERTY_RUNS") parse-long) 30))
 (def failures (atom []))
 (def coverage (atom {:success-false 0 :close-guard 0 :silent 0 :malformed 0
@@ -76,6 +99,20 @@
 (def novel-reasons ["quota-exhausted" "worktree-locked" "signature-required"
                     "hook-rejected" "shallow-clone-refused" "index-version-unsupported"])
 
+(defn- write-deprecate-check-stub!
+  "BL-1173's fail-closed deprecator freshness gate runs between pick and
+   git-mv and looks for extension/out/tools/deprecate-check.js under root;
+   absent, it holds every candidate in backlog/paused/ forever, which is
+   exactly what a `head-moved=false` P0 failure looks like from outside.
+   Reuses the same allow-stub BL-1480/BL-1496 already wrote for the sibling
+   shell fixtures rather than a second copy of its contents."
+  [root]
+  (p/shell {:out :string :err :string}
+           "bash" "-c" "source \"$1\" && write_deprecate_check_allow_stub \"$2\""
+           "bash"
+           (str (fs/path scripts-dir "test/lib/deprecate_check_allow_stub.sh"))
+           (str root)))
+
 (defn- make-fixture!
   "A repo with one eligible paused ticket, committed, and a clean index."
   [root]
@@ -90,15 +127,17 @@
   ;; promotion_gates (BL-663) and its whole load-file chain must travel with
   ;; the copy, or the gate throws on load and the script reports "no eligible
   ;; paused ticket" - which would look like a promotion decision, not a
-  ;; broken fixture, and every property below would pass vacuously.
-  (doseq [dep ["promotion_gates_cli.bb" "promotion_gates_lib.bb" "backlog_depth_lib.bb"
-               "swarm_identity_lib.bb" "daemon_cycle_guard_lib.bb"]]
+  ;; broken fixture, and every property below would pass vacuously. BL-1538:
+  ;; the chain is the derived closure, not a hand list - a load-file edge
+  ;; added upstream tomorrow is picked up with no edit here.
+  (doseq [dep promotion-gate-deps]
     (fs/copy (fs/path scripts-dir dep) (fs/path root "swarmforge/scripts" dep) {:replace-existing true}))
   (spit (str (fs/path root "swarmforge/swarmforge.conf")) "config active_backlog_max_depth 5\n")
   (spit (str (fs/path root "swarmforge/scripts/route_backlog_to_coder.sh"))
         "#!/usr/bin/env bash\nset -euo pipefail\nprintf '%s\\n' \"$1\" >> \"${ROUTE_LOG:?}\"\n")
   (fs/set-posix-file-permissions (fs/path root "swarmforge/scripts/route_backlog_to_coder.sh") "rwxr-xr-x")
   (fs/set-posix-file-permissions (fs/path root "swarmforge/scripts/promote_and_route_next.sh") "rwxr-xr-x")
+  (write-deprecate-check-stub! root)
   (spit (str (fs/path root "backlog/paused" ticket))
         "id: BL-9028\ntitle: \"fixture ticket\"\nstatus: paused\npriority: 1\nassigned_to:\n")
   (spit (str (fs/path root "specs/features/BL-9028-fixture-ticket.feature")) "")
