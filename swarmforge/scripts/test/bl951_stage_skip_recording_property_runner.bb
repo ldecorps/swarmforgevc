@@ -78,6 +78,8 @@
 ;; genuinely-wired path - over a bounded generated sample.
 (def swarm-handoff (str (fs/path script-dir ".." "swarm_handoff.bb")))
 
+(load-file (str (fs/path script-dir "lib" "send_through_audit.bb")))
+
 (defn prepare-git! [root]
   (shell/sh "git" "-C" root "init" "-q")
   (fs/create-dirs (fs/path root "specs" "features"))
@@ -108,12 +110,13 @@
     (let [skips (fs/path root ".swarmforge" "routing-skips.jsonl")]
       (when (fs/exists? skips) (fs/delete skips)))
     (spit draft (str "type: git_handoff\nto: " recipient "\npriority: 50\ntask: BL-951-probe\ncommit: " (get commits state) "\n"))
-    (let [{:keys [exit out err]} (shell/sh "bb" swarm-handoff "draft.txt"
-                                            :dir root
-                                            :env (merge (into {} (System/getenv))
-                                                        {"SWARMFORGE_ROLE" sender
-                                                         "SWARMFORGE_SKIP_SYNC_INJECT" "1"
-                                                         "SWARMFORGE_REQUIRED_STAGES_ROUTING" "1"}))]
+    (let [{:keys [exit out err]} (send-through-audit-lib/send-through-audit!
+                                   #(shell/sh "bb" swarm-handoff "draft.txt"
+                                              :dir root
+                                              :env (merge (into {} (System/getenv))
+                                                          {"SWARMFORGE_ROLE" sender
+                                                           "SWARMFORGE_SKIP_SYNC_INJECT" "1"
+                                                           "SWARMFORGE_REQUIRED_STAGES_ROUTING" "1"})))]
       (when-not (zero? exit)
         (throw (ex-info (str "send failed: " out err) {})))
       (let [envelope-file (last (re-seq #"/[^\s]*\.handoff" (str out err)))
