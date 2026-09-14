@@ -172,3 +172,5 @@ qa_e2e_procedure: |
   5. Break-then-restore: remove the `qa-hold-lib/` call from
      `done_with_current_task.bb`; step 3's refusal disappears and
      scenario 03 fails; restore.
+
+assigned_to: coder
