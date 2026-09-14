@@ -192,10 +192,28 @@ const takeoverArb = fc
   .array(deadArb, { minLength: 1, maxLength: 3 })
   .map((dead) => ['fresh', ...dead]);
 
-/** Repeated hand-offs, so the token changes hands more than once. */
+/**
+ * Repeated hand-offs, so the token changes hands more than once.
+ *
+ * BL-1555: a uniform draw over the inner run can land on every state
+ * "fresh", producing a sequence with no dead state at all and therefore no
+ * handover - the property then asserts handovers >= 1 against a sequence
+ * that structurally cannot have one. A dead state is spliced into the inner
+ * run at a drawn index instead, so every generated sequence contains one by
+ * construction, and the wrapping 'fresh' at each end still lets the handover
+ * happen (into the dead state, then back out of it).
+ */
 const flappingArb = fc
-  .array(fc.constantFrom('fresh', ...DEAD_STATES), { minLength: 4, maxLength: 6 })
-  .map((states) => ['fresh', ...states, 'fresh']);
+  .tuple(
+    fc.array(fc.constantFrom('fresh', ...DEAD_STATES), { minLength: 3, maxLength: 5 }),
+    deadArb,
+    fc.nat()
+  )
+  .map(([states, dead, seed]) => {
+    const idx = seed % (states.length + 1);
+    const inner = [...states.slice(0, idx), dead, ...states.slice(idx)];
+    return ['fresh', ...inner, 'fresh'];
+  });
 
 const breadthArb = fc.array(fc.constantFrom('fresh', ...DEAD_STATES), {
   minLength: 1,
@@ -223,6 +241,8 @@ test('property: the bridge takes the token only when the feeder is judged dead',
 });
 
 test('property: the token can change hands repeatedly in one process', async () => {
+  let sequences = 0;
+  let withHandover = 0;
   await fc.assert(
     fc.asyncProperty(flappingArb, async (states) => {
       const observed = await runSequence(states);
@@ -232,6 +252,8 @@ test('property: the token can change hands repeatedly in one process', async () 
       const handovers = observed.filter(
         (o, i) => i > 0 && o.tookToken !== observed[i - 1].tookToken
       ).length;
+      sequences += 1;
+      if (handovers >= 1) withHandover += 1;
       assert.ok(
         handovers >= 1,
         `a flapping sequence produced no handover at all: ${JSON.stringify(observed)}`
@@ -239,6 +261,9 @@ test('property: the token can change hands repeatedly in one process', async () 
     }),
     { numRuns: RUNS }
   );
+  // BL-1555 reach map: proves the construction, rather than hoping numRuns
+  // sequences all happened to contain a handover.
+  console.log(`BL-1555 reach map (flapping): ${JSON.stringify({ sequences, withHandover })}`);
 });
 
 test('property: any sequence of feeder states keeps at most one poller on the token', async () => {
