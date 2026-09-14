@@ -303,3 +303,6 @@ qa_e2e_procedure: |
   paused/ until human_approval flips to approved.
 
 assigned_to: coder
+bounce_count: 1
+bounce_history:
+  - { at: 2026-09-14, by: cleaner, blamed: coder, class: spec-gap, commit: 95c63166bc, evidence: backlog/evidence/BL-1560-swarm-stamp-missing-script-path-1fc9065605-bounce-20260914.md }
