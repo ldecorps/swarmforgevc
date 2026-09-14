@@ -190,3 +190,5 @@ notes: |
     (the fixture's copy set is checked against the closure) and scenario 02
     (the closure itself is derived and pinned) - the same deliberate pair
     BL-1496 records; not accidental drift, do not collapse them.
+
+assigned_to: coder
