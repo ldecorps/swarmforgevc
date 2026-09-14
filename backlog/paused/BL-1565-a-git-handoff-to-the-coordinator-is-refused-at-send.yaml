@@ -1,0 +1,177 @@
+id: BL-1565
+title: "A git_handoff addressed to the coordinator is refused at send: QA's post-land close of a PASSED ticket reaches the coordinator as a git_handoff stamped non-forwarding, Article 2.4 makes the coordinator complete it merge-only and wait for a close that never comes, and the ticket sits in active/ at cap 1 until the swarm starves (BL-1527 parcel 002673 on 09-13, BL-1563 parcel 002698 on 09-14) - the close is a note, and swarm_handoff.sh refuses the parcel shape before the mailbox"
+type: defect
+severity: high
+# high: a live fault degrading behaviour twice in twelve hours - each
+# occurrence froze the whole mono-router swarm at cap 1 (20 min and 90 min)
+# until an operator hand-note named the parcel as the close. Not critical:
+# nothing was lost, the landed commit was on main both times.
+status: todo
+epic: swarm-reliability
+priority: 9
+direction: swarm-reported
+depends_on: []
+mutation_cost: low
+# low: Babashka only (a small pure lib, one call in swarm_handoff.bb, a
+# shell test, a step handler). No mutation/CRAP/DRY tooling is wired for
+# bb (BL-472 deferred); the hardener records the fallback. No extension/src.
+slice_size_envelope: low
+required_stages: [coder, cleaner, architect, hardender, documenter, qa]
+
+acceptance: specs/features/BL-1565-a-git-handoff-to-the-coordinator-is-refused-at-send.feature
+
+# The first anchor is a consumer call (BL-1235): swarm_handoff.bb's -main is
+# the pre-existing live sender every role already runs, and the call the
+# parcel adds there IS the wiring. The ns must therefore be spelled
+# `git-handoff-recipient-guard-lib` (the reader matches the literal, and
+# ns-qualified is how every load-file'd lib is called in that file). The
+# second is the BL-233 in-parcel handler pin.
+required_wiring:
+  - 'swarmforge/scripts/swarm_handoff.bb::git-handoff-recipient-guard-lib/decide::the live sender consults the guard before the self-audit challenge'
+  - 'specs/pipeline/steps/bl1565CoordinatorNeverReceivesGitHandoffSteps.js::registerSteps::handler lands in the same parcel as the feature (BL-233)'
+
+human_approval: pending
+approval_context: >
+  A new feature file is authored here, so it needs a tap. No choice is
+  posed and there are no ruling_options. FIRM: the refusal keys on the
+  recipient name `coordinator` and on `type: git_handoff` only - Article
+  1.1 names that role as the one with no code commits, and roles.tsv
+  carries no bookkeeping-role column to derive it from; a `note` to the
+  coordinator is untouched, and a git_handoff to the specifier (Article
+  5.1's route for a constitution article) is untouched. FIRM: the refusal
+  exits non-zero, prints the note shape `QA-approved <task> landed <sha> -
+  bookkeep to done`, runs BEFORE the self-audit challenge (a refused draft
+  never prints AUDIT_REQUIRED) and writes nothing under any inbox. FIRM:
+  the two BL-1536 example rows that stamp a QA-to-coordinator forward are
+  RETIRED in this parcel (never reworded), and that feature's narrative is
+  re-tensed (BL-1006). Direction, not mandate: a pure decision lib plus
+  one call in swarm_handoff.bb. The four prose sites that sanctioned the
+  git_handoff shape (QA.prompt, coordinator.prompt, handoff-protocol.md)
+  are amended by the specifier with this mint - see notes.
+
+invariants:
+  - "No git_handoff parcel is ever written under the coordinator's inbox/new/, whatever the sender, the required_stages routing, or the reverse-hop mode of the sending window."
+
+description: |
+  ## What is wrong
+
+  Every role's inbound `git_handoff` carries the payload `merge_and_process
+  <sender> <sha>` and, when stamped `non-forwarding: true`, Article 2.4
+  says: merge, then `done_with_current.sh`, send nothing. BL-1536 (landed
+  2026-09-12) made the terminal stamp follow the hop's direction so that a
+  QA BOUNCE is never stamped - and in doing so it kept, and its own feature
+  narrative names, the one hop that IS stamped: "QA's approved commit to
+  the coordinator, which nobody forwards again". The coordinator holds no
+  code worktree (Article 1.1: `main`, no code commits) and Article 2.2 says
+  the QA merge-up signal is a `note`; yet three prose sites still sanction
+  a `git_handoff` for the close - `QA.prompt` ("Notify the coordinator with
+  a `git_handoff` or `note`"), `coordinator.prompt` ("When QA passes a
+  parcel (`git_handoff` or `note` to you"), `handoff-protocol.md` step 3
+  ("QA -> coordinator: `git_handoff` or `note`"). The QA seat obeys its
+  prompt, the helper obeys BL-1536, the coordinator obeys Article 2.4, and
+  the close is swallowed.
+
+  Census of `git_handoff` arrivals in `coordinator/inbox/completed/`:
+
+  | parcel | date | task | non-forwarding | outcome |
+  |---|---|---|---|---|
+  | 000051, 000286-000289, 001927, 001931, 001934, 001992, 001994 | 07-09 .. 08-30 | closes | absent | bookkept as closes (pre-BL-1536) |
+  | 002522, 002524, 002534 | 09-08 .. 09-09 | BL-1373, BL-1285, BL-1278 | true | bookkept (coordinator read the task id) |
+  | 002673 | 09-13 22:46Z | BL-1527 | true | swallowed merge-only; swarm-starved 23:25Z; coordinator self-diagnosed ~23:20Z |
+  | 002698 | 09-14 10:43Z | BL-1563 | true | swallowed merge-only at 10:44Z; coordinator blamed the coder's pane text and nudged it (008265); operator note 008266 at 11:03Z named the parcel as the close |
+
+  Both starvations happened at `active_backlog_max_depth: 1`, where the
+  swallowed close is the only thing between the swarm and its next ticket.
+  The coordinator's own transcript on 09-14: "completed it merge-only ...
+  waiting for QA's actual bookkeeping note". Evidence:
+  `backlog/evidence/BL-1565-1566-specifier-review-three-idle-stalls-20260914.md`.
+
+  ## What is wanted
+
+  A `git_handoff` draft whose `to:` names `coordinator` (alone or among
+  others, from any sender) is refused by `swarm_handoff.sh` before any
+  mailbox write and before the self-audit challenge: exit non-zero, no
+  `AUDIT_REQUIRED`, nothing under any `inbox/new/`, and a message that says
+  the coordinator holds no code (Article 1.1) and names the close shape
+  `type: note` / `QA-approved <task> landed <sha> - bookkeep to done`. A
+  `note` to the coordinator, a `git_handoff` to any pipeline role, and a
+  `git_handoff` to the specifier are unchanged. The invariant above also
+  holds for the POST-routing recipient set (BL-606's required_stages
+  routing rewrites `to:` before a parcel is written; BL-1536 already decides
+  its stamp on that set) - decide on both, the draft header for the fast
+  refusal and the routed set as the last line.
+
+  In the same parcel, BL-1536's feature loses the two example rows that
+  assert a stamped QA-to-coordinator forward (scenario 01 row
+  `QA | coordinator | carries`, scenario 02 row `coordinator | carries`) -
+  retired, never reworded - and its narrative sentence naming the
+  coordinator hop is re-tensed (BL-1006). The mutation-stamp header on
+  that file is the hardener's to refresh.
+
+  ## How (direction, not mandate)
+
+  - `swarmforge/scripts/git_handoff_recipient_guard_lib.bb` (ns
+    `git-handoff-recipient-guard-lib`): `decide` over `{:type :recipients}`
+    returns `{:decision :refuse :message ...}` or `{:decision :allow}`;
+    `refuse!`/message text lives with it. Pure - no I/O - so the handler
+    can drive it directly (the bl1536 handler shape) and the shell test
+    drives the real `swarm_handoff.bb` end to end (the bl1518 shape:
+    fixture root, fixture roles.tsv, no tmux needed for a refusal).
+  - In `swarm_handoff.bb -main`, consult it right after `validate` (the
+    recipients are parsed there) and before `inbound-non-forwarding?`, and
+    again on `(:recipients routed)` next to `with-non-forwarding`.
+  - Shell test `swarmforge/scripts/test/test_swarm_handoff_refuses_coordinator_git_handoff.sh`
+    for the mailbox-level assertion (exit status, no AUDIT_REQUIRED line,
+    empty coordinator inbox/new); it is the `qa_e2e_procedure`'s runner,
+    not an acceptance scenario's (BL-1541 ceiling).
+
+  ## Not in scope
+
+  - Coordinator-side reinterpretation of a legacy QA `git_handoff` already
+    queued: `commit_integrity_cli.bb`'s close gate keeps accepting "a QA
+    git_handoff or note referencing that ticket id" as close authority,
+    untouched; the prompt now tells the coordinator such an inbound IS the
+    close (specifier-landed prose, see notes).
+  - Removing `with-non-forwarding` / `reverse_hop_lib/terminal-forward?`:
+    once no git_handoff can reach the coordinator, QA's only git_handoffs
+    are bounces and the terminal stamp may be unreachable. The architect
+    verifies reachability and records it; retirement is a follow-up slice
+    (with BL-1536's feature), never this parcel.
+  - babysitterd's `swarm-starved` message and BL-1566 (the Article 4.2
+    hold record) - a sibling defect from the same shift, separate parcel.
+
+notes: |
+  Minted 2026-09-14 by the specifier from the coordinator's note 008280
+  ("3x resident self-typed-unsubmitted idle stalls this shift - review").
+  The review found no self-typed input: the pane text was the TUI's own
+  render, and the three stalls were two real lost signals (this ticket and
+  BL-1566) plus the 09-13 23:25Z occurrence of this one. Prose landed with
+  this mint on main (commit named in the mint commit's subject line):
+  QA.prompt close bullet (note only), coordinator.prompt "QA approval"
+  section (a QA git_handoff already in the mailbox is the close, never
+  merge-only) and a swarm-starved diagnosis order, handoff-protocol.md
+  merge-up step 3. Sibling: BL-1566. Related: BL-1536 (QA bounce stamped
+  merge-only, landed 09-12) - that ticket fixed the bounce direction and
+  this one retires the forward it kept.
+
+qa_e2e_procedure: |
+  From the QA worktree on the parcel commit:
+  1. Write `tmp/handoff.txt` with `type: git_handoff`, `to: coordinator`,
+     `priority: 00`, `task: BL-1565-a-git-handoff-to-the-coordinator-is-refused-at-send`,
+     `commit: <the parcel's 10-hex sha>`; run
+     `swarmforge/scripts/swarm_handoff.sh tmp/handoff.txt` -> exits
+     non-zero on the FIRST call, output names `type: note` and
+     `QA-approved <task> landed <sha> - bookkeep to done`, contains no
+     `AUDIT_REQUIRED`, and `ls .swarmforge/handoffs/coordinator/inbox/new/`
+     (master root) is unchanged. Remove the draft.
+  2. `bash swarmforge/scripts/test/test_swarm_handoff_refuses_coordinator_git_handoff.sh`
+     -> green.
+  3. Your own close of THIS ticket is the live proof of the allowed path:
+     it is a `note` reading `QA-approved BL-1565-... landed <sha> - bookkeep
+     to done` and it appears under the coordinator's inbox/new/.
+  4. `grep -n 'coordinator | carries' specs/features/BL-1536-*.feature`
+     is empty; the retired rows are gone, nothing reworded;
+     `swarmforge/scripts/gherkin_lint_gate.sh` is clean on both features.
+  5. Break-then-restore: comment out the `git-handoff-recipient-guard-lib/decide`
+     call in `swarm_handoff.bb`; step 1 now prints AUDIT_REQUIRED and
+     scenario 02 fails; restore.
