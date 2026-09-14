@@ -17,6 +17,8 @@ const {
   DEFAULT_STANDING_RED_MAX_COUNT,
   DEFAULT_STANDING_RED_MAX_AGE_DAYS,
 } = require('../out/metrics/standingRedSignal');
+const { ABOVE_BASELINE_MULTIPLIER, SEVERE_BASELINE_MULTIPLIER } = require('../out/metrics/reworkDiagnosis');
+const { assertReachFloor, runsPerCell } = require('./helpers/reachFloors');
 
 // BL-1429 (BL-654: coder owns first authorship of each declared invariant's
 // property test): the ticket declares three invariants. Each gets its own
@@ -66,55 +68,107 @@ function expectedFold(reworkCap, standingCap) {
   return Math.min(reworkCap, standingCap);
 }
 
-function writeReworkCategory(root, category) {
+function writeReworkCategory(root, category, reworkRate) {
   if (category === 'none') return;
-  // baseline 0.1: degraded crosses the 2x-baseline line (>0.2) without
-  // reaching the 4x severe line (>0.4); severe clears both.
-  const reworkRate = category === 'degraded' ? 0.3 : 0.6;
   persistReworkSignal(root, {
     kind: 'rework-rate',
     version: 1,
     computedAtIso: '2026-07-16T00:00:00Z',
-    signal: { hasSample: true, sampleCount: 10, reworkRate, baselineRate: 0.1, topRole: null, topTicketClass: null },
+    signal: { hasSample: true, sampleCount: 10, reworkRate, baselineRate: REWORK_BASELINE, topRole: null, topTicketClass: null },
   });
 }
 
 // Writes a register whose signal is EXACTLY the one named, and every other
 // signal clear - deterministic per category rather than randomized, so
 // expectedStandingCap/expectedFold above can be computed independently of
-// standingRedSignal.ts's own priority-ordering logic.
-function writeStandingCategory(root, category) {
+// standingRedSignal.ts's own priority-ordering logic. `magnitude` is the
+// category's own drawn value (unused fields stay inside every default, the
+// same "none" shape as before); omitted (invariant 2's own call site,
+// unchanged) it falls back to the fixed values this helper always used.
+const STANDING_MAGNITUDE_DEFAULTS = { count: 15, age: 12, unowned: 1 };
+
+function writeStandingCategory(root, category, magnitude = STANDING_MAGNITUDE_DEFAULTS[category]) {
   const specs = {
     none: { count: 3, oldestAgeDays: 2, unownedCount: 0 },
-    count: { count: 15, oldestAgeDays: 2, unownedCount: 0 },
-    age: { count: 3, oldestAgeDays: 12, unownedCount: 0 },
-    unowned: { count: 3, oldestAgeDays: 2, unownedCount: 1 },
+    count: { count: magnitude, oldestAgeDays: 2, unownedCount: 0 },
+    age: { count: 3, oldestAgeDays: magnitude, unownedCount: 0 },
+    unowned: { count: 3, oldestAgeDays: 2, unownedCount: magnitude },
   };
   writeStandingRedRegisterFixture(root, { ...specs[category], filePrefix: 'bl1429-prop-fixture' });
 }
 
+const ALL_COMBINATIONS = REWORK_CATEGORIES.flatMap((r) => STANDING_CATEGORIES.map((s) => `${r}:${s}`));
+const INVARIANT_1_TOTAL_RUNS = 60;
+const INVARIANT_1_CELL_RUNS = runsPerCell(INVARIANT_1_TOTAL_RUNS, ALL_COMBINATIONS.length);
+
+// baseline 0.1: degraded crosses the 2x-baseline line (>0.2) without
+// reaching the 4x severe line (>0.4); severe clears both. Band edges
+// derived from reworkDiagnosis.ts's own exported multipliers, never
+// restated as bare 0.2/0.4.
+const REWORK_BASELINE = 0.1;
+const DEGRADED_LOWER_CENTS = Math.round(REWORK_BASELINE * ABOVE_BASELINE_MULTIPLIER * 100);
+const SEVERE_LOWER_CENTS = Math.round(REWORK_BASELINE * SEVERE_BASELINE_MULTIPLIER * 100);
+
+// Per-category draw of the magnitude WITHIN the category's band, so a run
+// keeps drawing something real while the category itself is chosen by
+// construction (the outer loop below), never by a uniform draw that might
+// miss a cell (BL-1572).
+const reworkMagnitudeArb = {
+  none: fc.constant(null),
+  degraded: fc.integer({ min: DEGRADED_LOWER_CENTS + 1, max: SEVERE_LOWER_CENTS - 1 }).map((n) => n / 100),
+  severe: fc.integer({ min: SEVERE_LOWER_CENTS + 1, max: 100 }).map((n) => n / 100),
+};
+
+const standingMagnitudeArb = {
+  none: fc.constant(null),
+  count: fc.integer({ min: DEFAULT_STANDING_RED_MAX_COUNT + 1, max: DEFAULT_STANDING_RED_MAX_COUNT + 20 }),
+  age: fc.integer({ min: DEFAULT_STANDING_RED_MAX_AGE_DAYS + 1, max: DEFAULT_STANDING_RED_MAX_AGE_DAYS + 23 }),
+  unowned: fc.integer({ min: 1, max: 3 }),
+};
+
 test('property: the recommended cap is always exactly the fold of the rework and standing-red caps, and always one of Article 3.5s two named caps or null', () => {
   const seen = new Set();
-  fc.assert(
-    fc.property(fc.constantFrom(...REWORK_CATEGORIES), fc.constantFrom(...STANDING_CATEGORIES), (reworkCat, standingCat) => {
-      seen.add(`${reworkCat}:${standingCat}`);
-      const root = mkTmp();
-      writeReworkCategory(root, reworkCat);
-      writeStandingCategory(root, standingCat);
-      const rec = computeThrottleRecommendation(root);
-      const expected = expectedFold(expectedReworkCap(reworkCat), expectedStandingCap(standingCat));
-      assert.equal(rec.recommendedCap, expected, `reworkCat=${reworkCat} standingCat=${standingCat}`);
-      assert.ok(
-        rec.recommendedCap === null || rec.recommendedCap === 0 || rec.recommendedCap === 1,
-        `recommendedCap must be null, 0 or 1 - got ${rec.recommendedCap}`
+  const counts = {};
+
+  // Constructed, not sampled (BL-1572): every one of the 12 cells gets its
+  // own fc.assert with a floor-sized run budget, so the combination is
+  // reached BY CONSTRUCTION rather than hoped for by a uniform draw over
+  // both axes - a uniform 60-draw over 12 cells missed one 6.8% of the
+  // time, well inside the false-red budget for a swarm running unattended.
+  for (const reworkCat of REWORK_CATEGORIES) {
+    for (const standingCat of STANDING_CATEGORIES) {
+      const combo = `${reworkCat}:${standingCat}`;
+      fc.assert(
+        fc.property(reworkMagnitudeArb[reworkCat], standingMagnitudeArb[standingCat], (reworkRate, standingMagnitude) => {
+          seen.add(combo);
+          counts[combo] = (counts[combo] || 0) + 1;
+          const root = mkTmp();
+          writeReworkCategory(root, reworkCat, reworkRate);
+          writeStandingCategory(root, standingCat, standingMagnitude);
+          const rec = computeThrottleRecommendation(root);
+          const expected = expectedFold(expectedReworkCap(reworkCat), expectedStandingCap(standingCat));
+          assert.equal(rec.recommendedCap, expected, `reworkCat=${reworkCat} standingCat=${standingCat}`);
+          assert.ok(
+            rec.recommendedCap === null || rec.recommendedCap === 0 || rec.recommendedCap === 1,
+            `recommendedCap must be null, 0 or 1 - got ${rec.recommendedCap}`
+          );
+        }),
+        { numRuns: INVARIANT_1_CELL_RUNS }
       );
-    }),
-    { numRuns: 60 }
+    }
+  }
+
+  // Reachability floor (engineering.prompt / BL-1062): every one of the 12
+  // rework-category x standing-category combinations, including the ties
+  // this fold must resolve without raising, was actually exercised.
+  assert.equal(seen.size, ALL_COMBINATIONS.length, `expected all 12 combinations reached, got ${[...seen].sort().join(',')}`);
+  assertReachFloor(counts, ALL_COMBINATIONS, INVARIANT_1_CELL_RUNS, 'combination');
+  console.log(
+    `BL-1572 reach map (invariant 1): ${JSON.stringify({
+      combinations: Object.keys(counts).length,
+      minDrawsPerCombination: Math.min(...ALL_COMBINATIONS.map((c) => counts[c] || 0)),
+    })}`
   );
-  // Reachability floor (engineering.prompt): every one of the 12
-  // rework-category x standing-category combinations, including the
-  // ties this fold must resolve without raising, was actually exercised.
-  assert.equal(seen.size, REWORK_CATEGORIES.length * STANDING_CATEGORIES.length, `expected all 12 combinations reached, got ${[...seen].sort().join(',')}`);
 });
 
 // ── invariant 2: "Every change of the recommended cap is logged with the ──
