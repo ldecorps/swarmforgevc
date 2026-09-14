@@ -340,13 +340,18 @@ function registerSteps(registry) {
     ctx.bl1560.reviewComplete = true;
   });
 
-  scoped(/^the ledger row for the reviewed commit still reads "pending"$/, (ctx) => {
+  scoped(/^the ledger row for the reviewed commit carries no human decision$/, (ctx) => {
     assert.equal(ctx.bl1560.reviewComplete, true);
     const ledger = fs.readFileSync(LEDGER, 'utf8');
     const entry = ledger.split(/\n(?=-\s*commit:)/).find((block) => block.includes(`commit: ${HOTFIX}`));
     assert.ok(entry, `no hotfix-ledger entry for ${HOTFIX}`);
-    assert.match(entry, /state:\s*pending/, `ledger row is no longer pending: ${entry}`);
+    // Undecided means: state is neither certified nor waived, human_decision
+    // is null and decided_at is null. The row legitimately moves through
+    // pending -> stamp-open while the parcel travels, so the literal state
+    // pending is not asserted here (BL-1560 cleaner D1, 2026-09-14).
+    assert.doesNotMatch(entry, /state:\s*(certified|waived)\b/, `a decided state appears on the row: ${entry}`);
     assert.match(entry, /human_decision:\s*null/, `ledger row already carries a human decision: ${entry}`);
+    assert.match(entry, /decided_at:\s*null/, `a decision timestamp was written without a human: ${entry}`);
     assert.equal(
       git('status', '--porcelain', '--', 'backlog/hotfix-ledger.yaml').trim(),
       '',
