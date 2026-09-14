@@ -10,6 +10,7 @@ const {
   PIPELINE_BOARD_PAUSED_MAX,
   PIPELINE_BOARD_COLLAPSED_EPICS_MAX,
 } = require('../out/concierge/pipelineBoard');
+const { runsPerCell } = require('./helpers/reachFloors');
 
 // BL-956 declared invariants (backlog/active/BL-956-pipeline-board-caption-and-cap-hotfix.yaml):
 // 1. The composed board message stays within PIPELINE_BOARD_MESSAGE_MAX_LENGTH
@@ -38,14 +39,18 @@ const titleArb = fc
   })
   .map(({ length, filler }) => filler.repeat(Math.ceil(length / filler.length)).slice(0, length));
 
-const boardArb = fc.record({
-  activeCount: fc.integer({ min: 1, max: 15 }),
-  titles: fc.array(titleArb, { minLength: 15, maxLength: 15 }),
-  withMeta: fc.array(fc.boolean(), { minLength: 15, maxLength: 15 }),
-  epics: fc.array(fc.constantFrom('concerto', 'fugue', undefined), { minLength: 15, maxLength: 15 }),
-  plainParkedCount: fc.integer({ min: 0, max: 8 }),
-  epicTrackerCount: fc.integer({ min: 0, max: 8 }),
-});
+function boardArbWithActiveCount(activeCountArb) {
+  return fc.record({
+    activeCount: activeCountArb,
+    titles: fc.array(titleArb, { minLength: 15, maxLength: 15 }),
+    withMeta: fc.array(fc.boolean(), { minLength: 15, maxLength: 15 }),
+    epics: fc.array(fc.constantFrom('concerto', 'fugue', undefined), { minLength: 15, maxLength: 15 }),
+    plainParkedCount: fc.integer({ min: 0, max: 8 }),
+    epicTrackerCount: fc.integer({ min: 0, max: 8 }),
+  });
+}
+
+const boardArb = boardArbWithActiveCount(fc.integer({ min: 1, max: 15 }));
 
 function buildBoard(shape) {
   const activeIds = Array.from({ length: shape.activeCount }, (_, i) => `BL-${100 + i}`);
@@ -118,45 +123,69 @@ function expectedGridDropped(activeIds) {
   return Math.max(0, activeIds.length - PIPELINE_BOARD_GRID_MAX_ROWS);
 }
 
+// BL-1555: activeCount was drawn uniformly 1..15, so gridOverflowSeen (only
+// 3 of 15 values overflow PIPELINE_BOARD_GRID_MAX_ROWS) missed its floor
+// about 1 seed in 370. Split into an overflow cell (13..15, always drops)
+// and a fitting cell (1..12, never drops), runsPerCell(150, 2) draws each -
+// the total board count stays 150, but gridOverflowSeen is now met by every
+// draw of the overflow cell rather than hoped for by a uniform draw.
 test('BL-956 invariant 3: grid, parked and collapsed-epic caps each name exactly how many entries they dropped', () => {
   let parkedOverflowSeen = 0;
   let epicsOverflowSeen = 0;
   let gridOverflowSeen = 0;
-  fc.assert(
-    fc.property(boardArb, (shape) => {
-      const { data, activeIds } = buildBoard(shape);
-      // BOTH surfaces, by construction: the plain-text body is only the
-      // change-detection content signature - composePipelineBoardHtml is
-      // what actually posts, and it silently dropped the epics cap once
-      // (hardener bounce D1: all three test layers had asserted only the
-      // body). Every cap must announce itself on the LIVE surface too.
-      const surfaces = [renderPipelineBoardBody(data), composePipelineBoardHtml(data, 0, 'https://github.com/x/y').html];
-      const parkedDropped = Math.max(0, shape.plainParkedCount - PIPELINE_BOARD_PAUSED_MAX);
-      const epicsDropped = Math.max(0, shape.epicTrackerCount - PIPELINE_BOARD_COLLAPSED_EPICS_MAX);
-      const gridDropped = expectedGridDropped(activeIds);
-      for (const text of surfaces) {
-        if (parkedDropped > 0) {
-          assert.match(text, new RegExp(`\\+${parkedDropped} more parked`));
-        } else {
-          assert.doesNotMatch(text, /more parked/);
+
+  function runCell(activeCountArb, cellRuns) {
+    fc.assert(
+      fc.property(boardArbWithActiveCount(activeCountArb), (shape) => {
+        const { data, activeIds } = buildBoard(shape);
+        // BOTH surfaces, by construction: the plain-text body is only the
+        // change-detection content signature - composePipelineBoardHtml is
+        // what actually posts, and it silently dropped the epics cap once
+        // (hardener bounce D1: all three test layers had asserted only the
+        // body). Every cap must announce itself on the LIVE surface too.
+        const surfaces = [renderPipelineBoardBody(data), composePipelineBoardHtml(data, 0, 'https://github.com/x/y').html];
+        const parkedDropped = Math.max(0, shape.plainParkedCount - PIPELINE_BOARD_PAUSED_MAX);
+        const epicsDropped = Math.max(0, shape.epicTrackerCount - PIPELINE_BOARD_COLLAPSED_EPICS_MAX);
+        const gridDropped = expectedGridDropped(activeIds);
+        for (const text of surfaces) {
+          if (parkedDropped > 0) {
+            assert.match(text, new RegExp(`\\+${parkedDropped} more parked`));
+          } else {
+            assert.doesNotMatch(text, /more parked/);
+          }
+          if (epicsDropped > 0) {
+            assert.match(text, new RegExp(`\\+${epicsDropped} more epics`));
+          } else {
+            assert.doesNotMatch(text, /more epics/);
+          }
+          if (gridDropped > 0) {
+            assert.match(text, new RegExp(`\\+${gridDropped} more active`));
+          } else {
+            assert.doesNotMatch(text, /more active/);
+          }
         }
-        if (epicsDropped > 0) {
-          assert.match(text, new RegExp(`\\+${epicsDropped} more epics`));
-        } else {
-          assert.doesNotMatch(text, /more epics/);
-        }
-        if (gridDropped > 0) {
-          assert.match(text, new RegExp(`\\+${gridDropped} more active`));
-        } else {
-          assert.doesNotMatch(text, /more active/);
-        }
-      }
-      if (parkedDropped > 0) parkedOverflowSeen += 1;
-      if (epicsDropped > 0) epicsOverflowSeen += 1;
-      if (gridDropped > 0) gridOverflowSeen += 1;
-    }),
-    { numRuns: 150 }
+        if (parkedDropped > 0) parkedOverflowSeen += 1;
+        if (epicsDropped > 0) epicsOverflowSeen += 1;
+        if (gridDropped > 0) gridOverflowSeen += 1;
+      }),
+      { numRuns: cellRuns }
+    );
+  }
+
+  const cellRuns = runsPerCell(150, 2);
+  runCell(fc.integer({ min: 13, max: 15 }), cellRuns); // overflow cell
+  runCell(fc.integer({ min: 1, max: 12 }), cellRuns); // fitting cell
+
+  // BL-1555 reach map: proves the construction, rather than hoping 150
+  // uniform draws happened to land on the floors below.
+  console.log(
+    `BL-1555 reach map (invariant 3): ${JSON.stringify({
+      gridOverflow: gridOverflowSeen,
+      parkedOverflow: parkedOverflowSeen,
+      epicsOverflow: epicsOverflowSeen,
+    })}`
   );
+
   assert.ok(parkedOverflowSeen >= 20, `only ${parkedOverflowSeen} parked overflows exercised`);
   assert.ok(epicsOverflowSeen >= 20, `only ${epicsOverflowSeen} epic overflows exercised`);
   assert.ok(gridOverflowSeen >= 20, `only ${gridOverflowSeen} grid overflows exercised`);
