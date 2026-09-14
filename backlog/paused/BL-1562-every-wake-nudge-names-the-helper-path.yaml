@@ -1,0 +1,126 @@
+id: BL-1562
+title: "Every substrate nudge that tells a seat to run ready_for_next.sh names it as ./swarmforge/scripts/ready_for_next.sh from one shared constant - the tmux wake, the in_process resume lines, the freshness-hold and already-in-process ACTION lines - so a delivery never re-teaches the bare name the boot nudge unlearned"
+milestone: M8
+type: defect
+severity: low
+# low: hotfix 1fc9065605's heal class catches the typed `./ready_for_next.sh`
+# on the shell side once a seat's worktree carries it, and the transcripts
+# show zero hunts since the hotfix; what remains is the substrate handing
+# the seat the wrong spelling on every wake, which the boot nudge now
+# contradicts. Cosmetic today, a hunt again on any seat whose worktree is
+# behind (the cleaner's was, at mint).
+status: todo
+epic: tool-miss-auto-heal
+priority: 40
+direction: specifier-found
+depends_on: []
+mutation_cost: low
+# low: Babashka string constants and their existing runners (no
+# mutation/CRAP/DRY wired, BL-472); two shell tests echo the old wake text
+# as pane fixtures and follow the constant.
+slice_size_envelope: low
+required_stages: [coder, cleaner, architect, hardender, documenter, qa]
+
+acceptance: specs/features/BL-1562-every-wake-nudge-names-the-helper-path.feature
+
+# The consumers are pre-existing (handoffd.bb and handoff_inject_lib.bb
+# alias agent-runtime-lib/default-wake-chat-message), so an anchor on them
+# is satisfied before and after the fix and gates nothing (BL-1235). The
+# only honest pin is the BL-233 in-parcel handler.
+required_wiring:
+  - 'specs/pipeline/steps/bl1562WakeNudgeHelperPathSteps.js::registerSteps::the handler lands in the same parcel as the feature (BL-233, BL-1371)'
+
+human_approval: approved
+approval_context: >
+  A new feature file is authored here, so it needs a tap. No choice is
+  posed and there are no ruling_options. What needs sign-off: that the
+  six substrate strings below change to name the helper's real path, the
+  same wording hotfix 1fc9065605 put into the boot nudge. FIRM: this is
+  substrate text (a tmux wake line, dispatcher ACTION lines), not a role
+  prompt - BL-912's "do not pad prompts" is honoured; no prompt file
+  changes. FIRM: one shared constant (prompt_engine_lib's
+  ready-script-rel-path already exists) is the single source, with a test
+  asserting every message agrees with it (BL-897).
+
+invariants: []
+
+source: |
+  Found by the specifier on 2026-09-14 while minting BL-1560 (review goal 8).
+  Hotfix 1fc9065605 fixed the BOOT nudge; the tmux WAKE nudge that every
+  handoff delivery types into the pane still reads "You have new handoff
+  mail. If idle, run ready_for_next.sh." (`agent_runtime_lib.bb`
+  `default-wake-chat-message`, aliased by `handoffd.bb` and
+  `handoff_inject_lib.bb`). Same bare name in `in-process-resume-chat-message`,
+  `in-process-resume-shell-message`, `reference_freshness_lib.bb` ("Merge
+  main, then run ready_for_next.sh again", two sites) and `handoff_lib.bb`
+  ~1699 ("Do NOT run ready_for_next.sh again"). `prompt_engine_lib.bb`
+  already composes its own two kickoff sentences from
+  `ready-script-rel-path` ("swarmforge/scripts/ready_for_next.sh"). Census
+  at mint: `grep -rn 'run ready_for_next\.sh' swarmforge/scripts/*.bb` = 8
+  lines, 6 of them user-facing strings (the other two are comments).
+
+description: |
+  ## What / why
+
+  A seat is told the helper's location twice: once at boot (now
+  `./swarmforge/scripts/ready_for_next.sh (it is NOT at the worktree
+  root)`, hotfix 1fc9065605) and again on EVERY delivery, by the wake line
+  the daemon types into its pane - and that line still says the bare name.
+  The bare name is what the seats turned into `./ready_for_next.sh` and
+  then a `find /` hunt (31 attempts on 09-14 alone). The heal class now
+  catches the typed miss, but only on a seat whose worktree carries the
+  hotfix, and the substrate should not hand out a spelling it then has to
+  heal.
+
+  ## How (direction, not mandate)
+
+  - Compose the six strings from `prompt-engine-lib/ready-script-rel-path`
+    (already the single source for the kickoff sentences), spelled
+    `./swarmforge/scripts/ready_for_next.sh` wherever the seat is told to
+    RUN it, keeping each message's other words. The wake line's leading
+    text "You have new handoff mail." must stay byte-identical: two shell
+    tests (`test_handoffd_notify_verified.sh` ~100,
+    `test_swarm_handoff_daemon_backup.sh` ~45) and
+    `agent_runtime_test_runner.bb` ~96 echo or match it as a pane fixture
+    and follow the constant in the same parcel.
+  - Add to `agent_runtime_test_runner.bb` one assertion per message that
+    it contains the constant's value and not the bare `run
+    ready_for_next.sh` (BL-897: a literal mirrored by hand needs a test
+    that both agree).
+  - `reference_freshness_lib.bb` and `handoff_lib.bb` ~1699 take the same
+    constant; their runners (`reference_freshness_lib` runner, the
+    `ready_for_next` shell tests asserting the ACTION line) follow.
+  - Out of scope: the two code comments naming the bare form
+    (`pipeline_stage_cli.bb` ~120, `tool_miss_heal_lib.bb` ~45), role
+    prompts, the constitution.
+
+  ## Scenario notes for the coder
+
+  - Scenario 01 reads the strings through the real lib (a small bb CLI
+    under `specs/pipeline/steps/lib/` that loads `agent_runtime_lib.bb`,
+    `reference_freshness_lib.bb` and prints each message), never by
+    grepping source text; validate the message names against explicit
+    KNOWN_VALUES.
+  - Scenario 02 pins the census (BL-1445): the count of user-facing
+    strings under `swarmforge/scripts/*.bb` that tell a seat to run the
+    helper is 6 and every one names the path; record the exact grep in
+    evidence.
+  - Handler `bl1562WakeNudgeHelperPathSteps.js` lands in the SAME commit
+    as the feature (BL-233); `steps/index.js` discovers it by scan.
+
+notes: |
+  Sibling of BL-1560 (stamp of 1fc9065605; its review goal 8 is this
+  ticket's probe) and BL-1561 (the heal never rewrites a data token). Grep
+  all three before minting anything about ready_for_next nudges.
+
+qa_e2e_procedure: |
+  On the parcel commit:
+  1. `run_acceptance.sh` on the BL-1562 feature -> 2 scenarios green.
+  2. `bb swarmforge/scripts/test/agent_runtime_test_runner.bb` green;
+     `bash swarmforge/scripts/test/test_handoffd_notify_verified.sh` and
+     `bash swarmforge/scripts/test/test_swarm_handoff_daemon_backup.sh`
+     ALL PASS with their pane fixtures carrying the new wake line.
+  3. `grep -rn 'run ready_for_next\.sh' swarmforge/scripts/*.bb` matches
+     comments only.
+  4. Live: send any note to a worktree role and read its pane - the typed
+     wake line names ./swarmforge/scripts/ready_for_next.sh.

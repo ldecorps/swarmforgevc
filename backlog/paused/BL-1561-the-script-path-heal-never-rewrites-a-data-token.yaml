@@ -1,0 +1,150 @@
+id: BL-1561
+title: "The missing-script-path heal rewrites a helper token only in command position and opens on a masked exit 0 only when that helper is really absent at the root - a command that names ./x.sh as data and whose output echoes the miss text runs once, untouched"
+milestone: M8
+type: defect
+severity: medium
+# medium: contained (the command must name a root-level ./x.sh token AND
+# print the miss text AND exit 0) but it silently rewrites the data of a
+# command that succeeded, and the command it bites is exactly the transcript
+# grep the operator's own incident notes recommend for finding hunts - so it
+# corrupts the evidence of the incident it was built to end. Not high:
+# nothing is degraded for a seat doing its ordinary work.
+status: todo
+epic: tool-miss-auto-heal
+priority: 30
+direction: specifier-found
+depends_on: []
+mutation_cost: low
+# low: Babashka + bash only (no mutation/CRAP/DRY wired, BL-472); the pure
+# functions already have a runner (tool_miss_heal_lib_test_runner.bb) and the
+# acceptance handler executes the real composed wrapper under bash against a
+# mkdtemp fixture, the shape the runner's own e2e already uses.
+slice_size_envelope: low
+required_stages: [coder, cleaner, architect, hardender, documenter, qa]
+
+acceptance: specs/features/BL-1561-the-script-path-heal-never-rewrites-a-data-token.feature
+
+# The consumer is pre-existing: tool_miss_heal_hook.bb already calls
+# safe-wrapper-command, so an anchor on it would be satisfied before and
+# after the fix and gate nothing (BL-1235). The only honest pin is the
+# BL-233 in-parcel handler.
+required_wiring:
+  - 'specs/pipeline/steps/bl1561ScriptPathHealDataTokenSteps.js::registerSteps::the handler lands in the same parcel as the feature (BL-233, BL-1371)'
+
+human_approval: approved
+approval_context: >
+  A new feature file is authored here, so it needs a tap. No choice is
+  posed and there are no ruling_options. What needs sign-off: that the
+  reproduction below is a defect worth its own parcel and that the
+  direction (command-position tokens only; masked-exit-0 opener additionally
+  requires the root-level helper to be absent where the original ran) is
+  the right narrowing. FIRM: the BL-912 human directives bind - one retry
+  then stop, the first miss never reaches the model as a confession, no
+  prompt padding; this parcel changes tool_miss_heal_lib.bb and its runner
+  only, never a role prompt. FIRM: the hotfix's own e2e (the masked
+  root-level miss heals, helper runs once, exit 0) stays green - scenario 03
+  is the regression guard.
+
+invariants:
+  - "For any command the model observes exactly one result and at most one re-run (BL-913 invariant 1); a first attempt that exited 0 is re-run only when its captured output proves a root-level ./x.sh in command position never ran because it is absent at the root."
+
+source: |
+  Found by the specifier on 2026-09-14 while minting BL-1560 (the stamp of
+  hotfix 1fc9065605), reproduced on the specifier's own seat, whose shell is
+  wrapped by the live heal hook. The probe `grep -n 'no such file or
+  directory: ./ready_for_next.sh' t.log`, composed through the real
+  `build-healing-wrapper-command` and run by bash from a git-init fixture
+  root holding that line, printed `2:zsh: no such file or directory:
+  ./swarmforge/scripts/ready_for_next.sh` with exit 0 - the token inside the
+  grep's own search string had been repointed and the file's line was
+  reported as something it is not. The same wrapper over `grep -c` (a count,
+  so the output carries no miss text) ran once, untouched. Boot-nudge and
+  wake-nudge context: BL-1560 review goals 7 and 8.
+
+description: |
+  ## What / why
+
+  Hotfix 1fc9065605's `:missing-script-path` class has two parts that
+  together bite a command that never missed: `healed-command` rewrites
+  EVERY root-level `./x.sh` token in the original (`ROOT-SCRIPT-TOKEN` has
+  no notion of command position or quoting), and, because the class is
+  active for that command, `build-healing-wrapper-command` opens the chain
+  on exit 0 whenever the CAPTURED OUTPUT matches the miss pattern. A
+  command that carries the token as data - a grep for the miss string, a
+  `git log --grep=./ready_for_next.sh`, a heredoc that writes this very
+  sentence into a file and echoes it back - prints the pattern, exits 0,
+  and is re-run with its data rewritten. The model sees the second run only,
+  and it lies: the rewritten grep finds nothing, or finds a path nobody
+  typed. The human's BL-912 directive is "heal one miss in silence, then
+  fail honestly" - this is a silent rewrite of a command that succeeded.
+
+  ## How (direction, not mandate)
+
+  Two narrowings, both in `tool_miss_heal_lib.bb`, both testable with no
+  subprocess in the runner and one bash run in the acceptance handler:
+  - **Command position only.** A `./x.sh` token is rewritten only where it
+    can be executed: at the start of the command or right after `;`, `&&`,
+    `||`, `|`, `(`, or a newline (optional whitespace between). A token in
+    argument position - inside a quoted string, after `=`, after a flag -
+    is left alone, and a command with no command-position token DECLINES
+    (nil, clause omitted), which by construction keeps the exit-code-only
+    gate for it. `bash ./x.sh` / `sh ./x.sh` may be treated as command
+    position too; say which in the code comment.
+  - **The masked opener proves the miss.** When the class IS active, the
+    exit-0 opener must not fire on the output pattern alone: the generated
+    bash additionally checks that the command-position helper is absent
+    where the original ran and present under the pin
+    (`[ ! -e ./x.sh ] && [ -f "$__sfh_root/swarmforge/scripts/x.sh" ]`),
+    so a root-level script that exists, runs, and happens to print the
+    miss text about something else is never re-run. Stock bash 3.2.
+  Keep `classify-miss`'s verdicts and `healed-command`'s outputs for the
+  five hotfix cases byte-identical (BL-1560's scenarios 01-02 confirm them
+  and must stay true); extend the runner with the data-token and
+  existing-helper cases. Re-tense the BL-913 feature's narrative comment
+  ("one of three recoverable ways" is now four) in the same parcel - a
+  durable contract carrying a false sentence is still a lie (BL-1006) - and
+  touch nothing else in that file (its mutation stamp header stays).
+
+  ## Scenario notes for the coder
+
+  - Scenario 01 calls the real `healed-command` through a small bb CLI
+    under `specs/pipeline/steps/lib/` (reuse BL-1560's if it has landed,
+    else mint the same shape); validate every Outline column against
+    explicit KNOWN_VALUES.
+  - Scenarios 02 and 03 execute the REAL composed wrapper with `bash -c`
+    from the fixture root: `git init` under `fs.mkdtempSync`, proven by
+    `rev-parse --git-common-dir` before any mutating git command (BL-1390),
+    removed in `finally`; `swarmforge/scripts/ready_for_next.sh` present
+    and counting its runs; no `ready_for_next.sh` at the root; `t.log`
+    holding the zsh miss line for the data-token case.
+  - Handler `bl1561ScriptPathHealDataTokenSteps.js` lands in the SAME
+    commit as the feature (BL-233); `steps/index.js` discovers it by scan.
+  - Your own seat is wrapped by the live heal: a shell command of yours
+    that names `./ready_for_next.sh` as data and prints the miss text will
+    be rewritten under you until this lands. Split or escape the literal
+    (`\./ready_for_next\.sh` does not match the token regex), or put it in
+    a file and pass the path.
+
+notes: |
+  Sibling of BL-1560 (the stamp; its review goal 7 is this defect's probe)
+  and BL-1562 (the wake nudge names the helper path). Grep all three before
+  minting anything about the script-path heal class. If this lands before
+  BL-1560, BL-1560's goal 7 records "fixed by BL-1561" rather than a
+  reproduction; its scenarios 01-06 stay true under the direction above.
+
+qa_e2e_procedure: |
+  On the parcel commit:
+  1. `run_acceptance.sh` on the BL-1561 feature -> 3 scenarios green
+     (scenario 01 = 6 rows).
+  2. `bb swarmforge/scripts/test/tool_miss_heal_lib_test_runner.bb` ->
+     ALL TESTS PASS, with the hotfix's five healed-command cases unchanged
+     and the new data-token / existing-helper cases present in its source.
+  3. `bash swarmforge/scripts/test/test_tool_miss_heal_hook_wiring.sh` ->
+     ALL SCENARIOS PASS.
+  4. Live, from any role worktree that carries the commit: write a file
+     holding the zsh miss line, grep it with `-n` for that line through the
+     seat's ordinary Bash tool, and read the matched line back UNCHANGED
+     (the token still bare) with exit 0.
+  5. `specs/features/BL-913-pinned-shell-and-one-classified-retry.feature`
+     narrative no longer says "one of three"; its stamp header and
+     scenarios are byte-identical.
