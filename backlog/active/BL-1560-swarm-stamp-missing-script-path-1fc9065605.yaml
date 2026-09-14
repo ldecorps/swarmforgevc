@@ -289,3 +289,5 @@ qa_e2e_procedure: |
   posted on Telegram (telegram-approval-ask-messages.json); siblings
   BL-1561/BL-1562 are also pending the same gate. Holding all three in
   paused/ until human_approval flips to approved.
+
+assigned_to: coder
