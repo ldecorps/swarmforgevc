@@ -1,3 +1,8 @@
+# mutation-stamp: sha256=7813fcf2ef1857b39d207a1caf34f54deab9c87da212e421851cc5178a77c23d
+# acceptance-mutation-manifest-begin
+# {"version":1,"tested_at":"2026-09-14T10:31:48.788670320Z","feature_name":"BL-1563 Stamp-off review of the idle-resident-asks-the-router hotfix","feature_path":"/home/carillon/swarmforgevc/.worktrees/hardender/specs/features/BL-1563-swarm-stamp-router-target-0b727b286c.feature","background_hash":"080dbe48c3ebc8f339861616f86f057670939012c9b0916de2a57ed21e5aadf6","implementation_hash":"unknown","scenarios":[{"index":0,"name":"the empty-mailbox resolver lets a confirmed forward stand and asks the router only on the home fallback","scenario_hash":"cc8c1cccbcc320792a5af0ed89e00192d46486a46fb9329207e0bdce5756b2ae","mutation_count":45,"result":{"Total":45,"Killed":45,"Survived":0,"Errors":0},"tested_at":"2026-09-14T10:31:48.788670320Z"},{"index":4,"name":"the operator CLI prints the router's target, none, or a usage error","scenario_hash":"7b9296a8fa41c916c9975980e897f0340e99b06145c242c791b74fa6e6425f8c","mutation_count":9,"result":{"Total":9,"Killed":9,"Survived":0,"Errors":0},"tested_at":"2026-09-14T10:31:48.788670320Z"}]}
+# acceptance-mutation-manifest-end
+
 Feature: BL-1563 Stamp-off review of the idle-resident-asks-the-router hotfix
 
   BL-848 review-only certification of landed commit 0b727b286c (2026-09-14).
