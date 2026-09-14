@@ -21,7 +21,10 @@
 ;; every mailbox tree reset (asserted gone).
 ;;
 ;; Reach floors (absolute, never scaled): two-seat >= 6, three-seat >= 3,
-;; all-busy >= 4, redelivery >= 4, forward >= 4.
+;; all-busy >= 4, redelivery >= 4, forward >= 4. Each draw's seat count and
+;; parcel count are scheduled by draw_schedule.bb (BL-1559), which meets
+;; every one of these floors BY CONSTRUCTION for any `runs` >= 9, rather
+;; than by a uniform draw the floor only hoped would cover it.
 ;;
 ;; Non-vacuity (staged-first restore, run 2026-08-20, recorded in the
 ;; parcel commit). Break 1 is the REAL defect this parcel's own e2e probe
@@ -36,6 +39,10 @@
 ;;     redelivery draw.
 ;;   - break 3 (inv 3): swarm_handoff.bb's sender-role stage-ification
 ;;     reverted -> the forward draw goes RED on '@' in the from header.
+;;   - break 4 (BL-1559, generator coverage): draw_schedule.bb's
+;;     seat-schedule made to return only three-seat plans -> the coverage
+;;     check goes RED with "two-seat reached only 0 of 16 (floor 6)" on
+;;     the first run; restored (QA e2e step 4).
 
 (require '[babashka.fs :as fs]
          '[babashka.process :as process]
@@ -45,12 +52,14 @@
 (def scripts-dir (str (fs/parent script-dir)))
 
 (load-file (str (fs/path script-dir "lib" "send_through_audit.bb")))
+(load-file (str (fs/path script-dir "lib" "draw_schedule.bb")))
 
 (def runs (or (some-> (System/getenv "PROPERTY_RUNS") parse-long) 16))
 (def rng (java.util.Random. (System/nanoTime)))
 (defn rand-int* [n] (.nextInt rng n))
 (defn rand-nth* [xs] (nth xs (rand-int* (count xs))))
 (defn shuffle* [xs] (let [al (java.util.ArrayList. xs)] (java.util.Collections/shuffle al rng) (vec al)))
+(def schedule (draw-schedule-lib/seat-schedule runs rng))
 
 (def failures (atom []))
 (def coverage (atom {:two-seat 0 :three-seat 0 :all-busy 0 :redeliver 0 :forward 0}))
@@ -120,11 +129,10 @@
 (defn queue-of [stage] (handoffs-in (fs/path (seat-dir stage) ".swarmforge" "handoffs" "inbox" "new")))
 
 (dotimes [i runs]
-  (let [stage "coder"
+  (let [{:keys [n-seats n-parcels]} (nth schedule i)
+        stage "coder"
         next-stage "cleaner"
-        n-seats (+ 2 (rand-int* 2))
         seats (vec (cons stage (map #(str stage "@s" % (rand-int* 90)) (range 1 n-seats))))
-        n-parcels (inc (rand-int* (inc n-seats)))
         tasks (mapv #(str "BL-" (+ 300 (* i 10) %) "-t") (range n-parcels))]
     (swap! coverage update (if (= 3 n-seats) :three-seat :two-seat) inc)
     (reset-fixture! seats next-stage)
