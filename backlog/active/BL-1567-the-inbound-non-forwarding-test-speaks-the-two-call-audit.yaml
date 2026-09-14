@@ -79,8 +79,11 @@ description: |
   `SWARMFORGE_SKIP_DAEMON` unset, which takes the `:skipped` sync
   result and prints `HANDOFF QUEUED (mailbox only, no tmux inject):`.
 
-  Census (BL-1445, evidence file): 12 shell tests draft a git_handoff
-  and invoke swarm_handoff; 11 are green on main; this is the only red.
+  Census (BL-1445, evidence file): 13 shell tests draft a git_handoff
+  and invoke swarm_handoff; 12 are green on main; this is the only red.
+  (Counted 12 at mint on 674d50539a; BL-1565's
+  test_swarm_handoff_refuses_coordinator_git_handoff.sh landed after and
+  matches the predicate - re-counted 13 on 62da68ee2c, 2026-09-15.)
 
   ## What is wanted
 
@@ -122,6 +125,13 @@ notes: |
   reproduced it on main and ran the BL-1530 census again (12 files, this
   the only red). Siblings minted the same pass from the same note and
   census: BL-1568, BL-1569, BL-1570, BL-1571.
+  Amended 2026-09-15 (specifier, on the coder's priority-00 note from the
+  BL-1567 parcel): scenario 05's census is thirteen, not twelve - BL-1565
+  landed test_swarm_handoff_refuses_coordinator_git_handoff.sh between the
+  mint and the coder's run. Scenario 05 also pins that newcomer by name.
+  No new scenario; the step text for the count changed, so the coder's
+  handler step for the count must follow (BL-233). Parcel at coder when
+  amended, so the feature was edited on main and the coder noted to merge.
 
 qa_e2e_procedure: |
   On the parcel commit, from the repo root:

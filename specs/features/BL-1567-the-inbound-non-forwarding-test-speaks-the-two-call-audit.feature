@@ -33,7 +33,11 @@ Feature: BL-1567 The inbound non-forwarding test speaks the two-call audit
     And the test file sets no environment variable that swarm_handoff.bb reads to skip the audit
 
   # BL-1567 inbound-non-forwarding-two-call-05
+  # Census re-counted 2026-09-15 on main 62da68ee2c: BL-1565's
+  # test_swarm_handoff_refuses_coordinator_git_handoff.sh joined after the
+  # 2026-09-14 mint counted twelve (coder note, BL-1567 parcel).
   Scenario: the census of git_handoff-sending shell tests is the one the ticket counted
     When every shell test under swarmforge/scripts/test that invokes swarm_handoff and drafts a git_handoff is listed
     Then the list names test_swarm_handoff_inbound_non_forwarding.sh
-    And the list has twelve entries
+    And the list names test_swarm_handoff_refuses_coordinator_git_handoff.sh
+    And the list has thirteen entries

@@ -79,6 +79,12 @@ for f in $(grep -l -E 'swarm_handoff\.(sh|bb)' swarmforge/scripts/test/test_*.sh
 red. BL-1530 counted 11 on 2026-09-11; `test_bl1494_deferred_note_no_wake.sh`
 and `test_swarm_handoff_bounce_never_stamped.sh` joined since.
 
+Re-count 2026-09-15 on `main` 62da68ee2c (specifier, coder's priority-00 note
+from the BL-1567 parcel): **13 files** - BL-1565's
+`test_swarm_handoff_refuses_coordinator_git_handoff.sh` landed after the mint
+and matches the predicate. BL-1567 scenario 05 amended to thirteen and pins
+that file by name; ticket description amended to match.
+
 ### C. bb runners naming `dispatch-gap-items` / `read-active-items` (4 files)
 
 All green (`dispatch_gap_test_runner.bb`, `bl1097_router_dispatch_trail_test_runner.bb`,
