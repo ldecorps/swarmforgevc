@@ -6,7 +6,7 @@ type: epic
 epic: tool-miss-auto-heal
 priority: 15
 depends_on: []
-decomposes_into: [BL-913, BL-934, BL-960, BL-965]
+decomposes_into: [BL-913, BL-934, BL-960, BL-965, BL-1560, BL-1561, BL-1562]
 
 source: |
   Minted 2026-08-17 by the specifier from raw intake
@@ -60,6 +60,16 @@ notes: |
   never the first miss as a story to apologize for.
 
   ## Live follow-on (minted)
+
+  - **BL-1560 / BL-1561 / BL-1562** (2026-09-14, specifier): hotfix
+    1fc9065605 added a fourth heal class, `:missing-script-path` (seats
+    typed `./ready_for_next.sh` at the worktree root and hunted with
+    `find /`; 258 attempts and 121 hunts in the week to 09-14). BL-1560 is
+    its BL-848 stamp; BL-1561 fixes the class rewriting a `./x.sh` named
+    as DATA on a masked exit 0 (reproduced at mint); BL-1562 makes the tmux
+    wake line and five other substrate strings name the helper's real
+    path from `ready-script-rel-path`. All three honour the directives
+    above: substrate, not prompts; one retry; no confession.
 
   - **BL-934** — slice A's missing-root-argv heal is inlined as
     `original-command 'worktree'` in the source Claude Code classifies, so
