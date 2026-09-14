@@ -24,6 +24,7 @@ const fc = require('fast-check');
 const fs = require('node:fs');
 const path = require('node:path');
 const { mkTmpDir } = require('./helpers/tmpDir');
+const { runsPerCell } = require('./helpers/reachFloors');
 const { buildTurnProfileWindowRecord } = require('../out/metrics/turnProfileProducer');
 const { INTERVAL_CATEGORIES } = require('../out/metrics/transcriptWalker');
 
@@ -136,57 +137,73 @@ test('property (invariant 1): a stage nobody worked is absent, never a zero shar
   assert.ok(seen.multiWorked >= 1, `generator never worked more than one stage: ${JSON.stringify(seen)}`);
 });
 
+// BL-1553: the damage kind is ITERATED, one fc.assert per kind, rather than
+// sampled with fc.integer(0..2) inside a single property - a seed that never
+// draws one of three values in a handful of tries used to fail the floor
+// below without anything wrong in the code under test. Each of these
+// KIND_RUNS draws is guaranteed by construction to land in seen.<kind>, so
+// the floor is met on every run rather than merely usually met. The total
+// draw count (KIND_RUNS * DAMAGE_KINDS.length) is the same 15 the sampled
+// version used.
+const DAMAGE_KINDS = ['interior', 'missing', 'unreadablePath'];
+const KIND_RUNS = runsPerCell(15, DAMAGE_KINDS.length);
+
 test('property (invariant 2): one damaged transcript refuses the whole window', () => {
   const seen = { interior: 0, missing: 0, unreadablePath: 0 };
-  fc.assert(
-    fc.property(workedSpecArb, fc.integer({ min: 0, max: 2 }), (workedSpecs, brokenKind) => {
-      if (brokenKind === 0) seen.interior += 1;
-      else if (brokenKind === 1) seen.missing += 1;
-      else seen.unreadablePath += 1;
 
-      withRoot('sfvc-bl1364-inv2-', (root) => {
-        // A control run first: the same window, whole, DOES report shares -
-        // otherwise "no shares" would be trivially true and prove nothing.
-        const whole = buildWindow(root, workedSpecs);
-        const control = buildTurnProfileWindowRecord({
-          transcriptPaths: whole.paths,
-          handoffTrail: whole.trail,
+  for (const kind of DAMAGE_KINDS) {
+    fc.assert(
+      fc.property(workedSpecArb, (workedSpecs) => {
+        seen[kind] += 1;
+
+        withRoot('sfvc-bl1364-inv2-', (root) => {
+          // A control run first: the same window, whole, DOES report shares -
+          // otherwise "no shares" would be trivially true and prove nothing.
+          const whole = buildWindow(root, workedSpecs);
+          const control = buildTurnProfileWindowRecord({
+            transcriptPaths: whole.paths,
+            handoffTrail: whole.trail,
+          });
+          assert.equal(control.complete, true, 'the control window should be complete');
+          assert.ok(control.stages.length > 0, 'the control window reported no stage at all');
+
+          let broken;
+          if (kind === 'interior') {
+            // Interior damage: a bad line with a COMPLETE line after it. A torn
+            // FINAL line is a different condition (an in-progress append) and is
+            // covered by its own property below.
+            broken = path.join(root, 'broken-interior.jsonl');
+            fs.writeFileSync(broken, `garbage\n${LINE_KINDS[0](BASE_MS)}\n`, 'utf8');
+          } else if (kind === 'missing') {
+            broken = path.join(root, 'broken-missing.jsonl');
+          } else {
+            // A path that exists but cannot be read at all. A directory raises
+            // EISDIR, which is a real read failure without simulating one by
+            // chmod (engineering.prompt forbids chmod-for-failure).
+            broken = path.join(root, 'broken-unreadable.jsonl');
+            fs.mkdirSync(broken, { recursive: true });
+          }
+
+          const record = buildTurnProfileWindowRecord({
+            transcriptPaths: [...whole.paths, broken],
+            handoffTrail: whole.trail,
+          });
+
+          assert.equal(record.complete, false, 'a window with an unreadable transcript claimed completeness');
+          assert.deepEqual(record.stages, [], 'a partial window diluted a share instead of refusing one');
+          assert.ok(
+            record.unreadable_transcripts.includes(broken),
+            'the record does not name the transcript it could not read'
+          );
         });
-        assert.equal(control.complete, true, 'the control window should be complete');
-        assert.ok(control.stages.length > 0, 'the control window reported no stage at all');
+      }),
+      { numRuns: KIND_RUNS }
+    );
+  }
 
-        let broken;
-        if (brokenKind === 0) {
-          // Interior damage: a bad line with a COMPLETE line after it. A torn
-          // FINAL line is a different condition (an in-progress append) and is
-          // covered by its own property below.
-          broken = path.join(root, 'broken-interior.jsonl');
-          fs.writeFileSync(broken, `garbage\n${LINE_KINDS[0](BASE_MS)}\n`, 'utf8');
-        } else if (brokenKind === 1) {
-          broken = path.join(root, 'broken-missing.jsonl');
-        } else {
-          // A path that exists but cannot be read at all. A directory raises
-          // EISDIR, which is a real read failure without simulating one by
-          // chmod (engineering.prompt forbids chmod-for-failure).
-          broken = path.join(root, 'broken-unreadable.jsonl');
-          fs.mkdirSync(broken, { recursive: true });
-        }
-
-        const record = buildTurnProfileWindowRecord({
-          transcriptPaths: [...whole.paths, broken],
-          handoffTrail: whole.trail,
-        });
-
-        assert.equal(record.complete, false, 'a window with an unreadable transcript claimed completeness');
-        assert.deepEqual(record.stages, [], 'a partial window diluted a share instead of refusing one');
-        assert.ok(
-          record.unreadable_transcripts.includes(broken),
-          'the record does not name the transcript it could not read'
-        );
-      });
-    }),
-    { numRuns: 15 }
-  );
+  // BL-1553 acceptance reads this line from the run's own stdout rather than
+  // re-deriving reach by inspecting the source.
+  console.log(`BL-1553 invariant 2 reach over ${KIND_RUNS * DAMAGE_KINDS.length} draws: ${JSON.stringify(seen)}`);
 
   assert.ok(seen.interior >= 1, `never generated interior damage: ${JSON.stringify(seen)}`);
   assert.ok(seen.missing >= 1, `never generated a missing transcript: ${JSON.stringify(seen)}`);
