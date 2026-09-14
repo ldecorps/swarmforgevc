@@ -1,2 +1,1 @@
 file	disposition	rationale
-test/bl1313BatchGuardVisibilityInvariants.property.test.js	allowlist	BL-1503: both invariants die at bb load since hotfix 32fb1ff7e1 (2026-09-09) added respawn_bootstrap_lib.bb to the closure the test hand-types; register row names BL-1503 (first_seen 2026-09-09); this row leaves with its land
