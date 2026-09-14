@@ -43,6 +43,17 @@ const { mkTmpDir } = require('./helpers/tmpDir');
 // are CONSTRUCTED by the generator, so the oracle is independent of the
 // command the implementation happens to choose.
 //
+// BL-1564: each invariant answers its whole batch of cases in ONE bb process
+// that loads the library once, instead of one bb process per fixture case
+// (98 per run, unaffordable inside the full property lane). Every case's
+// fixture repository is built FIRST (and kept until the batch has answered -
+// cleanup moves to a `finally` over the whole set), then the batch is
+// answered in a single `bb -e` call. Shrinking is lost as a result - the
+// random draws are pulled with `fc.sample` and a logged seed instead of
+// `fc.assert`/`fc.property`, so a failure is replayable from the seed
+// printed alongside the reach map, and every assertion carries the failing
+// case's own shape/paths in its message.
+//
 // Runs ONLY via `npm run test:properties`.
 
 const REPO_ROOT = path.join(__dirname, '..', '..');
@@ -183,26 +194,72 @@ const PARCEL_PATHS = () =>
     .uniqueArray(fc.integer({ min: 0, max: 20 }), { minLength: 1, maxLength: 3 })
     .map((ns) => ns.map((n) => `extension/src/parcel${n}.ts`).sort());
 
-// nil (the walk could not run) is reported as the distinct marker NIL, never
-// flattened into the empty list - telling those two apart is the whole point
-// of the contract this ticket is repairing.
-function ownPaths(root, commit, semantic) {
-  const out = bbEval(
-    `(load-file ${JSON.stringify(GATE_LIB)})
-     (let [r (task-scope-gate-lib/own-commit-changed-paths ${JSON.stringify(root)} ${JSON.stringify(commit)} ${semantic})]
-       (print (if (nil? r) "NIL" (clojure.string/join "\\n" r))))`
-  );
-  if (out === 'NIL') return null;
-  return out.split('\n').filter(Boolean);
+function newSeed() {
+  return (Date.now() ^ Math.floor(Math.random() * 0x100000000)) >>> 0;
 }
 
-function withRoot(prefix, fn) {
-  const root = mkTmpDir(prefix);
-  try {
-    return fn(root);
-  } finally {
-    fs.rmSync(root, { recursive: true, force: true });
-  }
+function ednCases(pairs) {
+  return pairs.map(({ root, commit }) => `{:root ${JSON.stringify(root)} :commit ${JSON.stringify(commit)}}`).join(' ');
+}
+
+// ONE bb process answers `:delivered` and `:authored` for every {root,
+// commit} pair in `pairs` - own-commit-changed-paths loaded once instead of
+// once per case per semantic (BL-1564). nil stays nil (JSON null), never
+// flattened into []: telling an unreadable commit apart from a genuinely
+// empty answer is the whole point of invariant 2.
+function ownPathsBatch(pairs) {
+  const out = bbEval(
+    `(load-file ${JSON.stringify(GATE_LIB)})
+     (require '[cheshire.core :as json])
+     (let [cases [${ednCases(pairs)}]]
+       (println (json/generate-string
+         (mapv (fn [{:keys [root commit]}]
+                 {:delivered (task-scope-gate-lib/own-commit-changed-paths root commit :delivered)
+                  :authored (task-scope-gate-lib/own-commit-changed-paths root commit :authored)})
+               cases))))`
+  );
+  return JSON.parse(out.split('\n').pop()).map(({ delivered, authored }) => ({
+    delivered: delivered === null ? null : [...delivered].sort(),
+    authored: authored === null ? null : [...authored].sort(),
+  }));
+}
+
+// ONE bb process answers all three callers (the land-step replay, the
+// send-time scope gate, the unregistered-test gate) for every {root, commit}
+// pair - `threeCallers`'s own one-process-three-answers form (BL-1297),
+// generalised over a vector of pairs instead of one process per case
+// (BL-1564).
+// `gate` and `land` are coerced with `(vec (sort ...))` INSIDE the bb script,
+// exactly as the original single-case `threeCallers` did - own-paths (BL-1343)
+// legitimately answers nil for a refusal (every delivered path attributed to
+// an unlanded sibling, which every non-evil INV3 shape's OTHER-tagged content
+// triggers), and the pre-existing contract this ticket must not touch reads
+// that refusal the same as a genuine empty answer. Preserving that coercion
+// keeps every existing assertion's meaning identical to before BL-1564.
+function threeCallersBatch(pairs) {
+  const out = bbEval(
+    `(load-file ${JSON.stringify(LAND_LIB)})
+     (load-file ${JSON.stringify(UNREG_LIB)})
+     (require '[cheshire.core :as json])
+     (let [cases [${ednCases(pairs)}]]
+       (println (json/generate-string
+         (mapv (fn [{:keys [root commit]}]
+                 (let [gate (task-scope-gate-lib/parcel-own-changed-paths root ${JSON.stringify(TASK_ID)} commit)
+                       land (:paths (land-step-lib/own-paths root commit ${JSON.stringify(TASK_ID)}))
+                       unreg (unregistered-test-gate-lib/findings-for-git-handoff
+                              {:root root :task-name ${JSON.stringify(TASK)} :commit commit})]
+                   {:gate (vec (sort gate))
+                    :land (vec (sort land))
+                    :unreg-files (vec (sort (map :file (:findings unreg))))
+                    :unreg-warning (some? (:warning unreg))}))
+               cases))))`
+  );
+  return JSON.parse(out.split('\n').pop()).map((raw) => ({
+    gate: raw.gate,
+    land: raw.land,
+    unregFiles: raw['unreg-files'],
+    unregWarning: raw['unreg-warning'],
+  }));
 }
 
 // Reach is CONSTRUCTED, not hoped for: every shape is run once outright, and
@@ -216,64 +273,94 @@ function assertReach(seen, shapes) {
   }
 }
 
+function withRoots(fn) {
+  const roots = [];
+  const mk = (prefix) => {
+    const root = mkTmpDir(prefix);
+    roots.push(root);
+    return root;
+  };
+  try {
+    return fn(mk);
+  } finally {
+    for (const root of roots) fs.rmSync(root, { recursive: true, force: true });
+  }
+}
+
 test('property (invariant 1): delivered is the first-parent delta, authored is what differs from every parent', () => {
-  const seen = Object.fromEntries(SHAPES.map((s) => [s, 0]));
-  const runCase = (shape, parcelPaths) => {
-    seen[shape] += 1;
-    withRoot('sfvc-bl1297-inv1-', (root) => {
+  withRoots((mk) => {
+    const seen = Object.fromEntries(SHAPES.map((s) => [s, 0]));
+    const built = [];
+
+    const buildCase = (shape, parcelPaths) => {
+      seen[shape] += 1;
+      const root = mk('sfvc-bl1297-inv1-');
       initRepo(root);
       const { delivered, authored } = buildShape(root, shape, `${TASK}: the parcel`, parcelPaths);
       const commit = git(root, 'rev-parse', 'HEAD').trim();
+      built.push({ shape, parcelPaths, root, commit, delivered, authored });
+    };
 
-      const actualDelivered = ownPaths(root, commit, ':delivered');
+    for (const shape of SHAPES) buildCase(shape, ['extension/src/parcel0.ts', 'extension/src/parcel7.ts']);
+
+    const seed = newSeed();
+    const draws = fc.sample(fc.tuple(fc.constantFrom(...SHAPES), PARCEL_PATHS()), { numRuns: 15, seed });
+    for (const [shape, parcelPaths] of draws) buildCase(shape, parcelPaths);
+
+    console.log(`BL-1564 reach map (invariant 1): ${JSON.stringify({ cases: built.length, seed })}`);
+
+    const results = ownPathsBatch(built.map(({ root, commit }) => ({ root, commit })));
+
+    built.forEach(({ shape, parcelPaths, delivered, authored }, i) => {
+      const { delivered: actualDelivered, authored: actualAuthored } = results[i];
+      const ctx = `case ${i} (seed=${seed}) shape=${shape} paths=${JSON.stringify(parcelPaths)}`;
+
       assert.deepEqual(
-        [...actualDelivered].sort(),
+        actualDelivered,
         [...delivered].sort(),
-        `${shape} delivered ${JSON.stringify(actualDelivered)}, its first-parent change is ${JSON.stringify(delivered)}`
+        `${ctx}: delivered ${JSON.stringify(actualDelivered)}, its first-parent change is ${JSON.stringify(delivered)}`
       );
       // The headline half, stated separately so it cannot be satisfied by a
       // shape that happens to have no paths: a merge that DID change
       // something is never empty.
       if (delivered.length > 0) {
         assert.ok(
-          actualDelivered.length > 0,
-          `${shape} delivered an empty change set for a commit that changed ${delivered}`
+          actualDelivered && actualDelivered.length > 0,
+          `${ctx}: delivered an empty change set for a commit that changed ${delivered}`
         );
       }
 
-      const actualAuthored = ownPaths(root, commit, ':authored');
       assert.deepEqual(
-        [...actualAuthored].sort(),
+        actualAuthored,
         [...authored].sort(),
-        `${shape} authored ${JSON.stringify(actualAuthored)}, its own resolution is ${JSON.stringify(authored)}`
+        `${ctx}: authored ${JSON.stringify(actualAuthored)}, its own resolution is ${JSON.stringify(authored)}`
       );
       // "empty exactly when the merge resolved nothing itself" - stated as an
       // iff, in both directions, because the over-correction this amendment
       // repairs failed the second direction only.
       assert.equal(
-        actualAuthored.length === 0,
+        actualAuthored !== null && actualAuthored.length === 0,
         authored.length === 0,
-        `${shape}'s authored set is empty for the wrong reason: ${JSON.stringify(actualAuthored)}`
+        `${ctx}: authored set is empty for the wrong reason: ${JSON.stringify(actualAuthored)}`
       );
     });
-  };
 
-  for (const shape of SHAPES) runCase(shape, ['extension/src/parcel0.ts', 'extension/src/parcel7.ts']);
-
-  fc.assert(fc.property(fc.constantFrom(...SHAPES), PARCEL_PATHS(), runCase), { numRuns: 15 });
-
-  assertReach(seen, SHAPES);
-  // The shapes the defect and its over-correction hide behind carry the whole
-  // property; a run that only ever saw single-parent commits would pass
-  // against both.
-  assert.ok(seen.merge + seen['octopus-merge'] >= 2, `too few clean merge shapes: ${JSON.stringify(seen)}`);
-  assert.ok(seen['evil-merge'] >= 1, `the only merge with an author was never drawn: ${JSON.stringify(seen)}`);
+    assertReach(seen, SHAPES);
+    // The shapes the defect and its over-correction hide behind carry the whole
+    // property; a run that only ever saw single-parent commits would pass
+    // against both.
+    assert.ok(seen.merge + seen['octopus-merge'] >= 2, `too few clean merge shapes: ${JSON.stringify(seen)}`);
+    assert.ok(seen['evil-merge'] >= 1, `the only merge with an author was never drawn: ${JSON.stringify(seen)}`);
+  });
 });
 
 test('property (invariant 2): an empty answer is the truth, never an artefact of the invocation', () => {
-  const seen = { emptyDelivered: 0, emptyAuthored: 0, nonEmptyAuthored: 0 };
-  const runCase = (shape, parcelPaths) => {
-    withRoot('sfvc-bl1297-inv2-', (root) => {
+  withRoots((mk) => {
+    const seen = { emptyDelivered: 0, emptyAuthored: 0, nonEmptyAuthored: 0 };
+    const built = [];
+
+    const buildCase = (shape, parcelPaths) => {
+      const root = mk('sfvc-bl1297-inv2-');
       initRepo(root);
       const { delivered, authored } = buildShape(root, shape, `${TASK}: the parcel`, parcelPaths);
       const commit = git(root, 'rev-parse', 'HEAD').trim();
@@ -282,38 +369,53 @@ test('property (invariant 2): an empty answer is the truth, never an artefact of
       if (authored.length === 0) seen.emptyAuthored += 1;
       else seen.nonEmptyAuthored += 1;
 
-      for (const [semantic, expected] of [
-        [':delivered', delivered],
-        [':authored', authored],
+      built.push({ shape, parcelPaths, root, commit, delivered, authored });
+    };
+
+    for (const shape of SHAPES) buildCase(shape, ['extension/src/parcel0.ts', 'extension/src/parcel7.ts']);
+
+    const seed = newSeed();
+    const draws = fc.sample(fc.tuple(fc.constantFrom(...SHAPES), PARCEL_PATHS()), { numRuns: 12, seed });
+    for (const [shape, parcelPaths] of draws) buildCase(shape, parcelPaths);
+
+    console.log(`BL-1564 reach map (invariant 2): ${JSON.stringify({ cases: built.length, seed })}`);
+
+    // The unreadable-commit check rides the SAME batch, one more entry, so
+    // the invariant still costs exactly one bb process.
+    const nilRoot = mk('sfvc-bl1297-inv2-nil-');
+    initRepo(nilRoot);
+    const absent = '0000000000000000000000000000000000000000';
+
+    const results = ownPathsBatch([...built.map(({ root, commit }) => ({ root, commit })), { root: nilRoot, commit: absent }]);
+
+    built.forEach(({ shape, parcelPaths, delivered, authored }, i) => {
+      const { delivered: actualDelivered, authored: actualAuthored } = results[i];
+      const ctx = `case ${i} (seed=${seed}) shape=${shape} paths=${JSON.stringify(parcelPaths)}`;
+      for (const [actual, expected, semantic] of [
+        [actualDelivered, delivered, ':delivered'],
+        [actualAuthored, authored, ':authored'],
       ]) {
-        const actual = ownPaths(root, commit, semantic);
         // Blindness is never the empty answer. A caller that cannot tell them
         // apart reads an unreadable commit as a clean one - the same fail-open
         // as the merge blind spot, one door down.
-        assert.notEqual(actual, null, `${shape} under ${semantic} reported blindness for a readable commit`);
+        assert.notEqual(actual, null, `${ctx} under ${semantic} reported blindness for a readable commit`);
         assert.equal(
           actual.length === 0,
           expected.length === 0,
-          `${shape} under ${semantic} was empty for the wrong reason: ${JSON.stringify(actual)} vs ${JSON.stringify(expected)}`
+          `${ctx} under ${semantic} was empty for the wrong reason: ${JSON.stringify(actual)} vs ${JSON.stringify(expected)}`
         );
       }
     });
-  };
 
-  for (const shape of SHAPES) runCase(shape, ['extension/src/parcel0.ts', 'extension/src/parcel7.ts']);
-  fc.assert(fc.property(fc.constantFrom(...SHAPES), PARCEL_PATHS(), runCase), { numRuns: 12 });
+    assert.ok(seen.emptyDelivered > 0, `never produced a genuinely empty delivered set: ${JSON.stringify(seen)}`);
+    assert.ok(seen.emptyAuthored > 0, `never produced a genuinely empty authored set: ${JSON.stringify(seen)}`);
+    assert.ok(seen.nonEmptyAuthored > 0, `never produced a non-empty authored set: ${JSON.stringify(seen)}`);
 
-  assert.ok(seen.emptyDelivered > 0, `never produced a genuinely empty delivered set: ${JSON.stringify(seen)}`);
-  assert.ok(seen.emptyAuthored > 0, `never produced a genuinely empty authored set: ${JSON.stringify(seen)}`);
-  assert.ok(seen.nonEmptyAuthored > 0, `never produced a non-empty authored set: ${JSON.stringify(seen)}`);
-
-  // An unreadable commit answers nil under BOTH semantics, so neither caller
-  // can mistake a failed walk for a clean parcel.
-  withRoot('sfvc-bl1297-inv2-nil-', (root) => {
-    initRepo(root);
-    const absent = '0000000000000000000000000000000000000000';
-    assert.equal(ownPaths(root, absent, ':delivered'), null, 'an unreadable commit was not nil under :delivered');
-    assert.equal(ownPaths(root, absent, ':authored'), null, 'an unreadable commit was not nil under :authored');
+    // An unreadable commit answers nil under BOTH semantics, so neither caller
+    // can mistake a failed walk for a clean parcel.
+    const nil = results[results.length - 1];
+    assert.equal(nil.delivered, null, 'an unreadable commit was not nil under :delivered');
+    assert.equal(nil.authored, null, 'an unreadable commit was not nil under :authored');
   });
 });
 
@@ -328,29 +430,16 @@ function writeManifest(root) {
   fs.writeFileSync(path.join(dir, 'suite-manifest.tsv'), 'file\tlane\tdate\treason\n');
 }
 
-// One bb process, three answers, so the comparison cannot drift on library
-// load order and the property stays affordable.
-function threeCallers(root, commit) {
-  const out = bbEval(`
-(load-file ${JSON.stringify(LAND_LIB)})
-(load-file ${JSON.stringify(UNREG_LIB)})
-(let [gate (task-scope-gate-lib/parcel-own-changed-paths ${JSON.stringify(root)} ${JSON.stringify(TASK_ID)} ${JSON.stringify(commit)})
-      land (:paths (land-step-lib/own-paths ${JSON.stringify(root)} ${JSON.stringify(commit)} ${JSON.stringify(TASK_ID)}))
-      unreg (unregistered-test-gate-lib/findings-for-git-handoff
-             {:root ${JSON.stringify(root)} :task-name ${JSON.stringify(TASK)} :commit ${JSON.stringify(commit)}})]
-  (print (pr-str {:gate (vec (sort gate)) :land (vec (sort land))
-                  :unreg-files (vec (sort (map :file (:findings unreg))))
-                  :unreg-warning (some? (:warning unreg))})))`);
-  return out;
-}
-
 const TEST_FILE = 'swarmforge/scripts/test/test_bl1297_fixture.sh';
 const INV3_SHAPES = ['merge', 'octopus-merge', 'empty-merge', 'evil-merge', 'single-parent'];
 
 test('property (invariant 3): the land step reads delivered, the two send-time gates read authored', () => {
-  const seen = { authoredTestFile: 0, deliveredOnlyTestFile: 0, divergent: 0 };
-  const runCase = (shape, addTestFile) => {
-    withRoot('sfvc-bl1297-inv3-', (root) => {
+  withRoots((mk) => {
+    const seen = { authoredTestFile: 0, deliveredOnlyTestFile: 0, divergent: 0 };
+    const built = [];
+
+    const buildCase = (shape, addTestFile) => {
+      const root = mk('sfvc-bl1297-inv3-');
       initRepo(root);
       writeManifest(root);
       git(root, 'add', 'swarmforge');
@@ -372,13 +461,26 @@ test('property (invariant 3): the land step reads delivered, the two send-time g
       if (delivered.includes(TEST_FILE) && !authored.includes(TEST_FILE)) seen.deliveredOnlyTestFile += 1;
       if (delivered.length !== authored.length) seen.divergent += 1;
 
-      const raw = threeCallers(root, commit);
-      assert.ok(!raw.includes(':unreg-warning true'), `caller 3 could not read the parcel: ${raw}`);
+      built.push({ shape, addTestFile, root, commit, delivered, authored });
+    };
 
-      const parse = (key) => {
-        const inner = raw.match(new RegExp(`:${key} \\[([^\\]]*)\\]`))[1];
-        return inner ? inner.split(' ').map((s) => JSON.parse(s)) : [];
-      };
+    for (const shape of INV3_SHAPES) {
+      buildCase(shape, true);
+      buildCase(shape, false);
+    }
+
+    const seed = newSeed();
+    const draws = fc.sample(fc.tuple(fc.constantFrom(...INV3_SHAPES), fc.boolean()), { numRuns: 8, seed });
+    for (const [shape, addTestFile] of draws) buildCase(shape, addTestFile);
+
+    console.log(`BL-1564 reach map (invariant 3): ${JSON.stringify({ cases: built.length, seed })}`);
+
+    const results = threeCallersBatch(built.map(({ root, commit }) => ({ root, commit })));
+
+    built.forEach(({ shape, addTestFile, delivered, authored }, i) => {
+      const { gate, land, unregFiles, unregWarning } = results[i];
+      const ctx = `case ${i} (seed=${seed}) shape=${shape} addTestFile=${addTestFile}`;
+      assert.ok(!unregWarning, `${ctx}: caller 3 could not read the parcel`);
 
       // Caller 1 - the land-step replay. BL-1315: every non-TASK path in
       // this fixture family is tagged OTHER, a real (unlanded) ticket id,
@@ -389,40 +491,34 @@ test('property (invariant 3): the land step reads delivered, the two send-time g
       // (BL-1297's pre-BL-1315 oracle, "whatever the tagged commit's
       // first-parent diff happened to include") is no longer what the land
       // step reads - `authored` is.
-      assert.deepEqual([...parse('land')].sort(), [...authored].sort(), `the land step misreads ${shape}: ${raw}`);
+      assert.deepEqual(land, [...authored].sort(), `${ctx}: the land step misreads authored=${JSON.stringify(authored)}`);
 
       // Caller 2 - the send-time scope gate - judges the parcel's AUTHOR. A
       // clean receive-merge authored nothing, and charging it with the
       // tickets that rode in on it refuses every forward in the pipeline.
-      assert.deepEqual([...parse('gate')].sort(), [...authored].sort(), `the scope gate misreads ${shape}: ${raw}`);
+      assert.deepEqual(gate, [...authored].sort(), `${ctx}: the scope gate misreads authored=${JSON.stringify(authored)}`);
 
       // Caller 3 asks caller 2's question through the seam they share, and
-      // must never answer it differently.
-      // Read the gate's OWN findings (which name a file by basename), not the
-      // whole printed map: under the amended contract `:land` names delivered
-      // paths the gates must not see, so a substring check over `raw` would
-      // find the test file there and pass for the wrong reason.
+      // must never answer it differently. Read the gate's OWN findings
+      // (which name a file by basename), not the whole raw map: under the
+      // amended contract `land` names delivered paths the gates must not
+      // see, so a substring check over the raw map would find the test file
+      // there and pass for the wrong reason.
       assert.equal(
-        parse('unreg-files').includes(path.basename(TEST_FILE)),
+        (unregFiles || []).includes(path.basename(TEST_FILE)),
         authored.includes(TEST_FILE),
-        `the unregistered-test gate disagrees with the scope gate about ${shape}: ${raw}`
+        `${ctx}: the unregistered-test gate disagrees with the scope gate, delivered=${JSON.stringify(delivered)} authored=${JSON.stringify(authored)}`
       );
     });
-  };
 
-  for (const shape of INV3_SHAPES) {
-    runCase(shape, true);
-    runCase(shape, false);
-  }
-  fc.assert(fc.property(fc.constantFrom(...INV3_SHAPES), fc.boolean(), runCase), { numRuns: 8 });
-
-  // The two cases that separate the semantics are constructed, not hoped for.
-  // Without the second, every row could pass with both callers reading the
-  // same answer - which is exactly the contract this amendment replaced.
-  assert.ok(seen.authoredTestFile > 0, `the gates were never given an authored test file: ${JSON.stringify(seen)}`);
-  assert.ok(
-    seen.deliveredOnlyTestFile > 0,
-    `no case delivered a test file the merger did not author: ${JSON.stringify(seen)}`
-  );
-  assert.ok(seen.divergent > 0, `the two answers never diverged, so nothing was distinguished: ${JSON.stringify(seen)}`);
+    // The two cases that separate the semantics are constructed, not hoped for.
+    // Without the second, every row could pass with both callers reading the
+    // same answer - which is exactly the contract this amendment replaced.
+    assert.ok(seen.authoredTestFile > 0, `the gates were never given an authored test file: ${JSON.stringify(seen)}`);
+    assert.ok(
+      seen.deliveredOnlyTestFile > 0,
+      `no case delivered a test file the merger did not author: ${JSON.stringify(seen)}`
+    );
+    assert.ok(seen.divergent > 0, `the two answers never diverged, so nothing was distinguished: ${JSON.stringify(seen)}`);
+  });
 });
