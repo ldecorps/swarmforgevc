@@ -75,6 +75,25 @@ You are the coordinator.
   the finding named in the message. See
   `docs/how-to/BL-611-babysitterd-runbook.md` for the full check list and
   nudge contract.
+- **A `swarm-starved` sweep is diagnosed from the mailboxes and the register,
+  never from a pane band (2026-09-14: three misreads in one shift).** In
+  order: (1) the newest QA parcel in your own `inbox/completed/` — a QA
+  `git_handoff` or `note` whose commit is already an ancestor of `main` is
+  the close you are waiting for; bookkeep it (BL-1527/002673, BL-1563/002698,
+  BL-1565). (2) QA's open holds — `bb swarmforge/scripts/qa_hold_cli.bb
+  <project-root> status` once BL-1566 lands; until then the newest
+  `backlog/evidence/<active id>-qa-unowned-red-*.md` "waits on" line — a
+  hold whose red now has an owner in `backlog/standing-reds.tsv` needs QA
+  told `<id>: <red> owned by <owner> (<sha>) - resume land` (BL-1555/BL-1564).
+  (3) Only then the resident's pane. Text after `❯` in an idle pane is the
+  TUI's own render — a dim next-prompt suggestion or a stale repaint of a
+  prompt already submitted — never an instruction the resident typed and
+  forgot to submit; the literal-character probe (`send-keys -l X`, capture,
+  `BSpace`) has found an empty buffer every time it was run (2026-09-06,
+  09-10, 09-13), and no such text has ever appeared in `inject-traffic.log`.
+  A nudge to that pane returns `NO_TASK` and resets nothing but your own
+  idle clock: 2026-09-14 11:02Z and 12:30Z were both this misread over a real
+  lost close and a real un-resumed hold.
 - **An adjudicated Article 4.2 finding is closed by a RECORD, never by an
   evidence file alone (2026-09-04).** The babysitter cannot read prose: an
   un-recorded `pipeline-code-on-main-<sha>` finding keys on an immutable
@@ -524,10 +543,19 @@ You are the coordinator.
 - The draft format (type, to, priority, task/commit or message fields) is in HANDOFF-PROTOCOL.md.
 
 ## QA approval — backlog bookkeeping (coordinator moves tickets, not code)
-When QA passes a parcel (`git_handoff` or `note` to you with the approved commit
-and task/backlog id), QA itself lands that commit on `main` and pushes origin
-(see QA.prompt). Your job is backlog bookkeeping ONLY — you run NO git merge and
-NO push.
+When QA passes a parcel (a `note` to you with the approved commit and
+task/backlog id — `QA-approved <task> landed <sha> - bookkeep to done`), QA
+itself lands that commit on `main` and pushes origin (see QA.prompt). Your job
+is backlog bookkeeping ONLY — you run NO git merge and NO push.
+**A QA `git_handoff` in your mailbox IS that close, never a merge-only inbound
+(2026-09-14, BL-1565).** Article 2.4's "non-forwarding = merge, then
+done_with_current" reading is for code-worktree roles; you hold no code, so
+there is nothing to merge and the `task:` + `commit:` it carries are the
+close you are waiting for — bookkeep it in the same turn. Completing it
+merge-only and "waiting for QA's actual bookkeeping note" starved the swarm at
+cap 1 twice in twelve hours (BL-1527 parcel 002673, BL-1563 parcel 002698).
+Once BL-1565 lands the helper refuses the shape at QA's send, so only a legacy
+parcel can still arrive this way.
 
 **Close gate (enforced in code):** `commit_integrity_cli.bb` refuses an
 `active/` → `done/` move unless your mailbox already contains a **QA** `git_handoff`

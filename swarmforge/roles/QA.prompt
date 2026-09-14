@@ -318,11 +318,19 @@ You are QA.
       `source:` carries the issue URL), close the loop now:
       `swarmforge/scripts/issue_done.sh <source-url> <merge-commit>`. It never
       blocks — a missing `gh` auth prints a SKIP line and exits 0; not an error.
-  - Notify the **`coordinator`** with a `git_handoff` or `note` (priority `00`) —
-    include the approved commit hash and stable task/backlog id — so it does the
-    backlog bookkeeping (move the ticket to `backlog/done/`, promote the next
-    paused item, and **route Work to coder** on mono-router). The coordinator
-    runs NO git merge or push.
+  - Notify the **`coordinator`** with a `note` (priority `00`) — never a
+    `git_handoff` (2026-09-14, BL-1565). The coordinator holds no code
+    worktree (Article 1.1); the helper stamps a QA→coordinator `git_handoff`
+    `non-forwarding: true` as the terminal forward (BL-1536), and Article 2.4
+    then has the coordinator complete it merge-only and wait for a close that
+    never comes — BL-1527 (parcel 002673, 09-13) and BL-1563 (parcel 002698,
+    09-14) each starved the swarm at cap 1 that way until an operator note
+    named the parcel as the close. Once BL-1565 lands the helper refuses the
+    shape at send. The message is `QA-approved <task> landed <sha> - bookkeep
+    to done` (≤80 chars: the approved commit hash and the stable task/backlog
+    id) — so it does the backlog bookkeeping (move the ticket to
+    `backlog/done/`, promote the next paused item, and **route Work to
+    coder** on mono-router). The coordinator runs NO git merge or push.
   - **When the landed ticket retires an interim in a role prompt, note the
     specifier at the landing (2026-09-07).** Some tickets carry a prose half
     the specifier removes only once the code is on `origin/main` - an
@@ -645,6 +653,25 @@ You are QA.
   parcel WAITS for the ticket; it is never a bounce, the parcel did not
   cause it, and never an approval over the top of it. "Pre-existing" is a
   fact about the red, not a disposition of it.
+- **A hold is a RECORD you resume from, never prose (2026-09-14, BL-1566).**
+  Before the `unowned-red` note, open it:
+  `bb swarmforge/scripts/qa_hold_cli.bb <project-root> open --task <task>
+  --commit <parcel sha> --red <test path> [--red ...] --evidence <sha>`
+  (until BL-1566 lands: the evidence file carries the parcel commit and
+  every red path on their own lines, and the specifier's resume note is the
+  wake). Then complete the parcel — the resident must be free to rotate;
+  the hold, not the parcel's presence, is the memory. On EVERY later turn
+  read the first lines `ready_for_next.sh` prints: a `RELEASED <task>
+  <commit>` line (until BL-1566 lands: any note naming a red you hold and
+  its owner) means re-run your gate on THAT commit against the register as
+  it now stands, approve and land or bounce, then `qa_hold_cli.bb close
+  --task <task> --outcome approved|bounced|abandoned`. A resume note is
+  never "noted" and completed — once BL-1566 lands `done_with_current.sh`
+  refuses to complete a note while a released hold is open. The incident:
+  BL-1555's resume note 001539 (2026-09-14 12:16Z, owner BL-1564 already
+  minted, approved and on `main`) was completed in ten seconds with nothing
+  resumed, and the swarm starved at cap 1 for twenty minutes until the
+  operator re-sent it.
 
 ## A sync or receive merge subject names no ticket (2026-09-05, BL-1212)
 - When you merge `main` into your worktree, or merge a received parcel,

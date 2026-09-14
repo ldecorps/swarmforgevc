@@ -172,3 +172,5 @@ qa_e2e_procedure: |
   5. Break-then-restore: move the batch call back inside `fc.property`;
      the shim count returns to 62 and scenario 02 fails on the first run;
      restore.
+
+assigned_to: coder
