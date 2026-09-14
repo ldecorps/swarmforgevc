@@ -955,3 +955,17 @@ Do NOT self-schedule polling: no /loop, no "check again in N minutes", no cron, 
   nothing in the ticket obliged anyone to build the second shape. Same
   fail-open family as BL-1445's census: an acceptance that never constructs
   the population it quantifies over gates nothing.
+
+## An acceptance scenario that shells a standing runner must fit the per-mutant ceiling (BL-1541, 2026-09-14)
+- The Gherkin mutation gate re-runs a feature's WHOLE generated test once
+  per mutant inside the BL-1358 ceiling (300 s, human ruling 2026-09-03;
+  a timed-out mutant FAILS the gate) and no per-feature override exists.
+  Before minting a scenario that spawns a bb/shell runner, add up the
+  runners' own measured draw budgets (their headers state them) for the
+  full feature; if the sum is not comfortably inside the ceiling, the
+  scenario is not Testable in the acceptance lane. Put "runner X is
+  green" in `qa_e2e_procedure` and the standing-red register's discharge
+  instead, and gate the MECHANISM (a helper's contract, a pinned
+  population) in seconds. BL-1541 as minted ran ~240 s of bl982 plus four
+  more runners per mutant; the coder could finish it only under a 30 min
+  override, and the fix was a retire-and-replace amendment mid-flight.

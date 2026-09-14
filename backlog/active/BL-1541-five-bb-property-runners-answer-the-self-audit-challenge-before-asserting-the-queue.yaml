@@ -81,7 +81,13 @@ description: |
 
   ## What is wanted
 
-  - Each of the five runners is green (scenario 01).
+  - Each of the five runners is green, run by name with `bb` - including
+    bl982's OWN invariant 2 (see "Amended 2026-09-14" below). This is
+    QA's e2e step 2 and the register's discharge, not an executable
+    scenario: the former scenario 01 is retired (see the feature narrative).
+  - The shared helper's contract holds (scenario 03, both rows): a send through
+    it calls the CLI exactly twice on the byte-identical draft, returns only
+    the second call's result, and never masks a refusal.
   - The population is pinned: the set of bb runners that draft a
     `git_handoff` and invoke `swarm_handoff.bb` contains the five (scenario
     02), so a renamed or deleted runner cannot make this ticket green by
@@ -106,11 +112,59 @@ description: |
   recording) stay exactly as written - they are the oracle, and they must
   go green on their merits, not be loosened.
 
+  ## Amended 2026-09-14 (specifier, both coder notes of 2026-09-14)
+
+  Two amendments, one commit, parcel still at the coder (unforwarded
+  `317ca4f402` on `swarmforge-coder`). Neither changes the FIRM part of
+  the approval context.
+
+  1. **The acceptance could not fit the per-mutant ceiling - my spec
+     defect.** Scenario 01 drove all five real runners per mutant. bl982
+     alone draws 100 packs at ~2.4 s (its own header's measurement, ~240 s
+     before the doubled sends) and bl992 draws 100 too, so one mutant of
+     this feature ran for many minutes against the BL-1358 ceiling of 300 s
+     (human ruling 2026-09-03; a timed-out mutant FAILS the gate). No
+     per-feature override exists and raising the ruled default is not this
+     ticket's to do. Scenario 01 is RETIRED from the executable feature -
+     never reworded - and its claim lives in QA's e2e step 2 and the
+     register discharge. Scenario 03 (two rows: queued, refused) gates the
+     helper's contract in seconds; scenario 02 is unchanged. The coder's
+     handlers for 01 leave with it; scenario 03's land in the same parcel
+     (BL-233).
+  2. **bl982's invariant 2 is part of this ticket's green.** Its oracle
+     pins `swarmforge.sh` blob `2edd9a17ba9d40709c0f436d12395b638563c0ca`
+     (the pre-BL-982 script, 8 roles.tsv columns). `44d2d42591` - the same
+     2026-08-30 landing that introduced the two-call audit - appended
+     column 9, the propagation token (`forward-only` default), so the
+     byte-identity check has diverged on every single-seat draw since, on
+     the same day as the invariant-3 red. The register row is keyed per
+     FILE and already names this ticket; the ticket's title and e2e say
+     bl982 exits 0; a separate owner could not even be promoted beside
+     this one (same file, orthogonality rule). So it is folded in, and the
+     carve-out below is the ONE permitted change to an existing property.
+     Direction: keep the REAL-vs-REAL oracle and compare the PROJECTION -
+     the pre-blob's roles.tsv column set (the first 8 tab-separated
+     fields of every current row) against the pre-blob's rows, still
+     normalized on the fixture root - and assert every current row carries
+     at least those 8 fields. roles.tsv evolves by APPENDING columns
+     (column 9's own comment in swarmforge.sh: readers stay compatible),
+     so appending is the one change the oracle must tolerate; an inserted,
+     reordered or altered column still diverges, which is the regression
+     invariant 2 exists to catch. Re-pinning `pre-blob` to a newer blob is
+     NOT the fix: it re-rots at the next append. Restate the header's
+     inv-2 non-vacuity break accordingly (a mutated value in a projected
+     column goes red; an appended column no longer does) and record the
+     staged-first restore in the parcel commit as the header does today.
+
 constraints: >
   Test-only parcel: `swarm_handoff.bb`, `handoff_lib.bb` and the self-audit
   are not edited; no production script under swarmforge/scripts/ changes.
   Every existing property in the five runners keeps its meaning and its
-  coverage floors. The seven green runners in the census are not touched.
+  coverage floors - with ONE carve-out, amended 2026-09-14: bl982's
+  invariant 2 compares the projection onto the pre-blob's column set
+  instead of whole-line bytes (description, "Amended 2026-09-14" item 2).
+  The BL-1358 per-mutant ceiling (300 s) is not raised and no scenario of
+  this feature shells a standing runner. The seven green runners in the census are not touched.
 
 out_of_scope: |
   - `test_redo_from.sh` / `test_reroute.sh` and the script verbs - BL-1529.
@@ -123,6 +177,9 @@ qa_e2e_procedure: |
   2. Each of the five runners, run by name with `bb`, exits 0 and prints its
      own ALL-HOLD / coverage line; bl983's coverage line shows `redeliver`
      and `forward` at or above their floors (4 of 16). Run each twice.
+     bl982's output shows its single-seat draws at or above the floor (5)
+     with NO `diverged from pre-change script` line: invariant 2 is green
+     against the real pre-blob, not skipped (amended 2026-09-14).
   3. `git diff <base>..<parcel> -- swarmforge/scripts/swarm_handoff.bb
      swarmforge/scripts/handoff_lib.bb` is empty.
   4. Negative control: in a scratch copy, make one runner's send helper call
@@ -131,6 +188,9 @@ qa_e2e_procedure: |
      is what greened it.
   5. `bb swarmforge/scripts/standing_red_register_cli.bb .` reports no row
      for any of the five and `"unowned":[]`.
+  6. Amended 2026-09-14: the feature's mutation run (hardener evidence)
+     shows no mutant reported as timed out - every mutant finishes inside
+     the BL-1358 ceiling on its merits.
 
 source: |
   Specifier sighting, 2026-09-11, while censusing bb runners for the coder's
@@ -151,5 +211,23 @@ notes: |
   - Not a fold-in to BL-1529: its deliverable is the script verbs' sending
     path and it names only the two shell tests; the runners are their own
     senders.
+  - Amended 2026-09-14 by the specifier while the parcel sat unforwarded at
+    the coder (317ca4f402 on swarmforge-coder), answering the coder's three
+    notes of 2026-09-14 (bl982 invariant-2 stale pre-blob, twice; BL-1358
+    300 s ceiling too short): (1) scenario 01 retired - it could never fit
+    the per-mutant ceiling, my mint defect, not the coder's; (2) bl982's
+    invariant 2 folded in with a projection direction and the constraints
+    carve-out. No new ticket minted: the register is keyed per file and
+    this ticket already owns bl982's row, whose note now names both halves.
+    Evidence: backlog/evidence/BL-1541-specifier-amendment-20260914.md.
+    The coder merges main, re-reads this ticket and the feature, and
+    rebuilds on the same branch (BL-317/BL-325) - the coder's own
+    workmanship on the two-call helper stands.
+  - The feature file changed after approval. `human_approval` stays
+    `approved` deliberately: re-pending posts no fresh ask (BL-1455) and
+    reads as an erased approval; the FIRM part of approval_context is
+    untouched (no bypass, real two-call send). The amended feature is
+    flagged for the human's review in the specifier's report of 2026-09-14
+    rather than by re-pend.
 
 assigned_to: coder
