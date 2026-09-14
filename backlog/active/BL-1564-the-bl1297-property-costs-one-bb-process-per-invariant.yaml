@@ -179,3 +179,5 @@ qa_e2e_procedure: |
   5. Break-then-restore: move one invariant's bb call back inside its
      per-case loop; the shim count leaves 3 and scenario 02 fails on the
      first run; restore.
+
+assigned_to: coder
