@@ -254,3 +254,5 @@ qa_e2e_procedure: |
      prints a roster role or `none` and exits 0.
   7. After done: the human runs `bb swarmforge/scripts/hotfix_ledger_update.bb .
      --decide 0b727b286c approved|waived` and commits the ledger.
+
+assigned_to: coder
