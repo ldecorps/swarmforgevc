@@ -1,0 +1,181 @@
+id: BL-1564
+title: "bl1297MergeOwnPathsInvariants.property.test.js is red on main in the full property lane with no owner: every fixture case boots its own bb process (98 per run, 18 of them in invariant 3, each loading 2871 lines of land/gate libraries) so invariant 3's 20 s testTimeout holds alone (7.6-8.7 s) and fails inside the 404-file lane - the file answers each invariant's cases in one bb process and still judges every case"
+milestone: M8
+type: defect
+severity: high
+# high (standing-red rule 2026-09-05): a property-lane file whose verdict on
+# main is a function of host load is a broken safety signal; QA saw it red in
+# the full lane from the BL-1555 parcel (2026-09-14 11:51Z) and it withholds
+# that parcel's approval under Article 4.2 until owned. Production is
+# unaffected: none of the three bb libraries is touched and every judged case
+# agrees with them - the cost is the test's own process-per-case shape, the
+# same class as BL-1556.
+status: todo
+epic: code-quality-gates
+priority: 8
+direction: swarm-reported
+depends_on: []
+mutation_cost: low
+# low: one property test file under extension/test (never extension/src)
+# and one step-handler file. No production code, so no Stryker target; the
+# hardener records the fallback.
+slice_size_envelope: low
+required_stages: [coder, cleaner, architect, hardender, documenter, qa]
+
+acceptance: specs/features/BL-1564-the-bl1297-property-costs-one-bb-process-per-invariant.feature
+
+# No consumer anchor is honest here (BL-1235): the live consumer is the
+# properties lane itself (`npm run test:properties`, vitest.properties.config.mjs),
+# which already collects this file and is the thing that is red. The
+# handler entry is the BL-233 in-parcel pin.
+required_wiring:
+  - 'specs/pipeline/steps/bl1564OneBbProcessPerInvariantSteps.js::registerSteps::the handler lands in the same parcel as the feature (BL-233, BL-1371)'
+
+human_approval: pending
+approval_context: >
+  A new feature file is authored here, so it needs a tap. No choice is
+  posed and there are no ruling_options. FIRM: the 20 s testTimeout in
+  vitest.properties.config.mjs is not raised and no per-test timeout is
+  added - this cost is 95 redundant bb boots, not real work. FIRM: the
+  run counts (15, 12 and 8 random draws on top of the constructed cases)
+  are not reduced, every case is still judged, and every constructed
+  shape and reach assertion stays; the three bb libraries the file
+  drives are not touched; the file is not added to
+  property_suite_standing_allowlist.tsv. Direction, not mandate: build
+  each invariant's fixture repositories first, answer them all in ONE
+  bb process that loads the libraries once, then assert per case with
+  the case's shape and inputs in the message. Minted by the specifier on
+  QA's unowned-red note of 2026-09-14 11:51Z from the BL-1555 parcel
+  (evidence c859adced9 on swarmforge-QA); the specifier measured 98 bb
+  processes per run alone on main 67890beb06.
+
+invariants:
+  - "The number of bb processes a run of this file starts is bounded by its number of invariants, never by its number of fixture cases or fast-check draws."
+
+description: |
+  ## What is wrong
+
+  `extension/test/bl1297MergeOwnPathsInvariants.property.test.js` drives
+  the real `task_scope_gate_lib.bb`, `land_step_lib.bb` and
+  `unregistered_test_gate_lib.bb` through `bbEval`, a `spawnSync('bb',
+  ['-e', script])` that `load-file`s the libraries fresh on EVERY call.
+  Each fixture case builds a real git repository and then asks the
+  libraries one question per call: invariant 1 asks twice per case,
+  invariant 2 twice per case plus two for the unreadable commit, and
+  invariant 3 once per case through `threeCallers` - which already
+  answers three callers in one process "so the property stays
+  affordable", but is still called once per case. Counted with a `bb`
+  shim on the file alone (main `67890beb06`, load 1.9 of 20 cores):
+
+  | invariant | constructed cases | random draws | bb processes | alone |
+  |---|---|---|---|---|
+  | 1 | 6 | 15 | 42 | 5.9 s |
+  | 2 | 6 (+ unreadable) | 12 | 38 | 5.3 s |
+  | 3 | 10 | 8 | 18 | 7.6 s (QA: 8.7 s) |
+  | file | | | **98** | 18.8 s (QA: 20.6 s) |
+
+  Invariant 3's 18 processes each load all three libraries (2871
+  lines) on top of building a five-commit repository, about 0.42 s per
+  case near-idle. Inside the full `npm run test:properties` lane (404
+  files, parallel workers) the per-boot cost rises past 1.1 s and the
+  20 s `testTimeout` is missed:
+
+  | who | where | invariant 3 | verdict |
+  |---|---|---|---|
+  | BL-1555 QA, 2026-09-14, merged tree 006c8a3eed | full lane | > 20 s | fail, `Test timed out in 20000ms` |
+  | BL-1555 QA, same tree | alone | 8.67 s (file 20.59 s) | pass |
+  | specifier, 2026-09-14, main 67890beb06 | alone, with bb shim | 7.65 s (file 18.85 s) | pass, 98 bb processes |
+
+  Invariants 1 and 2 are not yet red but carry the same shape at 80
+  processes between them; a fix that batches invariant 3 alone leaves
+  the file one busier host away from the next unowned-red note.
+
+  This is BL-1556's class exactly (bl1272: 60 bb processes for 60 draws
+  against a CLI built for one per run), one file over. Latent since
+  BL-1297 landed the file (`1160427e31`, 2026-08-30); the BL-1447
+  adjudication of 2026-09-07 and BL-1464 covered BL-1297's ACCEPTANCE
+  feature scenario 03, a different lane and file, not this one.
+  Evidence: `backlog/evidence/BL-1564-specifier-unowned-red-repro-20260914.md`.
+
+  ## What is wanted
+
+  A run of the file starts at most one bb process per invariant (three
+  for the file) and still judges every constructed case and every
+  random draw, with every existing assertion intact: both semantics in
+  invariant 1, the truth-not-artefact and NIL-for-unreadable clauses in
+  invariant 2, the three-caller agreement and the three constructed
+  reach assertions in invariant 3. The run prints a reach map per
+  invariant (`BL-1564 reach map (invariant N): {"cases":<n>,...}`) so
+  the acceptance can see no property was thinned. The file is green on
+  `main` alone and in the full lane; the register row this ticket adds
+  is removed in the same land.
+
+  ## How (direction, not mandate)
+
+  - Draw each invariant's random cases up front (`fc.sample(arb, {
+    numRuns, seed })` with the seed logged so a failure is replayable),
+    build every case's fixture repository first and keep the roots until
+    the batch has answered (the per-case `withRoot` cleanup moves to a
+    `finally` over the whole set - the BL-971 prefix sweep still reaps a
+    killed run), then make ONE `bb -e` call per invariant that loads the
+    libraries once and answers every case, printing one EDN/JSON vector;
+    assert per case with the shape and paths in the message (shrinking
+    is lost; the cases are a shape and up to three paths and read fine
+    as printed). Invariant 3's `threeCallers` already has the
+    one-process, three-answers form - generalise it over a vector of
+    `[root commit]` pairs rather than writing a fourth query.
+  - The NIL-for-unreadable check in invariant 2 rides the same batch
+    (its two answers are two more entries), so the marker stays a
+    distinct value, never a flattened empty list.
+  - Step handler `specs/pipeline/steps/bl1564OneBbProcessPerInvariantSteps.js`
+    puts a counting `bb` shim first on `PATH` (a shell script that
+    appends a line to a counter file under a `mkProcessTmpDir` root,
+    then execs the real `bb` found by `command -v` on the ORIGINAL PATH)
+    and runs the property file alone under the properties config as a
+    real subprocess, memoised across scenarios (the
+    bl1534BoundedSweepReachSteps.js shape). Land it in the same commit
+    as the feature (BL-233).
+
+  ## Not in scope
+
+  - `swarmforge/scripts/task_scope_gate_lib.bb`, `land_step_lib.bb`,
+    `unregistered_test_gate_lib.bb`, `vitest.properties.config.mjs`, and
+    BL-1297's own acceptance feature and handler are not touched.
+  - BL-1556 fixes the same class in bl1272 through that file's own CLI;
+    no shared batching helper is minted across the two - each file's
+    batch is a few lines and the two parcels must not entangle.
+
+notes: |
+  Register: backlog/standing-reds.tsv gains one `property` row naming this
+  ticket (same commit as this mint), first_seen 2026-09-14; QA removes it
+  in the land that turns the file green. QA's BL-1555 parcel waits on this
+  row (Article 4.2) and is told by note in the same pass. Sibling: BL-1556
+  (bl1272, same class, in the queue); BL-1555 owns the two reach-floor
+  files from the 2026-09-13 note.
+
+qa_e2e_procedure: |
+  On the parcel commit, from `extension/`:
+  1. Make a counting shim: `mkdir -p tmp/shim && printf '#!/bin/sh\necho x >> "$BL1564_COUNT"\nexec <real bb> "$@"\n' > tmp/shim/bb`
+     with `<real bb>` the absolute path from `command -v bb` resolved
+     OUTSIDE the shim dir, `chmod +x`, then `BL1564_COUNT=$PWD/tmp/count
+     PATH=$PWD/tmp/shim:$PATH npx vitest run --config
+     vitest.properties.config.mjs
+     test/bl1297MergeOwnPathsInvariants.property.test.js` five times ->
+     green every time, `wc -l < tmp/count` at most 3 per run (unfixed: 98).
+  2. Each run's stdout prints `BL-1564 reach map (invariant 1)`,
+     `(invariant 2)` and `(invariant 3)` with `cases` at least 21, 18 and
+     18 respectively; vitest's per-test duration for invariant 3 is a
+     small fraction of the 20 s budget (about 2 s on a quiet host,
+     against 7.6-8.7 s alone and > 20 s in the lane unfixed).
+  3. `npm run test:properties` from `extension/` -> this file green in
+     the full lane; the standing-red row for it is gone from
+     `backlog/standing-reds.tsv`.
+  4. `git diff main...HEAD --name-only` names the property test, the
+     step handler, the feature, evidence, and the register row removal;
+     `extension/src/`, the three bb libraries, `vitest.properties.config.mjs`
+     and `property_suite_standing_allowlist.tsv` are unchanged;
+     `grep -n 'numRuns: 15\|numRuns: 12\|numRuns: 8' <the test>` still
+     shows all three counts.
+  5. Break-then-restore: move one invariant's bb call back inside its
+     per-case loop; the shim count leaves 3 and scenario 02 fails on the
+     first run; restore.
