@@ -138,3 +138,5 @@ qa_e2e_procedure: |
   4. Break-then-restore: delete the second call in case 03; the test fails
      on `expected exit 0` and the feature's scenario 01 goes red; restore.
   5. The row for this file is gone from `backlog/standing-reds.tsv`.
+
+assigned_to: coder
