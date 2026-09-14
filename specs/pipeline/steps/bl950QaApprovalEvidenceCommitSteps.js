@@ -4,11 +4,17 @@
 // the bare commit it received". Drives the REAL swarm_handoff.bb (and its
 // real review_forward_evidence_gate_lib.bb call chain) against a real
 // fixture git repo - the same pattern as bl806ReviewForwardEvidenceGateSteps.js,
-// which this gate extends. The feature's commit literals ("aaaaaaaaaa",
-// "bbbbbbbbbb") are KNOWN_VALUES tokens mapped to REAL fixture commits -
-// swarm_handoff.bb canonicalizes the commit header against the repo, so a
-// literal placeholder hash would be refused for the wrong reason (commit
-// resolution) and prove nothing about the gate.
+// which this gate extends.
+//
+// BL-1565 (2026-09-14) retired every QA-to-coordinator scenario this file
+// used to drive (see the feature file's own header comment for why): a
+// git_handoff naming the coordinator is refused before `validate` - and so
+// before review_forward_evidence_gate_lib.bb - ever runs, so neither the
+// "refused for Article 4.4 reasons" nor the "delivered" claims stay true.
+// Only the non-approval-forward coverage (a bounce, a merge-up note)
+// remains, and it needs no coordinator recipient or "aaaaaaaaaa"-family
+// KNOWN_VALUES commit token at all - the fixture keeps a single real
+// commit for the received/cited task instead.
 
 const assert = require('node:assert/strict');
 const fs = require('node:fs');
@@ -53,7 +59,7 @@ function processEnvAllowlist() {
 }
 
 function roleDir(ctx, role) {
-  return role === 'coordinator' ? ctx.root : path.join(ctx.root, role);
+  return path.join(ctx.root, role);
 }
 
 function mailboxDir(ctx, role, state) {
@@ -68,7 +74,6 @@ function writeRoles(ctx) {
     `hardender\thardender-wt\t${roleDir(ctx, 'hardender')}\tswarmforge-hardender\tHardener\tclaude\tbatch`,
     `documenter\tdocumenter-wt\t${roleDir(ctx, 'documenter')}\tswarmforge-documenter\tDocumenter\tclaude\ttask`,
     `QA\tQA-wt\t${roleDir(ctx, 'QA')}\tswarmforge-QA\tQa\tclaude\ttask`,
-    `coordinator\tmaster\t${roleDir(ctx, 'coordinator')}\tswarmforge-coordinator\tCoordinator\tclaude\ttask`,
   ];
   mkdirp(path.join(ctx.root, '.swarmforge'));
   fs.writeFileSync(path.join(ctx.root, '.swarmforge', 'roles.tsv'), `${rows.join('\n')}\n`);
@@ -79,15 +84,13 @@ function mkFixture(ctx) {
   git(ctx.root, ['init', '-q']);
   git(ctx.root, ['-c', 'user.email=t@t', '-c', 'user.name=t', 'commit', '-q', '--allow-empty', '-m', 'received work']);
   const received = gitOut(ctx.root, ['rev-parse', '--short=10', 'HEAD']);
-  git(ctx.root, ['-c', 'user.email=t@t', '-c', 'user.name=t', 'commit', '-q', '--allow-empty', '-m', 'QA pass evidence']);
-  const evidence = gitOut(ctx.root, ['rev-parse', '--short=10', 'HEAD']);
   for (const role of ['coder', 'cleaner', 'architect', 'hardender', 'documenter', 'QA']) {
     mkdirp(roleDir(ctx, role));
   }
   writeRoles(ctx);
-  // The feature's commit-literal tokens, mapped to the real fixture commits
+  // The feature's commit-literal token, mapped to the real fixture commit
   // (KNOWN_VALUES - an unknown token throws, never a passthrough).
-  ctx.commitTokens = { aaaaaaaaaa: received, bbbbbbbbbb: evidence };
+  ctx.commitTokens = { aaaaaaaaaa: received };
 }
 
 function knownCommit(ctx, token) {
@@ -124,8 +127,6 @@ const SEND_BUILDERS = {
     `type: git_handoff\nto: coder\npriority: 00\ntask: ${task}\ncommit: ${ctx.commitTokens.aaaaaaaaaa}\n`,
   'a merge-up note to the worktree roles': (ctx, task) =>
     `type: note\nto: coder,cleaner,architect,hardender,documenter\npriority: 00\nmessage: ${task} QA-approved ${ctx.commitTokens.aaaaaaaaaa} - merge up\n`,
-  'a git_handoff naming the same commit with a reroute_reason': (ctx, task) =>
-    `type: git_handoff\nto: coordinator\npriority: 50\ntask: ${task}\ncommit: ${ctx.commitTokens.aaaaaaaaaa}\nreroute_reason: deliberate detour for the acceptance fixture\n`,
 };
 
 function registerSteps(registry) {
@@ -148,24 +149,7 @@ function registerSteps(registry) {
     FEATURE
   );
 
-  registry.defineScoped(
-    /^QA holds no in-process parcel for task "([^"]+)"$/,
-    (ctx, task) => {
-      ctx.task = task;
-      // The fixture starts with an empty in_process box - nothing to seed.
-    },
-    FEATURE
-  );
-
   // ── Whens ────────────────────────────────────────────────────────────
-  registry.defineScoped(
-    /^QA sends an approval git_handoff to the coordinator naming commit "([^"]+)"$/,
-    (ctx, token) => {
-      sendFromQa(ctx, `type: git_handoff\nto: coordinator\npriority: 50\ntask: ${ctx.task}\ncommit: ${knownCommit(ctx, token)}\n`);
-    },
-    FEATURE
-  );
-
   registry.defineScoped(
     /^QA sends (.+) for task "([^"]+)"$/,
     (ctx, send, task) => {
@@ -178,24 +162,6 @@ function registerSteps(registry) {
   );
 
   // ── Thens ────────────────────────────────────────────────────────────
-  registry.defineScoped(
-    /^the send is refused$/,
-    (ctx) => {
-      assert.equal(ctx.result.status, 2, `expected a refusal (exit 2), got exit ${ctx.result.status}:\n${ctx.result.output}`);
-      assert.match(ctx.result.output, /HANDOFF INVALID/);
-    },
-    FEATURE
-  );
-
-  registry.defineScoped(
-    /^the refusal names Article 4\.4 pass evidence$/,
-    (ctx) => {
-      assert.ok(ctx.result.output.includes('4.4'), `expected the refusal to name Article 4.4, got:\n${ctx.result.output}`);
-      assert.match(ctx.result.output, /evidence/, `expected the refusal to name pass evidence, got:\n${ctx.result.output}`);
-    },
-    FEATURE
-  );
-
   registry.defineScoped(
     /^the send is delivered$/,
     (ctx) => {

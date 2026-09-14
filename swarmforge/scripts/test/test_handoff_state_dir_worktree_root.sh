@@ -81,7 +81,12 @@ outbox_count() { find "$ROOT_OUTBOX" -maxdepth 1 -name '*.handoff' 2>/dev/null |
 make_draft() {
   local dir="$1"
   mkdir -p "$dir/tmp"
-  printf 'type: git_handoff\nto: coordinator\npriority: 50\ntask: BL-056-test\ncommit: %s\n' \
+  # BL-1565 (2026-09-14): a git_handoff naming the coordinator is now
+  # refused at send (Article 1.1 - the coordinator holds no code worktree).
+  # This file's own subject is root-anchoring, not the recipient, so it
+  # targets the specifier instead - also master-resident, unaffected by
+  # this test's cd-from-subdir mechanics, and untouched by the new guard.
+  printf 'type: git_handoff\nto: specifier\npriority: 50\ntask: BL-056-test\ncommit: %s\n' \
     "$COMMIT" > "$dir/tmp/draft.txt"
   echo "$dir/tmp/draft.txt"
 }

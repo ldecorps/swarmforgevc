@@ -8,9 +8,12 @@ Feature: BL-1536 A bounce from the terminal role is never stamped merge-only
   swarm_handoff.bb stamps `non-forwarding: true` on every git_handoff whose
   SENDER is the last code-worktree role in roles.tsv (`with-non-forwarding`,
   `last-pack-role?`). The stamp was meant for that role's terminal FORWARD -
-  QA's approved commit to the coordinator, which nobody forwards again. It
-  keys on the sender's seat alone, so QA's BOUNCE to an earlier role carries
-  the same marker, and Article 2.4 tells the recipient a marked inbound is
+  QA's approved commit to the coordinator, which nobody forwarded again
+  (BL-1565 retired that hop itself, 2026-09-14: a git_handoff naming the
+  coordinator is refused at send before this stamping decision ever runs,
+  so the close now reaches the coordinator only as a `note`). It keys on
+  the sender's seat alone, so QA's BOUNCE to an earlier role carries the
+  same marker, and Article 2.4 tells the recipient a marked inbound is
   merge-only: merge, done_with_current, send nothing. The bounce is dropped
   by a role obeying the protocol. This feature is that the stamp follows the
   hop's DIRECTION: a git_handoff addressed to a role earlier in pipeline
@@ -30,7 +33,6 @@ Feature: BL-1536 A bounce from the terminal role is never stamped merge-only
       | sender     | recipient   | carries        |
       | QA         | hardender   | does not carry |
       | QA         | coder       | does not carry |
-      | QA         | coordinator | carries        |
       | hardender  | coder       | does not carry |
       | documenter | QA          | does not carry |
 
@@ -46,5 +48,4 @@ Feature: BL-1536 A bounce from the terminal role is never stamped merge-only
 
     Examples:
       | recipient   | carries        |
-      | coordinator | carries        |
       | hardender   | does not carry |
