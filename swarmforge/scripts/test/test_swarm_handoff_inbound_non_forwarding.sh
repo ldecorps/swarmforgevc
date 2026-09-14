@@ -108,16 +108,52 @@ pass "a non-forwarding inbound still blocks alongside an ordinary forwardable in
 
 # ── 03: with the non-forwarding inbound cleared, only the ordinary one
 #        remains — the send must now be ALLOWED (both `some` and the
-#        `every?` mutant agree here — the discriminator is 02, not this). ──
+#        `every?` mutant agree here — the discriminator is 02, not this).
+#        A git_handoff send runs the two-call self-audit (Article 2.3,
+#        BL-1529): the first call always challenges (AUDIT_REQUIRED /
+#        HANDOFF_NOT_QUEUED) and queues nothing, whatever exit convention
+#        it uses; the identical second call queues. run_send's
+#        SWARMFORGE_SKIP_DAEMON=1 (fine for cases 01/02, which refuse
+#        before delivery is ever reached) turns any sync-inject failure
+#        fatal on a call that actually reaches delivery, and this fixture
+#        creates no .swarmforge/tmux-socket - use the established
+#        mailbox-only escape instead (test_mailbox_only_delivery.sh /
+#        BL-1565's pattern: SWARMFORGE_MAILBOX_ONLY=1 with
+#        SWARMFORGE_SKIP_DAEMON unset).
 rm -f "$IN_PROCESS/00_lone_non_forwarding.handoff"
 
+run_send_queue() {
+  (
+    cd "$ROOT"
+    export SWARMFORGE_ROLE=coordinator
+    export SWARMFORGE_MAILBOX_ONLY=1
+    unset SWARMFORGE_SKIP_DAEMON
+    bb "$SWARM_HANDOFF" "$DRAFT"
+  )
+}
+
+OUTBOX="$MASTER_WT/.swarmforge/handoffs/coordinator/outbox"
+outbox_count() { find "$OUTBOX" -maxdepth 1 -name '*.handoff' 2>/dev/null | wc -l | tr -d ' '; }
+
 set +e
-out3="$(run_send 2>&1)"
-rc3=$?
+out3a="$(run_send_queue 2>&1)"
 set -e
-echo "$out3" | grep -q "Current inbound handoff is non-forwarding" \
-  && fail "ordinary-only in_process: send wrongly refused: $out3"
-[[ "$rc3" -eq 0 ]] || fail "ordinary-only in_process: expected exit 0, got $rc3: $out3"
+echo "$out3a" | grep -q "Current inbound handoff is non-forwarding" \
+  && fail "ordinary-only in_process (call 1): send wrongly refused: $out3a"
+echo "$out3a" | grep -q "AUDIT_REQUIRED" \
+  || fail "ordinary-only in_process (call 1): expected the audit challenge: $out3a"
+[[ "$(outbox_count)" == "0" ]] || fail "ordinary-only in_process (call 1): the audit challenge call queued a handoff"
+
+set +e
+out3b="$(run_send_queue 2>&1)"
+rc3b=$?
+set -e
+echo "$out3b" | grep -q "Current inbound handoff is non-forwarding" \
+  && fail "ordinary-only in_process (call 2): send wrongly refused: $out3b"
+[[ "$rc3b" -eq 0 ]] || fail "ordinary-only in_process (call 2): expected exit 0, got $rc3b: $out3b"
+echo "$out3b" | grep -q "HANDOFF QUEUED (mailbox only, no tmux inject):" \
+  || fail "ordinary-only in_process (call 2): missing mailbox-only queue message: $out3b"
+[[ "$(outbox_count)" == "1" ]] || fail "ordinary-only in_process (call 2): handoff did not land in the outbox"
 pass "an ordinary (non-marked) inbound alone does not block the forward"
 
 echo "ALL PASS"
