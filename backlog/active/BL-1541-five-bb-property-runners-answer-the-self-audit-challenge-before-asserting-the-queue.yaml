@@ -151,3 +151,5 @@ notes: |
   - Not a fold-in to BL-1529: its deliverable is the script verbs' sending
     path and it names only the two shell tests; the runners are their own
     senders.
+
+assigned_to: coder
