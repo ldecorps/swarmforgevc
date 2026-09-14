@@ -2105,6 +2105,15 @@ resident to that dormant role to drain it.
   home exactly as before. The chase sweep keeps its priority choice: an urgent
   or starved mailbox elsewhere still redirects the resident on its next sweep.
   `config rotation_after_forward home` restores the BL-550 home hop.
+- **No parcel to follow: ask the router, do not hop home (hotfix 2026-09-14).**
+  When the emptied seat forwarded nothing (it consumed a note) or its last
+  forward is already taken, `ready_for_next` asks the same mailbox scoring the
+  chase sweep uses (`mono_router_rows_lib.bb`, a dispatcher-side copy of the
+  daemon's `role-mail-row`) and prints `ROTATE_TO: <that role>` with reason
+  `router-preferred`. Only when nothing is actionable anywhere does it fall
+  back to home. `mono_router_rows_cli.bb <root>` prints the same answer for
+  an operator; `test_handoffd_priority_rotate_wiring.sh` guards it against
+  drifting from the daemon.
 
 **Configuration:** `note_actionable_after_ms` (positive integer, milliseconds).
 Read at daemon startup via the effective config (BL-216); absent, malformed,

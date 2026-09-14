@@ -1059,6 +1059,43 @@
          {:target "coder" :reason :policy-home}
          (mono-router-lib/forward-rotate-target (assoc fwd-base :policy "home" :recipients ["architect"])))
 
+;; ── Hotfix 2026-09-14: no parcel to follow -> router's own next target ─────
+(def home-fwd {:target "coder" :reason :recipient-not-holding})
+(assert= "a confirmed recipient stands, router ignored"
+         {:target "architect" :reason :forward-recipient}
+         (mono-router-lib/resolve-empty-mailbox-target
+          {:forward {:target "architect" :reason :forward-recipient} :home-role "coder" :role "QA"
+           :router-preferred "hardender" :known-roles roles}))
+(assert= "policy home stands even with a router target"
+         {:target "coder" :reason :policy-home}
+         (mono-router-lib/resolve-empty-mailbox-target
+          {:forward {:target "coder" :reason :policy-home} :home-role "coder" :role "QA"
+           :router-preferred "hardender" :known-roles roles}))
+(assert= "home fallback + router names a dormant role -> that role"
+         {:target "hardender" :reason :router-preferred}
+         (mono-router-lib/resolve-empty-mailbox-target
+          {:forward home-fwd :home-role "coder" :role "QA" :router-preferred "hardender" :known-roles roles}))
+(assert= "home fallback + router names nothing -> home, reason kept"
+         home-fwd
+         (mono-router-lib/resolve-empty-mailbox-target
+          {:forward home-fwd :home-role "coder" :role "QA" :router-preferred nil :known-roles roles}))
+(assert= "home fallback + router names home -> home, reason kept"
+         home-fwd
+         (mono-router-lib/resolve-empty-mailbox-target
+          {:forward home-fwd :home-role "coder" :role "QA" :router-preferred "coder" :known-roles roles}))
+(assert= "router names the coordinator -> home (never a rotation target)"
+         home-fwd
+         (mono-router-lib/resolve-empty-mailbox-target
+          {:forward home-fwd :home-role "coder" :role "QA" :router-preferred "coordinator" :known-roles roles}))
+(assert= "router names the departing role itself -> home"
+         home-fwd
+         (mono-router-lib/resolve-empty-mailbox-target
+          {:forward home-fwd :home-role "coder" :role "QA" :router-preferred "QA" :known-roles roles}))
+(assert= "router names an unknown role -> home"
+         home-fwd
+         (mono-router-lib/resolve-empty-mailbox-target
+          {:forward home-fwd :home-role "coder" :role "QA" :router-preferred "art-director" :known-roles roles}))
+
 (when (seq @failures)
   (binding [*out* *err*]
     (doseq [f @failures] (println f)))

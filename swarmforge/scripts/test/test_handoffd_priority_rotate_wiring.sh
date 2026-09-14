@@ -102,6 +102,11 @@ printf 'id: rp1\nfrom: architect\nto: coder\npriority: 50\ntype: git_handoff\nta
   "$NEW_AT" > "$CODER_A/.swarmforge/handoffs/inbox/new/50_from_architect_to_coder.handoff"
 
 TARGET_A="$(print_preferred "$ROOT_A")"
+# Hotfix 2026-09-14 drift guard: the dispatcher-side copy of role-mail-row
+# (mono_router_rows_lib.bb) must answer exactly what the daemon answers.
+ROWS_A="$(bb "$SCRIPT_DIR/../mono_router_rows_cli.bb" "$ROOT_A")"
+[[ "$ROWS_A" == "$TARGET_A" ]] \
+  || fail "A: mono_router_rows_cli.bb drifted from handoffd (daemon='$TARGET_A' lib='$ROWS_A')"
 [[ "$TARGET_A" == "specifier" ]] \
   || fail "A: expected specifier (priority 00), got '$TARGET_A'"
 pass "A: older priority-00 beats newer priority-50 via real role-mail-row"
@@ -143,6 +148,11 @@ printf 'id: c40\nfrom: cleaner\nto: coder\npriority: 40\ntype: git_handoff\ntask
   "$PRI40_AT" > "$CODER_B/.swarmforge/handoffs/inbox/new/40_from_cleaner_to_coder.handoff"
 
 TARGET_B="$(print_preferred "$ROOT_B")"
+# Hotfix 2026-09-14 drift guard: the dispatcher-side copy of role-mail-row
+# (mono_router_rows_lib.bb) must answer exactly what the daemon answers.
+ROWS_B="$(bb "$SCRIPT_DIR/../mono_router_rows_cli.bb" "$ROOT_B")"
+[[ "$ROWS_B" == "$TARGET_B" ]] \
+  || fail "B: mono_router_rows_cli.bb drifted from handoffd (daemon='$TARGET_B' lib='$ROWS_B')"
 [[ "$TARGET_B" == "specifier" ]] \
   || fail "B: expected specifier (best priority 00 despite newer 70), got '$TARGET_B'"
 pass "B: role-mail-row ranks by best priority, not newest parcel's"
@@ -181,6 +191,11 @@ printf 'id: c90\nfrom: cleaner\nto: coder\npriority: 90\ntype: git_handoff\ntask
   "$(iso_ago 10)" > "$CODER_C/.swarmforge/handoffs/inbox/new/90_from_cleaner_to_coder.handoff"
 
 TARGET_C="$(print_preferred "$ROOT_C")"
+# Hotfix 2026-09-14 drift guard: the dispatcher-side copy of role-mail-row
+# (mono_router_rows_lib.bb) must answer exactly what the daemon answers.
+ROWS_C="$(bb "$SCRIPT_DIR/../mono_router_rows_cli.bb" "$ROOT_C")"
+[[ "$ROWS_C" == "$TARGET_C" ]] \
+  || fail "C: mono_router_rows_cli.bb drifted from handoffd (daemon='$TARGET_C' lib='$ROWS_C')"
 [[ "$TARGET_C" == "coder" ]] \
   || fail "C: fresh priority-00 note must not beat coder's actionable 90 (got '$TARGET_C')"
 [[ "$TARGET_C" != "specifier" ]] \
@@ -219,6 +234,11 @@ printf 'id: p90\nfrom: specifier\nto: cleaner\npriority: 90\ntype: git_handoff\n
   "$(iso_ago 30)" > "$CLEAN_D/.swarmforge/handoffs/inbox/new/90_from_specifier_to_cleaner.handoff"
 
 TARGET_D="$(print_preferred "$ROOT_D")"
+# Hotfix 2026-09-14 drift guard: the dispatcher-side copy of role-mail-row
+# (mono_router_rows_lib.bb) must answer exactly what the daemon answers.
+ROWS_D="$(bb "$SCRIPT_DIR/../mono_router_rows_cli.bb" "$ROOT_D")"
+[[ "$ROWS_D" == "$TARGET_D" ]] \
+  || fail "D: mono_router_rows_cli.bb drifted from handoffd (daemon='$TARGET_D' lib='$ROWS_D')"
 [[ "$TARGET_D" == "cleaner" ]] \
   || fail "D: expected cleaner (priority 90), got '$TARGET_D' (missing priority jumped?)"
 pass "D: missing priority never jumps a valid 90 via real role-mail-row"
