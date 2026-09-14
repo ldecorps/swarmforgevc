@@ -14,8 +14,17 @@
 # This drives the REAL swarm_handoff.bb send path end to end (not a
 # reimplementation of the direction math - that is
 # reverse_audit_handoff_test_runner.bb's job) and asserts the installed
-# parcel's own `non-forwarding:` header, both directions, from the same
-# terminal sender.
+# parcel's own `non-forwarding:` header, from the terminal sender's bounce
+# direction.
+#
+# BL-1565 (2026-09-14) retired the OTHER direction this file used to cover
+# here: QA's terminal FORWARD to the coordinator. A git_handoff naming the
+# coordinator is now refused at send, before with-non-forwarding ever runs,
+# so that hop can no longer reach the marker at all - retired, not
+# reworded (BL-1006), matching the same two rows retired from
+# specs/features/BL-1536-a-bounce-from-the-terminal-role-is-never-stamped-merge-only.feature.
+# The coordinator-recipient coverage now lives in
+# test_swarm_handoff_refuses_coordinator_git_handoff.sh.
 
 set -euo pipefail
 unset SWARMFORGE_ROLE
@@ -86,13 +95,5 @@ if grep -q '^non-forwarding:' "$BOUNCE_FILE"; then
   fail "QA->hardender bounce was stamped non-forwarding - Article 2.4 would tell hardender to merge-only and drop it:\n$(cat "$BOUNCE_FILE")"
 fi
 pass "QA's bounce to hardender carries no non-forwarding marker"
-
-# ── 02: QA's terminal FORWARD to the coordinator still carries the marker ──
-FORWARD_FILE="$(send coordinator bl1536-test-qa-forward-to-coordinator)"
-grep -q '^to: coordinator$' "$FORWARD_FILE" \
-  || fail "forward parcel: expected 'to: coordinator', file:\n$(cat "$FORWARD_FILE")"
-grep -q '^non-forwarding: true$' "$FORWARD_FILE" \
-  || fail "QA->coordinator terminal forward lost its non-forwarding marker:\n$(cat "$FORWARD_FILE")"
-pass "QA's terminal forward to the coordinator still carries non-forwarding: true"
 
 echo "ALL PASS"

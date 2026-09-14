@@ -29,6 +29,7 @@
 (load-file (str (fs/path (fs/parent (fs/canonicalize *file*)) "unregistered_test_gate_lib.bb")))
 (load-file (str (fs/path (fs/parent (fs/canonicalize *file*)) "reverse_hop_lib.bb")))
 (load-file (str (fs/path (fs/parent (fs/canonicalize *file*)) "handoff_draft_root_guard_lib.bb")))
+(load-file (str (fs/path (fs/parent (fs/canonicalize *file*)) "git_handoff_recipient_guard_lib.bb")))
 
 (def usage-text
   (str "Usage: swarm_handoff.sh <draft-file>\n\n"
@@ -1155,6 +1156,22 @@
       (when-not (role-known? sender)
         (exit! 1 (str "Unknown sender role: " sender)))
       (let [{:keys [headers ordered errors]} (parse-draft draft)
+            ;; BL-1565: refuse a git_handoff naming the coordinator BEFORE
+            ;; `validate` runs at all - a refusal needs no git repository
+            ;; and no tmux socket: `validate` tries to canonicalize `commit:`
+            ;; via `git rev-parse`, which a fixture (or a malformed/stale
+            ;; commit citation) can fail well before this decision would
+            ;; ever be reached otherwise. Checked on the literal draft `to:`
+            ;; header, split exactly as `validate-recipients` does (no trim -
+            ;; role names never carry whitespace in production).
+            raw-recipients (if-let [to (get headers "to")]
+                             (str/split to #"," -1)
+                             [])
+            _ (let [decision (git-handoff-recipient-guard-lib/decide
+                              {:type (get headers "type")
+                               :recipients raw-recipients})]
+                (when (= :refuse (:decision decision))
+                  (exit! 1 (:message decision))))
             validation (validate headers ordered sender)
             all-errors (vec (concat errors (:errors validation)))]
         (when (seq all-errors)
@@ -1169,6 +1186,16 @@
                                              :root (project-root)
                                              :headers headers
                                              :sender sender})
+              ;; BL-1565: consult again on the POST-ROUTING recipient set -
+              ;; required_stages routing (BL-606) can rewrite `to:` before a
+              ;; parcel is ever written, so the refusal must hold for where
+              ;; the parcel actually goes, not only the literal draft header
+              ;; checked above.
+              _ (let [routed-decision (git-handoff-recipient-guard-lib/decide
+                                       {:type (get headers "type")
+                                        :recipients (:recipients routed)})]
+                  (when (= :refuse (:decision routed-decision))
+                    (exit! 1 (:message routed-decision))))
               ;; BL-1536: decided from the FINAL, post-routing recipients -
               ;; required_stages routing (BL-606) can rewrite `to:` before a
               ;; parcel is ever written, and the stamp must follow where the
