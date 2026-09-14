@@ -161,11 +161,22 @@
 
 (defn check-compose!
   "Invariant 1's prompt half over one multi-seat stage: metadata role ==
-   stage for BOTH seats, artifact files seat-keyed."
+   stage for BOTH seats, artifact files seat-keyed.
+   MODEL_FACTORY_STATE_DIR/MODEL_STEWARD_STATE_DIR are pinned to a fixture
+   path that never exists, so this draw's per-seat --model always resolves
+   from the pack itself - resolve_claude_model_for_index otherwise defaults
+   to THIS repo's real .swarmforge/model-factory/assignment.json, whose
+   live overlay (agent claude, model claude-sonnet-5, for coder/cleaner/
+   architect/...) silently overrides any other model the generator draws,
+   failing the assertion below on live-swarm environment state rather than
+   on anything this parcel changed."
   [draw root pack]
   (let [[stage seats] (first (filter (fn [[_ s]] (> (count s) 1)) (:stages pack)))
         [bare extra] [(first seats) (second seats)]
-        res (sh {:extra-env {"XDG_RUNTIME_DIR" "/tmp"}}
+        isolated-env {"XDG_RUNTIME_DIR" "/tmp"
+                      "MODEL_FACTORY_STATE_DIR" (str (fs/path root ".swarmforge" "model-factory"))
+                      "MODEL_STEWARD_STATE_DIR" (str (fs/path root ".swarmforge" "model-steward"))}
+        res (sh {:extra-env isolated-env}
                 "zsh" "-c"
                 (format "source '%s' '%s'; parse_config; generate_dormant_role_launch_artifacts $(( ${ROLE_INDEX[%s]} + 1 )); generate_dormant_role_launch_artifacts $(( ${ROLE_INDEX[%s]} + 1 ))"
                         swarmforge-sh root bare extra))]
