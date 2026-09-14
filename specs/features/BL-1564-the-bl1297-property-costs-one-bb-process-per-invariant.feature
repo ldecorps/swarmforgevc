@@ -1,3 +1,7 @@
+# acceptance-mutation-manifest-begin
+# {"version":1,"tested_at":"2026-09-14T23:05:27.259071320Z","feature_name":"BL-1564 The bl1297 property costs one bb process per invariant","feature_path":"/home/carillon/swarmforgevc/.worktrees/hardender/specs/features/BL-1564-the-bl1297-property-costs-one-bb-process-per-invariant.feature","background_hash":"b175d2c4b0bdc613db5d1ea12033d7f0994eb8f4b9386c86447fff22d86a42ff","implementation_hash":"unknown","scenarios":[]}
+# acceptance-mutation-manifest-end
+
 Feature: BL-1564 The bl1297 property costs one bb process per invariant
 
   extension/test/bl1297MergeOwnPathsInvariants.property.test.js drives the
