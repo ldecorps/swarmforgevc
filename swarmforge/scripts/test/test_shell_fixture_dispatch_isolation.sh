@@ -43,7 +43,7 @@ pass() { echo "PASS: $*"; }
 # A script resolves its own root if it runs the dispatch table, asks git for
 # the root, or cd's to its own directory. Everything else takes the root it
 # is given and is safe to invoke from anywhere.
-SELF_ROOTING_RE='run-dispatch!|dispatch-lib/git-root|cd "\$SCRIPT_DIR"|cd "\$\(dirname "\$0"\)"'
+SELF_ROOTING_RE='run-dispatch!|run-dispatch-forwarding-args!|dispatch-lib/git-root|cd "\$SCRIPT_DIR"|cd "\$\(dirname "\$0"\)"'
 
 # Comments are prose, not behaviour. batch_claim_progress_cli.bb carries a
 # comment explaining that its .sh sibling's own `cd "$SCRIPT_DIR"` makes it
@@ -60,7 +60,7 @@ self_rooting_scripts() {
   local f
   for f in "$REAL_SCRIPTS_DIR"/*.sh "$REAL_SCRIPTS_DIR"/*.bb; do
     [ -f "$f" ] || continue
-    if code_only "$f" | grep -qE "$SELF_ROOTING_RE" 2>/dev/null; then
+    if code_only "$f" | grep -E "$SELF_ROOTING_RE" >/dev/null 2>&1; then
       basename "$f"
     fi
   done
