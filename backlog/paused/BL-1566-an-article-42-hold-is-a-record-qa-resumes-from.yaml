@@ -32,7 +32,7 @@ required_wiring:
   - 'swarmforge/scripts/done_with_current_task.bb::qa-hold-lib/::a released hold blocks completing a note, from the live completion path'
   - 'specs/pipeline/steps/bl1566ArticleFortyTwoHoldRecordSteps.js::registerSteps::handler lands in the same parcel as the feature (BL-233)'
 
-human_approval: pending
+human_approval: approved
 approval_context: >
   A new feature file is authored here, so it needs a tap. No choice is
   posed and there are no ruling_options. FIRM: the hold is released by the
