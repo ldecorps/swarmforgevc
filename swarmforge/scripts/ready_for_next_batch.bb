@@ -9,6 +9,7 @@
 (load-file (str (fs/path (fs/parent *file*) "handoff_lib.bb")))
 (load-file (str (fs/path (fs/parent *file*) "backlog_depth_lib.bb")))
 (load-file (str (fs/path (fs/parent *file*) "mono_router_lib.bb")))
+(load-file (str (fs/path (fs/parent *file*) "mono_router_rows_lib.bb")))
 (load-file (str (fs/path (fs/parent *file*) "batch_claim_progress_lib.bb")))
 (load-file (str (fs/path (fs/parent *file*) "idle_clear_fullness_cli.bb")))
 
@@ -57,11 +58,22 @@
                        :known-roles known
                        :delivered? (boolean (:delivered? forward))
                        :holding (when (:delivered? forward)
-                                  (handoff-lib/roles-holding-parcel-id (:id forward) (:recipients forward)))})]
+                                  (handoff-lib/roles-holding-parcel-id (:id forward) (:recipients forward)))})
+            ;; Hotfix 2026-09-14: same as ready_for_next_task.bb - no parcel
+            ;; to follow -> the router's own next target, never a home hop.
+            router-preferred (when (= (str (:target decision)) (str home-role))
+                               (try (mono-router-rows-lib/preferred-rotate-role (handoff-lib/target-root))
+                                    (catch Exception _ nil)))
+            final (mono-router-lib/resolve-empty-mailbox-target
+                   {:forward decision
+                    :home-role home-role
+                    :role role
+                    :router-preferred router-preferred
+                    :known-roles known})]
         (println "ROTATE_HOME")
         (println (str "HOME_ROLE: " home-role))
-        (println (str "ROTATE_TO: " (:target decision)))
-        (println (str "ROTATE_REASON: " (name (:reason decision)))))
+        (println (str "ROTATE_TO: " (:target final)))
+        (println (str "ROTATE_REASON: " (name (:reason final)))))
       (do
         (println "NO_TASK")
         (maybe-clear-at-idle-boundary!)))))

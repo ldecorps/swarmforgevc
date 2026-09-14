@@ -548,6 +548,31 @@
                                         {:target candidate :reason :forward-recipient}
       :else                             {:target home-role :reason :recipient-not-holding})))
 
+(defn resolve-empty-mailbox-target
+  "Pure: the final rotate target for a non-home resident whose mailbox just
+   emptied. `forward` is forward-rotate-target's decision. When it already
+   names a recipient, or the pack pinned `rotation_after_forward home`, it
+   stands. Otherwise (no parcel to follow: the seat consumed a note, or its
+   last forward is already taken) `router-preferred` - the role the chase
+   sweep would pick right now (mono_router_rows_lib) - wins when it is a
+   known role other than the coordinator, the departing role and home;
+   any other case falls back to `forward` (i.e. home) exactly as before.
+   The hop home was only ever a way to let the router choose; asking it
+   directly saves the respawn."
+  [{:keys [forward home-role role router-preferred known-roles]}]
+  (let [rp (some-> router-preferred str str/trim not-empty)
+        known (set (map str known-roles))]
+    (cond
+      (not= (str (:target forward)) (str home-role)) forward
+      (= (:reason forward) :policy-home) forward
+      (and rp
+           (contains? known rp)
+           (not= rp "coordinator")
+           (not= rp (str role))
+           (not= rp (str home-role)))
+      {:target rp :reason :router-preferred}
+      :else forward)))
+
 (defn should-rotate-resident?
   "Gate resident rotation during chase — avoid mid-turn thrash and burst
    rotates. BL-921: :already-active additionally requires live-role (a live

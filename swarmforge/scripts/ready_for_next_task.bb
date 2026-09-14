@@ -10,6 +10,7 @@
 (load-file (str (fs/path (fs/parent *file*) "swarm_identity_lib.bb")))
 (load-file (str (fs/path (fs/parent *file*) "backlog_depth_lib.bb")))
 (load-file (str (fs/path (fs/parent *file*) "mono_router_lib.bb")))
+(load-file (str (fs/path (fs/parent *file*) "mono_router_rows_lib.bb")))
 (load-file (str (fs/path (fs/parent *file*) "seat_affinity_lib.bb")))
 (load-file (str (fs/path (fs/parent *file*) "seat_difficulty_lib.bb")))
 (load-file (str (fs/path (fs/parent *file*) "pipeline_stage_lib.bb")))
@@ -128,11 +129,22 @@
                        :known-roles known
                        :delivered? (boolean (:delivered? forward))
                        :holding (when (:delivered? forward)
-                                  (handoff-lib/roles-holding-parcel-id (:id forward) (:recipients forward)))})]
+                                  (handoff-lib/roles-holding-parcel-id (:id forward) (:recipients forward)))})
+            ;; Hotfix 2026-09-14: no parcel to follow -> ask the router for
+            ;; its own next target instead of hopping home to wait for it.
+            router-preferred (when (= (str (:target decision)) (str home-role))
+                               (try (mono-router-rows-lib/preferred-rotate-role (handoff-lib/target-root))
+                                    (catch Exception _ nil)))
+            final (mono-router-lib/resolve-empty-mailbox-target
+                   {:forward decision
+                    :home-role home-role
+                    :role role
+                    :router-preferred router-preferred
+                    :known-roles known})]
         (println "ROTATE_HOME")
         (println (str "HOME_ROLE: " home-role))
-        (println (str "ROTATE_TO: " (:target decision)))
-        (println (str "ROTATE_REASON: " (name (:reason decision)))))
+        (println (str "ROTATE_TO: " (:target final)))
+        (println (str "ROTATE_REASON: " (name (:reason final)))))
       (do
         (println "NO_TASK")
         (maybe-clear-at-idle-boundary!)))))

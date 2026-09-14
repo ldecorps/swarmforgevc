@@ -264,6 +264,18 @@ notes: |
   only the opener narrows), and goal 7 then records "fixed by BL-1561"
   instead of a reproduction.
 
+  2026-09-14 ~09:10Z specifier amendment (cleaner D1, 20e59c7225, spec-gap):
+  scenario 07's step now reads "Then the ledger row for the reviewed commit
+  carries no human decision" - undecided = state neither certified nor
+  waived, human_decision null, decided_at null (the BL-1346 handler's
+  reading). The literal state pending was unreachable: the mint commit
+  links the stamp ticket and the ledger moves pending -> stamp-open before
+  any parcel runs. The handler's regex changes with it (coder rebuild);
+  no new scenario, no new choice, human_approval untouched. Same wording
+  applied to the seven paused stamp features (BL-1504/1506/1507/1508/1549/
+  1557/1563) in the same commit; BL-1342/BL-1346 landed with handlers that
+  already read pending as undecided and keep their text.
+
 qa_e2e_procedure: |
   On the parcel commit:
   1. `git diff main...HEAD --name-only` names only evidence, the feature,
@@ -289,3 +301,5 @@ qa_e2e_procedure: |
   posted on Telegram (telegram-approval-ask-messages.json); siblings
   BL-1561/BL-1562 are also pending the same gate. Holding all three in
   paused/ until human_approval flips to approved.
+
+assigned_to: coder

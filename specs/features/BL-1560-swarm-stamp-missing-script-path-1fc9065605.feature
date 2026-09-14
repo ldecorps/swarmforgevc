@@ -82,6 +82,10 @@ Feature: BL-1560 Stamp-off review of the seats-stop-hunting-for-ready_for_next h
     And the rendered RESUME-ON-START note names ./swarmforge/scripts/ready_for_next.sh
 
   # BL-1560 swarm-stamp-missing-script-path-07
+  # Undecided means: state is neither certified nor waived, human_decision
+  # is null and decided_at is null. The row moves pending -> stamp-open the
+  # moment the mint links the stamp ticket, so the literal state pending is
+  # unreachable from inside the parcel (BL-1560 cleaner D1, 2026-09-14).
   Scenario: the stamp leaves the certification decision to the human
     When the review parcel completes
-    Then the ledger row for the reviewed commit still reads "pending"
+    Then the ledger row for the reviewed commit carries no human decision
