@@ -1,0 +1,208 @@
+id: BL-1572
+title: "bl1429StandingRedThrottleFoldInvariants.property.test.js is flaky red on main with no owner: invariant 1 asserts that all 12 rework x standing-red combinations were reached after 60 uniform draws it only samples, so about one run in fifteen fails on generator coverage with the fold holding on every draw (QA alone on f016c869a0, specifier 1 of 20 on main, 2026-09-14) - the combination floor is constructed the way BL-1555 splits its cells and stays asserted"
+milestone: M8
+type: defect
+severity: high
+# high (standing-red rule 2026-09-05): a property-lane file that fails on
+# main about one run in fifteen is a broken safety signal, and it is an
+# unowned red that throttles intake (BL-1429) and held QA's BL-1570 parcel
+# under Article 4.2. Production is unaffected: on every drawn combination the
+# recommended cap is exactly the fold; the failing assertion is the
+# generator's own reach.
+status: todo
+epic: code-quality-gates
+priority: 8
+direction: swarm-reported
+depends_on: []
+mutation_cost: low
+# low: one property test file under extension/test (never extension/src),
+# one step-handler file. No production code, so no Stryker target; the
+# hardener records the fallback.
+slice_size_envelope: low
+required_stages: [coder, cleaner, architect, hardender, documenter, qa]
+
+acceptance: specs/features/BL-1572-the-bl1429-fold-property-constructs-its-combination-floor.feature
+
+# No consumer anchor is honest here (BL-1235): the live consumer is the
+# properties lane itself (`npm run test:properties`, vitest.properties.config.mjs),
+# which already collects the file and is the thing that is red. The handler
+# entry is the BL-233 in-parcel pin.
+required_wiring:
+  - 'specs/pipeline/steps/bl1572FoldFloorConstructedSteps.js::registerSteps::the handler lands in the same parcel as the feature (BL-233, BL-1371)'
+
+human_approval: pending
+approval_context: >
+  A new feature file is authored here, so it needs a tap. No choice is
+  posed and there are no ruling_options. FIRM: extension/src is not
+  edited - emit-throttle-recommendation and standingRedSignal are landed
+  contracts (BL-1429) and the fold property agrees with them on every draw;
+  the fix is in the test's own draws only. FIRM: no reach floor is lowered,
+  dropped, or made rarer-to-miss by raising numRuns - BL-1062's rule is
+  that a floor is met BY CONSTRUCTION, and a floor that is merely usually
+  met is still a flake (same FIRM line as BL-1555 and BL-1559). FIRM: the
+  three BL-1429 invariants and every assertion in the file keep their text
+  and meaning; only how invariant 1 chooses each draw's rework and
+  standing-red category changes. Minted by the specifier on QA's
+  unowned-red note of 2026-09-14 16:41Z from the BL-1570 parcel
+  (f016c869a0), which is held under Article 4.2 until this row exists.
+
+invariants:
+  - "A reach floor is met by construction: every value a floor names is produced by a draw plan that yields it on every run, never by a uniform draw the floor merely hopes will cover it."
+
+description: |
+  ## What is wrong
+
+  `extension/test/bl1429StandingRedThrottleFoldInvariants.property.test.js`
+  invariant 1 ("the recommended cap is always exactly the fold of the
+  rework and standing-red caps") draws `fc.constantFrom` over 3 rework
+  categories and `fc.constantFrom` over 4 standing-red categories for
+  `numRuns: 60`, records each `rework:standing` pair in a `seen` set, and
+  then asserts `seen.size` equals 12 - "every one of the 12 combinations,
+  including the ties this fold must resolve without raising, was actually
+  exercised". Sixty uniform draws over 12 cells leave at least one cell
+  unvisited with probability 0.0637 (inclusion-exclusion on the source
+  arities); fast-check 4.9.0's actual draw over 3000 seeds missed 204
+  times (6.8%), every one of the 12 cells among the missed. So about one
+  run in fifteen fails with
+  `expected all 12 combinations reached, got <11 or fewer>` while the fold
+  held on every draw. Same defect class as BL-1555 (bl1253, bl956) and
+  BL-1559 (bl983): a reach floor asserted after a sampled draw.
+
+  | who | where | result |
+  |---|---|---|
+  | QA, 2026-09-14 | BL-1570 parcel f016c869a0, full lane then alone | fails alone: `11 !== 12`, missing `severe:count` |
+  | QA, 2026-09-10 / 09-13 / 09-14 | BL-1494, BL-1498, BL-1555 evidence | red on the full lane, green once alone each time - recorded as a contention flake, which it is not |
+  | specifier, 2026-09-14 | 3000 seeded fast-check draws of the same two arbitraries | 204 miss (6.8%); exact uniform 6.4% |
+  | specifier, 2026-09-14 | 20 runs of the file alone on main d0a3abe40f | 19 green, run 16 red missing `degraded:count` and `severe:age` |
+
+  The file's own three prior sightings were each dismissed as
+  "green in isolation", which a 94% pass rate produces on most single
+  re-runs; QA's isolated red on 2026-09-14 is the same die landing the
+  other way. Latent since the file landed with BL-1429 (d584d435c5,
+  2026-09-05). Evidence:
+  `backlog/evidence/BL-1572-specifier-unowned-red-repro-20260914.md`.
+
+  ## What is wanted
+
+  - Invariant 1's 12-combination floor is met by construction on every
+    run and stays asserted at its value: the assertion that all 12
+    `rework x standing` combinations were reached remains in the source,
+    and a per-combination floor of `runsPerCell(60, 12)` = 5 draws is
+    asserted through the shared `assertReachFloor` helper
+    (`extension/test/helpers/reachFloors.js`, BL-1062/BL-1555), so a
+    combination that stopped being produced fails the file naming that
+    combination.
+  - The total draw budget of invariant 1 stays 60; invariants 2 and 3 and
+    their `numRuns` are untouched.
+  - The run prints one reach map line in the BL-1555 shape,
+    `BL-1572 reach map (invariant 1): {"combinations":12,"minDrawsPerCombination":5}`,
+    computed from the counts the run actually reached, never restated.
+  - The file is green on `main` alone under the properties config 15 of
+    15 times (QA e2e step 1), and this ticket's register row is removed
+    in the same land that turns it green.
+
+  ## How (direction, not mandate)
+
+  - Iterate the 12 cells the way BL-1553 iterates the damage kind and
+    BL-1555 splits bl956's overflow cell: an outer loop over
+    `REWORK_CATEGORIES x STANDING_CATEGORIES`, and inside each cell one
+    `fc.assert` with `numRuns: runsPerCell(60, 12)`. What is left to draw
+    inside a cell is the magnitude within the category, which today is a
+    fixed constant per category (`reworkRate` 0.3 or 0.6; register
+    `count`/`oldestAgeDays`/`unownedCount` per `writeStandingCategory`):
+    draw those from the category's band instead (degraded strictly
+    between the 2x and 4x baseline lines, severe above 4x; `count` above
+    the default 10, `oldestAgeDays` above the default 7, `unownedCount`
+    at least 1; the `none` cell inside every default), so the property
+    keeps drawing something real per run while the category is chosen by
+    construction. The band edges are the ones the file's own comments
+    already state against a 0.1 baseline; read them from the module's
+    defaults rather than restating them if the constants are exported.
+  - Count draws per cell in a map, then `assertReachFloor(counts,
+    ALL_COMBINATIONS, runsPerCell(60, 12), 'combination')` after the
+    loop, keeping the existing `seen.size === 12` assertion beside it.
+  - Step handler `specs/pipeline/steps/bl1572FoldFloorConstructedSteps.js`
+    drives the REAL file as a vitest subprocess, memoized per scenario
+    (the bl1555ReachFloorsConstructedSteps.js shape, `lib/lazy.js`): one
+    run for scenarios 01 and 02, a source read for 03; every Examples
+    value validated against an explicit lookup. The whole feature costs
+    one 3 s vitest run plus a file read, far inside the BL-1358 per-mutant
+    ceiling. Land the handler in the same commit as the feature (BL-233);
+    `steps/index.js` discovers `*Steps.js` by directory scan, no
+    registration edit.
+
+  ## Not in scope
+
+  - `extension/src/tools/emit-throttle-recommendation.ts`,
+    `extension/src/metrics/standingRedSignal.ts`,
+    `extension/src/metrics/reworkObservatoryStore.ts` and their unit
+    tests.
+  - Invariants 2 and 3 of the same file: their arbitraries carry no reach
+    floor (invariant 2 asserts per sequence; invariant 3's branch
+    coverage over 300 draws of 1..50 thresholds has no asserted floor).
+  - The other files QA's full-lane runs flagged on 2026-09-14
+    (`bl1474ReplayCommitRefusalReasonInvariants`,
+    `bl1315OwnPathsFullRangeInvariants`,
+    `bl1343ReplayNeverDropsOwnPathInvariants`, `meanTicketTimeCost`):
+    each green alone in QA's own isolation and none carries a sampled
+    floor - the lane-timeout class BL-1564 owns for bl1297. A green test
+    needs no owner (2026-09-07 rule).
+
+notes: |
+  - Minted 2026-09-14 by the specifier the same pass QA's note arrived
+    (BL-1570 parcel f016c869a0, "unowned-red
+    test/bl1429StandingRedThrottleFold - see BL-1570-QA-hold-20260914.md",
+    hold evidence on swarmforge-QA, not on main), per the standing-red
+    rule (Article 3.2.4, 2026-09-05 amendment): type defect, severity
+    high. Register row added to `backlog/standing-reds.tsv` in the mint
+    commit, lane `property`, first_seen 2026-09-14 - the date this red was
+    first RECORDED; QA's three earlier full-lane sightings (2026-09-10,
+    09-13, 09-14) were each dismissed as contention on one green re-run.
+  - Holder told the same pass (BL-1566 rule): a priority-00 note to QA,
+    `BL-1570: bl1429StandingRedThrottleFold owned by BL-1572 (<sha>) -
+    resume land`, sent right after the mint commit landed; the coordinator
+    was told the item is ready in paused.
+  - Not folded into BL-1555 (done 2026-09-14) or BL-1559 (paused,
+    approved): same defect class, but BL-1555 has landed and BL-1559 is a
+    bb runner in another lane. The invariant is reused word-for-word so
+    the architect reviews all three against the same property.
+  - Scenario 02's floor of 5 draws per combination is `runsPerCell(60, 12)`
+    exactly: the constructed loop yields it on every run, a uniform draw
+    of 60 over 12 cells landed every cell at 5 or more in 0 of 3000 seeds,
+    so the floor separates construction from sampling on sight.
+
+qa_e2e_procedure: |
+  On the parcel commit, from `extension/`:
+  1. `for i in $(seq 1 15); do npx vitest run --config vitest.properties.config.mjs test/bl1429StandingRedThrottleFoldInvariants.property.test.js || echo FAIL; done`
+     -> 15 of 15 green, no FAIL line, and every run prints
+     `BL-1572 reach map (invariant 1): {"combinations":12,"minDrawsPerCombination":5}`
+     (the unfixed file fails about 1 run in 15 and prints no reach map;
+     15 green runs of the unfixed file happen about 1 time in 3, so the
+     printed map, not the pass count alone, is the evidence).
+  2. Acceptance resolving all three scenarios of the feature file
+     (`swarmforge/scripts/run_acceptance.sh specs/features/BL-1572-*.feature`
+     from the repo root).
+  3. Break-then-restore: remove `severe` from the iterated rework cells;
+     step 1's first run fails naming the reach floor
+     (`reach floor: combination severe:none drawn 0 < 5` or the
+     `seen.size` assertion, whichever runs first); restore.
+  4. `git diff main...HEAD --name-only` names the property test file, the
+     step handler, the feature, evidence and the register row removal;
+     `extension/src` is unchanged and invariants 2 and 3 of the file are
+     byte-identical to main.
+  5. `bb swarmforge/scripts/standing_red_register_cli.bb .` after landing
+     reports no row for
+     `extension/test/bl1429StandingRedThrottleFoldInvariants.property.test.js`
+     and `"unowned":[]`.
+
+source: |
+  QA note, 2026-09-14 16:41Z, from the BL-1570 parcel (hold evidence
+  `backlog/evidence/BL-1570-QA-hold-20260914.md` on swarmforge-QA at
+  f016c869a0): "`bl1429StandingRedThrottleFoldInvariants` FAILS even in
+  isolation: `property: the recommended cap is always exactly the fold of
+  the rework and standing-red caps... 11 !== 12` - a generator-coverage
+  sampling gap (missing `severe:count` out of 12 rework x standing
+  combinations), same class as the BL-1559 (bl983) sampled-coverage-floor
+  flake, NOT a lane-timeout artifact." QA withheld BL-1570 under Article
+  4.2, completed the parcel merge-only, and waits for a resume once the
+  owning ticket exists.
