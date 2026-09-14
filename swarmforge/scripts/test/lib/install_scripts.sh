@@ -16,4 +16,13 @@ install_scripts() {
   local wt="$1"
   mkdir -p "$wt/swarmforge/scripts"
   cp "$REAL_SCRIPTS_DIR"/*.bb "$REAL_SCRIPTS_DIR"/*.sh "$wt/swarmforge/scripts/"
+  # unregistered_test_gate_lib.bb load-files this sibling unconditionally
+  # (relative to its own dirname, not the caller's root) whenever
+  # swarm_handoff.bb is loaded - a fixture that dispatches through a full
+  # swarm_handoff.sh send (not just SWARMFORGE_SKIP_DAEMON=1 receive/complete
+  # helpers) needs it on disk or the load-file itself throws before any gate
+  # runs. Its own manifest lookup is fail-open on a missing manifest, so the
+  # manifest file is deliberately not copied.
+  mkdir -p "$wt/swarmforge/scripts/test"
+  cp "$REAL_SCRIPTS_DIR/test/suite_inventory_lib.bb" "$wt/swarmforge/scripts/test/"
 }
