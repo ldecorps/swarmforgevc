@@ -141,6 +141,13 @@ notes: |
   is BL-1485's). Sibling: BL-1556 owns the third file in QA's note
   (bl1272LandedSiblingInvariants), a different class.
 
+  2026-09-14T12:36Z coordinator: QA withheld approve/land pending an
+  unowned red (bl1297MergeOwnPathsInvariants, evidence c859adced9) per
+  Article 4.2. BL-1564 (main 9605ab9538) now owns that row in
+  backlog/standing-reds.tsv. Sent QA a priority-00 note to resume
+  approval/land. assigned_to/status left as-is pending QA's own bookkeeping
+  handoff on completion.
+
 qa_e2e_procedure: |
   On the parcel commit, from `extension/`:
   1. `for f in bl1253TokenOwnershipInvariants bl956PipelineBoardCaptionCapInvariants; do
