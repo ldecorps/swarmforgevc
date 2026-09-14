@@ -1,0 +1,293 @@
+id: BL-1560
+title: "Swarm stamp-off: hotfix 1fc9065605 stops seats hunting for ready_for_next.sh at the worktree root (every generated boot nudge and the RESUME-ON-START note name ./swarmforge/scripts/ready_for_next.sh; a fourth tool-miss heal class, missing-script-path, repoints root-level ./x.sh tokens at ./swarmforge/scripts/ and opens on a tail-masked exit 0) - review the landed diff, confirm or refute, open narrow follow-ups; never rewrite it and never write the ledger decision"
+milestone: M8
+type: defect
+severity: medium
+# medium: the behaviour is already live on main, in the regenerated
+# .swarmforge/launch/*.sh nudges (2026-09-14 08:00Z) and in five of the six
+# role worktrees; what is open is the review the constitution owes a hotfix
+# (BL-848). Not high: nothing is degraded today - the hunts stopped at the
+# hotfix (31 root-level attempts and 4 `find /` hunts on 09-14 before 07:00Z,
+# none after) and the ledger's resurfacing keeps the ask alive without the
+# expedite lane.
+status: todo
+epic: tool-miss-auto-heal
+priority: 20
+direction: human-directive
+depends_on: []
+mutation_cost: low
+# low: review-only; Babashka + bash only (no mutation/CRAP/DRY wired,
+# BL-472); one step-handler file drives the real tool_miss_heal_lib.bb
+# through a small bb CLI (the BL-1321 shape), executes the real composed
+# wrapper under bash against a mkdtemp fixture, and renders real launch
+# scripts through the write_role_launch_script seam the existing shell tests
+# already source.
+slice_size_envelope: low
+required_stages: [coder, cleaner, architect, hardender, documenter, qa]
+
+acceptance: specs/features/BL-1560-swarm-stamp-missing-script-path-1fc9065605.feature
+
+# A review parcel adds no production call site; the mechanism under review
+# is already wired (tool_miss_heal_hook.bb -> safe-wrapper-command ->
+# build-healing-wrapper-command, registered as the Bash PreToolUse hook by
+# write_claude_settings_file; the nudges by write_role_launch_script). The
+# handler entry is the BL-233 in-parcel pin; steps/index.js discovers
+# *Steps.js by directory scan.
+required_wiring:
+  - 'specs/pipeline/steps/bl1560SwarmStampMissingScriptPathSteps.js::registerSteps::the handler lands in the same parcel as the feature (BL-233, BL-1371)'
+
+human_approval: approved
+approval_context: >
+  A new feature file is authored here, so it needs a tap. No choice is
+  posed and there are no ruling_options. What needs sign-off is the
+  DISPOSITION only: that reviewing the landed diff of 1fc9065605 (BL-811 /
+  BL-849 posture) rather than re-implementing it is right, and that medium
+  is the right severity for a review of behaviour already live. FIRM: the
+  parcel changes no file under swarmforge/scripts except to add evidence
+  and, where the coder extends it, TEST files under swarmforge/scripts/test/;
+  a refuted scenario or a confirmed probe finding is a narrow follow-up via
+  note to the specifier, never an in-parcel rewrite. FIRM: the parcel never
+  writes human_decision into backlog/hotfix-ledger.yaml (scenario 07) - the
+  human records certify or waive with hotfix_ledger_update.bb --decide after
+  this reaches done. FIRM: the two findings the specifier made while minting
+  are NOT this parcel's to fix - BL-1561 (a data token is rewritten) and
+  BL-1562 (the wake nudge still says the bare name) own them. Minted by the
+  specifier on the coordinator's ledger note of 2026-09-14 07:01Z and as
+  the 2026-09-14 closing-ceremony outcome (BL-820); the ledger row is linked
+  in the mint commit.
+
+invariants:
+  - "The stamp never rewrites the hotfix: every file the parcel touches is evidence, a feature, a step handler (plus its lib/ helpers), or a file under swarmforge/scripts/test/; swarmforge/scripts/swarmforge.sh, tool_miss_heal_lib.bb and tool_miss_heal_hook.bb are byte-identical to the received commit."
+
+source: |
+  backlog/hotfix-ledger.yaml row `1fc9065605` (detected 2026-09-14, state
+  pending, no stamp ticket) surfaced by the certification sweep as a
+  coordinator note to the specifier, 2026-09-14 07:01Z: "Hotfix 1fc9065605
+  landed: seats stop hunting ./ready_for_next.sh; stamp it". The same shift's
+  closing-ceremony packet (`.swarmforge/lean/ceremony/2026-09-14.json`) named
+  "10 chase(s) in cleaner this shift" and coder as the longest dwell; the
+  cleaner's chase rows (BL-1538 00:20-00:27Z with a respawn, BL-1539 01:22Z,
+  BL-1540 01:57Z, BL-1553 06:27-06:43Z) sit on the same minutes as the
+  cleaner seat's `./ready_for_next.sh` attempts (00:27, 01:26, 02:47 with a
+  `find /` hunt, 06:43Z), so this ticket is also the pass's recorded
+  `process_ticket` outcome (evidence:
+  `backlog/evidence/closing-ceremony-2026-09-14-specifier.md`). Hotfix
+  landed by the operator (human-directed, Claude Code) 2026-09-14 08:00 BST
+  after a two-minute stall on the architect seat. The human's direction,
+  quoted verbatim from the commit message: "seats stop hunting for
+  ready_for_next.sh at the worktree root".
+
+description: |
+  ## What
+
+  An operator hotfix is live on main and has never been through a gate.
+  This ticket is that gate: a REVIEW ticket, not a rewrite ticket -
+  confirm or refute, and open narrow follow-ups for anything found.
+
+  ## The failure it fixed (from the commit message and the transcripts)
+
+  Every boot nudge said "if idle, run ready_for_next.sh". The helper lives
+  in swarmforge/scripts/ (on PATH via the launch script) but seats type
+  `./ready_for_next.sh` from the worktree root, get "no such file or
+  directory", and hunt with `find / -maxdepth 6 -iname ready_for_next.sh`
+  (a bfs shim here) until the Bash tool's 120 s cap moves it to the
+  background. The heal hook could not catch it: the three older miss classes
+  open only on a non-zero exit, and `| tail -50` masks the failure to exit 0.
+  Specifier's own count, role-session transcripts for 2026-09-14 (UTC):
+  31 `./ready_for_next.sh` attempts across all six worktree roles between
+  00:17Z and 06:53Z, four of them followed within 3 s by a `find /` hunt
+  (cleaner 02:47Z, documenter 05:54Z, architect 06:45Z, QA 06:53Z); zero
+  attempts after the hotfix landed at 07:00Z. The week to 09-14 (commit
+  message): 258 attempts, 121 root-level finds.
+
+  ## What landed (files to review)
+
+  - `swarmforge/scripts/swarmforge.sh`: the five generated launch bodies
+    (claude, codex, cursor, gemini, local-model/qwen) and the RESUME-ON-START
+    note now say `run ./swarmforge/scripts/ready_for_next.sh (it is NOT at
+    the worktree root)`. Copilot's body passes the prompt file whole and
+    carried no nudge before either. The nudge reaches a seat only when its
+    launch script is regenerated (the live `.swarmforge/launch/*.sh` were
+    regenerated at the 2026-09-14 09:00 BST launch and all ten carry it).
+  - `swarmforge/scripts/tool_miss_heal_lib.bb`: fourth entry in
+    `MISS-CLASS-PATTERNS`, `:missing-script-path`, matched LAST so the three
+    older classes keep first-match precedence; it recognises zsh's
+    "no such file or directory: ./x.sh" and bash's "./x.sh: No such file or
+    directory". `ROOT-SCRIPT-TOKEN` (`(?<![\w./-])\./([A-Za-z0-9_.-]+\.sh)`)
+    names the tokens the heal rewrites: a bare helper name at the root,
+    never one already under a directory, never the tail of a longer path.
+    `healed-command` for this class re-runs the WHOLE original from the
+    pinned worktree with every such token repointed at
+    `./swarmforge/scripts/x.sh` (a pipeline keeps its tail) and returns nil
+    (clause omitted) when the command names no such token.
+    `build-healing-wrapper-command`: when, and only when, the script-path
+    heal is active for THIS command, the chain guard becomes
+    `if [ $__sfh_ec -ne 0 ] || grep -qiE <pattern> "$__sfh_out_file"` - the
+    captured output opens the chain even at exit 0. Every other command
+    keeps the exact exit-code-only gate. Still one if/elif walk, first
+    match wins, one re-run at most (BL-913 invariant 1).
+  - `swarmforge/scripts/tool_miss_heal_hook.bb`: untouched; the pin is
+    still `SWARMFORGE_ROLE_WORKTREE` (BL-913 invariant 2) and the hook
+    runs the ROLE WORKTREE's copy of the lib, so each seat gets the class
+    when its worktree merges main.
+  - Tests: `tool_miss_heal_lib_test_runner.bb` gains the classification
+    cases for both spellings and the precedence case, five healed-command
+    rewrite/decline cases, two wrapper-clause cases, and an end-to-end bash
+    run of `./ready_for_next.sh 2>&1 | tail -5` from a foreign cwd against
+    a fixture worktree (helper output shown, exit 0, exactly one run). Green
+    on main 91c6c653e9 (specifier, 2026-09-14 08:30Z); so is
+    `test_tool_miss_heal_hook_wiring.sh`.
+
+  ## Review goals
+
+  1. Confirm the classifier (scenario 01): every row against the real
+     `tool-miss-heal-lib/classify-miss`, called through a small bb CLI
+     under `specs/pipeline/steps/lib/` (the BL-1321 shape) - a source-text
+     assertion cannot tell a wired verdict from a dead one. Specifier
+     verified the two rows worth noting: a missing script ALREADY under a
+     directory (`./swarmforge/scripts/ready_for_next.sh: No such file or
+     directory`) is `real-failure` - the class only heals the root-level
+     spelling, and the BL-985 proactive anchor is what brings a drifted
+     cwd home before the original runs; and a root-level miss beside
+     `fatal: not a git repository` is `wrong-cwd` (precedence).
+  2. Confirm the rewrite (scenario 02): every row against the real
+     `healed-command` for `:missing-script-path` with the pinned worktree
+     `/w`; the five cases the runner carries, validated against explicit
+     KNOWN_VALUES.
+  3. Confirm the live composition (scenario 03): the REAL
+     `build-healing-wrapper-command` output, executed by bash from a cwd
+     OUTSIDE a mkdtemp fixture worktree (`git init`, proven by `rev-parse
+     --git-common-dir` before any mutating git command, BL-1390) whose
+     helper lives only under `swarmforge/scripts/` and counts its runs -
+     the model sees the helper's own output, exit 0, one run, no "no such
+     file" text. Mirror the runner's own e2e; do not import it.
+  4. Confirm the gate is unchanged for everyone else (scenario 04): the
+     wrapper composed for `git status` carries the exit-code-only guard
+     `if [ $__sfh_ec -ne 0 ]; then` with no `|| grep`, and no
+     `swarmforge/scripts/` clause.
+  5. Confirm the hotfix's own case census (scenario 05): run
+     `bb swarmforge/scripts/test/tool_miss_heal_lib_test_runner.bb` and
+     assert `ALL TESTS PASS`, AND that the runner's source still carries
+     the section comment `Hotfix 2026-09-14: :missing-script-path` and the
+     assertion name `e2e: the helper ran exactly once` (BL-1445: the runner
+     prints no per-assertion line on success, so a runner that silently
+     lost the hotfix's cases would still report all-passed). The runner is
+     sub-second, well inside the BL-1358 per-mutant ceiling.
+  6. Confirm the nudges (scenario 06): render the REAL launch scripts
+     through `write_role_launch_script` into a fixture root, one role on
+     each of claude, codex, cursor, gemini and local-model (the
+     `run_write_role_launch_script` recipe in
+     `test_model_factory_runtime_wiring.sh` and the agent rows in
+     `test_alternate_runtime_launch.sh` / `test_local_model_seat.sh` are
+     the fixtures to copy), and assert each body carries
+     `run ./swarmforge/scripts/ready_for_next.sh (it is NOT at the worktree
+     root)` and none carries the bare `run ready_for_next.sh.`; then seed a
+     leftover in_process parcel for one role (the `test_resume_on_start.sh`
+     recipe) and assert the rendered RESUME-ON-START note names the same
+     path. Census pin: exactly five bodies plus one resume note.
+  7. PROBE, do not fix - BL-1561 owns the fix: a command that names a
+     root-level `./x.sh` token as DATA and whose exit-0 output echoes the
+     miss text is re-run with its data rewritten. Specifier reproduced it
+     on 2026-09-14 on this seat: `grep -n 'no such file or directory:
+     ./ready_for_next.sh' t.log` over a file holding that line, composed
+     through the real wrapper, printed the line with the token ALREADY
+     REPOINTED (`.../swarmforge/scripts/ready_for_next.sh`) and exit 0 -
+     the grep the operator's own incident notes recommend for finding
+     hunts in transcripts would report the rewritten path, or nothing.
+     Re-run the reproduction on the parcel's commit and RECORD it in
+     evidence; confirmed -> BL-1561's premise stands, nothing to note;
+     refuted -> note the specifier with why.
+  8. PROBE, do not fix - BL-1562 owns the fix: the tmux WAKE nudge is not
+     the boot nudge. `agent_runtime_lib.bb` `default-wake-chat-message`
+     still reads "You have new handoff mail. If idle, run ready_for_next.sh."
+     (also `in-process-resume-*`, `reference_freshness_lib.bb` "then run
+     ready_for_next.sh again", `handoff_lib.bb` ~1699 "Do NOT run
+     ready_for_next.sh again"), so every delivery re-teaches the bare name
+     the boot nudge just unlearned; the heal class covers the shell side
+     only once the seat's worktree carries the hotfix. Record the count of
+     such strings at the parcel's commit.
+  9. Note only: at mint, `git branch --contains 1fc9065605` listed main,
+     coder, architect, hardender, documenter and QA - NOT
+     swarmforge-cleaner, the role with the most chase rows in the packet.
+     The hook runs the role worktree's lib, so that seat keeps the
+     three-class chain until its next merge-up. Record which worktrees
+     carry the hotfix on the parcel's day.
+
+  ## Scenario notes for the coder
+
+  - Scenarios 01, 02 and 04 call the real lib through one small bb CLI
+    under `specs/pipeline/steps/lib/` that loads
+    `swarmforge/scripts/tool_miss_heal_lib.bb` and prints the verdict /
+    healed command / wrapper text; validate every Outline column against
+    explicit KNOWN_VALUES (never branch on scenario shape - a mutant in
+    that column survives otherwise). The output phrases in scenario 01's
+    table map to these literals: zsh spelling
+    `(eval):13: no such file or directory: ./ready_for_next.sh`; bash
+    spelling `bash: ./done_with_current.sh: No such file or directory`;
+    non-script `bash: ./notes.txt: No such file or directory`; under a
+    directory `bash: ./swarmforge/scripts/ready_for_next.sh: No such file
+    or directory`; beside npm `no such file or directory: ./x.sh` +
+    newline + `npm error code ENOENT`; beside git `fatal: not a git
+    repository` + newline + `no such file or directory: ./x.sh`.
+  - Scenario 03's fixture root is `git init` under `fs.mkdtempSync` and
+    removed in `finally`; its helper is a two-line bash script that
+    increments a counter file and prints `TASK: fixture|pwd=<cwd>`; the
+    wrapper is executed with `bash -c <wrapper>` from `/` (or another
+    directory outside the fixture).
+  - Scenario 06 needs zsh (the render seams source swarmforge.sh under
+    zsh, as every launch test does); skip nothing - if zsh is absent the
+    scenario FAILS, it does not pass vacuously.
+  - Scenario 07's handler reads `backlog/hotfix-ledger.yaml` for the row
+    `commit: 1fc9065605` and asserts `state` is not certified/waived and
+    `human_decision` is null; BL-1557 / BL-1549 / BL-1346 are the
+    precedents.
+  - The step handler is `bl1560SwarmStampMissingScriptPathSteps.js`,
+    landing in the SAME commit as the feature (BL-233); `steps/index.js`
+    discovers `*Steps.js` by directory scan, no registration edit.
+  - Mind the hook while you work: this seat's OWN shell is wrapped by the
+    live heal. A command of yours that names a root-level `./x.sh` as data
+    AND prints the miss text will be re-run with its data rewritten (goal
+    7). Write such literals with the script name split or escaped
+    (`\./ready_for_next\.sh` in a grep does not match the token regex) or
+    put them in a file and pass the path.
+
+notes: |
+  Ledger: linked to row 1fc9065605 via `hotfix_ledger_update.bb --link` in
+  the mint commit. Siblings (same mint pass): BL-1561 owns review goal 7's
+  fix (a data token is never rewritten), BL-1562 owns goal 8's (every wake
+  nudge names the helper path). Grep all three ids before minting anything
+  about ready_for_next hunting, the script-path heal class, or the wake
+  nudge text. This ticket is also the recorded `process_ticket` outcome of
+  the 2026-09-14 closing ceremony (BL-820). If BL-1561 lands first, the
+  stamp still reviews 1fc9065605 as landed: scenarios 01-06 hold under
+  BL-1561's direction (classify-miss and healed-command contracts stable;
+  only the opener narrows), and goal 7 then records "fixed by BL-1561"
+  instead of a reproduction.
+
+qa_e2e_procedure: |
+  On the parcel commit:
+  1. `git diff main...HEAD --name-only` names only evidence, the feature,
+     the step handler (+ lib/), and files under swarmforge/scripts/test/;
+     none of swarmforge.sh, tool_miss_heal_lib.bb, tool_miss_heal_hook.bb
+     (invariant 1).
+  2. `run_acceptance.sh` on the BL-1560 feature -> 7 scenarios green
+     (scenario 01 = 6 rows, scenario 02 = 5 rows).
+  3. `bb swarmforge/scripts/test/tool_miss_heal_lib_test_runner.bb` ->
+     ALL TESTS PASS; `bash swarmforge/scripts/test/test_tool_miss_heal_hook_wiring.sh`
+     -> ALL SCENARIOS PASS.
+  4. The evidence file records goal 7's reproduction (or "fixed by
+     BL-1561"), goal 8's string count, and goal 9's worktree list.
+  5. `backlog/hotfix-ledger.yaml` row 1fc9065605: `human_decision: null`.
+  6. Live check, no launch needed: `grep -L 'NOT at the worktree root'
+     .swarmforge/launch/*.sh` prints nothing (every regenerated launch
+     script carries the nudge).
+  7. After done: the human runs `bb swarmforge/scripts/hotfix_ledger_update.bb .
+     --decide 1fc9065605 approved|waived` and commits the ledger.
+
+  2026-09-14T08:16:43Z coordinator recheck: promote_and_route_next.sh
+  refused (human_approval: pending). An approval ask for BL-1560 is already
+  posted on Telegram (telegram-approval-ask-messages.json); siblings
+  BL-1561/BL-1562 are also pending the same gate. Holding all three in
+  paused/ until human_approval flips to approved.
+
+assigned_to: coder

@@ -324,6 +324,13 @@
 - commit: 1fc9065605
   subject: "Hotfix: seats stop hunting for ready_for_next.sh at the worktree root"
   detected_at: 2026-09-14
+  state: stamp-open
+  stamp_ticket: BL-1560
+  human_decision: null
+  decided_at: null
+- commit: 0b727b286c
+  subject: "Hotfix: idle resident with no parcel to follow rotates to the router's target"
+  detected_at: 2026-09-14
   state: pending
   stamp_ticket: null
   human_decision: null
