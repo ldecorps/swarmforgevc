@@ -1,0 +1,141 @@
+id: BL-1571
+title: "test_bl1159_bridge_child_survives_without_crash_giveup_loop.sh is red on main with no owner because BL-1159's production fix was silently reverted the day it landed: 43da3844ec (2026-08-26 15:33) routed operator_runtime.bb's miniapp watchdog recovery through recover_miniapp_bridge.sh (re-arm the front desk when it owns the stack); BL-653's 309e11bdef (same day, later) put bounce_bridge_headless.sh back and deleted the def - the watchdog recovers through recover_miniapp_bridge.sh again and the shell test that pins it is green"
+milestone: M8
+type: defect
+severity: high
+# high (standing-red rule 2026-09-05, and a live fault): the shell test is
+# red on main, and the production routing it pins is gone - a down
+# /lets-talk now makes the watchdog run bounce_bridge_headless.sh (an
+# `npm run compile`, a stop the surviving BL-1159 guard in
+# stop_bridge_headless.sh refuses, then a second start_bridge_headless.sh
+# on the same port) instead of re-arming the front desk. Not critical: the
+# stop guard survived, so the bridge child is no longer SIGTERMed; the
+# crash give-up loop BL-1159 fixed is not back in that form.
+status: todo
+epic: swarm-reliability
+priority: 9
+direction: swarm-reported
+depends_on: []
+mutation_cost: low
+# low: Babashka (two lines in operator_runtime.bb) plus one step-handler
+# file. No mutation/CRAP/DRY tooling is wired for bb (BL-472 deferred); the
+# hardener records the fallback. No extension/src.
+slice_size_envelope: low
+required_stages: [coder, cleaner, architect, hardender, documenter, qa]
+
+acceptance: specs/features/BL-1571-the-miniapp-watchdog-recovers-through-recover-miniapp-bridge.feature
+
+# The consumer is pre-existing (BL-1235): miniapp-watchdog-sweep! in
+# operator_runtime.bb already calls miniapp-bounce-bridge!; the anchor pins
+# WHICH script that call reaches. Handler pin per BL-233.
+required_wiring:
+  - 'swarmforge/scripts/operator_runtime.bb::recover_miniapp_bridge.sh::the pre-existing watchdog sweep reaches the re-arm router, the routing BL-1159 landed and 309e11bdef dropped'
+  - 'specs/pipeline/steps/bl1571MiniappWatchdogRecoverSteps.js::registerSteps::the handler lands in the same parcel as the feature (BL-233, BL-1371)'
+
+human_approval: pending
+approval_context: >
+  A new feature file is authored here, so it needs a tap. No choice is
+  posed and there are no ruling_options. FIRM: the change is the routing
+  alone - operator_runtime.bb's miniapp-bounce-bridge! invokes
+  recover_miniapp_bridge.sh (exactly what 43da3844ec did); the three shell
+  scripts recover_miniapp_bridge.sh, rearm_front_desk_bridge.sh,
+  bounce_bridge_headless.sh and the BL-1159 guard in stop_bridge_headless.sh
+  are not edited. FIRM: BL-1159's own feature file and its ten-minute live
+  scenarios are not touched; the standing shell test is the pin. FIRM:
+  the parcel diffs its merge against BOTH parents (BL-571/BL-958) - this
+  ticket exists because a same-day sibling merge did not. Minted by the
+  specifier from the BL-1445 census run on the coder's unowned-red note
+  of 2026-09-14 (BL-1565 parcel); evidence
+  backlog/evidence/BL-1567-BL-1571-specifier-unowned-red-census-20260914.md.
+
+invariants:
+  - "When front-desk-supervisor.pid names a live process, a miniapp watchdog recovery never invokes bounce_bridge_headless.sh or stop_bridge_headless.sh - it re-arms the front desk."
+
+description: |
+  ## What is wrong
+
+  `swarmforge/scripts/test/test_bl1159_bridge_child_survives_without_crash_giveup_loop.sh`
+  (BL-1159, lane shell, `standing`) fails on `main` 674d50539a:
+
+  ```
+  FAIL - bl-1159-03: down bridge uses recover (rearm) not bounce kill stub
+  ```
+
+  The fixture stubs `bounce_bridge_headless.sh` to write a marker and
+  ticks `operator_runtime.bb` with a down `/lets-talk`, threshold 1, and a
+  live `front-desk-supervisor.pid`; the marker must NOT appear. On main
+  it does, because `miniapp-bounce-bridge!` reads:
+
+  ```
+  (process/sh {:continue true}
+              "bash" (str bounce-bridge-headless-script) project-root (str miniapp-watchdog-port))
+  ```
+
+  BL-1159's landing 43da3844ec (2026-08-26 15:33) had changed that line to
+  `recover-miniapp-bridge-script` and added the def. BL-653's landing
+  309e11bdef, the same day, restored the old line and removed the def
+  (`git show 309e11bdef -- swarmforge/scripts/operator_runtime.bb`) - the
+  merge-reverts-landed-work class of BL-571/BL-958/BL-954, missed because
+  its diff was read against one parent. `recover_miniapp_bridge.sh` has sat
+  on main since, referenced by no bb file. Red for 19 days and unseen
+  because nothing runs the standing shell suite (BL-1526's gap).
+
+  Live effect today: a down `/lets-talk` past the threshold runs
+  `bounce_bridge_headless.sh` -> `npm run compile`, a
+  `stop_bridge_headless.sh` the surviving BL-1159 guard refuses when the
+  front desk owns the stack, then `start_bridge_headless.sh` on a port the
+  front desk's child already holds. The re-arm path
+  (`rearm_front_desk_bridge.sh`) is never reached. The live runtime.log
+  shows no `miniapp-watchdog bounced` lines on this host today, so the
+  fault is latent here, not firing.
+
+  ## What is wanted
+
+  `miniapp-bounce-bridge!` invokes `recover_miniapp_bridge.sh` (which
+  re-arms the front desk when `front-desk-supervisor.pid` is live and
+  falls back to `bounce_bridge_headless.sh` otherwise), the def
+  `recover-miniapp-bridge-script` is back beside
+  `bounce-bridge-headless-script`, and the shell test prints
+  `ALL CHECKS PASSED` on `main`. The register row this ticket adds is
+  removed in the same land.
+
+  ## How (direction, not mandate)
+
+  - Reapply 43da3844ec's two-line operator_runtime.bb hunk; nothing else
+    in that commit is missing from main (its scripts and the shell test
+    are present).
+  - Step handler `specs/pipeline/steps/bl1571MiniappWatchdogRecoverSteps.js`
+    greps operator_runtime.bb for the routing and runs the real shell test
+    as a subprocess; it lands in the same commit as the feature (BL-233).
+
+  ## Not in scope
+
+  - `recover_miniapp_bridge.sh`, `rearm_front_desk_bridge.sh`,
+    `bounce_bridge_headless.sh`, `stop_bridge_headless.sh`, the BL-1159
+    feature file and handler, and BL-653's escalation-driven sweep are not
+    touched.
+
+notes: |
+  Register: backlog/standing-reds.tsv gains one `shell` row naming this
+  ticket (same commit as this mint), first_seen 2026-09-14; QA removes it
+  in the land that turns the file green. Found by the specifier's census
+  of the 17 shell tests sourcing operator_runtime_sandbox.sh, run on the
+  coder's BL-1565 unowned-red note. Siblings minted the same pass:
+  BL-1567, BL-1568, BL-1569, BL-1570.
+
+qa_e2e_procedure: |
+  On the parcel commit, from the repo root:
+  1. `grep -n 'recover-miniapp-bridge-script\|recover_miniapp_bridge' swarmforge/scripts/operator_runtime.bb`
+     shows the def and its use inside miniapp-bounce-bridge!;
+     `grep -n 'bounce-bridge-headless-script' swarmforge/scripts/operator_runtime.bb`
+     shows only the def (no call in the watchdog).
+  2. `bash swarmforge/scripts/test/test_bl1159_bridge_child_survives_without_crash_giveup_loop.sh`
+     three times -> `ALL CHECKS PASSED`, exit 0.
+  3. `git diff main...HEAD --name-only` names operator_runtime.bb, the
+     handler, `specs/pipeline/steps/index.js`, the feature, evidence and
+     the register-row removal; the four bridge shell scripts are unchanged.
+  4. Break-then-restore: point miniapp-bounce-bridge! back at
+     bounce-bridge-headless-script; case bl-1159-03 fails; restore.
+  5. Diff the parcel's merge into main against BOTH parents; the
+     operator_runtime.bb hunk survives. The row for this file is gone from
+     `backlog/standing-reds.tsv`.

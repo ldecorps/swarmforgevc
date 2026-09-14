@@ -20,6 +20,16 @@ required_stages: [coder, cleaner, architect, hardender, documenter, qa]
 
 acceptance: specs/features/BL-1565-a-git-handoff-to-the-coordinator-is-refused-at-send.feature
 
+# BL-1276: the paths this ticket is chartered to retire inside ANOTHER
+# ticket's feature file (BL-1006, retire never reword). The task-scope gate
+# reads this from the ticket as LANDED on main, so no sender merge is needed;
+# without it the coder's send was refused on 2026-09-14 (evidence
+# backlog/evidence/BL-1565-task-scope-gate-needs-retires-declaration-20260914.md
+# on the parcel). Exact strings, one path per line, never a glob.
+retires:
+  - specs/features/BL-1536-a-bounce-from-the-terminal-role-is-never-stamped-merge-only.feature
+  - specs/features/BL-950-qa-approval-carries-its-own-evidence-commit.feature
+
 # The first anchor is a consumer call (BL-1235): swarm_handoff.bb's -main is
 # the pre-existing live sender every role already runs, and the call the
 # parcel adds there IS the wiring. The ns must therefore be spelled
@@ -153,6 +163,18 @@ notes: |
   merge-up step 3. Sibling: BL-1566. Related: BL-1536 (QA bounce stamped
   merge-only, landed 09-12) - that ticket fixed the bounce direction and
   this one retires the forward it kept.
+  Amended 2026-09-14 by the specifier (commit named in the amendment's
+  subject line): `retires:` now declares the BL-1536 and BL-950 feature
+  files. The coder's send of d0a3809e40 was refused by the task-scope gate
+  (BL-1192/BL-506) because the parcel retires rows and scenarios in both:
+  BL-1536's two QA-to-coordinator Examples rows (this ticket's own step 4
+  directs that) and BL-950's four QA-to-coordinator scenarios plus their
+  handler steps - retired, never reworded (BL-1006), because the refusal
+  now fires before validate for ANY commit, so each of them asserts a fate
+  that can no longer happen; BL-806's feature keeps the generic coverage.
+  Bookkeeping-only amendment: nothing the coder built changes and no
+  rebuild is asked - the gate reads the landed ticket, the coder re-sends
+  the same tip.
 
 qa_e2e_procedure: |
   From the QA worktree on the parcel commit:
@@ -175,3 +197,5 @@ qa_e2e_procedure: |
   5. Break-then-restore: comment out the `git-handoff-recipient-guard-lib/decide`
      call in `swarm_handoff.bb`; step 1 now prints AUDIT_REQUIRED and
      scenario 02 fails; restore.
+
+assigned_to: coder
