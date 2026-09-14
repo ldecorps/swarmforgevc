@@ -10,21 +10,35 @@
 # 2026-08-23: four such routes in about an hour, and on BL-973 the receiving
 # coder did not notice and built a second complete rival implementation.
 #
-# This drives the REAL route_backlog_to_coder.sh against a fixture project
-# root - real promotion_gates_cli.bb, real swarm_handoff.sh, real
-# dispatch_trail_cli.bb. No tmux: SWARMFORGE_SKIP_SYNC_INJECT=1 keeps the
-# outbound path off the live swarm (a shell test that touches tmux killed
-# eight live sessions on 2026-08-22).
+# This drives route_backlog_to_coder.sh, through a fixture copy of the
+# scripts tree, against a fixture project root - real promotion_gates_cli.bb,
+# real swarm_handoff.sh, real dispatch_trail_cli.bb, all installed under
+# $ROOT. No tmux: SWARMFORGE_SKIP_SYNC_INJECT=1 keeps the outbound path off
+# the live swarm (a shell test that touches tmux killed eight live sessions
+# on 2026-08-22).
+#
+# route_backlog_to_coder.sh `cd`s to its own dirname to find its siblings
+# (promotion_gates_cli.bb, dispatch_trail_cli.bb, swarm_handoff.sh, ...), so
+# invoking the REAL copy from this test dispatches into THIS checkout
+# instead of the fixture $ROOT, whatever root argument it is passed - the
+# same BL-998 shape as ceremony_handoff.sh (BL-1540). dispatch_trail_cli.bb
+# itself is a leaf (it takes ROOT as an explicit argument and resolves no
+# path from its own location), so the test's own direct calls to it below
+# are unaffected and stay pointed at the real copy.
 set -uo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
-ROUTE_SH="$SCRIPT_DIR/../route_backlog_to_coder.sh"
+REAL_SCRIPTS_DIR="$(cd "$SCRIPT_DIR/.." && pwd)"
+source "$SCRIPT_DIR/lib/install_scripts.sh"
 
 fail() { echo "FAIL: $*" >&2; exit 1; }
 pass() { echo "PASS: $*"; }
 
 ROOT="$(cd "$(mktemp -d)" && pwd -P)"
 trap 'rm -rf "$ROOT"' EXIT
+
+install_scripts "$ROOT"
+ROUTE_SH="$ROOT/swarmforge/scripts/route_backlog_to_coder.sh"
 
 git -C "$ROOT" init -q
 git -C "$ROOT" -c user.email=test@test -c user.name=test commit -q --allow-empty -m init

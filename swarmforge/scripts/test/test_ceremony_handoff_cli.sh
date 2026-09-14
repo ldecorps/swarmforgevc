@@ -16,7 +16,8 @@
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
-CEREMONY="$SCRIPT_DIR/../ceremony_handoff.sh"
+REAL_SCRIPTS_DIR="$(cd "$SCRIPT_DIR/.." && pwd)"
+source "$SCRIPT_DIR/lib/install_scripts.sh"
 
 fail() { echo "FAIL: $*" >&2; exit 1; }
 pass() { echo "PASS: $*"; }
@@ -27,6 +28,15 @@ COMMIT_ABBREV="a1b2c3d4e5"
 ROOT="$(cd "$(mktemp -d)" && pwd -P)"
 export SWARMFORGE_ALLOW_TMP_DAEMON=1  # BL-406: an intentional throwaway root
 trap 'rm -rf "$ROOT"' EXIT
+
+# BL-1540: ceremony_handoff.sh cd's to its own dirname before exec'ing its
+# sibling ceremony_handoff.bb (which in turn shells to swarm_handoff.sh the
+# same way), so which root it acts on is decided by where the file sits, not
+# by $ROOT. Install a fixture copy of the whole scripts tree and dispatch
+# through THAT copy - the same shape every other fixture-dispatching test
+# uses (BL-998).
+install_scripts "$ROOT"
+CEREMONY="$ROOT/swarmforge/scripts/ceremony_handoff.sh"
 
 git -C "$ROOT" init -q -b main
 git -C "$ROOT" config user.email "test@test"
