@@ -1,0 +1,174 @@
+id: BL-1566
+title: "An Article 4.2 hold is a durable record QA resumes from: QA withheld BL-1555's approval on an unowned red and completed the parcel; when the owner BL-1564 was minted and the resume note reached QA (001539, 12:16Z) it was completed in ten seconds with nothing to resume, and the swarm starved at cap 1 until the operator re-sent it - a hold record names the parcel and its reds, the register releases it, every QA turn prints a released hold first, and a note cannot be completed while a released hold is open"
+type: defect
+severity: high
+# high: a live fault degrading behaviour - the Article 4.2 withhold has a
+# start (QA's unowned-red note) and no built-in resume, so every hold at
+# cap 1 is a starvation waiting for an operator. BL-1555 lost 12:16Z to
+# 12:36Z on 09-14 with the owner already minted, approved and on main.
+status: todo
+epic: swarm-reliability
+priority: 9
+direction: swarm-reported
+depends_on: []
+mutation_cost: low
+# low: Babashka only (a hold lib and CLI, one call in the QA receive path,
+# one in the QA completion path, a step handler). No mutation/CRAP/DRY
+# tooling is wired for bb (BL-472 deferred); the hardener records the
+# fallback. No extension/src.
+slice_size_envelope: low
+required_stages: [coder, cleaner, architect, hardender, documenter, qa]
+
+acceptance: specs/features/BL-1566-an-article-42-hold-is-a-record-qa-resumes-from.feature
+
+# The first two anchors are consumer calls (BL-1235): ready_for_next_task.bb
+# and done_with_current_task.bb are the pre-existing live receive and
+# completion paths every task-mode seat runs, and the calls the parcel adds
+# there ARE the wiring. The ns must be spelled `qa-hold-lib` (the reader
+# matches the literal; ns-qualified is how every load-file'd lib is called
+# in those files). The third is the BL-233 in-parcel handler pin.
+required_wiring:
+  - 'swarmforge/scripts/ready_for_next_task.bb::qa-hold-lib/::every QA turn prints its open holds first, from the live receive path'
+  - 'swarmforge/scripts/done_with_current_task.bb::qa-hold-lib/::a released hold blocks completing a note, from the live completion path'
+  - 'specs/pipeline/steps/bl1566ArticleFortyTwoHoldRecordSteps.js::registerSteps::handler lands in the same parcel as the feature (BL-233)'
+
+human_approval: pending
+approval_context: >
+  A new feature file is authored here, so it needs a tap. No choice is
+  posed and there are no ruling_options. FIRM: the hold is released by the
+  standing-red register only - every red the hold names has a row whose
+  owner is a ticket in paused/ or active/ (a done/ ticket owns nothing) -
+  never by a note, an evidence file or prose; and a released hold leaves
+  the store only through an explicit close with an outcome. FIRM:
+  completing the parcel itself while the hold is UNRELEASED stays allowed
+  (QA parks; the mono-router resident must be free to rotate), and the
+  block applies to completing a note while a RELEASED hold is open. FIRM:
+  no per-red parsing of note text anywhere. Direction, not mandate: one
+  JSON record per task under the project-root `.swarmforge/qa-holds/`, a
+  three-verb CLI, two one-line calls in the live QA paths. The prose half
+  (QA.prompt hold procedure, specifier.prompt "tell the holder",
+  coordinator.prompt diagnosis order) is landed by the specifier with this
+  mint - see notes.
+
+invariants:
+  - "A released hold is never silently dropped: the only exit from .swarmforge/qa-holds/<task>.json is qa_hold_cli.bb close with an outcome, and no other write, completion or wake removes it."
+
+description: |
+  ## What is wrong
+
+  Article 4.2 (2026-09-05): QA approves no parcel whose evidence names a
+  red with no open ticket; the red goes to the specifier as an
+  `unowned-red` note and "the parcel waits". On 2026-09-14 QA withheld
+  BL-1555 on `bl1297MergeOwnPathsInvariants.property.test.js` (evidence
+  `c859adced9`, "fully verified and waits on this ticket/adjudication
+  before I approve and land"), sent the note at 11:51Z, and completed the
+  inbound parcel 001272 - correctly, since a rotation resident cannot hold
+  a parcel in_process for hours. Then:
+
+  | time (Z) | event |
+  |---|---|
+  | 12:05 | specifier mints BL-1564 (`ece92fe669`), register row names it |
+  | 12:06 | specifier notes QA (001539) "BL-1555: bl1297 red owned by BL-1564 (ece92fe669), register row on main" |
+  | 12:07 | human approves BL-1564 (`9605ab9538`) |
+  | 12:16:49 | QA dequeues 001539; 12:16:59 QA completes it - nothing resumed |
+  | 12:25, 12:30 | babysitterd `swarm-starved` CRIT x2; coordinator blames the coder's pane text |
+  | 12:32 | coordinator notes the specifier "3x self-typed-unsubmitted idle stalls" |
+  | 12:35 | operator note to coordinator names the hold |
+  | 12:36 | coordinator notes QA (008282) "resume land" |
+
+  The resume signal existed, reached QA, and was dropped: nothing in QA's
+  turn said which parcel commit to re-gate, nothing refused the ten-second
+  completion, and nothing on the next turn re-surfaced the hold. The hold
+  lives only in an evidence file's prose - the same "closed by a record,
+  never by an evidence file alone" gap the coordinator's Article 4.2
+  findings had (coordinator.prompt, 2026-09-04). Evidence:
+  `backlog/evidence/BL-1565-1566-specifier-review-three-idle-stalls-20260914.md`.
+
+  ## What is wanted
+
+  A hold is a record. QA opens it when it withholds: task, parcel commit,
+  the red test paths, the evidence sha. `status` prints one `HOLD <task>
+  <commit> red=<path> owner=<id|none>` line per red and a `RELEASED <task>
+  <commit>` line once EVERY red the hold names has a register row whose
+  owner is an open ticket (in `backlog/paused/` or `backlog/active/`; a
+  ticket in `done/` owns nothing, a red with no row is unowned). Every QA
+  turn - `ready_for_next.sh` for the QA role - prints `status` before
+  anything else when any hold exists, so whichever wake reaches QA
+  surfaces the release. `done_with_current.sh` as QA refuses to complete a
+  `note` inbound while a released hold is open (exit non-zero, prints
+  `HOLD_RELEASED <task> <commit>`, the note stays in_process); completing a
+  `git_handoff` inbound is never blocked (parking). `close --outcome
+  approved|bounced|abandoned` moves the record to
+  `.swarmforge/qa-holds/closed/` and ends the block.
+
+  ## How (direction, not mandate)
+
+  - `swarmforge/scripts/qa_hold_lib.bb` (ns `qa-hold-lib`): pure
+    `release?` over a hold map and the register rows
+    (`standing_red_register_lib/parse-register-rows`) plus the set of open
+    ticket ids (basenames under paused/ and active/); `status-lines`;
+    `blocks-completion?` over (role, inbound type, holds). No I/O in the
+    decisions so the handler drives them directly and the two live callers
+    stay one line each.
+  - `swarmforge/scripts/qa_hold_cli.bb <project-root> open|status|close`;
+    the store is the project-root `.swarmforge/` (the same root the
+    deprecator adjudications use), never a worktree-local one, so the
+    record is visible from the master checkout the coordinator reads.
+  - `ready_for_next_task.bb`: when `SWARMFORGE_ROLE` is QA and the store is
+    non-empty, print the status lines first (before in_process resume,
+    before `NO_TASK`). `done_with_current_task.bb`: the refusal sits with
+    the existing pre-completion refusals (the BL-1422 Work-note evidence
+    check is the shape).
+  - Handler fixtures: a mkdtemp project root with a `standing-reds.tsv`,
+    `backlog/{paused,active,done}/` and a QA mailbox (the bl1515 fixture
+    shape); the two shell-outs run the real `ready_for_next_task.bb` and
+    `done_with_current_task.bb` with `SWARMFORGE_ROLE=QA`.
+
+  ## Not in scope
+
+  - Who WAKES QA on release: the specifier's note to the holder (prompt
+    rule landed with this mint) is the wake; a handoffd sweep that notes QA
+    when a hold flips to released is a follow-up slice if that note is
+    ever missed again.
+  - babysitterd's `swarm-starved` message naming open holds - follow-up.
+  - Parsing note text for red names, or re-dispatching the parcel as a
+    new git_handoff: QA re-gates the recorded commit from its own branch.
+  - BL-1565 (the QA close as a git_handoff) - sibling from the same shift,
+    separate parcel; no shared file.
+
+notes: |
+  Minted 2026-09-14 by the specifier from the coordinator's note 008280
+  ("3x resident self-typed-unsubmitted idle stalls this shift - review");
+  the review found the 12:25-12:36Z stall was this hold with no resume,
+  not pane input. Prose landed with this mint on main (commit named in the
+  mint commit's subject line): QA.prompt Article 4.2 bullet (open the
+  record, re-gate on RELEASED, never "note and complete" a resume note),
+  specifier.prompt standing-red bullet (tell the holder the same pass),
+  coordinator.prompt swarm-starved diagnosis order. Until this lands, the
+  interim in QA.prompt is the evidence file carrying the parcel commit and
+  the specifier's resume note; retire that interim wording when this
+  ticket's tools are on origin/main. Sibling: BL-1565. Related: BL-1555
+  (the held parcel), BL-1564 (the owner), BL-1428 (register CLI).
+
+qa_e2e_procedure: |
+  From the QA worktree on the parcel commit, project root = master root:
+  1. `bb swarmforge/scripts/qa_hold_cli.bb <root> open --task BL-1566-e2e
+     --commit <parcel sha> --red extension/test/bl1297MergeOwnPathsInvariants.property.test.js
+     --evidence <parcel sha>`; `... status` prints `HOLD BL-1566-e2e <sha>
+     red=... owner=BL-1564` and `RELEASED BL-1566-e2e <sha>` (BL-1564 is in
+     paused/ or active/ at that time; if it has landed and is in done/,
+     use any red whose register row names an open ticket).
+  2. `SWARMFORGE_ROLE=QA swarmforge/scripts/ready_for_next.sh` -> the
+     first output line is the RELEASED line (then whatever the mailbox
+     holds).
+  3. With a real note in QA's in_process (any note you hold this turn, or
+     the coordinator's own merge-up note later), `done_with_current.sh`
+     -> refused, prints `HOLD_RELEASED BL-1566-e2e <sha>`, the note stays
+     in in_process; `... close --task BL-1566-e2e --outcome abandoned` ->
+     the record is under `.swarmforge/qa-holds/closed/` and
+     `done_with_current.sh` now completes.
+  4. `ls .swarmforge/qa-holds/` from the master checkout shows the same
+     store the worktree wrote (project-root, not worktree-local).
+  5. Break-then-restore: remove the `qa-hold-lib/` call from
+     `done_with_current_task.bb`; step 3's refusal disappears and
+     scenario 03 fails; restore.
