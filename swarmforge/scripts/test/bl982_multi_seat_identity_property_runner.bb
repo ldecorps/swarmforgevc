@@ -12,11 +12,17 @@
 ;;     The parcel-address half is invariant 3's delivery assertion: a
 ;;     stage-addressed send resolves the stage-named seat's mailbox and no
 ;;     other.
-;;   Invariant 2 (single-seat byte-identity): for confs with NO @-seat,
-;;     roles.tsv from THIS worktree's script is byte-identical (modulo the
-;;     absolute fixture root) to the PRE-CHANGE script, pinned by blob sha
-;;     2edd9a17ba9d40709c0f436d12395b638563c0ca (REAL-vs-REAL oracle, the
-;;     BL-978 pattern).
+;;   Invariant 2 (single-seat column-projection identity, amended
+;;     2026-09-14, BL-1541): for confs with NO @-seat, roles.tsv from THIS
+;;     worktree's script, PROJECTED onto the pre-change script's 8-column
+;;     shape (its first 8 tab-separated fields), is identical (modulo the
+;;     absolute fixture root) to the PRE-CHANGE script's own roles.tsv,
+;;     pinned by blob sha 2edd9a17ba9d40709c0f436d12395b638563c0ca
+;;     (REAL-vs-REAL oracle, the BL-978 pattern). roles.tsv evolves by
+;;     APPENDING columns (44d2d42591 appended column 9, the propagation
+;;     token, after this blob was pinned); an appended column must not
+;;     diverge the oracle, but an inserted, reordered or altered column
+;;     among the first 8 still must.
 ;;   Invariant 3 (second seat inert): a REAL swarm_handoff.bb send
 ;;     addressed to the stage lands in the bare seat's inbox/new and the
 ;;     @-seat's mailbox tree stays EMPTY; the @-seat's own mailbox
@@ -47,8 +53,17 @@
 ;;     the seat id -> compose fails/mis-keys for @-seats, the metadata
 ;;     role==stage assertion goes RED on the first compose-checked
 ;;     multi-seat draw.
-;;   - inv-2 break: an unconditional extra roles.tsv column -> byte-identity
-;;     RED on every single-seat draw.
+;;   - inv-2 break (amended 2026-09-14, BL-1541): a mutated value inside one
+;;     of the first 8 (pre-blob) columns -> projected-identity RED on every
+;;     single-seat draw; a 9th (appended) column, mutated or not, must stay
+;;     GREEN - verified 2026-09-14 by feeding the projection check a
+;;     synthetic current row with (a) a mutated column-3 value against the
+;;     unmutated pre-blob row (RED, confirming the break is still caught)
+;;     and (b) an unmutated first 8 columns plus a 9th appended column
+;;     against the unmutated 8-column pre-blob row (GREEN, confirming
+;;     append-only evolution no longer trips the oracle); restored to the
+;;     real projection immediately after, recorded here rather than staged
+;;     in the parcel commit since no production line changed.
 ;;   - inv-3 break: the generator's bare row withheld (delivery fixture
 ;;     declares only the @-seat) -> the bare-seat-delivery assertion goes
 ;;     RED, proving the assertion consumes the real delivery outcome.
@@ -62,6 +77,8 @@
 (def repo-root (str (fs/parent (fs/parent scripts-dir))))
 (def swarmforge-sh (str (fs/path scripts-dir "swarmforge.sh")))
 (def pre-blob "2edd9a17ba9d40709c0f436d12395b638563c0ca")
+
+(load-file (str (fs/path script-dir "lib" "send_through_audit.bb")))
 
 (def runs (or (some-> (System/getenv "PROPERTY_RUNS") parse-long) 100))
 (def rng (java.util.Random. (System/nanoTime)))
@@ -177,8 +194,22 @@
                 (fail! (str "draw " draw ": seat " seat " composed .md is not the stage's role prompt ("
                             (count md) " bytes)"))))))))))
 
+(defn- project-first-8-cols
+  "One roles.tsv line, truncated to its first 8 tab-separated fields - the
+   pre-blob's own column shape. An appended 9th+ column (44d2d42591) is
+   dropped here, never compared; a value inside the first 8 is kept in
+   place, so an insertion/reorder/alteration among them still shows up."
+  [line]
+  (str/join "\t" (take 8 (str/split line #"\t"))))
+
+(defn- tsv-lines [text]
+  (->> (or text "") str/split-lines (remove str/blank?)))
+
 (defn check-byte-identity!
-  "Invariant 2: single-seat conf, current vs pre-change blob, normalized."
+  "Invariant 2 (amended 2026-09-14, BL-1541): single-seat conf, current
+   roles.tsv PROJECTED onto the pre-change blob's 8-column shape, compared
+   to the pre-change blob's own (unprojected, already 8-column) roles.tsv,
+   normalized on the fixture root."
   [draw pack i]
   (let [root-a (mk-conf-root! (str i "-cur"))
         root-b (mk-conf-root! (str i "-pre"))
@@ -196,10 +227,17 @@
           rb (run-parse root-b (str (fs/path pre-dir "swarmforge.sh")))]
       (if (or (not (zero? (:exit ra))) (not (zero? (:exit rb))))
         (fail! (str "draw " draw ": single-seat parse failed cur=" (:exit ra) " pre=" (:exit rb) " " (:err ra) (:err rb)))
-        (let [norm (fn [root] (str/replace (or (roles-tsv root) "") root "ROOT"))]
-          (when-not (= (norm root-a) (norm root-b))
-            (fail! (str "draw " draw ": single-seat roles.tsv diverged from pre-change script:\nCUR:\n"
-                        (norm root-a) "\nPRE:\n" (norm root-b)))))))))
+        (let [norm (fn [root] (str/replace (or (roles-tsv root) "") root "ROOT"))
+              cur-lines (tsv-lines (norm root-a))
+              pre-lines (tsv-lines (norm root-b))
+              cur-projected (mapv project-first-8-cols cur-lines)]
+          (doseq [line cur-lines]
+            (let [n (count (str/split line #"\t"))]
+              (when (< n 8)
+                (fail! (str "draw " draw ": current roles.tsv row has only " n " of the required 8 columns: " line)))))
+          (when-not (= cur-projected pre-lines)
+            (fail! (str "draw " draw ": single-seat roles.tsv (projected onto the pre-blob's 8 columns) diverged from pre-change script:\nCUR (projected):\n"
+                        (str/join "\n" cur-projected) "\nPRE:\n" (str/join "\n" pre-lines)))))))))
 
 (defn check-delivery!
   "Invariant 3: real swarm_handoff.bb send to the stage lands ONLY in the
@@ -230,10 +268,11 @@
     (let [commit (str/trim (:out (sh {:dir root :out :string} "git" "rev-parse" "--short=10" "HEAD")))
           draft (str (fs/path root "specifier" "draft.txt"))]
       (spit draft (str "type: git_handoff\nto: " stage "\npriority: 50\ntask: BL-42\ncommit: " commit "\n"))
-      (sh {:dir (str (fs/path root "specifier"))
-           :extra-env {"SWARMFORGE_ROLE" "specifier"
-                       "PATH" (str (fs/path root "bin") ":" (System/getenv "PATH"))}}
-          "bb" (str (fs/path scripts-dir "swarm_handoff.bb")) draft)
+      (send-through-audit-lib/send-through-audit!
+       #(sh {:dir (str (fs/path root "specifier"))
+             :extra-env {"SWARMFORGE_ROLE" "specifier"
+                         "PATH" (str (fs/path root "bin") ":" (System/getenv "PATH"))}}
+            "bb" (str (fs/path scripts-dir "swarm_handoff.bb")) draft))
       (let [bare-inbox (fs/path root stage ".swarmforge" "handoffs" "inbox" "new")
             extra-tree (fs/path root (str/replace extra "@" "-") ".swarmforge" "handoffs")
             bare-delivered? (and (fs/exists? bare-inbox)
