@@ -22,8 +22,17 @@
 (load-file (str (fs/path (fs/parent (fs/canonicalize *file*))
                          ".." ".." ".." ".." "swarmforge" "scripts" "land_step_lib.bb")))
 
-(defn- sh! [dir & args]
-  (apply process/sh {:dir (str dir) :continue true} args))
+(defn- sh!
+  "Runs a fixture git step. A non-zero exit stops the fixture and names the
+  step - :continue true is what makes that visible to us instead of an
+  execution-halting exception, never a license to ignore the exit code."
+  [dir & args]
+  (let [{:keys [exit err] :as result} (apply process/sh {:dir (str dir) :continue true} args)]
+    (when-not (zero? exit)
+      (binding [*out* *err*]
+        (println (str "fixture step failed: " (str/join " " args) ": " (str/trim (or err "")))))
+      (System/exit 1))
+    result))
 
 (def siblings ["BL-9002" "BL-9003"])
 

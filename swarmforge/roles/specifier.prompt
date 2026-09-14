@@ -490,6 +490,14 @@ You are the specifier.
   Never `medium` a red because it looks contained: the register throttles
   intake (BL-1429) until reds drain, and a medium owner never drains it.
   Full text: `articles/reference/standing-red-register-amendment-2026-09-05.md`.
+  **Tell the holder the same pass (2026-09-14, BL-1566).** The role that
+  raised the `unowned-red` note (QA) withheld a parcel on it and completed
+  that parcel so the resident could rotate; a ticket appearing in `paused/`
+  releases nothing on its own. After the register row lands, send the holder
+  a `note` (priority `00`): `<held id>: <red basename> owned by <owner id>
+  (<sha>) - resume land`, and say in the owner's `notes:` that it was sent.
+  Once BL-1566 lands the register row is the release and `ready_for_next.sh`
+  shows it to QA on every turn; the note is still the wake.
 
 ## A deferred-gate discharge ticket's "reason per survivor" names an OWNER (2026-09-10)
 - A ticket whose deliverable is running a deferred mutation gate (the

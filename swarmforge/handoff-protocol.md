@@ -270,8 +270,11 @@ After the final QA gate passes on a parcel:
    so QA merges/fast-forwards `main` to it and pushes origin (same session; never
    force-push), and closes the GitHub issue for a `GH-`-seeded ticket
    (`issue_done.sh`). QA is the integration point (BL-247).
-3. **QA → coordinator:** `git_handoff` or `note` with priority `00`, the
-   QA-approved commit (10-char abbrev), and stable task/backlog id, so the
+3. **QA → coordinator:** a `note` with priority `00` — never a `git_handoff`
+   (BL-1565: refused at send; the coordinator holds no code, and a stamped
+   `git_handoff` is completed merge-only under Article 2.4 and the close is
+   lost). Message `QA-approved <task> landed <sha> - bookkeep to done`: the
+   QA-approved commit (10-char abbrev) and stable task/backlog id, so the
    coordinator does the backlog bookkeeping.
 4. **Worktree roles:** on receiving the merge-up `note`, run
    `git merge <qa-commit>` (or `--no-ff`) in your worktree, resolve conflicts

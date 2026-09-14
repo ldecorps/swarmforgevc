@@ -44,31 +44,49 @@ describe('BL-1272 invariant 1: landed is a positive finding, never an inference'
         });
       });
 
-    fc.assert(
-      fc.property(caseArb, ({ paths, complete, nilPaths, same }) => {
-        const effectivePaths = nilPaths ? null : paths;
-        const [landed] = batch('landed-batch', [{ paths: effectivePaths, complete, same }]);
+    // One bb process for the whole property, not one per draw (BL-1556):
+    // the 60 cases are drawn up front and answered in a single
+    // landed-batch query. Shrinking is lost, so the seed is logged and
+    // each case's own inputs are printed in its assertion message.
+    const seed = (Date.now() ^ Math.floor(Math.random() * 0x100000000)) >>> 0;
+    const drawn = fc.sample(caseArb, { numRuns: 60, seed });
+    console.log(`BL-1556 reach map (invariant 1): ${JSON.stringify({ cases: drawn.length, seed })}`);
 
-        // The claim, stated as an equivalence so neither direction can rot:
-        // landed exactly when the walk RAN completely, found something, and
-        // found all of it already identical.
-        const expected =
-          complete && effectivePaths !== null && effectivePaths.length > 0 && same.every(Boolean);
+    const results = batch(
+      'landed-batch',
+      drawn.map(({ paths, complete, nilPaths, same }) => ({
+        paths: nilPaths ? null : paths,
+        complete,
+        same,
+      }))
+    );
+
+    drawn.forEach(({ paths, complete, nilPaths, same }, i) => {
+      const effectivePaths = nilPaths ? null : paths;
+      const landed = results[i];
+
+      // The claim, stated as an equivalence so neither direction can rot:
+      // landed exactly when the walk RAN completely, found something, and
+      // found all of it already identical.
+      const expected =
+        complete && effectivePaths !== null && effectivePaths.length > 0 && same.every(Boolean);
+      assert.equal(
+        landed,
+        expected,
+        `case ${i} (seed=${seed}): paths=${JSON.stringify(effectivePaths)} complete=${complete} same=${JSON.stringify(same)}`
+      );
+
+      // And the fail-closed half on its own, so a refactor that made the
+      // equivalence accidentally true cannot hide it: an incomplete or
+      // unrun check NEVER reports landed.
+      if (!complete || effectivePaths === null || effectivePaths.length === 0) {
         assert.equal(
           landed,
-          expected,
-          `paths=${JSON.stringify(effectivePaths)} complete=${complete} same=${JSON.stringify(same)}`
+          false,
+          `case ${i} (seed=${seed}): an unanswered check reported the sibling as landed`
         );
-
-        // And the fail-closed half on its own, so a refactor that made the
-        // equivalence accidentally true cannot hide it: an incomplete or
-        // unrun check NEVER reports landed.
-        if (!complete || effectivePaths === null || effectivePaths.length === 0) {
-          assert.equal(landed, false, 'an unanswered check reported the sibling as landed');
-        }
-      }),
-      { numRuns: 60 }
-    );
+      }
+    });
   });
 
   it('is not vacuous: the identical, complete, non-empty case really does report landed', () => {
