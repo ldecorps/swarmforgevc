@@ -159,8 +159,8 @@ notes: |
     first RECORDED; QA's three earlier full-lane sightings (2026-09-10,
     09-13, 09-14) were each dismissed as contention on one green re-run.
   - Holder told the same pass (BL-1566 rule): a priority-00 note to QA,
-    `BL-1570: bl1429StandingRedThrottleFold owned by BL-1572 (<sha>) -
-    resume land`, sent right after the mint commit landed; the coordinator
+    `BL-1570: bl1429StandingRedThrottleFold owned by BL-1572 679cbd96ab -
+    resume land`, sent right after mint commit 679cbd96ab landed; the coordinator
     was told the item is ready in paused.
   - Not folded into BL-1555 (done 2026-09-14) or BL-1559 (paused,
     approved): same defect class, but BL-1555 has landed and BL-1559 is a
