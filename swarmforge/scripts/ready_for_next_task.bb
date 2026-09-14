@@ -15,6 +15,7 @@
 (load-file (str (fs/path (fs/parent *file*) "seat_difficulty_lib.bb")))
 (load-file (str (fs/path (fs/parent *file*) "pipeline_stage_lib.bb")))
 (load-file (str (fs/path (fs/parent *file*) "idle_clear_fullness_cli.bb")))
+(load-file (str (fs/path (fs/parent *file*) "qa_hold_lib.bb")))
 
 (def idle-boundary?
   "Set only when invoked from done_with_current_task.bb, right after it
@@ -247,7 +248,25 @@
       (requeue-and-refuse! handoff-file in-process-dir new-dir branch decision
                            "worktree has uncommitted changes"))))
 
+;; BL-1566: an Article 4.2 hold is a durable record, not an evidence-file
+;; sentence — every QA turn prints a released hold BEFORE anything else
+;; (before in_process resume, before NO_TASK) so whichever wake reaches QA
+;; surfaces the release, instead of the resume note being completed in ten
+;; seconds with nothing re-gated (BL-1555, 2026-09-14). No-op for every
+;; other role, and a no-op when the store is empty.
+(defn- print-qa-hold-status-if-any! []
+  (when (= "QA" (handoff-lib/current-role))
+    (let [root (str (handoff-lib/target-root))
+          holds (qa-hold-lib/read-holds root)]
+      (when (seq holds)
+        (doseq [line (qa-hold-lib/status-lines
+                      holds
+                      (qa-hold-lib/register-rows-for root)
+                      (qa-hold-lib/open-ticket-ids-for root))]
+          (println line))))))
+
 (defn -main []
+  (print-qa-hold-status-if-any!)
   ;; BL-983: a seat CLAIMS from its STAGE's queue (the stage-named row's
   ;; new/ - for a bare seat this IS its own new/, byte-identical path) into
   ;; its OWN in_process/completed/abandoned, so task-mode single-claim
