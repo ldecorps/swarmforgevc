@@ -1812,7 +1812,7 @@ RESUME_NOTE=""
 if in_process_dir="\$(bb '$SCRIPT_DIR/mailbox_dir.bb' '$WORKING_DIR' '$role' in_process 2>/dev/null)" \\
     && [[ -n "\$in_process_dir" && -d "\$in_process_dir" ]] \\
     && find "\$in_process_dir" -mindepth 1 -maxdepth 1 \( -name '*.handoff' -o -name 'batch_*' \) -print -quit 2>/dev/null | grep -q .; then
-  RESUME_NOTE='RESUME-ON-START: your inbox/in_process queue already holds a parcel from before this session started (a prior session claimed it and did not finish it). Run ready_for_next.sh as your very first action, before reading or doing anything else, and follow its output to resume it.
+  RESUME_NOTE='RESUME-ON-START: your inbox/in_process queue already holds a parcel from before this session started (a prior session claimed it and did not finish it). Run ./swarmforge/scripts/ready_for_next.sh as your very first action, before reading or doing anything else, and follow its output to resume it.
 
 '
 fi
@@ -1847,7 +1847,7 @@ RESUMECHECK
       # exists to capture. The system prompt file already carries the full
       # instructions; the first turn only needs a short kickoff (plus the
       # resume note, unchanged, when one applies).
-      launch_body="claude --settings '$settings_file'${claude_permission_flags}${claude_flags:+ $claude_flags} --append-system-prompt-file '$prompt_file' -n 'SwarmForge ${display}' \"\${RESUME_NOTE}Your constitution, pipeline, and role are already loaded above via --append-system-prompt-file. Begin your role loop now; if idle, run ready_for_next.sh.\""
+      launch_body="claude --settings '$settings_file'${claude_permission_flags}${claude_flags:+ $claude_flags} --append-system-prompt-file '$prompt_file' -n 'SwarmForge ${display}' \"\${RESUME_NOTE}Your constitution, pipeline, and role are already loaded above via --append-system-prompt-file. Begin your role loop now; if idle, run ./swarmforge/scripts/ready_for_next.sh (it is NOT at the worktree root).\""
       ;;
     codex)
       # Full prompt files exceed Linux MAX_ARG_STRLEN (~128KiB) when $(cat)'d
@@ -1856,7 +1856,7 @@ RESUMECHECK
       # --dangerously-bypass-approvals-and-sandbox is the Codex equivalent of
       # Claude's --dangerously-skip-permissions / Copilot's --yolo: swarm
       # agents must run unattended (no per-command approval prompts).
-      launch_body="codex${extra_cli:+ $extra_cli} --dangerously-bypass-approvals-and-sandbox -C '$role_worktree' \"\${RESUME_NOTE}Read and obey every instruction in '$prompt_file' (constitution, pipeline, role, pack). Then begin your role loop; if idle, run ready_for_next.sh.\""
+      launch_body="codex${extra_cli:+ $extra_cli} --dangerously-bypass-approvals-and-sandbox -C '$role_worktree' \"\${RESUME_NOTE}Read and obey every instruction in '$prompt_file' (constitution, pipeline, role, pack). Then begin your role loop; if idle, run ./swarmforge/scripts/ready_for_next.sh (it is NOT at the worktree root).\""
       ;;
     copilot)
       local copilot_dirs=""
@@ -1925,7 +1925,7 @@ RESUMECHECK
         cursor_dirs=" --add-dir '$WORKING_DIR'"
       fi
       local cursor_cli="$(swarm_only_strip_seat_tier "$extra_cli")"
-      launch_body="cursor-agent${cursor_cli:+ $cursor_cli} --force --trust --workspace '$role_worktree'${cursor_dirs} \"\${RESUME_NOTE}Read and obey every instruction in '$prompt_file' (constitution, pipeline, role, pack). Then begin your role loop; if idle, run ready_for_next.sh.\""
+      launch_body="cursor-agent${cursor_cli:+ $cursor_cli} --force --trust --workspace '$role_worktree'${cursor_dirs} \"\${RESUME_NOTE}Read and obey every instruction in '$prompt_file' (constitution, pipeline, role, pack). Then begin your role loop; if idle, run ./swarmforge/scripts/ready_for_next.sh (it is NOT at the worktree root).\""
       ;;
     gemini)
       # Google Gemini CLI (`npm i -g @google/gemini-cli` or similar). -y/--yolo
@@ -1933,7 +1933,7 @@ RESUMECHECK
       # GEMINI_API_KEY arrives via tmux -e (BL-130), never written here.
       # Keep argv short (path to prompt file) — full prompt slurps exceed
       # MAX_ARG_STRLEN the same way Codex does.
-      launch_body="cd '$role_worktree' && gemini -y${extra_cli:+ $extra_cli} \"\${RESUME_NOTE}Read and obey every instruction in '$prompt_file' (constitution, pipeline, role, pack). Then begin your role loop; if idle, run ready_for_next.sh.\""
+      launch_body="cd '$role_worktree' && gemini -y${extra_cli:+ $extra_cli} \"\${RESUME_NOTE}Read and obey every instruction in '$prompt_file' (constitution, pipeline, role, pack). Then begin your role loop; if idle, run ./swarmforge/scripts/ready_for_next.sh (it is NOT at the worktree root).\""
       ;;
     local-model)
       # BL-1052: seat against a downloaded model on loopback (BL-1082). First
@@ -1944,7 +1944,7 @@ RESUMECHECK
       # / tmux -e (BL-130), never written as secret values here.
       #
       # Prompt by PATH, not $(cat ...): same MAX_ARG_STRLEN trap as codex/gemini.
-      launch_body="qwen --auth-type openai -y${extra_cli:+ $extra_cli} \"\${RESUME_NOTE}Read and obey every instruction in '$prompt_file' (constitution, pipeline, role, pack). Then begin your role loop; if idle, run ready_for_next.sh.\""
+      launch_body="qwen --auth-type openai -y${extra_cli:+ $extra_cli} \"\${RESUME_NOTE}Read and obey every instruction in '$prompt_file' (constitution, pipeline, role, pack). Then begin your role loop; if idle, run ./swarmforge/scripts/ready_for_next.sh (it is NOT at the worktree root).\""
       ;;
     *)
       # BL-1080: same Unsupported agent wording + how-to pointer as validate_agent.

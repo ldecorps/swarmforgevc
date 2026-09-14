@@ -41,10 +41,27 @@
 ;; could drift (BL-897 lesson: a constant mirrored by hand across a language
 ;; boundary no import can bridge needs a shared source, not a "kept in sync"
 ;; comment).
+;; Hotfix 2026-09-14 (human directive): :missing-script-path. Every role is
+;; told to "run ready_for_next.sh"; the helper lives in swarmforge/scripts/
+;; (on PATH via the launch script), but seats keep typing `./ready_for_next.sh`
+;; from the worktree root, get "no such file or directory", and then hunt
+;; for it with `find /` - a 120 s tool timeout per boot (258 such attempts
+;; and 121 root-level finds across role sessions in the week to 09-14).
+;; Both shell spellings of the miss are matched: zsh's
+;; "no such file or directory: ./x.sh" and bash's "./x.sh: No such file or
+;; directory". Last in the chain so the three older classes keep their
+;; first-match precedence exactly.
 (def MISS-CLASS-PATTERNS
   [[:wrong-cwd "fatal: not a git repository"]
    [:wrong-surface "npm error code enoent|could not read package\\.json|no such file or directory.*package\\.json"]
-   [:missing-root-argv "usage:.*<project-root>|usage:.*<target-repo-path>|missing required argument"]])
+   [:missing-root-argv "usage:.*<project-root>|usage:.*<target-repo-path>|missing required argument"]
+   [:missing-script-path "no such file or directory: \\./[A-Za-z0-9_.-]+\\.sh|\\./[A-Za-z0-9_.-]+\\.sh: no such file or directory"]])
+
+;; The `./<name>.sh` tokens :missing-script-path rewrites - a bare helper
+;; name at the worktree root, never one already under a directory (the
+;; character class excludes `/`, so `./swarmforge/scripts/x.sh` is left
+;; alone) and never the tail of a longer path (negative lookbehind).
+(def ^:private ROOT-SCRIPT-TOKEN #"(?<![\w./-])\./([A-Za-z0-9_.-]+\.sh)")
 
 ;; The classifier must be conservative (per this ticket's own description):
 ;; anything it is not sure about is a real failure, never silently retried.
@@ -145,6 +162,19 @@
     ;; posture), never a syntactically valid but misdirected re-run.
     :missing-root-argv (when (single-simple-command? original-command)
                          (str original-command " \"$__sfh_root\""))
+    ;; Hotfix 2026-09-14: re-run the WHOLE original from the pinned worktree
+    ;; with every root-level `./x.sh` token pointed at ./swarmforge/scripts/
+    ;; x.sh - a pipeline such as `./ready_for_next.sh 2>&1 | tail -50` keeps
+    ;; its tail. nil (clause omitted, :real-failure posture) when the
+    ;; original carries no such token, so an unrelated "no such file" from
+    ;; some other ./x.sh mention in the OUTPUT can never trigger a re-run of
+    ;; a command that never named one.
+    :missing-script-path (let [rewritten (str/replace (or original-command "")
+                                                      ROOT-SCRIPT-TOKEN
+                                                      "./swarmforge/scripts/$1")]
+                           (when (not= rewritten original-command)
+                             (str "cd " (shell-quote pinned-worktree) " && "
+                                  (subshell-group rewritten ""))))
     nil))
 
 (defn- bash-clause
@@ -187,7 +217,23 @@
         clauses (apply str
                        (map-indexed
                         (fn [i [pattern healed]] (bash-clause (zero? i) pattern healed))
-                        active))]
+                        active))
+        ;; Hotfix 2026-09-14: seats run the helper as `./x.sh 2>&1 | tail -N`,
+        ;; so the pipeline's exit is tail's 0 and the "no such file" is
+        ;; MASKED - the chain below would never open. For this one class the
+        ;; captured output is itself the proof the command never ran, so a
+        ;; match on it opens the chain even at exit 0. Only emitted when the
+        ;; script-path heal is active for THIS command (healed-command
+        ;; declined otherwise), so every other command keeps the exact
+        ;; exit-code-only gate. Invariant 1 holds unchanged: the chain is
+        ;; still one if/elif walk, first match wins, one re-run at most.
+        masked-pattern (some (fn [[pattern _]]
+                               (when (= pattern (get (into {} MISS-CLASS-PATTERNS) :missing-script-path))
+                                 pattern))
+                             active)
+        chain-guard (if masked-pattern
+                      (str "if [ $__sfh_ec -ne 0 ] || grep -qiE " (shell-quote masked-pattern) " " OUT-FILE "; then\n")
+                      "if [ $__sfh_ec -ne 0 ]; then\n")]
     (str "__sfh_root=" (shell-quote pinned-worktree) "\n"
          ;; BL-985: the PROACTIVE anchor - decided from where the shell IS,
          ;; before the original runs, never from whether it failed. The one
@@ -225,7 +271,7 @@
          "trap 'exit 143' TERM\n"
          (capture-attempt original-command "")
          (when (seq active)
-           (str "if [ $__sfh_ec -ne 0 ]; then\n"
+           (str chain-guard
                 clauses
                 "  fi\n"
                 "fi\n"))
