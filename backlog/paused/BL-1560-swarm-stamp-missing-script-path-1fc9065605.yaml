@@ -283,3 +283,9 @@ qa_e2e_procedure: |
      script carries the nudge).
   7. After done: the human runs `bb swarmforge/scripts/hotfix_ledger_update.bb .
      --decide 1fc9065605 approved|waived` and commits the ledger.
+
+  2026-09-14T08:16:43Z coordinator recheck: promote_and_route_next.sh
+  refused (human_approval: pending). An approval ask for BL-1560 is already
+  posted on Telegram (telegram-approval-ask-messages.json); siblings
+  BL-1561/BL-1562 are also pending the same gate. Holding all three in
+  paused/ until human_approval flips to approved.
