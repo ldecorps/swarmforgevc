@@ -66,14 +66,18 @@
          (qa-hold-lib/hold-status-lines {:task "BL-9000-held" :commit "abcdef0123" :reds [RED-A]}
                                         [(register-row RED-A "BL-9001")] #{}))
 
-(assert= "a released hold prints exactly one RELEASED line, no HOLD lines"
-         ["RELEASED BL-9000-held abcdef0123"]
+(assert= "a released hold prints RELEASED FIRST, then its per-red HOLD lines (qa_e2e_procedure names both)"
+         ["RELEASED BL-9000-held abcdef0123"
+          "HOLD BL-9000-held abcdef0123 red=extension/test/a.property.test.js owner=BL-9001"
+          "HOLD BL-9000-held abcdef0123 red=extension/test/b.property.test.js owner=BL-9002"]
          (qa-hold-lib/hold-status-lines {:task "BL-9000-held" :commit "abcdef0123" :reds [RED-A RED-B]}
                                         [(register-row RED-A "BL-9001") (register-row RED-B "BL-9002")]
                                         #{"BL-9001" "BL-9002"}))
 
 (assert= "status-lines concatenates every hold's own lines in hold order, decided independently per hold"
-         ["RELEASED T1 c1" "HOLD T2 c2 red=extension/test/b.property.test.js owner=none"]
+         ["RELEASED T1 c1"
+          "HOLD T1 c1 red=extension/test/a.property.test.js owner=BL-9001"
+          "HOLD T2 c2 red=extension/test/b.property.test.js owner=none"]
          (qa-hold-lib/status-lines
           [{:task "T1" :commit "c1" :reds [RED-A]}
            {:task "T2" :commit "c2" :reds [RED-B]}]

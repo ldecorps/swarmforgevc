@@ -53,21 +53,29 @@
                     (and owner (contains? open-ticket-ids owner))))
                 reds))))
 
+(defn- hold-lines
+  [{:keys [task commit reds]} register-rows]
+  (mapv (fn [red]
+          (str "HOLD " task " " commit " red=" red
+               " owner=" (or (red-owner register-rows red) "none")))
+        reds))
+
 (defn hold-status-lines
-  "One hold -> its status lines. Released: exactly one `RELEASED <task>
-   <commit>` line — the per-red HOLD lines a still-open hold prints stop
-   mattering once every one of them is owned, and printing both would bury
-   the one line every QA turn actually needs to act on. Still open: one
-   `HOLD <task> <commit> red=<path> owner=<id|none>` line per red, in the
-   hold's own red order, and no RELEASED line."
+  "One hold -> its status lines: one `HOLD <task> <commit> red=<path>
+   owner=<id|none>` line per red, in the hold's own red order — the ticket's
+   own qa_e2e_procedure names both a HOLD line and a RELEASED line as
+   status's output for a released hold, so the per-red detail is never
+   dropped once released. When released, a `RELEASED <task> <commit>` line
+   is prepended (not appended): the ticket's own acceptance scenario 05
+   requires it to be the very FIRST line ready_for_next prints on a QA
+   turn — the one line every wake actually needs to act on, ahead of the
+   per-red detail. Still open: no RELEASED line at all."
   [hold register-rows open-ticket-ids]
-  (let [{:keys [task commit reds]} hold]
+  (let [{:keys [task commit]} hold
+        lines (hold-lines hold register-rows)]
     (if (release? hold register-rows open-ticket-ids)
-      [(str "RELEASED " task " " commit)]
-      (mapv (fn [red]
-              (str "HOLD " task " " commit " red=" red
-                   " owner=" (or (red-owner register-rows red) "none")))
-            reds))))
+      (into [(str "RELEASED " task " " commit)] lines)
+      lines)))
 
 (defn status-lines
   "Every hold's status lines, concatenated in hold order — what `status`

@@ -48,6 +48,21 @@ placed the outcome-stamped record under `closed-dir` — the delete only
 ever follows a successful write to the closed store, never precedes or
 substitutes for it.
 
+## Self-audit correction before handoff
+
+The first draft made a released hold's `status` print ONLY the `RELEASED`
+line, dropping the per-red `HOLD` lines. The ticket's own `qa_e2e_procedure`
+names BOTH lines as `status`'s output for a released hold
+("`... status` prints `HOLD BL-1566-e2e <sha> red=... owner=BL-1564` and
+`RELEASED BL-1566-e2e <sha>`") — the draft silently dropped the HOLD line,
+a real deviation from the ticket's own worked example. Fixed:
+`hold-status-lines` now prepends `RELEASED` ahead of the unchanged per-red
+`HOLD` lines when released (prepended, not appended, so acceptance
+scenario 05's "first output line is RELEASED" still holds). Re-verified:
+`qa_hold_cli.bb status` against the e2e procedure's own fixture prints
+both lines; `qa_hold_lib_test_runner.bb` and the full 8-scenario acceptance
+suite both still pass after the fix.
+
 ## Full verification for this parcel
 
 | check | result |
