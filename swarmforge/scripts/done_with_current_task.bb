@@ -19,6 +19,11 @@
 ;; off the same effective pack conf BL-1316's claim-time apply reads.
 (load-file (str (fs/path script-dir "backlog_depth_lib.bb")))
 (load-file (str (fs/path script-dir "seat_difficulty_lib.bb")))
+;; BL-1566: a released Article 4.2 hold refuses a note completion until QA
+;; closes it with an outcome (a git_handoff inbound — the withheld parcel
+;; itself, parked so the rotation resident can move on — is never blocked;
+;; qa_hold_lib.bb's own blocks-completion? encodes the parking exception).
+(load-file (str (fs/path script-dir "qa_hold_lib.bb")))
 
 (defn run-ready! []
   (process/exec (str (fs/path script-dir "ready_for_next_task.sh")) "--idle-boundary"))
@@ -174,6 +179,25 @@
                          (str "WORK_NOT_EVIDENCED: " ticket-id " has no commit or git_handoff naming it since dequeue.")
                          (str "Do the work and send the parcel, or run: done_with_current.sh --no-work \"<reason>\"")))))
 
+;; ── BL-1566: a released Article 4.2 hold blocks a note completion ────────
+;; Called with the in_process file still in place, same shape as
+;; work-note-gate! above — refuses (no side effects) when this role is QA,
+;; source-file is a note, and at least one hold is released; a no-op for
+;; every other role/type combination and a no-op when the store is empty.
+(defn- qa-hold-gate! [source-file]
+  (when (= "QA" (handoff-lib/current-role))
+    (let [root (str (handoff-lib/target-root))
+          inbound-type (handoff-lib/header-field source-file "type")
+          holds (qa-hold-lib/read-holds root)
+          register-rows (qa-hold-lib/register-rows-for root)
+          open-ids (qa-hold-lib/open-ticket-ids-for root)]
+      (when (qa-hold-lib/blocks-completion?
+             {:role "QA" :inbound-type inbound-type :holds holds
+              :register-rows register-rows :open-ticket-ids open-ids})
+        (let [released (first (qa-hold-lib/released-holds holds register-rows open-ids))]
+          (handoff-lib/fail! 1
+                             (str "HOLD_RELEASED " (:task released) " " (:commit released))))))))
+
 (defn -main []
   ;; BL-652: family contract — direct helper invocation also refuses argv.
   (dispatch-lib/refuse-unexpected-args!)
@@ -201,6 +225,11 @@
                            (str/join "\n" (map #(str "- " %) in-process-files))))
       (let [source-file (first in-process-files)
             target-file (fs/path completed-dir (fs/file-name source-file))
+            ;; BL-1566: refuses (exit, source-file untouched) when this
+            ;; role is QA, source-file is a note, and a hold the register
+            ;; has released is still open — runs before the BL-1422 gate so
+            ;; a released hold always wins the refusal message.
+            _ (qa-hold-gate! source-file)
             ;; BL-1422: refuses (exit, source-file untouched) on an
             ;; unevidenced Work note; otherwise nil (ordinary completion,
             ;; including every non-Work note and every git_handoff) or a
