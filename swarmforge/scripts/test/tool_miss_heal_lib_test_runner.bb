@@ -426,6 +426,58 @@
   (assert-no-capture-leak "BL-960 cleanup, healed re-run path" (str "bash " heals) tmp (mk-tmp))
   (assert-no-capture-leak "BL-960 cleanup, real-failure passthrough path" (str "bash " red) tmp nil))
 
+;; ── Hotfix 2026-09-14: :missing-script-path ───────────────────────────────
+(assert= "classify-miss: zsh's 'no such file or directory: ./x.sh' classifies missing-script-path"
+         :missing-script-path (tool-miss-heal-lib/classify-miss "(eval):13: no such file or directory: ./ready_for_next.sh"))
+(assert= "classify-miss: bash's './x.sh: No such file or directory' classifies missing-script-path"
+         :missing-script-path (tool-miss-heal-lib/classify-miss "bash: ./done_with_current.sh: No such file or directory"))
+(assert= "classify-miss: a missing non-.sh path stays a real failure"
+         :real-failure (tool-miss-heal-lib/classify-miss "bash: ./notes.txt: No such file or directory"))
+(assert= "classify-miss: a package.json ENOENT still wins as wrong-surface (older classes keep precedence)"
+         :wrong-surface (tool-miss-heal-lib/classify-miss "no such file or directory: ./x.sh\nnpm error code ENOENT"))
+(assert= "healed-command: missing-script-path re-anchors to the pinned worktree and repoints ./x.sh, keeping the pipeline"
+         "cd '/w' && (\n./swarmforge/scripts/ready_for_next.sh 2>&1 | tail -50\n)"
+         (tool-miss-heal-lib/healed-command :missing-script-path "./ready_for_next.sh 2>&1 | tail -50" "/w"))
+(assert= "healed-command: missing-script-path rewrites every root-level token in a ;-sequence"
+         "cd '/w' && (\n./swarmforge/scripts/done_with_current.sh; ./swarmforge/scripts/ready_for_next.sh\n)"
+         (tool-miss-heal-lib/healed-command :missing-script-path "./done_with_current.sh; ./ready_for_next.sh" "/w"))
+(assert= "healed-command: missing-script-path leaves an already-scripted path alone and DECLINES (nil)"
+         nil (tool-miss-heal-lib/healed-command :missing-script-path "./swarmforge/scripts/ready_for_next.sh" "/w"))
+(assert= "healed-command: missing-script-path DECLINES (nil) when the command names no ./x.sh at all"
+         nil (tool-miss-heal-lib/healed-command :missing-script-path "cat ./notes.txt" "/w"))
+(assert= "healed-command: missing-script-path does not touch the tail of a longer path"
+         nil (tool-miss-heal-lib/healed-command :missing-script-path "bash /tmp/x/./y.sh" "/w"))
+(assert-true "wrapper: the missing-script-path clause is emitted for a ./x.sh command"
+             (str/includes? (tool-miss-heal-lib/build-healing-wrapper-command "./ready_for_next.sh 2>&1 | tail -50" "/w")
+                            "./swarmforge/scripts/ready_for_next.sh 2>&1 | tail -50"))
+(assert-true "wrapper: no missing-script-path clause for a command without a ./x.sh token"
+             (not (str/includes? (tool-miss-heal-lib/build-healing-wrapper-command "git status" "/w")
+                                 "swarmforge/scripts/")))
+
+;; End to end over real bash: a fixture worktree whose helper lives ONLY
+;; under swarmforge/scripts/, a shell parked somewhere else, the original
+;; `./ready_for_next.sh | tail` - the wrapper must print the helper's own
+;; output and exit 0 after exactly one re-run.
+(let [tmp (str (fs/create-temp-dir {:prefix "tool-miss-heal-script-path-"}))
+      scripts (fs/path tmp "swarmforge" "scripts")
+      helper (fs/path scripts "ready_for_next.sh")
+      counter (str tmp "/n")]
+  (try
+    (fs/create-dirs scripts)
+    (spit (str helper) (str "#!/usr/bin/env bash\n"
+                            "n=$(( $(cat " counter " 2>/dev/null || echo 0) + 1 )); echo $n > " counter "\n"
+                            "printf 'TASK: fixture|pwd=%s\\n' \"$(pwd)\"\n"))
+    (.setExecutable (fs/file (str helper)) true)
+    (let [wrapper (tool-miss-heal-lib/build-healing-wrapper-command "./ready_for_next.sh 2>&1 | tail -5" tmp)
+          result (process/sh ["bash" "-c" wrapper] {:dir "/" :continue true})]
+      (assert= "e2e: healed run exits 0" 0 (:exit result))
+      (assert-true "e2e: the helper's output is what the model sees"
+                   (str/includes? (:out result) (str "TASK: fixture|pwd=" tmp)))
+      (assert-true "e2e: the original 'no such file' is not what the model sees"
+                   (not (str/includes? (str/lower-case (:out result)) "no such file")))
+      (assert= "e2e: the helper ran exactly once" "1" (str/trim (slurp counter))))
+    (finally (try (fs/delete-tree tmp) (catch Exception _ nil)))))
+
 ;; ── report ───────────────────────────────────────────────────────────────
 (if (empty? @failures)
   (println "ALL TESTS PASS")

@@ -1,3 +1,8 @@
+# mutation-stamp: sha256=2023cb53637c163f423d5710f5bb59ac0238ad1f38bb1b2e8edca49e1751c9f1
+# acceptance-mutation-manifest-begin
+# {"version":1,"tested_at":"2026-09-14T06:50:18.510023935Z","feature_name":"BL-1553 The bl1364 property constructs each damage kind","feature_path":"/home/carillon/swarmforgevc/.worktrees/hardender/specs/features/BL-1553-the-bl1364-property-constructs-each-damage-kind.feature","background_hash":"74234e98afe7498fb5daf1f36ac2d78acc339464f950703b8c019892f982b90b","implementation_hash":"unknown","scenarios":[{"index":2,"name":"the reach floor for each damage kind is still asserted in the test source","scenario_hash":"aae438d90c5d2ed9bff7f229edcbd0ff8efcdadad769c815fe5569ad8e74c145","mutation_count":3,"result":{"Total":3,"Killed":3,"Survived":0,"Errors":0},"tested_at":"2026-09-14T06:50:18.510023935Z"}]}
+# acceptance-mutation-manifest-end
+
 Feature: BL-1553 The bl1364 property constructs each damage kind
 
   extension/test/bl1364TurnProfileSeriesInvariants.property.test.js asserts
