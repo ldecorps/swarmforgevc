@@ -5,10 +5,12 @@
 # line and fail-safe-keep default. fixture_reaper_sweep_lib.bb's
 # real-adapters logs a DIFFERENT message ("...killing nothing this pass")
 # and takes the opposite safe direction (tree still reaped, kill list empty)
-# - neither was covered anywhere before this test. On this host /proc is
-# already absent (macOS). Pointing SWARMFORGE_LSOF_BIN at a nonexistent path
-# removes the ONLY other facility proc-fd-scan-lib/live-pid-paths! can use,
-# reproducing "neither facility reachable" without touching real system
+# - neither was covered anywhere before this test. BL-1570: "neither
+# facility reachable" is CONSTRUCTED on every host, not assumed from the
+# host /proc happens to lack. Pointing SWARMFORGE_LSOF_BIN at a nonexistent
+# path removes lsof; pointing SWARMFORGE_PROC_DIR (the seam BL-877 shipped
+# in proc_fd_scan_lib.bb) at a nonexistent path removes /proc the same way
+# on Linux as it is already absent on macOS - without touching real system
 # binaries or PATH globally.
 set -euo pipefail
 source "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/lib/operator_runtime_sandbox.sh"
@@ -45,16 +47,19 @@ cleanup() {
 trap cleanup EXIT
 
 run_tick() {
-  local project="$1" reap_root="$2" lsof_override="$3"
+  local project="$1" reap_root="$2" lsof_override="$3" proc_dir_override="$4"
   SWARMFORGE_FIXTURE_REAP_ROOT="$reap_root" SWARMFORGE_ORPHAN_REAP_CANDIDATE_PIDS="" \
     SWARMFORGE_FIXTURE_REAP_STALE_HOURS=1 \
     SWARMFORGE_SANDBOX_SWEEP_ROOT="$project/.no-sandbox-sweep" \
     SWARMFORGE_LSOF_BIN="$lsof_override" \
+    SWARMFORGE_PROC_DIR="$proc_dir_override" \
     OPERATOR_SKIP_LAUNCH=1 \
     bb "$project/swarmforge/scripts/operator_runtime.bb" "$project" --tick-once > /dev/null
 }
 
-# ── undetermined: neither /proc (already absent) nor lsof (forced absent) ──
+# ── undetermined: neither /proc nor lsof are reachable, constructed via the
+# SWARMFORGE_PROC_DIR and SWARMFORGE_LSOF_BIN seams so the case is identical
+# on every host ──
 PROJECT="$(make_project_fixture)"
 TMP_DIRS+=("$PROJECT")
 REAP_ROOT="$(mktemp -d)"
@@ -74,7 +79,7 @@ old_mtime "$STALE_ORPHAN"
 
 RUNTIME_LOG="$PROJECT/.swarmforge/operator/runtime.log"
 
-run_tick "$PROJECT" "$REAP_ROOT" "/nonexistent/path/to/lsof-bl877-reaper-test"
+run_tick "$PROJECT" "$REAP_ROOT" "/nonexistent/path/to/lsof-bl877-reaper-test" "$REAP_ROOT/.no-proc"
 
 check "undetermined: the process rooted in the reaped root survives (liveness could not be determined, so nothing is killed)" \
   'kill -0 "$ORPHAN_PID" 2>/dev/null'
