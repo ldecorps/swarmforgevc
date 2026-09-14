@@ -196,3 +196,5 @@ source: |
   check at all. Reproduced: 2 of 4 full local runs hit exactly :two-seat
   5." Routed as a note, not a bounce, because BL-1541's constraints forbade
   loosening any floor - correctly.
+
+assigned_to: coder
