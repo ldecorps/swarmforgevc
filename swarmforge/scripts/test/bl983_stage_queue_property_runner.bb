@@ -44,6 +44,8 @@
 (def script-dir (str (fs/parent (fs/canonicalize *file*))))
 (def scripts-dir (str (fs/parent script-dir)))
 
+(load-file (str (fs/path script-dir "lib" "send_through_audit.bb")))
+
 (def runs (or (some-> (System/getenv "PROPERTY_RUNS") parse-long) 16))
 (def rng (java.util.Random. (System/nanoTime)))
 (defn rand-int* [n] (.nextInt rng n))
@@ -98,9 +100,10 @@
 (defn send! [task to]
   (let [draft (str (fs/path (seat-dir "specifier") (str "d-" task ".txt")))]
     (spit draft (str "type: git_handoff\nto: " to "\npriority: 50\ntask: " task "\ncommit: " cited "\n"))
-    (sh {:dir (seat-dir "specifier")
-         :extra-env {"SWARMFORGE_ROLE" "specifier" "PATH" env-path}}
-        "bb" (str (fs/path scripts-dir "swarm_handoff.bb")) draft)))
+    (send-through-audit-lib/send-through-audit!
+     #(sh {:dir (seat-dir "specifier")
+           :extra-env {"SWARMFORGE_ROLE" "specifier" "PATH" env-path}}
+          "bb" (str (fs/path scripts-dir "swarm_handoff.bb")) draft))))
 
 (defn poll! [seat]
   (sh {:dir (seat-dir seat)
@@ -183,9 +186,10 @@
                          (->> (re-find #"(?m)^task: (.+)$")) second)
             draft (str (fs/path (seat-dir claimant) "fwd.txt"))]
         (spit draft (str "type: git_handoff\nto: " next-stage "\npriority: 50\ntask: " task "\ncommit: " cited "\n"))
-        (sh {:dir (seat-dir claimant)
-             :extra-env {"SWARMFORGE_ROLE" claimant "PATH" env-path}}
-            "bb" (str (fs/path scripts-dir "swarm_handoff.bb")) draft)
+        (send-through-audit-lib/send-through-audit!
+         #(sh {:dir (seat-dir claimant)
+               :extra-env {"SWARMFORGE_ROLE" claimant "PATH" env-path}}
+              "bb" (str (fs/path scripts-dir "swarm_handoff.bb")) draft))
         (let [arrived (handoffs-in (fs/path (seat-dir next-stage) ".swarmforge" "handoffs" "inbox" "new"))]
           (if (empty? arrived)
             (fail! (str "draw " i ": forward from " claimant " never reached " next-stage))

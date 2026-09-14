@@ -78,6 +78,8 @@
 (def script-dir (fs/parent (fs/canonicalize *file*)))
 (def swarm-handoff (str (fs/path (fs/parent script-dir) "swarm_handoff.bb")))
 
+(load-file (str (fs/path script-dir "lib" "send_through_audit.bb")))
+
 (def runs (or (some-> (System/getenv "PROPERTY_RUNS") parse-long) 40))
 
 (def failures (atom []))
@@ -169,8 +171,9 @@
                            "SWARMFORGE_SKIP_SYNC_INJECT" "1")
               routing-enabled? (assoc "SWARMFORGE_REQUIRED_STAGES_ROUTING" "1")
               (not routing-enabled?) (dissoc "SWARMFORGE_REQUIRED_STAGES_ROUTING"))
-        {:keys [exit out err]} (process/sh {:dir root :out :string :err :string :env env}
-                                           "bb" swarm-handoff "draft.txt")]
+        {:keys [exit out err]} (send-through-audit-lib/send-through-audit!
+                                 #(process/sh {:dir root :out :string :err :string :env env}
+                                              "bb" swarm-handoff "draft.txt"))]
     (if-not (zero? exit)
       (throw (ex-info (str "send failed: " out err) {}))
       (let [envelope (slurp (last (re-seq #"/[^\s]*\.handoff" (str out err))))

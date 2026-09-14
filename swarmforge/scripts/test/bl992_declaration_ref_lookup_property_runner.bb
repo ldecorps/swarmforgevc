@@ -43,6 +43,8 @@
 (def scripts-dir (str (fs/parent script-dir)))
 (def swarm-handoff (str (fs/path scripts-dir "swarm_handoff.bb")))
 
+(load-file (str (fs/path script-dir "lib" "send_through_audit.bb")))
+
 ;; Default sized so a BARE invocation reliably clears the ABSOLUTE reach
 ;; floors below (sum 21 across 6 uniform classes; 24 draws false-redded on
 ;; coverage twice in the architect's BL-992 D1 review). Mirrors the BL-982
@@ -119,11 +121,12 @@
   (let [commit (str/trim (:out (sh {:dir root :out :string} "git" "rev-parse" "--short=10" "HEAD")))
         draft (str (fs/path root "draft.txt"))]
     (spit draft (str "type: git_handoff\nto: " to "\npriority: 50\ntask: " task "\ncommit: " commit "\n"))
-    (let [res (sh {:dir root :out :string :err :string
-                   :extra-env {"SWARMFORGE_ROLE" "coder"
-                               "SWARMFORGE_SKIP_SYNC_INJECT" "1"
-                               "SWARMFORGE_REQUIRED_STAGES_ROUTING" "1"}}
-                  "bb" swarm-handoff draft)
+    (let [res (send-through-audit-lib/send-through-audit!
+               #(sh {:dir root :out :string :err :string
+                     :extra-env {"SWARMFORGE_ROLE" "coder"
+                                 "SWARMFORGE_SKIP_SYNC_INJECT" "1"
+                                 "SWARMFORGE_REQUIRED_STAGES_ROUTING" "1"}}
+                    "bb" swarm-handoff draft))
           outbox (fs/path root ".swarmforge" "handoffs" "outbox")
           envelope (when (fs/exists? outbox)
                      (some->> (fs/list-dir outbox)
