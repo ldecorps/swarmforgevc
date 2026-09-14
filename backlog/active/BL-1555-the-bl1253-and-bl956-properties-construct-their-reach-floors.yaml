@@ -164,3 +164,5 @@ qa_e2e_procedure: |
      again; the `handovers >= 1` assertion fails under the QA seed on the
      first run; restore. Narrow bl956's overflow cell to 1..12; the
      `gridOverflowSeen >= 20` floor fails on the first run; restore.
+
+assigned_to: coder
