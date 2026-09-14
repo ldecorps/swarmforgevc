@@ -162,10 +162,11 @@ prompt_engine_test_runner.bb	standing
 provider_auth_observe_lib_test_runner.bb	standing		
 provider_compat_lib_test_runner.bb	standing		
 provider_outage_evidence_lib_test_runner.bb	standing		
-push_sweep_ahead_range_lib_test_runner.bb	standing
-push_sweep_lib_test_runner.bb	standing
-qa_hold_lib_test_runner.bb	standing
-rate_limit_cooldown_gate_test_runner.bb	standing
+push_sweep_ahead_range_lib_test_runner.bb	standing		
+push_sweep_lib_test_runner.bb	standing		
+qa_hold_cli_test_runner.bb	standing		
+qa_hold_lib_test_runner.bb	standing		
+rate_limit_cooldown_gate_test_runner.bb	standing		
 reference_freshness_lib_test_runner.bb	standing		
 remote_wakeup_test_runner.bb	standing		
 required_stages_test_runner.bb	standing		

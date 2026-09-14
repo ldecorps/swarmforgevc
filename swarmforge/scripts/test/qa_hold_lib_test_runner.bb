@@ -26,6 +26,14 @@
          "BL-9001"
          (qa-hold-lib/red-owner [(register-row RED-A "BL-9001")] RED-A))
 
+(assert= "with multiple rows, the matching row's ticket is returned regardless of position (not first-row-wins)"
+         "BL-9002"
+         (qa-hold-lib/red-owner [(register-row RED-A "BL-9001") (register-row RED-B "BL-9002")] RED-B))
+
+(assert= "a row for a different red is skipped, not mistaken for a match"
+         nil
+         (qa-hold-lib/red-owner [(register-row RED-A "BL-9001")] RED-B))
+
 ;; ── release? ──────────────────────────────────────────────────────────────
 (assert= "01: an open hold with no register rows is never released"
          false
