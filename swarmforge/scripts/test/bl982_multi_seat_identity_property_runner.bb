@@ -63,6 +63,8 @@
 (def swarmforge-sh (str (fs/path scripts-dir "swarmforge.sh")))
 (def pre-blob "2edd9a17ba9d40709c0f436d12395b638563c0ca")
 
+(load-file (str (fs/path script-dir "lib" "send_through_audit.bb")))
+
 (def runs (or (some-> (System/getenv "PROPERTY_RUNS") parse-long) 100))
 (def rng (java.util.Random. (System/nanoTime)))
 (defn rand-nth* [xs] (nth xs (.nextInt rng (count xs))))
@@ -230,10 +232,11 @@
     (let [commit (str/trim (:out (sh {:dir root :out :string} "git" "rev-parse" "--short=10" "HEAD")))
           draft (str (fs/path root "specifier" "draft.txt"))]
       (spit draft (str "type: git_handoff\nto: " stage "\npriority: 50\ntask: BL-42\ncommit: " commit "\n"))
-      (sh {:dir (str (fs/path root "specifier"))
-           :extra-env {"SWARMFORGE_ROLE" "specifier"
-                       "PATH" (str (fs/path root "bin") ":" (System/getenv "PATH"))}}
-          "bb" (str (fs/path scripts-dir "swarm_handoff.bb")) draft)
+      (send-through-audit-lib/send-through-audit!
+       #(sh {:dir (str (fs/path root "specifier"))
+             :extra-env {"SWARMFORGE_ROLE" "specifier"
+                         "PATH" (str (fs/path root "bin") ":" (System/getenv "PATH"))}}
+            "bb" (str (fs/path scripts-dir "swarm_handoff.bb")) draft))
       (let [bare-inbox (fs/path root stage ".swarmforge" "handoffs" "inbox" "new")
             extra-tree (fs/path root (str/replace extra "@" "-") ".swarmforge" "handoffs")
             bare-delivered? (and (fs/exists? bare-inbox)
