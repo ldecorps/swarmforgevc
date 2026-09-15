@@ -1,0 +1,173 @@
+id: BL-1578
+title: "Three property files under extension/test assert a reach floor over a population they only sample and are flaky red on main with no owner: bl1529ScriptSenderAuditOutcomesInvariant draws outcome kind x stage uniformly for 20 runs and asserts each kind reached 5 (a kind lands under 5 about 1 run in 70), meanTicketTimeCost draws the corpus regime 50/50 for 12 runs and asserts the large regime reached 2 (1 run in 270), and bl622TelegramTokenSeparationInvariant constructs a token collision the subject swarm only sees when exactly two names were drawn (no genuine collision in 30 draws about 1 run in 600); each floor is met by construction on every run and stays asserted at its value"
+milestone: M8
+type: defect
+severity: high
+# high: a standing red on main in the property lane is a broken safety
+# signal at first sighting (Article 3.2.4, 2026-09-05); QA withheld BL-1509
+# on these reds under Article 4.2. Same class as BL-1555, BL-1559, BL-1572.
+status: todo
+epic: code-quality-gates
+priority: 8
+direction: swarm-reported
+depends_on: []
+mutation_cost: low
+# low: test-file changes only, the shared reachFloors helper already
+# exists (BL-1062/BL-1555); no production code, no Stryker target.
+slice_size_envelope: low
+required_stages: [coder, cleaner, architect, hardender, documenter, qa]
+
+acceptance: specs/features/BL-1578-three-sampled-reach-floors-are-constructed.feature
+
+required_wiring:
+  - 'specs/pipeline/steps/bl1578SampledReachFloorsConstructedSteps.js::registerSteps::the handler lands in the same parcel as the feature (BL-233, BL-1371)'
+# No production anchor on purpose (BL-1235): the three test files and the
+# helper already exist, so any pattern on them matches before and after.
+
+human_approval: pending
+approval_context: >
+  A new feature file is authored here, so it needs a tap. No choice is
+  posed and there are no ruling_options. FIRM: every reach floor the three
+  files assert today stays asserted at its value (the floors are
+  load-bearing, BL-1062); the fix is to make each population reached BY
+  CONSTRUCTION - an outer loop over the cells with runsPerCell draws each,
+  the way BL-1555, BL-1553 and BL-1572 did - never to lower a floor, widen
+  a tolerance or retry. FIRM: bl622's collision is constructed ON the
+  subject swarm for every drawn name-list length, since today's copy of
+  names[0]'s token onto names[1] only reaches the subject when the list
+  has exactly two names. FIRM: the draw budgets stay what they are (20,
+  12, 30); what changes is how the budget is spent. Register rows for the
+  three files are removed in the same land that turns them green.
+
+invariants: []
+
+description: |
+  ## What is wrong
+
+  QA ran `npm run test:properties` three times on the BL-1509 parcel on
+  2026-09-15 (`backlog/evidence/BL-1509-QA-unowned-red-20260915.md`, QA
+  commit 3fd48291df) and saw a different set of red files each run, none
+  touching BL-1509's diff, none registered; it withheld the parcel under
+  Article 4.2 and sent the specifier an `unowned-red` note. Three of the
+  five files assert a reach floor after a draw that only SAMPLES the
+  population the floor names, so a seed that never draws the value fails
+  the file with nothing wrong in the code it exercises (the BL-1062
+  lottery; BL-1555, BL-1559 and BL-1572 fixed the same shape). The
+  specifier's simulation over 3000 fast-check seeds of each file's own
+  arbitraries, and the miss the assertion would report
+  (`backlog/evidence/BL-1509-QA-unowned-red-specifier-adjudication-20260915.md`):
+
+  | file | draw | floor asserted | misses / 3000 |
+  |---|---|---|---|
+  | `test/bl1529ScriptSenderAuditOutcomesInvariant.property.test.js` | `constantFrom(queued, failed)` x `constantFrom(5 stages)`, 20 runs | `reached.queued >= 5` and `reached.failed >= 5` | 44 (1.5%) |
+  | `test/meanTicketTimeCost.property.test.js` | `oneof(small 0..20, large 200..400)`, 12 runs | `casesReachingLargeCorpus >= 2` | 11 (0.37%; QA saw 0 of 12) |
+  | `test/bl622TelegramTokenSeparationInvariant.property.test.js` | `uniqueArray` of 2..4 names, `boolean` forceCollision, 30 runs | `seenConflict.true > 0` | 5 (0.17%) |
+
+  bl622 also carries a construction defect: "Collisions are CONSTRUCTED
+  (one swarm's token copied onto another's), never left to chance", but
+  the copy is `tokens[names[1]] = tokens[names[0]]` while the checked
+  subject is `names[names.length - 1]`, so with three or four names the
+  collision exists between two bystanders and the subject sees none - the
+  conflict arm is reached only when the list has exactly two names AND
+  the boolean is true, about one draw in six. Each file was green alone
+  once on 2026-09-15 at load 3.4-5.1; that is what a 98.5% pass rate
+  produces on most single re-runs (BL-1572's lesson).
+
+  The other two files QA named, bl1343ReplayNeverDropsOwnPathInvariants
+  and bl1323StampOffInvariants, have floors met by construction already
+  (0 misses in 3000 simulated seeds) and are owned by BL-1579, minted the
+  same pass.
+
+  ## What is wanted
+
+  - Each floor is met by construction on every run and stays asserted at
+    its value in the source (scenario 03), with a per-cell floor asserted
+    through the shared `assertReachFloor` helper
+    (`extension/test/helpers/reachFloors.js`) so a cell that stopped being
+    produced fails the file naming that cell.
+  - bl1529: the 2 kinds x 5 stages are iterated as 10 cells with
+    `runsPerCell(20, 10)` = 2 draws each; `reached.queued`/`reached.failed`
+    reach 10, and the existing `>= STAGES.length` assertions remain.
+  - meanTicketTimeCost: the two corpus regimes are iterated as 2 cells with
+    `runsPerCell(12, 2)` = 6 draws each, the size within the regime still
+    drawn; `casesReachingLargeCorpus` reaches 6 and the `>= 2` assertion
+    remains.
+  - bl622: the collision arm is iterated as 2 cells (collision / no
+    collision) with `runsPerCell(30, 2)` = 15 draws each, and a
+    constructed collision copies the SUBJECT's token onto another drawn
+    name (or another's onto the subject) so the subject sees a genuine
+    conflictor at every list length; `seenConflict.true` reaches 15 and
+    both `> 0` assertions remain.
+  - Each run prints one reach map line in the BL-1555 shape, computed from
+    the counts the run actually reached, never restated:
+    `BL-1578 reach map (bl1529): {"cells":10,"minDrawsPerCell":2}`,
+    `BL-1578 reach map (meanTicketTimeCost): {"regimes":2,"minDrawsPerRegime":6}`,
+    `BL-1578 reach map (bl622): {"arms":2,"minDrawsPerArm":15}`.
+  - Each file is green alone under the properties config 15 of 15 times
+    (QA e2e step 1), and this ticket's three register rows are removed in
+    the same land that turns them green.
+
+  ## How (direction, not mandate)
+
+  - Outer `for` over the cells, one `fc.assert` per cell with `numRuns:
+    runsPerCell(budget, cells)`, exactly as BL-1572 iterates the 12 fold
+    combinations and BL-1553 the damage kind; inside a cell only the
+    magnitude is still drawn (the stage's fixture, the corpus size within
+    its regime, the name list and salt).
+  - bl1529's per-draw cost is one bb subprocess (about 1.3 s each, 26 s
+    for the file alone); iterating cells does not change the draw count,
+    so its own 60 s test timeout is untouched here. If the coder finds the
+    subprocess count is what makes the file red under load rather than
+    the floor, that is BL-1579's question, not this ticket's.
+  - Documenter: nothing beyond the evidence file; no diagram trigger.
+
+constraints: >
+  Test files and evidence only; `extension/src` unchanged. No floor
+  lowered, no tolerance widened, no retry, no seed pinned. The step
+  handler lands with the feature (BL-233).
+
+out_of_scope: |
+  - bl1343ReplayNeverDropsOwnPathInvariants and bl1323StampOffInvariants
+    (BL-1579).
+  - Any other property file's floor; the property lane's timeouts.
+
+qa_e2e_procedure: |
+  On the parcel commit, from `extension/`:
+  1. For each of the three files:
+     `for i in $(seq 1 15); do npx vitest run --config vitest.properties.config.mjs test/<file> || echo FAIL; done`
+     -> 15 of 15 green, no FAIL line, every run printing that file's
+     `BL-1578 reach map` line with the counts above (the printed map,
+     not the pass count alone, is the evidence: 15 green runs of the
+     unfixed bl1529 happen about 4 times in 5).
+  2. Acceptance resolving all three scenarios
+     (`swarmforge/scripts/run_acceptance.sh specs/features/BL-1578-*.feature`).
+  3. Break-then-restore, one file: drop the `failed` cell from bl1529's
+     iterated cells; step 1's first run fails naming the reach floor
+     (`reach floor: ... failed drawn 0 < 2` or `reached.failed >= 5`,
+     whichever runs first); restore.
+  4. `git diff main...HEAD --name-only` names the three test files, the
+     step handler, the feature, evidence and the register row removal;
+     `extension/src` is unchanged.
+  5. `bb swarmforge/scripts/standing_red_register_cli.bb .` after landing
+     reports no row for any of the three files and `"unowned":[]`.
+
+source: |
+  QA note to the specifier, priority 00, 2026-09-15T14:23Z (inbound
+  00_20260915T142336Z_002753_from_QA_to_specifier): "BL-1509 unowned-red
+  hold: 5 reach-floor flakes, see 3fd48291df". QA evidence
+  backlog/evidence/BL-1509-QA-unowned-red-20260915.md. Specifier
+  adjudication and simulations
+  backlog/evidence/BL-1509-QA-unowned-red-specifier-adjudication-20260915.md.
+
+notes: |
+  Minted 2026-09-15 by the specifier while completing QA's unowned-red
+  note, the same pass; the three register rows in
+  backlog/standing-reds.tsv name this ticket and QA was sent the resume
+  note (BL-1566 shape) in the same commit's pass. INVEST: Independent
+  (helper exists, no unbuilt sibling), Negotiable (loop shape is
+  direction), Valuable (three lane reds stop firing for no reason and QA
+  stops withholding unrelated parcels on them), Estimable (three loop
+  restructures, one sitting - BL-1555 did two), Small (three scenarios,
+  no invariant), Testable (the printed reach map and the source
+  assertions). Severity high per the standing-red rule, not medium: the
+  register throttles intake until reds drain.

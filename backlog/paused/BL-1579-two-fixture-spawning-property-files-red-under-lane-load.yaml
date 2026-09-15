@@ -1,0 +1,158 @@
+id: BL-1579
+title: "bl1343ReplayNeverDropsOwnPathInvariants and bl1323StampOffInvariants were red in QA's third property-lane run on 2026-09-15 with no owner and no recorded assertion text: both files' reach floors are met by construction (0 misses in 3000 simulated seeds), both spawn a bb or git fixture per draw, and their invariants run 10 to 13 s alone against the lane's 20 s test timeout, so the red is a load-time failure not a sampled floor; this ticket reproduces both under lane load with the failing assertion recorded, removes the cause, and takes the register rows out in the same land"
+milestone: M8
+type: defect
+severity: high
+# high: a standing red on main in the property lane is a broken safety
+# signal at first sighting (Article 3.2.4, 2026-09-05); QA withheld BL-1509
+# on it under Article 4.2.
+status: todo
+epic: code-quality-gates
+priority: 8
+direction: swarm-reported
+depends_on: []
+mutation_cost: low
+# low: test files (and at most the property lane's vitest config) change;
+# no production code, no Stryker target.
+slice_size_envelope: low
+required_stages: [coder, cleaner, architect, hardender, documenter, qa]
+
+acceptance: specs/features/BL-1579-two-fixture-spawning-property-files-red-under-lane-load.feature
+
+required_wiring:
+  - 'specs/pipeline/steps/bl1579FixtureSpawningPropertiesUnderLoadSteps.js::registerSteps::the handler lands in the same parcel as the feature (BL-233, BL-1371)'
+# No production anchor on purpose (BL-1235): the two test files already
+# exist, so any pattern on them matches before and after.
+
+human_approval: pending
+approval_context: >
+  A new feature file is authored here, so it needs a tap. No choice is
+  posed and there are no ruling_options. FIRM: the first step is a
+  reproduction that RECORDS the failing assertion text per file (QA's
+  evidence paraphrased run 3's three reds as "reach floor" assertions and
+  the specifier's simulation shows neither file can miss its floors), so
+  the fix answers the observed failure, not a guess. FIRM: no floor is
+  lowered, no assertion deleted, no retry added; if the cause is the 20 s
+  per-test timeout under load, the remedy is a load-relative budget in
+  the BL-871/BL-1007 shape or fewer subprocesses per draw, never a bare
+  larger constant. FIRM: if 5 full-lane runs under concurrent load and 20
+  runs alone are all green and no failure text is found, the two register
+  rows are retired with that evidence and this ticket closes without a
+  code change - a reasoned no-change is a success.
+
+invariants: []
+
+description: |
+  ## What is wrong
+
+  QA's third `npm run test:properties` run on the BL-1509 parcel
+  (2026-09-15, `backlog/evidence/BL-1509-QA-unowned-red-20260915.md`, QA
+  commit 3fd48291df) reported
+  `test/bl1343ReplayNeverDropsOwnPathInvariants.property.test.js` and
+  `test/bl1323StampOffInvariants.property.test.js` red, described as
+  "each a reach floor / rare-sample-not-constructed assertion", with no
+  assertion text recorded. The specifier's adjudication
+  (`backlog/evidence/BL-1509-QA-unowned-red-specifier-adjudication-20260915.md`)
+  finds that description cannot be right for these two:
+
+  - Both files already reach every floor BY CONSTRUCTION - an outer loop
+    over the shapes (`all-sibling`/`mixed`/`none-sibling`; `empty`/
+    `sentinel`/`ordinary`/`overCap`) with its own `fc.assert` each,
+    written on 2026-09-02 after architect bounce D1 for exactly the
+    sampled-floor defect. The only floor that still depends on a draw
+    (bl1343 invariant 1's `partiallySubtracted`, needing a `mixed` case
+    with two or more files in 9 draws) missed 0 times in 3000 simulated
+    seeds.
+  - Both spawn a subprocess per draw (bl1343 builds a git repository per
+    case; bl1323 invariant 2 shells `bb` per case) and run long alone:
+    bl1343 invariant 1 12.8 s and invariant 2 10.3 s, bl1323 invariant 2
+    10.4 s, measured 2026-09-15 at load 3.4-3.5 on 20 cores. The property
+    lane's `testTimeout` is 20000 ms (`vitest.properties.config.mjs`),
+    and QA's three runs were concurrent with the hardener's Stryker run
+    and QA's own suite. A per-test timeout under that load is the leading
+    hypothesis; a subprocess failing under load inside a property (an
+    empty bb hint, a git command exceeding its own timeout) is the
+    second. Neither is a floor.
+
+  QA's evidence names the failing file but not the assertion, so the
+  cause is not yet known; that is why the first deliverable is the
+  reproduction, and why the QA prompt now asks for the assertion text
+  verbatim per red file (specifier amendment, same pass).
+
+  ## What is wanted
+
+  - Reproduction with the text: the property lane run at least 5 times
+    while the box is under concurrent load comparable to QA's (a Stryker
+    or full unit-suite run alongside), plus each file 20 times alone,
+    every red recorded with the file, the test name and the assertion or
+    timeout message verbatim (scenario 02).
+  - The observed cause removed without lowering a floor or deleting an
+    assertion: if it is the 20 s timeout, a load-relative per-test budget
+    for the fixture-spawning property tests in the shape BL-871/BL-1007
+    already use for the unit lane (`specs/pipeline/steps/lib/contentionBudget.js`),
+    or fewer subprocesses per draw (build one fixture per shape and reset
+    it per draw, as bl1529 does with `clearOutbox`); if it is a
+    subprocess failing under load, the assertion that names it and the
+    fixture change that makes it deterministic.
+  - Each file green alone 20 of 20 and in 5 of 5 loaded lane runs after
+    the change (QA e2e), and both register rows removed in the same land.
+  - If no red reproduces in 25 runs and no failure text exists anywhere
+    (QA's pane, `backlog/evidence`), the rows are retired with that
+    evidence and the ticket closes with no code change.
+
+  ## How (direction, not mandate)
+
+  - `npx vitest run --config vitest.properties.config.mjs --reporter=verbose
+    2>&1 | tee tmp/bl1579-lane-<n>.log` under load; grep the logs for
+    `Test timed out`, `reach floor`, `never exercised`, `never reached`.
+  - The fixture-spawning tests are the population to budget, not every
+    property file; a file-level `testTimeout` override or a
+    `contentionBudget`-derived value passed as the test's third argument
+    keeps the pure files at 20 s.
+  - Documenter: nothing beyond the evidence file; no diagram trigger.
+
+constraints: >
+  Test files, the property lane config and evidence only; `extension/src`
+  unchanged. No floor lowered, no assertion deleted, no retry, no seed
+  pinned, no bare timeout constant raised without the load-relative
+  derivation. The step handler lands with the feature (BL-233).
+
+out_of_scope: |
+  - The three sampled floors (bl1529, meanTicketTimeCost, bl622): BL-1578.
+  - Re-architecting the property lane's scheduling.
+
+qa_e2e_procedure: |
+  On the parcel commit, from `extension/`:
+  1. `for i in $(seq 1 20); do npx vitest run --config vitest.properties.config.mjs test/<file> || echo FAIL; done`
+     for each of the two files -> 20 of 20 green, no FAIL line.
+  2. With a concurrent load comparable to QA's 2026-09-15 runs (a Stryker
+     run or the full unit suite in another worktree), `npm run
+     test:properties` 5 times -> neither file red in any run; every red
+     of any other file recorded in the evidence with its assertion text.
+  3. Acceptance resolving both scenarios
+     (`swarmforge/scripts/run_acceptance.sh specs/features/BL-1579-*.feature`).
+  4. The evidence names, per file, the failure text observed before the
+     change and the change that removed it, or the 25 green runs that
+     retired the row.
+  5. `bb swarmforge/scripts/standing_red_register_cli.bb .` after landing
+     reports no row for either file and `"unowned":[]`.
+
+source: |
+  QA note to the specifier, priority 00, 2026-09-15T14:23Z (inbound
+  00_20260915T142336Z_002753_from_QA_to_specifier): "BL-1509 unowned-red
+  hold: 5 reach-floor flakes, see 3fd48291df". QA evidence
+  backlog/evidence/BL-1509-QA-unowned-red-20260915.md. Specifier
+  adjudication backlog/evidence/BL-1509-QA-unowned-red-specifier-adjudication-20260915.md.
+
+notes: |
+  Minted 2026-09-15 by the specifier while completing QA's unowned-red
+  note, the same pass; the two register rows in backlog/standing-reds.tsv
+  name this ticket and QA was sent the resume note (BL-1566 shape). INVEST:
+  Independent (no unbuilt sibling), Negotiable (the remedy follows the
+  observed text), Valuable (two lane reds stop withholding unrelated
+  parcels), Estimable (25 bounded runs plus one config or fixture change,
+  one sitting; the no-change close is bounded too), Small (two scenarios,
+  no invariant), Testable (the recorded text and the green runs). The
+  unknown cause is why this ticket exists at all: minting a fix for a
+  paraphrase would repeat QA's guess with the specifier's signature on
+  it.
