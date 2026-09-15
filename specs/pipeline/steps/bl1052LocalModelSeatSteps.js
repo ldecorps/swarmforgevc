@@ -103,7 +103,9 @@ function composeLaunchScript({ role, agent, model, env = {} }) {
       path.join(root, 'swarmforge', 'swarmforge.conf'),
       `config active_backlog_max_depth -1\nwindow ${role} ${agent} ${role} --model ${model}\n`
     );
-    const childEnv = { ...process.env, ...env, SWARMFORGE_LOCAL_MODEL_ENDPOINT_STATUS: 'healthy' };
+    // BL-1318's gate: decide the hatch here, never inherit the pane's own
+    // export (BL-1486).
+    const childEnv = { ...process.env, PACK_STAFFING_SKIP_GATE: '1', ...env, SWARMFORGE_LOCAL_MODEL_ENDPOINT_STATUS: 'healthy' };
     for (const name of PROVIDER_KEYS) {
       if (!(name in env) && name !== 'SWARMFORGE_LOCAL_MODEL_ENDPOINT_STATUS') {
         delete childEnv[name];
@@ -273,6 +275,9 @@ function registerSteps(registry) {
       );
       const childEnv = {
         ...process.env,
+        // BL-1318's gate: decide the hatch here, never inherit the pane's
+        // own export (BL-1486).
+        PACK_STAFFING_SKIP_GATE: '1',
         PATH: `${fakeTmux}${path.delimiter}${process.env.PATH || ''}`,
         TMUX_LOG: logPath,
         SWARMFORGE_LOCAL_MODEL_ENDPOINT_STATUS: ctx.endpointStatus || 'missing',

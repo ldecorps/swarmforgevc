@@ -111,7 +111,9 @@ const SWARMFORGE_VARS_READ_BY_LAUNCHER = [
 ];
 
 function fixtureEnv() {
-  const env = { ...process.env, XDG_RUNTIME_DIR: '/tmp' };
+  // BL-1318's gate: decide the hatch here, never inherit the pane's own
+  // export (BL-1486).
+  const env = { ...process.env, XDG_RUNTIME_DIR: '/tmp', PACK_STAFFING_SKIP_GATE: '1' };
   for (const name of SWARMFORGE_VARS_READ_BY_LAUNCHER) delete env[name];
   return env;
 }

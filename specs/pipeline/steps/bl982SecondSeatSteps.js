@@ -85,7 +85,9 @@ function zshSource(root, shFile, body) {
   return spawnSync('zsh', ['-c', `source '${shFile}' '${root}'; ${body}`], {
     encoding: 'utf8',
     timeout: 60000,
-    env: { ...process.env, XDG_RUNTIME_DIR: '/tmp', SWARMFORGE_CONFIG: '' },
+    // BL-1318's gate: decide the hatch here, never inherit the pane's own
+    // export (BL-1486).
+    env: { ...process.env, PACK_STAFFING_SKIP_GATE: '1', XDG_RUNTIME_DIR: '/tmp', SWARMFORGE_CONFIG: '' },
   });
 }
 

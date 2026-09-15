@@ -108,7 +108,13 @@ function registerSteps(registry) {
   );
 
   scoped(registry, /^the BL-982 second-seat feature runs$/, (ctx) => {
-    const r = spawnSync('bash', [RUN_ACCEPTANCE, BL982_FEATURE], { encoding: 'utf8' });
+    // BL-1318's gate: decide the hatch here, never inherit the pane's own
+    // export (BL-1486) - belt-and-braces alongside the imported zshSource's
+    // own decision (bl982SecondSeatSteps.js).
+    const r = spawnSync('bash', [RUN_ACCEPTANCE, BL982_FEATURE], {
+      encoding: 'utf8',
+      env: { ...process.env, PACK_STAFFING_SKIP_GATE: '1' },
+    });
     ctx.result = { status: r.status, out: `${r.stdout || ''}${r.stderr || ''}` };
   });
 
