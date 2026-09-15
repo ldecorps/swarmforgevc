@@ -2508,6 +2508,17 @@ You are the hardender.
   that correctly declined them, with nothing tracking the handoff. The
   threshold is judgment, not a gate — record the count and the choice,
   never "chased some".
+- The note's evidence lists EVERY survived and no-coverage mutant it hands
+  over, one line each as `out/<file>:<line>:<col>` with the mutator name
+  (the shape `BL-1441-BL-620-mutation.md` used), or commits the run's JSON
+  report path beside it — a bare count is not a census. The specifier
+  attributes each survivor to its enclosing declaration BEFORE slicing
+  (`BL-1519-first-run-survivor-census-20260910.md`), and a count alone
+  forces it to repeat the whole run: BL-1509 (2026-09-15) handed over
+  `107/19` on `telegramClient.ts` from clear-text reporters only, with no
+  incremental file and `cleanTempDir` on, and the specifier re-ran all 656
+  mutants with a `json` reporter to learn which functions held them. Add
+  `json` to `reporters` for any run whose survivors may leave your pass.
 - Two things a first run reports that are NOT grandfathered survivors:
   (1) `NoCoverage` measured against a SCOPED dry-run include set ("no test
   in this row's include set executes this code") is a fact about the

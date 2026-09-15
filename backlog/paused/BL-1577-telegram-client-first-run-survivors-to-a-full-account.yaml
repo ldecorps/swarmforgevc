@@ -1,0 +1,234 @@
+id: BL-1577
+title: "telegramClient.ts, the one Bot API client every Telegram surface calls, was mutation-tested for the first time by BL-1509's hardener on 2026-09-15 and left 107 survived and 19 no-coverage mutants (656 instrumented) in functions that parcel never touched, owned by nobody; this ticket owns all 126, drives the no-coverage mutants to zero over the full unit suite, and records a disposition for every remaining survivor under the BL-1519 ruling"
+milestone: M8
+type: chore
+severity: medium
+# medium (chore, not a defect): no live fault and no broken safety signal -
+# BL-1509's own gate passed with zero survivors on its own lines. A real,
+# contained test gap on the HTTP client 27 production modules call.
+status: todo
+epic: first-run-mutation-debt
+priority: 30
+direction: swarm-proposed
+depends_on: []
+# BL-1509 is active and is not a dependency: its parcel is past the hardener
+# and touches only sendDocument, whose mutants are all killed. This ticket
+# re-measures over the full suite at its own start. It waits for BL-1509
+# to land only under Concurrent Work Orthogonality (same file), which the
+# coordinator applies at promotion, not via depends_on.
+mutation_cost: medium
+# medium: tests only, one 1174-line TypeScript module with 30 exports, full
+# Stryker run over the unit suite (the perTest dry run alone needs
+# --dryRunTimeoutMinutes 15 on this file, BL-1509's hardener found); no
+# production change unless a test seam is genuinely missing.
+slice_size_envelope: low
+required_stages: [coder, cleaner, architect, hardender, documenter, qa]
+
+acceptance: specs/features/BL-1577-telegram-client-first-run-survivors-to-a-full-account.feature
+
+required_wiring:
+  - 'specs/pipeline/steps/bl1577TelegramClientFirstRunSurvivorsSteps.js::registerSteps::the handler lands in the same parcel as the feature (BL-233, BL-1371)'
+# No production anchor is declared on purpose (BL-1235): the module and its
+# 27 consumers already exist, so any pattern on them matches before and
+# after the work and gates nothing. The evidence file is the contract.
+
+human_approval: approved
+human_ruling: |
+  Apply the BL-1519 ruling by analogy - chase the no-coverage mutants and any module-level survivors to zero here, and record the remaining function-body survivors as grandfathered debt guarded by the changed-path gate (recommended)
+ruling_provenance: tapped
+approval_context: >
+  A new feature file is authored here, so it needs a tap, and the tap also
+  records one ruling. BL-1509's hardener ran Stryker over the whole of
+  extension/src/notify/telegramClient.ts to gate its sendDocument addition
+  and that was the file's first mutation run ever: 656 mutants, 107
+  survived, 19 without coverage, none of them on BL-1509's lines. The
+  specifier repeated the run with a JSON reporter and attributed every
+  survivor to its function (census with the exact command:
+  backlog/evidence/BL-1509-survivor-census-specifier-20260915.md). FIRM
+  either way: the no-coverage mutants go to zero here, one sitting, and
+  no survivor is suppressed or hand-edited out of a manifest. The ruling
+  is what happens to the function-body survivors: your BL-1519 ruling for
+  the three large front-desk files (chase the untested regions and the
+  tables, grandfather the rest under the BL-1164 changed-path gate) is
+  applied to this file by analogy as the recommended option; the other
+  option chases every survivor to zero too, in successor slices the
+  specifier mints from the census in function groups of about 60.
+ruling_options:
+  - Apply the BL-1519 ruling by analogy - chase the no-coverage mutants and any module-level survivors to zero here, and record the remaining function-body survivors as grandfathered debt guarded by the changed-path gate (recommended)
+  - Chase all 126 to zero - this ticket takes the no-coverage mutants and the specifier mints successor slices for the function-body survivors from the census, in function groups of about 60
+ruling_tradeoffs:
+  - Pros - one sitting, closes the unreached code paths (the real setTimeout wait, the real fetch, the poll-id guard) that no test executes today, matches the ruling you already gave for the same class on BL-1519 and BL-1523, and the BL-1164 gate still forces a kill on every future edit to any grandfathered line. Cons - about a hundred surviving mutants stay alive in the client until each function is next touched. Recommended because the survivors sit in retry, forum-topic and extractor helpers whose behaviour tests exist and pass, and the swarm's hardener budget is better spent on unreached code than on literal-pinning tests in a file 27 modules already exercise.
+  - Pros - the client reaches a full account with zero survivors and the evidence names a kill per mutant. Cons - two to three further hardener sittings on one file, minted and promoted while the standing-red register and the cap-1 throttle already compete for the same seat, and most kills would be assertions on message text, retry counts and extractor fallbacks rather than on new behaviour.
+
+invariants:
+  - "Every mutant Stryker reports for out/notify/telegramClient.js at the parcel commit is killed, recorded as an accepted equivalent with the code-level reason, recorded as grandfathered under the BL-1519 ruling, or named as owned by another ticket; none is silent."
+
+description: |
+  ## What is wrong
+
+  `extension/src/notify/telegramClient.ts` is the single HTTP client
+  every Telegram-facing surface of the swarm calls (27 production modules
+  import it: the front desk, the concierge, the Cursor bridge, the
+  briefing, the dead-letter notifier). On 2026-09-15 BL-1509's hardener
+  ran Stryker over the whole compiled file to gate its own `sendDocument`
+  addition (`backlog/evidence/BL-1509-hardender-20260915.md`, hardender
+  tip 25a44feb63): 656 mutants, 107 survived, 19 no-coverage, 7 timeouts,
+  the two survivors inside `sendDocument` killed in-pass, everything else
+  in functions BL-1509's diff never touches. No `stryker-incremental.json`
+  existed in the worktree before that pass, so this was the file's first
+  mutation run ever. The hardener sent the rest to the specifier as an
+  `unowned-survivors` note per the first-run discharge rule of
+  2026-09-10; this is the owner ticket that rule requires.
+
+  The hardener's run kept clear-text reporters only, so the specifier
+  repeated it with a JSON reporter in the hardener's compiled worktree
+  and attributed every mutant to its enclosing declaration. The census
+  (`backlog/evidence/BL-1509-survivor-census-specifier-20260915.md`,
+  exact command and script inside):
+
+  - Survived 107, by function: the ten `extract*` response-shape readers
+    hold 56 (extractResultObject 8, extractIconStickers 7,
+    extractForumTopicCreatedName 7, extractPollId 7, extractFilePath 7,
+    extractParameters 6, extractDescription 6, extractPinnedMessageId 4,
+    extractUpdates 3, extractResultNumberField 1) - defensive type guards
+    on malformed Bot API responses no test feeds; then setChatMenuButton
+    5, getBotUsername 5, inlineKeyboardButtonToWire 4,
+    resolveForumTopicName 4, sendTelegramMessageWithRateLimitRetry 4,
+    bl568PlanMenuAnswerDrive 3, defaultPost 3, defaultPostVoice 3,
+    sendTelegramMessage 3, sendVoiceNote 3, bl568MenuAnswerPollMapping 2,
+    bl568FingerprintMatches 2, editForumTopic 2, downloadTelegramFile 2,
+    and one each in callTelegramApi, sendTelegramPoll, editMessageText,
+    answerCallbackQuery, createForumTopic and getFile. None sits on a
+    module-level declaration.
+  - No-coverage 19: bl568PlanMenuAnswerDrive 4, extractIconStickers 3,
+    setChatMenuButton 3, defaultWaitMs 2 (the only wholly unreached
+    function - the real setTimeout the rate-limit retry injects), and one
+    each in extractForumTopicCreatedName, inlineKeyboardButtonToWire,
+    defaultPost (the real fetch), extractUpdates, defaultPostVoice,
+    formatNetworkError and bl568TextFallbackMessage.
+  - Timeout 7 (killed in Stryker's score): retryOnRateLimit 3,
+    createForumTopicWithRateLimitRetry 3,
+    sendTelegramMessageWithRateLimitRetry 1 - a mutant that drops the
+    retry bound loops to the per-mutant timeout.
+  - Ignored 3: line 2's entrypoint-boilerplate literals (BL-447/BL-498).
+
+  The include set was the full unit suite minus the two known
+  Stryker-sandbox-broken files, neither of which reaches the client, so
+  the no-coverage count is a fact about the whole suite, not a scoped
+  include set. The hardener's fresh `vitest run --coverage` report (14:51)
+  corroborates it: 736 of 742 statements and 204 of 226 branches covered,
+  the 19 no-coverage mutants sitting on the 6 unreached statements and 22
+  unreached branches.
+
+  ## What changes
+
+  - The run is repeated over the FULL unit suite with a `json` reporter
+    (`--dryRunTimeoutMinutes 15`; the plain default times out on this
+    file's perTest dry run) and the evidence records the include set, the
+    summary block, load and duration, and at least 640 instrumented
+    mutants (the BL-1445 census pin; 656 at mint).
+  - Every no-coverage mutant goes to zero: a behaviour test enters each
+    of the 22 unreached branches through the caller that observes it -
+    `defaultWaitMs` through the retry helper it is injected into with a
+    fake timer, the real-`fetch` paths of `defaultPost` and
+    `defaultPostVoice` through a stubbed `global.fetch` (the pattern
+    BL-1509's hardener used for the CLI), the malformed-response guards
+    of `extractIconStickers`, `extractForumTopicCreatedName` and
+    `extractUpdates` with responses whose `result` is absent or the wrong
+    shape, the unexercised arms of `bl568PlanMenuAnswerDrive`,
+    `bl568TextFallbackMessage`, `setChatMenuButton`,
+    `inlineKeyboardButtonToWire` and `formatNetworkError` with the input
+    that selects each - asserting what the caller observes, never the
+    literal for its own sake.
+  - The census found no survivor on a module-level declaration; should
+    the re-measure surface one, it is killed through the call that
+    consumes it, with the hand-mutation proof where Stryker's
+    cached-module artifact makes a killed static export read as survived
+    (BL-1364's protocol, 2026-09-05).
+  - Every remaining survived mutant is listed with its enclosing function
+    and one disposition: killed, accepted equivalent with the code-level
+    reason and the consumer grep (BL-234), grandfathered under the
+    BL-1519 ruling, or owned by a named successor ticket (scenario 03).
+    Under the recommended option the grandfathered rows are the bulk of
+    the list; under the other option the specifier mints the successors
+    and each row names its owner.
+  - Evidence path: `backlog/evidence/BL-1577-telegramClient-mutation.md`.
+
+  ## How (direction, not mandate)
+
+  - `--mutate` scoped to `out/notify/telegramClient.js`, `perTest`,
+    `reporters` including `json`, sibling links per the Verification
+    rules (`node scripts/ensureStrykerSandboxSiblings.js` first - without
+    it the sandbox cannot resolve `../specs` and the dry run dies in the
+    vitest config). Check `mutation_cooldown_gate.bb` first and record
+    its decision (DECISION: run at mint, file age 21 days). Start from
+    BL-1509's `vitest.bl1509.stryker.config.mjs`, which already excludes
+    the two known Stryker-sandbox-broken test files.
+  - Timeouts count as killed in Stryker's score; list the 7 with their
+    functions in the evidence so a reader does not mistake them for
+    survivors.
+  - Documenter: nothing beyond the evidence file; no diagram trigger fires.
+
+constraints: >
+  Tests only unless a seam is missing, in which case the smallest
+  extraction that exposes the behaviour to an in-process test. Never
+  `process.chdir()` under mutation; never a hand-edited manifest; no
+  mutant suppressed; never a real network call or a real timer in the
+  suite. The step handler lands with the feature (BL-233). Client
+  behaviour does not change: a test that wants a different error shape or
+  retry count is a spec-gap note, not an edit.
+
+out_of_scope: |
+  - BL-1509's own `sendDocument` and its CLI: gated to zero survivors by
+    BL-1509's hardener, landing through BL-1509.
+  - Successor slices for the function-body survivors, if the tap picks the
+    second ruling option - minted separately from the census.
+  - BL-1519's three front-desk and pipeline-board files; BL-1523's
+    transcript walker.
+
+qa_e2e_procedure: |
+  1. The BL-1577 feature passes (three scenarios).
+  2. `backlog/evidence/BL-1577-telegramClient-mutation.md` shows a
+     completed Stryker summary over the full unit suite with at least 640
+     mutants and zero no-coverage.
+  3. Every function the census names with a no-coverage mutant appears in
+     the evidence with the test file and case that now executes it.
+  4. Every survived mutant in that summary appears in the evidence with
+     its function and a disposition; the count of listed rows equals the
+     summary's survived count.
+  5. `npm test` from `extension/` is green.
+
+source: |
+  Hardender note to the specifier, priority 00, 2026-09-15T13:54Z
+  (inbound 00_20260915T135444Z_001332_from_hardender_to_specifier):
+  "unowned-survivors BL-1509 telegramClient.ts 107/19
+  BL-1509-hardender-20260915". Hardender evidence
+  backlog/evidence/BL-1509-hardender-20260915.md (hardender tip
+  25a44feb63); census
+  backlog/evidence/BL-1509-survivor-census-specifier-20260915.md.
+  Rule: hardender.prompt "A deferred gate is DISCHARGED when its run
+  completes", accepted a17bc78d43 (2026-09-10).
+
+notes: |
+  Minted 2026-09-15 by the specifier while completing the hardender's
+  unowned-survivors note, the same pass. INVEST: Independent (BL-1509 is
+  not a dependency; the re-measure is this ticket's own first step),
+  Negotiable (test shapes are direction), Valuable (the client's mutation
+  gate goes from a first run with 126 unaccounted mutants to a full
+  account), Estimable (19 no-coverage mutants in three small regions,
+  one sitting; the 107 are a recorded disposition, not work, under the
+  recommended option), Small (three scenarios, one invariant), Testable
+  (the parcel's own evidence). The census pin (at least 640 mutants) is
+  BL-1445's discipline.
+
+  Why a ruling and not a plain tap: the human already answered exactly
+  this budget question for the three large files on BL-1519 (recommended
+  option tapped) and again by analogy on BL-1523; asking a third time
+  for a 1174-line file would be churn, but silently deciding it would be
+  the BL-1300 shape. The recommended option applies that ruling by
+  analogy and says so; the other option is one line to tap.
+
+  Same pass, the specifier amended swarmforge/roles/hardender.prompt: an
+  unowned-survivors note's evidence lists every mutant it hands over (or
+  commits the JSON report), because a bare count cannot be censused and
+  forced this re-run.
