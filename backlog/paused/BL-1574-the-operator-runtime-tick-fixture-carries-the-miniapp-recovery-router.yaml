@@ -1,0 +1,171 @@
+id: BL-1574
+title: "test_operator_runtime_tick.sh is red on main with no owner since BL-1571's 442bdd1f40 (2026-09-14 19:57) rerouted the miniapp watchdog recovery through recover_miniapp_bridge.sh: the smoke test's fixture stubs bounce_bridge_headless.sh but never carries the router, so a down /lets-talk tick logs bounce-failed exit=127 and the stub's marker never appears - the fixture provides the real router, the stubbed leaf is reached through it, and the completed-cycle check stops passing on a failed bounce"
+milestone: M8
+type: defect
+severity: high
+# high (standing-red rule 2026-09-05): a shell-lane test file red on main
+# is a broken safety signal and throttles intake until owned; QA is holding
+# the BL-1569 parcel on it under Article 4.2 (ca69008ee5, 2026-09-15). Not a
+# production fault: operator_runtime.bb's routing is the one BL-1571 wanted
+# and the live watchdog reaches the real router on disk. The defect is the
+# test fixture, plus a check that reads green on a failed bounce.
+status: todo
+epic: code-quality-gates
+priority: 8
+direction: swarm-reported
+depends_on: []
+mutation_cost: low
+# low: one shell test file (its make_fixture and one check) plus one step
+# handler. No bb/TS production code. No mutation/CRAP/DRY tooling is wired
+# for shell (BL-472 deferred); the hardener records the fallback.
+slice_size_envelope: low
+required_stages: [coder, cleaner, architect, hardender, documenter, qa]
+
+acceptance: specs/features/BL-1574-the-tick-fixture-carries-the-miniapp-recovery-router.feature
+
+# Handler pin per BL-233/BL-1371: the feature is executable only once the
+# handler lands in the same parcel. The test-file anchor is the deliverable
+# itself, satisfied by the parcel's own diff (BL-1235 caveat: it proves the
+# text landed, not a consumer); the runner-green scenario and the register
+# discharge are what prove the behaviour.
+required_wiring:
+  - 'specs/pipeline/steps/bl1574TickFixtureMiniappRouterSteps.js::registerSteps::the handler lands in the same parcel as the feature (BL-233, BL-1371)'
+  - 'swarmforge/scripts/test/test_operator_runtime_tick.sh::recover_miniapp_bridge.sh::the fixture carries the router the runtime invokes since 442bdd1f40 - deliverable text, not a consumer'
+
+human_approval: pending
+approval_context: >
+  A new feature file is authored here, so it needs a tap. No choice is
+  posed and there are no ruling_options. FIRM: production code is not
+  edited - operator_runtime.bb keeps BL-1571's routing and the three bridge
+  shell scripts are untouched (scenario 04 diffs them against main). FIRM:
+  the fix is in the test's own fixture (its make_fixture copies the real,
+  unstubbed recover_miniapp_bridge.sh beside the bb closure, so with no
+  front-desk-supervisor.pid the router execs the test's existing
+  bounce_bridge_headless.sh stub), and the test's second watchdog check
+  gains an assertion that the runtime log records `bounced` and never
+  `bounce-failed` - today that check is green on a bounce that exited 127.
+  FIRM: the parcel diffs its merge against BOTH parents (BL-571/BL-958).
+  Minted by the specifier on the coder's and QA's unowned-red notes of
+  2026-09-15 (BL-1569 parcel held at QA); evidence
+  backlog/evidence/BL-1574-specifier-unowned-red-census-20260915.md.
+
+invariants:
+  - "Every fixture that ticks operator_runtime.bb with the miniapp watchdog enabled provides, real or stubbed, every script the recovery invokes (recover_miniapp_bridge.sh and the script it execs), so a recovery never fails on a missing file - census 2026-09-15: two files enable it, this test and test_bl1159_bridge_child_survives_without_crash_giveup_loop.sh (grep -ln 'OPERATOR_MINIAPP_WATCHDOG_ENABLED=1' swarmforge/scripts/test/*.sh specs/pipeline/steps/*.js)."
+
+description: |
+  ## What is wrong
+
+  `swarmforge/scripts/test/test_operator_runtime_tick.sh` (lane shell,
+  `standing`) fails on `main` 6d6e90ba7b, one check of 160:
+
+  ```
+  FAIL - miniapp-watchdog: down bridge triggers a bounce attempt
+  operator_runtime smoke: FAILURES
+  ```
+
+  The section "mini app watchdog: a down /lets-talk endpoint triggers a
+  bounded auto-bounce" (lines 75-92) writes a stub
+  `bounce_bridge_headless.sh` into the fixture that appends to
+  `miniapp-bounced.marker`, ticks `operator_runtime.bb` with
+  `OPERATOR_MINIAPP_WATCHDOG_ENABLED=1`, threshold 1, cooldown 0 and
+  `BRIDGE_HEADLESS_PORT=1`, and asserts the marker exists. Since BL-1571's
+  442bdd1f40 (2026-09-14 19:57) `miniapp-bounce-bridge!` runs
+  `recover_miniapp_bridge.sh`, and the fixture's `make_fixture` copies only
+  the bb load closure (`copy_operator_runtime_sandbox`) plus the two
+  operator_telegram files - no shell scripts. The fixture's runtime.log
+  (specifier reproduction, this pass):
+
+  ```
+  miniapp-watchdog bounce-failed failures=1 exit=127 bash: <fixture>/swarmforge/scripts/recover_miniapp_bridge.sh: No such file or directory
+  ```
+
+  The stub is never reached, so the marker never appears. The section's
+  second check ("watchdog state records a completed bounce cycle") still
+  passes, because the sweep writes `consecutive-failures 0` and
+  `last-bounce-at-ms` on the `bounce-failed` branch too - that check is
+  green on a bounce that never ran, the BL-1445 fail-open shape.
+
+  Red since 442bdd1f40 landed; first seen 2026-09-15 by the coder (note
+  01:45Z) and QA (Article 4.2 hold on the BL-1569 parcel, ca69008ee5,
+  evidence `backlog/evidence/BL-1569-QA-unowned-red-20260915.md` on the QA
+  branch). QA's evidence attributes the file's last change to BL-653's
+  309e11bdef; the trigger was the runtime reroute, not a change to the
+  test. BL-1571's own mint (specifier, 2026-09-14) is at fault for the
+  miss: it swept the four bridge scripts and the bl1159 test but not the
+  sibling smoke test that stubs the leaf the reroute bypasses - the
+  BL-1006 obligation to grep siblings for assertions the successor
+  falsifies, unmet.
+
+  ## What is wanted
+
+  The test's fixture carries `recover_miniapp_bridge.sh` - the REAL script
+  copied from `swarmforge/scripts/`, never a stub, so the fixture proves
+  the runtime reaches the stubbed leaf through the router (with no
+  `front-desk-supervisor.pid` the router execs `bounce_bridge_headless.sh`,
+  which is the test's existing stub). The second watchdog check also
+  asserts the fixture's runtime.log carries a `miniapp-watchdog bounced`
+  line and no `bounce-failed` line, so a failed bounce can never read as a
+  completed cycle again. The test prints `ALL CHECKS PASSED` on `main`;
+  the register row this ticket adds is removed in the same land.
+
+  ## How (direction, not mandate)
+
+  - In `make_fixture` (or the watchdog section itself), after
+    `copy_operator_runtime_sandbox`, `cp "$SRC/recover_miniapp_bridge.sh"
+    "$d/swarmforge/scripts/"`. Do not extend
+    `lib/operator_runtime_sandbox.sh`'s closure copy to shell scripts:
+    fifteen other fixtures tick with the watchdog disabled and stub what
+    they shell to by design; the bl1159 test already copies the router
+    itself.
+  - Tighten the existing second check (or add a third) to grep
+    `$F/.swarmforge/operator/runtime.log` for `miniapp-watchdog bounced`
+    and refuse `bounce-failed`. Keep it a `check` line, same style.
+  - Step handler `specs/pipeline/steps/bl1574TickFixtureMiniappRouterSteps.js`
+    (register in `index.js`, same commit as the feature, BL-233): scenarios
+    01/02 read the test file; scenario 03 runs the real shell test as a
+    subprocess (measured 61 s wall on this host, 49 s CPU; give it a
+    180 s timeout - the whole feature is ~65 s per mutant, inside the
+    BL-1358 300 s ceiling with margin, BL-1541); scenario 04 diffs the
+    four production files against `main` (BL-1571's handler has the
+    pattern).
+
+  ## Not in scope
+
+  - `operator_runtime.bb`, `recover_miniapp_bridge.sh`,
+    `bounce_bridge_headless.sh`, `rearm_front_desk_bridge.sh`,
+    `lib/operator_runtime_sandbox.sh`, BL-1159's and BL-1571's feature
+    files and handlers are not touched.
+  - The other 159 checks in the smoke test are not reworked.
+
+notes: |
+  Register: backlog/standing-reds.tsv gains one `shell` row naming this
+  ticket (same commit as this mint), first_seen 2026-09-15; QA removes it
+  in the land that turns the file green. The same commit retires five
+  rows whose tickets closed with the row left behind (BL-1559, BL-1570 x2,
+  BL-1571, BL-1572) - each test verified green on main this pass, see the
+  evidence file; those rows read UNOWNED to standing_red_register_cli.bb
+  and were holding the cap at 1 and QA's Article 4.2 gate on their own.
+  Holder note: QA holds the BL-1569 parcel on this red (qa_hold_cli.bb,
+  ca69008ee5); the specifier sends QA the priority-00 note
+  `BL-1569: test_operator_runtime_tick.sh owned by BL-1574 (<sha>) -
+  resume land` the same pass, right after this commit, and the
+  coordinator a paused-item-ready note.
+
+qa_e2e_procedure: |
+  On the parcel commit, from the repo root:
+  1. `bash swarmforge/scripts/test/test_operator_runtime_tick.sh` three
+     times -> `ALL CHECKS PASSED`, exit 0.
+  2. `grep -n 'recover_miniapp_bridge.sh' swarmforge/scripts/test/test_operator_runtime_tick.sh`
+     shows the copy of the real script into the fixture, no heredoc stub;
+     `grep -n 'bounce-failed' swarmforge/scripts/test/test_operator_runtime_tick.sh`
+     shows the tightened check.
+  3. `git diff main...HEAD --name-only` names the test file, the handler,
+     `specs/pipeline/steps/index.js`, the feature, evidence and the
+     register-row removal; operator_runtime.bb and the three bridge shell
+     scripts are unchanged.
+  4. Break-then-restore: comment out the router copy; the "down bridge
+     triggers a bounce attempt" check fails AND the tightened
+     completed-cycle check fails (it must not stay green on exit=127);
+     restore.
+  5. Diff the parcel's merge into main against BOTH parents. The row for
+     this file is gone from `backlog/standing-reds.tsv`.
