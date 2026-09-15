@@ -8,7 +8,9 @@ Feature: the standing non-ticket topics carry their orchestra icons
   # The orchestra remap's harder half: today the concierge only sets icons on
   # TICKET topics (folder+type transitions). This extends iconization to the
   # standing NON-ticket topics — support/intake (box office) and the Operator
-  # topic (opera house) — while preserving BL-342's ownership rule exactly.
+  # topic (opera house at mint, superseded 2026-07-16 by BL-453's bell; see
+  # that feature for the current glyph) — while preserving BL-342's
+  # ownership rule exactly.
 
   Background:
     Given the concierge maintains icons for the standing non-ticket topics
@@ -22,7 +24,8 @@ Feature: the standing non-ticket topics carry their orchestra icons
     Examples:
       | topic          | icon |
       | support/intake | 🎟   |
-      | operator       | 🏛   |
+      # RETIRE-WITH: BL-1483 — operator | 🏛 row retired; BL-453's own
+      # feature (concierge-icon-01) asserts the current bell icon.
 
   # BL-418 standing-topic-icons-02
   Scenario: a human-customised standing-topic icon the swarm did not set is never overwritten
