@@ -14,6 +14,7 @@ const fs = require('node:fs');
 const os = require('node:os');
 const path = require('node:path');
 const { spawnSync } = require('node:child_process');
+const { mkSocketFixtureRoot } = require('./lib/socketFixtureRoot');
 
 const FEATURE = 'BL-1495 a b.ai gateway seat resolves, launches, survives a respawn and authenticates';
 
@@ -35,13 +36,6 @@ const ROLE_GATE_OVERRIDES = { hardender: 'hardener-gate' };
 function gateCompetency(role) {
   return ROLE_GATE_OVERRIDES[role] || `${role}-gate`;
 }
-
-const fixtureRoots = [];
-process.on('exit', () => {
-  for (const root of fixtureRoots) {
-    fs.rmSync(root, { recursive: true, force: true });
-  }
-});
 
 function bbEval(expr) {
   const r = spawnSync('bb', ['-e', expr], { encoding: 'utf8' });
