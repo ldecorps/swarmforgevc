@@ -1,5 +1,27 @@
 # SwarmForge VS Code Extension — Specification
 
+**Last Updated:** September 15, 2026 (BL-1509: `telegramClient.ts` gains
+`sendDocument`, the generic sibling of the existing `sendVoiceNote` — the
+same multipart-upload/injectable-postFn/redacted-error shape, posting to
+the Bot API's `sendDocument` method with the file under a `document` form
+part (chat id, optional `message_thread_id`, optional `caption`; no prior
+consumer needed a document upload, so none existed). A new headless CLI,
+`extension/src/tools/send-telegram-document.ts`
+(`node extension/out/tools/send-telegram-document.js <project-root> <file>
+[--caption <text>]`), resolves the standing Concierge topic the same way
+`notify-dead-letters.ts` does (`topicForSubject` over the topic map with
+`OPERATOR_SUBJECT_ID`), reads `TELEGRAM_BOT_TOKEN`/`TELEGRAM_CHAT_ID` from
+the environment, and honours `TELEGRAM_NOTIFY_FORCE_RESULT` for the
+no-network test path — exiting non-zero with `operator-topic-not-yet-created`
+when the map names no Concierge topic yet, or `missing-telegram-config`
+when either credential is absent, 0 only on a confirmed delivery. `main()`
+is a thin wrapper over the exported `sendTelegramDocumentCore`, driven
+in-process by the tests with stubbed argv/env. This is the delivery leg
+only — nothing yet calls it; the operator's model-scoring-report
+attachment (BL-1510) is the first consumer. Acceptance:
+`specs/features/BL-1509-a-file-can-be-posted-to-a-telegram-topic-as-a-document.feature`.
+No registered diagram depicts individual `telegramClient.ts` functions or
+Telegram CLI tools, so none needed updating.) Prior entry —
 **Last Updated:** September 15, 2026 (BL-1569: both closure walkers
 (`bb_load_closure_lib.bb`'s `direct-load-file-deps` and its JS twin
 `operatorRuntimeBbClosure.js`'s `directLoadFileDeps`) captured only the last
