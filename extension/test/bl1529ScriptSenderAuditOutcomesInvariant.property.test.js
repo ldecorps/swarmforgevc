@@ -43,12 +43,21 @@ const fs = require('node:fs');
 const path = require('node:path');
 const { execFileSync } = require('node:child_process');
 const { mkTmpDir } = require('./helpers/tmpDir');
+const { assertReachFloor, runsPerCell } = require('./helpers/reachFloors');
 
 const REPO_ROOT = path.join(__dirname, '..', '..');
 const SCRIPTS = path.join(REPO_ROOT, 'swarmforge', 'scripts');
 
 const STAGES = ['cleaner', 'architect', 'hardender', 'documenter', 'qa'];
 const OUTCOME_KINDS = ['queued', 'failed'];
+
+// BL-1578: the (kind, stage) pair is reached BY CONSTRUCTION - an outer loop
+// over all 10 cells, each with its own floor-sized run budget - rather than
+// hoped for by a uniform draw over both axes (a uniform 20-draw over 10 cells
+// missed a cell about 1 run in 70, the BL-1062 lottery).
+const CELLS = OUTCOME_KINDS.flatMap((kind) => STAGES.map((stage) => `${kind}:${stage}`));
+const TOTAL_RUNS = OUTCOME_KINDS.length * STAGES.length * 2;
+const CELL_RUNS = runsPerCell(TOTAL_RUNS, CELLS.length);
 
 const STUB_SWARM_HANDOFF =
   '#!/usr/bin/env bash\necho "AUDIT_REQUIRED" >&2\necho "HANDOFF_NOT_QUEUED" >&2\nexit 1\n';
@@ -132,38 +141,47 @@ test(
   () => {
     const fixture = buildFixture();
     const reached = { queued: 0, failed: 0 };
+    const counts = {};
     try {
-      fc.assert(
-        fc.property(fc.constantFrom(...OUTCOME_KINDS), fc.constantFrom(...STAGES), (kind, stage) => {
-          clearOutbox(fixture.root);
-          assert.deepEqual(outboxFiles(fixture.root), [], 'outbox must start empty each draw');
+      for (const kind of OUTCOME_KINDS) {
+        for (const stage of STAGES) {
+          const cell = `${kind}:${stage}`;
+          fc.assert(
+            fc.property(fc.constant(null), () => {
+              clearOutbox(fixture.root);
+              assert.deepEqual(outboxFiles(fixture.root), [], 'outbox must start empty each draw');
 
-          const { out, status } = runRedoFrom(fixture, kind, stage);
-          const after = outboxFiles(fixture.root);
-          reached[kind] += 1;
+              const { out, status } = runRedoFrom(fixture, kind, stage);
+              const after = outboxFiles(fixture.root);
+              reached[kind] += 1;
+              counts[cell] = (counts[cell] || 0) + 1;
 
-          if (kind === 'queued') {
-            assert.equal(status, 0, `expected success for stage ${stage}, got exit ${status}:\n${out}`);
-            assert.equal(after.length, 1, `expected exactly one queued handoff file for stage ${stage}:\n${out}`);
-            const lastLine = out.trim().split('\n').filter(Boolean).pop();
-            assert.ok(
-              lastLine && lastLine.includes(after[0]),
-              `command's last output line must name the queued outbox file; last line: "${lastLine}", file: ${after[0]}`
-            );
-          } else {
-            assert.notEqual(status, 0, `expected a refusal for stage ${stage}, got exit 0:\n${out}`);
-            assert.match(out, /Failed to queue handoff/, `refusal output must name the failure to queue:\n${out}`);
-            assert.deepEqual(after, [], `a refused send must queue nothing, got:\n${out}`);
-          }
-        }),
-        { numRuns: OUTCOME_KINDS.length * STAGES.length * 2 }
-      );
+              if (kind === 'queued') {
+                assert.equal(status, 0, `expected success for stage ${stage}, got exit ${status}:\n${out}`);
+                assert.equal(after.length, 1, `expected exactly one queued handoff file for stage ${stage}:\n${out}`);
+                const lastLine = out.trim().split('\n').filter(Boolean).pop();
+                assert.ok(
+                  lastLine && lastLine.includes(after[0]),
+                  `command's last output line must name the queued outbox file; last line: "${lastLine}", file: ${after[0]}`
+                );
+              } else {
+                assert.notEqual(status, 0, `expected a refusal for stage ${stage}, got exit 0:\n${out}`);
+                assert.match(out, /Failed to queue handoff/, `refusal output must name the failure to queue:\n${out}`);
+                assert.deepEqual(after, [], `a refused send must queue nothing, got:\n${out}`);
+              }
+            }),
+            { numRuns: CELL_RUNS }
+          );
+        }
+      }
     } finally {
       fs.rmSync(fixture.root, { recursive: true, force: true });
     }
 
+    assertReachFloor(counts, CELLS, CELL_RUNS, 'cell');
     assert.ok(reached.queued >= STAGES.length, `generator reach floor (queued): ${reached.queued}`);
     assert.ok(reached.failed >= STAGES.length, `generator reach floor (failed): ${reached.failed}`);
+    console.log(`BL-1578 reach map (bl1529): ${JSON.stringify({ cells: CELLS.length, minDrawsPerCell: CELL_RUNS })}`);
   },
   60000
 );

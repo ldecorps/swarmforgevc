@@ -1,3 +1,8 @@
+# mutation-stamp: sha256=7bb6e22d44ae72e1e39f810c18a0b7f1cd5ad5cf06d389b93f750a6c10785d5a
+# acceptance-mutation-manifest-begin
+# {"version":1,"tested_at":"2026-09-15T17:28:47.174226818Z","feature_name":"BL-1578 Three sampled reach floors are constructed","feature_path":"/home/carillon/swarmforgevc/.worktrees/hardender/specs/features/BL-1578-three-sampled-reach-floors-are-constructed.feature","background_hash":"74234e98afe7498fb5daf1f36ac2d78acc339464f950703b8c019892f982b90b","implementation_hash":"unknown","scenarios":[{"index":1,"name":"each constructed loop reports reaching its floor from the run itself","scenario_hash":"aae8978d04601026b9ed2cb7ddaa56af6147a94e0a492458f4fceeb23605cf6b","mutation_count":24,"result":{"Total":24,"Killed":24,"Survived":0,"Errors":0},"tested_at":"2026-09-15T17:28:47.174226818Z"},{"index":0,"name":"each property file is green on the tree as it stands","scenario_hash":"e1c657db2eb01f563c06617e8b883c45ee54e023771968d6021a55bb5438b56d","mutation_count":3,"result":{"Total":3,"Killed":3,"Survived":0,"Errors":0},"tested_at":"2026-09-15T16:44:15.494304057Z"},{"index":2,"name":"each reach floor is still asserted in its test source","scenario_hash":"a24d9b5e8684a52b3a57c996d5a9ee0cffad6571383e26086e57adfb6768e4fd","mutation_count":10,"result":{"Total":10,"Killed":10,"Survived":0,"Errors":0},"tested_at":"2026-09-15T16:44:15.494304057Z"}]}
+# acceptance-mutation-manifest-end
+
 Feature: BL-1578 Three sampled reach floors are constructed
 
   Three property files under extension/test assert a reach floor over a
