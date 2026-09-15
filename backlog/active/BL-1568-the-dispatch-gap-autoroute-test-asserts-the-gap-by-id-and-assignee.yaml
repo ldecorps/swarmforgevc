@@ -174,3 +174,12 @@ qa_e2e_procedure: |
   7. The row for this file is gone from `backlog/standing-reds.tsv`.
 
 assigned_to: coder
+bounce_count: 1
+bounce_history:
+  - { at: 2026-09-15, by: QA, blamed: coder, class: acceptance, commit: 1f92d0bf8a, evidence: backlog/evidence/BL-1568-bounce-20260915.md }
+abandoned_commits: [934f8e7420]
+# QA rebuilt a tip-pure commit off origin/main (BL-1241) at 51610a2b9e:
+# the last-handoff commit's lineage carried c1c675af80, a specifier
+# commit tagged "BL-1568:" that also minted BL-1573's topic/paused
+# files in the same commit, entangling the two tickets. Those files
+# are unchanged from origin/main; only the walk's base needed to move.
