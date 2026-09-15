@@ -39,6 +39,9 @@ approval_context: >
   the specifier on the coder's unowned-red note of 2026-09-14 14:30Z
   (BL-1565 parcel); reproduced on main 674d50539a; evidence
   backlog/evidence/BL-1567-BL-1571-specifier-unowned-red-census-20260914.md.
+  AMENDED 2026-09-15 (see notes): the mint missed that case 04 is red too,
+  for a second reason; the amendment keeps both FIRM points above and
+  poses no choice, so it does not re-pend.
 
 invariants: []
 
@@ -66,28 +69,72 @@ description: |
   `bl1479_parked_active_sweep_test_runner.bb`, `dropped_parcel_test_runner.bb`)
   are green on main; only this file pins the full key set.
 
+  ## Case 04 is red too, for a second reason (amendment 2026-09-15)
+
+  With case 01 fixed the file still stops at case 04 (coder note
+  2026-09-15 00:12Z; specifier reproduced). Case 02 calls
+  `dispatch-gap-draft-lines` with NO commit, which is the legacy soft-note
+  fallback: `message: BL-217 is active with no dispatch on record - ...`.
+  BL-1223 (2026-08-29) narrowed the dispatch trail so a note counts only
+  in the router's verb-first `Spec`/`Work` form; a bare leading id is a
+  mention, not a dispatch. So the queued note is not a trail,
+  `dispatch-trail-ticket-id` answers nil for it, and case 04's second
+  sweep re-detects the gap. The test's own header says it mirrors
+  `auto-route!` exactly, and `auto-route!` has sent a `git_handoff`
+  (`dispatch-gap-draft-lines item head-commit-10`) through
+  `handoff-lib/queue-git-handoff!`'s two-call audit since BL-1529 - the
+  test was mirroring a path production no longer takes. Case 04 was
+  masked because case 01 always exited the script first.
+
   ## What is wanted
 
   Case 01 asserts that `dispatch-gap-items` returns exactly one gap whose
   `:id` is `BL-217` and whose `:assigned-to` is `coder`, tolerating any
-  further keys the reader carries. Cases 02 and 03 are unchanged. The
-  file prints `ALL PASS` on `main` and the register row this ticket adds
-  is removed in the same land.
+  further keys the reader carries. Case 02 sends what production sends:
+  the draft from `dispatch-gap-draft-lines` called WITH the fixture's
+  10-hex HEAD, queued through `handoff-lib/queue-git-handoff!` (the
+  BL-1529 two-call protocol - a challenge, then the identical second call
+  queues; never an audit bypass), with `SWARMFORGE_ROLE=coordinator` and
+  `SWARMFORGE_DISPATCH_GAP_AUTOROUTE=1` in the env exactly as
+  `auto-route!` sets them. Case 03 asserts the queued file is
+  `type: git_handoff`, `from: coordinator`, `to: coder`, `task: BL-217`,
+  `commit: <fixture HEAD>`. Case 04 is unchanged and passes because
+  `task:` is structural trail evidence. The file prints `ALL PASS` on
+  `main` and the register row this ticket adds is removed in the same
+  land.
 
   ## How (direction, not mandate)
 
-  - Compare `(mapv #(select-keys % [:id :assigned-to]) gaps)` with the
-    expected vector, or assert `(count gaps)`, `(:id (first gaps))` and
-    `(:assigned-to (first gaps))` - either keeps the one-gap, right-gap
-    property; the assertion message still prints the full maps.
+  - Case 01: compare `(mapv #(select-keys % [:id :assigned-to]) gaps)`
+    with the expected vector, or assert `(count gaps)`, `(:id (first
+    gaps))` and `(:assigned-to (first gaps))` - either keeps the one-gap,
+    right-gap property; the assertion message still prints the full maps.
+  - Case 02: `HEAD10="$(git -C "$ROOT" rev-parse --short=10 HEAD)"` (the
+    fixture already makes one empty commit); load `handoff_lib.bb` beside
+    `chase_sweep_lib.bb`; count the calls the `run-once` fn makes and
+    assert `:status :queued` and exactly two calls. The specifier ran
+    this shape three times on main 2026-09-15 (~2 s, `ALL PASS` each
+    run) with the fixture's existing `SWARMFORGE_SKIP_SYNC_INJECT=1`
+    kept; `SWARMFORGE_MAILBOX_ONLY=1` also works and neither is required
+    for the queue - keep the one the file already uses. Evidence:
+    `backlog/evidence/BL-1568-specifier-amendment-20260915.md`.
+  - Case 03: replace the `message:` grep with `type:`/`task:`/`commit:`
+    greps; keep `from:`/`to:`.
   - Step handler `specs/pipeline/steps/bl1568DispatchGapAssertsByIdSteps.js`
     runs the real shell test as a subprocess and diffs `chase_sweep_lib.bb`
     against `main` (unchanged); it lands in the same commit as the feature
-    (BL-233).
+    (BL-233). The amendment adds scenario 05 (a text-shape guard on the
+    send case, scenario 03's style) - its steps land in the same parcel.
 
   ## Not in scope
 
   - `chase_sweep_lib.bb`, `handoffd.bb`, and the bb runners are not touched.
+  - The legacy note text `dispatch-gap-note-message` stays as it is: the
+    pure runner (`dispatch_gap_test_runner.bb`) and
+    `specs/pipeline/test/steps/dispatchGapSteps.test.js` pin it, and the
+    production hazard it carries (a note-fallback that is not a trail,
+    fired only when `head-commit-10` fails) is BL-1573's, not this
+    ticket's.
 
 notes: |
   Register: backlog/standing-reds.tsv gains one `shell` row naming this
@@ -96,17 +143,34 @@ notes: |
   BL-1565 parcel; reproduced by the specifier on main. Siblings minted the
   same pass: BL-1567, BL-1569, BL-1570, BL-1571.
 
+  Amendment 2026-09-15 (specifier, on the coder's priority-00 note of
+  00:12Z, parcel at the coder stage, coder tip 3986fa6d6e): the mint's
+  "cases 02 and 03 are unchanged" was wrong - case 04 is red for the
+  BL-1223 reason above and only case 02's send form can make it green
+  without touching the lib. The mint's omission, not the coder's; no
+  bounce is recorded. Feature gains scenario 05 (handler in the same
+  parcel, BL-233). Both FIRM points in approval_context hold and no
+  choice is posed, so the ticket is not re-pended. Register row reason
+  widened in the same commit. Sibling minted the same pass: BL-1573
+  (the note-fallback is not a trail; lib-side, paused).
+
 qa_e2e_procedure: |
   On the parcel commit, from the repo root:
   1. `bash swarmforge/scripts/test/test_dispatch_gap_autoroute.sh` three
      times -> `ALL PASS`, exit 0.
   2. `git diff main...HEAD -- swarmforge/scripts/chase_sweep_lib.bb` is
      empty; `git diff main...HEAD --name-only` names the shell test, the
-     handler, `specs/pipeline/steps/index.js`, the feature, evidence, and
-     the register-row removal.
+     handler, the feature, evidence, and the register-row removal
+     (`specs/pipeline/steps/index.js` only if registration is manual;
+     BL-1371 discovers handlers).
   3. `bb swarmforge/scripts/test/dispatch_gap_test_runner.bb` still exits 0.
   4. Break-then-restore: change the fixture's `assigned_to: coder` to
      `assigned_to: cleaner`; case 01 fails naming the assignee; restore.
-  5. The row for this file is gone from `backlog/standing-reds.tsv`.
+  5. Break-then-restore: drop the commit argument from case 02's
+     `dispatch-gap-draft-lines` call; case 03 fails (no `type: git_handoff`)
+     or case 04 re-detects the gap; restore.
+  6. `grep -n 'rev-parse --short=10\|queue-git-handoff!\|^grep -q "^task: BL-217' swarmforge/scripts/test/test_dispatch_gap_autoroute.sh`
+     shows all three.
+  7. The row for this file is gone from `backlog/standing-reds.tsv`.
 
 assigned_to: coder
