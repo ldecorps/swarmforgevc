@@ -46,10 +46,17 @@ function runSmokeCheck(root) {
 
 function runParseConfig(confPath) {
   try {
+    // BL-1318's staffing gate hatch: decide it here, never inherit the
+    // pane's own export (BL-1486). BL-1486's own mint text excluded this
+    // file as the "BL-939 orbit (BL-1487)" - BL-1487 has since landed
+    // (2026-09-13) and fixed the deleted-profile red; the residual failure
+    // here (confirmed 2026-09-15) was the launcher refusing role 'coder'
+    // for check 'seat-model-unresolved' without the hatch - this ticket's
+    // own class - so it belongs to this ticket now.
     const stdout = execFileSync('zsh', ['-c', `source '${SWARMFORGE_SH}' '${REPO_ROOT}'; parse_config`], {
       encoding: 'utf8',
       stdio: ['ignore', 'pipe', 'pipe'],
-      env: { ...process.env, SWARMFORGE_CONFIG: confPath },
+      env: { ...process.env, PACK_STAFFING_SKIP_GATE: '1', SWARMFORGE_CONFIG: confPath },
     });
     return { exitCode: 0, output: stdout };
   } catch (err) {

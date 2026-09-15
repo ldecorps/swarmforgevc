@@ -109,7 +109,12 @@ function writeRuntimeStateFixtures(root) {
 
 function runSync(root) {
   const script = `source '${path.join(root, 'swarmforge', 'scripts', 'swarmforge.sh')}' '${root}'; parse_config; sync_worktree_scripts`;
-  const result = spawnSync('zsh', ['-c', script], { encoding: 'utf8' });
+  // BL-1318's gate: decide the hatch here, never inherit the pane's own
+  // export (BL-1486).
+  const result = spawnSync('zsh', ['-c', script], {
+    encoding: 'utf8',
+    env: { ...process.env, PACK_STAFFING_SKIP_GATE: '1' },
+  });
   return { ok: result.status === 0, stdout: (result.stdout || '') + (result.stderr || '') };
 }
 

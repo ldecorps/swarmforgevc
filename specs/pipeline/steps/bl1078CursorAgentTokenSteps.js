@@ -90,7 +90,9 @@ function makeRoot(ctx, windowLines) {
 function zsh(script, env = {}) {
   return spawnSync('zsh', ['-c', script], {
     encoding: 'utf8',
-    env: { ...process.env, XDG_RUNTIME_DIR: '/tmp', ...env },
+    // BL-1318's gate: decide the hatch here, never inherit the pane's own
+    // export (BL-1486).
+    env: { ...process.env, PACK_STAFFING_SKIP_GATE: '1', XDG_RUNTIME_DIR: '/tmp', ...env },
     timeout: 120000,
   });
 }

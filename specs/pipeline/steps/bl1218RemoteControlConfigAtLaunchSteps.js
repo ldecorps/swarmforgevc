@@ -78,7 +78,13 @@ function compose(ctx, role) {
       // read THIS repo's real .swarmforge/model-factory/ instead of the
       // fixture's, leaking live overlay state into the composed script
       // (see test_remote_control_launch.sh / test_model_factory_runtime_wiring.sh).
-      env: { ...process.env, MODEL_FACTORY_STATE_DIR: path.join(root, '.swarmforge', 'model-factory') },
+      // BL-1318's gate: decide the hatch here, never inherit the pane's own
+      // export (BL-1486).
+      env: {
+        ...process.env,
+        PACK_STAFFING_SKIP_GATE: '1',
+        MODEL_FACTORY_STATE_DIR: path.join(root, '.swarmforge', 'model-factory'),
+      },
     }
   );
   const script = path.join(root, '.swarmforge', 'launch', `${role}.sh`);

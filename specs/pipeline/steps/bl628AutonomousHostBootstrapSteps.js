@@ -101,7 +101,9 @@ function parsedIdentity(ctx) {
     // sets a plain (non-exported) shell variable for a builtin like
     // source, which a later-spawned bb subprocess never inherits. Passing
     // it here, via the real env option, is the only reliable way.
-    { encoding: 'utf8', env: { ...process.env, XDG_RUNTIME_DIR: '/tmp' } }
+    // BL-1318's gate: decide the hatch here too, never inherit the pane's
+    // own export (BL-1486).
+    { encoding: 'utf8', env: { ...process.env, XDG_RUNTIME_DIR: '/tmp', PACK_STAFFING_SKIP_GATE: '1' } }
   );
   ctx.parsedIdentity = out;
   return out;
