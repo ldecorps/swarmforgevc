@@ -1,0 +1,182 @@
+id: BL-1582
+title: "Onboarder operational how-to: a docs/how-to/ guide to running one onboarding end to end on the swarm host - start, verify liveness, drive every persisted phase, inspect state, recover, stop - scoped to shipped behaviour and verified against the code it names"
+milestone: M5
+type: docs
+status: todo
+epic: swarm-intelligence-layer
+priority: 5
+direction: human-requested
+depends_on: []
+# BL-590, BL-624, BL-625, BL-643 and BL-684 are all in backlog/done/ -
+# the epic's own "ticket this once BL-625 lands" condition is met.
+mutation_cost: low
+# low: one new markdown page, one index link, two cross-links, one
+# read-only acceptance step handler; no production code, no Stryker target.
+slice_size_envelope: low
+required_stages: [coder, hardender, documenter, qa]
+stage_skip_reasons: { cleaner: "one markdown page and one read-only step handler, nothing to refactor", architect: "no architecture, no production code; the BL-643 doc parcel skipped it the same way" }
+# BL-643 precedent (e1c39eef31): the coder writes the page and its step
+# handler in one commit, the documenter owns the final wording and the
+# links. The hardener stays for the gherkin mutation gate over the feature.
+
+acceptance: specs/features/BL-1582-onboarder-operational-how-to.feature
+
+required_wiring:
+  - 'specs/pipeline/steps/bl1582OnboarderHowToSteps.js::registerSteps::the handler lands in the same parcel as the feature (BL-233, BL-1371)'
+# No production anchor on purpose (BL-1235): a docs page has no consumer
+# call site; the handler is the only literal that will exist.
+
+human_approval: pending
+approval_context: >
+  A new feature file and a new how-to page are authored here, so it needs
+  a tap. No choice is posed and there are no ruling_options. FIRM: the
+  guide describes SHIPPED behaviour only (BL-590/BL-624/BL-625 on main),
+  never claims the Onboarder launches or observes the target swarm, and
+  every path and runtime file name it quotes is verified against the
+  code that spells it (BL-643's own verified-path discipline). FIRM: it
+  sits beside the class document and the tutorial, linking to both
+  rather than restating the per-reply conversation the tutorial's
+  section 0 already carries.
+
+invariants: []
+
+description: |
+  ## Why
+
+  The BL-1329 epic deferred this slice in `remaining_slices:` with the
+  words "ticket this once BL-625 lands; a ticket filed now would sit
+  blocked behind four others". BL-625 landed (backlog/done/M8/), as did
+  every other Onboarder child (BL-590, BL-624, BL-643, BL-684), and the
+  Onboarder runs live as a standing ancillary on every launch
+  (`swarmforge/scripts/start_ancillary_services.sh` calls
+  `launch_onboarder.sh` whenever TELEGRAM_BOT_TOKEN and TELEGRAM_CHAT_ID
+  are set). As of 2026-09-15 `find docs/how-to -iname '*onboard*'` returns
+  nothing and no ticket exists for the guide. The human asked for it on
+  2026-09-15 through the operator (backlog/archive/INTAKE-operator-question-1789497004958.md).
+
+  What exists today and what this guide is NOT: the tutorial
+  `docs/tutorials/Onboarding-New-Project.md` section 0 walks the human
+  through the conversation reply by reply (URL, verification pastes,
+  `proceed` / `show-me` / `change-this`), and the class document
+  `docs/explanation/BL-643-non-pipeline-agents-as-a-class.md` says what
+  shipped and where the code is. Neither answers the operator's
+  questions: what starts the Onboarder, how do I know it is up, where is
+  a target's state, how do I recover a stalled onboarding, how do I stop
+  it. That is the how-to.
+
+  ## What is wanted
+
+  A task-oriented page `docs/how-to/BL-1582-onboarder-run-an-onboarding-end-to-end.md`
+  that takes an operator from a swarm host with Telegram credentials to
+  a target marked `done`, in this order:
+
+  1. Preconditions on the swarm host: the env the ancillary start reads
+     (TELEGRAM_BOT_TOKEN, TELEGRAM_CHAT_ID; SWARMFORGE_SKIP_ONBOARDER
+     unset), the one standing Onboarding topic reused across targets,
+     and that the target's OWN bot token is a separate one the
+     prerequisites phase collects.
+  2. Start and verify: `./swarm` (via `start_ancillary_services.sh`) or
+     `launch_onboarder.sh <swarm-repo-root>` by hand, the dry-run env,
+     and the liveness evidence to check - the pid file, the log and the
+     heartbeat under `.swarmforge/operator/` by their literal names, and
+     `./swarm ensure` as the repair when the WARN line appears. State
+     plainly that message handling runs inside the front-desk bot's
+     single poller, so a running supervisor with no front desk answers
+     nothing.
+  3. Drive one target end to end: the five prerequisite steps in order
+     (toolchain, github-access, fork-clone, target-repo, bot-token), then
+     each persisted phase from `checking-prerequisites` to `done` with
+     the reply that advances it and the observable post that confirms
+     it. Link the tutorial for the per-reply semantics; do not restate
+     them.
+  4. Inspect and resume: the per-target JSON under
+     `.swarmforge/onboarding/`, keyed by the normalized URL slug; pause /
+     proceed; restart-resume; re-posting a URL variant resumes the same
+     target.
+  5. Recover: a clone/survey/propose failure holds at
+     `prerequisites-ready` with a `proceed`-to-retry; two targets in
+     flight means naming the target; a crashed supervisor's bounded
+     restart and what the log shows when the budget is spent.
+  6. Launch handoff and stop: the guide says the human runs the posted
+     `./swarm <path> --pack mono-router` command on the target host
+     themselves - the Onboarder never launches or observes that swarm -
+     and names `stop_ancillary_services.sh` and the stop marker as the
+     way down.
+
+  Linked from `docs/index.md` under "How-to guides", and cross-linked
+  from the class document's Onboarder section and the tutorial's section
+  0 in the same parcel.
+
+  ## How (direction, not mandate)
+
+  - Coder: write the page from the code, not from memory - every
+    backticked repo path and every runtime file name is taken from the
+    script or module that spells it (`launch_onboarder.sh`,
+    `onboarder_supervisor.bb`, `stop_ancillary_services.sh`,
+    `extension/src/tools/onboarder-reconcile.ts`,
+    `extension/src/onboarding/onboarderState.ts`,
+    `extension/src/onboarding/contractPhaseRelay.ts`). Write the step
+    handler `bl1582OnboarderHowToSteps.js` in the bl441 shape: read the
+    page off disk, assert content; for scenario 02 resolve each
+    backticked repo-relative path against the repo root; for scenario 03
+    read the literal out of the named source file and assert the guide
+    carries it.
+  - Documenter: final wording, the index line, the two cross-links, and
+    the BL-643 honesty rule - a sentence that names unbuilt behaviour is
+    removed, not softened.
+
+constraints: >
+  Docs, one acceptance step handler, the feature and evidence only;
+  `extension/src` and `swarmforge/scripts` unchanged. Shipped behaviour
+  only. The step handler lands with the feature (BL-233).
+
+out_of_scope: |
+  - Any change to the Onboarder itself, its prompts, or its phases.
+  - Restating the tutorial's reply-by-reply walkthrough; the how-to
+    links it.
+  - The other `remaining_slices` of BL-1329.
+
+qa_e2e_procedure: |
+  On the parcel commit:
+  1. `swarmforge/scripts/run_acceptance.sh specs/features/BL-1582-*.feature`
+     resolves every scenario green.
+  2. Read the page once as an operator: every command in it is one you
+     could paste on the swarm host; every `.swarmforge/` file name it
+     quotes is grep-able in `swarmforge/scripts/launch_onboarder.sh`,
+     `swarmforge/scripts/onboarder_supervisor.bb`,
+     `swarmforge/scripts/stop_ancillary_services.sh` or
+     `extension/src/tools/onboarder-reconcile.ts`.
+  3. `ONBOARDER_LAUNCH_DRYRUN=1 swarmforge/scripts/launch_onboarder.sh .`
+     prints the DRYRUN line the guide says it prints.
+  4. `grep -n "BL-1582" docs/index.md docs/explanation/BL-643-non-pipeline-agents-as-a-class.md docs/tutorials/Onboarding-New-Project.md`
+     finds the index line and both cross-links.
+  5. Break-then-restore: rename one runtime file name in the page (for
+     example the heartbeat file); step 1's scenario 03 fails naming it;
+     restore.
+
+source: |
+  Operator intake backlog/archive/INTAKE-operator-question-1789497004958.md
+  (filed 2026-09-15T18:30Z from a status check the human asked for):
+  "mint the deferred 'Onboarder operational how-to' slice from BL-1329's
+  remaining_slices ... Scope per the epic: a step-by-step guide to
+  running an onboarding end to end, scoped to shipped behaviour only,
+  sitting beside the class document BL-643 already delivered.
+  Documenter-shaped work." Epic bullet: BL-1329 remaining_slices
+  "Onboarder operational how-to".
+
+notes: |
+  Minted 2026-09-15 by the specifier draining the backlog root. The
+  epic's deferral condition (BL-625 landed) was verified against
+  backlog/done/M8/ and the live launch path against
+  start_ancillary_services.sh line 102 before minting; BL-1329's
+  remaining_slices bullet and decomposes_into now name this ticket.
+  INVEST: Independent (every child it documents is landed), Negotiable
+  (section order is direction, the shipped-only rule is firm), Valuable
+  (the operator's start/verify/recover/stop questions get one page),
+  Estimable (one page from six source files, one sitting), Small (five
+  scenarios, no invariant), Testable (the page is read off disk and its
+  quoted literals checked against the code). Census for scenario 02 was
+  counted with `grep -o '`[a-z][^`]*`'` over the six source files named
+  in How; the pinned minimum is the seven paths the Examples table
+  lists, chosen for the idiom the page will actually use (backticked
+  repo-relative paths).

@@ -1,0 +1,159 @@
+id: BL-1581
+title: "bl1358MutantTimeCeilingInvariants draws the hang's position among 1-2 ordinary mutants for only 3 runs and then asserts a following mutant was seen, a floor a seed misses about one run in 23 and flaky red on main with no owner; first, middle and last are iterated by construction and the floor stays asserted at its value"
+milestone: M8
+type: defect
+severity: high
+# high: a standing red on main in the property lane is a broken safety
+# signal at first sighting (Article 3.2.4, 2026-09-05); QA withheld BL-1579
+# on this red under Article 4.2. Same class as BL-1578, BL-1580, BL-1572.
+status: todo
+epic: code-quality-gates
+priority: 8
+direction: swarm-reported
+depends_on: []
+mutation_cost: low
+# low: one test-file change, the shared reachFloors helper already
+# exists (BL-1062/BL-1555); no production code, no Stryker target.
+slice_size_envelope: low
+required_stages: [coder, cleaner, architect, hardender, documenter, qa]
+
+acceptance: specs/features/BL-1581-bl1358-hang-position-is-constructed.feature
+
+required_wiring:
+  - 'specs/pipeline/steps/bl1581HangPositionConstructedSteps.js::registerSteps::the handler lands in the same parcel as the feature (BL-233, BL-1371)'
+# No production anchor on purpose (BL-1235): the test file and the helper
+# already exist, so any pattern on them matches before and after.
+
+human_approval: pending
+approval_context: >
+  A new feature file is authored here, so it needs a tap. No choice is
+  posed and there are no ruling_options. FIRM: the reach floor the file
+  asserts today (the hang was followed by another mutant at least once,
+  `hangFollowed > 0`) stays asserted at its value; the fix is to make the
+  three hang positions - first, middle, last - reached BY CONSTRUCTION,
+  one cell each, the way BL-1578 and BL-1580 iterate their arms - never
+  to lower a floor, widen a tolerance, pin a seed or retry. FIRM: the draw
+  budget stays 3 and the 1000 ms ceiling stays; what changes is how the
+  budget is spent. The register row for the file is removed in the same
+  land that turns it green.
+
+invariants: []
+
+description: |
+  ## What is wrong
+
+  QA ran `npm run test:properties` on the BL-1579 parcel on 2026-09-15
+  (`backlog/evidence/BL-1579-QA-unowned-red-20260915.md`, QA commit
+  ce5917e361) and saw one red file BL-1579's diff never touches:
+  `extension/test/bl1358MutantTimeCeilingInvariants.property.test.js`,
+  test `BL-1358/BL-654 P1+P2: a timeout is its own verdict, and leaves
+  every other mutant its ordinary one`, with
+
+  ```
+  AssertionError: the hang was never followed by another mutant - P2 was never actually exercised
+  ```
+
+  The test draws `fc.array(fc.constantFrom('pass','fail'), {minLength: 1,
+  maxLength: 2})` and `fc.nat({max: 2})`, places one hang at
+  `rawPos % (ordinary.length + 1)`, runs `numRuns: 3`, and afterwards
+  asserts `hangFollowed > 0` - that in at least one run the hang was not
+  in last position. With one ordinary mutant the hang lands last one draw
+  in two, with two it lands last one draw in three; over three draws the
+  all-last case is far from rare. The specifier's simulation of that
+  exact draw over 3000 fast-check seeds missed the floor in 132 (4.40%),
+  the highest miss rate of any file in this class so far (BL-1580's was
+  3.13%). QA's own six unloaded runs saw it once. Nothing is wrong in the
+  code it exercises: the worker's timeout verdict and every neighbour's
+  ordinary verdict hold on every draw that runs. This is the BL-1062
+  sampled-reach-floor lottery, the shape BL-1555, BL-1559, BL-1572,
+  BL-1578 and BL-1580 fixed in other files. BL-1579 was withheld by QA
+  under Article 4.2 on it; this ticket owns it.
+
+  ## What is wanted
+
+  - The hang's position is iterated as 3 cells - first (position 0),
+    middle (position 1 among 2 ordinary mutants), last (position equal to
+    the ordinary count) - with `runsPerCell(3, 3)` = 1 draw each, so every
+    run exercises P2 (a mutant follows the hang: first and middle) and P1
+    at the run's end (last). Within a cell the ordinary kinds are still
+    drawn; only the position is fixed by the cell. Nothing else about a
+    draw changes: each draw still builds one real fixture per mutant and
+    drives the real `mutationWorker` `handle` under the 1000 ms ceiling.
+  - The per-cell floor is asserted through the shared `assertReachFloor`
+    helper (`extension/test/helpers/reachFloors.js`) so a position that
+    stopped being exercised fails the file naming that position, and the
+    existing `hangFollowed > 0` and `runs > 0` assertions remain in the
+    source at their value (scenario 03).
+  - Each run prints one reach map line in the BL-1578 shape, computed
+    from the counts the run actually reached, never restated:
+    `BL-1581 reach map (bl1358): {"positions":3,"minDrawsPerPosition":1}`.
+  - The file is green alone under the properties config 15 of 15 times
+    (QA e2e step 1), and this ticket's register row is removed in the
+    same land that turns it green.
+
+  ## How (direction, not mandate)
+
+  - Outer `for` over `['first', 'middle', 'last']`, one `fc.assert` per
+    cell with `numRuns: runsPerCell(3, 3)`, the ordinary array drawn
+    inside (min length 2 for the middle cell, so position 1 has a
+    follower), the position derived from the cell rather than drawn;
+    the per-draw body (`kinds`, `runMutant`, the P1/P2 assertions) is
+    unchanged. The control test in the same file is not sampled this way
+    and is out of scope.
+  - Each draw costs one real fixture and one 1000 ms hang; the draw count
+    does not change, so the file's runtime (about 5 s) and the lane's
+    timeout are untouched.
+  - Documenter: nothing beyond the evidence file; no diagram trigger.
+
+constraints: >
+  Test file and evidence only; `extension/src` and
+  `specs/pipeline/mutationWorker.js` unchanged. No floor lowered, no
+  tolerance widened, no retry, no seed pinned, the draw budget of 3 and
+  the 1000 ms ceiling unchanged. The step handler lands with the feature
+  (BL-233).
+
+out_of_scope: |
+  - The P1 control test in the same file, and any other property file's
+    floor.
+  - The property lane's timeouts (BL-1579).
+
+qa_e2e_procedure: |
+  On the parcel commit, from `extension/`:
+  1. `for i in $(seq 1 15); do npx vitest run --config vitest.properties.config.mjs test/bl1358MutantTimeCeilingInvariants.property.test.js || echo FAIL; done`
+     -> 15 of 15 green, no FAIL line, every run printing
+     `BL-1581 reach map (bl1358): {"positions":3,"minDrawsPerPosition":1}`
+     (the printed map, not the pass count alone, is the evidence: 15
+     green runs of the unfixed file happen about 1 time in 2).
+  2. Acceptance resolving all three scenarios
+     (`swarmforge/scripts/run_acceptance.sh specs/features/BL-1581-*.feature`).
+  3. Break-then-restore: drop the `middle` cell from the iterated cells;
+     step 1's first run fails naming the reach floor (`reach floor: ...
+     middle drawn 0 < 1`); restore. Then drop the `first` and `middle`
+     cells both; the run fails on `hangFollowed > 0` or the reach floor,
+     whichever runs first; restore.
+  4. `git diff main...HEAD --name-only` names the test file, the step
+     handler, the feature, evidence and the register row removal;
+     `extension/src` and `specs/pipeline/mutationWorker.js` are unchanged.
+  5. `bb swarmforge/scripts/standing_red_register_cli.bb .` after landing
+     reports no row for the file and `"unowned":[]`.
+
+source: |
+  QA note to the specifier, priority 00, 2026-09-15T20:00Z (inbound
+  00_20260915T200017Z_002761_from_QA_to_specifier_coordinator): "BL-1579
+  held: bl1358 sampled-floor red unowned, evidence ce5917e361". QA
+  evidence backlog/evidence/BL-1579-QA-unowned-red-20260915.md, which
+  carries the assertion text verbatim.
+
+notes: |
+  Minted 2026-09-15 by the specifier while completing QA's unowned-red
+  note, the same pass; the register row in backlog/standing-reds.tsv
+  names this ticket and QA was sent the resume note (BL-1566 shape) in
+  the same pass. Simulation: 3000 fast-check seeds of the file's exact
+  generators at `numRuns: 3`, the floor missed in 132 (4.40%). INVEST:
+  Independent (helper exists, no unbuilt sibling), Negotiable (loop
+  shape is direction), Valuable (one lane red stops firing for no reason
+  and QA stops withholding unrelated parcels on it), Estimable (one loop
+  restructure, one sitting - BL-1578 does three), Small (three
+  scenarios, no invariant), Testable (the printed reach map and the
+  source assertions). Severity high per the standing-red rule, not
+  medium: the register throttles intake until reds drain.
