@@ -59,7 +59,9 @@ for conf in "${SHIPPED_CONFS[@]}"; do
   done < <(grep -E '^window[[:space:]]' "$conf" | awk '{print $2}' | sort -u)
   cp "$conf" "$fixture_root/swarmforge/swarmforge.conf"
 
-  if ! zsh -c "source '$SWARMFORGE_SH' '$fixture_root'; parse_config" >/tmp/shipped-conf-check.$$.log 2>&1; then
+  # BL-1318's gate: decide the hatch here, never inherit the pane's own
+  # export (BL-1486).
+  if ! PACK_STAFFING_SKIP_GATE=1 zsh -c "source '$SWARMFORGE_SH' '$fixture_root'; parse_config" >/tmp/shipped-conf-check.$$.log 2>&1; then
     cat /tmp/shipped-conf-check.$$.log >&2
     rm -f /tmp/shipped-conf-check.$$.log
     rm -rf "$fixture_root"
