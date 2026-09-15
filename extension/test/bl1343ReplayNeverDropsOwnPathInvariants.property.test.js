@@ -43,7 +43,8 @@ const fs = require('node:fs');
 const os = require('node:os');
 const path = require('node:path');
 const { execFileSync, spawnSync } = require('node:child_process');
-const { mkTmpDir } = require('./helpers/tmpDir');
+const { checkoutSeededRepo } = require('./helpers/sharedRepoFixture');
+const { propertyLaneTimeoutMs } = require('./helpers/propertyLaneContentionBudget');
 
 const REPO_ROOT = path.join(__dirname, '..', '..');
 const LAND_STEP_LIB = path.join(REPO_ROOT, 'swarmforge', 'scripts', 'land_step_lib.bb');
@@ -64,14 +65,22 @@ function git(root, ...args) {
   execFileSync('git', args, { cwd: root, stdio: 'pipe' });
 }
 
+// BL-1579: the seed (git init + 3x config + --allow-empty commit) is the SAME
+// four spawns per case the BL-1039 shared-repo template exists to remove -
+// 27 cases across the two SHAPES loops below, so this file alone used to pay
+// it 27 times. checkoutSeededRepo hands back a real repo (branch "main",
+// identity configured, one commit) for one filesystem copy and NO git spawn;
+// this is the sole caller-specific step still needed. The seed sha is
+// re-resolved from THIS checkout every case rather than cached across cases:
+// the shared template can reseed itself mid-run (sharedRepoFixture's own
+// health check, BL-1124/BL-1175), so a sha cached from an earlier checkout
+// can silently stop existing in a later one - `update-ref` then fails on a
+// missing object. Re-resolving costs one more `rev-parse` per case, still far
+// cheaper than the four spawns it replaces.
 function buildRepo(files) {
-  const root = mkTmpDir(FIXTURE_PREFIX);
-  git(root, 'init', '-q', '-b', 'main', '.');
-  git(root, 'config', 'user.email', 't@t');
-  git(root, 'config', 'user.name', 't');
-  git(root, 'config', 'commit.gpgsign', 'false');
-  git(root, 'commit', '-q', '--allow-empty', '-m', 'seed');
-  git(root, 'update-ref', 'refs/remotes/origin/main', execFileSync('git', ['rev-parse', 'HEAD'], { cwd: root, encoding: 'utf8' }).trim());
+  const root = checkoutSeededRepo(FIXTURE_PREFIX);
+  const seedSha = execFileSync('git', ['rev-parse', 'HEAD'], { cwd: root, encoding: 'utf8' }).trim();
+  git(root, 'update-ref', 'refs/remotes/origin/main', seedSha);
 
   for (const file of files) {
     const full = path.join(root, file.path);
@@ -231,7 +240,7 @@ test('BL-1343/BL-654 invariant 1: a differing tip is never reported as landed or
   assert.ok(reach.fullySubtracted > 0, 'generator never reached a fully-subtracted contribution - the defect corner went untested');
   assert.ok(reach.partiallySubtracted > 0, 'generator never reached a partial subtraction');
   assert.ok(reach.nothingSubtracted > 0, 'generator never reached a case where nothing is subtracted');
-});
+}, propertyLaneTimeoutMs(20000));
 
 test('BL-1343/BL-654 invariant 2: an exclusion that empties the contribution refuses, naming path, ticket and sibling', () => {
   sweepStaleFixtures();
@@ -283,4 +292,4 @@ test('BL-1343/BL-654 invariant 2: an exclusion that empties the contribution ref
 
   assert.ok(reach.refusals > 0, 'generator never emptied the contribution - the refusal branch never fired');
   assert.ok(reach.kept > 0, 'generator never kept a path - the non-refusal branch never fired');
-});
+}, propertyLaneTimeoutMs(20000));
