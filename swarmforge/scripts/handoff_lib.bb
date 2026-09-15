@@ -1338,7 +1338,10 @@
                    :active-role role
                    :target-role target-role})
         do-respawn! (fn []
-                      (let [result (rotate-resident-to! target-role "handoff-forward")]
+                      (let [result (rotate-resident-to!
+                                    target-role
+                                    (mono-router-lib/resident-rotation-reason
+                                     (System/getenv "SWARMFORGE_ROTATION_REASON")))]
                         (when-not (:ok result)
                           (binding [*out* *err*]
                             (case (:reason result)
@@ -1424,11 +1427,13 @@
 ;; otherwise corrupt (e.g. headers with no body at all).
 ;;
 ;; Deliberately NOT "id": id is audit-only metadata (collision-proofing
-;; across worktrees, never read by delivery/dequeue routing), not something
-;; the pipeline actually needs to act on a handoff - and several existing
-;; tests already hand-craft minimal fixture handoffs that omit it, same as
-;; a real operator-authored note might. Requiring it here would flag those
-;; as corrupt for a reason that has nothing to do with dispatchability.
+;; across worktrees, never read by delivery/dequeue routing - though now
+;; also read by forward-rotate targeting, roles-holding-parcel-id, hotfix
+;; 92ecf4aea3), not something the pipeline actually needs to act on a
+;; handoff - and several existing tests already hand-craft minimal fixture
+;; handoffs that omit it, same as a real operator-authored note might.
+;; Requiring it here would flag those as corrupt for a reason that has
+;; nothing to do with dispatchability.
 (def required-envelope-headers ["from" "to" "priority" "type"])
 
 (defn parse-envelope

@@ -431,6 +431,26 @@
                    {:rotation-router? true :role "coder" :home-role "coder"
                     :mailbox-empty? true})))
 
+;; ── BL-1558: resident-rotation-reason ──────────────────────────────────────
+(assert= "wrapper's rotate-home wins"
+         "rotate-home"
+         (mono-router-lib/resident-rotation-reason "rotate-home"))
+(assert= "wrapper's rotate-forward wins"
+         "rotate-forward"
+         (mono-router-lib/resident-rotation-reason "rotate-forward"))
+(assert= "unset (nil) falls back to handoff-forward"
+         "handoff-forward"
+         (mono-router-lib/resident-rotation-reason nil))
+(assert= "blank (empty string) falls back to handoff-forward"
+         "handoff-forward"
+         (mono-router-lib/resident-rotation-reason ""))
+(assert= "whitespace-only falls back to handoff-forward"
+         "handoff-forward"
+         (mono-router-lib/resident-rotation-reason "   "))
+(assert= "surrounding whitespace is trimmed"
+         "rotate-home"
+         (mono-router-lib/resident-rotation-reason "  rotate-home  "))
+
 (assert= "BL-691: busy + ignore-busy? allows rotate for ambulance patient"
          :rotate
          (mono-router-lib/should-rotate-resident?
