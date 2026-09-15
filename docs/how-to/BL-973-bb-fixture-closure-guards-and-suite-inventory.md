@@ -255,3 +255,32 @@ A `git_handoff` send now also carries its own PARCEL-scoped registration
 check, so an unregistered file is caught at the moment its own ticket adds
 it rather than accumulating unseen until the next full suite run. See
 [Unregistered-test send-time gate](BL-1240-unregistered-test-send-time-gate.md).
+
+## Related — the closure walkers dropped a multi-segment load-file's directory (BL-1569)
+
+Both `direct-load-file-deps` (`bb_load_closure_lib.bb`) and its JS twin
+`directLoadFileDeps` (`operatorRuntimeBbClosure.js`) — the two independent
+implementations this page's tables and BL-897's agreement runner depend on
+agreeing — captured only the *last* quoted string in a `load-file` form.
+`unregistered_test_gate_lib.bb` load-files `test/suite_inventory_lib.bb` via
+`(fs/path (fs/parent (fs/canonicalize *file*)) "test"
+"suite_inventory_lib.bb")`, a two-segment form; both walkers reported the
+bare `suite_inventory_lib.bb`, a name that does not exist beside it, and
+`copy_bb_closure` (`bb_closure_copy.sh`) silently skipped the missing member
+instead of failing loud. The sandbox copy of `swarm_handoff.bb` then could
+not load `unregistered_test_gate_lib.bb`, and
+`test_operator_runtime_hotfix_certification_sweep.sh` was red on `main` from
+2026-08-31 to 2026-09-15 with nothing catching it — the two walkers agreeing
+on the wrong answer is exactly the failure the BL-897 agreement check cannot
+see.
+
+Both walkers now capture the whole run of quoted path segments in a bounded
+`load-file` form and join them with `/`, so a multi-segment form resolves to
+its directory-qualified relative path (`test/suite_inventory_lib.bb`) while
+every existing single-segment form is unchanged. `copy_bb_closure` creates
+the destination subdirectory and places each member at its own relative
+path, and now exits non-zero naming the path when a closure member is not
+found under the source — never a silent skip.
+`bb_load_closure_agreement_test_runner.bb` pins the multi-segment case
+across both twins. See
+[BL-1569's feature](../../specs/features/BL-1569-the-closure-walker-keeps-the-directory-of-a-load-filed-lib.feature).

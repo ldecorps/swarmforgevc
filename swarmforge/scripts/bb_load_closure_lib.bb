@@ -26,13 +26,40 @@
   (:require [babashka.fs :as fs]
             [clojure.string :as str]))
 
-(def ^:private load-file-re #"(?s)\(load-file\b.*?\"([^\"]+\.bb)\"")
+;; BL-1569: a load-file form may name more than one path segment after the
+;; loading file's own directory - (fs/path (fs/parent ...) "test"
+;; "suite_inventory_lib.bb") means test/suite_inventory_lib.bb, not the bare
+;; last segment. Capturing only the last quoted string (the prior form of
+;; this regex) silently dropped every segment before it. A load-file form is
+;; bounded (400 chars is generous headroom over the longest real one) so the
+;; DOTALL lazy match cannot run away across the file looking for some
+;; unrelated later "\")))"; every real form - single-line or the two-line
+;; canonicalize idiom some files use - closes within that span. Comment lines
+;; are stripped first: several files show the idiom in a `;;`-prefixed
+;; docstring example that never closes with the real form's three parens, so
+;; without this a bounded scan starting there can run on into the NEXT real
+;; form and merge the two into one bogus multi-segment dependency.
+(def ^:private load-file-form-re #"(?s)\(load-file\b.{0,400}?\)\)\)")
+(def ^:private quoted-segment-re #"\"([^\"]*)\"")
+
+(defn- strip-comment-lines [source-text]
+  (->> (str/split-lines source-text)
+       (remove #(str/starts-with? (str/triml %) ";"))
+       (str/join "\n")))
 
 (defn direct-load-file-deps
-  "Pure: the .bb filenames one file's source load-files directly. No recursion,
-   no I/O. Mirrors operatorRuntimeBbClosure.js's directLoadFileDeps."
+  "Pure: the .bb filenames one file's source load-files directly, joined with
+   '/' when a form names more than one path segment after the loading file's
+   own directory. No recursion, no I/O. Mirrors operatorRuntimeBbClosure.js's
+   directLoadFileDeps."
   [source-text]
-  (mapv second (re-seq load-file-re (or source-text ""))))
+  (->> (re-seq load-file-form-re (strip-comment-lines (or source-text "")))
+       (keep (fn [form]
+               (let [segs (map second (re-seq quoted-segment-re form))
+                     dep (str/join "/" segs)]
+                 (when (and (seq segs) (str/ends-with? dep ".bb"))
+                   dep))))
+       vec))
 
 (defn compute-closure
   "The transitive closure of entry-file within scripts-dir - every .bb it
