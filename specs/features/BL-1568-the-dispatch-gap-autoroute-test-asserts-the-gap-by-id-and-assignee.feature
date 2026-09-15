@@ -7,6 +7,10 @@ Feature: BL-1568 The dispatch-gap autoroute test asserts the gap by id and assig
   against the two keys it knew, and has been red on main since. This
   feature is that the case asserts what the auto-route draft consumes - one
   gap, id BL-217, assignee coder - and tolerates the keys it does not.
+  Behind it a second red waited: the send case still built the legacy soft
+  note, which BL-1223 stopped counting as a dispatch trail, so the
+  idempotency case re-detected the gap. Production auto-route sends a
+  git_handoff through the two-call audit; the test now sends the same.
 
   # BL-1568 dispatch-gap-by-id-and-assignee-01
   Scenario: the shell test is green on the tree as it stands
@@ -33,3 +37,9 @@ Feature: BL-1568 The dispatch-gap autoroute test asserts the gap by id and assig
       | runner                                        |
       | dispatch_gap_test_runner.bb                   |
       | bl1097_router_dispatch_trail_test_runner.bb   |
+
+  # BL-1568 dispatch-gap-by-id-and-assignee-05
+  Scenario: the send case speaks production's form, so the queued parcel is a trail
+    When the file swarmforge/scripts/test/test_dispatch_gap_autoroute.sh is read
+    Then its send case supplies the fixture HEAD commit to dispatch-gap-draft-lines and queues through the two-call audit
+    And its attribution case asserts type git_handoff and task BL-217
