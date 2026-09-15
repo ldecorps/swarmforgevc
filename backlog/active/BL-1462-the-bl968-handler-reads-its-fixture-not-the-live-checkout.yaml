@@ -166,3 +166,5 @@ notes: |
 
   IR-DRY at mint: scenarios 01 and 03 share "all four of its scenarios
   pass" by design (same claim from two checkouts); reviewed and kept.
+
+assigned_to: coder
