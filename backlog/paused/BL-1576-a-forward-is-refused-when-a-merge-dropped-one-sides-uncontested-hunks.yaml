@@ -37,7 +37,7 @@ required_wiring:
   - 'swarmforge/scripts/swarm_handoff.bb::merge_drop_guard_lib.bb::the git_handoff send is the one chokepoint every hop crosses; a predicate unit-tested but never consulted here leaves 4566a68955 exact path open (BL-1213 precedent, same warn-and-send posture)'
   - 'specs/pipeline/steps/bl1576MergeDropGuardSteps.js::registerSteps::the handler lands in the same parcel as the feature (BL-233, BL-1371 discovery)'
 
-human_approval: pending
+human_approval: approved
 approval_context: >
   FIRM: the chokepoint is the git_handoff send in swarm_handoff.bb, beside
   BL-1213's parcel-rollback gate and with its posture (refuse only on a
