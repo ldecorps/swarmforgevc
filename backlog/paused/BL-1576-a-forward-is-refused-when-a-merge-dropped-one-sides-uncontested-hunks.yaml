@@ -1,0 +1,210 @@
+id: BL-1576
+title: "A merge the sender made on its own branch re-adds the six register rows the cleaner removed and drops nothing else, so BL-1213's byte-identical rollback gate, BL-1242's deletion hook and BL-1098's push-sweep predicate all read clean and the loss travels to QA: the git_handoff send refuses a merge between the received and forwarded commits that dropped one side's uncontested hunks"
+milestone: M8
+type: defect
+severity: high
+# high: a live fault degrading behaviour with a broken safety signal - a
+# merge inside a parcel chain silently undid the parcel's own upstream
+# stage commit (cleaner 81a1ed3ec3 -> documenter merge 4566a68955), every
+# mechanical guard stayed silent, and only QA's hand diff at the LAST stage
+# caught it (BL-1486 bounce, 2026-09-15). 57 bounce-evidence files under
+# backlog/evidence/ name a merge that reverted something (grep -liE
+# 'merge.{0,40}revert|revert.{0,40}merge' backlog/evidence/*bounce*.md, this
+# pass); the constitution's "diff every merge against BOTH parents" is the
+# only defence and it is prose. Same severity BL-1213 carried for the
+# byte-identical sibling.
+status: todo
+epic: swarm-reliability
+priority: 6
+direction: swarm-reported
+depends_on: []
+mutation_cost: medium
+# medium: one new bb lib (hunk parsing over `git diff -U0`, a contested-range
+# predicate, a revert lookup) with a pure decision core, one wiring block in
+# swarm_handoff.bb beside BL-1213's, one step handler over a fixture repo.
+# BL-1213's identical shape ran 12 mutants, all killed, in one hardener pass.
+slice_size_envelope: medium
+required_stages: [coder, cleaner, architect, hardender, documenter, qa]
+
+acceptance: specs/features/BL-1576-a-forward-is-refused-when-a-merge-dropped-one-sides-uncontested-hunks.feature
+
+invariants:
+  - "The verdict is computed from git objects and the received parcel commit recorded in the sender's in_process mailbox alone - commits, parents, merge bases, trees and blobs - never from any working tree, so the chronically-dirty shared master checkout and a role worktree's uncommitted drift (BL-1195) cannot change the answer."
+  - "A line one side changed is a finding only when the other side never touched that hunk: a base line range both sides changed, or an insertion both sides made at the same base position, is contested and its resolution is free - a genuine same-line conflict is never refused, and a `This reverts commit <sha>` reachable from the forwarded commit that names the commit which authored the dropped hunk excuses it (BL-490/BL-495 convention, exactly as BL-1213 honours it)."
+  - "Bounded to the merge commits reachable from the forwarded commit and not from the received commit, and to the paths those merges' parents changed since their merge base - never a full-tree walk, never a walk past the received commit, never a merge the sender did not make."
+
+required_wiring:
+  - 'swarmforge/scripts/swarm_handoff.bb::merge_drop_guard_lib.bb::the git_handoff send is the one chokepoint every hop crosses; a predicate unit-tested but never consulted here leaves 4566a68955 exact path open (BL-1213 precedent, same warn-and-send posture)'
+  - 'specs/pipeline/steps/bl1576MergeDropGuardSteps.js::registerSteps::the handler lands in the same parcel as the feature (BL-233, BL-1371 discovery)'
+
+human_approval: pending
+approval_context: >
+  FIRM: the chokepoint is the git_handoff send in swarm_handoff.bb, beside
+  BL-1213's parcel-rollback gate and with its posture (refuse only on a
+  positive finding; warn and send on unreadable facts, scenario 05). Not a
+  commit-msg hook: BL-1242's deletion hook is per-checkout and --no-verify
+  skips it, while the send is crossed by every hop whatever made the merge.
+  FIRM: contested hunks are the resolver's - the gate never second-guesses a
+  genuine same-line conflict (scenario 02, invariant 2), only a one-sided
+  drop of a hunk the other side never touched. FIRM: the lib file name
+  merge_drop_guard_lib.bb is fixed only so required_wiring can anchor on a
+  literal that will exist (BL-874); the hunk-parsing mechanism behind it is
+  the implementer's. No choice is posed; nothing needs a ruling.
+
+description: |
+  ## What happened (2026-09-15, BL-1486, QA bounce f9d6ee9209)
+
+  The cleaner's `81a1ed3ec3` removed six rows from `backlog/standing-reds.tsv`
+  (base lines 33-38 of merge base `228a4b6b3d`). Meanwhile `main` landed
+  BL-1575's mint, which removed the BL-1569 row (base line 39) and added a
+  BL-1495 row after base line 40 - adjacent lines, disjoint from the six. The
+  documenter merged the hardener's `6cf853db7f` (carrying the removal) into
+  its own tip `61a4e2e5f1` (carrying main's edit); git raised a conflict on
+  the path because the edits touch, and the resolution kept the documenter's
+  side verbatim:
+
+      git diff 61a4e2e5f1 4566a68955 -- backlog/standing-reds.tsv   -> empty
+      git diff 6cf853db7f 4566a68955 -- backlog/standing-reds.tsv   -> +6 rows
+
+  The parcel then crossed the documenter->QA hop with the six rows back. QA
+  caught it only because BL-1486's own `qa_e2e_procedure` step 5 runs the
+  register CLI; a ticket without such a step would have landed the revert.
+
+  ## Why every existing guard read clean
+
+  - **BL-1213** (`parcel_rollback_guard_lib.bb`): bounded to the paths the
+    RECEIVED commit itself touched (`diff-tree` of `6cf853db7f`, which did
+    not touch the register), and fires only when the tip blob is
+    BYTE-IDENTICAL to the parcel commit's parent blob. Here the tip carried
+    main's edits too, so it matched no earlier blob.
+  - **BL-1242/BL-1341** (`check_merge_deletion.sh`): a commit-msg hook that
+    fires on a merge in progress, for PATH deletions only. The path was
+    present throughout.
+  - **BL-1098** (`push_sweep_lib.bb` silent-revert): runs on main's push
+    sweep, asks whether main's tip holds content no commit authored. The
+    merge commit itself authored this content.
+  - **BL-1205** (tree collapse): mass deletion of tracked files. Not this.
+  - **BL-1472-1474** (land step): QA's land diff. The cleaner's removal was
+    never on main, so nothing there could miss it.
+
+  The one defence is prose - engineering.prompt's "diff every merge against
+  BOTH parents and read the deletions" (BL-571/BL-958/BL-954) - and 57
+  bounce-evidence files in `backlog/evidence/` name a merge that reverted
+  something.
+
+  ## What is wanted
+
+  A `git_handoff` send is refused when a merge commit the sender made between
+  the received parcel commit and the forwarded commit dropped a hunk that one
+  of the merge's sides had the only claim to. The refusal names the merge
+  commit, the path, which side was dropped (received / sender's own), and the
+  number of lines dropped, and it tells the sender to redo the resolution or
+  revert the authoring commit properly.
+
+  Also wanted: a read-only entry point so QA can point the predicate at the
+  live objects with no fixture - `bb swarmforge/scripts/merge_drop_guard_lib.bb
+  <project-root> <received-commit> <forwarded-commit>` prints the findings
+  (JSON, one object per dropped hunk) and exits 0; on the incident's objects
+  (`6cf853db7f` -> `038ba762a9`) it names `4566a68955`,
+  `backlog/standing-reds.tsv`, side `received`, 6 lines.
+
+  ## How (direction, not mandate)
+
+  1. Received commit: the sender's in_process `git_handoff` for the task,
+     exactly BL-1213's `received-parcel-commit-for-task` - reuse it or lift
+     it into handoff_lib.bb; no second reader of the same header.
+  2. Merges to inspect: `git rev-list --merges <received>..<forwarded>`.
+     Empty means silent (scenario 06); a note never reaches the check
+     (scenario 07).
+  3. Per merge M with parents P1, P2 and base B = `git merge-base P1 P2`,
+     per path in the union of `git diff --name-only B P1` and `B P2`:
+     parse `git diff -U0 B <side> -- <path>` into hunks carrying their base
+     line range and their `-`/`+` lines. A hunk is CONTESTED when its base
+     range overlaps a hunk of the other side, or both sides insert at the
+     same base position. Adjacent ranges (33-38 vs 39-39 in the incident)
+     are NOT contested - that is the whole discriminator: git conflicts on
+     adjacency, a correct resolver keeps both.
+  4. Finding: in `git diff -U0 <side> M -- <path>`, a `+` line equal to a
+     line the side removed in an uncontested hunk (resurrection), or a `-`
+     line equal to a line the side added in an uncontested hunk (drop).
+     Compare whole lines byte-for-byte; ignore blank lines.
+  5. Excuse: a commit reachable from the forwarded commit whose body carries
+     `This reverts commit <full sha>` (`--grep ... -F`, as BL-1213) naming
+     a commit in `B..<side>` that touched the path.
+  6. Pure decision core (hunks in, findings out) separated from the git
+     reads, BL-654-style, so the hardener's mutants land on the predicate.
+  7. Wire beside BL-1213's block in swarm_handoff.bb: same `_ (when-let
+     [warning ...])` print, same refusal collection, same fail-open shape.
+
+  ## Not in scope
+
+  - Re-tuning BL-1213, BL-1242, BL-1098 or BL-1205. This is a sixth,
+    distinct question in that thread; none of the five is edited.
+  - Fixing the merge for the sender. The refusal names what to redo.
+  - Restoring BL-1486's rows: done in-parcel (`695880aa43`), landed.
+  - A commit-msg hook variant; a full-tree freshness walk; anything on
+    handoffd's reconcile sweep (that merge is not "a merge the sender made
+    between received and forwarded" and stays BL-1098's).
+
+constraints: >
+  Do NOT make ancestry a criterion: 81a1ed3ec3 IS an ancestor of 4566a68955
+  and its effect is gone (the BL-1211/BL-1213 lesson). Do NOT refuse a
+  contested-hunk pick (invariant 2) - a gate that second-guesses genuine
+  conflicts trains every role to bypass it. Do NOT fail closed on unreadable
+  facts - the four sibling gates in swarm_handoff.bb warn and send, and a
+  guard against silent destruction must never wedge every hop on a git
+  hiccup. Do NOT read a working tree. Do NOT walk past the received commit
+  or inspect merges the sender did not make. The handler's fixture is a
+  `git init` under mkSocketFixtureRoot, proven by `rev-parse
+  --git-common-dir` before any mutating git command (BL-1390); the sender's
+  own mailbox is seeded exactly as bl1213ParcelRollbackGuardSteps.js seeds
+  it. Every scenario shells one real swarm_handoff.bb send over a small
+  fixture; the whole feature stays well inside the BL-1358 300 s per-mutant
+  ceiling (BL-1213's identical shape ran 12 mutants in one pass).
+
+qa_e2e_procedure: >
+  1. Reproduce the live instance read-only from the shared checkout and put
+     the output in the evidence file: `git diff -U0 228a4b6b3d 6cf853db7f --
+     backlog/standing-reds.tsv` shows one hunk removing base lines 33-38;
+     `git diff -U0 228a4b6b3d 61a4e2e5f1 -- backlog/standing-reds.tsv` shows
+     hunks at base 39 and 40 only; `git diff 61a4e2e5f1 4566a68955 --
+     backlog/standing-reds.tsv` is EMPTY; `git diff 6cf853db7f 4566a68955 --
+     backlog/standing-reds.tsv` re-adds six `acceptance` rows.
+  2. On the parcel commit: `bb swarmforge/scripts/merge_drop_guard_lib.bb .
+     6cf853db7f 038ba762a9` prints exactly one finding naming 4566a68955,
+     backlog/standing-reds.tsv, side received, 6 lines; the same call with
+     `6cf853db7f 695880aa43` (the documenter's in-parcel re-apply) still
+     names the merge - the re-apply is a later commit, not a revert of
+     81a1ed3ec3 - and that is correct: the refusal is on the merge, and the
+     sender's remedy is to redo the resolution before sending or to carry a
+     proper revert. Record both outputs.
+  3. The feature: 7 scenarios green, `# fail 0`, under `env -u
+     PACK_STAFFING_SKIP_GATE`.
+  4. BL-1213's, BL-1205's and BL-760's features still green (siblings in
+     the same send path); `bash swarmforge/scripts/test/test_swarm_handoff*.sh`
+     if present still ALL PASS.
+  5. Break-then-restore on a scratch fixture: make the contested predicate
+     treat adjacency as overlap; scenario 01 row 3 goes green-when-wrong
+     (the incident passes) - restore.
+  6. `grep -n 'merge-drop-guard-lib' swarmforge/scripts/swarm_handoff.bb`
+     shows the findings call, the warning print and the refusal collection.
+  7. Diff the parcel's merge into main against BOTH parents (this ticket's
+     own shape; the gate must have run on the parcel's own hops).
+
+notes: >
+  Source: specifier closing-ceremony lean pass, shift 2026-09-15
+  (`backlog/evidence/closing-ceremony-2026-09-15-specifier.md`), outcome
+  `process_ticket` ref BL-1576. Packet bounce `behavior` x1 = BL-1486's
+  f9d6ee9209 (`backlog/evidence/BL-1486-bounce-20260915.md`, blamed
+  documenter). Specifier verification at mint, independent of QA's: parents
+  of 4566a68955 are 61a4e2e5f1 and 6cf853db7f; merge base 228a4b6b3d; the
+  three `git diff -U0` outputs in qa_e2e step 1 measured this pass; the
+  documenter hop contains exactly one merge (`git rev-list --merges
+  6cf853db7f..038ba762a9`). Sibling guards read and positioned in the
+  description; none is edited. IR-DRY (gherkin-parser + gherkin-ir-dry-
+  checker): 6 findings before the scenario-06 split, all adjudicated - the
+  allowed/refused pair and the outline-placeholder-vs-literal Given in
+  scenarios 03/04/05/07 are one parameterised step each, by design; the
+  duplicate Then inside the old scenario 06 was real and is split into 06/07.
+  Not a ritual_class declarant: this ticket touches neither ritual's
+  scripting (BL-1365).
