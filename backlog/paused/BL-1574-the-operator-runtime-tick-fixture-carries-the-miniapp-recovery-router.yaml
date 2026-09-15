@@ -32,7 +32,7 @@ required_wiring:
   - 'specs/pipeline/steps/bl1574TickFixtureMiniappRouterSteps.js::registerSteps::the handler lands in the same parcel as the feature (BL-233, BL-1371)'
   - 'swarmforge/scripts/test/test_operator_runtime_tick.sh::recover_miniapp_bridge.sh::the fixture carries the router the runtime invokes since 442bdd1f40 - deliverable text, not a consumer'
 
-human_approval: pending
+human_approval: approved
 approval_context: >
   A new feature file is authored here, so it needs a tap. No choice is
   posed and there are no ruling_options. FIRM: production code is not
