@@ -483,6 +483,22 @@
         (not= (str role) "coordinator")
         (not= (str role) (str home-role)))))
 
+(defn resident-rotation-reason
+  "Pure: the telemetry reason label for a resident-invoked rotation
+   (respawn-as!, via `rotate_to_role.sh <role>`). `env-reason` is the
+   wrapper's SWARMFORGE_ROTATION_REASON value (rotate-home, BL-550, or
+   rotate-forward, hotfix 92ecf4aea3) as read from the environment before
+   respawn-as! calls rotate-resident-to! - a non-blank value wins. Unset or
+   blank (an agent running `rotate_to_role.sh <role>` by hand, as the
+   mono-router pack prompts instruct) falls back to handoff-forward, the
+   label resident-invoked rotations have always carried. The daemon's own
+   chase-driven rotate-resident-to! call never passes through respawn-as!
+   or this helper, so its own default (rotate,
+   rotation-telemetry-lib/default-reason) is untouched."
+  [env-reason]
+  (or (not-empty (str/trim (str (or env-reason ""))))
+      "handoff-forward"))
+
 ;; ── Hotfix 2026-09-13 (human directive): rotate to the forward recipient ──
 ;; BL-550's ROTATE_HOME sent every non-home role back to `rotation_home`
 ;; after it forwarded its parcel, and the daemon's chase sweep then rotated
