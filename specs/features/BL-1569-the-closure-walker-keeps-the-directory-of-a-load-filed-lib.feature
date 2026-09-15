@@ -38,7 +38,8 @@ Feature: BL-1569 The closure walker keeps the directory of a load-filed lib
   # BL-1569 closure-keeps-directory-04
   Scenario: a copy whose closure names a missing file fails loud
     Given a scratch scripts directory whose a.bb load-files "missing" "b.bb" and no such file exists
-    When copy_bb_closure copies the closure of a.bb from that directory into an empty directory
+    And a.bb also load-files a second, present file that sorts after the missing one
+    When copy_bb_closure, run with no "set -e" in its caller, copies the closure of a.bb from that directory into an empty directory
     Then it exits non-zero
     And its error names missing/b.bb
 
