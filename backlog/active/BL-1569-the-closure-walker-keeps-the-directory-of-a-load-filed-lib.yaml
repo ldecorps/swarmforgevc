@@ -169,3 +169,5 @@ qa_e2e_procedure: |
      as they did on main apart from this one (BL-1570 and BL-1571 own the
      other three reds); the row for this file is gone from
      `backlog/standing-reds.tsv`.
+
+assigned_to: coder
