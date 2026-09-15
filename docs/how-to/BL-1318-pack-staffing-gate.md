@@ -58,7 +58,11 @@ This feature's own acceptance handler (`bl1318PackStaffingGateSteps.js`) is
 hermetic to the hatch: every spawn of the launcher it drives explicitly sets
 or removes `PACK_STAFFING_SKIP_GATE` in the child environment rather than
 inheriting whatever the pane exports, so the feature's verdict never depends
-on the ambient environment (BL-1485).
+on the ambient environment (BL-1485). Every other acceptance handler that
+drives `parse_config` on a fixture, plus the shipped-confs shell test, is
+hermetic the same way: each declares `PACK_STAFFING_SKIP_GATE` explicitly in
+its own spawn rather than inheriting the pane's export, so none of them pass
+or fail depending on whether the pane happens to carry the hatch (BL-1486).
 
 ## Identity resolution shapes
 

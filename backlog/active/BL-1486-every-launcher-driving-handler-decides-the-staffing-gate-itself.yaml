@@ -188,3 +188,6 @@ notes: |
   unbuilt dependency. IR-DRY at mint: 0 findings (11 step occurrences, 10 unique).
 
 assigned_to: coder
+bounce_count: 1
+bounce_history:
+  - { at: 2026-09-15, by: QA, blamed: documenter, class: behavior, commit: f9d6ee9209, evidence: backlog/evidence/BL-1486-bounce-20260915.md }
