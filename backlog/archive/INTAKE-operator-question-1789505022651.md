@@ -1,3 +1,15 @@
+# ARCHIVED - drained by specifier 2026-09-15
+
+Disposition: 1:N split (Consolidation Authority, BL-680). Minted epic BL-1583 with
+children BL-1584 (send-time gate + census CLI), BL-1585, BL-1586, BL-1587
+(sweeps 1-3 of 6); sweeps 4, 5a/5b, 6 recorded in BL-1583 remaining_slices
+with their pinned lists in backlog/evidence/BL-1583-sampled-reach-floor-census-20260915.md.
+All as direction: queue-jump, priority 0-2, human_approval: approved, per the
+convention this intake names. Every human sentence below survives verbatim in
+the tickets' source: fields (Article 5.3).
+
+---
+
 # Intake: a question the Operator could not answer
 
 Filed by the Operator (2026-09-15T20:43:42.651919115Z) - a question came in via Telegram
