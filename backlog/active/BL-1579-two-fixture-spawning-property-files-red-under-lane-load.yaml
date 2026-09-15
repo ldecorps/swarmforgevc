@@ -156,3 +156,5 @@ notes: |
   unknown cause is why this ticket exists at all: minting a fix for a
   paraphrase would repeat QA's guess with the specifier's signature on
   it.
+
+assigned_to: coder
