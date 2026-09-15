@@ -1,3 +1,8 @@
+# mutation-stamp: sha256=5ff3e81ae984bd6055accd9479a8409a22367ac002334f0bd2276d2338724120
+# acceptance-mutation-manifest-begin
+# {"version":1,"tested_at":"2026-09-15T13:01:10.228933122Z","feature_name":"BL-1509 A file can be posted to a Telegram topic as a document attachment","feature_path":"/home/carillon/swarmforgevc/.worktrees/hardender/specs/features/BL-1509-a-file-can-be-posted-to-a-telegram-topic-as-a-document.feature","background_hash":"74234e98afe7498fb5daf1f36ac2d78acc339464f950703b8c019892f982b90b","implementation_hash":"unknown","scenarios":[{"index":1,"name":"a failed upload reports the server's reason with the token redacted","scenario_hash":"341cb792aa405501f534517877b3edb11b9c4eb7c4acd374f93e77473fbac8ae","mutation_count":4,"result":{"Total":4,"Killed":4,"Survived":0,"Errors":0},"tested_at":"2026-09-15T13:01:02.673822058Z"},{"index":2,"name":"the headless CLI posts a file to the standing Concierge topic or says why it cannot","scenario_hash":"ce897547dacd3d2288b64ec802899f43dd3daaed633b4d0a5496980c4341a450","mutation_count":4,"result":{"Total":4,"Killed":4,"Survived":0,"Errors":0},"tested_at":"2026-09-15T13:01:02.673822058Z"}]}
+# acceptance-mutation-manifest-end
+
 Feature: BL-1509 A file can be posted to a Telegram topic as a document attachment
 
   The Telegram client sends text, polls and voice notes, but has no
