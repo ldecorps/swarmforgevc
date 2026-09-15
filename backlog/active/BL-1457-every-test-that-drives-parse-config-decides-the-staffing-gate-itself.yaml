@@ -177,3 +177,5 @@ notes: |
   IR-DRY at mint: the two scenario outlines share the shape "<file> runs
   alone ... passes" by design (one is the fix, the other the regression
   guard over the rest of the class); reviewed and kept.
+
+assigned_to: coder
