@@ -1,0 +1,113 @@
+id: BL-1583
+title: "Epic: every property test under extension/test that asserts a reach floor reaches it by construction, and a new one that samples its floor is refused at send - the daily unowned-red mint of the last week (BL-1555, BL-1559, BL-1572, BL-1578, BL-1580, BL-1581) stops at its source"
+milestone: M8
+type: epic
+epic: sampled-reach-floors
+status: todo
+priority: 0
+direction: queue-jump
+depends_on: []
+human_approval: approved
+approval_context: >
+  Minted from the operator-relayed human ask of 2026-09-15
+  (backlog/archive/INTAKE-operator-question-1789505022651.md): "URGENT -
+  human asks this be minted at top priority as a queue-jump (JumpQ)".
+  Per STEERING.md's queue-jump convention (precedent
+  INTAKE-prioritize-local-ollama-remaining-20260825.md) the children land
+  as direction queue-jump with human_approval approved bundled; the ask
+  is the approval. No choice is posed and there are no ruling_options.
+  An epic tracker is never promoted; the field is here so the tracker
+  reads the same as its slices.
+
+decomposes_into: [BL-1584, BL-1585, BL-1586, BL-1587]
+remaining_slices:
+  - "sweep 4 of 6: the 16 files with a smallest literal draw budget of 17 to 30 (backlog/evidence/BL-1583-sampled-reach-floor-census-20260915.md, section S3) - mint as one chore in the BL-1585 shape when BL-1585 lands"
+  - "sweep 5a/5b of 6: the 33 files whose smallest literal budget is 31 to 99, or whose numRuns is a constant the file computes, or absent (section S4/S5) - split into two chores of about 16 by name at mint; the unresolved-constant files read their RUNS/DRAWS constant into runsPerCell unchanged"
+  - "sweep 6 of 6: the 16 files with a smallest literal budget of 100 or more (section S6) - lowest miss probability, last; mint only after BL-1584's classifier confirms each still reads sampled, since a 300-draw floor over a 50/50 arm is not a defect in practice and the human may prefer the epic closed without it (record that ruling on the epic, not as a silent skip)"
+  - "per-fc.assert classification: bl1364TurnProfileSeriesInvariants and bl1429StandingRedThrottleFoldInvariants are constructed for one invariant each and still sample in their others; BL-1584 classifies per FILE, so they read constructed. A follow-up refines the classifier to per-fc.assert and sweeps what it re-flags"
+
+description: |
+  ## What is wrong
+
+  Four tickets in four days (BL-1578, BL-1579, BL-1580, BL-1581) and
+  three the week before (BL-1555, BL-1559, BL-1572) were minted as
+  `severity: high` unowned reds for one shape: a property test draws a
+  case space N times (N = 3, 6, 12, 20) and afterwards asserts every arm
+  or case was reached, so each carries a seed-miss probability of 1 in
+  600 to 1 in 23 and goes red in a QA lane run with nothing wrong in the
+  code it exercises. Each red withholds an unrelated parcel under Article
+  4.2, throttles intake through the standing-red register (BL-1429), and
+  costs a full specifier round trip to own. The fix has been identical
+  every time: iterate the cases by construction with `runsPerCell` and
+  keep the floor asserted at its value through `assertReachFloor`
+  (BL-1062's doctrine, `extension/test/helpers/reachFloors.js`).
+
+  The human asked, via the operator on 2026-09-15, for (1) one census
+  sweep over the class and (2) a preventive gate at send time so the
+  class stops growing. The census at mint
+  (`backlog/evidence/BL-1583-sampled-reach-floor-census-20260915.md`)
+  found 117 files with a reach floor, not the intake's 48: the human's
+  grep was blind to the dominant idiom, exactly BL-1445's lesson. 7 are
+  already constructed, 2 are owned (BL-1580, BL-1581), 108 remain.
+
+  ## Slices
+
+  - BL-1584 - the gate and the classifier: a parcel that ADDS a property
+    test asserting a reach floor over a sampled draw is refused at send;
+    a census CLI lists every property file's verdict from the same
+    classifier. Priority 1.
+  - BL-1585, BL-1586 - sweeps 1 and 2: the 32 files with a smallest
+    literal draw budget of 8 or fewer, the class the daily reds come
+    from. Priority 0.
+  - BL-1587 - sweep 3: the 11 files at 9 to 16 draws. Priority 2.
+  - remaining_slices above: sweeps 4, 5a/5b, 6 and the per-fc.assert
+    refinement, minted as the earlier slices land so no more than the
+    active cap's worth of near-identical parcels wait in paused/.
+
+  Sweep slices never touch `extension/src`, never touch each other's
+  files, and never touch bl1295 or bl1358 (owned). Any
+  `backlog/standing-reds.tsv` row naming a swept file leaves in the same
+  land that turns it green (none exist for the swept files at mint).
+
+  ## Why an epic
+
+  108 files fail INVEST Small as one ticket on sight; a per-slice pinned
+  list of about 16 is a sitting (BL-1578 did three with a per-file
+  simulation each; the recipe here is mechanical and needs none). The
+  human asked for "one or a few parcels"; six sweeps plus one gate is the
+  smallest honest count at that slice size.
+
+source: |
+  backlog/archive/INTAKE-operator-question-1789505022651.md, the human's
+  ask relayed by the operator 2026-09-15T20:43Z, verbatim (Article 5.3):
+  "URGENT - human asks this be minted at top priority as a queue-jump
+  (JumpQ), not queued behind other paused work. One systemic anti-pattern
+  is minting a fresh high-severity unowned-red defect every day or two:
+  property test files that SAMPLE a case space N times (N=3,6,12,20) and
+  then assert every arm/case was reached, so each carries a real
+  seed-miss probability (1-in-23 to 1-in-600) and flakes red in a QA lane
+  run with no owner. Four tickets of this exact shape in the last few
+  days, all fixed the same way: BL-1578, BL-1579 (landed), BL-1580
+  (active), BL-1581 (paused) - fix is always 'iterate the cases by
+  construction, keep the floor asserted at its value'. Census as of
+  2026-09-15: grep -rl 'reach floor|reached.*floor|both arms.*reached'
+  extension/test/*.property.test.js returns 48 of 407 property files.
+  Requested: (1) a census sweep ticket - one pass over the 48, apply the
+  construction-not-sampling fix to each, land as one or a few parcels
+  (precedent: BL-1445's census of script git_handoff senders), removing
+  any standing-reds.tsv rows in the same lands; (2) a preventive gate - a
+  check that flags a NEW property test with this shape (low run count
+  asserting full reach) at send time so the class stops growing.
+  Operator relaying the human's explicit priority ask; the human judged
+  this has to get done quickly." The operator's same-day correction
+  (21:55Z) reclassifies the lane from expedite to queue-jump; honoured.
+
+notes: |
+  Minted 2026-09-15 by the specifier draining the backlog root. Census,
+  greps and per-file buckets:
+  backlog/evidence/BL-1583-sampled-reach-floor-census-20260915.md.
+  JumpQ pull order among the children: BL-1585, BL-1586 (priority 0),
+  BL-1584 (1), BL-1587 (2); a JumpQ ticket never outranks an Article
+  3.2.4 expedited defect already queued (STEERING.md). BL-1580 (active)
+  and BL-1581 (paused, expedited) are the same class and are NOT
+  children: they own their register rows and finish first.
