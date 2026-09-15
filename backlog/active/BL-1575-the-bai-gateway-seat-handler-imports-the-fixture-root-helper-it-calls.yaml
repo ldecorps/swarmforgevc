@@ -154,3 +154,5 @@ qa_e2e_procedure: |
      ReferenceError and BL-1575 scenarios 01-03 all fail; restore.
   6. Diff the parcel's merge into main against BOTH parents. The row for
      the BL-1495 feature is gone from `backlog/standing-reds.tsv`.
+
+assigned_to: coder
