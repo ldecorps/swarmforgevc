@@ -83,7 +83,9 @@ function parsePack(root) {
   ].join('\n');
   const r = spawnSync('zsh', ['-c', script], {
     encoding: 'utf8',
-    env: { ...process.env, SWARMFORGE_CONFIG: '' },
+    // BL-1318's gate: decide the hatch here, never inherit the pane's own
+    // export (BL-1486).
+    env: { ...process.env, PACK_STAFFING_SKIP_GATE: '1', SWARMFORGE_CONFIG: '' },
   });
   const out = `${r.stdout || ''}`;
   const [rolesBlock = '', modelsBlock = ''] = out.split('---MODELS---');
