@@ -1,0 +1,186 @@
+id: BL-1588
+title: "Four fixture-spawning property files (bl1308, bl1315, bl1343, bl1354) timed out at the lane's raw 20 s ceiling in two full 408-file property-lane runs on 2026-09-15, each green alone; bl1343 already carries BL-1579's load-relative budget and still printed the unscaled 20000 ms, so the budget a fixture-spawning test receives inside a full-lane run must reflect the lane's own concurrency and not only a lagging 1-minute load average; this ticket reproduces the full-lane red with its text recorded, removes the cause without lowering a floor, and takes the four register rows out in the same land"
+milestone: M8
+type: defect
+severity: high
+# high: a standing red on main in the property lane is a broken safety
+# signal at first sighting (Article 3.2.4, 2026-09-05); QA withheld BL-1580
+# on it under Article 4.2. Second sighting of this class in one day
+# (BL-1579 owned the first): the class, not the file, is the defect.
+status: todo
+epic: code-quality-gates
+priority: 8
+direction: swarm-reported
+depends_on: []
+mutation_cost: low
+# low: test files, one test helper and at most the property lane's vitest
+# config change; no production code, no Stryker target.
+slice_size_envelope: low
+required_stages: [coder, cleaner, architect, hardender, documenter, qa]
+
+acceptance: specs/features/BL-1588-fixture-spawning-property-files-time-out-in-a-full-lane-run.feature
+
+required_wiring:
+  - 'specs/pipeline/steps/bl1588FullLanePropertyTimeoutSteps.js::registerSteps::the handler lands in the same parcel as the feature (BL-233, BL-1371)'
+# No production anchor on purpose (BL-1235): the four test files and the
+# budget helper already exist, so any pattern on them matches before and
+# after the fix.
+
+human_approval: pending
+approval_context: >
+  A new feature file is authored here, so it needs a tap. No choice is
+  posed and there are no ruling_options. FIRM: the first step is a
+  reproduction under a FULL property-lane run (not a file alone under
+  synthetic load, which is what BL-1579 verified) that records the
+  failing test name and the timeout text per file, so the fix answers
+  the full-lane failure QA observed. FIRM: no floor is lowered, no
+  assertion deleted, no retry added, no seed pinned, and no bare timeout
+  constant raised - a file that runs alone on a quiet host keeps the
+  strict 20 s base (invariant 1). FIRM: the remedy makes the budget a
+  fixture-spawning test receives inside a full-lane run reflect the
+  lane's own concurrency (the fork count the lane config already
+  computes) rather than only the 1-minute load average, which lags the
+  lane's own ramp by up to a minute; how that is wired is direction.
+  FIRM: if 5 full-lane runs and 20 runs alone per file are all green
+  and no timeout text is found, the four register rows are retired with
+  that evidence and this ticket closes without a code change.
+
+invariants:
+  - "A property test that runs alone on a quiet host (1-minute load at or under the quiet ceiling, one fork) receives the same 20 s budget before and after this change: the budget grows only with measured concurrency or load, never by a bare raise."
+
+description: |
+  ## What is wrong
+
+  QA ran `npm run test:properties` twice at the BL-1580 parcel commit
+  (2026-09-15, `backlog/evidence/BL-1580-QA-unowned-red-20260915.md`, QA
+  commit 325fe1d4ea). Run 1 (408 files, 301 s) timed out
+  `bl1308SiblingDetectorCoversReplay` invariant 1 and
+  `bl1315OwnPathsFullRangeInvariants` invariants 1 and 2; run 2 (283 s)
+  timed out `bl1343ReplayNeverDropsOwnPathInvariants` invariant 1 and
+  `bl1354SharedPathLandedSiblingInvariants` invariant 2. Every failure
+  reads `Error: Test timed out in 20000ms.` verbatim, none overlaps
+  between the runs, and all four are green alone or three together on a
+  quiet host at 8 to 15 s per test. None of the four is BL-1580's file.
+
+  The specifier's adjudication
+  (`backlog/evidence/BL-1580-QA-unowned-red-specifier-adjudication-20260915.md`)
+  confirms QA's reading and names the gap in BL-1579's fix:
+
+  - `bl1343` is the only one of the four wired to `propertyLaneTimeoutMs`
+    (`extension/test/helpers/propertyLaneContentionBudget.js`), and it
+    still printed the unscaled `20000ms`. That helper divides the 1-minute
+    load average by `QUIET_LOAD_CEILING` (4) and only scales past a
+    factor of 1. The 1-minute average lags the lane's own ramp by up to a
+    minute, and vitest's sequencer runs unknown, failed and larger files
+    FIRST (`BaseSequencer.sort`), so the long fixture-spawning files run
+    in the lane's first wave while the average still reads the pre-run
+    quiet band (QA measured 1.75 to 1.87). The factor is under 1 exactly
+    when the lane's forks are all busy, and the test gets 20 s.
+  - `bl1308`, `bl1315` and `bl1354` carry no budget at all: BL-1579
+    scoped only the two files QA had named that day. They spawn a `bb`
+    or `git` subprocess per draw like `bl1343`, run 8 to 15 s alone, and
+    are the same population; per-file wiring, one red at a time, will not
+    drain the class. A broad grep (`spawnSync('bb'`, `execFileSync('git'`
+    anywhere in the file) matches 113 of 407 property files, most of them
+    one-off fixture setup, so the population is pinned by NAMED files
+    (scenario 01's four plus BL-1579's two in the e2e procedure), not by
+    that grep (BL-1445).
+
+  ## What is wanted
+
+  - Reproduction with the text under a FULL lane run: `npm run
+    test:properties` at least 5 times, every timeout recorded with the
+    file, the test name and the message verbatim, plus the 1-minute load
+    and the fork count at the time (scenario 02). A synthetic load on a
+    file alone is not the reproduction this ticket needs - BL-1579
+    already passed that and the full lane still failed.
+  - The cause removed without lowering a floor or deleting an assertion:
+    the budget a fixture-spawning property test receives inside a
+    full-lane run reflects the lane's own concurrency, so a test running
+    while the lane's forks are all busy is not held to the quiet-host
+    20 s (scenario 03). A file alone on a quiet host keeps 20 s
+    (invariant 1).
+  - Each of the four files green alone 20 of 20 and in 5 of 5 full-lane
+    runs after the change, BL-1579's two files still green in the same
+    runs, and the four register rows removed in the same land.
+  - If no timeout reproduces in 5 full-lane runs and 20 runs alone per
+    file and no failure text exists anywhere (QA's pane,
+    `backlog/evidence`), the rows are retired with that evidence and the
+    ticket closes with no code change.
+
+  ## How (direction, not mandate)
+
+  - `vitest.properties.config.mjs` already computes `WORKER_POOL_SIZE`
+    (`resolveVitestWorkerPool`); it is the lane's real concurrency and it
+    is known before any file loads. Either publish it to the workers (an
+    env key set by the config, read by `propertyLaneTimeoutMs`) and take
+    `max(load-derived factor, forks / QUIET_LOAD_CEILING)` through
+    `resolveUnitLaneTimeout`'s existing `factor` injection, or derive the
+    lane-level `testTimeout` from it in the config so every file gets the
+    scaled ceiling without per-file wiring. A single fork (a file run
+    alone) must resolve to the 20 s base either way.
+  - Whichever route, wire the three unbudgeted files the same way
+    `bl1343` is wired if the budget stays per-file; a config-level
+    derivation needs no per-file change.
+  - Fewer subprocesses per draw (one fixture per shape, reset per draw,
+    as BL-1579 did for `bl1343`) is a second lever for `bl1308`/`bl1315`/
+    `bl1354` if a file still runs close to its scaled budget.
+  - `npx vitest run --config vitest.properties.config.mjs --reporter=verbose
+    2>&1 | tee tmp/bl1588-lane-<n>.log`; grep `Test timed out`. The
+    verbose reporter's per-test durations also give the census of tests
+    over 8 s, which the evidence should record.
+  - Documenter: nothing beyond the evidence file and the helper's header
+    comment; no diagram trigger.
+
+constraints: >
+  Test files, one test helper, the property lane config and evidence
+  only; `extension/src` unchanged. No floor lowered, no assertion
+  deleted, no retry, no seed pinned, no bare timeout constant raised
+  without the concurrency or load derivation. The step handler lands
+  with the feature (BL-233).
+
+out_of_scope: |
+  - Sampled reach floors in any of the four files (BL-1586/BL-1587
+    sweeps list them for a different defect class).
+  - Re-architecting the property lane's scheduling or its fork pool
+    sizing (BL-1348).
+  - The BL-871 `onTaskUpdate` heartbeat noise (allowlisted, not a red).
+
+qa_e2e_procedure: |
+  On the parcel commit, from `extension/`:
+  1. `for i in $(seq 1 20); do npx vitest run --config vitest.properties.config.mjs test/<file> || echo FAIL; done`
+     for each of the four files -> 20 of 20 green, no FAIL line.
+  2. `npm run test:properties` 5 times, no synthetic load needed (the
+     lane is its own load) -> none of the four files red in any run,
+     `bl1343ReplayNeverDropsOwnPathInvariants` and
+     `bl1323StampOffInvariants` (BL-1579) also green in every run; every
+     red of any other file recorded in the evidence with its text.
+  3. Acceptance resolving all three scenarios
+     (`swarmforge/scripts/run_acceptance.sh specs/features/BL-1588-*.feature`).
+  4. The evidence names, per file, the failure text observed in a full
+     lane run before the change and the change that removed it, or the
+     green runs that retired the row.
+  5. `bb swarmforge/scripts/standing_red_register_cli.bb .` after landing
+     reports no row for any of the four files and `"unowned":[]`.
+
+source: |
+  QA note to the specifier, priority 00, 2026-09-15T21:36Z (inbound
+  00_20260915T213650Z_002764_from_QA_to_specifier): "BL-1580 unowned-red:
+  4 lane timeouts (bl1308/1315/1343/1354), see 325fe1d4ea". QA evidence
+  backlog/evidence/BL-1580-QA-unowned-red-20260915.md. Specifier
+  adjudication backlog/evidence/BL-1580-QA-unowned-red-specifier-adjudication-20260915.md.
+
+notes: |
+  Minted 2026-09-15 by the specifier while completing QA's unowned-red
+  note, the same pass; the four register rows in backlog/standing-reds.tsv
+  name this ticket and QA was sent the resume note (BL-1566 shape).
+  BL-1579 (closed) fixed the same class for two files alone under
+  synthetic load; this is its full-lane recurrence plus three new files.
+  INVEST: Independent (helper and config exist, no unbuilt sibling),
+  Negotiable (env key vs config-level derivation is direction),
+  Valuable (four lane reds stop withholding unrelated parcels and the
+  class stops re-minting one file at a time), Estimable (5 bounded lane
+  runs plus one helper or config change and at most three one-line
+  wirings, one sitting), Small (three scenarios, one invariant),
+  Testable (the recorded text, the green runs, and scenario 03's
+  in-process budget check in seconds - BL-1541).
