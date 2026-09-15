@@ -116,3 +116,5 @@ qa_e2e_procedure: |
      Concierge topic as an attachment; exit 0.
   3. With a scratch root whose topic map lacks the Concierge subject the
      same command exits non-zero printing operator-topic-not-yet-created.
+
+assigned_to: coder
