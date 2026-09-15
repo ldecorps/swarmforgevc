@@ -19,16 +19,49 @@
 const fs = require('node:fs');
 const path = require('node:path');
 
-const LOAD_FILE_RE = /\(load-file\b[\s\S]*?"([^"]+\.bb)"/g;
+// BL-1569: a load-file form may name more than one path segment after the
+// loading file's own directory - (fs/path (fs/parent ...) "test"
+// "suite_inventory_lib.bb") means test/suite_inventory_lib.bb, not the bare
+// last segment. Capturing only the last quoted string (the prior form of
+// this regex) silently dropped every segment before it. A load-file form is
+// bounded (400 chars is generous headroom over the longest real one) so the
+// lazy match cannot run away across the file looking for some unrelated
+// later `")))"`; every real form - single-line or the two-line canonicalize
+// idiom some files use - closes within that span. Comment lines are
+// stripped first: several files show the idiom in a `//`/`;;`-prefixed
+// docstring example that never closes with the real form's three parens, so
+// without this a bounded scan starting there can run on into the NEXT real
+// form and merge the two into one bogus multi-segment dependency.
+const LOAD_FILE_FORM_RE = /\(load-file\b[\s\S]{0,400}?\)\)\)/g;
+const QUOTED_SEGMENT_RE = /"([^"]*)"/g;
+
+function stripCommentLines(sourceText) {
+  return sourceText
+    .split('\n')
+    .filter((line) => !line.trim().startsWith(';'))
+    .join('\n');
+}
 
 // Pure: given one file's raw source, returns the .bb filenames it
-// load-files directly (no recursion, no fs).
+// load-files directly, joined with '/' when a form names more than one path
+// segment after the loading file's own directory (no recursion, no fs).
 function directLoadFileDeps(sourceText) {
+  const cleaned = stripCommentLines(sourceText);
   const deps = [];
   let match;
-  LOAD_FILE_RE.lastIndex = 0;
-  while ((match = LOAD_FILE_RE.exec(sourceText))) {
-    deps.push(match[1]);
+  LOAD_FILE_FORM_RE.lastIndex = 0;
+  while ((match = LOAD_FILE_FORM_RE.exec(cleaned))) {
+    const segs = [];
+    let segMatch;
+    QUOTED_SEGMENT_RE.lastIndex = 0;
+    while ((segMatch = QUOTED_SEGMENT_RE.exec(match[0]))) {
+      segs.push(segMatch[1]);
+    }
+    if (segs.length === 0) continue;
+    const dep = segs.join('/');
+    if (dep.endsWith('.bb')) {
+      deps.push(dep);
+    }
   }
   return deps;
 }

@@ -34,7 +34,8 @@
   ["pipeline_stage_cli.bb"
    "done_with_current_task.bb"
    "operator_runtime.bb"
-   "handoff_lib.bb"])
+   "handoff_lib.bb"
+   "swarm_handoff.bb"])
 
 (defn js-closure [entry]
   (let [expr (str "const {computeClosure} = require(" (json/generate-string js-helper) ");"
@@ -55,10 +56,27 @@
                   "\n  only in bb: " (pr-str (sort (remove from-js from-bb)))
                   "\n  only in js: " (pr-str (sort (remove from-bb from-js))))))))
 
+;; BL-1569: pin the multi-segment load-file case in BOTH twins, over the real
+;; tree - not a synthetic fixture, so a fix applied to one side and forgotten
+;; on the other fails here by name. unregistered_test_gate_lib.bb's
+;; "test" "suite_inventory_lib.bb" is the one load-file form under
+;; swarmforge/scripts (outside test/) naming more than one path segment.
+(let [from-bb (bb-load-closure-lib/compute-closure scripts-dir "swarm_handoff.bb")
+      from-js (js-closure "swarm_handoff.bb")]
+  (doseq [[side closure] [["bb" from-bb] ["js" from-js]]]
+    (when-not (contains? closure "test/suite_inventory_lib.bb")
+      (fail! (str "swarm_handoff.bb: the " side
+                  " walker did not report the directory-qualified test/suite_inventory_lib.bb: "
+                  (pr-str (sort closure)))))
+    (when (contains? closure "suite_inventory_lib.bb")
+      (fail! (str "swarm_handoff.bb: the " side
+                  " walker still reports the bare suite_inventory_lib.bb alongside the qualified path")))))
+
 ;; The direct-dependency parse agrees too, not only the transitive result - a
 ;; closure walk can paper over a parser difference by reaching the same set
 ;; through a different edge.
-(doseq [f ["handoff_lib.bb" "operator_runtime.bb" "pipeline_stage_cli.bb"]]
+(doseq [f ["handoff_lib.bb" "operator_runtime.bb" "pipeline_stage_cli.bb"
+           "unregistered_test_gate_lib.bb"]]
   (let [src (slurp (str (fs/path scripts-dir f)))
         from-bb (vec (sort (bb-load-closure-lib/direct-load-file-deps src)))
         expr (str "const {directLoadFileDeps} = require(" (json/generate-string js-helper) ");"

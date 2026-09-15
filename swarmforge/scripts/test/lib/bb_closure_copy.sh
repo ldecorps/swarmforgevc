@@ -24,7 +24,10 @@
 #
 # Prints nothing on success. Returns non-zero, naming the entry point, if a
 # closure cannot be computed - a fixture that silently copied nothing would
-# fail much later and much less legibly.
+# fail much later and much less legibly. BL-1569: a closure member is placed
+# at its OWN relative path under dest (creating the directory), and a member
+# the closure names but that is not on disk under src fails the copy loudly,
+# naming it - a silent skip is the defect this ticket closes.
 
 copy_bb_closure() {
   local src="${1:?copy_bb_closure: src scripts dir}"
@@ -50,10 +53,12 @@ copy_bb_closure() {
     fi
     while read -r dep; do
       [[ -n "$dep" ]] || continue
-      # A closure member that is not on disk is reported by the CLI so a
-      # caller can see a real gap; skip it here rather than failing the copy,
-      # so the fixture's own run surfaces it in context.
-      [[ -f "$src/$dep" ]] && cp "$src/$dep" "$dest/"
+      if [[ ! -f "$src/$dep" ]]; then
+        echo "copy_bb_closure: closure member not found: $dep" >&2
+        return 1
+      fi
+      mkdir -p "$dest/$(dirname "$dep")"
+      cp "$src/$dep" "$dest/$dep"
     done <<< "$out"
   done
 }
