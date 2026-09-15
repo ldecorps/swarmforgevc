@@ -141,3 +141,5 @@ qa_e2e_procedure: |
   rotate-home or rotate-forward -
   `grep -c '"reason":"rotate-forward"' .swarmforge/telemetry/rotation-<yyyy-MM>.jsonl`
   goes above zero after the first non-home forward.
+
+assigned_to: coder
