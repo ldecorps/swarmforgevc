@@ -1,0 +1,218 @@
+id: BL-1584
+title: "A parcel that adds a property test asserting a reach floor after a sampled low-budget draw is refused at the git_handoff send, naming the file, the assertion, the budget and the two helpers; a pre-existing file or a high-budget one only warns, a constructed one passes, and a census CLI lists every property file's verdict from the same classifier"
+milestone: M8
+type: feature
+status: todo
+epic: sampled-reach-floors
+priority: 1
+direction: queue-jump
+depends_on: []
+mutation_cost: medium
+# medium: a new bb lib plus one load-file and one call in swarm_handoff.bb;
+# Babashka has no mutation/CRAP/DRY wired (BL-472), the lane is its own
+# unit suite plus this acceptance. No TypeScript, no Stryker target.
+slice_size_envelope: medium
+required_stages: [coder, cleaner, architect, hardender, documenter, qa]
+
+acceptance: specs/features/BL-1584-a-new-property-test-with-a-sampled-reach-floor-is-refused-at-send.feature
+
+required_wiring:
+  - 'swarmforge/scripts/swarm_handoff.bb::sampled_reach_floor_guard_lib.bb::the git_handoff send is the one chokepoint every parcel crosses (BL-1240, BL-1576 shape); a classifier unit-tested but never consulted here gates nothing (BL-1235)'
+  - 'specs/pipeline/steps/bl1584SampledReachFloorGateSteps.js::registerSteps::the handler lands in the same parcel as the feature (BL-233, BL-1371)'
+# The lib filename is chosen here so the first anchor is a literal that
+# will exist (BL-874); the coder keeps the name.
+
+human_approval: approved
+approval_context: >
+  Minted from the operator-relayed human ask of 2026-09-15
+  (backlog/archive/INTAKE-operator-question-1789505022651.md, "a
+  preventive gate - a check that flags a NEW property test with this
+  shape (low run count asserting full reach) at send time so the class
+  stops growing"), as direction queue-jump with human_approval approved
+  bundled per STEERING.md's convention; the ask is the approval. No
+  choice is posed and there are no ruling_options. FIRM: the gate refuses
+  only a file the parcel itself ADDED; a file that existed at the received
+  commit never blocks a send, whatever its shape, so the sweep parcels
+  (BL-1585..) and BL-1580/BL-1581 are never refused by it. FIRM:
+  fail-open on unreadable facts, the BL-1240/BL-1576 posture.
+
+invariants:
+  - "The gate refuses only on a property test file absent at the received commit and present at the forwarded one; a file present at both yields at most one warning line, whatever its classification"
+  - "The refusal text, the warning text and every census row come from one classifier over the file's text (sampled_reach_floor_guard_lib.bb); the gate and the CLI never hold a second notion of reach floor, of construction, or of budget"
+  - "An unreadable commit range, an unresolvable task id or an unreadable file never refuses; the send proceeds with a warning that names what could not be read"
+
+description: |
+  ## What is wrong
+
+  Seven unowned-red tickets in ten days (BL-1555, BL-1559, BL-1572,
+  BL-1578, BL-1580, BL-1581 and BL-1579's neighbours) share one shape: a
+  property test under `extension/test/*.property.test.js` draws a case
+  space a few times (`numRuns: 3`, 6, 12, 20) and afterwards asserts every
+  arm was reached. Each such floor is a seed lottery (1 in 600 to 1 in 23
+  per run) that goes red in QA's lane with nothing wrong in the code, and
+  each red costs an Article 4.2 hold on an unrelated parcel, a register
+  row, and a specifier round trip. The sweep (BL-1585..) drains the 108
+  existing files; nothing stops the next parcel from adding number 109.
+  BL-1062 shipped the remedy (`runsPerCell` + `assertReachFloor` in
+  `extension/test/helpers/reachFloors.js`) and the convention is in the
+  hardener's and coder's prompts, but no gate reads the file.
+
+  ## What is wanted
+
+  1. **One classifier**, pure, in a new
+     `swarmforge/scripts/sampled_reach_floor_guard_lib.bb`: file text in,
+     `{:verdict :reach-floor? :constructed? :budget :matched}` out, where
+     - `reach-floor?` is true when the text calls `assertReachFloor(` OR
+       an `assert(`/`assert.<fn>(` call's argument text (up to its
+       closing `);`) carries a KNOWN_PHRASES entry, case-insensitive.
+       KNOWN_PHRASES is pinned in the lib as data and starts as: `never
+       produced`, `never reached`, `never exercised`, `never drew`,
+       `never saw`, `never generated`, `never built`, `never answered`,
+       `never refused`, `never left`, `never worked`, `never drawn`,
+       `never followed`, `never created`, `ever sampled`, `too rare`,
+       `reach floor`, `reachability floor`, `generator coverage`,
+       `generator must reach`, `the generator reached`, `draws were`,
+       `silently lost`, `pass vacuously`, `both arms`, `common by
+       construction`, `were reached`, `was reached`. A comment never
+       matches (the human's grep counted 18 comment-only files).
+     - `constructed?` is true when the text calls `runsPerCell(`.
+     - `budget` is the smallest literal draw count among every draw site:
+       `numRuns: <int>` (an `fc.assert`/`fc.check` with no `numRuns`
+       counts as fast-check's default 100) and `fc.sample(<arb>, <int>)`
+       (or its `{ numRuns: <int> }` form); `:unresolved` when any draw
+       site's count is not an integer literal; `:none` when the file has
+       no fast-check draw site at all.
+     - `verdict`: `no-floor`; `constructed` (floor and runsPerCell);
+       `no-draw` (floor, no fast-check draw site - an exhaustive hand
+       loop like bl1078, or a hand RNG like bl1003's `randBool()`, which
+       the classifier cannot tell apart and so never refuses);
+       `sampled-low` (floor, no runsPerCell, budget under 100 or
+       unresolved); `sampled-high` (floor, no runsPerCell, literal budget
+       100 or more).
+  2. **The gate**, wired into `swarm_handoff.bb`'s `git_handoff` path
+     beside the BL-1240 unregistered-test gate and reading the parcel's
+     own changed paths from `task_scope_gate_lib/parcel-own-changed-paths`
+     (never a second notion of "what this parcel changed"): for each
+     `extension/test/*.property.test.js` the parcel ADDED (absent at the
+     received commit recorded in the in_process mailbox, present at the
+     forwarded commit) with verdict `sampled-low`, the send is REFUSED
+     with `SAMPLED_REACH_FLOOR:` naming the file, the assertion text that
+     matched (first 80 chars), the budget, and the remedy
+     (`runsPerCell(budget, cells)` per cell and `assertReachFloor`). An
+     added `sampled-high` or `no-draw` file, or any MODIFIED file of
+     those three verdicts, prints one `SAMPLED_REACH_FLOOR WARNING:` line
+     naming the file and sends. Unreadable facts warn and send (invariant 3).
+  3. **The census CLI**
+     `bb swarmforge/scripts/sampled_reach_floor_census_cli.bb <project-root>`:
+     one TSV row per property file (`file<TAB>verdict<TAB>budget`) from
+     the same classifier, sorted by path, plus a trailing summary line
+     with the count per verdict. The sweep slices' evidence and QA's e2e
+     cite it; it replaces the mint-time greps in
+     `backlog/evidence/BL-1583-sampled-reach-floor-census-20260915.md`.
+  4. **A frozen fixture corpus** under `specs/pipeline/fixtures/bl1584/`,
+     copies taken from `main` at 42e2979ed5 and renamed
+     `<name>.property.fixture.js` (never `.property.test.js`, so no vitest
+     glob or manifest sweep picks them up), one per idiom the census
+     found, so the acceptance pins the census WITHOUT depending on live
+     files the sweep will change (BL-1006):
+     - sampled-low: `bl1327DescentLadderInvariants` (3 draws, "never
+       exercised"), `bl1342CrashloopStampInvariants` (2, `count > 0` in a
+       loop), `bl1384LocalSeatTopicForwardedInvariants` (30, "never
+       reached all three"), `cursorSeatDriver` ("too rare", `RUNS`
+       constant, unresolved);
+     - sampled-high: `bl687WithinEpicLiveItems` ("reachability floor",
+       400), `bl946EpicIconPoolInvariants` ("common by construction",
+       300);
+     - no-draw: `bl1003BusyVerdictParity` ("generator coverage", a hand
+       loop over a `randBool()` RNG, 60 draws - sampled in truth, but
+       invisible to a classifier that reads fast-check draw sites; the
+       known limit, recorded here), `bl1078UncertifiedCursorRefused`
+       ("only ${n} draws were", exhaustive nested loops, no randomness);
+     - constructed: `bl1529ScriptSenderAuditOutcomesInvariant`,
+       `bl1281ReachFloorConstructionInvariants`;
+     - no-floor: `bl1113CursorHotfixStampOff` ("reach floor" in a
+       comment only; one non-literal budget, so unresolved),
+       `bl1304DryRunSpawnsNothing` (12 draws, no floor), `pilotSafeDefects`.
+     Scenario 06 runs the CLI over a fixture tree holding exactly these
+     13 files and pins each verdict; scenario 01 adds them to a parcel.
+
+  ## How (direction, not mandate)
+
+  - Mirror `unregistered_test_gate_lib.bb` (BL-1240) for the impure
+    entry point (`findings-for-git-handoff {:root :task-name :commit}` ->
+    `{:findings [...]}` or `{:warning ...}`, never both) and `blocked?` /
+    `refusal-message`; the added-vs-modified split is `git cat-file -e
+    <received>:<path>` through `daemon-cycle-guard-lib/sh!` (BL-1021),
+    the received commit read from the sender's in_process mailbox the
+    way BL-1576's gate reads it. Reuse BL-1576's fixture-repository step
+    handler shape for the acceptance.
+  - Keep the phrase list a `def` of strings, not a regex the coder
+    hand-assembles, so the census evidence can quote it and an amendment
+    is a one-line data change.
+  - Per-file classification is the contract here; per-`fc.assert`
+    classification (bl1364, bl1429 are constructed for one invariant and
+    sample in others) is the epic's follow-up slice, not this one.
+  - Documenter: `docs/reference/` page for the gate and CLI in the
+    BL-1240 page's shape; `handoff-flow.mmd` gains the gate at the send
+    step (its change-trigger fires: a new send gate).
+
+constraints: >
+  The gate never refuses a modified file and never reads files outside
+  the parcel's own changed paths (invariant 1). Fail-open on unreadable
+  facts (invariant 3). No change to `extension/test/helpers/reachFloors.js`
+  or to any live property test - that is the sweep's. The fixture corpus
+  is frozen copies, never symlinks or reads of the live files. The step
+  handler lands with the feature (BL-233).
+
+out_of_scope: |
+  - Sweeping the 108 existing files (BL-1585, BL-1586, BL-1587 and the
+    epic's remaining slices).
+  - A commit-time guard for hotfixes committed straight onto main (the
+    BL-1424 shape); a follow-up if a hotfix ever adds a property test.
+  - Per-fc.assert classification (epic remaining slice).
+
+qa_e2e_procedure: |
+  On the parcel commit, from the repo root:
+  1. `bb swarmforge/scripts/sampled_reach_floor_census_cli.bb .` prints
+     one row per file under `extension/test/*.property.test.js` (407 at
+     mint) and a summary; the counts per verdict are recorded in the QA
+     evidence beside the mint-time census
+     (`backlog/evidence/BL-1583-sampled-reach-floor-census-20260915.md`:
+     117 with a floor, 7 constructed at mint). A difference is expected
+     wherever a sweep slice has landed since; a difference on an unswept
+     file is a classifier defect to bounce.
+  2. Acceptance resolving every scenario
+     (`specs/pipeline/scripts/run_acceptance.sh specs/features/BL-1584-*.feature`).
+  3. Live break-then-restore in a scratch worktree off the parcel commit:
+     add `extension/test/qaProbe.property.test.js` containing an
+     `fc.assert` with `numRuns: 4` and `assert.ok(seen.a > 0, 'generator
+     never reached a')`, commit under a task name, write a git_handoff
+     draft and run `swarm_handoff.sh` - refused with `SAMPLED_REACH_FLOOR:`
+     naming the file; change the file to `runsPerCell(4, 2)` and
+     `assertReachFloor` - queued (after the AUDIT_REQUIRED challenge);
+     remove the probe.
+  4. `git diff main...HEAD --name-only` names the lib, the CLI, the
+     `swarm_handoff.bb` wiring, the fixture corpus, the feature, the
+     handler, docs and the diagram; no `extension/test/*.property.test.js`
+     is changed.
+  5. `bb swarmforge/scripts/standing_red_register_cli.bb .` reports
+     `"unowned":[]`.
+
+source: |
+  backlog/archive/INTAKE-operator-question-1789505022651.md (operator
+  relay of the human's ask, 2026-09-15T20:43Z, corrected 21:55Z to
+  queue-jump): "(2) a preventive gate - a check that flags a NEW property
+  test with this shape (low run count asserting full reach) at send time
+  so the class stops growing."
+
+notes: |
+  Minted 2026-09-15 by the specifier draining the backlog root, as slice
+  1 of epic BL-1583. INVEST: Independent (helpers and the send chokepoint
+  exist; no unbuilt sibling), Negotiable (lib layout, added-file
+  detection and phrase matching are direction), Valuable (the class stops
+  growing; one refusal at send replaces one high-severity ticket a day),
+  Estimable (the BL-1240 lib is the template, one sitting plus fixtures),
+  Small (six scenarios, three invariants at the cap), Testable (fixture
+  sends in seconds, well inside the BL-1358 ceiling: about 20 bb sends
+  per feature run). The census the corpus pins was counted with the greps
+  recorded in backlog/evidence/BL-1583-sampled-reach-floor-census-20260915.md.
