@@ -108,3 +108,5 @@ qa_e2e_procedure: |
   4. Break-then-restore: change the fixture's `assigned_to: coder` to
      `assigned_to: cleaner`; case 01 fails naming the assignee; restore.
   5. The row for this file is gone from `backlog/standing-reds.tsv`.
+
+assigned_to: coder
