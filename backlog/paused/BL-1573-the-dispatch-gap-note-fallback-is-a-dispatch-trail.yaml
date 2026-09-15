@@ -28,7 +28,10 @@ acceptance: specs/features/BL-1573-the-dispatch-gap-note-fallback-is-a-dispatch-
 required_wiring:
   - 'specs/pipeline/steps/bl1573DispatchGapFallbackIsATrailSteps.js::registerSteps::the handler lands in the same parcel as the feature (BL-233, BL-1371)'
 
-human_approval: pending
+human_approval: approved
+human_ruling: |
+  Make the fallback note verb-first in the router's own Work form so it counts as a trail and the assignee is still woken (recommended)
+ruling_provenance: tapped
 approval_context: >
   A new feature file is authored and a choice is posed. FIRM: whichever
   option is chosen, `unassigned-active-note-message` (already verb-first

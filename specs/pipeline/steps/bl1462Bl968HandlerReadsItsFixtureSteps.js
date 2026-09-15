@@ -12,41 +12,15 @@ const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const os = require('node:os');
 const path = require('node:path');
-const { spawnSync } = require('node:child_process');
 const { resolveTicketYamlPath } = require('./lib/ticketYamlLookup');
 const { masterCheckoutPath, firstLinkedWorktreePath } = require('./lib/roleWorktrees');
+const { runBl968Feature, assertAllFourScenariosPass } = require('./lib/bl1462Bl968FeatureRunner');
 
 const FEATURE = "BL-1462 BL-968's acceptance handler reads its fixture, not the live checkout's bookkeeping or shape";
 
 const REPO_ROOT = path.join(__dirname, '..', '..', '..');
 const BL968_TICKET_ID = 'BL-968';
-const BL968_FEATURE_REL = path.join('specs', 'features', 'BL-968-step-registry-loadable-from-materialized-tree.feature');
 const BL968_FEATURE_FILE_BASENAME = 'BL-968-step-registry-loadable-from-materialized-tree.feature';
-
-function runBl968Feature(cwd) {
-  return spawnSync(path.join('specs', 'pipeline', 'scripts', 'run_acceptance.sh'), [BL968_FEATURE_REL], {
-    cwd,
-    encoding: 'utf8',
-    timeout: 300000,
-  });
-}
-
-// The generated entry point registers one Node-test-runner `test()` per
-// BL-968 scenario (4, no outlines) - "ok 1..4" with no "not ok" line is
-// what "all four of its scenarios pass" means for that TAP output.
-function assertAllFourScenariosPass(result, whereLabel) {
-  assert.ok(result, `BL-968's feature never ran from ${whereLabel}`);
-  const output = `${result.stdout || ''}${result.stderr || ''}`;
-  const notOkLines = output.match(/^not ok .*$/gm) || [];
-  assert.deepEqual(notOkLines, [], `BL-968's feature reported failing scenarios from ${whereLabel}:\n${output}`);
-  const okLines = output.match(/^ok \d+ .*$/gm) || [];
-  assert.equal(
-    okLines.length,
-    4,
-    `expected all 4 of BL-968's scenarios to report ok from ${whereLabel}, got ${okLines.length}:\n${output}`
-  );
-  assert.equal(result.status, 0, `run_acceptance.sh exited ${result.status} from ${whereLabel}:\n${output}`);
-}
 
 function registerSteps(registry) {
   const scoped = (re, fn) => registry.defineScoped(re, fn, FEATURE);
