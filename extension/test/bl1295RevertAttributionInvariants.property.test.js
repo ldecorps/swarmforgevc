@@ -188,13 +188,10 @@ const REVERT_CELL_RUNS = runsPerCell(6, REVERT_ARMS.length);
 
 test('property (invariant 2): a revert of the task\'s own merge never changes the verdict', () => {
   const seen = { clean: 0, genuinelyForeign: 0 };
-  const counts = { clean: 0, genuinelyForeign: 0 };
   for (const foreignCommit of REVERT_ARMS) {
-    const armKey = foreignCommit ? 'genuinelyForeign' : 'clean';
     fc.assert(
       fc.property(fc.constant(foreignCommit), (foreignCommit) => {
         seen[foreignCommit ? 'genuinelyForeign' : 'clean'] += 1;
-        counts[armKey] += 1;
         withRoot((outer) => {
           const withRoot_ = path.join(outer, 'with');
           const withoutRoot = path.join(outer, 'without');
@@ -218,7 +215,7 @@ test('property (invariant 2): a revert of the task\'s own merge never changes th
       { numRuns: REVERT_CELL_RUNS }
     );
   }
-  assertReachFloor(counts, ['clean', 'genuinelyForeign'], REVERT_CELL_RUNS, 'arm');
+  assertReachFloor(seen, ['clean', 'genuinelyForeign'], REVERT_CELL_RUNS, 'arm');
   assert.ok(seen.clean > 0, 'generator never produced the clean parcel - the case the defect breaks');
   assert.ok(seen.genuinelyForeign > 0, 'generator never produced a genuinely foreign commit - the case that must still refuse');
   console.log(`BL-1580 reach map (bl1295): ${JSON.stringify({ arms: REVERT_ARMS.length, minDrawsPerArm: REVERT_CELL_RUNS })}`);
