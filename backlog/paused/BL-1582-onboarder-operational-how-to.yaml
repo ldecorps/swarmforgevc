@@ -26,7 +26,7 @@ required_wiring:
 # No production anchor on purpose (BL-1235): a docs page has no consumer
 # call site; the handler is the only literal that will exist.
 
-human_approval: pending
+human_approval: approved
 approval_context: >
   A new feature file and a new how-to page are authored here, so it needs
   a tap. No choice is posed and there are no ruling_options. FIRM: the
