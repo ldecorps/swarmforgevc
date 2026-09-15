@@ -1,0 +1,144 @@
+id: BL-1580
+title: "bl1295RevertAttributionInvariants invariant 2 draws its foreign-commit boolean uniformly for 6 runs and asserts both arms were reached, a floor a seed misses about one run in 32 and flaky red on main with no owner; both arms are iterated by construction and the floor stays asserted at its value"
+milestone: M8
+type: defect
+severity: high
+# high: a standing red on main in the property lane is a broken safety
+# signal at first sighting (Article 3.2.4, 2026-09-05); QA withheld BL-1578
+# on this red under Article 4.2. Same class as BL-1578, BL-1555, BL-1572.
+status: todo
+epic: code-quality-gates
+priority: 8
+direction: swarm-reported
+depends_on: []
+mutation_cost: low
+# low: one test-file change, the shared reachFloors helper already
+# exists (BL-1062/BL-1555); no production code, no Stryker target.
+slice_size_envelope: low
+required_stages: [coder, cleaner, architect, hardender, documenter, qa]
+
+acceptance: specs/features/BL-1580-bl1295-revert-attribution-boolean-arm-is-constructed.feature
+
+required_wiring:
+  - 'specs/pipeline/steps/bl1580RevertAttributionArmsConstructedSteps.js::registerSteps::the handler lands in the same parcel as the feature (BL-233, BL-1371)'
+# No production anchor on purpose (BL-1235): the test file and the helper
+# already exist, so any pattern on them matches before and after.
+
+human_approval: pending
+approval_context: >
+  A new feature file is authored here, so it needs a tap. No choice is
+  posed and there are no ruling_options. FIRM: the two reach floors the
+  file asserts today (clean parcel seen, genuinely foreign commit seen)
+  stay asserted at their value; the fix is to make both arms reached BY
+  CONSTRUCTION - an outer loop over the two arms with runsPerCell draws
+  each, the way BL-1578 does for its three files - never to lower a floor,
+  widen a tolerance, pin a seed or retry. FIRM: the draw budget stays 6;
+  what changes is how it is spent. The register row for the file is
+  removed in the same land that turns it green.
+
+invariants: []
+
+description: |
+  ## What is wrong
+
+  QA ran `npm run test:properties` on the BL-1578 parcel on 2026-09-15
+  (`backlog/evidence/BL-1578-QA-unowned-red-20260915.md`, QA commit
+  801d6847b8) and saw one red file BL-1578's diff never touches:
+  `extension/test/bl1295RevertAttributionInvariants.property.test.js`,
+  `property (invariant 2): a revert of the task's own merge never changes
+  the verdict`, with
+
+  ```
+  AssertionError: generator never produced a genuinely foreign commit - the case that must still refuse
+  ```
+
+  The test draws `fc.boolean()` uniformly with `numRuns: 6` and afterwards
+  asserts BOTH `seen.clean > 0` AND `seen.genuinelyForeign > 0`. Six
+  uniform coin flips land all on one side 2 x 0.5^6 of the time; the
+  specifier's simulation of that exact draw over 3000 fast-check seeds
+  missed an arm in 94 (3.13%), the highest miss rate of any file in this
+  class so far (BL-1578's worst was 1.5%). Nothing is wrong in the code it
+  exercises: the gate's verdict is the same with and without the revert on
+  every draw that runs. This is the BL-1062 sampled-reach-floor lottery,
+  the shape BL-1555, BL-1559, BL-1572 and BL-1578 fixed in other files.
+  BL-1578 was withheld by QA under Article 4.2 on it; this ticket owns it.
+
+  ## What is wanted
+
+  - The two arms (clean parcel, genuinely foreign commit) are iterated as
+    2 cells with `runsPerCell(6, 2)` = 3 draws each, so every run builds
+    both the parcel the defect breaks and the one that must still refuse.
+    Nothing else about a draw changes: each draw still builds the with-
+    revert and without-revert repositories and compares the two verdicts.
+  - The per-arm floor is asserted through the shared `assertReachFloor`
+    helper (`extension/test/helpers/reachFloors.js`) so an arm that
+    stopped being produced fails the file naming that arm, and the two
+    existing `seen.clean > 0` / `seen.genuinelyForeign > 0` assertions
+    remain in the source at their value (scenario 03).
+  - Each run prints one reach map line in the BL-1578 shape, computed
+    from the counts the run actually reached, never restated:
+    `BL-1580 reach map (bl1295): {"arms":2,"minDrawsPerArm":3}`.
+  - The file is green alone under the properties config 15 of 15 times
+    (QA e2e step 1), and this ticket's register row is removed in the
+    same land that turns it green.
+
+  ## How (direction, not mandate)
+
+  - Outer `for` over `[false, true]`, one `fc.assert` per arm with
+    `numRuns: runsPerCell(6, 2)` and the arm as a constant inside, exactly
+    as BL-1578's bl622 iterates its collision arm; the per-draw body is
+    unchanged. Invariant 1 in the same file is not sampled this way and
+    is out of scope.
+  - Each draw costs two repository builds and two bb subprocesses; the
+    draw count does not change, so the file's runtime and timeout are
+    untouched.
+  - Documenter: nothing beyond the evidence file; no diagram trigger.
+
+constraints: >
+  Test file and evidence only; `extension/src` unchanged. No floor
+  lowered, no tolerance widened, no retry, no seed pinned, the draw
+  budget of 6 unchanged. The step handler lands with the feature (BL-233).
+
+out_of_scope: |
+  - Invariant 1 of the same file, and any other property file's floor.
+  - The property lane's timeouts (BL-1579).
+
+qa_e2e_procedure: |
+  On the parcel commit, from `extension/`:
+  1. `for i in $(seq 1 15); do npx vitest run --config vitest.properties.config.mjs test/bl1295RevertAttributionInvariants.property.test.js || echo FAIL; done`
+     -> 15 of 15 green, no FAIL line, every run printing
+     `BL-1580 reach map (bl1295): {"arms":2,"minDrawsPerArm":3}` (the
+     printed map, not the pass count alone, is the evidence: 15 green
+     runs of the unfixed file happen about 3 times in 5).
+  2. Acceptance resolving all three scenarios
+     (`swarmforge/scripts/run_acceptance.sh specs/features/BL-1580-*.feature`).
+  3. Break-then-restore: drop the `true` arm from the iterated arms; step
+     1's first run fails naming the reach floor (`reach floor: ...
+     genuinelyForeign drawn 0 < 3` or `seen.genuinelyForeign > 0`,
+     whichever runs first); restore.
+  4. `git diff main...HEAD --name-only` names the test file, the step
+     handler, the feature, evidence and the register row removal;
+     `extension/src` is unchanged.
+  5. `bb swarmforge/scripts/standing_red_register_cli.bb .` after landing
+     reports no row for the file and `"unowned":[]`.
+
+source: |
+  QA note to the specifier, priority 00, 2026-09-15T17:53Z (inbound
+  00_20260915T175344Z_002757_from_QA_to_specifier): "BL-1578 unowned-red:
+  bl1295RevertAttributionInvariants inv2, see 801d6847b8". QA evidence
+  backlog/evidence/BL-1578-QA-unowned-red-20260915.md, which carries the
+  assertion text verbatim (QA.prompt amendment of the same day).
+
+notes: |
+  Minted 2026-09-15 by the specifier while completing QA's unowned-red
+  note, the same pass; the register row in backlog/standing-reds.tsv
+  names this ticket and QA was sent the resume note (BL-1566 shape) in
+  the same pass. Simulation: 3000 fast-check seeds of `fc.boolean()` at
+  `numRuns: 6`, an arm missed in 94 (3.13%), matching 2 x 0.5^6. INVEST:
+  Independent (helper exists, no unbuilt sibling), Negotiable (loop
+  shape is direction), Valuable (one lane red stops firing for no reason
+  and QA stops withholding unrelated parcels on it), Estimable (one loop
+  restructure, one sitting - BL-1578 does three), Small (three
+  scenarios, no invariant), Testable (the printed reach map and the
+  source assertions). Severity high per the standing-red rule, not
+  medium: the register throttles intake until reds drain.
