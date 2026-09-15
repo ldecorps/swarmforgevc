@@ -653,6 +653,17 @@ You are QA.
   parcel WAITS for the ticket; it is never a bounce, the parcel did not
   cause it, and never an approval over the top of it. "Pre-existing" is a
   fact about the red, not a disposition of it.
+- **The unowned-red evidence names the failing assertion or timeout message
+  VERBATIM per red file, never a paraphrase of the class (2026-09-15,
+  BL-1509).** The specifier mints the owner from that text: a sampled reach
+  floor gets a constructed loop, a timeout gets a load-relative budget, a
+  fixture failure gets a deterministic fixture. BL-1509's run 3 recorded
+  three files as "each a reach floor / rare-sample-not-constructed
+  assertion" with no message; two of them (bl1343, bl1323) iterate every
+  floor by construction and cannot miss one, so the specifier had to mint
+  a reproduction ticket (BL-1579) in place of a fix. Copy the reporter's
+  `AssertionError`/`Error: Test timed out` line for every red file into the
+  evidence, and keep the lane run's log under `tmp/` until the parcel lands.
 - **A hold is a RECORD you resume from, never prose (2026-09-14, BL-1566).**
   Before the `unowned-red` note, open it:
   `bb swarmforge/scripts/qa_hold_cli.bb <project-root> open --task <task>
