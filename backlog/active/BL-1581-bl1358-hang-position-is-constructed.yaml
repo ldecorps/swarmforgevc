@@ -157,3 +157,5 @@ notes: |
   scenarios, no invariant), Testable (the printed reach map and the
   source assertions). Severity high per the standing-red rule, not
   medium: the register throttles intake until reds drain.
+
+assigned_to: coder
