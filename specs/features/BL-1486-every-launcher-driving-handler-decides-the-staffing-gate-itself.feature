@@ -1,3 +1,8 @@
+# mutation-stamp: sha256=200e9c3ca5ea8502133424dfa65a0e7fa797e68b407061517a9486f2ba47fad5
+# acceptance-mutation-manifest-begin
+# {"version":1,"tested_at":"2026-09-15T03:47:45.555955636Z","feature_name":"BL-1486 Every step handler that drives the launcher on a fixture decides the staffing gate itself","feature_path":"/home/carillon/swarmforgevc/.worktrees/hardender/specs/features/BL-1486-every-launcher-driving-handler-decides-the-staffing-gate-itself.feature","background_hash":"74234e98afe7498fb5daf1f36ac2d78acc339464f950703b8c019892f982b90b","implementation_hash":"unknown","scenarios":[{"index":0,"name":"a launcher-driving feature passes with the override absent from the environment","scenario_hash":"664a8050dd139209619004ce0e21fa91fd6e061e9dadc443f000f8ca295e8958","mutation_count":6,"result":{"Total":6,"Killed":6,"Survived":0,"Errors":0},"tested_at":"2026-09-15T03:47:45.555955636Z"}]}
+# acceptance-mutation-manifest-end
+
 Feature: BL-1486 Every step handler that drives the launcher on a fixture decides the staffing gate itself
 
   BL-1318 put the pack staffing gate inside the launcher's parse_config:
