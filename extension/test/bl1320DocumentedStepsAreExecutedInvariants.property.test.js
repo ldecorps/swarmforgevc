@@ -70,7 +70,12 @@ function buildRoot(lines) {
 // parse_config only - never a launch.
 function parsePack(root) {
   const script = [`source '${SWARMFORGE_SH}' '${root}'`, 'parse_config', 'print -l -- "${ROLES[@]}"'].join('\n');
-  const r = spawnSync('zsh', ['-c', script], { encoding: 'utf8', env: { ...process.env, SWARMFORGE_CONFIG: '' } });
+  // Decide BL-1318's staffing gate ourselves - this fixture carries no role
+  // matrix, so it must not depend on whether the pane exports the hatch.
+  const r = spawnSync('zsh', ['-c', script], {
+    encoding: 'utf8',
+    env: { ...process.env, SWARMFORGE_CONFIG: '', PACK_STAFFING_SKIP_GATE: '1' },
+  });
   return {
     status: r.status,
     stderr: `${r.stderr || ''}`,

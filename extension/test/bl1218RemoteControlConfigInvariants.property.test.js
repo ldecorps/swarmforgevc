@@ -152,7 +152,9 @@ function writeLaunchScript(root, confText) {
   spawnSync(
     'zsh',
     ['-c', `source '${SWARMFORGE_SH}' '${root}'; parse_config; ${INDEX_OF_ROLE} write_role_launch_script "$(index_of_role coder)"`],
-    { encoding: 'utf8' }
+    // Decide BL-1318's staffing gate ourselves - this fixture carries no
+    // role matrix, so it must not depend on whether the pane exports the hatch.
+    { encoding: 'utf8', env: { ...process.env, PACK_STAFFING_SKIP_GATE: '1' } }
   );
   const script = path.join(root, '.swarmforge', 'launch', 'coder.sh');
   return fs.existsSync(script) ? fs.readFileSync(script, 'utf8') : undefined;
