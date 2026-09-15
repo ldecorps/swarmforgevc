@@ -232,3 +232,5 @@ notes: |
   unowned-survivors note's evidence lists every mutant it hands over (or
   commits the JSON report), because a bare count cannot be censused and
   forced this re-run.
+
+assigned_to: coder
