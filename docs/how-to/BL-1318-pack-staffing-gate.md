@@ -63,6 +63,11 @@ drives `parse_config` on a fixture, plus the shipped-confs shell test, is
 hermetic the same way: each declares `PACK_STAFFING_SKIP_GATE` explicitly in
 its own spawn rather than inheriting the pane's export, so none of them pass
 or fail depending on whether the pane happens to carry the hatch (BL-1486).
+The same rule holds one level down, in the vitest property lane: a test
+that spawns the launcher itself — not through an acceptance handler —
+decides the staffing override in its own spawn's environment rather than
+inheriting the pane's export (`bl1218RemoteControlConfigInvariants` invariant
+2, `bl1320DocumentedStepsAreExecutedInvariants`; BL-1457).
 
 ## Identity resolution shapes
 
