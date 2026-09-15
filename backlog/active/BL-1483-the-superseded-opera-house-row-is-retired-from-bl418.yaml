@@ -194,3 +194,6 @@ notes: |
   never amend a feature on main while a parcel may carry a stamped copy).
 
 assigned_to: coder
+bounce_count: 1
+bounce_history:
+  - { at: 2026-09-15, by: QA, blamed: documenter, class: behavior, commit: cac7d41dc0, evidence: backlog/evidence/BL-1483-bounce-20260915.md }
