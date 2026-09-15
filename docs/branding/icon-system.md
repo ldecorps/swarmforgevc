@@ -314,8 +314,9 @@ skips unresolvable emoji (BL-342 scenario 06).
   glyphs cannot reach Telegram at all; that layer is PWA-only.
 - Best musical remap available (small ticket if adopted):
   feature-in-flight 💡 → 🎵 ("a passage being played"); support/intake
-  topics → 🎟 (the box office); standing Operator topic → 🏛 (opera house —
-  decided by the human 2026-07-15);
+  topics → 🎟 (the box office); standing Concierge (formerly Operator) topic
+  → 🛎 (the bell — the human's 2026-07-15 opera-house choice was superseded
+  2026-07-16 by BL-453's rebrand, "The bell is fine");
   keep ✅ (done) 🦠 (defect) 🔍 (paused) — no musical stand-in beats them.
   Intake filed: `backlog/INTAKE-orchestra-emoji-topic-remap.md`.
 
