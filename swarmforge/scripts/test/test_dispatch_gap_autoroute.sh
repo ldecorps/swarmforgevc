@@ -48,7 +48,9 @@ COORDINATOR_OUTBOX="$ROOT/.swarmforge/handoffs/coordinator/outbox"
 bb -e "
 (load-file \"$CHASE_SWEEP_LIB\")
 (let [gaps (chase-sweep-lib/dispatch-gap-items \"$ROOT/backlog/active\" [\"$CODER_NEW\" \"$COORDINATOR_OUTBOX\"])]
-  (assert (= [{:id \"BL-217\" :assigned-to \"coder\"}] gaps) (str \"unexpected gaps: \" (pr-str gaps))))
+  (assert (= 1 (count gaps)) (str \"expected exactly one gap: \" (pr-str gaps)))
+  (assert (= \"BL-217\" (:id (first gaps))) (str \"expected gap id BL-217: \" (pr-str gaps)))
+  (assert (= \"coder\" (:assigned-to (first gaps))) (str \"expected gap assignee coder: \" (pr-str gaps))))
 " || fail "01: expected dispatch-gap-items to detect BL-217 as an undispatched gap"
 pass "01: dispatch-gap-items detects the undispatched active item"
 
