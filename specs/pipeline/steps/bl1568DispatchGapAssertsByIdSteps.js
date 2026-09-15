@@ -108,6 +108,43 @@ function registerSteps(registry) {
     const out = `${res.stdout || ''}${res.stderr || ''}`;
     assert.equal(res.status, 0, `${ctx.bl1568RunnerName} is red:\n${out}`);
   });
+
+  // ── dispatch-gap-by-id-and-assignee-05 (amendment 2026-09-15) ───────────
+  // Reuses the "is read" step from scenario 03, which sets ctx.bl1568Source.
+
+  scoped(
+    /^its send case supplies the fixture HEAD commit to dispatch-gap-draft-lines and queues through the two-call audit$/,
+    (ctx) => {
+      assert.match(
+        ctx.bl1568Source,
+        /HEAD10="\$\(git -C "\$ROOT" rev-parse --short=10 HEAD\)"/,
+        `${TEST_FILE} no longer captures the fixture's 10-hex HEAD`,
+      );
+      assert.match(
+        ctx.bl1568Source,
+        /\(chase-sweep-lib\/dispatch-gap-draft-lines \{:id \\"BL-217\\" :assigned-to \\"coder\\"\} \\"\$HEAD10\\"\)/,
+        `${TEST_FILE}'s send case no longer supplies the commit to dispatch-gap-draft-lines (the legacy soft-note fallback is not a trail, BL-1223)`,
+      );
+      assert.match(
+        ctx.bl1568Source,
+        /handoff-lib\/queue-git-handoff!/,
+        `${TEST_FILE}'s send case no longer queues through handoff-lib/queue-git-handoff!'s two-call audit (BL-1529)`,
+      );
+    },
+  );
+
+  scoped(/^its attribution case asserts type git_handoff and task BL-217$/, (ctx) => {
+    assert.match(
+      ctx.bl1568Source,
+      /grep -q "\^type: git_handoff\$"/,
+      `${TEST_FILE}'s attribution case no longer asserts type: git_handoff`,
+    );
+    assert.match(
+      ctx.bl1568Source,
+      /grep -q "\^task: BL-217\$"/,
+      `${TEST_FILE}'s attribution case no longer asserts task: BL-217`,
+    );
+  });
 }
 
 module.exports = { registerSteps };
