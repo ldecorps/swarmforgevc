@@ -16,6 +16,7 @@
 // whatever git's own merge heuristics would produce for a given content
 // shape.
 
+const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const path = require('node:path');
 const { execFileSync, spawnSync } = require('node:child_process');
@@ -44,6 +45,17 @@ function gitTry(cwd, args) {
 
 function gitOut(cwd, args) {
   return execFileSync('git', args, { cwd, encoding: 'utf8' }).trim();
+}
+
+// BL-1390: a fresh mkdtemp dir under mkSocketFixtureRoot - `git init` here
+// can never touch the live checkout - proven right after init, BEFORE any
+// mutating git command follows.
+function proveFixtureIsolated(root) {
+  const commonDir = execFileSync('git', ['-C', root, 'rev-parse', '--git-common-dir'], { encoding: 'utf8' }).trim();
+  assert.ok(
+    path.resolve(root, commonDir).startsWith(root),
+    `fixture git-common-dir must resolve inside the fixture root, got "${commonDir}"`
+  );
 }
 
 function processEnvAllowlist() {
@@ -150,6 +162,7 @@ const CORRECT_MINUS_RECEIVED_ADD_CONTENT = linesStr([
 function buildDivergedSides(ctx) {
   ctx.root = mkTmp('bl1576-merge-drop-');
   git(ctx.root, ['init', '-q', '-b', 'main', '.']);
+  proveFixtureIsolated(ctx.root);
   git(ctx.root, ['config', 'user.email', 'bl1576@example.com']);
   git(ctx.root, ['config', 'user.name', 'bl1576']);
   git(ctx.root, ['config', 'commit.gpgsign', 'false']);
@@ -250,6 +263,7 @@ function registerSteps(registry) {
   scoped(/^both sides rewrote the same base line of that path differently$/, (ctx) => {
     ctx.root = mkTmp('bl1576-contested-');
     git(ctx.root, ['init', '-q', '-b', 'main', '.']);
+    proveFixtureIsolated(ctx.root);
     git(ctx.root, ['config', 'user.email', 'bl1576@example.com']);
     git(ctx.root, ['config', 'user.name', 'bl1576']);
     git(ctx.root, ['config', 'commit.gpgsign', 'false']);
