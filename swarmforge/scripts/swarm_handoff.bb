@@ -22,6 +22,7 @@
 (load-file (str (fs/path (fs/parent (fs/canonicalize *file*)) "review_forward_evidence_gate_lib.bb")))
 (load-file (str (fs/path (fs/parent (fs/canonicalize *file*)) "task_commit_coherence_gate_lib.bb")))
 (load-file (str (fs/path (fs/parent (fs/canonicalize *file*)) "parcel_rollback_guard_lib.bb")))
+(load-file (str (fs/path (fs/parent (fs/canonicalize *file*)) "merge_drop_guard_lib.bb")))
 (load-file (str (fs/path (fs/parent (fs/canonicalize *file*)) "tree_collapse_guard_lib.bb")))
 (load-file (str (fs/path (fs/parent (fs/canonicalize *file*)) "landed_ticket_lib.bb")))
 (load-file (str (fs/path (fs/parent (fs/canonicalize *file*)) "task_scope_gate_lib.bb")))
@@ -435,6 +436,22 @@
         parcel-rollback-block
         (when (parcel-rollback-guard-lib/blocked? parcel-rollback-result)
           parcel-rollback-result)
+        ;; BL-1576 merge-drop gate: refuses a git_handoff whose branch
+        ;; carries a merge (received..forwarded) that resolved a
+        ;; conflicted path by taking one side verbatim, discarding
+        ;; uncontested hunks the other side made (see
+        ;; merge_drop_guard_lib.bb). Same fail-open-on-unreadable-facts
+        ;; posture as the gates above.
+        merge-drop-result
+        (when (and (= "git_handoff" type) canonical (not (str/blank? task-name)))
+          (merge-drop-guard-lib/findings-for-git-handoff
+           {:root (project-root) :sender sender :task-name task-name :canonical canonical}))
+        _ (when-let [warning (:warning merge-drop-result)]
+            (binding [*out* *err*]
+              (println (str "MERGE_DROP WARNING: " warning))))
+        merge-drop-block
+        (when (merge-drop-guard-lib/blocked? merge-drop-result)
+          merge-drop-result)
         ;; BL-1205 tree-collapse gate: refuses a git_handoff whose merge
         ;; into ANY named recipient's branch would mass-delete tracked
         ;; files - every hop, no ticket id required (see
@@ -536,6 +553,9 @@
                              parcel-rollback-block
                              (conj (parcel-rollback-guard-lib/refusal-message
                                     {:task-name task-name :findings (:findings parcel-rollback-block)}))
+                             merge-drop-block
+                             (conj (merge-drop-guard-lib/refusal-message
+                                    {:task-name task-name :findings (:findings merge-drop-block)}))
                              tree-collapse-block
                              (conj (tree-collapse-guard-lib/refusal-message tree-collapse-block))
                              unregistered-test-block

@@ -208,3 +208,5 @@ notes: >
   duplicate Then inside the old scenario 06 was real and is split into 06/07.
   Not a ritual_class declarant: this ticket touches neither ritual's
   scripting (BL-1365).
+
+assigned_to: coder
