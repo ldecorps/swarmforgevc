@@ -22,6 +22,7 @@ set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 CHASE_SWEEP_LIB="$SCRIPT_DIR/../chase_sweep_lib.bb"
 SWARM_HANDOFF="$SCRIPT_DIR/../swarm_handoff.bb"
+HANDOFF_LIB="$SCRIPT_DIR/../handoff_lib.bb"
 
 fail() { echo "FAIL: $*" >&2; exit 1; }
 pass() { echo "PASS: $*"; }
@@ -54,33 +55,47 @@ bb -e "
 " || fail "01: expected dispatch-gap-items to detect BL-217 as an undispatched gap"
 pass "01: dispatch-gap-items detects the undispatched active item"
 
+HEAD10="$(git -C "$ROOT" rev-parse --short=10 HEAD)"
+
 # ── 2: auto-route! mirrors exactly - construct the draft via
-#       dispatch-gap-draft-lines, shell to the real swarm_handoff.bb with
-#       SWARMFORGE_ROLE=coordinator via the vector process/sh form ────────
+#       dispatch-gap-draft-lines WITH the fixture HEAD (production always
+#       supplies one), then queue through handoff-lib/queue-git-handoff!'s
+#       BL-1529 two-call self-audit protocol (a challenge, then the
+#       identical second call queues - never a bypass) with
+#       SWARMFORGE_ROLE=coordinator and SWARMFORGE_DISPATCH_GAP_AUTOROUTE=1
+#       exactly as auto-route! sets them ──────────────────────────────────
 OUT="$(bb -e "
 (require '[babashka.fs :as fs] '[babashka.process :as process])
 (load-file \"$CHASE_SWEEP_LIB\")
+(load-file \"$HANDOFF_LIB\")
 (let [draft (fs/path \"$ROOT\" \"dispatch-gap-draft.txt\")]
-  (spit (str draft) (str (clojure.string/join \"\n\" (chase-sweep-lib/dispatch-gap-draft-lines {:id \"BL-217\" :assigned-to \"coder\"})) \"\n\"))
-  (let [env (merge (into {} (System/getenv)) {\"SWARMFORGE_ROLE\" \"coordinator\" \"SWARMFORGE_SKIP_SYNC_INJECT\" \"1\"})
-        result (process/sh [\"bb\" \"$SWARM_HANDOFF\" (str draft)] {:dir \"$ROOT\" :env env})]
-    (println \"EXIT:\" (:exit result))
-    (println \"OUT:\" (:out result))
-    (println \"ERR:\" (:err result))))
+  (spit (str draft) (str (clojure.string/join \"\n\" (chase-sweep-lib/dispatch-gap-draft-lines {:id \"BL-217\" :assigned-to \"coder\"} \"$HEAD10\")) \"\n\"))
+  (let [env (merge (into {} (System/getenv)) {\"SWARMFORGE_ROLE\" \"coordinator\" \"SWARMFORGE_SKIP_SYNC_INJECT\" \"1\" \"SWARMFORGE_DISPATCH_GAP_AUTOROUTE\" \"1\"})
+        calls (atom 0)
+        result (handoff-lib/queue-git-handoff!
+                (fn []
+                  (swap! calls inc)
+                  (process/sh [\"bb\" \"$SWARM_HANDOFF\" (str draft)] {:dir \"$ROOT\" :env env})))]
+    (println \"STATUS:\" (:status result))
+    (println \"CALLS:\" @calls)
+    (println \"OUTBOX:\" (:outbox-file result))))
 ")"
-grep -q "^EXIT: 0" <<< "$OUT" || fail "02: expected the auto-route send to exit 0; got: $OUT"
-grep -qi "HANDOFF QUEUED" <<< "$OUT" || fail "02: expected the handoff to be queued (daemon backup delivers); got: $OUT"
-pass "02: auto-route!'s exact mechanism (dispatch-gap-draft-lines + vector-form process/sh) sends successfully"
+grep -q "^STATUS: :queued" <<< "$OUT" || fail "02: expected queue-git-handoff! to report :queued; got: $OUT"
+grep -q "^CALLS: 2" <<< "$OUT" || fail "02: expected exactly two run-once calls (the BL-1529 self-audit challenge, then the identical retry); got: $OUT"
+pass "02: auto-route!'s exact mechanism (dispatch-gap-draft-lines with commit + queue-git-handoff!'s two-call audit) sends successfully"
 
 # ── 3: the queued file is correctly attributed to the coordinator (proves
 #       the :env override actually took effect - the risk this whole test
-#       exists to guard against) ────────────────────────────────────────────
+#       exists to guard against) and carries the git_handoff trail
+#       production sends, not the legacy soft note ─────────────────────────
 QUEUED_FILE="$(find "$COORDINATOR_OUTBOX" -name '*.handoff' | head -1)"
 [[ -n "$QUEUED_FILE" ]] || fail "03: expected a queued handoff file in the coordinator's own outbox"
 grep -q "^from: coordinator$" "$QUEUED_FILE" || fail "03: expected from: coordinator (env override), got: $(cat "$QUEUED_FILE")"
 grep -q "^to: coder$" "$QUEUED_FILE" || fail "03: expected to: coder, got: $(cat "$QUEUED_FILE")"
-grep -q "^message: BL-217 is active with no dispatch" "$QUEUED_FILE" || fail "03: expected the dispatch-gap message, got: $(cat "$QUEUED_FILE")"
-pass "03: the queued note is correctly attributed to the coordinator and addressed to the assignee"
+grep -q "^type: git_handoff$" "$QUEUED_FILE" || fail "03: expected type: git_handoff, got: $(cat "$QUEUED_FILE")"
+grep -q "^task: BL-217$" "$QUEUED_FILE" || fail "03: expected task: BL-217, got: $(cat "$QUEUED_FILE")"
+grep -q "^commit: $HEAD10$" "$QUEUED_FILE" || fail "03: expected commit: $HEAD10, got: $(cat "$QUEUED_FILE")"
+pass "03: the queued git_handoff is correctly attributed to the coordinator and addressed to the assignee"
 
 # ── 4: a second dispatch-gap-items pass (scanning the coordinator's own
 #       outbox too) no longer flags the item - idempotent even before real
