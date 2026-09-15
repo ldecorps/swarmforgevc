@@ -37,7 +37,13 @@ function writeConf(root, content) {
 function sourceAndRun(root, extraCommands) {
   const script = `source '${SWARMFORGE_SH}' '${root}'; parse_config; ${extraCommands}`;
   try {
-    const stdout = execFileSync('zsh', ['-c', script], { encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] });
+    // BL-1318's gate: decide the hatch here, never inherit the pane's own
+    // export (BL-1486).
+    const stdout = execFileSync('zsh', ['-c', script], {
+      encoding: 'utf8',
+      stdio: ['ignore', 'pipe', 'pipe'],
+      env: { ...process.env, PACK_STAFFING_SKIP_GATE: '1' },
+    });
     return { ok: true, stdout };
   } catch (err) {
     const stdout = (err.stdout ? err.stdout.toString() : '') + (err.stderr ? err.stderr.toString() : '');
