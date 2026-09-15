@@ -132,8 +132,39 @@ function registerSteps(registry) {
     }
   );
 
+  // BL-1569 hardening: a scratch closure with only ONE member (the missing
+  // one) cannot discriminate the explicit fail-loud check from copy_bb_closure
+  // simply inheriting cp's own nonzero exit as the last command it ran - and
+  // the scenario below already runs the copy under `set -e`, where ANY
+  // mid-loop failure aborts immediately regardless of position, so a check
+  // that did nothing would still "pass" this scenario. At least one real
+  // production caller (test_bl1028_promotion_obeys_integrity_refusal.sh) has
+  // no `set -e` at all, and there a missing dependency that is not the LAST
+  // one bash's while-loop happens to process would silently produce exit 0 -
+  // the exact silent-skip defect this ticket exists to close - unless the
+  // explicit `[[ ! -f ... ]] && return 1` check is the thing catching it.
+  // Verified by hand before landing this hardening: with that check removed
+  // and this same two-member, no-`set -e` shape, copy_bb_closure returned 0
+  // and silently copied only the present member.
   scoped(
-    /^copy_bb_closure copies the closure of (\S+) from that directory into an empty directory$/,
+    /^(\S+) also load-files a second, present file that sorts after the missing one$/,
+    (ctx, entryFile) => {
+      assert.equal(entryFile, ctx.bl1569.entryFile);
+      const secondName = 'zz_present.bb';
+      fs.copyFileSync(
+        path.join(REAL_SCRIPTS, 'bb_load_closure_lib.bb'),
+        path.join(ctx.bl1569.scratchDir, secondName)
+      );
+      const entryPath = path.join(ctx.bl1569.scratchDir, entryFile);
+      fs.appendFileSync(
+        entryPath,
+        `(load-file (str (fs/path (fs/parent (fs/canonicalize *file*)) "${secondName}")))\n`
+      );
+    }
+  );
+
+  scoped(
+    /^copy_bb_closure, run with no "set -e" in its caller, copies the closure of (\S+) from that directory into an empty directory$/,
     (ctx, entry) => {
       assert.equal(entry, ctx.bl1569.entryFile);
       const dest = mkdtemp('bl1569-copy-fail-');
@@ -141,7 +172,11 @@ function registerSteps(registry) {
         'bash',
         [
           '-c',
-          `set -euo pipefail\nsource "${path.join(REAL_SCRIPTS, 'test', 'lib', 'bb_closure_copy.sh')}"\ncopy_bb_closure "$1" "$2" "$3"`,
+          // No -e: matches test_bl1028_promotion_obeys_integrity_refusal.sh's
+          // real `set -uo pipefail` shape, so a mid-loop cp failure that is
+          // not the loop's LAST command does not itself abort the script -
+          // only the explicit fail-loud check inside copy_bb_closure can.
+          `set -uo pipefail\nsource "${path.join(REAL_SCRIPTS, 'test', 'lib', 'bb_closure_copy.sh')}"\ncopy_bb_closure "$1" "$2" "$3"`,
           'bash',
           ctx.bl1569.scratchDir,
           dest,
