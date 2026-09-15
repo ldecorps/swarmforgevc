@@ -4,6 +4,7 @@ const fs = require('node:fs');
 const path = require('node:path');
 const { execFileSync } = require('node:child_process');
 const { mkTmpDir, mkSharedTmpDir } = require('./helpers/tmpDir');
+const { assertReachFloor, runsPerCell } = require('./helpers/reachFloors');
 
 // BL-622 invariant (declared on the ticket, coder-authored per BL-654):
 // "Ambient-env Telegram creds resolve only for the one recorded primary
@@ -170,46 +171,68 @@ test('property: env-fallback token resolution is refused iff this is not the rec
 const distinctNamesArb = fc
   .uniqueArray(fc.constantFrom('fes', 'fes2', 'fes3', 'staging', 'secondary'), { minLength: 2, maxLength: 4 })
   .map((names) => names.slice());
-const forceCollisionArb = fc.boolean();
 const saltArb = fc.integer({ min: 0, max: 1_000_000 });
+
+// BL-1578: the collision arm (collision / no-collision) is reached BY
+// CONSTRUCTION - an outer loop over both arms, each with its own
+// floor-sized run budget - rather than hoped for by a 50/50 draw over the
+// arm (a uniform 30-draw missed the collision arm about 1 run in 600
+// BEFORE this fix, since the old copy only reached the SUBJECT when the
+// list had exactly two names; see the fixed construction below).
+const COLLISION_ARMS = ['collision', 'no-collision'];
+const TOTAL_RUNS = 30;
+const CELL_RUNS = runsPerCell(TOTAL_RUNS, COLLISION_ARMS.length);
 
 test('property: a swarm is flagged as conflicting iff another fleet swarm genuinely holds the identical token', () => {
   const seenConflict = { true: 0, false: 0 };
-  fc.assert(
-    fc.property(distinctNamesArb, forceCollisionArb, saltArb, (names, forceCollision, salt) => {
-      const fleetHome = mkTmpDir('bl622-prop-uniq-');
-      try {
-        const tokens = {};
-        names.forEach((name, i) => {
-          tokens[name] = `${name}-token-${salt}-${i}`;
-        });
-        if (forceCollision) {
-          // Construct the collision by deriving the second swarm's token
-          // from the first's - a real duplicate, not a coincidence.
-          tokens[names[1]] = tokens[names[0]];
+  const counts = {};
+
+  for (const arm of COLLISION_ARMS) {
+    const forceCollision = arm === 'collision';
+    fc.assert(
+      fc.property(distinctNamesArb, saltArb, (names, salt) => {
+        counts[arm] = (counts[arm] || 0) + 1;
+        const fleetHome = mkTmpDir('bl622-prop-uniq-');
+        try {
+          const tokens = {};
+          names.forEach((name, i) => {
+            tokens[name] = `${name}-token-${salt}-${i}`;
+          });
+          const subject = names[names.length - 1];
+          if (forceCollision) {
+            // Construct the collision ON the subject: copy the subject's
+            // own token onto another drawn name, so the subject sees a
+            // genuine conflictor at every list length (2..4) - the prior
+            // copy of names[0]'s token onto names[1] only reached the
+            // subject when the list had exactly two names.
+            const other = names.find((name) => name !== subject);
+            tokens[other] = tokens[subject];
+          }
+          names.forEach((name) => writeFleetCredsFile(fleetHome, name, { botToken: tokens[name], chatId: 'c', bridgePort: 8765 }));
+
+          const subjectToken = tokens[subject];
+          const expectedConflictor = names.find((name) => name !== subject && tokens[name] === subjectToken) || null;
+          seenConflict[String(expectedConflictor !== null)] += 1;
+
+          const actualConflictor = checkConflict(fleetHome, subject, subjectToken);
+
+          assert.equal(
+            actualConflictor,
+            expectedConflictor,
+            `names=${JSON.stringify(names)} subject=${subject} forceCollision=${forceCollision}`
+          );
+        } finally {
+          rmQuiet(fleetHome);
         }
-        names.forEach((name) => writeFleetCredsFile(fleetHome, name, { botToken: tokens[name], chatId: 'c', bridgePort: 8765 }));
+      }),
+      { numRuns: CELL_RUNS }
+    );
+  }
 
-        const subject = names[names.length - 1];
-        const subjectToken = tokens[subject];
-        const expectedConflictor = names.find((name) => name !== subject && tokens[name] === subjectToken) || null;
-        seenConflict[String(expectedConflictor !== null)] += 1;
-
-        const actualConflictor = checkConflict(fleetHome, subject, subjectToken);
-
-        assert.equal(
-          actualConflictor,
-          expectedConflictor,
-          `names=${JSON.stringify(names)} subject=${subject} forceCollision=${forceCollision}`
-        );
-      } finally {
-        rmQuiet(fleetHome);
-      }
-    }),
-    { numRuns: 30 }
-  );
+  assertReachFloor(counts, COLLISION_ARMS, CELL_RUNS, 'arm');
   assert.ok(seenConflict.true > 0, 'generator reach floor: must construct at least one genuine collision');
   assert.ok(seenConflict.false > 0, 'generator reach floor: must generate at least one collision-free trial');
+  console.log(`BL-1578 reach map (bl622): ${JSON.stringify({ arms: COLLISION_ARMS.length, minDrawsPerArm: CELL_RUNS })}`);
 
   // Non-vacuous per BL-654: a nil token never conflicts with anything.
   const fleetHome = mkTmpDir('bl622-prop-uniq-nil-');
