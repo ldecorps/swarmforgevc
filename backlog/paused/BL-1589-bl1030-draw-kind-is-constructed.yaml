@@ -1,0 +1,186 @@
+id: BL-1589
+title: "bl1030StopFlagTokenBoundary draws each admissible command's kind uniformly over 60 draws and then asserts at least 12 were real flags, a floor a seed misses about one run in 130 and flaky red on main with no owner; the three kinds are iterated by construction, the idiom the file's other two sweeps already use, and the floors stay asserted at their values"
+milestone: M8
+type: defect
+severity: high
+# high: a standing red on main in the property lane is a broken safety
+# signal at first sighting (Article 3.2.4, 2026-09-05); QA withheld BL-1581
+# on this red under Article 4.2. Same class as BL-1578, BL-1580, BL-1581.
+status: todo
+epic: code-quality-gates
+priority: 8
+direction: swarm-reported
+depends_on: []
+mutation_cost: low
+# low: one test-file change, the shared reachFloors helper already
+# exists (BL-1062/BL-1555); no production code, no Stryker target.
+slice_size_envelope: low
+required_stages: [coder, cleaner, architect, hardender, documenter, qa]
+
+acceptance: specs/features/BL-1589-bl1030-draw-kind-is-constructed.feature
+
+required_wiring:
+  - 'specs/pipeline/steps/bl1589DrawKindConstructedSteps.js::registerSteps::the handler lands in the same parcel as the feature (BL-233, BL-1371)'
+# No production anchor on purpose (BL-1235): the test file and the helper
+# already exist, so any pattern on them matches before and after.
+
+human_approval: pending
+approval_context: >
+  A new feature file is authored here, so it needs a tap. No choice is
+  posed and there are no ruling_options. FIRM: the two reach floors the
+  file's first test asserts today (`refusedCount >= 12` and
+  `lookalikeCount >= 12` of 60 draws) stay asserted at their values; the
+  fix is to make the three draw kinds - real flag, unquoted look-alike,
+  quoted look-alike - reached BY CONSTRUCTION, 20 draws each, the way the
+  same file's other two sweeps already iterate their shapes with
+  `i % length` and the way BL-1578, BL-1580 and BL-1581 iterate their
+  cells - never to lower a floor, widen a tolerance, pin a seed or retry.
+  FIRM: the draw budget stays 60 and the real bash oracle and the real
+  Babashka guard stay; what changes is how the budget is spent. The
+  register row for the file is removed in the same land that turns it
+  green.
+
+invariants: []
+
+description: |
+  ## What is wrong
+
+  QA ran `npm run test:properties` on the BL-1581 parcel on 2026-09-16
+  (`backlog/evidence/BL-1581-QA-unowned-red-20260916.md`, QA commit
+  972d70e278) and saw one red file BL-1581's diff never touches:
+  `extension/test/bl1030StopFlagTokenBoundary.property.test.js`, test
+  `BL-1030/BL-654 invariant 1: a forbidden flag is refused exactly when
+  the SHELL makes it a token of its own`, with
+
+  ```
+  AssertionError: generator coverage: only 11 of 60 draws were real flags (floor 12)
+  ```
+
+  `buildAdmissibleDraw` picks `kind = randInt(3)` from the file's own
+  time-seeded LCG: kind 0 is a real forbidden flag as its own token, kind
+  1 an unquoted substring look-alike, kind 2 a quoted look-alike. Over
+  `DRAWS = 60` the test then asserts `refusedCount >= 12` (kind 0) and
+  `lookalikeCount >= 12` (kinds 1 and 2). Kind 0 is a Binomial(60, 1/3):
+  mean 20, and fewer than 12 in 0.77% of runs (exact binomial; a
+  100000-seed simulation of the draw gave 0.76%). The look-alike floor
+  over the other two thirds never misses. Nothing is wrong in the guard
+  it exercises: on every draw that runs, the tokenizer matched bash and
+  the verdict matched the words. QA re-ran the file alone 5 of 5 green.
+  This is the BL-1062 sampled-reach-floor lottery, the shape BL-1555,
+  BL-1559, BL-1572, BL-1578, BL-1580 and BL-1581 fixed in other files.
+  BL-1581 was withheld by QA under Article 4.2 on it; this ticket owns it.
+
+  The file does not use fast-check: it has no `fc.assert` and no
+  `numRuns`, only its own `rng` and the `DRAWS` constant. The BL-1583
+  census listed it as `default100` for that reason (no literal budget
+  found); its real budget is 60. Its other two tests already spread their
+  60 draws over their shape lists with `shapeIndex = i % length` - the
+  file's own constructed idiom - and their `hits >= 5` floors are met
+  exactly (12 per operator shape, 10 per unreadable shape); only the
+  first test samples.
+
+  ## What is wanted
+
+  - In the first test the kind of draw `i` is derived from `i`, not drawn:
+    `i % 3` (or an outer loop over the three kinds with
+    `runsPerCell(60, 3)` = 20 draws each), so every run builds exactly 20
+    real flags and 40 look-alikes. Within a kind, the flag, the look-alike
+    shape, the random words and the optional trailing path are still
+    drawn; only the kind is fixed by position. Nothing else about a draw
+    changes: every command still goes through the real `bash -c printf`
+    oracle and the real `expedite-lib/stop-invocation-verdict` in one
+    batched `bb` call.
+  - The per-kind floor is asserted through the shared `assertReachFloor`
+    helper (`extension/test/helpers/reachFloors.js`) so a kind that
+    stopped being built fails the file naming that kind, and the existing
+    `refusedCount >= 12` and `lookalikeCount >= 12` assertions remain in
+    the source at their values (scenario 03). The two `hits >= 5` floors
+    of the other tests remain as well; migrating them to `assertReachFloor`
+    (census recipe shape 2) is welcome in the same pass but their `i %
+    length` loops do not change.
+  - The first test prints one reach map line in the BL-1578 shape,
+    computed from the counts the run actually reached, never restated:
+    `BL-1589 reach map (bl1030): {"kinds":3,"minDrawsPerKind":20}`.
+  - The file is green alone under the properties config 15 of 15 times
+    (QA e2e step 1), and this ticket's register row is removed in the
+    same land that turns it green.
+
+  ## How (direction, not mandate)
+
+  - `buildAdmissibleDraw(kind)` takes the kind instead of drawing it, and
+    the draw loop passes `i % 3` - the exact shape the compound and
+    unreadable sweeps below it already use, so the three tests read
+    alike. Count per kind into a coverage map alongside `refusedCount`
+    and `lookalikeCount`, hand the map to `assertReachFloor(coverage,
+    [0, 1, 2], runsPerCell(DRAWS, 3), 'bl1030 kind')`, and print the map
+    from `Math.min` over the counts.
+  - The step handler follows `bl1580RevertAttributionArmsConstructedSteps.js`:
+    it runs the REAL file once as a subprocess under
+    `vitest.properties.config.mjs`, memoizes the run, parses the printed
+    reach map, and reads the source for scenario 03 - never a restatement
+    of the generator. Every Examples value validates against an explicit
+    lookup (KNOWN_VALUES) and throws on anything else. Scoped
+    registration under the feature name (BL-1277).
+  - Each draw costs one `bash` spawn as today; the draw count does not
+    change, so the file's runtime (about 1 s) is untouched.
+  - Documenter: nothing beyond the evidence file; no diagram trigger.
+
+constraints: >
+  Test file, step handler, feature, evidence and the register row only;
+  `extension/src` and `swarmforge/scripts/expedite_lib.bb` unchanged. No
+  floor lowered, no tolerance widened, no retry, no seed pinned, the
+  draw budget of 60, the bash oracle and the batched bb call unchanged.
+  The step handler lands with the feature (BL-233).
+
+out_of_scope: |
+  - `extension/test/bl1030RefusalCostsNothing.property.test.js` (a
+    different file; the BL-1583 sweeps own it) and any other property
+    file's floor.
+  - The property lane's timeouts (BL-1579, BL-1588).
+  - The BL-1584 send-time classifier; this file leaves the epic's sweep
+    population as an owned file, recorded on BL-1583 in the same mint.
+
+qa_e2e_procedure: |
+  On the parcel commit, from `extension/`:
+  1. `for i in $(seq 1 15); do npx vitest run --config vitest.properties.config.mjs test/bl1030StopFlagTokenBoundary.property.test.js || echo FAIL; done`
+     -> 15 of 15 green, no FAIL line, every run printing
+     `BL-1589 reach map (bl1030): {"kinds":3,"minDrawsPerKind":20}`
+     (the printed map, not the pass count alone, is the evidence: 15
+     green runs of the unfixed file happen about 9 times in 10).
+  2. Acceptance resolving all three scenarios
+     (`swarmforge/scripts/run_acceptance.sh specs/features/BL-1589-*.feature`).
+  3. Break-then-restore: make the loop pass `i % 2` so kind 2 is never
+     built; step 1's first run fails naming the reach floor (`reach
+     floor: bl1030 kind 2 drawn 0 < 20`); restore. Then pass a constant
+     kind 1; the run fails on `refusedCount >= 12` or the reach floor,
+     whichever runs first; restore.
+  4. `git diff main...HEAD --name-only` names the test file, the step
+     handler, the feature, evidence and the register row removal;
+     `extension/src` and `swarmforge/scripts/expedite_lib.bb` are
+     unchanged.
+  5. `bb swarmforge/scripts/standing_red_register_cli.bb .` after landing
+     reports no row for the file and `"unowned":[]`.
+
+source: |
+  QA note to the specifier, priority 00, 2026-09-15T23:10Z (inbound
+  00_20260915T231057Z_002768_from_QA_to_specifier): "BL-1581 held:
+  bl1030 sampled-floor red unowned, evidence 972d70e278". QA evidence
+  backlog/evidence/BL-1581-QA-unowned-red-20260916.md, which carries
+  the assertion text verbatim.
+
+notes: |
+  Minted 2026-09-16 by the specifier while completing QA's unowned-red
+  note, the same pass; the register row in backlog/standing-reds.tsv
+  names this ticket and QA was sent the resume note (BL-1566 shape) in
+  the same pass. Adjudication and the draw arithmetic:
+  backlog/evidence/BL-1581-QA-unowned-red-specifier-adjudication-20260916.md.
+  Exact binomial: P(Binomial(60, 1/3) < 12) = 0.772%; simulated 759 of
+  100000. INVEST: Independent (helper exists, no unbuilt sibling),
+  Negotiable (loop shape is direction), Valuable (one lane red stops
+  firing for no reason and QA stops withholding unrelated parcels on it),
+  Estimable (one loop restructure, one sitting - BL-1578 does three),
+  Small (three scenarios, no invariant), Testable (the printed reach map
+  and the source assertions). Severity high per the standing-red rule,
+  not medium: the register throttles intake until reds drain. The file is
+  recorded on BL-1583 as owned here and excluded from sweep 5a/5b, the
+  way bl1295 and bl1358 are excluded.
