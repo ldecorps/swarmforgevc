@@ -1,3 +1,8 @@
+# mutation-stamp: sha256=b22155af916f65a9c04b9e617b08dbda36b5cf371710f495f5799f78650e2320
+# acceptance-mutation-manifest-begin
+# {"version":1,"tested_at":"2026-09-15T19:40:53.353105342Z","feature_name":"BL-1579 Two fixture-spawning property files are green under lane load","feature_path":"/home/carillon/swarmforgevc/.worktrees/hardender/specs/features/BL-1579-two-fixture-spawning-property-files-red-under-lane-load.feature","background_hash":"74234e98afe7498fb5daf1f36ac2d78acc339464f950703b8c019892f982b90b","implementation_hash":"unknown","scenarios":[{"index":0,"name":"each property file is green on the tree as it stands","scenario_hash":"9d036a9ca809379c13db47c05dc434c90b90c752c8e2a67e155263e654615872","mutation_count":2,"result":{"Total":2,"Killed":2,"Survived":0,"Errors":0},"tested_at":"2026-09-15T19:40:53.353105342Z"},{"index":1,"name":"the parcel's evidence records the observed failure and its remedy for each file","scenario_hash":"cbce3c5455d1b8836e275d4aaf994244b48426471fbed9cd4105bc3fc4e86c1f","mutation_count":2,"result":{"Total":2,"Killed":2,"Survived":0,"Errors":0},"tested_at":"2026-09-15T19:40:53.353105342Z"}]}
+# acceptance-mutation-manifest-end
+
 Feature: BL-1579 Two fixture-spawning property files are green under lane load
 
   QA's third property-lane run on the BL-1509 parcel (2026-09-15) reported

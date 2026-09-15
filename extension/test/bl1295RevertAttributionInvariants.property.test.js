@@ -4,6 +4,7 @@ const fs = require('node:fs');
 const path = require('node:path');
 const { spawnSync, execFileSync } = require('node:child_process');
 const { mkTmpDir } = require('./helpers/tmpDir');
+const { assertReachFloor, runsPerCell } = require('./helpers/reachFloors');
 
 // BL-1295 declared invariants:
 // 1. A revert commit is attributed to whoever authored the revert, never to
@@ -176,33 +177,49 @@ function withRoot(fn) {
   }
 }
 
+// BL-1580: the foreign-commit boolean is reached BY CONSTRUCTION - an outer
+// loop over both arms, each with its own floor-sized run budget (the
+// BL-1578 shape) - rather than hoped for by a uniform fc.boolean() draw
+// over 6 runs, which missed an arm about one run in 32 (94 of 3000
+// simulated seeds, 2 x 0.5^6). The draw budget of 6 is unchanged; only how
+// it is spent changes.
+const REVERT_ARMS = [false, true];
+const REVERT_CELL_RUNS = runsPerCell(6, REVERT_ARMS.length);
+
 test('property (invariant 2): a revert of the task\'s own merge never changes the verdict', () => {
   const seen = { clean: 0, genuinelyForeign: 0 };
-  fc.assert(
-    fc.property(fc.boolean(), (foreignCommit) => {
-      seen[foreignCommit ? 'genuinelyForeign' : 'clean'] += 1;
-      withRoot((outer) => {
-        const withRoot_ = path.join(outer, 'with');
-        const withoutRoot = path.join(outer, 'without');
-        const a = buildRepo(withRoot_, { withRevert: true, foreignCommit });
-        const b = buildRepo(withoutRoot, { withRevert: false, foreignCommit });
-        const withVerdict = gateVerdict(withRoot_, a.base, a.tip);
-        const withoutVerdict = gateVerdict(withoutRoot, b.base, b.tip);
-        assert.equal(
-          withVerdict.blocked,
-          withoutVerdict.blocked,
-          `the revert changed the verdict.\nwith:    ${withVerdict.raw}\nwithout: ${withoutVerdict.raw}`
-        );
-        // Scenario 02 keeps its teeth: a genuine foreign commit is still
-        // refused, and the refusal names the path.
-        assert.equal(withVerdict.blocked, foreignCommit, `verdict wrong for foreignCommit=${foreignCommit}: ${withVerdict.raw}`);
-        if (foreignCommit) {
-          assert.ok(withVerdict.raw.includes(FOREIGN_PATH), `the refusal did not name the foreign path: ${withVerdict.raw}`);
-        }
-      });
-    }),
-    { numRuns: 6 }
-  );
+  const counts = { clean: 0, genuinelyForeign: 0 };
+  for (const foreignCommit of REVERT_ARMS) {
+    const armKey = foreignCommit ? 'genuinelyForeign' : 'clean';
+    fc.assert(
+      fc.property(fc.constant(foreignCommit), (foreignCommit) => {
+        seen[foreignCommit ? 'genuinelyForeign' : 'clean'] += 1;
+        counts[armKey] += 1;
+        withRoot((outer) => {
+          const withRoot_ = path.join(outer, 'with');
+          const withoutRoot = path.join(outer, 'without');
+          const a = buildRepo(withRoot_, { withRevert: true, foreignCommit });
+          const b = buildRepo(withoutRoot, { withRevert: false, foreignCommit });
+          const withVerdict = gateVerdict(withRoot_, a.base, a.tip);
+          const withoutVerdict = gateVerdict(withoutRoot, b.base, b.tip);
+          assert.equal(
+            withVerdict.blocked,
+            withoutVerdict.blocked,
+            `the revert changed the verdict.\nwith:    ${withVerdict.raw}\nwithout: ${withoutVerdict.raw}`
+          );
+          // Scenario 02 keeps its teeth: a genuine foreign commit is still
+          // refused, and the refusal names the path.
+          assert.equal(withVerdict.blocked, foreignCommit, `verdict wrong for foreignCommit=${foreignCommit}: ${withVerdict.raw}`);
+          if (foreignCommit) {
+            assert.ok(withVerdict.raw.includes(FOREIGN_PATH), `the refusal did not name the foreign path: ${withVerdict.raw}`);
+          }
+        });
+      }),
+      { numRuns: REVERT_CELL_RUNS }
+    );
+  }
+  assertReachFloor(counts, ['clean', 'genuinelyForeign'], REVERT_CELL_RUNS, 'arm');
   assert.ok(seen.clean > 0, 'generator never produced the clean parcel - the case the defect breaks');
   assert.ok(seen.genuinelyForeign > 0, 'generator never produced a genuinely foreign commit - the case that must still refuse');
+  console.log(`BL-1580 reach map (bl1295): ${JSON.stringify({ arms: REVERT_ARMS.length, minDrawsPerArm: REVERT_CELL_RUNS })}`);
 });
