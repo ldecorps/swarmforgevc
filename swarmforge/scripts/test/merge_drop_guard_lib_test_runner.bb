@@ -279,6 +279,55 @@
           result (merge-drop-guard-lib/findings-between root received-sha forwarded-sha)]
       (assert= "no merge at all: no findings" [] result))))
 
+;; ordering: merge-commits walks oldest-first (the lib's own docstring
+;; promise: "a finding names the earliest offending merge when several
+;; exist"). Two independent sender-verbatim merges in sequence, the second
+;; built as a descendant of the first, must come back in commit order -
+;; `git rev-list --merges` alone is reverse-chronological (newest first);
+;; only `--reverse` gives the oldest-first order this test pins. Hand-
+;; verified as a real gap, not a style nit: dropping `--reverse` from
+;; merge-commits passes every other test in this file, the property
+;; runner, and the acceptance feature unchanged (2026-09-15 hardener pass).
+(with-fixture [root]
+  (write! root "a.txt" (lines-str base-lines))
+  (write! root "b.txt" "unused\n")
+  (commit! root "seed base")
+  (let [base-sha (head root)]
+    (write! root "a.txt" received-content)
+    (commit! root "received side 1")
+    (let [received1-sha (head root)]
+      (sh! root "git" "reset" "-q" "--hard" base-sha)
+      (write! root "a.txt" sender-content)
+      (commit! root "sender side 1")
+      (let [sender1-sha (head root)]
+        (write! root "a.txt" sender-content)
+        (sh! root "git" "add" "-A")
+        (let [tree1-sha (:out (sh! root "git" "write-tree"))
+              merge1-sha (:out (sh! root "git" "commit-tree" tree1-sha "-p" sender1-sha "-p" received1-sha
+                                     "-m" "merge1 (sender-verbatim)"))]
+          (sh! root "git" "update-ref" "refs/heads/main" merge1-sha)
+          (sh! root "git" "checkout" "-q" "main")
+          (write! root "b.txt" (lines-str base-lines))
+          (commit! root "seed b base")
+          (let [base2-sha (head root)]
+            (write! root "b.txt" received-content)
+            (commit! root "received side 2")
+            (let [received2-sha (head root)]
+              (sh! root "git" "reset" "-q" "--hard" base2-sha)
+              (write! root "b.txt" sender-content)
+              (commit! root "sender side 2")
+              (let [sender2-sha (head root)]
+                (write! root "b.txt" sender-content)
+                (sh! root "git" "add" "-A")
+                (let [tree2-sha (:out (sh! root "git" "write-tree"))
+                      merge2-sha (:out (sh! root "git" "commit-tree" tree2-sha "-p" sender2-sha "-p" received2-sha
+                                             "-m" "merge2 (sender-verbatim)"))]
+                  (sh! root "git" "update-ref" "refs/heads/main" merge2-sha)
+                  (let [result (merge-drop-guard-lib/findings-between root received1-sha merge2-sha)]
+                    (assert= "two merges: oldest-first ordering"
+                             [merge1-sha merge2-sha]
+                             (distinct (map :merge result)))))))))))))
+
 ;; scenario 02 shape: a genuinely contested hunk (both sides rewrite the
 ;; same base line) is never a finding, regardless of which rewrite the
 ;; merge kept.
