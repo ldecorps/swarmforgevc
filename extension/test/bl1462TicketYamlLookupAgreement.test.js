@@ -21,7 +21,7 @@ const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const path = require('node:path');
 const { execFileSync } = require('node:child_process');
-const { resolveTicketYamlPath } = require('../../specs/pipeline/steps/lib/ticketYamlLookup');
+const { resolveTicketYamlPath, readYamlField } = require('../../specs/pipeline/steps/lib/ticketYamlLookup');
 const { mkTmpDir } = require('./helpers/tmpDir');
 
 const REPO_ROOT = path.join(__dirname, '..', '..');
@@ -46,7 +46,14 @@ function mkFixture(placements) {
   for (const { dir, id, name } of placements) {
     const full = path.join(root, ...dir.split('/'));
     fs.mkdirSync(full, { recursive: true });
-    fs.writeFileSync(path.join(full, name), `id: ${id}\ntitle: "fixture"\n`);
+    // BL-1462 hardening: content is distinguishable PER PLACEMENT (embeds its
+    // own dir), never a shared "fixture" literal. When more than one
+    // placement shares an id (the precedence test below), identical content
+    // across copies would make content-equality pass no matter WHICH file
+    // either side picked - the exact vacuity this sweep found (a SEARCH_ORDER
+    // reorder mutant survived because all three precedence copies read
+    // `title: "fixture"` verbatim).
+    fs.writeFileSync(path.join(full, name), `id: ${id}\ntitle: "fixture from ${dir}"\n`);
   }
   return root;
 }
@@ -97,4 +104,27 @@ test('BL-1462: bb and the JS resolver agree that a ticket present nowhere resolv
   } finally {
     fs.rmSync(root, { recursive: true, force: true });
   }
+});
+
+// ── the-id-field-match-is-an-exact-line-prefix-not-a-substring-04 ─────────
+// bb's read-yaml-field (ticket_status_lib.bb) matches with `str/starts-with?`
+// against `<field>: `, never a substring scan - readYamlField mirrors that
+// exactly. A field whose NAME merely ends in "id" (e.g. a hypothetical
+// `epic_id:`) contains the literal text "id: " partway through its own line;
+// a substring-based match would misread that line as the ticket's `id:`
+// field. Pinned directly (not only through file resolution, where every
+// existing fixture's content happens to make startsWith and includes agree).
+test('BL-1462: readYamlField matches "id: " only as a line PREFIX, never as a substring inside another field', () => {
+  const content = ['epic_id: BL-1-decoy', 'id: BL-968', 'title: "fixture"', ''].join('\n');
+  assert.equal(readYamlField(content, 'id'), 'BL-968');
+});
+
+test('BL-1462: the resolver is not fooled by a decoy field whose name embeds "id: " ahead of the real id: line', () => {
+  const root = mkTmpDir('bl1462-agreement-');
+  const dir = path.join(root, 'backlog', 'active');
+  fs.mkdirSync(dir, { recursive: true });
+  fs.writeFileSync(path.join(dir, 'BL-968-fixture.yaml'), 'epic_id: BL-1-decoy\nid: BL-968\ntitle: "fixture"\n');
+  const found = resolveTicketYamlPath(root, 'BL-968');
+  assert.ok(found, 'resolver found nothing with a decoy epic_id: line present');
+  assert.equal(fs.readFileSync(found, 'utf8'), 'epic_id: BL-1-decoy\nid: BL-968\ntitle: "fixture"\n');
 });
