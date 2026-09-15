@@ -174,8 +174,15 @@ function registerSteps(registry) {
     );
   });
 
-  scoped(/^the list has twelve entries$/, (ctx) => {
-    assert.equal(ctx.bl1567Census.length, 12, `expected 12 entries, got ${ctx.bl1567Census.length}: ${ctx.bl1567Census.join(', ')}`);
+  scoped(/^the list names test_swarm_handoff_refuses_coordinator_git_handoff\.sh$/, (ctx) => {
+    assert.ok(
+      ctx.bl1567Census.includes('test_swarm_handoff_refuses_coordinator_git_handoff.sh'),
+      `census did not include test_swarm_handoff_refuses_coordinator_git_handoff.sh: ${ctx.bl1567Census.join(', ')}`,
+    );
+  });
+
+  scoped(/^the list has thirteen entries$/, (ctx) => {
+    assert.equal(ctx.bl1567Census.length, 13, `expected 13 entries, got ${ctx.bl1567Census.length}: ${ctx.bl1567Census.join(', ')}`);
   });
 }
 
