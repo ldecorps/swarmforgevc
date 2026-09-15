@@ -1,0 +1,156 @@
+id: BL-1575
+title: "The BL-1495 acceptance feature is red on main with no owner since BL-1410's 046a7d9b84 (2026-09-09) migrated bl1495BaiGatewaySeatSteps.js from a local mkTmpDir to mkSocketFixtureRoot without adding the require the ten sibling handlers received: all 7 scenarios die in the Background with 'mkSocketFixtureRoot is not defined' - the handler imports the helper it calls, the feature is green again, and the lane's caller census has no other handler missing the import"
+milestone: M8
+type: defect
+severity: high
+# high (standing-red rule 2026-09-05): an acceptance-lane feature red on
+# main is a broken safety signal and throttles intake until owned; the
+# coder withheld the BL-1486 forward on it (unowned-red note 03:27Z,
+# 2026-09-15). Not a production fault: the b.ai gateway seat, the staffing
+# gate and the launcher are untouched - the defect is one missing require
+# in a step handler. Injecting the import alone turns the feature 7/7
+# green in 6 s (specifier reproduction, this pass).
+status: todo
+epic: code-quality-gates
+priority: 8
+direction: swarm-reported
+depends_on: []
+mutation_cost: low
+# low: one require line in one step handler plus one new handler with
+# three read-and-grep scenarios; no production code, no bb/TS module.
+slice_size_envelope: low
+required_stages: [coder, cleaner, architect, hardender, documenter, qa]
+
+acceptance: specs/features/BL-1575-the-bai-gateway-handler-imports-the-fixture-root-helper-it-calls.feature
+
+# Handler pin per BL-233/BL-1371: the feature is executable only once the
+# handler lands in the same parcel. The bl1495 anchor is the deliverable
+# text itself, satisfied by the parcel's own diff (BL-1235 caveat: it
+# proves the line landed, not a consumer); scenario 02 running the real
+# BL-1495 feature is what proves the behaviour. No quote in the pattern
+# (BL-960): the path fragment is the literal the require line carries.
+required_wiring:
+  - 'specs/pipeline/steps/bl1575BaiGatewayHandlerImportsHelperSteps.js::registerSteps::the handler lands in the same parcel as the feature (BL-233, BL-1371)'
+  - 'specs/pipeline/steps/bl1495BaiGatewaySeatSteps.js::lib/socketFixtureRoot::the require BL-1410 dropped - deliverable text, not a consumer'
+
+human_approval: pending
+approval_context: >
+  A new feature file is authored here, so it needs a tap. No choice is
+  posed and there are no ruling_options. FIRM: production code is not
+  edited - the fix is one `const { mkSocketFixtureRoot } =
+  require('./lib/socketFixtureRoot');` line in the step handler, the same
+  line the ten sibling handlers of the BL-1410 migration carry. FIRM: the
+  BL-1495 feature file is not reworded; its scenarios are the contract
+  that goes green. FIRM: the parcel diffs its merge against BOTH parents
+  (BL-571/BL-958). Minted by the specifier on the coder's unowned-red note
+  of 2026-09-15 (BL-1486 forward withheld on it); evidence
+  backlog/evidence/BL-1575-specifier-unowned-red-20260915.md.
+
+invariants:
+  - "Every step handler under specs/pipeline/steps that calls mkSocketFixtureRoot( requires it from ./lib/socketFixtureRoot - census 2026-09-15 on main 228a4b6b3d: 123 callers, bl1495BaiGatewaySeatSteps.js the only one without the require (grep -l 'mkSocketFixtureRoot(' specs/pipeline/steps/*.js | xargs grep -L socketFixtureRoot)."
+
+description: |
+  ## What is wrong
+
+  `specs/features/BL-1495-a-b-ai-gateway-seat-launches-respawns-and-authenticates.feature`
+  (lane acceptance) fails on `main` 228a4b6b3d, all 7 scenario runs:
+
+  ```
+  not ok 1 - the launch gate resolves the pack's seats [1]
+    error: Scenario "..." failed at step "Given a steward registry fixture
+    where tencentcloud2/glm-5.3-flash is certified for every pipeline role
+    and anthropic/claude-fable-5-1 is certified for the specifier":
+    mkSocketFixtureRoot is not defined
+  ...
+  # pass 0
+  # fail 7
+  ```
+
+  Every scenario shares that Background step; it calls `buildStateDir()`,
+  whose first line is `mkSocketFixtureRoot('bl1495-staffing-state-')`
+  (line 82). The file has no `require('./lib/socketFixtureRoot')`; its
+  requires are `node:assert/strict`, `node:fs`, `node:os`, `node:path`
+  and `node:child_process` (lines 12-16). Two more calls sit at lines 116
+  and 224.
+
+  BL-1410's 046a7d9b84 (2026-09-09 02:02) migrated ten handlers from a
+  local `mkTmpDir` to the steps-lane helper. Nine of them gained the
+  require in the same diff; bl1495's hunk deleted `mkTmpDir` and rewrote
+  the three calls but added no import (`git show 046a7d9b84 --
+  specs/pipeline/steps/bl1495BaiGatewaySeatSteps.js`). f1c26a1cd5 (blank
+  lines) is the only later touch. BL-1410's own scenario 01 pinned four
+  features (BL-551, BL-565, BL-664, BL-771) as its migration census, none
+  of the ten it migrated, so its gate never ran the BL-1495 feature - the
+  BL-1445 shape, a population pin that misses the population.
+
+  Red since 046a7d9b84 landed; first seen 2026-09-15 by the coder on the
+  BL-1486 parcel (`# fail 7` with and without the staffing hatch, evidence
+  `backlog/evidence/BL-1486-coder-20260915.md` on the coder branch, note
+  03:27Z), which withheld its forward to the cleaner on it. Specifier
+  reproduction the same pass: injecting only
+  `global.mkSocketFixtureRoot = require(...).mkSocketFixtureRoot` ahead of
+  the steps index turns the feature `# pass 7 / # fail 0` in 6.1 s, so the
+  missing require is the whole defect.
+
+  ## What is wanted
+
+  `bl1495BaiGatewaySeatSteps.js` requires `mkSocketFixtureRoot` from
+  `./lib/socketFixtureRoot` like its ten migration siblings; the BL-1495
+  feature passes 7/7 under `specs/pipeline/scripts/run_acceptance.sh` on
+  `main`; the acceptance lane's census of handlers calling the helper has
+  no member without the require. The register row this ticket adds is
+  removed in the same land.
+
+  ## How (direction, not mandate)
+
+  - Add `const { mkSocketFixtureRoot } = require('./lib/socketFixtureRoot');`
+    beside the existing requires (the shape at
+    `bl802BabysitterdMacosPortabilitySteps.js:15`). The helper installs
+    its own exit hook, so the now-empty `fixtureRoots` array and its
+    `process.on('exit')` sweep (lines 39-44) are dead; dropping them is
+    fine in this parcel but not required.
+  - Step handler `specs/pipeline/steps/bl1575BaiGatewayHandlerImportsHelperSteps.js`
+    (auto-loaded from the steps directory; export `registerSteps`, BL-233):
+    scenario 01 reads the bl1495 file; scenario 02 spawns
+    `run_acceptance.sh` on the BL-1495 feature into a scratch outDir and
+    reads its TAP summary (6 s measured; the whole feature is well inside
+    the BL-1358 300 s per-mutant ceiling, BL-1541); scenario 03 derives
+    the caller set with the census grep above and pins it (BL-1445).
+    `bl1410StepHandlersTakeTheStepsLaneRootSteps.js:30` already runs a
+    feature by ticket id the same way.
+
+  ## Not in scope
+
+  - The BL-1495 feature file and the seat, gate and launcher code it
+    exercises are not touched.
+  - BL-1410's four-feature Examples pin is not widened here; if the
+    specifier wants the migration census gated it is a separate slice.
+  - A lane-wide "no undefined identifier" lint (BL-1226's shape) is not
+    built here.
+
+notes: |
+  Register: backlog/standing-reds.tsv gains one `acceptance` row naming
+  this ticket (same commit as this mint), first_seen 2026-09-15; QA
+  removes it in the land that turns the feature green. Holder note: the
+  coder holds the BL-1486 parcel (3e9a787980, merged main at 97f0d9075d)
+  with its forward withheld on this red; the specifier sends the coder the
+  priority-00 note `BL-1486: bl1495 red owned by BL-1575 (<sha>) - resume
+  forward` the same pass, right after this commit, and the coordinator a
+  paused-item-ready note.
+
+qa_e2e_procedure: |
+  On the parcel commit, from the repo root:
+  1. `specs/pipeline/scripts/run_acceptance.sh specs/features/BL-1495-a-b-ai-gateway-seat-launches-respawns-and-authenticates.feature ./tmp/bl1495-out`
+     -> `# pass 7`, `# fail 0`, exit 0; three times.
+  2. `grep -n "require('./lib/socketFixtureRoot')" specs/pipeline/steps/bl1495BaiGatewaySeatSteps.js`
+     shows the import; `grep -l 'mkSocketFixtureRoot(' specs/pipeline/steps/*.js | xargs grep -L socketFixtureRoot`
+     prints nothing.
+  3. `specs/pipeline/scripts/run_acceptance.sh specs/features/BL-1575-the-bai-gateway-handler-imports-the-fixture-root-helper-it-calls.feature ./tmp/bl1575-out`
+     -> 3 pass, 0 fail.
+  4. `git diff main...HEAD --name-only` names the bl1495 handler, the new
+     handler, the feature, evidence and the register-row removal; nothing
+     under swarmforge/scripts or extension/src.
+  5. Break-then-restore: remove the require; step 1 fails 7/7 with the
+     ReferenceError and BL-1575 scenarios 01-03 all fail; restore.
+  6. Diff the parcel's merge into main against BOTH parents. The row for
+     the BL-1495 feature is gone from `backlog/standing-reds.tsv`.
