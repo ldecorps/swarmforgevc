@@ -125,7 +125,11 @@ test('BL-1358/BL-654 P1+P2: a timeout is its own verdict, and leaves every other
   // the original 1-2 length, with the position derived from the cell
   // rather than drawn.
   const POSITION_CELLS = ['first', 'middle', 'last'];
-  const CELL_RUNS = runsPerCell(3, POSITION_CELLS.length);
+  // Independent of POSITION_CELLS on purpose: the floor must still name a
+  // cell dropped from the loop above, never shrink to match whatever the
+  // loop happens to iterate (qa_e2e_procedure step 3's break-then-restore).
+  const REQUIRED_POSITIONS = ['first', 'middle', 'last'];
+  const CELL_RUNS = runsPerCell(3, REQUIRED_POSITIONS.length);
   const counts = { first: 0, middle: 0, last: 0 };
 
   for (const cell of POSITION_CELLS) {
@@ -172,7 +176,7 @@ test('BL-1358/BL-654 P1+P2: a timeout is its own verdict, and leaves every other
     );
   }
 
-  assertReachFloor(counts, POSITION_CELLS, CELL_RUNS, 'position');
+  assertReachFloor(counts, REQUIRED_POSITIONS, CELL_RUNS, 'position');
   assert.ok(runs > 0, 'no run was generated');
   // A hang in last position alone would prove nothing about the rest of the
   // run continuing, so the reach that matters is asserted specifically.
