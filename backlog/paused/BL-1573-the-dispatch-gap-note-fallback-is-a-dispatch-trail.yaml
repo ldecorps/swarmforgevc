@@ -1,0 +1,138 @@
+id: BL-1573
+title: "The dispatch-gap sweep's note fallback is not a dispatch trail: when head-commit-10 fails, auto-route! sends 'BL-x is active with no dispatch on record - auto-routed by the sweep.' and BL-1223's narrowed predicate reads that bare-id note as a mention, so the next sweep re-detects the gap and sends it again every cycle - the sibling unassigned-active nudge was made verb-first for exactly this in BL-1223; the dispatch-gap fallback was not"
+milestone: M8
+type: defect
+severity: low
+# low: latent, never observed - .swarmforge daemon telemetry carries no
+# `note-fallback` line, and the path fires only when `git rev-parse HEAD`
+# fails in the master checkout. If a note-fallback line ever appears, the
+# specifier re-classes it: once live it is a per-cycle spam generator on
+# the assignee's inbox.
+status: todo
+epic: swarm-reliability
+priority: 5
+direction: swarm-reported
+depends_on: []
+mutation_cost: low
+# low: one string function and its arity-1 draft in chase_sweep_lib.bb,
+# two pins (bb runner, JS steps test); Babashka has no mutation lane
+# (BL-472), the hardener records the fallback.
+slice_size_envelope: low
+required_stages: [coder, cleaner, architect, hardender, documenter, qa]
+
+acceptance: specs/features/BL-1573-the-dispatch-gap-note-fallback-is-a-dispatch-trail.feature
+
+# The only live consumer, handoffd.bb's auto-route!, already calls
+# dispatch-gap-draft-lines before and after this fix, so an anchor there
+# gates nothing (BL-1235). Handler pin only (BL-233).
+required_wiring:
+  - 'specs/pipeline/steps/bl1573DispatchGapFallbackIsATrailSteps.js::registerSteps::the handler lands in the same parcel as the feature (BL-233, BL-1371)'
+
+human_approval: pending
+approval_context: >
+  A new feature file is authored and a choice is posed. FIRM: whichever
+  option is chosen, `unassigned-active-note-message` (already verb-first
+  since BL-1223) and the git_handoff form `auto-route!` sends when HEAD
+  resolves are untouched; `dispatch-trail-ticket-id` and
+  `spec-work-ticket-id-pattern` are untouched - the fix is on the emitting
+  side, never a widening of what counts as a trail (that widening is what
+  BL-1223 removed). FIRM: the message stays within the 80-character note
+  limit. The feature file is drafted for option A; a ruling of B sends the
+  ticket back to the specifier to redraft the scenarios before promotion.
+  Found 2026-09-15 while amending BL-1568, whose shell test was sending this
+  fallback and could not satisfy its own idempotency case.
+ruling_options:
+  - Make the fallback note verb-first in the router's own Work form so it counts as a trail and the assignee is still woken (recommended)
+  - Retire the fallback so auto-route! logs an error and sends nothing when HEAD does not resolve
+ruling_tradeoffs:
+  - Pros - smallest diff, one string plus two pins, a trail still lands so the sweep goes quiet and the assignee is woken, and it is exactly the fix BL-1223 applied to the sibling nudge. Cons - the note is not a parcel, so an agent can narrate and idle on it, which is why git_handoff replaced it in production. Recommended because the fallback exists to keep a starving ticket visible to its assignee, and a silent sweep with no wake is the failure BL-222 was filed against.
+  - Pros - no non-parcel dispatch ever leaves the sweep, the failure is a logged dispatch-gap-autoroute-error a human can see, and the arity-1 draft form and its pins are removed as dead code. Cons - the ticket sits unrouted for as long as HEAD fails and nobody is woken, which is silent starvation, and the parcel touches more (draft-lines arity, the bb runner, the JS steps test, auto-route!).
+
+invariants: []
+
+description: |
+  ## What is wrong
+
+  `handoffd.bb`'s `auto-route!` computes `(or (head-commit-10) "")` and
+  hands it to `chase-sweep-lib/dispatch-gap-draft-lines`. With a commit the
+  draft is a `git_handoff` (`task: <id>`), which BL-1223's
+  `dispatch-trail-ticket-id` counts structurally. Without one - `git
+  rev-parse --short=10 HEAD` failing in the master checkout - the draft is
+  the legacy soft note, `message: BL-217 is active with no dispatch on
+  record - auto-routed by the sweep.`, logged as `note-fallback`.
+
+  BL-1223 (2026-08-29) made a note count as a dispatch only in the router's
+  verb-first `Spec`/`Work` form (`spec-work-ticket-id-pattern`); a bare
+  leading id is a mention. It re-worded the sibling
+  `unassigned-active-note-message` to lead with `Work` for precisely this
+  reason - "which would otherwise turn this sweep's own anti-spam mechanism
+  into a spam generator" - but left `dispatch-gap-note-message` as it was.
+  So on the next sweep the fallback note is not a trail, `dispatch-gap-items`
+  lists the ticket again, and another note goes out, every cycle, until HEAD
+  resolves. Reproduced 2026-09-15 on main:
+
+  ```
+  (dispatch-trail-ticket-id {:task nil :message (dispatch-gap-note-message "BL-217")})
+  => nil
+  ```
+
+  Surfaced by BL-1568: `test_dispatch_gap_autoroute.sh` was sending this
+  very fallback and its case 04 (idempotency) could not pass. That ticket
+  fixes the TEST to send production's git_handoff form; this one fixes the
+  fallback itself.
+
+  ## What is wanted (option A, recommended; B redrafts)
+
+  The fallback note leads with the router's own `Work` marker, e.g.
+  `Work BL-217: read file in backlog/active - auto-routed by the sweep, no
+  HEAD` (76 chars), so `dispatch-trail-ticket-id` answers `BL-217` for the
+  queued file and the following sweep does not re-detect the gap. The pure
+  runner `dispatch_gap_test_runner.bb` and
+  `specs/pipeline/test/steps/dispatchGapSteps.test.js` pin the new text.
+  `extract-ticket-id` still resolves the id from the message (the runner's
+  existing assertion), and the message stays within
+  `dispatch-gap-note-max-length`.
+
+  ## How (direction, not mandate)
+
+  - `dispatch-gap-note-message` returns the verb-first string; nothing
+    else in `chase_sweep_lib.bb` moves. `unassigned-active-note-message` is
+    the worked example beside it.
+  - Add one runner assertion: `dispatch-trail-ticket-id` over
+    `{:task nil :message (dispatch-gap-note-message "BL-217")}` is
+    `"BL-217"` - the property that was missing.
+  - Step handler `specs/pipeline/steps/bl1573DispatchGapFallbackIsATrailSteps.js`
+    drives the pure functions in-process via `bb -e` (seconds, well inside
+    the BL-1358 ceiling) and lands in the same commit as the feature.
+
+  ## Not in scope
+
+  - `dispatch-trail-ticket-id`, `spec-work-ticket-id-pattern`,
+    `read-active-items`, `handoffd.bb`, and any test under
+    `swarmforge/scripts/test/test_*.sh`.
+
+notes: |
+  Minted 2026-09-15 by the specifier in the same pass as the BL-1568
+  amendment (its evidence:
+  backlog/evidence/BL-1568-specifier-amendment-20260915.md). Poses a
+  choice, so ruling_options and ruling_tradeoffs are declared (BL-1300,
+  BL-1531). Not a standing red: no test is red for it on main.
+
+qa_e2e_procedure: |
+  On the parcel commit, from the repo root:
+  1. `bb swarmforge/scripts/test/dispatch_gap_test_runner.bb` exits 0 and
+     its output names the new trail assertion.
+  2. `bb -e '(load-file "swarmforge/scripts/chase_sweep_lib.bb") (println (chase-sweep-lib/dispatch-trail-ticket-id {:task nil :message (chase-sweep-lib/dispatch-gap-note-message "BL-217")}))'`
+     prints `BL-217`; on main it prints `nil`.
+  3. `bb -e '(load-file "swarmforge/scripts/chase_sweep_lib.bb") (println (count (chase-sweep-lib/dispatch-gap-note-message "BL-217")))'`
+     prints a number no greater than 80.
+  4. In a mkdtemp fixture (test_dispatch_gap_autoroute.sh's shape: one
+     active BL-217 assigned to coder), write the arity-1 draft's lines into
+     a `.handoff` file under the coordinator outbox and run
+     `dispatch-gap-items` over it: the gap list is empty. On main it lists
+     BL-217.
+  5. `git diff main...HEAD --name-only` names chase_sweep_lib.bb, the bb
+     runner, the JS steps test, the handler, the feature, and evidence -
+     nothing under swarmforge/scripts/test/test_*.sh and not handoffd.bb.
+  6. `cd extension && npx vitest run ../specs/pipeline/test/steps/dispatchGapSteps.test.js`
+     (or the project's unit runner for that file) is green.
