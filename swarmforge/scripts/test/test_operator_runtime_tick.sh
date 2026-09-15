@@ -74,6 +74,12 @@ rm -rf "$F"
 
 # ── mini app watchdog: a down /lets-talk endpoint triggers a bounded auto-bounce ──
 F="$(make_fixture)"
+# BL-1574: BL-1571's 442bdd1f40 routed the recovery through
+# recover_miniapp_bridge.sh; the fixture must carry the REAL router (never
+# a stub) so the tick reaches this stubbed leaf through it. With no
+# front-desk-supervisor.pid in the fixture, the router execs
+# bounce_bridge_headless.sh below.
+cp "$SRC/recover_miniapp_bridge.sh" "$F/swarmforge/scripts/"
 cat > "$F/swarmforge/scripts/bounce_bridge_headless.sh" <<'EOF'
 #!/usr/bin/env bash
 set -euo pipefail
@@ -89,6 +95,13 @@ check "miniapp-watchdog: down bridge triggers a bounce attempt" \
   '[[ -f "$F/.swarmforge/operator/miniapp-bounced.marker" ]]'
 check "miniapp-watchdog: watchdog state records a completed bounce cycle" \
   '[[ "$(jget "$F/.swarmforge/operator/miniapp-watchdog.json" ":consecutive_failures")" == 0 ]] && [[ "$(jget "$F/.swarmforge/operator/miniapp-watchdog.json" ":last_bounce_at_ms")" != nil ]]'
+# BL-1574: a failed bounce (exit=127, missing router) wrote the same
+# zeroed-failures/last-bounce-at-ms state as a real bounce, so the check
+# above was green even when the bounce never ran (BL-1445 fail-open
+# shape). Tighten: the runtime log must record a completed bounce and
+# must never record a failed one.
+check "miniapp-watchdog: runtime log records a completed bounce, never a failed one" \
+  'grep -q "miniapp-watchdog bounced" "$F/.swarmforge/operator/runtime.log" && ! grep -q "miniapp-watchdog bounce-failed" "$F/.swarmforge/operator/runtime.log"'
 rm -rf "$F"
 
 # ── BL-516: valid operator Telegram config is supervised by the runtime tick ──
