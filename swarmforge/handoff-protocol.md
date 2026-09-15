@@ -853,6 +853,75 @@ send.
 
 How-to: `docs/how-to/BL-1213-parcel-rollback-guard.md`.
 
+## Merge-Drop Guard (BL-1576)
+
+`swarm_handoff.sh` refuses a `git_handoff` send when a merge commit the
+sender made on its own branch, between the parcel's received commit and
+the commit being forwarded, resolved a conflicted path by keeping one
+side verbatim and silently dropping hunks the OTHER side had the only
+claim to. This is the sixth guard in the same incident thread as BL-1213:
+on 2026-09-15 a documenter merge (`4566a68955`) resolved a conflict on
+`backlog/standing-reds.tsv` by keeping its own side, re-adding six rows
+the hardener had removed in an uncontested hunk (base lines 33-38),
+while main's adjacent, disjoint edit (base lines 39-40) stayed intact.
+Git raised the conflict because the two sides' edits were ADJACENT, not
+overlapping — a correct resolution keeps both. Every existing guard read
+clean: BL-1213 is bounded to the paths the *received* commit itself
+touched and fires only on a byte-identical tip (here the tip carried
+main's edits too, matching no earlier blob); BL-1242 fires on path
+deletions only (the path stayed present); BL-1098's silent-revert
+predicate excuses content the merge commit itself authored. Only QA's
+own hand diff against both parents, at the last stage, caught it
+(BL-1486 bounce).
+
+Mechanics (`merge_drop_guard_lib.bb`):
+
+- **Bounded to the sender's own merges.** Only merge commits reachable
+  from the forwarded commit and not from the received commit are
+  inspected (`git rev-list --merges <received>..<forwarded>`) — never a
+  merge the sender did not make, never past the received commit.
+- **Discriminator is contested vs. uncontested hunks, not ancestry.** For
+  each merge M with parents P1/P2 and base B, `git diff -U0 B <side> --
+  <path>` is parsed into hunks carrying their base line range. A hunk is
+  CONTESTED when its base range overlaps a hunk the other side made to
+  the same path, or both sides insert at the same base position —
+  adjacent ranges (the incident's 33-38 vs 39-39) are never contested.
+  This is the whole discriminator: git raises a conflict on adjacency,
+  but a correct resolver keeps both sides; only a one-sided drop of a
+  hunk the other side never touched is a finding.
+- **Finding.** Within a side's uncontested hunks, a `+` line in
+  `diff(side, M)` equal to a line that side itself removed
+  (resurrection), or a `-` line equal to a line that side itself added
+  (drop) — compared whole-line, byte-for-byte, ignoring blank lines.
+- **A legitimate revert stays legal.** A `This reverts commit <full
+  sha>` body reachable from the forwarded commit, naming a commit in
+  `B..<side>` that touched the path, excuses the finding — the same
+  BL-490/BL-495 bounce-revert convention BL-1213 honours.
+- **Fail-open on unreadable facts**, same posture as every other
+  send-time gate in `swarm_handoff.bb`: no recorded received commit at
+  all (a fresh task, nothing yet received) is silent, not a warning; a
+  recorded-but-unresolvable received commit or merge list warns
+  (`MERGE_DROP WARNING` to stderr) and the send proceeds.
+- Applies to `git_handoff` sends only; a `note` records no finding.
+- Read-only entry point with no mailbox/fixture, for QA to point at live
+  objects directly: `bb swarmforge/scripts/merge_drop_guard_lib.bb
+  <project-root> <received-commit> <forwarded-commit>` prints one JSON
+  finding per line and exits 0.
+
+Refusal message names the task, the merge commit, the dropped side, the
+path, and the line count:
+
+```text
+Cannot send git_handoff for BL-901: merge 4566a68955 dropped 6 lines of
+the received side's uncontested hunks in backlog/standing-reds.tsv - a
+one-sided merge resolution discarded uncontested work (BL-1576). If this
+is a deliberate BL-490/BL-495 bounce revert, carry a proper revert of the
+commit that authored the dropped hunk; otherwise redo the merge
+resolution to keep both sides before sending.
+```
+
+How-to: `docs/how-to/BL-1576-merge-drop-guard.md`.
+
 ## Tree-Collapse Guard (BL-1205)
 
 `swarm_handoff.sh` refuses a `git_handoff` — to **any** recipient, whether
