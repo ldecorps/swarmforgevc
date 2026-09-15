@@ -1,6 +1,6 @@
-# mutation-stamp: sha256=e912cb610f0afb004af7eb9bd7eb3c861dcec7c14470bfe992c2e723691be4a8
+# mutation-stamp: sha256=74b2667944194b252b031598d3b3ecf72a54d72b143e3753fda3676723464157
 # acceptance-mutation-manifest-begin
-# {"version":1,"tested_at":"2026-07-15T17:05:25.867823204Z","feature_name":"the standing non-ticket topics carry their orchestra icons","feature_path":"/home/carillon/swarmforgevc/.worktrees/hardender/specs/features/BL-418-standing-topic-icons.feature","background_hash":"f8a0f5b90dd0e32b0356487908b2a989f6a8e1f2f56bfed9503a190c6ec12f91","implementation_hash":"unknown","scenarios":[{"index":0,"name":"each standing topic resolves to its orchestra icon","scenario_hash":"0ffdd6e0cb1f292bd6a796206772068e5f431315c7ea46effcf0af7328c56a98","mutation_count":4,"result":{"Total":4,"Killed":4,"Survived":0,"Errors":0},"tested_at":"2026-07-15T17:05:25.867823204Z"}]}
+# {"version":1,"tested_at":"2026-09-15T10:40:24.143102753Z","feature_name":"the standing non-ticket topics carry their orchestra icons","feature_path":"/home/carillon/swarmforgevc/.worktrees/hardender/specs/features/BL-418-standing-topic-icons.feature","background_hash":"f8a0f5b90dd0e32b0356487908b2a989f6a8e1f2f56bfed9503a190c6ec12f91","implementation_hash":"unknown","scenarios":[{"index":0,"name":"each standing topic resolves to its orchestra icon","scenario_hash":"94b990125fa7fb8fc5566cc39114f9266d8ca018251594e02261f82f513fb52e","mutation_count":2,"result":{"Total":2,"Killed":2,"Survived":0,"Errors":0},"tested_at":"2026-09-15T10:40:24.143102753Z"}]}
 # acceptance-mutation-manifest-end
 
 Feature: the standing non-ticket topics carry their orchestra icons
