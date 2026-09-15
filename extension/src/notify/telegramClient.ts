@@ -1131,3 +1131,44 @@ export async function sendVoiceNote(
     return { success: false, error: formatNetworkError('Telegram request failed', err, token) };
   }
 }
+
+export interface SendDocumentResult {
+  success: boolean;
+  error?: string;
+}
+
+// BL-1509: the generic sibling of sendVoiceNote above - same multipart
+// upload, same redacted-error shape (reuses SendVoicePostFn/defaultPostVoice
+// unchanged, since Telegram's document upload is the identical "POST a
+// FormData body" shape sendVoice already does). filename rides the
+// document's own form-part filename; caption is optional and omitted from
+// the form entirely when not given, matching every other optional-field
+// convention in this file.
+export async function sendDocument(
+  token: string,
+  chatId: string,
+  fileBytes: Buffer,
+  filename: string,
+  messageThreadId?: number,
+  caption?: string,
+  postDocumentFn: SendVoicePostFn = defaultPostVoice
+): Promise<SendDocumentResult> {
+  const form = new FormData();
+  form.append('chat_id', chatId);
+  if (messageThreadId !== undefined) {
+    form.append('message_thread_id', String(messageThreadId));
+  }
+  if (caption !== undefined) {
+    form.append('caption', caption);
+  }
+  form.append('document', new Blob([fileBytes]), filename);
+  try {
+    const res = await postDocumentFn(apiUrl(token, 'sendDocument'), form);
+    if (!res.ok) {
+      return { success: false, error: formatApiFailureError(res.status, res.json, token) };
+    }
+    return { success: true };
+  } catch (err) {
+    return { success: false, error: formatNetworkError('Telegram request failed', err, token) };
+  }
+}
