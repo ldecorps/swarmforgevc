@@ -1,5 +1,30 @@
 # SwarmForge VS Code Extension — Specification
 
+**Last Updated:** September 15, 2026 (BL-1569: both closure walkers
+(`bb_load_closure_lib.bb`'s `direct-load-file-deps` and its JS twin
+`operatorRuntimeBbClosure.js`'s `directLoadFileDeps`) captured only the last
+quoted string in a `load-file` form, so `unregistered_test_gate_lib.bb`'s
+two-segment `(fs/path (fs/parent ...) "test" "suite_inventory_lib.bb")` was
+reported as the bare `suite_inventory_lib.bb` — a name that does not exist
+beside it. `copy_bb_closure` (`bb_closure_copy.sh`) silently skipped the
+missing member instead of failing loud, the sandboxed copy of
+`swarm_handoff.bb` could not load, and
+`test_operator_runtime_hotfix_certification_sweep.sh` was red on `main`
+from 2026-08-31 to 2026-09-15 — unseen because the two independent walkers
+agreed on the wrong answer, which is exactly what the BL-897 agreement
+runner cannot catch. Both walkers now capture the whole run of quoted path
+segments in a bounded `load-file` form and join them with `/`, so a
+multi-segment form resolves to its directory-qualified relative path while
+every existing single-segment form is unchanged; `copy_bb_closure` creates
+the destination subdirectory and now exits non-zero naming the path when a
+closure member is missing under the source, never a silent skip.
+`bb_load_closure_agreement_test_runner.bb` pins the multi-segment case
+across both twins. Acceptance:
+`specs/features/BL-1569-the-closure-walker-keeps-the-directory-of-a-load-filed-lib.feature`.
+How-to: `docs/how-to/BL-973-bb-fixture-closure-guards-and-suite-inventory.md`
+("the closure walkers dropped a multi-segment load-file's directory"). No
+registered diagram depicts test-fixture wiring.)
+Prior entry —
 **Last Updated:** September 14, 2026 (BL-1566: an Article 4.2 hold is now a
 durable record, not an evidence-file sentence. QA withheld BL-1555 on a red
 with no open ticket, completed the withheld parcel so the rotation resident
