@@ -26,12 +26,13 @@ const {
   registryLoadVerdict,
   plantOffender,
 } = require('../../../extension/test/helpers/materializedRegistryGuard');
+const { resolveTicketYamlPath } = require('./lib/ticketYamlLookup');
+const { firstLinkedWorktreePath } = require('./lib/roleWorktrees');
 
 const FEATURE = 'BL-968 step registry loads from a materialized non-repo tree';
 
 const REPO_ROOT = path.join(__dirname, '..', '..', '..');
 const TICKET_ID = 'BL-968';
-const TICKET_YAML_REL = path.join('backlog', 'active', 'BL-968-step-registry-loadable-from-materialized-tree.yaml');
 
 // The five load-time offenders this parcel fixed, with the lazy marker
 // each must carry (and the eager marker each must NOT) at any commit the
@@ -158,8 +159,11 @@ function registerSteps(registry) {
       assert.ok(content.includes(lazy), `${rel} at ${ctx.citedCommit} lacks its lazy marker '${lazy}'`);
       assert.ok(!content.includes(eager), `${rel} at ${ctx.citedCommit} still carries its eager load-time call '${eager}'`);
     }
-    ctx.yamlPath = path.join(REPO_ROOT, TICKET_YAML_REL);
-    assert.ok(fs.existsSync(ctx.yamlPath), `ticket yaml not found at ${ctx.yamlPath}`);
+    // BL-1462: found wherever backlog bookkeeping put it (the gate
+    // library's own search order), never a literal backlog/active path -
+    // BL-968 itself closed and moved to backlog/done on 2026-08-20.
+    ctx.yamlPath = resolveTicketYamlPath(REPO_ROOT, TICKET_ID);
+    assert.ok(ctx.yamlPath, `${TICKET_ID}'s ticket YAML not found anywhere under ${REPO_ROOT}/backlog (active, paused, or done)`);
   });
   scoped(/^the pre-QA gate gathers and evaluates the send$/, (ctx) => {
     const scratch = fs.mkdtempSync(path.join(os.tmpdir(), 'bl968-gate-'));
@@ -210,17 +214,26 @@ function registerSteps(registry) {
   });
 
   // ── registry-materialized-load-04 ─────────────────────────────────────
-  scoped(/^a role-worktree checkout of the repository$/, () => {
-    // In a linked worktree .git is a FILE (gitdir: pointer), in the master
-    // checkout a directory - this scenario's claim is about lazy
-    // resolution FROM a role worktree, so the context is asserted, not
-    // assumed.
-    const dotGit = path.join(REPO_ROOT, '.git');
-    assert.ok(fs.statSync(dotGit).isFile(), `expected a role-worktree checkout (.git as a gitdir pointer file), got a directory at ${dotGit}`);
+  scoped(/^a role-worktree checkout of the repository$/, (ctx) => {
+    // BL-1462: LOCATE a linked role worktree via `git worktree list`
+    // rather than asserting the checkout this process happens to run in
+    // is one - the scenario's claim is about lazy resolution FROM a role
+    // worktree, not about the runner's own surroundings. No linked
+    // worktree at all is a real missing precondition (a real swarm
+    // install is this scenario's premise): fail naming it.
+    const linked = firstLinkedWorktreePath(REPO_ROOT);
+    assert.ok(linked, 'no linked role worktree found via `git worktree list` off this repository');
+    ctx.linkedWorktree = linked;
   });
   scoped(/^a scenario step from a fixed step file executes and needs the main checkout$/, async (ctx) => {
     const { createStepRegistry } = require('../stepRegistry');
-    const fixed = require('./routingBreakEvenSteps');
+    // Required FROM the linked worktree's own path so its lazy
+    // main-checkout resolution (resolveMainCheckout(__dirname)) is
+    // exercised from that worktree, exactly as the scenario claims -
+    // never from wherever this test process itself happens to run.
+    const fixedPath = path.join(ctx.linkedWorktree, 'specs', 'pipeline', 'steps', 'routingBreakEvenSteps.js');
+    assert.ok(fs.existsSync(fixedPath), `fixed step file not found in the linked worktree at ${fixedPath}`);
+    const fixed = require(fixedPath);
     const reg = createStepRegistry();
     fixed.registerSteps(reg);
     // The chosen step runs the REAL park-cycle CLI with cwd set to the
