@@ -23,6 +23,7 @@ const {
   getFile,
   downloadTelegramFile,
   sendVoiceNote,
+  sendDocument,
 } = require('../out/notify/telegramClient');
 
 const TOKEN = '123456:test-bot-token';
@@ -1263,5 +1264,86 @@ test('BL-426: sendVoiceNote reports a redacted failure on a thrown network error
   const result = await sendVoiceNote(TOKEN, CHAT_ID, Buffer.from('synth-audio'), undefined, postVoiceFn);
 
   assert.equal(result.success, false);
+  assert.doesNotMatch(result.error, new RegExp(TOKEN));
+});
+
+// ── BL-1509: sendDocument (generic file upload, sendVoiceNote's pattern) ──
+
+test('BL-1509 file-posted-as-telegram-document-01: sendDocument posts one multipart sendDocument request carrying chat id, topic id and the file under its own name', async () => {
+  const calls = [];
+  const postFn = async (url, form) => {
+    calls.push({ url, form });
+    return { ok: true, status: 200, json: { ok: true, result: { message_id: 9 } } };
+  };
+
+  const result = await sendDocument(TOKEN, CHAT_ID, Buffer.from('# report'), 'report.md', 42, undefined, postFn);
+
+  assert.deepEqual(result, { success: true });
+  assert.equal(calls.length, 1);
+  assert.equal(calls[0].url, `https://api.telegram.org/bot${TOKEN}/sendDocument`);
+  assert.equal(calls[0].form.get('chat_id'), CHAT_ID);
+  assert.equal(calls[0].form.get('message_thread_id'), '42');
+  const document = calls[0].form.get('document');
+  assert.ok(document);
+  assert.equal(document.name, 'report.md');
+  // BL-1509 hardening, 2026-09-15: nothing previously asserted the
+  // document part's CONTENT, only its filename - a mutant emptying the
+  // Blob's bytes survived (new Blob([fileBytes]) -> new Blob([])).
+  assert.equal(await document.text(), '# report');
+});
+
+test('BL-1509: sendDocument omits message_thread_id when not given, and includes caption when given', async () => {
+  const calls = [];
+  const postFn = async (url, form) => {
+    calls.push(form);
+    return { ok: true, status: 200, json: { ok: true, result: { message_id: 9 } } };
+  };
+
+  await sendDocument(TOKEN, CHAT_ID, Buffer.from('# report'), 'report.md', undefined, 'BL-1509 e2e', postFn);
+
+  assert.equal(calls[0].has('message_thread_id'), false);
+  assert.equal(calls[0].get('caption'), 'BL-1509 e2e');
+});
+
+// The pair to the "includes caption when given" assertion above - every
+// other optional field in this file (message_thread_id here included) is
+// tested both ways (BL-1509 hardening, 2026-09-15: this side was missing,
+// so removing sendDocument's `if (caption !== undefined)` guard entirely
+// survived every existing test).
+test('BL-1509: sendDocument omits caption entirely when not given', async () => {
+  const calls = [];
+  const postFn = async (url, form) => {
+    calls.push(form);
+    return { ok: true, status: 200, json: { ok: true, result: { message_id: 9 } } };
+  };
+
+  await sendDocument(TOKEN, CHAT_ID, Buffer.from('# report'), 'report.md', undefined, undefined, postFn);
+
+  assert.equal(calls[0].has('caption'), false);
+});
+
+test('BL-1509 file-posted-as-telegram-document-02: a non-ok response reports the description and never the token', async () => {
+  const postFn = async () => ({ ok: false, status: 400, json: { ok: false, description: 'chat not found' } });
+
+  const result = await sendDocument(TOKEN, CHAT_ID, Buffer.from('# report'), 'report.md', undefined, undefined, postFn);
+
+  assert.equal(result.success, false);
+  assert.match(result.error, /chat not found/);
+  assert.doesNotMatch(result.error, new RegExp(TOKEN));
+});
+
+test('BL-1509 file-posted-as-telegram-document-02: a thrown network error reports the failure message and never the token', async () => {
+  const postFn = async () => {
+    throw new Error(`network down (token ${TOKEN})`);
+  };
+
+  const result = await sendDocument(TOKEN, CHAT_ID, Buffer.from('# report'), 'report.md', undefined, undefined, postFn);
+
+  assert.equal(result.success, false);
+  assert.match(result.error, /network down/);
+  // BL-1509 hardening, 2026-09-15: nothing previously asserted the
+  // formatNetworkError prefix itself - a mutant dropping it to "" survived
+  // (only the message text was checked).
+  assert.match(result.error, /^Telegram request failed: /);
   assert.doesNotMatch(result.error, new RegExp(TOKEN));
 });
