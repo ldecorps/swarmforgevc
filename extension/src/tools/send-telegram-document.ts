@@ -31,22 +31,36 @@ export interface SendTelegramDocumentArgs {
 
 const USAGE = 'Usage: send-telegram-document.js <project-root> <file> [--caption <text>]\n';
 
+// Splits --caption (and its value) out of argv, leaving the positional
+// args behind. Returns null for a dangling --caption with no value
+// following it. Isolated from parseArgs below so each function's own
+// branching stays small (cleaner pass, BL-1509).
+function extractCaptionFlag(argv: string[]): { caption?: string; positional: string[] } | null {
+  const captionIndex = argv.indexOf('--caption');
+  if (captionIndex < 0) {
+    return { positional: argv };
+  }
+  const caption = argv[captionIndex + 1];
+  if (caption === undefined) {
+    return null;
+  }
+  return { caption, positional: [...argv.slice(0, captionIndex), ...argv.slice(captionIndex + 2)] };
+}
+
 // Pure - no process.argv access here, same "keep main() a thin dispatcher
 // over a testable pure helper" split recruiter-run.ts's own hardener pass
 // established. --caption may appear anywhere after the two positionals;
 // everything else is positional (project-root, file, in that order).
 export function parseArgs(argv: string[]): SendTelegramDocumentArgs | null {
-  const captionIndex = argv.indexOf('--caption');
-  const caption = captionIndex >= 0 ? argv[captionIndex + 1] : undefined;
-  if (captionIndex >= 0 && caption === undefined) {
+  const parsed = extractCaptionFlag(argv);
+  if (!parsed) {
     return null;
   }
-  const positional = captionIndex >= 0 ? [...argv.slice(0, captionIndex), ...argv.slice(captionIndex + 2)] : argv;
-  const [projectRoot, file] = positional;
+  const [projectRoot, file] = parsed.positional;
   if (!projectRoot || !file) {
     return null;
   }
-  return caption !== undefined ? { projectRoot, file, caption } : { projectRoot, file };
+  return parsed.caption !== undefined ? { projectRoot, file, caption: parsed.caption } : { projectRoot, file };
 }
 
 export interface SendTelegramDocumentOutcome {

@@ -32,7 +32,10 @@ required_wiring:
 # 27 consumers already exist, so any pattern on them matches before and
 # after the work and gates nothing. The evidence file is the contract.
 
-human_approval: pending
+human_approval: approved
+human_ruling: |
+  Apply the BL-1519 ruling by analogy - chase the no-coverage mutants and any module-level survivors to zero here, and record the remaining function-body survivors as grandfathered debt guarded by the changed-path gate (recommended)
+ruling_provenance: tapped
 approval_context: >
   A new feature file is authored here, so it needs a tap, and the tap also
   records one ruling. BL-1509's hardener ran Stryker over the whole of
