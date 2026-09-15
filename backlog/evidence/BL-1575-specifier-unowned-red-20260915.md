@@ -57,3 +57,14 @@ the two named members are scenario 03's pin.
   note.
 - `bb swarmforge/scripts/standing_red_register_cli.bb` run after the row
   landed; result recorded in the commit's summary line below.
+
+## Register result after the mint commit (51881d1c49)
+
+`bb swarmforge/scripts/standing_red_register_cli.bb .` -> count 13, oldest
+8 days, BL-1575's row `owned: true`, ONE unowned row:
+`shell  swarmforge/scripts/test/test_operator_runtime_hotfix_certification_sweep.sh  BL-1569`.
+BL-1569 closed at e83cb56f60 with the row left behind (the stale-row
+shape of the BL-1574 pass). The test run on main 51881d1c49 this pass:
+`operator_runtime hotfix-certification-sweep smoke: ALL CHECKS PASSED`,
+exit 0, 6.1 s. The row is retired in the follow-up commit that carries
+this section; after it the register reports no unowned row.
