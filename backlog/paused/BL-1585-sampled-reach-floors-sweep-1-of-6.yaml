@@ -1,0 +1,179 @@
+id: BL-1585
+title: "Sampled reach floors, sweep 1 of 6: 16 property files under extension/test that assert a reach floor after a draw whose smallest literal budget is 8 or fewer (first half by name) reach every floor by construction through runsPerCell and assertReachFloor, every floor kept at its value and every draw budget unchanged"
+milestone: M8
+type: chore
+status: todo
+epic: sampled-reach-floors
+priority: 0
+direction: queue-jump
+depends_on: []
+mutation_cost: low
+# low: test files and evidence only; the shared reachFloors helper exists
+# (BL-1062/BL-1555); no production code, no Stryker target.
+slice_size_envelope: medium
+# medium, not low: 16 one-loop restructures in one sitting, each the
+# BL-1580 shape; BL-1578 did three with a per-file simulation, this
+# slice does 16 with none (the recipe is mechanical and pinned).
+required_stages: [coder, cleaner, architect, hardender, documenter, qa]
+
+acceptance: specs/features/BL-1585-sampled-reach-floors-sweep-1-of-6.feature
+
+required_wiring:
+  - 'specs/pipeline/steps/bl1585SampledReachFloorsSweep1Steps.js::registerSteps::the handler lands in the same parcel as the feature (BL-233, BL-1371)'
+# No production anchor on purpose (BL-1235): every swept file and the
+# helper already exist, so any pattern on them matches before and after.
+
+human_approval: approved
+approval_context: >
+  Minted from the operator-relayed human ask of 2026-09-15
+  (backlog/archive/INTAKE-operator-question-1789505022651.md, "(1) a
+  census sweep ticket - one pass over the [class], apply the
+  construction-not-sampling fix to each, land as one or a few parcels")
+  as direction queue-jump with human_approval approved bundled per
+  STEERING.md's convention; the ask is the approval. No choice is posed
+  and there are no ruling_options. FIRM: every reach floor a swept file
+  asserts today stays asserted at its value; the fix is to make each
+  population reached BY CONSTRUCTION - an outer loop over the cells with
+  runsPerCell draws each - never to lower a floor, widen a tolerance, pin
+  a seed or retry. FIRM: each file's draw budget stays what it is; what
+  changes is how it is spent. FIRM: a file the census matched that turns
+  out to carry no reach floor is left unchanged and named in the
+  evidence, never "fixed" to satisfy scenario 01.
+
+invariants:
+  - "No reach floor value, draw budget, timeout or tolerance in a swept file is lowered, raised, widened, seeded or retried; every floor asserted before the sweep is asserted after it at the same value, and the per-draw body is unchanged"
+  - "Every swept file reaches each reach floor by construction: an outer iteration over the values the floor names, each cell drawing runsPerCell(budget, cells) times, the floor asserted through assertReachFloor - never by a uniform draw the floor then hopes covered the space"
+
+description: |
+  ## What is wrong
+
+  Seven unowned-red tickets in ten days (BL-1555, BL-1559, BL-1572,
+  BL-1578, BL-1580, BL-1581 and neighbours) were one shape: a property
+  test draws a case space a few times and afterwards asserts every arm
+  was reached, a floor a seed misses 1 run in 600 to 1 in 23, red in QA's
+  lane with nothing wrong in the code, withholding an unrelated parcel
+  under Article 4.2 and throttling intake through the register (BL-1429).
+  The specifier's census at mint
+  (backlog/evidence/BL-1583-sampled-reach-floor-census-20260915.md) found
+  117 such files, 108 unowned and unconstructed. Epic BL-1583 sweeps them
+  in six slices ordered by risk (smallest literal draw budget first);
+  this is sweep 1 of 6.
+
+  ## What is wanted
+
+  Each of these 16 files (the census's section BL-1585, pinned here and in
+  scenario 01's Examples; the count is the BL-1445 census pin):
+
+  - `extension/test/bl1225SyncRestartTrailInvariants.property.test.js` (smallest literal budget 8)
+  - `extension/test/bl1279FrontDeskFixtureClosure.property.test.js` (smallest literal budget 1)
+  - `extension/test/bl1280MkdtempMigrationInvariants.property.test.js` (smallest literal budget 1)
+  - `extension/test/bl1296BubbleSeatInvariants.property.test.js` (smallest literal budget 6)
+  - `extension/test/bl1297MergeOwnPathsInvariants.property.test.js` (smallest literal budget 8)
+  - `extension/test/bl1306AuditKeyBasisInvariants.property.test.js` (smallest literal budget 1)
+  - `extension/test/bl1309LandDecideEntanglementInvariants.property.test.js` (smallest literal budget 2)
+  - `extension/test/bl1323StampOffInvariants.property.test.js` (smallest literal budget 5)
+  - `extension/test/bl1327DescentLadderInvariants.property.test.js` (smallest literal budget 3)
+  - `extension/test/bl1332SharedPathRefusesInvariants.property.test.js` (smallest literal budget 3)
+  - `extension/test/bl1333StampOffInvariants.property.test.js` (smallest literal budget 2)
+  - `extension/test/bl1335ExhaustionPromotionInvariants.property.test.js` (smallest literal budget 5)
+  - `extension/test/bl1336ForkCeilingInvariants.property.test.js` (smallest literal budget 4)
+  - `extension/test/bl1337ProfileCastInvariants.property.test.js` (smallest literal budget 8)
+  - `extension/test/bl1339LandApprovalRootInvariants.property.test.js` (smallest literal budget 2)
+  - `extension/test/bl1341MergeDropsEitherSideInvariants.property.test.js` (smallest literal budget 6)
+
+  is brought to the BL-1580 shape: every reach floor in it is reached by
+  construction and asserted through the shared helper. The recipe, per
+  file, is the census file's "The fix, per file" section - three shapes,
+  one outcome each, and the slice's evidence file
+  (backlog/evidence/BL-1585-<role>-<date>.md) records which branch every
+  file took, in a table: file, branch (sampled / constructed by hand /
+  not a floor), cells, budget, floors kept:
+
+  1. sampled - a counter accumulated inside the property and asserted
+     after fc.assert: iterate the population as cells, one fc.assert per
+     cell with numRuns runsPerCell(<unchanged budget>, cells) and the
+     cell's value a constant inside; assert the floor through
+     assertReachFloor(coverage, values, floor, label). Budget, floor
+     value and per-draw body do not change.
+  2. constructed by hand - already an outer loop with a per-cell numRuns
+     constant: migrate the constant to runsPerCell and the raw floor
+     assertion to assertReachFloor; no loop change.
+  3. not a floor after all - leave the file unchanged; quote the
+     assertion in the evidence so the epic's census is corrected. Such a
+     file still has to satisfy scenario 01 only if it IS swept; name it
+     in the evidence and the architect confirms the exclusion - do not
+     add a runsPerCell call to a file that draws nothing.
+
+  Every swept file is green alone under the properties config on every
+  run QA makes (qa_e2e_procedure), and any backlog/standing-reds.tsv row
+  naming a swept file is removed in the same land (none exist at mint).
+
+  ## How (direction, not mandate)
+
+  - Outer `for` over the cell values, one `fc.assert` per cell, exactly
+    as BL-1578's bl622 and BL-1580's bl1295 do; where a file has several
+    floors over one draw, one outer loop over the product of the axes or
+    one loop per floor - the coder's call, recorded in the evidence.
+  - Files with a numRuns constant the file computes keep the constant as
+    the budget handed to runsPerCell.
+  - Work through the list in the order above; commit per file or per few
+    files so a bounce names a file, not the slice.
+  - Documenter: nothing beyond the evidence file; no diagram trigger.
+
+constraints: >
+  Test files and evidence only; extension/src, the helper
+  extension/test/helpers/reachFloors.js, and every property file outside
+  the pinned list are unchanged (BL-506: stage only these paths). No
+  floor lowered, no tolerance widened, no retry, no seed pinned, no draw
+  budget changed. Never bl1295RevertAttributionInvariants (BL-1580) or
+  bl1358MutantTimeCeilingInvariants (BL-1581) - owned elsewhere. The step
+  handler lands with the feature (BL-233).
+
+out_of_scope: |
+  - Every property file not in the pinned list (the epic's other slices).
+  - The send-time gate and census CLI (BL-1584).
+  - The property lane's timeouts (BL-1579) and fixture-spawn cost.
+
+qa_e2e_procedure: |
+  On the parcel commit, from extension/:
+  1. For each pinned file: `for i in $(seq 1 5); do npx vitest run --config vitest.properties.config.mjs test/<file> || echo FAIL <file>; done`
+     -> every run green, no FAIL line. Under the BL-1358 ceiling this is
+     a QA step, never an acceptance scenario (BL-1541).
+  2. Acceptance resolving both scenarios
+     (`specs/pipeline/scripts/run_acceptance.sh specs/features/BL-1585-*.feature`).
+  3. Floor audit: `git diff main...HEAD -- extension/test | grep -E '^[-+].*(numRuns|assertReachFloor|>= *[0-9]|> *0|runsPerCell)'`
+     read line by line against the evidence table: every removed floor
+     value reappears as an assertReachFloor floor of the same value;
+     every removed numRuns literal reappears as the budget handed to
+     runsPerCell; no numeric value went down.
+  4. Break-then-restore on the pinned file with the smallest budget: drop
+     one cell from its iterated values; step 1's first run on that file
+     fails naming the reach floor (`reach floor: ... drawn 0 <`);
+     restore.
+  5. `git diff main...HEAD --name-only` names only pinned test files,
+     the feature, the handler, evidence (and a register row removal if
+     one existed); extension/src and the helper are unchanged.
+  6. `bb swarmforge/scripts/standing_red_register_cli.bb .` after landing
+     reports `"unowned":[]`.
+
+source: |
+  backlog/archive/INTAKE-operator-question-1789505022651.md (operator
+  relay of the human's ask, 2026-09-15T20:43Z, corrected 21:55Z to
+  queue-jump): "One systemic anti-pattern is minting a fresh
+  high-severity unowned-red defect every day or two: property test files
+  that SAMPLE a case space N times (N=3,6,12,20) and then assert every
+  arm/case was reached ... fix is always 'iterate the cases by
+  construction, keep the floor asserted at its value'."
+
+notes: |
+  Minted 2026-09-15 by the specifier draining the backlog root, as sweep
+  1 of 6 under epic BL-1583; the pinned list is section BL-1585 of
+  backlog/evidence/BL-1583-sampled-reach-floor-census-20260915.md, counted
+  with the greps recorded there. INVEST: Independent (helper exists; no
+  sibling slice shares a file), Negotiable (loop shape per file is
+  direction), Valuable (the riskiest reds stop firing for no reason),
+  Estimable (16 mechanical restructures, one sitting at medium
+  envelope), Small (two scenarios, two invariants), Testable (static
+  helper-use per file in the lane; green runs and the floor audit in
+  QA's e2e). Not type defect: no file here is red on main today; the
+  two that are (bl1295, bl1358) are owned by BL-1580/BL-1581.
