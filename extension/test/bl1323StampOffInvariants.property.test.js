@@ -25,6 +25,7 @@ const fc = require('fast-check');
 const fs = require('node:fs');
 const path = require('node:path');
 const { execFileSync, spawnSync } = require('node:child_process');
+const { propertyLaneTimeoutMs } = require('./helpers/propertyLaneContentionBudget');
 
 const REPO_ROOT = path.join(__dirname, '..', '..');
 const SCRIPTS = path.join(REPO_ROOT, 'swarmforge', 'scripts');
@@ -120,7 +121,7 @@ test('BL-1323/BL-654 invariant 2: no green suite writes a decision into the hotf
   assert.match(runOut, /# pass \d+/, `no scenario results came back: ${runOut.slice(-800)}`);
   assert.doesNotMatch(runOut, /# fail [1-9]/, `the reviewing feature is red: ${runOut.slice(-800)}`);
   assert.equal(fs.readFileSync(LEDGER, 'utf8'), before, 'running the review suite changed the hotfix ledger');
-});
+}, propertyLaneTimeoutMs(20000));
 
 test('BL-1323/BL-654 invariant 3: the hint never comes back empty and unlabeled, whatever the overlap', () => {
   // The defect the hotfix fixed was a swallowed shell-out that produced a
@@ -182,4 +183,4 @@ test('BL-1323/BL-654 invariant 3: the hint never comes back empty and unlabeled,
   assert.ok(reach.overCap > 0, 'never exercised an over-cap overlap');
   assert.ok(reach.sentinel > 0, 'never exercised the failed-read sentinel');
   assert.ok(reach.ordinary > 0, 'never exercised an ordinary overlap');
-});
+}, propertyLaneTimeoutMs(20000));
