@@ -128,9 +128,19 @@ function registerSteps(registry) {
       throw new Error(`unknown population example value: "${population}"`);
     }
     const map = ctx.bl1578current;
-    assert.ok(
-      (map[field] || 0) >= Number(floor),
-      `${ctx.bl1578currentTest} counted only ${map[field] || 0} ${population}, floor is ${floor}: ${JSON.stringify(map)}`
+    // Exact, not >=: every one of these fields (cells/regimes/arms and each
+    // rarest-cell/regime/arm draw count) is a fixed constant derived from the
+    // file's own budget/cell-count at module load (runsPerCell, *.length) -
+    // never a per-run sample - so the Examples table's floor is the value the
+    // run must reach, not merely a lower bound. A ">=" check cannot tell the
+    // declared floor apart from any smaller one when the constant already
+    // clears it (BL-1578 hardening: gherkin mutant m13, 2 -> 0, survived a
+    // ">=" check because meanTicketTimeCost's `regimes` is always exactly
+    // REGIMES.length=2).
+    assert.equal(
+      map[field] || 0,
+      Number(floor),
+      `${ctx.bl1578currentTest} counted ${map[field] || 0} ${population}, expected exactly ${floor}: ${JSON.stringify(map)}`
     );
   });
 
