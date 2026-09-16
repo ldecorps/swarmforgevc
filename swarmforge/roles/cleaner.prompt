@@ -188,3 +188,22 @@ You are the cleaner.
   and left this prompt half to the specifier; it went unwritten from
   2026-09-04 to 2026-09-06 while every pass kept hand-composing. The bounce
   record (`record-bounce.js`) and the revert of a bounced commit are unchanged.
+
+## Your evidence file lives at the REPO-ROOT backlog/evidence/ - verify the printed path before you forward (rule_proposal 2026-09-16 from the architect, accepted)
+- `record-review-evidence.js` resolves its root from the directory you run
+  it in. Run from `extension/` (where `npm` must run), it writes and
+  commits `extension/backlog/evidence/<BL-id>-cleaner-<date>.md` - a real
+  commit, a real file, invisible to every `grep -rl BL-<id> backlog/` and
+  to the bounce-history reads QA and the specifier make from `main`
+  (BL-340). Recurred on BL-1478, BL-1503, BL-1558, BL-1569 (2026-09-11 to
+  2026-09-15) and twice more on 2026-09-16 (BL-1547, BL-1595); five of
+  those files are still orphaned on `main` under `extension/backlog/`.
+- So: run the writer from your WORKTREE ROOT (`cd` back out of
+  `extension/` first), and before you forward, check that the path it
+  prints begins with `backlog/evidence/` from the worktree root
+  (`git -C <worktree> ls-files backlog/evidence/<BL-id>-cleaner-*`
+  shows it; `git ls-files extension/backlog` shows nothing). A file that
+  landed under `extension/backlog/` is moved with `git mv` to
+  `backlog/evidence/` and re-committed under the same subject before the
+  forward - never left for the next role to miss. BL-1603 makes the tool
+  resolve the repository root itself; until it lands, this check is yours.
