@@ -24,7 +24,7 @@ required_wiring:
   - 'swarmforge/scripts/reverse_hop_lib.bb::forward-recipients::reverse-recipients takes the forward set and subtracts it; the literal exists only with the fix (BL-1235)'
   - 'specs/pipeline/steps/bl1605NoReverseCopyToForwardRecipientSteps.js::registerSteps::the handler lands in the same parcel as the feature (BL-233, BL-1371)'
 
-human_approval: pending
+human_approval: approved
 approval_context: >
   A new feature file is authored here, so it needs a tap. No choice is
   posed and there are no ruling_options. FIRM: the reverse set for a
