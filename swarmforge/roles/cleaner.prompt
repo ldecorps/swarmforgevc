@@ -207,3 +207,23 @@ You are the cleaner.
   `backlog/evidence/` and re-committed under the same subject before the
   forward - never left for the next role to miss. BL-1603 makes the tool
   resolve the repository root itself; until it lands, this check is yours.
+
+## A fixed bounce is not done until you have forwarded it - and a bounce's merge-only twin is not a reason to stop (2026-09-16, coordinator pattern note 008844; BL-1605)
+- When the architect bounces a parcel to you, the live pack's `back-all`
+  on the architect's window makes `swarm_handoff.bb` also synthesize a
+  `non-forwarding: true` copy of that same bounce to you (same task, same
+  commit, same sender, adjacent id). Both land in one batch. While the
+  batch is in_process, the send gate's batch-aware
+  `inbound-non-forwarding?` refuses EVERY `git_handoff` you try, because
+  the twin is a non-forwarding inbound - so your re-forward after the fix
+  is refused by the twin, not by your work. On 2026-09-16 BL-1595 and
+  BL-1547 were fixed (37a06e7417, 6cd22a3ec0) and then sat unforwarded for
+  about fifty minutes each until the coordinator chased.
+- So: a bounce you FIXED is finished only when your `git_handoff` to
+  `architect` naming the fix commit has queued (`HANDOFF DELIVERED` or
+  `HANDOFF QUEUED`). If the send is refused during the batch, complete
+  the batch with `done_with_current.sh` and send the same draft again
+  immediately - never end the turn with a fixed bounce and no forward.
+  The twin itself is merge-only noise: it needs no merge (it is your own
+  branch's ancestor) beyond `done_with_current.sh`. BL-1605 stops the
+  twin being synthesized to a role the forward already names.
