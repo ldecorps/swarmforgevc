@@ -1,0 +1,172 @@
+id: BL-1601
+title: "extension/test/telegramCursorOperatorExec.test.js's two BL-1204 redeploy tests spawn the real redeploy script detached and unref'd and return before it writes its marker into the fixture root, so the afterEach tmpDir sweep's recursive removal races the write and fails ENOTEMPTY - sighted 2026-09-05, twice 2026-09-15 and twice 2026-09-16, each time called unrelated debris or a known flake and never owned; the tests wait for the marker before returning, the sweep retries a removal that a writer races and still fails closed, and the register row leaves in the same land"
+milestone: M8
+type: defect
+severity: high
+# high: a standing red on main (Article 3.2.4, 2026-09-05); QA withheld
+# BL-1592 on it under Article 4.2 (hold 5063439185). A red four roles have
+# learned to call "the normal one" is the shape the standing-red rule
+# exists for.
+status: todo
+epic: code-quality-gates
+priority: 8
+direction: swarm-reported
+depends_on: []
+mutation_cost: low
+# low: one test file, one test helper (tmpDir.js, exempt from the raw
+# mkdtemp guard and outside Stryker's src target) and evidence.
+slice_size_envelope: low
+required_stages: [coder, cleaner, architect, hardender, documenter, qa]
+
+acceptance: specs/features/BL-1601-bl1204-redeploy-tests-race-the-tmpdir-sweep-with-a-detached-script.feature
+
+required_wiring:
+  - 'extension/test/helpers/tmpDir.js::ENOTEMPTY::the sweep retries the one error code a racing writer produces; tmpDirSetup.js already calls the sweep on every test file, so the retry is live on every run (BL-1235)'
+  - 'specs/pipeline/steps/bl1601RedeployTestsAwaitTheMarkerSteps.js::registerSteps::the handler lands in the same parcel as the feature (BL-233, BL-1371)'
+
+human_approval: pending
+approval_context: >
+  A new feature file is authored here, so it needs a tap. No choice is
+  posed and there are no ruling_options. FIRM: both BL-1204 tests keep
+  driving the REAL executeOperatorVerb dispatch with a real spawn (the
+  point of those tests, BL-1204) and gain a bounded wait for the fixture
+  script's marker, asserted present - which also proves the real script
+  ran, an assertion the tests lack today. FIRM: sweepPendingTmpDirs and
+  sweepSharedTmpDirs retry a removal that fails ENOTEMPTY or EBUSY a
+  bounded number of times with a short delay and then rethrow - never
+  swallow: a fixture root that never empties is a leak and still fails
+  the run (BL-971). FIRM: no test skipped, no assertion weakened, no
+  production file touched.
+
+invariants:
+  - "A fixture root that never empties still fails the run: after the bounded retries the sweep rethrows the same error, never returns quietly, so the retry can only turn a race into a pass, never a leak into silence."
+
+description: |
+  ## What is wrong
+
+  `test/telegramCursorOperatorExec.test.js > BL-1204: executeOperatorVerb(/redeploy, "frontdesk") ...`
+  (and its `"all"` twin at line 321) build a fixture root with
+  `mkTmpDir`, write a stub `redeploy_front_desk.sh` (or
+  `redeploy_all_telegram.sh`) whose only action is `echo ok > <marker>`
+  inside that root, call the real `executeOperatorVerb`, assert on the
+  returned text, and return. The real module
+  (`extension/src/tools/telegramCursorBridgeFrontDeskRedeploy.ts:84`,
+  `...AllRedeploy.ts:90`) spawns `bash <script>` with `detached: true`
+  and `child.unref()` - by design, a redeploy outlives the bot. So the
+  marker is written AFTER the test returns, and `tmpDirSetup.js`'s
+  afterEach runs `sweepPendingTmpDirs` -> `fs.rmSync(dir, { recursive:
+  true, force: true })` while bash is still starting. When the write
+  lands between the sweep's directory listing and its `rmdir`, Node
+  throws:
+
+  ```
+  Error: ENOTEMPTY: directory not empty, rmdir '/tmp/bl1204-fd-blZG8d'
+   ❯ sweepPendingTmpDirs test/helpers/tmpDir.js:76:8
+   ❯ test/helpers/tmpDirSetup.js:11:3
+  ```
+
+  The window is bash's startup time against the sweep's, so the red is
+  load-shaped: QA reproduced it twice in a row at 15:39Z on the BL-1592
+  parcel commit (5307ab9f56; `backlog/evidence/BL-1592-QA-unowned-red-20260916.md`),
+  the specifier's three solo runs on main at 15:45Z passed 24/24. It is
+  not new. Recorded sightings, none owned:
+
+  - 2026-09-05, BL-1263 QA pass: the `"all"` twin, ENOTEMPTY on
+    `/tmp/bl1204-all-*`, "traced to a leftover fixture directory ...
+    session debris".
+  - 2026-09-15, BL-1564 QA: `npm test` 10478 of 10479, the one failure
+    this test, "ENOTEMPTY tmpdir race in sweepPendingTmpDirs".
+  - 2026-09-15, BL-1581 coder: the same.
+  - 2026-09-16, BL-1577 architect: "reproduces as an isolated
+    concurrent-tmp-dir-sweep race ... a recognized recurring flake
+    pattern ... Not a send-back."
+  - 2026-09-16 15:39Z, BL-1592 QA: deterministic twice, hold opened.
+
+  Four roles over eleven days normalised the red; the standing-red rule
+  (2026-09-05) exists so that never happens. No open ticket names the
+  file for this defect (BL-842, BL-841 and BL-1453 mention it for other
+  reasons); no register row.
+
+  ## What is wanted
+
+  - Each BL-1204 redeploy test waits, bounded (about 2 s in 20 ms steps),
+    for its marker file to exist and asserts it, before returning
+    (scenario 01 proves the shape against a stub script that sleeps
+    before writing; scenario 03 pins that exactly the two BL-1204 spawn
+    tests assert their markers).
+  - `sweepPendingTmpDirs` and `sweepSharedTmpDirs` retry `fs.rmSync` on
+    `ENOTEMPTY` and `EBUSY` a bounded number of times with a short delay
+    and rethrow after the last attempt (scenario 02; invariant 1).
+  - The file green 20 of 20 alone and in 3 full `npm test` runs (e2e);
+    the register row removed in the same land.
+
+  ## How (direction, not mandate)
+
+  - Test: after `executeOperatorVerb`, `for (let i = 0; i < 100 && !fs.existsSync(marker); i += 1) Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, 20);`
+    (a synchronous sleep that needs no timers - the suite bans real
+    timers) then `assert.ok(fs.existsSync(marker))`. A helper
+    `waitForFileSync(path, ms)` in `test/helpers/` if a third caller
+    appears; two inline loops are fine.
+  - Sweep: wrap the `rmSync` in a loop of 5 attempts; on
+    `err.code === 'ENOTEMPTY' || err.code === 'EBUSY'` sleep 50 ms
+    (same synchronous sleep) and retry; rethrow the last error. The
+    retry never masks a leak: the fifth failure throws exactly as today.
+  - Scenario 02 drives `sweepPendingTmpDirs` in process against a
+    directory a helper thread (or a `spawn`ed `sh -c 'sleep 0.1; touch
+    ...'`) populates during removal, and against a directory whose
+    removal is made to fail permanently (a mounted-busy path is not
+    portable; a stub `rmSync` injected through the helper's existing
+    `fs` seam or a `rmFn` parameter is the deterministic route -
+    direction).
+  - Documenter: `tmpDir.js`'s header names the retry and why; no
+    diagram trigger.
+
+constraints: >
+  One test file, one test helper and evidence; `extension/src`
+  unchanged; the two tests keep the real spawn (no `spawnFn` stub for
+  the dispatch assertion); no test skipped or weakened; no real timers.
+  The step handler lands with the feature (BL-233). Evidence named
+  BL-1601-*.
+
+out_of_scope: |
+  - The redeploy modules' detached spawn (correct production behaviour).
+  - Other tmp-dir races in other files: each is its own unowned-red note
+    and its own owner; the sweep retry will cover the same shape for
+    them once landed.
+
+qa_e2e_procedure: |
+  From `extension/` on the parcel commit, after `npm run compile`:
+  1. `for i in $(seq 1 20); do npx vitest run test/telegramCursorOperatorExec.test.js || echo FAIL; done` -> 20 of 20 green.
+  2. `npm test` 3 times -> the file green in every run; any other red
+     recorded with its text and raised as an unowned-red note.
+  3. Acceptance resolving all three scenarios
+     (`swarmforge/scripts/run_acceptance.sh specs/features/BL-1601-*.feature`).
+  4. `git diff <parent>..<parcel> -- extension/test/telegramCursorOperatorExec.test.js`
+     adds the marker wait and assertion in exactly the two BL-1204 spawn
+     tests and removes nothing.
+  5. `bb swarmforge/scripts/standing_red_register_cli.bb .` after landing
+     reports no row for the file and `"unowned":[]`.
+
+source: |
+  QA note to the specifier, priority 00, 2026-09-16T15:39Z (inbound
+  00_20260916T153948Z_002811_from_QA_to_specifier): "unowned-red BL-1592
+  telegramCursorOperatorExec ENOTEMPTY, hold open". QA evidence
+  backlog/evidence/BL-1592-QA-unowned-red-20260916.md (QA branch
+  5063439185). Specifier adjudication:
+  backlog/evidence/BL-1601-specifier-adjudication-of-qa-unowned-red-20260916.md.
+
+notes: |
+  Minted 2026-09-16 by the specifier while completing QA's unowned-red
+  note, the same pass; the register row in backlog/standing-reds.tsv
+  names this ticket with first_seen 2026-09-05 (the earliest recorded
+  sighting), QA was sent the resume note (BL-1566 shape) and the
+  coordinator the paused-ready note. INVEST: Independent (helper and
+  tests exist), Negotiable (the wait's helper placement and the sweep's
+  injection seam are direction), Valuable (a red normalised by four
+  roles stops withholding parcels and the two tests start proving the
+  script ran), Estimable (two loops in one test file, one loop in one
+  helper, one sitting), Small (three scenarios, one invariant), Testable
+  (in-process fixtures in under a second; runners in e2e - BL-1541).
+  Severity high per the standing-red rule.
+
+assigned_to: null
