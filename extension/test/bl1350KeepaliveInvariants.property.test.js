@@ -25,6 +25,7 @@ const assert = require('node:assert/strict');
 const fc = require('fast-check');
 const fs = require('node:fs');
 const path = require('node:path');
+const { assertReachFloor, runsPerCell } = require('./helpers/reachFloors');
 
 const REPO_ROOT = path.join(__dirname, '..', '..');
 const BRIDGE_SRC = path.join(REPO_ROOT, 'extension', 'src', 'bridge', 'bridgeServer.ts');
@@ -170,6 +171,8 @@ test('BL-1350/BL-654 invariant 2: a hold-open frame changes no consumer state', 
     snapshot: () => 'data: {"bridge":"snapshot"}\n\n',
     comment: () => ': some other comment\n\n',
   };
+  const SHAPE_NAMES = Object.keys(shapes);
+  const SHAPE_CELL_RUNS = runsPerCell(4 * SHAPE_NAMES.length, SHAPE_NAMES.length);
 
   for (const [name, make] of Object.entries(shapes)) {
     await fc.assert(
@@ -194,11 +197,9 @@ test('BL-1350/BL-654 invariant 2: a hold-open frame changes no consumer state', 
         assert.equal(seenIds.size, 0, `${name} added a seenIds entry`);
         return true;
       }),
-      { numRuns: 4 },
+      { numRuns: SHAPE_CELL_RUNS },
     );
   }
 
-  for (const name of Object.keys(shapes)) {
-    assert.ok(reach[name] > 0, `never exercised the ${name} frame shape`);
-  }
+  assertReachFloor(reach, SHAPE_NAMES, SHAPE_CELL_RUNS, 'hold-open frame shape');
 });

@@ -40,6 +40,7 @@ const { mkTmpDir } = require('./helpers/tmpDir');
 const { startBridge } = require('../out/bridge/bridgeServer');
 const { copyLiveScriptClosureInto } = require('./helpers/pinnedRepoFixture');
 const { copySeededRepoInto } = require('./helpers/sharedRepoFixture');
+const { assertReachFloor, runsPerCell } = require('./helpers/reachFloors');
 
 const TOKEN = 'bl1380-property-token';
 const FIXTURE_PREFIX = 'sfvc-bl1380-property-';
@@ -175,6 +176,7 @@ test('BL-1380/BL-654 P1+P2: an unanswered choice is refused, out loud, with noth
 test('BL-1380/BL-654 P3: a ticket with nothing left to choose expedites exactly as it does today', async () => {
   sweepFixtures();
   const reach = Object.fromEntries(SHAPES.slice(1).map((s) => [s, 0]));
+  const SHAPE_CELL_RUNS = runsPerCell(3 * SHAPES.slice(1).length, SHAPES.slice(1).length);
 
   for (const shape of SHAPES.slice(1)) {
     await fc.assert(
@@ -196,9 +198,9 @@ test('BL-1380/BL-654 P3: a ticket with nothing left to choose expedites exactly 
         });
         return true;
       }),
-      { numRuns: 3 }
+      { numRuns: SHAPE_CELL_RUNS }
     );
   }
 
-  for (const shape of Object.keys(reach)) assert.ok(reach[shape] > 0, `never exercised the ${shape} shape`);
+  assertReachFloor(reach, Object.keys(reach), SHAPE_CELL_RUNS, 'shape');
 });

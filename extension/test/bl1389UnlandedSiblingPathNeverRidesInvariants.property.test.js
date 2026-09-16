@@ -42,6 +42,7 @@ const os = require('node:os');
 const path = require('node:path');
 const { execFileSync, spawnSync } = require('node:child_process');
 const { mkTmpDir } = require('./helpers/tmpDir');
+const { assertReachFloor, runsPerCell } = require('./helpers/reachFloors');
 
 const REPO_ROOT = path.join(__dirname, '..', '..');
 const LAND_STEP_LIB = path.join(REPO_ROOT, 'swarmforge', 'scripts', 'land_step_lib.bb');
@@ -189,6 +190,7 @@ function sweepFixtures() {
 test("BL-1389/BL-654 invariant 1: a path an unlanded sibling owns alone never rides, whatever its approval reads", () => {
   sweepFixtures();
   const reach = Object.fromEntries(APPROVAL_SHAPES.map((s) => [s.name, 0]));
+  const APPROVAL_CELL_RUNS = runsPerCell(3 * APPROVAL_SHAPES.length, APPROVAL_SHAPES.length);
 
   for (const approval of APPROVAL_SHAPES) {
     fc.assert(
@@ -220,16 +222,17 @@ test("BL-1389/BL-654 invariant 1: a path an unlanded sibling owns alone never ri
           fs.rmSync(root, { recursive: true, force: true });
         }
       }),
-      { numRuns: 3 },
+      { numRuns: APPROVAL_CELL_RUNS },
     );
   }
 
-  for (const s of APPROVAL_SHAPES) assert.ok(reach[s.name] > 0, `never exercised the ${s.name} approval shape`);
+  assertReachFloor(reach, APPROVAL_SHAPES.map((s) => s.name), APPROVAL_CELL_RUNS, 'approval shape');
 });
 
 test('BL-1389/BL-654 invariant 2: a sibling reads landed only when EVERY attributed path is on origin/main', () => {
   sweepFixtures();
   const reach = { 'some-landed': 0, 'all-landed': 0 };
+  const LANDED_CELL_RUNS = runsPerCell(3 * 2, 2);
 
   for (const siblingLanded of [false, true]) {
     fc.assert(
@@ -272,11 +275,11 @@ test('BL-1389/BL-654 invariant 2: a sibling reads landed only when EVERY attribu
           fs.rmSync(root, { recursive: true, force: true });
         }
       }),
-      { numRuns: 3 },
+      { numRuns: LANDED_CELL_RUNS },
     );
   }
 
-  for (const shape of Object.keys(reach)) assert.ok(reach[shape] > 0, `never exercised the ${shape} shape`);
+  assertReachFloor(reach, Object.keys(reach), LANDED_CELL_RUNS, 'sibling-landed shape');
 });
 
 test('BL-1389/BL-654 invariant 3: the report is enough to check the verdict without diffing the tip', () => {

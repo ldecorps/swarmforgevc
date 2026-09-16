@@ -31,6 +31,7 @@ const fs = require('node:fs');
 const path = require('node:path');
 const { execFileSync, spawnSync } = require('node:child_process');
 const { mkTmpDir } = require('./helpers/tmpDir');
+const { assertReachFloor, runsPerCell } = require('./helpers/reachFloors');
 
 const REPO_ROOT = path.join(__dirname, '..', '..');
 const LAND_STEP_LIB = path.join(REPO_ROOT, 'swarmforge', 'scripts', 'land_step_lib.bb');
@@ -126,6 +127,7 @@ const relArb = fc.constantFrom(
 
 test('BL-1546/BL-654 invariant 1: a closed-owner path is never silently excluded - kept or refused by name', () => {
   const reach = { 'own-touch': 0, 'no-own-touch': 0 };
+  const CLOSED_CELL_RUNS = runsPerCell(3 * Object.keys(reach).length, Object.keys(reach).length);
 
   for (const shape of Object.keys(reach)) {
     fc.assert(
@@ -155,18 +157,17 @@ test('BL-1546/BL-654 invariant 1: a closed-owner path is never silently excluded
           fs.rmSync(root, { recursive: true, force: true });
         }
       }),
-      { numRuns: 3 },
+      { numRuns: CLOSED_CELL_RUNS },
     );
   }
 
-  for (const shape of Object.keys(reach)) {
-    assert.ok(reach[shape] > 0, `never exercised the ${shape} shape`);
-  }
+  assertReachFloor(reach, Object.keys(reach), CLOSED_CELL_RUNS, 'closed-owner shape');
 });
 
 test('BL-1546/BL-654 invariant 2: closed is a positive done-only finding - every other shape falls through to the pre-existing exclusion, unchanged', () => {
   const shapes = ['no-file-at-all', 'active-only', 'both-folders'];
   const reach = Object.fromEntries(shapes.map((s) => [s, 0]));
+  const NOT_CLOSED_CELL_RUNS = runsPerCell(3 * shapes.length, shapes.length);
 
   for (const shape of shapes) {
     fc.assert(
@@ -190,11 +191,9 @@ test('BL-1546/BL-654 invariant 2: closed is a positive done-only finding - every
           fs.rmSync(root, { recursive: true, force: true });
         }
       }),
-      { numRuns: 3 },
+      { numRuns: NOT_CLOSED_CELL_RUNS },
     );
   }
 
-  for (const shape of shapes) {
-    assert.ok(reach[shape] > 0, `never exercised the ${shape} shape`);
-  }
+  assertReachFloor(reach, shapes, NOT_CLOSED_CELL_RUNS, 'not-closed shape');
 });
