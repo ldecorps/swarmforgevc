@@ -161,4 +161,4 @@ notes: |
   a git fixture in seconds - BL-1541). Severity high: a live fault that
   engaged the throttle.
 
-assigned_to: null
+assigned_to: coder
