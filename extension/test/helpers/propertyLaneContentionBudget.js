@@ -1,9 +1,10 @@
 'use strict';
 
 // BL-1579: a load-relative per-test timeout for the property lane's
-// fixture-spawning tests (bl1343/bl1323), in the same shape the unit lane
-// already uses (BL-871/BL-1007's contentionBudget.js) - reused unmodified,
-// via its own supported injection points, rather than re-derived.
+// fixture-spawning tests (bl1343/bl1323; BL-1592 added bl1375/bl1309/
+// bl1389/bl1529), in the same shape the unit lane already uses
+// (BL-871/BL-1007's contentionBudget.js) - reused unmodified, via its own
+// supported injection points, rather than re-derived.
 //
 // contentionBudgetSetup.js (the unit lane's setupFile) samples
 // `loadavg / cpuCount` and only scales past `factor > 1` - right for sizing
