@@ -1,0 +1,164 @@
+id: BL-1604
+title: "A tip-pure land replays backlog/standing-reds.tsv and the property-suite allowlist whole from the parcel's tip, so a row another OPEN ticket owns that went missing on the branch (a merge artefact, never a deliberate drain) is deleted from main by an unrelated land: BL-1548's land removed BL-1595's row on 2026-09-16 while BL-1595 was active and its file red, the register read unowned and the cap fell to 1; the land step restores from origin/main every register or allowlist row owned by an open ticket other than the landing one that the replay tree lacks, prints each restoration, and still lets the landing ticket's own rows leave"
+milestone: M8
+type: defect
+severity: high
+# high: a live fault - a land silently un-owned a standing red, the
+# register read unowned, and BL-1429 dropped the cap to 1 (coordinator
+# note 008830, 17:26Z). Third register-row loss shape of the day: the two
+# earlier ones (BL-1589's tip carrying BL-1588's four-row removal,
+# BL-1573's tips lacking the bl1280 allowlist row) were caught only by
+# unrelated gates (a bounced co-owner, an ambiguous subject).
+status: todo
+epic: swarm-reliability
+priority: 5
+direction: swarm-reported
+depends_on: []
+mutation_cost: low
+# low: land_step_lib.bb and land_step_cli.bb (Babashka, no mutation/CRAP/
+# DRY wired - BL-472), the bb runner, one step handler; no extension/src.
+slice_size_envelope: low
+required_stages: [coder, cleaner, architect, hardender, documenter, qa]
+
+acceptance: specs/features/BL-1604-a-land-never-carries-another-tickets-register-row-removal.feature
+
+required_wiring:
+  - 'swarmforge/scripts/land_step_lib.bb::REGISTER_ROW_RESTORED::the replay builder restores and names each row; the literal exists only with the fix (BL-1235)'
+  - 'specs/pipeline/steps/bl1604LandRestoresOtherTicketsRegisterRowsSteps.js::registerSteps::the handler lands in the same parcel as the feature (BL-233, BL-1371)'
+
+human_approval: approved
+approval_context: >
+  A new feature file is authored here, so it needs a tap. No choice is
+  posed and there are no ruling_options. FIRM: the two registry files
+  are backlog/standing-reds.tsv (owner in column 3) and
+  swarmforge/scripts/property_suite_standing_allowlist.tsv (owner as the
+  "owner BL-<n>" token in the rationale column); for each, every row
+  present on origin/main whose owner is an OPEN ticket other than the
+  landing ticket and which the replay tree lacks is put back into the
+  replayed file byte-identical, and one REGISTER_ROW_RESTORED line names
+  the file, the row's file column and its owner. FIRM: a row owned by
+  the landing ticket that the tip removed still leaves (the drain rule);
+  a row owned by a CLOSED ticket that the tip removed also leaves (the
+  stale-row retirement lands like any other own change) - only an OPEN
+  other owner's row is protected. FIRM: nothing else about the replay
+  changes; an unreadable registry file on either side fails closed
+  (refuse, never guess).
+
+invariants:
+  - "A land never reduces another open ticket's ownership: for every row of either registry file on origin/main whose owner is open and not the landing ticket, the same row is on origin/main after the land."
+  - "The landing ticket's own rows are never protected from itself: a row it owns and removed at its tip is absent after the land, exactly as before this change."
+
+description: |
+  ## What is wrong
+
+  `land_step_lib.bb` builds the tip-pure replay by taking each delivered
+  path WHOLE from the parcel's tip (BL-1241, BL-1473). For a shared
+  registry file that every ticket edits - `backlog/standing-reds.tsv`,
+  and its mirror `swarmforge/scripts/property_suite_standing_allowlist.tsv`
+  - "whole from the tip" means the tip's row set replaces main's. A row
+  that went missing on the branch for any reason (a merge on a batch
+  branch, a conflict resolution, a stale worktree) is deleted from main
+  by whichever parcel lands next, whatever that parcel is about.
+
+  2026-09-16 18:17Z: BL-1548's land (2c1c44e2cc, "tip-pure replay onto
+  origin/main") changed the register by exactly one line:
+
+  ```
+  -property  extension/test/telegramFrontDeskBotCli.property.test.js  BL-1595  2026-09-16  ...
+  ```
+
+  BL-1548 (the launcher's SKIP_DAEMON audit line) never touched the
+  register on purpose; BL-1595 was active, mid-rework after an architect
+  bounce, and its file still red. `standing_red_register_cli.bb` then read
+  the file as unowned, BL-1429 dropped the cap to 1 (coordinator note
+  008830, 17:26Z), and the specifier restored the row by hand
+  (`backlog/evidence/BL-1604-specifier-adjudication-of-coordinator-unowned-red-20260916.md`).
+  Same day, same shape, caught only by luck: BL-1589's tip carried
+  BL-1588's four-row removal (blocked because BL-1588 was BOUNCED,
+  BL-1481) and BL-1573's tips lacked the bl1280 allowlist row (blocked
+  because the touching commit's subject was AMBIGUOUS, BL-1544). An open,
+  unbounced owner with a cleanly attributed tip has no gate at all.
+
+  ## What is wanted
+
+  - Before publishing, the replay builder compares each registry file's
+    rows on origin/main with the replay tree's: every origin/main row whose
+    owner is an open ticket other than the landing ticket and which the
+    replay lacks is restored byte-identical, and `REGISTER_ROW_RESTORED
+    <registry> <file> <owner>` is printed per row (scenario 01, rows 1 and
+    4).
+  - A row owned by the landing ticket that the tip removed leaves
+    (scenario 01, row 2); a row owned by a closed ticket that the tip
+    removed leaves (row 3).
+  - An unreadable registry file on either side refuses the land naming
+    the file (scenario 02, fail closed).
+
+  ## How (direction, not mandate)
+
+  - Row identity is the `file` column; owner from column 3 (register) or
+    the `owner BL-<n>` token (allowlist). Open ticket ids: the basenames
+    under backlog/paused and backlog/active on origin/main, the set
+    `qa_hold_lib.bb` and `closed-on-main?` already compute - reuse, never
+    a second reader.
+  - Implement as one pure function over (origin rows, replay rows,
+    landing id, open ids) -> (rows to restore), applied to the replayed
+    blob in `build-replay` (or whatever the tip-pure builder is named at
+    the time) before the tree is written; `land_step_cli.bb` prints the
+    lines. Drive the real CLI against a git fixture the way
+    `bl1481SharedPathContentCheckSteps.js` does; the pure function gets
+    bb runner cases.
+  - Documenter: the BL-1241 how-to gains a section; the standing-red
+    register header sentence "a row leaves in the same land that turns
+    the test green" gains "and no other land removes it".
+
+constraints: >
+  land_step_lib.bb, land_step_cli.bb, the bb runner, the feature, the
+  handler, evidence and docs only; no change to what the replay carries
+  for any other path; no extension/src. The step handler lands with the
+  feature (BL-233). Evidence named BL-1604-*.
+
+out_of_scope: |
+  - Why rows go missing on branches (merge resolution on batch branches;
+    BL-1576's merge-drop guard covers one shape at send time).
+  - The pole register of BL-1598 (its rows are owned by the epic; same
+    rule can be extended once it lands - a follow-up if a land drops one).
+  - Moving register-row removal out of the coder's commit entirely
+    (recorded candidate on BL-1589's adjudication; this ticket is the
+    smaller, sufficient protection).
+
+qa_e2e_procedure: |
+  On the parcel commit:
+  1. `bb swarmforge/scripts/test/land_step_lib_test_runner.bb` -> green
+     with the new cases named.
+  2. Acceptance resolving both scenarios
+     (`bash specs/pipeline/scripts/run_acceptance.sh specs/features/BL-1604-*.feature`).
+  3. Scratch reproduction of 2c1c44e2cc's shape: origin/main register
+     with a row owned by an open ticket X; a lander Y's tip whose register
+     lacks that row; `land_step_cli.bb Y <tip>` prints
+     `REGISTER_ROW_RESTORED backlog/standing-reds.tsv <file> X` and the
+     published register carries the row.
+  4. `git diff <parent>..<parcel> -- swarmforge/scripts/land_step_lib.bb`
+     shows the pure function and its one call site, nothing else in the
+     replay path.
+
+source: |
+  Coordinator note to the specifier, priority 00, 2026-09-16T17:26Z
+  (inbound 00_20260916T172621Z_008830): "URGENT cap=1:
+  telegramFrontDeskBotCli unowned, BL-1595 exists, no reg row". Specifier
+  attribution: `git show 2c1c44e2cc -- backlog/standing-reds.tsv` (one
+  deletion, BL-1595's row); adjudication
+  backlog/evidence/BL-1604-specifier-adjudication-of-coordinator-unowned-red-20260916.md.
+  Earlier instances the same day: BL-1589 and BL-1573 adjudications.
+
+notes: |
+  Minted 2026-09-16 by the specifier while restoring the dropped row on
+  main (same commit); the coordinator and QA were told. INVEST:
+  Independent (the replay builder, the open-ticket reader and the CLI
+  exist), Negotiable (function placement is direction), Valuable (a land
+  can no longer un-own a red and starve the swarm), Estimable (one pure
+  function, one call site, four runner cases, one fixture scenario, one
+  sitting), Small (two scenarios, two invariants), Testable (real CLI on
+  a git fixture in seconds - BL-1541). Severity high: a live fault that
+  engaged the throttle.
+
+assigned_to: null
