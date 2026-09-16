@@ -25,6 +25,7 @@ import { defineConfig } from 'vitest/config';
 // uses (this config is ESM, the budget module is CommonJS).
 const require = createRequire(import.meta.url);
 const { PER_WORKER_HEAP_MB, resolveVitestWorkerPool, resolveFreeCoresCeiling } = require('./out/tools/vitest-worker-memory-budget');
+const { FORKS_ENV_KEY } = require('./test/helpers/propertyLaneContentionBudget');
 // BL-935: the SAME single pool-resolution route as vitest.config.mjs - the
 // second required call site named by this ticket's own required_wiring, and
 // historically the easy one to miss a fix in. Both lanes now call the one
@@ -47,6 +48,18 @@ const WORKER_POOL_SIZE = resolveVitestWorkerPool({
   // both lanes now pass (BL-935 invariant 3).
   defaultCeiling: resolveFreeCoresCeiling(os.cpus().length, os.loadavg()[1]),
 });
+
+// BL-1588: publish the lane's own resolved fork ceiling to every worker
+// BEFORE any fork spawns, so a fixture-spawning file's own per-test budget
+// call (propertyLaneTimeoutMs, inside a worker) can fold the lane's actual
+// concurrency in alongside the 1-minute load average, which lags the
+// lane's own ramp by up to a minute (see propertyLaneContentionBudget.js).
+// Forks are spawned as child processes of this process, so they inherit
+// process.env as set here. BL-932 invariant 1 (bl932SharedHeavyTimeoutInvariants
+// .property.test.js) fixes this config's own suite-wide `testTimeout` at the
+// literal 20000ms below - the budget stays PER-TEST headroom on the fixture-
+// spawning files themselves, never a lane-wide raise here.
+process.env[FORKS_ENV_KEY] = String(WORKER_POOL_SIZE);
 
 export default defineConfig({
   test: {
