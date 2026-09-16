@@ -186,3 +186,6 @@ notes: |
   in-process budget check in seconds - BL-1541).
 
 assigned_to: coder
+bounce_count: 1
+bounce_history:
+  - { at: 2026-09-16, by: architect, blamed: coder, class: behavior, commit: 0d7be64b0a, evidence: backlog/evidence/BL-1588-architect-bounce-20260916.md }
