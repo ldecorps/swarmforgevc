@@ -190,7 +190,13 @@ bounce_count: 1
 bounce_history:
   - { at: 2026-09-16, by: architect, blamed: coder, class: behavior, commit: 0d7be64b0a, evidence: backlog/evidence/BL-1588-architect-bounce-20260916.md }
 
-abandoned_commits: [d8f2b9e198]
+abandoned_commits: [d8f2b9e198, dd5aa5af81]
+# dd5aa5af81 is QA's own branch tip cited to land_step_cli.bb; the CLI
+# built a tip-pure replay (a74843fc2d, LAND_REPLAY route, ENTANGLED_SIBLING
+# BL-1592) rather than landing the cited commit directly, per the QA
+# prompt's BL-1241 remedy - the replay severs descent, so this override is
+# required for task_scope_gate_lib.bb / pre_qa_gate_lib.bb to read the
+# landed commit correctly.
 # d8f2b9e198 ("BL-1589: restore BL-1588 register rows to origin/main
 # content...") is QA's own diagnostic commit on the swarmforge-QA branch
 # from BL-1589's land-escalate (backlog/evidence/BL-1589-land-escalate-followup-20260916.md):
