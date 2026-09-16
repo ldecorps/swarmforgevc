@@ -24,7 +24,7 @@ required_wiring:
   - 'extension/test/helpers/tmpDir.js::ENOTEMPTY::the sweep retries the one error code a racing writer produces; tmpDirSetup.js already calls the sweep on every test file, so the retry is live on every run (BL-1235)'
   - 'specs/pipeline/steps/bl1601RedeployTestsAwaitTheMarkerSteps.js::registerSteps::the handler lands in the same parcel as the feature (BL-233, BL-1371)'
 
-human_approval: pending
+human_approval: approved
 approval_context: >
   A new feature file is authored here, so it needs a tap. No choice is
   posed and there are no ruling_options. FIRM: both BL-1204 tests keep
@@ -140,7 +140,7 @@ qa_e2e_procedure: |
   2. `npm test` 3 times -> the file green in every run; any other red
      recorded with its text and raised as an unowned-red note.
   3. Acceptance resolving all three scenarios
-     (`swarmforge/scripts/run_acceptance.sh specs/features/BL-1601-*.feature`).
+     (`specs/pipeline/scripts/run_acceptance.sh specs/features/BL-1601-*.feature`).
   4. `git diff <parent>..<parcel> -- extension/test/telegramCursorOperatorExec.test.js`
      adds the marker wait and assertion in exactly the two BL-1204 spawn
      tests and removes nothing.

@@ -29,16 +29,11 @@ HANDOFFD_BB="${HANDOFFD_BB:-$SCRIPT_DIR/handoffd.bb}"
 HANDOFFD_SUPERVISOR_BB="${HANDOFFD_SUPERVISOR_BB:-$SCRIPT_DIR/handoffd_supervisor.bb}"
 PID_WAIT_ATTEMPTS="${PID_WAIT_ATTEMPTS:-60}"
 
-if [[ "${SWARMFORGE_SKIP_DAEMON:-}" == "1" ]]; then
-  echo "Skipping handoff daemon (SWARMFORGE_SKIP_DAEMON=1)."
-  exit 0
-fi
-
+# BL-1548: audit the invocation before honouring SWARMFORGE_SKIP_DAEMON - a
+# skipped start request is still a start request, and the ledger this log
+# keeps must see it, or a postmortem reading the log can't tell a skip
+# apart from an invocation that never happened at all.
 mkdir -p "$DAEMON_DIR"
-# BL-785: starting re-arms watching — a deliberate stop must not outlive the
-# next start, or the crontab line would be present while the daemon it
-# watches is silently unwatched.
-freshness_clear_stopped "$WORKING_DIR" "handoffd"
 AUDIT_LOG="$DAEMON_DIR/daemon-start-audit.log"
 
 audit() {
@@ -46,6 +41,17 @@ audit() {
 }
 
 audit "start_handoff_daemon invoked root=$WORKING_DIR pid=$$ SKIP_DAEMON=${SWARMFORGE_SKIP_DAEMON:-} caller=${SWARMFORGE_DAEMON_START_CALLER:-unknown}"
+
+if [[ "${SWARMFORGE_SKIP_DAEMON:-}" == "1" ]]; then
+  audit "skipping: SWARMFORGE_SKIP_DAEMON=1"
+  echo "Skipping handoff daemon (SWARMFORGE_SKIP_DAEMON=1)."
+  exit 0
+fi
+
+# BL-785: starting re-arms watching — a deliberate stop must not outlive the
+# next start, or the crontab line would be present while the daemon it
+# watches is silently unwatched.
+freshness_clear_stopped "$WORKING_DIR" "handoffd"
 
 # BL-976: a relaunch from a keyless shell (the supervisor/watchdog chain
 # spawns generations from whatever environment happens to run it) must not

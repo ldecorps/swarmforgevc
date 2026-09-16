@@ -131,7 +131,7 @@ qa_e2e_procedure: |
      every red of any other file recorded with its text and raised as an
      unowned-red note, never folded in.
   3. Acceptance resolving all three scenarios
-     (`swarmforge/scripts/run_acceptance.sh specs/features/BL-1595-*.feature`).
+     (`specs/pipeline/scripts/run_acceptance.sh specs/features/BL-1595-*.feature`).
   4. `git diff <parent>..<parcel> -- extension/test/telegramFrontDeskBotCli.property.test.js`
      touches one require line and two argument lines; no `assert` or
      `numRuns` line changes.
@@ -163,3 +163,6 @@ notes: |
   e2e - BL-1541). Severity high per the standing-red rule.
 
 assigned_to: coder
+bounce_count: 1
+bounce_history:
+  - { at: 2026-09-16, by: architect, blamed: cleaner, class: behavior, commit: 7f9b5a5da7, evidence: backlog/evidence/BL-1595-architect-bounce-20260916.md }
