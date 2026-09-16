@@ -19,7 +19,13 @@ this slice.
 2. **Re-check** — on success emit one-shot Operator note
    `MASTER CHECKOUT DRIFT RESTORED: …` (paths named); deferred-bounce
    handoffd via `start_handoff_daemon.sh` / `restart-handoffd-group!` so
-   `load-file` state matches disk.
+   `load-file` state matches disk. This bounce runs the launcher with
+   `SWARMFORGE_SKIP_DAEMON=1` (nothing new is started — a live handoffd is
+   already running) and logs nothing on its own success; the observable
+   that the bounce reached the launcher is `start_handoff_daemon.sh`'s own
+   invocation-audit line in `<root>/.swarmforge/daemon/daemon-start-audit.log`
+   (BL-1548), written before the skip check so a skipped request is
+   ledgered exactly like a real start.
 3. **Fail-closed** — restore failure or residual drift keeps the existing
    `MASTER CHECKOUT DRIFT` WARN.
 4. **In-flight** — no restore; mute rules unchanged.
