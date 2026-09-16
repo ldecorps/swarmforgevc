@@ -146,4 +146,15 @@ notes: |
   root in seconds - BL-1541). Severity high: a live stall on the default
   pack.
 
+
+  AMENDED 2026-09-16 20:10Z by the specifier on the coordinator's correction
+  (note 00_20260916T190336Z_008895: "architect (not cleaner) drops fwd x2").
+  The mailbox trail (backlog/evidence/BL-1609-specifier-adjudication-of-coordinator-correction-20260916.md)
+  has BOTH drops: the cleaner's batches closed at 16:50:40Z and 16:51:03Z
+  with bounce + twin and no forward (this ticket's mechanism, unchanged),
+  and after the chase the architect completed each re-forward within 14 s
+  with nothing sent (17:37:30Z, 17:44:26Z) - a second, distinct defect
+  owned by BL-1609 (completion gate for forwarding parcels; No-Op Rule
+  clarified in handoff-protocol.md). This ticket's title, scenarios and
+  invariants stand; BL-1609 depends on this one landing first.
 assigned_to: null

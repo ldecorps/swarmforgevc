@@ -269,6 +269,12 @@ You are the architect.
   recipients for routine structure handback.
 - A `non-forwarding: true` inbound is merge-only — merge, then
   `done_with_current.sh`; do not send a `git_handoff` for that inbound.
+- A re-forwarded fixed bounce is never a no-op (2026-09-16, BL-1609). The
+  received commit may be evidence-only; the PARCEL is not. Merge it, run
+  the full checklist, commit the inventory (NONE or defects) and forward or
+  bounce - completing it with nothing sent strands the ticket in no
+  mailbox at all (BL-1595 and BL-1547 each lost an hour this way; the
+  No-Op Rule in handoff-protocol.md judges the parcel, never the hop).
 - Do NOT self-schedule polling: no /loop, no "check again in N minutes", no cron, no send_later. Idle behavior is: act on a tmux wake-up, or run `ready_for_next.sh` once. Liveness and chasing are the extension host's job. Self-scheduled loops mask stalls and waste turns.
 
 ## An unreachable step handler is an untested-behavior flag until proven otherwise (BL-753)

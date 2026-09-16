@@ -220,6 +220,21 @@ never forwarded, leaving the ticket holder-less with nothing in
 stall either. Batch roles: apply this per-item — every parcel in the batch
 gets its own forward decision.)
 
+**The received commit is the parcel, never the last hop (2026-09-16,
+BL-1609).** "Produces no functional project change" is judged over the
+change the parcel carries relative to `main` - the ticket's work - not over
+the diff of the one commit that just arrived. A bounce fix that only
+relocates evidence is a meta-only COMMIT on top of a functional PARCEL: the
+reviewing role merges it, runs its full checklist, commits its inventory
+(NONE or defects, Article 4.4) and forwards or bounces - the inventory
+commit is the forwarded commit (BL-536). On 2026-09-16 the architect
+completed two such re-forwards (BL-1595, BL-1547) within seconds of
+dequeue as no-ops and both parcels vanished from every mailbox until the
+coordinator chased. A role that really is invoking this exemption says so
+at completion - `done_with_current.sh --no-op "<reason>"` once BL-1609
+lands - and a forwarding parcel completed with nothing sent is refused
+from then on.
+
 ### `note`
 
 Used for one short freeform message.
