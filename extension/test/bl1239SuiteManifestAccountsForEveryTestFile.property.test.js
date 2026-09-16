@@ -30,6 +30,7 @@ const path = require('node:path');
 const fc = require('fast-check');
 const { spawnSync } = require('node:child_process');
 const { mkTmpDir } = require('./helpers/tmpDir');
+const { assertReachFloor, runsPerCell } = require('./helpers/reachFloors');
 
 const REPO_ROOT = path.join(__dirname, '..', '..');
 const TEST_DIR = path.join(REPO_ROOT, 'swarmforge', 'scripts', 'test');
@@ -101,26 +102,32 @@ function runInventory(present, manifest) {
   }
 }
 
+// BL-1587: every breakage is reached BY CONSTRUCTION - an outer loop over
+// BREAKAGES, each cell drawing runsPerCell(60, 5) times - rather than hoped
+// for by a single fc.constantFrom(...BREAKAGES) draw. The draw budget of 60
+// and the floor value of 3 are unchanged.
+const BREAKAGE_CELL_RUNS = runsPerCell(60, BREAKAGES.length);
+
 test('property: the inventory gate passes exactly when every file has one row and every row names a file', () => {
   const reached = new Map(BREAKAGES.map((b) => [b, 0]));
-  fc.assert(
-    fc.property(nameArb, fc.constantFrom(...BREAKAGES), (files, breakage) => {
-      const { present, manifest } = buildCase(files, breakage);
-      const result = runInventory(present, manifest);
-      reached.set(breakage, reached.get(breakage) + 1);
-      if (breakage === 'none') {
-        assert.equal(result.status, 0, `a manifest in exact agreement was rejected:\n${result.out}`);
-      } else {
-        assert.equal(result.status, 1, `breakage ${breakage} was accepted:\n${result.out}`);
-      }
-    }),
-    { numRuns: 60 }
-  );
+  for (const breakage of BREAKAGES) {
+    fc.assert(
+      fc.property(nameArb, fc.constant(breakage), (files, breakage) => {
+        const { present, manifest } = buildCase(files, breakage);
+        const result = runInventory(present, manifest);
+        reached.set(breakage, reached.get(breakage) + 1);
+        if (breakage === 'none') {
+          assert.equal(result.status, 0, `a manifest in exact agreement was rejected:\n${result.out}`);
+        } else {
+          assert.equal(result.status, 1, `breakage ${breakage} was accepted:\n${result.out}`);
+        }
+      }),
+      { numRuns: BREAKAGE_CELL_RUNS }
+    );
+  }
   // Asserted reachability floor, never a hoped-for one: a breakage the
   // generator never produced proves nothing about it.
-  for (const b of BREAKAGES) {
-    assert.ok(reached.get(b) >= 3, `generator reached breakage ${b} only ${reached.get(b)} time(s)`);
-  }
+  assertReachFloor(Object.fromEntries(reached), BREAKAGES, 3, 'breakage');
 });
 
 test('property: a malformed row is reported as malformed, not as a missing file', () => {

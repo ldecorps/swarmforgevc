@@ -40,6 +40,7 @@ const fs = require('node:fs');
 const path = require('node:path');
 const os = require('node:os');
 const { spawnSync } = require('node:child_process');
+const { assertReachFloor, runsPerCell } = require('./helpers/reachFloors');
 
 const REPO_ROOT = path.join(__dirname, '..', '..');
 const WIRING_TEST = path.join(REPO_ROOT, 'swarmforge', 'scripts', 'test', 'test_pack_staffing_gate_wiring.sh');
@@ -68,34 +69,47 @@ function runWiringTest(gateValue, staleStateDir) {
 
 const STALE_STATE_DIR_VALUES = [false, true];
 
+// This sweep is a deterministic exhaustive Cartesian product, not
+// fc.property sampling (see the header comment), so there is no numRuns to
+// derive - each of the 4*2 combinations is its own cell, reached exactly
+// once. RUNS_PER_COMBINATION is the identity runsPerCell(cells, cells)
+// yields for equal budget and cell count, kept so that "once per
+// combination" is still stated through the shared helper rather than a bare
+// loop with no derivation at all.
+const COMBINATION_COUNT = PANE_GATE_VALUES.length * STALE_STATE_DIR_VALUES.length;
+const RUNS_PER_COMBINATION = runsPerCell(COMBINATION_COUNT, COMBINATION_COUNT);
+
 test('BL-1445/BL-654 invariant 1: the wiring test decides PACK_STAFFING_SKIP_GATE and MODEL_STEWARD_STATE_DIR itself, never inheriting either from the pane', () => {
   const reach = { unset: 0, one: 0, zero: 0, garbage: 0, staleStateDir: 0, freshStateDir: 0 };
 
   for (const gateValue of PANE_GATE_VALUES) {
     for (const staleStateDir of STALE_STATE_DIR_VALUES) {
-      if (gateValue === undefined) reach.unset += 1;
-      else if (gateValue === '1') reach.one += 1;
-      else if (gateValue === '0') reach.zero += 1;
-      else reach.garbage += 1;
-      if (staleStateDir) reach.staleStateDir += 1;
-      else reach.freshStateDir += 1;
+      for (let run = 0; run < RUNS_PER_COMBINATION; run += 1) {
+        if (gateValue === undefined) reach.unset += 1;
+        else if (gateValue === '1') reach.one += 1;
+        else if (gateValue === '0') reach.zero += 1;
+        else reach.garbage += 1;
+        if (staleStateDir) reach.staleStateDir += 1;
+        else reach.freshStateDir += 1;
 
-      const { status, out } = runWiringTest(gateValue, staleStateDir);
-      assert.equal(
-        status,
-        0,
-        `the wiring test must pass regardless of the pane's own PACK_STAFFING_SKIP_GATE=${JSON.stringify(gateValue)} / stale-state-dir=${staleStateDir}:\n${out}`
-      );
-      assert.match(out, /ALL CHECKS PASSED/, `expected every case to pass:\n${out}`);
+        const { status, out } = runWiringTest(gateValue, staleStateDir);
+        assert.equal(
+          status,
+          0,
+          `the wiring test must pass regardless of the pane's own PACK_STAFFING_SKIP_GATE=${JSON.stringify(gateValue)} / stale-state-dir=${staleStateDir}:\n${out}`
+        );
+        assert.match(out, /ALL CHECKS PASSED/, `expected every case to pass:\n${out}`);
+      }
     }
   }
 
-  assert.ok(reach.unset > 0, 'never exercised an unset pane export');
-  assert.ok(reach.one > 0, 'never exercised the real incident value (PACK_STAFFING_SKIP_GATE=1)');
-  assert.ok(reach.zero > 0, 'never exercised PACK_STAFFING_SKIP_GATE=0');
-  assert.ok(reach.garbage > 0, 'never exercised an arbitrary non-canonical value');
-  assert.ok(reach.staleStateDir > 0, 'never exercised a garbage pane MODEL_STEWARD_STATE_DIR');
-  assert.ok(reach.freshStateDir > 0, 'never exercised an unset pane MODEL_STEWARD_STATE_DIR');
+  // BL-1587: already reached BY CONSTRUCTION - the nested for-loops above are
+  // a deterministic exhaustive sweep of the 4x2 Cartesian product (this
+  // file's own BL-1445/BL-654 fix for the exact sampling flake the sweep
+  // ticket targets elsewhere), not fc.property sampling, so every category
+  // hits exactly once per combination that produces it. Migrated the manual
+  // assert.ok checks to the shared helper for consistency; no loop change.
+  assertReachFloor(reach, ['unset', 'one', 'zero', 'garbage', 'staleStateDir', 'freshStateDir'], 1, 'gate-wiring-case');
 });
 
 // invariant 2 is static (a property of the source text, not of any

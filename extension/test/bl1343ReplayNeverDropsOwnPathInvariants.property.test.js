@@ -45,6 +45,7 @@ const path = require('node:path');
 const { execFileSync, spawnSync } = require('node:child_process');
 const { checkoutSeededRepo } = require('./helpers/sharedRepoFixture');
 const { propertyLaneTimeoutMs } = require('./helpers/propertyLaneContentionBudget');
+const { assertReachFloor, runsPerCell } = require('./helpers/reachFloors');
 
 const REPO_ROOT = path.join(__dirname, '..', '..');
 const LAND_STEP_LIB = path.join(REPO_ROOT, 'swarmforge', 'scripts', 'land_step_lib.bb');
@@ -134,6 +135,13 @@ function landPlan(root) {
 // shape is reachable in one draw, and the floors below are satisfied by
 // construction rather than by luck.
 const SHAPES = ['all-sibling', 'mixed', 'none-sibling'];
+
+// BL-1587: migrated from the per-shape numRuns:9 literal to
+// runsPerCell(27, SHAPES.length) - the same 9 runs per shape, now derived
+// from the file's declared total budget rather than restated as a bare
+// constant. The loop shape (SHAPES already its own outer iteration, per-cell
+// fc.assert) and the per-draw body are unchanged.
+const SHAPE_CELL_RUNS = runsPerCell(27, SHAPES.length);
 
 // The shape is not drawn at all - each shape gets its OWN property run, so
 // "did the run reach this corner" stops being a question about luck. Only the
@@ -233,13 +241,11 @@ test('BL-1343/BL-654 invariant 1: a differing tip is never reported as landed or
           fs.rmSync(root, { recursive: true, force: true });
         }
       }),
-      { numRuns: 9 },
+      { numRuns: SHAPE_CELL_RUNS },
     );
   }
 
-  assert.ok(reach.fullySubtracted > 0, 'generator never reached a fully-subtracted contribution - the defect corner went untested');
-  assert.ok(reach.partiallySubtracted > 0, 'generator never reached a partial subtraction');
-  assert.ok(reach.nothingSubtracted > 0, 'generator never reached a case where nothing is subtracted');
+  assertReachFloor(reach, ['fullySubtracted', 'partiallySubtracted', 'nothingSubtracted'], 1, 'subtraction-shape');
 }, propertyLaneTimeoutMs(20000));
 
 test('BL-1343/BL-654 invariant 2: an exclusion that empties the contribution refuses, naming path, ticket and sibling', () => {
@@ -286,10 +292,9 @@ test('BL-1343/BL-654 invariant 2: an exclusion that empties the contribution ref
           fs.rmSync(root, { recursive: true, force: true });
         }
       }),
-      { numRuns: 9 },
+      { numRuns: SHAPE_CELL_RUNS },
     );
   }
 
-  assert.ok(reach.refusals > 0, 'generator never emptied the contribution - the refusal branch never fired');
-  assert.ok(reach.kept > 0, 'generator never kept a path - the non-refusal branch never fired');
+  assertReachFloor(reach, ['refusals', 'kept'], 1, 'refusal-shape');
 }, propertyLaneTimeoutMs(20000));

@@ -22,6 +22,7 @@ const fs = require('node:fs');
 const path = require('node:path');
 const { spawnSync, execFileSync } = require('node:child_process');
 const { mkTmpDir } = require('./helpers/tmpDir');
+const { assertReachFloor, runsPerCell } = require('./helpers/reachFloors');
 
 const REPO_ROOT = path.join(__dirname, '..', '..');
 const LAND_LIB = path.join(REPO_ROOT, 'swarmforge', 'scripts', 'land_step_lib.bb');
@@ -96,10 +97,32 @@ const siblingSpecArb = fc.array(fc.record({ idIdx: fc.integer({ min: 0, max: SIB
   maxLength: 3,
 });
 
+// BL-1587: the three shapes (a sibling present, no sibling at all, an own
+// path whose commit names no ticket) are reached BY CONSTRUCTION - an outer
+// loop over three cells, each pairing the original ownSpecArb/siblingSpecArb
+// generators with a fixed axis that forces its own shape - rather than a
+// single generator hoping a random draw landed on each. The draw budget of
+// 25 and the per-draw body are unchanged.
+const siblingSpecArbNonEmpty = fc.array(
+  fc.record({ idIdx: fc.integer({ min: 0, max: SIBLING_IDS.length - 1 }) }),
+  { minLength: 1, maxLength: 3 }
+);
+const ownSpecArbWithUntagged = fc
+  .array(fc.record({ tagged: fc.boolean() }), { minLength: 0, maxLength: 2 })
+  .map((rest) => [{ tagged: false }, ...rest]);
+
+const INVARIANT1_CELLS = [
+  { label: 'withSiblings', own: ownSpecArb, sibling: siblingSpecArbNonEmpty },
+  { label: 'noSiblings', own: ownSpecArb, sibling: fc.constant([]) },
+  { label: 'withUntaggedOwn', own: ownSpecArbWithUntagged, sibling: siblingSpecArb },
+];
+const INVARIANT1_CELL_RUNS = runsPerCell(25, INVARIANT1_CELLS.length);
+
 test('property (invariant 1 and 2): every own path survives, every unlanded-sibling-only path is dropped', () => {
   const seen = { withSiblings: 0, withUntaggedOwn: 0, noSiblings: 0 };
+  for (const cell of INVARIANT1_CELLS) {
   fc.assert(
-    fc.property(ownSpecArb, siblingSpecArb, (ownSpecs, siblingSpecs) => {
+    fc.property(cell.own, cell.sibling, (ownSpecs, siblingSpecs) => {
       if (siblingSpecs.length > 0) seen.withSiblings += 1;
       else seen.noSiblings += 1;
       if (ownSpecs.some((s) => !s.tagged)) seen.withUntaggedOwn += 1;
@@ -155,12 +178,11 @@ test('property (invariant 1 and 2): every own path survives, every unlanded-sibl
         );
       });
     }),
-    { numRuns: 25 }
+    { numRuns: INVARIANT1_CELL_RUNS }
   );
+  }
 
-  assert.ok(seen.withSiblings > 0, `never generated a case with an unlanded sibling: ${JSON.stringify(seen)}`);
-  assert.ok(seen.withUntaggedOwn > 0, `never generated an own path whose own commit names no ticket: ${JSON.stringify(seen)}`);
-  assert.ok(seen.noSiblings > 0, `never generated a case with no sibling at all: ${JSON.stringify(seen)}`);
+  assertReachFloor(seen, ['withSiblings', 'withUntaggedOwn', 'noSiblings'], INVARIANT1_CELL_RUNS, 'own-paths-shape');
 });
 
 // ── invariant 2, second sentence: an unreadable attribution refuses rather
