@@ -158,6 +158,18 @@ function classifyRegisterRow(row: RegisterRow, measured: number | undefined, bud
   return null;
 }
 
+// Priority order matches the amendment's own stated order (2026-09-16, QA's
+// Article 4.2 hold): new-pole, unowned-row, watch, stale-row, ok - a new,
+// unregistered offender is worse than an existing row gone stale or
+// unowned, which in turn outrank a merely-watched file or a stale one.
+function computeVerdict(offenderCount: number, unownedCount: number, watchCount: number, staleCount: number): BudgetVerdictKind {
+  if (offenderCount > 0) return 'new-pole';
+  if (unownedCount > 0) return 'unowned-row';
+  if (watchCount > 0) return 'watch';
+  if (staleCount > 0) return 'stale-row';
+  return 'ok';
+}
+
 // Walks every register row once, bucketing each into stale/unowned/pole via
 // classifyRegisterRow (a null verdict contributes to none) - the loop
 // itself pulled out of checkFileDurationBudget alongside classifyRegisterRow
@@ -217,16 +229,7 @@ export function checkFileDurationBudget(
     .map((d) => ({ file: d.file, durationMs: d.durationMs, budgetMs, kind: 'watch' }));
 
   const passed = offenders.length === 0 && unownedRows.length === 0;
-  const verdict: BudgetVerdictKind =
-    offenders.length > 0
-      ? 'new-pole'
-      : unownedRows.length > 0
-        ? 'unowned-row'
-        : watchFiles.length > 0
-          ? 'watch'
-          : staleRows.length > 0
-            ? 'stale-row'
-            : 'ok';
+  const verdict = computeVerdict(offenders.length, unownedRows.length, watchFiles.length, staleRows.length);
 
   return { passed, verdict, offenders, watchFiles, staleRows, unownedRows, registeredPoles };
 }

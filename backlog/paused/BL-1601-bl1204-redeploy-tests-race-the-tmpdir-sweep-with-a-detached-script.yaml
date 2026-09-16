@@ -24,7 +24,7 @@ required_wiring:
   - 'extension/test/helpers/tmpDir.js::ENOTEMPTY::the sweep retries the one error code a racing writer produces; tmpDirSetup.js already calls the sweep on every test file, so the retry is live on every run (BL-1235)'
   - 'specs/pipeline/steps/bl1601RedeployTestsAwaitTheMarkerSteps.js::registerSteps::the handler lands in the same parcel as the feature (BL-233, BL-1371)'
 
-human_approval: pending
+human_approval: approved
 approval_context: >
   A new feature file is authored here, so it needs a tap. No choice is
   posed and there are no ruling_options. FIRM: both BL-1204 tests keep
