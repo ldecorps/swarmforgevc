@@ -14,7 +14,8 @@ priority: 12
 direction: swarm-reported
 depends_on: [BL-1588, BL-1592, BL-1595]
 # depends_on: BL-1588 lands the helper's fork signal; BL-1592 and BL-1595
-# migrate five of the 87 sites in their own files. This sweep touches
+# migrate three of the 81 sites (bl1529's one, telegramFrontDeskBotCli's
+# two) in their own files. This sweep touches
 # every other file with a bare site and the guard's real-tree scan must
 # find zero, so it cannot be active alongside any of them (Article 3.2.3).
 mutation_cost: low
