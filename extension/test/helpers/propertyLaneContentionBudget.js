@@ -24,12 +24,18 @@
 // lane's forks are ALL busy and the 1-minute average still reads the
 // pre-run quiet band. A second factor, forks/QUIET_LOAD_CEILING, is folded
 // in by max() so neither reading can under-report contention the other
-// would have caught: the lane's own resolved fork ceiling (known before any
-// file loads - vitest.properties.config.mjs's WORKER_POOL_SIZE) does not
-// lag the way the load average does. A single fork (a file run alone)
-// contributes forks/QUIET_LOAD_CEILING = 0.25, under the factor>1
-// threshold, so a lone file on a quiet host still resolves to the strict
-// base (invariant 1) exactly as before this change.
+// would have caught.
+//
+// BL-1588 architect bounce (2026-09-16): "forks" must NOT be the lane's
+// static pool CEILING (vitest.properties.config.mjs's WORKER_POOL_SIZE,
+// resolved from host RAM/cores alone - identical whether the invocation
+// targets 408 files or 1). Publishing that ceiling unconditionally violated
+// invariant 1 on any host with enough free cores/RAM: a genuinely lone-file
+// run on a 20-core review host resolved forks=12, forkFactor=3, and a
+// declared-strict-20s run silently received 60000ms. The signal that
+// actually distinguishes "many files, lane concurrency in play" from "one
+// file, alone" is how many explicit file arguments the invoking command
+// line named - see resolveLaneForks below - never the pool's own sizing.
 const { resolveUnitLaneTimeout, sampleContentionFactor, usableFactor } = require('../../../specs/pipeline/steps/lib/contentionBudget');
 
 const QUIET_LOAD_CEILING = 4;
@@ -47,6 +53,37 @@ function forksFromEnv() {
   return Number.isFinite(n) && n > 0 ? n : 1;
 }
 
+// The number of explicit test-file arguments on the vitest CLI invocation,
+// e.g. `vitest run --config <cfg> test/a.js test/b.js` -> 2; `vitest run
+// --config <cfg>` (no filter, the full lane) -> 0. `--config`'s own value
+// is the one flag this lane's invocations ever pass with a value, so it is
+// the only one skipped by name; any other `-`-prefixed token is a bare
+// flag, never counted as a file.
+function explicitFileArgCount(argv) {
+  const args = Array.isArray(argv) ? argv.slice(2) : [];
+  let count = 0;
+  for (let i = 0; i < args.length; i += 1) {
+    const a = args[i];
+    if (a === '--config') {
+      i += 1; // skip its value
+      continue;
+    }
+    if (a === 'run' || (typeof a === 'string' && a.startsWith('-'))) continue;
+    count += 1;
+  }
+  return count;
+}
+
+// The lane's real concurrency signal for propertyLaneTimeoutMs's forks
+// input: the pool ceiling only when more than one file could actually be
+// running concurrently (0 explicit files = the full lane's own glob, >1 =
+// several named together); exactly one explicit file is indistinguishable
+// from a genuinely solo run, so it is forced to 1 regardless of how large
+// the host-sized pool ceiling resolved.
+function resolveLaneForks(argv, poolSize) {
+  return explicitFileArgCount(argv) === 1 ? 1 : poolSize;
+}
+
 function propertyLaneContentionFactor(opts = {}) {
   const loadFactor = usableFactor(sampleContentionFactor(opts.loadavg1mFn, () => QUIET_LOAD_CEILING));
   const forksFn = typeof opts.forksFn === 'function' ? opts.forksFn : forksFromEnv;
@@ -60,4 +97,11 @@ function propertyLaneTimeoutMs(baseMs, opts = {}) {
   return resolveUnitLaneTimeout(baseMs, { factor: propertyLaneContentionFactor(opts) }).effectiveMs;
 }
 
-module.exports = { propertyLaneTimeoutMs, propertyLaneContentionFactor, QUIET_LOAD_CEILING, FORKS_ENV_KEY };
+module.exports = {
+  propertyLaneTimeoutMs,
+  propertyLaneContentionFactor,
+  QUIET_LOAD_CEILING,
+  FORKS_ENV_KEY,
+  explicitFileArgCount,
+  resolveLaneForks,
+};
