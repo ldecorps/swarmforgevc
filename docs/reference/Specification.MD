@@ -12659,6 +12659,27 @@ remains the hard gate. This is the durable ratchet against the target
 creeping back unnoticed; the existing suite-duration trend
 (`swarmMetrics.ts`) still only reports relative "slower than before".
 
+**The per-file 7s guard reads a committed pole register so a new offender
+is distinguishable from an old one (BL-1598).** The guard above had live
+offenders continuously since 2026-08 with no way to tell a known, owned
+slow file apart from a fresh regression, so every recorded row read
+`result: fail` and a real regression (25s to 689s, unnoticed) walked past
+a gate that was firing on every run. `check-suite-file-budget.ts` now
+reads `backlog/suite-poles.tsv` (the standing-red register's own TSV
+shape, BL-1428): a file over budget with an open-ticket-owned row is
+reported, not refused; one with no row still refuses as a `new-pole`
+exactly as before; a row whose ticket is no longer open refuses as an
+`unowned-row`; a row whose file now measures under 80% of budget refuses
+as a `stale-row` so the row leaves in the land that cut the pole.
+`testDurationRecorderLib.js`'s recorded row (`.test-durations.jsonl`,
+BL-078) keeps `result` as the TEST outcome, unchanged and independent of
+the budget verdict, and gains `pole_ms` (the run's slowest file),
+`work_ms` (summed per-file duration), `new_offenders` (count with no
+row), and `budget_verdict` (`ok`/`new-pole`/`stale-row`/`unowned-row`) —
+so the trend, and the briefing's suite-duration line, can now tell a
+failing test apart from a slow file. See
+[The unit suite's per-file budget gate reads a pole register](../how-to/BL-1598-unit-suite-pole-register-drains-the-per-file-gate.md).
+
 ### Unit suite green + per-file duration profile (BL-792)
 
 Slice A of the `unit-suite-speed` epic (BL-791). Every recorded `npm test` run
