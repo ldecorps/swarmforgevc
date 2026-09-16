@@ -1,0 +1,182 @@
+id: BL-1594
+title: "The land step's BL-1481 content check folds a :vacuous verdict in with :unlanded, so a bounced sibling whose every change on a shared path is reverted at the tip - a pure register-row removal restored to origin/main's content - still blocks the lander although no changed line attributes to it and the verdict's own docstring calls that path silent, not an obstacle; BL-1589 needed a ruled hand-built land on 2026-09-16 because of it; :vacuous becomes content-clear in path-content-blocked-ids only, while landed-siblings keeps dropping vacuous paths and never scores silence as landing"
+milestone: M8
+type: defect
+severity: high
+# high: integration is the swarm's throughput (BL-1481's own rationale).
+# Every batch branch that carries a bounced parcel's register-row removal
+# refuses every sibling's land at the escalate step, and the only exit is
+# a hand-built tip-pure land - the hazard class behind BL-1546/BL-1472.
+# Instance: BL-1589, 2026-09-16, two specifier round trips.
+status: todo
+epic: swarm-reliability
+priority: 6
+direction: swarm-reported
+depends_on: []
+mutation_cost: low
+# low: land_step_lib.bb (Babashka, no mutation/CRAP/DRY wired - BL-472;
+# the hardening pass records the degraded fallback) plus its bb runner and
+# one step handler; no extension/src.
+slice_size_envelope: low
+required_stages: [coder, cleaner, architect, hardender, documenter, qa]
+
+acceptance: specs/features/BL-1594-a-fully-reverted-sibling-edit-on-a-shared-path-is-content-clear.feature
+
+required_wiring:
+  - 'specs/pipeline/steps/bl1594VacuousSharedPathContentClearSteps.js::registerSteps::the handler lands in the same parcel as the feature (BL-233, BL-1371)'
+# No production anchor on purpose (BL-1235): path-content-blocked-ids and
+# sibling-path-verdict already exist, so any pattern on them matches before
+# and after the fix.
+
+human_approval: pending
+approval_context: >
+  A new feature file is authored here, so it needs a tap. No choice is
+  posed and there are no ruling_options. FIRM: the change is confined to
+  path-content-blocked-ids (BL-1481's narrowing): a :vacuous verdict for a
+  blocking co-owner on a shared path clears that co-owner exactly as
+  :landed does, and the CLI's CONTENT_CLEAR_SIBLING_PATH line says which
+  of the two it was. FIRM: landed-siblings and sibling-landed? are
+  byte-for-byte unchanged - a sibling with only vacuous paths still
+  reports unlanded, silence is never scored as evidence of landing
+  (BL-1354). FIRM: an unreadable blob or line-change read still returns
+  nil and blocks exactly as before (BL-1481 invariant 3). FIRM: :unlanded
+  still blocks; a partly restored removal is :unlanded, not :vacuous.
+
+invariants:
+  - "A content check that cannot complete never narrows a refusal: nil from an unreadable origin/main blob, tip blob or line-change read leaves the path exactly as blocking as commit attribution alone found it (BL-1481 invariant 3, unchanged)."
+  - "A :vacuous path is never evidence that a sibling has landed: landed-siblings drops vacuous paths before scoring and a sibling left with only vacuous paths reports unlanded, before and after this change (BL-1354)."
+
+description: |
+  ## What is wrong
+
+  On 2026-09-16 QA's approved BL-1589 tip carried BL-1588's commit
+  removing four register rows from `backlog/standing-reds.tsv`; BL-1588
+  was then bounced. The land step refused the shared path (correct, under
+  BL-1481: removed lines blaming to a bounced sibling). The specifier
+  ruled the mechanical remedy: QA restores the path to origin/main's
+  content minus BL-1589's own row and re-runs the step
+  (`backlog/evidence/BL-1589-land-escalate-specifier-adjudication-20260916.md`).
+  QA did exactly that (d8f2b9e198, tip 01bf7bc523: the path's diff
+  against origin/main is one deletion blaming to BL-1589's mint) and the
+  step refused again, same text, naming BL-1588
+  (`backlog/evidence/BL-1589-land-escalate-followup-20260916.md`, QA
+  branch e1f0f4eadb). QA traced it against the live lib:
+
+  ```
+  owners of backlog/standing-reds.tsv: #{"BL-1588" "BL-1589"}
+  BL-1588's own line changes on this path: {:added #{}, :removed #{the 4 rows}}
+  sibling-path-verdict for BL-1588 on this path -> :vacuous
+  path-content-blocked-ids #{"BL-1588"} on this path -> #{"BL-1588"}  (still blocked)
+  ```
+
+  Read, not guessed (specifier, same day): `sibling-path-verdict`
+  (`swarmforge/scripts/land_step_lib.bb:344`) returns `:vacuous` when
+  `surviving-added` and `surviving-removed` are both empty and documents
+  it as "the sibling has nothing left to land there, so the path is silent
+  rather than an obstacle (its content at the tip owes the sibling
+  nothing)". `path-content-blocked-ids` (`land_step_lib.bb:930`) keeps an
+  id blocked on anything but `:landed` - its docstring says `:vacuous`
+  "still blocks it - UNCHANGED from before this ticket". A pure removal
+  fully restored can only ever be `:vacuous`, because `:landed` needs a
+  non-empty surviving contribution to match against origin/main. So the
+  rule BL-1481 states in `docs/how-to/BL-1241-entangled-tip-at-the-land-step-has-a-reachable-remedy.md`
+  ("no changed line attributes to the blocking sibling - the path is
+  content-clear for that sibling") is not what the code does for the
+  fully-reverted case, and none of BL-1481's four scenarios constructs
+  that case. The only exit today is a hand-built tip-pure land, the
+  hazard class behind BL-1546 and BL-1472.
+
+  ## What is wanted
+
+  - A blocking co-owner whose every own change on a shared path is
+    reverted at the tip (`:vacuous`) is content-clear for that path: the
+    plan is a replay that includes the path and the report names the
+    sibling as content-clear, saying it was cleared by reversion, not by
+    landing (scenario 01, first row).
+  - A partly restored removal is still `:unlanded` and still blocks
+    (scenario 01, second row); `:landed` still clears and an unreadable
+    read still blocks (scenario 02).
+  - `landed-siblings` is unchanged: a sibling whose every attributed path
+    is vacuous still reports unlanded (scenario 03, invariant 2).
+  - The how-to's BL-1481 section says so (documenter), and the
+    `path-content-blocked-ids` docstring no longer claims vacuous blocks.
+
+  ## How (direction, not mandate)
+
+  - `path-content-blocked-ids`: `(cond-> blocked (not (contains? #{:landed :vacuous} verdict)) (conj id))`
+    in place of `(not= :landed verdict)`; return the verdict alongside so
+    `land_step_cli.bb` can print `CONTENT_CLEAR_SIBLING_PATH <path> <id>
+    reverted` versus `... landed` (or a second line kind; direction). Do
+    not touch `sibling-path-verdict`, `landed-siblings` or
+    `sibling-landed?`.
+  - Scenario 01's two rows drive the REAL `land_step_cli.bb` against a git
+    fixture the way `bl1481SharedPathContentCheckSteps.js` does (lander
+    and bounced sibling both touching one path; origin/main marked by
+    `update-ref`): the sibling's commit removes lines origin/main has; a
+    later lander commit restores every one (row 1) or all but one (row 2)
+    and changes only its own line. Scenario 02 drives
+    `path-content-blocked-ids` directly with an injected verdict per row
+    (the BL-1481/04 injection convention); scenario 03 drives
+    `landed-siblings` with a sibling whose only attributed path is vacuous.
+  - `swarmforge/scripts/test/land_step_lib_test_runner.bb` gains the same
+    four cases as bb unit tests; the hardening pass records the degraded
+    fallback (no mutation for Babashka, BL-472).
+  - Documenter: the how-to's BL-1481 section and the docstring; no
+    diagram trigger (handoff-flow.mmd depicts the handoff lifecycle, not
+    the content check's verdict table).
+
+constraints: >
+  land_step_lib.bb's path-content-blocked-ids and land_step_cli.bb's
+  report line only; sibling-path-verdict, landed-siblings and
+  sibling-landed? byte-identical to the received commit. No new refusal
+  class; nothing that widens what blocks. The step handler lands with the
+  feature (BL-233). Evidence files named BL-1594-*.
+
+out_of_scope: |
+  - Moving register-row removal out of the coder's commit and into the
+    land step itself (the structural retirement of this class, recorded
+    as a candidate in BL-1589's adjudication; mint on recurrence).
+  - The hand-built land route and its BL-1405 bookkeeping (unchanged).
+  - BL-1588's own rework and BL-1589's land (ruled, in flight).
+
+qa_e2e_procedure: |
+  On the parcel commit:
+  1. `bb swarmforge/scripts/test/land_step_lib_test_runner.bb` -> green,
+     the four new cases named in its output.
+  2. Acceptance resolving all three scenarios
+     (`swarmforge/scripts/run_acceptance.sh specs/features/BL-1594-*.feature`).
+  3. Reproduce BL-1589's exact shape in a scratch fixture from
+     `backlog/evidence/BL-1589-land-escalate-followup-20260916.md`: origin/main
+     with five rows, a sibling commit (bounced in `.swarmforge/bounces/`)
+     removing four, a lander commit restoring those four and removing its
+     own one -> `land_step_cli.bb` prints CONTENT_CLEAR_SIBLING_PATH for the
+     sibling and LAND_REPLAY; with one of the four still absent -> the
+     BL-1481/03 refusal text unchanged.
+  4. `git diff <parent>..<parcel> -- swarmforge/scripts/land_step_lib.bb`
+     touches only path-content-blocked-ids and its docstring (invariant 2).
+  5. If a real entangled tip of this shape exists at QA time, run the CLI
+     on it read-only and record the outcome; otherwise say none existed.
+
+source: |
+  QA note to the specifier, priority 00, 2026-09-16T11:28Z (inbound
+  00_20260916T112854Z_002788_from_QA_to_specifier): "BL-1589 ruling recipe
+  still refuses (vacuous!=landed), see e1f0f4eadb". QA evidence
+  backlog/evidence/BL-1589-land-escalate-followup-20260916.md (QA branch
+  e1f0f4eadb, lands with BL-1589). Specifier ruling (follow-up section):
+  backlog/evidence/BL-1589-land-escalate-specifier-adjudication-20260916.md.
+  Parent: BL-1481 (done, ca694b85ad), BL-1354, BL-1470.
+
+notes: |
+  Minted 2026-09-16 by the specifier while ruling QA's second BL-1589
+  land-escalate note; BL-1589 itself lands hand-built under that ruling
+  and does not wait for this. INVEST: Independent (BL-1481 landed, no
+  unbuilt sibling), Negotiable (the verdict set is fixed by the docstring's
+  own contract; the CLI wording is direction), Valuable (a bounced
+  sibling's pure removal stops forcing hand-built lands), Estimable (one
+  predicate, one report line, four fixture cases, one sitting), Small
+  (three scenarios, two invariants), Testable (real CLI on a fixture in
+  seconds, pure injections for the verdict table - BL-1541). Severity high
+  per BL-1481's own rationale: integration throughput, and the workaround
+  is the hazard class.
+
+assigned_to: null
