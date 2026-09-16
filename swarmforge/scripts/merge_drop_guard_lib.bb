@@ -151,12 +151,18 @@
     (when (zero? exit) (str/trim out))))
 
 (defn- merge-commits
-  "Merge commits reachable from forwarded and not from received, oldest
+  "Merge commits reachable from forwarded and not from bound, oldest
    first, so a finding names the earliest offending merge when several
    exist. nil (unreadable) on a git failure; an empty vector (scenario 06:
-   a forward that made no merge) is a real, successful answer, never nil."
-  [root received forwarded]
-  (let [{:keys [exit out]} (git! root "rev-list" "--merges" "--reverse" (str received ".." forwarded))]
+   a forward that made no merge) is a real, successful answer, never nil.
+   BL-1610: bound is the sender's received_at_head stamp when the caller
+   has one (the merges the sender made AFTER receipt) - the received
+   commit itself only when no stamp exists (an older parcel, or a
+   coordinator route git_handoff whose commit is main's own tip, in which
+   case received..forwarded is the sender branch's WHOLE off-main
+   history)."
+  [root bound forwarded]
+  (let [{:keys [exit out]} (git! root "rev-list" "--merges" "--reverse" (str bound ".." forwarded))]
     (when (zero? exit)
       (vec (non-blank (str/split-lines out))))))
 
@@ -253,16 +259,63 @@
                                         :path path :merge-commit merge-commit}))))
               paths))))))))
 
+;; BL-1610 invariant 2: a finding whose path's blob at forwarded equals its
+;; blob at received carries nothing the forward could lose - the sender's
+;; own tree at that path never changed across the send at all, whatever a
+;; stale merge earlier in its history once did. `git rev-parse
+;; <commit>:<path>` on a path absent at both commits fails identically for
+;; both sides (nil = nil), which correctly reads as identical too - a path
+;; neither commit carries has nothing to drop.
+(defn- blob-sha [root commit path]
+  (let [{:keys [exit out]} (git! root "rev-parse" (str commit ":" path))]
+    (when (zero? exit) (str/trim out))))
+
+;; Blob identity between received and forwarded ALONE over-excuses: a merge
+;; that itself resolves a path by taking the received side verbatim also
+;; leaves blob(forwarded)==blob(received) for that path (BL-1576's own
+;; "taking the received side verbatim" scenario, which must stay refused -
+;; the sender's own dropped addition never rides the forward EITHER, but it
+;; is dropped BY THIS SEND, not superseded before it - there, merge-commit
+;; IS forwarded, nothing sits between them). The real BL-1606 shape is
+;; structurally different: forwarded is a LATER commit than the offending
+;; merge - whatever the merge itself resolved the path to, forwarded is
+;; downstream of it (by many commits in the real incident), so testing
+;; whether forwarded's blob differs from the merge's own output cannot
+;; discriminate the two cases (a real BL-1606 finding's path can rest at
+;; the SAME value the merge itself produced, if nothing else ever touched
+;; it again - exactly what happened for two of the six merges). The
+;; discriminator is commit identity, not a further blob change: excused
+;; only when the offending merge is NOT itself the commit being forwarded
+;; (something, even nothing, comes after it) AND the forward's blob
+;; matches what was received.
+(defn- excused-by-blob-identity? [root received forwarded merge-commit path]
+  (and (not= (full-sha root merge-commit) (full-sha root forwarded))
+       (= (blob-sha root received path) (blob-sha root forwarded path))))
+
 (defn findings-between
   "The one fs-touching entry point safe to call directly with raw refs
    (branch names, short or full shas, tags) - used both by the read-only
    CLI below and by findings-for-git-handoff once it has resolved the
    mailbox header. nil when the merge list itself could not be read
    (unreadable received/forwarded); an empty vector is a genuine answer
-   (no merges, or merges with nothing lost)."
-  [root received forwarded]
-  (when-let [merges (merge-commits root received forwarded)]
-    (vec (mapcat #(findings-for-merge root forwarded received %) merges))))
+   (no merges, or merges with nothing lost). Every finding carries
+   :excused (BL-1610 invariant 2) - true when the forward carries no
+   version of the finding's path that differs from what was received,
+   so nothing dropped can ride it; `blocked?`/`refusal-message` only act
+   on the non-excused ones, but an excused finding still comes back for a
+   caller that wants to report it (the read-only CLI does).
+
+   BL-1610: the 4-arity form bounds the merge scan to merges reachable
+   from forwarded and not from head (the sender's received_at_head stamp)
+   - the merges the sender made since receipt. The 3-arity form (every
+   pre-BL-1610 caller, and this arity's own fallback when a caller has no
+   stamp to pass) keeps its exact prior scan (received..forwarded)."
+  ([root received forwarded] (findings-between root received forwarded nil))
+  ([root received forwarded head]
+   (let [bound (if (not-empty head) head received)]
+     (when-let [merges (merge-commits root bound forwarded)]
+       (mapv (fn [f] (assoc f :excused (excused-by-blob-identity? root received forwarded (:merge f) (:path f))))
+             (mapcat #(findings-for-merge root forwarded received %) merges))))))
 
 (defn findings-for-git-handoff
   "The send-time entry point (called from swarm_handoff.bb, same posture
@@ -275,18 +328,28 @@
   [{:keys [root sender task-name canonical]}]
   (let [task-ticket-id (pipeline-stage-lib/extract-ticket-id task-name)
         received (review-forward-evidence-gate-lib/received-commit-for-task root sender task-name)
+        ;; BL-1610: the sender's HEAD at the moment it dequeued this task's
+        ;; parcel, when the dequeue stamped one - nil on an older parcel,
+        ;; falling through to findings-between's own received..forwarded
+        ;; fallback.
+        head (review-forward-evidence-gate-lib/received-at-head-for-task root sender task-name)
         unreadable-warning (delay {:warning (str "merge-drop check could not run for " task-ticket-id
                                                   " (received commit " received " unreadable) - send allowed, unverified (BL-1576)")})]
     (if-not received
       {:findings []}
       (if-let [received-full (full-sha root received)]
-        (if-let [findings (findings-between root received-full canonical)]
+        (if-let [findings (findings-between root received-full canonical head)]
           {:findings findings}
           @unreadable-warning)
         @unreadable-warning))))
 
+;; BL-1610: an excused finding (invariant 2) never blocks - the forward
+;; carries no version of its path that differs from what was received.
+(defn blocking-findings [findings]
+  (remove :excused findings))
+
 (defn blocked? [{:keys [findings]}]
-  (boolean (seq findings)))
+  (boolean (seq (blocking-findings findings))))
 
 (defn refusal-message
   [{:keys [task-name findings]}]
@@ -298,7 +361,7 @@
                  "BL-490/BL-495 bounce revert, carry a proper revert of the commit "
                  "that authored the dropped hunk; otherwise redo the merge resolution "
                  "to keep both sides before sending.")
-            task-name (str/join "; " (map describe findings)))))
+            task-name (str/join "; " (map describe (blocking-findings findings))))))
 
 ;; ── read-only CLI (qa_e2e_procedure step 2): ────────────────────────────
 ;;   bb merge_drop_guard_lib.bb <project-root> <received-commit> <forwarded-commit>
@@ -306,12 +369,14 @@
 ;; alone, no mailbox, no fixture.
 
 (defn -main [args]
-  (let [[root received forwarded] args]
+  ;; BL-1610: an optional 4th arg (head) drives the bounded scan directly,
+  ;; same shape the qa_e2e_procedure's own bb -e reproduction uses.
+  (let [[root received forwarded head] args]
     (if (or (str/blank? root) (str/blank? received) (str/blank? forwarded))
       (do (binding [*out* *err*]
-            (println "usage: merge_drop_guard_lib.bb <project-root> <received-commit> <forwarded-commit>"))
+            (println "usage: merge_drop_guard_lib.bb <project-root> <received-commit> <forwarded-commit> [head-commit]"))
           (System/exit 2))
-      (doseq [f (or (findings-between root received forwarded) [])]
+      (doseq [f (or (findings-between root received forwarded head) [])]
         (println (json/generate-string f))))))
 
 ;; Safe to load-file (a pure library load); runs -main only when this file
