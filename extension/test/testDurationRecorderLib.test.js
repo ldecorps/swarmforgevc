@@ -29,6 +29,7 @@ test('buildRecord shapes a pass record with finished_at, test_count, result, dur
     poleMs: 4800,
     workMs: 120000,
     newOffenders: 0,
+    watchFiles: 0,
     budgetVerdict: 'ok',
   });
   assert.deepEqual(rec, {
@@ -39,6 +40,7 @@ test('buildRecord shapes a pass record with finished_at, test_count, result, dur
     pole_ms: 4800,
     work_ms: 120000,
     new_offenders: 0,
+    watch_files: 0,
     budget_verdict: 'ok',
   });
 });
@@ -52,6 +54,7 @@ test('buildRecord marks a non-zero exit code as fail', () => {
     poleMs: 5000,
     workMs: 5000,
     newOffenders: 0,
+    watchFiles: 0,
     budgetVerdict: 'ok',
   });
   assert.equal(rec.result, 'fail');
@@ -68,11 +71,31 @@ test('buildRecord keeps result and budget_verdict independent - a passing run ca
     poleMs: 9000,
     workMs: 9000,
     newOffenders: 1,
+    watchFiles: 0,
     budgetVerdict: 'new-pole',
   });
   assert.equal(rec.result, 'pass');
   assert.equal(rec.budget_verdict, 'new-pole');
   assert.equal(rec.new_offenders, 1);
+});
+
+// BL-1598 amendment (2026-09-16): a watch verdict is reported (recorded on
+// the row) but never fails the run.
+test('buildRecord records watch_files independently of a passing exit code', () => {
+  const rec = buildRecord({
+    finishedAt: '2026-07-03T10:00:00.000Z',
+    testCount: 1,
+    exitCode: 0,
+    durationMs: 1000,
+    poleMs: 9000,
+    workMs: 9000,
+    newOffenders: 0,
+    watchFiles: 1,
+    budgetVerdict: 'watch',
+  });
+  assert.equal(rec.result, 'pass');
+  assert.equal(rec.budget_verdict, 'watch');
+  assert.equal(rec.watch_files, 1);
 });
 
 test('appendRecord writes one JSON line per call, appending to existing content', () => {
