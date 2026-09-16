@@ -206,3 +206,6 @@ notes: |
   the standing-red rule.
 
 assigned_to: coder
+bounce_count: 1
+bounce_history:
+  - { at: 2026-09-16, by: documenter, blamed: coder, class: behavior, commit: 0e8770c41d, evidence: backlog/evidence/BL-1607-documenter-bounce-20260916.md }
