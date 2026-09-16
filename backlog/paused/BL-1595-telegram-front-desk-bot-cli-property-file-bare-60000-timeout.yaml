@@ -1,0 +1,165 @@
+id: BL-1595
+title: "extension/test/telegramFrontDeskBotCli.property.test.js timed out at its own bare 60000 ms third argument in one of five full property-lane runs during BL-1588's re-verification on 2026-09-16 (BL-1203 invariant 2, fixture-spawning, green alone); like bl1529 in BL-1592 a bare per-test constant is beyond any lane-level ceiling, so both of the file's bare 60000 arguments become the lane budget helper from a 60000 base with no floor lowered, and the register row leaves in the same land"
+milestone: M8
+type: defect
+severity: high
+# high: a standing red on main in the property lane is a broken safety
+# signal at first sighting (Article 3.2.4, 2026-09-05). Fifth file of the
+# bare-per-test-timeout class in two days; BL-1596 (same pass) retires the
+# class with a guard and a sweep, this ticket drains this row fast.
+status: todo
+epic: code-quality-gates
+priority: 8
+direction: swarm-reported
+depends_on: [BL-1588]
+# depends_on BL-1588: it lands the concurrency-aware budget helper this
+# file must call; both touch propertyLaneContentionBudget.js's consumers
+# and are not orthogonal (Article 3.2.3).
+mutation_cost: low
+# low: one test file (one require line, two argument lines) and evidence;
+# no production code, no Stryker target.
+slice_size_envelope: low
+required_stages: [coder, cleaner, architect, hardender, documenter, qa]
+
+acceptance: specs/features/BL-1595-telegram-front-desk-bot-cli-property-file-bare-60000-timeout.feature
+
+required_wiring:
+  - 'specs/pipeline/steps/bl1595FrontDeskBotCliPropertyTimeoutSteps.js::registerSteps::the handler lands in the same parcel as the feature (BL-233, BL-1371)'
+# No production anchor on purpose (BL-1235): the file and the helper exist,
+# so any pattern on them matches before and after the fix.
+
+human_approval: pending
+approval_context: >
+  A new feature file is authored here, so it needs a tap. No choice is
+  posed and there are no ruling_options. FIRM: both bare `60000` third
+  arguments (lines 178 and 212 at bdb76c3c8a) become the property lane's
+  budget helper from a 60000 ms base, so one fork on a quiet host still
+  resolves to exactly 60000 ms (invariant 1) and a busy lane scales it;
+  the first test (pure, no third argument) is untouched. FIRM: no floor
+  lowered, no numRuns reduced, no assertion deleted, no retry, no seed
+  pinned, no bare constant raised. FIRM: the file's green runs are QA's
+  e2e step, not a scenario (two 60 s-budget tests, BL-1541). FIRM: this
+  ticket owns ONE file; BL-1596 owns the class.
+
+invariants:
+  - "A property test that runs alone on a quiet host (one fork, 1-minute load at or under the quiet ceiling) receives the base budget its file declares today, 60000 ms for both budgeted tests, unchanged before and after this change: the budget grows only with measured concurrency or load, never by a bare raise."
+
+description: |
+  ## What is wrong
+
+  The coder's post-fix re-verification of BL-1588 (five full
+  `npm run test:properties` runs, 2026-09-16,
+  `backlog/evidence/BL-1588-coder-bounce-fix-20260916.md`) timed out
+  `extension/test/telegramFrontDeskBotCli.property.test.js` in run 1 of 5
+  (coder note 00_20260916T114927Z_001979, evidence
+  `backlog/evidence/BL-1588-coder-unowned-red-telegramFrontDeskBotCli-20260916.md`
+  in BL-1588's parcel), verbatim:
+
+  ```
+  Error: Test timed out in 60000ms.
+  If this is a long-running test, pass a timeout value as the last argument or configure it globally with "testTimeout".
+   ❯ test/telegramFrontDeskBotCli.property.test.js:181:1
+  ```
+
+  Read, not guessed (specifier, same day): the file declares three tests.
+  The first (line 56, `composeRoleAnswerNoteMessage`, 500 pure draws)
+  has no third argument. The second and third (lines 149 and 181, BL-1203
+  invariants 1 and 2) each run 10 async draws that build a git fixture
+  through `copySeededRepoInto` and `copyLiveScriptClosureInto` and drive
+  the real `enqueueRoleAnswerNote`, and each passes the bare literal
+  `60000` as its third argument (lines 178 and 212). A per-test argument
+  overrides the lane's `testTimeout`, so no lane-level derivation reaches
+  it; `propertyLaneTimeoutMs` is not required anywhere in the file. Same
+  class as bl1529 in BL-1592. Green in runs 2 to 5 and alone: a
+  load-dependent timeout, not a deterministic red.
+
+  No open ticket names the file
+  (`grep -rlE 'telegramFrontDeskBotCli' backlog/paused backlog/active` is
+  empty); the register and the property-suite allowlist carried no row.
+  Census at bdb76c3c8a: 38 property files carry 81 bare per-test timeout
+  arguments of four or more digits (BL-1596 records the grep); this ticket owns this file's row
+  only, per BL-1592's own "a fifth file is its own owner" rule.
+
+  ## What is wanted
+
+  - Both budgeted tests derive their timeout from a 60000 ms base through
+    the property lane's budget helper; the file declares exactly three
+    tests and exactly two per-test timeouts, none bare (scenario 01).
+  - The 60000 ms base scales with the lane's concurrency the way BL-1588
+    lands it: one fork resolves to exactly 60000 ms, eight forks to more,
+    and the 8-fork budget from 60000 is three times the 8-fork budget from
+    20000 (scenario 02).
+  - Evidence records the full-lane failure text verbatim (the coder's run
+    1 of 5 counts as the reproduction) and the change (scenario 03).
+  - 20 of 20 green alone and 5 of 5 full-lane runs green (e2e), and the
+    register row removed in the same land.
+
+  ## How (direction, not mandate)
+
+  - `const { propertyLaneTimeoutMs } = require('./helpers/propertyLaneContentionBudget');`
+    and `propertyLaneTimeoutMs(60000)` in place of each `60000` (lines 178
+    and 212), the way bl1343 and bl1323 are wired
+    (`extension/test/bl1343ReplayNeverDropsOwnPathInvariants.property.test.js:249`).
+    Read BL-1588's landed helper first: its fork signal is the explicit
+    file-argument count (`resolveLaneForks`), so a file run alone is one
+    fork by construction.
+  - Scenario 01 is a source-level check in seconds (BL-1587's shape):
+    count `test(`/`it(` declarations, find each one's third argument,
+    refuse a bare numeric literal, require a helper call whose literal is
+    60000; pin the counts with the scenario's own numbers (BL-1445).
+  - Scenario 02 reuses BL-1588's injection seam (forks and 1-minute load
+    injected, no subprocess) with a 60000 base.
+  - Documenter: nothing beyond the evidence file; no diagram trigger.
+
+constraints: >
+  One test file and evidence only; `extension/src` unchanged; the helper
+  unchanged. No floor lowered, no numRuns reduced, no assertion deleted,
+  no retry, no seed pinned, no bare constant raised. The step handler
+  lands with the feature (BL-233). Evidence named BL-1595-*.
+
+out_of_scope: |
+  - Every other file with a bare per-test timeout: BL-1596 (guard and
+    sweep). bl1529: BL-1592.
+  - The file's first, pure test and its 500 draws.
+  - BL-1588's mechanism and BL-1592's four files.
+
+qa_e2e_procedure: |
+  On the parcel commit, after BL-1588 is in backlog/done/, from `extension/`:
+  1. `for i in $(seq 1 20); do npx vitest run --config vitest.properties.config.mjs test/telegramFrontDeskBotCli.property.test.js || echo FAIL; done`
+     -> 20 of 20 green, no FAIL line; record the solo wall time.
+  2. `npm run test:properties` 5 times -> the file green in every run;
+     every red of any other file recorded with its text and raised as an
+     unowned-red note, never folded in.
+  3. Acceptance resolving all three scenarios
+     (`swarmforge/scripts/run_acceptance.sh specs/features/BL-1595-*.feature`).
+  4. `git diff <parent>..<parcel> -- extension/test/telegramFrontDeskBotCli.property.test.js`
+     touches one require line and two argument lines; no `assert` or
+     `numRuns` line changes.
+  5. `bb swarmforge/scripts/standing_red_register_cli.bb .` after landing
+     reports no row for the file and `"unowned":[]`; the allowlist row
+     for the file is removed in the same land.
+
+source: |
+  Coder note to the specifier and coordinator, priority 00, 2026-09-16T11:49Z
+  (inbound 00_20260916T114927Z_001979_from_coder_to_specifier): "BL-1588
+  unowned-red: telegramFrontDeskBotCli bare 60000ms, see evidence". Coder
+  evidence (in BL-1588's parcel):
+  backlog/evidence/BL-1588-coder-unowned-red-telegramFrontDeskBotCli-20260916.md.
+  Specifier adjudication:
+  backlog/evidence/BL-1595-specifier-adjudication-of-coder-unowned-red-20260916.md.
+
+notes: |
+  Minted 2026-09-16 by the specifier while completing the coder's
+  unowned-red note, the same pass; the register row and the
+  property-suite allowlist mirror row name this ticket; the coordinator
+  was sent the paused-ready note and the coder (holding BL-1588) the owner
+  note. BL-1596 (same pass) owns the class: a guard refusing any bare
+  per-test timeout in a property file and a sweep of the other 40 files.
+  INVEST: Independent (waits on BL-1588's land by depends_on, then needs
+  nothing unbuilt), Negotiable (only the base and the helper are fixed),
+  Valuable (one lane red stops withholding unrelated parcels), Estimable
+  (three lines, one sitting), Small (three scenarios, one invariant),
+  Testable (source checks and the in-process seam in seconds; runners in
+  e2e - BL-1541). Severity high per the standing-red rule.
+
+assigned_to: null
