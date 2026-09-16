@@ -163,3 +163,6 @@ notes: |
   e2e - BL-1541). Severity high per the standing-red rule.
 
 assigned_to: coder
+bounce_count: 1
+bounce_history:
+  - { at: 2026-09-16, by: architect, blamed: cleaner, class: behavior, commit: 7f9b5a5da7, evidence: backlog/evidence/BL-1595-architect-bounce-20260916.md }

@@ -713,6 +713,100 @@
     (assert= "parcel-own-base: names the recorded last-handoff commit"
              first-commit (task-scope-gate-lib/parcel-own-base root "BL-1174-fixture"))))
 
+;; ── BL-1547: a closed ticket's own file is not foreign scope ─────────────
+;; ticket-lanes-at-ref/ticket-closed? live in landed_ticket_lib.bb (BL-992's
+;; own freshest-ref reader, extended here rather than a second walk); these
+;; fixtures exercise them directly plus the end-to-end effect on
+;; findings-for-git-handoff.
+
+;; scenario 01: the foreign ticket's YAML is filed under backlog/done/M8/ on
+;; the freshest ref (closed) - a task-tagged commit touching its how-to is
+;; not refused.
+(with-fixture [root]
+  (commit! root "backlog/done/M8/BL-1185-x.yaml" "id: BL-1185\nstatus: done\n" "seed: BL-1185 ships")
+  (mark-origin-main-here! root)
+  (assert= "BL-1547: a ticket filed only under backlog/done (nested by milestone) is closed"
+           [:done] (landed-ticket-lib/ticket-lanes-at-ref root "main" "BL-1185"))
+  (assert-true "BL-1547: ticket-closed? agrees" (landed-ticket-lib/ticket-closed? root "BL-1185"))
+  (commit! root "docs/how-to/BL-1185-guide.md" "# guide\n" "BL-1174-fixture: update BL-1185's shipped how-to")
+  (let [sha (:out (sh! root "git" "rev-parse" "HEAD"))
+        result (task-scope-gate-lib/findings-for-git-handoff
+                {:root root :task-name "BL-1174-fixture" :commit sha})]
+    (assert-false "BL-1547 s01: a closed ticket's how-to is not foreign scope"
+                  (task-scope-gate-lib/blocked? result))))
+
+;; scenario 02: the same shape, but the foreign ticket's YAML is under
+;; backlog/active/ (open) - refused exactly as today.
+(with-fixture [root]
+  (commit! root "backlog/active/BL-1185-x.yaml" "id: BL-1185\nstatus: todo\n" "seed: BL-1185 open")
+  (mark-origin-main-here! root)
+  (assert-false "BL-1547: a ticket filed under backlog/active is not closed"
+                (landed-ticket-lib/ticket-closed? root "BL-1185"))
+  (commit! root "docs/how-to/BL-1185-guide.md" "# guide\n" "BL-1174-fixture: touch BL-1185's open how-to")
+  (let [sha (:out (sh! root "git" "rev-parse" "HEAD"))
+        result (task-scope-gate-lib/findings-for-git-handoff
+                {:root root :task-name "BL-1174-fixture" :commit sha})]
+    (assert-true "BL-1547 s02: an open ticket's how-to is still refused"
+                 (task-scope-gate-lib/blocked? result))
+    (assert= "BL-1547 s02: the refusal names BL-1185"
+             "BL-1185" (:ticket-id (first (:findings result))))))
+
+;; scenario 02b: paused and hold are open lanes too, same as active.
+(with-fixture [root]
+  (commit! root "backlog/paused/BL-1185-x.yaml" "id: BL-1185\nstatus: todo\n" "seed: BL-1185 paused")
+  (mark-origin-main-here! root)
+  (assert-false "BL-1547: a ticket filed under backlog/paused is not closed"
+                (landed-ticket-lib/ticket-closed? root "BL-1185")))
+
+(with-fixture [root]
+  (commit! root "backlog/hold/BL-1185-x.yaml" "id: BL-1185\nstatus: todo\n" "seed: BL-1185 on hold")
+  (mark-origin-main-here! root)
+  (assert-false "BL-1547: a ticket filed under backlog/hold is not closed"
+                (landed-ticket-lib/ticket-closed? root "BL-1185")))
+
+;; scenario 03: the foreign ticket's YAML is found in no lane at all -
+;; absence is not closure, refused exactly as today.
+(with-fixture [root]
+  (mark-origin-main-here! root)
+  (commit! root "docs/how-to/BL-1185-guide.md" "# guide\n"
+           "BL-1174-fixture: touch a how-to for a ticket with no yaml on this checkout")
+  (assert= "BL-1547: a ticket with no yaml anywhere resolves to no lane"
+           [] (landed-ticket-lib/ticket-lanes-at-ref root "main" "BL-1185"))
+  (assert-false "BL-1547: absence is not closure"
+                (landed-ticket-lib/ticket-closed? root "BL-1185"))
+  (let [sha (:out (sh! root "git" "rev-parse" "HEAD"))
+        result (task-scope-gate-lib/findings-for-git-handoff
+                {:root root :task-name "BL-1174-fixture" :commit sha})]
+    (assert-true "BL-1547 s03: absence is not closure - still refused"
+                 (task-scope-gate-lib/blocked? result))))
+
+;; A ticket present in two lanes at once (a bookkeeping bug, not a real
+;; state) is fail-closed: never resolved to closed by picking one lane.
+(with-fixture [root]
+  (commit! root "backlog/active/BL-1185-x.yaml" "id: BL-1185\nstatus: todo\n" "seed: BL-1185 open copy")
+  (commit! root "backlog/done/M8/BL-1185-x.yaml" "id: BL-1185\nstatus: done\n"
+           "seed: BL-1185 also filed done (bookkeeping bug)")
+  (mark-origin-main-here! root)
+  (assert= "BL-1547: a ticket present in two lanes at once names both, in lane order"
+           [:active :done] (landed-ticket-lib/ticket-lanes-at-ref root "main" "BL-1185"))
+  (assert-false "BL-1547: ambiguity never resolves to closed"
+                (landed-ticket-lib/ticket-closed? root "BL-1185")))
+
+;; The task's OWN ticket is never queried for closure at all - own-scope
+;; paths are excluded before candidate-ids is even built, so a task whose
+;; own ticket happens to be filed under backlog/done (e.g. a retirement
+;; ticket editing its own already-shipped yaml) is unaffected either way.
+(with-fixture [root]
+  (commit! root "backlog/done/M8/BL-1174-x.yaml" "id: BL-1174\nstatus: done\n" "seed: BL-1174 ships")
+  (mark-origin-main-here! root)
+  (commit! root "backlog/done/M8/BL-1174-x.yaml" "id: BL-1174\nstatus: done\ntitle: amended\n"
+           "BL-1174-fixture: amend own already-closed ticket")
+  (let [sha (:out (sh! root "git" "rev-parse" "HEAD"))
+        result (task-scope-gate-lib/findings-for-git-handoff
+                {:root root :task-name "BL-1174-fixture" :commit sha})]
+    (assert-false "BL-1547: a task's own ticket, closed or not, is never a foreign finding"
+                  (task-scope-gate-lib/blocked? result))))
+
 (if (seq @failures)
   (do (doseq [f @failures] (binding [*out* *err*] (println f)))
       (println (str "\n" (count @failures) " failure(s)"))

@@ -22,7 +22,7 @@ const path = require('node:path');
 
 const REPO_ROOT = path.join(__dirname, '..', '..', '..');
 const EXT_DIR = path.join(REPO_ROOT, 'extension');
-const { checkFileDurationBudget, formatBudgetOffenders, PER_FILE_DURATION_BUDGET_MS } = require(
+const { checkFileDurationBudget, formatBudgetOffenders, PER_FILE_DURATION_BUDGET_MS, NEW_POLE_REFUSAL_FRACTION } = require(
   path.join(EXT_DIR, 'out', 'tools', 'check-suite-file-budget')
 );
 
@@ -36,8 +36,13 @@ function registerSteps(registry) {
   });
 
   // ── no-single-file-bounds-the-suite-01 ──────────────────────────────
+  // BL-1598 amendment (2026-09-16): an unregistered file only refuses at
+  // or above NEW_POLE_REFUSAL_FRACTION times the budget (a bare breach is
+  // `watch`, reported not refused) - this scenario's own "exceeds that
+  // budget" means "exceeds it clearly enough to refuse", so the duration
+  // is chosen at 2x the budget, well past the 1.5x line.
   registry.define(/^the guard sees a test file whose duration exceeds that budget$/, (ctx) => {
-    ctx.result = checkFileDurationBudget([{ file: 'test/slow.test.js', durationMs: ctx.budgetMs + 1000 }], ctx.budgetMs);
+    ctx.result = checkFileDurationBudget([{ file: 'test/slow.test.js', durationMs: ctx.budgetMs * 2 }], ctx.budgetMs);
   });
 
   registry.define(/^the guard fails$/, (ctx) => {
@@ -48,7 +53,7 @@ function registerSteps(registry) {
 
   registry.define(/^it names the offending file, its duration, and the budget it broke$/, (ctx) => {
     const text = formatBudgetOffenders(ctx.result.offenders);
-    if (!text.includes('test/slow.test.js') || !text.includes('8.0s') || !text.includes('7.0s')) {
+    if (!text.includes('test/slow.test.js') || !text.includes('14.0s') || !text.includes('7.0s')) {
       throw new Error(`expected the report to name the file, its duration, and the broken budget, got: ${text}`);
     }
   });
@@ -65,11 +70,14 @@ function registerSteps(registry) {
   });
 
   // ── no-single-file-bounds-the-suite-03 ──────────────────────────────
+  // BL-1598 amendment: both durations chosen at/above 2x the budget, well
+  // past the 1.5x refusal line, so this stays a test of "every new-pole
+  // offender is named", not a probe of the watch band.
   registry.define(/^the guard sees more than one test file exceeding that budget$/, (ctx) => {
     ctx.result = checkFileDurationBudget(
       [
-        { file: 'test/slow1.test.js', durationMs: ctx.budgetMs + 1000 },
-        { file: 'test/slow2.test.js', durationMs: ctx.budgetMs + 2000 },
+        { file: 'test/slow1.test.js', durationMs: ctx.budgetMs * 2 },
+        { file: 'test/slow2.test.js', durationMs: ctx.budgetMs * 3 },
       ],
       ctx.budgetMs
     );
@@ -92,11 +100,15 @@ function registerSteps(registry) {
     if (!ctx.packageJson.scripts.test.includes('recordTestDuration.js')) {
       throw new Error(`expected package.json's "test" script (the normal verification command) to invoke recordTestDuration.js, got: ${ctx.packageJson.scripts.test}`);
     }
-    if (!/BUDGET_GUARD_CLI/.test(ctx.recordTestDurationSource)) {
-      throw new Error('expected recordTestDuration.js to reference the compiled budget guard CLI');
+    // BL-1598: the guard now runs IN-PROCESS via runGuardAgainstReport (the
+    // same decision check-suite-file-budget.ts's own standalone CLI makes),
+    // not a second subprocess spawn of a compiled CLI - see that module's
+    // own header comment for why (one decision, two callers).
+    if (!/runGuardAgainstReport/.test(ctx.recordTestDurationSource)) {
+      throw new Error('expected recordTestDuration.js to reference runGuardAgainstReport (the in-process guard call)');
     }
-    if (!/spawnSync\(\s*['"]node['"]\s*,\s*\[\s*BUDGET_GUARD_CLI/.test(ctx.recordTestDurationSource)) {
-      throw new Error('expected recordTestDuration.js to unconditionally spawn the budget guard CLI, not merely reference it');
+    if (!/if\s*\(fs\.existsSync\(REPORT_PATH\)\)/.test(ctx.recordTestDurationSource)) {
+      throw new Error('expected recordTestDuration.js to unconditionally run the guard whenever the report was written, not merely reference it');
     }
   });
 }

@@ -186,15 +186,20 @@
   "Pure (BL-654-style property target): given the task's own ticket id and
    the set of changed paths, every {:path :ticket-id} pair whose path
    positively belongs to a DIFFERENT ticket - own-evidence paths for the
-   task excluded, and (BL-1276) the exact path the task's own ticket declares
-   as its acceptance contract. Empty when task-ticket-id is nil (nothing to
+   task excluded, (BL-1276) the exact path the task's own ticket declares
+   as its acceptance contract, and (BL-1547) a path whose basename names a
+   ticket already found to be CLOSED (the impure caller's own positive
+   read, from the freshest ref, of which ids are closed - never a git call
+   here) excluded too. Empty when task-ticket-id is nil (nothing to
    compare against) - the caller's own fail-open, not re-derived here."
-  ([task-ticket-id changed-paths] (foreign-scope-findings task-ticket-id changed-paths nil))
-  ([task-ticket-id changed-paths declared]
+  ([task-ticket-id changed-paths] (foreign-scope-findings task-ticket-id changed-paths nil nil))
+  ([task-ticket-id changed-paths declared] (foreign-scope-findings task-ticket-id changed-paths declared nil))
+  ([task-ticket-id changed-paths declared closed-ticket-ids]
    (let [declared-set (set (cond
                              (nil? declared) []
                              (string? declared) [declared]
-                             :else declared))]
+                             :else declared))
+         closed-set (set closed-ticket-ids)]
      (if-not task-ticket-id
        []
        (vec (for [path changed-paths
@@ -202,7 +207,8 @@
                   :when (and id
                              (not= id task-ticket-id)
                              (not (own-evidence-path? path task-ticket-id))
-                             (not (contains? declared-set path)))]
+                             (not (contains? declared-set path))
+                             (not (contains? closed-set id)))]
               {:path path :ticket-id id}))))))
 
 (defn- last-handoff-commit
@@ -480,7 +486,17 @@
                   ;; then honoured without the sender merging first.
                   (let [ticket-yaml (landed-ticket-lib/active-ticket-yaml-content root task-ticket-id)
                         declared (declared-exempt-paths ticket-yaml)
-                        findings (foreign-scope-findings task-ticket-id changed-paths declared)]
+                        ;; BL-1547: closure is a positive read, done ONCE per
+                        ;; distinct foreign candidate id (never the task's own
+                        ;; id, already excluded above) - findings-for-git-handoff
+                        ;; is the one impure caller of ticket-closed?, keeping
+                        ;; foreign-scope-findings itself free of git calls.
+                        candidate-ids (->> changed-paths
+                                           (keep ticket-id-for-path)
+                                           (remove #(= % task-ticket-id))
+                                           distinct)
+                        closed-ids (set (filter #(landed-ticket-lib/ticket-closed? root %) candidate-ids))
+                        findings (foreign-scope-findings task-ticket-id changed-paths declared closed-ids)]
                     (cond-> {:findings findings}
                       ;; No ticket to read means the exemption could not be
                       ;; evaluated at all. It grants nothing - and the refusal
