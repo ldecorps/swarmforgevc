@@ -226,15 +226,31 @@ export function parseFailingFilesFromVitestOutput(text: string): string[] {
 // own declared feature path when the row's exit is non-zero (the .feature
 // file IS the acceptance run's identifying test file - it has no vitest
 // FAIL-line shape to parse).
+// Isolated from failingFilesFromRow below (hardener extraction, BL-1554
+// CRAP gate: complexity 7 at 100% coverage on the un-extracted version,
+// complexity alone) - the acceptance row's own "is this a failure worth
+// naming" test, no different in meaning, just out of the caller's count.
+function isFailingAcceptanceRow(row: CheckRow, acceptanceFeature: string | undefined): boolean {
+  return row.id === 'acceptance' && row.exit !== 0 && !!acceptanceFeature;
+}
+
+// Unit/properties rows run vitest with cwd: extension/, so the FAIL line's
+// file is bare (test/...) - the register's own rows are always repo-root-
+// relative (extension/test/...). Idempotent: a path a caller already
+// supplies pre-prefixed (e.g. existing fixtures) is left alone.
+function toRepoRootRelative(file: string): string {
+  return file.startsWith('extension/') ? file : `extension/${file}`;
+}
+
 export function failingFilesFromRow(row: CheckRow, acceptanceFeature: string | undefined): string[] {
   if (row.status !== 'ran') {
     return [];
   }
   if (row.id === 'unit' || row.id === 'properties') {
-    return parseFailingFilesFromVitestOutput(row.excerpt);
+    return parseFailingFilesFromVitestOutput(row.excerpt).map(toRepoRootRelative);
   }
-  if (row.id === 'acceptance' && row.exit !== 0 && acceptanceFeature) {
-    return [acceptanceFeature];
+  if (isFailingAcceptanceRow(row, acceptanceFeature)) {
+    return [acceptanceFeature as string];
   }
   return [];
 }
@@ -262,7 +278,7 @@ export function buildRegisterJoin(rows: CheckRow[], register: RegisterReport | u
 // Parses the register check's own RAW (unbounded) stdout, never the row's
 // bounded-for-display `excerpt` (BL-1554 architect bounce D1) - a register
 // large enough to cross EXCERPT_MAX_CHARS must still resolve every row.
-function parseRegisterOutput(row: CheckRow | undefined, rawStdout: string | undefined): RegisterReport | undefined {
+export function parseRegisterOutput(row: CheckRow | undefined, rawStdout: string | undefined): RegisterReport | undefined {
   if (!row || row.status !== 'ran' || row.exit === null || rawStdout === undefined) {
     return undefined;
   }
