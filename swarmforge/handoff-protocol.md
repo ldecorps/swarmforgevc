@@ -371,7 +371,15 @@ Responsibilities:
   `AUDIT_REQUIRED` / `HANDOFF_NOT_QUEUED`, queues nothing, and exits
   non-zero (BL-1529) — never a silent exit 0 — so a script-originated
   sender with no agent to read and resubmit the challenge cannot mistake
-  it for success.
+  it for success. Every automated caller that drafts and sends its own
+  `git_handoff` speaks this same two-call protocol: `handoff_lib.bb`'s
+  `queue-git-handoff!` for Babashka script senders (BL-1529), the standing
+  shell tests via the `bl1240UnregisteredTestGateCli.sh` `send_once` idiom
+  (BL-1530), the bb property runners (BL-1541), and the acceptance-lane
+  step drivers under `specs/pipeline/steps` via the shared
+  `specs/pipeline/steps/lib/sendGitHandoffTwoCall.js` helper (BL-1602) —
+  one definition per language, each resubmitting the identical draft
+  exactly once on `AUDIT_REQUIRED` and never a third call.
 
 Atomic outbound write sequence:
 
