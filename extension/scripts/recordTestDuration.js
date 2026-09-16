@@ -18,6 +18,15 @@
 // behind it) - a real test failure's own exit code still wins if both
 // occur, since that is the more urgent signal.
 //
+// BL-1598: the guard now reads backlog/suite-poles.tsv, the committed pole
+// register, so it refuses only a NEW offender, a stale row (a file that no
+// longer needs one) or an unowned row (naming a closed/absent ticket) - a
+// file over budget WITH an open, un-stale row is reported, not refused.
+// Called in-process via runGuardAgainstReport (the same decision
+// check-suite-file-budget.ts's own standalone CLI makes) rather than
+// spawned a second time, so this script and a human running the CLI
+// directly never compute two different answers.
+//
 // test_count is the number of test FILES executed, not individual test()
 // cases - a stable, cheap proxy. Counting individual cases would mean
 // intercepting the child's TAP stdout instead of inheriting it directly,
@@ -28,12 +37,13 @@ const path = require('path');
 const { spawnSync } = require('child_process');
 const { listTestFiles, buildRecord, appendRecord, computeFinalExitCode } = require('./testDurationRecorderLib');
 const { buildSuiteBudgetVerdict, formatSuiteBudgetVerdict } = require('../out/tools/check-suite-duration-budget');
+const { runGuardAgainstReport, printGuardReport } = require('../out/tools/check-suite-file-budget');
 
 const ROOT_DIR = path.join(__dirname, '..');
 const TEST_DIR = path.join(ROOT_DIR, 'test');
 const LOG_PATH = path.join(ROOT_DIR, '.test-durations.jsonl');
 const REPORT_PATH = path.join(ROOT_DIR, '.vitest-report.json');
-const BUDGET_GUARD_CLI = path.join(ROOT_DIR, 'out', 'tools', 'check-suite-file-budget.js');
+const REGISTER_PATH = path.join(ROOT_DIR, '..', 'backlog', 'suite-poles.tsv');
 
 function main() {
   const testFiles = listTestFiles(TEST_DIR).map((f) => path.join('test', f));
@@ -49,16 +59,6 @@ function main() {
   const durationMs = Date.now() - startedAt;
   const testExitCode = result.status === null ? 1 : result.status;
 
-  appendRecord(
-    LOG_PATH,
-    buildRecord({
-      finishedAt: new Date().toISOString(),
-      testCount: testFiles.length,
-      exitCode: testExitCode,
-      durationMs,
-    })
-  );
-
   // BL-445: the whole-suite sibling of the per-file guard below - surfaces
   // an over-budget run against the operator's 10s target (never hard-fails;
   // see check-suite-duration-budget.ts). Computed in-process from the
@@ -66,8 +66,31 @@ function main() {
   // lives in this process and this run is itself trying to cut overhead.
   console.log(formatSuiteBudgetVerdict(buildSuiteBudgetVerdict(durationMs)));
 
-  const guardResult = fs.existsSync(REPORT_PATH) ? spawnSync('node', [BUDGET_GUARD_CLI, REPORT_PATH], { stdio: 'inherit', cwd: ROOT_DIR }) : null;
-  const guardExitCode = guardResult && guardResult.status !== null ? guardResult.status : 0;
+  let guardVerdict = { passed: true, verdict: 'ok', offenders: [], staleRows: [], unownedRows: [], registeredPoles: [] };
+  let poleMs = 0;
+  let workMs = 0;
+  if (fs.existsSync(REPORT_PATH)) {
+    const { result: verdict, durations } = runGuardAgainstReport(REPORT_PATH, REGISTER_PATH);
+    guardVerdict = verdict;
+    poleMs = durations.reduce((max, d) => Math.max(max, d.durationMs), 0);
+    workMs = durations.reduce((sum, d) => sum + d.durationMs, 0);
+    printGuardReport(guardVerdict, durations.length);
+  }
+  const guardExitCode = guardVerdict.passed ? 0 : 1;
+
+  appendRecord(
+    LOG_PATH,
+    buildRecord({
+      finishedAt: new Date().toISOString(),
+      testCount: testFiles.length,
+      exitCode: testExitCode,
+      durationMs,
+      poleMs,
+      workMs,
+      newOffenders: guardVerdict.offenders.length,
+      budgetVerdict: guardVerdict.verdict,
+    })
+  );
 
   process.exit(computeFinalExitCode(testExitCode, guardExitCode));
 }
