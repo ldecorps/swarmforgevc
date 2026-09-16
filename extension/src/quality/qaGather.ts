@@ -128,7 +128,24 @@ function fullCommand(built: BuiltCommand): string {
 // check's row - never a verdict (invariant 1). Exported separately from
 // gatherQaChecklist below so a caller (or a test) can pass a checklist
 // subset without touching the real one.
-export function runChecklist(checklist: CheckSpec[], ctx: CheckContext, runFn: RunFn): CheckRow[] {
+//
+// BL-1554 architect bounce D1: a check's `excerpt` is BOUNDED for display
+// (tailExcerpt, EXCERPT_MAX_CHARS) - fine for a human-facing report, wrong
+// as a machine-parsed source (the register check's own JSON stdout, once
+// past ~4000 chars, gets its opening structure sliced off by tailExcerpt's
+// keep-the-tail bounding, so JSON.parse throws and the register silently
+// reads as empty). `onRawOutcome`, called only for a check that actually
+// ran, hands the caller the UNBOUNDED outcome before it is ever passed
+// through tailExcerpt - the one seam a caller needs for a check whose
+// stdout must be parsed, not merely displayed, never a second runFn call
+// (which would double the register CLI's real subprocess cost and break
+// the "exactly once per check" sequencing invariant).
+export function runChecklist(
+  checklist: CheckSpec[],
+  ctx: CheckContext,
+  runFn: RunFn,
+  onRawOutcome?: (id: string, outcome: RunOutcome) => void
+): CheckRow[] {
   const rows: CheckRow[] = [];
   for (const spec of checklist) {
     const built = spec.build(ctx);
@@ -152,6 +169,7 @@ export function runChecklist(checklist: CheckSpec[], ctx: CheckContext, runFn: R
       });
       continue;
     }
+    onRawOutcome?.(spec.id, outcome);
     rows.push({
       id: spec.id,
       command: fullCommand(built),
@@ -241,12 +259,15 @@ export function buildRegisterJoin(rows: CheckRow[], register: RegisterReport | u
   });
 }
 
-function parseRegisterOutput(row: CheckRow | undefined): RegisterReport | undefined {
-  if (!row || row.status !== 'ran' || row.exit === null) {
+// Parses the register check's own RAW (unbounded) stdout, never the row's
+// bounded-for-display `excerpt` (BL-1554 architect bounce D1) - a register
+// large enough to cross EXCERPT_MAX_CHARS must still resolve every row.
+function parseRegisterOutput(row: CheckRow | undefined, rawStdout: string | undefined): RegisterReport | undefined {
+  if (!row || row.status !== 'ran' || row.exit === null || rawStdout === undefined) {
     return undefined;
   }
   try {
-    return JSON.parse(row.excerpt) as RegisterReport;
+    return JSON.parse(rawStdout) as RegisterReport;
   } catch {
     return undefined;
   }
@@ -296,8 +317,13 @@ export function composeQaGatherReport(
 ): QaGatherReport {
   const acceptanceFeature = yamlContent ? readAcceptancePath(yamlContent) : undefined;
   const ctx: CheckContext = { root, ticketId, task: opts.task, commit: opts.commit, acceptanceFeature };
-  const checks = runChecklist(CHECKLIST, ctx, runFn);
-  const register = parseRegisterOutput(checks.find((c) => c.id === 'register'));
+  let registerRawStdout: string | undefined;
+  const checks = runChecklist(CHECKLIST, ctx, runFn, (id, outcome) => {
+    if (id === 'register') {
+      registerRawStdout = outcome.stdout;
+    }
+  });
+  const register = parseRegisterOutput(checks.find((c) => c.id === 'register'), registerRawStdout);
   const register_join = buildRegisterJoin(checks, register, acceptanceFeature);
   return { ticket: ticketId, task: opts.task, commit: opts.commit, root, checks, register_join };
 }
