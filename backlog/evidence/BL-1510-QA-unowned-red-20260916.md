@@ -63,6 +63,34 @@ All three re-run in isolation with the same result (deterministic, not
 flaky): a structural property of the file (the raw `mkdtemp` call site,
 the live-repo enumeration), not a timing-sensitive assertion.
 
+## Update 2026-09-16 10:46Z — partial resolution
+
+The coordinator's resume note (`BL-1510: a27d082c2d mkdtemp owned by
+BL-1593 (bdb76c3c8a) - resume land`) covers only the mkdtemp defect: the
+specifier minted **BL-1593** (owning a `backlog/standing-reds.tsv` row for
+`bl1280MkdtempMigrationInvariants.property.test.js`, invariant 2) in
+response to the coder's independent same-day report of the identical
+underlying defect on the BL-1588 parcel. BL-1593's fix (migrate line 29's
+`fs.mkdtempSync` call to the shared `mkTmpDir` helper) will also turn
+`extension/test/tmpDirMigrationGuard.test.js` green — same detector,
+same call site — so that unit-lane red is treated as covered by BL-1593
+even though it has no register row of its own (identical failure
+signature).
+
+`extension/test/liveRepoDerivationGuard.test.js` is a SEPARATE defect:
+line 55 of `nightClosingCeremonyRotateDocumenterFallback.test.js` does
+`fs.readdirSync(scriptsDir)` over the live `swarmforge/scripts` checkout
+directory to symlink every `.bb` file into the fixture — deliberate,
+per the file's own comment ("same 'confirm the real wiring' posture"),
+but exactly what the live-repo-derivation guard forbids. BL-1593's
+`constraints:` explicitly excludes this ("no fixture content changed
+beyond the allocation line and its require"; `out_of_scope:` names only
+"any other raw call site", not the readdir). Re-ran both unit guards at
+10:46Z on the current HEAD to confirm: `tmpDirMigrationGuard.test.js` and
+`liveRepoDerivationGuard.test.js` both still red, verbatim identical to
+the original report above. The hold stays open on
+`liveRepoDerivationGuard.test.js` alone until a ticket owns it.
+
 ## Detail — BL-1510's own gates (all green)
 
 - Merged `c546fbbb2a` (documenter tip) into QA clean; then synced
