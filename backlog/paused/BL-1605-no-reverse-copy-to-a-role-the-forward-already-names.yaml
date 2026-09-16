@@ -1,0 +1,149 @@
+id: BL-1605
+title: "swarm_handoff.bb synthesizes a non-forwarding reverse copy (back-one/back-all) to every earlier role, including the role the git_handoff is ALREADY addressed to - so an architect bounce to the cleaner arrives twice in one batch, once as the bounce and once as a merge-only twin with the same task and commit, and the batch-aware send gate then refuses the cleaner's re-forward for the whole batch; twice on 2026-09-16 a fixed bounce sat unforwarded for fifty minutes until the coordinator chased; the reverse set drops the forward's own recipients, a bounce to a role arrives once, and the earlier roles' merge-only copies are unchanged"
+milestone: M8
+type: defect
+severity: high
+# high: a live fault degrading behaviour - every architect->cleaner bounce
+# on the full-forge pack stalls until chased (two chases on 2026-09-16,
+# coordinator note 008844), and the same shape hits any back-one/back-all
+# sender bouncing to its predecessor.
+status: todo
+epic: swarm-reliability
+priority: 5
+direction: swarm-reported
+depends_on: []
+mutation_cost: low
+# low: reverse_hop_lib.bb and its bb runner (Babashka, no mutation wired -
+# BL-472), one step handler; no extension/src.
+slice_size_envelope: low
+required_stages: [coder, cleaner, architect, hardender, documenter, qa]
+
+acceptance: specs/features/BL-1605-no-reverse-copy-to-a-role-the-forward-already-names.feature
+
+required_wiring:
+  - 'swarmforge/scripts/reverse_hop_lib.bb::forward-recipients::reverse-recipients takes the forward set and subtracts it; the literal exists only with the fix (BL-1235)'
+  - 'specs/pipeline/steps/bl1605NoReverseCopyToForwardRecipientSteps.js::registerSteps::the handler lands in the same parcel as the feature (BL-233, BL-1371)'
+
+human_approval: approved
+approval_context: >
+  A new feature file is authored here, so it needs a tap. No choice is
+  posed and there are no ruling_options. FIRM: the reverse set for a
+  git_handoff is the pack-declared earlier roles MINUS the roles the
+  forward already names; a role never receives both a forwarding and a
+  non-forwarding copy of one send. FIRM: for a forward hop (architect to
+  hardender under back-all; cleaner to architect under back-one) the
+  earlier roles' merge-only copies are byte-identical to today. FIRM: the
+  send gate's batch-aware refusal (a git_handoff is refused while a
+  non-forwarding inbound for another task is in_process) is unchanged;
+  only the duplicate that triggered it wrongly disappears. FIRM: the
+  coordinator still never receives a reverse copy.
+
+invariants:
+  - "For every git_handoff send, the set of roles receiving a non-forwarding copy is disjoint from the set of roles receiving the forwarding copy."
+  - "A role that is not among the forward's recipients and is an earlier pipeline role under the sender's declared mode receives exactly the same non-forwarding copy it receives today."
+
+description: |
+  ## What is wrong
+
+  `reverse_hop_lib.bb` `reverse-recipients` (line 133) derives the roles
+  that get a `non-forwarding: true` copy of a git_handoff from the
+  sender's declared mode alone: back-one is the preceding code-worktree
+  role, back-all every earlier one. `swarm_handoff.bb` writes those
+  copies on every queued git_handoff (Article 2.3). The live pack
+  (`swarmforge/packs/full-forge.conf:269-270`) declares the cleaner
+  `back-one` and the architect `back-all`. So when the architect BOUNCES
+  a parcel to the cleaner (`to: cleaner`), the cleaner is both the
+  forward recipient and an earlier role, and receives two files in one
+  batch:
+
+  ```
+  batch_20260916T163832Z_000001
+    00_..._002087_from_architect_to_cleaner  type: git_handoff  commit: c21858064e  task: BL-1595 ...
+    00_..._002089_from_architect_to_cleaner  type: git_handoff  commit: c21858064e  non-forwarding: true  task: BL-1595 ...
+  batch_20260916T165041Z_000001
+    00_..._002090_from_architect_to_cleaner  type: git_handoff  commit: 94ba67b029  task: BL-1547 ...
+    00_..._002092_from_architect_to_cleaner  type: git_handoff  commit: 94ba67b029  non-forwarding: true  task: BL-1547 ...
+  ```
+
+  `swarm_handoff.bb` `inbound-non-forwarding?` (line 903, batch-aware
+  since BL-1302/BL-1313) refuses every git_handoff while any in_process
+  file carries the marker. The cleaner fixed both bounces (37a06e7417 at
+  16:49Z, 6cd22a3ec0 at 16:50Z) and could not forward them during the
+  batch; it completed the batch and did not retry; the coordinator's
+  dropped-parcel sweep chased at 17:36Z and 17:41Z and the forwards went
+  at 17:37Z and 17:41Z (`00_..._000752`, `00_..._000756`). Fifty minutes
+  each, twice in one afternoon, and the same shape waits for every
+  back-one or back-all sender that bounces to its predecessor.
+
+  ## What is wanted
+
+  - `reverse-recipients` subtracts the forward's recipients from the
+    reverse set, so a bounce to an earlier role produces exactly one file
+    in that role's mailbox, the forwarding one (scenario 01 row 1), while
+    a forward hop's earlier roles still get their single merge-only copy
+    (rows 2 and 3) and the coordinator never gets one (row 4).
+  - The batch-aware send-gate refusal for a non-forwarding inbound of
+    ANOTHER task is unchanged (scenario 02).
+  - The cleaner prompt's interim rule (landed 2026-09-16 with this mint:
+    complete the batch, then re-send the refused forward) stays as
+    belt-and-braces; the documenter updates handoff-protocol.md's reverse
+    hop section.
+
+  ## How (direction, not mandate)
+
+  - 3-arity `reverse-recipients lines sender forward-recipients` (or a
+    `remove-forward-recipients` wrapper at the call site in
+    `swarm_handoff.bb`) returning the declared reverse roles minus the
+    forward set; keep the 2-arity for existing callers and the bb runner.
+  - Scenario 01 drives the REAL `swarm_handoff.bb` against a fixture
+    swarm root with a roles table and a pack declaring cleaner back-one
+    and architect back-all (the BL-1299/BL-1302 handlers' fixture shape),
+    counting files per mailbox and reading the marker. Scenario 02 drives
+    the real gate with a non-forwarding inbound for another task in
+    in_process.
+  - Documenter: `swarmforge/handoff-protocol.md` reverse-hop paragraph
+    and `docs/diagrams/handoff-flow.mmd` if it depicts reverse copies
+    (check the registry trigger: "the handoff file lifecycle, its gates"
+    - a reverse copy is part of the lifecycle; update if drawn).
+
+constraints: >
+  reverse_hop_lib.bb, its bb runner, the call site in swarm_handoff.bb,
+  the feature, the handler, evidence and docs only; no change to the
+  stamp rule (BL-1536), the batch reader or the audit protocol. The step
+  handler lands with the feature (BL-233). Evidence named BL-1605-*.
+
+out_of_scope: |
+  - Whether earlier roles should get a merge-only copy of a BOUNCE at all
+    (today they do; unchanged).
+  - The cleaner's retry discipline (prompt rule, landed).
+
+qa_e2e_procedure: |
+  On the parcel commit:
+  1. `bb swarmforge/scripts/test/reverse_hop_lib_test_runner.bb` (or the
+     runner the coder names) -> green with the new cases.
+  2. Acceptance resolving both scenarios
+     (`bash specs/pipeline/scripts/run_acceptance.sh specs/features/BL-1605-*.feature`).
+  3. Live probe on the parcel's own chain: the architect's next bounce to
+     the cleaner (or a deliberate architect-to-cleaner git_handoff on a
+     scratch swarm root) lands ONE file in the cleaner's batch, no
+     non-forwarding twin; the coder's copy is unchanged.
+
+source: |
+  Coordinator note to the specifier, priority 00, 2026-09-16T17:41Z
+  (inbound 00_20260916T174130Z_008844): "Pattern x2 today: cleaner fixes
+  a bounce, never re-forwards (1595,1547)". Specifier trace of the
+  cleaner's batches, the pack, reverse_hop_lib.bb and the send gate:
+  backlog/evidence/BL-1605-specifier-adjudication-of-coordinator-pattern-note-20260916.md.
+
+notes: |
+  Minted 2026-09-16 by the specifier while answering the coordinator's
+  pattern note; the cleaner prompt's interim rule landed in the same
+  commit. INVEST: Independent (the lib, the gate and the fixtures exist),
+  Negotiable (arity versus wrapper is direction), Valuable (every
+  backward bounce stops stalling for a chase), Estimable (one set
+  difference, two runner cases, one fixture scenario, one sitting), Small
+  (two scenarios, two invariants), Testable (real sender on a fixture
+  root in seconds - BL-1541). Severity high: a live stall on the default
+  pack.
+
+assigned_to: null
