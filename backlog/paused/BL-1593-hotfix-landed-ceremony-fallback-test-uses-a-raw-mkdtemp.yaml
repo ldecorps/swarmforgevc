@@ -1,0 +1,179 @@
+id: BL-1593
+title: "BL-1280's whole-tree mkdtemp guard is red on main since hotfix a27d082c2d landed extension/test/nightClosingCeremonyRotateDocumenterFallback.test.js with a raw fs.mkdtempSync at line 29 (one root per test body, never removed); the one call moves to the shared tmpDir helper's per-test variant with the same lifetime, the guard and the fallback test are green, and the register row leaves in the same land"
+milestone: M8
+type: defect
+severity: high
+# high: a standing red on main in the property lane is a broken safety
+# signal at first sighting (Article 3.2.4, 2026-09-05); the guard it breaks
+# is itself a health signal (BL-1280: "a permanently-red test is how a real
+# regression hides"). The fix is one line; the severity is the red's, not
+# the fix's.
+status: todo
+epic: code-quality-gates
+priority: 8
+direction: swarm-reported
+depends_on: []
+mutation_cost: low
+# low: one test file (one require line, one allocation line) and evidence;
+# no production code, no Stryker target.
+slice_size_envelope: low
+required_stages: [coder, cleaner, architect, hardender, documenter, qa]
+
+acceptance: specs/features/BL-1593-hotfix-landed-ceremony-fallback-test-uses-a-raw-mkdtemp.feature
+
+required_wiring:
+  - 'specs/pipeline/steps/bl1593CeremonyFallbackTestTmpDirSteps.js::registerSteps::the handler lands in the same parcel as the feature (BL-233, BL-1371)'
+# No production anchor on purpose (BL-1235): the fallback test, the guard
+# helper and tmpDir.js already exist, so any pattern on them matches before
+# and after the fix.
+
+human_approval: pending
+approval_context: >
+  A new feature file is authored here, so it needs a tap. No choice is
+  posed and there are no ruling_options. FIRM: the fix is the migration
+  BL-1280 completed for every other test file - the fallback test's one
+  `fs.mkdtempSync` call at line 29 becomes the shared helper's per-test
+  variant `mkTmpDir` (`extension/test/helpers/tmpDir.js`), which the unit
+  lane's afterEach sweep removes; no exempt-list entry is added (BL-1280
+  invariant 2 pins the list at three), no assertion in the fallback test
+  is touched, and the fixture keeps one root per test body. FIRM: this
+  parcel changes no production file and does not review the hotfix - that
+  is BL-1591's stamp-off, which shares this test file and must not migrate
+  the line itself (its notes say so). FIRM: the register row for the bl1280
+  guard file is removed in the same land that turns it green.
+
+invariants:
+  - "The fixture root's observable lifetime is unchanged: one root per test, allocated inside makeFixture from each test body and swept after that test; never a beforeAll or module-scope allocation and never a shared or process-lifetime variant (BL-1280 invariant 1)."
+
+description: |
+  ## What is wrong
+
+  `extension/test/bl1280MkdtempMigrationInvariants.property.test.js`
+  invariant 2, "leaves the real tree with no raw call site under the
+  three-path list", is red on main. The coder found it in BL-1588's
+  full-lane verification (coder note 00_20260916T093427Z_001976, evidence
+  `backlog/evidence/BL-1588-coder-unowned-red-bl1280-20260916.md` in
+  BL-1588's parcel) and the specifier reproduced it on main at
+  `012bb81731` (1 failed, 5 passed, 1.14 s), verbatim:
+
+  ```
+  Expected values to be strictly deep-equal:
+  + actual - expected
+  + [
+  +   {
+  +     file: '.../extension/test/nightClosingCeremonyRotateDocumenterFallback.test.js',
+  +     line: 29
+  +   }
+  + ]
+  - []
+  ```
+
+  Line 29 of that file, inside `makeFixture()`:
+  `const root = fs.mkdtempSync(path.join(os.tmpdir(), 'ncc-rotate-fallback-'));`.
+  The file was added by hotfix `a27d082c2d` (2026-09-16, human, landed
+  directly on main outside the pipeline), so BL-1280's guard never ran
+  against it before it landed. `makeFixture()` is called from each of the
+  file's three `test()` bodies and the file never removes the root: every
+  run leaks three `ncc-rotate-fallback-*` directories into `os.tmpdir()`,
+  which is exactly the leak the guard exists to refuse (BL-420, BL-1280).
+
+  No open ticket owns the guard file or the fallback test for this defect
+  (`grep -rlE 'bl1280|nightClosingCeremonyRotateDocumenterFallback' backlog/paused backlog/active`
+  hits only BL-1591, the hotfix's stamp-off review, whose scope is the
+  landed diff and whose notes now name this ticket as the owner of the
+  migration). The register carried no row for the guard file.
+
+  ## What is wanted
+
+  - The fallback test allocates its fixture root through `mkTmpDir` from
+    `./helpers/tmpDir` and carries no raw `fs.mkdtempSync` call site
+    (scenario 01, the guard's own `findRawMkdtempCallSites` on the file
+    and on the whole tree), and allocates that root through `mkTmpDir`
+    exactly once (scenario 02).
+  - The fallback test still passes, three of three, with the migrated
+    root (scenario 03, about 1.4 s).
+  - The bl1280 guard file itself is green in the property lane (e2e).
+  - The register row removed in the same land, with
+    `bb swarmforge/scripts/standing_red_register_cli.bb .` reporting no row
+    for the guard file and `"unowned":[]`.
+
+  ## How (direction, not mandate)
+
+  - `const { mkTmpDir } = require('./helpers/tmpDir');` and
+    `const root = mkTmpDir('ncc-rotate-fallback-');` - the shape every
+    other test in the directory uses (`extension/test/activateBounceWatcher.test.js:28`).
+    The per-test variant is right because each `test()` builds its own
+    root through `makeFixture()`; `mkSharedTmpDir` and `mkProcessTmpDir`
+    would keep three roots alive past their tests (invariant 1). The
+    `os` require may become unused; drop it only if the linter demands it.
+  - The unit lane's `tmpDirSetup.js` afterEach (wired in
+    `vitest.config.mjs` setupFiles) does the removal; add no `rmSync`.
+  - Scenario 01's handler calls `findRawMkdtempCallSites` from
+    `extension/test/helpers/rawMkdtempGuard.js` (which re-exports the
+    compiled `out/tools/rawMkdtempDetector`; compile first) - the real
+    detector, never a restated regex. Scenario 02's "exactly once" pins the
+    census (BL-1445): a file whose fixture was deleted rather than
+    migrated also has zero raw call sites.
+  - Documenter: nothing beyond the evidence file; no diagram trigger.
+
+constraints: >
+  One test file and evidence only; `extension/src` unchanged; the guard
+  helper, its exempt list and tmpDir.js unchanged. No assertion in the
+  fallback test touched, no fixture content changed beyond the allocation
+  line and its require. The step handler lands with the feature (BL-233).
+  The evidence file this parcel writes is named `BL-1593-*`, never
+  `BL-1591-*` or `BL-1588-*`.
+
+out_of_scope: |
+  - Reviewing the hotfix's production diff (night-closing-ceremony-run.ts,
+    consult_spawn_cli.bb, handoffd.bb): BL-1591's stamp-off.
+  - Any other raw call site a future scan finds: its own unowned-red note.
+  - The guard's exempt list and its detector (BL-1209, BL-1280).
+
+qa_e2e_procedure: |
+  On the parcel commit, from `extension/` after `npm run compile`:
+  1. `npx vitest run --config vitest.properties.config.mjs test/bl1280MkdtempMigrationInvariants.property.test.js`
+     -> 6 of 6 green (invariant 2's real-tree scan returns `[]`).
+  2. `npx vitest run test/nightClosingCeremonyRotateDocumenterFallback.test.js`
+     -> 3 of 3 green; `ls /tmp | grep -c ncc-rotate-fallback-` is
+     unchanged before and after the run (no leak).
+  3. Acceptance resolving all three scenarios
+     (`swarmforge/scripts/run_acceptance.sh specs/features/BL-1593-*.feature`).
+  4. `git diff <parent>..<parcel> -- extension/test/nightClosingCeremonyRotateDocumenterFallback.test.js`
+     touches only the require line(s) and the allocation line; no
+     `assert` line changes.
+  5. The evidence records the guard's failure text verbatim before the
+     change and the two green runs after.
+  6. `bb swarmforge/scripts/standing_red_register_cli.bb .` after landing
+     reports no row for the guard file and `"unowned":[]`.
+
+source: |
+  Coder note to the specifier and coordinator, priority 00, 2026-09-16T09:34Z
+  (inbound 00_20260916T093427Z_001976_from_coder_to_specifier): "unowned-red:
+  bl1280 raw mkdtempSync, nightClosingCeremonyRotateDocFallback:29". Coder
+  evidence (in BL-1588's parcel):
+  backlog/evidence/BL-1588-coder-unowned-red-bl1280-20260916.md.
+  Specifier adjudication:
+  backlog/evidence/BL-1593-specifier-adjudication-of-coder-unowned-red-bl1280-20260916.md.
+  Hotfix that landed the file: a27d082c2d (stamp-off BL-1591).
+
+notes: |
+  Minted 2026-09-16 by the specifier while completing the coder's
+  unowned-red note, the same pass; the register row in
+  backlog/standing-reds.tsv names this ticket, the coordinator was sent the
+  paused-ready note and the coder (holding BL-1588) the owner note. No
+  parcel is withheld on this red today. Shares the fallback test file with
+  BL-1591 (stamp-off of the same hotfix): not orthogonal, do not
+  co-activate (Article 3.2.3); this one is expedited and one line, so it
+  lands first, and BL-1591's notes tell its coder not to migrate the line.
+  Not folded into BL-1591: that ticket is approved with its feature file
+  reviewed, and adding a scenario there would need a re-pend that posts no
+  fresh ask (BL-1455). INVEST: Independent (helper and guard exist, no
+  unbuilt sibling), Negotiable (only the variant is fixed, by the file's
+  own structure), Valuable (a health-signal guard stops being the normal
+  red and a tmpdir leak stops), Estimable (two lines, one sitting),
+  Small (three scenarios, one invariant), Testable (the real detector in
+  process, one 1.4 s runner - BL-1541). Severity high per the
+  standing-red rule, not medium.
+
+assigned_to: null
