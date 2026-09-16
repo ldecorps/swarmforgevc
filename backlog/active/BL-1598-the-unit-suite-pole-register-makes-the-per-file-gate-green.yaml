@@ -7,6 +7,7 @@ severity: high
 # epic's own finding); the suite regressed 25 s -> 169 s -> 689 s under it
 # unseen. Operator-delegated 2026-09-16 (coordinator note 008676).
 status: todo
+abandoned_commits: [89e93b0465]
 epic: unit-suite-speed
 priority: 5
 direction: human-requested
