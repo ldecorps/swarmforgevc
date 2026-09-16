@@ -1,0 +1,154 @@
+id: BL-1597
+title: "pack_staffing_gate_lib.bb's agent-model-providers table has no row for the codex agent, so every codex window line - the shipped codex-mono-router.conf and BL-1512's two gpt-5.3-codex seats - refuses seat-model-unresolved before any steward evidence is read and can launch only under PACK_STAFFING_SKIP_GATE=1 while openai/gpt-5.3-codex is certified on the coder and architect matrices; the table gains the codex rows (or a per-agent provider default), a codex line resolves to provider openai and is decided on evidence like every other seat, and the shipped codex pack's lines all resolve"
+milestone: M8
+type: defect
+severity: medium
+# medium: real but contained - the hatch masks it and it is set by default
+# in this host's swarm.env, so no launch fails today; the cost is that
+# the gate protects nothing on a codex seat and BL-1512's pack cannot be
+# proven at the gate. Not high: no standing red, no live fault.
+status: todo
+epic: swarm-reliability
+priority: 14
+direction: swarm-reported
+depends_on: []
+mutation_cost: low
+# low: one Babashka table and its bb runner cases (no mutation/CRAP/DRY
+# wired for Babashka - BL-472, the hardening pass records the fallback);
+# one step handler; no extension/src.
+slice_size_envelope: low
+required_stages: [coder, cleaner, architect, hardender, documenter, qa]
+
+acceptance: specs/features/BL-1597-the-staffing-gate-resolves-a-codex-seat.feature
+
+required_wiring:
+  - 'specs/pipeline/steps/bl1597CodexSeatResolvesSteps.js::registerSteps::the handler lands in the same parcel as the feature (BL-233, BL-1371)'
+# No production anchor on purpose (BL-1235): resolve-seat and the table
+# already exist and are reached by the launcher's pack_staffing_gate on
+# every launch; a pattern on them matches before and after the fix.
+
+human_approval: pending
+approval_context: >
+  A new feature file is authored here, so it needs a tap. No choice is
+  posed and there are no ruling_options. FIRM: a `window <role> codex
+  <wt> --model <m>` line resolves to provider openai for the models the
+  shipped packs name (gpt-5.3-codex, gpt-5.5) and is then decided by the
+  same four checks as every seat - ranked on the role matrix, role gate
+  recorded pass, assignment-eligible - never waved through. FIRM: no
+  other agent's resolution changes; an agent/model pair the table still
+  does not know keeps refusing seat-model-unresolved (the fail-closed
+  posture is kept, only the codex rows are added). FIRM: the acceptance
+  decides on a steward FIXTURE in a scratch root, never the live
+  `.swarmforge/model-steward/` (gitignored, per-worktree, stale in every
+  worktree).
+
+invariants:
+  - "resolve-seat fails closed for every agent/model pair the table does not name, before and after: adding the codex rows never turns an unknown pair into a resolved one."
+
+description: |
+  ## What is wrong
+
+  `swarmforge/scripts/pack_staffing_gate_lib.bb` resolves a window
+  line's steward identity through `agent-model-providers` (agent/model
+  pairs -> provider; `["cursor" "auto"] "cursor"`, `["claude"
+  "claude-fable-5-1"] "anthropic"`, ...) or, for aider lines, through
+  `api-base-host-providers` on the `--openai-api-base` host. The table
+  has no `codex` row. A codex line therefore fails check 1
+  (`seat-model-unresolved`) before the registry or a scorecard is read,
+  whatever evidence exists. Verified by the specifier on 2026-09-16 on
+  the master root with the hatch unset
+  (`backlog/evidence/BL-1512-specifier-eligibility-adjudication-20260916.md`):
+
+  ```
+  coder      refuse  <none>  <none>  seat-model-unresolved     (codex --model gpt-5.3-codex)
+  architect  refuse  <none>  <none>  seat-model-unresolved     (codex --model gpt-5.3-codex)
+  specifier  pass    cursor  auto
+  ```
+
+  while `bb swarmforge/scripts/model_steward_cli.bb eligible
+  openai/gpt-5.3-codex --role coder` (and `--role architect`) answers
+  eligible: the model is certified and ranked; only the gate's lookup is
+  missing. `swarmforge/packs/codex-mono-router.conf` (every seat on codex)
+  has therefore only ever launched under `PACK_STAFFING_SKIP_GATE=1`, and
+  BL-1512's diversified pack cannot prove its coder and architect seats
+  at the gate. The hatch is on by default in this host's swarm.env, so
+  nothing fails visibly; the gate simply protects nothing on those seats.
+
+  ## What is wanted
+
+  - A codex window line for gpt-5.3-codex or gpt-5.5 resolves to provider
+    openai and is then decided on evidence: pass with a fixture that ranks
+    and gates the model for the role, refuse not-on-role-matrix without
+    (scenario 01, rows 1 to 3).
+  - Every window line of the shipped codex-mono-router.conf resolves - no
+    seat-model-unresolved - with the pack's line count pinned (scenario
+    02, BL-1445).
+  - An agent/model pair the table still does not name keeps refusing
+    seat-model-unresolved (scenario 01, row 4; invariant 1).
+  - `swarmforge/scripts/test/*` bb cases for the four shapes; the how-to
+    or the lib header names the codex rows.
+
+  ## How (direction, not mandate)
+
+  - Add `["codex" "gpt-5.3-codex"] "openai"` and `["codex" "gpt-5.5"]
+    "openai"` to `agent-model-providers`, or a per-agent default map
+    (`{"codex" "openai"}`) consulted when the pair is absent - direction;
+    either way the unknown-pair refusal stays for agents with no default.
+  - Scenarios drive the REAL `pack_staffing_gate_cli.bb` against a scratch
+    steward root the handler builds (registry role-matrix entries and
+    `scorecards/openai__gpt-5.3-codex.json` with `coder-gate` /
+    `architect-gate` pass entries, the hy3 scorecard's shape) and a
+    windows-file in the CLI's own tab format; scenario 02 derives the
+    windows-file from the shipped pack by the launcher's field rules and
+    runs it against the same fixture root. All in seconds (BL-1541).
+  - Documenter: the lib header's table comment and, if one names the
+    table, the staffing-gate how-to; no diagram trigger.
+
+constraints: >
+  pack_staffing_gate_lib.bb's table (or a default map beside it), its bb
+  test runner, the feature, the handler and evidence only. No other
+  agent's resolution changes; no check is skipped or reordered; the
+  override vocabulary is untouched. The step handler lands with the
+  feature (BL-233). Evidence named BL-1597-*.
+
+out_of_scope: |
+  - Recording any model's role gates (steward work: the qwen documenter
+    gate BL-1512 needs is the operator's compliance battery run).
+  - The committed seed's contents and the hatch default in swarm.env.
+  - BL-1512's pack and BL-1511's pack.
+
+qa_e2e_procedure: |
+  On the parcel commit:
+  1. `bb swarmforge/scripts/test/<the runner the coder names>` -> green
+     with the four new cases listed.
+  2. Acceptance resolving both scenarios
+     (`swarmforge/scripts/run_acceptance.sh specs/features/BL-1597-*.feature`).
+  3. On the MASTER root with the hatch unset, a windows-file holding
+     `coder<TAB>coder<TAB>codex<TAB>--model gpt-5.3-codex` ->
+     `coder<TAB>pass<TAB>openai<TAB>gpt-5.3-codex` (openai/gpt-5.3-codex
+     is certified and ranked on coder there; record the line verbatim);
+     the same for architect.
+  4. `git diff <parent>..<parcel> -- swarmforge/scripts/pack_staffing_gate_lib.bb`
+     touches the table (or the default map) and comments only.
+
+source: |
+  Coder note to the specifier, priority 00, 2026-09-16T12:13Z (inbound
+  00_20260916T121343Z_001982_from_coder_to_specifier): "BL-1512: 5/7
+  picks ineligible (cursor/qwen unregistered), see evidence" - the
+  specifier's re-run on the launch root separated the worktree staleness
+  from this gate gap. Adjudication:
+  backlog/evidence/BL-1512-specifier-eligibility-adjudication-20260916.md.
+  Parent: BL-1318 (the gate), BL-1495.
+
+notes: |
+  Minted 2026-09-16 by the specifier while adjudicating the coder's
+  BL-1512 note; BL-1512's codex lines wait on this ticket and assert
+  nothing about them meanwhile (BL-1006). INVEST: Independent (the table
+  and CLI exist; no unbuilt sibling), Negotiable (rows versus a default
+  map is direction), Valuable (the shipped codex pack and BL-1512's
+  coder/architect seats become gate-provable), Estimable (two table rows,
+  four bb cases, one sitting), Small (two scenarios, one invariant),
+  Testable (real CLI on a fixture root in seconds). Severity medium: the
+  hatch masks it today.
+
+assigned_to: null
