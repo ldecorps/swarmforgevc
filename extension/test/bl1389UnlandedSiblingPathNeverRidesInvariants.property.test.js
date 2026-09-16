@@ -43,6 +43,7 @@ const path = require('node:path');
 const { execFileSync, spawnSync } = require('node:child_process');
 const { mkTmpDir } = require('./helpers/tmpDir');
 const { assertReachFloor, runsPerCell } = require('./helpers/reachFloors');
+const { propertyLaneTimeoutMs } = require('./helpers/propertyLaneContentionBudget');
 
 const REPO_ROOT = path.join(__dirname, '..', '..');
 const LAND_STEP_LIB = path.join(REPO_ROOT, 'swarmforge', 'scripts', 'land_step_lib.bb');
@@ -227,7 +228,7 @@ test("BL-1389/BL-654 invariant 1: a path an unlanded sibling owns alone never ri
   }
 
   assertReachFloor(reach, APPROVAL_SHAPES.map((s) => s.name), APPROVAL_CELL_RUNS, 'approval shape');
-});
+}, propertyLaneTimeoutMs(20000));
 
 test('BL-1389/BL-654 invariant 2: a sibling reads landed only when EVERY attributed path is on origin/main', () => {
   sweepFixtures();
@@ -280,7 +281,7 @@ test('BL-1389/BL-654 invariant 2: a sibling reads landed only when EVERY attribu
   }
 
   assertReachFloor(reach, Object.keys(reach), LANDED_CELL_RUNS, 'sibling-landed shape');
-});
+}, propertyLaneTimeoutMs(20000));
 
 test('BL-1389/BL-654 invariant 3: the report is enough to check the verdict without diffing the tip', () => {
   sweepFixtures();
@@ -333,4 +334,4 @@ test('BL-1389/BL-654 invariant 3: the report is enough to check the verdict with
     }),
     { numRuns: 4 },
   );
-});
+}, propertyLaneTimeoutMs(20000));

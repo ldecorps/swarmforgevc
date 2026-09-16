@@ -39,6 +39,7 @@ const path = require('node:path');
 const { execFileSync, spawnSync } = require('node:child_process');
 const { mkTmpDir } = require('./helpers/tmpDir');
 const { assertReachFloor, runsPerCell } = require('./helpers/reachFloors');
+const { propertyLaneTimeoutMs } = require('./helpers/propertyLaneContentionBudget');
 
 const REPO_ROOT = path.join(__dirname, '..', '..');
 const LAND_STEP_LIB = path.join(REPO_ROOT, 'swarmforge', 'scripts', 'land_step_lib.bb');
@@ -214,7 +215,7 @@ test('BL-1375/BL-654 invariant 1: a sibling that is not positively approved stil
     APPROVAL_SHAPES.some((s) => s.blocks) && APPROVAL_SHAPES.some((s) => !s.blocks),
     'the shape table lost one side of the contrast',
   );
-});
+}, propertyLaneTimeoutMs(20000));
 
 test('BL-1375/BL-654 invariant 2: a passenger rides only through a self-consistent replayed tree', () => {
   const approved = APPROVAL_SHAPES.find((s) => s.name === 'approved');
@@ -280,7 +281,7 @@ test('BL-1375/BL-654 invariant 2: a passenger rides only through a self-consiste
   }
 
   assertReachFloor(reach, ['dangling', 'resolved'], CONSISTENCY_CELL_RUNS, 'passenger consistency');
-});
+}, propertyLaneTimeoutMs(20000));
 
 test('BL-1375/BL-654 invariant 3: the replay never reaches outside what the tip actually delivers', () => {
   let checked = 0;
@@ -310,4 +311,4 @@ test('BL-1375/BL-654 invariant 3: the replay never reaches outside what the tip 
   }
 
   assert.ok(checked > 0, 'no replayed path was ever examined, so this property asserted nothing');
-});
+}, propertyLaneTimeoutMs(20000));

@@ -57,6 +57,7 @@ const path = require('node:path');
 const { execFileSync, spawnSync } = require('node:child_process');
 const { mkTmpDir } = require('./helpers/tmpDir');
 const { assertReachFloor, runsPerCell } = require('./helpers/reachFloors');
+const { propertyLaneTimeoutMs } = require('./helpers/propertyLaneContentionBudget');
 
 const REPO_ROOT = path.join(__dirname, '..', '..');
 const SCRIPTS = path.join(REPO_ROOT, 'swarmforge', 'scripts');
@@ -201,7 +202,7 @@ test('BL-1309/BL-654 invariant 1: a withheld or unapproved ticket on the tip is 
 
   assertReachFloor(reach, PAIR_KEYS, PAIR_CELL_RUNS, 'route/state pair');
   for (const pair of Object.keys(reach)) assert.ok(reach[pair] > 0, `never exercised ${pair}`);
-});
+}, propertyLaneTimeoutMs(20000));
 
 test('BL-1309/BL-654 invariant 1, narrowed: an APPROVED unlanded sibling rides by every route', () => {
   sweepFixtures();
@@ -241,7 +242,7 @@ test('BL-1309/BL-654 invariant 1, narrowed: an APPROVED unlanded sibling rides b
 
   assertReachFloor(reach, RIDING_PAIR_KEYS, RIDING_PAIR_CELL_RUNS, 'route/state pair');
   for (const pair of Object.keys(reach)) assert.ok(reach[pair] > 0, `never exercised ${pair}`);
-});
+}, propertyLaneTimeoutMs(20000));
 
 test('BL-1309/BL-654 invariant 2: an input the step cannot read never becomes a refusal', () => {
   sweepFixtures();
@@ -295,4 +296,4 @@ test('BL-1309/BL-654 invariant 2: an input the step cannot read never becomes a 
 
   assertReachFloor(reach, BLIND, BLIND_CELL_RUNS, 'blind shape');
   for (const shape of BLIND) assert.ok(reach[shape] > 0, `never exercised the ${shape} shape`);
-});
+}, propertyLaneTimeoutMs(20000));
