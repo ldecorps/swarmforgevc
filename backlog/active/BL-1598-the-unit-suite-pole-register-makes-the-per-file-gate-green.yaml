@@ -207,6 +207,7 @@ notes: |
   charged to the coder's rate (record-bounce cannot name the specifier;
   BL-990's correction applies if QA records one).
 assigned_to: coder
-bounce_count: 1
+bounce_count: 2
 bounce_history:
   - { at: 2026-09-16, by: QA, blamed: coder, class: behavior, commit: 2707b1f24d, evidence: backlog/evidence/BL-1598-QA-bounce-20260916.md }
+  - { at: 2026-09-16, by: architect, blamed: coder, class: behavior, commit: 32fb5fd439, evidence: backlog/evidence/BL-1598-architect-bounce-20260916.md }
