@@ -37,3 +37,15 @@ No prior specifier adjudication exists for this specific commit
 Escalating per Article 4.4 / QA prompt land-step item 3.
 
 By QA.
+
+## Instance 2: BL-1511, same class, same commit
+
+`land_step_cli.bb BL-1511-the-bob-pack-seats-a-specifier-again da73d06c23`
+refused identically: `ENTANGLED_SIBLING BL-1512,BL-1573,BL-1588,BL-1593`
+(BL-1573 and BL-1588 both entangled-but-actually-landing-in-flight; BL-1588
+already on `origin/main`), same ambiguous-attribution block on
+`84b1fa52e289b0d827717970c0ecb060ecae7566` for
+`swarmforge/scripts/property_suite_standing_allowlist.tsv`. No new
+information — the same commit's ambiguous subject blocks every parcel
+downstream of it on this branch. BL-1511 waits on the same specifier
+ruling; no new note sent (Article 4.4 class rule).
