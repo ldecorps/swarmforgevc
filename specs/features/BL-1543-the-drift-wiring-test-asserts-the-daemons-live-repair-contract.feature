@@ -9,9 +9,11 @@ Feature: BL-1543 The drift wiring test asserts the daemon's live repair contract
   left modified). This feature is that the test is green against the real
   daemon, proving the restored branch and the in-flight WARN branch, and that
   it leaves no process behind. Proving the deferred bounce REACHED the
-  launcher is BL-1548's: under SWARMFORGE_SKIP_DAEMON=1 the launcher today
-  exits before writing any audit line, so the bounce is unobservable here
-  (amended 2026-09-12; the mint's case 05 asserted a line that never exists).
+  launcher is BL-1548's own scenario (case "05" of this same shared suite,
+  added once the launcher started ledgering a skipped invocation before
+  honouring it) - this feature only asserts that a fifth passed case now
+  exists, never its content (amended 2026-09-12; the mint's own case 05
+  asserted a line that did not exist yet, before BL-1548 landed).
 
   Background:
     Given the wiring test "swarmforge/scripts/test/test_handoffd_master_checkout_drift_wiring.sh" which boots the real handoffd.bb against a disposable repository
@@ -20,7 +22,7 @@ Feature: BL-1543 The drift wiring test asserts the daemon's live repair contract
   Scenario: the wiring test is green against the real daemon and proves the repair contract end to end
     When the standing suite runs "swarmforge/scripts/test/test_handoffd_master_checkout_drift_wiring.sh"
     Then the run exits zero and reports no failed check
-    And the run reports exactly 4 passed cases
+    And the run reports exactly 5 passed cases
     And case "01" reports the OPERATOR outbox carrying one "MASTER CHECKOUT DRIFT RESTORED:" line naming "swarmforge/scripts/handoffd_supervisor.bb"
     And case "02" reports the drifted script matching main after the sweep
     And case "03" reports no "MASTER CHECKOUT DRIFT:" warning line for the restored episode
