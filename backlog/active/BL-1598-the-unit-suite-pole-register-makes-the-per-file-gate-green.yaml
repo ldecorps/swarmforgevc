@@ -39,10 +39,18 @@ approval_context: >
   measured milliseconds; slice D tickets take rows over as they are
   minted. FIRM: the recorded row in .test-durations.jsonl keeps result as
   the TEST outcome and gains the budget verdict as its own fields, so the
-  trend can tell a failing test from a slow file.
+  trend can tell a failing test from a slow file. AMENDED 2026-09-16
+  15:10Z (specifier, on QA's hold 93b31c8209): the register's numbers
+  drifted within 2.5 hours of measurement with no code change (three
+  rows fell under 80 percent of the budget, one unregistered file rose to
+  9 s), so a stale row is now REPORTED, never refused, and an
+  unregistered file refuses only from 1.5 times the budget, with a
+  surfaced watch verdict between the budget and that line - the jitter
+  BL-445 documented for wall clock applies to marginal files too. The
+  feature changes inside the parcel on the bounce (notes carry the rows).
 
 invariants:
-  - "The gate never waves a new pole through: a file over PER_FILE_DURATION_BUDGET_MS with no register row fails npm test's exit code exactly as BL-378 did, before and after this change."
+  - "The gate never waves a new pole through silently: a file with no register row measuring at or above PER_FILE_DURATION_BUDGET_MS times NEW_POLE_REFUSAL_FRACTION (1.5, so 10500 ms) fails npm test's exit code, and a file with no row measuring between the budget and that line is named in the verdict as watch on every run it occurs - never absent from the output."
   - "No test is removed to satisfy the gate: the number of test files the recorder counts at the parcel commit is at least the number at its parent."
 
 description: |
@@ -80,12 +88,19 @@ description: |
   - `backlog/suite-poles.tsv` (tab-separated: file, owner, first_seen,
     measured_ms, note), committed, carrying the nine rows above owned by
     BL-791 (scenario 03 pins the count).
-  - The per-file guard reads the register: a file over budget WITH a row
-    is reported, not refused; a file over budget WITHOUT a row refuses
-    (naming file and milliseconds, as today); a row whose file measured
-    under 80% of the budget refuses as stale so the row leaves in the
-    same land that cut the pole; a row naming no open ticket refuses as
-    unowned (scenario 01).
+  - The per-file guard reads the register (amended 2026-09-16): a file
+    over budget WITH a row is reported as a registered pole, not refused;
+    a file WITHOUT a row at or above budget times
+    NEW_POLE_REFUSAL_FRACTION (1.5, one named constant beside the budget)
+    refuses as new-pole naming file and milliseconds; a file WITHOUT a
+    row between the budget and that line is reported as watch, naming
+    file and milliseconds, exit code untouched; a row whose file measured
+    under 80% of the budget is reported as stale-row, exit code untouched
+    (the drain rule is enforced by the slice D land that cuts the pole and
+    removes its row, and by the register CLI's stale list, never by
+    refusing an unrelated parcel); a row naming no open ticket refuses as
+    unowned-row (scenario 01). Headline verdict order: new-pole,
+    unowned-row, watch, stale-row, ok.
   - `npm test`'s recorded row keeps `result` as the test outcome
     (pass/fail of the tests themselves) and adds `pole_ms` (slowest
     file), `work_ms` (summed per-file), `new_offenders` (count), and
@@ -129,8 +144,9 @@ qa_e2e_procedure: |
      `pole_ms`, `work_ms`, `new_offenders: 0`, `budget_verdict: ok`.
   2. Append a synthetic row for a file that is under budget to a scratch
      copy of the register and run the guard against the real report ->
-     `stale-row` refusal naming it; remove a real row -> `new-pole`
-     refusal naming the file.
+     `stale-row` REPORTED naming it, exit 0; remove the bl968 row (69.9 s)
+     -> `new-pole` refusal naming the file; a scratch report with an
+     unregistered file at 9000 ms -> `watch` naming it, exit 0.
   3. `backlog/suite-poles.tsv` has 9 rows, every owner in
      backlog/paused or backlog/active.
   4. Acceptance resolving all three scenarios.
@@ -154,4 +170,40 @@ notes: |
   extension, one TSV, four record fields, one sitting), Small (three
   scenarios, two invariants), Testable (pure injections in ms).
 
+  AMENDED 2026-09-16 15:10Z by the specifier on QA's Article 4.2 hold
+  (note 00_20260916T145518Z_002806; QA evidence
+  backlog/evidence/BL-1598-QA-drift-20260916.md at 93b31c8209; adjudication
+  backlog/evidence/BL-1598-specifier-hold-adjudication-20260916.md). QA
+  ran npm test three times on the parcel commit at 15:50Z (load 6.4 to
+  9.0): three registered files measured under 80 percent of the budget
+  (epicReorderBridge 5.0 s vs row 10600; pilotAcceptanceGateCli 2.7 s vs
+  8500; recordBounceCli 2.3 s vs 7300) and one unregistered file measured
+  about 9.0 s (emitLifecycleSnapshotCli), identically in all three runs,
+  with no code change since the 13:16Z measurement. The design defect is
+  the specifier's: a snapshot register that REFUSES on drift is red on
+  day one. Amendment, to be applied INSIDE the parcel by the coder on
+  QA's bounce (the feature carries the hardener's mutation stamp, so
+  main-side feature edits are not made - BL-1385):
+  - check-suite-file-budget.ts: NEW_POLE_REFUSAL_FRACTION = 1.5 beside
+    PER_FILE_DURATION_BUDGET_MS; verdict kinds ok | watch | stale-row |
+    unowned-row | new-pole; only new-pole and unowned-row fail the exit
+    code; the recorder row gains watch_files (count) beside
+    new_offenders.
+  - Feature scenario 01 rows become:
+      | one file measures 9000 ms  | names that file with an open owner            | ok, the file reported as a registered pole |
+      | one file measures 9000 ms  | is empty                                      | watch naming the file and 9000 ms, exit 0  |
+      | one file measures 11000 ms | is empty                                      | new-pole naming the file and 11000 ms      |
+      | every file measures under 5000 ms | names one of them with an open owner   | stale-row reported naming that file, exit 0 |
+      | one file measures 9000 ms  | names that file with a closed or absent owner | unowned-row naming the file and its owner  |
+      | every file measures under 7000 ms | is empty                               | ok                                         |
+    and scenario 02 gains rows | 0 | watch | pass | 0 | and
+    | 0 | stale-row | pass | 0 |; scenario 03 is unchanged (the nine
+    rows stay; a stale row is harmless and leaves with its slice D cut).
+  - Invariant 1 is re-worded above; invariant 2 unchanged. No register
+    row is added for emitLifecycleSnapshotCli: it is a watch file, and
+    BL-791's slice D inventory gains it.
+  Bounce routing: QA bounces to the coder (Article 4.3, the guard is the
+  coder's domain); the spec defect is the specifier's and no bounce is
+  charged to the coder's rate (record-bounce cannot name the specifier;
+  BL-990's correction applies if QA records one).
 assigned_to: coder
