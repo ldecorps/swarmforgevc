@@ -164,3 +164,5 @@ qa_e2e_procedure: |
      their unit tests, the step handler, the feature, evidence and docs;
      nothing under `swarmforge/scripts/` is changed (no check was
      reimplemented).
+
+assigned_to: coder
