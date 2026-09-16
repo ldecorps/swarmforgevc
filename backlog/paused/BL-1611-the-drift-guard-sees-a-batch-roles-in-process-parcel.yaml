@@ -1,0 +1,155 @@
+id: BL-1611
+title: "BL-1195's pre-turn worktree-drift guard reads the in_process box with the flat file reader, which never descends into the batch_ directories batch roles hold their parcels in, so a cleaner or hardender mid-work reads as holding nothing and its own uncommitted edits are refused as WORKTREE_DRIFT_DETECTED - the hardender hit it at session start on BL-1599 on 2026-09-16; the guard reads the box through the batch-aware reader and every roster shape is judged as BL-1195 meant"
+milestone: M8
+type: defect
+severity: high
+# high: a live fault degrading behaviour - a batch role's every
+# ready_for_next while its tree is dirty is refused (exit 2, nothing
+# dequeued or resumed) although it holds a batch; the hardender was
+# refused on BL-1599 today and reported it. A guard blind to a roster
+# shape is the BL-1515 family.
+status: todo
+epic: swarm-reliability
+priority: 5
+direction: swarm-reported
+depends_on: []
+# BL-1195 and BL-1515 are in backlog/done. BL-1612 (same pass) swaps the
+# same flat reader in two send-time gate libs; different files, so the
+# two are orthogonal and may run together.
+mutation_cost: low
+# low: Babashka (no mutation/CRAP/DRY wired, BL-472): one line in
+# ready_for_next.bb, its bb runner, one feature and handler, evidence.
+slice_size_envelope: low
+required_stages: [coder, cleaner, architect, hardender, documenter, qa]
+
+acceptance: specs/features/BL-1611-the-drift-guard-sees-a-batch-roles-in-process-parcel.feature
+
+required_wiring:
+  - 'swarmforge/scripts/ready_for_next.bb::handoff-files-with-batches::the drift guard''s in-process check reaches the batch-aware reader (BL-1235: the guard is the pre-existing consumer; the reader exists since BL-1313)'
+  - 'specs/pipeline/steps/bl1611DriftGuardSeesBatchParcelSteps.js::registerSteps::the handler lands in the same parcel as the feature (BL-233, BL-1371)'
+
+human_approval: pending
+approval_context: >
+  A new feature file is authored here, so it needs a tap. No choice is
+  posed and there are no ruling_options. FIRM: the guard's decision
+  (worktree_drift_lib.bb) is unchanged - a role with tracked edits and
+  no in-process parcel is still refused; only the "has an in-process
+  parcel" input becomes true for a batch role holding a batch directory
+  with a parcel inside. FIRM: a batch directory with no parcel inside
+  counts as nothing held (an empty batch_ dir is an interrupted claim,
+  not a task). FIRM: the master-resident exemption (BL-1515 D1) is
+  unchanged. FIRM: one scenario per roster shape - task, batch,
+  master-resident - each built in the fixture (the rule this ticket's
+  own class taught: a guard that runs on every role's turn is minted
+  with the population it quantifies over).
+
+invariants:
+  - "For every roster shape, the drift guard's in-process input is true exactly when a git_handoff or note parcel exists anywhere under the role's in_process box, at the top level or inside a batch_ directory."
+
+description: |
+  ## What is wrong
+
+  `enforce-worktree-drift-guard!` (`swarmforge/scripts/ready_for_next.bb:204-215`,
+  BL-1195) exits 2 with WORKTREE_DRIFT_DETECTED when `git diff --name-only
+  HEAD` is non-empty and `has-in-process-parcel?` is false. That predicate
+  (line 172) is
+
+  ```
+  (boolean (seq (handoff-lib/my-handoff-files (handoff-lib/my-mailbox-dir :in_process))))
+  ```
+
+  - the flat reader. A batch role's parcels live in
+  `in_process/batch_<stamp>_<seq>/` (the cleaner's and hardender's normal
+  shape), and only `handoff-files-with-batches` (`handoff_lib.bb:167`,
+  BL-1313) descends into them. So a batch role mid-work always reads as
+  holding nothing, and any uncommitted edit of its own - the ordinary
+  state of a hardener between a mutation run and its commit - is refused
+  on its next `ready_for_next.sh`. The hardender's evidence
+  (`.worktrees/hardender/backlog/evidence/BL-1599-hardender-20260916.md`,
+  "Worktree-drift guard defect found"): hit at session start on BL-1599's
+  own parcel in `batch_20260916T202413Z_000001/`. BL-1195's feature has
+  the task shape only; BL-1515's D1 bounce added the master-resident
+  exemption to this guard by hand and its own feature the master shape -
+  the batch shape was never built in either.
+
+  ## What is wanted
+
+  - `has-in-process-parcel?` reads the box through
+    `handoff-lib/handoff-files-with-batches`, so a batch directory with a
+    parcel inside counts as held (scenario 01 rows 1 and 3); an empty
+    batch directory, or no file at all, does not (rows 2 and 4); the
+    master-resident row stays exempt (row 5). The decision library is
+    untouched.
+  - No flat in_process read remains in `ready_for_next.bb` (scenario 02;
+    BL-1445: the census is `grep -n "my-mailbox-dir :in_process"` on that
+    file - one site today, line 173).
+  - The bb runner for the guard's wiring gains the batch case.
+
+  ## How (direction, not mandate)
+
+  - One line: `(handoff-lib/handoff-files-with-batches (handoff-lib/my-mailbox-dir :in_process))`
+    in place of `my-handoff-files`, with a comment naming BL-1313 as the
+    reader's origin and this ticket.
+  - Scenario 01 drives the real `ready_for_next.sh` on a fixture swarm
+    root (the `bl1195WorktreeTrackedContentDriftSteps.js` and
+    `bl1515BranchIdentityGuardSteps.js` fixture shapes: roles table with
+    the three rows, one worktree each, a tracked file edited, the
+    in_process box shaped per row) and reads exit code and stdout;
+    scenario 02 reads the source. Seconds (BL-1541).
+  - Documenter: `docs/how-to` page for BL-1195 (or handoff-protocol.md's
+    pre-turn guards paragraph) says the guard is batch-aware; no diagram
+    trigger.
+
+constraints: >
+  ready_for_next.bb (one predicate), its bb runner, the feature and
+  handler, evidence and docs. worktree_drift_lib.bb unchanged; no change
+  to the master-resident exemption or to BL-1515's guard. The step
+  handler lands with the feature (BL-233). Evidence named BL-1611-*.
+
+out_of_scope: |
+  - The same flat reader in two send-time gate libraries
+    (parcel_rollback_guard_lib.bb:67, review_forward_evidence_gate_lib.bb:72),
+    which makes BL-1213, BL-806 and BL-1576 silent for batch roles - a
+    fail-open twin of this fail-closed defect, owned by BL-1612 (same
+    pass).
+  - Why the hardender's tree was dirty (its own mutation-run WIP, the
+    legitimate case BL-1195 scenario 02 exempts).
+
+qa_e2e_procedure: |
+  On the parcel commit:
+  1. `bb swarmforge/scripts/test/<runner the coder names>` -> green with
+     the batch case.
+  2. Acceptance resolving both scenarios
+     (`bash specs/pipeline/scripts/run_acceptance.sh specs/features/BL-1611-*.feature`)
+     and BL-1195's and BL-1515's features still resolving.
+  3. Live probe on the parcel's own chain: at the hardender stage, with
+     the parcel in its batch and one tracked file deliberately edited and
+     uncommitted, `./swarmforge/scripts/ready_for_next.sh` resumes the
+     batch instead of printing WORKTREE_DRIFT_DETECTED; revert the edit.
+  4. `grep -n 'my-handoff-files (handoff-lib/my-mailbox-dir :in_process)' swarmforge/scripts/ready_for_next.bb`
+     -> no match.
+
+source: |
+  Hardender note to the specifier, priority 00, 2026-09-16T21:24Z
+  (inbound 00_20260916T212459Z_001366_from_hardender_to_specifier):
+  "BL-1195 drift guard blind to batch_* in_process - false
+  WORKTREE_DRIFT_DETECTED". Hardender evidence
+  .worktrees/hardender/backlog/evidence/BL-1599-hardender-20260916.md.
+  Specifier adjudication:
+  backlog/evidence/BL-1611-specifier-adjudication-of-hardender-drift-guard-note-20260916.md.
+  Parents: BL-1195, BL-1313, BL-1515.
+
+notes: |
+  Minted 2026-09-16 by the specifier while completing the hardender's
+  note, the same pass as BL-1612 (the send-time twins found by the
+  reader census). Workaround until this lands, told to the hardender:
+  commit or stash-free-resolve before any ready_for_next while a batch
+  is open - the guard only reads the working tree at turn start.
+  INVEST: Independent (the batch-aware reader exists), Negotiable (the
+  comment and runner shape are direction), Valuable (batch roles stop
+  being refused their own turns), Estimable (one line, one fixture row
+  per shape - one sitting), Small (two scenarios, one invariant),
+  Testable (the real script on a fixture root in seconds - BL-1541).
+  Severity high: a live refusal on two of six worktree roles.
+
+assigned_to: null
