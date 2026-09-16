@@ -28,6 +28,7 @@ const fs = require('node:fs');
 const path = require('node:path');
 const { execFileSync, spawnSync } = require('node:child_process');
 const { mkTmpDir } = require('./helpers/tmpDir');
+const { assertReachFloor, runsPerCell } = require('./helpers/reachFloors');
 
 const REPO_ROOT = path.join(__dirname, '..', '..');
 const LAND_STEP_LIB = path.join(REPO_ROOT, 'swarmforge', 'scripts', 'land_step_lib.bb');
@@ -117,6 +118,7 @@ const relArb = fc.constantFrom(
 
 test('BL-1332/BL-654 invariant 1: no replayed path ever carries a change attributed solely to an unlanded ticket', () => {
   const reach = Object.fromEntries(SHAPES.map((s) => [s, 0]));
+  const SHAPE_CELL_RUNS = runsPerCell(3 * SHAPES.length, SHAPES.length);
 
   for (const shape of SHAPES) {
     fc.assert(
@@ -140,10 +142,11 @@ test('BL-1332/BL-654 invariant 1: no replayed path ever carries a change attribu
           fs.rmSync(root, { recursive: true, force: true });
         }
       }),
-      { numRuns: 3 },
+      { numRuns: SHAPE_CELL_RUNS },
     );
   }
 
+  assertReachFloor(reach, SHAPES, SHAPE_CELL_RUNS, 'shape');
   for (const shape of SHAPES) {
     assert.ok(reach[shape] > 0, `never exercised the ${shape} shape`);
   }
@@ -151,6 +154,7 @@ test('BL-1332/BL-654 invariant 1: no replayed path ever carries a change attribu
 
 test('BL-1332/BL-654 invariant 2: an inseparable shared path refuses, naming path and sibling, and ships neither version', () => {
   const reach = { refused: 0, allowed: 0 };
+  const SHAPE_CELL_RUNS_2 = runsPerCell(3 * SHAPES.length, SHAPES.length);
 
   for (const shape of SHAPES) {
     fc.assert(
@@ -185,10 +189,11 @@ test('BL-1332/BL-654 invariant 2: an inseparable shared path refuses, naming pat
           fs.rmSync(root, { recursive: true, force: true });
         }
       }),
-      { numRuns: 3 },
+      { numRuns: SHAPE_CELL_RUNS_2 },
     );
   }
 
+  assertReachFloor(reach, ['refused', 'allowed'], SHAPE_CELL_RUNS_2, 'refusal outcome');
   assert.ok(reach.refused > 0, 'never exercised the shared-path refusal - the defect corner went untested');
   assert.ok(reach.allowed > 0, 'never exercised a non-shared path - BL-1315 regression cover went untested');
 });
