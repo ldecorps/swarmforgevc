@@ -191,7 +191,7 @@ test('BL-1481/BL-654 invariant 2: a shared path clears when every changed line i
         assert.equal(result.warning, null, `content-clear shape should not warn: ${JSON.stringify(result)}`);
         assert.deepEqual(
           result['content-clear'],
-          [{ path: rel, sibling: SIBLING }],
+          [{ path: rel, sibling: SIBLING, verdict: 'landed' }],
           `the report should name the sibling as content-clear for the path: ${JSON.stringify(result)}`,
         );
         return true;
