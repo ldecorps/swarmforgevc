@@ -139,3 +139,5 @@ qa_e2e_procedure: |
      nothing under swarmforge/scripts/test/test_*.sh and not handoffd.bb.
   6. `cd extension && npx vitest run ../specs/pipeline/test/steps/dispatchGapSteps.test.js`
      (or the project's unit runner for that file) is green.
+
+assigned_to: coder
