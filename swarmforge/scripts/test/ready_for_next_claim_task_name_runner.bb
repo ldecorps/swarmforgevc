@@ -43,6 +43,20 @@
          (ready-for-next-task/claim-task-name
           (tmp-handoff-file "type: note\nto: coder\npriority: 10\nmessage: branch behind abc1234567: merge up\n\nbranch behind abc1234567: merge up\n")))
 
+;; Shape 4 (hardener, BL-1608, 2026-09-16): a PRESENT but BLANK task:
+;; header must fall through to the Work BL-… message, not be taken as the
+;; task name. `header-field` returns "" for a present-but-empty header
+;; line, and an empty string is truthy in Clojure's `or`, so the
+;; `not-empty` guard is load-bearing - a mutant dropping it makes this
+;; case resolve "" instead of falling through. Hand-verified via a
+;; bb -e probe (not covered by any Stryker/CRAP tool, BL-638 fallback):
+;; the mutated form resolved "" here where the original resolves the
+;; message slug below.
+(assert= "a present-but-blank task: header falls through to the Work BL-… message"
+         "BL-2222-something"
+         (ready-for-next-task/claim-task-name
+          (tmp-handoff-file "type: note\nto: coder\npriority: 10\ntask: \nmessage: Work BL-2222-something\n\nWork BL-2222-something\n")))
+
 (if (seq @failures)
   (do (doseq [f @failures] (println f))
       (println (str "\n" (count @failures) " failure(s)"))
