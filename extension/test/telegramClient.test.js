@@ -24,6 +24,7 @@ const {
   downloadTelegramFile,
   sendVoiceNote,
   sendDocument,
+  setChatMenuButton,
 } = require('../out/notify/telegramClient');
 
 const TOKEN = '123456:test-bot-token';
@@ -1346,4 +1347,200 @@ test('BL-1509 file-posted-as-telegram-document-02: a thrown network error report
   // (only the message text was checked).
   assert.match(result.error, /^Telegram request failed: /);
   assert.doesNotMatch(result.error, new RegExp(TOKEN));
+});
+
+// ── BL-1577: telegramClient.ts's first-run mutation survivors - the
+// no-coverage regions the census named (backlog/evidence/BL-1509-survivor-
+// census-specifier-20260915.md) go to zero. Every test below asserts what
+// the caller observes, never a literal for its own sake. ──────────────────
+
+test('BL-1577: getForumTopicIconStickers returns an empty list when the response result is not an array (malformed shape)', async () => {
+  const postFn = async () => ({ ok: true, status: 200, json: { ok: true, result: { not: 'an array' } } });
+
+  const result = await getForumTopicIconStickers(TOKEN, postFn);
+
+  assert.equal(result.success, true);
+  assert.deepEqual(result.stickers, []);
+});
+
+test('BL-1577: getForumTopicIconStickers defaults customEmojiId to an empty string when a sticker carries none', async () => {
+  const postFn = async () => ({ ok: true, status: 200, json: { ok: true, result: [{ emoji: '✅' }] } });
+
+  const result = await getForumTopicIconStickers(TOKEN, postFn);
+
+  assert.deepEqual(result.stickers, [{ emoji: '✅', customEmojiId: '' }]);
+});
+
+test('BL-1577: resolveForumTopicName returns undefined when the probe reply carries no forum_topic_created service message', async () => {
+  const postFn = async (url) => {
+    if (url.includes('sendMessage')) {
+      return {
+        ok: true,
+        status: 200,
+        json: {
+          ok: true,
+          result: { message_id: 99, reply_to_message: { message_id: 50, text: 'not a topic-created message' } },
+        },
+      };
+    }
+    return { ok: true, status: 200, json: { ok: true, result: true } };
+  };
+
+  const name = await resolveForumTopicName(TOKEN, CHAT_ID, 3857, postFn);
+
+  assert.equal(name, undefined);
+});
+
+test('BL-1577: setChatMenuButton posts { type: "default" } to reset the chat menu button', async () => {
+  let capturedBody = null;
+  const postFn = async (url, body) => {
+    capturedBody = JSON.parse(body);
+    return { ok: true, status: 200, json: { ok: true, result: true } };
+  };
+
+  const result = await setChatMenuButton(TOKEN, { type: 'default' }, CHAT_ID, postFn);
+
+  assert.equal(result.success, true);
+  assert.deepEqual(capturedBody.menu_button, { type: 'default' });
+});
+
+test('BL-1577: getTelegramUpdates returns an empty batch when the response result is not an array (malformed shape)', async () => {
+  const postFn = async () => ({ ok: true, status: 200, json: { ok: true, result: { not: 'an array' } } });
+
+  const result = await getTelegramUpdates(TOKEN, 0, 30, postFn);
+
+  assert.equal(result.success, true);
+  assert.deepEqual(result.updates, []);
+});
+
+test('BL-1577: sendTelegramMessage defaults callback_data to an empty string when a button has neither callbackData, webAppUrl nor url', async () => {
+  let capturedBody = null;
+  const postFn = async (url, body) => {
+    capturedBody = body;
+    return { ok: true, status: 200, json: { ok: true, result: { message_id: 47 } } };
+  };
+
+  await sendTelegramMessage(TOKEN, CHAT_ID, 'hi', undefined, postFn, undefined, [[{ text: 'Ack' }]]);
+
+  assert.deepEqual(JSON.parse(capturedBody).reply_markup.inline_keyboard, [[{ text: 'Ack', callback_data: '' }]]);
+});
+
+test('BL-1577: sendTelegramMessage reports "unknown error" when a thrown failure is not an Error instance', async () => {
+  const postFn = async () => {
+    throw 'connection reset';
+  };
+
+  const result = await sendTelegramMessage(TOKEN, CHAT_ID, 'hi', undefined, postFn);
+
+  assert.equal(result.success, false);
+  assert.match(result.error, /unknown error/);
+});
+
+test('BL-1577: answerCallbackQuery uses the real fetch-based post when no postFn is given', async () => {
+  const originalFetch = global.fetch;
+  global.fetch = async () => ({ ok: true, status: 200, json: async () => ({ ok: true, result: true }) });
+  try {
+    const result = await answerCallbackQuery(TOKEN, 'cbq-1');
+    assert.equal(result.success, true);
+  } finally {
+    global.fetch = originalFetch;
+  }
+});
+
+test('BL-1577: sendVoiceNote uses the real fetch-based multipart post when no postVoiceFn is given', async () => {
+  const originalFetch = global.fetch;
+  global.fetch = async () => ({ ok: true, status: 200, json: async () => ({ ok: true, result: true }) });
+  try {
+    const result = await sendVoiceNote(TOKEN, CHAT_ID, Buffer.from('audio-bytes'));
+    assert.equal(result.success, true);
+  } finally {
+    global.fetch = originalFetch;
+  }
+});
+
+test('BL-1577: answerCallbackQuery via the real fetch-based post still succeeds when the response body is not valid JSON', async () => {
+  // Reaches defaultPost's `catch { json = undefined; }` branch (mutation
+  // hardening run, out/notify/telegramClient.js:41-48): the Stryker report
+  // this test discharges empty-catch-block mutant this branch is unreachable
+  // by every other existing test. `json` is declared with `let json;`
+  // (undefined) before the try, so an explicit `json = undefined` in the
+  // catch is behaviorally identical to an empty catch block - equivalent
+  // mutant, recorded in backlog/evidence/BL-1577-telegramClient-mutation.md.
+  const originalFetch = global.fetch;
+  global.fetch = async () => ({
+    ok: true,
+    status: 200,
+    json: async () => {
+      throw new SyntaxError('Unexpected token in JSON');
+    },
+  });
+  try {
+    const result = await answerCallbackQuery(TOKEN, 'cbq-malformed-json');
+    assert.equal(result.success, true);
+  } finally {
+    global.fetch = originalFetch;
+  }
+});
+
+test('BL-1577: sendVoiceNote via the real fetch-based multipart post still succeeds when the response body is not valid JSON', async () => {
+  // Same equivalent-mutant shape as the answerCallbackQuery test above, for
+  // defaultPostVoice's identical catch block
+  // (out/notify/telegramClient.js:605-612).
+  const originalFetch = global.fetch;
+  global.fetch = async () => ({
+    ok: true,
+    status: 200,
+    json: async () => {
+      throw new SyntaxError('Unexpected token in JSON');
+    },
+  });
+  try {
+    const result = await sendVoiceNote(TOKEN, CHAT_ID, Buffer.from('audio-bytes'));
+    assert.equal(result.success, true);
+  } finally {
+    global.fetch = originalFetch;
+  }
+});
+
+test('BL-1577: createForumTopicWithRateLimitRetry uses the real timer-based wait when none is given', async () => {
+  vi.useFakeTimers();
+  try {
+    let attempts = 0;
+    const postFn = async () => {
+      attempts += 1;
+      if (attempts === 1) {
+        return {
+          ok: false,
+          status: 429,
+          json: { ok: false, description: 'Too Many Requests: retry after 1', parameters: { retry_after: 1 } },
+        };
+      }
+      return { ok: true, status: 200, json: { ok: true, result: { message_thread_id: 42 } } };
+    };
+
+    const promise = createForumTopicWithRateLimitRetry(TOKEN, CHAT_ID, 'Approvals', postFn);
+    // Flush microtasks with zero elapsed real time so the retry chain
+    // reaches its defaultWaitMs call without yet advancing past it, then
+    // assert a real timer is actually pending. Coverage of this line alone
+    // does not kill a BlockStatement mutant on defaultWaitMs's body (it
+    // would return `undefined` instead of a Promise, so `await wait(ms)`
+    // resolves immediately and the retry proceeds with no wait at all) -
+    // only an assertion on the scheduled timer itself, before advancing,
+    // can tell "waited" from "didn't wait" (mutation hardening, BL-1577).
+    await vi.advanceTimersByTimeAsync(0);
+    assert.equal(attempts, 1, 'the first (429) attempt must have already happened');
+    assert.equal(
+      vi.getTimerCount(),
+      1,
+      "defaultWaitMs's real setTimeout must be scheduled before the retry fires"
+    );
+
+    await vi.advanceTimersByTimeAsync(1000);
+    const result = await promise;
+
+    assert.deepEqual(result, { success: true, messageThreadId: 42 });
+    assert.equal(attempts, 2);
+  } finally {
+    vi.useRealTimers();
+  }
 });
