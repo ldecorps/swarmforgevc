@@ -16,14 +16,29 @@ export interface ParsedArgs {
   root?: string;
 }
 
+// Flag -> setter, in place of an if/else-if chain (hardener extraction,
+// BL-1554 CRAP gate: complexity 7 at 100% coverage on the chain form,
+// complexity alone) - a lookup collapses 4 branches into 1.
+const ARG_SETTERS: Record<string, (out: Partial<ParsedArgs>, value: string) => void> = {
+  '--ticket': (out, value) => {
+    out.ticket = value;
+  },
+  '--task': (out, value) => {
+    out.task = value;
+  },
+  '--commit': (out, value) => {
+    out.commit = value;
+  },
+  '--root': (out, value) => {
+    out.root = value;
+  },
+};
+
 export function parseArgs(argv: string[]): ParsedArgs | undefined {
   const out: Partial<ParsedArgs> = {};
   for (let i = 0; i < argv.length; i += 1) {
-    const arg = argv[i];
-    if (arg === '--ticket') out.ticket = argv[++i];
-    else if (arg === '--task') out.task = argv[++i];
-    else if (arg === '--commit') out.commit = argv[++i];
-    else if (arg === '--root') out.root = argv[++i];
+    const setter = ARG_SETTERS[argv[i]];
+    if (setter) setter(out, argv[++i]);
   }
   if (!out.ticket) {
     return undefined;
@@ -31,7 +46,7 @@ export function parseArgs(argv: string[]): ParsedArgs | undefined {
   return out as ParsedArgs;
 }
 
-function resolveHeadCommit(root: string): string {
+export function resolveHeadCommit(root: string): string {
   try {
     return execFileSync('git', ['rev-parse', '--short=10', 'HEAD'], { cwd: root, encoding: 'utf8' }).trim();
   } catch {
