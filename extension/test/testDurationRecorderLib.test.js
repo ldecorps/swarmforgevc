@@ -31,6 +31,7 @@ test('buildRecord shapes a pass record with finished_at, test_count, result, dur
     newOffenders: 0,
     watchFiles: 0,
     budgetVerdict: 'ok',
+    workBudgetVerdict: 'ok',
   });
   assert.deepEqual(rec, {
     finished_at: '2026-07-03T10:00:00.000Z',
@@ -42,6 +43,7 @@ test('buildRecord shapes a pass record with finished_at, test_count, result, dur
     new_offenders: 0,
     watch_files: 0,
     budget_verdict: 'ok',
+    work_budget_verdict: 'ok',
   });
 });
 
@@ -56,6 +58,7 @@ test('buildRecord marks a non-zero exit code as fail', () => {
     newOffenders: 0,
     watchFiles: 0,
     budgetVerdict: 'ok',
+    workBudgetVerdict: 'ok',
   });
   assert.equal(rec.result, 'fail');
 });
@@ -73,6 +76,7 @@ test('buildRecord keeps result and budget_verdict independent - a passing run ca
     newOffenders: 1,
     watchFiles: 0,
     budgetVerdict: 'new-pole',
+    workBudgetVerdict: 'ok',
   });
   assert.equal(rec.result, 'pass');
   assert.equal(rec.budget_verdict, 'new-pole');
@@ -92,10 +96,31 @@ test('buildRecord records watch_files independently of a passing exit code', () 
     newOffenders: 0,
     watchFiles: 1,
     budgetVerdict: 'watch',
+    workBudgetVerdict: 'ok',
   });
   assert.equal(rec.result, 'pass');
   assert.equal(rec.budget_verdict, 'watch');
   assert.equal(rec.watch_files, 1);
+});
+
+// BL-1599: work_budget_verdict rides beside budget_verdict (BL-1598's
+// per-file field), independent of it - a run can be a new-pole offender
+// (per-file) while its summed work still reads ok, or vice versa.
+test('buildRecord carries work_budget_verdict independently of budget_verdict', () => {
+  const rec = buildRecord({
+    finishedAt: '2026-07-03T10:00:00.000Z',
+    testCount: 1,
+    exitCode: 1,
+    durationMs: 1000,
+    poleMs: 9000,
+    workMs: 620000,
+    newOffenders: 0,
+    watchFiles: 0,
+    budgetVerdict: 'ok',
+    workBudgetVerdict: 'over-budget',
+  });
+  assert.equal(rec.budget_verdict, 'ok');
+  assert.equal(rec.work_budget_verdict, 'over-budget');
 });
 
 test('appendRecord writes one JSON line per call, appending to existing content', () => {
@@ -130,6 +155,26 @@ test('computeFinalExitCode prefers a non-zero test exit code over the guard\'s',
 });
 
 test('computeFinalExitCode falls back to the guard exit code when the tests passed', () => {
+  assert.equal(computeFinalExitCode(0, 1), 1);
+  assert.equal(computeFinalExitCode(0, 0), 0);
+});
+
+// BL-1599: the work ratchet's own exit code is a THIRD source, same
+// precedence as the per-file guard - a real test failure always wins,
+// then either budget-refusing source, never silently dropped when the
+// caller omits it (defaults to 0, so every pre-BL-1599 2-arg call site
+// keeps its exact prior behavior).
+test('computeFinalExitCode falls back to the work ratchet exit code when tests and the per-file guard both passed', () => {
+  assert.equal(computeFinalExitCode(0, 0, 1), 1);
+  assert.equal(computeFinalExitCode(0, 0, 0), 0);
+});
+
+test('computeFinalExitCode prefers a non-zero test exit code over both the guard and the work ratchet', () => {
+  assert.equal(computeFinalExitCode(2, 1, 1), 2);
+});
+
+test('computeFinalExitCode omitting the work ratchet argument behaves exactly as the 2-arg call did', () => {
+  assert.equal(computeFinalExitCode(1, 0), 1);
   assert.equal(computeFinalExitCode(0, 1), 1);
   assert.equal(computeFinalExitCode(0, 0), 0);
 });

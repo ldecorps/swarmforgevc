@@ -7,6 +7,13 @@ const {
   buildSuiteBudgetVerdict,
   formatSuiteBudgetVerdict,
   SUITE_DURATION_BUDGET_MS,
+  classifySuiteWork,
+  deriveExpectedWallMs,
+  buildSuiteWorkVerdict,
+  formatSuiteWorkVerdict,
+  SUITE_WORK_BUDGET_MS,
+  SUITE_WORK_TOLERANCE,
+  OPERATOR_WALL_CEILING_MS,
 } = require('../out/tools/check-suite-duration-budget');
 
 const CLI = path.join(__dirname, '..', 'out', 'tools', 'check-suite-duration-budget.js');
@@ -62,6 +69,70 @@ test('formatSuiteBudgetVerdict reports a within-budget run as OK, not an offende
   const text = formatSuiteBudgetVerdict(buildSuiteBudgetVerdict(6000, 10000));
   assert.match(text, /OK/);
   assert.doesNotMatch(text, /over budget/);
+});
+
+// ── classifySuiteWork / deriveExpectedWallMs / buildSuiteWorkVerdict (pure)
+// ── BL-1599 unit-suite-work-ratchet-01's whole decision table ──────────────
+
+test('BL-1599: the committed budget is the delegated number, the wall budget stays unchanged', () => {
+  assert.equal(SUITE_WORK_BUDGET_MS, 550000);
+  assert.equal(SUITE_DURATION_BUDGET_MS, 10000);
+});
+
+const WORK_RATCHET_TABLE = [
+  { work: 540000, forks: 9, pole: 69900, verdict: 'ok', exitNonZero: false, wall: 69900, distance: 56900 },
+  { work: 90000, forks: 9, pole: 5000, verdict: 'ok', exitNonZero: false, wall: 10000, distance: 0 },
+  { work: 590000, forks: 10, pole: 5000, verdict: 'over-tolerance', exitNonZero: false, wall: 59000, distance: 46000 },
+  { work: 620000, forks: 1, pole: 69900, verdict: 'over-budget', exitNonZero: true, wall: 620000, distance: 607000 },
+];
+
+for (const { work, forks, pole, verdict, exitNonZero, wall, distance } of WORK_RATCHET_TABLE) {
+  test(`classifySuiteWork/deriveExpectedWallMs: work=${work} forks=${forks} pole=${pole} -> ${verdict}`, () => {
+    assert.equal(classifySuiteWork(work, SUITE_WORK_BUDGET_MS, SUITE_WORK_TOLERANCE), verdict);
+    assert.equal(deriveExpectedWallMs(work, forks, pole), wall);
+  });
+
+  test(`buildSuiteWorkVerdict: work=${work} forks=${forks} pole=${pole} carries the verdict, wall and distance, exit non-zero=${exitNonZero}`, () => {
+    const result = buildSuiteWorkVerdict(work, forks, pole);
+    assert.equal(result.verdict, verdict);
+    assert.equal(result.expectedWallMs, wall);
+    assert.equal(result.distanceMs, distance);
+    assert.equal(result.verdict === 'over-budget', exitNonZero);
+  });
+}
+
+test('classifySuiteWork: the boundary (exactly the budget) is ok, not over-tolerance', () => {
+  assert.equal(classifySuiteWork(550000, 550000, 0.1), 'ok');
+});
+
+test('classifySuiteWork: exactly the tolerance ceiling (budget * 1.1) is over-tolerance, not over-budget', () => {
+  assert.equal(classifySuiteWork(605000, 550000, 0.1), 'over-tolerance');
+});
+
+test('deriveExpectedWallMs: an invalid fork count (0, negative, NaN) falls back to 1 fork rather than dividing by zero', () => {
+  assert.equal(deriveExpectedWallMs(90000, 0, 5000), 90000);
+  assert.equal(deriveExpectedWallMs(90000, -1, 5000), 90000);
+  assert.equal(deriveExpectedWallMs(90000, NaN, 5000), 90000);
+});
+
+test('formatSuiteWorkVerdict prints work, forks, slowest file, derived wall and the distance to the operator ceiling', () => {
+  const text = formatSuiteWorkVerdict(buildSuiteWorkVerdict(620000, 1, 69900));
+  assert.equal(OPERATOR_WALL_CEILING_MS, 13000);
+  assert.match(text, /620\.0s/);
+  assert.match(text, /1 fork/);
+  assert.match(text, /69\.9s/);
+  assert.match(text, /620\.0s/);
+  assert.match(text, /607\.0s/);
+});
+
+test('formatSuiteWorkVerdict reports ok without refusal language', () => {
+  const text = formatSuiteWorkVerdict(buildSuiteWorkVerdict(540000, 9, 69900));
+  assert.doesNotMatch(text, /refus/i);
+});
+
+test('formatSuiteWorkVerdict names an over-budget run as refused', () => {
+  const text = formatSuiteWorkVerdict(buildSuiteWorkVerdict(620000, 1, 69900));
+  assert.match(text, /refus/i);
 });
 
 // ── main() (thin CLI wrapper, in-process) ───────────────────────────────────
