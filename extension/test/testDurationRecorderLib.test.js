@@ -21,18 +21,58 @@ test('listTestFiles returns only .test.js files, sorted', () => {
 
 // BL-078 suite-duration-01
 test('buildRecord shapes a pass record with finished_at, test_count, result, duration_ms', () => {
-  const rec = buildRecord({ finishedAt: '2026-07-03T10:00:00.000Z', testCount: 42, exitCode: 0, durationMs: 33000 });
+  const rec = buildRecord({
+    finishedAt: '2026-07-03T10:00:00.000Z',
+    testCount: 42,
+    exitCode: 0,
+    durationMs: 33000,
+    poleMs: 4800,
+    workMs: 120000,
+    newOffenders: 0,
+    budgetVerdict: 'ok',
+  });
   assert.deepEqual(rec, {
     finished_at: '2026-07-03T10:00:00.000Z',
     test_count: 42,
     result: 'pass',
     duration_ms: 33000,
+    pole_ms: 4800,
+    work_ms: 120000,
+    new_offenders: 0,
+    budget_verdict: 'ok',
   });
 });
 
 test('buildRecord marks a non-zero exit code as fail', () => {
-  const rec = buildRecord({ finishedAt: '2026-07-03T10:00:00.000Z', testCount: 42, exitCode: 1, durationMs: 5000 });
+  const rec = buildRecord({
+    finishedAt: '2026-07-03T10:00:00.000Z',
+    testCount: 42,
+    exitCode: 1,
+    durationMs: 5000,
+    poleMs: 5000,
+    workMs: 5000,
+    newOffenders: 0,
+    budgetVerdict: 'ok',
+  });
   assert.equal(rec.result, 'fail');
+});
+
+// BL-1598 unit-suite-pole-register-02: result (test outcome) and
+// budget_verdict (the guard's own verdict) vary independently.
+test('buildRecord keeps result and budget_verdict independent - a passing run can still carry a non-ok budget_verdict', () => {
+  const rec = buildRecord({
+    finishedAt: '2026-07-03T10:00:00.000Z',
+    testCount: 1,
+    exitCode: 0,
+    durationMs: 1000,
+    poleMs: 9000,
+    workMs: 9000,
+    newOffenders: 1,
+    budgetVerdict: 'new-pole',
+  });
+  assert.equal(rec.result, 'pass');
+  assert.equal(rec.budget_verdict, 'new-pole');
+  assert.equal(rec.new_offenders, 1);
 });
 
 test('appendRecord writes one JSON line per call, appending to existing content', () => {
