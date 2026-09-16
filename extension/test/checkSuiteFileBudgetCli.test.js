@@ -87,9 +87,21 @@ test('every file within budget passes', () => {
 
 // A file whose duration lands EXACTLY on the budget is not itself over it
 // (the boundary belongs to "within budget", not "exceeds").
-test('a file exactly at the budget passes, not fails', () => {
+test('a file exactly at the budget passes, not fails, and is not even a watch file', () => {
   const result = checkFileDurationBudget([{ file: 'test/exact.test.js', durationMs: 7000 }], 7000);
   assert.equal(result.passed, true);
+  // Not merely "passed" (which a watch verdict also leaves true) - exactly
+  // at budget is not "over" it at all, so it must appear in NEITHER
+  // offenders nor watchFiles.
+  assert.equal(result.offenders.length, 0);
+  assert.equal(result.watchFiles.length, 0);
+});
+
+test('a file exactly at 1.5x the budget (the refusal threshold itself) is a new-pole, not watch', () => {
+  const result = checkFileDurationBudget([{ file: 'test/exact15x.test.js', durationMs: 10500 }], 7000);
+  assert.equal(result.verdict, 'new-pole');
+  assert.equal(result.watchFiles.length, 0);
+  assert.deepEqual(result.offenders, [{ file: 'test/exact15x.test.js', durationMs: 10500, budgetMs: 7000 }]);
 });
 
 // BL-378 no-single-file-bounds-the-suite-03, amended 2026-09-16: every
@@ -602,6 +614,30 @@ test('printGuardReport on failure writes every failure line to stderr, newline-j
   assert.match(stdout, /stale register row/);
   assert.doesNotMatch(stderr, /stale register row/);
   assert.doesNotMatch(stdout, /suite file budget OK/);
+});
+
+test('printGuardReport joins the TOP-LEVEL failureLines (offenders + unowned rows) with a real newline, not glued together', () => {
+  // The amendment moved staleRows/watchFiles to infoLines, so the sibling
+  // test above (2 offenders, 1 stale row) exercises only
+  // formatBudgetOffenders' OWN internal join, never printGuardReport's
+  // top-level `failureLines.join('\n')` - offenders and unownedRows are
+  // the only two categories that still land in failureLines, so both must
+  // be present at once to discriminate this separator.
+  const { stderr } = captureConsoleAndStderr(() => {
+    printGuardReport(
+      {
+        passed: false,
+        verdict: 'new-pole',
+        offenders: [{ file: 'a.test.js', durationMs: 11000, budgetMs: 7000 }],
+        watchFiles: [],
+        staleRows: [],
+        unownedRows: [{ file: 'b.test.js', durationMs: 9000, budgetMs: 7000, kind: 'unowned-row', ticket: 'BL-1' }],
+        registeredPoles: [],
+      },
+      2
+    );
+  });
+  assert.match(stderr, /per-file budget\n1 unowned register row/);
 });
 
 // ── runGuardAgainstReport (end-to-end: real report + real register file) ──
