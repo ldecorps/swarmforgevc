@@ -17,6 +17,7 @@ const {
   writeAcceptanceContractFixture,
   DEFAULT_FEATURE_PATH: ACCEPTANCE_FEATURE_PATH
 } = require('../../../extension/test/helpers/acceptanceContractFixture');
+const { sendGitHandoffTwoCall } = require('./lib/sendGitHandoffTwoCall');
 
 const CANONICAL_CHAIN = ['coder', 'cleaner', 'architect', 'hardender', 'documenter', 'QA'];
 
@@ -138,7 +139,7 @@ function sendHandoff(ctx, { from, to, task, rejectionReason }) {
   } else {
     delete env.SWARMFORGE_REQUIRED_STAGES_ROUTING;
   }
-  const result = spawnSync('bb', [SWARM_HANDOFF, `draft-${seq}.txt`], { cwd: ctx.targetPath, encoding: 'utf8', env });
+  const result = sendGitHandoffTwoCall('bb', [SWARM_HANDOFF, `draft-${seq}.txt`], { cwd: ctx.targetPath, encoding: 'utf8', env });
   const out = (result.stdout || '') + (result.stderr || '');
   const match = out.match(/:(\/[^\n]*\.handoff)/);
   if (!match) {
