@@ -9,10 +9,11 @@ priority: 28
 direction: human-requested
 depends_on: []
 mutation_cost: medium
-decomposes_into: [BL-792, BL-1038, BL-1039]
+decomposes_into: [BL-792, BL-1038, BL-1039, BL-1598, BL-1599]
 
 remaining_slices:
-  - "Slice C — hold the line: whatever gate or ratchet is needed so the suite cannot silently walk back up. BL-378's per-file 7s budget and BL-445's suite ratchet both already exist — this slice is about why they did not stop a 25s-to-169s regression, not about inventing a third one. NOT YET MINTED, and deliberately so: what the gate should be depends on the operator's pending answer about lane composition and host budget (see the 2026-08-22 profile note below). Measured 2026-08-22: BL-378's guard has 19 live offenders and therefore fails every `npm test` through computeFinalExitCode — it is already a permanently-red gate, which is half of slice C's answer."
+  - "Slice C — MINTED 2026-09-16 as BL-1598 (pole register: the per-file gate refuses only a NEW pole, a stale row or an unowned row; npm test's recorded result tells test failures from budget verdicts) and BL-1599 (work ratchet: SUITE_WORK_BUDGET_MS 550000 on summed per-file work, 10 percent tolerance, lowered only; the verdict derives the expected wall and prints the distance to 13 s). The operator delegated the lane-budget decision to the specifier on 2026-09-16 (coordinator note 008676); the decision is in lane_budget_decision_2026_09_16 below."
+  - "Slice D — the poles, per file, once BL-1598's register owns them (measured 2026-09-16, 9 forks, load 10.8, extension/.vitest-report.json): bl968StepRegistryMaterializedTreeGuard 69.9 s; telegramFrontDeskBotCli.test.js 65.3 s; renderBriefingBurndownCli 36.6 s; briefingDigestLineCli 36.3 s; bl1277UnscopedStepCollisionGuard 23.6 s (its timeout red is BL-1600; the pole is this slice); renderBriefingDiagramsCli 14.6 s; epicReorderBridge 10.6 s; pilotAcceptanceGateCli 8.5 s; recordBounceCli 7.3 s. Together 273 s of 546 s. NOT YET MINTED: one ticket per file (or per shared cause - the two 65 to 70 s files first), each taking its register row over from this epic. With every pole under 7 s the derived wall at 9 forks is about 30 s; 13 s needs the summed work under about 110 s as well."
 
 slice_b_minted_2026_08_22:
   - "BL-1038 — seven tests take the LIVE repo as their subject (121.6s of 533.8s). The growth term: their cost rises with every commit, which is why four measured budget raises in four days all went stale."
@@ -146,6 +147,39 @@ notes: |
   fails is a suite whose failures carry no signal — a real regression and
   worker-termination noise are indistinguishable in that log. Slice A restores
   the signal, which is worth landing even if the wall-clock never moves.
+
+lane_budget_decision_2026_09_16: |
+  ## The delegated decision (specifier, 2026-09-16)
+
+  The operator delegated slice C's open question (host budget and lane
+  composition) to the specifier (coordinator note 008676, the only record
+  of the operator's words; amend here if it misstates them). Measured
+  first: `npm test` from `extension/` on the master checkout, 20 cores,
+  fork pool 9 (resolveVitestWorkerPool under a 1-minute load of 10.8), 622
+  files, wall 72.0 s, summed per-file work 546.1 s, 9 files over the 7 s
+  per-file budget (273 s of the 546 s), median file 0.06 s, p90 1.5 s, 3
+  failing files (two owned by BL-1593, bl1277 owned by BL-1600 this pass).
+  Full profile: backlog/evidence/BL-791-slice-c-lane-budget-decision-20260916.md.
+
+  1. Host budget: unchanged. The lane uses whatever fork pool
+     resolveVitestWorkerPool sizes from free cores and RAM; the gate's
+     numbers are fork-independent so the pool may change without moving
+     the line.
+  2. Lane composition: unchanged. npm test is the unit lane; no split, no
+     change-scoped runs - a gate on a subset holds no line.
+  3. The line is summed per-file WORK, not wall: 533.8 s on 2026-08-22
+     (1 fork, macOS, 460 files) against 546.1 s today (9 forks, WSL, 622
+     files) while wall went 689 s to 72 s. SUITE_WORK_BUDGET_MS 550000,
+     tolerance 10 percent, refused above, ratcheted down by the parcel
+     that lowers it, never raised (BL-1599).
+  4. The per-file gate regains its signal through a committed pole
+     register (BL-1598); the 13 s wall stays the epic's target, printed
+     on every run as a distance, reached by slice D's pole cuts.
+  5. Consequence stated plainly: at 9 forks the 69.9 s pole alone keeps
+     wall near 70 s; with every pole under 7 s the derived wall is about
+     30 s; 13 s additionally needs summed work under about 110 s, which
+     is a fifth of today's. The line holds what exists; it does not
+     promise the ceiling.
 
 profile_2026_08_22: |
   ## 2026-08-22 re-profile — why slice B became two tickets, and why slice C waits

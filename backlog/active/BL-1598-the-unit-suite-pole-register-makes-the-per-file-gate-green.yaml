@@ -1,0 +1,157 @@
+id: BL-1598
+title: "BL-791 slice C, part 1 - BL-378's per-file 7 s gate has been permanently red since 2026-08 (9 offenders on 2026-09-16, 19 on 2026-08-22), which is why it stopped nothing: every npm test records result fail and a new pole is indistinguishable from an old one; a committed pole register (file, owner ticket, first seen, measured) makes the gate refuse only a NEW offender or a STALE row, npm test's recorded result tells test failures apart from budget verdicts, and the nine poles measured today enter the register owned by the epic"
+milestone: M8
+type: defect
+severity: high
+# high: a gate that is red on every run is a broken safety signal (the
+# epic's own finding); the suite regressed 25 s -> 169 s -> 689 s under it
+# unseen. Operator-delegated 2026-09-16 (coordinator note 008676).
+status: todo
+epic: unit-suite-speed
+priority: 5
+direction: human-requested
+depends_on: []
+mutation_cost: medium
+# medium: TypeScript tools under Stryker (check-suite-file-budget.ts gains
+# the register read; the recorder lib gains fields) plus the JS recorder.
+slice_size_envelope: low
+required_stages: [coder, cleaner, architect, hardender, documenter, qa]
+
+acceptance: specs/features/BL-1598-the-unit-suite-pole-register-makes-the-per-file-gate-green.feature
+
+required_wiring:
+  - 'extension/scripts/recordTestDuration.js::suite-poles.tsv::npm test passes the committed register to the guard on every run - the live consumer (BL-1235)'
+  - 'specs/pipeline/steps/bl1598SuitePoleRegisterSteps.js::registerSteps::the handler lands in the same parcel as the feature (BL-233, BL-1371)'
+
+human_approval: approved
+approval_context: >
+  A new feature file is authored here, so it needs a tap. No choice is
+  posed and there are no ruling_options. The operator delegated the lane
+  budget decision to the specifier on 2026-09-16 (BL-791 slice C); the
+  decision is recorded on the epic and in
+  backlog/evidence/BL-791-slice-c-lane-budget-decision-20260916.md. FIRM:
+  PER_FILE_DURATION_BUDGET_MS stays 7000 and no test is deleted, skipped
+  or excluded; the register is the standing-red register's shape
+  (BL-1428): a row names an OPEN ticket, leaves in the land that brings
+  the file under budget, and a row for a file now under 80% of the budget
+  is refused as stale. FIRM: the nine files measured over budget on
+  2026-09-16 enter backlog/suite-poles.tsv owned by BL-791 with their
+  measured milliseconds; slice D tickets take rows over as they are
+  minted. FIRM: the recorded row in .test-durations.jsonl keeps result as
+  the TEST outcome and gains the budget verdict as its own fields, so the
+  trend can tell a failing test from a slow file.
+
+invariants:
+  - "The gate never waves a new pole through: a file over PER_FILE_DURATION_BUDGET_MS with no register row fails npm test's exit code exactly as BL-378 did, before and after this change."
+  - "No test is removed to satisfy the gate: the number of test files the recorder counts at the parcel commit is at least the number at its parent."
+
+description: |
+  ## What is wrong
+
+  BL-378's guard (`extension/src/tools/check-suite-file-budget.ts`, 7000 ms
+  per file, hard exit through `computeFinalExitCode`) has had live
+  offenders continuously since August: 19 on 2026-08-22 (BL-791's
+  profile), 9 on 2026-09-16 (specifier run, `npm test` from `extension/`,
+  20 cores, 9 forks, 1-minute load 10.8, wall 72.0 s, summed per-file work
+  546.1 s, 622 files, `.vitest-report.json`):
+
+  ```
+  69.9s bl968StepRegistryMaterializedTreeGuard.test.js
+  65.3s telegramFrontDeskBotCli.test.js
+  36.6s renderBriefingBurndownCli.test.js
+  36.3s briefingDigestLineCli.test.js
+  23.6s bl1277UnscopedStepCollisionGuard.test.js
+  14.6s renderBriefingDiagramsCli.test.js
+  10.6s epicReorderBridge.test.js
+   8.5s pilotAcceptanceGateCli.test.js
+   7.3s recordBounceCli.test.js
+  ```
+
+  Half the lane's work is in those nine files (273 s of 546 s; median
+  file 0.06 s, p90 1.5 s). Because the guard fails every run, every row of
+  `.test-durations.jsonl` since 2026-07-07 reads `result: fail`, a new
+  pole looks exactly like the old ones, and the 25 s -> 689 s regression
+  BL-791 opened on walked past a gate that was firing the whole time.
+  This is the half of slice C the epic already named: "a permanently-red
+  gate is half of slice C's answer".
+
+  ## What is wanted
+
+  - `backlog/suite-poles.tsv` (tab-separated: file, owner, first_seen,
+    measured_ms, note), committed, carrying the nine rows above owned by
+    BL-791 (scenario 03 pins the count).
+  - The per-file guard reads the register: a file over budget WITH a row
+    is reported, not refused; a file over budget WITHOUT a row refuses
+    (naming file and milliseconds, as today); a row whose file measured
+    under 80% of the budget refuses as stale so the row leaves in the
+    same land that cut the pole; a row naming no open ticket refuses as
+    unowned (scenario 01).
+  - `npm test`'s recorded row keeps `result` as the test outcome
+    (pass/fail of the tests themselves) and adds `pole_ms` (slowest
+    file), `work_ms` (summed per-file), `new_offenders` (count), and
+    `budget_verdict` (`ok` | `new-pole` | `stale-row` | `unowned-row`);
+    the exit code is the test exit code, else the guard's (scenario 02).
+  - The register CLI shape of BL-1428: the guard's verdict lines are
+    machine-readable, one per offender.
+
+  ## How (direction, not mandate)
+
+  - `check-suite-file-budget.ts`: `checkFileDurationBudget(durations,
+    budgetMs, register)` pure over injected rows; the register reader is a
+    sibling of `standing_red_register_cli.bb`'s TSV parse (5 tab columns,
+    `#` comments). Open-ticket ids are the basenames under
+    `backlog/paused` and `backlog/active` (the same set qa_hold_lib.bb
+    uses).
+  - `testDurationRecorderLib.js` `buildRecord` gains the four fields;
+    `recordTestDuration.js` passes `path.join(ROOT_DIR, '..', 'backlog',
+    'suite-poles.tsv')` to the guard - that literal is the wiring anchor.
+  - Scenarios drive the pure functions with injected durations and rows
+    in milliseconds (BL-1541); the real `npm test` is e2e.
+  - Documenter: `docs/how-to/BL-378-*` or a new how-to page names the
+    register and the drain rule; the suite-duration trend doc gains the
+    new fields; no diagram trigger.
+
+constraints: >
+  PER_FILE_DURATION_BUDGET_MS unchanged; no test deleted, skipped or
+  excluded; no vitest config change; the register rows carry the
+  measured numbers above, never a rounded-down value. The step handler
+  lands with the feature (BL-233). Evidence named BL-1598-*.
+
+out_of_scope: |
+  - Cutting any pole (BL-791 slice D, per file).
+  - The whole-suite work ratchet and the derived wall (BL-1599).
+  - The property lane (its own register and allowlist).
+
+qa_e2e_procedure: |
+  On the parcel commit, from `extension/`:
+  1. `npm test` -> exit code is the TEST exit code (the three owned unit
+     reds of 2026-09-16 may still fail it); the recorded row carries
+     `pole_ms`, `work_ms`, `new_offenders: 0`, `budget_verdict: ok`.
+  2. Append a synthetic row for a file that is under budget to a scratch
+     copy of the register and run the guard against the real report ->
+     `stale-row` refusal naming it; remove a real row -> `new-pole`
+     refusal naming the file.
+  3. `backlog/suite-poles.tsv` has 9 rows, every owner in
+     backlog/paused or backlog/active.
+  4. Acceptance resolving all three scenarios.
+
+source: |
+  Coordinator note to the specifier, priority 00, 2026-09-16T13:13Z
+  (inbound 00_20260916T131330Z_008676): "BL-791 slice C: operator
+  authorizes you to decide lane budget, mint gate". BL-791
+  remaining_slices (slice C, unminted since 2026-08-22). Specifier
+  measurement and decision:
+  backlog/evidence/BL-791-slice-c-lane-budget-decision-20260916.md.
+
+notes: |
+  Minted 2026-09-16 by the specifier under the operator's delegation
+  relayed by the coordinator; the coordinator's wording is the only
+  record of the operator's words (no Telegram text found), so the
+  decision is stated in full on the epic for the operator to amend.
+  INVEST: Independent (guard, recorder and register shape exist),
+  Negotiable (reader placement is direction), Valuable (the per-file gate
+  regains its signal after a month red), Estimable (one pure function
+  extension, one TSV, four record fields, one sitting), Small (three
+  scenarios, two invariants), Testable (pure injections in ms).
+
+assigned_to: coder
