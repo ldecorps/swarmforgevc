@@ -172,3 +172,5 @@ notes: |
   helper-use per file in the lane; green runs and the floor audit in
   QA's e2e). Not type defect: no file here is red on main today; the
   two that are (bl1295, bl1358) are owned by BL-1580/BL-1581.
+
+assigned_to: coder
