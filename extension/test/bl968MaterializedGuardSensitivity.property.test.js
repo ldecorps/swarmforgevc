@@ -51,6 +51,7 @@ const { materializeCurrentPipeline, registryLoadVerdict, plantOffender } = requi
 // BL-1062: the floor assertion lives in one place, so the acceptance drives
 // the SAME function this test does rather than a restatement of it.
 const { assertReachFloor } = require('./helpers/reachFloors');
+const { propertyLaneTimeoutMs } = require('./helpers/propertyLaneContentionBudget');
 
 // BL-1062: these floors used to be asserted over 24 UNIFORM draws of
 // (class x depth), which a correct implementation cannot guarantee - per class,
@@ -240,5 +241,5 @@ test(
   // property guard's own 180s RERUN-ALONE ceiling (BL-1407): a rerun-alone
   // is uncontended and this file clears that in 50-55s regardless of its
   // own internal timeout here.
-  240000
+  propertyLaneTimeoutMs(240000)
 );

@@ -100,6 +100,74 @@ test('BL-1588/BL-654 invariant: one fork on a quiet host keeps the strict base; 
   );
 });
 
+// BL-1606's declared invariant 1 (property authorship rests with the
+// coder, first pass - BL-654): "The property lane's per-test budget never
+// resolves below the base the test declares, at any published fork count
+// and any load: a lane-level ceiling caps growth, never the base." The
+// test above only ever drove BASE_MS=20000 (fixed) - a base at or above
+// the shared UNIT_LANE_BUDGET_CEILING_MS (120000) is exactly the state
+// that test never covered, and exactly the state BL-1606 found broken
+// (240000's base, once factor >= 1, clamped to the FIXED 120000 ceiling
+// propertyLaneTimeoutMs passed through unmodified - half the declared
+// budget). This generalizes the "never below base" half of the invariant
+// across the whole base range BL-1596's census actually uses.
+//
+// Non-vacuity, proven by hand: reverted propertyLaneTimeoutMs to call
+// resolveUnitLaneTimeout without a ceilingMs override (the pre-fix shape)
+// - this property failed immediately for a base at or above 120000 with
+// forks/load producing factor >= 1 (e.g. base=240000, forks=9). Restored
+// and reconfirmed green.
+test('BL-1606 invariant 1: the budget never resolves below the base, for every base 20000-300000 and every fork count 1-64', () => {
+  fc.assert(
+    fc.property(
+      fc.integer({ min: 20000, max: 300000 }),
+      fc.integer({ min: 1, max: 64 }),
+      fc.float({ min: 0, max: 100, noNaN: true }),
+      (base, forks, load) => {
+        const ms = propertyLaneTimeoutMs(base, { forksFn: () => forks, loadavg1mFn: () => load });
+        assert.ok(ms >= base, `base=${base}, forks=${forks}, load=${load} resolved below base: ${ms}`);
+      }
+    ),
+    { numRuns: 200 },
+  );
+});
+
+// BL-1606 hardener pass (2026-09-16): the property above proves "never
+// BELOW base" but a `>=` check cannot tell a genuinely GROWING budget from
+// one that silently caps AT the base under load - a mutant shrinking
+// PROPERTY_LANE_MAX_GROWTH from 3 to 1 (ceilingMs collapsing to exactly
+// baseMs for any base at or above the shared 120000 ceiling) survived
+// every existing assertion here, because base*1 === base satisfies `>=`
+// with equality. This pins the STRICT half of invariant 1 for a base AT
+// OR ABOVE the shared ceiling specifically (bl968's own real 240000) -
+// the shape 20000-base tests above never reach, since 20000*GROWTH never
+// approaches the 120000 ceiling regardless of GROWTH's value.
+test('BL-1606 hardener: a base at or above the shared ceiling STRICTLY grows under load, more forks growing it further, never merely equalling its own base', () => {
+  const BASE = 240000;
+  // Stays clear of the clamp point (forkFactor 3 at forks=12, since
+  // QUIET_LOAD_CEILING=4: forks/4 reaches PROPERTY_LANE_MAX_GROWTH there,
+  // and effectiveMs pins to the ceiling for every fork count at or above
+  // it - a pair straddling or beyond that point could tie at the SAME
+  // clamped value for a reason unrelated to the defect this guards,
+  // exactly BASE_MS=20000's own [5,24] band picks its own clamp-free range.
+  fc.assert(
+    fc.property(
+      fc.integer({ min: 5, max: 11 }),
+      fc.integer({ min: 5, max: 11 }),
+      (a, b) => {
+        fc.pre(a !== b);
+        const lo = Math.min(a, b);
+        const hi = Math.max(a, b);
+        const loMs = propertyLaneTimeoutMs(BASE, { forksFn: () => lo, loadavg1mFn: () => 1.8 });
+        const hiMs = propertyLaneTimeoutMs(BASE, { forksFn: () => hi, loadavg1mFn: () => 1.8 });
+        assert.ok(loMs > BASE, `${lo} forks past the quiet ceiling did not raise a ${BASE} base above itself: ${loMs}`);
+        assert.ok(hiMs > loMs, `${hi} forks (${hiMs}ms) did not budget more than ${lo} forks (${loMs}ms) for a ${BASE} base`);
+      },
+    ),
+    { numRuns: 50 },
+  );
+});
+
 // BL-1588 architect bounce (2026-09-16): the property above injects
 // forksFn directly, so it never observes what the REAL
 // vitest.properties.config.mjs -> env-var -> forksFromEnv() wiring

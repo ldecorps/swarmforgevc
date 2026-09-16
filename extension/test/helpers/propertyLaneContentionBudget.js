@@ -37,9 +37,36 @@
 // actually distinguishes "many files, lane concurrency in play" from "one
 // file, alone" is how many explicit file arguments the invoking command
 // line named - see resolveLaneForks below - never the pool's own sizing.
-const { resolveUnitLaneTimeout, sampleContentionFactor, usableFactor } = require('../../../specs/pipeline/steps/lib/contentionBudget');
+const {
+  resolveUnitLaneTimeout,
+  sampleContentionFactor,
+  usableFactor,
+  UNIT_LANE_BUDGET_CEILING_MS,
+} = require('../../../specs/pipeline/steps/lib/contentionBudget');
 
 const QUIET_LOAD_CEILING = 4;
+
+// BL-1606: resolveUnitLaneTimeout's own effectiveBudgetMs is
+// min(ceilingMs, base * max(1, factor)) - passing NO ceilingMs (as this
+// module did before) defaults to the unit lane's shared
+// UNIT_LANE_BUDGET_CEILING_MS (120000), a FIXED ceiling under some
+// property bases (BL-1450 set bl968MaterializedGuardSensitivity's base to
+// 240000 after 120000 was hit twice under real pooled load). A fixed
+// ceiling below a file's own base means any factor >= 1 clamps the result
+// to the ceiling - HALF the declared budget, under the exact load the
+// budget-scaling exists to survive, and never below the base only by
+// accident (whenever the ceiling itself happens to sit above it).
+//
+// The fix: the ceiling this lane supplies is never fixed - it grows with
+// the base itself, `max(UNIT_LANE_BUDGET_CEILING_MS, baseMs *
+// PROPERTY_LANE_MAX_GROWTH)`, so a base under the shared ceiling keeps
+// today's exact arithmetic (the ceiling is unchanged, 120000) and a base
+// at or above it gains the same multiplicative headroom every other base
+// already has. PROPERTY_LANE_MAX_GROWTH is the worst contention factor
+// this host has measured (2.7 at load 10.8, BL-1579's own evidence; 12
+// forks resolves exactly 3.0) - never a copy of effectiveBudgetMs's math,
+// only its existing ceilingMs injection point.
+const PROPERTY_LANE_MAX_GROWTH = 3;
 
 // vitest.properties.config.mjs sets this to its own resolved WORKER_POOL_SIZE
 // before any worker fork spawns - the lane's real concurrency ceiling, known
@@ -95,13 +122,15 @@ function propertyLaneContentionFactor(opts = {}) {
 }
 
 function propertyLaneTimeoutMs(baseMs, opts = {}) {
-  return resolveUnitLaneTimeout(baseMs, { factor: propertyLaneContentionFactor(opts) }).effectiveMs;
+  const ceilingMs = Math.max(UNIT_LANE_BUDGET_CEILING_MS, Number(baseMs) * PROPERTY_LANE_MAX_GROWTH);
+  return resolveUnitLaneTimeout(baseMs, { factor: propertyLaneContentionFactor(opts), ceilingMs }).effectiveMs;
 }
 
 module.exports = {
   propertyLaneTimeoutMs,
   propertyLaneContentionFactor,
   QUIET_LOAD_CEILING,
+  PROPERTY_LANE_MAX_GROWTH,
   FORKS_ENV_KEY,
   explicitFileArgCount,
   resolveLaneForks,
