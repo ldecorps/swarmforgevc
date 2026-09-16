@@ -113,8 +113,12 @@
          true
          (<= (count (chase-sweep-lib/dispatch-gap-note-message "BL-217")) chase-sweep-lib/dispatch-gap-note-max-length))
 
+(assert= "BL-1573: the auto-route note message is itself a dispatch trail (verb-first Work form), so the next sweep does not re-detect the gap"
+         "BL-217"
+         (chase-sweep-lib/dispatch-trail-ticket-id {:task nil :message (chase-sweep-lib/dispatch-gap-note-message "BL-217")}))
+
 (assert= "dispatch-gap-draft-lines builds a valid note draft addressed to the assignee"
-         ["type: note" "to: coder" "priority: 00" "message: BL-217 is active with no dispatch on record - auto-routed by the sweep."]
+         ["type: note" "to: coder" "priority: 00" "message: Work BL-217: read file in backlog/active - auto-routed by the sweep, no HEAD"]
          (chase-sweep-lib/dispatch-gap-draft-lines {:id "BL-217" :assigned-to "coder"}))
 
 ;; ── collect-dispatched-ticket-ids / read-active-items (fixture-based fs I/O,
