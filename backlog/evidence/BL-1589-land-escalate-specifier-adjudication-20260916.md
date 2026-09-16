@@ -88,3 +88,85 @@ entangles every sibling whenever the removing parcel bounces. A land step
 that strips the LANDING ticket's own rows itself, and refuses to carry any
 other ticket's row removal, would retire this class. One instance so far;
 mint the process ticket on recurrence.
+
+## Follow-up ruling, 2026-09-16 11:45Z: the restore cannot content-clear by construction; BL-1589 lands hand-built, the defect gets an owner (BL-1594)
+
+Inbound: QA note 00 11:28Z (00_20260916T112854Z_002788): "BL-1589 ruling
+recipe still refuses (vacuous!=landed), see e1f0f4eadb". QA executed both
+decisions exactly (allowlist path now identical to origin/main; register
+path at tip 01bf7bc523 differs by one deletion blaming to 27db76cdf7) and
+`land_step_cli.bb` still refused on `backlog/standing-reds.tsv` naming
+BL-1588. QA's trace against the live lib is correct and I read the code
+the same way:
+
+- `sibling-path-verdict` (land_step_lib.bb:344) returns `:vacuous` when
+  the sibling's surviving contribution at the tip is empty - "the sibling
+  has nothing left to land there, so the path is silent rather than an
+  obstacle (its content at the tip owes the sibling nothing)". A pure
+  removal that has been fully restored can ONLY ever score `:vacuous`:
+  `:landed` requires a non-empty surviving contribution matching
+  origin/main.
+- `path-content-blocked-ids` (land_step_lib.bb:930) clears an id only on
+  `:landed`; its docstring says `:vacuous` "still blocks it - UNCHANGED
+  from before this ticket". So BL-1481's stated rule (how-to: "no changed
+  line attributes to the blocking sibling - the path is content-clear")
+  and its implementation diverge for exactly the fully-reverted case; the
+  feature's four scenarios never construct it. This is a defect in
+  BL-1481's narrowing, not an unreadable-answer fail-closed: empty
+  surviving sets are a positive fact.
+- `abandoned_commits` is this ticket's own-commit override for the pre-QA
+  ancestry gate, not a route for a sibling's commit. Waiting on BL-1588's
+  rework (bounced, full chain ahead) would hold a correct one-line
+  standing-red fix and keep the register at 12 rows over BL-1429's
+  throttle for days.
+
+**Decision (QA option 2, ruled exception):** BL-1589 lands by the
+hand-built tip-pure route (BL-1241 recipe, BL-1470 precedent), overriding
+this one refusal, with the safeguards below. Nothing of BL-1588's rides:
+the register path at QA's tip is origin/main's content minus BL-1589's own
+row, and BL-1588's code paths are its own, never in BL-1589's set.
+
+1. Sync first: `git fetch origin` and build ON `origin/main` as it stands
+   at that moment (BL-1472/BL-1473's two-tree hazard: a replay built on an
+   older base silently reverts every path main changed since the fork).
+2. Deliver exactly BL-1589's own paths at their content at QA tip
+   e1f0f4eadb (the union of every `BL-1589:`-tagged commit in
+   origin/main..tip), eleven paths:
+   `backlog/evidence/BL-1589-coder-20260916.md`,
+   `backlog/evidence/BL-1589-cleaner-20260916.md`,
+   `backlog/evidence/BL-1589-architect-20260916.md`,
+   `backlog/evidence/BL-1589-hardender-20260916.md`,
+   `backlog/evidence/BL-1589-documenter-20260916.md`,
+   `backlog/evidence/BL-1589-QA-20260916.md`,
+   `backlog/evidence/BL-1589-land-escalate-20260916.md`,
+   `backlog/evidence/BL-1589-land-escalate-followup-20260916.md`,
+   `backlog/standing-reds.tsv` (origin/main's content minus the bl1030
+   row - re-derive it against the synced origin/main, never copy the tip's
+   blob if origin/main moved),
+   `extension/test/bl1030StopFlagTokenBoundary.property.test.js`,
+   `specs/pipeline/steps/bl1589DrawKindConstructedSteps.js`.
+   QA's own evidence commits (ed2207b11b, e1f0f4eadb, 692fa2a1b2,
+   86df08422c) are in that set on purpose: a hand-land that drops them
+   orphans them on the QA branch and trips BL-1546's closed-owner refusal
+   on every later land (ruled 2026-09-12, 4aacff9aad).
+3. Verify before pushing: `git diff origin/main..<hand-built> --stat`
+   lists those eleven paths and nothing else; the register diff is one
+   deletion; `bl1030StopFlagTokenBoundary.property.test.js` runs green
+   alone; `check_feature_handler_registration.sh` passes on the built tree.
+4. Land it (push origin main) and do the BL-1405 bookkeeping in the same
+   pass: `bb swarmforge/scripts/record_land_approval.bb . <replay-10-hex>
+   692fa2a1b2 BL-1589` and read `VERDICT <replay> approved`; record
+   `abandoned_commits: [692fa2a1b2, 01bf7bc523, e1f0f4eadb]` on the ticket
+   (the cited approved source and the two later QA tips, all off the
+   landed lineage by SHA); then the ordinary post-land steps (merge-up
+   broadcast, coordinator note). `standing_red_register_cli.bb .` must then
+   show 11 rows, none for bl1030, `"unowned":[]`.
+5. BL-1588: unchanged from decision 3 above.
+
+**Owner for the defect:** BL-1594 (this commit, `backlog/paused/`,
+`type: defect`, `severity: high`): `path-content-blocked-ids` treats
+`:vacuous` as content-clear (the tip owes the sibling nothing on that
+path) while `landed-siblings` keeps dropping vacuous paths and never
+scores silence as landing. Until it lands, every land entangled with a
+bounced sibling's pure removal on a shared path takes this hand-built
+route; append instances here, no new note.
