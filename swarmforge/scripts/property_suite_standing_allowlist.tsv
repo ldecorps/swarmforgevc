@@ -1,2 +1,4 @@
 file	disposition	rationale
 test/telegramFrontDeskBotCli.property.test.js	allowlist	owner BL-1595 (backlog/standing-reds.tsv): BL-1203 invariant 2 "Test timed out in 60000ms." under a full lane, bare 60000 per-test argument no lane-level ceiling reaches; row leaves with BL-1595 land
+test/bl1304DryRunSpawnsNothing.property.test.js	allowlist	owner BL-1606 (backlog/standing-reds.tsv): invariant 1 "Test timed out in 20000ms." under a full lane, no per-test budget on three bb-spawning tests; row leaves with BL-1606 land
+test/bl968MaterializedGuardSensitivity.property.test.js	allowlist	owner BL-1606 (backlog/standing-reds.tsv): invariant 2 "Test timed out in 240000ms." under a full lane, bare 240000 per-test argument above the helper 120000 ceiling; row leaves with BL-1606 land
