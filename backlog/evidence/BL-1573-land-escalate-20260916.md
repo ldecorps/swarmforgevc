@@ -49,3 +49,10 @@ already on `origin/main`), same ambiguous-attribution block on
 information — the same commit's ambiguous subject blocks every parcel
 downstream of it on this branch. BL-1511 waits on the same specifier
 ruling; no new note sent (Article 4.4 class rule).
+
+## Instance 3: BL-1512, same class, same commit
+
+`land_step_cli.bb BL-1512-a-diversified-fallback-pack-survives-two-exhausted-plans
+421bfc0664` refused identically on the same ambiguous
+`84b1fa52e2` attribution; `ENTANGLED_SIBLING BL-1511,BL-1573,BL-1588,BL-1593`.
+No new information. Waits on the same specifier ruling.
