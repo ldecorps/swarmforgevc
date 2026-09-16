@@ -72,10 +72,24 @@ specifier minted **BL-1593** (owning a `backlog/standing-reds.tsv` row for
 response to the coder's independent same-day report of the identical
 underlying defect on the BL-1588 parcel. BL-1593's fix (migrate line 29's
 `fs.mkdtempSync` call to the shared `mkTmpDir` helper) will also turn
-`extension/test/tmpDirMigrationGuard.test.js` green — same detector,
-same call site — so that unit-lane red is treated as covered by BL-1593
-even though it has no register row of its own (identical failure
-signature).
+`extension/test/tmpDirMigrationGuard.test.js` green too — same detector,
+same call site. **However `qa_hold_cli.bb status` matches a hold's red by
+exact file path against the register (`red-owner` in `qa_hold_lib.bb`),
+never by shared root cause**, so this unit-lane file mechanically stays
+`owner=none` until it has its own register row, regardless of BL-1593's
+eventual fix. Current status (10:52Z):
+
+```
+HOLD ...attachment ed1f739525 red=extension/test/liveRepoDerivationGuard.test.js owner=none
+HOLD ...attachment ed1f739525 red=extension/test/tmpDirMigrationGuard.test.js owner=none
+HOLD ...attachment ed1f739525 red=extension/test/bl1280MkdtempMigrationInvariants.property.test.js owner=BL-1593
+```
+
+2 of 3 reds still `owner=none`: `liveRepoDerivationGuard.test.js` (see
+below, genuinely out of BL-1593's scope) AND `tmpDirMigrationGuard.test.js`
+(same defect as the owned property-lane row, but no row of its own — a
+one-line register addition would release it without waiting for BL-1593
+to land).
 
 `extension/test/liveRepoDerivationGuard.test.js` is a SEPARATE defect:
 line 55 of `nightClosingCeremonyRotateDocumenterFallback.test.js` does
