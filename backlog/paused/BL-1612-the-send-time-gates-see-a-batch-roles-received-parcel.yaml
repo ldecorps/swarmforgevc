@@ -31,7 +31,7 @@ required_wiring:
   - 'swarmforge/scripts/parcel_rollback_guard_lib.bb::handoff-files-with-batches::received-parcel-commit-for-task reads through the batch-aware reader'
   - 'specs/pipeline/steps/bl1612SendGatesSeeBatchReceivedParcelSteps.js::registerSteps::the handler lands in the same parcel as the feature (BL-233, BL-1371)'
 
-human_approval: pending
+human_approval: approved
 approval_context: >
   A new feature file is authored here, so it needs a tap. No choice is
   posed and there are no ruling_options. FIRM: only the two readers'
