@@ -939,18 +939,25 @@
    tagged line changes (merges excluded - `sibling-own-line-changes`'s own
    posture, unchanged): `:landed` clears it, the shape scenario 01 names
    (every surviving line the id's own commits contributed is already on
-   origin/main under whatever sha put it there). `:unlanded` or `:vacuous`
-   still blocks it - UNCHANGED from before this ticket. A merge that
-   resolved a real conflict between two blocking co-owners (BL-1374/05)
-   leaves each co-owner `:unlanded` there (neither's own line survives to
-   the tip, and neither the surviving addition nor removal is on
-   origin/main either) - this narrowing changes nothing for it. The only
-   new outcome is a blocker whose own lines truly already match
-   origin/main.
+   origin/main under whatever sha put it there). BL-1594: `:vacuous` also
+   clears it - the id's own contribution to this path is entirely reverted
+   at the tip (surviving-added and surviving-removed both empty), so the
+   path owes it nothing and content it never contributed cannot block it;
+   `sibling-path-verdict`'s own docstring already calls this case silent,
+   not an obstacle. `:unlanded` still blocks it - UNCHANGED from before
+   this ticket: a partly-reverted removal (one of the id's removed lines
+   still absent) or a real unresolved conflict between two blocking
+   co-owners (BL-1374/05) leaves it owing content the tip does not have.
 
    Returns the subset of `candidate-ids` still blocking. #{} is a real,
-   positive answer: every one of them is `:landed` on this path - content-
-   clear, invariant 2's own shape.
+   positive answer: every one of them is `:landed` or `:vacuous` on this
+   path - content-clear, invariant 2's own shape. The returned set carries
+   `{:verdicts {id verdict}}` metadata (every checked id, `:landed`,
+   `:unlanded` or `:vacuous` - never present for an id whose own changes
+   could not be read) so a caller that wants to report WHICH of the two
+   cleared an id (BL-1594's own CLI line) can look it up without a second
+   walk; a caller that only cares whether an id blocks reads the set
+   exactly as before, metadata is invisible to `contains?`/`seq`/`empty?`.
 
    nil when `origin-main`'s or the tip's blob could not be read, or any
    candidate's own line changes could not be read - the caller fails
@@ -973,16 +980,18 @@
        nil
        (let [candidates (delay (ancestry-commits root origin-main commit))
              lines-fn (or lines-fn #(when @candidates (sibling-own-line-changes root @candidates %)))]
-         (loop [ids (sort candidate-ids) blocked #{}]
+         (loop [ids (sort candidate-ids) blocked #{} verdicts {}]
            (if (empty? ids)
-             blocked
+             (with-meta blocked {:verdicts verdicts})
              (let [id (first ids)
                    changes (lines-fn id)]
                (if (nil? changes)
                  nil
                  (let [verdict (sibling-path-verdict {:changes (get changes path {})
                                                        :main-lines main-lines :tip-lines tip-lines})]
-                   (recur (rest ids) (cond-> blocked (not= :landed verdict) (conj id)))))))))))))
+                   (recur (rest ids)
+                          (cond-> blocked (not (contains? #{:landed :vacuous} verdict)) (conj id))
+                          (assoc verdicts id verdict))))))))))))
 
 (defn- full-delivered-paths
   "The two-tree diff between origin-main and commit - literally 'what
@@ -1433,9 +1442,17 @@
                                   "per BL-1481)")}
 
                    :else
+                   ;; BL-1594: each cleared id's own verdict (:landed or
+                   ;; :vacuous) rides along via path-content-blocked-ids'
+                   ;; own :verdicts metadata - never a second content check
+                   ;; for the sole purpose of labelling the CLI's report line.
                    (recur (rest remaining) (conj acc path) excluded
                           (into passengers (remove blocker-ids (filter unlanded-siblings (:owners attribution))))
-                          (into content-clear (map (fn [id] {:path path :sibling id}) (sort blocker-ids))))))
+                          (into content-clear
+                                (map (fn [id]
+                                       {:path path :sibling id
+                                        :verdict (get (:verdicts (meta content-blocked)) id)})
+                                     (sort blocker-ids))))))
 
                ;; BL-1544. A path whose attribution is AMBIGUOUS (some
                ;; touching commit's subject names more than one ticket id

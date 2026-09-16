@@ -2464,11 +2464,11 @@ RESOLVED BY THIS TICKET
                    (contains? (set paths) "shared.txt"))
       (assert= "BL-1481/01: and it is not a refusal" nil warning)
       (assert= "BL-1481/01: the report names the sibling as content-clear for that path"
-               [{:path "shared.txt" :sibling "BL-9002"}] content-clear)
+               [{:path "shared.txt" :sibling "BL-9002" :verdict :landed}] content-clear)
       (let [plan (land-step-lib/land-plan {:root root :commit commit :task-ticket-id "BL-9001"})]
         (assert= "BL-1481/01: land-plan still replays" :replay (:action plan))
         (assert= "BL-1481/01: and threads the content-clear report through"
-                 [{:path "shared.txt" :sibling "BL-9002"}] (:content-clear plan))))))
+                 [{:path "shared.txt" :sibling "BL-9002" :verdict :landed}] (:content-clear plan))))))
 
 ;; Scenario 02: a line the bounced sibling added is in the tip but absent
 ;; from origin/main - still refuses.
@@ -2591,6 +2591,106 @@ RESOLVED BY THIS TICKET
                         (str/includes? (str warning) "BL-9003"))
           (assert= "BL-1481/05: a refused path's own-paths call carries no content-clear key (the refusal map short-circuits before that accumulator is ever threaded back)"
                    nil content-clear))))))
+
+;; ── BL-1594: a fully reverted sibling edit on a shared path is
+;;    content-clear ─────────────────────────────────────────────────────
+;; Mirrors BL-1589's real incident (2026-09-16): a bounced sibling's ONLY
+;; change on a shared path was removing lines the tip then restores in
+;; full - :vacuous, not :unlanded, so the path owes the sibling nothing
+;; and the land no longer needs a hand-built exit.
+
+;; Scenario 01a ("every one restored"): the plan is a replay that includes
+;; the shared path and names the sibling content-clear BY REVERSION.
+(with-fixture [root]
+  (write-ticket! root "active" "BL-9002" "id: BL-9002\nhuman_approval: approved\n")
+  (commit! root "shared.txt" "anchor\nrow1\nrow2\nrow3\n" "seed the shared file")
+  (mark-origin-main-here! root)
+  (commit! root "shared.txt" "anchor\n" "BL-9002: sibling removes every row")
+  (let [sibling-commit (:out (sh! root "git" "rev-parse" "HEAD"))]
+    (commit! root "other.txt" "never landed\n" "BL-9002: touches an unrelated path that never lands")
+    (commit! root "shared.txt" "anchor\nrow1\nrow2\nrow3\nlander line\n"
+             "BL-9001: the lander restores every row and adds its own line")
+    (write-bounce! root "BL-9002" sibling-commit "2026-09-16T00:00:00.000Z")
+    (let [commit (:out (sh! root "git" "rev-parse" "HEAD"))
+          origin-main (:out (sh! root "git" "rev-parse" "refs/remotes/origin/main"))
+          pure-result (land-step-lib/path-content-blocked-ids
+                       root origin-main commit "shared.txt" #{"BL-9002"})]
+      (assert= "BL-1594/01a (pure): a fully reverted removal clears, not blocks"
+               #{} pure-result)
+      (assert= "BL-1594/01a (pure): cleared as :vacuous, not :landed"
+               {"BL-9002" :vacuous} (:verdicts (meta pure-result)))
+      (let [{:keys [paths warning content-clear]} (land-step-lib/own-paths root commit "BL-9001" #{"BL-9002"})]
+        (assert-true "BL-1594/01a: the sibling's fully-reverted removal clears the shared path"
+                     (contains? (set paths) "shared.txt"))
+        (assert= "BL-1594/01a: not a refusal" nil warning)
+        (assert= "BL-1594/01a: the report names the sibling content-clear BY REVERSION"
+                 [{:path "shared.txt" :sibling "BL-9002" :verdict :vacuous}] content-clear)
+        (let [plan (land-step-lib/land-plan {:root root :commit commit :task-ticket-id "BL-9001"})]
+          (assert= "BL-1594/01a: land-plan replays" :replay (:action plan))
+          (assert= "BL-1594/01a: and threads the reverted verdict through"
+                   [{:path "shared.txt" :sibling "BL-9002" :verdict :vacuous}] (:content-clear plan)))))))
+
+;; Scenario 01b ("all but one restored"): a partly restored removal still
+;; owes the tip a line origin/main has - still refuses, the BL-1481/03
+;; refusal text unchanged.
+(with-fixture [root]
+  (write-ticket! root "active" "BL-9002" "id: BL-9002\nhuman_approval: approved\n")
+  (commit! root "shared.txt" "anchor\nrow1\nrow2\nrow3\n" "seed the shared file")
+  (mark-origin-main-here! root)
+  (commit! root "shared.txt" "anchor\n" "BL-9002: sibling removes every row")
+  (let [sibling-commit (:out (sh! root "git" "rev-parse" "HEAD"))]
+    (commit! root "shared.txt" "anchor\nrow1\nrow2\nlander line\n"
+             "BL-9001: the lander restores only two of the three rows")
+    (write-bounce! root "BL-9002" sibling-commit "2026-09-16T00:00:00.000Z")
+    (let [commit (:out (sh! root "git" "rev-parse" "HEAD"))
+          {:keys [paths warning]} (land-step-lib/own-paths root commit "BL-9001" #{"BL-9002"})]
+      (assert= "BL-1594/01b: a still-absent row still refuses" nil paths)
+      (assert-includes "BL-1594/01b: names the shared path" warning "shared.txt")
+      (assert-includes "BL-1594/01b: names the sibling" warning "BL-9002"))))
+
+;; Scenario 02 (BL-1594): the content check's verdict table, pure
+;; injection - landed and vacuous both clear, unlanded still blocks, an
+;; unreadable per-id read still fails the WHOLE check closed (BL-1481
+;; invariant 3, unchanged).
+(with-fixture [root]
+  (commit! root "shared.txt" "base\n" "seed")
+  (mark-origin-main-here! root)
+  (commit! root "shared.txt" "base\nextra\n" "BL-9001: the lander's own line")
+  (let [commit (:out (sh! root "git" "rev-parse" "HEAD"))
+        origin-main (:out (sh! root "git" "rev-parse" "refs/remotes/origin/main"))
+        lines-fn {"BL-LANDED" {"shared.txt" {:added #{"base"} :removed #{}}}
+                  "BL-VACUOUS" {"shared.txt" {:added #{"reverted-line"} :removed #{}}}
+                  "BL-UNLANDED" {"shared.txt" {:added #{"extra"} :removed #{}}}}
+        result (land-step-lib/path-content-blocked-ids
+                root origin-main commit "shared.txt"
+                #{"BL-LANDED" "BL-VACUOUS" "BL-UNLANDED"}
+                lines-fn)]
+    (assert= "BL-1594/02: landed and vacuous both clear, only unlanded blocks"
+             #{"BL-UNLANDED"} result)
+    (assert= "BL-1594/02: the cleared/blocking verdicts ride along as metadata"
+             {"BL-LANDED" :landed "BL-VACUOUS" :vacuous "BL-UNLANDED" :unlanded}
+             (:verdicts (meta result)))
+    (let [unreadable (land-step-lib/path-content-blocked-ids
+                      root origin-main commit "shared.txt" #{"BL-UNREADABLE"}
+                      (fn [_] nil))]
+      (assert= "BL-1594/02: an unreadable per-id read fails the whole check closed"
+               nil unreadable))))
+
+;; Scenario 03 (BL-1594): a vacuous path is still never evidence that a
+;; sibling has landed - landed-siblings drops it before scoring and a
+;; sibling whose ONLY attributed path is vacuous reports unlanded, exactly
+;; as before this ticket (BL-1354, unchanged).
+(with-fixture [root]
+  (commit! root "shared.txt" "base\n" "seed")
+  (mark-origin-main-here! root)
+  (commit! root "shared.txt" "base\nsibling line\n" "BL-9002: sibling adds its line")
+  (commit! root "shared.txt" "base\n" "BL-9002: sibling removes its own line again")
+  (commit! root "own.txt" "own line\n" "BL-9001: own work")
+  (let [commit (:out (sh! root "git" "rev-parse" "HEAD"))
+        om (land-step-lib/origin-main-sha root)
+        cands (str/split-lines (:out (sh! root "git" "rev-list" (str om ".." commit))))]
+    (assert= "BL-1594/03: the sibling's own edit nets out vacuous at the tip - still unlanded"
+             #{} (land-step-lib/landed-siblings root commit om cands #{"BL-9002"}))))
 
 ;; ── BL-1544: a subject that names more than one ticket id and leads with
 ;; none is AMBIGUOUS - never silently excluded ────────────────────────────
