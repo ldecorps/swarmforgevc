@@ -1067,11 +1067,18 @@
 (def dispatch-gap-note-max-length 80)
 
 (defn dispatch-gap-note-message
-  "Legacy soft-note text (kept for callers/tests that still assert the phrase).
-   Production auto-route now emits a git_handoff via dispatch-gap-draft-lines
-   when a HEAD commit is supplied."
+  "BL-1573: leads with the router's own verb-first 'Work' marker (matching
+   spec-work-ticket-id-pattern), the same fix BL-1223 applied to the
+   sibling unassigned-active-note-message - so dispatch-trail-ticket-id
+   counts this fallback itself as a trail and the next sweep does not
+   re-detect the gap. Fires only when auto-route!'s HEAD lookup fails
+   (git rev-parse in the master checkout); production auto-route otherwise
+   emits a git_handoff via dispatch-gap-draft-lines."
   [item-id]
-  (str item-id " is active with no dispatch on record - auto-routed by the sweep."))
+  (let [msg (str "Work " item-id ": read file in backlog/active - auto-routed by the sweep, no HEAD")]
+    (if (<= (count msg) dispatch-gap-note-max-length)
+      msg
+      (subs msg 0 dispatch-gap-note-max-length))))
 
 (defn dispatch-gap-draft-lines
   "The swarm_handoff.sh draft for one auto-route — a real git_handoff so the
