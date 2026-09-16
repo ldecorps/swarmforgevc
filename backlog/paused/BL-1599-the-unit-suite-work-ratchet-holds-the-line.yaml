@@ -1,0 +1,137 @@
+id: BL-1599
+title: "BL-791 slice C, part 2 - the whole-suite gate holds a number that jitters with host load (10 s wall, surfaced only, over budget since July), so it can neither refuse nor be believed; the lane budget the operator delegated is decided as summed per-file WORK, fork-independent: a committed SUITE_WORK_BUDGET_MS of 550000 (546.1 s measured 2026-09-16, 533.8 s on 2026-08-22 at 460 files on one fork) with a 10 percent tolerance, refused above it, lowered only, and a verdict that derives the expected wall from work, forks and the slowest file so the distance to the operator's 13 s is printed on every run"
+milestone: M8
+type: defect
+severity: medium
+# medium: real but contained - the line is held by nothing today, but
+# BL-1598 restores the per-file signal first; this adds the total.
+status: todo
+epic: unit-suite-speed
+priority: 6
+direction: human-requested
+depends_on: [BL-1598]
+# depends_on BL-1598: both change the recorder and its lib; the register
+# fields must exist before the work fields join them (Article 3.2.3).
+mutation_cost: medium
+# medium: check-suite-duration-budget.ts under Stryker plus the recorder.
+slice_size_envelope: low
+required_stages: [coder, cleaner, architect, hardender, documenter, qa]
+
+acceptance: specs/features/BL-1599-the-unit-suite-work-ratchet-holds-the-line.feature
+
+required_wiring:
+  - 'extension/scripts/recordTestDuration.js::SUITE_WORK_BUDGET_MS::npm test decides the work ratchet on every run - the live consumer (BL-1235)'
+  - 'specs/pipeline/steps/bl1599SuiteWorkRatchetSteps.js::registerSteps::the handler lands in the same parcel as the feature (BL-233, BL-1371)'
+
+human_approval: approved
+approval_context: >
+  A new feature file is authored here, so it needs a tap. No choice is
+  posed and there are no ruling_options: the lane budget decision was
+  delegated to the specifier on 2026-09-16 and is FIRM here as decided,
+  amendable by the operator on the epic. FIRM: the number the gate holds
+  is summed per-file work from the Vitest JSON report, not wall clock,
+  because work is independent of the fork count and moved only 2 percent
+  between a 1-fork macOS run at 460 files (533.8 s, 2026-08-22) and a
+  9-fork WSL run at 622 files (546.1 s, 2026-09-16) while wall moved from
+  689 s to 72 s. FIRM: SUITE_WORK_BUDGET_MS is 550000 with a 10 percent
+  tolerance (refuse above 605000); a parcel may lower it when its
+  evidence records a lower measured sum and never raises it; the 10 s
+  wall budget stays in code as a surfaced target and the 13 s operator
+  ceiling is printed as a distance, neither refuses. FIRM: the host budget
+  (fork pool from resolveVitestWorkerPool) and the lane composition (npm
+  test is the unit lane) are unchanged.
+
+invariants:
+  - "The ratchet only tightens: SUITE_WORK_BUDGET_MS at the parcel commit is at most its value at the parent commit, and SUITE_DURATION_BUDGET_MS and PER_FILE_DURATION_BUDGET_MS are unchanged."
+  - "No test is removed to fit the budget: the recorder's file count at the parcel commit is at least the parent's."
+
+description: |
+  ## What is wrong
+
+  `check-suite-duration-budget.ts` holds 10 s of WALL clock and, by an
+  architect-reviewed choice (BL-445), surfaces rather than refuses,
+  because wall jitters with host load. It has read over budget since
+  July. The epic's 2026-08-22 profile found the 13 s ceiling unreachable
+  by cutting poles alone and put slice C on hold for an operator answer
+  about host budget and lane composition; on 2026-09-16 the operator
+  delegated that answer to the specifier (coordinator note 008676).
+
+  ## The decision (specifier, 2026-09-16, recorded on BL-791)
+
+  - Host budget: unchanged - the lane uses the fork pool
+    `resolveVitestWorkerPool` sizes from free cores and RAM (9 forks on
+    this host under swarm load, 1 on the 2-core macOS host).
+  - Lane composition: unchanged - `npm test` is the unit lane; the
+    property lane keeps its own budgets.
+  - The line: summed per-file WORK, because it is fork-independent and
+    stable (533.8 s -> 546.1 s across two hosts, two fork counts and 162
+    more files, while wall went 689 s -> 72 s). Budget 550000 ms,
+    tolerance 10 percent, ratchet down only. Wall stays a report: the
+    verdict prints the derived expected wall `max(slowest file,
+    work / forks)` and the distance to 13000 ms, so the operator sees on
+    every run how far the poles keep the suite from the ceiling (today:
+    the 69.9 s pole alone puts it 57 s away whatever the fork count).
+
+  ## What is wanted
+
+  - `SUITE_WORK_BUDGET_MS = 550000` and `SUITE_WORK_TOLERANCE = 0.10`,
+    the one named place; a run whose summed per-file work exceeds budget
+    times (1 + tolerance) refuses through the recorder's exit code
+    (scenario 01); within tolerance but over budget passes and prints the
+    margin.
+  - The verdict line prints work, forks, slowest file, derived wall and
+    the distance to 13000 ms (scenario 01, same rows).
+  - The recorded row gains `work_budget_verdict` (`ok` | `over-tolerance`
+    | `over-budget`) beside BL-1598's fields.
+  - The committed budget equals the number above at the parcel commit
+    (scenario 02, the census pin).
+
+  ## How (direction, not mandate)
+
+  - Pure `classifySuiteWork(workMs, budgetMs, tolerance)` and
+    `deriveExpectedWallMs(workMs, forks, poleMs)` in
+    `check-suite-duration-budget.ts`; the fork count comes from the same
+    `resolveVitestWorkerPool` the config calls, injected in tests.
+  - Summed work and the slowest file come from the report BL-378's
+    `extractFileDurations` already parses; no second collection.
+  - Scenarios inject milliseconds and fork counts (BL-1541).
+  - Documenter: the suite-duration how-to gains the decision and the
+    ratchet rule; no diagram trigger.
+
+constraints: >
+  Budget constants live in one named place each; SUITE_DURATION_BUDGET_MS
+  and PER_FILE_DURATION_BUDGET_MS unchanged; no test deleted, skipped or
+  excluded; no vitest config change. The step handler lands with the
+  feature (BL-233). Evidence named BL-1599-*.
+
+out_of_scope: |
+  - Cutting poles (BL-791 slice D) and the pole register (BL-1598).
+  - Changing the fork pool or splitting the lane.
+
+qa_e2e_procedure: |
+  On the parcel commit, from `extension/`:
+  1. `npm test` -> the verdict line prints work, forks, slowest file,
+     derived wall and distance to 13000 ms; the recorded row carries
+     `work_budget_verdict`; with today's tree, work about 546 s reads
+     `ok`.
+  2. Run the guard against a scratch report whose summed work is 620 s
+     -> refusal; 590 s -> pass with the margin printed.
+  3. `git diff <parent>..<parcel>` shows SUITE_WORK_BUDGET_MS introduced
+     at 550000 and the two existing constants untouched.
+  4. Acceptance resolving both scenarios.
+
+source: |
+  Coordinator note 00_20260916T131330Z_008676 ("BL-791 slice C: operator
+  authorizes you to decide lane budget, mint gate"); BL-791
+  profile_2026_08_22; specifier measurement 2026-09-16:
+  backlog/evidence/BL-791-slice-c-lane-budget-decision-20260916.md.
+
+notes: |
+  Minted 2026-09-16 by the specifier under the operator's delegation. The
+  operator may amend the number on the epic; the mechanism does not
+  change with it. INVEST: Independent once BL-1598 lands, Negotiable
+  (function placement is direction; the number is the delegated
+  decision), Valuable (the total stops walking up unseen), Estimable (two
+  pure functions, one constant, one field, one sitting), Small (two scenarios, two invariants), Testable (injected milliseconds).
+
+assigned_to: null
