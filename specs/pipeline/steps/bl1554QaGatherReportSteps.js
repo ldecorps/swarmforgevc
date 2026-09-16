@@ -203,6 +203,13 @@ function registerSteps(registry) {
     ctx.bl1554.registerEntries = entry ? [entry] : [];
   });
 
+  // ── scenario 06 ──────────────────────────────────────────────────────
+  scoped(/^the fake runner answers the properties check with exit 1 and an output naming the bare failing file (\S+)$/, (ctx, file) => {
+    if (!ctx.bl1554.script) ctx.bl1554.script = {};
+    ctx.bl1554.script.properties = { exit: 1, stdout: ` FAIL  ${file} > some assertion` };
+    ctx.bl1554.lastFile = `extension/${file}`;
+  });
+
   scoped(/^the report's register join lists (\S+) as (\S+)$/, (ctx, file, join) => {
     const entry = ctx.bl1554.report.register_join.find((r) => r.file === file);
     assert.ok(entry, `no register_join entry for ${file}: ${JSON.stringify(ctx.bl1554.report.register_join)}`);

@@ -234,12 +234,20 @@ function isFailingAcceptanceRow(row: CheckRow, acceptanceFeature: string | undef
   return row.id === 'acceptance' && row.exit !== 0 && !!acceptanceFeature;
 }
 
+// Unit/properties rows run vitest with cwd: extension/, so the FAIL line's
+// file is bare (test/...) - the register's own rows are always repo-root-
+// relative (extension/test/...). Idempotent: a path a caller already
+// supplies pre-prefixed (e.g. existing fixtures) is left alone.
+function toRepoRootRelative(file: string): string {
+  return file.startsWith('extension/') ? file : `extension/${file}`;
+}
+
 export function failingFilesFromRow(row: CheckRow, acceptanceFeature: string | undefined): string[] {
   if (row.status !== 'ran') {
     return [];
   }
   if (row.id === 'unit' || row.id === 'properties') {
-    return parseFailingFilesFromVitestOutput(row.excerpt);
+    return parseFailingFilesFromVitestOutput(row.excerpt).map(toRepoRootRelative);
   }
   if (isFailingAcceptanceRow(row, acceptanceFeature)) {
     return [acceptanceFeature as string];
