@@ -61,18 +61,17 @@
       o? ["origin/main"]
       :else [])))
 
-(defn ticket-yaml-at-ref
-  "The ticket's yaml CONTENT at ref, matched by its OWN id: field exactly -
-   the anchored git-grep is only a cheap candidate filter; correctness
-   comes from re-checking yaml-id-field on the shown content, so a ref
-   carrying only BL-9005 can never resolve a BL-900 lookup (BL-992
-   invariant 3, same guard as the working-tree path). nil on any git
-   error, a non-matching ref, or no candidate - never throws."
-  [root ref ticket-id]
+(defn- ticket-yaml-at-ref-in
+  "ticket-yaml-at-ref's own body, generalized to an arbitrary backlog
+   subpath - `backlog/done`'s pathspec covers the whole subtree, so a
+   ticket nested under a milestone folder (backlog/done/M8/BL-....yaml) is
+   found exactly like an unnested one. nil on any git error, a
+   non-matching ref, or no candidate - never throws."
+  [root ref ticket-id subpath]
   (try
     (let [g (command root "git" "grep" "-l" "-E"
                      (str "^id:[[:space:]]*" ticket-id "[[:space:]]*$")
-                     ref "--" "backlog/active")]
+                     ref "--" subpath)]
       (when (zero? (:exit g))
         (some (fn [line]
                 (let [path (second (str/split line #":" 2))
@@ -82,6 +81,56 @@
                       (when (= ticket-id (yaml-id-field content)) content)))))
               (remove str/blank? (str/split-lines (:out g))))))
     (catch Exception _ nil)))
+
+(defn ticket-yaml-at-ref
+  "The ticket's yaml CONTENT at ref, matched by its OWN id: field exactly -
+   the anchored git-grep is only a cheap candidate filter; correctness
+   comes from re-checking yaml-id-field on the shown content, so a ref
+   carrying only BL-9005 can never resolve a BL-900 lookup (BL-992
+   invariant 3, same guard as the working-tree path). nil on any git
+   error, a non-matching ref, or no candidate - never throws."
+  [root ref ticket-id]
+  (ticket-yaml-at-ref-in root ref ticket-id "backlog/active"))
+
+;; ── BL-1547: which backlog lane(s) hold a ticket, at a ref ───────────────
+
+(def ^:private backlog-lanes
+  [[:active "backlog/active"]
+   [:paused "backlog/paused"]
+   [:hold "backlog/hold"]
+   [:done "backlog/done"]])
+
+(defn ticket-lanes-at-ref
+  "Every backlog lane (:active :paused :hold :done) whose tree at ref
+   contains ticket-id's own YAML (id: field match, never a filename glob).
+   Empty when the ticket is found in no lane at ref - absence and an
+   unreadable listing are deliberately not told apart here, since
+   ticket-closed? below treats both the same way (fail-closed: no
+   exemption). More than one entry means the ticket's YAML is present in
+   two lanes at once on the SAME ref - a bookkeeping state the caller must
+   never resolve by picking one."
+  [root ref ticket-id]
+  (vec (keep (fn [[lane subpath]]
+               (when (ticket-yaml-at-ref-in root ref ticket-id subpath) lane))
+             backlog-lanes)))
+
+(defn ticket-closed?
+  "BL-1547: is ticket-id closed - its YAML found under backlog/done, and
+   under no other lane - on the freshest of main/origin-main (BL-992's own
+   freshest-ref resolution above, never a second ref-freshness walk)?
+   Consults declaration-refs in order and answers from the FIRST ref that
+   finds the ticket in some lane at all; a ref that finds it in no lane
+   falls through to the next ref rather than concluding closed or open
+   from silence. No ref ever resolving it - the ticket is absent
+   everywhere, or every ref is itself unreadable - answers false: the
+   fail-closed default, no exemption, the existing foreign-scope refusal
+   stands."
+  [root ticket-id]
+  (boolean
+   (first (keep (fn [ref]
+                  (let [lanes (ticket-lanes-at-ref root ref ticket-id)]
+                    (when (seq lanes) (= [:done] lanes))))
+                (declaration-refs root)))))
 
 (defn active-ticket-yaml-content
   "Reads the active ticket whose OWN `id:` field equals ticket-id exactly -
