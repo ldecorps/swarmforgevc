@@ -186,6 +186,25 @@
           (assert-true (str "P2b trial " trial ": a role with no row anywhere in the log yields nil")
                        (nil? actual)))))))
 
+;; ── deterministic pin: the chunk-boundary edge-line drop (hardener pass,
+;;    2026-09-16) ──────────────────────────────────────────────────────────
+;; break 1 in the header comment above ("the window-edge line drop removed")
+;; was documented as a design note the RANDOM generator does not reliably
+;; catch, deferred to the acceptance scenario's torn-tail case instead. Hand
+;; mutation (`(if (and (pos? start) (seq lines)) ...)` -> `(zero? start)`)
+;; survived BOTH this property runner (60 trials) AND
+;; specs/features/BL-1493-*.feature scenario 03 - the "reliable check" the
+;; comment names does not actually exercise this guard, because scenario
+;; 03's torn tail sits at the FILE's true end, never at a chunk's OWN start
+;; boundary. usable-chunk-lines is private; called via var resolution, the
+;; same access pattern this file already establishes is safe for a defn-.
+(let [usable-chunk-lines (deref (resolve (symbol "context-telemetry-store" "usable-chunk-lines")))
+      buf (.getBytes "{\"role\":\"cleaner\"}\n{\"role\":\"architect\"}\n" "UTF-8")]
+  (assert-true "chunk-boundary pin: start>0 drops the (presumed-partial) first line"
+               (= ["{\"role\":\"architect\"}"] (usable-chunk-lines buf 5)))
+  (assert-true "chunk-boundary pin: start=0 (the file's own beginning) keeps every line"
+               (= ["{\"role\":\"cleaner\"}" "{\"role\":\"architect\"}"] (usable-chunk-lines buf 0))))
+
 ;; ── report ───────────────────────────────────────────────────────────────
 (println (str "bl1493_usage_lookup_bounded_property_runner: " runs " trials"))
 (if (empty? @failures)
