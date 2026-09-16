@@ -12666,18 +12666,31 @@ slow file apart from a fresh regression, so every recorded row read
 `result: fail` and a real regression (25s to 689s, unnoticed) walked past
 a gate that was firing on every run. `check-suite-file-budget.ts` now
 reads `backlog/suite-poles.tsv` (the standing-red register's own TSV
-shape, BL-1428): a file over budget with an open-ticket-owned row is
-reported, not refused; one with no row still refuses as a `new-pole`
-exactly as before; a row whose ticket is no longer open refuses as an
-`unowned-row`; a row whose file now measures under 80% of budget refuses
-as a `stale-row` so the row leaves in the land that cut the pole.
-`testDurationRecorderLib.js`'s recorded row (`.test-durations.jsonl`,
-BL-078) keeps `result` as the TEST outcome, unchanged and independent of
-the budget verdict, and gains `pole_ms` (the run's slowest file),
-`work_ms` (summed per-file duration), `new_offenders` (count with no
-row), and `budget_verdict` (`ok`/`new-pole`/`stale-row`/`unowned-row`) —
-so the trend, and the briefing's suite-duration line, can now tell a
-failing test apart from a slow file. See
+shape, BL-1428). **Amended the same day on a QA bounce**: the first cut
+refused outright on a `stale-row` or an unregistered file over budget, but
+QA's own three `npm test` runs 2.5 hours after the register's numbers were
+measured already showed three registered files drift under 80% of budget
+and one unregistered file drift to 9.0s with no code change — the same
+wall-clock jitter BL-445 documented for the whole-suite budget applies to
+marginal per-file measurements too, and a snapshot register that refuses
+on that jitter is red on day one. Only two of five verdicts now fail the
+exit code: a file over budget with an open-ticket-owned row is `ok`
+(reported, not refused); one with no row at or above
+`PER_FILE_DURATION_BUDGET_MS × NEW_POLE_REFUSAL_FRACTION` (7000 × 1.5 =
+10500ms) refuses as `new-pole`; one with no row between the budget and
+that line is reported as `watch` (named every run, never blocking); a row
+whose ticket is no longer open refuses as `unowned-row`; a row whose file
+now measures under 80% of budget is reported as `stale-row` (named so the
+row can be drained, never blocking — draining still happens at the land
+that cuts the pole). `testDurationRecorderLib.js`'s recorded row
+(`.test-durations.jsonl`, BL-078) keeps `result` as the TEST outcome,
+unchanged and independent of the budget verdict, and gains `pole_ms` (the
+run's slowest file), `work_ms` (summed per-file duration), `new_offenders`
+(count at or above the 1.5× line with no row), `watch_files` (count of
+unregistered files over budget but under that line), and `budget_verdict`
+(`ok`/`watch`/`stale-row`/`unowned-row`/`new-pole`, headline priority in
+that order) — so the trend, and the briefing's suite-duration line, can
+now tell a failing test apart from a slow file. See
 [The unit suite's per-file budget gate reads a pole register](../how-to/BL-1598-unit-suite-pole-register-drains-the-per-file-gate.md).
 
 ### Unit suite green + per-file duration profile (BL-792)
