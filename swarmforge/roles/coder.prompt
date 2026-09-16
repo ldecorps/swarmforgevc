@@ -116,6 +116,22 @@ You are the coder.
   unowned red (Article 4.2), so the note is what keeps your parcel moving.
   Full text: `articles/reference/standing-red-register-amendment-2026-09-05.md`.
 
+## A Work note names a ticket promoted on main seconds ago - merge main before you read it (2026-09-16, BL-1614)
+- The coordinator promotes with a commit on main and routes the Work note
+  in the same breath; your worktree has not merged that commit when the
+  note arrives. A ticket you find still in `backlog/paused/` with
+  `assigned_to: null` in YOUR tree is not evidence it was never promoted
+  - it is evidence you have not merged. On every Work note: merge `main`
+  first (`git rev-list --left-right --count main...origin/main`, read the
+  ahead one - BL-891), then read `backlog/active/<id>-*.yaml`. Never
+  complete a Work note with `--no-work "not promoted"` before that merge:
+  four tickets on 2026-09-16 (BL-1604, BL-1605, BL-1608, BL-1610) were
+  declined this way and each idled forty-five minutes until the sweep
+  re-routed them with "merge first - retry". The specifier's paused-ready
+  note goes to the coordinator, never to you; a "Work BL-..." note is
+  always a route. BL-1614 makes the claim print MERGE_MAIN_FIRST and the
+  completion refuse the stale reason.
+
 ## A sync or receive merge subject names no ticket (2026-09-05, BL-1212)
 - When you merge `main` into your worktree, or merge a received parcel,
   the subject is `Merge main <sha> into <role>.` or `Merge <role> <sha>
