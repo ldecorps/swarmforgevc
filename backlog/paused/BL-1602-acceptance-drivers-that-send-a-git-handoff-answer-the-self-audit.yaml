@@ -1,0 +1,188 @@
+id: BL-1602
+title: "Ten acceptance features have been red on main since BL-1529's self-audit challenge landed on 2026-09-12 because their step drivers send a git_handoff to the real swarm_handoff.bb once and assert the queue - bl1001, bl1004, bl1167, bl1185, bl1317, bl606, bl623, bl983, bl1192 and bl1276, 49 failing steps, unrecorded for four days until the coder's full acceptance run; every acceptance driver that drafts a git_handoff sends it through one shared two-call helper (JavaScript) or the bl1240 driver's idiom (bash), a population scenario pins the eleven drivers so a missing one cannot pass by absence, and the ten register rows leave in the same land"
+milestone: M8
+type: defect
+severity: high
+# high: ten standing reds in the acceptance lane at first recording
+# (Article 3.2.4, 2026-09-05); the acceptance contract of ten shipped
+# tickets has reported nothing for four days.
+status: todo
+epic: code-quality-gates
+priority: 5
+direction: swarm-reported
+depends_on: []
+mutation_cost: low
+# low: step drivers under specs/pipeline/steps (JavaScript and two bash
+# CLIs), one new shared helper with its own unit cases; no extension/src.
+slice_size_envelope: medium
+required_stages: [coder, cleaner, architect, hardender, documenter, qa]
+
+acceptance: specs/features/BL-1602-acceptance-drivers-that-send-a-git-handoff-answer-the-self-audit.feature
+
+required_wiring:
+  - 'specs/pipeline/steps/lib/sendGitHandoffTwoCall.js::AUDIT_REQUIRED::the shared helper detects the challenge itself; the literal exists only once the helper does'
+  - 'specs/pipeline/steps/bl1001DifficultyAwareSeatRoutingSteps.js::sendGitHandoffTwoCall::one of the nine JavaScript drivers reaching the helper - the live consumer (BL-1235)'
+  - 'specs/pipeline/steps/lib/bl1192TaskScopeGateCli.sh::AUDIT_REQUIRED::the bash driver answers the challenge itself (bl1240 idiom)'
+  - 'specs/pipeline/steps/lib/bl1276AcceptanceExemptionCli.sh::AUDIT_REQUIRED::the second bash driver answers the challenge itself'
+  - 'specs/pipeline/steps/bl1602AcceptanceDriversAnswerTheAuditSteps.js::registerSteps::the handler lands in the same parcel as the feature (BL-233, BL-1371)'
+
+human_approval: pending
+approval_context: >
+  A new feature file is authored here, so it needs a tap. No choice is
+  posed and there are no ruling_options. FIRM: no feature file and no
+  step text changes - the ten red features are contracts of shipped
+  tickets and stay byte-identical; only their DRIVERS change, plus one
+  shared helper. FIRM: the helper is the two-call protocol and nothing
+  else (Article 2.3, BL-1529): on an AUDIT_REQUIRED first call it runs
+  the identical draft exactly once more and returns that second result,
+  queued or refused; a first call that queues, or refuses for any other
+  reason, is returned as-is; never a third call, never an env bypass.
+  FIRM: the population of git_handoff-drafting drivers is pinned by name
+  in the feature (eleven files, the specifier's census of 2026-09-16), so
+  a driver the scan misses fails the scenario rather than passing by
+  absence (BL-1445).
+
+invariants:
+  - "The helper never bypasses the audit: it invokes swarm_handoff.bb at most twice with the identical draft and returns only a real queue or a real refusal; AUDIT_REQUIRED never reaches a driver's assertion."
+  - "No acceptance contract changes: every feature file under specs/features is byte-identical between the parcel's parent and the parcel; the diff touches drivers, the helper, the register, evidence and docs only."
+
+description: |
+  ## What is wrong
+
+  BL-1529 (landed 2026-09-12, 7115aa7595) made the first valid
+  `swarm_handoff.bb` invocation for a git_handoff draft print
+  `AUDIT_REQUIRED` / `HANDOFF_NOT_QUEUED` and exit non-zero; the sender
+  re-invokes with the identical draft to queue (Article 2.3). BL-1529
+  swept the script senders (`handoff_lib.bb`'s `queue-git-handoff!`),
+  BL-1530 the shell tests and BL-1541 the bb property runners. Nobody
+  swept the ACCEPTANCE DRIVERS under `specs/pipeline/steps/`, which drive
+  the real sender end to end and assert a queued parcel after ONE call.
+  The coder found `BL-1192-pre-handoff-task-scope-gate.feature` 5 of 9 red
+  in a full acceptance run on 2026-09-16 (note 00_20260916T162707Z_001995).
+
+  Census (specifier, 2026-09-16, main at 968338296b; grep: every file
+  under `specs/pipeline/steps` and `specs/pipeline/steps/lib` that
+  executes `swarm_handoff.bb|.sh`, contains a `git_handoff` draft, and
+  contains none of `AUDIT_REQUIRED|queue-git-handoff|HANDOFF_NOT_QUEUED`),
+  each feature then run with `specs/pipeline/scripts/run_acceptance.sh`:
+
+  | driver | feature | failing steps | AUDIT_REQUIRED in log |
+  |---|---|---|---|
+  | bl1001DifficultyAwareSeatRoutingSteps.js | BL-1001-difficulty-aware-coder-seat-routing | 6 | yes |
+  | bl1004ReworkClaimSteps.js | BL-1004-a-rework-is-claimed-only-by-a-seat-that-can-work-it-safely | 5 | yes |
+  | bl1167SameModelSeatRoutingSteps.js | BL-1167-same-model-coder-seats-bypass-tier-routing | 3 | yes |
+  | bl1185WorkNoteMissingTaskHeaderSteps.js | BL-1185-work-note-missing-task-header-defers-hard-seat | 1 | no (asserts the claim, not the send; same class by structure - confirm in the sweep) |
+  | bl1317AdaptEffortSteps.js | BL-1317-adapt-tier-effort-from-outcome-signals | 3 | yes |
+  | bl606RequiredStagesRoutingSteps.js | BL-606-specifier-declared-required-stages-routing | 13 | yes |
+  | bl623RoutingSkipTrailSteps.js | BL-623-routing-skip-trail-records-actual-hop | 6 | yes |
+  | bl983StageQueueSteps.js | BL-983-stage-mailbox-delivers-to-one-idle-seat | 5 | yes |
+  | lib/bl1192TaskScopeGateCli.sh | BL-1192-pre-handoff-task-scope-gate | 5 | yes |
+  | lib/bl1276AcceptanceExemptionCli.sh | BL-1276-a-tickets-own-declared-paths-are-not-foreign | 2 | yes |
+  | corruptHandoffNeverDispatchedSteps.js | BL-365-corrupt-handoff-never-dispatched | 0 (green: its draft is refused before the audit) | no |
+
+  Ten features red, 49 failing steps, four days, no register row: the
+  acceptance contracts of ten shipped tickets have gated nothing since
+  2026-09-12. Run logs: `backlog/evidence/BL-1602-specifier-adjudication-of-coder-unowned-red-20260916.md`.
+
+  ## What is wanted
+
+  - `specs/pipeline/steps/lib/sendGitHandoffTwoCall.js` exporting
+    `sendGitHandoffTwoCall(draftPath, opts)` (or a thunk form like
+    BL-1541's helper): runs the sender once; if the result is non-zero
+    AND its output contains `AUDIT_REQUIRED`, runs the identical
+    invocation exactly once more and returns that result; otherwise
+    returns the first. Its own cases (scenario 01) drive it with an
+    injected sender thunk.
+  - The nine JavaScript drivers in the census send through the helper;
+    the two bash drivers adopt `bl1240UnregisteredTestGateCli.sh`'s
+    `send_once` idiom (line 118 to 138). No feature file or step text
+    changes.
+  - Scenario 02 derives the git_handoff-drafting drivers from the real
+    `specs/pipeline/steps` tree (the census grep, in process) and pins
+    every one of the eleven by name; every member carries the two-call
+    literal.
+  - The ten features green (e2e: each run once, then the full acceptance
+    corpus) and the ten register rows removed in the same land; evidence
+    lists each feature with its pre-fix failing-step count and its green
+    run (scenario 03).
+
+  ## How (direction, not mandate)
+
+  - Helper shape: `const { spawnSync } = require('node:child_process');
+    function sendGitHandoffTwoCall(bb, args, opts) { const first =
+    spawnSync(bb, args, opts); if (first.status !== 0 &&
+    /AUDIT_REQUIRED/.test(`${first.stdout}${first.stderr}`)) return
+    spawnSync(bb, args, opts); return first; }` - with the spawn injected
+    for the unit cases. Drivers replace their `spawnSync('bb',
+    [swarm_handoff.bb, draft], ...)` with the helper and keep their own
+    assertions.
+  - Scenario 02's derivation is the census grep above, run in process
+    over the real tree, with the eleven names as the pin (BL-1541
+    scenario 02's shape; `bl1541GitHandoffRunnersAnswerAuditSteps.js`
+    lines 40 to 90 are the precedent).
+  - bl1185: after the driver change, re-run; if its one failure remains,
+    it is a different red - raise it as its own unowned-red note, never
+    fold a second fix in.
+  - Documenter: `docs/how-to` page for the acceptance lane (or the
+    handoff-protocol doc's script-sender section) names the helper as
+    the way an acceptance driver sends a git_handoff; no diagram trigger.
+
+constraints: >
+  specs/pipeline/steps drivers, one new helper under
+  specs/pipeline/steps/lib, the register, evidence and docs only. No
+  feature file, no swarmforge/scripts change, no extension/src. The
+  helper never sets an env bypass and never calls a third time. The step
+  handler lands with the feature (BL-233). Evidence named BL-1602-*.
+
+out_of_scope: |
+  - The self-audit challenge itself (BL-1529) and its script/shell/bb
+    sweeps (BL-1529, BL-1530, BL-1541).
+  - Any red in these ten features that survives the driver change: its
+    own unowned-red note and owner.
+  - Running the full acceptance corpus on every parcel (a process
+    question for the lean pass: this class was invisible for four days
+    because nothing runs the corpus routinely).
+
+qa_e2e_procedure: |
+  On the parcel commit:
+  1. For each of the eleven features in the census:
+     `bash specs/pipeline/scripts/run_acceptance.sh specs/features/<feature>`
+     -> green; record the ten previously-red ones' step counts.
+  2. `for f in specs/features/*.feature; do bash specs/pipeline/scripts/run_acceptance.sh "$f" >/dev/null 2>&1 || echo "RED $f"; done`
+     -> no RED line for any of the ten; every other RED line recorded and
+     raised as an unowned-red note (this is the first full-corpus run
+     on record since 2026-09-12).
+  3. `git diff <parent>..<parcel> --stat -- specs/features/` is empty
+     except this ticket's own feature (invariant 2).
+  4. Acceptance resolving all three scenarios
+     (`bash specs/pipeline/scripts/run_acceptance.sh specs/features/BL-1602-*.feature`).
+  5. `bb swarmforge/scripts/standing_red_register_cli.bb .` after landing
+     reports no row for any of the ten features and `"unowned":[]`.
+
+source: |
+  Coder note to the specifier and coordinator, priority 00, 2026-09-16T16:27Z
+  (inbound 00_20260916T162707Z_001995_from_coder_to_specifier):
+  "unowned-red: BL-1192-pre-handoff-task-scope-gate.feature 5/9 red,
+  AUDIT_REQUIRED". Specifier census and adjudication:
+  backlog/evidence/BL-1602-specifier-adjudication-of-coder-unowned-red-20260916.md.
+  Parents: BL-1529, BL-1530, BL-1541.
+
+notes: |
+  Minted 2026-09-16 by the specifier while completing the coder's
+  unowned-red note, the same pass; the ten register rows in
+  backlog/standing-reds.tsv name this ticket (lane acceptance, first_seen
+  2026-09-16 - the first recording; the reds date from BL-1529's land on
+  2026-09-12), the coordinator was sent the paused-ready note and the
+  coder the owner note. The register stands at 12 rows after this pass (BL-1592's four rows left with its land while this mint was in progress),
+  above BL-1429's 10 and with an 11-day-old row, so the intake throttle
+  is engaged by design until these drain; this ticket and BL-1601 are
+  the fast drains. INVEST: Independent (the sender, the protocol and the
+  bl1240 idiom exist), Negotiable (helper signature is direction),
+  Valuable (ten acceptance contracts gate again and the class cannot
+  recur), Estimable (one helper, eleven mechanical driver edits, one
+  sitting - BL-1541 did five runners plus a helper as one), Small (three
+  scenarios, two invariants; the diff is eleven one-hunk files), Testable
+  (helper cases and the population scan in seconds; feature runs in e2e -
+  BL-1541).
+
+assigned_to: null
