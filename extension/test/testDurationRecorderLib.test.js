@@ -173,6 +173,14 @@ test('computeFinalExitCode prefers a non-zero test exit code over both the guard
   assert.equal(computeFinalExitCode(2, 1, 1), 2);
 });
 
+// BL-1599 hardening: the guard and the work ratchet must have DIFFERING
+// non-zero values here, or a mutant swapping their priority (work wins
+// over guard) survives - every other guard/work pairing above uses equal
+// values and cannot tell the two branches apart.
+test('computeFinalExitCode prefers the per-file guard exit code over the work ratchet when both are non-zero', () => {
+  assert.equal(computeFinalExitCode(0, 2, 3), 2);
+});
+
 test('computeFinalExitCode omitting the work ratchet argument behaves exactly as the 2-arg call did', () => {
   assert.equal(computeFinalExitCode(1, 0), 1);
   assert.equal(computeFinalExitCode(0, 1), 1);
