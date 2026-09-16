@@ -60,6 +60,41 @@ documentation only — never read by the gate, and not required to agree with
 `retires:`. See `swarmforge/backlog-schema.md`'s `retires` row for the full
 field contract.
 
+## Closed-ticket exemption (BL-1547)
+
+A changed `docs/how-to`, `specs/features` or `backlog` path whose basename
+names a ticket that is CLOSED — its YAML found under `backlog/done/`
+(nested by milestone) and under no other lane, on the freshest of
+`main`/`origin/main` (`landed_ticket_lib.bb`'s `ticket-closed?`, the same
+freshest-ref resolution `find-ticket-yaml-content` uses, never a second
+walk) — is not a foreign-scope finding either. A shipped ticket's how-to
+page, feature narrative or YAML is routinely maintained by whoever later
+changes the behaviour it describes (a BL-1006 retirement re-tenses a
+sibling feature's boundary scenarios; a documenter fix updates a shipped
+ticket's how-to page after its own parcel), and BL-1544's rule tells the
+documenter to lead such a commit with its OWN ticket id, naming the other
+ticket after it in the subject — which this exemption is what makes safe
+to send.
+
+A basename naming a ticket still under `backlog/active/`, `paused/` or
+`hold/` refuses exactly as before this ticket — that ticket's own work is
+still in flight and the path is genuinely foreign scope. A basename naming
+a ticket whose YAML cannot be found in any lane at all is refused too:
+absence is never treated as closure (fail-closed, same posture as the
+declared-path exemption above). A ticket found in more than one lane on
+the same ref — a bookkeeping state that should never happen — is also not
+exempt.
+
+Before BL-1547 landed (2026-08-27 to 2026-09-16), no such exemption
+existed: a subject leading with the sender's own id while touching a
+closed ticket's file was refused, and the only subject that passed —
+naming no ticket id, or naming only the file's ticket — is exactly what
+the land step then silently credited to the closed ticket, dropping the
+path (BL-1546, `BL-1537`'s `5dbd34f27f`). BL-1546 (already landed) fixed
+the land-step half of that same defect; this exemption is the send-side
+half. With both landed, leading a commit subject with your own id is
+always the right shape, and neither rule fires.
+
 ## Example refusal
 
 ```

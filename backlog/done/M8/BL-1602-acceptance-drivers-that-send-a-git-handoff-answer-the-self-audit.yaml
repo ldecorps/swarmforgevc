@@ -198,3 +198,5 @@ notes: |
   reading), with the residual owned by a named open ticket. No feature
   text changes. Holder (coder) told by note to merge main and re-read.
 assigned_to: coder
+abandoned_commits: [3659c0369e]
+
