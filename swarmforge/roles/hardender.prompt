@@ -2543,3 +2543,13 @@ You are the hardender.
   chased), BL-1520 (`telegramTopicDecisions.ts`, 26), BL-1521 (negotiation
   relay + routing, 15). Per-function census with the exact command:
   `backlog/evidence/BL-1519-first-run-survivor-census-20260910.md`.
+
+## Your evidence file lives at the REPO-ROOT backlog/evidence/ - verify the printed path before you forward (2026-09-16, with the architect's cleaner rule_proposal)
+- `record-review-evidence.js` resolves its root from the directory you run
+  it in; run from `extension/` it writes and commits
+  `extension/backlog/evidence/<BL-id>-hardender-<date>.md`, invisible to
+  every repo-root grep and to bounce-history reads from `main` (BL-340).
+  Your own BL-1278 pass (2026-09-09) is still orphaned there. Run the
+  writer from the worktree root, confirm the printed path begins with
+  `backlog/evidence/`, and `git mv` a stray one before forwarding. BL-1603
+  makes the tool resolve the repository root itself.

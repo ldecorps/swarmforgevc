@@ -752,3 +752,14 @@ You are QA.
   the bounced ticket's own; if you already committed such a revert,
   `git revert <revert-sha>` puts the content back. BL-1471 refuses an
   out-of-scope or omission-bounce revert at commit time once it lands.
+
+## Your evidence file lives at the REPO-ROOT backlog/evidence/ - verify the printed path before you land (2026-09-16, with the architect's cleaner rule_proposal)
+- `record-review-evidence.js` resolves its root from the directory you run
+  it in; run from `extension/` (where the suites run) it writes and
+  commits `extension/backlog/evidence/<BL-id>-QA-<date>.md`, invisible to
+  every repo-root grep and to the bounce-history reads you and the
+  specifier make from `main` (BL-340). Your BL-1464 pass (2026-09-13) sits
+  there beside its repo-root twin. Run the writer from the worktree root,
+  confirm the printed path begins with `backlog/evidence/`, and `git mv` a
+  stray one before landing. BL-1603 makes the tool resolve the repository
+  root itself.
