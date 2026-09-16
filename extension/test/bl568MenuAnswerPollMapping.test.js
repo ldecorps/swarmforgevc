@@ -54,3 +54,23 @@ test('BL-568 matching fingerprint injects voted indexes', () => {
 test('BL-568 text fallback names RC', () => {
   assert.match(bl568TextFallbackMessage('Q?', 'too-many-options', 'session_x'), /session_x/);
 });
+
+// BL-1577: the "empty-vote" drop reason and the no-rcHint text fallback were
+// no-coverage in telegramClient.ts's first mutation run - neither branch was
+// reached by any test.
+test('BL-1577: an empty vote drops without inject', () => {
+  const m = bl568MenuAnswerPollMapping({
+    role: 'coder',
+    paneId: 'p',
+    options: ['a'],
+    fingerprint: 'fp',
+  });
+  const plan = bl568PlanMenuAnswerDrive({ mapping: m, liveFingerprint: 'fp', optionIds: [] });
+  assert.equal(plan.action, 'drop');
+  assert.equal(plan.reason, 'empty-vote');
+});
+
+test('BL-1577: text fallback omits the RC segment entirely when no rcHint is given', () => {
+  const message = bl568TextFallbackMessage('Q?', 'too-many-options');
+  assert.equal(message, 'Menu blocked (poll caps: too-many-options). Open the pane to answer.\nQ: Q?');
+});
