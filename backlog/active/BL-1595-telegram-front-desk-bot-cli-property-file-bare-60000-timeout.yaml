@@ -162,4 +162,4 @@ notes: |
   Testable (source checks and the in-process seam in seconds; runners in
   e2e - BL-1541). Severity high per the standing-red rule.
 
-assigned_to: null
+assigned_to: coder
