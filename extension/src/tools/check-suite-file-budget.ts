@@ -29,6 +29,15 @@ import { runCliMain } from './swarm-metrics';
 // exists to prevent.
 export const PER_FILE_DURATION_BUDGET_MS = 7000;
 
+// BL-1598 amendment (2026-09-16, specifier, on QA's Article 4.2 hold
+// 93b31c8209): per-file wall durations on this lane's host drift 2 to 3x
+// within hours with no code change (BL-445 documented the same jitter for
+// the whole-suite wall clock). An unregistered file refusing at any
+// breach of the budget is a snapshot gate that reads red on day one under
+// normal jitter; it now refuses only at or above this multiple, with a
+// `watch` verdict surfaced (never silently absorbed) for the band between.
+export const NEW_POLE_REFUSAL_FRACTION = 1.5;
+
 export interface FileDuration {
   file: string;
   durationMs: number;
@@ -106,7 +115,7 @@ export function openTicketIds(backlogDir: string): Set<string> {
   return ids;
 }
 
-export type BudgetVerdictKind = 'ok' | 'new-pole' | 'stale-row' | 'unowned-row';
+export type BudgetVerdictKind = 'ok' | 'watch' | 'stale-row' | 'unowned-row' | 'new-pole';
 
 export interface FileVerdict extends BudgetOffender {
   kind: BudgetVerdictKind;
@@ -117,6 +126,7 @@ export interface BudgetCheckResult {
   passed: boolean;
   verdict: BudgetVerdictKind;
   offenders: BudgetOffender[];
+  watchFiles: FileVerdict[];
   staleRows: FileVerdict[];
   unownedRows: FileVerdict[];
   registeredPoles: FileVerdict[];
@@ -148,12 +158,14 @@ function classifyRegisterRow(row: RegisterRow, measured: number | undefined, bud
   return null;
 }
 
-// Priority order matches the ticket's own three-way refusal split: a new,
+// Priority order matches the amendment's own stated order (2026-09-16, QA's
+// Article 4.2 hold): new-pole, unowned-row, watch, stale-row, ok - a new,
 // unregistered offender is worse than an existing row gone stale or
-// unowned, so it wins the headline verdict whenever one exists.
-function computeVerdict(offenderCount: number, unownedCount: number, staleCount: number): BudgetVerdictKind {
+// unowned, which in turn outrank a merely-watched file or a stale one.
+function computeVerdict(offenderCount: number, unownedCount: number, watchCount: number, staleCount: number): BudgetVerdictKind {
   if (offenderCount > 0) return 'new-pole';
   if (unownedCount > 0) return 'unowned-row';
+  if (watchCount > 0) return 'watch';
   if (staleCount > 0) return 'stale-row';
   return 'ok';
 }
@@ -185,12 +197,17 @@ function classifyRegisterRows(
 }
 
 // Pure: the whole decision table (BL-378 scenarios 01-03, extended by
-// BL-1598's register). Every file over budget is reported, not just the
-// first (scenario 03) - failing on the first would hide the others and turn
-// one fix into N sequential rediscoveries. register/openTickets default to
-// empty - with no register, every offender is a new-pole exactly as BL-378
-// always reported it (BL-1598 invariant 1: unchanged before/after for this
-// case).
+// BL-1598's register, amended 2026-09-16 on QA's Article 4.2 hold). Every
+// file over budget is reported, not just the first (scenario 03) - failing
+// on the first would hide the others and turn one fix into N sequential
+// rediscoveries. register/openTickets default to empty.
+//
+// Only new-pole and unowned-row fail (`passed`); watch and stale-row are
+// reported on every run they occur but never refuse - a snapshot gate that
+// refuses on ordinary host-load jitter (BL-445's own documented shape for
+// the whole-suite wall clock) is red on day one. Headline verdict
+// precedence when several apply at once: new-pole, unowned-row, watch,
+// stale-row, ok (the amendment's own stated order).
 export function checkFileDurationBudget(
   durations: FileDuration[],
   budgetMs: number,
@@ -202,14 +219,19 @@ export function checkFileDurationBudget(
 
   const { staleRows, unownedRows, registeredPoles } = classifyRegisterRows(register, durationByFile, budgetMs, openTickets);
 
-  const offenders = durations
-    .filter((d) => d.durationMs > budgetMs && !rowByFile.has(d.file))
+  const refusalThresholdMs = budgetMs * NEW_POLE_REFUSAL_FRACTION;
+  const unregisteredOverBudget = durations.filter((d) => d.durationMs > budgetMs && !rowByFile.has(d.file));
+  const offenders = unregisteredOverBudget
+    .filter((d) => d.durationMs >= refusalThresholdMs)
     .map((d) => ({ ...d, budgetMs }));
+  const watchFiles: FileVerdict[] = unregisteredOverBudget
+    .filter((d) => d.durationMs < refusalThresholdMs)
+    .map((d) => ({ file: d.file, durationMs: d.durationMs, budgetMs, kind: 'watch' }));
 
-  const passed = offenders.length === 0 && staleRows.length === 0 && unownedRows.length === 0;
-  const verdict = computeVerdict(offenders.length, unownedRows.length, staleRows.length);
+  const passed = offenders.length === 0 && unownedRows.length === 0;
+  const verdict = computeVerdict(offenders.length, unownedRows.length, watchFiles.length, staleRows.length);
 
-  return { passed, verdict, offenders, staleRows, unownedRows, registeredPoles };
+  return { passed, verdict, offenders, watchFiles, staleRows, unownedRows, registeredPoles };
 }
 
 // Names the offender, its duration, AND the budget it broke (scenario 01)
@@ -241,9 +263,11 @@ export function runGuardAgainstReport(
   return { result, durations };
 }
 
-// A file over budget WITH an open, un-stale register row is REPORTED, not
-// refused (infoLines); new-pole/stale-row/unowned-row all refuse
-// (failureLines) - BL-1598's own three-way refusal split.
+// A file over budget WITH an open, un-stale register row (registeredPoles),
+// a stale row (file now under 80% of budget), and an unregistered file
+// between the budget and NEW_POLE_REFUSAL_FRACTION (watchFiles) are all
+// REPORTED, never refused - only new-pole and unowned-row refuse
+// (failureLines), the amendment's own split.
 export function formatGuardReport(result: BudgetCheckResult): { infoLines: string[]; failureLines: string[] } {
   const infoLines: string[] = [];
   if (result.registeredPoles.length > 0) {
@@ -251,14 +275,19 @@ export function formatGuardReport(result: BudgetCheckResult): { infoLines: strin
       `${result.registeredPoles.length} registered pole(s) reported, not refused:\n${formatBudgetOffenders(result.registeredPoles)}`
     );
   }
+  if (result.watchFiles.length > 0) {
+    infoLines.push(
+      `${result.watchFiles.length} watch file(s) (unregistered, over budget but under ${NEW_POLE_REFUSAL_FRACTION}x - not refused):\n${formatBudgetOffenders(result.watchFiles)}`
+    );
+  }
+  if (result.staleRows.length > 0) {
+    infoLines.push(
+      `${result.staleRows.length} stale register row(s) (file now under 80% of budget - remove the row):\n${formatBudgetOffenders(result.staleRows)}`
+    );
+  }
   const failureLines: string[] = [];
   if (result.offenders.length > 0) {
     failureLines.push(`${result.offenders.length} new-pole offender(s):\n${formatBudgetOffenders(result.offenders)}`);
-  }
-  if (result.staleRows.length > 0) {
-    failureLines.push(
-      `${result.staleRows.length} stale register row(s) (file now under 80% of budget - remove the row):\n${formatBudgetOffenders(result.staleRows)}`
-    );
   }
   if (result.unownedRows.length > 0) {
     failureLines.push(

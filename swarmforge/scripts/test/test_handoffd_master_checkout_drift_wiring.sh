@@ -166,6 +166,18 @@ assert len(drift_lines) == 1, f"expected the RESTORED line to be the only MASTER
 PY
 pass "03: no \"MASTER CHECKOUT DRIFT:\" warning line was written for the restored episode"
 
+# ── 05: the deferred repair bounce reached the launcher (BL-1548) ──────────
+# The daemon's own bounce thread re-invokes start_handoff_daemon.sh under
+# SWARMFORGE_SKIP_DAEMON=1 (this test's own exported env, line 33) - BL-1548
+# made the launcher ledger that invocation BEFORE honouring the skip flag,
+# so the bounce is now observable here as one audit line, with nothing
+# started (checked separately from cases 01-03's OPERATOR-outbox evidence).
+AUDIT_LOG="$ROOT/.swarmforge/daemon/daemon-start-audit.log"
+[[ -f "$AUDIT_LOG" ]] || fail "05: $AUDIT_LOG does not exist - the deferred bounce never reached the launcher"
+grep -q "start_handoff_daemon invoked root=$ROOT" "$AUDIT_LOG" || fail "05: no invocation line naming $ROOT in $AUDIT_LOG"
+grep "start_handoff_daemon invoked root=$ROOT" "$AUDIT_LOG" | grep -q "SKIP_DAEMON=1" || fail "05: the invocation line does not read SKIP_DAEMON=1"
+pass "05: $AUDIT_LOG names $ROOT under SKIP_DAEMON=1, the deferred bounce's own re-invocation, with nothing started (PID1 was this test's only daemon)"
+
 echo "fixture root: $ROOT"
 
 # ═══════════════════════════════════════════════════════════════════════
