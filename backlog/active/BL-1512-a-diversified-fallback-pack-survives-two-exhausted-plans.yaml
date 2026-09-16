@@ -1,5 +1,5 @@
 id: BL-1512
-title: "A diversified fallback pack survives b.ai and Anthropic being exhausted together: swarmforge/packs/candidate-diversified-fallback-mono-router.conf staffs every pipeline seat from a third plan (Cursor, OpenAI, Alibaba Token Plan) with a model certified for that role, passes the staffing gate without the override hatch, and states in its header why each seat was chosen and how to launch it - the coordinator seat follows the operator's ruling because no non-Anthropic, non-b.ai coordinator pick has been proven live"
+title: "A diversified fallback pack survives b.ai and Anthropic being exhausted together: swarmforge/packs/candidate-diversified-fallback-mono-router.conf staffs every pipeline seat from a third plan (Cursor, OpenAI, Alibaba Token Plan) with a model certified for that role (steward eligible on the launch root, no override), whose cursor lines pass the staffing gate without the override hatch while the codex lines wait on BL-1597 and the qwen documenter line on a recorded documenter gate, and states in its header why each seat was chosen and how to launch it - the coordinator seat follows the operator's ruling because no non-Anthropic, non-b.ai coordinator pick has been proven live"
 milestone: M8
 type: feature
 status: todo
@@ -43,10 +43,21 @@ approval_context: >
   which is Anthropic and so cannot serve a pack for "BOTH b.ai and
   Anthropic unavailable"; qwen3.7-plus is the documenter's next certified
   non-Anthropic pick (0.72-0.8) - Amend if you prefer another; QA
-  cursor/auto. FIRM: every seat's model must be certified for its role
-  (steward eligible, no override) and the staffing gate must pass without
-  PACK_STAFFING_SKIP_GATE; if a pick fails either, the coder reports it
-  via note rather than substituting silently. Split by the specifier from
+  cursor/auto. FIRM: every seat's model must be certified for its role (steward
+  eligible on the LAUNCH root, no override) - verified by the specifier
+  on 2026-09-16 on the master checkout: all seven picks eligible when
+  named by the id the gate resolves (qwen/qwen3.7-plus, never
+  openai/qwen3.7-plus). AMENDED 2026-09-16 (specifier, after the coder's
+  eligibility note): the staffing gate passes the four cursor lines
+  today; the two codex lines refuse seat-model-unresolved because the
+  gate's agent-model-providers table has no codex row (BL-1597, minted
+  the same pass), and the qwen documenter line refuses role-gate-not-pass
+  because its scorecard records no documenter-gate (steward work). So the
+  LAUNCH line keeps PACK_STAFFING_SKIP_GATE=1 and the PREREQ names those
+  three verdicts and what clears each; the acceptance gates the pack's
+  shape against a steward fixture, never the live root. If a pick fails
+  eligibility on the launch root, the coder reports it via note rather
+  than substituting silently. Split by the specifier from
   the operator's 2026-09-09 intake (1:N): section 3.
 ruling_options:
   - Coordinator stays claude-sonnet-5 (Anthropic) with a header caveat that the seat is not diversified (recommended)
@@ -137,16 +148,39 @@ description: |
   - Scenario 01 parses the pack with the launcher's `parse_config` and
     resolves each line's provider through `pack_staffing_gate_lib.bb`'s
     own lookups (agent-model-providers, api-base-host-providers).
-  - Scenario 02 runs `bb model_steward_cli.bb eligible <provider>/<model>
-    --role <role>` per line, no `--override-uncertified`.
-  - Scenario 03: `env -u PACK_STAFFING_SKIP_GATE bb pack_staffing_gate_cli.bb
-    <root> <conf>` - every window row `pass` (decide the variable in the
-    handler; BL-1485).
+  - Eligibility is an e2e check on the launch root (amended 2026-09-16):
+    `bb swarmforge/scripts/model_steward_cli.bb eligible <provider>/<model>
+    --role <role>` with the provider/model the GATE resolves for the line
+    (cursor/auto, openai/gpt-5.3-codex, qwen/qwen3.7-plus - the aider
+    `--model openai/qwen3.7-plus` prefix is aider's OpenAI-compatible
+    routing, not the steward id; the gate maps the Token Plan host to
+    provider qwen). `.swarmforge/model-steward/` is gitignored, per-worktree
+    and stale in every worktree (the coder's registry knows three models),
+    so no acceptance scenario reads it.
+  - Scenario 02 (amended 2026-09-16) is the BL-1511 shape: the handler
+    builds a scratch root with a steward registry ranking cursor/auto on
+    specifier, cleaner, hardender and QA and qwen/qwen3.7-plus on
+    documenter, plus scorecards carrying `<role>-gate` pass entries,
+    derives the windows-file from the pack's `window` lines by the
+    launcher's field rules (role, agent, worktree, optional task|batch,
+    optional propagation, optional idle-clear, rest = extra-cli), pins it
+    at 7 lines, and runs `bb swarmforge/scripts/pack_staffing_gate_cli.bb
+    <scratch-root> <windows-file>` with `env -u PACK_STAFFING_SKIP_GATE`
+    (decide the variable in the handler; BL-1485): the cursor and qwen
+    lines pass, and with the documenter-gate entry removed the qwen line
+    refuses role-gate-not-pass (sensitivity, BL-1445). The two codex
+    lines read seat-model-unresolved in every fixture until BL-1597 lands
+    and are not asserted here (BL-1006: a slice-boundary assertion is the
+    successor's to retire, so none is written).
+  - Never pass the pack file itself as the CLI's second argument: it
+    reads it as a tab-less windows-file and prints a vacuous pass per
+    line (BL-1511's own false premise).
   - Scenario 04 reads the header and the coordinator config lines against
     the ticket's `human_ruling`.
-  - If gpt-5.3-codex or qwen3.7-plus fails the gate or eligibility on the
-    real registry, STOP and note the specifier with the verdict - the
-    pick is the operator's to change, not the coder's.
+  - If a pick fails ELIGIBILITY on the launch root, STOP and note the
+    specifier with the verdict - the pick is the operator's to change, not
+    the coder's. A gate refusal of a codex or qwen line on this host is
+    the known state above, not a stop.
 
   ## Not in scope
 
@@ -154,15 +188,49 @@ description: |
   - Changing any existing pack; automatic switching between packs.
 
 qa_e2e_procedure: |
-  1. `env -u PACK_STAFFING_SKIP_GATE bb swarmforge/scripts/pack_staffing_gate_cli.bb
-     . swarmforge/packs/candidate-diversified-fallback-mono-router.conf`
-     -> every window line `pass`.
-  2. For each line: `bb swarmforge/scripts/model_steward_cli.bb eligible
-     <provider>/<model> --role <role>` -> eligible.
+  1. Against the MASTER checkout root (`/home/carillon/swarmforgevc`, the
+     launch root), derive the windows-file from the pack's `window` lines
+     (the awk in BL-1511's e2e step 1) and run `env -u
+     PACK_STAFFING_SKIP_GATE bb swarmforge/scripts/pack_staffing_gate_cli.bb
+     /home/carillon/swarmforgevc tmp/div-windows.tsv` -> 7 lines: the
+     four cursor lines `pass`; the two codex lines
+     `seat-model-unresolved` until BL-1597 lands, then `pass`; the qwen
+     documenter line `role-gate-not-pass` until its documenter gate is
+     recorded, then `pass`. Record the verdict column verbatim; the
+     header's PREREQ must match it.
+  2. For each line, on the master root, with the provider/model the gate
+     resolves (cursor/auto, openai/gpt-5.3-codex, qwen/qwen3.7-plus):
+     `bb swarmforge/scripts/model_steward_cli.bb eligible <provider>/<model> --role <role>`
+     -> eligible for all seven (verified 2026-09-16).
   3. `SWARMFORGE_TERMINAL=none ./swarm <scratch-root> --pack
-     candidate-diversified-fallback-mono-router` on a scratch root with
-     fake keys reaches the staffing gate with every seat `pass` (the
-     launcher may then fail on missing real keys - that is after the
-     gate, and expected).
+     candidate-diversified-fallback-mono-router` on a scratch root with fake keys and PACK_STAFFING_SKIP_GATE=1 reaches
+     the staffing gate and prints the override warning per refused seat
+     (codex, qwen) and pass for the cursor seats (the launcher may then
+     fail on missing real keys - that is after the gate, and expected).
+
+notes: |
+  Amended 2026-09-16 by the specifier on the coder's eligibility note
+  (00_20260916T121343Z_001982; coder evidence
+  backlog/evidence/BL-1512-coder-verdict-20260916.md; adjudication
+  backlog/evidence/BL-1512-specifier-eligibility-adjudication-20260916.md).
+  The coder's 5-of-7 ineligible verdict came from its worktree's stale
+  gitignored steward registry (three models known) and, for qwen, from
+  the aider prefix openai/qwen3.7-plus instead of the steward id
+  qwen/qwen3.7-plus. On the launch root all seven picks are eligible.
+  The FIRM "gate passes without the hatch" was the specifier's own
+  unverified premise (the BL-1511 shape): on the launch root the gate
+  passes the four cursor lines, refuses both codex lines
+  seat-model-unresolved (no codex row in agent-model-providers - BL-1597)
+  and the qwen documenter line role-gate-not-pass (its scorecard has no
+  documenter-gate entry; steward work: compliance_battery.bb gate
+  documenter, then model_steward_cli.bb show qwen/qwen3.7-plus). Scope:
+  the pack is written with the FIRM picks; the hatch stays on the LAUNCH
+  line; the PREREQ names the three verdicts; scenario 02 is a fixture
+  gate check over the cursor and qwen lines with a sensitivity row;
+  eligibility moves to e2e on the master root. The human ruling
+  (coordinator seat) is untouched; human_approval stays approved. No
+  bounce recorded: the coder followed the ticket's own stop-and-report
+  route. The coder's partial (no pack written) is the correct state to
+  resume from.
 
 assigned_to: coder
