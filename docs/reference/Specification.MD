@@ -1,5 +1,28 @@
 # SwarmForge VS Code Extension — Specification
 
+**Last Updated:** September 16, 2026 (BL-1573: `chase_sweep_lib.bb`'s
+dispatch-gap sweep (BL-222) fallback note — sent when `auto-route!` can't
+resolve a HEAD commit and so drafts a soft `note` instead of a
+`git_handoff` — now leads with the router's own verb-first `Work` marker
+(`Work BL-217: read file in backlog/active - auto-routed by the sweep, no
+HEAD`, 76 characters, under the 80-character `dispatch-gap-note-max-length`),
+the same fix BL-1223 (2026-08-29) applied to the sibling
+`unassigned-active-note-message`. Before this fix, `dispatch-trail-ticket-id`
+read the fallback's bare-leading-id form as a mention, not a dispatch trail,
+so a HEAD resolution failure made the sweep re-detect and re-send the same
+note every cycle; `dispatch-trail-ticket-id` now answers the ticket id for
+the fallback message too. Surfaced by BL-1568, whose shell test sent this
+same fallback and could not satisfy its own idempotency case.
+`dispatch-trail-ticket-id`, `spec-work-ticket-id-pattern`,
+`read-active-items`, and `handoffd.bb` itself are unchanged — the fix is on
+the emitting side only. `specs/pipeline/steps/dispatchGapSteps.js`'s
+`listQueuedAutoroutesFor` (BL-222's own acceptance step handler) widened its
+match pattern from a bare leading id to `^message: (?:Work )?<id>` so it
+recognizes both the legacy and the new verb-first form. Acceptance:
+`specs/features/BL-1573-the-dispatch-gap-note-fallback-is-a-dispatch-trail.feature`.
+No registered diagram depicts the dispatch-gap sweep's note text, so none
+needed updating.) Prior entry —
+
 **Last Updated:** September 16, 2026 (BL-1510: a headless renderer,
 `extension/src/tools/render-model-scoring-report.ts`
 (`node extension/out/tools/render-model-scoring-report.js <project-root>

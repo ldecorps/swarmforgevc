@@ -22,17 +22,17 @@
 const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const path = require('node:path');
-const os = require('node:os');
 const { rotateDocumenter, spawnConsultDocumenter } = require('../out/tools/night-closing-ceremony-run');
+const { mkTmpDir } = require('./helpers/tmpDir');
+const { copyLiveScriptClosureInto } = require('./helpers/pinnedRepoFixture');
 
 function makeFixture() {
-  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'ncc-rotate-fallback-'));
+  const root = mkTmpDir('ncc-rotate-fallback-');
   const docWt = path.join(root, 'wt-documenter');
   fs.mkdirSync(path.join(docWt, '.swarmforge', 'handoffs', 'inbox', 'new'), { recursive: true });
   fs.mkdirSync(path.join(docWt, '.swarmforge', 'handoffs', 'inbox', 'in_process'), { recursive: true });
   fs.mkdirSync(path.join(root, '.swarmforge', 'launch'), { recursive: true });
   fs.mkdirSync(path.join(root, '.swarmforge', 'daemon', 'consult'), { recursive: true });
-  fs.mkdirSync(path.join(root, 'swarmforge', 'scripts'), { recursive: true });
 
   fs.writeFileSync(
     path.join(root, '.swarmforge', 'roles.tsv'),
@@ -44,19 +44,14 @@ function makeFixture() {
     mode: 0o755,
   });
 
-  // The REAL consult_spawn_cli.bb, symlinked in alongside its ENTIRE real
-  // .bb dependency closure (every .bb file in the checkout's own scripts
-  // dir, not a hand-picked list that silently rots the next time a lib
-  // gains a new load-file) - same "confirm the real wiring" posture as
-  // importing the real compiled night-closing-ceremony-run.js above.
-  // rotate_to_role.sh is deliberately NOT part of this - it is a .sh file,
-  // written fresh below as this fixture's own stub.
-  const scriptsDir = path.join(__dirname, '..', '..', 'swarmforge', 'scripts');
-  for (const name of fs.readdirSync(scriptsDir)) {
-    if (name.endsWith('.bb')) {
-      fs.symlinkSync(path.join(scriptsDir, name), path.join(root, 'swarmforge', 'scripts', name));
-    }
-  }
+  // The REAL consult_spawn_cli.bb, copied in alongside its DERIVED .bb
+  // dependency closure (BL-1038) - never the whole live scripts directory,
+  // which grows with every unrelated script the repo ever gains - same
+  // "confirm the real wiring" posture as importing the real compiled
+  // night-closing-ceremony-run.js above. rotate_to_role.sh is deliberately
+  // NOT part of this - it is a .sh file, written fresh below as this
+  // fixture's own stub.
+  copyLiveScriptClosureInto(path.join(root, 'swarmforge', 'scripts'), ['consult_spawn_cli.bb']);
 
   // A stub rotate_to_role.sh that always exits 5 - the exact respawn-as!
   // :refuse exit code (handoff_lib.bb) for a resident with a real,

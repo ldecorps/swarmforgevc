@@ -38,7 +38,7 @@ function writeQueuedNote(targetPath, itemId, to) {
   fs.mkdirSync(dir, { recursive: true });
   fs.writeFileSync(
     path.join(dir, '00_test.handoff'),
-    `id: test\nfrom: coordinator\nto: ${to}\npriority: 00\ntype: note\nmessage: ${itemId} is active with no dispatch on record - auto-routed by the sweep.\n\nbody\n`
+    `id: test\nfrom: coordinator\nto: ${to}\npriority: 00\ntype: note\nmessage: Work ${itemId}: read file in backlog/active - auto-routed by the sweep, no HEAD\n\nbody\n`
   );
 }
 
