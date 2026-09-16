@@ -350,13 +350,12 @@ test('a registered pole (open ticket, over budget) is NOT an offender and report
   assert.deepEqual(result.registeredPoles, [{ file: 'f.test.js', durationMs: 9000, budgetMs: 7000, kind: 'ok', ticket: 'BL-1' }]);
 });
 
-test('a row whose file now measures under 80% of budget is a stale-row, reported not refused', () => {
+test('a row whose file now measures under 80% of budget is reported, not refused (stale-row is watch-band, not a failure)', () => {
   const durations = [{ file: 'f.test.js', durationMs: 5000 }]; // 5000 < 0.8*7000=5600
   const register = [{ file: 'f.test.js', ticket: 'BL-1', firstSeen: '2026-01-01', measuredMs: 9000, note: '' }];
 
   const result = checkFileDurationBudget(durations, 7000, register, OPEN);
 
-  // Amended 2026-09-16: a stale row is reported, never refused.
   assert.equal(result.passed, true);
   assert.equal(result.verdict, 'stale-row');
   assert.deepEqual(result.staleRows, [{ file: 'f.test.js', durationMs: 5000, budgetMs: 7000, kind: 'stale-row', ticket: 'BL-1' }]);
@@ -422,7 +421,7 @@ test('a registered (open, owned) row whose file did not run this time is silentl
 
 test('verdict priority: new-pole beats unowned-row and stale-row when several kinds occur together', () => {
   const durations = [
-    { file: 'new.test.js', durationMs: 11000 }, // no row, at/above 1.5x budget - new-pole
+    { file: 'new.test.js', durationMs: 11000 }, // no row, >= 1.5x budget - new-pole
     { file: 'unowned.test.js', durationMs: 9000 },
     { file: 'stale.test.js', durationMs: 5000 },
   ];
@@ -486,9 +485,7 @@ test('formatGuardReport: a registered pole produces exactly one info line naming
   assert.deepEqual(failureLines, []);
 });
 
-// Amended 2026-09-16: a stale row is reported (infoLines), never refused
-// (failureLines) - only new-pole and unowned-row produce failure lines.
-test('formatGuardReport: offenders and unowned rows each produce their OWN failure line; a stale row reports as info, not failure', () => {
+test('formatGuardReport: offenders and unowned rows each produce their OWN failure line; stale rows are reported (info), not a failure', () => {
   const { infoLines, failureLines } = formatGuardReport({
     passed: false,
     verdict: 'new-pole',
@@ -577,33 +574,33 @@ test('printGuardReport prints the registered-pole info line even on a passing ru
   assert.match(stdout, /suite file budget OK/);
 });
 
-// Amended 2026-09-16: a stale row reports as info (stdout), never a
-// failure line - the "join separator" check now uses offenders + an
-// unowned row, the two kinds that still refuse together.
-test('printGuardReport on failure writes every failure line to stderr, newline-joined, prints a stale row as info, and prints no OK line', () => {
+test('printGuardReport on failure writes every failure line to stderr, newline-joined, and prints no OK line', () => {
   const { stdout, stderr } = captureConsoleAndStderr(() => {
     printGuardReport(
       {
         passed: false,
         verdict: 'new-pole',
-        offenders: [{ file: 'a.test.js', durationMs: 9000, budgetMs: 7000 }],
+        offenders: [
+          { file: 'a.test.js', durationMs: 11000, budgetMs: 7000 },
+          { file: 'c.test.js', durationMs: 12000, budgetMs: 7000 },
+        ],
         watchFiles: [],
         staleRows: [{ file: 'b.test.js', durationMs: 5000, budgetMs: 7000, kind: 'stale-row', ticket: 'BL-1' }],
-        unownedRows: [{ file: 'c.test.js', durationMs: 9000, budgetMs: 7000, kind: 'unowned-row', ticket: 'BL-999' }],
+        unownedRows: [],
         registeredPoles: [],
       },
       2
     );
   });
   assert.match(stderr, /suite file budget exceeded:/);
-  // Precise separator check (not [\s\S]*, which matches '' too): the
-  // offender line's own trailing text is directly followed by a real
-  // newline, then the unowned-row section's own leading text - proves
-  // failureLines.join('\n'), never join('') gluing "budget1 unowned..." into
-  // one run-on line.
-  assert.match(stderr, /per-file budget\n1 unowned register row/);
-  assert.doesNotMatch(stderr, /stale register row/);
+  // Precise separator check (not [\s\S]*, which matches '' too): both
+  // offender lines' own trailing text is directly followed by a real
+  // newline - proves formatBudgetOffenders joins with '\n', never ''.
+  assert.match(stderr, /per-file budget\nc\.test\.js/);
+  // Stale rows are reported (info), never a failure line - they print to
+  // stdout via infoLines, not to stderr's failureLines.
   assert.match(stdout, /stale register row/);
+  assert.doesNotMatch(stderr, /stale register row/);
   assert.doesNotMatch(stdout, /suite file budget OK/);
 });
 
@@ -632,12 +629,9 @@ test('runGuardAgainstReport relativizes an ABSOLUTE report path against the regi
   assert.equal(result.registeredPoles.length, 1);
 });
 
-// Amended 2026-09-16: with no register, an unregistered file still refuses
-// as new-pole once it reaches 1.5x the budget (9000ms alone would now be
-// watch - see the dedicated watch-band test above).
-test('runGuardAgainstReport with no register path behaves like pre-BL-1598 at/above 1.5x the budget (a clear new-pole)', () => {
+test('runGuardAgainstReport with no register path and a file at or above 1.5x budget is a new-pole, same as pre-BL-1598', () => {
   const root = mkTmp();
-  const reportPath = writeReport(root, [{ name: 'test/slow.test.js', startTime: 0, endTime: 15000 }]);
+  const reportPath = writeReport(root, [{ name: 'test/slow.test.js', startTime: 0, endTime: 11000 }]);
 
   const { result } = runGuardAgainstReport(reportPath);
 
@@ -649,7 +643,7 @@ test('runGuardAgainstReport with a register path whose file does not exist yet t
   const root = mkTmp();
   const backlogDir = path.join(root, 'backlog');
   fs.mkdirSync(backlogDir, { recursive: true });
-  const reportPath = writeReport(root, [{ name: 'test/slow.test.js', startTime: 0, endTime: 15000 }]);
+  const reportPath = writeReport(root, [{ name: 'test/slow.test.js', startTime: 0, endTime: 11000 }]);
   const registerPath = path.join(backlogDir, 'suite-poles.tsv'); // never written
 
   const { result } = runGuardAgainstReport(reportPath, registerPath);

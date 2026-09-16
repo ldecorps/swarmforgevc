@@ -158,11 +158,10 @@ function classifyRegisterRow(row: RegisterRow, measured: number | undefined, bud
   return null;
 }
 
-// Headline verdict precedence, the amendment's own stated order: new-pole,
-// unowned-row, watch, stale-row, ok. A new, unregistered offender at or
-// above the 1.5x refusal line is worse than an existing row gone stale, an
-// unowned row, or a lesser (watch-band) breach, so it wins whenever one
-// exists.
+// Priority order matches the amendment's own stated order (2026-09-16, QA's
+// Article 4.2 hold): new-pole, unowned-row, watch, stale-row, ok - a new,
+// unregistered offender is worse than an existing row gone stale or
+// unowned, which in turn outrank a merely-watched file or a stale one.
 function computeVerdict(offenderCount: number, unownedCount: number, watchCount: number, staleCount: number): BudgetVerdictKind {
   if (offenderCount > 0) return 'new-pole';
   if (unownedCount > 0) return 'unowned-row';
@@ -229,10 +228,6 @@ export function checkFileDurationBudget(
     .filter((d) => d.durationMs < refusalThresholdMs)
     .map((d) => ({ file: d.file, durationMs: d.durationMs, budgetMs, kind: 'watch' }));
 
-  // Amended 2026-09-16: only new-pole and unowned-row fail (`passed`);
-  // watch and stale-row are reported on every run they occur but never
-  // refuse - a snapshot gate that refuses on ordinary host-load jitter is
-  // red on day one.
   const passed = offenders.length === 0 && unownedRows.length === 0;
   const verdict = computeVerdict(offenders.length, unownedRows.length, watchFiles.length, staleRows.length);
 
