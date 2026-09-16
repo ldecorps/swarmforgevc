@@ -145,8 +145,12 @@ function listQueuedAutoroutesFor(ctx, itemId) {
   return files
     .map((f) => fs.readFileSync(path.join(dir, f), 'utf8'))
     .filter((content) => {
-      // Legacy soft-note auto-route OR BL-1094 git_handoff citing the ticket.
-      if (new RegExp(`^message: ${itemId}`, 'm').test(content)) return true;
+      // BL-1573: dispatch-gap-note-message now leads with the router's own
+      // verb-first "Work" marker (same fix BL-1223 applied to the sibling
+      // unassigned-active-note-message), so this fixture-side matcher
+      // recognizes that form too - a bare leading id (the pre-BL-1573
+      // fallback) or BL-1094's git_handoff citing the ticket.
+      if (new RegExp(`^message: (?:Work )?${itemId}`, 'm').test(content)) return true;
       return (
         /^type: git_handoff$/m.test(content) &&
         new RegExp(`^task: ${itemId}(?:-|$)`, 'm').test(content)
