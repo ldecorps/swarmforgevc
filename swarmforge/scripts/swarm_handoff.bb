@@ -883,8 +883,14 @@
 ;; copy addressed to it would land unapproved in-flight work on the
 ;; published branch. Residency is read from the table, never from a second
 ;; hardcoded role name.
-(defn reverse-roles [sender]
-  (reverse-hop-lib/reverse-recipients (roles-table-lines) sender (role-propagation sender)))
+;; BL-1605: subtracts the forward's own recipients from the reverse set -
+;; a role the `to:` already names (a bounce to an earlier role under
+;; back-one/back-all) must receive exactly the forwarding copy, never
+;; also a non-forwarding twin of the same send.
+(defn reverse-roles [sender forward-recipients]
+  (reverse-hop-lib/remove-forward-recipients
+   (reverse-hop-lib/reverse-recipients (roles-table-lines) sender (role-propagation sender))
+   forward-recipients))
 
 ;; BL-1536: the terminal non-forwarding stamp follows the hop's DIRECTION,
 ;; not the sender's seat alone (the old last-pack-role? check this replaced
@@ -1138,7 +1144,7 @@
                                                  :non-forwarding true
                                                  :reverse? true
                                                  :routing-skipped nil)))
-                        (reverse-roles (:sender ctx))))]
+                        (reverse-roles (:sender ctx) (:recipients ctx))))]
     (into [forward] reverse)))
 
 (defn error-report [draft errors]
