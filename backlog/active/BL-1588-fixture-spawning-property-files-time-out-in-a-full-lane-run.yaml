@@ -186,3 +186,17 @@ notes: |
   in-process budget check in seconds - BL-1541).
 
 assigned_to: coder
+bounce_count: 1
+bounce_history:
+  - { at: 2026-09-16, by: architect, blamed: coder, class: behavior, commit: 0d7be64b0a, evidence: backlog/evidence/BL-1588-architect-bounce-20260916.md }
+
+abandoned_commits: [d8f2b9e198]
+# d8f2b9e198 ("BL-1589: restore BL-1588 register rows to origin/main
+# content...") is QA's own diagnostic commit on the swarmforge-QA branch
+# from BL-1589's land-escalate (backlog/evidence/BL-1589-land-escalate-followup-20260916.md):
+# a restore attempt superseded by the hand-built tip-pure land the
+# specifier then authorized (9e253d2d21, confirmed on origin/main).
+# d8f2b9e198 never reached origin/main
+# (git merge-base --is-ancestor d8f2b9e198 origin/main fails) - this
+# ticket's own land removes the same four rows for real, per BL-1588's
+# own fix landing.

@@ -23,6 +23,7 @@ const path = require('node:path');
 const { spawnSync, execFileSync } = require('node:child_process');
 const { mkTmpDir } = require('./helpers/tmpDir');
 const { assertReachFloor, runsPerCell } = require('./helpers/reachFloors');
+const { propertyLaneTimeoutMs } = require('./helpers/propertyLaneContentionBudget');
 
 const REPO_ROOT = path.join(__dirname, '..', '..');
 const LAND_LIB = path.join(REPO_ROOT, 'swarmforge', 'scripts', 'land_step_lib.bb');
@@ -183,7 +184,7 @@ test('property (invariant 1 and 2): every own path survives, every unlanded-sibl
   }
 
   assertReachFloor(seen, ['withSiblings', 'withUntaggedOwn', 'noSiblings'], INVARIANT1_CELL_RUNS, 'own-paths-shape');
-});
+}, propertyLaneTimeoutMs(20000));
 
 // ── invariant 2, second sentence: an unreadable attribution refuses rather
 //    than narrowing - driven via an injected commits-fn (own-paths' own DI
@@ -228,4 +229,4 @@ test('property (invariant 2, refusal): an unreadable path refuses the land and n
     }),
     { numRuns: 12 }
   );
-});
+}, propertyLaneTimeoutMs(20000));
