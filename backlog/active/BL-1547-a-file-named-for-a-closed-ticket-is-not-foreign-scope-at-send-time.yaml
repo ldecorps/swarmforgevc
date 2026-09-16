@@ -155,6 +155,8 @@ notes: |
   active / absent); kept as written.
 
 assigned_to: coder
+abandoned_commits: [32b7c311ee]
+
 bounce_count: 1
 bounce_history:
   - { at: 2026-09-16, by: architect, blamed: cleaner, class: behavior, commit: faac7a4489, evidence: backlog/evidence/BL-1547-architect-bounce-20260916.md }
