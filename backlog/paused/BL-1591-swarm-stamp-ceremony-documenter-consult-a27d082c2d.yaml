@@ -186,6 +186,12 @@ notes: |
   BL-658 (the night closing ceremony). Grep all three before minting
   anything about consult sessions or the ceremony's documenter hop.
 
+  2026-09-16, specifier bookkeeping: the hotfix-landed fallback test's
+  raw fs.mkdtempSync at line 29 turned BL-1280's whole-tree guard red
+  on main; BL-1593 owns that register row and the one-line migration to
+  mkTmpDir. This parcel must NOT migrate that line itself (the two
+  share the file; not orthogonal, BL-1593 lands first). If this parcel
+  extends makeFixture, it builds on BL-1593's landed shape.
 qa_e2e_procedure: |
   On the parcel commit:
   1. `git diff main...HEAD --name-only` names only evidence, the feature,
