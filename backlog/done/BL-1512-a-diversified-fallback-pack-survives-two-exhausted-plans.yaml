@@ -234,3 +234,14 @@ notes: |
   resume from.
 
 assigned_to: coder
+
+abandoned_commits: [66817a2bc3, 421bfc0664, d4bc5f18d3]
+# 66817a2bc3 is QA's own branch tip cited to land_step_cli.bb; the CLI
+# built a tip-pure replay (970199c726, LAND_REPLAY route,
+# ENTANGLED_SIBLING BL-1592) rather than landing the cited commit
+# directly (BL-1241 remedy) - the replay severs descent, so this override
+# is required for task_scope_gate_lib.bb / pre_qa_gate_lib.bb to read the
+# landed commit correctly. 421bfc0664 and d4bc5f18d3 are QA's earlier
+# cited tips from the BL-1544 land-escalate
+# (backlog/evidence/BL-1573-land-escalate-20260916.md), all off the
+# landed lineage by SHA.
