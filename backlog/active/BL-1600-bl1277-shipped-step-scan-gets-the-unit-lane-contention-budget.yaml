@@ -1,0 +1,106 @@
+id: BL-1600
+title: "extension/test/bl1277UnscopedStepCollisionGuard.test.js's shipped-step scan requires every handler under specs/pipeline/steps and ran 23.5 s against the unit lane's flat 20 s testTimeout under a 1-minute load of 10.8 on 2026-09-16 (green in QA's lower-load run the same morning), a load-dependent standing red with no owner; the scan gets the unit lane's contention-relative budget (BL-1007) from its 20 s base with no floor lowered, and the register row leaves in the same land"
+milestone: M8
+type: defect
+severity: high
+# high: a standing red on main at first sighting (Article 3.2.4,
+# 2026-09-05); the specifier's own npm test run found it, no parcel is
+# withheld on it yet.
+status: todo
+epic: code-quality-gates
+priority: 8
+direction: swarm-reported
+depends_on: []
+mutation_cost: low
+# low: one test file and evidence; the helper exists (BL-1007).
+slice_size_envelope: low
+required_stages: [coder, cleaner, architect, hardender, documenter, qa]
+
+acceptance: specs/features/BL-1600-bl1277-shipped-step-scan-gets-the-unit-lane-contention-budget.feature
+
+required_wiring:
+  - 'specs/pipeline/steps/bl1600ShippedStepScanBudgetSteps.js::registerSteps::the handler lands in the same parcel as the feature (BL-233, BL-1371)'
+
+human_approval: approved
+approval_context: >
+  A new feature file is authored here, so it needs a tap. No choice is
+  posed and there are no ruling_options. FIRM: the shipped-scan test's
+  budget is resolveUnitLaneTimeout from a 20000 ms base (BL-1007's helper,
+  the unit lane's own contention rule, capped at its 120 s ceiling), so a
+  quiet host keeps 20 s (invariant 1); no assertion is weakened, the scan
+  still requires every shipped handler. FIRM: the file's 23.6 s wall is
+  also a BL-378 pole and stays in BL-1598's register owned by BL-791;
+  cutting the scan's cost is slice D work, not this ticket's.
+
+invariants:
+  - "The shipped-scan test on a quiet host (contention factor at or under 1) receives exactly its 20000 ms base: the budget grows only with recorded contention, never by a bare raise."
+
+description: |
+  ## What is wrong
+
+  Specifier run of `npm test` on 2026-09-16 (20 cores, 9 forks, 1-minute
+  load 10.8): `bl1277UnscopedStepCollisionGuard.test.js > the shipped step
+  files register no colliding unscoped pattern` failed after 23537 ms
+  (vitest renders the timeout as `Error: STACK_TRACE_ERROR` at line 108,
+  the test's own declaration); the file's other five tests passed in under
+  30 ms. `shippedCollisionVerdict()` (`extension/test/helpers/stepCollisionGuard.js`)
+  requires every file under `specs/pipeline/steps/` through the real
+  registry - about 940 handlers - so its cost is the module graph's, and
+  under swarm load it crosses the lane's flat `testTimeout: 20000`. QA's
+  full `npm test` the same morning (BL-1589-QA-20260916.md, lower load)
+  had it green: load-dependent, not deterministic. No owner, no register
+  row.
+
+  ## What is wanted
+
+  - The shipped-scan `it(` carries a budget derived through
+    `resolveUnitLaneTimeout(20000)` from `specs/pipeline/steps/lib/contentionBudget.js`
+    (the helper `extension/vitest.config.mjs` already reaches), never a
+    bare literal (scenario 01, source-level).
+  - The derivation yields exactly 20000 at factor 1, more under
+    contention, and never above the helper's ceiling (scenario 02,
+    pure injection).
+  - The register row removed in the same land; 20 of 20 green alone and
+    3 of 3 full `npm test` runs green for this file (e2e).
+
+  ## How (direction, not mandate)
+
+  - `const { resolveUnitLaneTimeout } = require('../../specs/pipeline/steps/lib/contentionBudget');`
+    and `resolveUnitLaneTimeout(20000).effectiveMs` as the third argument
+    of that one `it(` - the same seam the property lane's helper wraps.
+  - Scenario 01 reads the file's source: exactly one per-test timeout is
+    declared, on the shipped-scan test, through the helper from 20000.
+  - Documenter: nothing beyond evidence; no diagram trigger.
+
+constraints: >
+  One test file and evidence; the helper and the scan's assertions
+  unchanged; no numRuns, no skip. The step handler lands with the feature
+  (BL-233). Evidence named BL-1600-*.
+
+out_of_scope: |
+  - Cutting the scan's cost (BL-791 slice D pole work; the file is in
+    BL-1598's register).
+  - Any other unit-lane timeout under load: its own unowned-red note.
+
+qa_e2e_procedure: |
+  From `extension/` on the parcel commit:
+  1. `for i in $(seq 1 20); do npx vitest run test/bl1277UnscopedStepCollisionGuard.test.js || echo FAIL; done` -> 20 of 20 green.
+  2. `npm test` 3 times -> the file green in every run.
+  3. Acceptance resolving both scenarios.
+  4. `bb swarmforge/scripts/standing_red_register_cli.bb .` after landing
+     reports no row for the file and `"unowned":[]`.
+
+source: |
+  Specifier's own `npm test` measurement for BL-791 slice C, 2026-09-16
+  13:16 UTC (`extension/.vitest-report.json`), recorded in
+  backlog/evidence/BL-791-slice-c-lane-budget-decision-20260916.md.
+
+notes: |
+  Minted 2026-09-16 by the specifier on a red found in its own measurement
+  run (the standing-red rule applies to any role's sighting); register row
+  added the same pass. INVEST: Independent, Negotiable (seam is fixed by
+  BL-1007, placement is direction), Valuable (one load-dependent red
+  stops withholding parcels), Estimable (two lines), Small (two
+  scenarios, one invariant), Testable (source check and pure injection).
+
+assigned_to: coder
