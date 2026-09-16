@@ -34,6 +34,7 @@ const os = require('node:os');
 const path = require('node:path');
 const { execFileSync, spawnSync } = require('node:child_process');
 const { mkTmpDir } = require('./helpers/tmpDir');
+const { assertReachFloor, runsPerCell } = require('./helpers/reachFloors');
 
 const REPO_ROOT = path.join(__dirname, '..', '..');
 const LAND_STEP_LIB = path.join(REPO_ROOT, 'swarmforge', 'scripts', 'land_step_lib.bb');
@@ -134,6 +135,7 @@ function sweepFixtures() {
 test('BL-1354/BL-654 invariant 2: a sibling is judged on its own attributed content only', () => {
   sweepFixtures();
   const reach = Object.fromEntries(MIXES.map((m) => [m, 0]));
+  const MIX_CELL_RUNS = runsPerCell(3 * MIXES.length, MIXES.length);
 
   for (const mix of MIXES) {
     fc.assert(
@@ -167,17 +169,18 @@ test('BL-1354/BL-654 invariant 2: a sibling is judged on its own attributed cont
           fs.rmSync(root, { recursive: true, force: true });
         }
       }),
-      { numRuns: 3 },
+      { numRuns: MIX_CELL_RUNS },
     );
   }
 
-  for (const mix of MIXES) assert.ok(reach[mix] > 0, `never exercised the ${mix} mix`);
+  assertReachFloor(reach, MIXES, MIX_CELL_RUNS, 'landed mix');
 });
 
 test('BL-1354/BL-654 invariant 1: an unanswerable attribution never reads landed', () => {
   sweepFixtures();
   const SHAPES = ['walk-failed', 'empty-path-set', 'unreadable-diff'];
   const reach = Object.fromEntries(SHAPES.map((s) => [s, 0]));
+  const SHAPE_CELL_RUNS = runsPerCell(3 * SHAPES.length, SHAPES.length);
 
   for (const shape of SHAPES) {
     fc.assert(
@@ -233,9 +236,9 @@ test('BL-1354/BL-654 invariant 1: an unanswerable attribution never reads landed
           fs.rmSync(root, { recursive: true, force: true });
         }
       }),
-      { numRuns: 3 },
+      { numRuns: SHAPE_CELL_RUNS },
     );
   }
 
-  for (const shape of SHAPES) assert.ok(reach[shape] > 0, `never exercised the ${shape} shape`);
+  assertReachFloor(reach, SHAPES, SHAPE_CELL_RUNS, 'unanswerable attribution shape');
 });

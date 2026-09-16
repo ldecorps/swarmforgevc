@@ -46,6 +46,7 @@ const {
   connectEvents,
   sleep,
 } = require('../../specs/pipeline/steps/lib/bl1460IdleEventsFixture');
+const { assertReachFloor, runsPerCell } = require('./helpers/reachFloors');
 
 const REPO_ROOT = path.join(__dirname, '..', '..');
 const BRIDGE_SRC = path.join(REPO_ROOT, 'extension', 'src', 'bridge', 'bridgeServer.ts');
@@ -62,7 +63,7 @@ test('BL-1460/BL-654 invariant 1 (structural): the connect path seeds lastSnapsh
 test('BL-1460/BL-654 invariant 1 (behavioural): no two consecutive data frames a client receives are identical, whatever the change/no-change schedule', async () => {
   const fx = makeFixture();
   const handle = await startFixtureBridge(fx);
-  const reach = { allIdle: false, backToBackChanges: false };
+  const reach = { allIdle: 0, backToBackChanges: 0 };
   let counter = 0;
 
   async function runSchedule(changeFlags) {
@@ -94,8 +95,8 @@ test('BL-1460/BL-654 invariant 1 (behavioural): no two consecutive data frames a
       for (let i = 1; i < dataFrames.length; i += 1) {
         assert.notEqual(dataFrames[i], dataFrames[i - 1], `frames ${i - 1} and ${i} were identical consecutive snapshots`);
       }
-      if (changeFlags.every((c) => !c)) reach.allIdle = true;
-      if (sawBackToBack) reach.backToBackChanges = true;
+      if (changeFlags.every((c) => !c)) reach.allIdle += 1;
+      if (sawBackToBack) reach.backToBackChanges += 1;
       return true;
     } finally {
       await client.close();
@@ -103,23 +104,25 @@ test('BL-1460/BL-654 invariant 1 (behavioural): no two consecutive data frames a
   }
 
   try {
+    // The broad random exploration is its own single cell of the file's
+    // unchanged 8-run budget; the two named shapes below are guaranteed by
+    // direct construction rather than hoped for from this draw.
     await fc.assert(
       fc.asyncProperty(fc.array(fc.boolean(), { minLength: 1, maxLength: 4 }), runSchedule),
-      { numRuns: 8 },
+      { numRuns: runsPerCell(8, 1) },
     );
     // Reach floor: force the two shapes fc's draw is not guaranteed to hit -
     // an all-idle run and a back-to-back-changes run - rather than hope for
     // them (the failure shape this repo has seen before: a generator
     // technically covering a state while never actually landing on it).
     await runSchedule([false, false]);
-    reach.allIdle = true;
+    reach.allIdle += 1;
     await runSchedule([true, true]);
-    reach.backToBackChanges = true;
+    reach.backToBackChanges += 1;
   } finally {
     await handle.stop();
     removeFixture(fx);
   }
 
-  assert.ok(reach.allIdle, 'never exercised an all-idle schedule');
-  assert.ok(reach.backToBackChanges, 'never exercised two changes back to back with no idle tick between them');
+  assertReachFloor(reach, ['allIdle', 'backToBackChanges'], 1, 'idle/back-to-back schedule shape');
 }, 60000);
