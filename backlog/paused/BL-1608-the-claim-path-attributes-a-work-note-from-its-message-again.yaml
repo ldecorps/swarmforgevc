@@ -1,0 +1,192 @@
+id: BL-1608
+title: "BL-1185's fix is gone from main: the hard coder seat's claim predicate reads mutation cost from the task header alone, which a Work note never carries, so it defers the note to an idle easy sibling and prints NO_TASK while the ambulance patient's mail sits in new - BL-1167's land ccc63d8cfd (2026-08-27) replaced BL-1185's message attribution with a bare header read, BL-1185's scenario 02 has been red on main since and was first recorded on 2026-09-16; both claim-time cost readers resolve the ticket through one shared attribution that falls back to the Work message, and the register row leaves with BL-1185's feature green"
+milestone: M8
+type: defect
+severity: high
+# high: a standing red on main (Article 3.2.4, 2026-09-05) and a landed
+# fix silently reverted (BL-571 class); on any tiered pack with an idle
+# easy sibling a hard seat cannot claim a Work note. Today's pack runs one
+# coder, so no live routing fault, which is why nobody noticed for 20 days.
+status: todo
+epic: multi-seat-stages
+priority: 8
+direction: swarm-reported
+depends_on: []
+# BL-1602 (active) touches specs/pipeline/steps drivers and the register
+# only; this ticket touches swarmforge/scripts/ready_for_next_task.bb, a
+# bb test runner, its own feature and handler. No shared path. BL-1602's
+# land removes nine register rows; BL-1185's row now names this ticket and
+# leaves only with this ticket's land.
+mutation_cost: low
+# low: Babashka, no Stryker/CRAP/DRY wired (engineering.prompt); one
+# script, one bb unit-test runner, one feature and handler, evidence.
+slice_size_envelope: low
+required_stages: [coder, cleaner, architect, hardender, documenter, qa]
+
+acceptance: specs/features/BL-1608-the-claim-path-attributes-a-work-note-from-its-message-again.feature
+
+required_wiring:
+  - 'swarmforge/scripts/ready_for_next_task.bb::claim-task-name::the pre-existing claim predicate and the claim-moment effort apply are the consumers of the shared attribution (BL-1235); the name is chosen at mint so the literal will exist (BL-874)'
+  - 'specs/pipeline/steps/bl1608ClaimPathAttributesWorkNoteSteps.js::registerSteps::the handler lands in the same parcel as the feature (BL-233, BL-1371)'
+
+human_approval: pending
+approval_context: >
+  A new feature file is authored here, so it needs a tap. No choice is
+  posed and there are no ruling_options. FIRM: the attribution rule is
+  BL-1185's, unchanged - prefer the task header, else the "Work BL-..."
+  ticket named in the note's message, else nil; a task header is never
+  invented on a type note (BL-1185 scenario 03 stays green). FIRM: one
+  shared function serves both claim-time readers (the claim predicate and
+  the effort apply), so the two cannot drift apart again; the rework-claim
+  decision's own task read (BL-1004, git_handoff only) is untouched. FIRM:
+  BL-1167's same-model bypass and BL-1001's tier rules are unchanged; the
+  four sibling features (BL-1001, BL-1004, BL-1167, BL-1185) all resolve
+  green on the parcel. FIRM: the register row for BL-1185's feature leaves
+  in the same land.
+
+invariants:
+  - "Every claim-time reader of a parcel's mutation cost resolves the ticket through the one shared attribution: no site in ready_for_next_task.bb passes a bare task-header read to mutation-cost-for-task or to the effort apply."
+
+description: |
+  ## What is wrong
+
+  `specs/features/BL-1185-work-note-missing-task-header-defers-hard-seat.feature`
+  scenario 02 fails on main (specifier run 2026-09-16, 37 s, 3 pass 1
+  fail):
+
+  ```
+  Scenario "the hard seat claims an ambulance patient Work note when easy is idle" failed at step "Then the Work note is claimed rather than skipped as defer-better-fit": hard should claim Work note; out=NO_TASK
+  new=10_work_1789583561812.handoff in_process=
+  ```
+
+  The coder's BL-1602 sweep found the same single failure before and
+  after the audit-helper change and raised it as its own unowned-red note
+  (`00_20260916T182510Z_002003_from_coder_to_specifier_coordinator`,
+  `.worktrees/coder/backlog/evidence/BL-1602-coder-20260916.md` "BL-1185
+  note"): this driver's drafts are `type: note`, which the self-audit
+  never gates, so it is not BL-1602's class. The specifier's census had
+  flagged it "same class by structure, confirm in the sweep"; the sweep
+  said no.
+
+  Mechanism (read, not guessed): `difficulty-allows-claim?`
+  (`swarmforge/scripts/ready_for_next_task.bb:92-108`) computes
+  `cost (mutation-cost-for-task (handoff-lib/header-field handoff-file "task"))`.
+  A Work note carries no `task:` header (task is git_handoff-only,
+  `swarm_handoff` validation), so the cost is nil, and
+  `seat-difficulty-lib/difficulty-claim-decision` on a hard seat with an
+  idle easy sibling answers defer-better-fit; the note stays in `new/`
+  and the seat prints NO_TASK. That is the fault BL-1185 fixed on
+  2026-08-27 (8fa2a5c2fb) with `task-name-for-difficulty`: prefer the
+  task header, else `supersede-lib/task-name-from-content` on the note
+  (the `Work BL-...` message). BL-1167's land the same afternoon
+  (ccc63d8cfd, "bypass tier routing when stage seats share the same
+  model") rewrote the predicate's signature and replaced that call with
+  the bare header read - the diff removes `task-name-for-difficulty`
+  outright, one commit after 465281d90d's architect pass said "keep
+  BL-1185 attribution". A merge that silently reverts already-landed work
+  (BL-571/BL-958); nothing ran BL-1185's feature again until today.
+  `apply-effort-for-task!` (line 65, BL-1316) reads the same bare header
+  at the claim moment, so a claimed Work note also applies no
+  ticket-specific effort.
+
+  ## What is wanted
+
+  - One shared attribution in `ready_for_next_task.bb` - `claim-task-name`
+    - that returns the `task` header when present, else the `Work BL-...`
+    ticket slug from the note's message (`supersede-lib/task-name-from-content`,
+    the same reader BL-1185 used), else nil; both `difficulty-allows-claim?`
+    and `apply-effort-for-task!` resolve the task through it, and neither
+    reads the header directly for a cost (scenario 01, source-level, with
+    the call-site count pinned; scenario 02 drives the function on three
+    handoff shapes).
+  - BL-1185's feature resolves 4 of 4 on the parcel (e2e; it is this
+    ticket's register row), and BL-1001, BL-1004 and BL-1167 stay green.
+  - A bb unit test in `swarmforge/scripts/test/` for the shared
+    attribution (the three shapes of scenario 02), the lane's only gate
+    for Babashka (engineering.prompt: no mutation/CRAP/DRY wired).
+  - The register row for BL-1185's feature removed in the same land, with
+    `bb swarmforge/scripts/standing_red_register_cli.bb .` reporting no
+    row for it and `"unowned":[]`.
+
+  ## How (direction, not mandate)
+
+  - Restore the eight lines ccc63d8cfd removed (see `git show ccc63d8cfd
+    -- swarmforge/scripts/ready_for_next_task.bb`), under the name
+    `claim-task-name`, and call it at lines 65 and 97 in place of
+    `(handoff-lib/header-field handoff-file "task")`. Line 229's
+    `claim-task` and line 359's `:task` feed the rework-claim decision
+    (BL-1004, git_handoff parcels only) and are not cost readers - leave
+    them.
+  - Scenario 01's handler reads the script and asserts: both function
+    bodies contain `claim-task-name`; the literal
+    `mutation-cost-for-task (handoff-lib/header-field` is absent; the
+    count of `(claim-task-name ` call sites is exactly 2 (BL-1445: a
+    census, not a hope). Scenario 02's handler writes three fixture
+    handoff files and calls the function through `bb -e` with the script
+    loaded, about a second each.
+  - Test: `swarmforge/scripts/test/ready_for_next_claim_task_name_runner.bb`
+    (the `seat_difficulty_lib_test_runner.bb` shape).
+  - Documenter: `docs/how-to` page for seat difficulty routing (BL-1001)
+    or handoff-protocol.md's Work-note section says a Work note's ticket
+    is attributed from its message at claim time; no diagram trigger.
+
+constraints: >
+  swarmforge/scripts/ready_for_next_task.bb, one bb test runner, the
+  feature and its handler, evidence; no change to seat_difficulty_lib.bb,
+  supersede_lib.bb, handoff_lib.bb or any feature file other than this
+  ticket's own; no task header written onto any note. The step handler
+  lands with the feature (BL-233). Evidence named BL-1608-*.
+
+out_of_scope: |
+  - The BL-1602 sweep and its nine remaining register rows.
+  - Why nothing runs the acceptance corpus routinely (recorded in
+    backlog/evidence/BL-1602-specifier-adjudication-of-coder-unowned-red-20260916.md;
+    a process ticket if the ceremony packet names it).
+  - The rework-claim decision's task read (BL-1004).
+
+qa_e2e_procedure: |
+  On the parcel commit, from the repo root:
+  1. `./specs/pipeline/scripts/run_acceptance.sh specs/features/BL-1185-work-note-missing-task-header-defers-hard-seat.feature`
+     -> 4 pass, 0 fail (the failing step above is gone).
+  2. The same for `specs/features/BL-1001-*.feature`, `BL-1004-*.feature`,
+     `BL-1167-*.feature` -> all green (BL-1602's audit fix must be on the
+     parcel's base for these; merge main first).
+  3. `./specs/pipeline/scripts/run_acceptance.sh specs/features/BL-1608-*.feature`
+     -> both scenarios green.
+  4. `bb swarmforge/scripts/test/ready_for_next_claim_task_name_runner.bb` -> green.
+  5. `grep -n 'header-field handoff-file "task"' swarmforge/scripts/ready_for_next_task.bb`
+     -> only the rework-claim sites (no line inside difficulty-allows-claim?
+     or apply-effort-for-task!).
+  6. After landing, `bb swarmforge/scripts/standing_red_register_cli.bb .`
+     reports no row for BL-1185's feature and `"unowned":[]`.
+
+source: |
+  Coder note to the specifier and coordinator, priority 00,
+  2026-09-16T18:25Z (inbound 00_20260916T182510Z_002003_from_coder):
+  "unowned-red: BL-1185 seat-claim NO_TASK, unrelated to audit fix
+  (BL-1602)". Coder evidence
+  .worktrees/coder/backlog/evidence/BL-1602-coder-20260916.md ("BL-1185
+  note"). Specifier adjudication and reproduction:
+  backlog/evidence/BL-1608-specifier-adjudication-of-coder-unowned-red-20260916.md.
+  Parents: BL-1185, BL-1167, BL-1316, BL-1602.
+
+notes: |
+  Minted 2026-09-16 by the specifier while completing the coder's
+  unowned-red note, the same pass; the register row for BL-1185's feature
+  moved from BL-1602 to this ticket (first_seen stays 2026-09-16, the
+  first record; red since 2026-08-27); BL-1602 amended in flight (notes,
+  row table; nine rows leave with its land, BL-1185's row stays) and the
+  coder (holding BL-1602) sent the note; the coordinator sent the
+  paused-ready note. The acceptance pointer is this ticket's own feature;
+  BL-1185's feature going green is the e2e and the row's release, not a
+  claim of ownership over BL-1185's contract (BL-1251). INVEST:
+  Independent (the reader and the lookup exist; nothing unbuilt),
+  Negotiable (the function's name and the runner's shape are direction;
+  the attribution rule is BL-1185's and fixed), Valuable (a landed fix is
+  back on main and a hard seat claims Work notes again), Estimable (eight
+  restored lines, two call sites, one runner, one small handler - one
+  sitting), Small (two scenarios, one invariant), Testable (source census
+  and a bb call in seconds; the four sibling features in e2e - BL-1541).
+  Severity high per the standing-red rule.
+
+assigned_to: null
