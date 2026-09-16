@@ -174,3 +174,6 @@ notes: |
   two that are (bl1295, bl1358) are owned by BL-1580/BL-1581.
 
 assigned_to: coder
+bounce_count: 1
+bounce_history:
+  - { at: 2026-09-16, by: architect, blamed: cleaner, class: behavior, commit: 0a6d9b6053, evidence: backlog/evidence/BL-1587-sampled-reach-floors-sweep-3-of-6-bounce-20260916.md }
