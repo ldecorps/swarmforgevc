@@ -206,3 +206,7 @@ notes: |
     file/process state).
 
 assigned_to: coder
+abandoned_commits: [2453b8f599]
+# QA land: BL-1241 entanglement (BL-1547, BL-1595, BL-1598 unfinished
+# siblings on the shared branch) — land_step_cli.bb built a tip-pure
+# replay 2c1c44e2cc, landed instead of the cited commit.
