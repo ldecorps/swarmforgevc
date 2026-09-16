@@ -26,6 +26,7 @@ const path = require('node:path');
 const { execFileSync } = require('node:child_process');
 const fc = require('fast-check');
 const { mkTmpDir } = require('./helpers/tmpDir');
+const { assertReachFloor, runsPerCell } = require('./helpers/reachFloors');
 
 const REPO_ROOT = path.join(__dirname, '..', '..');
 const UPDATER = path.join(REPO_ROOT, 'swarmforge', 'scripts', 'hotfix_ledger_update.bb');
@@ -93,25 +94,46 @@ const linkArb = (pool, existing) =>
       })
     );
 
+// BL-1587: the "hit" link's commit is derived FROM the drawn `created` set
+// (chained), rather than an independent PRESENT draw hoping to land on one
+// of the (up to 3) created commits - the "went red on an unlucky seed"
+// failure this file's own header comment already documents. `existed` is
+// now true BY CONSTRUCTION for every run. `miss` already drew from ABSENT,
+// a pool never created, so it was already a guaranteed miss by construction
+// and is unchanged.
+const missArb = linkArb(ABSENT, false);
+
 // Every scenario creates at least one row, then links at least one row that
 // exists and at least one that does not, plus any number of further links in
 // any order.
 const scenarioArb = fc
   .record({
     created: fc.uniqueArray(fc.constantFrom(...PRESENT), { minLength: 1, maxLength: 3 }),
-    hit: linkArb(PRESENT, true),
-    miss: linkArb(ABSENT, false),
+    hitTicket: ticketArb,
+    miss: missArb,
     extra: fc.array(
       fc.oneof(linkArb(PRESENT, true), linkArb(ABSENT, false)),
       { maxLength: 3 }
     ),
   })
-  .map(({ created, hit, miss, extra }) => ({
-    // Only the drawn `created` commits are made, so a link at PRESENT can
-    // still miss - the invariant holds either way.
+  .chain((partial) =>
+    fc.constantFrom(...partial.created).map((hitCommit) => ({ ...partial, hitCommit }))
+  )
+  .map(({ created, hitCommit, hitTicket, miss, extra }) => ({
     creates: created.map((commit) => ({ kind: 'new', commit })),
-    links: [hit, miss, ...extra],
+    links: [
+      { kind: 'link', existing: true, commit: hitCommit, ticket: hitTicket },
+      miss,
+      ...extra,
+    ],
   }));
+
+// The reach here is already guaranteed by construction via scenarioArb's
+// chained hit/miss derivation above (see the BL-1587 note there), not by a
+// cell split - one cell over the whole generator space. runsPerCell(12, 1)
+// is the identity, kept so the draw count is still derived through the
+// shared helper rather than a bare literal.
+const SCENARIO_CELL_RUNS = runsPerCell(12, 1);
 
 describe('BL-1254 invariant 2: only a recorded human decision certifies a hotfix', () => {
   it('never reaches certified or waived through the operations a green run performs', () => {
@@ -146,12 +168,10 @@ describe('BL-1254 invariant 2: only a recorded human decision certifies a hotfix
           );
         }
       }),
-      { numRuns: 12 }
+      { numRuns: SCENARIO_CELL_RUNS }
     );
 
-    assert.ok(reached.created > 0, 'the generator never created a ledger row');
-    assert.ok(reached.linkedExisting > 0, 'the generator never linked an existing row');
-    assert.ok(reached.linkedMissing > 0, 'the generator never linked a row that was not there');
+    assertReachFloor(reached, ['created', 'linkedExisting', 'linkedMissing'], 1, 'operation');
   });
 
   it('does certify when a human decision is recorded', () => {

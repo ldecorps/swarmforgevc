@@ -40,6 +40,7 @@ const fs = require('node:fs');
 const path = require('node:path');
 const { spawnSync } = require('node:child_process');
 const { mkTmpDir } = require('./helpers/tmpDir');
+const { assertReachFloor, runsPerCell } = require('./helpers/reachFloors');
 
 const REPO_ROOT = path.join(__dirname, '..', '..');
 const HANDOFF_LIB = path.join(REPO_ROOT, 'swarmforge', 'scripts', 'handoff_lib.bb');
@@ -164,33 +165,64 @@ function bbDecideSequence(signals, baselineEffort) {
   return JSON.parse(r.stdout.trim());
 }
 
+function runInvariant2Case(signals, baselineEffort, reach) {
+  const steps = bbDecideSequence(signals, baselineEffort);
+  assert.equal(steps.length, signals.length, 'bb fold skipped a signal');
+  let i = 0;
+  // The seam: each answer comes from the real Babashka decision, and the
+  // inputs the JS loop built must match the ones bb actually decided on.
+  const decide = (input) => {
+    const step = steps[i++];
+    for (const key of ['priorEffort', 'baselineEffort', 'signal', 'cleanStreak', 'cleanStreakRequired']) {
+      assert.equal(input[key], step[key], `JS and bb folds diverged on ${key} at step ${i - 1}`);
+    }
+    return { apply: step.apply, effort: step.effort };
+  };
+  return checkAsymmetry(decide, signals, baselineEffort, reach);
+}
+
+// BL-1587: top/floor/climbs/drops are reached BY CONSTRUCTION, not hoped for
+// from a weighted random walk - the pure decision above is deterministic
+// (bounce always climbs one notch until the top rung; clean only drops once
+// its streak reaches ADAPT_DEFAULT_CLEAN_STREAK), so one pinned sequence
+// starting at the bottom rung - a leading clean (sits at the baseline),
+// enough bounces to reach the top, then a full clean streak to force one
+// drop - reaches all four deterministically. Run before the random sequence
+// pass, the same PINNED-then-random shape as BL-1308's sibling-detector
+// properties. The draw budget of 40 and the per-signal decision are
+// unchanged.
+const PINNED_SEQUENCES = [
+  {
+    signals: [
+      'clean',
+      ...Array(ADAPT_EFFORT_LADDER.length - 1).fill('bounce'),
+      ...Array(ADAPT_DEFAULT_CLEAN_STREAK).fill('clean'),
+    ],
+    baselineEffort: ADAPT_EFFORT_LADDER[0],
+  },
+];
+
+// The random sequence pass is one cell over the whole generator space (its
+// reach is already covered by PINNED_SEQUENCES above, so it is exploratory
+// fuzzing, not a reach-floor source) - runsPerCell(40, 1) is the identity,
+// kept so the draw count is still derived through the shared helper rather
+// than a bare literal.
+const INVARIANT2_RANDOM_PASS_RUNS = runsPerCell(40, 1);
+
 test('BL-1317/BL-654 invariant 2: a climb is one notch per signal, a drop needs the whole streak, and neither leaves the ladder', () => {
   const reach = { top: 0, floor: 0, drops: 0, climbs: 0 };
 
+  for (const { signals, baselineEffort } of PINNED_SEQUENCES) {
+    runInvariant2Case(signals, baselineEffort, reach);
+  }
+
   fc.assert(
-    fc.property(sequenceArb, effortArb, (signals, baselineEffort) => {
-      const steps = bbDecideSequence(signals, baselineEffort);
-      assert.equal(steps.length, signals.length, 'bb fold skipped a signal');
-      let i = 0;
-      // The seam: each answer comes from the real Babashka decision, and the
-      // inputs the JS loop built must match the ones bb actually decided on.
-      const decide = (input) => {
-        const step = steps[i++];
-        for (const key of ['priorEffort', 'baselineEffort', 'signal', 'cleanStreak', 'cleanStreakRequired']) {
-          assert.equal(input[key], step[key], `JS and bb folds diverged on ${key} at step ${i - 1}`);
-        }
-        return { apply: step.apply, effort: step.effort };
-      };
-      return checkAsymmetry(decide, signals, baselineEffort, reach);
-    }),
-    { numRuns: 40 },
+    fc.property(sequenceArb, effortArb, (signals, baselineEffort) => runInvariant2Case(signals, baselineEffort, reach)),
+    { numRuns: INVARIANT2_RANDOM_PASS_RUNS },
   );
 
   // The asserted reachability floor.
-  assert.ok(reach.top > 0, 'generator never reached the top rung - the ceiling assertions never fired');
-  assert.ok(reach.floor > 0, 'generator never sat at the baseline - the floor assertions never fired');
-  assert.ok(reach.climbs > 0, 'generator never produced an applied climb');
-  assert.ok(reach.drops > 0, 'generator never produced an applied drop - the whole streak rule went untested');
+  assertReachFloor(reach, ['top', 'floor', 'climbs', 'drops'], 1, 'adapt-effort-state');
 });
 
 test('BL-1317 non-vacuity: invariant 2 rejects a decision that jumps straight to the top rung', () => {
@@ -266,28 +298,47 @@ function replaySignals(root, signals, mutationCost) {
   return r.stdout.trim();
 }
 
+function runInvariant1Case(signals, mutationCost, reach) {
+  const { root, confPath } = bl1317Fixture('medium');
+  const before = fs.readFileSync(confPath);
+  const beforeStat = fs.statSync(confPath);
+
+  const finalEffort = replaySignals(root, signals, mutationCost);
+
+  const after = fs.readFileSync(confPath);
+  assert.ok(before.equals(after), 'Adapt rewrote the pack conf');
+  assert.equal(beforeStat.size, fs.statSync(confPath).size);
+
+  // And the mechanism it DOES use is the respawn-read settings file, so
+  // "never the conf" is not passing merely because nothing happened.
+  if (rank(finalEffort) > rank(mutationCost)) reach.climbed += 1;
+  if (rank(finalEffort) < rank('medium')) reach.dropped += 1;
+}
+
+// BL-1587: "the seat moved at all" is reached BY CONSTRUCTION - a single
+// bounce against a fixture that always starts at 'medium' can only leave
+// the seat at 'medium' or climb it, so pairing it with mutationCost 'low'
+// guarantees rank(finalEffort) > rank('low') on every run, whether or not
+// the climb itself applied - rather than a weighted random walk hoping to
+// move the seat at all. The draw budget of 12 is unchanged.
+const PINNED_INVARIANT1_CASES = [{ signals: ['bounce'], mutationCost: 'low' }];
+
+// Same identity-cell shape as INVARIANT2_RANDOM_PASS_RUNS above.
+const INVARIANT1_RANDOM_PASS_RUNS = runsPerCell(12, 1);
+
 test('BL-1317/BL-654 invariant 1: no outcome sequence ever rewrites the pack conf on disk', () => {
   const reach = { climbed: 0, dropped: 0 };
 
+  for (const { signals, mutationCost } of PINNED_INVARIANT1_CASES) {
+    runInvariant1Case(signals, mutationCost, reach);
+  }
+
   fc.assert(
     fc.property(sequenceArb, fc.constantFrom('low', 'medium', 'high'), (signals, mutationCost) => {
-      const { root, confPath } = bl1317Fixture('medium');
-      const before = fs.readFileSync(confPath);
-      const beforeStat = fs.statSync(confPath);
-
-      const finalEffort = replaySignals(root, signals, mutationCost);
-
-      const after = fs.readFileSync(confPath);
-      assert.ok(before.equals(after), 'Adapt rewrote the pack conf');
-      assert.equal(beforeStat.size, fs.statSync(confPath).size);
-
-      // And the mechanism it DOES use is the respawn-read settings file, so
-      // "never the conf" is not passing merely because nothing happened.
-      if (rank(finalEffort) > rank(mutationCost)) reach.climbed += 1;
-      if (rank(finalEffort) < rank('medium')) reach.dropped += 1;
+      runInvariant1Case(signals, mutationCost, reach);
       return true;
     }),
-    { numRuns: 12 },
+    { numRuns: INVARIANT1_RANDOM_PASS_RUNS },
   );
 
   assert.ok(
