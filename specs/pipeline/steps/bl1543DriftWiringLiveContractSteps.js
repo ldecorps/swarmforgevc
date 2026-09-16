@@ -136,4 +136,9 @@ function registerSteps(registry) {
   });
 }
 
-module.exports = { registerSteps };
+// BL-1548 reuses the run/parse plumbing below for its own scenario driving
+// the SAME standing shell suite - exported so its own step handler, scoped
+// to its OWN feature name, never re-implements "run the suite, read its
+// PASS: lines" a second time. registerSteps itself is unaffected: its own
+// registrations stay scoped to THIS file's FEATURE_NAME exactly as before.
+module.exports = { registerSteps, KNOWN_SUITE, runSuite, outputOf, passLines, findPassLine };
