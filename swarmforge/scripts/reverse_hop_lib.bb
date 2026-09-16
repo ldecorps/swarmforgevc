@@ -146,6 +146,21 @@
          "back-all" (vec (take idx roles))
          [])))))
 
+;; BL-1605: a role that the forward's own `to:` already names must never
+;; ALSO receive a non-forwarding reverse copy of the same send - an
+;; architect bounce `to: cleaner` under back-all synthesized both the
+;; forwarding file AND a non-forwarding twin (same task/commit) into the
+;; cleaner's mailbox in one batch, and the batch-aware send gate
+;; (inbound-non-forwarding?) then refused the cleaner's own re-forward for
+;; the WHOLE batch until a chase. Subtracts the forward's recipients from
+;; the reverse candidates reverse-recipients above already computed - never
+;; a second derivation of which roles are "earlier"; a role not among the
+;; forward's recipients gets exactly the same non-forwarding copy it gets
+;; today.
+(defn remove-forward-recipients
+  [candidates forward-recipients]
+  (vec (remove (set forward-recipients) candidates)))
+
 (defn roles-lines
   "roles.tsv lines under root, or [] when the table is absent."
   [root]
