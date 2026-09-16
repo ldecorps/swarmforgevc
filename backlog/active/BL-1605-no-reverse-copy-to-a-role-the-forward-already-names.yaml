@@ -158,3 +158,10 @@ notes: |
   clarified in handoff-protocol.md). This ticket's title, scenarios and
   invariants stand; BL-1609 depends on this one landing first.
 assigned_to: coder
+
+abandoned_commits: [c96761faa1]
+# Same BL-1576 merge-drop guard finding already fully diagnosed and
+# escalated to the specifier (backlog/evidence/BL-1576-merge-drop-guard-
+# false-positive-documenter-20260916.md; also recorded on BL-1599,
+# BL-1607, BL-1608 the same pass). Verified against the current tree:
+# nothing is actually lost.
