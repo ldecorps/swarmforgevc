@@ -10,6 +10,7 @@ const {
   failingFilesFromRow,
   readAcceptancePath,
   tailExcerpt,
+  composeQaGatherReport,
 } = require('../out/quality/qaGather');
 const { findTicketYamlContent, gatherQaChecklist } = require('../out/metrics/qaGatherAdapter');
 
@@ -102,6 +103,26 @@ test('runChecklist reports the row shape a report reader needs: command, cwd, st
   assert.equal(row.exit, 3);
   assert.ok(row.duration_ms >= 0);
   assert.equal(row.excerpt, 'outerr');
+});
+
+test('runChecklist calls onRawOutcome with the UNBOUNDED outcome for a check that ran, never for a blocked one', () => {
+  const longStdout = 'x'.repeat(5000);
+  const { runFn } = fakeRunner({ default: { started: true, exit: 0, stdout: longStdout, stderr: '' } });
+  const raw = new Map();
+  const rows = runChecklist(CHECKLIST, { root: '/r', ticketId: 'BL-1', commit: 'abc1234567' }, runFn, (id, outcome) => {
+    raw.set(id, outcome.stdout);
+  });
+  // every check that actually ran (all but the two blocked-by-missing-
+  // prerequisite ones, wiring/acceptance, since no --task/acceptance
+  // feature was given) reported its raw, full-length stdout - never the
+  // row's own bounded `excerpt`.
+  const ranIds = rows.filter((r) => r.status === 'ran').map((r) => r.id);
+  assert.deepEqual([...raw.keys()].sort(), ranIds.slice().sort());
+  for (const id of ranIds) {
+    assert.equal(raw.get(id).length, 5000);
+  }
+  assert.ok(!raw.has('wiring'));
+  assert.ok(!raw.has('acceptance'));
 });
 
 test('no row ever carries a verdict-shaped field', () => {
@@ -222,4 +243,34 @@ test('gatherQaChecklist resolves the ticket\'s own acceptance: path and reports 
   for (const key of Object.keys(report)) {
     assert.ok(!/verdict|pass|bounce|approve/i.test(key), `report key "${key}" looks like a verdict field`);
   }
+});
+
+// BL-1554 architect bounce D1 (2026-09-16): the register check's raw JSON
+// stdout was fed through the SAME bounding (tailExcerpt, EXCERPT_MAX_CHARS
+// = 4000) as every other check's display excerpt, so a register large
+// enough to cross that bound had its opening `{`/array structure sliced
+// off, JSON.parse threw, and every failing file that run found silently
+// reported `absent` regardless of what the register actually said -
+// reproduces the architect's own repro (40 register rows, ~4640 chars).
+test('composeQaGatherReport correctly classifies owned even when the register CLI\'s own JSON exceeds the display excerpt bound', () => {
+  const bigRows = [];
+  for (let i = 0; i < 40; i += 1) {
+    bigRows.push({ lane: 'unit', file: `test/file${i}.test.js`, ticket: `BL-${1000 + i}`, first_seen: '2026-01-01', age_days: 1, owned: true });
+  }
+  const registerJson = JSON.stringify({ rows: bigRows });
+  assert.ok(registerJson.length > 4000, 'fixture must actually exceed the excerpt bound to reproduce D1');
+
+  const runFn = (command, args) => {
+    if (args.some((a) => String(a).includes('standing_red_register_cli'))) {
+      return { started: true, exit: 0, stdout: registerJson, stderr: '' };
+    }
+    if (args.includes('test')) {
+      return { started: true, exit: 1, stdout: 'FAIL test/file0.test.js\n', stderr: '' };
+    }
+    return { started: true, exit: 0, stdout: '', stderr: '' };
+  };
+
+  const report = composeQaGatherReport('/fake/root', 'BL-9999', { commit: 'abc1234567' }, runFn, undefined);
+
+  assert.deepEqual(report.register_join, [{ file: 'test/file0.test.js', join: 'owned', ticket: 'BL-1000' }]);
 });
