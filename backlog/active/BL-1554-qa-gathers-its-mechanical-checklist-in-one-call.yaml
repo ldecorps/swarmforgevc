@@ -166,16 +166,16 @@ qa_e2e_procedure: |
      reimplemented).
 
 assigned_to: coder
-abandoned_commits: [e2e8503cfc]
-
 bounce_count: 2
 bounce_history:
   - { at: 2026-09-16, by: architect, blamed: coder, class: behavior, commit: d926d21599, evidence: backlog/evidence/BL-1554-architect-bounce-20260916.md }
   - { at: 2026-09-16, by: QA, blamed: coder, class: behavior, commit: 67926c1e9d, evidence: backlog/evidence/BL-1554-QA-bounce-20260916.md }
 
-abandoned_commits: [45822a9b27]
+abandoned_commits: [45822a9b27, e2e8503cfc]
 # 45822a9b27 ("BL-1554: record QA bounce in ticket history", by QA) is not
 # reachable from this worktree's merge chain (PRE_QA_GATE ancestry check).
 # Its sole content - bounce_count: 2 and the QA bounce_history entry - is
 # replayed by hand in this same commit instead of a second land of the
 # identical fields.
+# e2e8503cfc is the commit originally cited for QA approval; the land step
+# replayed it tip-pure onto origin/main as 050076f38d (BL-1241 remedy).
