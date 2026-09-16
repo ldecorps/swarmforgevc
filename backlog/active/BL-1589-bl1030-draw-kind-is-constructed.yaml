@@ -184,3 +184,5 @@ notes: |
   not medium: the register throttles intake until reds drain. The file is
   recorded on BL-1583 as owned here and excluded from sweep 5a/5b, the
   way bl1295 and bl1358 are excluded.
+
+assigned_to: coder

@@ -164,3 +164,5 @@ qa_e2e_procedure: |
      fake keys reaches the staffing gate with every seat `pass` (the
      launcher may then fail on missing real keys - that is after the
      gate, and expected).
+
+assigned_to: coder

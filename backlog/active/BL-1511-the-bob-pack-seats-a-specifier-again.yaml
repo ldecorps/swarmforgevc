@@ -115,3 +115,5 @@ qa_e2e_procedure: |
      dry shape (bl931 runner) resolves a launch line for the pack.
   3. Header read: role table lists specifier; no "deliberately ABSENT";
      LAUNCH line carries no PACK_STAFFING_SKIP_GATE.
+
+assigned_to: coder
