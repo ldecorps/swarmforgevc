@@ -1,0 +1,228 @@
+id: BL-1606
+title: "extension/test/bl1304DryRunSpawnsNothing.property.test.js (three bb-spawning tests, no per-test budget, the lane's raw 20 s) and extension/test/bl968MaterializedGuardSensitivity.property.test.js (a bare 240000 ms third argument) timed out in QA's full property lane on the BL-1598 parcel on 2026-09-16, green alone, no owner; both derive their budgets from the base they declare today through the property lane's helper, and the helper stops resolving below a base - its 120000 ms ceiling sits under 240000, so today's route would halve that file's budget under load and BL-1596's sweep would carry the cut to fifteen more sites"
+milestone: M8
+type: defect
+severity: high
+# high: two standing reds on main at first sighting (Article 3.2.4,
+# 2026-09-05); QA withholds BL-1598 on them under Article 4.2 (note
+# 00_20260916T180834Z_002817). Not medium: the helper gap would turn
+# BL-1596's class fix into a budget cut on 15 sites.
+status: todo
+epic: code-quality-gates
+priority: 8
+direction: swarm-reported
+depends_on: []
+# BL-1588 (the helper) and BL-1592 (the same shape on four files) are in
+# backlog/done. BL-1595 (active) edits only its own property file; no
+# shared path with this ticket. BL-1596 (paused) sweeps every remaining
+# bare site and now depends on this ticket, which lands first.
+mutation_cost: low
+# low: two test files, one test helper and its unit test, evidence;
+# extension/src unchanged, no Stryker target.
+slice_size_envelope: low
+required_stages: [coder, cleaner, architect, hardender, documenter, qa]
+
+acceptance: specs/features/BL-1606-two-more-property-files-fit-a-full-lane-and-no-lane-budget-resolves-below-its-base.feature
+
+required_wiring:
+  - 'specs/pipeline/steps/bl1606TwoMorePropertyFilesFitAFullLaneSteps.js::registerSteps::the handler lands in the same parcel as the feature (BL-233, BL-1371)'
+# No production anchor on purpose (BL-1235): the two files and the helper
+# exist, so any pattern on them matches before and after the fix; the
+# source scenarios check the call sites directly.
+
+human_approval: pending
+approval_context: >
+  A new feature file is authored here, so it needs a tap. No choice is
+  posed and there are no ruling_options. FIRM: every test in the two
+  files derives its per-test timeout from the base the file declares
+  today (20000 ms for bl1304, the lane's own testTimeout it sits on;
+  240000 ms for bl968) through propertyLaneTimeoutMs - the base is never
+  changed, so a file alone on a quiet host keeps exactly the budget it
+  has today. FIRM: the helper never resolves a budget below its base at
+  any fork count or load, and every base grows with the lane's
+  concurrency the way the 20000 ms base does; a 20000 ms base at 8 forks
+  still resolves exactly 40000 ms and a 60000 ms base exactly 120000 ms,
+  so no existing BL-1588/BL-1592/BL-1595 example changes. FIRM: no draw
+  count, reach floor or assertion in either file changes; the shared
+  unit-lane rule in specs/pipeline/steps/lib/contentionBudget.js is
+  untouched (the property lane passes its own ceiling through the
+  existing ceilingMs injection). FIRM: the two register rows and the two
+  allowlist mirror rows leave in the same land.
+
+invariants:
+  - "The property lane's per-test budget never resolves below the base the test declares, at any published fork count and any load: a lane-level ceiling caps growth, never the base."
+  - "No draw count, reach floor or assertion in either file changes: the parcel's diff over the two property files contains no removed or changed line other than a require line and a per-test timeout argument."
+
+description: |
+  ## What is wrong
+
+  QA's checklist gather (BL-1554, `qa-gather.js`) on the BL-1598 parcel
+  commit 771b9cdd6d ran `npm test` and then `npm run test:properties`
+  (one after the other, `spawnSync`) and the property lane timed out two
+  files that no open ticket names and that carry no register row
+  (`backlog/evidence/BL-1598-QA-unowned-red-20260916.md`, QA branch
+  cd5f3b5e25):
+
+  ```
+  FAIL  test/bl1304DryRunSpawnsNothing.property.test.js > invariant 1: dry run starts no stage and creates no worktree/branch, regardless of prior state
+  Error: Test timed out in 20000ms.
+
+  FAIL  test/bl968MaterializedGuardSensitivity.property.test.js > BL-968 invariant 2 (generative): every planted load-time-binding module, any class, any chain depth, turns the guard red naming it
+  Error: Test timed out in 240000ms.
+  ```
+
+  Both are green alone at the same commit (bl1304 3/3 in 8.7 s; bl968
+  within BL-1450's 60 s solo budget, `BL-1450-*.feature` scenario 01).
+
+  - bl1304's three `test(` calls (lines 106, 152, 188) carry no third
+    argument, so they sit on the lane's flat `testTimeout: 20000`, and
+    each spawns the expedite CLI under `bb` 12 to 15 times per run
+    (`numRuns` 15 and 12; `spawnSync` with its own 30 s guard at line
+    74). That is exactly the shape BL-1592 owned for bl1375, bl1309 and
+    bl1389 ("at the lane's raw 20-second ceiling with no per-test budget
+    at all"); BL-1592 pinned its population by name, so this file was
+    never covered, and BL-1596 excludes files with no per-test timeout by
+    design ("a red there is its own unowned-red note").
+  - bl968's one test passes a bare `240000` (line 243), BL-1596's class
+    (13 of its 81 sites carry that base). BL-1450 (2026-09-07) set it
+    after 120000 "was hit twice under the real full-lane POOLED run
+    (126046ms, 149518ms)"; the lane now runs 408 files and the same
+    pooled regime crossed 240 s.
+  - Routing that base through the helper as it stands does not fix it
+    and BL-1596's sweep would make it worse: `propertyLaneTimeoutMs`
+    calls `resolveUnitLaneTimeout(base, { factor })`, whose
+    `effectiveBudgetMs` returns `min(ceiling, base * factor)` for any
+    factor above 1 with the shared `UNIT_LANE_BUDGET_CEILING_MS = 120000`
+    (`specs/pipeline/steps/lib/contentionBudget.js`). For a 240000 ms base
+    at 9 forks that is `min(120000, 540000) = 120000` - half the declared
+    budget, under the very load the helper exists for. The BL-1007
+    contract ("1000 -> ceiling") was written for bases under the ceiling;
+    every base at or above it (BL-1596's census: 33 sites at 120000, 2 at
+    180000, 13 at 240000) never grows, and the 15 above it shrink.
+    BL-1596 invariant 1 checks only the quiet host, so the sweep would
+    pass with the cut in place.
+
+  ## What is wanted
+
+  - Every test in bl1304 receives `propertyLaneTimeoutMs(20000)` and
+    bl968's test `propertyLaneTimeoutMs(240000)`; no bare numeric per-test
+    timeout survives in either file (scenario 01).
+  - The property lane's budget never resolves below its base and every
+    base grows with the lane's concurrency: a 240000 ms base resolves
+    exactly 240000 at one fork on a quiet host, more than 240000 at 8
+    forks, and never under 240000 at any fork count; a 20000 ms base at 8
+    forks still resolves exactly 40000 and a 60000 ms base exactly 120000
+    (scenario 02, invariant 1). The shared unit-lane rule is untouched:
+    the property lane supplies its own ceiling through
+    `resolveUnitLaneTimeout`'s existing `ceilingMs` option.
+  - bl1304 green alone on the tree as it stands (scenario 03, about 9 s);
+    bl968's green runs are e2e only (its solo run is already gated by
+    BL-1450 scenario 01 and would not fit the per-mutant ceiling twice,
+    BL-1541).
+  - Each file's evidence records the full-lane failure text verbatim
+    with the load and fork count of the parcel's own reproduction (QA's
+    text above counts as the first sighting; cite it by path) and the
+    change that removed it (scenario 04).
+  - The two register rows and the two allowlist mirror rows removed in
+    the same land, with `bb swarmforge/scripts/standing_red_register_cli.bb .`
+    reporting no row for either file and `"unowned":[]`.
+
+  ## How (direction, not mandate)
+
+  - `extension/test/helpers/propertyLaneContentionBudget.js`:
+    `propertyLaneTimeoutMs(baseMs, opts)` passes
+    `ceilingMs: Math.max(UNIT_LANE_BUDGET_CEILING_MS, baseMs * PROPERTY_LANE_MAX_GROWTH)`
+    (one named constant, e.g. 3 - the worst factor this host has shown is
+    2.7 at load 10.8; forks 12 gives 3.0) into `resolveUnitLaneTimeout`,
+    so a base under the ceiling keeps exactly today's arithmetic and a
+    base at or above it gains the same multiplicative headroom. Never a
+    copy of `effectiveBudgetMs`'s math; never an edit to
+    `contentionBudget.js` (BL-1007's examples stay as they are).
+  - `bl1588PropertyLaneBudgetConcurrencyInvariant.property.test.js` (or a
+    sibling) gains the property "for every base in 20000..300000 and every
+    fork count in 1..64, the budget is at least the base" - the invariant
+    is a property, not a list (BL-633).
+  - bl1304: `const { propertyLaneTimeoutMs } = require('./helpers/propertyLaneContentionBudget');`
+    and `, propertyLaneTimeoutMs(20000)` as each test's third argument;
+    bl968: the literal at line 243 becomes
+    `propertyLaneTimeoutMs(240000)` with the require added once and the
+    BL-1450 comment kept. Nothing else in either file changes
+    (invariant 2).
+  - Scenario 01 reads the two sources (the BL-1592/BL-1595 step shape,
+    scoped to this feature); scenario 02 drives `propertyLaneTimeoutMs`
+    through its `forksFn`/`loadavg1mFn` seams in process; scenario 03 runs
+    bl1304 under the properties config; scenario 04 reads the evidence.
+    All in seconds except scenario 03 (BL-1541).
+  - Documenter: `docs/how-to/BL-1175-property-suite-standing-reds-block-unrelated-commits.md`
+    or the helper's header states that a property test's budget is never
+    below its base and that bases above the shared ceiling grow too; no
+    diagram trigger.
+
+constraints: >
+  Two property test files, one test helper and its test, evidence;
+  extension/src unchanged; specs/pipeline/steps/lib/contentionBudget.js
+  unchanged; the property lane config unchanged. No base changed, no
+  numRuns reduced, no assertion deleted, no floor lowered, no retry, no
+  seed pinned. The step handler lands with the feature (BL-233). Evidence
+  named BL-1606-*.
+
+out_of_scope: |
+  - Cutting either file's cost (bl968's cells are already iterated once
+    each, BL-1450; bl1304's spawns are the property).
+  - The other 79 bare sites (BL-1596, which depends on this ticket and
+    finds these two files already migrated).
+  - The unit lane's contention rule (BL-1607, same pass, owns bl1277).
+  - Files with no per-test timeout other than bl1304 (each is its own
+    unowned-red note).
+
+qa_e2e_procedure: |
+  On the parcel commit, from `extension/`, after `npm run compile`:
+  1. `for i in $(seq 1 20); do npx vitest run --config vitest.properties.config.mjs test/bl1304DryRunSpawnsNothing.property.test.js || echo FAIL; done`
+     -> 20 of 20 green; the same for bl968MaterializedGuardSensitivity 5
+     times (about 50 s each alone).
+  2. `npm run test:properties` 3 times -> both files green in every run;
+     any other timeout recorded with its text and raised as an
+     unowned-red note if it is not one of these two files.
+  3. `node -e "const h=require('./test/helpers/propertyLaneContentionBudget');console.log(h.propertyLaneTimeoutMs(240000,{forksFn:()=>9,loadavg1mFn:()=>1.8}), h.propertyLaneTimeoutMs(20000,{forksFn:()=>8,loadavg1mFn:()=>1.8}))"`
+     -> first number above 240000, second exactly 40000.
+  4. Acceptance resolving all four scenarios
+     (`specs/pipeline/scripts/run_acceptance.sh specs/features/BL-1606-*.feature`).
+  5. `git diff <parent>..<parcel> -- test/bl1304DryRunSpawnsNothing.property.test.js test/bl968MaterializedGuardSensitivity.property.test.js | grep -E '^-' | grep -vE '^---'`
+     shows only the bare `240000` line (invariant 2: bl1304 removes
+     nothing).
+  6. After landing, `bb swarmforge/scripts/standing_red_register_cli.bb .`
+     reports no row for either file and `"unowned":[]`, and
+     `swarmforge/scripts/property_suite_standing_allowlist.tsv` carries no
+     row for either.
+
+source: |
+  QA note to the specifier, priority 00, 2026-09-16T18:08Z (inbound
+  00_20260916T180834Z_002817_from_QA_to_specifier): "unowned-red BL-1598:
+  bl1277/bl1304/bl968Sensitivity timeouts, hold open". QA evidence
+  backlog/evidence/BL-1598-QA-unowned-red-20260916.md (QA branch
+  cd5f3b5e25). Specifier adjudication:
+  backlog/evidence/BL-1606-specifier-adjudication-of-qa-unowned-red-20260916.md
+  (covers BL-1607 too). Parents: BL-1579, BL-1588, BL-1592, BL-1595,
+  BL-1596, BL-1450.
+
+notes: |
+  Minted 2026-09-16 by the specifier while completing QA's unowned-red
+  note, the same pass as BL-1607 (bl1277's owner); the two register rows
+  and the two property-suite allowlist mirror rows name this ticket
+  (first_seen 2026-09-16, the first recorded sighting at these budgets);
+  QA was sent the resume note (BL-1566 shape, asking for a merge of main
+  first so the land keeps the rows - BL-1604's hazard) and the
+  coordinator the paused-ready note. BL-1596 amended the same pass:
+  depends_on gains this ticket, its census subtracts bl968's site, and
+  its notes record the ceiling hazard this ticket closes. INVEST:
+  Independent (helper and files exist, nothing unbuilt), Negotiable
+  (the ceiling's shape is direction; the base and the never-below-base
+  property are fixed), Valuable (two lane reds stop withholding
+  unrelated parcels and the class fix stops being a cut), Estimable
+  (two one-line migrations, one helper line, one property test - one
+  sitting), Small (four scenarios, two invariants), Testable (source
+  checks and the in-process seams in seconds; bl1304 alone about 9 s;
+  bl968 and the lane runs in e2e - BL-1541). Severity high per the
+  standing-red rule.
+
+assigned_to: null
