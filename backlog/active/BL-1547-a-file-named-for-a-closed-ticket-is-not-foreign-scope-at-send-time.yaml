@@ -153,3 +153,5 @@ notes: |
 
   IR-DRY on the feature: findings are the variables under test (done /
   active / absent); kept as written.
+
+assigned_to: coder
