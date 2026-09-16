@@ -196,4 +196,4 @@ notes: |
   (real gate on a fixture repository in seconds - BL-1541). Severity
   high: a live refusal lane on the default pack.
 
-assigned_to: null
+assigned_to: coder
