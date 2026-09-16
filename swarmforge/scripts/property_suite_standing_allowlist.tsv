@@ -1,1 +1,6 @@
 file	disposition	rationale
+test/bl1280MkdtempMigrationInvariants.property.test.js	allowlist	owner BL-1593 (backlog/standing-reds.tsv): invariant 2 finds nightClosingCeremonyRotateDocumenterFallback.test.js:29's raw mkdtempSync, landed by hotfix a27d082c2d outside the pipeline, not yet promoted/fixed as of 2026-09-16
+test/bl1375ApprovedSiblingsCanLandInvariants.property.test.js	allowlist	owner BL-1592 (backlog/standing-reds.tsv): invariant 1 "Test timed out in 20000ms." at the lane raw ceiling, no per-test budget wired, not yet fixed as of 2026-09-16
+test/bl1309LandDecideEntanglementInvariants.property.test.js	allowlist	owner BL-1592 (backlog/standing-reds.tsv): invariant 1 "Test timed out in 20000ms." at the lane raw ceiling, no per-test budget wired, not yet fixed as of 2026-09-16
+test/bl1389UnlandedSiblingPathNeverRidesInvariants.property.test.js	allowlist	owner BL-1592 (backlog/standing-reds.tsv): invariant 1 "Test timed out in 20000ms." at the lane raw ceiling, no per-test budget wired, not yet fixed as of 2026-09-16
+test/bl1529ScriptSenderAuditOutcomesInvariant.property.test.js	allowlist	owner BL-1592 (backlog/standing-reds.tsv): "Test timed out in 60000ms." against its own bare 60000 third argument, no lane-level ceiling reaches it, not yet fixed as of 2026-09-16
