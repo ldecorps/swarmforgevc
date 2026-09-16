@@ -1,0 +1,205 @@
+id: BL-1596
+title: "Thirty-eight property-lane test files carry eighty-one bare numeric per-test timeout arguments of four or more digits (census at bdb76c3c8a), each a constant that no lane-level ceiling reaches and that times out under a busy lane one file at a time (bl1529 in BL-1592, telegramFrontDeskBotCli in BL-1595, the third sighting in two days); every one becomes the property lane's budget helper from the same base, a whole-tree guard in the unit lane refuses any new bare one in seconds, and the class stops re-minting per file"
+milestone: M8
+type: defect
+severity: medium
+# medium: real but contained - the reds this class produces are owned one
+# file at a time (BL-1592, BL-1595) and each is load-dependent, not
+# deterministic. Not high: no standing red on main is unowned because of
+# it today; the value is stopping the per-file re-mint and the next
+# unrelated parcel's hold.
+status: todo
+epic: code-quality-gates
+priority: 12
+direction: swarm-reported
+depends_on: [BL-1588, BL-1592, BL-1595]
+# depends_on: BL-1588 lands the helper's fork signal; BL-1592 and BL-1595
+# migrate three of the 81 sites (bl1529's one, telegramFrontDeskBotCli's
+# two) in their own files. This sweep touches
+# every other file with a bare site and the guard's real-tree scan must
+# find zero, so it cannot be active alongside any of them (Article 3.2.3).
+mutation_cost: low
+# low: test files, one new test helper with its own unit test, evidence;
+# no production code, no Stryker target. The diff is wide (about 40
+# files) but mechanical: one require line per file, one call per site.
+slice_size_envelope: medium
+required_stages: [coder, cleaner, architect, hardender, documenter, qa]
+
+acceptance: specs/features/BL-1596-no-property-test-carries-a-bare-per-test-timeout.feature
+
+required_wiring:
+  - 'specs/pipeline/steps/bl1596BarePerTestTimeoutGuardSteps.js::registerSteps::the handler lands in the same parcel as the feature (BL-233, BL-1371)'
+  - 'extension/test/barePerTestTimeoutGuard.test.js::findBarePerTestTimeoutSites::the unit-lane guard test that scans the real tree is the consumer of the new helper (BL-1235)'
+# The second anchor is the guard's own real-tree test: it is the consumer
+# that makes the helper reachable in the unit lane on every run. The
+# scanner's name is chosen at mint so the literal will exist (BL-874).
+
+human_approval: approved
+approval_context: >
+  A new feature file is authored here, so it needs a tap. No choice is
+  posed and there are no ruling_options. FIRM: every bare numeric third
+  argument of a test()/it() call in extension/test/*.property.test.js
+  becomes propertyLaneTimeoutMs(<the same literal>) - the base is never
+  changed, so a file alone on a quiet host keeps every budget it has
+  today (invariant 1); the migration is scripted and the evidence lists
+  every site with its base. FIRM: a new helper
+  extension/test/helpers/barePerTestTimeoutGuard.js with a pure per-file
+  scanner and a real-tree walk, its unit test running in the unit lane in
+  seconds, the BL-420/BL-1280 shape; no file-level exemption list (a
+  fixture STRING carrying the pattern is split, never exempted - BL-1280
+  invariant 2). FIRM: no numRuns reduced, no assertion deleted, no floor
+  lowered, no retry, no seed pinned. FIRM: the census the parcel finds is
+  recorded and the guard's zero after the sweep is asserted with the
+  count of migrated sites pinned against the mint census, so a matcher
+  blind to a shape cannot pass on an empty find (BL-1445).
+
+invariants:
+  - "No migrated site changes its base: for every site the sweep touches, the helper's literal argument equals the bare literal it replaced, so a file run alone on a quiet host (one fork) receives exactly the budget it received before this change."
+  - "No draw count, reach floor or assertion in any migrated file changes: the parcel's diff over extension/test/*.property.test.js contains no removed or changed line other than a require line and a per-test timeout argument."
+
+description: |
+  ## What is wrong
+
+  BL-1579 (2026-09-15), BL-1588, BL-1592 and BL-1595 (2026-09-16) are four
+  tickets in two days for one shape: a fixture-spawning property test
+  times out under a busy full lane at a budget that does not know the
+  lane is busy. BL-1588 lands the mechanism (a fork-aware
+  `propertyLaneTimeoutMs`), but a test that passes its own bare numeric
+  third argument overrides the lane's `testTimeout` and stays exactly as
+  blind as before - bl1529's `60000` and telegramFrontDeskBotCli's two
+  `60000`s are the sightings so far, each surfacing as an unowned red on
+  an unrelated parcel and each costing a specifier pass, a register row
+  and a six-stage parcel.
+
+  Census (specifier, 2026-09-16 at bdb76c3c8a, `extension/`): 38 of 408
+  property files carry 81 bare per-test timeout arguments of four or more
+  digits (bases: 120000 x33, 60000 x22, 240000 x13, 30000 x7, 90000 x3,
+  180000 x2). A shorter literal is excluded on purpose: a bare `0` closing
+  an ordinary call matched a looser rule and is not a timeout. The grep,
+  to re-run rather than re-derive (BL-1445):
+
+  ```
+  python3 - <<'PY'
+  import re,glob
+  A=re.compile(r'^\s*(\d[\d_]{3,})\s*,?\s*$'); CLOSE=re.compile(r'^\s*\)\s*;?\s*$'); B=re.compile(r'\}\s*,\s*(\d[\d_]{3,})\s*\)')
+  files={}
+  for f in sorted(glob.glob('test/*.property.test.js')):
+      L=open(f).read().split('\n'); n=0
+      for i,l in enumerate(L):
+          if A.match(l) and i+1<len(L) and CLOSE.match(L[i+1]): n+=1
+          n+=len(B.findall(l))
+      if n: files[f]=n
+  print(len(files), sum(files.values()))
+  PY
+  ```
+
+  Two shapes: a number-only line that closes a `test(`/`it(` call (the
+  bl1529 and telegramFrontDeskBotCli shape, 7 sites in
+  bl1526SpawnTargetsResolveStaticallyInvariants alone) and the inline
+  `}, 60000)`. Only bl1343 and bl1323 (BL-1579) call the helper today.
+  Per-file owners cannot drain this: the next busy lane picks the next
+  file.
+
+  ## What is wanted
+
+  - A guard helper with a pure per-file scanner and a real-tree walk over
+    `extension/test/*.property.test.js`, and a unit-lane test that (a)
+    flags a synthesized bare timeout in each of the two shapes, (b)
+    passes a helper-wrapped one and a number that is not a test's third
+    argument, and (c) asserts the real tree has zero bare sites
+    (scenarios 01 and 02). No exemption list.
+  - Every bare site migrated to `propertyLaneTimeoutMs(<same literal>)`
+    with the file requiring the helper once; the evidence lists every
+    migrated site (file, line, base) and the count equals the census the
+    parcel re-runs at its own base commit minus the sites BL-1592 and
+    BL-1595 already migrated (scenario 03).
+  - At least 38 property files require the lane budget helper after the
+    sweep - 40 expected: the 38 census files plus bl1343 and bl1323 (the
+    census pin, BL-1445: a scanner blind to a shape would find zero and
+    pass with nothing migrated) (scenario 02).
+  - The property lane green in 3 full runs and the unit lane green
+    (e2e); every file alone keeps its budgets (invariant 1).
+
+  ## How (direction, not mandate)
+
+  - `extension/test/helpers/barePerTestTimeoutGuard.js` exporting
+    `findBarePerTestTimeoutLines(text)` (pure: the two shapes above,
+    anchored to a `test(`/`it(` call's closing argument, never a number
+    inside an object or array) and `findBarePerTestTimeoutSites(testDir)`
+    (walks `*.property.test.js` only; the unit lane's own bare timeouts
+    are the unit lane's contentionBudget's business and out of scope).
+    `extension/test/barePerTestTimeoutGuard.test.js` drives both, the
+    `tmpDirMigrationGuard.test.js` shape; a property sibling with a
+    sensitivity draw is welcome but not required.
+  - The sweep is a script the coder keeps in the evidence: for each file
+    with a site, insert the require after the last top-level require,
+    replace each site's literal with `propertyLaneTimeoutMs(<literal>)`,
+    re-run the census, expect zero. Files that already require the helper
+    (bl1343, bl1323, and BL-1592's/BL-1595's after they land) get no
+    second require.
+  - Scenario 01 drives the pure scanner in process; scenario 02 drives
+    the real-tree walk and counts files requiring the helper; scenario 03
+    reads the evidence. All in seconds (BL-1541); the lane runs are e2e.
+  - Documenter: `docs/how-to/BL-1175-property-suite-standing-reds-block-unrelated-commits.md`
+    or the helper's header gains the rule "a property test's explicit
+    timeout goes through propertyLaneTimeoutMs"; no diagram trigger.
+
+constraints: >
+  Test files, one new test helper and its unit test, evidence only;
+  `extension/src` unchanged; the property lane config and
+  propertyLaneContentionBudget.js unchanged. No base changed, no numRuns
+  reduced, no assertion deleted, no exemption list. The step handler
+  lands with the feature (BL-233). Evidence named BL-1596-*.
+
+out_of_scope: |
+  - Files with NO per-test timeout at all (they sit on the lane's
+    `testTimeout`, which BL-1588's route covers or does not; a red there
+    is its own unowned-red note).
+  - The unit lane's bare timeouts (`*.test.js` without `.property.`).
+  - Reducing any test's draws or subprocess count.
+  - BL-1592's and BL-1595's files (they land first; the guard finds them
+    already migrated).
+
+qa_e2e_procedure: |
+  On the parcel commit, after BL-1588, BL-1592 and BL-1595 are in
+  backlog/done/, from `extension/`:
+  1. `npx vitest run test/barePerTestTimeoutGuard.test.js` -> green; the
+     real-tree case reports zero sites.
+  2. Re-run the mint census above at the parcel's base commit and at the
+     parcel commit: the first number equals the evidence's "found", the
+     second is 0.
+  3. `grep -l propertyLaneTimeoutMs test/*.property.test.js | wc -l` -> at
+     least 38 (40 expected).
+  4. `npm run test:properties` 3 times -> green (every timeout of any
+     file recorded with its text and raised as an unowned-red note if it
+     is not a migrated file's; a migrated file's timeout is this parcel's
+     to explain); `npm test` -> green.
+  5. Acceptance resolving all three scenarios
+     (`swarmforge/scripts/run_acceptance.sh specs/features/BL-1596-*.feature`).
+  6. `git diff <parent>..<parcel> -- 'extension/test/*.property.test.js' | grep -E '^-' | grep -vE '^---' | grep -vE '^-\s*[0-9][0-9_]*\s*,?\s*$|^-.*\}\s*,\s*[0-9]'`
+     is empty (invariant 2: the only removed lines are the bare literals).
+
+source: |
+  Coder note to the specifier and coordinator, priority 00, 2026-09-16T11:49Z
+  (inbound 00_20260916T114927Z_001979_from_coder_to_specifier): "BL-1588
+  unowned-red: telegramFrontDeskBotCli bare 60000ms, see evidence" - the
+  third sighting of the class. Specifier census and adjudication:
+  backlog/evidence/BL-1595-specifier-adjudication-of-coder-unowned-red-20260916.md.
+  Parents: BL-1579, BL-1588, BL-1592, BL-1595.
+
+notes: |
+  Minted 2026-09-16 by the specifier in the same pass as BL-1595, on the
+  third sighting of the bare-per-test-timeout class in two days; the
+  per-file owners drain their rows fast, this retires the class. INVEST:
+  Independent (waits on the three named lands by depends_on, then needs
+  nothing unbuilt), Negotiable (scanner shape and sweep script are
+  direction), Valuable (the class stops producing unowned reds and
+  per-file tickets), Estimable (a scripted 40-file mechanical migration
+  plus one helper and its test - one sitting, the BL-1280 shape at 24
+  files/33 sites was one; here 38 files/81 sites), Small (three scenarios, two invariants; the
+  diff is wide but each hunk is one line - reviewers read it with
+  `git diff --stat` and the evidence's site list), Testable (pure scanner
+  and real-tree walk in seconds, lane runs in e2e - BL-1541). Severity
+  medium, not high: no unowned red exists because of it today.
+
+assigned_to: null
