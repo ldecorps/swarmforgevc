@@ -35,14 +35,47 @@ receives `effectiveBudgetMs(20000, 3) = 60000 ms`, three times the FIRM
 "same 20 s budget" the invariant requires — regardless of whether only one
 fork is actually doing any work.
 
-**Evidence this already happened, not just a hypothetical:**
-`backlog/evidence/BL-1588-coder-post-fix-verification-20260916.md`'s own
+**This is not a hypothetical edge case — it reproduces end to end on this
+review host right now, via the actual config, with load held out of it
+entirely.** Loading the real `vitest.properties.config.mjs` (the exact
+module `npm run test:properties` loads, whether it targets 408 files or
+one) already sets the real env var, before any test file — let alone
+more than one — has even been selected:
+```
+$ node --input-type=module -e "
+  import('./vitest.properties.config.mjs').then(() => {
+    console.log('SWARMFORGE_PROPERTY_LANE_FORKS =', process.env.SWARMFORGE_PROPERTY_LANE_FORKS);
+  });"
+SWARMFORGE_PROPERTY_LANE_FORKS = 11
+```
+`effectiveBudgetMs(20000, factor)` takes `max(1, factor)` before
+multiplying (`contentionBudget.js`), so the result is identical whether
+`factor` comes from load or from forks — feeding that real, config-set
+value through the real `forksFromEnv()` path with load held at 0 (the
+"quiet host" leg of invariant 1) still inflates the base 3x:
+```
+$ SWARMFORGE_PROPERTY_LANE_FORKS=11 node -e "
+  const {propertyLaneTimeoutMs}=require('./extension/test/helpers/propertyLaneContentionBudget');
+  console.log(propertyLaneTimeoutMs(20000, {loadavg1mFn: () => 0}))"
+55000
+```
+i.e. a literally-idle-load host, running ONE file alone through the real
+config, gets 2.75x the declared 20 s base before that file's own duration
+is even measured — because the config sets the "forks" signal to its pool
+CEILING at load time, identically regardless of how many files this
+invocation actually targets. That is a direct violation of invariant 1's
+FIRM text, reproduced without needing to interpret any ambiguous timing
+data.
+
+*Corroborating, not conclusive on its own:* `backlog/evidence/BL-1588-coder-post-fix-verification-20260916.md`'s
 "20-of-20 alone" table records `bl1315OwnPathsFullRangeInvariants` taking
-**27.55 s** in an "alone" run. Under the strict unmodified 20000 ms base
-that invariant 1 promises for a lone run, that run should have timed out.
-It passed only because the wired budget was already inflated past the
-declared base on this exact host, in the exact "runs alone" scenario the
-invariant is FIRM about. The parcel's own property test
+27.55 s in one "alone" run, above the strict 20000 ms base — consistent
+with this defect (their host's ceiling was evidently also above 4), though
+by itself that data point cannot rule out ordinary background load on a
+shared dev/swarm host as an alternate explanation. The direct reproduction
+above does not depend on that ambiguity.
+
+The parcel's own property test
 (`bl1588PropertyLaneBudgetConcurrencyInvariant.property.test.js`) does not
 catch this: it exercises `propertyLaneTimeoutMs` with `forksFn` injected
 directly (`forksFn: () => 1`), never through the real
