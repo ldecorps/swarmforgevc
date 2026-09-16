@@ -128,3 +128,5 @@ qa_e2e_procedure: |
      it against a fresh `bb model_steward_cli.bb role-matrix coder
      --include-uncertified` for one role - every line present.
   3. `npm test` green; Stryker over the renderer with no survivors.
+
+assigned_to: coder
