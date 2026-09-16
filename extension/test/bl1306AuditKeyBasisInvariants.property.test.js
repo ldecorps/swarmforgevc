@@ -27,6 +27,7 @@ const os = require('node:os');
 const path = require('node:path');
 const { execFileSync, spawnSync } = require('node:child_process');
 const { mkTmpDir } = require('./helpers/tmpDir');
+const { assertReachFloor, runsPerCell } = require('./helpers/reachFloors');
 
 const REPO_ROOT = path.join(__dirname, '..', '..');
 const HELPER = path.join(REPO_ROOT, 'swarmforge', 'scripts', 'swarm_handoff.bb');
@@ -121,6 +122,10 @@ test('BL-1306/BL-654 invariant: the lookup key is DERIVED from the stored candid
 // that times out reports a red nobody can act on.
 test('BL-1306/BL-654 invariant: an identical second invocation queues, and an edited one does not, however routing lands', { timeout: 180000 }, () => {
   const reach = { rerouted: 0, unrouted: 0, edited: 0 };
+  const ARM_LABELS = ['rerouted', 'unrouted'];
+  // BL-1585: the per-arm run count expressed through runsPerCell rather than
+  // a bare literal, budget unchanged (1 per arm).
+  const ARM_CELL_RUNS = runsPerCell(ARM_LABELS.length, ARM_LABELS.length);
 
   for (const [label, stages] of [['rerouted', SKIPPING], ['unrouted', FULL]]) {
     fc.assert(
@@ -148,9 +153,10 @@ test('BL-1306/BL-654 invariant: an identical second invocation queues, and an ed
       // rather than from repetition - repeating an enumerated arm buys
       // nothing but wall-clock, and a property test that times out is a red
       // nobody can act on.
-      { numRuns: 1 },
+      { numRuns: ARM_CELL_RUNS },
     );
   }
+  assertReachFloor(reach, ARM_LABELS, ARM_CELL_RUNS, 'routing arm');
 
   // The other half of the invariant: the audit must still bite. A fix that
   // bought queueing by never invalidating would pass everything above.

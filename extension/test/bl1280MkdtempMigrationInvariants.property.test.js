@@ -40,7 +40,7 @@ const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const path = require('node:path');
 const fc = require('fast-check');
-const { assertReachFloor } = require('./helpers/reachFloors');
+const { assertReachFloor, runsPerCell } = require('./helpers/reachFloors');
 const {
   findRawMkdtempCallSites,
   findRawMkdtempLines,
@@ -139,6 +139,7 @@ describe('BL-1280 invariant 1: a migrated root never outlives its sweep', () => 
   it('flags an allocation placed where the per-test sweep is too early', () => {
     const coverage = {};
     // One run per too-long-lived position: the floor is met by construction.
+    const TOO_LONG_LIVED_CELL_RUNS = runsPerCell(TOO_LONG_LIVED.length, TOO_LONG_LIVED.length);
     for (const where of TOO_LONG_LIVED) {
       fc.assert(
         fc.property(fc.constant(where), (position) => {
@@ -157,10 +158,10 @@ describe('BL-1280 invariant 1: a migrated root never outlives its sweep', () => 
           );
           return true;
         }),
-        { numRuns: 1 }
+        { numRuns: TOO_LONG_LIVED_CELL_RUNS }
       );
     }
-    assertReachFloor(coverage, TOO_LONG_LIVED, 1, 'too-long-lived position');
+    assertReachFloor(coverage, TOO_LONG_LIVED, TOO_LONG_LIVED_CELL_RUNS, 'too-long-lived position');
   });
 });
 
@@ -199,6 +200,7 @@ describe('BL-1280 invariant 2: the exempt list stays at three, and the fixture d
 
   it('scans every data carrier, finds nothing, and leaves the data able to trip the detector', () => {
     const coverage = {};
+    const DATA_CARRIERS_CELL_RUNS = runsPerCell(DATA_CARRIERS.length, DATA_CARRIERS.length);
     for (const file of DATA_CARRIERS) {
       fc.assert(
         fc.property(fc.constant(file), (carrier) => {
@@ -220,10 +222,10 @@ describe('BL-1280 invariant 2: the exempt list stays at three, and the fixture d
           );
           return true;
         }),
-        { numRuns: 1 }
+        { numRuns: DATA_CARRIERS_CELL_RUNS }
       );
     }
-    assertReachFloor(coverage, DATA_CARRIERS, 1, 'raw-pattern data carrier');
+    assertReachFloor(coverage, DATA_CARRIERS, DATA_CARRIERS_CELL_RUNS, 'raw-pattern data carrier');
   });
 
   it('leaves the real tree with no raw call site under the three-path list', () => {

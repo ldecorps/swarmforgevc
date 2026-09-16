@@ -56,6 +56,7 @@ const os = require('node:os');
 const path = require('node:path');
 const { execFileSync, spawnSync } = require('node:child_process');
 const { mkTmpDir } = require('./helpers/tmpDir');
+const { assertReachFloor, runsPerCell } = require('./helpers/reachFloors');
 
 const REPO_ROOT = path.join(__dirname, '..', '..');
 const SCRIPTS = path.join(REPO_ROOT, 'swarmforge', 'scripts');
@@ -170,6 +171,10 @@ function decide(root, cli = CLI) {
 test('BL-1309/BL-654 invariant 1: a withheld or unapproved ticket on the tip is never advised for push', () => {
   sweepFixtures();
   const reach = Object.fromEntries(ROUTES.flatMap((r) => BLOCKING_STATES.map((s) => [`${r}/${s}`, 0])));
+  const PAIR_KEYS = Object.keys(reach);
+  // BL-1585: the per-pair run count expressed through runsPerCell rather
+  // than a bare literal, budget unchanged (2 per route/state pair).
+  const PAIR_CELL_RUNS = runsPerCell(2 * PAIR_KEYS.length, PAIR_KEYS.length);
 
   for (const route of ROUTES) {
     for (const state of BLOCKING_STATES) {
@@ -189,17 +194,22 @@ test('BL-1309/BL-654 invariant 1: a withheld or unapproved ticket on the tip is 
             fs.rmSync(fx.work, { recursive: true, force: true });
           }
         }),
-        { numRuns: 2 }
+        { numRuns: PAIR_CELL_RUNS }
       );
     }
   }
 
+  assertReachFloor(reach, PAIR_KEYS, PAIR_CELL_RUNS, 'route/state pair');
   for (const pair of Object.keys(reach)) assert.ok(reach[pair] > 0, `never exercised ${pair}`);
 });
 
 test('BL-1309/BL-654 invariant 1, narrowed: an APPROVED unlanded sibling rides by every route', () => {
   sweepFixtures();
   const reach = Object.fromEntries(ROUTES.flatMap((r) => RIDING_STATES.map((s) => [`${r}/${s}`, 0])));
+  const RIDING_PAIR_KEYS = Object.keys(reach);
+  // BL-1585: the per-pair run count expressed through runsPerCell rather
+  // than a bare literal, budget unchanged (2 per route/state pair).
+  const RIDING_PAIR_CELL_RUNS = runsPerCell(2 * RIDING_PAIR_KEYS.length, RIDING_PAIR_KEYS.length);
 
   for (const route of ROUTES) {
     for (const state of RIDING_STATES) {
@@ -224,17 +234,21 @@ test('BL-1309/BL-654 invariant 1, narrowed: an APPROVED unlanded sibling rides b
             fs.rmSync(fx.work, { recursive: true, force: true });
           }
         }),
-        { numRuns: 2 }
+        { numRuns: RIDING_PAIR_CELL_RUNS }
       );
     }
   }
 
+  assertReachFloor(reach, RIDING_PAIR_KEYS, RIDING_PAIR_CELL_RUNS, 'route/state pair');
   for (const pair of Object.keys(reach)) assert.ok(reach[pair] > 0, `never exercised ${pair}`);
 });
 
 test('BL-1309/BL-654 invariant 2: an input the step cannot read never becomes a refusal', () => {
   sweepFixtures();
   const reach = Object.fromEntries(BLIND.map((s) => [s, 0]));
+  // BL-1585: the per-shape run count expressed through runsPerCell rather
+  // than a bare literal, budget unchanged (2 per shape).
+  const BLIND_CELL_RUNS = runsPerCell(2 * BLIND.length, BLIND.length);
 
   for (const shape of BLIND) {
     fc.assert(
@@ -275,9 +289,10 @@ test('BL-1309/BL-654 invariant 2: an input the step cannot read never becomes a 
           fs.rmSync(fx.work, { recursive: true, force: true });
         }
       }),
-      { numRuns: 2 }
+      { numRuns: BLIND_CELL_RUNS }
     );
   }
 
+  assertReachFloor(reach, BLIND, BLIND_CELL_RUNS, 'blind shape');
   for (const shape of BLIND) assert.ok(reach[shape] > 0, `never exercised the ${shape} shape`);
 });
