@@ -1,0 +1,236 @@
+id: BL-1592
+title: "Four more fixture-spawning property files (bl1375, bl1309, bl1389, bl1529) timed out in the coder's first full 408-file property-lane run for BL-1588 on 2026-09-16, none named by BL-1588 and none carrying a register row; bl1375, bl1309 and bl1389 carry no per-test budget at all and bl1529 pins a bare 60000 ms third argument on its only test, which no lane-level ceiling can reach; this ticket owns the four rows, gives every test in the four files the concurrency-aware budget BL-1588 lands from the base each file declares today, records each file's full-lane text and remedy, and takes the four rows out in the same land"
+milestone: M8
+type: defect
+severity: high
+# high: a standing red on main in the property lane is a broken safety
+# signal at first sighting (Article 3.2.4, 2026-09-05). Third sighting of
+# this class in two days (BL-1579, BL-1588): the class is broader than
+# BL-1588's named population and the register throttles intake until it
+# drains.
+status: todo
+epic: code-quality-gates
+priority: 8
+direction: swarm-reported
+depends_on: [BL-1588]
+# depends_on BL-1588: it lands the concurrency-aware budget (helper with a
+# fork-count seam, or a config-level derivation) that every test here must
+# receive. Both tickets touch propertyLaneContentionBudget.js and the lane
+# config, so they are not orthogonal (Article 3.2.3) and cannot be active
+# together anyway; this one waits for BL-1588 in backlog/done/.
+mutation_cost: low
+# low: four test files, at most the budget helper's header and evidence; no
+# production code, no Stryker target.
+slice_size_envelope: low
+required_stages: [coder, cleaner, architect, hardender, documenter, qa]
+
+acceptance: specs/features/BL-1592-four-more-property-files-time-out-in-a-full-lane-run.feature
+
+required_wiring:
+  - 'specs/pipeline/steps/bl1592SecondFullLaneTimeoutPopulationSteps.js::registerSteps::the handler lands in the same parcel as the feature (BL-233, BL-1371)'
+# No production anchor on purpose (BL-1235): the four test files and the
+# budget helper already exist, so any pattern on them matches before and
+# after the fix.
+
+human_approval: pending
+approval_context: >
+  A new feature file is authored here, so it needs a tap. No choice is
+  posed and there are no ruling_options. FIRM: every test in the four
+  files receives the concurrency-aware budget BL-1588 lands, derived from
+  the base the file declares today (20000 ms for bl1375, bl1309 and
+  bl1389; 60000 ms for bl1529) and never from a bare numeric literal;
+  bl1529's `60000` third argument is replaced, not raised. FIRM: no floor
+  is lowered, no draw count reduced, no assertion deleted, no retry added,
+  no seed pinned, and no bare timeout constant raised - a file alone on a
+  quiet host keeps its base (invariant 1). FIRM: the coder's BL-1588
+  reproduction run of 2026-09-16 (the evidence file BL-1588's parcel
+  lands) is the first full-lane reproduction for all four files and is
+  cited, not re-run for its own sake; each further full-lane run's
+  timeouts are recorded with file, test name, message verbatim, 1-minute
+  load and fork count. FIRM: bl1529's green runs are QA's e2e step, not a
+  scenario, so the feature fits the per-mutant ceiling (BL-1541). FIRM: if
+  5 full-lane runs and 20 runs alone per file after BL-1588's land are all
+  green and no timeout text is found for a file, that file's register row
+  is retired on that evidence without a code change to it.
+
+invariants:
+  - "A property test that runs alone on a quiet host (one fork, 1-minute load at or under the quiet ceiling) receives the base budget its file declares today, 20000 ms or 60000 ms, unchanged before and after this change: the budget grows only with measured concurrency or load, never by a bare raise."
+  - "No draw count, reach floor, assertion or fixture in the four files is reduced or removed by this ticket: every test that ran before the change runs after it with the same numRuns and the same asserts."
+
+description: |
+  ## What is wrong
+
+  The coder's first full property-lane run for BL-1588 (2026-09-16,
+  10:12 to 10:17 UTC, 408 files, 320 s, 1-minute load 8.67 at start, 20
+  CPUs, 11 forks; `backlog/evidence/BL-1588-coder-full-lane-reproduction-20260916.md`
+  in BL-1588's parcel, coder note to the specifier
+  00_20260916T091925Z_001975) failed 8 files. Three were BL-1588's own
+  named files. The other four are NOT named by BL-1588, carry no register
+  row, and appear in no open ticket for this defect class
+  (`grep -rlE 'bl1375ApprovedSiblings|bl1309LandDecide|bl1389UnlandedSibling|bl1529ScriptSender' backlog/paused backlog/active`
+  is empty, 2026-09-16):
+
+  - `extension/test/bl1375ApprovedSiblingsCanLandInvariants.property.test.js`,
+    invariant 1 "a sibling that is not positively approved still blocks,
+    and is named", 21596 ms: `Error: Test timed out in 20000ms.`
+  - `extension/test/bl1309LandDecideEntanglementInvariants.property.test.js`,
+    invariant 1 "a withheld or unapproved ticket on the tip is never
+    advised for push", 23211 ms: `Error: Test timed out in 20000ms.`
+  - `extension/test/bl1389UnlandedSiblingPathNeverRidesInvariants.property.test.js`,
+    invariant 1 "a path an unlanded sibling owns alone never rides,
+    whatever its approval reads", 22437 ms: `Error: Test timed out in 20000ms.`
+  - `extension/test/bl1529ScriptSenderAuditOutcomesInvariant.property.test.js`,
+    "a challenge, a refusal, and a queue are three distinguishable
+    outcomes", 74454 ms: `Error: Test timed out in 60000ms.`
+
+  Same shape as BL-1588's class, read from the files (specifier,
+  2026-09-16): each spawns `bb`, `git` or `bash` per draw inside the
+  property body against a real git fixture (bl1375 also runs
+  `check_feature_handler_registration.sh` per draw). None of the four
+  calls `propertyLaneTimeoutMs` (only bl1343 and bl1323 do). bl1375,
+  bl1309 and bl1389 declare three tests each with no third argument, so
+  they sit on the lane's flat `testTimeout: 20000`. bl1529 declares one
+  test whose third argument is the bare literal `60000`
+  (`extension/test/bl1529ScriptSenderAuditOutcomesInvariant.property.test.js`,
+  last line of the `it`): a per-test argument overrides the config's
+  `testTimeout`, so a lane-level derivation, if BL-1588 chose one, would
+  never reach it, and the 60 s it has today is exactly BL-1579's diagnosis
+  again - a constant that does not know the lane is busy. Its solo time is
+  not on record in any evidence file; the parcel measures it.
+
+  BL-1588 pins its population by NAMED files (BL-1445) and its coder
+  correctly refused to grow that scope from one run's evidence. The
+  register is keyed per test file (Article 4.2): each of these four needs
+  an open owner before QA's next full-lane run finds them red on an
+  unrelated parcel.
+
+  ## What is wanted
+
+  - Every test in the four files receives the concurrency-aware budget
+    BL-1588 lands, derived from the base the file declares today: 20000 ms
+    for bl1375, bl1309 and bl1389, 60000 ms for bl1529 (scenario 02, both
+    routes below). No bare numeric per-test timeout survives in any of the
+    four (scenario 02), and bl1529's 60000 ms base scales multiplicatively
+    with the lane's concurrency the same way the 20000 ms base does, so
+    one fork on a quiet host still resolves to exactly 60000 ms
+    (scenario 04, invariant 1).
+  - The three 20-second-class files green alone on the tree as it stands
+    (scenario 01, ~10 to 25 s each). bl1529's green runs are e2e only.
+  - Each file's evidence records the full-lane failure text verbatim with
+    load and fork count, and the change that removed it, or the 5 full-lane
+    and 20 solo green runs that retired its row (scenario 03). The coder's
+    BL-1588 run of 2026-09-16 counts as the first reproduction for all
+    four; cite it by path and record any further timeouts the parcel's own
+    runs produce.
+  - The four register rows removed in the same land, with `bb
+    swarmforge/scripts/standing_red_register_cli.bb .` reporting no row
+    for any of them and `"unowned":[]`.
+
+  ## How (direction, not mandate)
+
+  - Two acceptable shapes per file, and scenario 02's handler accepts
+    either. (a) Per-file: each `it(...)` carries `propertyLaneTimeoutMs(<base>)`
+    (or whatever BL-1588 named its fork-aware entry point) as its third
+    argument, the way bl1343 and bl1323 are wired today
+    (`extension/test/bl1343ReplayNeverDropsOwnPathInvariants.property.test.js:249`).
+    (b) Config-level: if BL-1588 landed a lane-level `testTimeout`
+    derived through the helper, the 20000 ms files may carry no third
+    argument at all and are covered by the config; bl1529 must still carry
+    a helper call from 60000 because a per-test argument is the only way
+    to express a base other than the lane's. Read BL-1588's landed helper
+    and config first; the coder's in-flight BL-1588 handler resolves
+    `propertyLaneTimeoutMs(base, { forksFn, loadavg1mFn })`, which is
+    shape (a).
+  - Scenario 02's "derived from <base> ms through the property lane's
+    budget helper" is a source-level check in seconds (BL-1541, the
+    BL-1587 shape): read the file, find every `it(`/`test(` declaration's
+    third argument, refuse a bare numeric literal, and require a call
+    whose literal argument is `<base>` - or, for a 20000 ms file under
+    shape (b), no third argument and the lane config deriving
+    `testTimeout` through the helper. Pin the population with the
+    `tests` column: the count of `it(` declarations the check ranged over
+    must equal it, so a matcher that finds none reports red, not vacuous
+    green (BL-1445).
+  - Scenario 04 reuses BL-1588's seam (fork count and 1-minute load
+    injected, no subprocess) with a 60000 base: 1 fork resolves to exactly
+    60000; 8 forks to more than 60000; and the 8-fork budget from 60000 is
+    three times the 8-fork budget from 20000, which is what "scales the
+    base, never adds to it" means in one assertion.
+  - Fewer subprocesses per draw (one fixture per shape, reset per draw,
+    as BL-1579 did for bl1343) is a second lever for any file that still
+    runs close to its scaled budget; bl1375's per-draw
+    `check_feature_handler_registration.sh` spawn is the likeliest
+    candidate. Do not reduce numRuns (invariant 2).
+  - `npx vitest run --config vitest.properties.config.mjs --reporter=verbose
+    2>&1 | tee tmp/bl1592-lane-<n>.log`; grep `Test timed out`; record
+    `nproc`, `cat /proc/loadavg` and the resolved fork count per run.
+  - Documenter: nothing beyond the evidence file and, if the helper's
+    header lists its consumers, adding the four; no diagram trigger.
+
+constraints: >
+  Test files, the budget helper's header comment at most, the property
+  lane config only if shape (b) needs a consumer note, and evidence;
+  `extension/src` unchanged. No floor lowered, no draw count reduced, no
+  assertion deleted, no retry, no seed pinned, no bare timeout constant
+  raised. The step handler lands with the feature (BL-233). The evidence
+  file this parcel writes is named `BL-1592-*`, never `BL-1588-*`, so the
+  land step's task-scope attribution stays clean.
+
+out_of_scope: |
+  - BL-1588's four files and BL-1579's two (BL-1588 owns them; its e2e
+    runs already re-check them).
+  - Sampled reach floors in any of the four files (BL-1578 owned bl1529's;
+    BL-1583's epic and sweeps cover the class).
+  - Re-architecting the property lane's scheduling or fork pool (BL-1348).
+  - Any fifth file a future full-lane run turns red: that is a new
+    unowned-red note and its own owner, not a scope grow here (BL-1445).
+  - The BL-871 `onTaskUpdate` heartbeat noise (allowlisted, not a red).
+
+qa_e2e_procedure: |
+  On the parcel commit, after BL-1588 is in backlog/done/, from `extension/`:
+  1. `for i in $(seq 1 20); do npx vitest run --config vitest.properties.config.mjs test/<file> || echo FAIL; done`
+     for each of the four files -> 20 of 20 green, no FAIL line. Record
+     bl1529's solo wall time in the evidence (it has none on record).
+  2. `npm run test:properties` 5 times, no synthetic load needed (the
+     lane is its own load) -> none of the four files red in any run;
+     BL-1588's four files and BL-1579's two also green in every run;
+     every red of any other file recorded in the evidence with its text
+     and raised as an unowned-red note, never folded in.
+  3. Acceptance resolving all four scenarios
+     (`swarmforge/scripts/run_acceptance.sh specs/features/BL-1592-*.feature`).
+  4. The evidence names, per file, the full-lane failure text observed
+     before the change (citing the coder's BL-1588 run of 2026-09-16 and
+     any of this parcel's own) and the change that removed it, or the
+     green runs that retired the row.
+  5. `bb swarmforge/scripts/standing_red_register_cli.bb .` after landing
+     reports no row for any of the four files and `"unowned":[]`.
+  6. `git diff <parent>..<parcel> -- extension/test/bl1375*.js extension/test/bl1309*.js extension/test/bl1389*.js extension/test/bl1529*.js | grep -E '^-.*(numRuns|assert)'`
+     is empty (invariant 2).
+
+source: |
+  Coder note to the specifier and coordinator, priority 00, 2026-09-16T09:19Z
+  (inbound 00_20260916T091925Z_001975_from_coder_to_specifier): "unowned-red:
+  bl1375/1309/1389/1529 property timeouts; BL-1588 evidence file". Coder
+  evidence (in BL-1588's parcel):
+  backlog/evidence/BL-1588-coder-full-lane-reproduction-20260916.md.
+  Specifier adjudication:
+  backlog/evidence/BL-1592-specifier-adjudication-of-coder-unowned-red-20260916.md.
+
+notes: |
+  Minted 2026-09-16 by the specifier while completing the coder's
+  unowned-red note, the same pass; the four register rows in
+  backlog/standing-reds.tsv name this ticket, the coordinator was sent the
+  paused-ready note and the coder (holding BL-1588) the owner note so its
+  evidence can cite BL-1592 by id. No parcel is withheld on these reds
+  today; the rows exist so that QA's next full-lane run on any parcel
+  finds them owned (Article 4.2). INVEST: Independent (waits on BL-1588's
+  land by depends_on, then needs nothing unbuilt), Negotiable (per-file
+  or config-level wiring is direction, the handler accepts both),
+  Valuable (four more lane reds stop withholding unrelated parcels and the
+  class stops re-minting one file at a time), Estimable (at most ten
+  it() wirings, one bare literal replaced, 5 bounded lane runs, one
+  sitting), Small (four scenarios, two invariants), Testable (source-level
+  checks and the in-process budget seam in seconds; runners in e2e -
+  BL-1541). Severity high per the standing-red rule, not medium.
+
+assigned_to: null
