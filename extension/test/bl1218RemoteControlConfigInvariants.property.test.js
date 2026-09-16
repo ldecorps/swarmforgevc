@@ -4,6 +4,7 @@ const fs = require('node:fs');
 const path = require('node:path');
 const { spawnSync } = require('node:child_process');
 const { mkTmpDir } = require('./helpers/tmpDir');
+const { assertReachFloor, runsPerCell } = require('./helpers/reachFloors');
 
 // BL-1218 declared invariants:
 // 1. A seat launched under config remote_control off carries no
@@ -27,16 +28,32 @@ const SWARMFORGE_SH = path.join(SCRIPTS, 'swarmforge.sh');
 const SESSION = 'SwarmForge-Coder';
 const FLAG = '--remote-control';
 
-// A window line's flags, as the real packs write them. The rows that can
-// detect this defect are the ones that NAME the flag - an omits-row composes
-// identically before and after - so naming is weighted heavily and the
-// generator's reach over both is asserted.
+// A window line's flags, as the real packs write them.
 const OTHER_FLAGS = () =>
   fc.subarray(
     ['--model claude-sonnet-5', '--dangerously-skip-permissions', '--effort medium'],
     { minLength: 0 }
   );
 
+// BL-1587: extracted so a fixed placement can be composed BY CONSTRUCTION
+// (an outer loop over the placements) while the flags themselves stay
+// randomized - the same composition the old combined WINDOW_CLI() generator
+// used, just no longer the only way to reach a given placement.
+function composeWindowCli(flags, placement) {
+  if (placement === 'absent') return flags.join(' ');
+  if (placement === 'bare') return [...flags, FLAG].join(' ');
+  const named = `${FLAG} ${SESSION}`;
+  const parts = placement === 'leading' ? [named, ...flags] : [...flags, named];
+  return parts.join(' ');
+}
+
+const PLACEMENTS = ['absent', 'trailing', 'leading', 'bare'];
+
+const WINDOW_CLI_FOR_PLACEMENT = (placement) =>
+  OTHER_FLAGS().map((flags) => ({ cli: composeWindowCli(flags, placement), placement }));
+
+// The original combined generator, kept for the one test below whose
+// `cases > 0` assertion is not a reach floor (shape 3) - left unchanged.
 const WINDOW_CLI = () =>
   fc
     .tuple(OTHER_FLAGS(), fc.oneof(
@@ -45,16 +62,9 @@ const WINDOW_CLI = () =>
       { arbitrary: fc.constant('leading'), weight: 2 },
       { arbitrary: fc.constant('bare'), weight: 1 }
     ))
-    .map(([flags, placement]) => {
-      if (placement === 'absent') return { cli: flags.join(' '), placement };
-      if (placement === 'bare') return { cli: [...flags, FLAG].join(' '), placement };
-      const named = `${FLAG} ${SESSION}`;
-      const parts = placement === 'leading' ? [named, ...flags] : [...flags, named];
-      return { cli: parts.join(' '), placement };
-    });
+    .map(([flags, placement]) => ({ cli: composeWindowCli(flags, placement), placement }));
 
-const AGENT = () =>
-  fc.oneof({ arbitrary: fc.constant('claude'), weight: 4 }, { arbitrary: fc.constant('codex'), weight: 1 });
+const AGENTS = ['claude', 'codex'];
 
 function resolve(agent, rcDefault, cli) {
   const script = `set -euo pipefail
@@ -75,51 +85,64 @@ function legacyCompose(agent, rcDefault, cli) {
   return cli;
 }
 
-function assertReach(seen, kinds) {
-  for (const kind of kinds) {
-    assert.ok(seen[kind] > 0, `generator never reached ${kind}: ${JSON.stringify(seen)}`);
-  }
-}
+// BL-1587: every placement is reached BY CONSTRUCTION - an outer loop over
+// PLACEMENTS, each cell drawing runsPerCell(100, 4) times - rather than
+// hoped for by a single weighted draw. The draw budget of 100 is unchanged;
+// only how it is spent changes.
+const INVARIANT1_CELL_RUNS = runsPerCell(100, PLACEMENTS.length);
 
 test('property (invariant 1): under config off a Claude seat carries no flag, whatever the window line says', () => {
   const seen = { absent: 0, trailing: 0, leading: 0, bare: 0 };
-  fc.assert(
-    fc.property(WINDOW_CLI(), ({ cli, placement }) => {
-      seen[placement] += 1;
-      const resolved = resolve('claude', 0, cli);
-      assert.ok(
-        !resolved.includes(FLAG),
-        `config off left a remote-control flag behind.\nwindow line: [${cli}]\nresolved:    [${resolved}]`
-      );
-      // Stripping must not eat the rest of the line.
-      for (const flag of cli.split(' ')) {
-        if (!flag || flag === FLAG || flag === SESSION) continue;
-        assert.ok(resolved.includes(flag), `stripping the flag ate ${flag}: [${resolved}]`);
-      }
-    }),
-    { numRuns: 100 }
-  );
-  assertReach(seen, ['absent', 'trailing', 'leading', 'bare']);
+  for (const placement of PLACEMENTS) {
+    fc.assert(
+      fc.property(WINDOW_CLI_FOR_PLACEMENT(placement), ({ cli, placement }) => {
+        seen[placement] += 1;
+        const resolved = resolve('claude', 0, cli);
+        assert.ok(
+          !resolved.includes(FLAG),
+          `config off left a remote-control flag behind.\nwindow line: [${cli}]\nresolved:    [${resolved}]`
+        );
+        // Stripping must not eat the rest of the line.
+        for (const flag of cli.split(' ')) {
+          if (!flag || flag === FLAG || flag === SESSION) continue;
+          assert.ok(resolved.includes(flag), `stripping the flag ate ${flag}: [${resolved}]`);
+        }
+      }),
+      { numRuns: INVARIANT1_CELL_RUNS }
+    );
+  }
+  assertReachFloor(seen, PLACEMENTS, INVARIANT1_CELL_RUNS, 'placement');
 });
+
+// BL-1587: both axes (agent x placement) reached BY CONSTRUCTION - an outer
+// loop over their product, each cell drawing runsPerCell(100, 8) times. The
+// draw budget of 100 and the per-draw body are unchanged.
+const INVARIANT3_CELLS = AGENTS.flatMap((agent) => PLACEMENTS.map((placement) => ({ agent, placement })));
+const INVARIANT3_CELL_RUNS = runsPerCell(100, INVARIANT3_CELLS.length);
 
 test('property (invariant 3): with config on, composition is exactly the pre-BL-1218 rule', () => {
   const seen = { absent: 0, trailing: 0, leading: 0, bare: 0, claude: 0, codex: 0 };
-  fc.assert(
-    fc.property(AGENT(), WINDOW_CLI(), (agent, { cli, placement }) => {
-      seen[placement] += 1;
-      seen[agent] += 1;
-      assert.equal(
-        resolve(agent, 1, cli),
-        legacyCompose(agent, 1, cli),
-        `config on diverged from today's composition for ${agent} [${cli}]`
-      );
-    }),
-    { numRuns: 100 }
-  );
-  assertReach(seen, ['absent', 'trailing', 'leading', 'bare', 'claude', 'codex']);
+  for (const { agent, placement } of INVARIANT3_CELLS) {
+    fc.assert(
+      fc.property(WINDOW_CLI_FOR_PLACEMENT(placement), ({ cli, placement }) => {
+        seen[placement] += 1;
+        seen[agent] += 1;
+        assert.equal(
+          resolve(agent, 1, cli),
+          legacyCompose(agent, 1, cli),
+          `config on diverged from today's composition for ${agent} [${cli}]`
+        );
+      }),
+      { numRuns: INVARIANT3_CELL_RUNS }
+    );
+  }
+  assertReachFloor(seen, ['absent', 'trailing', 'leading', 'bare', 'claude', 'codex'], INVARIANT3_CELL_RUNS, 'agent/placement');
 });
 
 test('property (invariant 3): a non-Claude seat is never rewritten, under either config value', () => {
+  // BL-1587: not a reach floor after all - `assert.ok(cases > 0)` only
+  // checks that fc.assert ran at least one case, which is true for any
+  // numRuns >= 1 regardless of what the generator produced. Left unchanged.
   let cases = 0;
   fc.assert(
     fc.property(WINDOW_CLI(), fc.constantFrom(0, 1), ({ cli }, rcDefault) => {
@@ -160,32 +183,39 @@ function writeLaunchScript(root, confText) {
   return fs.existsSync(script) ? fs.readFileSync(script, 'utf8') : undefined;
 }
 
-const CONFIG_SETTING = () => fc.constantFrom('off', 'on', 'absent');
+// BL-1587: setting x nameFlag reached BY CONSTRUCTION - an outer loop over
+// their product (3 settings x 2 flag placements = 6 cells), each cell
+// drawing runsPerCell(12, 6) times. The draw budget of 12 is unchanged.
+const CONFIG_SETTINGS = ['off', 'on', 'absent'];
+const INVARIANT2_CELLS = CONFIG_SETTINGS.flatMap((setting) => [true, false].map((nameFlag) => ({ setting, nameFlag })));
+const INVARIANT2_CELL_RUNS = runsPerCell(12, INVARIANT2_CELLS.length);
 
 test('property (invariant 2): a persisted launch script never disagrees with the config that wrote it', () => {
   const seen = { off: 0, on: 0, absent: 0, named: 0, unnamed: 0 };
-  fc.assert(
-    fc.property(CONFIG_SETTING(), fc.boolean(), (setting, nameFlag) => {
-      seen[setting] += 1;
-      seen[nameFlag ? 'named' : 'unnamed'] += 1;
-      const root = mkTmpDir('sfvc-bl1218-prop-');
-      try {
-        const configLine = setting === 'absent' ? '' : `config remote_control ${setting}\n`;
-        const windowFlags = `--model claude-haiku-4-5-20251001 --dangerously-skip-permissions --effort low${
-          nameFlag ? ` ${FLAG} ${SESSION}` : ''
-        }`;
-        const written = writeLaunchScript(root, `${configLine}window coder claude coder ${windowFlags}\n`);
-        assert.ok(written, `no launch script was written for config ${setting}`);
-        assert.equal(
-          written.includes(FLAG),
-          setting !== 'off',
-          `the persisted script disagrees with config ${setting} (window line ${nameFlag ? 'names' : 'omits'} the flag)`
-        );
-      } finally {
-        fs.rmSync(root, { recursive: true, force: true });
-      }
-    }),
-    { numRuns: 12 }
-  );
-  assertReach(seen, ['off', 'on', 'absent', 'named', 'unnamed']);
+  for (const { setting, nameFlag } of INVARIANT2_CELLS) {
+    fc.assert(
+      fc.property(fc.constant(setting), fc.constant(nameFlag), (setting, nameFlag) => {
+        seen[setting] += 1;
+        seen[nameFlag ? 'named' : 'unnamed'] += 1;
+        const root = mkTmpDir('sfvc-bl1218-prop-');
+        try {
+          const configLine = setting === 'absent' ? '' : `config remote_control ${setting}\n`;
+          const windowFlags = `--model claude-haiku-4-5-20251001 --dangerously-skip-permissions --effort low${
+            nameFlag ? ` ${FLAG} ${SESSION}` : ''
+          }`;
+          const written = writeLaunchScript(root, `${configLine}window coder claude coder ${windowFlags}\n`);
+          assert.ok(written, `no launch script was written for config ${setting}`);
+          assert.equal(
+            written.includes(FLAG),
+            setting !== 'off',
+            `the persisted script disagrees with config ${setting} (window line ${nameFlag ? 'names' : 'omits'} the flag)`
+          );
+        } finally {
+          fs.rmSync(root, { recursive: true, force: true });
+        }
+      }),
+      { numRuns: INVARIANT2_CELL_RUNS }
+    );
+  }
+  assertReachFloor(seen, ['off', 'on', 'absent', 'named', 'unnamed'], INVARIANT2_CELL_RUNS, 'setting/nameFlag');
 });

@@ -33,6 +33,7 @@ const fc = require('fast-check');
 const fs = require('node:fs');
 const path = require('node:path');
 const { spawnSync } = require('node:child_process');
+const { assertReachFloor, runsPerCell } = require('./helpers/reachFloors');
 
 const REPO_ROOT = path.join(__dirname, '..', '..');
 const PROVIDER_COMPAT_LIB = path.join(REPO_ROOT, 'swarmforge', 'scripts', 'provider_compat_lib.bb');
@@ -116,62 +117,69 @@ const secretArb = fc
   .map((idxs) => idxs.map((i) => SECRET_ALPHABET[i]).join(''));
 const providerArb = fc.constantFrom('cerebras', 'bai');
 
+// BL-1587: both providers are reached BY CONSTRUCTION - an outer loop over
+// PROVIDER_KEYS, each cell drawing runsPerCell(30, 2) times with the
+// provider fixed via fc.constant - rather than hoped for by a single
+// providerArb draw. The draw budget of 30 is unchanged.
+const PROVIDER_KEYS = Object.keys(PROVIDERS);
+const PROVIDER_CELL_RUNS = runsPerCell(30, PROVIDER_KEYS.length);
+
 test('BL-1495/BL-654 invariant 1: the compat resolver treats api.b.ai exactly as it treats api.cerebras.ai', () => {
   const reach = { cerebras: 0, bai: 0 };
 
-  fc.assert(
-    fc.property(providerArb, secretArb, secretArb, (provider, key, realOpenaiKey) => {
-      fc.pre(key !== realOpenaiKey);
-      reach[provider] += 1;
-      const p = PROVIDERS[provider];
-      const resolved = resolveCompat({ provider, key, realOpenaiKey });
-      assert.equal(resolved.provider, p.tag, `${provider}: wrong provider tag: ${JSON.stringify(resolved)}`);
-      assert.equal(resolved['openai-api-key'], key, `${provider}: expected the provider's own key, got: ${JSON.stringify(resolved)}`);
-      assert.equal(resolved['openai-api-base'], p.base, `${provider}: wrong base: ${JSON.stringify(resolved)}`);
-      assert.equal(resolved['openai-base-url'], p.base, `${provider}: wrong base-url: ${JSON.stringify(resolved)}`);
-      assert.notEqual(resolved['openai-api-key'], realOpenaiKey, `${provider}: the host's real OPENAI_API_KEY leaked through: ${JSON.stringify(resolved)}`);
-      return true;
-    }),
-    { numRuns: 30 },
-  );
-
-  for (const provider of Object.keys(reach)) {
-    assert.ok(reach[provider] > 0, `never exercised provider ${provider} - the parity comparison went untested`);
+  for (const provider of PROVIDER_KEYS) {
+    fc.assert(
+      fc.property(fc.constant(provider), secretArb, secretArb, (provider, key, realOpenaiKey) => {
+        fc.pre(key !== realOpenaiKey);
+        reach[provider] += 1;
+        const p = PROVIDERS[provider];
+        const resolved = resolveCompat({ provider, key, realOpenaiKey });
+        assert.equal(resolved.provider, p.tag, `${provider}: wrong provider tag: ${JSON.stringify(resolved)}`);
+        assert.equal(resolved['openai-api-key'], key, `${provider}: expected the provider's own key, got: ${JSON.stringify(resolved)}`);
+        assert.equal(resolved['openai-api-base'], p.base, `${provider}: wrong base: ${JSON.stringify(resolved)}`);
+        assert.equal(resolved['openai-base-url'], p.base, `${provider}: wrong base-url: ${JSON.stringify(resolved)}`);
+        assert.notEqual(resolved['openai-api-key'], realOpenaiKey, `${provider}: the host's real OPENAI_API_KEY leaked through: ${JSON.stringify(resolved)}`);
+        return true;
+      }),
+      { numRuns: PROVIDER_CELL_RUNS },
+    );
   }
+
+  assertReachFloor(reach, PROVIDER_KEYS, PROVIDER_CELL_RUNS, 'provider');
 });
 
 test('BL-1495/BL-654 invariant 1: both respawn mappings agree with each other and with the compat resolver, for both providers', () => {
   const reach = { cerebras: 0, bai: 0 };
 
-  fc.assert(
-    fc.property(providerArb, secretArb, secretArb, (provider, key, realOpenaiKey) => {
-      fc.pre(key !== realOpenaiKey);
-      reach[provider] += 1;
-      const p = PROVIDERS[provider];
-      const resolved = resolveCompat({ provider, key, realOpenaiKey });
-      const { respawnLib, handoffLib } = respawnArgs({ provider, key, realOpenaiKey });
+  for (const provider of PROVIDER_KEYS) {
+    fc.assert(
+      fc.property(fc.constant(provider), secretArb, secretArb, (provider, key, realOpenaiKey) => {
+        fc.pre(key !== realOpenaiKey);
+        reach[provider] += 1;
+        const p = PROVIDERS[provider];
+        const resolved = resolveCompat({ provider, key, realOpenaiKey });
+        const { respawnLib, handoffLib } = respawnArgs({ provider, key, realOpenaiKey });
 
-      for (const [label, map] of [['provider_respawn_env_lib.bb', respawnLib], ['handoff_lib.bb', handoffLib]]) {
-        assert.equal(map.OPENAI_API_KEY, resolved['openai-api-key'], `${provider}/${label}: disagrees with the compat resolver on OPENAI_API_KEY: ${JSON.stringify(map)}`);
-        assert.equal(map.OPENAI_API_BASE, p.base, `${provider}/${label}: wrong OPENAI_API_BASE: ${JSON.stringify(map)}`);
-        assert.equal(map.OPENAI_BASE_URL, p.base, `${provider}/${label}: wrong OPENAI_BASE_URL: ${JSON.stringify(map)}`);
-        assert.equal(map[p.useVar], '1', `${provider}/${label}: did not forward ${p.useVar}=1: ${JSON.stringify(map)}`);
-        assert.notEqual(map.OPENAI_API_KEY, realOpenaiKey, `${provider}/${label}: the host's real OPENAI_API_KEY leaked through: ${JSON.stringify(map)}`);
-      }
-      // BL-1495's own key: forwarded under its own name too (both mappings),
-      // never only folded into the OPENAI_API_KEY remap.
-      if (provider === 'bai') {
-        assert.equal(respawnLib.B_AI_API_KEY, key, `respawn lib did not forward B_AI_API_KEY itself: ${JSON.stringify(respawnLib)}`);
-        assert.equal(handoffLib.B_AI_API_KEY, key, `handoff lib did not forward B_AI_API_KEY itself: ${JSON.stringify(handoffLib)}`);
-      }
-      return true;
-    }),
-    { numRuns: 30 },
-  );
-
-  for (const provider of Object.keys(reach)) {
-    assert.ok(reach[provider] > 0, `never exercised provider ${provider} - the both-mappings comparison went untested`);
+        for (const [label, map] of [['provider_respawn_env_lib.bb', respawnLib], ['handoff_lib.bb', handoffLib]]) {
+          assert.equal(map.OPENAI_API_KEY, resolved['openai-api-key'], `${provider}/${label}: disagrees with the compat resolver on OPENAI_API_KEY: ${JSON.stringify(map)}`);
+          assert.equal(map.OPENAI_API_BASE, p.base, `${provider}/${label}: wrong OPENAI_API_BASE: ${JSON.stringify(map)}`);
+          assert.equal(map.OPENAI_BASE_URL, p.base, `${provider}/${label}: wrong OPENAI_BASE_URL: ${JSON.stringify(map)}`);
+          assert.equal(map[p.useVar], '1', `${provider}/${label}: did not forward ${p.useVar}=1: ${JSON.stringify(map)}`);
+          assert.notEqual(map.OPENAI_API_KEY, realOpenaiKey, `${provider}/${label}: the host's real OPENAI_API_KEY leaked through: ${JSON.stringify(map)}`);
+        }
+        // BL-1495's own key: forwarded under its own name too (both mappings),
+        // never only folded into the OPENAI_API_KEY remap.
+        if (provider === 'bai') {
+          assert.equal(respawnLib.B_AI_API_KEY, key, `respawn lib did not forward B_AI_API_KEY itself: ${JSON.stringify(respawnLib)}`);
+          assert.equal(handoffLib.B_AI_API_KEY, key, `handoff lib did not forward B_AI_API_KEY itself: ${JSON.stringify(handoffLib)}`);
+        }
+        return true;
+      }),
+      { numRuns: PROVIDER_CELL_RUNS },
+    );
   }
+
+  assertReachFloor(reach, PROVIDER_KEYS, PROVIDER_CELL_RUNS, 'provider');
 });
 
 test('BL-1495/BL-654 invariant 1: a launch-cli host match remaps b.ai even when the flag is unset', () => {
@@ -196,43 +204,49 @@ test('BL-1495/BL-654 invariant 1: a launch-cli host match remaps b.ai even when 
 // ── invariant 2 ──────────────────────────────────────────────────────────
 
 const KNOWN_BACKENDS = ['claude', 'copilot', 'grok', 'codex', 'gemini', 'vibe', 'local-model', 'openrouter', 'aider'];
-const backendSetArb = fc.uniqueArray(fc.constantFrom(...KNOWN_BACKENDS), { minLength: 0, maxLength: KNOWN_BACKENDS.length });
+
+// BL-1587: 'aider-present' and 'aider-absent' are reached BY CONSTRUCTION -
+// an outer loop over two cells, each drawing a subset of the OTHER backends
+// and then either always appending 'aider' or always excluding it - rather
+// than a single uniqueArray draw hoping to land on each shape (and needing
+// fc.pre to throw away the empty set). The draw budget of 40 is unchanged.
+const OTHER_BACKENDS = KNOWN_BACKENDS.filter((b) => b !== 'aider');
+const AIDER_SHAPE_CELLS = [
+  { label: 'aider-present', backends: fc.subarray(OTHER_BACKENDS, { minLength: 0 }).map((rest) => [...rest, 'aider']) },
+  { label: 'aider-absent', backends: fc.subarray(OTHER_BACKENDS, { minLength: 1 }) },
+];
+const AIDER_SHAPE_CELL_RUNS = runsPerCell(40, AIDER_SHAPE_CELLS.length);
 
 test('BL-1495/BL-654 invariant 2: B_AI_API_KEY is scrubbed from the tmux server unless an aider window is configured', () => {
   const reach = { 'aider-present': 0, 'aider-absent': 0 };
 
-  fc.assert(
-    fc.property(backendSetArb, (backends) => {
-      // BL-1049's own documented posture: an EMPTY backend set means the
-      // running configuration could not be read at all, and the lib fails
-      // OPEN (scrubs nothing) rather than assuming no window needs a key -
-      // out of scope for THIS property, which is about the aider/no-aider
-      // dichotomy over a READABLE configuration.
-      fc.pre(backends.length > 0);
-      const shape = backends.includes('aider') ? 'aider-present' : 'aider-absent';
-      reach[shape] += 1;
+  for (const cell of AIDER_SHAPE_CELLS) {
+    fc.assert(
+      fc.property(cell.backends, (backends) => {
+        const shape = backends.includes('aider') ? 'aider-present' : 'aider-absent';
+        reach[shape] += 1;
 
-      const expr = `
+        const expr = `
 (require '[cheshire.core :as json])
 (load-file "${HARNESS_ENV_SCRUB_LIB}")
 (println (json/generate-string {:scrub (vec (harness-env-scrub-lib/provider-scrub-vars #{${backends.map((b) => `"${b}"`).join(' ')}}))
                                  :keep (vec (harness-env-scrub-lib/provider-keep-names #{${backends.map((b) => `"${b}"`).join(' ')}}))}))`;
-      const { scrub, keep } = bbJson(expr, process.env);
+        const { scrub, keep } = bbJson(expr, process.env);
 
-      if (shape === 'aider-present') {
-        assert.ok(!scrub.includes('B_AI_API_KEY'), `an aider window is configured but B_AI_API_KEY is still scrubbed: ${JSON.stringify(scrub)}`);
-        assert.ok(keep.includes('B_AI_API_KEY'), `an aider window is configured but B_AI_API_KEY is not kept: ${JSON.stringify(keep)}`);
-      } else {
-        assert.ok(scrub.includes('B_AI_API_KEY'), `no aider window is configured but B_AI_API_KEY was not scrubbed: ${JSON.stringify(scrub)}`);
-        assert.ok(!keep.includes('B_AI_API_KEY'), `no aider window is configured but B_AI_API_KEY is kept: ${JSON.stringify(keep)}`);
-      }
-      return true;
-    }),
-    { numRuns: 40 },
-  );
+        if (shape === 'aider-present') {
+          assert.ok(!scrub.includes('B_AI_API_KEY'), `an aider window is configured but B_AI_API_KEY is still scrubbed: ${JSON.stringify(scrub)}`);
+          assert.ok(keep.includes('B_AI_API_KEY'), `an aider window is configured but B_AI_API_KEY is not kept: ${JSON.stringify(keep)}`);
+        } else {
+          assert.ok(scrub.includes('B_AI_API_KEY'), `no aider window is configured but B_AI_API_KEY was not scrubbed: ${JSON.stringify(scrub)}`);
+          assert.ok(!keep.includes('B_AI_API_KEY'), `no aider window is configured but B_AI_API_KEY is kept: ${JSON.stringify(keep)}`);
+        }
+        return true;
+      }),
+      { numRuns: AIDER_SHAPE_CELL_RUNS },
+    );
+  }
 
-  assert.ok(reach['aider-present'] > 0, 'never drew a backend set containing aider');
-  assert.ok(reach['aider-absent'] > 0, 'never drew a backend set without aider');
+  assertReachFloor(reach, ['aider-present', 'aider-absent'], AIDER_SHAPE_CELL_RUNS, 'aider-shape');
 });
 
 test('BL-1495 invariant 2: B_AI_API_KEY never appears as a hardcoded value in a committed launch file', () => {
