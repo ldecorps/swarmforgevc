@@ -120,6 +120,63 @@ function briefingSent(target: string, dayKey: string): boolean {
   }
 }
 
+// Hotfix 2026-09-16: `rotate_to_role.sh documenter` is the resident-invoked
+// rotation entry (handoff_lib.bb's respawn-as!, BL-805) - it REFUSES
+// (nonzero exit) when the resident holds a real, undrained in_process
+// parcel, exactly the normal case while the ceremony fires mid-work. The
+// old fallback (a plain note to coordinator) is inert: coordinator cannot
+// respawn a pane it does not own, so documenter never got a live session
+// and the briefing was silently never written (observed live 2026-09-15:
+// "rotate-documenter" -> "briefing-missing" -> "swarm-stopped" in one
+// ceremony run, no chase-rotate/consult-spawn event for documenter that
+// whole night). The real fallback: spawn documenter's OWN ephemeral
+// session via consult_spawn_cli.bb - the same fix already proven for
+// chase's own :departing-mid-parcel refusal (handoffd.bb's
+// spawn-consult-session!, BL-1549) - which never touches the resident and
+// tears itself down via the already-certified consult-teardown-sweep!
+// once documenter goes idle with nothing left pending. Exported
+// separately from buildRealDeps so a test can drive it directly against a
+// fixture without mocking execFileSync.
+export function spawnConsultDocumenter(target: string): void {
+  const cli = path.join(target, 'swarmforge', 'scripts', 'consult_spawn_cli.bb');
+  if (!fs.existsSync(cli)) {
+    // Fixture roots may lack scripts — same degrade-quietly posture as
+    // sendHandoffNote's own missing-script branch.
+    return;
+  }
+  try {
+    execFileSync('bb', [cli, target, 'documenter', 'coordinator'], {
+      cwd: target,
+      stdio: 'pipe',
+    });
+  } catch {
+    // Best-effort: a spawn refusal (no-such-role, no-launch-script, an
+    // already-active marker) is not this caller's decision to escalate -
+    // the CLI's own stdout already named the reason for a human reading
+    // the ceremony's process output.
+  }
+}
+
+export function rotateDocumenter(target: string): void {
+  const rotate = path.join(target, 'swarmforge', 'scripts', 'rotate_to_role.sh');
+  if (fs.existsSync(rotate)) {
+    try {
+      execFileSync('bash', [rotate, 'documenter'], {
+        cwd: target,
+        env: { ...process.env, SWARMFORGE_ROLE: 'coordinator' },
+        stdio: 'pipe',
+      });
+      return;
+    } catch {
+      // fall through - the resident refused (mid-parcel, most commonly),
+      // so get documenter its own ephemeral session instead of leaving it
+      // stuck behind an inert note.
+    }
+  }
+  spawnConsultDocumenter(target);
+  sendHandoffNote(target, 'coordinator', 'BL-658: rotate resident to documenter for morning briefing');
+}
+
 export function sendHandoffNote(target: string, to: string, message: string): void {
   const draftPath = draftPathUnder(target, 'closing-ceremony');
   fs.mkdirSync(path.dirname(draftPath), { recursive: true });
@@ -211,22 +268,7 @@ export function buildRealDeps(): RunDeps {
     applyFreeze: (target, untilMs) => {
       writeControlPauseState(target, { active: true, untilMs }, 'night-closing-ceremony');
     },
-    rotateDocumenter: (target) => {
-      const rotate = path.join(target, 'swarmforge', 'scripts', 'rotate_to_role.sh');
-      if (fs.existsSync(rotate)) {
-        try {
-          execFileSync('bash', [rotate, 'documenter'], {
-            cwd: target,
-            env: { ...process.env, SWARMFORGE_ROLE: 'coordinator' },
-            stdio: 'pipe',
-          });
-          return;
-        } catch {
-          // fall through to note
-        }
-      }
-      sendHandoffNote(target, 'coordinator', 'BL-658: rotate resident to documenter for morning briefing');
-    },
+    rotateDocumenter,
     instructBriefing: (target, dayKey) => {
       sendHandoffNote(target, 'documenter', briefingInstruction(dayKey));
     },
