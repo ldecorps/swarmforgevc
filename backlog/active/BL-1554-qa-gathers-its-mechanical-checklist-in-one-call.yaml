@@ -166,3 +166,6 @@ qa_e2e_procedure: |
      reimplemented).
 
 assigned_to: coder
+bounce_count: 1
+bounce_history:
+  - { at: 2026-09-16, by: architect, blamed: coder, class: behavior, commit: d926d21599, evidence: backlog/evidence/BL-1554-architect-bounce-20260916.md }
