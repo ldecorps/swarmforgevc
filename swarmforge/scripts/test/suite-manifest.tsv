@@ -178,8 +178,9 @@ review_forward_evidence_gate_lib_test_runner.bb	standing
 role_ask_escalation_lib_test_runner.bb	standing		
 role_lifecycle_lib_test_runner.bb	standing		
 rotation_telemetry_lib_test_runner.bb	standing		
-routing_manifest_lib_test_runner.bb	standing		
-sandbox_sweep_lib_test_runner.bb	standing		
+routing_manifest_lib_test_runner.bb	standing
+sampled_reach_floor_guard_lib_test_runner.bb	standing
+sandbox_sweep_lib_test_runner.bb	standing
 seat_affinity_lib_test_runner.bb	standing		
 seat_difficulty_lib_test_runner.bb	standing		
 self_heal_telemetry_lib_test_runner.bb	standing		
