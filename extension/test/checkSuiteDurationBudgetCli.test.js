@@ -135,6 +135,46 @@ test('formatSuiteWorkVerdict names an over-budget run as refused', () => {
   assert.match(text, /refus/i);
 });
 
+// BL-1599 hardening: exact full-string pins, singular fork, ok verdict.
+// workS/wallS are equal here by construction (forks=1) - the plural
+// fixture below gives them DISTINCT values so an arithmetic mutant on
+// either cannot hide behind the other's matching substring, the same
+// collision that let workS's `/1000`->`*1000` mutant survive against
+// the loose /620\.0s/ regex above (wallS happened to render the same
+// text). An exact assert.equal pins every field, including the label
+// ('ok', not forced true/false or emptied) and the singular "1 fork".
+test('formatSuiteWorkVerdict: exact text for an ok verdict, one fork (singular)', () => {
+  const text = formatSuiteWorkVerdict(buildSuiteWorkVerdict(100000, 1, 40000, 550000, 0.1));
+  assert.equal(
+    text,
+    'suite work ok: 100.0s work (budget 550.0s, 1 fork, slowest file 40.0s) -> expected wall 100.0s, 87.0s from the 13.0s operator ceiling'
+  );
+});
+
+// Plural forks, and work/wall/pole/distance all distinct decimal strings
+// so each field's arithmetic mutant (/1000 -> *1000) breaks the exact
+// match on its own, unmasked by a sibling field's coincidentally-matching
+// substring.
+test('formatSuiteWorkVerdict: exact text for an ok verdict, seven forks (plural)', () => {
+  const text = formatSuiteWorkVerdict(buildSuiteWorkVerdict(300000, 7, 25000, 550000, 0.1));
+  assert.equal(
+    text,
+    'suite work ok: 300.0s work (budget 550.0s, 7 forks, slowest file 25.0s) -> expected wall 42.9s, 29.9s from the 13.0s operator ceiling'
+  );
+});
+
+// Exercises the over-tolerance branch at all (BL-1599's NoCoverage
+// survivor: no prior test ever produced this verdict, so the 'over
+// tolerance' string literal itself had zero coverage) and pins the
+// label text exactly, discriminating it from both 'ok' and 'REFUSED'.
+test('formatSuiteWorkVerdict: exact text for an over-tolerance verdict', () => {
+  const text = formatSuiteWorkVerdict(buildSuiteWorkVerdict(590000, 10, 5000, 550000, 0.1));
+  assert.equal(
+    text,
+    'suite work over tolerance: 590.0s work (budget 550.0s, 10 forks, slowest file 5.0s) -> expected wall 59.0s, 46.0s from the 13.0s operator ceiling'
+  );
+});
+
 // ── main() (thin CLI wrapper, in-process) ───────────────────────────────────
 
 // Runs the REAL main() in-process so in-process coverage/mutation can see
