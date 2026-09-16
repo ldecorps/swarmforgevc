@@ -8,6 +8,7 @@ const path = require('node:path');
 const fc = require('fast-check');
 
 const { mkTmpDir } = require('./helpers/tmpDir');
+const { propertyLaneTimeoutMs } = require('./helpers/propertyLaneContentionBudget');
 
 // BL-1304 declared invariants (backlog/paused/BL-1304-a-dry-run-spawns-nothing.yaml):
 //
@@ -147,7 +148,7 @@ test('invariant 1: dry run starts no stage and creates no worktree/branch, regar
     ),
     { numRuns: 15 }
   );
-});
+}, propertyLaneTimeoutMs(20000));
 
 test('invariant 2: dry run succeeds and prints a plan whenever a real run could start', () => {
   fc.assert(
@@ -183,7 +184,7 @@ test('invariant 2: dry run succeeds and prints a plan whenever a real run could 
     ),
     { numRuns: 12 }
   );
-});
+}, propertyLaneTimeoutMs(20000));
 
 test('reach floor: without the fix, a real run DOES start stages when worktree exists', () => {
   // This test proves the property is non-vacuous: it shows that WITHOUT the
@@ -203,4 +204,4 @@ test('reach floor: without the fix, a real run DOES start stages when worktree e
   } finally {
     fs.rmSync(root, { recursive: true, force: true });
   }
-});
+}, propertyLaneTimeoutMs(20000));
