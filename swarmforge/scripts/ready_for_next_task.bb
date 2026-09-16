@@ -44,6 +44,22 @@
 ;; off to rotate_to_role.sh. Never fires outside mono-router, never diverts
 ;; the home role itself, and never fires while real work is dequeueable.
 
+;; BL-1610: the sender's own HEAD at the moment a parcel is claimed - stamped
+;; onto the in_process file as received_at_head so a later git_handoff send
+;; can bound its merge-drop scan to merges the sender made AFTER receipt,
+;; never the sender branch's whole off-main history when the received parcel
+;; is a coordinator route git_handoff (main's own tip). Mirrors
+;; ready_for_next_batch.bb's current-head-commit-10 exactly (duplicated
+;; rather than shared - task/batch have no common require point below
+;; handoff_lib.bb, same posture as their other small live-glue
+;; duplications). "" on error, never nil, so a downstream set-header! never
+;; writes a blank/nil value silently.
+(defn- current-head-commit-10 []
+  (try
+    (let [result (sh/sh "git" "rev-parse" "--short=10" "HEAD")]
+      (if (zero? (:exit result)) (str/trim (:out result)) ""))
+    (catch Exception _ "")))
+
 (defn- mono-router-conf-text []
   (try (slurp (str (backlog-depth-lib/conf-file-path (handoff-lib/target-root))))
        (catch Exception _ nil)))
@@ -421,6 +437,12 @@
                         ;; waiting in new/, and must not outlive it there.
                         (handoff-lib/remove-sidecars-of! source-file)
                         (handoff-lib/set-header! target-file "dequeued_at" (handoff-lib/timestamp))
+                        ;; BL-1610: stamped beside dequeued_at, same claim
+                        ;; moment - not "" checked here, a blank stamp still
+                        ;; writes and the gate's own reader falls back to
+                        ;; today's received..forwarded scan on a blank/absent
+                        ;; value (fail-open, never a strand).
+                        (handoff-lib/set-header! target-file "received_at_head" (current-head-commit-10))
                         ;; BL-1004 invariant 1's out-loud half: a cross-seat
                         ;; claim past the deadline says the seat did not
                         ;; build this parcel, so it merges the parcel
