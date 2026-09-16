@@ -18,6 +18,7 @@ const {
   collisionVerdict,
   shippedCollisionVerdict,
 } = require('./helpers/stepCollisionGuard');
+const { resolveUnitLaneTimeout } = require('../../specs/pipeline/steps/lib/contentionBudget');
 
 // A synthetic step file, written to a temp dir and loaded through the real
 // module system - the guard is given exactly what it is given in production
@@ -105,10 +106,20 @@ describe('BL-1277 unscoped step-pattern collision guard', () => {
     }
   });
 
-  it('the shipped step files register no colliding unscoped pattern', () => {
-    const verdict = shippedCollisionVerdict();
+  // BL-1600: this scan requires every handler under specs/pipeline/steps
+  // (about 940 files) through the real registry, so its cost is the module
+  // graph's - under swarm load it crossed the lane's flat 20 s testTimeout
+  // (23.5 s observed) while staying under 8 s on a quiet host. The budget
+  // is derived through the unit lane's own contention rule (BL-1007) so a
+  // quiet host keeps the strict 20 s base and a loaded one gets more.
+  it(
+    'the shipped step files register no colliding unscoped pattern',
+    () => {
+      const verdict = shippedCollisionVerdict();
 
-    assert.equal(verdict.message, '');
-    assert.equal(verdict.ok, true);
-  });
+      assert.equal(verdict.message, '');
+      assert.equal(verdict.ok, true);
+    },
+    resolveUnitLaneTimeout(20000).effectiveMs
+  );
 });
