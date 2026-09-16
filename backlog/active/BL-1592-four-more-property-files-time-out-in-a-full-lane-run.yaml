@@ -233,4 +233,4 @@ notes: |
   checks and the in-process budget seam in seconds; runners in e2e -
   BL-1541). Severity high per the standing-red rule, not medium.
 
-assigned_to: null
+assigned_to: coder
