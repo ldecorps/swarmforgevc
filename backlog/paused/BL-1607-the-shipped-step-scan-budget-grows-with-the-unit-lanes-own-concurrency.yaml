@@ -1,0 +1,208 @@
+id: BL-1607
+title: "extension/test/bl1277UnscopedStepCollisionGuard.test.js's shipped-step scan timed out again at 20000 ms in QA's full unit lane on the BL-1598 parcel on 2026-09-16, the same afternoon BL-1600 landed its contention budget: BL-1600's factor is the 1-minute load over 20 cores, which stays under 1 at every load this host has recorded, so the budget never grew; the unit lane publishes its resolved fork count and the scan's budget reads it with the quiet-band denominator the property lane already uses, from the same 20000 ms base"
+milestone: M8
+type: defect
+severity: high
+# high: a standing red on main (Article 3.2.4, 2026-09-05); QA withholds
+# BL-1598 on it under Article 4.2 (note 00_20260916T180834Z_002817). The
+# owner that just closed did not remove it, so the row is back.
+status: todo
+epic: code-quality-gates
+priority: 8
+direction: swarm-reported
+depends_on: []
+# BL-1600 (the base derivation) is in backlog/done. BL-1606 (same pass)
+# edits propertyLaneContentionBudget.js; this ticket only reads it, so
+# the two are orthogonal. BL-791 slice D owns the scan's cost, not its
+# budget.
+mutation_cost: low
+# low: one test file, one lane config, one new test helper and its unit
+# test, evidence; extension/src unchanged, no Stryker target.
+slice_size_envelope: low
+required_stages: [coder, cleaner, architect, hardender, documenter, qa]
+
+acceptance: specs/features/BL-1607-the-shipped-step-scan-budget-grows-with-the-unit-lanes-own-concurrency.feature
+
+required_wiring:
+  - 'extension/test/bl1277UnscopedStepCollisionGuard.test.js::unitLaneHeavyContentionFactor::the scan is the pre-existing consumer that reaches the new factor (BL-1235); the name is chosen at mint so the literal will exist (BL-874)'
+  - 'extension/vitest.config.mjs::SWARMFORGE_UNIT_LANE_FORKS::the lane config that runs on every npm test is the producer of the fork count the factor reads; without this line the factor is load-only on every run'
+  - 'specs/pipeline/steps/bl1607ShippedStepScanBudgetGrowsWithLaneSteps.js::registerSteps::the handler lands in the same parcel as the feature (BL-233, BL-1371)'
+# The second anchor is satisfied by the parcel's own diff (BL-1235's
+# caution) but it sits in the config that every unit run loads, and its
+# absence is exactly the fail-open this ticket closes: a helper with no
+# producer reads one fork forever and the gate would stay green.
+
+human_approval: pending
+approval_context: >
+  A new feature file is authored here, so it needs a tap. No choice is
+  posed and there are no ruling_options. FIRM: the scan's budget stays
+  derived from 20000 ms through resolveUnitLaneTimeout (BL-1600 scenario
+  01 stays green) and a quiet host with one fork keeps exactly 20000 ms
+  (BL-1600 invariant 1 stands); the budget grows only with the unit
+  lane's published fork count or a 1-minute load above the quiet band
+  (QUIET_LOAD_CEILING, 4, BL-1579's measurement), capped by the unit
+  lane's 120000 ms ceiling. FIRM: the fork count is resolved through the
+  property lane helper's resolveLaneForks (one explicit file argument
+  means one fork), never the pool ceiling alone (BL-1588's architect
+  bounce). FIRM: the lane-wide testTimeout and contentionBudgetSetup.js
+  keep their core-count rule - this ticket budgets the one explicitly
+  budgeted heavy test, not the lane. FIRM: no assertion weakened, the
+  scan still requires every shipped handler; the register row leaves in
+  the same land.
+
+invariants:
+  - "The scan on a quiet host with one fork receives exactly its 20000 ms base: the budget grows only with the lane's published fork count or a load above the quiet band, never by a bare raise."
+  - "BL-1600's scenario 01 stays green on the parcel: the scan's timeout still reads as derived from 20000 ms through resolveUnitLaneTimeout, never a bare literal."
+
+description: |
+  ## What is wrong
+
+  BL-1600 (landed 3e5884b9bc, 2026-09-16, an ancestor of the parcel) gave
+  the shipped-step scan `resolveUnitLaneTimeout(20000).effectiveMs`
+  (line 123). QA's checklist gather on the BL-1598 parcel commit
+  771b9cdd6d, the same afternoon, ran the full unit lane and reported
+  (`backlog/evidence/BL-1598-QA-unowned-red-20260916.md`, QA branch
+  cd5f3b5e25):
+
+  ```
+  FAIL  test/bl1277UnscopedStepCollisionGuard.test.js > BL-1277 unscoped step-pattern collision guard > the shipped step files register no colliding unscoped pattern
+  Error: Test timed out in 20000ms.
+  ```
+
+  Green alone at the same commit, 6/6 in 7.9 s. The message names the
+  budget vitest applied: exactly 20000 ms, so BL-1600's derivation
+  resolved the base. It always will on this host:
+  `resolveUnitLaneTimeout`'s default factor is
+  `sampleContentionFactor` = the 1-minute load average divided by the
+  core count (`specs/pipeline/steps/lib/contentionBudget.js:12-19`), and
+  `effectiveBudgetMs` returns the base for any factor under 1. With 20
+  cores the factor crosses 1 only above a load of 20; BL-1579 measured
+  this host idle at 2.3 to 3.6 and a full lane at 7 to 10.8, and wrote
+  the diagnosis into `propertyLaneContentionBudget.js`'s header: "20
+  cores means that factor stays under 1 well past the point real
+  contention already timed these tests out." The property lane fixed it
+  for its own files with a quiet-band denominator (QUIET_LOAD_CEILING = 4,
+  BL-1579) and the lane's own published fork count (BL-1588, folded in by
+  max so the load average's one-minute lag cannot under-report). The unit
+  lane has neither: `vitest.config.mjs` publishes no fork count, and
+  BL-1600 reached for the cores-denominated default. Its own e2e (QA,
+  622/622 twice) ran at a load where 20 s was enough, so the gap did not
+  show until the next loaded lane.
+
+  ## What is wanted
+
+  - `extension/vitest.config.mjs` publishes the unit lane's resolved fork
+    count to the environment before any fork spawns, through the property
+    lane helper's `resolveLaneForks(process.argv, WORKER_POOL_SIZE)`
+    (one explicit file argument resolves to one fork; the full glob or
+    several files to the pool ceiling), under one named key (scenario 03,
+    source-level).
+  - The scan's third argument becomes
+    `resolveUnitLaneTimeout(20000, { factor: unitLaneHeavyContentionFactor() })`,
+    where the factor is the property lane's `propertyLaneContentionFactor`
+    fed the unit lane's published fork count through its existing
+    `forksFn` seam - the quiet-band load denominator and the fork factor,
+    max of the two, never a copy of either lane's math (scenario 01,
+    source-level; BL-1600 scenario 01 stays green because the argument
+    still names `resolveUnitLaneTimeout` and `20000`).
+  - The budget resolves exactly 20000 at one fork with load 1.8 or 3.6,
+    45000 at 9 forks with load 1.8, 54000 at load 10.8 with 1 or 9 forks,
+    and 120000 (the unit lane's ceiling) at 40 forks (scenario 02,
+    invariant 1).
+  - The file green 20 of 20 alone and in 3 full `npm test` runs under
+    the swarm's normal load (e2e); the register row removed in the same
+    land.
+  - The evidence records QA's full-lane text above verbatim, the
+    parcel's own reproduction or green runs with load and fork count, and
+    the change (scenario 04).
+
+  ## How (direction, not mandate)
+
+  - `extension/test/helpers/unitLaneContentionBudget.js` exporting
+    `UNIT_LANE_FORKS_ENV_KEY = 'SWARMFORGE_UNIT_LANE_FORKS'` and
+    `unitLaneHeavyContentionFactor(opts)` =
+    `propertyLaneContentionFactor({ ...opts, forksFn: opts.forksFn ?? (() => process.env[UNIT_LANE_FORKS_ENV_KEY]) })`.
+    A `unitLaneHeavyTimeoutMs(base)` wrapper is fine, but the scan's
+    source must still read `resolveUnitLaneTimeout(20000, ...)` so
+    BL-1600's step (`bl1600ShippedStepScanBudgetSteps.js:181-186`, which
+    checks the argument text for `resolveUnitLaneTimeout` and `20000`)
+    stays green - invariant 2.
+  - `vitest.config.mjs`, beside `UNIT_LANE_TIMEOUT`:
+    `process.env[UNIT_LANE_FORKS_ENV_KEY] = String(resolveLaneForks(process.argv, WORKER_POOL_SIZE));`
+    through the same `createRequire` bridge the file already uses. Stryker
+    reuses this config (BL-124): under a mutation run the key resolves to
+    the pool size, so the scan's budget grows there too - a longer budget
+    on a test file outside the mutate scope, no verdict changes; say so
+    in the helper's header.
+  - Unit test for the helper: the factor at forks 1 / load 1.8 is under 1;
+    at forks 9 it is 2.25; at load 10.8 it is 2.7; an unset key reads as
+    one fork (the property helper's own rule).
+  - Scenarios 01 and 03 read sources; scenario 02 drives the real
+    `resolveUnitLaneTimeout` with `unitLaneHeavyContentionFactor({ forksFn, loadavg1mFn })`
+    injected; scenario 04 reads the evidence. All in seconds (BL-1541).
+  - Documenter: `docs/how-to/BL-1007-a-unit-lane-budget-is-relative-to-recorded-contention.md`
+    gains the heavy-test route and why the core-count rule cannot see
+    the lane's own forks; no diagram trigger.
+
+constraints: >
+  One test file, one lane config, one new test helper and its unit test,
+  evidence; extension/src unchanged;
+  specs/pipeline/steps/lib/contentionBudget.js, contentionBudgetSetup.js
+  and propertyLaneContentionBudget.js unchanged (read, never edited -
+  BL-1606 edits the last one in parallel). No assertion weakened, no bare
+  raise of the 20000 ms base. The step handler lands with the feature
+  (BL-233). Evidence named BL-1607-*.
+
+out_of_scope: |
+  - The lane-wide unit testTimeout and contentionBudgetSetup.js's
+    core-count factor (a second heavy unit test surfacing is the trigger
+    to generalise; today there is one).
+  - The scan's 23.6 s cost itself (BL-791 slice D; the pole register row
+    stays owned by BL-791).
+  - The property lane (BL-1606).
+
+qa_e2e_procedure: |
+  On the parcel commit, from `extension/`, after `npm run compile`:
+  1. `for i in $(seq 1 20); do npx vitest run test/bl1277UnscopedStepCollisionGuard.test.js || echo FAIL; done` -> 20 of 20 green.
+  2. `npm test` 3 times, recording `uptime` before each -> the scan green
+     in every run; any other red recorded with its text and raised as an
+     unowned-red note.
+  3. `node -e "const {resolveUnitLaneTimeout}=require('../specs/pipeline/steps/lib/contentionBudget');const {unitLaneHeavyContentionFactor}=require('./test/helpers/unitLaneContentionBudget');console.log(resolveUnitLaneTimeout(20000,{factor:unitLaneHeavyContentionFactor({forksFn:()=>9,loadavg1mFn:()=>1.8})}).effectiveMs, resolveUnitLaneTimeout(20000,{factor:unitLaneHeavyContentionFactor({forksFn:()=>1,loadavg1mFn:()=>1.8})}).effectiveMs)"`
+     -> `45000 20000`.
+  4. Acceptance resolving all four scenarios
+     (`specs/pipeline/scripts/run_acceptance.sh specs/features/BL-1607-*.feature`)
+     and BL-1600's feature still resolving
+     (`specs/pipeline/scripts/run_acceptance.sh specs/features/BL-1600-*.feature`).
+  5. `grep -n SWARMFORGE_UNIT_LANE_FORKS vitest.config.mjs` -> one
+     assignment before `defineConfig`.
+  6. After landing, `bb swarmforge/scripts/standing_red_register_cli.bb .`
+     reports no row for the file and `"unowned":[]`.
+
+source: |
+  QA note to the specifier, priority 00, 2026-09-16T18:08Z (inbound
+  00_20260916T180834Z_002817_from_QA_to_specifier): "unowned-red BL-1598:
+  bl1277/bl1304/bl968Sensitivity timeouts, hold open". QA evidence
+  backlog/evidence/BL-1598-QA-unowned-red-20260916.md (QA branch
+  cd5f3b5e25). Specifier adjudication:
+  backlog/evidence/BL-1606-specifier-adjudication-of-qa-unowned-red-20260916.md.
+  Parents: BL-1007, BL-1579, BL-1588, BL-1600.
+
+notes: |
+  Minted 2026-09-16 by the specifier while completing QA's unowned-red
+  note, the same pass as BL-1606 (the two property files); the register
+  row names this ticket (first_seen 2026-09-16, BL-1600's own sighting,
+  whose row left at its land); QA was sent the resume note (BL-1566
+  shape) and the coordinator the paused-ready note. BL-1600 is not
+  reopened: a done ticket cannot own a row, and its scenario 01 and
+  invariant 1 stay true - this ticket adds the factor BL-1600's
+  derivation lacked. INVEST: Independent (helpers and seams exist),
+  Negotiable (helper file placement and the wrapper are direction; the
+  factor's inputs and the source shape are fixed), Valuable (the unit
+  lane's one heavy scan stops timing out under the swarm and stops
+  withholding unrelated parcels), Estimable (one config line, one small
+  helper with its test, one argument change - one sitting), Small (four
+  scenarios, two invariants), Testable (source checks and the injected
+  factor in seconds; the lane runs in e2e - BL-1541). Severity high per
+  the standing-red rule.
+
+assigned_to: null
