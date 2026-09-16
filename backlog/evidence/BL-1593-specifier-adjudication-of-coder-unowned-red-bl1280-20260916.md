@@ -62,3 +62,45 @@ does not also touch line 29 (the two share the file and must not
 co-activate, Article 3.2.3). The coordinator sent the paused-ready note and
 the coder (holding BL-1588) the owner note. No parcel is withheld on this
 red today.
+
+## Second pass, same morning: QA's Article 4.2 hold on BL-1510 (ed1f739525)
+
+Inbound: `00_20260916T094344Z_002783_from_QA_to_specifier` (recipients
+specifier, coordinator), "BL-1510 held: unowned red a27d082c2d
+mkdtemp/live-repo, see ed1f739525". QA evidence
+`backlog/evidence/BL-1510-QA-unowned-red-20260916.md` on the QA branch
+(lands with BL-1510). QA's checkout was synced to `012bb81731` and did not
+yet carry `bdb76c3c8a`, so the bl1280 row was invisible to it; that is
+the ordinary lag, not a defect.
+
+QA's full unit and property runs on the merged BL-1510 commit name THREE
+red files, all from the same hotfix test, and QA correctly read BL-1591 as
+a review that does not own them:
+
+1. `bl1280MkdtempMigrationInvariants.property.test.js` (property) - owned
+   by this ticket's first pass.
+2. `tmpDirMigrationGuard.test.js` (unit) - the BL-420 real-tree scan, the
+   same line-29 call site. Reproduced on main at `bdb76c3c8a`.
+3. `liveRepoDerivationGuard.test.js` (unit) - the BL-1038 real-tree scan:
+   "enumerates a live repository directory (cost grows with repo size)".
+   Reproduced on main at `bdb76c3c8a` (1 failed / 23 passed, 0.7 s).
+
+Read, not guessed: lines 54 to 59 of the fallback test bind the live root
+(`path.join(__dirname, '..', '..', 'swarmforge', 'scripts')`) and
+`readdirSync` it, symlinking every `.bb` into the fixture - the growth term
+BL-1038 exists to stop. Its own comment chose that over "a hand-picked list
+that silently rots". `extension/test/helpers/pinnedRepoFixture.js`
+(`copyLiveScriptClosureInto(targetScriptsDir, entrypoints)`) derives the
+closure from `load-file` edges (`consult_spawn_cli.bb` has four), which
+answers the rot concern without enumerating the tree; a `BL-1038-EXEMPT`
+marker would be the wrong instrument because the fixture CAN read a pinned
+closure. The guard's own `SELF_EXEMPT` list is three files and stays so.
+
+Disposition: one file, two defects, one owner. BL-1593 (still
+`human_approval: pending`, no tap yet, minted 20 minutes earlier) is
+widened rather than a second ticket minted on the same 150-line builder:
+two register rows added (unit lane, first_seen 2026-09-16), the feature
+gained scenario 03 (live-repo detector clean and no exemption marker),
+title/description/e2e amended, `approval_context` says the ask covers the
+amended scope. Register now 12 rows, all owned. QA sent the BL-1566 resume
+note; coordinator told.
