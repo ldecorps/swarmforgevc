@@ -8,6 +8,7 @@ severity: high
 # bare-per-test-timeout class in two days; BL-1596 (same pass) retires the
 # class with a guard and a sweep, this ticket drains this row fast.
 status: todo
+abandoned_commits: [60df31cd15]
 epic: code-quality-gates
 priority: 8
 direction: swarm-reported
