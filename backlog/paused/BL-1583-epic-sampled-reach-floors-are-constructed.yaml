@@ -120,3 +120,4 @@ notes: |
   bucket also holds files with NO fast-check (bl1030's two files use a
   hand-rolled LCG and a DRAWS constant); read each file's own loop
   before assuming an fc.assert to restructure.
+mutation_cost: low
