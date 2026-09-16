@@ -56,9 +56,11 @@ const WORKER_POOL_SIZE = resolveVitestWorkerPool({
   defaultCeiling: resolveFreeCoresCeiling(os.cpus().length, os.loadavg()[1]),
 });
 
-// BL-1607: published before any fork spawns (forks are child processes of
-// this process, so they inherit process.env as set here) - the same
-// posture vitest.properties.config.mjs already uses for its own key.
+// BL-1607: publishes SWARMFORGE_UNIT_LANE_FORKS (UNIT_LANE_FORKS_ENV_KEY,
+// unitLaneContentionBudget.js) before any fork spawns (forks are child
+// processes of this process, so they inherit process.env as set here) -
+// the same posture vitest.properties.config.mjs already uses for its own
+// key.
 process.env[UNIT_LANE_FORKS_ENV_KEY] = String(resolveLaneForks(process.argv, WORKER_POOL_SIZE));
 
 export default defineConfig({
