@@ -186,3 +186,13 @@ notes: |
   way bl1295 and bl1358 are excluded.
 
 assigned_to: coder
+
+abandoned_commits: [692fa2a1b2, 01bf7bc523, e1f0f4eadb]
+# QA landed this ticket tip-pure on 2026-09-16 (9e253d2d21) per
+# backlog/evidence/BL-1589-land-escalate-specifier-adjudication-20260916.md's
+# follow-up ruling: the QA branch tip carried bounced sibling BL-1588 and
+# pending sibling BL-1592 as ancestors, so land_step_cli.bb refused on the
+# shared standing-reds.tsv register path (a fully-reverted sibling removal
+# scores :vacuous, not :landed - BL-1594 owns that gap). The listed shas are
+# the cited approved source and QA's own later sync/evidence tips, all off
+# the landed lineage by SHA.

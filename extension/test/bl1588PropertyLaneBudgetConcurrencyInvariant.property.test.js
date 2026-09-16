@@ -196,3 +196,41 @@ test('BL-1588 architect bounce: a genuinely solo invocation keeps the strict bas
     }
   }
 });
+
+// BL-1588 hardener pass (2026-09-16): forksFromEnv()'s own fallback - what
+// forks resolves to when SWARMFORGE_PROPERTY_LANE_FORKS is UNSET, e.g. this
+// module required outside vitest.properties.config.mjs's own load (a plain
+// unit test, or a worker that started before the config's env write landed)
+// - had zero coverage. Every test above either injects forksFn directly or
+// sets the env key itself, so a hand mutant changing the fallback from 1 to
+// 5 (forkFactor 5/4 = 1.25, past the scaling threshold) survived every
+// existing assertion. The header comment on forksFromEnv's call site already
+// declares the invariant ("unset ... reads as a single fork, never a
+// multiplier this file did not measure"); this pins it.
+test('BL-1588 hardener: an unset FORKS_ENV_KEY resolves through forksFromEnv() to a single fork, not a multiplier', () => {
+  const hadKey = Object.prototype.hasOwnProperty.call(process.env, FORKS_ENV_KEY);
+  const before = process.env[FORKS_ENV_KEY];
+  try {
+    delete process.env[FORKS_ENV_KEY];
+    fc.assert(
+      fc.property(fc.float({ min: 0, max: QUIET_LOAD_CEILING, noNaN: true }), (load) => {
+        // No forksFn override: propertyLaneTimeoutMs falls through to the
+        // module's real forksFromEnv(), which must read the now-deleted key
+        // as absent and default to 1, not any larger fallback.
+        const ms = propertyLaneTimeoutMs(BASE_MS, { loadavg1mFn: () => load });
+        assert.equal(
+          ms,
+          BASE_MS,
+          `unset ${FORKS_ENV_KEY} with quiet load=${load} raised the budget to ${ms} via forksFromEnv()'s fallback`
+        );
+      }),
+      { numRuns: 30 },
+    );
+  } finally {
+    if (hadKey) {
+      process.env[FORKS_ENV_KEY] = before;
+    } else {
+      delete process.env[FORKS_ENV_KEY];
+    }
+  }
+});
