@@ -173,7 +173,7 @@ test('parseFailingFilesFromVitestOutput returns nothing for clean output', () =>
 
 test('failingFilesFromRow reads unit/properties rows via the vitest parser and acceptance rows by its own declared path on a non-zero exit', () => {
   const unitRow = { id: 'unit', status: 'ran', exit: 1, excerpt: ' FAIL  test/foo.test.js > x' };
-  assert.deepEqual(failingFilesFromRow(unitRow, undefined), ['test/foo.test.js']);
+  assert.deepEqual(failingFilesFromRow(unitRow, undefined), ['extension/test/foo.test.js']);
 
   const cleanUnitRow = { id: 'unit', status: 'ran', exit: 0, excerpt: 'all good' };
   assert.deepEqual(failingFilesFromRow(cleanUnitRow, undefined), []);
@@ -225,7 +225,29 @@ test('buildRegisterJoin classifies owned/unowned/absent exactly per the register
 
 test('buildRegisterJoin with no register data reports every failing file absent', () => {
   const rows = [{ id: 'unit', status: 'ran', exit: 1, excerpt: ' FAIL  test/foo.test.js > x' }];
-  assert.deepEqual(buildRegisterJoin(rows, undefined, undefined), [{ file: 'test/foo.test.js', join: 'absent' }]);
+  assert.deepEqual(buildRegisterJoin(rows, undefined, undefined), [{ file: 'extension/test/foo.test.js', join: 'absent' }]);
+});
+
+// BL-1554 QA bounce D1: unit/properties rows run with cwd: extension/, so
+// real vitest prints the FAIL line's file bare (test/...), never prefixed
+// extension/test/... the way the register's own rows always are - the join
+// must still match, for both lanes.
+test('buildRegisterJoin matches a bare unit/properties vitest path against the register\'s extension/-relative row', () => {
+  const rows = [
+    { id: 'unit', status: 'ran', exit: 1, excerpt: ' FAIL  test/bl1277UnscopedStepCollisionGuard.test.js > x' },
+    { id: 'properties', status: 'ran', exit: 1, excerpt: ' FAIL  test/bl968MaterializedGuardSensitivity.property.test.js > y' },
+  ];
+  const register = {
+    rows: [
+      { lane: 'unit', file: 'extension/test/bl1277UnscopedStepCollisionGuard.test.js', ticket: 'BL-1607', first_seen: '2026-09-10', age_days: 6, owned: true },
+      { lane: 'property', file: 'extension/test/bl968MaterializedGuardSensitivity.property.test.js', ticket: 'BL-1606', first_seen: '2026-09-10', age_days: 6, owned: true },
+    ],
+  };
+  const join = buildRegisterJoin(rows, register, undefined);
+  assert.deepEqual(join, [
+    { file: 'extension/test/bl1277UnscopedStepCollisionGuard.test.js', join: 'owned', ticket: 'BL-1607' },
+    { file: 'extension/test/bl968MaterializedGuardSensitivity.property.test.js', join: 'owned', ticket: 'BL-1606' },
+  ]);
 });
 
 // ── readAcceptancePath ───────────────────────────────────────────────────
@@ -327,7 +349,7 @@ test('gatherQaChecklist resolves the ticket\'s own acceptance: path and reports 
 test('composeQaGatherReport correctly classifies owned even when the register CLI\'s own JSON exceeds the display excerpt bound', () => {
   const bigRows = [];
   for (let i = 0; i < 40; i += 1) {
-    bigRows.push({ lane: 'unit', file: `test/file${i}.test.js`, ticket: `BL-${1000 + i}`, first_seen: '2026-01-01', age_days: 1, owned: true });
+    bigRows.push({ lane: 'unit', file: `extension/test/file${i}.test.js`, ticket: `BL-${1000 + i}`, first_seen: '2026-01-01', age_days: 1, owned: true });
   }
   const registerJson = JSON.stringify({ rows: bigRows });
   assert.ok(registerJson.length > 4000, 'fixture must actually exceed the excerpt bound to reproduce D1');
@@ -344,7 +366,7 @@ test('composeQaGatherReport correctly classifies owned even when the register CL
 
   const report = composeQaGatherReport('/fake/root', 'BL-9999', { commit: 'abc1234567' }, runFn, undefined);
 
-  assert.deepEqual(report.register_join, [{ file: 'test/file0.test.js', join: 'owned', ticket: 'BL-1000' }]);
+  assert.deepEqual(report.register_join, [{ file: 'extension/test/file0.test.js', join: 'owned', ticket: 'BL-1000' }]);
 });
 
 // ── defaultRunFn: real child_process (hardener pass, BL-1554) ──────────
@@ -403,7 +425,7 @@ test('composeQaGatherReport gates the register join on the REGISTER check\'s own
   // status, so grabbing the wrong one changes the outcome: register_join
   // must still classify the failing file, using the REGISTER row's own
   // (ran, exit 0) status, not stragglers_before's (blocked).
-  const registerJson = JSON.stringify({ rows: [{ lane: 'unit', file: 'test/file0.test.js', ticket: 'BL-1000', first_seen: '2026-01-01', age_days: 1, owned: true }] });
+  const registerJson = JSON.stringify({ rows: [{ lane: 'unit', file: 'extension/test/file0.test.js', ticket: 'BL-1000', first_seen: '2026-01-01', age_days: 1, owned: true }] });
   const runFn = (command, args) => {
     if (args.some((a) => String(a).includes('pgrep')) || command === 'pgrep') {
       return { started: false, exit: null, stdout: '', stderr: '', reason: 'pgrep not found' };
@@ -421,5 +443,5 @@ test('composeQaGatherReport gates the register join on the REGISTER check\'s own
 
   const stragglersBefore = report.checks.find((c) => c.id === 'stragglers_before');
   assert.equal(stragglersBefore.status, 'blocked', 'fixture setup: stragglers_before must actually be blocked');
-  assert.deepEqual(report.register_join, [{ file: 'test/file0.test.js', join: 'owned', ticket: 'BL-1000' }]);
+  assert.deepEqual(report.register_join, [{ file: 'extension/test/file0.test.js', join: 'owned', ticket: 'BL-1000' }]);
 });
