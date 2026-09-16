@@ -1,2 +1,1 @@
 file	disposition	rationale
-test/telegramFrontDeskBotCli.property.test.js	allowlist	owner BL-1595 (backlog/standing-reds.tsv): BL-1203 invariant 2 "Test timed out in 60000ms." under a full lane, bare 60000 per-test argument no lane-level ceiling reaches; row leaves with BL-1595 land
