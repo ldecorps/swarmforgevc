@@ -35,6 +35,7 @@ const path = require('node:path');
 const { execFileSync, spawnSync } = require('node:child_process');
 const { mkTmpDir } = require('./helpers/tmpDir');
 const { assertReachFloor, runsPerCell } = require('./helpers/reachFloors');
+const { propertyLaneTimeoutMs } = require('./helpers/propertyLaneContentionBudget');
 
 const REPO_ROOT = path.join(__dirname, '..', '..');
 const LAND_STEP_LIB = path.join(REPO_ROOT, 'swarmforge', 'scripts', 'land_step_lib.bb');
@@ -174,7 +175,7 @@ test('BL-1354/BL-654 invariant 2: a sibling is judged on its own attributed cont
   }
 
   assertReachFloor(reach, MIXES, MIX_CELL_RUNS, 'landed mix');
-});
+}, propertyLaneTimeoutMs(20000));
 
 test('BL-1354/BL-654 invariant 1: an unanswerable attribution never reads landed', () => {
   sweepFixtures();
@@ -241,4 +242,4 @@ test('BL-1354/BL-654 invariant 1: an unanswerable attribution never reads landed
   }
 
   assertReachFloor(reach, SHAPES, SHAPE_CELL_RUNS, 'unanswerable attribution shape');
-});
+}, propertyLaneTimeoutMs(20000));

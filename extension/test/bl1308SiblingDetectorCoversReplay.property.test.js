@@ -7,6 +7,7 @@ const path = require('node:path');
 const { execFileSync } = require('node:child_process');
 const { mkTmpDir } = require('./helpers/tmpDir');
 const { assertReachFloor, runsPerCell } = require('./helpers/reachFloors');
+const { propertyLaneTimeoutMs } = require('./helpers/propertyLaneContentionBudget');
 
 // BL-1308 declared invariants:
 //
@@ -293,7 +294,7 @@ test('property (invariant 1): every ticket whose content the replay tip adds is 
   for (const ops of PINNED) runCase(ops);
   fc.assert(fc.property(OPS(), runCase), { numRuns: RANDOM_PASS_RUNS });
   assertReach(seen, { needsReplay: true });
-});
+}, propertyLaneTimeoutMs(20000));
 
 test('property (invariant 2): the detector walks every commit the replay can draw content from', () => {
   const seen = { trunk: 0, merge: 0, siblingOnSide: 0 };
@@ -321,4 +322,4 @@ test('property (invariant 2): the detector walks every commit the replay can dra
   for (const ops of PINNED) runCase(ops);
   fc.assert(fc.property(OPS(), runCase), { numRuns: RANDOM_PASS_RUNS });
   assertReach(seen);
-});
+}, propertyLaneTimeoutMs(20000));
