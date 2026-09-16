@@ -6,6 +6,7 @@ const fs = require('node:fs');
 const path = require('node:path');
 const { spawnSync, execFileSync } = require('node:child_process');
 const { mkTmpDir } = require('./helpers/tmpDir');
+const { assertReachFloor, runsPerCell } = require('./helpers/reachFloors');
 
 // BL-1297 declared invariants (as amended 2026-08-30):
 //
@@ -304,7 +305,10 @@ test('property (invariant 1): delivered is the first-parent delta, authored is w
     for (const shape of SHAPES) buildCase(shape, ['extension/src/parcel0.ts', 'extension/src/parcel7.ts']);
 
     const seed = newSeed();
-    const draws = fc.sample(fc.tuple(fc.constantFrom(...SHAPES), PARCEL_PATHS()), { numRuns: 15, seed });
+    // BL-1585: the extra-breadth draw count expressed through runsPerCell
+    // rather than a bare literal, budget unchanged (15).
+    const EXTRA_DRAWS = runsPerCell(15 * SHAPES.length, SHAPES.length);
+    const draws = fc.sample(fc.tuple(fc.constantFrom(...SHAPES), PARCEL_PATHS()), { numRuns: EXTRA_DRAWS, seed });
     for (const [shape, parcelPaths] of draws) buildCase(shape, parcelPaths);
 
     console.log(`BL-1564 reach map (invariant 1): ${JSON.stringify({ cases: built.length, seed })}`);
@@ -346,6 +350,7 @@ test('property (invariant 1): delivered is the first-parent delta, authored is w
     });
 
     assertReach(seen, SHAPES);
+    assertReachFloor(seen, SHAPES, 1, 'shape');
     // The shapes the defect and its over-correction hide behind carry the whole
     // property; a run that only ever saw single-parent commits would pass
     // against both.
@@ -375,7 +380,10 @@ test('property (invariant 2): an empty answer is the truth, never an artefact of
     for (const shape of SHAPES) buildCase(shape, ['extension/src/parcel0.ts', 'extension/src/parcel7.ts']);
 
     const seed = newSeed();
-    const draws = fc.sample(fc.tuple(fc.constantFrom(...SHAPES), PARCEL_PATHS()), { numRuns: 12, seed });
+    // BL-1585: the extra-breadth draw count expressed through runsPerCell
+    // rather than a bare literal, budget unchanged (12).
+    const EXTRA_DRAWS = runsPerCell(12 * SHAPES.length, SHAPES.length);
+    const draws = fc.sample(fc.tuple(fc.constantFrom(...SHAPES), PARCEL_PATHS()), { numRuns: EXTRA_DRAWS, seed });
     for (const [shape, parcelPaths] of draws) buildCase(shape, parcelPaths);
 
     console.log(`BL-1564 reach map (invariant 2): ${JSON.stringify({ cases: built.length, seed })}`);
@@ -410,6 +418,7 @@ test('property (invariant 2): an empty answer is the truth, never an artefact of
     assert.ok(seen.emptyDelivered > 0, `never produced a genuinely empty delivered set: ${JSON.stringify(seen)}`);
     assert.ok(seen.emptyAuthored > 0, `never produced a genuinely empty authored set: ${JSON.stringify(seen)}`);
     assert.ok(seen.nonEmptyAuthored > 0, `never produced a non-empty authored set: ${JSON.stringify(seen)}`);
+    assertReachFloor(seen, ['emptyDelivered', 'emptyAuthored', 'nonEmptyAuthored'], 1, 'answer shape');
 
     // An unreadable commit answers nil under BOTH semantics, so neither caller
     // can mistake a failed walk for a clean parcel.
@@ -470,7 +479,11 @@ test('property (invariant 3): the land step reads delivered, the two send-time g
     }
 
     const seed = newSeed();
-    const draws = fc.sample(fc.tuple(fc.constantFrom(...INV3_SHAPES), fc.boolean()), { numRuns: 8, seed });
+    // BL-1585: the extra-breadth draw count expressed through runsPerCell
+    // rather than a bare literal, budget unchanged (8).
+    const INV3_CELLS = INV3_SHAPES.length * 2;
+    const EXTRA_DRAWS = runsPerCell(8 * INV3_CELLS, INV3_CELLS);
+    const draws = fc.sample(fc.tuple(fc.constantFrom(...INV3_SHAPES), fc.boolean()), { numRuns: EXTRA_DRAWS, seed });
     for (const [shape, addTestFile] of draws) buildCase(shape, addTestFile);
 
     console.log(`BL-1564 reach map (invariant 3): ${JSON.stringify({ cases: built.length, seed })}`);
@@ -520,5 +533,6 @@ test('property (invariant 3): the land step reads delivered, the two send-time g
       `no case delivered a test file the merger did not author: ${JSON.stringify(seen)}`
     );
     assert.ok(seen.divergent > 0, `the two answers never diverged, so nothing was distinguished: ${JSON.stringify(seen)}`);
+    assertReachFloor(seen, ['authoredTestFile', 'deliveredOnlyTestFile', 'divergent'], 1, 'divergence case');
   });
 });
