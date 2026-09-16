@@ -29,7 +29,7 @@ required_wiring:
   - 'swarmforge/scripts/ready_for_next_task.bb::claim-task-name::the pre-existing claim predicate and the claim-moment effort apply are the consumers of the shared attribution (BL-1235); the name is chosen at mint so the literal will exist (BL-874)'
   - 'specs/pipeline/steps/bl1608ClaimPathAttributesWorkNoteSteps.js::registerSteps::the handler lands in the same parcel as the feature (BL-233, BL-1371)'
 
-human_approval: pending
+human_approval: approved
 approval_context: >
   A new feature file is authored here, so it needs a tap. No choice is
   posed and there are no ruling_options. FIRM: the attribution rule is
