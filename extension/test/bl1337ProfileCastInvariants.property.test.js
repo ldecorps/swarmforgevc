@@ -27,6 +27,7 @@ const {
   runCli,
   filesWritten,
 } = require('../../specs/pipeline/steps/lib/bl1337ProfileCastFixture');
+const { assertReachFloor, runsPerCell } = require('./helpers/reachFloors');
 
 const REPO_ROOT = path.join(__dirname, '..', '..');
 const CAST_LIB = path.join(REPO_ROOT, 'swarmforge', 'scripts', 'bob_starting_cast_lib.bb');
@@ -211,6 +212,9 @@ test('BL-1337/BL-654 invariant 1: runnable only when every seat passed BOTH bars
       expect: { runnable: false, staffed: {} },
     },
   ];
+  // BL-1585: each constructed shape's run count expressed through
+  // runsPerCell rather than an implicit literal (1 per shape, unchanged).
+  const CONSTRUCTED_CELL_RUNS = runsPerCell(CONSTRUCTED.length, CONSTRUCTED.length);
   for (const { label, seats, expect } of CONSTRUCTED) {
     const [got] = callCastLib(generateForm(seats, 0.5));
     assert.equal(got.runnable, expect.runnable, `${label}: runnable disagreed (${JSON.stringify(got)})`);
@@ -218,6 +222,7 @@ test('BL-1337/BL-654 invariant 1: runnable only when every seat passed BOTH bars
     reach[label] = (reach[label] ?? 0) + 1;
   }
 
+  assertReachFloor(reach, CONSTRUCTED.map((c) => c.label), CONSTRUCTED_CELL_RUNS, 'constructed shape');
   assert.ok(reach.runnable > 0, 'never reached a fully staffable cast');
   assert.ok(reach.blockedByRegistry > 0, 'never exercised a candidate failing the REGISTRY bar');
   assert.ok(reach.blockedByHost > 0, 'never exercised a candidate failing the HOST bar');
