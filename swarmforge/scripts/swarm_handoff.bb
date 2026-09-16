@@ -28,6 +28,7 @@
 (load-file (str (fs/path (fs/parent (fs/canonicalize *file*)) "task_scope_gate_lib.bb")))
 (load-file (str (fs/path (fs/parent (fs/canonicalize *file*)) "contract_freshness_gate_lib.bb")))
 (load-file (str (fs/path (fs/parent (fs/canonicalize *file*)) "unregistered_test_gate_lib.bb")))
+(load-file (str (fs/path (fs/parent (fs/canonicalize *file*)) "sampled_reach_floor_guard_lib.bb")))
 (load-file (str (fs/path (fs/parent (fs/canonicalize *file*)) "reverse_hop_lib.bb")))
 (load-file (str (fs/path (fs/parent (fs/canonicalize *file*)) "handoff_draft_root_guard_lib.bb")))
 (load-file (str (fs/path (fs/parent (fs/canonicalize *file*)) "git_handoff_recipient_guard_lib.bb")))
@@ -523,6 +524,23 @@
         unregistered-test-block
         (when (unregistered-test-gate-lib/blocked? unregistered-test-result)
           unregistered-test-result)
+        ;; BL-1584 sampled-reach-floor gate: refuses a git_handoff whose own
+        ;; parcel ADDS a property test file under extension/test/ that draws
+        ;; a low, literal budget and then asserts every arm was reached -
+        ;; a seed lottery, not a real assertion (see
+        ;; sampled_reach_floor_guard_lib.bb). Added-only, never a pre-
+        ;; existing (merely modified) file; same fail-open posture as every
+        ;; gate above.
+        sampled-reach-floor-result
+        (when (and (= "git_handoff" type) canonical (not (str/blank? task-name)))
+          (sampled-reach-floor-guard-lib/findings-for-git-handoff
+           {:root (project-root) :sender sender :task-name task-name :commit canonical}))
+        _ (doseq [warning (:warnings sampled-reach-floor-result)]
+            (binding [*out* *err*]
+              (println (str "SAMPLED_REACH_FLOOR WARNING: " warning))))
+        sampled-reach-floor-block
+        (when (sampled-reach-floor-guard-lib/blocked? sampled-reach-floor-result)
+          sampled-reach-floor-result)
         git-errors (cond-> []
                      (= "git_handoff" type)
                      (into (cond-> []
@@ -562,6 +580,10 @@
                              (conj (unregistered-test-gate-lib/refusal-message
                                     {:task-name task-name
                                      :findings (:findings unregistered-test-block)}))
+                             sampled-reach-floor-block
+                             (conj (sampled-reach-floor-guard-lib/refusal-message
+                                    {:task-name task-name
+                                     :findings (:findings sampled-reach-floor-block)}))
                              task-scope-block
                              (conj (task-scope-gate-lib/refusal-message
                                     {:task-name task-name

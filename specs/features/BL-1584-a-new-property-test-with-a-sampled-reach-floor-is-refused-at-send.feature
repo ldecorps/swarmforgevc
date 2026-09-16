@@ -78,6 +78,23 @@ Feature: BL-1584 a new property test with a sampled reach floor is refused at se
     And a warning names the ticket whose received commit could not be read
 
   # BL-1584 a-new-property-test-with-a-sampled-reach-floor-is-refused-at-send-06
+  #
+  # Coder correction (2026-09-16, backlog/evidence/BL-1584-sampled-reach-floor-gate-20260916.md):
+  # bl1281's and pilotSafeDefects' budgets below were re-derived against the
+  # classifier's one rule - "unresolved when ANY draw site's count is not an
+  # integer literal" - since both rows mix literal and non-literal draw sites
+  # and the mint-time table's hand count disagreed with a direct read of the
+  # file. Neither row's VERDICT changes (both stay constructed/no-floor,
+  # already budget-independent per the decision table in the ticket's own
+  # description); only the budget column moves. bl1281 carries five draw
+  # sites (two fc.sample(..., { numRuns: CELL_RUNS | TOTAL_RUNS }) calls plus
+  # three fc.assert numRuns options: SEED_FLOOR, the literal 1, and
+  # Object.keys(PRE_CHANGE_FLOORS).length * 2) - four of the five are
+  # identifiers or computed expressions, not integer literals, so the file is
+  # unresolved, not 1. pilotSafeDefects carries an fc.sample(fc.array(...), 1)
+  # bare-count draw site the mint-time count did not add in alongside its
+  # three fc.assert numRuns (80, 80, 100); with it counted the smallest
+  # literal draw count is 1, not 80.
   Scenario Outline: the census CLI classifies the frozen corpus with the same classifier the gate uses
     When the census CLI runs over a tree holding exactly the thirteen corpus files
     Then it prints thirteen rows and a summary
@@ -94,7 +111,7 @@ Feature: BL-1584 a new property test with a sampled reach floor is refused at se
       | bl1078UncertifiedCursorRefused             | no-draw      | none       |
       | bl1003BusyVerdictParity                    | no-draw      | none       |
       | bl1529ScriptSenderAuditOutcomesInvariant   | constructed  | unresolved |
-      | bl1281ReachFloorConstructionInvariants     | constructed  | 1          |
+      | bl1281ReachFloorConstructionInvariants     | constructed  | unresolved |
       | bl1113CursorHotfixStampOff                 | no-floor     | unresolved |
       | bl1304DryRunSpawnsNothing                  | no-floor     | 12         |
-      | pilotSafeDefects                           | no-floor     | 80         |
+      | pilotSafeDefects                           | no-floor     | 1          |
