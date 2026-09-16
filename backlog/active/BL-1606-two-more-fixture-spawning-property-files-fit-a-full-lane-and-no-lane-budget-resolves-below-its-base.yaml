@@ -30,7 +30,7 @@ required_wiring:
 # exist, so any pattern on them matches before and after the fix; the
 # source scenarios check the call sites directly.
 
-human_approval: pending
+human_approval: approved
 approval_context: >
   A new feature file is authored here, so it needs a tap. No choice is
   posed and there are no ruling_options. FIRM: every test in the two
@@ -225,4 +225,4 @@ notes: |
   bl968 and the lane runs in e2e - BL-1541). Severity high per the
   standing-red rule.
 
-assigned_to: null
+assigned_to: coder
