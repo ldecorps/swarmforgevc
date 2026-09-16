@@ -47,12 +47,21 @@
 const assert = require('node:assert/strict');
 const path = require('node:path');
 const { spawnSync } = require('node:child_process');
+const { assertReachFloor, runsPerCell } = require('./helpers/reachFloors');
 
 const REPO_ROOT = path.join(__dirname, '..', '..');
 const EXPEDITE_LIB = path.join(REPO_ROOT, 'swarmforge', 'scripts', 'expedite_lib.bb');
 
 const FORBIDDEN = ['--sweep-inbox', '--reset-worktrees', '--full'];
 const DRAWS = 60;
+
+// BL-1589: kind 0 is a real flag, kind 1 an unquoted look-alike, kind 2 a
+// quoted look-alike - the three draw kinds buildAdmissibleDraw used to
+// sample uniformly (a Binomial(60, 1/3) that misses the floor below about
+// once in 130 runs). Iterated by construction instead, the idiom the
+// file's own compound/unreadable sweeps below already use.
+const KINDS = [0, 1, 2];
+const KIND_CELL_RUNS = runsPerCell(DRAWS, KINDS.length);
 
 const rng = (() => {
   let state = Date.now() % 2147483647;
@@ -90,10 +99,9 @@ const LOOKALIKE_SHAPES = [
 // direction.
 const quotedLookalike = (flag) => `'/repos/my ${flag} target'`;
 
-function buildAdmissibleDraw() {
+function buildAdmissibleDraw(kind) {
   // No operators, no expansions, balanced quotes: bash can be the oracle.
   const parts = ['./stop-swarm.sh'];
-  const kind = randInt(3);
   if (kind === 0) {
     parts.push(randNth(FORBIDDEN)); // a real flag, as its own token
   } else if (kind === 1) {
@@ -148,13 +156,20 @@ function guardVerdicts(commands) {
 
 test('BL-1030/BL-654 invariant 1: a forbidden flag is refused exactly when the SHELL makes it a token of its own', () => {
   const commands = [];
-  for (let i = 0; i < DRAWS; i += 1) commands.push(buildAdmissibleDraw());
+  const kinds = [];
+  for (let i = 0; i < DRAWS; i += 1) {
+    const kind = i % KINDS.length;
+    kinds.push(kind);
+    commands.push(buildAdmissibleDraw(kind));
+  }
 
   const verdicts = guardVerdicts(commands);
   assert.equal(verdicts.length, commands.length, 'the guard must answer once per draw');
 
   let refusedCount = 0;
   let lookalikeCount = 0;
+  const kindCoverage = {};
+  kinds.forEach((k) => { kindCoverage[k] = (kindCoverage[k] || 0) + 1; });
 
   commands.forEach((command, i) => {
     const words = bashWords(command);
@@ -198,6 +213,14 @@ test('BL-1030/BL-654 invariant 1: a forbidden flag is refused exactly when the S
   assert.ok(
     lookalikeCount >= 12,
     `generator coverage: only ${lookalikeCount} of ${DRAWS} draws were substring look-alikes (floor 12)`
+  );
+
+  // BL-1589: each kind is now built by construction (kind = i % KINDS.length),
+  // so this floor can never miss - but it still names the kind that stopped
+  // being built if a future change breaks the construction again.
+  assertReachFloor(kindCoverage, KINDS, KIND_CELL_RUNS, 'bl1030 kind');
+  console.log(
+    `BL-1589 reach map (bl1030): ${JSON.stringify({ kinds: KINDS.length, minDrawsPerKind: KIND_CELL_RUNS })}`
   );
 });
 
