@@ -18,14 +18,24 @@ pole was indistinguishable from an old one and the gate stopped nothing.
 A committed register, `backlog/suite-poles.tsv` (same shape as the
 standing-red register, BL-1428: tab-separated `file`, `owner` ticket,
 `first_seen`, `measured_ms`, `note`; `#`-comment and blank lines skipped),
-now sits between the measured durations and the guard's pass/fail verdict:
+now sits between the measured durations and the guard's pass/fail verdict.
+
+**Amended the same day (2026-09-16, QA bounce):** the first cut refused a
+`stale-row` outright, but QA's own three `npm test` runs 2.5 hours after
+the register's numbers were measured already showed three registered
+files drifted under 80% of budget and one unregistered file drifted to
+9.0s — a snapshot register that *refuses* on ordinary run-to-run jitter is
+red on day one, the same wall-clock jitter BL-445 already documented.
+Only `new-pole` and `unowned-row` fail the exit code now; `watch` and
+`stale-row` are surfaced, never silently absorbed and never blocking:
 
 | Situation | Verdict | Blocks the run? |
 | --- | --- | --- |
-| File over budget, no register row | `new-pole` | Yes — same as before BL-1598 |
-| File over budget, row present, owner ticket open, not stale | `ok` (reported) | No |
+| File with no register row, at or above `PER_FILE_DURATION_BUDGET_MS × NEW_POLE_REFUSAL_FRACTION` (7000 × 1.5 = 10500 ms) | `new-pole` | Yes |
+| File with no register row, between the budget and that 1.5× line | `watch` | No — named in the report every time it occurs |
+| Row present, owner ticket open, file still over budget | `ok` (reported as a registered pole) | No |
 | Row's owner ticket is not open (paused/active) | `unowned-row` | Yes |
-| Row's file now measures under 80% of budget | `stale-row` | Yes — the row must leave |
+| Row's file now measures under 80% of budget | `stale-row` | No — reported so the row can be drained, never blocking |
 
 `PER_FILE_DURATION_BUDGET_MS` itself is unchanged (7000 ms); no test is
 deleted, skipped or excluded to satisfy the gate.
@@ -33,8 +43,9 @@ deleted, skipped or excluded to satisfy the gate.
 | Want | Do |
 | --- | --- |
 | Land work while a known-slow file is on file | Keep its row in `backlog/suite-poles.tsv`, owner ticket open |
-| A file you didn't touch is now a new offender | Mint or point to an owning ticket and add a row — do not silence it |
-| You cut a pole's runtime below 80% of budget | Remove its row in the SAME land — a stale row still blocks |
+| A file you didn't touch crosses 1.5× budget | Mint or point to an owning ticket and add a row — do not silence it |
+| A file you didn't touch drifts between budget and 1.5× | Nothing blocks; it's named as `watch` — a candidate for BL-791 slice D's inventory, not an emergency |
+| You cut a pole's runtime below 80% of budget | Remove its row in the SAME land — a lingering `stale-row` never blocks but should not sit forever |
 | The owning ticket closes without the pole being cut | The row becomes `unowned-row` and blocks until re-owned or the file is actually fixed |
 
 ## The recorded trend gains verdict fields (BL-1598)
@@ -42,22 +53,28 @@ deleted, skipped or excluded to satisfy the gate.
 `testDurationRecorderLib.js`'s `buildRecord` (the row `recordTestDuration.js`
 appends to `.test-durations.jsonl`, BL-078) keeps `result` as the TEST
 outcome (pass/fail of the tests themselves, unchanged and independent of
-the budget verdict) and adds four fields computed from the same per-file
+the budget verdict) and adds five fields computed from the same per-file
 durations the guard already extracts:
 
 - `pole_ms` — the single slowest file's duration in the run.
 - `work_ms` — the summed per-file duration across the run.
-- `new_offenders` — count of files over budget with no register row.
-- `budget_verdict` — `ok` / `new-pole` / `stale-row` / `unowned-row`, the
-  guard's own verdict for the run.
+- `new_offenders` — count of files at or above the 1.5× refusal line with
+  no register row.
+- `watch_files` — count of unregistered files over budget but under the
+  1.5× line.
+- `budget_verdict` — `ok` / `watch` / `stale-row` / `unowned-row` /
+  `new-pole`, the guard's own headline verdict for the run (that priority
+  order: a `new-pole` or `unowned-row` anywhere wins over `watch`, which
+  wins over `stale-row`, which wins over `ok`).
 
 `npm test`'s exit code is the TEST suite's exit code; when the tests
-themselves pass but the budget guard doesn't, the guard's non-zero exit
-code is what `computeFinalExitCode` returns. A run can therefore show
-`result: pass` and `budget_verdict: new-pole` in the same recorded row —
-this is what lets the trend (and the briefing's suite-duration line,
-`swarmMetrics.ts`) tell a failing test apart from a slow file going
-forward, which it could not do while every row read `result: fail`.
+themselves pass but the budget guard doesn't (only `new-pole`/`unowned-row`
+do that), the guard's non-zero exit code is what `computeFinalExitCode`
+returns. A run can therefore show `result: pass` and `budget_verdict:
+new-pole` in the same recorded row — this is what lets the trend (and the
+briefing's suite-duration line, `swarmMetrics.ts`) tell a failing test
+apart from a slow file going forward, which it could not do while every
+row read `result: fail`.
 
 ## Verify
 
@@ -68,10 +85,12 @@ node ../specs/pipeline/scripts/run_acceptance.sh \
   ../specs/features/BL-1598-the-unit-suite-pole-register-makes-the-per-file-gate-green.feature
 ```
 
-Scratch-copy check: append a synthetic register row for a file that
-measures well under budget and re-run the guard against the same
-`.vitest-report.json` — the row refuses as `stale-row`, naming the file;
-remove a real row for a file still over budget — it refuses as `new-pole`.
+Scratch-copy check against the real `.vitest-report.json`: append a
+synthetic register row for a file that measures well under budget — it
+reports `stale-row`, naming the file, exit 0; remove a real row for a file
+still over budget — `new-pole`, refused; a scratch report with an
+unregistered file at 9000 ms (between budget and 1.5×) — `watch`, named,
+exit 0.
 
 Related: [BL-1007 unit lane contention budget](BL-1007-a-unit-lane-budget-is-relative-to-recorded-contention.md).
 BL-1600 gave `bl1277UnscopedStepCollisionGuard.test.js` — one of the nine

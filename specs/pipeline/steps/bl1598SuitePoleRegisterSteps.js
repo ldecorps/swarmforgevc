@@ -11,8 +11,9 @@
 // ("one file measures 9000 ms", "names that file with an open owner"), so
 // this handler maps them through an explicit KNOWN_VALUES lookup (the
 // engineering article's Scenario Outline rule) rather than parsing them -
-// exactly the 5 combinations the ticket's own Examples table declares, and
-// nothing else. An unknown token throws rather than passing through.
+// exactly the 6 combinations the ticket's own Examples table declares
+// (amended 2026-09-16 on QA's Article 4.2 hold: watch/1.5x/stale-reports),
+// and nothing else. An unknown token throws rather than passing through.
 
 const assert = require('node:assert/strict');
 const fs = require('node:fs');
@@ -40,6 +41,10 @@ const FEATURE = 'BL-1598 The unit suite pole register makes the per-file gate gr
 const REPORT_FIXTURES = {
   'one file measures 9000 ms': () => ({
     durations: [{ file: 'test/slow.test.js', durationMs: 9000 }],
+    focusFile: 'test/slow.test.js',
+  }),
+  'one file measures 11000 ms': () => ({
+    durations: [{ file: 'test/slow.test.js', durationMs: 11000 }],
     focusFile: 'test/slow.test.js',
   }),
   'every file measures under 5000 ms': () => ({
@@ -101,17 +106,25 @@ const VERDICT_CHECKS = {
       `expected ${ctx.focusFile} among registeredPoles, got ${JSON.stringify(result.registeredPoles)}`
     );
   },
-  'new-pole naming the file and 9000 ms': (result, ctx) => {
+  'watch naming the file and 9000 ms, exit 0': (result, ctx) => {
+    assert.equal(result.verdict, 'watch');
+    assert.equal(result.passed, true);
+    assert.ok(
+      result.watchFiles.some((w) => w.file === ctx.focusFile && w.durationMs === 9000),
+      `expected ${ctx.focusFile} at 9000ms among watchFiles, got ${JSON.stringify(result.watchFiles)}`
+    );
+  },
+  'new-pole naming the file and 11000 ms': (result, ctx) => {
     assert.equal(result.verdict, 'new-pole');
     assert.equal(result.passed, false);
     assert.ok(
-      result.offenders.some((o) => o.file === ctx.focusFile && o.durationMs === 9000),
-      `expected ${ctx.focusFile} at 9000ms among offenders, got ${JSON.stringify(result.offenders)}`
+      result.offenders.some((o) => o.file === ctx.focusFile && o.durationMs === 11000),
+      `expected ${ctx.focusFile} at 11000ms among offenders, got ${JSON.stringify(result.offenders)}`
     );
   },
-  'stale-row naming that file': (result, ctx) => {
+  'stale-row reported naming that file, exit 0': (result, ctx) => {
     assert.equal(result.verdict, 'stale-row');
-    assert.equal(result.passed, false);
+    assert.equal(result.passed, true);
     assert.ok(
       result.staleRows.some((r) => r.file === ctx.focusFile),
       `expected ${ctx.focusFile} among staleRows, got ${JSON.stringify(result.staleRows)}`
@@ -129,6 +142,7 @@ const VERDICT_CHECKS = {
     assert.equal(result.verdict, 'ok');
     assert.equal(result.passed, true);
     assert.equal(result.offenders.length, 0);
+    assert.equal(result.watchFiles.length, 0);
     assert.equal(result.staleRows.length, 0);
     assert.equal(result.unownedRows.length, 0);
     assert.equal(result.registeredPoles.length, 0);
@@ -184,7 +198,10 @@ function registerSteps(registry) {
   });
 
   scoped(/^the recorder builds the run's row$/, (ctx) => {
-    const guardExitCode = ctx.bl1598verdict === 'ok' ? 0 : 1;
+    // Amended 2026-09-16: only new-pole and unowned-row fail the guard's
+    // own exit code; watch and stale-row are reported, never refused.
+    const REFUSING_VERDICTS = new Set(['new-pole', 'unowned-row']);
+    const guardExitCode = REFUSING_VERDICTS.has(ctx.bl1598verdict) ? 1 : 0;
     ctx.bl1598record = buildRecord({
       finishedAt: '2026-09-16T00:00:00.000Z',
       testCount: 1,
@@ -193,6 +210,7 @@ function registerSteps(registry) {
       poleMs: 1000,
       workMs: 1000,
       newOffenders: ctx.bl1598verdict === 'new-pole' ? 1 : 0,
+      watchFiles: ctx.bl1598verdict === 'watch' ? 1 : 0,
       budgetVerdict: ctx.bl1598verdict,
     });
     ctx.bl1598exitCode = computeFinalExitCode(ctx.bl1598testExit, guardExitCode);
