@@ -189,4 +189,4 @@ notes: |
   and a bb call in seconds; the four sibling features in e2e - BL-1541).
   Severity high per the standing-red rule.
 
-assigned_to: null
+assigned_to: coder
