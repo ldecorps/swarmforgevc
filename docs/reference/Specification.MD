@@ -1,5 +1,39 @@
 # SwarmForge VS Code Extension — Specification
 
+**Last Updated:** September 16, 2026 (BL-1602: the acceptance-lane sweep of
+the two-call self-audit protocol (BL-1529's own sweep swept script senders,
+BL-1530 the shell tests, BL-1541 the bb property runners — nobody swept the
+ACCEPTANCE DRIVERS under `specs/pipeline/steps`, which drive the real
+`swarm_handoff.bb` end to end and asserted a queued parcel after one call).
+Ten features had been red since BL-1529 landed on 2026-09-12
+(`AUDIT_REQUIRED` reaching a driver's own assertion), unrecorded for four
+days until a full acceptance corpus run found them. Fixed:
+`specs/pipeline/steps/lib/sendGitHandoffTwoCall.js` exports
+`sendGitHandoffTwoCall(bb, args, opts, spawnFn = spawnSync)` — runs the
+sender once; if that result is non-zero AND its combined stdout+stderr
+matches `AUDIT_REQUIRED`, re-invokes the identical `(bb, args, opts)`
+exactly once more and returns that second result; any other outcome (a
+first-call queue, or a refusal for any other reason) is returned as-is,
+never a third call, never an env bypass — the spawn is injected so the
+helper's own cases drive the protocol over a fake sender thunk. The nine
+JavaScript acceptance drivers in the census now send through this helper;
+the two bash drivers (`lib/bl1192TaskScopeGateCli.sh`,
+`lib/bl1276AcceptanceExemptionCli.sh`) adopt the `bl1240UnregisteredTestGateCli.sh`
+`send_once` idiom already used elsewhere. No feature file or step text
+changed — the ten contracts are byte-identical, only their drivers and the
+one new helper changed. BL-1602's own scenario 02 derives the population
+of git_handoff-drafting drivers from the real `specs/pipeline/steps` tree
+(the same census grep) and pins all eleven by name, so a driver the scan
+misses fails the scenario rather than passing by absence. One feature's
+residual failure (`BL-1185-work-note-missing-task-header-defers-hard-seat`)
+turned out to be a different, pre-existing red (BL-1185's Work-message
+attribution dropped by BL-1167's land) — split out and owned by BL-1608,
+its register row moved there rather than closed with this ticket's nine.
+Acceptance:
+`specs/features/BL-1602-acceptance-drivers-that-send-a-git-handoff-answer-the-self-audit.feature`.
+No new extension command, setting, or UI change; no diagram edit.) Prior
+entry —
+
 **Last Updated:** September 16, 2026 (BL-1554: QA's mechanical checklist —
 the straggler check, `qa-sibling-check.js status`, the standing-red
 register CLI, `pre_qa_gate.sh`'s `required_wiring` read, `npm test`,
