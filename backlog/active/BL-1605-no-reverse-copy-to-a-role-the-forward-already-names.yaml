@@ -157,4 +157,4 @@ notes: |
   owned by BL-1609 (completion gate for forwarding parcels; No-Op Rule
   clarified in handoff-protocol.md). This ticket's title, scenarios and
   invariants stand; BL-1609 depends on this one landing first.
-assigned_to: null
+assigned_to: coder
