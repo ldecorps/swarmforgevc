@@ -33,6 +33,7 @@ const {
   runEnsure,
   callSharedDecision,
 } = require('../../specs/pipeline/steps/lib/bl1346RcRepairStampFixture');
+const { assertReachFloor, runsPerCell } = require('./helpers/reachFloors');
 
 const LEDGER = path.join(REPO_ROOT, 'backlog', 'hotfix-ledger.yaml');
 const REVIEWED_COMMIT = '195de28861';
@@ -56,6 +57,7 @@ test('BL-1346/BL-654 invariant 1: a degraded pane is still repaired, with its ow
   // defect could ever reach. Drawing the degraded role from a pool would let
   // a pass happen without ever touching it.
   const reach = Object.fromEntries(ROLES.map((r) => [r, 0]));
+  const DEGRADED_CELL_RUNS = runsPerCell(1 * ROLES.length, ROLES.length);
 
   for (const degraded of ROLES) {
     fc.assert(
@@ -94,13 +96,11 @@ test('BL-1346/BL-654 invariant 1: a degraded pane is still repaired, with its ow
           removeFixture(fx);
         }
       }),
-      { numRuns: 1 },
+      { numRuns: DEGRADED_CELL_RUNS },
     );
   }
 
-  for (const [role, count] of Object.entries(reach)) {
-    assert.ok(count > 0, `never exercised a degraded ${role} pane`);
-  }
+  assertReachFloor(reach, ROLES, DEGRADED_CELL_RUNS, 'degraded role');
 }, 120000);
 
 test('BL-1346/BL-654 invariant 2: the marker keeps full authority on a router pack, and none off it', () => {

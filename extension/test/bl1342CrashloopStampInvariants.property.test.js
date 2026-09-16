@@ -36,6 +36,7 @@ const {
   callLanded,
   callSupervisor,
 } = require('../../specs/pipeline/steps/lib/bl1342CrashloopStampFixture');
+const { assertReachFloor, runsPerCell } = require('./helpers/reachFloors');
 
 const STALL_MS = 30000;
 const STALE_OBSERVATION =
@@ -61,6 +62,8 @@ test('BL-1342/BL-654 invariant 1: the guard swallows I/O conditions and nothing 
     'java.lang.RuntimeException',
   ];
   const reach = { io: 0, nonIo: 0 };
+  // BL-1586: both cells are drawn from the same literal budget (4), unchanged.
+  const FAILURE_CLASS_CELL_RUNS = runsPerCell(4 * 2, 2);
 
   const check = (classNames, expectVanished) => {
     fc.assert(
@@ -89,15 +92,15 @@ test('BL-1342/BL-654 invariant 1: the guard swallows I/O conditions and nothing 
         }
         return true;
       }),
-      { numRuns: 4 },
+      { numRuns: FAILURE_CLASS_CELL_RUNS },
     );
   };
 
   check(IO_CLASSES, true);
   check(NON_IO_CLASSES, false);
 
-  assert.ok(reach.io >= IO_CLASSES.length - 1, 'never exercised a genuine I/O failure');
-  assert.ok(reach.nonIo >= NON_IO_CLASSES.length - 1, 'never exercised a non-I/O failure - the dangerous half');
+  assertReachFloor(reach, ['io'], IO_CLASSES.length - 1, 'genuine I/O failure');
+  assertReachFloor(reach, ['nonIo'], NON_IO_CLASSES.length - 1, 'non-I/O failure - the dangerous half');
 });
 
 test('BL-1342/BL-654 invariant 2: a skipped parcel is left as found and re-evaluated later', () => {
@@ -167,6 +170,8 @@ test('BL-1342/BL-654 invariant 3: the grace only softens :stalled, only for a kn
     deadOld: { alive: false, age: fc.integer({ min: STALL_MS + 1, max: STALL_MS * 100 }), expect: 'dead' },
   };
   const reach = Object.fromEntries(Object.keys(CASES).map((k) => [k, 0]));
+  const CASE_NAMES = Object.keys(CASES);
+  const CASE_CELL_RUNS = runsPerCell(3 * CASE_NAMES.length, CASE_NAMES.length);
 
   for (const [name, spec] of Object.entries(CASES)) {
     fc.assert(
@@ -183,11 +188,9 @@ test('BL-1342/BL-654 invariant 3: the grace only softens :stalled, only for a kn
         );
         return true;
       }),
-      { numRuns: 3 },
+      { numRuns: CASE_CELL_RUNS },
     );
   }
 
-  for (const [name, count] of Object.entries(reach)) {
-    assert.ok(count > 0, `never exercised the ${name} case`);
-  }
+  assertReachFloor(reach, CASE_NAMES, CASE_CELL_RUNS, 'crashloop grace case');
 });
