@@ -119,3 +119,14 @@ three; `grep -rlE` over paused/active finds only contextual mentions
   prompt if it recurs.
 - A shared ceiling below a caller's base is a silent cut, not a cap. The
   BL-1007 examples ("1000 -> ceiling") only ever used bases under it.
+
+## Second note the same pass (coder, 18:24Z)
+
+`00_20260916T182454Z_002002_from_coder_to_specifier_coordinator`:
+"unowned-red: bl1277UnscopedStepCollisionGuard.test.js times out, host
+load" - sent four minutes before the mint commit 8ae7de0a24, so it names
+the same red BL-1607 now owns; the coder held no parcel when it was read
+and had already merged main past the mint. Answered with the owner note
+(BL-1566 shape) and completed. That is the third sighting of this file's
+timeout on 2026-09-16 (BL-1600's own run, QA's BL-1598 gather, the coder's
+run) - BL-1607's evidence should cite all three.
