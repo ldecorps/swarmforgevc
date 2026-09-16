@@ -16,6 +16,22 @@ slice_size_envelope: medium
 # slice does 16 with none (the recipe is mechanical and pinned).
 required_stages: [coder, cleaner, architect, hardender, documenter, qa]
 
+abandoned_commits: [d0b60a7c24]
+# BL-1241 land-step remedy (2026-09-16): land_step_cli.bb reported
+# LAND_REPLAY with ENTANGLED_SIBLING BL-1577 and LANDED_SIBLING BL-1585
+# for the originally-cited QA merge commit d0b60a7c24; landed the
+# tip-pure replay 406f1a954a instead (a clean fast-forward of
+# origin/main, diff 1380958162..406f1a954a touches only this ticket's
+# own 15 pinned test files, its step handler, and its own evidence).
+# BL-1577 was already fully on origin/main before this land (its own
+# commits are ancestors of the tip that predates this ticket) - the
+# flag reads as the walk's own caution rather than a real unlanded
+# sibling, recorded per protocol regardless. BL-1585's own leftover
+# evidence commits were landed first (commit 1380958162, hand-built
+# tip-pure after its own land_step_cli.bb replay mis-targeted the
+# ticket's pre-close backlog/active/ path instead of its current
+# backlog/done/ path - see backlog/evidence/BL-1585-QA-20260916.md).
+
 acceptance: specs/features/BL-1586-sampled-reach-floors-sweep-2-of-6.feature
 
 required_wiring:
