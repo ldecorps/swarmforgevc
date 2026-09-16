@@ -131,7 +131,7 @@ qa_e2e_procedure: |
      every red of any other file recorded with its text and raised as an
      unowned-red note, never folded in.
   3. Acceptance resolving all three scenarios
-     (`swarmforge/scripts/run_acceptance.sh specs/features/BL-1595-*.feature`).
+     (`specs/pipeline/scripts/run_acceptance.sh specs/features/BL-1595-*.feature`).
   4. `git diff <parent>..<parcel> -- extension/test/telegramFrontDeskBotCli.property.test.js`
      touches one require line and two argument lines; no `assert` or
      `numRuns` line changes.

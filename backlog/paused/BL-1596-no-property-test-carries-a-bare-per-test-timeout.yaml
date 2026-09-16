@@ -175,7 +175,7 @@ qa_e2e_procedure: |
      is not a migrated file's; a migrated file's timeout is this parcel's
      to explain); `npm test` -> green.
   5. Acceptance resolving all three scenarios
-     (`swarmforge/scripts/run_acceptance.sh specs/features/BL-1596-*.feature`).
+     (`specs/pipeline/scripts/run_acceptance.sh specs/features/BL-1596-*.feature`).
   6. `git diff <parent>..<parcel> -- 'extension/test/*.property.test.js' | grep -E '^-' | grep -vE '^---' | grep -vE '^-\s*[0-9][0-9_]*\s*,?\s*$|^-.*\}\s*,\s*[0-9]'`
      is empty (invariant 2: the only removed lines are the bare literals).
 

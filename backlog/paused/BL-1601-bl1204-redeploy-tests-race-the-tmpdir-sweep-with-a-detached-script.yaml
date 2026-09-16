@@ -140,7 +140,7 @@ qa_e2e_procedure: |
   2. `npm test` 3 times -> the file green in every run; any other red
      recorded with its text and raised as an unowned-red note.
   3. Acceptance resolving all three scenarios
-     (`swarmforge/scripts/run_acceptance.sh specs/features/BL-1601-*.feature`).
+     (`specs/pipeline/scripts/run_acceptance.sh specs/features/BL-1601-*.feature`).
   4. `git diff <parent>..<parcel> -- extension/test/telegramCursorOperatorExec.test.js`
      adds the marker wait and assertion in exactly the two BL-1204 spawn
      tests and removes nothing.

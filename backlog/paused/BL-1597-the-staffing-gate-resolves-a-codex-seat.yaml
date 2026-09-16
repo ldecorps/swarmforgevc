@@ -122,7 +122,7 @@ qa_e2e_procedure: |
   1. `bb swarmforge/scripts/test/<the runner the coder names>` -> green
      with the four new cases listed.
   2. Acceptance resolving both scenarios
-     (`swarmforge/scripts/run_acceptance.sh specs/features/BL-1597-*.feature`).
+     (`specs/pipeline/scripts/run_acceptance.sh specs/features/BL-1597-*.feature`).
   3. On the MASTER root with the hatch unset, a windows-file holding
      `coder<TAB>coder<TAB>codex<TAB>--model gpt-5.3-codex` ->
      `coder<TAB>pass<TAB>openai<TAB>gpt-5.3-codex` (openai/gpt-5.3-codex
