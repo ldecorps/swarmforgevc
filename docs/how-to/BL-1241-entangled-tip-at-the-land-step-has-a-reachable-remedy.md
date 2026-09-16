@@ -977,6 +977,47 @@ adds the `CONTENT_CLEAR_SIBLING_PATH` line to a `LAND_REPLAY`/`LAND_CLEAN`
 report and removes some refusals that content no longer supports. Acceptance:
 `specs/features/BL-1481-a-shared-path-blocks-only-when-the-siblings-lines-are-not-yet-on-main.feature`.
 
+## A fully reverted sibling edit clears the path too, not just a landed one (BL-1594)
+
+BL-1481 above only narrowed a refusal for `:landed` — a blocking sibling's
+own lines already on `origin/main` under a different SHA. It left a second,
+distinct case still blocking: `sibling-path-verdict` can also answer
+`:vacuous` — the sibling's own contribution to the path is entirely
+REVERTED at the tip (nothing it added survives, nothing it removed is still
+missing), so the path owes it nothing at all, in either direction. The
+verdict's own docstring already called this case "silent, not an obstacle,"
+but `path-content-blocked-ids` kept it in the blocked set anyway (`:landed`
+was the only clearing verdict), so a bounced sibling's pure register-row
+removal — fully restored by a later commit on the same path — still
+refused every co-owner's land.
+
+Live 2026-09-16: QA's approved BL-1589 tip carried BL-1588's commit
+removing four rows from `backlog/standing-reds.tsv`; BL-1588 was then
+bounced. The land step refused (correctly, under BL-1481, since the
+removed lines still blamed to BL-1588). QA restored the path to
+`origin/main`'s content — the mechanical remedy the specifier ruled — and
+the step refused again with the same text: BL-1588's own change on the
+path was now `{:added #{}, :removed #{}}`, a fully reverted removal, which
+`sibling-path-verdict` correctly scored `:vacuous` but
+`path-content-blocked-ids` still treated as blocking. The only exit was a
+hand-built tip-pure land, the same hazard class as BL-1546/BL-1472.
+
+Fixed: `path-content-blocked-ids` now clears a blocking co-owner on
+`:vacuous` exactly as it does on `:landed` — a path a sibling never
+actually contributes to at the tip cannot owe that sibling anything.
+`sibling-path-verdict`, `landed-siblings` and `sibling-landed?` are
+byte-for-byte unchanged: a sibling whose only attributed paths are
+vacuous still reports UNLANDED overall (BL-1354's own rule — silence is
+never scored as evidence that a sibling has landed; only a path CHECK's
+own local blocking decision changed). A partly-reverted removal is still
+`:unlanded` and still blocks, exactly as before.
+
+`land_step_cli.bb`'s `CONTENT_CLEAR_SIBLING_PATH <path> <ticket-id>` line
+now names which of the two verdicts cleared it — `landed` or `reverted` —
+so the report distinguishes "this sibling's lines already reached main
+another way" from "this sibling's edit here was fully undone." Acceptance:
+`specs/features/BL-1594-a-fully-reverted-sibling-edit-on-a-shared-path-is-content-clear.feature`.
+
 ## An ambiguous commit subject never silently excludes a path (BL-1544)
 
 Every prior owner check above reads attribution through `commit-ticket-id`
