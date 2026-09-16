@@ -17,6 +17,14 @@ const require = createRequire(import.meta.url);
 const { PER_WORKER_HEAP_MB, resolveVitestWorkerPool, resolveFreeCoresCeiling } = require('./out/tools/vitest-worker-memory-budget');
 // BL-1007: load-relative suite default (compile-free helper; never import out/).
 const { resolveUnitLaneTimeout } = require('../specs/pipeline/steps/lib/contentionBudget');
+// BL-1607: the SAME fork-count signal vitest.properties.config.mjs already
+// publishes for its own lane (resolveLaneForks - one explicit file argument
+// means a genuinely solo run, else the pool ceiling), published here under
+// this lane's OWN key so unitLaneContentionBudget.js's heavy-test budget
+// (currently just the shipped-step scan) reads this lane's real concurrency
+// rather than the property lane's.
+const { resolveLaneForks } = require('./test/helpers/propertyLaneContentionBudget');
+const { UNIT_LANE_FORKS_ENV_KEY } = require('./test/helpers/unitLaneContentionBudget');
 const UNIT_LANE_TIMEOUT = resolveUnitLaneTimeout(20000);
 // BL-792: MAX_WORKERS is a ceiling tuned for the 15360MB reference incident
 // host, not a promise that every host running this suite has that much RAM.
@@ -47,6 +55,11 @@ const WORKER_POOL_SIZE = resolveVitestWorkerPool({
   // budget module itself still reads no os/env of its own.
   defaultCeiling: resolveFreeCoresCeiling(os.cpus().length, os.loadavg()[1]),
 });
+
+// BL-1607: published before any fork spawns (forks are child processes of
+// this process, so they inherit process.env as set here) - the same
+// posture vitest.properties.config.mjs already uses for its own key.
+process.env[UNIT_LANE_FORKS_ENV_KEY] = String(resolveLaneForks(process.argv, WORKER_POOL_SIZE));
 
 export default defineConfig({
   test: {
