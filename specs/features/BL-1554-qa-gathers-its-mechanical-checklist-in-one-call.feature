@@ -63,3 +63,10 @@ Feature: BL-1554 QA gathers its mechanical checklist in one call
       | extension/test/owned.property.test.js      | owned by BL-1553        | owned    |
       | extension/test/stale.property.test.js      | naming a closed ticket  | unowned  |
       | extension/test/fresh.property.test.js      | absent from the register| absent   |
+
+  # BL-1554 qa-gathers-checklist-06 (QA bounce D1, 2026-09-16)
+  Scenario: a bare unit/properties vitest path is still joined to the register's extension/-relative row
+    Given the fake runner answers the properties check with exit 1 and an output naming the bare failing file test/bl1606example.property.test.js
+    And the register check answers with a row for extension/test/bl1606example.property.test.js that is owned by BL-1606
+    When qa-gather runs for BL-1554-FIX over the fake runner
+    Then the report's register join lists extension/test/bl1606example.property.test.js as owned
