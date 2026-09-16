@@ -16,6 +16,7 @@
  * Usage: node check-suite-file-budget.js <vitest-json-report-path>
  */
 import * as fs from 'fs';
+import * as path from 'path';
 import { runCliMain } from './swarm-metrics';
 
 // BL-378: the ONE named place for the budget number - never hardcoded or
@@ -37,11 +38,6 @@ export interface BudgetOffender extends FileDuration {
   budgetMs: number;
 }
 
-export interface BudgetCheckResult {
-  passed: boolean;
-  offenders: BudgetOffender[];
-}
-
 // Vitest's own --reporter=json shape (Jest-compatible): testResults[] has
 // one entry per FILE (not per test), each carrying startTime/endTime
 // epoch ms - no separate top-level per-file duration field, so it is
@@ -50,17 +46,130 @@ export interface VitestJsonReport {
   testResults: Array<{ name: string; startTime: number; endTime: number }>;
 }
 
-export function extractFileDurations(report: VitestJsonReport): FileDuration[] {
-  return report.testResults.map((r) => ({ file: r.name, durationMs: r.endTime - r.startTime }));
+// projectRoot, when given, relativizes an ABSOLUTE r.name (vitest's real
+// JSON reporter emits the file's full filesystem path, not the
+// `test/foo.test.js` shorthand this module's own fixtures use) so the
+// result matches backlog/suite-poles.tsv's committed, portable
+// (repo-root-relative) file column. Omitted (existing callers, tests):
+// r.name passes through unchanged, byte-for-byte the pre-BL-1598 behavior.
+export function extractFileDurations(report: VitestJsonReport, projectRoot?: string): FileDuration[] {
+  return report.testResults.map((r) => ({
+    file: projectRoot && path.isAbsolute(r.name) ? path.relative(projectRoot, r.name) : r.name,
+    durationMs: r.endTime - r.startTime,
+  }));
 }
 
-// Pure: the whole decision table (BL-378 scenarios 01-03) - one offender,
-// none, or many. Every file over budget is reported, not just the first
-// (scenario 03) - failing on the first would hide the others and turn
-// one fix into N sequential rediscoveries.
-export function checkFileDurationBudget(durations: FileDuration[], budgetMs: number): BudgetCheckResult {
-  const offenders = durations.filter((d) => d.durationMs > budgetMs).map((d) => ({ ...d, budgetMs }));
-  return { passed: offenders.length === 0, offenders };
+// BL-1598: the standing-red register's own shape (BL-1428) - a committed,
+// tab-separated pole register naming an OPEN ticket that owns bringing its
+// file back under budget. 5 columns: file, ticket, first_seen, measured_ms,
+// note. '#'-comment and blank lines skipped, mirroring
+// standing_red_register_lib.bb's own parse.
+export interface RegisterRow {
+  file: string;
+  ticket: string;
+  firstSeen: string;
+  measuredMs: number;
+  note: string;
+}
+
+export function parseRegisterRows(text: string): RegisterRow[] {
+  if (!text) return [];
+  return text
+    .split('\n')
+    .map((line) => line.trim())
+    .filter((line) => line.length > 0 && !line.startsWith('#'))
+    .map((line) => {
+      const [file, ticket, firstSeen, measuredMsRaw, ...noteParts] = line.split('\t');
+      return { file, ticket, firstSeen, measuredMs: Number(measuredMsRaw), note: noteParts.join('\t') };
+    });
+}
+
+// Open-ticket ids: a *.yaml file directly under backlogDir/paused/ or
+// backlogDir/active/ (top-level only, never a nested backlog/done/ entry) -
+// mirrors qa_hold_lib.bb's own open-ticket-ids-for so both readers of a
+// standing-red-register-shaped TSV agree on what "open" means.
+export function openTicketIds(backlogDir: string): Set<string> {
+  const ids = new Set<string>();
+  for (const sub of ['paused', 'active']) {
+    let entries: string[] = [];
+    try {
+      entries = fs.readdirSync(path.join(backlogDir, sub));
+    } catch {
+      continue;
+    }
+    for (const name of entries) {
+      if (!name.endsWith('.yaml')) continue;
+      const match = /^(BL-\d+)/i.exec(name);
+      if (match) ids.add(match[1].toUpperCase());
+    }
+  }
+  return ids;
+}
+
+export type BudgetVerdictKind = 'ok' | 'new-pole' | 'stale-row' | 'unowned-row';
+
+export interface FileVerdict extends BudgetOffender {
+  kind: BudgetVerdictKind;
+  ticket?: string;
+}
+
+export interface BudgetCheckResult {
+  passed: boolean;
+  verdict: BudgetVerdictKind;
+  offenders: BudgetOffender[];
+  staleRows: FileVerdict[];
+  unownedRows: FileVerdict[];
+  registeredPoles: FileVerdict[];
+}
+
+// A row's file measuring under this fraction of the budget is stale: the
+// pole it was minted for is gone, so the row should leave in the same land
+// that cut it (BL-1598's own FIRM wording).
+const STALE_ROW_FRACTION = 0.8;
+
+// Pure: the whole decision table (BL-378 scenarios 01-03, extended by
+// BL-1598's register). Every file over budget is reported, not just the
+// first (scenario 03) - failing on the first would hide the others and turn
+// one fix into N sequential rediscoveries. register/openTickets default to
+// empty - with no register, every offender is a new-pole exactly as BL-378
+// always reported it (BL-1598 invariant 1: unchanged before/after for this
+// case).
+export function checkFileDurationBudget(
+  durations: FileDuration[],
+  budgetMs: number,
+  register: RegisterRow[] = [],
+  openTickets: Set<string> = new Set()
+): BudgetCheckResult {
+  const durationByFile = new Map(durations.map((d) => [d.file, d.durationMs]));
+  const rowByFile = new Map(register.map((r) => [r.file, r]));
+
+  const staleRows: FileVerdict[] = [];
+  const unownedRows: FileVerdict[] = [];
+  const registeredPoles: FileVerdict[] = [];
+
+  for (const row of register) {
+    const measured = durationByFile.get(row.file);
+    if (!openTickets.has(row.ticket)) {
+      unownedRows.push({ file: row.file, durationMs: measured ?? row.measuredMs, budgetMs, kind: 'unowned-row', ticket: row.ticket });
+      continue;
+    }
+    if (measured === undefined) continue;
+    if (measured < budgetMs * STALE_ROW_FRACTION) {
+      staleRows.push({ file: row.file, durationMs: measured, budgetMs, kind: 'stale-row', ticket: row.ticket });
+    } else if (measured > budgetMs) {
+      registeredPoles.push({ file: row.file, durationMs: measured, budgetMs, kind: 'ok', ticket: row.ticket });
+    }
+  }
+
+  const offenders = durations
+    .filter((d) => d.durationMs > budgetMs && !rowByFile.has(d.file))
+    .map((d) => ({ ...d, budgetMs }));
+
+  const passed = offenders.length === 0 && staleRows.length === 0 && unownedRows.length === 0;
+  const verdict: BudgetVerdictKind =
+    offenders.length > 0 ? 'new-pole' : unownedRows.length > 0 ? 'unowned-row' : staleRows.length > 0 ? 'stale-row' : 'ok';
+
+  return { passed, verdict, offenders, staleRows, unownedRows, registeredPoles };
 }
 
 // Names the offender, its duration, AND the budget it broke (scenario 01)
@@ -73,22 +182,79 @@ export function formatBudgetOffenders(offenders: BudgetOffender[]): string {
     .join('\n');
 }
 
+// BL-1598: reads a run's real vitest JSON report and (when given) the
+// committed pole register, and returns the SAME structured result both
+// main() (the standalone CLI) and recordTestDuration.js (the in-process
+// live consumer) print and record from - one decision, two callers, never
+// two computations of it.
+export function runGuardAgainstReport(
+  reportPath: string,
+  registerPath?: string
+): { result: BudgetCheckResult; durations: FileDuration[] } {
+  const report = JSON.parse(fs.readFileSync(reportPath, 'utf8')) as VitestJsonReport;
+  const projectRoot = registerPath ? path.dirname(path.dirname(registerPath)) : undefined;
+  const durations = extractFileDurations(report, projectRoot);
+  const registerRows =
+    registerPath && fs.existsSync(registerPath) ? parseRegisterRows(fs.readFileSync(registerPath, 'utf8')) : [];
+  const openTickets = registerPath ? openTicketIds(path.dirname(registerPath)) : new Set<string>();
+  const result = checkFileDurationBudget(durations, PER_FILE_DURATION_BUDGET_MS, registerRows, openTickets);
+  return { result, durations };
+}
+
+// A file over budget WITH an open, un-stale register row is REPORTED, not
+// refused (infoLines); new-pole/stale-row/unowned-row all refuse
+// (failureLines) - BL-1598's own three-way refusal split.
+export function formatGuardReport(result: BudgetCheckResult): { infoLines: string[]; failureLines: string[] } {
+  const infoLines: string[] = [];
+  if (result.registeredPoles.length > 0) {
+    infoLines.push(
+      `${result.registeredPoles.length} registered pole(s) reported, not refused:\n${formatBudgetOffenders(result.registeredPoles)}`
+    );
+  }
+  const failureLines: string[] = [];
+  if (result.offenders.length > 0) {
+    failureLines.push(`${result.offenders.length} new-pole offender(s):\n${formatBudgetOffenders(result.offenders)}`);
+  }
+  if (result.staleRows.length > 0) {
+    failureLines.push(
+      `${result.staleRows.length} stale register row(s) (file now under 80% of budget - remove the row):\n${formatBudgetOffenders(result.staleRows)}`
+    );
+  }
+  if (result.unownedRows.length > 0) {
+    failureLines.push(
+      `${result.unownedRows.length} unowned register row(s) (ticket not open):\n${result.unownedRows
+        .map((r) => `${r.file}: owner ${r.ticket} is not open`)
+        .join('\n')}`
+    );
+  }
+  return { infoLines, failureLines };
+}
+
+export function printGuardReport(result: BudgetCheckResult, fileCount: number): void {
+  const { infoLines, failureLines } = formatGuardReport(result);
+  for (const line of infoLines) {
+    console.log(line);
+  }
+  if (!result.passed) {
+    process.stderr.write(`suite file budget exceeded:\n${failureLines.join('\n')}\n`);
+    return;
+  }
+  console.log(`suite file budget OK: ${fileCount} files, all within ${(PER_FILE_DURATION_BUDGET_MS / 1000).toFixed(1)}s`);
+}
+
 export function main(): void {
   const reportPath = process.argv[2];
+  const registerPath = process.argv[3];
   if (!reportPath) {
-    process.stderr.write('Usage: node check-suite-file-budget.js <vitest-json-report-path>\n');
+    process.stderr.write('Usage: node check-suite-file-budget.js <vitest-json-report-path> [register-tsv-path]\n');
     process.exitCode = 1;
     return;
   }
-  const report = JSON.parse(fs.readFileSync(reportPath, 'utf8')) as VitestJsonReport;
-  const durations = extractFileDurations(report);
-  const result = checkFileDurationBudget(durations, PER_FILE_DURATION_BUDGET_MS);
+  const { result, durations } = runGuardAgainstReport(reportPath, registerPath);
+  printGuardReport(result, durations.length);
   if (!result.passed) {
-    process.stderr.write(`suite file budget exceeded (${result.offenders.length} offender(s)):\n${formatBudgetOffenders(result.offenders)}\n`);
     process.exitCode = 1;
-    return;
   }
-  console.log(`suite file budget OK: ${durations.length} files, all within ${(PER_FILE_DURATION_BUDGET_MS / 1000).toFixed(1)}s`);
 }
 
 if (require.main === module) {
