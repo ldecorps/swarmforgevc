@@ -141,3 +141,14 @@ qa_e2e_procedure: |
      (or the project's unit runner for that file) is green.
 
 assigned_to: coder
+
+abandoned_commits: [78b0739fec, d5fdc8a0ff, 6a2083ac9f]
+# 78b0739fec is QA's own branch tip cited to land_step_cli.bb; the CLI
+# built a tip-pure replay (cdd37b4337, LAND_REPLAY route,
+# ENTANGLED_SIBLING BL-1511/BL-1512/BL-1592) rather than landing the cited
+# commit directly (BL-1241 remedy) - the replay severs descent, so this
+# override is required for task_scope_gate_lib.bb / pre_qa_gate_lib.bb to
+# read the landed commit correctly. d5fdc8a0ff and 6a2083ac9f are QA's
+# earlier cited tips from the BL-1544 land-escalate
+# (backlog/evidence/BL-1573-land-escalate-20260916.md), all off the
+# landed lineage by SHA.
