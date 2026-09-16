@@ -113,3 +113,11 @@ notes: |
     with a quoted parameter - kept as written.
 
 assigned_to: coder
+
+abandoned_commits: [538573c54d]
+# 538573c54d is QA's own branch tip cited to land_step_cli.bb; the CLI
+# built a tip-pure replay (f7752c75ae, LAND_REPLAY route,
+# ENTANGLED_SIBLING BL-1511/BL-1512/BL-1573/BL-1592) rather than landing
+# the cited commit directly (BL-1241 remedy) - the replay severs descent,
+# so this override is required for task_scope_gate_lib.bb /
+# pre_qa_gate_lib.bb to read the landed commit correctly.
