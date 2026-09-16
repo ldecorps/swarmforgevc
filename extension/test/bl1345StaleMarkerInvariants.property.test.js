@@ -28,6 +28,7 @@ const fc = require('fast-check');
 const fs = require('node:fs');
 const path = require('node:path');
 const { spawnSync } = require('node:child_process');
+const { assertReachFloor, runsPerCell } = require('./helpers/reachFloors');
 
 const REPO_ROOT = path.join(__dirname, '..', '..');
 const SCRIPTS = path.join(REPO_ROOT, 'swarmforge', 'scripts');
@@ -66,7 +67,9 @@ test('BL-1345/BL-654 invariant 1: a standing pack derives nothing from the marke
   // The three states that make a marker unusable, plus a usable one naming a
   // real role: all enumerated, so the corner that matters (a leftover marker
   // naming a REAL role on a standing pack - the outage shape) runs every time.
-  for (const marker of [null, '   ', 'nosuchrole', 'coordinator']) {
+  const MARKER_CELLS = [null, '   ', 'nosuchrole', 'coordinator'];
+  const MARKER_CELL_RUNS = runsPerCell(3 * MARKER_CELLS.length, MARKER_CELLS.length);
+  for (const marker of MARKER_CELLS) {
     fc.assert(
       fc.property(fc.constantFrom(...ROLES), (namedRole) => {
         const value = marker === 'coordinator' ? namedRole : marker;
@@ -80,12 +83,11 @@ test('BL-1345/BL-654 invariant 1: a standing pack derives nothing from the marke
         );
         return true;
       }),
-      { numRuns: 3 },
+      { numRuns: MARKER_CELL_RUNS },
     );
   }
 
-  assert.ok(reach.usable > 0, 'never exercised a marker naming a real role - the outage shape went untested');
-  assert.ok(reach.unusable > 0, 'never exercised an unusable marker');
+  assertReachFloor(reach, ['usable', 'unusable'], 1, 'marker usability');
 
   // The structural half: the sweep must route through the shared decision.
   // The whole defect was a third consumer that never got the rule, so a copy
@@ -138,6 +140,7 @@ test('BL-1345/BL-654 invariant 2: a wrong-role pane is never healthy, and a righ
     { rotationRouter: false, sameRole: true },
     { rotationRouter: false, sameRole: false },
   ];
+  const CASE_CELL_RUNS = runsPerCell(6 * CASES.length, CASES.length);
 
   for (const { rotationRouter, sameRole } of CASES) {
     fc.assert(
@@ -177,11 +180,9 @@ test('BL-1345/BL-654 invariant 2: a wrong-role pane is never healthy, and a righ
           return true;
         },
       ),
-      { numRuns: 6 },
+      { numRuns: CASE_CELL_RUNS },
     );
   }
 
-  assert.ok(reach.mismatch > 0, 'never exercised a mismatched pane');
-  assert.ok(reach.match > 0, 'never exercised a correctly staffed pane');
-  assert.ok(reach.router > 0, 'never exercised a rotation-router pack');
+  assertReachFloor(reach, ['mismatch', 'match', 'router'], 1, 'role-mismatch case');
 });

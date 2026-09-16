@@ -35,6 +35,7 @@ const fs = require('node:fs');
 const path = require('node:path');
 const { spawnSync } = require('node:child_process');
 const { mkTmpDir } = require('./helpers/tmpDir');
+const { assertReachFloor, runsPerCell } = require('./helpers/reachFloors');
 
 const REPO_ROOT = path.join(__dirname, '..', '..');
 const SCRIPTS = path.join(REPO_ROOT, 'swarmforge', 'scripts');
@@ -79,6 +80,7 @@ function renderedStatus(transport, waiting, h) {
 
 test('BL-1352/BL-654 invariant 1: nothing reads healthy while a question sits undelivered', () => {
   const reach = { configuredWaiting: 0, configuredIdle: 0, unconfiguredWaiting: 0, unconfiguredIdle: 0 };
+  const VISIBILITY_CELL_RUNS = runsPerCell(4 * Object.keys(reach).length, Object.keys(reach).length);
 
   for (const transport of ['configured', 'unconfigured']) {
     // Both arms run for both transports: idle is a CASE, not a draw.
@@ -123,51 +125,60 @@ test('BL-1352/BL-654 invariant 1: nothing reads healthy while a question sits un
         }
         return true;
           }),
-        { numRuns: 4 },
+        { numRuns: VISIBILITY_CELL_RUNS },
       );
     }
   }
 
-  for (const [key, count] of Object.entries(reach)) {
-    assert.ok(count > 0, `never exercised the ${key} case`);
-  }
+  assertReachFloor(reach, Object.keys(reach), VISIBILITY_CELL_RUNS, 'transport x waiting case');
 });
 
 test('BL-1352/BL-654 invariant 2: N ticks in one state produce exactly one line', () => {
   const reach = { held: 0, changed: 0 };
 
-  fc.assert(
-    fc.property(fc.integer({ min: 2, max: 12 }), fc.integer({ min: 0, max: 6 }), (ticks, changeAt) => {
-      // A sequence of transport states: `changeAt` ticks in the first state,
-      // then the rest in the other. changeAt 0 or >= ticks means it never
-      // changes, which is the flooding case the invariant is about.
-      const states = [];
-      for (let i = 0; i < ticks; i += 1) {
-        states.push(changeAt > 0 && i >= changeAt ? 'ok' : 'fault');
-      }
-      const changes = new Set(states).size - 1;
-      if (changes === 0) reach.held += 1;
-      else reach.changed += 1;
+  // BL-1586: `changeAt` is now derived per cell rather than drawn
+  // independently, so the flooding case (never changes) and the change case
+  // are each reached by construction, budget (10) unchanged.
+  const TICKS_ARB = fc.integer({ min: 2, max: 12 });
+  const CASE_ARBS = {
+    held: TICKS_ARB.map((ticks) => ({ ticks, changeAt: 0 })),
+    changed: TICKS_ARB.chain((ticks) => fc.integer({ min: 1, max: ticks - 1 }).map((changeAt) => ({ ticks, changeAt }))),
+  };
+  const CASE_NAMES = Object.keys(CASE_ARBS);
+  const CASE_CELL_RUNS = runsPerCell(10, CASE_NAMES.length);
 
-      let last = null;
-      let lines = 0;
-      for (const s of states) {
-        const due = bb(`(role-ask-escalation-lib/transport-log-due? ${last ? `{:state "${last}"}` : 'nil'} {:state :${s}})`);
-        if (due) {
-          lines += 1;
-          last = s;
+  for (const [name, arb] of Object.entries(CASE_ARBS)) {
+    fc.assert(
+      fc.property(arb, ({ ticks, changeAt }) => {
+        // A sequence of transport states: `changeAt` ticks in the first
+        // state, then the rest in the other. changeAt 0 or >= ticks means it
+        // never changes, which is the flooding case the invariant is about.
+        const states = [];
+        for (let i = 0; i < ticks; i += 1) {
+          states.push(changeAt > 0 && i >= changeAt ? 'ok' : 'fault');
         }
-      }
+        const changes = new Set(states).size - 1;
+        reach[name] += 1;
 
-      // One line for the first observation, plus one per change - never one
-      // per tick, however many ticks there are.
-      assert.equal(lines, 1 + changes, `${ticks} ticks with ${changes} change(s) produced ${lines} lines`);
-      assert.ok(lines <= ticks, 'more lines than ticks, which is impossible');
-      return true;
-    }),
-    { numRuns: 10 },
-  );
+        let last = null;
+        let lines = 0;
+        for (const s of states) {
+          const due = bb(`(role-ask-escalation-lib/transport-log-due? ${last ? `{:state "${last}"}` : 'nil'} {:state :${s}})`);
+          if (due) {
+            lines += 1;
+            last = s;
+          }
+        }
 
-  assert.ok(reach.held > 0, 'never exercised a held state - the flooding case went untested');
-  assert.ok(reach.changed > 0, 'never exercised a state change');
+        // One line for the first observation, plus one per change - never one
+        // per tick, however many ticks there are.
+        assert.equal(lines, 1 + changes, `${ticks} ticks with ${changes} change(s) produced ${lines} lines`);
+        assert.ok(lines <= ticks, 'more lines than ticks, which is impossible');
+        return true;
+      }),
+      { numRuns: CASE_CELL_RUNS },
+    );
+  }
+
+  assertReachFloor(reach, CASE_NAMES, CASE_CELL_RUNS, 'transport-log flooding case');
 });
