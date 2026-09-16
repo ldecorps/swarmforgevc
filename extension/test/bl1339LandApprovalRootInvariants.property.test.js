@@ -30,6 +30,7 @@ const fs = require('node:fs');
 const path = require('node:path');
 const { execFileSync, spawnSync } = require('node:child_process');
 const { mkTmpDir } = require('./helpers/tmpDir');
+const { assertReachFloor, runsPerCell } = require('./helpers/reachFloors');
 
 const REPO_ROOT = path.join(__dirname, '..', '..');
 const SCRIPTS = path.join(REPO_ROOT, 'swarmforge', 'scripts');
@@ -90,10 +91,12 @@ function askPredicate(cwd, sha) {
 
 test('BL-1339/BL-654 invariant 1: one location, whichever checkout the land ran from', () => {
   const reach = { fromMain: 0, fromWorktree: 0 };
+  const FROM_CELLS = ['main', 'worktree'];
+  const FROM_CELL_RUNS = runsPerCell(2 * FROM_CELLS.length, FROM_CELLS.length);
 
   // The checkout is ENUMERATED - it is the whole axis of the defect, so it is
   // never left to a draw. Only the ticket id and shas vary.
-  for (const from of ['main', 'worktree']) {
+  for (const from of FROM_CELLS) {
     fc.assert(
       fc.property(fc.array(fc.constantFrom(...'0123456789abcdef'), { minLength: 10, maxLength: 10 }).map((cs) => cs.join('')), (sha) => {
         const fx = buildFixture();
@@ -116,22 +119,25 @@ test('BL-1339/BL-654 invariant 1: one location, whichever checkout the land ran 
           fs.rmSync(fx.base, { recursive: true, force: true });
         }
       }),
-      { numRuns: 2 },
+      { numRuns: FROM_CELL_RUNS },
     );
   }
 
+  assertReachFloor(reach, ['fromMain', 'fromWorktree'], FROM_CELL_RUNS, 'checkout');
   assert.ok(reach.fromMain > 0, 'never landed from the main checkout');
   assert.ok(reach.fromWorktree > 0, 'never landed from the linked worktree - the defect corner went untested');
 });
 
 test('BL-1339/BL-654 invariant 2: the predicate agrees from either checkout, and a bounce still vetoes', () => {
   const reach = { asked: 0, vetoed: 0 };
+  const ASK_FROM_CELLS = ['main', 'worktree'];
+  const ASK_FROM_CELL_RUNS = runsPerCell(2 * ASK_FROM_CELLS.length, ASK_FROM_CELLS.length);
 
   // The read side of the human's ruling (option 2): the predicate answers the
   // same wherever it is asked from. The acceptance scenarios ask only from the
   // main checkout, where the old relative path already worked - so this is the
   // half only a two-checkout property can see.
-  for (const askFrom of ['main', 'worktree']) {
+  for (const askFrom of ASK_FROM_CELLS) {
     fc.assert(
       fc.property(fc.constantFrom('BL-9339', 'BL-9340'), (ticket) => {
         const fx = buildFixture();
@@ -167,10 +173,11 @@ test('BL-1339/BL-654 invariant 2: the predicate agrees from either checkout, and
           fs.rmSync(fx.base, { recursive: true, force: true });
         }
       }),
-      { numRuns: 2 },
+      { numRuns: ASK_FROM_CELL_RUNS },
     );
   }
 
+  assertReachFloor(reach, ['asked', 'vetoed'], ASK_FROM_CELL_RUNS * ASK_FROM_CELLS.length, 'predicate call');
   assert.ok(reach.asked > 0, 'never asked the predicate');
   assert.ok(reach.vetoed > 0, 'never exercised the bounce veto - approval could be spreading unchecked');
 });

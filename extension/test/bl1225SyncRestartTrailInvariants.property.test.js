@@ -4,6 +4,7 @@ const fs = require('node:fs');
 const path = require('node:path');
 const { spawnSync } = require('node:child_process');
 const { mkTmpDir } = require('./helpers/tmpDir');
+const { assertReachFloor, runsPerCell } = require('./helpers/reachFloors');
 
 // BL-1225 declared invariants:
 // 1. No sync-initiated restart discards log lines written before it.
@@ -42,16 +43,21 @@ function withRoot(fn) {
 // OWN reach floor that way in a full-lane run - a flaky commit gate, which
 // is worse than no floor at all. Weighted 2-in-7 over 40 runs the miss
 // probability is about 4 in a million.
-const PRIOR_LOG = () =>
-  fc.oneof(
-    { arbitrary: fc.constant(''), weight: 2 },
-    {
-      arbitrary: fc
-        .array(fc.stringMatching(/^[A-Za-z0-9 _.:-]{1,40}$/), { minLength: 1, maxLength: 6 })
-        .map((lines) => `${lines.join('\n')}\n`),
-      weight: 5,
-    }
-  );
+const NON_EMPTY_PRIOR_LOG = () =>
+  fc
+    .array(fc.stringMatching(/^[A-Za-z0-9 _.:-]{1,40}$/), { minLength: 1, maxLength: 6 })
+    .map((lines) => `${lines.join('\n')}\n`);
+
+// BL-1585: the two cases ("empty" and "non-empty" prior log) are reached BY
+// CONSTRUCTION - an outer loop over both cells, each with its own
+// floor-sized run budget (the BL-1578/BL-1580 shape) - rather than hoped for
+// by a weighted fc.oneof() draw, which is what this file's own comment
+// (above, now historical) records as having missed the empty-log case about
+// 2.5% of the time even after weighting. The total draw budget of 40 is
+// unchanged; only how it is spent changes.
+const PRIOR_LOG_CELLS = { empty: () => fc.constant(''), nonEmpty: NON_EMPTY_PRIOR_LOG };
+const PRIOR_LOG_KINDS = Object.keys(PRIOR_LOG_CELLS);
+const PRIOR_LOG_CELL_RUNS = runsPerCell(40, PRIOR_LOG_KINDS.length);
 
 const NEW_OUTPUT = () => fc.stringMatching(/^[A-Za-z0-9_.:-]{1,30}$/);
 
@@ -68,33 +74,34 @@ function spawnThroughProductionOpts(root, logFile, line) {
 }
 
 test('property (invariant 1): a sync-initiated restart never discards a log line written before it', () => {
-  let emptyPrior = 0;
-  let nonEmptyPrior = 0;
-  fc.assert(
-    fc.property(PRIOR_LOG(), NEW_OUTPUT(), (prior, line) => {
-      if (prior === '') emptyPrior += 1;
-      else nonEmptyPrior += 1;
-      withRoot((root) => {
-        const logFile = path.join(root, 'runtime.log');
-        fs.writeFileSync(logFile, prior);
-        const result = spawnThroughProductionOpts(root, logFile, line);
-        assert.equal(result.status, 0, `bb spawn failed: ${result.stderr}`);
-        const after = fs.readFileSync(logFile, 'utf8');
-        assert.ok(
-          after.startsWith(prior),
-          `the restart discarded earlier log content.\nbefore: ${JSON.stringify(prior)}\nafter:  ${JSON.stringify(after)}`
-        );
-        assert.ok(
-          after.includes(line),
-          `the replacement's own output is missing: ${JSON.stringify(after)}`
-        );
-        assert.ok(after.length > prior.length, 'nothing was appended at all');
-      });
-    }),
-    { numRuns: 40 }
-  );
-  assert.ok(nonEmptyPrior > 0, 'generator never produced a non-empty prior log - the only case that can detect truncation');
-  assert.ok(emptyPrior > 0, 'generator never produced the empty prior log');
+  const seen = { empty: 0, nonEmpty: 0 };
+  for (const kind of PRIOR_LOG_KINDS) {
+    fc.assert(
+      fc.property(PRIOR_LOG_CELLS[kind](), NEW_OUTPUT(), (prior, line) => {
+        seen[kind] += 1;
+        withRoot((root) => {
+          const logFile = path.join(root, 'runtime.log');
+          fs.writeFileSync(logFile, prior);
+          const result = spawnThroughProductionOpts(root, logFile, line);
+          assert.equal(result.status, 0, `bb spawn failed: ${result.stderr}`);
+          const after = fs.readFileSync(logFile, 'utf8');
+          assert.ok(
+            after.startsWith(prior),
+            `the restart discarded earlier log content.\nbefore: ${JSON.stringify(prior)}\nafter:  ${JSON.stringify(after)}`
+          );
+          assert.ok(
+            after.includes(line),
+            `the replacement's own output is missing: ${JSON.stringify(after)}`
+          );
+          assert.ok(after.length > prior.length, 'nothing was appended at all');
+        });
+      }),
+      { numRuns: PRIOR_LOG_CELL_RUNS }
+    );
+  }
+  assertReachFloor(seen, PRIOR_LOG_KINDS, PRIOR_LOG_CELL_RUNS, 'prior kind');
+  assert.ok(seen.nonEmpty > 0, 'generator never produced a non-empty prior log - the only case that can detect truncation');
+  assert.ok(seen.empty > 0, 'generator never produced the empty prior log');
 });
 
 test('property (invariant 1): repeated restarts keep growing the log rather than resetting it', () => {
@@ -128,8 +135,13 @@ test('property (invariant 1): repeated restarts keep growing the log rather than
 // A start is either sync-initiated (the env build_freshness_lib.bb hands to
 // the script) or it is not. Both branches must be reached: an "if and only
 // if" that only ever generates one side proves half of itself.
-const START_KIND = () =>
-  fc.constantFrom('sync', 'direct', 'other-caller');
+//
+// BL-1585: the three kinds are reached BY CONSTRUCTION - an outer loop over
+// each kind with its own floor-sized run budget - rather than hoped for by a
+// uniform fc.constantFrom() draw over 18 runs. The draw budget of 18 is
+// unchanged; only how it is spent changes.
+const START_KINDS = ['sync', 'direct', 'other-caller'];
+const START_KIND_CELL_RUNS = runsPerCell(18, START_KINDS.length);
 
 function startDaemon(root, kind) {
   const stub = path.join(root, 'stub.bb');
@@ -169,27 +181,30 @@ function syncCaller() {
 
 test('property (invariant 2): the audit names build-freshness if and only if a sync initiated the start', () => {
   const seen = { sync: 0, direct: 0, 'other-caller': 0 };
-  fc.assert(
-    fc.property(START_KIND(), (kind) => {
-      seen[kind] += 1;
-      withRoot((root) => {
-        const audit = startDaemon(root, kind);
-        const startLine = audit
-          .split('\n')
-          .find((l) => l.includes('start_handoff_daemon invoked'));
-        assert.ok(startLine, `no start-audit line was written for a ${kind} start: ${JSON.stringify(audit)}`);
-        assert.equal(
-          startLine.includes(`caller=${CALLER}`),
-          kind === 'sync',
-          `a ${kind} start was attributed wrongly: ${startLine}`
-        );
-        if (kind === 'direct') {
-          assert.match(startLine, /caller=unknown/, `an unattributed start lost its fallback: ${startLine}`);
-        }
-      });
-    }),
-    { numRuns: 18 }
-  );
+  for (const kind of START_KINDS) {
+    fc.assert(
+      fc.property(fc.constant(kind), (kind) => {
+        seen[kind] += 1;
+        withRoot((root) => {
+          const audit = startDaemon(root, kind);
+          const startLine = audit
+            .split('\n')
+            .find((l) => l.includes('start_handoff_daemon invoked'));
+          assert.ok(startLine, `no start-audit line was written for a ${kind} start: ${JSON.stringify(audit)}`);
+          assert.equal(
+            startLine.includes(`caller=${CALLER}`),
+            kind === 'sync',
+            `a ${kind} start was attributed wrongly: ${startLine}`
+          );
+          if (kind === 'direct') {
+            assert.match(startLine, /caller=unknown/, `an unattributed start lost its fallback: ${startLine}`);
+          }
+        });
+      }),
+      { numRuns: START_KIND_CELL_RUNS }
+    );
+  }
+  assertReachFloor(seen, START_KINDS, START_KIND_CELL_RUNS, 'start kind');
   for (const kind of Object.keys(seen)) {
     assert.ok(seen[kind] > 0, `generator never reached a ${kind} start: ${JSON.stringify(seen)}`);
   }

@@ -23,6 +23,8 @@ const fc = require('fast-check');
 const fs = require('node:fs');
 const path = require('node:path');
 
+const { assertReachFloor, runsPerCell } = require('./helpers/reachFloors');
+
 const REPO_ROOT = path.join(__dirname, '..', '..');
 const EXT_DIR = path.join(REPO_ROOT, 'extension');
 const {
@@ -74,31 +76,50 @@ test('BL-1336/BL-654 invariant 1: both lanes size through the one composition po
 test('BL-1336/BL-654 invariant 2: the RAM budget always binds, whatever the ceiling', () => {
   const reach = { ceilingBound: 0, ramBound: 0, router: 0 };
 
+  // BL-1585: which bound binds is reached BY CONSTRUCTION - the ceiling is
+  // pure over (pack, platform, rotation), so it is computed FIRST and the
+  // hostRamMB draw is split into a "below the ceiling's RAM-equivalent" cell
+  // and an "at or above it" cell, rather than hoped for by a single uniform
+  // draw over the whole [512, 1024*1024] range. The per-(rotation,pack) draw
+  // budget of 6 (72 total) is unchanged; only how it is spent changes.
+  const RAM_PER_WORKER_MB = 640 / 0.5; // PER_WORKER_HEAP_MB / SAFE_HOST_RAM_FRACTION
+  const TOTAL_CELLS = ROTATIONS.length * PACKS.length * 2;
+  const BOUND_CELL_RUNS = runsPerCell(6 * ROTATIONS.length * PACKS.length, TOTAL_CELLS);
+
   for (const rotation of ROTATIONS) {
     for (const pack of PACKS) {
-      fc.assert(
-        fc.property(fc.integer({ min: 512, max: 1024 * 1024 }), (hostRamMB) => {
-          const pool = resolveVitestWorkerPool({ pack, platform: 'linux', rotation, hostRamMB });
-          const ceiling = resolveVitestForkCeiling({ pack, platform: 'linux', rotation });
-          const ramAllows = resolveWorkerPoolSize(hostRamMB, Number.MAX_SAFE_INTEGER);
+      const ceiling = resolveVitestForkCeiling({ pack, platform: 'linux', rotation });
+      const threshold = Math.round(RAM_PER_WORKER_MB * ceiling);
+      const BOUND_CELLS = {
+        ramBound: fc.integer({ min: 512, max: threshold - 1 }),
+        ceilingBound: fc.integer({ min: threshold, max: 1024 * 1024 }),
+      };
 
-          // The pool is never more than EITHER bound - that is what "the RAM
-          // budget remains binding" means once a ceiling can be raised.
-          assert.ok(pool <= ramAllows, `the pool (${pool}) exceeded what RAM allows (${ramAllows})`);
-          assert.ok(pool <= ceiling, `the pool (${pool}) exceeded the ceiling (${ceiling})`);
-          assert.equal(pool, Math.min(ramAllows, ceiling), 'the pool is not the minimum of the two bounds');
-          assert.ok(pool >= 1, 'the pool fell below one worker');
+      for (const bound of Object.keys(BOUND_CELLS)) {
+        fc.assert(
+          fc.property(BOUND_CELLS[bound], (hostRamMB) => {
+            const pool = resolveVitestWorkerPool({ pack, platform: 'linux', rotation, hostRamMB });
+            const ramAllows = resolveWorkerPoolSize(hostRamMB, Number.MAX_SAFE_INTEGER);
 
-          if (rotation === 'router') reach.router += 1;
-          if (ramAllows < ceiling) reach.ramBound += 1;
-          else reach.ceilingBound += 1;
-          return true;
-        }),
-        { numRuns: 6 },
-      );
+            // The pool is never more than EITHER bound - that is what "the RAM
+            // budget remains binding" means once a ceiling can be raised.
+            assert.ok(pool <= ramAllows, `the pool (${pool}) exceeded what RAM allows (${ramAllows})`);
+            assert.ok(pool <= ceiling, `the pool (${pool}) exceeded the ceiling (${ceiling})`);
+            assert.equal(pool, Math.min(ramAllows, ceiling), 'the pool is not the minimum of the two bounds');
+            assert.ok(pool >= 1, 'the pool fell below one worker');
+
+            if (rotation === 'router') reach.router += 1;
+            if (ramAllows < ceiling) reach.ramBound += 1;
+            else reach.ceilingBound += 1;
+            return true;
+          }),
+          { numRuns: BOUND_CELL_RUNS },
+        );
+      }
     }
   }
 
+  assertReachFloor(reach, ['ramBound', 'ceilingBound'], BOUND_CELL_RUNS * ROTATIONS.length * PACKS.length, 'binding bound');
   assert.ok(reach.router > 0, 'never exercised a router rotation');
   assert.ok(reach.ramBound > 0, 'never exercised a host where RAM is the binding bound');
   assert.ok(reach.ceilingBound > 0, 'never exercised a host where the ceiling is the binding bound');

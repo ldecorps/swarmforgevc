@@ -29,6 +29,7 @@ const {
   CURSOR_SEAT_NAME,
 } = require('../out/tools/bubbleSeat');
 const { runBubbleSeatTurn } = require('../out/tools/bubbleSeatLive');
+const { assertReachFloor, runsPerCell } = require('./helpers/reachFloors');
 
 const SRC = path.join(__dirname, '..', 'src', 'tools');
 const BUBBLE_TOPIC = 11810;
@@ -48,8 +49,10 @@ test('BL-1296/BL-654 invariant 1: every answer is the front desk mirror, whateve
   // both, which is what "a mirror with its own worker" means operationally:
   // no separate context, and no dependence on what cursor is doing.
   const reach = { busy: 0, idle: 0 };
+  const CURSOR_BUSY_CELLS = [true, false];
+  const CURSOR_BUSY_CELL_RUNS = runsPerCell(CURSOR_BUSY_CELLS.length * 6, CURSOR_BUSY_CELLS.length);
 
-  for (const cursorBusy of [true, false]) {
+  for (const cursorBusy of CURSOR_BUSY_CELLS) {
     fc.assert(
       fc.property(fc.string({ maxLength: 40 }), () => {
         reach[cursorBusy ? 'busy' : 'idle'] += 1;
@@ -65,9 +68,10 @@ test('BL-1296/BL-654 invariant 1: every answer is the front desk mirror, whateve
         assert.ok(!('context' in decided) && !('history' in decided), 'the decision carries a context of its own');
         return true;
       }),
-      { numRuns: 6 },
+      { numRuns: CURSOR_BUSY_CELL_RUNS },
     );
   }
+  assertReachFloor(reach, ['busy', 'idle'], CURSOR_BUSY_CELL_RUNS, 'cursor state');
   assert.ok(reach.busy > 0 && reach.idle > 0, 'never exercised both cursor states');
 
   // ...and the answer is byte-identical across those states: a mirror that
@@ -90,29 +94,33 @@ test('BL-1296/BL-654 invariant 1: every answer is the front desk mirror, whateve
 // reply the front desk can return.
 test("BL-1296/BL-654 invariant 1: the posted text is the front desk's own, byte for byte", async () => {
   const reach = { busy: 0, idle: 0 };
-  await fc.assert(
-    fc.asyncProperty(
-      fc.string({ minLength: 1, maxLength: 200 }).filter((t) => t.trim().length > 0),
-      fc.boolean(),
-      async (replyText, cursorBusy) => {
-        reach[cursorBusy ? 'busy' : 'idle'] += 1;
-        const posted = [];
-        await runBubbleSeatTurn({
-          targetPath: '/nowhere',
-          topicId: BUBBLE_TOPIC,
-          seatTopicId: BUBBLE_TOPIC,
-          cursorTopicId: CURSOR_TOPIC,
-          cursorBusy,
-          text: 'anything',
-          post: async (topicId, message) => posted.push({ topicId, message }),
-          frontDeskTurnFn: async () => ({ success: true, replyText }),
-        });
-        assert.deepEqual(posted, [{ topicId: BUBBLE_TOPIC, message: replyText }]);
-        return true;
-      },
-    ),
-    { numRuns: 30 },
-  );
+  const TEXT_CURSOR_BUSY_CELLS = [true, false];
+  const TEXT_CURSOR_BUSY_CELL_RUNS = runsPerCell(30, TEXT_CURSOR_BUSY_CELLS.length);
+  for (const cursorBusy of TEXT_CURSOR_BUSY_CELLS) {
+    await fc.assert(
+      fc.asyncProperty(
+        fc.string({ minLength: 1, maxLength: 200 }).filter((t) => t.trim().length > 0),
+        async (replyText) => {
+          reach[cursorBusy ? 'busy' : 'idle'] += 1;
+          const posted = [];
+          await runBubbleSeatTurn({
+            targetPath: '/nowhere',
+            topicId: BUBBLE_TOPIC,
+            seatTopicId: BUBBLE_TOPIC,
+            cursorTopicId: CURSOR_TOPIC,
+            cursorBusy,
+            text: 'anything',
+            post: async (topicId, message) => posted.push({ topicId, message }),
+            frontDeskTurnFn: async () => ({ success: true, replyText }),
+          });
+          assert.deepEqual(posted, [{ topicId: BUBBLE_TOPIC, message: replyText }]);
+          return true;
+        },
+      ),
+      { numRuns: TEXT_CURSOR_BUSY_CELL_RUNS },
+    );
+  }
+  assertReachFloor(reach, ['busy', 'idle'], TEXT_CURSOR_BUSY_CELL_RUNS, 'cursor state');
   assert.ok(reach.busy > 0 && reach.idle > 0, JSON.stringify(reach));
 });
 
@@ -145,40 +153,52 @@ test('BL-1296/BL-654 invariant 1: a front desk that cannot answer yields a refus
 });
 
 test('BL-1296/BL-654 invariant 2: a seat answers only its own topic', () => {
-  // GENERATOR REACH: the two live topics are in the pool by construction, and
-  // the run fails unless it saw both plus a foreign one - a property that
-  // never asked about cursor's topic could not catch cross-answering.
+  // GENERATOR REACH (by construction): the two live topics, the unbound
+  // case and a foreign topic are each their own cell, one fc.assert per
+  // cell with its own floor-sized run budget (the BL-1578/BL-1580 shape) -
+  // rather than hoped for by a uniform topicArb draw over 40 runs, which is
+  // what "a property that never asked about cursor's topic could not catch
+  // cross-answering" required in the first place. The draw budget of 40 is
+  // unchanged; only how it is spent changes.
   const reach = { own: 0, cursor: 0, foreign: 0, unbound: 0 };
+  const TOPIC_CELLS = {
+    own: () => fc.constant(BUBBLE_TOPIC),
+    cursor: () => fc.constant(CURSOR_TOPIC),
+    unbound: () => fc.constant(undefined),
+    foreign: () => fc.integer({ min: 1, max: 99999 }).filter((n) => n !== BUBBLE_TOPIC && n !== CURSOR_TOPIC),
+  };
+  const TOPIC_KINDS = Object.keys(TOPIC_CELLS);
+  const TOPIC_CELL_RUNS = runsPerCell(40, TOPIC_KINDS.length);
 
-  fc.assert(
-    fc.property(topicArb, fc.boolean(), fc.boolean(), (topicId, cursorBusy, mirrorAvailable) => {
-      const decided = decideBubbleSeatTurn({
-        topicId,
-        seatTopicId: BUBBLE_TOPIC,
-        cursorTopicId: CURSOR_TOPIC,
-        cursorBusy,
-        mirrorAvailable,
-      });
-      if (topicId === BUBBLE_TOPIC) {
-        reach.own += 1;
-        assert.ok(['answer', 'refuse'].includes(decided.kind), 'the seat ignored its own topic');
-        assert.equal(decided.seat, BUBBLE_SEAT_NAME);
-        assert.equal(decided.topicId, BUBBLE_TOPIC, 'the seat replied into a topic other than its own');
+  for (const kind of TOPIC_KINDS) {
+    fc.assert(
+      fc.property(TOPIC_CELLS[kind](), fc.boolean(), fc.boolean(), (topicId, cursorBusy, mirrorAvailable) => {
+        reach[kind] += 1;
+        const decided = decideBubbleSeatTurn({
+          topicId,
+          seatTopicId: BUBBLE_TOPIC,
+          cursorTopicId: CURSOR_TOPIC,
+          cursorBusy,
+          mirrorAvailable,
+        });
+        if (topicId === BUBBLE_TOPIC) {
+          assert.ok(['answer', 'refuse'].includes(decided.kind), 'the seat ignored its own topic');
+          assert.equal(decided.seat, BUBBLE_SEAT_NAME);
+          assert.equal(decided.topicId, BUBBLE_TOPIC, 'the seat replied into a topic other than its own');
+          return true;
+        }
+        // Everything else: not this seat's. It says nothing - no answer, no
+        // refusal, and nothing addressed to another topic.
+        assert.equal(decided.kind, 'not-mine', `the Bubble seat claimed topic ${topicId}`);
+        assert.ok(!('topicId' in decided), 'a not-mine decision still names a topic to post into');
+        if (topicId === CURSOR_TOPIC) assert.equal(decided.seat, CURSOR_SEAT_NAME);
         return true;
-      }
-      if (topicId === CURSOR_TOPIC) reach.cursor += 1;
-      else if (topicId === undefined) reach.unbound += 1;
-      else reach.foreign += 1;
-      // Everything else: not this seat's. It says nothing - no answer, no
-      // refusal, and nothing addressed to another topic.
-      assert.equal(decided.kind, 'not-mine', `the Bubble seat claimed topic ${topicId}`);
-      assert.ok(!('topicId' in decided), 'a not-mine decision still names a topic to post into');
-      if (topicId === CURSOR_TOPIC) assert.equal(decided.seat, CURSOR_SEAT_NAME);
-      return true;
-    }),
-    { numRuns: 40 },
-  );
+      }),
+      { numRuns: TOPIC_CELL_RUNS },
+    );
+  }
 
+  assertReachFloor(reach, TOPIC_KINDS, TOPIC_CELL_RUNS, 'topic kind');
   assert.ok(reach.own > 0, "never exercised the seat's own topic");
   assert.ok(reach.cursor > 0, "never exercised cursor's host topic - the cross-answering case");
   assert.ok(reach.foreign > 0, 'never exercised a third topic');
