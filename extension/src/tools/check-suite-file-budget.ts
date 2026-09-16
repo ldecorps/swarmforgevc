@@ -127,6 +127,63 @@ export interface BudgetCheckResult {
 // that cut it (BL-1598's own FIRM wording).
 const STALE_ROW_FRACTION = 0.8;
 
+// One register row's verdict, isolated from the loop that walks the whole
+// register (hardener extraction, BL-1598: pulled out of
+// checkFileDurationBudget to bring its CRAP back under the gate - CRAP=12
+// on the un-extracted version, complexity alone, at 100% coverage). null
+// means the row contributes NO verdict this run (an owned, non-stale,
+// non-pole row still measuring within budget's middle band, or a row for a
+// file this run never touched).
+function classifyRegisterRow(row: RegisterRow, measured: number | undefined, budgetMs: number, openTickets: Set<string>): FileVerdict | null {
+  if (!openTickets.has(row.ticket)) {
+    return { file: row.file, durationMs: measured ?? row.measuredMs, budgetMs, kind: 'unowned-row', ticket: row.ticket };
+  }
+  if (measured === undefined) return null;
+  if (measured < budgetMs * STALE_ROW_FRACTION) {
+    return { file: row.file, durationMs: measured, budgetMs, kind: 'stale-row', ticket: row.ticket };
+  }
+  if (measured > budgetMs) {
+    return { file: row.file, durationMs: measured, budgetMs, kind: 'ok', ticket: row.ticket };
+  }
+  return null;
+}
+
+// Priority order matches the ticket's own three-way refusal split: a new,
+// unregistered offender is worse than an existing row gone stale or
+// unowned, so it wins the headline verdict whenever one exists.
+function computeVerdict(offenderCount: number, unownedCount: number, staleCount: number): BudgetVerdictKind {
+  if (offenderCount > 0) return 'new-pole';
+  if (unownedCount > 0) return 'unowned-row';
+  if (staleCount > 0) return 'stale-row';
+  return 'ok';
+}
+
+// Walks every register row once, bucketing each into stale/unowned/pole via
+// classifyRegisterRow (a null verdict contributes to none) - the loop
+// itself pulled out of checkFileDurationBudget alongside classifyRegisterRow
+// so the caller is left with straight-line composition, not a branching
+// walk (hardener extraction, BL-1598, same CRAP-gate reason).
+function classifyRegisterRows(
+  register: RegisterRow[],
+  durationByFile: Map<string, number>,
+  budgetMs: number,
+  openTickets: Set<string>
+): { staleRows: FileVerdict[]; unownedRows: FileVerdict[]; registeredPoles: FileVerdict[] } {
+  const staleRows: FileVerdict[] = [];
+  const unownedRows: FileVerdict[] = [];
+  const registeredPoles: FileVerdict[] = [];
+
+  for (const row of register) {
+    const verdict = classifyRegisterRow(row, durationByFile.get(row.file), budgetMs, openTickets);
+    if (verdict === null) continue;
+    if (verdict.kind === 'unowned-row') unownedRows.push(verdict);
+    else if (verdict.kind === 'stale-row') staleRows.push(verdict);
+    else registeredPoles.push(verdict);
+  }
+
+  return { staleRows, unownedRows, registeredPoles };
+}
+
 // Pure: the whole decision table (BL-378 scenarios 01-03, extended by
 // BL-1598's register). Every file over budget is reported, not just the
 // first (scenario 03) - failing on the first would hide the others and turn
@@ -143,31 +200,14 @@ export function checkFileDurationBudget(
   const durationByFile = new Map(durations.map((d) => [d.file, d.durationMs]));
   const rowByFile = new Map(register.map((r) => [r.file, r]));
 
-  const staleRows: FileVerdict[] = [];
-  const unownedRows: FileVerdict[] = [];
-  const registeredPoles: FileVerdict[] = [];
-
-  for (const row of register) {
-    const measured = durationByFile.get(row.file);
-    if (!openTickets.has(row.ticket)) {
-      unownedRows.push({ file: row.file, durationMs: measured ?? row.measuredMs, budgetMs, kind: 'unowned-row', ticket: row.ticket });
-      continue;
-    }
-    if (measured === undefined) continue;
-    if (measured < budgetMs * STALE_ROW_FRACTION) {
-      staleRows.push({ file: row.file, durationMs: measured, budgetMs, kind: 'stale-row', ticket: row.ticket });
-    } else if (measured > budgetMs) {
-      registeredPoles.push({ file: row.file, durationMs: measured, budgetMs, kind: 'ok', ticket: row.ticket });
-    }
-  }
+  const { staleRows, unownedRows, registeredPoles } = classifyRegisterRows(register, durationByFile, budgetMs, openTickets);
 
   const offenders = durations
     .filter((d) => d.durationMs > budgetMs && !rowByFile.has(d.file))
     .map((d) => ({ ...d, budgetMs }));
 
   const passed = offenders.length === 0 && staleRows.length === 0 && unownedRows.length === 0;
-  const verdict: BudgetVerdictKind =
-    offenders.length > 0 ? 'new-pole' : unownedRows.length > 0 ? 'unowned-row' : staleRows.length > 0 ? 'stale-row' : 'ok';
+  const verdict = computeVerdict(offenders.length, unownedRows.length, staleRows.length);
 
   return { passed, verdict, offenders, staleRows, unownedRows, registeredPoles };
 }
