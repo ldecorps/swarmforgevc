@@ -13,6 +13,7 @@ const fs = require('node:fs');
 const path = require('node:path');
 const { execFileSync, spawnSync } = require('node:child_process');
 const { mkSocketFixtureRoot } = require('./lib/socketFixtureRoot');
+const { sendGitHandoffTwoCall } = require('./lib/sendGitHandoffTwoCall');
 
 const FEATURE = 'BL-1317 Adapt-tier effort dial follows outcome signals';
 
@@ -110,19 +111,13 @@ function send(ctx) {
     draft,
     `type: git_handoff\nto: ${ROLE}\npriority: 50\ntask: ${ctx.task}\ncommit: ${ctx.commit}\n`
   );
-  const sendOnce = () =>
-    spawnSync('bb', [path.join(SCRIPTS_DIR, 'swarm_handoff.bb'), draft], {
-      cwd: seatDir(ctx.root, 'specifier'),
-      encoding: 'utf8',
-      timeout: 60000,
-      env: fixtureEnv(ctx.root, 'specifier'),
-    });
-  // Article 2.3's self-audit: the first call against a draft fingerprint
-  // challenges and queues nothing; an identical second call queues it.
-  let res = sendOnce();
-  assert.equal(res.status, 0, `send (audit) failed: ${res.stdout}${res.stderr}`);
-  res = sendOnce();
-  assert.equal(res.status, 0, `send (queue) failed: ${res.stdout}${res.stderr}`);
+  const res = sendGitHandoffTwoCall('bb', [path.join(SCRIPTS_DIR, 'swarm_handoff.bb'), draft], {
+    cwd: seatDir(ctx.root, 'specifier'),
+    encoding: 'utf8',
+    timeout: 60000,
+    env: fixtureEnv(ctx.root, 'specifier'),
+  });
+  assert.equal(res.status, 0, `send failed: ${res.stdout}${res.stderr}`);
 }
 
 function claim(ctx) {

@@ -8,6 +8,7 @@ const fs = require('node:fs');
 const path = require('node:path');
 const { execFileSync, spawnSync } = require('node:child_process');
 const { mkSocketFixtureRoot } = require('./lib/socketFixtureRoot');
+const { sendGitHandoffTwoCall } = require('./lib/sendGitHandoffTwoCall');
 
 const FEATURE = 'A stage\'s seats are chosen by ticket difficulty, not by whichever is idle';
 
@@ -109,7 +110,7 @@ function send(ctx) {
     draft,
     `type: git_handoff\nto: ${STAGE}\npriority: 50\ntask: ${ctx.task}\ncommit: ${ctx.commit}\n`
   );
-  const res = spawnSync('bb', [path.join(SCRIPTS_DIR, 'swarm_handoff.bb'), draft], {
+  const res = sendGitHandoffTwoCall('bb', [path.join(SCRIPTS_DIR, 'swarm_handoff.bb'), draft], {
     cwd: seatDir(ctx.root, 'specifier'),
     encoding: 'utf8',
     timeout: 60000,
