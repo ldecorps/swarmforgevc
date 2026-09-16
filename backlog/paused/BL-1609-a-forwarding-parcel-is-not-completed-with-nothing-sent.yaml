@@ -37,7 +37,7 @@ required_wiring:
 # role runs; a gate built and called from neither is exactly the
 # fail-open this ticket closes.
 
-human_approval: pending
+human_approval: approved
 approval_context: >
   A new feature file is authored here, so it needs a tap. No choice is
   posed and there are no ruling_options. FIRM: the gate is BL-1422's

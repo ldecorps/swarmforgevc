@@ -100,6 +100,38 @@ test('BL-1588/BL-654 invariant: one fork on a quiet host keeps the strict base; 
   );
 });
 
+// BL-1606's declared invariant 1 (property authorship rests with the
+// coder, first pass - BL-654): "The property lane's per-test budget never
+// resolves below the base the test declares, at any published fork count
+// and any load: a lane-level ceiling caps growth, never the base." The
+// test above only ever drove BASE_MS=20000 (fixed) - a base at or above
+// the shared UNIT_LANE_BUDGET_CEILING_MS (120000) is exactly the state
+// that test never covered, and exactly the state BL-1606 found broken
+// (240000's base, once factor >= 1, clamped to the FIXED 120000 ceiling
+// propertyLaneTimeoutMs passed through unmodified - half the declared
+// budget). This generalizes the "never below base" half of the invariant
+// across the whole base range BL-1596's census actually uses.
+//
+// Non-vacuity, proven by hand: reverted propertyLaneTimeoutMs to call
+// resolveUnitLaneTimeout without a ceilingMs override (the pre-fix shape)
+// - this property failed immediately for a base at or above 120000 with
+// forks/load producing factor >= 1 (e.g. base=240000, forks=9). Restored
+// and reconfirmed green.
+test('BL-1606 invariant 1: the budget never resolves below the base, for every base 20000-300000 and every fork count 1-64', () => {
+  fc.assert(
+    fc.property(
+      fc.integer({ min: 20000, max: 300000 }),
+      fc.integer({ min: 1, max: 64 }),
+      fc.float({ min: 0, max: 100, noNaN: true }),
+      (base, forks, load) => {
+        const ms = propertyLaneTimeoutMs(base, { forksFn: () => forks, loadavg1mFn: () => load });
+        assert.ok(ms >= base, `base=${base}, forks=${forks}, load=${load} resolved below base: ${ms}`);
+      }
+    ),
+    { numRuns: 200 },
+  );
+});
+
 // BL-1588 architect bounce (2026-09-16): the property above injects
 // forksFn directly, so it never observes what the REAL
 // vitest.properties.config.mjs -> env-var -> forksFromEnv() wiring
