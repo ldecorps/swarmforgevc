@@ -1,0 +1,22 @@
+# backlog/suite-poles.tsv - BL-1598: the per-file 7000ms duration budget's
+# (BL-378) pole register, in the standing-red register's shape (BL-1428). A
+# row names an OPEN ticket that owns bringing its file back under budget: a
+# file over budget WITH a row here is reported, not refused; a file over
+# budget WITHOUT a row refuses as new-pole; a row whose file now measures
+# under 80% of the budget refuses as stale (the row leaves in the same land
+# that cut the pole); a row naming a closed or absent ticket refuses as
+# unowned. Measured 2026-09-16 (specifier npm test run for BL-791 slice C,
+# 20 cores, 9 forks, 1-minute load 10.8; extension/.vitest-report.json) -
+# never a rounded-down value. Slice D tickets take rows over as they are
+# minted; drain a row by removing it in the same land that cuts its pole.
+#
+# file	ticket	first_seen	measured_ms	note
+extension/test/bl968StepRegistryMaterializedTreeGuard.test.js	BL-791	2026-09-16	69900	BL-791 slice D pole census; cut work not yet minted
+extension/test/telegramFrontDeskBotCli.test.js	BL-791	2026-09-16	65300	BL-791 slice D pole census; cut work not yet minted
+extension/test/renderBriefingBurndownCli.test.js	BL-791	2026-09-16	36600	BL-791 slice D pole census; cut work not yet minted
+extension/test/briefingDigestLineCli.test.js	BL-791	2026-09-16	36300	BL-791 slice D pole census; cut work not yet minted
+extension/test/bl1277UnscopedStepCollisionGuard.test.js	BL-791	2026-09-16	23600	BL-791 slice D pole census; its own 20s unit-lane timeout is separately owned by BL-1600, unrelated to this 7s per-file duration budget
+extension/test/renderBriefingDiagramsCli.test.js	BL-791	2026-09-16	14600	BL-791 slice D pole census; cut work not yet minted
+extension/test/epicReorderBridge.test.js	BL-791	2026-09-16	10600	BL-791 slice D pole census; cut work not yet minted
+extension/test/pilotAcceptanceGateCli.test.js	BL-791	2026-09-16	8500	BL-791 slice D pole census; cut work not yet minted
+extension/test/recordBounceCli.test.js	BL-791	2026-09-16	7300	BL-791 slice D pole census; cut work not yet minted

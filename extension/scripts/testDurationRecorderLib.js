@@ -10,12 +10,22 @@ function listTestFiles(testDir) {
     .sort();
 }
 
-function buildRecord({ finishedAt, testCount, exitCode, durationMs }) {
+// BL-1598: pole_ms/work_ms/new_offenders/budget_verdict come from the
+// per-file budget guard's own run against this same report (see
+// check-suite-file-budget.js's runGuardAgainstReport) - result stays the
+// TEST outcome (pass/fail of the tests themselves), independent of
+// budget_verdict, so a trend reader can tell a failing test from a slow
+// file.
+function buildRecord({ finishedAt, testCount, exitCode, durationMs, poleMs, workMs, newOffenders, budgetVerdict }) {
   return {
     finished_at: finishedAt,
     test_count: testCount,
     result: exitCode === 0 ? 'pass' : 'fail',
     duration_ms: durationMs,
+    pole_ms: poleMs,
+    work_ms: workMs,
+    new_offenders: newOffenders,
+    budget_verdict: budgetVerdict,
   };
 }
 
