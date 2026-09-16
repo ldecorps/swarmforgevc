@@ -28,6 +28,7 @@ const fc = require('fast-check');
 const fs = require('node:fs');
 const path = require('node:path');
 const { execFileSync } = require('node:child_process');
+const { assertReachFloor, runsPerCell } = require('./helpers/reachFloors');
 const {
   REPO_ROOT,
   makeFixture,
@@ -116,6 +117,9 @@ test('BL-1333/BL-654 invariant 1: running the redundancy proof alone never chang
     absent: fc.constant({ tree: {}, ask: ['nowhere.txt'], expected: [] }),
   };
 
+  const SHAPE_KEYS = Object.keys(SHAPES);
+  const SHAPE_CELL_RUNS = runsPerCell(2 * SHAPE_KEYS.length, SHAPE_KEYS.length);
+
   for (const [shape, arbitrary] of Object.entries(SHAPES)) {
     fc.assert(
       fc.property(arbitrary, (caseSpec) => {
@@ -142,10 +146,11 @@ test('BL-1333/BL-654 invariant 1: running the redundancy proof alone never chang
           return true;
         });
       }),
-      { numRuns: 2 },
+      { numRuns: SHAPE_CELL_RUNS },
     );
   }
 
+  assertReachFloor(reach, SHAPE_KEYS, SHAPE_CELL_RUNS, 'shape');
   assert.ok(reach.matches > 0, 'never exercised a tracked path whose content matches origin');
   assert.ok(reach.stagedNew > 0, 'never exercised a staged-new path whose content matches origin');
   assert.ok(reach.differs > 0, 'never exercised a path whose content differs');
@@ -183,6 +188,9 @@ test('BL-1333/BL-654 invariant 2: an unproven path is left as found, still block
       proven: [],
     }),
   };
+
+  const SHAPE_KEYS_2 = Object.keys(SHAPES);
+  const SHAPE_CELL_RUNS_2 = runsPerCell(2 * SHAPE_KEYS_2.length, SHAPE_KEYS_2.length);
 
   for (const [shape, arbitrary] of Object.entries(SHAPES)) {
     fc.assert(
@@ -240,10 +248,11 @@ test('BL-1333/BL-654 invariant 2: an unproven path is left as found, still block
           return true;
         });
       }),
-      { numRuns: 2 },
+      { numRuns: SHAPE_CELL_RUNS_2 },
     );
   }
 
+  assertReachFloor(reach, SHAPE_KEYS_2, SHAPE_CELL_RUNS_2, 'shape');
   assert.ok(reach.mixed > 0, 'never exercised a proven path alongside an unproven one');
   assert.ok(reach.allUnproven > 0, 'never exercised an overlap the proof establishes nothing in');
   assert.ok(reach.unrelatedDirt > 0, 'never exercised dirt outside the overlap');

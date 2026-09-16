@@ -24,6 +24,7 @@ const fs = require('node:fs');
 const path = require('node:path');
 const { execFileSync, spawnSync } = require('node:child_process');
 const { mkTmpDir } = require('./helpers/tmpDir');
+const { assertReachFloor, runsPerCell } = require('./helpers/reachFloors');
 
 const REPO_ROOT = path.join(__dirname, '..', '..');
 const GUARD = path.join(REPO_ROOT, 'swarmforge', 'scripts', 'check_merge_deletion.sh');
@@ -87,52 +88,61 @@ function runGuard(root, message) {
   return { status: r.status, out: `${r.stdout || ''}${r.stderr || ''}` };
 }
 
-const caseArb = fc.record({
-  side: fc.constantFrom('receiving', 'incoming', 'both'),
-  names: fc.boolean(),
-  rel: fc.constantFrom(
-    'specs/pipeline/steps/bl0341ExampleSteps.js',
-    'swarmforge/scripts/bl0341_example_lib.bb',
-    'docs/how-to/BL-0341-example.md',
-  ),
-});
+const relArb = fc.constantFrom(
+  'specs/pipeline/steps/bl0341ExampleSteps.js',
+  'swarmforge/scripts/bl0341_example_lib.bb',
+  'docs/how-to/BL-0341-example.md',
+);
+
+const SIDES = ['receiving', 'incoming', 'both'];
+const NAMES = [true, false];
 
 test('BL-1341/BL-654 invariant: a merge dropping a path EITHER parent carried is refused unless the message names its ticket', () => {
   const reach = { receiving: 0, incoming: 0, both: 0, named: 0, unnamed: 0 };
 
-  // Each side gets its own property run, so "did we test the blind
-  // direction" is settled by construction rather than by a lucky draw.
-  for (const side of ['receiving', 'incoming', 'both']) {
-    fc.assert(
-      fc.property(caseArb, (c) => {
-        const { root } = fixtureWithDroppedPath(side, c.rel);
-        try {
-          reach[side] += 1;
-          if (c.names) reach.named += 1;
-          else reach.unnamed += 1;
+  // BL-1585: side AND names are both reached BY CONSTRUCTION - crossed, one
+  // fc.assert per (side, names) cell with its own floor-sized run budget -
+  // rather than hoped for by drawing `names` independently inside an
+  // already-constructed side loop, which left "named"/"unnamed" to a coin
+  // flip. The per-side draw budget of 6 (18 total) is unchanged; only how it
+  // is spent changes.
+  const CELL_RUNS = runsPerCell(6 * SIDES.length, SIDES.length * NAMES.length);
 
-          const message = c.names ? `${TICKET}: dropping it deliberately` : 'merge, saying nothing';
-          const { status, out } = runGuard(root, message);
+  for (const side of SIDES) {
+    for (const names of NAMES) {
+      fc.assert(
+        fc.property(relArb, (rel) => {
+          const { root } = fixtureWithDroppedPath(side, rel);
+          try {
+            reach[side] += 1;
+            if (names) reach.named += 1;
+            else reach.unnamed += 1;
 
-          if (c.names) {
-            assert.equal(status, 0, `naming the ticket must exempt the removal:\n${out}`);
-          } else {
-            assert.notEqual(status, 0, `a ${side}-side drop was waved through:\n${out}`);
-            assert.ok(out.includes(c.rel), `the refusal does not name the dropped path:\n${out}`);
-            assert.ok(out.includes(TICKET), `the refusal does not name the ticket:\n${out}`);
-            // One finding per path, whichever side(s) it came from.
-            const mentions = out.split('\n').filter((l) => l.includes(c.rel)).length;
-            assert.equal(mentions, 1, `the path is reported ${mentions} times, not once:\n${out}`);
+            const message = names ? `${TICKET}: dropping it deliberately` : 'merge, saying nothing';
+            const { status, out } = runGuard(root, message);
+
+            if (names) {
+              assert.equal(status, 0, `naming the ticket must exempt the removal:\n${out}`);
+            } else {
+              assert.notEqual(status, 0, `a ${side}-side drop was waved through:\n${out}`);
+              assert.ok(out.includes(rel), `the refusal does not name the dropped path:\n${out}`);
+              assert.ok(out.includes(TICKET), `the refusal does not name the ticket:\n${out}`);
+              // One finding per path, whichever side(s) it came from.
+              const mentions = out.split('\n').filter((l) => l.includes(rel)).length;
+              assert.equal(mentions, 1, `the path is reported ${mentions} times, not once:\n${out}`);
+            }
+            return true;
+          } finally {
+            fs.rmSync(root, { recursive: true, force: true });
           }
-          return true;
-        } finally {
-          fs.rmSync(root, { recursive: true, force: true });
-        }
-      }),
-      { numRuns: 6 },
-    );
+        }),
+        { numRuns: CELL_RUNS },
+      );
+    }
   }
 
+  assertReachFloor(reach, SIDES, CELL_RUNS * NAMES.length, 'side');
+  assertReachFloor(reach, ['named', 'unnamed'], CELL_RUNS * SIDES.length, 'names outcome');
   assert.ok(reach.receiving > 0, 'never exercised a receiving-only drop');
   assert.ok(reach.incoming > 0, 'never exercised an incoming-only drop - the blind direction went untested');
   assert.ok(reach.both > 0, 'never exercised a path both sides carried');

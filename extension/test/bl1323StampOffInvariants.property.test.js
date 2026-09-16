@@ -26,6 +26,7 @@ const fs = require('node:fs');
 const path = require('node:path');
 const { execFileSync, spawnSync } = require('node:child_process');
 const { propertyLaneTimeoutMs } = require('./helpers/propertyLaneContentionBudget');
+const { assertReachFloor, runsPerCell } = require('./helpers/reachFloors');
 
 const REPO_ROOT = path.join(__dirname, '..', '..');
 const SCRIPTS = path.join(REPO_ROOT, 'swarmforge', 'scripts');
@@ -156,6 +157,11 @@ test('BL-1323/BL-654 invariant 3: the hint never comes back empty and unlabeled,
       Array.from({ length: n }, (_, i) => `over/cap-${String(i).padStart(2, '0')}.txt`)),
   };
 
+  const SHAPE_KEYS = Object.keys(SHAPES);
+  // BL-1585: the per-shape run count expressed through runsPerCell rather
+  // than a bare literal, budget unchanged (5 per shape).
+  const SHAPE_CELL_RUNS = runsPerCell(5 * SHAPE_KEYS.length, SHAPE_KEYS.length);
+
   for (const [shape, arbitrary] of Object.entries(SHAPES)) {
     fc.assert(
       fc.property(arbitrary, fc.constantFrom('dirty', 'diverged'), (paths, reason) => {
@@ -175,10 +181,11 @@ test('BL-1323/BL-654 invariant 3: the hint never comes back empty and unlabeled,
         }
         return true;
       }),
-      { numRuns: 5 },
+      { numRuns: SHAPE_CELL_RUNS },
     );
   }
 
+  assertReachFloor(reach, SHAPE_KEYS, SHAPE_CELL_RUNS, 'shape');
   assert.ok(reach.empty > 0, 'never exercised an empty overlap - the pre-hotfix failure shape went untested');
   assert.ok(reach.overCap > 0, 'never exercised an over-cap overlap');
   assert.ok(reach.sentinel > 0, 'never exercised the failed-read sentinel');

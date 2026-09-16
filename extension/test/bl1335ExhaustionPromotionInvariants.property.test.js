@@ -26,6 +26,7 @@ const assert = require('node:assert/strict');
 const fc = require('fast-check');
 const path = require('node:path');
 const { spawnSync } = require('node:child_process');
+const { assertReachFloor, runsPerCell } = require('./helpers/reachFloors');
 
 const REPO_ROOT = path.join(__dirname, '..', '..');
 const SCRIPTS = path.join(REPO_ROOT, 'swarmforge', 'scripts');
@@ -80,6 +81,8 @@ test('BL-1335/BL-654 invariant 1: only classified exhaustion opens a record', ()
   const reach = { exhausted: 0, suspected: 0, unrelated: 0 };
 
   const corpora = { exhausted: EXHAUSTED, suspected: SUSPECTED, unrelated: UNRELATED };
+  const CORNER_KEYS = Object.keys(corpora);
+  const CORNER_CELL_RUNS = runsPerCell(5 * CORNER_KEYS.length, CORNER_KEYS.length);
   for (const [corner, corpus] of Object.entries(corpora)) {
     fc.assert(
       fc.property(fc.constantFrom(...corpus), (text) => {
@@ -102,10 +105,11 @@ test('BL-1335/BL-654 invariant 1: only classified exhaustion opens a record', ()
         );
         return true;
       }),
-      { numRuns: 5 },
+      { numRuns: CORNER_CELL_RUNS },
     );
   }
 
+  assertReachFloor(reach, CORNER_KEYS, CORNER_CELL_RUNS, 'corner');
   for (const [corner, count] of Object.entries(reach)) {
     assert.ok(count > 0, `never exercised the ${corner} corner`);
   }
