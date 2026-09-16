@@ -184,3 +184,5 @@ notes: |
   wirings, one sitting), Small (three scenarios, one invariant),
   Testable (the recorded text, the green runs, and scenario 03's
   in-process budget check in seconds - BL-1541).
+
+assigned_to: coder

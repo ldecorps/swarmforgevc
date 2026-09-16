@@ -1,5 +1,28 @@
 # SwarmForge VS Code Extension — Specification
 
+**Last Updated:** September 16, 2026 (BL-1510: a headless renderer,
+`extension/src/tools/render-model-scoring-report.ts`
+(`node extension/out/tools/render-model-scoring-report.js <project-root>
+[--out <path>] [--no-send]`), re-pulls `bb swarmforge/scripts/
+model_steward_cli.bb role-matrix <role> --include-uncertified` for each of
+the steward's seven scored roles (specifier, coder, cleaner, architect,
+hardender, documenter, QA — the coordinator is excluded, the steward does
+not track it as a role-matrix role at all), joins each line against the
+registry JSON the steward CLI itself reads to mark certified models `*`,
+and renders one Markdown table (columns: Role, Model, Score,
+Provider/plan, Evidence) with a footer stating the coordinator's
+exclusion. Domain logic (line parsing, the join, the render) lives in
+`model-scoring-report-core.ts`; flag parsing lives in
+`renderModelScoringReportArgs.ts`, this project's own `*Args.ts`
+convention. By default the rendered file is written under the project's
+`tmp/` and delivered to the operator's Concierge Telegram topic through
+BL-1509's `sendDocument`/`sendReportDocument` — its first live consumer;
+`--no-send` renders and writes only. The report is always re-pulled at
+render time, never a copy of a prior snapshot. Acceptance:
+`specs/features/BL-1510-the-model-scoring-table-reaches-the-operator-as-an-attachment.feature`.
+No registered diagram depicts individual `extension/src/tools/` CLIs, so
+none needed updating.) Prior entry —
+
 **Last Updated:** September 16, 2026 (BL-1584: `swarm_handoff.bb` gains a
 send-time gate, `sampled_reach_floor_guard_lib.bb`, that refuses a
 `git_handoff` whose own parcel ADDS a file under
