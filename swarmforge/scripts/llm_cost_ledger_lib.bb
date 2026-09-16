@@ -51,22 +51,24 @@
 
 
 (defn latest-role-usage-from-context-events
-  "BL-565: reuse GH-22 context-events.jsonl (via context-telemetry-store/read-events!)
-   for the recipient role's latest turn usage before a handoff delivery record
-   is stamped. Returns nil when the log is absent or has no row for the role."
+  "BL-565: reuse GH-22 context-events.jsonl (via context-telemetry-store/
+   latest-event-for-role) for the recipient role's latest turn usage before
+   a handoff delivery record is stamped. BL-1493: the lookup reads the
+   log's tail in successively doubling bounded chunks rather than every
+   row ever recorded - the cost is bounded by the distance to the role's
+   latest row (or the store's tail window cap), never by the file's
+   length. Returns nil when the log is absent, or when role has no row
+   within that window - identical to what an absent log answers, per the
+   ticket's own FIRM constraint."
   [state-dir role]
   (when-not (str/blank? role)
-    (let [events (context-telemetry-store/read-events! (telemetry-dir state-dir))
-          role-events (filter #(= role (:role %)) events)
-          latest (last (sort-by #(.toEpochMilli (java.time.Instant/parse (:timestamp %)))
-                                role-events))]
-      (when latest
-        {:model (:model latest)
-         :provider (:provider latest)
-         :tokens {:inputTokens (:input_tokens latest)
-                  :outputTokens (:output_tokens latest)
-                  :cacheCreationTokens 0
-                  :cacheReadTokens 0}}))))
+    (when-let [latest (context-telemetry-store/latest-event-for-role (telemetry-dir state-dir) role)]
+      {:model (:model latest)
+       :provider (:provider latest)
+       :tokens {:inputTokens (:input_tokens latest)
+                :outputTokens (:output_tokens latest)
+                :cacheCreationTokens 0
+                :cacheReadTokens 0}})))
 
 ;; Allow `bb llm_cost_ledger_lib.bb` to be a no-op load (it is a library).
 (when (= *file* (System/getProperty "babashka.file")) nil)
