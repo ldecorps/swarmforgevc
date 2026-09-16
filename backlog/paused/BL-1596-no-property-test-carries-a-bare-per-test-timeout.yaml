@@ -12,10 +12,12 @@ status: todo
 epic: code-quality-gates
 priority: 12
 direction: swarm-reported
-depends_on: [BL-1588, BL-1592, BL-1595]
+depends_on: [BL-1588, BL-1592, BL-1595, BL-1606]
 # depends_on: BL-1588 lands the helper's fork signal; BL-1592 and BL-1595
 # migrate three of the 81 sites (bl1529's one, telegramFrontDeskBotCli's
-# two) in their own files. This sweep touches
+# two) in their own files; BL-1606 migrates bl968Sensitivity's 240000 site
+# AND closes the helper's ceiling gap this sweep would otherwise carry to
+# every 180000 and 240000 site (amended 2026-09-16, see notes). This sweep touches
 # every other file with a bare site and the guard's real-tree scan must
 # find zero, so it cannot be active alongside any of them (Article 3.2.3).
 mutation_cost: low
@@ -111,8 +113,8 @@ description: |
   - Every bare site migrated to `propertyLaneTimeoutMs(<same literal>)`
     with the file requiring the helper once; the evidence lists every
     migrated site (file, line, base) and the count equals the census the
-    parcel re-runs at its own base commit minus the sites BL-1592 and
-    BL-1595 already migrated (scenario 03).
+    parcel re-runs at its own base commit minus the sites BL-1592,
+    BL-1595 and BL-1606 already migrated (scenario 03).
   - At least 38 property files require the lane budget helper after the
     sweep - 40 expected: the 38 census files plus bl1343 and bl1323 (the
     census pin, BL-1445: a scanner blind to a shape would find zero and
@@ -135,8 +137,8 @@ description: |
     with a site, insert the require after the last top-level require,
     replace each site's literal with `propertyLaneTimeoutMs(<literal>)`,
     re-run the census, expect zero. Files that already require the helper
-    (bl1343, bl1323, and BL-1592's/BL-1595's after they land) get no
-    second require.
+    (bl1343, bl1323, and BL-1592's/BL-1595's/BL-1606's after they land)
+    get no second require.
   - Scenario 01 drives the pure scanner in process; scenario 02 drives
     the real-tree walk and counts files requiring the helper; scenario 03
     reads the evidence. All in seconds (BL-1541); the lane runs are e2e.
@@ -157,11 +159,11 @@ out_of_scope: |
     is its own unowned-red note).
   - The unit lane's bare timeouts (`*.test.js` without `.property.`).
   - Reducing any test's draws or subprocess count.
-  - BL-1592's and BL-1595's files (they land first; the guard finds them
-    already migrated).
+  - BL-1592's, BL-1595's and BL-1606's files (they land first; the guard
+    finds them already migrated).
 
 qa_e2e_procedure: |
-  On the parcel commit, after BL-1588, BL-1592 and BL-1595 are in
+  On the parcel commit, after BL-1588, BL-1592, BL-1595 and BL-1606 are in
   backlog/done/, from `extension/`:
   1. `npx vitest run test/barePerTestTimeoutGuard.test.js` -> green; the
      real-tree case reports zero sites.
@@ -201,5 +203,21 @@ notes: |
   `git diff --stat` and the evidence's site list), Testable (pure scanner
   and real-tree walk in seconds, lane runs in e2e - BL-1541). Severity
   medium, not high: no unowned red exists because of it today.
+
+  AMENDED 2026-09-16 19:30Z by the specifier (BL-1606 mint, same pass as
+  QA's unowned-red note on BL-1598): the helper this sweep routes every
+  site through caps the budget at the SHARED 120000 ms ceiling
+  (effectiveBudgetMs = min(ceiling, base x factor) for factor above 1),
+  which sits below 15 of the 81 bases (2 at 180000, 13 at 240000) and
+  equals 33 more. As the helper stood, the sweep would have HALVED the
+  240000 sites under a busy lane and frozen the 120000 ones, and
+  invariant 1 (quiet host only) would not have seen it. BL-1606 fixes
+  the helper first (the property lane passes its own ceiling through
+  resolveUnitLaneTimeout's ceilingMs option; never below a base, growth
+  for every base; the 20000 and 60000 routes unchanged) and migrates
+  bl968Sensitivity's 240000 site; depends_on gains BL-1606 and the
+  census subtraction names it. No scenario changes: scenario 02's
+  count is 'at least 38' and scenario 03's census is re-run at the
+  parcel's base commit, where bl968's site is already gone.
 
 assigned_to: null
