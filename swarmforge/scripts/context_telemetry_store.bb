@@ -152,3 +152,94 @@
     (if (fs/exists? f)
       (parse-events-tolerant (slurp (str f)))
       {:events [] :torn-tail-line nil})))
+
+;; BL-1493: an 8 MB tail window CAP is about a day of events at the volume
+;; that produced the ticket's own 67 MB / 258 157-row measurement - large
+;; enough that a role delivered to within the last day always resolves,
+;; small enough that the read cost stays bounded regardless of how large
+;; the log has grown since. The actual read starts far smaller than this
+;; (initial-tail-chunk-bytes below) and only grows toward the cap when a
+;; role's row is not found near the tail - the cap bounds the WORST case,
+;; it is never the read size for the common case of a recently-delivered
+;; role.
+(def default-tail-window-bytes (* 8 1024 1024))
+
+;; The first chunk size a lookup tries, before doubling. Small enough that
+;; a role whose latest row is within the last few hundred events - the
+;; common delivery-hop case - resolves in a single read far under 1% of a
+;; multi-megabyte log, per this ticket's own scenario 01 (fewer than 5%
+;; of a 200 000-row log's bytes for a row 50 from the end).
+(def initial-tail-chunk-bytes (* 64 1024))
+
+;; BL-1493 acceptance seam: the read primitive latest-event-for-role calls
+;; for each backward chunk attempt - real RandomAccessFile seek+readFully
+;; in production. The acceptance CLI rebinds this to a byte-counting
+;; wrapper to observe how many bytes a lookup actually pulled from disk,
+;; without duplicating this function's own chunk-growth logic (mirrors
+;; chase_sweep_lib.bb's *read-handoff-file* seam).
+(def ^:dynamic *read-tail-chunk*
+  (fn [raf start len]
+    (let [buf (byte-array len)]
+      (.seek raf start)
+      (.readFully raf buf)
+      buf)))
+
+;; The lines of one read chunk, minus the window's own first line whenever
+;; the chunk does not cover the whole file (start > 0): RandomAccessFile/
+;; seek has no notion of line boundaries, so that line may begin mid-
+;; record - dropped rather than parsed, the same "discard an incomplete
+;; boundary, never guess at it" posture read-events!'s torn-tail handling
+;; already uses, just applied to the chunk's OWN edge instead of the
+;; file's end.
+(defn- usable-chunk-lines [buf start]
+  (let [lines (str/split (String. buf "UTF-8") #"\r?\n")]
+    (if (and (pos? start) (seq lines)) (rest lines) (seq lines))))
+
+;; Scans lines from LAST backward, skipping any NUL-torn or otherwise
+;; unparseable line (BL-1477's shape - the scan continues past it toward
+;; the next older line rather than stopping, so a damaged final line never
+;; hides an earlier intact match), and returns the first (i.e. latest)
+;; one whose :role matches. nil when none of this chunk's lines match.
+(defn- scan-lines-for-role [lines role]
+  (loop [remaining (reverse lines)]
+    (when (seq remaining)
+      (let [cleaned (strip-nul (first remaining))]
+        (if (str/blank? cleaned)
+          (recur (rest remaining))
+          (let [parsed (try (json/parse-string cleaned true) (catch Exception _ nil))]
+            (if (and parsed (= role (:role parsed)))
+              parsed
+              (recur (rest remaining)))))))))
+
+(defn latest-event-for-role
+  "BL-1493: the role's latest event, read from the file's TAIL in
+   successively DOUBLING bounded chunks (RandomAccessFile) rather than a
+   full read-events! parse of every row ever recorded - the cost is the
+   distance from the tail to the role's latest row (or to max-window-
+   bytes, whichever is smaller), never the file's length. A role whose
+   row sits near the tail - the common delivery-hop case - resolves on
+   the FIRST, smallest chunk; the window only grows (doubling, capped at
+   max-window-bytes) when that attempt finds nothing, so total bytes
+   read stay O(distance to the match) rather than O(the cap) for every
+   lookup regardless of where the match actually sits.
+
+   nil when the log is absent, or when role names no row within
+   max-window-bytes of the tail - identical to what an absent log
+   answers today (BL-1493's own FIRM behaviour constraint: outside the
+   window reads exactly like no row at all, never an error)."
+  ([state-dir role] (latest-event-for-role state-dir role default-tail-window-bytes))
+  ([state-dir role max-window-bytes]
+   (let [f (log-file state-dir)]
+     (when (fs/exists? f)
+       (let [file-len (fs/size f)]
+         (when (pos? file-len)
+           (with-open [raf (java.io.RandomAccessFile. (str f) "r")]
+             (loop [chunk (min file-len initial-tail-chunk-bytes max-window-bytes)]
+               (let [start (max 0 (- file-len chunk))
+                     read-len (- file-len start)
+                     buf (*read-tail-chunk* raf start read-len)
+                     found (scan-lines-for-role (usable-chunk-lines buf start) role)]
+                 (cond
+                   found found
+                   (or (zero? start) (>= chunk max-window-bytes)) nil
+                   :else (recur (min max-window-bytes (* chunk 2)))))))))))))
