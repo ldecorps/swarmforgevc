@@ -1,5 +1,30 @@
 # SwarmForge VS Code Extension — Specification
 
+**Last Updated:** September 16, 2026 (BL-1584: `swarm_handoff.bb` gains a
+send-time gate, `sampled_reach_floor_guard_lib.bb`, that refuses a
+`git_handoff` whose own parcel ADDS a file under
+`extension/test/*.property.test.js` classified `sampled-low` — a
+low-budget fast-check draw (`numRuns`/`fc.sample` under the literal 100
+default, or unresolved) that then asserts every arm of its case space was
+reached, the seed-lottery shape behind seven unowned-red tickets in ten
+days (BL-1555, BL-1559, BL-1572, BL-1578, BL-1580, BL-1581). One pure
+classifier (`classify`) is the single source of truth for both the gate
+and the new census CLI (`sampled_reach_floor_census_cli.bb <project-root>`,
+one TSV row per property file plus a per-verdict summary, superseding the
+mint-time greps in `backlog/evidence/BL-1583-sampled-reach-floor-census-20260915.md`).
+Parcel-scoped and added-only: a merely modified file, or a pre-existing
+one the parcel never touched, is at most a `SAMPLED_REACH_FLOOR WARNING:`
+line, never a refusal; fail-open on an unreadable commit, task id, or
+file. `extension/test/helpers/reachFloors.js`'s `runsPerCell` +
+`assertReachFloor` (BL-1062) is the remedy the refusal names. Sweeping the
+108 pre-existing files is explicitly out of scope (BL-1585/1586/1587 and
+the epic's remaining slices), as is per-`fc.assert` classification.
+Mechanics: `swarmforge/handoff-protocol.md` Sampled Reach Floor Send-Time
+Gate section. How-to: `docs/how-to/BL-1584-sampled-reach-floor-send-time-gate.md`.
+No diagram edit — a new send-time refusal check alongside the other
+`swarm_handoff.bb` guards (BL-760, BL-953, BL-1192, BL-1205, BL-1213,
+BL-1240), below handoff-flow.mmd's depicted granularity, same as those.)
+Prior entry —
 **Last Updated:** September 15, 2026 (BL-1509: `telegramClient.ts` gains
 `sendDocument`, the generic sibling of the existing `sendVoiceNote` — the
 same multipart-upload/injectable-postFn/redacted-error shape, posting to

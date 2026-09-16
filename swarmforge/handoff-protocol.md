@@ -1081,6 +1081,94 @@ YYYY-MM-DD date and the reason.
 
 How-to: `docs/how-to/BL-1240-unregistered-test-send-time-gate.md`.
 
+## Sampled Reach Floor Send-Time Gate (BL-1584)
+
+`swarm_handoff.bb` refuses a `git_handoff` whose own parcel ADDS a file
+under `extension/test/*.property.test.js` that draws a low, literal
+fast-check budget and then asserts every arm of its case space was
+reached — a seed lottery, not a real assertion. `extension/test/helpers/reachFloors.js`
+shipped the remedy (`runsPerCell` + `assertReachFloor`, BL-1062) and the
+convention was already in the hardener's and coder's prompts, but until
+this gate nothing at the send chokepoint read the file to enforce it:
+seven unowned-red tickets in ten days (BL-1555, BL-1559, BL-1572,
+BL-1578, BL-1580, BL-1581 and BL-1579's neighbours) shared exactly this
+shape, each costing an Article 4.2 hold on an unrelated parcel, a
+standing-red register row, and a specifier round trip.
+
+Mechanics (`sampled_reach_floor_guard_lib.bb`):
+
+- **One classifier, pure.** `classify` takes a property test file's text
+  and returns `{:verdict :reach-floor? :constructed? :budget :matched}`.
+  `reach-floor?` is true when the text calls `assertReachFloor(` or an
+  `assert(`/`assert.<fn>(` call's own argument text carries one of a
+  pinned `known-phrases` list (`"never reached"`, `"reach floor"`,
+  `"both arms"`, `"were reached"`, ...), case-insensitive. `constructed?`
+  is true when the text calls `runsPerCell(`. `budget` is the smallest
+  literal draw count among the file's fast-check draw sites (`numRuns:
+  <int>` — an `fc.assert`/`fc.check` with none counts as fast-check's
+  default 100 — and `fc.sample(<arb>, <int>)` or its `{numRuns: <int>}`
+  form); `:unresolved` when a draw site's count is not an integer
+  literal, `:none` when the file has no fast-check draw site at all.
+  `verdict` is `no-floor`, `constructed` (floor + `runsPerCell`),
+  `no-draw` (floor, no fast-check draw site — an exhaustive hand loop or
+  a hand RNG the classifier cannot distinguish from real sampling, so it
+  never refuses), `sampled-low` (floor, no `runsPerCell`, budget under
+  100 or unresolved), or `sampled-high` (floor, no `runsPerCell`, literal
+  budget 100 or more). **A comment never matches** — `strip-comments`
+  (string/template-literal-aware, blanks `//` and `/* */` spans) runs
+  first, over the whole file, before every other check; the ticket's own
+  phrase-matching rule already scoped `reach-floor?` to assert-call
+  argument text, but a bare substring search for `runsPerCell(` would
+  otherwise have let a comment (e.g. proving a modified file's shape was
+  unchanged) flip the verdict.
+- **One classifier, two callers, never two notions.** The gate
+  (`findings-for-git-handoff`) and the census CLI
+  (`sampled_reach_floor_census_cli.bb`'s `census-row-for-text`) both call
+  `classify` and nothing else computes a verdict, budget, or construction
+  fact independently (invariant 2, checked directly by property P2b, not
+  trusted by inspection).
+- **Parcel-scoped and added-only** (invariant 1), the same posture as the
+  BL-1240 gate above: a path is `:added` when absent at the received
+  commit (read from the sender's in_process mailbox, the same reader
+  BL-1576's merge-drop guard uses) and present at the forwarded one. Only
+  an `:added` file with verdict `sampled-low` is refused. An `:added`
+  file with verdict `sampled-high` or `no-draw`, or ANY `:modified` file
+  of verdict `sampled-low`/`sampled-high`/`no-draw`, is at most one
+  `SAMPLED_REACH_FLOOR WARNING:` line and the send proceeds — a
+  pre-existing file's shape is not this parcel's fault to fix, so the
+  sweep parcels (BL-1585 onward) and BL-1580/BL-1581 are never refused by
+  this gate.
+- **Fail-open is absolute** (invariant 3), same posture as every other
+  send-time gate in `swarm_handoff.bb`: an unresolvable task id, an
+  unreadable forwarded commit, or an unreadable recorded received commit
+  each warn on stderr and the send proceeds; no recorded received commit
+  at all (an ordinary first-hop parcel) is silent, the same convention
+  the merge-drop guard (BL-1576) and BL-806 already follow. An unreadable
+  file (of the parcel's own added/modified candidates) warns and is
+  skipped, never refused.
+
+Refusal message names the file, the matched assertion text (first 80
+chars), the budget, and the remedy:
+
+```text
+SAMPLED_REACH_FLOOR: Cannot send git_handoff for BL-1584 - this parcel
+adds a property test file that draws a low, literal budget and then
+asserts every arm was reached (BL-1584):
+extension/test/qaProbe.property.test.js (budget 4): "generator never
+reached a". Remedy: runsPerCell(budget, cells) per cell and
+assertReachFloor (extension/test/helpers/reachFloors.js).
+```
+
+Census CLI: `bb swarmforge/scripts/sampled_reach_floor_census_cli.bb
+<project-root>` prints one `file<TAB>verdict<TAB>budget` row per
+`extension/test/*.property.test.js` file (sorted by path) plus a trailing
+`SUMMARY verdict=count ...` line, from the same classifier the gate uses.
+It replaces the mint-time greps recorded in
+`backlog/evidence/BL-1583-sampled-reach-floor-census-20260915.md`; the
+sweep slices' evidence and QA's e2e procedure cite its output directly.
+
+How-to: `docs/how-to/BL-1584-sampled-reach-floor-send-time-gate.md`.
+
 ## Bounce Revert Verification (BL-954)
 
 A bounce requires the bouncing role to remove the bounced commit's content
