@@ -100,6 +100,10 @@ function main() {
     hostRamMB: os.totalmem() / (1024 * 1024),
     defaultCeiling: resolveFreeCoresCeiling(os.cpus().length, os.loadavg()[1]),
   });
+  // BL-1599: decides the work ratchet against SUITE_WORK_BUDGET_MS (the
+  // default buildSuiteWorkVerdict falls back to - never re-passed here,
+  // so a lowered budget in check-suite-duration-budget.ts applies here
+  // with no second edit) on every npm test run - the live consumer.
   const workVerdict = buildSuiteWorkVerdict(workMs, forks, poleMs);
   console.log(formatSuiteWorkVerdict(workVerdict));
   const workExitCode = workVerdict.verdict === 'over-budget' ? 1 : 0;
