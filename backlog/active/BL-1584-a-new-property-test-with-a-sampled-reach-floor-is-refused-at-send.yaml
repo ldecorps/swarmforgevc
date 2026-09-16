@@ -216,3 +216,5 @@ notes: |
   sends in seconds, well inside the BL-1358 ceiling: about 20 bb sends
   per feature run). The census the corpus pins was counted with the greps
   recorded in backlog/evidence/BL-1583-sampled-reach-floor-census-20260915.md.
+
+assigned_to: coder
