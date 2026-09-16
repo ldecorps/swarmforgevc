@@ -168,7 +168,7 @@ qa_e2e_procedure: |
      (`git diff <parcel-commit>~1:extension/backlog/evidence/BL-1278-hardender-20260909.md
      <parcel-commit>:backlog/evidence/BL-1278-hardender-20260909.md` is
      empty, same for the other two).
-  5. `swarmforge/scripts/run_acceptance.sh` on this ticket's feature: 7/7
+  5. `specs/pipeline/scripts/run_acceptance.sh` on this ticket's feature: 7/7
      (outline 01 x2, outline 02 x3, scenarios 03 and 04).
   6. Break-then-restore: remove the `run_guard` line from Tier 1; scenario
      03 fails (the chain no longer names the guard); restore.
