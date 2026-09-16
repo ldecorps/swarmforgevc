@@ -1,0 +1,182 @@
+id: BL-1590
+title: "A chase that rotates the resident is counted as a stall: on a rotation-router pack the chase sweep's poke IS the daemon's own rotate of the resident to the chased role (26 of the 50 chase rows in the 2026-09-15/16 shift coincide within 2 s with a rotation row to that role, cleaner 8 of 17), the chase row does not say so, leanLedgerComposeStall folds it as a stall, and the closing-ceremony packet turns router transport into a 'chase pattern' hypothesis and a raise dial citing stalls for five of six roles - the lean pass dismissed it four shifts running; the chase row names its poke and a rotation composes no stall"
+milestone: M8
+type: defect
+severity: medium
+# medium, not high: the chase ladder and the rotation itself are correct -
+# the fault is a label missing from the telemetry the lean instruments
+# read, contained to the lifecycle ledger and the packet (BL-1551's class).
+# Not low: the closing-ceremony pass is the swarm's one process-health
+# loop, and its top hypothesis and five of six quality-dial rows this
+# shift rest on this row; the only reader it has dismissed it on
+# 2026-09-13, 09-14, 09-15 and 09-16 (evidence files named below).
+status: todo
+epic: lean-aware-coordinator
+priority: 12
+direction: swarm-reported
+depends_on: []
+mutation_cost: low
+# low: one key on the adapter's result map in handoffd.bb and one field on
+# the chase row in chase_sweep_lib.bb (Babashka - no mutation/CRAP/DRY
+# wired, BL-472; gated by chase_sweep_test_runner.bb and the fake-tmux
+# shell tests), one predicate in leanLedgerComposeStall.ts under Stryker,
+# one step-handler file. Runners the feature shells: the departing-mid-
+# parcel gate test measured 4.1 s on this host (BL-1358 ceiling 300 s).
+slice_size_envelope: low
+required_stages: [coder, cleaner, architect, hardender, documenter, qa]
+
+acceptance: specs/features/BL-1590-a-chase-that-rotates-the-resident-is-not-a-stall.feature
+
+# The live consumer already exists and already calls the adapter this
+# ticket changes (chase_sweep_lib.bb apply-inbox-item-action! ->
+# :send-wake-up!, wired in handoffd.bb ~2075 to chase-poke-and-notify!),
+# so a consumer anchor there matches before and after the fix and gates
+# nothing (BL-1235). Handler pin only.
+required_wiring:
+  - 'specs/pipeline/steps/bl1590ChaseRotateIsNotAStallSteps.js::registerSteps::the handler lands in the same parcel as the feature (BL-233, BL-1371)'
+
+human_approval: pending
+approval_context: >
+  A new feature file is authored here, so it needs a tap. No choice is
+  posed and there are no ruling_options. FIRM: a chaser telemetry row of
+  type chase keeps its type, so every reader that counts chases today
+  (BL-098's chase-rate signal, BL-870's attribution, dashboards) is
+  unchanged; the row gains a poke field naming wake or rotate. FIRM: only
+  the lean composition changes - a chase row naming a rotation composes no
+  stall event; a row naming a wake, or a legacy row naming no poke,
+  composes exactly the stall it composes today. FIRM: the chase ladder's
+  decisions, chaseTimeoutSeconds, the busy predicate and the quality-dial
+  logic are untouched. FIRM: ledger rows and packets already on disk are
+  not rewritten. Minted by the specifier as the BL-820 outcome of the
+  2026-09-16 ceremony pass (evidence
+  backlog/evidence/closing-ceremony-2026-09-16-specifier.md).
+
+invariants:
+  - "A chaser telemetry row of type chase whose poke names a rotation never composes a stall event; a chase row naming a wake, or naming no poke, composes exactly the stall event it composes today."
+
+description: |
+  ## What is wrong
+
+  `apply-inbox-item-action!` in `swarmforge/scripts/chase_sweep_lib.bb`
+  (~line 463) handles the ladder's `"chased"` action by calling the
+  `:send-wake-up!` adapter and, when `wake-result->attempted?` is true,
+  writing `{:type "chase" :role :handoffId :count}`. The live adapter
+  (`handoffd.bb` ~2075) is `chase-poke-and-notify!`, whose
+  `chase-poke-plan` has three modes: `:skip`, `:wake` (inject wake text
+  into a live pane) and `:rotate` (`chase-rotate-to!` respawns the
+  mono-router resident AS the chased role). Both `:wake` and `:rotate`
+  return `{:attempted true ...}`; the row cannot tell them apart and
+  carries no field that would.
+
+  Downstream, `extension/src/metrics/leanLedgerComposeStall.ts` folds
+  every row whose type is in `CHASER_ATTENTION_SIGNAL_TYPES` (`chase`,
+  `nudge`, `dead-letter`, `respawn`) into a `stall` event inside the
+  role's ticket window; `computeStalls` in
+  `extension/src/quality/closingCeremony.ts` sums them, `primaryHypotheses`
+  turns the largest into "N chase(s) in <role> this shift - chase
+  pattern", and `noteStallCite` makes every stalled role a `raise` dial
+  citing `stalls`.
+
+  On a rotation-router pack the `:rotate` poke is not somebody having to
+  intervene: it is how a dormant role's mail gets a seat at all whenever
+  the forwarding seat did not rotate itself there (BL-1557's
+  `handoff-forward` covers one recipient; a QA merge-up broadcast has
+  five, a reverse hop copy and a coordinator note have none, and a
+  resident busy on another parcel rotates only when it is done). The
+  rotation itself is already an instrument of its own
+  (`.swarmforge/telemetry/rotation-<month>.jsonl`, reason `rotate`,
+  BL-594), so the stall fold counts one event twice under two names and
+  charges the wait to the chased role's quality.
+
+  ## Census (re-runnable)
+
+  Shift window 2026-09-15T09:00Z..2026-09-16T08:00Z, both files under
+  `.swarmforge/telemetry/`. Chase rows by role
+  (`grep '"type":"chase"' chaser-2026-09.jsonl | <window> | grep -oE
+  '"role":"[A-Za-z]+"' | sort | uniq -c`): cleaner 17, specifier 8,
+  coder 7, QA 6, documenter 5, architect 4, hardender 3 = 50. Rotation
+  rows with `"reason":"rotate"` in the same window: cleaner 13,
+  architect 5, specifier 5, QA 4, hardender 4, documenter 3, coder 2,
+  coordinator 1. Pairing each chase row with a rotation row whose `to`
+  equals the chased role and whose `at` is within 2 s (a 12-line python
+  join over the two files, recorded in the ceremony evidence): 26 of 50
+  - cleaner 8, specifier 5, architect 4, QA 4, documenter 3, coder 2.
+  Four of the shift's eleven cleaner chase events sat on QA merge-up
+  broadcast notes and one on a hardender->cleaner reverse-hop copy, none
+  on work the cleaner could have picked up faster. The daemon log pairs
+  each with a `chase-rotate <role>` line at the same second.
+
+  The packet's reading of it: 2026-09-16 `stalls` cleaner chase 6, coder
+  chase 4, QA nudge 3, architect chase 2, documenter chase 1, QA chase 1;
+  hypothesis "6 chase(s) in cleaner this shift - chase pattern";
+  `qualityRecommendations` raise for architect, cleaner, coder,
+  documenter and QA, each citing only `stalls` (cleaner also the bounce).
+  The specifier's dismissals: `closing-ceremony-2026-09-13-specifier.md`
+  ("Mono-router rotation waits ... Known shape"), `-09-14-` (10 chases,
+  the helper-hunting shape of that day), `-09-15-` ("Rotation boot
+  latency; no ticket"), and this pass.
+
+  ## What is wanted
+
+  - `chase-poke-and-notify!` returns the mode it performed on its result
+    map (`:mode :wake` or `:mode :rotate`) beside `:attempted`/`:landed`.
+  - `apply-inbox-item-action!` writes that mode on the chase row as
+    `:poke "wake"` / `:poke "rotate"`. A legacy boolean result (every
+    existing fake adapter) writes the row exactly as today, no `poke`.
+  - `leanLedgerComposeStall.ts`: a `chase` row whose `poke` is `rotate`
+    composes no stall event; a row with `poke` `wake` or with no `poke`
+    composes as today. `chase` stays in `CHASER_ATTENTION_SIGNAL_TYPES`
+    and the unrecognised-type report stays empty.
+  - `docs/reference/BL-819-ticket-lifecycle-ledger.md`'s attention-signal
+    paragraph says which chase rows count and why (documenter).
+
+  ## How (direction, not mandate)
+
+  - BL-1505 already made the adapter's result a map and
+    `wake-result->attempted?` the only reader of its shape; add the mode
+    there and a sibling reader, keep `chase_sweep_lib.bb` agent-agnostic
+    (BL-208). `chase_sweep_test_runner.bb`'s `:send-wake-up!` stub returns
+    the map each case needs. The composer and its unrecognised-type report
+    are Vitest over fixture JSONL (the BL-918/BL-923/BL-1551 seams).
+  - Scenario 03's case 08 lands in
+    `swarmforge/scripts/test/test_chase_departing_mid_parcel_gate.sh`,
+    whose cases 02 and 04 already drive a real chase rotate through
+    handoffd.bb with a fake tmux and read the telemetry file; the handler
+    runs that test and parses its PASS lines.
+
+  ## Not in scope
+
+  - The respawn rung's label (BL-1551 owns it), the wake-attribution log
+    (BL-870), chaseTimeoutSeconds, or when the ladder decides to chase.
+  - BL-098's circuit-breaker chase rate and the quality-dial arithmetic.
+  - Rewriting ledger rows or ceremony packets already on disk.
+
+notes: |
+  Minted 2026-09-16 by the specifier as the BL-820 outcome for the
+  2026-09-16 ceremony pass (`process_ticket`, this id). Epic BL-818's
+  decomposes_into gains this id in the same commit. Sibling by shape:
+  BL-1551 (a skipped respawn is not a respawn) - same adapter, next rung
+  up the ladder; the two do not overlap and neither depends on the other.
+  Grep BL-1551, BL-1505, BL-918 before minting anything about chaser
+  telemetry labels.
+
+qa_e2e_procedure: |
+  On the parcel commit, from the repo root after `npm run compile` in
+  `extension/`. Fixture roots per BL-1390: `git init` under mkdtemp,
+  proven with `git rev-parse --git-common-dir` before anything else.
+  1. `bb swarmforge/scripts/test/chase_sweep_test_runner.bb` - ALL PASS,
+     including the three result shapes of scenario 01.
+  2. `bash swarmforge/scripts/test/test_chase_departing_mid_parcel_gate.sh`
+     - ALL PASS with case 08 in its PASS lines; the telemetry row it
+     asserts carries `"poke":"rotate"`.
+  3. Under `extension/`: `npx vitest run leanLedgerComposeStall
+     closingCeremony` - ALL PASS; a rotate-poked chase row composes no
+     stall and is not reported as unrecognised.
+  4. `swarmforge/scripts/run_acceptance.sh` on this ticket's feature:
+     7/7 (two outlines x3, one scenario).
+  5. Live check, read-only: seed a fixture chaser file with one
+     `"poke":"rotate"` chase row and one `"poke":"wake"` row inside a
+     role window and run `node extension/out/tools/lean-ledger-record.js`
+     for that ticket; the ledger gains exactly one chase stall.
+  6. Break-then-restore: drop the composer's poke predicate; scenario 02
+     row 1 fails on "0 stall events"; restore.
