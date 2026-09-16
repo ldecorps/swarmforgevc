@@ -25,7 +25,7 @@ import { defineConfig } from 'vitest/config';
 // uses (this config is ESM, the budget module is CommonJS).
 const require = createRequire(import.meta.url);
 const { PER_WORKER_HEAP_MB, resolveVitestWorkerPool, resolveFreeCoresCeiling } = require('./out/tools/vitest-worker-memory-budget');
-const { FORKS_ENV_KEY } = require('./test/helpers/propertyLaneContentionBudget');
+const { FORKS_ENV_KEY, resolveLaneForks } = require('./test/helpers/propertyLaneContentionBudget');
 // BL-935: the SAME single pool-resolution route as vitest.config.mjs - the
 // second required call site named by this ticket's own required_wiring, and
 // historically the easy one to miss a fix in. Both lanes now call the one
@@ -49,17 +49,30 @@ const WORKER_POOL_SIZE = resolveVitestWorkerPool({
   defaultCeiling: resolveFreeCoresCeiling(os.cpus().length, os.loadavg()[1]),
 });
 
-// BL-1588: publish the lane's own resolved fork ceiling to every worker
-// BEFORE any fork spawns, so a fixture-spawning file's own per-test budget
-// call (propertyLaneTimeoutMs, inside a worker) can fold the lane's actual
-// concurrency in alongside the 1-minute load average, which lags the
-// lane's own ramp by up to a minute (see propertyLaneContentionBudget.js).
-// Forks are spawned as child processes of this process, so they inherit
-// process.env as set here. BL-932 invariant 1 (bl932SharedHeavyTimeoutInvariants
-// .property.test.js) fixes this config's own suite-wide `testTimeout` at the
-// literal 20000ms below - the budget stays PER-TEST headroom on the fixture-
-// spawning files themselves, never a lane-wide raise here.
-process.env[FORKS_ENV_KEY] = String(WORKER_POOL_SIZE);
+// BL-1588: publish the lane's own concurrency signal to every worker BEFORE
+// any fork spawns, so a fixture-spawning file's own per-test budget call
+// (propertyLaneTimeoutMs, inside a worker) can fold it in alongside the
+// 1-minute load average, which lags the lane's own ramp by up to a minute
+// (see propertyLaneContentionBudget.js). Forks are spawned as child
+// processes of this process, so they inherit process.env as set here.
+// BL-932 invariant 1 (bl932SharedHeavyTimeoutInvariants.property.test.js)
+// fixes this config's own suite-wide `testTimeout` at the literal 20000ms
+// below - the budget stays PER-TEST headroom on the fixture-spawning files
+// themselves, never a lane-wide raise here.
+//
+// Architect bounce (2026-09-16): WORKER_POOL_SIZE alone is the lane's
+// static pool CEILING, sized from host RAM/cores - identical whether this
+// invocation targets 408 files or 1, so publishing it unconditionally
+// violated invariant 1 on any host with enough free capacity (a genuinely
+// solo run on a 20-core host resolved a 3x budget). resolveLaneForks reads
+// process.argv (the number of explicit test-file arguments on this
+// invocation, known before any fork spawns, same as WORKER_POOL_SIZE
+// itself) and forces forks=1 whenever exactly one file was named - the one
+// shape indistinguishable from a truly solo run - and only uses the pool
+// ceiling when the invocation could actually run more than one file
+// concurrently (0 explicit files, the full lane's own glob, or >1 named
+// together).
+process.env[FORKS_ENV_KEY] = String(resolveLaneForks(process.argv, WORKER_POOL_SIZE));
 
 export default defineConfig({
   test: {
