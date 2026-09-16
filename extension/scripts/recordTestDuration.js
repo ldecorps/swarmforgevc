@@ -19,13 +19,16 @@
 // occur, since that is the more urgent signal.
 //
 // BL-1598: the guard now reads backlog/suite-poles.tsv, the committed pole
-// register, so it refuses only a NEW offender, a stale row (a file that no
-// longer needs one) or an unowned row (naming a closed/absent ticket) - a
-// file over budget WITH an open, un-stale row is reported, not refused.
-// Called in-process via runGuardAgainstReport (the same decision
-// check-suite-file-budget.ts's own standalone CLI makes) rather than
-// spawned a second time, so this script and a human running the CLI
-// directly never compute two different answers.
+// register, so it refuses only a NEW offender at or above 1.5x budget or an
+// unowned row (naming a closed/absent ticket); a watch file (unregistered,
+// over budget but under 1.5x) and a stale row (a registered file now well
+// under budget) are reported on every run, never refused - a snapshot gate
+// that refuses on ordinary host-load jitter is red on day one (amended
+// 2026-09-16, BL-445's own documented shape). Called in-process via
+// runGuardAgainstReport (the same decision check-suite-file-budget.ts's own
+// standalone CLI makes) rather than spawned a second time, so this script
+// and a human running the CLI directly never compute two different
+// answers.
 //
 // test_count is the number of test FILES executed, not individual test()
 // cases - a stable, cheap proxy. Counting individual cases would mean
@@ -66,7 +69,7 @@ function main() {
   // lives in this process and this run is itself trying to cut overhead.
   console.log(formatSuiteBudgetVerdict(buildSuiteBudgetVerdict(durationMs)));
 
-  let guardVerdict = { passed: true, verdict: 'ok', offenders: [], staleRows: [], unownedRows: [], registeredPoles: [] };
+  let guardVerdict = { passed: true, verdict: 'ok', offenders: [], watchFiles: [], staleRows: [], unownedRows: [], registeredPoles: [] };
   let poleMs = 0;
   let workMs = 0;
   if (fs.existsSync(REPORT_PATH)) {
@@ -88,6 +91,7 @@ function main() {
       poleMs,
       workMs,
       newOffenders: guardVerdict.offenders.length,
+      watchFiles: guardVerdict.watchFiles.length,
       budgetVerdict: guardVerdict.verdict,
     })
   );

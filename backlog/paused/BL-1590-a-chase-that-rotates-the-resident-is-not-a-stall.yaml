@@ -172,7 +172,7 @@ qa_e2e_procedure: |
   3. Under `extension/`: `npx vitest run leanLedgerComposeStall
      closingCeremony` - ALL PASS; a rotate-poked chase row composes no
      stall and is not reported as unrecognised.
-  4. `swarmforge/scripts/run_acceptance.sh` on this ticket's feature:
+  4. `specs/pipeline/scripts/run_acceptance.sh` on this ticket's feature:
      7/7 (two outlines x3, one scenario).
   5. Live check, read-only: seed a fixture chaser file with one
      `"poke":"rotate"` chase row and one `"poke":"wake"` row inside a

@@ -15,6 +15,7 @@ const {
   formatGuardReport,
   printGuardReport,
   PER_FILE_DURATION_BUDGET_MS,
+  NEW_POLE_REFUSAL_FRACTION,
 } = require('../out/tools/check-suite-file-budget');
 
 const CLI = path.join(__dirname, '..', 'out', 'tools', 'check-suite-file-budget.js');
@@ -50,11 +51,25 @@ test('extractFileDurations returns an empty array for a report with no test file
 
 // ── checkFileDurationBudget (pure) — BL-378's own 3-way decision table ──
 
-// BL-378 no-single-file-bounds-the-suite-01
-test('a file over the budget fails the guard', () => {
-  const result = checkFileDurationBudget([{ file: 'test/slow.test.js', durationMs: 8000 }], 7000);
+// BL-378 no-single-file-bounds-the-suite-01, amended 2026-09-16: an
+// unregistered file refuses only at or above 1.5x budget (a bare breach
+// alone is watch - see the test below).
+test('a file at or above 1.5x the budget fails the guard as a new pole', () => {
+  const result = checkFileDurationBudget([{ file: 'test/slow.test.js', durationMs: 15000 }], 7000);
   assert.equal(result.passed, false);
-  assert.deepEqual(result.offenders, [{ file: 'test/slow.test.js', durationMs: 8000, budgetMs: 7000 }]);
+  assert.equal(result.verdict, 'new-pole');
+  assert.deepEqual(result.offenders, [{ file: 'test/slow.test.js', durationMs: 15000, budgetMs: 7000 }]);
+});
+
+// BL-1598 amendment (2026-09-16): a bare breach of the budget (over budget,
+// but under 1.5x) is reported as watch, never refused - a snapshot gate
+// that refuses on ordinary host-load jitter is red on day one.
+test('a file over budget but under 1.5x is watch, not refused', () => {
+  const result = checkFileDurationBudget([{ file: 'test/slow.test.js', durationMs: 8000 }], 7000);
+  assert.equal(result.passed, true);
+  assert.equal(result.verdict, 'watch');
+  assert.equal(result.offenders.length, 0);
+  assert.deepEqual(result.watchFiles, [{ file: 'test/slow.test.js', durationMs: 8000, budgetMs: 7000, kind: 'watch' }]);
 });
 
 // BL-378 no-single-file-bounds-the-suite-02
@@ -77,18 +92,23 @@ test('a file exactly at the budget passes, not fails', () => {
   assert.equal(result.passed, true);
 });
 
-// BL-378 no-single-file-bounds-the-suite-03
-test('every offender is named, not just the first', () => {
+// BL-378 no-single-file-bounds-the-suite-03, amended 2026-09-16: every
+// new-pole offender (at or above 1.5x budget) is named, not just the
+// first, and a lesser breach (over budget, under 1.5x) sorts into
+// watchFiles instead of offenders.
+test('every new-pole offender is named, not just the first, and a lesser breach is watch', () => {
   const result = checkFileDurationBudget(
     [
       { file: 'test/a.test.js', durationMs: 10 },
-      { file: 'test/slow1.test.js', durationMs: 9000 },
+      { file: 'test/watch1.test.js', durationMs: 9000 },
       { file: 'test/slow2.test.js', durationMs: 12000 },
+      { file: 'test/slow3.test.js', durationMs: 20000 },
     ],
     7000
   );
   assert.equal(result.passed, false);
-  assert.deepEqual(result.offenders.map((o) => o.file), ['test/slow1.test.js', 'test/slow2.test.js']);
+  assert.deepEqual(result.offenders.map((o) => o.file), ['test/slow2.test.js', 'test/slow3.test.js']);
+  assert.deepEqual(result.watchFiles.map((w) => w.file), ['test/watch1.test.js']);
 });
 
 // ── formatBudgetOffenders (pure) ──────────────────────────────────────────
@@ -156,15 +176,28 @@ test('main() passes and reports the file count when every file is within budget'
   assert.match(result.stdout, /suite file budget OK: 1 files/);
 });
 
-test('main() fails and names the offender when a file exceeds the budget', async () => {
+test('main() fails and names the offender when a file is at or above 1.5x the budget', async () => {
   const root = mkTmp();
-  const reportPath = writeReport(root, [{ name: 'test/slow.test.js', startTime: 0, endTime: PER_FILE_DURATION_BUDGET_MS + 1000 }]);
+  const reportPath = writeReport(root, [
+    { name: 'test/slow.test.js', startTime: 0, endTime: Math.ceil(PER_FILE_DURATION_BUDGET_MS * NEW_POLE_REFUSAL_FRACTION) },
+  ]);
 
   const result = await runCli([reportPath]);
 
   assert.equal(result.exitCode, 1);
   assert.match(result.stderr, /test\/slow\.test\.js/);
   assert.match(result.stderr, /budget/);
+});
+
+test('main() passes but reports watch when a file is over budget but under 1.5x', async () => {
+  const root = mkTmp();
+  const reportPath = writeReport(root, [{ name: 'test/slow.test.js', startTime: 0, endTime: PER_FILE_DURATION_BUDGET_MS + 1000 }]);
+
+  const result = await runCli([reportPath]);
+
+  assert.equal(result.exitCode, undefined);
+  assert.match(result.stdout, /watch/);
+  assert.match(result.stdout, /test\/slow\.test\.js/);
 });
 
 test('main() with no report path argument prints usage and fails, never a crash', async () => {
@@ -186,9 +219,11 @@ test('the compiled CLI runs standalone as a subprocess and produces the same res
   assert.match(output, /suite file budget OK: 1 files/);
 });
 
-test('the compiled CLI exits non-zero as a subprocess when a file exceeds the budget', () => {
+test('the compiled CLI exits non-zero as a subprocess when a file is at or above 1.5x the budget', () => {
   const root = mkTmp();
-  const reportPath = writeReport(root, [{ name: 'test/slow.test.js', startTime: 0, endTime: PER_FILE_DURATION_BUDGET_MS + 1000 }]);
+  const reportPath = writeReport(root, [
+    { name: 'test/slow.test.js', startTime: 0, endTime: Math.ceil(PER_FILE_DURATION_BUDGET_MS * NEW_POLE_REFUSAL_FRACTION) },
+  ]);
 
   assert.throws(() => execFileSync('node', [CLI, reportPath], { encoding: 'utf8', stdio: ['ignore', 'ignore', 'pipe'] }));
 });
@@ -315,13 +350,13 @@ test('a registered pole (open ticket, over budget) is NOT an offender and report
   assert.deepEqual(result.registeredPoles, [{ file: 'f.test.js', durationMs: 9000, budgetMs: 7000, kind: 'ok', ticket: 'BL-1' }]);
 });
 
-test('a row whose file now measures under 80% of budget is a stale-row refusal', () => {
+test('a row whose file now measures under 80% of budget is reported, not refused (stale-row is watch-band, not a failure)', () => {
   const durations = [{ file: 'f.test.js', durationMs: 5000 }]; // 5000 < 0.8*7000=5600
   const register = [{ file: 'f.test.js', ticket: 'BL-1', firstSeen: '2026-01-01', measuredMs: 9000, note: '' }];
 
   const result = checkFileDurationBudget(durations, 7000, register, OPEN);
 
-  assert.equal(result.passed, false);
+  assert.equal(result.passed, true);
   assert.equal(result.verdict, 'stale-row');
   assert.deepEqual(result.staleRows, [{ file: 'f.test.js', durationMs: 5000, budgetMs: 7000, kind: 'stale-row', ticket: 'BL-1' }]);
   assert.equal(result.registeredPoles.length, 0);
@@ -386,7 +421,7 @@ test('a registered (open, owned) row whose file did not run this time is silentl
 
 test('verdict priority: new-pole beats unowned-row and stale-row when several kinds occur together', () => {
   const durations = [
-    { file: 'new.test.js', durationMs: 9000 }, // no row - new-pole
+    { file: 'new.test.js', durationMs: 11000 }, // no row, >= 1.5x budget - new-pole
     { file: 'unowned.test.js', durationMs: 9000 },
     { file: 'stale.test.js', durationMs: 5000 },
   ];
@@ -425,6 +460,7 @@ test('formatGuardReport: an all-clean result produces no info and no failure lin
     passed: true,
     verdict: 'ok',
     offenders: [],
+    watchFiles: [],
     staleRows: [],
     unownedRows: [],
     registeredPoles: [],
@@ -438,6 +474,7 @@ test('formatGuardReport: a registered pole produces exactly one info line naming
     passed: true,
     verdict: 'ok',
     offenders: [],
+    watchFiles: [],
     staleRows: [],
     unownedRows: [],
     registeredPoles: [{ file: 'f.test.js', durationMs: 9000, budgetMs: 7000, kind: 'ok', ticket: 'BL-1' }],
@@ -448,22 +485,24 @@ test('formatGuardReport: a registered pole produces exactly one info line naming
   assert.deepEqual(failureLines, []);
 });
 
-test('formatGuardReport: offenders, stale rows and unowned rows each produce their OWN failure line, all three present at once', () => {
-  const { failureLines } = formatGuardReport({
+test('formatGuardReport: offenders and unowned rows each produce their OWN failure line; stale rows are reported (info), not a failure', () => {
+  const { infoLines, failureLines } = formatGuardReport({
     passed: false,
     verdict: 'new-pole',
     offenders: [{ file: 'new.test.js', durationMs: 9000, budgetMs: 7000 }],
+    watchFiles: [],
     staleRows: [{ file: 'stale.test.js', durationMs: 5000, budgetMs: 7000, kind: 'stale-row', ticket: 'BL-1' }],
     unownedRows: [{ file: 'unowned.test.js', durationMs: 9000, budgetMs: 7000, kind: 'unowned-row', ticket: 'BL-999' }],
     registeredPoles: [],
   });
-  assert.equal(failureLines.length, 3);
+  assert.equal(failureLines.length, 2);
   assert.match(failureLines[0], /new-pole offender/);
   assert.match(failureLines[0], /new\.test\.js/);
-  assert.match(failureLines[1], /stale register row/);
-  assert.match(failureLines[1], /stale\.test\.js/);
-  assert.match(failureLines[2], /unowned register row/);
-  assert.match(failureLines[2], /unowned\.test\.js: owner BL-999 is not open/);
+  assert.match(failureLines[1], /unowned register row/);
+  assert.match(failureLines[1], /unowned\.test\.js: owner BL-999 is not open/);
+  assert.equal(infoLines.length, 1);
+  assert.match(infoLines[0], /stale register row/);
+  assert.match(infoLines[0], /stale\.test\.js/);
 });
 
 test('formatGuardReport: multiple unowned rows are newline-joined, one per line, not glued together', () => {
@@ -471,6 +510,7 @@ test('formatGuardReport: multiple unowned rows are newline-joined, one per line,
     passed: false,
     verdict: 'unowned-row',
     offenders: [],
+    watchFiles: [],
     staleRows: [],
     unownedRows: [
       { file: 'a.test.js', durationMs: 9000, budgetMs: 7000, kind: 'unowned-row', ticket: 'BL-1' },
@@ -507,7 +547,7 @@ function captureConsoleAndStderr(fn) {
 test('printGuardReport prints the OK summary line (with the real fileCount and budget seconds) when passed', () => {
   const { stdout, stderr } = captureConsoleAndStderr(() => {
     printGuardReport(
-      { passed: true, verdict: 'ok', offenders: [], staleRows: [], unownedRows: [], registeredPoles: [] },
+      { passed: true, verdict: 'ok', offenders: [], watchFiles: [], staleRows: [], unownedRows: [], registeredPoles: [] },
       3
     );
   });
@@ -522,6 +562,7 @@ test('printGuardReport prints the registered-pole info line even on a passing ru
         passed: true,
         verdict: 'ok',
         offenders: [],
+        watchFiles: [],
         staleRows: [],
         unownedRows: [],
         registeredPoles: [{ file: 'f.test.js', durationMs: 9000, budgetMs: 7000, kind: 'ok', ticket: 'BL-1' }],
@@ -539,7 +580,11 @@ test('printGuardReport on failure writes every failure line to stderr, newline-j
       {
         passed: false,
         verdict: 'new-pole',
-        offenders: [{ file: 'a.test.js', durationMs: 9000, budgetMs: 7000 }],
+        offenders: [
+          { file: 'a.test.js', durationMs: 11000, budgetMs: 7000 },
+          { file: 'c.test.js', durationMs: 12000, budgetMs: 7000 },
+        ],
+        watchFiles: [],
         staleRows: [{ file: 'b.test.js', durationMs: 5000, budgetMs: 7000, kind: 'stale-row', ticket: 'BL-1' }],
         unownedRows: [],
         registeredPoles: [],
@@ -548,12 +593,14 @@ test('printGuardReport on failure writes every failure line to stderr, newline-j
     );
   });
   assert.match(stderr, /suite file budget exceeded:/);
-  // Precise separator check (not [\s\S]*, which matches '' too): the
-  // offender line's own trailing text is directly followed by a real
-  // newline, then the stale-row section's own leading text - proves
-  // failureLines.join('\n'), never join('') gluing "budget1 stale..." into
-  // one run-on line.
-  assert.match(stderr, /per-file budget\n1 stale register row/);
+  // Precise separator check (not [\s\S]*, which matches '' too): both
+  // offender lines' own trailing text is directly followed by a real
+  // newline - proves formatBudgetOffenders joins with '\n', never ''.
+  assert.match(stderr, /per-file budget\nc\.test\.js/);
+  // Stale rows are reported (info), never a failure line - they print to
+  // stdout via infoLines, not to stderr's failureLines.
+  assert.match(stdout, /stale register row/);
+  assert.doesNotMatch(stderr, /stale register row/);
   assert.doesNotMatch(stdout, /suite file budget OK/);
 });
 
@@ -582,9 +629,9 @@ test('runGuardAgainstReport relativizes an ABSOLUTE report path against the regi
   assert.equal(result.registeredPoles.length, 1);
 });
 
-test('runGuardAgainstReport with no register path behaves exactly like pre-BL-1598 (every over-budget file is a new-pole)', () => {
+test('runGuardAgainstReport with no register path and a file at or above 1.5x budget is a new-pole, same as pre-BL-1598', () => {
   const root = mkTmp();
-  const reportPath = writeReport(root, [{ name: 'test/slow.test.js', startTime: 0, endTime: 9000 }]);
+  const reportPath = writeReport(root, [{ name: 'test/slow.test.js', startTime: 0, endTime: 11000 }]);
 
   const { result } = runGuardAgainstReport(reportPath);
 
@@ -596,7 +643,7 @@ test('runGuardAgainstReport with a register path whose file does not exist yet t
   const root = mkTmp();
   const backlogDir = path.join(root, 'backlog');
   fs.mkdirSync(backlogDir, { recursive: true });
-  const reportPath = writeReport(root, [{ name: 'test/slow.test.js', startTime: 0, endTime: 9000 }]);
+  const reportPath = writeReport(root, [{ name: 'test/slow.test.js', startTime: 0, endTime: 11000 }]);
   const registerPath = path.join(backlogDir, 'suite-poles.tsv'); // never written
 
   const { result } = runGuardAgainstReport(reportPath, registerPath);
