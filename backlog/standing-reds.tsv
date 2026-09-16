@@ -26,7 +26,6 @@
 # register row on (lane, file)). The hardening lane is empty of BL-1441's
 # rows as of this commit (invariant 2: a register row leaves in the same
 # commit that discharges it).
-property	extension/test/bl1030StopFlagTokenBoundary.property.test.js	BL-1589	2026-09-16	QA property-lane run on the BL-1581 parcel (972d70e278): invariant 1 draws each of 60 admissible commands' kind uniformly (no fast-check, own LCG) and asserts refusedCount >= 12; Binomial(60, 1/3) misses the floor in 0.77% of runs (759 of 100000 simulated); owner BL-1589 iterates the 3 kinds with i % 3, runsPerCell(60,3)
 property	extension/test/bl1375ApprovedSiblingsCanLandInvariants.property.test.js	BL-1592	2026-09-16	coder full property-lane run 1 on the BL-1588 tree (2026-09-16 10:12-10:17 UTC, 1-minute load 8.67, 11 forks, 8 red of 408): invariant 1 "Test timed out in 20000ms." at the lane raw ceiling; no per-test budget wired; not among BL-1588 named files; owner BL-1592
 property	extension/test/bl1309LandDecideEntanglementInvariants.property.test.js	BL-1592	2026-09-16	coder full property-lane run 1 on the BL-1588 tree (2026-09-16): invariant 1 "Test timed out in 20000ms." at the lane raw ceiling; no per-test budget wired; not among BL-1588 named files; owner BL-1592
 property	extension/test/bl1389UnlandedSiblingPathNeverRidesInvariants.property.test.js	BL-1592	2026-09-16	coder full property-lane run 1 on the BL-1588 tree (2026-09-16): invariant 1 "Test timed out in 20000ms." at the lane raw ceiling; no per-test budget wired; not among BL-1588 named files; owner BL-1592
