@@ -1,5 +1,42 @@
 # SwarmForge VS Code Extension — Specification
 
+**Last Updated:** September 16, 2026 (BL-1554: QA's mechanical checklist —
+the straggler check, `qa-sibling-check.js status`, the standing-red
+register CLI, `pre_qa_gate.sh`'s `required_wiring` read, `npm test`,
+`npm run test:properties`, the ticket's acceptance run, and the straggler
+check again — gathered and reported in one call,
+`node extension/out/tools/qa-gather.js --ticket <BL-id> [--task <name>]
+[--commit <10-hex>] [--root <path>]`, run from the QA worktree root. Each
+of the eight checks runs sequentially (never overlapping the unit or
+property lane) as the EXISTING owner CLI or npm script through one
+injected runner seam — never a reimplementation of what a check verifies
+— and is reported as one row: `id`, `command`, `cwd`, `status`
+(`ran`/`blocked`), `exit`, `duration_ms`, `excerpt`, and a `reason` when
+blocked (a check that cannot start, e.g. `wiring` with no `--task`, is
+reported blocked, never omitted). A `register_join` section then names
+every failing test file the unit/property/acceptance output named as
+`owned` (a register row carries this ticket's id), `unowned` (a row names
+a different ticket) or `absent` (no row) — a lookup QA does by hand today,
+turned mechanical. Same FIRM constraint as its own precedent (BL-1554's
+operator intake, echoing BL-1362's `record-review-evidence.js` rationale):
+the tool GATHERS and REPORTS only, never a verdict — no summary judgment
+field, and the exit code is 0 whenever a report printed regardless of what
+any check returned (2 is usage-error only), so QA still reads every row
+and judges pre-existing red against new before recording its own verdict
+through `record-review-evidence.js` (the report's excerpt feeds that
+tool's `## Detail` section, it does not write it). `extension/src/quality/qaGather.ts`
+holds the checklist/runner/register-join logic with no fs/child_process
+import (the dependency-gate's policy-zone rule, BL-259); the impure IO
+lives in `extension/src/metrics/qaGatherAdapter.ts`, which depends on the
+quality module, never the reverse. `swarmforge/roles/QA.prompt` names the
+tool as the way to run the mechanical half of a pass (BL-798, landed in
+this ticket's own mint). Acceptance:
+`specs/features/BL-1554-qa-gathers-its-mechanical-checklist-in-one-call.feature`.
+No how-to page: an internal role-tooling CLI, same documentation precedent
+as its sibling `record-review-evidence.js`/`record-bounce.js` (BL-1362,
+Specification.MD-only, no dedicated page). No diagram depicts QA's
+internal checklist gathering.) Prior entry —
+
 **Last Updated:** September 16, 2026 (BL-1573: `chase_sweep_lib.bb`'s
 dispatch-gap sweep (BL-222) fallback note — sent when `auto-route!` can't
 resolve a HEAD commit and so drafts a soft `note` instead of a
