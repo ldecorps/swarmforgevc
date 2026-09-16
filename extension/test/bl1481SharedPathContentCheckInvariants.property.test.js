@@ -35,6 +35,7 @@ const fs = require('node:fs');
 const path = require('node:path');
 const { execFileSync, spawnSync } = require('node:child_process');
 const { mkTmpDir } = require('./helpers/tmpDir');
+const { assertReachFloor, runsPerCell } = require('./helpers/reachFloors');
 
 const REPO_ROOT = path.join(__dirname, '..', '..');
 const LAND_STEP_LIB = path.join(REPO_ROOT, 'swarmforge', 'scripts', 'land_step_lib.bb');
@@ -151,8 +152,10 @@ const relArb = fc.constantFrom(
 
 test('BL-1481/BL-654 invariant 1: never replays a path carrying a line attributable to a still-blocking sibling', () => {
   const reach = { 'still-blocking-added': 0, 'still-blocking-removed': 0 };
+  const STILL_BLOCKING_SHAPES = ['still-blocking-added', 'still-blocking-removed'];
+  const STILL_BLOCKING_CELL_RUNS = runsPerCell(3 * STILL_BLOCKING_SHAPES.length, STILL_BLOCKING_SHAPES.length);
 
-  for (const shape of ['still-blocking-added', 'still-blocking-removed']) {
+  for (const shape of STILL_BLOCKING_SHAPES) {
     fc.assert(
       fc.property(relArb, (rel) => {
         const root = buildFixture(shape, rel);
@@ -167,13 +170,11 @@ test('BL-1481/BL-654 invariant 1: never replays a path carrying a line attributa
           fs.rmSync(root, { recursive: true, force: true });
         }
       }),
-      { numRuns: 3 },
+      { numRuns: STILL_BLOCKING_CELL_RUNS },
     );
   }
 
-  for (const shape of Object.keys(reach)) {
-    assert.ok(reach[shape] > 0, `never exercised the ${shape} shape`);
-  }
+  assertReachFloor(reach, STILL_BLOCKING_SHAPES, STILL_BLOCKING_CELL_RUNS, 'still-blocking shape');
 });
 
 test('BL-1481/BL-654 invariant 2: a shared path clears when every changed line is the lander\'s own', () => {
@@ -206,6 +207,7 @@ test('BL-1481/BL-654 invariant 2: a shared path clears when every changed line i
 
 test('BL-1481/BL-654 invariant 3: an unreadable content attribution fails closed, never a silent pass, in EVERY shape', () => {
   const reach = Object.fromEntries(SHAPES.map((s) => [s, 0]));
+  const SHAPE_CELL_RUNS = runsPerCell(3 * SHAPES.length, SHAPES.length);
 
   for (const shape of SHAPES) {
     fc.assert(
@@ -228,11 +230,9 @@ test('BL-1481/BL-654 invariant 3: an unreadable content attribution fails closed
           fs.rmSync(root, { recursive: true, force: true });
         }
       }),
-      { numRuns: 3 },
+      { numRuns: SHAPE_CELL_RUNS },
     );
   }
 
-  for (const shape of SHAPES) {
-    assert.ok(reach[shape] > 0, `never exercised the ${shape} shape`);
-  }
+  assertReachFloor(reach, SHAPES, SHAPE_CELL_RUNS, 'content-attribution shape');
 });

@@ -38,6 +38,7 @@ const fs = require('node:fs');
 const path = require('node:path');
 const { execFileSync, spawnSync } = require('node:child_process');
 const { mkTmpDir } = require('./helpers/tmpDir');
+const { assertReachFloor, runsPerCell } = require('./helpers/reachFloors');
 
 const REPO_ROOT = path.join(__dirname, '..', '..');
 const LAND_STEP_LIB = path.join(REPO_ROOT, 'swarmforge', 'scripts', 'land_step_lib.bb');
@@ -164,6 +165,7 @@ const extraPathArb = fc.constantFrom('landing/anchor.txt', 'docs/reference/notes
 
 test('BL-1375/BL-654 invariant 1: a sibling that is not positively approved still blocks, and is named', () => {
   const reach = Object.fromEntries(APPROVAL_SHAPES.map((s) => [s.name, 0]));
+  const APPROVAL_CELL_RUNS = runsPerCell(3 * APPROVAL_SHAPES.length, APPROVAL_SHAPES.length);
 
   for (const shape of APPROVAL_SHAPES) {
     fc.assert(
@@ -203,13 +205,11 @@ test('BL-1375/BL-654 invariant 1: a sibling that is not positively approved stil
           fs.rmSync(root, { recursive: true, force: true });
         }
       }),
-      { numRuns: 3 },
+      { numRuns: APPROVAL_CELL_RUNS },
     );
   }
 
-  for (const shape of APPROVAL_SHAPES) {
-    assert.ok(reach[shape.name] > 0, `never exercised the ${shape.name} approval state`);
-  }
+  assertReachFloor(reach, APPROVAL_SHAPES.map((s) => s.name), APPROVAL_CELL_RUNS, 'approval state');
   assert.ok(
     APPROVAL_SHAPES.some((s) => s.blocks) && APPROVAL_SHAPES.some((s) => !s.blocks),
     'the shape table lost one side of the contrast',
@@ -219,6 +219,7 @@ test('BL-1375/BL-654 invariant 1: a sibling that is not positively approved stil
 test('BL-1375/BL-654 invariant 2: a passenger rides only through a self-consistent replayed tree', () => {
   const approved = APPROVAL_SHAPES.find((s) => s.name === 'approved');
   const reach = { dangling: 0, resolved: 0 };
+  const CONSISTENCY_CELL_RUNS = runsPerCell(2 * 2, 2);
 
   for (const consistent of [false, true]) {
     fc.assert(
@@ -274,12 +275,11 @@ test('BL-1375/BL-654 invariant 2: a passenger rides only through a self-consiste
           fs.rmSync(root, { recursive: true, force: true });
         }
       }),
-      { numRuns: 2 },
+      { numRuns: CONSISTENCY_CELL_RUNS },
     );
   }
 
-  assert.ok(reach.dangling > 0, 'never exercised a dangling passenger line - the BL-1324 corner went untested');
-  assert.ok(reach.resolved > 0, 'never exercised a resolved passenger line - the guard could be refusing everything');
+  assertReachFloor(reach, ['dangling', 'resolved'], CONSISTENCY_CELL_RUNS, 'passenger consistency');
 });
 
 test('BL-1375/BL-654 invariant 3: the replay never reaches outside what the tip actually delivers', () => {
