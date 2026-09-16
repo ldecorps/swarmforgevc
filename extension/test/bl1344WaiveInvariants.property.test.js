@@ -35,6 +35,7 @@ const {
   readStore,
   elapseCooldown,
 } = require('../../specs/pipeline/steps/lib/bl1344WaiveFixture');
+const { assertReachFloor, runsPerCell } = require('./helpers/reachFloors');
 
 const WAIVE_LIB = path.join(SCRIPTS, 'babysitter_waive_lib.bb');
 
@@ -75,34 +76,41 @@ test('BL-1344/BL-654 invariant 1: a waive silences the key it names and nothing 
   // draws would almost never produce a same-class pair, and a class-wide
   // waive would sail through such a property untouched.
   const reach = { sameClass: 0, differentClass: 0 };
+  // BL-1586: the other-class axis is now an outer cell rather than a drawn
+  // value, so "a finding of another class" is reached by construction (2 of
+  // the 3 cells) rather than hoped for by a uniform 3-way draw; budget (6)
+  // unchanged.
+  const OTHER_CLASSES = ['pipeline-code-on-main', 'stuck-parcel', 'daemon-down'];
+  const OTHER_CLASS_CELL_RUNS = runsPerCell(6 * OTHER_CLASSES.length, OTHER_CLASSES.length);
 
-  fc.assert(
-    fc.property(findingKey, sha, fc.constantFrom('pipeline-code-on-main', 'stuck-parcel', 'daemon-down'), (waived, otherSha, otherClass) => {
-      const sameClassKey = `pipeline-code-on-main-${otherSha}`;
-      const differentClassKey = `${otherClass}-${otherSha}`;
-      if (sameClassKey === waived) return true; // the same key is not "another key"
-      reach.sameClass += 1;
-      if (otherClass !== 'pipeline-code-on-main') reach.differentClass += 1;
+  for (const otherClass of OTHER_CLASSES) {
+    fc.assert(
+      fc.property(findingKey, sha, (waived, otherSha) => {
+        const sameClassKey = `pipeline-code-on-main-${otherSha}`;
+        const differentClassKey = `${otherClass}-${otherSha}`;
+        if (sameClassKey === waived) return true; // the same key is not "another key"
+        reach.sameClass += 1;
+        if (otherClass !== 'pipeline-code-on-main') reach.differentClass += 1;
 
-      const findings = [waived, sameClassKey, differentClassKey].map((key) => ({ key, severity: 'CRIT', message: `finding ${key}` }));
-      const [result] = callWaiveLib(
-        `(let [store (babysitter-waive-lib/render-waives
-                       (babysitter-waive-lib/record-waive {} {:key "${waived}" :waived-by "coordinator" :reason "investigated" :waived-at "2026-09-03"}))
-               read (babysitter-waive-lib/parse-waives store)
-               {:keys [to-nudge suppressed store-error]}
-               (babysitter-waive-lib/partition-findings ${ednFindings(findings)} read)]
-           (emit {:to-nudge (mapv :key to-nudge) :suppressed (mapv :key suppressed) :store-error store-error}))`,
-      );
-      assert.deepEqual(result.suppressed, [waived], `a waive suppressed more than the key it names: ${JSON.stringify(result)}`);
-      assert.ok(result['to-nudge'].includes(sameClassKey), 'a later finding of the same class was silenced by another key\'s waive');
-      assert.ok(result['to-nudge'].includes(differentClassKey), 'a finding of another class was silenced');
-      return true;
-    }),
-    { numRuns: 6 },
-  );
+        const findings = [waived, sameClassKey, differentClassKey].map((key) => ({ key, severity: 'CRIT', message: `finding ${key}` }));
+        const [result] = callWaiveLib(
+          `(let [store (babysitter-waive-lib/render-waives
+                         (babysitter-waive-lib/record-waive {} {:key "${waived}" :waived-by "coordinator" :reason "investigated" :waived-at "2026-09-03"}))
+                 read (babysitter-waive-lib/parse-waives store)
+                 {:keys [to-nudge suppressed store-error]}
+                 (babysitter-waive-lib/partition-findings ${ednFindings(findings)} read)]
+             (emit {:to-nudge (mapv :key to-nudge) :suppressed (mapv :key suppressed) :store-error store-error}))`,
+        );
+        assert.deepEqual(result.suppressed, [waived], `a waive suppressed more than the key it names: ${JSON.stringify(result)}`);
+        assert.ok(result['to-nudge'].includes(sameClassKey), 'a later finding of the same class was silenced by another key\'s waive');
+        assert.ok(result['to-nudge'].includes(differentClassKey), 'a finding of another class was silenced');
+        return true;
+      }),
+      { numRuns: OTHER_CLASS_CELL_RUNS },
+    );
+  }
 
-  assert.ok(reach.sameClass > 0, 'never exercised a second finding of the SAME class - the collision that matters');
-  assert.ok(reach.differentClass > 0, 'never exercised a finding of another class');
+  assertReachFloor(reach, ['sameClass', 'differentClass'], 1, 'waive-key collision class');
 }, 120000);
 
 test('BL-1344/BL-654 invariant 2: the sweep never creates, widens or renews a waive', () => {
@@ -152,6 +160,8 @@ test('BL-1344/BL-654 invariant 3: only a positively read waive can suppress anyt
   // entry too incomplete to be accountable. All four must suppress nothing.
   // A weighted draw would let the run pass with the dangerous corner unseen.
   const reach = { unreadable: 0, unparseable: 0, incomplete: 0, empty: 0 };
+  const READ_SHAPES = ['unreadable', 'unparseable', 'incomplete', 'empty'];
+  const READ_SHAPE_CELL_RUNS = runsPerCell(3 * READ_SHAPES.length, READ_SHAPES.length);
 
   const UNREADABLE = '{:ok? false :reason :unreadable}';
   const CASES = {
@@ -184,11 +194,9 @@ test('BL-1344/BL-654 invariant 3: only a positively read waive can suppress anyt
         }
         return true;
       }),
-      { numRuns: 3 },
+      { numRuns: READ_SHAPE_CELL_RUNS },
     );
   }
 
-  for (const [shape, count] of Object.entries(reach)) {
-    assert.ok(count > 0, `never exercised the ${shape} store`);
-  }
+  assertReachFloor(reach, READ_SHAPES, READ_SHAPE_CELL_RUNS, 'unreadable-store shape');
 }, 120000);

@@ -7,6 +7,7 @@ const { startBridge } = require('../out/bridge/bridgeServer');
 const { mkTmpDir } = require('./helpers/tmpDir');
 const { copyLiveScriptClosureInto } = require('./helpers/pinnedRepoFixture');
 const { copySeededRepoInto } = require('./helpers/sharedRepoFixture');
+const { assertReachFloor, runsPerCell } = require('./helpers/reachFloors');
 
 const TOKEN = 'bl687-invariant3-token';
 
@@ -117,8 +118,12 @@ const doneExtraArb = fc.record({
 test(
   'BL-687 property: invariant 3 - active/done content never changes the epic tile list, its order, or the epic-level make-top outcome',
   async () => {
-    let sawSameEpicSlugActiveExtra = false;
-    let sawCrossEpicActiveExtra = false;
+    // BL-1586: the shared/cross epic-slug shape is now an outer cell rather
+    // than a drawn boolean, so both are reached by construction rather than
+    // hoped for by a uniform draw; budget (6) unchanged.
+    const EPIC_SLUG_CELLS = ['sameEpicSlug', 'crossEpicSlug'];
+    const EPIC_SLUG_CELL_RUNS = runsPerCell(6, EPIC_SLUG_CELLS.length);
+    const reach = { sameEpicSlug: 0, crossEpicSlug: 0 };
 
     // Baseline (no active/done extras) is fixed across every property run -
     // one fixture, one bridge session, computed once - since it never
@@ -134,71 +139,74 @@ test(
     const baselineFinalPriorities = { E1: readPriority(baselineRoot, 'paused', 'E1'), E2: readPriority(baselineRoot, 'paused', 'E2') };
     fs.rmSync(baselineRoot, { recursive: true, force: true });
 
-    await fc.assert(
-      fc.asyncProperty(
-        fc.array(activeExtraArb, { minLength: 1, maxLength: 2 }),
-        fc.array(doneExtraArb, { minLength: 0, maxLength: 2 }),
-        async (activeExtras, doneExtras) => {
-          const uniqueActive = [...new Map(activeExtras.map((a) => [a.id, a])).values()];
-          const uniqueDone = [...new Map(doneExtras.map((d) => [d.id, d])).values()];
+    for (const cell of EPIC_SLUG_CELLS) {
+      await fc.assert(
+        fc.asyncProperty(
+          // The first drawn extra's epic-slug shape is forced to this cell's
+          // value; any further extras keep their own drawn shape unchanged.
+          fc
+            .array(activeExtraArb, { minLength: 1, maxLength: 2 })
+            .map((extras) => extras.map((e, i) => (i === 0 ? { ...e, sameEpicSlug: cell === 'sameEpicSlug' } : e))),
+          fc.array(doneExtraArb, { minLength: 0, maxLength: 2 }),
+          async (activeExtras, doneExtras) => {
+            reach[cell] += 1;
+            const uniqueActive = [...new Map(activeExtras.map((a) => [a.id, a])).values()];
+            const uniqueDone = [...new Map(doneExtras.map((d) => [d.id, d])).values()];
 
-          const treatmentRoot = mkFixtureRoot();
-          seedBaseFixture(treatmentRoot);
-          const activeExtraContentBefore = new Map();
-          for (const extra of uniqueActive) {
-            const fields = ['type: feature', `priority: ${extra.priority}`];
-            if (extra.sameEpicSlug) {
-              fields.push('epic: base-slug');
-              sawSameEpicSlugActiveExtra = true;
-            } else {
-              sawCrossEpicActiveExtra = true;
+            const treatmentRoot = mkFixtureRoot();
+            seedBaseFixture(treatmentRoot);
+            const activeExtraContentBefore = new Map();
+            for (const extra of uniqueActive) {
+              const fields = ['type: feature', `priority: ${extra.priority}`];
+              if (extra.sameEpicSlug) {
+                fields.push('epic: base-slug');
+              }
+              writeTicket(treatmentRoot, 'active', extra.id, fields);
+              activeExtraContentBefore.set(extra.id, fs.readFileSync(path.join(treatmentRoot, 'backlog', 'active', `${extra.id}.yaml`), 'utf8'));
             }
-            writeTicket(treatmentRoot, 'active', extra.id, fields);
-            activeExtraContentBefore.set(extra.id, fs.readFileSync(path.join(treatmentRoot, 'backlog', 'active', `${extra.id}.yaml`), 'utf8'));
-          }
-          for (const extra of uniqueDone) {
-            writeTicket(treatmentRoot, 'done', extra.id, ['type: feature', `priority: ${extra.priority}`, 'epic: base-slug']);
-          }
-          commitAll(treatmentRoot, 'seed active/done extras');
+            for (const extra of uniqueDone) {
+              writeTicket(treatmentRoot, 'done', extra.id, ['type: feature', `priority: ${extra.priority}`, 'epic: base-slug']);
+            }
+            commitAll(treatmentRoot, 'seed active/done extras');
 
-          const treatment = await withBridge(treatmentRoot, async (handle) => {
-            const tiles = await fetchTiles(handle);
-            const makeTop = await postMakeTop(handle, 'E1');
-            return { tiles, changed: makeTop.body.changed };
-          });
-          const treatmentFinalPriorities = { E1: readPriority(treatmentRoot, 'paused', 'E1'), E2: readPriority(treatmentRoot, 'paused', 'E2') };
+            const treatment = await withBridge(treatmentRoot, async (handle) => {
+              const tiles = await fetchTiles(handle);
+              const makeTop = await postMakeTop(handle, 'E1');
+              return { tiles, changed: makeTop.body.changed };
+            });
+            const treatmentFinalPriorities = { E1: readPriority(treatmentRoot, 'paused', 'E1'), E2: readPriority(treatmentRoot, 'paused', 'E2') };
 
-          assert.deepEqual(treatment.tiles, baseline.tiles, 'expected the epic tile list/order to be unaffected by active/done content');
-          assert.equal(treatment.changed, baseline.changed, 'expected the make-top verdict to be unaffected');
-          assert.deepEqual(
-            treatmentFinalPriorities,
-            baselineFinalPriorities,
-            'expected the epic-level make-top domination set (BL-672) to be unaffected by active/done content'
-          );
-
-          // The decisive, most sensitive oracle: an active/ file's content
-          // (not merely its presence/folder) must be byte-IDENTICAL after
-          // the epic-tile make-top runs - if active/ ever leaked into the
-          // domination set, a displaced item's `priority:` line would be
-          // rewritten even while the file stayed in backlog/active/, which
-          // the weaker "still exists" check alone would miss entirely.
-          for (const extra of uniqueActive) {
-            const after = fs.readFileSync(path.join(treatmentRoot, 'backlog', 'active', `${extra.id}.yaml`), 'utf8');
-            assert.equal(
-              after,
-              activeExtraContentBefore.get(extra.id),
-              `expected ${extra.id}'s backlog/active/ file to be byte-identical - the epic-tile route must never read OR write active/`
+            assert.deepEqual(treatment.tiles, baseline.tiles, 'expected the epic tile list/order to be unaffected by active/done content');
+            assert.equal(treatment.changed, baseline.changed, 'expected the make-top verdict to be unaffected');
+            assert.deepEqual(
+              treatmentFinalPriorities,
+              baselineFinalPriorities,
+              'expected the epic-level make-top domination set (BL-672) to be unaffected by active/done content'
             );
+
+            // The decisive, most sensitive oracle: an active/ file's content
+            // (not merely its presence/folder) must be byte-IDENTICAL after
+            // the epic-tile make-top runs - if active/ ever leaked into the
+            // domination set, a displaced item's `priority:` line would be
+            // rewritten even while the file stayed in backlog/active/, which
+            // the weaker "still exists" check alone would miss entirely.
+            for (const extra of uniqueActive) {
+              const after = fs.readFileSync(path.join(treatmentRoot, 'backlog', 'active', `${extra.id}.yaml`), 'utf8');
+              assert.equal(
+                after,
+                activeExtraContentBefore.get(extra.id),
+                `expected ${extra.id}'s backlog/active/ file to be byte-identical - the epic-tile route must never read OR write active/`
+              );
+            }
+
+            fs.rmSync(treatmentRoot, { recursive: true, force: true });
           }
+        ),
+        { numRuns: EPIC_SLUG_CELL_RUNS }
+      );
+    }
 
-          fs.rmSync(treatmentRoot, { recursive: true, force: true });
-        }
-      ),
-      { numRuns: 6 }
-    );
-
-    assert.ok(sawSameEpicSlugActiveExtra, "reachability floor: generator never produced an active extra sharing the target epic's own slug");
-    assert.ok(sawCrossEpicActiveExtra, 'reachability floor: generator never produced a cross-epic/epic-less active extra');
+    assertReachFloor(reach, EPIC_SLUG_CELLS, EPIC_SLUG_CELL_RUNS, 'active-extra epic-slug shape');
   },
   60000
 );

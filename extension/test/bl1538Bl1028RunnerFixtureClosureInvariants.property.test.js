@@ -42,7 +42,7 @@ const path = require('node:path');
 const fc = require('fast-check');
 const { spawnSync } = require('node:child_process');
 const { mkSharedTmpDir } = require('./helpers/tmpDir');
-const { assertReachFloor } = require('./helpers/reachFloors');
+const { assertReachFloor, runsPerCell } = require('./helpers/reachFloors');
 
 const EXTENSION_ROOT = path.join(__dirname, '..');
 const REPO_ROOT = path.dirname(EXTENSION_ROOT);
@@ -85,7 +85,9 @@ function copyScriptsTree(dest) {
 }
 
 const DEPTHS = ['at the entry point', 'inside a lib it loads'];
-const DEPTH_FLOOR = 3;
+// BL-1586: the per-cell run count expressed through runsPerCell rather than
+// a bare literal, budget unchanged (3 per depth, 6 total).
+const DEPTH_FLOOR = runsPerCell(DEPTHS.length * 3, DEPTHS.length);
 
 describe('BL-1538 invariant 1: the copy set is derived from the closure, never hand-listed', () => {
   it('copies exactly the closure however the tree gains load-file edges', () => {
@@ -153,6 +155,9 @@ describe('BL-1538 invariant 2: the guard reads what the fixture actually copies,
     // The domain is the closure itself: finite and enumerable, so each
     // member is removed from the ACTUAL copy in turn rather than sampled -
     // a guard keyed to one specific filename would look just as green.
+    // BL-1586: the per-member run count expressed through runsPerCell rather
+    // than a bare literal, budget unchanged (1 per member).
+    const CLOSURE_CELL_RUNS = runsPerCell(closure.length, closure.length);
     for (const member of closure) {
       fc.assert(
         fc.property(fc.constant(member), (removed) => {
@@ -191,9 +196,9 @@ describe('BL-1538 invariant 2: the guard reads what the fixture actually copies,
           }
           return true;
         }),
-        { numRuns: 1 }
+        { numRuns: CLOSURE_CELL_RUNS }
       );
     }
-    assertReachFloor(coverage, closure, 1, 'closure member dropped');
+    assertReachFloor(coverage, closure, CLOSURE_CELL_RUNS, 'closure member dropped');
   });
 });
