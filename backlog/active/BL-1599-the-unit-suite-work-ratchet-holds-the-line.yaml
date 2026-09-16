@@ -154,3 +154,6 @@ abandoned_commits: [c96761faa1]
 # this abandons the flagged historical merge as a known, checked, false
 # positive from concurrent multi-branch history on a shared register
 # file, not from this ticket's own work.
+bounce_count: 1
+bounce_history:
+  - { at: 2026-09-16, by: documenter, blamed: coder, class: behavior, commit: 0e8770c41d, evidence: backlog/evidence/BL-1599-documenter-bounce-20260916.md }
