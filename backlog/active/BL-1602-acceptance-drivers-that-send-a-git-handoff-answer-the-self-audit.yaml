@@ -71,7 +71,7 @@ description: |
   | bl1001DifficultyAwareSeatRoutingSteps.js | BL-1001-difficulty-aware-coder-seat-routing | 6 | yes |
   | bl1004ReworkClaimSteps.js | BL-1004-a-rework-is-claimed-only-by-a-seat-that-can-work-it-safely | 5 | yes |
   | bl1167SameModelSeatRoutingSteps.js | BL-1167-same-model-coder-seats-bypass-tier-routing | 3 | yes |
-  | bl1185WorkNoteMissingTaskHeaderSteps.js | BL-1185-work-note-missing-task-header-defers-hard-seat | 1 | no (asserts the claim, not the send; same class by structure - confirm in the sweep) |
+  | bl1185WorkNoteMissingTaskHeaderSteps.js | BL-1185-work-note-missing-task-header-defers-hard-seat | 1 | no (asserts the claim, not the send; the sweep confirmed a DIFFERENT red - owned by BL-1608 since 2026-09-16, its register row moved there) |
   | bl1317AdaptEffortSteps.js | BL-1317-adapt-tier-effort-from-outcome-signals | 3 | yes |
   | bl606RequiredStagesRoutingSteps.js | BL-606-specifier-declared-required-stages-routing | 13 | yes |
   | bl623RoutingSkipTrailSteps.js | BL-623-routing-skip-trail-records-actual-hop | 6 | yes |
@@ -185,4 +185,16 @@ notes: |
   (helper cases and the population scan in seconds; feature runs in e2e -
   BL-1541).
 
+
+  AMENDED 2026-09-16 19:55Z by the specifier (BL-1608 mint, on the coder's
+  unowned-red note 00_20260916T182510Z_002003): BL-1185's residual failure is
+  a different red (the claim path lost BL-1185's Work-message attribution in
+  BL-1167's land ccc63d8cfd) and is owned by BL-1608. Consequences for
+  this ticket: the register row for BL-1185's feature now names BL-1608 and
+  must NOT leave with this ticket's land - nine rows leave, not ten (the
+  land step replays the register whole, BL-1604: keep the BL-1608 row);
+  scenario 03's 'post-fix green run' for BL-1185 reads green for every
+  audit-class step ('green (audit)' in the evidence, the handler's own
+  reading), with the residual owned by a named open ticket. No feature
+  text changes. Holder (coder) told by note to merge main and re-read.
 assigned_to: coder
