@@ -1458,6 +1458,50 @@ test('BL-1577: sendVoiceNote uses the real fetch-based multipart post when no po
   }
 });
 
+test('BL-1577: answerCallbackQuery via the real fetch-based post still succeeds when the response body is not valid JSON', async () => {
+  // Reaches defaultPost's `catch { json = undefined; }` branch (mutation
+  // hardening run, out/notify/telegramClient.js:41-48): the Stryker report
+  // this test discharges empty-catch-block mutant this branch is unreachable
+  // by every other existing test. `json` is declared with `let json;`
+  // (undefined) before the try, so an explicit `json = undefined` in the
+  // catch is behaviorally identical to an empty catch block - equivalent
+  // mutant, recorded in backlog/evidence/BL-1577-telegramClient-mutation.md.
+  const originalFetch = global.fetch;
+  global.fetch = async () => ({
+    ok: true,
+    status: 200,
+    json: async () => {
+      throw new SyntaxError('Unexpected token in JSON');
+    },
+  });
+  try {
+    const result = await answerCallbackQuery(TOKEN, 'cbq-malformed-json');
+    assert.equal(result.success, true);
+  } finally {
+    global.fetch = originalFetch;
+  }
+});
+
+test('BL-1577: sendVoiceNote via the real fetch-based multipart post still succeeds when the response body is not valid JSON', async () => {
+  // Same equivalent-mutant shape as the answerCallbackQuery test above, for
+  // defaultPostVoice's identical catch block
+  // (out/notify/telegramClient.js:605-612).
+  const originalFetch = global.fetch;
+  global.fetch = async () => ({
+    ok: true,
+    status: 200,
+    json: async () => {
+      throw new SyntaxError('Unexpected token in JSON');
+    },
+  });
+  try {
+    const result = await sendVoiceNote(TOKEN, CHAT_ID, Buffer.from('audio-bytes'));
+    assert.equal(result.success, true);
+  } finally {
+    global.fetch = originalFetch;
+  }
+});
+
 test('BL-1577: createForumTopicWithRateLimitRetry uses the real timer-based wait when none is given', async () => {
   vi.useFakeTimers();
   try {
@@ -1475,6 +1519,22 @@ test('BL-1577: createForumTopicWithRateLimitRetry uses the real timer-based wait
     };
 
     const promise = createForumTopicWithRateLimitRetry(TOKEN, CHAT_ID, 'Approvals', postFn);
+    // Flush microtasks with zero elapsed real time so the retry chain
+    // reaches its defaultWaitMs call without yet advancing past it, then
+    // assert a real timer is actually pending. Coverage of this line alone
+    // does not kill a BlockStatement mutant on defaultWaitMs's body (it
+    // would return `undefined` instead of a Promise, so `await wait(ms)`
+    // resolves immediately and the retry proceeds with no wait at all) -
+    // only an assertion on the scheduled timer itself, before advancing,
+    // can tell "waited" from "didn't wait" (mutation hardening, BL-1577).
+    await vi.advanceTimersByTimeAsync(0);
+    assert.equal(attempts, 1, 'the first (429) attempt must have already happened');
+    assert.equal(
+      vi.getTimerCount(),
+      1,
+      "defaultWaitMs's real setTimeout must be scheduled before the retry fires"
+    );
+
     await vi.advanceTimersByTimeAsync(1000);
     const result = await promise;
 
