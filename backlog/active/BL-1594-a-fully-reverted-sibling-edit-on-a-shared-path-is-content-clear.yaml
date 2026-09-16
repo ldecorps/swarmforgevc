@@ -180,3 +180,11 @@ notes: |
   is the hazard class.
 
 assigned_to: coder
+
+abandoned_commits: [660d785518]
+# 660d785518 is QA's own branch tip cited to land_step_cli.bb; the CLI
+# built a tip-pure replay (a6d4a08fa2, LAND_REPLAY route,
+# ENTANGLED_SIBLING BL-1592/BL-1598) rather than landing the cited commit
+# directly (BL-1241 remedy) - the replay severs descent, so this override
+# is required for task_scope_gate_lib.bb / pre_qa_gate_lib.bb to read the
+# landed commit correctly.
