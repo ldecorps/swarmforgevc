@@ -9,6 +9,7 @@ const fs = require('node:fs');
 const path = require('node:path');
 const { execFileSync, spawnSync } = require('node:child_process');
 const { mkSocketFixtureRoot } = require('./lib/socketFixtureRoot');
+const { sendGitHandoffTwoCall } = require('./lib/sendGitHandoffTwoCall');
 
 const FEATURE =
   'Work notes attribute mutation cost from Work BL message when task header is absent';
@@ -313,7 +314,7 @@ function registerSteps(registry) {
       draft,
       `type: note\nto: ${STAGE}\npriority: 10\nmessage: Work ${PATIENT_SLUG}: read file in backlog/active\n`
     );
-    ctx.emit = spawnSync('bb', [path.join(SCRIPTS_DIR, 'swarm_handoff.bb'), draft], {
+    ctx.emit = sendGitHandoffTwoCall('bb', [path.join(SCRIPTS_DIR, 'swarm_handoff.bb'), draft], {
       cwd: seatDir(ctx.root, 'coordinator'),
       encoding: 'utf8',
       timeout: 60000,
@@ -346,7 +347,7 @@ function registerSteps(registry) {
       draft,
       `type: note\nto: ${STAGE}\npriority: 10\ntask: ${PATIENT_SLUG}\nmessage: Work ${PATIENT_SLUG}\n`
     );
-    const res = spawnSync('bb', [path.join(SCRIPTS_DIR, 'swarm_handoff.bb'), draft], {
+    const res = sendGitHandoffTwoCall('bb', [path.join(SCRIPTS_DIR, 'swarm_handoff.bb'), draft], {
       cwd: seatDir(ctx.root, 'coordinator'),
       encoding: 'utf8',
       timeout: 60000,

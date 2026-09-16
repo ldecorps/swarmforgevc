@@ -167,13 +167,29 @@ task: ${TASK_TICKET}-fixture
 commit: ${CITED_SHORT}
 EOF
 
+# The self-audit challenge (Article 2.3) consumes the FIRST valid invocation
+# of any given git_handoff draft: it prints AUDIT_REQUIRED / HANDOFF_NOT_QUEUED
+# and returns before the send-path gate chain is reached. A real agent
+# answers the challenge by re-invoking with an identical draft, and that is
+# what this driver does (bl1240UnregisteredTestGateCli.sh's own idiom) - the
+# SECOND call is the one whose verdict is reported. If the challenge is not
+# raised (nothing else in the chain refused first), the first call already
+# carries the verdict and stands.
 STDERR_FILE="$ROOT/stderr.txt"
-(
-  cd "$ROOT"
-  PATH="$FAKE_BIN:$PATH" SWARMFORGE_ROLE="$SENDER" \
-    bb "$SWARM_HANDOFF" "$DRAFT"
-) >"$ROOT/stdout.txt" 2>"$STDERR_FILE"
+send_once() {
+  (
+    cd "$ROOT"
+    PATH="$FAKE_BIN:$PATH" SWARMFORGE_ROLE="$SENDER" \
+      bb "$SWARM_HANDOFF" "$DRAFT"
+  ) >"$ROOT/stdout.txt" 2>"$STDERR_FILE"
+}
+
+send_once
 EXIT_CODE=$?
+if grep -q 'AUDIT_REQUIRED' "$ROOT/stdout.txt" "$STDERR_FILE"; then
+  send_once
+  EXIT_CODE=$?
+fi
 
 DELIVERED=false
 if [[ -n "$(find "$CLEANER_WT/.swarmforge/handoffs/inbox/new" -type f 2>/dev/null)" ]] \

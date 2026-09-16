@@ -18,6 +18,7 @@ const { execFileSync, spawnSync } = require('node:child_process');
 // BL-1002/BL-948 gate: this file references a control socket, so fixture
 // roots come from the shared short-base helper, never os.tmpdir().
 const { mkSocketFixtureRoot } = require('./lib/socketFixtureRoot');
+const { sendGitHandoffTwoCall } = require('./lib/sendGitHandoffTwoCall');
 
 const FEATURE = 'BL-983 a parcel addressed to a stage is worked by exactly one of its seats';
 
@@ -66,7 +67,7 @@ function fixtureEnv(root, role) {
 function send(ctx, task, to = STAGE, fromRole = 'specifier') {
   const draft = path.join(seatDir(ctx.root, fromRole), `d-${task}.txt`);
   fs.writeFileSync(draft, `type: git_handoff\nto: ${to}\npriority: 50\ntask: ${task}\ncommit: ${ctx.commit}\n`);
-  const res = spawnSync('bb', [path.join(SCRIPTS_DIR, 'swarm_handoff.bb'), draft], {
+  const res = sendGitHandoffTwoCall('bb', [path.join(SCRIPTS_DIR, 'swarm_handoff.bb'), draft], {
     cwd: seatDir(ctx.root, fromRole),
     encoding: 'utf8',
     timeout: 60000,
@@ -193,7 +194,7 @@ function registerSteps(registry) {
   scoped(/^that seat forwards its work onward$/, (ctx) => {
     const draft = path.join(seatDir(ctx.root, SEAT2), 'fwd.txt');
     fs.writeFileSync(draft, `type: git_handoff\nto: ${NEXT_STAGE}\npriority: 50\ntask: BL-506-x\ncommit: ${ctx.commit}\n`);
-    const res = spawnSync('bb', [path.join(SCRIPTS_DIR, 'swarm_handoff.bb'), draft], {
+    const res = sendGitHandoffTwoCall('bb', [path.join(SCRIPTS_DIR, 'swarm_handoff.bb'), draft], {
       cwd: seatDir(ctx.root, SEAT2),
       encoding: 'utf8',
       timeout: 60000,
