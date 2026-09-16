@@ -27,7 +27,7 @@ required_wiring:
 # already exist and are reached by the launcher's pack_staffing_gate on
 # every launch; a pattern on them matches before and after the fix.
 
-human_approval: pending
+human_approval: approved
 approval_context: >
   A new feature file is authored here, so it needs a tap. No choice is
   posed and there are no ruling_options. FIRM: a `window <role> codex
