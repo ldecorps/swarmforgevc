@@ -19,6 +19,7 @@ const {
   shippedCollisionVerdict,
 } = require('./helpers/stepCollisionGuard');
 const { resolveUnitLaneTimeout } = require('../../specs/pipeline/steps/lib/contentionBudget');
+const { unitLaneHeavyContentionFactor } = require('./helpers/unitLaneContentionBudget');
 
 // A synthetic step file, written to a temp dir and loaded through the real
 // module system - the guard is given exactly what it is given in production
@@ -120,6 +121,6 @@ describe('BL-1277 unscoped step-pattern collision guard', () => {
       assert.equal(verdict.message, '');
       assert.equal(verdict.ok, true);
     },
-    resolveUnitLaneTimeout(20000).effectiveMs
+    resolveUnitLaneTimeout(20000, { factor: unitLaneHeavyContentionFactor() }).effectiveMs
   );
 });
