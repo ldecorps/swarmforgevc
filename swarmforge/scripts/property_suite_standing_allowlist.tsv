@@ -1,6 +1,2 @@
 file	disposition	rationale
-test/bl1375ApprovedSiblingsCanLandInvariants.property.test.js	allowlist	owner BL-1592 (backlog/standing-reds.tsv): invariant 1 "Test timed out in 20000ms." at the lane raw ceiling, no per-test budget wired, not yet fixed as of 2026-09-16
-test/bl1309LandDecideEntanglementInvariants.property.test.js	allowlist	owner BL-1592 (backlog/standing-reds.tsv): invariant 1 "Test timed out in 20000ms." at the lane raw ceiling, no per-test budget wired, not yet fixed as of 2026-09-16
-test/bl1389UnlandedSiblingPathNeverRidesInvariants.property.test.js	allowlist	owner BL-1592 (backlog/standing-reds.tsv): invariant 1 "Test timed out in 20000ms." at the lane raw ceiling, no per-test budget wired, not yet fixed as of 2026-09-16
-test/bl1529ScriptSenderAuditOutcomesInvariant.property.test.js	allowlist	owner BL-1592 (backlog/standing-reds.tsv): "Test timed out in 60000ms." against its own bare 60000 third argument, no lane-level ceiling reaches it, not yet fixed as of 2026-09-16
 test/telegramFrontDeskBotCli.property.test.js	allowlist	owner BL-1595 (backlog/standing-reds.tsv): BL-1203 invariant 2 "Test timed out in 60000ms." under a full lane, bare 60000 per-test argument no lane-level ceiling reaches; row leaves with BL-1595 land

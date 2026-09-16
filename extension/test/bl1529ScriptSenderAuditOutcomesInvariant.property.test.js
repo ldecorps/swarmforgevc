@@ -44,6 +44,7 @@ const path = require('node:path');
 const { execFileSync } = require('node:child_process');
 const { mkTmpDir } = require('./helpers/tmpDir');
 const { assertReachFloor, runsPerCell } = require('./helpers/reachFloors');
+const { propertyLaneTimeoutMs } = require('./helpers/propertyLaneContentionBudget');
 
 const REPO_ROOT = path.join(__dirname, '..', '..');
 const SCRIPTS = path.join(REPO_ROOT, 'swarmforge', 'scripts');
@@ -183,5 +184,5 @@ test(
     assert.ok(reached.failed >= STAGES.length, `generator reach floor (failed): ${reached.failed}`);
     console.log(`BL-1578 reach map (bl1529): ${JSON.stringify({ cells: CELLS.length, minDrawsPerCell: CELL_RUNS })}`);
   },
-  60000
+  propertyLaneTimeoutMs(60000)
 );
