@@ -34,7 +34,7 @@ required_wiring:
 # that makes the helper reachable in the unit lane on every run. The
 # scanner's name is chosen at mint so the literal will exist (BL-874).
 
-human_approval: pending
+human_approval: approved
 approval_context: >
   A new feature file is authored here, so it needs a tap. No choice is
   posed and there are no ruling_options. FIRM: every bare numeric third
