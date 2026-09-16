@@ -87,6 +87,32 @@ export interface RenderAndSendDeps {
   sendReportDocument?: (projectRoot: string, filePath: string, content: string) => Promise<{ success: boolean; reason?: string }>;
 }
 
+interface ResolvedRenderAndSendDeps {
+  runRoleMatrix: (role: string) => string[];
+  readRegistry: () => RegistryEntry[];
+  writeFile: (filePath: string, content: string) => void;
+  sendReportDocument: (projectRoot: string, filePath: string, content: string) => Promise<{ success: boolean; reason?: string }>;
+}
+
+function defaultWriteFile(filePath: string, fileContent: string): void {
+  fs.mkdirSync(path.dirname(filePath), { recursive: true });
+  fs.writeFileSync(filePath, fileContent);
+}
+
+// Split out of renderAndSendReport (cleaner-domain-shaped, done here per the
+// CRAP rule: renderAndSendReport's own default-resolution branches pushed
+// its complexity to 8, over the CRAP=6 threshold even at 100% coverage -
+// complexity alone drives CRAP when coverage is full). Isolating the four
+// `??` fallbacks here keeps each function's own complexity under the cap.
+function resolveRenderAndSendDeps(projectRoot: string, deps: RenderAndSendDeps): ResolvedRenderAndSendDeps {
+  return {
+    runRoleMatrix: deps.runRoleMatrix ?? realRunRoleMatrix(projectRoot),
+    readRegistry: deps.readRegistry ?? (() => realReadRegistry(projectRoot)),
+    writeFile: deps.writeFile ?? defaultWriteFile,
+    sendReportDocument: deps.sendReportDocument ?? realSendReportDocument,
+  };
+}
+
 // The exported, in-process-testable core (scenarios 01-04 drive this
 // directly with injected runners/registry/send function - never a real
 // shell-out or network call in tests).
@@ -95,21 +121,13 @@ export async function renderAndSendReport(
   args: { outPath?: string; send: boolean },
   deps: RenderAndSendDeps = {}
 ): Promise<RenderAndSendOutcome> {
-  const runRoleMatrix = deps.runRoleMatrix ?? realRunRoleMatrix(projectRoot);
-  const readRegistry = deps.readRegistry ?? (() => realReadRegistry(projectRoot));
+  const { runRoleMatrix, readRegistry, writeFile, sendReportDocument } = resolveRenderAndSendDeps(projectRoot, deps);
   const content = renderScoringReport({ runRoleMatrix, readRegistry });
   const outPath = args.outPath ?? path.join(projectRoot, 'tmp', 'model-scoring-report.md');
-  const writeFile =
-    deps.writeFile ??
-    ((filePath: string, fileContent: string) => {
-      fs.mkdirSync(path.dirname(filePath), { recursive: true });
-      fs.writeFileSync(filePath, fileContent);
-    });
   writeFile(outPath, content);
   if (!args.send) {
     return { outPath, sent: false };
   }
-  const sendReportDocument = deps.sendReportDocument ?? realSendReportDocument;
   const result = await sendReportDocument(projectRoot, outPath, content);
   return result.success ? { outPath, sent: true } : { outPath, sent: false, reason: result.reason };
 }
