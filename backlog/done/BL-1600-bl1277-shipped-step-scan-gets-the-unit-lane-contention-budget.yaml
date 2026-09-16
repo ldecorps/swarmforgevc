@@ -104,3 +104,11 @@ notes: |
   scenarios, one invariant), Testable (source check and pure injection).
 
 assigned_to: coder
+
+abandoned_commits: [f6adf3976d]
+# f6adf3976d is QA's own branch tip cited to land_step_cli.bb; the CLI
+# built a tip-pure replay (8a2eea2428, LAND_REPLAY route,
+# ENTANGLED_SIBLING BL-1592) rather than landing the cited commit
+# directly (BL-1241 remedy) - the replay severs descent, so this override
+# is required for task_scope_gate_lib.bb / pre_qa_gate_lib.bb to read the
+# landed commit correctly.
