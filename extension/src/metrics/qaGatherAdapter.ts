@@ -28,25 +28,34 @@ function readIdField(yamlContent: string): string | undefined {
   return undefined;
 }
 
+// Isolated from findYamlInDir below (hardener extraction, BL-1554 CRAP
+// gate: complexity 7 on the un-extracted version, complexity alone) - ONE
+// directory entry's own contribution (recurse into a subdirectory, or
+// check a .yaml file's own id: field), no different in meaning, just out
+// of the recursive walker's own branch count. A helper this small (one
+// entry, one outcome) is still the right size to extract - the walker's
+// job is "which entry, if any, resolves it", not the resolution logic
+// itself.
+function resolveEntry(dir: string, entry: fs.Dirent, ticketId: string): string | undefined {
+  const full = path.join(dir, entry.name);
+  if (entry.isDirectory()) {
+    return findYamlInDir(full, ticketId);
+  }
+  if (!entry.name.endsWith('.yaml')) {
+    return undefined;
+  }
+  const content = fs.readFileSync(full, 'utf8');
+  return readIdField(content) === ticketId ? content : undefined;
+}
+
 function findYamlInDir(dir: string, ticketId: string): string | undefined {
   if (!fs.existsSync(dir)) {
     return undefined;
   }
   for (const entry of fs.readdirSync(dir, { withFileTypes: true })) {
-    const full = path.join(dir, entry.name);
-    if (entry.isDirectory()) {
-      const nested = findYamlInDir(full, ticketId);
-      if (nested) {
-        return nested;
-      }
-      continue;
-    }
-    if (!entry.name.endsWith('.yaml')) {
-      continue;
-    }
-    const content = fs.readFileSync(full, 'utf8');
-    if (readIdField(content) === ticketId) {
-      return content;
+    const found = resolveEntry(dir, entry, ticketId);
+    if (found) {
+      return found;
     }
   }
   return undefined;
