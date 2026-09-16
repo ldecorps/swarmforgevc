@@ -36,7 +36,11 @@
 ;;   awaiting approval, or unreadable) was NOT refused, because the tip's
 ;;   content versus origin/main carries no line attributable to it - the
 ;;   sibling shares the path in history only, not in content, so it rides
-;;   as an ordinary own path rather than escalating.
+;;   as an ordinary own path rather than escalating. BL-1594: the line
+;;   also names WHICH of the two cleared it - "landed" (the sibling's own
+;;   surviving lines already match origin/main under whatever sha put them
+;;   there) or "reverted" (the sibling's own contribution to this path is
+;;   entirely gone at the tip, so the path owes it nothing).
 ;; Exit 1, prints "LAND_ESCALATE" then the reason on the next line: the
 ;;   detection or replay itself could not be completed cleanly (a real
 ;;   conflict, an unreadable range). Per QA.prompt: not a bounce to the
@@ -168,8 +172,9 @@
                       owner (sort owners)]
                 (println (str "EXCLUDED_SIBLING_PATH " path " " owner)))
               (doseq [id (sort (:passengers plan))] (println (str "PASSENGER_SIBLING " id)))
-              (doseq [{:keys [path sibling]} (sort-by (juxt :path :sibling) (:content-clear plan))]
-                (println (str "CONTENT_CLEAR_SIBLING_PATH " path " " sibling)))
+              (doseq [{:keys [path sibling verdict]} (sort-by (juxt :path :sibling) (:content-clear plan))]
+                (println (str "CONTENT_CLEAR_SIBLING_PATH " path " " sibling " "
+                              (if (= :vacuous verdict) "reverted" "landed"))))
               (System/exit 0))
 
             :escalate
