@@ -1,0 +1,199 @@
+id: BL-1610
+title: "BL-1576's merge-drop send gate scans the sender's entire off-main history whenever the received parcel is the coordinator's route git_handoff, whose commit is main's tip at promotion: the coder's BL-1606 send was refused on 2026-09-16 over six cross-role merges from hours earlier whose one-sided resolutions later merges had already superseded, on three paths the forward leaves byte-identical to the received commit; the scan is bounded to merges the sender made since it received the parcel, and a finding on a path the forward leaves identical to the received commit is excused"
+milestone: M8
+type: defect
+severity: high
+# high: a live fault degrading behaviour - every coder parcel routed by a
+# git_handoff is refused at its first send while the coder branch's
+# off-main history holds any superseded one-sided merge (six today);
+# BL-1606 blocked at 19:22Z, BL-1607 is routed the same way.
+status: todo
+epic: swarm-reliability
+priority: 5
+direction: swarm-reported
+depends_on: []
+# BL-1576 is in backlog/done. No open ticket touches
+# merge_drop_guard_lib.bb or review_forward_evidence_gate_lib.bb.
+mutation_cost: low
+# low: Babashka (no mutation/CRAP/DRY wired, BL-472): one gate lib, its
+# bb runner, the dequeue stamp, one feature and handler, evidence.
+slice_size_envelope: low
+required_stages: [coder, cleaner, architect, hardender, documenter, qa]
+
+acceptance: specs/features/BL-1610-the-merge-drop-gate-judges-only-what-the-forward-carries.feature
+
+required_wiring:
+  - 'specs/pipeline/steps/bl1610MergeDropGateJudgesOnlyWhatTheForwardCarriesSteps.js::registerSteps::the handler lands in the same parcel as the feature (BL-233, BL-1371)'
+# No production anchor on purpose (BL-1235): swarm_handoff.bb already
+# calls merge-drop-guard-lib/findings-for-git-handoff, so any pattern on
+# that call matches before and after the fix and gates nothing; the
+# scenarios drive the real gate on a fixture repository instead.
+
+human_approval: pending
+approval_context: >
+  A new feature file is authored here, so it needs a tap. No choice is
+  posed and there are no ruling_options. FIRM: BL-1576's seven scenarios
+  stay green - a merge the sender made since receipt that drops one
+  side's uncontested hunks on a path the forward changes is refused with
+  the same message. FIRM: the scan never names a merge the sender did not
+  make after it received the parcel (invariant 1) and never names a path
+  whose blob at the forwarded commit equals its blob at the received
+  commit (invariant 2) - the gate exists to stop dropped lines RIDING a
+  forward, and neither shape can ride one. FIRM: the coordinator's route
+  git_handoff keeps main's tip as its commit (BL-1213's lineage check
+  needs it); the fix is in what the gate scans, not in what the route
+  says. FIRM: fail-open posture unchanged - an unreadable head or blob
+  warns and sends.
+
+invariants:
+  - "Every merge a finding names is reachable from the forwarded commit and not from the sender's own HEAD at the moment it dequeued the received parcel: a merge the sender did not make after receipt never produces a finding."
+  - "A finding never names a path whose blob at the forwarded commit equals its blob at the received commit."
+
+description: |
+  ## What is wrong
+
+  The coder's BL-1606 send at 19:22Z was refused (coder evidence
+  `.worktrees/coder/backlog/evidence/BL-1606-coder-tree-collapse-block-20260916.md`;
+  the text names BL-1576, the coder's note mislabels it TREE_COLLAPSE):
+  nine findings over six merges - `473f642c38`, `6fd600caef`,
+  `8cbf928cbf`, `32fb5fd439`, `f192c1cc27`, `5fb252fc58` - on
+  `extension/src/tools/check-suite-file-budget.ts`,
+  `extension/test/checkSuiteFileBudgetCli.test.js` and the paused
+  BL-1602 YAML. Two of the six are the coder's own merges, four are
+  cleaner and architect merges that reached the coder branch by
+  cross-merge; all six predate BL-1606's promotion (15:49Z to 17:46Z
+  against a claim at 19:23Z); none is a merge the coder made for this
+  parcel.
+
+  The specifier re-ran the library (`merge-drop-guard-lib/findings-between`)
+  on 2026-09-16 20:30Z: received `3e3b7fd605` (main) to forwarded
+  `f5907751cc` scans 66 merges - the coder branch's whole off-main history
+  (`git rev-list --merges --count main..HEAD` is 66) - and returns the
+  nine findings; received `c948102301` (the architect's tip, BL-1602's
+  parcel) to `6558df2a6f` scans 0 merges, which is why the coder's BL-1602
+  send at 18:28Z passed the same gate. The difference is the received
+  parcel: the coder's in_process item for BL-1606 is the coordinator's
+  route git_handoff `008889` with `commit: b71cedfcf3`, main's tip at
+  promotion, and `received-commit-for-task`
+  (`review_forward_evidence_gate_lib.bb:66-88`, the reader BL-1576
+  reuses) takes its commit header. `git rev-list --merges received..forwarded`
+  from a commit on main is every merge the branch ever made off main. The
+  library's own header promises "never past the received commit, never a
+  merge the sender did not make"; for a main-based received commit the
+  second clause is false.
+
+  The findings are true about those six merges and harmless now: every
+  implicated path's blob at `f5907751cc` equals its blob at `b71cedfcf3`
+  and at the QA tip `cd5f3b5e25` (`git rev-parse <commit>:<path>` agrees),
+  so the forward carries no version of those paths at all - nothing
+  dropped can ride it. BL-1576's only excuse is a `This reverts commit
+  <sha>` body naming an authoring commit, which does not describe a drop
+  a later merge superseded, so the coder had no honest way through.
+
+  ## What is wanted
+
+  - The dequeue stamps the sender's own HEAD onto the in_process parcel
+    (`received_at_head: <10-hex>`, beside `dequeued_at`), and the gate
+    bounds its merge scan to merges reachable from the forwarded commit
+    and not from that head - the merges the sender made since receipt -
+    falling back to today's `received..forwarded` only when the stamp is
+    absent (older parcels), with the fail-open warning (scenario 01 rows
+    1, 2 and 4; invariant 1).
+  - A finding whose path's blob at the forwarded commit equals its blob
+    at the received commit is excused, named in the warning stream as
+    carrying nothing (scenario 01 row 3; invariant 2).
+  - The exact refusal that opened this ticket - received on main, no
+    merge of the sender's since receipt, every implicated path unchanged
+    - is a queue (scenario 02; e2e step 1 re-runs it on the real
+    repository).
+  - BL-1576's feature and its bb runner green unchanged.
+
+  ## How (direction, not mandate)
+
+  - `ready_for_next_task.bb` (and the batch dequeue) call
+    `handoff-lib/set-header!` with `received_at_head` from
+    `handoff-lib/worktree-head-commit-10` at the moment the file moves to
+    in_process; `received_at_head` joins the reserved header set in
+    `swarm_handoff.bb` so no draft can forge it.
+  - `merge_drop_guard_lib.bb` `findings-for-git-handoff` reads the stamp
+    through the same in_process reader BL-806 owns (extend
+    `received-commit-for-task` to return both fields, or add a sibling
+    reader beside it - never a third scan of the box), passes
+    `{:since head}` to `merge-commits`, and filters findings whose
+    `git rev-parse <forwarded>:<path>` equals `<received>:<path>` before
+    `blocked?` sees them - the filter lives in the pure core with the blob
+    ids injected, BL-654-style, so the bb runner covers it.
+  - Scenario 01 drives the real `swarm_handoff.bb` on a fixture
+    repository (BL-1576's own handler fixture: main, coder, sibling; a
+    pre-parcel one-sided merge; then the four rows' shapes). Scenario 02
+    drives `findings-between` (or its successor) with the head and the
+    two commits from a fixture that reproduces the BL-1606 shape. All in
+    seconds (BL-1541).
+  - Documenter: handoff-protocol.md's merge-drop paragraph and the
+    reserved-header list gain `received_at_head`; `docs/diagrams/handoff-flow.mmd`
+    if it draws the dequeue stamps (registry trigger: the handoff file
+    lifecycle - update if drawn).
+
+constraints: >
+  merge_drop_guard_lib.bb, review_forward_evidence_gate_lib.bb (the
+  reader), the dequeue stamp in ready_for_next_task.bb and
+  ready_for_next_batch.bb, swarm_handoff.bb's reserved-header set, the
+  bb runner, the feature and handler, evidence and docs. No change to
+  BL-1576's feature, to what the coordinator's route git_handoff carries,
+  or to any other send gate. The step handler lands with the feature
+  (BL-233). Evidence named BL-1610-*.
+
+out_of_scope: |
+  - Whether the coordinator should route coder work as a git_handoff at
+    all (today's standard route is the Work note; the git_handoff route
+    was sent by hand for BL-1606 alongside it - a coordinator prompt
+    question, recorded in the evidence).
+  - The six historical merges themselves (their drops were superseded;
+    nothing to unwind).
+  - BL-1609's completion gate (independent; it lands its own --no-op).
+
+qa_e2e_procedure: |
+  On the parcel commit, from the repo root:
+  1. `bb -e '(load-file "swarmforge/scripts/merge_drop_guard_lib.bb") ...'`
+     re-running the ticket's own shape: received b71cedfcf3, forwarded
+     f5907751cc, head a58edcf04a (the coder's HEAD at the 19:23Z claim)
+     -> 0 findings; the same call with no head -> 9 findings still
+     reported as excused (blob-identical), 0 blocking.
+  2. `bb swarmforge/scripts/test/merge_drop_guard_lib_test_runner.bb`
+     (BL-1576's runner, extended) -> green.
+  3. Acceptance resolving both scenarios
+     (`bash specs/pipeline/scripts/run_acceptance.sh specs/features/BL-1610-*.feature`)
+     and BL-1576's feature still resolving.
+  4. Live probe on the parcel's own chain: the coder's first send of THIS
+     parcel, routed by a git_handoff from the coordinator, queues with no
+     MERGE_DROP refusal on the coder branch as it stands; a deliberate
+     one-sided merge the coder makes after receipt on a path it then
+     forwards is refused (then reverted before the real send).
+
+source: |
+  Coder note to the specifier, priority 00, 2026-09-16T19:22Z (inbound
+  00_20260916T192253Z_002005_from_coder_to_specifier): "BL-1606 send
+  BLOCKED: TREE_COLLAPSE dropped hunks in 6 prior merges today". Coder
+  evidence .worktrees/coder/backlog/evidence/BL-1606-coder-tree-collapse-block-20260916.md.
+  Specifier adjudication and library re-run:
+  backlog/evidence/BL-1610-specifier-adjudication-of-coder-blocked-send-20260916.md.
+  Parents: BL-1576, BL-1213, BL-806.
+
+notes: |
+  Minted 2026-09-16 by the specifier while completing the coder's blocked-
+  send note. BL-1606 moves today without this fix: the gate's reader scans
+  in_process only, the coordinator also sent the standard Work note
+  (008888, waiting in the coder's new/ since 18:48Z), so the coder was told
+  to complete the route git_handoff 008889 with the adjudication in its
+  evidence (the BL-1609 --no-op shape, ahead of BL-1609), claim the Work
+  note and send from it; the coordinator was told to route coder work as
+  Work notes only until this lands. INVEST: Independent (the reader, the
+  dequeue stamp site and BL-1576's fixture exist), Negotiable (where the
+  stamp reader lives and the excuse's wording are direction), Valuable
+  (git_handoff-routed coder parcels stop being refused on history they
+  never touched), Estimable (one stamp, one bound, one blob filter, one
+  runner - one sitting), Small (two scenarios, two invariants), Testable
+  (real gate on a fixture repository in seconds - BL-1541). Severity
+  high: a live refusal lane on the default pack.
+
+assigned_to: null
