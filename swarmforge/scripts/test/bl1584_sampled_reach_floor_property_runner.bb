@@ -197,6 +197,12 @@
 
 (def fixture-root
   (let [root (str (fs/create-temp-dir {:prefix "bl1584-property-"}))]
+    ;; BL-113/tempdir-cleanup-trap-02: a shutdown hook, not only the
+    ;; unconditional (fs/delete-tree fixture-root) at the bottom of this
+    ;; file - an exception anywhere in check-all before that line is
+    ;; reached must still not leak the fixture root.
+    (.addShutdownHook (Runtime/getRuntime)
+                       (Thread. (fn [] (when (fs/exists? root) (fs/delete-tree root)))))
     (sh! root "git" "init" "-q" "-b" "main" ".")
     (sh! root "git" "config" "user.email" "t@t")
     (sh! root "git" "config" "user.name" "t")
@@ -285,7 +291,7 @@
     (when (< drawn p3-floor)
       (swap! failures conj (str "FAIL reach floor: P3 " shape " drawn " drawn " < " p3-floor)))))
 
-(fs/delete-tree fixture-root)
+(when (fs/exists? fixture-root) (fs/delete-tree fixture-root))
 
 (if (empty? @failures)
   (println (str "ALL PASS (" runs " runs each, coverage " (pr-str @coverage) ")"))
