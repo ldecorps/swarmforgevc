@@ -26,6 +26,7 @@ const { execFileSync, spawnSync } = require('node:child_process');
 // BL-1002/BL-948 gate: this file references a control socket, so fixture
 // roots come from the shared short-base helper, never os.tmpdir().
 const { mkSocketFixtureRoot } = require('./lib/socketFixtureRoot');
+const { sendGitHandoffTwoCall } = require('./lib/sendGitHandoffTwoCall');
 
 const FEATURE = 'A stage queue hands a rework only to a seat that can work it safely';
 
@@ -78,7 +79,7 @@ function fixtureEnv(root, role) {
 function send(ctx, task) {
   const draft = path.join(seatDir(ctx.root, 'specifier'), `d-${task}.txt`);
   fs.writeFileSync(draft, `type: git_handoff\nto: ${ctx.stage}\npriority: 50\ntask: ${task}\ncommit: ${ctx.commit}\n`);
-  const res = spawnSync('bb', [path.join(SCRIPTS_DIR, 'swarm_handoff.bb'), draft], {
+  const res = sendGitHandoffTwoCall('bb', [path.join(SCRIPTS_DIR, 'swarm_handoff.bb'), draft], {
     cwd: seatDir(ctx.root, 'specifier'),
     encoding: 'utf8',
     timeout: 60000,

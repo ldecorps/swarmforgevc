@@ -20,6 +20,7 @@ const {
   writeAcceptanceContractFixture,
   DEFAULT_FEATURE_PATH: ACCEPTANCE_FEATURE_PATH
 } = require('../../../extension/test/helpers/acceptanceContractFixture');
+const { sendGitHandoffTwoCall } = require('./lib/sendGitHandoffTwoCall');
 
 // BL-761: every send in this file reuses the ONE commit captured below as
 // `ctx.commit` - the acceptance-contract gate (the third pre-QA finding,
@@ -124,7 +125,7 @@ function sendHandoff(ctx, { from, to, task }) {
   } else {
     delete env.SWARMFORGE_REQUIRED_STAGES_ROUTING;
   }
-  const result = spawnSync('bb', [SWARM_HANDOFF, `draft-${seq}.txt`], { cwd: ctx.targetPath, encoding: 'utf8', env });
+  const result = sendGitHandoffTwoCall('bb', [SWARM_HANDOFF, `draft-${seq}.txt`], { cwd: ctx.targetPath, encoding: 'utf8', env });
   const out = (result.stdout || '') + (result.stderr || '');
   const match = out.match(/:(\/[^\n]*\.handoff)/);
   if (!match) {
