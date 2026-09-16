@@ -31,7 +31,7 @@ required_wiring:
   - 'swarmforge/scripts/ready_for_next_task.bb::MERGE_MAIN_FIRST::the claim prints the hint from the same main-side read'
   - 'specs/pipeline/steps/bl1614WorkNoteNotDeclinedOnStaleReadSteps.js::registerSteps::the handler lands in the same parcel as the feature (BL-233, BL-1371)'
 
-human_approval: pending
+human_approval: approved
 approval_context: >
   A new feature file is authored here, so it needs a tap. No choice is
   posed and there are no ruling_options. FIRM: the fact both changes
