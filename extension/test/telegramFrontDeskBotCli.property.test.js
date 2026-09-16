@@ -6,6 +6,7 @@ const { mkTmpDir } = require('./helpers/tmpDir');
 const { copyLiveScriptClosureInto } = require('./helpers/pinnedRepoFixture');
 const { copySeededRepoInto } = require('./helpers/sharedRepoFixture');
 const { composeRoleAnswerNoteMessage, enqueueRoleAnswerNote, roleAnswerFilePointerPath } = require('../out/tools/telegram-front-desk-bot');
+const { propertyLaneTimeoutMs } = require('./helpers/propertyLaneContentionBudget');
 
 // BL-607 (architect, property support): composeRoleAnswerNoteMessage builds
 // the single-line `message:` header of the note that carries a human's
@@ -175,7 +176,7 @@ test(
       sharedRoot = undefined;
     }
   },
-  60000
+  propertyLaneTimeoutMs(60000)
 );
 
 test(
@@ -209,5 +210,5 @@ test(
       sharedRoot = undefined;
     }
   },
-  60000
+  propertyLaneTimeoutMs(60000)
 );
