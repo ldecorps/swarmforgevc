@@ -15,8 +15,10 @@ function listTestFiles(testDir) {
 // check-suite-file-budget.js's runGuardAgainstReport) - result stays the
 // TEST outcome (pass/fail of the tests themselves), independent of
 // budget_verdict, so a trend reader can tell a failing test from a slow
-// file.
-function buildRecord({ finishedAt, testCount, exitCode, durationMs, poleMs, workMs, newOffenders, budgetVerdict }) {
+// file. watch_files (amended 2026-09-16) is the count of unregistered
+// files over budget but under NEW_POLE_REFUSAL_FRACTION - reported on
+// every run they occur, never refusing.
+function buildRecord({ finishedAt, testCount, exitCode, durationMs, poleMs, workMs, newOffenders, watchFiles, budgetVerdict }) {
   return {
     finished_at: finishedAt,
     test_count: testCount,
@@ -25,6 +27,7 @@ function buildRecord({ finishedAt, testCount, exitCode, durationMs, poleMs, work
     pole_ms: poleMs,
     work_ms: workMs,
     new_offenders: newOffenders,
+    watch_files: watchFiles,
     budget_verdict: budgetVerdict,
   };
 }
