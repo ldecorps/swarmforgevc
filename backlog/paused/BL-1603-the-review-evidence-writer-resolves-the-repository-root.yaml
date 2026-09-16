@@ -1,0 +1,144 @@
+id: BL-1603
+title: "record-review-evidence.js takes its root from process.cwd(), so a role that runs it from extension/ (where npm must run) writes and commits a correct evidence file under extension/backlog/evidence/ that no repo-root grep or bounce-history read ever sees - six such files are on main (cleaner x4, hardender x1, QA x1), five with no repo-root copy; the writer resolves the repository root itself, refuses to write anywhere but <root>/backlog/evidence/, the orphans move to where they belong, and a test with the working directory stubbed to a subdirectory proves it"
+milestone: M8
+type: defect
+severity: medium
+# medium: real but contained - the files exist and are committed, only
+# their location is wrong; the harm is a bounce-history or Article 4.4
+# read from main missing a pass record. Not high: no gate is red.
+status: todo
+epic: code-quality-gates
+priority: 12
+direction: swarm-reported
+depends_on: []
+mutation_cost: medium
+# medium: extension/src/tools/record-review-evidence.ts under Stryker; a
+# root-resolution seam and its unit cases.
+slice_size_envelope: low
+required_stages: [coder, cleaner, architect, hardender, documenter, qa]
+
+acceptance: specs/features/BL-1603-the-review-evidence-writer-resolves-the-repository-root.feature
+
+required_wiring:
+  - 'extension/src/tools/record-review-evidence.ts::show-toplevel::the writer resolves the repository root itself; the literal exists only with the fix (BL-1235)'
+  - 'specs/pipeline/steps/bl1603EvidenceWriterResolvesRepoRootSteps.js::registerSteps::the handler lands in the same parcel as the feature (BL-233, BL-1371)'
+
+human_approval: approved
+approval_context: >
+  A new feature file is authored here, so it needs a tap. No choice is
+  posed and there are no ruling_options. FIRM: the writer's root is the
+  repository top level of the directory it runs in (git rev-parse
+  --show-toplevel through an injected cwd, never process.chdir), and it
+  refuses with a named reason when that directory is not inside a
+  repository or when the resolved target would not be
+  <root>/backlog/evidence/<name>. FIRM: the five orphaned files under
+  extension/backlog/evidence/ (BL-1278 hardender, BL-1478, BL-1503,
+  BL-1558, BL-1569 cleaner) move to backlog/evidence/ with git mv in this
+  parcel, byte-identical; the sixth (BL-1464-QA-20260913.md) has a
+  repo-root twin - the parcel diffs the two, keeps the root copy if
+  identical or records the difference in evidence and keeps both merged
+  by hand, then removes the stray; extension/backlog/ is gone after the
+  parcel. FIRM: the commit subject and the printed 10-hex commit are
+  unchanged (the review-forward evidence gate reads them).
+
+invariants:
+  - "The writer never commits a path outside <repo-root>/backlog/evidence/: for any working directory inside the repository, the committed relative path starts with backlog/evidence/, and for any directory outside a repository it commits nothing."
+
+description: |
+  ## What is wrong
+
+  `extension/src/tools/record-review-evidence.ts` line 82 calls
+  `recordReviewEvidence({ ...args, root: process.cwd() })`; line 38 sets
+  `EVIDENCE_DIR = path.join('backlog', 'evidence')` and lines 63 to 76
+  write `<root>/backlog/evidence/<name>`, `git add` it and commit with
+  the subject `<BL-id>: <role> review pass evidence (<summary>)`. Every
+  role prompt says "from your worktree root", but the suites run from
+  `extension/`, and a role still there when it records its verdict gets
+  a real commit of `extension/backlog/evidence/<name>`. On main at
+  05e7ee0395:
+
+  ```
+  extension/backlog/evidence/BL-1278-hardender-20260909.md   (no repo-root copy)
+  extension/backlog/evidence/BL-1464-QA-20260913.md          (repo-root twin exists)
+  extension/backlog/evidence/BL-1478-cleaner-20260911.md     (no repo-root copy)
+  extension/backlog/evidence/BL-1503-cleaner-20260913.md     (no repo-root copy)
+  extension/backlog/evidence/BL-1558-cleaner-20260915.md     (no repo-root copy)
+  extension/backlog/evidence/BL-1569-cleaner-20260915.md     (no repo-root copy)
+  ```
+
+  plus BL-1547 and BL-1595 cleaner passes on 2026-09-16 in flight. The
+  architect's rule_proposal of 2026-09-16 (accepted into cleaner.prompt,
+  hardender.prompt and QA.prompt the same pass) tells the roles to check;
+  this ticket makes the check unnecessary.
+
+  ## What is wanted
+
+  - The CLI resolves its root as the repository top level of the
+    directory it runs in (`git rev-parse --show-toplevel`, cwd injected
+    for tests) and writes, adds and commits
+    `<root>/backlog/evidence/<name>` whatever subdirectory it was run
+    from (scenario 01, rows 1 and 2).
+  - Run outside any repository, it refuses with a named reason and
+    writes nothing (scenario 01, row 3).
+  - The five orphans are at `backlog/evidence/`, the sixth reconciled,
+    and `extension/backlog/` does not exist (scenario 02, census pinned
+    by the five names).
+
+  ## How (direction, not mandate)
+
+  - `resolveRepoRoot(cwd, execFn)` beside the existing helpers; `main`
+    passes `process.cwd()` in; unit cases stub cwd to `<fixture>/extension`
+    and to a non-repo temp dir (never `process.chdir`, per the engineering
+    rules). Keep `recordReviewEvidence({ root })` pure over the injected
+    root so the existing tests stay.
+  - `git mv extension/backlog/evidence/<five> backlog/evidence/`; for
+    BL-1464, `diff` the two, then `git rm` the stray (or merge by hand
+    and say so in evidence).
+  - Documenter: the record-review-evidence how-to (or the tool's header)
+    states the root rule; no diagram trigger.
+
+constraints: >
+  The tool, its tests, the six files' relocation, evidence and docs; the
+  commit subject format and the printed commit are unchanged; no other
+  tool changes. The step handler lands with the feature (BL-233).
+  Evidence named BL-1603-*.
+
+out_of_scope: |
+  - record-bounce.js and other writers (none found writing evidence
+    relative to cwd; if one is, its own ticket).
+  - The role prompts' check (landed with the rule_proposal acceptance).
+
+qa_e2e_procedure: |
+  On the parcel commit, from `extension/` after `npm run compile`:
+  1. `node out/tools/record-review-evidence.js --ticket BL-1603 --role qa --none`
+     run FROM `extension/` in a scratch clone -> the file lands at
+     `<clone>/backlog/evidence/BL-1603-qa-<date>.md`, `git ls-files
+     extension/backlog` is empty there.
+  2. `git ls-files extension/backlog` on the parcel commit -> empty;
+     `ls backlog/evidence/ | grep -E 'BL-(1278-hardender|1478-cleaner|1503-cleaner|1558-cleaner|1569-cleaner)'`
+     -> five files.
+  3. `npx vitest run test/recordReviewEvidence*.test.js` -> green with the
+     new cwd cases.
+  4. Acceptance resolving both scenarios
+     (`bash specs/pipeline/scripts/run_acceptance.sh specs/features/BL-1603-*.feature`).
+
+source: |
+  Architect rule_proposal to the specifier, priority 50, 2026-09-16T16:40Z
+  (inbound 50_20260916T164018Z_002093, scope role:cleaner): "Cleaner's own
+  NONE-pass evidence file must be written to repo-root backlog/evidence/,
+  never a cwd-relative path; verify the written path before committing.
+  Rationale: Recurred 2x this session (BL-1595, BL-1547): evidence landed
+  under extension/backlog/evidence/, invisible to repo-root grep -rl
+  BL-<id> backlog/." Specifier verification: `git ls-files extension/backlog`
+  on main lists six files (first 943079fdfc, 2026-09-09).
+
+notes: |
+  Minted 2026-09-16 by the specifier while accepting the architect's
+  rule_proposal (the prompt halves landed in the same commit: cleaner,
+  hardender, QA). INVEST: Independent (the tool and its tests exist),
+  Negotiable (helper shape is direction), Valuable (every pass record
+  becomes findable and the class cannot recur), Estimable (one resolver,
+  two unit cases, six git mv, one sitting), Small (two scenarios, one invariant), Testable (cwd-stubbed cases in milliseconds; the scratch
+  clone run in e2e).
+
+assigned_to: null

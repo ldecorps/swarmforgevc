@@ -142,7 +142,7 @@ qa_e2e_procedure: |
   3. Under `extension/`: `npx vitest run leanLedgerComposeStall` and the
      closingCeremony packet test - ALL PASS; `respawn-skipped` is composed
      as a stall and not reported as unrecognised.
-  4. `swarmforge/scripts/run_acceptance.sh` on this ticket's feature: 6/6
+  4. `specs/pipeline/scripts/run_acceptance.sh` on this ticket's feature: 6/6
      (one outline x4, two scenarios).
   5. Live check, read-only: in the fixture, seed a chaser-telemetry file
      with one `respawn-skipped` row inside a role window and run

@@ -138,7 +138,7 @@ out_of_scope: |
 
 qa_e2e_procedure: |
   On the parcel commit:
-  1. `swarmforge/scripts/run_acceptance.sh specs/features/BL-1582-*.feature`
+  1. `specs/pipeline/scripts/run_acceptance.sh specs/features/BL-1582-*.feature`
      resolves every scenario green.
   2. Read the page once as an operator: every command in it is one you
      could paste on the swarm host; every `.swarmforge/` file name it
