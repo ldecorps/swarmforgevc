@@ -256,3 +256,15 @@ bounce_count: 2
 bounce_history:
   - { at: 2026-09-17, by: hardender, blamed: coder, class: spec-gap, commit: dde761503b, evidence: backlog/evidence/BL-1610-bounce-20260917.md }
   - { at: 2026-09-17, by: hardender, blamed: coder, class: spec-gap, commit: c80be224c0, evidence: backlog/evidence/BL-1610-bounce-20260917.md }
+
+abandoned_commits: [7b78e9d58a]
+# Stranded on swarmforge-coder@2 (the stage-queue-dir mismatch bug the
+# operator's active watch names 2026-09-17: coder@2's queue reads the
+# shared coder mailbox, never its own, so mail addressed to it never
+# dequeues). Diffed against merge_drop_guard_lib.bb's shipped shape (the
+# chain that reached documenter via cleaner/architect/hardener/QA-bounce/
+# coder-rebuild): same two-negative-ref bound (forwarded ^head ^received),
+# same blob-identity excuse unchanged, same rationale for excluding the
+# received commit's own ancestry - an independent, superseded coder draft
+# of the identical fix, not a second implementation carrying anything the
+# shipped one lacks.
