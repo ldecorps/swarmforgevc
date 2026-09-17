@@ -7,7 +7,14 @@
 // (derived from that library's own real source, never a hand-maintained
 // duplicate) is present and names a file that exists under the root.
 //
-// Runs ONLY via `npm run test:properties` (vitest.properties.config.mjs).
+// bl1613_fixture_identity_completeness_property_runner.bb is a
+// *_property_runner.bb file, which the standing bb suite's own discovery
+// predicate does not match (test-file? only matches test_*.sh and
+// *_test_runner.bb) - without this wrapper it would never run at all
+// (same orphaned shape worktree_drift_lib_property_runner.bb, BL-1195's
+// own sibling, is still in today). This wrapper is what makes it runnable
+// via `npm run test:properties` (vitest.properties.config.mjs) - the ONLY
+// lane that runs it.
 
 const assert = require('node:assert/strict');
 const path = require('node:path');
@@ -19,10 +26,10 @@ const RUNNER = path.join(
   'swarmforge',
   'scripts',
   'test',
-  'bl1613_launcher_shaped_identity_property_runner.bb'
+  'bl1613_fixture_identity_completeness_property_runner.bb'
 );
 
-test('BL-1613/BL-654: the launcher-shaped-identity invariant holds (bb property runner)', () => {
+test('BL-1613/BL-654: the fixture-identity-completeness invariant holds (bb property runner)', () => {
   const r = spawnSync('bb', [RUNNER], { encoding: 'utf8', timeout: 60000 });
   assert.equal(r.status, 0, `bl1613 property runner failed:\n${r.stdout || ''}${r.stderr || ''}`);
 });
