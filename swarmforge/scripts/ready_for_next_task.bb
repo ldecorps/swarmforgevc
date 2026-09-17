@@ -370,7 +370,11 @@
         in-process-dir (handoff-lib/my-mailbox-dir :in_process)
         completed-dir  (handoff-lib/my-mailbox-dir :completed)
         abandoned-dir  (handoff-lib/my-mailbox-dir :abandoned)]
-    (doseq [dir [new-dir in-process-dir completed-dir abandoned-dir]]
+    ;; BL-1615: seat-addressed mail (a reverse-hop merge-only copy, a
+    ;; branch-behind merge-up note) is delivered into the seat's OWN new/,
+    ;; not the stage's shared queue - claim-queue-dirs names both so
+    ;; neither goes uncreated.
+    (doseq [dir (conj (handoff-lib/claim-queue-dirs :new) in-process-dir completed-dir abandoned-dir)]
       (fs/create-dirs dir))
     (let [in-process-batches (handoff-lib/batch-dirs in-process-dir)
           ;; BL-983: a claimed stage-queue parcel keeps its stamped
@@ -404,7 +408,11 @@
           (print-merge-main-first-hint! (first in-process-files)))
         (if (handoff-lib/draining?)
           (println "DRAINING")
-          (let [new-files            (handoff-lib/stage-handoff-files new-dir)
+          (let [;; BL-1615: the union of the stage's shared queue and the
+                ;; seat's own new/ (claim-queue-dirs), each file offered
+                ;; once, in the one filename sort across both - never queue
+                ;; first, seat box second (invariant 1).
+                new-files            (handoff-lib/claim-stage-handoff-files :new)
                 ;; BL-983: a redelivered copy of a parcel a PEER seat has
                 ;; already claimed (live in its in_process) or already
                 ;; finished (its completed/abandoned) must never be claimed
