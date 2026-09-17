@@ -8,6 +8,12 @@
 // vitest.config.mjs's test.setupFiles) does the actual removal. Split this
 // way so a unit test can drive the sweep directly without needing a real
 // Vitest afterEach cycle to observe it.
+// BL-1601: sweepPendingTmpDirs and sweepSharedTmpDirs retry their removal a
+// bounded number of times (see removeWithRetry below) when it fails with
+// ENOTEMPTY or EBUSY - the shape a detached, unref'd child (a redeploy
+// script) still writing into a fixture root the instant a test returns can
+// produce - and rethrow after the last attempt, so a genuine leak still
+// fails the run rather than being swallowed by the retry.
 const fs = require('fs');
 const os = require('os');
 const path = require('path');
@@ -65,29 +71,70 @@ function mkProcessTmpDir(prefix) {
   return dir;
 }
 
+// BL-1601: force:true tolerates a path already gone (ENOENT), but NOT
+// ENOTEMPTY/EBUSY - a detached, unref'd child (a redeploy script, by
+// design) can still be writing into a fixture root the instant a test
+// returns, so the sweep's own directory listing and its rmdir can race a
+// live writer. Five attempts, 50ms apart (the same synchronous sleep the
+// suite already uses elsewhere - real timers are banned), then RETHROW the
+// last error exactly as before: the retry turns a transient race into a
+// pass, but a root that never empties is a genuine leak and must still
+// fail the run (BL-971's own posture) - never swallowed into silence.
+// rmFn is a seam (defaults to fs.rmSync) so a test can inject a stub that
+// fails a controlled number of times, or permanently, without a real
+// racing child process.
+function sleepSyncMs(ms) {
+  Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, ms);
+}
+
+const REMOVE_RETRY_ATTEMPTS = 5;
+const REMOVE_RETRY_DELAY_MS = 50;
+
+function removeWithRetry(dir, rmFn) {
+  const remove = rmFn || fs.rmSync;
+  for (let attempt = 1; attempt <= REMOVE_RETRY_ATTEMPTS; attempt += 1) {
+    try {
+      remove(dir, { recursive: true, force: true });
+      return;
+    } catch (err) {
+      const retryable = err && (err.code === 'ENOTEMPTY' || err.code === 'EBUSY');
+      if (retryable && attempt < REMOVE_RETRY_ATTEMPTS) {
+        sleepSyncMs(REMOVE_RETRY_DELAY_MS);
+        continue;
+      }
+      throw err;
+    }
+  }
+}
+
 // Removes every path handed out via mkTmpDir since the last sweep and
 // returns them (mainly for the helper's own tests to assert against).
-// force:true tolerates a path already removed (by the test itself, or a
-// prior sweep) rather than throwing mid-teardown.
-function sweepPendingTmpDirs() {
+function sweepPendingTmpDirs(rmFn) {
   const dirs = pending;
   pending = [];
   for (const dir of dirs) {
-    fs.rmSync(dir, { recursive: true, force: true });
+    removeWithRetry(dir, rmFn);
   }
   return dirs;
 }
 
-// The afterAll sweep for mkSharedTmpDir's own registry - same tolerant
-// removal, separate list, so a per-test afterEach can never race it away
-// early.
-function sweepSharedTmpDirs() {
+// The afterAll sweep for mkSharedTmpDir's own registry - same tolerant,
+// retrying removal, separate list, so a per-test afterEach can never race
+// it away early.
+function sweepSharedTmpDirs(rmFn) {
   const dirs = pendingShared;
   pendingShared = [];
   for (const dir of dirs) {
-    fs.rmSync(dir, { recursive: true, force: true });
+    removeWithRetry(dir, rmFn);
   }
   return dirs;
 }
 
-module.exports = { mkTmpDir, mkSharedTmpDir, mkProcessTmpDir, sweepPendingTmpDirs, sweepSharedTmpDirs };
+module.exports = {
+  mkTmpDir,
+  mkSharedTmpDir,
+  mkProcessTmpDir,
+  sweepPendingTmpDirs,
+  sweepSharedTmpDirs,
+  REMOVE_RETRY_ATTEMPTS,
+};
