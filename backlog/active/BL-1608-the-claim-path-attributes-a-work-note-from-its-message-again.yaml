@@ -190,3 +190,10 @@ notes: |
   Severity high per the standing-red rule.
 
 assigned_to: coder
+
+abandoned_commits: [c96761faa1]
+# Same BL-1576 merge-drop guard finding already fully diagnosed and
+# escalated to the specifier (backlog/evidence/BL-1576-merge-drop-guard-
+# false-positive-documenter-20260916.md; also recorded on BL-1599 and
+# BL-1607 the same pass). Verified against the current tree: nothing is
+# actually lost.

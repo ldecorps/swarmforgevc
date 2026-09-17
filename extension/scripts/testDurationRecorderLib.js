@@ -18,7 +18,11 @@ function listTestFiles(testDir) {
 // file. watch_files (amended 2026-09-16) is the count of unregistered
 // files over budget but under NEW_POLE_REFUSAL_FRACTION - reported on
 // every run they occur, never refusing.
-function buildRecord({ finishedAt, testCount, exitCode, durationMs, poleMs, workMs, newOffenders, watchFiles, budgetVerdict }) {
+// BL-1599: work_budget_verdict (the work ratchet's own 'ok' | 'over-tolerance'
+// | 'over-budget') rides beside BL-1598's budget_verdict (the per-file
+// guard's), independent of it - see check-suite-duration-budget.ts's
+// classifySuiteWork.
+function buildRecord({ finishedAt, testCount, exitCode, durationMs, poleMs, workMs, newOffenders, watchFiles, budgetVerdict, workBudgetVerdict }) {
   return {
     finished_at: finishedAt,
     test_count: testCount,
@@ -29,6 +33,7 @@ function buildRecord({ finishedAt, testCount, exitCode, durationMs, poleMs, work
     new_offenders: newOffenders,
     watch_files: watchFiles,
     budget_verdict: budgetVerdict,
+    work_budget_verdict: workBudgetVerdict,
   };
 }
 
@@ -49,8 +54,12 @@ function appendRecord(logPath, record) {
 // genuine test failure by exiting 0. Pulled out of recordTestDuration.js's
 // main() so this decision is covered in-process rather than only by the
 // script's own untested subprocess orchestration.
-function computeFinalExitCode(testExitCode, guardExitCode) {
-  return testExitCode !== 0 ? testExitCode : guardExitCode;
+// BL-1599: workExitCode is a THIRD source, same precedence (a real test
+// failure wins over either budget-refusing source) - defaulted to 0 so
+// every pre-BL-1599 2-arg call site keeps its exact prior behavior.
+function computeFinalExitCode(testExitCode, guardExitCode, workExitCode = 0) {
+  if (testExitCode !== 0) return testExitCode;
+  return guardExitCode !== 0 ? guardExitCode : workExitCode;
 }
 
 module.exports = { listTestFiles, buildRecord, appendRecord, computeFinalExitCode };

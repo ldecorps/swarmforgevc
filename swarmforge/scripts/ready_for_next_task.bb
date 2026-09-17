@@ -16,6 +16,11 @@
 (load-file (str (fs/path (fs/parent *file*) "pipeline_stage_lib.bb")))
 (load-file (str (fs/path (fs/parent *file*) "idle_clear_fullness_cli.bb")))
 (load-file (str (fs/path (fs/parent *file*) "qa_hold_lib.bb")))
+;; BL-1185/BL-1608: Work notes attribute mutation_cost via the same
+;; task-name parse supersede_lib already uses (task: header, else Work
+;; BL-… in the message) - restored after BL-1167's land (ccc63d8cfd,
+;; 2026-08-27) silently reverted it (BL-571 class).
+(load-file (str (fs/path (fs/parent *file*) "supersede_lib.bb")))
 
 (def idle-boundary?
   "Set only when invoked from done_with_current_task.bb, right after it
@@ -51,6 +56,20 @@
   (handoff-lib/active-ticket-mutation-cost
    (pipeline-stage-lib/extract-ticket-id task)))
 
+(defn claim-task-name
+  "BL-1185/BL-1608: the ONE shared attribution both claim-time readers
+   (difficulty-allows-claim? and apply-effort-for-task!) resolve a
+   parcel's task through - prefer the task: header (git_handoff), else the
+   `Work BL-…` ticket slug from a note's own message
+   (supersede-lib/task-name-from-content), else nil. Never invent a task
+   header on a type: note - attribution only. Public (not defn-) so
+   ready_for_next_claim_task_name_runner.bb can drive it directly."
+  [handoff-file]
+  (or (not-empty (handoff-lib/header-field handoff-file "task"))
+      (try
+        (supersede-lib/task-name-from-content (slurp (str handoff-file)))
+        (catch Exception _ nil))))
+
 (defn- apply-effort-for-task!
   "BL-1316: retunes (or restores) this seat's reasoning effort for the
    ticket named by handoff-file's task header, at both the claim moment
@@ -62,7 +81,7 @@
   (let [me (handoff-lib/current-role)
         backends (seat-difficulty-lib/parse-seat-backends pack-conf)
         efforts (seat-difficulty-lib/parse-seat-efforts pack-conf)
-        task (handoff-lib/header-field handoff-file "task")
+        task (claim-task-name handoff-file)
         ticket (pipeline-stage-lib/extract-ticket-id task)
         cost (mutation-cost-for-task task)]
     (handoff-lib/apply-claim-effort!
@@ -94,7 +113,7 @@
   [handoff-file tiers pack-conf]
   (let [me (handoff-lib/current-role)
         stage (handoff-lib/seat-stage me)
-        cost (mutation-cost-for-task (handoff-lib/header-field handoff-file "task"))
+        cost (mutation-cost-for-task (claim-task-name handoff-file))
         models (seat-difficulty-lib/parse-seat-models pack-conf)
         decision (seat-difficulty-lib/difficulty-claim-decision
                   {:me me
@@ -416,4 +435,5 @@
                         (handoff-lib/print-task target-file))
                       (recur (rest candidates)))))))))))))
 
-(-main)
+(when (= *file* (System/getProperty "babashka.file"))
+  (-main))
