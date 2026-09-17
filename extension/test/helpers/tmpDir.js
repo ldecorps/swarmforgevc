@@ -17,9 +17,67 @@
 const fs = require('fs');
 const os = require('os');
 const path = require('path');
+const { spawnSync } = require('child_process');
 
 let pending = [];
 let pendingShared = [];
+
+// BL-1623: a pid still in the process table is not necessarily a running
+// peer. SIGKILL a process whose parent has not reaped it yet and it becomes
+// a ZOMBIE: the process is dead, but its entry lingers so `kill(pid, 0)`
+// still succeeds. macOS and Linux both report 'Z' here (the only two target
+// platforms); anything else, including a failed `ps`, is read as alive so
+// the sweep errs toward keeping a root it is unsure about. The single copy
+// of this probe - propertyLaneFixtureRunner.js's sweepStaleFixtures reuses
+// it from here rather than carrying its own (BL-984's original copy).
+function isZombiePid(pid) {
+  const probe = spawnSync('ps', ['-o', 'state=', '-p', String(pid)], { encoding: 'utf8' });
+  return probe.status === 0 && /^\s*Z/.test(probe.stdout || '');
+}
+
+function defaultIsPidAlive(pid) {
+  try {
+    process.kill(pid, 0);
+  } catch (err) {
+    // EPERM: the pid exists but belongs to another user - alive.
+    return err.code === 'EPERM';
+  }
+  return !isZombiePid(pid);
+}
+
+function escapeRegExp(text) {
+  return text.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+}
+
+// BL-1287's fixture-tunnel rule and BL-984's sweepStaleFixtures, applied to
+// TEMP ROOTS: a blind `readdirSync(os.tmpdir())` sweep that removes every
+// entry sharing a prefix destroys a live peer's fixtures the instant two
+// runs of the same file are ever alive at once on the host (BL-1385/BL-1390's
+// shape - a concurrent lane, a guard re-run, a solo re-run). A caller that
+// builds its roots as `${prefix}${process.pid}-...` and sweeps through this
+// helper instead removes a root only when the pid its own name records is
+// gone (or is this process's own, before it has written one) - a live
+// peer's roots are never touched, and a run that died without trapping
+// anything still has its roots cleared by the next run's sweep. `dir`
+// defaults to the real os.tmpdir() but is injectable so this helper's own
+// tests never touch it.
+function sweepStaleTmpDirs({ prefix, dir = os.tmpdir(), isPidAlive = defaultIsPidAlive } = {}) {
+  const ownedName = new RegExp(`^${escapeRegExp(prefix)}(\\d+)-`);
+  const removed = [];
+  for (const name of fs.readdirSync(dir)) {
+    const match = ownedName.exec(name);
+    if (!match) {
+      continue;
+    }
+    const ownerPid = Number(match[1]);
+    if (ownerPid === process.pid || !isPidAlive(ownerPid)) {
+      const fullPath = path.join(dir, name);
+      fs.rmSync(fullPath, { recursive: true, force: true });
+      removed.push(fullPath);
+    }
+  }
+  return removed;
+}
 
 // Creates a real mkdtemp dir under os.tmpdir() with the given prefix
 // (preserves every existing naming convention - sfvc-/relay-/negotiate-/etc -
@@ -137,4 +195,6 @@ module.exports = {
   sweepPendingTmpDirs,
   sweepSharedTmpDirs,
   REMOVE_RETRY_ATTEMPTS,
+  sweepStaleTmpDirs,
+  defaultIsPidAlive,
 };
