@@ -26,6 +26,7 @@ expects them, and are not migrated or rewritten here.
 
 *Task-oriented: recipes to accomplish a specific goal.*
 
+- [Running an Onboarding End to End with the Onboarder](how-to/BL-1582-onboarder-run-an-onboarding-end-to-end.md) — start, verify liveness, drive a target from a repo URL to `done`, inspect/resume state, recover a stalled onboarding, and stop it (BL-1582).
 - [What NOT to do when tweaking the swarm](how-to/BL-644-what-not-to-do-when-tweaking-the-swarm.md) — eighteen anti-patterns observed causing real damage on 2026-07-25, grouped by what they break; companion to the [green-suites-that-proved-nothing](explanation/lessons-2026-07-25-green-suites-that-proved-nothing.md) explanation doc (BL-644).
 - [Bringing Up a Second Swarm on Windows via WSL2](how-to/BL-091-wsl2-second-swarm-bringup.md)
 - [Headless Secondary Swarms on a Raspberry Pi or VPS](how-to/BL-101-pi-vps-secondary-swarm-bringup.md)
