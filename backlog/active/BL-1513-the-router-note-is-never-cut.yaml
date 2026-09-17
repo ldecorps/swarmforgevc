@@ -179,3 +179,5 @@ notes: |
   Given reused concretely (`slug of 90 characters`) in scenario 02 - one
   step handler serves both, by design; the four Given/When and synonym
   findings were resolved by sharing one `routes the ticket` action step.
+
+assigned_to: coder
