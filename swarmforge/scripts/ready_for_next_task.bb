@@ -21,6 +21,11 @@
 ;; BL-… in the message) - restored after BL-1167's land (ccc63d8cfd,
 ;; 2026-08-27) silently reverted it (BL-571 class).
 (load-file (str (fs/path (fs/parent *file*) "supersede_lib.bb")))
+;; BL-1614: the claim-time merge-main-first hint - same Work-note message
+;; parser BL-1422's gate uses (work-note-evidence-lib), same main-side ref
+;; read done_with_current_task.bb's gate uses (ticket-active-on-main-lib).
+(load-file (str (fs/path (fs/parent *file*) "work_note_evidence_lib.bb")))
+(load-file (str (fs/path (fs/parent *file*) "ticket_active_on_main_lib.bb")))
 
 (def idle-boundary?
   "Set only when invoked from done_with_current_task.bb, right after it
@@ -300,6 +305,28 @@
                       (qa-hold-lib/open-ticket-ids-for root))]
           (println line))))))
 
+;; ── BL-1614: claim-time merge-main-first hint ──────────────────────────────
+;; A Work note whose ticket is active in backlog/active on main but not yet
+;; in this worktree's own backlog/active (the promotion commit landed
+;; seconds before the route, and this tree has not merged it yet) prints the
+;; hint right after the claim - never merges on the role's behalf (the
+;; lineage rule), just names the fact so the role merges before reading a
+;; stale worktree. A no-op for a git_handoff (no message header, so the
+;; parser answers nil), any non-Work note, a ticket that is genuinely paused
+;; or absent on main, and a ticket the worktree already has active (already
+;; merged - nothing to hint).
+(defn- print-merge-main-first-hint! [handoff-file]
+  (when-let [ticket-id (work-note-evidence-lib/work-note-ticket-id-from-message
+                        (handoff-lib/header-field handoff-file "message"))]
+    (let [{:keys [active? sha]} (ticket-active-on-main-lib/active-on-main
+                                  (str (handoff-lib/target-root)) ticket-id)]
+      (when (and active?
+                 (not (ticket-active-on-main-lib/worktree-active?
+                       (handoff-lib/worktree-root) ticket-id)))
+        (println (str "MERGE_MAIN_FIRST: " ticket-id " is active on main"
+                      (when sha (str " at " sha))
+                      "; merge main before reading it"))))))
+
 (defn -main []
   (print-qa-hold-status-if-any!)
   ;; BL-983: a seat CLAIMS from its STAGE's queue (the stage-named row's
@@ -340,7 +367,8 @@
         (do
           (enforce-branch-claim-guard! (first in-process-files) in-process-dir new-dir)
           (apply-effort-for-task! (first in-process-files) (mono-router-conf-text))
-          (handoff-lib/print-task (first in-process-files)))
+          (handoff-lib/print-task (first in-process-files))
+          (print-merge-main-first-hint! (first in-process-files)))
         (if (handoff-lib/draining?)
           (println "DRAINING")
           (let [new-files            (handoff-lib/stage-handoff-files new-dir)
@@ -454,7 +482,8 @@
                                      :sibling-seats sibling-seat-ids})))
                         (enforce-branch-claim-guard! target-file in-process-dir new-dir)
                         (apply-effort-for-task! target-file pack-conf)
-                        (handoff-lib/print-task target-file))
+                        (handoff-lib/print-task target-file)
+                        (print-merge-main-first-hint! target-file))
                       (recur (rest candidates)))))))))))))
 
 (when (= *file* (System/getProperty "babashka.file"))

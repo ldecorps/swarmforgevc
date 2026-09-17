@@ -64,6 +64,15 @@
 
 (def sample-ticket-ids [nil "BL-9001" "BL-1" "GH-42"])
 
+;; BL-1614 added a fourth input (active-on-main?) to the decision table this
+;; property drives. This file's OWN scope stays BL-1422's three original
+;; clauses (invariants 1 and 3) - every generated case here holds
+;; active-on-main? fixed at false, so the new BL-1614 clause never engages
+;; and the expected table below is unchanged from before that ticket. The
+;; NEW clause gets its own dedicated property runner
+;; (bl1614_work_note_active_on_main_property_runner.bb), never folded in
+;; here.
+
 (defn gen-p1 [s]
   (let [[ti s1] (gen-int s (count sample-ticket-ids))
         [evidenced? s2] (gen-bool s1)
@@ -81,7 +90,7 @@
                       (some? reason) :complete-with-reason
                       evidenced? :complete-plain
                       :else :refuse)
-          actual (work-note-evidence-lib/work-note-completion-decision ticket-id evidenced? reason)]
+          actual (work-note-evidence-lib/work-note-completion-decision ticket-id evidenced? reason false)]
       (or (= expected actual)
           (str "expected " expected " got " actual)))))
 

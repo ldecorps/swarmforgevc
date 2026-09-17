@@ -15,6 +15,10 @@
 ;; (never load-file'd directly by a test, since THIS file's own -main runs
 ;; as a load-time side effect).
 (load-file (str (fs/path script-dir "work_note_evidence_lib.bb")))
+;; BL-1614: the Work-note gate's fourth input - is the ticket active in
+;; backlog/active on the freshest of main/origin-main right now? Same
+;; main-side ref read ready_for_next_task.bb's claim-time hint uses.
+(load-file (str (fs/path script-dir "ticket_active_on_main_lib.bb")))
 ;; BL-1609: a forwarding git_handoff (no non-forwarding: true) held by a
 ;; code-worktree role is not completed with nothing sent - the pure decision
 ;; core, and the shared outbox/sent reader BL-1422's Work-note gate below
@@ -155,10 +159,25 @@
   (let [ticket-id (work-note-ticket-id source-file)
         since (or (handoff-lib/header-field source-file "dequeued_at") "1970-01-01T00:00:00Z")
         reason (dispatch-lib/no-work-reason)
-        evidenced? (boolean (and ticket-id (work-evidenced-since? ticket-id since)))]
-    (case (work-note-evidence-lib/work-note-completion-decision ticket-id evidenced? reason)
+        evidenced? (boolean (and ticket-id (work-evidenced-since? ticket-id since)))
+        ;; BL-1614: only read when a ticket-id and a reason are both in
+        ;; play - the git IO is otherwise unnecessary (every other path's
+        ;; decision cannot depend on it).
+        active-on-main (when (and ticket-id (some? reason))
+                          (ticket-active-on-main-lib/active-on-main
+                           (str (handoff-lib/target-root)) ticket-id))]
+    (case (work-note-evidence-lib/work-note-completion-decision
+           ticket-id evidenced? reason (:active? active-on-main))
       :complete-plain nil
       :complete-with-reason reason
+      :refuse-active-on-main
+      (handoff-lib/fail! 1
+                         (str "WORK_ACTIVE_ON_MAIN: " ticket-id " is active on main"
+                              (when-let [sha (:sha active-on-main)] (str " at " sha))
+                              " - merge main first, then complete it with real work or a reason.")
+                         (str "Merge main, re-read backlog/active/" ticket-id
+                              "-*.yaml, and either do the work and send the parcel, or retry"
+                              " done_with_current.sh --no-work \"<reason>\" once the merge is done."))
       :refuse
       (handoff-lib/fail! 1
                          (str "WORK_NOT_EVIDENCED: " ticket-id " has no commit or git_handoff naming it since dequeue.")
