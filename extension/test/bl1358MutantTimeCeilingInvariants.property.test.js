@@ -37,10 +37,9 @@
 
 const assert = require('node:assert/strict');
 const fs = require('node:fs');
-const os = require('node:os');
 const path = require('node:path');
 const fc = require('fast-check');
-const { mkTmpDir } = require('./helpers/tmpDir');
+const { mkTmpDir, sweepStaleTmpDirs } = require('./helpers/tmpDir');
 const { assertReachFloor, runsPerCell } = require('./helpers/reachFloors');
 const { handle } = require('../../specs/pipeline/mutationWorker');
 
@@ -57,18 +56,17 @@ const STEP_BODIES = {
   hang: 'await new Promise(() => { setInterval(() => {}, 20); });',
 };
 
+// BL-1623: scoped by owner pid through the shared helper - a blind
+// prefix sweep destroys a live peer's roots the instant two instances
+// of this file are ever alive at once (BL-1385/BL-1390's shape).
 function sweepFixtures() {
-  for (const entry of fs.readdirSync(os.tmpdir())) {
-    if (entry.startsWith(FIXTURE_PREFIX)) {
-      fs.rmSync(path.join(os.tmpdir(), entry), { recursive: true, force: true });
-    }
-  }
+  sweepStaleTmpDirs({ prefix: FIXTURE_PREFIX });
 }
 
 function runMutant(kind, id) {
   // BL-1280: the swept helper, never a raw fs.mkdtempSync - its root is
   // registered with the suite's own sweep instead of relying on this file's.
-  const dir = mkTmpDir(FIXTURE_PREFIX);
+  const dir = mkTmpDir(`${FIXTURE_PREFIX}${process.pid}-`);
   try {
     const stepsPath = path.join(dir, 'steps.js');
     fs.writeFileSync(

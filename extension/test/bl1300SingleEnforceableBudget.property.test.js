@@ -1,10 +1,9 @@
 const assert = require('node:assert/strict');
 const fs = require('node:fs');
-const os = require('node:os');
 const path = require('node:path');
 const fc = require('fast-check');
 const { spawnSync } = require('node:child_process');
-const { mkTmpDir } = require('./helpers/tmpDir');
+const { mkTmpDir, sweepStaleTmpDirs } = require('./helpers/tmpDir');
 
 // BL-1300 declared invariant:
 //
@@ -53,20 +52,19 @@ function parseMeasured(stdout) {
 }
 
 // BL-971: sweep leftovers by prefix BEFORE the run too - a killed run traps
-// nothing, so the next run collects what it left behind.
+// nothing, so the next run collects what it left behind. BL-1623: scoped by
+// owner pid through the shared helper - a blind prefix sweep destroys a
+// live peer's roots the instant two instances of this file are ever alive
+// at once (BL-1385/BL-1390's shape).
 function sweepFixtures() {
-  for (const entry of fs.readdirSync(os.tmpdir())) {
-    if (entry.startsWith(FIXTURE_PREFIX)) {
-      fs.rmSync(path.join(os.tmpdir(), entry), { recursive: true, force: true });
-    }
-  }
+  sweepStaleTmpDirs({ prefix: FIXTURE_PREFIX });
 }
 
 // Same calibration technique the BL-1227 step handler uses: an empty-article
 // tree, its baseline read from the gate's own output, then padded by the
 // remaining delta so the tree lands on an exact size.
 function withTreeOfExactSize(targetChars, fn) {
-  const root = mkTmpDir(FIXTURE_PREFIX);
+  const root = mkTmpDir(`${FIXTURE_PREFIX}${process.pid}-`);
   try {
     const articlesDir = path.join(root, 'swarmforge', 'constitution', 'articles');
     fs.mkdirSync(articlesDir, { recursive: true });
