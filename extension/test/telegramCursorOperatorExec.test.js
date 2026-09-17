@@ -2,6 +2,7 @@ const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const path = require('node:path');
 const { mkTmpDir } = require('./helpers/tmpDir');
+const { waitForFileSync } = require('./helpers/waitForFileSync');
 const {
   formatSyncenvReport,
   formatConfReport,
@@ -304,17 +305,14 @@ test('BL-1204: executeOperatorVerb(/redeploy, "frontdesk") dispatches to the fro
   // dispatched - misrouting to it (today's bug) would silently bounce the
   // wrong runtime while reporting success.
   assert.doesNotMatch(result.text, /this bridge/i);
-  // BL-1601: the real module spawns the script detached and unref'd (by
-  // design - a redeploy outlives the bot), so the marker can still be
-  // unwritten the instant executeOperatorVerb returns. A bounded,
-  // synchronous wait (no real timers) for it, then an assertion that it
-  // exists, both closes the race with the afterEach tmpDir sweep (which
-  // used to throw ENOTEMPTY when it raced this same write) and proves the
-  // real script actually ran - an assertion these tests lacked before.
-  for (let i = 0; i < 100 && !fs.existsSync(marker); i += 1) {
-    Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, 20);
-  }
-  assert.ok(fs.existsSync(marker), 'expected the front desk redeploy script to have written its marker');
+  // BL-1601: the module spawns the script detached and unref'd (by design -
+  // a redeploy outlives the bot), so the marker lands after this call
+  // returns. Waiting for it, bounded, before the test itself returns is
+  // what stops the afterEach sweep from racing the write (ENOTEMPTY) - and
+  // proves the real script actually ran, which the assertions above alone
+  // do not.
+  const waited = waitForFileSync(marker, { timeoutMs: 2000 });
+  assert.ok(waited.ok, `expected the front desk redeploy script to write its marker within 2s, got: ${JSON.stringify(waited)}`);
 });
 
 test('BL-1204: executeOperatorVerb(/redeploy, "all") dispatches to the all-targets redeploy module', () => {
@@ -331,13 +329,11 @@ test('BL-1204: executeOperatorVerb(/redeploy, "all") dispatches to the all-targe
   fs.chmodSync(path.join(scriptDir, 'redeploy_all_telegram.sh'), 0o755);
   const result = executeOperatorVerb(root, '/redeploy', 'all');
   assert.match(result.text, /All Telegram redeploy started/i);
-  // BL-1601: see the frontdesk twin above - bounded synchronous wait for
-  // the detached script's marker, then assert it, closing the sweep race
-  // and proving the real script ran.
-  for (let i = 0; i < 100 && !fs.existsSync(marker); i += 1) {
-    Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, 20);
-  }
-  assert.ok(fs.existsSync(marker), 'expected the all-targets redeploy script to have written its marker');
+  // BL-1601: same as the frontdesk test above - wait for the detached
+  // script's marker before returning, bounded, so the afterEach sweep
+  // never races the write.
+  const waited = waitForFileSync(marker, { timeoutMs: 2000 });
+  assert.ok(waited.ok, `expected the all-targets redeploy script to write its marker within 2s, got: ${JSON.stringify(waited)}`);
 });
 
 test('BL-1204: /redeploy and /redeploy miniapp are unchanged by the frontdesk/all wiring', () => {
