@@ -31,11 +31,12 @@ required_wiring:
 human_approval: pending
 approval_context: >
   A new feature file is authored here, so it needs a tap. No choice is
-  posed and there are no ruling_options. FIRM: the guard reads the
-  leading ticket exactly as the land step's attribution does - the first
-  ticket id anywhere in the subject, or none - so it refuses precisely
-  the subjects the land step would later attribute to a closed ticket
-  (a "Revert BL-<closed> ..." subject included). FIRM: silent on main -
+  posed and there are no ruling_options. FIRM: the guard reads a
+  subject exactly as the land step's attribution does - leading id, named
+  ids, ambiguity - so it refuses precisely the subjects the land step
+  would later attribute to a closed ticket (a "Revert BL-<closed> ..."
+  subject included), to a fileless one, or ambiguously to several
+  (amended 2026-09-17, the 93f2031c3b incident in notes). FIRM: silent on main -
   the coordinator's bookkeeping and QA's land commits legitimately name
   tickets that are closing, and the land step never attributes main's own
   history. FIRM: fail-open with a warning when origin/main cannot be read,
@@ -44,8 +45,8 @@ approval_context: >
   (BL-1242); this one never masks or is masked by another.
 
 invariants:
-  - "The guard's leading ticket is the attribution's: the first ticket id anywhere in the subject, or none - never a second parser of the subject line."
-  - "The guard refuses only on a branch other than main, only when the leading id is filed under backlog/done/ alone on origin/main, and never when origin/main cannot be read."
+  - "The guard's reading of a subject is the land step's: leading id, named ids and ambiguity exactly as land_step_lib's subject-attribution answers them - never a second parser of the subject line"
+  - "The guard refuses only on a branch other than main, and only a subject the land step would attribute to a ticket filed under backlog/done/ alone on origin/main, to a ticket with no file anywhere there, or to more than one ticket with no leading one; an unreadable origin/main warns and commits"
 
 description: |
   ## What is wrong
@@ -86,6 +87,14 @@ description: |
     (scenario 01 rows 3-4). The same closed-ticket subject on main
     commits (scenario 02). An unreadable origin/main warns and commits
     (scenario 03).
+  - A subject that names two or more ticket ids and leads with none (the
+    shape land_step_lib's subject-attribution reads as AMBIGUOUS, BL-1544)
+    is refused, naming every id and telling the author to lead with the
+    open owner (scenario 01 row 5). A subject whose leading id has no
+    ticket file anywhere on origin/main is refused as unknown there
+    (scenario 01 row 6): the land step reads such a sibling as unreadable
+    and fails closed (BL-1481), which is what held BL-1608 and BL-1607 a
+    second time on 2026-09-17 (amendment, see notes).
   - The prompt half landed with this mint: documenter.prompt says a
     report on a closed ticket's mechanism is filed under its OPEN owner.
 
@@ -94,13 +103,16 @@ description: |
   - `swarmforge/scripts/check_closed_ticket_subject.sh [message-file]`
     in the BL-1242 chain (`swarmforge/git-hooks/commit-msg`, `|| status=$?`,
     own `set -euo pipefail`): read the subject line from the message
-    file; extract the first `BL-<digits>` with the same regex
-    `task_scope_gate_lib.bb`'s attribution uses - a constant mirrored
-    across a language boundary needs a test asserting both literals
-    agree (BL-897); `git rev-parse --abbrev-ref HEAD` = main -> exit 0;
-    `git ls-tree -r --name-only origin/main backlog/` -> the id's ticket
-    file under `backlog/done/` and under no other folder -> refuse; ls-tree
-    failure -> warn on stderr, exit 0.
+    file; extract the named ids and the LEADING id with the same two regexes
+    `land_step_lib.bb`'s subject-attribution uses (`extract-ticket-ids`
+    and `leading-ticket-id-pattern`, which allows a close/promote/approve
+    verb before the id) - constants mirrored across a language boundary
+    need a test asserting both literals agree (BL-897); two or more named
+    ids and no leading one -> refuse as ambiguous; `git rev-parse --abbrev-ref HEAD` = main -> exit 0;
+    `git ls-tree -r --name-only origin/main backlog/` -> the leading (or
+    sole) id's ticket file under `backlog/done/` and under no other folder
+    -> refuse as closed; under no folder at all -> refuse as unknown;
+    ls-tree failure -> warn on stderr, exit 0.
   - Shell test `swarmforge/scripts/test/test_check_closed_ticket_subject.sh`
     (fixture repositories under mkdtemp with a fake origin, BL-1390) for
     the five shapes; the acceptance handler drives the real hook on the
@@ -134,7 +146,11 @@ qa_e2e_procedure: |
      message naming BL-1576 as closed; `git commit --allow-empty -m
      "BL-1610: probe"` (an open ticket at the time of the probe, or any
      open id) commits and is reset away; the same refused subject on the
-     master checkout's main commits and is reset away.
+     master checkout's main commits and is reset away; `git commit
+     --allow-empty -m "Revert x's BL-1576/BL-1610 row"` is refused as
+     ambiguous and `-m "BL-1185: probe"` as unknown on origin/main
+     (unless BL-1185's restored done file is there by then - pick any id
+     with no ticket file).
   4. `bash swarmforge/scripts/test/test_branch_claim_guard.sh` and the
      other guard tests still green (the chain's other exits unmasked).
 
@@ -158,3 +174,18 @@ notes: |
   Small (three scenarios, two invariants), Testable (real hook on a
   fixture repository in seconds). Severity medium: contained, loud,
   hand-remedied - but recurring.
+
+  Amended 2026-09-17 09:15Z by the specifier while completing QA's
+  post-fix land-escalate note (002856/002857): the same land refused a
+  SECOND time, on backlog/standing-reds.tsv, because QA's own 93f2031c3b
+  ("Revert fb9a53751e's wrongly-reintroduced BL-1185/BL-1608 standing-red
+  row") names two ids and leads with neither - subject-attribution reads
+  it AMBIGUOUS, BL-1185 rides as an owner, and BL-1185 has no ticket file
+  anywhere (its done file was dropped by the 2026-08-28 reset commits),
+  so the BL-1481 shared-path check reads it unreadable and fails closed.
+  Two rows added to scenario 01 (ambiguous; fileless leading id), both
+  invariants and the How widened to mirror subject-attribution's three
+  answers, not only the closed one. Evidence:
+  backlog/evidence/BL-1608-specifier-adjudication-of-post-fix-land-escalate-and-whole-branch-push-20260917.md.
+  BL-1185's done file is restored on main in the same commit, so that
+  particular id reads closed from now on.
