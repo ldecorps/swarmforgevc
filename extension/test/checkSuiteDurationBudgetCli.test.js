@@ -7,6 +7,13 @@ const {
   buildSuiteBudgetVerdict,
   formatSuiteBudgetVerdict,
   SUITE_DURATION_BUDGET_MS,
+  classifySuiteWork,
+  deriveExpectedWallMs,
+  buildSuiteWorkVerdict,
+  formatSuiteWorkVerdict,
+  SUITE_WORK_BUDGET_MS,
+  SUITE_WORK_TOLERANCE,
+  OPERATOR_WALL_CEILING_MS,
 } = require('../out/tools/check-suite-duration-budget');
 
 const CLI = path.join(__dirname, '..', 'out', 'tools', 'check-suite-duration-budget.js');
@@ -62,6 +69,110 @@ test('formatSuiteBudgetVerdict reports a within-budget run as OK, not an offende
   const text = formatSuiteBudgetVerdict(buildSuiteBudgetVerdict(6000, 10000));
   assert.match(text, /OK/);
   assert.doesNotMatch(text, /over budget/);
+});
+
+// ── classifySuiteWork / deriveExpectedWallMs / buildSuiteWorkVerdict (pure)
+// ── BL-1599 unit-suite-work-ratchet-01's whole decision table ──────────────
+
+test('BL-1599: the committed budget is the delegated number, the wall budget stays unchanged', () => {
+  assert.equal(SUITE_WORK_BUDGET_MS, 550000);
+  assert.equal(SUITE_DURATION_BUDGET_MS, 10000);
+});
+
+const WORK_RATCHET_TABLE = [
+  { work: 540000, forks: 9, pole: 69900, verdict: 'ok', exitNonZero: false, wall: 69900, distance: 56900 },
+  { work: 90000, forks: 9, pole: 5000, verdict: 'ok', exitNonZero: false, wall: 10000, distance: 0 },
+  { work: 590000, forks: 10, pole: 5000, verdict: 'over-tolerance', exitNonZero: false, wall: 59000, distance: 46000 },
+  { work: 620000, forks: 1, pole: 69900, verdict: 'over-budget', exitNonZero: true, wall: 620000, distance: 607000 },
+];
+
+for (const { work, forks, pole, verdict, exitNonZero, wall, distance } of WORK_RATCHET_TABLE) {
+  test(`classifySuiteWork/deriveExpectedWallMs: work=${work} forks=${forks} pole=${pole} -> ${verdict}`, () => {
+    assert.equal(classifySuiteWork(work, SUITE_WORK_BUDGET_MS, SUITE_WORK_TOLERANCE), verdict);
+    assert.equal(deriveExpectedWallMs(work, forks, pole), wall);
+  });
+
+  test(`buildSuiteWorkVerdict: work=${work} forks=${forks} pole=${pole} carries the verdict, wall and distance, exit non-zero=${exitNonZero}`, () => {
+    const result = buildSuiteWorkVerdict(work, forks, pole);
+    assert.equal(result.verdict, verdict);
+    assert.equal(result.expectedWallMs, wall);
+    assert.equal(result.distanceMs, distance);
+    assert.equal(result.verdict === 'over-budget', exitNonZero);
+  });
+}
+
+test('classifySuiteWork: the boundary (exactly the budget) is ok, not over-tolerance', () => {
+  assert.equal(classifySuiteWork(550000, 550000, 0.1), 'ok');
+});
+
+test('classifySuiteWork: exactly the tolerance ceiling (budget * 1.1) is over-tolerance, not over-budget', () => {
+  assert.equal(classifySuiteWork(605000, 550000, 0.1), 'over-tolerance');
+});
+
+test('deriveExpectedWallMs: an invalid fork count (0, negative, NaN) falls back to 1 fork rather than dividing by zero', () => {
+  assert.equal(deriveExpectedWallMs(90000, 0, 5000), 90000);
+  assert.equal(deriveExpectedWallMs(90000, -1, 5000), 90000);
+  assert.equal(deriveExpectedWallMs(90000, NaN, 5000), 90000);
+});
+
+test('formatSuiteWorkVerdict prints work, forks, slowest file, derived wall and the distance to the operator ceiling', () => {
+  const text = formatSuiteWorkVerdict(buildSuiteWorkVerdict(620000, 1, 69900));
+  assert.equal(OPERATOR_WALL_CEILING_MS, 13000);
+  assert.match(text, /620\.0s/);
+  assert.match(text, /1 fork/);
+  assert.match(text, /69\.9s/);
+  assert.match(text, /620\.0s/);
+  assert.match(text, /607\.0s/);
+});
+
+test('formatSuiteWorkVerdict reports ok without refusal language', () => {
+  const text = formatSuiteWorkVerdict(buildSuiteWorkVerdict(540000, 9, 69900));
+  assert.doesNotMatch(text, /refus/i);
+});
+
+test('formatSuiteWorkVerdict names an over-budget run as refused', () => {
+  const text = formatSuiteWorkVerdict(buildSuiteWorkVerdict(620000, 1, 69900));
+  assert.match(text, /refus/i);
+});
+
+// BL-1599 hardening: exact full-string pins, singular fork, ok verdict.
+// workS/wallS are equal here by construction (forks=1) - the plural
+// fixture below gives them DISTINCT values so an arithmetic mutant on
+// either cannot hide behind the other's matching substring, the same
+// collision that let workS's `/1000`->`*1000` mutant survive against
+// the loose /620\.0s/ regex above (wallS happened to render the same
+// text). An exact assert.equal pins every field, including the label
+// ('ok', not forced true/false or emptied) and the singular "1 fork".
+test('formatSuiteWorkVerdict: exact text for an ok verdict, one fork (singular)', () => {
+  const text = formatSuiteWorkVerdict(buildSuiteWorkVerdict(100000, 1, 40000, 550000, 0.1));
+  assert.equal(
+    text,
+    'suite work ok: 100.0s work (budget 550.0s, 1 fork, slowest file 40.0s) -> expected wall 100.0s, 87.0s from the 13.0s operator ceiling'
+  );
+});
+
+// Plural forks, and work/wall/pole/distance all distinct decimal strings
+// so each field's arithmetic mutant (/1000 -> *1000) breaks the exact
+// match on its own, unmasked by a sibling field's coincidentally-matching
+// substring.
+test('formatSuiteWorkVerdict: exact text for an ok verdict, seven forks (plural)', () => {
+  const text = formatSuiteWorkVerdict(buildSuiteWorkVerdict(300000, 7, 25000, 550000, 0.1));
+  assert.equal(
+    text,
+    'suite work ok: 300.0s work (budget 550.0s, 7 forks, slowest file 25.0s) -> expected wall 42.9s, 29.9s from the 13.0s operator ceiling'
+  );
+});
+
+// Exercises the over-tolerance branch at all (BL-1599's NoCoverage
+// survivor: no prior test ever produced this verdict, so the 'over
+// tolerance' string literal itself had zero coverage) and pins the
+// label text exactly, discriminating it from both 'ok' and 'REFUSED'.
+test('formatSuiteWorkVerdict: exact text for an over-tolerance verdict', () => {
+  const text = formatSuiteWorkVerdict(buildSuiteWorkVerdict(590000, 10, 5000, 550000, 0.1));
+  assert.equal(
+    text,
+    'suite work over tolerance: 590.0s work (budget 550.0s, 10 forks, slowest file 5.0s) -> expected wall 59.0s, 46.0s from the 13.0s operator ceiling'
+  );
 });
 
 // ── main() (thin CLI wrapper, in-process) ───────────────────────────────────

@@ -173,6 +173,10 @@
                     ;; BL-232: same sidecar drop as the task-mode dequeue path.
                     (handoff-lib/remove-sidecars-of! source-file)
                     (handoff-lib/set-header! target-file "dequeued_at" (handoff-lib/timestamp))
+                    ;; BL-1610: stamped beside dequeued_at, same claim moment
+                    ;; - bounds a later git_handoff send's merge-drop scan to
+                    ;; merges made AFTER receipt (see merge_drop_guard_lib.bb).
+                    (handoff-lib/set-header! target-file "received_at_head" (current-head-commit-10))
                     ;; BL-678 invariant 1: the sidecar is written the INSTANT
                     ;; the item is claimed - never lazily by a later sweep
                     ;; tick (that gap is the BL-648-source near-miss).

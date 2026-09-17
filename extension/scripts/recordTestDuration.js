@@ -36,11 +36,18 @@
 // which risks altering the byte-for-byte console output existing consumers
 // (CI logs, the coverage/crap scripts) rely on.
 const fs = require('fs');
+const os = require('os');
 const path = require('path');
 const { spawnSync } = require('child_process');
 const { listTestFiles, buildRecord, appendRecord, computeFinalExitCode } = require('./testDurationRecorderLib');
-const { buildSuiteBudgetVerdict, formatSuiteBudgetVerdict } = require('../out/tools/check-suite-duration-budget');
+const {
+  buildSuiteBudgetVerdict,
+  formatSuiteBudgetVerdict,
+  buildSuiteWorkVerdict,
+  formatSuiteWorkVerdict,
+} = require('../out/tools/check-suite-duration-budget');
 const { runGuardAgainstReport, printGuardReport } = require('../out/tools/check-suite-file-budget');
+const { resolveVitestWorkerPool, resolveFreeCoresCeiling } = require('../out/tools/vitest-worker-memory-budget');
 
 const ROOT_DIR = path.join(__dirname, '..');
 const TEST_DIR = path.join(ROOT_DIR, 'test');
@@ -81,6 +88,26 @@ function main() {
   }
   const guardExitCode = guardVerdict.passed ? 0 : 1;
 
+  // BL-1599: the SAME resolveVitestWorkerPool composition vitest.config.mjs
+  // itself calls, with the same real environment inputs, so the fork count
+  // the ratchet reads is the lane's real pool size - never a copy of the
+  // config's own sizing decision.
+  const forks = resolveVitestWorkerPool({
+    pack: process.env.SWARMFORGE_PACK,
+    rotation: process.env.SWARMFORGE_ROTATION,
+    platform: os.platform(),
+    override: process.env.SWARMFORGE_VITEST_MAX_FORKS,
+    hostRamMB: os.totalmem() / (1024 * 1024),
+    defaultCeiling: resolveFreeCoresCeiling(os.cpus().length, os.loadavg()[1]),
+  });
+  // BL-1599: decides the work ratchet against SUITE_WORK_BUDGET_MS (the
+  // default buildSuiteWorkVerdict falls back to - never re-passed here,
+  // so a lowered budget in check-suite-duration-budget.ts applies here
+  // with no second edit) on every npm test run - the live consumer.
+  const workVerdict = buildSuiteWorkVerdict(workMs, forks, poleMs);
+  console.log(formatSuiteWorkVerdict(workVerdict));
+  const workExitCode = workVerdict.verdict === 'over-budget' ? 1 : 0;
+
   appendRecord(
     LOG_PATH,
     buildRecord({
@@ -93,10 +120,11 @@ function main() {
       newOffenders: guardVerdict.offenders.length,
       watchFiles: guardVerdict.watchFiles.length,
       budgetVerdict: guardVerdict.verdict,
+      workBudgetVerdict: workVerdict.verdict,
     })
   );
 
-  process.exit(computeFinalExitCode(testExitCode, guardExitCode));
+  process.exit(computeFinalExitCode(testExitCode, guardExitCode, workExitCode));
 }
 
 main();

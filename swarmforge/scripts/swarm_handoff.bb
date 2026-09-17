@@ -56,7 +56,10 @@
        "body: <proposed rule text, max 200 chars>\n"
        "rationale: <why the rule is needed, max 200 chars>"))
 
-(def reserved-fields #{"id" "from" "role" "recipient" "created_at" "enqueued_at" "dequeued_at" "completed_at" "routing_skipped" "non-forwarding"})
+;; BL-1610: received_at_head (the dequeue stamp - see
+;; ready_for_next_task.bb/ready_for_next_batch.bb) reserved so no draft can
+;; forge it, same posture as dequeued_at.
+(def reserved-fields #{"id" "from" "role" "recipient" "created_at" "enqueued_at" "dequeued_at" "completed_at" "routing_skipped" "non-forwarding" "received_at_head"})
 (def allowed-fields #{"type" "to" "priority" "task" "commit" "message" "wake" "rejection_reason" "reroute_reason" "scope" "body" "rationale"})
 (def allowed-types #{"awake" "git_handoff" "note" "rule_proposal"})
 (def valid-scope-pattern #"constitution|engineering|project|role:[a-zA-Z][a-zA-Z0-9]*")
@@ -883,8 +886,14 @@
 ;; copy addressed to it would land unapproved in-flight work on the
 ;; published branch. Residency is read from the table, never from a second
 ;; hardcoded role name.
-(defn reverse-roles [sender]
-  (reverse-hop-lib/reverse-recipients (roles-table-lines) sender (role-propagation sender)))
+;; BL-1605: subtracts the forward's own recipients from the reverse set -
+;; a role the `to:` already names (a bounce to an earlier role under
+;; back-one/back-all) must receive exactly the forwarding copy, never
+;; also a non-forwarding twin of the same send.
+(defn reverse-roles [sender forward-recipients]
+  (reverse-hop-lib/remove-forward-recipients
+   (reverse-hop-lib/reverse-recipients (roles-table-lines) sender (role-propagation sender))
+   forward-recipients))
 
 ;; BL-1536: the terminal non-forwarding stamp follows the hop's DIRECTION,
 ;; not the sender's seat alone (the old last-pack-role? check this replaced
@@ -1138,7 +1147,7 @@
                                                  :non-forwarding true
                                                  :reverse? true
                                                  :routing-skipped nil)))
-                        (reverse-roles (:sender ctx))))]
+                        (reverse-roles (:sender ctx) (:recipients ctx))))]
     (into [forward] reverse)))
 
 (defn error-report [draft errors]

@@ -16,6 +16,11 @@
 (load-file (str (fs/path (fs/parent *file*) "pipeline_stage_lib.bb")))
 (load-file (str (fs/path (fs/parent *file*) "idle_clear_fullness_cli.bb")))
 (load-file (str (fs/path (fs/parent *file*) "qa_hold_lib.bb")))
+;; BL-1185/BL-1608: Work notes attribute mutation_cost via the same
+;; task-name parse supersede_lib already uses (task: header, else Work
+;; BL-… in the message) - restored after BL-1167's land (ccc63d8cfd,
+;; 2026-08-27) silently reverted it (BL-571 class).
+(load-file (str (fs/path (fs/parent *file*) "supersede_lib.bb")))
 
 (def idle-boundary?
   "Set only when invoked from done_with_current_task.bb, right after it
@@ -39,6 +44,22 @@
 ;; off to rotate_to_role.sh. Never fires outside mono-router, never diverts
 ;; the home role itself, and never fires while real work is dequeueable.
 
+;; BL-1610: the sender's own HEAD at the moment a parcel is claimed - stamped
+;; onto the in_process file as received_at_head so a later git_handoff send
+;; can bound its merge-drop scan to merges the sender made AFTER receipt,
+;; never the sender branch's whole off-main history when the received parcel
+;; is a coordinator route git_handoff (main's own tip). Mirrors
+;; ready_for_next_batch.bb's current-head-commit-10 exactly (duplicated
+;; rather than shared - task/batch have no common require point below
+;; handoff_lib.bb, same posture as their other small live-glue
+;; duplications). "" on error, never nil, so a downstream set-header! never
+;; writes a blank/nil value silently.
+(defn- current-head-commit-10 []
+  (try
+    (let [result (sh/sh "git" "rev-parse" "--short=10" "HEAD")]
+      (if (zero? (:exit result)) (str/trim (:out result)) ""))
+    (catch Exception _ "")))
+
 (defn- mono-router-conf-text []
   (try (slurp (str (backlog-depth-lib/conf-file-path (handoff-lib/target-root))))
        (catch Exception _ nil)))
@@ -51,6 +72,20 @@
   (handoff-lib/active-ticket-mutation-cost
    (pipeline-stage-lib/extract-ticket-id task)))
 
+(defn claim-task-name
+  "BL-1185/BL-1608: the ONE shared attribution both claim-time readers
+   (difficulty-allows-claim? and apply-effort-for-task!) resolve a
+   parcel's task through - prefer the task: header (git_handoff), else the
+   `Work BL-…` ticket slug from a note's own message
+   (supersede-lib/task-name-from-content), else nil. Never invent a task
+   header on a type: note - attribution only. Public (not defn-) so
+   ready_for_next_claim_task_name_runner.bb can drive it directly."
+  [handoff-file]
+  (or (not-empty (handoff-lib/header-field handoff-file "task"))
+      (try
+        (supersede-lib/task-name-from-content (slurp (str handoff-file)))
+        (catch Exception _ nil))))
+
 (defn- apply-effort-for-task!
   "BL-1316: retunes (or restores) this seat's reasoning effort for the
    ticket named by handoff-file's task header, at both the claim moment
@@ -62,7 +97,7 @@
   (let [me (handoff-lib/current-role)
         backends (seat-difficulty-lib/parse-seat-backends pack-conf)
         efforts (seat-difficulty-lib/parse-seat-efforts pack-conf)
-        task (handoff-lib/header-field handoff-file "task")
+        task (claim-task-name handoff-file)
         ticket (pipeline-stage-lib/extract-ticket-id task)
         cost (mutation-cost-for-task task)]
     (handoff-lib/apply-claim-effort!
@@ -94,7 +129,7 @@
   [handoff-file tiers pack-conf]
   (let [me (handoff-lib/current-role)
         stage (handoff-lib/seat-stage me)
-        cost (mutation-cost-for-task (handoff-lib/header-field handoff-file "task"))
+        cost (mutation-cost-for-task (claim-task-name handoff-file))
         models (seat-difficulty-lib/parse-seat-models pack-conf)
         decision (seat-difficulty-lib/difficulty-claim-decision
                   {:me me
@@ -402,6 +437,12 @@
                         ;; waiting in new/, and must not outlive it there.
                         (handoff-lib/remove-sidecars-of! source-file)
                         (handoff-lib/set-header! target-file "dequeued_at" (handoff-lib/timestamp))
+                        ;; BL-1610: stamped beside dequeued_at, same claim
+                        ;; moment - not "" checked here, a blank stamp still
+                        ;; writes and the gate's own reader falls back to
+                        ;; today's received..forwarded scan on a blank/absent
+                        ;; value (fail-open, never a strand).
+                        (handoff-lib/set-header! target-file "received_at_head" (current-head-commit-10))
                         ;; BL-1004 invariant 1's out-loud half: a cross-seat
                         ;; claim past the deadline says the seat did not
                         ;; build this parcel, so it merges the parcel
@@ -416,4 +457,5 @@
                         (handoff-lib/print-task target-file))
                       (recur (rest candidates)))))))))))))
 
-(-main)
+(when (= *file* (System/getProperty "babashka.file"))
+  (-main))
