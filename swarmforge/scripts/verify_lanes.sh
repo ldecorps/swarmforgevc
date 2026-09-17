@@ -72,13 +72,23 @@ esac
 # in_process parcel's own task names which ticket to ask about; no parcel
 # (a note, or nothing at all) falls back to origin/main, same as the
 # ticket's own direction.
+#
+# The newest-match lookup itself shells to handoff-lib/handoff-files-with-
+# batches (BL-1313) rather than a bash `find | sort`, deliberately: that
+# reader sorts every candidate - top-level or inside any batch_* directory -
+# by FILENAME ALONE, exactly as a batch role's real mailbox is read
+# everywhere else in this swarm. A bash `find | sort` instead sorts full
+# PATHS, so a batch-nested file's own "batch_<ts>/" path segment can make it
+# sort before or after a top-level file for reasons that have nothing to do
+# with either file's own priority/timestamp prefix - a batch role (cleaner,
+# hardender) holding more than one in-process task would then have this
+# script ask review_forward_evidence_gate_lib.bb about the WRONG task's
+# received commit.
 current_in_process_task() {
-  local inbox f
-  inbox="$(bb "$SCRIPT_DIR/mailbox_dir.bb" "$ROOT" "$STAGE" in_process 2>/dev/null || true)"
-  [[ -n "$inbox" && -d "$inbox" ]] || return 0
-  f="$(find "$inbox" -name '*.handoff' -type f 2>/dev/null | sort | tail -1)"
-  [[ -n "$f" ]] || return 0
-  grep -E '^task:' "$f" 2>/dev/null | head -1 | awk '{print $2}' | tr -d '\r'
+  bb -e "(load-file \"$SCRIPT_DIR/handoff_lib.bb\")
+(when-let [role-info (handoff-lib/load-role-info \"$STAGE\" \"$ROOT\")]
+  (when-let [files (seq (handoff-lib/handoff-files-with-batches (handoff-lib/mailbox-dir role-info :in_process)))]
+    (println (or (handoff-lib/header-field (last files) \"task\") \"\"))))" 2>/dev/null || true
 }
 
 received_commit_for_task() {
