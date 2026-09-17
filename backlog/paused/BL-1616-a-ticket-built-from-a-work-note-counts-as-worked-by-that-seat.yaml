@@ -168,3 +168,17 @@ notes: |
   reverted on that branch before its next merge-up; a note to coder@2 is
   a dead letter until BL-1615 lands, so this is recorded here and in the
   evidence for whichever seat or sweep reaches it.
+
+  2026-09-17 10:50Z (specifier): the residue every duplicate build leaves.
+  Twice today the seat whose duplicate lost kept a `BL-<id>:`-leading
+  commit on its branch (coder@2: 7b78e9d58a for BL-1610, eca9aaeb96 for
+  BL-1604) whose files the record renamed or never had; once the ticket
+  closes, land_step_lib's BL-1546 clause refuses every later land from
+  that branch on those paths, and the draft's own test file goes red at
+  load time on every parcel the seat forwards (bl1604RegistryRestoreInvariants
+  calling a symbol the record renamed). Remedy each time: delete the
+  draft-only files or restore the shared ones to the record's blob in an
+  UNTAGGED commit - never a revert, which deletes lines both builds wrote
+  identically. Records: backlog/evidence/BL-1610-specifier-adjudication-of-coder-at-2-revert-hold-20260917.md,
+  backlog/evidence/BL-1604-specifier-adjudication-of-coder-at-2-unowned-red-note-20260917.md.
+  Spec unchanged: the fix that stops the duplicate build is this ticket.
