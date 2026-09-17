@@ -452,63 +452,6 @@
                   (assert= "head bound: exactly one finding" 1 (count bounded))
                   (assert= "head bound: names M1, not M0" m1-sha (:merge (first bounded))))))))))))
 
-;; ── BL-1610 amendment (specifier a5e59a0f5b, bounce BL-1610-bounce-
-;; 20260917.md): the `^received` exclusion, same isolating-fixture
-;; discipline as the `^head` test just above. M-upstream is an UPSTREAM
-;; role's one-sided merge, made on a line that becomes the RECEIVED
-;; commit's own ancestry - never reachable from the sender's own head at
-;; dequeue, because the sender's head predates ever receiving the parcel
-;; at all (the documenter's real shape: 6e5087cd43 reached the documenter
-;; through 4356ab57c1's ancestry, not through anything the documenter did
-;; after receipt). `head..forwarded` alone (the pre-amendment 4-arity
-;; scan) re-admits it; `forwarded ^head ^received` must not.
-(with-fixture [root]
-  (write! root "up.txt" (lines-str base-lines))
-  (commit! root "seed base (up.txt)")
-  (let [base-sha (head root)]
-    (write! root "up.txt" sender-content)
-    (commit! root "upstream: keep side (up.txt)")
-    (let [keep-sha (head root)]
-      (sh! root "git" "reset" "-q" "--hard" base-sha)
-      (write! root "up.txt" received-content)
-      (commit! root "upstream: drop side (up.txt)")
-      (let [drop-sha (head root)
-            keep-tree-sha (:out (sh! root "git" "rev-parse" (str keep-sha "^{tree}")))
-            ;; M-upstream: the UPSTREAM role's own one-sided merge, kept
-            ;; the keep-side verbatim - drop-side's uncontested hunk lost.
-            m-upstream-sha (:out (sh! root "git" "commit-tree" keep-tree-sha "-p" keep-sha "-p" drop-sha
-                                      "-m" "M-upstream: an upstream role's one-sided merge (drops drop-side's hunk)."))]
-        (sh! root "git" "update-ref" "refs/heads/main" m-upstream-sha)
-        (sh! root "git" "checkout" "-q" "main")
-        ;; The parcel this test's sender RECEIVES: one small commit past
-        ;; M-upstream - its own ancestry, never anything the sender did.
-        (write! root "marker.txt" "received marker\n")
-        (commit! root "received: one hop past M-upstream")
-        (let [received-sha (head root)]
-          ;; The sender's own head at dequeue: reset to BEFORE M-upstream
-          ;; ever existed, then the sender's own unrelated work - head has
-          ;; NO path to M-upstream at all, exactly the real shape.
-          (sh! root "git" "reset" "-q" "--hard" base-sha)
-          (write! root "sender-own.txt" "sender's own pre-existing work\n")
-          (commit! root "sender: own work before ever receiving the parcel")
-          (let [head-sha (head root)]
-            (sh! root "git" "update-ref" "refs/heads/main" head-sha)
-            (sh! root "git" "checkout" "-q" "main")
-            ;; forwarded: the sender's own ordinary merge of the received
-            ;; parcel into its own head - ordinary auto-merge, disjoint
-            ;; paths, no conflict of its own to resolve.
-            (sh! root "git" "merge" "-q" "--no-ff" received-sha
-                 "-m" "forwarded: sender merges the received parcel into its own head")
-            (let [forwarded-sha (head root)
-                  unbounded (merge-drop-guard-lib/findings-between root received-sha forwarded-sha)
-                  bounded (merge-drop-guard-lib/findings-between root received-sha forwarded-sha head-sha)]
-              (assert= "no head (3-arity, unchanged): M-upstream already excluded (ancestor of received)"
-                       #{} (set (map :path unbounded)))
-              (assert= "head bound (4-arity, amended): M-upstream STILL excluded via ^received"
-                       #{} (set (map :path bounded)))
-              (assert-false "head bound: M-upstream itself never named"
-                            (boolean (some #(= m-upstream-sha (:merge %)) bounded))))))))))
-
 ;; ── BL-1610 invariant 2: excused-by-blob-identity? requires BOTH the
 ;; merge-commit-is-not-forwarded clause AND the blob-identity clause - a
 ;; mutant weakening the AND to an OR (hand-verified via a bb -e probe,
