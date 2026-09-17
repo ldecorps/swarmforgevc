@@ -1,5 +1,5 @@
 id: BL-1620
-title: "BL-791 slice D, first cut: the unit lane's two largest poles - bl968StepRegistryMaterializedTreeGuard.test.js at 69.9 s and telegramFrontDeskBotCli.test.js at 65.3 s (census 2026-09-16, 9 forks, load 10.8; half the nine poles' 273 s between them) - come under the 7000 ms per-file budget with no test deleted, skipped or excluded, their suite-poles.tsv rows move from the epic to this ticket at mint and leave in the same land, and the cause of each is named"
+title: "BL-791 slice D, first cut, amended 2026-09-17: telegramFrontDeskBotCli.test.js (65.3 s in the 2026-09-16 census, 22.9 s alone today, 95 percent of it in ten tests that each start one or two real Babashka processes through enqueueRoleAnswerNote) comes under the 7000 ms per-file budget through one injected exec seam on that function, the file's own postFn convention; the tests that prove dedup and pointer logic inject a recording fake, BL-1518's test keeps the real script; bl968 leaves this ticket for BL-1629 (an accepted pole) and BL-1630 (the registry load's own cost)"
 milestone: M8
 type: chore
 epic: unit-suite-speed
@@ -50,50 +50,73 @@ description: |
   live repository (BL-1038) and a CLI test that spawns real processes per
   case (BL-1039).
 
-  ## What is wanted
+  ## What is wanted (amended 2026-09-17, see notes)
 
-  - Both files under 7000 ms in three consecutive `npm test` runs at a
-    1-minute load below 8, test count equal or higher, nothing skipped
-    (scenario 01; invariants 1-2).
-  - Their suite-poles.tsv rows, moved to BL-1620 at mint (this commit),
-    removed in the same land; the verdict prints no new-pole and no
-    stale-row for them (scenario 02).
-  - The cause per file named in evidence with the pattern that replaced it
-    (scenario 03): a materialized fixture tree instead of the live repo, an
-    in-process CLI main with stubbed cwd/argv instead of a spawned node per
-    case (engineering.prompt "CLI main() is a thin wrapper").
+  - `extension/test/telegramFrontDeskBotCli.test.js` under 7000 ms in
+    three consecutive `npm test` runs at a 1-minute load below 8, test
+    count equal or higher, nothing skipped (scenario 01; invariants 1-2).
+  - Its suite-poles.tsv row removed in the same land; the verdict prints
+    no new-pole and no stale-row for it (scenario 02). bl968's row moved
+    to BL-1629 in the amendment commit.
+  - The cause named in evidence with the pattern that replaced it
+    (scenario 03): every call to `enqueueRoleAnswerNote` starts a real
+    `bb swarm_handoff.bb` process (about 1.3 s each; the BL-1203 tests
+    call it twice by construction) - replaced by an injected exec
+    function, the file's own `postFn` convention, with the real call as
+    the default.
 
   ## How (direction, not mandate)
 
-  - Profile each file alone (`npx vitest run <file> --reporter=json`) to
-    find the per-test cost; the epic's slice B tickets (BL-1038, BL-1039)
-    show the two remedies. Keep every assertion; add a shared fixture
-    builder only if both files need it.
-  - Evidence names the before/after per-file ms from the JSON report at the
-    same load band.
-  - Documenter: BL-791's how-to gains the two entries; nothing else.
+  - `enqueueRoleAnswerNote(targetPath, role, text, updateId?, runHandoff?)`
+    in `extension/src/tools/telegram-front-desk-bot.ts`: one optional
+    trailing parameter whose default is today's
+    `execFileAsync('bb', [cli, draftPath], {...})` (line 1844) - an
+    injected side effect, never a `*_FORCE_RESULT` env (engineering.prompt
+    "CLI main() is a thin wrapper"). Every production caller is unchanged.
+  - In the test file, the BL-1203 and BL-607 cases (the ten slowest, 95
+    percent of the file) pass a fake that records `[cli, draftPath, opts]`
+    and resolves; their assertions read the recorded draft path and the
+    role-answer file exactly as they read the real queue today. BL-1518's
+    test keeps the real `bb` (it proves the real script's refusal and
+    delivery). `runCli`/`runCliSubprocess` are already in-process where
+    they can be - unchanged.
+  - Profile before and after with `npx vitest run <file> --reporter=json`;
+    evidence names the per-file ms from the JSON report at the same load
+    band, and the ten tests' before/after.
+  - Documenter: BL-791's how-to gains the entry; nothing else.
 
 constraints: >
-  The two test files, any fixture helper they gain, backlog/suite-poles.tsv
-  rows, evidence. No production code, no config, no budget or register
-  rule change. The step handler lands with the feature (BL-233). Evidence
-  named BL-1620-*.
+  The test file, backlog/suite-poles.tsv's row for it, evidence, and ONE
+  production change: the optional injected exec parameter on
+  enqueueRoleAnswerNote with the current call as its default (amended
+  2026-09-17 - the original "no production code" made the file's budget
+  unreachable, coder evidence). No other production code, no config, no
+  budget or register rule change. The step handler lands with the feature
+  (BL-233). Evidence named BL-1620-*.
 
 out_of_scope: |
-  - The other seven poles and the watch file (BL-791 slice D, next cuts -
-    minted one or two files at a time as this one lands).
-  - bl1277UnscopedStepCollisionGuard's 20 s timeout red (BL-1600 landed;
-    BL-1607 active).
+  - bl968StepRegistryMaterializedTreeGuard.test.js: its two full registry
+    loads cost 13-19 s each by construction; it is an accepted pole under
+    BL-1629 (register disposition) and cheaper only through BL-1630 (the
+    registry load's own cost). Its blind temp-dir sweep goes with BL-1629.
+  - The other seven poles and the watch file (BL-791 slice D, next cuts).
+  - bl1277UnscopedStepCollisionGuard's 20 s timeout red (BL-1607 active).
+  - The bb cold-start cost itself (about 1.3 s per swarm_handoff.bb run,
+    paid by every live send): a BL-791 question in its own right.
 
 qa_e2e_procedure: |
-  On the parcel commit, from extension/:
-  1. Acceptance resolving all scenarios
+  On the parcel commit, from `extension/`, at a 1-minute load below 8:
+  1. `npx vitest run test/telegramFrontDeskBotCli.test.js --reporter=json`
+     three times, sequentially -> under 7000 ms each, 275 or more tests,
+     none skipped; the BL-1518 test still runs the real script (its own
+     duration about 2.5 s is expected).
+  2. `npm test` once -> the verdict prints no new-pole and no stale-row
+     for the file; its row is gone from backlog/suite-poles.tsv.
+  3. Acceptance resolving all scenarios
      (`bash specs/pipeline/scripts/run_acceptance.sh specs/features/BL-1620-*.feature`).
-  2. `npm test` once (the three-run measurement is the parcel's own, in its
-     evidence): the verdict line shows no new-pole and no stale-row for
-     either file; `backlog/suite-poles.tsv` has no row for either.
-  3. `git diff <received>..<parcel> --stat` touches only the two test
-     files, any helper, the register and evidence.
+  4. `git diff main...HEAD --name-only` names the test file, the one
+     production file, the register, evidence and docs only; the production
+     diff adds one optional parameter and no other behaviour.
 
 source: |
   Human intake via the operator, 2026-09-17T07:10Z ("BL-791 slice D
@@ -122,5 +145,29 @@ notes: |
   sweep through tmpDir.js's `sweepStaleTmpDirs` once BL-1623 lands, or
   the pid-guarded loop inline if this lands first. Not a new scenario;
   recorded so the two parcels do not both edit the file.
+
+  Amended 2026-09-17 14:10Z by the specifier on coder@2's note 000009
+  ("neither named remedy applies to either file", evidence
+  BL-1620-coder-investigation-20260917.md in .worktrees/coder2): both
+  remedies the mint named were already in place, and the measured cost
+  is elsewhere. telegramFrontDeskBotCli: ten tests, 21.8 of 22.9 s, each
+  starting one or two real bb processes through enqueueRoleAnswerNote -
+  reachable only with a production seam, so the "no production code"
+  constraint is widened to that one optional parameter. bl968: the file
+  spawns a full step-registry load twice by design (BL-968 invariant 1:
+  a materialized, complete, current tree) and one load costs 12.6 s of
+  require time across 1189 handlers (19.5 s wall through index.js,
+  specifier census 14:05Z) - no test-side change reaches 7 s; it leaves
+  this ticket: BL-1629 makes it an accepted pole (a register disposition
+  BL-1598 lacks), BL-1630 cuts the registry load itself (twelve handlers
+  carry 10.5 of the 12.6 s; six sweep the temp dir at module load). The
+  approved FIRMs hold for the file that stays (no test lost, measured
+  under-budget, its row leaves with the land); bl968's row moves to
+  BL-1629 in the amendment commit instead of leaving here - the human
+  may reject in the topic. Scenario 01's Examples lose the bl968 row.
+  The Work note coder@2 completed at 14:00Z is the closed trail; the
+  coordinator re-routes this ticket as a fresh Work note (BL-1415: a
+  dropped trail routes without --force). The 12:10Z note above about
+  bl968's blind sweep now belongs to BL-1629.
 
 assigned_to: coder
