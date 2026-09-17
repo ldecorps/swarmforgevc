@@ -33,8 +33,15 @@ authored. Only QA's hand diff against both parents caught it.
 - A deliberate `git revert` of the commit that authored the dropped hunk,
   reachable from the forwarded commit (`This reverts commit <sha>` in the
   body) — the BL-490/BL-495 bounce-revert convention, same as BL-1213.
-- A merge the sender did not make, or anything outside the
-  received..forwarded range.
+- A merge the sender did not make since it received the parcel: the scan
+  is bounded to merges reachable from the forwarded commit and not from
+  the sender's `received_at_head` dequeue stamp (BL-1610), falling back to
+  the full received..forwarded range only for an older parcel with no
+  stamp.
+- A finding whose path the forward carries unchanged from what was
+  received — the forward's blob at that path equals the received commit's
+  blob there, so nothing dropped can ride it (BL-1610 invariant 2; still
+  blocks when the offending merge itself is the commit being forwarded).
 - A `note` handoff — only `git_handoff` sends are checked.
 
 ## If you hit this refusal
@@ -63,12 +70,13 @@ to keep both sides before sending.
 | Guard library | `swarmforge/scripts/merge_drop_guard_lib.bb` |
 | Wired into | `swarmforge/scripts/swarm_handoff.bb` (send-time `validate`) |
 | Acceptance steps | `specs/pipeline/steps/bl1576MergeDropGuardSteps.js` |
-| Read-only CLI (no fixture) | `bb swarmforge/scripts/merge_drop_guard_lib.bb <project-root> <received-commit> <forwarded-commit>` — prints one JSON finding per line |
+| Read-only CLI (no fixture) | `bb swarmforge/scripts/merge_drop_guard_lib.bb <project-root> <received-commit> <forwarded-commit> [head-commit]` — prints one JSON finding per line, each carrying `:excused` (BL-1610); the optional 4th arg reproduces the send-time `received_at_head`-bounded scan |
 
 ## Related
 
 - [BL-1213](BL-1213-parcel-rollback-guard.md) (parcel-rollback guard) — bounded to the paths the *received* commit itself touched and fires on a byte-identical tip; this gate is a distinct, sixth question in the same incident thread and does not re-tune BL-1213.
 - BL-1242 (merge-deletion commit-msg hook), BL-1098 (push-sweep silent-revert predicate), BL-1205 (tree-collapse guard) — sibling guards read and positioned during BL-1576's design; none of them is edited by this ticket.
+- BL-1610 bounds this guard's scan to `received_at_head..forwarded` and excuses a finding whose path the forward carries unchanged from what was received, fixing a false refusal when the received commit is the coordinator's route `git_handoff` (main's own tip).
 
 ## Verify
 

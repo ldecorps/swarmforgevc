@@ -180,3 +180,23 @@ notes: |
   backlog/evidence/BL-1604-specifier-adjudication-of-documenter-blocked-send-20260917.md.
 
 assigned_to: coder
+
+abandoned_commits: [eca9aaeb96]
+# Stranded on swarmforge-coder@2, never forwarded (PRE_QA_GATE ancestry
+# check at documenter send-time). Diffed against the shipped chain
+# (06e6226cdb -> ad4424a340 -> hardener/cleaner/architect review) that
+# reached documenter: same requirement, same restore-other-tickets-
+# registry-rows!/rows-to-restore shape, same REGISTER_ROW_RESTORED line,
+# same BL-1447 completeness-check exemption for the two registry paths -
+# an independent, superseded coder draft of the identical fix, not a
+# second implementation carrying anything the shipped one lacks.
+
+bounce_count: 1
+bounce_history:
+  - { at: 2026-09-17, by: QA, blamed: documenter, class: behavior, commit: dc79387b11, evidence: backlog/evidence/BL-1604-QA-20260917.md }
+# QA's bounce (commit dc79387b11) fired on the received tip 8393648d8b,
+# which lacked this exact abandoned_commits entry at the time; the fix
+# above landed via a parallel documenter/specifier path
+# (596f5fb061 + the 2026-09-17T07:00Z amendment) before QA's bounce was
+# picked up. Superseded in effect, not corrected as a misattribution -
+# the gap QA reported was real at the commit QA reviewed.

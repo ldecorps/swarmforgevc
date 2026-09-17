@@ -7,6 +7,7 @@
 ;; type: note with neither never invents a task header.
 (ns ready-for-next-claim-task-name-runner
   (:require [babashka.fs :as fs]
+            [babashka.process :as process]
             [clojure.string :as str]))
 
 (def script-dir (str (fs/parent (fs/canonicalize *file*))))
@@ -17,6 +18,10 @@
 (defn assert= [msg expected actual]
   (when (not= expected actual)
     (swap! failures conj (str "FAIL: " msg "\n  expected: " (pr-str expected) "\n  actual:   " (pr-str actual)))))
+
+(defn assert-true [msg actual]
+  (when (not= true actual)
+    (swap! failures conj (str "FAIL: " msg "\n  expected: true\n  actual:   " (pr-str actual)))))
 
 (defn- tmp-handoff-file [content]
   (let [f (fs/create-temp-file {:prefix "bl1608-claim-task-name-" :suffix ".handoff"})]
@@ -56,6 +61,19 @@
          "BL-2222-something"
          (ready-for-next-task/claim-task-name
           (tmp-handoff-file "type: note\nto: coder\npriority: 10\ntask: \nmessage: Work BL-2222-something\n\nWork BL-2222-something\n")))
+
+;; BL-1610: current-head-commit-10 - the dequeue stamp's own source of the
+;; sender's HEAD, otherwise exercised by no test at all (the acceptance
+;; steps seed received_at_head directly into the fixture parcel, never
+;; through this function - specs/pipeline/steps/bl1610MergeDropGate…Steps.js).
+;; Cross-checked against a real git call in this same worktree, never a
+;; second implementation of the same rev-parse to compare against itself.
+(let [{:keys [out]} (process/sh "git" "rev-parse" "--short=10" "HEAD")]
+  (assert= "current-head-commit-10 returns the real worktree HEAD, short=10"
+           (str/trim out)
+           (ready-for-next-task/current-head-commit-10)))
+(assert-true "current-head-commit-10 is a 10-char hex string"
+             (boolean (re-matches #"[0-9a-f]{10}" (ready-for-next-task/current-head-commit-10))))
 
 (if (seq @failures)
   (do (doseq [f @failures] (println f))

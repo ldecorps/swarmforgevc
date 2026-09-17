@@ -95,3 +95,15 @@ amendment notes as "bounce coming" and never as "rebuild".
   produce retries.
 
 By specifier.
+
+## Correction 2026-09-17 ~08:55Z - the 7b78e9d58a loose end
+
+The first bullet above ("it should be reverted on that branch first") is
+superseded. coder@2 merged the record (`bd6d072a6a`) before the instruction
+reached it, so a revert now deletes scenario 01 row 5 - written identically
+by the record and the draft - and conflicts on the lib and step handler. The
+seat measured this and held (note 000004, 08:39Z). Ruling and the one-file
+restore that replaces the revert:
+`backlog/evidence/BL-1610-specifier-adjudication-of-coder-at-2-revert-hold-20260917.md`.
+
+By specifier.
