@@ -231,9 +231,10 @@ commit is the forwarded commit (BL-536). On 2026-09-16 the architect
 completed two such re-forwards (BL-1595, BL-1547) within seconds of
 dequeue as no-ops and both parcels vanished from every mailbox until the
 coordinator chased. A role that really is invoking this exemption says so
-at completion - `done_with_current.sh --no-op "<reason>"` once BL-1609
-lands - and a forwarding parcel completed with nothing sent is refused
-from then on.
+at completion - `done_with_current.sh --no-op "<reason>"` (BL-1609) - and
+a forwarding parcel completed with nothing sent is refused from then on;
+see the forward-gate description under `done_with_current_task.sh` and
+`done_with_current_batch.sh` below.
 
 ### `note`
 
@@ -2994,6 +2995,23 @@ Responsibilities:
     instead of requiring evidence.
   Every non-Work note and every `git_handoff` skips this gate entirely and
   completes exactly as below.
+- **BL-1609 — forward-completion gate.** If the in-process file is a
+  forwarding `git_handoff` (no `non-forwarding: true` header, Article 2.4)
+  held by a code-worktree role (`worktree-name` other than `master` in
+  `roles.tsv` - specifier and coordinator are never gated), refuse (exit 1,
+  `FORWARD_NOT_SENT: <ticket-id> has no git_handoff naming it queued since
+  dequeue.`, no side effects, the file stays in_process) unless one of:
+  - a `git_handoff` in the role's own `outbox/` or `sent/` mailbox created
+    since the inbound's own `dequeued_at` whose `task:` header names the
+    same ticket, or
+  - the invocation carried `--no-op "<reason>"` (non-blank), in which case
+    complete and stamp `no_op_reason` and `no_op_at` onto the completed
+    file instead of requiring a forward.
+  A non-forwarding inbound (Article 2.4's merge-only handback) completes
+  exactly as before, gated by neither rule. The received commit is judged
+  as the parcel, never the last hop (see "the received commit is the
+  parcel" above) - a re-forwarded fixed bounce still needs its own forward
+  queued after ITS OWN dequeue to pass this gate.
 - Add or update `completed_at`.
 - Move the file to `inbox/completed/`.
 - Print the completed task path.
@@ -3037,6 +3055,16 @@ Responsibilities:
 - Run inside one agent worktree.
 - Require exactly one batch directory in `inbox/in_process/`.
 - Refuse to run if `inbox/in_process/` contains a single task file.
+- **BL-1609 — forward-completion gate, applied per item.** Gathers every
+  batch item's verdict first (same rule as `done_with_current_task.sh`'s
+  gate above, per item), then refuses ONCE (exit 1, `FORWARD_NOT_SENT:`
+  followed by one `- <ticket-id> (<file>)` line per unforwarded item, no
+  side effects, the batch stays in_process) if any item is a forwarding
+  `git_handoff` with no forward queued for its ticket since its own
+  dequeue and no `--no-op "<reason>"` given (Article 4.4's shape - one
+  refusal names every offender, never the first one found). With
+  `--no-op "<reason>"`, the reason applies to the whole batch and is
+  stamped as `no_op_reason`/`no_op_at` on exactly the items that needed it.
 - Add or update `completed_at` on each file in the batch.
 - Move the batch directory to `inbox/completed/`.
 - Print the completed task paths and completed batch path.
