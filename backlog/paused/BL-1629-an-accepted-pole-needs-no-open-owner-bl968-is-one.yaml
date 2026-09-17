@@ -1,0 +1,148 @@
+id: BL-1629
+title: "bl968StepRegistryMaterializedTreeGuard.test.js can never come under the 7000 ms per-file budget: its two full step-registry loads are the point of the test (BL-968 invariant 1) and one load costs 12.6 s of require time across 1189 handlers today, yet BL-1598's pole register knows only rows that name an OPEN ticket and read unowned the day it closes; the register gains a disposition column - owned (default) or accepted, an accepted row carrying its rationale and a re-measure date instead of an owner, reported and never refused as new-pole, stale or unowned - and bl968's row is the first accepted one; its blind temp-dir sweep takes BL-1623's helper in the same parcel"
+milestone: M8
+type: feature
+epic: unit-suite-speed
+priority: 8
+direction: swarm-reported
+depends_on: []
+# BL-1598 (the register and check-suite-file-budget.ts) is in backlog/done;
+# BL-1620 (amended, active) no longer owns bl968; BL-1630 (paused) is the
+# cut that may one day make this row stale in the good direction; BL-1623
+# (paused) ships the sweep helper this parcel calls - if BL-1623 has not
+# landed when this builds, the pid-guarded loop goes inline (BL-1623's
+# own note on the file).
+mutation_cost: medium
+# medium: check-suite-file-budget.ts is TypeScript under mutation/CRAP/DRY;
+# one reader column, one verdict branch, the unit test for both; the
+# register row; one test file's sweep; feature and handler; evidence, docs.
+slice_size_envelope: low
+required_stages: [coder, cleaner, architect, hardender, documenter, qa]
+
+acceptance: specs/features/BL-1629-an-accepted-pole-needs-no-open-owner-bl968-is-one.feature
+
+required_wiring:
+  - 'extension/src/tools/check-suite-file-budget.ts::accepted::the pre-existing reader is the consumer of the new disposition; the literal exists only with the fix (BL-874, BL-1235)'
+  - 'specs/pipeline/steps/bl1629AcceptedPoleNeedsNoOpenOwnerSteps.js::registerSteps::the handler lands in the same parcel as the feature (BL-233, BL-1371)'
+
+human_approval: pending
+approval_context: >
+  A new feature file is authored here, so it needs a tap. No choice is
+  posed and there are no ruling_options. FIRM: an accepted row is never
+  silent - the verdict prints it every run with its rationale and
+  re-measure date, so a pole cannot be accepted and forgotten. FIRM: a
+  file with NO row is still refused as new-pole; acceptance is a
+  deliberate, recorded act in the register, one row at a time. FIRM: an
+  accepted row whose file measures under 80 percent of the budget is
+  reported as stale exactly like an owned one - acceptance ends when the
+  cost does. FIRM: bl968's tests, assertions and two registry loads are
+  unchanged; only its sweep changes (owner pid in the root name, BL-1623's
+  rule). The 2026-09-05 directive stands: this is not a carpet - the pole
+  stays visible on every run, with its reason.
+
+invariants:
+  - "The register never carries a row the gate ignores: every row - owned or accepted - contributes a printed line to every run's verdict, and only a file with no row at all is refused as new-pole."
+
+description: |
+  ## What is wrong
+
+  BL-1598's pole register (`backlog/suite-poles.tsv`, read by
+  `extension/src/tools/check-suite-file-budget.ts`) holds one kind of row:
+  a file over the 7000 ms budget owned by an OPEN ticket that will cut it.
+  A row naming a closed ticket refuses as `unowned-row`; a row whose file
+  measures under 80 percent of the budget refuses as `stale-row`. That
+  models a pole that will be cut. bl968 is a pole that will not be:
+  BL-968 invariant 1 is that the step registry loads from a materialized,
+  complete, current tree, so the test spawns a full registry load twice
+  (a clean load, then a planted-offender load). One load costs 12.6 s of
+  require time across 1189 handlers (specifier census 2026-09-17 14:05Z,
+  19.5 s wall through index.js; coder@2 measured 15.3 s and 24.2 s for the
+  two spawns, evidence `BL-1620-coder-investigation-20260917.md`). BL-1630
+  may bring one load to a few seconds; two loads plus the rest still
+  exceed 7 s, and the test's own header has said so since 2026-08-20. Under
+  today's rule the only way to keep bl968's row owned is a ticket that
+  never closes.
+
+  ## What is wanted
+
+  - The register's fifth column `note` is preceded by a new fourth-and-a-
+    half: `disposition` - `owned` (today's meaning) or `accepted`; an
+    accepted row's `ticket` column holds the rationale ticket (the one
+    that accepted it, may be closed) and its note carries `re-measure:
+    YYYY-MM-DD`. Rows without the column read as `owned` (scenario 01, the
+    reader over both shapes).
+  - The verdict for an accepted row is `accepted` - printed every run with
+    the file, its measured ms, the rationale and the re-measure date;
+    never `unowned-row`, never `new-pole`; `stale-row` exactly as for an
+    owned row when the file measures under 80 percent (scenario 02).
+  - A file with no row is still `new-pole` (scenario 02, last row).
+  - bl968's row becomes the first accepted row (this parcel), re-measure
+    2026-12-17 or BL-1630's land, whichever first; bl968's module-load
+    sweep records its owner pid and sweeps through BL-1623's helper
+    (scenario 03).
+
+  ## How (direction, not mandate)
+
+  - `check-suite-file-budget.ts`: extend the row type and the parser
+    (`line.split('\t')` at ~91) to read an optional `disposition` column
+    (a missing column is `owned`); add `'accepted'` to `BudgetVerdictKind`
+    and one branch before the unowned check; the verdict printer prints
+    the rationale and re-measure date. Unit-test both shapes in
+    `checkSuiteFileBudgetCli.test.js` (or the lib's test) with fixture
+    registers.
+  - The register header documents the column; the bl968 row is rewritten
+    in place.
+  - bl968: `mkTmpDir(`${PREFIX}${process.pid}-`)` and
+    `sweepStaleTmpDirs({ prefix })` from tmpDir.js (BL-1623), or the
+    pid-guarded loop inline if BL-1623 is unlanded.
+  - Documenter: BL-1598's how-to gains the disposition; engineering-detailed.prompt
+    "Test Speed And Isolation" names the accepted-pole rule.
+
+constraints: >
+  check-suite-file-budget.ts and its tests, backlog/suite-poles.tsv
+  (header and the bl968 row), bl968's sweep lines, the feature and
+  handler, evidence and docs. No change to the 7000 ms budget, to
+  recordTestDuration.js, to bl968's assertions or registry loads, or to
+  any other pole row. The step handler lands with the feature (BL-233).
+  Evidence named BL-1629-*.
+
+out_of_scope: |
+  - Cutting the registry load (BL-1630).
+  - Accepting any other pole: each acceptance is its own recorded row,
+    minted from a measurement.
+  - The standing-red register (backlog/standing-reds.tsv): a red is never
+    accepted; this column is the pole register's only.
+
+qa_e2e_procedure: |
+  On the parcel commit, from `extension/`:
+  1. `npm test` once -> the verdict prints one `accepted` line for bl968
+     with its rationale and re-measure date, no unowned-row, no new-pole.
+  2. `npx vitest run test/checkSuiteFileBudgetCli.test.js` (and the lib
+     test if separate) -> green, both register shapes covered.
+  3. Acceptance resolving all scenarios
+     (`bash specs/pipeline/scripts/run_acceptance.sh specs/features/BL-1629-*.feature`).
+  4. `npx vitest run test/bl968StepRegistryMaterializedTreeGuard.test.js`
+     once -> 3 tests green, its roots named with the pid, its sweep
+     through the helper (or the inline loop) - duration recorded, expected
+     over budget.
+
+source: |
+  Coder@2 note to the specifier, priority 00, 2026-09-17T13:59Z (inbound
+  00_20260917T135959Z_000009_from_coder): "BL-1620: neither named remedy
+  applies to either file - see coder evidence"; evidence
+  .worktrees/coder2/backlog/evidence/BL-1620-coder-investigation-20260917.md.
+  Specifier adjudication and census:
+  backlog/evidence/BL-1620-specifier-adjudication-of-coder-neither-remedy-applies-20260917.md.
+  Parents: BL-1598, BL-968, BL-1620. Siblings: BL-1630, BL-1623.
+
+notes: |
+  Minted 2026-09-17 by the specifier while amending BL-1620 (split:
+  bl968 leaves it). Register: backlog/suite-poles.tsv's bl968 row names
+  this ticket from the amendment commit (owned until this lands, then
+  accepted). INVEST: Independent (the reader, the register and bl968
+  exist), Negotiable (column placement and verdict wording are direction),
+  Valuable (a pole that will never be cut stops needing a ticket that never
+  closes, and stays visible on every run), Estimable (one column, one
+  verdict branch, one row, one sweep - one sitting), Small (three
+  scenarios, one invariant), Testable (fixture registers in milliseconds;
+  bl968's solo run is the one long e2e step). Priority 8, beside BL-1620.
