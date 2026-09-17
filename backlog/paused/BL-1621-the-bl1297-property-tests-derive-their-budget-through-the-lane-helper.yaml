@@ -1,0 +1,190 @@
+id: BL-1621
+title: "bl1297MergeOwnPathsInvariants.property.test.js is red again in the full property lane with no owner: its three invariant tests carry no per-test budget at all, so invariant 3 (8.3 s alone on a quiet host, 15 s for the file, after BL-1564's one-process fix) meets the lane's flat 20 s testTimeout under 404-file contention - QA's BL-1605 pass, 2026-09-17 08:41Z, green alone in 15.24 s - and every test in the file derives its budget from the 20000 ms base through propertyLaneTimeoutMs, the BL-1606 bl1304 remedy, with the register row leaving in the land"
+milestone: M8
+type: defect
+severity: high
+# high (standing-red rule 2026-09-05): a property-lane file whose verdict on
+# main is a function of host load is a broken safety signal; QA saw it red in
+# the full lane on the BL-1605 parcel 9583f2177c and withholds that parcel
+# under Article 4.2 until owned. Production is unaffected: the three bb
+# libraries the file drives are untouched and every judged case agrees with
+# them - the cost is the test's own fixture construction, the same class as
+# BL-1606's bl1304 (no per-test budget, the lane's raw 20 s).
+status: todo
+epic: code-quality-gates
+priority: 8
+direction: swarm-reported
+depends_on: []
+# BL-1564 (this file's one-bb-process-per-invariant fix) and BL-1606 (the
+# helper's never-below-base ceiling and the bl1304 migration) are both in
+# backlog/done. BL-1596 (paused) migrates BARE numeric third arguments; this
+# file has no third argument at all, so it is outside BL-1596's 38-file
+# census and BL-1596 is not touched.
+mutation_cost: low
+# low: three call-site edits in one property test file (the property lane is
+# its own tag, never under mutation/CRAP/DRY - engineering.prompt), one
+# feature and handler, evidence, two register rows.
+slice_size_envelope: low
+required_stages: [coder, cleaner, architect, hardender, documenter, qa]
+
+acceptance: specs/features/BL-1621-the-bl1297-property-tests-derive-their-budget-through-the-lane-helper.feature
+
+required_wiring:
+  - 'extension/test/bl1297MergeOwnPathsInvariants.property.test.js::propertyLaneTimeoutMs(20000)::the file is the pre-existing consumer of the helper; the literal exists only with the fix (BL-874, BL-1235)'
+  - 'specs/pipeline/steps/bl1621Bl1297BudgetThroughTheLaneHelperSteps.js::registerSteps::the handler lands in the same parcel as the feature (BL-233, BL-1371)'
+
+human_approval: pending
+approval_context: >
+  A new feature file is authored here, so it needs a tap. No choice is
+  posed and there are no ruling_options. FIRM: every test in the file
+  derives its per-test timeout from 20000 ms - the lane's own testTimeout
+  it sits on today - through propertyLaneTimeoutMs; the base is never
+  raised, so the file alone on a quiet host keeps exactly the budget it
+  has today and grows only with the lane's measured concurrency (BL-1606
+  invariant 1, landed). FIRM: nothing else in the file changes - BL-1564's
+  one-bb-process batches, the fc.sample seeds, the 21/18/18 reach maps.
+  FIRM: the standing-red row and its allowlist mirror leave in the same
+  land that turns the file green.
+
+invariants: []
+# None declared on purpose: the property that matters here - a budget
+# never resolves below its base and grows with the lane's concurrency - is
+# BL-1606's invariant 1, landed and gated by its own feature; scenario 01
+# below is the whole surface of this slice.
+
+description: |
+  ## What is wrong
+
+  QA's BL-1605 pass on 2026-09-17 (parcel 9583f2177c, `npm run
+  test:properties` through qa-gather.js, evidence
+  `backlog/evidence/BL-1605-qa-unowned-red-bl1297-20260917.md` on the QA
+  branch, commit 574d99483c) failed one file in the full property lane:
+
+  ```
+  FAIL  test/bl1297MergeOwnPathsInvariants.property.test.js > property
+  (invariant 3): the land step reads delivered, the two send-time gates
+  read authored
+  Error: Test timed out in 20000ms.
+  ```
+
+  The file is touched by no commit on that branch; alone against the same
+  tree it is green, 15.24 s total, invariant 3 at 9.36 s (QA). The
+  specifier re-measured it on main 738952fbc0 at 08:53Z, 1-minute load
+  2.67 on 20 cores, one run: green, 3 tests, 15.13 s wall - invariant 1
+  3.6 s, invariant 2 2.8 s, invariant 3 8.3 s - reach maps 21, 18 and 18
+  cases, unchanged from BL-1564. No open ticket names the file and the
+  register carried no row for it.
+
+  `20000ms` is `vitest.properties.config.mjs`'s flat suite-wide
+  `testTimeout`: the file's three `test(` calls pass NO third argument,
+  so the lane's raw ceiling is their budget and it does not move with
+  contention. Under the 404-file lane's forks an 8-9 s test needs only a
+  2.5x slowdown to miss it. This is exactly the bl1304 shape BL-1606 owned
+  and fixed on 2026-09-16 ("no per-test budget, the lane's raw 20 s"), on
+  a file BL-1606's census did not include because it was green that day.
+  It is NOT a reopening of BL-1564: that ticket batched the file's 98 bb
+  processes into three (its register row left in its land, 2026-09-15),
+  and the batches are intact - what remains is the fixture construction
+  itself (each invariant builds 18 to 21 real git repositories, one git
+  process per command) plus one library-loading bb process per invariant,
+  which is a property-lane cost census question for BL-791 slice E after
+  BL-1619's recorder, not this ticket's to cut. It is NOT BL-1596's
+  either: that sweep migrates bare numeric third arguments (81 sites in
+  38 files, census at bdb76c3c8a) and a file with no third argument is
+  not in it.
+
+  ## What is wanted
+
+  - Every test in the file receives `propertyLaneTimeoutMs(20000)` as its
+    per-test budget and no test passes a bare numeric literal (scenario
+    01) - the base is the budget the file has today, so alone on a quiet
+    host nothing changes; at 8 forks it resolves 40000, never below
+    20000 (BL-1606 invariant 1, landed).
+  - The file green alone on the tree as it stands, its three reach maps
+    still 21, 18 and 18 cases (scenario 02).
+  - The parcel's evidence records the full-lane failure text verbatim
+    with the load and fork count of the reproduction (QA's text above is
+    the first sighting; cite it by path) and the change that removed it
+    (scenario 03).
+  - The register row and the allowlist mirror row named in `notes:`
+    removed in the same land, `bb swarmforge/scripts/standing_red_register_cli.bb .`
+    reporting no row for the file.
+
+  ## How (direction, not mandate)
+
+  - `const { propertyLaneTimeoutMs } = require('./helpers/propertyLaneContentionBudget');`
+    beside the file's other requires, and `}, propertyLaneTimeoutMs(20000));`
+    closing each of the three `test(` calls - byte-for-byte the shape
+    bl1304 carries since BL-1606 (`extension/test/bl1304DryRunSpawnsNothing.property.test.js`
+    lines 151, 187, 207). Nothing else in the file moves.
+  - The handler `bl1621Bl1297BudgetThroughTheLaneHelperSteps.js` reuses
+    BL-1606's scoped step shapes (`the source of <file> is read`, `it
+    declares exactly N tests`, the bare-literal and derived-budget checks,
+    `<file> runs alone under the properties config`, the evidence read)
+    in a scope of its own; the reach-map step reads the three `BL-1564
+    reach map` lines from the run's stdout. Scenario 02 is one solo run
+    of the file, about 15 s, inside BL-1541's per-mutant ceiling with the
+    source checks.
+  - Documenter: nothing beyond the evidence unless a how-to lists the
+    helper's migrated call sites; then this file joins the list.
+
+constraints: >
+  The property test file's three call sites and one require line, the
+  feature and handler, evidence, the standing-red row and its allowlist
+  mirror. No change to propertyLaneContentionBudget.js, to
+  vitest.properties.config.mjs, to BL-1564's batching or seeds, or to any
+  other property file. The step handler lands with the feature (BL-233).
+  Evidence named BL-1621-*.
+
+out_of_scope: |
+  - Cutting invariant 3's own 8 s (fixture construction): BL-791 slice E,
+    minted from BL-1619's census once the property lane is measured.
+  - BL-1596's 38 bare-literal files and its whole-tree guard.
+  - BL-1619 (the property lane's recorder) and BL-1618 (which roles run
+    the lane).
+
+qa_e2e_procedure: |
+  On the parcel commit, from `extension/`:
+  1. `npx vitest run --config vitest.properties.config.mjs test/bl1297MergeOwnPathsInvariants.property.test.js`
+     ONCE -> 3 passed, the three `BL-1564 reach map` lines print cases 21,
+     18 and 18, and vitest's per-test durations are recorded in the
+     evidence beside the host's 1-minute load. Never "run it N times".
+  2. Acceptance resolving all three scenarios
+     (`bash specs/pipeline/scripts/run_acceptance.sh specs/features/BL-1621-*.feature`);
+     BL-1564's and BL-1606's features still resolving.
+  3. ONE full `npm run test:properties` on the parcel -> this file green
+     in the lane; its row gone from `backlog/standing-reds.tsv` and its
+     mirror gone from `swarmforge/scripts/property_suite_standing_allowlist.tsv`;
+     `bb swarmforge/scripts/standing_red_register_cli.bb .` names no row
+     for the file.
+  4. `git diff main...HEAD --name-only` names the property test, the
+     feature, the handler, the evidence and the two register files only.
+
+source: |
+  QA note to the specifier, priority 00, 2026-09-17T08:41Z (inbound
+  00_20260917T084126Z_002854_from_QA_to_specifier): "BL-1605 unowned-red
+  bl1297MergeOwnPathsInvariants inv3 timeout, evd 574d99483c". QA
+  evidence backlog/evidence/BL-1605-qa-unowned-red-bl1297-20260917.md
+  (QA branch, 574d99483c). Specifier adjudication and re-measurement:
+  backlog/evidence/BL-1621-specifier-adjudication-of-qa-unowned-red-bl1297-20260917.md.
+  Parents: BL-1564, BL-1606, BL-1566. Class sibling: BL-1596.
+
+notes: |
+  Minted 2026-09-17 by the specifier while completing QA's unowned-red
+  note, the same pass. Register: backlog/standing-reds.tsv gains one
+  `property` row naming this ticket (first_seen 2026-09-17 - BL-1564's
+  row for the same file left in its land on 2026-09-15, so this is a
+  second sighting of the class, not a stale row) and
+  swarmforge/scripts/property_suite_standing_allowlist.tsv gains the
+  mirror row (BL-1428's join), both in this commit; QA removes both in
+  the land that turns the file green. QA's BL-1605 parcel (9583f2177c,
+  completed 08:41Z so the seat could rotate, BL-1566) waits on this row
+  and was sent the resume note in this pass: merge main first so the
+  land keeps the rows (BL-1604's hazard). INVEST: Independent (helper,
+  config and file exist, nothing unbuilt), Negotiable (the handler's
+  scoping and the reach-map step's reading are direction), Valuable (a
+  lane red stops withholding unrelated parcels, without raising any
+  base), Estimable (three one-line edits and one require, one handler -
+  one sitting), Small (three scenarios, no invariant), Testable (source
+  checks in milliseconds, one 15 s solo run - BL-1541). Severity high
+  per the standing-red rule.
