@@ -27,9 +27,8 @@
 const assert = require('node:assert/strict');
 const fc = require('fast-check');
 const fs = require('node:fs');
-const os = require('node:os');
 const path = require('node:path');
-const { mkTmpDir } = require('./helpers/tmpDir');
+const { mkTmpDir, sweepStaleTmpDirs } = require('./helpers/tmpDir');
 const { assertRunWritesNoDecision } = require('./helpers/stampOff');
 
 const FIXTURE_PREFIX = 'bl1356-property-';
@@ -70,12 +69,11 @@ function applyToWatchedRow(text, write) {
 
 // A killed run traps no `finally`, so the previous run's fixtures are swept by
 // prefix BEFORE this one starts as well (BL-971).
+// BL-1623: scoped by owner pid through the shared helper - a blind
+// prefix sweep destroys a live peer's roots the instant two instances
+// of this file are ever alive at once (BL-1385/BL-1390's shape).
 function sweepFixtures() {
-  for (const entry of fs.readdirSync(os.tmpdir())) {
-    if (entry.startsWith(FIXTURE_PREFIX)) {
-      fs.rmSync(path.join(os.tmpdir(), entry), { recursive: true, force: true });
-    }
-  }
+  sweepStaleTmpDirs({ prefix: FIXTURE_PREFIX });
 }
 
 /** A ledger whose watched row sits at `state`, between two decided neighbours. */
@@ -103,7 +101,7 @@ function writeLedger(dir, state) {
 }
 
 function verdict(state, writeName) {
-  const dir = mkTmpDir(FIXTURE_PREFIX);
+  const dir = mkTmpDir(`${FIXTURE_PREFIX}${process.pid}-`);
   try {
     const file = writeLedger(dir, state);
     const write = WRITES[writeName];
