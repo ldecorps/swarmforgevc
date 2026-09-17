@@ -152,4 +152,4 @@ notes: |
   Testable (the real script on a fixture root in seconds - BL-1541).
   Severity high: a live refusal on two of six worktree roles.
 
-assigned_to: null
+assigned_to: coder
