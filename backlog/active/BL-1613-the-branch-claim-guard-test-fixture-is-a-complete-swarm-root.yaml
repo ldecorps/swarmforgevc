@@ -11,6 +11,12 @@ epic: code-quality-gates
 priority: 8
 direction: swarm-reported
 depends_on: []
+abandoned_commits: [4133436d83]
+# BL-1241 land-step remedy: 4133436d83 was entangled with BL-1604/BL-1610
+# (already landed, differently attributed) as ancestors, and BL-1609/
+# BL-1611 correctly recognized as landed siblings; land_step_cli.bb built
+# a tip-pure replay onto origin/main carrying only this ticket's own
+# paths. Land that commit, not the cited one.
 mutation_cost: low
 # low: one shell test's fixture (two lines), one feature and handler,
 # evidence; no production code, no Stryker target.
