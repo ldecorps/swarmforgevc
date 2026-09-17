@@ -35,6 +35,7 @@ Feature: BL-1610 The merge-drop gate judges only the merges the sender made and 
       | main's tip, the coordinator's route commit | a merge that dropped the sibling's uncontested hunks on a path | changes that path against the received commit      | refused naming that merge, that path and the dropped lines |
       | main's tip, the coordinator's route commit | a merge that dropped the sibling's uncontested hunks on a path | leaves that path identical to the received commit  | queued, the finding excused as carrying nothing            |
       | the sibling branch's tip                   | a plain commit on another path                                 | changes nothing on the dropped path                | queued with no merge-drop finding                          |
+      | the sibling branch's tip, after the sibling itself made a one-sided merge that dropped uncontested hunks on a second path | a plain commit on that second path | changes that second path against the received commit | queued with no merge-drop finding |
 
   # BL-1610 merge-drop-gate-judges-only-what-the-forward-carries-02
   Scenario: the refusal that opened this ticket is a queue on the fixed gate
