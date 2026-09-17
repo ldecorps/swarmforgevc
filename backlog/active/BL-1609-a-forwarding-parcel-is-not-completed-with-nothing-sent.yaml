@@ -13,6 +13,12 @@ epic: swarm-reliability
 priority: 5
 direction: swarm-reported
 depends_on: [BL-1605]
+abandoned_commits: [c48556095a]
+# BL-1241 land-step remedy: c48556095a was entangled with BL-1604/BL-1610
+# (already landed, differently attributed) and BL-1613 (still unlanded at
+# parcel time); land_step_cli.bb built a tip-pure replay onto origin/main
+# carrying only this ticket's own paths (BL-1611 recognized as a
+# landed sibling). Land that commit, not the cited one.
 # depends_on BL-1605: until the merge-only twin stops arriving with a
 # bounce, a batch role holding bounce+twin cannot queue its forward (the
 # batch-aware send gate refuses) and this gate would then refuse its
