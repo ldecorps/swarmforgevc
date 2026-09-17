@@ -30,7 +30,7 @@ required_wiring:
   - 'swarmforge/scripts/handoff_lib.bb::task-name-from-content::worked-task-names-in attributes a Work note through supersede-lib, the reader BL-1185 and BL-1608 use; the literal is absent from handoff_lib.bb today (grep verified 2026-09-17) so it exists only with the fix (BL-1235)'
   - 'specs/pipeline/steps/bl1616WorkNoteCountsAsWorkedSteps.js::registerSteps::the handler lands in the same parcel as the feature (BL-233, BL-1371)'
 
-human_approval: pending
+human_approval: approved
 approval_context: >
   A new feature file is authored here, so it needs a tap. No choice is
   posed and there are no ruling_options. FIRM: a Work note is still never
@@ -193,3 +193,7 @@ notes: |
   "sends a note"; since BL-1094 it is a git_handoff when HEAD resolves,
   a note only as the no-HEAD fallback. Evidence:
   backlog/evidence/coordinator-dispatch-race-daemon-auto-route-and-forced-second-dispatch-20260917.md.
+
+  AUTO-APPROVED under the 2026-09-17 operator hotfix (severity defect, no
+  ruling_options) — see
+  auto-approve-high-severity-defects-amendment-20260917.md.
