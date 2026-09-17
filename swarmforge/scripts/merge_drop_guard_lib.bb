@@ -151,20 +151,36 @@
     (when (zero? exit) (str/trim out))))
 
 (defn- merge-commits
-  "Merge commits reachable from forwarded and not from bound, oldest
-   first, so a finding names the earliest offending merge when several
-   exist. nil (unreadable) on a git failure; an empty vector (scenario 06:
-   a forward that made no merge) is a real, successful answer, never nil.
+  "Merge commits reachable from forwarded and not from bound (nor from
+   also-exclude, when given and distinct from bound), oldest first, so a
+   finding names the earliest offending merge when several exist. nil
+   (unreadable) on a git failure; an empty vector (scenario 06: a forward
+   that made no merge) is a real, successful answer, never nil.
+
    BL-1610: bound is the sender's received_at_head stamp when the caller
    has one (the merges the sender made AFTER receipt) - the received
-   commit itself only when no stamp exists (an older parcel, or a
-   coordinator route git_handoff whose commit is main's own tip, in which
-   case received..forwarded is the sender branch's WHOLE off-main
-   history)."
-  [root bound forwarded]
-  (let [{:keys [exit out]} (git! root "rev-list" "--merges" "--reverse" (str bound ".." forwarded))]
-    (when (zero? exit)
-      (vec (non-blank (str/split-lines out))))))
+   commit itself only when no stamp exists (the 3-arity fallback,
+   unchanged: an older parcel, or a coordinator route git_handoff whose
+   commit is main's own tip, in which case received..forwarded is the
+   sender branch's WHOLE off-main history).
+
+   Amended 2026-09-17 (specifier amendment a5e59a0f5b, bounced
+   BL-1610-bounce-20260917.md): `bound..forwarded` alone re-admits every
+   merge in the RECEIVED commit's own ancestry that the sender's head
+   happens to lack - true whenever an upstream role's send arrived through
+   a route the sender's own branch never merged. `also-exclude` (the
+   4-arity form, passed as the received commit whenever a head stamp
+   exists) is a SECOND negative ref alongside bound, so a merge an
+   upstream role made - reachable only through the received commit's own
+   ancestry, never through anything the sender did after receipt - is
+   never a candidate here, excused or not."
+  ([root bound forwarded] (merge-commits root bound forwarded nil))
+  ([root bound forwarded also-exclude]
+   (let [args (cond-> ["rev-list" "--merges" "--reverse" forwarded (str "^" bound)]
+                (and also-exclude (not= also-exclude bound)) (conj (str "^" also-exclude)))
+         {:keys [exit out]} (apply git! root args)]
+     (when (zero? exit)
+       (vec (non-blank (str/split-lines out)))))))
 
 (defn- parents [root commit]
   (let [{:keys [exit out]} (git! root "rev-parse" (str commit "^@"))]
@@ -307,13 +323,18 @@
 
    BL-1610: the 4-arity form bounds the merge scan to merges reachable
    from forwarded and not from head (the sender's received_at_head stamp)
-   - the merges the sender made since receipt. The 3-arity form (every
-   pre-BL-1610 caller, and this arity's own fallback when a caller has no
-   stamp to pass) keeps its exact prior scan (received..forwarded)."
+   NOR from received (amended 2026-09-17: a merge an upstream role made
+   that arrives only through the received commit's own ancestry is never
+   a merge the sender made since receipt, whether or not the sender's own
+   head happens to carry that ancestry too) - the merges the sender made
+   since receipt. The 3-arity form (every pre-BL-1610 caller, and this
+   arity's own fallback when a caller has no stamp to pass) keeps its
+   exact prior scan (received..forwarded, a single bound)."
   ([root received forwarded] (findings-between root received forwarded nil))
   ([root received forwarded head]
-   (let [bound (if (not-empty head) head received)]
-     (when-let [merges (merge-commits root bound forwarded)]
+   (let [bound (if (not-empty head) head received)
+         also-exclude (when (not-empty head) received)]
+     (when-let [merges (merge-commits root bound forwarded also-exclude)]
        (mapv (fn [f] (assoc f :excused (excused-by-blob-identity? root received forwarded (:merge f) (:path f))))
              (mapcat #(findings-for-merge root forwarded received %) merges))))))
 

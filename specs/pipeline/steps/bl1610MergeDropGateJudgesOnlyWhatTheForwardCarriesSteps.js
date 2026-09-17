@@ -26,6 +26,7 @@ const FEATURE_NAME =
   'BL-1610 The merge-drop gate judges only the merges the sender made and only what the forward carries';
 const P_PATH = 'p.txt';
 const OTHER_PATH = 'other.txt';
+const SECOND_PATH = 'second.txt';
 
 function mkTmp(prefix) {
   return mkSocketFixtureRoot(prefix);
@@ -99,32 +100,35 @@ function linesFor(round) {
 // sender's side verbatim - taking sender verbatim drops the received
 // side's uncontested hunks, exactly BL-1576's own "taking the sender's
 // side verbatim" resolution shape) on top of a fresh divergence from
-// `fromSha` on P_PATH. Leaves the merge checked out.
-function buildOneSidedMergeSince(ctx, fromSha, round) {
+// `fromSha` on `filePath` (default P_PATH), building on `branch` (default
+// 'coder' - scenario 01 row 5's sibling-made-its-own-merge shape reuses
+// this on a 'sibling' branch, never a second hand-copy of this shape).
+// Leaves the merge checked out.
+function buildOneSidedMergeSince(ctx, fromSha, round, { branch = 'coder', filePath = P_PATH } = {}) {
   const { base, received, sender } = linesFor(round);
-  git(ctx.root, ['checkout', '-q', '-B', 'coder', fromSha]);
-  writeFile(ctx, P_PATH, base);
+  git(ctx.root, ['checkout', '-q', '-B', branch, fromSha]);
+  writeFile(ctx, filePath, base);
   commit(ctx, `${round} base`);
   const baseSha = head(ctx);
 
   git(ctx.root, ['checkout', '-q', '-b', `${round}-received`, baseSha]);
-  writeFile(ctx, P_PATH, received);
+  writeFile(ctx, filePath, received);
   commit(ctx, `${round} received side`);
   const receivedSideSha = head(ctx);
 
-  git(ctx.root, ['checkout', '-q', 'coder']);
-  writeFile(ctx, P_PATH, sender);
+  git(ctx.root, ['checkout', '-q', branch]);
+  writeFile(ctx, filePath, sender);
   commit(ctx, `${round} sender side`);
   const senderSideSha = head(ctx);
 
-  writeFile(ctx, P_PATH, sender); // sender verbatim - drops the received side's hunk
+  writeFile(ctx, filePath, sender); // sender verbatim - drops the received side's hunk
   git(ctx.root, ['add', '-A']);
   const treeSha = gitOut(ctx.root, ['write-tree']);
   const mergeSha = gitOut(ctx.root, [
     'commit-tree', treeSha, '-p', senderSideSha, '-p', receivedSideSha, '-m', `${round} one-sided merge`,
   ]);
-  git(ctx.root, ['update-ref', 'refs/heads/coder', mergeSha]);
-  git(ctx.root, ['checkout', '-q', 'coder']);
+  git(ctx.root, ['update-ref', `refs/heads/${branch}`, mergeSha]);
+  git(ctx.root, ['checkout', '-q', branch]);
   return { mergeSha, receivedSideSha };
 }
 
@@ -198,10 +202,35 @@ function registerSteps(registry) {
   // ── Scenario 01 (Outline) ────────────────────────────────────────────
 
   scoped(/^the received parcel's commit is (.+)$/, (ctx, received) => {
-    ctx.bl1610Received =
-      received === "main's tip, the coordinator's route commit"
-        ? gitOut(ctx.root, ['rev-parse', '--short=10', ctx.mainTipSha])
-        : gitOut(ctx.root, ['rev-parse', '--short=10', ctx.siblingTipSha]);
+    if (received === "main's tip, the coordinator's route commit") {
+      ctx.bl1610Received = gitOut(ctx.root, ['rev-parse', '--short=10', ctx.mainTipSha]);
+    } else if (received === 'the sibling branch\'s tip') {
+      ctx.bl1610Received = gitOut(ctx.root, ['rev-parse', '--short=10', ctx.siblingTipSha]);
+    } else if (
+      received ===
+      'the sibling branch\'s tip, after the sibling itself made a one-sided merge that dropped uncontested hunks on a second path'
+    ) {
+      // BL-1610 amendment row 5: the SIBLING (never coder) makes a
+      // further one-sided merge on SECOND_PATH, off its own tip - the
+      // upstream-role shape (6e5087cd43 reaching the documenter through
+      // the RECEIVED commit's own ancestry, never through anything the
+      // documenter did after receipt). Coder then receives that tip and
+      // weaves it into its own line exactly once (mirroring buildBackground's
+      // own historical-merge weave of ctx.siblingTipSha) - never
+      // reachable from `head` (ctx.historicalMergeSha, stamped BEFORE
+      // this sibling work ever existed), so only `^received` (never
+      // `^head` alone) can exclude it.
+      const { mergeSha } = buildOneSidedMergeSince(ctx, ctx.siblingTipSha, 'sib2', {
+        branch: 'sibling',
+        filePath: SECOND_PATH,
+      });
+      git(ctx.root, ['checkout', '-q', 'coder']);
+      git(ctx.root, ['merge', '-q', '--no-ff', mergeSha, '-m', 'coder receives the sibling\'s second one-sided merge']);
+      ctx.bl1610Received = gitOut(ctx.root, ['rev-parse', '--short=10', mergeSha]);
+      ctx.bl1610SiblingSecondMergeSha = mergeSha;
+    } else {
+      throw new Error(`bl1610: unknown "received" shape "${received}"`);
+    }
   });
 
   scoped(/^the coder branch carries a one-sided merge from before the parcel that dropped uncontested hunks on a path$/, () => {
@@ -218,6 +247,14 @@ function registerSteps(registry) {
       const { mergeSha } = buildOneSidedMergeSince(ctx, ctx.historicalMergeSha, 'since');
       ctx.bl1610SinceMergeSha = mergeSha;
       ctx.bl1610SinceMerge = true;
+    } else if (since === 'a plain commit on that second path') {
+      // Row 5: an ordinary commit on SECOND_PATH, on top of whatever
+      // coder's current HEAD is (the sibling's second merge, already
+      // woven in by the "received" step) - never a merge of coder's own,
+      // so it never itself becomes a merge-drop candidate.
+      writeFile(ctx, SECOND_PATH, 'coder touched the second path after receipt\n');
+      commit(ctx, 'plain commit on the second path');
+      ctx.bl1610SinceMerge = false;
     } else {
       throw new Error(`bl1610: unknown "since" shape "${since}"`);
     }
@@ -234,6 +271,10 @@ function registerSteps(registry) {
       const receivedBlob = gitOut(ctx.root, ['show', `${ctx.bl1610Received}:${P_PATH}`]);
       writeFile(ctx, P_PATH, `${receivedBlob}\n`);
       commit(ctx, 'forward restores the dropped path to the received blob');
+    } else if (forward === 'changes that second path against the received commit') {
+      const current = fs.readFileSync(path.join(ctx.root, SECOND_PATH), 'utf8');
+      writeFile(ctx, SECOND_PATH, `${current}forward-changed-the-second-path\n`);
+      commit(ctx, 'forward changes the second path further');
     } else {
       throw new Error(`bl1610: unknown "forward" shape "${forward}"`);
     }
