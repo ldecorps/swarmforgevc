@@ -34,6 +34,8 @@ flowchart TD
 
   WORK["agent executes the task\nand commits"]
   FORWARD["sends the next git_handoff\n(10-char commit hex)"]
+  FWDGATE{"forward-gate! (BL-1609):\na forwarding git_handoff, held by a\ncode-worktree role, with no git_handoff\nnaming its ticket sent since dequeue?"}
+  NOTSENT(["FORWARD_NOT_SENT: refused,\nnothing moved - send the forward,\nor done_with_current.sh --no-op \"<reason>\""])
   DONE["done_with_current.sh:\nin_process/ -> completed/\n(BL-652: any argv fails fast,\nzero side effects)"]
   STALE(["skipping this leaves a stale claim\nthat re-shows on the next wake"])
 
@@ -66,7 +68,12 @@ flowchart TD
   GUARD -->|dirty| REQUEUE
   REQUEUE --> WAIT
   WORK --> FORWARD
+  WORK -.->|role tries to complete\nwithout forwarding first| FWDGATE
   FORWARD --> DONE
+  FORWARD -.->|already forwarded,\ngate passes| FWDGATE
+  FWDGATE -->|refuse: forwarding inbound,\nno forward sent, no --no-op| NOTSENT
+  FWDGATE -->|complete: forward sent since dequeue,\n--no-op reason given, non-forwarding\ninbound, or master-resident role| DONE
+  NOTSENT -.->|in_process untouched -\nsend the forward, then retry| WORK
   DONE -.->|omitted| STALE
   FORWARD -.->|recipient repeats\nthis whole cycle| START
 
@@ -75,8 +82,8 @@ flowchart TD
   classDef store fill:#57606a,color:#fff,stroke:#32383f;
   classDef act fill:#1f6feb,color:#fff,stroke:#0b3d91;
   classDef daemon fill:#8250df,color:#fff,stroke:#4c2889;
-  class VALIDATE,CHASE,PICK,GUARD,DEFERCHECK,ROOTGUARD,RECIPIENTGUARD gate;
-  class REJECT,REQUEUE,STALE,OUTSIDEROOT,COORDREFUSED bad;
+  class VALIDATE,CHASE,PICK,GUARD,DEFERCHECK,ROOTGUARD,RECIPIENTGUARD,FWDGATE gate;
+  class REJECT,REQUEUE,STALE,OUTSIDEROOT,COORDREFUSED,NOTSENT bad;
   class WRITE,SENT,CLAIM,DONE,WAIT,DEFERRED store;
   class DRAFT,READY,WORK,FORWARD,AUTOFIX,DEPTH act;
   class DAEMON,WAKE daemon;

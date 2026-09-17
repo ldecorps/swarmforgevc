@@ -177,7 +177,9 @@ pass "04a: a non-Work note completes exactly as today"
 # 04b retired (BL-1609): "a git_handoff item completes exactly as today, no
 # gate" is no longer true - a forwarding git_handoff now has its OWN gate
 # (specs/features/BL-1609-*.feature's own acceptance scenarios exercise it,
-# plus test_done_with_current_arg_rejection.sh's --no-op argv coverage).
+# plus test_done_with_current_arg_rejection.sh's own #06/#07 --no-op argv
+# coverage, added at hardening after this comment was found to name a
+# coverage that did not actually exist there yet).
 # Every remaining scenario in this file uses a Work note or chase note as
 # its in_process item, never a bare git_handoff, so none of them exercise
 # BL-1609's gate - this file's own scope stays the WORK NOTE gate alone.
