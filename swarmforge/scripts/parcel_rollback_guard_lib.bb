@@ -57,14 +57,18 @@
 (defn- received-parcel-commit-for-task
   "sender's received parcel commit for task-name, or nil - the newest
    in_process git_handoff parcel whose task matches (batch roles hold
-   several in-process tasks at once; handoff-files' own sort makes `last`
-   the newest). Mirrors review-forward-evidence-gate-lib's own
+   several in-process tasks at once; handoff-files-with-batches' own sort
+   makes `last` the newest). Mirrors review-forward-evidence-gate-lib's own
    received-commit-for-task (BL-806): fails open (nil) on every 'nothing to
    check against' shape - unknown role, no mailbox, no matching parcel, a
-   matching parcel with no commit header."
+   matching parcel with no commit header. BL-1612: descends into batch_*
+   directories the way BL-1313 already taught the sender's own
+   non-forwarding check - a batch role's in-process parcels all sit inside
+   one, so the flat reader this replaces never found a received commit for
+   the cleaner or hardender."
   [root sender task-name]
   (when-let [role-info (handoff-lib/load-role-info sender root)]
-    (when-let [file (->> (handoff-lib/handoff-files (handoff-lib/mailbox-dir role-info :in_process))
+    (when-let [file (->> (handoff-lib/handoff-files-with-batches (handoff-lib/mailbox-dir role-info :in_process))
                           (filter (fn [f]
                                     (and (= "git_handoff" (handoff-lib/header-field f "type"))
                                          (= task-name (handoff-lib/header-field f "task")))))
