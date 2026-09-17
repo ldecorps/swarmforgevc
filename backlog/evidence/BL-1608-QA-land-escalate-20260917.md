@@ -59,4 +59,33 @@ per Article 2.6, or BL-1605 is excluded once its coder fix returns) is
 likely the least-disruptive path. Continuing to process BL-1607 now;
 BL-1608 waits for this adjudication before landing.
 
+## Same structural blocker recurs on BL-1607 (same pass)
+
+BL-1607 also fully verified (unit suite green apart from BL-1605's
+already-bounced, unrelated defect; the guard test green 20/20 isolated
+and in 3 full-lane runs at loads 4.4–12.08; both its own feature and
+BL-1600's feature green; `required_wiring` OK; register row removed at
+commit `b4ec85fbd7`, clean QA evidence `47e50af7ee`). Attempting
+`bb swarmforge/scripts/land_step_cli.bb BL-1607 47e50af7ee` hits the
+IDENTICAL refusal, same shared evidence file, same
+`ENTANGLED_SIBLING` set minus BL-1607 itself plus BL-1608:
+
+```
+LAND_ESCALATE
+ENTANGLED_SIBLING BL-1185
+ENTANGLED_SIBLING BL-1576
+ENTANGLED_SIBLING BL-1599
+ENTANGLED_SIBLING BL-1605
+ENTANGLED_SIBLING BL-1608
+BL-1607: entangled tip - sibling ticket(s) BL-1185,BL-1576,BL-1599,BL-1605,BL-1608
+unlanded as ancestors, tip-pure replay could not complete cleanly; specifier
+adjudication needed.
+```
+
+Same structural cause (Article 4.4 escalation discipline: one escalation
+per class) — not re-sent as a second priority-00 note, appended here
+instead. Both BL-1607 and BL-1608 are QA-approved and waiting on this
+same adjudication; whatever resolves one likely resolves both in one
+pass. Continuing to BL-1599 next.
+
 By QA.
