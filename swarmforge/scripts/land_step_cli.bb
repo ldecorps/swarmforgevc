@@ -41,13 +41,6 @@
 ;;   surviving lines already match origin/main under whatever sha put them
 ;;   there) or "reverted" (the sibling's own contribution to this path is
 ;;   entirely gone at the tip, so the path owes it nothing).
-;;   BL-1604: also one "REGISTER_ROW_RESTORED <registry> <file> <owner>"
-;;   line per row of backlog/standing-reds.tsv or
-;;   swarmforge/scripts/property_suite_standing_allowlist.tsv that an OPEN
-;;   ticket other than the landing one owns on origin/main and the
-;;   replayed tree lacked - restored, byte-identical, into the SAME commit
-;;   before it was built, so a land can no longer un-own a standing red or
-;;   allowlist row by carrying a sibling's registry edit whole from the tip.
 ;; Exit 1, prints "LAND_ESCALATE" then the reason on the next line: the
 ;;   detection or replay itself could not be completed cleanly (a real
 ;;   conflict, an unreadable range). Per QA.prompt: not a bounce to the
@@ -187,7 +180,6 @@
               (doseq [{:keys [path sibling verdict]} (sort-by (juxt :path :sibling) (:content-clear plan))]
                 (println (str "CONTENT_CLEAR_SIBLING_PATH " path " " sibling " "
                               (if (= :vacuous verdict) "reverted" "landed"))))
-              (doseq [line (:register-restored plan)] (println line))
               (System/exit 0))
 
             :escalate

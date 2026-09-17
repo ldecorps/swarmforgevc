@@ -849,6 +849,12 @@ across five worktrees, one file at a time, by hand.
 
 Mechanics (`parcel_rollback_guard_lib.bb`):
 
+- **The accepted parcel commit is read from the sender's own `in_process`
+  mailbox** the same batch-aware way BL-806's reader is (above): the newest
+  matching `git_handoff` for the task, at the top level or inside a
+  `batch_*/` directory (BL-1612; before it, a cleaner or hardender's
+  batch-held parcel resolved to no received commit and this gate never
+  judged their forwards).
 - **Ticket-scoped, not tree-wide.** Only the paths the ticket's own
   accepted parcel commit touched (via `diff-tree`) are checked — seven
   blob comparisons in the live incident, never a full-tree walk.
@@ -1798,7 +1804,10 @@ re-running work that had already been done once.
 - **Refuses** when the outgoing `commit:` is exactly the commit that role
   received for the same `task:` — read from the sender's own `in_process`
   mailbox (the newest matching `git_handoff` parcel, since batch roles hold
-  several at once). A bounce (backward direction), a `note`, a
+  several at once), through the batch-aware reader that descends into
+  `batch_*/` directories as well as the top level (BL-1612; before it, a
+  cleaner or hardender's batch-held parcel was invisible to this reader and
+  the gate never judged their forwards at all). A bounce (backward direction), a `note`, a
   `rule_proposal`, and any send carrying a non-blank `reroute_reason` (the
   BL-425 cannot-fix-forward-onward exemption) all pass through untouched —
   the gate's refusal surface is exactly review-role forward-direction
