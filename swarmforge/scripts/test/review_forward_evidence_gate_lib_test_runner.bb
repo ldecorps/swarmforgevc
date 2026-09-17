@@ -44,7 +44,7 @@
              "QA\tQA-wt\t" root "/QA\tswarmforge-QA\tQa\tclaude\ttask\n"
              "coordinator\tmaster\t" root "\tswarmforge-coordinator\tCoordinator\tclaude\ttask\n")))
 
-(defn write-in-process! [root role filename {:keys [type task commit]
+(defn write-in-process! [root role filename {:keys [type task commit received-at-head]
                                              :or {type "git_handoff"}}]
   (let [role-info (handoff-lib/load-role-info role root)
         dir (handoff-lib/mailbox-dir role-info :in_process)]
@@ -52,6 +52,7 @@
     (spit (str (fs/path dir filename))
           (str "id: x\nfrom: coder\nto: " role "\npriority: 50\ntype: " type "\n"
                (when (= type "git_handoff") (str "task: " task "\ncommit: " commit "\n"))
+               (when received-at-head (str "received_at_head: " received-at-head "\n"))
                "\nbody\n"))))
 
 ;; ── received-commit-for-task ─────────────────────────────────────────────
@@ -93,6 +94,53 @@
   (assert= "the newest (highest-sorting filename) match wins among several"
            "2222222222"
            (review-forward-evidence-gate-lib/received-commit-for-task root "cleaner" "BL-T")))
+
+;; ── received-at-head-for-task (BL-1610) ──────────────────────────────────
+;; The sibling reader beside received-commit-for-task - same lookup, same
+;; parcel file, so the commit and the head it reads always agree.
+
+(let [root (mk-root)]
+  (write-roles! root)
+  (assert-nil "no mailbox contents -> nil (fail open)"
+              (review-forward-evidence-gate-lib/received-at-head-for-task root "architect" "BL-T")))
+
+(let [root (mk-root)]
+  (write-roles! root)
+  (assert-nil "unknown sender role -> nil (fail open)"
+              (review-forward-evidence-gate-lib/received-at-head-for-task root "nonexistent-role" "BL-T")))
+
+(let [root (mk-root)]
+  (write-roles! root)
+  (write-in-process! root "architect" "00_received.handoff"
+                      {:task "BL-T" :commit "aaaaaaaaaa" :received-at-head "e5e5e5e5e5"})
+  (assert= "a matching parcel's received_at_head is returned"
+           "e5e5e5e5e5"
+           (review-forward-evidence-gate-lib/received-at-head-for-task root "architect" "BL-T")))
+
+(let [root (mk-root)]
+  (write-roles! root)
+  ;; An older parcel, claimed before BL-1610's dequeue stamp landed: the
+  ;; header is absent entirely, never a blank line written in its place.
+  (write-in-process! root "architect" "00_received.handoff" {:task "BL-T" :commit "aaaaaaaaaa"})
+  (assert-nil "no received_at_head header at all (older parcel) -> nil"
+              (review-forward-evidence-gate-lib/received-at-head-for-task root "architect" "BL-T")))
+
+(let [root (mk-root)]
+  (write-roles! root)
+  ;; A present-but-blank header must fall open exactly like an absent one -
+  ;; `not-empty` is load-bearing here (the same present-but-blank trap as
+  ;; claim-task-name's task: header, BL-1608).
+  (write-in-process! root "architect" "00_received.handoff"
+                      {:task "BL-T" :commit "aaaaaaaaaa" :received-at-head ""})
+  (assert-nil "a present-but-blank received_at_head -> nil, not empty string"
+              (review-forward-evidence-gate-lib/received-at-head-for-task root "architect" "BL-T")))
+
+(let [root (mk-root)]
+  (write-roles! root)
+  (write-in-process! root "architect" "00_other_task.handoff"
+                      {:task "BL-OTHER" :commit "aaaaaaaaaa" :received-at-head "e5e5e5e5e5"})
+  (assert-nil "a different task's parcel never matches (same task-equality as the commit reader)"
+              (review-forward-evidence-gate-lib/received-at-head-for-task root "architect" "BL-T")))
 
 ;; ── blocked?: the core truth table (BL-654 invariants 1 and 2) ──────────
 
