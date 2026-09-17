@@ -110,7 +110,7 @@ TICKET_ID="$(grep -E '^id:' "$YAML" | head -1 | awk '{print $2}' | tr -d '\r')"
 # the assigned_to rewrite below - same "before anything is written or
 # rewritten" posture BL-1097 already established for this ticket's own id
 # resolution, so a refusal leaves the ticket file untouched.
-MSG="Work ${TICKET_ID}: read backlog/active/${TICKET_ID}-*.yaml"
+MSG="Work ${TICKET_ID}: merge main first, then read backlog/active"
 if (( ${#MSG} > 80 )); then
   echo "route_backlog_to_coder: composed message exceeds the 80-character limit (${#MSG} chars, not sent, not shortened): ${MSG}" >&2
   exit 1
