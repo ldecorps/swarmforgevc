@@ -402,6 +402,108 @@
     (assert-false "no recorded parcel: not blocked" (merge-drop-guard-lib/blocked? result))
     (assert-true "no recorded parcel: no warning" (nil? (:warning result)))))
 
+;; ── BL-1610 invariant 1: the 4-arity head bound restricts the merge scan
+;; to merges reachable from forwarded and not from head, never the 3-arity
+;; fallback's whole received..forwarded range. Two independent
+;; sender-verbatim merges on two different paths in sequence - M0 (on
+;; old.txt) BEFORE head, M1 (on new.txt) AFTER head - reproduce the exact
+;; BL-1606 shape: received is an ancestor of both, head sits between them.
+(with-fixture [root]
+  (write! root "old.txt" (lines-str base-lines))
+  (commit! root "seed old base")
+  (let [base0-sha (head root)]
+    (write! root "old.txt" received-content)
+    (commit! root "received side (old.txt)")
+    (let [received-old-sha (head root)]
+      (sh! root "git" "reset" "-q" "--hard" base0-sha)
+      (write! root "old.txt" sender-content)
+      (commit! root "sender side (old.txt)")
+      (let [sender-old-sha (head root)
+            tree0-sha (:out (sh! root "git" "write-tree"))
+            m0-sha (:out (sh! root "git" "commit-tree" tree0-sha "-p" sender-old-sha "-p" received-old-sha
+                               "-m" "M0: merge received into sender (old.txt, kept sender verbatim)."))]
+        (sh! root "git" "update-ref" "refs/heads/main" m0-sha)
+        (sh! root "git" "checkout" "-q" "main")
+        ;; head = the sender's own HEAD at the moment it dequeued the
+        ;; parcel - M0 already happened before receipt, exactly BL-1610's
+        ;; "coder branch carries a one-sided merge from before the parcel".
+        (let [head-sha m0-sha]
+          (write! root "new.txt" (lines-str base-lines))
+          (commit! root "seed new base")
+          (let [base1-sha (head root)]
+            (write! root "new.txt" received-content)
+            (commit! root "received side (new.txt)")
+            (let [received-new-sha (head root)]
+              (sh! root "git" "reset" "-q" "--hard" base1-sha)
+              (write! root "new.txt" sender-content)
+              (commit! root "sender side (new.txt)")
+              (let [sender-new-sha (head root)
+                    tree1-sha (:out (sh! root "git" "write-tree"))
+                    ;; M1 - the merge the sender made AFTER receipt.
+                    m1-sha (:out (sh! root "git" "commit-tree" tree1-sha "-p" sender-new-sha "-p" received-new-sha
+                                       "-m" "M1: merge received into sender (new.txt, kept sender verbatim)."))]
+                (sh! root "git" "update-ref" "refs/heads/main" m1-sha)
+                (let [unbounded (merge-drop-guard-lib/findings-between root base0-sha m1-sha)
+                      bounded (merge-drop-guard-lib/findings-between root base0-sha m1-sha head-sha)]
+                  (assert= "no head (3-arity fallback): both M0 and M1 findings"
+                           #{"old.txt" "new.txt"} (set (map :path unbounded)))
+                  (assert= "head bound (4-arity): only M1's finding, M0 excluded"
+                           #{"new.txt"} (set (map :path bounded)))
+                  (assert= "head bound: exactly one finding" 1 (count bounded))
+                  (assert= "head bound: names M1, not M0" m1-sha (:merge (first bounded))))))))))))
+
+;; ── BL-1610 invariant 2: excused-by-blob-identity? requires BOTH the
+;; merge-commit-is-not-forwarded clause AND the blob-identity clause - a
+;; mutant weakening the AND to an OR (hand-verified via a bb -e probe,
+;; BL-638 fallback: the mutated form marked case C below excused, where
+;; the original correctly leaves it blocked) survives every other test in
+;; this file, so these three cases pin all four AND-truth-table corners
+;; that matter (the merge-is-forwarded corner is already pinned by the
+;; sender-verbatim test above).
+(with-fixture [root]
+  (write! root "shared.txt" (lines-str base-lines))
+  (commit! root "seed base")
+  (let [base-sha (head root)]
+    (write! root "shared.txt" received-content)
+    (commit! root "BL-1610-fixture: received side")
+    (let [received-sha (head root)]
+      (sh! root "git" "reset" "-q" "--hard" base-sha)
+      (write! root "shared.txt" sender-content)
+      (commit! root "BL-1610-fixture: sender side")
+      (let [sender-sha (head root)
+            tree-sha (:out (sh! root "git" "write-tree"))
+            merge-sha (:out (sh! root "git" "commit-tree" tree-sha "-p" sender-sha "-p" received-sha
+                                  "-m" "Merge received into sender (kept sender verbatim)."))]
+        (sh! root "git" "update-ref" "refs/heads/main" merge-sha)
+        ;; Case A: merge IS forwarded (nothing comes after it) - not
+        ;; excused regardless of blob identity (first AND clause false).
+        (let [result-a (merge-drop-guard-lib/findings-between root received-sha merge-sha)]
+          (assert= "case A (merge is forwarded): one finding" 1 (count result-a))
+          (assert-false "case A: not excused" (:excused (first result-a))))
+        ;; Case B: something comes after the merge that restores the path
+        ;; to exactly what received carried - excused (both clauses true).
+        (write! root "shared.txt" received-content)
+        (commit! root "restore shared.txt to received's content")
+        (let [forwarded-b-sha (head root)
+              result-b (merge-drop-guard-lib/findings-between root received-sha forwarded-b-sha)]
+          (assert= "case B (restored to received): one finding" 1 (count result-b))
+          (assert-true "case B: excused" (:excused (first result-b)))
+          (assert-false "case B: not blocked" (merge-drop-guard-lib/blocked?
+                                                {:findings result-b})))
+        ;; Case C: something comes after the merge, but it does NOT
+        ;; restore the path to received's content - first clause true,
+        ;; second clause false, so an AND still refuses (an OR would
+        ;; wrongly excuse it on the first clause alone).
+        (sh! root "git" "reset" "-q" "--hard" merge-sha)
+        (write! root "shared.txt" "neither side's content, still not received's\n")
+        (commit! root "change shared.txt again, matching neither side")
+        (let [forwarded-c-sha (head root)
+              result-c (merge-drop-guard-lib/findings-between root received-sha forwarded-c-sha)]
+          (assert= "case C (later, still not received): one finding" 1 (count result-c))
+          (assert-false "case C: not excused (AND, not OR)" (:excused (first result-c)))
+          (assert-true "case C: still blocked" (merge-drop-guard-lib/blocked?
+                                                 {:findings result-c})))))))
+
 (if (seq @failures)
   (do (doseq [f @failures] (binding [*out* *err*] (println f)))
       (println (str "\n" (count @failures) " failure(s)"))
