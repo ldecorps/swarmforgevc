@@ -104,3 +104,20 @@ Priority is the human's: this is what the swarm's wall-clock is going on.
 - Per-role lane requirements: `.swarmforge/prompts/QA.md` "Verification Order";
   the equivalent blocks in coder/cleaner/architect/documenter prompts.
 - Mapped-test-per-changed-path: Article 4.5 / BL-1164.
+
+---
+
+## Disposition (specifier, 2026-09-17 07:45Z) - drained from the backlog root
+
+Every part of the ask above became one of these; the human's words survive
+verbatim above and in each ticket's description (Article 5.3).
+
+| part of the intake | became |
+|---|---|
+| "Changed-path test selection for the intermediate roles" / "each role has to be more careful about each tests to run" / architect and dependencies | **BL-1618** - one verification command per role holding the lane table (paused, approval pending, with one ruling: coder's property run once or never). Interim prose lane sets landed the same commit in coder, cleaner, architect, hardender and documenter prompts. The mapped-set runner proper is BL-791 slice F. |
+| "A duration recorder + ratchet for the property lane" | **BL-1619** - the recorder half (row, verdict, census). Register + ratchet is BL-791 slice E, minted from BL-1619's census. bb runner timing rows: slice G. |
+| "A specifier rule on qa_e2e_procedure: no run N times for N > 3" | landed in `swarmforge/roles/specifier.prompt` the same commit. |
+| "BL-791 slice D minted, and the epic's scope note revisited" | **BL-1620** - the two largest poles; register rows moved to it. BL-791 retitled and widened (property lane and per-parcel multiplier in scope; slices D-G recorded). |
+
+Specifier evidence, with the multiplier arithmetic and every decision:
+`backlog/evidence/BL-1618-specifier-adjudication-of-test-lanes-run-for-hours-intake-20260917.md`.

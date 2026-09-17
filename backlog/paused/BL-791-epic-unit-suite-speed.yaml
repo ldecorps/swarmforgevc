@@ -1,5 +1,5 @@
 id: BL-791
-title: "EPIC — Bring the extension unit suite back under 13 seconds, and keep it there"
+title: "EPIC — Bring the extension unit suite back under 13 seconds and keep it there; measure and ratchet the property lane the same way; and stop every role re-running every lane on every parcel (widened 2026-09-17 on the human's intake: the hours are a per-parcel multiplier, not a pole)"
 milestone: M8
 status: todo
 type: epic
@@ -9,9 +9,13 @@ priority: 28
 direction: human-requested
 depends_on: []
 mutation_cost: medium
-decomposes_into: [BL-792, BL-1038, BL-1039, BL-1598, BL-1599]
+decomposes_into: [BL-792, BL-1038, BL-1039, BL-1598, BL-1599, BL-1618, BL-1619, BL-1620]
 
 remaining_slices:
+  - "Slice D, first cut - MINTED 2026-09-17 as BL-1620: bl968StepRegistryMaterializedTreeGuard (69.9 s) and telegramFrontDeskBotCli (65.3 s), their suite-poles.tsv rows moved to BL-1620. Next cuts, one or two files each as BL-1620 lands: renderBriefingBurndownCli 36.6 s, briefingDigestLineCli 36.3 s, bl1277UnscopedStepCollisionGuard 23.6 s, renderBriefingDiagramsCli 14.6 s, epicReorderBridge 10.6 s, pilotAcceptanceGateCli 8.5 s, recordBounceCli 7.3 s; emitLifecycleSnapshotCli on watch."
+  - "Slice E - the property lane's pole register and summed-work ratchet, the BL-1598/BL-1599 mirror, minted from the census BL-1619's recorder produces (top ten files by work on its first row). Not before BL-1619 lands."
+  - "Slice F - a mapped-set runner for the intermediate roles (run only the unit tests Article 4.5 maps to the changed production paths), once BL-1618 holds the lane table and the unit lane exceeds a minute; today it is 36 s and BL-1618 alone removes the hours."
+  - "Slice G - timing rows for the bb property and shell runners under swarmforge/scripts/test/ (190 and 201 files, no record), if they are ever run as a lane outside the hardender."
   - "Slice C — MINTED 2026-09-16 as BL-1598 (pole register: the per-file gate refuses only a NEW pole, a stale row or an unowned row; npm test's recorded result tells test failures from budget verdicts) and BL-1599 (work ratchet: SUITE_WORK_BUDGET_MS 550000 on summed per-file work, 10 percent tolerance, lowered only; the verdict derives the expected wall and prints the distance to 13 s). The operator delegated the lane-budget decision to the specifier on 2026-09-16 (coordinator note 008676); the decision is in lane_budget_decision_2026_09_16 below."
   - "Slice D — the poles, per file, once BL-1598's register owns them (measured 2026-09-16, 9 forks, load 10.8, extension/.vitest-report.json): bl968StepRegistryMaterializedTreeGuard 69.9 s; telegramFrontDeskBotCli.test.js 65.3 s; renderBriefingBurndownCli 36.6 s; briefingDigestLineCli 36.3 s; bl1277UnscopedStepCollisionGuard 23.6 s (its timeout red is BL-1600; the pole is this slice); renderBriefingDiagramsCli 14.6 s; epicReorderBridge 10.6 s; pilotAcceptanceGateCli 8.5 s; recordBounceCli 7.3 s. Together 273 s of 546 s. QA's three runs at 15:50Z (load 6.4 to 9.0) measured the last three at 5.0, 2.7 and 2.3 s and emitLifecycleSnapshotCli at about 9.0 s: marginal files swing 2 to 3 times between runs with no code change, so BL-1598 (amended 15:10Z) refuses an unregistered file only from 1.5 times the budget and reports the rest as watch; emitLifecycleSnapshotCli joins this inventory as a watch file. NOT YET MINTED: one ticket per file (or per shared cause - the two 65 to 70 s files first), each taking its register row over from this epic. With every pole under 7 s the derived wall at 9 forks is about 30 s; 13 s needs the summed work under about 110 s as well."
 
@@ -83,7 +87,11 @@ description: |
   ## Out of scope for the whole epic
 
   - Gherkin / acceptance pipeline wall-clock — a separate surface with its own
-    budget.
+    budget (the per-feature run_acceptance.sh is not where the hours are).
+  - (Removed 2026-09-17) The property lane and the per-parcel multiplier were
+    implicitly out of scope; they are IN scope since the human's intake of
+    2026-09-17 - BL-1618 (one command per role), BL-1619 (property recorder),
+    slice E (property register + ratchet).
   - Android JVM unit tests (BL-769's suite) — not this suite.
   - Raising `SUITE_DURATION_BUDGET_MS`, or any other change whose effect is to
     make the number look better without the run being faster.
@@ -147,6 +155,16 @@ notes: |
   fails is a suite whose failures carry no signal — a real regression and
   worker-termination noise are indistinguishable in that log. Slice A restores
   the signal, which is worth landing even if the wall-clock never moves.
+
+  2026-09-17 (specifier, backlog-root drain): the human's intake "the swarm
+  knowingly runs tests for hours" widened this epic - the hours are six
+  full-lane runs per parcel (320 s property lane x 6, a Stryker pass, the
+  unit lane x 6) at cap 5-6, not a unit-lane pole. Minted BL-1618 (one
+  verification command per role; interim prose lane sets landed in the five
+  prompts the same commit), BL-1619 (property-lane duration recorder) and
+  BL-1620 (slice D first cut); slices E-G recorded above. Intake archived:
+  backlog/archive/INTAKE-test-lanes-run-for-hours-changed-path-selection-20260917.md.
+  Evidence: backlog/evidence/BL-1618-specifier-adjudication-of-test-lanes-run-for-hours-intake-20260917.md.
 
 lane_budget_decision_2026_09_16: |
   ## The delegated decision (specifier, 2026-09-16)
