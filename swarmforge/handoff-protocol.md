@@ -570,6 +570,21 @@ Mechanics (`duplicate_chain_guard_lib.bb`):
   literal `true`, fails closed and the parcel still counts as a blocker.
   Skipping a candidate does not stop the walk: a genuine competing chain
   sitting behind a reverse copy is still found and named.
+  `reverse_hop_lib.bb`'s `reverse-recipients` (called from `swarm_handoff.bb`
+  on every queued `git_handoff`) subtracts the forward's own `to:` set from
+  the declared reverse roles before writing any copy (BL-1605) — a role
+  never receives both the forwarding parcel and a non-forwarding twin of
+  the same send. Before this fix, a bounce that landed on an EARLIER role
+  under the sender's own declared mode (e.g. an architect bouncing to the
+  cleaner, with the architect declared `back-all`) produced two files in
+  that role's mailbox with the same task and commit — the forward and its
+  own reverse copy — and `inbound-non-forwarding?`'s batch-aware refusal
+  then blocked the role's own re-forward for the rest of that batch until
+  a chase sweep caught it (twice on 2026-09-16, ~50 minutes each,
+  `backlog/evidence/BL-1605-specifier-adjudication-of-coordinator-pattern-note-20260916.md`).
+  A forward hop's earlier roles (never the forward's own recipient) still
+  get their single merge-only copy exactly as before; the coordinator
+  still never receives one.
 - **The sender's own mailbox is excluded.** The sender is the holder, and its
   inbound parcel is by definition the one it is acting on — this is what
   keeps every ordinary forward legal.
