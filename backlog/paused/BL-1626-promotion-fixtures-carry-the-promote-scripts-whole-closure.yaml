@@ -1,0 +1,179 @@
+id: BL-1626
+title: "Three landed promotion features are red on main with no owner - BL-803 since 2026-08-20 and BL-1028 since 08-25 because their step handlers hand-list the promote script's Babashka load-file closure and it grew (backlog_depth_lib gained daemon_cycle_guard_lib, promotion_gates_lib gained acceptance_pointer_gate_lib), BL-1100 since 08-27 because the freshness gate promote_and_route_next.sh gained cannot find extension/out/tools/deprecate-check.js inside a fixture root and holds fail-closed; the fixtures derive the closure (BL-1538's helper) and give the gate its CLI, and a census pins every handler that copies the promote chain"
+milestone: M8
+type: defect
+severity: high
+# high (standing-red rule 2026-09-05): three acceptance features red on
+# main, unseen for three to four weeks because no lane runs a landed
+# feature (BL-1628). Production is unaffected: every failure is the
+# fixture's copy of the promote chain missing a file the live chain has.
+status: todo
+epic: code-quality-gates
+priority: 8
+direction: swarm-reported
+depends_on: []
+# BL-1538 (closure derivation for a bb fixture: computeClosure,
+# diffClosureAgainstList in specs/pipeline/steps/lib/operatorRuntimeBbClosure.js;
+# copyScriptClosure in extension/test/helpers/pinnedRepoFixture.js) is in
+# backlog/done. BL-1628 (a recorded full-acceptance lane) is a paused
+# sibling, not a dependency.
+mutation_cost: low
+# low: three step-handler fixture edits and one shared helper call, a
+# census scenario, evidence, four register rows; step handlers are not
+# under mutation. Runners the feature shells: the closure diff and the
+# gate's own answer on a fixture in seconds; the three real features are
+# QA's e2e (30-90 s each, BL-1541).
+slice_size_envelope: low
+required_stages: [coder, cleaner, architect, hardender, documenter, qa]
+
+acceptance: specs/features/BL-1626-promotion-fixtures-carry-the-promote-scripts-whole-closure.feature
+
+required_wiring:
+  - 'specs/pipeline/steps/bl803PromoteRouteSedPortabilitySteps.js::computeClosure::the red handler is the pre-existing consumer of BL-1538 closure helper; the literal exists only with the fix (BL-874, BL-1235)'
+  - 'specs/pipeline/steps/bl1626PromotionFixturesCarryTheClosureSteps.js::registerSteps::the handler lands in the same parcel as the feature (BL-233, BL-1371)'
+
+human_approval: approved
+approval_context: >
+  A new feature file is authored here, so it needs a tap. No choice is
+  posed and there are no ruling_options. FIRM: no scenario of BL-803,
+  BL-1028 or BL-1100 is reworded or retired - their fixtures are repaired
+  so they pass as written. FIRM: the closure is DERIVED at fixture build
+  from the real load-file graph (BL-1538's invariant), never a longer
+  hand list. FIRM: the freshness gate is not bypassed - the fixture gives
+  it the real CLI (a link or copy of the repository's extension/out under
+  the fixture root, or a CLI-path injection seam that points at the real
+  tool), and the gate answers allow on its own. FIRM: the census names
+  every handler that copies promote_and_route_next.sh or
+  promotion_gates_cli.bb into a fixture; each derives the closure.
+
+invariants:
+  - "A fixture that copies a Babashka entry point carries that entry point's whole transitive load-file closure, derived from the sources at build time - never a hand-maintained list."
+
+description: |
+  ## What is wrong
+
+  The coder (seat 1, BL-1614 pass, evidence
+  `backlog/evidence/BL-1614-coder-unowned-reds-20260917.md` in
+  `.worktrees/coder`) ran every feature whose handler drives
+  route_backlog_to_coder.sh and found four red on main. The specifier
+  reproduced all four on main 695624c52c at 14:18 local
+  (`run_acceptance.sh`, exit 1 each). Three share one class:
+
+  - `specs/features/BL-803-promote-route-sed-bsd-portability.feature`:
+    "no eligible paused ticket" - `bl803PromoteRouteSedPortabilitySteps.js`
+    copies promotion_gates_cli/lib, backlog_depth_lib and
+    swarm_identity_lib (lines 27-33, a hand list annotated "BL-853: ...
+    both must travel with the copy"); backlog_depth_lib.bb has load-filed
+    daemon_cycle_guard_lib.bb since BL-966 (5c8b0835f8, 2026-08-20), so
+    the copied gate dies at load and the promote finds nothing eligible.
+    Red since 2026-08-20.
+  - `specs/features/BL-1028-promotion-must-not-bypass-a-refused-integrity-commit.feature`:
+    same class - its list (lines 44-48) includes daemon_cycle_guard_lib
+    but not acceptance_pointer_gate_lib.bb, which promotion_gates_lib.bb
+    load-files since BL-626 (ea14fa3039, 2026-08-25). Red since then.
+  - `specs/features/BL-1100-promotion-candidacy-is-decided-by-structured-fields-never-prose.feature`:
+    "freshness HOLD for BL-9100: interpretFreshnessCliOutput failed -
+    fail closed" - promote_and_route_next.sh's BL-1173 gate (lines
+    250-274) looks for `$ROOT/extension/out/tools/deprecate-check.js`,
+    then relative to the SCRIPT's own directory; the handler copies the
+    script into the fixture root (line 52), so both lookups land inside
+    the fixture, find nothing, and the gate holds fail-closed. Red since
+    the gate was wired (2026-08-27).
+
+  BL-1538 fixed exactly this shape for one property runner and left the
+  helpers: `computeClosure(scriptsDir, entryFile)` and
+  `diffClosureAgainstList` in `specs/pipeline/steps/lib/operatorRuntimeBbClosure.js`,
+  `copyScriptClosure(liveScriptsDir, targetScriptsDir, entrypoints)` in
+  `extension/test/helpers/pinnedRepoFixture.js`. Two handlers never
+  adopted them.
+
+  ## What is wanted
+
+  - bl803 and bl1028 build their fixture's scripts dir by deriving the
+    closure of the entry points they copy (promote_and_route_next.sh's
+    bb entry points: promotion_gates_cli.bb and every load-file it
+    reaches), never a list; `diffClosureAgainstList` reports nothing
+    missing for either fixture (scenario 01).
+  - bl1100's fixture lets the freshness gate find the real CLI, and the
+    gate answers `allow` for the fixture ticket on its own (scenario 02).
+  - A census: every step handler that copies promote_and_route_next.sh or
+    promotion_gates_cli.bb into a fixture derives its closure; the
+    population is counted and at least the three named (scenario 03,
+    BL-1445).
+  - BL-803, BL-1028 and BL-1100 green as written (QA e2e); their four
+    register rows (three here, BL-937's under BL-1627) leave in their
+    lands.
+
+  ## How (direction, not mandate)
+
+  - Replace each hand list with `copyScriptClosure(SCRIPTS_DIR,
+    fixtureScriptsDir, ['promotion_gates_cli.bb'])` or `computeClosure`
+    plus a copy loop; keep the shell entry point's copy as is.
+  - bl1100: `fs.symlinkSync(path.join(REPO_ROOT, 'extension'),
+    path.join(root, 'extension'))` in the fixture builder (the gate then
+    resolves `$ROOT/extension/out/tools/deprecate-check.js`, and
+    deprecate-check reads the fixture root for the ticket and
+    adjudications), or a `SWARMFORGE_DEPRECATE_CHECK_CLI` path seam in
+    promote_and_route_next.sh's `deprecate_check_cli` resolver - an
+    injection of WHERE the real tool is, never a result bypass
+    (engineering.prompt). The symlink needs no production change; prefer
+    it unless bl1100's other scenarios read the fixture's extension/.
+  - Census handler: grep `specs/pipeline/steps/*.js` for the two entry
+    point names in a copy call, assert each such file requires one of the
+    two closure helpers, print the count.
+  - Documenter: the how-to for BL-1538 (if any) lists the three handlers
+    as consumers; engineering-detailed.prompt "Acceptance Pipeline" gains
+    the invariant's sentence.
+
+constraints: >
+  Three step handlers, one census scenario and handler, evidence and
+  docs, four register rows (the three here; BL-937's row is BL-1627's).
+  No change to any of the three features' scenarios, to
+  promote_and_route_next.sh beyond an optional CLI-path seam, to the
+  closure helpers, or to any library. The step handler lands with the
+  feature (BL-233). Evidence named BL-1626-*.
+
+out_of_scope: |
+  - BL-937's feature (BL-1627).
+  - A lane that runs landed features (BL-1628); any other landed feature
+    the census or that lane finds red is its own unowned-red note.
+
+qa_e2e_procedure: |
+  On the parcel commit, from the repo root, with extension/out compiled:
+  1. `bash specs/pipeline/scripts/run_acceptance.sh specs/features/BL-803-*.feature`,
+     the same for BL-1028 and BL-1100 - each ONCE, each green.
+  2. Acceptance resolving all three scenarios of this feature
+     (`bash specs/pipeline/scripts/run_acceptance.sh specs/features/BL-1626-*.feature`).
+  3. The three register rows gone from backlog/standing-reds.tsv;
+     `bb swarmforge/scripts/standing_red_register_cli.bb .` names none of
+     the three files.
+  4. `git diff main...HEAD --name-only` names no library under
+     swarmforge/scripts except, if the seam was chosen,
+     promote_and_route_next.sh.
+
+source: |
+  Coder note to the specifier and coordinator, priority 00,
+  2026-09-17T13:12Z (inbound 00_20260917T131200Z_002025_from_coder):
+  "unowned-red BL-803/1028/1100/937 acceptance fail on main, unrelated".
+  Coder evidence .worktrees/coder/backlog/evidence/BL-1614-coder-unowned-reds-20260917.md
+  (rides BL-1614's parcel). Specifier adjudication and reproduction:
+  backlog/evidence/BL-1626-specifier-adjudication-of-coder-unowned-reds-20260917.md.
+  Parents: BL-1538, BL-803, BL-1028, BL-1100, BL-1173. Siblings: BL-1627,
+  BL-1628.
+
+notes: |
+  Minted 2026-09-17 by the specifier while completing the coder's note,
+  the same pass as BL-1627 and BL-1628. Register: backlog/standing-reds.tsv
+  gains three `acceptance` rows naming this ticket (first_seen 2026-09-17,
+  the first RECORDED sighting; the reds date from 08-20, 08-25 and 08-27).
+  No Article 4.2 hold is open: the coder reported from a regression sweep
+  and continues BL-1614. INVEST: Independent (the helpers and handlers
+  exist), Negotiable (symlink versus CLI seam is direction), Valuable
+  (three landed contracts become true again and the class gets a census),
+  Estimable (three fixture edits and one grep - one sitting), Small (three
+  scenarios, one invariant), Testable (closure diffs and a gate answer in
+  seconds). Severity high per the standing-red rule.
+
+  AUTO-APPROVED under the 2026-09-17 operator hotfix (severity defect, no
+  ruling_options) — see
+  auto-approve-high-severity-defects-amendment-20260917.md.

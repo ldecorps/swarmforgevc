@@ -68,3 +68,21 @@ approval) is the commit-time guard that would have refused the cleaner's
 subject; its approval is the durable stop.
 
 By specifier.
+
+## Addendum 13:40Z - the architect's retraction, and a second re-plant
+
+Architect note 002188 (13:36Z): "architect retracts BL-1604 drop claim -
+abandoned draft, 4th lineage". Its earlier note to the coordinator (002179,
+12:49Z: "silent merge-drop of BL-1604 code, no conflict; fixed 6dd9d193f9")
+had re-planted the same eight lines independently of the cleaner's
+e73896f43c, and 6dd9d193f9 then rode the BL-1601 and BL-1623 forwards onto
+the coder, hardender, documenter and QA branches (blob c5327bb7a9 on all
+four at 13:36Z). The cleaner's 3af21c25f6 (14:29 local) restored the file
+to main's blob on the cleaner and architect branches; its subject still
+names BL-1604, which is harmless only while the path stays byte-identical
+to main. The four other branches restore as the forwards and merge-ups
+carry 3af21c25f6, or by hand per the notes already sent (QA before the
+BL-1618 land; coder@2 on merge). Same-day count: one abandoned draft, two
+independent "silent revert" repairs, four lineages.
+
+By specifier.

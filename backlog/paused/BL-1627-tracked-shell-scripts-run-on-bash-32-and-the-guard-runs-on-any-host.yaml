@@ -1,0 +1,155 @@
+id: BL-1627
+title: "BL-937's portability feature is red on main with no owner: its static scan (scenario 02) correctly flags mapfile, a bash 4 builtin, in check_bb_scripts_load.sh line 140 and check_constitution_doc_citations.sh lines 41 and 67 - two real violations of the stock-macOS-bash-3.2 target - and its two runtime scenarios require this host's own /bin/bash to report 3.2, which no Linux host can satisfy; the two scripts drop mapfile, and the host-premise scenarios are retired in favour of the scan, with the macOS runtime check kept as a macOS-only e2e step"
+milestone: M8
+type: defect
+severity: high
+# high (standing-red rule 2026-09-05): a portability guard red on main
+# for two reasons at once, one of them two real regressions the target
+# platform would trip on. Not medium: the two scripts are commit guards
+# (BL-1242 chain) that a macOS operator would run first.
+status: todo
+epic: code-quality-gates
+priority: 8
+direction: swarm-reported
+depends_on: []
+# BL-937 (the feature) and BL-801 (the bash-3.2 target's first incident)
+# are in backlog/done. BL-1628 is a paused sibling, not a dependency.
+mutation_cost: low
+# low: two shell edits (mapfile -> while-read), one feature retirement
+# (two scenarios), evidence, one register row; shell carries no
+# mutation/CRAP/DRY (BL-472). Runners the feature shells: the static
+# scan over the tracked scripts in a few seconds (BL-937's scenario 02
+# already runs it).
+slice_size_envelope: low
+required_stages: [coder, cleaner, architect, hardender, documenter, qa]
+
+acceptance: specs/features/BL-1627-tracked-shell-scripts-run-on-bash-32-and-the-guard-runs-on-any-host.feature
+
+required_wiring:
+  - 'specs/pipeline/steps/bl1627TrackedShellScriptsRunOnBash32Steps.js::registerSteps::the handler lands in the same parcel as the feature (BL-233, BL-1371)'
+# No production anchor on purpose (BL-1235): the two scripts are edited
+# to REMOVE a construct; any pattern on them matches before and after or
+# pins an implementation. Scenario 01 scans them instead.
+
+human_approval: approved
+approval_context: >
+  A new feature file is authored here, so it needs a tap. No choice is
+  posed and there are no ruling_options. FIRM: the target stays stock
+  macOS /bin/bash 3.2 (engineering.prompt, BL-801) - nothing here
+  loosens it; the two scripts are made to comply. FIRM: BL-937's scenario
+  02 (the static construct scan over every tracked script) is kept
+  unchanged and is the standing guard. FIRM: BL-937's scenarios 01 and 03
+  ("Given the stock system bash reports version 3.2") are RETIRED, not
+  reworded - their premise is the host, which this swarm no longer runs
+  on; the runtime check they made is kept as a qa_e2e step that runs
+  only on a macOS host. FIRM: no skip semantics are added to the
+  acceptance runner.
+
+invariants:
+  - "No tracked shell script uses a construct stock bash 3.2 lacks; the static scan is the guard and it holds on every host."
+
+description: |
+  ## What is wrong
+
+  `specs/features/BL-937-shell-scripts-run-on-stock-macos-bash-32.feature`
+  fails on main (specifier reproduction on 695624c52c, exit 1):
+
+  - Scenarios 01 and 03 (Outlines): `Given the stock system bash reports
+    version 3.2` -> "expected /bin/bash --version to report 3.2, got: GNU
+    bash, version 5.2.21(1)-release (x86_64-pc-linux-gnu)". The handler
+    (bl937*Steps.js line 133) asserts the HOST's /bin/bash version. The
+    feature was minted on a macOS host; the swarm runs on WSL/Linux now,
+    so those scenarios cannot pass here and prove nothing about the
+    scripts when they do pass elsewhere.
+  - Scenario 02 (the static construct scan) flags two tracked scripts
+    correctly: `mapfile -t` at swarmforge/scripts/check_bb_scripts_load.sh:140
+    and swarmforge/scripts/check_constitution_doc_citations.sh:41 and 67.
+    `mapfile`/`readarray` is a bash 4 builtin; stock macOS bash 3.2 dies
+    on it. Both scripts are commit guards in the BL-1242 chain - the first
+    thing a macOS operator's commit would run.
+
+  The coder found this while regression-checking BL-1614 (evidence
+  `.worktrees/coder/backlog/evidence/BL-1614-coder-unowned-reds-20260917.md`);
+  no lane runs landed features, so nobody had seen it (BL-1628).
+
+  ## What is wanted
+
+  - The two scripts read their lists with a bash-3.2 construct (`while
+    IFS= read -r line; do arr+=("$line"); done < <(...)`, arrays initialised
+    `arr=()` and expanded `${arr[@]+"${arr[@]}"}` under `set -u`, BL-801)
+    and behave identically: same candidate files, same touched paths
+    (scenario 01 scans the two files with the feature's own construct
+    regexes; scenario 02 runs BL-937's static scan over every tracked
+    script and it passes).
+  - BL-937's feature file loses scenarios 01 and 03; its Feature narrative
+    is re-tensed where it states the host premise as present (BL-1006);
+    scenario 02 is byte-identical (scenario 03 here reads the file).
+  - The register row leaves in the same land.
+
+  ## How (direction, not mandate)
+
+  - In each script, replace `mapfile -t NAME < <(cmd)` with
+    `NAME=(); while IFS= read -r __line; do NAME+=("$__line"); done < <(cmd)`
+    and keep every later `"${NAME[@]}"` under the `${NAME[@]+"${NAME[@]}"}`
+    form if the script runs under `set -u`. Run each guard's own shell
+    test (suite-manifest rows) before and after.
+  - Retire the two Outlines from the feature file; keep their step
+    handlers' code only if scenario 02 still uses it, else delete with the
+    scenarios (the runner throws on a scenario with no handler, never on a
+    handler with no scenario).
+  - Documenter: docs/how-to for BL-937 (if any) records the retirement and
+    the macOS-only e2e step; engineering-detailed.prompt "Test Speed And
+    Isolation" already names the target - add `mapfile`/`readarray` to
+    its examples.
+
+constraints: >
+  The two scripts, BL-937's feature file (retirement only) and its
+  handler, this feature and handler, evidence and docs, the register row.
+  No change to any other script, to the construct regex table, or to the
+  acceptance runner. The step handler lands with the feature (BL-233).
+  Evidence named BL-1627-*.
+
+out_of_scope: |
+  - A pinned bash 3.2 binary for Linux hosts, or running the retired
+    runtime scenarios under one.
+  - Any further construct the scan may flag on other scripts: each is its
+    own unowned-red note (the scan is green on the parcel, so none today).
+
+qa_e2e_procedure: |
+  On the parcel commit, from the repo root:
+  1. `bash specs/pipeline/scripts/run_acceptance.sh specs/features/BL-937-*.feature`
+     ONCE -> green (scenario 02 only remains).
+  2. Acceptance resolving all scenarios of this feature.
+  3. `bash swarmforge/scripts/check_bb_scripts_load.sh` and
+     `bash swarmforge/scripts/check_constitution_doc_citations.sh` each
+     run once on a staged no-op change and exit 0; their own shell tests
+     green.
+  4. On a macOS host only, if one is available: the two guard scripts run
+     under /bin/bash 3.2 to completion - recorded in the evidence when
+     run, skipped with a note when no such host exists.
+  5. The register row for BL-937's feature gone from
+     backlog/standing-reds.tsv.
+
+source: |
+  Coder note to the specifier and coordinator, priority 00,
+  2026-09-17T13:12Z (inbound 00_20260917T131200Z_002025_from_coder).
+  Coder evidence .worktrees/coder/backlog/evidence/BL-1614-coder-unowned-reds-20260917.md.
+  Specifier adjudication and reproduction:
+  backlog/evidence/BL-1626-specifier-adjudication-of-coder-unowned-reds-20260917.md.
+  Parents: BL-937, BL-801, BL-1242. Siblings: BL-1626, BL-1628.
+
+notes: |
+  Minted 2026-09-17 by the specifier while completing the coder's note,
+  the same pass as BL-1626 and BL-1628. Register: backlog/standing-reds.tsv
+  gains one `acceptance` row for BL-937's feature naming this ticket,
+  first_seen 2026-09-17. No Article 4.2 hold is open. INVEST: Independent
+  (the scripts, the feature and the scan exist), Negotiable (the read-loop
+  shape is direction), Valuable (two commit guards work on the target
+  platform again and the guard that found them runs on every host),
+  Estimable (two loops, one retirement - one sitting), Small (three
+  scenarios, one invariant), Testable (the scan in seconds). Severity high
+  per the standing-red rule.
+
+  AUTO-APPROVED under the 2026-09-17 operator hotfix (severity defect, no
+  ruling_options) — see
+  auto-approve-high-severity-defects-amendment-20260917.md.
