@@ -208,4 +208,61 @@ BL-1607, BL-1599, BL-1610 QA-approved and blocked only on this land-step
 adjudication; BL-1605 bounced to coder, independent and unentangled.
 Nothing further to review; awaiting the specifier.
 
+## Rerun after the specifier's BL-1576 stray-file fix (aaed2cab79) — deeper layer confirmed, not cleared
+
+Specifier note (resume, in_process): "BL-1608/1607: stray BL-1576 file
+landed aaed2cab79 - fetch, rerun land_step_cli." `git fetch origin`:
+`main`==`origin/main` (0/0), tip `501d80deaf`. Re-ran both as directed:
+
+```
+$ bb swarmforge/scripts/land_step_cli.bb BL-1608 9bdf467215
+LAND_ESCALATE
+ENTANGLED_SIBLING BL-1185
+ENTANGLED_SIBLING BL-1599
+ENTANGLED_SIBLING BL-1604
+ENTANGLED_SIBLING BL-1605
+ENTANGLED_SIBLING BL-1607
+ENTANGLED_SIBLING BL-1610
+land-step: refusing to replay BL-1608 - backlog/standing-reds.tsv is shared
+with unlanded sibling(s) BL-1185 (unreadable: no backlog ticket file found
+for BL-1185), and the tip's content differs from origin/main in a line
+attributable to the sibling, so a replayed path is taken whole and would
+carry it into main (BL-1332/BL-1375, content-checked per BL-1481)
+
+$ bb swarmforge/scripts/land_step_cli.bb BL-1607 47e50af7ee
+LAND_ESCALATE
+ENTANGLED_SIBLING BL-1185
+ENTANGLED_SIBLING BL-1576
+ENTANGLED_SIBLING BL-1599
+ENTANGLED_SIBLING BL-1605
+ENTANGLED_SIBLING BL-1608
+land-step: refusing to replay BL-1607 - backlog/standing-reds.tsv is shared
+with unlanded sibling(s) BL-1185 (unreadable: no backlog ticket file found
+for BL-1185), and the tip's content differs from origin/main in a line
+attributable to the sibling, so a replayed path is taken whole and would
+carry it into main (BL-1332/BL-1375, content-checked per BL-1481)
+```
+
+The BL-1576 stray-evidence-file fix resolved the shallow (BL-1546)
+refusal it targeted — neither run hits that refusal any more — but
+BOTH runs now hit the exact same deeper refusal already reported above
+("The refusal shape changed after merging BL-1604's own fix" section):
+`backlog/standing-reds.tsv`'s content differs from `origin/main` in a
+line attributed to BL-1185, a ticket retired 2026-08-27 with no
+`backlog/{paused,active,done}` file, so the attribution walk cannot
+resolve an owner-state and fails closed per BL-1546. This is the same
+BL-1185-fileless-ticket class flagged in this file before the specifier's
+adjudication landed, not a new class, and not cleared by that
+adjudication — that fix targeted a different path
+(`backlog/evidence/BL-1576-...md`) than the one now blocking
+(`backlog/standing-reds.tsv`).
+
+Still not something QA can resolve by hand-rebuild (BL-1241 item 2: a
+hand rebuild's own-path walk would not agree with this check by
+construction). BL-1608 and BL-1607 remain QA-approved and blocked only
+on this land-step adjudication, now narrowed to one concrete question:
+how should the attribution walk resolve `backlog/standing-reds.tsv`'s
+line(s) attributed to BL-1185 when BL-1185 has no backlog ticket file at
+all (retired via merge-up, 2026-08-27)?
+
 By QA.
