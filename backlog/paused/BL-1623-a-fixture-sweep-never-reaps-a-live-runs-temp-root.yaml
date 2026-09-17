@@ -1,0 +1,213 @@
+id: BL-1623
+title: "bl1309LandDecideEntanglementInvariants.property.test.js is red in a full property lane with no owner (QA's BL-1609 pass, 2026-09-17 11:52Z: an approved fixture sibling read back as 'no backlog ticket file found', green alone 17-29 s): its module-load sweep removes EVERY bl1309-property-* root under the shared temp dir, a live peer lane's included - the BL-1385/BL-1390 shape; seven property files carry the same blind sweep, each records its owner pid in the root name and sweeps only roots whose owner is gone through one helper, and a unit-lane guard pins the census"
+milestone: M8
+type: defect
+severity: high
+# high (standing-red rule 2026-09-05): a property-lane file whose verdict
+# depends on whether another lane, or a solo run of the same file, is alive
+# on the host is a broken safety signal; QA holds BL-1609 on it under
+# Article 4.2. Production is unaffected: land_main_publish.sh answered
+# correctly on the fixture it was given - the fixture had been deleted from
+# under it.
+status: todo
+epic: code-quality-gates
+priority: 8
+direction: swarm-reported
+depends_on: []
+# BL-1287 (the pid-scoped sweep rule for fixture tunnels) and BL-984
+# (sweepStaleFixtures for generated *.property.test.js files in
+# propertyLaneFixtureRunner.js) are in backlog/done; this ticket applies
+# their rule to temp ROOTS. BL-1620 (paused, approved) owns bl968's cut
+# and takes bl968's blind sweep with it (notes there) - not touched here.
+mutation_cost: low
+# low: a JS helper under extension/test/helpers (not in the compiled out/**
+# mutation scope), seven one-shape migrations in property test files, one
+# unit-lane guard test, one feature and handler, evidence, two register
+# rows. Runners the feature shells, measured: bl1309 alone 17-29 s, the
+# guard and the helper cases in milliseconds - inside the BL-1358 ceiling.
+slice_size_envelope: low
+required_stages: [coder, cleaner, architect, hardender, documenter, qa]
+
+acceptance: specs/features/BL-1623-a-fixture-sweep-never-reaps-a-live-runs-temp-root.feature
+
+required_wiring:
+  - 'extension/test/bl1309LandDecideEntanglementInvariants.property.test.js::sweepStaleTmpDirs::the red file is the pre-existing consumer of the new helper; the literal exists only with the fix (BL-874, BL-1235)'
+  - 'specs/pipeline/steps/bl1623ScopedTmpDirSweepSteps.js::registerSteps::the handler lands in the same parcel as the feature (BL-233, BL-1371)'
+
+human_approval: pending
+approval_context: >
+  A new feature file is authored here, so it needs a tap. No choice is
+  posed and there are no ruling_options. FIRM: the sweep rule is
+  BL-1287's, applied to temp roots - a root is removed only when its
+  recorded owner pid is gone (or is this process's own, before it has
+  written), so a killed run's roots are still cleared and a live peer's
+  never are. FIRM: the census is the seven property files named in the
+  feature; each keeps its own prefix, gaining the pid; nothing else about
+  those tests changes. FIRM: the unit-lane guard reads the real tree and
+  names any property file that still sweeps the temp dir directly, so the
+  class stops re-minting one file at a time. FIRM: bl968's blind sweep is
+  BL-1620's, not this ticket's.
+
+invariants:
+  - "A fixture sweep never removes a temp root a live run owns: a root under the shared temp dir is removed only when its recorded owner pid is not alive (or is this process's own pid, before this run has written any root)."
+  - "A run that died without trapping anything still has its roots cleared by the next run's sweep, however it died - scoping never turns into leaking."
+
+description: |
+  ## What is wrong
+
+  QA's BL-1609 pass (parcel 03bb5fb, full `npm run test:properties`,
+  evidence `backlog/evidence/BL-1609-qa-unowned-red-bl1309-20260917.md` on
+  the QA branch, 50728512c7) failed one file on an ASSERTION, not a
+  timeout:
+
+  ```
+  FAIL  test/bl1309LandDecideEntanglementInvariants.property.test.js >
+  BL-1309/BL-654 invariant 1, narrowed: an APPROVED unlanded sibling rides by every route
+  Error: Property failed after 2 tests { seed: -1500076303, path: "1" }
+  Counterexample: [9032]
+  Caused by: AssertionError: rematch/approved: an approved sibling was refused: ENTANGLED_SIBLING_BLOCK
+  entangled-sibling: BL-9032 (unreadable) no backlog ticket file found for BL-9032
+  ```
+
+  The fixture had written `backlog/active/BL-9032-*.yaml` into its own
+  temp root and committed it; `land_main_publish.sh --decide-only` then
+  found no such file in that root. Green alone straight after (QA: 3/3 in
+  17.19 s; specifier on main 2f3e112c2a at 12:53 local, load 5.9: 3/3 in
+  28.8 s). No open ticket names the file; the register has no row.
+
+  The mechanism is in the test, `sweepFixtures()` (line 86): at module
+  load it lists `os.tmpdir()` and removes EVERY entry starting with
+  `bl1309-property-`, whoever made it. Two instances of this file alive at
+  once - a property lane in one checkout and a lane, a guard re-run or a
+  solo run in another; today the coder@2 seat, the master checkout's
+  pre-commit guard (twice) and QA all ran the lane from different
+  checkouts within hours, and every role's solo re-run of a red file is
+  another instance - and the later one's sweep deletes the earlier one's
+  live roots mid-test. The land step then reads the truth: the ticket
+  file is gone. This is exactly the shape engineering.prompt records from
+  BL-1385/BL-1390 ("under concurrent invocation a blind prefix sweep
+  destroys sibling runs ... reaping ONLY roots no live run owns - a dead
+  recorded owner pid, or an age bound"), and the rule BL-1287 made law for
+  fixture tunnels and BL-984's `sweepStaleFixtures`
+  (`extension/test/helpers/propertyLaneFixtureRunner.js`) implements for
+  generated test files: the origin pid is in the name, and only a root
+  whose pid is gone is removed.
+
+  Census (specifier, 2026-09-17, main 2f3e112c2a):
+  `grep -l 'readdirSync(os.tmpdir())' extension/test/*.property.test.js`
+  finds SEVEN files, none guarding by pid or age:
+  bl1030RefusalCostsNothing, bl1300SingleEnforceableBudget,
+  bl1309LandDecideEntanglementInvariants,
+  bl1343ReplayNeverDropsOwnPathInvariants, bl1356StampOffInvariants,
+  bl1358MutantTimeCeilingInvariants, bl1359MergeChargedInvariants. The
+  same grep over the unit lane finds one,
+  bl968StepRegistryMaterializedTreeGuard.test.js (BL-1620's file).
+
+  ## What is wanted
+
+  - A helper `sweepStaleTmpDirs({ prefix, isPidAlive })` in
+    `extension/test/helpers/tmpDir.js` (beside mkTmpDir): removes, under
+    `os.tmpdir()`, only entries named `<prefix><pid>-*` whose pid is not
+    alive - or is this process's own - using the same liveness predicate
+    `propertyLaneFixtureRunner.js` already has (`process.kill(pid, 0)`,
+    EPERM alive, zombie dead); everything else is left alone (scenario
+    01; invariants 1 and 2).
+  - `mkTmpDir`'s siblings gain nothing; each of the seven files builds its
+    roots as `<prefix><process.pid>-` and calls the helper where its own
+    blind sweep was, keeping its prefix (scenario 02, the census pin).
+  - bl1309 green alone with its three invariants, and green with TWO
+    instances running at once (qa_e2e step 2 - the reproduction).
+  - A unit-lane guard `extension/test/blindTmpDirSweepGuard.test.js` reads
+    every `extension/test/*.property.test.js` and fails naming any file
+    that calls `fs.readdirSync(os.tmpdir())` outside the helper; on the
+    parcel tree it names none and its census count is exactly the seven
+    migrated files plus zero (scenario 03).
+  - The register row and the allowlist mirror row named in `notes:`
+    removed in the same land.
+
+  ## How (direction, not mandate)
+
+  - Helper shape: `for (const entry of fs.readdirSync(os.tmpdir()))` ->
+    `match = new RegExp('^' + escape(prefix) + '(\\d+)-').exec(entry)` ->
+    skip on no match -> `if (pid === process.pid || !isPidAlive(pid))
+    rmSync(recursive, force)`. Export it from tmpDir.js and reuse
+    propertyLaneFixtureRunner.js's `defaultIsPidAlive` (export it there
+    or lift it into tmpDir.js - never a second copy of the zombie probe).
+  - In each file: `const FIXTURE_PREFIX = 'bl1309-property-';` stays;
+    roots become `mkTmpDir(`${FIXTURE_PREFIX}${process.pid}-`)`; the
+    local sweep function is deleted and its call site becomes
+    `sweepStaleTmpDirs({ prefix: FIXTURE_PREFIX })`.
+  - The guard test: the BL-1596 whole-tree shape - list the real files,
+    read each, regex for `readdirSync\(os\.tmpdir\(\)\)`, allowlist the
+    helper module itself; assert the offending list is empty and print
+    the census count. Handler drives the guard's exported finder on a
+    fixture directory holding one blind file and one clean file, and the
+    real finder on the real tree.
+  - Documenter: engineering-detailed.prompt "Test Speed And Isolation"
+    names the helper as the way to sweep temp roots; the tmpDir how-to if
+    one exists.
+
+constraints: >
+  tmpDir.js (one helper, plus the shared liveness predicate), the seven
+  property files' prefix and sweep lines, the guard test, the feature and
+  handler, evidence and docs, the two register rows. No change to what
+  any of the seven tests asserts, to propertyLaneFixtureRunner.js's own
+  sweep, or to bl968 (BL-1620). The step handler lands with the feature
+  (BL-233). Evidence named BL-1623-*.
+
+out_of_scope: |
+  - bl968StepRegistryMaterializedTreeGuard.test.js's blind sweep: BL-1620
+    cuts that file and takes the sweep with it (noted there).
+  - An age bound as a second scoping signal: the pid rule is the one both
+    precedents use; add an age bound only if a probe shows pid reuse in
+    practice (a note, not this parcel).
+  - Serialising concurrent lanes on one host (BL-1618's lane sets reduce
+    them; they will not reach zero).
+
+qa_e2e_procedure: |
+  On the parcel commit, from `extension/`:
+  1. `npx vitest run --config vitest.properties.config.mjs test/bl1309LandDecideEntanglementInvariants.property.test.js`
+     ONCE -> 3/3, durations recorded beside the host's 1-minute load.
+  2. The reproduction, deliberately: start the same command TWICE within
+     five seconds of each other (two shells). Expected: 2 of 2 runs green.
+     On the pre-fix tree the second's sweep deletes the first's live roots
+     and one run fails with "no backlog ticket file found". This is a
+     named intermittent failure, N=2, never more.
+  3. `npm test` -> the guard file green, its census line printed.
+  4. Acceptance resolving all scenarios
+     (`bash specs/pipeline/scripts/run_acceptance.sh specs/features/BL-1623-*.feature`).
+  5. ONE full `npm run test:properties` -> the seven files green; the
+     bl1309 rows gone from `backlog/standing-reds.tsv` and
+     `swarmforge/scripts/property_suite_standing_allowlist.tsv`;
+     `bb swarmforge/scripts/standing_red_register_cli.bb .` names no row
+     for the file. Never a solo run of any of the seven while another lane
+     is alive on the host until this lands.
+
+source: |
+  QA note to the specifier, priority 00, 2026-09-17T11:52Z (inbound
+  00_20260917T115226Z_002872_from_QA_to_specifier): "unowned-red
+  bl1309LandDecideEntanglementInvariants - BL-1609 held". QA evidence
+  backlog/evidence/BL-1609-qa-unowned-red-bl1309-20260917.md (QA branch,
+  50728512c7). Specifier adjudication:
+  backlog/evidence/BL-1623-specifier-adjudication-of-qa-unowned-red-bl1309-20260917.md.
+  Parents: BL-1287, BL-984, BL-1385, BL-1390, BL-1309. Sibling: BL-1620.
+
+notes: |
+  Minted 2026-09-17 by the specifier while completing QA's unowned-red
+  note, the same pass. Register: backlog/standing-reds.tsv gains one
+  `property` row for bl1309 naming this ticket (first_seen 2026-09-17)
+  and swarmforge/scripts/property_suite_standing_allowlist.tsv the mirror
+  row (BL-1428's join), both in this commit; QA removes both in the land
+  that turns the file green. QA's BL-1609 parcel (73a520271b, completed
+  11:52Z so the seat could continue, BL-1566) waits on this row and was
+  sent the resume note in this pass: merge main first so the land keeps
+  the rows (BL-1604's hazard). The other six files carry no row: none has
+  failed yet, and a row needs a sighting. INVEST: Independent (the helper
+  site, the liveness predicate and the seven files exist), Negotiable
+  (helper placement and the guard's finder shape are direction), Valuable
+  (a lane red that any concurrent run can cause stops withholding
+  parcels, for seven files at once), Estimable (one helper, seven
+  three-line migrations, one guard - one sitting), Small (three scenarios,
+  two invariants), Testable (helper cases and the guard in milliseconds,
+  one 20-30 s solo run - BL-1541). Severity high per the standing-red
+  rule.
