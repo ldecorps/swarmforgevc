@@ -252,3 +252,7 @@ notes: |
   06:05Z).
 
 assigned_to: coder
+bounce_count: 2
+bounce_history:
+  - { at: 2026-09-17, by: hardender, blamed: coder, class: spec-gap, commit: dde761503b, evidence: backlog/evidence/BL-1610-bounce-20260917.md }
+  - { at: 2026-09-17, by: hardender, blamed: coder, class: spec-gap, commit: c80be224c0, evidence: backlog/evidence/BL-1610-bounce-20260917.md }

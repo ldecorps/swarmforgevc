@@ -157,6 +157,11 @@
                   (binding [*out* *err*]
                     (println (str "LAND_APPROVAL_UNRECORDED " (:reason rec))))))
               (println (str "LAND_REPLAY " (:branch plan) " " (:commit plan)))
+              ;; BL-1604: names every other open ticket's registry row the
+              ;; replay restored - a land can no longer silently un-own a
+              ;; standing red.
+              (doseq [{:keys [registry file owner]} (:restored-registry-rows plan)]
+                (println (str land-step-lib/register-row-restored-prefix " " registry " " file " " owner)))
               (print-entangled-siblings! plan)
               ;; BL-1389 invariant 3. The verdict a human would otherwise
               ;; have to re-derive by diffing the replayed tip: which path
