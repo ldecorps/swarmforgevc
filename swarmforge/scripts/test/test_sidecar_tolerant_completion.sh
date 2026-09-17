@@ -42,6 +42,18 @@ make_handoff() {
   mkdir -p "$dir"
   printf 'id: %s\nfrom: specifier\nto: coder\nrecipient: coder\npriority: 50\ntype: git_handoff\ntask: BL-119-test\n\npayload\n' \
     "$name" > "$dir/00_${name}.handoff"
+  # BL-1609: a forwarding git_handoff only leaves in_process once its own
+  # forward has been queued (or non-forwarding/--no-op). This file's own
+  # concern is sidecar tolerance, not forwarding, so every fixture also gets
+  # a matching already-queued forward in the SAME root's outbox - real
+  # evidence, so the item stays an ordinary forwarding git_handoff in every
+  # other respect these scenarios observe. Harmless when the real .handoff
+  # is later removed to simulate an orphaned sidecar (01/01c below): the
+  # batch is then empty and the gate never engages at all.
+  local root="${dir%%/.swarmforge/*}"
+  mkdir -p "$root/.swarmforge/handoffs/outbox"
+  printf 'id: fwd-%s\nfrom: coder\nto: cleaner\npriority: 50\ntype: git_handoff\ntask: BL-119-test\ncommit: 0000000000\ncreated_at: 2020-01-01T00:00:00.000000000Z\n\nmerge_and_process coder 0000000000\n' \
+    "$name" > "$root/.swarmforge/handoffs/outbox/90_fwd_${name}.handoff"
   echo "$dir/00_${name}.handoff"
 }
 
