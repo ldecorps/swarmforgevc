@@ -173,4 +173,4 @@ notes: |
   invariant), Testable (real scripts on a fixture repository in seconds
   - BL-1541). Severity high: four times today.
 
-assigned_to: null
+assigned_to: coder
