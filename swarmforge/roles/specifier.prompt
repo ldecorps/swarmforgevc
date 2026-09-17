@@ -977,3 +977,13 @@ Do NOT self-schedule polling: no /loop, no "check again in N minutes", no cron, 
   population) in seconds. BL-1541 as minted ran ~240 s of bl982 plus four
   more runners per mutant; the coder could finish it only under a 30 min
   override, and the fix was a retire-and-replace amendment mid-flight.
+
+## A `qa_e2e_procedure` never says "run it N times" for N above 3 (human directive 2026-09-17)
+- A slow or flaky test is proven by ONE measured run - its duration row,
+  its verdict line, its per-file ms from the JSON report - never by twenty.
+  Write "run N times" only when the ticket IS a flake ticket hunting a
+  NAMED intermittent failure, cap N at 3, and state the expected pass count.
+  BL-1607's procedure asked QA to run a 23 s guard file 20 times (about
+  8 min for one step) after five roles had already run the lane; the human:
+  "Its becoming a thing in itself." Sibling rule for the lanes themselves:
+  BL-1618 (one verification command per role).

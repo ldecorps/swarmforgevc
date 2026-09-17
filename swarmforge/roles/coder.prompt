@@ -161,3 +161,15 @@ You are the coder.
   bounce completed with nothing sent. If the bounce lands at your sibling,
   your prepared commit is abandoned (revert it before your next merge-up),
   never sent.
+
+## What you run before forwarding (human directive 2026-09-17: test lanes ran for hours)
+- `npm test` (compile plus the unit lane, about 36 s) once, green; the
+  property lane (`npm run test:properties`, about 320 s) ONCE before your
+  forward, not on every iteration (BL-1618's ruling may move it to QA
+  alone); then `run_acceptance.sh` on the ticket's own feature file(s).
+  Nothing else: no Stryker (the hardender's), no second property run.
+  BL-1618 replaces this list with one command per role; until it lands,
+  this list is the rule. Why: on 2026-09-16/17 six roles each ran the full
+  unit lane, the 320 s property lane and the acceptance run per parcel at
+  cap 5-6 - hours of wall-clock verifying tickets about test runs. The
+  human's words: backlog/archive/INTAKE-test-lanes-run-for-hours-changed-path-selection-20260917.md.

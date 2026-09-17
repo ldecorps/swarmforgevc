@@ -2553,3 +2553,12 @@ You are the hardender.
   writer from the worktree root, confirm the printed path begins with
   `backlog/evidence/`, and `git mv` a stray one before forwarding. BL-1603
   makes the tool resolve the repository root itself.
+
+## What you run before forwarding (human directive 2026-09-17: test lanes ran for hours)
+- `npm test` (your mutation baseline), your differential Stryker /
+  Gherkin mutation and the bb runners per the rules above,
+  `run_acceptance.sh` on the ticket's own feature file(s). NOT
+  `npm run test:properties` (about 320 s) unless you yourself added or
+  changed a `*.property.test.js` - it runs at coder and at QA. BL-1618
+  replaces this list with one command per role; until it lands, this list
+  is the rule. The human's words: backlog/archive/INTAKE-test-lanes-run-for-hours-changed-path-selection-20260917.md.
