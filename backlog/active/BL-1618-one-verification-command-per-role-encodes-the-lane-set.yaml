@@ -181,3 +181,4 @@ notes: |
   (001383) when amended; holder and QA told by note, YAML merges (BL-1391).
 
 assigned_to: coder
+abandoned_commits: [f48999a472]
