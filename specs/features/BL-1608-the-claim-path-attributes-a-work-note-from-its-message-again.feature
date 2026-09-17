@@ -1,3 +1,7 @@
+# acceptance-mutation-manifest-begin
+# {"version":1,"tested_at":"2026-09-16T21:46:20.295853413Z","feature_name":"BL-1608 The claim path attributes a Work note's ticket from its message again","feature_path":"/home/carillon/swarmforgevc/.worktrees/hardender/specs/features/BL-1608-the-claim-path-attributes-a-work-note-from-its-message-again.feature","background_hash":"74234e98afe7498fb5daf1f36ac2d78acc339464f950703b8c019892f982b90b","implementation_hash":"unknown","scenarios":[]}
+# acceptance-mutation-manifest-end
+
 Feature: BL-1608 The claim path attributes a Work note's ticket from its message again
 
   BL-1185 (landed 2026-08-27) made the hard coder seat resolve a Work note's

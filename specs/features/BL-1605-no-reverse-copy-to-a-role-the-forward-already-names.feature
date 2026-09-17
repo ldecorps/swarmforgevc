@@ -1,3 +1,7 @@
+# acceptance-mutation-manifest-begin
+# {"version":1,"tested_at":"2026-09-16T21:56:22.157881717Z","feature_name":"BL-1605 No reverse copy to a role the forward already names","feature_path":"/home/carillon/swarmforgevc/.worktrees/hardender/specs/features/BL-1605-no-reverse-copy-to-a-role-the-forward-already-names.feature","background_hash":"1cc442e7760501e76f4e700c750c860cf065f58b5ba7580e73b8813611bd86a3","implementation_hash":"unknown","scenarios":[]}
+# acceptance-mutation-manifest-end
+
 Feature: BL-1605 No reverse copy to a role the forward already names
 
   A git_handoff's reverse copies go to every earlier role the sender's
