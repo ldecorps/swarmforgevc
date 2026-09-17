@@ -87,6 +87,23 @@
     (when-let [file (received-parcel-for-task role-info task-name)]
       (handoff-lib/header-field file "commit"))))
 
+;; BL-1610: sibling reader beside received-commit-for-task, never a third
+;; scan of the box - reuses the SAME received-parcel-for-task lookup, so the
+;; commit and the head it reads always come from the identical parcel file.
+;; nil (never "") when the header is absent (an older parcel claimed before
+;; BL-1610's dequeue stamp landed) - merge_drop_guard_lib.bb's caller falls
+;; back to today's received..forwarded scan on nil, the same fail-open
+;; posture received-commit-for-task's own callers already rely on.
+(defn received-at-head-for-task
+  "sender's received_at_head stamp for task-name, or nil - fails open on
+   every shape received-commit-for-task already fails open on (unknown
+   sender role, no mailbox, no matching parcel), plus a matching parcel
+   whose received_at_head header is blank or absent (an older parcel)."
+  [root sender task-name]
+  (when-let [role-info (handoff-lib/load-role-info sender root)]
+    (when-let [file (received-parcel-for-task role-info task-name)]
+      (not-empty (handoff-lib/header-field file "received_at_head")))))
+
 (defn forward-introduces-nothing-own?
   "True when commit is a MERGE (two or more parents) whose combined diff
    against ALL its parents is empty - every line already exists in some

@@ -4,7 +4,9 @@
 # in flight. A row MUST name an OPEN ticket (backlog/paused or backlog/active);
 # a row naming a closed or absent ticket is an UNOWNED red, which throttles
 # intake (BL-1429) and blocks QA approval (Article 4.2). A row is removed in
-# the same land that turns the test green. BL-1428 builds the reader and the
+# the same land that turns the test green, and no other land removes it
+# (BL-1604: the land step restores an open other ticket's row the replay
+# tree lacks). BL-1428 builds the reader and the
 # commit guard; until then this file is read by humans and roles.
 #
 # Columns, tab-separated: lane<TAB>file<TAB>ticket<TAB>first_seen<TAB>note

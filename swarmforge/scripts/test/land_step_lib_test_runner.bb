@@ -3009,6 +3009,203 @@ RESOLVED BY THIS TICKET
       (assert-true "BL-1546 (06): kept (no owner to blame it on, exactly as before this ticket)"
                    (boolean (some #{"sibling.txt"} (:paths result)))))))
 
+;; ── BL-1604: rows-to-restore (pure) ─────────────────────────────────────
+
+(let [row-key-fn (fn [line] (nth (str/split line #"\t" -1) 1 nil))
+      owner-fn (fn [line] (nth (str/split line #"\t" -1) 2 nil))
+      row-x "unit\tfile-x.test.js\tBL-9002\t2026-09-01\tnote-x"
+      row-y "unit\tfile-y.test.js\tBL-9003\t2026-09-01\tnote-y"
+      row-closed "unit\tfile-z.test.js\tBL-9004\t2026-09-01\tnote-z"
+      row-landing "unit\tfile-w.test.js\tBL-9001\t2026-09-01\tnote-w"]
+
+  (assert= "BL-1604 (01): an open other-owner row the replay lacks is restored"
+           [row-x]
+           (land-step-lib/rows-to-restore
+            {:origin-lines [row-x] :replay-keys #{} :row-key-fn row-key-fn :owner-fn owner-fn
+             :task-ticket-id "BL-9001" :open-ticket-ids #{"BL-9002"}}))
+
+  (assert= "BL-1604 (02): a row the replay already carries is never duplicated"
+           []
+           (land-step-lib/rows-to-restore
+            {:origin-lines [row-x] :replay-keys #{"file-x.test.js"} :row-key-fn row-key-fn :owner-fn owner-fn
+             :task-ticket-id "BL-9001" :open-ticket-ids #{"BL-9002"}}))
+
+  (assert= "BL-1604 (03): the landing ticket's own row is never protected from itself (the drain rule)"
+           []
+           (land-step-lib/rows-to-restore
+            {:origin-lines [row-landing] :replay-keys #{} :row-key-fn row-key-fn :owner-fn owner-fn
+             :task-ticket-id "BL-9001" :open-ticket-ids #{"BL-9001"}}))
+
+  (assert= "BL-1604 (04): a row owned by a CLOSED ticket is never restored (stale-row retirement lands unimpeded)"
+           []
+           (land-step-lib/rows-to-restore
+            {:origin-lines [row-closed] :replay-keys #{} :row-key-fn row-key-fn :owner-fn owner-fn
+             :task-ticket-id "BL-9001" :open-ticket-ids #{"BL-9002"}}))
+
+  (assert= "BL-1604 (05): several missing open-other rows are all restored, origin order preserved"
+           [row-x row-y]
+           (land-step-lib/rows-to-restore
+            {:origin-lines [row-x row-y row-closed row-landing] :replay-keys #{}
+             :row-key-fn row-key-fn :owner-fn owner-fn
+             :task-ticket-id "BL-9001" :open-ticket-ids #{"BL-9002" "BL-9003"}})))
+
+;; The allowlist's owner-fn (rationale token) and row-key-fn (file column).
+(let [allow-row-key-fn (fn [line] (nth (str/split line #"\t" -1) 0 nil))
+      allow-owner-fn (fn [line] (second (re-find #"owner (BL-\d+)" (nth (str/split line #"\t" -1) 2 ""))))
+      allow-row "test/a.property.test.js\tallowlist\towner BL-9002 (backlog/standing-reds.tsv): some reason"]
+  (assert= "BL-1604 (06): the allowlist's owner is read from the rationale's \"owner BL-<n>\" token"
+           [allow-row]
+           (land-step-lib/rows-to-restore
+            {:origin-lines [allow-row] :replay-keys #{} :row-key-fn allow-row-key-fn :owner-fn allow-owner-fn
+             :task-ticket-id "BL-9001" :open-ticket-ids #{"BL-9002"}}))
+  (assert= "BL-1604 (07): the allowlist's own header row (no owner token) is never mistaken for a data row"
+           []
+           (land-step-lib/rows-to-restore
+            {:origin-lines ["file\tdisposition\trationale"] :replay-keys #{}
+             :row-key-fn allow-row-key-fn :owner-fn allow-owner-fn
+             :task-ticket-id "BL-9001" :open-ticket-ids #{"BL-9002"}})))
+
+;; ── BL-1604: restore-other-tickets-registry-rows! (impure, real fixture) ──
+;; Reproduces 2c1c44e2cc's own shape: origin/main's register carries a row
+;; an OPEN ticket owns; the landing ticket's own tip lacks it entirely
+;; (the branch-history loss this ticket protects against, modeled directly
+;; as "never wrote it" rather than reproducing the merge that dropped it -
+;; the outcome write-tree-from-paths! leaves is identical either way).
+
+(with-fixture [root]
+  (commit! root "backlog/standing-reds.tsv"
+           (str "# header\n"
+                "unit\tfile-x.test.js\tBL-9002\t2026-09-01\tnote-x\n")
+           "seed register with BL-9002's row")
+  (commit! root "backlog/active/BL-9002-x.yaml" "id: BL-9002\n" "BL-9002: open ticket file")
+  (mark-origin-main-here! root)
+  ;; The landing ticket's own tip touches an UNRELATED path only - the
+  ;; register on this scratch tree (checked out off origin/main by
+  ;; replay!, before write-tree-from-paths! runs) still carries BL-9002's
+  ;; row untouched; this fixture asserts restore-other-tickets-registry-rows!
+  ;; is a no-op here (nothing missing to restore) as the baseline, then a
+  ;; second fixture below proves the actual restoration.
+  (commit! root "backlog/active/BL-9001-x.yaml" "id: BL-9001\n" "BL-9001: own ticket file")
+  (let [scratch (str (fs/path root ".." "bl1604-scratch-noop"))]
+    (fs/delete-tree scratch {:force true})
+    (sh! root "git" "worktree" "add" "-q" scratch "refs/remotes/origin/main")
+    (let [result (land-step-lib/restore-other-tickets-registry-rows!
+                  {:root root :scratch scratch :origin-main (:out (sh! root "git" "rev-parse" "refs/remotes/origin/main"))
+                   :task-ticket-id "BL-9001"})]
+      (assert-true "BL-1604 (08): ok? on a readable registry" (:ok? result))
+      (assert= "BL-1604 (08): nothing to restore when the replay tree already carries the row"
+               [] (:restored result)))
+    (sh! root "git" "worktree" "remove" "-f" scratch)))
+
+(with-fixture [root]
+  (commit! root "backlog/standing-reds.tsv"
+           (str "# header\n"
+                "unit\tfile-x.test.js\tBL-9002\t2026-09-01\tnote-x\n")
+           "seed register with BL-9002's row")
+  (commit! root "backlog/active/BL-9002-x.yaml" "id: BL-9002\n" "BL-9002: open ticket file")
+  (mark-origin-main-here! root)
+  (let [origin-main (:out (sh! root "git" "rev-parse" "refs/remotes/origin/main"))
+        scratch (str (fs/path root ".." "bl1604-scratch-restore"))]
+    (fs/delete-tree scratch {:force true})
+    ;; The scratch tree stands in for write-tree-from-paths!'s OWN OUTPUT:
+    ;; the landing ticket's tip lacked BL-9002's row entirely (the real
+    ;; branch-history-loss shape) - the register here carries only the
+    ;; header, modeling exactly what a tip-pure "whole from the tip" copy
+    ;; would leave when the tip's own register never had that row.
+    (sh! root "git" "worktree" "add" "-q" scratch "refs/remotes/origin/main")
+    (spit (str (fs/path scratch "backlog" "standing-reds.tsv")) "# header\n")
+    (let [result (land-step-lib/restore-other-tickets-registry-rows!
+                  {:root root :scratch scratch :origin-main origin-main :task-ticket-id "BL-9001"})]
+      (assert-true "BL-1604 (09): ok? on a readable registry" (:ok? result))
+      (assert= "BL-1604 (09): BL-9002's row is restored, naming the registry, file and owner"
+               [{:registry "backlog/standing-reds.tsv" :file "file-x.test.js" :owner "BL-9002"}]
+               (:restored result))
+      (assert-includes "BL-1604 (09): the restored file's content carries the row byte-identical"
+                        (slurp (str (fs/path scratch "backlog" "standing-reds.tsv")))
+                        "unit\tfile-x.test.js\tBL-9002\t2026-09-01\tnote-x"))
+    (sh! root "git" "worktree" "remove" "-f" scratch)))
+
+;; BL-1604's own docstring claims restore-other-tickets-registry-rows!
+;; "creat[es] it if task-ticket-id's own tip deleted it outright" - no
+;; prior case exercised the file being entirely ABSENT from the replay
+;; tree (only "header-only, row missing"). Hand-verified as a real gap:
+;; removing the fs/create-dirs call above this write leaves every
+;; pre-existing test green (2026-09-17 hardener pass).
+(with-fixture [root]
+  (commit! root "backlog/standing-reds.tsv"
+           (str "# header\n"
+                "unit\tfile-x.test.js\tBL-9002\t2026-09-01\tnote-x\n")
+           "seed register with BL-9002's row")
+  (commit! root "backlog/active/BL-9002-x.yaml" "id: BL-9002\n" "BL-9002: open ticket file")
+  (mark-origin-main-here! root)
+  (let [origin-main (:out (sh! root "git" "rev-parse" "refs/remotes/origin/main"))
+        scratch (str (fs/path root ".." "bl1604-scratch-deleted"))]
+    (fs/delete-tree scratch {:force true})
+    (sh! root "git" "worktree" "add" "-q" scratch "refs/remotes/origin/main")
+    ;; The landing ticket's own tip deleted the registry file outright -
+    ;; write-tree-from-paths! left no copy of it in the replay tree at all.
+    (fs/delete-if-exists (fs/path scratch "backlog" "standing-reds.tsv"))
+    (let [result (land-step-lib/restore-other-tickets-registry-rows!
+                  {:root root :scratch scratch :origin-main origin-main :task-ticket-id "BL-9001"})]
+      (assert-true "BL-1604 (09b): ok? when the replay tree lacks the file entirely" (:ok? result))
+      (assert= "BL-1604 (09b): the deleted file's other-owned row is still restored"
+               [{:registry "backlog/standing-reds.tsv" :file "file-x.test.js" :owner "BL-9002"}]
+               (:restored result))
+      (assert-true "BL-1604 (09b): the file is created fresh"
+                    (fs/exists? (fs/path scratch "backlog" "standing-reds.tsv")))
+      (assert= "BL-1604 (09b): a freshly-created file carries only the restored row, no leading blank line"
+               "unit\tfile-x.test.js\tBL-9002\t2026-09-01\tnote-x\n"
+               (slurp (str (fs/path scratch "backlog" "standing-reds.tsv")))))
+    (sh! root "git" "worktree" "remove" "-f" scratch)))
+
+;; A replay-tree registry whose content does NOT end in a trailing newline
+;; (an editor or tool that trimmed it) - the joiner must insert its own
+;; "\n" separator before the restored row, or the two lines fuse into one
+;; corrupt row. Hand-verified as a real gap: dropping this branch entirely
+;; (never inserting the separator) leaves every pre-existing case green
+;; (2026-09-17 hardener pass) because every other fixture's content already
+;; ends with "\n".
+(with-fixture [root]
+  (commit! root "backlog/standing-reds.tsv"
+           (str "# header\n"
+                "unit\tfile-x.test.js\tBL-9002\t2026-09-01\tnote-x\n")
+           "seed register with BL-9002's row")
+  (commit! root "backlog/active/BL-9002-x.yaml" "id: BL-9002\n" "BL-9002: open ticket file")
+  (mark-origin-main-here! root)
+  (let [origin-main (:out (sh! root "git" "rev-parse" "refs/remotes/origin/main"))
+        scratch (str (fs/path root ".." "bl1604-scratch-no-trailing-nl"))]
+    (fs/delete-tree scratch {:force true})
+    (sh! root "git" "worktree" "add" "-q" scratch "refs/remotes/origin/main")
+    ;; No trailing newline - "# header" with nothing after it.
+    (spit (str (fs/path scratch "backlog" "standing-reds.tsv")) "# header")
+    (let [result (land-step-lib/restore-other-tickets-registry-rows!
+                  {:root root :scratch scratch :origin-main origin-main :task-ticket-id "BL-9001"})]
+      (assert-true "BL-1604 (09c): ok? on a trailing-newline-less replay file" (:ok? result))
+      (assert= "BL-1604 (09c): the restored row is still recorded"
+               [{:registry "backlog/standing-reds.tsv" :file "file-x.test.js" :owner "BL-9002"}]
+               (:restored result))
+      (assert= "BL-1604 (09c): a missing trailing newline gets its own separator, never fusing with the restored row"
+               "# header\nunit\tfile-x.test.js\tBL-9002\t2026-09-01\tnote-x\n"
+               (slurp (str (fs/path scratch "backlog" "standing-reds.tsv")))))
+    (sh! root "git" "worktree" "remove" "-f" scratch)))
+
+(with-fixture [root]
+  ;; Fail-closed: origin/main's registry cannot be read (an impossible sha
+  ;; stands in for a genuine git read failure) - refuses, never guesses.
+  (commit! root "backlog/active/BL-9001-x.yaml" "id: BL-9001\n" "BL-9001: own ticket file")
+  (mark-origin-main-here! root)
+  (let [scratch (str (fs/path root ".." "bl1604-scratch-unreadable"))]
+    (fs/delete-tree scratch {:force true})
+    (sh! root "git" "worktree" "add" "-q" scratch "refs/remotes/origin/main")
+    (let [result (land-step-lib/restore-other-tickets-registry-rows!
+                  {:root root :scratch scratch :origin-main "0000000000000000000000000000000000000000"
+                   :task-ticket-id "BL-9001"})]
+      (assert-false "BL-1604 (10): an unreadable origin/main ref fails closed, never guesses"
+                     (:ok? result))
+      (assert-includes "BL-1604 (10): the refusal names the unreadable registry file"
+                        (:reason result) "backlog/standing-reds.tsv"))
+    (sh! root "git" "worktree" "remove" "-f" scratch)))
+
 (if (seq @failures)
   (do
     (doseq [f @failures] (println f))

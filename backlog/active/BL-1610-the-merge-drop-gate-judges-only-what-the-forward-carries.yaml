@@ -46,7 +46,7 @@ approval_context: >
   warns and sends.
 
 invariants:
-  - "Every merge a finding names is reachable from the forwarded commit and not from the sender's own HEAD at the moment it dequeued the received parcel: a merge the sender did not make after receipt never produces a finding."
+  - "Every merge a finding names is reachable from the forwarded commit and from neither the received commit nor the sender's own HEAD at the moment it dequeued the received parcel: a merge the sender did not make after receipt - including one an upstream role made that arrives through the received commit's own ancestry - never produces a finding, excused or not."
   - "A finding never names a path whose blob at the forwarded commit equals its blob at the received commit."
 
 description: |
@@ -95,10 +95,13 @@ description: |
   - The dequeue stamps the sender's own HEAD onto the in_process parcel
     (`received_at_head: <10-hex>`, beside `dequeued_at`), and the gate
     bounds its merge scan to merges reachable from the forwarded commit
-    and not from that head - the merges the sender made since receipt -
+    and from NEITHER that head NOR the received commit - the merges the
+    sender made since receipt; a merge that arrives through the received
+    commit's own ancestry is an upstream role's, judged at that role's
+    send, and is never scanned here (amended 2026-09-17, see notes) -
     falling back to today's `received..forwarded` only when the stamp is
     absent (older parcels), with the fail-open warning (scenario 01 rows
-    1, 2 and 4; invariant 1).
+    1, 2, 4 and 5; invariant 1).
   - A finding whose path's blob at the forwarded commit equals its blob
     at the received commit is excused, named in the warning stream as
     carrying nothing (scenario 01 row 3; invariant 2).
@@ -119,7 +122,11 @@ description: |
     through the same in_process reader BL-806 owns (extend
     `received-commit-for-task` to return both fields, or add a sibling
     reader beside it - never a third scan of the box), passes
-    `{:since head}` to `merge-commits`, and filters findings whose
+    `{:since head}` to `merge-commits`, whose scan is
+    `git rev-list --merges --reverse <forwarded> ^<head> ^<received>` -
+    both negative refs; `head..forwarded` alone re-admits every merge in
+    the received commit's ancestry that the sender's head lacks (measured
+    2026-09-17, notes) - and filters findings whose
     `git rev-parse <forwarded>:<path>` equals `<received>:<path>` before
     `blocked?` sees them - the filter lives in the pure core with the blob
     ids injected, BL-654-style, so the bb runner covers it.
@@ -158,7 +165,12 @@ qa_e2e_procedure: |
      re-running the ticket's own shape: received b71cedfcf3, forwarded
      f5907751cc, head a58edcf04a (the coder's HEAD at the 19:23Z claim)
      -> 0 findings; the same call with no head -> 9 findings still
-     reported as excused (blob-identical), 0 blocking.
+     reported as excused (blob-identical), 0 blocking. Then the
+     documenter's shape (2026-09-17 amendment): on `.worktrees/documenter`,
+     received 4356ab57c1, forwarded 6ad1d3f616, head 073a34b5e1 -> 0
+     findings (the pre-amendment build returned one EXCUSED finding on the
+     CLEANER's merge 6e5087cd43); with no head -> 1 finding on c96761faa1,
+     excused, 0 blocking.
   2. `bb swarmforge/scripts/test/merge_drop_guard_lib_test_runner.bb`
      (BL-1576's runner, extended) -> green.
   3. Acceptance resolving both scenarios
@@ -196,4 +208,51 @@ notes: |
   (real gate on a fixture repository in seconds - BL-1541). Severity
   high: a live refusal lane on the default pack.
 
+  Amended 2026-09-17 06:30Z by the specifier while completing the
+  documenter's note 001328 (2026-09-16T21:44Z, "BL-1576 merge-drop guard
+  false-positive blocks BL-1599/1607 sends"): the second incident of this
+  gate, shape 2 - a cross-parcel QA merge-up merge (c96761faa1, 20:36Z)
+  the documenter made BEFORE it dequeued BL-1607/1608/1605/1599
+  (21:37Z-22:02Z) was named on every one of the four sends; side-label's
+  ancestor fallback mislabelled its parents because neither is in the
+  received commit's ancestry. Adjudication: BL-1610 owns it - the head
+  bound excludes that merge on all four (verified: `git rev-list --merges
+  4356ab57c1..6ad1d3f616 --not 073a34b5e1` omits c96761faa1). Evidence:
+  backlog/evidence/BL-1610-specifier-adjudication-of-documenter-blocked-sends-20260917.md.
+  Running the parcel's own library (architect tip c80be224c0) on that
+  shape found D1: the build scans `head..forwarded`, so a merge an
+  UPSTREAM role made that arrives through the received commit's ancestry
+  is named (the cleaner's 6e5087cd43 on
+  extension/vitest.bl1599.stryker.config.mjs, excused only because the
+  documenter left that path alone; a hardender editing such a file would
+  be refused for a merge it never made). Invariant 1 and the wanted/how
+  bullets now say `forwarded ^head ^received`. The feature file gains
+  scenario 01 row 5 INSIDE the parcel (BL-1385: the parcel is past the
+  coder; main's copy is not edited) - the coder adds this row on the
+  bounce, word-for-word or fitted to its fixture:
+  `| the sibling branch's tip, after the sibling itself made a one-sided merge that dropped uncontested hunks on a second path | a plain commit on that second path | changes that second path against the received commit | queued with no merge-drop finding |`
+  and the step handler's Given for that received shape builds the
+  sibling's own dropping merge (the pre-amendment build refuses this row
+  as a non-excused finding; the amended scan queues it). human_approval
+  stays approved: the row makes an already-approved FIRM statement
+  ("never names a merge the sender did not make after it received the
+  parcel") testable and changes no approved outcome; the human may
+  reject in the topic. Notes (priority 00) naming this amendment sent to
+  the hardender (holder, parcel 002139 in its new/), the coder (rebuild)
+  and the documenter (reporter). The eventual bounce is spec-attributed
+  (class spec-gap): the invariant's checkable predicate admitted the
+  build. Declined: a `dequeued_at`-time bound for stampless parcels (a
+  prior specifier pass drafted it uncommitted on main, discarded here,
+  text preserved in the evidence) - the stampless fallback is today's
+  scan plus the blob excuse, which already excuses every measured
+  stampless shape, and a clock bound is a weaker mechanism than the
+  graph. The four stranded documenter parcels move by the coordinator's
+  nudge note 009010: a note in_process has no commit header, the reader
+  returns nil and the gate is silent (BL-1608 reached QA as 001329 at
+  06:05Z).
+
 assigned_to: coder
+bounce_count: 2
+bounce_history:
+  - { at: 2026-09-17, by: hardender, blamed: coder, class: spec-gap, commit: dde761503b, evidence: backlog/evidence/BL-1610-bounce-20260917.md }
+  - { at: 2026-09-17, by: hardender, blamed: coder, class: spec-gap, commit: c80be224c0, evidence: backlog/evidence/BL-1610-bounce-20260917.md }
