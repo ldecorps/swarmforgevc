@@ -28,7 +28,7 @@ required_wiring:
   - 'swarmforge/scripts/ready_for_next_task.bb::claim-queue-dirs::the claim path enumerates candidates from the stage queue and the seat own new/ through this one helper; the name is chosen at mint so the literal exists only with the fix (BL-874, BL-1235)'
   - 'specs/pipeline/steps/bl1615SeatDispatcherClaimsSeatMailSteps.js::registerSteps::the handler lands in the same parcel as the feature (BL-233, BL-1371)'
 
-human_approval: pending
+human_approval: approved
 approval_context: >
   A new feature file is authored here, so it needs a tap. No choice is
   posed and there are no ruling_options. FIRM: seat-addressed mail stays
@@ -196,3 +196,7 @@ notes: |
   unchanged; the coder builds the fixture population from these three
   shapes (merge-only copy, sweep note, plain note). The seat evidence
   (untracked in its worktree): coder-at-2-seat-mailbox-undrainable-20260917.md.
+
+  AUTO-APPROVED under the 2026-09-17 operator hotfix (severity defect, no
+  ruling_options) — see
+  auto-approve-high-severity-defects-amendment-20260917.md.
