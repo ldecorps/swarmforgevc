@@ -122,3 +122,5 @@ notes: |
   sweep through tmpDir.js's `sweepStaleTmpDirs` once BL-1623 lands, or
   the pid-guarded loop inline if this lands first. Not a new scenario;
   recorded so the two parcels do not both edit the file.
+
+assigned_to: coder
