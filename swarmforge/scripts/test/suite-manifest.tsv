@@ -498,8 +498,9 @@ test_tmp_cleanup_lib.sh	standing
 test_tool_miss_heal_hook_wiring.sh	standing		
 test_tunnel_ownership_lib.sh	standing		
 test_unpark_front_desk.sh	standing		
-test_upstream_drift_check_cli.sh	standing		
-test_worktree_drift_guard.sh	standing		
+test_upstream_drift_check_cli.sh	standing
+test_verify_lanes.sh	standing
+test_worktree_drift_guard.sh	standing
 test_worktree_drift_guard_master_resident_exempt.sh	standing		
 test_wsl_bootstrap.sh	standing		
 ticket_close_guard_lib_test_runner.bb	standing		
