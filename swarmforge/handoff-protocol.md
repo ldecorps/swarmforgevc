@@ -915,23 +915,30 @@ own hand diff against both parents, at the last stage, caught it
 
 Mechanics (`merge_drop_guard_lib.bb`):
 
-- **Bounded to the sender's own merges since receipt (BL-1610).** The
+- **Bounded to the sender's own merges since receipt, excluding the
+  received commit's own ancestry too (BL-1610, amended 2026-09-17).** The
   dequeue (`ready_for_next_task.bb`/`ready_for_next_batch.bb`) stamps the
   sender's own HEAD onto the in_process parcel as `received_at_head` (a
   reserved header, alongside `dequeued_at`) the moment the file moves to
   `in_process/`. The scan is bounded to merge commits reachable from the
-  forwarded commit and not from that stamped head
-  (`git rev-list --merges <received_at_head>..<forwarded>`) — the merges
-  the sender actually made after it received the parcel. Only when a
-  parcel carries no stamp (an older parcel, predating BL-1610) does the
-  scan fall back to `<received>..<forwarded>`. For a parcel whose received
-  commit is the coordinator's route `git_handoff` — commit is main's own
-  tip at promotion (BL-1213's lineage check needs it to stay that way) —
-  `<received>..<forwarded>` is the sender branch's ENTIRE off-main
-  history; `received_at_head` is what keeps the scan to merges the send
-  itself is responsible for (BL-1610: a coder's BL-1606 send was refused
-  over nine findings on six merges from hours earlier, none made for this
-  parcel).
+  forwarded commit and from NEITHER that stamped head NOR the received
+  commit (`git rev-list --merges <forwarded> ^<received_at_head>
+  ^<received>`) — the merges the sender actually made after it received
+  the parcel. A head-only bound re-admits a merge an UPSTREAM role made
+  that arrives only through the received commit's own ancestry (never
+  through anything the sender did after receipt) whenever the sender's
+  own head happens to lack that ancestry — true of every fresh parcel;
+  measured on the documenter's own sends 2026-09-17, where a cleaner merge
+  reachable only through the received commit was named on all four. Only
+  when a parcel carries no stamp (an older parcel, predating BL-1610) does
+  the scan fall back to `<received>..<forwarded>`. For a parcel whose
+  received commit is the coordinator's route `git_handoff` — commit is
+  main's own tip at promotion (BL-1213's lineage check needs it to stay
+  that way) — `<received>..<forwarded>` is the sender branch's ENTIRE
+  off-main history; `received_at_head` (and now `received` itself) is
+  what keeps the scan to merges the send itself is responsible for
+  (BL-1610: a coder's BL-1606 send was refused over nine findings on six
+  merges from hours earlier, none made for this parcel).
 - **A finding whose path the forward carries unchanged is excused
   (BL-1610).** Every finding also carries `:excused` — true when the
   offending merge is not itself the commit being forwarded (something
