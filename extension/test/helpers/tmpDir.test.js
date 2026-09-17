@@ -1,6 +1,18 @@
 const assert = require('node:assert/strict');
 const fs = require('node:fs');
-const { mkTmpDir, mkSharedTmpDir, sweepPendingTmpDirs, sweepSharedTmpDirs } = require('./tmpDir');
+const { mkTmpDir, mkSharedTmpDir, sweepPendingTmpDirs, sweepSharedTmpDirs, REMOVE_RETRY_ATTEMPTS } = require('./tmpDir');
+
+function enotempty() {
+  const err = new Error('ENOTEMPTY: directory not empty');
+  err.code = 'ENOTEMPTY';
+  throw err;
+}
+
+function ebusy() {
+  const err = new Error('EBUSY: resource busy or locked');
+  err.code = 'EBUSY';
+  throw err;
+}
 
 // BL-420: the shared temp-dir helper's own tests. Never asserts on a /tmp
 // LISTING (engineering shared-global-directory rule) - only on the exact
@@ -75,6 +87,108 @@ test('a second sweep after a fresh mkTmpDir call only removes the NEW directory,
   assert.equal(fs.existsSync(dirB), true);
   sweepPendingTmpDirs();
   assert.equal(fs.existsSync(dirB), false);
+});
+
+// ── BL-1601: sweepPendingTmpDirs retries ENOTEMPTY/EBUSY ────────────────
+// A detached, unref'd redeploy script can still be writing into a fixture
+// root the instant a test returns - the sweep's own directory listing and
+// its rmdir can race that write. rmFn is the seam these tests use to
+// simulate the race deterministically, never a real concurrent writer.
+
+test('sweepPendingTmpDirs retries a removal that fails ENOTEMPTY twice, then succeeds', () => {
+  const dir = mkTmpDir('sfvc-tmpdir-helper-retry-succeeds-');
+  let calls = 0;
+  const rmFn = (target, opts) => {
+    calls += 1;
+    if (calls <= 2) enotempty();
+    fs.rmSync(target, opts);
+  };
+
+  const swept = sweepPendingTmpDirs(rmFn);
+
+  assert.deepEqual(swept, [dir]);
+  assert.equal(calls, 3, 'expected exactly 3 attempts (2 failures then a success)');
+  assert.equal(fs.existsSync(dir), false);
+});
+
+test('sweepPendingTmpDirs rethrows ENOTEMPTY after its bounded attempts - a root that never empties is a leak, never silenced', () => {
+  const dir = mkTmpDir('sfvc-tmpdir-helper-retry-exhausted-');
+  let calls = 0;
+  const rmFn = () => {
+    calls += 1;
+    enotempty();
+  };
+
+  assert.throws(() => sweepPendingTmpDirs(rmFn), { code: 'ENOTEMPTY' });
+  assert.equal(calls, REMOVE_RETRY_ATTEMPTS, `expected exactly ${REMOVE_RETRY_ATTEMPTS} bounded attempts`);
+
+  fs.rmSync(dir, { recursive: true, force: true });
+});
+
+test('sweepPendingTmpDirs retries a removal that fails EBUSY twice, then succeeds', () => {
+  // ENOTEMPTY and EBUSY are ORed into the same `retryable` check
+  // (tmpDir.js) - a suite that only ever throws ENOTEMPTY cannot tell
+  // "the disjunction" from "just the first disjunct", so a mutant
+  // dropping EBUSY entirely survives undetected without this test (hand-
+  // confirmed: reverting the `|| err.code === 'EBUSY'` clause left every
+  // other test in this file, and the BL-1601 property test, green).
+  const dir = mkTmpDir('sfvc-tmpdir-helper-retry-ebusy-succeeds-');
+  let calls = 0;
+  const rmFn = (target, opts) => {
+    calls += 1;
+    if (calls <= 2) ebusy();
+    fs.rmSync(target, opts);
+  };
+
+  const swept = sweepPendingTmpDirs(rmFn);
+
+  assert.deepEqual(swept, [dir]);
+  assert.equal(calls, 3, 'expected exactly 3 attempts (2 EBUSY failures then a success)');
+  assert.equal(fs.existsSync(dir), false);
+});
+
+test('sweepPendingTmpDirs rethrows EBUSY after its bounded attempts - a root that never empties is a leak, never silenced', () => {
+  const dir = mkTmpDir('sfvc-tmpdir-helper-retry-ebusy-exhausted-');
+  let calls = 0;
+  const rmFn = () => {
+    calls += 1;
+    ebusy();
+  };
+
+  assert.throws(() => sweepPendingTmpDirs(rmFn), { code: 'EBUSY' });
+  assert.equal(calls, REMOVE_RETRY_ATTEMPTS, `expected exactly ${REMOVE_RETRY_ATTEMPTS} bounded attempts`);
+
+  fs.rmSync(dir, { recursive: true, force: true });
+});
+
+test('sweepPendingTmpDirs succeeds on the first attempt when nothing races it', () => {
+  const dir = mkTmpDir('sfvc-tmpdir-helper-retry-first-try-');
+  let calls = 0;
+  const rmFn = (target, opts) => {
+    calls += 1;
+    fs.rmSync(target, opts);
+  };
+
+  const swept = sweepPendingTmpDirs(rmFn);
+
+  assert.deepEqual(swept, [dir]);
+  assert.equal(calls, 1);
+});
+
+test('sweepPendingTmpDirs never retries a non-retryable error (e.g. EACCES) - rethrows immediately', () => {
+  const dir = mkTmpDir('sfvc-tmpdir-helper-retry-non-retryable-');
+  let calls = 0;
+  const rmFn = () => {
+    calls += 1;
+    const err = new Error('EACCES: permission denied');
+    err.code = 'EACCES';
+    throw err;
+  };
+
+  assert.throws(() => sweepPendingTmpDirs(rmFn), { code: 'EACCES' });
+  assert.equal(calls, 1, 'a non-retryable error must not be retried');
+
+  fs.rmSync(dir, { recursive: true, force: true });
 });
 
 // ── mkSharedTmpDir / sweepSharedTmpDirs (the beforeAll/afterAll sibling) ───
