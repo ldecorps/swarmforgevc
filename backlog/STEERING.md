@@ -49,6 +49,39 @@ Until the human declares one of those as the cycle direction, no Direction-lane
 gate is in force. That does **not** mean the human has said nothing about
 product surfaces — see the standing freeze below.
 
+## Standing human directive (2026-09-17, via Claude Code) — new high/critical defects auto-approved; shift-end consolidation sweep
+
+**Human, verbatim:** "New high defect[s] can be jumped automatically. Other
+ticket[s] raised during a shift by the swarm should be analysed by [the]
+specifier during the closing ceremony as a whole so that commonalities can be
+refactored [into] a new ticket. The idea is to reduce the number of tickets
+as they are very often quite similar."
+
+Applied as an operator hotfix the same session (bypassing the normal Article
+5.1 round trip because the effect is wanted immediately):
+
+1. **Auto-approval at mint.** A newly minted `type: defect` with `severity:
+   critical` or `high` — the class Article 3.2 rule 4 already expedites — is
+   minted `human_approval: approved` directly, no human tap in front of it,
+   unless it poses a genuine choice (`ruling_options`), which still waits on
+   the human regardless of severity. Binding text: Article 3.2 rule 4
+   (`03_backlog.md`) and `specifier.prompt` "Human approval is a STRUCTURED
+   field". Rationale: **auto-approve-high-severity-defects-amendment-20260917.md**.
+2. **Shift-end consolidation sweep.** Every closing-ceremony lean pass
+   (BL-820) now also sweeps this shift's own minted tickets for
+   near-duplicates/overlapping root causes and consolidates matches into one
+   ticket (N:1 merge, Article 5.3 bound: no human sentence dropped), same
+   mechanism as the epic-orbit sweep, applied to "everything minted this
+   shift" rather than "everything in one epic's orbit". Binding text:
+   `specifier.prompt` "Consolidation Authority" and "Lean-aware duty"
+   sections.
+
+Both changes are specifier-side prompt/constitution edits only — nothing about
+promotion depth, orthogonality, the circuit breaker, or QA's own gates
+changed. Recorded in `backlog/hotfix-ledger.yaml` by the swarm's own
+hotfix-detection sweep against the commits carrying these edits; a stamp
+ticket follows automatically for each.
+
 ## Standing human preference (2026-08-31) — exhaust `hold/` before `paused/`
 
 **Human directive (Cursor session, 2026-08-31):** when an active slot opens,
