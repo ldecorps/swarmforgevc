@@ -471,6 +471,29 @@ not as the several separate edits that produced it).
   stray-daemon check grepped `ps` for `handoffd.bb` + `/tmp/tmp.` and passed only
   because unrelated coder-worktree orphans happened to be gone at that moment —
   same class as BL-112, for `ps` rather than a directory listing.)
+- **Sweeping temp roots by prefix at module load is the same shared-global
+  hazard as the two bullets above — scope the sweep to your own dead runs, use
+  `sweepStaleTmpDirs` (BL-1623).** A property test that lists `os.tmpdir()` at
+  module load and `rmSync`s every entry sharing its prefix, whoever made it, is
+  the BL-1385/BL-1390 shape applied inside a single test file: two instances of
+  that file alive at once (a property lane in one checkout, a guard re-run or a
+  solo re-run of a red file in another — routine on a busy host) means the
+  later one's module-load sweep deletes the earlier one's still-live fixture
+  roots mid-test. `extension/test/helpers/tmpDir.js`'s `sweepStaleTmpDirs({
+  prefix, isPidAlive })` is the scoped fix (BL-1287's rule, applied to temp
+  roots rather than fixture tunnels): each root is named `<prefix><pid>-...`,
+  and only a root whose recorded owner pid is dead (or is the current
+  process's own, before it has written anything) is removed — a live peer's
+  roots are never touched, and a run that died without trapping anything still
+  has its roots cleared by the next run's sweep. `blindTmpDirSweepGuard.test.js`
+  fails naming any `*.property.test.js` file that still calls
+  `fs.readdirSync(os.tmpdir())` directly instead of going through the helper —
+  a new blind sweep is a caught regression, not a silent re-mint of the class.
+  (BL-1623: `bl1309LandDecideEntanglementInvariants.property.test.js`'s own
+  blind sweep deleted a concurrent instance's fixture ticket file
+  mid-assertion, read by `land_main_publish.sh` as "no backlog ticket file
+  found" — an unowned red on 2026-09-17, one of seven files sharing the same
+  blind-sweep shape.)
 - **A LIVE shared runtime path is the third shared global — and the only one a test can
   DESTROY rather than merely flake on. Reach it through a redirectable env seam, never
   directly.** The two rules above are about shared state CORRUPTING a test; this one is about

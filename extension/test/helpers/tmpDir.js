@@ -207,7 +207,7 @@ module.exports = {
   mkProcessTmpDir,
   sweepPendingTmpDirs,
   sweepSharedTmpDirs,
+  REMOVE_RETRY_ATTEMPTS,
   sweepStaleTmpDirs,
   defaultIsPidAlive,
-  REMOVE_RETRY_ATTEMPTS,
 };
