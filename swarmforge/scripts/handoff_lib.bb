@@ -493,6 +493,41 @@
                      (or (nil? me) (nil? recipient) (= recipient me) (= recipient stage))))
                  (handoff-files dir)))))
 
+;; BL-1615: handoff_inject_lib.bb's target-path delivers seat-addressed mail
+;; (a reverse-hop merge-only copy, a branch-behind merge-up note) into the
+;; RECIPIENT seat's own `mailbox-dir :new` - a directory stage-queue-dir
+;; alone never reads, so it sat undrainable forever (eight files stranded
+;; on coder@2, 2026-09-17). A seat's dispatcher must claim from BOTH: the
+;; shared stage queue (stage-addressed work, BL-983's design) and its own
+;; new/ (seat-addressed mail). distinct collapses the two to one directory
+;; exactly when they already coincide - a bare single-seat role or a
+;; master-resident roster row (BL-1515's two-rows-one-checkout shape) -
+;; so neither sees any file twice and nothing changes for them.
+(defn claim-queue-dirs
+  "The directories a seat's dispatcher claims NEW-state candidates from:
+   its stage's shared queue and its own mailbox, deduped when they are the
+   same path."
+  [state]
+  (distinct [(stage-queue-dir state) (my-mailbox-dir state)]))
+
+(defn claim-stage-handoff-files
+  "stage-handoff-files, unioned across every directory claim-queue-dirs
+   names for state - each file offered once (deduped by basename, a
+   physical file living in exactly one of the directories), in the one
+   filename sort (priority, timestamp, sequence) across both - never queue
+   first, seat box second."
+  [state]
+  (let [seen (atom #{})]
+    (->> (claim-queue-dirs state)
+         (mapcat stage-handoff-files)
+         (filter (fn [f]
+                   (let [name (fs/file-name f)]
+                     (if (contains? @seen name)
+                       false
+                       (do (swap! seen conj name) true)))))
+         (sort-by #(fs/file-name %))
+         vec)))
+
 (defn stage-sibling-seats
   "role-infos of every OTHER seat of the current role's stage - rows whose
    id shares my stage, excluding me. Empty for bare single-seat stages."
