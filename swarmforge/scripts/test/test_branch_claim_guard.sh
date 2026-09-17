@@ -53,7 +53,16 @@ mkdir -p "$ROOT/.swarmforge" \
          "$CODER_WT/.swarmforge/handoffs/inbox/completed"
 printf 'coder\tcoder\t%s\tswarmforge-coder\tCoder\tclaude\ttask\n' "$CODER_WT" \
   > "$ROOT/.swarmforge/roles.tsv"
-printf 'swarm_name\tprimary\nswarm_mode\tautonomous\n' > "$ROOT/.swarmforge/swarm-identity"
+# BL-1613: a swarm root the launcher could have made carries
+# active_backlog_max_depth_conf_path (BL-966) naming a tracked conf that
+# exists - without it, every claim's pack-conf read
+# (backlog_depth_lib.bb/conf-file-path) falls through to its loud,
+# by-design stderr warning, which this test's own "a passing guard emits
+# no warning" assertion (below) then trips on.
+mkdir -p "$ROOT/swarmforge"
+: > "$ROOT/swarmforge/swarmforge.conf"
+printf 'swarm_name\tprimary\nswarm_mode\tautonomous\nactive_backlog_max_depth_conf_path\tswarmforge/swarmforge.conf\n' \
+  > "$ROOT/.swarmforge/swarm-identity"
 
 INBOX="$CODER_WT/.swarmforge/handoffs/inbox"
 
