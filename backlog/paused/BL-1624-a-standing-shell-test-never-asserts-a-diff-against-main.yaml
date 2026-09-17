@@ -1,0 +1,187 @@
+id: BL-1624
+title: "test_bl1388_land_step_guard_fixture.sh has been red on main since BL-1388 landed on 2026-09-04 with no owner (first recorded 2026-09-17 by the cleaner): its step 4 asserts that land_step_lib_test_runner.bb DIFFERS from main - a parcel-time premise (BL-1388's qa_e2e item 4) frozen into a standing test - and from a fresh clone the runner's tree-guard cases fail as assertions because the compiled checker is absent; the parcel-time step is retired, the runner names a missing build loudly, and no standing shell test diffs against main"
+milestone: M8
+type: defect
+severity: high
+# high (standing-red rule 2026-09-05): a test red on main is a broken safety
+# signal, and this one hid for thirteen days because the shell manifest is
+# no role's lane (BL-1625). Production is unaffected: every assertion that
+# fails is about the test's own premise or the test environment, not the
+# land step.
+status: todo
+epic: code-quality-gates
+priority: 8
+direction: swarm-reported
+depends_on: []
+# BL-1388 (the fixture this test guards) and BL-1006 (a slice-boundary
+# assertion is the successor's to retire) are in backlog/done. BL-1625
+# (the shell manifest as a recorded lane) is a paused sibling, not a
+# dependency: this file is fixed whether or not the lane exists.
+mutation_cost: low
+# low: one shell test edit, one precondition in a bb runner or its shell
+# wrapper, one census guard (shell or unit), one feature and handler,
+# evidence, one register row. Babashka/shell carry no mutation/CRAP/DRY
+# (BL-472). Runners the feature shells, measured: the census grep in
+# milliseconds; the fresh-tree precondition on a fixture copy in seconds;
+# the real shell test is BL-1388's scenario 01 and QA's e2e, not a
+# scenario here (about 60-90 s, BL-1541).
+slice_size_envelope: low
+required_stages: [coder, cleaner, architect, hardender, documenter, qa]
+
+acceptance: specs/features/BL-1624-a-standing-shell-test-never-asserts-a-diff-against-main.feature
+
+required_wiring:
+  - 'swarmforge/scripts/test/test_bl1388_land_step_guard_fixture.sh::extension/out missing::the red test is the pre-existing consumer of the loud precondition; the literal exists only with the fix (BL-874, BL-1235)'
+  - 'specs/pipeline/steps/bl1624StandingShellTestNeverDiffsAgainstMainSteps.js::registerSteps::the handler lands in the same parcel as the feature (BL-233, BL-1371)'
+
+human_approval: pending
+approval_context: >
+  A new feature file is authored here, so it needs a tap. No choice is
+  posed and there are no ruling_options. FIRM: step 4 of the shell test is
+  RETIRED, not reworded - it was BL-1388's parcel-time check ("no other
+  assertion in the runner changed") and has no standing meaning once the
+  parcel landed; steps 1-3 and 5 stay byte-identical. FIRM: the fresh-tree
+  fix is a loud precondition, never a skip - a missing compiled checker
+  fails the test naming the build to run. FIRM: the census guard reads the
+  real manifest and names any standing shell test that runs `git diff
+  main` (or `origin/main`) as an assertion; on the parcel tree it names
+  none. FIRM: BL-1388's own feature keeps resolving (its handler runs this
+  shell test).
+
+invariants:
+  - "A standing shell test never asserts a difference against main: a premise that holds only while its own parcel is unlanded is a parcel-time check for qa_e2e, never a manifest row."
+
+description: |
+  ## What is wrong
+
+  The cleaner, re-running the land-step neighbourhood's shell tests while
+  processing a QA merge-up on 2026-09-17, found
+  `swarmforge/scripts/test/test_bl1388_land_step_guard_fixture.sh` red
+  (evidence `backlog/evidence/unowned-red-bl1388-land-step-guard-fixture-cleaner-20260917.md`,
+  cleaner branch 51f08dac8c). The specifier reproduced it on main
+  b1e8ba48bd at 14:05 local, real exit status 1:
+
+  ```
+  PASS: the land-step test runner exits zero with no failing assertion
+  PASS: a discoverable handler makes the refusal assertions fail (the fixture measures the guard)
+  PASS: the block still calls run-replayed-tree-guards with no injected tree-guards-fn
+  PASS: and still assesses a non-main tree (the land-replay branch)
+  FAIL: the diff touches assertions outside the fixture block (0 lines)
+  PASS: the empty-array tree is pinned as PASSING, the premise BL-1371 established
+  FAILURES
+  ```
+
+  Step 4 (lines 76-87) runs `git diff main --
+  swarmforge/scripts/test/land_step_lib_test_runner.bb` and requires the
+  diff to be NON-EMPTY (`changed > 0`) with no assertion outside the
+  fixture block changed. That is BL-1388's qa_e2e item 4 ("No other
+  assertion in the runner changed - diff the runner against main"), a
+  check that is only meaningful while BL-1388's parcel is unlanded. BL-1388
+  landed on 2026-09-04 (3f84aba369); on main the file equals main, the
+  diff is empty, and the step has failed on every run since. It is the
+  BL-1006 shape - a parcel-time premise frozen into a standing assertion -
+  and the file sits in `swarmforge/scripts/test/suite-manifest.tsv` as
+  `standing` (line 533), where no role's lane runs it (BL-1618's table has
+  no shell lane; QA runs the suites a ticket names), so nothing noticed for
+  thirteen days.
+
+  Second finding, from the cleaner's fresh clone and the specifier's own
+  (`git clone` of main into a scratch dir, no `extension/out`): the runner
+  `land_step_lib_test_runner.bb` fails EIGHT cases (BL-1375 x5, BL-1388 x3)
+  - "an all-approved shared path plans a replay, not an escalation", "a
+  discoverable handler beside an empty registry array is not refused" and
+  siblings. The tree-guard fixture reaches
+  `check_feature_handler_registration.sh`, which execs
+  `extension/out/tools/check-feature-handler-registration.js`; with no
+  compiled `out/` the guard refuses ("CHECKER missing"), the plan
+  escalates, and every assertion about a replay or a named refusal fails
+  as if the land step were wrong. A missing build is reported as eight
+  logic failures.
+
+  ## What is wanted
+
+  - Step 4 is gone from the shell test; steps 1, 2, 3 and 5 are unchanged
+    (scenario 01 reads the source: no `git diff main`/`origin/main` in
+    it, the other four step headers still present); the real run is
+    BL-1388's scenario 01 and QA's e2e step 1.
+  - A fresh tree without `extension/out` fails the shell test at once with
+    one line naming the missing compiled checker and `npm run compile`,
+    before any runner assertion (scenario 02).
+  - A census guard over every `standing` row of the shell manifest names
+    any test that asserts on `git diff main`/`origin/main`; on the parcel
+    tree it names none, and the population it read is the manifest's
+    standing count (scenario 03, BL-1445: 518 rows on 2026-09-17 - re-count
+    at build).
+  - The register row leaves in the same land.
+
+  ## How (direction, not mandate)
+
+  - Delete the `# -- 4.` block from the shell test; renumber nothing (the
+    headers are prose). The BL-1388 ticket's qa_e2e item 4 stays as
+    history in `backlog/done/`.
+  - Precondition: at the top of the shell test (after REPO_ROOT), `[[ -f
+    "$REPO_ROOT/extension/out/tools/check-feature-handler-registration.js"
+    ]] || { echo "FAIL: extension/out missing - run 'npm run compile' in
+    extension/ first"; exit 1; }` - or the same check inside the runner's
+    tree-guard fixture if the coder prefers one site; either way the
+    message names the build.
+  - Census guard: a shell test `test_standing_shell_tests_never_diff_main.sh`
+    (or a unit test) that reads `suite-manifest.tsv`'s standing rows, greps
+    each file for `git diff (main|origin/main)` outside comments, prints
+    the population count and the offenders, exits 1 on any. Register it
+    standing in the manifest (BL-1239's own rule).
+  - Documenter: engineering-detailed.prompt "Acceptance Pipeline"/"Test
+    Speed And Isolation" gains the one-line rule of the invariant; the
+    BL-1388 how-to if one exists notes the retirement.
+
+constraints: >
+  The shell test, one precondition, one census guard, the feature and
+  handler, evidence and docs, the register row. No change to
+  land_step_lib_test_runner.bb's assertions, to the land step, or to
+  BL-1388's feature. The step handler lands with the feature (BL-233).
+  Evidence named BL-1624-*.
+
+out_of_scope: |
+  - Running the shell manifest as a lane and recording its durations:
+    BL-1625 (paused sibling).
+  - Any other standing shell test the census names: each is its own
+    retirement, minted from the census the parcel records.
+
+qa_e2e_procedure: |
+  On the parcel commit, from the repo root, with extension/out compiled:
+  1. `bash swarmforge/scripts/test/test_bl1388_land_step_guard_fixture.sh`
+     ONCE -> ALL PASS, exit 0.
+  2. In a scratch clone of the parcel commit with no extension/out:
+     the same command -> one FAIL line naming extension/out and npm run
+     compile, exit 1, no runner assertion printed.
+  3. Acceptance resolving all three scenarios
+     (`bash specs/pipeline/scripts/run_acceptance.sh specs/features/BL-1624-*.feature`)
+     and BL-1388's feature still resolving.
+  4. The census guard green on the parcel tree, its population line
+     printed; the register row for the file gone from
+     backlog/standing-reds.tsv; `bb swarmforge/scripts/standing_red_register_cli.bb .`
+     names no row for it.
+
+source: |
+  Cleaner note to the specifier, priority 00, 2026-09-17T13:02Z (inbound
+  00_20260917T130257Z_000801_from_cleaner_to_specifier): "unowned red
+  test_bl1388_land_step_guard_fixture.sh - see evidence". Cleaner evidence
+  backlog/evidence/unowned-red-bl1388-land-step-guard-fixture-cleaner-20260917.md
+  (cleaner branch 51f08dac8c). Specifier adjudication:
+  backlog/evidence/BL-1624-specifier-adjudication-of-cleaner-unowned-red-bl1388-20260917.md.
+  Parents: BL-1388, BL-1006, BL-1239. Sibling: BL-1625.
+
+notes: |
+  Minted 2026-09-17 by the specifier while completing the cleaner's note,
+  the same pass. Register: backlog/standing-reds.tsv gains one `shell` row
+  naming this ticket, first_seen 2026-09-17 (the first RECORDED sighting;
+  the red dates from BL-1388's land on 2026-09-04), leaving in this land.
+  No Article 4.2 hold is open on it: the cleaner reported from a merge-up,
+  not from a parcel; QA does not run this file unless a ticket names it.
+  INVEST: Independent (the test, the runner, the manifest exist),
+  Negotiable (where the precondition sits is direction), Valuable (a
+  thirteen-day red leaves the register with the class that made it, and a
+  fresh clone stops reporting a missing build as eight logic failures),
+  Estimable (one deletion, one guard line, one census script - one
+  sitting), Small (three scenarios, one invariant), Testable (source reads
+  and a fixture copy in seconds). Severity high per the standing-red rule.
