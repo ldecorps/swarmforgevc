@@ -95,6 +95,32 @@
            "2222222222"
            (review-forward-evidence-gate-lib/received-commit-for-task root "cleaner" "BL-T")))
 
+;; BL-1612: a batch role's real in-process shape - every parcel inside a
+;; batch_* directory, never flat (the shape the two tests above never
+;; actually reproduced). Before this ticket, handoff-lib/handoff-files
+;; never descended into batch_* at all, so this returned nil.
+(defn- write-in-batch! [root role batch-name filename opts]
+  (let [role-info (handoff-lib/load-role-info role root)
+        dir (fs/path (handoff-lib/mailbox-dir role-info :in_process) batch-name)]
+    (fs/create-dirs dir)
+    (spit (str (fs/path dir filename))
+          (str "id: x\nfrom: coder\nto: " role "\npriority: 50\ntype: git_handoff\n"
+               "task: " (:task opts) "\ncommit: " (:commit opts) "\n\nbody\n"))))
+
+(let [root (mk-root)]
+  (write-roles! root)
+  (write-in-batch! root "cleaner" "batch_20260916T170000Z" "50_a.handoff" {:task "BL-T" :commit "3333333333"})
+  (assert= "a batch-held git_handoff for the task is found - the BL-1612 fix"
+           "3333333333"
+           (review-forward-evidence-gate-lib/received-commit-for-task root "cleaner" "BL-T")))
+
+(let [root (mk-root)]
+  (write-roles! root)
+  (fs/create-dirs (fs/path (handoff-lib/mailbox-dir (handoff-lib/load-role-info "cleaner" root) :in_process)
+                           "batch_20260916T170000Z"))
+  (assert-nil "an emptied batch directory yields nothing"
+              (review-forward-evidence-gate-lib/received-commit-for-task root "cleaner" "BL-T")))
+
 ;; ── received-at-head-for-task (BL-1610) ──────────────────────────────────
 ;; The sibling reader beside received-commit-for-task - same lookup, same
 ;; parcel file, so the commit and the head it reads always agree.
