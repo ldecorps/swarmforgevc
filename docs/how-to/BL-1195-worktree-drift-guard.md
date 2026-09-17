@@ -36,7 +36,16 @@ the role already hold (or is about to resume) an in-progress task?
   ```
 - **An in-progress task exists** — every currently-modified path is
   presumed that task's own WIP; no false flag (this is what stops the guard
-  from blocking ordinary in-flight work).
+  from blocking ordinary in-flight work). This check is **batch-aware** (BL-1611):
+  it reads the in-process box through `handoff-files-with-batches`, so a
+  parcel held inside a batch role's own `in_process/batch_<stamp>_<seq>/`
+  directory (the cleaner's and hardender's normal shape) counts as an
+  in-progress task exactly like a task role's flat `in_process/*.handoff`.
+  Before BL-1611 the guard used the flat reader only, so a batch role
+  mid-work always read as holding nothing and its own uncommitted WIP
+  (e.g. between a mutation run and its commit) was refused as drift — hit
+  live by the hardender on BL-1599 (2026-09-16). An empty `batch_*`
+  directory still counts as nothing held.
 - **A clean worktree** — passes silently either way.
 
 The guard never stashes or discards on its own: it only reports and names
