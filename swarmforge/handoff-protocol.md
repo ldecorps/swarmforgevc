@@ -496,6 +496,7 @@ created_at
 enqueued_at
 dequeued_at
 completed_at
+received_at_head
 ```
 
 Validation errors should be explicit enough for an agent to repair the draft.
@@ -914,10 +915,43 @@ own hand diff against both parents, at the last stage, caught it
 
 Mechanics (`merge_drop_guard_lib.bb`):
 
-- **Bounded to the sender's own merges.** Only merge commits reachable
-  from the forwarded commit and not from the received commit are
-  inspected (`git rev-list --merges <received>..<forwarded>`) — never a
-  merge the sender did not make, never past the received commit.
+- **Bounded to the sender's own merges since receipt, excluding the
+  received commit's own ancestry too (BL-1610, amended 2026-09-17).** The
+  dequeue (`ready_for_next_task.bb`/`ready_for_next_batch.bb`) stamps the
+  sender's own HEAD onto the in_process parcel as `received_at_head` (a
+  reserved header, alongside `dequeued_at`) the moment the file moves to
+  `in_process/`. The scan is bounded to merge commits reachable from the
+  forwarded commit and from NEITHER that stamped head NOR the received
+  commit (`git rev-list --merges <forwarded> ^<received_at_head>
+  ^<received>`) — the merges the sender actually made after it received
+  the parcel. A head-only bound re-admits a merge an UPSTREAM role made
+  that arrives only through the received commit's own ancestry (never
+  through anything the sender did after receipt) whenever the sender's
+  own head happens to lack that ancestry — true of every fresh parcel;
+  measured on the documenter's own sends 2026-09-17, where a cleaner merge
+  reachable only through the received commit was named on all four. Only
+  when a parcel carries no stamp (an older parcel, predating BL-1610) does
+  the scan fall back to `<received>..<forwarded>`. For a parcel whose
+  received commit is the coordinator's route `git_handoff` — commit is
+  main's own tip at promotion (BL-1213's lineage check needs it to stay
+  that way) — `<received>..<forwarded>` is the sender branch's ENTIRE
+  off-main history; `received_at_head` (and now `received` itself) is
+  what keeps the scan to merges the send itself is responsible for
+  (BL-1610: a coder's BL-1606 send was refused over nine findings on six
+  merges from hours earlier, none made for this parcel).
+- **A finding whose path the forward carries unchanged is excused
+  (BL-1610).** Every finding also carries `:excused` — true when the
+  offending merge is not itself the commit being forwarded (something
+  comes after it) AND the forward's blob at the finding's path equals the
+  received commit's blob at that path: the forward carries no version of
+  the path that differs from what was received, so nothing dropped can
+  ride it. Blob identity between received and forwarded blobs ALONE is not
+  enough — a merge that resolves a path by taking the received side
+  verbatim also leaves that equality, which must still block when the
+  offending merge itself IS the forwarded commit (BL-1576's "taking the
+  received side verbatim" scenario). `blocked?`/`refusal-message` act only
+  on non-excused findings; the read-only CLI still reports excused ones
+  (marked as carrying nothing) for anyone reviewing the full scan.
 - **Discriminator is contested vs. uncontested hunks, not ancestry.** For
   each merge M with parents P1/P2 and base B, `git diff -U0 B <side> --
   <path>` is parsed into hunks carrying their base line range. A hunk is
@@ -943,8 +977,11 @@ Mechanics (`merge_drop_guard_lib.bb`):
 - Applies to `git_handoff` sends only; a `note` records no finding.
 - Read-only entry point with no mailbox/fixture, for QA to point at live
   objects directly: `bb swarmforge/scripts/merge_drop_guard_lib.bb
-  <project-root> <received-commit> <forwarded-commit>` prints one JSON
-  finding per line and exits 0.
+  <project-root> <received-commit> <forwarded-commit> [head-commit]` prints
+  one JSON finding per line (each carrying `:excused`, BL-1610) and exits
+  0; the optional 4th argument drives the same `received_at_head`-bounded
+  scan the send-time gate uses, omitted for the pre-BL-1610
+  `<received>..<forwarded>` scan.
 
 Refusal message names the task, the merge commit, the dropped side, the
 path, and the line count:
@@ -2875,7 +2912,12 @@ Responsibilities:
   (BL-218).
 - Atomically move that file to `inbox/in_process/`.
 - Add or update `dequeued_at`.
-- Print the accepted task path, sender, message type, priority, and payload.
+- Add or update `received_at_head` (BL-1610) — the sender's own git HEAD in
+  its worktree at this dequeue moment, read via
+  `handoff-lib/worktree-head-commit-10`. Consumed by
+  `merge_drop_guard_lib.bb`'s send-time scan (see the Merge-Drop Guard
+  section) to bound its merge scan to what the sender did after receiving
+  this parcel, rather than everything received..forwarded.
 - Print `NO_TASK` if no inbox item is available (including when every `new/`
   candidate was skipped as already-processed).
 - Refuse ambiguous states, such as multiple in-process files, unless an explicit
@@ -2980,6 +3022,8 @@ Responsibilities:
 - Move those files into one `inbox/in_process/batch_<timestamp>_<suffix>/`
   directory.
 - Add or update `dequeued_at` on each selected file.
+- Add or update `received_at_head` (BL-1610) on each selected file, same
+  stamp and same purpose as `ready_for_next_task.sh` above.
 - Print the accepted batch path, count, priority, and each task payload in
   helper-delivered order.
 - Print `NO_TASK` if no inbox item is available.
@@ -3064,6 +3108,7 @@ created_at
 enqueued_at
 dequeued_at
 completed_at
+received_at_head
 ```
 
 Lifecycle ownership:
@@ -3071,8 +3116,10 @@ Lifecycle ownership:
 - `swarm_handoff.sh` writes `id`, `from`, `to`, `priority`, `type`, and
   `created_at`.
 - `handoffd` writes `recipient` and `enqueued_at` into each recipient copy.
-- `ready_for_next_task.sh` writes `dequeued_at`.
-- `ready_for_next_batch.sh` writes `dequeued_at`.
+- `ready_for_next_task.sh` writes `dequeued_at` and `received_at_head`
+  (BL-1610).
+- `ready_for_next_batch.sh` writes `dequeued_at` and `received_at_head`
+  (BL-1610).
 - `done_with_current_task.sh` writes `completed_at`.
 - `done_with_current_batch.sh` writes `completed_at`.
 

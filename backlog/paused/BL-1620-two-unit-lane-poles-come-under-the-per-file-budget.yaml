@@ -22,7 +22,7 @@ required_wiring:
 # files under budget and two register rows gone; the gate that proves it is
 # BL-1598's, already wired into recordTestDuration.js.
 
-human_approval: pending
+human_approval: approved
 approval_context: >
   Your 2026-09-17 ask, the cutting half for the unit lane: the epic's slice
   D exists since 2026-09-16 and was not minted; this is its first cut, the
