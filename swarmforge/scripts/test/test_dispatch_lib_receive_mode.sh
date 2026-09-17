@@ -67,6 +67,17 @@ echo "$OUT" | grep -q '^BATCH:' || fail "01: batch-mode dispatch did not route t
 echo "$OUT" | grep -q '^COUNT: 1$' || fail "01: expected single-item batch"
 pass "01: batch-mode role routes ready_for_next.bb to the batch helper"
 
+# BL-1609: a forwarding git_handoff only leaves in_process once its own
+# forward has been queued (or non-forwarding/--no-op) - this file's own
+# concern is dispatch routing, not forwarding, so item1's ticket gets a
+# matching already-queued forward in batchrole's own outbox, timestamped
+# safely after ready_for_next.bb's own dequeue stamp (real wall-clock "now",
+# not the fixture's fixed 2020 placeholder other files use).
+mkdir -p "$BATCH_WT/.swarmforge/handoffs/outbox"
+FWD_CREATED_AT="$(date -u -d '+1 hour' '+%Y-%m-%dT%H:%M:%S.000000000Z' 2>/dev/null || date -u -v+1H '+%Y-%m-%dT%H:%M:%S.000000000Z')"
+printf 'id: fwd\nfrom: batchrole\nto: architect\npriority: 50\ntype: git_handoff\ntask: BL-056-dispatch-test\ncommit: %s\ncreated_at: %s\n\nmerge_and_process batchrole %s\n' \
+  "$COMMIT" "$FWD_CREATED_AT" "$COMMIT" > "$BATCH_WT/.swarmforge/handoffs/outbox/90_fwd.handoff"
+
 OUT="$(cd "$BATCH_WT" && SWARMFORGE_ROLE=batchrole bb "$DONE_DISPATCH")"
 echo "$OUT" | grep -q '^COMPLETED_BATCH:' || fail "02: batch-mode dispatch did not route done_with_current.bb to the batch helper (got: $OUT)"
 echo "$OUT" | grep -q '^NO_TASK$' || fail "02: expected NO_TASK after completing the only queued batch"

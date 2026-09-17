@@ -130,6 +130,17 @@ grep -q "^TASK: $ROOT_INBOX/in_process/" <<< "$OUT" \
 [[ ! -e "$NESTED_STATE" ]] || fail "03: nested $NESTED_STATE was created on receive"
 pass "03: ready_for_next from subdir reads the worktree-root inbox"
 
+# BL-1609: a forwarding git_handoff only leaves in_process once its own
+# forward has been queued (or non-forwarding/--no-op). This file's own
+# concern is worktree-root anchoring, not forwarding, so BL-056-test gets a
+# matching already-queued forward - written to coder's SENT mailbox (not
+# outbox, which outbox_count() above counts exactly for scenarios 01/02/04)
+# and timestamped safely after ready_for_next's own real dequeue stamp.
+FWD_CREATED_AT="$(date -u -d '+1 hour' '+%Y-%m-%dT%H:%M:%S.000000000Z' 2>/dev/null || date -u -v+1H '+%Y-%m-%dT%H:%M:%S.000000000Z')"
+mkdir -p "$CODER_WT/.swarmforge/handoffs/sent"
+printf 'id: fwd\nfrom: coder\nto: cleaner\npriority: 50\ntype: git_handoff\ntask: BL-056-test\ncommit: %s\ncreated_at: %s\n\nmerge_and_process coder %s\n' \
+  "$COMMIT" "$FWD_CREATED_AT" "$COMMIT" > "$CODER_WT/.swarmforge/handoffs/sent/90_fwd.handoff"
+
 # ── done_with_current_task from a subdirectory completes the root task ───────
 OUT="$(cd "$CODER_WT/extension" && SWARMFORGE_ROLE=coder bb "$DONE_TASK")"
 grep -q "^COMPLETED: $ROOT_INBOX/completed/" <<< "$OUT" \
