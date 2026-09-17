@@ -161,7 +161,42 @@ notes: |
   a git fixture in seconds - BL-1541). Severity high: a live fault that
   engaged the throttle.
 
+  AMENDED 2026-09-17 07:00Z by the specifier on the documenter's note
+  001334 ("BL-1604 send BLOCKED by BL-1610's own gap"): the documenter's
+  send of 8393648d8b was refused by the merge-drop gate on 5843bb685c, a
+  HARDENDER merge in the received commit's ancestry (BL-1610 D1, amended
+  a5e59a0f5b, rebuilt by the coder 76c1ab039e/023ca45241, at the cleaner);
+  the pre-BL-1610 scan refuses it too, on c96761faa1 (BL-1610 shape 2).
+  Under the amended scan the only merge in range is the documenter's own
+  374faba743, which drops nothing; the two rows 5843bb685c is accused of
+  dropping are present at 8393648d8b. Content is clean; the gate is the
+  defect, owned by BL-1610. Disposition (the BL-1606 precedent): the
+  documenter completes 001374 recording the adjudication and sends the
+  SAME commit 8393648d8b from its next claim - the reader matches
+  in_process git_handoffs by task, so the send is an initiating send and
+  the gate is silent. QA: this parcel reached you by that path; the
+  documenter's evidence chain (BL-1604-documenter-blocked-send-20260917.md)
+  carries the content verification. Specifier evidence:
+  backlog/evidence/BL-1604-specifier-adjudication-of-documenter-blocked-send-20260917.md.
+
 assigned_to: coder
+
+abandoned_commits: [eca9aaeb96]
+# Stranded on swarmforge-coder@2, never forwarded (PRE_QA_GATE ancestry
+# check at documenter send-time). Diffed against the shipped chain
+# (06e6226cdb -> ad4424a340 -> hardener/cleaner/architect review) that
+# reached documenter: same requirement, same restore-other-tickets-
+# registry-rows!/rows-to-restore shape, same REGISTER_ROW_RESTORED line,
+# same BL-1447 completeness-check exemption for the two registry paths -
+# an independent, superseded coder draft of the identical fix, not a
+# second implementation carrying anything the shipped one lacks.
+
 bounce_count: 1
 bounce_history:
   - { at: 2026-09-17, by: QA, blamed: documenter, class: behavior, commit: dc79387b11, evidence: backlog/evidence/BL-1604-QA-20260917.md }
+# QA's bounce (commit dc79387b11) fired on the received tip 8393648d8b,
+# which lacked this exact abandoned_commits entry at the time; the fix
+# above landed via a parallel documenter/specifier path
+# (596f5fb061 + the 2026-09-17T07:00Z amendment) before QA's bounce was
+# picked up. Superseded in effect, not corrected as a misattribution -
+# the gap QA reported was real at the commit QA reviewed.
