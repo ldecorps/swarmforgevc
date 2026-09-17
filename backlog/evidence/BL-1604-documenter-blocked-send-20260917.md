@@ -54,3 +54,14 @@ itself has no mechanism to excuse this shape today (BL-1610's amendment is
 the only fix, not yet coded) — recorded here rather than worked around, per
 "Never Blind-Forward A Bounce You Cannot Fix": this is BL-1610's own gate
 defect, not documenter's or hardener's to redesign.
+
+## Retry after merge-up (coordinator notes 009021/009024, 2026-09-17)
+
+Merged `main` `6c95a92517` into this worktree (`b23a1e5a58`, clean, no
+conflicts) per the coordinator's "branch behind — merge up" notes, then
+retried the real `swarm_handoff.sh` send with `commit: b23a1e5a58`. Same
+guard, same refusal, same merge (`5843bb685c`) named. The merge-up did not
+and could not change this outcome — the blocking commit is inside
+`received`'s own ancestry, upstream of anything this worktree's merges
+touch. Still waiting on BL-1610 (`assigned_to: coder`) before this send can
+queue.
