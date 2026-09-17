@@ -31,6 +31,14 @@
      ticket YAML `priority:` (promotion order) only. Expediting a ticket
      never bumps its handoff `priority:` to `00` — that lane is reserved for
      genuinely blocking decisions. See **expedite-defects-amendment-2026-07-25.md**.
+   - **Auto-approved at mint** (operator hotfix, 2026-09-17): a
+     newly minted ticket that qualifies for this rule (`type: defect`,
+     `severity: critical` or `high`) is minted `human_approval: approved`
+     directly — no human tap gates it before promotion — UNLESS its
+     `approval_context` poses a genuine choice, in which case it still
+     declares `ruling_options` and mints `pending` like any other ruling; a
+     real ruling is never auto-decided by severity alone. See
+     **auto-approve-high-severity-defects-amendment-20260917.md**.
 
 ## 3.3 Coordinator Duties
 1. **Intake Control** – New specs land in `backlog/paused/` (written by specifier).
