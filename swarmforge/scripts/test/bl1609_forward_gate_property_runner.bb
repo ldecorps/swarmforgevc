@@ -192,7 +192,78 @@
               (fail! "invariant 2b: retry completed but the batch never reached completed/"))))))
     (finally (fs/delete-tree root))))
 
-(println "bl1609_forward_gate property: 16-state oracle sweep (invariant 1) + 2 real-fixture cases (invariant 2)")
+;; ── invariant 2c: batch refusal names EVERY unforwarded ticket, not just
+;; one (Article 4.4's "complete review inventory" shape, which
+;; done_with_current_batch.bb's own forward-gate! comment claims to
+;; implement: "refuse ONCE naming every unforwarded forwarding item,
+;; rather than stopping at the first one found"). invariant 2b above uses
+;; two items but never checks the refusal MESSAGE content, only the exit
+;; code and mailbox byte-identity - a mutant that truncates the refusal to
+;; the first unforwarded item alone (e.g. `(take 1 refusals)`) passes 2b
+;; undetected. Two DISTINCT tickets, progressed through three stages, is
+;; what actually discriminates: neither evidenced (both must be named),
+;; one evidenced (the refusal must still fire and name only the
+;; remaining one, not the satisfied one), then both evidenced (completes).
+
+(let [root (fs/create-temp-dir {:prefix "bl1609-invariant2c-"})]
+  (try
+    (p/shell {:dir (str root) :out :string :err :string} "git" "init" "-q" "-b" "main")
+    (p/shell {:dir (str root) :out :string :err :string} "git" "config" "user.email" "t@t")
+    (p/shell {:dir (str root) :out :string :err :string} "git" "config" "user.name" "t")
+    (p/shell {:dir (str root) :out :string :err :string} "git" "config" "commit.gpgsign" "false")
+    (p/shell {:dir (str root) :out :string :err :string} "git" "commit" "-q" "--allow-empty" "-m" "init")
+    (let [wt (fs/path root ".worktrees" "role")]
+      (p/shell {:dir (str root) :out :string :err :string} "git" "worktree" "add" "-q" "-b" "role" (str wt))
+      (install-scripts! (fs/path wt "swarmforge" "scripts"))
+      (fs/create-dirs (fs/path wt ".swarmforge"))
+      (spit (str (fs/path wt ".swarmforge" "roles.tsv"))
+            (str "role\trole\t" wt "\tswarmforge-role\tRole\tclaude\tbatch\n"))
+      (let [batch-dir (fs/path wt ".swarmforge" "handoffs" "inbox" "in_process" "batch_20260916T000000Z")
+            completed (fs/path wt ".swarmforge" "handoffs" "inbox" "completed")
+            outbox (fs/path wt ".swarmforge" "handoffs" "outbox")]
+        (fs/create-dirs batch-dir)
+        (fs/create-dirs completed)
+        (fs/create-dirs outbox)
+        (spit (str (fs/path batch-dir "50_a.handoff")) (forwarding-handoff "BL-8004" "2020-01-01T00:00:00.000000000Z"))
+        (spit (str (fs/path batch-dir "50_b.handoff")) (forwarding-handoff "BL-8005" "2020-01-01T00:00:00.000000000Z"))
+        ;; Stage 1: neither evidenced - refusal must name BOTH tickets.
+        (let [result (run-done! wt "role")]
+          (when (zero? (:exit result))
+            (fail! (str "invariant 2c stage 1: expected a refusal, got exit 0: " (:out result))))
+          (when-not (str/includes? (:err result) "BL-8004")
+            (fail! (str "invariant 2c stage 1: refusal must name BL-8004: " (:err result))))
+          (when-not (str/includes? (:err result) "BL-8005")
+            (fail! (str "invariant 2c stage 1: refusal must name BL-8005: " (:err result)))))
+        ;; Stage 2: only BL-8004 evidenced - still refused, naming ONLY the
+        ;; still-unevidenced BL-8005, and BL-8004 must NOT be in the message
+        ;; (the whole batch is still refused, but the message identifies
+        ;; exactly what remains, per Article 4.4's inventory - never padded
+        ;; with an item that is already satisfied).
+        (spit (str (fs/path outbox "90_fwd_a.handoff")) (queued-forward "BL-8004" "2020-01-02T00:00:00.000000000Z"))
+        (let [before (snapshot wt)
+              result (run-done! wt "role")]
+          (when (zero? (:exit result))
+            (fail! (str "invariant 2c stage 2: expected a refusal, got exit 0: " (:out result))))
+          (when-not (str/includes? (:err result) "BL-8005")
+            (fail! (str "invariant 2c stage 2: refusal must name the still-unevidenced BL-8005: " (:err result))))
+          (when (str/includes? (:err result) "BL-8004")
+            (fail! (str "invariant 2c stage 2: refusal must not re-name the already-evidenced BL-8004: " (:err result))))
+          (let [after (snapshot wt)]
+            (when (not= before after)
+              (doseq [k (into (sorted-set) (concat (keys before) (keys after)))]
+                (when (not= (get before k) (get after k))
+                  (fail! (str "invariant 2c stage 2: differing file " k)))))))
+        ;; Stage 3: both evidenced - completes.
+        (spit (str (fs/path outbox "90_fwd_b.handoff")) (queued-forward "BL-8005" "2020-01-02T00:00:00.000000000Z"))
+        (let [retry (run-done! wt "role")]
+          (when-not (zero? (:exit retry))
+            (fail! (str "invariant 2c stage 3: retry with evidence in place did not complete: " (:out retry) (:err retry))))
+          (when-not (and (fs/exists? (fs/path completed "batch_20260916T000000Z" "50_a.handoff"))
+                          (fs/exists? (fs/path completed "batch_20260916T000000Z" "50_b.handoff")))
+            (fail! "invariant 2c stage 3: retry completed but the batch never reached completed/")))))
+    (finally (fs/delete-tree root))))
+
+(println "bl1609_forward_gate property: 16-state oracle sweep (invariant 1) + 3 real-fixture cases (invariant 2)")
 (if (seq @failures)
   (do (doseq [f @failures] (binding [*out* *err*] (println f)))
       (println (str (count @failures) " PROPERTY FAILURE(S)"))
