@@ -61,35 +61,54 @@
 (defn run-helper! [script & args]
   (apply process/exec (str (fs/path script-dir script)) args))
 
-(defn no-work-args?
-  "BL-1422: the ONE argv shape refuse-unexpected-args! now accepts besides
-   none at all - exactly [\"--no-work\" \"<non-blank reason>\"]. A bare
-   --no-work, a blank reason, or anything else (including --help) is not
-   this shape and stays refused."
-  [args]
+(defn- reason-flag-args?
+  "The shared shape both --no-work (BL-1422) and --no-op (BL-1609) accept:
+   exactly [flag \"<non-blank reason>\"]. A bare flag, a blank reason, or
+   anything else (including --help) is not this shape and stays refused."
+  [flag args]
   (and (= 2 (count args))
-       (= "--no-work" (first args))
+       (= flag (first args))
        (not (str/blank? (second args)))))
+
+(defn no-work-args?
+  "BL-1422: the Work-note-completion exception - see reason-flag-args!."
+  [args]
+  (reason-flag-args? "--no-work" args))
+
+(defn no-op-args?
+  "BL-1609: the forwarding-git_handoff-completion exception - see
+   reason-flag-args!."
+  [args]
+  (reason-flag-args? "--no-op" args))
 
 (defn no-work-reason
   "The --no-work reason from this process's own argv, when
-   refuse-unexpected-args! has already let it through; nil for a plain,
-   argumentless invocation."
+   refuse-unexpected-args! has already let it through; nil for a plain
+   invocation or one carrying --no-op instead."
   []
   (let [args *command-line-args*]
     (when (no-work-args? args) (second args))))
 
-(defn refuse-unexpected-args!
-  "BL-652: done_with_current family takes no arguments, with ONE exception
-   (BL-1422): --no-work \"<reason>\" (non-blank) records a deliberate
-   non-start on a Work-note completion instead of silence. Any other argv
-   (including --help, or --no-work with no/blank reason) still fails fast
-   with usage text and zero completion side effects. Call before any
-   mailbox mutation or helper dispatch."
+(defn no-op-reason
+  "The --no-op reason from this process's own argv, when
+   refuse-unexpected-args! has already let it through; nil for a plain
+   invocation or one carrying --no-work instead."
   []
   (let [args *command-line-args*]
-    (when (and (seq args) (not (no-work-args? args)))
-      (exit! 2 "Usage: done_with_current.sh takes no arguments, or --no-work \"<reason>\""))))
+    (when (no-op-args? args) (second args))))
+
+(defn refuse-unexpected-args!
+  "BL-652: done_with_current family takes no arguments, with two exceptions:
+   --no-work \"<reason>\" (BL-1422, a Work-note completion) and --no-op
+   \"<reason>\" (BL-1609, a forwarding git_handoff completion), each
+   non-blank. Any other argv (including --help, either flag with no/blank
+   reason, or both flags together) still fails fast with usage text and
+   zero completion side effects. Call before any mailbox mutation or helper
+   dispatch."
+  []
+  (let [args *command-line-args*]
+    (when (and (seq args) (not (or (no-work-args? args) (no-op-args? args))))
+      (exit! 2 "Usage: done_with_current.sh takes no arguments, or --no-work \"<reason>\" or --no-op \"<reason>\""))))
 
 (defn run-dispatch!
   "Dispatch to the shell helper configured for the current role's receive mode.

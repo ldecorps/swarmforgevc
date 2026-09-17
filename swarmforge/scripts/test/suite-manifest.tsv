@@ -101,8 +101,9 @@ expedite_announce_lib_test_runner.bb	standing
 expedite_lib_test_runner.bb	standing		
 fixture_reaper_lib_test_runner.bb	standing		
 fleet_telegram_creds_lib_test_runner.bb	standing		
-flow_watchdog_test_runner.bb	standing		
-front_desk_supervisor_lib_test_runner.bb	standing		
+flow_watchdog_test_runner.bb	standing
+forward_evidence_lib_test_runner.bb	standing
+front_desk_supervisor_lib_test_runner.bb	standing
 gh25_role_ask_escalation_test_runner.bb	standing		
 gherkin_lint_gate_lib_test_runner.bb	standing		
 handoff_draft_root_guard_lib_test_runner.bb	standing		
