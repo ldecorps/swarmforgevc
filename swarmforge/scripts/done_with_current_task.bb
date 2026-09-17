@@ -174,21 +174,16 @@
 ;; list) are never gated - both complete exactly as today. The DECISION
 ;; itself is forward-evidence-lib/forward-completion-decision (pure);
 ;; everything here is gathering its four inputs and acting on its verdict.
-(defn- forwarding-inbound? [source-file]
-  (and (= "git_handoff" (handoff-lib/header-field source-file "type"))
-       (not (handoff-lib/non-forwarding? source-file))))
-
-(defn- master-resident? []
-  (= "master" (:worktree-name (handoff-lib/load-role-info (handoff-lib/current-role)))))
-
+;; forwarding-inbound? and master-resident? live in forward_evidence_lib.bb,
+;; shared with the batch path's own forward-gate!.
 (defn- forward-gate! [source-file]
   (let [ticket-id (pipeline-stage-lib/extract-ticket-id (handoff-lib/header-field source-file "task"))
         since (or (handoff-lib/header-field source-file "dequeued_at") "1970-01-01T00:00:00Z")
         reason (dispatch-lib/no-op-reason)
         evidenced? (boolean (and ticket-id (forward-evidence-lib/sent-handoff-names-ticket-since? ticket-id since)))]
     (case (forward-evidence-lib/forward-completion-decision
-           {:forwarding? (forwarding-inbound? source-file)
-            :master-resident? (master-resident?)
+           {:forwarding? (forward-evidence-lib/forwarding-inbound? source-file)
+            :master-resident? (forward-evidence-lib/master-resident?)
             :evidenced? evidenced?
             :reason reason})
       :complete-plain nil

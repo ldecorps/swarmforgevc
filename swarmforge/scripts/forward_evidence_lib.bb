@@ -47,6 +47,20 @@
          (concat (handoff-lib/handoff-files (handoff-lib/my-mailbox-dir :sent))
                  (handoff-lib/handoff-files (handoff-lib/my-mailbox-dir :outbox))))))
 
+(defn forwarding-inbound?
+  "A git_handoff (never a note) that does not carry non-forwarding: true
+   (Article 2.4's merge-only marker). Shared by the task and batch
+   completion paths so both read the same header fields the same way."
+  [source-file]
+  (and (= "git_handoff" (handoff-lib/header-field source-file "type"))
+       (not (handoff-lib/non-forwarding? source-file))))
+
+(defn master-resident?
+  "This role's own roles.tsv row has worktree-name \"master\"
+   (handoff-lib/load-role-info) - never a hardcoded role-name list."
+  []
+  (= "master" (:worktree-name (handoff-lib/load-role-info (handoff-lib/current-role)))))
+
 (defn forward-completion-decision
   "BL-1609's one decision table given what the caller has already
    determined:
