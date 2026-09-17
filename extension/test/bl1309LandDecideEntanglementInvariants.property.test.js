@@ -52,10 +52,9 @@
 const assert = require('node:assert/strict');
 const fc = require('fast-check');
 const fs = require('node:fs');
-const os = require('node:os');
 const path = require('node:path');
 const { execFileSync, spawnSync } = require('node:child_process');
-const { mkTmpDir } = require('./helpers/tmpDir');
+const { mkTmpDir, sweepStaleTmpDirs } = require('./helpers/tmpDir');
 const { assertReachFloor, runsPerCell } = require('./helpers/reachFloors');
 const { propertyLaneTimeoutMs } = require('./helpers/propertyLaneContentionBudget');
 
@@ -82,13 +81,12 @@ function head(root) {
 }
 
 // A killed run traps no `finally`, so the previous run's fixtures are swept by
-// prefix BEFORE this one starts as well (BL-971).
+// prefix BEFORE this one starts as well (BL-971). BL-1623: scoped by owner
+// pid through the shared helper - a blind prefix sweep destroys a live
+// peer's roots the instant two instances of this file are ever alive at
+// once (BL-1385/BL-1390's shape).
 function sweepFixtures() {
-  for (const entry of fs.readdirSync(os.tmpdir())) {
-    if (entry.startsWith(FIXTURE_PREFIX)) {
-      fs.rmSync(path.join(os.tmpdir(), entry), { recursive: true, force: true });
-    }
-  }
+  sweepStaleTmpDirs({ prefix: FIXTURE_PREFIX });
 }
 
 function commitFile(root, rel, body, message) {
@@ -98,7 +96,7 @@ function commitFile(root, rel, body, message) {
 }
 
 function newFixture() {
-  const work = mkTmpDir(FIXTURE_PREFIX);
+  const work = mkTmpDir(`${FIXTURE_PREFIX}${process.pid}-`);
   const origin = path.join(work, 'origin.git');
   const root = path.join(work, 'repo');
   git(work, 'init', '-q', '--bare', '-b', 'main', origin);

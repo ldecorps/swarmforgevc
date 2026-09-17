@@ -40,10 +40,10 @@
 const assert = require('node:assert/strict');
 const fc = require('fast-check');
 const fs = require('node:fs');
-const os = require('node:os');
 const path = require('node:path');
 const { execFileSync, spawnSync } = require('node:child_process');
 const { checkoutSeededRepo } = require('./helpers/sharedRepoFixture');
+const { sweepStaleTmpDirs } = require('./helpers/tmpDir');
 const { propertyLaneTimeoutMs } = require('./helpers/propertyLaneContentionBudget');
 const { assertReachFloor, runsPerCell } = require('./helpers/reachFloors');
 
@@ -54,12 +54,11 @@ const TICKET = 'BL-9343';
 const SIBLING = 'BL-9344';
 
 // BL-971: a killed run traps nothing, so sweep by prefix BEFORE the run too.
+// BL-1623: scoped by owner pid through the shared helper - a blind prefix
+// sweep destroys a live peer's roots the instant two instances of this file
+// are ever alive at once (BL-1385/BL-1390's shape).
 function sweepStaleFixtures() {
-  for (const entry of fs.readdirSync(os.tmpdir())) {
-    if (entry.startsWith(FIXTURE_PREFIX)) {
-      fs.rmSync(path.join(os.tmpdir(), entry), { recursive: true, force: true });
-    }
-  }
+  sweepStaleTmpDirs({ prefix: FIXTURE_PREFIX });
 }
 
 function git(root, ...args) {
@@ -79,7 +78,7 @@ function git(root, ...args) {
 // missing object. Re-resolving costs one more `rev-parse` per case, still far
 // cheaper than the four spawns it replaces.
 function buildRepo(files) {
-  const root = checkoutSeededRepo(FIXTURE_PREFIX);
+  const root = checkoutSeededRepo(`${FIXTURE_PREFIX}${process.pid}-`);
   const seedSha = execFileSync('git', ['rev-parse', 'HEAD'], { cwd: root, encoding: 'utf8' }).trim();
   git(root, 'update-ref', 'refs/remotes/origin/main', seedSha);
 
