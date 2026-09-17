@@ -182,3 +182,13 @@ notes: |
   Specifier evidence: backlog/evidence/BL-1605-specifier-adjudication-of-hardender-socket-fixture-root-note-20260917.md.
 
 assigned_to: coder
+
+abandoned_commits: [c96761faa1]
+# Same BL-1576 merge-drop guard finding already fully diagnosed and
+# escalated to the specifier (backlog/evidence/BL-1576-merge-drop-guard-
+# false-positive-documenter-20260916.md; also recorded on BL-1599,
+# BL-1607, BL-1608 the same pass). Verified against the current tree:
+# nothing is actually lost.
+bounce_count: 1
+bounce_history:
+  - { at: 2026-09-17, by: QA, blamed: coder, class: unit, commit: 073a34b5e1, evidence: backlog/evidence/BL-1605-QA-20260917.md }

@@ -3125,6 +3125,70 @@ RESOLVED BY THIS TICKET
                         "unit\tfile-x.test.js\tBL-9002\t2026-09-01\tnote-x"))
     (sh! root "git" "worktree" "remove" "-f" scratch)))
 
+;; BL-1604's own docstring claims restore-other-tickets-registry-rows!
+;; "creat[es] it if task-ticket-id's own tip deleted it outright" - no
+;; prior case exercised the file being entirely ABSENT from the replay
+;; tree (only "header-only, row missing"). Hand-verified as a real gap:
+;; removing the fs/create-dirs call above this write leaves every
+;; pre-existing test green (2026-09-17 hardener pass).
+(with-fixture [root]
+  (commit! root "backlog/standing-reds.tsv"
+           (str "# header\n"
+                "unit\tfile-x.test.js\tBL-9002\t2026-09-01\tnote-x\n")
+           "seed register with BL-9002's row")
+  (commit! root "backlog/active/BL-9002-x.yaml" "id: BL-9002\n" "BL-9002: open ticket file")
+  (mark-origin-main-here! root)
+  (let [origin-main (:out (sh! root "git" "rev-parse" "refs/remotes/origin/main"))
+        scratch (str (fs/path root ".." "bl1604-scratch-deleted"))]
+    (fs/delete-tree scratch {:force true})
+    (sh! root "git" "worktree" "add" "-q" scratch "refs/remotes/origin/main")
+    ;; The landing ticket's own tip deleted the registry file outright -
+    ;; write-tree-from-paths! left no copy of it in the replay tree at all.
+    (fs/delete-if-exists (fs/path scratch "backlog" "standing-reds.tsv"))
+    (let [result (land-step-lib/restore-other-tickets-registry-rows!
+                  {:root root :scratch scratch :origin-main origin-main :task-ticket-id "BL-9001"})]
+      (assert-true "BL-1604 (09b): ok? when the replay tree lacks the file entirely" (:ok? result))
+      (assert= "BL-1604 (09b): the deleted file's other-owned row is still restored"
+               [{:registry "backlog/standing-reds.tsv" :file "file-x.test.js" :owner "BL-9002"}]
+               (:restored result))
+      (assert-true "BL-1604 (09b): the file is created fresh"
+                    (fs/exists? (fs/path scratch "backlog" "standing-reds.tsv")))
+      (assert= "BL-1604 (09b): a freshly-created file carries only the restored row, no leading blank line"
+               "unit\tfile-x.test.js\tBL-9002\t2026-09-01\tnote-x\n"
+               (slurp (str (fs/path scratch "backlog" "standing-reds.tsv")))))
+    (sh! root "git" "worktree" "remove" "-f" scratch)))
+
+;; A replay-tree registry whose content does NOT end in a trailing newline
+;; (an editor or tool that trimmed it) - the joiner must insert its own
+;; "\n" separator before the restored row, or the two lines fuse into one
+;; corrupt row. Hand-verified as a real gap: dropping this branch entirely
+;; (never inserting the separator) leaves every pre-existing case green
+;; (2026-09-17 hardener pass) because every other fixture's content already
+;; ends with "\n".
+(with-fixture [root]
+  (commit! root "backlog/standing-reds.tsv"
+           (str "# header\n"
+                "unit\tfile-x.test.js\tBL-9002\t2026-09-01\tnote-x\n")
+           "seed register with BL-9002's row")
+  (commit! root "backlog/active/BL-9002-x.yaml" "id: BL-9002\n" "BL-9002: open ticket file")
+  (mark-origin-main-here! root)
+  (let [origin-main (:out (sh! root "git" "rev-parse" "refs/remotes/origin/main"))
+        scratch (str (fs/path root ".." "bl1604-scratch-no-trailing-nl"))]
+    (fs/delete-tree scratch {:force true})
+    (sh! root "git" "worktree" "add" "-q" scratch "refs/remotes/origin/main")
+    ;; No trailing newline - "# header" with nothing after it.
+    (spit (str (fs/path scratch "backlog" "standing-reds.tsv")) "# header")
+    (let [result (land-step-lib/restore-other-tickets-registry-rows!
+                  {:root root :scratch scratch :origin-main origin-main :task-ticket-id "BL-9001"})]
+      (assert-true "BL-1604 (09c): ok? on a trailing-newline-less replay file" (:ok? result))
+      (assert= "BL-1604 (09c): the restored row is still recorded"
+               [{:registry "backlog/standing-reds.tsv" :file "file-x.test.js" :owner "BL-9002"}]
+               (:restored result))
+      (assert= "BL-1604 (09c): a missing trailing newline gets its own separator, never fusing with the restored row"
+               "# header\nunit\tfile-x.test.js\tBL-9002\t2026-09-01\tnote-x\n"
+               (slurp (str (fs/path scratch "backlog" "standing-reds.tsv")))))
+    (sh! root "git" "worktree" "remove" "-f" scratch)))
+
 (with-fixture [root]
   ;; Fail-closed: origin/main's registry cannot be read (an impossible sha
   ;; stands in for a genuine git read failure) - refuses, never guesses.
