@@ -1597,6 +1597,230 @@
             (when-not (zero? (:exit res)) (reset! ok false))))))
     @ok))
 
+;; ── BL-1604: a land never carries another open ticket's registry-row
+;; removal ────────────────────────────────────────────────────────────────
+;; write-tree-from-paths! (above) applies each of the ticket's own paths
+;; WHOLE from the tip. For the two shared registries every ticket edits -
+;; backlog/standing-reds.tsv and its property-suite mirror,
+;; swarmforge/scripts/property_suite_standing_allowlist.tsv - "whole from
+;; the tip" means a row another ticket owns, missing on the branch for any
+;; reason (a merge on a batch branch, a stale worktree, never a deliberate
+;; drain), is deleted from main by whichever parcel lands next. Measured
+;; 2026-09-16: BL-1548's replay ("tip-pure replay onto origin/main",
+;; 2c1c44e2cc) removed BL-1595's still-open register row while BL-1595's
+;; own file was still red, the register then read the red as unowned, and
+;; BL-1429 dropped the intake cap to 1.
+;;
+;; This restores, before the replay is committed, every origin/main row an
+;; OPEN ticket OTHER than the landing one owns and the replayed tree lacks
+;; - byte-identical, never re-serialized through a parsed field set. A row
+;; owned by the landing ticket itself, or by a closed (or absent) ticket,
+;; is never restored: only a genuinely open OTHER owner's row is protected
+;; (invariant 2).
+
+(defn- registry-line-blank-or-comment? [line]
+  (or (str/blank? line) (str/starts-with? (str/trim line) "#")))
+
+(defn- register-tsv-rows
+  "backlog/standing-reds.tsv text -> [{:file :owner :raw}], one per
+   non-comment/blank line with at least 3 tab-separated columns (lane,
+   file, ticket - owner is column 3, BL-1604's own 'How'). :raw is the
+   exact source line, never a re-serialization - restoration reproduces it
+   byte-identical."
+  [text]
+  (->> (str/split-lines (or text ""))
+       (remove registry-line-blank-or-comment?)
+       (keep (fn [line]
+               (let [cols (str/split line #"\t" -1)]
+                 (when (>= (count cols) 3)
+                   {:file (nth cols 1) :owner (nth cols 2) :raw line}))))
+       vec))
+
+(defn- allowlist-owner-token
+  "The BL-<n> id an 'owner BL-<n>' token in free-text `rationale` names, or
+   nil - the allowlist's only ownership signal (BL-1604 'How'); the
+   rationale column stays free text otherwise, never parsed a second way."
+  [rationale]
+  (when rationale (second (re-find #"owner\s+(BL-\d+)" rationale))))
+
+(defn- allowlist-tsv-rows
+  "property_suite_standing_allowlist.tsv text -> [{:file :owner :raw}],
+   skipping the header row (`file<TAB>...`) and any comment/blank line."
+  [text]
+  (->> (str/split-lines (or text ""))
+       (remove registry-line-blank-or-comment?)
+       (remove #(str/starts-with? % "file\t"))
+       (keep (fn [line]
+               (let [cols (str/split line #"\t" -1)]
+                 (when (seq cols)
+                   {:file (first cols)
+                    :owner (allowlist-owner-token (nth cols 2 nil))
+                    :raw line}))))
+       vec))
+
+(def ^:private registry-specs
+  "Registry repo-relative path -> its raw-row reader (BL-1604). A def, not
+   a growing set of call sites, so a second protected registry is one
+   entry."
+  {"backlog/standing-reds.tsv" register-tsv-rows
+   "swarmforge/scripts/property_suite_standing_allowlist.tsv" allowlist-tsv-rows})
+
+(defn registry-rows-to-restore
+  "Pure (BL-1604's own 'How': one function over origin rows, replay rows,
+   the landing id and the open-id set). origin-rows/replay-rows: [{:file
+   :owner :raw}] from the SAME reader. Returns the origin-rows whose
+   :owner is a member of open-ids and is not landing-id, and whose :file
+   has no row in replay-rows - exactly the rows a land must put back, in
+   origin's own order.
+
+   A row owned by the landing ticket, or by anyone NOT in open-ids (closed
+   or absent), is never restored - the drain/retirement rule stays
+   untouched: only a genuinely open OTHER owner's row is protected."
+  [{:keys [origin-rows replay-rows landing-id open-ids]}]
+  (let [replay-files (into #{} (map :file replay-rows))]
+    (vec (for [row origin-rows
+               :when (and (:owner row)
+                          (not= (:owner row) landing-id)
+                          (contains? open-ids (:owner row))
+                          (not (contains? replay-files (:file row))))]
+           row))))
+
+(defn registry-restore-plan
+  "One registry's restore plan, pure over already-read texts: {:restore
+   [...rows] :report [\"REGISTER_ROW_RESTORED <registry> <file>
+   <owner>\" ...]}, or {:refusal \"...\"} when either side's text, or the
+   open-id set, could not be read - fail closed (BL-1604's own FIRM
+   constraint), never a guess. The text-reading half is impure
+   (restore-registry-rows! below); this half stays testable without git."
+  [{:keys [registry-path origin-text replay-text landing-id open-ids row-reader]}]
+  (cond
+    (nil? origin-text)
+    {:refusal (str "land-step: " registry-path " could not be read on origin/main")}
+
+    (nil? replay-text)
+    {:refusal (str "land-step: " registry-path " could not be read on the replayed tree")}
+
+    (nil? open-ids)
+    {:refusal (str "land-step: could not read the open-ticket set to judge " registry-path)}
+
+    :else
+    (let [to-restore (registry-rows-to-restore
+                       {:origin-rows (row-reader origin-text)
+                        :replay-rows (row-reader replay-text)
+                        :landing-id landing-id
+                        :open-ids open-ids})]
+      {:restore to-restore
+       :report (mapv (fn [row] (str "REGISTER_ROW_RESTORED " registry-path " " (:file row) " " (:owner row)))
+                      to-restore)})))
+
+;; ── impure: read both trees, decide, write back ──────────────────────────
+
+(defn- registry-blob-text
+  "The full text `rev:path` holds at `root`, \"\" when absent there (a
+   real, valid empty document - the tip legitimately deleting the file is
+   not a read failure), or nil when the blob exists but cat-file fails - a
+   genuine read failure the caller must fail closed on. Reuses blob-at,
+   this file's own existing absence-aware blob resolver."
+  [root rev path]
+  (let [blob (blob-at root rev path)]
+    (if (= ::absent blob)
+      ""
+      (let [res (git! root "cat-file" "blob" blob)]
+        (when (zero? (:exit res)) (:out res))))))
+
+(defn- registry-tree-text
+  "The full text `path` holds under `tree-root`'s working copy, \"\" when
+   the path does not exist there, or nil on a genuine read failure."
+  [tree-root path]
+  (let [f (fs/file (str (fs/path tree-root path)))]
+    (if-not (.exists f)
+      ""
+      (try (slurp f) (catch Exception _ nil)))))
+
+(defn- open-ticket-ids-on
+  "Ticket ids with a YAML file directly under backlog/paused/ or
+   backlog/active/ AT `rev` - always origin/main, the same tree every
+   row's fate is judged against, never the worktree's own possibly-ahead
+   or possibly-behind state (qa_hold_lib.bb's open-ticket-ids-for reads
+   this same notion off a live filesystem; this is its origin/main-via-git
+   equivalent). nil when either folder could not be listed."
+  [root rev]
+  (let [ids-in (fn [folder]
+                 (let [res (git! root "ls-tree" "-r" "--name-only" rev (str "backlog/" folder "/"))]
+                   (when (zero? (:exit res))
+                     (->> (str/split-lines (:out res))
+                          (remove str/blank?)
+                          (keep #(pipeline-stage-lib/extract-ticket-id (fs/file-name %)))))))
+        paused (ids-in "paused")
+        active (ids-in "active")]
+    (when (and paused active)
+      (into #{} (concat paused active)))))
+
+(defn- append-registry-rows!
+  "Appends `rows`' :raw lines, byte-identical, to registry-path under
+   tree-root - creating the file (and its parent dirs) if the tip deleted
+   it entirely - then stages the path. Returns true on success."
+  [tree-root registry-path rows]
+  (let [f (fs/file (str (fs/path tree-root registry-path)))
+        existing (if (.exists f) (slurp f) "")
+        sep (if (or (str/blank? existing) (str/ends-with? existing "\n")) "" "\n")
+        addition (str/join "" (map #(str (:raw %) "\n") rows))]
+    (fs/create-dirs (fs/parent (fs/path tree-root registry-path)))
+    (spit f (str existing sep addition))
+    (zero? (:exit (git! tree-root "add" "--" registry-path)))))
+
+(defn restore-registry-rows!
+  "Runs BL-1604's restore over every registry in registry-specs, against
+   `tree-root`'s working copy (already holding the replay's own-paths
+   applied, before the replay commit). Returns {:success true :report
+   [...] :restored-paths #{...}} - report/restored-paths may be empty, a
+   real 'nothing needed restoring' answer - or {:success false :reason
+   \"...\"} on any refusal, in which case NO registry is left partially
+   restored is assumed by the caller: the whole replay refuses rather than
+   publish with only some registries checked.
+
+   `:restored-paths` names exactly the registry paths this call actually
+   appended a row to - land-plan's own completeness check (BL-1447) must
+   never compare THESE paths' replayed blob against the cited tip's blob,
+   since a restore deliberately makes them differ; every other path stays
+   fully covered by that check.
+
+   `blob-text-fn`/`tree-text-fn` are injection seams (default the real
+   git/filesystem reads) so the unreadable row is drivable in a test
+   without corrupting a repository - the same convention this file's other
+   hard-to-construct-for-real failures already use (BL-1481's
+   content-blocked-fn)."
+  ([opts] (restore-registry-rows! opts nil nil))
+  ([{:keys [root tree-root origin-main landing-id]} blob-text-fn tree-text-fn]
+   (let [read-origin (or blob-text-fn (partial registry-blob-text root))
+         read-tree (or tree-text-fn (partial registry-tree-text tree-root))
+         open-ids (open-ticket-ids-on root origin-main)]
+     (reduce
+      (fn [acc [registry-path row-reader]]
+        (if-not (:success acc)
+          acc
+          (let [origin-text (read-origin origin-main registry-path)
+                replay-text (read-tree registry-path)
+                plan (registry-restore-plan {:registry-path registry-path
+                                              :origin-text origin-text
+                                              :replay-text replay-text
+                                              :landing-id landing-id
+                                              :open-ids open-ids
+                                              :row-reader row-reader})]
+            (cond
+              (:refusal plan) {:success false :reason (:refusal plan)}
+
+              (seq (:restore plan))
+              (if (append-registry-rows! tree-root registry-path (:restore plan))
+                (-> acc
+                    (update :report into (:report plan))
+                    (update :restored-paths conj registry-path))
+                {:success false :reason (str "land-step: could not write restored rows to " registry-path)})
+
+              :else acc))))
+      {:success true :report [] :restored-paths #{}}
+      registry-specs))))
+
 (defn- append-land-approval! [root c src task-ticket-id]
   (let [dir (fs/path root ".swarmforge" "land-approvals")
         month (subs (str (java.time.Instant/now)) 0 7)
@@ -1778,10 +2002,11 @@
    as land-plan's - land_step_cli.bb passes the SAME sha it gave land-plan,
    so the worktree this builds is created off the exact tip own-paths was
    decided against, not a tip main may have moved to since."
-  [{:keys [root commit task-ticket-id own-paths passengers tree-guards-fn] :as opts}]
+  [{:keys [root commit task-ticket-id own-paths passengers tree-guards-fn registry-restore-fn] :as opts}]
   (let [origin-main (if (contains? opts :origin-main) (:origin-main opts) (origin-main-sha root))
         common-dir (git-common-dir root)
-        run-guards (or tree-guards-fn (fn [tree-root _] (run-replayed-tree-guards tree-root)))]
+        run-guards (or tree-guards-fn (fn [tree-root _] (run-replayed-tree-guards tree-root)))
+        run-registry-restore (or registry-restore-fn restore-registry-rows!)]
     (cond
       (nil? origin-main)
       {:success false :reason "land-step replay: could not resolve origin/main"}
@@ -1811,32 +2036,48 @@
               (do (cleanup!)
                   (drop-branch!)
                   {:success false :reason (str "land-step replay: could not apply " task-ticket-id "'s own paths from " commit)})
-              (let [index-empty? (zero? (:exit (git! scratch "diff" "--cached" "--quiet")))
-                    commit-res (git! scratch "-c" "user.email=t@t" "-c" "user.name=t"
-                                      "commit" "-q" "-m" (str task-ticket-id ": tip-pure replay onto origin/main (BL-1241 land-step remedy)"))]
-                (if-not (zero? (:exit commit-res))
+              ;; BL-1604: restored BEFORE the tip-pure commit, so a row
+              ;; another open ticket owns rides in the SAME commit as this
+              ;; ticket's own content - never a second, later commit a
+              ;; human would have to remember to make. A refusal here (an
+              ;; unreadable registry on either side) fails the whole
+              ;; replay closed, same posture as every other pre-commit
+              ;; refusal in this function.
+              (let [registry-result (run-registry-restore {:root root :tree-root scratch
+                                                             :origin-main origin-main
+                                                             :landing-id task-ticket-id})]
+                (if-not (:success registry-result)
                   (do (cleanup!)
                       (drop-branch!)
-                      {:success false
-                       :reason (replay-commit-refusal-reason task-ticket-id index-empty? (:err commit-res))})
-                  (let [sha (str/trim (:out (git! scratch "rev-parse" "HEAD")))
-                        ;; BL-1375 invariant 2. Run ONLY when a passenger's
-                        ;; lines actually ride: with nothing riding, the tree
-                        ;; is this ticket's own content on origin/main, and a
-                        ;; main that is already inconsistent would otherwise
-                        ;; start refusing every land - a second deadlock in
-                        ;; place of the one this ticket dissolves.
-                        refusals (if (seq passengers) (run-guards scratch passengers) [])]
-                    (cleanup!)
-                    (if (seq refusals)
-                      (do (drop-branch!)
+                      {:success false :reason (:reason registry-result)})
+                  (let [index-empty? (zero? (:exit (git! scratch "diff" "--cached" "--quiet")))
+                        commit-res (git! scratch "-c" "user.email=t@t" "-c" "user.name=t"
+                                          "commit" "-q" "-m" (str task-ticket-id ": tip-pure replay onto origin/main (BL-1241 land-step remedy)"))]
+                    (if-not (zero? (:exit commit-res))
+                      (do (cleanup!)
+                          (drop-branch!)
                           {:success false
-                           :reason (str "land-step replay: refusing to publish " task-ticket-id
-                                        " - the replayed tree is not self-consistent with passenger sibling(s) "
-                                        (str/join "," (sort passengers))
-                                        " riding on a shared path (BL-1375 invariant 2 / BL-1324): "
-                                        (str/join "; " refusals))})
-                      {:success true :commit sha :branch branch :passengers (set passengers)})))))))))))
+                           :reason (replay-commit-refusal-reason task-ticket-id index-empty? (:err commit-res))})
+                      (let [sha (str/trim (:out (git! scratch "rev-parse" "HEAD")))
+                            ;; BL-1375 invariant 2. Run ONLY when a passenger's
+                            ;; lines actually ride: with nothing riding, the tree
+                            ;; is this ticket's own content on origin/main, and a
+                            ;; main that is already inconsistent would otherwise
+                            ;; start refusing every land - a second deadlock in
+                            ;; place of the one this ticket dissolves.
+                            refusals (if (seq passengers) (run-guards scratch passengers) [])]
+                        (cleanup!)
+                        (if (seq refusals)
+                          (do (drop-branch!)
+                              {:success false
+                               :reason (str "land-step replay: refusing to publish " task-ticket-id
+                                            " - the replayed tree is not self-consistent with passenger sibling(s) "
+                                            (str/join "," (sort passengers))
+                                            " riding on a shared path (BL-1375 invariant 2 / BL-1324): "
+                                            (str/join "; " refusals))})
+                          {:success true :commit sha :branch branch :passengers (set passengers)
+                           :register-restored (:report registry-result)
+                           :register-restored-paths (or (:restored-paths registry-result) #{})})))))))))))))
 
 ;; ── BL-1447: a built replay is verified complete before land-plan ever
 ;;    returns :replay, reading git objects only - never the attribution
@@ -2058,7 +2299,14 @@
                          :reason (str "land-step: could not read " task-ticket-id
                                       "'s own commit history to verify the replay")
                          :unlanded unlanded})
-                    (let [offenders (replay-completeness-offenders root commit (:commit replay-result) parcel-paths)]
+                    ;; BL-1604: a registry path this replay actually restored a
+                    ;; sibling row into is EXPECTED to differ from the cited
+                    ;; tip's own blob there - the completeness check below must
+                    ;; never read that sanctioned divergence as a dropped path.
+                    ;; Every other path (including a registry path restore
+                    ;; touched nothing) stays fully covered, unchanged.
+                    (let [check-paths (remove (or (:register-restored-paths replay-result) #{}) parcel-paths)
+                          offenders (replay-completeness-offenders root commit (:commit replay-result) check-paths)]
                       (if (seq offenders)
                         (do (git! root "branch" "-q" "-D" (:branch replay-result))
                             {:action :escalate
@@ -2069,6 +2317,7 @@
                          :excluded (or excluded [])
                          :content-clear (or content-clear [])
                          :own-paths paths :passengers (or passengers #{})
+                         :register-restored (or (:register-restored replay-result) [])
                          :commit (:commit replay-result) :branch (:branch replay-result)}))))))))))))
 
 ;; ── BL-1432 option 1: re-point the QA branch after a successful land ─────

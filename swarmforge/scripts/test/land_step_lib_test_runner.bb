@@ -3009,6 +3009,181 @@ RESOLVED BY THIS TICKET
       (assert-true "BL-1546 (06): kept (no owner to blame it on, exactly as before this ticket)"
                    (boolean (some #{"sibling.txt"} (:paths result)))))))
 
+;; ── BL-1604: a land never carries another open ticket's registry-row
+;; removal ────────────────────────────────────────────────────────────────
+
+;; Pure core: registry-rows-to-restore.
+
+(let [origin [{:file "a" :owner "BL-9001" :raw "raw-a"}
+              {:file "b" :owner "BL-9002" :raw "raw-b"}
+              {:file "c" :owner "BL-9003" :raw "raw-c"}
+              {:file "d" :owner "BL-9002" :raw "raw-d"}]]
+  (assert= "registry-rows-to-restore: restores an open OTHER owner's row missing from the replay"
+           [{:file "b" :owner "BL-9002" :raw "raw-b"}]
+           (land-step-lib/registry-rows-to-restore
+            {:origin-rows origin :replay-rows [{:file "d" :owner "BL-9002" :raw "raw-d"}]
+             :landing-id "BL-9001" :open-ids #{"BL-9002"}}))
+  (assert= "registry-rows-to-restore: the landing ticket's own removed row is never restored"
+           []
+           (land-step-lib/registry-rows-to-restore
+            {:origin-rows [{:file "a" :owner "BL-9001" :raw "raw-a"}] :replay-rows []
+             :landing-id "BL-9001" :open-ids #{"BL-9001"}}))
+  (assert= "registry-rows-to-restore: a closed (not-open) owner's removed row is never restored"
+           []
+           (land-step-lib/registry-rows-to-restore
+            {:origin-rows [{:file "c" :owner "BL-9003" :raw "raw-c"}] :replay-rows []
+             :landing-id "BL-9001" :open-ids #{"BL-9002"}}))
+  (assert= "registry-rows-to-restore: a row already present in the replay is never re-added"
+           []
+           (land-step-lib/registry-rows-to-restore
+            {:origin-rows [{:file "b" :owner "BL-9002" :raw "raw-b"}]
+             :replay-rows [{:file "b" :owner "BL-9002" :raw "raw-b"}]
+             :landing-id "BL-9001" :open-ids #{"BL-9002"}})))
+
+;; registry-restore-plan: fail-closed on an unreadable side or an
+;; unreadable open-id set - never a guess.
+
+(assert= "registry-restore-plan: refuses naming the registry when origin/main could not be read"
+         "land-step: backlog/standing-reds.tsv could not be read on origin/main"
+         (:refusal (land-step-lib/registry-restore-plan
+                    {:registry-path "backlog/standing-reds.tsv" :origin-text nil :replay-text ""
+                     :landing-id "BL-9001" :open-ids #{} :row-reader identity})))
+
+(assert= "registry-restore-plan: refuses naming the registry when the replayed tree could not be read"
+         "land-step: backlog/standing-reds.tsv could not be read on the replayed tree"
+         (:refusal (land-step-lib/registry-restore-plan
+                    {:registry-path "backlog/standing-reds.tsv" :origin-text "" :replay-text nil
+                     :landing-id "BL-9001" :open-ids #{} :row-reader identity})))
+
+(assert= "registry-restore-plan: refuses when the open-ticket set itself could not be read"
+         "land-step: could not read the open-ticket set to judge backlog/standing-reds.tsv"
+         (:refusal (land-step-lib/registry-restore-plan
+                    {:registry-path "backlog/standing-reds.tsv" :origin-text "" :replay-text ""
+                     :landing-id "BL-9001" :open-ids nil :row-reader identity})))
+
+;; ── end-to-end: replay! restores through a real git fixture, reproducing
+;; the BL-1548 shape (2c1c44e2cc: a tip-pure replay dropped a still-open
+;; sibling's standing-red register row) ───────────────────────────────────
+
+(def ^:private register-header
+  "# backlog/standing-reds.tsv fixture header\n")
+
+(with-fixture [root]
+  ;; origin/main: three rows, owned by the landing ticket, an open sibling
+  ;; and a closed sibling - and BL-9002 (open) / BL-9003 (closed) already
+  ;; filed in their respective backlog folders there.
+  (commit! root "backlog/active/BL-9002-x.yaml" "id: BL-9002\n" "BL-9002: open sibling ticket file")
+  (commit! root "backlog/done/M8/BL-9003-x.yaml" "id: BL-9003\n" "BL-9003: closed sibling ticket file")
+  (commit! root "backlog/standing-reds.tsv"
+           (str register-header
+                "unit\tsome/file/a.js\tBL-9001\t2026-09-16\tlanding ticket's own row\n"
+                "unit\tsome/file/b.js\tBL-9002\t2026-09-16\topen sibling's row\n"
+                "unit\tsome/file/c.js\tBL-9003\t2026-09-16\tclosed sibling's row\n")
+           "seed the standing-red register")
+  (mark-origin-main-here! root)
+  ;; An entangled, unlanded sibling (BL-9004) - required for land-plan to
+  ;; choose :replay at all; it shares no path with BL-9001, so it rides as
+  ;; an ordinary excluded sibling, never a passenger.
+  (commit! root "sibling-only.txt" "sib\n" "BL-9004: sibling unlanded work")
+  ;; BL-9001's own commits: its own ticket file, and a rewrite of the
+  ;; register that (for whatever branch-local reason - the ticket's own
+  ;; premise, never assumed deliberate) carries none of the three rows.
+  (commit! root "backlog/active/BL-9001-x.yaml" "id: BL-9001\n" "BL-9001: own ticket file")
+  (commit! root "backlog/standing-reds.tsv" register-header
+           "BL-9001: rewrite standing-reds.tsv, dropping every row")
+  (let [commit (:out (sh! root "git" "rev-parse" "HEAD"))
+        plan (land-step-lib/land-plan {:root root :commit commit :task-ticket-id "BL-9001"})]
+    (assert= "BL-1604: an entangled tip still plans a replay" :replay (:action plan))
+    (when (= :replay (:action plan))
+      (assert= "BL-1604: reports REGISTER_ROW_RESTORED for the open sibling's row only"
+               ["REGISTER_ROW_RESTORED backlog/standing-reds.tsv some/file/b.js BL-9002"]
+               (:register-restored plan))
+      (let [tip-register (:out (sh! root "git" "show" (str (:commit plan) ":backlog/standing-reds.tsv")))]
+        (assert-true "BL-1604: the replayed register carries the open sibling's row back"
+                     (str/includes? tip-register "some/file/b.js\tBL-9002"))
+        (assert-false "BL-1604: the landing ticket's own removed row stays gone (the drain rule)"
+                      (str/includes? tip-register "some/file/a.js"))
+        (assert-false "BL-1604: the closed ticket's removed row stays gone"
+                      (str/includes? tip-register "some/file/c.js"))))))
+
+;; Same shape, the property-suite allowlist mirror: an open sibling's row
+;; is restored the same way.
+
+(with-fixture [root]
+  (commit! root "backlog/active/BL-9002-x.yaml" "id: BL-9002\n" "BL-9002: open sibling ticket file")
+  (commit! root "swarmforge/scripts/property_suite_standing_allowlist.tsv"
+           (str "file\tdisposition\trationale\n"
+                "some/prop.test.js\tallowlist\tflaky under load; owner BL-9002\n")
+           "seed the allowlist")
+  (mark-origin-main-here! root)
+  (commit! root "sibling-only.txt" "sib\n" "BL-9004: sibling unlanded work")
+  (commit! root "backlog/active/BL-9001-x.yaml" "id: BL-9001\n" "BL-9001: own ticket file")
+  (commit! root "swarmforge/scripts/property_suite_standing_allowlist.tsv" "file\tdisposition\trationale\n"
+           "BL-9001: rewrite the allowlist, dropping every row")
+  (let [commit (:out (sh! root "git" "rev-parse" "HEAD"))
+        plan (land-step-lib/land-plan {:root root :commit commit :task-ticket-id "BL-9001"})]
+    (assert= "BL-1604 (allowlist): an entangled tip still plans a replay" :replay (:action plan))
+    (when (= :replay (:action plan))
+      (assert= "BL-1604 (allowlist): reports REGISTER_ROW_RESTORED for the open sibling's row"
+               ["REGISTER_ROW_RESTORED swarmforge/scripts/property_suite_standing_allowlist.tsv some/prop.test.js BL-9002"]
+               (:register-restored plan))
+      (let [tip-allowlist (:out (sh! root "git" "show" (str (:commit plan) ":swarmforge/scripts/property_suite_standing_allowlist.tsv")))]
+        (assert-true "BL-1604 (allowlist): the replayed allowlist carries the open sibling's row back"
+                     (str/includes? tip-allowlist "some/prop.test.js\tallowlist\tflaky under load; owner BL-9002"))))))
+
+;; A clean land (no entangled sibling) never runs the restore machinery at
+;; all - replay! is only ever called from land-plan's :replay branch.
+
+(with-fixture [root]
+  (mark-origin-main-here! root)
+  (commit! root "backlog/active/BL-9001-x.yaml" "id: BL-9001\n" "BL-9001: own work only")
+  (let [commit (:out (sh! root "git" "rev-parse" "HEAD"))
+        plan (land-step-lib/land-plan {:root root :commit commit :task-ticket-id "BL-9001"})]
+    (assert= "BL-1604: a clean land carries no :register-restored key at all" :land (:action plan))
+    (assert-false "BL-1604: a clean land's plan map never mentions register-restored"
+                  (contains? plan :register-restored))))
+
+;; An unreadable registry on origin/main refuses the WHOLE replay, naming
+;; the registry - fail closed, exercised via replay!'s own injection seam
+;; (the same convention BL-1481's content-blocked-fn already uses: no real
+;; git fixture can make a blob unreadable without corrupting the
+;; repository).
+
+(with-fixture [root]
+  (mark-origin-main-here! root)
+  (commit! root "backlog/active/BL-9002-x.yaml" "id: BL-9002\n" "BL-9002: sibling unlanded work")
+  (commit! root "backlog/active/BL-9001-x.yaml" "id: BL-9001\n" "BL-9001: own work")
+  (let [commit (:out (sh! root "git" "rev-parse" "HEAD"))
+        result (land-step-lib/replay!
+                {:root root :commit commit :task-ticket-id "BL-9001"
+                 :own-paths ["backlog/active/BL-9001-x.yaml"]
+                 :registry-restore-fn (fn [_]
+                                         {:success false
+                                          :reason "land-step: backlog/standing-reds.tsv could not be read on origin/main"})})]
+    (assert= "BL-1604: replay! refuses the whole build when the registry restore refuses"
+             false (:success result))
+    (assert-includes "BL-1604: the refusal names the unreadable registry"
+                     (:reason result) "backlog/standing-reds.tsv")
+    (assert= "BL-1604: a refused registry restore leaves no scratch branch behind"
+             "" (:out (sh! root "git" "branch" "--list" (replay-branch-for "BL-9001" commit))))))
+
+;; restore-registry-rows! itself: the same fail-closed refusal, driven
+;; through its own blob-text-fn/tree-text-fn injection seams rather than
+;; replay!'s.
+
+(with-fixture [root]
+  (commit! root "backlog/active/BL-9001-x.yaml" "id: BL-9001\n" "BL-9001: own ticket file")
+  (mark-origin-main-here! root)
+  (let [origin-main (:out (sh! root "git" "rev-parse" "origin/main"))
+        result (land-step-lib/restore-registry-rows!
+                {:root root :tree-root root :origin-main origin-main :landing-id "BL-9001"}
+                (fn [_ _] nil)
+                (fn [_] ""))]
+    (assert= "restore-registry-rows!: refuses when the injected origin reader answers nil"
+             false (:success result))
+    (assert-includes "restore-registry-rows!: the refusal names a registry path"
+                     (:reason result) "backlog/standing-reds.tsv")))
+
 (if (seq @failures)
   (do
     (doseq [f @failures] (println f))
