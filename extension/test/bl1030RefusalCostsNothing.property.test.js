@@ -43,10 +43,9 @@
 
 const assert = require('node:assert/strict');
 const fs = require('node:fs');
-const os = require('node:os');
 const path = require('node:path');
 const { spawnSync } = require('node:child_process');
-const { mkTmpDir } = require('./helpers/tmpDir');
+const { mkTmpDir, sweepStaleTmpDirs } = require('./helpers/tmpDir');
 
 const REPO_ROOT = path.join(__dirname, '..', '..');
 const CLI = path.join(REPO_ROOT, 'swarmforge', 'scripts', 'expedite_cli.bb');
@@ -99,12 +98,11 @@ function buildRefusedCommand(kind) {
   return `./stop-swarm.sh $${randWord().toUpperCase()}`;
 }
 
+// BL-1623: scoped by owner pid through the shared helper - a blind prefix
+// sweep destroys a live peer's roots the instant two instances of this file
+// are ever alive at once (BL-1385/BL-1390's shape).
 function sweepStaleFixtures() {
-  for (const entry of fs.readdirSync(os.tmpdir())) {
-    if (entry.startsWith(FIXTURE_PREFIX)) {
-      fs.rmSync(path.join(os.tmpdir(), entry), { recursive: true, force: true });
-    }
-  }
+  sweepStaleTmpDirs({ prefix: FIXTURE_PREFIX });
 }
 
 function listing(dir) {
@@ -182,7 +180,7 @@ test('BL-1030/BL-654 invariant 3: a refusal changes nothing - nothing parked, no
     for (let i = 0; i < DRAWS; i += 1) {
       const kind = i % 2 === 0 ? 'forbidden-flag' : 'unreadable';
       const command = buildRefusedCommand(kind);
-      const root = fs.realpathSync(mkTmpDir(FIXTURE_PREFIX));
+      const root = fs.realpathSync(mkTmpDir(`${FIXTURE_PREFIX}${process.pid}-`));
       const r = runExpeditor(root, command);
 
       assert.notEqual(r.exitCode, 0, `expected a refusal, got exit ${r.exitCode} for: ${command}\n${r.output}`);
@@ -225,7 +223,7 @@ test('BL-1030/BL-654 invariant 3, the other direction: an ADMITTED command reall
   // Without this, "changes nothing" would be satisfied by a guard that refused
   // every command, and the whole sweep above would be vacuous.
   sweepStaleFixtures();
-  const root = fs.realpathSync(mkTmpDir(FIXTURE_PREFIX));
+  const root = fs.realpathSync(mkTmpDir(`${FIXTURE_PREFIX}${process.pid}-`));
   try {
     const r = runExpeditor(root, './stop-swarm.sh /repos/full-sweep-inbox-fix');
     assert.ok(!/REFUSE stop command/.test(r.output), `a safe look-alike path was refused:\n${r.output}`);
