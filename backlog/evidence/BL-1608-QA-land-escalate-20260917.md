@@ -265,4 +265,54 @@ how should the attribution walk resolve `backlog/standing-reds.tsv`'s
 line(s) attributed to BL-1185 when BL-1185 has no backlog ticket file at
 all (retired via merge-up, 2026-08-27)?
 
+## Rerun after merging origin/main fully into the QA branch (specifier's follow-up note) — same result, root cause pinpointed
+
+Second specifier resume note (in_process, queued ahead of the note
+above): "BL-1608/1607: merge main aaed2cab79 into QA first, then
+land_step_cli on QA tip." Per the how-to's sync-first discipline: `git
+merge origin/main --no-edit -m "Merge main 501d80deaf into QA."`
+(clean, no conflicts, untagged subject) onto tip `287ef562e7`, new tip
+`227a4b2ee5`. Re-ran both on this fully-synced tip:
+
+```
+$ bb swarmforge/scripts/land_step_cli.bb BL-1608 227a4b2ee5
+LAND_ESCALATE ... same backlog/standing-reds.tsv / BL-1185 refusal
+
+$ bb swarmforge/scripts/land_step_cli.bb BL-1607 227a4b2ee5
+LAND_ESCALATE ... same backlog/standing-reds.tsv / BL-1185 refusal
+```
+
+Identical to the pre-sync result — the sync did not clear it, since this
+is a genuine content difference, not a staleness artifact. Pinpointed
+the exact cause: `git log -S"BL-1185-work-note-missing-task-header-defers-hard-seat.feature"
+-- backlog/standing-reds.tsv` finds three touching commits; the relevant
+one is **QA's own** `93f2031c3b`, subject "Revert fb9a53751e's
+wrongly-reintroduced BL-1185/BL-1608 standing-red row" (2026-09-17
+07:32:38+01:00, this same QA branch, part of the D1-retraction
+correction earlier in this pass). The subject text names "BL-1185"
+before "BL-1608" (as the compound "BL-1185/BL-1608"), and the
+attribution walk resolves ownership from the first ticket id token in a
+commit subject — so it reads this commit, and the standing-reds.tsv line
+it touches, as BL-1185's, not BL-1608's. The commit's own content is
+correct (it reverts a wrongly-reintroduced row belonging to BL-1608; see
+its full body) — only the SUBJECT WORDING misleads the walk, the same
+"a commit subject naming two tickets attributes to whichever the walk
+reads first" class as BL-1617 (which covers a *closed* ticket leading a
+subject; BL-1185 is not closed, it has no backlog file at all, so
+BL-1546's fail-closed clause fires the same way).
+
+QA cannot fix this by rewriting `93f2031c3b`'s message: it is not at the
+branch tip, and an interactive rebase to reword it is out of policy
+(rewrites every descendant SHA already cited in this pass's evidence and
+handoffs). Per BL-1241 item 3/4: rematch attempted once (the sync above),
+still not clean — stopping here per that discipline rather than looping.
+BL-1608 and BL-1607 remain QA-approved, blocked only on this adjudication.
+Root cause is now precise enough to fix at its source: either (a) the
+specifier lands a corrective commit whose own subject leads with BL-1608
+and touches `backlog/standing-reds.tsv` (giving the attribution walk a
+later, correctly-attributed touch on the same path to prefer), or (b)
+the attribution walk itself is amended to ignore a non-leading ticket
+token, or a ticket id with no resolvable backlog file, when a leading
+token already resolves. Not QA's call.
+
 By QA.
