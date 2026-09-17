@@ -12,6 +12,12 @@ epic: swarm-reliability
 priority: 6
 direction: swarm-reported
 depends_on: []
+abandoned_commits: [78813f59c5]
+# BL-1241 land-step remedy: 78813f59c5 was entangled with BL-1604/BL-1610
+# (already landed, differently attributed) as ancestors; BL-1609/BL-1611/
+# BL-1613 correctly recognized as landed siblings. land_step_cli.bb built
+# a tip-pure replay onto origin/main carrying only this ticket's own
+# paths. Land that commit, not the cited one.
 # BL-1313, BL-806, BL-1213 and BL-1576 are in backlog/done. BL-1611 (same
 # pass) edits ready_for_next.bb only; BL-1610 (paused) edits
 # merge_drop_guard_lib.bb and extends review_forward_evidence_gate_lib.bb's
