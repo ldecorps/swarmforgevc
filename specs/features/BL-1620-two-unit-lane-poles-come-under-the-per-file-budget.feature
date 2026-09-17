@@ -22,7 +22,6 @@ Feature: BL-1620 Two unit-lane poles come under the per-file budget
 
     Examples:
       | file                                                    |
-      | extension/test/bl968StepRegistryMaterializedTreeGuard.test.js |
       | extension/test/telegramFrontDeskBotCli.test.js          |
 
   # BL-1620 two-unit-lane-poles-02

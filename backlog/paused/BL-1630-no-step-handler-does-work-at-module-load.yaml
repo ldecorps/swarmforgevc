@@ -1,0 +1,168 @@
+id: BL-1630
+title: "Loading the step registry costs 12.6 s of require time across 1189 handlers (19.5 s wall through index.js on 2026-09-17), paid on every acceptance run, every QA-bound send's BL-761 gate and twice by bl968, and twelve handlers carry 10.5 s of it: six call sweepStaleFixtures() at module load (a temp-dir listing per handler per load), three require node:test at load, two require jsdom at load; the work moves inside the step functions, a guard pins every handler's incremental require cost under a budget, and one load measures under 5 s"
+milestone: M8
+type: defect
+severity: medium
+# medium: a real, contained cost on every acceptance run and QA send
+# (BL-1618's "tests run for hours" family), not a red and not a safety
+# signal; the register's throttle is untouched.
+status: todo
+epic: unit-suite-speed
+priority: 6
+direction: swarm-reported
+depends_on: []
+# BL-1371 (registration is discovery: index.js requires every *Steps.js at
+# load) and BL-984 (sweepStaleFixtures) are in backlog/done; BL-1629 (bl968
+# accepted) and BL-1623 (scoped temp sweeps) are paused siblings, not
+# dependencies.
+mutation_cost: low
+# low: step-handler edits (moving a call and two requires inside
+# functions), one unit-lane guard test, feature and handler, evidence;
+# step handlers are not under mutation. Runners the feature shells: the
+# per-handler require census in one child process (about 15 s today,
+# under 5 s after), the guard in the same call (BL-1541).
+slice_size_envelope: low
+required_stages: [coder, cleaner, architect, hardender, documenter, qa]
+
+acceptance: specs/features/BL-1630-no-step-handler-does-work-at-module-load.feature
+
+required_wiring:
+  - 'specs/pipeline/steps/bl1299ReverseHopMasterResidentSteps.js::registerSteps::the heaviest handler is a pre-existing consumer - its module-load sweepStaleFixtures() call moves inside registerSteps; the census scenario pins the rest (BL-1235)'
+  - 'specs/pipeline/steps/bl1630NoStepHandlerWorksAtModuleLoadSteps.js::registerSteps::the handler lands in the same parcel as the feature (BL-233, BL-1371)'
+
+human_approval: pending
+approval_context: >
+  A new feature file is authored here, so it needs a tap. No choice is
+  posed and there are no ruling_options. FIRM: no scenario of any moved
+  handler changes - a sweep that ran at module load runs at the first
+  Given instead (or once per file through a lazily-initialised guard),
+  and a jsdom or node:test require moves inside the function that uses
+  it. FIRM: the guard reads the real tree: every *Steps.js required in a
+  fresh child, its incremental require cost under the budget the parcel
+  sets from its own after-measurement (direction: 200 ms), and index.js
+  loading under 5 s. FIRM: the census is recorded before and after in the
+  evidence with the same script, so the twelve names and the two totals
+  are re-runnable.
+
+invariants:
+  - "A step handler does no work at module load: no filesystem listing, no process spawn, no temp-dir sweep and no heavy module require outside a step function or a lazily-initialised helper."
+
+description: |
+  ## What is wrong
+
+  BL-1371 made registration discovery: `specs/pipeline/steps/index.js`
+  requires every `*Steps.js` at load. Every acceptance run, every QA-bound
+  send (BL-761's registration gate) and bl968's two spawns pay that load.
+  Measured by the specifier on main 695624c52c at 14:05Z with a
+  one-process require census (script in the evidence): 1189 handlers,
+  12.6 s of incremental require time; `node -e "require('./specs/pipeline/steps/index.js')"`
+  19.5 s wall. The twelve heaviest handlers carry about 10.5 s:
+
+  ```
+  1216 ms bl1299ReverseHopMasterResidentSteps.js
+  1199 ms bl1327DescentLadderProposalSteps.js
+  1138 ms bl1320SeatOperatorStepSteps.js
+  1129 ms bl1306HandoffAuditRerouteSteps.js
+  1119 ms bl1323MainSyncDeadlockOverlapHintsStampSteps.js
+  1113 ms bl1332SharedPathLineLeakSteps.js
+   804 ms bl1153StickyWebFontSizeChoiceSteps.js
+   605 ms bl1335ExhaustionOpensFailoverRecordSteps.js
+   571 ms bl1339LandApprovalSharedRootSteps.js
+   558 ms bl1375ApprovedSiblingsCanLandSteps.js
+   550 ms bl1352EscalationTransportFaultSteps.js
+   545 ms bl1343ReplayDropsTheTicketsOwnPathSteps.js
+  ```
+
+  The six at 1.1-1.2 s each call `sweepStaleFixtures()` at module load
+  (bl1299 line 71, bl1327 line 40, bl1320 line 42, ...): a listing of the
+  shared temp dir, thousands of entries on this host, per handler per
+  registry load - BL-971's pre-run sweep put where it runs on every load
+  instead of once per test run. bl1153 (and bl592, bl609) require jsdom
+  at module load; bl1021, bl1064 and bl1069 require node:test at load,
+  which registers a test runner that prints a TAP epilogue at exit and
+  adds exit listeners (the census logs "11 exit listeners added" and
+  "TAP version 13 ... 1..0"). None of this is a step's work; all of it is
+  paid by every consumer of the registry.
+
+  ## What is wanted
+
+  - The twelve handlers named above do no work at module load: the sweep
+    runs at the first Given (or once per file behind a lazy flag), jsdom
+    and node:test are required inside the functions that use them; every
+    scenario of those handlers still resolves (scenario 01 pins the
+    twelve by name and measures each under the budget).
+  - A unit-lane guard `extension/test/stepHandlerModuleLoadBudget.test.js`
+    requires every `*Steps.js` in one fresh child (the census script,
+    landed as a helper) and fails naming any handler whose incremental
+    require exceeds the budget, and fails if the index.js load exceeds
+    5 s (scenario 02).
+  - Before/after census in the evidence: the same script, the twelve
+    names, the two totals (scenario 03).
+
+  ## How (direction, not mandate)
+
+  - Land the census script as `extension/test/helpers/stepHandlerRequireCensus.js`
+    (exported function returning `[file, ms]` rows and the index.js wall),
+    used by the guard and by the evidence.
+  - `sweepStaleFixtures()` at load -> `let swept = false; function
+    ensureSwept() { if (!swept) { sweepStaleFixtures(); swept = true; } }`
+    called from the handler's first Given; or move the call into
+    `registerSteps` if the runner calls it once per run - check
+    `specs/pipeline/runtime.js` before choosing.
+  - jsdom: `const { JSDOM } = require(...)` inside the step that builds
+    the DOM (bl1046 and bl1160 already do this - the pattern exists).
+    node:test: the three handlers use `test`/`describe` at load; move the
+    require inside, or drop it if the handler never calls it.
+  - Budget: 200 ms per handler after the fix on this host (re-measure at
+    build; a handler that legitimately needs more names why in the
+    guard's allowlist with a ticket).
+  - Documenter: engineering-detailed.prompt "Acceptance Pipeline" gains
+    the invariant's sentence; the BL-1371 how-to notes the load cost.
+
+constraints: >
+  The twelve step handlers (moves only, no scenario change), the census
+  helper, the guard test, the feature and handler, evidence and docs. No
+  change to index.js, to runtime.js, to any feature file or to any
+  library. The step handler lands with the feature (BL-233). Evidence
+  named BL-1630-*.
+
+out_of_scope: |
+  - Handlers under the budget today: the guard catches regressions; no
+    sweep of all 1189.
+  - Making index.js lazy (discovery on demand): a design change to the
+    acceptance runtime, its own ticket if the guard is not enough.
+  - bl968's acceptance as a pole (BL-1629); the blind-sweep scoping of
+    property tests (BL-1623).
+
+qa_e2e_procedure: |
+  On the parcel commit, from the repo root, with extension/out compiled:
+  1. `cd extension && npx vitest run test/stepHandlerModuleLoadBudget.test.js`
+     once -> green; its printed census shows every handler under budget
+     and the index.js load under 5 s.
+  2. Acceptance resolving all scenarios
+     (`bash specs/pipeline/scripts/run_acceptance.sh specs/features/BL-1630-*.feature`)
+     and, for the twelve moved handlers, their own features still
+     resolving - run each once.
+  3. `npx vitest run test/bl968StepRegistryMaterializedTreeGuard.test.js`
+     once -> 3 tests green, both spawn durations recorded (expected well
+     under the 15 s and 24 s of 2026-09-17).
+  4. `git diff main...HEAD --name-only` names the twelve handlers, the
+     helper, the guard, the feature, evidence and docs only.
+
+source: |
+  Found by the specifier adjudicating coder@2's BL-1620 note of
+  2026-09-17T13:59Z (evidence BL-1620-coder-investigation-20260917.md: a
+  single registry-load spawn 15.3 s). Specifier census and adjudication:
+  backlog/evidence/BL-1620-specifier-adjudication-of-coder-neither-remedy-applies-20260917.md.
+  Human intake 2026-09-17 ("tests run for hours"). Parents: BL-1371,
+  BL-968, BL-984, BL-971. Siblings: BL-1629, BL-1623.
+
+notes: |
+  Minted 2026-09-17 by the specifier in the same pass as BL-1629 and the
+  BL-1620 amendment. INVEST: Independent (the handlers and the runtime
+  exist), Negotiable (lazy flag versus registerSteps placement, the
+  budget's exact ms), Valuable (every acceptance run and QA send loses
+  10-15 s; bl968 halves), Estimable (twelve small moves, one helper, one
+  guard - one sitting), Small (three scenarios, one invariant), Testable
+  (one child-process census in seconds after the fix). Severity medium:
+  cost, not a red.
