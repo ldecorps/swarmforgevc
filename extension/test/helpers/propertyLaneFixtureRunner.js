@@ -58,31 +58,10 @@ function escapeRegExp(text) {
   return text.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 }
 
-// A pid still in the process table is not necessarily a running peer.
-// SIGKILL a process whose parent has not reaped it yet and it becomes a
-// ZOMBIE: the process is dead, but its entry lingers so `kill(pid, 0)`
-// still succeeds. That is exactly the case BL-984 exists for - the run is
-// over and can never write another fixture, so the pid counts as gone.
-// The window is wide in this helper's own idiom: everything here is
-// synchronous (spawnSync), so a killed child stays unreaped for as long as
-// the event loop is blocked, which is the whole run.
-// macOS and Linux both report 'Z' here (the only two target platforms);
-// anything else, including a failed `ps`, is read as alive so the sweep
-// errs toward keeping a file it is unsure about.
-function isZombiePid(pid) {
-  const probe = spawnSync('ps', ['-o', 'state=', '-p', String(pid)], { encoding: 'utf8' });
-  return probe.status === 0 && /^\s*Z/.test(probe.stdout || '');
-}
-
-function defaultIsPidAlive(pid) {
-  try {
-    process.kill(pid, 0);
-  } catch (err) {
-    // EPERM: the pid exists but belongs to another user - alive.
-    return err.code === 'EPERM';
-  }
-  return !isZombiePid(pid);
-}
+// BL-1623: the zombie-aware liveness probe now lives in tmpDir.js (this
+// module's own copy was the original, BL-984); sweepStaleFixtures below
+// reuses it as its default so the codebase carries exactly one.
+const { defaultIsPidAlive } = require('./tmpDir');
 
 // BL-984: the exit/signal cleanup above is thorough for every exit the
 // process can observe, but nothing traps SIGKILL - a kill -9 or OOM kill
