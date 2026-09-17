@@ -159,4 +159,39 @@ OUT="$(cd "$TASK_WT" && SWARMFORGE_ROLE=taskrole "$DONE_TASK" --no-work "not a w
 echo "$OUT" | grep -q 'COMPLETED:' || fail "05: expected COMPLETED, got: $OUT"
 pass "05: --no-work \"<reason>\" is accepted at the argv layer and completes"
 
+# ── 06: BL-1609's own exception, --no-op, mirrors 04/05 at the argv layer.
+#    reason-flag-args? is shared by no-work-args?/no-op-args? (dispatch_lib.bb),
+#    so a bad --no-op shape must fail exactly like a bad --no-work shape, and
+#    a good one must be accepted the same way - proven independently here
+#    rather than assumed from the --no-work coverage above, since only the
+#    "--no-op" flag STRING itself (as opposed to the shared count/blank
+#    logic) is unique to this call site. This fixture's item is a plain note
+#    (message: body, never a Work note and never a git_handoff), so - same
+#    as 05 above - this only proves refuse-unexpected-args! lets the shape
+#    through; BL-1609's own semantic use of the reason (stamping
+#    no_op_reason on a forwarding git_handoff) is
+#    specs/features/BL-1609-*.feature's scope. ─────────────────────────────
+run_bad_no_op() {
+  setup_task
+  set +e
+  OUT="$(cd "$TASK_WT" && SWARMFORGE_ROLE=taskrole "$DONE_TASK" "$@" 2>&1)"
+  STATUS=$?
+  set -e
+  [[ "$STATUS" -ne 0 ]] || fail "06 ($*): expected non-zero, got 0; out=$OUT"
+  echo "$OUT" | grep -qi 'no argument' || fail "06 ($*): expected no-argument usage text; got: $OUT"
+  [[ -f "$TASK_WT/.swarmforge/handoffs/inbox/in_process/50_t.handoff" ]] \
+    || fail "06 ($*): handoff left in_process"
+  pass "06: task mode rejects bad --no-op shape '$*' with no side effects"
+}
+run_bad_no_op --no-op
+run_bad_no_op --no-op x extra
+run_bad_no_op --no-work reason --no-op "another reason"
+
+setup_task
+rm -rf "$TASK_WT/.swarmforge/handoffs/inbox/completed"
+mkdir -p "$TASK_WT/.swarmforge/handoffs/inbox/completed"
+OUT="$(cd "$TASK_WT" && SWARMFORGE_ROLE=taskrole "$DONE_TASK" --no-op "not a forwarding parcel anyway" 2>&1)"
+echo "$OUT" | grep -q 'COMPLETED:' || fail "07: expected COMPLETED, got: $OUT"
+pass "07: --no-op \"<reason>\" is accepted at the argv layer and completes"
+
 echo "ALL PASS: done_with_current arg rejection (BL-652)"

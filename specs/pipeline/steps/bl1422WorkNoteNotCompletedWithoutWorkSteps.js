@@ -104,13 +104,6 @@ function writeChaseNote(state, n, dir) {
   );
 }
 
-function writeGitHandoffItem(state) {
-  fs.writeFileSync(
-    path.join(state.inProcess, '00_handoff.handoff'),
-    `id: x\nfrom: coordinator\nto: taskrole\nrecipient: taskrole\npriority: 00\ntype: git_handoff\nrole: coordinator\ntask: BL-9001-some-slug\ncommit: 0000000000\ndequeued_at: ${DEQUEUED_AT}\n\nmerge_and_process coordinator 0000000000\n`
-  );
-}
-
 function writeSentHandoffFor(state, ticket) {
   fs.writeFileSync(
     path.join(state.sent, '50_sent.handoff'),
@@ -220,13 +213,6 @@ function registerSteps(registry) {
     fs.rmSync(path.join(state.inProcess, '10_work.handoff'), { force: true });
     writeChaseNote(state, 1);
     state.expectedCompletedName = '10_chase_001.handoff';
-  });
-
-  scoped(/^the in_process item is a git_handoff carrying a task instead of the Work note$/, (ctx) => {
-    const state = ensureState(ctx);
-    fs.rmSync(path.join(state.inProcess, '10_work.handoff'), { force: true });
-    writeGitHandoffItem(state);
-    state.expectedCompletedName = '00_handoff.handoff';
   });
 
   scoped(/^the item is completed$/, (ctx) => {
