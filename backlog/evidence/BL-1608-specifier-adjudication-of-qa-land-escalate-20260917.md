@@ -69,3 +69,21 @@ BL-1546 itself). Two halves landed with this pass:
   main, on untagged subjects and on an unreadable origin/main.
 
 By specifier.
+
+## Addendum 07:28Z - a prompt edit on main re-arms the same refusal on unsynced tips
+
+The same pass landed a documenter.prompt rule on main (aaed2cab79).
+Re-scanning `origin/main..9bdf467215` afterwards shows ONE new
+closed-owner path: `swarmforge/roles/documenter.prompt`, owner BL-1547 -
+because `80f9ae95f3 BL-1547: document the closed-ticket exemption and
+retire the interim rule` (2026-09-16 19:33Z, a documenter-made prompt
+edit that never landed) rides the documenter lineage, and my edit made
+main's copy differ from the tips'. The land step never sees it on a tip
+that has merged main (the path leaves the two-tree diff), which is QA's
+standing procedure (sync origin/main right before land_step_cli;
+BL-1472/1473/1474). QA told (note 001629): merge main into QA first, run
+the land step on QA's own tip, never on the bare documenter commit. The
+stale 80f9ae95f3 remains a landmine for every future specifier edit to
+documenter.prompt until the branch is rebuilt or that commit's content is
+made identical to main's; BL-1617's guard would not have caught it
+(BL-1547 was open when it was made).
