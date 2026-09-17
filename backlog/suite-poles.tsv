@@ -12,7 +12,6 @@
 #
 # file	ticket	first_seen	measured_ms	note
 extension/test/bl968StepRegistryMaterializedTreeGuard.test.js	BL-1629	2026-09-16	69900	BL-791 slice D pole census; two full step-registry loads by design (BL-968 invariant 1), 12.6 s of require time per load on 2026-09-17 - an accepted pole under BL-1629 (register disposition), cheaper only through BL-1630 (the registry load itself); moved from BL-1620 on 2026-09-17
-extension/test/telegramFrontDeskBotCli.test.js	BL-1620	2026-09-16	65300	BL-791 slice D pole census; cut work minted 2026-09-17 as BL-1620 (BL-791 slice D, first cut); row leaves in BL-1620 land
 extension/test/renderBriefingBurndownCli.test.js	BL-791	2026-09-16	36600	BL-791 slice D pole census; cut work not yet minted
 extension/test/briefingDigestLineCli.test.js	BL-791	2026-09-16	36300	BL-791 slice D pole census; cut work not yet minted
 extension/test/bl1277UnscopedStepCollisionGuard.test.js	BL-791	2026-09-16	23600	BL-791 slice D pole census; its own 20s unit-lane timeout is separately owned by BL-1600, unrelated to this 7s per-file duration budget
