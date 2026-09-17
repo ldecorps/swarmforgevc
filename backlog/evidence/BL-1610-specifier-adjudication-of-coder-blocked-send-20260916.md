@@ -86,3 +86,16 @@ from `b71cedfcf3` (the coder merged it at 18:48Z).
   prompt line: one route per promotion, the Work note.
 - The coder's note mislabels the gate (TREE_COLLAPSE for MERGE_DROP);
   the refusal text names BL-1576 - read the text, not the note.
+
+## Correction 2026-09-17 12:25Z - the route git_handoff was the daemon's, not hand-sent
+
+`008889` (`from: coordinator`, `role: coordinator`, `task: BL-1606`,
+`commit: b71cedfcf3`, 2026-09-16T18:48:20Z) was handoffd's dispatch-gap
+auto-route (`chase_sweep_lib.bb` `dispatch-gap-draft-lines`, BL-1094), fired
+when BL-1606 became active with `assigned_to` and no trail - the same shape
+as BL-1601's `009133` today. "Sent by hand for BL-1606 alongside" the Work
+note above is wrong; the Work note 008888 was the coordinator's router, the
+git_handoff the daemon's. Record:
+backlog/evidence/coordinator-dispatch-race-daemon-auto-route-and-forced-second-dispatch-20260917.md.
+
+By specifier.

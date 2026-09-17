@@ -51,7 +51,7 @@ ruling_tradeoffs:
 
 invariants:
   - "The lane set of a role lives in one table in one script; the plan the script prints for a role is byte-for-byte the sequence it runs - never a second list in a prompt, a config or a role's habit."
-  - "The property lane appears in no plan for cleaner, architect, documenter or hardender unless that role's own commits changed a *.property.test.js file; it appears in QA's plan always, and in the coder's plan per the ruling."
+  - "The property lane appears in no plan for cleaner, architect or documenter unless that role's own commits changed a *.property.test.js file; it never appears in the hardender's plan (compile, unit, mutation, acceptance-own - fixed); it appears in QA's plan always, and in the coder's plan per the ruling."
 
 description: |
   ## What is wrong
@@ -170,5 +170,14 @@ notes: |
   ("this is what the swarm's wall-clock is going on"). The ruling above is
   the intake's one ambiguity ("Coder keeps the full unit lane but not the
   property lane on every iteration" - once, or never).
+
+  Amended 2026-09-17 12:30Z by the specifier on the architect's spec-gap
+  note (002174, 12:20Z; architect pass NONE ff22c5644e): invariant 2
+  listed the hardender among the roles whose property lane is conditional
+  on a changed *.property.test.js, while the lane table, feature row and
+  approval_context fix the hardender's set at compile, unit, mutation,
+  acceptance-own. The invariant now says so; the table, the feature and
+  the build are unchanged - nothing to rebuild. Parcel at the documenter
+  (001383) when amended; holder and QA told by note, YAML merges (BL-1391).
 
 assigned_to: coder

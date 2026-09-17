@@ -182,3 +182,14 @@ notes: |
   identically. Records: backlog/evidence/BL-1610-specifier-adjudication-of-coder-at-2-revert-hold-20260917.md,
   backlog/evidence/BL-1604-specifier-adjudication-of-coder-at-2-unowned-red-note-20260917.md.
   Spec unchanged: the fix that stops the duplicate build is this ticket.
+
+  2026-09-17 12:25Z (specifier): a second source of duplicate dispatches,
+  same seat-blind shape - handoffd's dispatch-gap auto-route sends a
+  git_handoff (commit = main's tip, BL-1094) seconds after a promote, the
+  coordinator's router is then correctly refused on the trail, and a
+  `--force` sends a Work note on top (BL-1601: 009133 then 009135, both in
+  the coder's box). coordinator.prompt now says so. Documenter, in this
+  parcel's doc pass: handoff-protocol.md ~2562 still says the auto-route
+  "sends a note"; since BL-1094 it is a git_handoff when HEAD resolves,
+  a note only as the no-HEAD fallback. Evidence:
+  backlog/evidence/coordinator-dispatch-race-daemon-auto-route-and-forced-second-dispatch-20260917.md.
