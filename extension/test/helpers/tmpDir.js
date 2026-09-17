@@ -8,6 +8,12 @@
 // vitest.config.mjs's test.setupFiles) does the actual removal. Split this
 // way so a unit test can drive the sweep directly without needing a real
 // Vitest afterEach cycle to observe it.
+// BL-1601: sweepPendingTmpDirs and sweepSharedTmpDirs retry their removal a
+// bounded number of times (see removeWithRetry below) when it fails with
+// ENOTEMPTY or EBUSY - the shape a detached, unref'd child (a redeploy
+// script) still writing into a fixture root the instant a test returns can
+// produce - and rethrow after the last attempt, so a genuine leak still
+// fails the run rather than being swallowed by the retry.
 const fs = require('fs');
 const os = require('os');
 const path = require('path');
