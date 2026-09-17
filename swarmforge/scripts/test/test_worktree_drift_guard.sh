@@ -12,6 +12,14 @@
 # clean-worktree-passes-03). Covers the REAL ready_for_next.bb against a
 # real git fixture (no mocked git) - same established pattern as
 # test_reference_freshness_guard.sh. Prints "PASS: NN:" markers.
+#
+# BL-1611: scenarios 04-06 cover a BATCH role (cleaner/hardender's own
+# in_process/batch_<stamp>_<seq>/ shape, BL-1313) - the flat reader this
+# guard used before BL-1611 never descended into a batch_ directory, so a
+# batch role mid-work always read as holding nothing and its own
+# uncommitted WIP was refused as WORKTREE_DRIFT_DETECTED (the hardender hit
+# this on BL-1599, 2026-09-16). The guard now reads in_process/ through the
+# batch-aware reader (handoff-files-with-batches, BL-1313).
 
 set -euo pipefail
 
@@ -72,6 +80,38 @@ drop_handoff() {  # dir name
     "$2" "$2" > "$1/00_$2.handoff"
 }
 
+# BL-1611: a second, batch-shaped role worktree (hardender) sharing the same
+# repo/fixture-drift-marker.txt.
+git -C "$ROOT" branch swarmforge-hardender
+HARDENDER_WT="$ROOT/.worktrees/hardender"
+git -C "$ROOT" worktree add -q "$HARDENDER_WT" swarmforge-hardender
+install_scripts "$HARDENDER_WT"
+HARDENDER_READY="$HARDENDER_WT/swarmforge/scripts/ready_for_next.bb"
+mkdir -p "$HARDENDER_WT/.swarmforge/handoffs/inbox/new" \
+         "$HARDENDER_WT/.swarmforge/handoffs/inbox/in_process" \
+         "$HARDENDER_WT/.swarmforge/handoffs/inbox/completed"
+printf 'coder\tcoder\t%s\tswarmforge-coder\tCoder\tclaude\tguard-boundary-only\nhardender\thardender\t%s\tswarmforge-hardender\tHardener\tclaude\tguard-boundary-only\n' \
+  "$CODER_WT" "$HARDENDER_WT" > "$ROOT/.swarmforge/roles.tsv"
+# The guard resolves role-info via the WORKTREE's own toplevel (a linked
+# worktree's dispatch-lib/git-root), so each worktree needs its own copy.
+cp "$ROOT/.swarmforge/roles.tsv" "$CODER_WT/.swarmforge/roles.tsv"
+cp "$ROOT/.swarmforge/roles.tsv" "$HARDENDER_WT/.swarmforge/roles.tsv"
+HARDENDER_INBOX="$HARDENDER_WT/.swarmforge/handoffs/inbox"
+
+drop_batch_handoff() {  # batch-dir parcel-name
+  mkdir -p "$1"
+  printf 'id: %s\nfrom: specifier\nto: hardender\nrecipient: hardender\npriority: 00\ntype: git_handoff\ntask: BL-000-demo\ncommit: 0000000000\n\nbody for %s\n' \
+    "$2" "$2" > "$1/00_$2.handoff"
+}
+
+run_ready_hardender() {  # sets OUT, ERR, RC
+  set +e
+  OUT="$(cd "$HARDENDER_WT" && SWARMFORGE_ROLE=hardender bb "$HARDENDER_READY" 2>"$ROOT/stderr-hardender.txt")"
+  RC=$?
+  set -e
+  ERR="$(cat "$ROOT/stderr-hardender.txt")"
+}
+
 run_ready() {  # sets OUT, ERR, RC
   set +e
   OUT="$(cd "$CODER_WT" && SWARMFORGE_ROLE=coder bb "$READY" 2>"$ROOT/stderr.txt")"
@@ -115,5 +155,38 @@ echo "$ERR" | grep -q "INVALID_RECEIVE_MODE" \
 [[ "$(cat "$CODER_WT/$DRIFT_REL")" == "DRIFTED: no commit authored this" ]] \
   || fail "02: the guard must never touch the file content either way"
 pass "02: a file the role is legitimately editing for its current (in-progress) task is not flagged"
+
+# ── BL-1611 scenario 04: a BATCH role's own uncommitted WIP, with the ────
+# in-process parcel inside a batch_<stamp>_<seq>/ directory (BL-1313's own
+# shape) rather than at the top level - the guard must see it, not read the
+# box as empty.
+echo "DRIFTED: hardender wip" > "$HARDENDER_WT/$DRIFT_REL"
+drop_batch_handoff "$HARDENDER_INBOX/in_process/batch_20260917T000000Z_000001" "hardender1"
+run_ready_hardender
+echo "$ERR" | grep -q "WORKTREE_DRIFT_DETECTED" \
+  && fail "04: a batch role's own uncommitted WIP with a parcel inside its batch_ directory must never be flagged, got: $ERR"
+echo "$ERR" | grep -q "INVALID_RECEIVE_MODE" \
+  || fail "04: expected control to reach dispatch once the batch parcel explains the drift, got rc=$RC err=$ERR"
+pass "04: a batch role's in_process/batch_.../ parcel is seen by the batch-aware reader and exempts its own drift"
+
+# ── BL-1611 scenario 05: the SAME drift, but the batch_ directory is now ──
+# empty - an interrupted claim, not a held task, so nothing explains the
+# drift and the guard refuses.
+rm -f "$HARDENDER_INBOX/in_process/batch_20260917T000000Z_000001/00_hardender1.handoff"
+run_ready_hardender
+[[ $RC -ne 0 ]] || fail "05: expected a refusal, rc=0 out=$OUT"
+echo "$ERR" | grep -q "WORKTREE_DRIFT_DETECTED" \
+  || fail "05: an empty batch_ directory holds nothing, expected a drift report, got: $ERR"
+pass "05: an empty batch_ directory does not count as an in-process parcel"
+
+# ── BL-1611 scenario 06: the SAME drift, in_process holds nothing at all ──
+# (no batch_ directory either) - same refusal as scenario 01, now proven
+# for the batch-shaped worktree too.
+rmdir "$HARDENDER_INBOX/in_process/batch_20260917T000000Z_000001"
+run_ready_hardender
+[[ $RC -ne 0 ]] || fail "06: expected a refusal, rc=0 out=$OUT"
+echo "$ERR" | grep -q "WORKTREE_DRIFT_DETECTED" \
+  || fail "06: an empty in_process/ holds nothing, expected a drift report, got: $ERR"
+pass "06: a batch role's in_process/ with no batch_ directory at all is still judged correctly"
 
 echo "ALL PASS"
