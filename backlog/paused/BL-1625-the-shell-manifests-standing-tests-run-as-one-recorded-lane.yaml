@@ -1,0 +1,140 @@
+id: BL-1625
+title: "The shell suite manifest's 518 standing tests are no role's lane - BL-1618's table has no shell lane and QA runs only the suites a ticket names - so test_bl1388_land_step_guard_fixture.sh was red on main for thirteen days before a cleaner's incidental re-run found it (BL-1624); one runner executes every standing row sequentially, appends one duration row per completed run with the pole and the failing files, prints a verdict and exits with the suite's status - the recorder half (BL-1619's shape for the shell lane), changing no role's lane set until the census is in"
+milestone: M8
+type: feature
+epic: unit-suite-speed
+priority: 4
+direction: swarm-reported
+depends_on: []
+# suite-manifest.tsv (BL-1239), recordTestDuration.js and recordPropertyDuration.js
+# (BL-1619, paused) exist as the shapes to mirror; BL-1618 (active) owns
+# the lane table and is not touched - adding a shell row there is the
+# slice after this census, minted from the row this runner records.
+mutation_cost: low
+# low: one bash runner and its shell test (mkdtemp fixture manifest, fake
+# tests), one feature and handler, evidence, docs; shell carries no
+# mutation/CRAP/DRY (BL-472). Runners the feature shells: the fixture
+# runs in seconds; the real manifest run is QA's e2e once (BL-1541).
+slice_size_envelope: low
+required_stages: [coder, cleaner, architect, hardender, documenter, qa]
+
+acceptance: specs/features/BL-1625-the-shell-manifests-standing-tests-run-as-one-recorded-lane.feature
+
+required_wiring:
+  - 'specs/pipeline/steps/bl1625ShellManifestRecordedLaneSteps.js::registerSteps::the handler lands in the same parcel as the feature (BL-233, BL-1371)'
+# No production anchor on purpose (BL-1235): the runner is a new entry
+# point with no pre-existing caller; the lane-set row that will call it
+# is the next slice, after the census this runner produces.
+
+human_approval: pending
+approval_context: >
+  A new feature file is authored here, so it needs a tap. No choice is
+  posed and there are no ruling_options. FIRM: measurement before cutting
+  or wiring - this runner changes no role's lane set, no test, and nothing
+  about how the manifest is registered; it only runs the standing rows in
+  order and records what that costs. FIRM: a killed run appends no row.
+  FIRM: the first real run on the parcel is the census (the evidence lists
+  the top ten files by duration and every failing file), from which the
+  lane-set row and any pole cuts are minted later (BL-791 family), the way
+  BL-1619's census feeds slice E.
+
+invariants:
+  - "Every completed run appends exactly one row; a run that did not complete appends none."
+  - "The runner changes nothing about the tests it runs: same files, same order as the manifest, each test's own exit status - observation only."
+
+description: |
+  ## What is wrong
+
+  `swarmforge/scripts/test/suite-manifest.tsv` registers 518 shell tests
+  as `standing` (BL-1239 refuses an unregistered test file at send), but
+  registration is the only thing anyone reads it for:
+  `check_test_file_registration.sh` and `run_commit_guards.sh` consult it,
+  no script runs it. BL-1618's one-command lane table has compile, unit,
+  properties, mutation, changed-path and acceptance-own - no shell lane -
+  and QA's e2e runs "the seven named shell suites" a ticket lists.
+  test_bl1388_land_step_guard_fixture.sh (BL-1624) turned red on
+  2026-09-04 when its own ticket landed and was found on 2026-09-17 only
+  because a cleaner re-ran the land-step neighbourhood by hand after a
+  merge repair. A test that no lane runs is the carpet the 2026-09-05
+  directive forbids, and 518 of them have no duration record either.
+
+  ## What is wanted
+
+  - `swarmforge/scripts/test/run_shell_suite.sh [manifest]`: runs every
+    `standing` row of the manifest sequentially from the repo root, each
+    with `bash`, capturing exit status and wall time (scenario 01: a
+    fixture manifest with two standing rows and one non-standing row runs
+    exactly the two, in manifest order).
+  - A failing row makes the verdict name it and the runner exit nonzero;
+    an all-green run exits 0 (scenario 02).
+  - One row per completed run appended to
+    `swarmforge/scripts/test/.shell-durations.jsonl` - finished_at,
+    file_count, result, duration_ms, pole_ms, pole_file, failed (a list) -
+    on pass and on fail (scenario 03; invariant 1); a killed run appends
+    none.
+  - A verdict line naming the pole with its seconds and every file above
+    30 s.
+  - The first real run on the parcel is the census: the evidence records
+    the row, the top ten files by duration and every failing file - each
+    failing file is an `unowned-red` note to the specifier the same pass
+    (the BL-1624 shape), never fixed in this parcel.
+
+  ## How (direction, not mandate)
+
+  - Bash, `set -uo pipefail` (never `set -e` across a chain of independent
+    tests - BL-1242: capture each status, exit the combined one), `date
+    +%s%3N` around each `bash <file>`, a `printf`-built JSON row appended
+    with `>>`; the manifest path defaults to the real one; a `--dry-run`
+    prints the plan. Mirror recordTestDuration.js's row names where they
+    apply. Never `set -e` around the loop and never `kill` anything.
+  - Shell test `swarmforge/scripts/test/test_run_shell_suite.sh` with a
+    mkdtemp manifest and three fake tests (two passing, one failing;
+    BL-1390 fixture rules), registered standing itself.
+  - Documenter: the how-to for the unit-lane recorder gains the shell
+    twin; engineering-detailed.prompt "Verification" names the row.
+
+constraints: >
+  One runner, its shell test, the feature and handler, evidence and docs.
+  No change to suite-manifest.tsv's rows, to any shell test, to
+  verify_lanes.sh or BL-1618's table, or to any role prompt. The step
+  handler lands with the feature (BL-233). Evidence named BL-1625-*.
+
+out_of_scope: |
+  - A row for the shell lane in BL-1618's table, and which role runs it:
+    the slice after this census, minted from the recorded duration.
+  - Cutting any pole the census finds, or fixing any red it finds (each
+    red is an unowned-red note; BL-1624 is the first).
+  - Timing the bb property runners under swarmforge/scripts/test/ (their
+    rows in the manifest are `bb`, not `standing` shell; BL-791 remaining
+    slice).
+
+qa_e2e_procedure: |
+  On the parcel commit, from the repo root, with extension/out compiled:
+  1. `bash swarmforge/scripts/test/test_run_shell_suite.sh` -> green.
+  2. Acceptance resolving all scenarios
+     (`bash specs/pipeline/scripts/run_acceptance.sh specs/features/BL-1625-*.feature`).
+  3. ONE real `bash swarmforge/scripts/test/run_shell_suite.sh`: exactly
+     one new row in .shell-durations.jsonl, the verdict printed, its exit
+     status the suite's; the evidence records the row, the top ten files
+     by duration and every failing file, each failing file already the
+     subject of an unowned-red note. Never "run it N times".
+  4. `git diff main...HEAD --name-only` names no test the manifest lists
+     and not suite-manifest.tsv beyond the new test's own row.
+
+source: |
+  Found by the specifier adjudicating the cleaner's unowned-red note of
+  2026-09-17T13:02Z (BL-1624): `grep -rln suite-manifest swarmforge/scripts`
+  names only the registration checks; `grep -c standing suite-manifest.tsv`
+  = 518. Human directive 2026-09-05 ("we should not sweep failing tests
+  under the carpet"); human intake 2026-09-17 ("tests run for hours",
+  BL-1618/1619). Parents: BL-1239, BL-1619, BL-078. Sibling: BL-1624.
+
+notes: |
+  Minted 2026-09-17 by the specifier in the same pass as BL-1624. INVEST:
+  Independent (the manifest and the recorder shapes exist), Negotiable
+  (row names and verdict wording are direction), Valuable (518 tests
+  become a measured, runnable lane instead of a registry nobody runs),
+  Estimable (one loop, one JSON row, one verdict, one fixture test - one
+  sitting), Small (three scenarios, two invariants), Testable (fixture
+  manifest in seconds). Priority 4: measurement, like BL-1619, ahead of
+  any lane-set change.

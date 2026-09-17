@@ -632,6 +632,26 @@ not as the several separate edits that produced it).
   every author who deletes step code, not only the role that caught it late.)
 
 ## Verification
+- **One command per role encodes the lane set (BL-1618).**
+  `swarmforge/scripts/verify_lanes.sh [role] [--plan]` holds the per-role
+  verification lane table in one place; `--plan` prints the exact
+  sequence a role's invocation would run, byte-for-byte the same list
+  `verify_lanes.sh` then executes — never a second list hand-copied into
+  a prompt. Role defaults to `$SWARMFORGE_ROLE` (an `@`-seat like
+  `coder@2` maps to its stage); an unknown role is refused (exit 2),
+  never run-everything. Lane table: coder runs compile, unit, the
+  property lane, and its own ticket's acceptance feature; cleaner,
+  architect and documenter run compile, the unit lane only when their
+  own commits since the received commit (or `origin/main` with none)
+  touch `extension/src` or `extension/test`, the property lane only when
+  those commits touch a `*.property.test.js` file, and their own ticket's
+  acceptance feature; hardender runs compile, unit, mutation, and its own
+  acceptance feature; QA runs compile, unit, the changed-path gate
+  (Article 4.5), the property lane, and the ticket's acceptance feature —
+  QA is the only role that always runs every lane. Replaces the five
+  role prompts' own interim prose lane sets (landed 2026-09-17, the same
+  pass that filed this ticket) with one script that cannot drift from
+  what actually runs.
 - Before running language, build, or test commands, prefer project-local
   cache/configuration paths inside the assigned worktree.
 - After syncing main (merging up) or in a freshly-created worktree, run
