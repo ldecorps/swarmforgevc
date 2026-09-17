@@ -197,3 +197,6 @@ abandoned_commits: [c96761faa1]
 # false-positive-documenter-20260916.md; also recorded on BL-1599 and
 # BL-1607 the same pass). Verified against the current tree: nothing is
 # actually lost.
+bounce_count: 1
+bounce_history:
+  - { at: 2026-09-17, by: QA, blamed: hardender, class: behavior, commit: bb1a4ad57d, evidence: backlog/evidence/BL-1608-QA-20260917.md }
