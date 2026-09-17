@@ -143,4 +143,4 @@ notes: |
   fixture root in seconds - BL-1541). Severity high: a broken safety
   signal on two roles since the gates landed.
 
-assigned_to: null
+assigned_to: coder
