@@ -475,3 +475,38 @@ test('a lib path embedded in a template literal is not a sibling reference', () 
   );
   assert.deepEqual(offenders, []);
 });
+
+// ── hotfix 2026-09-17 (human ruling A): BL-1607's handler shape ─────────────
+// A single-quoted literal that HOLDS a double quote (`'"'`) must not unpair
+// the double-quote blanking for the rest of the file. Sequential passes let
+// a later double-quoted fixture string carrying require('./test/helpers/...')
+// survive, and the guard invented a module and refused every commit on main
+// (1bcfa2ba45's tree, 2026-09-17 10:04). One left-to-right pass over all
+// three quoting forms consumes `'"'` as a token instead.
+test("a single-quoted literal holding a double quote does not unpair the blanking of a later embedded require", () => {
+  const { extractRequiredModules } = require('../out/tools/featureHandlerRegistrationText');
+  const handler = [
+    "if (c === '\"' || c === \"'\" || c === '`') {",
+    '  depth += 1;',
+    '}',
+    "const real = require('./lib/realDep');",
+    "assert.ok(source.includes(\"require('./test/helpers/phantom')\"));",
+    // bl1410's shape: a regex literal holding an apostrophe, then one with a
+    // quote character class, then an embedded double-quoted require.
+    "registry.define(/^none imports mkTmpDir from extension\\/test's tmpDir helper$/, (ctx) => {",
+    "  const hasStringLiteral = /['\"].*mkTmpDir.*['\"]/.test(line);",
+    "  if (line.trim().startsWith('//') || line.includes(\"require('./helpers/phantomTwo')\")) { return; }",
+    '});',
+    // division is not a regex: the real require after it must still be read.
+    "const ratio = total / count / 2; const alsoReal = require('./lib/realDep');",
+  ].join('\n');
+  assert.deepEqual(extractRequiredModules(handler, `${STEPS}/bl1Steps.js`), [`${STEPS}/lib/realDep.js`, `${STEPS}/lib/realDep.js`]);
+  const offenders = assessFeatureHandlerRegistration(
+    tree({
+      [`${STEPS}/index.js`]: registry('bl1Steps'),
+      [`${STEPS}/bl1Steps.js`]: handler,
+      [`${STEPS}/lib/realDep.js`]: 'module.exports = {};',
+    })
+  );
+  assert.deepEqual(offenders, []);
+});
