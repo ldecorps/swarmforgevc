@@ -8,6 +8,12 @@ function enotempty() {
   throw err;
 }
 
+function ebusy() {
+  const err = new Error('EBUSY: resource busy or locked');
+  err.code = 'EBUSY';
+  throw err;
+}
+
 // BL-420: the shared temp-dir helper's own tests. Never asserts on a /tmp
 // LISTING (engineering shared-global-directory rule) - only on the exact
 // path this helper itself created and handed back.
@@ -114,6 +120,42 @@ test('sweepPendingTmpDirs rethrows ENOTEMPTY after its bounded attempts - a root
   };
 
   assert.throws(() => sweepPendingTmpDirs(rmFn), { code: 'ENOTEMPTY' });
+  assert.equal(calls, REMOVE_RETRY_ATTEMPTS, `expected exactly ${REMOVE_RETRY_ATTEMPTS} bounded attempts`);
+
+  fs.rmSync(dir, { recursive: true, force: true });
+});
+
+test('sweepPendingTmpDirs retries a removal that fails EBUSY twice, then succeeds', () => {
+  // ENOTEMPTY and EBUSY are ORed into the same `retryable` check
+  // (tmpDir.js) - a suite that only ever throws ENOTEMPTY cannot tell
+  // "the disjunction" from "just the first disjunct", so a mutant
+  // dropping EBUSY entirely survives undetected without this test (hand-
+  // confirmed: reverting the `|| err.code === 'EBUSY'` clause left every
+  // other test in this file, and the BL-1601 property test, green).
+  const dir = mkTmpDir('sfvc-tmpdir-helper-retry-ebusy-succeeds-');
+  let calls = 0;
+  const rmFn = (target, opts) => {
+    calls += 1;
+    if (calls <= 2) ebusy();
+    fs.rmSync(target, opts);
+  };
+
+  const swept = sweepPendingTmpDirs(rmFn);
+
+  assert.deepEqual(swept, [dir]);
+  assert.equal(calls, 3, 'expected exactly 3 attempts (2 EBUSY failures then a success)');
+  assert.equal(fs.existsSync(dir), false);
+});
+
+test('sweepPendingTmpDirs rethrows EBUSY after its bounded attempts - a root that never empties is a leak, never silenced', () => {
+  const dir = mkTmpDir('sfvc-tmpdir-helper-retry-ebusy-exhausted-');
+  let calls = 0;
+  const rmFn = () => {
+    calls += 1;
+    ebusy();
+  };
+
+  assert.throws(() => sweepPendingTmpDirs(rmFn), { code: 'EBUSY' });
   assert.equal(calls, REMOVE_RETRY_ATTEMPTS, `expected exactly ${REMOVE_RETRY_ATTEMPTS} bounded attempts`);
 
   fs.rmSync(dir, { recursive: true, force: true });
