@@ -135,3 +135,25 @@ notes: |
   pure functions, one constant, one field, one sitting), Small (two scenarios, two invariants), Testable (injected milliseconds).
 
 assigned_to: coder
+
+abandoned_commits: [c96761faa1]
+# c96761faa1 ("Merge QA 6607854833 into documenter.") is flagged by the
+# BL-1576 merge-drop guard: its "received" parent (mislabelled by the
+# guard's own documented ancestor-fallback, since neither parent of this
+# unrelated historical merge is an ancestor of THIS ticket's own received
+# commit) had, at that point, already dropped its BL-1606/BL-1607
+# standing-red rows via an earlier commit in a since-superseded coder
+# attempt (e102e1a5a7) for the still-open BL-1607; taking the other
+# parent's content there re-added those rows rather than dropping them.
+# Verified directly against the CURRENT tree (git grep on
+# backlog/standing-reds.tsv): BL-1602's nine rows are correctly absent
+# (landed via QA, git log confirms), BL-1606's rows are correctly absent
+# (landed via QA e8a58b386d, later), and BL-1607's row is correctly
+# PRESENT (that ticket is still open on its own bounce, my note to coder
+# 2026-09-16). No content is actually wrong or lost at the current tip;
+# this abandons the flagged historical merge as a known, checked, false
+# positive from concurrent multi-branch history on a shared register
+# file, not from this ticket's own work.
+bounce_count: 1
+bounce_history:
+  - { at: 2026-09-16, by: documenter, blamed: coder, class: behavior, commit: 0e8770c41d, evidence: backlog/evidence/BL-1599-documenter-bounce-20260916.md }

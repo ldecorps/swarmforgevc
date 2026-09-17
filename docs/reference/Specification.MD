@@ -12764,6 +12764,35 @@ that order) — so the trend, and the briefing's suite-duration line, can
 now tell a failing test apart from a slow file. See
 [The unit suite's per-file budget gate reads a pole register](../how-to/BL-1598-unit-suite-pole-register-drains-the-per-file-gate.md).
 
+**A second gate — summed per-file WORK, not wall — is the one that
+refuses (BL-1599, BL-791 slice C part 2).** The wall-clock gate above has
+read over its 10s target since July without refusing (BL-445's own
+architect-reviewed choice — wall jitters with host load). The operator
+delegated the lane-budget decision to the specifier on 2026-09-16
+(coordinator note 008676); the line decided: summed per-file WORK from
+the same Vitest JSON report `check-suite-file-budget.ts` already parses,
+because work is fork-independent and stable where wall is not — measured
+533.8s (2026-08-22, 460 files, 1 fork, macOS) to 546.1s (2026-09-16, 622
+files, 9 forks, WSL), a 2% move, while wall moved 689s to 72s over the
+same span. `check-suite-duration-budget.ts` gains `SUITE_WORK_BUDGET_MS`
+(550000) and `SUITE_WORK_TOLERANCE` (0.10, one named place each);
+`classifySuiteWork(workMs, budgetMs, tolerance)` is `ok` at or under
+budget, `over-tolerance` (passes, prints the margin) up to
+budget×(1+tolerance), and `over-budget` (refuses) above that — a ratchet
+that only tightens: a parcel may lower `SUITE_WORK_BUDGET_MS` when its own
+evidence records a lower measured sum, never raise it.
+`deriveExpectedWallMs(workMs, forks, poleMs)` — `max(slowest file, work /
+forks)`, since no file finishes faster than its own duration regardless of
+fork count — prints the expected wall and its distance to the operator's
+own 13000ms ceiling (`OPERATOR_WALL_CEILING_MS`, distinct from
+`SUITE_DURATION_BUDGET_MS`'s 10s architect target) on every run, so the
+operator sees how far the poles keep the suite from the ceiling whatever
+the fork count (today: the 69.9s pole alone puts it 57s away). Host budget
+(the fork pool `resolveVitestWorkerPool` sizes) and lane composition
+(`npm test` is the whole unit lane) are both unchanged by this decision.
+The recorded row gains `work_budget_verdict`
+(`ok`/`over-tolerance`/`over-budget`) beside BL-1598's fields.
+
 ### Unit suite green + per-file duration profile (BL-792)
 
 Slice A of the `unit-suite-speed` epic (BL-791). Every recorded `npm test` run

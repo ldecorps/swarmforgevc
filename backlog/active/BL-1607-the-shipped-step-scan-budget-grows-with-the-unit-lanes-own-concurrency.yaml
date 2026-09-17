@@ -206,3 +206,18 @@ notes: |
   the standing-red rule.
 
 assigned_to: coder
+bounce_count: 1
+bounce_history:
+  - { at: 2026-09-16, by: documenter, blamed: coder, class: behavior, commit: 0e8770c41d, evidence: backlog/evidence/BL-1607-documenter-bounce-20260916.md }
+
+abandoned_commits: [c96761faa1]
+# c96761faa1 ("Merge QA 6607854833 into documenter.") is flagged by the
+# BL-1576 merge-drop guard on an unrelated historical merge (mislabelled
+# "received"/"sender" per the guard's own documented ancestor-fallback,
+# since neither parent of that merge is an ancestor of this ticket's own
+# received commit). Verified directly against the current tree: BL-1602's
+# rows are correctly absent (landed via QA), BL-1606's rows are correctly
+# absent (landed via QA, later), and this ticket's own row is correctly
+# present until QA confirms the fix green. Same finding, same
+# verification, already recorded on BL-1599 the same pass
+# (backlog/evidence/BL-1599-documenter-bounce-20260916.md).
