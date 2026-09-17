@@ -1,0 +1,176 @@
+id: BL-1614
+title: "The coder declines a freshly routed Work note on a stale read: it dequeues the note seconds after the promotion commit, reads backlog/active in its unmerged worktree, finds the ticket still paused and unassigned, and completes the note with a stated no-work reason - four tickets on 2026-09-16 (BL-1604, BL-1605, BL-1608, BL-1610) and three before, each recovered by the dropped-parcel sweep about forty-five minutes later; the claim names main's promotion when the tree is behind, and a no-work completion of a Work note whose ticket is active on main is refused"
+milestone: M8
+type: defect
+severity: high
+# high: a live fault degrading behaviour on the default pack - four
+# promotions today each idled the coder ~45 min until the sweep's retry
+# note ("now active/assigned in main, merge first - retry"), which
+# worked every time; the coordinator's by-hand git_handoff route for
+# BL-1606 (BL-1610's incident) was the workaround for this very shape.
+status: todo
+epic: swarm-reliability
+priority: 5
+direction: swarm-reported
+depends_on: []
+# BL-1422 is in backlog/done. BL-1609 (paused) adds a gate to
+# done_with_current_task.bb as this ticket extends its Work-note gate -
+# same file, not orthogonal (Article 3.2.3); whichever lands second
+# merges the other's change. The coder prompt rule landed with this mint.
+mutation_cost: low
+# low: Babashka (no mutation/CRAP/DRY wired, BL-472): the claim path,
+# the Work-note decision lib and its runner, one route script's message,
+# one feature and handler, evidence.
+slice_size_envelope: low
+required_stages: [coder, cleaner, architect, hardender, documenter, qa]
+
+acceptance: specs/features/BL-1614-a-work-note-is-not-declined-on-a-stale-worktree-read.feature
+
+required_wiring:
+  - 'swarmforge/scripts/done_with_current_task.bb::ticket-active-on-main::the Work-note gate feeds the decision the main-side fact (the pre-existing consumer, BL-1235; name chosen at mint, BL-874)'
+  - 'swarmforge/scripts/ready_for_next_task.bb::MERGE_MAIN_FIRST::the claim prints the hint from the same main-side read'
+  - 'specs/pipeline/steps/bl1614WorkNoteNotDeclinedOnStaleReadSteps.js::registerSteps::the handler lands in the same parcel as the feature (BL-233, BL-1371)'
+
+human_approval: approved
+approval_context: >
+  A new feature file is authored here, so it needs a tap. No choice is
+  posed and there are no ruling_options. FIRM: the fact both changes
+  read is "is <ticket> in backlog/active on main (or origin/main,
+  whichever is ahead - BL-891)", answered with git show against the ref,
+  never with the worktree's files; unreadable refs fail open (no hint,
+  no refusal) with a warning. FIRM: BL-1422's decision table is
+  extended by one input, not rewritten - a Work note whose ticket is
+  paused or absent on main still completes with its reason exactly as
+  today, and its five scenarios stay green. FIRM: the claim never merges
+  on the role's behalf; it prints MERGE_MAIN_FIRST with the ticket id
+  and main's tip and leaves the merge to the role (the lineage rule).
+  FIRM: the route note's message says merge main first within the
+  80-character cap.
+
+invariants:
+  - "A Work note is never completed with a no-work reason while its ticket sits in backlog/active on main: the completion helper reads that fact from the ref, never from the worktree, on every invocation with a reason."
+
+description: |
+  ## What is wrong
+
+  Coder mailbox, 2026-09-16 (`.worktrees/coder/.swarmforge/handoffs/inbox/completed`,
+  Work notes from the coordinator, times Z):
+
+  | ticket | routed | dequeued | completed | stated reason |
+  |---|---|---|---|---|
+  | BL-1608 | 20:35:45 | 20:35:48 | 20:36:14 | "still in backlog/paused/ with assigned_to: null - not promoted to active ... no work to do until the coordinator promotes" |
+  | BL-1605 | 20:47:53 | 20:47:56 | 20:48:01 | "still in backlog/paused/ ... Paused-ready informational note, not a git_handoff task assignment." |
+  | BL-1610, BL-1604 | 20:59, 21:14 | seconds later | seconds later | the same sentence |
+
+  The promotion (`Promote BL-1608: paused -> active for coder`) is a
+  commit on main made seconds before the note; the coder's worktree had
+  not merged it, so `backlog/active/` there did not have the file and
+  `backlog/paused/` still did. The coder read its own tree, concluded the
+  note was the specifier's paused-ready inform (which goes to the
+  coordinator, never the coder), and completed with `--no-work`, which
+  BL-1422 accepts on any non-blank reason. The coordinator's
+  dropped-parcel sweep found "no parcel in flight" at 21:22Z and 21:33Z
+  and re-routed with "Work BL-1608: now active/assigned in main, merge
+  first - retry"; the coder merged, found the ticket active, and worked it.
+  Three earlier completions carry the same reason (2026-09-06, 09-08,
+  09-10). BL-1610's incident is the other face: the coordinator routed
+  BL-1606 by a git_handoff carrying main's tip, which does force the
+  merge through the lineage rule, and that route tripped the merge-drop
+  gate.
+
+  Nothing in `coder.prompt` said "merge main before you read a Work
+  note's ticket" (landed with this mint), and nothing mechanical checks
+  the premise: the ticket's state on main is one `git show` away.
+
+  ## What is wanted
+
+  - On claiming a Work note whose ticket is in `backlog/active` on main
+    (or origin/main, whichever is ahead) but not in the worktree's
+    `backlog/active`, the claim prints `MERGE_MAIN_FIRST: <id> is active
+    on main at <10-hex>; merge main before reading it` after the TASK
+    lines (scenario 01 rows 1-3). Nothing is merged for the role.
+  - `done_with_current.sh --no-work "<reason>"` on a Work note whose
+    ticket is in `backlog/active` on main is refused naming the ticket
+    and main's tip, the note staying in in_process (row 4, invariant 1);
+    with the ticket paused or absent on main it completes with the
+    reason as today (rows 5-6; BL-1422's own scenarios unchanged).
+  - `route_backlog_to_coder.sh`'s message reads
+    `Work <id>: merge main first, then read backlog/active` (fits the
+    80-character cap; today's basename form is truncated mid-word for
+    every long slug, as `008934`'s "read " shows).
+  - The Work-note decision runner gains the new input's cases.
+
+  ## How (direction, not mandate)
+
+  - `work_note_evidence_lib.bb`: `work-note-completion-decision` takes a
+    fourth input `active-on-main?` (nil when unreadable = today's
+    behaviour); `:refuse-active-on-main` when a reason is given and the
+    ticket is active on main. `done_with_current_task.bb`'s
+    `work-note-gate!` gathers it with
+    `git -C <root> show <ref>:backlog/active/<id>-*.yaml` (a
+    `git ls-tree <ref> backlog/active/ | grep <id>-` is enough), ref =
+    the ahead one of main/origin/main via `git rev-list
+    --left-right --count`.
+  - `ready_for_next_task.bb`: after the claim prints, the same read;
+    print the hint when the worktree's `backlog/active` lacks the file.
+  - `route_backlog_to_coder.sh:141` message text; the Work-note parser
+    (BL-1223, `work-note-ticket-id-from-message`) must still extract the
+    id - verify against its regex before changing the wording.
+  - Scenarios drive the real scripts on a fixture repository with a
+    main branch and a worktree (the BL-1422 handler's fixture plus a
+    branch): seconds (BL-1541).
+  - Documenter: handoff-protocol.md's Work-note paragraph names the hint
+    and the refusal; coder.prompt already carries the rule.
+
+constraints: >
+  ready_for_next_task.bb (the hint), done_with_current_task.bb and
+  work_note_evidence_lib.bb (the input), route_backlog_to_coder.sh (the
+  message), the runner, the feature and handler, evidence and docs. No
+  merge performed by any helper; no change to BL-1422's five scenarios.
+  The step handler lands with the feature (BL-233). Evidence named
+  BL-1614-*.
+
+out_of_scope: |
+  - Routing coder work as a git_handoff to force the merge (BL-1610's
+    incident; the Work note stays the route).
+  - The specifier's paused-ready note to the coordinator (unchanged; it
+    never reaches the coder).
+  - BL-1609's forwarding-parcel gate in the same file.
+
+qa_e2e_procedure: |
+  On the parcel commit:
+  1. `bb swarmforge/scripts/test/<runner the coder names>` -> green with
+     the active-on-main cases.
+  2. Acceptance resolving all six rows
+     (`bash specs/pipeline/scripts/run_acceptance.sh specs/features/BL-1614-*.feature`)
+     and BL-1422's feature still resolving.
+  3. Live probe on the parcel's own chain: promote a scratch ticket on a
+     fixture root and route it; the claim prints MERGE_MAIN_FIRST; a
+     `--no-work` completion is refused; after merging, the same
+     completion with work evidenced completes plain.
+  4. `bash -c 'source swarmforge/scripts/route_backlog_to_coder.sh'`
+     is not runnable standalone - read line 141 and confirm the message
+     under 80 characters for the longest active basename.
+
+source: |
+  Coordinator note to the specifier, priority 00, 2026-09-16T21:33Z
+  (inbound 00_20260916T213348Z_008978_from_coordinator): "Pattern:
+  promote+route note beats coder's main merge x2 (1608,1605)". Specifier
+  census of the coder's completed Work notes:
+  backlog/evidence/BL-1614-specifier-adjudication-of-coordinator-pattern-note-20260916.md.
+  Parents: BL-1422, BL-1223, BL-891.
+
+notes: |
+  Minted 2026-09-16 by the specifier while completing the coordinator's
+  pattern note; the coder prompt rule "a Work note names a ticket
+  promoted on main seconds ago - merge main before you read it" landed
+  in the mint commit (BL-798), and the coder holding BL-1605's retry note
+  was sent the rule by note. INVEST: Independent (the decision lib, the
+  claim path and git are in place), Negotiable (the git read's exact
+  form and the hint's wording are direction), Valuable (a promotion
+  stops costing forty-five minutes and a sweep), Estimable (one input,
+  one print, one message - one sitting), Small (one outline, one
+  invariant), Testable (real scripts on a fixture repository in seconds
+  - BL-1541). Severity high: four times today.
+
+assigned_to: null

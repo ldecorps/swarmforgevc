@@ -1,0 +1,149 @@
+id: BL-1613
+title: "swarmforge/scripts/test/test_branch_claim_guard.sh (BL-529) has failed its first case on main since 2026-08-21 - its fixture's swarm-identity carries no active_backlog_max_depth_conf_path, so every claim prints BL-966's loud no-swarm-identity fallback to stderr and the test's 'a passing guard emits no warning' assertion fails - first recorded by the coder on 2026-09-16; the fixture persists the identity the launcher persists, with its conf path and the tracked conf, the test is green, and the register row leaves in the same land"
+milestone: M8
+type: defect
+severity: high
+# high: a standing red on main (Article 3.2.4, 2026-09-05), 27 days
+# unrecorded. The guard it tests is live and correct; the fixture is
+# stale against BL-966's identity schema.
+status: todo
+epic: code-quality-gates
+priority: 8
+direction: swarm-reported
+depends_on: []
+mutation_cost: low
+# low: one shell test's fixture (two lines), one feature and handler,
+# evidence; no production code, no Stryker target.
+slice_size_envelope: low
+required_stages: [coder, cleaner, architect, hardender, documenter, qa]
+
+acceptance: specs/features/BL-1613-the-branch-claim-guard-test-fixture-is-a-complete-swarm-root.feature
+
+required_wiring:
+  - 'swarmforge/scripts/test/test_branch_claim_guard.sh::active_backlog_max_depth_conf_path::the fixture identity carries the key BL-966 reads (the test is the pre-existing consumer; the key name is fixed by backlog_depth_lib.bb, BL-874)'
+  - 'specs/pipeline/steps/bl1613BranchClaimGuardFixtureSteps.js::registerSteps::the handler lands in the same parcel as the feature (BL-233, BL-1371)'
+
+human_approval: approved
+approval_context: >
+  A new feature file is authored here, so it needs a tap. No choice is
+  posed and there are no ruling_options. FIRM: the assertion "a passing
+  guard emits no warning" stays - it is the contract; the fixture is
+  what changes, to the identity shape swarmforge.sh persists (BL-966:
+  a swarm-identity with active_backlog_max_depth_conf_path naming a
+  tracked conf under the root). FIRM: no assertion weakened, no case
+  removed, no stderr filtered. FIRM: the register row leaves in the same
+  land.
+
+invariants:
+  - "The fixture is a swarm root the launcher could have made: every key backlog_depth_lib.bb reads from a swarm-identity is present and names a file that exists under the fixture root before the first claim runs."
+
+description: |
+  ## What is wrong
+
+  Specifier run on main at 40b28c4219, 2026-09-16 21:35Z:
+
+  ```
+  PASS: baseline: empty inbox on a ticket branch prints NO_TASK and never fires the guard
+  FAIL: 01(swarmforge-coder): a passing guard emits no warning, got: backlog_depth_lib: no swarm-identity for /tmp/tmp.p6mjnCofJ3 - falling back to the tracked default conf /tmp/tmp.p6mjnCofJ3/swarmforge/swarmforge.conf
+  ```
+
+  The fixture (lines 30-46) writes
+  `.swarmforge/swarm-identity` as `swarm_name primary / swarm_mode
+  autonomous` and nothing else. `backlog_depth_lib.bb/conf-file-path`
+  (BL-966, 5c8b0835f8, 2026-08-20) reads
+  `active_backlog_max_depth_conf_path` from that file and, when it is
+  absent, prints the fallback line to stderr by design ("never silent").
+  `ready_for_next_task.bb` reads the pack conf through that function on
+  every claim since BL-1004 (19b28a1a84, 2026-08-21: `pack-conf
+  (mono-router-conf-text)` in the claim path). Scenario 01's first row
+  asserts `-z "$ERR"` after a passing claim (line 107), so it has failed
+  since 2026-08-21. BL-1530's shell-test census (2026-09-11) did not
+  cover this file (its population was the tests that drive
+  swarm_handoff). The coder recorded it first today.
+
+  Census of the shape (2026-09-16, `grep -l swarm-identity
+  swarmforge/scripts/test/*.sh`, then the key, a claim-path invocation
+  and an empty-stderr assertion per file): five fixtures write an
+  identity without the key and drive the claim path
+  (test_branch_claim_guard, test_worktree_drift_guard,
+  test_worktree_drift_guard_master_resident_exempt, test_supersede_guard,
+  test_reference_freshness_guard); only test_branch_claim_guard asserts
+  an empty stderr, so it is the only one red for this reason. The grep:
+  `for t in $(grep -l 'swarm-identity' swarmforge/scripts/test/*.sh); do echo "$t $(grep -c active_backlog_max_depth_conf_path $t) $(grep -cE 'ready_for_next_task|ready_for_next\.sh' $t) $(grep -c '\-z "\$ERR"' $t)"; done`.
+
+  ## What is wanted
+
+  - The fixture's swarm-identity carries
+    `active_backlog_max_depth_conf_path` naming a tracked conf under the
+    fixture root (the launcher's own shape, `swarm_identity_lib.bb`), and
+    that conf exists before the first claim (scenario 01, invariant 1).
+  - The test green: exit 0, every case PASS (scenario 02; about 30 s -
+    sixteen claim invocations - inside the per-mutant ceiling, BL-1541).
+  - The census pinned: exactly one shell test that drives the claim path
+    asserts an empty stderr, and it is this one (scenario 03, BL-1445).
+  - The register row removed in the same land.
+
+  ## How (direction, not mandate)
+
+  - Two fixture lines after the identity write:
+    `mkdir -p "$ROOT/swarmforge"; : > "$ROOT/swarmforge/swarmforge.conf"`
+    and the identity gains a third tab-separated row
+    `active_backlog_max_depth_conf_path<TAB>swarmforge/swarmforge.conf`
+    (the same relative form `test_backlog_depth_conf.sh` uses); keep the
+    `.gitignore` of `.swarmforge/` as is.
+  - Scenario 01 reads the script; scenario 02 runs it from the repository
+    root (the BL-1530 handler's shell-runner shape, output captured);
+    scenario 03 runs the census grep above in process over the real tree.
+  - Documenter: `docs/how-to` page for BL-966 (or the shell-test
+    conventions page) says a fixture swarm root carries the conf-path key;
+    no diagram trigger.
+
+constraints: >
+  One shell test's fixture, the feature and handler, evidence and docs;
+  no change to backlog_depth_lib.bb, ready_for_next_task.bb or the
+  test's assertions. The step handler lands with the feature (BL-233).
+  Evidence named BL-1613-*.
+
+out_of_scope: |
+  - The other four fixtures with the same incomplete identity (green
+    today; each becomes its own red the day it asserts on stderr - the
+    census in scenario 03 is what will show a second one).
+  - Making BL-966's fallback quieter (its loudness is the design).
+  - A routine shell-lane run (nothing runs the shell tests as a lane;
+    recorded in the evidence, ceremony-packet material).
+
+qa_e2e_procedure: |
+  On the parcel commit:
+  1. `bash swarmforge/scripts/test/test_branch_claim_guard.sh` -> exit
+     0, every line PASS, no FAIL.
+  2. Acceptance resolving all three scenarios
+     (`bash specs/pipeline/scripts/run_acceptance.sh specs/features/BL-1613-*.feature`).
+  3. `git diff <parent>..<parcel> -- swarmforge/scripts/test/test_branch_claim_guard.sh | grep -E '^-' | grep -vE '^---'`
+     shows only the identity printf line (no assertion removed).
+  4. After landing, `bb swarmforge/scripts/standing_red_register_cli.bb .`
+     reports no row for the file and `"unowned":[]`.
+
+source: |
+  Coder note to the specifier and coordinator, priority 00,
+  2026-09-16T21:29Z (inbound 00_20260916T212946Z_002011_from_coder):
+  "unowned-red: test_branch_claim_guard.sh scenario 01 stderr warning,
+  pre-existing". Specifier reproduction and census:
+  backlog/evidence/BL-1613-specifier-adjudication-of-coder-unowned-red-20260916.md.
+  Parents: BL-529, BL-966, BL-1004, BL-1530.
+
+notes: |
+  Minted 2026-09-16 by the specifier while completing the coder's
+  unowned-red note, the same pass; the register row (lane shell,
+  first_seen 2026-09-16 - the first record; red since 2026-08-21) names
+  this ticket; the coder held no parcel when the note was read and was
+  sent the owner note; the coordinator the paused-ready note. IR-DRY:
+  the checker's possible-synonym between "source ... is read" and the
+  run step was reviewed and the run step reworded. INVEST: Independent
+  (nothing unbuilt), Negotiable (the conf's relative form is direction),
+  Valuable (a shell red stops withholding parcels and the guard's
+  contract is tested again), Estimable (two fixture lines, one handler -
+  one sitting), Small (three scenarios, one invariant), Testable (the
+  script and a grep in seconds; the test itself about 30 s, BL-1541).
+  Severity high per the standing-red rule.
+
+assigned_to: null

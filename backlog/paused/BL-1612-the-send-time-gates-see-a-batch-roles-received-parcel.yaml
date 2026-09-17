@@ -1,0 +1,146 @@
+id: BL-1612
+title: "The two readers that supply a sender's received commit to the send-time gates read the in_process box flat, so for the cleaner and hardender - whose parcels sit inside batch directories - BL-806's review-forward evidence gate, BL-1576's merge-drop gate and BL-1213's parcel-rollback gate find no received commit and stay silent on every send; both readers descend into batch directories the way BL-1313 taught the sender's own non-forwarding check, and a batch role is judged exactly as a task role"
+milestone: M8
+type: defect
+severity: high
+# high: a broken safety signal - three send-time gates have never judged
+# a cleaner or hardender forward (every one today passed with no received
+# commit on record); the fail-open twin of BL-1611's false refusal, found
+# by its reader census.
+status: todo
+epic: swarm-reliability
+priority: 6
+direction: swarm-reported
+depends_on: []
+# BL-1313, BL-806, BL-1213 and BL-1576 are in backlog/done. BL-1611 (same
+# pass) edits ready_for_next.bb only; BL-1610 (paused) edits
+# merge_drop_guard_lib.bb and extends review_forward_evidence_gate_lib.bb's
+# reader with a head field - it and this ticket touch that one file, so
+# they are not orthogonal (Article 3.2.3): whichever lands second merges
+# the other's reader change.
+mutation_cost: low
+# low: Babashka (no mutation/CRAP/DRY wired, BL-472): two one-line reader
+# swaps, two bb runners, one feature and handler, evidence.
+slice_size_envelope: low
+required_stages: [coder, cleaner, architect, hardender, documenter, qa]
+
+acceptance: specs/features/BL-1612-the-send-time-gates-see-a-batch-roles-received-parcel.feature
+
+required_wiring:
+  - 'swarmforge/scripts/review_forward_evidence_gate_lib.bb::handoff-files-with-batches::received-parcel-for-task reads through the batch-aware reader (BL-1235: the two gates that call it are the pre-existing consumers)'
+  - 'swarmforge/scripts/parcel_rollback_guard_lib.bb::handoff-files-with-batches::received-parcel-commit-for-task reads through the batch-aware reader'
+  - 'specs/pipeline/steps/bl1612SendGatesSeeBatchReceivedParcelSteps.js::registerSteps::the handler lands in the same parcel as the feature (BL-233, BL-1371)'
+
+human_approval: approved
+approval_context: >
+  A new feature file is authored here, so it needs a tap. No choice is
+  posed and there are no ruling_options. FIRM: only the two readers'
+  file listing changes - `handoff-lib/handoff-files` becomes
+  `handoff-lib/handoff-files-with-batches` (BL-1313's reader), the
+  newest-match rule and the fail-open shapes (unknown role, no mailbox,
+  no matching parcel, no commit header) are unchanged, and an emptied
+  batch directory yields nothing. FIRM: the three gates' own decisions
+  are untouched; a batch role simply starts receiving them. FIRM: one
+  scenario per roster shape held (batch, task) per reader, and one
+  end-to-end refusal through the real sender for the batch shape.
+
+invariants:
+  - "For both readers, the received commit resolved for a task is the commit header of the newest git_handoff naming that task anywhere under the sender's in_process box, at the top level or inside a batch directory, and nil otherwise - independent of the sender's receive mode."
+
+description: |
+  ## What is wrong
+
+  Found by BL-1611's census of `:in_process` readers
+  (`backlog/evidence/BL-1611-specifier-adjudication-of-hardender-drift-guard-note-20260916.md`).
+  `review_forward_evidence_gate_lib.bb:66-76` `received-parcel-for-task`
+  and `parcel_rollback_guard_lib.bb:60-72` `received-parcel-commit-for-task`
+  both list the sender's in_process box with `handoff-lib/handoff-files`,
+  the flat reader; `handoff-files-with-batches` (`handoff_lib.bb:167`) is
+  the one that descends into `batch_*`, and `swarm_handoff.bb:903`'s
+  `inbound-non-forwarding?` already uses it ("BL-1302 + BL-1313:
+  batch-aware reader"). Three gates take their received commit from those
+  two readers: BL-806's review-forward evidence gate and BL-1576's
+  merge-drop gate (the first reader, `merge_drop_guard_lib.bb:53`
+  "reuse BL-806's own reader"), and BL-1213's parcel-rollback gate (the
+  second). Each documents "fails open (nil) on no matching parcel". For
+  a batch role there is never a matching parcel at the top level, so the
+  cleaner's and hardender's forwards have never been judged by any of the
+  three: today's BL-1595 and BL-1547 re-forwards from the cleaner
+  (17:37Z, 17:41Z) went out with no received commit on record.
+
+  ## What is wanted
+
+  - Both readers list the box through `handoff-files-with-batches`; a
+    batch-held git_handoff for the task yields its commit, an emptied
+    batch directory nothing, a task role's top-level parcel exactly as
+    today (scenario 01, invariant 1).
+  - Through the real `swarm_handoff.bb`, a batch role whose forwarded
+    commit does not descend from what it received is refused by the
+    parcel-rollback gate naming that commit (scenario 02) - the same
+    refusal a task role gets.
+  - The two libs' bb runners gain the batch case.
+
+  ## How (direction, not mandate)
+
+  - One call swap per reader with a comment naming BL-1313 and this
+    ticket; nothing else in either function.
+  - Scenario 01 drives the two reader functions in process on a fixture
+    mailbox (the BL-1313 handler's batch fixture shape); scenario 02
+    drives the real sender on a fixture swarm root with an architect
+    branch, a cleaner branch and a cleaner batch holding a git_handoff
+    whose commit is the architect tip, then a cleaner tip that does not
+    descend from it (BL-1213's own fixture). Seconds (BL-1541).
+  - Documenter: handoff-protocol.md's send-time gates paragraph says the
+    received commit is read wherever the parcel is held; no diagram
+    trigger.
+
+constraints: >
+  The two reader functions, their bb runners, the feature and handler,
+  evidence and docs. No change to the three gates' decision cores, to
+  swarm_handoff.bb, or to ready_for_next.bb (BL-1611). The step handler
+  lands with the feature (BL-233). Evidence named BL-1612-*.
+
+out_of_scope: |
+  - The pre-turn drift guard (BL-1611).
+  - The merge-drop gate's range and blob rules (BL-1610).
+  - The daemon's and dashboards' own in-process counters
+    (chase_sweep_lib, orphan_claim_sweep_lib, role_lifecycle_cli,
+    operator_runtime) - not re-verified; each is its own note if found
+    flat.
+
+qa_e2e_procedure: |
+  On the parcel commit:
+  1. `bb swarmforge/scripts/test/<runners the coder names>` -> green with
+     the batch cases.
+  2. Acceptance resolving both scenarios
+     (`bash specs/pipeline/scripts/run_acceptance.sh specs/features/BL-1612-*.feature`)
+     and BL-806's, BL-1213's, BL-1313's and BL-1576's features still
+     resolving.
+  3. Live probe on the parcel's own chain: at the cleaner stage, with the
+     parcel in its batch, `bb -e` calling both readers for this task
+     returns the coder's forwarded commit (not nil); the cleaner's real
+     forward then queues (no rollback, no drop).
+  4. `grep -n 'handoff-lib/handoff-files (handoff-lib/mailbox-dir role-info :in_process)' swarmforge/scripts/review_forward_evidence_gate_lib.bb swarmforge/scripts/parcel_rollback_guard_lib.bb`
+     -> no match.
+
+source: |
+  Specifier census while adjudicating the hardender's note
+  00_20260916T212459Z_001366 (BL-1611); evidence
+  backlog/evidence/BL-1611-specifier-adjudication-of-hardender-drift-guard-note-20260916.md.
+  Parents: BL-1313, BL-806, BL-1213, BL-1576.
+
+notes: |
+  Minted 2026-09-16 by the specifier in the same pass as BL-1611; the
+  fail-open twin of that fail-closed defect - one reader family, two
+  consequences, two tickets because the files, the gates and the
+  observable outcomes differ. Not orthogonal with BL-1610 on
+  review_forward_evidence_gate_lib.bb; the coordinator sequences them.
+  INVEST: Independent (the batch-aware reader exists), Negotiable
+  (runner shape and comment are direction), Valuable (three safety
+  gates start judging two of six worktree roles), Estimable (two call
+  swaps, one fixture per shape - one sitting), Small (two scenarios, one
+  invariant), Testable (readers in process and the real sender on a
+  fixture root in seconds - BL-1541). Severity high: a broken safety
+  signal on two roles since the gates landed.
+
+assigned_to: null
