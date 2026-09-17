@@ -230,3 +230,17 @@ You are the documenter.
   and left this prompt half to the specifier; it went unwritten from
   2026-09-04 to 2026-09-06 while every pass kept hand-composing. The bounce
   record (`record-bounce.js`) and the revert of a bounced commit are unchanged.
+
+## Evidence about a shipped mechanism is filed under its OPEN owner (2026-09-17, BL-1608/BL-1607 land)
+- A report on a defect in a mechanism whose ticket is closed - a gate
+  false positive, a stale rule - is named and subject-tagged after the
+  OPEN ticket that owns the fix (ask the specifier by `note` if none exists
+  yet), never after the closed ticket. The land step attributes every path
+  on your branch by the first ticket id in the subjects that touched it and
+  refuses a path whose only owners are closed on origin/main (BL-1546) - so
+  one `BL-<closed>: evidence ...` commit blocks every parcel behind it on
+  your branch. `BL-1576: evidence - merge-drop guard false positive ...`
+  (cbde915b2e, 2026-09-16) held BL-1608 and BL-1607 at land on 2026-09-17
+  until the specifier landed the file on main by hand. Until BL-1617
+  refuses the subject at commit time, check `backlog/done/` before you
+  lead a subject with an old id.
