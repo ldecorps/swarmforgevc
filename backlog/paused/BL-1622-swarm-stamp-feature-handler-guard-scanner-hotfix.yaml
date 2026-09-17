@@ -1,0 +1,181 @@
+id: BL-1622
+title: "Swarm stamp-off: hotfix bab1f918c8 makes withoutEmbeddedSource a single-pass scanner over comments, regex literals and the three quoting forms, after the single-quoted '\"' in BL-1607's landed step handler made check_feature_handler_registration.sh refuse every direct-to-main commit on 2026-09-17 (human ruling A); review-only, plus two recorded probes - the property lane dying under the pre-commit guard, and the regex-versus-division heuristic's reach over every real step file"
+milestone: M8
+type: defect
+severity: medium
+# medium: the fault is already fixed on main (every direct-to-main commit
+# refused from 10:04 to the hotfix); what is open is the review the
+# constitution owes a hotfix (BL-848) and two probes. Not high: nothing is
+# degraded today and the ledger's resurfacing keeps the ask alive without
+# the expedite lane.
+status: todo
+epic: code-quality-gates
+priority: 12
+direction: human-directive
+depends_on: []
+mutation_cost: medium
+# medium: review-only, but the reviewed function is a real TypeScript
+# scanner under mutation/CRAP/DRY; the hardener may add TEST files only.
+# Runners the feature shells, measured on this host: the unit test file
+# under 1 s, the guard on the real tree about 2 s, extractRequiredModules
+# rows in milliseconds - inside the BL-1358 ceiling.
+slice_size_envelope: low
+required_stages: [coder, cleaner, architect, hardender, documenter, qa]
+
+acceptance: specs/features/BL-1622-swarm-stamp-feature-handler-guard-scanner-hotfix.feature
+
+# A review parcel adds no production call site; the mechanism under review
+# is already wired (check_feature_handler_registration.sh -> the compiled
+# assessor -> extractRequiredModules/extractSiblingScripts ->
+# withoutEmbeddedSource). The handler entry is the BL-233 in-parcel pin.
+required_wiring:
+  - 'specs/pipeline/steps/bl1622SwarmStampFeatureHandlerGuardScannerSteps.js::registerSteps::the handler lands in the same parcel as the feature (BL-233, BL-1371)'
+
+human_approval: pending
+approval_context: >
+  A new feature file is authored here, so it needs a tap. No choice is
+  posed and there are no ruling_options. What needs sign-off is the
+  DISPOSITION only: that reviewing the landed diff of bab1f918c8 (BL-811 /
+  BL-849 posture) rather than re-implementing it is right, that medium is
+  the right severity for a review of a fault already fixed, and that the
+  two probes (P1 the property lane's ERR_IPC_CHANNEL_CLOSED under the
+  pre-commit guard, P2 the regex heuristic's reach) are recorded, not
+  fixed, inside this parcel. FIRM: the parcel changes no production file -
+  extension/src/tools/featureHandlerRegistrationText.ts is byte-identical
+  to the received commit; it adds evidence, a feature, a step handler and,
+  if the hardener extends them, TEST files only. FIRM: a refuted scenario
+  or a confirmed probe finding is a narrow follow-up via note to the
+  specifier, never an in-parcel rewrite. FIRM: the parcel never writes
+  human_decision into backlog/hotfix-ledger.yaml (scenario 04) - the human
+  records certify or waive with hotfix_ledger_update.bb --decide after this
+  reaches done. The ledger row is linked to this ticket in the mint commit.
+
+invariants:
+  - "The stamp never rewrites the hotfix: every file the parcel touches is evidence, a feature, a step handler (plus its lib/ helpers), or a test file; extension/src/tools/featureHandlerRegistrationText.ts stays byte-identical to the received commit."
+
+source: |
+  Specifier role_ask 2026-09-17 ~10:15Z (two options, pros and cons) and
+  the human's tapped answer, verbatim: "A: hotfix withoutEmbeddedSource now
+  (recommended)". Root cause: coordinator evidence
+  backlog/evidence/coordinator-feature-handler-guard-false-positive-20260917.md
+  (untracked on the shared checkout at the time; the coordinator's own
+  commit was refused by the same guard) and the specifier's independent
+  reproduction. Hotfix commit bab1f918c8, trailer `Hotfix-Certification:
+  pending`, landed with SWARMFORGE_ROLE=QA (the BL-848 how-to's
+  pipeline-path route) and SWARMFORGE_SKIP_PROPERTY_SUITE_GUARD=1 (the
+  BL-1121 recovery-only override) after two consecutive lane crashes with
+  no failing property. Parents: BL-1303, BL-848, BL-1607.
+
+description: |
+  ## What
+
+  An operator hotfix is live on main and has never been through a gate.
+  This ticket is that gate: a REVIEW ticket, not a rewrite ticket -
+  confirm or refute, and open narrow follow-ups for anything found.
+
+  ## What landed (files to review)
+
+  - `extension/src/tools/featureHandlerRegistrationText.ts`:
+    `withoutEmbeddedSource` is no longer two sequential regex passes
+    (template literals, then double-quoted strings). It is one
+    left-to-right scan that consumes each token in source order: line and
+    block comments (blanked), regex literals (blanked; a slash opens one
+    only in expression position - after `( [ { } , ; = : ? ! & | + - * %
+    < > ~ ^` or one of `return typeof case do else in instanceof new
+    throw void delete yield await` - and reads as division after an
+    identifier, a number, `)` or `]`; character classes honoured, an
+    unterminated one at end of line falls back to division), template
+    and double-quoted literals (blanked, as before) and single-quoted
+    literals (kept verbatim, as before - real requires and lib references
+    are single-quoted). Blanking can only make the check MISS an offender,
+    never invent one, the same direction the old passes erred.
+  - `extension/test/featureHandlerRegistrationCheck.test.js`: one new test,
+    "a single-quoted literal holding a double quote does not unpair the
+    blanking of a later embedded require" - the bl1607 shape (`'"'` then a
+    double-quoted require), the bl1410 shape (a regex literal holding an
+    apostrophe, one holding `['"]`, then a double-quoted require) and a
+    division line that must not read as a regex, asserted through both
+    `extractRequiredModules` and the assessor.
+
+  ## Why it was needed
+
+  QA's 1bcfa2ba45 (10:04) put `specs/pipeline/steps/bl1607ShippedStepScanBudgetGrowsWithLaneSteps.js`
+  on main. Its line 37 `if (c === '"' || c === "'" || c === '`') {`
+  desynced the old double-quote pass, so line 234's double-quoted fixture
+  string carrying `require('./test/helpers/propertyLaneContentionBudget')`
+  survived blanking and the guard reported that phantom module on every
+  commit on main - the coordinator's BL-1605 bookkeeping and the
+  specifier's mints alike. Intermediate shapes measured on the way to the
+  fix: a naive three-quote alternation reported 4 phantoms (apostrophes in
+  comments), comments blanked but regex literals unhandled reported 1
+  (bl1410's `/...test's.../`).
+
+  ## Review goals
+
+  1. Confirm the regression test and the assessor (scenario 01): run the
+     real unit test file against `extension/out` and pin the new test's
+     name (BL-1445 census pin).
+  2. Confirm the scanner on the shapes that mattered (scenario 02): drive
+     the real `extractRequiredModules` on the bl1607 shape, the bl1410
+     shape, a division line, a require inside a line comment and a
+     template literal holding a require - exactly the modules named,
+     nothing invented, nothing real lost.
+  3. Confirm the guard on the real tree (scenario 03): zero offenders
+     with `--assume-main` at the parcel commit, and a fixture tree with a
+     genuinely missing module is STILL refused (the fix did not fail
+     open).
+  4. PROBE P1, record, do not fix: the property lane died under the
+     pre-commit guard twice in a row (file 27 then file 23 of 414,
+     `ERR_IPC_CHANNEL_CLOSED`, refusal logs 000001 and 000002 of
+     2026-09-17) while the same lane completed for QA from its worktree at
+     09:41. Record whether the git hook environment (GIT_INDEX_FILE,
+     GIT_DIR, GIT_PREFIX inherited by the lane's fixture git commands) or
+     a specific file around position 23-27 of the lane's order is the
+     cause. A confirmed cause is a note to the specifier.
+  5. PROBE P2, record, do not fix: run `extractRequiredModules` and
+     `extractSiblingScripts` over every `specs/pipeline/steps/*.js` on
+     the parcel commit and diff the result against the same run on the
+     pre-hotfix build (`git show 1bcfa2ba45:extension/src/tools/featureHandlerRegistrationText.ts`
+     compiled aside, or the old two-pass regex re-applied in the probe):
+     list every file whose module set changed, and for each say whether
+     the change removed a phantom (expected) or dropped a real reference
+     (a finding). The census is the whole steps directory; record the
+     count.
+
+constraints: >
+  Evidence, the feature and handler, and TEST files only. No change to
+  featureHandlerRegistrationText.ts, to the guard script, to
+  index.js or to any step handler. The step handler lands with the
+  feature (BL-233). Evidence named BL-1622-*.
+
+out_of_scope: |
+  - Fixing P1 or P2 in this parcel: each confirmed finding is a note to
+    the specifier and its own narrow ticket.
+  - The whole-branch push 1bcfa2ba45 itself (recorded in
+    backlog/evidence/BL-1608-specifier-adjudication-of-post-fix-land-escalate-and-whole-branch-push-20260917.md).
+  - The certification decision (human, ledger --decide).
+
+qa_e2e_procedure: |
+  On the parcel commit, from the repo root:
+  1. `cd extension && npx vitest run test/featureHandlerRegistrationCheck.test.js test/checkFeatureHandlerRegistrationCli.test.js`
+     -> green, the new test named in the output.
+  2. `bash swarmforge/scripts/check_feature_handler_registration.sh . --assume-main`
+     -> exit 0, no offender.
+  3. Acceptance resolving all scenarios
+     (`bash specs/pipeline/scripts/run_acceptance.sh specs/features/BL-1622-*.feature`).
+  4. The evidence carries P1 and P2's records; `git diff main...HEAD
+     --name-only` names no path under extension/src.
+  5. `backlog/hotfix-ledger.yaml`'s row for bab1f918c8 still reads
+     `human_decision: null`.
+
+notes: |
+  Minted 2026-09-17 by the specifier in the same pass as the hotfix,
+  under the human's ruling A; the ledger row for bab1f918c8 is linked to
+  this ticket in the mint commit (hotfix_ledger_update.bb --link). INVEST:
+  Independent (the hotfix, the guard and the test file exist), Negotiable
+  (how the probes are recorded is direction), Valuable (a guard that
+  protects main gets its review, and two open questions get a recorded
+  answer), Estimable (one unit run, one guard run, five extractor rows,
+  two census probes - one sitting), Small (four scenarios, one invariant),
+  Testable (real tool in seconds - BL-1541). Severity medium per BL-1591's
+  precedent for a stamp of a fault already fixed.
