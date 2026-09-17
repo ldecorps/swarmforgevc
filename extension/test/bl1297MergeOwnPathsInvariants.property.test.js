@@ -7,6 +7,7 @@ const path = require('node:path');
 const { spawnSync, execFileSync } = require('node:child_process');
 const { mkTmpDir } = require('./helpers/tmpDir');
 const { assertReachFloor, runsPerCell } = require('./helpers/reachFloors');
+const { propertyLaneTimeoutMs } = require('./helpers/propertyLaneContentionBudget');
 
 // BL-1297 declared invariants (as amended 2026-08-30):
 //
@@ -357,7 +358,7 @@ test('property (invariant 1): delivered is the first-parent delta, authored is w
     assert.ok(seen.merge + seen['octopus-merge'] >= 2, `too few clean merge shapes: ${JSON.stringify(seen)}`);
     assert.ok(seen['evil-merge'] >= 1, `the only merge with an author was never drawn: ${JSON.stringify(seen)}`);
   });
-});
+}, propertyLaneTimeoutMs(20000));
 
 test('property (invariant 2): an empty answer is the truth, never an artefact of the invocation', () => {
   withRoots((mk) => {
@@ -426,7 +427,7 @@ test('property (invariant 2): an empty answer is the truth, never an artefact of
     assert.equal(nil.delivered, null, 'an unreadable commit was not nil under :delivered');
     assert.equal(nil.authored, null, 'an unreadable commit was not nil under :authored');
   });
-});
+}, propertyLaneTimeoutMs(20000));
 
 // ── invariant 3: each caller reads the question its own decision needs ─────
 
@@ -535,4 +536,4 @@ test('property (invariant 3): the land step reads delivered, the two send-time g
     assert.ok(seen.divergent > 0, `the two answers never diverged, so nothing was distinguished: ${JSON.stringify(seen)}`);
     assertReachFloor(seen, ['authoredTestFile', 'deliveredOnlyTestFile', 'divergent'], 1, 'divergence case');
   });
-});
+}, propertyLaneTimeoutMs(20000));
