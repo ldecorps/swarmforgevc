@@ -1,0 +1,184 @@
+id: BL-1615
+title: "A seat's dispatcher never reads its own new/: BL-983's stage-queue-dir points every @-seat at the stage's shared queue, so mail addressed to the seat itself - reverse-hop merge-only copies, the coordinator's branch-behind merge-up notes - is delivered into a box nothing claims; eight files sat undrainable in coder@2's inbox on 2026-09-17 with the daemon chasing them and the seat's branch never merging up; the claim path offers the stage queue and the seat's own new/ together, each file once in the one filename order, seat-addressed mail to that seat alone"
+milestone: M8
+type: defect
+severity: high
+# high: a live fault degrading behaviour on the default pack - every
+# reverse-hop merge-only copy and every branch-behind merge-up note sent
+# to coder@2 strands forever (8 files by 06:58Z on 2026-09-17, two with
+# .chase.json sidecars), the seat's tree never merges main by the note
+# path (drift), and the chase sweep feeds the health signals that throttle
+# intake (BL-1429).
+status: todo
+epic: multi-seat-stages
+priority: 5
+direction: swarm-reported
+depends_on: []
+# BL-982/BL-983/BL-1004 are in backlog/done. No open ticket touches
+# stage-queue-dir or the claim path's candidate list.
+mutation_cost: low
+# low: Babashka (no mutation/CRAP/DRY wired, BL-472): one helper, the
+# claim path's candidate list, one bb runner case, one feature and handler.
+slice_size_envelope: low
+required_stages: [coder, cleaner, architect, hardender, documenter, qa]
+
+acceptance: specs/features/BL-1615-a-seats-dispatcher-claims-the-mail-addressed-to-that-seat.feature
+
+required_wiring:
+  - 'swarmforge/scripts/ready_for_next_task.bb::claim-queue-dirs::the claim path enumerates candidates from the stage queue and the seat own new/ through this one helper; the name is chosen at mint so the literal exists only with the fix (BL-874, BL-1235)'
+  - 'specs/pipeline/steps/bl1615SeatDispatcherClaimsSeatMailSteps.js::registerSteps::the handler lands in the same parcel as the feature (BL-233, BL-1371)'
+
+human_approval: pending
+approval_context: >
+  A new feature file is authored here, so it needs a tap. No choice is
+  posed and there are no ruling_options. FIRM: seat-addressed mail stays
+  seat-specific - it is never redirected into the stage queue and never
+  offered to a sibling seat (a branch-behind merge-up note names the
+  seat's own branch; a reverse-hop merge-only copy syncs the seat's own
+  tree). FIRM: a stage-addressed parcel keeps BL-983's exactly-one-seat
+  claim and BL-1004's cross-seat deferral unchanged. FIRM: a bare
+  single-seat role and a master-resident row see exactly the candidate
+  set they see today - their two directories coincide. FIRM: no mailbox
+  file is moved or edited by hand to drain the eight; the fix drains them
+  through ready_for_next.sh.
+
+invariants:
+  - "Every candidate a seat's dispatcher offers comes from the stage queue or from the seat's own new/, is offered once, and is ordered by the one filename sort (priority, timestamp, sequence) across both directories - never queue first, seat box second."
+  - "A file delivered to a seat's own new/ is offered to that seat only: a sibling seat's dispatcher never lists it."
+
+description: |
+  ## What is wrong
+
+  `handoff_lib.bb` `stage-queue-dir` (lines 470-481) resolves an @-seat's
+  queue to the mailbox of the roles.tsv row whose id is the stage, and
+  `ready_for_next_task.bb` line 274 reads candidates from that directory
+  only (`new-dir (handoff-lib/stage-queue-dir :new)`); the seat's own
+  in_process/, completed/ and abandoned/ ARE its own (`my-mailbox-dir`),
+  so a claim moves a file from the shared queue into the seat's box. That
+  is BL-983's design and it is right for stage-addressed work. Delivery
+  is different: `handoff_inject_lib.bb` `target-path` puts a parcel into
+  the RECIPIENT's `mailbox-dir :new`, so `to: coder@2` lands in
+  `.worktrees/coder2/.swarmforge/handoffs/inbox/new/` - a directory no
+  dispatcher reads. Verified by coder@2 itself with the library
+  (`.worktrees/coder2/backlog/evidence/coder-at-2-seat-mailbox-undrainable-20260917.md`:
+  `(stage-queue-dir :new)` for coder@2 => the coder seat's new/) and by
+  the specifier from the master checkout at 06:58Z: eight files in that
+  directory, none ever claimed -
+
+  - `00_20260917T061947Z_000783_from_cleaner_to_coder@2_for_coder@2.handoff`
+    (BL-1604, non-forwarding, `.chase.json` chaseCount 2)
+  - `00_20260917T062328Z_002144_from_architect_to_coder@2_for_coder@2.handoff`
+    (BL-1604, non-forwarding, chased)
+  - `00_20260917T065549Z_000786_...` (BL-1610), `00_20260917T065643Z_000788_...`
+    (BL-1605), `00_20260917T065751Z_002148_...` (BL-1610) - reverse-hop
+    merge-only copies from the cleaner and architect
+  - `10_20260917T061544Z_009012`, `10_20260917T064325Z_009025`,
+    `10_20260917T065415Z_009026` - the coordinator's "branch behind ...
+    merge up" notes to the seat.
+
+  The senders are right to address the seat: `reverse_hop_lib.bb`
+  `reverse-recipients` enumerates every earlier roles.tsv row so each
+  seat's TREE gets its merge-only copy, and the branch-behind sweep names
+  the seat because the branch is the seat's. The dispatcher is wrong not
+  to read what they deliver. Effects: coder@2's tree merges main only when
+  it happens to claim a stage-addressed merge-only copy; every seat copy
+  strands and is chased forever; a note to coder@2 - the coordinator's
+  nudge, a specifier amendment - is a dead letter.
+
+  ## What is wanted
+
+  - A seat's dispatcher offers the union of the stage queue and the
+    seat's own new/ when the two are distinct, each file once, in the one
+    filename order across both (scenario 01 rows 1-3, scenario 02;
+    invariant 1).
+  - A file in a seat's own new/ is never listed by a sibling seat
+    (scenario 01 row 4; invariant 2).
+  - A bare single-seat role and a master-resident row (BL-1515's roster
+    shape: two rows sharing one checkout path with different session
+    values) see exactly today's candidate set - their two directories
+    coincide, so no file is offered twice (scenario 03).
+  - On the live repository, coder@2's `ready_for_next.sh` claims the
+    oldest priority-00 seat-addressed copy instead of printing NO_TASK,
+    and the eight files drain through `done_with_current.sh` (e2e step 3).
+
+  ## How (direction, not mandate)
+
+  - `claim-queue-dirs` in `ready_for_next_task.bb` (or beside
+    `stage-queue-dir` in `handoff_lib.bb`): `(distinct [(stage-queue-dir
+    :new) (my-mailbox-dir :new)])`; the candidate list is the
+    concatenation of `stage-handoff-files` over those directories, deduped
+    by basename, sorted by the filename sort `handoff-files` already
+    applies. `stage-handoff-files` (line 483) already passes files
+    addressed "to the seat itself", so its filter needs no change; the
+    BL-983 claim loop (`fs/move` as the atomic arbiter) and the BL-1004
+    sibling dedup sets are unchanged.
+  - If `ready_for_next_batch.bb` reads `stage-queue-dir` too, it takes the
+    same helper - one definition, two call sites; if it does not, say so
+    in the evidence and leave it.
+  - Fixture: BL-983's handler fixture (`bl983StageQueueSteps.js`: a stage
+    with two seats, own worktree and mailbox each) extended with delivery
+    into the seat's own new/; scenario 03's second row builds the
+    master-resident roster shape (BL-1515). All in seconds (BL-1541).
+  - Documenter: handoff-protocol.md's BL-983 seat paragraph says a seat
+    claims from the stage queue AND its own new/; `docs/diagrams/handoff-flow.mmd`
+    if it draws the seat queue (registry trigger: the inbox state
+    machine - update if drawn).
+
+constraints: >
+  ready_for_next_task.bb (and the batch twin if it reads stage-queue-dir),
+  one helper, the bb runner, the feature and handler, evidence and docs.
+  No change to delivery (handoff_inject_lib.bb), to reverse_hop_lib.bb, to
+  BL-983's exactly-one-seat claim, or to BL-1004's deferral. The step
+  handler lands with the feature (BL-233). Evidence named BL-1615-*.
+
+out_of_scope: |
+  - The duplicate builds of BL-1604 and BL-1610 on 2026-09-17: BL-1616
+    (seat affinity blind to Work-note builds) and the coder.prompt rule
+    landed with this mint (an amendment note is not the parcel).
+  - Redirecting seat-addressed mail into the stage queue - rejected: a
+    merge-up note names one seat's branch and a reverse-hop copy syncs
+    one seat's tree; a sibling must never claim them.
+  - The chase and watchdog sweeps: they already see seat boxes (they
+    chased 000783 and 002144); once the seat drains, the chases stop.
+
+qa_e2e_procedure: |
+  On the parcel commit, from the repo root:
+  1. Acceptance resolving all scenarios
+     (`bash specs/pipeline/scripts/run_acceptance.sh specs/features/BL-1615-*.feature`),
+     and BL-983, BL-1004, BL-1001, BL-1167 features still resolving.
+  2. The ready_for_next_task runner extended
+     (`swarmforge/scripts/test/ready_for_next_claim_task_name_runner.bb`
+     or a sibling) -> green.
+  3. Live: with the parcel merged into `.worktrees/coder2`, `ready_for_next.sh`
+     run as the coder@2 seat prints TASK for the oldest priority-00
+     seat-addressed file (000783 as of 2026-09-17 06:58Z) instead of
+     NO_TASK; `done_with_current.sh` drains each of the eight; the
+     `.chase.json` chaseCount on 000783 stops growing.
+  4. Negative: from `.worktrees/coder`, `ready_for_next.sh` never lists a
+     `_to_coder@2_` file.
+
+source: |
+  Coordinator note to the specifier, priority 00, 2026-09-17T06:55Z
+  (inbound 00_20260917T065504Z_009027): "coder@2 reworks non-forwarding
+  inbounds fresh (BL-1604+BL-1610 today)". coder@2 evidence
+  .worktrees/coder2/backlog/evidence/coder-at-2-seat-mailbox-undrainable-20260917.md.
+  Specifier adjudication:
+  backlog/evidence/BL-1615-specifier-adjudication-of-coordinator-coder-at-2-rework-note-20260917.md.
+  Parents: BL-982, BL-983, BL-1004.
+
+notes: |
+  Minted 2026-09-17 by the specifier while completing the coordinator's
+  note. The note's diagnosis is corrected in the evidence: coder@2's two
+  reworks came from a claimed retry Work note (BL-1604, 009003) and from
+  the REAL bounce of BL-1610 (001373), both taken from the shared stage
+  queue - not from non-forwarding copies, which are exactly the files it
+  cannot drain. INVEST: Independent (stage-queue-dir, my-mailbox-dir and
+  the BL-983 fixture exist), Negotiable (helper placement is direction),
+  Valuable (seat-addressed mail becomes deliverable; eight stuck files
+  drain; the chase noise stops), Estimable (one two-element union, one
+  dedup, one sort - one sitting), Small (three scenarios, two
+  invariants), Testable (real claim path on a fixture roster in seconds -
+  BL-1541). Severity high: a live strand on the default pack. Until this
+  lands, nothing addressed to coder@2 is read: route seat-independent
+  mail to `coder` (the shared queue) and expect coder@2's branch to merge
+  up only through stage-addressed merge-only copies it happens to claim.

@@ -1,0 +1,115 @@
+id: BL-1620
+title: "BL-791 slice D, first cut: the unit lane's two largest poles - bl968StepRegistryMaterializedTreeGuard.test.js at 69.9 s and telegramFrontDeskBotCli.test.js at 65.3 s (census 2026-09-16, 9 forks, load 10.8; half the nine poles' 273 s between them) - come under the 7000 ms per-file budget with no test deleted, skipped or excluded, their suite-poles.tsv rows move from the epic to this ticket at mint and leave in the same land, and the cause of each is named"
+milestone: M8
+type: chore
+epic: unit-suite-speed
+priority: 12
+direction: human-requested
+depends_on: []
+# BL-1598 (pole register, landed) owns the gate this discharges; BL-1599
+# (work ratchet) is active and independent.
+mutation_cost: medium
+# medium: two test files and any fixture helper they gain, under the unit
+# lane's coverage/mutation/CRAP tooling; production code unchanged.
+slice_size_envelope: low
+required_stages: [coder, cleaner, architect, hardender, documenter, qa]
+
+acceptance: specs/features/BL-1620-two-unit-lane-poles-come-under-the-per-file-budget.feature
+
+required_wiring:
+  - 'specs/pipeline/steps/bl1620TwoUnitLanePolesSteps.js::registerSteps::the handler lands in the same parcel as the feature (BL-233, BL-1371)'
+# No production anchor on purpose (BL-1235): the deliverable is two test
+# files under budget and two register rows gone; the gate that proves it is
+# BL-1598's, already wired into recordTestDuration.js.
+
+human_approval: pending
+approval_context: >
+  Your 2026-09-17 ask, the cutting half for the unit lane: the epic's slice
+  D exists since 2026-09-16 and was not minted; this is its first cut, the
+  two largest files. FIRM: no test deleted, skipped or excluded; test count
+  per file may only rise (BL-791's own rule). FIRM: under-budget is
+  measured (three runs under 7000 ms at load below 8), never asserted.
+  FIRM: the two register rows move to this ticket now and leave with its
+  land (BL-1598: a surviving row reads stale). No choice is posed and there
+  are no ruling_options.
+
+invariants:
+  - "No test is deleted, skipped or excluded: each file's test count at the parcel is greater than or equal to its count at the received commit."
+  - "Under-budget is measured, never asserted: a register row leaves only with three recorded runs under 7000 ms at a 1-minute load below 8."
+
+description: |
+  ## What is wrong
+
+  BL-791's slice D ("the poles, per file, once BL-1598's register owns
+  them") has sat unminted since 2026-09-16 while the human asks why the
+  swarm runs tests for hours. `backlog/suite-poles.tsv` (BL-1598) names
+  nine files over the 7000 ms budget, owned by the epic with "cut work not
+  yet minted". The two largest - `bl968StepRegistryMaterializedTreeGuard.test.js`
+  69.9 s and `telegramFrontDeskBotCli.test.js` 65.3 s - are 135 s of the
+  nine's 273 s. Both are the shapes slice B named: a guard that walks the
+  live repository (BL-1038) and a CLI test that spawns real processes per
+  case (BL-1039).
+
+  ## What is wanted
+
+  - Both files under 7000 ms in three consecutive `npm test` runs at a
+    1-minute load below 8, test count equal or higher, nothing skipped
+    (scenario 01; invariants 1-2).
+  - Their suite-poles.tsv rows, moved to BL-1620 at mint (this commit),
+    removed in the same land; the verdict prints no new-pole and no
+    stale-row for them (scenario 02).
+  - The cause per file named in evidence with the pattern that replaced it
+    (scenario 03): a materialized fixture tree instead of the live repo, an
+    in-process CLI main with stubbed cwd/argv instead of a spawned node per
+    case (engineering.prompt "CLI main() is a thin wrapper").
+
+  ## How (direction, not mandate)
+
+  - Profile each file alone (`npx vitest run <file> --reporter=json`) to
+    find the per-test cost; the epic's slice B tickets (BL-1038, BL-1039)
+    show the two remedies. Keep every assertion; add a shared fixture
+    builder only if both files need it.
+  - Evidence names the before/after per-file ms from the JSON report at the
+    same load band.
+  - Documenter: BL-791's how-to gains the two entries; nothing else.
+
+constraints: >
+  The two test files, any fixture helper they gain, backlog/suite-poles.tsv
+  rows, evidence. No production code, no config, no budget or register
+  rule change. The step handler lands with the feature (BL-233). Evidence
+  named BL-1620-*.
+
+out_of_scope: |
+  - The other seven poles and the watch file (BL-791 slice D, next cuts -
+    minted one or two files at a time as this one lands).
+  - bl1277UnscopedStepCollisionGuard's 20 s timeout red (BL-1600 landed;
+    BL-1607 active).
+
+qa_e2e_procedure: |
+  On the parcel commit, from extension/:
+  1. Acceptance resolving all scenarios
+     (`bash specs/pipeline/scripts/run_acceptance.sh specs/features/BL-1620-*.feature`).
+  2. `npm test` once (the three-run measurement is the parcel's own, in its
+     evidence): the verdict line shows no new-pole and no stale-row for
+     either file; `backlog/suite-poles.tsv` has no row for either.
+  3. `git diff <received>..<parcel> --stat` touches only the two test
+     files, any helper, the register and evidence.
+
+source: |
+  Human intake via the operator, 2026-09-17T07:10Z ("BL-791 slice D
+  minted"), backlog/INTAKE-test-lanes-run-for-hours-changed-path-selection-20260917.md
+  (archived with its disposition). Census: backlog/suite-poles.tsv and
+  BL-791 remaining_slices (2026-09-16). Specifier adjudication:
+  backlog/evidence/BL-1618-specifier-adjudication-of-test-lanes-run-for-hours-intake-20260917.md.
+  Siblings the same pass: BL-1618, BL-1619. Parent: BL-791 (slices B, C).
+
+notes: |
+  Minted 2026-09-17 by the specifier draining the backlog root; the two
+  register rows re-owned in the same commit. INVEST: Independent (the
+  register, the recorder and the slice B patterns exist), Negotiable (the
+  remedy per file is the coder's to choose within the two named patterns),
+  Valuable (half the poles' work gone, two register rows retired),
+  Estimable (two files with known shapes - one sitting), Small (three
+  scenarios, two invariants), Testable (measured per-file ms from the JSON
+  report). Priority 12: below BL-1618/1619 - the unit lane is 36 s wall
+  today; these poles matter to the per-file gate, not to the hours.
