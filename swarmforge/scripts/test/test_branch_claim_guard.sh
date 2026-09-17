@@ -53,7 +53,14 @@ mkdir -p "$ROOT/.swarmforge" \
          "$CODER_WT/.swarmforge/handoffs/inbox/completed"
 printf 'coder\tcoder\t%s\tswarmforge-coder\tCoder\tclaude\ttask\n' "$CODER_WT" \
   > "$ROOT/.swarmforge/roles.tsv"
-printf 'swarm_name\tprimary\nswarm_mode\tautonomous\n' > "$ROOT/.swarmforge/swarm-identity"
+# BL-1613: a complete swarm root also carries the conf-path key BL-966
+# reads (backlog_depth_lib.bb/conf-file-path) - absent, every claim prints
+# its loud no-swarm-identity fallback to stderr (by design, never silent),
+# which the guard-01 rows below assert NEVER happens on a passing claim.
+mkdir -p "$ROOT/swarmforge"
+: > "$ROOT/swarmforge/swarmforge.conf"
+printf 'swarm_name\tprimary\nswarm_mode\tautonomous\nactive_backlog_max_depth_conf_path\tswarmforge/swarmforge.conf\n' \
+  > "$ROOT/.swarmforge/swarm-identity"
 
 INBOX="$CODER_WT/.swarmforge/handoffs/inbox"
 
