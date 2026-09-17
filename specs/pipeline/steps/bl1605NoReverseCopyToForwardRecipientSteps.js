@@ -9,9 +9,9 @@
 
 const assert = require('node:assert/strict');
 const fs = require('node:fs');
-const os = require('node:os');
 const path = require('node:path');
 const { execFileSync, spawnSync } = require('node:child_process');
+const { mkSocketFixtureRoot } = require('./lib/socketFixtureRoot');
 
 const FEATURE = 'BL-1605 No reverse copy to a role the forward already names';
 
@@ -41,7 +41,7 @@ function mailboxDir(root, role, ...rest) {
 }
 
 function makeFixtureRoot() {
-  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'bl1605-'));
+  const root = mkSocketFixtureRoot('bl1605-');
   sh('git', ['init', '-q'], { cwd: root });
   sh('git', ['config', 'user.email', 'test@test'], { cwd: root });
   sh('git', ['config', 'user.name', 'test'], { cwd: root });

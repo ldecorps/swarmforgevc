@@ -43,4 +43,20 @@ bash specs/pipeline/scripts/run_acceptance.sh \
   specs/features/BL-1185-work-note-missing-task-header-defers-hard-seat.feature
 ```
 
+## Silently reverted, then restored (BL-1608)
+
+BL-1167's land (`ccc63d8cfd`, 2026-08-27, same afternoon as this fix)
+rewrote `difficulty-allows-claim?`'s signature and replaced the call above
+with a bare `task:` header read — removing this attribution outright, one
+commit after its own architect pass said "keep BL-1185 attribution"
+(the BL-571/BL-958 silent-revert class). Nothing ran this feature again
+until 2026-09-16, when a full acceptance-corpus run (BL-1602) found
+scenario 02 red on `main` and traced it to the missing call.
+
+BL-1608 restores it as `claim-task-name`, one shared function both
+`difficulty-allows-claim?` and `apply-effort-for-task!` (BL-1316's effort
+apply, which reads the same attribution at claim time and had silently
+lost it too) now call — so the two readers cannot drift apart again the
+way a duplicated inline read once did.
+
 Related: [Difficulty-aware coder seat routing](BL-1001-difficulty-aware-coder-seat-routing.md).
