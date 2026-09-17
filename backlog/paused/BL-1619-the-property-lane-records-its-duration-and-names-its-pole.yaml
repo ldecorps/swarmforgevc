@@ -1,0 +1,139 @@
+id: BL-1619
+title: "The property lane has no measurement at all - 414 *.property.test.js files, one flat 20 s testTimeout, 319.94 s wall on 2026-09-16, no duration row, no per-file work, no pole, no verdict - so its reds are found one file at a time when the timeout fires under load and each becomes a ticket (BL-1588, BL-1596, BL-1607); npm run test:properties appends one row per completed run with files, result, wall, work, pole and pole file to extension/.property-durations.jsonl and prints a verdict naming the pole and the files above half the timeout, the recorder half of the BL-078/BL-378 mirror, changing nothing about what vitest runs or how it exits"
+milestone: M8
+type: feature
+epic: unit-suite-speed
+priority: 4
+direction: human-requested
+depends_on: []
+# recordTestDuration.js, vitest.properties.config.mjs and the vitest JSON
+# reporter exist; BL-1596 (bare per-test timeouts) is a paused sibling on
+# the same lane and touches test files, not the runner.
+mutation_cost: medium
+# medium: a node script beside recordTestDuration.js with a unit test and
+# a wiring test; TypeScript tooling under mutation/CRAP/DRY (the recorder
+# is plain node like its sibling - keep it a thin wrapper over an exported
+# helper, engineering.prompt).
+slice_size_envelope: low
+required_stages: [coder, cleaner, architect, hardender, documenter, qa]
+
+acceptance: specs/features/BL-1619-the-property-lane-records-its-duration-and-names-its-pole.feature
+
+required_wiring:
+  - 'extension/package.json::recordPropertyDuration.js::the test:properties script is the pre-existing consumer; the literal exists only with the fix (BL-874, BL-1235)'
+  - 'specs/pipeline/steps/bl1619PropertyLaneRecordsDurationSteps.js::registerSteps::the handler lands in the same parcel as the feature (BL-233, BL-1371)'
+
+human_approval: pending
+approval_context: >
+  Your 2026-09-17 ask, the measurement half: the property lane gets the
+  duration row and verdict the unit lane has had since BL-078/BL-378. FIRM:
+  observation only - the recorder never changes which files run, their
+  order, the timeout or the exit status; a killed run leaves no row. FIRM:
+  no budget, no refusal, no register in this slice - the pole register and
+  the work ratchet (the BL-1598/BL-1599 mirror) are BL-791 slice E, minted
+  from the census this recorder produces. FIRM: the first row on the
+  parcel is the census: the evidence lists the top ten files by work.
+  No choice is posed and there are no ruling_options.
+
+invariants:
+  - "Every completed property-lane run, pass or fail, appends exactly one row; a run that did not complete appends none."
+  - "The recorder changes nothing vitest does: same files, same order, same result, same exit status - observation only."
+
+description: |
+  ## What is wrong
+
+  Intake (human, verbatim, 2026-09-17): "What happened to make the swarm
+  knowingly run tests for hours? Is there a ticket to revisit the unit
+  tests so that they can run quickly?" The unit lane is measured and
+  ratcheted (extension/.test-durations.jsonl: 1029 files, pass, 35.8 s
+  wall, work 273.6 s, pole 34.3 s). The property lane is not:
+  `extension/vitest.properties.config.mjs` runs 414 `*.property.test.js`
+  files under one `testTimeout: 20000`, one full run took 319.94 s wall on
+  2026-09-16 (QA evidence), and nothing records per-file work, the pole or
+  the trend. Known process-spawning shapes - one bb process per draw
+  (BL-1556), 98 bb processes per run (BL-1564), fixture-spawning files that
+  only miss under full-lane load (BL-1588) - are found one at a time when
+  the flat timeout fires under load, and each becomes a ticket verified by
+  re-running the slow file. The lane grew 407 to 414 files in two days
+  with no measurement of what that costs.
+
+  ## What is wanted
+
+  - `npm run test:properties` runs through a recorder that appends one row
+    per completed run to `extension/.property-durations.jsonl` -
+    finished_at, file_count, result, duration_ms, work_ms, pole_ms,
+    pole_file - on pass and on fail, with vitest's own exit status
+    (scenario 01; invariant 1).
+  - A verdict line at the end naming the pole and its seconds, every file
+    above half the lane's testTimeout (10 s) with its seconds, the work sum
+    and the wall (scenario 02) - the poles are visible before they time
+    out under load.
+  - A killed or crashed run appends nothing (scenario 03); the recorder is
+    observation only (scenario 04; invariant 2).
+  - The first row on the parcel is the census: the evidence lists the top
+    ten files by work, which BL-791 slice E (register + ratchet) is minted
+    from.
+
+  ## How (direction, not mandate)
+
+  - `extension/scripts/recordPropertyDuration.js`, the shape of
+    `recordTestDuration.js` (BL-078/BL-378): spawn vitest with the
+    properties config and the JSON reporter to a report file, read per-file
+    durations from the report, append the row, print the verdict, exit with
+    vitest's status. `package.json` `test:properties` becomes
+    `npm run compile && node scripts/recordPropertyDuration.js`. Keep the
+    row-building and verdict-composing pure helpers exported and unit-tested
+    with a fixture report (in-process, stubbed cwd - engineering.prompt);
+    the script itself a thin wrapper.
+  - The acceptance handler drives the exported helpers on fixture reports
+    and the wrapper on a fake vitest (a stub on PATH writing a canned report)
+    - never the real 320 s lane (BL-1541).
+  - Documenter: docs/how-to for the unit-lane recorder gains the property
+    twin; engineering-detailed.prompt "Test Speed And Isolation" names the
+    row.
+
+constraints: >
+  One script, its pure helpers and tests, the package.json script line, the
+  feature and handler, evidence and docs. No change to
+  vitest.properties.config.mjs's include, timeout or workers, to any
+  property test, or to the unit-lane recorder. The step handler lands with
+  the feature (BL-233). Evidence named BL-1619-*.
+
+out_of_scope: |
+  - A per-file budget, pole register or work ratchet for the property lane
+    (BL-791 slice E, after this recorder's census).
+  - Which roles run the property lane (BL-1618).
+  - The bare per-test timeouts in 38 property files (BL-1596, paused).
+  - Timing records for the bb property and shell runners under
+    swarmforge/scripts/test/ (BL-791 remaining slice, if they are ever run
+    as a lane outside the hardender).
+
+qa_e2e_procedure: |
+  On the parcel commit, from extension/:
+  1. Unit and wiring tests for the recorder's helpers green (`npm test`).
+  2. Acceptance resolving all scenarios
+     (`bash specs/pipeline/scripts/run_acceptance.sh specs/features/BL-1619-*.feature`).
+  3. ONE real `npm run test:properties` run on this parcel: exactly one new
+     row in extension/.property-durations.jsonl, the verdict line printed,
+     vitest's own exit status; the evidence records the row and the top ten
+     files by work. Never "run it N times".
+  4. `git diff` shows vitest.properties.config.mjs unchanged.
+
+source: |
+  Human intake via the operator, 2026-09-17T07:10Z, filed as
+  backlog/INTAKE-test-lanes-run-for-hours-changed-path-selection-20260917.md
+  (archived to backlog/archive/ with its disposition), coordinator note
+  009046. Specifier adjudication:
+  backlog/evidence/BL-1618-specifier-adjudication-of-test-lanes-run-for-hours-intake-20260917.md.
+  Siblings the same pass: BL-1618, BL-1620. Parents: BL-078, BL-378, BL-792.
+
+notes: |
+  Minted 2026-09-17 by the specifier draining the backlog root. INVEST:
+  Independent (the sibling recorder, the reporter and the config exist),
+  Negotiable (report parsing shape is direction), Valuable (the lane the
+  hours are spent in becomes measurable, and its poles visible before they
+  time out), Estimable (one wrapper mirroring an existing one, one
+  verdict, one sitting), Small (four scenarios, two invariants), Testable
+  (fixture reports and a stub vitest, seconds). Priority 4, just behind
+  BL-1618: measurement before cutting, as BL-791 slice A did for the unit
+  lane.

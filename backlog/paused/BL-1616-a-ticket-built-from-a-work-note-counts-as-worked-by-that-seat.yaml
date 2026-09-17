@@ -1,0 +1,170 @@
+id: BL-1616
+title: "BL-1004's seat affinity reads a seat's worked tasks from git_handoff task headers only, and coder work is dispatched by Work notes that carry the ticket in their message, so a seat that built a ticket from a Work note holds no worked record and the ticket's bounce is claimed by the sibling seat with none of the history: BL-1610's bounce 001373 went to coder@2 on 2026-09-17 06:41Z although coder built it; a completed Work note names the ticket its message names through the one shared attribution, and a note completed with a --no-work reason names nothing"
+milestone: M8
+type: defect
+severity: high
+# high: a live fault degrading behaviour - on the default two-seat pack
+# every bounce of a Work-note-dispatched ticket (the coordinator's normal
+# route) is a coin toss between seats, BL-1004's own incident shape
+# re-opened for the normal route; on 2026-09-17 it produced a second
+# rebuild of BL-1610 on a tree without the build (coder@2 7b78e9d58a,
+# never forwarded, now orphaned) beside the coder's own.
+status: todo
+epic: multi-seat-stages
+priority: 5
+direction: swarm-reported
+depends_on: []
+# BL-1608 (active) restores claim-task-name in ready_for_next_task.bb over
+# supersede-lib/task-name-from-content; this ticket attributes through the
+# SAME underlying reader from handoff_lib.bb, so the two share one parser
+# whichever lands first - not a dependency on an unbuilt sibling.
+mutation_cost: low
+# low: Babashka (no mutation/CRAP/DRY wired, BL-472): one reader in
+# handoff_lib.bb, its runner cases, one feature and handler.
+slice_size_envelope: low
+required_stages: [coder, cleaner, architect, hardender, documenter, qa]
+
+acceptance: specs/features/BL-1616-a-ticket-built-from-a-work-note-counts-as-worked-by-that-seat.feature
+
+required_wiring:
+  - 'swarmforge/scripts/handoff_lib.bb::task-name-from-content::worked-task-names-in attributes a Work note through supersede-lib, the reader BL-1185 and BL-1608 use; the literal is absent from handoff_lib.bb today (grep verified 2026-09-17) so it exists only with the fix (BL-1235)'
+  - 'specs/pipeline/steps/bl1616WorkNoteCountsAsWorkedSteps.js::registerSteps::the handler lands in the same parcel as the feature (BL-233, BL-1371)'
+
+human_approval: pending
+approval_context: >
+  A new feature file is authored here, so it needs a tap. No choice is
+  posed and there are no ruling_options. FIRM: a Work note is still never
+  itself a rework candidate (rework-claim-decision's git_handoff-only
+  rule stands) - only the WORKED SET learns to read Work notes. FIRM: one
+  attribution - the ticket named in the note's message, read by
+  supersede-lib/task-name-from-content, the same reader BL-1185 used and
+  BL-1608 restores - never a second parser of the Work message. FIRM: a
+  note completed with a --no-work reason is not history; a declined
+  ticket must not pull its bounce toward the seat that declined it.
+  FIRM: BL-1004's deadline release and its single-seat unreachability are
+  unchanged.
+
+invariants:
+  - "A seat's worked-task set is the union, over its completed/ and in_process/ (batch_* included), of the task each file names: a git_handoff by its task header, a Work note by the ticket its message names through the one shared attribution - never a second parser of the Work message."
+  - "A Work note completed with a --no-work reason names no worked task."
+
+description: |
+  ## What is wrong
+
+  `handoff_lib.bb` `worked-task-names-in` (lines 507-517) keeps only
+  `git_handoff` files and reads their `task` header; `sibling-worked-task-names`
+  and the daemon-side `stage-seat-worked-task-sets` build on it, and
+  `seat_affinity_lib.bb` `rework-claim-decision` defers a stage-queue
+  bounce when a sibling's set holds its task. The coordinator routes
+  coder work as a Work note ("Work BL-1610-...: read file ..."), a `note`
+  with the ticket in its message and no task header - so a seat that
+  builds from one records nothing in its worked set, and the bounce of
+  what it built is decided by whichever seat polls first.
+
+  Measured 2026-09-17: the coder seat's completed/ holds Work notes 008954
+  and 008992 for BL-1610 and no git_handoff for it; the hardender's bounce
+  001373 (task BL-1610) entered the stage queue at 06:23Z and coder@2
+  claimed it at 06:41:26Z with no deferral line, because `sibling-tasks`
+  at coder@2 did not contain BL-1610. coder@2 merged the bounce and
+  rebuilt on a tree that never held the build (7b78e9d58a, 06:52Z) while
+  the coder forwarded its own rebuild (76c1ab039e/023ca45241) from the
+  specifier's amendment note; the bounce was then completed with nothing
+  sent and 7b78e9d58a is orphaned on coder@2's branch. This is BL-1004's
+  own incident (BL-994 on 2026-08-20) re-opened for every ticket the
+  coordinator routes the normal way. The same blindness let coder@2 claim
+  the BL-1604 retry Work note 009003 while the coder had 008964 in its
+  history - but a Work note is by design never a rework candidate
+  (`rework-claim-decision` line 77), so that path stays a plain claim and
+  is not this ticket's to change.
+
+  ## What is wanted
+
+  - `worked-task-names-in` also names, for each `note` in the directory,
+    the ticket its message names through the shared attribution
+    (`supersede-lib/task-name-from-content`), so a seat that built a
+    ticket from a Work note is its prior worker and the sibling defers
+    the bounce within the deadline (scenario 01 row 1; invariant 1).
+  - A note completed with a `--no-work` reason (the header
+    `done_with_current.sh --no-work` stamps) contributes nothing: a
+    declined ticket is not history (scenario 01 row 2; invariant 2).
+  - The cross-seat deadline release and the claim-cross-seat message are
+    unchanged (scenario 01 row 3); a note naming no ticket contributes
+    nothing (scenario 02); a single-seat stage never consults the set
+    (scenario 03).
+  - `stage-seat-worked-task-sets` (the stall sweeps' twin, lines 531+)
+    reads the same helper, so `deferral-hold?` agrees with the claim path
+    on what a seat has worked - the two must not drift (BL-897's shape).
+
+  ## How (direction, not mandate)
+
+  - Extend `worked-task-names-in`: `git_handoff` -> `task` header; `note`
+    without the no-work header -> `(supersede-lib/task-name-from-content
+    message)`; anything else or nil -> dropped. If `handoff_lib.bb` cannot
+    require `supersede_lib.bb` without a cycle, move
+    `task-name-from-content` into a tiny lib both require, or inject the
+    reader - one reader, however it is reached; BL-1608's
+    `claim-task-name` may delegate to it once both have landed.
+  - Runner: the handoff_lib or seat_affinity_lib bb runner gains the
+    shapes of scenario 01 and 02 as unit cases (the lane's only gate for
+    Babashka, BL-472).
+  - Fixture: BL-1004's handler fixture (`bl1004ReworkClaimSteps.js`: two
+    coder seats, a stage queue, a prior worker) extended so the prior
+    worker's record is a completed Work note rather than a git_handoff;
+    scenario 01 row 2 stamps the no-work header on it. All in seconds
+    (BL-1541).
+  - Documenter: handoff-protocol.md's BL-1004 paragraph says "worked"
+    includes a ticket built from a Work note and excludes a no-work
+    completion; `docs/how-to` for seat routing if it lists what counts as
+    worked.
+
+constraints: >
+  handoff_lib.bb's worked-task readers and their runner, the feature and
+  handler, evidence and docs. No change to rework-claim-decision, to
+  deferral-hold?'s polarity, to the claim loop, or to the Work-note
+  message format. The step handler lands with the feature (BL-233).
+  Evidence named BL-1616-*.
+
+out_of_scope: |
+  - Seat-addressed mail being undrainable (BL-1615).
+  - The coder forwarding a rebuild from a specifier amendment note ahead
+    of the bounce (coder.prompt rule landed with this mint).
+  - Whether a retry Work note should be deferred while a sibling holds the
+    original in_process - a Work note is not a rework; BL-1614 removes the
+    stale-read declines that produce retries.
+
+qa_e2e_procedure: |
+  On the parcel commit, from the repo root:
+  1. Acceptance resolving all scenarios
+     (`bash specs/pipeline/scripts/run_acceptance.sh specs/features/BL-1616-*.feature`);
+     BL-1004, BL-1185, BL-1608 and BL-983 features still resolving.
+  2. The bb runner extended -> green.
+  3. Live: `bb -e '(load-file "swarmforge/scripts/handoff_lib.bb") ...'`
+     calling the worked-set reader on the coder seat's completed/ names
+     BL-1610 (from Work note 008992) and BL-1604 (from 008964 unless it
+     carries the no-work header); the same call on 2026-09-17's main
+     names neither.
+  4. Live probe: a bounce for a ticket the coder seat built from a Work
+     note, entering the stage queue while both seats are idle, prints the
+     deferral line at coder@2 and is claimed by coder.
+
+source: |
+  Coordinator note to the specifier, priority 00, 2026-09-17T06:55Z
+  (inbound 00_20260917T065504Z_009027): "coder@2 reworks non-forwarding
+  inbounds fresh (BL-1604+BL-1610 today)". Mailbox trail and library
+  reading: backlog/evidence/BL-1615-specifier-adjudication-of-coordinator-coder-at-2-rework-note-20260917.md.
+  Parents: BL-983, BL-1004, BL-1185, BL-1608.
+
+notes: |
+  Minted 2026-09-17 by the specifier while completing the coordinator's
+  note, beside BL-1615. INVEST: Independent (worked-task-names-in, the
+  supersede-lib reader and BL-1004's fixture exist; BL-1608 is a sibling
+  consumer of the same reader, not a prerequisite), Negotiable (where the
+  reader is reached from is direction), Valuable (a bounce follows the
+  seat that built the ticket on the normal route), Estimable (one reader
+  extension, three runner cases, one fixture change - one sitting), Small
+  (three scenarios, two invariants), Testable (real claim path on a
+  fixture roster in seconds - BL-1541). Severity high: BL-1004's incident
+  shape live on the default route. coder@2's orphaned 7b78e9d58a should be
+  reverted on that branch before its next merge-up; a note to coder@2 is
+  a dead letter until BL-1615 lands, so this is recorded here and in the
+  evidence for whichever seat or sweep reaches it.

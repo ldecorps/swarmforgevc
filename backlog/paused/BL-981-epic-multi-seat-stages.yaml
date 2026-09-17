@@ -6,7 +6,7 @@ type: epic
 epic: multi-seat-stages
 priority: 26
 depends_on: []
-decomposes_into: [BL-982, BL-983, BL-1001, BL-1004, BL-1040, BL-1316, BL-1319, BL-1320]
+decomposes_into: [BL-982, BL-983, BL-1001, BL-1004, BL-1040, BL-1316, BL-1319, BL-1320, BL-1608, BL-1615, BL-1616]
 
 remaining_slices:
   - "Difficulty-aware routing among seats of a stage: map a ticket difficulty
@@ -140,4 +140,12 @@ notes: |
   must not both own the mapping); BL-909 / stage-dwell (bottleneck naming,
   observe-only); coordinator.prompt Swarm Optimizer (already recommends "add a
   role instance" with no substrate behind it - this epic supplies the substrate).
+  2026-09-17 (specifier): two defects minted on the coordinator's coder@2
+  note - BL-1615 (a seat's dispatcher never reads its own new/, so
+  seat-addressed reverse-hop copies and merge-up notes strand) and BL-1616
+  (BL-1004's worked set ignores Work-note builds, so a bounce goes to the
+  sibling without the history); BL-1608 (active, Work-note attribution for
+  the claim predicate) recorded here too. Evidence:
+  backlog/evidence/BL-1615-specifier-adjudication-of-coordinator-coder-at-2-rework-note-20260917.md.
+
 mutation_cost: low
