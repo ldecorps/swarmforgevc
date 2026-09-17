@@ -26,7 +26,7 @@ flowchart TD
   READY["recipient runs ready_for_next.sh"]
   PICK{"any dequeueable\nfile in new/ ?"}
   NOTASK(["NO_TASK\n(mono-router non-home role:\nROTATE_HOME instead)"])
-  CLAIM["move new/ -> in_process/\nstamp dequeued_at,\nwrite .claim-progress.json"]
+  CLAIM["move new/ -> in_process/\nstamp dequeued_at +\nreceived_at_head (BL-1610),\nwrite .claim-progress.json"]
 
   GUARD{"branch-claim guard:\nworktree branch matches\nthe claimed ticket?"}
   AUTOFIX["clean but wrong branch:\nauto-checkout the standard branch,\nturn proceeds"]
