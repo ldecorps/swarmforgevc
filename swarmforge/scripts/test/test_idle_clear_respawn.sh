@@ -118,6 +118,21 @@ exit 0
 TMUX
 chmod +x "$FAKE_BIN/tmux"
 
+# BL-1609: a forwarding git_handoff only leaves in_process once its own
+# forward has been queued (or non-forwarding/--no-op). This file's fixtures
+# are about idle-clear-respawn, not forwarding, so each queued item also
+# gets a matching already-queued forward in the SAME worktree's outbox -
+# real evidence, not an opt-out, so the item stays an ordinary forwarding
+# git_handoff in every other respect these scenarios observe.
+queue_forward_evidence() {
+  local dir="$1" name="$2"
+  local handoffs_dir
+  handoffs_dir="$(dirname "$(dirname "$dir")")"
+  mkdir -p "$handoffs_dir/outbox"
+  printf 'id: fwd-%s\nfrom: onrole\nto: cleaner\npriority: 50\ntype: git_handoff\ntask: BL-089-test\ncommit: %s\ncreated_at: 2020-01-01T00:00:00.000000000Z\n\nmerge_and_process onrole %s\n' \
+    "$name" "$COMMIT" "$COMMIT" > "$handoffs_dir/outbox/90_fwd_${name}.handoff"
+}
+
 queue_task() {
   # BL-610: commit must resolve to a real object now that dequeue re-checks
   # it - $COMMIT is ROOT's own init commit, not a placeholder.
@@ -125,6 +140,7 @@ queue_task() {
   mkdir -p "$dir"
   printf 'id: %s\nfrom: specifier\nto: %s\npriority: 50\ntype: git_handoff\ntask: BL-089-test\ncommit: %s\n\npayload\n' \
     "$name" "$(basename "$(dirname "$dir")")" "$COMMIT" > "$dir/50_${name}.handoff"
+  queue_forward_evidence "$dir" "$name"
 }
 
 queue_batch() {
@@ -136,6 +152,7 @@ queue_batch() {
   mkdir -p "$batch_dir"
   printf 'id: %s\nfrom: specifier\nto: %s\npriority: 50\ntype: git_handoff\ntask: BL-089-test\ncommit: %s\n\npayload\n' \
     "$name" "$(basename "$(dirname "$dir")")" "$COMMIT" > "$batch_dir/50_${name}.handoff"
+  queue_forward_evidence "$dir" "$name"
 }
 
 # ── 1: enabled role, no queued work -> clears (respawns) at the idle boundary ──

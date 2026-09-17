@@ -53,7 +53,11 @@ Feature: BL-1422 A Work dispatch cannot be completed without work or a stated re
     And the completed file carries the reason under no_work_reason
 
   # BL-1422 other-items-complete-as-today-04
-  Scenario Outline: a note that is not a Work dispatch, or a git_handoff, completes as today
+  # BL-1609 retires the "a git_handoff carrying a task" row: a forwarding
+  # git_handoff carrying a task is now BL-1609's own gate's concern
+  # (specs/features/BL-1609-*.feature), not this one's "completes as
+  # today" - it no longer does, by design, once nothing has forwarded it.
+  Scenario Outline: a note that is not a Work dispatch completes as today
     Given the in_process item is <item> instead of the Work note
     When the role runs done_with_current.sh
     Then the item is completed
@@ -61,7 +65,6 @@ Feature: BL-1422 A Work dispatch cannot be completed without work or a stated re
     Examples:
       | item                                                |
       | a "branch behind <sha>: dirty worktree" note        |
-      | a git_handoff carrying a task                       |
 
   # BL-1422 the-2026-09-05-burst-stops-at-the-first-work-note-05
   Scenario: a burst of completions over a queue of chase notes stops at the first Work note
