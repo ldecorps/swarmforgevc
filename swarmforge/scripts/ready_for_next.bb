@@ -169,8 +169,16 @@
 ;; widens to new/ too (it is answering a different question - which task
 ;; name would explain a supersede match), so this guard reads in_process/
 ;; directly rather than reusing it.
+;;
+;; BL-1611: the flat reader (my-handoff-files) never descends into a batch
+;; role's in_process/batch_<stamp>_<seq>/ subdirectories (BL-1313's own
+;; shape, cleaner and hardender's normal one), so a batch role mid-work
+;; always read as holding nothing here and its own uncommitted WIP was
+;; refused as WORKTREE_DRIFT_DETECTED. handoff-files-with-batches (BL-1313)
+;; is the pre-existing batch-aware reader; this is its first use as the
+;; guard's own in-process check.
 (defn- has-in-process-parcel? []
-  (boolean (seq (handoff-lib/my-handoff-files (handoff-lib/my-mailbox-dir :in_process)))))
+  (boolean (seq (handoff-lib/handoff-files-with-batches (handoff-lib/my-mailbox-dir :in_process)))))
 
 ;; BL-1195 D1 re-bounce (architect, 2026-08-28): the coder's first fix
 ;; (unioning every master-resident role's in_process mailbox into the
