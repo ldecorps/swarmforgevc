@@ -74,4 +74,4 @@ function waitForFileSync(filePath, options = {}) {
   }
 }
 
-module.exports = { waitForFileSync, describeWaitTimeout, DEFAULT_TIMEOUT_MS, DEFAULT_POLL_MS };
+module.exports = { waitForFileSync, describeWaitTimeout, sleepSync, DEFAULT_TIMEOUT_MS, DEFAULT_POLL_MS };

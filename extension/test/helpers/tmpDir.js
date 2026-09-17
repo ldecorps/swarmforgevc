@@ -12,9 +12,43 @@ const fs = require('fs');
 const os = require('os');
 const path = require('path');
 const { spawnSync } = require('child_process');
+const { sleepSync } = require('./waitForFileSync');
 
 let pending = [];
 let pendingShared = [];
+
+// BL-1601: a detached, unref'd writer (the redeploy scripts' own by-design
+// shape - a redeploy outlives the bot) can still be mid-write when the
+// afterEach sweep's rmSync walks the directory, racing a removal into
+// ENOTEMPTY/EBUSY on a root whose writer is about to finish anyway.
+// Retried a bounded number of times with a short synchronous sleep between
+// attempts (no real timers) turns that race into a pass; the LAST
+// attempt's error is rethrown exactly as before, never swallowed - a root
+// that genuinely never empties (a real leak) still fails the run (BL-971).
+// `rmFn`/`sleep` are injectable so a test can make removal fail
+// deterministically without a real racing writer.
+const RETRYABLE_REMOVE_CODES = new Set(['ENOTEMPTY', 'EBUSY']);
+const DEFAULT_REMOVE_RETRY_ATTEMPTS = 5;
+const DEFAULT_REMOVE_RETRY_DELAY_MS = 50;
+
+function removeWithRetry(dir, options = {}) {
+  const rmFn = options.rmFn ?? fs.rmSync;
+  const sleep = options.sleep ?? sleepSync;
+  const attempts = options.attempts ?? DEFAULT_REMOVE_RETRY_ATTEMPTS;
+  const delayMs = options.delayMs ?? DEFAULT_REMOVE_RETRY_DELAY_MS;
+  for (let attempt = 1; attempt <= attempts; attempt += 1) {
+    try {
+      rmFn(dir, { recursive: true, force: true });
+      return;
+    } catch (err) {
+      if (RETRYABLE_REMOVE_CODES.has(err.code) && attempt < attempts) {
+        sleep(delayMs);
+        continue;
+      }
+      throw err;
+    }
+  }
+}
 
 // BL-1623: a pid still in the process table is not necessarily a running
 // peer. SIGKILL a process whose parent has not reaped it yet and it becomes
@@ -126,24 +160,26 @@ function mkProcessTmpDir(prefix) {
 // Removes every path handed out via mkTmpDir since the last sweep and
 // returns them (mainly for the helper's own tests to assert against).
 // force:true tolerates a path already removed (by the test itself, or a
-// prior sweep) rather than throwing mid-teardown.
-function sweepPendingTmpDirs() {
+// prior sweep) rather than throwing mid-teardown. `options` (rmFn, sleep,
+// attempts, delayMs) is forwarded to removeWithRetry - production callers
+// (tmpDirSetup.js's afterEach) pass none and get the real retry.
+function sweepPendingTmpDirs(options) {
   const dirs = pending;
   pending = [];
   for (const dir of dirs) {
-    fs.rmSync(dir, { recursive: true, force: true });
+    removeWithRetry(dir, options);
   }
   return dirs;
 }
 
-// The afterAll sweep for mkSharedTmpDir's own registry - same tolerant
-// removal, separate list, so a per-test afterEach can never race it away
-// early.
-function sweepSharedTmpDirs() {
+// The afterAll sweep for mkSharedTmpDir's own registry - same tolerant,
+// retrying removal, separate list, so a per-test afterEach can never race
+// it away early.
+function sweepSharedTmpDirs(options) {
   const dirs = pendingShared;
   pendingShared = [];
   for (const dir of dirs) {
-    fs.rmSync(dir, { recursive: true, force: true });
+    removeWithRetry(dir, options);
   }
   return dirs;
 }
