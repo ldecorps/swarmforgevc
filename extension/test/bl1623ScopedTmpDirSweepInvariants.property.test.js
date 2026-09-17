@@ -110,7 +110,7 @@ describe('BL-1623 scoped temp-root sweep invariants (property)', () => {
           fs.rmSync(dir, { recursive: true, force: true });
         }
       }),
-      { numRuns: 60 }
+      { numRuns: 100 }
     );
     // BL-654 generator-reach: every pid-kind row scenario 01 names is
     // demonstrably drawn, not merely hoped for.
@@ -159,7 +159,7 @@ describe('BL-1623 scoped temp-root sweep invariants (property)', () => {
           fs.rmSync(dir, { recursive: true, force: true });
         }
       }),
-      { numRuns: 30 }
+      { numRuns: 100 }
     );
     assert.ok(coverage.generations.some((n) => n === 0), 'generator never drew zero accumulated leaks');
     assert.ok(coverage.generations.some((n) => n >= 5), 'generator never drew a substantial pile-up (>=5)');
