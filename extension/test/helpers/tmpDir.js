@@ -8,6 +8,12 @@
 // vitest.config.mjs's test.setupFiles) does the actual removal. Split this
 // way so a unit test can drive the sweep directly without needing a real
 // Vitest afterEach cycle to observe it.
+// BL-1601: sweepPendingTmpDirs and sweepSharedTmpDirs retry their removal a
+// bounded number of times (see removeWithRetry below) when it fails with
+// ENOTEMPTY or EBUSY - the shape a detached, unref'd child (a redeploy
+// script) still writing into a fixture root the instant a test returns can
+// produce - and rethrow after the last attempt, so a genuine leak still
+// fails the run rather than being swallowed by the retry.
 const fs = require('fs');
 const os = require('os');
 const path = require('path');
@@ -30,8 +36,18 @@ let pendingShared = [];
 const RETRYABLE_REMOVE_CODES = new Set(['ENOTEMPTY', 'EBUSY']);
 const DEFAULT_REMOVE_RETRY_ATTEMPTS = 5;
 const DEFAULT_REMOVE_RETRY_DELAY_MS = 50;
+// Exported so a caller (or a test asserting the exact attempt count) never
+// hardcodes the retry budget - kept as an alias of the default so the two
+// calling conventions below (an options object with its own `attempts`,
+// or a bare rmFn using the default) agree on one number.
+const REMOVE_RETRY_ATTEMPTS = DEFAULT_REMOVE_RETRY_ATTEMPTS;
 
-function removeWithRetry(dir, options = {}) {
+// Accepts either an options object ({rmFn, sleep, attempts, delayMs}) or a
+// bare rmFn function directly, so both calling conventions this helper has
+// accumulated keep working: sweepPendingTmpDirs(rmFn) and
+// sweepPendingTmpDirs({rmFn, sleep, attempts}).
+function removeWithRetry(dir, optionsOrRmFn = {}) {
+  const options = typeof optionsOrRmFn === 'function' ? { rmFn: optionsOrRmFn } : optionsOrRmFn;
   const rmFn = options.rmFn ?? fs.rmSync;
   const sleep = options.sleep ?? sleepSync;
   const attempts = options.attempts ?? DEFAULT_REMOVE_RETRY_ATTEMPTS;
@@ -160,14 +176,15 @@ function mkProcessTmpDir(prefix) {
 // Removes every path handed out via mkTmpDir since the last sweep and
 // returns them (mainly for the helper's own tests to assert against).
 // force:true tolerates a path already removed (by the test itself, or a
-// prior sweep) rather than throwing mid-teardown. `options` (rmFn, sleep,
-// attempts, delayMs) is forwarded to removeWithRetry - production callers
-// (tmpDirSetup.js's afterEach) pass none and get the real retry.
-function sweepPendingTmpDirs(options) {
+// prior sweep) rather than throwing mid-teardown. The argument is forwarded
+// to removeWithRetry as-is, so a caller may pass either a bare rmFn or an
+// options object ({rmFn, sleep, attempts, delayMs}) - production callers
+// (tmpDirSetup.js's afterEach) pass neither and get the real retry.
+function sweepPendingTmpDirs(optionsOrRmFn) {
   const dirs = pending;
   pending = [];
   for (const dir of dirs) {
-    removeWithRetry(dir, options);
+    removeWithRetry(dir, optionsOrRmFn);
   }
   return dirs;
 }
@@ -175,11 +192,11 @@ function sweepPendingTmpDirs(options) {
 // The afterAll sweep for mkSharedTmpDir's own registry - same tolerant,
 // retrying removal, separate list, so a per-test afterEach can never race
 // it away early.
-function sweepSharedTmpDirs(options) {
+function sweepSharedTmpDirs(optionsOrRmFn) {
   const dirs = pendingShared;
   pendingShared = [];
   for (const dir of dirs) {
-    removeWithRetry(dir, options);
+    removeWithRetry(dir, optionsOrRmFn);
   }
   return dirs;
 }
@@ -192,4 +209,5 @@ module.exports = {
   sweepSharedTmpDirs,
   sweepStaleTmpDirs,
   defaultIsPidAlive,
+  REMOVE_RETRY_ATTEMPTS,
 };
