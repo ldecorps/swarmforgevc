@@ -13,6 +13,11 @@ epic: swarm-reliability
 priority: 5
 direction: swarm-reported
 depends_on: []
+abandoned_commits: [7c58246a21]
+# BL-1241 land-step remedy: 7c58246a21 was entangled with unlanded
+# siblings (BL-1604/BL-1609/BL-1610/BL-1613 as ancestors); land_step_cli.bb
+# built a tip-pure replay 96cb2e2bfb onto origin/main carrying only this
+# ticket's own paths. Land that commit, not the cited one.
 # BL-1195 and BL-1515 are in backlog/done. BL-1612 (same pass) swaps the
 # same flat reader in two send-time gate libs; different files, so the
 # two are orthogonal and may run together.
