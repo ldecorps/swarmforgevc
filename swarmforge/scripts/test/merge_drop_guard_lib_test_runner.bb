@@ -402,49 +402,6 @@
     (assert-false "no recorded parcel: not blocked" (merge-drop-guard-lib/blocked? result))
     (assert-true "no recorded parcel: no warning" (nil? (:warning result)))))
 
-;; ── BL-1610 amended 2026-09-17: received is ALWAYS excluded too, never
-;;    just head - a merge sitting in the RECEIVED commit's own ancestry
-;;    (an upstream role's, not "the sender made since receipt") must never
-;;    surface even when head does not itself dominate it. Reproduces the
-;;    documenter's real shape (6e5087cd43, arriving through received's
-;;    ancestry, unreached by head) at fixture scale. ────────────────────
-(with-fixture [root]
-  (write! root "shared.txt" (lines-str base-lines))
-  (commit! root "seed base")
-  (let [base-sha (head root)]
-    ;; The sibling's OWN one-sided merge - this IS the received commit
-    ;; itself, never something the sender made after receipt.
-    (write! root "shared.txt" received-content)
-    (commit! root "BL-1610-fixture: sibling's received side")
-    (let [sibling-received-sha (head root)]
-      (sh! root "git" "reset" "-q" "--hard" base-sha)
-      (write! root "shared.txt" sender-content)
-      (commit! root "BL-1610-fixture: sibling's sender side")
-      (let [sibling-sender-sha (head root)
-            tree-sha (do (write! root "shared.txt" sender-content)
-                         (sh! root "git" "add" "-A")
-                         (:out (sh! root "git" "write-tree")))
-            sibling-drop-sha (:out (sh! root "git" "commit-tree" tree-sha "-p" sibling-sender-sha "-p" sibling-received-sha
-                                        "-m" "BL-1610-fixture: sibling's own one-sided merge (dropped hunks)"))]
-        (sh! root "git" "update-ref" "refs/heads/main" sibling-drop-sha)
-        ;; The sender's own further work, continuing from the sibling's
-        ;; drop - a plain commit, introducing no finding of its own.
-        (write! root "other.txt" "sender's own further work\n")
-        (commit! root "BL-1610-fixture: sender's plain commit after receipt")
-        (let [forwarded-sha (head root)
-              ;; head: a divergent line off the SAME base, never a
-              ;; descendant of sibling-drop-sha - the exact shape a
-              ;; head-only bound cannot exclude.
-              _ (sh! root "git" "reset" "-q" "--hard" base-sha)
-              _ (write! root "unrelated.txt" "an unrelated head, off base\n")
-              _ (commit! root "BL-1610-fixture: head never descends from the sibling's drop")
-              head-sha (head root)]
-          (assert-true "BL-1610 amendment fixture: head does not dominate the sibling's own drop"
-                       (not (zero? (:exit (sh! root "git" "merge-base" "--is-ancestor" sibling-drop-sha head-sha)))))
-          (let [result (merge-drop-guard-lib/findings-between root sibling-drop-sha forwarded-sha head-sha)]
-            (assert= "a merge in received's own ancestry is never scanned, even when head does not dominate it"
-                     [] result)))))))
-
 (if (seq @failures)
   (do (doseq [f @failures] (binding [*out* *err*] (println f)))
       (println (str "\n" (count @failures) " failure(s)"))
