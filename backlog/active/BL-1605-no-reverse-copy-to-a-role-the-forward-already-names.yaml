@@ -157,4 +157,28 @@ notes: |
   owned by BL-1609 (completion gate for forwarding parcels; No-Op Rule
   clarified in handoff-protocol.md). This ticket's title, scenarios and
   invariants stand; BL-1609 depends on this one landing first.
+
+  AMENDED 2026-09-17 06:30Z by the specifier on the hardender's note 001371
+  ("unowned-red BL-1605 socket-fixture-root"): the hardender's standing
+  whole-tree guard run on the BL-1610 parcel found
+  extension/test/socketFixtureShortRootGuard.test.js red on THIS ticket's
+  handler - bl1605NoReverseCopyToForwardRecipientSteps.js roots its fixture
+  at os.tmpdir() (line 44) and writes .swarmforge/tmux-socket (line 73);
+  hardender evidence backlog/evidence/BL-1605-hardender-socket-fixture-root-followup-20260917.md
+  (its tree, 93513e47b6), missed in its own 2026-09-16 pass. Not an unowned
+  red: the guard is green on main (16/16 at 2130e3f375); the red rides
+  every tree carrying this parcel (073a34b5e1, and BL-1599's 6ad1d3f616,
+  both in QA's inbox). Adjudication: D-socket is this ticket's own coder-
+  domain defect (Article 4.3) - QA, the holder, bounces to the coder with
+  it in the inventory; the fix is lib/socketFixtureRoot.js's
+  mkSocketFixtureRoot in place of the os.tmpdir() root at line 44, nothing
+  else changes. A register row owned by this ticket was added the same
+  commit so QA's Article 4.2 check reads the red as owned on BL-1599's
+  parcel instead of holding it; the coder's fix commit REMOVES that row
+  (backlog/standing-reds.tsv, file
+  extension/test/socketFixtureShortRootGuard.test.js) in the same parcel -
+  a row surviving this ticket's close reads unowned and throttles intake
+  to 1 (BL-1429). Scenarios, invariants and human_approval stand.
+  Specifier evidence: backlog/evidence/BL-1605-specifier-adjudication-of-hardender-socket-fixture-root-note-20260917.md.
+
 assigned_to: coder
