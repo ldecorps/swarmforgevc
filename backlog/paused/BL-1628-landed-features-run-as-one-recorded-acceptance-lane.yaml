@@ -1,0 +1,137 @@
+id: BL-1628
+title: "No lane runs a landed feature: 1294 files under specs/features/ and every role runs only the parcel's own (acceptance-own), so four landed promotion and portability features were red on main for three to four weeks before a coder's incidental regression sweep found them (BL-1626, BL-1627); one runner executes every feature file sequentially, appends one row per COMPLETED feature with its duration and result, prints a verdict naming every red and the poles, and exits with the suite's status - the recorder half, changing no lane set until the census is in"
+milestone: M8
+type: feature
+epic: unit-suite-speed
+priority: 4
+direction: swarm-reported
+depends_on: []
+# run_acceptance.sh (BL-112) takes one feature file; recordTestDuration.js
+# (BL-078/BL-378), BL-1619 (property recorder, paused) and BL-1625 (shell
+# manifest recorder, paused) are the shapes to mirror. BL-1618 (active)
+# owns the lane table and is not touched.
+mutation_cost: low
+# low: one bash runner and its shell test (a fixture features dir with two
+# tiny features and their handlers), one feature and handler, evidence,
+# docs; shell carries no mutation/CRAP/DRY (BL-472). The real 1294-file
+# run is QA's e2e once and is expected to take hours - it is the census.
+slice_size_envelope: low
+required_stages: [coder, cleaner, architect, hardender, documenter, qa]
+
+acceptance: specs/features/BL-1628-landed-features-run-as-one-recorded-acceptance-lane.feature
+
+required_wiring:
+  - 'specs/pipeline/steps/bl1628LandedFeaturesRecordedLaneSteps.js::registerSteps::the handler lands in the same parcel as the feature (BL-233, BL-1371)'
+# No production anchor on purpose (BL-1235): the runner is a new entry
+# point with no pre-existing caller; the night ceremony or a lane-set row
+# that calls it is the slice after this census.
+
+human_approval: pending
+approval_context: >
+  A new feature file is authored here, so it needs a tap. No choice is
+  posed and there are no ruling_options. FIRM: measurement before wiring
+  - this runner changes no lane set, no feature, no handler; it only runs
+  every feature file in name order and records what each costs and
+  answers. FIRM: rows are per FEATURE, appended as each completes, so a
+  run killed hours in still leaves a usable partial census (unlike the
+  per-run rows of BL-1619/BL-1625). FIRM: every red the first census
+  finds is an unowned-red note to the specifier the same pass, never fixed
+  in this parcel. FIRM: the runner never runs beside the unit suite
+  (engineering.prompt Verification: sequential, never concurrent).
+
+invariants:
+  - "Every feature that completes appends exactly one row, whether it passed or failed; a feature that did not complete appends none."
+  - "The runner changes nothing about the features it runs: same files, name order, each feature's own result - observation only."
+
+description: |
+  ## What is wrong
+
+  `specs/pipeline/scripts/run_acceptance.sh <feature-file>` runs ONE
+  feature. Every role's lane set (BL-1618's table, and the prose sets
+  before it) runs `acceptance-own`: the features the ticket's
+  `acceptance:` names. The hardender's Gherkin mutation gate runs the
+  parcel's features. Nothing runs the other 1290. Four of them were red
+  for weeks - BL-803 since 2026-08-20, BL-1028 since 08-25, BL-1100 since
+  08-27, BL-937 since the two mapfile scripts landed - and were found on
+  2026-09-17 only because a coder ran "every feature whose handler drives
+  route_backlog_to_coder.sh" by hand (BL-1614 evidence). A landed feature
+  is a durable contract (BL-111); a contract nobody runs is the carpet the
+  2026-09-05 directive forbids.
+
+  ## What is wanted
+
+  - `specs/pipeline/scripts/run_all_acceptance.sh [features-dir]`: runs
+    every `*.feature` under the directory (default specs/features/) in
+    name order through run_acceptance.sh, one at a time (scenario 01: a
+    fixture directory with two tiny features runs exactly those two, in
+    order).
+  - After each feature completes, one row appended to
+    `specs/pipeline/.acceptance-durations.jsonl` - finished_at, file,
+    result, duration_ms (scenario 02; invariant 1); a run killed mid-way
+    leaves the rows of the completed features and no more.
+  - A verdict at the end naming every red feature and the ten slowest
+    with their seconds, and the exit status nonzero when any feature is
+    red (scenario 03).
+  - The first real run on the parcel is the census: the evidence records
+    the red list, the top ten by duration and the total wall; each red is
+    an unowned-red note the same pass (BL-1626/BL-1627 own today's four).
+
+  ## How (direction, not mandate)
+
+  - Bash, `set -uo pipefail` (BL-1242: never `set -e` across independent
+    features - capture each status), `date +%s%3N` around each
+    run_acceptance.sh call, a `printf`-built JSON row appended with `>>`
+    after each call returns; `--dry-run` prints the plan. The generated
+    entry-point directory per feature must not collide: pass a per-run
+    outDir to run_acceptance.sh (its second argument).
+  - Shell test `specs/pipeline/scripts/test_run_all_acceptance.sh` (or
+    under swarmforge/scripts/test/, registered standing) with a mkdtemp
+    features dir holding two one-scenario features whose handlers pass
+    and fail respectively.
+  - Documenter: the how-to for the unit-lane recorder gains the
+    acceptance twin; engineering-detailed.prompt "Acceptance Pipeline"
+    names the runner and the row.
+
+constraints: >
+  One runner, its shell test, the feature and handler, evidence and docs.
+  No change to run_acceptance.sh, to any feature or handler, to
+  verify_lanes.sh or BL-1618's table, or to any role prompt. The step
+  handler lands with the feature (BL-233). Evidence named BL-1628-*.
+
+out_of_scope: |
+  - Where the lane runs (the night closing ceremony is the natural home;
+    a slice after the census, minted from the recorded wall).
+  - Fixing any red the census finds (unowned-red notes) or cutting any
+    pole.
+  - Parallelising features: the acceptance runner is sequential by rule.
+
+qa_e2e_procedure: |
+  On the parcel commit, from the repo root, with extension/out compiled:
+  1. The runner's shell test -> green.
+  2. Acceptance resolving all scenarios
+     (`bash specs/pipeline/scripts/run_acceptance.sh specs/features/BL-1628-*.feature`).
+  3. ONE real `bash specs/pipeline/scripts/run_all_acceptance.sh`, alone
+     on the host (no unit or property lane beside it), started when the
+     pipeline is quiet: one row per feature in .acceptance-durations.jsonl,
+     the verdict printed, its exit status the suite's; the evidence records
+     the reds, the top ten by duration and the total wall. Never "run it N
+     times".
+
+source: |
+  Found by the specifier adjudicating the coder's unowned-red note of
+  2026-09-17T13:12Z (BL-1626/BL-1627): `ls specs/features/*.feature | wc -l`
+  = 1294; QA.prompt runs run_acceptance.sh "for the ticket's" features;
+  BL-1618's table has acceptance-own only. Human directive 2026-09-05
+  (no carpet); human intake 2026-09-17 (tests run for hours - hence
+  measurement first, and never beside another lane). Parents: BL-112,
+  BL-111, BL-078, BL-1619, BL-1625. Siblings: BL-1626, BL-1627.
+
+notes: |
+  Minted 2026-09-17 by the specifier in the same pass as BL-1626 and
+  BL-1627. INVEST: Independent (run_acceptance.sh and the recorder shapes
+  exist), Negotiable (row names, verdict wording, outDir handling are
+  direction), Valuable (1294 landed contracts become a measured lane
+  instead of a folder nobody runs), Estimable (one loop, one JSON row,
+  one verdict, one fixture test - one sitting), Small (three scenarios,
+  two invariants), Testable (fixture features in seconds). Priority 4:
+  measurement before any lane-set change, like BL-1619 and BL-1625.
