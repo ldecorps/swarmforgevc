@@ -73,11 +73,6 @@ write_chase_note() {
     "$n" "$sha" "$DEQUEUED_AT" "$sha" > "$dir/10_chase_$(printf '%03d' "$n").handoff"
 }
 
-write_git_handoff() {
-  printf 'id: x\nfrom: coordinator\nto: taskrole\nrecipient: taskrole\npriority: 00\ntype: git_handoff\nrole: coordinator\ntask: BL-9001-some-slug\ncommit: 0000000000\ndequeued_at: %s\n\nmerge_and_process coordinator 0000000000\n' \
-    "$DEQUEUED_AT" > "$IN_PROCESS/00_handoff.handoff"
-}
-
 write_sent_handoff_for() {
   local ticket="$1" created_at="$2"
   printf 'id: y\nfrom: taskrole\nto: cleaner\npriority: 50\ntype: git_handoff\nrole: taskrole\ntask: %s-some-slug\ncommit: 1111111111\ncreated_at: %s\n\nmerge_and_process taskrole 1111111111\n' \
@@ -179,12 +174,13 @@ OUT="$(run_done 2>&1)"
 echo "$OUT" | grep -q 'COMPLETED:' || fail "04a: expected COMPLETED, got: $OUT"
 pass "04a: a non-Work note completes exactly as today"
 
-# ── 04b: a git_handoff item completes exactly as today, no gate ───────────
-reset_mailbox
-write_git_handoff
-OUT="$(run_done 2>&1)"
-echo "$OUT" | grep -q 'COMPLETED:' || fail "04b: expected COMPLETED, got: $OUT"
-pass "04b: a git_handoff completes exactly as today"
+# 04b retired (BL-1609): "a git_handoff item completes exactly as today, no
+# gate" is no longer true - a forwarding git_handoff now has its OWN gate
+# (specs/features/BL-1609-*.feature's own acceptance scenarios exercise it,
+# plus test_done_with_current_arg_rejection.sh's --no-op argv coverage).
+# Every remaining scenario in this file uses a Work note or chase note as
+# its in_process item, never a bare git_handoff, so none of them exercise
+# BL-1609's gate - this file's own scope stays the WORK NOTE gate alone.
 
 # ── 05: a burst over 28 chase notes plus a Work note stops at the Work note ─
 # done_with_current_task.bb requires exactly ONE file in in_process/ at a

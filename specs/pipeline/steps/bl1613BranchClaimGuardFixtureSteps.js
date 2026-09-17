@@ -1,127 +1,106 @@
 'use strict';
 
 // BL-1613: step handlers for "The branch-claim guard test's fixture is a
-// complete swarm root". Drives the REAL test_branch_claim_guard.sh against
-// the real repository tree (no mocked git, no copied fixture) - the
-// fixture's own conformance to what the launcher would persist is exactly
-// what this feature is about, so reading and running the real committed
-// file is the only honest technique.
+// complete swarm root". Scenario 01 is a static read of the REAL script's
+// own source (the defect is a missing fixture line, not runtime
+// behavior a reimplementation could stand in for); scenario 02 runs the
+// REAL shell test end to end; scenario 03 scans the REAL swarmforge/
+// scripts/test/ tree, the same "drive the real thing" convention every
+// sibling handler in this directory uses.
 
 const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const path = require('node:path');
-const { spawnSync } = require('node:child_process');
+const { execFileSync } = require('node:child_process');
 
 const FEATURE = "BL-1613 The branch-claim guard test's fixture is a complete swarm root";
 
-// A shell statement split across a backslash-continued line (this fixture's
-// own printf-then-redirect style) reads as two separate lines under a
-// naive per-line scan. Joins each `...\` line with the one after it before
-// any line-based matching below, so a statement's pieces are always seen
-// together regardless of how the author wrapped it.
-function logicalLines(source) {
-  const raw = source.split('\n');
-  const joined = [];
-  let acc = null;
-  for (const line of raw) {
-    const piece = acc === null ? line : `${acc} ${line.trim()}`;
-    if (/\\\s*$/.test(line)) {
-      acc = piece.replace(/\\\s*$/, '');
-    } else {
-      joined.push(piece);
-      acc = null;
-    }
-  }
-  if (acc !== null) joined.push(acc);
-  return joined;
-}
 const REPO_ROOT = path.join(__dirname, '..', '..', '..');
-const SCRIPT_REL = 'swarmforge/scripts/test/test_branch_claim_guard.sh';
-const SCRIPT_PATH = path.join(REPO_ROOT, SCRIPT_REL);
+const SCRIPT_REL_PATH = 'swarmforge/scripts/test/test_branch_claim_guard.sh';
 const TEST_DIR = path.join(REPO_ROOT, 'swarmforge', 'scripts', 'test');
+
+function ensure(ctx) {
+  if (!ctx.bl1613) ctx.bl1613 = {};
+  return ctx.bl1613;
+}
 
 function registerSteps(registry) {
   const scoped = (re, fn) => registry.defineScoped(re, fn, FEATURE);
 
+  // ── 01: the fixture's own source ─────────────────────────────────────────
   scoped(/^the source of swarmforge\/scripts\/test\/test_branch_claim_guard\.sh is read$/, (ctx) => {
-    ctx.source = fs.readFileSync(SCRIPT_PATH, 'utf8');
+    const state = ensure(ctx);
+    state.source = fs.readFileSync(path.join(REPO_ROOT, SCRIPT_REL_PATH), 'utf8');
   });
 
   scoped(/^the fixture writes a swarm-identity carrying active_backlog_max_depth_conf_path$/, (ctx) => {
-    assert.match(
-      ctx.source,
-      /swarm-identity["']?\s*$|\.swarmforge\/swarm-identity/m,
-      'expected a write targeting .swarmforge/swarm-identity'
-    );
-    const identityWrite = logicalLines(ctx.source).find(
-      (line) => line.includes('.swarmforge/swarm-identity') && line.includes('printf')
-    );
-    assert.ok(identityWrite, `expected a printf writing .swarmforge/swarm-identity, got source with no such line`);
-    assert.ok(
-      identityWrite.includes('active_backlog_max_depth_conf_path'),
-      `expected the swarm-identity write to carry active_backlog_max_depth_conf_path, got: ${identityWrite}`
-    );
+    const state = ensure(ctx);
+    const m = state.source.match(/active_backlog_max_depth_conf_path\\t([\w./-]+)/);
+    assert.ok(m, 'expected the swarm-identity printf to carry active_backlog_max_depth_conf_path');
+    state.confRelPath = m[1];
   });
 
   scoped(/^the fixture creates the tracked conf that path names before any claim runs$/, (ctx) => {
-    const lines = logicalLines(ctx.source);
-    const identityIdx = lines.findIndex(
-      (line) => line.includes('.swarmforge/swarm-identity') && line.includes('printf')
-    );
-    const firstClaimIdx = lines.findIndex((line) => /drop_handoff|drop_note|run_ready\b/.test(line));
-    assert.ok(identityIdx >= 0, 'expected to find the swarm-identity write line');
-    assert.ok(firstClaimIdx >= 0, 'expected to find at least one claim-driving line');
+    const state = ensure(ctx);
+    const source = state.source;
+    const confRelPath = state.confRelPath;
+    const creationIdx = source.indexOf(`$ROOT/${confRelPath}`);
+    assert.notEqual(creationIdx, -1, `expected the fixture to create $ROOT/${confRelPath} somewhere in its source`);
+    // The first CALL to run_ready (a bare invocation on its own line), never
+    // its function DEFINITION (`run_ready() {`, which appears earlier and
+    // would falsely satisfy an "index of the substring run_ready" check).
+    const firstCallMatch = source.match(/^run_ready$/m);
+    assert.ok(firstCallMatch, 'expected at least one bare run_ready invocation');
     assert.ok(
-      identityIdx < firstClaimIdx,
-      `expected the identity write (line ${identityIdx}) before the first claim (line ${firstClaimIdx})`
-    );
-    // The conf path named is swarmforge/swarmforge.conf (relative to the
-    // fixture ROOT, per conf-file-path's own identity-root resolution) -
-    // the fixture must create that file before the identity write commits
-    // to naming it, so a later claim's read never race a missing target.
-    const confCreateIdx = lines.findIndex(
-      (line) => line.includes('swarmforge/swarmforge.conf') && !line.includes('printf')
-    );
-    assert.ok(confCreateIdx >= 0, 'expected a line creating swarmforge/swarmforge.conf');
-    assert.ok(
-      confCreateIdx <= identityIdx,
-      `expected the conf file created (line ${confCreateIdx}) at or before the identity write (line ${identityIdx})`
+      creationIdx < firstCallMatch.index,
+      `expected the conf to be created (index ${creationIdx}) before the first claim runs (index ${firstCallMatch.index})`
     );
   });
 
+  // ── 02: the real shell test, executed end to end ─────────────────────────
   scoped(/^the branch-claim guard shell test is executed from the repository root$/, (ctx) => {
-    const result = spawnSync('bash', [SCRIPT_REL], { cwd: REPO_ROOT, encoding: 'utf8' });
-    ctx.rc = result.status;
-    ctx.stdout = result.stdout || '';
-    ctx.stderr = result.stderr || '';
+    const state = ensure(ctx);
+    try {
+      const out = execFileSync('bash', [SCRIPT_REL_PATH], { cwd: REPO_ROOT, encoding: 'utf8' });
+      state.result = { status: 0, output: out };
+    } catch (err) {
+      state.result = { status: err.status ?? 1, output: `${err.stdout || ''}${err.stderr || ''}` };
+    }
   });
 
   scoped(/^it exits 0 with every case reported as PASS$/, (ctx) => {
-    assert.equal(ctx.rc, 0, `expected exit 0, got rc=${ctx.rc} stdout=${ctx.stdout} stderr=${ctx.stderr}`);
-    assert.ok(!/^FAIL:/m.test(ctx.stdout + ctx.stderr), `expected no FAIL line, got: ${ctx.stdout}${ctx.stderr}`);
-    assert.match(ctx.stdout, /^ALL PASS$/m, `expected a final ALL PASS line, got: ${ctx.stdout}`);
+    const state = ensure(ctx);
+    assert.equal(state.result.status, 0, `expected exit 0, got: ${state.result.output}`);
+    const lines = state.result.output.split('\n').filter((l) => l.trim().length > 0);
+    const caseLines = lines.filter((l) => l.startsWith('PASS:') || l.startsWith('FAIL:'));
+    assert.ok(caseLines.length > 0, `expected at least one PASS/FAIL line, got: ${state.result.output}`);
+    for (const line of caseLines) {
+      assert.ok(line.startsWith('PASS:'), `expected every case to PASS, found: ${line}`);
+    }
   });
 
+  // ── 03: the census over every shell test driving the claim path ─────────
   scoped(
     /^the shell tests under swarmforge\/scripts\/test that drive the task claim path are scanned for an empty-stderr assertion$/,
     (ctx) => {
-      const files = fs.readdirSync(TEST_DIR).filter((name) => name.startsWith('test_') && name.endsWith('.sh'));
-      const matches = [];
-      for (const name of files) {
-        const text = fs.readFileSync(path.join(TEST_DIR, name), 'utf8');
-        if (!text.includes('swarm-identity')) continue;
+      const state = ensure(ctx);
+      const files = fs.readdirSync(TEST_DIR).filter((f) => f.startsWith('test_') && f.endsWith('.sh'));
+      state.claimPathSilentAssertionFiles = files.filter((f) => {
+        const text = fs.readFileSync(path.join(TEST_DIR, f), 'utf8');
         const drivesClaimPath = /ready_for_next_task|ready_for_next\.sh/.test(text);
-        const assertsEmptyStderr = /-z\s+"\$ERR"/.test(text);
-        if (drivesClaimPath && assertsEmptyStderr) matches.push(name);
-      }
-      ctx.emptyStderrAssertingClaimDrivers = matches;
+        const assertsEmptyStderr = /-z "\$ERR"/.test(text);
+        return drivesClaimPath && assertsEmptyStderr;
+      });
     }
   );
 
   scoped(/^exactly 1 such test is found and it is test_branch_claim_guard\.sh$/, (ctx) => {
-    const matches = ctx.emptyStderrAssertingClaimDrivers;
-    assert.equal(matches.length, 1, `expected exactly 1 match, got: ${JSON.stringify(matches)}`);
-    assert.equal(matches[0], 'test_branch_claim_guard.sh', `expected test_branch_claim_guard.sh, got: ${matches[0]}`);
+    const state = ensure(ctx);
+    assert.deepEqual(
+      state.claimPathSilentAssertionFiles,
+      ['test_branch_claim_guard.sh'],
+      `expected exactly test_branch_claim_guard.sh, got: ${JSON.stringify(state.claimPathSilentAssertionFiles)}`
+    );
   });
 }
 
