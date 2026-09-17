@@ -52,6 +52,18 @@ function materialize(dir, population) {
     let name;
     let expectRemoved;
     if (entry.pidKind === 'own') {
+      // BL-1623 hardening: isPidAlive must explicitly say ALIVE for
+      // process.pid here - without this, a fake isPidAlive that merely
+      // never mentions process.pid (as an unset `aliveSet.has(...)` would)
+      // reports it as not-alive anyway, and the 'own' case stops
+      // distinguishing "removed because own-pid short-circuits before
+      // consulting isPidAlive" from "removed because isPidAlive happened
+      // to say dead" - the exact vacuity that let a mutant dropping the
+      // `ownerPid === process.pid ||` clause survive undetected (hand-
+      // confirmed: reverting to `if (!isPidAlive(ownerPid))` alone passed
+      // this file before this fix, since aliveSet never contained
+      // process.pid either way).
+      aliveSet.add(process.pid);
       name = `${PREFIX}${process.pid}-${entry.suffix}-${i}`;
       expectRemoved = true;
     } else if (entry.pidKind === 'alive') {
