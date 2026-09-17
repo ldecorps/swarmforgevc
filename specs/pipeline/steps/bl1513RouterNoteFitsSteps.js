@@ -29,6 +29,21 @@ function bb(expr) {
   return execFileSync('bb', ['-e', expr], { encoding: 'utf8' }).trim();
 }
 
+// BL-1390: a fixture root must be proven isolated from the live checkout
+// BEFORE any mutating git call - `git -C ""` is the current directory, and
+// a linked worktree shares the live repo's own `.git/config`, so a fixture
+// that is accidentally either of those would commit real changes into the
+// live repository instead of its own throwaway tree. `git-common-dir`
+// resolving INSIDE the fixture root proves this is a genuinely fresh
+// `git init`, not an ambient or shared checkout.
+function proveFixtureIsolated(root) {
+  const commonDir = git(root, 'rev-parse', '--git-common-dir');
+  assert.ok(
+    path.resolve(root, commonDir).startsWith(root),
+    `fixture git-common-dir must resolve inside the fixture root, got "${commonDir}"`
+  );
+}
+
 function mailboxDir(root, role, state) {
   return bb(`(require '[babashka.fs :as fs])
 (load-file "${path.join(SCRIPTS, 'handoff_lib.bb')}")
@@ -38,6 +53,7 @@ function mailboxDir(root, role, state) {
 function initFixture(root) {
   fs.mkdirSync(root, { recursive: true });
   git(root, 'init', '-q', '-b', 'main', '.');
+  proveFixtureIsolated(root);
   git(root, 'config', 'user.email', 't@t');
   git(root, 'config', 'user.name', 't');
   git(root, 'config', 'commit.gpgsign', 'false');

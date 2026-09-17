@@ -56,9 +56,24 @@
   (let [{:keys [exit out err]} (apply p/sh {:dir (str dir) :continue true} args)]
     {:exit exit :out (str/trim (or out "")) :err (str/trim (or err ""))}))
 
+;; BL-1390: a fixture root must be proven isolated from the live checkout
+;; BEFORE any mutating git call - `git -C ""` is the current directory, and
+;; a linked worktree shares the live repo's own `.git/config`, so a fixture
+;; that is accidentally either of those would commit real changes into the
+;; live repository instead of its own throwaway tree. git-common-dir
+;; resolving INSIDE the fixture root proves this is a genuinely fresh
+;; `git init`, not an ambient or shared checkout.
+(defn- prove-fixture-isolated! [root]
+  (let [{:keys [exit out]} (sh! root "git" "rev-parse" "--git-common-dir")
+        common-dir (str (fs/canonicalize (fs/path root out)))]
+    (when-not (and (zero? exit) (str/starts-with? common-dir (str (fs/canonicalize root))))
+      (throw (ex-info "fixture git-common-dir does not resolve inside the fixture root"
+                       {:root root :git-common-dir out})))))
+
 (defn- mk-fixture! []
   (let [root (str (fs/create-temp-dir {:prefix "bl1513-property-"}))]
     (sh! root "git" "init" "-q" "-b" "main" ".")
+    (prove-fixture-isolated! root)
     (sh! root "git" "config" "user.email" "t@t")
     (sh! root "git" "config" "user.name" "t")
     (sh! root "git" "config" "commit.gpgsign" "false")
