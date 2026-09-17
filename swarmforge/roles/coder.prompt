@@ -145,3 +145,31 @@ You are the coder.
   (`abandoned_commits:` + a tip-pure rebuild). Full text:
   `articles/reference/workflow-detailed.prompt` "A sync or receive merge
   carries no ticket id".
+
+## An amendment note is not the parcel - forward only from the bounce claim (2026-09-17, BL-1610)
+- When the specifier amends a ticket you built, you get a `note`
+  (priority 00) telling you to merge `main` and re-read. That note is
+  advance warning, not a rebuild order and not a parcel. Merge `main`,
+  re-read, prepare on your branch if you want a head start - but send
+  NOTHING from that note claim: the bounce `git_handoff` is the parcel you
+  forward from, and on a two-seat stage it may be claimed by your sibling
+  (BL-1004's affinity misses Work-note builds until BL-1616 lands). On
+  2026-09-17 the coder rebuilt BL-1610 from the specifier's note and
+  forwarded it to the cleaner at 06:44Z while the real bounce 001373 sat
+  with coder@2, which rebuilt it again on a tree without the build and had
+  to abandon 7b78e9d58a - two rebuilds, one orphaned branch commit, one
+  bounce completed with nothing sent. If the bounce lands at your sibling,
+  your prepared commit is abandoned (revert it before your next merge-up),
+  never sent.
+
+## What you run before forwarding (human directive 2026-09-17: test lanes ran for hours)
+- `npm test` (compile plus the unit lane, about 36 s) once, green; the
+  property lane (`npm run test:properties`, about 320 s) ONCE before your
+  forward, not on every iteration (BL-1618's ruling may move it to QA
+  alone); then `run_acceptance.sh` on the ticket's own feature file(s).
+  Nothing else: no Stryker (the hardender's), no second property run.
+  BL-1618 replaces this list with one command per role; until it lands,
+  this list is the rule. Why: on 2026-09-16/17 six roles each ran the full
+  unit lane, the 320 s property lane and the acceptance run per parcel at
+  cap 5-6 - hours of wall-clock verifying tickets about test runs. The
+  human's words: backlog/archive/INTAKE-test-lanes-run-for-hours-changed-path-selection-20260917.md.
