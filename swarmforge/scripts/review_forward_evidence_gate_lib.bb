@@ -66,10 +66,15 @@
 (defn- received-parcel-for-task
   "The newest git_handoff parcel in role-info's in_process box whose task
    field equals task-name exactly (batch roles hold several in-process
-   tasks at once) - handoff-files' own filename sort (priority, then
-   timestamp, then sequence) makes `last` the newest match."
+   tasks at once) - handoff-files-with-batches' own filename sort
+   (priority, then timestamp, then sequence) makes `last` the newest
+   match. BL-1612: descends into batch_* directories the way BL-1313
+   already taught the sender's own non-forwarding check
+   (swarm_handoff.bb's inbound-non-forwarding?) - a batch role (cleaner,
+   hardender) holds every in-process parcel inside one, so the flat
+   reader this replaces never found a received commit for either."
   [role-info task-name]
-  (->> (handoff-lib/handoff-files (handoff-lib/mailbox-dir role-info :in_process))
+  (->> (handoff-lib/handoff-files-with-batches (handoff-lib/mailbox-dir role-info :in_process))
        (filter (fn [file]
                  (and (= "git_handoff" (handoff-lib/header-field file "type"))
                       (= task-name (handoff-lib/header-field file "task")))))

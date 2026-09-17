@@ -82,6 +82,17 @@
              "task: " task-name "\ncommit: " commit-short "\n"
              "created_at: 2026-08-28T00:00:00Z\n\nbody\n")))
 
+;; BL-1612: the cleaner's REAL in-process shape - inside a batch_* directory,
+;; never flat (seed-parcel! above never actually reproduced the bug; roles.tsv
+;; already declares cleaner as a batch role, but its files sat flat).
+(defn- seed-batch-parcel! [root task-name commit-short]
+  (let [dir (fs/path root ".swarmforge" "handoffs" "inbox" "in_process" "batch_20260916T170000Z")]
+    (fs/create-dirs dir)
+    (spit (str (fs/path dir "00_received.handoff"))
+          (str "id: x\nfrom: coder\nto: cleaner\npriority: 50\ntype: git_handoff\nrole: coder\n"
+               "task: " task-name "\ncommit: " commit-short "\n"
+               "created_at: 2026-08-28T00:00:00Z\n\nbody\n"))))
+
 ;; row 1: pre-parcel content, no revert -> refused
 (with-fixture [root]
   (commit! root "file.txt" "pre-parcel content\n" "seed file")
@@ -95,6 +106,23 @@
       (assert-true "row 1 (pre-parcel, no revert): blocked" (parcel-rollback-guard-lib/blocked? result))
       (assert= "row 1: exactly one finding" 1 (count (:findings result)))
       (assert= "row 1: finding names the right path" "file.txt" (:path (first (:findings result)))))))
+
+;; row 1, batch shape (BL-1612): the identical scenario, but the received
+;; parcel sits inside a batch_* directory - before this ticket, the flat
+;; reader found nothing there and the gate stayed silently unblocked.
+(with-fixture [root]
+  (commit! root "file.txt" "pre-parcel content\n" "seed file")
+  (commit! root "file.txt" "parcel content\n" "BL-1213-fixture: parcel change")
+  (let [parcel-short (:out (sh! root "git" "rev-parse" "--short=10" "HEAD"))]
+    (seed-batch-parcel! root "BL-1213-fixture" parcel-short)
+    (commit! root "file.txt" "pre-parcel content\n" "recovery: restore tree (bulk restore, not a revert)")
+    (let [canonical (:out (sh! root "git" "rev-parse" "HEAD"))
+          result (parcel-rollback-guard-lib/findings-for-git-handoff
+                  {:root root :sender "cleaner" :task-name "BL-1213-fixture" :canonical canonical})]
+      (assert-true "row 1 batch (pre-parcel, no revert, batch-held): blocked - the BL-1612 fix"
+                   (parcel-rollback-guard-lib/blocked? result))
+      (assert= "row 1 batch: exactly one finding" 1 (count (:findings result)))
+      (assert= "row 1 batch: finding names the right path" "file.txt" (:path (first (:findings result)))))))
 
 ;; row 1 -> row 3 (non-vacuity companion): pre-parcel content, WITH a
 ;; genuine revert -> allowed
