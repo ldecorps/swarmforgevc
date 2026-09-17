@@ -99,6 +99,23 @@ BASENAME="$(basename "$YAML" .yaml)"
 TICKET_ID="$(grep -E '^id:' "$YAML" | head -1 | awk '{print $2}' | tr -d '\r')"
 [[ -n "$TICKET_ID" ]] || TICKET_ID="$BASENAME"
 
+# BL-1513: composed from the ticket id, not the file basename (whose slug
+# alone can run past 46 characters, and past 75 loses its own tail) - fits
+# under the note's 80-character header limit for every id the swarm mints.
+# A composition that still does not fit is REFUSED, never cut: a truncated
+# instruction (BL-1494, 2026-09-10 - "read file in backlo") reads as a
+# dispatch to both parsers (spec-work-ticket-id-pattern, BL-1422's
+# completion guard) while naming no actual work, and a role can complete
+# it with nothing done. Checked here, before the dispatch-trail read and
+# the assigned_to rewrite below - same "before anything is written or
+# rewritten" posture BL-1097 already established for this ticket's own id
+# resolution, so a refusal leaves the ticket file untouched.
+MSG="Work ${TICKET_ID}: read backlog/active/${TICKET_ID}-*.yaml"
+if (( ${#MSG} > 80 )); then
+  echo "route_backlog_to_coder: composed message exceeds the 80-character limit (${#MSG} chars, not sent, not shortened): ${MSG}" >&2
+  exit 1
+fi
+
 if (( FORCE == 0 )); then
   TRAIL_RC=0
   TRAIL_LINE="$(bb "$SCRIPT_DIR/dispatch_trail_cli.bb" "$ROOT" dispatched "$TICKET_ID")" || TRAIL_RC=$?
@@ -136,11 +153,6 @@ if [[ "$FLAG" == "REWRITE" ]]; then
   else
     printf '\nassigned_to: %s\n' "$ROLE" >> "$YAML"
   fi
-fi
-
-MSG="Work ${BASENAME}: read file in backlog/active"
-if (( ${#MSG} > 80 )); then
-  MSG="${MSG:0:80}"
 fi
 
 export SWARMFORGE_SKIP_DAEMON="${SWARMFORGE_SKIP_DAEMON:-1}"

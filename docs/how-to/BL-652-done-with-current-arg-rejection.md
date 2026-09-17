@@ -29,7 +29,8 @@ archive / stamp / chain as before.
 ## `--no-work` and the Work-note evidence gate (BL-1422)
 
 `route_backlog_to_coder.sh` dispatches a ticket as a priority-10 note whose
-message reads `Work <ticket>: read file in backlog/active`. Completing that
+message reads `Work <ticket-id>: read backlog/active/<ticket-id>-*.yaml`
+(BL-1513). Completing that
 note with no work done silently lost the dispatch — a role clearing a queue
 of chase notes with back-to-back `done_with_current.sh` calls swept the
 Work note out unread along with them (BL-1384 was blind-completed four

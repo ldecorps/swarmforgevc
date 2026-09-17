@@ -103,7 +103,8 @@
 
 ;; ── BL-1422: a Work note is not completed without work ────────────────────
 ;; route_backlog_to_coder.sh dispatches a ticket as a priority-10 note whose
-;; message reads "Work <ticket>: read file in backlog/active". Nothing used
+;; message reads "Work <ticket-id>: read backlog/active/<ticket-id>-*.yaml"
+;; (BL-1513). Nothing used
 ;; to distinguish that from any other note at the moment of completion, so a
 ;; role clearing a queue of chase notes with back-to-back done_with_current
 ;; calls swept the dispatch out unread - BL-1384 was blind-completed four
