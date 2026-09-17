@@ -15,10 +15,14 @@
 ;; (never load-file'd directly by a test, since THIS file's own -main runs
 ;; as a load-time side effect).
 (load-file (str (fs/path script-dir "work_note_evidence_lib.bb")))
-;; BL-1614: the Work-note gate's fourth input - is the ticket active in
-;; backlog/active on the freshest of main/origin-main right now? Same
-;; main-side ref read ready_for_next_task.bb's claim-time hint uses.
-(load-file (str (fs/path script-dir "ticket_active_on_main_lib.bb")))
+;; BL-1614: the Work-note gate's fourth input reads landed_ticket_lib.bb's
+;; BL-992 ref-freshness resolution directly (declaration-refs,
+;; ticket-lanes-at-ref) - the read itself is duplicated between here and
+;; ready_for_next_task.bb's claim-time hint rather than factored into a
+;; shared lib, the same "small live-glue duplication" posture
+;; ready_for_next_task.bb's own header comment already states for this
+;; exact pair of files (no common require point below handoff_lib.bb).
+(load-file (str (fs/path script-dir "landed_ticket_lib.bb")))
 ;; BL-1609: a forwarding git_handoff (no non-forwarding: true) held by a
 ;; code-worktree role is not completed with nothing sent - the pure decision
 ;; core, and the shared outbox/sent reader BL-1422's Work-note gate below
@@ -155,6 +159,25 @@
 ;; not-a-Work-note path). The DECISION itself is
 ;; work-note-evidence-lib/work-note-completion-decision (pure); everything
 ;; here is gathering its three inputs and acting on its verdict.
+;; BL-1614: is ticket-id active in backlog/active on the freshest of
+;; main/origin-main right now (landed-ticket-lib/declaration-refs' own
+;; ahead-of-the-two ordering - never a second freshness walk)?
+;; {:active? true|false|nil :sha <10-hex or nil>}. :active? is nil
+;; (unreadable) only when NEITHER ref resolves at all - found-active,
+;; found-elsewhere, and found-nowhere all answer true/false off that one
+;; ref. Never throws.
+(defn- ticket-active-on-main [root ticket-id]
+  (let [refs (landed-ticket-lib/declaration-refs root)]
+    (if (empty? refs)
+      {:active? nil :sha nil}
+      (let [ref (first refs)
+            lanes (set (landed-ticket-lib/ticket-lanes-at-ref root ref ticket-id))
+            sha (try
+                  (let [r (process/sh ["git" "-C" (str root) "rev-parse" "--short=10" ref])]
+                    (when (zero? (:exit r)) (str/trim (:out r))))
+                  (catch Exception _ nil))]
+        {:active? (contains? lanes :active) :sha sha}))))
+
 (defn- work-note-gate! [source-file]
   (let [ticket-id (work-note-ticket-id source-file)
         since (or (handoff-lib/header-field source-file "dequeued_at") "1970-01-01T00:00:00Z")
@@ -164,8 +187,7 @@
         ;; play - the git IO is otherwise unnecessary (every other path's
         ;; decision cannot depend on it).
         active-on-main (when (and ticket-id (some? reason))
-                          (ticket-active-on-main-lib/active-on-main
-                           (str (handoff-lib/target-root)) ticket-id))]
+                          (ticket-active-on-main (str (handoff-lib/target-root)) ticket-id))]
     (case (work-note-evidence-lib/work-note-completion-decision
            ticket-id evidenced? reason (:active? active-on-main))
       :complete-plain nil

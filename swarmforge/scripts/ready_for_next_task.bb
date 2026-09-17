@@ -23,9 +23,14 @@
 (load-file (str (fs/path (fs/parent *file*) "supersede_lib.bb")))
 ;; BL-1614: the claim-time merge-main-first hint - same Work-note message
 ;; parser BL-1422's gate uses (work-note-evidence-lib), same main-side ref
-;; read done_with_current_task.bb's gate uses (ticket-active-on-main-lib).
+;; resolution done_with_current_task.bb's gate uses
+;; (landed-ticket-lib/declaration-refs, BL-992) - the read itself is
+;; duplicated between the two files rather than factored into a shared
+;; lib, task/batch having no common require point below handoff_lib.bb
+;; (see apply-effort-for-task!'s own sibling comment above for the same
+;; posture on a different pair of duplicated readers).
 (load-file (str (fs/path (fs/parent *file*) "work_note_evidence_lib.bb")))
-(load-file (str (fs/path (fs/parent *file*) "ticket_active_on_main_lib.bb")))
+(load-file (str (fs/path (fs/parent *file*) "landed_ticket_lib.bb")))
 
 (def idle-boundary?
   "Set only when invoked from done_with_current_task.bb, right after it
@@ -306,6 +311,37 @@
           (println line))))))
 
 ;; ── BL-1614: claim-time merge-main-first hint ──────────────────────────────
+;; Same main-side fact done_with_current_task.bb's Work-note gate reads
+;; (landed-ticket-lib/declaration-refs' own ahead-of-the-two ref, BL-992) -
+;; see that file's ticket-active-on-main for the identical logic, duplicated
+;; here rather than shared (this file's own header comment above states the
+;; same posture for its other duplicated readers).
+(defn- ticket-active-on-main [root ticket-id]
+  (let [refs (landed-ticket-lib/declaration-refs root)]
+    (if (empty? refs)
+      {:active? nil :sha nil}
+      (let [ref (first refs)
+            lanes (set (landed-ticket-lib/ticket-lanes-at-ref root ref ticket-id))
+            sha (try
+                  (let [r (sh/sh "git" "-C" (str root) "rev-parse" "--short=10" ref)]
+                    (when (zero? (:exit r)) (str/trim (:out r))))
+                  (catch Exception _ nil))]
+        {:active? (contains? lanes :active) :sha sha}))))
+
+;; Is ticket-id's own YAML (matched by its `id:` field, never a filename
+;; glob) present under root's OWN backlog/active/ right now - a plain
+;; filesystem read, never git, so it answers for whatever THIS worktree's
+;; working tree currently holds regardless of what it has or has not
+;; merged.
+(defn- worktree-ticket-active? [root ticket-id]
+  (let [dir (fs/path root "backlog" "active")]
+    (boolean
+     (and (fs/exists? dir)
+          (some (fn [f]
+                  (= ticket-id (landed-ticket-lib/yaml-id-field
+                                (try (slurp (str f)) (catch Exception _ nil)))))
+                (fs/glob dir "**.yaml"))))))
+
 ;; A Work note whose ticket is active in backlog/active on main but not yet
 ;; in this worktree's own backlog/active (the promotion commit landed
 ;; seconds before the route, and this tree has not merged it yet) prints the
@@ -318,11 +354,8 @@
 (defn- print-merge-main-first-hint! [handoff-file]
   (when-let [ticket-id (work-note-evidence-lib/work-note-ticket-id-from-message
                         (handoff-lib/header-field handoff-file "message"))]
-    (let [{:keys [active? sha]} (ticket-active-on-main-lib/active-on-main
-                                  (str (handoff-lib/target-root)) ticket-id)]
-      (when (and active?
-                 (not (ticket-active-on-main-lib/worktree-active?
-                       (handoff-lib/worktree-root) ticket-id)))
+    (let [{:keys [active? sha]} (ticket-active-on-main (str (handoff-lib/target-root)) ticket-id)]
+      (when (and active? (not (worktree-ticket-active? (handoff-lib/worktree-root) ticket-id)))
         (println (str "MERGE_MAIN_FIRST: " ticket-id " is active on main"
                       (when sha (str " at " sha))
                       "; merge main before reading it"))))))
