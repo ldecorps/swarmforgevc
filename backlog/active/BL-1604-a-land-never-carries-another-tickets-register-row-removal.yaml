@@ -162,3 +162,6 @@ notes: |
   engaged the throttle.
 
 assigned_to: coder
+bounce_count: 1
+bounce_history:
+  - { at: 2026-09-17, by: QA, blamed: documenter, class: behavior, commit: dc79387b11, evidence: backlog/evidence/BL-1604-QA-20260917.md }
