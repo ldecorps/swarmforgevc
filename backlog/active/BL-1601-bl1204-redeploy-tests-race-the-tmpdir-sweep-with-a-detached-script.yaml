@@ -169,4 +169,4 @@ notes: |
   (in-process fixtures in under a second; runners in e2e - BL-1541).
   Severity high per the standing-red rule.
 
-assigned_to: null
+assigned_to: coder
