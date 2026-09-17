@@ -1,0 +1,169 @@
+id: BL-1618
+title: "Every role runs every test lane on every parcel - six full unit runs, six 320 s property runs, six acceptance runs and a Stryker pass per ticket at cap 5-6 on one host - and no prompt says which lanes are whose; the human on 2026-09-17: the swarm knowingly runs tests for hours and it is becoming a thing in itself; one script holds the lane table per role, prints the plan, runs exactly it sequentially and refuses an unknown role, so the property lane runs at most twice per parcel and the intermediate roles run the mapped set, the unit lane only when they touched extension/, and the ticket's own acceptance feature"
+milestone: M8
+type: feature
+epic: unit-suite-speed
+priority: 3
+direction: human-requested
+depends_on: []
+# BL-1164's changed-path gate (Article 4.5), recordTestDuration.js and
+# run_acceptance.sh exist; no open ticket touches per-role verification.
+mutation_cost: low
+# low: one bash script with a --plan mode, its shell test, one feature and
+# handler; no extension/src. Shell has no mutation/CRAP/DRY wired (BL-472).
+slice_size_envelope: low
+required_stages: [coder, cleaner, architect, hardender, documenter, qa]
+
+acceptance: specs/features/BL-1618-one-verification-command-per-role-encodes-the-lane-set.feature
+
+required_wiring:
+  - 'specs/pipeline/steps/bl1618OneVerificationCommandPerRoleSteps.js::registerSteps::the handler lands in the same parcel as the feature (BL-233, BL-1371)'
+# No production anchor on purpose (BL-1235): the consumers of
+# verify_lanes.sh are the five role prompts, which the specifier lands on
+# main at activation (BL-798) and which a parcel-commit anchor would
+# false-block; a pattern on the script itself would be satisfied by its own
+# declaration and gate nothing. Interim prose lane sets landed 2026-09-17.
+
+human_approval: pending
+approval_context: >
+  Your 2026-09-17 ask ("each role has to be more careful about each tests
+  to run"), turned into a mechanism: one script, one lane table, one plan
+  per role. FIRM: QA still runs every lane once per parcel - the final gate
+  is unchanged. FIRM: cleaner, architect and documenter never run the
+  property lane or Stryker; they run compile, the unit lane only when
+  their own commits touch extension/src or extension/test, the mapped test
+  for a changed production path (Article 4.5), and the ticket's own
+  acceptance feature. FIRM: the hardender keeps the unit lane (its mutation
+  baseline) and its differential mutation. FIRM: lanes run sequentially,
+  never the acceptance run beside the unit run. ONE CHOICE is yours below:
+  whether the coder runs the property lane once before forwarding.
+  Interim prose lane sets already landed in the five prompts on
+  2026-09-17; this ticket replaces the prose with the command.
+ruling_options:
+  - A - coder runs the property lane once before forwarding, QA runs it once (recommended)
+  - B - only QA runs the property lane, the coder runs the unit lane and its own acceptance feature
+ruling_tradeoffs:
+  - Pros - a property regression is caught by its author within minutes, before four review hops. Cons - about 5 min more per parcel at the coder (320 s lane on 2026-09-16). Recommended because a property regression found only at QA costs a bounce through cleaner, architect, hardender and documenter - an hour or more of pipeline for the 5 min saved.
+  - Pros - the smallest possible wall-clock, two lanes fewer per parcel than today at every role. Cons - property regressions surface only at QA and bounce through the whole chain; the coder cannot see its own property breakage.
+
+invariants:
+  - "The lane set of a role lives in one table in one script; the plan the script prints for a role is byte-for-byte the sequence it runs - never a second list in a prompt, a config or a role's habit."
+  - "The property lane appears in no plan for cleaner, architect, documenter or hardender unless that role's own commits changed a *.property.test.js file; it appears in QA's plan always, and in the coder's plan per the ruling."
+
+description: |
+  ## What is wrong
+
+  Intake (human, verbatim, 2026-09-17): "There is a golden rule in the
+  swarm which states that the unit tests should not have timers or sleeps
+  so that it can run super fast. When then today a considerable amount of
+  time is spent waiting for tests to run? Its becoming a thing in itself.
+  What happened to make the swarm knowingly run tests for hours? Is there
+  a ticket to revisit the unit tests so that they can run quickly? I
+  suppose each role has to be more careful about each tests to run.
+  Specifier is speccing small tickets. Architect has to ensure that the
+  dependencies are such that changing a small area of the code does not
+  mean running hours long test suites."
+
+  Measured (intake, 2026-09-16/17): the unit lane is 35.8 s wall (1029
+  files, pass); one `npm run test:properties` run is 319.94 s wall (408
+  files); coder, cleaner, architect, hardender, documenter and QA each ran
+  the unit lane, the property lane and the acceptance run per parcel, the
+  hardender a Stryker pass on top, at cap 5-6 on one 20-core host. Six
+  property runs are 32 min of wall per parcel before anything else. Under
+  that load the property lane's flat 20 s timeout fired, each red became a
+  ticket (BL-1588, BL-1596, BL-1607), and QA verified the ticket by
+  re-running the slow file twenty times. No role prompt says which lanes
+  are that role's: coder.prompt and cleaner.prompt say "Run unit tests and
+  relevant local verification", architect.prompt runs the property lane
+  only when it touches properties, documenter.prompt says nothing, and
+  only QA.prompt has a Verification Order - so every role ran everything.
+
+  ## What is wanted
+
+  - `swarmforge/scripts/verify_lanes.sh [role] [--plan]`: the lane table
+    per role in ONE place (scenario 01); `--plan` prints the lanes for the
+    role, the run executes exactly that plan, sequentially, stopping at the
+    first failed lane with a verdict naming it (scenario 02); the role
+    defaults to `SWARMFORGE_ROLE` with an @-seat mapped to its stage, and
+    an unknown role is refused, never run-everything (scenario 03).
+  - Lane table (the ruling decides the coder's property lane):
+    coder - compile, unit, properties (per ruling), acceptance-own;
+    cleaner / architect / documenter - compile, unit only when the parcel's
+    own commits since the received commit touch extension/src or
+    extension/test, properties only when they touch a *.property.test.js,
+    acceptance-own; hardender - compile, unit, mutation, acceptance-own;
+    QA - compile, unit, changed-path (Article 4.5), properties,
+    acceptance-own. `acceptance-own` is run_acceptance.sh on the feature
+    file(s) the ticket's `acceptance:` names.
+  - The five role prompts name the command and drop their interim prose
+    lane sets (specifier, at activation - BL-798).
+
+  ## How (direction, not mandate)
+
+  - Bash, `set -euo pipefail`, one associative table `LANES[role]`; the
+    changed-paths test is `git diff --name-only <received>..HEAD` with the
+    received commit from the in_process parcel (`received-commit-for-task`,
+    review_forward_evidence_gate_lib.bb) or `origin/main` when none; the
+    ticket's feature files from `acceptance:` via the schema reader.
+  - Lanes map to: `npm run compile`, `npm test`, `npm run test:properties`,
+    `npm run mutation` (the hardender's existing differential invocation),
+    `specs/pipeline/scripts/run_acceptance.sh <feature>`, and the
+    changed-path check QA already runs. All from `extension/` where npm
+    runs (local-engineering.prompt).
+  - Shell test `swarmforge/scripts/test/test_verify_lanes.sh` with a fake
+    npm on PATH recording invocations (mkdtemp fixtures, BL-1390); the
+    acceptance handler drives `--plan` and the fake-npm run in seconds
+    (BL-1541) - never the real lanes.
+  - Documenter: engineering-detailed.prompt "Verification" and the
+    how-to index gain the one-command rule; the five prompts are the
+    specifier's.
+
+constraints: >
+  One script, its shell test, the feature and handler, evidence and docs.
+  No change to what any lane itself runs, to QA's lane set, to Article
+  4.5's gate, or to recordTestDuration.js. The step handler lands with the
+  feature (BL-233). Evidence named BL-1618-*.
+
+out_of_scope: |
+  - A mapped-set runner that runs only the unit tests mapped to changed
+    paths (BL-791 remaining slice F; the unit lane is 36 s today).
+  - Measuring or ratcheting the property lane (BL-1619, then slice E).
+  - Cutting individual poles (BL-1620 and BL-791 slice D).
+  - Stryker's own cost at the hardender.
+
+qa_e2e_procedure: |
+  On the parcel commit, from the repo root:
+  1. `bash swarmforge/scripts/test/test_verify_lanes.sh` -> green.
+  2. Acceptance resolving all scenarios
+     (`bash specs/pipeline/scripts/run_acceptance.sh specs/features/BL-1618-*.feature`).
+  3. Live, once: `swarmforge/scripts/verify_lanes.sh --plan` in the QA
+     worktree prints QA's five lanes; the same in `.worktrees/documenter`
+     prints compile and acceptance-own for a docs-only parcel. ONE measured
+     run of `verify_lanes.sh` for QA on this parcel, its wall-clock recorded
+     in the evidence beside the sum of the lanes it ran - never "run it N
+     times".
+
+source: |
+  Human intake via the operator, 2026-09-17T07:10Z, filed as
+  backlog/INTAKE-test-lanes-run-for-hours-changed-path-selection-20260917.md
+  (archived to backlog/archive/ with its disposition), coordinator note
+  009046. The human's words are quoted verbatim above. Specifier
+  adjudication and the multiplier arithmetic:
+  backlog/evidence/BL-1618-specifier-adjudication-of-test-lanes-run-for-hours-intake-20260917.md.
+  Siblings minted the same pass: BL-1619 (property-lane recorder), BL-1620
+  (BL-791 slice D, two poles). Parents: BL-1164, BL-378, BL-791.
+
+notes: |
+  Minted 2026-09-17 by the specifier draining the backlog root. The
+  interim prose lane sets landed in coder, cleaner, architect, hardender
+  and documenter prompts in the same commit, with the specifier rule that a
+  qa_e2e_procedure never says "run it N times" for N above 3. INVEST:
+  Independent (npm scripts, run_acceptance.sh and the received-commit
+  reader exist), Negotiable (bash versus bb, table shape), Valuable (the
+  hours become two property runs per parcel and the intermediate roles'
+  lanes shrink to what they touched), Estimable (one script, one table,
+  one shell test - one sitting), Small (three scenarios, two invariants),
+  Testable (fake npm on PATH, plan mode, seconds). Priority 3: the human's
+  ("this is what the swarm's wall-clock is going on"). The ruling above is
+  the intake's one ambiguity ("Coder keeps the full unit lane but not the
+  property lane on every iteration" - once, or never).

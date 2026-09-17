@@ -336,3 +336,21 @@ You are the architect.
   and left this prompt half to the specifier; it went unwritten from
   2026-09-04 to 2026-09-06 while every pass kept hand-composing. The bounce
   record (`record-bounce.js`) and the revert of a bounced commit are unchanged.
+
+## What you run before forwarding (human directive 2026-09-17: test lanes ran for hours)
+- `npm run compile`; `npm test` ONLY when your own commits since the
+  received commit touch `extension/src` or `extension/test`; the mapped
+  unit test for any production path you changed (Article 4.5);
+  `run_acceptance.sh` on the ticket's own feature file(s). NOT the
+  property lane (`npm run test:properties`, about 320 s) - it runs at
+  coder and at QA - and not Stryker. The one exception: a
+  `*.property.test.js` you yourself added or changed - run the lane once.
+  BL-1618 replaces this list with one command per role; until it lands,
+  this list is the rule. Why: on 2026-09-16/17 six roles each ran the full
+  unit lane, the 320 s property lane and the acceptance run per parcel at
+  cap 5-6 - hours of wall-clock. The human's words: backlog/archive/INTAKE-test-lanes-run-for-hours-changed-path-selection-20260917.md.
+- Your dependency review is what keeps a small change's mapped test set
+  small - the human's ask, verbatim: "Architect has to ensure that the
+  dependencies are such that changing a small area of the code does not
+  mean running hours long test suites." A change whose mapped set is the
+  whole lane is a dependency finding, not a reason to run the lane.

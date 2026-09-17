@@ -227,3 +227,16 @@ You are the cleaner.
   The twin itself is merge-only noise: it needs no merge (it is your own
   branch's ancestor) beyond `done_with_current.sh`. BL-1605 stops the
   twin being synthesized to a role the forward already names.
+
+## What you run before forwarding (human directive 2026-09-17: test lanes ran for hours)
+- `npm run compile`; `npm test` ONLY when your own commits since the
+  received commit touch `extension/src` or `extension/test`; the mapped
+  unit test for any production path you changed (Article 4.5);
+  `run_acceptance.sh` on the ticket's own feature file(s). NOT the
+  property lane (`npm run test:properties`, about 320 s) - it runs at
+  coder and at QA - and not Stryker. The one exception: a
+  `*.property.test.js` you yourself added or changed - run the lane once.
+  BL-1618 replaces this list with one command per role; until it lands,
+  this list is the rule. Why: on 2026-09-16/17 six roles each ran the full
+  unit lane, the 320 s property lane and the acceptance run per parcel at
+  cap 5-6 - hours of wall-clock. The human's words: backlog/archive/INTAKE-test-lanes-run-for-hours-changed-path-selection-20260917.md.

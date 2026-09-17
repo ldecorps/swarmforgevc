@@ -1,0 +1,160 @@
+id: BL-1617
+title: "A role-branch commit whose subject leads with a ticket closed on origin/main is refused at commit time: the land step attributes every path by the first ticket id in the subjects that touched it and refuses a path whose only owners are closed (BL-1546), so one such commit blocks every parcel behind it on the branch - the documenter's BL-1576-tagged evidence commit cbde915b2e (2026-09-16) held BL-1608 and BL-1607 at land on 2026-09-17 until the specifier landed the file on main by hand; the commit-msg chain gains a guard that names the closed ticket and the open owner to lead with, silent on main, on untagged subjects and on an unreadable origin/main"
+milestone: M8
+type: defect
+severity: medium
+# medium: real but contained - the land step catches it loudly and the
+# remedy is a specifier commit of the stray path onto main (about an hour
+# of two QA-approved parcels waiting on 2026-09-17); second closed-owner
+# incident in five days (BL-1537's 5dbd34f27f on 2026-09-12 motivated
+# BL-1546), so the class recurs without a commit-time guard.
+status: todo
+epic: swarm-reliability
+priority: 20
+direction: swarm-reported
+depends_on: []
+# BL-1546 (closed-owner refusal) and BL-1242 (guard chain shape) are in
+# backlog/done. No open ticket touches the commit-msg hook.
+mutation_cost: low
+# low: one shell guard in the BL-1242 chain, its shell test, one feature
+# and handler; no extension/src. Shell has no mutation/CRAP/DRY wired
+# (BL-472) - the shell test is the lane's gate.
+slice_size_envelope: low
+required_stages: [coder, cleaner, architect, hardender, documenter, qa]
+
+acceptance: specs/features/BL-1617-a-role-branch-commit-never-leads-with-a-closed-ticket.feature
+
+required_wiring:
+  - 'swarmforge/git-hooks/commit-msg::check_closed_ticket_subject.sh::the commit-msg chain is the pre-existing consumer (BL-1242 shape, guard || status=$?); the literal exists only with the fix (BL-874, BL-1235)'
+  - 'specs/pipeline/steps/bl1617RoleBranchCommitNeverLeadsWithClosedTicketSteps.js::registerSteps::the handler lands in the same parcel as the feature (BL-233, BL-1371)'
+
+human_approval: pending
+approval_context: >
+  A new feature file is authored here, so it needs a tap. No choice is
+  posed and there are no ruling_options. FIRM: the guard reads the
+  leading ticket exactly as the land step's attribution does - the first
+  ticket id anywhere in the subject, or none - so it refuses precisely
+  the subjects the land step would later attribute to a closed ticket
+  (a "Revert BL-<closed> ..." subject included). FIRM: silent on main -
+  the coordinator's bookkeeping and QA's land commits legitimately name
+  tickets that are closing, and the land step never attributes main's own
+  history. FIRM: fail-open with a warning when origin/main cannot be read,
+  the same posture as land_step_lib's closed-on-main? (nil is never
+  "closed"). FIRM: each guard in the chain keeps its own exit status
+  (BL-1242); this one never masks or is masked by another.
+
+invariants:
+  - "The guard's leading ticket is the attribution's: the first ticket id anywhere in the subject, or none - never a second parser of the subject line."
+  - "The guard refuses only on a branch other than main, only when the leading id is filed under backlog/done/ alone on origin/main, and never when origin/main cannot be read."
+
+description: |
+  ## What is wrong
+
+  `land_step_lib.bb` attributes each path of `origin/main..<tip>` by the
+  first ticket id in the subjects of the commits that touched it, and
+  `closed-on-main?` (line 681) plus the BL-1546 clause (line 1487) refuse
+  a path whose every owner is filed under `backlog/done/` on origin/main
+  and which no commit of the landing ticket touches - correctly: a closed
+  owner's lines can never read as landed, so the path would otherwise be
+  excluded forever or ride in under someone else's approval. Nothing
+  stops the commit that creates such a path in the first place.
+
+  On 2026-09-16 21:44Z the documenter reported a gate defect in
+  `backlog/evidence/BL-1576-merge-drop-guard-false-positive-documenter-20260916.md`
+  with the subject `BL-1576: evidence - ...` (cbde915b2e). BL-1576 is
+  closed. Every documenter-lineage tip carries that path, so on
+  2026-09-17 `land_step_cli.bb` printed LAND_ESCALATE for BL-1608
+  (`9bdf467215`) and BL-1607 (`47e50af7ee`) - two QA-approved parcels -
+  naming that one path (QA evidence
+  `.worktrees/QA/backlog/evidence/BL-1608-QA-land-escalate-20260917.md`);
+  the specifier's scan of `origin/main..9bdf467215` (106 paths) found it
+  the only closed-owner path. The remedy was a by-hand commit of the file
+  onto main so it leaves the diff (specifier evidence
+  `backlog/evidence/BL-1608-specifier-adjudication-of-qa-land-escalate-20260917.md`).
+  BL-1537's 5dbd34f27f (2026-09-12) was the same class. A land-time
+  refusal an hour after the fact, repaired by hand, is the wrong place to
+  catch a subject line.
+
+  ## What is wanted
+
+  - On a branch other than main, a commit whose subject's first ticket id
+    is filed under `backlog/done/` alone on origin/main is refused, and
+    the refusal names the closed ticket, says why (BL-1546 at land), and
+    tells the author to lead with the open ticket that owns the work or
+    to use an untagged subject (scenario 01 rows 1-2; invariants 1-2).
+  - A subject leading with an open ticket, or naming none, commits
+    (scenario 01 rows 3-4). The same closed-ticket subject on main
+    commits (scenario 02). An unreadable origin/main warns and commits
+    (scenario 03).
+  - The prompt half landed with this mint: documenter.prompt says a
+    report on a closed ticket's mechanism is filed under its OPEN owner.
+
+  ## How (direction, not mandate)
+
+  - `swarmforge/scripts/check_closed_ticket_subject.sh [message-file]`
+    in the BL-1242 chain (`swarmforge/git-hooks/commit-msg`, `|| status=$?`,
+    own `set -euo pipefail`): read the subject line from the message
+    file; extract the first `BL-<digits>` with the same regex
+    `task_scope_gate_lib.bb`'s attribution uses - a constant mirrored
+    across a language boundary needs a test asserting both literals
+    agree (BL-897); `git rev-parse --abbrev-ref HEAD` = main -> exit 0;
+    `git ls-tree -r --name-only origin/main backlog/` -> the id's ticket
+    file under `backlog/done/` and under no other folder -> refuse; ls-tree
+    failure -> warn on stderr, exit 0.
+  - Shell test `swarmforge/scripts/test/test_check_closed_ticket_subject.sh`
+    (fixture repositories under mkdtemp with a fake origin, BL-1390) for
+    the five shapes; the acceptance handler drives the real hook on the
+    same fixture. All in seconds (BL-1541).
+  - Documenter: `docs/how-to/BL-1241-entangled-tip-at-the-land-step-has-a-reachable-remedy.md`
+    gains a line that the closed-owner shape is now refused at commit
+    time; handoff-protocol.md if it lists the commit guards.
+
+constraints: >
+  One guard script, its chain line in swarmforge/git-hooks/commit-msg, the
+  shell test, the feature and handler, evidence and docs. No change to
+  land_step_lib.bb, to the attribution in task_scope_gate_lib.bb, or to
+  any other guard. The step handler lands with the feature (BL-233).
+  Evidence named BL-1617-*.
+
+out_of_scope: |
+  - Repairing commits already on role branches (the specifier's by-hand
+    land of the BL-1576 file covers today's).
+  - A guard on main: bookkeeping and land commits there legitimately
+    name closing tickets.
+  - Deciding which OPEN ticket owns a report - the author's call, with the
+    specifier by note when none exists (documenter.prompt).
+
+qa_e2e_procedure: |
+  On the parcel commit, from the repo root:
+  1. `bash swarmforge/scripts/test/test_check_closed_ticket_subject.sh` -> green.
+  2. Acceptance resolving all scenarios
+     (`bash specs/pipeline/scripts/run_acceptance.sh specs/features/BL-1617-*.feature`).
+  3. Live: in a role worktree with the parcel merged,
+     `git commit --allow-empty -m "BL-1576: probe"` is refused with the
+     message naming BL-1576 as closed; `git commit --allow-empty -m
+     "BL-1610: probe"` (an open ticket at the time of the probe, or any
+     open id) commits and is reset away; the same refused subject on the
+     master checkout's main commits and is reset away.
+  4. `bash swarmforge/scripts/test/test_branch_claim_guard.sh` and the
+     other guard tests still green (the chain's other exits unmasked).
+
+source: |
+  QA note to the specifier, priority 00, 2026-09-17T06:55Z (inbound
+  00_20260917T065542Z_002851): "BL-1608 land LAND_ESCALATE, entangled w/
+  1185,1576,1599,1605,1607". QA evidence
+  .worktrees/QA/backlog/evidence/BL-1608-QA-land-escalate-20260917.md.
+  Specifier adjudication:
+  backlog/evidence/BL-1608-specifier-adjudication-of-qa-land-escalate-20260917.md.
+  Parents: BL-1241, BL-1546, BL-1242.
+
+notes: |
+  Minted 2026-09-17 by the specifier while completing QA's land-escalate
+  note; the stray BL-1576 evidence file was landed on main in the same
+  pass so BL-1608 and BL-1607 can replay. INVEST: Independent (the chain,
+  the attribution regex and the closed-on-main reading exist), Negotiable
+  (shell versus bb for the guard is direction), Valuable (a closed-ticket
+  subject is refused where it is typed, not an hour later at land),
+  Estimable (one guard, one chain line, one shell test - one sitting),
+  Small (three scenarios, two invariants), Testable (real hook on a
+  fixture repository in seconds). Severity medium: contained, loud,
+  hand-remedied - but recurring.
