@@ -125,4 +125,59 @@ resolves, BL-1608/1607/1599 can land together (or in sequence) without
 carrying BL-1605's still-unresolved file, since none of the three
 approved tickets' own paths overlap it.
 
+## The refusal shape changed after merging BL-1604's own fix (same pass)
+
+BL-1604 (the land-step's own register-row-restoration fix, also
+QA-reviewed this pass — see its bounce/resolution below) landed into
+this QA branch at `a0e149f224`. Re-running
+`bb swarmforge/scripts/land_step_cli.bb BL-1608 a0e149f224` now (BL-1604's
+fix live in-tree, though not yet landed on `origin/main`) produces a
+DIFFERENT, more specific refusal — BL-1604's own new content-check
+(BL-1332/BL-1375/BL-1481 shape) now runs and finds a real attribution
+gap of its own:
+
+```
+LAND_ESCALATE
+ENTANGLED_SIBLING BL-1185
+ENTANGLED_SIBLING BL-1576
+ENTANGLED_SIBLING BL-1599
+ENTANGLED_SIBLING BL-1604
+ENTANGLED_SIBLING BL-1605
+ENTANGLED_SIBLING BL-1607
+ENTANGLED_SIBLING BL-1610
+BL-1608: entangled tip - sibling ticket(s) BL-1185,BL-1576,BL-1599,BL-1604,
+BL-1605,BL-1607,BL-1610 unlanded as ancestors, tip-pure replay could not
+complete cleanly; specifier adjudication needed.
+land-step: refusing to replay BL-1608 - backlog/standing-reds.tsv is shared
+with unlanded sibling(s) BL-1185 (unreadable: no backlog ticket file found
+for BL-1185), and the tip's content differs from origin/main in a line
+attributable to the sibling, so a replayed path is taken whole and would
+carry it into main (BL-1332/BL-1375, content-checked per BL-1481)
+```
+
+BL-1185 is not a live ticket — it was retired 2026-08-27 via merge-up and
+has no `backlog/{paused,active,done}` file at all (its feature is the
+contract; see `docs/how-to` note on this in BL-1608's own mint record).
+It appears as an `ENTANGLED_SIBLING` only because its name is quoted in
+prose inside commit subjects/messages along this chain (e.g. "BL-1185's
+own feature now resolves 4/4"), and the attribution walk cannot resolve
+an owner-state for a ticket id with no backlog file, so it fails closed
+per BL-1546 rather than assume it is closed/absent-and-safe.
+
+`BL-1610` is newly entangled too — not seen in the two earlier attempts
+this pass, before BL-1604's fix was in-tree — since BL-1604's own
+description and the specifier's amendment (`backlog/active/BL-1604-*.yaml`
+"AMENDED 2026-09-17 07:00Z") reference BL-1610's gate defect directly.
+QA has not yet received or reviewed a BL-1610 parcel.
+
+This is a distinct, deeper layer of the same class (shared-registry /
+prose-referenced-ticket attribution at the land step), not a new class —
+still appended here rather than a fresh note. Not something QA can
+resolve by hand-rebuilding (per BL-1241 item 2, a hand-rebuild's own-path
+walk would not agree with this check by construction); this stays with
+the specifier's pending adjudication, which now additionally needs to
+cover: (a) how a retired, fileless ticket id referenced only in prose
+should resolve in the attribution walk, and (b) BL-1610's relationship to
+this batch once QA receives it.
+
 By QA.
