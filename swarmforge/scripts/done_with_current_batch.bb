@@ -17,17 +17,12 @@
 (defn run-ready! []
   (process/exec (str (fs/path script-dir "ready_for_next_batch.sh")) "--idle-boundary"))
 
-(defn- forwarding-inbound? [source-file]
-  (and (= "git_handoff" (handoff-lib/header-field source-file "type"))
-       (not (handoff-lib/non-forwarding? source-file))))
-
-(defn- master-resident? []
-  (= "master" (:worktree-name (handoff-lib/load-role-info (handoff-lib/current-role)))))
-
 ;; ── BL-1609: a forwarding git_handoff is not completed with nothing sent ──
 ;; Article 4.4's shape, per BL-1609's own direction: gather every batch
 ;; item's verdict first, refuse ONCE naming every unforwarded forwarding
 ;; item, rather than stopping at the first one found.
+;; forwarding-inbound? and master-resident? live in forward_evidence_lib.bb,
+;; shared with the task path's own forward-gate!.
 (defn- forward-verdict [resident? source-file]
   (let [ticket-id (pipeline-stage-lib/extract-ticket-id (handoff-lib/header-field source-file "task"))
         since (or (handoff-lib/header-field source-file "dequeued_at") "1970-01-01T00:00:00Z")
@@ -35,13 +30,13 @@
     {:file source-file
      :ticket-id ticket-id
      :decision (forward-evidence-lib/forward-completion-decision
-                {:forwarding? (forwarding-inbound? source-file)
+                {:forwarding? (forward-evidence-lib/forwarding-inbound? source-file)
                  :master-resident? resident?
                  :evidenced? evidenced?
                  :reason (dispatch-lib/no-op-reason)})}))
 
 (defn- forward-gate! [batch-files]
-  (let [resident? (master-resident?)
+  (let [resident? (forward-evidence-lib/master-resident?)
         verdicts (mapv #(forward-verdict resident? %) batch-files)
         refusals (filterv #(= :refuse (:decision %)) verdicts)]
     (when (seq refusals)
