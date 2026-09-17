@@ -88,4 +88,41 @@ instead. Both BL-1607 and BL-1608 are QA-approved and waiting on this
 same adjudication; whatever resolves one likely resolves both in one
 pass. Continuing to BL-1599 next.
 
+## Same structural blocker recurs a third time on BL-1599 (same pass)
+
+BL-1599 also fully verified and QA-approved: unit suite green apart from
+BL-1605's already-bounced, unrelated defect (confirmed twice more, one
+transient unrelated flake on a third run not reproduced on a fourth);
+its own acceptance feature 5/5 green; hardener mutation pass 100% kill
+(77/77 Stryker mutants + 8 hand-authored + 27 Gherkin outline mutants);
+`SUITE_DURATION_BUDGET_MS`/`PER_FILE_DURATION_BUDGET_MS` unchanged,
+`SUITE_WORK_BUDGET_MS`=550000/`SUITE_WORK_TOLERANCE`=0.10 introduced as
+specified; `work_budget_verdict` recorded; documentation added to
+`docs/reference/Specification.MD` accurately. `required_wiring` OK.
+Clean QA evidence `f2d20f4da9`. Attempting
+`bb swarmforge/scripts/land_step_cli.bb BL-1599 f2d20f4da9` hits the
+IDENTICAL refusal:
+
+```
+LAND_ESCALATE
+ENTANGLED_SIBLING BL-1185
+ENTANGLED_SIBLING BL-1576
+ENTANGLED_SIBLING BL-1605
+ENTANGLED_SIBLING BL-1607
+ENTANGLED_SIBLING BL-1608
+BL-1599: entangled tip - sibling ticket(s) BL-1185,BL-1576,BL-1605,BL-1607,BL-1608
+unlanded as ancestors, tip-pure replay could not complete cleanly; specifier
+adjudication needed.
+```
+
+Same structural cause, third instance this pass — appended here per the
+same escalation discipline. **All four reviewed tickets from this
+documenter batch are now dispositioned**: BL-1608, BL-1607, BL-1599 are
+QA-approved and blocked only on this land-step adjudication; BL-1605 is
+bounced to coder (independent, unrelated defect) and not part of the
+entanglement blocking the other three's land — once this adjudication
+resolves, BL-1608/1607/1599 can land together (or in sequence) without
+carrying BL-1605's still-unresolved file, since none of the three
+approved tickets' own paths overlap it.
+
 By QA.
