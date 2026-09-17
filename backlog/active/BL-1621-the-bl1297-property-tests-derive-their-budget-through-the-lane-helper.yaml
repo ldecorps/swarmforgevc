@@ -33,7 +33,7 @@ required_wiring:
   - 'extension/test/bl1297MergeOwnPathsInvariants.property.test.js::propertyLaneTimeoutMs(20000)::the file is the pre-existing consumer of the helper; the literal exists only with the fix (BL-874, BL-1235)'
   - 'specs/pipeline/steps/bl1621Bl1297BudgetThroughTheLaneHelperSteps.js::registerSteps::the handler lands in the same parcel as the feature (BL-233, BL-1371)'
 
-human_approval: pending
+human_approval: approved
 approval_context: >
   A new feature file is authored here, so it needs a tap. No choice is
   posed and there are no ruling_options. FIRM: every test in the file
@@ -188,3 +188,5 @@ notes: |
   one sitting), Small (three scenarios, no invariant), Testable (source
   checks in milliseconds, one 15 s solo run - BL-1541). Severity high
   per the standing-red rule.
+
+assigned_to: coder

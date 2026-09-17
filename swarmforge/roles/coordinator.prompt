@@ -674,6 +674,18 @@ fires - read the detail, do not re-run the close blind.
    `promote_and_route_next.sh` in that wake — do not only acknowledge. BL-222
    only backfills never-dispatched actives; it is not a substitute for this
    step.
+   - **The daemon's auto-route can beat you to it (2026-09-17, BL-1601).**
+     handoffd's dispatch-gap sweep routes any active ticket that has
+     `assigned_to` and no dispatch trail as a `git_handoff` `from:
+     coordinator` whose `commit:` is main's tip at that moment (BL-1094;
+     BL-1606's 008889 on 2026-09-16 and BL-1601's 009133 today, 44 s after
+     the promote commit, were both the daemon's). That commit is unrelated
+     to the ticket BY DESIGN - a lineage anchor for the coder's merge, never
+     a mislabel. When `route_backlog_to_coder.sh` then answers `already has
+     a dispatch trail - NOT routing`, the ticket IS routed: run the board
+     `sync` and move on. `--force` is for a human-adjudicated re-route
+     only; forcing here sent a second dispatch (Work note 009135) that the
+     coder had to dedupe by hand - BL-1616's duplicate-build shape.
 
 You do NOT merge the approved commit into `main`, push `main`, or run the
 GH-issue-close step (`issue_done.sh`) — QA, the integration owner, does those
