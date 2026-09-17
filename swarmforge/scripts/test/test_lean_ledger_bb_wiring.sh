@@ -79,6 +79,14 @@ TMUX
   printf 'id: item1\nfrom: specifier\nto: coder\npriority: 50\ntype: git_handoff\ntask: BL-819-lean-ledger-wiring-test\ncommit: %s\n\npayload\n' \
     "$task_commit" > "$wt/.swarmforge/handoffs/inbox/in_process/50_item1.handoff"
 
+  # BL-1609: a forwarding git_handoff only leaves in_process once its own
+  # forward has been queued (or non-forwarding/--no-op). This file's own
+  # concern is the lean-ledger CLI call site, not forwarding, so item1's
+  # ticket gets a matching already-queued forward in coder's own outbox.
+  mkdir -p "$wt/.swarmforge/handoffs/outbox"
+  printf 'id: fwd\nfrom: coder\nto: cleaner\npriority: 50\ntype: git_handoff\ntask: BL-819-lean-ledger-wiring-test\ncommit: %s\ncreated_at: 2020-01-01T00:00:00.000000000Z\n\nmerge_and_process coder %s\n' \
+    "$task_commit" "$task_commit" > "$wt/.swarmforge/handoffs/outbox/90_fwd.handoff"
+
   # done_with_current_task.bb's *file* (hence its script-dir) drives its own
   # `run-ready!` exec of ready_for_next_task.sh — a REAL absolute path, not
   # PATH-searched, so it cannot be faked via $fake_bin the way tmux is. If
