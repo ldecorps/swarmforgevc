@@ -48,7 +48,15 @@ function mkFixture(ctx) {
   fs.writeFileSync(path.join(root, 'backlog', 'active', 'F.yaml'), 'id: F\n');
   fs.mkdirSync(path.join(root, '.swarmforge'), { recursive: true });
   const roles = ['specifier', STAGE, SEAT2, 'cleaner'];
-  for (const r of roles) fs.mkdirSync(path.join(root, safeName(r)), { recursive: true });
+  // SEAT2 gets a REAL linked git worktree (not a plain directory) - scenario
+  // 04 needs it on its own branch, independently dirty-able, which only a
+  // real `git worktree add` gives (every other seat here stays a plain
+  // directory: they never need branch/dirty state of their own, and
+  // `git rev-parse --show-toplevel` from a plain subdirectory just resolves
+  // to root's own checkout, same as bl983StageQueueSteps.js's convention).
+  for (const r of roles) {
+    if (r !== SEAT2) fs.mkdirSync(path.join(root, safeName(r)), { recursive: true });
+  }
   fs.writeFileSync(
     path.join(root, '.swarmforge', 'roles.tsv'),
     roles.map((r) => `${r}\t${safeName(r)}-wt\t${path.join(root, safeName(r))}\tswarmforge-${r}\t${r}\tclaude\ttask`).join('\n') + '\n'
@@ -61,6 +69,7 @@ function mkFixture(ctx) {
   git(['add', '-A']);
   git(['-c', 'user.email=t@t', '-c', 'user.name=t', 'commit', '-q', '-m', 'seed']);
   ctx.commit = git(['rev-parse', '--short=10', 'HEAD']).trim();
+  git(['worktree', 'add', '-q', path.join(root, safeName(SEAT2)), '-b', 'swarmforge-coder-2-base']);
 }
 
 function fixtureEnv(ctx, role) {
@@ -315,6 +324,44 @@ function registerSteps(registry) {
     try {
       assert.deepEqual(newFiles(ctx, ctx.rosterRole), [], "expected the role's own new/ drained of the one file");
       assert.equal(inProcess(ctx, ctx.rosterRole).length, 1, 'expected exactly one in-process file, nothing duplicated');
+    } finally {
+      cleanup(ctx);
+    }
+  });
+
+  // ── Scenario 04 (architect bounce D1): refused claim requeues to origin ──
+  scoped(/^a non-forwarding git_handoff copy for BL-9001 addressed to coder@2 is delivered$/, (ctx) => {
+    ctx.deliveredBasename = deliverToOwnBox(ctx, {
+      basename: 'BL-9001-bl1615-scenario04',
+      recipient: SEAT2,
+      from: 'architect',
+      nonForwarding: true,
+    });
+  });
+
+  scoped(/^the coder@2 worktree is on branch BL-9998 with uncommitted changes$/, (ctx) => {
+    const seat2Dir = roleRoot(ctx, SEAT2);
+    execFileSync('git', ['checkout', '-q', '-b', 'BL-9998-mismatch'], { cwd: seat2Dir, encoding: 'utf8' });
+    fs.writeFileSync(path.join(seat2Dir, 'dirty.txt'), 'uncommitted\n');
+  });
+
+  scoped(/^the claim is refused$/, (ctx) => {
+    assert.notEqual(ctx.pollResult.status, 0, `expected a refusal: ${ctx.pollResult.stdout}${ctx.pollResult.stderr}`);
+    const out = `${ctx.pollResult.stdout || ''}${ctx.pollResult.stderr || ''}`;
+    assert.match(out, /BRANCH_CLAIM_MISMATCH/, `expected BRANCH_CLAIM_MISMATCH: ${out}`);
+  });
+
+  scoped(/^the file is requeued into the seat's own new\/, never the stage queue$/, (ctx) => {
+    try {
+      assert.ok(
+        newFiles(ctx, SEAT2).includes(ctx.deliveredBasename),
+        `expected the file requeued into coder@2's own new/: ${newFiles(ctx, SEAT2)}`
+      );
+      assert.ok(
+        !newFiles(ctx, STAGE).includes(ctx.deliveredBasename),
+        `expected the file NOT in the stage queue: ${newFiles(ctx, STAGE)}`
+      );
+      assert.deepEqual(inProcess(ctx, SEAT2), [], "expected coder@2's in_process empty after the requeue");
     } finally {
       cleanup(ctx);
     }
