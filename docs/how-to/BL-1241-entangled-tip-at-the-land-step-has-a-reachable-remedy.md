@@ -1139,6 +1139,57 @@ BL-1537's own two excluded paths are not re-landed by this ticket — they
 were landed by the adjudicated hand recipe cited above. Acceptance:
 `specs/features/BL-1546-a-path-owned-only-by-a-closed-ticket-is-never-silently-excluded.feature`.
 
+## A replay restores another open ticket's registry row instead of dropping it (BL-1604)
+
+`write-tree-from-paths!` takes each own-path WHOLE from the cited commit — for
+an ordinary path that is right, but for a shared registry file every ticket
+edits (`backlog/standing-reds.tsv`, its mirror
+`swarmforge/scripts/property_suite_standing_allowlist.tsv`) it means the tip's
+row set REPLACES `origin/main`'s. A row that went missing on the branch for
+any reason — a merge on a batch branch, a conflict resolution, a stale
+worktree, never a deliberate drain — was silently deleted from `main` by
+whichever parcel landed next, whatever that parcel was about.
+
+Live 2026-09-16: BL-1548's land (`2c1c44e2cc`, "tip-pure replay onto
+origin/main") changed the register by exactly one line — deleting BL-1595's
+still-open row — though BL-1548 never touched the register on purpose;
+BL-1595 was active, mid-rework, and its file still red.
+`standing_red_register_cli.bb` then read the file as unowned and BL-1429
+dropped the intake cap to 1 (coordinator note, 17:26Z); the specifier restored
+the row by hand. Two earlier instances the same day were caught only by
+unrelated gates (a bounced co-owner, an ambiguous commit subject — BL-1544
+above) rather than anything purpose-built.
+
+Fixed: `restore-other-tickets-registry-rows!` runs right after
+`write-tree-from-paths!` overlays the landing ticket's own tip, before the
+replay commit is made — a restored row rides the SAME land, never a second
+commit. For each registry file it reads `origin/main`'s and the replay
+tree's own rows (`rows-to-restore`, a pure function over the two row sets —
+row identity is the `file` column; owner is column 3 for the register, or the
+`owner BL-<n>` token in the rationale column for the allowlist), and restores
+byte-identical, in `origin/main`'s own row order, every row whose owner is an
+OPEN ticket other than the landing one and which the replay tree lacks.
+`land_step_cli.bb` prints `REGISTER_ROW_RESTORED <registry> <file> <owner>`
+per restored row.
+
+- **A row the landing ticket itself removed** (the drain rule) — still
+  leaves; `rows-to-restore` excludes any row whose owner is the landing
+  ticket.
+- **A row a CLOSED ticket owned** — still leaves; only an open OTHER owner's
+  row is protected.
+- **An unreadable registry file on either side** — fails closed: the whole
+  replay refuses, naming the file, never guessing at rows it could not read.
+
+BL-1447's completeness check (above) diffs the replay tip byte-for-byte
+against the cited commit for every own-path — which the two registry files
+now deliberately fail by design, since restoring a row makes the replay's
+copy diverge from the tip's on purpose. `land-plan` exempts exactly those two
+paths from that check; every other own-path keeps the full byte-for-byte
+verification unchanged.
+
+Acceptance:
+`specs/features/BL-1604-a-land-never-carries-another-tickets-register-row-removal.feature`.
+
 ## What this does not change
 
 - BL-1192's send-time gate and its range — unchanged; this ticket only adds
