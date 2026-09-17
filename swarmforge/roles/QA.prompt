@@ -108,6 +108,15 @@ You are QA.
 
 ## Handoff
 - When verification PASSES:
+  - **A row the landing ticket owns must be gone from YOUR tip before you
+    approve (2026-09-17).** `grep <ticket-id> backlog/standing-reds.tsv
+    swarmforge/scripts/property_suite_standing_allowlist.tsv backlog/suite-poles.tsv`
+    on the parcel commit: a row naming the landing ticket is the parcel's own
+    retirement, and its qa_e2e says so - run that step, never assume it.
+    Three lands on 2026-09-17 (BL-1605, BL-1613, BL-1623) closed with their
+    rows present; each read as unowned within minutes, throttled intake to
+    one and cost a specifier round trip. Until BL-1631 lands (the land step
+    retires the landing ticket's own rows), this grep is the only stop.
   - Send `note` broadcast to every **pipeline worktree** role:
     `coder,cleaner,architect,hardender,documenter` with priority `00`. This
     broadcast instructs each recipient to **merge its own worktree branch up to
