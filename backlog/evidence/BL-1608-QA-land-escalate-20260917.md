@@ -125,4 +125,194 @@ resolves, BL-1608/1607/1599 can land together (or in sequence) without
 carrying BL-1605's still-unresolved file, since none of the three
 approved tickets' own paths overlap it.
 
+## The refusal shape changed after merging BL-1604's own fix (same pass)
+
+BL-1604 (the land-step's own register-row-restoration fix, also
+QA-reviewed this pass — see its bounce/resolution below) landed into
+this QA branch at `a0e149f224`. Re-running
+`bb swarmforge/scripts/land_step_cli.bb BL-1608 a0e149f224` now (BL-1604's
+fix live in-tree, though not yet landed on `origin/main`) produces a
+DIFFERENT, more specific refusal — BL-1604's own new content-check
+(BL-1332/BL-1375/BL-1481 shape) now runs and finds a real attribution
+gap of its own:
+
+```
+LAND_ESCALATE
+ENTANGLED_SIBLING BL-1185
+ENTANGLED_SIBLING BL-1576
+ENTANGLED_SIBLING BL-1599
+ENTANGLED_SIBLING BL-1604
+ENTANGLED_SIBLING BL-1605
+ENTANGLED_SIBLING BL-1607
+ENTANGLED_SIBLING BL-1610
+BL-1608: entangled tip - sibling ticket(s) BL-1185,BL-1576,BL-1599,BL-1604,
+BL-1605,BL-1607,BL-1610 unlanded as ancestors, tip-pure replay could not
+complete cleanly; specifier adjudication needed.
+land-step: refusing to replay BL-1608 - backlog/standing-reds.tsv is shared
+with unlanded sibling(s) BL-1185 (unreadable: no backlog ticket file found
+for BL-1185), and the tip's content differs from origin/main in a line
+attributable to the sibling, so a replayed path is taken whole and would
+carry it into main (BL-1332/BL-1375, content-checked per BL-1481)
+```
+
+BL-1185 is not a live ticket — it was retired 2026-08-27 via merge-up and
+has no `backlog/{paused,active,done}` file at all (its feature is the
+contract; see `docs/how-to` note on this in BL-1608's own mint record).
+It appears as an `ENTANGLED_SIBLING` only because its name is quoted in
+prose inside commit subjects/messages along this chain (e.g. "BL-1185's
+own feature now resolves 4/4"), and the attribution walk cannot resolve
+an owner-state for a ticket id with no backlog file, so it fails closed
+per BL-1546 rather than assume it is closed/absent-and-safe.
+
+`BL-1610` is newly entangled too — not seen in the two earlier attempts
+this pass, before BL-1604's fix was in-tree — since BL-1604's own
+description and the specifier's amendment (`backlog/active/BL-1604-*.yaml`
+"AMENDED 2026-09-17 07:00Z") reference BL-1610's gate defect directly.
+QA has not yet received or reviewed a BL-1610 parcel.
+
+This is a distinct, deeper layer of the same class (shared-registry /
+prose-referenced-ticket attribution at the land step), not a new class —
+still appended here rather than a fresh note. Not something QA can
+resolve by hand-rebuilding (per BL-1241 item 2, a hand-rebuild's own-path
+walk would not agree with this check by construction); this stays with
+the specifier's pending adjudication, which now additionally needs to
+cover: (a) how a retired, fileless ticket id referenced only in prose
+should resolve in the attribution walk, and (b) BL-1610's relationship to
+this batch once QA receives it.
+
+## BL-1610 itself, now reviewed, hits the same class from a third angle
+
+BL-1610 (the merge-drop gate's own scan-bound fix — the mechanism behind
+several of this thread's own findings) is QA-approved: bb test runner and
+property runner green, both scenarios of its own feature (6/6) and
+BL-1576's regression feature (11/11) green, `required_wiring` OK, the
+qa_e2e_procedure's own reproduction independently re-run by QA
+(`bb merge_drop_guard_lib.bb .worktrees/documenter 4356ab57c1 6ad1d3f616
+073a34b5e1` → 0 findings; without the head arg → 1 excused finding on
+`c96761faa1`, matching spec exactly), docs and the diagram trigger
+updated. Clean QA evidence `6ca79b8ddc`.
+`bb swarmforge/scripts/land_step_cli.bb BL-1610 6ca79b8ddc` refuses too,
+a third flavor of the same class:
+
+```
+land-step: refusing to replay BL-1610 - backlog/standing-reds.tsv's attribution
+is ambiguous: 93f2031c3b names BL-1185,BL-1608 and leads with neither, and no
+commit of BL-1610's own touches backlog/standing-reds.tsv - never decided
+silently (BL-1544)
+```
+
+That cited commit is QA's OWN revert (the fix for the very first finding
+in this thread, restoring the coder's discharged BL-1185/BL-1608 row).
+**All five tickets touched this pass are now dispositioned**: BL-1608,
+BL-1607, BL-1599, BL-1610 QA-approved and blocked only on this land-step
+adjudication; BL-1605 bounced to coder, independent and unentangled.
+Nothing further to review; awaiting the specifier.
+
+## Rerun after the specifier's BL-1576 stray-file fix (aaed2cab79) — deeper layer confirmed, not cleared
+
+Specifier note (resume, in_process): "BL-1608/1607: stray BL-1576 file
+landed aaed2cab79 - fetch, rerun land_step_cli." `git fetch origin`:
+`main`==`origin/main` (0/0), tip `501d80deaf`. Re-ran both as directed:
+
+```
+$ bb swarmforge/scripts/land_step_cli.bb BL-1608 9bdf467215
+LAND_ESCALATE
+ENTANGLED_SIBLING BL-1185
+ENTANGLED_SIBLING BL-1599
+ENTANGLED_SIBLING BL-1604
+ENTANGLED_SIBLING BL-1605
+ENTANGLED_SIBLING BL-1607
+ENTANGLED_SIBLING BL-1610
+land-step: refusing to replay BL-1608 - backlog/standing-reds.tsv is shared
+with unlanded sibling(s) BL-1185 (unreadable: no backlog ticket file found
+for BL-1185), and the tip's content differs from origin/main in a line
+attributable to the sibling, so a replayed path is taken whole and would
+carry it into main (BL-1332/BL-1375, content-checked per BL-1481)
+
+$ bb swarmforge/scripts/land_step_cli.bb BL-1607 47e50af7ee
+LAND_ESCALATE
+ENTANGLED_SIBLING BL-1185
+ENTANGLED_SIBLING BL-1576
+ENTANGLED_SIBLING BL-1599
+ENTANGLED_SIBLING BL-1605
+ENTANGLED_SIBLING BL-1608
+land-step: refusing to replay BL-1607 - backlog/standing-reds.tsv is shared
+with unlanded sibling(s) BL-1185 (unreadable: no backlog ticket file found
+for BL-1185), and the tip's content differs from origin/main in a line
+attributable to the sibling, so a replayed path is taken whole and would
+carry it into main (BL-1332/BL-1375, content-checked per BL-1481)
+```
+
+The BL-1576 stray-evidence-file fix resolved the shallow (BL-1546)
+refusal it targeted — neither run hits that refusal any more — but
+BOTH runs now hit the exact same deeper refusal already reported above
+("The refusal shape changed after merging BL-1604's own fix" section):
+`backlog/standing-reds.tsv`'s content differs from `origin/main` in a
+line attributed to BL-1185, a ticket retired 2026-08-27 with no
+`backlog/{paused,active,done}` file, so the attribution walk cannot
+resolve an owner-state and fails closed per BL-1546. This is the same
+BL-1185-fileless-ticket class flagged in this file before the specifier's
+adjudication landed, not a new class, and not cleared by that
+adjudication — that fix targeted a different path
+(`backlog/evidence/BL-1576-...md`) than the one now blocking
+(`backlog/standing-reds.tsv`).
+
+Still not something QA can resolve by hand-rebuild (BL-1241 item 2: a
+hand rebuild's own-path walk would not agree with this check by
+construction). BL-1608 and BL-1607 remain QA-approved and blocked only
+on this land-step adjudication, now narrowed to one concrete question:
+how should the attribution walk resolve `backlog/standing-reds.tsv`'s
+line(s) attributed to BL-1185 when BL-1185 has no backlog ticket file at
+all (retired via merge-up, 2026-08-27)?
+
+## Rerun after merging origin/main fully into the QA branch (specifier's follow-up note) — same result, root cause pinpointed
+
+Second specifier resume note (in_process, queued ahead of the note
+above): "BL-1608/1607: merge main aaed2cab79 into QA first, then
+land_step_cli on QA tip." Per the how-to's sync-first discipline: `git
+merge origin/main --no-edit -m "Merge main 501d80deaf into QA."`
+(clean, no conflicts, untagged subject) onto tip `287ef562e7`, new tip
+`227a4b2ee5`. Re-ran both on this fully-synced tip:
+
+```
+$ bb swarmforge/scripts/land_step_cli.bb BL-1608 227a4b2ee5
+LAND_ESCALATE ... same backlog/standing-reds.tsv / BL-1185 refusal
+
+$ bb swarmforge/scripts/land_step_cli.bb BL-1607 227a4b2ee5
+LAND_ESCALATE ... same backlog/standing-reds.tsv / BL-1185 refusal
+```
+
+Identical to the pre-sync result — the sync did not clear it, since this
+is a genuine content difference, not a staleness artifact. Pinpointed
+the exact cause: `git log -S"BL-1185-work-note-missing-task-header-defers-hard-seat.feature"
+-- backlog/standing-reds.tsv` finds three touching commits; the relevant
+one is **QA's own** `93f2031c3b`, subject "Revert fb9a53751e's
+wrongly-reintroduced BL-1185/BL-1608 standing-red row" (2026-09-17
+07:32:38+01:00, this same QA branch, part of the D1-retraction
+correction earlier in this pass). The subject text names "BL-1185"
+before "BL-1608" (as the compound "BL-1185/BL-1608"), and the
+attribution walk resolves ownership from the first ticket id token in a
+commit subject — so it reads this commit, and the standing-reds.tsv line
+it touches, as BL-1185's, not BL-1608's. The commit's own content is
+correct (it reverts a wrongly-reintroduced row belonging to BL-1608; see
+its full body) — only the SUBJECT WORDING misleads the walk, the same
+"a commit subject naming two tickets attributes to whichever the walk
+reads first" class as BL-1617 (which covers a *closed* ticket leading a
+subject; BL-1185 is not closed, it has no backlog file at all, so
+BL-1546's fail-closed clause fires the same way).
+
+QA cannot fix this by rewriting `93f2031c3b`'s message: it is not at the
+branch tip, and an interactive rebase to reword it is out of policy
+(rewrites every descendant SHA already cited in this pass's evidence and
+handoffs). Per BL-1241 item 3/4: rematch attempted once (the sync above),
+still not clean — stopping here per that discipline rather than looping.
+BL-1608 and BL-1607 remain QA-approved, blocked only on this adjudication.
+Root cause is now precise enough to fix at its source: either (a) the
+specifier lands a corrective commit whose own subject leads with BL-1608
+and touches `backlog/standing-reds.tsv` (giving the attribution walk a
+later, correctly-attributed touch on the same path to prefer), or (b)
+the attribution walk itself is amended to ignore a non-leading ticket
+token, or a ticket id with no resolvable backlog file, when a leading
+token already resolves. Not QA's call.
+
 By QA.

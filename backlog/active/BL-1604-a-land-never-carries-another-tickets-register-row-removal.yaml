@@ -194,3 +194,9 @@ abandoned_commits: [eca9aaeb96]
 bounce_count: 1
 bounce_history:
   - { at: 2026-09-17, by: QA, blamed: documenter, class: behavior, commit: dc79387b11, evidence: backlog/evidence/BL-1604-QA-20260917.md }
+# QA's bounce (commit dc79387b11) fired on the received tip 8393648d8b,
+# which lacked this exact abandoned_commits entry at the time; the fix
+# above landed via a parallel documenter/specifier path
+# (596f5fb061 + the 2026-09-17T07:00Z amendment) before QA's bounce was
+# picked up. Superseded in effect, not corrected as a misattribution -
+# the gap QA reported was real at the commit QA reviewed.
