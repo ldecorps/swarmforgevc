@@ -113,3 +113,12 @@ notes: |
   scenarios, two invariants), Testable (measured per-file ms from the JSON
   report). Priority 12: below BL-1618/1619 - the unit lane is 36 s wall
   today; these poles matter to the per-file gate, not to the hours.
+
+  2026-09-17 12:10Z (specifier, BL-1623 mint): bl968StepRegistryMaterializedTreeGuard.test.js
+  is the unit lane's one blind temp-dir sweep (`readdirSync(os.tmpdir())`
+  by prefix, no owner pid) - the shape that made bl1309 red under a
+  concurrent lane today. The cut this ticket makes to that file takes
+  the sweep with it: build the roots as `<prefix><process.pid>-` and
+  sweep through tmpDir.js's `sweepStaleTmpDirs` once BL-1623 lands, or
+  the pid-guarded loop inline if this lands first. Not a new scenario;
+  recorded so the two parcels do not both edit the file.
