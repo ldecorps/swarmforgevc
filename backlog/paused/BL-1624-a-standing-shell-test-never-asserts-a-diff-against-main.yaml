@@ -34,7 +34,7 @@ required_wiring:
   - 'swarmforge/scripts/test/test_bl1388_land_step_guard_fixture.sh::extension/out missing::the red test is the pre-existing consumer of the loud precondition; the literal exists only with the fix (BL-874, BL-1235)'
   - 'specs/pipeline/steps/bl1624StandingShellTestNeverDiffsAgainstMainSteps.js::registerSteps::the handler lands in the same parcel as the feature (BL-233, BL-1371)'
 
-human_approval: pending
+human_approval: approved
 approval_context: >
   A new feature file is authored here, so it needs a tap. No choice is
   posed and there are no ruling_options. FIRM: step 4 of the shell test is
@@ -185,3 +185,7 @@ notes: |
   Estimable (one deletion, one guard line, one census script - one
   sitting), Small (three scenarios, one invariant), Testable (source reads
   and a fixture copy in seconds). Severity high per the standing-red rule.
+
+  AUTO-APPROVED under the 2026-09-17 operator hotfix (severity defect, no
+  ruling_options) — see
+  auto-approve-high-severity-defects-amendment-20260917.md.
