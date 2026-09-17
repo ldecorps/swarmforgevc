@@ -238,6 +238,31 @@
               candidate))
           (branch-claim-guard-lib/standard-branch-candidates swarm-name role))))
 
+;; BL-1615 D1 (architect bounce, 2026-09-17): a refused claim must requeue
+;; to the SAME directory it was actually claimed from - since BL-1615's own
+;; union claim (claim-stage-handoff-files) draws candidates from both the
+;; stage's shared queue AND the seat's own new/, a single fixed new-dir
+;; binding (always stage-queue-dir) silently relocated a seat-addressed
+;; file into the shared queue on a guard refusal, where it sat readable by
+;; a sibling seat's dispatcher too (even though stage-handoff-files' own
+;; recipient filter still kept a MISMATCHED sibling from actually claiming
+;; it, the file no longer lived where invariant 2 says seat-addressed mail
+;; must live - a visible defect on its own, and load-bearing for anything
+;; that lists new/ by directory rather than by re-deriving the filter).
+(defn- origin-new-dir-for
+  "The new/ directory handoff-file's own `recipient:` header says it came
+   from: the seat's own mailbox when addressed to the seat itself exactly
+   (current-role, not merely the stage), the shared stage queue otherwise
+   (untagged, or addressed to the stage) - mirrors stage-handoff-files'
+   own recipient match exactly, so the requeue target always agrees with
+   what claim-stage-handoff-files would offer it from again."
+  [handoff-file]
+  (let [me (handoff-lib/current-role)
+        recipient (handoff-lib/header-field handoff-file "recipient")]
+    (if (and me (= recipient me))
+      (handoff-lib/my-mailbox-dir :new)
+      (handoff-lib/stage-queue-dir :new))))
+
 (defn requeue-and-refuse!
   "Moves the in-process claim file back to new/ (it never runs this turn),
    then refuses the turn with a warning naming the branch and the claim."
@@ -366,11 +391,16 @@
   ;; new/ - for a bare seat this IS its own new/, byte-identical path) into
   ;; its OWN in_process/completed/abandoned, so task-mode single-claim
   ;; holds per seat while the stage keeps one addressable queue.
-  (let [new-dir        (handoff-lib/stage-queue-dir :new)
-        in-process-dir (handoff-lib/my-mailbox-dir :in_process)
+  ;; BL-1615 D1: no single new-dir binding here any more - a refused claim's
+  ;; requeue target is resolved per-file via origin-new-dir-for instead.
+  (let [in-process-dir (handoff-lib/my-mailbox-dir :in_process)
         completed-dir  (handoff-lib/my-mailbox-dir :completed)
         abandoned-dir  (handoff-lib/my-mailbox-dir :abandoned)]
-    (doseq [dir [new-dir in-process-dir completed-dir abandoned-dir]]
+    ;; BL-1615: seat-addressed mail (a reverse-hop merge-only copy, a
+    ;; branch-behind merge-up note) is delivered into the seat's OWN new/,
+    ;; not the stage's shared queue - claim-queue-dirs names both so
+    ;; neither goes uncreated.
+    (doseq [dir (conj (handoff-lib/claim-queue-dirs :new) in-process-dir completed-dir abandoned-dir)]
       (fs/create-dirs dir))
     (let [in-process-batches (handoff-lib/batch-dirs in-process-dir)
           ;; BL-983: a claimed stage-queue parcel keeps its stamped
@@ -398,13 +428,21 @@
         ;; in_process handoff work." message seen by callers of
         ;; ready_for_next.sh.
         (do
-          (enforce-branch-claim-guard! (first in-process-files) in-process-dir new-dir)
+          ;; BL-1615 D1: a refused claim requeues to the directory the
+          ;; recipient header says it actually came from, never a fixed
+          ;; new-dir - see origin-new-dir-for.
+          (enforce-branch-claim-guard! (first in-process-files) in-process-dir
+                                       (origin-new-dir-for (first in-process-files)))
           (apply-effort-for-task! (first in-process-files) (mono-router-conf-text))
           (handoff-lib/print-task (first in-process-files))
           (print-merge-main-first-hint! (first in-process-files)))
         (if (handoff-lib/draining?)
           (println "DRAINING")
-          (let [new-files            (handoff-lib/stage-handoff-files new-dir)
+          (let [;; BL-1615: the union of the stage's shared queue and the
+                ;; seat's own new/ (claim-queue-dirs), each file offered
+                ;; once, in the one filename sort across both - never queue
+                ;; first, seat box second (invariant 1).
+                new-files            (handoff-lib/claim-stage-handoff-files :new)
                 ;; BL-983: a redelivered copy of a parcel a PEER seat has
                 ;; already claimed (live in its in_process) or already
                 ;; finished (its completed/abandoned) must never be claimed
@@ -513,7 +551,10 @@
                                     {:basename (fs/file-name source-file)
                                      :task (:task decision)
                                      :sibling-seats sibling-seat-ids})))
-                        (enforce-branch-claim-guard! target-file in-process-dir new-dir)
+                        ;; BL-1615 D1: same origin-aware requeue target as
+                        ;; the resume path above.
+                        (enforce-branch-claim-guard! target-file in-process-dir
+                                                     (origin-new-dir-for target-file))
                         (apply-effort-for-task! target-file pack-conf)
                         (handoff-lib/print-task target-file)
                         (print-merge-main-first-hint! target-file))

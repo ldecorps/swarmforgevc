@@ -202,3 +202,6 @@ notes: |
   auto-approve-high-severity-defects-amendment-20260917.md.
 
 assigned_to: coder
+bounce_count: 1
+bounce_history:
+  - { at: 2026-09-17, by: architect, blamed: coder, class: behavior, commit: baf4eea434, evidence: backlog/evidence/BL-1615-bounce-20260917.md }
