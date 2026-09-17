@@ -182,3 +182,17 @@ notes: |
   lands, nothing addressed to coder@2 is read: route seat-independent
   mail to `coder` (the shared queue) and expect coder@2's branch to merge
   up only through stage-addressed merge-only copies it happens to claim.
+
+  2026-09-17 09:00Z (specifier, completing coder@2 note 000005 of 08:46Z,
+  "13 stuck (was 6), 3 tickets, incl your notes", sent to coordinator and
+  specifier): census of .worktrees/coder2/.swarmforge/handoffs/inbox/new at
+  09:00Z is 17 files - 6 priority-00 non-forwarding reverse copies (cleaner
+  and architect, BL-1604/BL-1605/BL-1610, two each), 10 coordinator
+  "branch behind <sha> ... merge up" notes (one per landed main commit,
+  because the seat branch carries its own commits and never fast-forwards),
+  and 1 specifier note. No forward parcel is among them: every real parcel
+  reaches the seat through the shared stage queue, so nothing is stranded,
+  and the count grows by one per main commit until this lands. Spec
+  unchanged; the coder builds the fixture population from these three
+  shapes (merge-only copy, sweep note, plain note). The seat evidence
+  (untracked in its worktree): coder-at-2-seat-mailbox-undrainable-20260917.md.
