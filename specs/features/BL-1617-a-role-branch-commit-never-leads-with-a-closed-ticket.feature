@@ -29,6 +29,8 @@ Feature: BL-1617 A role-branch commit never leads with a closed ticket
       | Revert BL-0001's row re-add              | is refused naming BL-0001 as closed and telling the author to lead with the open owner |
       | BL-0002: fix - see BL-0001's gate        | is committed                                                            |
       | docs: a subject naming no ticket         | is committed                                                            |
+      | Revert the BL-0001/BL-0002 row re-add    | is refused as ambiguous naming BL-0001 and BL-0002 and telling the author to lead with the open owner |
+      | BL-0009: a subject leading with an id that has no ticket file | is refused naming BL-0009 as unknown on origin/main and telling the author to lead with the open owner |
 
   # BL-1617 role-branch-commit-never-leads-with-a-closed-ticket-02
   Scenario: the guard is silent on main
