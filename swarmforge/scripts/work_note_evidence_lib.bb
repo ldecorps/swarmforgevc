@@ -28,28 +28,43 @@
   (chase-sweep-lib/dispatch-trail-ticket-id {:task nil :message message}))
 
 (defn work-note-completion-decision
-  "BL-1422 invariants 1 and 3, as one pure decision table given what the
-   caller has already determined:
-     ticket-id  - work-note-ticket-id-from-message's result for the
-                  in_process item's own message header (nil for anything
-                  that is not a Work/Spec dispatch note, INCLUDING every
-                  git_handoff - it never has a message header at all).
-     evidenced? - a commit naming ticket-id on the role's branch, or a
-                  sent git_handoff naming it, since the item's dequeue.
-     reason     - the --no-work reason argv already vetted non-blank, or
-                  nil for a plain invocation.
-   Returns :complete-plain | :complete-with-reason | :refuse.
+  "BL-1422 invariants 1 and 3, extended by BL-1614's fourth input (the
+   table is EXTENDED, never rewritten - BL-1422's own three clauses are
+   untouched below), as one pure decision table given what the caller has
+   already determined:
+     ticket-id      - work-note-ticket-id-from-message's result for the
+                       in_process item's own message header (nil for
+                       anything that is not a Work/Spec dispatch note,
+                       INCLUDING every git_handoff - it never has a
+                       message header at all).
+     evidenced?     - a commit naming ticket-id on the role's branch, or a
+                       sent git_handoff naming it, since the item's dequeue.
+     reason         - the --no-work reason argv already vetted non-blank,
+                       or nil for a plain invocation.
+     active-on-main? - BL-1614: is ticket-id in backlog/active on the
+                       freshest of main/origin-main right now (nil when
+                       neither ref resolves - unreadable behaves exactly
+                       like false, today's behaviour, never a refusal of
+                       its own)?
+   Returns :complete-plain | :complete-with-reason | :refuse-active-on-main
+   | :refuse.
 
    Invariant 3 falls out of the FIRST clause alone: a nil ticket-id (every
    non-Work note, every git_handoff) always completes plainly, regardless
-   of evidenced?/reason - the gate never engages for them, which is
-   exactly \"completes exactly as today.\" Invariant 1 is the remaining
-   three clauses: a stated reason always completes-with-reason (recorded,
-   never silent); evidence with no reason completes plainly (no reason to
+   of evidenced?/reason/active-on-main? - the gate never engages for them,
+   which is exactly \"completes exactly as today.\" BL-1614's own
+   invariant is the SECOND clause: a stated reason on a ticket genuinely
+   active on main is refused, never silently recorded - a Work note is
+   never completed with a no-work reason while its ticket sits in
+   backlog/active on main. BL-1422's invariant 1 is the remaining three
+   clauses, unchanged: a stated reason on a ticket NOT active on main (or
+   on an unreadable ref) always completes-with-reason (recorded, never
+   silent); evidence with no reason completes plainly (no reason to
    record); neither refuses."
-  [ticket-id evidenced? reason]
+  [ticket-id evidenced? reason active-on-main?]
   (cond
     (nil? ticket-id) :complete-plain
+    (and (some? reason) active-on-main?) :refuse-active-on-main
     (some? reason) :complete-with-reason
     evidenced? :complete-plain
     :else :refuse))
