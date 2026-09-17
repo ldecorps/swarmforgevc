@@ -180,4 +180,32 @@ cover: (a) how a retired, fileless ticket id referenced only in prose
 should resolve in the attribution walk, and (b) BL-1610's relationship to
 this batch once QA receives it.
 
+## BL-1610 itself, now reviewed, hits the same class from a third angle
+
+BL-1610 (the merge-drop gate's own scan-bound fix — the mechanism behind
+several of this thread's own findings) is QA-approved: bb test runner and
+property runner green, both scenarios of its own feature (6/6) and
+BL-1576's regression feature (11/11) green, `required_wiring` OK, the
+qa_e2e_procedure's own reproduction independently re-run by QA
+(`bb merge_drop_guard_lib.bb .worktrees/documenter 4356ab57c1 6ad1d3f616
+073a34b5e1` → 0 findings; without the head arg → 1 excused finding on
+`c96761faa1`, matching spec exactly), docs and the diagram trigger
+updated. Clean QA evidence `6ca79b8ddc`.
+`bb swarmforge/scripts/land_step_cli.bb BL-1610 6ca79b8ddc` refuses too,
+a third flavor of the same class:
+
+```
+land-step: refusing to replay BL-1610 - backlog/standing-reds.tsv's attribution
+is ambiguous: 93f2031c3b names BL-1185,BL-1608 and leads with neither, and no
+commit of BL-1610's own touches backlog/standing-reds.tsv - never decided
+silently (BL-1544)
+```
+
+That cited commit is QA's OWN revert (the fix for the very first finding
+in this thread, restoring the coder's discharged BL-1185/BL-1608 row).
+**All five tickets touched this pass are now dispositioned**: BL-1608,
+BL-1607, BL-1599, BL-1610 QA-approved and blocked only on this land-step
+adjudication; BL-1605 bounced to coder, independent and unentangled.
+Nothing further to review; awaiting the specifier.
+
 By QA.
