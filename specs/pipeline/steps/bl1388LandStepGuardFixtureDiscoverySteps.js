@@ -22,7 +22,6 @@ const CLAIMS = {
   measuring: 'a discoverable handler makes the refusal assertions fail (the fixture measures the guard)',
   'real-path': 'the block still calls run-replayed-tree-guards with no injected tree-guards-fn',
   'non-main': 'and still assesses a non-main tree (the land-replay branch)',
-  'only-block': 'no assertion outside the fixture block changed',
   'empty-array-passes': 'the empty-array tree is pinned as PASSING, the premise BL-1371 established',
 };
 
@@ -125,8 +124,11 @@ function registerSteps(registry) {
   });
 
   scoped(/^the replayed tree guards pass$/, (ctx) => {
+    // BL-1624: the shell test's step 4 ("no assertion outside the fixture
+    // block changed") was retired - a parcel-time premise (BL-1388's own
+    // qa_e2e item 4) frozen into a standing assertion, true only while
+    // BL-1388's parcel was unlanded. This claim leaves with it.
     requirePassed(ctx, ctx.bl1388.emptyArray ? 'empty-array-passes' : 'green');
-    requirePassed(ctx, 'only-block');
   });
 }
 
