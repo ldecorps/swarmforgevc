@@ -115,6 +115,32 @@ export function getResidentSpyUiHtml(): string {
     font-size: 10px;
     color: var(--tg-theme-hint-color, #8b949e);
   }
+  .ticket-strip.is-collapsed .ticket-strip-line {
+    display: flex;
+    align-items: baseline;
+    white-space: nowrap;
+    overflow: hidden;
+  }
+  .ticket-strip.is-collapsed .ticket-strip-title {
+    display: inline-block;
+    min-width: 0;
+    flex: 1 1 auto;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    vertical-align: bottom;
+  }
+  .ticket-strip-collapse-btn {
+    flex: 0 0 auto;
+    margin-left: 6px;
+    padding: 0 4px;
+    border: none;
+    background: transparent;
+    color: var(--tg-theme-hint-color, #8b949e);
+    font-size: 12px;
+    line-height: 1;
+    cursor: pointer;
+  }
   .pane-offline {
     flex: 0 0 auto;
     margin: 10px;
@@ -358,7 +384,7 @@ export function getResidentSpyUiHtml(): string {
 <body>
 <div class="split-view" id="split-view">
   <div id="ticket-strip" class="ticket-strip" hidden>
-    <div class="ticket-strip-line"><span class="ticket-strip-id" id="ticket-strip-id"></span> - <span class="ticket-strip-title" id="ticket-strip-title"></span></div>
+    <div class="ticket-strip-line"><span class="ticket-strip-id" id="ticket-strip-id"></span> - <span class="ticket-strip-title" id="ticket-strip-title"></span><button type="button" id="ticket-strip-collapse-btn" class="ticket-strip-collapse-btn" aria-label="Collapse ticket title">▾</button></div>
     <div class="ticket-strip-meta" id="ticket-strip-meta"></div>
   </div>
   <div id="pane-offline" class="pane-offline" hidden>Live panes unavailable — swarm agents may be down.</div>
@@ -388,6 +414,7 @@ export function getResidentSpyUiHtml(): string {
   var ticketStripIdEl = document.getElementById('ticket-strip-id');
   var ticketStripTitleEl = document.getElementById('ticket-strip-title');
   var ticketStripMetaEl = document.getElementById('ticket-strip-meta');
+  var ticketStripCollapseBtnEl = document.getElementById('ticket-strip-collapse-btn');
   var paneOfflineEl = document.getElementById('pane-offline');
   var paneFullscreenEl = document.getElementById('pane-fullscreen');
   var fsTopEl = document.getElementById('fs-top');
@@ -406,6 +433,12 @@ export function getResidentSpyUiHtml(): string {
   var claimEnteredByPaneId = {};
   var ticketStripClaimEnteredAtMs = null;
   var ticketStripMetaBase = '';
+  // BL-1542: host-persisted via GET/PUT /web-ui-ticket-strip-collapsed
+  // (Rule 3 - no browser storage). Changes ONLY on a human tap or a loaded
+  // preference - never on a pane-data refresh or the claim-age tick, which
+  // rewrite ticket-strip TEXT (updateTicketStrip, the 1s tick below) and
+  // must never touch this state.
+  var ticketStripCollapsed = false;
   var fsClaimEnteredAtMs = null;
   var fsTitleBase = '';
   var lastPanes = [];
@@ -478,6 +511,44 @@ export function getResidentSpyUiHtml(): string {
         applyPaneFontSize(false);
       })
       .catch(function () { applyPaneFontSize(false); });
+  }
+
+  function persistTicketStripCollapsed() {
+    if (!token) return;
+    fetch('/web-ui-ticket-strip-collapsed?bearer=' + encodeURIComponent(token), {
+      method: 'PUT',
+      headers: fontControlAuthHeaders(),
+      body: JSON.stringify({ surface: 'live-screen', collapsed: ticketStripCollapsed }),
+    }).catch(function () {});
+  }
+
+  // Applies the class + button label ONLY - never called from
+  // updateTicketStrip or the claim-age tick, so a refresh cannot flip it.
+  function applyTicketStripCollapsed(persist) {
+    ticketStripEl.classList.toggle('is-collapsed', ticketStripCollapsed);
+    ticketStripCollapseBtnEl.textContent = ticketStripCollapsed ? '▸' : '▾';
+    ticketStripCollapseBtnEl.setAttribute('aria-label', ticketStripCollapsed ? 'Expand ticket title' : 'Collapse ticket title');
+    if (persist) {
+      persistTicketStripCollapsed();
+    }
+  }
+
+  function loadTicketStripCollapsed() {
+    if (!token) {
+      applyTicketStripCollapsed(false);
+      return;
+    }
+    fetch('/web-ui-ticket-strip-collapsed?surface=live-screen&bearer=' + encodeURIComponent(token), {
+      cache: 'no-store',
+    })
+      .then(function (r) { return r.ok ? r.json() : null; })
+      .then(function (data) {
+        if (data && data.success && typeof data.collapsed === 'boolean') {
+          ticketStripCollapsed = data.collapsed;
+        }
+        applyTicketStripCollapsed(false);
+      })
+      .catch(function () { applyTicketStripCollapsed(false); });
   }
 
   function inTelegram() {
@@ -758,6 +829,16 @@ export function getResidentSpyUiHtml(): string {
     if (selection && String(selection).length) return;
     e.preventDefault();
     exitFullscreen();
+  });
+
+  // BL-1542: its own element, separate from #fs-font-ctrl (which changes
+  // pane OUTPUT font size, not this strip's visibility). stopPropagation so
+  // the tap never bubbles into some future strip-level handler.
+  ticketStripCollapseBtnEl.addEventListener('click', function (e) {
+    e.stopPropagation();
+    e.preventDefault();
+    ticketStripCollapsed = !ticketStripCollapsed;
+    applyTicketStripCollapsed(true);
   });
 
   // BL-609: stopPropagation so +/- never triggers the fullscreen tap-to-exit.
@@ -1081,6 +1162,7 @@ export function getResidentSpyUiHtml(): string {
   }
 
   loadPaneFontSize();
+  loadTicketStripCollapsed();
   refresh();
   // BL-881: paired with RESIDENT_PANE_CACHE_TTL_MS (residentPaneLive.ts) —
   // polling faster than the walk can finish piled overlapping captures onto
