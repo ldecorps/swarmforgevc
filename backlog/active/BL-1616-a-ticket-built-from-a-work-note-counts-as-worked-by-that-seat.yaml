@@ -198,4 +198,15 @@ notes: |
   ruling_options) — see
   auto-approve-high-severity-defects-amendment-20260917.md.
 
+  2026-09-18 (documenter, pre-QA-gate ancestry check): coder@2 built this
+  ticket a second time from the same Work note, same author, same session,
+  producing 07dc946b66 - a byte-identical diff to the coder seat's own
+  bb91947c67 (both touch only handoff_lib.bb, its test runner, the feature
+  handler and BL-1616-coder-20260917.md; same stat). 07dc946b66 was never
+  forwarded from coder@2 and carries no wiring this parcel's tip lacks -
+  same seat-duplicate-rework shape as BL-1610/BL-1604 on 2026-09-17,
+  recorded here rather than merged.
+
+abandoned_commits: [07dc946b66]
+
 assigned_to: coder
