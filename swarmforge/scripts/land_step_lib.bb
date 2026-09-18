@@ -1621,16 +1621,37 @@
    names exactly one literal in the codebase (BL-1235)."
   "REGISTER_ROW_RESTORED")
 
+(def register-row-retired-prefix
+  "BL-1631: the mirror of register-row-restored-prefix - the one spelling of
+   the line land_step_cli.bb prints per row this land retires because its
+   own owner column is the landing ticket."
+  "REGISTER_ROW_RETIRED")
+
 (def ^:private registry-specs
-  "Row identity is the `file` column; owner is column 3 (standing-reds.tsv)
-   or the `owner BL-<n>` token in the rationale column (the allowlist -
-   BL-1428's mirror shape). tsv-cols never re-splits per caller."
+  "Row identity is the `file` column; owner is column 3 (standing-reds.tsv),
+   the `owner BL-<n>` token in the rationale column (the allowlist -
+   BL-1428's mirror shape), or column 2 (the pole register, BL-1598's own
+   shape - `file ticket first_seen measured_ms note`). tsv-cols never
+   re-splits per caller.
+
+   BL-1631: `:retirable?-fn` (absent = always retirable) is the one place a
+   registry can except a row from `rows-to-retire` regardless of owner - the
+   pole register's accepted-pole row (BL-1629's disposition, spelled in its
+   own note column, no dedicated column exists) is the one case today."
   [{:path "backlog/standing-reds.tsv"
     :row-key-fn (fn [line] (nth (str/split line #"\t" -1) 1 nil))
     :owner-fn (fn [line] (nth (str/split line #"\t" -1) 2 nil))}
    {:path "swarmforge/scripts/property_suite_standing_allowlist.tsv"
     :row-key-fn (fn [line] (nth (str/split line #"\t" -1) 0 nil))
-    :owner-fn (fn [line] (second (re-find #"owner (BL-\d+)" (nth (str/split line #"\t" -1) 2 ""))))}])
+    :owner-fn (fn [line] (second (re-find #"owner (BL-\d+)" (nth (str/split line #"\t" -1) 2 ""))))}
+   {:path "backlog/suite-poles.tsv"
+    :row-key-fn (fn [line] (nth (str/split line #"\t" -1) 0 nil))
+    :owner-fn (fn [line] (nth (str/split line #"\t" -1) 1 nil))
+    :retirable?-fn (fn [line] (not (re-find #"(?i)accepted pole" line)))}])
+
+(defn- non-data-line?
+  [line]
+  (or (str/blank? line) (str/starts-with? line "#")))
 
 (defn- registry-data-lines
   "Non-blank, non-comment lines - a registry's own header/comment lines
@@ -1638,7 +1659,18 @@
    up front keeps rows-to-restore's candidate set exactly the rows that
    could ever match."
   [content]
-  (remove (fn [l] (or (str/blank? l) (str/starts-with? l "#"))) (str/split-lines (or content ""))))
+  (remove non-data-line? (str/split-lines (or content ""))))
+
+(defn- rebuild-registry-content
+  "BL-1631: reconstructs a registry file's full text after retiring rows -
+   the original header/comment lines verbatim and in place, followed by the
+   data lines still kept (original order), followed by any restored rows
+   (origin order, BL-1604's own contract unchanged). Empty when nothing
+   survives (never leaves a dangling trailing newline with no content)."
+  [original-content kept-data restored]
+  (let [header (filter non-data-line? (if (str/blank? (or original-content "")) [] (str/split-lines original-content)))
+        all (concat header kept-data restored)]
+    (if (seq all) (str (str/join "\n" all) "\n") "")))
 
 (defn rows-to-restore
   "Pure (BL-654-style property target): origin-lines (raw TSV lines, as
@@ -1658,6 +1690,21 @@
                     (not (contains? replay-keys k)))]
      line)))
 
+(defn rows-to-retire
+  "Pure sibling of rows-to-restore (BL-654-style property target): lines
+   (registry-data-lines-filtered, from whichever tree's content the caller
+   is checking) whose owner-fn reads task-ticket-id AND retirable?-fn (a
+   row's own line, defaulting to always-retirable) says yes - the landing
+   ticket's own rows leave in its own land, except a row a registry marks
+   as never-retire-by-this-rule (the pole register's accepted disposition)."
+  [{:keys [lines owner-fn task-ticket-id retirable?-fn]}]
+  (let [retirable? (or retirable?-fn (constantly true))]
+    (vec
+     (for [line lines
+           :let [owner (owner-fn line)]
+           :when (and owner (= owner task-ticket-id) (retirable? line))]
+       line))))
+
 (defn- git-show [root ref path]
   "{:ok? bool :content string-or-nil}. :ok? false when ref itself cannot be
    resolved (a genuine read failure, not the ordinary case of the path
@@ -1676,19 +1723,24 @@
 (defn restore-other-tickets-registry-rows!
   "Impure orchestrator: for each registry-specs entry, reads origin/main's
    and the replay tree's (scratch, already carrying task-ticket-id's own
-   paths from write-tree-from-paths!) own copies, computes rows-to-restore,
-   and appends them back to the replay tree's file (creating it if
-   task-ticket-id's own tip deleted it outright, since a deletion can still
-   need to carry another open ticket's row). Returns {:ok? true :restored
-   [{:registry :file :owner} ...]} or {:ok? false :reason \"...\"} (fail
-   closed on an unreadable registry file on either side - never guess)."
+   paths from write-tree-from-paths!) own copies, computes rows-to-restore
+   AND rows-to-retire (BL-1631 - a row's own owner is guaranteed never
+   task-ticket-id for a restore candidate, so the two never contend for the
+   same row), then rewrites the replay tree's file to carry the kept rows
+   plus the restored ones (creating it if task-ticket-id's own tip deleted
+   it outright, since a deletion can still need to carry another open
+   ticket's row). Returns {:ok? true :restored [{:registry :file :owner}
+   ...] :retired [{:registry :file :owner} ...]} or {:ok? false :reason
+   \"...\"} (fail closed on an unreadable registry file on either side -
+   never guess)."
   [{:keys [root scratch origin-main task-ticket-id]}]
   (let [open-ids (qa-hold-lib/open-ticket-ids-for scratch)]
     (loop [specs registry-specs
-           restored []]
+           restored []
+           retired []]
       (if (empty? specs)
-        {:ok? true :restored restored}
-        (let [{:keys [path row-key-fn owner-fn]} (first specs)
+        {:ok? true :restored restored :retired retired}
+        (let [{:keys [path row-key-fn owner-fn retirable?-fn]} (first specs)
               origin-read (git-show root origin-main path)
               replay-path (fs/path scratch path)
               replay-content (try (when (fs/exists? replay-path) (slurp (str replay-path)))
@@ -1709,17 +1761,21 @@
                                              :row-key-fn row-key-fn
                                              :owner-fn owner-fn
                                              :task-ticket-id task-ticket-id
-                                             :open-ticket-ids open-ids})]
-              (when (seq restore)
+                                             :open-ticket-ids open-ids})
+                  retire (rows-to-retire {:lines replay-lines
+                                          :owner-fn owner-fn
+                                          :task-ticket-id task-ticket-id
+                                          :retirable?-fn retirable?-fn})
+                  retire-set (set retire)
+                  kept-data (remove retire-set replay-lines)]
+              (when (or (seq restore) (seq retire))
                 (fs/create-dirs (fs/parent replay-path))
-                (spit (str replay-path)
-                      (str (or replay-content "") (when (and (not (str/blank? (or replay-content "")))
-                                                              (not (str/ends-with? (or replay-content "") "\n")))
-                                                     "\n")
-                           (str/join "\n" restore) "\n")))
+                (spit (str replay-path) (rebuild-registry-content replay-content kept-data restore)))
               (recur (rest specs)
                      (into restored
-                           (map (fn [line] {:registry path :file (row-key-fn line) :owner (owner-fn line)}) restore))))))))))
+                           (map (fn [line] {:registry path :file (row-key-fn line) :owner (owner-fn line)}) restore))
+                     (into retired
+                           (map (fn [line] {:registry path :file (row-key-fn line) :owner (owner-fn line)}) retire))))))))))
 
 (defn- append-land-approval! [root c src task-ticket-id]
   (let [dir (fs/path root ".swarmforge" "land-approvals")
@@ -1946,7 +2002,7 @@
                       (drop-branch!)
                       {:success false :reason (:reason restore-result)})
                   (do
-                    (doseq [{:keys [registry]} (:restored restore-result)]
+                    (doseq [registry (into #{} (map :registry) (concat (:restored restore-result) (:retired restore-result)))]
                       (git! scratch "add" "--" registry))
                     (let [index-empty? (zero? (:exit (git! scratch "diff" "--cached" "--quiet")))
                           commit-res (git! scratch "-c" "user.email=t@t" "-c" "user.name=t"
@@ -1974,7 +2030,8 @@
                                               " riding on a shared path (BL-1375 invariant 2 / BL-1324): "
                                               (str/join "; " refusals))})
                             {:success true :commit sha :branch branch :passengers (set passengers)
-                             :restored-registry-rows (:restored restore-result)}))))))))))))))
+                             :restored-registry-rows (:restored restore-result)
+                             :retired-registry-rows (:retired restore-result)}))))))))))))))
 
 ;; ── BL-1447: a built replay is verified complete before land-plan ever
 ;;    returns :replay, reading git objects only - never the attribution
@@ -2219,7 +2276,8 @@
                          :content-clear (or content-clear [])
                          :own-paths paths :passengers (or passengers #{})
                          :commit (:commit replay-result) :branch (:branch replay-result)
-                         :restored-registry-rows (:restored-registry-rows replay-result)}))))))))))))
+                         :restored-registry-rows (:restored-registry-rows replay-result)
+                         :retired-registry-rows (:retired-registry-rows replay-result)}))))))))))))
 
 ;; ── BL-1432 option 1: re-point the QA branch after a successful land ─────
 ;; QA's branch keeps every review merge and every merge-of-main as its own
