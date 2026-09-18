@@ -4,9 +4,13 @@
 # in flight. A row MUST name an OPEN ticket (backlog/paused or backlog/active);
 # a row naming a closed or absent ticket is an UNOWNED red, which throttles
 # intake (BL-1429) and blocks QA approval (Article 4.2). A row is removed in
-# the same land that turns the test green, and no other land removes it
-# (BL-1604: the land step restores an open other ticket's row the replay
-# tree lacks). BL-1428 builds the reader and the
+# the same land that turns the test green, and no other land removes it:
+# the land step itself retires every row whose owner is the landing ticket
+# (BL-1631: REGISTER_ROW_RETIRED, one line per row), so a row surviving to
+# main is a defect in the land, not a parcel author's forgotten cleanup
+# (BL-1604: the land step also restores an open OTHER ticket's row the
+# replay tree lacks - the two run in the same registry pass, never in
+# tension). BL-1428 builds the reader and the
 # commit guard; until then this file is read by humans and roles.
 #
 # Columns, tab-separated: lane<TAB>file<TAB>ticket<TAB>first_seen<TAB>note
@@ -29,7 +33,4 @@
 # rows as of this commit (invariant 2: a register row leaves in the same
 # commit that discharges it).
 shell	swarmforge/scripts/test/test_bl1388_land_step_guard_fixture.sh	BL-1624	2026-09-17	cleaner reproduction 2026-09-17 13:02Z on a QA merge-up (cleaner branch 51f08dac8c) and the specifier on main b1e8ba48bd (exit 1): step 4 "the diff touches assertions outside the fixture block (0 lines)" - the step requires land_step_lib_test_runner.bb to differ from main, true only while BL-1388 was unlanded; red since BL-1388 landed 2026-09-04 (3f84aba369), unseen because no lane runs the shell manifest (BL-1625); a fresh clone without extension/out fails eight more runner cases (missing compiled checker); owner BL-1624
-acceptance	specs/features/BL-803-promote-route-sed-bsd-portability.feature	BL-1626	2026-09-17	coder regression sweep on the BL-1614 parcel (2026-09-17 13:12Z) and the specifier on main 695624c52c (exit 1): "no eligible paused ticket" - the handler hand-lists the promote chain closure and backlog_depth_lib gained daemon_cycle_guard_lib (BL-966, 2026-08-20); red since then, unseen because no lane runs landed features (BL-1628); owner BL-1626
-acceptance	specs/features/BL-1028-promotion-must-not-bypass-a-refused-integrity-commit.feature	BL-1626	2026-09-17	same sweep and reproduction: "no eligible paused ticket" - the handler list lacks acceptance_pointer_gate_lib which promotion_gates_lib gained (BL-626, 2026-08-25); red since then; owner BL-1626
-acceptance	specs/features/BL-1100-promotion-candidacy-is-decided-by-structured-fields-never-prose.feature	BL-1626	2026-09-17	same sweep and reproduction: "freshness HOLD for BL-9100: interpretFreshnessCliOutput failed - fail closed" - the copied promote_and_route_next.sh looks for extension/out/tools/deprecate-check.js inside the fixture root (BL-1173 gate, 2026-08-27); red since then; owner BL-1626
 acceptance	specs/features/BL-937-shell-scripts-run-on-stock-macos-bash-32.feature	BL-1627	2026-09-17	same sweep and reproduction: scenarios 01/03 "expected /bin/bash --version to report 3.2, got 5.2.21" on this Linux host, and scenario 02 flags mapfile (bash 4) in check_bb_scripts_load.sh:140 and check_constitution_doc_citations.sh:41,67 - two real target violations; owner BL-1627
