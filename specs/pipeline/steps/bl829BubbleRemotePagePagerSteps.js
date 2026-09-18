@@ -120,17 +120,25 @@ function registerSteps(registry) {
   );
 
   // ── bundle-pages-rejected-whole-02 ────────────────────────────────────
+  // BL-1634: the fixture's id is `malformed-operator-page` — an id no
+  // built-in page (health/host/operator-docs/live) will ever carry, so
+  // this scenario's own assertion cannot collide with BL-1166's or
+  // BL-775's built-in merges. `ctx.malformedManifestPageIds` records
+  // exactly what was written, so the "no page from it" step below asserts
+  // against what THIS fixture wrote, never a hand-guessed list.
   registry.defineScoped(
     /^the served manifest carries a malformed page list$/,
     (ctx) => {
+      const malformedIds = ['malformed-operator-page'];
       writeManifest(ctx.targetPath, {
         schemaVersion: 1,
         bundleVersion: 3,
         minShellVersion: 0,
         payload: '<html></html>',
         // missing `title` and `order` on the one page entry.
-        pages: [{ id: 'live', entryPath: 'live' }],
+        pages: malformedIds.map((id) => ({ id, entryPath: id })),
       });
+      ctx.malformedManifestPageIds = malformedIds;
     },
     FEATURE_NAME
   );
@@ -153,11 +161,24 @@ function registerSteps(registry) {
     FEATURE_NAME
   );
 
+  // BL-1634: the scenario's own sentence is narrower than "empty" - no
+  // page id FROM THE REJECTED MANIFEST is offered; the bridge's built-in
+  // pages (health/host/operator-docs/live) are offered regardless, by
+  // BL-1166's own design, and this step must not fail on their presence.
   registry.defineScoped(
     /^no page from it is offered to the shell$/,
     (ctx) => {
-      if (!Array.isArray(ctx.manifestBody.pages) || ctx.manifestBody.pages.length !== 0) {
-        throw new Error(`expected no pages offered, got: ${JSON.stringify(ctx.manifestBody.pages)}`);
+      const pages = ctx.manifestBody.pages;
+      if (!Array.isArray(pages)) {
+        throw new Error(`expected an offered pages array, got: ${JSON.stringify(ctx.manifestBody)}`);
+      }
+      const offeredIds = pages.map((page) => page.id);
+      const leaked = ctx.malformedManifestPageIds.filter((id) => offeredIds.includes(id));
+      if (leaked.length > 0) {
+        throw new Error(
+          `expected none of the malformed manifest's ids (${JSON.stringify(ctx.malformedManifestPageIds)}) ` +
+            `among the offered pages, but found: ${JSON.stringify(leaked)} in ${JSON.stringify(pages)}`
+        );
       }
     },
     FEATURE_NAME
