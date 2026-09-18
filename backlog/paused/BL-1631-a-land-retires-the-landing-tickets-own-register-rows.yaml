@@ -1,0 +1,158 @@
+id: BL-1631
+title: "Three lands on 2026-09-17 (BL-1605 at 10:04, BL-1613 at 13:14, BL-1623 at 16:44) closed with their own standing-red or allowlist rows still present, so each row read as unowned within minutes, throttled intake to one (BL-1429) and cost a specifier round trip to retire by hand; BL-1604 taught the land step to restore OTHER open tickets' rows the replay lacks, and its mirror is missing - the land step retires every row in the two registries and the pole register whose owner is the landing ticket, prints one REGISTER_ROW_RETIRED line per row, and QA's approval (the test green on the parcel) is the only precondition"
+milestone: M8
+type: defect
+severity: high
+# high (standing-red rule 2026-09-05): a false unowned red is a broken
+# safety signal - the throttle it trips is real and the intake it stops is
+# real; three times in one day.
+status: todo
+epic: code-quality-gates
+priority: 8
+direction: swarm-reported
+depends_on: []
+# BL-1604 (restore-other-tickets-registry-rows!, registry-specs,
+# rows-to-restore in land_step_lib.bb) and BL-1428/BL-1598 (the three
+# registries' readers) are in backlog/done; nothing unbuilt.
+mutation_cost: low
+# low: Babashka (no mutation/CRAP/DRY wired, BL-472): one pure function
+# beside rows-to-restore, one orchestrator call beside the restore, one
+# CLI print line, the bb runner cases, one feature and handler, evidence.
+# Runners the feature shells: the bb runner and the real land step on a
+# fixture repository in seconds (BL-1604's own fixture shape).
+slice_size_envelope: low
+required_stages: [coder, cleaner, architect, hardender, documenter, qa]
+
+acceptance: specs/features/BL-1631-a-land-retires-the-landing-tickets-own-register-rows.feature
+
+required_wiring:
+  - 'swarmforge/scripts/land_step_lib.bb::rows-to-retire::the pure sibling of rows-to-restore, called from the same registry pass the replay already runs; the literal exists only with the fix (BL-874, BL-1235)'
+  - 'specs/pipeline/steps/bl1631LandRetiresOwnRegisterRowsSteps.js::registerSteps::the handler lands in the same parcel as the feature (BL-233, BL-1371)'
+
+human_approval: pending
+approval_context: >
+  A new feature file is authored here, so it needs a tap. No choice is
+  posed and there are no ruling_options. FIRM: only rows whose owner
+  column is the landing ticket are retired; a row owned by any other
+  ticket is untouched, and BL-1604's restore of other OPEN tickets' rows
+  is unchanged (a regression pin is scenario 03). FIRM: retirement is
+  printed, never silent - one REGISTER_ROW_RETIRED line per row, in the
+  same block as REGISTER_ROW_RESTORED. FIRM: the precondition is QA's
+  approval, which already vouches the test is green on the parcel; the
+  land step runs no test to decide. FIRM: the pole register
+  (backlog/suite-poles.tsv) is included, and an accepted row (BL-1629)
+  names a rationale ticket that may be closed - an accepted row is never
+  retired by this rule.
+
+invariants:
+  - "A registry row whose owner is the ticket being landed does not survive that land: after the replay commit is built, no row in backlog/standing-reds.tsv, swarmforge/scripts/property_suite_standing_allowlist.tsv or backlog/suite-poles.tsv names the landing ticket as owner (an accepted pole row excepted)."
+
+description: |
+  ## What is wrong
+
+  A standing-red row is meant to leave "in the same land that turns the
+  test green" (register header, BL-1428). Nothing makes that happen:
+  the parcel's author may forget (BL-1623's parcel carried both its rows
+  to QA's tip untouched, and QA approved against its own e2e step 5),
+  or a tip-pure replay may keep origin/main's whole registry blob when
+  the path is entangled with unlanded siblings (BL-1613's replay carried
+  no register change at all). BL-1604 (landed 2026-09-17) fixed the
+  other direction - a land must not DROP another open ticket's row it
+  carries whole from the tip - and its mechanism is exactly the shape
+  this needs: `rows-to-restore` (pure) and
+  `restore-other-tickets-registry-rows!` (orchestrator) over
+  `registry-specs` in `land_step_lib.bb` (~1620-1700), run in the replay
+  build (~1941), printing `REGISTER_ROW_RESTORED` lines.
+
+  Same day, three times: BL-1605 (10:04, its row kept by a hand-resolved
+  merge), BL-1613 (13:14, its replay carried no register change), BL-1623
+  (16:44, parcel never removed its rows). Each read `unowned` in
+  `standing_red_register_cli.bb` within minutes, the coordinator throttled
+  intake to one (BL-1429), sent the specifier a note, and the specifier
+  retired the row by hand (9c56a9bc50 for BL-1613, this pass for
+  BL-1623). A land that cannot close its own row is a land that trips the
+  swarm's own safety signal.
+
+  ## What is wanted
+
+  - `rows-to-retire` (pure): from a registry's data lines, the rows whose
+    owner is task-ticket-id - both the replay tree's own copy and any row
+    origin/main carries that the replay tree would restore (scenario 01
+    drives it on fixture lines for all three registries, including the
+    accepted-pole exception).
+  - The orchestrator drops those rows from the replay tree's registry
+    files in the same pass that restores other tickets' rows, and the CLI
+    prints `REGISTER_ROW_RETIRED <registry> <file> <owner>` per row
+    (scenario 02, the real land step on BL-1604's fixture shape).
+  - BL-1604's behaviour unchanged: a row for another OPEN ticket that the
+    tip lacks is still restored (scenario 03 - the BL-1604 case re-pinned
+    beside the new one).
+  - `standing_red_register_cli.bb .` on the replay commit reports no
+    unowned row for the landing ticket.
+
+  ## How (direction, not mandate)
+
+  - `rows-to-retire [{:keys [lines owner-fn task-ticket-id accepted?-fn]}]`
+    beside `rows-to-restore`; `registry-specs` gains a `:retirable?` (false
+    for an accepted pole row, BL-1629's disposition, when that column
+    exists); the orchestrator filters the replay file's lines through it
+    before appending restored rows, so a retired row cannot be restored
+    back.
+  - `land_step_cli.bb` prints the retired lines from the plan next to the
+    restored ones (`:register-retired`).
+  - bb runner cases in `land_step_lib_test_runner.bb` beside BL-1604's;
+    the acceptance handler reuses BL-1604's fixture builder.
+  - Documenter: `docs/how-to/BL-1241-entangled-tip-at-the-land-step-has-a-reachable-remedy.md`
+    and the register header sentence ("leaves in the same land") gain the
+    mechanism; QA.prompt's grep sentence (landed with this mint) points
+    here.
+
+constraints: >
+  land_step_lib.bb (one pure function, one orchestrator change),
+  land_step_cli.bb (one print), the bb runner, the feature and handler,
+  evidence and docs. No change to BL-1604's restore rule, to any
+  registry's format beyond reading BL-1629's disposition when present, or
+  to the standing-red reader. The step handler lands with the feature
+  (BL-233). Evidence named BL-1631-*.
+
+out_of_scope: |
+  - Deciding whether the test is green: QA's approval is the precondition
+    (Article 4.2 already forbids approving over a red the parcel owns).
+  - The hand-land route (a push from a worktree, 1bcfa2ba45's shape) -
+    it runs no land step; QA.prompt's grep sentence is the only stop there.
+  - Rows owned by closed tickets that were never landed through this
+    step (today's three are retired by hand already).
+
+qa_e2e_procedure: |
+  On the parcel commit, from the repo root:
+  1. `bb swarmforge/scripts/test/land_step_lib_test_runner.bb` -> green,
+     the retire cases and the BL-1604 restore cases both present.
+  2. Acceptance resolving all scenarios
+     (`bash specs/pipeline/scripts/run_acceptance.sh specs/features/BL-1631-*.feature`)
+     and BL-1604's feature still resolving.
+  3. Live, on this ticket's own land: THIS ticket has no register row, so
+     add none; instead the land of the next ticket that owns a row (any
+     standing red whose owner is in flight) prints REGISTER_ROW_RETIRED
+     for it and `standing_red_register_cli.bb .` reports no unowned row
+     after the close - recorded by QA in the first such land after this
+     one, cited by ticket id in this ticket's done notes.
+
+source: |
+  Coordinator notes to the specifier, priority 00: 009126 (12:15Z,
+  BL-1613's row) and 009207 (15:45Z, BL-1623's row), plus the BL-1605 row
+  kept by the 10:04 push (backlog/evidence/BL-1608-specifier-adjudication-of-post-fix-land-escalate-and-whole-branch-push-20260917.md).
+  Specifier adjudication of this instance:
+  backlog/evidence/BL-1631-specifier-adjudication-of-third-surviving-register-row-20260917.md.
+  Parents: BL-1604, BL-1428, BL-1429, BL-1598, BL-1629.
+
+notes: |
+  Minted 2026-09-17 by the specifier while retiring BL-1623's rows by
+  hand (the third time today). QA.prompt gains the grep sentence in the
+  same commit (BL-798: prompt prose is the specifier's to land). INVEST:
+  Independent (BL-1604's functions and fixture exist), Negotiable (the
+  filter's placement in the orchestrator is direction), Valuable (a land
+  stops tripping the throttle it should have cleared), Estimable (one
+  pure function, one filter, one print, one runner case set - one
+  sitting), Small (three scenarios, one invariant), Testable (fixture
+  registries and the real land step in seconds). Severity high per the
+  false-safety-signal reading.
