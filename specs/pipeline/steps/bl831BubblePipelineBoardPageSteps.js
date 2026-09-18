@@ -11,6 +11,7 @@ const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const os = require('node:os');
 const path = require('node:path');
+const { onAbnormalExit } = require('./lib/fixtureReaper');
 
 const FEATURE = "Bubble's Pipeline page shows what is in flight, with a blurb per ticket and its spec one tap away";
 const EXT = path.join(__dirname, '..', '..', '..', 'extension');
@@ -23,9 +24,44 @@ function loadOut() {
   };
 }
 
+// BL-831 send-back (cleaner): the mkdtemp root created by ensure() had no
+// cleanup anywhere - a permanent leak per scenario run, same class already
+// fixed this session in bl1624/bl1626/bl1632/bl693's own handlers. Tracked
+// via fixtureReaper's onAbnormalExit the moment the directory exists, with
+// an inline cleanup in each scenario's own terminal step (cleanupFixtureRoot)
+// so it does not wait for process exit.
+const trackedDirs = new Set();
+function trackDir(dir) {
+  trackedDirs.add(dir);
+  return () => {
+    if (trackedDirs.delete(dir)) {
+      fs.rmSync(dir, { recursive: true, force: true });
+    }
+  };
+}
+onAbnormalExit(() => {
+  for (const dir of Array.from(trackedDirs)) {
+    trackedDirs.delete(dir);
+    try {
+      fs.rmSync(dir, { recursive: true, force: true });
+    } catch {
+      /* already gone */
+    }
+  }
+});
+
+function cleanupFixtureRoot(ctx) {
+  if (ctx.cleanupBl831Root) {
+    ctx.cleanupBl831Root();
+    ctx.cleanupBl831Root = undefined;
+  }
+}
+
 function ensure(ctx) {
   if (!ctx.bl831) {
-    ctx.bl831 = { root: fs.mkdtempSync(path.join(os.tmpdir(), 'bl831-')) };
+    const root = fs.mkdtempSync(path.join(os.tmpdir(), 'bl831-'));
+    ctx.cleanupBl831Root = trackDir(root);
+    ctx.bl831 = { root };
     fs.mkdirSync(path.join(ctx.bl831.root, 'backlog', 'active'), { recursive: true });
     fs.mkdirSync(path.join(ctx.bl831.root, '.swarmforge', 'board'), { recursive: true });
   }
@@ -108,14 +144,22 @@ function registerSteps(registry) {
     // (pipelineGridLive.ts) - asserted by the previous step matching the
     // fixture's own stage-map assignment exactly, with no other stage
     // string reachable from this page's own code.
-    for (const row of ctx.bl831.state.inFlight) {
-      assert.ok(['coder', 'cleaner'].includes(row.column), `unexpected column ${row.column}`);
+    try {
+      for (const row of ctx.bl831.state.inFlight) {
+        assert.ok(['coder', 'cleaner'].includes(row.column), `unexpected column ${row.column}`);
+      }
+    } finally {
+      cleanupFixtureRoot(ctx);
     }
   });
 
   scoped(/^each in-flight ticket listed shows its blurb without opening the detail sheet$/, (ctx) => {
-    for (const row of ctx.bl831.state.inFlight) {
-      assert.ok(row.blurb && row.blurb.length > 0, `ticket ${row.id} has no blurb`);
+    try {
+      for (const row of ctx.bl831.state.inFlight) {
+        assert.ok(row.blurb && row.blurb.length > 0, `ticket ${row.id} has no blurb`);
+      }
+    } finally {
+      cleanupFixtureRoot(ctx);
     }
   });
 
@@ -130,12 +174,16 @@ function registerSteps(registry) {
   });
 
   scoped(/^its blurb is (the first sentence of its description|its title)$/, (ctx, expected) => {
-    const row = ctx.bl831.state.inFlight.find((entry) => entry.id === 'BL-2003');
-    assert.ok(row, 'BL-2003 not found in-flight');
-    if (expected === 'the first sentence of its description') {
-      assert.equal(row.blurb, 'This is the first sentence.');
-    } else {
-      assert.equal(row.blurb, 'Ticket with no description');
+    try {
+      const row = ctx.bl831.state.inFlight.find((entry) => entry.id === 'BL-2003');
+      assert.ok(row, 'BL-2003 not found in-flight');
+      if (expected === 'the first sentence of its description') {
+        assert.equal(row.blurb, 'This is the first sentence.');
+      } else {
+        assert.equal(row.blurb, 'Ticket with no description');
+      }
+    } finally {
+      cleanupFixtureRoot(ctx);
     }
   });
 
@@ -179,12 +227,20 @@ function registerSteps(registry) {
   });
 
   scoped(/^it carries the scenarios of that feature file$/, (ctx) => {
-    assert.deepEqual(ctx.bl831.detail.scenarios, ['does the thing', 'does another thing']);
+    try {
+      assert.deepEqual(ctx.bl831.detail.scenarios, ['does the thing', 'does another thing']);
+    } finally {
+      cleanupFixtureRoot(ctx);
+    }
   });
 
   scoped(/^it states that no acceptance scenarios are recorded for it$/, (ctx) => {
-    assert.equal(ctx.bl831.detail.scenarios.length, 0);
-    assert.ok(/no acceptance scenarios/i.test(ctx.bl831.detail.scenariosNote || ''));
+    try {
+      assert.equal(ctx.bl831.detail.scenarios.length, 0);
+      assert.ok(/no acceptance scenarios/i.test(ctx.bl831.detail.scenariosNote || ''));
+    } finally {
+      cleanupFixtureRoot(ctx);
+    }
   });
 
   scoped(/^the swarm holds no in-flight ticket$/, (ctx) => {
@@ -200,7 +256,11 @@ function registerSteps(registry) {
     // BL-1188 posture pipelineGridLive.ts's own capture already holds) -
     // an empty result here, immediately after a non-empty one in an
     // earlier scenario, is that guarantee observed rather than assumed.
-    assert.equal(ctx.bl831.state.inFlight.length, 0);
+    try {
+      assert.equal(ctx.bl831.state.inFlight.length, 0);
+    } finally {
+      cleanupFixtureRoot(ctx);
+    }
   });
 
   scoped(/^the served UI bundle manifest is read$/, async (ctx) => {
@@ -210,11 +270,15 @@ function registerSteps(registry) {
   });
 
   scoped(/^it names the Pipeline page as one of its pages$/, (ctx) => {
-    const { bubblePipelinePage } = loadOut();
-    const page = ctx.bl831.manifest.pages.find((entry) => entry.id === bubblePipelinePage.id);
-    assert.ok(page);
-    assert.equal(page.title, 'Pipeline');
-    assert.equal(page.entryPath, 'pipeline');
+    try {
+      const { bubblePipelinePage } = loadOut();
+      const page = ctx.bl831.manifest.pages.find((entry) => entry.id === bubblePipelinePage.id);
+      assert.ok(page);
+      assert.equal(page.title, 'Pipeline');
+      assert.equal(page.entryPath, 'pipeline');
+    } finally {
+      cleanupFixtureRoot(ctx);
+    }
   });
 }
 
