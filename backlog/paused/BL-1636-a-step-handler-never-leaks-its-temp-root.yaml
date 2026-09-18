@@ -1,0 +1,216 @@
+id: BL-1636
+title: "A step handler never leaks its temp root: 583 of the 1191 acceptance handlers call mkdtempSync and 455 of them never register the root for reaping (295 have no removal at all, 160 remove only on the happy path), so the host's temp directory holds 695,941 entries of which 686,946 are leaked bl-prefixed handler roots, about 48,000 new ones a day, and every one of the 35 code paths that list os.tmpdir() pays 2.6 s per listing - six of them at every step-registry load; the cleaner fixed the fifth such leak by hand this session (BL-831) and asked for a census gate; a standing unit-lane guard refuses any handler that creates a root without registering it (a committed census of today's offenders that may only shrink), the fixture reaper gains a one-line tracked-root helper, and an age-floored reap removes dead roots"
+milestone: M8
+type: defect
+severity: high
+# high: a live fault degrading every lane on this host - a 2.6 s temp
+# directory listing sits inside the step-registry load (BL-1630's 12.6 s),
+# the property lane's fixture sweeps (BL-1621, BL-1632's contention) and
+# every BL-1623-style stale sweep; and the leak grows by ~48k roots a day
+# until the disk fills. Production is unaffected: only test fixtures leak.
+status: todo
+epic: code-quality-gates
+priority: 8
+direction: swarm-reported
+depends_on: []
+# BL-420 (the extension/test raw-mkdtemp migration guard, the template),
+# BL-458 (fixtureReaper.js, the tracking primitive 31 handlers already
+# use) and BL-1623 (owner-pid root names and the pid-aware sweep) are in
+# backlog/done. BL-1630 (paused) moves six handlers' sweeps off module
+# load; it and this ticket touch different files and are not dependent -
+# this one shrinks what those sweeps list, BL-1630 shrinks how often.
+mutation_cost: low
+# low: one guard test and its census under extension/test (the guard runs
+# in the unit lane; its finder is a small pure function), one helper in
+# specs/pipeline/steps/lib, one reap script under specs/pipeline/scripts,
+# one feature and handler, evidence. No production code.
+slice_size_envelope: low
+required_stages: [coder, cleaner, architect, hardender, documenter, qa]
+
+acceptance: specs/features/BL-1636-a-step-handler-never-leaks-its-temp-root.feature
+
+required_wiring:
+  - 'specs/pipeline/steps/lib/fixtureReaper.js::trackedTmpRoot::the reaper is the pre-existing home of root tracking that 31 handlers already require; the helper name is chosen at mint so the literal exists only with the fix (BL-874, BL-1235)'
+  - 'extension/test/stepHandlerTmpRootGuard.test.js::specs/pipeline/steps::the guard file in the lane every parcel runs - a draft-conversion style pin, satisfied by this parcel by construction, whose job is that the standing assertion exists and scans the handler tree'
+  - 'specs/pipeline/steps/bl1636StepHandlerTempRootGuardSteps.js::registerSteps::the handler lands in the same parcel as the feature (BL-233, BL-1371)'
+
+human_approval: approved
+approval_context: >
+  A new feature file is authored here, so it needs a tap. No choice is
+  posed and there are no ruling_options. FIRM: the guard refuses a NEW
+  offender only - today's 455 offenders are frozen in a committed census
+  that may only shrink, and a census entry that no longer offends fails
+  the guard until it is removed, so the list ratchets down and never
+  silently grandfathers a fix back out (BL-1598's register shape, BL-693's
+  no-exemption rule applied to new files). FIRM: no existing handler is
+  migrated in this parcel beyond what the census mechanics require; the
+  five the cleaner fixed this session stay as they are. FIRM: the reap
+  removes only roots older than its floor whose name carries no live
+  owner pid - a live run never keeps a root for a day - and never touches
+  anything outside os.tmpdir(); the one host-wide reap is QA's e2e step,
+  run with no lane alive, its count recorded.
+
+invariants:
+  - "A step handler's temp root is never a permanent resident of the host: every mkdtemp root a handler under specs/pipeline/steps creates is registered for reaping, and a root older than the reap floor with no live owner is removed by the reap."
+
+description: |
+  ## What is wrong
+
+  Cleaner note 000857, 2026-09-18T14:08Z: "5th mkdtemp-leak-in-handler
+  this session (BL-831) - census gate?". The five, all fixed by hand in
+  review rounds this session with `fixtureReaper.js`'s `onAbnormalExit`
+  pattern: `bl1624StandingShellTestNeverDiffsAgainstMainSteps.js`,
+  `bl1626PromotionFixturesCarryTheClosureSteps.js`,
+  `bl1632Bl1071ProbeCountsOnlyItsOwnFixturesHangsSteps.js`,
+  `bl693DocsDuplicateParagraphGuardSteps.js` and
+  `bl831BubblePipelineBoardPageSteps.js` (cleaner evidence
+  `BL-831-bounce-cleaner-20260918.md`, `BL-693-bounce-cleaner-20260918.md`
+  on the cleaner branch). Five review rounds for one class, and the class
+  is not five files.
+
+  Census (specifier, 2026-09-18, a node walk over
+  `specs/pipeline/steps/*Steps.js`): 1191 handlers; 583 call
+  `fs.mkdtempSync`; 295 of those contain no `rmSync`/`rm(` at all; 160
+  remove only on the happy path (no `finally`, no reaper, no sweep helper);
+  36 use a sweep helper; 31 require `fixtureReaper`. So 455 handlers leak a
+  root on every scenario run, by construction, and have since they landed.
+
+  The host (`os.tmpdir()` = /tmp, 2026-09-18 15:0x local): 695,941
+  entries; 686,946 begin with `bl` (the handlers' own prefix convention);
+  48,243 of those are younger than 24 hours - the leak's daily rate; the
+  oldest is from 2026-08-27 (the re-seed). `du -sh /tmp` did not finish in
+  60 s. One `fs.readdirSync(os.tmpdir())` takes 2,644 ms. Thirty-five code
+  paths perform that listing - `extension/test/helpers/tmpDir.js`'s and
+  `blindTmpDirSweepFinder.js`'s sweeps, three fixture libs under
+  `specs/pipeline/steps/lib`, and the handlers' own `sweepStaleFixtures`
+  copies, six of which run at module load and so at every step-registry
+  load (BL-1630: "six call sweepStaleFixtures() at module load, 1.1 s
+  each" - that 1.1 s is this listing). The leak is therefore a standing
+  tax on the unit lane, the property lane (BL-1621, BL-1632: fixture
+  sweeps under contention) and every acceptance run, growing daily.
+
+  The rule exists (engineering.prompt "Test Speed And Isolation": a
+  mkdtemp fixture dir is removed in a `finally` and swept by prefix, BL-971;
+  reaping only roots no live run owns, BL-1385/BL-1390/BL-1623) and the
+  primitive exists (`fixtureReaper.js`, BL-458: `track`, `reap`,
+  `onAbnormalExit`, installed once for exit/SIGINT/SIGTERM). What is
+  missing is the gate: `extension/test/tmpDirMigrationGuard.test.js`
+  (BL-420) pins ZERO raw mkdtemp call sites under `extension/test/` and
+  has held; nothing pins anything under `specs/pipeline/steps/`, and the
+  acceptance runtime has no per-scenario cleanup hook, so a new handler
+  leaks by default and only a reviewer who happens to look catches it.
+
+  ## What is wanted
+
+  - A standing unit-lane guard over `specs/pipeline/steps/*Steps.js`: a
+    file that calls `fs.mkdtempSync` and neither registers its roots with
+    the fixture reaper (`track`, `trackedTmpRoot`, or `onAbnormalExit`)
+    nor uses a recognised sweep helper is an offender; the guard fails
+    naming any offender NOT in the committed census (scenario 01).
+  - The census ratchets: a census entry naming a file that no longer
+    offends fails the guard until the entry is removed - the list shrinks
+    by hand and never silently regrows (scenario 02).
+  - The real tree against the committed census names no new offender, and
+    the census pins its population: at least 400 entries on 2026-09-18
+    (455 counted; re-count at build - BL-1445) (scenario 03).
+  - A reap over a directory removes `bl`-prefixed roots older than its
+    floor, keeps younger ones, and keeps any root whose name carries a
+    live owner pid regardless of age (scenario 04, on a fixture
+    directory; BL-1623's rule reused).
+  - `trackedTmpRoot(prefix)` in the reaper: one call that creates the root
+    under `os.tmpdir()` with the owner-pid name shape and registers it, so
+    the migration of any handler is one line.
+  - QA e2e: the one host-wide reap with no lane alive, its removed count
+    and the listing's before/after milliseconds recorded.
+
+  ## How (direction, not mandate)
+
+  - `extension/test/helpers/stepHandlerTmpRootFinder.js`: a pure finder,
+    the shape of BL-420's `findRawMkdtempCallSites` - reads each
+    `*Steps.js`, reports files with a `mkdtempSync(` call and none of the
+    recognised registrations (`require(...fixtureReaper)` plus a
+    `track(`/`trackedTmpRoot(`/`onAbnormalExit(` call, or
+    `sweepStaleFixtures`/`sweepStaleTmpDirs`/`mkTmpDir(`). The guard test
+    `extension/test/stepHandlerTmpRootGuard.test.js` drives it on fixture
+    directories (scenarios 01-02) and on the real tree against
+    `extension/test/step-handler-tmp-root-census.txt` (one path per line,
+    sorted; scenario 03) - both directions: new offender fails, stale
+    entry fails.
+  - `fixtureReaper.js`: `trackedTmpRoot(prefix)` = `fs.mkdtempSync(path.join(os.tmpdir(), prefix + process.pid + '-'))`
+    + `track`-style registration whose reap is `fs.rmSync(root, {
+    recursive: true, force: true })` (no process tree to kill) - reuse the
+    existing `onAbnormalExit` install; export it.
+  - `specs/pipeline/scripts/reap_stale_tmp_roots.js [--dir <d>]
+    [--older-than-hours 24] [--prefix bl] [--dry-run]`: lists the dir
+    ONCE, filters by prefix and mtime, skips a name whose embedded pid is
+    alive (`tmpDir.js`'s `isZombiePid`/liveness probe), removes the rest,
+    prints the count; never recurses outside the dir. Scenario 04 drives it
+    on a mkdtemp fixture dir with three roots (old, young, old-with-live-pid).
+  - The census is written by the finder once at build and committed; the
+    five handlers fixed this session must NOT appear in it (they register).
+  - Documenter: engineering-detailed.prompt "Test Speed And Isolation"
+    gains the guard and the helper; the BL-420 how-to (if any) gains the
+    handler-side twin; a one-line note in `docs/how-to/` on running the
+    reap when a host's temp directory is slow.
+
+constraints: >
+  The finder, the guard test and its census under extension/test; the
+  helper in fixtureReaper.js; the reap script; the feature and handler;
+  evidence and docs. No handler migration beyond the census mechanics;
+  no change to the acceptance runtime, to tmpDir.js, or to any existing
+  sweep. The step handler lands with the feature (BL-233). Evidence
+  named BL-1636-*.
+
+out_of_scope: |
+  - Migrating the 455 census handlers to the helper: each parcel that
+    touches one removes its entry (the ratchet); a bulk sweep is its own
+    ticket if the count stops falling.
+  - A per-scenario cleanup hook in the acceptance runtime (a design change
+    to specs/pipeline/runtime.js; the guard makes it unnecessary for new
+    handlers).
+  - BL-1630's module-load sweeps and BL-1623's sweep rules.
+  - Non-bl prefixes in os.tmpdir() (sfvc-*, sf-*, tmp.*: about 9,000
+    entries, other tools' business).
+
+qa_e2e_procedure: |
+  On the parcel commit, from `extension/`:
+  1. `npx vitest run test/stepHandlerTmpRootGuard.test.js` ONCE -> green;
+     the census line count recorded.
+  2. Acceptance resolving all four scenarios
+     (`bash specs/pipeline/scripts/run_acceptance.sh specs/features/BL-1636-*.feature`).
+  3. With NO lane alive on the host (`pgrep -af 'node.*vitest'` empty, no
+     acceptance run): `node specs/pipeline/scripts/reap_stale_tmp_roots.js --dry-run`
+     then without `--dry-run`, ONCE; record the removed count (about
+     640,000 expected on this host), and `node -e` timing of one
+     `fs.readdirSync(os.tmpdir())` before and after (2,644 ms before on
+     2026-09-18). Never "run it N times".
+  4. `git diff main...HEAD --name-only` names the finder, the guard, the
+     census, the reaper, the reap script, the feature, the handler,
+     evidence and docs only.
+
+source: |
+  Cleaner note to the specifier, priority 10, 2026-09-18T14:08Z (inbound
+  10_20260918T140816Z_000857_from_cleaner): "5th mkdtemp-leak-in-handler
+  this session (BL-831) - census gate?" - accepted as a process ticket
+  under the specifier's rule-proposal authority. Cleaner evidence
+  BL-831-bounce-cleaner-20260918.md and BL-693-bounce-cleaner-20260918.md
+  (cleaner branch fca2da2a9f). Specifier census and host measurements:
+  backlog/evidence/BL-1636-specifier-census-of-handler-temp-root-leaks-20260918.md.
+  Parents: BL-420, BL-458, BL-1623, BL-971. Beneficiaries: BL-1630,
+  BL-1621, BL-1632. Human directive 2026-09-17 ("tests run for hours",
+  BL-1618): a 2.6 s listing inside thirty-five sweeps is part of the hours.
+
+notes: |
+  Minted 2026-09-18 by the specifier while completing the cleaner's note,
+  the same pass. AUTO-APPROVED under the 2026-09-17 operator hotfix
+  (severity defect, no ruling_options) - see
+  auto-approve-high-severity-defects-amendment-20260917.md. The cleaner
+  was told the proposal is accepted as this ticket; the coordinator was
+  sent paused-ready. INVEST: Independent (the reaper, BL-420's finder
+  shape and BL-1623's pid probe exist), Negotiable (finder heuristics,
+  census file format, reap flags are direction; the helper name and the
+  guard file are the anchors), Valuable (new handlers cannot leak, the
+  host's 687k dead roots go, every temp-directory listing gets its
+  seconds back), Estimable (one finder, one test, one helper, one script -
+  one sitting), Small (four scenarios, one invariant), Testable (fixture
+  directories in milliseconds; the host reap is e2e).
