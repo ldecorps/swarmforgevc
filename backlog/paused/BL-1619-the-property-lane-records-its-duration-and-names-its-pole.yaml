@@ -24,7 +24,7 @@ required_wiring:
   - 'extension/package.json::recordPropertyDuration.js::the test:properties script is the pre-existing consumer; the literal exists only with the fix (BL-874, BL-1235)'
   - 'specs/pipeline/steps/bl1619PropertyLaneRecordsDurationSteps.js::registerSteps::the handler lands in the same parcel as the feature (BL-233, BL-1371)'
 
-human_approval: pending
+human_approval: approved
 approval_context: >
   Your 2026-09-17 ask, the measurement half: the property lane gets the
   duration row and verdict the unit lane has had since BL-078/BL-378. FIRM:
