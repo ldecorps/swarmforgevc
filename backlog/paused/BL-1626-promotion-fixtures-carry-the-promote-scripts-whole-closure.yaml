@@ -5,7 +5,7 @@ type: defect
 severity: high
 # high (standing-red rule 2026-09-05): three acceptance features red on
 # main, unseen for three to four weeks because no lane runs a landed
-# feature (BL-1628). Production is unaffected: every failure is the
+# feature (BL-1625, which absorbed BL-1628 on 2026-09-18). Production is unaffected: every failure is the
 # fixture's copy of the promote chain missing a file the live chain has.
 status: todo
 epic: code-quality-gates
@@ -15,7 +15,7 @@ depends_on: []
 # BL-1538 (closure derivation for a bb fixture: computeClosure,
 # diffClosureAgainstList in specs/pipeline/steps/lib/operatorRuntimeBbClosure.js;
 # copyScriptClosure in extension/test/helpers/pinnedRepoFixture.js) is in
-# backlog/done. BL-1628 (a recorded full-acceptance lane) is a paused
+# backlog/done. BL-1625 (the recorded lane runner; absorbed BL-1628 2026-09-18) is a paused
 # sibling, not a dependency.
 mutation_cost: low
 # low: three step-handler fixture edits and one shared helper call, a
@@ -135,7 +135,7 @@ constraints: >
 
 out_of_scope: |
   - BL-937's feature (BL-1627).
-  - A lane that runs landed features (BL-1628); any other landed feature
+  - A lane that runs landed features (BL-1625, which absorbed BL-1628 on 2026-09-18); any other landed feature
     the census or that lane finds red is its own unowned-red note.
 
 qa_e2e_procedure: |
@@ -159,7 +159,7 @@ source: |
   (rides BL-1614's parcel). Specifier adjudication and reproduction:
   backlog/evidence/BL-1626-specifier-adjudication-of-coder-unowned-reds-20260917.md.
   Parents: BL-1538, BL-803, BL-1028, BL-1100, BL-1173. Siblings: BL-1627,
-  BL-1628.
+  BL-1628 (retired 2026-09-18 into BL-1625).
 
 notes: |
   Minted 2026-09-17 by the specifier while completing the coder's note,
