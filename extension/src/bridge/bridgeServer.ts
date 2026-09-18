@@ -97,6 +97,7 @@ import {
   mergeBubbleHealthIntoUiBundleManifest,
 } from './letsTalkRoutes';
 import { createWebUiFontSizeRoutes, isWebUiFontSizePath } from './webUiFontSizeRoutes';
+import { createWebUiTicketStripCollapsedRoutes, isWebUiTicketStripCollapsedPath } from './webUiTicketStripCollapseRoutes';
 import { resolveLetsTalkAudioAdaptersFromEnv } from './letsTalkAudio';
 import { resolveLetsTalkAudioForTurn } from './letsTalkAudioPreference';
 import { createLetsTalkAudioEngineRoutes } from './letsTalkAudioEngineRoutes';
@@ -1890,6 +1891,7 @@ const QUERY_TOKEN_ELIGIBLE_PATHS: Array<(url: string) => boolean> = [
   isSpecTreeStatePath,
   isContextBudgetStatePath,
   isWebUiFontSizePath,
+  isWebUiTicketStripCollapsedPath,
   isOperatorDocsIndexFeedPath,
   isOperatorDocsPageFeedPath,
 ];
@@ -2237,6 +2239,11 @@ export function startBridge(
       respondJson,
       (req, res, maxBytes, isShape, shapeErrorReason) => readValidatedBody(req, res, maxBytes, isShape, shapeErrorReason)
     );
+    const webUiTicketStripCollapsedRoutes = createWebUiTicketStripCollapsedRoutes(
+      requireControlAuth,
+      respondJson,
+      (req, res, maxBytes, isShape, shapeErrorReason) => readValidatedBody(req, res, maxBytes, isShape, shapeErrorReason)
+    );
     // BL-790: POST /agent-notes — authenticated note queue (agentNotesRoutes).
     const agentNotesRoutes = createAgentNotesRoutes(
       requireControlAuth,
@@ -2357,6 +2364,7 @@ export function startBridge(
         ...letsTalkAudioEngineRoutes,
         ...letsTalkMetaRoutes,
         ...webUiFontSizeRoutes,
+        ...webUiTicketStripCollapsedRoutes,
         ...agentNotesRoutes,
       ].find((route) => route.matches(req, url));
       if (writeRoute) {
