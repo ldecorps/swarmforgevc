@@ -47,5 +47,9 @@ status=0
 # check_bounce_revert_scope.sh's own header for why pre-commit's call
 # (run_commit_guards.sh) always defers.
 "$REPO_ROOT/swarmforge/scripts/check_bounce_revert_scope.sh" "$1" || status=$?
+# BL-1617: catches a subject the land step would attribute to a closed,
+# unknown, or ambiguous ticket - at commit time, not an hour later on
+# someone else's parcel.
+"$REPO_ROOT/swarmforge/scripts/check_closed_ticket_subject.sh" "$1" || status=$?
 
 exit "$status"
