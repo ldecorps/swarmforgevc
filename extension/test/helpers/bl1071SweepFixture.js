@@ -57,6 +57,32 @@ const PGREP_GREEN = '#!/usr/bin/env bash\nexit 0\n';
 // A ./swarm that records every ensure and returns immediately.
 const SWARM_OK = '#!/usr/bin/env bash\necho 1 >> "$(dirname "$0")/ensure-count"\necho ensured\nexit 0\n';
 
+// BL-1632: the four ways a ./swarm hang defeats a half-measure kill (BL-1071's
+// own review), each `sleep 3600` renamed via `exec -a` to carry the fixture's
+// own root - unique per mkdtemp, no token to thread through - so
+// fixtureHangs() below can count only the processes THIS fixture started, and
+// never a peer's. The grandchild shapes rename the backgrounded `sleep` too,
+// or the group kill's own target would be invisible to the probe that proves
+// it worked.
+const HANG_RECORD = 'echo 1 >> "$(dirname "$0")/ensure-count"';
+const HANG_SLEEP = 'exec -a "bl1071-hang:$(dirname "$0")" sleep 3600';
+const HANG_SHAPES = {
+  plain: `#!/usr/bin/env bash\n${HANG_RECORD}\n${HANG_SLEEP}\n`,
+  grandchild: `#!/usr/bin/env bash\n${HANG_RECORD}\n${HANG_SLEEP} &\n${HANG_SLEEP}\n`,
+  'ignores-sigterm': `#!/usr/bin/env bash\ntrap '' TERM\n${HANG_RECORD}\n${HANG_SLEEP} &\n${HANG_SLEEP}\n`,
+  'output-then-hang': `#!/usr/bin/env bash\n${HANG_RECORD}\necho "ensure: starting"\n${HANG_SLEEP} &\n${HANG_SLEEP}\n`,
+};
+
+// The count of hang processes THIS fixture's own swarm stub started - never a
+// peer's. `pgrep -f` matches the marker's fixture root, which is unique per
+// mkdtemp; invoked with NO shell wrapper, because a wrapper whose own argv
+// carries the marker text would match itself (measured: counted 4 instead of
+// 2 on this host).
+function fixtureHangs(fixture) {
+  const res = spawnSync('pgrep', ['-f', `bl1071-hang:${fixture.root}`], { encoding: 'utf8' });
+  return (res.stdout || '').split('\n').filter(Boolean).length;
+}
+
 function realSearchPath() {
   return (process.env.PATH || '').split(path.delimiter).filter(Boolean);
 }
@@ -230,6 +256,8 @@ module.exports = {
   TMUX_TWO_ROLES,
   TMUX_NO_SERVER,
   SWARM_OK,
+  HANG_SHAPES,
+  fixtureHangs,
   farmWithout,
   makeSweepFixture,
   writeStub,
