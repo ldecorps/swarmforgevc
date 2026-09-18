@@ -631,6 +631,18 @@ not as the several separate edits that produced it).
   blocks but the vendored parser's IR has an empty examples list (the parser silently
   drops all Examples tables while reporting a clean parse; BL-515's gate currently misses
   this - detected hardening BL-515 2026-07-18).
+- **A fixture that copies a Babashka entry point carries that entry point's
+  whole transitive `load-file` closure, derived from the sources at build
+  time — never a hand-maintained list** (BL-973/BL-1538/BL-1626): a
+  hand-`cp` list of "today's dependencies" rots silently the next time an
+  upstream file gains a `load-file` edge, and the fixture's subprocess
+  dies at load — a broken fixture that reads like a real refusal, not a
+  missing file. `computeClosure`/`copyScriptClosure`
+  (`extension/test/helpers/pinnedRepoFixture.js`, JS side) and
+  `bb_load_closure_lib.bb`/`bb_closure_copy.sh` (bb/shell side) derive the
+  copy set behaviorally from the live sources; see
+  `docs/how-to/BL-973-bb-fixture-closure-guards-and-suite-inventory.md`
+  for the guarded-fixture table and how to add a new one.
 - **Before deleting a step-handler file a note or ticket calls "dead", extract every step
   pattern it registers and grep EVERY live `.feature` file for a scenario still using any of
   them — the step registry is ONE global namespace keyed by step text, so a handler outlives
