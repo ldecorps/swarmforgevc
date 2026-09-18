@@ -69,11 +69,19 @@ function registerSteps(registry) {
   });
 
   scoped(/^no library is missing from the fixture$/, (ctx) => {
-    assert.deepEqual(
-      ctx.missingFromFixture,
-      [],
-      `fixture at ${ctx.fixtureScriptsDir} is missing: ${ctx.missingFromFixture.join(', ')}`
-    );
+    try {
+      assert.deepEqual(
+        ctx.missingFromFixture,
+        [],
+        `fixture at ${ctx.fixtureScriptsDir} is missing: ${ctx.missingFromFixture.join(', ')}`
+      );
+    } finally {
+      // BL-1626 architect bounce: buildFixtureScriptsDir() mkdtemp's a real
+      // directory with no cleanup of its own - the caller that reads it
+      // owns removing it, in a finally so a failed assertion still cleans
+      // up rather than leaking on the red path too.
+      fs.rmSync(ctx.fixtureScriptsDir, { recursive: true, force: true });
+    }
   });
 
   scoped(/^the fixture root that the bl1100 step handler builds, holding one paused fixture ticket$/, (ctx) => {
