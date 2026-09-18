@@ -43,6 +43,9 @@ each fixture with the entry point it actually drives:
 | `swarmforge/scripts/test/test_promote_and_route_next_no_limit_depth.sh` | `promotion_gates_cli.bb`, `effective_backlog_depth_cli.bb`, `backlog_depth_cli.bb`, `backlog_depth_conf_path_cli.bb` | runs `bb_closure_copy.sh`'s `copy_bb_closure` (one call per entry point) and reads what lands |
 | `swarmforge/scripts/test/test_bl1028_promotion_obeys_integrity_refusal.sh` | `promotion_gates_cli.bb` | runs `bb_closure_copy.sh`'s `copy_bb_closure` and reads what lands |
 | `swarmforge/scripts/test/bl1028_promotion_refusal_property_runner.bb` | `promotion_gates_cli.bb` | runs the fixture itself with `--copy-into <dir>` and reads what lands |
+| `specs/pipeline/steps/bl803PromoteRouteSedBsdPortabilitySteps.js` | `promotion_gates_cli.bb` | `copyScriptClosure` (`extension/test/helpers/pinnedRepoFixture.js`), derived, not a hand list (BL-1626) |
+| `specs/pipeline/steps/bl1028PromotionRefusalSteps.js` | `promotion_gates_cli.bb` | `copyScriptClosure` (`extension/test/helpers/pinnedRepoFixture.js`), derived, not a hand list (BL-1626) |
+| `specs/pipeline/steps/bl1100PromotionProseNeverBlocksSteps.js` | `promotion_gates_cli.bb` (via `promote_and_route_next.sh`) | fixture builder installs the real gate scripts directly (no hand-copy to fall out of date); the freshness gate's own CLI is reached through the extension symlink below, not this table's closure mechanism |
 
 The tenth and eleventh (BL-1480, 2026-09-08) are the first two whose entry is
 a **list** rather than a single CLI: `promote_and_route_next.sh` shells directly to three cap-resolution
@@ -78,6 +81,36 @@ The runner now derives its copy set via `bb_load_closure_lib.bb`'s
 effective set behaviourally through a `--copy-into <dir>` flag the fixture
 itself accepts — running the fixture and reading what lands, never parsing
 its source. `bbFixtureClosureGate.js` gained a `bb-copy` kind for this.
+
+The fourteenth and fifteenth (BL-1626, 2026-09-18) are two more
+`promotion_gates_cli.bb` fixtures of the same surface —
+`bl803PromoteRouteSedBsdPortabilitySteps.js` and
+`bl1028PromotionRefusalSteps.js` — each carrying its own hand-`cp` list
+(the sixteenth-and-later shape this table's own gap note above already
+named) that had rotted twice over: `backlog_depth_lib.bb` gained a
+`load-file` of `daemon_cycle_guard_lib.bb` (BL-966, 2026-08-20) and
+`promotion_gates_lib.bb` gained one of `acceptance_pointer_gate_lib.bb`
+(BL-626, 2026-08-25), each silently outside the hand list. Both now call
+`copyScriptClosure` (`extension/test/helpers/pinnedRepoFixture.js`, the
+same BL-1538 helper) instead of a hand `cp` loop.
+
+The same pass fixed a second, unrelated fixture gap in this family:
+`promote_and_route_next.sh`'s freshness gate (BL-1173) resolves the
+deprecate-check CLI at `$ROOT/extension/out/tools/deprecate-check.js`
+first — a path no `.bb` closure walk reaches, since it is a compiled
+TypeScript tool, not a `load-file` edge. A fixture with no `extension/`
+directory at all hits the gate's fail-closed HOLD regardless of whether
+its `.bb` closure is complete. `bl803PromoteRouteSedBsdPortabilitySteps.js`,
+`bl1028PromotionRefusalSteps.js` and
+`bl1100PromotionProseNeverBlocksSteps.js` each now `fs.symlinkSync` the
+repository's real `extension/` into the fixture root, so the gate resolves
+the real, already-compiled CLI and answers on its own — never a result
+bypass. A census scenario in
+`specs/features/BL-1626-promotion-fixtures-carry-the-promote-scripts-whole-closure.feature`
+greps every step handler that copies `promote_and_route_next.sh` or
+`promotion_gates_cli.bb` into a fixture and asserts each one requires one
+of the closure helpers, so a future sixteenth fixture in this family is
+caught at review rather than found red weeks later.
 
 The effective list is read **behaviorally** — what the fixture actually
 copies or actually exports — never by grepping its source for a literal. A
