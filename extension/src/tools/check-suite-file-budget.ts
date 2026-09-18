@@ -115,11 +115,21 @@ export function openTicketIds(backlogDir: string): Set<string> {
   return ids;
 }
 
-export type BudgetVerdictKind = 'ok' | 'watch' | 'stale-row' | 'unowned-row' | 'new-pole';
+export type BudgetVerdictKind = 'ok' | 'watch' | 'stale-row' | 'unowned-row' | 'new-pole' | 'contention';
 
 export interface FileVerdict extends BudgetOffender {
   kind: BudgetVerdictKind;
   ticket?: string;
+}
+
+// BL-1633: a would-be new-pole confirmed ALONE (its own solo duration)
+// under budget - the in-suite duration above is the fork pool's
+// contention, not the code, so the run passes and both numbers are
+// reported (never just the in-suite one, which is what made this file
+// look like a pole in the first place).
+export interface ContentionVerdict extends FileVerdict {
+  kind: 'contention';
+  aloneMs: number;
 }
 
 export interface BudgetCheckResult {
@@ -130,6 +140,7 @@ export interface BudgetCheckResult {
   staleRows: FileVerdict[];
   unownedRows: FileVerdict[];
   registeredPoles: FileVerdict[];
+  contention: ContentionVerdict[];
 }
 
 // A row's file measuring under this fraction of the budget is stale: the
@@ -159,15 +170,55 @@ function classifyRegisterRow(row: RegisterRow, measured: number | undefined, bud
 }
 
 // Priority order matches the amendment's own stated order (2026-09-16, QA's
-// Article 4.2 hold): new-pole, unowned-row, watch, stale-row, ok - a new,
-// unregistered offender is worse than an existing row gone stale or
-// unowned, which in turn outrank a merely-watched file or a stale one.
-function computeVerdict(offenderCount: number, unownedCount: number, watchCount: number, staleCount: number): BudgetVerdictKind {
+// Article 4.2 hold), extended by BL-1633's 'contention' between watch and
+// stale-row (2026-09-18): new-pole, unowned-row, watch, contention,
+// stale-row, ok - a new, unregistered offender is worse than an existing
+// row gone stale or unowned, which in turn outrank a merely-watched or
+// pool-contended file, which outrank a stale one.
+function computeVerdict(
+  offenderCount: number,
+  unownedCount: number,
+  watchCount: number,
+  contentionCount: number,
+  staleCount: number
+): BudgetVerdictKind {
   if (offenderCount > 0) return 'new-pole';
   if (unownedCount > 0) return 'unowned-row';
   if (watchCount > 0) return 'watch';
+  if (contentionCount > 0) return 'contention';
   if (staleCount > 0) return 'stale-row';
   return 'ok';
+}
+
+// BL-1633: a would-be new-pole (unregistered, at or above the 1.5x refusal
+// line) is refused only after a confirming SOLO measurement of that file
+// also exceeds the budget - the in-suite duration alone is the fork
+// pool's contention, not evidence the file itself is slow (measured:
+// telegramFrontDeskBotCli.test.js, 3.7-5.0s alone vs 8.0-19.7s in-suite,
+// six of eight runs over the line with zero code change). No confirmation
+// argument (the four-argument callers, BL-1598's and BL-1620's own) keeps
+// every candidate an offender exactly as before - confirmAlone is never
+// called and this degrades to a no-op pass-through. `null` (the
+// confirmer's own timeout/failure sentinel) counts as over budget alone
+// (the FIRM: a confirmation that does not finish in time is never treated
+// as evidence of contention). Extracted alongside classifyRegisterRows,
+// same CRAP-gate reason.
+function confirmOffendersAlone(
+  candidates: FileDuration[],
+  budgetMs: number,
+  confirmAlone: ((file: string) => number | null) | undefined
+): { offenders: BudgetOffender[]; contention: ContentionVerdict[] } {
+  const offenders: BudgetOffender[] = [];
+  const contention: ContentionVerdict[] = [];
+  for (const d of candidates) {
+    const aloneMs = confirmAlone ? confirmAlone(d.file) : null;
+    if (confirmAlone && aloneMs !== null && aloneMs < budgetMs) {
+      contention.push({ file: d.file, durationMs: d.durationMs, aloneMs, budgetMs, kind: 'contention' });
+    } else {
+      offenders.push({ file: d.file, durationMs: d.durationMs, budgetMs });
+    }
+  }
+  return { offenders, contention };
 }
 
 // Walks every register row once, bucketing each into stale/unowned/pole via
@@ -202,17 +253,19 @@ function classifyRegisterRows(
 // on the first would hide the others and turn one fix into N sequential
 // rediscoveries. register/openTickets default to empty.
 //
-// Only new-pole and unowned-row fail (`passed`); watch and stale-row are
-// reported on every run they occur but never refuse - a snapshot gate that
-// refuses on ordinary host-load jitter (BL-445's own documented shape for
-// the whole-suite wall clock) is red on day one. Headline verdict
-// precedence when several apply at once: new-pole, unowned-row, watch,
-// stale-row, ok (the amendment's own stated order).
+// Only new-pole and unowned-row fail (`passed`); watch, contention and
+// stale-row are reported on every run they occur but never refuse - a
+// snapshot gate that refuses on ordinary host-load jitter (BL-445's own
+// documented shape for the whole-suite wall clock) is red on day one.
+// Headline verdict precedence when several apply at once: new-pole,
+// unowned-row, watch, contention, stale-row, ok (the amendment's own
+// stated order, extended by BL-1633).
 export function checkFileDurationBudget(
   durations: FileDuration[],
   budgetMs: number,
   register: RegisterRow[] = [],
-  openTickets: Set<string> = new Set()
+  openTickets: Set<string> = new Set(),
+  confirmAlone?: (file: string) => number | null
 ): BudgetCheckResult {
   const durationByFile = new Map(durations.map((d) => [d.file, d.durationMs]));
   const rowByFile = new Map(register.map((r) => [r.file, r]));
@@ -221,17 +274,16 @@ export function checkFileDurationBudget(
 
   const refusalThresholdMs = budgetMs * NEW_POLE_REFUSAL_FRACTION;
   const unregisteredOverBudget = durations.filter((d) => d.durationMs > budgetMs && !rowByFile.has(d.file));
-  const offenders = unregisteredOverBudget
-    .filter((d) => d.durationMs >= refusalThresholdMs)
-    .map((d) => ({ ...d, budgetMs }));
+  const candidateOffenders = unregisteredOverBudget.filter((d) => d.durationMs >= refusalThresholdMs);
+  const { offenders, contention } = confirmOffendersAlone(candidateOffenders, budgetMs, confirmAlone);
   const watchFiles: FileVerdict[] = unregisteredOverBudget
     .filter((d) => d.durationMs < refusalThresholdMs)
     .map((d) => ({ file: d.file, durationMs: d.durationMs, budgetMs, kind: 'watch' }));
 
   const passed = offenders.length === 0 && unownedRows.length === 0;
-  const verdict = computeVerdict(offenders.length, unownedRows.length, watchFiles.length, staleRows.length);
+  const verdict = computeVerdict(offenders.length, unownedRows.length, watchFiles.length, contention.length, staleRows.length);
 
-  return { passed, verdict, offenders, watchFiles, staleRows, unownedRows, registeredPoles };
+  return { passed, verdict, offenders, watchFiles, staleRows, unownedRows, registeredPoles, contention };
 }
 
 // Names the offender, its duration, AND the budget it broke (scenario 01)
@@ -251,7 +303,8 @@ export function formatBudgetOffenders(offenders: BudgetOffender[]): string {
 // two computations of it.
 export function runGuardAgainstReport(
   reportPath: string,
-  registerPath?: string
+  registerPath?: string,
+  confirmAlone?: (file: string) => number | null
 ): { result: BudgetCheckResult; durations: FileDuration[] } {
   const report = JSON.parse(fs.readFileSync(reportPath, 'utf8')) as VitestJsonReport;
   const projectRoot = registerPath ? path.dirname(path.dirname(registerPath)) : undefined;
@@ -259,7 +312,7 @@ export function runGuardAgainstReport(
   const registerRows =
     registerPath && fs.existsSync(registerPath) ? parseRegisterRows(fs.readFileSync(registerPath, 'utf8')) : [];
   const openTickets = registerPath ? openTicketIds(path.dirname(registerPath)) : new Set<string>();
-  const result = checkFileDurationBudget(durations, PER_FILE_DURATION_BUDGET_MS, registerRows, openTickets);
+  const result = checkFileDurationBudget(durations, PER_FILE_DURATION_BUDGET_MS, registerRows, openTickets, confirmAlone);
   return { result, durations };
 }
 
@@ -268,6 +321,37 @@ export function runGuardAgainstReport(
 // between the budget and NEW_POLE_REFUSAL_FRACTION (watchFiles) are all
 // REPORTED, never refused - only new-pole and unowned-row refuse
 // (failureLines), the amendment's own split.
+// BL-1633: `result.contention` may be absent on a hand-built partial
+// result (this file's own tests construct BudgetCheckResult literals
+// without it) - defaulted to empty, never a throw, the same posture the
+// four-argument checkFileDurationBudget callers get from confirmAlone
+// being optional there.
+function formatContentionVerdicts(entries: ContentionVerdict[]): string {
+  return entries
+    .map(
+      (c) =>
+        `${c.file}: ${(c.durationMs / 1000).toFixed(1)}s in-suite, ${(c.aloneMs / 1000).toFixed(1)}s alone (budget ${(c.budgetMs / 1000).toFixed(1)}s) - the pool, not the code`
+    )
+    .join('\n');
+}
+
+// BL-1633 hardener: pulled the contention line's own decision (present, and
+// result.contention's own absent-on-a-hand-built-literal default) out of
+// formatGuardReport, the same CRAP-gate reason BL-1598's own extractions
+// already used (classifyRegisterRow/classifyRegisterRows beside
+// checkFileDurationBudget) - formatGuardReport's own complexity was already
+// AT the un-flagged ceiling (6, five pre-existing ifs) before this ticket's
+// one inline `if` plus the `result.contention || []` default pushed it to 8
+// and over the gate. Extracting both here restores it to 6.
+function appendContentionLine(infoLines: string[], result: BudgetCheckResult): void {
+  const contention = result.contention || [];
+  if (contention.length > 0) {
+    infoLines.push(
+      `${contention.length} contention file(s) (over budget in-suite, confirmed under budget alone):\n${formatContentionVerdicts(contention)}`
+    );
+  }
+}
+
 export function formatGuardReport(result: BudgetCheckResult): { infoLines: string[]; failureLines: string[] } {
   const infoLines: string[] = [];
   if (result.registeredPoles.length > 0) {
@@ -280,6 +364,7 @@ export function formatGuardReport(result: BudgetCheckResult): { infoLines: strin
       `${result.watchFiles.length} watch file(s) (unregistered, over budget but under ${NEW_POLE_REFUSAL_FRACTION}x - not refused):\n${formatBudgetOffenders(result.watchFiles)}`
     );
   }
+  appendContentionLine(infoLines, result);
   if (result.staleRows.length > 0) {
     infoLines.push(
       `${result.staleRows.length} stale register row(s) (file now under 80% of budget - remove the row):\n${formatBudgetOffenders(result.staleRows)}`

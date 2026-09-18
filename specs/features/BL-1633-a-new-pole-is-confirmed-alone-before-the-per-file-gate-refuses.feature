@@ -1,58 +1,55 @@
 Feature: BL-1633 A new pole is confirmed alone before the per-file gate refuses
 
-  The unit lane's per-file budget gate reads each file's duration from
-  npm test's own report, measured inside the lane's 10-11 forks, and
-  refuses any unregistered file at or above 1.5 times the 7000 ms budget.
-  The hardener measured telegramFrontDeskBotCli.test.js at 8.0 to 19.7 s
-  in-suite across eight runs at load below 8, six of them over the line,
-  while the file is 3.7 to 5.0 s alone - the verdict follows the pool's
-  contention, not the code. This feature is that a suspected new pole is
-  confirmed alone before the gate refuses, that one under budget alone is
-  reported as contention with both durations and never refuses the run,
-  that the confirmation is bounded and is not a bypass, that the recorder
-  passes a real confirmer, and that the file's own register row leaves
-  in this land. One full npm test run is QA's e2e step, not a scenario
-  (BL-1541).
-
-  Background:
-    Given a pole register with no row for the file under test
+  The unit lane's per-file budget gate (BL-1598) refuses an unregistered
+  file at or above 1.5x the 7000 ms budget by reading its duration from
+  npm test's own JSON report - measured while the file shares the host
+  with the lane's 10-11 concurrent forks. telegramFrontDeskBotCli.test.js,
+  3.7-5.0 s alone after BL-1620's cut, measured 8.0, 9.1, 10.5, 12.3,
+  12.4, 12.5, 14.3 and 19.7 s in-suite across eight npm test runs with no
+  code change, six of eight over the refusal line: the gate's verdict
+  flips with the fork pool's contention, not the code. This feature is
+  that a would-be new pole is confirmed ALONE before the gate refuses it
+  - a file under budget alone is reported as contention with both
+  durations and never refuses the run; a file over budget alone too is
+  refused exactly as before.
 
   # BL-1633 new-pole-confirmed-alone-01
-  Scenario Outline: an unregistered file over the line is refused only when it is over budget alone too
-    Given a per-file duration report where an unregistered file measures <in-suite> ms
-    And the file measures <alone> when confirmed alone
-    When the per-file budget guard runs with a 7000 ms budget and the confirmer
-    Then the verdict is <verdict>
-    And the run <outcome>
-    And the verdict line <names>
+  Scenario Outline: a would-be new pole is confirmed alone before the gate decides
+    Given a per-file duration report where <file> measures <inSuiteMs> ms in-suite, at or above the refusal line
+    And a confirmer that measures <file> alone at <aloneMs> ms
+    When the per-file budget guard runs with the confirmer
+    Then the verdict is <verdict> and the run <outcome>, naming both durations when the verdict is contention
 
     Examples:
-      | in-suite | alone            | verdict    | outcome     | names                                        |
-      | 12400    | 4800 ms          | contention | passes      | names the file with 12400 ms and 4800 ms     |
-      | 12400    | 9100 ms          | new-pole   | is refused  | names the file as exceeding the budget       |
-      | 19700    | no result at all | new-pole   | is refused  | names the file as unconfirmed within 21000 ms |
+      | file            | inSuiteMs | aloneMs | verdict    | outcome    |
+      | pooled.test.js  | 15000     | 4000    | contention | passes     |
+      | genuine.test.js | 15000     | 9000    | new-pole   | is refused |
 
   # BL-1633 new-pole-confirmed-alone-02
-  Scenario Outline: the confirmation is bounded to would-be offenders, once each
-    Given a per-file duration report where <report>
-    When the per-file budget guard runs with a 7000 ms budget and the confirmer
-    Then the confirmer was called <calls>
-
-    Examples:
-      | report                                                              | calls                    |
-      | an unregistered file measures 8000 ms                               | 0 times                  |
-      | a registered file with an open owner measures 12400 ms              | 0 times                  |
-      | two unregistered files measure 12400 ms and 15000 ms                | exactly once per file    |
+  Scenario: no confirmation for a registered or below-the-line file, at most one confirmation per candidate, and a timeout counts as over budget alone
+    Given a per-file duration report where registered.test.js measures 15000 ms in-suite, at or above the refusal line
+    And backlog/suite-poles.tsv names registered.test.js under an open ticket
+    And a per-file duration report where watched.test.js measures 9000 ms in-suite, under the refusal line
+    And a per-file duration report where pooled.test.js measures 15000 ms in-suite, at or above the refusal line
+    And a per-file duration report where timedout.test.js measures 15000 ms in-suite, at or above the refusal line
+    And a confirmer that measures pooled.test.js alone at 4000 ms, never finishes for timedout.test.js, and records every file it is asked to measure
+    When the per-file budget guard runs with the confirmer
+    Then the confirmer is never asked about registered.test.js or watched.test.js
+    And the confirmer is asked about pooled.test.js exactly once
+    And timedout.test.js is a new-pole, refused exactly as today
 
   # BL-1633 new-pole-confirmed-alone-03
-  Scenario: the recorder's real confirmer measures one file alone under the unit config
-    Given a fixture test file whose one test sleeps 200 ms
-    When the recorder's confirmer measures that file alone
-    Then it reports a duration of at least 200 ms
-    And it ran vitest with exactly that one file
+  Scenario: the recorder's real confirmer measures one file alone under the real vitest
+    Given a fixture test file that sleeps 200 ms, not under extension/test/
+    When the recorder's real confirmer measures it alone
+    Then it returns a duration at least 200 ms and under the per-file budget
 
   # BL-1633 new-pole-confirmed-alone-04
-  Scenario: the file that surfaced the gap is under budget alone and its row is gone
-    When extension/test/telegramFrontDeskBotCli.test.js runs alone once under the unit config
+  Scenario: telegramFrontDeskBotCli.test.js is under budget alone and its register row is gone
+    Given extension/test/telegramFrontDeskBotCli.test.js at the parcel's own commit
+    When it runs alone once under the real vitest
     Then it measures under 7000 ms
-    And backlog/suite-poles.tsv at the parcel has no row for it and every other row byte-identical to main
+    And backlog/suite-poles.tsv has no row for it
+    And every other row in backlog/suite-poles.tsv is byte-identical to main
+    And BL-1620's feature at the parcel carries scenarios two-unit-lane-poles-01 and -03 only, its narrative stating the register row's fate in the past
+    And BL-1598's feature at the parcel carries scenarios unit-suite-pole-register-01 and -02 only, its narrative stating the 2026-09-16 census in the past

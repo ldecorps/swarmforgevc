@@ -46,14 +46,82 @@ const {
   buildSuiteWorkVerdict,
   formatSuiteWorkVerdict,
 } = require('../out/tools/check-suite-duration-budget');
-const { runGuardAgainstReport, printGuardReport } = require('../out/tools/check-suite-file-budget');
+const { runGuardAgainstReport, printGuardReport, PER_FILE_DURATION_BUDGET_MS } = require('../out/tools/check-suite-file-budget');
 const { resolveVitestWorkerPool, resolveFreeCoresCeiling } = require('../out/tools/vitest-worker-memory-budget');
 
 const ROOT_DIR = path.join(__dirname, '..');
+// BL-1633: confirmAlone's `file` argument, in real use, is whatever
+// `runGuardAgainstReport` already loaded into `durations` - REPO-ROOT
+// relative (extractFileDurations relativizes against the register's
+// repo root, so a row and a duration always agree, e.g.
+// "extension/test/foo.test.js"), never extension-relative. Resolving a
+// relative `file` against ROOT_DIR (extension/) instead of the repo root
+// double-prefixes it into a path that does not exist, so `--dir`
+// silently finds nothing and every confirmation returns null (measured:
+// both emitLifecycleSnapshotCli.test.js and telegramFrontDeskBotCli.test.js
+// wrongly stayed new-pole offenders on a real npm test run, 2026-09-18,
+// though both measure well under budget alone).
+const REPO_ROOT_DIR = path.join(ROOT_DIR, '..');
 const TEST_DIR = path.join(ROOT_DIR, 'test');
 const LOG_PATH = path.join(ROOT_DIR, '.test-durations.jsonl');
 const REPORT_PATH = path.join(ROOT_DIR, '.vitest-report.json');
 const REGISTER_PATH = path.join(ROOT_DIR, '..', 'backlog', 'suite-poles.tsv');
+
+// BL-1633: confirms a would-be new-pole ALONE before the per-file gate
+// refuses it - the file's own real duration outside the lane's 10-11
+// concurrent forks, since the in-suite duration `checkFileDurationBudget`
+// reads from npm test's report is the pool's contention as much as the
+// file's own cost (measured: telegramFrontDeskBotCli.test.js, 3.7-5.0s
+// alone vs 8.0-19.7s in-suite, six of eight runs over the refusal line
+// with zero code change). `file` is REPO-ROOT relative in real use (the
+// same shape `durations`/register rows already carry, e.g.
+// "extension/test/foo.test.js" - REPO_ROOT_DIR above, never ROOT_DIR) or
+// an absolute path (BL-1633 scenario 03's own mkdtemp fixture, never
+// created under `test/` - BL-1390's fixture rules). `--dir
+// <dirname(absFile)> <basename(absFile)>` scopes vitest's real file
+// discovery to exactly that one file under the SAME project config
+// (globals:true etc.) `npm test` itself runs under - works identically
+// for either path shape once resolved to absolute. Exported (never
+// `main()`'d
+// as a side effect of require - see the require.main guard at the
+// bottom) so the acceptance handler can call the same real function `npm
+// test` does, never a re-statement of it. `null` is the timeout/failure
+// sentinel the FIRM treats as "over budget alone" - the confirmation is
+// evidence of contention only when it actually completes under budget.
+function confirmPoleAlone(file) {
+  const vitestBin = path.join(ROOT_DIR, 'node_modules', '.bin', 'vitest');
+  const absFile = path.isAbsolute(file) ? file : path.join(REPO_ROOT_DIR, file);
+  const dir = path.dirname(absFile);
+  const base = path.basename(absFile);
+  const tmpReport = path.join(fs.mkdtempSync(path.join(os.tmpdir(), 'bl1633-confirm-')), 'report.json');
+  try {
+    // stdio: 'ignore' - the confirmation reads the JSON report FILE, never
+    // the child's console output, so there is no reason to buffer it.
+    // spawnSync's default (pipe, capped at a 1MB maxBuffer) measurably
+    // failed a real confirmation running right after the main suite's own
+    // 10-fork run (2026-09-18): the nested vitest process's own startup
+    // warnings pushed captured stdout/stderr over the cap, spawnSync set
+    // result.error (ERR_CHILD_PROCESS_STDIO_MAXBUFFER), and this function
+    // returned null - which the FIRM treats as "over budget alone",
+    // silently reproducing the exact refusal this ticket exists to
+    // prevent. Ignoring the streams removes the failure mode entirely
+    // rather than raising the cap (which only moves the same ceiling).
+    const result = spawnSync(
+      vitestBin,
+      ['run', '--dir', dir, base, '--reporter=json', `--outputFile=${tmpReport}`],
+      { cwd: ROOT_DIR, timeout: 3 * PER_FILE_DURATION_BUDGET_MS, stdio: 'ignore' }
+    );
+    if (result.error || !fs.existsSync(tmpReport)) return null;
+    const report = JSON.parse(fs.readFileSync(tmpReport, 'utf8'));
+    const entry = report.testResults.find((r) => path.resolve(r.name) === absFile);
+    if (!entry) return null;
+    return entry.endTime - entry.startTime;
+  } catch {
+    return null;
+  } finally {
+    fs.rmSync(path.dirname(tmpReport), { recursive: true, force: true });
+  }
+}
 
 function main() {
   const testFiles = listTestFiles(TEST_DIR).map((f) => path.join('test', f));
@@ -76,11 +144,20 @@ function main() {
   // lives in this process and this run is itself trying to cut overhead.
   console.log(formatSuiteBudgetVerdict(buildSuiteBudgetVerdict(durationMs)));
 
-  let guardVerdict = { passed: true, verdict: 'ok', offenders: [], watchFiles: [], staleRows: [], unownedRows: [], registeredPoles: [] };
+  let guardVerdict = {
+    passed: true,
+    verdict: 'ok',
+    offenders: [],
+    watchFiles: [],
+    staleRows: [],
+    unownedRows: [],
+    registeredPoles: [],
+    contention: [],
+  };
   let poleMs = 0;
   let workMs = 0;
   if (fs.existsSync(REPORT_PATH)) {
-    const { result: verdict, durations } = runGuardAgainstReport(REPORT_PATH, REGISTER_PATH);
+    const { result: verdict, durations } = runGuardAgainstReport(REPORT_PATH, REGISTER_PATH, confirmPoleAlone);
     guardVerdict = verdict;
     poleMs = durations.reduce((max, d) => Math.max(max, d.durationMs), 0);
     workMs = durations.reduce((sum, d) => sum + d.durationMs, 0);
@@ -127,4 +204,11 @@ function main() {
   process.exit(computeFinalExitCode(testExitCode, guardExitCode, workExitCode));
 }
 
-main();
+// BL-1633: exported for the acceptance handler (scenario 03) to call the
+// SAME confirmer `npm test` itself runs, never a re-statement of it -
+// requiring this module must not re-run the whole suite as a side effect.
+module.exports = { confirmPoleAlone };
+
+if (require.main === module) {
+  main();
+}
