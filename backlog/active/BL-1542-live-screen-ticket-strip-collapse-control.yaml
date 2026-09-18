@@ -158,3 +158,5 @@ notes: |
   - Epic `swarmforge-console`, as BL-609 and BL-1189 (the live screen's
     other slices); `bubble-live-screen` (BL-774) is the duplication epic,
     and this change lands in the shared page both entry points render.
+
+assigned_to: coder
