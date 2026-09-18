@@ -65,6 +65,7 @@ function readMeasuredDurationsMs() {
   }
   return rows.map((m) => Number(m[1]) * 1000);
 }
+
 function registerSteps(registry) {
   const scoped = (re, fn) => registry.defineScoped(re, fn, FEATURE);
 
@@ -116,6 +117,7 @@ function registerSteps(registry) {
   scoped(/^no test in it is skipped or excluded$/, (ctx) => {
     assert.equal(isSkippedOrExcluded(ctx.bl1620CurrentSource), false, `${ctx.bl1620File} must have no skipped/excluded test`);
   });
+
   // -- Scenario 03 ----------------------------------------------------------
 
   scoped(/^the parcel's evidence file$/, (ctx) => {

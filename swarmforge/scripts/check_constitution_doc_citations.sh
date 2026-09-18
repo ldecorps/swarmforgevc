@@ -38,7 +38,12 @@ cd "$REPO_ROOT" || { echo "check_constitution_doc_citations: WARNING - could not
 
 ARTICLES_PREFIX="swarmforge/constitution/articles/"
 
-mapfile -t TOUCHED < <(git diff --cached --name-only --diff-filter=ACMR -- "$ARTICLES_PREFIX" 2>/dev/null)
+# BL-1627: `mapfile` is a bash-4 builtin stock macOS bash 3.2 lacks
+# (BL-801's target) - the read loop below materializes the same array.
+TOUCHED=()
+while IFS= read -r __ccdc_touched; do
+  TOUCHED+=("$__ccdc_touched")
+done < <(git diff --cached --name-only --diff-filter=ACMR -- "$ARTICLES_PREFIX" 2>/dev/null)
 if (( ${#TOUCHED[@]} == 0 )); then
   exit 0
 fi
@@ -64,9 +69,12 @@ trap 'rm -rf "$SNAPSHOT_DIR"' EXIT
 # `git ls-files --cached` already reflects the INDEX - a staged deletion is
 # already absent from this listing, so no separate diff-filter pass is
 # needed to exclude it.
-mapfile -t ALL_STAGED_PATHS < <(git ls-files --cached -- "$ARTICLES_PREFIX" 2>/dev/null)
+ALL_STAGED_PATHS=()
+while IFS= read -r __ccdc_path; do
+  ALL_STAGED_PATHS+=("$__ccdc_path")
+done < <(git ls-files --cached -- "$ARTICLES_PREFIX" 2>/dev/null)
 
-for path in "${ALL_STAGED_PATHS[@]}"; do
+for path in ${ALL_STAGED_PATHS[@]+"${ALL_STAGED_PATHS[@]}"}; do
   rel="${path#"$ARTICLES_PREFIX"}"
   dest="$SNAPSHOT_DIR/$rel"
   mkdir -p "$(dirname "$dest")"
