@@ -123,6 +123,159 @@ test('every new-pole offender is named, not just the first, and a lesser breach 
   assert.deepEqual(result.watchFiles.map((w) => w.file), ['test/watch1.test.js']);
 });
 
+// ── checkFileDurationBudget with confirmAlone (BL-1633) ───────────────────
+
+// BL-1633 invariant: a would-be new-pole confirmed ALONE under budget is
+// contention (the fork pool, not the code), never refused.
+test('a would-be new-pole confirmed alone UNDER budget is contention, not new-pole, and the run passes', () => {
+  const result = checkFileDurationBudget(
+    [{ file: 'test/pooled.test.js', durationMs: 15000 }],
+    7000,
+    [],
+    new Set(),
+    () => 4000
+  );
+  assert.equal(result.passed, true);
+  assert.equal(result.verdict, 'contention');
+  assert.deepEqual(result.offenders, []);
+  assert.deepEqual(result.contention, [
+    { file: 'test/pooled.test.js', durationMs: 15000, aloneMs: 4000, budgetMs: 7000, kind: 'contention' },
+  ]);
+});
+
+// The FIRM: a file over budget alone too is refused exactly as today -
+// confirmation is not a bypass.
+test('a would-be new-pole confirmed alone OVER budget stays a new-pole, refused exactly as today', () => {
+  const result = checkFileDurationBudget(
+    [{ file: 'test/genuine.test.js', durationMs: 15000 }],
+    7000,
+    [],
+    new Set(),
+    () => 9000
+  );
+  assert.equal(result.passed, false);
+  assert.equal(result.verdict, 'new-pole');
+  assert.deepEqual(result.contention, []);
+  assert.deepEqual(result.offenders, [{ file: 'test/genuine.test.js', durationMs: 15000, budgetMs: 7000 }]);
+});
+
+// The FIRM: a confirmation that does not finish (or otherwise fails) counts
+// as over budget alone - never silently treated as contention.
+test('a confirmer returning null (timeout/failure) counts as over budget alone, still a new-pole', () => {
+  const result = checkFileDurationBudget(
+    [{ file: 'test/timedout.test.js', durationMs: 15000 }],
+    7000,
+    [],
+    new Set(),
+    () => null
+  );
+  assert.equal(result.verdict, 'new-pole');
+  assert.deepEqual(result.contention, []);
+  assert.deepEqual(result.offenders, [{ file: 'test/timedout.test.js', durationMs: 15000, budgetMs: 7000 }]);
+});
+
+// A duration exactly AT the budget from the confirmer is not itself under
+// it (the boundary belongs to "over", same convention as the in-suite
+// reading elsewhere in this file) - still a new-pole.
+test('a confirmed-alone duration exactly at the budget is still a new-pole, not contention', () => {
+  const result = checkFileDurationBudget(
+    [{ file: 'test/exact.test.js', durationMs: 15000 }],
+    7000,
+    [],
+    new Set(),
+    () => 7000
+  );
+  assert.equal(result.verdict, 'new-pole');
+  assert.deepEqual(result.contention, []);
+});
+
+test('no confirmAlone argument (the four-argument callers) leaves every candidate an offender, exactly as before', () => {
+  const result = checkFileDurationBudget([{ file: 'test/slow.test.js', durationMs: 15000 }], 7000);
+  assert.equal(result.verdict, 'new-pole');
+  assert.deepEqual(result.offenders, [{ file: 'test/slow.test.js', durationMs: 15000, budgetMs: 7000 }]);
+  assert.deepEqual(result.contention, []);
+});
+
+test('each candidate is confirmed at most once per run, and each is judged independently', () => {
+  const calls = [];
+  const confirmAlone = (file) => {
+    calls.push(file);
+    return file === 'test/pooled.test.js' ? 4000 : 9000;
+  };
+  const result = checkFileDurationBudget(
+    [
+      { file: 'test/pooled.test.js', durationMs: 15000 },
+      { file: 'test/genuine.test.js', durationMs: 15000 },
+    ],
+    7000,
+    [],
+    new Set(),
+    confirmAlone
+  );
+  assert.deepEqual(calls, ['test/pooled.test.js', 'test/genuine.test.js']);
+  assert.deepEqual(result.contention.map((c) => c.file), ['test/pooled.test.js']);
+  assert.deepEqual(result.offenders.map((o) => o.file), ['test/genuine.test.js']);
+});
+
+test('confirmAlone is never called for a registered file (a row, even over budget, is never a would-be offender)', () => {
+  const calls = [];
+  const result = checkFileDurationBudget(
+    [{ file: 'test/registered.test.js', durationMs: 15000 }],
+    7000,
+    [{ file: 'test/registered.test.js', ticket: 'BL-1', firstSeen: '2026-01-01', measuredMs: 15000, note: '' }],
+    OPEN,
+    (file) => {
+      calls.push(file);
+      return 4000;
+    }
+  );
+  assert.deepEqual(calls, []);
+  assert.equal(result.registeredPoles.length, 1);
+});
+
+test('confirmAlone is never called for a file below the refusal line (watch-band, not a candidate)', () => {
+  const calls = [];
+  const result = checkFileDurationBudget(
+    [{ file: 'test/watch.test.js', durationMs: 9000 }],
+    7000,
+    [],
+    new Set(),
+    (file) => {
+      calls.push(file);
+      return 4000;
+    }
+  );
+  assert.deepEqual(calls, []);
+  assert.equal(result.verdict, 'watch');
+});
+
+test('verdict priority: contention sorts between watch and stale-row (new-pole/unowned-row/watch still outrank it)', () => {
+  const durations = [
+    { file: 'watch.test.js', durationMs: 9000 },
+    { file: 'pooled.test.js', durationMs: 15000 },
+    { file: 'stale.test.js', durationMs: 5000 },
+  ];
+  const register = [{ file: 'stale.test.js', ticket: 'BL-1', firstSeen: '2026-01-01', measuredMs: 9000, note: '' }];
+
+  const result = checkFileDurationBudget(durations, 7000, register, OPEN, () => 4000);
+
+  // watch present -> watch beats contention.
+  assert.equal(result.verdict, 'watch');
+});
+
+test('verdict priority: contention beats stale-row when no new-pole/unowned-row/watch is present', () => {
+  const durations = [
+    { file: 'pooled.test.js', durationMs: 15000 },
+    { file: 'stale.test.js', durationMs: 5000 },
+  ];
+  const register = [{ file: 'stale.test.js', ticket: 'BL-1', firstSeen: '2026-01-01', measuredMs: 9000, note: '' }];
+
+  const result = checkFileDurationBudget(durations, 7000, register, OPEN, () => 4000);
+
+  assert.equal(result.verdict, 'contention');
+  assert.equal(result.staleRows.length, 1);
+});
+
 // ── formatBudgetOffenders (pure) ──────────────────────────────────────────
 
 test('formatBudgetOffenders names the offending file, its duration, and the budget it broke', () => {
@@ -497,6 +650,25 @@ test('formatGuardReport: a registered pole produces exactly one info line naming
   assert.deepEqual(failureLines, []);
 });
 
+test('formatGuardReport: a contention file produces one info line naming both durations, no failure line', () => {
+  const { infoLines, failureLines } = formatGuardReport({
+    passed: true,
+    verdict: 'contention',
+    offenders: [],
+    watchFiles: [],
+    staleRows: [],
+    unownedRows: [],
+    registeredPoles: [],
+    contention: [{ file: 'pooled.test.js', durationMs: 15000, aloneMs: 4000, budgetMs: 7000, kind: 'contention' }],
+  });
+  assert.equal(infoLines.length, 1);
+  assert.match(infoLines[0], /^1 contention file\(s\)/);
+  assert.match(infoLines[0], /pooled\.test\.js/);
+  assert.match(infoLines[0], /15\.0s in-suite/);
+  assert.match(infoLines[0], /4\.0s alone/);
+  assert.deepEqual(failureLines, []);
+});
+
 test('formatGuardReport: offenders and unowned rows each produce their OWN failure line; stale rows are reported (info), not a failure', () => {
   const { infoLines, failureLines } = formatGuardReport({
     passed: false,
@@ -673,6 +845,17 @@ test('runGuardAgainstReport with no register path and a file at or above 1.5x bu
 
   assert.equal(result.verdict, 'new-pole');
   assert.equal(result.offenders.length, 1);
+});
+
+test('runGuardAgainstReport forwards its 3rd argument as confirmAlone (BL-1633)', () => {
+  const root = mkTmp();
+  const reportPath = writeReport(root, [{ name: 'test/slow.test.js', startTime: 0, endTime: 11000 }]);
+
+  const { result } = runGuardAgainstReport(reportPath, undefined, () => 4000);
+
+  assert.equal(result.verdict, 'contention');
+  assert.deepEqual(result.offenders, []);
+  assert.equal(result.contention.length, 1);
 });
 
 test('runGuardAgainstReport with a register path whose file does not exist yet treats the register as empty', () => {
