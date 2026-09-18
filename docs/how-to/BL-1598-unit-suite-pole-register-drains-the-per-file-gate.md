@@ -98,3 +98,37 @@ files this register lists — BL-1007's contention-relative per-test timeout
 for its own load-dependent wall time; that is orthogonal to this register,
 whose row for the same file still tracks its measured pole against the
 fixed 7000 ms per-file budget.
+
+## BL-791 slice D, first cut: cutting a pole vs. re-owning its row (BL-1620/BL-1633)
+
+Not every listed file gets faster from a test-side change alone, and a
+file's solo time is not what the gate reads. Two shapes turned up in the
+first slice D cut, `extension/test/telegramFrontDeskBotCli.test.js`:
+
+- **A real cost inside the test, cut with an injected side effect.** Ten
+  of the file's slowest cases each started one or two real `bb
+  swarm_handoff.bb` processes (~1.3 s each) through `enqueueRoleAnswerNote`
+  — a real subprocess start, unreachable from the test side alone. BL-1620
+  gave that function one optional trailing `runHandoff` parameter — the
+  file's own `postFn` convention, never a `*_FORCE_RESULT` env bypass —
+  defaulting to the exact real spawn every production caller still gets;
+  the affected cases now inject a fake that records the call and resolves,
+  reading the same on-disk draft file and role-answer pointer they asserted
+  against before. The one test that proves the real script's own
+  refusal/delivery contract (BL-1518) keeps the real `bb` call on purpose.
+  This is the pattern for any future slice D file whose pole is a real
+  subprocess or I/O call inside the test, not the production code under
+  test: solo duration dropped from 22.9 s to 4.2–5.96 s across measured
+  runs, test count only rising (275 → 276, a hardening-pass addition).
+- **A row that survives its own cut.** The gate reads a file's **in-suite**
+  duration (10-11 concurrent forks under `npm test`), not its solo run.
+  Even after the cut above, `telegramFrontDeskBotCli.test.js` measured
+  7.79–19.7 s in-suite across measured runs against 4.2–5.96 s solo — most
+  of them still over the 1.5× refusal line's fixed-budget shadow. Cutting a
+  pole's *solo* time below budget does not by itself let its row leave: a
+  row only drains once the guard, run against the file's actual **in-suite**
+  duration, reports `stale-row` for it (the fixed 80%-of-budget threshold
+  in the table above, measured the same way the gate measures). Until then
+  the row stays, re-owned by whichever ticket the specifier assigns — this
+  file's row is BL-1633, which leaves in that ticket's own land once its
+  gate confirms the pole alone before refusing.
