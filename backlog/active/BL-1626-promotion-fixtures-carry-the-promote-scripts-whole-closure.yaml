@@ -179,6 +179,7 @@ notes: |
   auto-approve-high-severity-defects-amendment-20260917.md.
 
 assigned_to: coder
+abandoned_commits: [18139b3651]
 bounce_count: 1
 bounce_history:
   - { at: 2026-09-18, by: architect, blamed: coder, class: behavior, commit: 965cd71296, evidence: backlog/evidence/BL-1626-architect-bounce-20260918.md }
