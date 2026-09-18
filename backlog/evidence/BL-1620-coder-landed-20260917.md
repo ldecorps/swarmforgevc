@@ -40,20 +40,43 @@ scope here, per the amended ticket's own `out_of_scope`.
 
 ## Measured (`npx vitest run test/telegramFrontDeskBotCli.test.js --reporter=json`, solo, three consecutive runs)
 
+Re-measured 2026-09-18 after the hardener's own hardening pass added one
+mutation-gap test to the file (`b2dbead3d7`, 275 -> 276; carried into this
+parcel by the coder round trip, BL-1620-hardener-bounce-20260918.md), so
+this table reflects the file as it stands in this commit, not the
+2026-09-17 baseline.
+
 | run | wall (real) | tests | failed |
 |-----|-------------|-------|--------|
-| 1   | 5.88 s      | 275   | 0      |
-| 2   | 6.25 s      | 275   | 0      |
-| 3   | 5.86 s      | 275   | 0      |
+| 1   | 5.96 s      | 276   | 0      |
+| 2   | 5.70 s      | 276   | 0      |
+| 3   | 5.81 s      | 276   | 0      |
 
-275 tests in every run (no test deleted, skipped or excluded — test count
-equal to the received commit's, `main` at merge time). Every run's file
-duration is under the 7000 ms per-file budget.
+276 tests in every run (no test deleted, skipped or excluded — test count
+276 >= the received commit's 275 on `main`). Every run's file duration is
+under the 7000 ms per-file budget.
+
+## In-suite measurement (`npm test`, one real run, 2026-09-18)
+
+| file | in-suite wall | tests | failed |
+|------|---------------|-------|--------|
+| extension/test/telegramFrontDeskBotCli.test.js | 7.79 s | 275 | 0 |
+
+Host 1-minute load at run start: 10.7. Full suite this run: 626 files,
+10678 tests, 0 failed (`extension/.vitest-report.json`). Matches the
+hardener's 8.0–19.7 s in-suite band (2026-09-18, eight runs) at the low
+end. Amended 2026-09-18 (specifier, BL-990 correction on the hardener's
+spec-gap bounce): the per-file budget gate reads the file's IN-SUITE
+duration, not the SOLO duration above, so the register row does not read
+stale here — it stays, re-owned by BL-1633, until that ticket's own gate
+confirms a suspected pole alone before refusing.
 
 ## Register
 
 `backlog/suite-poles.tsv`'s row for `extension/test/telegramFrontDeskBotCli.test.js`
-(owned by BL-1620) is removed in this same commit, per the register's own
-drain rule ("a surviving row reads stale").
+is re-owned by BL-1633 (amended 2026-09-18) and STAYS in this commit — the
+in-suite duration above is well over the per-file budget, so the row does
+not read stale under the measure the gate actually reads. It leaves only
+in BL-1633's own land.
 
 By coder.
