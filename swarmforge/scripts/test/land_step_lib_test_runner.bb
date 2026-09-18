@@ -3206,6 +3206,150 @@ RESOLVED BY THIS TICKET
                         (:reason result) "backlog/standing-reds.tsv"))
     (sh! root "git" "worktree" "remove" "-f" scratch)))
 
+;; ── BL-1631: rows-to-retire (pure) ───────────────────────────────────────
+
+(let [owner-fn (fn [line] (nth (str/split line #"\t" -1) 2 nil))
+      row-landing "unit\tfile-w.test.js\tBL-9001\t2026-09-01\tnote-w"
+      row-other "unit\tfile-x.test.js\tBL-9002\t2026-09-01\tnote-x"
+      row-landing-2 "unit\tfile-v.test.js\tBL-9001\t2026-09-01\tnote-v"]
+
+  (assert= "BL-1631 (01): a row owned by the landing ticket is retired"
+           [row-landing]
+           (land-step-lib/rows-to-retire
+            {:lines [row-landing row-other] :owner-fn owner-fn :task-ticket-id "BL-9001"}))
+
+  (assert= "BL-1631 (02): a row owned by another open ticket is never retired"
+           []
+           (land-step-lib/rows-to-retire
+            {:lines [row-other] :owner-fn owner-fn :task-ticket-id "BL-9001"}))
+
+  (assert= "BL-1631 (03): several landing-ticket rows are all retired, original order preserved"
+           [row-landing row-landing-2]
+           (land-step-lib/rows-to-retire
+            {:lines [row-landing row-other row-landing-2] :owner-fn owner-fn :task-ticket-id "BL-9001"}))
+
+  (assert= "BL-1631 (04): a retirable?-fn that says no excepts the row from retirement even though it is owned by the landing ticket"
+           []
+           (land-step-lib/rows-to-retire
+            {:lines [row-landing] :owner-fn owner-fn :task-ticket-id "BL-9001"
+             :retirable?-fn (constantly false)}))
+
+  (assert= "BL-1631 (05): a comment/header line never matches (owner-fn reads nil)"
+           []
+           (land-step-lib/rows-to-retire
+            {:lines ["# header"] :owner-fn owner-fn :task-ticket-id "BL-9001"})))
+
+;; The pole register's real owner-fn/retirable?-fn (column 1, accepted-pole
+;; note text) - the shape BL-1629's own disposition row uses verbatim.
+(let [pole-owner-fn (fn [line] (nth (str/split line #"\t" -1) 1 nil))
+      pole-retirable?-fn (fn [line] (not (re-find #"(?i)accepted pole" line)))
+      pole-row "extension/test/x.test.js\tBL-9001\t2026-09-01\t69900\tan accepted pole under BL-9002 (register disposition)"
+      pole-row-ordinary "extension/test/y.test.js\tBL-9001\t2026-09-01\t14600\tBL-791 slice D pole census"]
+  (assert= "BL-1631 (06): the pole register's accepted-pole row is never retired, even when owned by the landing ticket"
+           [pole-row-ordinary]
+           (land-step-lib/rows-to-retire
+            {:lines [pole-row pole-row-ordinary] :owner-fn pole-owner-fn :task-ticket-id "BL-9001"
+             :retirable?-fn pole-retirable?-fn})))
+
+;; ── BL-1631: restore-other-tickets-registry-rows! also retires (real fixture) ──
+
+(with-fixture [root]
+  (commit! root "backlog/standing-reds.tsv"
+           (str "# header\n"
+                "unit\tfile-w.test.js\tBL-9001\t2026-09-01\tnote-w\n"
+                "unit\tfile-x.test.js\tBL-9002\t2026-09-01\tnote-x\n")
+           "seed register with BL-9001's own row and BL-9002's row")
+  (commit! root "backlog/active/BL-9001-x.yaml" "id: BL-9001\n" "BL-9001: landing ticket file")
+  (commit! root "backlog/active/BL-9002-x.yaml" "id: BL-9002\n" "BL-9002: open ticket file")
+  (mark-origin-main-here! root)
+  (let [origin-main (:out (sh! root "git" "rev-parse" "refs/remotes/origin/main"))
+        scratch (str (fs/path root ".." "bl1631-scratch-retire"))]
+    (fs/delete-tree scratch {:force true})
+    ;; The replay tree stands in for write-tree-from-paths!'s output: the
+    ;; landing ticket's own tip still carries its own row unchanged (the
+    ;; drain-rule shape this ticket now closes) alongside BL-9002's, which
+    ;; the tip also still carries (nothing to restore here - this fixture
+    ;; isolates retirement).
+    (sh! root "git" "worktree" "add" "-q" scratch "refs/remotes/origin/main")
+    (let [result (land-step-lib/restore-other-tickets-registry-rows!
+                  {:root root :scratch scratch :origin-main origin-main :task-ticket-id "BL-9001"})]
+      (assert-true "BL-1631 (07): ok? on a readable registry" (:ok? result))
+      (assert= "BL-1631 (07): BL-9001's own row is retired, naming the registry, file and owner"
+               [{:registry "backlog/standing-reds.tsv" :file "file-w.test.js" :owner "BL-9001"}]
+               (:retired result))
+      (assert= "BL-1631 (07): nothing needed restoring (BL-9002's row already present)"
+               [] (:restored result))
+      (let [content (slurp (str (fs/path scratch "backlog" "standing-reds.tsv")))]
+        (assert-true "BL-1631 (07): the landing ticket's own row is gone from the replayed file"
+                      (not (str/includes? content "file-w.test.js")))
+        (assert-true "BL-1631 (07): the other ticket's row survives untouched"
+                      (str/includes? content "unit\tfile-x.test.js\tBL-9002\t2026-09-01\tnote-x"))
+        (assert-true "BL-1631 (07): the header survives"
+                      (str/starts-with? content "# header"))))
+    (sh! root "git" "worktree" "remove" "-f" scratch)))
+
+(with-fixture [root]
+  ;; BL-1631's mirror of the BL-1604 restore fixture, exercised in the SAME
+  ;; pass: origin/main carries BL-9002's row the replay tree lacks (restore
+  ;; it) AND the replay tree carries BL-9001's own row (retire it) - both
+  ;; happen in one write, never a second commit.
+  (commit! root "backlog/standing-reds.tsv"
+           (str "# header\n"
+                "unit\tfile-x.test.js\tBL-9002\t2026-09-01\tnote-x\n")
+           "seed register with BL-9002's row")
+  (commit! root "backlog/active/BL-9002-x.yaml" "id: BL-9002\n" "BL-9002: open ticket file")
+  (mark-origin-main-here! root)
+  (let [origin-main (:out (sh! root "git" "rev-parse" "refs/remotes/origin/main"))
+        scratch (str (fs/path root ".." "bl1631-scratch-both"))]
+    (fs/delete-tree scratch {:force true})
+    (sh! root "git" "worktree" "add" "-q" scratch "refs/remotes/origin/main")
+    ;; The landing ticket's own tip lacks BL-9002's row (never wrote it,
+    ;; same modeling BL-1604's own fixture uses) but carries its OWN row.
+    (spit (str (fs/path scratch "backlog" "standing-reds.tsv"))
+          (str "# header\n" "unit\tfile-w.test.js\tBL-9001\t2026-09-01\tnote-w\n"))
+    (let [result (land-step-lib/restore-other-tickets-registry-rows!
+                  {:root root :scratch scratch :origin-main origin-main :task-ticket-id "BL-9001"})]
+      (assert-true "BL-1631 (08): ok? on a readable registry" (:ok? result))
+      (assert= "BL-1631 (08): BL-9002's row is restored"
+               [{:registry "backlog/standing-reds.tsv" :file "file-x.test.js" :owner "BL-9002"}]
+               (:restored result))
+      (assert= "BL-1631 (08): BL-9001's own row is retired in the same pass"
+               [{:registry "backlog/standing-reds.tsv" :file "file-w.test.js" :owner "BL-9001"}]
+               (:retired result))
+      (let [content (slurp (str (fs/path scratch "backlog" "standing-reds.tsv")))]
+        (assert-true "BL-1631 (08): the retired row is gone"
+                      (not (str/includes? content "file-w.test.js")))
+        (assert-true "BL-1631 (08): the restored row is present"
+                      (str/includes? content "unit\tfile-x.test.js\tBL-9002\t2026-09-01\tnote-x"))))
+    (sh! root "git" "worktree" "remove" "-f" scratch)))
+
+(with-fixture [root]
+  ;; The pole register end to end: BL-9001's own accepted-pole row survives
+  ;; its own land, an ordinary row it owns does not.
+  (commit! root "backlog/suite-poles.tsv"
+           (str "# header\n"
+                "extension/test/a.test.js\tBL-9001\t2026-09-01\t69900\tan accepted pole under BL-9007 (register disposition)\n"
+                "extension/test/b.test.js\tBL-9001\t2026-09-01\t14600\tBL-791 slice D pole census\n")
+           "seed pole register with BL-9001's accepted and ordinary rows")
+  (commit! root "backlog/active/BL-9001-x.yaml" "id: BL-9001\n" "BL-9001: landing ticket file")
+  (mark-origin-main-here! root)
+  (let [origin-main (:out (sh! root "git" "rev-parse" "refs/remotes/origin/main"))
+        scratch (str (fs/path root ".." "bl1631-scratch-pole"))]
+    (fs/delete-tree scratch {:force true})
+    (sh! root "git" "worktree" "add" "-q" scratch "refs/remotes/origin/main")
+    (let [result (land-step-lib/restore-other-tickets-registry-rows!
+                  {:root root :scratch scratch :origin-main origin-main :task-ticket-id "BL-9001"})]
+      (assert-true "BL-1631 (09): ok? on the pole register" (:ok? result))
+      (assert= "BL-1631 (09): only the ordinary row is retired, never the accepted-pole row"
+               [{:registry "backlog/suite-poles.tsv" :file "extension/test/b.test.js" :owner "BL-9001"}]
+               (:retired result))
+      (let [content (slurp (str (fs/path scratch "backlog" "suite-poles.tsv")))]
+        (assert-true "BL-1631 (09): the accepted-pole row survives"
+                      (str/includes? content "extension/test/a.test.js"))
+        (assert-true "BL-1631 (09): the ordinary row is gone"
+                      (not (str/includes? content "extension/test/b.test.js")))))
+    (sh! root "git" "worktree" "remove" "-f" scratch)))
+
 (if (seq @failures)
   (do
     (doseq [f @failures] (println f))
