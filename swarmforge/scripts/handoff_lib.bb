@@ -24,6 +24,12 @@
 ;; to save the role.
 (load-file (str (fs/path (fs/parent (fs/canonicalize *file*)) "shell_quote_lib.bb")))
 
+;; BL-1616: supersede-lib is a leaf dependency (no load-file of its own) -
+;; loaded here so worked-task-names-in below can attribute a completed Work
+;; note through the ONE shared reader (task-name-from-content, BL-1185/
+;; BL-1608) rather than a second parser of the Work message.
+(load-file (str (fs/path (fs/parent (fs/canonicalize *file*)) "supersede_lib.bb")))
+
 ;; BL-967: every subprocess this lib spawns goes through the bounded
 ;; chokepoint (daemon-cycle-guard-lib/sh!), never clojure.java.shell/sh -
 ;; whose stream-read shim was the BL-057/BL-061 deadlock family and, still
@@ -540,14 +546,25 @@
                (load-all-roles)))))
 
 (defn worked-task-names-in
-  "Task names of every git_handoff directly in dir or inside its batch_*
-   subdirectories - one mailbox state's contribution to a seat's durable
-   record of the tasks it has worked (BL-1004). A missing dir is the empty
-   set, via handoff-files."
+  "Task names of every git_handoff, and every completed Work note, directly
+   in dir or inside its batch_* subdirectories - one mailbox state's
+   contribution to a seat's durable record of the tasks it has worked
+   (BL-1004/BL-1616). A git_handoff attributes through its `task` header; a
+   `note` attributes through the ONE shared reader
+   (supersede-lib/task-name-from-content, BL-1185/BL-1608's own parser -
+   never a second one), UNLESS it was completed with a `--no-work` reason
+   (the `no_work_reason` header done_with_current.sh stamps) - a declined
+   ticket is not history (invariant 2). Anything else, or a note naming no
+   ticket, contributes nothing. A missing dir is the empty set, via
+   handoff-files."
   [dir]
   (set (keep (fn [f]
-               (when (= "git_handoff" (header-field f "type"))
-                 (header-field f "task")))
+               (let [type (header-field f "type")]
+                 (cond
+                   (= "git_handoff" type) (header-field f "task")
+                   (and (= "note" type) (nil? (header-field f "no_work_reason")))
+                   (supersede-lib/task-name-from-content (slurp (str f)))
+                   :else nil)))
              (concat (handoff-files dir)
                      (mapcat handoff-files (batch-dirs dir))))))
 
