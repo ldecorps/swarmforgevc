@@ -156,3 +156,5 @@ notes: |
   sitting), Small (three scenarios, one invariant), Testable (fixture
   registries and the real land step in seconds). Severity high per the
   false-safety-signal reading.
+
+assigned_to: coder
