@@ -146,3 +146,6 @@ notes: |
   `acceptance:` names a feature file that exists, that file's scenarios. Then
   close every active ticket (or point at an idle swarm) and confirm the page
   states that nothing is in flight rather than showing the last grid.
+bounce_count: 1
+bounce_history:
+  - { at: 2026-09-18, by: cleaner, blamed: coder, class: integration, commit: fca2da2a9f, evidence: backlog/evidence/BL-831-bounce-cleaner-20260918.md }
