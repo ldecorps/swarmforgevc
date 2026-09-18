@@ -1,3 +1,2 @@
 file	disposition	rationale
-test/bl1297MergeOwnPathsInvariants.property.test.js	allowlist	owner BL-1621 (backlog/standing-reds.tsv): invariant 3 "Test timed out in 20000ms." under a full lane, no per-test budget on three fixture-building tests (BL-1606 bl1304 shape); row leaves with BL-1621 land
 test/bl1071RecoveryBoundedInTime.property.test.js	allowlist	owner BL-1632 (backlog/standing-reds.tsv): "a grandchild survived the kill (plain): 2 stray hangs before, 0 after" under a full lane beside a concurrent lane - host-wide sleep 3600 probe, not the sweep; row leaves with BL-1632 land
