@@ -1,3 +1,7 @@
+# acceptance-mutation-manifest-begin
+# {"version":1,"tested_at":"2026-09-18T12:35:42.986087605Z","feature_name":"a markdown doc cannot ship the same prose paragraph twice","feature_path":"/home/carillon/swarmforgevc/.worktrees/hardender/specs/features/BL-693-repeated-paragraph-gate.feature","background_hash":"433ac5a240efb8ba19464aabfd642b0871d17a31ca37ca27852aa2550fc6365f","implementation_hash":"unknown","scenarios":[{"index":2,"name":"a short repeated line is not a duplicated paragraph","scenario_hash":"9fb8e6842ad4190aeb1d8c21ea50315896667c4c71988a5da0f43c783e58c051","mutation_count":7,"result":{"Total":7,"Killed":7,"Survived":0,"Errors":0},"tested_at":"2026-09-18T12:33:49.080751651Z"}]}
+# acceptance-mutation-manifest-end
+
 Feature: a markdown doc cannot ship the same prose paragraph twice
 
   830 KB of one repeated paragraph sat in the project's reference

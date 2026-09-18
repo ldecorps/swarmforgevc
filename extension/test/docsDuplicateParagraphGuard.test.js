@@ -104,6 +104,17 @@ test('formatFinding names the file, the (truncated) text, the count and the line
   assert.ok(line.length < long.length, 'the repeated text must be truncated, not embedded whole');
 });
 
+// BL-693 hardener: the 300-char fixture above exercises only the
+// well-over-80 case - it cannot tell `text.length > 80` from `>= 80`
+// (both truncate). Pin the boundary itself: exactly 80 chars must NOT be
+// truncated (text is over the guard's own 200-char substantiality
+// threshold, so this is a real reportable finding, just a short one).
+test('formatFinding does not truncate text at or under 80 characters', () => {
+  const exactly80 = 'e'.repeat(80);
+  const line = formatFinding({ file: '/x/y.md', text: exactly80, count: 2, lines: [1, 2] });
+  assert.match(line, new RegExp(`"${exactly80}"`), 'text exactly at the truncation boundary must appear in full, not cut short');
+});
+
 // ── scanDocsTree (impure, real fs) - break-then-fix ─────────────────────
 
 function writeFile(dir, name, content) {
