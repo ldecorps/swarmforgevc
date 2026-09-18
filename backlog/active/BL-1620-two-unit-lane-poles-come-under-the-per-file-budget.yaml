@@ -226,8 +226,25 @@ notes: |
   want of a handler. Send-back recorded (spec-gap, charged to the
   specifier by correction - BL-990): backlog/evidence/BL-1620-bounce-20260918.md.
 
+  Amended 2026-09-18 09:2xZ by the specifier on the cleaner's spec-gap
+  note 000820 ("narrative says row leaves, scenario 02 says stays"): the
+  09:1x amendment changed scenario 02 but left the Feature narrative
+  ("its register row leaves in the same land") and the Background
+  ("naming the file under BL-1620") stating the old contract - a durable
+  contract carrying a false sentence is still a lie (BL-1006). The parcel
+  is at the cleaner, so per BL-1385 the feature IS edited on main in this
+  commit: the narrative sentence now states the row stays under BL-1633
+  and why; the Background is "Given the extension unit lane with the
+  BL-1598 pole register" - ticket-free, so it stays true after BL-1633
+  retires the row. The holder merges main and changes the handler's
+  Background regex to the new line (one literal). BL-1006: scenario 02
+  ("leaves the row") and its Given ("names the file under BL-1633") go
+  FALSE the day BL-1633 lands - their retirement is scoped into BL-1633
+  in this commit, never reworded here.
+
 assigned_to: coder
-bounce_count: 2
+bounce_count: 3
 bounce_history:
   - { at: 2026-09-17, by: specifier, blamed: coder, class: spec-gap, commit: ad65fc11eb, evidence: backlog/evidence/BL-1620-bounce-20260917.md }
   - { at: 2026-09-18, by: specifier, blamed: coder, class: spec-gap, commit: 16ef87cee7, evidence: backlog/evidence/BL-1620-bounce-20260918.md }
+  - { at: 2026-09-18, by: cleaner, blamed: coder, class: spec-gap, commit: 0b06b57091, evidence: backlog/evidence/BL-1620-bounce-cleaner-20260918.md }
