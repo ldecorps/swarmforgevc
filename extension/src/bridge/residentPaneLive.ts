@@ -164,6 +164,10 @@ export function derivePaneActivitySignal(paneText: string | undefined): PaneActi
  */
 type RolePaneCaptureResult = { ok: true; snapshot: PaneLiveSnapshot } | { ok: false; reason: string };
 
+function paneCaptureFailedReason(stderr: string, role: string): string {
+  return stderr.trim() || `pane capture failed for ${role}`;
+}
+
 function tryCaptureRolePane(
   targetPath: string,
   socketPath: string,
@@ -176,7 +180,7 @@ function tryCaptureRolePane(
   const target = resolveAgentPaneTarget(socketPath, roleEntry.session, paneBaseIndex);
   const captured = capturePane(socketPath, target, -RESIDENT_PANE_SPY_DEFAULT_LINES);
   if (captured.exitCode !== 0) {
-    return { ok: false, reason: captured.stderr.trim() || `pane capture failed for ${roleEntry.role}` };
+    return { ok: false, reason: paneCaptureFailedReason(captured.stderr, roleEntry.role) };
   }
   const paneText = stripAnsi(captured.stdout ?? '');
   if (!paneText.trim()) {
