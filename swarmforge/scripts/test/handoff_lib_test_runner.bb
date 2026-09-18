@@ -740,6 +740,66 @@
   (assert= "run-respawn-bootstrap!: no argv means spawn-detached! is never called"
            ::not-called @captured))
 
+;; ── BL-1616: worked-task-names-in attributes a completed Work note ────────
+;; through the shared supersede-lib reader, and excludes a --no-work
+;; completion (invariant 2). git_handoff attribution (pre-existing) is
+;; re-asserted here too, so this block is the whole contract in one place.
+
+(defn- write-handoff! [dir name content]
+  (fs/create-dirs dir)
+  (spit (str (fs/path dir name)) content))
+
+(let [dir (mk-tmp-dir)]
+  (write-handoff! dir "50_gh.handoff"
+                   (str "id: x\nfrom: coder\nto: cleaner\npriority: 50\n"
+                        "type: git_handoff\ntask: BL-9001\ncommit: abc1234567\n\npayload\n"))
+  (assert= "worked-task-names-in: a git_handoff attributes through its task header"
+           #{"BL-9001"} (handoff-lib/worked-task-names-in dir)))
+
+(let [dir (mk-tmp-dir)]
+  (write-handoff! dir "10_note.handoff"
+                   (str "id: x\nfrom: coordinator\nto: coder\npriority: 10\n"
+                        "type: note\nmessage: Work BL-9002: read backlog/active\n\n"
+                        "Work BL-9002: read backlog/active\n"))
+  (assert= "worked-task-names-in: a completed Work note attributes through supersede-lib/task-name-from-content"
+           #{"BL-9002"} (handoff-lib/worked-task-names-in dir)))
+
+(let [dir (mk-tmp-dir)]
+  (write-handoff! dir "10_note.handoff"
+                   (str "id: x\nfrom: coordinator\nto: coder\npriority: 10\n"
+                        "type: note\nmessage: Work BL-9003: read backlog/active\n"
+                        "no_work_reason: not ready\nno_work_at: 2026-08-17T00:05:00Z\n\n"
+                        "Work BL-9003: read backlog/active\n"))
+  (assert= "worked-task-names-in: a --no-work completion contributes nothing (invariant 2)"
+           #{} (handoff-lib/worked-task-names-in dir)))
+
+(let [dir (mk-tmp-dir)]
+  (write-handoff! dir "10_note.handoff"
+                   (str "id: x\nfrom: coordinator\nto: coder\npriority: 10\n"
+                        "type: note\nmessage: branch behind abc1234567: merge up\n\n"
+                        "branch behind abc1234567: merge up\n"))
+  (assert= "worked-task-names-in: a note naming no ticket contributes nothing"
+           #{} (handoff-lib/worked-task-names-in dir)))
+
+(let [dir (mk-tmp-dir)]
+  (write-handoff! (str (fs/path dir "batch_20260817T000000Z_001")) "10_note.handoff"
+                   (str "id: x\nfrom: coordinator\nto: cleaner\npriority: 10\n"
+                        "type: note\nmessage: Work BL-9004: read backlog/active\n\n"
+                        "Work BL-9004: read backlog/active\n"))
+  (assert= "worked-task-names-in: a completed Work note inside a batch_* subdirectory attributes too"
+           #{"BL-9004"} (handoff-lib/worked-task-names-in dir)))
+
+(let [dir (mk-tmp-dir)]
+  (write-handoff! dir "50_gh.handoff"
+                   (str "id: x\nfrom: coder\nto: cleaner\npriority: 50\n"
+                        "type: git_handoff\ntask: BL-9001\ncommit: abc1234567\n\npayload\n"))
+  (write-handoff! dir "10_note.handoff"
+                   (str "id: y\nfrom: coordinator\nto: coder\npriority: 10\n"
+                        "type: note\nmessage: Work BL-9002: read backlog/active\n\n"
+                        "Work BL-9002: read backlog/active\n"))
+  (assert= "worked-task-names-in: the union of git_handoff and Work-note attribution in one directory"
+           #{"BL-9001" "BL-9002"} (handoff-lib/worked-task-names-in dir)))
+
 ;; ── report ────────────────────────────────────────────────────────────────
 (if (empty? @failures)
   (println "handoff_lib (BL-365): ALL TESTS PASSED")
