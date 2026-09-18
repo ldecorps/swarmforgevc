@@ -53,6 +53,14 @@ export interface PaneLiveSnapshot {
   claimEnteredAgo?: string;
   heldParcelCount?: number;
   header?: string;
+  /**
+   * BL-775 invariant 3: set only when the capture itself ran and failed for
+   * a nameable reason (tmux capture-pane's own stderr, or an empty-output
+   * verdict) — never a bare status code. Absent means "no pane here at
+   * all" (the role isn't part of the running pack), which the UI reads as
+   * idle, not broken.
+   */
+  reason?: string;
 }
 
 /** @deprecated Use PaneLiveSnapshot — kept for existing imports. */
@@ -78,8 +86,8 @@ export interface MonoRouterLiveScreenSnapshot {
 
 export const LIVE_SCREEN_ROLE_ORDER: readonly string[] = ['coordinator', ...PIPELINE_CHAIN];
 
-function unavailablePane(): PaneLiveSnapshot {
-  return { available: false };
+function unavailablePane(reason?: string): PaneLiveSnapshot {
+  return reason ? { available: false, reason } : { available: false };
 }
 
 function withHeader(
@@ -147,6 +155,15 @@ export function derivePaneActivitySignal(paneText: string | undefined): PaneActi
   return isPaneActivelyProcessing(paneText) ? 'ok' : 'stale';
 }
 
+/**
+ * BL-775 invariant 3: a discriminated result rather than `| undefined`, so
+ * the ONE caller that needs to show a human why (captureLiveScreenPanes, the
+ * Live Screen's own capture path) can, while the other two callers — which
+ * only ever cared about truthy/falsy — keep their exact prior behaviour by
+ * reading `.ok` instead of truthiness.
+ */
+type RolePaneCaptureResult = { ok: true; snapshot: PaneLiveSnapshot } | { ok: false; reason: string };
+
 function tryCaptureRolePane(
   targetPath: string,
   socketPath: string,
@@ -155,15 +172,15 @@ function tryCaptureRolePane(
   paneBaseIndex: number,
   monoRouterActiveRole?: string,
   claimedTicketIds: Set<string> = new Set()
-): PaneLiveSnapshot | undefined {
+): RolePaneCaptureResult {
   const target = resolveAgentPaneTarget(socketPath, roleEntry.session, paneBaseIndex);
   const captured = capturePane(socketPath, target, -RESIDENT_PANE_SPY_DEFAULT_LINES);
   if (captured.exitCode !== 0) {
-    return undefined;
+    return { ok: false, reason: captured.stderr.trim() || `pane capture failed for ${roleEntry.role}` };
   }
   const paneText = stripAnsi(captured.stdout ?? '');
   if (!paneText.trim()) {
-    return undefined;
+    return { ok: false, reason: `pane ${roleEntry.role} produced no output` };
   }
   const roleSearchCaptured = capturePane(socketPath, target, -RESIDENT_PANE_SPY_ROLE_SEARCH_LINES);
   const roleSearchText = stripAnsi(roleSearchCaptured.stdout ?? paneText);
@@ -179,15 +196,18 @@ function tryCaptureRolePane(
   // in the SAME capture already claimed the same ticket.
   const heldTicket = dedupePrimaryWorkingTicket(claimedTicketIds, rawHeldTicket);
   return {
-    available: true,
-    roleLabel: identity.roleLabel,
-    paneText,
-    // Derived from `paneText` above - the capture this function already made,
-    // never a second one (BL-1243 invariant 2).
-    activitySignal: derivePaneActivitySignal(paneText),
-    sessionTarget: target,
-    modelLabel: modelId ? formatModelDisplayName(modelId) : undefined,
-    ...heldTicket,
+    ok: true,
+    snapshot: {
+      available: true,
+      roleLabel: identity.roleLabel,
+      paneText,
+      // Derived from `paneText` above - the capture this function already made,
+      // never a second one (BL-1243 invariant 2).
+      activitySignal: derivePaneActivitySignal(paneText),
+      sessionTarget: target,
+      modelLabel: modelId ? formatModelDisplayName(modelId) : undefined,
+      ...heldTicket,
+    },
   };
 }
 
@@ -286,9 +306,9 @@ export function captureResidentPaneLive(targetPath: string): PaneLiveSnapshot | 
     if (!roleEntry) {
       continue;
     }
-    const snap = tryCaptureRolePane(targetPath, socketPath, roleEntry, roles, paneBaseIndex, activeRole);
-    if (snap) {
-      return snap;
+    const result = tryCaptureRolePane(targetPath, socketPath, roleEntry, roles, paneBaseIndex, activeRole);
+    if (result.ok) {
+      return result.snapshot;
     }
   }
   return undefined;
@@ -304,7 +324,8 @@ export function captureCoordinatorPaneLive(targetPath: string): PaneLiveSnapshot
   if (!roleEntry) {
     return undefined;
   }
-  return tryCaptureRolePane(targetPath, socketPath, roleEntry, roles, getPaneBaseIndex(socketPath));
+  const result = tryCaptureRolePane(targetPath, socketPath, roleEntry, roles, getPaneBaseIndex(socketPath));
+  return result.ok ? result.snapshot : undefined;
 }
 
 export function captureLiveScreenPanes(targetPath: string): LiveScreenPaneEntry[] {
@@ -324,9 +345,9 @@ export function captureLiveScreenPanes(targetPath: string): LiveScreenPaneEntry[
     const id = liveScreenPaneId(roleEntry, monoLayout);
     const label = liveScreenPaneLabel(roleEntry, monoLayout);
     const monoActive = monoRouterActiveRoleForPane(monoLayout, roleEntry.role, activeRole);
-    const raw = tryCaptureRolePane(targetPath, socketPath, roleEntry, roles, paneBaseIndex, monoActive, claimedTicketIds);
+    const result = tryCaptureRolePane(targetPath, socketPath, roleEntry, roles, paneBaseIndex, monoActive, claimedTicketIds);
     const showClaimEntered = id === 'resident' || roleEntry.role === 'coder';
-    const pane = withHeader(raw ? { ...raw, available: true } : unavailablePane(), label, {
+    const pane = withHeader(result.ok ? result.snapshot : unavailablePane(result.reason), label, {
       includeClaimEnteredAgo: showClaimEntered,
     });
     return { id, label, pane };
