@@ -144,7 +144,7 @@ description: |
   THROW on collection, turning the acceptance suite red for every other
   parcel in flight, not just this one (BL-233).
 
-acceptance: specs/features/BL-693-repeated-paragraph-gate.feature.draft
+acceptance: specs/features/BL-693-repeated-paragraph-gate.feature
 
 required_wiring:
   - "extension/test/docsDuplicateParagraphGuard.test.js::docs::the zero-duplicate assertion must sit in the suite every parcel runs — its absence is exactly why one botched insertion went unnoticed for 17 days. The filename is fixed by this declaration."
