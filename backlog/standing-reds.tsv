@@ -32,4 +32,3 @@
 # register row on (lane, file)). The hardening lane is empty of BL-1441's
 # rows as of this commit (invariant 2: a register row leaves in the same
 # commit that discharges it).
-acceptance	specs/features/BL-937-shell-scripts-run-on-stock-macos-bash-32.feature	BL-1627	2026-09-17	same sweep and reproduction: scenarios 01/03 "expected /bin/bash --version to report 3.2, got 5.2.21" on this Linux host, and scenario 02 flags mapfile (bash 4) in check_bb_scripts_load.sh:140 and check_constitution_doc_citations.sh:41,67 - two real target violations; owner BL-1627
