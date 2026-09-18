@@ -2482,13 +2482,39 @@ function swarmHandoffFixture() {
   return root;
 }
 
-// The real swarm_handoff.bb attempts a sync tmux inject first and falls
-// back to a durable outbox record when no tmux socket resolves (exactly
-// this fixture's case) - the SAME graceful "queued for daemon backup
-// delivery" production path a genuinely dormant role's answer note takes,
-// never a crash. Reading the outbox record (rather than the delivered
-// inbox file, which only a live daemon actually moves it into) proves the
-// CLI was invoked with the right headers - the load-bearing assertion.
+// BL-1620: the real swarm_handoff.bb (BL-1518, exercised directly below)
+// is what actually delivers into the outbox/inbox; enqueueRoleAnswerNote's
+// OWN contract is what it writes to disk before handing off to that CLI
+// (the draft file and the per-role answer pointer) and that it invokes the
+// CLI at all - both provable, cheaply, through the injected `runHandoff`
+// seam instead of a real ~1.3s bb process per call. `fakeRunHandoff`
+// records every call ([cli, draftPath, opts]) and resolves; assertions
+// read the recorded draftPath's own real content (written by production
+// code before the seam is ever invoked) exactly as they read the real
+// queued note before.
+function fakeRunHandoff() {
+  const calls = [];
+  const runHandoff = async (cli, draftPath, opts) => {
+    calls.push({ cli, draftPath, opts });
+  };
+  return { runHandoff, calls };
+}
+
+// Simulates the real CLI's failure mode (e.g. no roles.tsv to resolve the
+// role against) without starting a real bb process.
+function fakeRunHandoffThatFails() {
+  return async () => {
+    throw new Error('simulated swarm_handoff.bb failure');
+  };
+}
+
+function readDraftNote(draftPath) {
+  return fs.readFileSync(draftPath, 'utf8');
+}
+
+// BL-1518 below still drives the real CLI directly (never faked - it is
+// the CLI's own refusal/delivery contract under test), so the real-outbox
+// reader stays for that one test.
 function readQueuedOutboxNote(root) {
   const outboxDir = path.join(root, '.swarmforge', 'handoffs', 'outbox');
   const files = fs.readdirSync(outboxDir);
@@ -2496,21 +2522,103 @@ function readQueuedOutboxNote(root) {
   return fs.readFileSync(path.join(outboxDir, files[0]), 'utf8');
 }
 
-// A refused send must leave no outbox at all - unlike listOutboxFiles below
-// (BL-1203, used only once a first successful send has created the
-// directory), this must not throw when the directory was never created.
+// A refused real-CLI send (BL-1518 below) must leave no outbox at all -
+// this must not throw when the directory was never created.
 function listOutboxFilesIfPresent(root) {
   const outboxDir = path.join(root, '.swarmforge', 'handoffs', 'outbox');
   return fs.existsSync(outboxDir) ? fs.readdirSync(outboxDir).length : 0;
 }
 
-test('BL-607: enqueueRoleAnswerNote queues a real `type: note` handoff into the role\'s own inbox, inlining a short answer verbatim', async () => {
+// BL-1620 hardening: every other test in this file passes a fake
+// `runHandoff`, so none of them any longer exercises `runHandoff`'s own
+// DEFAULT value - the real `execFileAsync('bb', [cli, draftPath], opts)`
+// wiring every production caller actually relies on (the production
+// caller at telegram-front-desk-bot.ts:2690 never supplies a 5th
+// argument). BL-1518 below does not cover this either: it drives the real
+// CLI directly via its own `execFileSync` call, bypassing
+// enqueueRoleAnswerNote (and the default arrow) entirely. A mutant
+// swapping `[cli, draftPath]` to `[draftPath, cli]` in the default value
+// survives every test above (they only assert on the fake) and every
+// BL-1201/deliverRoleAnswerCli test (they only assert on state written
+// BEFORE the seam is ever called) - confirmed by hand-mutating the
+// compiled `out/` file and re-running. It is caught by
+// telegramFrontDeskBotCli.property.test.js's invariant 1, but that file
+// is `**/*.property.test.js` and vitest.config.mjs (the config Stryker
+// mutates against) excludes that glob - so under real mutation scope this
+// default arrow had zero coverage.
+//
+// A first attempt proved this with a REAL `bb` spawn through
+// enqueueRoleAnswerNote's own default path - it killed the mutant, but it
+// also put a SECOND real Babashka process-start (~1.3s) into this exact
+// file, which is precisely the cost this ticket exists to remove: under
+// the real `npm test` run's own concurrent 10-11 fork pool (not solo),
+// two real bb spawns pushed the file from 9.1s (a reported "watch", never
+// refused) to 12-14s - ABOVE the register's 1.5x (10.5s) refusal
+// threshold, turning `npm test`'s own exit code from 0 to 1. Reverted.
+//
+// Instead: an isolated NODE subprocess (no Babashka, no bb - a bare `node`
+// process starts in tens of ms, not ~1.3s) that monkey-patches
+// `child_process.execFile` BEFORE requiring the compiled module, so the
+// module-scope `execFileAsync = promisify(execFile)` capture (out/tools/
+// telegram-front-desk-bot.js) captures the fake instead of the real
+// syscall. This proves the default arrow's own argument ORDER and SHAPE
+// (cli, then draftPath, in that order) without ever touching a real bb
+// process or the fork-pool contention that made the first attempt too
+// costly.
+function runDefaultRunHandoffProbe(root, text) {
+  const probeDir = mkTmpDir('sfvc-bl1620-default-probe-');
+  const probeScript = path.join(probeDir, 'probe.js');
+  const modulePath = path.join(__dirname, '..', 'out', 'tools', 'telegram-front-desk-bot.js');
+  fs.writeFileSync(
+    probeScript,
+    `
+    const cp = require('child_process');
+    const calls = [];
+    cp.execFile = (...args) => {
+      calls.push(args.slice(0, -1));
+      const cb = args[args.length - 1];
+      cb(null, '', '');
+    };
+    const { enqueueRoleAnswerNote } = require(${JSON.stringify(modulePath)});
+    enqueueRoleAnswerNote(${JSON.stringify(root)}, 'specifier', ${JSON.stringify(text)}).then((ok) => {
+      process.stdout.write(JSON.stringify({ ok, calls }));
+    });
+    `
+  );
+  const output = execFileSync('node', [probeScript], { encoding: 'utf8' });
+  fs.rmSync(probeDir, { recursive: true, force: true });
+  return JSON.parse(output);
+}
+
+test('BL-1620: enqueueRoleAnswerNote with no runHandoff argument falls back to a call shaped exactly like the real bb invocation (cli, then draftPath, in order)', () => {
   const root = swarmHandoffFixture();
 
-  const ok = await enqueueRoleAnswerNote(root, 'specifier', 'sample answer alpha');
+  const { ok, calls } = runDefaultRunHandoffProbe(root, 'sample answer default-path');
 
   assert.equal(ok, true);
-  const content = readQueuedOutboxNote(root);
+  assert.equal(calls.length, 1, `expected exactly one execFile call, got: ${JSON.stringify(calls)}`);
+  const [cmd, args] = calls[0];
+  assert.equal(cmd, 'bb');
+  assert.equal(args.length, 2, `expected exactly [cli, draftPath], got: ${JSON.stringify(args)}`);
+  assert.ok(
+    args[0].endsWith(path.join('swarmforge', 'scripts', 'swarm_handoff.bb')),
+    `first positional arg must be the cli script path, got: ${args[0]}`
+  );
+  assert.ok(
+    /role-answer-draft-/.test(args[1]),
+    `second positional arg must be the draft file path (cli then draftPath, never swapped), got: ${args[1]}`
+  );
+});
+
+test('BL-607: enqueueRoleAnswerNote queues a `type: note` handoff draft for the role, inlining a short answer verbatim', async () => {
+  const root = swarmHandoffFixture();
+  const { runHandoff, calls } = fakeRunHandoff();
+
+  const ok = await enqueueRoleAnswerNote(root, 'specifier', 'sample answer alpha', undefined, runHandoff);
+
+  assert.equal(ok, true);
+  assert.equal(calls.length, 1);
+  const content = readDraftNote(calls[0].draftPath);
   assert.match(content, /^type: note$/m);
   assert.match(content, /^to: specifier$/m);
   assert.match(content, /^message: sample answer alpha$/m);
@@ -2519,11 +2627,12 @@ test('BL-607: enqueueRoleAnswerNote queues a real `type: note` handoff into the 
 test('BL-607: enqueueRoleAnswerNote falls back to a file pointer + writes the full answer alongside, for an answer over the 80-char cap', async () => {
   const root = swarmHandoffFixture();
   const longAnswer = 'please use the staging environment for this deploy, not production, since we are still validating the migration'.repeat(2);
+  const { runHandoff, calls } = fakeRunHandoff();
 
-  const ok = await enqueueRoleAnswerNote(root, 'specifier', longAnswer);
+  const ok = await enqueueRoleAnswerNote(root, 'specifier', longAnswer, undefined, runHandoff);
 
   assert.equal(ok, true);
-  const content = readQueuedOutboxNote(root);
+  const content = readDraftNote(calls[0].draftPath);
   assert.match(content, /^message: answer ready: .*--role specifier$/m);
   const stored = JSON.parse(fs.readFileSync(path.join(root, roleAnswerFilePointerPath('specifier')), 'utf8'));
   assert.equal(stored.text, longAnswer);
@@ -2575,11 +2684,11 @@ test('BL-1518: swarm_handoff.bb refuses a draft that lies outside the project ro
   assert.match(content, /^message: sample answer gamma$/m);
 });
 
-test('BL-607: enqueueRoleAnswerNote returns false, never throws, when the target has no roles.tsv at all', async () => {
+test('BL-607: enqueueRoleAnswerNote returns false, never throws, when the handoff CLI fails (e.g. no roles.tsv to resolve the role against)', async () => {
   const root = gitFixture();
   copyCommitIntegrityScripts(root);
 
-  const ok = await enqueueRoleAnswerNote(root, 'specifier', 'use staging');
+  const ok = await enqueueRoleAnswerNote(root, 'specifier', 'use staging', undefined, fakeRunHandoffThatFails());
 
   assert.equal(ok, false);
 });
@@ -2595,11 +2704,12 @@ test('BL-607: enqueueRoleAnswerNote falls back to a file pointer for a short mul
   const root = swarmHandoffFixture();
   const multilineAnswer = 'use option A\nbut rename the flag';
   assert.ok(multilineAnswer.length <= 80, 'fixture must reproduce the "fits under the cap" case');
+  const { runHandoff, calls } = fakeRunHandoff();
 
-  const ok = await enqueueRoleAnswerNote(root, 'specifier', multilineAnswer);
+  const ok = await enqueueRoleAnswerNote(root, 'specifier', multilineAnswer, undefined, runHandoff);
 
   assert.equal(ok, true);
-  const content = readQueuedOutboxNote(root);
+  const content = readDraftNote(calls[0].draftPath);
   assert.match(content, /^message: answer ready: .*--role specifier$/m);
   assert.doesNotMatch(content, /\n\S*rename/, 'the 2nd line of the answer must never leak into the queued draft as a bogus header');
   const stored = JSON.parse(fs.readFileSync(path.join(root, roleAnswerFilePointerPath('specifier')), 'utf8'));
@@ -2615,47 +2725,47 @@ test('BL-607: enqueueRoleAnswerNote falls back to a file pointer for a short mul
 // with byte-identical text - both still queue (constraint: "must key on
 // the identity of the inbound message, not on its text").
 
-function listOutboxFiles(root) {
-  return fs.readdirSync(path.join(root, '.swarmforge', 'handoffs', 'outbox'));
-}
-
 test('BL-1203: enqueueRoleAnswerNote with the same updateId twice queues only one note', async () => {
   const root = swarmHandoffFixture();
+  const { runHandoff, calls } = fakeRunHandoff();
 
-  const first = await enqueueRoleAnswerNote(root, 'specifier', 'sample answer alpha', 42);
-  const second = await enqueueRoleAnswerNote(root, 'specifier', 'sample answer alpha', 42);
+  const first = await enqueueRoleAnswerNote(root, 'specifier', 'sample answer alpha', 42, runHandoff);
+  const second = await enqueueRoleAnswerNote(root, 'specifier', 'sample answer alpha', 42, runHandoff);
 
   assert.equal(first, true);
   assert.equal(second, true, 'a duplicate delivery of an already-captured answer still reports success, just queues nothing new');
-  assert.equal(listOutboxFiles(root).length, 1, 'the second call for the same updateId must not queue a second note');
+  assert.equal(calls.length, 1, 'the second call for the same updateId must not queue a second note');
 });
 
 test('BL-1203: enqueueRoleAnswerNote with the same updateId twice, long-form pointer answer, still queues only one note', async () => {
   const root = swarmHandoffFixture();
   const longAnswer = 'please use the staging environment for this deploy, not production, since we are still validating the migration'.repeat(2);
+  const { runHandoff, calls } = fakeRunHandoff();
 
-  await enqueueRoleAnswerNote(root, 'specifier', longAnswer, 7);
-  await enqueueRoleAnswerNote(root, 'specifier', longAnswer, 7);
+  await enqueueRoleAnswerNote(root, 'specifier', longAnswer, 7, runHandoff);
+  await enqueueRoleAnswerNote(root, 'specifier', longAnswer, 7, runHandoff);
 
-  assert.equal(listOutboxFiles(root).length, 1);
+  assert.equal(calls.length, 1);
 });
 
 test('BL-1203: two DIFFERENT updateIds with byte-identical text both queue - identity, never content, is the key', async () => {
   const root = swarmHandoffFixture();
+  const { runHandoff, calls } = fakeRunHandoff();
 
-  await enqueueRoleAnswerNote(root, 'specifier', 'use staging', 100);
-  await enqueueRoleAnswerNote(root, 'specifier', 'use staging', 101);
+  await enqueueRoleAnswerNote(root, 'specifier', 'use staging', 100, runHandoff);
+  await enqueueRoleAnswerNote(root, 'specifier', 'use staging', 101, runHandoff);
 
-  assert.equal(listOutboxFiles(root).length, 2, 'two genuinely separate answers with the same words must both be delivered');
+  assert.equal(calls.length, 2, 'two genuinely separate answers with the same words must both be delivered');
 });
 
 test('BL-1203: a caller with no updateId (legacy call shape) is never deduped against itself or anything else', async () => {
   const root = swarmHandoffFixture();
+  const { runHandoff, calls } = fakeRunHandoff();
 
-  await enqueueRoleAnswerNote(root, 'specifier', 'use staging');
-  await enqueueRoleAnswerNote(root, 'specifier', 'use staging');
+  await enqueueRoleAnswerNote(root, 'specifier', 'use staging', undefined, runHandoff);
+  await enqueueRoleAnswerNote(root, 'specifier', 'use staging', undefined, runHandoff);
 
-  assert.equal(listOutboxFiles(root).length, 2, 'omitting updateId must not accidentally dedupe unrelated calls');
+  assert.equal(calls.length, 2, 'omitting updateId must not accidentally dedupe unrelated calls');
 });
 
 // A legacy (no-updateId) call sits BETWEEN two identity-keyed calls -
@@ -2667,13 +2777,14 @@ test('BL-1203: a caller with no updateId (legacy call shape) is never deduped ag
 // queuing a third note instead of being recognized as the duplicate it is.
 test('BL-1203: a legacy call interleaved between identity-keyed calls does not erase prior dedup history', async () => {
   const root = swarmHandoffFixture();
+  const { runHandoff, calls } = fakeRunHandoff();
 
-  await enqueueRoleAnswerNote(root, 'specifier', 'first answer', 1);
-  await enqueueRoleAnswerNote(root, 'specifier', 'unrelated legacy nudge');
-  await enqueueRoleAnswerNote(root, 'specifier', 'first answer', 1);
+  await enqueueRoleAnswerNote(root, 'specifier', 'first answer', 1, runHandoff);
+  await enqueueRoleAnswerNote(root, 'specifier', 'unrelated legacy nudge', undefined, runHandoff);
+  await enqueueRoleAnswerNote(root, 'specifier', 'first answer', 1, runHandoff);
 
   assert.equal(
-    listOutboxFiles(root).length,
+    calls.length,
     2,
     'the replayed updateId 1 must still be recognized as a duplicate after an interleaved legacy call - only the first two calls should have queued'
   );
@@ -2688,11 +2799,12 @@ test('BL-1203: a legacy call interleaved between identity-keyed calls does not e
 test('BL-1203: the pointer file is refreshed even for a short, inline-fitting answer (invariant 2)', async () => {
   const root = swarmHandoffFixture();
   const longAnswer = 'please use the staging environment for this deploy, not production, since we are still validating the migration'.repeat(2);
-  await enqueueRoleAnswerNote(root, 'specifier', longAnswer, 1);
+  const { runHandoff } = fakeRunHandoff();
+  await enqueueRoleAnswerNote(root, 'specifier', longAnswer, 1, runHandoff);
   const staleStored = JSON.parse(fs.readFileSync(path.join(root, roleAnswerFilePointerPath('specifier')), 'utf8'));
   assert.equal(staleStored.text, longAnswer);
 
-  await enqueueRoleAnswerNote(root, 'specifier', 'use staging', 2);
+  await enqueueRoleAnswerNote(root, 'specifier', 'use staging', 2, runHandoff);
 
   const freshStored = JSON.parse(fs.readFileSync(path.join(root, roleAnswerFilePointerPath('specifier')), 'utf8'));
   assert.equal(freshStored.text, 'use staging', 'the pointer file must be refreshed to the latest captured answer, never left stale');

@@ -231,3 +231,4 @@ bounce_count: 2
 bounce_history:
   - { at: 2026-09-17, by: specifier, blamed: coder, class: spec-gap, commit: ad65fc11eb, evidence: backlog/evidence/BL-1620-bounce-20260917.md }
   - { at: 2026-09-18, by: specifier, blamed: coder, class: spec-gap, commit: 16ef87cee7, evidence: backlog/evidence/BL-1620-bounce-20260918.md }
+  - { at: 2026-09-18, by: hardender, blamed: coder, class: spec-gap, commit: be40b306ab, evidence: backlog/evidence/BL-1620-hardener-bounce-20260918.md }
