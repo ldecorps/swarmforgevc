@@ -160,3 +160,5 @@ notes: |
   landed contract stops lying and a BL-775 collision is pinned before it
   lands), Estimable (two hunks and one handler - one sitting), Small (two
   scenarios, one invariant), Testable (the real bridge in seconds).
+
+assigned_to: coder
