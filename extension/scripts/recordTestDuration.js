@@ -95,10 +95,21 @@ function confirmPoleAlone(file) {
   const base = path.basename(absFile);
   const tmpReport = path.join(fs.mkdtempSync(path.join(os.tmpdir(), 'bl1633-confirm-')), 'report.json');
   try {
+    // stdio: 'ignore' - the confirmation reads the JSON report FILE, never
+    // the child's console output, so there is no reason to buffer it.
+    // spawnSync's default (pipe, capped at a 1MB maxBuffer) measurably
+    // failed a real confirmation running right after the main suite's own
+    // 10-fork run (2026-09-18): the nested vitest process's own startup
+    // warnings pushed captured stdout/stderr over the cap, spawnSync set
+    // result.error (ERR_CHILD_PROCESS_STDIO_MAXBUFFER), and this function
+    // returned null - which the FIRM treats as "over budget alone",
+    // silently reproducing the exact refusal this ticket exists to
+    // prevent. Ignoring the streams removes the failure mode entirely
+    // rather than raising the cap (which only moves the same ceiling).
     const result = spawnSync(
       vitestBin,
       ['run', '--dir', dir, base, '--reporter=json', `--outputFile=${tmpReport}`],
-      { cwd: ROOT_DIR, timeout: 3 * PER_FILE_DURATION_BUDGET_MS }
+      { cwd: ROOT_DIR, timeout: 3 * PER_FILE_DURATION_BUDGET_MS, stdio: 'ignore' }
     );
     if (result.error || !fs.existsSync(tmpReport)) return null;
     const report = JSON.parse(fs.readFileSync(tmpReport, 'utf8'));

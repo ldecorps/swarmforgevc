@@ -8,9 +8,11 @@
 // Scenario 01 drives the REAL file three times through the real vitest CLI
 // (never a hand-rolled timer) and reads the real, committed file's test
 // count - the same thing the ticket's own qa_e2e_procedure asks QA to
-// re-run. Scenarios 02-03 drive the REAL checkFileDurationBudget (BL-1598)
-// and read the REAL committed register/evidence, never a re-statement of
-// either.
+// re-run. Scenario 03 drives the REAL committed evidence, never a
+// re-statement of it. Scenario 02 (BL-1006, amended 2026-09-18): retired
+// by BL-1633's own parcel - true only while BL-1633 was open, false the
+// day it landed (its row-removal is exactly what BL-1633 delivers). See
+// BL-1633's evidence for the retirement's own record.
 //
 // NOTE (invariant 1 applies to this file too): everything below binds at
 // step-execution time - module load is requires and pure constants only.
@@ -23,12 +25,7 @@ const { execFileSync } = require('node:child_process');
 const REPO_ROOT = path.join(__dirname, '..', '..', '..');
 const EXT = path.join(REPO_ROOT, 'extension');
 const OUT_DIR = path.join(EXT, 'out');
-const {
-  checkFileDurationBudget,
-  parseRegisterRows,
-  openTicketIds,
-  PER_FILE_DURATION_BUDGET_MS,
-} = require(path.join(OUT_DIR, 'tools', 'check-suite-file-budget'));
+const { PER_FILE_DURATION_BUDGET_MS } = require(path.join(OUT_DIR, 'tools', 'check-suite-file-budget'));
 
 const FEATURE = 'BL-1620 Two unit-lane poles come under the per-file budget';
 
@@ -37,20 +34,6 @@ const FEATURE = 'BL-1620 Two unit-lane poles come under the per-file budget';
 // from the Examples table text, so a future Examples row is a real signal
 // this handler needs updating, not a silent pass-through.
 const TICKET = 'BL-1620';
-
-// Scenario 02 (amended 2026-09-18) has no Given step establishing "the
-// file" the way scenario 01's Outline does (its own file comes from the
-// Examples table via a captured step argument) - it is a separate
-// scenario with fresh context, so the one file this ticket still owns is
-// named here too, the same "constant, never re-derived" reasoning as
-// TICKET above.
-const FILE = 'extension/test/telegramFrontDeskBotCli.test.js';
-
-// The register row's new owner (amended 2026-09-18, specifier correction
-// on the hardener's spec-gap bounce): the gate reads the file's IN-SUITE
-// duration, which the row's stale-under-80%-of-budget premise does not
-// survive, so the row is re-owned rather than removed by this ticket.
-const REGISTER_OWNER = 'BL-1633';
 
 function testCount(source) {
   // Same top-level `test(` convention this file's own sibling handlers
@@ -81,25 +64,6 @@ function readMeasuredDurationsMs() {
     assert.equal(Number(m[3]), 0, 'every recorded run must show 0 failed tests');
   }
   return rows.map((m) => Number(m[1]) * 1000);
-}
-
-// The IN-SUITE counterpart to readMeasuredDurationsMs above: the one real
-// `npm test` run's per-file duration for `file`, recorded beside the three
-// solo runs in the same evidence file (qa_e2e_procedure step 2). Never a
-// live re-run here, same reasoning as readMeasuredDurationsMs: a real
-// wall-clock measurement is load-variable, so the acceptance run reads the
-// coder's own recorded evidence rather than re-measuring live.
-function readInSuiteMeasuredMs(file) {
-  const evidenceDir = path.join(REPO_ROOT, 'backlog', 'evidence');
-  const name = fs.readdirSync(evidenceDir).find((f) => /^BL-1620-coder-landed-\d{8}\.md$/.test(f));
-  assert.ok(name, `expected a BL-1620-coder-landed-*.md evidence file under ${evidenceDir}`);
-  const text = fs.readFileSync(path.join(evidenceDir, name), 'utf8');
-  const escapedFile = file.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-  const re = new RegExp(`\\|\\s*${escapedFile}\\s*\\|\\s*([\\d.]+)\\s*s\\s*\\|\\s*(\\d+)\\s*\\|\\s*(\\d+)\\s*\\|`);
-  const m = text.match(re);
-  assert.ok(m, `expected an in-suite measurement row for ${file} in ${name}`);
-  assert.equal(Number(m[3]), 0, 'the recorded in-suite run must show 0 failed tests');
-  return Number(m[1]) * 1000;
 }
 
 function registerSteps(registry) {
@@ -152,58 +116,6 @@ function registerSteps(registry) {
 
   scoped(/^no test in it is skipped or excluded$/, (ctx) => {
     assert.equal(isSkippedOrExcluded(ctx.bl1620CurrentSource), false, `${ctx.bl1620File} must have no skipped/excluded test`);
-  });
-
-  // -- Scenario 02 (amended 2026-09-18) --------------------------------------
-  //
-  // The row's owner changed from this ticket to BL-1633 (the gate reads
-  // the file's IN-SUITE duration, under which the row does not read
-  // stale), so this scenario now checks the row STAYS, re-owned, rather
-  // than that it is removed. The file this scenario is about is FILE
-  // (above), not derived from a register-row scan the way the old
-  // "both files" version had to.
-
-  scoped(/^backlog\/suite-poles\.tsv names the file under BL-1633$/, (ctx) => {
-    const currentRegisterText = fs.readFileSync(path.join(REPO_ROOT, 'backlog', 'suite-poles.tsv'), 'utf8');
-    ctx.bl1620Register = parseRegisterRows(currentRegisterText);
-    ctx.bl1620File = ctx.bl1620File || FILE;
-    const row = ctx.bl1620Register.find((r) => r.file === ctx.bl1620File);
-    assert.ok(row, `expected a backlog/suite-poles.tsv row for ${ctx.bl1620File}`);
-    assert.equal(
-      row.ticket,
-      REGISTER_OWNER,
-      `expected ${ctx.bl1620File}'s row owned by ${REGISTER_OWNER}, got ${row.ticket}`
-    );
-  });
-
-  scoped(/^the parcel's evidence records the file's in-suite duration from one npm test run$/, (ctx) => {
-    ctx.bl1620InSuiteMs = readInSuiteMeasuredMs(ctx.bl1620File);
-  });
-
-  scoped(/^the per-file budget guard runs with a 7000 ms budget against that duration and the register$/, (ctx) => {
-    const openTickets = openTicketIds(path.join(REPO_ROOT, 'backlog'));
-    const durations = [{ file: ctx.bl1620File, durationMs: ctx.bl1620InSuiteMs }];
-    ctx.bl1620Verdict = checkFileDurationBudget(durations, PER_FILE_DURATION_BUDGET_MS, ctx.bl1620Register, openTickets);
-  });
-
-  scoped(/^it reports no new-pole and no unowned-row for the file$/, (ctx) => {
-    assert.ok(
-      !ctx.bl1620Verdict.offenders.some((o) => o.file === ctx.bl1620File),
-      `${ctx.bl1620File} must not be reported as a new-pole`
-    );
-    assert.ok(
-      !ctx.bl1620Verdict.unownedRows.some((r) => r.file === ctx.bl1620File),
-      `${ctx.bl1620File} must not be reported as an unowned-row`
-    );
-  });
-
-  scoped(/^the parcel leaves the row in backlog\/suite-poles\.tsv$/, (ctx) => {
-    const postText = fs.readFileSync(path.join(REPO_ROOT, 'backlog', 'suite-poles.tsv'), 'utf8');
-    const rows = parseRegisterRows(postText);
-    assert.ok(
-      rows.some((r) => r.file === ctx.bl1620File && r.ticket === REGISTER_OWNER),
-      `expected ${ctx.bl1620File}'s row to remain in backlog/suite-poles.tsv, owned by ${REGISTER_OWNER}`
-    );
   });
 
   // -- Scenario 03 ----------------------------------------------------------
