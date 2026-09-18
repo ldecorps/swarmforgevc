@@ -9,12 +9,12 @@ Feature: BL-1620 Two unit-lane poles come under the per-file budget
   left this ticket for BL-1629 (an accepted pole) and BL-1630 (the registry
   load itself); this feature is that telegramFrontDeskBotCli.test.js comes
   under budget alone with no test deleted, skipped or excluded, that its
-  register row stays, re-owned by BL-1633 (amended 2026-09-18: the gate
-  reads the file's in-suite duration, two to four times its solo one, and
-  refuses an unregistered file at 1.5x the budget - so the row leaves in
-  BL-1633's land, once a suspected pole is confirmed alone before refusing,
-  and BL-1633 retires scenario 02 below then), and that the cause is named,
-  not guessed.
+  register row stayed, re-owned by BL-1633, until BL-1633 retired it
+  (amended 2026-09-18: the gate read the file's in-suite duration, two to
+  four times its solo one, and refused an unregistered file at 1.5x the
+  budget - so the row left in BL-1633's land, once a suspected pole was
+  confirmed alone before refusing), and that the cause is named, not
+  guessed.
 
   Background:
     Given the extension unit lane with the BL-1598 pole register
@@ -30,14 +30,6 @@ Feature: BL-1620 Two unit-lane poles come under the per-file budget
     Examples:
       | file                                                    |
       | extension/test/telegramFrontDeskBotCli.test.js          |
-
-  # BL-1620 two-unit-lane-poles-02
-  Scenario: the register row stays, re-owned, until the gate confirms a pole alone
-    Given backlog/suite-poles.tsv names the file under BL-1633
-    And the parcel's evidence records the file's in-suite duration from one npm test run
-    When the per-file budget guard runs with a 7000 ms budget against that duration and the register
-    Then it reports no new-pole and no unowned-row for the file
-    And the parcel leaves the row in backlog/suite-poles.tsv
 
   # BL-1620 two-unit-lane-poles-03
   Scenario: the cause of the pole is named in evidence

@@ -335,6 +335,23 @@ function formatContentionVerdicts(entries: ContentionVerdict[]): string {
     .join('\n');
 }
 
+// BL-1633 hardener: pulled the contention line's own decision (present, and
+// result.contention's own absent-on-a-hand-built-literal default) out of
+// formatGuardReport, the same CRAP-gate reason BL-1598's own extractions
+// already used (classifyRegisterRow/classifyRegisterRows beside
+// checkFileDurationBudget) - formatGuardReport's own complexity was already
+// AT the un-flagged ceiling (6, five pre-existing ifs) before this ticket's
+// one inline `if` plus the `result.contention || []` default pushed it to 8
+// and over the gate. Extracting both here restores it to 6.
+function appendContentionLine(infoLines: string[], result: BudgetCheckResult): void {
+  const contention = result.contention || [];
+  if (contention.length > 0) {
+    infoLines.push(
+      `${contention.length} contention file(s) (over budget in-suite, confirmed under budget alone):\n${formatContentionVerdicts(contention)}`
+    );
+  }
+}
+
 export function formatGuardReport(result: BudgetCheckResult): { infoLines: string[]; failureLines: string[] } {
   const infoLines: string[] = [];
   if (result.registeredPoles.length > 0) {
@@ -347,12 +364,7 @@ export function formatGuardReport(result: BudgetCheckResult): { infoLines: strin
       `${result.watchFiles.length} watch file(s) (unregistered, over budget but under ${NEW_POLE_REFUSAL_FRACTION}x - not refused):\n${formatBudgetOffenders(result.watchFiles)}`
     );
   }
-  const contention = result.contention || [];
-  if (contention.length > 0) {
-    infoLines.push(
-      `${contention.length} contention file(s) (over budget in-suite, confirmed under budget alone):\n${formatContentionVerdicts(contention)}`
-    );
-  }
+  appendContentionLine(infoLines, result);
   if (result.staleRows.length > 0) {
     infoLines.push(
       `${result.staleRows.length} stale register row(s) (file now under 80% of budget - remove the row):\n${formatBudgetOffenders(result.staleRows)}`

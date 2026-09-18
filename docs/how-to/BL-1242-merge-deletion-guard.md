@@ -169,6 +169,18 @@ attempt. A merge that violates both now reports both in one refusal.
 - [BL-1471 (bounce-revert scope guard)](BL-1471-bounce-revert-scope-guard.md) —
   reuses this guard's own path-attribution walk, applied to a `git revert`
   commit instead of a merge.
+- BL-1617 (`check_closed_ticket_subject.sh`) — the newest commit-msg
+  sibling, also wired alongside these guards. It reads a commit's own
+  SUBJECT rather than a merge's deleted paths: on any branch but `main`, a
+  subject the land step's own attribution (BL-1546) would later read as
+  leading with a ticket closed on `origin/main`, as ambiguous (two or more
+  named ids, none leading), or as leading with an id with no ticket file
+  anywhere on `origin/main`, is refused where it is typed. Fail-open with
+  a warning when `origin/main` cannot be read, same posture as
+  `land_step_lib.bb`'s own `closed-on-main?`. See
+  [BL-1241](BL-1241-entangled-tip-at-the-land-step-has-a-reachable-remedy.md)
+  for the land-time incident (a closed-owner path blocking every parcel
+  behind it) this guard now catches an hour earlier, at the commit itself.
 
 ## Verify
 
