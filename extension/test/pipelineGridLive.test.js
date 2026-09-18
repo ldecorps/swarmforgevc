@@ -2,7 +2,7 @@ const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const path = require('node:path');
 const { mkTmpDir } = require('./helpers/tmpDir');
-const { capturePipelineGridLive, readLiveRoleHeldTickets } = require('../out/bridge/pipelineGridLive');
+const { capturePipelineGridLive, readLiveRoleHeldTickets, computeLivePipelineBoard, blurb } = require('../out/bridge/pipelineGridLive');
 
 // BL-1188: the REAL pipeline_stage_cli.bb `report` subprocess, never mocked -
 // same precedent as readLiveRoleHeldTicketsCli.test.js (BL-487/BL-814).
@@ -60,6 +60,58 @@ function findMatrixRow(boardText, ticketId) {
   const displayId = ticketId.replace(/^BL-/, '');
   return boardText.split('\n').find((l) => l.startsWith(`${displayId} `));
 }
+
+// ── blurb: BL-831's per-ticket main-view description ──
+//
+// BL-831 hardening: the property test (bl831BubblePipelineBoardInvariants
+// .property.test.js) already exercises "with or without a description",
+// but per this project's Test Speed And Isolation rule property tests run
+// in their own lane and are never folded into unit coverage/CRAP - so a
+// plain unit test is still required to cover blurb()'s branches for the
+// standard unit lane that CRAP measures against.
+
+test('blurb: falls back to the title when the ticket has no description', () => {
+  assert.equal(blurb({ id: 'BL-1', title: 'Just a title' }), 'Just a title');
+});
+
+test('blurb: is the first sentence when the description ends with punctuation', () => {
+  assert.equal(
+    blurb({ id: 'BL-1', title: 'fallback', description: 'First sentence here. Second sentence never shown.' }),
+    'First sentence here.'
+  );
+});
+
+test('blurb: falls back to the first line when the description carries no sentence-ending punctuation', () => {
+  assert.equal(
+    blurb({ id: 'BL-1', title: 'fallback', description: 'no punctuation on this line at all\nsecond line' }),
+    'no punctuation on this line at all'
+  );
+});
+
+test('blurb: truncates a description whose first sentence exceeds the display bound', () => {
+  const longSentence = 'x'.repeat(200) + '.';
+  const result = blurb({ id: 'BL-1', title: 'fallback', description: longSentence });
+  assert.ok(result.length <= 160, `expected a bounded blurb, got ${result.length} chars`);
+  assert.match(result, /…$/);
+});
+
+// ── computeLivePipelineBoard: the shared read model BL-831 reuses ──
+
+test('computeLivePipelineBoard: byId carries both active and paused ticket records for consumers that need ticket prose', () => {
+  const root = mkTmpDir('bl831-computelive-');
+  writeActiveTicket(root, 'BL-9020', 'description: |\n  Active ticket text.\n');
+  const pausedDir = path.join(root, 'backlog', 'paused');
+  fs.mkdirSync(pausedDir, { recursive: true });
+  fs.writeFileSync(path.join(pausedDir, 'BL-9021.yaml'), 'id: BL-9021\ntitle: "paused ticket"\n');
+
+  const { data, byId } = computeLivePipelineBoard(root);
+
+  assert.ok(byId['BL-9020'], 'expected the active ticket in byId');
+  assert.equal(byId['BL-9020'].description.trim(), 'Active ticket text.');
+  assert.ok(byId['BL-9021'], 'expected the paused ticket in byId even though it never appears in data.rows');
+  assert.ok(data.rows.some((row) => row.id === 'BL-9020'), 'the active ticket must appear in the board rows');
+  assert.ok(!data.rows.some((row) => row.id === 'BL-9021'), 'a paused ticket is not an in-flight row');
+});
 
 // ── readLiveRoleHeldTickets: sync counterpart of BL-487's async CLI reader ──
 
