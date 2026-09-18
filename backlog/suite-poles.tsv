@@ -8,7 +8,11 @@
 # unowned. Measured 2026-09-16 (specifier npm test run for BL-791 slice C,
 # 20 cores, 9 forks, 1-minute load 10.8; extension/.vitest-report.json) -
 # never a rounded-down value. Slice D tickets take rows over as they are
-# minted; drain a row by removing it in the same land that cuts its pole.
+# minted; a row drains automatically in the same land that cuts its pole -
+# the land step retires every row this register lists whose owner is the
+# landing ticket (BL-1631: REGISTER_ROW_RETIRED), EXCEPT an accepted-pole
+# row (its note column says so, BL-1629's disposition), which the land step
+# never retires regardless of owner.
 #
 # file	ticket	first_seen	measured_ms	note
 extension/test/bl968StepRegistryMaterializedTreeGuard.test.js	BL-1629	2026-09-16	69900	BL-791 slice D pole census; two full step-registry loads by design (BL-968 invariant 1), 12.6 s of require time per load on 2026-09-17 - an accepted pole under BL-1629 (register disposition), cheaper only through BL-1630 (the registry load itself); moved from BL-1620 on 2026-09-17

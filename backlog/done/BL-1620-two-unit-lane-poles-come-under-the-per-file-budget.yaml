@@ -243,6 +243,7 @@ notes: |
   in this commit, never reworded here.
 
 assigned_to: coder
+abandoned_commits: [6adc2fc8f7]
 bounce_count: 3
 bounce_history:
   - { at: 2026-09-17, by: specifier, blamed: coder, class: spec-gap, commit: ad65fc11eb, evidence: backlog/evidence/BL-1620-bounce-20260917.md }
