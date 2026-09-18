@@ -209,3 +209,5 @@ notes: |
   confirmer in milliseconds; one 2 s fixture run; one 4 s solo run -
   BL-1541). Severity high: a gate refusing on load is a broken safety
   signal for every role.
+
+assigned_to: coder
