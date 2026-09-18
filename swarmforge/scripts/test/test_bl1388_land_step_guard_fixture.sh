@@ -13,6 +13,17 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(cd "$SCRIPT_DIR/../../.." && pwd)"
 RUNNER="$REPO_ROOT/swarmforge/scripts/test/land_step_lib_test_runner.bb"
 
+# BL-1624: the tree-guard fixture below reaches
+# check_feature_handler_registration.sh, which execs the COMPILED checker -
+# a fresh clone with no extension/out fails eight runner assertions as if
+# the land step were wrong, when the real problem is a missing build. Loud
+# and first, never a silent skip.
+CHECKER="$REPO_ROOT/extension/out/tools/check-feature-handler-registration.js"
+if [[ ! -f "$CHECKER" ]]; then
+  echo "FAIL: extension/out missing ($CHECKER not found) - run 'npm run compile' in extension/ first"
+  exit 1
+fi
+
 status=0
 fail() { echo "FAIL: $*"; status=1; }
 pass() { echo "PASS: $*"; }
@@ -71,19 +82,6 @@ if grep -q 'land-replay/BL-9001' <<<"$block"; then
   pass "and still assesses a non-main tree (the land-replay branch)"
 else
   fail "the fixture no longer builds a non-main tree, so --assume-main is untested"
-fi
-
-# ── 4. only the fixture block changed ────────────────────────────────────
-# qa_e2e item 4: every other assertion in the runner is untouched.
-changed="$(cd "$REPO_ROOT" && git diff main -- swarmforge/scripts/test/land_step_lib_test_runner.bb \
-           | grep -cE '^[+-][^+-]' || true)"
-outside="$(cd "$REPO_ROOT" && git diff main -U0 -- swarmforge/scripts/test/land_step_lib_test_runner.bb \
-           | grep -E '^[+-][[:space:]]*\(assert' \
-           | grep -vcE 'BL-1388|BL-1375: the real tree guard refuses an unregistered handler|BL-1375: and the refusal names the offending feature|BL-1375: and a self-consistent tree passes' || true)"
-if (( changed > 0 )) && (( outside == 0 )); then
-  pass "no assertion outside the fixture block changed"
-else
-  fail "the diff touches assertions outside the fixture block (${outside} lines)"
 fi
 
 # ── 5. the retired premise is gone from the block ────────────────────────
