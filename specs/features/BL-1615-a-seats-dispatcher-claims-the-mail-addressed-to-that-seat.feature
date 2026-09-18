@@ -49,3 +49,11 @@ Feature: BL-1615 A seat's dispatcher claims the mail addressed to that seat
       | shape                                                                              | role      |
       | a bare single-seat code role with its own worktree                                 | cleaner   |
       | two master-resident rows sharing one checkout path with different session values   | specifier |
+
+  # BL-1615 seat-dispatcher-claims-seat-mail-04 (architect bounce D1, 2026-09-17)
+  Scenario: a refused claim requeues to its own origin, never the stage queue
+    Given a non-forwarding git_handoff copy for BL-9001 addressed to coder@2 is delivered
+    And the coder@2 worktree is on branch BL-9998 with uncommitted changes
+    When seat coder@2 asks for its next task
+    Then the claim is refused
+    And the file is requeued into the seat's own new/, never the stage queue
