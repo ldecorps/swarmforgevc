@@ -118,6 +118,16 @@ description: |
     bl1620TwoUnitLanePolesSteps.js, never reworded), and BL-1620's
     narrative sentence about the row is re-tensed to the past (scenario
     04's last step). BL-1620's scenarios 01 and 03 stay untouched.
+  - BL-1006 again, found by the hardender (note 001399): BL-1598's
+    scenario `unit-suite-pole-register-03` ("the committed register names
+    the nine poles of 2026-09-16 with an open owner each": exactly 9 rows,
+    telegramFrontDeskBotCli among them) is a census pin that this land
+    falsifies by design (9 -> 8, the named file gone) - it is RETIRED in
+    this parcel (scenario and its four scoped handler steps removed, never
+    reworded; its "every row names an open ticket" clause is the gate's
+    own unowned-row verdict, scenario 01), and BL-1598's narrative
+    sentence about the nine poles is re-tensed to the past (scenario 04's
+    last step covers both features). BL-1598's scenarios 01 and 02 stay.
 
   ## How (direction, not mandate)
 
@@ -157,6 +167,17 @@ description: |
     scenario with no handler, never on a handler with no scenario, so
     remove the scenario and its handlers in the same commit. BL-1620 lands
     before this ticket; if it has not, merge main until it has.
+  - BL-1598's feature and handler: delete the `# BL-1598
+    unit-suite-pole-register-03` block (comment, Scenario, four steps) and
+    the four `scoped(` registrations at bl1598SuitePoleRegisterSteps.js
+    lines 229-249 (`backlog/suite-poles.tsv is read`, `it holds exactly 9
+    rows`, `every row names a ticket present ...`, `... are among the
+    files`); change the narrative clause "and that the nine poles measured
+    on 2026-09-16 are registered with an open owner" to "and that the nine
+    poles measured on 2026-09-16 were registered with an open owner (the
+    census pin retired by BL-1633 as rows drain)" - a re-tense, not a
+    rewrite. BL-1629's later accepted row (naming a ticket that closes)
+    would have broken the same clause; retiring now preempts it.
   - Documenter: BL-1598's how-to (if any) and engineering-detailed.prompt
     "Test Speed And Isolation" gain the rule: the per-file gate refuses a
     new pole only after confirming it alone; a verdict of `contention` is
@@ -165,10 +186,10 @@ description: |
 constraints: >
   check-suite-file-budget.ts (the decision extension and its print),
   recordTestDuration.js (the confirmer and its one call), their unit
-  tests, one register row, the feature and handler, BL-1620's feature and
-  handler (scenario 02 retirement and the narrative re-tense only -
-  BL-1006; the acceptance pointer below is not a claim on BL-1620's
-  contract), evidence and docs.
+  tests, one register row, the feature and handler, BL-1620's and
+  BL-1598's features and handlers (scenario retirements and narrative
+  re-tenses only - BL-1006; the acceptance pointer below is not a claim on
+  either sibling's contract), evidence and docs.
   No change to PER_FILE_DURATION_BUDGET_MS, NEW_POLE_REFUSAL_FRACTION,
   STALE_ROW_FRACTION, the unowned rule, the work ratchet, any vitest
   config, or any test file's content. The step handler lands with the
@@ -191,8 +212,9 @@ qa_e2e_procedure: |
      test file) once -> green, the contention and timeout cases present.
   2. Acceptance resolving all four scenarios
      (`bash specs/pipeline/scripts/run_acceptance.sh specs/features/BL-1633-*.feature`);
-     BL-1598's feature still resolving, and BL-1620's feature resolving
-     with scenarios 01 and 03 only (02 retired here, BL-1006).
+     BL-1598's feature resolving with scenarios 01 and 02 only (03 retired
+     here) and BL-1620's with scenarios 01 and 03 only (02 retired here) -
+     BL-1006, both.
   3. ONE `npm test` at a 1-minute load below 8 -> exit 0; the verdict
      names telegramFrontDeskBotCli as `contention` with both durations if
      the pool put it over the line, or nothing if it did not; no new-pole,
@@ -217,6 +239,11 @@ source: |
   first cut of this ticket forgot the boundary it creates); scenario 04
   gained its last step. If a coder already holds this ticket: merge main
   and re-read - the only new work is the retirement block above.
+  Amended 2026-09-18 10:4xZ on the hardender's spec-gap note 001399
+  (evidence BL-1633-hardener-spec-gap-20260918.md, hardender 4bdf3ba12e):
+  BL-1598's scenario 03 is the symmetric census pin the first amendment
+  missed; its retirement is scoped in. Send-back recorded, charged to the
+  specifier (BL-990): backlog/evidence/BL-1633-bounce-20260918.md.
 
 notes: |
   Minted 2026-09-18 by the specifier while completing the hardener's
@@ -237,7 +264,23 @@ notes: |
   BL-1541). Severity high: a gate refusing on load is a broken safety
   signal for every role.
 
+  Amended 2026-09-18 10:4xZ by the specifier on the hardender's spec-gap
+  note 001399: BL-1598's scenario 03 ("exactly 9 rows", the named file
+  among them) goes false the moment this parcel's own row retirement
+  lands - the same BL-1006 shape as BL-1620's scenario 02, missed at the
+  09:2x amendment. The parcel is at the hardender, so the feature is NOT
+  edited on main (BL-1385); the coder round trip carries it. In the
+  parcel: (1) BL-1598's feature loses the `unit-suite-pole-register-03`
+  block and its narrative clause is re-tensed as the How says; (2)
+  bl1598SuitePoleRegisterSteps.js loses the four scoped steps at lines
+  229-249; (3) this ticket's feature, scenario 04, gains a last step:
+    And BL-1598's feature at the parcel carries scenarios unit-suite-pole-register-01 and -02 only, its narrative stating the 2026-09-16 census in the past
+  with its handler step in bl1633NewPoleConfirmedAloneSteps.js reading the
+  real feature file (the BL-1620 sibling step's shape). Nothing else in the
+  parcel changes; the hardender's review of the confirmer stands.
+
 assigned_to: coder
-bounce_count: 1
+bounce_count: 2
 bounce_history:
   - { at: 2026-09-18, by: cleaner, blamed: coder, class: spec-gap, commit: 0378dbfce1, evidence: backlog/evidence/BL-1633-bounce-cleaner-20260918.md }
+  - { at: 2026-09-18, by: specifier, blamed: coder, class: spec-gap, commit: 4bdf3ba12e, evidence: backlog/evidence/BL-1633-bounce-20260918.md }
