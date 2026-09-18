@@ -162,4 +162,36 @@ grep -q '\[Cc\]\[Ll\]\[Oo\]\[Ss\]\[Ee\].*\[Pp\]\[Rr\]\[Oo\]\[Mm\]\[Oo\]\[Tt\]\[E
   || fail "10: the guard's leading-verb match must mirror land_step_lib.bb's leading-verb-prefixes (close, promote, approve)"
 pass "10: the guard's mirrored regex literals agree with their bb originals (BL-897)"
 
+# ── 11: a single named id that is NOT positioned at the very start of the
+#        subject still resolves to that id (subject-attribution's :else
+#        branch - one named id, whether leading or merely named alone,
+#        resolves the same way) and is refused when it is closed ──────────
+new_fixture
+seed_origin_ticket "BL-9611" "done"
+mark_origin_main
+MSG="$MSGDIR/11.txt"; write_msg "$MSG" "Fixes a bug also touched by BL-9611"
+set +e
+OUT="$(run_guard "$MSG" 2>&1)"; RC=$?
+set -e
+[[ "$RC" -ne 0 ]] || fail "11: expected refusal for a single named-but-not-leading closed id"
+echo "$OUT" | grep -q "BL-9611" || fail "11: refusal must name BL-9611, got: $OUT"
+echo "$OUT" | grep -qi "closed" || fail "11: refusal must say closed, got: $OUT"
+pass "11: a single named-but-not-leading id still resolves and is refused when closed"
+
+# ── 12: a ticket id present under TWO folders on origin/main, only one of
+#        them done, commits - every folder is checked, not only the first
+#        one ls-tree happens to list (seeded "done" then "paused" so the
+#        non-done folder sorts AFTER "done" - "backlog/done/" < "backlog/
+#        paused/" - so a truncate-to-first-folder mutant wrongly refuses) ──
+new_fixture
+mkdir -p "$ROOT/backlog/done" "$ROOT/backlog/paused"
+echo "id: BL-9612" > "$ROOT/backlog/done/BL-9612-fixture.yaml"
+echo "id: BL-9612" > "$ROOT/backlog/paused/BL-9612-fixture.yaml"
+git -C "$ROOT" add -A
+git -C "$ROOT" -c user.email=t@t -c user.name=t commit -q -m "seed BL-9612 under done and paused"
+mark_origin_main
+MSG="$MSGDIR/12.txt"; write_msg "$MSG" "BL-9612: probe"
+run_guard "$MSG" || fail "12: expected a subject leading with a ticket that is NOT closed in every folder to commit"
+pass "12: a ticket filed under two folders (not all done) commits - every folder is checked"
+
 echo "ALL PASS"
