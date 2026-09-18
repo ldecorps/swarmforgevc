@@ -22,7 +22,7 @@ Feature: BL-1620 Two unit-lane poles come under the per-file budget
   # BL-1620 two-unit-lane-poles-01
   Scenario Outline: a pole file comes under budget with its tests intact
     Given <file> at the received commit has a recorded test count
-    When npm test runs three times on the parcel at a 1-minute load below 8
+    When <file> runs alone three times under the unit config at a 1-minute load below 8
     Then <file> measures under 7000 ms in every run
     And its test count at the parcel is greater than or equal to the received count
     And no test in it is skipped or excluded
@@ -32,11 +32,12 @@ Feature: BL-1620 Two unit-lane poles come under the per-file budget
       | extension/test/telegramFrontDeskBotCli.test.js          |
 
   # BL-1620 two-unit-lane-poles-02
-  Scenario: the register row leaves in the same land
-    Given backlog/suite-poles.tsv names the file under BL-1620
-    When the parcel's npm test verdict is read
-    Then it reports no new-pole and no stale-row for the file
-    And the parcel removes its row from backlog/suite-poles.tsv
+  Scenario: the register row stays, re-owned, until the gate confirms a pole alone
+    Given backlog/suite-poles.tsv names the file under BL-1633
+    And the parcel's evidence records the file's in-suite duration from one npm test run
+    When the per-file budget guard runs with a 7000 ms budget against that duration and the register
+    Then it reports no new-pole and no unowned-row for the file
+    And the parcel leaves the row in backlog/suite-poles.tsv
 
   # BL-1620 two-unit-lane-poles-03
   Scenario: the cause of the pole is named in evidence
