@@ -32,7 +32,7 @@ required_wiring:
 # point with no pre-existing caller; the lane-set rows that will call its
 # front-ends are the slice after the censuses this runner produces.
 
-human_approval: pending
+human_approval: approved
 approval_context: >
   A new feature file is authored here, so it needs a tap; amended
   2026-09-18 when BL-1628 was absorbed (the pending ask posted 2026-09-17
