@@ -1,0 +1,166 @@
+id: BL-1638
+title: "BL-775 landed on 2026-09-18 with its Stryker mutation gate deferred - the perTest dry run over out/bridge/bubbleLiveUiHtml.js and out/bridge/residentPaneLive.js timed out twice at the five-minute ceiling under load 11.5-25.2 with swap in use and eight or more concurrent workers, and a plain coverage run in the same window died with ERR_IPC_CHANNEL_CLOSED after a WSL-captured node abort - so the ledger row names a closed parcel, the register reads it as the only unowned row, and BL-1429's throttle holds the cap at one; this ticket owns the row through the three-day cooldown (not before 2026-09-21), recreates the scoped Stryker config the parcel did not land, runs the gate on a quiet host, and discharges the row with a completed result"
+milestone: M8
+type: defect
+severity: high
+# high (standing-red rule 2026-09-05, BL-1488's precedent): an unowned
+# hardening-lane row is a broken safety signal that throttles intake for
+# every ticket until owned; production is unaffected (the gate never ran,
+# nothing is known to survive).
+status: todo
+epic: code-quality-gates
+priority: 8
+direction: swarm-reported
+depends_on: []
+not_before: 2026-09-21
+# not_before is cooldown arithmetic, not a schedule: mutation_cooldown_gate.bb
+# refuses a file touched on main within 3 days, BL-775's land c3395108d8
+# touched both files on 2026-09-18, so the earliest run is 2026-09-21
+# (BL-1469's promotion gate reads this field so the ticket cannot hold a
+# slot at cap while it waits - the BL-1439 lesson). Recompute from the
+# files' last touch on main if either is touched again before then.
+mutation_cost: medium
+# medium: one Stryker perTest run over two compiled files (18 + 416 source
+# lines), which is the deliverable; the config, the evidence, the ledger
+# discharge and the register row are bookkeeping around it.
+slice_size_envelope: low
+required_stages: [coder, cleaner, architect, hardender, documenter, qa]
+
+acceptance: specs/features/BL-1638-the-bl775-deferred-mutation-gate-is-run.feature
+
+required_wiring:
+  - 'backlog/hardening-debt-ledger.yaml::discharged_evidence: backlog/evidence/BL-1638::the ledger, which the register and the throttle read, carries this parcel evidence path only once the discharge verb ran (BL-1488 shape)'
+  - 'specs/pipeline/steps/bl1638Bl775DeferredMutationGateIsRunSteps.js::registerSteps::the handler lands in the same parcel as the feature (BL-233, BL-1371)'
+
+human_approval: approved
+approval_context: >
+  A new feature file is authored here, so it needs a tap. No choice is
+  posed and there are no ruling_options. Same shape as BL-1468 and BL-1488
+  (both approved and landed) for one row dated 2026-09-18: run the
+  deferred Stryker gate, discharge the row with evidence naming an owner
+  for every survivor, remove the register row in the same commit. FIRM: a
+  run that cannot complete is recorded with the ledger's attempt verb and
+  the row stays outstanding and owned - never a discharge on a timeout,
+  never a raised ceiling, never a narrower mutate scope than the two files.
+
+invariants:
+  - "A ledger row leaves the outstanding debt only through a discharge that names the gate, the parcel and a committed result; a run that cannot complete is recorded as an attempt and leaves the row outstanding and owned."
+  - "The register row leaves in the same commit that discharges the ledger row, never earlier; the hardening lane holds no BL-1638 row only when the BL-775 row carries discharged_at."
+
+description: |
+  ## What is wrong
+
+  `backlog/hardening-debt-ledger.yaml` carries `parcel: BL-775, gate:
+  stryker-mutation, file_set: extension/out/bridge/bubbleLiveUiHtml.js,
+  extension/out/bridge/residentPaneLive.js, detected_at: 2026-09-18,
+  attempted_at: 2026-09-18`, recorded by the hardender with the defer
+  verb: the perTest dry run (full-suite coverage analysis) timed out twice
+  at the five-minute ceiling (15:03:27 to 15:08:33 local, concurrency 4,
+  scoped `vitest.bl775.stryker.config.mjs`) under load 11.5-25.2 on 20
+  cores with 1.7-1.8 GiB of swap in use and eight or more vitest/stryker
+  workers from other roles' worktrees; a plain full-coverage vitest run in
+  the same window crashed with ERR_IPC_CHANNEL_CLOSED and dmesg recorded a
+  WSL-captured node abort (signal 6) - host-crash evidence, not a code
+  defect. The hardender recorded the deferral rather than waving the gate
+  through. BL-775 then landed (c3395108d8, 16:15) and closed (7e49a69087,
+  16:16). The register reader joins ledger rows to register rows on
+  (lane, file); the row's parcel is closed and no register row names
+  another owner, so `standing_red_register_cli.bb` reports
+  `hardening: residentPaneLive.js -> BL-775` as the register's only
+  unowned row and BL-1429's throttle holds the cap at one while it stands.
+  The coordinator's note 009547 (15:18Z) is that reading.
+
+  The parcel's scoped Stryker config did not land: `extension/` on main
+  has no `vitest.bl775.stryker.config.mjs` (the hardender's worktree
+  does). Note the gate's name in this row is `stryker-mutation`, not the
+  older rows' `mutation`; the discharge verb must name it exactly.
+
+  Cooldown at mint: `mutation_cooldown_gate.bb` refuses a file touched on
+  main within 3 days; both files were touched by the land on 2026-09-18.
+  Earliest run: 2026-09-21. Host at mint: load 13.2 with 16 vitest/stryker
+  workers and 1 GiB of swap in use - the same shape the hardender met.
+
+  ## What changes
+
+  - `extension/vitest.bl775.stryker.config.mjs` committed (recreated from
+    the hardender branch's copy or from BL-1488's shape): `--mutate` scoped
+    to the two compiled files, `perTest`, sibling links per the
+    Verification rules, the standard five-minute dry-run ceiling.
+  - One Stryker run over the compiled file set on a quiet host, recorded as
+    `backlog/evidence/BL-1638-BL-775-mutation.md` with the summary block,
+    load, duration, and zero survivors or one entry per survivor with its
+    reason: "killed in this pass", "accepted equivalent" with the code-level
+    proof, or "first-run debt, owned by <ticket id>" (2026-09-10 rule) -
+    never "next stage's work" with no ticket.
+  - `hardening_debt_ledger_update.bb --discharge BL-775 stryker-mutation
+    --evidence backlog/evidence/BL-1638-BL-775-mutation.md`; a run that
+    cannot complete is recorded with the attempt verb and the row stays
+    outstanding and owned (invariant 1).
+  - The `hardening` register row naming BL-1638 leaves in the discharge
+    commit (invariant 2; BL-1631's land step also retires it).
+
+  ## How (direction, not mandate)
+
+  - Run on a quiet host: `uptime` under 8 and no other vitest/stryker
+    workers (`pgrep -af 'vitest|stryker'`), never beside another lane
+    (engineering.prompt Verification: sequential). The hardender's
+    concurrency 4 is the starting point; the two files are 18 and 416
+    source lines, so a quiet run is minutes.
+  - If the dry run times out at the ceiling, record the attempt with load
+    and duration and stop; do not raise the ceiling, do not narrow the
+    scope below the two files, do not `process.chdir()` under mutation.
+  - Documenter: nothing beyond the evidence file; no diagram.
+
+constraints: >
+  No production code changes. The run happens in the coder's worktree
+  against compiled out/** (compile first; extension/out/ is gitignored).
+  Never a hand-edited mutation manifest. The step handler lands with the
+  feature (BL-233). Evidence named BL-1638-*.
+
+out_of_scope: |
+  - Any other ledger row (all others are discharged as of this mint).
+  - Any change to the cooldown window, the ledger verbs, the throttle, or
+    the five-minute dry-run ceiling (BL-1358).
+  - The host contention itself (BL-1618/BL-1619, BL-1636).
+
+qa_e2e_procedure: >
+  (1) `bb swarmforge/scripts/mutation_cooldown_gate.bb . extension/src/bridge/residentPaneLive.ts`
+  and the same for bubbleLiveUiHtml.ts report the cooldown clear before the
+  run. (2) The evidence file shows the Stryker summary block for the two
+  compiled files, the host load and the duration, and every survivor with
+  an owner. (3) `backlog/hardening-debt-ledger.yaml`: the BL-775
+  stryker-mutation row carries `discharged_at` and the evidence path. (4)
+  `bb swarmforge/scripts/standing_red_register_cli.bb .`: no hardening row
+  for the two files, no unowned row. (5)
+  `bb swarmforge/scripts/effective_backlog_depth_cli.bb .` reports the cap
+  no longer throttled by the register. One run of each; never "run it N
+  times".
+
+source: |
+  Coordinator note to the specifier, priority 00, 2026-09-18T15:18Z
+  (inbound 00_20260918T151816Z_009547_from_coordinator): "BL-775
+  hardening-debt row unowned - throttles cap to 1, mint owner". Ledger row
+  as quoted above; hardender pass evidence
+  backlog/evidence/BL-775-hardender-20260918.md (NONE for defects; the
+  deferral is the ledger row). Specifier adjudication:
+  backlog/evidence/BL-1638-specifier-adjudication-of-unowned-hardening-row-20260918.md.
+  Parents: BL-942 (the ledger), BL-1439 (the verbs), BL-1468 and BL-1488
+  (the two prior owners of this shape), BL-1631 (the land step retires
+  the row).
+
+notes: |
+  Minted 2026-09-18 by the specifier while completing the coordinator's
+  note, the same pass. AUTO-APPROVED under the 2026-09-17 operator hotfix
+  (severity defect, no ruling_options) - see
+  auto-approve-high-severity-defects-amendment-20260917.md. Owning the
+  row is what lifts the throttle: the register reads a ticket in paused or
+  active as an owner, so the cap returns to six the moment this ticket
+  exists on main, and the run itself waits for the cooldown. The
+  coordinator was sent paused-ready and told the cap may be restored.
+  INVEST: Independent (the ledger, the verbs, the gate and the files
+  exist), Negotiable (concurrency and the quiet-host reading are
+  direction), Valuable (the throttle lifts now and the gate BL-775 owed is
+  run), Estimable (one config, one run, one discharge - one sitting once
+  the host is quiet), Small (two scenarios, two invariants), Testable (the
+  parcel's own committed ledger, evidence and register, read in
+  milliseconds).
