@@ -191,3 +191,4 @@ notes: |
   particular id reads closed from now on.
 
 assigned_to: coder
+abandoned_commits: [3a7ae31217]
