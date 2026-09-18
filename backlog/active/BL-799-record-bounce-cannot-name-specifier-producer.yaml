@@ -6,7 +6,7 @@ severity: low
 status: todo
 epic: code-quality-gates
 human_approval: approved
-assigned_to: none
+assigned_to: coder
 priority: 200
 direction: swarm-proposed
 depends_on: []
