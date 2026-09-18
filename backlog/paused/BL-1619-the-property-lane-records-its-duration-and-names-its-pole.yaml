@@ -2,6 +2,7 @@ id: BL-1619
 title: "The property lane has no measurement at all - 414 *.property.test.js files, one flat 20 s testTimeout, 319.94 s wall on 2026-09-16, no duration row, no per-file work, no pole, no verdict - so its reds are found one file at a time when the timeout fires under load and each becomes a ticket (BL-1588, BL-1596, BL-1607); npm run test:properties appends one row per completed run with files, result, wall, work, pole and pole file to extension/.property-durations.jsonl and prints a verdict naming the pole and the files above half the timeout, the recorder half of the BL-078/BL-378 mirror, changing nothing about what vitest runs or how it exits"
 milestone: M8
 type: feature
+status: todo
 epic: unit-suite-speed
 priority: 4
 direction: human-requested
