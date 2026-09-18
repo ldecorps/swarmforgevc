@@ -1,3 +1,7 @@
+# acceptance-mutation-manifest-begin
+# {"version":1,"tested_at":"2026-09-18T11:26:06.382475883Z","feature_name":"BL-1617 A role-branch commit never leads with a closed ticket","feature_path":"/home/carillon/swarmforgevc/.worktrees/hardender/specs/features/BL-1617-a-role-branch-commit-never-leads-with-a-closed-ticket.feature","background_hash":"140c342ad4537e756e6627063645f1b2de4161fbbc9bc3b15e69772b4fda6f25","implementation_hash":"unknown","scenarios":[]}
+# acceptance-mutation-manifest-end
+
 Feature: BL-1617 A role-branch commit never leads with a closed ticket
 
   The land step (BL-1241) replays only the landing ticket's own paths onto
