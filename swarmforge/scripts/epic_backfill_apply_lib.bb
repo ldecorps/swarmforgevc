@@ -161,6 +161,16 @@
 
 ;; ── IO: apply ──────────────────────────────────────────────────────────────
 
+;; The ticket's own approval_context names commit_integrity_cli.bb, but that
+;; CLI exists for shell-driven, non-Babashka writers (its own doc comment:
+;; "shell-driven writers on a shared checkout... route through the same
+;; locked, pathspec-scoped, verify+retry commit") and additionally wires
+;; ticket_close_guard_lib.bb's active/->done/ close-move validation, which
+;; does not apply here - this apply only ever edits tickets already resting
+;; in done/, never moves one there. This code is already a bb process, so it
+;; calls the CLI's own underlying commit-integrity-lib/commit-with-integrity!
+;; directly - the same locked, pathspec-scoped, verify+retry commit, without
+;; the inapplicable close-guard hook.
 (defn- default-commit-batch! [req]
   (commit-integrity-lib/commit-with-integrity! req))
 
