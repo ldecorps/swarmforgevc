@@ -188,7 +188,12 @@ function registerSteps(registry) {
     writeTicket(ctx.root, `${id}-fixture.yaml`, id);
     ctx.ticketArg = id;
     ctx.ticketId = id;
-    ctx.expectedComposedLength = `Work ${id}: read backlog/active/${id}-*.yaml`.length;
+    // BL-1614: the router's composed message text changed from naming the
+    // ticket's own backlog/active/<id>-*.yaml path to a fixed
+    // "merge main first, then read backlog/active" instruction - this
+    // scenario's own expected length must track route_backlog_to_coder.sh's
+    // CURRENT template, never a copy frozen at BL-1513's own authoring time.
+    ctx.expectedComposedLength = `Work ${id}: merge main first, then read backlog/active`.length;
   });
 
   scoped(/^it exits non-zero naming the 80-character limit and the length it composed$/, (ctx) => {
