@@ -1,32 +1,40 @@
 'use strict';
 
 // BL-1634: step handlers for "BL-1634 A rejected manifest offers no page
-// from it while the built-in pages are still offered". Drives the REAL
-// bridge server (out/bridge/bridgeServer.js) against the served UI bundle
-// manifest route, same shape bl829BubbleRemotePagePagerSteps.js's own
-// scenarios 1-2 use for this exact route - a scoped copy per BL-1277's
-// unscoped-collision guard, never an unscoped duplicate.
+// from it while the built-in pages are still offered"
+// (specs/features/BL-1634-a-rejected-manifest-offers-no-page-from-it-built-ins-still-offered.feature).
+//
+// Drives the REAL bridge server exactly as bl829BubbleRemotePagePagerSteps.js
+// does (its own scoped Background text - "...for BL-1634" - so this file
+// registers its own copy rather than colliding with the shared, unscoped
+// "a running swarm and the bridge started via its opt-in command" text;
+// BL-1277's collision guard forbids an unscoped duplicate of THAT text, and
+// this feature's own Background line is deliberately different from it).
+//
+// Built-in page ids/shapes are read from letsTalkRoutes.ts's own exported
+// registry at run time - never a hand-typed list of id strings - so this
+// feature and its fixture cannot silently drift from whatever the bridge
+// actually merges in (BL-775 added `live` to that exact registry).
 
 const fs = require('node:fs');
 const path = require('node:path');
+const assert = require('node:assert/strict');
 
 const EXT_DIR = path.join(__dirname, '..', '..', '..', 'extension');
 const { startBridge } = require(path.join(EXT_DIR, 'out', 'bridge', 'bridgeServer'));
-const {
-  operatorDocs,
-  bubbleHealth,
-  bubblePipelinePage,
-  bubbleHostPage,
-  bubbleLivePage,
-} = require(path.join(EXT_DIR, 'out', 'bridge', 'letsTalkRoutes'));
+const { operatorDocs, bubbleHealth, bubbleHostPage, bubbleLivePage } = require(
+  path.join(EXT_DIR, 'out', 'bridge', 'letsTalkRoutes')
+);
+const { mkSocketFixtureRoot } = require('./lib/socketFixtureRoot');
 
 const FEATURE_NAME = 'BL-1634 A rejected manifest offers no page from it while the built-in pages are still offered';
-const TOKEN = 'aps-bl1634-token';
+const TOKEN = 'aps-bl1634-manifest-token';
 
-// BL-1634: read the built-in registry from the real module (never a hand
-// list) - every page bridgeServer.ts's manifest route merges in regardless
-// of the operator manifest's state.
-const BUILT_IN_PAGES = [operatorDocs, bubbleHealth, bubblePipelinePage, bubbleHostPage, bubbleLivePage];
+// The bridge's own built-in registry (bridgeServer.ts's merge chain) - read
+// here, not hand-copied, so a fifth built-in added later is picked up by
+// this feature automatically.
+const BUILT_IN_PAGES = [operatorDocs, bubbleHealth, bubbleHostPage, bubbleLivePage];
+const BUILT_IN_IDS = BUILT_IN_PAGES.map((p) => p.id);
 
 function operatorDir(targetPath) {
   return path.join(targetPath, '.swarmforge', 'operator');
@@ -43,50 +51,42 @@ async function fetchManifest(ctx) {
   const response = await fetch(`http://127.0.0.1:${ctx.bridge.port}/lets-talk/ui-bundle.json`, {
     headers: { authorization: `Bearer ${TOKEN}` },
   });
+  ctx.manifestResponse = response;
   ctx.manifestBody = await response.json();
   ctx.bridge.stop();
 }
 
-// required_wiring anchor: registerSteps
+function writeMalformedManifest(targetPath, id) {
+  // Missing `title` and `order` on the one page entry - still malformed,
+  // same shape BL-829's own fixture uses.
+  writeManifest(targetPath, {
+    schemaVersion: 1,
+    bundleVersion: 3,
+    minShellVersion: 0,
+    payload: '<html></html>',
+    pages: [{ id, entryPath: id }],
+  });
+}
+
 function registerSteps(registry) {
   const scoped = (re, fn) => registry.defineScoped(re, fn, FEATURE_NAME);
 
   scoped(/^a running swarm and the bridge started via its opt-in command for BL-1634$/, (ctx) => {
-    // targetPath is set by the shared Given step elsewhere in this suite
-    // for the plain "a running swarm..." wording; this feature's own
-    // Background carries a distinct sentence (BL-1277 scoping), so it
-    // must establish targetPath itself.
-    if (!ctx.targetPath) {
-      const os = require('node:os');
-      ctx.targetPath = fs.mkdtempSync(path.join(os.tmpdir(), 'bl1634-'));
-      ctx.cleanupBl1634Root = () => fs.rmSync(ctx.targetPath, { recursive: true, force: true });
-    }
+    ctx.targetPath = mkSocketFixtureRoot('bl1634-acceptance-');
   });
 
   scoped(/^the served manifest carries a malformed page list whose entry id is not a built-in page$/, (ctx) => {
-    ctx.malformedId = 'non-built-in-malformed-page';
-    writeManifest(ctx.targetPath, {
-      schemaVersion: 1,
-      bundleVersion: 3,
-      minShellVersion: 0,
-      payload: '<html></html>',
-      // missing `title` and `order` on the one page entry.
-      pages: [{ id: ctx.malformedId, entryPath: ctx.malformedId }],
-    });
+    const id = 'malformed-operator-page';
+    assert.ok(!BUILT_IN_IDS.includes(id), `fixture id "${id}" must not collide with a built-in id: ${JSON.stringify(BUILT_IN_IDS)}`);
+    writeMalformedManifest(ctx.targetPath, id);
+    ctx.malformedManifestPageIds = [id];
   });
 
   scoped(/^the served manifest carries a malformed page list whose entry id equals a built-in page's id$/, (ctx) => {
-    ctx.malformedId = bubbleLivePage.id;
-    writeManifest(ctx.targetPath, {
-      schemaVersion: 1,
-      bundleVersion: 3,
-      minShellVersion: 0,
-      payload: '<html></html>',
-      // missing `title` and `order`, and a `entryPath` that is NOT the
-      // built-in's own - proves a resolved page with this id is the
-      // built-in's entry, not smuggled from the malformed manifest.
-      pages: [{ id: ctx.malformedId, entryPath: 'smuggled-entry-path' }],
-    });
+    const collidingPage = BUILT_IN_PAGES[0];
+    writeMalformedManifest(ctx.targetPath, collidingPage.id);
+    ctx.malformedManifestPageIds = [collidingPage.id];
+    ctx.collidingBuiltinPage = collidingPage;
   });
 
   scoped(/^the manifest is validated$/, async (ctx) => {
@@ -94,56 +94,31 @@ function registerSteps(registry) {
   });
 
   scoped(/^it is rejected whole$/, (ctx) => {
-    if (ctx.manifestBody.payload !== '') {
-      throw new Error(`expected the whole manifest rejected (default payload), got: ${JSON.stringify(ctx.manifestBody)}`);
-    }
+    assert.equal(ctx.manifestBody.payload, '', `expected the whole manifest rejected (default payload), got: ${JSON.stringify(ctx.manifestBody)}`);
   });
 
   scoped(/^no offered page carries the malformed entry's id$/, (ctx) => {
-    // Scenario 01 only: the malformed entry's id is not a built-in id, so
-    // (unlike scenario 02's id-collision case) it must not appear among
-    // the offered pages at all.
-    const offeredIds = Array.isArray(ctx.manifestBody.pages) ? ctx.manifestBody.pages.map((page) => page.id) : [];
-    if (offeredIds.includes(ctx.malformedId)) {
-      throw new Error(`expected no page carrying the malformed entry's id ${ctx.malformedId}, got: ${JSON.stringify(ctx.manifestBody.pages)}`);
+    const offeredIds = ctx.manifestBody.pages.map((p) => p.id);
+    for (const id of ctx.malformedManifestPageIds) {
+      assert.ok(!offeredIds.includes(id), `expected id "${id}" absent from offered pages, got: ${JSON.stringify(offeredIds)}`);
     }
   });
 
   scoped(/^every built-in page is still offered$/, (ctx) => {
-    try {
-      const offeredIds = new Set((ctx.manifestBody.pages || []).map((page) => page.id));
-      for (const builtIn of BUILT_IN_PAGES) {
-        if (!offeredIds.has(builtIn.id)) {
-          throw new Error(`expected built-in page ${builtIn.id} to be offered, got: ${JSON.stringify(ctx.manifestBody.pages)}`);
-        }
-      }
-    } finally {
-      if (ctx.cleanupBl1634Root) {
-        ctx.cleanupBl1634Root();
-        ctx.cleanupBl1634Root = undefined;
-      }
+    const offeredIds = ctx.manifestBody.pages.map((p) => p.id);
+    for (const id of BUILT_IN_IDS) {
+      assert.ok(offeredIds.includes(id), `expected built-in id "${id}" among offered pages, got: ${JSON.stringify(offeredIds)}`);
     }
   });
 
   scoped(/^the offered page with that id is the bridge's built-in entry, not the manifest's$/, (ctx) => {
-    try {
-      const builtIn = BUILT_IN_PAGES.find((page) => page.id === ctx.malformedId);
-      if (!builtIn) {
-        throw new Error(`test setup error: ${ctx.malformedId} is not a known built-in id`);
-      }
-      const offered = (ctx.manifestBody.pages || []).find((page) => page.id === ctx.malformedId);
-      if (!offered) {
-        throw new Error(`expected a page with id ${ctx.malformedId} to be offered, got: ${JSON.stringify(ctx.manifestBody.pages)}`);
-      }
-      if (offered.entryPath !== builtIn.entryPath || offered.title !== builtIn.title) {
-        throw new Error(`expected the built-in entry for ${ctx.malformedId} (${JSON.stringify(builtIn)}), got: ${JSON.stringify(offered)}`);
-      }
-    } finally {
-      if (ctx.cleanupBl1634Root) {
-        ctx.cleanupBl1634Root();
-        ctx.cleanupBl1634Root = undefined;
-      }
-    }
+    const offered = ctx.manifestBody.pages.find((p) => p.id === ctx.collidingBuiltinPage.id);
+    assert.ok(offered, `expected an offered page with id "${ctx.collidingBuiltinPage.id}", got: ${JSON.stringify(ctx.manifestBody.pages)}`);
+    assert.deepEqual(
+      offered,
+      ctx.collidingBuiltinPage,
+      `expected the offered entry to be exactly the bridge's built-in (${JSON.stringify(ctx.collidingBuiltinPage)}), got: ${JSON.stringify(offered)}`
+    );
   });
 }
 
