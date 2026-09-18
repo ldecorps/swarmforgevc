@@ -8,11 +8,16 @@ Feature: BL-1620 Two unit-lane poles come under the per-file budget
   2026-09-17: bl968 performs two full step-registry loads by design and
   left this ticket for BL-1629 (an accepted pole) and BL-1630 (the registry
   load itself); this feature is that telegramFrontDeskBotCli.test.js comes
-  under budget with no test deleted, skipped or excluded, that its register
-  row leaves in the same land, and that the cause is named, not guessed.
+  under budget alone with no test deleted, skipped or excluded, that its
+  register row stays, re-owned by BL-1633 (amended 2026-09-18: the gate
+  reads the file's in-suite duration, two to four times its solo one, and
+  refuses an unregistered file at 1.5x the budget - so the row leaves in
+  BL-1633's land, once a suspected pole is confirmed alone before refusing,
+  and BL-1633 retires scenario 02 below then), and that the cause is named,
+  not guessed.
 
   Background:
-    Given the extension unit lane with the BL-1598 pole register naming the file under BL-1620
+    Given the extension unit lane with the BL-1598 pole register
 
   # BL-1620 two-unit-lane-poles-01
   Scenario Outline: a pole file comes under budget with its tests intact

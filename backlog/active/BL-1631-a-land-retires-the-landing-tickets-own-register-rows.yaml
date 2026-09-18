@@ -29,7 +29,7 @@ required_wiring:
   - 'swarmforge/scripts/land_step_lib.bb::rows-to-retire::the pure sibling of rows-to-restore, called from the same registry pass the replay already runs; the literal exists only with the fix (BL-874, BL-1235)'
   - 'specs/pipeline/steps/bl1631LandRetiresOwnRegisterRowsSteps.js::registerSteps::the handler lands in the same parcel as the feature (BL-233, BL-1371)'
 
-human_approval: pending
+human_approval: approved
 approval_context: >
   A new feature file is authored here, so it needs a tap. No choice is
   posed and there are no ruling_options. FIRM: only rows whose owner
@@ -156,3 +156,5 @@ notes: |
   sitting), Small (three scenarios, one invariant), Testable (fixture
   registries and the real land step in seconds). Severity high per the
   false-safety-signal reading.
+
+assigned_to: coder
