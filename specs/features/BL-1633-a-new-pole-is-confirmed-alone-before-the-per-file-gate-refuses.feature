@@ -51,3 +51,5 @@ Feature: BL-1633 A new pole is confirmed alone before the per-file gate refuses
     Then it measures under 7000 ms
     And backlog/suite-poles.tsv has no row for it
     And every other row in backlog/suite-poles.tsv is byte-identical to main
+    And BL-1620's feature at the parcel carries scenarios two-unit-lane-poles-01 and -03 only, its narrative stating the register row's fate in the past
+    And BL-1598's feature at the parcel carries scenarios unit-suite-pole-register-01 and -02 only, its narrative stating the 2026-09-16 census in the past

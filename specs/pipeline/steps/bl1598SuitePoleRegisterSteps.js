@@ -4,8 +4,11 @@
 // per-file gate green". Scenarios 01 and 02 drive the REAL pure functions
 // (checkFileDurationBudget, buildRecord/computeFinalExitCode) with injected
 // fixtures, in milliseconds (BL-1541 shape) - never a subprocess, never a
-// hand-copied decision table. Scenario 03 reads the REAL committed
-// backlog/suite-poles.tsv and the real backlog/paused|active directories.
+// hand-copied decision table. Scenario 03 (the committed register's own
+// 2026-09-16 census pin) was retired by BL-1633 (BL-1006, 2026-09-18): a
+// row draining as its file's pole is fixed is the register's own designed
+// mechanism, so a fixed row count/name-list goes stale by construction -
+// see BL-1633's evidence for the retirement's own record.
 //
 // Scenario 01's <report>/<register> Examples columns are narrative English
 // ("one file measures 9000 ms", "names that file with an open owner"), so
@@ -16,22 +19,16 @@
 // and nothing else. An unknown token throws rather than passing through.
 
 const assert = require('node:assert/strict');
-const fs = require('node:fs');
 const path = require('node:path');
 
 const REPO_ROOT = path.join(__dirname, '..', '..', '..');
 const OUT_DIR = path.join(REPO_ROOT, 'extension', 'out');
-const {
-  checkFileDurationBudget,
-  parseRegisterRows,
-  openTicketIds,
-} = require(path.join(OUT_DIR, 'tools', 'check-suite-file-budget'));
+const { checkFileDurationBudget } = require(path.join(OUT_DIR, 'tools', 'check-suite-file-budget'));
 const {
   buildRecord,
   computeFinalExitCode,
 } = require(path.join(REPO_ROOT, 'extension', 'scripts', 'testDurationRecorderLib'));
 
-const REGISTER_TSV = path.join(REPO_ROOT, 'backlog', 'suite-poles.tsv');
 const BUDGET_MS = 7000;
 
 const FEATURE = 'BL-1598 The unit suite pole register makes the per-file gate green';
@@ -224,35 +221,6 @@ function registerSteps(registry) {
   scoped(/^the run's exit code is (\S+)$/, (ctx, exitToken) => {
     assertExit(exitToken, ctx.bl1598exitCode);
   });
-
-  // -- Scenario 03 --------------------------------------------------------
-  scoped(/^backlog\/suite-poles\.tsv is read$/, (ctx) => {
-    ctx.bl1598registerText = fs.readFileSync(REGISTER_TSV, 'utf8');
-    ctx.bl1598registerRows = parseRegisterRows(ctx.bl1598registerText);
-    ctx.bl1598openTicketsReal = openTicketIds(path.join(REPO_ROOT, 'backlog'));
-  });
-
-  scoped(/^it holds exactly 9 rows$/, (ctx) => {
-    assert.equal(ctx.bl1598registerRows.length, 9);
-  });
-
-  scoped(/^every row names a ticket present under backlog\/paused or backlog\/active$/, (ctx) => {
-    for (const row of ctx.bl1598registerRows) {
-      assert.ok(
-        ctx.bl1598openTicketsReal.has(row.ticket),
-        `${row.file}'s owner ${row.ticket} is not open under backlog/paused or backlog/active`
-      );
-    }
-  });
-
-  scoped(
-    /^bl968StepRegistryMaterializedTreeGuard\.test\.js and telegramFrontDeskBotCli\.test\.js are among the files$/,
-    (ctx) => {
-      const files = ctx.bl1598registerRows.map((r) => r.file);
-      assert.ok(files.some((f) => f.endsWith('bl968StepRegistryMaterializedTreeGuard.test.js')), files.join(', '));
-      assert.ok(files.some((f) => f.endsWith('telegramFrontDeskBotCli.test.js')), files.join(', '));
-    }
-  );
 }
 
 module.exports = { registerSteps };
