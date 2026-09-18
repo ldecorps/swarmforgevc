@@ -113,7 +113,7 @@ export function parseArgs(argv: string[]): RecordBounceArgs | null {
 export const USAGE =
   'Usage: record-bounce.js --ticket <id> --role <producingRole> --type <ticketType> --class <failureClass>\n' +
   '         --commit <hex> --by <bouncingRole> [--evidence <path>] [--items <json>] [--blocked <n>]\n' +
-  `  --role: coder|cleaner|architect|hardender|documenter\n` +
+  `  --role: specifier|coder|cleaner|architect|hardender|documenter\n` +
   `  --type: feature|bug|defect|chore|docs|enhancement|epic\n` +
   `  --class: ${KNOWN_FAILURE_CLASSES.join('|')}\n` +
   `  --by (required): specifier|coder|cleaner|architect|hardender|documenter|QA\n` +
