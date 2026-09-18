@@ -32,5 +32,4 @@
 # register row on (lane, file)). The hardening lane is empty of BL-1441's
 # rows as of this commit (invariant 2: a register row leaves in the same
 # commit that discharges it).
-shell	swarmforge/scripts/test/test_bl1388_land_step_guard_fixture.sh	BL-1624	2026-09-17	cleaner reproduction 2026-09-17 13:02Z on a QA merge-up (cleaner branch 51f08dac8c) and the specifier on main b1e8ba48bd (exit 1): step 4 "the diff touches assertions outside the fixture block (0 lines)" - the step requires land_step_lib_test_runner.bb to differ from main, true only while BL-1388 was unlanded; red since BL-1388 landed 2026-09-04 (3f84aba369), unseen because no lane runs the shell manifest (BL-1625); a fresh clone without extension/out fails eight more runner cases (missing compiled checker); owner BL-1624
 acceptance	specs/features/BL-937-shell-scripts-run-on-stock-macos-bash-32.feature	BL-1627	2026-09-17	same sweep and reproduction: scenarios 01/03 "expected /bin/bash --version to report 3.2, got 5.2.21" on this Linux host, and scenario 02 flags mapfile (bash 4) in check_bb_scripts_load.sh:140 and check_constitution_doc_citations.sh:41,67 - two real target violations; owner BL-1627
