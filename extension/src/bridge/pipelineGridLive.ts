@@ -6,10 +6,11 @@
 
 import { execFileSync } from 'child_process';
 import * as path from 'path';
-import { readBacklogFolders } from '../panel/backlogReader';
+import { readBacklogFolders, BacklogItem } from '../panel/backlogReader';
 import {
   computePipelineBoard,
   renderPipelineBoardGridOnly,
+  PipelineBoardData,
   PipelineBoardPausedItem,
   PipelineBoardTicketMeta,
 } from '../concierge/pipelineBoard';
@@ -39,7 +40,11 @@ export function readLiveRoleHeldTickets(targetPath: string): Record<string, stri
   return invertTicketStageToRoleHeldTickets(stageMap);
 }
 
-function resolveRoleHeld(targetPath: string): Record<string, string[]> {
+// BL-831: exported so the Bubble Pipeline page (bubblePipelinePage.ts) can
+// drive the identical live-report-with-cache-fallback resolution this
+// module's own capturePipelineGridLive uses, rather than reimplementing it
+// as a second read model (BL-831 invariant 1).
+export function resolveRoleHeld(targetPath: string): Record<string, string[]> {
   try {
     return readLiveRoleHeldTickets(targetPath);
   } catch {
@@ -50,10 +55,27 @@ function resolveRoleHeld(targetPath: string): Record<string, string[]> {
   }
 }
 
-export function capturePipelineGridLive(targetPath: string, nowMs: number = Date.now()): PipelineGridLiveSnapshot {
+export interface LivePipelineBoard {
+  data: PipelineBoardData;
+  // BL-831: active+paused ticket records keyed by id, for consumers (the
+  // Bubble Pipeline page) that need ticket prose (description, etc.)
+  // alongside the board's own placement data - never a second read of the
+  // backlog tree.
+  byId: Record<string, BacklogItem>;
+}
+
+/**
+ * BL-831 invariant 1: the ONE place ticketMeta/paused/roleHeld are built and
+ * handed to computePipelineBoard for the live bridge - capturePipelineGridLive
+ * (Mini App board) and the Bubble Pipeline page both call this rather than
+ * each deriving their own stage placement.
+ */
+export function computeLivePipelineBoard(targetPath: string): LivePipelineBoard {
   const folders = readBacklogFolders(targetPath);
   const ticketMeta: Record<string, PipelineBoardTicketMeta> = {};
+  const byId: Record<string, BacklogItem> = {};
   for (const item of folders.active) {
+    byId[item.id] = item;
     ticketMeta[item.id] = {
       epic: item.epic,
       type: item.type,
@@ -63,6 +85,7 @@ export function capturePipelineGridLive(targetPath: string, nowMs: number = Date
     };
   }
   for (const item of folders.paused) {
+    byId[item.id] = item;
     ticketMeta[item.id] = {
       epic: item.epic,
       type: item.type,
@@ -86,8 +109,31 @@ export function capturePipelineGridLive(targetPath: string, nowMs: number = Date
   const data = computePipelineBoard(roleHeld, paused, ticketMeta, {
     activeIds: folders.active.map((item) => item.id),
   });
+  return { data, byId };
+}
+
+export function capturePipelineGridLive(targetPath: string, nowMs: number = Date.now()): PipelineGridLiveSnapshot {
+  const { data } = computeLivePipelineBoard(targetPath);
   return {
     boardText: renderPipelineBoardGridOnly(data, nowMs),
     rowCount: data.rows.length,
   };
+}
+
+// BL-831 pipeline-page-blurb-source-03: bounded so the Pipeline page's main
+// view stays scannable (same spirit as the grid caption's own title
+// truncation, BL-956) - the first sentence of the ticket's description:,
+// falling back to its title when it has none.
+const BUBBLE_PIPELINE_BLURB_MAX_CHARS = 160;
+
+// required_wiring anchor: blurb
+export function blurb(item: BacklogItem): string {
+  if (!item.description) {
+    return item.title;
+  }
+  const match = item.description.match(/^[^.!?\n]*[.!?]/);
+  const candidate = (match ? match[0] : item.description.split('\n')[0]).trim();
+  return candidate.length > BUBBLE_PIPELINE_BLURB_MAX_CHARS
+    ? `${candidate.slice(0, BUBBLE_PIPELINE_BLURB_MAX_CHARS - 1)}…`
+    : candidate;
 }
