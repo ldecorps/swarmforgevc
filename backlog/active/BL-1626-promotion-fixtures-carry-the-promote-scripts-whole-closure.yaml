@@ -29,7 +29,7 @@ required_stages: [coder, cleaner, architect, hardender, documenter, qa]
 acceptance: specs/features/BL-1626-promotion-fixtures-carry-the-promote-scripts-whole-closure.feature
 
 required_wiring:
-  - 'specs/pipeline/steps/bl803PromoteRouteSedPortabilitySteps.js::computeClosure::the red handler is the pre-existing consumer of BL-1538 closure helper; the literal exists only with the fix (BL-874, BL-1235)'
+  - 'specs/pipeline/steps/bl803PromoteRouteSedBsdPortabilitySteps.js::copyScriptClosure::the red handler is the pre-existing consumer of BL-1538 closure helper; the literal exists only with the fix (BL-874, BL-1235); corrected filename (was missing "Bsd") and literal (the coder chose copyScriptClosure over computeClosure, both permitted by the ticket''s own How) - documenter fix, PRE_QA_GATE_FAIL wiring mismatch at forward time'
   - 'specs/pipeline/steps/bl1626PromotionFixturesCarryTheClosureSteps.js::registerSteps::the handler lands in the same parcel as the feature (BL-233, BL-1371)'
 
 human_approval: approved
