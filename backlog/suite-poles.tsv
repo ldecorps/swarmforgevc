@@ -23,4 +23,3 @@ extension/test/renderBriefingDiagramsCli.test.js	BL-791	2026-09-16	14600	BL-791 
 extension/test/epicReorderBridge.test.js	BL-791	2026-09-16	10600	BL-791 slice D pole census; cut work not yet minted
 extension/test/pilotAcceptanceGateCli.test.js	BL-791	2026-09-16	8500	BL-791 slice D pole census; cut work not yet minted
 extension/test/recordBounceCli.test.js	BL-791	2026-09-16	7300	BL-791 slice D pole census; cut work not yet minted
-extension/test/telegramFrontDeskBotCli.test.js	BL-1633	2026-09-16	19700	BL-791 slice D pole census (65300 ms on 2026-09-16); cut by BL-1620 to 3.7-5.0 s ALONE (coder, 2026-09-17) but 8.0-19.7 s IN-SUITE across eight npm test runs at load below 8 (hardener, 2026-09-18; 19700 the largest) - the gate reads the in-suite figure, so the row stays until the gate confirms a suspected pole alone before refusing; re-owned by BL-1633 on 2026-09-18, row leaves in BL-1633 land
