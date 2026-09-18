@@ -186,6 +186,7 @@ expects them, and are not migrated or rewritten here.
 - [Resident Spy pane font-size control](how-to/BL-609-resident-spy-font-size-control.md) — compact +/- in header; default 13px; host-persisted stickiness via BL-1153 (BL-609 UX).
 - [Sticky web UI font-size choice](how-to/BL-1153-sticky-web-font-size-choice.md) — Live Screen, Pipeline Board, and Paused pager restore size after reload via extension-host JSON; PWA Cache unchanged (BL-1153).
 - [Live Screen grid tiles name the ticket a seat holds](how-to/BL-1046-console-tile-names-the-ticket-a-seat-holds.md) — ticket id, slug, compact claim age, batch +N on phone grid; same payload as Expand (BL-1046).
+- [Live screen ticket-strip collapse control](how-to/BL-1542-live-screen-ticket-strip-collapse-control.md) — chevron control clamps the strip's title to one line, distinct from the BL-609 text-size control; host-persisted per surface, never on a live refresh (BL-1542).
 - [Understanding and Handling Sibling Bounce Deferrals](how-to/BL-532-sibling-bounce-deferral-runbook.md)
 - [Isolating batch recovery trees](how-to/BL-588-isolate-batch-recovery-trees.md) — approach 3: clean siblings re-forward unchanged and land while a defective batch sibling reworks on an isolated branch; QA merges verified whole trees only (BL-588).
 - [Dev-host bounce under WSL: exactly one window](how-to/BL-578-devhost-bounce-wsl-window-leak.md) — Windows-side kill-old + headless-swarm refuse/`--force` (BL-578).
