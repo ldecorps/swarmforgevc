@@ -30,12 +30,19 @@ approval_context: >
   per file may only rise (BL-791's own rule). FIRM: under-budget is
   measured (three runs under 7000 ms at load below 8), never asserted.
   FIRM: the two register rows move to this ticket now and leave with its
-  land (BL-1598: a surviving row reads stale). No choice is posed and there
-  are no ruling_options.
+  land (BL-1598: a surviving row reads stale). AMENDED 2026-09-18 by the
+  specifier (hardener spec-gap note 001390): the telegramFrontDeskBotCli
+  row does NOT leave with this land - it is re-owned by BL-1633 and leaves
+  there - because the premise in the FIRM is false under the measure the
+  gate actually reads: a surviving row reads stale only under 80 percent
+  of budget, and the file's in-suite duration is 8-20 s, not its 4-5 s
+  solo; removing the row would make npm test refuse on most runs. The
+  human was told in the specifier's reply and may reject or re-pend. No
+  choice is posed and there are no ruling_options.
 
 invariants:
   - "No test is deleted, skipped or excluded: each file's test count at the parcel is greater than or equal to its count at the received commit."
-  - "Under-budget is measured, never asserted: a register row leaves only with three recorded runs under 7000 ms at a 1-minute load below 8."
+  - "Under-budget is measured, never asserted: three recorded solo runs under 7000 ms at a 1-minute load below 8, and one recorded in-suite duration from npm test beside them; the register row leaves only in BL-1633's land (amended 2026-09-18)."
 
 description: |
   ## What is wrong
@@ -55,9 +62,19 @@ description: |
   - `extension/test/telegramFrontDeskBotCli.test.js` under 7000 ms in
     three consecutive `npm test` runs at a 1-minute load below 8, test
     count equal or higher, nothing skipped (scenario 01; invariants 1-2).
-  - Its suite-poles.tsv row removed in the same land; the verdict prints
-    no new-pole and no stale-row for it (scenario 02). bl968's row moved
-    to BL-1629 in the amendment commit.
+  - Its suite-poles.tsv row STAYS, re-owned by BL-1633 on main (amended
+    2026-09-18, see notes): the per-file gate reads the file's IN-SUITE
+    duration from npm test's own report (10-11 forks), which the hardener
+    measured at 8.0-19.7 s across eight runs at load below 8 while the
+    file is 3.7-5.0 s alone, and a file with no row at or above 1.5x the
+    budget refuses the run - so removing the row makes npm test red on
+    most runs for everyone. The parcel's evidence records one real npm
+    test run's in-suite duration for the file beside the three solo runs;
+    the guard, run against that duration and the register as it stands,
+    reports no new-pole and no unowned-row for the file (scenario 02).
+    bl968's row moved to BL-1629 on 2026-09-17; this row leaves in
+    BL-1633's land, once the gate confirms a suspected pole alone before
+    refusing.
   - The cause named in evidence with the pattern that replaced it
     (scenario 03): every call to `enqueueRoleAnswerNote` starts a real
     `bb swarm_handoff.bb` process (about 1.3 s each; the BL-1203 tests
@@ -86,8 +103,10 @@ description: |
   - Documenter: BL-791's how-to gains the entry; nothing else.
 
 constraints: >
-  The test file, backlog/suite-poles.tsv's row for it, evidence, and ONE
-  production change: the optional injected exec parameter on
+  The test file, evidence, and ONE production change (no change to
+  backlog/suite-poles.tsv: its row is re-owned by BL-1633 on main - merge
+  main and KEEP the row, resolving the parcel's earlier deletion in main's
+  favour; amended 2026-09-18): the optional injected exec parameter on
   enqueueRoleAnswerNote with the current call as its default (amended
   2026-09-17 - the original "no production code" made the file's budget
   unreachable, coder evidence). No other production code, no config, no
@@ -110,8 +129,12 @@ qa_e2e_procedure: |
      three times, sequentially -> under 7000 ms each, 275 or more tests,
      none skipped; the BL-1518 test still runs the real script (its own
      duration about 2.5 s is expected).
-  2. `npm test` once -> the verdict prints no new-pole and no stale-row
-     for the file; its row is gone from backlog/suite-poles.tsv.
+  2. `npm test` once -> the file is reported as a registered pole under
+     BL-1633 (or under budget), never new-pole and never unowned-row; its
+     in-suite ms from extension/.vitest-report.json is recorded in the
+     evidence beside the three solo runs and the host's 1-minute load;
+     its row is PRESENT in backlog/suite-poles.tsv with ticket BL-1633
+     (amended 2026-09-18).
   3. Acceptance resolving all scenarios
      (`bash specs/pipeline/scripts/run_acceptance.sh specs/features/BL-1620-*.feature`).
   4. `git diff main...HEAD --name-only` names the test file, the one
@@ -170,7 +193,41 @@ notes: |
   dropped trail routes without --force). The 12:10Z note above about
   bl968's blind sweep now belongs to BL-1629.
 
+  Amended 2026-09-18 09:1xZ by the specifier on the hardener's spec-gap
+  note 001390 (evidence BL-1620-hardener-20260918.md on the hardender
+  branch, 16ef87cee7): "under 7000 ms" named no measurement condition,
+  the coder measured SOLO (3.7-5.0 s, correctly, per the How), and the
+  gate reads IN-SUITE (8.0-19.7 s over eight npm test runs, 6 of 8 over
+  the 1.5x refusal line) - so scenario 02's "row removed, no new-pole"
+  is not reliably true and the FIRM's premise (a surviving row reads
+  stale) is false under the in-suite measure. Two changes, both carried
+  into the parcel by the coder round trip (the parcel is past the coder,
+  so the feature file is NOT edited on main - BL-1385): (1) scenario 01's
+  When becomes "<file> runs alone three times under the unit config at a
+  1-minute load below 8" (what the handler already does; "npm test" was
+  the wrong verb); (2) scenario 02 becomes:
+    # BL-1620 two-unit-lane-poles-02
+    Scenario: the register row stays, re-owned, until the gate confirms a pole alone
+      Given backlog/suite-poles.tsv names the file under BL-1633
+      And the parcel's evidence records the file's in-suite duration from one npm test run
+      When the per-file budget guard runs with a 7000 ms budget against that duration and the register
+      Then it reports no new-pole and no unowned-row for the file
+      And the parcel leaves the row in backlog/suite-poles.tsv
+  The handler's scenario-02 steps read the recorded in-suite ms (not the
+  solo worst run) and drop the row-removal assertion. The row's owner on
+  main is BL-1633 (this commit); the coder merges main first and keeps
+  the row where the parcel had deleted it. ALSO outstanding from
+  2026-09-17 and never sent (the specifier session died before the note
+  went out): f291a8373e reworded the feature's narrative, Background,
+  scenario 02 and titles from "both files"/"either file" to the one file
+  - the handler's four literal patterns ("names both files", "for either
+  file", "removes both rows", the Examples-derived wording) must follow in
+  the same round trip, or the reworded feature on main throws at land for
+  want of a handler. Send-back recorded (spec-gap, charged to the
+  specifier by correction - BL-990): backlog/evidence/BL-1620-bounce-20260918.md.
+
 assigned_to: coder
-bounce_count: 1
+bounce_count: 2
 bounce_history:
   - { at: 2026-09-17, by: specifier, blamed: coder, class: spec-gap, commit: ad65fc11eb, evidence: backlog/evidence/BL-1620-bounce-20260917.md }
+  - { at: 2026-09-18, by: specifier, blamed: coder, class: spec-gap, commit: 16ef87cee7, evidence: backlog/evidence/BL-1620-bounce-20260918.md }

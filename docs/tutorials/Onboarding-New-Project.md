@@ -14,6 +14,10 @@ instead walks a human through the same ground, step by step, in a single
 Telegram topic — so onboarding a target reduces to "give it a repo URL" rather
 than remembering seven commands in order. It runs on the swarm's own host
 (never the target host) and clones/onboards the target from its GitHub URL.
+This section covers the per-reply conversation itself; for the operator's
+side — starting it, checking it is alive, inspecting or resuming a target's
+state, recovering a stalled onboarding, and stopping it — see
+[Running an Onboarding End to End with the Onboarder](../how-to/BL-1582-onboarder-run-an-onboarding-end-to-end.md).
 
 **What's shipped:** an "Onboarding"
 topic, ensured once in the primary swarm's Telegram group and **reused across
