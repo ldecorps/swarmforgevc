@@ -55,7 +55,12 @@ was resolved against the repo, not recalled.
 The Onboarder guides a human through bringing the swarm to a new target
 repo, in a standing Telegram topic. All **three slices** (BL-590, BL-624,
 BL-625) are on `main` today, closing the full state machine from a bare
-repo URL through a running swarm handoff. Slice 1 first:
+repo URL through a running swarm handoff. For the operator's task-oriented
+guide to running one end to end — start, verify liveness, drive it,
+inspect/resume state, recover, stop — see
+[Running an Onboarding End to End with the Onboarder](../how-to/BL-1582-onboarder-run-an-onboarding-end-to-end.md);
+this section stays the "what shipped and where the code is" reference.
+Slice 1 first:
 
 - **One standing "Onboarding" topic**, ensured once per swarm's Telegram
   group and reused across every target — never one topic per target
