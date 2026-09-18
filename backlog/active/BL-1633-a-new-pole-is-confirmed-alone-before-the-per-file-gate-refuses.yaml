@@ -1,0 +1,213 @@
+id: BL-1633
+title: "The unit lane's per-file budget gate refuses on fork contention, not on code: it reads each file's IN-SUITE duration from npm test's report (10-11 forks) and refuses any unregistered file at or above 1.5x the 7000 ms budget, and telegramFrontDeskBotCli.test.js - 3.7-5.0 s alone after BL-1620's cut - measured 8.0, 9.1, 10.5, 12.3, 12.4, 12.5, 14.3 and 19.7 s in-suite across eight runs at load below 8 with no code change, six of them over the line (hardener, 2026-09-18); the gate confirms a suspected new pole ALONE before refusing, reports one that is under budget alone as contention with both numbers, and the file's register row - re-owned here so BL-1620 can land - leaves in this land"
+milestone: M8
+type: defect
+severity: high
+# high: a gate whose verdict flips with the fork pool's contention is a
+# broken safety signal - npm test, every role's unit lane, read red on six
+# of eight runs for a file that is under budget alone, and would do so for
+# any unregistered file whose solo time is a third of the budget. It is
+# contained today only because the file keeps a register row (this ticket
+# owns it), which is why BL-1620 cannot remove that row as minted.
+status: todo
+epic: unit-suite-speed
+priority: 8
+direction: swarm-reported
+depends_on: []
+# BL-1598 (the register and the 1.5x refusal line) and BL-1599 (the work
+# ratchet) are in backlog/done; BL-1620 (active, at the hardender) keeps
+# this file's row in place and lands first. BL-1007's contention helper
+# (specs/pipeline/steps/lib/contentionBudget.js) exists and is not the
+# remedy chosen here - see How.
+mutation_cost: medium
+# medium: one TypeScript decision extension in check-suite-file-budget.ts
+# (under Stryker via out/**), one injected confirmer in the recorder's
+# thin wrapper, unit tests, one feature and handler, evidence, one
+# register row.
+slice_size_envelope: low
+required_stages: [coder, cleaner, architect, hardender, documenter, qa]
+
+acceptance: specs/features/BL-1633-a-new-pole-is-confirmed-alone-before-the-per-file-gate-refuses.feature
+
+required_wiring:
+  - 'extension/scripts/recordTestDuration.js::confirmPoleAlone::the recorder is the pre-existing live consumer of the guard and passes the real confirmer into it; the name is chosen at mint so the literal exists only with the fix (BL-874, BL-1235)'
+  - 'specs/pipeline/steps/bl1633NewPoleConfirmedAloneSteps.js::registerSteps::the handler lands in the same parcel as the feature (BL-233, BL-1371)'
+
+human_approval: approved
+approval_context: >
+  A new feature file is authored here, so it needs a tap. No choice is
+  posed and there are no ruling_options. FIRM: an unregistered file at or
+  above the refusal line is refused ONLY after a confirming measurement of
+  that file alone also exceeds the budget; a file under budget alone is
+  reported as contention with both durations and never refuses the run.
+  FIRM: the confirmation is not a bypass - a file over budget alone is
+  refused exactly as today, and a confirmation that does not finish
+  within three times the budget counts as over budget alone. FIRM: no
+  confirmation runs for a file that has a register row or sits below the
+  refusal line, and each candidate is confirmed at most once per run.
+  FIRM: the 7000 ms budget, the 1.5x line, the stale and unowned rules and
+  the work ratchet are unchanged. FIRM: telegramFrontDeskBotCli's register
+  row leaves in this land and no other row is touched.
+
+invariants:
+  - "A file under the per-file budget alone is never refused as a new pole: every refusal of an unregistered file is preceded by a confirming solo measurement of that file that also exceeds the budget."
+
+description: |
+  ## What is wrong
+
+  BL-1598 made the per-file gate refuse only a NEW offender - an
+  unregistered file at or above `NEW_POLE_REFUSAL_FRACTION` (1.5x) of the
+  7000 ms budget - precisely so that "a snapshot gate that refuses on
+  ordinary host-load jitter" would not be red on day one. The margin is
+  not enough. The gate reads each file's duration from
+  `extension/.vitest-report.json`, `endTime - startTime` per file
+  (`extractFileDurations`), measured while the file shares the host with
+  the lane's 10-11 forks. The hardener, hardening BL-1620 on 2026-09-18
+  (evidence `BL-1620-hardener-20260918.md`, hardender branch 16ef87cee7):
+
+  > Solo `npx vitest run test/telegramFrontDeskBotCli.test.js` measured
+  > 3.7-5.0s across 6 runs at load < 8 ... But the REAL `npm test` run -
+  > which measures this file's duration from inside its own 10-11
+  > concurrent vitest forks ... showed wild variance for this exact file,
+  > unchanged across runs: 8.0s, 9.1s, 10.5s, 12.3s, 12.4s, 12.5s, 14.3s,
+  > 19.7s. Several of these cross the register's own 1.5x refusal
+  > threshold (10500ms), flipping `npm test`'s exit code from 0 to 1
+  > non-deterministically, with zero code change between runs.
+
+  Six of eight runs over the line. The in-suite duration is two to four
+  times the solo duration, and the ratio itself is not stable, so no fixed
+  fraction of the budget separates a pole from contention. BL-1620 as
+  minted removed this file's register row in its land ("a surviving row
+  reads stale"); with the row gone, every npm test run on main after that
+  land would refuse whenever the pool put this file over 10.5 s - most
+  runs - and the same is true of any unregistered file whose solo time is
+  a third of the budget. That is a broken safety signal for every role's
+  unit lane, and it is why BL-1620 was amended on 2026-09-18 to keep the
+  row, re-owned here. It is NOT BL-1620's regression (the cut is real:
+  22.9 s to 3.7-5.0 s alone) and NOT BL-1599's territory (the work
+  ratchet is a whole-suite sum). BL-1007's contention helper
+  (`loadNormalizedDurationMs`, load divided by cores) was considered: a
+  normalized number still jitters with the pool's real interleaving, and
+  the hardener's data spans 2.5x at the same load band, so a normalized
+  duration would move the line, not remove the flip.
+
+  ## What is wanted
+
+  - An unregistered file at or above the refusal line in the run's report
+    is CONFIRMED ALONE before the gate refuses: the file alone under
+    budget -> the verdict is `contention`, the run passes, and the verdict
+    line names the file with its in-suite and its solo duration; the file
+    alone over budget too -> `new-pole`, refused exactly as today
+    (scenario 01).
+  - No confirmation runs for a file that has a register row or sits below
+    the refusal line, each candidate is confirmed at most once per run,
+    and a confirmation that does not finish within three times the budget
+    counts as over budget alone (scenario 02).
+  - The recorder passes a real confirmer that runs one file alone under
+    the unit config and returns its measured duration (scenario 03, a
+    fixture test file under the real vitest, about two seconds).
+  - `extension/test/telegramFrontDeskBotCli.test.js` is under budget alone
+    on the parcel and its register row is gone at the parcel; every other
+    row is byte-identical to main (scenario 04).
+
+  ## How (direction, not mandate)
+
+  - `checkFileDurationBudget` gains an optional last argument
+    `{ confirmAlone?: (file) => number | null }` (or a sibling function
+    that wraps it - the existing four-argument callers, including
+    BL-1598's and BL-1620's handlers, stay green). For each would-be
+    offender it calls the confirmer once; `null`/timeout -> over budget
+    alone; under budget -> moved from `offenders` to a new `contention`
+    list with `{ file, durationMs, aloneMs, budgetMs }`; `BudgetVerdictKind`
+    gains `'contention'` between `watch` and `stale-row` in precedence.
+    `formatGuardReport` prints a contention line per file with both
+    numbers. Pure, injectable, unit-tested in milliseconds with a fake
+    confirmer (the BL-1598 test file's own idiom).
+  - `recordTestDuration.js` defines `confirmPoleAlone(file)`: one
+    `npx vitest run <file> --reporter=json --outputFile <tmp>` with the
+    unit config, `timeout: 3 * PER_FILE_DURATION_BUDGET_MS`, reading that
+    file's duration from the JSON report; passed into
+    `runGuardAgainstReport` (which forwards it). The script stays a thin
+    wrapper (engineering.prompt); the function is exported for scenario 03.
+  - The feature's handler drives `checkFileDurationBudget` with fixture
+    reports and a recording fake confirmer (scenarios 01-02) - BL-1598's
+    `a per-file duration report where <token>` idiom in a scope of its
+    own; scenario 03 runs the exported confirmer on a mkdtemp test file
+    that sleeps 200 ms (BL-1390 fixture rules, the file under
+    `extension/test/` is NOT created - point vitest at the fixture path);
+    scenario 04 runs the real file alone once (about 4 s) and reads the
+    real register.
+  - Register: this parcel deletes the telegramFrontDeskBotCli row; no
+    other row changes.
+  - Documenter: BL-1598's how-to (if any) and engineering-detailed.prompt
+    "Test Speed And Isolation" gain the rule: the per-file gate refuses a
+    new pole only after confirming it alone; a verdict of `contention` is
+    the pool, not the code.
+
+constraints: >
+  check-suite-file-budget.ts (the decision extension and its print),
+  recordTestDuration.js (the confirmer and its one call), their unit
+  tests, one register row, the feature and handler, evidence and docs.
+  No change to PER_FILE_DURATION_BUDGET_MS, NEW_POLE_REFUSAL_FRACTION,
+  STALE_ROW_FRACTION, the unowned rule, the work ratchet, any vitest
+  config, or any test file's content. The step handler lands with the
+  feature (BL-233). Evidence named BL-1633-*.
+
+out_of_scope: |
+  - Making the stale-row rule read solo durations (a row is stale under
+    80 percent of budget IN-SUITE today; with confirmation in place a
+    stale row only ever costs a report line).
+  - The remaining seven register rows (BL-791 slice D, next cuts) and
+    the accepted-pole disposition (BL-1629).
+  - The bb cold-start cost of BL-1518's real swarm_handoff.bb run inside
+    telegramFrontDeskBotCli (about 2.5 s alone; a BL-791 question).
+  - Fork-pool sizing (vitest-worker-memory-budget) and the property
+    lane's own budgets (BL-1606).
+
+qa_e2e_procedure: |
+  On the parcel commit, from `extension/`, with extension/out compiled:
+  1. `npx vitest run test/checkSuiteFileBudget*.test.js` (or the lib's
+     test file) once -> green, the contention and timeout cases present.
+  2. Acceptance resolving all four scenarios
+     (`bash specs/pipeline/scripts/run_acceptance.sh specs/features/BL-1633-*.feature`);
+     BL-1598's and BL-1620's features still resolving.
+  3. ONE `npm test` at a 1-minute load below 8 -> exit 0; the verdict
+     names telegramFrontDeskBotCli as `contention` with both durations if
+     the pool put it over the line, or nothing if it did not; no new-pole,
+     no unowned-row; its row absent from backlog/suite-poles.tsv; the
+     evidence records the verdict lines verbatim and how many
+     confirmations ran. Never "run it N times".
+  4. `git diff main...HEAD --name-only` names the two source files, their
+     tests, the register, the feature, the handler, evidence and docs
+     only.
+
+source: |
+  Hardener note to the specifier and coordinator, priority 00,
+  2026-09-18T08:32Z (inbound 00_20260918T083203Z_001390_from_hardender):
+  "BL-1620 spec-gap: npm test intermittently new-pole refuses; evidence
+  has detail". Hardener evidence backlog/evidence/BL-1620-hardener-20260918.md
+  (hardender branch, 16ef87cee7). Specifier adjudication and BL-1620's
+  amendment: backlog/evidence/BL-1620-bounce-20260918.md. Parents:
+  BL-1598, BL-378, BL-1620. Class siblings: BL-1107, BL-1599, BL-1606,
+  BL-1621, BL-1632 (verdict turns on what else is alive on the host).
+
+notes: |
+  Minted 2026-09-18 by the specifier while completing the hardener's
+  spec-gap note, the same pass. AUTO-APPROVED under the 2026-09-17
+  operator hotfix (severity defect, no ruling_options) — see
+  auto-approve-high-severity-defects-amendment-20260917.md. Register:
+  backlog/suite-poles.tsv's telegramFrontDeskBotCli row is re-owned by
+  this ticket in the mint commit (measured_ms 19700, the hardener's
+  largest in-suite reading, note carrying the range and the solo figure)
+  so BL-1620 can land with the row present; the row leaves in THIS land.
+  INVEST: Independent (the guard, the recorder and the report exist),
+  Negotiable (where the confirmer lives, its timeout and the verdict
+  wording are direction; the injected shape is the contract), Valuable
+  (npm test stops refusing on the pool - one outcome), Estimable (one
+  branch, one seam, one fixture run - one sitting), Small (four
+  scenarios, one invariant), Testable (pure decision with a fake
+  confirmer in milliseconds; one 2 s fixture run; one 4 s solo run -
+  BL-1541). Severity high: a gate refusing on load is a broken safety
+  signal for every role.
+
+assigned_to: coder
