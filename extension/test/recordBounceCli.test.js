@@ -416,6 +416,19 @@ test('resolveBounceInventory resolves "ok" for a well-formed multi-item array', 
   assert.equal(resolution.items.length, 2);
 });
 
+// BL-799 hardener: every prior "unknown class"/"unknown blamed role" case
+// above fed a SINGLE-item array, so a `.some(isValidBounceInventoryItem)`
+// mutant (any-valid) agrees with the real `.every` (all-valid) whenever the
+// array has just one member. Discriminate with a MIXED array: one valid
+// item and one invalid one, so only `.every` degrades it.
+test('resolveBounceInventory degrades a mixed array with one valid and one invalid item to "invalid-item"', () => {
+  const mixed = JSON.stringify([
+    { id: 'D1', class: 'behavior', blamed: 'coder', pointer: 'fixture.ts:1 fn()' },
+    { id: 'D2', class: 'flaky', blamed: 'coder', pointer: 'fixture.ts:2 fn()' },
+  ]);
+  assert.deepEqual(resolveBounceInventory(mixed), { kind: 'degraded', reason: 'invalid-item' });
+});
+
 test('resolveBlockedCount defaults to 0 when absent, negative, or non-integer', () => {
   assert.equal(resolveBlockedCount(undefined), 0);
   assert.equal(resolveBlockedCount('-1'), 0);
