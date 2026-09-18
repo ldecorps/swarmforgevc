@@ -2015,3 +2015,42 @@ test('GET /companion-package/does-not-exist is refused with a reason naming the 
     assert.match(body.reason, /does-not-exist/);
   });
 });
+
+// BL-775: Bubble's Live page — same shared renderer as /resident-spy,
+// published under its own bundle path, pre-auth like every other Mini
+// App/Bubble shell (the actual pane data still requires the token).
+test('serves /live HTML without a prior bearer/query token, identical to /resident-spy', async () => {
+  const target = mkTmp();
+  await withBridge(target, {}, async (handle) => {
+    const [liveRes, residentRes] = await Promise.all([
+      fetch(`http://127.0.0.1:${handle.port}/live`),
+      fetch(`http://127.0.0.1:${handle.port}/resident-spy`),
+    ]);
+    assert.equal(liveRes.status, 200);
+    assert.match(liveRes.headers.get('content-type'), /text\/html/);
+    const [liveBody, residentBody] = await Promise.all([liveRes.text(), residentRes.text()]);
+    // BL-775 invariant 1 / scenario 02: one renderer, byte-identical output —
+    // never a second copy of the Live Screen markup to drift from it.
+    assert.equal(liveBody, residentBody);
+  });
+});
+
+// BL-775 required_wiring / scenario 07: the Live page must be reachable
+// from the pager, i.e. named in the served UI bundle manifest, with no
+// operator-authored manifest file present.
+test('the served UI bundle manifest names the Live page (BL-775)', async () => {
+  const target = mkTmp();
+  await withBridge(target, {}, async (handle) => {
+    const res = await fetch(`http://127.0.0.1:${handle.port}/lets-talk/ui-bundle.json`, {
+      headers: { authorization: `Bearer ${TOKEN}` },
+    });
+    assert.equal(res.status, 200);
+    const body = await res.json();
+    const livePage = body.pages.find((page) => page.id === 'live');
+    assert.ok(livePage, `expected a 'live' page in the manifest, got: ${JSON.stringify(body.pages)}`);
+    assert.equal(livePage.entryPath, 'live');
+    assert.equal(typeof livePage.title, 'string');
+    assert.ok(livePage.title.length > 0);
+    assert.equal(typeof livePage.order, 'number');
+  });
+});
