@@ -261,3 +261,4 @@ notes: |
 bounce_count: 1
 bounce_history:
   - { at: 2026-09-18, by: cleaner, blamed: coder, class: integration, commit: 63f72de252, evidence: backlog/evidence/BL-693-bounce-cleaner-20260918.md }
+abandoned_commits: [02667c104d]

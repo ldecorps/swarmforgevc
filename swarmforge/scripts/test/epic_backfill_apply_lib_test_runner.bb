@@ -95,6 +95,17 @@
          nil
          (epic-backfill-apply-lib/refusal "human_approval: approved\n" parsed valid-epics
                                             #{"BL-010" "BL-011" "BL-012"}))
+;; BL-677 hardener: a mutant swapping the stale-mapping and unknown-epic
+;; cond clauses survived every test above - each one triggers only ONE of
+;; the two failure conditions at a time, so reordering them is invisible.
+;; A row that is BOTH missing from done/ AND carries an unknown value
+;; discriminates the order: the code's own comment ("staleness, then value
+;; validity") says stale-mapping must win.
+(assert= "stale-mapping is checked before unknown-epic when a row triggers both"
+         :stale-mapping
+         (:reason (epic-backfill-apply-lib/refusal "human_approval: approved\n"
+                                                      [{:id "BL-999" :proposal "not-a-real-epic"}]
+                                                      valid-epics #{})))
 
 ;; ── classify-row (idempotency falls out of this) ────────────────────────────
 
@@ -107,6 +118,14 @@ even when the current value differs from the proposal"
          :skip-already-tagged (epic-backfill-apply-lib/classify-row {:proposal "console"} "reliability"))
 (assert= "idempotency: a ticket this apply already wrote is skip-already-tagged on the next run"
          :skip-already-tagged (epic-backfill-apply-lib/classify-row {:proposal "console"} "console"))
+;; BL-677 hardener: a mutant swapping classify-row's two cond clauses
+;; survived every test above - each one leaves only ONE of the two guards
+;; true at a time (blank-proposal tests use current-epic nil; the
+;; already-tagged test uses a non-blank proposal). A row that is BOTH
+;; already-tagged AND carries a blank proposal discriminates the order.
+(assert= "a ticket that already carries an epic is skipped as already-tagged
+even when this row's own proposal cell is blank"
+         :skip-already-tagged (epic-backfill-apply-lib/classify-row {:proposal ""} "reliability"))
 
 ;; ── with-epic-line ─────────────────────────────────────────────────────────
 
