@@ -8,7 +8,12 @@
 // parser (qaBounceEvidenceParser.ts) both depend on this module, not the
 // other way around.
 
-export const KNOWN_PRODUCING_ROLES = ['coder', 'cleaner', 'architect', 'hardender', 'documenter'] as const;
+// BL-799: `specifier` added - the exact producing role specifier.prompt's
+// own "Recording A Send-Back (BL-635)" rule names for a spec-gap it
+// remediated itself (BL-795/BL-1184/BL-1305, three occurrences), which this
+// enum rejected outright. KNOWN_BOUNCE_ROLES (--by, below) already accepted
+// it; this was the one gap.
+export const KNOWN_PRODUCING_ROLES = ['specifier', 'coder', 'cleaner', 'architect', 'hardender', 'documenter'] as const;
 export type QaBounceProducingRole = (typeof KNOWN_PRODUCING_ROLES)[number];
 
 // BL-608: the role DOING the bouncing, distinct from producingRole (the role

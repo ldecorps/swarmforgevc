@@ -129,6 +129,17 @@ for (const by of ['specifier', 'coder', 'cleaner', 'architect', 'hardender', 'do
   });
 }
 
+// BL-799: `specifier` as the PRODUCING role (--role), distinct from the
+// loop above (which is `by`, the bouncing role - already complete). A
+// specifier-produced spec-gap it remediates itself and tries to record
+// (specifier.prompt's own BL-635 rule) was rejected outright before this
+// ticket - three live occurrences (BL-795, BL-1184, BL-1305), all lost.
+for (const role of ['specifier', 'coder', 'cleaner', 'architect', 'hardender', 'documenter']) {
+  test(`parseArgs accepts every known producing role, including ${role}`, () => {
+    assert.equal(parseArgs(flagArgs({ role })).producingRole, role);
+  });
+}
+
 // BL-688: the two widened classes must parse identically to any other known
 // class - no special-casing at the CLI layer, the vocabulary lives solely in
 // qaBounce.ts's KNOWN_FAILURE_CLASSES.
@@ -163,7 +174,7 @@ test('USAGE opens with the CLI name and its required core flags', () => {
 });
 
 test('USAGE documents the --role, --type, --class and --evidence field values', () => {
-  assert.match(USAGE, /--role: coder\|cleaner\|architect\|hardender\|documenter/);
+  assert.match(USAGE, /--role: specifier\|coder\|cleaner\|architect\|hardender\|documenter/);
   assert.match(USAGE, /--type: feature\|bug\|defect\|chore\|docs\|enhancement\|epic/);
   assert.match(USAGE, /--class: compile\|unit\|integration\|acceptance\|behavior\|invariant-unencoded\|spec-gap/);
   assert.match(USAGE, /--evidence \(optional\): backlog\/evidence\/<file>\.md/);
@@ -229,6 +240,22 @@ test('recording a bounce writes `by` to the durable log AND the ticket record', 
   const yamlText = fs.readFileSync(ticketPath, 'utf8');
   assert.match(yamlText, /bounce_count: 1/);
   assert.match(yamlText, /by: architect, blamed: coder/);
+});
+
+// BL-799 qa_e2e_procedure step 1: --role specifier --class spec-gap records
+// a row naming specifier as producer (source: BL-795/BL-1184/BL-1305, all
+// refused by the CLI before this fix; the specifier's own BL-635 rule
+// requires this exact recording for a spec-gap it remediated itself).
+test('recording a spec-gap bounce with --role specifier succeeds and names specifier as producer', async () => {
+  const root = mkRepo();
+  writeTicketYaml(root, 'BL-795');
+  const result = await runCli(root, flagArgs({ ticket: 'BL-795', role: 'specifier', cls: 'spec-gap', by: 'specifier' }));
+  assert.equal(result.recorded, true);
+
+  const records = readBounceRecords(root).filter((r) => r.ticket === 'BL-795');
+  assert.equal(records.length, 1);
+  assert.equal(records[0].producingRole, 'specifier');
+  assert.equal(records[0].failureClass, 'spec-gap');
 });
 
 // ── record-bounce-by-role-07: new path only, legacy dir never written ─────
@@ -387,6 +414,19 @@ test('resolveBounceInventory resolves "ok" for a well-formed multi-item array', 
   const resolution = resolveBounceInventory(inventoryJson(2));
   assert.equal(resolution.kind, 'ok');
   assert.equal(resolution.items.length, 2);
+});
+
+// BL-799 hardener: every prior "unknown class"/"unknown blamed role" case
+// above fed a SINGLE-item array, so a `.some(isValidBounceInventoryItem)`
+// mutant (any-valid) agrees with the real `.every` (all-valid) whenever the
+// array has just one member. Discriminate with a MIXED array: one valid
+// item and one invalid one, so only `.every` degrades it.
+test('resolveBounceInventory degrades a mixed array with one valid and one invalid item to "invalid-item"', () => {
+  const mixed = JSON.stringify([
+    { id: 'D1', class: 'behavior', blamed: 'coder', pointer: 'fixture.ts:1 fn()' },
+    { id: 'D2', class: 'flaky', blamed: 'coder', pointer: 'fixture.ts:2 fn()' },
+  ]);
+  assert.deepEqual(resolveBounceInventory(mixed), { kind: 'degraded', reason: 'invalid-item' });
 });
 
 test('resolveBlockedCount defaults to 0 when absent, negative, or non-integer', () => {

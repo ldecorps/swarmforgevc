@@ -1,3 +1,7 @@
+# acceptance-mutation-manifest-begin
+# {"version":1,"tested_at":"2026-09-18T12:20:53.101242616Z","feature_name":"The bounce ledger records specifier-produced send-backs","feature_path":"/home/carillon/swarmforgevc/.worktrees/hardender/specs/features/BL-799-record-bounce-specifier-producer.feature","background_hash":"74234e98afe7498fb5daf1f36ac2d78acc339464f950703b8c019892f982b90b","implementation_hash":"unknown","scenarios":[],"outcome":"inapplicable"}
+# acceptance-mutation-manifest-end
+
 Feature: The bounce ledger records specifier-produced send-backs
 
   record-bounce.js rejects --role specifier while --class spec-gap and
