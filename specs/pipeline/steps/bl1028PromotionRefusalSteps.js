@@ -28,6 +28,7 @@ const os = require('node:os');
 const path = require('node:path');
 const { spawnSync } = require('node:child_process');
 const { afterEach } = require('node:test');
+const { copyScriptClosure } = require('../../../extension/test/helpers/pinnedRepoFixture');
 
 const FEATURE = 'a promotion never bypasses an integrity commit that refused';
 
@@ -35,18 +36,6 @@ const REPO_ROOT = path.join(__dirname, '..', '..', '..');
 const SCRIPTS = path.join(REPO_ROOT, 'swarmforge', 'scripts');
 const HELPER = path.join(SCRIPTS, 'promote_and_route_next.sh');
 const TICKET = 'BL-9028-fixture-ticket.yaml';
-
-// promotion_gates (BL-663) is the chokepoint the script shells every gate
-// decision through; its whole load-file chain must travel with the copy or the
-// gate throws on load and the script reports "no eligible paused ticket" - a
-// broken fixture that reads like a promotion decision.
-const GATE_DEPS = [
-  'promotion_gates_cli.bb',
-  'promotion_gates_lib.bb',
-  'backlog_depth_lib.bb',
-  'swarm_identity_lib.bb',
-  'daemon_cycle_guard_lib.bb',
-];
 
 // Explicit known values per the Scenario Outline handler rule: a reason the
 // handlers do not know is a hard failure, never a passthrough. `close-guard`
@@ -126,9 +115,18 @@ function mkFixture(ctx) {
   }
   fs.copyFileSync(HELPER, path.join(root, 'swarmforge/scripts/promote_and_route_next.sh'));
   fs.chmodSync(path.join(root, 'swarmforge/scripts/promote_and_route_next.sh'), 0o755);
-  for (const dep of GATE_DEPS) {
-    fs.copyFileSync(path.join(SCRIPTS, dep), path.join(root, 'swarmforge/scripts', dep));
-  }
+  // promotion_gates (BL-663) is the chokepoint the script shells every gate
+  // decision through; its whole transitive load-file closure is derived from
+  // the live sources and copied (BL-1538/BL-1626), never a hand-maintained
+  // list — a hand list goes stale silently and the gate throws on load.
+  copyScriptClosure(SCRIPTS, path.join(root, 'swarmforge/scripts'), ['promotion_gates_cli.bb']);
+  // BL-1626: the freshness gate resolves the deprecate-check CLI at
+  // $ROOT/extension/out/tools/ first; a fixture with no extension/ hits the
+  // fail-closed HOLD path even once the eligibility gates answer correctly.
+  // Ignored rather than committed - the fixture's own "clean index" scenario
+  // asserts nothing untracked sits in the working tree.
+  fs.writeFileSync(path.join(root, '.gitignore'), '/extension\n');
+  fs.symlinkSync(path.join(REPO_ROOT, 'extension'), path.join(root, 'extension'));
   fs.writeFileSync(path.join(root, 'swarmforge/swarmforge.conf'), 'config active_backlog_max_depth 5\n');
   fs.writeFileSync(path.join(root, 'swarmforge/scripts/route_backlog_to_coder.sh'),
     '#!/usr/bin/env bash\nset -euo pipefail\nprintf \'%s\\n\' "$1" >> "${ROUTE_LOG:?}"\n');
@@ -138,7 +136,7 @@ function mkFixture(ctx) {
     'id: BL-9028\ntitle: "fixture ticket"\nstatus: paused\npriority: 1\nassigned_to:\n');
   fs.writeFileSync(path.join(root, 'specs/features/BL-9028-fixture-ticket.feature'), '');
 
-  git(root, ['add', 'backlog', 'specs', 'swarmforge']);
+  git(root, ['add', 'backlog', 'specs', 'swarmforge', '.gitignore']);
   git(root, ['commit', '-q', '-m', 'fixture paused backlog']);
   return root;
 }
@@ -260,4 +258,12 @@ function registerSteps(registry) {
   });
 }
 
-module.exports = { registerSteps };
+// BL-1626: the exact copy this handler's fixture performs, exposed for the
+// closure-census scenario to build and diff without duplicating the call.
+function buildFixtureScriptsDir() {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'bl1028-scripts-closure-'));
+  copyScriptClosure(SCRIPTS, dir, ['promotion_gates_cli.bb']);
+  return dir;
+}
+
+module.exports = { registerSteps, buildFixtureScriptsDir };

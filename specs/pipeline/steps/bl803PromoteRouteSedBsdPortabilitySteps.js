@@ -20,17 +20,11 @@ const fs = require('node:fs');
 const os = require('node:os');
 const path = require('node:path');
 const { execFileSync, spawnSync } = require('node:child_process');
+const { copyScriptClosure } = require('../../../extension/test/helpers/pinnedRepoFixture');
 
 const REPO_ROOT = path.join(__dirname, '..', '..', '..');
 const SCRIPTS_DIR = path.join(REPO_ROOT, 'swarmforge', 'scripts');
 const PROMOTE_SCRIPT_SRC = path.join(SCRIPTS_DIR, 'promote_and_route_next.sh');
-const GATES_CLI_SRC = path.join(SCRIPTS_DIR, 'promotion_gates_cli.bb');
-const GATES_LIB_SRC = path.join(SCRIPTS_DIR, 'promotion_gates_lib.bb');
-// BL-853: promotion_gates_lib.bb's depth-refusal now load-files
-// backlog_depth_lib.bb (shared no-limit? sentinel predicate), which in turn
-// load-files swarm_identity_lib.bb - both must travel with the copy below.
-const BACKLOG_DEPTH_LIB_SRC = path.join(SCRIPTS_DIR, 'backlog_depth_lib.bb');
-const SWARM_IDENTITY_LIB_SRC = path.join(SCRIPTS_DIR, 'swarm_identity_lib.bb');
 
 const FEATURE_NAME = 'promote-and-route survives BSD sed hosts';
 const TICKET_ID = 'BL-9803';
@@ -122,11 +116,18 @@ function initFixture(ctx) {
   fs.copyFileSync(PROMOTE_SCRIPT_SRC, destScript);
   fs.chmodSync(destScript, 0o755);
   // promotion_gates (BL-663): the chokepoint promote_and_route_next.sh now
-  // shells out to for every gate decision — must travel with the copy.
-  fs.copyFileSync(GATES_CLI_SRC, path.join(ctx.root, 'swarmforge', 'scripts', 'promotion_gates_cli.bb'));
-  fs.copyFileSync(GATES_LIB_SRC, path.join(ctx.root, 'swarmforge', 'scripts', 'promotion_gates_lib.bb'));
-  fs.copyFileSync(BACKLOG_DEPTH_LIB_SRC, path.join(ctx.root, 'swarmforge', 'scripts', 'backlog_depth_lib.bb'));
-  fs.copyFileSync(SWARM_IDENTITY_LIB_SRC, path.join(ctx.root, 'swarmforge', 'scripts', 'swarm_identity_lib.bb'));
+  // shells out to for every gate decision. BL-1626: the whole transitive
+  // load-file closure of promotion_gates_cli.bb is copied — derived from the
+  // live sources at fixture build time (BL-1538), never a hand-maintained
+  // list, so a future load-file addition travels with the copy automatically.
+  copyScriptClosure(SCRIPTS_DIR, path.join(ctx.root, 'swarmforge', 'scripts'), ['promotion_gates_cli.bb']);
+
+  // BL-1626: the freshness gate (promote_and_route_next.sh's BL-1173 block)
+  // resolves the deprecate-check CLI at $ROOT/extension/out/tools/ first; a
+  // fixture with no extension/ hits the fail-closed HOLD path even once the
+  // eligibility gates above answer correctly. A symlink to the real
+  // extension/ gives the gate its real CLI without bypassing its own answer.
+  fs.symlinkSync(path.join(REPO_ROOT, 'extension'), path.join(ctx.root, 'extension'));
 
   const routeStub = path.join(ctx.root, 'swarmforge', 'scripts', 'route_backlog_to_coder.sh');
   fs.writeFileSync(
@@ -242,4 +243,12 @@ function registerSteps(registry) {
   );
 }
 
-module.exports = { registerSteps };
+// BL-1626: the exact copy this handler's fixture performs, exposed for the
+// closure-census scenario to build and diff without duplicating the call.
+function buildFixtureScriptsDir() {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'bl803-scripts-closure-'));
+  copyScriptClosure(SCRIPTS_DIR, dir, ['promotion_gates_cli.bb']);
+  return dir;
+}
+
+module.exports = { registerSteps, buildFixtureScriptsDir };
