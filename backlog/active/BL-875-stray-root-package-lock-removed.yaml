@@ -193,3 +193,5 @@ notes: |
   step 2 restated for BL-1371's handler discovery, the e2e steps lifted into
   `qa_e2e_procedure:`. Recorded with record-adjudication.js (outcome amend)
   and re-checked: allow.
+
+assigned_to: coder
