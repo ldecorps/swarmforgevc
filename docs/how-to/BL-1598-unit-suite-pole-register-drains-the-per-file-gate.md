@@ -31,11 +31,29 @@ Only `new-pole` and `unowned-row` fail the exit code now; `watch` and
 
 | Situation | Verdict | Blocks the run? |
 | --- | --- | --- |
-| File with no register row, at or above `PER_FILE_DURATION_BUDGET_MS × NEW_POLE_REFUSAL_FRACTION` (7000 × 1.5 = 10500 ms) | `new-pole` | Yes |
+| File with no register row, at or above `PER_FILE_DURATION_BUDGET_MS × NEW_POLE_REFUSAL_FRACTION` (7000 × 1.5 = 10500 ms), confirmed over budget alone | `new-pole` | Yes |
 | File with no register row, between the budget and that 1.5× line | `watch` | No — named in the report every time it occurs |
 | Row present, owner ticket open, file still over budget | `ok` (reported as a registered pole) | No |
 | Row's owner ticket is not open (paused/active) | `unowned-row` | Yes |
 | Row's file now measures under 80% of budget | `stale-row` | No — reported so the row can be drained, never blocking |
+
+**Amended again (2026-09-18, BL-1633):** a would-be `new-pole` is no longer
+refused on its in-suite reading alone. `checkFileDurationBudget` gains an
+optional `confirmAlone` argument (`recordTestDuration.js` wires in
+`confirmPoleAlone`, one real solo `vitest` run under the same project
+config `npm test` itself uses); before refusing, every unregistered
+candidate at or above the 1.5× line is measured alone once. Under budget
+alone, it is reported as contention (both durations shown, the run
+passes); at or over budget alone — or the confirmer times out and returns
+`null`, which counts as over budget alone — it stays a `new-pole`, refused
+exactly as before. No confirmation runs for a registered or below-the-line
+file, and each candidate is confirmed at most once per run. This is why
+`extension/test/telegramFrontDeskBotCli.test.js` — whose in-suite duration
+kept crossing the line non-deterministically (8.0–19.7 s in-suite vs.
+3.7–5.0 s solo, six of eight runs over) even after BL-1620's subprocess
+cut — no longer needs a register row at all: the confirmation mechanism
+now contains the risk the row existed to guard against, and BL-1633
+removed its row in the same land.
 
 `PER_FILE_DURATION_BUDGET_MS` itself is unchanged (7000 ms); no test is
 deleted, skipped or excluded to satisfy the gate.
@@ -128,7 +146,10 @@ first slice D cut, `extension/test/telegramFrontDeskBotCli.test.js`:
   pole's *solo* time below budget does not by itself let its row leave: a
   row only drains once the guard, run against the file's actual **in-suite**
   duration, reports `stale-row` for it (the fixed 80%-of-budget threshold
-  in the table above, measured the same way the gate measures). Until then
-  the row stays, re-owned by whichever ticket the specifier assigns — this
-  file's row is BL-1633, which leaves in that ticket's own land once its
-  gate confirms the pole alone before refusing.
+  in the table above, measured the same way the gate measures) — or, as of
+  BL-1633, once the gate itself stops trusting the in-suite reading alone
+  and confirms a suspected new pole against its own solo measurement first
+  (see the "Amended again" note above). `telegramFrontDeskBotCli.test.js`'s
+  row left `backlog/suite-poles.tsv` in BL-1633's own land: its solo time,
+  already under budget after BL-1620's cut, now passes the confirmation
+  the gate performs before it would otherwise refuse.
