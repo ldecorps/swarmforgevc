@@ -1,0 +1,187 @@
+id: BL-1637
+title: "A seat's forward is filed where its completion gate looks: handoffd moves a delivered outbox file into the sent folder of the role named by its from header, which a seat stamps with its stage (coder), while done_with_current's forward-evidence gate (BL-1609) reads only the seat's own outbox and sent folders - so every forward coder@2 sends completes only through --no-op (BL-831, 2026-09-18: the forward delivered and claimed at the cleaner, the seat's sent folder empty since 2026-09-17, FORWARD_NOT_SENT) - the gate reads the seat's folders and its stage's, and the daemon files a seat's delivered mail under that seat, so the gate BL-1609 built is real for a second seat"
+milestone: M8
+type: defect
+severity: high
+# high: a live fault on the default pack - the second coder seat cannot
+# truthfully complete any parcel it forwards; each completion goes through
+# --no-op with a reason, which records a real forward as no work (the
+# BL-1422 ledger reads it so) and trains the seat to bypass BL-1609's gate.
+# BL-831 is the first recorded instance; every coder@2 forward since the
+# seat came up on 2026-09-16 was exposed to it.
+status: todo
+epic: multi-seat-stages
+priority: 8
+direction: swarm-reported
+depends_on: []
+# BL-1609 (the gate), BL-983 (seat-aware stage queue) and BL-1615 (the
+# seat's dispatcher claims mail addressed to it - inbound only, landed
+# 2026-09-18) are in backlog/done. BL-1616 (active) is BL-1004's affinity,
+# a different function. None of them touch the sent-folder side.
+mutation_cost: low
+# low: Babashka (no mutation/CRAP/DRY wired, BL-472): one function in
+# forward_evidence_lib.bb, one filing decision in handoffd.bb, their bb
+# runner cases, one feature and handler on BL-1609's fixture idiom,
+# evidence, protocol doc.
+slice_size_envelope: low
+required_stages: [coder, cleaner, architect, hardender, documenter, qa]
+
+acceptance: specs/features/BL-1637-a-seats-forward-is-filed-where-its-completion-gate-looks.feature
+
+required_wiring:
+  - 'swarmforge/scripts/forward_evidence_lib.bb::sent-dirs-for-seat::the gate lib is the pre-existing live consumer (done_with_current_task.bb calls sent-handoff-names-ticket-since?); the function name is chosen at mint so the literal exists only with the fix (BL-874, BL-1235)'
+  - 'specs/pipeline/steps/bl1637SeatForwardFiledWhereGateLooksSteps.js::registerSteps::the handler lands in the same parcel as the feature (BL-233, BL-1371)'
+
+human_approval: approved
+approval_context: >
+  A new feature file is authored here, so it needs a tap. No choice is
+  posed and there are no ruling_options. FIRM: the gate keeps refusing a
+  completion with no forward since dequeue - a stale forward in either
+  folder is still FORWARD_NOT_SENT; this widens WHERE the gate looks, not
+  WHAT it accepts. FIRM: the from header keeps the stage name (reverse
+  hops, affinity and attribution read it); the seat identity the daemon
+  files by rides a separate daemon-stamped header, never a rewrite of
+  from. FIRM: a bare seat (a stage with no @ rows) is byte-identical to
+  today - its own folders are its stage's.
+
+invariants:
+  - "A forward a seat sent after dequeuing a parcel is found by that seat's completion gate wherever the daemon filed it, and a forward sent before the dequeue, or none, is never accepted."
+
+description: |
+  ## What is wrong
+
+  Coder note 000019 (2026-09-18T14:45Z), evidence
+  `backlog/evidence/BL-831-coder-forward-gate-false-refusal-20260918.md`
+  (coder@2 branch 6d63104e70). coder@2 forwarded BL-831's bounce fix
+  (c6507fe1bd) to the cleaner: `swarm_handoff.sh` printed
+  `HANDOFF DELIVERED`, the file was claimed into the cleaner's batch
+  within twelve seconds, and the parcel is at the architect as this is
+  written. `done_with_current.sh` then refused the inbound:
+  `FORWARD_NOT_SENT: BL-831 has no git_handoff naming it queued since
+  dequeue`. A resend was refused by the duplicate-parcel check (the parcel
+  is live at the cleaner); `redo_from.sh` would have cleared a live
+  parcel; the seat completed the inbound with `--no-op` and an honest
+  reason, and wrote the note.
+
+  The coder read it as a sweep of its outbox and sent folders. It is not.
+  The delivered file is at
+  `.worktrees/coder/.swarmforge/handoffs/sent/50_20260918T144241Z_000018_from_coder_to_cleaner.handoff`
+  - the CODER STAGE's sent folder, not the seat's.
+  `swarmforge/scripts/handoffd.bb:598`:
+  `(move-with-collision path (sent-dir (get roles sender-role)))` files a
+  delivered outbox file under the role named by the file's `from:`
+  header, and a seat stamps `from:` with its stage (`from: coder`; the
+  stage is the addressable identity, BL-982/BL-983). The seat's own
+  outbox loses the file at delivery (its directory mtime 15:45:58 is the
+  daemon's move - the "sweep" the coder saw) and its own sent folder has
+  been empty since 2026-09-17 07:00. Meanwhile
+  `forward_evidence_lib.bb:32-48` `sent-handoff-names-ticket-since?`
+  scans `(handoff-lib/my-mailbox-dir :sent)` and `:outbox` - for
+  `SWARMFORGE_ROLE=coder@2` that is `.worktrees/coder2/.swarmforge/handoffs/`,
+  resolved from roles.tsv by `my-mailbox-base-dir`. Sender, daemon and
+  gate agree on nothing: the seat writes to its own outbox, the daemon
+  files under the stage, the gate reads the seat. For a bare seat the
+  three folders coincide, which is why BL-1609's own fixture never saw it.
+
+  BL-1615 (landed today) made the seat's dispatcher CLAIM mail addressed
+  to the seat; this is the other direction - mail the seat SENT. Same
+  family, different function, not covered.
+
+  ## What is wanted
+
+  - coder@2 holding a parcel for T, dequeued a minute ago, with a
+    git_handoff naming T that it sent after the dequeue: completes without
+    `--no-op` whether the daemon filed that forward under the seat's own
+    sent folder or under its stage's (scenario 01, rows 1-2); a forward
+    filed before the dequeue, or none at all, is still refused as
+    FORWARD_NOT_SENT (rows 3-4).
+  - A bare seat's behaviour is unchanged: with no `@` rows in roles.tsv
+    the folders the gate scans are exactly today's two (scenario 02).
+  - The daemon files a seat's delivered forward under that seat's sent
+    folder, keyed by a daemon-stamped seat header, while `from:` keeps the
+    stage name (scenario 03).
+  - `swarmforge/handoff-protocol.md` documents the seat header as
+    reserved and daemon-stamped (documenter).
+
+  ## How (direction, not mandate)
+
+  - `forward_evidence_lib.bb`: `(sent-dirs-for-seat)` returns the seat's
+    own `:sent` and `:outbox` plus, when `seat-stage` differs from the
+    seat, the stage's `:sent` and `:outbox` (`handoff-lib/mailbox-dir` on
+    the stage's role-info, the same join `stage-queue-dir` makes for
+    inbound); `sent-handoff-names-ticket-since?` scans that set. Filter
+    the stage's files to those whose seat header, when present, is this
+    seat - a file with no seat header (pre-fix) counts, so the transition
+    is green.
+  - `handoff_lib.bb` send path: stamp `from_seat: <SWARMFORGE_ROLE>` (a
+    reserved, tool-stamped header; agents writing it are refused like any
+    other reserved header) beside `from: <stage>`. `handoffd.bb:598` and
+    `:729`: `sent-dir` of the seat named by `from_seat` when present and
+    resolvable in roles.tsv, else of `from:` as today.
+  - bb runner cases beside BL-1609's in
+    `forward_evidence_lib_test_runner.bb` (or its home) for the four rows
+    and the bare-seat case; the handler drives the real
+    `done_with_current_task.bb` on BL-1609's fixture swarm root
+    (`bl1609ForwardingParcelNotCompletedWithNothingSentSteps.js`'s roles
+    table, plus a `coder@2` row) and the real daemon filing function for
+    scenario 03 - never a re-statement of either.
+  - Documenter: handoff-protocol.md's reserved-header list gains
+    `from_seat`; the BL-1609 how-to (if any) notes the seat case.
+
+constraints: >
+  forward_evidence_lib.bb, the send-path stamping in handoff_lib.bb, the
+  two filing sites in handoffd.bb, their runner cases, the feature and
+  handler, evidence and docs. No change to from, to stage-queue-dir, to
+  BL-1004's affinity, to reverse-hop routing, or to any dispatcher. The
+  step handler lands with the feature (BL-233). Evidence named BL-1637-*.
+
+out_of_scope: |
+  - Rewriting from to carry the seat (breaks back-one/back-all routing
+    and attribution that read the stage).
+  - The --no-op records already written for coder@2 forwards: honest at
+    the time, left as history; BL-831's evidence file lands with BL-831.
+  - The reverse-hop copies addressed to coder@2 that sat unread before
+    BL-1615 landed.
+
+qa_e2e_procedure: |
+  On the parcel commit, from the repo root:
+  1. The lib's bb runner ONCE -> green, the four rows and the bare-seat
+     case present.
+  2. Acceptance resolving all three scenarios
+     (`bash specs/pipeline/scripts/run_acceptance.sh specs/features/BL-1637-*.feature`);
+     BL-1609's feature still resolving.
+  3. Live, ONCE, on this parcel's own forward: QA reads coder@2's sent
+     folder after the coder@2 seat forwards any parcel post-land (or the
+     stage's, if the seat header is absent) and confirms the seat's
+     done_with_current completed it without --no-op - the completed
+     inbound carries no no_op_reason. Never "run it N times".
+  4. `git diff main...HEAD --name-only` names the three bb files, the
+     runner, the feature, the handler, evidence and docs only.
+
+source: |
+  Coder note to the specifier, priority 00, 2026-09-18T14:45Z (inbound
+  00_20260918T144557Z_000019_from_coder): "BL-831 forward-gate
+  false-refused; evidence in backlog/evidence". Coder evidence
+  backlog/evidence/BL-831-coder-forward-gate-false-refusal-20260918.md
+  (coder@2 branch 6d63104e70). Specifier adjudication with the file
+  locations and the daemon line:
+  backlog/evidence/BL-1637-specifier-adjudication-of-coder-forward-gate-refusal-20260918.md.
+  Parents: BL-1609, BL-983, BL-1615. Class siblings: BL-1615/BL-1616 (the
+  seat's mail directories), BL-1614 (a gate reading the wrong tree).
+
+notes: |
+  Minted 2026-09-18 by the specifier while completing the coder's note,
+  the same pass. AUTO-APPROVED under the 2026-09-17 operator hotfix
+  (severity defect, no ruling_options) - see
+  auto-approve-high-severity-defects-amendment-20260917.md. The coder was
+  told the refusal is a real gate defect and its --no-op record stands;
+  the coordinator was sent paused-ready. Until this lands: a coder@2
+  forward that reaches its target and is refused at completion is this
+  defect - complete with --no-op naming this ticket, never redo_from.sh a
+  live parcel. INVEST: Independent (gate, daemon and seat rows exist),
+  Negotiable (the seat header's name and the daemon's filing join are
+  direction; the gate function name is the anchor), Valuable (the second
+  seat completes truthfully and BL-1609's gate means something for it),
+  Estimable (one scan set, one header, two filing sites - one sitting),
+  Small (three scenarios, one invariant), Testable (BL-1609's fixture
+  swarm in seconds).
