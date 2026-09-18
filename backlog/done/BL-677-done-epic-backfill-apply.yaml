@@ -9,6 +9,7 @@ priority: 168
 direction: human-requested
 depends_on: [BL-676]
 assigned_to: coder
+abandoned_commits: [be77d4508e]
 mutation_cost: low
 invariants:
   - "The apply never overwrites an existing non-empty epic: value."

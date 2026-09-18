@@ -1,3 +1,8 @@
+# mutation-stamp: sha256=a94865ed08d679fedb2abf3307b550a7d0c098985580c5d13610fcbc40577130
+# acceptance-mutation-manifest-begin
+# {"version":1,"tested_at":"2026-09-18T13:47:42.239812357Z","feature_name":"Bubble's Live page shows the coordinator and resident panes without a second renderer","feature_path":"/home/carillon/swarmforgevc/.worktrees/hardender/specs/features/BL-775-bubble-live-screen-shell.feature","background_hash":"f91394f1db8393d5abd4b1a2d0c99b9f5de47b10ddefe417d2edae1cc33949bc","implementation_hash":"unknown","scenarios":[{"index":2,"name":"the pane strip carries what the human needs to judge the pane","scenario_hash":"681800ec9f0dafc47b8b44bba45ee62cc24c4c563ee7db9d73ea4526a39476a9","mutation_count":5,"result":{"Total":5,"Killed":5,"Survived":0,"Errors":0},"tested_at":"2026-09-18T13:47:42.239812357Z"}]}
+# acceptance-mutation-manifest-end
+
 Feature: Bubble's Live page shows the coordinator and resident panes without a second renderer
 
   The bridge already renders the Live Screen for the Telegram Mini App, already
