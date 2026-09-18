@@ -82,6 +82,24 @@ export function mergeBubbleHostIntoUiBundleManifest(manifest: LetsTalkUiBundleMa
   };
 }
 
+// required_wiring anchor: bubbleLivePage
+export const bubbleLivePage: LetsTalkUiBundlePage = {
+  id: 'live',
+  title: 'Live',
+  entryPath: 'live',
+  order: 1,
+};
+
+export function mergeBubbleLiveIntoUiBundleManifest(manifest: LetsTalkUiBundleManifest): LetsTalkUiBundleManifest {
+  if (manifest.pages.some((page) => page.id === bubbleLivePage.id)) {
+    return manifest;
+  }
+  return {
+    ...manifest,
+    pages: [...manifest.pages, bubbleLivePage].sort((a, b) => a.order - b.order),
+  };
+}
+
 export const LETS_TALK_TURN_MAX_BODY_BYTES = 8 * 1024 * 1024;
 
 export interface LetsTalkRouteDeps {

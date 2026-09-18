@@ -11,7 +11,15 @@ import {
   PANE_FONT_STEP_PX,
 } from './residentSpyPaneFontSize';
 
-export function getResidentSpyUiHtml(): string {
+/**
+ * BL-775 invariant 1 / required_wiring: the ENTIRE Live Screen document -
+ * markup, style and script - lives here and only here. Both the Telegram
+ * Mini App shell (getResidentSpyUiHtml) and Bubble's Live bundle page
+ * (bubbleLiveUiHtml.ts's getBubbleLiveUiHtml) call this same function; a
+ * second copy of what it returns is the one thing this ticket's first
+ * invariant forbids.
+ */
+export function renderLiveScreenBody(): string {
   return `<!DOCTYPE html>
 <html lang="en">
 <head>
@@ -387,7 +395,7 @@ export function getResidentSpyUiHtml(): string {
     <div class="ticket-strip-line"><span class="ticket-strip-id" id="ticket-strip-id"></span> - <span class="ticket-strip-title" id="ticket-strip-title"></span><button type="button" id="ticket-strip-collapse-btn" class="ticket-strip-collapse-btn" aria-label="Collapse ticket title">▾</button></div>
     <div class="ticket-strip-meta" id="ticket-strip-meta"></div>
   </div>
-  <div id="pane-offline" class="pane-offline" hidden>Live panes unavailable — swarm agents may be down.</div>
+  <div id="pane-offline" class="pane-offline" hidden>Swarm is idle - no live panes right now.</div>
   <div class="split" id="pane-split"></div>
 </div>
 <div id="pane-fullscreen" class="pane-fullscreen" hidden>
@@ -443,6 +451,11 @@ export function getResidentSpyUiHtml(): string {
   var fsTitleBase = '';
   var lastPanes = [];
   var lastFetchAvailable = false;
+  // BL-775 invariant 3: the poll's own failure reason (e.g. an HTTP status
+  // plus the bridge's own JSON error detail, never a bare code alone) -
+  // null when the last poll reached the bridge and got a real answer,
+  // whatever that answer was.
+  var lastFetchErrorReason = null;
   var lastAggregateStatus = null;
   // BL-929: false until a snapshot says otherwise, so a standing full pack
   // never shows the top ticket strip even on the very first paint (fails
@@ -789,7 +802,9 @@ export function getResidentSpyUiHtml(): string {
       fsClaimEnteredAtMs = null;
       fsTitleBase = '';
     }
-    var text = pane && pane.available !== false ? (pane.paneText || '(empty)') : '(pane not reachable)';
+    var text = pane && pane.available !== false
+      ? (pane.paneText || '(empty)')
+      : ((pane && pane.reason) || '(pane not reachable)');
     if (fsPreEl.textContent !== text) {
       var atBottom = fsPreEl.scrollHeight - fsPreEl.scrollTop - fsPreEl.clientHeight < 24;
       fsPreEl.textContent = text;
@@ -982,6 +997,17 @@ export function getResidentSpyUiHtml(): string {
     ];
   }
 
+  // BL-775 invariants 3 and the "quiet, not broken" scenario: when no pane
+  // is live, the banner names why - the poll's own failure reason first
+  // (never a bare status code alone), else a plain idle message, never the
+  // old "may be down" alarm wording for what is often just a quiet swarm.
+  function offlineBannerText() {
+    if (lastFetchErrorReason) {
+      return 'Live feed error: ' + lastFetchErrorReason;
+    }
+    return 'Swarm is idle - no live panes right now.';
+  }
+
   function updateOfflineBanner(panes, available) {
     if (focusPane) {
       paneOfflineEl.hidden = true;
@@ -991,6 +1017,9 @@ export function getResidentSpyUiHtml(): string {
       return entry.pane && entry.pane.available !== false;
     });
     paneOfflineEl.hidden = anyLive;
+    if (!anyLive) {
+      paneOfflineEl.textContent = offlineBannerText();
+    }
   }
 
   function pickTicketPane(panes) {
@@ -1100,7 +1129,10 @@ export function getResidentSpyUiHtml(): string {
     // Keep pane text in the hidden <pre> so Expand can still use DOM if needed;
     // fullscreen sync reads from the live payload, not this node.
     if (!pane || pane.available === false) {
-      paneEl.textContent = '(pane not reachable)';
+      // BL-775 invariant 3: a capture that failed for a nameable reason
+      // shows that reason - '(pane not reachable)' is the floor only when
+      // the bridge gave none.
+      paneEl.textContent = (pane && pane.reason) || '(pane not reachable)';
       return;
     }
     var text = pane.paneText || '(empty)';
@@ -1136,7 +1168,15 @@ export function getResidentSpyUiHtml(): string {
   function refresh() {
     fetch('/resident-pane?bearer=' + encodeURIComponent(token), { cache: 'no-store' })
       .then(function (r) {
-        if (!r.ok) throw new Error('HTTP ' + r.status);
+        if (!r.ok) {
+          // BL-775 invariant 3: read whatever detail the bridge's own error
+          // body carries (e.g. {"error":"unauthorized"}) rather than
+          // discarding it - the code alone is never the whole message.
+          return r.json().catch(function () { return null; }).then(function (body) {
+            var detail = body && body.error ? body.error : r.statusText;
+            throw new Error('HTTP ' + r.status + (detail ? ' (' + detail + ')' : ''));
+          });
+        }
         return r.json();
       })
       .then(function (data) {
@@ -1144,6 +1184,7 @@ export function getResidentSpyUiHtml(): string {
           setStatus('err');
           return;
         }
+        lastFetchErrorReason = null;
         var panes = normalizePanes(data);
         lastPanes = panes;
         lastFetchAvailable = !!data.available;
@@ -1156,7 +1197,10 @@ export function getResidentSpyUiHtml(): string {
           setStatus('ok');
         }
       })
-      .catch(function () {
+      .catch(function (err) {
+        lastFetchErrorReason = (err && err.message) || 'connection failed';
+        lastFetchAvailable = false;
+        updateOfflineBanner(lastPanes, false);
         setStatus('err');
       });
   }
@@ -1209,4 +1253,10 @@ export function getResidentSpyUiHtml(): string {
 </script>
 </body>
 </html>`;
+}
+
+// BL-522: Telegram Mini App shell entry point, kept for existing callers -
+// a thin wrapper over the shared renderer above, never a second copy of it.
+export function getResidentSpyUiHtml(): string {
+  return renderLiveScreenBody();
 }
