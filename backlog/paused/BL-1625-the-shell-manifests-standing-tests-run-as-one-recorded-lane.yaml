@@ -1,52 +1,69 @@
 id: BL-1625
-title: "The shell suite manifest's 518 standing tests are no role's lane - BL-1618's table has no shell lane and QA runs only the suites a ticket names - so test_bl1388_land_step_guard_fixture.sh was red on main for thirteen days before a cleaner's incidental re-run found it (BL-1624); one runner executes every standing row sequentially, appends one duration row per completed run with the pole and the failing files, prints a verdict and exits with the suite's status - the recorder half (BL-1619's shape for the shell lane), changing no role's lane set until the census is in"
+title: "Two registered test populations are no role's lane - the shell suite manifest's 518 standing tests and the 1294 landed feature files under specs/features/ - so test_bl1388_land_step_guard_fixture.sh was red on main for thirteen days (BL-1624) and four landed promotion and portability features for three to four weeks (BL-1626, BL-1627) before incidental hand runs found them; one recorded lane runner executes a listed population one item at a time, appends one duration row per completed item, prints a verdict naming every red and the slowest, and exits with the suite's status, behind a shell-manifest front-end and a landed-features front-end - the recorder half, changing no lane set, with each population's first full run the census in the nightly slot after landing, never inside the parcel (absorbs BL-1628)"
 milestone: M8
 type: feature
+status: todo
 epic: unit-suite-speed
 priority: 4
 direction: swarm-reported
 depends_on: []
-# suite-manifest.tsv (BL-1239), recordTestDuration.js and recordPropertyDuration.js
-# (BL-1619, paused) exist as the shapes to mirror; BL-1618 (active) owns
-# the lane table and is not touched - adding a shell row there is the
-# slice after this census, minted from the row this runner records.
+# suite-manifest.tsv (BL-1239), run_acceptance.sh (BL-112),
+# recordTestDuration.js (BL-078/BL-378) and BL-1619 (property recorder,
+# paused) exist as the shapes to mirror; BL-1618 (done) owns the lane
+# table and is not touched - the shell and acceptance rows there are the
+# slice after each census. BL-1630 (paused) cuts the step-registry load
+# every run_acceptance.sh call pays; it is not a dependency, but the
+# acceptance population's full run is sized by it (see What is wrong).
 mutation_cost: low
-# low: one bash runner and its shell test (mkdtemp fixture manifest, fake
-# tests), one feature and handler, evidence, docs; shell carries no
-# mutation/CRAP/DRY (BL-472). Runners the feature shells: the fixture
-# runs in seconds; the real manifest run is QA's e2e once (BL-1541).
+# low: one bash runner, two thin front-ends and their shell tests (mkdtemp
+# lists, fake commands, two tiny fixture features), one feature and
+# handler, evidence, docs; shell carries no mutation/CRAP/DRY (BL-472).
+# Runners the feature shells: seconds, plus two run_acceptance.sh calls on
+# tiny features (~50 s of registry load until BL-1630), inside BL-1541's
+# ceiling. The real populations run only as bounded samples in the parcel.
 slice_size_envelope: low
 required_stages: [coder, cleaner, architect, hardender, documenter, qa]
 
 acceptance: specs/features/BL-1625-the-shell-manifests-standing-tests-run-as-one-recorded-lane.feature
 
 required_wiring:
-  - 'specs/pipeline/steps/bl1625ShellManifestRecordedLaneSteps.js::registerSteps::the handler lands in the same parcel as the feature (BL-233, BL-1371)'
+  - 'specs/pipeline/steps/bl1625RecordedLaneRunnerSteps.js::registerSteps::the handler lands in the same parcel as the feature (BL-233, BL-1371)'
 # No production anchor on purpose (BL-1235): the runner is a new entry
-# point with no pre-existing caller; the lane-set row that will call it
-# is the next slice, after the census this runner produces.
+# point with no pre-existing caller; the lane-set rows that will call its
+# front-ends are the slice after the censuses this runner produces.
 
 human_approval: pending
 approval_context: >
-  A new feature file is authored here, so it needs a tap. No choice is
+  A new feature file is authored here, so it needs a tap; amended
+  2026-09-18 when BL-1628 was absorbed (the pending ask posted 2026-09-17
+  predates the amendment - read the ticket as it stands). No choice is
   posed and there are no ruling_options. FIRM: measurement before cutting
-  or wiring - this runner changes no role's lane set, no test, and nothing
-  about how the manifest is registered; it only runs the standing rows in
-  order and records what that costs. FIRM: a killed run appends no row.
-  FIRM: the first real run on the parcel is the census (the evidence lists
-  the top ten files by duration and every failing file), from which the
-  lane-set row and any pole cuts are minted later (BL-791 family), the way
-  BL-1619's census feeds slice E.
+  or wiring - the runner changes no role's lane set, no test, no feature,
+  no handler and nothing about how either population is registered; it
+  runs the listed items in the population's own order and records what
+  each costs and answers. FIRM: rows are per ITEM for both populations,
+  appended as each completes, so a run killed part-way leaves the rows of
+  the completed items and no more. FIRM: no full run of either real
+  population inside the parcel - 1294 features each paying the
+  step-registry load is about seven hours today (BL-1630) and the shell
+  suite carries runners with 240 s budgets (BL-1541); the parcel proves the
+  runner on fixtures and on a bounded sample of each real population, and
+  the first full run of each is one run in the nightly slot after landing,
+  its reds unowned-red notes to the specifier. FIRM: the runner never runs
+  beside the unit or property lane (engineering.prompt Verification:
+  sequential, never concurrent).
 
 invariants:
-  - "Every completed run appends exactly one row; a run that did not complete appends none."
-  - "The runner changes nothing about the tests it runs: same files, same order as the manifest, each test's own exit status - observation only."
+  - "Every item that completes appends exactly one row, whether it passed or failed; an item that did not complete appends none."
+  - "The runner changes nothing about what it runs: the same files in the population's own order, each item's own exit status - observation only."
 
 description: |
   ## What is wrong
 
+  Two registries are read for registration and run by nobody.
+
   `swarmforge/scripts/test/suite-manifest.tsv` registers 518 shell tests
-  as `standing` (BL-1239 refuses an unregistered test file at send), but
+  as `standing` (BL-1239 refuses an unregistered test file at send), and
   registration is the only thing anyone reads it for:
   `check_test_file_registration.sh` and `run_commit_guards.sh` consult it,
   no script runs it. BL-1618's one-command lane table has compile, unit,
@@ -55,86 +72,182 @@ description: |
   test_bl1388_land_step_guard_fixture.sh (BL-1624) turned red on
   2026-09-04 when its own ticket landed and was found on 2026-09-17 only
   because a cleaner re-ran the land-step neighbourhood by hand after a
-  merge repair. A test that no lane runs is the carpet the 2026-09-05
-  directive forbids, and 518 of them have no duration record either.
+  merge repair.
+
+  `specs/pipeline/scripts/run_acceptance.sh <feature-file>` runs ONE
+  feature. Every role's lane set runs `acceptance-own`: the features the
+  ticket's `acceptance:` names. The hardender's Gherkin mutation gate
+  runs the parcel's features. Nothing runs the other 1290. Four of them
+  were red for weeks - BL-803 since 2026-08-20, BL-1028 since 08-25,
+  BL-1100 since 08-27, BL-937 since the two mapfile scripts landed - and
+  were found on 2026-09-17 only because a coder ran "every feature whose
+  handler drives route_backlog_to_coder.sh" by hand (BL-1614 evidence). A
+  landed feature is a durable contract (BL-111); a contract nobody runs,
+  like a registered test nobody runs, is the carpet the 2026-09-05
+  directive forbids, and neither population has a duration record.
+
+  These were minted on 2026-09-17 as two tickets (this one for the shell
+  manifest, BL-1628 for the landed features) with the same fix shape - a
+  sequential bash runner over a population, one JSON duration row per
+  completion, a verdict, the suite's exit status, a fixture test with two
+  passing and one failing item - and the 2026-09-18 shift-end
+  consolidation sweep (operator hotfix 2026-09-17) merged them: one
+  runner, two front-ends, one ticket. BL-1628 is retired
+  (`closed_as: superseded-by-BL-1625`); its per-feature rows, its
+  "alone on the host" rule and its features front-end are carried here.
+
+  The sweep also sized the censuses, which the two tickets had put inside
+  the parcel. Every `run_acceptance.sh` call loads the whole step
+  registry - 19.5 s wall through index.js on 2026-09-17 (BL-1630) - so
+  1294 features cost about seven hours of registry load before a single
+  scenario runs, and about two hours after BL-1630's target of one load
+  under 5 s. The shell manifest's 518 rows include bb runners with
+  measured 240 s draw budgets (BL-1541). A parcel step of hours is the
+  "tests run for hours" the human's 2026-09-17 intake refused (BL-1618).
+  So the parcel proves the runner on fixtures and on a bounded sample of
+  each population, and each population's first FULL run is one run in the
+  nightly slot after landing (BL-1628 had already named the night
+  closing ceremony as the lane's natural home): that run is the census
+  the lane-set rows and any pole cuts are minted from, and every red it
+  names is an unowned-red note to the specifier the same pass, never
+  fixed in this parcel.
 
   ## What is wanted
 
-  - `swarmforge/scripts/test/run_shell_suite.sh [manifest]`: runs every
-    `standing` row of the manifest sequentially from the repo root, each
-    with `bash`, capturing exit status and wall time (scenario 01: a
-    fixture manifest with two standing rows and one non-standing row runs
-    exactly the two, in manifest order).
-  - A failing row makes the verdict name it and the runner exit nonzero;
-    an all-green run exits 0 (scenario 02).
-  - One row per completed run appended to
-    `swarmforge/scripts/test/.shell-durations.jsonl` - finished_at,
-    file_count, result, duration_ms, pole_ms, pole_file, failed (a list) -
-    on pass and on fail (scenario 03; invariant 1); a killed run appends
-    none.
-  - A verdict line naming the pole with its seconds and every file above
-    30 s.
-  - The first real run on the parcel is the census: the evidence records
-    the row, the top ten files by duration and every failing file - each
-    failing file is an `unowned-red` note to the specifier the same pass
-    (the BL-1624 shape), never fixed in this parcel.
+  - The shell front-end lists exactly the manifest's `standing` rows in
+    manifest order and the runner runs exactly those (scenario 01: a
+    fixture manifest with two standing rows and one non-standing row).
+  - The features front-end lists every `*.feature` under a directory in
+    name order and the runner runs exactly those through
+    run_acceptance.sh (scenario 02: a fixture directory with two
+    one-scenario features whose handlers are registered).
+  - One row per completed item, none for an incomplete one: both pass ->
+    one row per item, both passing; one fails -> one row per item, one
+    failing; killed after the first -> exactly one row (scenario 03, the
+    runner on a fixture list; invariant 1).
+  - The verdict names every failing item and the exit status is the
+    suite's: all pass -> 0 and no red named; one fails -> 1 and exactly
+    that item named (scenario 04).
+  - `--limit N` runs the first N items of the list and appends N rows -
+    the bounded sample the parcel's e2e uses on the real populations
+    (scenario 05).
+  - After landing, not a parcel step: the first full run of each
+    population in the nightly slot is the census; the evidence of THAT
+    run (whoever runs it) lists the reds, the ten slowest and the wall,
+    and each red is an unowned-red note to the specifier.
 
   ## How (direction, not mandate)
 
-  - Bash, `set -uo pipefail` (never `set -e` across a chain of independent
-    tests - BL-1242: capture each status, exit the combined one), `date
-    +%s%3N` around each `bash <file>`, a `printf`-built JSON row appended
-    with `>>`; the manifest path defaults to the real one; a `--dry-run`
-    prints the plan. Mirror recordTestDuration.js's row names where they
-    apply. Never `set -e` around the loop and never `kill` anything.
-  - Shell test `swarmforge/scripts/test/test_run_shell_suite.sh` with a
-    mkdtemp manifest and three fake tests (two passing, one failing;
-    BL-1390 fixture rules), registered standing itself.
-  - Documenter: the how-to for the unit-lane recorder gains the shell
-    twin; engineering-detailed.prompt "Verification" names the row.
+  - One runner, `swarmforge/scripts/test/run_recorded_lane.sh --lane
+    <shell|acceptance> --list <file> --durations <path> [--limit N]
+    [--dry-run]`, where each list line is `<file>\t<command ...>`; it runs
+    the lines in order, `date +%s%3N` around each, and appends one
+    `printf`-built JSON row `{finished_at, lane, file, result,
+    duration_ms}` with `>>` the moment the command returns; `set -uo
+    pipefail` and a captured status per item, never `set -e` across the
+    loop (BL-1242) and never `kill` anything; the verdict names every red,
+    the ten slowest with their seconds and the wall; exit nonzero when any
+    item is red. Mirror recordTestDuration.js's row names where they apply.
+  - Two thin front-ends that only BUILD the list and call the runner:
+    `swarmforge/scripts/test/run_shell_suite.sh [manifest]` (standing rows
+    -> `bash <file>`; durations `swarmforge/scripts/test/.shell-durations.jsonl`)
+    and `specs/pipeline/scripts/run_all_acceptance.sh [features-dir]`
+    (`*.feature` in name order -> `bash run_acceptance.sh <feature>
+    <per-run outDir>`, the second argument so generated entry points never
+    collide; durations `specs/pipeline/.acceptance-durations.jsonl`). Both
+    forward `--limit` and `--dry-run`.
+  - Shell test `swarmforge/scripts/test/test_run_recorded_lane.sh`: a
+    mkdtemp list with three fake commands (two pass, one fails; a
+    `sleep`-then-pass item for the kill case; BL-1390 fixture rules) plus
+    one case per front-end's list building; registered standing in the
+    manifest (BL-1239's own rule). The acceptance handler
+    `bl1625RecordedLaneRunnerSteps.js` drives the real runner and the real
+    front-ends on the same fixtures; scenario 02's two fixture features
+    ship with feature-scoped handlers of their own (BL-1277's collision
+    guard) and run through the real run_acceptance.sh, about 25 s each
+    until BL-1630 lands.
+  - Documenter: the how-to for the unit-lane recorder gains the shell and
+    acceptance twins; engineering-detailed.prompt "Verification" and
+    "Acceptance Pipeline" name the runner, the two durations files and the
+    rule that a full population run is a nightly-slot run, never a parcel
+    step.
 
 constraints: >
-  One runner, its shell test, the feature and handler, evidence and docs.
-  No change to suite-manifest.tsv's rows, to any shell test, to
+  One runner, two front-ends, their shell tests, the feature and handler
+  (with two tiny fixture features and their handlers), evidence and docs.
+  No change to suite-manifest.tsv's rows beyond the new tests' own, to any
+  shell test, to run_acceptance.sh, to any landed feature or handler, to
   verify_lanes.sh or BL-1618's table, or to any role prompt. The step
   handler lands with the feature (BL-233). Evidence named BL-1625-*.
 
 out_of_scope: |
-  - A row for the shell lane in BL-1618's table, and which role runs it:
-    the slice after this census, minted from the recorded duration.
-  - Cutting any pole the census finds, or fixing any red it finds (each
-    red is an unowned-red note; BL-1624 is the first).
+  - Rows for the shell and acceptance lanes in BL-1618's table, and which
+    role or slot runs them: the slice after each census, minted from the
+    recorded rows.
+  - Running either full population inside the parcel, cutting any pole
+    the censuses find, or fixing any red they find (each red is an
+    unowned-red note; BL-1624, BL-1626 and BL-1627 own today's).
   - Timing the bb property runners under swarmforge/scripts/test/ (their
-    rows in the manifest are `bb`, not `standing` shell; BL-791 remaining
-    slice).
+    manifest rows are `bb`, not `standing` shell; BL-791 remaining slice).
+  - Parallelising features or tests: the acceptance runner is sequential
+    by rule, and the manifest runs in order.
+  - Cutting the step-registry load each run_acceptance.sh call pays
+    (BL-1630).
 
 qa_e2e_procedure: |
   On the parcel commit, from the repo root, with extension/out compiled:
-  1. `bash swarmforge/scripts/test/test_run_shell_suite.sh` -> green.
-  2. Acceptance resolving all scenarios
+  1. `bash swarmforge/scripts/test/test_run_recorded_lane.sh` -> green.
+  2. Acceptance resolving all five scenarios
      (`bash specs/pipeline/scripts/run_acceptance.sh specs/features/BL-1625-*.feature`).
-  3. ONE real `bash swarmforge/scripts/test/run_shell_suite.sh`: exactly
-     one new row in .shell-durations.jsonl, the verdict printed, its exit
-     status the suite's; the evidence records the row, the top ten files
-     by duration and every failing file, each failing file already the
-     subject of an unowned-red note. Never "run it N times".
-  4. `git diff main...HEAD --name-only` names no test the manifest lists
-     and not suite-manifest.tsv beyond the new test's own row.
+  3. Bounded samples of the two REAL populations, one run each, never the
+     whole population and never "run it N times":
+     `bash swarmforge/scripts/test/run_shell_suite.sh --limit 10` -> ten
+     new rows in .shell-durations.jsonl, the verdict printed, the exit
+     status the sample's; then, alone on the host (no unit or property
+     lane beside it), `bash specs/pipeline/scripts/run_all_acceptance.sh
+     --limit 5` -> five new rows in .acceptance-durations.jsonl. The
+     evidence records both verdicts, every row's ms, the host's 1-minute
+     load, and the extrapolated full-run wall of each population (rows x
+     population size), which sizes the nightly slot.
+  4. `git diff main...HEAD --name-only` names no test the manifest lists,
+     no landed feature, and not suite-manifest.tsv beyond the new tests'
+     own rows.
 
 source: |
   Found by the specifier adjudicating the cleaner's unowned-red note of
   2026-09-17T13:02Z (BL-1624): `grep -rln suite-manifest swarmforge/scripts`
   names only the registration checks; `grep -c standing suite-manifest.tsv`
-  = 518. Human directive 2026-09-05 ("we should not sweep failing tests
-  under the carpet"); human intake 2026-09-17 ("tests run for hours",
-  BL-1618/1619). Parents: BL-1239, BL-1619, BL-078. Sibling: BL-1624.
+  = 518. And, the same day, adjudicating the coder's unowned-red note of
+  2026-09-17T13:12Z (BL-1626/BL-1627): `ls specs/features/*.feature | wc -l`
+  = 1294; QA.prompt runs run_acceptance.sh "for the ticket's" features;
+  BL-1618's table has acceptance-own only. Human directive 2026-09-05 ("we
+  should not sweep failing tests under the carpet"); human intake
+  2026-09-17 ("tests run for hours", BL-1618/1619 - hence measurement
+  first, bounded samples in the parcel, and never beside another lane).
+  Absorbs BL-1628 (minted 2026-09-17, retired 2026-09-18 in the shift-end
+  consolidation sweep, closed_as superseded-by-BL-1625); sweep evidence
+  backlog/evidence/BL-1625-shift-end-consolidation-sweep-20260918.md.
+  Parents: BL-1239, BL-112, BL-111, BL-1619, BL-078. Siblings: BL-1624,
+  BL-1626, BL-1627. Sizing: BL-1630, BL-1541.
 
 notes: |
-  Minted 2026-09-17 by the specifier in the same pass as BL-1624. INVEST:
-  Independent (the manifest and the recorder shapes exist), Negotiable
-  (row names and verdict wording are direction), Valuable (518 tests
-  become a measured, runnable lane instead of a registry nobody runs),
-  Estimable (one loop, one JSON row, one verdict, one fixture test - one
-  sitting), Small (three scenarios, two invariants), Testable (fixture
-  manifest in seconds). Priority 4: measurement, like BL-1619, ahead of
-  any lane-set change.
+  Minted 2026-09-17 by the specifier in the same pass as BL-1624.
+  Amended 2026-09-18 by the specifier in the shift-end consolidation sweep
+  of the 2026-09-17 mints (operator hotfix 2026-09-17; the human asked the
+  same morning): absorbed BL-1628, whose runner, fixture test and
+  three-scenario feature were the same shape over a second population;
+  rows became per item for both (BL-1628's FIRM); the two full censuses
+  left the parcel for the nightly slot once their cost was summed
+  (registry load x 1294, 240 s bb budgets); the handler name changed to
+  bl1625RecordedLaneRunnerSteps.js and the feature was rewritten (no
+  handler existed for either ticket, so nothing built is affected). The
+  pending approval ask posted 2026-09-17 predates the amendment and no
+  new ask is posted for an amended pending ticket (BL-1455). INVEST after
+  the merge: Independent (the manifest, run_acceptance.sh and the recorder
+  shapes exist), Negotiable (row and flag names, verdict wording, list
+  format are direction), Valuable (both registries nobody runs become one
+  measured lane - one outcome, one mechanism), Estimable (one loop, two
+  list builders, one row, one verdict, fixture tests - one sitting), Small
+  (five scenarios, two invariants), Testable (fixtures in seconds, two
+  tiny features under a minute). Priority 4: measurement, like BL-1619,
+  ahead of any lane-set change.

@@ -2,6 +2,8 @@ id: BL-1628
 title: "No lane runs a landed feature: 1294 files under specs/features/ and every role runs only the parcel's own (acceptance-own), so four landed promotion and portability features were red on main for three to four weeks before a coder's incidental regression sweep found them (BL-1626, BL-1627); one runner executes every feature file sequentially, appends one row per COMPLETED feature with its duration and result, prints a verdict naming every red and the poles, and exits with the suite's status - the recorder half, changing no lane set until the census is in"
 milestone: M8
 type: feature
+status: superseded
+closed_as: superseded-by-BL-1625
 epic: unit-suite-speed
 priority: 4
 direction: swarm-reported
@@ -127,6 +129,24 @@ source: |
   BL-111, BL-078, BL-1619, BL-1625. Siblings: BL-1626, BL-1627.
 
 notes: |
+  RETIRED 2026-09-18 by the specifier in the shift-end consolidation sweep
+  of the 2026-09-17 mints (operator hotfix 2026-09-17; the human asked the
+  same morning): absorbed into BL-1625, which had the same fix shape - a
+  sequential bash runner over a population, one JSON duration row per
+  completion, a verdict, the suite's exit status, a two-pass-one-fail
+  fixture test - over the shell manifest. BL-1625 now carries one runner
+  with two front-ends; this ticket's per-FEATURE rows (a killed run keeps
+  the completed rows), its "alone on the host" rule, its features
+  front-end, its outDir note and its out-of-scope items survive there
+  verbatim in intent. The feature file below was retired with this move
+  (no handler was ever built for it; the scenarios live on, re-scoped, in
+  BL-1625's feature). One finding the sweep added: the full 1294-feature
+  run this ticket put inside the parcel costs about seven hours of
+  step-registry load alone today (BL-1630), so BL-1625 runs bounded
+  samples in the parcel and the full census in the nightly slot after
+  landing. Sweep evidence:
+  backlog/evidence/BL-1625-shift-end-consolidation-sweep-20260918.md.
+  --- notes as minted ---
   Minted 2026-09-17 by the specifier in the same pass as BL-1626 and
   BL-1627. INVEST: Independent (run_acceptance.sh and the recorder shapes
   exist), Negotiable (row names, verdict wording, outDir handling are

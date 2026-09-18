@@ -13,7 +13,7 @@ priority: 8
 direction: swarm-reported
 depends_on: []
 # BL-937 (the feature) and BL-801 (the bash-3.2 target's first incident)
-# are in backlog/done. BL-1628 is a paused sibling, not a dependency.
+# are in backlog/done. BL-1625 (absorbed BL-1628 2026-09-18) is a paused sibling, not a dependency.
 mutation_cost: low
 # low: two shell edits (mapfile -> while-read), one feature retirement
 # (two scenarios), evidence, one register row; shell carries no
@@ -70,7 +70,7 @@ description: |
 
   The coder found this while regression-checking BL-1614 (evidence
   `.worktrees/coder/backlog/evidence/BL-1614-coder-unowned-reds-20260917.md`);
-  no lane runs landed features, so nobody had seen it (BL-1628).
+  no lane runs landed features, so nobody had seen it (BL-1625, which absorbed BL-1628 on 2026-09-18).
 
   ## What is wanted
 
@@ -136,7 +136,7 @@ source: |
   Coder evidence .worktrees/coder/backlog/evidence/BL-1614-coder-unowned-reds-20260917.md.
   Specifier adjudication and reproduction:
   backlog/evidence/BL-1626-specifier-adjudication-of-coder-unowned-reds-20260917.md.
-  Parents: BL-937, BL-801, BL-1242. Siblings: BL-1626, BL-1628.
+  Parents: BL-937, BL-801, BL-1242. Siblings: BL-1626, BL-1628 (retired 2026-09-18 into BL-1625).
 
 notes: |
   Minted 2026-09-17 by the specifier while completing the coder's note,
