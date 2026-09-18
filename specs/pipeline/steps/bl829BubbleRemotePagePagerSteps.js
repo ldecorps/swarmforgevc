@@ -123,13 +123,20 @@ function registerSteps(registry) {
   registry.defineScoped(
     /^the served manifest carries a malformed page list$/,
     (ctx) => {
+      // BL-1634: the fixture id is one no built-in page will ever carry
+      // (`malformed-operator-page`) - an assert-by-id fix must not collide
+      // with a real built-in (BL-775 landed a fourth, `live`, the id this
+      // fixture used to use). The written id(s) are recorded on ctx so the
+      // "no page from it" step below asserts by id, not by list length.
+      // required_wiring anchor: malformed-operator-page
+      ctx.malformedManifestPageIds = ['malformed-operator-page'];
       writeManifest(ctx.targetPath, {
         schemaVersion: 1,
         bundleVersion: 3,
         minShellVersion: 0,
         payload: '<html></html>',
         // missing `title` and `order` on the one page entry.
-        pages: [{ id: 'live', entryPath: 'live' }],
+        pages: [{ id: 'malformed-operator-page', entryPath: 'malformed-operator-page' }],
       });
     },
     FEATURE_NAME
@@ -156,8 +163,17 @@ function registerSteps(registry) {
   registry.defineScoped(
     /^no page from it is offered to the shell$/,
     (ctx) => {
-      if (!Array.isArray(ctx.manifestBody.pages) || ctx.manifestBody.pages.length !== 0) {
-        throw new Error(`expected no pages offered, got: ${JSON.stringify(ctx.manifestBody.pages)}`);
+      // BL-1634: "no page from it" names IDS from the malformed manifest,
+      // not the offered list's length - the bridge's own built-in pages
+      // (health/host/operator-docs/live, BL-1166/BL-775) are legitimately
+      // offered even when the operator manifest is malformed.
+      const offeredIds = Array.isArray(ctx.manifestBody.pages)
+        ? ctx.manifestBody.pages.map((page) => page.id)
+        : [];
+      for (const malformedId of ctx.malformedManifestPageIds || []) {
+        if (offeredIds.includes(malformedId)) {
+          throw new Error(`expected no page carrying the malformed manifest's id ${malformedId}, got: ${JSON.stringify(ctx.manifestBody.pages)}`);
+        }
       }
     },
     FEATURE_NAME
