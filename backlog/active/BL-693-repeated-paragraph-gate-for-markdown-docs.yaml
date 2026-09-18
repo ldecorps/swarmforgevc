@@ -258,3 +258,6 @@ notes: |
   scenario 01 is green without an exemption. Nothing else changed; the
   human's two approvals (2026-07-27 split, 2026-08-10 Vitest incarnation)
   stand.
+bounce_count: 1
+bounce_history:
+  - { at: 2026-09-18, by: cleaner, blamed: coder, class: integration, commit: 63f72de252, evidence: backlog/evidence/BL-693-bounce-cleaner-20260918.md }
