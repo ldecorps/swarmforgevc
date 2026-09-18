@@ -1823,11 +1823,18 @@ export function deliverRoleAnswer(targetPath: string, role: string): DeliverRole
 // short-circuits (checking only the single most-recently-recorded
 // updateId is not enough - a replay interleaved with a DIFFERENT newer
 // answer would read as unseen; see writeRoleAnswerFile's own note).
+// BL-1620: `runHandoff` is an injected side effect (the file's own
+// postFn convention), never a *_FORCE_RESULT env bypass - defaults to the
+// real `bb swarm_handoff.bb <draft>` spawn every production caller still
+// gets unchanged. A test can inject a recording fake that resolves
+// without ever starting the real, ~1.3s-per-call bb process.
 export async function enqueueRoleAnswerNote(
   targetPath: string,
   role: string,
   text: string,
-  updateId?: number
+  updateId?: number,
+  runHandoff: (cli: string, draftPath: string, opts: { cwd: string; env: NodeJS.ProcessEnv }) => Promise<unknown> =
+    (cli, draftPath, opts) => execFileAsync('bb', [cli, draftPath], opts)
 ): Promise<boolean> {
   const existing = readRoleAnswerFile(targetPath, role);
   if (updateId !== undefined && existing?.seenUpdateIds?.includes(updateId)) {
@@ -1841,7 +1848,7 @@ export async function enqueueRoleAnswerNote(
   fs.writeFileSync(draftPath, `type: note\nto: ${role}\npriority: 00\nmessage: ${message}\n`);
   const cli = path.join(targetPath, 'swarmforge', 'scripts', 'swarm_handoff.bb');
   try {
-    await execFileAsync('bb', [cli, draftPath], { cwd: targetPath, env: { ...process.env, SWARMFORGE_ROLE: 'coordinator' } });
+    await runHandoff(cli, draftPath, { cwd: targetPath, env: { ...process.env, SWARMFORGE_ROLE: 'coordinator' } });
     return true;
   } catch (err) {
     process.stderr.write(`enqueueRoleAnswerNote: failed to queue answer note for "${role}": ${(err as Error).message}\n`);
