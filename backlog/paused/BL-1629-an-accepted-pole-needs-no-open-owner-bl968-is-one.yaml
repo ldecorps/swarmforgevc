@@ -2,6 +2,7 @@ id: BL-1629
 title: "bl968StepRegistryMaterializedTreeGuard.test.js can never come under the 7000 ms per-file budget: its two full step-registry loads are the point of the test (BL-968 invariant 1) and one load costs 12.6 s of require time across 1189 handlers today, yet BL-1598's pole register knows only rows that name an OPEN ticket and read unowned the day it closes; the register gains a disposition column - owned (default) or accepted, an accepted row carrying its rationale and a re-measure date instead of an owner, reported and never refused as new-pole, stale or unowned - and bl968's row is the first accepted one; its blind temp-dir sweep takes BL-1623's helper in the same parcel"
 milestone: M8
 type: feature
+status: todo
 epic: unit-suite-speed
 priority: 8
 direction: swarm-reported
