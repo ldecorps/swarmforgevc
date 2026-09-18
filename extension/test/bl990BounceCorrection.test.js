@@ -3,6 +3,7 @@ const {
   isBounceCorrection,
   bounceCorrectionTargetKey,
   applyBounceCorrections,
+  hasBounceCorrection,
   KNOWN_BOUNCE_ROLES,
 } = require('../out/quality/qaBounce');
 
@@ -78,6 +79,14 @@ test('every KNOWN_BOUNCE_ROLES member may issue a correction - including the spe
   assert.ok(KNOWN_BOUNCE_ROLES.includes('specifier'));
 });
 
+// BL-799 hardener: `evidence`, when PRESENT, must still be non-empty (not
+// merely non-blank - isNonEmptyString, unlike the reason check above) - the
+// optional field is honored (evidence absent, tested above) or validated
+// (evidence present-but-empty, refused here), never silently defaulted.
+test('isBounceCorrection refuses a present-but-empty evidence pointer', () => {
+  assert.equal(isBounceCorrection(correction({ evidence: '' })), false);
+});
+
 // ── targeting ────────────────────────────────────────────────────────────
 
 test('a correction targets a bounce by ticket AND commit, so a ticket that bounced twice loses only the corrected one', () => {
@@ -108,4 +117,20 @@ test('applyBounceCorrections is idempotent - two identical corrections remove on
 test('a correction for a bounce that is not in the store removes nothing and does not throw', () => {
   const records = [bounce()];
   assert.deepEqual(applyBounceCorrections(records, [correction({ commit: 'cccccccccc' })]), records);
+});
+
+// BL-799 hardener: hasBounceCorrection's only prior exercise (the store's
+// "recording the identical correction twice" idempotency check) always fed
+// it an EXISTING array whose one entry's key matches the candidate's - a
+// `.some(() => true)` mutant (always-found) agrees with a correct
+// `.some(target-key-equality)` on that single-candidate input. Discriminate
+// with a NON-matching existing entry: a real predicate says not-found.
+test('hasBounceCorrection is false when the existing corrections target a different ticket+commit', () => {
+  const existing = [correction({ ticket: 'BL-1', commit: 'ffffffffff' })];
+  assert.equal(hasBounceCorrection(existing, correction()), false);
+});
+
+test('hasBounceCorrection is true only for a matching ticket+commit among several existing corrections', () => {
+  const existing = [correction({ ticket: 'BL-1', commit: 'ffffffffff' }), correction()];
+  assert.equal(hasBounceCorrection(existing, correction()), true);
 });
