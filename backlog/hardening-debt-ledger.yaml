@@ -70,3 +70,11 @@
   detected_at: 2026-09-08
   discharged_at: 2026-09-11
   discharged_evidence: backlog/evidence/BL-1488-BL-1476-mutation.md
+- parcel: BL-775
+  gate: stryker-mutation
+  file_set: extension/out/bridge/bubbleLiveUiHtml.js,extension/out/bridge/residentPaneLive.js
+  reason: "Stryker perTest dry-run (full-suite coverage analysis) timed out twice at ~5min under sustained host contention (multiple concurrent role worktrees' vitest/stryker runs, swap in use); a plain full-coverage vitest run in the same window crashed with ERR_IPC_CHANNEL_CLOSED and dmesg recorded a WSL-captured node abort (signal 6) - host-crash evidence, not a code defect. Targeted hardening substituted: 2 hand-authored tests for invariant 3 (rejected fetch + non-ok JSON error detail), full BL-775 acceptance suite green (11/11), Gherkin/BL-113 soft mutation 5/5 killed on the pane-strip scenario, scoped CRAP clean (max 6.00), DRY clean (0 clones)."
+  load: "load avg 11.5-25.2 on 20 cores, swap 1.7-1.8Gi in use, 8+ concurrent vitest/stryker workers from other roles' worktrees"
+  detected_at: 2026-09-18
+  attempted_at: 2026-09-18
+  attempted_blocker: "dry-run timeout (5min) at concurrency 4, mutate=2 files (bubbleLiveUiHtml,residentPaneLive) via scoped vitest.bl775.stryker.config.mjs, 15:03:27-15:08:33"
