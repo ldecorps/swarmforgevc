@@ -52,31 +52,20 @@
 // All three restored byte-for-byte, ALL PROPERTIES HOLD.
 
 const assert = require('node:assert/strict');
-const { execFileSync } = require('node:child_process');
 const { mkTmpDir } = require('./helpers/tmpDir');
-const { makeSweepFixture, breakProbes, writeStub, ensureCalls, runSweep, died, TMUX_NO_SERVER } = require('./helpers/bl1071SweepFixture');
+const {
+  makeSweepFixture,
+  breakProbes,
+  writeStub,
+  ensureCalls,
+  runSweep,
+  died,
+  TMUX_NO_SERVER,
+  HANG_SHAPES,
+  fixtureHangs,
+} = require('./helpers/bl1071SweepFixture');
 
 const mkdir = () => mkTmpDir('bl1071-bound-');
-
-const RECORD = 'echo 1 >> "$(dirname "$0")/ensure-count"';
-
-// Each shape hangs differently, and each defeats a different half-measure.
-const HANG_SHAPES = {
-  plain: `#!/usr/bin/env bash\n${RECORD}\nsleep 3600\n`,
-  grandchild: `#!/usr/bin/env bash\n${RECORD}\nsleep 3600 &\nsleep 3600\n`,
-  'ignores-sigterm': `#!/usr/bin/env bash\ntrap '' TERM\n${RECORD}\nsleep 3600 &\nsleep 3600\n`,
-  'output-then-hang': `#!/usr/bin/env bash\n${RECORD}\necho "ensure: starting"\nsleep 3600 &\nsleep 3600\n`,
-};
-
-// The marker every hang shape's `sleep` carries. Bracketed so a pgrep for it
-// can never match its own command line.
-function strayHangs() {
-  try {
-    return execFileSync('bash', ['-c', "pgrep -f '[s]leep 3600' | wc -l"], { encoding: 'utf8' }).trim();
-  } catch {
-    return '0';
-  }
-}
 
 test('BL-1071/BL-654 invariant 2: a recovery that never returns is bounded, reported unfinished, and leaves nothing behind', () => {
   const boundMs = 1500;
@@ -84,11 +73,15 @@ test('BL-1071/BL-654 invariant 2: a recovery that never returns is bounded, repo
   assert.equal(shapes.length, 4, 'every hang shape must run, or the sweep is not covering the ways a kill half-works');
 
   for (const shape of shapes) {
-    const before = strayHangs();
     const fixture = breakProbes(makeSweepFixture(mkdir, { swarmStub: HANG_SHAPES[shape] }), [], {
       planeMissing: true,
     });
     writeStub(fixture, 'tmux', TMUX_NO_SERVER);
+
+    // Scoped to this fixture's own root: 0 by construction, before its own
+    // sweep has started anything. The guard that the fixture began clean.
+    const before = fixtureHangs(fixture);
+    assert.equal(before, 0, `the fixture started hangs before its own sweep ran (${shape}): ${before}`);
 
     const r = runSweep(fixture, { BABYSITTER_ENSURE_TIMEOUT_MS: String(boundMs) });
 
@@ -117,14 +110,10 @@ test('BL-1071/BL-654 invariant 2: a recovery that never returns is bounded, repo
       `a recovery that never returned was reported as a repair (${shape}):\n${r.output}`
     );
 
-    // And it left nothing running. A group kill is the only thing that
-    // reaches a hung script's children.
-    const after = strayHangs();
-    assert.equal(
-      after,
-      before,
-      `a grandchild survived the kill (${shape}): ${before} stray hangs before, ${after} after`
-    );
+    // And it left nothing running of THIS fixture's own. A group kill is the
+    // only thing that reaches a hung script's children.
+    const after = fixtureHangs(fixture);
+    assert.equal(after, 0, `a grandchild of this fixture survived the kill (${shape}): ${after} left running`);
   }
 });
 
