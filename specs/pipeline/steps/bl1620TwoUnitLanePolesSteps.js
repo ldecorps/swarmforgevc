@@ -106,12 +106,14 @@ function registerSteps(registry) {
   const scoped = (re, fn) => registry.defineScoped(re, fn, FEATURE);
 
   scoped(
-    /^the extension unit lane with the BL-1598 pole register naming the file under BL-1620$/,
+    /^the extension unit lane with the BL-1598 pole register$/,
     (ctx) => {
-      // Background/setup only - the ticket's own amendment narrowed the
-      // live scope to one file (out_of_scope names bl968 explicitly); the
-      // ticket this row's own commit lives under is what every later step
-      // checks against, never a hardcoded file list.
+      // Background/setup only - the 2026-09-18 amendment made this line
+      // ticket-free (the register row's owner changed mid-flight from
+      // BL-1620 to BL-1633, so naming a ticket here would itself go stale
+      // the next time ownership moves); the ticket this row's own commit
+      // lives under is what every later step checks against, never a
+      // hardcoded file list.
       ctx.bl1620Ticket = TICKET;
     }
   );
