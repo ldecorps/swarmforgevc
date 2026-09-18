@@ -18,6 +18,7 @@ const fs = require('node:fs');
 const os = require('node:os');
 const path = require('node:path');
 const { execFileSync, spawn, spawnSync } = require('node:child_process');
+const { onAbnormalExit } = require('./lib/fixtureReaper');
 
 const {
   makeSweepFixture,
@@ -28,6 +29,41 @@ const {
   HANG_SHAPES,
   fixtureHangs,
 } = require(path.join(__dirname, '..', '..', '..', 'extension', 'test', 'helpers', 'bl1071SweepFixture'));
+
+// BL-1632 hardening: both scenarios below spawn a REAL long-lived process
+// (a detached `sleep 3600` in 01, a whole process group carrying its own
+// `sleep 3600` grandchild in 02) and only reaped it inline, in a terminal
+// Then step's own `finally`. Any assertion earlier in the SAME scenario
+// that throws (an entirely plausible outcome - these steps assert the very
+// invariant this ticket exists to fix) skips every later step, including
+// that `finally`, and leaks the process for real (an hour, for the plain
+// `sleep 3600`). This is the acceptance-lane sibling of the "a
+// fixture-creating Given step that throws while validating leaks its temp
+// dir" hazard (hardener.prompt) - here the leaked resource is a process,
+// not a directory, but the mechanism (a later step's cleanup never runs)
+// is the same. `killTracked` is registered against fixtureReaper's shared
+// exit/SIGINT/SIGTERM coverage so a leak survives no failure shape,
+// mirroring the pattern bl690EnsureDaemonRepairStartsNotHaltsSteps.js
+// already uses for its own spawned processes.
+const trackedKillers = new Set();
+function trackKill(fn) {
+  trackedKillers.add(fn);
+  return () => {
+    trackedKillers.delete(fn);
+    fn();
+  };
+}
+function killTracked() {
+  for (const fn of Array.from(trackedKillers)) {
+    trackedKillers.delete(fn);
+    try {
+      fn();
+    } catch {
+      /* already gone */
+    }
+  }
+}
+onAbnormalExit(killTracked);
 
 const FEATURE = "BL-1632 The bl1071 stray-hang probe counts only its own fixture's hangs";
 
@@ -76,6 +112,15 @@ function registerSteps(registry) {
     const foreign = spawn('sleep', ['3600'], { detached: true, stdio: 'ignore' });
     foreign.unref();
     ctx.foreignPid = foreign.pid;
+    ctx.killForeign = trackKill(() => {
+      if (ctx.foreignPid) {
+        try {
+          process.kill(ctx.foreignPid, 'SIGKILL');
+        } catch {
+          /* already gone */
+        }
+      }
+    });
   });
 
   scoped(/^a sweep fixture built with the plain hang shape$/, (ctx) => {
@@ -106,12 +151,7 @@ function registerSteps(registry) {
         'the foreign hang process (started by no fixture) was reaped by a sweep scoped to a different fixture'
       );
     } finally {
-      try {
-        process.kill(ctx.foreignPid, 'SIGKILL');
-      } catch {
-        /* already gone */
-      }
-      ctx.foreignPid = null;
+      ctx.killForeign();
     }
   });
 
@@ -125,6 +165,15 @@ function registerSteps(registry) {
       writeStub(ctx.fixtureA, 'tmux', TMUX_NO_SERVER);
       const child = spawn('bash', [path.join(ctx.fixtureA.root, 'swarm')], { detached: true, stdio: 'ignore' });
       ctx.fixtureASwarmPid = child.pid;
+      ctx.killFixtureASwarm = trackKill(() => {
+        if (ctx.fixtureASwarmPid) {
+          try {
+            process.kill(-ctx.fixtureASwarmPid, 'SIGKILL');
+          } catch {
+            /* already gone */
+          }
+        }
+      });
       const deadline = Date.now() + 2000;
       while (Date.now() < deadline && fixtureHangs(ctx.fixtureA) < 2) {
         execFileSync('sleep', ['0.05']);
@@ -147,14 +196,7 @@ function registerSteps(registry) {
       // The whole process GROUP the swarm stub started - a leaked `sleep
       // 3600` from this handler would itself be the peer this ticket
       // removes.
-      if (ctx.fixtureASwarmPid) {
-        try {
-          process.kill(-ctx.fixtureASwarmPid, 'SIGKILL');
-        } catch {
-          /* already gone */
-        }
-        ctx.fixtureASwarmPid = null;
-      }
+      ctx.killFixtureASwarm();
     }
   });
 
