@@ -1139,6 +1139,21 @@ BL-1537's own two excluded paths are not re-landed by this ticket — they
 were landed by the adjudicated hand recipe cited above. Acceptance:
 `specs/features/BL-1546-a-path-owned-only-by-a-closed-ticket-is-never-silently-excluded.feature`.
 
+**Caught an hour earlier, at the commit itself, since BL-1617.** This
+clause still refuses at LAND time — an hour or more after the offending
+commit, once a QA-approved parcel happens to carry the stray path. A
+commit-msg guard, `check_closed_ticket_subject.sh` (wired into
+`swarmforge/git-hooks/commit-msg`, on any branch but `main`), reads a
+commit's own subject the same way this clause and `task_scope_gate_lib.bb`
+do (the leading ticket id, or AMBIGUOUS when two or more ids are named
+with none leading) and refuses before the commit is even made when that
+id's ticket is closed on `origin/main`, or filed nowhere there at all
+(the BL-1481 unreadable-sibling shape). See
+[BL-1242](BL-1242-merge-deletion-guard.md)'s "Related" section for the
+guard's own details; this clause remains the land step's own backstop for
+whatever a commit-time guard cannot reach (a commit made before the guard
+was installed, or on a repository without the hook wired).
+
 ## A replay restores another open ticket's registry row instead of dropping it (BL-1604)
 
 `write-tree-from-paths!` takes each own-path WHOLE from the cited commit — for
