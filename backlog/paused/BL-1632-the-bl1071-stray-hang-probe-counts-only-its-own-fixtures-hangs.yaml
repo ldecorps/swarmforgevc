@@ -1,0 +1,268 @@
+id: BL-1632
+title: "bl1071RecoveryBoundedInTime.property.test.js is red in the full property lane with no owner: its stray-hang probe counts every sleep 3600 on the host, so a concurrent lane's hangs present at the before sample and gone at the after sample fail the draw as 'a grandchild survived the kill (plain): 2 stray hangs before, 0 after' - QA's BL-1614 pass, 2026-09-17, green alone 2/2 in 8.47 s - and the probe reads only the hang processes this draw's own fixture started, so two runs alive on one host never see each other, with the register row leaving in the land"
+milestone: M8
+type: defect
+severity: high
+# high (standing-red rule 2026-09-05): a property-lane file whose verdict on
+# main is a function of what else is alive on the host is a broken safety
+# signal; QA saw it red in the full lane on the BL-1614 parcel d5f41ac50d and
+# withholds that parcel under Article 4.2 until owned. Production is
+# unaffected: the babysitter sweep the file drives is untouched and bounded
+# the recovery correctly in every draw - the count that failed was the
+# test's own host-wide probe, the BL-1107 class (verdict turns on host
+# state, not code) on a new file and a new assertion.
+status: todo
+epic: code-quality-gates
+priority: 8
+direction: swarm-reported
+depends_on: []
+# BL-1071 (the file and its fixture helper) and BL-1623 (the shared
+# fixture helper's zombie-aware pid probe) are in backlog/done. BL-1621
+# (active) and BL-1596 (paused) touch per-test budgets in OTHER property
+# files; this file's tests carry no timeout problem (8.47 s alone) and
+# neither ticket names it - orthogonal.
+mutation_cost: low
+# low: one probe and four hang-shape strings move from the property file
+# into the fixture helper it already shares with the acceptance handler
+# (the property lane is its own tag, never under mutation/CRAP/DRY -
+# engineering.prompt), one feature and handler, evidence, two register rows.
+slice_size_envelope: low
+required_stages: [coder, cleaner, architect, hardender, documenter, qa]
+
+acceptance: specs/features/BL-1632-the-bl1071-stray-hang-probe-counts-only-its-own-fixtures-hangs.feature
+
+required_wiring:
+  - 'extension/test/bl1071RecoveryBoundedInTime.property.test.js::fixtureHangs(::the property file is the pre-existing live consumer of the scoped probe; the literal exists only with the fix (BL-874, BL-1235)'
+  - 'specs/pipeline/steps/bl1632Bl1071ProbeCountsOnlyItsOwnFixturesHangsSteps.js::registerSteps::the handler lands in the same parcel as the feature (BL-233, BL-1371)'
+
+human_approval: approved
+approval_context: >
+  A new feature file is authored here, so it needs a tap. No choice is
+  posed and there are no ruling_options. FIRM: the probe the property
+  file reads before and after each draw reports only hang processes that
+  THIS draw's fixture started - a hang process any other run, lane,
+  handler or daemon started is neither counted by it nor reached by the
+  sweep's recovery kill. FIRM: the four hang shapes (plain, grandchild,
+  ignores-sigterm, output-then-hang) and every assertion of BL-1071
+  invariant 2 stay - bounded in wall clock, reported unfinished, nothing
+  of its own left behind, the returning recovery still reported as a
+  repair. FIRM: the recovery bound, the sweep script and the babysitter
+  are not touched; this is the test's own probe. FIRM: the standing-red
+  row and its allowlist mirror leave in the same land that turns the file
+  green.
+
+invariants:
+  - "A hang process this draw's fixture did not start is neither counted by the stray-hang probe nor reached by the sweep's recovery kill: two runs of the file alive on one host at once never see each other's hangs."
+
+description: |
+  ## What is wrong
+
+  QA's BL-1614 pass (parcel d5f41ac50d on the QA branch, evidence
+  `backlog/evidence/BL-1614-qa-unowned-red-bl1071-20260917.md` at
+  6392e8c63d, hold record `.swarmforge/qa-holds/BL-1614.json` in the QA
+  worktree) failed one file in the full property lane on an assertion,
+  not a timeout:
+
+  ```
+  FAIL  test/bl1071RecoveryBoundedInTime.property.test.js > BL-1071/BL-654 invariant 2: a recovery that never returns is bounded, reported unfinished, and leaves nothing behind
+  AssertionError: a grandchild survived the kill (plain): 2 stray hangs before, 0 after
+
+  '0' !== '2'
+
+  Expected: "2"
+  Received: "0"
+
+   ❯ test/bl1071RecoveryBoundedInTime.property.test.js:123:12
+  ```
+
+  Alone against the same commit on the same host: 2/2 green in 8.47 s
+  (QA). The file has not changed since it landed on 2026-08-23
+  (e80ceab3e3); no commit on the BL-1614 branch touches it, its fixture
+  helper, or the babysitter sweep it drives. At the time of the full-lane
+  run a second vitest lane was alive on the host from `.worktrees/coder2`
+  (QA, by `pgrep -fl vitest` and `/proc/<pid>/cwd`).
+
+  Read the numbers, not the message. The probe (lines 73-79) is
+
+  ```
+  pgrep -f '[s]leep 3600' | wc -l
+  ```
+
+  - every process on the host whose command line carries `sleep 3600`,
+  sampled once before the draw's sweep runs (line 87) and once after (line
+  122), with `assert.equal(after, before)` between them (line 123). Two
+  before and zero after means two such processes existed on the host
+  before this draw started its hang and were gone by the time its sweep
+  had killed it: they were never this fixture's - a fresh mkdtemp fixture
+  has started nothing at "before" - and nothing of this draw's survived.
+  The assertion's message says the opposite of what happened. The same
+  probe fails the other way round (zero before, N after) whenever a peer
+  STARTS a hang during the draw, and that shape would name a surviving
+  grandchild that is, again, someone else's process. Either way the
+  verdict is a function of what else is alive on the host across the two
+  samples, never of the sweep under test.
+
+  The peers are not hypothetical. The full property lane contains this
+  file, so a second copy of the lane on the host (QA's observation) runs
+  the same four hang shapes on its own clock. In the tree, `grep -rln
+  "sleep 3600" extension/test specs/pipeline/steps swarmforge/scripts/test`
+  names 15 files: this one; the BL-1071 acceptance handler
+  (`bl1071BabysitterSweepSurvivalSteps.js`, the same grandchild shape,
+  run by the acceptance lane); four more acceptance handlers (bl1021,
+  bl1103, bl967, expeditor offline); and eight shell and bb test runners
+  under `swarmforge/scripts/test/`. `bl1370WorktreeStrayCheck.property.test.js`
+  names it in a fixture table only. Any of them alive across a draw's two
+  samples flips this file. An unrelated bare `sleep` was alive on this host
+  during the specifier's pass (recorded in the adjudication evidence).
+
+  What the invariant needs is a count of the hang processes THIS draw's
+  fixture started - the direct child and, for the grandchild shapes, its
+  background child - so that "nothing left behind" is asserted about this
+  fixture's own subtree. BL-1071's own review knew the half-measures (a
+  `.destroyForcibly` reaches the direct child only; `setsid` and a group
+  KILL are what reach the grandchild) and the property still proves them;
+  what it lacks is a probe scoped to the fixture. This is the BL-1385/
+  BL-1390/BL-1623 family - a test reading host-global state as if it were
+  its own - moved from temp roots to the process table; BL-1623 fixed the
+  same shape for `os.tmpdir()` sweeps two days ago. It is NOT BL-1107's
+  file or remedy (a per-test budget): this file is not slow. It is NOT a
+  BL-1071 regression: the sweep bounded the recovery, reported it
+  unfinished, and left nothing of its own behind in every draw.
+
+  ## What is wanted
+
+  - The probe the property file reads before and after each draw reports
+    only hang processes this draw's fixture started: a hang alive on the
+    host that no fixture started is neither counted nor reached by the
+    sweep's recovery kill (scenario 01); two fixtures alive at once, one
+    with its grandchild hang running and one that has not run, read 2 and
+    0 respectively (scenario 02).
+  - The file green alone on the tree as it stands, both tests, all four
+    hang shapes still exercised (scenario 03).
+  - The parcel's evidence records the full-lane failure text verbatim
+    (QA's text above is the first sighting; cite it by path) and the
+    change that removed it (scenario 04).
+  - The register row and the allowlist mirror row named in `notes:`
+    removed in the same land, `bb swarmforge/scripts/standing_red_register_cli.bb .`
+    reporting no row for the file.
+
+  ## How (direction, not mandate)
+
+  - The four hang shapes and the probe move into
+    `extension/test/helpers/bl1071SweepFixture.js`, whose own header says
+    the parts that go subtly wrong when copied live there once, exported
+    as `HANG_SHAPES` and `fixtureHangs(fixture)` - the handler for
+    scenarios 01 and 02 needs both, and the property file becomes their
+    consumer (the `required_wiring` anchor). Names fixed for the
+    handler's sake; the mechanism is yours.
+  - The specifier verified one mechanism on this host (bash 5.2; `exec
+    -a` is in bash 3.2 too): each shape's `sleep 3600` becomes
+    `exec -a "bl1071-hang:$(dirname "$0")" sleep 3600` (and the same
+    inside the `( ... ) &` grandchild), so the marker is the fixture root
+    - unique per mkdtemp, no token to thread through - and the probe is
+    `pgrep -f "bl1071-hang:<fixture.root>"`. Measured: 2 for the
+    grandchild shape from its own root, 0 from a different root, 0 after
+    the kill, and the bare `^sleep 3600$` pattern no longer matches them.
+    The self-match trap is real - invoke `pgrep` through
+    `execFileSync('pgrep', [...])` with NO `bash -c` wrapper (a wrapper
+    whose argv carries the marker text matches itself; the specifier's
+    first attempt counted 4), and never `-c`, which BSD pgrep lacks.
+    Ancestry walks, a per-draw token in argv, or `pgrep -g` on the
+    sweep's group are equally acceptable if they meet the invariant on
+    both macOS and Linux.
+  - With a scoped probe the before sample is 0 by construction; assert
+    `after === 0` (and keep the before read as the guard that the
+    fixture started clean) so the message names what happened.
+  - The handler `bl1632Bl1071ProbeCountsOnlyItsOwnFixturesHangsSteps.js`
+    reuses the BL-1071 handler's fixture calls (`makeSweepFixture`,
+    `breakProbes`, `writeStub`, `runSweep`) in a scope of its own. For
+    scenario 01 it spawns a bare detached `sleep 3600` as the foreign
+    hang, records its pid, runs the real sweep with
+    `BABYSITTER_ENSURE_TIMEOUT_MS=1500`, and kills the foreign process
+    in a `finally`. For scenario 02 it starts the first fixture's swarm
+    stub with `spawn('bash', [<root>/swarm], { detached: true })`, polls
+    `fixtureHangs` to 2 within a bounded 2 s, reads the second fixture's
+    probe, and SIGKILLs the first's process group (`-pid`) in a
+    `finally` - a handler that leaks a `sleep 3600` is itself the peer
+    this ticket removes. Scenario 03 reuses BL-1621's "runs alone under
+    the properties config" step shape; scenario 04 the evidence read.
+    About 9 s for scenario 03 and 3 s for 01 and 02 together, inside
+    BL-1541's per-mutant ceiling.
+  - Documenter: nothing beyond the evidence unless a how-to lists the
+    fixture helper's exports; then the two new ones join it.
+
+constraints: >
+  The property test file, the shared fixture helper it already uses,
+  the feature and handler, evidence, the standing-red row and its
+  allowlist mirror. No change to babysitter_check.sh or the sweep it
+  drives, to the recovery bound or its env seam, to the BL-1071
+  acceptance handler or feature, to bl1071SweepSurvivesAnyProbeFailure,
+  or to any other property file. The step handler lands with the feature
+  (BL-233). Evidence named BL-1632-*.
+
+out_of_scope: |
+  - Marking the bare `sleep 3600` in the 14 other files that spawn it:
+    once this file's probe is scoped they can no longer flip it, and none
+    of them counts strays.
+  - A whole-tree guard against host-wide process probes in tests (the
+    BL-1623 blind-sweep finder's sibling for the process table): a
+    separate slice if a second file is ever found doing it.
+  - BL-1618/BL-1619 (which roles run the property lane, its recorder)
+    and the concurrent-lane question itself.
+
+qa_e2e_procedure: |
+  On the parcel commit, from `extension/`:
+  1. `npx vitest run --config vitest.properties.config.mjs test/bl1071RecoveryBoundedInTime.property.test.js`
+     ONCE -> 2 passed, vitest's per-test durations recorded in the evidence
+     beside the host's 1-minute load. Never "run it N times".
+  2. Acceptance resolving all four scenarios
+     (`bash specs/pipeline/scripts/run_acceptance.sh specs/features/BL-1632-*.feature`);
+     BL-1071's feature still resolving.
+  3. ONE full `npm run test:properties` on the parcel -> this file green
+     in the lane; its row gone from `backlog/standing-reds.tsv` and its
+     mirror gone from `swarmforge/scripts/property_suite_standing_allowlist.tsv`;
+     `bb swarmforge/scripts/standing_red_register_cli.bb .` names no row
+     for the file. `pgrep -f "sleep 3600"` after the lane shows nothing the
+     lane started (a leaked hang is a bounce to the coder).
+  4. `git diff main...HEAD --name-only` names the property test, the
+     fixture helper, the feature, the handler, the evidence and the two
+     register files only.
+
+source: |
+  QA note to the specifier and coordinator, priority 00, 2026-09-18T08:04Z
+  (inbound 00_20260918T080420Z_002906_from_QA): "BL-1614 held: unowned red
+  bl1071RecoveryBoundedInTime.property.test.js". QA evidence
+  backlog/evidence/BL-1614-qa-unowned-red-bl1071-20260917.md (QA branch,
+  6392e8c63d); hold record .swarmforge/qa-holds/BL-1614.json (QA worktree,
+  parcel d5f41ac50d). Specifier adjudication and the marker demonstration:
+  backlog/evidence/BL-1632-specifier-adjudication-of-qa-unowned-red-bl1071-20260918.md.
+  Parents: BL-1071, BL-654 (invariant 2), BL-1623 (the class, temp roots),
+  BL-1566 (the hold/release). Class siblings: BL-1107, BL-1385, BL-1390.
+
+notes: |
+  Minted 2026-09-18 by the specifier while completing QA's unowned-red
+  note, the same pass. AUTO-APPROVED under the 2026-09-17 operator hotfix
+  (severity defect, no ruling_options) — see
+  auto-approve-high-severity-defects-amendment-20260917.md. Register:
+  backlog/standing-reds.tsv gains one `property` row naming this ticket
+  (first_seen 2026-09-17, QA's run; first sighting of the file) and
+  swarmforge/scripts/property_suite_standing_allowlist.tsv gains the
+  mirror row (BL-1428's join), both in this commit; QA removes both in
+  the land that turns the file green (BL-1631, paused, makes the land
+  step do it). QA's BL-1614 parcel (hold record open in the QA worktree,
+  completed so the seat could rotate, BL-1566) waits on this row and was
+  sent the resume note in this pass: merge main first so the hold's
+  release reads the row and the land keeps it (BL-1604's hazard). No
+  solo re-run by the specifier: QA measured 8.47 s, a 12-worker vitest
+  lane was alive at load 12 during this pass, and a solo run of THIS file
+  beside a live lane perturbs the lane's own bl1071 draw - the defect in
+  one line (BL-1618, one verification command per role). INVEST:
+  Independent (helper, file and handler idiom exist, nothing unbuilt),
+  Negotiable (the marker mechanism is direction; two export names are
+  fixed for the handler), Valuable (a lane red stops withholding
+  unrelated parcels and the invariant's "nothing left behind" becomes
+  true of the fixture, not the host), Estimable (one probe, four strings,
+  two exports, one handler - one sitting), Small (four scenarios, one
+  invariant), Testable (real sweep and real processes on a fixture in
+  seconds, one 9 s solo run - BL-1541). Severity high per the
+  standing-red rule.
