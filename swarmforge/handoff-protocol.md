@@ -3004,6 +3004,35 @@ Responsibilities:
     instead of requiring evidence.
   Every non-Work note and every `git_handoff` skips this gate entirely and
   completes exactly as below.
+- **BL-1614 — claim-time hint and a stale-read refusal.** A stale
+  worktree read on a Work note routed right after its ticket's promotion
+  commit (the coder's own worktree not yet merged, so `backlog/active/`
+  there still looks paused) let the coder decline four promotions on
+  2026-09-16 with `--no-work "still in backlog/paused/..."`, each
+  recovered ~45 minutes later by the coordinator's dropped-parcel sweep.
+  Two additions layered on the same gate, both reading the fact from the
+  freshest of `main`/`origin/main` (never the worktree) through
+  `git show`/`git ls-tree`, never merging on the role's behalf:
+  - `ready_for_next_task.bb` prints, right after the claim, `MERGE_MAIN_FIRST:
+    <ticket-id> is active on main [at <10-hex>]; merge main before reading
+    it` whenever the claimed Work note's ticket is active on main but the
+    worktree's own `backlog/active/` does not yet have it.
+  - `done_with_current_task.bb`'s Work-note gate refuses (exit 1,
+    `WORK_ACTIVE_ON_MAIN: <ticket-id> is active on main [at <10-hex>] -
+    merge main first, then complete it with real work or a reason.`, no
+    side effects) a `--no-work "<reason>"` completion whenever the
+    ticket is active on main at that moment - `work-note-completion-decision`
+    gains this as a fourth input (`active-on-main?`), answering
+    `:refuse-active-on-main` only when a reason is given AND the ticket
+    is active on main; a ticket genuinely paused or absent on main, or
+    unreadable refs, complete exactly as BL-1422's original five
+    scenarios (never a second freshness walk; the git read only runs
+    when a ticket id and a reason are both in play).
+  `route_backlog_to_coder.sh`'s dispatch message now reads `Work <id>:
+  merge main first, then read backlog/active` (BL-1513's composition
+  rule above still applies - the id, not the basename, keeps every live
+  ticket under the 80-character cap); the coder prompt carries the
+  "merge main before you read a Work note's ticket" rule directly.
 - **BL-1609 — forward-completion gate.** If the in-process file is a
   forwarding `git_handoff` (no `non-forwarding: true` header, Article 2.4)
   held by a code-worktree role (`worktree-name` other than `master` in
