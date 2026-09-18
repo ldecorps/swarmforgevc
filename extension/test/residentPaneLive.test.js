@@ -628,3 +628,50 @@ test('BL-1189: a bookkeep-closed ticket with a stale claim shows on no tile at a
     fake.restore();
   }
 });
+
+// BL-775 invariant 3: a role present in sessions.tsv (so it IS iterated by
+// captureLiveScreenPanes) whose tmux capture-pane call itself fails must
+// carry a nameable reason - never a bare status/blank the UI would have to
+// paper over with a generic message.
+test('BL-775 invariant 3: a pane whose tmux capture fails carries the reason, never a bare status', () => {
+  const tmp = mkTmpDir('sfvc-live-screen-pane-reason-fail-');
+  seedResidentPaneFixture(tmp, { role: 'coordinator', model: null });
+  const fake = installInProcessTmux([
+    { subcommand: 'show-window-options', exitCode: 0, stdout: '0\n' },
+    { subcommand: 'list-windows', exitCode: 0, stdout: '0\n' },
+    { subcommand: 'capture-pane', exitCode: 1, stderr: "can't find pane: swarmforge-coordinator:0" },
+  ]);
+  try {
+    const panes = captureLiveScreenPanes(tmp);
+    const entry = panes.find((p) => p.id === 'coordinator');
+    assert.ok(entry, 'the coordinator role, present in sessions.tsv, must still produce a pane entry');
+    assert.equal(entry.pane.available, false);
+    assert.ok(entry.pane.reason, 'a failed capture must carry a reason');
+    assert.match(entry.pane.reason, /can't find pane/);
+    assert.doesNotMatch(entry.pane.reason, /^\d+$/, 'never a bare status code');
+  } finally {
+    fake.restore();
+  }
+});
+
+// BL-775 invariant 3, the second failure shape: the capture succeeds (exit
+// 0) but the pane produced no text at all - a distinct reason from a
+// tmux-level error, and still never a bare blank.
+test('BL-775 invariant 3: a pane that captures nothing carries a reason, not a bare blank', () => {
+  const tmp = mkTmpDir('sfvc-live-screen-pane-reason-blank-');
+  seedResidentPaneFixture(tmp, { role: 'coordinator', model: null });
+  const fake = installInProcessTmux([
+    { subcommand: 'show-window-options', exitCode: 0, stdout: '0\n' },
+    { subcommand: 'list-windows', exitCode: 0, stdout: '0\n' },
+    { subcommand: 'capture-pane', exitCode: 0, stdout: '' },
+  ]);
+  try {
+    const panes = captureLiveScreenPanes(tmp);
+    const entry = panes.find((p) => p.id === 'coordinator');
+    assert.ok(entry, 'the coordinator role, present in sessions.tsv, must still produce a pane entry');
+    assert.equal(entry.pane.available, false);
+    assert.match(entry.pane.reason, /produced no output/);
+  } finally {
+    fake.restore();
+  }
+});
