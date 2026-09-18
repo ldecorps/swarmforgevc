@@ -26,8 +26,40 @@ const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const path = require('node:path');
 const { execFileSync } = require('node:child_process');
+const { onAbnormalExit } = require('./lib/fixtureReaper');
 
 const FEATURE = "BL-1626 Promotion fixtures carry the promote script's whole closure";
+
+// BL-1626 hardening: the coder's own bounce fix (finally-cleanup in the
+// terminal "no library is missing" Then step) closes the leak the
+// architect demonstrated, but the WHEN step in between
+// (fs.readdirSync/computeClosure over ctx.fixtureScriptsDir) sits between
+// creation and that cleanup with nothing covering it - the same "a
+// fixture-creating step that throws before the terminal step's cleanup
+// leaks its temp dir" hazard, one step earlier. Registered the moment the
+// directory exists, mirroring bl1632's own onAbnormalExit pattern, so a
+// throw anywhere between creation and the inline cleanup is still caught;
+// the inline `finally` in the Then step below removes it from tracking
+// first, so the happy path never double-frees.
+const trackedDirs = new Set();
+function trackDir(dir) {
+  trackedDirs.add(dir);
+  return () => {
+    if (trackedDirs.delete(dir)) {
+      fs.rmSync(dir, { recursive: true, force: true });
+    }
+  };
+}
+onAbnormalExit(() => {
+  for (const dir of Array.from(trackedDirs)) {
+    trackedDirs.delete(dir);
+    try {
+      fs.rmSync(dir, { recursive: true, force: true });
+    } catch {
+      /* already gone */
+    }
+  }
+});
 
 const REPO_ROOT = path.join(__dirname, '..', '..', '..');
 const SCRIPTS_DIR = path.join(REPO_ROOT, 'swarmforge', 'scripts');
@@ -60,6 +92,7 @@ function registerSteps(registry) {
     const build = KNOWN_HANDLERS.get(handler);
     assert.ok(build, `unknown handler in Examples: ${handler} - add it to KNOWN_HANDLERS`);
     ctx.fixtureScriptsDir = build();
+    ctx.cleanupFixtureScriptsDir = trackDir(ctx.fixtureScriptsDir);
   });
 
   scoped(/^its contents are diffed against the derived load-file closure of promotion_gates_cli\.bb$/, (ctx) => {
@@ -80,7 +113,7 @@ function registerSteps(registry) {
       // directory with no cleanup of its own - the caller that reads it
       // owns removing it, in a finally so a failed assertion still cleans
       // up rather than leaking on the red path too.
-      fs.rmSync(ctx.fixtureScriptsDir, { recursive: true, force: true });
+      ctx.cleanupFixtureScriptsDir();
     }
   });
 
