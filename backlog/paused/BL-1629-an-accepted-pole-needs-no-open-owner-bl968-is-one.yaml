@@ -26,7 +26,7 @@ required_wiring:
   - 'extension/src/tools/check-suite-file-budget.ts::accepted::the pre-existing reader is the consumer of the new disposition; the literal exists only with the fix (BL-874, BL-1235)'
   - 'specs/pipeline/steps/bl1629AcceptedPoleNeedsNoOpenOwnerSteps.js::registerSteps::the handler lands in the same parcel as the feature (BL-233, BL-1371)'
 
-human_approval: pending
+human_approval: approved
 approval_context: >
   A new feature file is authored here, so it needs a tap. No choice is
   posed and there are no ruling_options. FIRM: an accepted row is never
