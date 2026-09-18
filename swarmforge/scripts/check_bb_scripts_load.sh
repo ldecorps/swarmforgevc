@@ -128,25 +128,30 @@ analyse_one() {
 }
 
 # BL-1427: the full listed set is captured into an ARRAY, never streamed
-# through a `while read < <(process substitution)` pipe - a pipe is exactly
-# what let harness_env_scrub_names.bb's own stdin read (a script that
-# behaves this way is analysed like any other; `</dev/null` on the probe
-# below is the primary fix, but a `for` loop over an already-materialized
-# array has no shared stdin left to drain even if a future script found a
-# different way in) drain the rest of the file list out from under this
-# loop. Comparing $listed against $analysed below is the invariant this
-# ticket names directly: a listed script the probe never reached is a
-# refusal, never a silent partial pass.
-mapfile -t candidate_files < <(changed_bb_files)
+# through a bare `for f in $(cmd)` word-split - a `for` loop iterating a
+# command's raw output has no shared stdin left to drain even if a future
+# script found a way in (the harness_env_scrub_names.bb shape this ticket
+# guards against; `</dev/null` on the probe below is the primary fix).
+# BL-1627: `mapfile` is a bash-4 builtin stock macOS bash 3.2 lacks
+# (BL-801's target); the read-loop below materializes the SAME array
+# without it, still fully built before either `for` loop below ever
+# starts - the invariant is unchanged. Comparing $listed against
+# $analysed below is the invariant this ticket names directly: a listed
+# script the probe never reached is a refusal, never a silent partial
+# pass.
+candidate_files=()
+while IFS= read -r __cbl_file; do
+  candidate_files+=("$__cbl_file")
+done < <(changed_bb_files)
 listed=0
 handoffd_listed=0
-for f in "${candidate_files[@]}"; do
+for f in ${candidate_files[@]+"${candidate_files[@]}"}; do
   [[ -n "$f" ]] || continue
   listed=$((listed + 1))
   [[ "$(basename "$f")" == "handoffd.bb" ]] && handoffd_listed=1
 done
 
-for f in "${candidate_files[@]}"; do
+for f in ${candidate_files[@]+"${candidate_files[@]}"}; do
   [[ -n "$f" ]] || continue
   # handoffd.bb is excluded from the plain probe and covered by the BOOT step
   # below instead, and the reason is worth stating: its top level ends in
