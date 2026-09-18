@@ -89,6 +89,11 @@ export interface BacklogItem {
   statusText?: string;
   promotionBlockers?: string[];
   blockUntil?: string[];
+  // BL-831: the ticket's declared invariants and out-of-scope prose, for
+  // the Bubble Pipeline page's detail sheet (spec sections) - not read by
+  // any other consumer before this ticket.
+  invariants?: string[];
+  outOfScope?: string;
 }
 
 const VALID_STATUSES = new Set(['todo', 'active', 'done']);
@@ -233,6 +238,8 @@ function assignOptionalFields(item: BacklogItem, content: string): void {
   assignIfTruthy(item, 'statusText', unrecognizedStatusText(parseYamlScalar(content, 'status')));
   assignIfTruthy(item, 'promotionBlockers', parseYamlFlowOrBlockList(content, 'promotion_blockers'));
   assignIfTruthy(item, 'blockUntil', parseYamlFlowOrBlockList(content, 'block_until'));
+  assignIfTruthy(item, 'invariants', parseYamlList(content, 'invariants'));
+  assignIfTruthy(item, 'outOfScope', parseYamlBlockScalar(content, 'out_of_scope'));
 }
 
 function toOptionalNumber(value: unknown): number | undefined {
@@ -358,6 +365,8 @@ function assignOptionalFieldsFromObject(item: BacklogItem, obj: Record<string, u
   assignIfTruthy(item, 'statusText', unrecognizedStatusText(toOptionalString(obj.status)));
   assignIfTruthy(item, 'promotionBlockers', toOptionalStringList(obj.promotion_blockers));
   assignIfTruthy(item, 'blockUntil', toOptionalStringList(obj.block_until));
+  assignIfTruthy(item, 'invariants', toOptionalStringList(obj.invariants));
+  assignIfTruthy(item, 'outOfScope', toTrimmedOptionalString(obj.out_of_scope));
 }
 
 function buildItemFromParsedObject(obj: Record<string, unknown>): BacklogItem | null {

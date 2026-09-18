@@ -65,6 +65,24 @@ export function mergeOperatorDocsIntoUiBundleManifest(manifest: LetsTalkUiBundle
   };
 }
 
+// required_wiring anchor: bubblePipelinePage
+export const bubblePipelinePage: LetsTalkUiBundlePage = {
+  id: 'pipeline',
+  title: 'Pipeline',
+  entryPath: 'pipeline',
+  order: 2,
+};
+
+export function mergeBubblePipelinePageIntoUiBundleManifest(manifest: LetsTalkUiBundleManifest): LetsTalkUiBundleManifest {
+  if (manifest.pages.some((page) => page.id === bubblePipelinePage.id)) {
+    return manifest;
+  }
+  return {
+    ...manifest,
+    pages: [...manifest.pages, bubblePipelinePage].sort((a, b) => a.order - b.order),
+  };
+}
+
 export const bubbleHostPage: LetsTalkUiBundlePage = {
   id: 'host',
   title: 'Host',

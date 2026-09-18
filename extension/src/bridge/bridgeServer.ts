@@ -26,6 +26,13 @@ import { getConsoleMenuUiHtml } from './consoleMenuUiHtml';
 import { getPipelineGridUiHtml } from './pipelineGridUiHtml';
 import { captureMonoRouterLiveScreen } from './residentPaneLive';
 import { capturePipelineGridLive } from './pipelineGridLive';
+import { captureBubblePipelineBoard, captureBubblePipelineDetail } from './bubblePipelinePage';
+import {
+  getBubblePipelinePageUiHtml,
+  isBubblePipelinePagePath,
+  isBubblePipelinePageStatePath,
+  isBubblePipelinePageDetailPath,
+} from './bubblePipelinePageUiHtml';
 import { answerCapturedGateLive } from './gateAnswerLive';
 import { computeRoleGateStatesLive, filterPendingGates } from './gateSnapshot';
 import { readSwarmRoles } from '../swarm/tmuxClient';
@@ -96,6 +103,7 @@ import {
   mergeOperatorDocsIntoUiBundleManifest,
   mergeBubbleHealthIntoUiBundleManifest,
   mergeBubbleLiveIntoUiBundleManifest,
+  mergeBubblePipelinePageIntoUiBundleManifest,
 } from './letsTalkRoutes';
 import { getBubbleLiveUiHtml, isBubbleLivePath } from './bubbleLiveUiHtml';
 import { createWebUiFontSizeRoutes, isWebUiFontSizePath } from './webUiFontSizeRoutes';
@@ -2120,10 +2128,22 @@ function buildJsonRoutes(targetPath: string, runLogPath: string, nowMs?: number)
         mergeBubbleLiveIntoUiBundleManifest(
           mergeBubbleHostIntoUiBundleManifest(
             mergeBubbleHealthIntoUiBundleManifest(
-              mergeOperatorDocsIntoUiBundleManifest(getLetsTalkUiBundleManifest(targetPath, process.env))
+              mergeBubblePipelinePageIntoUiBundleManifest(
+                mergeOperatorDocsIntoUiBundleManifest(getLetsTalkUiBundleManifest(targetPath, process.env))
+              )
             )
           )
         ),
+    },
+    {
+      // BL-831: the Pipeline page's in-flight board state (rows + blurb).
+      matches: isBubblePipelinePageStatePath,
+      compute: () => captureBubblePipelineBoard(targetPath),
+    },
+    {
+      // BL-831: the Pipeline page's per-ticket detail sheet.
+      matches: isBubblePipelinePageDetailPath,
+      compute: (url) => captureBubblePipelineDetail(targetPath, queryParams(url).get('id') ?? ''),
     },
     {
       // BL-832: Health page JSON — same readouts as bubbleHealthCore, on demand.
@@ -2305,6 +2325,10 @@ export function startBridge(
       }
       if (isBubbleHealthPath(url)) {
         serveMiniAppHtml(res, getBubbleHealthUiHtml());
+        return;
+      }
+      if (isBubblePipelinePagePath(url)) {
+        serveMiniAppHtml(res, getBubblePipelinePageUiHtml());
         return;
       }
       if (isBubbleHostPath(url)) {
