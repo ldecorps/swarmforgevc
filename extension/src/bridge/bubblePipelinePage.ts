@@ -14,6 +14,7 @@ import * as fs from 'fs';
 import * as path from 'path';
 import { readBacklogFolders } from '../panel/backlogReader';
 import { computeLivePipelineBoard, blurb } from './pipelineGridLive';
+import { PIPELINE_BOARD_COLUMN_ORDER } from '../concierge/pipelineBoard';
 
 export interface BubblePipelineGridEntry {
   id: string;
@@ -23,6 +24,12 @@ export interface BubblePipelineGridEntry {
 }
 
 export interface BubblePipelineBoardState {
+  // BL-831: the fixed stage-column order the grid marks against - the SAME
+  // PIPELINE_BOARD_COLUMN_ORDER the existing Pipeline board renders its own
+  // matrix from (invariant 1: no second read model / no invented column
+  // set), served here so the page can render a real agent x ticket matrix
+  // rather than a flat list.
+  columns: readonly string[];
   inFlight: BubblePipelineGridEntry[];
 }
 
@@ -47,7 +54,7 @@ export function captureBubblePipelineBoard(targetPath: string): BubblePipelineBo
       blurb: item ? blurb(item) : (row.title ?? row.id),
     };
   });
-  return { inFlight };
+  return { columns: PIPELINE_BOARD_COLUMN_ORDER, inFlight };
 }
 
 function parseFeatureScenarioTitles(featureText: string): string[] {

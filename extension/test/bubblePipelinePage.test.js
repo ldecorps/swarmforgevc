@@ -32,7 +32,9 @@ function writeStageMap(root, byId) {
 
 test('captureBubblePipelineBoard: an empty backlog reports no in-flight tickets', () => {
   const root = mkTmpDir('bl831-empty-');
-  assert.deepEqual(captureBubblePipelineBoard(root), { inFlight: [] });
+  const state = captureBubblePipelineBoard(root);
+  assert.deepEqual(state.inFlight, []);
+  assert.ok(Array.isArray(state.columns) && state.columns.length > 0);
 });
 
 test('captureBubblePipelineDetail: returns null for a ticket id not in active or paused', () => {
@@ -79,4 +81,11 @@ test('getBubblePipelinePageUiHtml: renders a page shell that fetches the state a
   assert.match(html, /<title>Pipeline<\/title>/);
   assert.match(html, /\/pipeline-page-state/);
   assert.match(html, /\/pipeline-page-detail/);
+});
+
+test('getBubblePipelinePageUiHtml: renders the grid as a horizontally-scrollable matrix, not just a card list', () => {
+  const html = getBubblePipelinePageUiHtml();
+  assert.match(html, /grid-scroll/);
+  assert.match(html, /<table>/);
+  assert.match(html, /data\.columns/);
 });

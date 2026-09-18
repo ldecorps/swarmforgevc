@@ -30,14 +30,18 @@ export function getBubblePipelinePageUiHtml(): string {
   }
   h1 { font-size: calc(var(--pp-font-px) + 1px); margin: 0; font-weight: 600; }
   main { padding: 12px 14px 24px; display: grid; gap: 10px; }
-  .grid-scroll { overflow-x: auto; }
+  .grid-scroll { overflow-x: auto; max-width: 100%; }
   table { border-collapse: collapse; font-size: calc(var(--pp-font-px) - 2px); }
   td, th { padding: 4px 8px; border: 1px solid color-mix(in srgb, var(--tg-theme-hint-color, #8b949e) 30%, transparent); white-space: nowrap; }
+  th { color: var(--tg-theme-hint-color, #8b949e); font-weight: 600; }
+  td.mark { text-align: center; color: var(--tg-theme-link-color, #58a6ff); font-weight: 700; }
+  td.rowid { cursor: pointer; color: var(--tg-theme-link-color, #58a6ff); }
   .row {
     border: 1px solid color-mix(in srgb, var(--tg-theme-hint-color, #8b949e) 30%, transparent);
     border-radius: 10px;
     padding: 10px 12px;
     background: color-mix(in srgb, var(--tg-theme-bg-color, #0d1117) 92%, #fff 4%);
+    cursor: pointer;
   }
   .row .title { font-weight: 600; }
   .row .column { color: var(--tg-theme-hint-color, #8b949e); font-size: calc(var(--pp-font-px) - 2px); }
@@ -96,19 +100,34 @@ export function getBubblePipelinePageUiHtml(): string {
     .then(function (r) { return r.json(); })
     .then(function (data) {
       var inFlight = data.inFlight || [];
+      var columns = data.columns || [];
       var root = document.getElementById('root');
       if (inFlight.length === 0) {
         root.innerHTML = '<p class="empty">Nothing is in flight.</p>';
         return;
       }
-      root.innerHTML = inFlight.map(function (t) {
+      // Agent x ticket matrix - a mark at the cell where each ticket's own
+      // column (the board read model's own placement, not derived here)
+      // sits, same axes as the existing Pipeline board's own grid.
+      var gridHtml = '<div class="grid-scroll"><table><thead><tr><th>Ticket</th>'
+        + columns.map(function (c) { return '<th>' + esc(c) + '</th>'; }).join('')
+        + '</tr></thead><tbody>'
+        + inFlight.map(function (t) {
+            return '<tr>'
+              + '<td class="rowid" data-id="' + esc(t.id) + '">' + esc(t.id) + '</td>'
+              + columns.map(function (c) { return '<td class="mark">' + (c === t.column ? '●' : '') + '</td>'; }).join('')
+              + '</tr>';
+          }).join('')
+        + '</tbody></table></div>';
+      var blurbsHtml = inFlight.map(function (t) {
         return '<article class="row" data-id="' + esc(t.id) + '">'
           + '<div class="title">' + esc(t.id) + ' — ' + esc(t.title) + '</div>'
           + '<div class="column">' + esc(t.column) + '</div>'
           + '<div class="blurb">' + esc(t.blurb) + '</div>'
           + '</article>';
       }).join('');
-      root.querySelectorAll('.row').forEach(function (el) {
+      root.innerHTML = gridHtml + blurbsHtml;
+      root.querySelectorAll('[data-id]').forEach(function (el) {
         el.addEventListener('click', function () { openDetail(el.getAttribute('data-id')); });
       });
     })
