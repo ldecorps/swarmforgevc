@@ -186,6 +186,41 @@ test('parseBacklogYaml parses remaining_slices via the lenient fallback on a str
   assert.deepEqual(item.remainingSlices, ['some untracked slice', 'another one']);
 });
 
+// BL-831: invariants (a YAML list) and out_of_scope (a block scalar) - for
+// the Bubble Pipeline page's detail sheet - via BOTH the strict js-yaml
+// path and the lenient regex-fallback path, same double coverage every
+// other list/block-scalar field above gets.
+
+test('parseBacklogYaml parses invariants as a list', () => {
+  const yaml = 'id: BL-831\ntitle: t\ninvariants:\n  - "first invariant"\n  - "second invariant"\n';
+  const item = parseBacklogYaml(yaml);
+  assert.deepEqual(item.invariants, ['first invariant', 'second invariant']);
+});
+
+test('parseBacklogYaml omits invariants when the field is absent', () => {
+  const yaml = 'id: BL-831\ntitle: t\n';
+  const item = parseBacklogYaml(yaml);
+  assert.equal(Object.prototype.hasOwnProperty.call(item, 'invariants'), false);
+});
+
+test('parseBacklogYaml parses invariants via the lenient fallback on a strict-unparsable ticket', () => {
+  const yaml = 'id: BL-093\ntitle: BUG — colon: breaks strict YAML\ninvariants:\n  - first invariant\n  - second invariant\n';
+  const item = parseBacklogYaml(yaml);
+  assert.deepEqual(item.invariants, ['first invariant', 'second invariant']);
+});
+
+test('parseBacklogYaml parses an out_of_scope block scalar', () => {
+  const yaml = 'id: BL-831\ntitle: t\nout_of_scope: |\n  First line.\n  Second line.\n';
+  const item = parseBacklogYaml(yaml);
+  assert.equal(item.outOfScope, 'First line.\nSecond line.');
+});
+
+test('parseBacklogYaml parses out_of_scope via the lenient fallback on a strict-unparsable ticket', () => {
+  const yaml = 'id: BL-093\ntitle: BUG — colon: breaks strict YAML\nout_of_scope: |\n  Nothing outside this slice.\n';
+  const item = parseBacklogYaml(yaml);
+  assert.equal(item.outOfScope, 'Nothing outside this slice.');
+});
+
 // BL-117: prose description + acceptance reference, for the docs
 // drill-down explorer's ticket and Gherkin levels.
 
