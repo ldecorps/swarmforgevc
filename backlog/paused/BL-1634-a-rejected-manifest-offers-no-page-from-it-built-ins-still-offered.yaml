@@ -1,0 +1,162 @@
+id: BL-1634
+title: "BL-829's landed scenario 'a malformed page list rejects the whole manifest' is red on main since BL-1166 landed the bridge's built-in pages (2026-08-27): its handler demands an EMPTY offered list where the scenario says no page FROM the malformed manifest is offered, so the built-in health, host and operator-docs pages fail it - first recorded 2026-09-18 by the coder on BL-775, which adds a fourth built-in, `live`, the very id the fixture's malformed entry uses; the handler asserts by id, the fixture's id is one no built-in will ever carry, and the row leaves in this land"
+milestone: M8
+type: defect
+severity: high
+# high (standing-red rule 2026-09-05): a landed acceptance contract red on
+# main is a broken safety signal; it was red for three weeks because no
+# lane runs landed features (BL-1625). Production is unaffected: the bridge
+# rejects the malformed operator manifest whole and offers only its own
+# built-in pages - the scenario's sentence is true, the handler's
+# assertion is wrong.
+status: todo
+epic: bubble-thin-shell
+priority: 8
+direction: swarm-reported
+depends_on: []
+# BL-829 and BL-1166 are in backlog/done. BL-775 (active, coder) adds the
+# built-in `live` page and does not touch BL-829's handler; BL-1635
+# (paused, minted the same pass) owns the JVM-suite red that keeps BL-829's
+# scenarios 03 red - a different root, a different file, not a dependency.
+mutation_cost: low
+# low: one step handler (specs/pipeline/steps, outside Stryker's out/**
+# scope), one fixture id, one feature and handler, evidence, one register
+# row.
+slice_size_envelope: low
+required_stages: [coder, cleaner, architect, hardender, documenter, qa]
+
+acceptance: specs/features/BL-1634-a-rejected-manifest-offers-no-page-from-it-built-ins-still-offered.feature
+
+required_wiring:
+  - 'specs/pipeline/steps/bl829BubbleRemotePagePagerSteps.js::malformed-operator-page::the BL-829 handler is the pre-existing consumer; the fixture id literal exists only with the fix (BL-874, BL-1235)'
+  - 'specs/pipeline/steps/bl1634RejectedManifestOffersNoPageFromItSteps.js::registerSteps::the handler lands in the same parcel as the feature (BL-233, BL-1371)'
+
+human_approval: approved
+approval_context: >
+  A new feature file is authored here, so it needs a tap. No choice is
+  posed and there are no ruling_options. FIRM: BL-829's feature text is
+  not changed - "no page from it is offered to the shell" is the right
+  sentence; only its handler's assertion and its fixture's page id change.
+  FIRM: the bridge's behaviour is not changed - a malformed operator
+  manifest is still rejected whole and the built-in pages are still
+  offered. FIRM: the register row leaves in the same land that turns
+  BL-829's scenario 02 green.
+
+invariants:
+  - "A page id from a rejected operator manifest never appears among the pages offered to the shell, and the bridge's built-in pages are offered regardless of the operator manifest's state."
+
+description: |
+  ## What is wrong
+
+  `specs/features/BL-829-bubble-remote-page-pager.feature`, scenario
+  `bundle-pages-rejected-whole-02`, fails on main 858f8fca6c (specifier,
+  one run, 2026-09-18 13:5xZ, load 4.4, no lane alive):
+
+  ```
+  not ok 2 - a malformed page list rejects the whole manifest
+    error: 'Scenario "a malformed page list rejects the whole manifest" failed at step "And no page from it is offered to the shell": expected no pages offered, got: [{"id"...
+  ```
+
+  The handler (`bl829BubbleRemotePagePagerSteps.js:157-164`) throws
+  unless `ctx.manifestBody.pages` is an EMPTY array. The scenario says
+  something narrower: no page FROM the malformed manifest is offered.
+  Since BL-1166 landed on 2026-08-27 (06284be69e, the Operator docs
+  page; `extension/src/bridge/letsTalkRoutes.ts:34` `id: 'operator-docs'`)
+  the bridge merges its own built-in pages - health, host, operator-docs -
+  into the served list after the operator manifest resolves, including
+  when that resolution fell back to `pages: []` on a malformed operator
+  list (the coder's BL-775 evidence, 2026-09-18, confirmed pre-existing
+  by stashing every BL-775 change). So the offered list is never empty,
+  the assertion has been false for three weeks, and nobody saw it because
+  no lane runs landed features (BL-1625). BL-775, in flight, adds a fourth
+  built-in with id `live` - the id the fixture's malformed entry uses
+  (`pages: [{ id: 'live', entryPath: 'live' }]`), so even an assert-by-id
+  fix would collide the moment BL-775 lands unless the fixture's id is
+  one no built-in carries.
+
+  Not a BL-829 regression, not a BL-1166 defect: both behaviours are as
+  designed; the handler over-asserted from the day built-ins existed.
+  BL-829's scenarios 03 [1-4] are ALSO red, by a different root (the JVM
+  suite, BL-1635); this ticket owns scenario 02 and the feature's row.
+
+  ## What is wanted
+
+  - A malformed operator manifest whose entry id is no built-in's id is
+    rejected whole, no offered page carries that id, and every built-in
+    page is still offered (scenario 01).
+  - A malformed operator manifest whose entry id equals a built-in's id
+    is rejected whole, and the offered page with that id is the bridge's
+    built-in entry, not the manifest's (scenario 02 - the BL-775 `live`
+    collision, pinned before it can happen).
+  - BL-829's scenario 02 green on the parcel (QA e2e), its handler
+    asserting by id against the manifest's entries and its fixture using
+    the id `malformed-operator-page`.
+  - The register row leaves in the same land.
+
+  ## How (direction, not mandate)
+
+  - In `bl829BubbleRemotePagePagerSteps.js`: the fixture step writes
+    `pages: [{ id: 'malformed-operator-page', entryPath: 'malformed-operator-page' }]`
+    (still missing `title` and `order`, so still malformed) and records
+    the ids it wrote on `ctx`; the "no page from it" step asserts that
+    none of the recorded ids appears in `ctx.manifestBody.pages` -
+    nothing about the list's length. Two hunks, one file.
+  - The BL-1634 handler drives the real bridge the way BL-829's does
+    (its exported helpers, or its own scoped copies of the start/write/
+    fetch steps - BL-1277's collision guard forbids an unscoped duplicate);
+    scenario 02 writes the built-in id and asserts the offered entry's
+    `entryPath`/`title` are the built-in's. Read the built-in ids from
+    `letsTalkRoutes.ts`'s registry at run time, never a hand list.
+  - Documenter: BL-829's how-to (if any) gains one line on built-ins
+    being offered regardless of the operator manifest.
+
+constraints: >
+  BL-829's step handler (two hunks), the feature and handler, evidence,
+  one register row. No change to BL-829's feature text, to
+  bridgeServer.ts, letsTalkRoutes.ts or letsTalkUiBundle.ts, or to any
+  other feature. The step handler lands with the feature (BL-233).
+  Evidence named BL-1634-*.
+
+out_of_scope: |
+  - BL-829's scenarios 03 [1-4] and the JVM suite: BL-1635.
+  - Whether built-ins SHOULD be offered when the operator manifest is
+    malformed: they are today by BL-1166's design; a change is a Bubble
+    product decision for its own ticket.
+  - A lane that runs landed features (BL-1625).
+
+qa_e2e_procedure: |
+  On the parcel commit, from the repo root with extension/out compiled:
+  1. Acceptance resolving both scenarios
+     (`bash specs/pipeline/scripts/run_acceptance.sh specs/features/BL-1634-*.feature`).
+  2. `bash specs/pipeline/scripts/run_acceptance.sh specs/features/BL-829-*.feature`
+     ONCE: scenario 02 passes; scenarios 03 [1-4] stay red while BL-1635
+     is unlanded (their row names it) and pass once it has landed. Never
+     "run it N times".
+  3. `git diff main...HEAD --name-only` names BL-829's handler, this
+     feature and handler, evidence and the register only.
+
+source: |
+  Coder note to the specifier and coordinator, priority 00,
+  2026-09-18T13:35Z (inbound 00_20260918T133501Z_002044_from_coder):
+  "unowned-red BL-829 'malformed page list' fails on main - see BL-775
+  evidence". Coder evidence
+  backlog/evidence/BL-775-coder-20260918.md (coder branch fdf1ff3da2).
+  Specifier adjudication with the measured runs:
+  backlog/evidence/BL-1635-specifier-adjudication-of-coder-unowned-red-bl829-20260918.md.
+  Parents: BL-829, BL-1166, BL-775. Sibling minted the same pass: BL-1635.
+
+notes: |
+  Minted 2026-09-18 by the specifier while completing the coder's
+  unowned-red note, the same pass as BL-1635. AUTO-APPROVED under the
+  2026-09-17 operator hotfix (severity defect, no ruling_options) — see
+  auto-approve-high-severity-defects-amendment-20260917.md. Register:
+  backlog/standing-reds.tsv gains one `acceptance` row for BL-829's
+  feature naming this ticket (first_seen 2026-09-18; red since
+  2026-08-27), its note naming BL-1635 for scenarios 03; the row leaves in
+  this land (BL-1631). The coder holding BL-775 was told the reds are
+  owned. INVEST: Independent (the bridge, the handler and BL-1166's
+  built-ins exist), Negotiable (how the handler reaches the bridge is
+  direction; the fixture id is fixed for the wiring anchor), Valuable (a
+  landed contract stops lying and a BL-775 collision is pinned before it
+  lands), Estimable (two hunks and one handler - one sitting), Small (two
+  scenarios, one invariant), Testable (the real bridge in seconds).
