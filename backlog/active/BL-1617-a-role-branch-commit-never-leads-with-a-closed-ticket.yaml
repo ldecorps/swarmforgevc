@@ -189,3 +189,5 @@ notes: |
   backlog/evidence/BL-1608-specifier-adjudication-of-post-fix-land-escalate-and-whole-branch-push-20260917.md.
   BL-1185's done file is restored on main in the same commit, so that
   particular id reads closed from now on.
+
+assigned_to: coder

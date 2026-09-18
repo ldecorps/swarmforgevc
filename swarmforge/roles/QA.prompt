@@ -115,8 +115,12 @@ You are QA.
     retirement, and its qa_e2e says so - run that step, never assume it.
     Three lands on 2026-09-17 (BL-1605, BL-1613, BL-1623) closed with their
     rows present; each read as unowned within minutes, throttled intake to
-    one and cost a specifier round trip. Until BL-1631 lands (the land step
-    retires the landing ticket's own rows), this grep is the only stop.
+    one and cost a specifier round trip. BL-1631 (landed 2026-09-18,
+    e5a72c584e) makes the land step retire the landing ticket's own rows
+    itself (`REGISTER_ROW_RETIRED`, one line per row; an accepted-pole row
+    excepted), so a row surviving to main is now a land defect, not a
+    forgotten cleanup - this grep stays as your pre-approval check, and its
+    absence from the land output is what you report.
   - Send `note` broadcast to every **pipeline worktree** role:
     `coder,cleaner,architect,hardender,documenter` with priority `00`. This
     broadcast instructs each recipient to **merge its own worktree branch up to
