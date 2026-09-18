@@ -40,9 +40,16 @@ preserved). For each stage-queue candidate:
 
 "Worked" means present in that seat's `completed/` or `in_process/`
 mailbox — no new state, just the durable record BL-983 already left behind.
-Age is read from the parcel's `enqueued_at` header (falling back to
-`created_at`), never file mtime, matching every other staleness check in
-this pipeline.
+A `git_handoff` attributes through its `task` header; since BL-1616, a
+completed `note` attributes too — through the same shared reader
+(`supersede-lib/task-name-from-content`, BL-1185/BL-1608's own parser, never
+a second one) — so a ticket a seat built from the coordinator's normal
+Work-note dispatch also counts as that seat's prior work, not just one
+dispatched as a `git_handoff`. A `note` completed with a `--no-work` reason
+(the `no_work_reason` header `done_with_current.sh` stamps) contributes
+nothing: a declined ticket is not history. Age is read from the parcel's
+`enqueued_at` header (falling back to `created_at`), never file mtime,
+matching every other staleness check in this pipeline.
 
 ## The deadline is bounded, deliberately
 
