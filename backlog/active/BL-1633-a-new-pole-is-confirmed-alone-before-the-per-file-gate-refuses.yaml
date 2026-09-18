@@ -109,6 +109,15 @@ description: |
   - `extension/test/telegramFrontDeskBotCli.test.js` is under budget alone
     on the parcel and its register row is gone at the parcel; every other
     row is byte-identical to main (scenario 04).
+  - BL-1006, the slice-boundary rule: BL-1620's scenario
+    `two-unit-lane-poles-02` ("the register row stays ... the parcel
+    leaves the row in backlog/suite-poles.tsv", its Given "names the file
+    under BL-1633") is TRUE only while this ticket is open and goes false
+    the day this lands - it is RETIRED in this parcel (scenario removed
+    from BL-1620's feature, its five handler steps removed from
+    bl1620TwoUnitLanePolesSteps.js, never reworded), and BL-1620's
+    narrative sentence about the row is re-tensed to the past (scenario
+    04's last step). BL-1620's scenarios 01 and 03 stay untouched.
 
   ## How (direction, not mandate)
 
@@ -139,6 +148,15 @@ description: |
     real register.
   - Register: this parcel deletes the telegramFrontDeskBotCli row; no
     other row changes.
+  - BL-1620's feature and handler: delete the `# BL-1620
+    two-unit-lane-poles-02` block (comment, Scenario, five steps) and the
+    five `scoped(` registrations for its step texts; change the narrative
+    clause "that its register row stays, re-owned by BL-1633 (...)" to
+    "that its register row stayed, re-owned by BL-1633, until BL-1633
+    retired it" - a re-tense, not a rewrite. The runner throws on a
+    scenario with no handler, never on a handler with no scenario, so
+    remove the scenario and its handlers in the same commit. BL-1620 lands
+    before this ticket; if it has not, merge main until it has.
   - Documenter: BL-1598's how-to (if any) and engineering-detailed.prompt
     "Test Speed And Isolation" gain the rule: the per-file gate refuses a
     new pole only after confirming it alone; a verdict of `contention` is
@@ -147,7 +165,10 @@ description: |
 constraints: >
   check-suite-file-budget.ts (the decision extension and its print),
   recordTestDuration.js (the confirmer and its one call), their unit
-  tests, one register row, the feature and handler, evidence and docs.
+  tests, one register row, the feature and handler, BL-1620's feature and
+  handler (scenario 02 retirement and the narrative re-tense only -
+  BL-1006; the acceptance pointer below is not a claim on BL-1620's
+  contract), evidence and docs.
   No change to PER_FILE_DURATION_BUDGET_MS, NEW_POLE_REFUSAL_FRACTION,
   STALE_ROW_FRACTION, the unowned rule, the work ratchet, any vitest
   config, or any test file's content. The step handler lands with the
@@ -170,7 +191,8 @@ qa_e2e_procedure: |
      test file) once -> green, the contention and timeout cases present.
   2. Acceptance resolving all four scenarios
      (`bash specs/pipeline/scripts/run_acceptance.sh specs/features/BL-1633-*.feature`);
-     BL-1598's and BL-1620's features still resolving.
+     BL-1598's feature still resolving, and BL-1620's feature resolving
+     with scenarios 01 and 03 only (02 retired here, BL-1006).
   3. ONE `npm test` at a 1-minute load below 8 -> exit 0; the verdict
      names telegramFrontDeskBotCli as `contention` with both durations if
      the pool put it over the line, or nothing if it did not; no new-pole,
@@ -190,6 +212,11 @@ source: |
   amendment: backlog/evidence/BL-1620-bounce-20260918.md. Parents:
   BL-1598, BL-378, BL-1620. Class siblings: BL-1107, BL-1599, BL-1606,
   BL-1621, BL-1632 (verdict turns on what else is alive on the host).
+  Amended 2026-09-18 09:2xZ on the cleaner's BL-1620 note 000820: the
+  BL-1006 retirement of BL-1620's scenario 02 scoped in (the specifier's
+  first cut of this ticket forgot the boundary it creates); scenario 04
+  gained its last step. If a coder already holds this ticket: merge main
+  and re-read - the only new work is the retirement block above.
 
 notes: |
   Minted 2026-09-18 by the specifier while completing the hardener's
