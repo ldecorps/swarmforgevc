@@ -102,8 +102,10 @@ import {
   mergeBubbleHostIntoUiBundleManifest,
   mergeOperatorDocsIntoUiBundleManifest,
   mergeBubbleHealthIntoUiBundleManifest,
+  mergeBubbleLiveIntoUiBundleManifest,
   mergeBubblePipelinePageIntoUiBundleManifest,
 } from './letsTalkRoutes';
+import { getBubbleLiveUiHtml, isBubbleLivePath } from './bubbleLiveUiHtml';
 import { createWebUiFontSizeRoutes, isWebUiFontSizePath } from './webUiFontSizeRoutes';
 import { createWebUiTicketStripCollapsedRoutes, isWebUiTicketStripCollapsedPath } from './webUiTicketStripCollapseRoutes';
 import { resolveLetsTalkAudioAdaptersFromEnv } from './letsTalkAudio';
@@ -2123,10 +2125,12 @@ function buildJsonRoutes(targetPath: string, runLogPath: string, nowMs?: number)
       // decide fresh/cached/stale/bare from what this route actually serves.
       matches: isLetsTalkUiBundlePath,
       compute: () =>
-        mergeBubbleHostIntoUiBundleManifest(
-          mergeBubbleHealthIntoUiBundleManifest(
-            mergeBubblePipelinePageIntoUiBundleManifest(
-              mergeOperatorDocsIntoUiBundleManifest(getLetsTalkUiBundleManifest(targetPath, process.env))
+        mergeBubbleLiveIntoUiBundleManifest(
+          mergeBubbleHostIntoUiBundleManifest(
+            mergeBubbleHealthIntoUiBundleManifest(
+              mergeBubblePipelinePageIntoUiBundleManifest(
+                mergeOperatorDocsIntoUiBundleManifest(getLetsTalkUiBundleManifest(targetPath, process.env))
+              )
             )
           )
         ),
@@ -2329,6 +2333,12 @@ export function startBridge(
       }
       if (isBubbleHostPath(url)) {
         serveMiniAppHtml(res, getBubbleHostUiHtml());
+        return;
+      }
+      // BL-775: Bubble's Live page - the same shared renderer the Mini App
+      // shell above already serves, published under its own bundle path.
+      if (isBubbleLivePath(url)) {
+        serveMiniAppHtml(res, getBubbleLiveUiHtml());
         return;
       }
       if (url === '/lets-talk/manifest.json' || url.startsWith('/lets-talk/manifest.json?')) {
