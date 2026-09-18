@@ -109,7 +109,7 @@ export type WebUiFontSizePreferenceWrite = { ok: true; fontSizePx: number } | { 
 // (font-size writes keep ticketStripCollapsed intact, and vice versa) so
 // the two preferences never clobber each other.
 function readTicketStripCollapsedMap(existing: Record<string, unknown> | null): Record<string, boolean> {
-  const raw = existing ? existing.ticketStripCollapsed : undefined;
+  const raw = existing?.ticketStripCollapsed;
   if (typeof raw !== 'object' || raw === null || Array.isArray(raw)) {
     return {};
   }
