@@ -10,7 +10,8 @@ Feature: BL-1598 The unit suite pole register makes the per-file gate green
   a snapshot gate that refuses on ordinary host-load jitter is red on day
   one (amended 2026-09-16 on QA's Article 4.2 hold) - that the recorded run
   keeps the test outcome apart from the budget verdict, and that the nine
-  poles measured on 2026-09-16 are registered with an open owner.
+  poles measured on 2026-09-16 were registered with an open owner (the
+  census pin retired by BL-1633 as rows drain).
 
   # BL-1598 unit-suite-pole-register-01
   Scenario Outline: the per-file gate decides against the register
@@ -42,10 +43,3 @@ Feature: BL-1598 The unit suite pole register makes the per-file gate green
       | 1         | ok        | fail   | 1        |
       | 0         | watch     | pass   | 0        |
       | 0         | stale-row | pass   | 0        |
-
-  # BL-1598 unit-suite-pole-register-03
-  Scenario: the committed register names the nine poles of 2026-09-16 with an open owner each
-    When backlog/suite-poles.tsv is read
-    Then it holds exactly 9 rows
-    And every row names a ticket present under backlog/paused or backlog/active
-    And bl968StepRegistryMaterializedTreeGuard.test.js and telegramFrontDeskBotCli.test.js are among the files

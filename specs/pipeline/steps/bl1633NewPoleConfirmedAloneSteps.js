@@ -224,6 +224,65 @@ function registerSteps(registry) {
       'every row other than the removed one must be byte-identical to main'
     );
   });
+
+  // BL-1006 (both amendments): this parcel retires a scenario in each of
+  // two sibling features whose premise it falsifies (BL-1620's own row,
+  // BL-1598's census count) - both read the REAL committed feature file,
+  // never a re-statement of its content.
+  function featureScenarioTags(text) {
+    return [...text.matchAll(/^\s*# BL-\d+ ([\w-]+)$/gm)].map((m) => m[1]);
+  }
+
+  scoped(
+    /^BL-1620's feature at the parcel carries scenarios two-unit-lane-poles-01 and -03 only, its narrative stating the register row's fate in the past$/,
+    () => {
+      const text = fs.readFileSync(
+        path.join(REPO_ROOT, 'specs', 'features', 'BL-1620-two-unit-lane-poles-come-under-the-per-file-budget.feature'),
+        'utf8'
+      );
+      assert.deepEqual(
+        featureScenarioTags(text),
+        ['two-unit-lane-poles-01', 'two-unit-lane-poles-03'],
+        'expected BL-1620\'s feature to carry only scenarios 01 and 03 (02 retired)'
+      );
+      assert.match(
+        text,
+        /register row stayed, re-owned by BL-1633, until BL-1633 retired it/,
+        'expected BL-1620\'s narrative to state the row\'s fate in the past tense'
+      );
+      assert.doesNotMatch(text, /register row stays, re-owned by BL-1633 \(/, 'expected the present-tense narrative to be gone');
+    }
+  );
+
+  scoped(
+    /^BL-1598's feature at the parcel carries scenarios unit-suite-pole-register-01 and -02 only, its narrative stating the 2026-09-16 census in the past$/,
+    () => {
+      const text = fs.readFileSync(
+        path.join(
+          REPO_ROOT,
+          'specs',
+          'features',
+          'BL-1598-the-unit-suite-pole-register-makes-the-per-file-gate-green.feature'
+        ),
+        'utf8'
+      );
+      assert.deepEqual(
+        featureScenarioTags(text),
+        ['unit-suite-pole-register-01', 'unit-suite-pole-register-02'],
+        'expected BL-1598\'s feature to carry only scenarios 01 and 02 (03 retired)'
+      );
+      assert.match(
+        text,
+        /nine\s+poles measured on 2026-09-16 were registered with an open owner/,
+        'expected BL-1598\'s narrative to state the census in the past tense'
+      );
+      assert.doesNotMatch(
+        text,
+        /nine\s+poles measured on 2026-09-16 are registered with an open owner/,
+        'expected the present-tense narrative to be gone'
+      );
+    }
+  );
 }
 
 module.exports = { registerSteps };
