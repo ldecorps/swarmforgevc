@@ -2,7 +2,14 @@
 
 BL-983 gave a multi-seat stage one addressable mailbox queue and let
 whichever seat polls first claim from it — correct for fresh work, but a
-hazard for a **rework**. Seats of the same stage do not share a worktree
+hazard for a **rework**. (A seat's own candidate list is wider than "the
+stage queue alone": since BL-1615 it is the union of the stage queue and
+the seat's own `new/` — mail addressed to the seat itself, such as a
+reverse-hop merge-only copy or a branch-behind merge-up note, which a
+stage-only read left undrainable. This page's own deferral logic runs
+over stage-queue candidates only; a seat-addressed file is never a
+stage-addressed `git_handoff` a sibling could claim, so BL-1615's union
+is orthogonal to the deferral decision below.) Seats of the same stage do not share a worktree
 (`coder` on `swarm/coder` in `.worktrees/coder`, `coder@sonnet2` on
 `primary/coder-sonnet2` in `.worktrees/coder-sonnet2`), so a bounce addressed
 to the stage could land on a seat holding none of the parcel's history.
