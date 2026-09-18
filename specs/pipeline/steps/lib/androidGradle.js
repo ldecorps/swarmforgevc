@@ -109,6 +109,26 @@ function ensureLocalProperties(androidDir, sdkRoot) {
   fs.writeFileSync(target, line);
 }
 
+// BL-1635: this lib is the pre-existing live launcher of every acceptance-
+// driven JVM run against android/ - it previously spawned gradlew with only
+// PATH/HOME/JAVA_HOME/ANDROID_SDK_ROOT, no locale at all. Under that
+// environment the Kotlin compile daemon (a separate JVM from the Gradle
+// daemon, which gradle.properties' own -Dfile.encoding only reaches) reads
+// its default charset from the process locale, so a source set it
+// recompiles can decode a non-ASCII literal differently from one compiled
+// earlier under a real shell's UTF-8 locale. C.UTF-8 is explicit and
+// portable (no locale generation needed, unlike en_US.UTF-8) - and
+// JAVA_TOOL_OPTIONS is honoured by every JVM the build launches, including
+// ones gradle.properties' own jvmargs settings never reach.
+function buildGradleEnv(baseEnv) {
+  return {
+    ...baseEnv,
+    LANG: 'C.UTF-8',
+    LC_ALL: 'C.UTF-8',
+    JAVA_TOOL_OPTIONS: '-Dfile.encoding=UTF-8',
+  };
+}
+
 // Runs a gradlew task against android/ under repoRoot. Throws if no JDK 17+
 // or Android SDK can be found - both are environmental prerequisites this
 // feature's Background depends on, never silently skipped.
@@ -132,12 +152,12 @@ function runGradle(repoRoot, args, opts = {}) {
   const res = spawnSync('./gradlew', args, {
     cwd: androidDir,
     encoding: 'utf8',
-    env: {
+    env: buildGradleEnv({
       PATH: process.env.PATH,
       HOME: process.env.HOME,
       JAVA_HOME: jdkHome,
       ANDROID_SDK_ROOT: sdkRoot,
-    },
+    }),
     timeout: opts.timeoutMs || 10 * 60 * 1000,
     maxBuffer: 64 * 1024 * 1024,
   });
@@ -170,4 +190,4 @@ function readJUnitResults(androidDir, taskReportDir) {
   return results;
 }
 
-module.exports = { findJdk17Home, findAndroidSdkRoot, runGradle, readJUnitResults };
+module.exports = { findJdk17Home, findAndroidSdkRoot, runGradle, readJUnitResults, buildGradleEnv };
