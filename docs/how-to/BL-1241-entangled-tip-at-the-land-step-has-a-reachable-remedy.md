@@ -1190,6 +1190,45 @@ verification unchanged.
 Acceptance:
 `specs/features/BL-1604-a-land-never-carries-another-tickets-register-row-removal.feature`.
 
+## A land retires its own landing ticket's registry rows (BL-1631)
+
+Restoring another open ticket's row (above) fixed one direction; the other
+direction — a land failing to remove the LANDING ticket's own row — was
+still left to the parcel's author to remember, and didn't happen three
+times on 2026-09-17 alone (BL-1605, BL-1613, BL-1623): each land closed
+with its own standing-red or allowlist row still present, each row read
+`unowned` within minutes, `BL-1429` throttled intake to one, and the
+specifier retired the row by hand each time. A land that cannot close its
+own row is a land that trips the swarm's own safety signal.
+
+`rows-to-retire` is `rows-to-restore`'s pure mirror: from a registry's data
+lines, the rows whose owner IS the landing ticket — both the replay tree's
+own copy and any row `origin/main` carries that the restore step above
+would otherwise bring back (the two run in the same registry pass, never
+in tension: retire filters first, restore then adds back only rows owned
+by an OPEN OTHER ticket). The orchestrator drops those rows from the
+replay tree's registry files in the same pass that restores other
+tickets' rows, before the replay commit is made — a retired row rides the
+SAME land, never a second commit or a specifier hand-fix.
+`land_step_cli.bb` prints `REGISTER_ROW_RETIRED <registry> <file> <owner>`
+per retired row, right beside `REGISTER_ROW_RESTORED`.
+
+`registry-specs` (the same table `rows-to-restore` reads) gains an
+optional `:retirable?-fn` per registry — absent means always retirable.
+`backlog/suite-poles.tsv` is the one registry that uses it today: an
+**accepted-pole row** (BL-1629's disposition, spelled in the row's own
+note column — "accepted pole", no dedicated column exists) is never
+retired regardless of owner, since an accepted pole's row is meant to
+outlive any one land.
+
+The precondition is QA's own approval — the test green on the parcel —
+never a test the land step runs itself (Article 4.2 already forbids QA
+approving over a red the parcel owns, so the land step trusts that
+verdict rather than re-deciding it).
+
+Acceptance:
+`specs/features/BL-1631-a-land-retires-the-landing-tickets-own-register-rows.feature`.
+
 ## What this does not change
 
 - BL-1192's send-time gate and its range — unchanged; this ticket only adds
