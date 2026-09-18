@@ -643,6 +643,17 @@ not as the several separate edits that produced it).
   copy set behaviorally from the live sources; see
   `docs/how-to/BL-973-bb-fixture-closure-guards-and-suite-inventory.md`
   for the guarded-fixture table and how to add a new one.
+- **A standing shell test never asserts a difference against main** (BL-1624):
+  a premise that holds only while its own parcel is unlanded (e.g. "this
+  file's diff against main is non-empty") is a `qa_e2e` check for that one
+  land, never a manifest row — once the parcel lands the diff against main
+  is empty by construction and the assertion is red forever, unowned,
+  invisible to every role because the shell manifest
+  (`swarmforge/scripts/test/suite-manifest.tsv`) is no role's lane. A
+  census guard over the manifest's `standing` rows
+  (`swarmforge/scripts/test/test_standing_shell_tests_never_diff_main.sh`)
+  greps each for a `git diff main`/`origin/main` assertion and names any
+  offender.
 - **Before deleting a step-handler file a note or ticket calls "dead", extract every step
   pattern it registers and grep EVERY live `.feature` file for a scenario still using any of
   them — the step registry is ONE global namespace keyed by step text, so a handler outlives

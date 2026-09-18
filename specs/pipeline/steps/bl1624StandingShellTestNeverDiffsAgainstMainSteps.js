@@ -16,6 +16,7 @@ const fs = require('node:fs');
 const os = require('node:os');
 const path = require('node:path');
 const { spawnSync } = require('node:child_process');
+const { onAbnormalExit } = require('./lib/fixtureReaper');
 
 const FEATURE = 'BL-1624 A standing shell test never asserts a diff against main';
 
@@ -24,6 +25,34 @@ const TEST_DIR = path.join(REPO_ROOT, 'swarmforge', 'scripts', 'test');
 const SHELL_TEST = path.join(TEST_DIR, 'test_bl1388_land_step_guard_fixture.sh');
 const CENSUS_SCRIPT = path.join(TEST_DIR, 'test_standing_shell_tests_never_diff_main.sh');
 const RUNNER = path.join(TEST_DIR, 'land_step_lib_test_runner.bb');
+
+// BL-1624 hardening: scenario 02's mkdtemp fixture root (ctx.bl1624Root)
+// had no cleanup at all - not a partial leak on the failure path, a
+// permanent one on every run. Confirmed: 4 already leaked under
+// /tmp/bl1624-no-build-* from the coder/cleaner/architect's own prior
+// verification runs before this fix. Same class already fixed twice this
+// pass in bl1632/bl1626's own handlers - tracked via fixtureReaper's
+// onAbnormalExit the moment the directory exists, with an inline cleanup
+// on the happy path so it does not wait for process exit.
+const trackedDirs = new Set();
+function trackDir(dir) {
+  trackedDirs.add(dir);
+  return () => {
+    if (trackedDirs.delete(dir)) {
+      fs.rmSync(dir, { recursive: true, force: true });
+    }
+  };
+}
+onAbnormalExit(() => {
+  for (const dir of Array.from(trackedDirs)) {
+    trackedDirs.delete(dir);
+    try {
+      fs.rmSync(dir, { recursive: true, force: true });
+    } catch {
+      /* already gone */
+    }
+  }
+});
 const FIXTURE_ISOLATION = path.join(TEST_DIR, 'lib', 'fixture_isolation.sh');
 
 function registerSteps(registry) {
@@ -75,6 +104,7 @@ function registerSteps(registry) {
     fs.copyFileSync(FIXTURE_ISOLATION, path.join(testDir, 'lib', 'fixture_isolation.sh'));
     // extension/out deliberately absent - the fixture root's whole point.
     ctx.bl1624Root = root;
+    ctx.cleanupBl1624Root = trackDir(root);
   });
 
   scoped(/^the shell test runs there$/, (ctx) => {
@@ -97,11 +127,15 @@ function registerSteps(registry) {
   });
 
   scoped(/^no runner assertion line is printed$/, (ctx) => {
-    const combined = ctx.bl1624Result.stdout + ctx.bl1624Result.stderr;
-    assert.ok(
-      !/PASS: the land-step test runner|FAIL: the runner is still red/.test(combined),
-      `expected no runner assertion line, got:\n${combined}`
-    );
+    try {
+      const combined = ctx.bl1624Result.stdout + ctx.bl1624Result.stderr;
+      assert.ok(
+        !/PASS: the land-step test runner|FAIL: the runner is still red/.test(combined),
+        `expected no runner assertion line, got:\n${combined}`
+      );
+    } finally {
+      ctx.cleanupBl1624Root();
+    }
   });
 
   // ── Scenario 03 ──────────────────────────────────────────────────────
