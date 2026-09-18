@@ -53,10 +53,20 @@ function installRouteScripts(root) {
   fs.chmodSync(path.join(scriptsDir, 'promote_and_route_next.sh'), 0o755);
 }
 
+function installExtensionLink(root) {
+  // BL-1100/BL-1626: the freshness gate (promote_and_route_next.sh's BL-1173
+  // block) resolves the deprecate-check CLI at $ROOT/extension/out/tools/
+  // first; a fixture with no extension/ hits the fail-closed HOLD path even
+  // when the gate itself is correct. A symlink to the real extension/ gives
+  // the gate its real CLI without bypassing its own answer.
+  fs.symlinkSync(path.join(REPO_ROOT, 'extension'), path.join(root, 'extension'));
+}
+
 function makeRoot(ctx) {
   const root = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'bl1100-')));
   installPromotionGates(root, { maxDepth: 50 });
   installRouteScripts(root);
+  installExtensionLink(root);
   git(root, 'init', '-q', '-b', 'main');
   git(root, 'config', 'user.email', 't@t');
   git(root, 'config', 'user.name', 't');
@@ -204,4 +214,23 @@ function registerSteps(registry) {
   });
 }
 
-module.exports = { registerSteps };
+// BL-1626: the exact fixture-root build this handler performs for an
+// eligible paused ticket (makeRoot + one paused ticket + its feature file),
+// exposed for the freshness-gate scenario to drive without a full ctx.
+function buildFixtureRootWithPausedTicket() {
+  const ctx = {};
+  const root = makeRoot(ctx);
+  const ticketId = 'BL-9100';
+  const featDir = path.join(root, 'specs', 'features');
+  fs.mkdirSync(featDir, { recursive: true });
+  fs.copyFileSync(
+    path.join(REPO_ROOT, 'specs', 'features', 'BL-1100-promotion-candidacy-is-decided-by-structured-fields-never-prose.feature'),
+    path.join(featDir, 'BL-1100-promotion-candidacy-is-decided-by-structured-fields-never-prose.feature')
+  );
+  writePaused(root, ticketId, eligibleBody(ticketId, 'ordinary notes'));
+  git(root, 'add', '-A');
+  git(root, 'commit', '-q', '-m', `seed ${ticketId}`);
+  return { root, ticketId };
+}
+
+module.exports = { registerSteps, buildFixtureRootWithPausedTicket };
