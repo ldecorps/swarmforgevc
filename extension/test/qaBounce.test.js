@@ -263,6 +263,14 @@ test('defectCountForRecord counts a record\'s inventory size when present', () =
   assert.equal(defectCountForRecord(record({ items: [item(), item({ id: 'D2' })] })), 2);
 });
 
+// BL-799 hardener: an EMPTY items array is truthy in JS, so a bare
+// `record.items && ...` check without the `.length > 0` guard would treat
+// it as "has inventory" and report 0 defects instead of the invariant-2
+// floor of 1 - distinct from `items` being absent entirely (tested above).
+test('defectCountForRecord counts a record with an EMPTY items array as one defect, never zero', () => {
+  assert.equal(defectCountForRecord(record({ items: [] })), 1);
+});
+
 test('computeDefectsPerBounce is 0 for an empty record set, never a crash or NaN', () => {
   assert.equal(computeDefectsPerBounce([]), 0);
 });
