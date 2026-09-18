@@ -2569,9 +2569,11 @@ ticket id). Two complementary closes run from that scan, both via the normal
 
 1. **Assigned, never dispatched (BL-222).** An active item that already has
    `assigned_to` but **no** trail anywhere is auto-routed: the daemon sends a
-   `note` **to that assignee** so the living role picks the work up. A gap
-   already covered by an in-flight auto-routed note is not re-routed on the
-   next sweep.
+   `git_handoff` (commit = HEAD's tip, the BL-1094 exemption above) **to that
+   assignee** when HEAD resolves, falling back to a plain `note` only when it
+   does not, so the living role picks the work up either way. A gap already
+   covered by an in-flight auto-routed dispatch is not re-routed on the next
+   sweep.
 
 2. **Active but unassigned.** An active item with an `id` and a missing/blank
    `assigned_to` is invisible to (1) — there is nowhere to auto-route — and the
