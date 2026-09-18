@@ -8,7 +8,7 @@ human_approval: approved
 priority: 191
 direction: swarm-proposed
 depends_on: [BL-692]
-assigned_to: specifier
+assigned_to: coder
 mutation_cost: low
 
 invariants:
@@ -85,10 +85,21 @@ description: |
     docs files is NOT a duplicate and must not fail the guard. This repo
     deliberately restates sections across documents; a cross-file scan would
     light up on legitimate content. See `out_of_scope`.
-  - **Surface, do not delete.** If the guard turns up duplicates in files
-    other than Specification.MD, report them for triage. This ticket
-    authorises building the guard, not removing anything — BL-692 authorises
-    removing the BL-607 copies and nothing else.
+  - **Surface, do not delete - with one triaged exception (2026-09-18).**
+    If the guard turns up duplicates in files other than the two named
+    here, report them for triage; this ticket authorises building the guard,
+    not removing anything else. The specifier's freshness scan on
+    2026-09-18 (every `docs/**/*.md`, trimmed lines over 200 characters
+    repeating within one file) found exactly one file with two groups:
+    `docs/index.md` lines 162 and 169 (the BL-1370 how-to bullet, added
+    twice by 4409993daf and d6e44499b7 on 2026-09-05) and lines 324 and
+    326 (the BL-1056 how-to bullet, added twice by 407525ee7d and
+    e513e7905f on 2026-09-02) - identical index bullets appended by two
+    parcels each, the exact defect this guard exists to catch. Remove the
+    SECOND copy of each in this parcel (two lines, nothing else in docs/),
+    record both in the evidence as the guard's first catch, and scenario
+    01 is green on the real tree without any exemption. Line numbers are
+    as of main 0e09c54f69; re-locate by content, not by number.
 
   ## Wiring
 
@@ -120,10 +131,11 @@ description: |
      is a Scenario Outline over seven structural-line kinds, so validate its
      `<line>` column against an explicit `KNOWN_VALUES` set — no passthrough
      check).
-  2. Register it: add `require('./bl693DocsDuplicateParagraphGuardSteps'),`
-     to the `DOMAINS` list in `specs/pipeline/steps/index.js`. File presence
-     is not registration — `specs/pipeline/runtime.js` resolves handlers only
-     through that list.
+  2. Registration is by discovery (BL-1371, 2026-09-03): a `*Steps.js`
+     file under `specs/pipeline/steps/` that exports `registerSteps` is
+     loaded by `index.js` by existing - there is no `DOMAINS` list to edit
+     (restated 2026-09-18; the earlier wording predates BL-1371). Scope
+     every step with `registry.defineScoped(..., FEATURE)` (BL-1277).
   3. Rename `specs/features/BL-693-repeated-paragraph-gate.feature.draft` to
      `.feature` and repoint this ticket's `acceptance:` at the renamed path.
 
@@ -155,7 +167,7 @@ out_of_scope: |
     blocking at the transport layer is a separate decision about core
     transport, not this slice.
 
-qa_e2e: |
+qa_e2e_procedure: |
   1. Run the extension Vitest suite and confirm the new guard test is
      COLLECTED and green on the deduplicated tree.
   2. Break-then-fix proof, over the SAME suite command a role already runs
@@ -229,3 +241,20 @@ notes: |
   No new human approval requested: the amendment adds a mechanical build step
   the ticket already implied and poses no choice, so re-pending `human_approval`
   would erase a real approval to collect nothing.
+
+  ## Freshness re-verified 2026-09-18 (specifier, on the coordinator's Work note 009392)
+
+  Routed to the specifier only because `assigned_to: specifier` was left on
+  the ticket (the router never rewrites that value); set to `coder` and
+  forwarded by git_handoff. `depends_on: [BL-692]` satisfied
+  (backlog/done/M8). `deprecate-check` answers allow. The draft feature
+  lints clean; its two IR-DRY findings are the deliberate pair above.
+  Three stale sentences fixed: the draft-conversion step 2 named a
+  `DOMAINS` list that BL-1371 removed on 2026-09-03; the e2e field was
+  spelled `qa_e2e` (every reader - QA.prompt, land_step_lib, qa_hold_lib -
+  names `qa_e2e_procedure`); and the real-tree scan is no longer zero -
+  `docs/index.md` carries two accidental duplicate bullets (constraints
+  above), which this parcel removes as the guard's first catch so
+  scenario 01 is green without an exemption. Nothing else changed; the
+  human's two approvals (2026-07-27 split, 2026-08-10 Vitest incarnation)
+  stand.
