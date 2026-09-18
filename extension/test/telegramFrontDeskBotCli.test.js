@@ -2529,6 +2529,87 @@ function listOutboxFilesIfPresent(root) {
   return fs.existsSync(outboxDir) ? fs.readdirSync(outboxDir).length : 0;
 }
 
+// BL-1620 hardening: every other test in this file passes a fake
+// `runHandoff`, so none of them any longer exercises `runHandoff`'s own
+// DEFAULT value - the real `execFileAsync('bb', [cli, draftPath], opts)`
+// wiring every production caller actually relies on (the production
+// caller at telegram-front-desk-bot.ts:2690 never supplies a 5th
+// argument). BL-1518 below does not cover this either: it drives the real
+// CLI directly via its own `execFileSync` call, bypassing
+// enqueueRoleAnswerNote (and the default arrow) entirely. A mutant
+// swapping `[cli, draftPath]` to `[draftPath, cli]` in the default value
+// survives every test above (they only assert on the fake) and every
+// BL-1201/deliverRoleAnswerCli test (they only assert on state written
+// BEFORE the seam is ever called) - confirmed by hand-mutating the
+// compiled `out/` file and re-running. It is caught by
+// telegramFrontDeskBotCli.property.test.js's invariant 1, but that file
+// is `**/*.property.test.js` and vitest.config.mjs (the config Stryker
+// mutates against) excludes that glob - so under real mutation scope this
+// default arrow had zero coverage.
+//
+// A first attempt proved this with a REAL `bb` spawn through
+// enqueueRoleAnswerNote's own default path - it killed the mutant, but it
+// also put a SECOND real Babashka process-start (~1.3s) into this exact
+// file, which is precisely the cost this ticket exists to remove: under
+// the real `npm test` run's own concurrent 10-11 fork pool (not solo),
+// two real bb spawns pushed the file from 9.1s (a reported "watch", never
+// refused) to 12-14s - ABOVE the register's 1.5x (10.5s) refusal
+// threshold, turning `npm test`'s own exit code from 0 to 1. Reverted.
+//
+// Instead: an isolated NODE subprocess (no Babashka, no bb - a bare `node`
+// process starts in tens of ms, not ~1.3s) that monkey-patches
+// `child_process.execFile` BEFORE requiring the compiled module, so the
+// module-scope `execFileAsync = promisify(execFile)` capture (out/tools/
+// telegram-front-desk-bot.js) captures the fake instead of the real
+// syscall. This proves the default arrow's own argument ORDER and SHAPE
+// (cli, then draftPath, in that order) without ever touching a real bb
+// process or the fork-pool contention that made the first attempt too
+// costly.
+function runDefaultRunHandoffProbe(root, text) {
+  const probeDir = mkTmpDir('sfvc-bl1620-default-probe-');
+  const probeScript = path.join(probeDir, 'probe.js');
+  const modulePath = path.join(__dirname, '..', 'out', 'tools', 'telegram-front-desk-bot.js');
+  fs.writeFileSync(
+    probeScript,
+    `
+    const cp = require('child_process');
+    const calls = [];
+    cp.execFile = (...args) => {
+      calls.push(args.slice(0, -1));
+      const cb = args[args.length - 1];
+      cb(null, '', '');
+    };
+    const { enqueueRoleAnswerNote } = require(${JSON.stringify(modulePath)});
+    enqueueRoleAnswerNote(${JSON.stringify(root)}, 'specifier', ${JSON.stringify(text)}).then((ok) => {
+      process.stdout.write(JSON.stringify({ ok, calls }));
+    });
+    `
+  );
+  const output = execFileSync('node', [probeScript], { encoding: 'utf8' });
+  fs.rmSync(probeDir, { recursive: true, force: true });
+  return JSON.parse(output);
+}
+
+test('BL-1620: enqueueRoleAnswerNote with no runHandoff argument falls back to a call shaped exactly like the real bb invocation (cli, then draftPath, in order)', () => {
+  const root = swarmHandoffFixture();
+
+  const { ok, calls } = runDefaultRunHandoffProbe(root, 'sample answer default-path');
+
+  assert.equal(ok, true);
+  assert.equal(calls.length, 1, `expected exactly one execFile call, got: ${JSON.stringify(calls)}`);
+  const [cmd, args] = calls[0];
+  assert.equal(cmd, 'bb');
+  assert.equal(args.length, 2, `expected exactly [cli, draftPath], got: ${JSON.stringify(args)}`);
+  assert.ok(
+    args[0].endsWith(path.join('swarmforge', 'scripts', 'swarm_handoff.bb')),
+    `first positional arg must be the cli script path, got: ${args[0]}`
+  );
+  assert.ok(
+    /role-answer-draft-/.test(args[1]),
+    `second positional arg must be the draft file path (cli then draftPath, never swapped), got: ${args[1]}`
+  );
+});
+
 test('BL-607: enqueueRoleAnswerNote queues a `type: note` handoff draft for the role, inlining a short answer verbatim', async () => {
   const root = swarmHandoffFixture();
   const { runHandoff, calls } = fakeRunHandoff();
