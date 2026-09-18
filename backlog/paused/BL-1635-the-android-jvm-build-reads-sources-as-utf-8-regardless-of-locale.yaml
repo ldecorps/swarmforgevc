@@ -1,0 +1,219 @@
+id: BL-1635
+title: "The Android JVM unit suite is red on main - 4 of 275 BridgeClientTest cases fail with ComparisonFailure because the test's em-dash literals compiled into three replacement characters while production's compiled intact: the build's source charset follows whichever locale the JVM that compiled each source set happened to have (the acceptance handlers' Gradle lib launches with PATH and HOME only, JDK 17 derives file.encoding from the locale, gradle.properties pins UTF-8 for the Gradle JVM and nothing for the Kotlin compile daemon) - measured 2026-09-18, red for the five landed features that shell the suite (BL-829 4 scenarios, BL-825 0/6, BL-828 0/8, BL-769 2/4, BL-826 0/6); every JVM the build launches reads sources as UTF-8 regardless of locale, the handler lib exports an explicit UTF-8 locale, the raw NUL byte in BridgeClientTest.kt is escaped, the suite is 275/275, and the five rows leave in this land"
+milestone: M8
+type: defect
+severity: high
+# high (standing-red rule 2026-09-05): five landed acceptance contracts
+# and the Bubble JVM lane are red on main from one root, and any Bubble
+# parcel's qa_e2e that runs the suite (BL-831, in flight) is held on it.
+# Production is unaffected: the failing comparisons are between two
+# compiles of the same em-dash, not a behaviour.
+status: todo
+epic: code-quality-gates
+priority: 8
+direction: swarm-reported
+depends_on: []
+# BL-769 (the JVM seam and its Gradle lib) and BL-707 (the portable JDK
+# 17 + SDK under .swarmforge/tooling) are in backlog/done. BL-1634 (paused,
+# same pass) owns BL-829's other red; BL-831 (active, coder@2) does not
+# touch BridgeClient or the build files.
+mutation_cost: low
+# low: Gradle properties and one build.gradle.kts block, one JS lib under
+# specs/pipeline/steps/lib (outside Stryker's out/** scope), one escaped
+# byte in a Kotlin test, one feature and handler, evidence, five rows.
+slice_size_envelope: low
+required_stages: [coder, cleaner, architect, hardender, documenter, qa]
+
+acceptance: specs/features/BL-1635-the-android-jvm-build-reads-sources-as-utf-8-regardless-of-locale.feature
+
+required_wiring:
+  - 'specs/pipeline/steps/lib/androidGradle.js::C.UTF-8::the handlers Gradle lib is the pre-existing live launcher of every acceptance-driven JVM run; the literal exists only with the fix (BL-874, BL-1235)'
+  - 'android/gradle.properties::kotlin.daemon.jvmargs::the property Gradle reads for the Kotlin compile daemon JVM; the key exists only with the fix'
+  - 'specs/pipeline/steps/bl1635JvmBuildReadsSourcesAsUtf8Steps.js::registerSteps::the handler lands in the same parcel as the feature (BL-233, BL-1371)'
+
+human_approval: approved
+approval_context: >
+  A new feature file is authored here, so it needs a tap. No choice is
+  posed and there are no ruling_options. FIRM: no test assertion and no
+  production string changes - the four cases fail on two compiles of the
+  same character, and the fix is that every JVM the build launches reads
+  sources as UTF-8 whatever the caller's locale. FIRM: the coder REPRODUCES
+  the failure before fixing it (evidence records the reproduction: stop the
+  daemons, compile the test source set under a POSIX locale with the main
+  classes compiled under UTF-8) so the fix is proven against the cause,
+  not assumed. FIRM: the five rows leave in this land.
+
+invariants:
+  - "The compiled form of a source string literal never depends on the locale of the process that compiled it: every JVM the Android build launches, the Gradle daemon, the Kotlin compile daemon and javac, reads sources as UTF-8."
+
+description: |
+  ## What is wrong
+
+  `./gradlew :app:testDebugUnitTest` through the acceptance handlers' own
+  Gradle lib (`specs/pipeline/steps/lib/androidGradle.js`, portable JDK
+  `.swarmforge/tooling/jdk-17`) on main 858f8fca6c, 2026-09-18 14:03
+  local: `275 tests completed, 4 failed`, all in
+  `com.swarmforge.floatcompanion.BridgeClientTest`
+  (`android/app/build/test-results/testDebugUnitTest/TEST-...BridgeClientTest.xml`;
+  in the lines below `[???]` stands for the three U+FFFD replacement
+  characters the XML shows, one per byte of the em-dash, and `[-]` for
+  the real em-dash U+2014):
+
+  ```
+  classifies a refused connection distinctly from an unresolvable host :: org.junit.ComparisonFailure: expected:<...nnect to the bridge [???] the tunnel may be d...> but was:<...nnect to the bridge [-] the tunnel may be d...>
+  classifies an unresolvable host as a stale-pairing connection failure :: expected:<...ind the bridge host [???] pairing URL may be ...> but was:<...ind the bridge host [-] pairing URL may be ...>
+  falls back to a generic io message for other io exceptions :: expected:<...ge connection error [???] the tunnel may be d...> but was:<...ge connection error [-] the tunnel may be d...>
+  classifies a timeout distinctly from an unresolvable host :: expected:<...onnection timed out [???] the tunnel may be d...> but was:<...onnection timed out [-] the tunnel may be d...>
+  ```
+
+  Both sources carry the em-dash as the same three UTF-8 bytes
+  (`e2 80 94`, checked with od in the test at line 24 and in
+  `BridgeClient.kt`; the test file's blob is byte-identical to its last
+  commit 1adc748a34, BL-864, 2026-08-13). The EXPECTED side - the test's
+  literal - compiled into three replacement characters, one per byte: the
+  compile that produced the test classes decoded the source with a
+  single-byte charset. The ACTUAL side - production's literal - is intact:
+  the main classes came from a compile that read UTF-8. Two compiles, two
+  charsets, one repository.
+
+  Why the charset can differ per compile: JDK 17 derives
+  `file.encoding` from the locale (JEP 400 made UTF-8 the default only
+  in 18). `android/gradle.properties` pins `-Dfile.encoding=UTF-8` in
+  `org.gradle.jvmargs` - the Gradle daemon's JVM only. The Kotlin compile
+  daemon is a separate JVM (`kotlin.daemon.jvmargs`, unset) and inherits
+  the environment of whichever process first started it. The handlers'
+  lib spawns gradlew with `env: { PATH, HOME }` and nothing else
+  (`androidGradle.js:135-137`), so under the swarm's tmux session the
+  daemons start with no `LANG` at all: the live Gradle daemon (pid 3853)
+  and Kotlin daemon (pid 10395), both started 14:03 today by that lib,
+  carry no LANG/LC_* in `/proc/<pid>/environ`. A test source set
+  recompiled by such a daemon reads ASCII; main classes compiled earlier
+  under a UTF-8 shell (QA's BL-829 pass on 2026-08-17 ran the suite green,
+  48.6 s) stay up to date and keep their real em-dash. No Android source
+  landed since 2026-09-01, so the recompile came from daemon or cache
+  state, not from a change - which is exactly why this is a build defect,
+  not a test defect: the outcome depends on which process compiled what,
+  when.
+
+  Blast radius, measured 2026-09-18 (one run each, the acceptance runner):
+  BL-829's feature scenarios 03 [1-4] red; BL-825 0 ok / 6 not ok; BL-828
+  0/8; BL-769 2/4; BL-826 0/6 - every landed feature that shells
+  `testDebugUnitTest`, all failing at "Then it exercises ..." or "reports a
+  passing result" on the same suite exit. Unseen for the same reason as
+  BL-1626's four: no lane runs landed features (BL-1625).
+
+  One hygiene finding in the same file: `BridgeClientTest.kt` line 96
+  carries a RAW NUL byte inside a string literal (a control-character test
+  input written as the byte itself), so `file` classifies the source as
+  data and grep treats it as binary. Legal to kotlinc, hostile to every
+  text tool; write it as the six-character escape backslash-u-0000 instead.
+
+  ## What is wanted
+
+  - Every JVM the Android build launches reads sources as UTF-8 whatever
+    the locale: `org.gradle.jvmargs` keeps `-Dfile.encoding=UTF-8`,
+    `kotlin.daemon.jvmargs` carries it too, and the app module's Java
+    compile options set `encoding = "UTF-8"` (scenario 01, source checks).
+  - The handlers' Gradle lib exports the environment it launches gradlew
+    with, and that environment carries an explicit UTF-8 locale and
+    `JAVA_TOOL_OPTIONS=-Dfile.encoding=UTF-8`, which every JVM including
+    the Kotlin daemon honours (scenario 02, the exported builder driven in
+    milliseconds).
+  - No Kotlin source under `android/app/src` contains a NUL byte or an
+    invalid UTF-8 sequence, and the population checked is pinned
+    (scenario 03: 70 `.kt` files on 2026-09-18 - re-count at build).
+  - The reproduction and the fix in evidence; the suite 275/275 through
+    the lib; the five features' JVM scenarios green (QA e2e).
+  - The five register rows leave in this land.
+
+  ## How (direction, not mandate)
+
+  - `android/gradle.properties`: add `kotlin.daemon.jvmargs=-Dfile.encoding=UTF-8`
+    and `systemProp.file.encoding=UTF-8`. `android/app/build.gradle.kts`
+    `compileOptions { encoding = "UTF-8" }` beside the existing block.
+    If measurement shows kotlinc ignores `file.encoding` for source
+    reading, the honest belt is the lib's `JAVA_TOOL_OPTIONS` plus locale
+    - keep whichever the reproduction proves necessary, drop none that
+    the invariant needs.
+  - `androidGradle.js`: extract `buildGradleEnv(baseEnv)` returning
+    `{ PATH, HOME, LANG: 'C.UTF-8', LC_ALL: 'C.UTF-8', JAVA_TOOL_OPTIONS: '-Dfile.encoding=UTF-8' }`
+    (merged with any JAVA_HOME it resolves), export it, and use it in the
+    spawn. Stop the live daemons once (`./gradlew --stop` and the Kotlin
+    daemon) so the fixed environment is what starts the next ones -
+    record the pids in evidence.
+  - Reproduction (evidence, before the fix): `./gradlew --stop`; kill the
+    Kotlin daemon; with `LANG=C LC_ALL=C` run `:app:compileDebugUnitTestKotlin --rerun-tasks`
+    then `:app:testDebugUnitTest` with the main classes untouched -> the
+    four failures; then the same under `LC_ALL=C.UTF-8` -> 275/275.
+  - Scenario 03's handler walks `android/app/src/**/*.kt` as bytes,
+    checks for a zero byte and decodes as strict UTF-8; prints the count.
+  - `BridgeClientTest.kt:96`: replace the raw byte with the six-character escape backslash-u-0000 (the
+    test's meaning unchanged).
+  - Documenter: `docs/how-to/BL-769-android-jvm-unit-suite.md` gains the
+    rule that the suite's charset is pinned in the build, never assumed
+    from the shell, and the one-time daemon stop.
+
+constraints: >
+  android/gradle.properties, android/app/build.gradle.kts (one block),
+  specs/pipeline/steps/lib/androidGradle.js, one escaped byte in
+  BridgeClientTest.kt, the feature and handler, evidence and docs, five
+  register rows. No test assertion, no production string, no other Kotlin
+  source, no other feature changes. The step handler lands with the
+  feature (BL-233). Evidence named BL-1635-*.
+
+out_of_scope: |
+  - BL-829's scenario 02 (BL-1634).
+  - A lane that runs landed features or the JVM suite on a schedule
+    (BL-1625).
+  - Upgrading the portable JDK past 17 (JEP 400 would make the default
+    UTF-8; the pin is still right).
+
+qa_e2e_procedure: |
+  On the parcel commit, from the repo root:
+  1. `node -e "require('./specs/pipeline/steps/lib/androidGradle').runGradle(process.cwd(), [':app:testDebugUnitTest','--console=plain'])"`
+     ONCE after the daemons were stopped -> BUILD SUCCESSFUL, 275 tests,
+     0 failed; record the run's wall and the daemons' environ lines.
+  2. Acceptance resolving all three scenarios
+     (`bash specs/pipeline/scripts/run_acceptance.sh specs/features/BL-1635-*.feature`).
+  3. `bash specs/pipeline/scripts/run_acceptance.sh` ONCE each on
+     BL-829, BL-825, BL-828, BL-769 and BL-826's features: every JVM-suite
+     scenario passes (BL-829's scenario 02 depends on BL-1634). Never
+     "run it N times".
+  4. `bb swarmforge/scripts/standing_red_register_cli.bb .` names no row
+     for any of the five features or the Kotlin test; `git diff
+     main...HEAD --name-only` names the build files, the lib, the one
+     Kotlin test, the feature, the handler, evidence, docs and the
+     register only.
+
+source: |
+  Coder note to the specifier and coordinator, priority 00,
+  2026-09-18T13:35Z (inbound 00_20260918T133501Z_002044_from_coder):
+  "unowned-red BL-829 'malformed page list' fails on main - see BL-775
+  evidence". The JVM root was found by the specifier running BL-829's
+  feature and then the suite through the handlers' lib, then the four
+  sibling features once each. Specifier adjudication with every
+  measurement:
+  backlog/evidence/BL-1635-specifier-adjudication-of-coder-unowned-red-bl829-20260918.md.
+  Parents: BL-769, BL-707, BL-864. Sibling minted the same pass: BL-1634.
+  Class siblings: BL-1627 (host-premise reds), BL-1626 (landed features red
+  for weeks with no lane).
+
+notes: |
+  Minted 2026-09-18 by the specifier while completing the coder's
+  unowned-red note, the same pass as BL-1634. AUTO-APPROVED under the
+  2026-09-17 operator hotfix (severity defect, no ruling_options) - see
+  auto-approve-high-severity-defects-amendment-20260917.md. Register:
+  backlog/standing-reds.tsv gains one `jvm` row for the Kotlin test and
+  four `acceptance` rows for BL-825, BL-828, BL-769 and BL-826's features
+  naming this ticket (first_seen 2026-09-18), and BL-829's row (BL-1634)
+  names this ticket for its scenarios 03; the register stands at six rows
+  (BL-1624, BL-1626 and BL-1627 landed this morning and their rows left
+  with them), under the BL-1429 throttle line - five leave together in
+  this land. The coder holding BL-775 was told the reds are owned. INVEST:
+  Independent (the build, the lib and the JDK exist), Negotiable (which
+  setting kotlinc honours is the reproduction's to show; the env builder's
+  name is the anchor), Valuable (the Bubble JVM lane and five landed
+  contracts stop depending on who ran Gradle last), Estimable (two config
+  edits, one lib function, one byte - one sitting), Small (three
+  scenarios, one invariant), Testable (source and env checks in
+  milliseconds; the suite run is e2e - BL-1541).
