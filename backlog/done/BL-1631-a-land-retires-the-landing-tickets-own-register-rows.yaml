@@ -159,3 +159,12 @@ notes: |
 
 assigned_to: coder
 abandoned_commits: [f8c72151a8]
+
+qa_e2e_confirmation: |
+  qa_e2e_procedure step 3, confirmed 2026-09-18 by QA: BL-1626 was the
+  first land after this one whose owned rows survived to the land step.
+  `land_step_cli.bb BL-1626 18139b3651` printed three
+  `REGISTER_ROW_RETIRED` lines (backlog/standing-reds.tsv, BL-803/
+  BL-1028/BL-1100's acceptance rows), landed at 2055a18f1e; confirmed
+  gone from `origin/main`'s standing-reds.tsv afterward. The automation
+  works as specced; QA needed no hand retirement.
