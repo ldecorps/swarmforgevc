@@ -170,4 +170,9 @@ notes: |
   Severity high per the standing-red rule.
 
 assigned_to: coder
-abandoned_commits: [c893556be4]
+abandoned_commits: [c893556be4, 2cd26c6ac2]
+# 2cd26c6ac2: a second, parallel implementation of this ticket by a coder
+# seat at 14:40 on 2026-09-17, never reviewed (not an ancestor of the
+# approved a8154c0a4d), carried into every role branch by sync merges;
+# abandoned 2026-09-18 on QA's BL-1616 LAND_ESCALATE - see
+# backlog/evidence/BL-1616-land-escalate-specifier-adjudication-20260918.md

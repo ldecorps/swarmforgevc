@@ -162,6 +162,11 @@
               ;; standing red.
               (doseq [{:keys [registry file owner]} (:restored-registry-rows plan)]
                 (println (str land-step-lib/register-row-restored-prefix " " registry " " file " " owner)))
+              ;; BL-1631: names every row this land retired because its own
+              ;; owner column was the landing ticket - the register no
+              ;; longer trips the unowned-row throttle within minutes.
+              (doseq [{:keys [registry file owner]} (:retired-registry-rows plan)]
+                (println (str land-step-lib/register-row-retired-prefix " " registry " " file " " owner)))
               (print-entangled-siblings! plan)
               ;; BL-1389 invariant 3. The verdict a human would otherwise
               ;; have to re-derive by diffing the replayed tip: which path
