@@ -34,7 +34,7 @@ flowchart TD
 
   WORK["agent executes the task\nand commits"]
   FORWARD["sends the next git_handoff\n(10-char commit hex)"]
-  FWDGATE{"forward-gate! (BL-1609):\na forwarding git_handoff, held by a\ncode-worktree role, with no git_handoff\nnaming its ticket sent since the inbound's\nevidence window start (BL-1645: created_at,\nelse enqueued_at, else dequeued_at)?"}
+  FWDGATE{"forward-gate! (BL-1609):\na forwarding git_handoff, held by a\ncode-worktree role, with no git_handoff\n(or, QA stage only - BL-1642 - no note\nnaming the ticket) sent since the inbound's\nevidence window start (BL-1645: created_at,\nelse enqueued_at, else dequeued_at)?"}
   NOTSENT(["FORWARD_NOT_SENT: refused,\nnothing moved - send the forward,\nor done_with_current.sh --no-op \"<reason>\""])
   DONE["done_with_current.sh:\nin_process/ -> completed/\n(BL-652: any argv fails fast,\nzero side effects)"]
   STALE(["skipping this leaves a stale claim\nthat re-shows on the next wake"])
@@ -72,7 +72,7 @@ flowchart TD
   FORWARD --> DONE
   FORWARD -.->|already forwarded,\ngate passes| FWDGATE
   FWDGATE -->|refuse: forwarding inbound,\nno forward sent, no --no-op| NOTSENT
-  FWDGATE -->|complete: forward sent since window start,\n--no-op reason given, non-forwarding\ninbound, or master-resident role| DONE
+  FWDGATE -->|complete: forward (or QA note)\nsent since window start,\n--no-op reason given, non-forwarding\ninbound, or master-resident role| DONE
   NOTSENT -.->|in_process untouched -\nsend the forward, then retry| WORK
   DONE -.->|omitted| STALE
   FORWARD -.->|recipient repeats\nthis whole cycle| START
