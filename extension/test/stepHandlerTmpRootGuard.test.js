@@ -11,6 +11,7 @@ const { findStepHandlerTmpRootOffenders } = require('./helpers/stepHandlerTmpRoo
 // ratchets down and never silently regrows.
 
 const REPO_ROOT = path.join(__dirname, '..', '..');
+// specs/pipeline/steps - the acceptance step-handler tree this guard scans.
 const STEPS_DIR = path.join(REPO_ROOT, 'specs', 'pipeline', 'steps');
 const CENSUS_PATH = path.join(__dirname, 'step-handler-tmp-root-census.txt');
 
