@@ -56,6 +56,32 @@
          (forward-evidence-lib/forward-completion-decision
           {:forwarding? true :master-resident? true :evidenced? false :reason "irrelevant"}))
 
+;; ── BL-1642: qa-note-evidenced? ──────────────────────────────────────────
+
+(assert= "07: forwarding, no git_handoff evidence, but QA note evidence, no reason -> complete-plain"
+         :complete-plain
+         (forward-evidence-lib/forward-completion-decision
+          {:forwarding? true :master-resident? false :evidenced? false
+           :qa-note-evidenced? true :reason nil}))
+
+(assert= "08: forwarding, no evidence of either kind, no reason -> refuse"
+         :refuse
+         (forward-evidence-lib/forward-completion-decision
+          {:forwarding? true :master-resident? false :evidenced? false
+           :qa-note-evidenced? false :reason nil}))
+
+(assert= "a stated reason wins over QA note evidence too (recorded, never silently dropped)"
+         :complete-with-reason
+         (forward-evidence-lib/forward-completion-decision
+          {:forwarding? true :master-resident? false :evidenced? false
+           :qa-note-evidenced? true :reason "already superseded"}))
+
+(assert= "git_handoff evidence still completes plainly when qa-note-evidenced? is false (BL-1609 unchanged)"
+         :complete-plain
+         (forward-evidence-lib/forward-completion-decision
+          {:forwarding? true :master-resident? false :evidenced? true
+           :qa-note-evidenced? false :reason nil}))
+
 ;; ── report ────────────────────────────────────────────────────────────────
 (if (seq @failures)
   (do

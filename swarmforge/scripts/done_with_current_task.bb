@@ -222,11 +222,18 @@
   (let [ticket-id (pipeline-stage-lib/extract-ticket-id (handoff-lib/header-field source-file "task"))
         since (or (handoff-lib/header-field source-file "dequeued_at") "1970-01-01T00:00:00Z")
         reason (dispatch-lib/no-op-reason)
-        evidenced? (boolean (and ticket-id (forward-evidence-lib/sent-handoff-names-ticket-since? ticket-id since)))]
+        evidenced? (boolean (and ticket-id (forward-evidence-lib/sent-handoff-names-ticket-since? ticket-id since)))
+        ;; BL-1642: QA's own forward is a note (Article 1.8/2.5), never a
+        ;; git_handoff - qa-stage? is ANDed in here so a non-QA role's
+        ;; decision never sees this flag true, keeping BL-1609's rule
+        ;; byte-identical for every other role.
+        qa-note-evidenced? (boolean (and ticket-id (forward-evidence-lib/qa-stage?)
+                                          (forward-evidence-lib/sent-note-names-ticket-since? ticket-id since)))]
     (case (forward-evidence-lib/forward-completion-decision
            {:forwarding? (forward-evidence-lib/forwarding-inbound? source-file)
             :master-resident? (forward-evidence-lib/master-resident?)
             :evidenced? evidenced?
+            :qa-note-evidenced? qa-note-evidenced?
             :reason reason})
       :complete-plain nil
       :complete-with-reason reason
@@ -241,7 +248,7 @@
 ;; source-file is a note, and at least one hold is released; a no-op for
 ;; every other role/type combination and a no-op when the store is empty.
 (defn- qa-hold-gate! [source-file]
-  (when (= "QA" (handoff-lib/current-role))
+  (when (forward-evidence-lib/qa-stage?)
     (let [root (str (handoff-lib/target-root))
           inbound-type (handoff-lib/header-field source-file "type")
           holds (qa-hold-lib/read-holds root)
