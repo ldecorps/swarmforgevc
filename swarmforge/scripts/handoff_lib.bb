@@ -473,6 +473,26 @@
   [role-name]
   (when role-name (first (str/split role-name #"@" 2))))
 
+;; BL-1637: a seat stamps `from:` with its STAGE (BL-982/BL-983 - the
+;; stage is the addressable identity), so a delivered forward's own sent
+;; copy, filed by `from:` alone, lands under the stage's mailbox rather
+;; than the seat's - exactly the gap BL-1637 fixes. `from_seat` (a
+;; reserved, tool-stamped header - swarm_handoff.bb writes it, agents
+;; never do) names the seat that actually sent it, so a filer can prefer
+;; it. Shared by every filing site (handoffd.bb's two, and
+;; handoff_inject_lib.bb's sync-delivery path, which is the one that
+;; actually ran in BL-831's own incident) so none can silently drift onto
+;; its own copy of this decision.
+(defn seat-filing-role-info
+  "The role-info a delivered handoff's sent copy should be filed under:
+   the seat named by its from_seat header when present and resolvable in
+   roles, else the STAGE named by its from header - today's behavior,
+   byte-identical for a bare seat or a file predating this fix (no
+   from_seat header at all)."
+  [headers roles]
+  (or (some->> (get headers "from_seat") (get roles))
+      (get roles (get headers "from"))))
+
 (defn stage-queue-dir
   "The current role's STAGE queue in the given state - the mailbox of the
    roles.tsv row whose id IS the stage name (BL-982's parse guarantees that
