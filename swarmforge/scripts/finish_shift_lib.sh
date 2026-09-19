@@ -90,13 +90,39 @@ finish_shift_stop_ancillaries() {
   done < <(lifecycle_matrix_stop_set finish-shift)
 }
 
+# BL-1647: kill -0 alone succeeds on a zombie (exited, not yet reaped by
+# its parent) - a pidfile owner that has already exited must never read
+# as running just because nothing has claimed its exit status yet.
+# `ps -o stat=` is the one check both stock macOS ps and procps print a
+# leading "Z" for; stock bash 3.2 throughout (BL-801/BL-1627), never
+# /proc (macOS has none).
+_finish_shift_pid_is_zombie() {
+  local pid="$1" stat
+  # `|| true`: this runs under whatever set -e the caller (the real
+  # finish-shift entrypoint) has active, and a pid that has already fully
+  # exited between the kill -0 check above and this one is a legitimate,
+  # narrow race - ps failing here must read as "not a zombie" (stat stays
+  # empty, falls through to the ordinary not-alive path), never abort the
+  # whole bedtime run.
+  # BSD `ps` (stock macOS) can right-justify a single-column `-o stat=`
+  # value with leading whitespace even with the header suppressed - the
+  # same reason specs/pipeline/scripts/reap_stale_tmp_roots.js's own
+  # isZombiePid matches `/^\s*Z/` rather than a bare prefix. Strip
+  # leading/trailing whitespace before comparing so this check is not
+  # blind to a zombie on a platform whose ps pads it.
+  stat="$(ps -o stat= -p "$pid" 2>/dev/null || true)"
+  stat="${stat#"${stat%%[![:space:]]*}"}"
+  [[ "$stat" == Z* ]]
+}
+
 _finish_shift_pidfile_alive() {
   local pid_file="$1"
   [[ -f "$pid_file" ]] || return 1
   local pid
   pid="$(tr -d '[:space:]' < "$pid_file" 2>/dev/null || true)"
   [[ "$pid" =~ ^[0-9]+$ ]] || return 1
-  kill -0 "$pid" 2>/dev/null
+  kill -0 "$pid" 2>/dev/null || return 1
+  ! _finish_shift_pid_is_zombie "$pid"
 }
 
 _finish_shift_ps_matches() {

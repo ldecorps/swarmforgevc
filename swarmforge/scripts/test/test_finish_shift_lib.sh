@@ -247,17 +247,27 @@ else
 fi
 
 # 08: a kept component dying unexpectedly is caught (never silently allowed).
+# BL-1647: FD_PID is THIS (parent) shell's own child - kill and wait for it
+# HERE, never inside a `$( ... )` command substitution subshell, which owns
+# no child processes of its own and whose `wait $FD_PID` returns at once
+# (not-a-child), leaving FD_PID a zombie until the parent is scheduled to
+# reap it via SIGCHLD - a race `kill -0` alone cannot see (BL-1647's own
+# `_finish_shift_pid_is_zombie` check closes that gap too, belt-and-braces).
 start_fixture
 kill "$OB_PID" "$OR_PID" "$BB_PID" 2>/dev/null || true # not part of this check
-result="$(
+BEFORE_08="$(
   export SWARMFORGE_SURVIVOR_PS_FILE="$CLEAN_PS"
   source "$SRC/finish_shift_lib.sh"
   finish_shift_keep_snapshot "$ROOT"
-  before="$finish_shift_keep_running"
-  kill -9 "$FD_PID" 2>/dev/null || true
-  wait "$FD_PID" 2>/dev/null || true
+  echo "$finish_shift_keep_running"
+)"
+kill -9 "$FD_PID" 2>/dev/null || true
+wait "$FD_PID" 2>/dev/null || true
+result="$(
+  export SWARMFORGE_SURVIVOR_PS_FILE="$CLEAN_PS"
+  source "$SRC/finish_shift_lib.sh"
   finish_shift_stop_ancillaries "$ROOT" >/dev/null
-  if finish_shift_verify "$ROOT" "$before"; then
+  if finish_shift_verify "$ROOT" "$BEFORE_08"; then
     echo "PROBLEM unexpected=[$finish_shift_verify_unexpectedly_stopped]"
   else
     echo "CLEAN"
@@ -268,6 +278,103 @@ if [[ "$result" == "PROBLEM unexpected=[front-desk]" ]]; then
 else
   fail "08: expected front-desk flagged as unexpectedly stopped, got: $result"
 fi
+
+# ── 09 (BL-1647): a pidfile naming a zombie is not a live component ─────────
+# A reliable zombie needs its DIRECT parent to never reap it for a known
+# window - bash itself is unsuitable here (confirmed live: bash services a
+# just-killed background child's job-control status opportunistically
+# between commands even with no explicit `wait`, so both a `kill` inside a
+# `$(...)` finishing in ~0.2s and a dedicated `bash -c` parent blocked in a
+# plain 2s `sleep` failed to leave an externally observable zombie in this
+# environment). Python has no such implicit reaping: a forked child that is
+# killed and never passed to os.waitpid() stays a zombie until the parent
+# explicitly reaps it or exits - the parent below deliberately sleeps 3s
+# first, so the zombie window is fully deterministic.
+Z_HELPER_OUT="$(mktemp)"
+python3 -c '
+import os, signal, time
+pid = os.fork()
+if pid == 0:
+    time.sleep(300)
+    os._exit(0)
+else:
+    os.kill(pid, signal.SIGKILL)
+    print(pid, flush=True)
+    time.sleep(3)
+    try:
+        os.waitpid(pid, 0)
+    except ChildProcessError:
+        pass
+' > "$Z_HELPER_OUT" &
+Z_HELPER_PID=$!
+Z_PID=""
+for _ in 1 2 3 4 5 6 7 8 9 10; do
+  if [[ -s "$Z_HELPER_OUT" ]]; then
+    Z_PID="$(tr -d '[:space:]' < "$Z_HELPER_OUT")"
+    break
+  fi
+  sleep 0.05
+done
+echo "$Z_PID" > "$OP_DIR/front-desk-supervisor.pid"
+zombie_seen=0
+for _ in 1 2 3 4 5 6 7 8 9 10 11 12 13 14 15; do
+  stat="$(ps -o stat= -p "$Z_PID" 2>/dev/null | tr -d '[:space:]' || true)"
+  if [[ "$stat" == Z* ]]; then
+    zombie_seen=1
+    break
+  fi
+  sleep 0.1
+done
+if [[ "$zombie_seen" -eq 1 ]]; then
+  result09="$(
+    source "$SRC/finish_shift_lib.sh"
+    finish_shift_component_running "$ROOT" front-desk && echo running || echo stopped
+  )"
+  if [[ "$result09" == "stopped" ]]; then
+    pass "09: a pidfile naming a zombie reads as not running (front-desk)"
+  else
+    fail "09: expected stopped for a zombie-owned pidfile, got: $result09"
+  fi
+else
+  fail "09: could not reproduce a zombie for $Z_PID (environment cannot verify this case)"
+fi
+wait "$Z_HELPER_PID" 2>/dev/null || true
+rm -f "$Z_HELPER_OUT"
+
+# ── 10 (BL-1647 hardening): _finish_shift_pid_is_zombie tolerates a
+#    leading-whitespace `ps -o stat=` reading, never just a bare "Z" match.
+#    Stock macOS (BSD) ps can right-justify a single-column value with
+#    leading whitespace even with the header suppressed - the same reason
+#    specs/pipeline/scripts/reap_stale_tmp_roots.js's own isZombiePid
+#    matches `/^\s*Z/` rather than a bare prefix. This host's Linux ps
+#    happens to emit no padding for a lone `-o stat=` column, so cases 08
+#    and 09 above (which use the real ps binary) cannot exercise a padded
+#    reading either way - a stubbed `ps` is the only way to pin this on
+#    any one host. No fixture root, no background process: cheap and
+#    load-insensitive.
+ps() {
+  if [[ "$1" == "-o" && "$2" == "stat=" ]]; then
+    printf '  Z+\n'
+  else
+    command ps "$@"
+  fi
+}
+(
+  source "$SRC/finish_shift_lib.sh"
+  if _finish_shift_pid_is_zombie 1; then
+    exit 0
+  else
+    exit 1
+  fi
+)
+STATUS10=$?
+unset -f ps
+if [[ "$STATUS10" -eq 0 ]]; then
+  pass "10: _finish_shift_pid_is_zombie tolerates leading whitespace in ps -o stat= output"
+else
+  fail "10: expected a leading-whitespace 'Z+' reading to be detected as a zombie"
+fi
+
 kill "$TN_PID" 2>/dev/null || true
 
 # Belt-and-suspenders: kill every fixture PID this file may have spawned
