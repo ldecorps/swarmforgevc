@@ -59,7 +59,11 @@
 ;; BL-1610: received_at_head (the dequeue stamp - see
 ;; ready_for_next_task.bb/ready_for_next_batch.bb) reserved so no draft can
 ;; forge it, same posture as dequeued_at.
-(def reserved-fields #{"id" "from" "role" "recipient" "created_at" "enqueued_at" "dequeued_at" "completed_at" "routing_skipped" "non-forwarding" "received_at_head"})
+;; BL-1637: from_seat (the sending SEAT's own SWARMFORGE_ROLE, stamped
+;; beside from: which keeps the STAGE name) reserved so no draft can forge
+;; it - it is daemon/tool-stamped audit metadata a filer trusts, never
+;; agent-authored.
+(def reserved-fields #{"id" "from" "from_seat" "role" "recipient" "created_at" "enqueued_at" "dequeued_at" "completed_at" "routing_skipped" "non-forwarding" "received_at_head"})
 (def allowed-fields #{"type" "to" "priority" "task" "commit" "message" "wake" "rejection_reason" "reroute_reason" "scope" "body" "rationale"})
 (def allowed-types #{"awake" "git_handoff" "note" "rule_proposal"})
 (def valid-scope-pattern #"constitution|engineering|project|role:[a-zA-Z][a-zA-Z0-9]*")
@@ -1075,7 +1079,7 @@
                            "Rule proposal (" scope ") from " sender ": " proposal-body
                            "\nRationale: " rationale))))
 
-(defn write-handoff! [{:keys [headers recipients canonical-commit sender routing-skipped
+(defn write-handoff! [{:keys [headers recipients canonical-commit sender seat routing-skipped
                               priority non-forwarding reverse?]}]
   (let [timestamp-id (id-timestamp)
         created-at (timestamp)
@@ -1099,6 +1103,8 @@
                        (str "to: " (str/join "," recipients))
                        (str "priority: " priority)
                        (str "type: " type)]
+                (and seat (not= seat sender))
+                (conj (str "from_seat: " seat))
                 (= "git_handoff" type)
                 (conj (str "role: " sender)
                       (str "task: " (get headers "task"))
@@ -1260,6 +1266,7 @@
                                                       :recipients (:recipients routed)
                                                       :canonical-commit (:canonical-commit validation)
                                                       :sender sender
+                                                      :seat (System/getenv "SWARMFORGE_ROLE")
                                                       :routing-skipped (:routing-skipped routed)})]
                           (when-let [skip (:routing-skipped routed)]
                             (log-routing-skip! (project-root)

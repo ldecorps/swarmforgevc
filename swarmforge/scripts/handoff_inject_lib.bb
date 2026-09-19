@@ -240,5 +240,13 @@
           (throw (ex-info "missing to header" {:path (str outbox-path)})))
         (write-parcel-to-recipients!
          project-root outbox-path message roles socket filename recipients log-fn)
-        (move-with-collision outbox-path (sent-dir (get roles sender-role)))
+        ;; BL-1637: sender-role here is the STAGE (swarm_handoff.bb's
+        ;; sender-role fn strips a seat's own '@N' before ever passing it
+        ;; in), so filing by it alone lands a seat's forward under its
+        ;; stage's sent/ - the exact BL-831 incident, since this synchronous
+        ;; path (not handoffd.bb's async poll sweep) is the one that
+        ;; actually runs on every ordinary send. seat-filing-role-info
+        ;; prefers the parcel's own from_seat header when it resolves.
+        (move-with-collision outbox-path
+                              (sent-dir (handoff-lib/seat-filing-role-info headers roles)))
         :delivered))))
