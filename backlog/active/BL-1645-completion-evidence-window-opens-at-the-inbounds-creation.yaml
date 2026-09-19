@@ -187,3 +187,11 @@ notes: |
   kept.
 
 assigned_to: coder
+
+abandoned_commits: [4eb9bfc553]
+# BL-1241 land-step remedy: the tip 4eb9bfc553 (QA's sync merge, evidence
+# commit 84e8bf8dbf) was entangled with unlanded siblings BL-1634, BL-1637,
+# BL-831 as ancestors. land_main_publish.sh --land built a tip-pure replay
+# off origin/main, land-replay/BL-1645-4eb9bfc553, landed as f213b7e997 on
+# 2026-09-19. Recorded per the LAND_REPLAY item so task_scope_gate_lib.bb
+# and pre_qa_gate_lib.bb re-base their walk on origin/main. By QA.
