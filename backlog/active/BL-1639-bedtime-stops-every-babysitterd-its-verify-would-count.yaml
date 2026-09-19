@@ -194,3 +194,5 @@ notes: |
   handler entry is the BL-233 same-parcel pin. IR-DRY at mint: scenarios
   01 and 03 share their two-daemon Given by design (finish-shift and the
   nuclear path over one snapshot); reviewed and kept.
+
+assigned_to: coder
