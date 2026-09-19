@@ -24,8 +24,14 @@ import { defineConfig } from 'vitest/config';
 // same createRequire bridge vitest.config.mjs's own ESM-to-CommonJS load
 // uses (this config is ESM, the budget module is CommonJS).
 const require = createRequire(import.meta.url);
-const { PER_WORKER_HEAP_MB, resolveVitestWorkerPool, resolveFreeCoresCeiling } = require('./out/tools/vitest-worker-memory-budget');
+const {
+  resolveVitestWorkerPool,
+  resolveFreeCoresCeiling,
+  resolvePropertyLaneHeapMB,
+  resolvePropertyLaneFileHeapCeilingMB,
+} = require('./out/tools/vitest-worker-memory-budget');
 const { FORKS_ENV_KEY, resolveLaneForks } = require('./test/helpers/propertyLaneContentionBudget');
+const { PROPERTY_LANE_HEAP_CEILING_ENV_KEY } = require('./test/helpers/propertyLaneHeapCeilingEnvKey');
 // BL-935: the SAME single pool-resolution route as vitest.config.mjs - the
 // second required call site named by this ticket's own required_wiring, and
 // historically the easy one to miss a fix in. Both lanes now call the one
@@ -74,6 +80,33 @@ const WORKER_POOL_SIZE = resolveVitestWorkerPool({
 // together).
 process.env[FORKS_ENV_KEY] = String(resolveLaneForks(process.argv, WORKER_POOL_SIZE));
 
+// BL-1651: the per-worker heap cap and the per-file gate ceiling it feeds
+// (propertyLaneHeapGuardSetup.js), derived from memory ACTUALLY FREE at
+// this moment (os.freemem(), never totalmem() - a busy host's other
+// resident processes, the live swarm's own role sessions, already hold
+// some of that) divided across the forks resolveLaneForks actually
+// publishes above. A test harness driving a controlled scenario (BL-1651's
+// own acceptance handler) pre-sets PROPERTY_LANE_HEAP_CEILING_ENV_KEY
+// before this config loads; only computed here when absent, so a real run
+// never overwrites a deliberately-forced test ceiling.
+//
+// Printed exactly once: this module body runs once in the main process,
+// before any fork spawns (forks inherit process.env, never re-run this
+// file) - the same "known once, in the main process" property FORKS_ENV_KEY
+// above already relies on.
+const FREE_RAM_MB = os.freemem() / (1024 * 1024);
+const PROPERTY_LANE_LANE_FORKS = Number(process.env[FORKS_ENV_KEY]);
+if (!process.env[PROPERTY_LANE_HEAP_CEILING_ENV_KEY]) {
+  const workerHeapMB = resolvePropertyLaneHeapMB(FREE_RAM_MB, PROPERTY_LANE_LANE_FORKS);
+  process.env[PROPERTY_LANE_HEAP_CEILING_ENV_KEY] = String(resolvePropertyLaneFileHeapCeilingMB(workerHeapMB));
+}
+const PROPERTY_LANE_WORKER_HEAP_MB = resolvePropertyLaneHeapMB(FREE_RAM_MB, PROPERTY_LANE_LANE_FORKS);
+// eslint-disable-next-line no-console
+console.log(
+  `[property-lane-budget] forks=${PROPERTY_LANE_LANE_FORKS} workerHeapMB=${PROPERTY_LANE_WORKER_HEAP_MB} ` +
+    `fileHeapCeilingMB=${process.env[PROPERTY_LANE_HEAP_CEILING_ENV_KEY]} freeRamMB=${Math.round(FREE_RAM_MB)}`
+);
+
 export default defineConfig({
   test: {
     globals: true,
@@ -82,8 +115,15 @@ export default defineConfig({
     // guards vitest.config.mjs wires (BL-420's temp-dir sweep, BL-720's
     // env-restore guard) - a property test's mkTmpDir() calls were never
     // swept and a leaked process.env key had nothing to catch it. Same two
-    // setupFiles, same paths, as vitest.config.mjs.
-    setupFiles: ['./test/helpers/tmpDirSetup.js', './test/helpers/envRestoreGuardSetup.js', './test/helpers/gitEnvGuardSetup.js'],
+    // setupFiles, same paths, as vitest.config.mjs. BL-1651 adds the
+    // per-file heap ceiling gate (propertyLaneHeapGuardSetup.js) alongside
+    // them - this lane's own addition, never wired into vitest.config.mjs.
+    setupFiles: [
+      './test/helpers/tmpDirSetup.js',
+      './test/helpers/envRestoreGuardSetup.js',
+      './test/helpers/gitEnvGuardSetup.js',
+      './test/helpers/propertyLaneHeapGuardSetup.js',
+    ],
     include: ['test/**/*.property.test.js'],
     testTimeout: 20000,
     // BL-871 QA bounce D2 follow-up (2026-08-11): raising per-test timeouts
@@ -114,9 +154,12 @@ export default defineConfig({
     // confirmed-benign, non-configurable, always-on Vitest-internal artifact
     // from flipping a real 232/232 pass into a reported failure.
     dangerouslyIgnoreUnhandledErrors: true,
-    // BL-871: same forks pool + per-worker heap cap as vitest.config.mjs,
-    // sourced from the same resolveWorkerPoolSize/PER_WORKER_HEAP_MB. This
-    // lane deliberately leaves Vitest's default per-file isolation ON
+    // BL-871/BL-1651: the fork pool ceiling is unchanged (BL-871's own
+    // resolveVitestWorkerPool); the per-worker heap cap is now
+    // resolvePropertyLaneHeapMB's own host-derived value, never the unit
+    // lane's fixed PER_WORKER_HEAP_MB (this lane's own crashes, not the
+    // unit lane's, are what this ticket fixes - see the derivation above).
+    // This lane deliberately leaves Vitest's default per-file isolation ON
     // (unlike vitest.config.mjs's isolate:false) - bringing the lanes to
     // parity there rests on a precondition (every test restores what it
     // stubs) not yet established for property files, and is out of this
@@ -125,7 +168,7 @@ export default defineConfig({
     poolOptions: {
       forks: {
         maxForks: WORKER_POOL_SIZE,
-        execArgv: [`--max-old-space-size=${PER_WORKER_HEAP_MB}`],
+        execArgv: [`--max-old-space-size=${PROPERTY_LANE_WORKER_HEAP_MB}`],
       },
     },
   },
