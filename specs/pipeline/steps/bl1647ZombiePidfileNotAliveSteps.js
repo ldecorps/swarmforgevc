@@ -20,6 +20,7 @@ const fs = require('node:fs');
 const path = require('node:path');
 const os = require('node:os');
 const { spawnSync, execFileSync } = require('node:child_process');
+const { onAbnormalExit } = require('./lib/fixtureReaper');
 
 const FEATURE = 'BL-1647 A pidfile naming a zombie is not a live component';
 
@@ -104,7 +105,15 @@ function registerSteps(registry) {
   scoped(
     /^a fixture root under a temporary directory with the finish-shift library loaded and its operator pidfiles pointing at fixture processes$/,
     (ctx) => {
-      ensureState(ctx);
+      const state = ensureState(ctx);
+      // BL-1636: the fixture root created above is normally removed by
+      // cleanupFixture(state), called from the terminal Then steps - but a
+      // thrown assertion in between skips straight past those calls and
+      // leaks the root (BL-921/BL-931's cross-step leak class). This
+      // onAbnormalExit callback is the crash-safety net; idempotent with
+      // cleanupFixture's own normal call (fs.rmSync force:true no-ops on
+      // an already-gone target).
+      onAbnormalExit(() => cleanupFixture(state));
     }
   );
 
@@ -171,11 +180,11 @@ function registerSteps(registry) {
     ctx.bl1647TestResult = execFileSync('bash', [TEST_FILE], { encoding: 'utf8', timeout: 60000 });
   });
 
-  scoped(/^it reports PASS=12 FAIL=0$/, (ctx) => {
+  scoped(/^it reports PASS=13 FAIL=0$/, (ctx) => {
     assert.match(
       ctx.bl1647TestResult,
-      /PASS=12 FAIL=0/,
-      `expected PASS=12 FAIL=0, got: ${ctx.bl1647TestResult}`
+      /PASS=13 FAIL=0/,
+      `expected PASS=13 FAIL=0, got: ${ctx.bl1647TestResult}`
     );
   });
 

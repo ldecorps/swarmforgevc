@@ -104,7 +104,14 @@ _finish_shift_pid_is_zombie() {
   # narrow race - ps failing here must read as "not a zombie" (stat stays
   # empty, falls through to the ordinary not-alive path), never abort the
   # whole bedtime run.
+  # BSD `ps` (stock macOS) can right-justify a single-column `-o stat=`
+  # value with leading whitespace even with the header suppressed - the
+  # same reason specs/pipeline/scripts/reap_stale_tmp_roots.js's own
+  # isZombiePid matches `/^\s*Z/` rather than a bare prefix. Strip
+  # leading/trailing whitespace before comparing so this check is not
+  # blind to a zombie on a platform whose ps pads it.
   stat="$(ps -o stat= -p "$pid" 2>/dev/null || true)"
+  stat="${stat#"${stat%%[![:space:]]*}"}"
   [[ "$stat" == Z* ]]
 }
 
