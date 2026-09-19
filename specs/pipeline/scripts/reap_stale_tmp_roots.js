@@ -33,6 +33,20 @@ const { defaultIsPidAlive } = (() => {
   return { defaultIsPidAlive };
 })();
 
+// Self-audit (2026-09-19): this leftmost digit-run match can misread an
+// unrelated legacy directory's leading ticket number (e.g.
+// `bl1031-dir-<rand>`) as an "owner pid", which only ever makes the reap
+// SKIP a root it could safely have removed - it never causes a false
+// deletion (no digit run this pattern could find is ever used to justify
+// removing anything; it only ever justifies keeping). A stricter,
+// end-anchored match (pid immediately before the trailing 6-char mkdtemp
+// suffix) was considered and rejected: caller prefixes vary in length, so
+// anchoring would miss a genuinely long-lived owned root whose prefix
+// carries extra descriptive text, which WOULD risk deleting something
+// still alive. This keeps the same "errs toward keeping a root it is
+// unsure about" posture tmpDir.js's isZombiePid already documents for the
+// unit lane's own sweep - never tightened at the cost of that safety
+// direction.
 const OWNER_PID_PATTERN = /(\d+)-/;
 
 function parseArgs(argv) {
