@@ -251,6 +251,72 @@
          (chase-sweep-lib/parse-batch-claim-progress-role-stale-threshold-ms
           "# config batch_claim_progress_role_stale_threshold_minutes hardender 2"))
 
+;; ── BL-1649: parse-claim-idle-timeout-role-minutes-ms (pure) ────────────────
+;; BL-528's own per-role conf key, the exact shape of the BL-1076 parser
+;; above but with NO direct pure-function coverage until now - the shell
+;; wiring test (test_claim_progress_sweep.sh) only exercises a well-formed
+;; single-role line (test11) and an unrelated-role line (test12b), never
+;; the zero/negative/missing/repeated/commented edge cases this parser's
+;; own docstring claims to handle. Confirmed by hand-mutation before
+;; writing these: dropping the (pos? n) guard (accepting zero/negative
+;; minutes as a valid, TIGHTER timeout - exactly what the ticket's own
+;; invariant 2 forbids: "never to a tighter one") left the shell wiring
+;; test AND this file's own other tests fully green. Restored before
+;; committing.
+
+(assert= "role-timeout: a well-formed line is parsed to ms"
+         {"QA" (* 90 60 1000)}
+         (chase-sweep-lib/parse-claim-idle-timeout-role-minutes-ms
+          "config claim_idle_timeout_role_minutes QA 90"))
+
+(assert= "role-timeout: several roles each get their own entry"
+         {"QA" (* 90 60 1000) "coder" (* 5 60 1000)}
+         (chase-sweep-lib/parse-claim-idle-timeout-role-minutes-ms
+          (str "config claim_idle_timeout_role_minutes QA 90\n"
+               "config claim_idle_timeout_role_minutes coder 5")))
+
+(assert= "role-timeout: no such line at all is an empty map, never nil"
+         {}
+         (chase-sweep-lib/parse-claim-idle-timeout-role-minutes-ms
+          "config claim_idle_timeout_minutes 20"))
+
+(assert= "role-timeout: zero is unusable and is dropped, never a tighter timeout"
+         {}
+         (chase-sweep-lib/parse-claim-idle-timeout-role-minutes-ms
+          "config claim_idle_timeout_role_minutes QA 0"))
+
+(assert= "role-timeout: a negative value is dropped too"
+         {}
+         (chase-sweep-lib/parse-claim-idle-timeout-role-minutes-ms
+          "config claim_idle_timeout_role_minutes QA -5"))
+
+(assert= "role-timeout: a missing number is dropped, never read as the role"
+         {}
+         (chase-sweep-lib/parse-claim-idle-timeout-role-minutes-ms
+          "config claim_idle_timeout_role_minutes QA"))
+
+(assert= "role-timeout: an unusable line does not discard a good one beside it"
+         {"coder" (* 5 60 1000)}
+         (chase-sweep-lib/parse-claim-idle-timeout-role-minutes-ms
+          (str "config claim_idle_timeout_role_minutes QA 0\n"
+               "config claim_idle_timeout_role_minutes coder 5")))
+
+(assert= "role-timeout: the base key is not mistaken for a per-role one"
+         {}
+         (chase-sweep-lib/parse-claim-idle-timeout-role-minutes-ms
+          "config claim_idle_timeout_minutes 15"))
+
+(assert= "role-timeout: a commented-out line is not read as configuration"
+         {}
+         (chase-sweep-lib/parse-claim-idle-timeout-role-minutes-ms
+          "# config claim_idle_timeout_role_minutes QA 90"))
+
+(assert= "role-timeout: a repeated role takes the LAST line"
+         {"QA" (* 45 60 1000)}
+         (chase-sweep-lib/parse-claim-idle-timeout-role-minutes-ms
+          (str "config claim_idle_timeout_role_minutes QA 90\n"
+               "config claim_idle_timeout_role_minutes QA 45")))
+
 (when (seq @failures)
   (binding [*out* *err*]
     (doseq [f @failures] (println f)))
