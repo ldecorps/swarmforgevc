@@ -146,3 +146,16 @@ notes: |
   is the gate.
 
 assigned_to: coder
+
+abandoned_commits: [86ae9a19ef]
+# BL-1241 land-step remedy: the tip 86ae9a19ef named ENTANGLED_SIBLING
+# BL-1634, BL-1636, BL-1637, BL-1646, BL-1649, BL-831, BL-875, all closed
+# on origin/main (the known BL-1650-item-0 first-parent-walk artifact).
+# The tip-pure replay land-replay/BL-1647-86ae9a19ef (eac93c7cc2) was
+# inspected directly: its two-tree diff against origin/main carries only
+# BL-1647's own paths plus a harmless duplicate-defn dedup in
+# forward_evidence_lib.bb (both BL-1642 and BL-1645 had separately added
+# an identical inbound-window-start defn during their own merges; this
+# merge's conflict resolution kept one copy - confirmed byte-identical
+# body, zero behavior change, both owners read LANDED_SIBLING). Landed
+# eac93c7cc2 in place of 86ae9a19ef. By QA.
