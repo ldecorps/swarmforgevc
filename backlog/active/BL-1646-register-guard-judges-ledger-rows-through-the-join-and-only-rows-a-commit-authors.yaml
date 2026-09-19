@@ -175,3 +175,5 @@ notes: |
   hardening row" and 01/04 share the BL-4343 owner Given by design (one
   staged register, two commit shapes); the refusal steps differ only by
   the row they name. Reviewed and kept.
+
+assigned_to: coder
