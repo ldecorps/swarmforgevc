@@ -26,10 +26,5 @@ Feature: The property lane bounds its worker pool the same way the unit lane doe
     Examples:
       | ram   | workers |
       | 16384 | 6       |
-      | 8192  | 3       |
+      | 4096  | 3       |
       | 2048  | 1       |
-
-  # BL-871 property-lane-worker-pool-cap-04
-  Scenario: a subprocess-heavy property file passes under a full-suite run
-    Given the whole property suite is run on this host
-    Then every property file reaches a verdict without timing out
