@@ -91,6 +91,16 @@ description: |
      what to clear. The existing `conflict` outcome keeps its meaning for
      a real merge conflict.
 
+  3. (Coordinator note 009765, 06:17Z.) The sweep's failed-abort path
+     retains merge ownership (`master-main-merge-owner.json`, stale sha)
+     when `git merge --abort` answers "There is no merge to abort
+     (MERGE_HEAD missing)" and logs "next tick aborts by ownership" - but
+     with no MERGE_HEAD there is nothing to abort, so every tick repeats
+     `merge-abort-failed` and the owner file never clears on its own. An
+     abort that finds no MERGE_HEAD releases ownership at once
+     (`clear-merge-owner!`) and the next tick starts from the index check
+     of item 2; ownership is retained only while a MERGE_HEAD exists.
+
   ## How (direction, not mandate)
 
   - The restore is one call in the failure branch of each writer; keep
@@ -156,6 +166,13 @@ notes: |
   `surfaced: conflict` checks `git diff --cached --name-only` first: a
   staged path with no incoming overlap is this shape, and unstaging it
   (never resetting the worktree) frees the sweep.
+
+  Amended the same hour on the coordinator's note 009765 ("master-main-
+  merge-owner.json stale sha, abort-failed loop, never clears"): item 3
+  and scenario 05 added. Verified after the unstage: the sweep joined at
+  06:17:16Z (3c9ad7983d), the owner file and reconcile state read `{}`,
+  the sync gate reads proceed - the loop ends when the index clears, and
+  item 3 makes it end on its own.
 
   required_wiring names the step handler only: the two writers and the
   sweep exist before the fix and an anchor on the new result key would
