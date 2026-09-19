@@ -601,10 +601,11 @@
             ;; with its own worktree row is itself seat-safe by
             ;; construction) - explicit rather than relying on that
             ;; accident, and the only choice a file with no seat header
-            ;; (predating this fix) leaves.
+            ;; (predating this fix) leaves. Shared decision, handoff_lib's
+            ;; seat-filing-role-info, so this site and the sync-delivery
+            ;; path in handoff_inject_lib.bb cannot drift apart.
             (move-with-collision path
-                                  (sent-dir (or (some->> (get headers "from_seat") (get roles))
-                                                (get roles sender-role))))
+                                  (sent-dir (handoff-lib/seat-filing-role-info headers roles sender-role)))
             (log! "delivered" (str path)))))))))
 
 (defn inbox-new-files [role-info]
@@ -734,13 +735,14 @@
                       ;; The duplicate outbox copy is confirmed delivered (its
                       ;; twin already landed in sent/); archive it too instead of
                       ;; leaving it to be reprocessed and re-fail every poll cycle.
-                      ;; BL-1637: same from_seat preference as deliver!'s own
-                      ;; filing move, via the envelope this poll already read.
+                      ;; BL-1637: same shared filing decision as deliver!'s
+                      ;; own move above, via the envelope this poll already
+                      ;; read.
                       (try
                         (move-with-collision
                          path
-                         (sent-dir (or (some->> (get-in read-result [:envelope :headers "from_seat"]) (get roles))
-                                       (get roles role))))
+                         (sent-dir (handoff-lib/seat-filing-role-info
+                                    (get-in read-result [:envelope :headers]) roles role)))
                         (catch Exception _ignored nil)))
                     (fail! path (.getMessage e))))))))))))
 
