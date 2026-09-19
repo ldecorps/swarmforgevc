@@ -162,3 +162,14 @@ notes: |
   scenarios, one invariant), Testable (the real bridge in seconds).
 
 assigned_to: coder
+
+abandoned_commits: [1e97976a66]
+# A second, independent coder@2-seat implementation of this ticket
+# (1e97976a66, "a rejected manifest offers no page from it, built-ins
+# still offered"), functionally identical to the reviewed chain's own
+# coder commit 065f7e5b89 that this parcel already carries through
+# cleaner/architect/hardener/documenter - same assert-by-id fix, same
+# fixture id, same built-in-collision scenario, diffed line for line.
+# Never merged or forwarded past the coder stage; recorded here per the
+# forward-gate's own remedy rather than merged in, so a second review
+# pass over identical content is not required.
