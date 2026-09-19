@@ -9,6 +9,7 @@ severity: high
 # every BL-1623-style stale sweep; and the leak grows by ~48k roots a day
 # until the disk fills. Production is unaffected: only test fixtures leak.
 status: todo
+abandoned_commits: [fd2da75c46]
 epic: code-quality-gates
 priority: 8
 direction: swarm-reported
