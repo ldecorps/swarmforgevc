@@ -340,6 +340,41 @@ else
 fi
 wait "$Z_HELPER_PID" 2>/dev/null || true
 rm -f "$Z_HELPER_OUT"
+
+# ── 10 (BL-1647 hardening): _finish_shift_pid_is_zombie tolerates a
+#    leading-whitespace `ps -o stat=` reading, never just a bare "Z" match.
+#    Stock macOS (BSD) ps can right-justify a single-column value with
+#    leading whitespace even with the header suppressed - the same reason
+#    specs/pipeline/scripts/reap_stale_tmp_roots.js's own isZombiePid
+#    matches `/^\s*Z/` rather than a bare prefix. This host's Linux ps
+#    happens to emit no padding for a lone `-o stat=` column, so cases 08
+#    and 09 above (which use the real ps binary) cannot exercise a padded
+#    reading either way - a stubbed `ps` is the only way to pin this on
+#    any one host. No fixture root, no background process: cheap and
+#    load-insensitive.
+ps() {
+  if [[ "$1" == "-o" && "$2" == "stat=" ]]; then
+    printf '  Z+\n'
+  else
+    command ps "$@"
+  fi
+}
+(
+  source "$SRC/finish_shift_lib.sh"
+  if _finish_shift_pid_is_zombie 1; then
+    exit 0
+  else
+    exit 1
+  fi
+)
+STATUS10=$?
+unset -f ps
+if [[ "$STATUS10" -eq 0 ]]; then
+  pass "10: _finish_shift_pid_is_zombie tolerates leading whitespace in ps -o stat= output"
+else
+  fail "10: expected a leading-whitespace 'Z+' reading to be detected as a zombie"
+fi
+
 kill "$TN_PID" 2>/dev/null || true
 
 # Belt-and-suspenders: kill every fixture PID this file may have spawned

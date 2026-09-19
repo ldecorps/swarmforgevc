@@ -88,6 +88,12 @@ The second half is deliberate: an already-stopped swarm's kept components
 stay "unchanged" (still down), not forced up — bedtime never starts
 anything that wasn't already running.
 
+A pidfile naming a zombie (exited, unreaped) is not a live owner
+(`_finish_shift_pidfile_alive`, BL-1647): `kill -0` alone succeeds on an
+unreaped process, so the check also reads `ps -o stat=` and rejects a `Z`
+state, for every component the pidfile idiom checks (onboarder, front
+desk, tunnels).
+
 To fully stop the phone path too, run `./stop-swarm.sh` afterward — it
 still tears down the front desk and tunnels and reports the same
 survivor-scan-verified clean slate it always has.

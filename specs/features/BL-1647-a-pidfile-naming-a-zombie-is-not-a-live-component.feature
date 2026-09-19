@@ -34,5 +34,5 @@ Feature: BL-1647 A pidfile naming a zombie is not a live component
   # BL-1647 the-library-test-is-green-once-with-its-census-pinned-03
   Scenario: the finish-shift library test passes once and carries the zombie case
     When swarmforge/scripts/test/test_finish_shift_lib.sh runs once
-    Then it reports PASS=12 FAIL=0
+    Then it reports PASS=13 FAIL=0
     And its passing lines include case 08 and a case 09 naming a zombie pidfile owner

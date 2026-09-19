@@ -8,7 +8,7 @@ severity: high
 # intake to a cap of one for every ticket until owned; production is
 # unaffected (the gate never ran, nothing is known to survive, and CRAP,
 # DRY and the Gherkin mutation were green on the parcel).
-status: todo
+status: done
 epic: code-quality-gates
 priority: 8
 direction: swarm-reported
@@ -180,3 +180,11 @@ notes: |
   the host is quiet), Small (two scenarios, two invariants), Testable (the
   parcel's own committed ledger, evidence and register, read in
   milliseconds).
+  Retired 2026-09-19 at the shift-end consolidation sweep (BL-680, Article
+  5.3): merged into BL-1638, which now owns both deferred-gate rows; the
+  register row for bubblePipelinePage.js names BL-1638; this ticket's
+  feature file was removed (BL-1638's scenarios 03-04 carry the contract).
+  Every sentence quoted from the coordinator's note survives in BL-1638's
+  source. Closed by the specifier under its deprecator retire authority,
+  not by QA.
+closed_as: superseded-by-BL-1638
