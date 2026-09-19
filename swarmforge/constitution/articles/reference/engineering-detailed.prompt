@@ -494,6 +494,28 @@ not as the several separate edits that produced it).
   mid-assertion, read by `land_main_publish.sh` as "no backlog ticket file
   found" — an unowned red on 2026-09-17, one of seven files sharing the same
   blind-sweep shape.)
+- **An acceptance step handler that calls `fs.mkdtempSync` must register its
+  root for reaping — a standing unit-lane guard catches a NEW offender
+  (BL-1636, 2026-09-19).** `extension/test/stepHandlerTmpRootGuard.test.js`
+  drives `extension/test/helpers/stepHandlerTmpRootFinder.js` over every
+  `specs/pipeline/steps/*Steps.js` file: one that calls `mkdtempSync(` and
+  has neither a `fixtureReaper` registration (`track`/`trackedTmpRoot`/
+  `onAbnormalExit`) nor a recognised sweep helper
+  (`sweepStaleFixtures`/`sweepStaleTmpDirs`/`mkTmpDir(`) is an offender, and
+  the guard fails naming any offender not already in the committed census
+  `extension/test/step-handler-tmp-root-census.txt`. The census ratchets
+  down only: an entry naming a file that no longer offends fails the guard
+  until the entry itself is removed, so a fix can never silently regrow the
+  list. `fixtureReaper.js`'s `trackedTmpRoot(prefix)` is the one-line fix for
+  any handler that leaks: it creates the root under `os.tmpdir()` with the
+  owner-pid name shape (BL-1623's convention) and registers it in the same
+  call. Census background: 583 of 1191 handlers called `mkdtempSync`, 455
+  never registered their root, and the host's `os.tmpdir()` held 695,941
+  entries (686,946 leaked `bl`-prefixed handler roots) before the reap —
+  `specs/pipeline/scripts/reap_stale_tmp_roots.js` removes `bl`-prefixed
+  roots older than its floor with no live owner pid, same rule as
+  `sweepStaleTmpDirs` above, run as QA's e2e step with no lane alive on the
+  host (never inside a running suite).
 - **A LIVE shared runtime path is the third shared global — and the only one a test can
   DESTROY rather than merely flake on. Reach it through a redirectable env seam, never
   directly.** The two rules above are about shared state CORRUPTING a test; this one is about
