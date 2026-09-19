@@ -1,0 +1,180 @@
+id: BL-1644
+title: "Swarm stamp-off: hotfix daa34e6778 exports a full PATH at the top of the two tracked cron-invoked bedtime entrypoints (finish-shift, wait_for_expedite_then_bedtime.sh) so bb, claude and tmux resolve under cron's bare PATH - review-only certification (BL-848) of what landed on 2026-09-18"
+milestone: M8
+type: defect
+severity: medium
+# medium: the behaviour is already live on main and every worktree has
+# merged past it; what is open is the review the constitution owes a
+# hotfix (BL-848). Not high: nothing is degraded today and the ledger's
+# resurfacing keeps the ask alive without the expedite lane.
+status: todo
+epic: swarm-reliability
+priority: 20
+direction: human-directive
+depends_on: []
+mutation_cost: low
+# low: review-only; bash only (no mutation/CRAP/DRY wired, BL-472); one
+# step-handler file drives the two real scripts' PATH prelude under a
+# cron-shaped environment against a fixture HOME.
+slice_size_envelope: low
+required_stages: [coder, cleaner, architect, hardender, documenter, qa]
+
+acceptance: specs/features/BL-1644-swarm-stamp-cron-path-export-daa34e6778.feature
+
+# A review parcel adds no production call site; the mechanism under
+# review is two export lines already at the top of two scripts cron
+# already invokes. The handler entry is the BL-233 in-parcel pin;
+# steps/index.js discovers *Steps.js by directory scan.
+required_wiring:
+  - 'specs/pipeline/steps/bl1644SwarmStampCronPathExportSteps.js::registerSteps::the handler lands in the same parcel as the feature (BL-233, BL-1371)'
+
+human_approval: pending
+approval_context: >
+  A new feature file is authored here, so it needs a tap. No choice is
+  posed and there are no ruling_options. What needs sign-off is the
+  DISPOSITION only: that reviewing the landed diff of daa34e6778 (BL-848
+  posture) rather than re-implementing it is right, and that medium is the
+  right severity for a review of behaviour already live. FIRM: the parcel
+  changes no file except to add evidence, the feature, the step handler
+  (plus lib/ helpers) and, where the coder extends it, TEST files under
+  swarmforge/scripts/test/; a refuted scenario or a confirmed probe finding
+  is a narrow follow-up via note to the specifier, never an in-parcel
+  rewrite. FIRM: the parcel never writes human_decision into
+  backlog/hotfix-ledger.yaml (scenario 03) - the human records certify or
+  waive with hotfix_ledger_update.bb --decide after this reaches done.
+  FIRM: the commit message's babysitterd claim is not under review here -
+  BL-1639 owns that finding. Minted by the specifier on the certification
+  sweep's ledger note of 2026-09-19; the ledger row is linked in the mint
+  commit.
+
+invariants:
+  - "The stamp never rewrites the hotfix: every file the parcel touches is evidence, a feature, a step handler (plus its lib/ helpers), or a file under swarmforge/scripts/test/; finish-shift and swarmforge/scripts/wait_for_expedite_then_bedtime.sh are read, never edited."
+
+source: |
+  backlog/hotfix-ledger.yaml row `daa34e6778` (detected 2026-09-18, state
+  pending, no stamp ticket), appended by the operator's `--new` on
+  2026-09-18 and found still uncommitted on the shared checkout at this
+  mint; surfaced by the certification sweep as the note "hotfix daa34e6778
+  has no stamp ticket - mint a review ticket" (reached the specifier
+  2026-09-19 01:02Z as inbound 00_20260919T010255Z_001692). Hotfix landed
+  by the operator (human-directed, Claude Code) 2026-09-18 19:26 BST with
+  `Hotfix-Certification: pending`. From the commit message, verbatim:
+  "cron runs jobs with a bare minimal PATH (no ~/.local/bin), so
+  day-shift-start.sh's rotate_to_role.sh failed "exec: bb: not found"
+  (rc=127) at this morning's launch" and "Applies the same PATH export
+  start-swarm.sh already uses at its own top to every cron-invoked
+  entrypoint in the bedtime chain: finish-shift and
+  wait_for_expedite_then_bedtime.sh here (tracked); day-shift-start.sh,
+  day-shift-bedtime.sh and night-start.sh got the identical fix locally
+  (untracked, .swarmforge/ is gitignored)."
+
+description: |
+  ## What
+
+  An operator hotfix is live on main and has never been through a gate.
+  This ticket is that gate: a REVIEW ticket, not a rewrite ticket -
+  confirm or refute, and open narrow follow-ups for anything found.
+
+  ## The failure it fixed (from the commit message and day-shift.log)
+
+  Cron runs its jobs with a bare PATH that lacks `~/.local/bin` and
+  `~/.npm-global/bin`, where `bb`, `claude` and `tmux` live on this host.
+  `.swarmforge/operator/day-shift.log` 2026-09-18T08:00:30Z:
+  `day-shift-start rotated resident to recorded role cleaner rc=127`
+  (`rotate_to_role.sh` -> `exec: bb: not found`). `start-swarm.sh` has
+  carried the export at its own top (line 88) for exactly this reason;
+  the bedtime chain's tracked entrypoints did not.
+
+  ## What landed (files to review)
+
+  - `finish-shift` line ~30: `export PATH="$HOME/.npm-global/bin:$HOME/.local/bin:/opt/homebrew/bin:/usr/local/bin:$PATH"`
+    after `set -euo pipefail`, before `REPO_ROOT` and every shell-out.
+  - `swarmforge/scripts/wait_for_expedite_then_bedtime.sh` line ~44: the
+    same export after `set -u`, before `ROOT=` and its own
+    `expedite_cli.bb` calls and the `finish-shift` call.
+  - The three `.swarmforge/operator/*.sh` copies (untracked) are outside
+    this review.
+
+  ## Review goals
+
+  1. Confirm the prelude works under cron's environment (scenario 01):
+     for each of the two scripts, under `env -i HOME=<fixture>
+     PATH=/usr/bin:/bin`, sourcing the script's prelude (its lines up to
+     and including the export) makes `bb`, `tmux` and `claude` resolve to
+     stubs placed at `<fixture>/.local/bin/`; and the export line precedes
+     the first invocation of `bb`, `tmux`, `claude`, `node` or `npx` in
+     the file (a static order check - an export below the first shell-out
+     fixes nothing).
+  2. Confirm the census of cron-invoked tracked entrypoints (scenario 02,
+     BL-1445): the installed crontab names four tracked paths -
+     `swarmforge/scripts/wait_for_expedite_then_bedtime.sh` (weekend
+     bedtime), `swarmforge/scripts/daemon_log_freshness_check.sh` (its
+     cron line sets PATH inline AND the script exports one),
+     `swarmforge/scripts/descent_review_cli.bb` (invoked as a bare `bb`
+     command) and, through `day-shift-bedtime.sh`, `finish-shift`. Pin
+     that census in the scenario: every tracked bash entrypoint cron
+     reaches carries the export before its first shell-out.
+  3. PROBE, do not fix: `17 4 * * * bb .../descent_review_cli.bb review
+     <root>` runs `bb` by bare name under the same bare cron PATH, so it
+     may have failed every night since it was installed. Look for its
+     output (`.swarmforge/` descent-review artifacts, their mtimes, cron
+     mail) and RECORD the finding in evidence with the crontab line;
+     confirmed broken -> note the specifier (the crontab is the human's
+     file; the fix is a `PATH=` prefix on that line or an absolute `bb`
+     path, never this parcel's).
+  4. Record, do not review: the commit message also attributes the
+     2026-09-18 bedtime's unstoppable babysitterd to this PATH gap.
+     BL-1639 (minted 2026-09-19) found otherwise - a second babysitterd
+     launched from an operator-local copy with its own pidfile, which the
+     stop never signals. The PATH export stands on the rc=127 evidence
+     alone; say so in evidence and do not extend the review into BL-1639.
+  5. Regression, note only: `bash swarmforge/scripts/test/test_finish_shift_lib.sh`
+     green on the parcel (the lib is untouched; the export sits in the
+     wrapper above it).
+
+  ## Scenario notes for the coder
+
+  - Scenario 01's fixture is a mkdtemp HOME with executable stubs
+    `.local/bin/bb`, `.local/bin/tmux`, `.local/bin/claude`; the handler
+    runs `env -i HOME=<fx> PATH=/usr/bin:/bin bash -c 'source <(sed -n
+    "1,/^export PATH=/p" <script>); command -v bb tmux claude'` per script
+    and asserts each resolves under `<fx>/.local/bin/`. The order check
+    is a line-number comparison on the real file.
+  - Scenario 02 reads the crontab from a fixture copy of the installed
+    lines (the handler must never read or edit the live crontab), derives
+    the tracked bash entrypoints, and pins the count and the two names.
+  - Scenario 03's handler reads `backlog/hotfix-ledger.yaml` for the row
+    `commit: daa34e6778` and asserts `state` is not certified/waived and
+    `human_decision` is null; BL-1557 / BL-1591 are the precedents.
+  - The step handler is `bl1644SwarmStampCronPathExportSteps.js`, landing
+    in the SAME commit as the feature (BL-233).
+
+notes: |
+  Ledger: linked to row daa34e6778 via `hotfix_ledger_update.bb --link`
+  in the mint commit; the row itself (the operator's `--new` of
+  2026-09-18) and the sweep's derived-state refresh of the a27d082c2d row
+  were both uncommitted on the shared checkout and ride the same commit.
+  Grepped `daa34e6778` across backlog/paused, active, done and hold
+  before minting (BL-1253/BL-1260 duplicate-stamp lesson): no prior
+  stamp. Minted 2026-09-19 by the specifier while completing the sweep's
+  note, the same pass. Minted pending: medium severity is outside the
+  2026-09-17 auto-approval carve-out (critical/high only).
+  Goal 3 probe at mint: `find .swarmforge -maxdepth 3 -iname "*descent*"`
+  found nothing - consistent with the descent-review cron line never
+  having produced an artifact; the parcel confirms and records it.
+
+qa_e2e_procedure: |
+  On the parcel commit:
+  1. `git diff main...HEAD --name-only` names only evidence, the feature,
+     the step handler (+ lib/), and files under swarmforge/scripts/test/;
+     neither finish-shift nor wait_for_expedite_then_bedtime.sh
+     (invariant 1).
+  2. `run_acceptance.sh` on the BL-1644 feature -> 3 scenarios green
+     (scenario 01 = 2 rows).
+  3. `bash swarmforge/scripts/test/test_finish_shift_lib.sh` ALL CHECKS
+     PASSED.
+  4. The evidence file records review goal 3's finding explicitly (the
+     descent-review cron line, what artifacts exist and their mtimes).
+  5. `backlog/hotfix-ledger.yaml` row daa34e6778: `human_decision: null`.
+  6. After done: the human runs `bb swarmforge/scripts/hotfix_ledger_update.bb .
+     --decide daa34e6778 approved|waived` and commits the ledger.
