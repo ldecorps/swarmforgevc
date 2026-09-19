@@ -790,7 +790,23 @@
       ;; never opens a reflog can tell from this line alone why nothing moved.
       :local-ahead-refused
       (let [msg (str "BL-1310: local-ahead commits present, " behind " behind - refused, not reset")]
-        (if (<= (count msg) 80) msg "BL-1310: local-ahead commits present - refused, not reset")))))
+        (if (<= (count msg) 80) msg "BL-1310: local-ahead commits present - refused, not reset"))
+      ;; BL-1653 item 2: names the staged path(s), same shape as :dirty
+      ;; above - the whole point of this reason existing separately from
+      ;; :conflict is that the coordinator's note says what to clear.
+      :index-not-clean
+      (let [paths (vec (or (:paths opts) []))
+            base (str "BL-891: master main " behind " behind origin, index not clean")
+            suffix " - not reconciled"
+            detail (case (count paths)
+                     0 ""
+                     1 (str ": " (first paths))
+                     (str ": " (count paths) " paths"))
+            named (str base detail suffix)]
+        (if (<= (count named) 80) named (str base suffix)))
+      :merge-abort-no-merge-head
+      (let [msg (str "BL-1653: abort found no MERGE_HEAD, ownership released, " behind " behind")]
+        (if (<= (count msg) 80) msg "BL-1653: abort found no MERGE_HEAD, ownership released")))))
 
 (defn surface-draft-lines
   "A `note` to the coordinator only - reconciling the master checkout's own
@@ -902,6 +918,18 @@
     :verdict-unavailable "verdict-unavailable"
     :push-unavailable "push-unavailable"
     :local-ahead-refused "local-ahead-refused"
+    ;; BL-1653 item 2: a staged index refuses the merge before it is even
+    ;; attempted - a DIFFERENT fact than a genuine content conflict, and
+    ;; the surfaced note must name the staged paths rather than read as
+    ;; the generic "absorb refused" text this outcome would otherwise fall
+    ;; through to.
+    :index-not-clean "index-not-clean"
+    ;; BL-1653 item 3: ownership was already released by absorb-with-
+    ;; merge!/the :abort-owned-merge branch - distinct from the generic
+    ;; :merge-abort-failed reason so this tick's note (and next tick's
+    ;; fresh episode) never reads as the same unresolved abort looping
+    ;; forever.
+    :merge-abort-no-merge-head "merge-abort-no-merge-head"
     "conflict"))
 
 (defn rematch-owner-recovery?
@@ -1151,7 +1179,10 @@
   [daemon-dir state adapters behind handle-blocked! result]
   (let [outcome (or (:outcome result) :conflict)
         reason (merge-failure-reason outcome)
-        surface-msg (surface-message {:behind behind :reason (keyword reason)})]
+        ;; BL-1653 item 2: :index-not-clean's own surface-message case reads
+        ;; :paths off opts - threaded through from absorb-with-merge!'s own
+        ;; result, never re-derived.
+        surface-msg (surface-message {:behind behind :reason (keyword reason) :paths (:paths result)})]
     (apply (:log! adapters)
            (into ["master-main-reconcile"]
                  (merge-failure-log-tail outcome (:error result))))
@@ -1407,8 +1438,9 @@
         succeeded? (fn [r] (or (nil? r) (not (false? (:success r)))))
         staged-block (when staged-paths! (staged-index-block-reason (staged-paths!)))]
     (if staged-block
-      (do (log "index-not-clean" (index-not-clean-log-text (:paths staged-block)))
-          {:success false :outcome :index-not-clean :paths (:paths staged-block)})
+      (let [error-text (index-not-clean-log-text (:paths staged-block))]
+        (log "index-not-clean" error-text)
+        {:success false :outcome :index-not-clean :paths (:paths staged-block) :error error-text})
       (let [ff-result (ff!)]
         (if (:success ff-result)
           {:success true :outcome :ff}

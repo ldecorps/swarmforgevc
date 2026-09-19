@@ -106,6 +106,48 @@
                (not (clojure.string/includes? msg long-path)))
   (assert-true "surface-message: still stays within the 80-char note limit even for a long path" (<= (count msg) 80)))
 
+;; ── BL-1653 item 2: surface-message :index-not-clean names the staged path ─
+
+(let [msg (master-main-reconcile-lib/surface-message {:behind 5 :reason :index-not-clean :paths ["seed.txt"]})]
+  (assert-true "surface-message: index-not-clean names the single staged path" (clojure.string/includes? msg "seed.txt"))
+  (assert-true "surface-message: index-not-clean mentions the behind count" (clojure.string/includes? msg "5"))
+  (assert-true "surface-message: stays within the 80-char note limit" (<= (count msg) 80)))
+
+(let [msg (master-main-reconcile-lib/surface-message {:behind 5 :reason :index-not-clean :paths ["a.txt" "b.txt" "c.txt"]})]
+  (assert-true "surface-message: multiple staged paths collapse to a count" (clojure.string/includes? msg "3 paths")))
+
+(let [msg (master-main-reconcile-lib/surface-message {:behind 5 :reason :index-not-clean :paths ["docs/briefings/.sent.json"]})]
+  (assert-true "surface-message: a path too long to fit falls back to the unnamed form rather than exceeding the limit"
+               (not (clojure.string/includes? msg "docs/briefings/.sent.json")))
+  (assert-true "surface-message: still stays within the 80-char note limit even for a long path" (<= (count msg) 80)))
+
+(assert= "merge-failure-reason: :index-not-clean maps to its own reason, never :conflict"
+         "index-not-clean" (master-main-reconcile-lib/merge-failure-reason :index-not-clean))
+(assert= "merge-failure-reason: :merge-abort-no-merge-head maps to its own reason, never :conflict"
+         "merge-abort-no-merge-head" (master-main-reconcile-lib/merge-failure-reason :merge-abort-no-merge-head))
+
+;; ── BL-1653 item 2: sweep! end to end - the surfaced note names the path,
+;; never the generic BL-1130 conflict text ─────────────────────────────────
+
+(let [daemon-dir (str (fs/create-temp-dir {:prefix "bl1653-sweep-"}))
+      surfaced (atom nil)
+      log-calls (atom [])]
+  (master-main-reconcile-lib/sweep!
+   daemon-dir 3
+   {:rev-counts! (fn [] {:ahead 0 :behind 1})
+    :dirty-paths! (fn [] [])
+    :merge-changed-paths! (fn [] [])
+    :merge! (fn [] {:success false :outcome :index-not-clean :paths ["seed.txt"]
+                     :error "staged path(s) block the absorb merge: seed.txt"})
+    :surface! (fn [msg] (reset! surfaced msg))
+    :escalate! (fn [_] nil)
+    :log! (fn [& parts] (swap! log-calls conj (vec parts)))})
+  (assert-true "sweep!: the surfaced note names the staged path, not the generic BL-1130 text"
+               (and @surfaced (clojure.string/includes? @surfaced "seed.txt")))
+  (assert-true "sweep!: the surfaced note does NOT read as a generic absorb-refused conflict"
+               (not (clojure.string/includes? @surfaced "BL-1130")))
+  (fs/delete-tree daemon-dir))
+
 (let [msg (master-main-reconcile-lib/surface-message {:behind 22 :reason :dirty :overlapping-paths #{}})]
   (assert-true "surface-message: no named paths still mentions the behind count" (clojure.string/includes? msg "22"))
   (assert-true "surface-message: stays within the 80-char note limit" (<= (count msg) 80)))
@@ -851,7 +893,8 @@
                :fallback! (fn [] {:success false})
                :log! (fn [label text] (swap! log-calls conj [label text]))})]
   (assert= "bl1653 item 2: a staged path refuses before ff!, reporting :index-not-clean"
-           {:success false :outcome :index-not-clean :paths ["docs/briefings/.sent.json"]} result)
+           {:success false :outcome :index-not-clean :paths ["docs/briefings/.sent.json"]
+            :error "staged path(s) block the absorb merge: docs/briefings/.sent.json"} result)
   (assert= "bl1653 item 2: ff! is never called when the index is not clean" 0 @ff-calls)
   (assert= "bl1653 item 2: merge! is never called when the index is not clean" 0 @merge-calls)
   (assert= "bl1653 item 2: the log names the staged path"
