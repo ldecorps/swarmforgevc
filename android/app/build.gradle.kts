@@ -31,6 +31,10 @@ android {
     compileOptions {
         sourceCompatibility = JavaVersion.VERSION_17
         targetCompatibility = JavaVersion.VERSION_17
+        // BL-1635: javac's own source-reading charset, independent of the
+        // Gradle/Kotlin daemon JVM args above - pinned so it never falls
+        // back to the platform default under an unset locale.
+        encoding = "UTF-8"
     }
     kotlinOptions {
         jvmTarget = "17"

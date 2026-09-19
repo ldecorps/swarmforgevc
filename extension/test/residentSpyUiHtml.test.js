@@ -468,3 +468,39 @@ test('BL-1153: Live Screen pane font size survives a full Mini App reload', asyn
   );
   reloaded.window.close();
 });
+
+// BL-775 invariant 3: refresh()'s own catch path (a rejected /resident-pane
+// fetch - a real network/connection failure, distinct from the
+// per-pane tmux-capture-failure reason the acceptance suite's JSDOM harness
+// already covers via a resolved payload). This path is untested by that
+// harness because its stub fetch always resolves ok, and it is invisible to
+// Stryker (the whole document is one opaque template-literal string to the
+// mutation tool) - so a hand-authored test is the only gate on it.
+test('BL-775: a rejected /resident-pane fetch shows the connection failure reason, not a bare status', async () => {
+  const dom = renderScreen(() => Promise.reject(new Error('network unreachable')));
+  await flush();
+  const { document } = dom.window;
+  assert.equal(document.getElementById('pane-offline').hidden, false);
+  assert.match(document.getElementById('pane-offline').textContent, /Live feed error: network unreachable/);
+  dom.window.close();
+});
+
+// BL-775 invariant 3: a non-ok HTTP response's own JSON error detail must
+// be read and shown, never discarded in favour of a bare status code.
+test('BL-775: a non-ok /resident-pane response shows the bridge JSON error detail, not a bare status code', async () => {
+  const dom = renderScreen(() =>
+    Promise.resolve({
+      ok: false,
+      status: 401,
+      statusText: 'Unauthorized',
+      json: () => Promise.resolve({ error: 'bad token' }),
+    })
+  );
+  await flush();
+  const { document } = dom.window;
+  assert.equal(document.getElementById('pane-offline').hidden, false);
+  const text = document.getElementById('pane-offline').textContent;
+  assert.match(text, /Live feed error: HTTP 401 \(bad token\)/);
+  assert.doesNotMatch(text, /^\s*401\s*$/, 'a bare numeric status code is not an acceptable reason');
+  dom.window.close();
+});
