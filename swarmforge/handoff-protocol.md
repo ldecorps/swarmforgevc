@@ -2998,10 +2998,11 @@ Responsibilities:
   dispatch note (`chase-sweep-lib/dispatch-trail-ticket-id` on its
   `message` header is non-nil), refuse (exit 1, `WORK_NOT_EVIDENCED: ...`,
   no side effects, the file stays in_process) unless one of:
-  - a commit on the role's current branch since the note's own
-    `dequeued_at`, whose subject's leading ticket id exactly matches, or
+  - a commit on the role's current branch since the note's own evidence
+    window start (`inbound-window-start`, BL-1645 below), whose subject's
+    leading ticket id exactly matches, or
   - a `git_handoff` in the role's own `outbox/` or `sent/` mailbox created
-    since `dequeued_at` whose `task:` header names the ticket, or
+    since that same window start whose `task:` header names the ticket, or
   - the invocation carried `--no-work "<reason>"`, in which case complete
     and stamp `no_work_reason` and `no_work_at` onto the completed file
     instead of requiring evidence.
@@ -3043,8 +3044,8 @@ Responsibilities:
   `FORWARD_NOT_SENT: <ticket-id> has no git_handoff naming it queued since
   dequeue.`, no side effects, the file stays in_process) unless one of:
   - a `git_handoff` in the role's own `outbox/` or `sent/` mailbox created
-    since the inbound's own `dequeued_at` whose `task:` header names the
-    same ticket, or
+    since the inbound's own evidence window start (`inbound-window-start`
+    below) whose `task:` header names the same ticket, or
   - the invocation carried `--no-op "<reason>"` (non-blank), in which case
     complete and stamp `no_op_reason` and `no_op_at` onto the completed
     file instead of requiring a forward.
@@ -3053,6 +3054,25 @@ Responsibilities:
   as the parcel, never the last hop (see "the received commit is the
   parcel" above) - a re-forwarded fixed bounce still needs its own forward
   queued after ITS OWN dequeue to pass this gate.
+  - **The evidence window opens at the inbound's own creation, not its
+    dequeue (BL-1645).** `forward_evidence_lib.bb`'s `inbound-window-start`
+    reads the inbound file's own `created_at`, else `enqueued_at`, else
+    `dequeued_at`, else the epoch - shared by all three gate call sites
+    (this task Work-note gate, this task forward gate, and the batch
+    forward gate below), so they cannot drift apart. A dispatch note IS
+    the request: any commit or handoff naming its ticket produced any time
+    after the dispatch existed counts, however its `dequeued_at` was later
+    stamped - a queue holding older in_process items, or a drift refusal
+    before the first successful dequeue, can legitimately stamp
+    `dequeued_at` well after the real work happened (BL-1614/BL-1637's
+    incidents: a seat blocked both ways - `WORK_NOT_EVIDENCED` on plain
+    completion, `WORK_ACTIVE_ON_MAIN` on `--no-work`, because its
+    dequeue-stamped window excluded work it had already sent). A
+    re-dispatch after a bounce is itself created AFTER the first pass's
+    own work, so `created_at` guards against riding stale evidence exactly
+    as well as `dequeued_at` did - no completion any gate previously
+    refused newly passes, only completions previously refused *despite*
+    real evidence now correctly pass.
   - **Seat-aware filing (BL-1637).** A seat's `from:` header always names
     its STAGE (BL-982/BL-983), so a delivered forward's sent copy is filed
     by `handoffd.bb`/`handoff_inject_lib.bb` under the seat named by the
@@ -3115,8 +3135,9 @@ Responsibilities:
   followed by one `- <ticket-id> (<file>)` line per unforwarded item, no
   side effects, the batch stays in_process) if any item is a forwarding
   `git_handoff` with no forward queued for its ticket since its own
-  dequeue and no `--no-op "<reason>"` given (Article 4.4's shape - one
-  refusal names every offender, never the first one found). With
+  evidence window start (`inbound-window-start`, BL-1645 above) and no
+  `--no-op "<reason>"` given (Article 4.4's shape - one refusal names
+  every offender, never the first one found). With
   `--no-op "<reason>"`, the reason applies to the whole batch and is
   stamped as `no_op_reason`/`no_op_at` on exactly the items that needed it.
 - Add or update `completed_at` on each file in the batch.
