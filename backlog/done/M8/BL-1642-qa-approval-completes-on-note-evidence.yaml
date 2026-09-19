@@ -205,3 +205,11 @@ notes: |
   and a note queued between the parcel's creation and its dequeue must
   count. The coder was noted to merge main before starting.
 assigned_to: coder
+
+abandoned_commits: [ddc16895ed]
+# BL-1241 land-step remedy: the tip ddc16895ed (QA's sync merge, evidence
+# commit 26301c455b) was entangled with unlanded siblings BL-1634, BL-1637,
+# BL-831 as ancestors. land_main_publish.sh --land built a tip-pure replay
+# off origin/main, land-replay/BL-1642-ddc16895ed, landed as 9efb783ab1 on
+# 2026-09-19. Recorded per the LAND_REPLAY item so task_scope_gate_lib.bb
+# and pre_qa_gate_lib.bb re-base their walk on origin/main. By QA.
