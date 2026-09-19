@@ -345,7 +345,14 @@
 - commit: bab1f918c8
   subject: "Hotfix: withoutEmbeddedSource scans comments, regex literals and all three quoting forms in one pass"
   detected_at: 2026-09-17
-  state: pending
+  state: stamp-open
   stamp_ticket: BL-1622
+  human_decision: null
+  decided_at: null
+- commit: daa34e6778
+  subject: "export a full PATH before bb/claude/tmux calls in cron-invoked bedtime scripts"
+  detected_at: 2026-09-18
+  state: pending
+  stamp_ticket: BL-1644
   human_decision: null
   decided_at: null

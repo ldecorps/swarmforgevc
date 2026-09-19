@@ -1,0 +1,182 @@
+id: BL-1643
+title: "BL-831 landed on 2026-09-19 with its Stryker mutation gate deferred - the perTest dry run over out/bridge/bubblePipelinePage.js timed out at the five-minute ceiling under load 11-14 with 21 concurrent workers, targeted hand coverage was substituted, and the ledger row now names a closed parcel: own the row, run the gate after the cooldown, discharge it with every survivor owned"
+milestone: M8
+type: defect
+severity: high
+# high (standing-red rule 2026-09-05, BL-1488/BL-1638 precedent): an
+# unowned hardening-lane row is a broken safety signal that throttles
+# intake to a cap of one for every ticket until owned; production is
+# unaffected (the gate never ran, nothing is known to survive, and CRAP,
+# DRY and the Gherkin mutation were green on the parcel).
+status: todo
+epic: code-quality-gates
+priority: 8
+direction: swarm-reported
+depends_on: []
+not_before: 2026-09-20
+# not_before is cooldown arithmetic, not a schedule: mutation_cooldown_gate.bb
+# answered skip-cooldown at mint (file_age_days 0.47, cooldown 1 day) for
+# extension/src/bridge/bubblePipelinePage.ts, last touched on main by
+# ba3522d794 (2026-09-18 14:47 local, landed cdeb8bdfdb 2026-09-19 00:39Z);
+# the window clears ~13:47Z on 2026-09-19 and a whole-day field cannot say
+# that, so 2026-09-20 is the first day the promotion gate (BL-1469) lets it
+# hold a slot without the run being refused. Recompute from the file's last
+# touch on main if it is touched again before then.
+mutation_cost: medium
+# medium: one Stryker perTest run over one compiled file (97 source lines),
+# which is the deliverable; the scoped config, the evidence, the ledger
+# discharge and the register row are bookkeeping around it.
+slice_size_envelope: low
+required_stages: [coder, cleaner, architect, hardender, documenter, qa]
+
+acceptance: specs/features/BL-1643-the-bl831-deferred-mutation-gate-is-run.feature
+
+required_wiring:
+  - 'backlog/hardening-debt-ledger.yaml::discharged_evidence: backlog/evidence/BL-1643::the ledger, which the register and the throttle read, carries this parcel evidence path only once the discharge verb ran'
+  - 'specs/pipeline/steps/bl1643Bl831DeferredMutationGateIsRunSteps.js::registerSteps::the handler lands in the same parcel as the feature (BL-233, BL-1371)'
+
+human_approval: approved
+approval_context: >
+  A new feature file is authored here, so it needs a tap. No choice is
+  posed and there are no ruling_options. Same shape as BL-1468, BL-1488
+  and BL-1638 (all approved) for one row dated 2026-09-18: run the
+  deferred Stryker gate over one compiled file, discharge the row with
+  evidence naming an owner for every survivor, remove the register row in
+  the same commit. FIRM: a run that cannot complete is recorded with the
+  ledger's attempt verb and the row stays outstanding and owned - never a
+  discharge on a timeout, never a raised ceiling, never a narrower mutate
+  scope than the file. FIRM: the hand-authored coverage the hardender
+  substituted stays; it is not the gate.
+
+invariants:
+  - "A ledger row leaves the outstanding debt only through a discharge that names the gate, the parcel and a committed result; a run that cannot complete is recorded as an attempt and leaves the row outstanding and owned."
+  - "The register row leaves in the same commit that discharges the ledger row, never earlier; the hardening lane holds no BL-1643 row only when the BL-831 row carries discharged_at."
+
+description: |
+  ## What is wrong
+
+  `backlog/hardening-debt-ledger.yaml` carries `parcel: BL-831, gate:
+  stryker-mutation, file_set: extension/out/bridge/bubblePipelinePage.js,
+  detected_at: 2026-09-18, attempted_at: 2026-09-18`, recorded by the
+  hardender with the defer verb: the perTest dry run (full-suite coverage
+  analysis, 114 mutants instrumented on the one file) never got past
+  "Starting initial test run" before the 300 s wrapper timeout
+  (16:14:23-16:19:23 local, concurrency 4) under load 11.2-14.3 on 20
+  cores with concurrent stryker/vitest workers from other roles'
+  worktrees - the same host shape as BL-775 the same day (BL-1638). The
+  hardender substituted targeted hardening and recorded it in the row's
+  reason: three hand-authored unit tests closing the CRAP>6 gaps a scoped
+  crapReport flagged, max CRAP 6.00 across the three touched files, BL-113
+  Gherkin mutation 4/4 killed on the blurb Scenario Outline, the BL-831
+  acceptance suite 8/8, the unit suite 10781/10782 (one unrelated flake
+  clean on re-run), DRY 0 clones (`backlog/evidence/BL-831-hardender-20260918.md`).
+  That is real coverage; it is not the gate, and the row says so.
+
+  BL-831 then landed (QA at cdeb8bdfdb, 2026-09-19 00:39Z) and closed
+  (22c3f6f111, 00:49Z). The register reader joins ledger rows to register
+  rows on (lane, file); the row's parcel is closed and no register row
+  names another owner, so `standing_red_register_cli.bb` reports the
+  hardening row for bubblePipelinePage.js as unowned and BL-1429's
+  throttle holds the cap at one (`effective_backlog_depth_cli.bb` = 1 at
+  mint). The coordinator's note 009593 (00:52Z) is that reading.
+
+  No scoped Stryker config for BL-831 exists on main or in the hardender
+  worktree; the row's gate is spelled `stryker-mutation` and the discharge
+  verb must name it exactly.
+
+  Cooldown at mint: `mutation_cooldown_gate.bb` answers skip-cooldown
+  (file_age_days 0.47, cooldown 1 day); the window clears ~13:47Z on
+  2026-09-19. Host at mint: load 13.8 with 21 vitest/stryker workers on 20
+  cores, 10 of 19 GB in use - the shape the hardender met, not a window to
+  run in.
+
+  ## What changes
+
+  - `extension/vitest.bl831.stryker.config.mjs` committed (BL-1488's and
+    BL-1638's shape): `--mutate` scoped to the one compiled file,
+    `perTest`, sibling links per the Verification rules, the standard
+    five-minute dry-run ceiling.
+  - One Stryker run over `extension/out/bridge/bubblePipelinePage.js` on a
+    quiet host, recorded as `backlog/evidence/BL-1643-BL-831-mutation.md`
+    with the summary block, load, duration, and zero survivors or one
+    entry per survivor with its reason: "killed in this pass", "accepted
+    equivalent" with the code-level proof, or "first-run debt, owned by
+    <ticket id>" (2026-09-10 rule) - never "next stage's work" with no
+    ticket.
+  - `hardening_debt_ledger_update.bb . --discharge BL-831 stryker-mutation
+    --evidence backlog/evidence/BL-1643-BL-831-mutation.md`; a run that
+    cannot complete is recorded with the attempt verb and the row stays
+    outstanding and owned (invariant 1).
+  - The `hardening` register row naming BL-1643 leaves in the discharge
+    commit (invariant 2; BL-1631's land step also retires it).
+
+  ## How (direction, not mandate)
+
+  - Run on a quiet host: `uptime` under 8 and no other vitest/stryker
+    workers (`pgrep -af 'vitest|stryker'`), never beside another lane
+    (engineering.prompt Verification: sequential). Concurrency 4 is the
+    starting point; the file is 97 source lines with 114 mutants, so a
+    quiet run is minutes. Compile first (`extension/out/` is gitignored).
+  - If the dry run times out at the ceiling, record the attempt with load
+    and duration and stop; do not raise the ceiling, do not narrow the
+    scope, do not `process.chdir()` under mutation.
+  - Documenter: nothing beyond the evidence file; no diagram.
+
+constraints: >
+  No production code changes. The run happens in the coder's worktree
+  against compiled out/** . Never a hand-edited mutation manifest. The
+  step handler lands with the feature (BL-233). Evidence named BL-1643-*.
+
+out_of_scope: |
+  - Any other ledger row (BL-775's is owned by BL-1638; all others are
+    discharged as of this mint).
+  - Any change to the cooldown window, the ledger verbs, the throttle, or
+    the five-minute dry-run ceiling (BL-1358).
+  - The host contention itself (BL-1618/BL-1619, BL-1636).
+  - The hand-authored coverage the hardender added (it stays as is).
+
+qa_e2e_procedure: >
+  (1) `bb swarmforge/scripts/mutation_cooldown_gate.bb . extension/src/bridge/bubblePipelinePage.ts`
+  reports the cooldown clear before the run. (2) The evidence file shows
+  the Stryker summary block for the compiled file, the host load and the
+  duration, and every survivor with an owner. (3)
+  `backlog/hardening-debt-ledger.yaml`: the BL-831 stryker-mutation row
+  carries `discharged_at` and the evidence path. (4)
+  `bb swarmforge/scripts/standing_red_register_cli.bb .`: no hardening
+  row for bubblePipelinePage.js, no unowned row. (5)
+  `bb swarmforge/scripts/effective_backlog_depth_cli.bb .` reports the
+  cap no longer throttled by the register. One run of each; never "run it
+  N times".
+
+source: |
+  Coordinator note to the specifier, priority 00, 2026-09-19T00:52Z
+  (inbound 00_20260919T005216Z_009593_from_coordinator): "unowned
+  hardening row BL-831 caps depth to 1; mint owner, BL-1638 shape". Ledger
+  row as quoted above; hardender pass evidence
+  backlog/evidence/BL-831-hardender-20260918.md (NONE; the deferral is the
+  ledger row and the substituted coverage is listed there). Specifier
+  adjudication:
+  backlog/evidence/BL-1643-specifier-adjudication-of-unowned-hardening-row-20260919.md.
+  Parents: BL-942 (the ledger), BL-1439 (the verbs), BL-1468, BL-1488 and
+  BL-1638 (the prior owners of this shape), BL-1631 (the land step retires
+  the row).
+
+notes: |
+  Minted 2026-09-19 by the specifier while completing the coordinator's
+  note, the same pass. AUTO-APPROVED under the 2026-09-17 operator hotfix
+  (severity defect, no ruling_options) - see
+  auto-approve-high-severity-defects-amendment-20260917.md. Owning the
+  row is what lifts the throttle: the register reads a ticket in paused or
+  active as an owner, so the cap returns the moment this ticket exists on
+  main, and the run itself waits for the cooldown and a quiet host. The
+  coordinator was sent paused-ready and told the cap may be restored.
+  Second row of this shape in two days (BL-1638 yesterday): the deferrals
+  are the host's, not the parcels' - BL-1636's /tmp census and the
+  in-suite fork contention (BL-1633) are the causes on file.
+  INVEST: Independent (the ledger, the verbs, the gate and the file
+  exist), Negotiable (concurrency and the quiet-host reading are
+  direction), Valuable (the throttle lifts now and the gate BL-831 owed is
+  run), Estimable (one config, one run, one discharge - one sitting once
+  the host is quiet), Small (two scenarios, two invariants), Testable (the
+  parcel's own committed ledger, evidence and register, read in
+  milliseconds).
