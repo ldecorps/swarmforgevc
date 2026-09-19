@@ -5,10 +5,14 @@
 ;; reimplementation of either.
 ;;
 ;; Usage: bl1428StandingRedRegisterCli.bb <mode> [args...]
-;;   report                              scenario 01: build a fixture root
+;;   report [YYYY-MM-DD]                 scenario 01: build a fixture root
 ;;                                       (allowlist + ledger + register +
 ;;                                       backlog with open/closed tickets)
-;;                                       and run the real CLI against it.
+;;                                       and run the real CLI against it -
+;;                                       an optional date (BL-1648) is
+;;                                       passed through as the real CLI's
+;;                                       own --now, pinning the fixture's
+;;                                       ages instead of the real clock.
 ;;   guard <ticket-shape>                scenario 02: stage a register row
 ;;                                       naming a ticket in the given shape
 ;;                                       and run the real guard.
@@ -53,32 +57,38 @@
 
 ;; ── scenario 01: the register CLI's own report ──────────────────────────
 
-(defn- run-report []
-  (sweep-fixtures!)
-  (let [root (str (fs/create-temp-dir {:prefix FIXTURE-PREFIX}))]
-    (try
-      (write! (fs/path root "backlog" "paused" "BL-9001-open-paused.yaml") "id: BL-9001\nstatus: todo\n")
-      (write! (fs/path root "backlog" "active" "BL-9002-open-active.yaml") "id: BL-9002\nstatus: todo\n")
-      (write! (fs/path root "backlog" "done" "M8" "BL-9003-closed.yaml") "id: BL-9003\nstatus: done\n")
-      (write! (fs/path root "swarmforge" "scripts" "property_suite_standing_allowlist.tsv")
-              (str "file\tdisposition\trationale\n"
-                   "test/bl9001Owned.property.test.js\tallowlist\towner BL-9001, see register\n"
-                   "test/bl9099Orphan.property.test.js\tallowlist\tno register row for this one\n"))
-      (write! (fs/path root "backlog" "standing-reds.tsv")
-              (str "# header\n"
-                   "property\textension/test/bl9001Owned.property.test.js\tBL-9001\t2026-09-01\towned by an open paused ticket\n"
-                   "unit\textension/test/bl9002.test.js\tBL-9002\t2026-09-01\towned by an open active ticket\n"
-                   "unit\textension/test/bl9003.test.js\tBL-9003\t2026-08-01\towned by a CLOSED ticket - unowned\n"))
-      (write! (fs/path root "backlog" "hardening-debt-ledger.yaml")
-              (str "- parcel: BL-9002\n"
-                   "  gate: mutation\n"
-                   "  file_set: a.ts\n"
-                   "  reason: test fixture\n"
-                   "  load: \"1\"\n"
-                   "  detected_at: 2026-09-01\n"))
-      (let [res (sh! root "bb" register-cli root)]
-        (println (:out res)))
-      (finally (fs/delete-tree root)))))
+(defn- run-report
+  ;; BL-1648: an optional pinned date, passed straight through to the real
+  ;; CLI's own --now seam - the fixture's ages are computed against IT,
+  ;; never the real clock, so scenario 01's assertion stays true forever
+  ;; instead of true on exactly one day.
+  ([] (run-report nil))
+  ([now]
+   (sweep-fixtures!)
+   (let [root (str (fs/create-temp-dir {:prefix FIXTURE-PREFIX}))]
+     (try
+       (write! (fs/path root "backlog" "paused" "BL-9001-open-paused.yaml") "id: BL-9001\nstatus: todo\n")
+       (write! (fs/path root "backlog" "active" "BL-9002-open-active.yaml") "id: BL-9002\nstatus: todo\n")
+       (write! (fs/path root "backlog" "done" "M8" "BL-9003-closed.yaml") "id: BL-9003\nstatus: done\n")
+       (write! (fs/path root "swarmforge" "scripts" "property_suite_standing_allowlist.tsv")
+               (str "file\tdisposition\trationale\n"
+                    "test/bl9001Owned.property.test.js\tallowlist\towner BL-9001, see register\n"
+                    "test/bl9099Orphan.property.test.js\tallowlist\tno register row for this one\n"))
+       (write! (fs/path root "backlog" "standing-reds.tsv")
+               (str "# header\n"
+                    "property\textension/test/bl9001Owned.property.test.js\tBL-9001\t2026-09-01\towned by an open paused ticket\n"
+                    "unit\textension/test/bl9002.test.js\tBL-9002\t2026-09-01\towned by an open active ticket\n"
+                    "unit\textension/test/bl9003.test.js\tBL-9003\t2026-08-01\towned by a CLOSED ticket - unowned\n"))
+       (write! (fs/path root "backlog" "hardening-debt-ledger.yaml")
+               (str "- parcel: BL-9002\n"
+                    "  gate: mutation\n"
+                    "  file_set: a.ts\n"
+                    "  reason: test fixture\n"
+                    "  load: \"1\"\n"
+                    "  detected_at: 2026-09-01\n"))
+       (let [res (apply sh! root "bb" register-cli root (if now ["--now" now] []))]
+         (println (:out res)))
+       (finally (fs/delete-tree root))))))
 
 ;; ── scenarios 02/03: the guard against a real repo ──────────────────────
 
@@ -159,7 +169,7 @@
 
 (let [[mode & rest-args] *command-line-args*]
   (case mode
-    "report" (run-report)
+    "report" (run-report (first rest-args))
     "guard" (run-guard (first rest-args))
     "guard-pre-existing" (run-guard-pre-existing)
     "live-register" (run-live-register)
