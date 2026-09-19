@@ -81,6 +81,20 @@
               (build-freshness-lib/on-deployed-surface? "extension/out/tools/start-bridge-headless.js"))
 (assert-false "on-deployed-surface?: bookkeeping paths are not the deployed surface"
               (build-freshness-lib/on-deployed-surface? "backlog/paused/BL-1.yaml"))
+;; BL-875: the extension/package-lock.json clause is an EXACT match (=), not
+;; a suffix/substring match - the whole point of BL-875's fix is that the
+;; STRAY ROOT package-lock.json (no extension/ prefix) must stay OFF the
+;; deployed surface (its invariant: "build_freshness_lib.bb keys its
+;; deployed-surface check on that exact path"). Every existing case above
+;; only tests the POSITIVE (extension/package-lock.json -> true); nothing
+;; tested that a near-miss on that same clause is excluded, so a mutant
+;; loosening `=` to `str/ends-with?` survived every test in this runner and
+;; BL-875's own acceptance suite (hand-mutated and confirmed, 2026-09-19,
+;; hardener pass - reverted before committing).
+(assert-false "on-deployed-surface?: the bare root package-lock.json (BL-875's own stray file) is NOT the deployed surface"
+              (build-freshness-lib/on-deployed-surface? "package-lock.json"))
+(assert-false "on-deployed-surface?: a package-lock.json under an unrelated directory is NOT the deployed surface"
+              (build-freshness-lib/on-deployed-surface? "some/other/dir/package-lock.json"))
 (assert-false "touches-deployed-surface?: no changed path on the surface -> false"
               (build-freshness-lib/touches-deployed-surface? ["backlog/paused/BL-1.yaml" "docs/index.md"]))
 (assert-true "touches-deployed-surface?: any ONE changed path on the surface -> true"
