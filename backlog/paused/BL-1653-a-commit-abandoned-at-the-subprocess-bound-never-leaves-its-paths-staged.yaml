@@ -1,0 +1,165 @@
+id: BL-1653
+title: "A commit abandoned at the daemon's 60-second subprocess bound never leaves its paths staged in the shared checkout, and the reconcile sweep names the staged paths that block its merge instead of logging 'conflict': on 2026-09-19 the briefing send-marker commit (06:14Z) and the specifier's BL-1644 commit (02:15Z) were both killed mid-hook, left docs/briefings/.sent.json and three mint paths staged, and main stopped reconciling with origin until a human unstaged them by hand"
+milestone: M8
+type: defect
+severity: high
+# high: a live fault in delivery machinery. `git merge` refuses whenever
+# the index differs from HEAD, so one abandoned commit stalls BL-891's
+# master-main reconcile for every later tick: local main diverges from
+# origin (ahead of the coordinator's bookkeeping, behind QA's lands),
+# main_sync_status_cli answers wait-dirty-clear, and every specifier
+# commit waits. Twice today; the second was the daemon's own writer.
+# Not critical: pathspec commits still land and QA's lands still push;
+# only the join stalls, and a hand `git restore --staged` clears it.
+status: todo
+epic: swarm-reliability
+priority: 8
+direction: swarm-reported
+depends_on: []
+# BL-891 (the reconcile sweep), BL-1475 (writers retry git's own lock),
+# BL-1525 (the subprocess bound destroys the child tree) are in
+# backlog/done. No open ticket touches commit_integrity_cli.bb or
+# briefing_email_lib.bb's marker commit.
+mutation_cost: low
+# low: Babashka (no mutation/CRAP/DRY wired, BL-472): one restore-on-abandon
+# step in two writers, one log line and one surfaced-note change in the
+# reconcile lib, bb runner cases, one feature and handler on a git fixture.
+slice_size_envelope: low
+required_stages: [coder, cleaner, architect, hardender, documenter, qa]
+
+acceptance: specs/features/BL-1653-a-commit-abandoned-at-the-subprocess-bound-never-leaves-its-paths-staged.feature
+
+required_wiring:
+  - 'specs/pipeline/steps/bl1653AbandonedCommitUnstagesSteps.js::registerSteps::the handler lands in the same parcel as the feature (BL-233, BL-1371)'
+
+human_approval: approved
+approval_context: >
+  A new feature file is authored here, so it would ordinarily need a tap;
+  it is minted approved under the 2026-09-17 operator hotfix (severity
+  defect, no choice posed, no ruling_options). FIRM: the subprocess bound
+  and the reconcile's refusal to merge over a dirty index stay - a killed
+  commit must not be retried blindly, and the sweep must never merge over
+  someone's staged work; what changes is that an abandoned commit leaves
+  the index as it found it, and that the sweep says which staged paths
+  block it. FIRM: worktree content is never touched by the unstage - a
+  path returns to modified, never to HEAD.
+
+invariants:
+  - "A writer that stages paths and then fails or is killed before its commit lands leaves the index exactly as it found it; the paths' worktree content is untouched."
+  - "When the reconcile sweep's merge refuses because the index differs from HEAD, its log line and its surfaced note name every staged path; 'conflict' is never the whole message."
+
+description: |
+  ## What is wrong
+
+  `daemon_cycle_guard_lib/sh!` bounds every daemon-side subprocess at
+  60 000 ms and destroy-trees the child on the bound (BL-1525). Two
+  writers stage then commit through it: `commit_integrity_cli.bb`
+  (`git commit -- <paths>` after the caller's `git add`) and
+  `briefing_email_lib.bb` `commit-sent-marker!` (`git add` then `git
+  commit` of `docs/briefings/.sent.json`). A commit whose pre-commit
+  guard chain runs past the bound - `run_commit_guards.sh` took 89 s at
+  02:16Z and about 100 s at 02:15Z under load 13-19 today - is killed
+  mid-hook: nothing lands, and the `git add` stays.
+
+  `git merge` aborts whenever the index differs from HEAD ("to avoid
+  recording unrelated changes in the merge commit"), so BL-891's
+  master-main reconcile sweep then fails every tick with
+  `merge-abort-failed fatal: There is no merge to abort (MERGE_HEAD
+  missing)` followed by `master-main-reconcile conflict` (no path named)
+  and the surfaced `BL-1130: absorb refused - rematch onto origin/main`.
+  `main_sync_status_cli.bb` answers `wait-dirty-clear` and the specifier
+  obeys it. Today: 02:15Z, the specifier's BL-1644 commit killed at the
+  bound left three mint paths staged until the specifier unstaged them
+  (02:2x Z); 06:14Z, the send-marker commit (the 2026-09-17 marker, whose
+  commit had already been refused on 09-17) left `.sent.json` staged and
+  the sweep refused at 06:13:06Z; the specifier unstaged it at 06:2x Z
+  (worktree content kept). Meanwhile local main sat ahead 2 (the
+  coordinator's close and topic record for BL-1642) and behind 1 (QA's
+  land 9efb783ab1). No log line named the staged path either time.
+
+  ## What is wanted
+
+  1. `commit_integrity_cli.bb` and `commit-sent-marker!`: when the commit
+     subprocess is abandoned at the bound, fails, or is refused, run
+     `git restore --staged -- <the paths this call staged>` before
+     returning, and say so in the result (`:index-restored [paths]`). A
+     caller that staged nothing restores nothing.
+  2. `master_main_reconcile_lib.bb`: before the absorb merge, read `git
+     diff --cached --name-only`; if non-empty, do not attempt the merge,
+     log `master-main-reconcile index-not-clean <paths>` and surface the
+     same paths in the BL-1130 note, so the coordinator's step 0 names
+     what to clear. The existing `conflict` outcome keeps its meaning for
+     a real merge conflict.
+
+  ## How (direction, not mandate)
+
+  - The restore is one call in the failure branch of each writer; keep
+    the path list the writer itself built, never a `git restore --staged
+    .`. Runner cases: killed at the bound, refused by a guard, refused by
+    the lock - each leaves the index as found.
+  - The reconcile read is one `git diff --cached --name-only` in the lib's
+    existing pre-merge checks (BL-1387's orphaned-merge check is the
+    sibling); the note text is composed by `surface-draft-lines`.
+  - Docs: `swarmforge/handoff-protocol.md`'s reconcile paragraph and
+    `coordinator.prompt` step 0's `wait-dirty-clear` row (the specifier
+    lands the prompt line) say the note now names the paths.
+
+constraints: >
+  Never a raw commit outside the CLI; never `--no-verify`. Fixtures are
+  `git init` roots under mkdtemp, proven by `rev-parse --git-common-dir`
+  before any mutating git command (BL-1390); the bound is simulated by
+  an injected sh! that returns exit 124, never a real 60 s wait. The step
+  handler lands in the same commit as the feature (BL-233).
+
+out_of_scope: |
+  - Raising the bound or speeding the guard chain (the chain's own pole,
+    check_handler_module_graph.sh over 947 handlers, is BL-1633's family).
+  - The coordinator's own bookkeeping commits (pathspec-scoped, they do
+    not stage first).
+
+qa_e2e_procedure: >
+  (1) Unit: the bb runners covering commit_integrity_cli.bb,
+  briefing_email_lib.bb and master_main_reconcile_lib.bb green. (2)
+  Acceptance: the BL-1653 feature green through the runner, once. (3) On
+  a scratch clone: stage one file, run the reconcile lib's pre-merge check
+  - the log names the path; then run the CLI with an injected sh! that
+  answers exit 124 - the index is clean afterwards and the worktree
+  change survives. (4) Live, after land: the next bound-killed commit in
+  `handoffd.log` is followed by an `index-restored` line, and
+  `main_sync_status_cli.bb` never reads wait-dirty-clear on a leftover
+  stage. Never "run it N times".
+
+source: |
+  Found by the specifier while retiring BL-1642's interim on QA's note
+  (inbound 50_20260919T061306Z_002976_from_QA): `main_sync_status_cli.bb`
+  answered wait-dirty-clear with `docs/briefings/.sent.json` staged and
+  no other dirty overlap; `handoffd.log` 06:13:04-06:13:08Z
+  (`drift ahead=1 behind=1`, `merge-abort-failed ... MERGE_HEAD missing`,
+  `conflict`, `BL-1130: absorb refused`); `.git/index` mtime 06:14:29Z;
+  `briefing_email_lib.bb` lines 114-127 (`commit-sent-marker!`: scoped
+  `git add` + `git commit` through `daemon-cycle-guard-lib/sh!`). The
+  02:15Z instance: the specifier's own BL-1644 commit,
+  `commit_integrity_cli: FAILED (commit-failed) ... bounded-wait timeout
+  after 60000ms: git -C . commit`, three paths left staged. Parents:
+  BL-891, BL-1475, BL-1525, BL-1130.
+
+notes: |
+  Minted 2026-09-19 by the specifier while completing QA's note, the same
+  pass. AUTO-APPROVED under the 2026-09-17 operator hotfix (severity
+  defect, no ruling_options) - see
+  auto-approve-high-severity-defects-amendment-20260917.md.
+
+  Interim applied by the specifier at 06:2x Z, reported to the
+  coordinator: `git restore --staged -- docs/briefings/.sent.json` on the
+  shared checkout (worktree content untouched; the email sweep re-adds
+  it on its next tick). Anyone who meets wait-dirty-clear with
+  `surfaced: conflict` checks `git diff --cached --name-only` first: a
+  staged path with no incoming overlap is this shape, and unstaging it
+  (never resetting the worktree) frees the sweep.
+
+  required_wiring names the step handler only: the two writers and the
+  sweep exist before the fix and an anchor on the new result key would
+  be satisfied by the parcel's own diff (BL-1235); scenario 01 runs the
+  real CLI with an injected bound on a fixture, which is the gate.
+  IR-DRY at mint: outline 01 and scenario 02 share the writer steps by
+  design (one writer, landed versus not landed); reviewed and kept.
