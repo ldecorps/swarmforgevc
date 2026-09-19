@@ -1,0 +1,168 @@
+id: BL-1651
+title: "The property lane dies on the V8 per-worker heap cap in the middle of unrelated files (FATAL ERROR JavaScript heap out of memory: bl1371, bl1218, bl1495 131 cases deep, bl1297 - five crashes across five parcels on 2026-09-18/19, one on a single-file run, kernel oom_kill 0), so every role skips it 'per run-once' and no parcel's property lane is verified: measure each file's heap, gate a per-file ceiling deterministically, size the cap to the host, and own the offenders"
+milestone: M8
+type: defect
+severity: high
+# high: a broken safety signal on every parcel - the property lane
+# crashed on five parcels' coder passes in two days (BL-1636 four
+# attempts, BL-1639, BL-1645, BL-1646, BL-1649) and each role recorded
+# "not re-attempted per the run-once directive", so the lane's 424 files
+# have not completed on a parcel tree since at least 2026-09-18. The host
+# is not out of memory (/proc/vmstat oom_kill 0 since boot 2026-09-16;
+# 14 GB available at mint): the cap is V8's, per worker, and one file
+# reaches it alone.
+status: todo
+epic: code-quality-gates
+priority: 8
+direction: swarm-reported
+depends_on: []
+# BL-871 (fork pool + per-worker heap cap), BL-422 (the unit lane's
+# contention budget), BL-1358 (mutant ceiling) are in backlog/done.
+# BL-1619 (paused) measures the property lane's DURATION per file; this
+# measures its HEAP per file - a sibling instrument, different axis.
+# BL-1636 (done) already reaps the /tmp roots that were one growth source.
+mutation_cost: medium
+# medium: TypeScript/JS under Stryker for the budget module and the new
+# per-file heap gate; the census file, the vitest config line, one
+# feature and handler; offender fixes are owned by name, not done here.
+slice_size_envelope: medium
+required_stages: [coder, cleaner, architect, hardender, documenter, qa]
+
+acceptance: specs/features/BL-1651-the-property-lane-crashes-on-the-per-worker-heap-cap-mid-file.feature
+
+required_wiring:
+  - 'specs/pipeline/steps/bl1651PropertyLaneHeapCeilingSteps.js::registerSteps::the handler lands in the same parcel as the feature (BL-233, BL-1371)'
+
+human_approval: approved
+approval_context: >
+  A new feature file is authored here, so it would ordinarily need a tap;
+  it is minted approved under the 2026-09-17 operator hotfix (severity
+  defect, no choice posed, no ruling_options). FIRM: the lane keeps its
+  fork pool and per-worker cap posture (BL-871) - a crash is turned into a
+  named, deterministic per-file failure, never into an unbounded heap.
+  FIRM: measurement is ONE run of the lane with heap logging, committed as
+  a census; the ticket never asks anyone to run the lane N times. FIRM:
+  offenders above the ceiling are fixed here only when the fix is a
+  retained-reference release of a few lines; anything larger is owned by
+  a named follow-up ticket before this closes.
+
+invariants:
+  - "A property file that exceeds its heap ceiling fails as that file, by name, with its peak heap in the report; it never takes the worker or the lane down with it."
+  - "The per-worker heap cap the lane spawns with is derived from this host's memory and the resolved fork count so that forks times cap never exceeds the host's available memory at spawn, and the derivation is printed once per run."
+
+description: |
+  ## What is wrong
+
+  `npm run test:properties` runs `vitest.properties.config.mjs`: 424
+  `*.property.test.js` files, `pool: forks`, `maxForks: WORKER_POOL_SIZE`
+  (BL-871's static ceiling; a 20-core host resolved forks=12), each fork
+  spawned with `--max-old-space-size=PER_WORKER_HEAP_MB` (the same cap
+  the unit lane uses), isolate per file, `testTimeout` 20 s. When a
+  worker's V8 heap reaches the cap Node aborts the fork with `FATAL ERROR:
+  ... JavaScript heap out of memory` and vitest reports the whole run as
+  crashed - no file name in the summary, no heap number, the lane red for
+  the parcel.
+
+  Recorded on parcel trees (coder evidence):
+  - BL-1636 (2026-09-18): four attempts - the full lane twice, a
+    `--poolOptions.forks.maxForks=2` retry, and a single-file-filtered
+    attempt - each dying on a different file
+    (`bl1371StepDiscoveryInvariants`, `bl1218RemoteControlConfigInvariants`)
+    before reaching the parcel's own property file.
+  - BL-1639 (2026-09-19): at `bl1495BaiGatewayInvariants.property.test.js`,
+    131 tests deep.
+  - BL-1645 (2026-09-19): after `bl1297MergeOwnPathsInvariants.property.test.js`.
+  - BL-1646 and BL-1649 (2026-09-19, coder@2): the same message.
+  Every role then wrote "not re-attempted per the 2026-09-17 run-once
+  directive", correctly, and forwarded. The host is not the cause:
+  `/proc/vmstat oom_kill` reads 0 since boot on 2026-09-16, 14 GB were
+  available at mint, and the single-file attempt died too - one property
+  file, running its generated cases, can fill a worker's cap on its own
+  (`MaxListenersExceededWarning: 11 exit listeners` on runs of the
+  acceptance CLI hints at retained handles across cases).
+
+  ## What is wanted
+
+  1. One measured run of the lane with per-file heap logging (vitest
+     `--logHeapUsage`, or an equivalent reporter) committed as
+     `extension/test/property-lane-heap-census.txt`: file, peak heap MB,
+     cases run; plus the cap and fork count the run spawned with, printed
+     once at the top.
+  2. A per-file heap ceiling gate: a property file whose peak heap exceeds
+     `PROPERTY_LANE_FILE_HEAP_CEILING_MB` (a named constant below the
+     worker cap, with headroom) fails as that file with its peak in the
+     message - the crash becomes a named, deterministic red on the file,
+     never a dead worker.
+  3. The per-worker cap derived from the host: forks x cap <= available
+     memory at spawn (headroom for the other lanes a busy host runs), the
+     derivation printed once per run; on this host that is well above
+     whatever cap the crashes hit.
+  4. The census's top offenders: fixed in-parcel when the fix is a
+     released reference of a few lines (a cleanup the file forgot, a
+     module-level array that grows per case); otherwise owned by name in
+     a follow-up ticket minted by the specifier on the coder's note before
+     this closes - never left as "hardener's next work" (2026-09-10 rule).
+
+  ## How (direction, not mandate)
+
+  - The cap and fork resolution live in
+    `extension/test/helpers/propertyLaneContentionBudget.js` and the
+    unit lane's sibling module (BL-422/BL-871); keep one derivation, read
+    by both configs.
+  - The ceiling gate is cheapest as a vitest `afterEach`/`afterAll` hook
+    reading `process.memoryUsage().heapUsed` per file in a shared setup
+    file, or vitest's own `logHeapUsage` reporter output parsed by a
+    guard test; either way the failing file is named.
+  - Measurement runs on a quiet host (`uptime` load under 8, no other
+    vitest/stryker workers), once; record the load beside the census.
+
+constraints: >
+  No property file's assertions change here except to release a retained
+  reference. The fork pool ceiling (BL-871) and the run-once directive
+  stand. The census is committed, never hand-edited. The step handler
+  lands in the same commit as the feature (BL-233). The feature's own
+  scenarios never run the full lane - they drive the gate on a fixture
+  file that allocates past a tiny ceiling.
+
+out_of_scope: |
+  - Per-file DURATION measurement (BL-1619).
+  - The chase sweep respawning a busy role while its lane runs (BL-1652).
+  - Cross-role lane scheduling (roles run lanes concurrently on one host;
+    BL-1618 encodes the lane set per role).
+
+qa_e2e_procedure: >
+  (1) Unit: the budget module's tests green. (2) Acceptance: the BL-1651
+  feature green through the runner, once. (3) On a quiet host, ONCE:
+  `npm run test:properties` completes (no FATAL ERROR), its first lines
+  print the derived cap and fork count, and the committed census matches
+  the run's per-file peaks within noise. (4) Every census entry above the
+  ceiling names an owner: fixed here or a BL id. Never "run it N times".
+
+source: |
+  coder note to the specifier (coder@2 by its counter), priority 10,
+  2026-09-19T05:05:22Z (inbound 10_20260919T050522Z_000026_from_coder):
+  "property lane OOM'd 4x today (BL-1636/39/45/46/49), unrelated files
+  each time". Coder evidence, verbatim (BL-1636-coder-20260918.md): "each
+  time on a different, unrelated file (`bl1371StepDiscoveryInvariants`,
+  then `bl1218RemoteControlConfigInvariants`) before reaching this
+  ticket's own property file"; (BL-1639-coder-20260919.md): "crashed with
+  `FATAL ERROR: ... JavaScript heap out of memory` at
+  `test/bl1495BaiGatewayInvariants.property.test.js`, 131 tests deep".
+  Parents: BL-871, BL-422, BL-1619.
+
+notes: |
+  Minted 2026-09-19 by the specifier while completing the coder's note,
+  the same pass. AUTO-APPROVED under the 2026-09-17 operator hotfix
+  (severity defect, no ruling_options) - see
+  auto-approve-high-severity-defects-amendment-20260917.md.
+
+  Read at mint: `/proc/vmstat` oom_kill 0; `free -m` 14313 MB available,
+  swap 1598/5120 MB used; load 19; 17 node/vitest processes at 1.8 GB
+  total. So the kernel never killed anything - the earlier reading that
+  QA's process died of memory pressure is wrong; BL-1652 owns what killed
+  it. required_wiring names the step handler only (BL-1235): scenario 01
+  drives the real gate on a fixture file, which is the gate.
+  IR-DRY at mint: scenarios 01/02 differ only in whether the fixture
+  exceeds the ceiling, by design; reviewed and kept.
+
+assigned_to: coder
