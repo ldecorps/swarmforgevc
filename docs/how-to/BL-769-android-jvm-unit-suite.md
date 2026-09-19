@@ -51,3 +51,24 @@ environmentally unsuitable (alongside the VS Code API and the webview) and
 stating where device behavior is verified instead is a separate,
 specifier-owned deliverable (see BL-769's ticket `approval_context`) — this
 document covers the seam itself, not that policy text.
+
+## The source charset must be pinned, not inherited (BL-1635)
+
+`org.gradle.jvmargs=-Dfile.encoding=UTF-8` in `gradle.properties` pins only
+the Gradle daemon's own JVM. The Kotlin compile daemon is a separate JVM
+and, unset, inherits whatever locale the process that first started it
+happened to have — under an automated caller with no `LANG` at all (the
+acceptance handlers' Gradle lib spawns with only `PATH`/`HOME`), that
+daemon's default charset follows JDK 17's locale-derived `file.encoding`
+(JEP 400's UTF-8-by-default only lands in JDK 18+), so a test source set
+recompiled by such a daemon can silently decode a UTF-8 literal (e.g. an
+em-dash) wrong while `main` classes compiled earlier under a different
+daemon invocation stay correct — two compiles, two charsets, one
+repository, and a `ComparisonFailure` with no code change. Three lines now
+pin every JVM this build touches regardless of caller environment:
+`kotlin.daemon.jvmargs=-Dfile.encoding=UTF-8` and
+`systemProp.file.encoding=UTF-8` in `gradle.properties`, plus
+`compileOptions { encoding = "UTF-8" }` in `app/build.gradle.kts` for
+`javac`'s own source-reading charset. If `:app:testDebugUnitTest` ever
+shows a string-literal mismatch with no corresponding source change,
+suspect the calling environment's locale before the test.
