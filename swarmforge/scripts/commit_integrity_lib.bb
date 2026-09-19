@@ -432,11 +432,24 @@
         (if-not lock-result
           {:success false :reason :lock-timeout :attempts 0}
           (try
-            (let [fail-restoring (fn [reason attempt attempt-snapshot extra]
+            (let [;; BL-1653 item 1: :index-restored names the paths this
+                  ;; call itself staged and then restored - including on a
+                  ;; bound-timeout (exit 124) commit, which reaches here as
+                  ;; an ordinary :commit-failed - so a caller can log/report
+                  ;; restoration the same way commit-sent-marker! now does,
+                  ;; never leaving it implicit in a bare :success false. Per
+                  ;; the ticket's own words, "a caller that staged nothing
+                  ;; restores nothing": `staged?` is false only for
+                  ;; :add-failed, where add-fn! itself never staged
+                  ;; anything for this attempt to have to undo.
+                  fail-restoring (fn [reason attempt attempt-snapshot extra staged?]
                                     (let [restored? (restore-index-fn! project-root paths attempt-snapshot)]
                                       (merge {:success false :reason reason :attempts attempt}
                                              extra
-                                             (when-not restored? {:index-left-dirty true}))))]
+                                             (cond
+                                               (not restored?) {:index-left-dirty true}
+                                               staged? {:index-restored (vec paths)}
+                                               :else {}))))]
               ;; Two distinct snapshot points, not one shared "before the
               ;; loop" snapshot - they answer different questions:
               ;;  - pre-add-snapshot (before THIS attempt's own add-fn!):
@@ -467,7 +480,7 @@
                         (do (restore-index-fn! project-root paths pre-add-snapshot)
                             (cond-> {:success true :reason :landed-elsewhere :sha sha :attempts attempt}
                               reaped-lock (assoc :reaped-lock reaped-lock)))
-                        (fail-restoring :add-failed attempt pre-add-snapshot (when (:err add-res) {:stderr (:err add-res)}))))
+                        (fail-restoring :add-failed attempt pre-add-snapshot (when (:err add-res) {:stderr (:err add-res)}) false)))
                     (let [commit-res (commit-fn! project-root message paths)]
                       (if-not (zero? (:exit commit-res))
                         (if (and (lock-refusal? commit-res) (< attempt (inc max-retries)))
@@ -476,7 +489,7 @@
                             (do (restore-index-fn! project-root paths pre-add-snapshot)
                                 (cond-> {:success true :reason :landed-elsewhere :sha sha :attempts attempt}
                                   reaped-lock (assoc :reaped-lock reaped-lock)))
-                            (fail-restoring :commit-failed attempt pre-add-snapshot (when (:err commit-res) {:stderr (:err commit-res)}))))
+                            (fail-restoring :commit-failed attempt pre-add-snapshot (when (:err commit-res) {:stderr (:err commit-res)}) true)))
                         (let [post-commit-snapshot (snapshot-index-fn project-root paths)
                               sha (rev-parse-fn project-root)
                               mismatched (vec (keep (fn [[path expected-content]]
@@ -489,5 +502,5 @@
                             (if (< attempt (inc max-retries))
                               (do (retry-delay-fn! attempt)
                                   (recur (inc attempt)))
-                              (fail-restoring :verify-mismatch attempt post-commit-snapshot {:mismatched-paths mismatched}))))))))))
+                              (fail-restoring :verify-mismatch attempt post-commit-snapshot {:mismatched-paths mismatched} true))))))))))
             (finally (unlock-fn! lock-dir))))))))

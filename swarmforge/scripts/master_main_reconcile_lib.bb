@@ -404,6 +404,52 @@
    (boolean (or started-this-tick?
                 (owns-merge-head? owner-record merge-head-sha)))))
 
+;; ── BL-1653 item 3: an abort that finds NO MERGE_HEAD released ownership ──
+;; git's own message on `git merge --abort` with nothing to abort is "fatal:
+;; There is no merge to abort (MERGE_HEAD missing)." Before this ticket that
+;; read exactly like every other failed abort - ownership retained, "next
+;; tick aborts by ownership" - but there is no MERGE_HEAD for a later tick to
+;; find either, so every tick repeated the same abort-failed log line
+;; forever and the owner record never cleared on its own (coordinator note
+;; 009765, 2026-09-19).
+(def ^:private no-merge-head-pattern #"(?i)no merge to abort")
+
+(defn abort-found-no-merge-head?
+  "True when `abort-error` (git's own stderr from a failed `git merge
+   --abort`) says there was no MERGE_HEAD to abort in the first place -
+   never inferred from a blank/unreadable error, which stays a genuine
+   abort-failed (ownership retained, ordinary posture)."
+  [abort-error]
+  (boolean (and (seq (str abort-error)) (re-find no-merge-head-pattern (str abort-error)))))
+
+;; ── BL-1653 item 2: the index must be clean BEFORE the absorb merge is
+;; even attempted - `git merge` refuses unconditionally whenever the index
+;; differs from HEAD (a writer's own staged-but-uncommitted paths), whether
+;; or not those paths overlap what the incoming merge would itself change
+;; (BL-919's own overlap-only gate one door up answers a DIFFERENT
+;; question: whether an unstaged/untracked dirty path collides with the
+;; merge's content - a STAGED path blocks unconditionally, since git will
+;; not fold a stranger's staged change into the merge commit). On
+;; 2026-09-19 a writer's commit killed at the daemon's 60s subprocess bound
+;; left `docs/briefings/.sent.json` (and, earlier, three mint paths)
+;; staged with no overlap to the incoming merge at all, and the sweep's own
+;; `merge-abort-failed fatal: There is no merge to abort (MERGE_HEAD
+;; missing)` never named the real cause. ──────────────────────────────────
+
+(defn staged-index-block-reason
+  "Pure: `staged-paths` (repo-relative, `git diff --cached --name-only`) ->
+   nil when empty (nothing staged, the merge may proceed) or
+   {:outcome :index-not-clean :paths [sorted...]} otherwise. Never asks
+   whether the staged paths overlap the incoming merge - any staged path at
+   all blocks, per git's own unconditional refusal."
+  [staged-paths]
+  (let [paths (vec (sort (remove str/blank? (map str (or staged-paths [])))))]
+    (when (seq paths)
+      {:outcome :index-not-clean :paths paths})))
+
+(defn index-not-clean-log-text [paths]
+  (str "staged path(s) block the absorb merge: " (str/join "," paths)))
+
 (defn open-merge-branch
   "BL-1387: the ONE mapping from an open merge to a plan branch, shared by
    every plan that used to test `merge-head-present?` directly, so the three
@@ -1341,47 +1387,68 @@
    working. On a FAILED abort this returns
    {:success false :outcome :merge-abort-failed ...} WITHOUT calling
    fallback!, because a rematch/reset on top of a still-open merge is a
-   second hazard on top of the first."
-  [{:keys [ff! merge! abort! fallback! record-owner! clear-owner! log!]}]
+   second hazard on top of the first. BL-1653 item 3: when the abort's OWN
+   error says there was no MERGE_HEAD to abort (`abort-found-no-merge-
+   head?`), ownership is released at once (`clear-owner!` runs) instead of
+   retained - :outcome :merge-abort-no-merge-head, never the generic
+   :merge-abort-failed, since there is no MERGE_HEAD for a later tick to
+   finish by ownership either.
+
+   BL-1653 item 2: `:staged-paths!` (fn [] -> coll of path strings) is an
+   OPTIONAL adapter, `git diff --cached --name-only` in production. When it
+   returns any path, NOTHING below runs (not even ff!) - the merge is
+   refused before it is attempted, `:outcome :index-not-clean :paths
+   [...]`, logged via `index-not-clean-log-text`. Absent (nil), every
+   pre-existing call site and test keeps its exact behaviour."
+  [{:keys [ff! merge! abort! fallback! record-owner! clear-owner! log! staged-paths!]}]
   (let [log (or log! (fn [_ _] nil))
         ;; A nil return means no-opinion, which for a pre-BL-1386 adapter
         ;; is success - it is what the discarded result always was.
         succeeded? (fn [r] (or (nil? r) (not (false? (:success r)))))
-        ff-result (ff!)]
-    (if (:success ff-result)
-      {:success true :outcome :ff}
-      (do
-        (when record-owner! (record-owner!))
-        (let [merge-result (merge!)]
-          (if (:success merge-result)
-            (do (when clear-owner! (clear-owner!))
-                {:success true :outcome :merged})
-            ;; The merge failed. Say WHY, in git's words, before doing
-            ;; anything else - on 2026-09-04 this text existed and was
-            ;; thrown away every tick, which is why the cause stayed
-            ;; unknowable across three orphans.
-            (let [merge-error (str/trim (str (:error merge-result)))
-                  conflict? (boolean (:conflict? merge-result))
-                  abort-result (abort!)]
-              (if (succeeded? abort-result)
-                (do
-                  (when clear-owner! (clear-owner!))
-                  ;; BL-1214's line is kept for the case it was written for -
-                  ;; a merge git actually reported as conflicting - and the
-                  ;; observed outcome is used otherwise, so the log stops
-                  ;; asserting `conflict` as a label for every failure.
-                  (log (if conflict? "conflict" "merge-failed") merge-error)
-                  (fallback!))
-                ;; The abort did NOT take. MERGE_HEAD is still ours and still
-                ;; open. Leave the ownership record standing so the next tick
-                ;; can finish it by ownership, and do NOT fall through to
-                ;; fallback! as though the tree were clean.
-                (let [abort-error (str/trim (str (:error abort-result)))]
-                  (log "merge-abort-failed" abort-error)
-                  {:success false
-                   :outcome :merge-abort-failed
-                   :merge-error merge-error
-                   :abort-error abort-error})))))))))
+        staged-block (when staged-paths! (staged-index-block-reason (staged-paths!)))]
+    (if staged-block
+      (do (log "index-not-clean" (index-not-clean-log-text (:paths staged-block)))
+          {:success false :outcome :index-not-clean :paths (:paths staged-block)})
+      (let [ff-result (ff!)]
+        (if (:success ff-result)
+          {:success true :outcome :ff}
+          (do
+            (when record-owner! (record-owner!))
+            (let [merge-result (merge!)]
+              (if (:success merge-result)
+                (do (when clear-owner! (clear-owner!))
+                    {:success true :outcome :merged})
+                ;; The merge failed. Say WHY, in git's words, before doing
+                ;; anything else - on 2026-09-04 this text existed and was
+                ;; thrown away every tick, which is why the cause stayed
+                ;; unknowable across three orphans.
+                (let [merge-error (str/trim (str (:error merge-result)))
+                      conflict? (boolean (:conflict? merge-result))
+                      abort-result (abort!)]
+                  (if (succeeded? abort-result)
+                    (do
+                      (when clear-owner! (clear-owner!))
+                      ;; BL-1214's line is kept for the case it was written for -
+                      ;; a merge git actually reported as conflicting - and the
+                      ;; observed outcome is used otherwise, so the log stops
+                      ;; asserting `conflict` as a label for every failure.
+                      (log (if conflict? "conflict" "merge-failed") merge-error)
+                      (fallback!))
+                    ;; The abort did NOT take. BL-1653 item 3: when git's own
+                    ;; abort error says there was no MERGE_HEAD to abort,
+                    ;; there is nothing left open to protect or finish by
+                    ;; ownership later - release it now rather than retaining
+                    ;; it forever. Any OTHER failed abort still retains
+                    ;; ownership: MERGE_HEAD is still ours and still open, and
+                    ;; the next tick finishes it by ownership.
+                    (let [abort-error (str/trim (str (:error abort-result)))
+                          no-merge-head? (abort-found-no-merge-head? abort-error)]
+                      (log (if no-merge-head? "merge-abort-no-merge-head" "merge-abort-failed") abort-error)
+                      (when no-merge-head? (when clear-owner! (clear-owner!)))
+                      {:success false
+                       :outcome (if no-merge-head? :merge-abort-no-merge-head :merge-abort-failed)
+                       :merge-error merge-error
+                       :abort-error abort-error})))))))))))
 
 ;; Self-healing across transitions, mirroring push_sweep_lib.bb's own
 ;; sweep!: reaching :up-to-date or a successful :should-reconcile always

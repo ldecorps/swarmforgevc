@@ -219,7 +219,11 @@
               {:project-root dir :paths ["notes.txt"] :message "m"
                :add-fn! (fn [& _] {:exit 0})
                :commit-fn! (fn [& _] {:exit 1})})]
-  (assert= "a commit failure is reported as :commit-failed on attempt 1" {:success false :reason :commit-failed :attempts 1} result))
+  ;; BL-1653 item 1: add succeeded (staged), so the restored index is
+  ;; reported - "a caller that staged nothing restores nothing" does not
+  ;; apply here, add-fn! really did stage.
+  (assert= "a commit failure is reported as :commit-failed on attempt 1"
+           {:success false :reason :commit-failed :attempts 1 :index-restored ["notes.txt"]} result))
 
 ;; ── (a) verify + bounded retry, injected seams, no real concurrency ────
 
