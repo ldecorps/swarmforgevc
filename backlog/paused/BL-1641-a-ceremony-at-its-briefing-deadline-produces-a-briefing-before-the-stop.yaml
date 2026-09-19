@@ -1,0 +1,210 @@
+id: BL-1641
+title: "A closing ceremony that reaches its briefing deadline with no briefing on main produces one before the stop: it lands the documenter branch's own briefing commit for the day when there is one, otherwise composes the banked headless briefing (BL-308) and commits it, keeps the deadline loud, and never touches a briefing main already has (2026-09-18: a 120-line briefing sat committed on the documenter branch while the stack was killed)"
+milestone: M8
+type: defect
+severity: high
+# high: the human's daily briefing did not arrive although one was
+# written. The delivery chain's last guard - the ceremony at its hard
+# deadline - stops the stack with the file one branch away, and the
+# headless composer that exists for exactly a no-agent moment is consulted
+# only while hibernated. Not critical: the written briefing is not lost,
+# it is late.
+status: todo
+epic: swarm-reliability
+priority: 8
+direction: human-requested
+depends_on: []
+# BL-308 (banked headless composer) and BL-658 (the deadline and its loud
+# surface) are in backlog/done. BL-1640 (the sleep path runs to done) is
+# an independent sibling: this parcel fires on the daemon's weekend window
+# today (closing-briefing-missing was surfaced there on 09-16 and 09-17)
+# and on every sleep once BL-1640 lands. BL-1459 (the QA-note landing path)
+# stays the normal path; this is the deadline fallback.
+mutation_cost: medium
+# medium: TypeScript under Stryker (one new action in
+# nightClosingCeremonyLive.ts, its executor and two deps in
+# night-closing-ceremony-run.ts), a Babashka CLI over banked_briefing_lib.bb
+# (no mutation wired, BL-472), a git fixture, one feature and handler, the
+# retirement of BL-658 scenario 04's exact-sequence line.
+slice_size_envelope: medium
+required_stages: [coder, cleaner, architect, hardender, documenter, qa]
+
+acceptance: specs/features/BL-1641-a-ceremony-at-its-briefing-deadline-produces-a-briefing-before-the-stop.feature
+
+required_wiring:
+  - 'extension/src/tools/night-closing-ceremony-run.ts::compose_banked_briefing_cli.bb::the run CLI executor is the pre-existing consumer of ceremony actions and shells the composer through this bb entry, which the parcel creates'
+  - 'specs/pipeline/steps/bl1641CeremonyDeadlineProducesABriefingSteps.js::registerSteps::the handler lands in the same parcel as the feature (BL-233)'
+
+human_approval: pending
+approval_context: >
+  A new feature file is authored here and a genuine choice is posed, so
+  this is a ruling ask even though the defect is high severity. FIRM: a
+  briefing main already has is never replaced or rewritten, whether or not
+  its email went out; the deadline stays loud (the surface fires and the
+  sequence records which path produced the file); BL-308's hibernated
+  composition is byte-identical to today; when nothing can be produced
+  (no documenter commit and the composer fails) the night still ends
+  exactly as BL-658 built it. The ask is what the ceremony does at the
+  deadline when main has no briefing. Option A is written into the feature
+  file; a B ruling drops scenario 01 and the ticket is re-cut before
+  promotion.
+ruling_options:
+  - A - land the documenter branch's own briefing commit for the day when one exists, otherwise compose the banked headless briefing (recommended)
+  - B - always compose the banked headless briefing at the deadline, never land anything from the documenter branch
+ruling_tradeoffs:
+  - Pros - the human gets the briefing the documenter actually wrote (on 2026-09-18 a full one existed on the documenter branch), the banked text only when nothing was written, and it lands in one docs-only commit of the same class the daemon already makes on main (topic records, snapshots). Cons - the ceremony commits a documenter commit to main outside QA's landing, so the acceptance pins that commit to touching only docs/briefings/<day>.md. Recommended because a forced briefing that discards a written one would make the morning worse, not better.
+  - Pros - simplest; no git landing by the ceremony; only the composer the swarm already runs while hibernated. Cons - the human gets the thin banked text even when a full briefing exists one branch away, and the documenter's later landing is refused as already on main, so the written one is lost.
+
+invariants:
+  - "The ceremony never adds, replaces or rewrites a docs/briefings/<day>.md that main already has; a forced briefing commit touches exactly that one absent path and nothing else."
+  - "Every forced path is recorded in the ceremony sequence and surfaced loudly; a forced briefing is never silent, and a deadline with nothing producible still stops the swarm as BL-658 built it."
+
+description: |
+  ## What is wrong
+
+  BL-658's briefing phase waits for the day's briefing until the hard
+  deadline, then surfaces `closing-briefing-missing` and stops the swarm
+  (`nightClosingCeremonyLive.ts` `advanceBriefing`, the `nowMs >=
+  hardDeadlineMs` branch). Loud, by design - "the forbidden outcome is
+  silence". But the swarm holds a composer built for exactly a no-agent
+  moment, BL-308's `compose-and-write-banked-briefing!`, and consults it
+  only while `hibernated?`; and it never looks one branch over.
+
+  On 2026-09-18 the documenter received `produce the morning briefing for
+  2026-09-18` at 15:35:50Z, committed a 120-line briefing on its own branch
+  at 15:47:36Z (`1af06d965b`, touching only `docs/briefings/2026-09-18.md`),
+  and sent QA the landing note at 15:46:15Z. QA held five other parcels;
+  the note was still in its inbox when bedtime killed the stack at
+  16:00:05Z. No file on main, no email, and `docs/briefings/2026-09-18.md`
+  is absent from main at mint. The mornings of 09-16 and 09-17 show the
+  other half: the daemon's window surfaced `closing-briefing-missing` at
+  07:45Z both days.
+
+  ## What is wanted (ruling A)
+
+  When the briefing phase reaches its hard deadline and main has no
+  `docs/briefings/<day>.md`, the ceremony produces one before `night-stop`:
+
+  1. If the documenter branch's newest commit touching that path adds it
+     and touches nothing else, land that file on main byte-identical, in
+     one commit that names the ceremony and the source sha; record
+     `briefing-landed-from-documenter` in the sequence.
+  2. Otherwise compose the banked briefing for the day through a new bb
+     CLI over `banked_briefing_lib.bb`, with a first line
+     `Closing ceremony - headless briefing for <day>` (BL-308's hibernated
+     label `Swarm parked - lightweight briefing` unchanged), commit it, and
+     record `briefing-composed-headless`.
+  3. If neither is possible, the night ends as today:
+     `briefing-missing, swarm-stopped`, loud.
+
+  `closing-briefing-missing` is still surfaced on every deadline path so
+  the loud log keeps its meaning (the documenter did not land in time);
+  the sequence says what was done about it. A file main already has is
+  never touched, whether or not `.sent.json` records it: that is the email
+  sweep's job.
+
+  ## How (direction, not mandate)
+
+  - `advanceBriefing`: at the deadline emit `{ kind: 'ensure-briefing',
+    dayKey }` before the surface and the stop; the executor in
+    `night-closing-ceremony-run.ts` runs deps `landDocumenterBriefing(target,
+    dayKey)` (returns the landed sha or null) then
+    `composeHeadlessBriefing(target, dayKey)` (boolean), and appends the
+    matching sequence step through the state it writes back. Keep the pure
+    machine pure: it decides, the deps act.
+  - Landing: `git log <documenter-branch> -1 --format=%H -- docs/briefings/<day>.md`;
+    verify with `git diff-tree --no-commit-id --name-only -r <sha>` that the
+    only path is that file and `git cat-file -e main:<path>` fails; write
+    the blob from `git show <sha>:<path>` and commit through
+    `bb swarmforge/scripts/commit_integrity_cli.bb <root> --message ... --path <path>`
+    (the lock every main writer takes, 2026-09-07). The documenter
+    worktree's branch name comes from `roles.tsv`, not a literal.
+  - `swarmforge/scripts/compose_banked_briefing_cli.bb <root> <day> [--label <text>]`
+    (the file name is fixed by `required_wiring`): gathers the same inputs
+    `handoffd.bb` gathers for BL-308 and writes the file; the daemon's
+    hibernated path keeps calling the lib in-process as today, or moves to
+    the CLI byte-identically - your call, provable by the BL-308 tests.
+  - Retire BL-658 scenario 04's exact-sequence line ("freeze-promotion,
+    rotate-documenter, briefing-missing, swarm-stopped") and its handler
+    assertion - it is falsified by design once a forced step joins the
+    sequence (BL-1006: retire, never reword); scenario 04 below carries
+    that contract for the nothing-producible case. Re-tense any narrative
+    in BL-658's feature or how-to that now states a false present.
+  - Docs: `docs/how-to/BL-658-briefing-trigger-derived-from-closure-schedule.md`
+    sequence step 5 and the operator notes; `Specification.MD`'s BL-308
+    entry names the second caller. No registered diagram depicts the
+    ceremony.
+
+constraints: >
+  The fixture is a `git init` root under mkdtemp with a `main` and a
+  documenter branch, proven by `rev-parse --git-common-dir` before any
+  mutating git command (BL-1390); never the live checkout. The ceremony
+  deps are injected as today (`buildRealDeps` is the only impure builder);
+  scenario 02 runs the real bb CLI. The step handler lands in the same
+  commit as the feature (BL-233). Feature runtime must stay well inside
+  the 300 s per-mutant ceiling (BL-1541): one git fixture, no sleeps.
+
+out_of_scope: |
+  - Running the ceremony to done on a sleep path (BL-1640) - without it
+    this parcel's deadline path fires on the daemon's window only.
+  - The QA-note landing path itself (BL-1459) - still the normal path; this
+    is what happens when it did not finish in time.
+  - Renaming `closing-briefing-missing` for the composed-but-unsent case
+    (09-16/09-17); recorded in the intake archive.
+  - The email send of the forced file: `briefing-email-sweep!` sends
+    whatever is committed and unsent on its own cadence, unchanged.
+
+qa_e2e_procedure: >
+  (1) Unit: `npx vitest run test/nightClosingCeremonyLive.test.js
+  test/nightClosingCeremonyRun.test.js test/nightClosingCeremony.property.test.js`
+  green from `extension/`; the BL-308 bb runners green
+  (`bb swarmforge/scripts/test/banked_briefing_lib_test_runner.bb` if
+  present, else the runner that covers the lib). (2) Acceptance: the
+  BL-1641 feature and the BL-658 feature green through the runner, once.
+  (3) Scratch clone with a daemon-shaped root and a documenter branch
+  carrying a briefing commit for today, `.sent.json` without it, budgets 0:
+  run `node extension/out/tools/night-closing-ceremony-run.js --target
+  <clone> --sleep-path finish-shift` twice; expect main's tip to add
+  exactly `docs/briefings/<today>.md` byte-identical to the branch's copy,
+  the sequence to name `briefing-landed-from-documenter`, and
+  `closing-ceremony-loud.log` to gain one `closing-briefing-missing` line.
+  Repeat once with no documenter commit: main's tip adds a file whose first
+  line is `Closing ceremony - headless briefing for <today>`. (4) Live,
+  after land: the next deadline that fires with no briefing on main leaves
+  a briefing commit on main and the sequence says which path; the email
+  sweep sends it on its next tick.
+
+source: |
+  Human intake `backlog/INTAKE-day-shift-cron-path-and-bedtime-shutdown-gaps-20260918.md`
+  (filed via Claude Code 2026-09-18, commit 91ba15b294), item 1, verbatim:
+  "Wanted: some combination of (a) escalating the injected nudge if
+  unaddressed past N sweep ticks — surface it as a real handoff note to the
+  coordinator, not just a repeated tmux inject, so it survives a busy pane
+  and shows up in mailbox-based dropped-parcel sweeps; (b) reserving a
+  safety margin before a scheduled bedtime so a due-but-unwritten briefing
+  gets escalated/forced (e.g., the existing headless `compose-headless!`
+  path, currently only used when `hibernated?`, triggered instead once
+  bedtime is imminent and the file still doesn't exist) rather than being
+  silently swallowed by the shutdown."
+  This ticket is the forcing of (b). The intake's "due-but-unwritten" was,
+  on 2026-09-18, due-and-written-but-unlanded, which is why option A
+  looks one branch over before composing.
+
+notes: |
+  Minted 2026-09-19 by the specifier draining the backlog root. Pending a
+  human ruling (A recommended); the feature file is written for A.
+
+  Evidence read at mint: `.worktrees/documenter` commit `1af06d965b`
+  (`docs/briefings/2026-09-18.md`, 120 insertions, one path); QA's inbox
+  `00_20260918T154615Z_001373_from_documenter_to_QA_for_QA.handoff` still
+  present at mint with a claim-progress sidecar;
+  `.swarmforge/daemon/closing-ceremony-loud.log` (09-16 07:45:19Z, 09-17
+  07:45:31Z); `git log -- docs/briefings/2026-09-17.md` (landed 07:13Z) and
+  `docs/briefings/.sent.json` mtime (09:07Z, uncommitted on main at mint).
+
+  required_wiring's first entry is satisfied by the parcel's own diff on
+  both sides (BL-1235) and is declared for the file-name pin only;
+  scenario 02 runs the real chain through the executor, which is the gate.
+  The handler entry is the BL-233 same-parcel pin. IR-DRY at mint:
+  scenarios 01, 02 and 04 share the deadline Given by design (one decision,
+  three states); reviewed and kept.

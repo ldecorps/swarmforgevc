@@ -1,0 +1,207 @@
+id: BL-1642
+title: "A QA approval completes without a no-op reason: BL-1609's forward gate accepts, for the QA stage only, a note naming the ticket queued since dequeue (approval bookkeeping, merge-up broadcast, withhold, spec-gap) as the completion evidence - QA never sends a git_handoff forward, so every approval since the gate landed on 2026-09-17 was refused FORWARD_NOT_SENT and completed --no-op (27 stamped)"
+milestone: M8
+type: defect
+severity: high
+# high: a broken safety signal on the pipeline's integration point. The
+# gate fires on 100% of QA approvals (27 of 27 completions since 09-17
+# carry a no_op_reason saying "QA is terminal"), so it carries no
+# information there and trains QA to bypass it - the same reason BL-1637
+# is high. Each approval costs a refusal round trip and a stamp that
+# reads "no work" on the swarm's most important completion. Not
+# critical: the escape hatch is printed in the refusal and nothing was
+# lost.
+status: todo
+epic: swarm-reliability
+priority: 8
+direction: swarm-reported
+depends_on: []
+# BL-1609 (the gate) and BL-1566 (QA's hold gate, the QA-ness predicate to
+# share) are in backlog/done. BL-1637 (active) widens WHERE the same lib
+# looks for a seat's forwards; this widens WHAT counts for one stage. Both
+# touch forward_evidence_lib.bb: promote after BL-1637 lands (Concurrent
+# Work Orthogonality), or merge deliberately.
+mutation_cost: low
+# low: Babashka (no mutation/CRAP/DRY wired, BL-472): one new input to a
+# pure decision, one evidence reader for notes, one shared seat-stage
+# helper, their bb runner cases, one feature and handler on BL-1609's
+# fixture idiom, the QA prompt interim retired at land.
+slice_size_envelope: low
+required_stages: [coder, cleaner, architect, hardender, documenter, qa]
+
+acceptance: specs/features/BL-1642-qa-approval-completes-on-note-evidence.feature
+
+required_wiring:
+  - 'specs/pipeline/steps/bl1642QaApprovalCompletesOnNoteEvidenceSteps.js::registerSteps::the handler lands in the same parcel as the feature (BL-233)'
+
+human_approval: approved
+approval_context: >
+  A new feature file is authored here, so it would ordinarily need a tap;
+  it is minted approved under the 2026-09-17 operator hotfix (severity
+  defect, no choice posed, no ruling_options). FIRM: BL-1609's rule is
+  unchanged for every role but the QA stage - a mid-chain role still
+  forwards by git_handoff or states a reason; the master-resident and
+  non-forwarding exemptions are byte-identical. FIRM: QA stays gated - a
+  landed-but-unannounced approval (BL-1565's dropped close) is still
+  refused; what changes is that QA's real forward, a note naming the
+  ticket, now counts. FIRM: the since-dequeue rule and "names THIS ticket"
+  apply to notes exactly as they apply to git_handoffs. FIRM: the escape
+  hatch keeps working as today.
+
+invariants:
+  - "For a forwarding git_handoff held by the QA stage, completion without a stated reason requires a handoff of either type, queued in QA's own outbox or sent mailbox after the inbound's dequeue, that names the inbound's ticket; a note created before the dequeue, or naming only other tickets, never completes it."
+  - "Note evidence is the QA stage's alone: every other code-worktree role's forwarding inbound keeps BL-1609's rule unchanged, and the master-resident and non-forwarding exemptions are byte-identical to today."
+  - "The forward gate and the BL-1566 hold gate decide QA-ness through one shared seat-stage helper, so a QA@2 seat is the QA stage to both and the two predicates cannot drift."
+
+description: |
+  ## What is wrong
+
+  BL-1609's `forward-gate!` (`done_with_current_task.bb`, decision core
+  `forward_evidence_lib.bb/forward-completion-decision`) refuses a
+  code-worktree role's forwarding `git_handoff` completion unless a
+  `git_handoff` naming the same ticket was queued since dequeue, or a
+  `--no-op` reason is stated. It exempts master-resident rows (specifier,
+  coordinator) because their tracer bullets are answered with a note.
+
+  QA is a worktree role whose forward is ALSO a note - by constitution
+  (Article 1.8, 2.5, PIPELINE.md step 5): it lands the approved commit on
+  `main` itself, broadcasts a merge-up `note` to the worktree roles and
+  sends the coordinator `QA-approved <task> landed <sha> - bookkeep to
+  done`. It never queues a `git_handoff` forward. So the gate refuses
+  every approval: `.worktrees/QA/.swarmforge/handoffs/inbox/completed/`
+  holds 27 files stamped `no_op_reason: QA approved and landed ...` /
+  `QA is terminal ...` since the gate landed on 2026-09-17, and QA's
+  evidence `backlog/evidence/BL-1609-qa-note-completion-gap-20260919.md`
+  (QA branch 137747a75b) records BL-831's refusal on 2026-09-19 after the
+  land at `cdeb8bdfdb` and both notes had gone out. Nothing reads the
+  `no_op_reason` stamp today (only the two writers name it), so the cost
+  is the refusal round trip on every approval plus a durable record that
+  reads "no work" on the swarm's most important completion, and a gate
+  that fires on 100% of one role's parcels teaches that role to bypass it.
+
+  QA's other terminal outcomes have the same shape: a withhold under
+  Article 4.2 sends the specifier an `unowned-red` note and parks the
+  parcel (BL-1566); a spec-gap sends the specifier a note and completes the
+  inbound; a LAND_ESCALATE sends the coordinator a note. A bounce is a
+  `git_handoff` to the owning role and is already evidenced.
+
+  ## What is wanted
+
+  For the QA stage, a `note` queued in QA's own outbox or sent mailbox
+  after the inbound's dequeue, whose headers name the inbound's ticket
+  (task or message, `pipeline-stage-lib/extract-ticket-ids` - a merge-up
+  broadcast or a multi-ticket close names several), is completion
+  evidence exactly as a `git_handoff` is. Everything else about BL-1609 is
+  unchanged: other roles, the since-dequeue rule, the reason path, the
+  refusal's no-side-effects contract, the batch path's shared core.
+
+  ## How (direction, not mandate)
+
+  - `forward_evidence_lib.bb`: a sibling reader
+    (`sent-note-names-ticket-since?` or a `:kinds` argument on the existing
+    one) over the same outbox/sent set BL-1637 is widening, matching
+    `type: note` and `extract-ticket-ids` of task+message containing the
+    ticket; `forward-completion-decision` gains one input (`qa-stage?`)
+    and one clause: `(and qa-stage? evidenced-by-note?) :complete-plain`,
+    placed after the reason clause so a stated reason still records.
+  - QA-ness: ONE shared helper, `(= "QA" (handoff-lib/seat-stage
+    (handoff-lib/current-role)))`, used by both `forward-gate!` and
+    `qa-hold-gate!` (`done_with_current_task.bb` line ~244 currently
+    compares `current-role` to the literal, which a `QA@2` seat would
+    fail). Do NOT derive it from roster order: `reverse_hop_lib.bb`'s
+    `last-pipeline-role` answers `art-director` on the live roles.tsv
+    (its row sits after QA), which is why BL-1536's terminal stamp is the
+    wrong predicate here.
+  - Tests: the bb runner that covers `forward-completion-decision` gains
+    the QA rows; the feature drives the REAL `done_with_current.sh` on
+    BL-1609's fixture (`bl1609ForwardingParcelNotCompletedWithNothingSentSteps.js`
+    builds the worktrees and roles.tsv - reuse that builder, add QA and
+    documenter rows) with a QA worktree; assert the completed file carries
+    NO `no_op_reason` header on the plain rows.
+  - Docs: `swarmforge/handoff-protocol.md`'s BL-1609 paragraph names QA's
+    note evidence; `docs/diagrams/handoff-flow.mmd` only if it draws the
+    gate's inputs. The QA prompt's "Until BL-1642 lands" block (landed with
+    this mint) is retired by the specifier when QA notes
+    `BL-1642 landed <sha>` per the prompt's own interim-retirement bullet.
+
+constraints: >
+  Pure decision stays pure (`forward-completion-decision` takes booleans;
+  gathering stays in the gate). A refusal still has no side effects
+  (BL-1609 invariant 2). The fixture is a mkdtemp `git init` root with its
+  own worktrees and roles.tsv, never the live checkout (BL-1390); the
+  feature stays well inside the 300 s per-mutant ceiling (BL-1541) - one
+  fixture build, real tool, no sleeps. The step handler lands in the same
+  commit as the feature (BL-233).
+
+out_of_scope: |
+  - Where a seat's forwards are filed (BL-1637, active).
+  - A reader for `no_op_reason` (BL-1609's own follow-up; still unbuilt,
+    which is why the stamp is only a record today).
+  - `reverse_hop_lib.bb`'s `last-pipeline-role` answering `art-director`
+    on the live roster (BL-1536's terminal stamp): harmless while the
+    art-director sends notes only; recorded here as an observation.
+  - The art-director's own completions (it receives notes only today).
+
+qa_e2e_procedure: >
+  (1) Unit: the bb runner covering `forward_evidence_lib.bb` green
+  (`bb swarmforge/scripts/test/forward_evidence_lib_test_runner.bb` or its
+  home), plus `done_with_current` runners touched. (2) Acceptance: the
+  BL-1642 feature and the BL-1609 feature green through the runner, once.
+  (3) Live, ONCE, on this parcel's own approval: after landing and sending
+  the merge-up broadcast and the coordinator bookkeeping note, run a PLAIN
+  `done_with_current.sh`; expect completion with no `FORWARD_NOT_SENT` and
+  no `no_op_reason` header on the completed file. Then note the specifier
+  `BL-1642 landed <sha>` so the QA prompt interim is retired. (4) A QA
+  parcel completed with no note sent is still refused: verify by reading
+  the refusal on the fixture (scenario row 3), never by withholding a real
+  approval note.
+
+source: |
+  QA note to the specifier, priority 50, 2026-09-19T00:47:58Z (inbound
+  50_20260919T004758Z_002947_from_QA): "BL-1609 gate refuses QA note
+  completion; see BL-1609-qa gap evidence". QA's evidence
+  `backlog/evidence/BL-1609-qa-note-completion-gap-20260919.md` (QA
+  branch 137747a75b): "QA is a legitimate second exception to
+  `forwarding-inbound?`'s 'master-resident or refuse' split ... Every QA
+  approval will hit this same refusal until the gate accounts for QA's
+  note-only forward. Suggested remedy shape (specifier's to decide):
+  extend `forward-completion-decision`'s inputs with a
+  `qa-approval-note-sent?` signal (a `note` to `coordinator` naming the
+  same ticket since dequeue), so QA completes plainly on note evidence
+  instead of requiring a `--no-op` reason on every pass."
+  Widened from "a note to coordinator" to "a note naming the ticket, to
+  anyone", so a withhold or spec-gap note completes the same way.
+
+notes: |
+  Minted 2026-09-19 by the specifier while completing QA's note, the same
+  pass. AUTO-APPROVED under the 2026-09-17 operator hotfix (severity
+  defect, no ruling_options) — see
+  auto-approve-high-severity-defects-amendment-20260917.md.
+
+  Interim landed with this mint (prompt half is the specifier's, BL-798):
+  `swarmforge/roles/QA.prompt` "Until BL-1642 lands" bullet under the
+  approval sequence - complete with `--no-op "BL-1642: ..."`, no evidence
+  file, no note; the stamp is informational. QA notes the specifier
+  `BL-1642 landed <sha>` at land and the specifier retires the block.
+
+  Census at mint: `grep -l '^no_op_reason' .worktrees/QA/.swarmforge/handoffs/inbox/completed/*.handoff | wc -l`
+  = 27 (coder2 5, documenter 1 - those are BL-1637's and a pre-dequeue
+  forward, different shapes). The coordinator's completed inbox holds 31
+  `from_QA` notes since 09-17: the approvals all went out; only their
+  completions were refused.
+
+  required_wiring names the step handler only: the production consumer
+  (`done_with_current_task.bb` `forward-gate!`) exists before the fix and
+  an anchor on the new input would be satisfied by the parcel's own diff
+  (BL-1235); the outline's plain rows drive the real tool, which is the
+  gate. IR-DRY at mint: the outline rows share their Given/When by design
+  (one decision table); scenario 02 is a static one-helper check in the
+  BL-897 mirror shape.
+
+  Amended 2026-09-19 03:2x local (after promotion df8a7286ed, before the
+  coder dequeued Work note 009620), same pass as the BL-1645 mint: feature
+  outline row 5 now reads "created before the inbound itself was queued" -
+  the evidence window opens at the inbound's creation once BL-1645 lands,
+  and a note queued between the parcel's creation and its dequeue must
+  count. The coder was noted to merge main before starting.
+assigned_to: coder

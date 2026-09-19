@@ -1,0 +1,198 @@
+id: BL-1639
+title: "Bedtime stops every babysitterd its own verify would count: finish-shift's babysitterd stop, its verify and kill_all_swarm's babysitterd signal read one root-scoped process census, so a second babysitterd launched from an operator-local copy is signalled at bedtime instead of surviving it as REFUSE rc=1 and an orphan (2026-09-18 16:00Z; babysitterd named in 3 of the last 7 recorded bedtime refusals)"
+milestone: M8
+type: defect
+severity: high
+# high: a broken safety signal plus a live fault. finish-shift is the cron
+# bedtime; when its verify counts a babysitterd its stop never signalled,
+# it exits rc=1 (REFUSE) and the survivor keeps sweeping a dead stack every
+# 300 s until a human kills it (283 finding lines logged 16:01Z-18:21Z on
+# 2026-09-18, including CRIT resume-overdue and NUDGE-SKIP against a
+# coordinator that no longer existed). day-shift.log records REFUSE on
+# 08-26, 08-27, 09-04, 09-08 and 09-18; three of those name babysitterd.
+# Not critical: the pipeline itself was stopped and nothing was lost.
+status: todo
+epic: swarm-reliability
+priority: 8
+direction: human-requested
+depends_on: []
+# BL-611 (babysitterd), BL-637 (verify, never trust exit codes) and BL-762
+# (finish-shift bedtime) are all in backlog/done; this fixes the seam
+# between the stop they share and the verify they share.
+mutation_cost: low
+# low: shell only (no mutation/CRAP/DRY wired, BL-472): one census helper,
+# three call sites, one shell test on the existing ps-snapshot seam, one
+# feature and handler, the BL-611 runbook.
+slice_size_envelope: low
+required_stages: [coder, cleaner, architect, hardender, documenter, qa]
+
+acceptance: specs/features/BL-1639-bedtime-stops-every-babysitterd-its-verify-would-count.feature
+
+required_wiring:
+  - 'swarmforge/scripts/stop_ancillary_services.sh::babysitterd_census_lib.sh::stop_babysitterd is the pre-existing live consumer (finish-shift, finish_shift_stop_ancillaries, stop_ancillary_component babysitterd)'
+  - 'swarmforge/scripts/finish_shift_lib.sh::babysitterd_census_lib.sh::finish_shift_component_running babysitterd is the verify side and must read the same census'
+  - 'swarmforge/scripts/kill_all_swarm.sh::babysitterd_census_lib.sh::the nuclear path signals babysitterd too (BL-611 exception) and must read the same census'
+  - 'specs/pipeline/steps/bl1639BabysitterdCensusSteps.js::registerSteps::the handler lands in the same parcel as the feature (BL-233)'
+
+human_approval: approved
+approval_context: >
+  A new feature file is authored here, so it would ordinarily need a tap;
+  it is minted approved under the 2026-09-17 operator hotfix (severity
+  defect, no choice posed, no ruling_options). FIRM: babysitterd stays in
+  finish-shift's stop-set exactly as lifecycle_matrix.sh declares it; this
+  changes WHICH processes the stop reaches, never whether it stops. FIRM:
+  the census is scoped to this project root - a babysitterd of another
+  root, a mkdtemp fixture or a sibling worktree is neither signalled nor
+  counted (the root-blind matcher is the second half of the same defect).
+  FIRM: the tracked pidfile is still signalled and removed, so a stack
+  with only the tracked daemon behaves byte-identically to today.
+
+invariants:
+  - "For the babysitterd component, the process set finish-shift signals and the process set finish_shift_verify counts are produced by one function over one process snapshot; the stop never reads a source the verify does not."
+  - "The census names only processes of THIS project root: a babysitterd whose script path or root argument lies under another root - a mkdtemp fixture, a sibling worktree, another checkout - is neither signalled nor counted."
+
+description: |
+  ## What is wrong
+
+  `./finish-shift` (BL-762) stops babysitterd through
+  `stop_ancillary_services.sh`'s `stop_babysitterd`, which signals ONE
+  pidfile, `.swarmforge/babysitterd/babysitterd.pid` - the one the tracked
+  daemon (`swarmforge/scripts/babysitterd.sh <root>`, started by
+  `start_babysitterd.sh`) writes. It then verifies (BL-637) through
+  `finish_shift_lib.sh`'s `finish_shift_component_running babysitterd`,
+  which matches EVERY process whose arguments contain `babysitterd.sh`,
+  from any root. The stop and the verify read different populations, so
+  any second babysitterd is counted and never signalled: finish-shift
+  refuses with rc=1 and the survivor keeps running.
+
+  On 2026-09-18 the second daemon was an operator-local copy:
+  `.swarmforge/operator/day-shift-start.sh` (gitignored) launched
+  `.swarmforge/operator/babysitterd.sh` at 08:00:15Z (pid 31823, pidfile
+  `.swarmforge/operator/babysitterd.pid`) two seconds after `start-swarm.sh`
+  had already started the tracked one (pid 29714). The operator copy is an
+  older script (pre-BL-611 paths, its own log) and its launcher's comment
+  still says start-swarm.sh does not start babysitterd - it does. Bedtime at
+  16:00:01Z signalled 29714, verified, found 31823, printed
+  `REFUSE: finish-shift left the stack in an unexpected state: still running
+  (should be stopped): babysitterd` and exited rc=1. The orphan logged 283
+  findings against a stack that no longer existed until the human killed it
+  at ~18:21Z. `day-shift.log` shows the same pair launched on 07-30, 08-21,
+  09-01, 09-04, 09-10 and 09-18.
+
+  The intake read the `SIGTERM agents:` pid list as the miss. It is not:
+  that list is the agent sessions; babysitterd is stopped by its own step
+  one line earlier. The miss is the census.
+
+  ## What is wanted
+
+  One root-scoped babysitterd census, read by the stop, by the verify and
+  by `kill_all_swarm.sh`'s BL-611 babysitterd signal: every babysitterd of
+  THIS root is signalled, and only those are counted. A stack with only
+  the tracked daemon behaves as today (pidfile signalled and removed).
+
+  ## How (direction, not mandate)
+
+  - New `swarmforge/scripts/babysitterd_census_lib.sh` (the file name is
+    fixed by `required_wiring`; its internals are yours): one function
+    that, given the project root and a `ps -eo pid=,args=` snapshot (the
+    `SWARMFORGE_SURVIVOR_PS_FILE` seam `stack_survivor_scan.sh` and
+    `finish_shift_lib.sh` already honour), returns the pids whose args name
+    `babysitterd.sh` AND belong to this root: the script token is directly
+    under `<root>/swarmforge/scripts/` or `<root>/.swarmforge/operator/`, or
+    a whitespace-delimited token equals `<root>` exactly (the tracked
+    daemon's root argument). A path merely PREFIXED by the root
+    (`<root>/.worktrees/coder/...`) is another root.
+  - `stop_babysitterd`: signal every pid the census names (TERM, then KILL
+    after the same short wait `signal_pid_file` uses), plus the tracked
+    pidfile as today; remove the tracked pidfile. `finish_shift_component_running
+    babysitterd`: non-empty census. `kill_all_swarm.sh` line ~57: the same
+    census in place of the lone `signal_pid_file`.
+  - Tests never send a real signal: inject the kill the way the snapshot is
+    injected (an env-named function or a recorded-signal file), and build
+    every snapshot line the feature names. `test_finish_shift_lib.sh` is
+    the idiom; add `test_babysitterd_census_lib.sh`. Stock bash 3.2: no
+    `mapfile`, `${arr[@]+"${arr[@]}"}` under `set -u` (BL-801, BL-1627).
+  - Docs: `docs/how-to/BL-611-babysitterd-runbook.md` and
+    `docs/how-to/BL-762-finish-shift-bedtime-vs-lights-out.md` say the stop
+    reads the census, not one pidfile. No registered diagram depicts the
+    bedtime stop-set; none changes.
+
+constraints: >
+  Shell only; no change to lifecycle_matrix.sh's stop/keep sets. The census
+  is a pure function of (root, snapshot) and is testable with no process
+  alive. A fixture never signals a live pid and never touches the live
+  `.swarmforge/` (BL-1390). The operator-local scripts under
+  `.swarmforge/operator/` are gitignored and are NOT edited by this parcel.
+
+out_of_scope: |
+  - The operator-local launcher itself (`day-shift-start.sh` / `night-start.sh`
+    starting a second, older babysitterd copy although start-swarm.sh already
+    starts the tracked one): gitignored, a human hotfix, surfaced in the
+    intake archive. This parcel makes bedtime correct whether or not that
+    copy keeps launching.
+  - A single-instance guarantee at START (`start_babysitterd.sh` refusing
+    or adopting when a foreign copy of this root is alive) and
+    `swarm_ensure.bb`'s revive reading the same census - a sibling slice if
+    the duplicate keeps appearing after the launcher hotfix.
+  - operator-runtime, which the same REFUSE history also names twice
+    (08-26, 08-27): a different component and matcher; mint separately if it
+    recurs.
+
+qa_e2e_procedure: >
+  (1) Unit: `bash swarmforge/scripts/test/test_finish_shift_lib.sh` and the
+  new `bash swarmforge/scripts/test/test_babysitterd_census_lib.sh` green;
+  `bash swarmforge/scripts/test/test_kill_all_swarm_vitest_reap.sh` still
+  green. (2) Acceptance: the BL-1639 feature green through the runner, once.
+  (3) Scratch clone with a daemon-shaped root: start the tracked daemon with
+  `start_babysitterd.sh <root>`, then launch a stub copied to
+  `<root>/.swarmforge/operator/babysitterd.sh` (a script that sleeps in a
+  loop) with `setsid nohup bash <that path> &`; run `./finish-shift` from
+  the clone root; expect rc=0, no REFUSE line, and `ps -eo args= | grep
+  babysitterd.sh | grep <root>` empty; run once, not N times. (4) Live,
+  after land: the next scheduled bedtime's day-shift.log block ends
+  `finish-shift rc=0` with no REFUSE, and `pgrep -af babysitterd.sh` is
+  empty afterwards.
+
+source: |
+  Human intake `backlog/INTAKE-day-shift-cron-path-and-bedtime-shutdown-gaps-20260918.md`
+  (filed via Claude Code 2026-09-18, commit 91ba15b294), item 2, verbatim:
+  "**`kill_all_swarm`'s SIGTERM list missed a live process.** Tonight's
+  bedtime (16:00:05Z) logged `REFUSE: finish-shift left the stack in an
+  unexpected state: still running (should be stopped): babysitterd` — the
+  SIGTERM pid list it printed (`649 937 982 1147 14367 26097 28509 30498
+  31923 32278`) did not include babysitterd's actual running pid (31823,
+  started 08:00:15Z by `day-shift-start.sh`). `finish-shift` reported rc=1;
+  the process sat orphaned until the operator killed it by hand tonight.
+  Wanted: whatever builds that pid list should read it from the same
+  source `day-shift-start.sh`/`night-start.sh` write
+  (`.swarmforge/operator/babysitterd.pid`) rather than a possibly-stale
+  enumeration, so a bedtime that starts right after a fresh babysitterd
+  launch doesn't miss it."
+  The "Wanted" names one pidfile; the census above reads that copy's
+  process too, and every other copy of this root, which is the same ask
+  made robust to the next launcher.
+
+notes: |
+  Minted 2026-09-19 by the specifier draining the backlog root. AUTO-APPROVED
+  under the 2026-09-17 operator hotfix (severity defect, no ruling_options)
+  — see auto-approve-high-severity-defects-amendment-20260917.md.
+
+  Live state at mint: two babysitterds are running on the host again -
+  pid 10398 (`swarmforge/scripts/babysitterd.sh`, tracked pidfile) and
+  pid 12580 (`.swarmforge/operator/babysitterd.sh`, operator pidfile), both
+  from the 01:00 night-start. The 09:00 local weekend bedtime today will
+  REFUSE the same way unless the operator copy is stopped first. Reported
+  to the human in the same pass; not this parcel's to touch.
+
+  Grepped first: no open ticket names `stop_babysitterd`,
+  `finish_shift_component_running` or the babysitterd verify; BL-611,
+  BL-637, BL-762 are done. The memory note "babysitterd liveness check is
+  root-blind" is invariant 2 here.
+
+  required_wiring anchors the three pre-existing consumers on the lib's
+  file name, chosen at mint so the pattern is a literal (BL-874); the
+  handler entry is the BL-233 same-parcel pin. IR-DRY at mint: scenarios
+  01 and 03 share their two-daemon Given by design (finish-shift and the
+  nuclear path over one snapshot); reviewed and kept.
+
+assigned_to: coder
