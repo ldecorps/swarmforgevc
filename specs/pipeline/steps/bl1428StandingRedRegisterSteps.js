@@ -42,8 +42,12 @@ function registerSteps(registry) {
   });
 
   // ── 01 ──────────────────────────────────────────────────────────────
-  scoped(/^the standing-red register CLI reads the fixture root$/, (ctx) => {
-    ctx.bl1428.report = run('report');
+  // BL-1648: the named date is passed straight through to the fixture
+  // wrapper, which forwards it to the real CLI's own --now seam - the
+  // fixture's ages are computed against IT, never the real clock, so the
+  // oldest_age_days assertion below stays true forever.
+  scoped(/^the standing-red register CLI reads the fixture root as of (\d{4}-\d{2}-\d{2})$/, (ctx, asOf) => {
+    ctx.bl1428.report = run('report', asOf);
   });
 
   scoped(/^every allowlist, ledger and register row appears once with its lane, file, ticket and first-seen date$/, (ctx) => {
