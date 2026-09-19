@@ -1,0 +1,146 @@
+id: BL-1647
+title: "A pidfile naming a zombie is not a live component: finish_shift_lib.sh's pidfile liveness reads kill -0 alone, which succeeds on an unreaped process, so test_finish_shift_lib.sh case 08 (a kept component dying unexpectedly) flips green or red with the parent shell's reaping latency under host load - flaky on 2026-09-19 in the hardender's BL-1639 pass, 3 of 3 green on main afterwards"
+milestone: M8
+type: defect
+severity: high
+# high (standing-red rule 2026-09-05): a test that fails on main, even
+# intermittently, is a broken safety signal; without an owner the register
+# reads it unowned and QA must withhold any parcel whose evidence names it.
+# The production blind spot is real but small: a supervisor left as a
+# zombie would read as alive to bedtime's verify.
+status: todo
+epic: swarm-reliability
+priority: 8
+direction: swarm-reported
+depends_on: []
+# BL-762 (finish-shift and this test) and BL-637 (verify) are in
+# backlog/done. BL-1639 (documenter stage at mint) changes the babysitterd
+# branch of the same lib, not the pidfile helper; land order is free.
+mutation_cost: low
+# low: bash only (no mutation/CRAP/DRY wired, BL-472): one liveness helper,
+# one test case restructured, one new case, one feature and handler.
+slice_size_envelope: low
+required_stages: [coder, cleaner, architect, hardender, documenter, qa]
+
+acceptance: specs/features/BL-1647-a-pidfile-naming-a-zombie-is-not-a-live-component.feature
+
+required_wiring:
+  - 'specs/pipeline/steps/bl1647ZombiePidfileNotAliveSteps.js::registerSteps::the handler lands in the same parcel as the feature (BL-233, BL-1371)'
+
+human_approval: approved
+approval_context: >
+  A new feature file is authored here, so it would ordinarily need a tap;
+  it is minted approved under the 2026-09-17 operator hotfix (severity
+  defect, no choice posed, no ruling_options). FIRM: this is a flake
+  ticket hunting ONE named intermittent failure (case 08); its proof is
+  the mechanism scenario, never "run it N times" (human directive
+  2026-09-17). FIRM: bedtime's keep/stop contract (BL-762) and the verify
+  (BL-637) are unchanged; only what counts as a live pidfile owner
+  changes, and only for a process that has already exited.
+
+invariants:
+  - "A pidfile owner counts as running only while its process exists and has not exited: a zombie (exited, unreaped) is not running, for every component the pidfile idiom checks (onboarder, front-desk, tunnels)."
+  - "The fixture never depends on the parent shell's reaping latency: a kept component's death is made observable deterministically before the verify runs."
+
+description: |
+  ## What is wrong
+
+  `swarmforge/scripts/finish_shift_lib.sh` `_finish_shift_pidfile_alive`
+  answers `kill -0 "$pid"`, which succeeds on a zombie (exited, not yet
+  reaped by its parent). `test_finish_shift_lib.sh` case 08 kills the
+  fixture's front-desk `sleep` INSIDE a command substitution and calls
+  `wait "$FD_PID"` there - but that pid is the parent script's child, not
+  the subshell's, so `wait` returns at once and the process stays a zombie
+  until the parent handles SIGCHLD. The parent is blocked reading the
+  substitution's output; it reaps only when it gets scheduled for the
+  signal. Usually that is long before the verify runs (the stop step
+  takes a second); under host load it is not, `kill -0` says alive,
+  front-desk is not flagged as unexpectedly stopped, and the case prints
+  `expected front-desk flagged as unexpectedly stopped, got: CLEAN`.
+
+  Reproduced 2026-09-19 (specifier, standalone, load 12-14): a `sleep 300 &`
+  killed with `-9` inside `$( ... )` then probed with `kill -0` read ALIVE
+  five times out of five; the same probe after the parent's own `wait`
+  read dead. The real test passed 3 of 3 on main 4617c74bbc (18 s each,
+  load 9.6-14.5); the hardender's BL-1639 pass saw case 08 red once in
+  its worktree (its note 001414, "flaky, unrelated"; BL-1639 touches the
+  babysitterd branch of the lib, not this helper).
+
+  ## What is wanted
+
+  1. `_finish_shift_pidfile_alive` (and any sibling that trusts `kill -0`
+     for a pidfile owner) treats an exited-but-unreaped process as not
+     alive: `kill -0` AND `ps -o stat= -p <pid>` not beginning with `Z`
+     (stock macOS `ps` and procps both print it).
+  2. Case 08 no longer depends on reaping latency: kill and `wait` the
+     front-desk pid in the PARENT shell (take the keep snapshot in the
+     parent too, or pass the pre-kill snapshot in), so the pid is gone
+     before the subshell verifies; keep the case's assertion.
+  3. A new case (09) pins the mechanism: a pidfile naming a zombie
+     (killed inside a substitution, unreaped) reads as NOT running for
+     front-desk, onboarder and tunnels.
+
+  ## How (direction, not mandate)
+
+  - Stock bash 3.2 throughout (BL-801/BL-1627); `ps -o stat=` only, never
+    `/proc` (macOS). The test's own belt-and-braces kill block at the end
+    stays.
+  - The BL-762 acceptance handler (`bl762FinishShiftPhonePathSteps.js`)
+    builds the same "services up" fixture shape; if it kills a fixture pid
+    inside a spawned script, apply the same parent-shell wait there.
+  - Docs: one line in `docs/how-to/BL-762-finish-shift-bedtime-vs-lights-out.md`
+    under verify: a zombie owner is not alive. No diagram.
+
+constraints: >
+  No change to the keep/stop sets, the matrix, or the survivor ps-snapshot
+  seam. The feature's fixture spawns its own children under mkdtemp roots
+  and reaps them in a finally (BL-971), never touching the live
+  `.swarmforge/`; runtime stays seconds (BL-1541). The step handler lands
+  in the same commit as the feature (BL-233).
+
+out_of_scope: |
+  - The host contention that widens the window (BL-1633, BL-1636).
+  - BL-1639's babysitterd census (it lands independently).
+  - Any other case of test_finish_shift_lib.sh (01-07 were green in every
+    run observed).
+
+qa_e2e_procedure: >
+  (1) `bash swarmforge/scripts/test/test_finish_shift_lib.sh` ONCE:
+  `PASS=12 FAIL=0` (case 09 present in the PASS lines - the census pin).
+  (2) Acceptance: the BL-1647 and BL-762 features green through the
+  runner, once. (3) Mechanism, once: `sleep 300 & P=$!; echo $P >
+  <fixture>/.swarmforge/operator/front-desk-supervisor.pid; r=$( kill -9
+  $P; source swarmforge/scripts/finish_shift_lib.sh;
+  finish_shift_component_running <fixture> front-desk && echo running ||
+  echo stopped ); echo $r; wait $P` prints `stopped`. Never "run it N
+  times".
+
+source: |
+  Hardender note to the specifier, priority 10, 2026-09-19T03:15:58Z
+  (inbound 10_20260919T031558Z_001414_from_hardender):
+  "test_finish_shift_lib.sh case 08 flaky, unrelated - see BL-1639
+  evidence". The hardender's evidence
+  (`backlog/evidence/BL-1639-hardender-20260919.md`, hardender branch)
+  records D1/D2 only; the flake's own output was not recorded, so the
+  mechanism above is the specifier's reproduction, not the hardender's
+  transcript. Parents: BL-762 (the lib and test), BL-637 (verify).
+
+notes: |
+  Minted 2026-09-19 by the specifier while completing the hardender's
+  note, the same pass. AUTO-APPROVED under the 2026-09-17 operator hotfix
+  (severity defect, no ruling_options) - see
+  auto-approve-high-severity-defects-amendment-20260917.md. Register row
+  (lane `shell`, file `swarmforge/scripts/test/test_finish_shift_lib.sh`,
+  owner BL-1647) appended in the mint commit so QA can approve parcels
+  whose evidence names this case (Article 4.2) and the land step retires
+  the row with this ticket (BL-1631).
+
+  Three runs on main at mint (the cap for a named flake): 3 of 3 green,
+  18 s each. The standalone reproduction is the proof; the ticket does not
+  ask anyone to run the file repeatedly.
+
+  required_wiring names the step handler only: the production consumer
+  (finish-shift -> finish_shift_verify -> finish_shift_component_running)
+  exists before the fix and an anchor on it would match unchanged code
+  (BL-1235); scenario 01 sources the real lib against a real zombie, which
+  is the gate.
