@@ -61,6 +61,21 @@
    :respawnCooldownSeconds (env-num "RESPAWN_COOLDOWN_SECONDS" 300)
    ;; BL-528 tunables:
    :claim-idle-timeout-ms (long (env-num "CLAIM_IDLE_TIMEOUT_MS" (* 20 60 1000)))
+   ;; BL-1649: CLAIM_ROLE_TIMEOUT_CONF_TEXT is raw conf text (one or more
+   ;; `config claim_idle_timeout_role_minutes <role> <n>` lines), parsed the
+   ;; real way (chase-sweep-lib/parse-claim-idle-timeout-role-minutes-ms) -
+   ;; never a hand-built map - so this harness proves the real parser, not a
+   ;; test-only stand-in for it. Merged OVER claim-progress-lib's own
+   ;; built-in map (never the reverse): evaluate-claim-idle-signal's own
+   ;; (merge default-config config) is a SHALLOW merge - handing it an
+   ;; empty/partial :role-idle-timeout-ms here would silently replace the
+   ;; whole built-in map (hardender's 90 minutes included) rather than
+   ;; layer on top of it, exactly the gap this ticket's own conf key must
+   ;; not reopen for every OTHER role's fallback.
+   :role-idle-timeout-ms
+   (merge (:role-idle-timeout-ms claim-progress-lib/default-config)
+          (chase-sweep-lib/parse-claim-idle-timeout-role-minutes-ms
+           (or (System/getenv "CLAIM_ROLE_TIMEOUT_CONF_TEXT") "")))
    :probe-grace-ms (long (env-num "CLAIM_PROBE_GRACE_MS" (* 10 60 1000)))
    :nudge-threshold (long (env-num "CLAIM_NUDGE_THRESHOLD" 1))
    :bounce-threshold (long (env-num "CLAIM_BOUNCE_THRESHOLD" 6))
@@ -110,7 +125,11 @@
      (cond-> {}
        (= "1" (System/getenv "CLAIM_RESIDENT_BUSY")) (assoc :resident-busy? true)
        (= "1" (System/getenv "CLAIM_ROTATION_ROUTER")) (assoc :rotation-router? true)
-       (System/getenv "CLAIM_ACTIVE_ROLE") (assoc :active-role (System/getenv "CLAIM_ACTIVE_ROLE"))))
+       (System/getenv "CLAIM_ACTIVE_ROLE") (assoc :active-role (System/getenv "CLAIM_ACTIVE_ROLE"))
+       ;; BL-1649: absent (nil) by default - never tightens the ladder for
+       ;; every pre-existing scenario that doesn't set these.
+       (System/getenv "CLAIM_AGENT_PRESENT") (assoc :agent-present? (= "1" (System/getenv "CLAIM_AGENT_PRESENT")))
+       (= "1" (System/getenv "CLAIM_RESPAWNED_RECENTLY")) (assoc :respawned-recently? true)))
    :send-claim-idle-probe!
    (fn [role message]
      (log-call! "claim-idle-probe" role (subs message 0 (min 40 (count message)))))
@@ -119,7 +138,13 @@
      (log-call! "claim-bounce" role (str (:reclaims progress))))
    :on-claim-idle-halt!
    (fn [role _fp progress]
-     (log-call! "claim-halt" role (str (:reclaims progress))))})
+     (log-call! "claim-halt" role (str (:reclaims progress))))
+   :log-claim-idle-reclaim!
+   (fn [{:keys [role reclaims busy dirty recent present elapsed-min timeout-min]}]
+     (log-call! "claim-idle-reclaim" role (str "reclaims=" reclaims)
+                (str "busy=" busy) (str "dirty=" dirty) (str "recent=" recent)
+                (str "present=" present) (str "elapsed-min=" elapsed-min)
+                (str "timeout-min=" timeout-min)))})
 
 (chase-sweep-lib/run-sweep!
  [{:role role :inbox-new-dir inbox-new-dir :in-process-dir in-process-dir

@@ -388,6 +388,14 @@
             :paused-dormant
             (write-claim-progress! fp (claim-progress-lib/pause-for-active-rotation progress now-ms))
 
+            ;; BL-1649: same posture as :paused-dormant - a dead or
+            ;; freshly-respawned agent resets the claim clock rather than
+            ;; merely skipping this one tick's count, so elapsed time never
+            ;; piles up across the outage and fires several reclaims in a
+            ;; row the moment the agent is observed again.
+            :paused-agent-absent
+            (write-claim-progress! fp (claim-progress-lib/pause-for-active-rotation progress now-ms))
+
             :probe-agent
             (let [elapsed-min (quot (max 0 (- now-ms (or (:claimAtMs progress) 0))) 60000)
                   p' (claim-progress-lib/mark-idle-probe progress now-ms)]
@@ -402,12 +410,26 @@
 
             :claimed-idle
             (let [p'     (claim-progress-lib/increment-reclaims progress)
-                  action (claim-progress-lib/decide-claim-idle-action (:reclaims p') claim-cfg)]
+                  action (claim-progress-lib/decide-claim-idle-action (:reclaims p') claim-cfg)
+                  timeout-min (quot (claim-progress-lib/resolve-claim-idle-timeout-ms role claim-cfg) 60000)
+                  elapsed-min (quot (max 0 (- now-ms (or (:claimAtMs progress) 0))) 60000)]
               (write-claim-progress! fp p')
               ((:log-telemetry! adapters)
                {:type "claim-idle" :role role :handoffId (handoff-id fp)
                 :reclaims (:reclaims p') :action (name action)}
                now-ms)
+              ;; BL-1649: one human-readable log line per reclaim increment,
+              ;; naming every reading the count was decided on - so a count
+              ;; the babysitter/coordinator reports is always explainable
+              ;; from the daemon's own log, never a silent accrual.
+              (when-let [logf (:log-claim-idle-reclaim! adapters)]
+                (logf {:role role :reclaims (:reclaims p')
+                       :busy (boolean (or agent-busy? (:resident-busy? ctx)))
+                       :dirty (boolean worktree-dirty?)
+                       :recent (boolean (:resident-recently-active? ctx))
+                       :present (not (false? (:agent-present? ctx)))
+                       :elapsed-min elapsed-min
+                       :timeout-min timeout-min}))
               (case action
                 :nudge
                 (when (wake-role-delivered? adapters role)
@@ -1845,6 +1867,28 @@
    (fn [acc line]
      (let [[_ role mins] (re-matches
                           #"config\s+batch_claim_progress_role_stale_threshold_minutes\s+(\S+)\s+(-?\d+)\s*"
+                          line)
+           n (some-> mins parse-long)]
+       (if (and role n (pos? n))
+         (assoc acc role (* n 60 1000))
+         acc)))
+   {}
+   (str/split-lines (or conf-text ""))))
+
+(defn parse-claim-idle-timeout-role-minutes-ms
+  "BL-1649. Pure: every `config claim_idle_timeout_role_minutes <role> <n>`
+   line from conf text, as a {role ms} map - the exact BL-1076 shape
+   (parse-batch-claim-progress-role-stale-threshold-ms above) applied to
+   BL-528's OWN ladder instead of the batch observer's. A line whose
+   minutes are missing, unparseable or non-positive is DROPPED, so the
+   role falls back to claim-progress-lib's own built-in :role-idle-timeout-ms
+   entry (or the flat base) rather than to something tighter. A repeated
+   role takes the last line."
+  [conf-text]
+  (reduce
+   (fn [acc line]
+     (let [[_ role mins] (re-matches
+                          #"config\s+claim_idle_timeout_role_minutes\s+(\S+)\s+(-?\d+)\s*"
                           line)
            n (some-> mins parse-long)]
        (if (and role n (pos? n))
