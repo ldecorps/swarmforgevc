@@ -498,6 +498,7 @@ enqueued_at
 dequeued_at
 completed_at
 received_at_head
+from_seat
 ```
 
 Validation errors should be explicit enough for an agent to repair the draft.
@@ -3052,6 +3053,19 @@ Responsibilities:
   as the parcel, never the last hop (see "the received commit is the
   parcel" above) - a re-forwarded fixed bounce still needs its own forward
   queued after ITS OWN dequeue to pass this gate.
+  - **Seat-aware filing (BL-1637).** A seat's `from:` header always names
+    its STAGE (BL-982/BL-983), so a delivered forward's sent copy is filed
+    by `handoffd.bb`/`handoff_inject_lib.bb` under the seat named by the
+    file's `from_seat` header when it resolves in `roles.tsv`, else under
+    the stage named by `from:` as before (`seat-filing-role-info`,
+    `handoff_lib.bb`). This gate's own scan (`sent-handoff-names-ticket-
+    since?`, `forward_evidence_lib.bb`) reads BOTH the current role's own
+    `outbox`/`sent` mailbox AND, when the current role is a seat
+    (`<stage>@<seat>`) distinct from its stage, the stage's `outbox`/`sent`
+    too - filtering the stage-level files to those whose `from_seat`
+    (when present) names this seat, so one seat's forward is never counted
+    as another sibling seat's evidence. A bare stage with no `@` rows in
+    `roles.tsv` scans exactly the two folders it always did.
 - Add or update `completed_at`.
 - Move the file to `inbox/completed/`.
 - Print the completed task path.
@@ -3177,6 +3191,7 @@ enqueued_at
 dequeued_at
 completed_at
 received_at_head
+from_seat
 ```
 
 Lifecycle ownership:
@@ -3190,6 +3205,14 @@ Lifecycle ownership:
   (BL-1610).
 - `done_with_current_task.sh` writes `completed_at`.
 - `done_with_current_batch.sh` writes `completed_at`.
+- `swarm_handoff.bb`'s send path writes `from_seat` (BL-1637) — the seat
+  (`SWARMFORGE_ROLE`, `<stage>@<seat>` or a bare stage) that actually sent
+  the handoff, distinct from `from`, which stays the STAGE name for
+  reverse-hop routing and attribution. A seat's delivered forward is filed
+  into that seat's own `sent`/`outbox` folders when `from_seat` resolves
+  to a roles.tsv row, else into its stage's — see "Seat Forward Filing"
+  below. Agents never write this header; a draft supplying it is refused
+  like any other reserved header.
 
 ## Daemon Shutdown
 
