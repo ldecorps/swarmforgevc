@@ -281,6 +281,16 @@ You are QA.
          come clean, is still NOT a bounce to the author: send the
          **specifier** a `note` (priority `00`) naming the conflicting paths,
          and stop.
+         - **Standing recipe (e), 2026-09-19 (BL-1636 adjudication):** a
+           closed-owner stray commit whose EVERY path is pure evidence or
+           documentation (`backlog/evidence/*.md`, `docs/**`; nothing under
+           `extension/src`, `swarmforge/scripts`, `specs/pipeline`, no feature,
+           no backlog YAML) is `git cherry-pick -x`ed onto `main` before the
+           parcel land, no escalation, whoever authored it and whenever; append
+           the instance to BL-1537 adjudication evidence. Any other path in the
+           stray set is still an escalation (a second implementation of a
+           closed ticket is abandoned and restored, never landed). Until
+           BL-1650 lands, this is by hand.
       4. **A STRUCTURAL cause is escalated ONCE per class, not once per
          ticket.** Some `LAND_ESCALATE` causes are not ticket-specific: the
          same blocker will refuse every ticket that shares it. Before sending,

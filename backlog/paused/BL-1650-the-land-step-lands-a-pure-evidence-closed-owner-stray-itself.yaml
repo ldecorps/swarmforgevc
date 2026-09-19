@@ -1,0 +1,141 @@
+id: BL-1650
+title: "The land step lands a closed-owner stray whose every path is pure evidence or documentation itself (cherry-picked onto main ahead of the replay, recorded in the land log) and treats a closed-owner ancestor whose paths are content-identical to main as landed, not entangled - so a role's incident evidence committed on its long-lived branch after its ticket closed no longer escalates every later land (BL-1636, 2026-09-19)"
+milestone: M8
+type: defect
+severity: medium
+# medium: a real, recurring cost - one specifier round trip and a QA hold
+# per closed-ticket evidence stray, the second instance of this class in
+# a week (BL-1537 condition (d), BL-1636) - but a standing recipe now lets
+# QA clear it by hand without an escalation. Not high: nothing lands
+# wrong; the fail-closed posture (BL-1546) is correct and stays.
+status: todo
+epic: swarm-reliability
+priority: 14
+direction: swarm-reported
+depends_on: []
+# BL-1546 (never exclude a closed-owner path silently) and BL-1272 (landed
+# is a positive content finding) are in backlog/done and stay the rule;
+# this adds the one class the land step may decide itself.
+mutation_cost: low
+# low: Babashka (no mutation/CRAP/DRY wired, BL-472): one classifier in
+# land_step_lib.bb, one cherry-pick step in the replay path, runner cases,
+# one feature and handler on a git fixture.
+slice_size_envelope: low
+required_stages: [coder, cleaner, architect, hardender, documenter, qa]
+
+acceptance: specs/features/BL-1650-the-land-step-lands-a-pure-evidence-closed-owner-stray-itself.feature
+
+required_wiring:
+  - 'specs/pipeline/steps/bl1650LandStepPureEvidenceStraySteps.js::registerSteps::the handler lands in the same parcel as the feature (BL-233, BL-1371)'
+
+human_approval: pending
+approval_context: >
+  A new feature file is authored here, so it needs a tap. No choice is
+  posed and there are no ruling_options. FIRM: BL-1546's rule stands for
+  every path that is not pure evidence or documentation - a closed-owner
+  stray touching code, a feature, pipeline steps or backlog YAML is still
+  LAND_ESCALATE, never decided by the step. FIRM: the cherry-pick keeps
+  the stray commit's author and subject (`-x` trailer), lands on main
+  before the parcel's replay, and is named in the land log; nothing is
+  abandoned. FIRM: an ancestor whose every path is byte-identical to
+  main after the parcel's own edits is reported as landed, never as
+  entangled.
+
+invariants:
+  - "The land step decides a closed-owner stray on its own only when every path the stray commit touches is under backlog/evidence/ or docs/; one path outside that set makes the whole stray an escalation, exactly as today."
+  - "A stray the step lands is recorded: the land log names the cherry-picked commit, its source sha and its paths, and the landed commit carries the -x trailer; nothing lands silently (BL-1546)."
+
+description: |
+  ## What is wrong
+
+  `land_step_cli.bb` (BL-1546) refuses to replay a parcel when the
+  two-tree diff carries a path whose only owner is a ticket closed on
+  origin/main and no commit of the parcel touches it - correctly, since
+  the alternative was silent exclusion. On 2026-09-19 that path was
+  `backlog/evidence/BL-831-coder-forward-gate-false-refusal-20260918.md`:
+  the coder's record of a forward-gate incident, committed on the coder
+  branch (6d63104e70) after BL-831 had moved to the cleaner, never part of
+  any parcel, and BL-831 closed the next day. Every branch that merged the
+  coder branch since carries it, so every later land escalated on it
+  (BL-1636, QA evidence
+  `BL-1636-QA-land-escalate-closed-sibling-evidence-20260919.md`). The
+  step also printed `ENTANGLED_SIBLING BL-1634` for an ancestor
+  (1e97976a66) whose content is entirely on main through BL-1634's own
+  tip-pure replay - ancestry-only, nothing to land.
+
+  BL-1537's condition (d) and the new condition (e) (2026-09-19) let QA
+  clear this by hand with a `git cherry-pick -x`; the step can do the
+  same thing itself for exactly this class, and say so in its log.
+
+  ## What is wanted
+
+  1. Before the replay, for each closed-owner stray commit in the parcel's
+     ancestry whose EVERY path is under `backlog/evidence/` or `docs/`
+     (and none under `extension/`, `swarmforge/`, `specs/`, `android/`,
+     `pwa/`, `backlog/{paused,active,done,hold}/`, `backlog/*.tsv`,
+     `backlog/*.yaml`): cherry-pick it with `-x` onto main ahead of the
+     parcel's replay, under the same lock, and log
+     `LAND_STRAY_EVIDENCE_LANDED <sha> -> <landed sha> <paths>`.
+  2. A closed-owner ancestor whose paths are all byte-identical between
+     the parcel tip (after the parcel's own edits) and origin/main is
+     reported `LAND_SIBLING_LANDED <ticket>` and never counted as
+     entangled.
+  3. Everything else keeps BL-1546's refusal and text.
+
+  ## How (direction, not mandate)
+
+  - The classifier is pure (a path set in, a verdict out) with runner
+    cases for the boundary list; the cherry-pick lives beside the replay's
+    existing git calls; the log line rides the existing land log.
+  - Fixture: a `git init` root with a main, a role branch carrying (a) a
+    pure-evidence stray from a closed ticket, (b) a stray touching one
+    script, (c) an ancestor replayed onto main with identical content;
+    run the real `land_step_cli.bb` on each shape.
+  - Docs: `docs/how-to/BL-1428-standing-red-register.md` is not this; the
+    land step's how-to (BL-1144/BL-1447 family) gains the two lines.
+
+constraints: >
+  Fail-closed posture unchanged for anything not in the pure-evidence
+  set; an unreadable path set or an unreadable stray commit is an
+  escalation. Fixture roots are mkdtemp `git init` repositories, proven by
+  `rev-parse --git-common-dir` before any mutating git command (BL-1390).
+  The step handler lands in the same commit as the feature (BL-233).
+
+out_of_scope: |
+  - Why roles commit incident evidence on their long-lived branches (a
+    process note: land such evidence through the adjudicator's own main
+    commit, as the specifier does).
+  - The task-scope send gate (BL-1547).
+
+qa_e2e_procedure: >
+  (1) Unit: the bb runner covering land_step_lib.bb green with the new
+  cases. (2) Acceptance: the BL-1650 feature green through the runner,
+  once. (3) Replay of 2026-09-19 on a scratch clone: a branch carrying
+  6d63104e70's shape lands with one `LAND_STRAY_EVIDENCE_LANDED` line and
+  the parcel replay proceeds; the same fixture with the stray touching a
+  script under swarmforge/scripts is refused with BL-1546's text. Never
+  "run it N times".
+
+source: |
+  QA note to the specifier, priority 00, 2026-09-19T04:33:56Z (inbound
+  00_20260919T043356Z_002955_from_QA): "BL-1636 land-escalate: closed
+  siblings, see ev 7fe5a8494f". QA's ask, verbatim: "is a condition (e)
+  worth adding to the standing recipe: "the attributed commit's ticket is
+  already fully closed on origin/main and the file is pure
+  evidence/documentation with no production-code content" - so QA does
+  not have to re-escalate per closed-ticket-file pair going forward?"
+  Specifier adjudication:
+  backlog/evidence/BL-1636-specifier-adjudication-of-land-escalate-closed-sibling-evidence-20260919.md.
+  Parents: BL-1546, BL-1272, BL-1537 (conditions (a)-(d)).
+
+notes: |
+  Minted 2026-09-19 by the specifier while completing QA's note, the same
+  pass. Minted pending: medium severity is outside the 2026-09-17
+  auto-approval carve-out. The manual rule (e) is already on main in
+  QA.prompt and the BL-1537 record, so nothing waits on this ticket.
+
+  required_wiring names the step handler only: the production consumer
+  (`land_step_cli.bb` -> `land_step_lib.bb`) exists before the fix and an
+  anchor on a new log literal would be satisfied by the parcel's own diff
+  (BL-1235); scenario 01 runs the real CLI on a fixture, which is the
+  gate.
