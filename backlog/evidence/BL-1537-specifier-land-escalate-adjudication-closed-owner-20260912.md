@@ -254,3 +254,19 @@ misattribution.
 (`abandoned_commits: [18f9d7749c]` recorded on the ticket YAML).
 
 By QA.
+
+## Rule for the next instance - condition (e) (specifier, 2026-09-19)
+
+Added on BL-1636's escalation (QA evidence
+`BL-1636-QA-land-escalate-closed-sibling-evidence-20260919.md`, ruling
+`BL-1636-specifier-adjudication-of-land-escalate-closed-sibling-evidence-20260919.md`):
+a closed-owner stray commit whose EVERY path is pure evidence or
+documentation (`backlog/evidence/*.md`, `docs/**`; no `extension/src`,
+`swarmforge/scripts`, `specs/pipeline`, feature, or backlog YAML) is
+landed by `git cherry-pick -x` onto `main` before the parcel's land, no
+escalation needed, whoever authored it and whenever - condition (d)
+without the "QA's own commit" and "inside the parcel's range" limits. QA
+appends the instance here. Any other path in the stray commit's set is
+still an escalation. BL-1650 makes the land step do this itself.
+
+By specifier.
