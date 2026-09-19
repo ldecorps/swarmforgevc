@@ -1,0 +1,187 @@
+id: BL-1645
+title: "A completion gate's evidence window opens when the inbound was created, not when it was dequeued: the Work-note gate (BL-1422/BL-1614) and the forward gate (BL-1609) count a commit or handoff naming the ticket from the inbound's created_at, so work done between a dispatch and its (re-)dequeue completes plainly instead of being refused both ways - the coder was stuck on BL-1637's Work note on 2026-09-19 with the work forwarded and live at the cleaner"
+milestone: M8
+type: defect
+severity: high
+# high: a live fault on the default pack's home role. The coder seat cannot
+# complete Work note 009529 by any path (plain: WORK_NOT_EVIDENCED, since
+# its work predates the dequeue stamp; --no-work: WORK_ACTIVE_ON_MAIN, since
+# BL-1637 is active on main because it is in flight downstream), and
+# ready_for_next.sh resumes in_process first, so the seat is blocked until
+# an interim clears it. Any inbound whose dequeue is re-stamped after the
+# work - a queue with older in_process items, a drift refusal before the
+# first dequeue - hits the same wall. Not critical: BL-1637 itself is
+# unaffected and progressing.
+status: todo
+epic: swarm-reliability
+priority: 8
+direction: swarm-reported
+depends_on: []
+# BL-1422 (Work-note gate), BL-1614 (active-on-main clause) and BL-1609
+# (forward gate) are all in backlog/done. BL-1637 (active) and BL-1642
+# (paused) widen WHERE the forward gate looks and WHAT kind counts for QA;
+# this changes WHEN the window opens for both gates. All three touch
+# forward_evidence_lib.bb's callers: promote after BL-1637 lands, or merge
+# deliberately.
+mutation_cost: low
+# low: Babashka (no mutation/CRAP/DRY wired, BL-472): one `since` reader
+# shared by three gate call sites (task Work-note, task forward, batch
+# forward), their bb runner cases, one feature and handler on BL-1609's
+# and BL-1422's fixture idiom, two narrative re-tensings.
+slice_size_envelope: low
+required_stages: [coder, cleaner, architect, hardender, documenter, qa]
+
+acceptance: specs/features/BL-1645-completion-evidence-window-opens-at-the-inbounds-creation.feature
+
+required_wiring:
+  - 'specs/pipeline/steps/bl1645EvidenceWindowOpensAtCreationSteps.js::registerSteps::the handler lands in the same parcel as the feature (BL-233, BL-1371)'
+
+human_approval: approved
+approval_context: >
+  A new feature file is authored here, so it would ordinarily need a tap;
+  it is minted approved under the 2026-09-17 operator hotfix (severity
+  defect, no choice posed, no ruling_options). FIRM: BL-1422's contract
+  stands - a Work note is never completed on evidence older than the
+  dispatch itself, so a re-dispatch after a bounce still demands new work;
+  BL-1614's clause stands - a stated reason on a ticket active on main
+  with no evidence is still refused; BL-1609's contract stands - a forward
+  that predates the inbound's existence never completes it. What changes
+  is only the window's lower bound: the inbound's own created_at
+  (enqueued_at, then dequeued_at, as fallbacks when a header is missing),
+  never its dequeue stamp.
+
+invariants:
+  - "The evidence window for completing an inbound opens at the inbound's own creation (created_at, then enqueued_at, then dequeued_at as fallbacks), never at its dequeue: evidence produced after the dispatch existed counts however the dequeue was stamped, and evidence older than the dispatch never counts."
+  - "The three gate call sites (task Work-note gate, task forward gate, batch forward gate) read the window's lower bound through one shared function, so they cannot drift."
+
+description: |
+  ## What is wrong
+
+  Both completion gates in `done_with_current_task.bb` (and the batch
+  path's forward gate in `done_with_current_batch.bb`) set
+  `since (or (header-field source-file "dequeued_at") "1970-...")` and
+  ask `git-log-names-ticket-since?` / `sent-handoff-names-ticket-since?`
+  for evidence after that instant. The assumption is that work follows
+  the dequeue. On 2026-09-19 it did not: the coder's first
+  `ready_for_next.sh` of the session was refused with
+  `WORKTREE_DRIFT_DETECTED` before touching the queue; the coder repaired
+  the drift, merged main, built BL-1637 from the Work note's own text,
+  committed `d59f181d38` (01:42Z, subject `BL-1637: ...`) and forwarded
+  `50_20260919T020229Z_002048_from_coder_to_cleaner` (02:02:29Z, now in
+  the cleaner's in_process batch). Its next `ready_for_next.sh` processed
+  two older in_process items, then dequeued the Work note
+  `10_20260918T150112Z_009529` (created 2026-09-18T15:01:12Z) and stamped
+  `dequeued_at: 2026-09-19T02:05:03Z` - after the work. Plain completion:
+  `WORK_NOT_EVIDENCED` (nothing since 02:05:03Z). With an honest
+  `--no-work`: `WORK_ACTIVE_ON_MAIN: BL-1637 is active on main at
+  fb259484b4` - BL-1614's clause, correct in its own case (a "not
+  promoted" decline on a stale read), but a ticket in flight downstream is
+  active on main until QA closes it, so every stated reason is refused
+  for a ticket mid-pipeline. The coder's evidence:
+  `backlog/evidence/BL-1614-work-note-active-on-main-blocks-already-completed-work-20260919.md`
+  (coder branch 22c7b4bba6). The seat is blocked: `ready_for_next.sh`
+  resumes in_process first.
+
+  The dequeue stamp is the wrong lower bound. A dispatch note IS the
+  request; any commit or handoff naming its ticket produced after the
+  note existed is a response to it. The stamp BL-1422 chose guards
+  against completing on evidence from an EARLIER pass (a re-dispatch after
+  a bounce must not ride the first pass's commits); the note's own
+  `created_at` guards that exactly as well, because the re-dispatch note
+  is created after those commits.
+
+  ## What is wanted
+
+  One shared reader, `inbound-window-start` (name yours), returning the
+  inbound's `created_at`, else `enqueued_at`, else `dequeued_at`, else the
+  epoch; every gate's `since` reads it. Nothing else in the decision
+  tables changes.
+
+  ## How (direction, not mandate)
+
+  - `forward_evidence_lib.bb` (already shared by both gates) is the home
+    for the reader; `done_with_current_task.bb` lines ~183 and ~223 and
+    `done_with_current_batch.bb` line ~28 call it.
+  - Tests: the bb runner covering `forward_evidence_lib.bb` gains the
+    header-precedence cases; the feature drives the REAL
+    `done_with_current.sh` on BL-1609's fixture builder
+    (`bl1609ForwardingParcelNotCompletedWithNothingSentSteps.js`) and
+    BL-1422's Work-note fixture, writing the inbound's `created_at`,
+    `dequeued_at` and the evidence's timestamps explicitly.
+  - Narratives, not scenarios (BL-1006): re-tense BL-1422's feature
+    narrative ("evidence of work since its dequeue") and BL-1609's ("queued
+    after the dequeue") to say since the inbound was queued; their
+    scenario rows stay as they are - every one still holds under the
+    creation window. BL-1642's row 5 was reworded at this mint.
+  - Docs: `swarmforge/handoff-protocol.md`'s BL-1422/BL-1609 paragraphs
+    name the window's start; `docs/diagrams/handoff-flow.mmd` only if it
+    draws the gates' inputs.
+
+constraints: >
+  Pure decisions stay pure (the tables take booleans; the window is
+  gathered by the gate). A refusal still has no side effects (BL-1609
+  invariant 2). Fixture roots are mkdtemp `git init` repositories, never
+  the live checkout (BL-1390); the feature stays well inside the 300 s
+  per-mutant ceiling (BL-1541). The step handler lands in the same commit
+  as the feature (BL-233).
+
+out_of_scope: |
+  - Why the coder worked before its first successful dequeue (the drift
+    refusal is BL-1195's guard doing its job; working from the pane wake
+    text is the seat's own ordering - noted, not ticketed).
+  - Where a seat's forwards are filed (BL-1637) and QA's note evidence
+    (BL-1642).
+  - Any change to the four decision tables' clauses.
+
+qa_e2e_procedure: >
+  (1) Unit: the bb runner covering `forward_evidence_lib.bb` green, plus
+  the `done_with_current` runners touched. (2) Acceptance: the BL-1645,
+  BL-1422, BL-1609 and BL-1614 features green through the runner, once.
+  (3) Fixture replay of the incident, once: a Work note created at T0, a
+  commit `BL-4242: ...` on the role's branch at T1 > T0, a
+  `dequeued_at` of T2 > T1; `done_with_current.sh` completes plainly with
+  no `no_work_reason` header. (4) Live, ONCE, on this parcel's own
+  dispatch: the coder completes its Work note plainly after forwarding
+  the parcel, as today.
+
+source: |
+  Coder note to the specifier, priority 00, 2026-09-19T02:11:41Z (inbound
+  00_20260919T021141Z_002049_from_coder): "BL-1614 active-on-main gate
+  blocks a genuinely-done Work note; evidence attached". Coder evidence
+  (coder branch 22c7b4bba6): "The decision table has no clause
+  distinguishing 'no work exists' from 'work already happened before this
+  dequeue' - both hit :refuse-active-on-main the same way once a reason is
+  given, and plain completion requires evidence *strictly after* a dequeue
+  stamp that can legitimately postdate real work in this
+  multi-item-queue-then-dequeue shape." Parents: BL-1422 (the Work-note
+  gate), BL-1614 (its fourth input), BL-1609 (the forward gate).
+
+notes: |
+  Minted 2026-09-19 by the specifier while completing the coder's note,
+  the same pass. AUTO-APPROVED under the 2026-09-17 operator hotfix
+  (severity defect, no ruling_options) - see
+  auto-approve-high-severity-defects-amendment-20260917.md.
+
+  Interim for the blocked seat (sent to the coder as a note the same pass):
+  commit the evidence it already wrote with a subject that LEADS with the
+  dispatched ticket id (`BL-1637: evidence - Work note 009529 completion
+  blocked by the BL-1645 gap`) - a real commit on the coder branch, after
+  the dequeue stamp, naming the ticket the note dispatched - then complete
+  plainly. Never resend the parcel (it is live at the cleaner) and never
+  fabricate a commit; the evidence commit IS work on this dispatch.
+
+  Verified at mint: the coordinator sent exactly ONE Work note for
+  BL-1637 (15:01:12Z 2026-09-18); the other nine notes in the coder's
+  new/ are branch-behind merge-up notes and Work notes for BL-875 and
+  BL-1639. The coder's forward 002048 sits in
+  `.worktrees/cleaner/.swarmforge/handoffs/inbox/in_process/batch_20260919T020247Z_000001/`.
+
+  required_wiring names the step handler only: the three production
+  consumers exist before the fix and an anchor on the new reader's name
+  would be satisfied by the parcel's own diff (BL-1235); scenario 01 runs
+  the real tool on a fixture whose dequeue stamp postdates the work, which
+  is the gate.
+  IR-DRY at mint: scenarios 01/02 and outline 03 share the "runs
+  done_with_current with no reason" step across concrete and templated
+  forms by design (one decision table, two inbound kinds); reviewed and
+  kept.
