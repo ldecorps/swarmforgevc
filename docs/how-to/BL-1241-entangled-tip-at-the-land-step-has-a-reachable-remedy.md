@@ -42,6 +42,18 @@ land_step_cli.bb <task-name> <commit> [repo-root]
   (BL-1375)" below. QA owes each named passenger the same
   `abandoned_commits:` bookkeeping its own land would have produced.
 
+  `<new-commit>`'s own branch may also carry one or more
+  `LAND_STRAY_EVIDENCE_LANDED <sha> -> <landed-sha> <paths>` lines (BL-1650):
+  a closed sibling's stray commit whose EVERY path is pure evidence
+  (`backlog/evidence/`) or documentation (`docs/`) — the everyday shape a
+  role's own incident write-up, committed after the sibling moved on,
+  produces (BL-831/BL-1636) — is cherry-picked (`-x`, keeping the stray's own
+  author and subject) onto the replay branch itself, ahead of the parcel's
+  own tip-pure commit. That sibling then reports `LANDED_SIBLING`, never
+  `ENTANGLED_SIBLING`; nothing is abandoned. Anything wider — a stray
+  touching any path outside that narrow allowlist — still refuses exactly as
+  BL-1546 already does, by name, never decided silently.
+
   A `LANDED_SIBLING` line does not change what action `land-plan` returns —
   the sibling's original commit remains an ancestor, and its content may
   differ from the replay, so the action stays `:land` — only the report.
