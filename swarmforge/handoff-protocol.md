@@ -3073,6 +3073,28 @@ Responsibilities:
     as well as `dequeued_at` did - no completion any gate previously
     refused newly passes, only completions previously refused *despite*
     real evidence now correctly pass.
+  - **QA's forward is a note, and note evidence counts for the QA stage
+    ONLY (BL-1642).** QA never queues a `git_handoff` forward: by
+    constitution (Article 1.8, 2.5) it lands the approved commit on `main`
+    itself and broadcasts a merge-up `note` to the worktree roles plus a
+    bookkeeping note to the coordinator - so before this fix the gate
+    refused every QA approval (`FORWARD_NOT_SENT`, worked around with
+    `--no-op "<reason>"` on 100% of passes). For the QA stage alone,
+    `forward_evidence_lib.bb`'s `sent-note-names-ticket-since?` - the
+    note-evidence sibling of `sent-handoff-names-ticket-since?`, over the
+    identical outbox/sent scan - is now also accepted: a `note` queued
+    since the inbound's evidence window start, naming the ticket in
+    either its `task:` or `message:` header (a merge-up broadcast or a
+    multi-ticket close can name several), completes the inbound plainly,
+    same as a `git_handoff` would. A withhold, spec-gap, or LAND_ESCALATE
+    note counts exactly the same way - QA's other terminal outcomes have
+    the same note-forward shape. Every other code-worktree role's rule is
+    byte-identical to before: only a `git_handoff` counts for them. QA-ness
+    is decided by ONE shared predicate, `qa-stage?` (`(= "QA"
+    (handoff-lib/seat-stage (handoff-lib/current-role)))`), used by both
+    this gate and the BL-1566 hold gate, so a `QA@2` seat is the QA stage
+    to both and the two predicates cannot drift apart - a bare `(=
+    "QA" current-role)` comparison would fail a seat.
   - **Seat-aware filing (BL-1637).** A seat's `from:` header always names
     its STAGE (BL-982/BL-983), so a delivered forward's sent copy is filed
     by `handoffd.bb`/`handoff_inject_lib.bb` under the seat named by the
