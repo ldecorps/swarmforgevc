@@ -95,3 +95,20 @@ note as the entangled siblings (BL-1241), both closed and content-landed.
 Nothing else to do for either sibling.
 
 By specifier.
+
+## Instance 2 (QA, 2026-09-19, BL-1649)
+
+Same class, same open defect (BL-1650 item 0). BL-1649's land named
+`ENTANGLED_SIBLING BL-1634`, `BL-1637`, `BL-831` — all `backlog/done/` on
+origin/main. Applying this file's standing ruling rather than
+re-escalating: `git diff --name-only origin/main <replay-tip>` for both
+the first replay (`361d15da18`) and the final one after recording
+`abandoned_commits` (`b29f321e4e`) carried none of BL-1634/BL-1637/
+BL-831's own content — only BL-1649's own paths, QA's own BL-1646
+`abandoned_commits` addendum, and one closed-owner pure-evidence stray
+(`backlog/evidence/BL-1636-architect-note-new-offenders-not-in-census-
+20260919.md`, rule (e)). Landed `b29f321e4e`; `abandoned_commits:
+[f4bac9c452]` recorded on BL-1649's own ticket. No specifier round trip
+needed — this file already covers the class.
+
+By QA.

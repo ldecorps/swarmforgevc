@@ -1,0 +1,142 @@
+id: BL-1654
+title: "BL-1308's acceptance scenario 03 asserts a premise BL-1389 closed on 2026-09-04 - that an unlanded sibling's path can ride a replay tip unattributed - so its own census guard fails ('the replay tip carried no foreign path, so this scenario proves nothing') and the feature has been red on main for fifteen days: retire scenario 03 and pin the exclusion the land step now performs (only the cited ticket's paths in the replay, every excluded sibling path named)"
+milestone: M8
+type: defect
+severity: high
+# high (standing-red rule 2026-09-05): a test failing on main is a broken
+# safety signal; unowned it throttles intake and makes QA withhold any
+# parcel whose changed-path lane reaches the BL-1308 feature (BL-1650, at
+# the cleaner at mint, is the first). Not high for product reasons: the
+# land step is correct and safer than the scenario assumed.
+status: todo
+epic: swarm-reliability
+priority: 8
+direction: swarm-reported
+depends_on: []
+# BL-1308 (the feature) and BL-1389 (the exclusion that closed its
+# premise) are in backlog/done; BL-1650 (active) changes the land step's
+# landed-sibling verdict, not the own-paths exclusion this scenario runs.
+mutation_cost: low
+# low: one scenario retired and one written in an existing feature, its
+# handler's two steps, the BL-113 stamp re-run; no production change.
+slice_size_envelope: low
+required_stages: [coder, cleaner, architect, hardender, documenter, qa]
+
+acceptance: specs/features/BL-1308-an-unlanded-sibling-on-a-second-parent-is-invisible.feature
+# The contract this ticket must satisfy is BL-1308's feature post-retirement
+# (scenario 03 gone, the replacement resolving, scenarios 01/02/04
+# unchanged) - BL-1251's shape; this pointer is not a claim of ownership
+# over BL-1308's contract. The gate is that file green through the runner.
+
+required_wiring:
+  - 'specs/pipeline/steps/bl1308SiblingDetectorCoversReplaySteps.js::EXCLUDED_SIBLING_PATH::the replacement step reads the exclusion lines the land step CLI prints (BL-1389), the literal it must match'
+
+human_approval: approved
+approval_context: >
+  A scenario is retired and one written in an existing feature file, so it
+  would ordinarily need a tap; it is minted approved under the 2026-09-17
+  operator hotfix (severity defect, no choice posed, no ruling_options).
+  FIRM: retire, never reword (BL-1006) - scenario 03's text and its
+  "proves nothing" guard go; the replacement asserts the behaviour main
+  has today, not a weakened version of the old premise. FIRM: scenarios
+  01, 02 and 04 and the fixture CLI are untouched.
+
+invariants:
+  - "BL-1308's feature holds no scenario whose Given can no longer be constructed on main; every remaining scenario is green through the runner on the parcel commit."
+
+description: |
+  ## What is wrong
+
+  `specs/features/BL-1308-an-unlanded-sibling-on-a-second-parent-is-invisible.feature`
+  scenario 03 ("A replay tip carries no path from a ticket the report did
+  not name") builds the 2026-08-30 shape - a forward-merge whose subject
+  names the cited ticket, carrying an untagged sibling's commits on its
+  second parent - and its handler
+  (`bl1308SiblingDetectorCoversReplaySteps.js` line 135-147) first
+  asserts that the replay tip DID carry a foreign path, then that the
+  report attributes it. BL-1389 (landed 2026-09-04, 06f1babcaf: "a path an
+  unlanded sibling owns alone never rides another ticket's land") made the
+  land step exclude such paths and print `EXCLUDED_SIBLING_PATH <path>
+  <ticket>` for each, so the fixture now yields `replayAdded: ["own.txt"]`
+  with `ENTANGLED_SIBLING BL-9002` and two `EXCLUDED_SIBLING_PATH` lines -
+  the foreign path never enters the tip, the guard fires:
+  `the replay tip carried no foreign path, so this scenario proves
+  nothing: ["own.txt"]`. Red since 2026-09-04; first seen by the cleaner
+  on 2026-09-19 while reviewing BL-1650 (its evidence
+  `BL-1308-cleaner-stale-premise-20260919.md`, reproduced against a fresh
+  origin/main checkout without BL-1650); specifier one run on main
+  8963bc6ff1: `not ok 4`, scenarios 1-3 and 5 ok. BL-1006's shape: the
+  successor that falsified the assertion never retired it.
+
+  ## What is wanted
+
+  - Scenario 03 retired (not reworded), with its comment.
+  - A replacement scenario in the same feature, built on the same
+    `second-parent` fixture shape: the replay tip adds only the cited
+    ticket's own paths, the sibling is named `ENTANGLED_SIBLING`, and every
+    sibling path left out is named on its own `EXCLUDED_SIBLING_PATH`
+    line - the exclusion BL-1389 performs, pinned where BL-1308's premise
+    used to live. Name BL-1389 in the scenario comment so the lineage is
+    greppable.
+  - The feature narrative re-tensed where it states the old premise as
+    present.
+  - Register row for the feature (lane acceptance, owner BL-1654, added
+    at mint) retired by this parcel's land (BL-1631).
+
+  ## How (direction, not mandate)
+
+  - The handler already parses the CLI's output into `report.replayAdded`
+    and `report.out`; the replacement steps read `replayAdded` (equals the
+    fixture's own path set) and the `EXCLUDED_SIBLING_PATH` lines (one per
+    sibling path, naming BL-9002). No new fixture.
+  - Re-run the BL-113 Gherkin mutation stamp if the runner requires it.
+
+constraints: >
+  No change to land_step_lib.bb, land_step_cli.bb or the fixture CLI.
+  The step handler change lands in the same commit as the feature
+  (BL-233). Fixture roots are mkdtemp `git init` repositories (already so).
+
+out_of_scope: |
+  - BL-1650's landed-sibling verdict (a different function).
+  - Why the changed-path lane (BL-1164) did not surface this red when
+    BL-1389, BL-1544, BL-1546 and BL-1594 changed the land step: recorded
+    as an observation for the specifier's own follow-up, not this ticket.
+
+qa_e2e_procedure: >
+  (1) `node specs/pipeline/cli.js specs/features/BL-1308-an-unlanded-sibling-on-a-second-parent-is-invisible.feature`
+  ONCE on the parcel commit: every scenario ok, no scenario titled "A
+  replay tip carries no path from a ticket the report did not name", one
+  scenario naming BL-1389 in its comment. (2) `grep -c EXCLUDED_SIBLING_PATH
+  specs/pipeline/steps/bl1308SiblingDetectorCoversReplaySteps.js` is at
+  least 1. Never "run it N times".
+
+source: |
+  Cleaner note to the specifier, priority 10, 2026-09-19T07:06:37Z
+  (inbound 10_20260919T070637Z_000891_from_cleaner): "Unowned standing
+  red: BL-1308 scenario 03 stale premise, unrelated to BL-1650". Cleaner
+  evidence, verbatim: "`own-paths`'s attribution/exclusion walk already
+  excludes `sib_a.txt`/`sib_b.txt` and names `ENTANGLED_SIBLING BL-9002`
+  on origin/main today - some earlier ticket (not identified here) already
+  closed the exclusion gap this scenario was built to catch." The
+  specifier identified it: BL-1389, 06f1babcaf, 2026-09-04
+  (`git log -S'EXCLUDED_SIBLING_PATH'`). Parents: BL-1308, BL-1389,
+  BL-1006 (retire, never reword).
+
+notes: |
+  Minted 2026-09-19 by the specifier while completing the cleaner's note,
+  the same pass. AUTO-APPROVED under the 2026-09-17 operator hotfix
+  (severity defect, no ruling_options) - see
+  auto-approve-high-severity-defects-amendment-20260917.md. Register row
+  appended in the mint commit (first_seen 2026-09-19, the first sighting;
+  red by arithmetic since 2026-09-04). The cleaner, holding BL-1650, was
+  noted the same pass that the red is owned.
+
+  Third instance today of a successor leaving a falsified scenario red
+  (BL-1428 sc01 on the calendar, BL-871 sc02-04 on BL-1348/BL-1541,
+  BL-1308 sc03 on BL-1389): the reds surfaced only when today's parcels
+  happened to run those features. The specifier records this as a
+  process observation for the shift-end pass.
+
+  required_wiring anchors the literal the replacement step must read
+  (`EXCLUDED_SIBLING_PATH`, printed by land_step_cli.bb since BL-1389) in
+  the handler; it is satisfied only once the replacement step exists.
