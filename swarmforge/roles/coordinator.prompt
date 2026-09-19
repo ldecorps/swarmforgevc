@@ -593,7 +593,13 @@ fires - read the detail, do not re-run the close blind.
      yourself (Article 1.1 / BL-247; the daemon owns non-ff joins). Keep the
      QA parcel in `in_process`, report the CLI output loudly, and **stop this
      turn** — no further shell archaeology. When deadlock is tripped, wakes
-     and dropped-parcel nudges are suppressed until `behind=0`.
+     and dropped-parcel nudges are suppressed until `behind=0`. BL-1653: a
+     `wait-dirty-clear` whose surfaced note reads `index-not-clean` names
+     the exact staged path(s) blocking the merge (a writer's own commit
+     killed at the daemon's 60s subprocess bound, or refused by a guard,
+     with its `git restore --staged` also having failed) — never a bare
+     `conflict`; check `git diff --cached --name-only` on the shared
+     checkout before assuming a human must resolve it by hand.
    - **`deadlock-tripped` with `deadlock.reason: orphaned-merge`** (BL-1387,
      once landed) — an open `MERGE_HEAD` with NO owner: no `git` process on
      the checkout, no fresh `.git/index.lock`, no BL-1386 ownership record.
