@@ -7,8 +7,13 @@
 # already on HEAD that has since gone stale is the throttle's signal
 # (BL-1429), never the committer's fault, and never refuses a commit that
 # does not touch it. `git diff --cached -U0` on each of the three source
-# paths gives exactly the resulting (post-change) lines with none of the
-# surrounding context a wider diff would also report as "changed".
+# paths gives the resulting (post-change) `+` lines; BL-1646 additionally
+# subtracts any line already present verbatim in HEAD's own version of the
+# file OR (mid-merge) MERGE_HEAD's - a branch merge collapsing several
+# days of the OTHER parent's own history into one `git diff --cached`
+# (always taken against a single first parent) must never have an
+# already-valid, inherited line judged as newly authored by this commit; a
+# merge whose OWN resolution adds a genuinely new row is still judged.
 #
 # Sources judged:
 #   backlog/standing-reds.tsv                                (lane file ticket first_seen note)
@@ -17,7 +22,10 @@
 #     whether the CURRENT staged register already names an open ticket for
 #     it, via the SAME join standing_red_register_lib.bb's build-report
 #     uses - never a second, independent ownership rule)
-#   backlog/hardening-debt-ledger.yaml                        (a new/changed `- parcel: X` line)
+#   backlog/hardening-debt-ledger.yaml                        (a new/changed `- parcel: X` row -
+#     BL-1646: owned when the CURRENT staged register already names an open
+#     ticket for the SAME (hardening, file_set) pair, via that same join;
+#     only otherwise is the row's own bare parcel id required to be open)
 #
 # Fail-open on an unreadable git index (WARN, exit 0) - the chain's posture
 # elsewhere (check_ticket_deletion.sh et al.): a check that cannot run is
@@ -66,11 +74,28 @@ ticket_open() {
 " 2>/dev/null
 }
 
-# Every `+` content line from `git diff --cached -U0 -- <path>`, excluding
-# the `+++ b/<path>` file-header line diff itself always emits first.
+# BL-1646 invariant 2: every line HEAD or (mid-merge) MERGE_HEAD already
+# carries for path - a line present in either is inherited, never a line
+# this commit itself authors. Empty when neither ref resolves the path
+# (a brand-new file).
+inherited_lines() {
+  local path="$1" merge_head_path
+  git show "HEAD:$path" 2>/dev/null
+  merge_head_path="$(git rev-parse --git-path MERGE_HEAD 2>/dev/null || true)"
+  if [[ -n "$merge_head_path" && -f "$merge_head_path" ]]; then
+    git show "MERGE_HEAD:$path" 2>/dev/null
+  fi
+}
+
+# Every `+` content line from `git diff --cached -U0 -- <path>` (excluding
+# the `+++ b/<path>` file-header line diff itself always emits first),
+# minus any line already inherited from HEAD or MERGE_HEAD (BL-1646).
 added_or_changed_lines() {
   local path="$1"
-  git diff --cached -U0 -- "$path" 2>/dev/null | grep -E '^\+[^+]' | sed -E 's/^\+//'
+  local candidates
+  candidates="$(git diff --cached -U0 -- "$path" 2>/dev/null | grep -E '^\+[^+]' | sed -E 's/^\+//')"
+  [[ -n "$candidates" ]] || return 0
+  comm -23 <(printf '%s\n' "$candidates" | sort -u) <(inherited_lines "$path" | sort -u)
 }
 
 violations=()
@@ -103,20 +128,58 @@ while IFS=$'\x01' read -r lane file ticket _rest; do
   fi
 done < <(added_or_changed_lines "$REGISTER_PATH" | tsv_fields_01)
 
-# ── the ledger: a new/changed debt row's own `- parcel: X` line ─────────
-while IFS= read -r line; do
-  [[ "$line" == "- parcel:"* ]] || continue
-  raw="${line#"- parcel:"}"
-  raw="$(echo "$raw" | sed -E 's/^[[:space:]]*"?//; s/"?[[:space:]]*$//')"
-  ticket="$(printf '%s' "$raw" | grep -oE '^[A-Za-z]+-[0-9]+' || true)"
+# ── the ledger: a new/changed debt row's own `- parcel: X` line, its
+#    ownership resolved through the SAME (lane, file) register join
+#    build-report uses (BL-1646 invariant 1) before falling back to the
+#    row's own bare parcel id ───────────────────────────────────────────
+ledger_new_lines="$(added_or_changed_lines "$LEDGER_PATH")"
+staged_register_for_ledger="$(git show ":$REGISTER_PATH" 2>/dev/null || true)"
+
+ledger_row_owned_by_register() {
+  local file_set="$1" row ticket
+  [[ -n "$staged_register_for_ledger" && -n "$file_set" ]] || return 1
+  row="$(printf '%s\n' "$staged_register_for_ledger" | awk -F'\t' -v f="$file_set" '$1=="hardening" && $2==f {print; exit}')"
+  [[ -n "$row" ]] || return 1
+  ticket="$(printf '%s' "$row" | awk -F'\t' '{print $3}')"
+  [[ -n "$ticket" ]] && ticket_open "$ticket"
+}
+
+current_parcel_raw=""
+current_file_set=""
+current_is_new=0
+
+finalize_ledger_row() {
+  [[ -n "$current_parcel_raw" ]] || return 0
+  [[ "$current_is_new" -eq 1 ]] || return 0
+  ledger_row_owned_by_register "$current_file_set" && return 0
+  local ticket
+  ticket="$(printf '%s' "$current_parcel_raw" | grep -oE '^[A-Za-z]+-[0-9]+' || true)"
   if [[ -z "$ticket" ]]; then
-    violations+=("backlog/hardening-debt-ledger.yaml row for parcel '$raw' names no ticket id")
-    continue
+    violations+=("backlog/hardening-debt-ledger.yaml row for parcel '$current_parcel_raw' names no ticket id")
+    return 0
   fi
   if ! ticket_open "$ticket"; then
-    violations+=("backlog/hardening-debt-ledger.yaml row for parcel '$raw' names $ticket, which is not open (closed or absent)")
+    violations+=("backlog/hardening-debt-ledger.yaml row for parcel '$current_parcel_raw' names $ticket, which is not open (closed or absent), and the register names no open owner for file_set '$current_file_set'")
   fi
-done < <(added_or_changed_lines "$LEDGER_PATH")
+}
+
+while IFS= read -r line; do
+  if [[ "$line" == "- parcel:"* ]]; then
+    finalize_ledger_row
+    current_parcel_raw="${line#"- parcel:"}"
+    current_parcel_raw="$(echo "$current_parcel_raw" | sed -E 's/^[[:space:]]*"?//; s/"?[[:space:]]*$//')"
+    current_file_set=""
+    if printf '%s\n' "$ledger_new_lines" | grep -Fxq -- "$line"; then
+      current_is_new=1
+    else
+      current_is_new=0
+    fi
+  elif [[ "$line" == "  file_set:"* ]]; then
+    current_file_set="${line#"  file_set:"}"
+    current_file_set="$(echo "$current_file_set" | sed -E 's/^[[:space:]]*"?//; s/"?[[:space:]]*$//')"
+  fi
+done < <(git show ":$LEDGER_PATH" 2>/dev/null || true)
+finalize_ledger_row
 
 # ── the allowlist: no ticket column of its own - judged by the CURRENT
 #    staged register's own join (the same rule standing_red_register_lib.bb

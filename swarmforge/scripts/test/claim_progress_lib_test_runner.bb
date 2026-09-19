@@ -257,7 +257,38 @@
   (assert-true "should-refuse halt for stale dormant coder claim"
                (claim-progress-lib/should-refuse-claim-halt?
                 {:role "coder" :active-role "hardender" :rotation-router? true
-                 :resident-busy? false :resident-recently-active? false})))
+                 :resident-busy? false :resident-recently-active? false}))
+
+  ;; ── BL-1649: a dead or freshly-respawned agent is never counted idle ────
+  (assert= "agent-present? false → paused-agent-absent, even past the timeout"
+           :paused-agent-absent
+           (claim-progress-lib/evaluate-claim-idle-signal base commit past cfg
+                                                          (assoc idle-ctx :agent-present? false)))
+
+  (assert= "respawned-recently? true → paused-agent-absent, even past the timeout"
+           :paused-agent-absent
+           (claim-progress-lib/evaluate-claim-idle-signal base commit past cfg
+                                                          (assoc idle-ctx :respawned-recently? true)))
+
+  (assert= "agent-present? true, respawned-recently? false → the ordinary ladder still runs"
+           :probe-agent
+           (claim-progress-lib/evaluate-claim-idle-signal base commit past cfg
+                                                          (assoc idle-ctx :agent-present? true
+                                                                 :respawned-recently? false)))
+
+  (assert= "neither reading supplied (nil) never tightens the ladder - same as before this ticket"
+           :probe-agent
+           (claim-progress-lib/evaluate-claim-idle-signal base commit past cfg idle-ctx))
+
+  (assert-true "should-refuse halt when the agent is absent"
+               (claim-progress-lib/should-refuse-claim-halt?
+                {:role "coder" :resident-busy? false :resident-recently-active? false
+                 :agent-present? false}))
+
+  (assert-true "should-refuse halt when the agent was respawned within its cooldown"
+               (claim-progress-lib/should-refuse-claim-halt?
+                {:role "coder" :resident-busy? false :resident-recently-active? false
+                 :respawned-recently? true})))
 
 (when (seq @failures)
   (doseq [f @failures] (println f))
