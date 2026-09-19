@@ -119,18 +119,27 @@
 
 (defn evaluate-claim-idle-signal
   "BL-528 gate: before counting an idle reclaim, skip when the resident is
-   working, the worktree has uncommitted work, or (mono-router) a dormant
-   role's mailbox is stale while another identity is active; otherwise probe
-   the agent once and wait :probe-grace-ms before incrementing reclaims.
-   Returns :progressed | :not-yet-overdue | :paused-dormant | :probe-agent |
-   :claimed-idle."
+   working, the worktree has uncommitted work, (mono-router) a dormant
+   role's mailbox is stale while another identity is active, or (BL-1649)
+   the role's agent process is absent or was chase-respawned within its
+   cooldown - a dead or freshly-respawned agent is never idle, it is
+   unobserved; otherwise probe the agent once and wait :probe-grace-ms
+   before incrementing reclaims.
+   Returns :progressed | :not-yet-overdue | :paused-dormant |
+   :paused-agent-absent | :probe-agent | :claimed-idle."
   [progress current-commit-10 now-ms config
    {:keys [role agent-busy? worktree-dirty? resident-busy? resident-recently-active?
-           active-role rotation-router?]}]
+           active-role rotation-router? agent-present? respawned-recently?]}]
   (let [cfg (merge default-config config)]
     (cond
       (mono-router-dormant-stale-claim? role active-role rotation-router?)
       :paused-dormant
+
+      ;; BL-1649: strict false?/true? - a caller that never supplies these
+      ;; readings (nil, absence of information) must never make the ladder
+      ;; MORE aggressive than before this ticket, only ever less.
+      (or (false? agent-present?) (true? respawned-recently?))
+      :paused-agent-absent
 
       (resident-shows-work? {:resident-busy? resident-busy?
                              :resident-recently-active? resident-recently-active?})
@@ -154,12 +163,19 @@
             :else :claimed-idle))))))
 
 (defn should-refuse-claim-halt?
-  "Last-line guard: never kill the swarm while the resident is working or a
-   dormant mailbox claim is stale under mono-router rotation."
-  [{:keys [role resident-busy? resident-recently-active? active-role rotation-router?]}]
+  "Last-line guard: never kill the swarm while the resident is working, a
+   dormant mailbox claim is stale under mono-router rotation, or (BL-1649)
+   the agent is absent or was chase-respawned within its cooldown - reclaims
+   accrued from a sidecar that predates this fix (a daemon restart, a stale
+   count carried over) must not reach a halt on a dead/respawning agent
+   either."
+  [{:keys [role resident-busy? resident-recently-active? active-role rotation-router?
+           agent-present? respawned-recently?]}]
   (or (resident-shows-work? {:resident-busy? resident-busy?
                               :resident-recently-active? resident-recently-active?})
-      (mono-router-dormant-stale-claim? role active-role rotation-router?)))
+      (mono-router-dormant-stale-claim? role active-role rotation-router?)
+      (false? agent-present?)
+      (true? respawned-recently?)))
 
 (defn format-idle-probe-message
   [{:keys [role elapsed-min]}]

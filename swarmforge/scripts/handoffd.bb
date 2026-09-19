@@ -2049,14 +2049,41 @@
      (or (mono-router-lib/rotation-router-from-identity? identity-text)
          (mono-router-lib/conf-rotation-router? conf-text)))))
 
+(defn- claim-idle-timeout-role-minutes-config
+  "BL-1649: `config claim_idle_timeout_role_minutes <role> <n>` lines from
+   the active pack conf (backlog-depth-lib/conf-file-path - the SAME
+   pack-aware resolution auth-respawn-max-attempts and its siblings above
+   already use), read fresh on every call so an operator's edit takes
+   effect on the next sweep with no daemon restart. Merged OVER
+   claim-progress-lib's own built-in :role-idle-timeout-ms map (conf wins
+   for a role it names; every other role keeps its built-in entry) -
+   never merged the other way, which would let a missing/unusable conf
+   line silently drop an existing built-in tolerance."
+  []
+  (let [conf-text (try (slurp (str (backlog-depth-lib/conf-file-path project-root)))
+                       (catch Exception _ nil))]
+    (merge (:role-idle-timeout-ms claim-progress-lib/default-config)
+           (chase-sweep-lib/parse-claim-idle-timeout-role-minutes-ms conf-text))))
+
 (defn- claim-idle-context [socket roles role now-ms]
   (let [active (handoff-lib/read-mono-router-active-role)
-        activity-role (or active role)]
+        activity-role (or active role)
+        ;; BL-1649: reuses get-liveness's own heartbeat-pid check (already
+        ;; wired for chase's stuck-in-process ladder) rather than a second,
+        ;; independent process-presence probe - "dead" is exactly the
+        ;; classification 2026-09-19's incident needed the ladder to notice.
+        agent-present? (not= "dead" (get-liveness role))
+        role-info (get roles role)
+        inbox-new-dir (when role-info (str (handoff-lib/mailbox-dir role-info :new)))
+        respawn-cooldown-until-ms (when inbox-new-dir
+                                    (chase-sweep-lib/read-respawn-cooldown-until-ms inbox-new-dir))]
     {:resident-busy? (resident-pane-busy? socket)
      :resident-recently-active? (chase-sweep-lib/pane-recently-active?
                                   activity-role now-ms claim-recent-activity-ms)
      :active-role active
-     :rotation-router? (rotation-router-mode?)}))
+     :rotation-router? (rotation-router-mode?)
+     :agent-present? agent-present?
+     :respawned-recently? (boolean (and respawn-cooldown-until-ms (< now-ms respawn-cooldown-until-ms)))}))
 
 (defn- note-chase-control-plane-failure!
   "BL-958: a failed chase tmux send is the daemon's view of the crash class
@@ -2212,8 +2239,19 @@
                           (claim-progress-lib/format-bounce-log role (:reclaims progress))))
                   :on-claim-idle-halt!
                   (fn [role _fp progress]
-                    (halt-for-claim-progress! role progress))}]
-    (chase-sweep-lib/run-sweep! (role-inboxes-for-chase roles) now-ms chase-sweep-config adapters)
+                    (halt-for-claim-progress! role progress))
+                  ;; BL-1649: one human-readable handoffd.log line per
+                  ;; reclaim increment, naming every reading it was decided
+                  ;; on - the six 2026-09-19 increments left no such line.
+                  :log-claim-idle-reclaim!
+                  (fn [{:keys [role reclaims busy dirty recent present elapsed-min timeout-min]}]
+                    (log! "claim-idle-reclaim" role
+                          (str "reclaims=" reclaims " busy=" busy " dirty=" dirty
+                               " recent=" recent " present=" present
+                               " elapsed-min=" elapsed-min " timeout-min=" timeout-min)))}
+          sweep-config (assoc chase-sweep-config
+                              :role-idle-timeout-ms (claim-idle-timeout-role-minutes-config))]
+    (chase-sweep-lib/run-sweep! (role-inboxes-for-chase roles) now-ms sweep-config adapters)
     (observe-standing-role-loops! roles socket)
     (try
       (observe-standing-role-auth! roles socket)

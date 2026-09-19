@@ -268,6 +268,104 @@ else
 fi
 rm -rf "${T}"
 
+# ── Test 9 (BL-1649): agent absent near the halt threshold → paused, not halt ─
+T=$(mktemp -d)
+register_tmp_dir "${T}"
+make_handoff "${T}" "test.handoff" "aaaa000000"
+CLAIM_MS=0
+write_claim_sidecar "${T}" "test.handoff" "aaaa000000" "${CLAIM_MS}" 9
+NOW=$((CLAIM_MS + 2000))
+run_sweep "${T}" "${NOW}" alive "${NOW}" CLAIM_HEAD_COMMIT=aaaa000000 \
+  CLAIM_AGENT_PRESENT=0
+RECLAIMS=$(python3 -c "import json; print(json.load(open('${T}/inbox/in_process/test.handoff.claim-progress.json'))['reclaims'])" 2>/dev/null || echo "x")
+if [[ "${RECLAIMS}" == "0" ]] && ! grep -q "claim-halt\|claim-idle-reclaim" "${T}/calls.log" 2>/dev/null; then
+  pass "test9: an absent agent pauses (resets) reclaims instead of incrementing toward halt"
+else
+  fail "test9: expected pause reset; reclaims=${RECLAIMS} calls=$(cat ${T}/calls.log 2>/dev/null)"
+fi
+rm -rf "${T}"
+
+# ── Test 10 (BL-1649): recent chase-respawn near the halt threshold → paused ─
+T=$(mktemp -d)
+register_tmp_dir "${T}"
+make_handoff "${T}" "test.handoff" "aaaa000000"
+CLAIM_MS=0
+write_claim_sidecar "${T}" "test.handoff" "aaaa000000" "${CLAIM_MS}" 9
+NOW=$((CLAIM_MS + 2000))
+run_sweep "${T}" "${NOW}" alive "${NOW}" CLAIM_HEAD_COMMIT=aaaa000000 \
+  CLAIM_RESPAWNED_RECENTLY=1
+RECLAIMS=$(python3 -c "import json; print(json.load(open('${T}/inbox/in_process/test.handoff.claim-progress.json'))['reclaims'])" 2>/dev/null || echo "x")
+if [[ "${RECLAIMS}" == "0" ]] && ! grep -q "claim-halt\|claim-idle-reclaim" "${T}/calls.log" 2>/dev/null; then
+  pass "test10: a role respawned within its cooldown pauses (resets) reclaims instead of incrementing toward halt"
+else
+  fail "test10: expected pause reset; reclaims=${RECLAIMS} calls=$(cat ${T}/calls.log 2>/dev/null)"
+fi
+rm -rf "${T}"
+
+# ── Test 12b (BL-1649): hardender's built-in 90min fallback survives an
+#    UNRELATED conf line for a different role - the shallow-merge gotcha
+#    (evaluate-claim-idle-signal's own `(merge default-config config)`
+#    would silently replace claim-progress-lib's whole built-in
+#    :role-idle-timeout-ms map, hardender's 90min included, with whatever
+#    THIS harness's own :role-idle-timeout-ms carries, unless the harness
+#    pre-merges the conf-parsed map over the built-in one itself) ───────────
+T=$(mktemp -d)
+register_tmp_dir "${T}"
+mkdir -p "${T}/inbox/in_process" "${T}/inbox/new" "${T}/inbox/completed" "${T}/inbox/abandoned"
+cat > "${T}/inbox/in_process/test.handoff" << EOF
+id: test
+from: coordinator
+to: hardender
+priority: 10
+type: git_handoff
+task: BL-528-test
+commit: aaaa000000
+dequeued_at: 2026-07-19T22:00:00Z
+EOF
+CLAIM_MS=0
+NOW=$((CLAIM_MS + 45 * 60 * 1000))
+env -u SWARMFORGE_CONFIG \
+  CLAIM_IDLE_TIMEOUT_MS=1000 CLAIM_PROBE_GRACE_MS=0 CLAIM_HEAD_COMMIT=aaaa000000 \
+  CLAIM_ROLE_TIMEOUT_CONF_TEXT="config claim_idle_timeout_role_minutes QA 90" \
+  bb "${RUNNER}" "${T}" "${NOW}" alive "${NOW}" hardender
+if grep -q "claim-idle-probe\|claim-idle-reclaim" "${T}/calls.log" 2>/dev/null; then
+  fail "test12b: hardender's built-in 90min fallback was lost - an unrelated QA conf line must never erase it; calls=$(cat ${T}/calls.log 2>/dev/null)"
+else
+  pass "test12b: hardender keeps its built-in 90min fallback even with an unrelated role's conf line present"
+fi
+rm -rf "${T}"
+
+# ── Test 11 (BL-1649): a per-role conf minutes line retunes the flat base ────
+T=$(mktemp -d)
+register_tmp_dir "${T}"
+make_handoff "${T}" "test.handoff" "aaaa000000"
+CLAIM_MS=0
+NOW=$((CLAIM_MS + 2000))
+run_sweep "${T}" "${NOW}" alive "${NOW}" CLAIM_HEAD_COMMIT=aaaa000000 \
+  CLAIM_ROLE_TIMEOUT_CONF_TEXT="config claim_idle_timeout_role_minutes coder 5"
+if grep -q "claim-idle-probe\|claim-idle-reclaim" "${T}/calls.log" 2>/dev/null; then
+  fail "test11: expected the conf-driven 5-minute window to still tolerate 2s elapsed; calls=$(cat ${T}/calls.log 2>/dev/null)"
+else
+  pass "test11: a conf-driven per-role window (5min) tolerates what the flat 1s base alone would not"
+fi
+rm -rf "${T}"
+
+# ── Test 12 (BL-1649): the reclaim log line names every reading ─────────────
+T=$(mktemp -d)
+register_tmp_dir "${T}"
+make_handoff "${T}" "test.handoff" "aaaa000000"
+CLAIM_MS=0
+write_claim_sidecar "${T}" "test.handoff" "aaaa000000" "${CLAIM_MS}" 0 0
+NOW=$((CLAIM_MS + 2000))
+run_sweep "${T}" "${NOW}" alive "${NOW}" CLAIM_HEAD_COMMIT=aaaa000000 \
+  CLAIM_AGENT_PRESENT=1
+if grep -qE "claim-idle-reclaim coder reclaims=1 busy=false dirty=false recent=false present=true elapsed-min=[0-9]+ timeout-min=[0-9]+" "${T}/calls.log" 2>/dev/null; then
+  pass "test12: the reclaim log line names role, reclaims, and every reading it was decided on"
+else
+  fail "test12: expected a full claim-idle-reclaim log line; calls=$(cat ${T}/calls.log 2>/dev/null)"
+fi
+rm -rf "${T}"
+
 if [[ "${FAILURES}" -eq 0 ]]; then
   echo "ALL TESTS PASSED (test_claim_progress_sweep)"
   exit 0
