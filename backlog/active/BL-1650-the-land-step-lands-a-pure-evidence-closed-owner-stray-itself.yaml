@@ -170,3 +170,5 @@ notes: |
   anchor on a new log literal would be satisfied by the parcel's own diff
   (BL-1235); scenario 01 runs the real CLI on a fixture, which is the
   gate.
+
+assigned_to: coder
