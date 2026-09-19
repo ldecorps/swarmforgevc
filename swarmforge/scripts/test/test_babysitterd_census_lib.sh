@@ -73,6 +73,26 @@ else
   fail "04: expected [100 ], got: [$result]"
 fi
 
+# ── 04b: the calling process's OWN pid is never named, even when the
+#    snapshot carries a matching babysitterd.sh line for it — the census
+#    is meant to be safe to call from WITHIN a babysitterd (a future
+#    single-instance-guard-at-start caller, out_of_scope note) without
+#    ever signalling itself. Hand-mutated (removed the `pid != self`
+#    guard) and confirmed ALL 7 of this file's other cases, and all 4 of
+#    the BL-1639 acceptance scenarios, stayed green — none of them ever
+#    plants a snapshot line for $$, so nothing else in the suite can see
+#    this guard. Reverted before adding this case.
+cat > "$PS_FILE" <<EOF
+  100 $ROOT/swarmforge/scripts/babysitterd.sh $ROOT
+  $$ $ROOT/.swarmforge/operator/babysitterd.sh
+EOF
+result="$(SWARMFORGE_SURVIVOR_PS_FILE="$PS_FILE" babysitterd_census_pids "$ROOT" | sort -n | tr '\n' ' ')"
+if [[ "$result" == "100 " ]]; then
+  pass "04b: the calling process's own pid is never named, even when it matches"
+else
+  fail "04b: expected [100 ] (self excluded), got: [$result]"
+fi
+
 # ── 05: an empty snapshot names nothing ──────────────────────────────────
 : > "$PS_FILE"
 result="$(SWARMFORGE_SURVIVOR_PS_FILE="$PS_FILE" babysitterd_census_pids "$ROOT")"

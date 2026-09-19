@@ -4,6 +4,7 @@ milestone: M8
 type: defect
 severity: medium
 status: todo
+abandoned_commits: [0e316f3ce7]
 epic: code-quality-gates
 priority: 140
 direction: normal
