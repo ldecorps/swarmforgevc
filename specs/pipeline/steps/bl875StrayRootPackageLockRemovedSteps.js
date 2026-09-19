@@ -13,27 +13,14 @@
 
 const assert = require('node:assert/strict');
 const fs = require('node:fs');
-const os = require('node:os');
 const path = require('node:path');
 const { execFileSync, spawnSync } = require('node:child_process');
+const { trackedTmpRoot } = require('./lib/fixtureReaper');
 
 const FEATURE = 'The repo root carries no stray package-lock.json for npm to rewrite';
 
 const REPO_ROOT = path.join(__dirname, '..', '..', '..');
 const BUILD_FRESHNESS_LIB = path.join(REPO_ROOT, 'swarmforge', 'scripts', 'build_freshness_lib.bb');
-
-// Fixture-root hygiene (BL-971/BL-529 pattern, same as bl1230's own steps):
-// every root this Background creates is registered for removal at process
-// exit, and a fresh Background eagerly drops the previous scenario's root.
-const fixtureRoots = [];
-function registerFixtureRoot(root) {
-  fixtureRoots.push(root);
-}
-process.on('exit', () => {
-  for (const root of fixtureRoots) {
-    fs.rmSync(root, { recursive: true, force: true });
-  }
-});
 
 function git(root, args) {
   return execFileSync('git', args, { cwd: root, encoding: 'utf8' });
@@ -44,12 +31,21 @@ function git(root, args) {
 // package-lock.json, and extension/package-lock.json tracked - the exact
 // shape BL-875's fix produces, built fresh under mkdtemp rather than
 // read off the live worktree.
+//
+// Root creation and cleanup go through fixtureReaper's trackedTmpRoot()
+// (BL-1636: a hand-rolled `fs.mkdtempSync` + process.on('exit', ...) here
+// only covered NORMAL exit, never SIGINT/SIGTERM, and tripped BL-1636's own
+// standing unregistered-mkdtemp guard - the plain track()/reap() pair is
+// the wrong primitive for a bare fixture directory with no
+// .swarmforge/operator state or tmux socket to kill: reap() does nothing
+// for a root shaped like this one, per its own "no operator dir and no
+// tmux pointer does nothing" test - trackedTmpRoot's rmSync-on-exit is the
+// one that actually removes a plain directory).
 function buildFixedRootFixture(ctx) {
   if (ctx.bl875 && ctx.bl875.root) {
     fs.rmSync(ctx.bl875.root, { recursive: true, force: true });
   }
-  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'bl875-root-'));
-  registerFixtureRoot(root);
+  const root = trackedTmpRoot('bl875-root-');
   git(root, ['init', '-q', '-b', 'main']);
   git(root, ['config', 'user.email', 'test@test']);
   git(root, ['config', 'user.name', 'test']);
