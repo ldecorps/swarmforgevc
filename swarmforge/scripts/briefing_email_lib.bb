@@ -123,7 +123,19 @@
    failure. The marker file itself is already written to disk by
    record-briefing-sent! either way - a commit failure degrades to exactly
    the pre-Leg-A working-tree-only behavior for THIS host, it never loses
-   the local send record."
+   the local send record.
+
+   BL-1653 item 1: a real commit failure (a hook refusal, or the daemon's
+   own 60s subprocess bound killing `git commit` mid pre-commit-hook -
+   BL-1525) leaves `path` staged in the SHARED master checkout, which then
+   blocks BL-891's reconcile sweep on every later tick until a human
+   unstages it by hand (measured 2026-09-19, 06:13-06:17Z). This call now
+   runs `git restore --staged -- path` before returning on that branch:
+   `{:ok false :reason ... :index-restored [path]}` when the restore
+   itself succeeds, or `{:ok false :reason ... :index-left-dirty true}`
+   when it too fails - never silently leaving the path staged unreported.
+   The failed add branch above restores nothing: a failed `git add` never
+   staged anything for this call to have to undo."
   ([briefings-dir] (commit-sent-marker! briefings-dir real-sh))
   ([briefings-dir sh-fn]
    (try
@@ -158,7 +170,11 @@
              {:ok true :reason :nothing-to-commit}
 
              :else
-             {:ok false :reason (str "git commit failed: " (str/trim (str (:err commit-result))))}))))
+             (let [restore-result (sh-fn briefings-dir "git" "restore" "--staged" "--" path)
+                   restored? (zero? (:exit restore-result))]
+               (cond-> {:ok false :reason (str "git commit failed: " (str/trim (str (:err commit-result))))}
+                 restored? (assoc :index-restored [path])
+                 (not restored?) (assoc :index-left-dirty true)))))))
      (catch Exception e
        {:ok false :reason (str "commit-sent-marker-exception: " (.getMessage e))}))))
 

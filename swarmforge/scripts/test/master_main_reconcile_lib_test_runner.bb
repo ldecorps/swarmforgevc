@@ -106,6 +106,48 @@
                (not (clojure.string/includes? msg long-path)))
   (assert-true "surface-message: still stays within the 80-char note limit even for a long path" (<= (count msg) 80)))
 
+;; ── BL-1653 item 2: surface-message :index-not-clean names the staged path ─
+
+(let [msg (master-main-reconcile-lib/surface-message {:behind 5 :reason :index-not-clean :paths ["seed.txt"]})]
+  (assert-true "surface-message: index-not-clean names the single staged path" (clojure.string/includes? msg "seed.txt"))
+  (assert-true "surface-message: index-not-clean mentions the behind count" (clojure.string/includes? msg "5"))
+  (assert-true "surface-message: stays within the 80-char note limit" (<= (count msg) 80)))
+
+(let [msg (master-main-reconcile-lib/surface-message {:behind 5 :reason :index-not-clean :paths ["a.txt" "b.txt" "c.txt"]})]
+  (assert-true "surface-message: multiple staged paths collapse to a count" (clojure.string/includes? msg "3 paths")))
+
+(let [msg (master-main-reconcile-lib/surface-message {:behind 5 :reason :index-not-clean :paths ["docs/briefings/.sent.json"]})]
+  (assert-true "surface-message: a path too long to fit falls back to the unnamed form rather than exceeding the limit"
+               (not (clojure.string/includes? msg "docs/briefings/.sent.json")))
+  (assert-true "surface-message: still stays within the 80-char note limit even for a long path" (<= (count msg) 80)))
+
+(assert= "merge-failure-reason: :index-not-clean maps to its own reason, never :conflict"
+         "index-not-clean" (master-main-reconcile-lib/merge-failure-reason :index-not-clean))
+(assert= "merge-failure-reason: :merge-abort-no-merge-head maps to its own reason, never :conflict"
+         "merge-abort-no-merge-head" (master-main-reconcile-lib/merge-failure-reason :merge-abort-no-merge-head))
+
+;; ── BL-1653 item 2: sweep! end to end - the surfaced note names the path,
+;; never the generic BL-1130 conflict text ─────────────────────────────────
+
+(let [daemon-dir (str (fs/create-temp-dir {:prefix "bl1653-sweep-"}))
+      surfaced (atom nil)
+      log-calls (atom [])]
+  (master-main-reconcile-lib/sweep!
+   daemon-dir 3
+   {:rev-counts! (fn [] {:ahead 0 :behind 1})
+    :dirty-paths! (fn [] [])
+    :merge-changed-paths! (fn [] [])
+    :merge! (fn [] {:success false :outcome :index-not-clean :paths ["seed.txt"]
+                     :error "staged path(s) block the absorb merge: seed.txt"})
+    :surface! (fn [msg] (reset! surfaced msg))
+    :escalate! (fn [_] nil)
+    :log! (fn [& parts] (swap! log-calls conj (vec parts)))})
+  (assert-true "sweep!: the surfaced note names the staged path, not the generic BL-1130 text"
+               (and @surfaced (clojure.string/includes? @surfaced "seed.txt")))
+  (assert-true "sweep!: the surfaced note does NOT read as a generic absorb-refused conflict"
+               (not (clojure.string/includes? @surfaced "BL-1130")))
+  (fs/delete-tree daemon-dir))
+
 (let [msg (master-main-reconcile-lib/surface-message {:behind 22 :reason :dirty :overlapping-paths #{}})]
   (assert-true "surface-message: no named paths still mentions the behind count" (clojure.string/includes? msg "22"))
   (assert-true "surface-message: stays within the 80-char note limit" (<= (count msg) 80)))
@@ -837,6 +879,87 @@
                :abort! (fn [] (swap! ff-order conj :abort!-should-not-run))
                :fallback! (fn [] (swap! ff-order conj :fallback!-should-not-run) {:success false})})]
   (assert= "bl1214 invariant 2: ff success calls nothing else at all" [:ff] @ff-order))
+
+;; ── BL-1653 item 2: a staged index blocks the absorb merge BEFORE ff! ──────
+
+(let [ff-calls (atom 0)
+      merge-calls (atom 0)
+      log-calls (atom [])
+      result (master-main-reconcile-lib/absorb-with-merge!
+              {:staged-paths! (fn [] ["docs/briefings/.sent.json"])
+               :ff! (fn [] (swap! ff-calls inc) {:success true})
+               :merge! (fn [] (swap! merge-calls inc) {:success true})
+               :abort! (fn [] nil)
+               :fallback! (fn [] {:success false})
+               :log! (fn [label text] (swap! log-calls conj [label text]))})]
+  (assert= "bl1653 item 2: a staged path refuses before ff!, reporting :index-not-clean"
+           {:success false :outcome :index-not-clean :paths ["docs/briefings/.sent.json"]
+            :error "staged path(s) block the absorb merge: docs/briefings/.sent.json"} result)
+  (assert= "bl1653 item 2: ff! is never called when the index is not clean" 0 @ff-calls)
+  (assert= "bl1653 item 2: merge! is never called when the index is not clean" 0 @merge-calls)
+  (assert= "bl1653 item 2: the log names the staged path"
+           [["index-not-clean" "staged path(s) block the absorb merge: docs/briefings/.sent.json"]]
+           @log-calls))
+
+(let [result (master-main-reconcile-lib/absorb-with-merge!
+              {:staged-paths! (fn [] [])
+               :ff! (fn [] {:success true})
+               :merge! (fn [] {:success true})
+               :abort! (fn [] nil)
+               :fallback! (fn [] {:success false})})]
+  (assert= "bl1653 item 2: no staged paths proceeds exactly as before" {:success true :outcome :ff} result))
+
+(let [result (master-main-reconcile-lib/absorb-with-merge!
+              {:ff! (fn [] {:success true})
+               :merge! (fn [] {:success true})
+               :abort! (fn [] nil)
+               :fallback! (fn [] {:success false})})]
+  (assert= "bl1653 item 2: an absent :staged-paths! adapter behaves exactly as every pre-existing call site"
+           {:success true :outcome :ff} result))
+
+(assert= "staged-index-block-reason: no staged paths -> nil"
+         nil (master-main-reconcile-lib/staged-index-block-reason []))
+(assert= "staged-index-block-reason: staged paths sorted and named"
+         {:outcome :index-not-clean :paths ["a.yaml" "b.md"]}
+         (master-main-reconcile-lib/staged-index-block-reason ["b.md" "a.yaml"]))
+
+;; ── BL-1653 item 3: an abort finding no MERGE_HEAD releases ownership ──────
+
+(let [clear-calls (atom 0)
+      log-calls (atom [])
+      result (master-main-reconcile-lib/absorb-with-merge!
+              {:ff! (fn [] {:success false})
+               :merge! (fn [] {:success false :error "conflict"})
+               :abort! (fn [] {:success false :error "fatal: There is no merge to abort (MERGE_HEAD missing)."})
+               :clear-owner! (fn [] (swap! clear-calls inc))
+               :fallback! (fn [] {:success false})
+               :log! (fn [label text] (swap! log-calls conj [label text]))})]
+  (assert= "bl1653 item 3: an abort finding no MERGE_HEAD reports :merge-abort-no-merge-head, never the generic failure"
+           :merge-abort-no-merge-head (:outcome result))
+  (assert-is-false "bl1653 item 3: :success stays false, no fallback! ran" (:success result))
+  (assert= "bl1653 item 3: ownership is released" 1 @clear-calls)
+  (assert= "bl1653 item 3: logged under its own label"
+           "fatal: There is no merge to abort (MERGE_HEAD missing)."
+           (second (first (filter #(= "merge-abort-no-merge-head" (first %)) @log-calls)))))
+
+(let [clear-calls (atom 0)
+      result (master-main-reconcile-lib/absorb-with-merge!
+              {:ff! (fn [] {:success false})
+               :merge! (fn [] {:success false :error "conflict"})
+               :abort! (fn [] {:success false :error "some other transient refusal"})
+               :clear-owner! (fn [] (swap! clear-calls inc))
+               :fallback! (fn [] {:success false})})]
+  (assert= "bl1653 item 3: any OTHER failed abort still reports the generic :merge-abort-failed"
+           :merge-abort-failed (:outcome result))
+  (assert= "bl1653 item 3: ownership is NOT released on a genuine abort failure" 0 @clear-calls))
+
+(assert-true "abort-found-no-merge-head?: git's own MERGE_HEAD-missing text"
+             (master-main-reconcile-lib/abort-found-no-merge-head?
+              "fatal: There is no merge to abort (MERGE_HEAD missing)."))
+(assert-is-false "abort-found-no-merge-head?: an unrelated abort error"
+              (master-main-reconcile-lib/abort-found-no-merge-head? "fatal: index.lock held"))
+(assert-is-false "abort-found-no-merge-head?: blank/nil never matches"
+              (master-main-reconcile-lib/abort-found-no-merge-head? nil))
 
 ;; ── BL-1248: parse-enabled? - fails closed to disabled on everything but
 ;;    the exact literal "true" ────────────────────────────────────────────
