@@ -265,7 +265,19 @@
   (assert= "the reason is :verify-mismatch" :verify-mismatch (:reason result))
   (assert= "attempts = max-retries + 1 (the initial attempt plus every retry)" 3 (:attempts result))
   (assert= "the mismatched path is named in the result" ["notes.txt"] (:mismatched-paths result))
-  (assert= "a fresh commit was attempted on every retry, up to the cap" 3 @commit-calls))
+  (assert= "a fresh commit was attempted on every retry, up to the cap" 3 @commit-calls)
+  ;; BL-1653 item 1 (hardening finding): add-fn! DID stage (it returns exit
+  ;; 0 above), so this call's own restore is real and must be reported -
+  ;; "a caller that staged nothing restores nothing" cuts the OTHER way
+  ;; here. Confirmed by hand-mutation before writing this: flipping only
+  ;; the :verify-mismatch call site's own `staged?` argument (true -> false)
+  ;; left every existing assertion in this file green, including the one
+  ;; exact-map check on the sibling :commit-failed case above (which does
+  ;; catch its OWN direction's mutant, :add-failed's, but says nothing
+  ;; about :verify-mismatch) - the injected-seam :commit-failed case is the
+  ;; only place :index-restored was checked at all until now.
+  (assert= "the restored path is reported on exhausted :verify-mismatch, same as :commit-failed"
+           ["notes.txt"] (:index-restored result)))
 
 ;; multi-path: only the genuinely mismatched path is reported, and a
 ;; matching path never blocks success.
