@@ -486,12 +486,15 @@
 (defn seat-filing-role-info
   "The role-info a delivered handoff's sent copy should be filed under:
    the seat named by its from_seat header when present and resolvable in
-   roles, else the STAGE named by its from header - today's behavior,
-   byte-identical for a bare seat or a file predating this fix (no
-   from_seat header at all)."
-  [headers roles]
-  (or (some->> (get headers "from_seat") (get roles))
-      (get roles (get headers "from"))))
+   roles, else fallback-role (the STAGE named by its from header, unless
+   the caller already has a more precise outbox-owning roles.tsv key -
+   handoffd.bb's two filing sites pass their own sender-role/role, itself
+   seat-safe by construction) - today's behavior, byte-identical for a
+   bare seat or a file predating this fix (no from_seat header at all)."
+  ([headers roles] (seat-filing-role-info headers roles (get headers "from")))
+  ([headers roles fallback-role]
+   (or (some->> (get headers "from_seat") (get roles))
+       (get roles fallback-role))))
 
 (defn stage-queue-dir
   "The current role's STAGE queue in the given state - the mailbox of the
