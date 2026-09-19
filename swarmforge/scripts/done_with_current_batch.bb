@@ -26,13 +26,20 @@
 (defn- forward-verdict [resident? source-file]
   (let [ticket-id (pipeline-stage-lib/extract-ticket-id (handoff-lib/header-field source-file "task"))
         since (forward-evidence-lib/inbound-window-start source-file)
-        evidenced? (boolean (and ticket-id (forward-evidence-lib/sent-handoff-names-ticket-since? ticket-id since)))]
+        evidenced? (boolean (and ticket-id (forward-evidence-lib/sent-handoff-names-ticket-since? ticket-id since)))
+        ;; BL-1642: same shared qa-stage? helper as the task path's own
+        ;; forward-gate! - QA is a task-mode role and never reaches this
+        ;; batch path today, but the decision core's input is gathered the
+        ;; same way here so neither call site drifts onto its own copy.
+        qa-note-evidenced? (boolean (and ticket-id (forward-evidence-lib/qa-stage?)
+                                          (forward-evidence-lib/sent-note-names-ticket-since? ticket-id since)))]
     {:file source-file
      :ticket-id ticket-id
      :decision (forward-evidence-lib/forward-completion-decision
                 {:forwarding? (forward-evidence-lib/forwarding-inbound? source-file)
                  :master-resident? resident?
                  :evidenced? evidenced?
+                 :qa-note-evidenced? qa-note-evidenced?
                  :reason (dispatch-lib/no-op-reason)})}))
 
 (defn- forward-gate! [batch-files]
