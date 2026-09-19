@@ -10,7 +10,8 @@ Feature: BL-1609 A forwarding parcel is not completed with nothing sent
   completed with nothing sent, on the task path and the batch path alike.
   This feature is that a code-worktree role's forwarding git_handoff
   inbound, held alone or inside a batch, completes only when a git_handoff
-  for its ticket was queued after the dequeue or a no-op reason is stated
+  for its ticket was queued after the inbound ITSELF was queued (BL-1645:
+  its own created_at, not its dequeue stamp) or a no-op reason is stated
   and recorded on the completed file, that a refusal moves nothing, and
   that a merge-only inbound and a master-resident role complete exactly as
   today. The live chain is QA's e2e.

@@ -180,7 +180,7 @@
 
 (defn- work-note-gate! [source-file]
   (let [ticket-id (work-note-ticket-id source-file)
-        since (or (handoff-lib/header-field source-file "dequeued_at") "1970-01-01T00:00:00Z")
+        since (forward-evidence-lib/inbound-window-start source-file)
         reason (dispatch-lib/no-work-reason)
         evidenced? (boolean (and ticket-id (work-evidenced-since? ticket-id since)))
         ;; BL-1614: only read when a ticket-id and a reason are both in
@@ -220,7 +220,7 @@
 ;; shared with the batch path's own forward-gate!.
 (defn- forward-gate! [source-file]
   (let [ticket-id (pipeline-stage-lib/extract-ticket-id (handoff-lib/header-field source-file "task"))
-        since (or (handoff-lib/header-field source-file "dequeued_at") "1970-01-01T00:00:00Z")
+        since (forward-evidence-lib/inbound-window-start source-file)
         reason (dispatch-lib/no-op-reason)
         evidenced? (boolean (and ticket-id (forward-evidence-lib/sent-handoff-names-ticket-since? ticket-id since)))]
     (case (forward-evidence-lib/forward-completion-decision
