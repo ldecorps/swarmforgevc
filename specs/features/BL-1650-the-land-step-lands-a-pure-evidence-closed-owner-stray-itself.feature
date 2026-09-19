@@ -1,60 +1,57 @@
-Feature: BL-1650 The land step lands a pure-evidence closed-owner stray itself and never calls a landed ancestor entangled
+Feature: BL-1650 The land step lands a pure-evidence closed-owner stray itself
 
-  The land step refuses to replay a parcel when the two-tree diff carries a
-  path whose only owner is a ticket closed on main and no parcel commit
-  touches it. On 2026-09-19 that path was a coder's incident evidence file,
-  committed on the coder branch after its ticket had moved on and closed,
-  inherited by every later branch, and escalated on every later land. After
-  this parcel the step cherry-picks such a stray onto main ahead of the
-  replay when every path it touches is pure evidence or documentation, says
-  so in its log, and keeps refusing every other closed-owner stray exactly
-  as before. Its landed-sibling verdict also walks the same ancestry its
-  entangled detector walks, instead of first-parent commits only, and
-  honours a sibling's own abandoned_commits record: on 2026-09-19 BL-1636's
-  tip-pure replay kept printing ENTANGLED_SIBLING for two closed siblings
-  whose commits had reached the branch through the pipeline's merge chain
-  and whose content was byte-identical on main.
+  land-plan's landed-sibling verdict used to score a sibling only over
+  task-tagged-changed-paths's own --first-parent walk, which never visits a
+  commit that rode into the parcel's branch through a non-first-parent
+  merge - the everyday shape every pipeline receive-merge produces. A
+  sibling's content already on origin/main under a different sha then read
+  ENTANGLED_SIBLING forever, and a candidate commit its own ticket had
+  already disclaimed under abandoned_commits counted as evidence against it
+  too. Separately, a closed sibling's incident-evidence file, committed on
+  a role's own branch after the sibling moved on, is never anybody's
+  content to land under the BL-1389 rule and BL-1546 refuses to decide it
+  silently - correctly, but every later parcel whose branch carries that
+  same stray commit escalates on it again, forever (BL-1636, 2026-09-19).
+  The land step may now cherry-pick (`-x`, keeping the stray's own author
+  and subject) such a stray itself, ahead of the parcel's own tip-pure
+  replay, and report it LAND_STRAY_EVIDENCE_LANDED - narrowly, only when
+  every path the stray touches is pure evidence/documentation; anything
+  wider still refuses exactly as BL-1546 already does. Every scenario runs
+  against a fixture repository under mkdtemp with its own origin (BL-1390).
 
   Background:
-    Given a git fixture with a main branch, a role branch, and a ticket BL-4242 closed on main
-    And the real land step runs from the fixture root
+    Given a fixture repository with an origin and a main branch
 
-  # BL-1650 a-pure-evidence-stray-is-landed-ahead-of-the-replay-01
-  Scenario: a closed-owner stray touching only an evidence file is cherry-picked onto main and the replay proceeds
-    Given the role branch carries a BL-4242 commit that adds only backlog/evidence/BL-4242-incident.md, absent from main
-    And a parcel for BL-4343 on top of it
-    When the land step runs for BL-4343
-    Then main gains that evidence file in a commit carrying the -x trailer naming the stray commit
-    And the land log carries one LAND_STRAY_EVIDENCE_LANDED line naming the stray commit, the landed commit and the path
-    And the BL-4343 replay proceeds
+  # BL-1650 a-closed-owner-pure-evidence-stray-lands-with-the-parcel-01
+  Scenario: a closed sibling's pure-evidence-only stray commit lands itself, ahead of the parcel's own replay
+    Given a commit on a role branch, tagged with a sibling ticket id, touching only a path under backlog/evidence/
+    And that sibling ticket is closed on origin/main
+    And the landing ticket's own commit is on the same role branch
+    When the land step runs for the landing ticket at the tip
+    Then it exits LAND_REPLAY and prints LAND_STRAY_EVIDENCE_LANDED naming the stray's own commit and its path
+    And the sibling is reported LANDED_SIBLING, never ENTANGLED_SIBLING
+    And the replay branch's tip carries the stray's own file content
 
-  # BL-1650 a-stray-touching-code-is-still-an-escalation-02
-  Scenario Outline: a closed-owner stray touching any non-evidence path is still refused as before
-    Given the role branch carries a BL-4242 commit that adds backlog/evidence/BL-4242-incident.md and <path>, absent from main
-    And a parcel for BL-4343 on top of it
-    When the land step runs for BL-4343
-    Then the land step refuses with LAND_ESCALATE naming BL-4242 and <path>
-    And main is unchanged
+  # BL-1650 a-closed-owner-stray-touching-code-still-refuses-02
+  Scenario: a closed sibling's stray commit touching a path outside backlog/evidence/ and docs/ still refuses by name
+    Given a commit on a role branch, tagged with a sibling ticket id, touching a path under swarmforge/scripts/
+    And that sibling ticket is closed on origin/main
+    And the landing ticket's own commit is on the same role branch
+    When the land step runs for the landing ticket at the tip
+    Then it exits LAND_ESCALATE and the reason names that path and the closed sibling's id
+    And no LAND_STRAY_EVIDENCE_LANDED line is printed
 
-    Examples:
-      | path                                              |
-      | swarmforge/scripts/some_lib.bb                    |
-      | specs/features/BL-4242-something.feature          |
-      | backlog/done/BL-4242-something.yaml               |
+  # BL-1650 a-sibling-reaching-the-tip-only-via-a-merge-reads-landed-03
+  Scenario: a sibling commit that reaches the tip only through a non-first-parent merge is reported landed when its content already matches origin/main
+    Given origin/main already carries a path's content under its own commit
+    And a sibling's own unrelated commit adds the same path with the same content
+    And the landing ticket's branch merges the sibling's commit in as a non-first-parent ancestor
+    When the land step runs for the landing ticket at the tip
+    Then the sibling is reported LANDED_SIBLING, never ENTANGLED_SIBLING
 
-  # BL-1650 a-landed-ancestor-that-rode-in-on-a-merge-is-not-entangled-03
-  Scenario: a closed-owner ancestor whose commit rode in on a merge and whose content is already on main is reported landed, not entangled
-    Given the role branch merged in a branch carrying a BL-4242 commit whose every path is byte-identical on main through BL-4242's own replay
-    And a parcel for BL-4343 on top of it
-    When the land step runs for BL-4343
-    Then the output carries LANDED_SIBLING BL-4242
-    And no ENTANGLED_SIBLING line names BL-4242
-    And the BL-4343 replay proceeds
-
-  # BL-1650 a-siblings-own-abandoned-record-is-honoured-04
-  Scenario: a sibling commit listed in its own ticket's abandoned_commits is neither entangled nor blocking
-    Given the role branch merged in a branch carrying a BL-4242 commit that BL-4242's own done ticket lists under abandoned_commits
-    And a parcel for BL-4343 on top of it
-    When the land step runs for BL-4343
-    Then no ENTANGLED_SIBLING line names BL-4242
-    And the BL-4343 replay proceeds
+  # BL-1650 a-sibling-whose-only-candidate-is-its-own-abandoned-commit-is-not-entangled-04
+  Scenario: a sibling ticket that already recorded its only candidate commit under its own abandoned_commits is not entangled at all
+    Given a sibling ticket closed on origin/main with abandoned_commits naming its own commit
+    And that same commit later becomes an ancestor of the landing ticket's branch through an ordinary merge
+    When the land step runs for the landing ticket at the tip
+    Then it exits LAND_CLEAN
