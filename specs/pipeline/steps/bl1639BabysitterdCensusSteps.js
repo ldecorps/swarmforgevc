@@ -30,6 +30,7 @@ const fs = require('node:fs');
 const os = require('node:os');
 const assert = require('node:assert/strict');
 const { spawnSync } = require('node:child_process');
+const { onAbnormalExit } = require('./lib/fixtureReaper');
 
 const REPO_ROOT = path.join(__dirname, '..', '..', '..');
 const SCRIPTS_DIR = path.join(REPO_ROOT, 'swarmforge', 'scripts');
@@ -129,6 +130,16 @@ function registerSteps(registry) {
     ctx.bl1639PsLines = [];
     ctx.bl1639NextFakePid = 900001;
     ctx.bl1639ThisRootExtraPids = [];
+    // BL-1636: every root this scenario mkdtemps (bl1639Root here, plus
+    // bl1639RecordDir/bl1639PsFileDir/bl1639KillAllSwarmScratch created by
+    // later steps) is normally removed by cleanupFixture(ctx), called from
+    // the terminal Then steps below - but a thrown assertion in between
+    // skips straight past those calls and leaks every one of them. This
+    // onAbnormalExit callback is the crash-safety net (BL-921/BL-931's
+    // cross-step leak class): idempotent with cleanupFixture's own normal
+    // calls (fs.rmSync force:true and process.kill both no-op on an
+    // already-gone target), so registering it here never double-frees.
+    onAbnormalExit(() => cleanupFixture(ctx));
   });
 
   registry.define(/^process signals are recorded through an injected seam instead of being sent$/, (ctx) => {
