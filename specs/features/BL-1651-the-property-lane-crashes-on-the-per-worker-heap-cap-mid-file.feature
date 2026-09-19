@@ -38,3 +38,9 @@ Feature: BL-1651 The property lane names the file that exceeds its heap ceiling 
     When extension/test/property-lane-heap-census.txt is read on the parcel commit
     Then it lists one row per property test file with its peak heap in megabytes and its case count
     And its header states the cap, the fork count and the host load of the run that produced it
+
+  # BL-1651 the-bl871-feature-is-green-once-with-its-fourth-scenario-retired-05
+  Scenario: the BL-871 worker-pool feature runs green once with scenarios 01 to 03 and its full-lane scenario retired
+    When specs/features/BL-871-property-lane-worker-pool-cap.feature runs once through the acceptance runner
+    Then every scenario it still carries passes
+    And it carries no scenario that runs the whole property lane
