@@ -1,0 +1,186 @@
+id: BL-1649
+title: "The BL-528 claim-idle ladder reads a per-role timeout from swarmforge.conf (QA 90 like the hardender's built-in), logs every reclaim increment with the readings it was decided on, and never counts a role whose agent process is absent or freshly respawned as idle: on 2026-09-19 QA's 80-minute land of BL-1636 crossed the flat 20-minute window, its Claude process died at ~04:00, six reclaims accrued in minutes with no log line each, the daemon bounced QA on top of its own respawn and released the parcel - four reclaims short of kill_all_swarm"
+milestone: M8
+type: defect
+severity: critical
+# critical: the halt threshold (10 reclaims) ends with the daemon writing
+# the stop file and running kill_all_swarm.sh - swarm down on a false
+# reading; QA sat at 6 at 04:06Z with the ladder still armed, and the
+# same shape re-arms on every long QA land until the timeout is raised.
+# The bounce already cost one 80-minute verification and released the
+# parcel for re-routing.
+status: todo
+epic: swarm-reliability
+priority: 5
+direction: swarm-reported
+depends_on: []
+# BL-528 (the ladder), BL-1076 (the batch observer's per-role conf key,
+# the naming and parser this mirrors) are in backlog/done. No open ticket
+# touches claim_progress_lib.bb.
+mutation_cost: low
+# low: Babashka (no mutation/CRAP/DRY wired, BL-472): one conf parser
+# mirroring chase_sweep_lib.bb's BL-1076 regex, two inputs to a pure
+# decision, one log line, the shipped conf, bb runner cases, one wiring
+# shell test, one feature and handler.
+slice_size_envelope: low
+required_stages: [coder, cleaner, architect, hardender, documenter, qa]
+
+acceptance: specs/features/BL-1649-the-claim-idle-ladder-reads-a-per-role-timeout-and-never-counts-a-dead-agent-as-idle.feature
+
+required_wiring:
+  - 'swarmforge/swarmforge.conf::claim_idle_timeout_role_minutes::the operator override is documented beside the base key it retunes (BL-1076 invariant), never a setting only the source tells of'
+  - 'specs/pipeline/steps/bl1649ClaimIdleLadderSteps.js::registerSteps::the handler lands in the same parcel as the feature (BL-233, BL-1371)'
+
+human_approval: approved
+approval_context: >
+  A new feature file is authored here, so it would ordinarily need a tap;
+  it is minted approved under the 2026-09-17 operator hotfix (severity
+  defect, no choice posed, no ruling_options). FIRM: the ladder's shape
+  (nudge, bounce at 6, halt at 10) and its busy/dirty/recent-activity
+  guards are unchanged; this adds a conf-driven per-role window, one log
+  line per increment, and one more guard (no agent process, or a respawn
+  within the cooldown, is not idle). FIRM: the hardender's built-in 90
+  minutes stays as the fallback entry; QA's 90 ships in the conf.
+
+invariants:
+  - "A role's claim-idle reclaim never increments while its pane shows the busy footer, its worktree carries uncommitted work, its agent process is absent, or a chase respawn of it happened within respawnCooldownSeconds."
+  - "The per-role idle timeout is read from swarmforge.conf on every sweep; a missing or unusable value degrades to the built-in role entry, then to the base window - never to a tighter one."
+  - "Every reclaim increment writes one log line naming the role, the new count and the readings it was decided on; a count that cannot be explained from the log did not happen."
+
+description: |
+  ## What is wrong
+
+  `claim_progress_lib.bb` judges a claimed parcel idle when HEAD has not
+  moved past the claim commit for `:claim-idle-timeout-ms` (20 min), with
+  one hardcoded exception, `:role-idle-timeout-ms {"hardender" 90 min}`
+  in its `default-config`. `evaluate-claim-idle-signal` skips the count
+  while the pane is busy, the worktree dirty or the resident recently
+  active, then probes once and increments; `decide-claim-idle-action`
+  nudges below 6, bounces at 6 (respawn the role, release the claim for
+  re-routing) and halts at 10 (`halt-for-claim-progress!`: Telegram,
+  email, stop file, `kill_all_swarm.sh`).
+
+  2026-09-19: QA dequeued BL-1636's parcel at 02:45:36Z (claim commit
+  d9cbadbf57) and ran its verification - unit, acceptance, the property
+  lane and the /tmp reap e2e for a heavy ticket - with HEAD unchanged, as
+  a land does until the evidence commit. At 03:52Z the daemon still saw
+  it busy (`chase-wake-skip-busy QA`). Around 04:00Z QA's Claude process
+  died (babysitter 04:03:17Z and 04:08:18Z: `CRIT [proc-QA] pane alive but
+  NO claude process under it`; cause not recorded - no OOM line readable,
+  no respawn reason logged); the daemon `chase-respawn`ed it at 04:01:31Z.
+  With no process the pane was no longer busy, so the ladder, armed since
+  03:05Z, incremented on successive sweeps: the babysitter read 4 at
+  04:03:40Z and 6 at 04:08:48Z, and the daemon logged
+  `claim-progress-bounce QA ... (reclaims=6). Releasing claim for
+  re-routing` at 04:06:08Z, then respawned QA again at 04:07:10Z. Not one
+  of the six increments left a log line (`claim-*` keys today: the bounce
+  only). QA re-claimed at 04:11Z, restarted the verification from
+  scratch, and now advances HEAD with progress commits (d39ad13714) to keep
+  the counter at zero. The coordinator's note 009679 (04:11:32Z) is the
+  reading "QA lacks role-idle-timeout-ms (hardender has it)".
+
+  Two faults, one ladder: the window is flat for a role whose legitimate
+  work is 60-90 quiet minutes, and a dead agent reads as an idle one, so
+  a crash escalation and the idle ladder stack their respawns and the
+  ladder keeps climbing toward the halt.
+
+  ## What is wanted
+
+  1. `config claim_idle_timeout_role_minutes <role> <n>` in
+     `swarmforge/swarmforge.conf`, repeatable, one line per role, parsed
+     the way `batch_claim_progress_role_stale_threshold_minutes` is
+     (`chase_sweep_lib.bb` ~1847; an unusable value is dropped, never
+     tightened); read fresh each sweep and merged over the lib's built-in
+     `:role-idle-timeout-ms`. The shipped conf sets `QA 90`, documented
+     beside the base key.
+  2. `evaluate-claim-idle-signal` takes `agent-present?` and
+     `respawned-recently?`; either false/true respectively yields a
+     non-counting outcome (`:paused-agent-absent`), the same posture as
+     `:paused-dormant`. The daemon supplies them from the readings the
+     babysitter and the chase sweep already make.
+  3. Every increment logs `claim-idle-reclaim <role> reclaims=<n>
+     busy=<b> dirty=<b> recent=<b> present=<b> elapsed-min=<m>
+     timeout-min=<t>`.
+
+  ## How (direction, not mandate)
+
+  - Keep the pure/impure split: the conf parser and the two new readings
+    are gathered in `handoffd.bb`'s sweep; the lib decides. Runner cases
+    for the parser (valid, zero, negative, non-numeric, repeated role,
+    unknown role) and for the new outcomes.
+  - Wiring: extend the handoffd claim-progress wiring shell test (or add
+    one on `test_handoffd_briefing_generation_wiring.sh`'s idiom) to run
+    one sweep on a fixture root with a stale claim and assert the log
+    line and the conf-driven window.
+  - Docs: `swarmforge/handoff-protocol.md`'s BL-528 paragraph and
+    `docs/how-to/BL-611-babysitterd-runbook.md` (the claim-risk reading)
+    name the key and the log line. No registered diagram depicts the
+    ladder.
+
+constraints: >
+  No change to the nudge/bounce/halt thresholds or to the halt's alert
+  order. The lib stays adapter-injected; fixtures are mkdtemp roots and
+  fake readings, never the live daemon (BL-1390). The step handler lands
+  in the same commit as the feature (BL-233). Runtime seconds (BL-1541).
+
+out_of_scope: |
+  - Why QA's Claude process died twice on 2026-09-19 (~04:00Z, ~04:06Z):
+    not diagnosable from the logs kept; surfaced to the human. The
+    babysitter's proc-<role> escalation owns the crash itself.
+  - The chase sweep's respawn logging its reason (an observation: the
+    seven `chase-respawn QA` lines at 04:01:31Z carry none).
+  - The batch observer's separate clock (BL-1076), unchanged.
+
+qa_e2e_procedure: >
+  (1) Unit: the bb runner covering `claim_progress_lib.bb` green with the
+  new cases; the wiring shell test green. (2) Acceptance: the BL-1649
+  feature green through the runner, once. (3) On a scratch daemon-shaped
+  root with `config claim_idle_timeout_role_minutes QA 90` and a QA claim
+  stamped 45 minutes old with HEAD unchanged and no busy footer: one
+  sweep logs no increment; the same root with the line removed and the
+  claim 25 minutes old logs exactly one `claim-idle-reclaim QA reclaims=1
+  ...` line. (4) Live, after land: `grep claim-idle-reclaim
+  .swarmforge/daemon/handoffd.log` explains every non-zero
+  `reclaims` the babysitter reports. Never "run it N times".
+
+source: |
+  Coordinator note to the specifier, priority 00, 2026-09-19T04:11:32Z
+  (inbound 00_20260919T041132Z_009679_from_coordinator): "QA lacks
+  role-idle-timeout-ms (hardender has it); reclaims hit 6". Daemon log
+  `claim-progress-bounce QA ... (reclaims=6)` 04:06:08Z; babysitter
+  `[claim-risk-QA]` 4 at 04:03:40Z, 6 at 04:08:48Z (ESCALATED operator);
+  `[proc-QA] pane alive but NO claude process` 04:03:17Z and 04:08:18Z;
+  `chase-respawn QA` x7 at 04:01:31Z and x7 at 04:07:10Z. The hardender's
+  exception is `claim_progress_lib.bb` line 32, a built-in map entry, not
+  a conf key. Parents: BL-528 (the ladder), BL-1076 (the per-role conf
+  precedent and its documented-override invariant).
+
+notes: |
+  Minted 2026-09-19 by the specifier while completing the coordinator's
+  note, the same pass. AUTO-APPROVED under the 2026-09-17 operator hotfix
+  (severity defect, no ruling_options) - see
+  auto-approve-high-severity-defects-amendment-20260917.md.
+
+  Hotfix candidate for the human NOW: one line in `claim_progress_lib.bb`
+  `default-config` `:role-idle-timeout-ms` adding `"QA" (* 90 60 1000)`
+  keeps the ladder unarmed through a legitimate land until this lands;
+  the daemon reads the lib at start, so a daemon restart follows. Interim
+  QA already uses: a progress commit (evidence stub) that advances HEAD
+  past the claim commit resets the counter to zero - keep doing it once
+  per lane until the fix lands.
+
+  Three concerns in one slice on purpose: the conf window alone leaves
+  the crash-counts-as-idle hole that produced today's bounce, and the log
+  line is what makes either verifiable; each part is a few lines in the
+  same lib and sweep. Grepped first: no open ticket names
+  `claim-idle-timeout-ms`, `role-idle-timeout-ms` or
+  `evaluate-claim-idle-signal`.
+
+  required_wiring's first entry anchors the conf key beside the base key
+  (BL-1076's rule); the second is the BL-233 pin. The daemon consumer
+  (`handoffd.bb`'s claim-progress sweep) pre-exists and an anchor on it
+  would match unchanged code (BL-1235); scenario 06 drives one real sweep
+  on a fixture, which is the gate.
+  IR-DRY at mint: every near-duplicate pairs a concrete step with its
+  Scenario Outline template (claim age, conf line, evaluated role) - one
+  handler regex serves both by design; reviewed and kept.
