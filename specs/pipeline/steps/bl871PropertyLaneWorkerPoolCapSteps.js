@@ -7,18 +7,16 @@
 // vitestWorkerMemoryBudgetSteps.js's scenario 01/02 and
 // bl868PropertyLaneIsolationGuardsSteps.js's scenario 04. Scenario 03
 // drives the real resolveWorkerPoolSize from the compiled budget module.
-// Scenario 04 runs the REAL `npm run test:properties` (the whole 65-file
-// lane) - the one scenario slow enough to earn its own long timeout, per
-// this ticket's own approval_context ("Scenario 04 is a full-suite run...
-// it earns its place: scenarios 01-03 can all pass on a config that still
-// flakes, because they check the declaration rather than the outcome").
 // Registered via defineScoped (BL-425 pattern): "the Vitest configuration"
 // Given text is close enough to BL-868's own unquoted phrasing that an
 // unscoped registration could collide with that feature's steps.
+//
+// BL-1651: the former scenario 04 (spawning the whole property lane
+// inside this acceptance harness via spawnSync) is retired - see the
+// removed handler's own note further down and BL-1651's scenario 05.
 const fs = require('node:fs');
 const os = require('node:os');
 const path = require('node:path');
-const { spawnSync } = require('node:child_process');
 const { pathToFileURL } = require('node:url');
 
 const REPO_ROOT = path.join(__dirname, '..', '..', '..');
@@ -77,11 +75,24 @@ function registerSteps(registry) {
   registry.defineScoped(
     /^its worker ceiling and heap limit come from the shared worker budget module$/,
     (ctx) => {
-      const { resolveWorkerPoolSize, PER_WORKER_HEAP_MB } = loadBudgetModule();
-      const expectedMaxForks = resolveWorkerPoolSize(os.totalmem() / (1024 * 1024));
+      const { resolveVitestWorkerPool, resolveFreeCoresCeiling, PER_WORKER_HEAP_MB } = loadBudgetModule();
+      // BL-1651: mirrors the REAL config's own composition exactly
+      // (pack/platform/override/rotation/defaultCeiling via
+      // resolveFreeCoresCeiling) - a bare resolveWorkerPoolSize(totalmem)
+      // (pre-BL-1651) never considered load at all and mismatched on any
+      // host whose free-cores ceiling resolves above MAX_WORKERS (BL-1348/
+      // BL-1336's own ceiling, landed after this scenario was authored).
+      const expectedMaxForks = resolveVitestWorkerPool({
+        pack: process.env.SWARMFORGE_PACK,
+        rotation: process.env.SWARMFORGE_ROTATION,
+        platform: os.platform(),
+        override: process.env.SWARMFORGE_VITEST_MAX_FORKS,
+        hostRamMB: os.totalmem() / (1024 * 1024),
+        defaultCeiling: resolveFreeCoresCeiling(os.cpus().length, os.loadavg()[1]),
+      });
       const actualMaxForks = ctx.config.test?.poolOptions?.forks?.maxForks;
       if (actualMaxForks !== expectedMaxForks) {
-        throw new Error(`expected maxForks to equal resolveWorkerPoolSize's own answer (${expectedMaxForks}) for this host, got ${actualMaxForks}`);
+        throw new Error(`expected maxForks to equal resolveVitestWorkerPool's own answer (${expectedMaxForks}) for this host, got ${actualMaxForks}`);
       }
       const execArgv = ctx.config.test?.poolOptions?.forks?.execArgv || [];
       const heapArg = execArgv.find((a) => /^--max-old-space-size=(\d+)$/.test(a));
@@ -138,44 +149,14 @@ function registerSteps(registry) {
     FEATURE_NAME
   );
 
-  // ── property-lane-worker-pool-cap-04 ─────────────────────────────────
-  // BL-871 QA bounce D1 (2026-08-11): direct timed runs of this exact
-  // command on this exact reference host measured 418.5s and 450.8s END TO
-  // END WHEN PASSING - the prior 300000ms (5min) timeout was shorter than a
-  // real passing run and could never succeed regardless of the property
-  // lane's health. 900000ms (15min) leaves headroom both above that
-  // baseline and above the D2 fix's own raised per-test timeouts on the
-  // subprocess-heavy files (bl760/bl787/bl797) landing back-to-back in one
-  // fork's critical path under contention.
-  registry.defineScoped(
-    /^the whole property suite is run on this host$/,
-    (ctx) => {
-      const result = spawnSync('npm', ['run', 'test:properties'], {
-        cwd: EXTENSION_DIR,
-        encoding: 'utf8',
-        timeout: 900000,
-      });
-      ctx.result = {
-        status: result.status,
-        output: `${result.stdout || ''}${result.stderr || ''}`,
-        timedOut: Boolean(result.error && result.error.code === 'ETIMEDOUT'),
-      };
-    },
-    FEATURE_NAME
-  );
-
-  registry.defineScoped(
-    /^every property file reaches a verdict without timing out$/,
-    (ctx) => {
-      if (ctx.result.timedOut) {
-        throw new Error(`expected the full property suite to finish within budget, but it timed out:\n${ctx.result.output.slice(-4000)}`);
-      }
-      if (ctx.result.status !== 0) {
-        throw new Error(`expected the full property suite to pass, got exit ${ctx.result.status}:\n${ctx.result.output.slice(-4000)}`);
-      }
-    },
-    FEATURE_NAME
-  );
+  // property-lane-worker-pool-cap-04 (spawning the whole property lane
+  // inside this acceptance harness) is RETIRED by BL-1651: nesting a
+  // 400s+, multi-fork, memory-hungry child inside a node:test-based
+  // harness process via spawnSync crashed the harness itself (SIGABRT,
+  // BL-1651's own standing-red evidence), independent of the lane's own
+  // health - the real command it ran passes cleanly run directly, which
+  // is what BL-1651's own qa_e2e_procedure and scenario 04 now verify
+  // instead. See BL-1651's scenario 05 for the retirement itself.
 }
 
 module.exports = { registerSteps };

@@ -160,6 +160,40 @@ function registerSteps(registry) {
     assert.match(header, /forks=\d+/, `expected the header to state the fork count:\n${header}`);
     assert.match(header, /load=[\d.]+/, `expected the header to state the host load:\n${header}`);
   });
+
+  // ── Scenario 05 ───────────────────────────────────────────────────────
+  // BL-871's own feature had two stale expectations (scenario 02's forks
+  // formula predated BL-1348/BL-1336's resolveFreeCoresCeiling ceiling,
+  // scenario 03's 8192MB row predated BL-1348's 640MB heap drop) and a
+  // scenario 04 that crashed this very acceptance harness nesting the
+  // whole property lane inside it via spawnSync (BL-1651's own standing-
+  // red evidence) - fixed/retired as this ticket's own registered debt
+  // (backlog/standing-reds.tsv). Drives the REAL run_acceptance.sh on
+  // BL-871's own (now-fixed) feature file, never a re-implementation of
+  // the runner.
+  const BL871_FEATURE = path.join(REPO_ROOT, 'specs', 'features', 'BL-871-property-lane-worker-pool-cap.feature');
+  const RUN_ACCEPTANCE = path.join(REPO_ROOT, 'specs', 'pipeline', 'scripts', 'run_acceptance.sh');
+
+  scoped(/^specs\/features\/BL-871-property-lane-worker-pool-cap\.feature runs once through the acceptance runner$/, (ctx) => {
+    const { spawnSync } = require('node:child_process');
+    const result = spawnSync('bash', [RUN_ACCEPTANCE, BL871_FEATURE], { cwd: REPO_ROOT, encoding: 'utf8', timeout: 120000 });
+    ctx.bl871Run = { status: result.status, output: `${result.stdout || ''}${result.stderr || ''}` };
+  });
+
+  scoped(/^every scenario it still carries passes$/, (ctx) => {
+    assert.equal(ctx.bl871Run.status, 0, `expected BL-871's feature to pass, got exit ${ctx.bl871Run.status}:\n${ctx.bl871Run.output}`);
+    assert.doesNotMatch(ctx.bl871Run.output, /^not ok/m, `expected no failing subtest:\n${ctx.bl871Run.output}`);
+  });
+
+  scoped(/^it carries no scenario that runs the whole property lane$/, () => {
+    const featureText = fs.readFileSync(BL871_FEATURE, 'utf8');
+    assert.doesNotMatch(featureText, /whole property (suite|lane)/i, `expected no full-lane scenario left in the feature:\n${featureText}`);
+    const handlerText = fs.readFileSync(
+      path.join(REPO_ROOT, 'specs', 'pipeline', 'steps', 'bl871PropertyLaneWorkerPoolCapSteps.js'),
+      'utf8'
+    );
+    assert.doesNotMatch(handlerText, /test:properties/, 'expected no handler still spawning the full property lane');
+  });
 }
 
 module.exports = { registerSteps };

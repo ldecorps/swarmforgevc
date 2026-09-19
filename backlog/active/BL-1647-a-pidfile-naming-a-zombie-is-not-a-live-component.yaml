@@ -144,3 +144,5 @@ notes: |
   exists before the fix and an anchor on it would match unchanged code
   (BL-1235); scenario 01 sources the real lib against a real zombie, which
   is the gate.
+
+assigned_to: coder
