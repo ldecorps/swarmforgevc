@@ -19,10 +19,10 @@ Feature: BL-1422 A Work dispatch cannot be completed without work or a stated re
 
   This feature is that a Work note is recognised through the one dispatch
   parser (BL-1223) and leaves in_process only with evidence of work since
-  its dequeue, a commit naming the ticket on the role's branch or a
-  git_handoff naming it, or with an explicit stated reason recorded on the
-  completed file; every other note and every git_handoff completes exactly
-  as today.
+  the note was queued (BL-1645: its own created_at, not its dequeue stamp),
+  a commit naming the ticket on the role's branch or a git_handoff naming
+  it, or with an explicit stated reason recorded on the completed file;
+  every other note and every git_handoff completes exactly as today.
 
   Background:
     Given a fixture role mailbox and worktree with a Work note for BL-9001 in in_process
