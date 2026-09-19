@@ -1,0 +1,139 @@
+id: BL-1648
+title: "BL-1428's acceptance scenario 01 asserts a wall-clock age: its handler expects oldest_age_days 35 for a fixture row first seen 2026-08-01 while standing_red_register_cli.bb reads LocalDate/now, so the scenario has been red since 2026-09-06 (49 on 2026-09-19) and surfaced only when BL-1646's changed-path lane ran it - the CLI takes an injected date and the handler pins it"
+milestone: M8
+type: defect
+severity: high
+# high (standing-red rule 2026-09-05): a test failing on main is a broken
+# safety signal; unowned it throttles intake and makes QA withhold every
+# parcel whose changed-path lane reaches the BL-1428 feature (BL-1646,
+# at the architect at mint, is the first). Not critical: the register CLI
+# itself is correct; only its acceptance fixture is under-specified.
+status: todo
+epic: swarm-reliability
+priority: 8
+direction: swarm-reported
+depends_on: []
+# BL-1428 (the register, the CLI, the feature) is in backlog/done. BL-1646
+# (active, in flight) changes the commit guard the same feature covers;
+# the two touch different files and either may land first.
+mutation_cost: low
+# low: Babashka (no mutation/CRAP/DRY wired, BL-472): one CLI argument,
+# one handler line, one feature and handler, one date pinned in BL-1428's
+# scenario 01 step text.
+slice_size_envelope: low
+required_stages: [coder, cleaner, architect, hardender, documenter, qa]
+
+acceptance: specs/features/BL-1648-the-register-cli-takes-an-injected-date.feature
+
+required_wiring:
+  - 'specs/pipeline/steps/bl1648RegisterCliInjectedDateSteps.js::registerSteps::the handler lands in the same parcel as the feature (BL-233, BL-1371)'
+
+human_approval: approved
+approval_context: >
+  A new feature file is authored here, so it would ordinarily need a tap;
+  it is minted approved under the 2026-09-17 operator hotfix (severity
+  defect, no choice posed, no ruling_options). FIRM: the register's
+  live behaviour is unchanged - with no date given the CLI still reads
+  today's date; the seam exists for fixtures. FIRM: BL-1428 scenario 01's
+  age assertion (35 for a row first seen 2026-08-01) keeps its number;
+  what changes is that its When step names the date it reads as of, so
+  the number is deterministic instead of true on exactly one day.
+
+invariants:
+  - "No acceptance scenario asserts a value that depends on the real clock: any age, deadline or 'today' a scenario checks is computed from a date the scenario itself pins."
+  - "The register CLI with no date argument reads today's date; an injected date changes only the age arithmetic, never which rows exist or who owns them."
+
+description: |
+  ## What is wrong
+
+  `specs/pipeline/steps/bl1428StandingRedRegisterSteps.js` line 74:
+  `assert.equal(report.oldest_age_days, 35, 'expected the oldest row's age
+  (2026-08-01)')`. The report comes from
+  `standing_red_register_cli.bb`, whose `-main` takes only the project
+  root and passes `:now (str (java.time.LocalDate/now))` to
+  `build-report`. The fixture row is first seen 2026-08-01; the assertion
+  was true on 2026-09-05 (the day the feature was stamped) and false from
+  2026-09-06 on. Nobody ran it until BL-1646 (a change to the register's
+  commit guard) pulled the BL-1428 feature into the changed-path lane
+  (BL-1164) on 2026-09-19: the cleaner reported it (note 000879), and one
+  run on main 9013f9edee reads
+  `not ok 1 - ... expected the oldest row's age (2026-08-01), got: 49`
+  (14 s; scenarios 2-7 ok). It is the BL-1006 shape - an assertion
+  red-when-correct - with the calendar instead of a successor ticket as
+  the trigger.
+
+  ## What is wanted
+
+  - `standing_red_register_cli.bb` accepts an optional injected date
+    (`--now YYYY-MM-DD` after the root, or one env seam - pick one, name
+    it in the handoff-protocol paragraph), defaulting to today.
+  - BL-1428 scenario 01 reads the fixture "as of 2026-09-05" (its When
+    step text names the date; the handler passes it), so 35 stays true
+    forever; scenarios 02-07 are untouched.
+  - BL-1648's own feature gates the seam: a pinned date gives a pinned
+    age; no date gives today (a row first seen today reads age 0); the
+    injected date never changes rows or ownership.
+
+  ## How (direction, not mandate)
+
+  - Parse the date with `java.time.LocalDate/parse` and refuse a
+    malformed value loudly (exit 2 naming the argument) rather than
+    falling back to today - a fixture that mistyped its date must not
+    silently pass on the real clock.
+  - The step text change in BL-1428's feature is a fixture pin, not a
+    contract change; say so in the feature's narrative in one sentence.
+    Re-stamp its BL-113 mutation header if the runner requires it.
+  - Grep the other handlers for the same shape before closing:
+    `grep -ln 'Date.now\|LocalDate/now\|new Date()' specs/pipeline/steps/*.js`
+    and any `assert.equal(..., <number>` on an `age`/`days` field; list
+    the hits in evidence (fix only BL-1428's here; others are a note to
+    the specifier).
+
+constraints: >
+  No change to build-report or the register's ownership join. Fixture
+  roots are mkdtemp, never the live checkout (BL-1390); runtime stays
+  seconds (BL-1541). The step handler lands in the same commit as the
+  feature (BL-233).
+
+out_of_scope: |
+  - The commit guard's ledger join (BL-1646).
+  - Any other handler found by the grep above (noted, not fixed here).
+
+qa_e2e_procedure: >
+  (1) `node specs/pipeline/cli.js specs/features/BL-1428-every-standing-red-names-an-open-owner.feature`
+  ONCE: 7 ok, 0 not ok. (2) The BL-1648 feature green through the runner,
+  once. (3) `bb swarmforge/scripts/standing_red_register_cli.bb .` with no
+  date still reports today's ages (compare one row's age with the calendar
+  by hand). (4) The evidence lists the grep's hits for other clock-bound
+  assertions. Never "run it N times".
+
+source: |
+  Cleaner note to the specifier, priority 10, 2026-09-19T03:33:20Z
+  (inbound 10_20260919T033320Z_000879_from_cleaner): "Unowned standing
+  red: BL-1428 feature hardcodes oldest_age_days=35 vs real clock". The
+  cleaner forwarded BL-1646 to the architect at 03:34Z without
+  withholding. Specifier reproduction on main 9013f9edee: one run, 14 s,
+  scenario 01 not ok with `got: 49`. Parents: BL-1428 (the feature and
+  CLI), BL-1006 (the red-when-correct rule), BL-1164 (the changed-path
+  lane that surfaced it).
+
+notes: |
+  Minted 2026-09-19 by the specifier while completing the cleaner's note,
+  the same pass. AUTO-APPROVED under the 2026-09-17 operator hotfix
+  (severity defect, no ruling_options) - see
+  auto-approve-high-severity-defects-amendment-20260917.md. Register row
+  (lane `acceptance`, file
+  `specs/features/BL-1428-every-standing-red-names-an-open-owner.feature`,
+  owner BL-1648, first_seen 2026-09-19 - the first sighting; red by
+  arithmetic since 2026-09-06, which the row's note says) appended in the
+  mint commit. The architect, holding BL-1646, was noted the same pass
+  that the red is owned and to resume.
+
+  required_wiring names the step handler only: the CLI's consumers (the
+  register report, the BL-1428 handler) exist before the fix and an
+  anchor on the new argument would be satisfied by the parcel's own diff
+  (BL-1235); scenario 01 runs the real CLI with the pinned date, which is
+  the gate.
+  IR-DRY at mint: the four When steps are one CLI call with four date
+  arguments (pinned, none, two dates, malformed) by design; reviewed and
+  kept.
