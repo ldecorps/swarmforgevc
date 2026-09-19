@@ -186,3 +186,16 @@ notes: |
   handler regex serves both by design; reviewed and kept.
 
 assigned_to: coder
+
+abandoned_commits: [f4bac9c452]
+# BL-1241 land-step remedy: the tip f4bac9c452 (QA's sync merge) named
+# ENTANGLED_SIBLING BL-1634, BL-1637 and BL-831 as ancestors, all closed
+# on origin/main. Per the specifier's 2026-09-19 BL-1636 ruling (the same
+# first-parent-walk defect, BL-1650 item 0: landed-sibling-verdicts walks
+# --first-parent only and misses a sibling that rode in on a merge), the
+# tip-pure replay land-replay/BL-1649-f4bac9c452 (361d15da18) was
+# inspected directly: its two-tree diff against origin/main carries none
+# of BL-1634/BL-1637/BL-831's content, only BL-1649's own paths plus a
+# stray closed-owner pure-evidence file (BL-1636 architect note, landed by
+# rule (e)) and QA's own BL-1646 abandoned_commits addendum. Landed
+# 361d15da18 in place of f4bac9c452. By QA.
