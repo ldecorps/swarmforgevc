@@ -187,3 +187,82 @@ test('reap() is idempotent — calling it twice on the same root after files are
     supervisor.kill('SIGKILL');
   }
 });
+
+// BL-1636: trackedTmpRoot(prefix) itself has no unit coverage anywhere -
+// the property/acceptance suites only feed its NAME as text to the
+// finder (proving the finder recognises the call site), never actually
+// invoke the function and observe what it does. Its own contract - a
+// created directory under /tmp with the owner-pid name shape, registered
+// so onAbnormalExit removes it on the process's OWN exit (not just a
+// signal) - is exactly the kind of behaviour this file's other tests
+// exist to prove for reap(). Per this file's own stated posture above,
+// track()/onAbnormalExit() (and so trackedTmpRoot, which calls
+// onAbnormalExit internally) are never required into THIS test process -
+// a real disposable CHILD process stands in, the same as every kill-path
+// test above.
+const FIXTURE_REAPER_PATH = path.join(__dirname, '..', 'steps', 'lib', 'fixtureReaper.js');
+
+function spawnTrackedTmpRootChild(prefix, { exitMode }) {
+  const script =
+    `const { trackedTmpRoot } = require(${JSON.stringify(FIXTURE_REAPER_PATH)});` +
+    `const root = trackedTmpRoot(${JSON.stringify(prefix)});` +
+    `process.stdout.write(root + '\\n');` +
+    (exitMode === 'normal'
+      ? `process.exit(0);`
+      : `setInterval(() => {}, 1000);`); // idle, waiting to be signalled.
+  return spawn(process.execPath, ['-e', script], { stdio: ['ignore', 'pipe', 'inherit'] });
+}
+
+function readChildStdoutLine(child) {
+  return new Promise((resolve, reject) => {
+    let buf = '';
+    child.stdout.on('data', (chunk) => {
+      buf += chunk.toString();
+      const nl = buf.indexOf('\n');
+      if (nl !== -1) {
+        resolve(buf.slice(0, nl));
+      }
+    });
+    child.on('error', reject);
+  });
+}
+
+test('trackedTmpRoot() creates a bl-prefixed, owner-pid-named root under /tmp, and removes it on the child process\'s own normal exit', async () => {
+  // The child prints its root and calls process.exit(0) in the same tick,
+  // so by the time this process's readChildStdoutLine resolves the child
+  // may already be exiting - asserting the root still exists at that
+  // instant would be racing the very behaviour under test. The name-shape
+  // assertion runs first (the root's existence is not load-bearing for
+  // it: fs.mkdtempSync already returned a real path when the child printed
+  // it), then this waits for the child to actually exit before asserting
+  // removal - the property this test exists to prove.
+  const child = spawnTrackedTmpRootChild('bl1636-normal-', { exitMode: 'normal' });
+  const root = await readChildStdoutLine(child);
+  try {
+    assert.ok(root.startsWith(path.join(os.tmpdir(), 'bl1636-normal-')), `unexpected root: ${root}`);
+    assert.match(path.basename(root), new RegExp(`^bl1636-normal-${child.pid}-`), `expected the child's own pid in the root name, got: ${root}`);
+    await waitFor(() => !alive(child.pid), 2000);
+    assert.equal(fs.existsSync(root), false, 'expected the root to be gone after the child exited normally');
+  } finally {
+    if (alive(child.pid)) {
+      child.kill('SIGKILL');
+    }
+    fs.rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test('trackedTmpRoot() removes its root when the child process is SIGTERM\'d', async () => {
+  const child = spawnTrackedTmpRootChild('bl1636-sigterm-', { exitMode: 'signal' });
+  const root = await readChildStdoutLine(child);
+  try {
+    assert.equal(fs.existsSync(root), true, 'expected the root to exist before signalling');
+    child.kill('SIGTERM');
+    await waitFor(() => !alive(child.pid), 2000);
+    assert.equal(fs.existsSync(root), false, 'expected the root to be gone after the child was SIGTERM\'d');
+  } finally {
+    if (alive(child.pid)) {
+      child.kill('SIGKILL');
+    }
+    fs.rmSync(root, { recursive: true, force: true });
+  }
+});
