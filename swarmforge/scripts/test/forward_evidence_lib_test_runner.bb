@@ -65,8 +65,21 @@
 ;; sent-handoff-names-ticket-since?, small enough here to cover directly
 ;; with real temp files rather than pushing every case out to the feature.
 
+;; BL-1636/BL-459 sibling: a bb harness creating fs/create-temp-dir roots
+;; needs a cleanup mechanism the standing tempDirTrapGuard recognises - an
+;; addShutdownHook or a try/finally + delete-tree. This runner has no
+;; early-exit path (assert= records failures rather than throwing, so the
+;; script always reaches its own end), but the shutdown hook is the
+;; established shape for this exact "small, deliberate IO exception"
+;; pattern (aps_equivalence_lib_test_runner.bb, ambulance_lib_property_runner.bb).
+(def bl1645-created-temp-dirs (atom []))
+(.addShutdownHook (Runtime/getRuntime)
+                   (Thread. (fn [] (doseq [d @bl1645-created-temp-dirs] (try (fs/delete-tree d) (catch Exception _ nil))))))
+
 (defn write-headers [m]
-  (let [f (str (fs/path (fs/create-temp-dir {:prefix "bl1645-window-"}) "fixture.handoff"))]
+  (let [dir (fs/create-temp-dir {:prefix "bl1645-window-"})
+        f (str (fs/path dir "fixture.handoff"))]
+    (swap! bl1645-created-temp-dirs conj dir)
     (spit f (str (str/join "\n" (map (fn [[k v]] (str (name k) ": " v)) m)) "\n\nbody\n"))
     f))
 
