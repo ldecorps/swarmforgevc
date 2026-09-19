@@ -197,3 +197,5 @@ notes: |
   gate. IR-DRY at mint: the outline rows share their Given/When by design
   (one decision table); scenario 02 is a static one-helper check in the
   BL-897 mirror shape.
+
+assigned_to: coder
