@@ -2744,7 +2744,25 @@ label widened what the sweep can SAY without widening what it can DO, since
 a suppressed observation sends nothing at all. It is deliberately
 separate from BL-528's task-mode claim-idle escalation ladder
 (nudge → bounce → halt): this mechanism assumes a live owner throughout and
-only ever answers "is it progressing", never "is it alive". The sidecar is
+only ever answers "is it progressing", never "is it alive". BL-528's ladder
+answers "is it alive" too, since BL-1649 (2026-09-19): `evaluate-claim-idle-
+signal` never counts a reclaim while the role's agent process is absent
+(`agent-present?` false) or was respawned within `respawnCooldownSeconds`
+(`respawned-recently?` true) - a crash reads as `:paused-agent-absent`, the
+same non-counting posture as a busy pane or a dirty worktree, so a daemon
+respawn racing the crash-escalation respawn no longer stacks reclaims
+toward the halt. Its own per-role window is conf-driven the same shape as
+this sweep's: `config claim_idle_timeout_role_minutes <role> <n>` (repeatable,
+`swarmforge.conf`, an unusable value dropped, never tightened) overrides
+`claim_progress_lib.bb`'s built-in `:role-idle-timeout-ms` map (`hardender`
+90 minutes; the shipped conf adds `QA 90`), which falls back to the base
+`claim-idle-timeout-ms` (20 minutes) for every other role - the two
+per-role maps stay deliberately unmerged, same reasoning as above. Every
+reclaim increment logs one `claim-idle-reclaim <role> reclaims=<n> busy=<b>
+dirty=<b> recent=<b> present=<b> elapsed-min=<m> timeout-min=<t>` line
+naming the readings it was decided on, so a bounce or halt's count is
+always explainable from `handoffd.log` - the six 2026-09-19 QA increments
+that led to a bounce left no such line. The sidecar is
 registered in `handoff_lib.bb`'s sidecar suffixes, so the existing
 terminal-cleanup convention (every batch completion calls
 `remove-sidecars-of!`) retires it automatically when the batch finishes.
