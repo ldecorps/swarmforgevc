@@ -21,6 +21,19 @@ You are the coder.
   the existing registry doesn't yet resolve). This is in addition to, not
   instead of, your own unit tests. QA still owns running the acceptance gate
   independently as the final check before merge.
+- **A step handler that creates a temp root registers it for reaping
+  (BL-1636 standing guard, on main since 2026-09-19).** Any
+  `specs/pipeline/steps/*Steps.js` that calls `fs.mkdtempSync` must also
+  carry one of the finder's markers - `trackedTmpRoot(`, `onAbnormalExit(`,
+  `track(` from `./lib/fixtureReaper`, or the lib's `mkTmpDir(` - or
+  `extension/test/stepHandlerTmpRootGuard.test.js` fails the unit lane
+  naming your file as a new offender. The committed census is frozen: a new
+  handler registers, it is never added to the census. Before forwarding a
+  parcel that adds or edits a handler: `npx vitest run
+  test/stepHandlerTmpRootGuard.test.js` from `extension/` (seconds). Four
+  handlers written on 2026-09-18/19 (bl1639, bl875, bl1647, bl1649) reached
+  the hardender unregistered and each cost a bounce-shaped fix there.
+
 - Promoting a parked `.feature.draft` (BL-233) is TWO edits in ONE commit:
   (1) move the draft to its live `specs/features/*.feature` alongside the
   step handlers you add for it, and (2) flip the ticket YAML's `acceptance:`
