@@ -66,7 +66,17 @@ function mailboxDirs(wt, role, masterResident) {
   };
 }
 
-function makeFixture() {
+// BL-1642: generalizes the fixture this file always built (one hardcoded
+// role set) into a builder over an arbitrary role list, so a sibling
+// ticket needing a different role mix (BL-1642's QA/architect/documenter
+// set) reuses this ONE fixture builder rather than growing its own copy.
+// roleDefs: [{ role, worktreeKey, receiveMode: 'task'|'batch',
+// masterResident }] - roles sharing a worktreeKey share one checkout
+// (BL-128's per-role mailbox subdirectory, same as specifier/coordinator
+// always have). makeFixture() below is byte-identical to its pre-BL-1642
+// shape, now expressed as this builder called with the original four
+// roles - no behavior change for BL-1609's own scenarios.
+function buildFixture(roleDefs) {
   const root = mkProcessTmpDir('bl1609acc-');
   git(root, ['init', '-q', '-b', 'main']);
   git(root, ['config', 'user.email', 'test@test']);
@@ -74,55 +84,63 @@ function makeFixture() {
   git(root, ['config', 'commit.gpgsign', 'false']);
   git(root, ['commit', '-q', '--allow-empty', '-m', 'init']);
 
-  const architectWt = path.join(root, '.worktrees', 'architect');
-  git(root, ['worktree', 'add', '-q', '-b', 'architect', architectWt]);
-  const cleanerWt = path.join(root, '.worktrees', 'cleaner');
-  git(root, ['worktree', 'add', '-q', '-b', 'cleaner', cleanerWt]);
-  const masterWt = path.join(root, '.worktrees', 'master');
-  git(root, ['worktree', 'add', '-q', '-b', 'master', masterWt]);
-
-  for (const wt of [architectWt, cleanerWt, masterWt]) {
+  const wtByKey = {};
+  for (const { worktreeKey } of roleDefs) {
+    if (wtByKey[worktreeKey]) continue;
+    const wt = path.join(root, '.worktrees', worktreeKey);
+    git(root, ['worktree', 'add', '-q', '-b', worktreeKey, wt]);
     installScripts(path.join(wt, 'swarmforge', 'scripts'));
+    wtByKey[worktreeKey] = wt;
   }
 
-  // Background: architect (task, own worktree), cleaner (batch, own
-  // worktree), specifier and coordinator (master-resident, ONE shared
-  // checkout - BL-128's per-role mailbox subdirectory under it).
-  const rolesLine =
-    `architect\tarchitect\t${architectWt}\tswarmforge-architect\tArchitect\tclaude\ttask\n` +
-    `cleaner\tcleaner\t${cleanerWt}\tswarmforge-cleaner\tCleaner\tclaude\tbatch\n` +
-    `specifier\tmaster\t${masterWt}\tswarmforge-specifier\tSpecifier\tclaude\ttask\n` +
-    `coordinator\tmaster\t${masterWt}\tswarmforge-coordinator\tCoordinator\tclaude\ttask\n`;
+  const displayName = (role) => role.charAt(0).toUpperCase() + role.slice(1).toLowerCase();
+  const rolesLine = roleDefs
+    .map(
+      ({ role, worktreeKey, receiveMode }) =>
+        `${role}\t${worktreeKey}\t${wtByKey[worktreeKey]}\tswarmforge-${role}\t${displayName(role)}\tclaude\t${receiveMode}\n`
+    )
+    .join('');
   // handoff_lib.bb's target-root resolves to the repo ROOT shared by every
   // linked worktree (git rev-parse --git-common-dir's parent), not the
   // worktree itself, so roles.tsv must exist there too for load-role-info
   // (and the master-resident branch it drives) to resolve. Each worktree
   // also keeps its own copy for dispatch_lib.bb's project-root (which
   // prefers `git rev-parse --show-toplevel`'s own roles.tsv when present).
-  for (const wt of [root, architectWt, cleanerWt, masterWt]) {
+  for (const wt of [root, ...Object.values(wtByKey)]) {
     fs.mkdirSync(path.join(wt, '.swarmforge'), { recursive: true });
     fs.writeFileSync(path.join(wt, '.swarmforge', 'roles.tsv'), rolesLine);
   }
 
-  const dirsByRole = {
-    architect: mailboxDirs(architectWt, 'architect', false),
-    cleaner: mailboxDirs(cleanerWt, 'cleaner', false),
-    specifier: mailboxDirs(masterWt, 'specifier', true),
-    coordinator: mailboxDirs(masterWt, 'coordinator', true),
-  };
-  for (const dirs of Object.values(dirsByRole)) {
+  const dirsByRole = {};
+  const wtByRole = {};
+  for (const { role, worktreeKey, masterResident } of roleDefs) {
+    const wt = wtByKey[worktreeKey];
+    wtByRole[role] = wt;
+    const dirs = mailboxDirs(wt, role, Boolean(masterResident));
+    dirsByRole[role] = dirs;
     fs.mkdirSync(dirs.inProcess, { recursive: true });
     fs.mkdirSync(dirs.completed, { recursive: true });
     fs.mkdirSync(dirs.outbox, { recursive: true });
     fs.mkdirSync(dirs.sent, { recursive: true });
   }
 
-  const wtByRole = { architect: architectWt, cleaner: cleanerWt, specifier: masterWt, coordinator: masterWt };
   const doneShByRole = Object.fromEntries(
     Object.entries(wtByRole).map(([role, wt]) => [role, path.join(wt, 'swarmforge', 'scripts', 'done_with_current.sh')])
   );
 
   return { root, dirsByRole, wtByRole, doneShByRole };
+}
+
+function makeFixture() {
+  // Background: architect (task, own worktree), cleaner (batch, own
+  // worktree), specifier and coordinator (master-resident, ONE shared
+  // checkout - BL-128's per-role mailbox subdirectory under it).
+  return buildFixture([
+    { role: 'architect', worktreeKey: 'architect', receiveMode: 'task' },
+    { role: 'cleaner', worktreeKey: 'cleaner', receiveMode: 'batch' },
+    { role: 'specifier', worktreeKey: 'master', receiveMode: 'task', masterResident: true },
+    { role: 'coordinator', worktreeKey: 'master', receiveMode: 'task', masterResident: true },
+  ]);
 }
 
 function forwardingHandoffBody({ role, ticket, commit, dequeuedAt, nonForwarding, name }) {
@@ -292,4 +310,18 @@ function registerSteps(registry) {
   });
 }
 
-module.exports = { registerSteps };
+// BL-1642: exported so a sibling handler needing a different role mix
+// (QA/architect/documenter) reuses this ONE fixture builder rather than
+// growing its own copy - registerSteps remains the only export the step
+// registry itself loads (BL-1371's discovery calls only that).
+module.exports = {
+  registerSteps,
+  buildFixture,
+  installScripts,
+  mailboxDirs,
+  git,
+  isoSecondsAgo,
+  forwardingHandoffBody,
+  queuedForwardBody,
+  runDone,
+};
