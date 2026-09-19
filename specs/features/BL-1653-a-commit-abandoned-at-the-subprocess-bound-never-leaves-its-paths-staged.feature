@@ -47,3 +47,11 @@ Feature: BL-1653 A commit abandoned at the subprocess bound never leaves its pat
     When the master-main reconcile sweep runs once
     Then the log carries the conflict line as today
     And no index-not-clean line is logged
+
+  # BL-1653 a-failed-abort-with-no-merge-releases-ownership-05
+  Scenario: an abort that finds no merge in progress releases ownership instead of looping
+    Given the sweep holds merge ownership for a sha and no merge is in progress
+    When the master-main reconcile sweep runs once
+    Then the owner record is cleared
+    And the log carries no merge-abort-failed line
+    And the next run starts from the index check
