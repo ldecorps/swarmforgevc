@@ -16,6 +16,7 @@
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+source "$SCRIPT_DIR/babysitterd_census_lib.sh"
 
 if [[ "${1:-}" == "-h" || "${1:-}" == "--help" ]]; then
   cat <<'HELP'
@@ -54,6 +55,10 @@ for arg in "$@"; do
   esac
 done
 if ROOT="$(cd "$ROOT_ARG" 2>/dev/null && pwd)"; then
+  # BL-1639: the same root-scoped census stop_ancillary_services.sh's
+  # stop_babysitterd and finish_shift_lib.sh's verify use, not just the
+  # one tracked pidfile — a babysitterd of another root is untouched.
+  babysitterd_census_signal "$ROOT"
   signal_pid_file "$ROOT/.swarmforge/babysitterd/babysitterd.pid"
 fi
 

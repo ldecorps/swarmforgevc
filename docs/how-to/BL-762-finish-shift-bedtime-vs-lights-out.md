@@ -71,6 +71,19 @@ safe to run finish-shift more than once in a row.
 - a component it should have left running (front desk, tunnels) was up
   before the run and is no longer running after.
 
+For babysitterd, the stop and this verify read the same root-scoped
+process census (`babysitterd_census_lib.sh`, BL-1639) instead of the stop
+signalling one pidfile while the verify matches every `babysitterd.sh`
+process on the host: a second babysitterd of this root (an operator-local
+copy launched alongside the tracked one, say) is signalled by the stop and
+so never trips the verify as a survivor; a babysitterd of a *different*
+root is neither signalled nor counted at all. Before BL-1639, that
+mismatch was the recorded cause of `REFUSE: finish-shift left the stack in
+an unexpected state: still running (should be stopped): babysitterd` —
+the stop's one pidfile missed the second daemon, the verify's root-blind
+match counted it anyway, and the orphaned survivor kept running until a
+human killed it by hand.
+
 The second half is deliberate: an already-stopped swarm's kept components
 stay "unchanged" (still down), not forced up — bedtime never starts
 anything that wasn't already running.
