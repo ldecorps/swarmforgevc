@@ -102,6 +102,27 @@ description: |
      module-level array that grows per case); otherwise owned by name in
      a follow-up ticket minted by the specifier on the coder's note before
      this closes - never left as "hardener's next work" (2026-09-10 rule).
+  5. (Amendment 2026-09-19 06:2x Z, coder note 002052.) BL-871's own
+     acceptance feature (`specs/features/BL-871-property-lane-worker-pool-cap.feature`)
+     is red on main and this parcel owns it, because items 2-3 change the
+     very derivation its scenarios assert (BL-1006: the successor amends
+     what it falsifies): scenario 02 compares the config's `maxForks`
+     against a bare `resolveWorkerPoolSize(totalmem)` (ceiling 6) while
+     the config has used `resolveFreeCoresCeiling` since BL-1348 (got 9
+     on 2026-09-19); scenario 03's Examples row `8192 -> 3` predates the
+     per-worker heap dropping to 640 MB (floor(8192*0.5/640) = 6, got 6);
+     scenario 04 spawns the whole 400-second property lane synchronously
+     inside the acceptance harness, which cannot fit BL-1541's 300 s
+     per-mutant ceiling and crashed on this ticket's own heap error under
+     the harness on 2026-09-19. Do: scenario 02 asserts "same shared
+     module" by calling the module with the inputs the config itself
+     uses, never a second formula; scenario 03's rows are recomputed from
+     item 3's derivation (rows that still demonstrate a shrink); scenario
+     04 is RETIRED (its coverage is qa_e2e step 3, the lane completing
+     once on a quiet host) and the feature narrative re-tensed. The BL-113
+     stamp is re-run if the runner requires it. The register row for the
+     BL-871 feature (owner BL-1651, added at this amendment) is retired by
+     this parcel's land (BL-1631).
 
   ## How (direction, not mandate)
 
@@ -162,6 +183,17 @@ notes: |
   QA's process died of memory pressure is wrong; BL-1652 owns what killed
   it. required_wiring names the step handler only (BL-1235): scenario 01
   drives the real gate on a fixture file, which is the gate.
+
+  Amended 2026-09-19 06:2x Z on the coder's note 002052 (coder evidence
+  `BL-871-standing-red-scenarios-02-03-04-20260919.md`, coder branch
+  a302f8687f): item 5 above and feature scenario 05 added; the coder
+  (holder) was noted to merge main and re-read. The note's other half
+  ("BL-1639/1645 tmp-dir traps") is the union-tree artifact adjudicated
+  in `BL-1636-specifier-adjudication-of-architect-guard-red-on-merge-20260919.md`:
+  main's `stepHandlerTmpRootGuard.test.js` and `tempDirTrapGuard.test.js`
+  are both green (one run each, 2026-09-19 06:2x Z), BL-1645 landed
+  (f213b7e997) with its runner's shutdown hook, and BL-1639's registered
+  handler is what QA holds; the coder branch carries pre-fix copies.
   IR-DRY at mint: scenarios 01/02 differ only in whether the fixture
   exceeds the ceiling, by design; reviewed and kept.
 
