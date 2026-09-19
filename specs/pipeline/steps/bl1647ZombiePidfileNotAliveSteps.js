@@ -73,6 +73,13 @@ else:
   return parseInt(out, 10);
 }
 
+function cleanupFixture(state) {
+  if (state.root) {
+    fs.rmSync(state.root, { recursive: true, force: true });
+    state.root = null;
+  }
+}
+
 function ensureState(ctx) {
   if (!ctx.bl1647) {
     const root = fs.mkdtempSync(path.join(os.tmpdir(), 'bl1647acc-'));
@@ -135,13 +142,21 @@ function registerSteps(registry) {
   // ── Then ──────────────────────────────────────────────────────────────
   scoped(/^the (front-desk|onboarder|tunnels) is reported as not running$/, (ctx, component) => {
     const state = ensureState(ctx);
-    assert.equal(state.component, component);
-    assert.equal(state.result, 'stopped', `expected ${component} to read as stopped, got: ${state.result}`);
+    try {
+      assert.equal(state.component, component);
+      assert.equal(state.result, 'stopped', `expected ${component} to read as stopped, got: ${state.result}`);
+    } finally {
+      cleanupFixture(state);
+    }
   });
 
   scoped(/^the front-desk is reported as running$/, (ctx) => {
     const state = ensureState(ctx);
-    assert.equal(state.result, 'running', `expected front-desk to read as running, got: ${state.result}`);
+    try {
+      assert.equal(state.result, 'running', `expected front-desk to read as running, got: ${state.result}`);
+    } finally {
+      cleanupFixture(state);
+    }
     for (const pid of state.alivePids) {
       try {
         process.kill(pid, 'SIGKILL');
