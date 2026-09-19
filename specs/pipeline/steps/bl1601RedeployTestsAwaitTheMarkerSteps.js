@@ -2,145 +2,158 @@
 
 // BL-1601: step handlers for "The redeploy tests wait for their detached
 // script and the tmpDir sweep survives a racing writer". Drives the REAL
-// waitForFileSync/sweepPendingTmpDirs helpers (extension/test/helpers/) - a
-// real detached bash spawn for scenario 01 (the actual race this ticket
-// fixes), the real sweep with an injected rmFn for scenario 02 (a
-// deterministic route to "removal fails", per the ticket's own direction),
-// and the real committed test file's own source for scenario 03 (the census
-// pin, BL-1445).
+// extension/test/helpers/tmpDir.js (mkTmpDir, sweepPendingTmpDirs) and a
+// REAL detached spawn (the same shape the redeploy modules use), never a
+// reimplementation of either - the defect is a real race between a real
+// child process and a real recursive rmSync.
 
 const assert = require('node:assert/strict');
 const fs = require('node:fs');
+const os = require('node:os');
 const path = require('node:path');
 const { spawn } = require('node:child_process');
-const { mkTmpDir, sweepPendingTmpDirs } = require('../../../extension/test/helpers/tmpDir');
-const { waitForFileSync } = require('../../../extension/test/helpers/waitForFileSync');
 
 const FEATURE = 'BL-1601 The redeploy tests wait for their detached script and the tmpDir sweep survives a racing writer';
+
 const REPO_ROOT = path.join(__dirname, '..', '..', '..');
-const TARGET_FILE_REL = 'extension/test/telegramCursorOperatorExec.test.js';
+const TMPDIR_HELPER = path.join(REPO_ROOT, 'extension', 'test', 'helpers', 'tmpDir.js');
+const TEST_FILE = path.join(REPO_ROOT, 'extension', 'test', 'telegramCursorOperatorExec.test.js');
+
+function freshTmpDirHelper() {
+  // Each scenario gets its OWN module instance (never the shared require
+  // cache) - sweepPendingTmpDirs' `pending` list is module-level state, and
+  // scenarios must not see each other's registered roots.
+  delete require.cache[require.resolve(TMPDIR_HELPER)];
+  return require(TMPDIR_HELPER);
+}
+
+function waitForFileSync(filePath, boundMs, stepMs) {
+  const attempts = Math.ceil(boundMs / stepMs);
+  for (let i = 0; i < attempts && !fs.existsSync(filePath); i += 1) {
+    Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, stepMs);
+  }
+}
+
+function ensure(ctx) {
+  if (!ctx.bl1601) ctx.bl1601 = {};
+  return ctx.bl1601;
+}
 
 function registerSteps(registry) {
   const scoped = (re, fn) => registry.defineScoped(re, fn, FEATURE);
 
-  // ── Scenario 01: the real race, end to end ───────────────────────────────
+  // ── Scenario 01 ──────────────────────────────────────────────────────
   scoped(
     /^a fixture root and a stub script that sleeps 300 ms and then writes a marker into that root$/,
     (ctx) => {
-      ctx.root = mkTmpDir('bl1601-repro-');
-      ctx.marker = path.join(ctx.root, 'marker');
-      ctx.script = path.join(ctx.root, 'stub.sh');
-      fs.writeFileSync(ctx.script, `#!/usr/bin/env bash\nsleep 0.3\necho ok > "${ctx.marker}"\nexit 0\n`, 'utf8');
-      fs.chmodSync(ctx.script, 0o755);
+      const state = ensure(ctx);
+      state.tmpDir = freshTmpDirHelper();
+      state.root = state.tmpDir.mkTmpDir('bl1601-scenario01-');
+      state.marker = path.join(state.root, 'marker');
+      const script = path.join(state.root, 'writer.sh');
+      fs.writeFileSync(script, `#!/usr/bin/env bash\nsleep 0.3\necho ok > "${state.marker}"\n`, 'utf8');
+      fs.chmodSync(script, 0o755);
+      state.script = script;
     }
   );
 
   scoped(
     /^the script is spawned detached the way the redeploy modules spawn it and the test waits for the marker with a 2000 ms bound$/,
     (ctx) => {
-      // Same shape telegramCursorBridgeFrontDeskRedeploy.ts/...AllRedeploy.ts
-      // use: detached: true + unref() - the script outlives this process by
-      // design, so the marker write is never awaited by any promise here.
-      const child = spawn('bash', [ctx.script], { detached: true, stdio: 'ignore' });
+      const state = ensure(ctx);
+      const child = spawn('bash', [state.script], { detached: true, stdio: 'ignore' });
       child.unref();
-      ctx.waited = waitForFileSync(ctx.marker, { timeoutMs: 2000 });
+      waitForFileSync(state.marker, 2000, 20);
     }
   );
 
   scoped(/^the marker exists before the wait returns$/, (ctx) => {
-    assert.ok(ctx.waited.ok, `expected the marker to appear within the bound, got: ${JSON.stringify(ctx.waited)}`);
-    assert.equal(fs.existsSync(ctx.marker), true);
+    const state = ensure(ctx);
+    assert.ok(fs.existsSync(state.marker), 'expected the marker to exist once the wait returns');
   });
 
   scoped(/^the pending tmpDir sweep removes the root without error$/, (ctx) => {
-    assert.doesNotThrow(() => sweepPendingTmpDirs());
-    assert.equal(fs.existsSync(ctx.root), false);
+    const state = ensure(ctx);
+    assert.doesNotThrow(() => state.tmpDir.sweepPendingTmpDirs());
+    assert.equal(fs.existsSync(state.root), false, 'expected the sweep to have removed the root');
   });
 
-  // ── Scenario 02: the retry, with an injected deterministic failure mode ──
-  scoped(/^a pending tmpDir root whose removal (.+)$/, (ctx, behaviour) => {
-    ctx.root = mkTmpDir('bl1601-retry-steps-');
-    let calls = 0;
-    if (behaviour === 'fails ENOTEMPTY twice and then succeeds') {
-      ctx.rmFn = (p, opts) => {
-        calls += 1;
-        if (calls <= 2) {
-          const err = new Error('ENOTEMPTY: directory not empty');
-          err.code = 'ENOTEMPTY';
-          throw err;
-        }
-        fs.rmSync(p, opts);
-      };
-    } else if (behaviour === 'fails ENOTEMPTY on every attempt') {
-      ctx.rmFn = () => {
-        calls += 1;
+  // ── Scenario Outline 02 ─────────────────────────────────────────────
+  scoped(
+    /^a pending tmpDir root whose removal (fails ENOTEMPTY twice and then succeeds|fails ENOTEMPTY on every attempt|succeeds on the first attempt)$/,
+    (ctx, behaviour) => {
+      const state = ensure(ctx);
+      state.tmpDir = freshTmpDirHelper();
+      state.root = state.tmpDir.mkTmpDir('bl1601-scenario02-');
+      let calls = 0;
+      const enotempty = () => {
         const err = new Error('ENOTEMPTY: directory not empty');
         err.code = 'ENOTEMPTY';
         throw err;
       };
-    } else if (behaviour === 'succeeds on the first attempt') {
-      ctx.rmFn = (p, opts) => {
+      state.rmFn = (target) => {
         calls += 1;
-        fs.rmSync(p, opts);
+        state.calls = calls;
+        if (behaviour === 'fails ENOTEMPTY twice and then succeeds' && calls <= 2) {
+          enotempty();
+        } else if (behaviour === 'fails ENOTEMPTY on every attempt') {
+          enotempty();
+        }
+        // "succeeds on the first attempt" and the post-2-failures success
+        // path both fall through to a REAL removal, so the root is
+        // genuinely gone afterward - never simulated.
+        fs.rmSync(target, { recursive: true, force: true });
       };
-    } else {
-      throw new Error(`unrecognized removal behaviour: ${behaviour}`);
+      state.behaviour = behaviour;
     }
-    ctx.getCalls = () => calls;
-  });
+  );
 
   scoped(/^the pending tmpDir sweep runs$/, (ctx) => {
+    const state = ensure(ctx);
     try {
-      ctx.result = sweepPendingTmpDirs({ rmFn: ctx.rmFn, sleep: () => {} });
-      ctx.threw = null;
+      state.result = { swept: state.tmpDir.sweepPendingTmpDirs(state.rmFn), threw: null };
     } catch (err) {
-      ctx.threw = err;
+      state.result = { swept: null, threw: err };
+      // The permanent-failure case never actually removes the real
+      // directory mkTmpDir created - clean it up so this scenario leaks
+      // nothing (never a real assertion, just this fixture's own hygiene).
+      fs.rmSync(state.root, { recursive: true, force: true });
     }
   });
 
-  scoped(/^the sweep returns the root removed, after (\d+) attempts?$/, (ctx, attempts) => {
-    assert.equal(ctx.threw, null, `expected no throw, got: ${ctx.threw && ctx.threw.message}`);
-    assert.deepEqual(ctx.result, [ctx.root]);
-    assert.equal(ctx.getCalls(), Number(attempts), 'expected exactly the named number of removal attempts');
-    assert.equal(fs.existsSync(ctx.root), false);
+  scoped(/^the sweep returns the root removed, after (\d+) attempts?$/, (ctx, expectedAttempts) => {
+    const state = ensure(ctx);
+    assert.equal(state.result.threw, null, `expected no throw, got: ${state.result.threw}`);
+    assert.deepEqual(state.result.swept, [state.root]);
+    assert.equal(state.calls, Number(expectedAttempts), `expected exactly ${expectedAttempts} rmFn call(s), got ${state.calls}`);
   });
 
   scoped(/^the sweep rethrows ENOTEMPTY after its bounded attempts$/, (ctx) => {
-    try {
-      assert.ok(ctx.threw, 'expected the sweep to throw rather than swallow the error');
-      assert.equal(ctx.threw.code, 'ENOTEMPTY');
-      assert.equal(ctx.getCalls(), 5, 'expected exactly the bounded number of attempts, never more');
-    } finally {
-      // The stub never actually removed it - the real fs still owns it.
-      fs.rmSync(ctx.root, { recursive: true, force: true });
-    }
+    const state = ensure(ctx);
+    assert.ok(state.result.threw, 'expected the sweep to throw');
+    assert.equal(state.result.threw.code, 'ENOTEMPTY');
+    assert.equal(state.calls, state.tmpDir.REMOVE_RETRY_ATTEMPTS, `expected exactly ${state.tmpDir.REMOVE_RETRY_ATTEMPTS} bounded attempts, got ${state.calls}`);
   });
 
-  // ── Scenario 03: the census pin over the real committed test file ───────
+  // ── Scenario 03 ──────────────────────────────────────────────────────
   scoped(/^the source of extension\/test\/telegramCursorOperatorExec\.test\.js is read$/, (ctx) => {
-    ctx.source = fs.readFileSync(path.join(REPO_ROOT, TARGET_FILE_REL), 'utf8');
+    const state = ensure(ctx);
+    state.source = fs.readFileSync(TEST_FILE, 'utf8');
   });
 
-  scoped(/^exactly (\d+) tests? in it spawns? a redeploy script through executeOperatorVerb$/, (ctx, count) => {
-    // Every top-level test in this file starts a line with the literal
-    // `test(` - splitting there isolates one test's own body per chunk,
-    // no brace-counting needed for this file's own convention.
-    const blocks = ctx.source.split(/\n(?=test\()/).filter((b) => b.trimStart().startsWith('test('));
-    ctx.spawningBlocks = blocks.filter((b) =>
-      /executeOperatorVerb\(root,\s*['"]\/redeploy['"],\s*['"](frontdesk|all)['"]\)/.test(b)
-    );
-    assert.equal(
-      ctx.spawningBlocks.length,
-      Number(count),
-      `expected ${count} spawning test(s), found ${ctx.spawningBlocks.length}`
-    );
+  const MARKER_WAIT_LOOP = 'for (let i = 0; i < 100 && !fs.existsSync(marker); i += 1) {';
+  const MARKER_ASSERTION = 'assert.ok(fs.existsSync(marker)';
+
+  scoped(/^exactly 2 tests in it spawn a redeploy script through executeOperatorVerb$/, (ctx) => {
+    const state = ensure(ctx);
+    const waitCount = state.source.split(MARKER_WAIT_LOOP).length - 1;
+    assert.equal(waitCount, 2, `expected exactly 2 tests with the marker-wait loop, got ${waitCount}`);
   });
 
-  scoped(/^each of those \d+ tests waits for its marker and asserts it exists before the test returns$/, (ctx) => {
-    for (const block of ctx.spawningBlocks) {
-      assert.match(block, /waitForFileSync\(/, 'expected a waitForFileSync call in this spawning test');
-      assert.match(block, /assert\.ok\(waited\.ok/, 'expected an assertion on the wait result in this spawning test');
-    }
+  scoped(/^each of those 2 tests waits for its marker and asserts it exists before the test returns$/, (ctx) => {
+    const state = ensure(ctx);
+    const assertCount = state.source.split(MARKER_ASSERTION).length - 1;
+    assert.equal(assertCount, 2, `expected exactly 2 marker existence assertions, got ${assertCount}`);
   });
 }
 

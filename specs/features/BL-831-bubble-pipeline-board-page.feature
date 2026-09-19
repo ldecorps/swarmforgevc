@@ -1,3 +1,8 @@
+# mutation-stamp: sha256=09da50ef451a4dbeb02d4e7b4fe7bcd64b5533205e41f77f95c8a5c45eaeed18
+# acceptance-mutation-manifest-begin
+# {"version":1,"tested_at":"2026-09-18T15:13:57.013126886Z","feature_name":"Bubble's Pipeline page shows what is in flight, with a blurb per ticket and its spec one tap away","feature_path":"/home/carillon/swarmforgevc/.worktrees/hardender/specs/features/BL-831-bubble-pipeline-board-page.feature","background_hash":"f91394f1db8393d5abd4b1a2d0c99b9f5de47b10ddefe417d2edae1cc33949bc","implementation_hash":"unknown","scenarios":[{"index":2,"name":"the blurb comes from the ticket's own words","scenario_hash":"f2091348baa82c317f71afbe113de0ecdf558b26285de8a64c411c6595a65aaf","mutation_count":4,"result":{"Total":4,"Killed":4,"Survived":0,"Errors":0},"tested_at":"2026-09-18T15:13:57.013126886Z"}]}
+# acceptance-mutation-manifest-end
+
 Feature: Bubble's Pipeline page shows what is in flight, with a blurb per ticket and its spec one tap away
 
   The bridge already computes the in-flight board and already serves it to the
