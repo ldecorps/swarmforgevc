@@ -595,7 +595,17 @@
                                  :wake-field (get headers "wake")))))
             (when (= "rule_proposal" (get headers "type"))
               (append-rule-proposal! headers))
-            (move-with-collision path (sent-dir (get roles sender-role)))
+            ;; BL-1637: prefer the parcel's own from_seat header (the
+            ;; sending SEAT, when resolvable) over sender-role (here
+            ;; already the outbox-owning roles.tsv key, which for a seat
+            ;; with its own worktree row is itself seat-safe by
+            ;; construction) - explicit rather than relying on that
+            ;; accident, and the only choice a file with no seat header
+            ;; (predating this fix) leaves. Shared decision, handoff_lib's
+            ;; seat-filing-role-info, so this site and the sync-delivery
+            ;; path in handoff_inject_lib.bb cannot drift apart.
+            (move-with-collision path
+                                  (sent-dir (handoff-lib/seat-filing-role-info headers roles sender-role)))
             (log! "delivered" (str path)))))))))
 
 (defn inbox-new-files [role-info]
@@ -725,8 +735,14 @@
                       ;; The duplicate outbox copy is confirmed delivered (its
                       ;; twin already landed in sent/); archive it too instead of
                       ;; leaving it to be reprocessed and re-fail every poll cycle.
+                      ;; BL-1637: same shared filing decision as deliver!'s
+                      ;; own move above, via the envelope this poll already
+                      ;; read.
                       (try
-                        (move-with-collision path (sent-dir (get roles role)))
+                        (move-with-collision
+                         path
+                         (sent-dir (handoff-lib/seat-filing-role-info
+                                    (get-in read-result [:envelope :headers]) roles role)))
                         (catch Exception _ignored nil)))
                     (fail! path (.getMessage e))))))))))))
 
