@@ -82,6 +82,24 @@
          (some matches? (filter (partial seat-owned-file? me)
                                  (mapcat handoff-lib/handoff-files stage-dirs)))))))
 
+(defn inbound-window-start
+  "BL-1645: the evidence window's lower bound for completing an inbound -
+   its OWN created_at, else enqueued_at, else dequeued_at, else the epoch.
+   A dispatch note IS the request; a commit or handoff naming its ticket
+   produced any time after the dispatch existed is a response to it - the
+   dequeue stamp (BL-1422's original choice) can legitimately postdate
+   real work in a multi-item-queue-then-dequeue shape (BL-1614/BL-1637's
+   incidents), and a re-dispatch after a bounce is itself created AFTER
+   the first pass's own work, so created_at guards against riding stale
+   evidence exactly as well as dequeued_at did. Shared by all three gate
+   call sites (task Work-note gate, task forward gate, batch forward
+   gate) so they cannot drift."
+  [source-file]
+  (or (handoff-lib/header-field source-file "created_at")
+      (handoff-lib/header-field source-file "enqueued_at")
+      (handoff-lib/header-field source-file "dequeued_at")
+      "1970-01-01T00:00:00Z"))
+
 (defn forwarding-inbound?
   "A git_handoff (never a note) that does not carry non-forwarding: true
    (Article 2.4's merge-only marker). Shared by the task and batch
