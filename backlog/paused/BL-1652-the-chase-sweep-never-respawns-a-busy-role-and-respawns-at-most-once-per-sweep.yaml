@@ -1,0 +1,174 @@
+id: BL-1652
+title: "The chase sweep never respawns a role whose own pane shows the busy footer or whose worktree lane is running, respawns a role at most once per sweep however many stuck inbox items it holds, and logs each respawn with the readings it was decided on - on 2026-09-19 it respawned QA seven times in one tick at 04:01:31Z (liveness dead on a stale heartbeat, five inbox items past their chase ceiling) in the middle of an 80-minute land, then again at 04:07:10Z"
+milestone: M8
+type: defect
+severity: high
+# high: a live fault that kills work. QA's land of BL-1636 (unit,
+# property, acceptance, e2e - 80 minutes) was killed by the respawn at
+# 04:01Z, restarted from scratch, and the claim-idle ladder then counted
+# the absent pane toward a halt (BL-1649). Every long, quiet lane on a
+# role with a backlog in its inbox re-arms it: QA holds 12 new/ items
+# at mint, nine past the chase ceiling of three. Not critical: the
+# swarm stays up; one role's session and its work are lost per event.
+status: todo
+epic: swarm-reliability
+priority: 8
+direction: swarm-reported
+depends_on: []
+# BL-098 (chase telemetry), BL-528 (claim-idle ladder) are in backlog/done.
+# BL-1649 (active at coder) makes the claim-idle ladder ignore an absent
+# or freshly respawned agent - the pile-on; this ticket stops the
+# respawn itself. Both touch chase_sweep_lib.bb and handoffd.bb: promote
+# after BL-1649 lands (Concurrent Work Orthogonality).
+mutation_cost: low
+# low: Babashka (no mutation/CRAP/DRY wired, BL-472): two inputs and one
+# clause in the stale-item decision, a per-sweep respawn set, one log
+# line, bb runner cases, one wiring shell test, one feature and handler.
+slice_size_envelope: low
+required_stages: [coder, cleaner, architect, hardender, documenter, qa]
+
+acceptance: specs/features/BL-1652-the-chase-sweep-never-respawns-a-busy-role-and-respawns-at-most-once-per-sweep.feature
+
+required_wiring:
+  - 'specs/pipeline/steps/bl1652ChaseRespawnBusyGuardSteps.js::registerSteps::the handler lands in the same parcel as the feature (BL-233, BL-1371)'
+
+human_approval: approved
+approval_context: >
+  A new feature file is authored here, so it would ordinarily need a tap;
+  it is minted approved under the 2026-09-17 operator hotfix (severity
+  defect, no choice posed, no ruling_options). FIRM: the chase ladder's
+  shape (chase up to maxChases, then respawn a genuinely dead role, else
+  dead-letter) and its cooldown are unchanged; this adds the guards the
+  wake path already has (busy pane) plus a lane-running reading, caps
+  respawns at one per role per sweep, and makes every respawn explain
+  itself. FIRM: a role with a truly dead pane and no running lane is still
+  respawned exactly as today.
+
+invariants:
+  - "A role is never respawned while its own pane shows the busy footer or a test lane is running under its worktree; liveness read from a stale heartbeat alone never respawns a role whose pane or lane is alive."
+  - "One sweep respawns a role at most once, however many of its inbox items have reached the chase ceiling, and each respawn writes one log line naming the role, the item that triggered it, the liveness state, the heartbeat age, the pane activity age, the busy reading and the lane reading."
+
+description: |
+  ## What is wrong
+
+  `chase_sweep_lib.bb` `decide-item-action`: an inbox new/ item older
+  than `chaseTimeoutSeconds` (30 s) on a role with no pane activity for
+  `stuckInProcessTimeoutSeconds` (60 s) goes to `decide-stale-item-action`,
+  which chases up to `maxChases` (3) and then, when the role's liveness is
+  `dead`, `unknown` or `stuck`, answers "respawned". Liveness comes from
+  `compute-liveness` over the role's heartbeat (stale 30 s, in-flight
+  60 s, dead 120 s) and its pid. The daemon's `:trigger-respawn!` adapter
+  gates on busy only for the mono-router resident pane ("a classic-pack
+  role's own respawn ... must not be blocked by an unrelated busy
+  resident/coder pane") - a standing-pack role's OWN busy pane is not
+  consulted. And the decision runs per item: every stuck item past the
+  ceiling answers "respawned" in the same sweep.
+
+  2026-09-19: QA dequeued BL-1636's parcel at 02:45Z and ran its lanes.
+  At 03:52Z the daemon still saw the pane busy (`chase-wake-skip-busy
+  QA`). QA's new/ held five items (001379-001382, 001693) whose chase
+  counts had climbed to 6, 8, 10, 12 and 19 across the hours. At
+  04:01:31Z the sweep logged `chase-respawn QA ./.swarmforge/launch/QA.sh`
+  seven times within 350 ms, and the chaser telemetry records a
+  `respawn` row per item at 04:07:09Z (counts 6, 8, 10, 12, 19). The
+  babysitter then read `pane alive but NO claude process` at 04:03:17Z
+  and 04:08:18Z; the claim-idle ladder counted the absent pane to 6 and
+  bounced QA at 04:06:08Z (BL-1649); a second `chase-respawn` x7 followed
+  at 04:07:10Z. `/proc/vmstat oom_kill` is 0 since boot: nothing but the
+  daemon killed that session. QA re-claimed at 04:11Z and restarted the
+  80-minute verification from scratch. No respawn line says why.
+
+  ## What is wanted
+
+  1. `decide-stale-item-action` (or its caller) takes `pane-busy?` and
+     `lane-running?`; either true yields "chased" (or "skipped" inside
+     backoff), never "respawned". `pane-busy?` is the same footer reading
+     `chase-poke-and-notify!` uses for `chase-wake-skip-busy`;
+     `lane-running?` is true when a vitest, stryker, bb test runner or
+     the acceptance CLI is running with the role's worktree as its cwd
+     (the `pgrep -af` reading roles already make, scoped to the
+     worktree path).
+  2. One respawn per role per sweep: the sweep collects the roles whose
+     items decided "respawned" and triggers each once, naming the first
+     triggering item; the other items keep their counts.
+  3. Every respawn logs `chase-respawn <role> item=<id> liveness=<state>
+     heartbeat-age-s=<n> activity-age-s=<n> busy=<b> lane=<b>`; the
+     telemetry `respawn` row gains the same fields.
+
+  ## How (direction, not mandate)
+
+  - The pure decision stays pure: gather the two readings in
+    `handoffd.bb`'s chase sweep (the busy reading exists; the lane
+    reading is one `pgrep` per role per sweep, cached for the sweep) and
+    pass them in; runner cases for every combination of liveness,
+    busy and lane.
+  - The per-sweep set is a `(reduce ... #{})` over the items' decisions
+    before any adapter fires.
+  - Wiring: the handoffd chase wiring shell test drives one sweep on a
+    fixture root with five stuck items, a stale heartbeat and a busy
+    footer, and asserts zero respawns and one log line per item chased;
+    then the same with the footer absent and no lane, and asserts exactly
+    one respawn and one respawn log line.
+  - Docs: `swarmforge/handoff-protocol.md`'s chase/respawn paragraph and
+    `docs/how-to/BL-611-babysitterd-runbook.md` (the proc-<role> CRIT is
+    now distinguishable from a daemon respawn by the log line);
+    `docs/diagrams/handoff-flow.mmd` only if it draws the chase ladder.
+
+constraints: >
+  The chase ladder's thresholds, backoff and cooldown are unchanged. The
+  lib stays adapter-injected; fixtures are mkdtemp roots and fake
+  readings, never the live daemon (BL-1390). The step handler lands in
+  the same commit as the feature (BL-233). Runtime seconds (BL-1541).
+
+out_of_scope: |
+  - The claim-idle ladder's own guards (BL-1649, in flight).
+  - Why a role's heartbeat (`.swarmforge/heartbeat/<role>.yaml`, written
+    by `extension/src/tools/heartbeat.ts` writeHeartbeat) goes stale
+    during a long lane: the heartbeat is a liveness input; this ticket
+    stops it from being the ONLY input to a respawn. Name its writer's
+    cadence in evidence.
+  - The property lane's own crashes (BL-1651).
+
+qa_e2e_procedure: >
+  (1) Unit: the bb runner covering chase_sweep_lib.bb green with the new
+  cases; the wiring shell test green. (2) Acceptance: the BL-1652 feature
+  green through the runner, once. (3) On a scratch daemon-shaped root:
+  five stuck items on QA, a heartbeat 10 minutes old, and a pane capture
+  carrying the busy footer - one sweep logs no `chase-respawn`; remove
+  the footer and the sweep logs exactly ONE `chase-respawn QA ...` line
+  with all seven readings. (4) Live, after land: `grep chase-respawn
+  .swarmforge/daemon/handoffd.log` shows one line per real respawn, each
+  with its readings, and never a burst. Never "run it N times".
+
+source: |
+  Found while adjudicating the coder's property-lane note (inbound
+  10_20260919T050522Z_000026_from_coder) and the coordinator's BL-1649
+  note: the daemon log (`chase-respawn QA` x7 at 04:01:31Z and x7 at
+  04:07:10Z), `.swarmforge/telemetry/chaser-2026-09.jsonl` (`respawn`
+  rows for five QA items at 04:07:09Z with counts 6, 8, 10, 12, 19),
+  the babysitter log (`[proc-QA] pane alive but NO claude process`
+  04:03:17Z, 04:08:18Z), QA's chase sidecars at mint (counts 4-25 on 12
+  new/ items), `/proc/vmstat oom_kill 0`. Parents: BL-098 (chase
+  telemetry), BL-528 (claim-idle), BL-1649 (the ladder's own guards).
+
+notes: |
+  Minted 2026-09-19 by the specifier while completing the coder's
+  property-lane note, the same pass. AUTO-APPROVED under the 2026-09-17
+  operator hotfix (severity defect, no ruling_options) - see
+  auto-approve-high-severity-defects-amendment-20260917.md.
+
+  Corrects BL-1649's "cause not recorded" for QA's process death: the
+  daemon's own chase respawn killed it, twice; the kernel never did.
+  Until this lands, a role running a long quiet lane with a full inbox
+  is at risk on every sweep once its items pass three chases; the
+  coordinator draining a role's new/ before it starts a long lane is the
+  only interim, and the human may raise `maxChases` in the daemon config
+  as a hotfix if it recurs before the fix lands.
+
+  required_wiring names the step handler only: the production consumer
+  (`handoffd.bb`'s chase sweep -> `decide-item-action`) exists before
+  the fix and an anchor on the new readings would be satisfied by the
+  parcel's own diff (BL-1235); scenario 01 drives one real sweep on a
+  fixture, which is the gate.
+  IR-DRY at mint: the four scenarios vary the busy footer and the lane
+  reading over one fixture by design; reviewed and kept.
