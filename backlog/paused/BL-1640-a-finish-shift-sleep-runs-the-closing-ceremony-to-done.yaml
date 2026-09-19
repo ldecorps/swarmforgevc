@@ -1,0 +1,210 @@
+id: BL-1640
+title: "A finish-shift sleep runs the closing ceremony to its end before the stack stops: the sleep path anchors the drain and briefing deadlines to now plus the configured budgets and keeps advancing the state until it reads done, instead of one freeze tick against a hard deadline already eight hours past (2026-09-18 16:00Z: freeze, then kill_all_swarm four seconds later; no lean packet, no documenter instruction, no briefing runway)"
+milestone: M8
+type: defect
+severity: high
+# high: BL-1393's contract - one ceremony every sleep, the human's own
+# directive - has been silently unmet on every weekday bedtime since it
+# landed on 2026-09-04. The lean packet never reached the specifier from a
+# weekday shift (the 09-18 shift-end sweep had to be run by hand with no
+# packet), the ceremony never instructed the documenter, and the briefing
+# had no runway before the kill. A silent ceremony is a failed ceremony
+# (BL-820). Not critical: nothing is lost, the stack does stop.
+status: todo
+epic: swarm-reliability
+priority: 8
+direction: human-requested
+depends_on: []
+# BL-1393 (one ceremony every sleep) and BL-658 (the ceremony) are in
+# backlog/done. BL-1641 (a briefing forced at the deadline) is a sibling
+# on the same state machine, independent: it fires on the daemon's weekend
+# window today and on this parcel's sleep path once both land.
+mutation_cost: medium
+# medium: TypeScript under Stryker (nightClosingCeremonyLive.ts's new-night
+# and same-day decisions, night-closing-ceremony-run.ts's sleep-path
+# observation), one bash loop in finish_shift_lib.sh with its shell test,
+# the BL-1393 e2e extended, one feature and handler.
+slice_size_envelope: medium
+required_stages: [coder, cleaner, architect, hardender, documenter, qa]
+
+acceptance: specs/features/BL-1640-a-finish-shift-sleep-runs-the-closing-ceremony-to-done.feature
+
+required_wiring:
+  - 'specs/pipeline/steps/bl1640SleepPathCeremonyRunsToDoneSteps.js::registerSteps::the handler lands in the same parcel as the feature (BL-233)'
+
+human_approval: pending
+approval_context: >
+  A new feature file is authored here and a genuine choice is posed, so
+  this is a ruling ask even though the defect is high severity. FIRM: the
+  ceremony's sequence (freeze, drain or park, lean packet, rotate and
+  instruct the documenter, briefing, stop) and the two configured budgets
+  are unchanged; a stop that is a restart still runs no ceremony
+  (BL-1393); the daemon's own weekend window is untouched; bedtime never
+  hangs - a ceiling of the two budgets plus a short grace stops the stack
+  anyway and says so loudly. The ask is WHERE the sleep path buys the time
+  the ceremony needs. Option A is written into the feature file; a B ruling
+  sends the ticket back to the specifier for a re-cut before promotion.
+ruling_options:
+  - A - finish-shift keeps advancing the ceremony until it reads done, bounded by the configured drain and briefing budgets (recommended)
+  - B - the daemon opens the ceremony window drain-plus-briefing minutes before each scheduled sleep so the cron bedtime finds it already done
+ruling_tradeoffs:
+  - Pros - no schedule or config change; every sleep path (weekday bedtime, weekend bedtime, night-stop, a manual finish-shift) gets the same guarantee; the budgets already bound the wait. Cons - on a day with in-flight work the stack stops up to drain-plus-briefing minutes (35 by default) after the cron minute. Recommended because it fixes the mechanism where it is broken and needs nothing from the crontab.
+  - Pros - the stack stops on the cron minute. Cons - needs a per-schedule stop time in swarmforge.conf (closure_stop_local is the weekend-morning stop only; the weekday stop lives only in the crontab), a gate that knows which schedule is today, and a cron regeneration; a manual finish-shift outside any schedule still gets one tick unless A is also built.
+
+invariants:
+  - "On a sleep path, no stop-set component is stopped while the ceremony state for this sleep is not done, unless the ceiling (drain plus briefing budgets plus grace) has passed and the overrun was surfaced."
+  - "Every deadline the sleep path writes (drainDeadlineMs, hardDeadlineMs, the freeze's untilMs) is later than the sleep's own start time; a sleep never inherits a deadline from a stop time that has already passed."
+
+description: |
+  ## What is wrong
+
+  `./finish-shift` (BL-1393) declares itself a sleep with
+  `night-closing-ceremony-run.js --target <root> --sleep-path finish-shift`
+  and then, on the next line, stops the ancillaries and the pipeline. The
+  CLI is ONE tick of the `nightClosingCeremonyLive.ts` state machine; the
+  daemon drives later ticks on its overnight window, but at a bedtime the
+  daemon is killed four seconds later. And the tick computes
+  `hardDeadlineMs` from today's `closure_stop_local` (08:45 local) whatever
+  the hour, so at a 17:00 bedtime the hard deadline is already eight hours
+  past.
+
+  `day-shift.log`, 2026-09-18 16:00:01Z: `"gateMode": "sleep:finish-shift",
+  "advanced": true, "phase": "frozen", "sequence": ["freeze-promotion"],
+  "hardDeadlineMs": 1789717500000` (07:45Z that morning) - then
+  `16:00:01Z stopping babysitterd`, `16:00:05Z kill_all_swarm begin`. No
+  lean packet, no `rotate-documenter`, no `instruct-briefing`. The day
+  before (09-17 16:00:46Z) the same call answered `"advanced": false`:
+  the daemon's morning window (07:10-07:45Z, the swarm having been started
+  at 07:00) had already consumed the day's night key, and
+  `advanceNightClosingCeremony` treats a same-day `done` as nothing to do.
+  So a weekday bedtime is either a no-op or a single freeze - never the
+  sequence. The BL-1393 acceptance is green because its e2e
+  (`test_bl1393_one_ceremony_every_sleep.sh`) ticks the CLI directly under
+  `closure_stop_local 06:00` and proves "finish-shift drives" by grepping
+  `finish_shift_lib.sh` for the call - the BL-1235 shape.
+
+  ## What is wanted
+
+  A sleep runs the one sequence to its end before the stack stops. Its
+  deadlines are relative to the sleep: drain deadline = now + drain
+  budget, hard deadline = now + drain + briefing budgets, both read from
+  `swarmforge.conf` (`closing_drain_budget_minutes`,
+  `closing_briefing_budget_minutes`; `night-closing-ceremony-run.ts`
+  currently hard-codes 25 minutes for drain and ignores the briefing
+  budget). A second sleep on the same calendar day after a shift of work
+  is a new ceremony; a second sleep with no shift since stays quiet.
+  Bedtime never hangs: past the ceiling it stops the stack, prints that the
+  ceremony overran, and exits as today.
+
+  ## How (direction, not mandate; written for ruling A)
+
+  - `finish_shift_run_closing_ceremony`: loop the CLI until the state file
+    (`.swarmforge/daemon/closing-ceremony-state.json`) reads `phase: done`
+    for this sleep, sleeping a seam-injected interval between ticks
+    (default ~30 s, 0 in tests), with a ceiling of drain + briefing budgets
+    + grace read from the conf; on the ceiling, print
+    `finish-shift: closing ceremony overran its budgets - stopping anyway`
+    and continue. The BL-1393 e2e's grep for `--sleep-path finish-shift`
+    must keep matching.
+  - `night-closing-ceremony-run.ts`: when `sleepPath` is set and a NEW
+    ceremony starts, `hardDeadlineMs = nowMs + (drain + briefing) * 60_000`
+    and `drainBudgetMs = drain * 60_000` from `readBudgets(conf)` (the gate
+    already parses them; expose them on the gate result rather than
+    re-parsing). A continuing sleep keeps the deadlines it wrote. The
+    daemon's window path keeps `parseHmToMs(nowMs, closureStopLocal)`.
+  - `nightClosingCeremonyLive.ts` `advanceNightClosingCeremony`: a
+    same-night `done` with `workedAShift === true` and a sleep observation
+    starts a new ceremony (`startFrozen`) instead of returning the old
+    state; `workedAShift === false` keeps today's no-op. Drive time through
+    the CLI's existing now-ms argument in tests so no scenario waits on a
+    wall clock; the BL-1393 property test (`bl1393OneCeremonyEverySleep`)
+    gains the same-day-second-sleep case.
+  - Docs: `docs/how-to/BL-658-briefing-trigger-derived-from-closure-schedule.md`
+    "One ceremony, every sleep" gains the loop, the ceiling and the
+    sleep-relative deadlines; no registered diagram depicts the ceremony.
+
+constraints: >
+  The daemon's own overnight trigger and its window arithmetic are
+  unchanged. No new clock, no crontab edit, no new conf key. A fixture is a
+  mkdtemp root with a daemon-shaped `.swarmforge` and its own
+  `swarmforge.conf`, never the live root; finish-shift's stop steps run
+  against the fixture through the seams `test_finish_shift_lib.sh` already
+  uses. The step handler lands in the same commit as the feature (BL-233).
+  Runner budgets: the feature must stay comfortably inside the 300 s
+  per-mutant ceiling (BL-1541) - ticks are seam-driven, never slept.
+
+out_of_scope: |
+  - Producing a briefing when the deadline passes with none on main
+    (BL-1641).
+  - The landing path of a documenter briefing (BL-1459) and the fallback
+    trigger's author (BL-1458).
+  - The ceremony's `briefingAlreadySent` observation reading `.sent.json`
+    (the email) rather than the file on main: on 09-16 and 09-17 the
+    briefing landed at 07:13Z and the ceremony still surfaced
+    `closing-briefing-missing` at 07:45Z because the email went out at
+    09:07Z. Recorded in the intake archive; not this parcel.
+  - Ruling B's per-schedule window (a separate cut if B is chosen).
+
+qa_e2e_procedure: >
+  (1) Unit: `npx vitest run test/nightClosingCeremonyLive.test.js
+  test/nightClosingCeremonyRun.test.js test/bl1393OneCeremonyEverySleep.property.test.js`
+  green from `extension/`; `bash swarmforge/scripts/test/test_finish_shift_lib.sh`
+  and `bash swarmforge/scripts/test/test_bl1393_one_ceremony_every_sleep.sh`
+  green. (2) Acceptance: the BL-1640 feature green through the runner, once.
+  (3) Scratch clone with a daemon-shaped root, one fake in-process parcel
+  file under a worktree role's mailbox, budgets set to 1 and 1 minutes:
+  run `./finish-shift`; expect, in order on stdout/stderr, the ceremony
+  state reaching `done` (its sequence naming `lean-packet` and the
+  documenter instruction) BEFORE `stopping babysitterd`, and the whole run
+  finishing within about three minutes. (4) Live, after land: the next
+  weekday bedtime's day-shift.log block shows the ceremony state `done`
+  with a sequence longer than `["freeze-promotion"]`, the specifier's inbox
+  holds that shift's lean packet note, and the documenter's inbox holds
+  `produce the morning briefing for <date>` - one bedtime, not twenty.
+
+source: |
+  Human intake `backlog/INTAKE-day-shift-cron-path-and-bedtime-shutdown-gaps-20260918.md`
+  (filed via Claude Code 2026-09-18, commit 91ba15b294), item 1, verbatim:
+  "Wanted: some combination of (a) escalating the injected nudge if
+  unaddressed past N sweep ticks — surface it as a real handoff note to the
+  coordinator, not just a repeated tmux inject, so it survives a busy pane
+  and shows up in mailbox-based dropped-parcel sweeps; (b) reserving a
+  safety margin before a scheduled bedtime so a due-but-unwritten briefing
+  gets escalated/forced (e.g., the existing headless `compose-headless!`
+  path, currently only used when `hibernated?`, triggered instead once
+  bedtime is imminent and the file still doesn't exist) rather than being
+  silently swallowed by the shutdown."
+  This ticket is the safety margin of (b): the margin BL-658 designed
+  (drain + briefing budgets ahead of the stop) applied to a sleep. The
+  forcing of (b) is BL-1641. On (a): the daemon logs show no injected nudge
+  on 2026-09-18 at all (inject-traffic.log carries no briefing line that
+  day; the `briefingInstructed`/`briefing-missing` flags the intake read
+  are the previous night's `done` state re-logged every tick) - the
+  fallback that would inject is dormant on the closure-scheduled path and
+  BL-1458 retargets it to a documenter mailbox note anyway.
+  BL-1393's directive, carried: "820 should be part of 658. the closing
+  ceremony should happen each time the swarm does at least 1 shift and goes
+  to sleep".
+
+notes: |
+  Minted 2026-09-19 by the specifier draining the backlog root. Pending a
+  human ruling (A recommended); the feature file is written for A.
+
+  Evidence read at mint: `.swarmforge/operator/day-shift.log` lines
+  2466-2492 (09-18 bedtime) and 2262-2300 (09-17); the daemon's
+  `closing-ceremony-run` blocks in `handoffd.log.20260918T151721Z` and
+  `handoffd.log.20260919T000002Z` (nightKey 2026-09-17, phase done, all day);
+  `night-closing-ceremony-run.ts` lines 448-470 (`hardDeadlineMs =
+  parseHmToMs(nowMs, closureStopLocal)`, `drainBudgetMs = 25 * 60_000`);
+  `nightClosingCeremonyLive.ts` line 251 (`sameNight && prev.phase ===
+  'done'` returns unchanged); `test_bl1393_one_ceremony_every_sleep.sh`
+  lines 73-74 and 135-137.
+
+  required_wiring names the step handler only: the production consumer
+  (`finish-shift` -> `finish_shift_run_closing_ceremony` -> the run CLI)
+  exists before the fix and an anchor on it would match unchanged code
+  (BL-1235); scenario 01 runs `./finish-shift` on a fixture root and reads
+  the state file and the stop order, which is the gate. BL-1393's scenarios
+  stay as they are: none asserts the one-tick shape; their fixture simply
+  never built the in-flight sleep (BL-1445's census shape), which this
+  feature's Background does.

@@ -49,3 +49,10 @@ Feature: BL-1458 Every briefing trigger instructs the documenter and the host's 
     When the briefing generation sweep runs
     Then the headless composer writes today's briefing
     And no note is queued for any role
+
+  # BL-1458 one-instruction-per-day-however-many-ticks-06
+  Scenario: the fallback instructs the documenter once per day however many sweep ticks run
+    Given the closure schedule is unusable and today's briefing does not exist
+    And the configured morning time has passed
+    When the briefing generation sweep runs three times
+    Then exactly one note reading "produce the morning briefing for <today>" is queued for the documenter
