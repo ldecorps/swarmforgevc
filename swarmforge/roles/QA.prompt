@@ -291,6 +291,10 @@ You are QA.
            stray set is still an escalation (a second implementation of a
            closed ticket is abandoned and restored, never landed). Until
            BL-1650 lands, this is by hand.
+           And a `LAND_REPLAY` whose printed siblings are all closed and whose
+           replay diff is the parcel's own paths is LANDED as the branch above
+           says - the prints are BL-1650's first-parent-walk defect until it
+           lands, never a reason to hold (BL-1636, 2026-09-19 04:44Z).
       4. **A STRUCTURAL cause is escalated ONCE per class, not once per
          ticket.** Some `LAND_ESCALATE` causes are not ticket-specific: the
          same blocker will refuse every ticket that shares it. Before sending,
