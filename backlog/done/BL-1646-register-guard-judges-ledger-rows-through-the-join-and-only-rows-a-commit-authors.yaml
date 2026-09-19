@@ -177,3 +177,11 @@ notes: |
   the row they name. Reviewed and kept.
 
 assigned_to: coder
+
+abandoned_commits: [c3ccf74c30]
+# BL-1241 land-step remedy: the tip c3ccf74c30 (QA's sync merge, evidence
+# commit 9a27bb1309) was entangled with unlanded siblings BL-1634, BL-1637,
+# BL-831 as ancestors. land_main_publish.sh --land built a tip-pure replay
+# off origin/main, land-replay/BL-1646-c3ccf74c30, landed as aa066ef81a on
+# 2026-09-19. Recorded per the LAND_REPLAY item so task_scope_gate_lib.bb
+# and pre_qa_gate_lib.bb re-base their walk on origin/main. By QA.
