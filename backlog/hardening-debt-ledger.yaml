@@ -78,3 +78,11 @@
   detected_at: 2026-09-18
   attempted_at: 2026-09-18
   attempted_blocker: "dry-run timeout (5min) at concurrency 4, mutate=2 files (bubbleLiveUiHtml,residentPaneLive) via scoped vitest.bl775.stryker.config.mjs, 15:03:27-15:08:33"
+- parcel: BL-831
+  gate: stryker-mutation
+  file_set: extension/out/bridge/bubblePipelinePage.js
+  reason: "Stryker perTest dry-run (full-suite coverage analysis, 114 mutants instrumented on the one file) never got past 'Starting initial test run' before a 300s wrapper timeout under the same sustained host contention as BL-775 the same day. Targeted hardening substituted: 3 hand-authored unit tests closing the CRAP>6 gaps a scoped-run crapReport flagged (captureBubblePipelineDetail's missing-feature-file and real-feature-file branches, captureBubblePipelineBoard's matched-item blurb path), full-suite coverage re-run confirms max CRAP 6.00 across all three touched files (bubblePipelinePage.ts, pipelineGridLive.ts, backlogReader.ts), BL-113 Gherkin mutation 4/4 killed on the blurb-source Scenario Outline, full BL-831 acceptance suite green (8/8), full unit suite green (10781/10782 passing, 1 unrelated pre-existing flake reproduced clean on immediate re-run), DRY clean (0 clones)."
+  load: "load avg 11.2-14.3 on 20 cores, concurrent stryker/vitest workers from other roles' worktrees"
+  detected_at: 2026-09-18
+  attempted_at: 2026-09-18
+  attempted_blocker: "dry-run (perTest coverage analysis over the full unit suite) did not complete within a 300s wrapper timeout, concurrency 4, mutate=out/bridge/bubblePipelinePage.js, 16:14:23-16:19:23"

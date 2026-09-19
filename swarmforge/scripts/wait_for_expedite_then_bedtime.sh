@@ -36,6 +36,12 @@
 #
 # Usage: wait_for_expedite_then_bedtime.sh [project-root]
 set -u
+# Cron runs jobs with a bare minimal PATH (no ~/.local/bin), so bb/claude/
+# tmux resolve fine in an interactive shell but not here. 2026-09-18: this
+# script's own bb calls (expedite_cli.bb below) and the finish-shift chain
+# it calls need it under cron. Same fix start-swarm.sh already applies at
+# its own top.
+export PATH="$HOME/.npm-global/bin:$HOME/.local/bin:/opt/homebrew/bin:/usr/local/bin:$PATH"
 ROOT="${1:-/home/carillon/swarmforgevc}"
 LOG="$ROOT/.swarmforge/operator/day-shift.log"
 PAUSE_MARKER="$ROOT/.swarmforge/operator/control-pause.json"

@@ -21,6 +21,15 @@
 #
 set -euo pipefail
 
+# Cron runs jobs with a bare minimal PATH (no ~/.local/bin), so bb/claude/
+# tmux resolve fine in an interactive shell but not here. 2026-09-18: this
+# gap, in the wait_for_expedite_then_bedtime.sh chain that calls this script
+# under cron, left babysitterd unstoppable at bedtime (kill_all_swarm's own
+# pid list is unaffected — this is belt-and-suspenders for anything else in
+# this chain that shells out). Same fix start-swarm.sh already applies at
+# its own top.
+export PATH="$HOME/.npm-global/bin:$HOME/.local/bin:/opt/homebrew/bin:/usr/local/bin:$PATH"
+
 REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 KILL_PIPELINE="$REPO_ROOT/swarmforge/scripts/kill_pipeline_swarm.sh"
 # finish_shift_lib.sh overwrites SCRIPT_DIR to swarmforge/scripts/ — keep
