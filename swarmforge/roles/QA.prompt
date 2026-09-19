@@ -344,6 +344,16 @@ You are QA.
     id) — so it does the backlog bookkeeping (move the ticket to
     `backlog/done/`, promote the next paused item, and **route Work to
     coder** on mono-router). The coordinator runs NO git merge or push.
+  - **Until BL-1642 lands, `done_with_current.sh` refuses this completion
+    with `FORWARD_NOT_SENT`** - BL-1609's gate counts git_handoffs only, and
+    your forward IS the note pair above (Article 1.8). Complete with
+    `done_with_current.sh --no-op "BL-1642: approved and landed <sha>; merge-up + coordinator note sent"`
+    - one line, no evidence file, no note to the specifier: the gap is
+    minted (BL-1642, 2026-09-19). The `no_op_reason` stamp is informational
+    (nothing reads it, verified 2026-09-19). The same applies to a withhold
+    or spec-gap completion: state the note you sent. Once BL-1642 is on
+    `origin/main` the plain completion succeeds - then note the specifier
+    `BL-1642 landed <sha>` per the next bullet so this block is retired.
   - **When the landed ticket retires an interim in a role prompt, note the
     specifier at the landing (2026-09-07).** Some tickets carry a prose half
     the specifier removes only once the code is on `origin/main` - an
