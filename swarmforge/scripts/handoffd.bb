@@ -595,7 +595,16 @@
                                  :wake-field (get headers "wake")))))
             (when (= "rule_proposal" (get headers "type"))
               (append-rule-proposal! headers))
-            (move-with-collision path (sent-dir (get roles sender-role)))
+            ;; BL-1637: prefer the parcel's own from_seat header (the
+            ;; sending SEAT, when resolvable) over sender-role (here
+            ;; already the outbox-owning roles.tsv key, which for a seat
+            ;; with its own worktree row is itself seat-safe by
+            ;; construction) - explicit rather than relying on that
+            ;; accident, and the only choice a file with no seat header
+            ;; (predating this fix) leaves.
+            (move-with-collision path
+                                  (sent-dir (or (some->> (get headers "from_seat") (get roles))
+                                                (get roles sender-role))))
             (log! "delivered" (str path)))))))))
 
 (defn inbox-new-files [role-info]
@@ -725,8 +734,13 @@
                       ;; The duplicate outbox copy is confirmed delivered (its
                       ;; twin already landed in sent/); archive it too instead of
                       ;; leaving it to be reprocessed and re-fail every poll cycle.
+                      ;; BL-1637: same from_seat preference as deliver!'s own
+                      ;; filing move, via the envelope this poll already read.
                       (try
-                        (move-with-collision path (sent-dir (get roles role)))
+                        (move-with-collision
+                         path
+                         (sent-dir (or (some->> (get-in read-result [:envelope :headers "from_seat"]) (get roles))
+                                       (get roles role))))
                         (catch Exception _ignored nil)))
                     (fail! path (.getMessage e))))))))))))
 

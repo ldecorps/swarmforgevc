@@ -29,23 +29,58 @@
     (.isAfter (java.time.Instant/parse ts-str) (java.time.Instant/parse since-str))
     (catch Exception _ false)))
 
+(defn sent-dirs-for-seat
+  "BL-1637: the directories a seat's completion gate scans for its own
+   sent forwards - its own :sent and :outbox, plus, only when this role is
+   a seat whose STAGE has its own resolvable roles.tsv row distinct from
+   the seat itself (BL-983's design guarantee for every '@'-seat), the
+   STAGE's :sent and :outbox too - the daemon may file a delivered forward
+   there (its sent copy is filed by the parcel's `from:` header, which a
+   seat stamps with its stage, not by the seat that sent it). A bare seat
+   (no '@' row, or the stage row does not resolve - fixtures without
+   roles.tsv, legacy packs) scans exactly its own two, byte-identical to
+   pre-BL-1637 behavior."
+  []
+  (let [me (handoff-lib/current-role)
+        stage (handoff-lib/seat-stage me)
+        stage-ri (and stage (not= stage me) (handoff-lib/load-role-info stage))]
+    (cond-> [(handoff-lib/my-mailbox-dir :sent) (handoff-lib/my-mailbox-dir :outbox)]
+      stage-ri (conj (handoff-lib/mailbox-dir stage-ri :sent) (handoff-lib/mailbox-dir stage-ri :outbox)))))
+
+(defn- seat-owned-file?
+  "BL-1637: a file found in the STAGE's own dirs (never the seat's own -
+   those are unambiguously the seat's) counts as this seat's forward only
+   when its from_seat header, if present, names this seat. A file with no
+   from_seat header at all (every file predating this fix) counts - the
+   transition to the fix is green, never a false refusal for existing
+   history."
+  [me f]
+  (let [seat-header (handoff-lib/header-field f "from_seat")]
+    (or (nil? seat-header) (= seat-header me))))
+
 (defn sent-handoff-names-ticket-since?
-  "A git_handoff in this role's own outbox/ or sent/ mailbox, created after
-   since-iso, whose task header's ticket id is exactly ticket-id. BOTH
-   directories, per the ticket's own direction: handoffd.bb's deliver! only
-   moves an outbox file into sent/ AFTER the daemon has actually picked it
-   up and delivered it (move-with-collision path (sent-dir ...)) - a
-   git_handoff this role just sent via swarm_handoff.sh can sit in outbox/
-   for a real window before that sweep runs. Reading sent/ alone would
-   false-refuse a role that sent its parcel and completed within that
-   window."
+  "A git_handoff in this seat's own outbox/sent mailbox, or (BL-1637) its
+   stage's, created after since-iso, whose task header's ticket id is
+   exactly ticket-id - filtered to this seat's own forwards when the file
+   lives in the stage's shared dirs (seat-owned-file? above). BOTH
+   directions (outbox and sent) per the ticket's own direction:
+   handoffd.bb's deliver! only moves an outbox file into sent/ AFTER the
+   daemon has actually picked it up and delivered it (move-with-collision
+   path (sent-dir ...)) - a git_handoff this role just sent via
+   swarm_handoff.sh can sit in outbox/ for a real window before that sweep
+   runs. Reading sent/ alone would false-refuse a role that sent its
+   parcel and completed within that window."
   [ticket-id since-iso]
-  (boolean
-   (some (fn [f]
-           (and (= ticket-id (pipeline-stage-lib/extract-ticket-id (handoff-lib/header-field f "task")))
-                (instant-after? (or (handoff-lib/header-field f "created_at") "") since-iso)))
-         (concat (handoff-lib/handoff-files (handoff-lib/my-mailbox-dir :sent))
-                 (handoff-lib/handoff-files (handoff-lib/my-mailbox-dir :outbox))))))
+  (let [me (handoff-lib/current-role)
+        own-dirs #{(handoff-lib/my-mailbox-dir :sent) (handoff-lib/my-mailbox-dir :outbox)}
+        stage-dirs (remove own-dirs (sent-dirs-for-seat))
+        matches? (fn [f]
+                   (and (= ticket-id (pipeline-stage-lib/extract-ticket-id (handoff-lib/header-field f "task")))
+                        (instant-after? (or (handoff-lib/header-field f "created_at") "") since-iso)))]
+    (boolean
+     (or (some matches? (mapcat handoff-lib/handoff-files own-dirs))
+         (some matches? (filter (partial seat-owned-file? me)
+                                 (mapcat handoff-lib/handoff-files stage-dirs)))))))
 
 (defn forwarding-inbound?
   "A git_handoff (never a note) that does not carry non-forwarding: true
