@@ -99,6 +99,81 @@
     (finally
       (fs/delete-tree root))))
 
+;; ── sent-handoff-names-ticket-since? seat-ownership filtering (integration,
+;;    via a real bb subprocess) ────────────────────────────────────────────
+;;
+;; The two subprocess suites above cover sent-dirs-for-seat's directory set
+;; and seat-owned-file?'s own pure predicate separately, but neither drives
+;; them TOGETHER through sent-handoff-names-ticket-since? - the public
+;; function forward-completion-decision's caller (and BL-1637's own
+;; declared invariant) actually calls. Confirmed by hand-mutation before
+;; writing this: removing the `(filter (partial seat-owned-file? me) ...)`
+;; call from sent-handoff-names-ticket-since? left both the bb runner above
+;; and the BL-1637 property test (extension/test/
+;; bl1637SeatForwardEvidenceInvariant.property.test.js, which never stamps
+;; from_seat on its fixture files) green - the composition was untested.
+;; These two cases isolate the filter the way "Overlapping self-exclusion
+;; guards each need an ISOLATING test" (hardender.prompt) requires: one
+;; fixture where the filter is the only thing that could exclude the
+;; match (a DIFFERENT seat's forward in the stage's shared dir), one where
+;; it is the only thing that could admit it (this seat's own, stamped,
+;; forward in that same shared dir).
+
+(defn build-three-seat-fixture! []
+  (let [root (fs/create-temp-dir {:prefix "bl1637-evidence-"})
+        coder-wt (fs/path root "coder")
+        coder2-wt (fs/path root "coder2")
+        coder3-wt (fs/path root "coder3")]
+    (fs/create-dirs (fs/path root ".swarmforge"))
+    (doseq [wt [coder-wt coder2-wt coder3-wt]]
+      (fs/create-dirs (fs/path wt ".swarmforge"))
+      (mailbox-dirs! wt))
+    (let [roles-line (str "coder\tcoder\t" coder-wt "\tswarmforge-coder\tCoder\tclaude\ttask\n"
+                          "coder@2\tcoder2\t" coder2-wt "\tswarmforge-coder2\tCoder@2\tclaude\ttask\n"
+                          "coder@3\tcoder3\t" coder3-wt "\tswarmforge-coder3\tCoder@3\tclaude\ttask\n")]
+      (doseq [wt [root coder-wt coder2-wt coder3-wt]]
+        (spit (str (fs/path wt ".swarmforge" "roles.tsv")) roles-line)))
+    {:root root :coder-wt coder-wt :coder2-wt coder2-wt :coder3-wt coder3-wt}))
+
+(defn run-evidence-subprocess [role wt ticket since-iso]
+  (let [program (str "(load-file \"" script-dir "/forward_evidence_lib.bb\")"
+                     "(println (boolean (forward-evidence-lib/sent-handoff-names-ticket-since? \"" ticket "\" \"" since-iso "\")))")
+        result (process/sh {:dir (str wt) :extra-env {"SWARMFORGE_ROLE" role}} "bb" "-e" program)]
+    (when-not (zero? (:exit result))
+      (throw (ex-info "subprocess failed" {:err (:err result) :out (:out result)})))
+    (= "true" (str/trim (:out result)))))
+
+(let [{:keys [root coder-wt coder2-wt]} (build-three-seat-fixture!)
+      ticket "BL-9191"
+      since-iso "2020-01-01T00:00:00.000000000Z"
+      after-since "2030-01-01T00:00:00.000000000Z"]
+  (try
+    ;; A matching ticket, timed after since-iso, sitting in the STAGE's
+    ;; shared sent dir but stamped for a DIFFERENT seat (coder@3, never
+    ;; coder@2) - the dir-membership check alone would count it (it is a
+    ;; genuine stage-dir hit); only seat-owned-file? excludes it.
+    (mk-handoff-file! (fs/path coder-wt ".swarmforge" "handoffs" "sent") "mismatched.handoff"
+                       {"from" "coder" "from_seat" "coder@3" "to" "cleaner" "priority" "50"
+                        "type" "git_handoff" "task" (str ticket "-some-slug") "commit" "9999999999"
+                        "created_at" after-since})
+    (assert= "a matching-ticket forward in the stage's shared dir, stamped for a DIFFERENT seat, is NOT evidence for this seat"
+             false
+             (run-evidence-subprocess "coder@2" coder2-wt ticket since-iso))
+    (fs/delete-tree (fs/path coder-wt ".swarmforge" "handoffs" "sent" "mismatched.handoff"))
+    ;; Same shape, this seat's own from_seat this time - seat-owned-file?
+    ;; must not also exclude a genuine match; the composition should admit
+    ;; it exactly as it would with no from_seat header at all (pre-fix
+    ;; history, already covered above).
+    (mk-handoff-file! (fs/path coder-wt ".swarmforge" "handoffs" "sent") "matching.handoff"
+                       {"from" "coder" "from_seat" "coder@2" "to" "cleaner" "priority" "50"
+                        "type" "git_handoff" "task" (str ticket "-some-slug") "commit" "9999999999"
+                        "created_at" after-since})
+    (assert= "a matching-ticket forward in the stage's shared dir, stamped for THIS seat, IS evidence for this seat"
+             true
+             (run-evidence-subprocess "coder@2" coder2-wt ticket since-iso))
+    (finally
+      (fs/delete-tree root))))
+
 ;; ── report ────────────────────────────────────────────────────────────────
 (if (seq @failures)
   (do
