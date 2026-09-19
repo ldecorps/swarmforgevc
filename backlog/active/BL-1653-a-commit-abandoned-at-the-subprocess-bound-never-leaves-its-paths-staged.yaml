@@ -180,3 +180,5 @@ notes: |
   real CLI with an injected bound on a fixture, which is the gate.
   IR-DRY at mint: outline 01 and scenario 02 share the writer steps by
   design (one writer, landed versus not landed); reviewed and kept.
+
+assigned_to: coder
