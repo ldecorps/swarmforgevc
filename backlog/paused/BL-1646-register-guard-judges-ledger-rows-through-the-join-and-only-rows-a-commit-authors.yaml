@@ -1,0 +1,177 @@
+id: BL-1646
+title: "check_standing_red_register.sh decides a ledger row's owner through the register's own (lane, file) join and judges only rows the commit itself authors: today it reads the bare parcel id and treats every line a branch merge inherits from main as newly added, so on 2026-09-19 coder@2's routine merge of main was refused over the BL-831 row that BL-1643 owns through the register"
+milestone: M8
+type: defect
+severity: high
+# high: a live fault in the delivery machinery. A worktree whose branch
+# lacks a ledger row whose parcel has since closed cannot merge main at
+# all while the row stands (days, until the owner discharges it), so it
+# can neither take a Work note ("merge main first") nor complete one.
+# coder@2 is blocked now; every lagging or fresh worktree hits it at the
+# next close of a parcel with a deferred gate. Not critical: seven of
+# eight role branches carry the row already and are unaffected today.
+status: todo
+epic: swarm-reliability
+priority: 8
+direction: swarm-reported
+depends_on: []
+# BL-1428 (the guard and the register), BL-1439 (ledger verbs) are in
+# backlog/done; BL-1638 and BL-1643 (paused) are the two owners whose
+# indirection the guard ignores. No open ticket touches the guard.
+mutation_cost: low
+# low: bash only (no mutation/CRAP/DRY wired, BL-472): one guard script,
+# its shell test on a git fixture, one feature and handler.
+slice_size_envelope: low
+required_stages: [coder, cleaner, architect, hardender, documenter, qa]
+
+acceptance: specs/features/BL-1646-register-guard-judges-ledger-rows-through-the-join-and-only-rows-a-commit-authors.feature
+
+required_wiring:
+  - 'specs/pipeline/steps/bl1646RegisterGuardLedgerJoinSteps.js::registerSteps::the handler lands in the same parcel as the feature (BL-233, BL-1371)'
+
+human_approval: approved
+approval_context: >
+  A new feature file is authored here, so it would ordinarily need a tap;
+  it is minted approved under the 2026-09-17 operator hotfix (severity
+  defect, no choice posed, no ruling_options). FIRM: the guard still
+  refuses a commit that AUTHORS a register or ledger row naming a ticket
+  that is not open (BL-1428's contract); what changes is that a ledger
+  row's owner is read through the same join the register CLI uses, and
+  that a merge commit is judged only on rows absent from both parents.
+  FIRM: no ledger row, register row or ticket is edited to work around
+  this; the row BL-1643 owns stays exactly as adjudicated.
+
+invariants:
+  - "One ownership rule: the guard decides whether a ledger row is owned through the same (lane, file) register join build-report uses - a register row naming an open ticket for that pair owns the row - never the parcel id alone."
+  - "A commit is judged only on rows it authors: a register or ledger line present in any parent of the commit being made is inherited and is never a reason to refuse; a merge that itself adds a row naming a closed ticket is still refused."
+
+description: |
+  ## What is wrong
+
+  `swarmforge/scripts/check_standing_red_register.sh` (BL-1428, in
+  `run_commit_guards.sh`) judges the `+` lines of `git diff --cached -U0`
+  on three sources. For the register and the allowlist it is careful: the
+  allowlist branch resolves ownership "via the SAME join
+  standing_red_register_lib.bb's build-report uses - never a second,
+  independent ownership rule". For the ledger branch it is not: a
+  `- parcel: X` line is refused whenever X itself is not open, although
+  `build-report` treats a ledger row as covered the moment the register
+  names an open ticket for the same (hardening, file) pair - which is
+  exactly how a closed parcel's deferred gate is owned (BL-1468, BL-1488,
+  BL-1638, BL-1643).
+
+  And `--cached` against HEAD makes a branch merge of main look like the
+  merging role authored every line its branch lacked. On 2026-09-19
+  coder@2 (branch tip cf9579d941, no BL-831 row) merged main 8e9e190751:
+  no conflicts, then
+  `check_standing_red_register: COMMIT REFUSED ... backlog/hardening-debt-ledger.yaml
+  row for parcel 'BL-831' names BL-831, which is not open`. The row was
+  added on main on 2026-09-18 while BL-831 was open (the guard passed on
+  main's own linear history), BL-831 closed at 00:49Z, and
+  `backlog/standing-reds.tsv` line 41 names BL-1643 (open, paused) as the
+  owner of that exact pair - the register CLI reads `unowned 0`. coder@2
+  aborted the merge and escalated (its evidence
+  `check-standing-red-register-ledger-merge-false-positive-20260919.md`,
+  coder@2 branch aae4b66643). At mint the other seven role branches
+  carry the row and merge freely; any fresh or lagging worktree, and every
+  future close of a parcel with a deferred gate, meets the same wall until
+  the owner discharges the row days later.
+
+  ## What is wanted
+
+  1. A ledger row this commit adds or changes is owned when the staged
+     register (`git show :backlog/standing-reds.tsv`) carries a
+     `hardening` row for the same file set naming an open ticket; only
+     otherwise is the row's own parcel required to be open. One rule, the
+     register's join.
+  2. A merge commit (`.git/MERGE_HEAD` present) is judged only on lines
+     present in NEITHER parent's version of the file: a line inherited
+     from `HEAD` or `MERGE_HEAD` is not this commit's row. A merge whose
+     resolution itself adds a row naming a closed ticket is still refused.
+
+  ## How (direction, not mandate)
+
+  - Keep the script's shape (bash 3.2, `set -uo pipefail`, the `\x01`
+    re-join idiom, fail-open only on an unreadable index). For (1), read
+    the staged register once and look the ledger row's `file_set` up by
+    `(hardening, file_set)` - the ledger row's `file_set:` line follows its
+    `- parcel:` line, so collect the block, not just the first line. For
+    (2), compute the inherited-line set from `git show HEAD:<path>` and
+    `git show MERGE_HEAD:<path>` and filter the `+` lines against it.
+  - Test: extend or add `swarmforge/scripts/test/test_check_standing_red_register.sh`
+    (or its home) on a mkdtemp `git init` fixture: a main with the ledger
+    row and register row, a branch without them, `git merge --no-commit`
+    staged, the real guard run from the fixture root. The feature's
+    handler drives the same fixture.
+  - Docs: `docs/how-to/BL-1428-standing-red-register.md` gains the two
+    rules; no registered diagram depicts the guard.
+
+constraints: >
+  No change to the register CLI, the ledger, the throttle or any row.
+  Fixture roots are `git init` under mkdtemp, proven by
+  `rev-parse --git-common-dir` before any mutating git command (BL-1390);
+  the guard is run from the fixture root, never the live checkout. The
+  feature stays well inside the 300 s per-mutant ceiling (BL-1541). The
+  step handler lands in the same commit as the feature (BL-233).
+
+out_of_scope: |
+  - The throttle's reading of an unowned row (BL-1429) - unchanged.
+  - Whether the coordinator's promotion or the specifier's owner mint
+    should run before a close of a parcel with a deferred gate (the
+    window between a close and its owner row is the throttle's signal, and
+    after this parcel a merge no longer refuses on it).
+  - coder@2's blocked Work note for BL-1636 (BL-1645's interim applies).
+
+qa_e2e_procedure: >
+  (1) Unit: the guard's shell test green. (2) Acceptance: the BL-1646 and
+  BL-1428 features green through the runner, once. (3) Replay, once, on a
+  scratch clone: a branch at cf9579d941's shape (no BL-831 ledger row)
+  merging a main that carries the row and BL-1643's register row commits
+  with the guard passing; the same fixture with the register row deleted
+  from main still passes the merge (inherited), and a linear commit that
+  adds a `- parcel: BL-9999` row for an absent ticket is refused. (4)
+  Live, ONCE, after land: coder@2 merges main and the guard passes.
+
+source: |
+  coder@2 note to the specifier (from: coder, seat coder@2 by its
+  evidence), priority 00, 2026-09-19T02:31:07Z (inbound
+  00_20260919T023107Z_000021_from_coder): "guard false-refuses main-merges:
+  ledger check skips register indirection". Evidence, verbatim: "A branch
+  merge collapses several days of main's history into one `git diff
+  --cached` against a single first parent, making every
+  already-valid-when-added line look newly "added" to this commit - not the
+  guard's stated intent, but its current behaviour." and "Any worktree role
+  merging main today, after BL-831 closed (2026-09-19T00:49Z) and while
+  this ledger row and BL-1643's register row both stand, hits the same
+  refusal on its own next `git merge main`. Not unique to coder@2."
+  Parents: BL-1428 (the guard), BL-1643 (the owner whose indirection it
+  ignores).
+
+notes: |
+  Minted 2026-09-19 by the specifier while completing coder@2's note, the
+  same pass. AUTO-APPROVED under the 2026-09-17 operator hotfix (severity
+  defect, no ruling_options) - see
+  auto-approve-high-severity-defects-amendment-20260917.md.
+
+  Verified at mint with `git grep 'parcel: BL-831' <branch> -- backlog/hardening-debt-ledger.yaml`:
+  coder, cleaner, architect, hardender, documenter, QA and art-director
+  carry the row; coder@2 does not. The register CLI on main reads
+  `unowned 0` (BL-1638 and BL-1643 own both hardening rows).
+
+  This is delivery machinery: the fix cannot reach coder@2 through the
+  pipeline it blocks without another seat carrying it, and the human's
+  hotfix lane or the expeditor (`swarmforge/scripts/expedite.sh BL-1646`)
+  is the short path. The coordinator was told so in the same pass.
+  Interim for coder@2's Work note (BL-1636, already built and forwarded):
+  BL-1645's - a real commit on its branch whose subject leads with
+  `BL-1636:` (its evidence qualifies), then a plain completion; no merge
+  of main is needed for that step.
+
+  required_wiring names the step handler only: the production consumer
+  (`run_commit_guards.sh` -> the guard) exists before the fix and an
+  anchor on it would match unchanged code (BL-1235); scenario 01 runs the
+  real guard on a staged merge, which is the gate.
+  IR-DRY at mint: scenarios 02, 03 and 05 share "names no owner for any
+  hardening row" and 01/04 share the BL-4343 owner Given by design (one
+  staged register, two commit shapes); the refusal steps differ only by
+  the row they name. Reviewed and kept.
