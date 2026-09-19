@@ -197,3 +197,11 @@ notes: |
   gate. IR-DRY at mint: the outline rows share their Given/When by design
   (one decision table); scenario 02 is a static one-helper check in the
   BL-897 mirror shape.
+
+  Amended 2026-09-19 03:2x local (after promotion df8a7286ed, before the
+  coder dequeued Work note 009620), same pass as the BL-1645 mint: feature
+  outline row 5 now reads "created before the inbound itself was queued" -
+  the evidence window opens at the inbound's creation once BL-1645 lands,
+  and a note queued between the parcel's creation and its dequeue must
+  count. The coder was noted to merge main before starting.
+assigned_to: coder
