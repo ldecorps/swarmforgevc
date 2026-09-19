@@ -184,3 +184,5 @@ notes: |
   IR-DRY at mint: every near-duplicate pairs a concrete step with its
   Scenario Outline template (claim age, conf line, evaluated role) - one
   handler regex serves both by design; reviewed and kept.
+
+assigned_to: coder
