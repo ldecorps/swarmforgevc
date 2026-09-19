@@ -37,6 +37,28 @@ test('captureBubblePipelineBoard: an empty backlog reports no in-flight tickets'
   assert.ok(Array.isArray(state.columns) && state.columns.length > 0);
 });
 
+// BL-831 hardening: the empty-backlog case above never runs the per-row map
+// callback (it maps over zero rows), so its item-found branch (the blurb()
+// call, and the title fallback when a matched item has no title) had no
+// coverage. A role-held ticket with no backlog record never reaches this
+// map at all - computeLivePipelineBoard's rows are built from activeIds
+// (folders.active's own ids; pipelineGridLive.ts), and captureBubblePipelineBoard's
+// byId is built from that same folders.active list, so every row's id is
+// guaranteed present in byId (verified here as a negative: a stage-map
+// entry with no backlog record is excluded from inFlight entirely, not
+// shown with a fallback).
+test('captureBubblePipelineBoard: an in-flight ticket with a matching backlog record gets its blurb; a stage-map entry with no backlog record is not listed at all', () => {
+  const root = mkTmpDir('bl831-inflight-');
+  writeTicket(root, 'BL-9010', { title: 'has a backlog record', description: 'First sentence here.' });
+  writeStageMap(root, { 'BL-9010': 'coder', 'BL-9099': 'cleaner' });
+  const state = captureBubblePipelineBoard(root);
+  const withRecord = state.inFlight.find((row) => row.id === 'BL-9010');
+  const withoutRecord = state.inFlight.find((row) => row.id === 'BL-9099');
+  assert.ok(withRecord, 'expected BL-9010 to be listed as in flight');
+  assert.equal(withRecord.blurb, 'First sentence here.');
+  assert.equal(withoutRecord, undefined, 'a role-held ticket absent from the backlog must not appear in inFlight');
+});
+
 test('captureBubblePipelineDetail: returns null for a ticket id not in active or paused', () => {
   const root = mkTmpDir('bl831-missing-');
   assert.equal(captureBubblePipelineDetail(root, 'BL-9999'), null);
@@ -50,6 +72,56 @@ test('captureBubblePipelineDetail: an acceptance value that is not a .feature pa
   assert.ok(detail);
   assert.equal(detail.scenarios.length, 0);
   assert.match(detail.scenariosNote, /no acceptance scenarios/i);
+});
+
+// BL-831 hardening: distinct from the "not a .feature path" case above -
+// here `acceptance:` DOES name a `.feature` path, but that file does not
+// exist on disk. Must still fall back to scenariosNote, not throw or read
+// a nonexistent file.
+test('captureBubblePipelineDetail: a .feature acceptance path that does not exist on disk still opens with a note, not a crash', () => {
+  const root = mkTmpDir('bl831-missingfeature-');
+  writeTicket(root, 'BL-9005', { title: 'feature path but no file', acceptance: 'specs/features/BL-9005-does-not-exist.feature' });
+  writeStageMap(root, { 'BL-9005': 'hardener' });
+  const detail = captureBubblePipelineDetail(root, 'BL-9005');
+  assert.ok(detail);
+  assert.equal(detail.scenarios.length, 0);
+  assert.match(detail.scenariosNote, /no acceptance scenarios/i);
+});
+
+// BL-831 hardening: the feature-exists branch (parseFeatureScenarioTitles
+// actually reading and parsing a real file) had zero coverage - both of
+// the tests above take the acceptance-missing/not-a-path route, so the
+// detail sheet's real reason to exist (surfacing Gherkin scenario titles)
+// was never unit-exercised, only reached indirectly via the acceptance
+// suite's own subprocess (invisible to this file's coverage instrumentation).
+test('captureBubblePipelineDetail: a .feature acceptance path that exists on disk has its scenario titles parsed, not its Given/When/Then steps', () => {
+  const root = mkTmpDir('bl831-realfeature-');
+  writeTicket(root, 'BL-9006', { title: 'ticket with a real feature file', acceptance: 'specs/features/BL-9006-x.feature' });
+  writeStageMap(root, { 'BL-9006': 'architect' });
+  const featureDir = path.join(root, 'specs', 'features');
+  fs.mkdirSync(featureDir, { recursive: true });
+  fs.writeFileSync(
+    path.join(featureDir, 'BL-9006-x.feature'),
+    [
+      'Feature: something',
+      '',
+      '  Scenario: the first one',
+      '    Given a precondition',
+      '    When something happens',
+      '    Then something is true',
+      '',
+      '  Scenario Outline: the second one',
+      '    Given <value>',
+      '',
+      '    Examples:',
+      '      | value |',
+      '      | 1     |',
+    ].join('\n')
+  );
+  const detail = captureBubblePipelineDetail(root, 'BL-9006');
+  assert.deepEqual(detail.scenarios, ['the first one', 'the second one']);
+  assert.equal(detail.scenariosNote, undefined);
+  assert.ok(!detail.scenarios.some((s) => /^Given |^When |^Then /.test(s)), 'scenario titles must not include step lines');
 });
 
 test('captureBubblePipelineDetail: carries invariants and out_of_scope when the ticket declares them', () => {
