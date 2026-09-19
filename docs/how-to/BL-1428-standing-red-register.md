@@ -82,6 +82,24 @@ naming a ticket that is not open, naming the offending row.
   is judged by whether the CURRENT staged register already names an open
   ticket for it, via the same join the register CLI's `build-report`
   uses. Never a second, independent ownership rule.
+- **An added/changed ledger row is judged through the same join
+  (BL-1646).** A `- parcel: X` row's own `file_set:` line (the block that
+  follows it) is looked up against the staged register
+  (`git show :backlog/standing-reds.tsv`) for a `hardening` row naming the
+  same file set; a register row naming an open ticket for that pair owns
+  it, exactly as `build-report` treats it — this is how a closed parcel's
+  own deferred gate stays owned after the parcel closes. Only when no
+  register row covers the pair does the ledger row's own `parcel` id have
+  to resolve to an open ticket.
+- **A merge commit is judged only on rows it itself adds (BL-1646,
+  invariant 2's second clause).** `git diff --cached -U0` against `HEAD`
+  alone makes a branch merge of `main` look like the merging role authored
+  every line its own branch previously lacked — days of main's history
+  collapsed onto one commit. Mid-merge (`MERGE_HEAD` present), a line is
+  "this commit's own" only when it is present in NEITHER `HEAD:<path>` nor
+  `MERGE_HEAD:<path>` — a line either parent already carried is inherited,
+  never a reason to refuse. A merge whose own conflict resolution adds a
+  genuinely new row naming a closed ticket is still refused.
 - **Fail-open on an unreadable git index** (WARN, exit 0) — the same
   posture every other guard in the chain takes; this guard's own refusal
   requires being SURE the row is unowned, not merely suspicious.
