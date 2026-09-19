@@ -188,4 +188,46 @@ function track(root) {
   tracked.add(root);
 }
 
-module.exports = { track, reap, onAbnormalExit, isLiveRepoSwarmforgeSocket };
+// BL-1636: one-line migration for the plain mkdtemp-then-forget shape 455
+// handlers had at mint - creates the root with the owner-pid name shape
+// tmpDir.js's own sweepStaleTmpDirs/BL-1623 already expect
+// (`prefix<pid>-...`), tracks it for onAbnormalExit reaping (a simple
+// `fs.rmSync`, not reap()'s front-desk-process-tree kill - a plain fixture
+// root has no detached process tree to kill), and removes it on EVERY exit
+// path via the shared onAbnormalExit callback list. Rooted at the SAME
+// short base (/tmp, not os.tmpdir()) socketFixtureRoot.js's
+// mkSocketFixtureRoot uses - this file already references control sockets
+// (killTmuxServer above), and the socket-fixture-root guard
+// (extension/test/socketFixtureShortRootGuard.test.js) refuses any file
+// that both references a socket and roots a fixture at the long
+// (os.tmpdir()) base, so a plain tmpdir()-based root here would trip that
+// guard even though this helper never itself builds a socket.
+const SHORT_FIXTURE_BASE = '/tmp';
+const trackedTmpRoots = new Set();
+let trackedTmpRootReaperRegistered = false;
+
+function reapTrackedTmpRoot(root) {
+  if (trackedTmpRoots.delete(root)) {
+    try {
+      fs.rmSync(root, { recursive: true, force: true });
+    } catch {
+      // already gone - fine, that's the point of cleanup
+    }
+  }
+}
+
+function trackedTmpRoot(prefix) {
+  const root = fs.mkdtempSync(path.join(SHORT_FIXTURE_BASE, `${prefix}${process.pid}-`));
+  if (!trackedTmpRootReaperRegistered) {
+    trackedTmpRootReaperRegistered = true;
+    onAbnormalExit(() => {
+      for (const r of [...trackedTmpRoots]) {
+        reapTrackedTmpRoot(r);
+      }
+    });
+  }
+  trackedTmpRoots.add(root);
+  return root;
+}
+
+module.exports = { track, reap, onAbnormalExit, isLiveRepoSwarmforgeSocket, trackedTmpRoot };
