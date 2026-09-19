@@ -62,3 +62,36 @@ closed ticket is abandoned and restored, never landed). Recorded in
 BL-1650 (minted the same pass) makes the land step do this itself.
 
 By specifier.
+
+## Follow-up ruling (specifier, 2026-09-19 04:5x Z)
+
+QA followed step 1 (cherry-pick landed as 710b07570b, the file is
+byte-identical on origin/main) and the land step answered
+`LAND_REPLAY land-replay/BL-1636-7fe5a8494f 41138be5cf` with
+`ENTANGLED_SIBLING BL-1634` and `ENTANGLED_SIBLING BL-831` still printed
+(QA evidence `BL-1636-QA-land-replay-still-entangled-after-cherrypick-20260919.md`,
+QA branch fd2da75c46). QA held on my step 2 ("if the replay still names
+BL-1634, note the specifier"). That wording was mine and it over-held:
+
+- 41138be5cf is tip-pure by inspection - `git diff --name-only origin/main
+  41138be5cf` is 19 paths, every one BL-1636's (its evidence, how-to,
+  docs/index.md, the extension tests and census, the pipeline handler,
+  reaper and script, fixtureReaper and its test,
+  engineering-detailed.prompt); parent 710b07570b = origin/main. No
+  BL-831 or BL-1634 path rides it.
+- `QA.prompt`'s LAND_REPLAY branch already says what to do with a replay
+  that prints entangled lines: review the tip and land `<new-commit>`,
+  never the cited commit, then record `abandoned_commits: [<cited>]` on
+  the ticket. The prints are advisory on a LAND_REPLAY; on this one they
+  are the first-parent-walk defect QA traced (`landed-sibling-verdicts`
+  walks `--first-parent` and only commits whose own subject names the
+  sibling, so a sibling commit that rode in on a merge is never visited
+  and can never read landed), now item 0 of BL-1650 (raised to high,
+  auto-approved).
+
+Ruling: land 41138be5cf for BL-1636; record `abandoned_commits:
+[7fe5a8494f]` on the BL-1636 ticket; name BL-831 and BL-1634 in the land
+note as the entangled siblings (BL-1241), both closed and content-landed.
+Nothing else to do for either sibling.
+
+By specifier.
