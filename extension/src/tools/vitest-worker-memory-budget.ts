@@ -190,3 +190,40 @@ export function resolveVitestWorkerPool({ pack, platform, override, defaultCeili
   // memory allows (BL-1336 invariant 2, BL-422/BL-792's floor untouched).
   return resolveWorkerPoolSize(hostRamMB, resolveVitestForkCeiling({ pack, platform, override, defaultCeiling, rotation }));
 }
+
+// ── BL-1651: the property lane's own additive heap sizing ──────────────────
+//
+// PER_WORKER_HEAP_MB above is a fixed constant sized against the BL-422/
+// BL-1348 reference incident host and never re-derived against what THIS
+// host can actually spare a worker. Five parcels' property lanes crashed
+// on the V8 per-worker heap cap mid-file in 2026-09-18/19 (a single file,
+// alone in its own isolate, filled the fixed 640MB before its own
+// assertions ever ran) while the host itself measured 14GB+ free and zero
+// kernel OOM kills - the fixed cap, not host memory, was the ceiling that
+// broke. This is additive only: PER_WORKER_HEAP_MB/resolveWorkerPoolSize
+// keep every existing caller (the unit lane, every test above) byte-
+// identical; only vitest.properties.config.mjs calls these two.
+//
+// Derived from memory ACTUALLY FREE at spawn (never hostRamMB/totalmem,
+// which ignores what a busy host's other resident processes - the live
+// swarm's own role sessions - already hold), divided across the forks
+// that will actually spawn, at the same SAFE_HOST_RAM_FRACTION headroom
+// resolveWorkerPoolSize already uses. Floored at PER_WORKER_HEAP_MB so a
+// derivation on a tight host never regresses below today's proven-safe
+// minimum - the floor binding is a deliberate choice, not a bug: 640MB
+// already runs the lane safely on a modest host, and this ticket's own
+// incidents are all on a host with room to spare.
+export function resolvePropertyLaneHeapMB(freeRamMB: number, forks: number): number {
+  const derivedMB = Math.floor((freeRamMB * SAFE_HOST_RAM_FRACTION) / Math.max(1, forks));
+  return Math.max(PER_WORKER_HEAP_MB, derivedMB);
+}
+
+// The per-FILE gate ceiling sits below the worker's own V8 cap with real
+// headroom, so a runaway file's heap crosses the gate and fails cleanly,
+// attributed to that file, before it ever reaches the hard V8 limit that
+// used to abort the whole worker with no file name and no number.
+export const PROPERTY_LANE_HEAP_HEADROOM_FRACTION = 0.85;
+
+export function resolvePropertyLaneFileHeapCeilingMB(workerHeapMB: number): number {
+  return Math.floor(workerHeapMB * PROPERTY_LANE_HEAP_HEADROOM_FRACTION);
+}
