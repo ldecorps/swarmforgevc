@@ -30,3 +30,8 @@ specs/pipeline/generated/
 /email-text.txt
 /failure.log
 /status.json
+# BL-875: root-anchored - the repo root has no package.json, so an
+# accidental `npm install` there recreates this file; anchored (not a
+# bare `package-lock.json` line) so extension/package-lock.json, a real
+# tracked deployed surface, stays tracked.
+/package-lock.json
