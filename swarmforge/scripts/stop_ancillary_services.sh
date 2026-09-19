@@ -34,6 +34,7 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 source "$SCRIPT_DIR/freshness_stop_marker_lib.sh"
 source "$SCRIPT_DIR/lifecycle_matrix.sh"
 source "$SCRIPT_DIR/tunnel_ownership_lib.sh"
+source "$SCRIPT_DIR/babysitterd_census_lib.sh"
 
 # Sets the globals every stop_* function below reads: ROOT, OP_DIR, BB_DIR,
 # LEGACY_BB_DIR. Callers that source this file (finish_shift_lib.sh) must
@@ -97,9 +98,14 @@ stop_front_desk_children() {
   done < <(pgrep -fl "telegram-front-desk-bot.js.*$ROOT" 2>/dev/null || true)
 }
 
-# babysitterd (BL-611) — signal its pidfile like the other daemons.
+# babysitterd (BL-611) — signal its pidfile like the other daemons, PLUS
+# every other babysitterd of this root the census names (BL-1639: an
+# operator-local copy, launched from a different script, has no entry in
+# BB_DIR and was never reached here before — the verify counted it, the
+# stop never signalled it).
 stop_babysitterd() {
   log "stopping babysitterd"
+  babysitterd_census_signal "$ROOT"
   signal_pid_file "$BB_DIR/babysitterd.pid"
   # BL-785: record that babysitterd was stopped ON PURPOSE, so the BL-675
   # freshness cron does not resurrect it.
