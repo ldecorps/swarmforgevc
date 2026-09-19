@@ -7,9 +7,11 @@
 ;; below.
 (ns forward-evidence-lib-test-runner
   (:require [babashka.fs :as fs]
+            [babashka.process :as process]
             [clojure.string :as str]))
 
-(load-file (str (fs/path (fs/parent (fs/canonicalize *file*)) ".." "forward_evidence_lib.bb")))
+(def lib-path (str (fs/path (fs/parent (fs/canonicalize *file*)) ".." "forward_evidence_lib.bb")))
+(load-file lib-path)
 
 (def failures (atom []))
 
@@ -84,6 +86,39 @@
          (forward-evidence-lib/forward-completion-decision
           {:forwarding? true :master-resident? false :evidenced? true
            :qa-note-evidenced? false :reason nil}))
+
+;; ── qa-stage? (BL-1642 invariant 3, real behavior) ────────────────────────
+;; The tests above give forward-completion-decision a hand-supplied
+;; qa-note-evidenced? boolean - they prove the DECISION TABLE, never that
+;; qa-stage? itself computes the right answer for a seat. Scenario 02 of
+;; the acceptance feature only checks, STATICALLY (source text), that
+;; forward-gate! and qa-hold-gate! call the SAME function name - it never
+;; runs qa-stage? against a real "QA@2"-shaped SWARMFORGE_ROLE, so the
+;; ticket's own invariant 3 ("a QA@2 seat is the QA stage to both") had no
+;; behavioral coverage anywhere in the parcel. Confirmed by hand-mutation
+;; before writing these: reverting qa-stage? to the pre-fix bare
+;; (= "QA" (handoff-lib/current-role)) comparison left BOTH this runner's
+;; other 9 cases AND all 9 of the BL-1642 acceptance scenarios green.
+;; qa-stage? reads current-role via System/getenv, which cannot be
+;; overridden in-process (the same reason BL-1637's sent-dirs-for-seat
+;; tests use a real bb subprocess) - drive it the identical way.
+(defn qa-stage-subprocess [role]
+  (let [program (str "(load-file \"" lib-path "\")"
+                     "(println (boolean (forward-evidence-lib/qa-stage?)))")
+        result (process/sh {:extra-env {"SWARMFORGE_ROLE" role}} "bb" "-e" program)]
+    (= "true" (str/trim (:out result)))))
+
+(assert= "qa-stage? is true for the bare QA role"
+         true
+         (qa-stage-subprocess "QA"))
+
+(assert= "qa-stage? is true for a QA@2 seat (BL-1642's own invariant 3)"
+         true
+         (qa-stage-subprocess "QA@2"))
+
+(assert= "qa-stage? is false for a non-QA role"
+         false
+         (qa-stage-subprocess "architect"))
 
 ;; ── inbound-window-start (BL-1645) ───────────────────────────────────────
 ;; IO (header-field slurps a real file), unlike the pure decision tests
