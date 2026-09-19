@@ -86,8 +86,17 @@ function registerSteps(registry) {
       const execArgv = ctx.config.test?.poolOptions?.forks?.execArgv || [];
       const heapArg = execArgv.find((a) => /^--max-old-space-size=(\d+)$/.test(a));
       const actualHeap = heapArg ? Number(heapArg.match(/=(\d+)$/)[1]) : undefined;
-      if (actualHeap !== PER_WORKER_HEAP_MB) {
-        throw new Error(`expected the heap cap to equal PER_WORKER_HEAP_MB (${PER_WORKER_HEAP_MB}), got ${actualHeap}`);
+      // BL-1651: this config's own heap cap is now resolvePropertyLaneHeapMB's
+      // host-derived value (memory free at spawn, divided across the forks
+      // that will actually run), never the unit lane's fixed
+      // PER_WORKER_HEAP_MB - re-reading os.freemem() here would compare
+      // against a DIFFERENT instant than the config's own read at import
+      // time, on a host where free memory is not stable (this ticket's own
+      // reason for existing). The floor resolvePropertyLaneHeapMB always
+      // honors is the one timing-independent invariant to pin here;
+      // hasHardcodedHeapSize below (never a bare literal) covers the rest.
+      if (typeof actualHeap !== 'number' || !Number.isFinite(actualHeap) || actualHeap < PER_WORKER_HEAP_MB) {
+        throw new Error(`expected the heap cap to be a finite number at least PER_WORKER_HEAP_MB's floor (${PER_WORKER_HEAP_MB}), got ${actualHeap}`);
       }
     },
     FEATURE_NAME
