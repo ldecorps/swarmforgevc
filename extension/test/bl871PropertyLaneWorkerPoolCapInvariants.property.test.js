@@ -9,7 +9,7 @@ const { mkTmpDir } = require('./helpers/tmpDir');
 const { runManyAsPropertyLaneFixtures } = require('./helpers/propertyLaneFixtureRunner');
 const { maxConcurrentSpans } = require('./helpers/maxConcurrentSpans');
 const { importsSharedBudgetModule, hasHardcodedMaxForks, hasHardcodedHeapSize, readsSharedWorkerBudgetOnly } = require('./helpers/workerPoolConfigGuard');
-const { resolveVitestWorkerPool, resolveFreeCoresCeiling, PER_WORKER_HEAP_MB } = require('../out/tools/vitest-worker-memory-budget');
+const { resolveVitestWorkerPool, resolveFreeCoresCeiling } = require('../out/tools/vitest-worker-memory-budget');
 
 // BL-871 declared invariants (property authorship rests with the coder,
 // first pass - BL-654). Runs ONLY via `npm run test:properties`
@@ -110,10 +110,23 @@ test(
           `expected at most ${WORKER_POOL_SIZE} worker processes alive at once across ${fileCount} files, observed ${peakConcurrent}`
         );
 
+        // BL-1651: the property lane's own per-worker cap is now host-
+        // derived (resolvePropertyLaneHeapMB), never the fixed
+        // PER_WORKER_HEAP_MB the unit lane still uses - reading os.freemem()
+        // again HERE would race the real config's own reading in the
+        // spawned process. The config prints its resolved value exactly
+        // once, in that same spawned process, before any fixture runs
+        // (vitest.properties.config.mjs's "[property-lane-budget]" line) -
+        // parsing it from this run's own captured output is the one way to
+        // compare against the EXACT cap that run actually spawned with.
+        const printed = result.output.match(/\[property-lane-budget\] forks=\d+ workerHeapMB=(\d+)/);
+        assert.ok(printed, `expected the config's own budget line in the run's output:\n${result.output}`);
+        const resolvedWorkerHeapMB = Number(printed[1]);
+
         for (const { heapLimitMB } of records) {
           assert.ok(
-            heapLimitMB <= PER_WORKER_HEAP_MB * HEAP_TOLERANCE,
-            `expected every file's heap ceiling to stay near ${PER_WORKER_HEAP_MB}MB regardless of fileCount=${fileCount}, saw ${heapLimitMB}MB`
+            heapLimitMB <= resolvedWorkerHeapMB * HEAP_TOLERANCE,
+            `expected every file's heap ceiling to stay near ${resolvedWorkerHeapMB}MB regardless of fileCount=${fileCount}, saw ${heapLimitMB}MB`
           );
         }
       }),

@@ -5,9 +5,12 @@ const {
   resolveVitestForkCeiling,
   resolveVitestWorkerPool,
   resolveFreeCoresCeiling,
+  resolvePropertyLaneHeapMB,
+  resolvePropertyLaneFileHeapCeilingMB,
   MAX_WORKERS,
   PER_WORKER_HEAP_MB,
   SAFE_HOST_RAM_FRACTION,
+  PROPERTY_LANE_HEAP_HEADROOM_FRACTION,
 } = require('../out/tools/vitest-worker-memory-budget');
 
 // ── computeWorkerMemoryBudget (pure) - BL-422 vitest-mem-budget-03 ─────────
@@ -238,4 +241,33 @@ test('the resolved pool is never below 1, including absent/malformed/zero/negati
 
 test('an explicit defaultCeiling is carried through the composition, not dropped', () => {
   assert.equal(resolveVitestWorkerPool({ pack: undefined, platform: 'linux', defaultCeiling: 2, hostRamMB: 15360 }), 2);
+});
+
+// ── resolvePropertyLaneHeapMB / resolvePropertyLaneFileHeapCeilingMB (pure) - BL-1651 ──
+
+test('a generous host derives a per-worker heap above the fixed floor', () => {
+  const derived = resolvePropertyLaneHeapMB(40000, 6);
+  assert.equal(derived, Math.floor((40000 * SAFE_HOST_RAM_FRACTION) / 6));
+  assert.ok(derived > PER_WORKER_HEAP_MB);
+});
+
+test('a tight host never regresses below the proven-safe PER_WORKER_HEAP_MB floor', () => {
+  assert.equal(resolvePropertyLaneHeapMB(512, 6), PER_WORKER_HEAP_MB);
+  assert.equal(resolvePropertyLaneHeapMB(0, 1), PER_WORKER_HEAP_MB);
+});
+
+test('forks is floored at 1 - a zero or negative fork count never divides by zero or inflates the result', () => {
+  assert.equal(resolvePropertyLaneHeapMB(40000, 0), resolvePropertyLaneHeapMB(40000, 1));
+  assert.equal(resolvePropertyLaneHeapMB(40000, -3), resolvePropertyLaneHeapMB(40000, 1));
+});
+
+test('resolvePropertyLaneFileHeapCeilingMB applies the headroom fraction, floored', () => {
+  assert.equal(resolvePropertyLaneFileHeapCeilingMB(1000), Math.floor(1000 * PROPERTY_LANE_HEAP_HEADROOM_FRACTION));
+  assert.equal(resolvePropertyLaneFileHeapCeilingMB(640), Math.floor(640 * PROPERTY_LANE_HEAP_HEADROOM_FRACTION));
+});
+
+test('the file ceiling always sits strictly below the worker heap it is derived from', () => {
+  for (const workerHeapMB of [640, 1000, 4096]) {
+    assert.ok(resolvePropertyLaneFileHeapCeilingMB(workerHeapMB) < workerHeapMB);
+  }
 });
