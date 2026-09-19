@@ -157,6 +157,14 @@
                   (binding [*out* *err*]
                     (println (str "LAND_APPROVAL_UNRECORDED " (:reason rec))))))
               (println (str "LAND_REPLAY " (:branch plan) " " (:commit plan)))
+              ;; BL-1650 items 1-2: names every closed-owner pure-evidence
+              ;; stray this land step cherry-picked onto the replay branch
+              ;; itself, ahead of the parcel's own tip-pure commit - never
+              ;; landed silently (Article 1.9's own posture, same as the
+              ;; ENTANGLED_SIBLING/LANDED_SIBLING lines below).
+              (doseq [{:keys [sha landed-sha paths]} (:stray-landed plan)]
+                (println (str "LAND_STRAY_EVIDENCE_LANDED " sha " -> " landed-sha " "
+                              (str/join "," (sort paths)))))
               ;; BL-1604: names every other open ticket's registry row the
               ;; replay restored - a land can no longer silently un-own a
               ;; standing red.
