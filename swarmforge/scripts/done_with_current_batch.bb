@@ -25,7 +25,7 @@
 ;; shared with the task path's own forward-gate!.
 (defn- forward-verdict [resident? source-file]
   (let [ticket-id (pipeline-stage-lib/extract-ticket-id (handoff-lib/header-field source-file "task"))
-        since (or (handoff-lib/header-field source-file "dequeued_at") "1970-01-01T00:00:00Z")
+        since (forward-evidence-lib/inbound-window-start source-file)
         evidenced? (boolean (and ticket-id (forward-evidence-lib/sent-handoff-names-ticket-since? ticket-id since)))
         ;; BL-1642: same shared qa-stage? helper as the task path's own
         ;; forward-gate! - QA is a task-mode role and never reaches this

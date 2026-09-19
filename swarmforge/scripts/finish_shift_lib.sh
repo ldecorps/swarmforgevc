@@ -52,6 +52,7 @@
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 source "$SCRIPT_DIR/lifecycle_matrix.sh"
 source "$SCRIPT_DIR/stop_ancillary_services.sh"
+source "$SCRIPT_DIR/babysitterd_census_lib.sh"
 
 # BL-1393: THE closing ceremony - one sequence, on every sleep after work.
 #
@@ -129,7 +130,11 @@ finish_shift_component_running() {
   local op_dir="$root/.swarmforge/operator"
   case "$component" in
     babysitterd)
-      _finish_shift_ps_matches "*babysitterd.sh*"
+      # BL-1639: root-scoped — a babysitterd of another root (an
+      # operator-local copy, a sibling worktree, a mkdtemp fixture) is
+      # never counted here, matching what stop_babysitterd (and
+      # kill_all_swarm.sh's BL-611 exception) actually signal.
+      [[ -n "$(babysitterd_census_pids "$root")" ]]
       ;;
     operator-runtime)
       _finish_shift_ps_matches "*--remote-control Operator*"
