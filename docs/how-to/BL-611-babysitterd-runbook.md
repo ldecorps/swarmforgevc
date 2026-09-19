@@ -422,6 +422,20 @@ role holding a claim past its idle timeout with HEAD unmoved — can fire
 again. Row 11 above is otherwise unchanged: same trigger, same nudge path,
 now actually reachable.
 
+A role's idle timeout, for this reading and for BL-528's own claim-idle
+escalation ladder, is per-role and conf-driven (BL-1649, 2026-09-19):
+`config claim_idle_timeout_role_minutes <role> <n>` in `swarmforge.conf`
+(repeatable; an unusable value is dropped, never tightened) overrides the
+ladder's built-in `:role-idle-timeout-ms` map (`hardender` 90 minutes; the
+shipped conf adds `QA 90` after a legitimate 80-minute QA land read as idle
+and bounced at reclaims=6). The ladder also stops counting a role whose
+agent process is absent or was respawned within the cooldown as idle — a
+crashed agent used to stack reclaims on top of its own crash-escalation
+respawn toward the halt threshold. Every reclaim increment now logs one
+`claim-idle-reclaim <role> reclaims=<n> busy=<b> dirty=<b> recent=<b>
+present=<b> elapsed-min=<m> timeout-min=<t>` line in `handoffd.log`, so a
+bounce or halt's count is always explainable from the log.
+
 ## Stuck-in-process now gates on owner liveness, and sees every mailbox (BL-807)
 
 Check 5 used to be a pure file-age test: it never consulted whether the owning
