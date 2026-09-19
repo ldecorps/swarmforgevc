@@ -24,8 +24,15 @@ acceptance: specs/features/BL-1458-every-briefing-trigger-instructs-the-document
 required_wiring:
   - 'specs/pipeline/steps/bl1458BriefingTriggerInstructsDocumenterSteps.js::registerSteps::the step handler lands in the same parcel as the feature (BL-233)'
 
-human_approval: approved
+human_approval: pending
 approval_context: >
+  RE-PENDED 2026-09-19 by the specifier: scenario 06 was added to the
+  feature file (the fallback instructs the documenter ONCE per day however
+  many sweep ticks run - the sweep re-fires every tick while the file is
+  missing, ~every two minutes, so a mailbox note without this guard is a
+  note flood). No choice is posed; the original approval (12f13f2589,
+  2026-09-07 batch) covered scenarios 01-05, which are unchanged. The rest
+  of this context is as approved:
   A new feature file is authored here, so it needs a tap. No choice is
   posed and there are no ruling_options: this is the code half of your
   ruling A (documenter authors), whose prompt halves are already on main
@@ -89,6 +96,12 @@ description: |
     the night runner's `sendHandoffNote` takes - never a pane injection
     into the coordinator. Rename the log key if `briefing-generation-nudge-
     sent` no longer describes it.
+  - Once per day-key (scenario 06): `generate-briefing-if-due!` is gated on
+    file presence only and re-fires every sweep tick until the file exists;
+    a mailbox note needs a durable per-day marker (e.g.
+    `.swarmforge/briefing/instructed-<day-key>`, or the ceremony state's own
+    `briefingInstructed`) so the documenter receives ONE note per day, and
+    a daemon restart does not re-send it.
   - `extension.ts` `onBriefingDue`: delete the `sendInstructionVerified`
     call and the coordinator pane lookup; keep the sidecar emit; rewrite
     the BL-099 comment ("Composing the briefing's content is the
@@ -169,3 +182,16 @@ notes: |
   (`handoffd.bb`'s generation sweep calling the lib) exists before the fix
   and an anchor on it would match unchanged code (BL-1235); scenario 01
   runs the sweep and reads the documenter's mailbox, which is the gate.
+
+  Amended 2026-09-19 by the specifier (intake
+  `INTAKE-day-shift-cron-path-and-bedtime-shutdown-gaps-20260918.md`):
+  scenario 06 added, ticket re-pended (see approval_context). Premise
+  re-verified the same pass: on 2026-09-18 the daemon logged no
+  `briefing-generation-nudge-sent` and `inject-traffic.log` carries no
+  briefing injection - the fallback IS dormant on the closure-scheduled
+  path as this ticket says; the `briefingInstructed`/`briefing-missing`
+  flags the intake read every tick were the previous night's `done`
+  ceremony state re-logged. What did fail that day is BL-1640/BL-1641's
+  shape (the sleep-path ceremony), not this trigger.
+  IR-DRY on the amendment: scenario 06's "exactly one note ..." is a count
+  assertion over scenario 01's step by design; reviewed and kept.
