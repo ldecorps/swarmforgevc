@@ -105,9 +105,17 @@ command:
 
 - `start_ancillary_services.sh` starts it (`start_babysitterd.sh`), unless
   `SWARMFORGE_SKIP_BABYSITTERD=1` is set.
-- `stop_ancillary_services.sh` / `./stop-swarm.sh` stop it by pidfile, the
-  same pattern as the other daemons.
-- `kill_all_swarm.sh` (the nuclear path) signals its pidfile too.
+- `stop_ancillary_services.sh` / `./stop-swarm.sh` stop it through
+  `babysitterd_census_lib.sh`'s root-scoped census (BL-1639): every
+  `babysitterd.sh` process belonging to THIS project root is signalled
+  (TERM, then KILL after a short wait), not only the tracked pidfile's pid
+  — a second babysitterd of this root (an operator-local copy, say) is
+  signalled too, while a babysitterd of another root — a mkdtemp fixture, a
+  sibling worktree, another checkout — is neither signalled nor counted.
+  The tracked pidfile is still signalled and removed, so a stack with only
+  the tracked daemon behaves exactly as before BL-1639.
+- `kill_all_swarm.sh` (the nuclear path) reads the same census, not just
+  its pidfile.
 - `./swarm ensure` verifies the pidfile's pid is alive and, if not, runs
   `start_babysitterd.sh`. That start script **adopts** a live
   `babysitterd.sh` for this root when the pidfile is missing or stale
