@@ -148,5 +148,33 @@ git -C "$ROOT" reset -q --hard coder
 [[ "$STATUS5" -eq 0 ]] || fail "05: expected a new ledger row for an open ticket (bare parcel id) to pass, got: $OUT5"
 pass "05: a genuinely new ledger row for an open ticket still passes by its own bare parcel id"
 
+# ── 06: a MERGE whose OWN resolution adds a genuinely new, unowned ledger
+#    row (present in NEITHER parent) is still refused - the ticket's own
+#    invariant 2 second clause, untested until now. Confirmed by hand-
+#    mutation before writing this: making added_or_changed_lines return
+#    empty unconditionally whenever MERGE_HEAD exists (a "just skip
+#    validation during any merge" over-broad reading of invariant 2) left
+#    cases 01-05 above all green - only a case where the merge's OWN
+#    resolution adds new content can distinguish "inherited, so skip" from
+#    "mid-merge, so skip everything".
+git -C "$ROOT" checkout -q coder
+git -C "$ROOT" merge -q --no-ff --no-commit "$MAIN_WITH_OWNER" || true
+cat >> "$ROOT/backlog/hardening-debt-ledger.yaml" <<'EOF'
+- parcel: BL-9999
+  gate: mutation
+  file_set: brand/new/file.js
+  reason: "conflict resolution added this"
+  detected_at: 2026-01-01
+EOF
+git -C "$ROOT" add -A
+set +e
+OUT6="$(run_guard 2>&1)"
+STATUS6=$?
+set -e
+git -C "$ROOT" merge --abort 2>/dev/null || git -C "$ROOT" reset -q --hard coder
+[[ "$STATUS6" -ne 0 ]] || fail "06: expected refusal of a genuinely new, unowned row added by the merge's own resolution"
+echo "$OUT6" | grep -q "BL-9999" || fail "06: refusal must name BL-9999, got: $OUT6"
+pass "06: a merge whose own resolution adds a genuinely new, unowned ledger row is still refused"
+
 echo ""
 echo "ALL PASS: check_standing_red_register.sh ledger join + merge-inherited-line filtering (BL-1646)"
