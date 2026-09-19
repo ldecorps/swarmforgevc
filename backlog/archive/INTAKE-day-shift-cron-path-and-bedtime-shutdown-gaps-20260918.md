@@ -1,3 +1,63 @@
+# Disposition (specifier, 2026-09-19)
+
+Drained from the backlog root on 2026-09-19. Every "Wanted" sentence below
+survives verbatim in the `source:` of the ticket that carries it
+(Article 5.3). The 1:N split:
+
+- **Item 2 (babysitterd survives bedtime) → BL-1639** (`backlog/paused/`,
+  defect, high, auto-approved). Root cause re-read from the code, not the
+  pid list: the `SIGTERM agents:` list is the agent sessions; babysitterd
+  is stopped one line earlier by `stop_babysitterd`, which signals the
+  tracked pidfile `.swarmforge/babysitterd/babysitterd.pid` only, while the
+  verify matches any `babysitterd.sh` process. The survivor (31823) was a
+  SECOND daemon: `.swarmforge/operator/day-shift-start.sh` launches the
+  older operator-local copy `.swarmforge/operator/babysitterd.sh` (pidfile
+  `.swarmforge/operator/babysitterd.pid`) two seconds after `start-swarm.sh`
+  already started the tracked one (29714) - the launcher's "start-swarm.sh
+  does NOT start babysitterd" comment is stale. Same pair on 07-30, 08-21,
+  09-01, 09-04, 09-10, 09-18, and again at the 01:00 night-start today
+  (pids 10398 tracked, 12580 operator). BL-1639 makes stop, verify and
+  `kill_all_swarm.sh` read one root-scoped census. The launcher itself is
+  gitignored: a human hotfix, not a ticket.
+- **Item 1(b), the safety margin → BL-1640** (`backlog/paused/`, defect,
+  high, PENDING a ruling A/B). What actually happened at 16:00:01Z: the
+  sleep-path ceremony took ONE tick (`sequence: ["freeze-promotion"]`,
+  `hardDeadlineMs` = 07:45Z that morning, computed from
+  `closure_stop_local`) and the stack was killed four seconds later. The
+  margin BL-658 designed (drain + briefing budgets ahead of the stop) never
+  applies on a sleep. Same on 09-17 (`advanced: false`: the morning window
+  had consumed the day's night key).
+- **Item 1(b), the forcing → BL-1641** (`backlog/paused/`, defect, high,
+  PENDING a ruling A/B). The 09-18 briefing was NOT unwritten: the
+  documenter committed it on its branch at 15:47:36Z (`1af06d965b`) and
+  sent QA the landing note at 15:46:15Z; QA never reached it before the
+  kill. At the deadline the ceremony lands the documenter's own commit when
+  one exists, else composes the banked briefing (BL-308), and stays loud.
+- **Item 1(a), the injected nudge → no new ticket; BL-1458 amended.** The
+  daemon logs show no `briefing-generation-nudge-sent` on 2026-09-18 and
+  `.swarmforge/daemon/inject-traffic.log` has no briefing injection that
+  day. The `briefingInstructed`/`briefing-missing` flags read as
+  "every tick" are the previous night's `done` ceremony state re-logged by
+  `closing-ceremony-run` each sweep. The BL-258 fallback is dormant on the
+  closure-scheduled path, as BL-1458 (paused, approved 09-07) says; BL-1458
+  retargets it to a documenter mailbox note and was amended today with a
+  once-per-day guard (scenario 06) and re-pended for that change. What woke
+  the coordinator at 15:35 is not in any mailbox; it relayed on its own.
+
+Observations recorded, not ticketed this pass:
+- The ceremony's `briefingAlreadySent` reads `.sent.json` (the email), not
+  the file on main: on 09-16 and 09-17 the briefing landed at 07:13Z and
+  `closing-briefing-missing` still fired at 07:45Z because the email went
+  out at 09:07Z. A "composed but unsent" state deserves its own surface.
+- `docs/briefings/.sent.json` is modified and uncommitted on main since
+  2026-09-17 09:07Z (the 09-17 send's marker commit did not land; that was
+  the day every direct-to-main commit was refused by the handler guard).
+- The BL-1393 e2e proves "finish-shift drives the sequence" by grepping
+  `finish_shift_lib.sh` for the CLI call (BL-1235 shape); BL-1640's
+  Background builds the in-flight sleep it never constructed.
+
+---
+
 # Intake: today's daily briefing never went out — cron PATH bug (fixed), and two open gaps in the bedtime chain
 
 Filed by the human via Claude Code (2026-09-18T18:00Z, approx). RAW ask, not
