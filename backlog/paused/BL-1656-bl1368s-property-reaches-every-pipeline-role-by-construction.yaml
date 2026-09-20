@@ -1,0 +1,125 @@
+id: BL-1656
+title: "bl1368ApprovalCommitByline.property.test.js asserts that 60 random draws over the seven pipeline roles reached every role, so the property lane goes red whenever the generator skips one (2026-09-20: specifier never drawn, expected 7 roles seen, got 6, green again in isolation): the reach is made structural - every role gets its two verdicts on every run - and the random draw keeps only the invariant"
+milestone: M8
+type: defect
+severity: high
+# high (standing-red rule 2026-09-05): a test failing on main in any lane
+# is a broken safety signal, and a flake in the property lane fails the
+# whole lane for whichever role happens to run it (the coder, on its
+# BL-1630 parcel). Not high for product reasons: the byline checker is
+# correct; only the test's reach is drawn instead of built.
+status: todo
+epic: swarm-reliability
+priority: 8
+direction: swarm-reported
+depends_on: []
+# BL-1368 (the test and the checker) is in backlog/done. No open ticket
+# touches this test file or compliance_cli's commit-byline check.
+mutation_cost: low
+# low: one test file; no production change, so no mutation, CRAP or DRY
+# surface - the hardener's gate is the property lane run.
+slice_size_envelope: low
+required_stages: [coder, cleaner, architect, hardender, documenter, qa]
+
+acceptance: specs/features/BL-1368-an-approval-commit-names-the-decider.feature
+# The contract this ticket must keep satisfying is BL-1368's feature,
+# unchanged (the fix touches only the property test) - BL-1251's shape;
+# this pointer is not a claim of ownership over BL-1368's contract. The
+# gate is that file green through the runner plus the e2e below.
+
+human_approval: approved
+approval_context: >
+  No feature file is authored or changed here; minted approved under the
+  2026-09-17 operator hotfix (severity defect, no choice posed, no
+  ruling_options). FIRM: the reach assertion stays (a property that can
+  pass without visiting a role gates nothing, BL-1445); it is made true by
+  construction, never deleted or loosened. FIRM: the two invariants the
+  property checks (a role's own commit passes the byline check; a
+  human-decision commit is credited to no role) are unchanged.
+
+invariants:
+  - "Every role in PIPELINE_ORDER receives both verdicts on every run before the reach assertion is judged, independent of the generator's draws and of numRuns."
+
+description: |
+  ## What is wrong
+
+  `extension/test/bl1368ApprovalCommitByline.property.test.js`, third
+  test ("a pipeline role's own commit still passes the role byline check,
+  and a human-decision commit is not one"): `fc.assert(fc.property(
+  fc.constantFrom(...PIPELINE_ORDER), ...), { numRuns: 60 })` memoises a
+  verdict pair per role it happens to draw, then asserts
+  `[...verdicts.keys()].sort()` deep-equals `PIPELINE_ORDER` sorted -
+  reach hoped for, not built. Seven roles, sixty uniform draws: about one
+  run in fifteen hundred misses a role. On 2026-09-20 a full
+  `npm run test:properties` on the coder's BL-1630 worktree failed it:
+  `Expected values to be strictly deep-equal: [ 'QA', 'architect',
+  'cleaner', 'coder', 'documenter', 'hardender', 'specifier' ] vs
+  [ 'QA', 'architect', 'cleaner', 'coder', 'documenter', 'hardender' ]`
+  (coder evidence
+  `backlog/evidence/unowned-red-bl1368-approval-commit-byline-reach-flake-20260920.md`,
+  coder worktree 931b3c0806); 3/3 green for the coder in isolation right
+  after, 1/1 green for the specifier on main f5b734384d (2.2 s). Same
+  shape as the coder's own Invariants rule names: a property can pass
+  hundreds of runs against a live defect when the generator under-reaches
+  a state - and here it can FAIL against no defect at all.
+
+  ## What is wanted
+
+  - The verdict pair is computed for EVERY role in `PIPELINE_ORDER`
+    deterministically (one pass over the list before, or as the first
+    thing inside, the property), so the reach assertion is true by
+    construction on every run; the random draw then exercises the two
+    invariants over whichever roles it likes.
+  - The reach assertion stays, unchanged in meaning.
+  - Register row for the file (lane property, owner BL-1656, added at
+    mint) leaves in this parcel's land (BL-1631).
+
+  ## How (direction, not mandate)
+
+  - `for (const role of PIPELINE_ORDER) verdicts.set(role, {...})` ahead
+    of `fc.assert`, keeping the property body's reads; or `fc.assert(...,
+    { numRuns: 60, examples: PIPELINE_ORDER.map((r) => [r]) })`, which
+    fast-check runs before the random draws. Either keeps the fixture's
+    per-role git commits at seven pairs, as today.
+
+constraints: >
+  No change to compliance_cli's commit-byline check or to
+  humanDecisionCommitMessage. The file stays in the property lane's
+  allowlist as it is. Fixture root stays an mkdtemp git init (already so).
+
+out_of_scope: |
+  - The same drawn-reach shape elsewhere: 6 property files compare a
+    seen-set to a fixed census (`grep -l 'seen.*\.size' extension/test/*.property.test.js`)
+    and 90 mention a reach check (`grep -l -i 'reached only\|reach:'`).
+    The coder also saw bl1340SelfConvertingDraftInvariants fail this way
+    once during the 2026-09-19 BL-1652 work, with no failing output
+    recorded. A sweep is minted when a second file carries a recorded
+    failing run; a flake sighting without its output is not a red.
+
+qa_e2e_procedure: >
+  (1) `cd extension && npx vitest run --config vitest.properties.config.mjs
+  test/bl1368ApprovalCommitByline.property.test.js` ONCE on the parcel
+  commit: 3 passed, duration row recorded. (2)
+  `grep -n 'PIPELINE_ORDER' extension/test/bl1368ApprovalCommitByline.property.test.js`
+  shows the deterministic pass over every role beside the random draw,
+  and the reach `assert.deepEqual` is still present. Never "run it N
+  times".
+
+source: |
+  Coder note to the specifier, priority 00, 2026-09-20T01:02:41Z (inbound
+  00_20260920T010241Z_002059_from_coder), verbatim: "unowned-red:
+  bl1368ApprovalCommitByline property reach flake, see evidence". Coder
+  evidence, verbatim: "The test's own \"Reach: every pipeline role was
+  actually exercised\" assertion failed because the random generator did
+  not happen to draw \"specifier\" as one of the roles in this run - a
+  generator-reach flake". Parents: BL-1368, BL-1445 (a derived census
+  must be pinned), BL-1647 (a flake sighting records its failing output).
+
+notes: |
+  Minted 2026-09-20 by the specifier while completing the coder's note,
+  the same pass. AUTO-APPROVED under the 2026-09-17 operator hotfix
+  (severity defect, no ruling_options) - see
+  auto-approve-high-severity-defects-amendment-20260917.md. Register row
+  appended in the mint commit (first_seen 2026-09-20, the first sighting
+  with a recorded failing run). The coder, who raised it while holding
+  BL-1630, was noted the same pass that the red is owned.
