@@ -5,6 +5,11 @@
 # creates one - the sweep never waives anything on its own (BL-848's line).
 # Record one with babysitter_waive.bb --record; list them with --list.
 
+- key: pipeline-code-on-main-08ae1cd0efa5bcb302753e279823970c99477e99
+  waived_by: coordinator
+  reason: "Legitimate QA land, not a bypass: 08ae1cd0ef is a land-replay of 4499a7d380 (land-approvals/2026-09.jsonl, BL-1654), which is itself a land-replay of 2c9a3d2364, a genuine QA-branch commit ('BL-1654: QA review pass evidence (NONE)'). Manually walked the two-hop chain and confirmed each hop legitimate. is_qa_ancestor.sh only resolves ONE replay hop (it approves 4499a7d380 directly but fails 08ae1cd0ef because it doesn't recursively resolve 4499a7d380's own source) - a checker bug, not a real Article 4.2 violation. Filing a note to the specifier about the checker's single-hop limitation."
+  waived_at: 2026-09-20
+
 - key: pipeline-code-on-main-091ac7d273e801d86dc7e53ee68d233b38056f61
   waived_by: coordinator
   reason: "Pipeline work commit for BL-1357, QA-approved and landed"
