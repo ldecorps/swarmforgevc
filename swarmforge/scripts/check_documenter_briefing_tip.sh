@@ -255,7 +255,22 @@ DOCUMENTER_BRANCH="$(resolve_documenter_branch || true)"
 if [[ -z "$DOCUMENTER_BRANCH" ]]; then
   exit 0
 fi
-if ! git merge-base --is-ancestor "$INCOMING" "$DOCUMENTER_BRANCH" 2>/dev/null; then
+# BL-1459 hotfix (found live, 2026-09-20): hook mode judges only when
+# INCOMING IS the documenter branch's own current tip - not merely "an
+# ancestor of it". An ancestor-based check (check_art_director_tip.sh's
+# own pattern, tried here first) false-positives the moment ANY role
+# branch has, through unrelated cross-merge/replay activity elsewhere in
+# a concurrent swarm, absorbed a commit that also happens to be reachable
+# from the documenter branch - observed live: a cleaner->coder bounce
+# commit having nothing to do with docs/briefings/ was refused wholesale
+# because it turned out to already be an ancestor of swarmforge-documenter
+# (traced to a prior tip-pure land replay carrying it along). Exact-tip
+# equality trades a narrow, rare race (documenter advances between note
+# composition and this hook firing - the merge is then silently NOT
+# judged, a missed enforcement) for eliminating an ACTIVE, demonstrated
+# false refusal of unrelated merges - the safer failure mode by far.
+DOCUMENTER_BRANCH_TIP="$(git rev-parse -q --verify "$DOCUMENTER_BRANCH" 2>/dev/null || true)"
+if [[ -z "$DOCUMENTER_BRANCH_TIP" || "$INCOMING" != "$DOCUMENTER_BRANCH_TIP" ]]; then
   exit 0
 fi
 LANDED_MAIN="$(resolve_landed_main || true)"
