@@ -1,6 +1,6 @@
-# mutation-stamp: sha256=af30cb93f76ff0467a9e52035797d05e158ce4ca3b24b7fec9012244ebe91d48
+# mutation-stamp: sha256=9c04b4699f34449c63a701ff36ef3557bee0d0f5189091ec503c8fa66ac83ed7
 # acceptance-mutation-manifest-begin
-# {"version":1,"tested_at":"2026-08-31T00:11:24.513548065Z","feature_name":"An unlanded sibling reached only through a merge's second parent","feature_path":"/home/carillon/swarmforgevc/.worktrees/hardender/specs/features/BL-1308-an-unlanded-sibling-on-a-second-parent-is-invisible.feature","background_hash":"212826b91bef58bd2964debb3570c00459183cd24794056bb53344f1e6d303f4","implementation_hash":"unknown","scenarios":[{"index":0,"name":"A sibling is named wherever its commits sit in the ancestry","scenario_hash":"5ea88299c6bbdc6730cd2d9cd787e151dd39cfd6419fa9f0378e1c0864be3685","mutation_count":2,"result":{"Total":2,"Killed":2,"Survived":0,"Errors":0},"tested_at":"2026-08-31T00:11:24.513548065Z"}]}
+# {"version":1,"tested_at":"2026-09-20T01:29:24.877567310Z","feature_name":"An unlanded sibling reached only through a merge's second parent","feature_path":"/home/carillon/swarmforgevc/.worktrees/hardender/specs/features/BL-1308-an-unlanded-sibling-on-a-second-parent-is-invisible.feature","background_hash":"212826b91bef58bd2964debb3570c00459183cd24794056bb53344f1e6d303f4","implementation_hash":"unknown","scenarios":[{"index":0,"name":"A sibling is named wherever its commits sit in the ancestry","scenario_hash":"5ea88299c6bbdc6730cd2d9cd787e151dd39cfd6419fa9f0378e1c0864be3685","mutation_count":2,"result":{"Total":2,"Killed":2,"Survived":0,"Errors":0},"tested_at":"2026-08-31T00:11:24.513548065Z"}]}
 # acceptance-mutation-manifest-end
 
 Feature: An unlanded sibling reached only through a merge's second parent

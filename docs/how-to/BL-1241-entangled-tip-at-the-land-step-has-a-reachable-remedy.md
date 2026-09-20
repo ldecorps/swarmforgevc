@@ -54,6 +54,28 @@ land_step_cli.bb <task-name> <commit> [repo-root]
   touching any path outside that narrow allowlist — still refuses exactly as
   BL-1546 already does, by name, never decided silently.
 
+  **An already-applied stray lands as `LAND_STRAY_EVIDENCE_ALREADY_LANDED`,
+  never an escalation (BL-1650 QA bounce, 2026-09-20).** `git cherry-pick -x`
+  itself returns nonzero for a genuine content conflict AND for the
+  everyday case where the stray's content is already present on the
+  target tree under a different commit ("The previous cherry-pick is now
+  empty…" on stderr, a pending `CHERRY_PICK_HEAD`) — the shape this
+  produces once a stray of this kind has already been hand-landed once
+  (BL-831's evidence file, cherry-picked by the specifier on 2026-09-19,
+  then hit this same automation the next day trying to land it again).
+  The replay loop used to treat both cases identically — `--abort` and
+  `LAND_ESCALATE` — which blocked every later parcel whose ancestry
+  carried the same already-landed stray. `cherry-pick-already-applied?`
+  now recognizes git's own "already empty" stderr and runs
+  `cherry-pick --skip` instead of aborting: the entry still lands in
+  `:stray-landed` with `:already-applied? true` and `:landed-sha` = the
+  tree's own current tip (nothing new was committed), and the CLI prints
+  `LAND_STRAY_EVIDENCE_ALREADY_LANDED <sha> already at <landed-sha>
+  <paths>` in place of the fresh-land line — distinct and equally
+  auditable, since no new commit with an `-x` trailer was actually made
+  for it. Any other nonzero cherry-pick outcome still `--abort`s and
+  escalates exactly as before.
+
   A `LANDED_SIBLING` line does not change what action `land-plan` returns —
   the sibling's original commit remains an ancestor, and its content may
   differ from the replay, so the action stays `:land` — only the report.
