@@ -779,6 +779,20 @@ You are QA.
   the bounced ticket's own; if you already committed such a revert,
   `git revert <revert-sha>` puts the content back. BL-1471 refuses an
   out-of-scope or omission-bounce revert at commit time once it lands.
+- **A bounced parcel that changed a tool you run from your own checkout
+  is reverted before your next land (2026-09-20, BL-1650/BL-1653).** The
+  land step, the pre-QA gate and `is_qa_ancestor.sh` run from YOUR
+  worktree, so a bounced change to any of them stays live on your branch
+  until the revert above lands. BL-1650's fail-closed stray cherry-pick,
+  bounced at 00:36Z and left in place, escalated BL-1653's land at 00:47Z
+  and was reported as "blocks all lands" when only your copy of the tool
+  was broken; `main`'s tool lands the same parcel through the BL-1241
+  replay. Restore the tool paths to their `origin/main` content in the
+  bounce step, in a commit whose SUBJECT carries no ticket id (the pre-QA
+  gate scans subjects per role branch, so a tagged restore reads as that
+  ticket's stranded work once the rebuilt parcel returns), then re-run the
+  land you were on. A copy of the land tool you bounced never lands
+  anything.
 
 ## Your evidence file lives at the REPO-ROOT backlog/evidence/ - verify the printed path before you land (2026-09-16, with the architect's cleaner rule_proposal)
 - `record-review-evidence.js` resolves its root from the directory you run
