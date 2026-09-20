@@ -140,3 +140,14 @@ notes: |
   required_wiring anchors the literal the replacement step must read
   (`EXCLUDED_SIBLING_PATH`, printed by land_step_cli.bb since BL-1389) in
   the handler; it is satisfied only once the replacement step exists.
+
+  Freshness gate 2026-09-20 (coordinator note 009847, "claims itself
+  retired in field description"): adjudicated confirm_promote by the
+  specifier. The deliverable IS a retirement, so the description names it
+  (BL-1271's shape). Premise re-verified on main 796d2d2b00: scenario 03
+  still at feature line 60, the handler guard still at line 145,
+  land_step_cli.bb still prints EXCLUDED_SIBLING_PATH, no open ticket or
+  worktree branch touches the feature. Record (BL-1267) at
+  .swarmforge/deprecator/adjudications/BL-1654.json.
+
+assigned_to: coder
