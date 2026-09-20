@@ -127,3 +127,5 @@ notes: |
   appended in the mint commit (first_seen 2026-09-20; red since
   2026-09-18 by BL-1617's land). The cleaner, reviewing BL-1662, was
   noted the same pass that the red is owned.
+
+assigned_to: coder
