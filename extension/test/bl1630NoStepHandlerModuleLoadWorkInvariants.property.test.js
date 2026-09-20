@@ -31,8 +31,17 @@ const { censusAllHandlers, checkHandlerBudgets } = require('./helpers/stepHandle
 
 const BUDGET_MS = 200;
 
+// BL-1630 QA bounce (2026-09-20): listsDir originally listed
+// `os.tmpdir()`, the real OS temp root - on this host that holds ~114k
+// entries (82ms idle, 214ms under this lane's fork contention), so the
+// listing's OWN cost tripped the separate 200ms budget check before the
+// listedDir check was even reached, failing on a budget reason neither
+// test meant to exercise. `__dirname` at module load is the fixture's OWN
+// directory (a handful of generated files) - fast and stable regardless
+// of host temp-dir size, while still genuinely exercising a directory
+// listing at module load.
 const BEHAVIORS = {
-  listsDir: "require('node:fs').readdirSync(require('node:os').tmpdir());",
+  listsDir: "require('node:fs').readdirSync(__dirname);",
   spawnsViaSpawnSync: "require('node:child_process').spawnSync('true', []);",
   spawnsViaExecFileSync: "require('node:child_process').execFileSync('true', []);",
   requiresNodeTest: "require('node:test');",
@@ -120,10 +129,14 @@ test('property (BL-1630 invariant) non-vacuity: a broken listedDir check would s
     const brokenModule = require(brokenPath);
     const { rows } = brokenModule.censusAllHandlers(fixtureDir);
     const violations = brokenModule.checkHandlerBudgets(rows, { budgetMs: BUDGET_MS });
-    assert.deepEqual(
-      violations,
-      [],
-      'expected the broken (listedDir-check-removed) guard to silently pass the directory-listing offender, proving the real check is load-bearing'
+    // BL-1630 QA bounce (2026-09-20): assert on the SPECIFIC reason this
+    // probe means to exercise, never that violations is empty outright -
+    // an unrelated budget violation (e.g. host load pushing the require
+    // itself over budgetMs) is a different, legitimate finding this probe
+    // never claims to rule out.
+    assert.ok(
+      !violations.some((v) => v.reason === 'lists a directory at module load'),
+      `expected the broken (listedDir-check-removed) guard to silently pass the directory-listing offender, proving the real check is load-bearing; got: ${JSON.stringify(violations)}`
     );
   } finally {
     delete require.cache[require.resolve(brokenPath)];
