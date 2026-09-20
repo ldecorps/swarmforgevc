@@ -182,3 +182,18 @@ notes: |
   design (one writer, landed versus not landed); reviewed and kept.
 
 assigned_to: coder
+
+abandoned_commits: [1093b59e49]
+# BL-1241 land-step remedy, per the specifier's land-order ruling
+# (backlog/evidence/BL-1652-BL-1653-specifier-ruling-mutual-entanglement-land-order-20260920.md):
+# BL-1653 and BL-1652 both touch swarmforge/scripts/handoffd.bb; landing
+# either from the shared QA tip made the other's replay unbootable
+# (each needs a helper file only the other owns). Ruling: land the
+# older approval (BL-1653) first, from its own approval point
+# (9792341072) synced onto origin/main (1093b59e49), not the shared tip.
+# The tip-pure replay land-replay/BL-1653-1093b59e49 (24eb598cfa) was
+# inspected directly: its two-tree diff against origin/main carries only
+# BL-1653's own paths (plus two harmless untagged-touch passengers per
+# BL-1315: an abandoned_commits annotation on the closed BL-1648 ticket,
+# and BL-1650's own BL-1308-cleaner-stale-premise evidence file).
+# Landed 24eb598cfa in place of 1093b59e49. By QA.

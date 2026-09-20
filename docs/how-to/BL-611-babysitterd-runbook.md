@@ -36,6 +36,22 @@ captures, an available-memory reading) against these checks, in
 | 12 | resume-overdue | a pause is still marked active but its `untilMs` expired more than 15 minutes ago (the auto-resume sweep itself failed) |
 | 13 | pipeline-code-on-main | a commit reachable from `main` or `origin/main`, not an ancestor of `swarmforge-QA`, touches a QA-exclusive path (BL-631, below); reports `UNAVAILABLE`, never a clean sweep, when `swarmforge-QA` itself can't be resolved |
 
+**A half-launch CRIT (row 1) can be the daemon's own chase respawn, not a
+crash (BL-1652).** `handoffd.bb`'s chase sweep force-relaunches a role's pane
+(`respawn-pane -k`) when a stuck inbox item's chase count passes the ceiling
+and the role's own pane is not busy and has no lane running — the agent
+process is briefly gone between the kill and the relaunch, which row 1 can
+catch mid-window. Before treating a half-launch finding as unexplained,
+`grep chase-respawn .swarmforge/daemon/handoffd.log` for a line at the same
+timestamp: `chase-respawn <role> <launch-script> item=<id> liveness=<state>
+heartbeat-age-s=<n> activity-age-s=<n> busy=<bool> lane=<bool>`. Its presence
+means the daemon did this on purpose, with the readings it decided on; its
+absence means the process really did die on its own. (2026-09-19: QA's pane
+was read as half-launched twice during an 80-minute land; the daemon's own
+chase sweep had respawned it seven times each round on a stale heartbeat
+while the pane was busy — the respawn guard this ticket adds is why the
+readings now say `busy=true`/`lane=true` and the sweep chases instead.)
+
 Every check is a pure function over a snapshot struct — no tmux/fs/sleep in
 the test path. `swarmforge/scripts/test/babysitterd_sweep_lib_test_runner.bb`
 and `..._property_runner.bb` drive it with fixtures.
