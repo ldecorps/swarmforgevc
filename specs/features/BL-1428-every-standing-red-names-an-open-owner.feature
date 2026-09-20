@@ -28,14 +28,16 @@ Feature: BL-1428 Every standing red names an open owner
   committer's fault. Every scenario but the last runs against a fixture root
   under a temporary directory; the last reads the parcel's own tree, a
   read-only live-tree read justified because the register at this commit is
-  the contract.
+  the contract. Scenario 01 names the date it reads the fixture as of
+  (BL-1648): a fixture pin so its age assertion stays true forever, not a
+  change to what the register itself reports.
 
   Background:
     Given a fixture root with a property allowlist, a hardening-debt ledger, a standing-red register and a backlog holding both open and closed tickets
 
   # BL-1428 the-register-names-every-red-and-its-owner-01
   Scenario: the register CLI reports every red with its lane, owner and age
-    When the standing-red register CLI reads the fixture root
+    When the standing-red register CLI reads the fixture root as of 2026-09-05
     Then every allowlist, ledger and register row appears once with its lane, file, ticket and first-seen date
     And a row whose ticket is closed or absent is reported as unowned
     And the report carries the total count and the oldest age in days

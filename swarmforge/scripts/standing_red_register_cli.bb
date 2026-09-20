@@ -3,7 +3,13 @@
 ;; reader. Thin IO wrapper over standing_red_register_lib.bb's build-report
 ;; - never a second implementation of the join/ownership decision.
 ;;
-;; Usage: standing_red_register_cli.bb <project-root>
+;; Usage: standing_red_register_cli.bb <project-root> [--now YYYY-MM-DD]
+;;
+;; BL-1648: --now is a seam for acceptance/manual fixtures ONLY - the
+;; register's live behaviour is unchanged, since omitting it still reads
+;; today's real date. A malformed date refuses loudly (exit 2, naming the
+;; argument) rather than silently falling back to today - a fixture that
+;; mistyped its date must not silently pass on the real clock.
 ;;
 ;; Prints one JSON object: {rows: [{lane, file, ticket, first_seen,
 ;; age_days, owned}], count, oldest_age_days, unowned: [rows]}.
@@ -30,8 +36,38 @@
 
 (defn- usage! []
   (binding [*out* *err*]
-    (println "Usage: standing_red_register_cli.bb <project-root>"))
+    (println "Usage: standing_red_register_cli.bb <project-root> [--now YYYY-MM-DD]"))
   (System/exit 1))
+
+;; BL-1648: refuses (exit 2, naming the argument) rather than falling back
+;; to today - a fixture whose --now is malformed must not silently pass on
+;; the real clock.
+(defn- parse-now-arg! [raw]
+  (try
+    (str (java.time.LocalDate/parse raw))
+    (catch Exception _
+      (binding [*out* *err*]
+        (println (str "Invalid --now date: " raw " (expected YYYY-MM-DD)")))
+      (System/exit 2))))
+
+;; rest-args is everything after project-root. Only --now is recognised;
+;; an unrecognised flag or a --now with no following value is the same
+;; loud, non-today-fallback refusal as a malformed date.
+(defn- parse-now [rest-args]
+  (loop [args rest-args]
+    (when (seq args)
+      (let [[flag value] args]
+        (cond
+          (not= flag "--now")
+          (do (binding [*out* *err*] (println (str "Unknown argument: " flag)))
+              (System/exit 2))
+
+          (nil? value)
+          (do (binding [*out* *err*] (println "--now requires a YYYY-MM-DD value"))
+              (System/exit 2))
+
+          :else
+          (parse-now-arg! value))))))
 
 (defn- slurp-if-exists [path]
   (when (fs/exists? path) (slurp (str path))))
@@ -70,9 +106,10 @@
                     :first-seen detected-at}))))))
 
 (defn -main [& args]
-  (let [[project-root] args]
+  (let [[project-root & rest-args] args]
     (when (nil? project-root) (usage!))
-    (let [allowlist-text (slurp-if-exists (fs/path project-root "swarmforge" "scripts"
+    (let [now (or (parse-now rest-args) (str (java.time.LocalDate/now)))
+          allowlist-text (slurp-if-exists (fs/path project-root "swarmforge" "scripts"
                                                     "property_suite_standing_allowlist.tsv"))
           register-text (slurp-if-exists (fs/path project-root "backlog" "standing-reds.tsv"))
           report (standing-red-register-lib/build-report
@@ -80,7 +117,7 @@
                    :register-rows (standing-red-register-lib/parse-register-rows register-text)
                    :ledger-rows (or (ledger-rows-for-report project-root) [])
                    :ticket-state-fn #(real-ticket-state project-root %)
-                   :now (str (java.time.LocalDate/now))})]
+                   :now now})]
       (println (json/generate-string report)))))
 
 (apply -main *command-line-args*)
