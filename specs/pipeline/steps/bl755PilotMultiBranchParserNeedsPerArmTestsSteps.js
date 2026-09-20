@@ -18,6 +18,15 @@ const { composePilotExpeditorPrompt } = require(path.join(
   'tools',
   'telegramCursorBridgePilot'
 ));
+// BL-1667: unowned pre-existing gap - this file hand-built its own deps
+// object rather than using the shared, contract-checked base BL-1229
+// introduced (extension/test/helpers/pilotAcceptanceGateDeps.js), so it
+// never picked up any dependency the interface grew since (BL-757's
+// checkOrphanedAuthoredDocs, checkOriginMainLanding): every scenario
+// driving this fixture failed outright before this parcel touched
+// anything. Using the shared base here closes that gap the same way
+// BL-1229's own migration already closed it for every test-side caller.
+const { makeAcceptanceGateDeps } = require(path.join(EXT_DIR, 'test', 'helpers', 'pilotAcceptanceGateDeps.js'));
 
 const HARDENDER = path.join(REPO_ROOT, 'swarmforge', 'roles', 'hardender.prompt');
 const FEATURE =
@@ -86,7 +95,7 @@ function multiBranchOutcome(ctx) {
 function baseDeps(ctx) {
   ensureCtx(ctx);
   let executedFeaturePath;
-  return {
+  return makeAcceptanceGateDeps({
     readAcceptanceDeclaration: () => ctx.acceptanceDeclaration,
     resolveFeatureFilePath: (declaration) => resolveFeatureFilePath(ctx.repoRootFixture, declaration),
     isLifecycleTeardownTicket: () => false,
@@ -99,15 +108,7 @@ function baseDeps(ctx) {
       executedFeaturePath = featureFilePath;
     },
     readAcceptanceExecution: () => executedFeaturePath,
-    checkCommitClaims: () => ({ checked: true, commitsChecked: 0 }),
-    checkCrossFileDuplication: () => ({ checked: true, filesScanned: 0 }),
-    checkScopedCrap: () => ({ checked: true, tsFilesScanned: 0, violations: [] }),
-    checkMkdtempConvention: () => ({ checked: true, testFilesScanned: 0, violations: [], scannedPaths: [] }),
-    checkPropertyGeneratorReach: () => ({ checked: true, propertyFilesScanned: 0, scannedPaths: [] }),
-    checkShellEntryPointDrive: () => ({ checked: true, shellTestsScanned: 0, entryPointsNamed: 0 }),
-    checkUnreachableStepHandlers: () => ({ checked: true, stepFilesScanned: 0, patternsChecked: 0 }),
     checkMultiBranchParserCoverage: () => multiBranchOutcome(ctx),
-    checkPerHatRolePromptEvidence: () => ({ checked: true, verdictsScanned: 0 }),
     moveTicketToDone: () => {
       ctx.calls.move += 1;
       ctx.yamlMoved = true;
@@ -122,7 +123,7 @@ function baseDeps(ctx) {
     },
     getLandedCommit: () => 'e'.repeat(40),
     now: () => '2026-08-26T00:00:00.000Z',
-  };
+  });
 }
 
 async function runGate(ctx) {
@@ -185,6 +186,48 @@ function registerSteps(registry) {
     ensureCtx(ctx);
     ctx.parsers = [];
     ctx.testTexts = [];
+  });
+
+  // BL-1667: an arm's marker (c--) sitting INSIDE ANOTHER ARM's text (c--a)
+  // must still read untested - the whole-token fix this scenario pins.
+  scoped(
+    registry,
+    /^a touched parser with three arms whose markers are c--a, a00 and c--$/,
+    (ctx) => {
+      ensureCtx(ctx);
+      ctx.parsers = [
+        {
+          functionName: 'nested-marker-fn',
+          sourcePath: 'swarmforge/scripts/lib.bb',
+          arms: [
+            { label: 'c--a', marker: 'c--a' },
+            { label: 'a00', marker: 'a00' },
+            { label: 'c--', marker: 'c--' },
+          ],
+        },
+      ];
+    }
+  );
+
+  scoped(registry, /^tests whose texts mention c--a and a00 only$/, (ctx) => {
+    ensureCtx(ctx);
+    ctx.testTexts = ['c--a', 'a00'];
+  });
+
+  scoped(registry, /^the land is attempted$/, async (ctx) => {
+    await runGate(ctx);
+  });
+
+  scoped(registry, /^it refuses naming the arm c-- as untested$/, (ctx) => {
+    if (!ctx.outcome || ctx.outcome.landed !== false) {
+      throw new Error(`expected refusal, got ${JSON.stringify(ctx.outcome)}`);
+    }
+    if (ctx.outcome.reasonKind !== 'untested-parser-branch') {
+      throw new Error(`expected untested-parser-branch, got ${ctx.outcome.reasonKind}`);
+    }
+    if (!/c--(?!a)/.test(ctx.outcome.reason || '')) {
+      throw new Error(`refusal did not name arm c--: ${ctx.outcome.reason}`);
+    }
   });
 
   scoped(registry, /^the pilot runs the landing gate$/, async (ctx) => {
