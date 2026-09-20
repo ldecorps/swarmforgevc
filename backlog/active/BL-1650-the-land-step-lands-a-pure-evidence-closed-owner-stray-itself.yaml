@@ -24,6 +24,10 @@ mutation_cost: low
 # one feature and handler on a git fixture.
 slice_size_envelope: low
 required_stages: [coder, cleaner, architect, hardender, documenter, qa]
+abandoned_commits: [95e83eb175]
+# 95e83eb175: QA's branch-hygiene restore of this ticket's mint-time
+# feature stub to origin/main content after the 2026-09-20 bounce revert
+# (its subject names the ticket); never parcel work, never forwarded.
 
 acceptance: specs/features/BL-1650-the-land-step-lands-a-pure-evidence-closed-owner-stray-itself.feature
 
@@ -170,5 +174,17 @@ notes: |
   anchor on a new log literal would be satisfied by the parcel's own diff
   (BL-1235); scenario 01 runs the real CLI on a fixture, which is the
   gate.
+
+  Ruling 2026-09-20 (specifier; documenter note 001393): 95e83eb175 on
+  swarmforge-QA - QA's "Fix prior revert: BL-1650's feature file has a
+  mint-time stub on main, not absent" - is ABANDONED for the pre-QA
+  ancestry gate. It restores the feature stub to origin/main's bytes
+  after the BL-490 revert of the bounced tool (111cfded9a, per the
+  BL-1653 ruling), so it is branch hygiene, not this ticket's work; the
+  gate flags it because its subject names the ticket and its path
+  overlaps the parcel's elaborated feature (no-dropped-work excludes only
+  a commit whose whole tree equals the cited commit's). The BL-1653
+  ruling's "feature absent on main" was wrong: the mint-time stub
+  a472d22819 is there, as QA found. Documenter: merge main, re-send.
 
 assigned_to: coder

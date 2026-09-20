@@ -1052,6 +1052,58 @@
   (assert-true "BL-821: a real git commit failure is reported, never thrown"
                (not (:ok (briefing-email-lib/commit-sent-marker! dir sh-fn)))))
 
+;; ── BL-1653 item 1 (hardening finding): commit-sent-marker!'s own
+;; :index-restored / :index-left-dirty reporting had zero coverage - the
+;; test above drives the exact same commit-failure branch this code lives
+;; in, but its sh-fn returns {:exit 0} for every call except "commit"
+;; (which is what makes the subsequent "restore" call succeed too), and
+;; nothing asserted on the returned map beyond `:ok`. Confirmed by hand-
+;; mutation before writing these: hardcoding `restored?` to `false` (the
+;; restore call is made but its own real exit code is discarded) left
+;; every existing test in this file green.
+(let [dir (mk-tmp)
+      restore-calls (atom [])
+      sh-fn (fn [repo-dir & args]
+              (cond
+                (= (second args) "commit") {:exit 1 :out "" :err "fatal: unable to lock ref"}
+                (= (second args) "restore") (do (swap! restore-calls conj (vec (cons repo-dir args)))
+                                                 {:exit 0 :out "" :err ""})
+                :else {:exit 0 :out "" :err ""}))
+      result (briefing-email-lib/commit-sent-marker! dir sh-fn)
+      marker-path (briefing-email-lib/sent-state-path dir)]
+  (assert= "BL-1653: a commit failure whose restore SUCCEEDS reports :index-restored naming the marker path"
+           [marker-path] (:index-restored result))
+  (assert= "BL-1653: :index-left-dirty is absent when the restore succeeded"
+           false (boolean (:index-left-dirty result)))
+  (assert= "BL-1653: the restore is scoped to exactly the marker path, never a bare `git restore --staged`"
+           [dir "git" "restore" "--staged" "--" marker-path]
+           (first @restore-calls)))
+
+(let [dir (mk-tmp)
+      sh-fn (fn [_repo-dir & args]
+              (cond
+                (= (second args) "commit") {:exit 1 :out "" :err "fatal: unable to lock ref"}
+                (= (second args) "restore") {:exit 1 :out "" :err "fatal: pathspec did not match"}
+                :else {:exit 0 :out "" :err ""}))
+      result (briefing-email-lib/commit-sent-marker! dir sh-fn)]
+  (assert-true "BL-1653: a commit failure whose restore ALSO fails reports :index-left-dirty"
+               (boolean (:index-left-dirty result)))
+  (assert= "BL-1653: :index-restored is absent when the restore itself failed"
+           nil (:index-restored result)))
+
+(let [dir (mk-tmp)
+      restore-calls (atom [])
+      sh-fn (fn [repo-dir & args]
+              (if (= (second args) "add")
+                {:exit 1 :out "" :err "fatal: add failed"}
+                (do (swap! restore-calls conj (vec (cons repo-dir args)))
+                    {:exit 0 :out "" :err ""})))
+      result (briefing-email-lib/commit-sent-marker! dir sh-fn)]
+  (assert= "BL-1653: a failed `git add` never staged anything, so this call restores nothing"
+           [] @restore-calls)
+  (assert= "BL-1653: :index-restored is absent on an :add-failed shape"
+           nil (:index-restored result)))
+
 ;; ── render-briefing-html (BL-1419: phone-mail-client layout) ─────────────
 
 (let [html (briefing-email-lib/render-briefing-html "2026-09-05" "<p>Body text.</p>" nil)]
