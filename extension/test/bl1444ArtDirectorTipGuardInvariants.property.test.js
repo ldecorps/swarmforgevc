@@ -9,13 +9,13 @@ const { mkTmpDir } = require('./helpers/tmpDir');
 
 // BL-1444 declared invariants (backlog/active/BL-1444-the-art-directors-tip-lands-on-main-by-qa.yaml):
 //   1. "The verdict is a function of git objects only - the tip's
-//      reachability from primary/art-director and from the landed main, and
+//      reachability from swarmforge-art-director and from the landed main, and
 //      the last commit touching each path the tip introduces - never of
 //      SWARMFORGE_ROLE, the current branch name, the working tree, or who
 //      runs it."
 //   2. "A merge whose incoming parent is reachable from the landed main is
 //      never judged, whatever it carries; neither is one whose incoming
-//      parent is not on primary/art-director. Only an art-director-side
+//      parent is not on swarmforge-art-director. Only an art-director-side
 //      commit is ever judged."
 //   3. "The guard reads only: it never writes a file, moves a ref, fetches,
 //      or pushes."
@@ -49,7 +49,7 @@ function mkRepo() {
   gitOk(d, ['config', 'user.email', 't@t']);
   gitOk(d, ['config', 'user.name', 't']);
   gitOk(d, ['commit', '-q', '--allow-empty', '-m', 'init']);
-  gitOk(d, ['branch', 'primary/art-director', 'main']);
+  gitOk(d, ['branch', 'swarmforge-art-director', 'main']);
   return d;
 }
 
@@ -114,7 +114,7 @@ test('property (invariant): the verdict is a function of git objects only - neve
       fc.stringMatching(/^[a-z][a-z0-9-]{2,8}$/),
       (relPaths, role, altBranchName) => {
         const d = mkRepo();
-        const tip = writeCommit(d, 'primary/art-director', relPaths);
+        const tip = writeCommit(d, 'swarmforge-art-director', relPaths);
         gitOk(d, ['checkout', '-q', 'main']);
         const landingSha = gitOk(d, ['rev-parse', 'HEAD']);
 
@@ -150,7 +150,7 @@ test('property (invariant): the verdict is a function of git objects only - neve
 // ── invariant 2 ────────────────────────────────────────────────────────
 const shapeArb = fc.constantFrom('not-on-art-director', 'reachable-from-main', 'fresh-on-art-director');
 
-test('property (invariant): hook mode judges only an unmerged art-director-side commit; a merge whose incoming parent is not on primary/art-director, or is already reachable from the landed main, is never judged, whatever it carries', () => {
+test('property (invariant): hook mode judges only an unmerged art-director-side commit; a merge whose incoming parent is not on swarmforge-art-director, or is already reachable from the landed main, is never judged, whatever it carries', () => {
   fc.assert(
     fc.property(shapeArb, tipPathsArb, (shape, relPaths) => {
       const d = mkRepo();
@@ -163,7 +163,7 @@ test('property (invariant): hook mode judges only an unmerged art-director-side 
       } else if (shape === 'reachable-from-main') {
         incoming = writeCommit(d, 'main', relPaths);
       } else {
-        incoming = writeCommit(d, 'primary/art-director', relPaths);
+        incoming = writeCommit(d, 'swarmforge-art-director', relPaths);
       }
 
       gitOk(d, ['checkout', '-q', '-b', 'landing', earlyMain]);
@@ -211,7 +211,7 @@ test('property (invariant): the guard reads only - it never writes a file, moves
   fc.assert(
     fc.property(tipPathsArb, fc.boolean(), (relPaths, useHookMode) => {
       const d = mkRepo();
-      const tip = writeCommit(d, 'primary/art-director', relPaths);
+      const tip = writeCommit(d, 'swarmforge-art-director', relPaths);
       gitOk(d, ['checkout', '-q', '-b', 'landing', 'main']);
       // Loud if the guard ever DID fetch or push: this remote cannot be
       // reached, so any attempt against it fails visibly rather than
