@@ -270,3 +270,26 @@ appends the instance here. Any other path in the stray commit's set is
 still an escalation. BL-1650 makes the land step do this itself.
 
 By specifier.
+
+## Instance — BL-1653's land, condition (d)/(e) (QA, 2026-09-20)
+
+Landing BL-1653, `land_step_cli.bb` refused: `backlog/evidence/BL-1648-QA-20260920.md`'s
+only owner (BL-1648) is closed on `origin/main` and no BL-1653 commit touches it. Root
+cause: QA's own process gap on BL-1648 — the QA review-pass evidence
+(`8133b7f8ef`, `3b98a327e3`, both `By QA.`, touching only that one evidence
+path) was recorded AFTER BL-1648's approved commit had already been landed
+via `land_main_publish.sh --land`, so it was never part of that replay and
+sat orphaned on the QA branch. Fits condition (d)/(e) exactly (closed
+owner, QA's own evidence commits, pure-evidence path, absent from
+`origin/main`): cherry-picked -x both commits onto `main` in a scratch
+worktree under the BL-1144 lock, verified the diff against `origin/main`
+was exactly that one path, pushed, no escalation.
+
+**Landed:** `92813a05e5` (parent `9dc75c063f`), onto `origin/main` at
+`f5b734384d`.
+
+Lesson for future lands: record and commit QA's own review-pass evidence
+BEFORE running the land step, not after — the replay's own-paths can only
+carry what already exists when it is built.
+
+By QA.
