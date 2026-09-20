@@ -73,3 +73,13 @@ Feature: BL-1650 The land step lands a pure-evidence closed-owner stray itself
     When the land step runs for the landing ticket at the tip
     Then it exits LAND_REPLAY and prints LAND_STRAY_EVIDENCE_ALREADY_LANDED naming the stray's own commit and its path
     And the sibling is reported LANDED_SIBLING, never ENTANGLED_SIBLING
+
+  # BL-1650 a-stray-whose-tip-content-equals-main-is-landed-already-06
+  # 2026-09-20: main's copy of the evidence file grew after the stray
+  # commit; the tip carries main's copy; nothing is left to land.
+  Scenario: a closed-owner stray commit whose path content on the replay tip already equals origin/main replays through with no cherry-pick
+    Given a closed ticket's evidence commit off the lineage that added part of a file origin/main now carries in full
+    And a replay tip whose copy of that file equals origin/main's
+    When the land step replays the cited ticket
+    Then no cherry-pick is attempted for the stray
+    And the replay reports the sibling landed and lands the ticket's own paths
