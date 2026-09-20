@@ -286,17 +286,37 @@ collect_verdict_stores() {
 }
 
 # BL-1334: is the SOURCE a land record names itself approved? A mapping is
-# only as good as what it points at. The source must resolve, carry no bounce
-# verdict in either store, and be an ancestor of swarmforge-QA - which is the
-# ordinary approval question, asked of the source rather than the replay.
-# Deliberately NOT a recursive call into answer_one: a land record whose
-# source is itself a replay would otherwise chain, and approval that can be
-# reached through a chain of records is approval that spreads.
+# only as good as what it points at. The source must resolve and carry no
+# bounce verdict in either store; from there it is approved either the
+# ordinary way (an ancestor of swarmforge-QA) or, BL-1668, because it is
+# ITSELF the `commit` of another land-approval record whose own source
+# resolves the same way - the shape a QA-hand-built final commit produces
+# when it is recorded against the land step's own replay, which in turn
+# was recorded against the reviewed sync tip (the replay branch itself is
+# deleted after the land, so it is never an ancestor of anything).
+#
+# Recursive, but bounded and cycle-safe (invariant: "a chain of at most
+# three land-approval records ... a cycle or an exhausted depth grants
+# nothing"): depth counts records consumed so far (the caller's own match
+# in LAND_TOKENS is record 1, so this function is entered with depth=1 by
+# answer_one and may recurse twice more); visited is a space-joined list
+# of full shas already walked (bash 3.2: no associative arrays) - a source
+# that names itself, directly or via a cycle of records, grants nothing
+# rather than looping.
 source_is_approved() {
-  local source_token="$1" full_source token rc
+  local source_token="$1" depth="${2:-1}" visited="${3:-}" full_source token src_tok f
+  if [[ "$depth" -eq 1 ]]; then
+    CHAIN_TRACE=""
+  fi
   if ! full_source="$(git rev-parse --verify -q "${source_token}^{commit}" 2>/dev/null)"; then
     return 1
   fi
+  case " $visited " in
+    *" $full_source "*) return 1 ;;
+  esac
+  visited="$visited $full_source"
+  CHAIN_TRACE="$CHAIN_TRACE $(printf '%s' "$full_source" | cut -c1-10)"
+
   while read -r token _rest; do
     [[ -n "$token" ]] || continue
     case "$full_source" in "$token"*) return 1 ;; esac
@@ -305,9 +325,27 @@ source_is_approved() {
     [[ -n "$token" ]] || continue
     case "$full_source" in "$token"*) return 1 ;; esac
   done <<< "$YAML_TOKENS"
-  rc=0
-  git merge-base --is-ancestor "$full_source" swarmforge-QA || rc=$?
-  return "$rc"
+
+  if git merge-base --is-ancestor "$full_source" swarmforge-QA 2>/dev/null; then
+    return 0
+  fi
+
+  if [[ "$depth" -ge 3 ]]; then
+    return 1
+  fi
+
+  while read -r token src_tok f; do
+    [[ -n "$token" ]] || continue
+    case "$full_source" in
+      "$token"*)
+        if source_is_approved "$src_tok" $((depth + 1)) "$visited"; then
+          return 0
+        fi
+        ;;
+    esac
+  done <<< "$LAND_TOKENS"
+
+  return 1
 }
 
 # One SHA's verdict against the already-collected stores. Echoes the same
@@ -363,7 +401,11 @@ answer_one() {
     case "$FULL_SHA" in
       "$token"*)
         if source_is_approved "$source_token"; then
-          echo "approved: $SHORT_SHA is a land-step replay of approved source $source_token ($f, recorded as $token) - BL-1334" >&2
+          if [[ -n "${CHAIN_TRACE// /}" ]]; then
+            echo "approved: $SHORT_SHA is a land-step replay of approved source $source_token via chain:$CHAIN_TRACE ($f, recorded as $token) - BL-1334/BL-1668" >&2
+          else
+            echo "approved: $SHORT_SHA is a land-step replay of approved source $source_token ($f, recorded as $token) - BL-1334" >&2
+          fi
           return 0
         fi
         # A record naming an unapproved source grants nothing. Said out loud

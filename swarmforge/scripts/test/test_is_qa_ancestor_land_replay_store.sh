@@ -174,6 +174,52 @@ run_predicate "$UNRELATED_SHA"
 check "an absent land-replay store reads as 'no land recorded', never an error" \
   '[[ $EXIT_CODE -eq 1 ]]'
 
+# ── BL-1668: a hand-built commit recorded against the land step's own
+#    replay (itself recorded against the reviewed source) reads approved -
+#    the exact shape QA's own hand-built land route produces when a replay
+#    is superseded by a hand-built tip-pure commit ─────────────────────────
+mkdir -p "$STORE_DIR"
+HAND_BUILT="$(mk_commit chain2.js 'BL-5: hand-built final commit recorded against the replay')"
+{
+  printf '{"at":"2026-09-20T00:00:00Z","ticket":"BL-1","commit":"%s","source":"%s"}\n' "${REPLAY_SHA:0:10}" "${APPROVED_SOURCE:0:10}"
+  printf '{"at":"2026-09-20T00:01:00Z","ticket":"BL-5","commit":"%s","source":"%s"}\n' "${HAND_BUILT:0:10}" "${REPLAY_SHA:0:10}"
+} > "$STORE_DIR/2026-09.jsonl"
+run_predicate "$HAND_BUILT"
+check "a commit recorded against an approved land-step replay (a two-record chain) is approved" \
+  '[[ $EXIT_CODE -eq 0 ]]'
+check "the chain approval names the chain" \
+  '[[ "$OUT" == *chain* ]]'
+
+# ── row 11: a chain four records deep exceeds the bound and grants nothing,
+#    even though every individual link would resolve if walked alone ──────
+CHAIN_A="$(mk_commit chaina.js 'BL-6a: chain link a')"
+CHAIN_B="$(mk_commit chainb.js 'BL-6b: chain link b')"
+CHAIN_C="$(mk_commit chainc.js 'BL-6c: chain link c')"
+CHAIN_D="$(mk_commit chaind.js 'BL-6d: chain link d')"
+{
+  printf '{"at":"2026-09-20T00:02:00Z","ticket":"BL-6","commit":"%s","source":"%s"}\n' "${CHAIN_A:0:10}" "${APPROVED_SOURCE:0:10}"
+  printf '{"at":"2026-09-20T00:03:00Z","ticket":"BL-6","commit":"%s","source":"%s"}\n' "${CHAIN_B:0:10}" "${CHAIN_A:0:10}"
+  printf '{"at":"2026-09-20T00:04:00Z","ticket":"BL-6","commit":"%s","source":"%s"}\n' "${CHAIN_C:0:10}" "${CHAIN_B:0:10}"
+  printf '{"at":"2026-09-20T00:05:00Z","ticket":"BL-6","commit":"%s","source":"%s"}\n' "${CHAIN_D:0:10}" "${CHAIN_C:0:10}"
+} > "$STORE_DIR/2026-09.jsonl"
+run_predicate "$CHAIN_C"
+check "a three-record chain (at the depth bound) is still approved" \
+  '[[ $EXIT_CODE -eq 0 ]]'
+run_predicate "$CHAIN_D"
+check "a four-record chain exceeds the depth bound and grants nothing" \
+  '[[ $EXIT_CODE -eq 1 ]]'
+
+# ── row 12: a cycle of records grants nothing and terminates (never hangs) ─
+CYCLE_A="$(mk_commit cyclea.js 'BL-7a: cycle link a')"
+CYCLE_B="$(mk_commit cycleb.js 'BL-7b: cycle link b')"
+{
+  printf '{"at":"2026-09-20T00:06:00Z","ticket":"BL-7","commit":"%s","source":"%s"}\n' "${CYCLE_A:0:10}" "${CYCLE_B:0:10}"
+  printf '{"at":"2026-09-20T00:07:00Z","ticket":"BL-7","commit":"%s","source":"%s"}\n' "${CYCLE_B:0:10}" "${CYCLE_A:0:10}"
+} > "$STORE_DIR/2026-09.jsonl"
+run_predicate "$CYCLE_A"
+check "a cycle of land-approval records grants nothing (and terminates)" \
+  '[[ $EXIT_CODE -eq 1 ]]'
+
 if [[ $fail -eq 0 ]]; then
   echo "is_qa_ancestor land-replay store: ALL CHECKS PASSED"
 else
