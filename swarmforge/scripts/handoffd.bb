@@ -1003,6 +1003,24 @@
     (not (str/blank? (System/getenv "CLAUDE_CODE_MAX_OUTPUT_TOKENS")))
     (concat ["-e" (str "CLAUDE_CODE_MAX_OUTPUT_TOKENS=" (System/getenv "CLAUDE_CODE_MAX_OUTPUT_TOKENS"))])))
 
+(defn- chase-respawn-log-detail
+  "BL-1652: the readings a real respawn was decided on, named in the log
+   line itself - `chase-respawn <role> item=<id> liveness=<state>
+   heartbeat-age-s=<n> activity-age-s=<n> busy=<b> lane=<b>`, with the
+   launch script appended so the operational info the pre-BL-1652 line
+   carried is never lost. `log-context` absent (any pre-BL-1652 caller)
+   degrades to the launch script alone, unchanged."
+  [launch-script log-context]
+  (if log-context
+    (str "item=" (:item-id log-context)
+         " liveness=" (:liveness log-context)
+         " heartbeat-age-s=" (:heartbeat-age-s log-context)
+         " activity-age-s=" (:activity-age-s log-context)
+         " busy=" (:busy log-context)
+         " lane=" (:lane log-context)
+         " script=" launch-script)
+    (str launch-script)))
+
 (defn do-respawn!
   "Busy-vs-wedged precheck (BL-137/BL-147 parity): never types/respawns into
    a pane showing Claude Code's busy footer. Otherwise force-relaunches the
@@ -1012,19 +1030,27 @@
    Launch script is always the canonical project-root
    .swarmforge/launch/<role>.sh (same as swarm_ensure.bb/respawn-role!) —
    never a worktree-local copy, which can drift or be missing and which once
-   left the coordinator session running the coder script after a bad repair."
-  [role-info socket]
-  (let [session (:session role-info)
-        role (:role role-info)
-        pane (try (capture-pane-text socket session) (catch Exception _ ""))]
-    (if (chase-sweep-lib/actively-processing? pane)
-      (log! "chase-respawn-skip-busy" role)
-      (let [launch-script (fs/path state-dir "launch" (str role ".sh"))
-            env-args (openrouter-respawn-env-args)]
-        (log! "chase-respawn" role (str launch-script))
-        (apply tmux! (concat ["-S" socket "respawn-pane" "-k"]
-                             env-args
-                             ["-t" session (shell-quote-lib/launch-command launch-script)]))))))
+   left the coordinator session running the coder script after a bad repair.
+
+   `log-context` (BL-1652, optional): the readings the chase sweep's own
+   respawn decision was made on - see chase-respawn-log-detail above. This
+   is a defense-in-depth recheck only; the decision layer (chase_sweep_lib.
+   bb's decide-item-action) already never decides \"respawned\" while the
+   pane is busy or a verification lane is running under this role's
+   worktree (BL-1652 invariant 1)."
+  ([role-info socket] (do-respawn! role-info socket nil))
+  ([role-info socket log-context]
+   (let [session (:session role-info)
+         role (:role role-info)
+         pane (try (capture-pane-text socket session) (catch Exception _ ""))]
+     (if (chase-sweep-lib/actively-processing? pane)
+       (log! "chase-respawn-skip-busy" role)
+       (let [launch-script (fs/path state-dir "launch" (str role ".sh"))
+             env-args (openrouter-respawn-env-args)]
+         (log! "chase-respawn" role (chase-respawn-log-detail launch-script log-context))
+         (apply tmux! (concat ["-S" socket "respawn-pane" "-k"]
+                              env-args
+                              ["-t" session (shell-quote-lib/launch-command launch-script)])))))))
 
 (defn write-chase-status! [now-ms]
   (fs/create-dirs daemon-dir)
@@ -1046,6 +1072,41 @@
      :in-process-dir (str (handoff-lib/mailbox-dir role-info :in_process))
      :completed-dir (str (handoff-lib/mailbox-dir role-info :completed))
      :abandoned-dir (str (handoff-lib/mailbox-dir role-info :abandoned))}))
+
+;; ── BL-1652: verification-lane detection, one process-table read per sweep ─
+;; process-table-lib is already in scope here (transitively load-file'd via
+;; master_checkout_drift_lib.bb above) - the same shared cwd/argv path-
+;; boundary classifier (project-scoped-process?) the orphan reapers use, so
+;; this and they can never disagree about what "scoped to this worktree"
+;; means. Mirrors master_checkout_drift_lib.bb's own list-process-
+;; snapshots!: cheap cmdline match first, cwd resolved only for candidates -
+;; a real /proc/<pid>/cwd read for every host process would be needlessly
+;; slow on a busy box.
+(defn- lane-process-snapshots! []
+  (mapv (fn [{:keys [pid cmdline]}]
+          (let [cmd (str cmdline)]
+            {:cmdline cmd
+             :cwd (when (chase-sweep-lib/lane-process-cmdline? cmd)
+                    (try (process-table-lib/cwd! pid) (catch Exception _ nil)))}))
+        (or (process-table-lib/list-processes!) [])))
+
+(defn- canonical-worktree-path [worktree-path]
+  (try (str (fs/canonicalize worktree-path)) (catch Exception _ (str worktree-path))))
+
+(defn lane-running-under-worktree?
+  "True when a verification-lane process (chase-sweep-lib/lane-process-
+   pattern) is scoped - by argv or cwd, process-table-lib/project-scoped-
+   process?'s own path-boundary rule (BL-1370: never a bare prefix match) -
+   to `worktree-path`. `process-snapshots` is read ONCE per sweep
+   (lane-process-snapshots! above), never once per role."
+  [process-snapshots worktree-path]
+  (boolean
+   (and worktree-path
+        (let [root (canonical-worktree-path worktree-path)]
+          (some (fn [{:keys [cmdline cwd]}]
+                  (and (chase-sweep-lib/lane-process-cmdline? cmdline)
+                       (process-table-lib/project-scoped-process? cmdline cwd [root])))
+                process-snapshots)))))
 
 ;; BL-098: durable per-role chase/nudge/dead-letter/respawn telemetry. The
 ;; existing .chase.json/.nudge sidecars are ephemeral (abandoned once an
@@ -1680,6 +1741,28 @@
   (let [pane (try (capture-pane-text socket session) (catch Exception _ ""))]
     (chase-sweep-lib/actively-processing? pane)))
 
+(defn chase-target-busy?
+  "BL-1652: the SAME footer reading chase-poke-and-notify! gates chase-
+   wake-skip-busy on - the shared resident pane when this role's chase poke
+   would land there, else this role's own wake-session pane (pane-busy?
+   above). Mirrors chase-poke-and-notify!'s own resident-target? branch
+   exactly, reusing its leaf readings rather than a third copy of the
+   capture+actively-processing? check. Used by the chase sweep's own
+   :pane-busy? adapter so decide-item-action never even considers
+   respawning a role its wake path would also have skipped as busy."
+  [roles socket role]
+  (let [action (chase-poke-action roles socket role)
+        ri (get roles role)
+        wake-sess (handoff-lib/wake-session socket (:session ri))
+        resident-target? (mono-router-lib/resident-poke-target?
+                          {:action action
+                           :wake-session wake-sess
+                           :resident-session (handoff-lib/mono-router-resident-session)})]
+    (boolean
+     (if resident-target?
+       (resident-pane-busy? socket)
+       (pane-busy? socket wake-sess)))))
+
 (defn spawn-consult-session!
   "Fires from attempt-resident-rotate!'s :departing-mid-parcel branch only.
    No-op (returns nil) whenever consult-eligible? refuses, the role has no
@@ -2109,6 +2192,9 @@
 (defn chase-sweep! [roles socket]
   (let [now-ms (System/currentTimeMillis)
         resident-wake-suppressed? (atom false)
+        ;; BL-1652: one process-table read for the WHOLE sweep, never one
+        ;; per role - the :lane-running? adapter below only filters this.
+        lane-process-snapshots (lane-process-snapshots!)
         adapters {:get-liveness get-liveness
                   ;; BL-1505: returns chase-poke-and-notify!'s {:attempted
                   ;; :landed} map (or {:attempted false :landed false} when
@@ -2144,7 +2230,15 @@
                                                     (log! "chase-in-process-resume-error" role (.getMessage e))
                                                     (note-chase-control-plane-failure! socket roles)
                                                     false))))
-                  :trigger-respawn! (fn [role]
+                  ;; BL-1652: `context` ({:item-id :liveness :heartbeat-age-s
+                  ;; :activity-age-s :busy :lane}) is the chase sweep's own
+                  ;; decision-time readings, forwarded to do-respawn! for its
+                  ;; log line. By the time this fires, decide-item-action has
+                  ;; already never decided "respawned" while busy or lane was
+                  ;; true (invariant 1) - the busy recheck below is a second,
+                  ;; belt-and-braces gate against a race between decision and
+                  ;; action, not the primary guard.
+                  :trigger-respawn! (fn [role context]
                                        (try
                                          ;; Busy gating is scoped like chase-poke-and-notify!:
                                          ;; only pokes landing on the shared resident pane defer
@@ -2165,7 +2259,7 @@
                                              (contains? #{:rotate :wake-resident} action)
                                              (chase-rotate-to! socket roles role)
 
-                                             :else (do-respawn! ri socket)))
+                                             :else (do-respawn! ri socket context)))
                                          (catch Exception e (log! "chase-respawn-error" role (.getMessage e)))))
                   :log-dead-letter! (fn [role path] (log! "dead-letter" role (fs/file-name path)))
                   :get-last-activity-ms (fn [role] (get-last-activity-ms (get roles role) socket now-ms))
@@ -2248,7 +2342,20 @@
                     (log! "claim-idle-reclaim" role
                           (str "reclaims=" reclaims " busy=" busy " dirty=" dirty
                                " recent=" recent " present=" present
-                               " elapsed-min=" elapsed-min " timeout-min=" timeout-min)))}
+                               " elapsed-min=" elapsed-min " timeout-min=" timeout-min)))
+                  ;; BL-1652: the busy-footer and verification-lane readings
+                  ;; the respawn guard folds into decide-item-action's own
+                  ;; "recent activity" check. :pane-busy? reuses the exact
+                  ;; reading chase-poke-and-notify! gates chase-wake-skip-busy
+                  ;; on; :lane-running? consults the ONE process-table
+                  ;; snapshot (lane-process-snapshots) taken once for this
+                  ;; whole sweep, never once per role.
+                  :pane-busy? (fn [role] (chase-target-busy? roles socket role))
+                  :lane-running? (fn [role]
+                                   (lane-running-under-worktree?
+                                    lane-process-snapshots (:worktree-path (get roles role))))
+                  :get-heartbeat-age-seconds
+                  (fn [role] (chase-sweep-lib/heartbeat-age-seconds (parse-heartbeat role) now-ms))}
           sweep-config (assoc chase-sweep-config
                               :role-idle-timeout-ms (claim-idle-timeout-role-minutes-config))]
     (chase-sweep-lib/run-sweep! (role-inboxes-for-chase roles) now-ms sweep-config adapters)

@@ -97,7 +97,18 @@
                     (when-not (= "1" (System/getenv "CHASE_WAKE_SKIP"))
                       (log-call! "wake-up" role))
                     (not= "1" (System/getenv "CHASE_WAKE_SKIP")))
-   :trigger-respawn! (fn [role] (log-call! "respawn" role))
+   ;; BL-1652: context is {:item-id :liveness :heartbeat-age-s :activity-age-s
+   ;; :busy :lane} - logged so a shell test can assert on the readings a
+   ;; respawn was decided on, the same way handoffd.bb's real chase-respawn
+   ;; log line does.
+   :trigger-respawn! (fn [role context]
+                        (log-call! "respawn" role
+                                   (str "item=" (:item-id context))
+                                   (str "liveness=" (:liveness context))
+                                   (str "heartbeat-age-s=" (:heartbeat-age-s context))
+                                   (str "activity-age-s=" (:activity-age-s context))
+                                   (str "busy=" (:busy context))
+                                   (str "lane=" (:lane context))))
    :log-dead-letter! (fn [role path] (log-call! "dead-letter" role (fs/file-name path)))
    :get-last-activity-ms (fn [_role] last-activity-ms)
    :on-stuck-escalation! (fn [role escalated] (log-call! "escalation" role (str escalated)))
@@ -144,7 +155,15 @@
      (log-call! "claim-idle-reclaim" role (str "reclaims=" reclaims)
                 (str "busy=" busy) (str "dirty=" dirty) (str "recent=" recent)
                 (str "present=" present) (str "elapsed-min=" elapsed-min)
-                (str "timeout-min=" timeout-min)))})
+                (str "timeout-min=" timeout-min)))
+   ;; BL-1652: CHASE_PANE_BUSY=1 / CHASE_LANE_RUNNING=1 simulate the busy
+   ;; footer / a running verification lane; CHASE_HEARTBEAT_AGE_S sets the
+   ;; respawn log/telemetry's heartbeat-age-s reading. All three absent by
+   ;; default - never changes any pre-existing scenario's behavior.
+   :pane-busy? (fn [_role] (= "1" (System/getenv "CHASE_PANE_BUSY")))
+   :lane-running? (fn [_role] (= "1" (System/getenv "CHASE_LANE_RUNNING")))
+   :get-heartbeat-age-seconds
+   (fn [_role] (some-> (System/getenv "CHASE_HEARTBEAT_AGE_S") parse-double))})
 
 (chase-sweep-lib/run-sweep!
  [{:role role :inbox-new-dir inbox-new-dir :in-process-dir in-process-dir
