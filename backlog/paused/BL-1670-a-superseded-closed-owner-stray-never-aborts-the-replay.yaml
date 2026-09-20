@@ -1,0 +1,146 @@
+id: BL-1670
+title: "The land step's stray cherry-pick loop aborts the whole replay when a closed-owner doc stray conflicts against origin/main's own later rewrite of the same lines (BL-1459's bounced first-round doc commit sits on six role branches, so every land escalates until it is tolerated - BL-1657 on 2026-09-20): a stray whose cherry-pick conflicts against a landed rewrite by the same closed owner is superseded, printed as LAND_STRAY_SUPERSEDED, skipped, and the walk continues to its sibling verdicts"
+milestone: M8
+type: defect
+severity: high
+# high: a live fault in delivery machinery - with six of seven role
+# branches carrying the superseded commit, every land from them
+# escalates (BL-1657 first, 06:44Z) and QA falls back to hand-built
+# lands until this lands; the walk's abort also misreports a landed
+# sibling as entangled. Not critical: the hand recipe lands parcels and
+# the swarm stays up.
+status: todo
+epic: swarm-reliability
+priority: 9
+direction: swarm-reported
+depends_on: []
+# BL-1650 (the loop, its D1 already-applied skip and scenario 06's
+# tip-content skip) landed 90c7b53cca on 2026-09-20 and is in
+# backlog/done; BL-1241/BL-1546 (the replay and the closed-owner rule)
+# are done. No open ticket touches land_step_lib.bb. Expedite candidate.
+mutation_cost: low
+# low: Babashka (no mutation/CRAP/DRY wired, BL-472): one branch in the
+# stray loop, bb runner cases, one scenario and step in BL-1650's
+# existing handler over an mkdtemp fixture.
+slice_size_envelope: low
+required_stages: [coder, cleaner, architect, hardender, documenter, qa]
+
+acceptance: specs/features/BL-1650-the-land-step-lands-a-pure-evidence-closed-owner-stray-itself.feature
+# The contract is BL-1650's feature with scenario 07 (text below) added by
+# this parcel, its step landing in the existing handler in the SAME
+# commit (BL-233). Not a claim of ownership over BL-1650's contract.
+
+required_wiring:
+  - 'specs/pipeline/steps/bl1650LandStepPureEvidenceStraySteps.js::superseded::the new scenario step text, landing with the scenario (BL-233)'
+
+human_approval: approved
+approval_context: >
+  One scenario is added to a landed feature file, so it would ordinarily
+  need a tap; it is minted approved under the 2026-09-17 operator hotfix
+  (severity defect, no choice posed, no ruling_options). FIRM: a
+  conflict is read as superseded ONLY when the conflicting lines on
+  origin/main were last touched by a landed commit of the SAME closed
+  owner (the ticket's own later land); a conflict against anyone else's
+  lines still escalates by name (BL-1546: never decided silently). FIRM:
+  a code-path stray keeps scenario 02's refusal.
+
+invariants:
+  - "The stray loop never aborts the replay over a closed-owner stray whose every conflicting line on origin/main was last written by a landed commit of that same owner; it reports the stray as superseded and every later verdict of the walk is still computed."
+
+description: |
+  ## What is wrong
+
+  `swarmforge/scripts/land_step_lib.bb` (landed BL-1650, 90c7b53cca), the
+  stray loop around line 2184: for each closed-owner pure-evidence stray
+  it runs `git cherry-pick -x <sha>` on the scratch branch; an "already
+  applied" empty result is skipped (D1), a tip whose path already equals
+  origin/main is never cherry-picked (scenario 06), and ANY other
+  non-zero exit runs `cherry-pick --abort` and fails the whole replay
+  with `land-step replay: could not cherry-pick stray evidence commit
+  <sha>`. On 2026-09-20 QA's land of BL-1657 (approved a8f0779522, QA
+  evidence `backlog/evidence/BL-1657-land-escalate-20260920.md`) hit
+  5dbfd9b6a6, BL-1459's bounced first-round doc commit (one path,
+  `docs/how-to/BL-658-briefing-trigger-derived-from-closure-schedule.md`):
+  BL-1459's rebuilt land 8fad11b0dc rewrote the same section, so the
+  cherry-pick conflicts and, resolved to main's side, is empty - nothing
+  to land. The loop aborted, and BL-1663 (landed cedb993ae3) printed as
+  ENTANGLED_SIBLING only because the walk never reached its verdict.
+  Specifier census at 06:5x Z: coder, cleaner, architect, hardender,
+  documenter and QA all carry 5dbfd9b6a6 with the doc differing from
+  main (a 3-way sync merge keeps the old hunks), so every land from those
+  branches escalates the same way until this lands; QA hand-builds
+  tip-pure commits meanwhile (BL-1537 log, condition (g)).
+
+  ## What is wanted
+
+  - When a closed-owner stray's cherry-pick conflicts, the loop reads
+    `git blame` (or the log) of the conflicting lines on origin/main: if
+    every such line was last written by a landed commit whose subject
+    attributes to the same closed owner, the stray is superseded - the
+    loop aborts only THAT cherry-pick, prints `LAND_STRAY_SUPERSEDED <sha>
+    <path> <superseding landed sha>`, and continues; the replay and the
+    sibling verdicts complete as if the stray were already landed.
+  - A conflict against lines owned by anyone else still escalates by
+    name (unchanged).
+  - BL-1650's feature gains scenario 07, step in the same commit:
+
+    ```
+      # BL-1650 a-superseded-closed-owner-stray-is-skipped-and-the-walk-continues-07
+      # BL-1670 (2026-09-20): BL-1459's bounced first-round doc commit
+      # conflicted against BL-1459's own rebuilt land on every branch.
+      Scenario: a closed-owner doc stray that conflicts against the same owner's later landed rewrite is reported superseded and the replay completes
+        Given a closed ticket whose first commit off the lineage wrote a doc section and whose later landed commit rewrote the same lines on origin/main
+        And a replay tip that carries the first commit and a landed sibling behind it
+        When the land step replays the cited ticket
+        Then it reports the stray as superseded naming the landed commit
+        And it reports the sibling landed
+        And it lands the ticket's own paths
+    ```
+
+  ## How (direction, not mandate)
+
+  - On cherry-pick failure, `git diff --name-only --diff-filter=U` gives
+    the conflicting paths; `git blame -L` over main's side of each
+    conflict hunk gives the last-writer shas; `subject-attribution` over
+    those subjects gives the owners. Superseded iff the set is exactly
+    {the stray's owner} and every sha is on origin/main.
+
+constraints: >
+  No change to which strays are candidates, to scenario 06's tip-content
+  rule, or to the D1 already-applied skip. The step handler lands with the
+  scenario (BL-233). Fixture repositories are mkdtemp git init roots.
+
+out_of_scope: |
+  - Cleaning 5dbfd9b6a6's hunks off the six branches by hand: a restore
+    on one branch re-diverges at the next 3-way sync merge and cannot
+    converge; the tool tolerating the shape is the fix.
+  - Why QA cited the pre-sync approved commit rather than the synced tip
+    (QA.prompt already says which); the doc differs either way.
+
+qa_e2e_procedure: >
+  (1) `node specs/pipeline/cli.js specs/features/BL-1650-the-land-step-lands-a-pure-evidence-closed-owner-stray-itself.feature`
+  ONCE on the parcel commit: 7 scenarios ok. (2)
+  `bb swarmforge/scripts/test/land_step_lib_test_runner.bb` once: ALL
+  PASS. (3) On the live repository from the QA checkout, the land step
+  over any approved tip carrying 5dbfd9b6a6 prints
+  `LAND_STRAY_SUPERSEDED 5dbfd9b6a6 ... 8fad11b0dc` and no LAND_ESCALATE
+  for it. Never "run it N times".
+
+source: |
+  QA note to the specifier, priority 00, 2026-09-20T06:45:08Z (inbound
+  00_20260920T064508Z_003027_from_QA), verbatim: "BL-1657 LAND_ESCALATE
+  - empty-diff stray blocks replay, see 3e81b0207a". QA evidence,
+  verbatim: "the replay's cherry-pick step does not tolerate a stray
+  commit whose content is already fully present on `origin/main` under
+  different phrasing (an empty diff after conflict resolution) - it
+  treats 'nothing to commit' as a failure rather than a no-op success,
+  and aborts the whole walk rather than continuing past it." Parents:
+  BL-1650, BL-1546, BL-1241, BL-1459.
+
+notes: |
+  Minted 2026-09-20 by the specifier while completing QA's note, the same
+  pass. AUTO-APPROVED under the 2026-09-17 operator hotfix (severity
+  defect, no ruling_options) - see
+  auto-approve-high-severity-defects-amendment-20260917.md. Condition (g)
+  in the BL-1537 log is the interim (hand-built tip-pure land). The
+  coordinator was asked to promote it ahead (expedite lane).
