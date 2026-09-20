@@ -47,14 +47,22 @@ function discoverHandlerFiles(stepsDir = STEPS_DIR) {
 // process.listenerCount('exit') across it to catch a `node:test`-style
 // registration - all three restored immediately after each file so one
 // handler's instrumentation never leaks into the next one's reading.
-function buildChildScript(absolutePaths) {
+//
+// The target list is read from stdin, never embedded in this script's own
+// source: with 1200+ handlers the JSON-encoded path list alone is over
+// 128KB, and passing it as part of a `-e` argv string hits Linux's
+// per-argument MAX_ARG_STRLEN limit (128KB) - independent of, and far
+// below, the ARG_MAX the whole argv+envp is allowed (spawnSync then fails
+// outright with E2BIG, before this script ever runs). Stdin has no such
+// per-argument ceiling and grows with the tree without needing a rewrite.
+function buildChildScript() {
   return `
 'use strict';
 const fs = require('node:fs');
 const cp = require('node:child_process');
 const path = require('node:path');
 const NodeModule = require('node:module');
-const targets = ${JSON.stringify(absolutePaths)};
+const targets = JSON.parse(fs.readFileSync(0, 'utf8'));
 const rows = [];
 const orig = {
   readdirSync: fs.readdirSync,
@@ -118,7 +126,8 @@ function extractDelimited(output) {
 }
 
 function runChildCensus(absolutePaths) {
-  const result = spawnSync(process.execPath, ['-e', buildChildScript(absolutePaths)], {
+  const result = spawnSync(process.execPath, ['-e', buildChildScript()], {
+    input: JSON.stringify(absolutePaths),
     encoding: 'utf8',
     cwd: REPO_ROOT,
     maxBuffer: 64 * 1024 * 1024,

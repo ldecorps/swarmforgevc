@@ -3350,6 +3350,276 @@ RESOLVED BY THIS TICKET
                       (not (str/includes? content "extension/test/b.test.js")))))
     (sh! root "git" "worktree" "remove" "-f" scratch)))
 
+;; ── BL-1650 item 0: landed-sibling-verdicts scores over the FULL ancestry
+;; candidates (a commit that rode in on a non-first-parent merge counts),
+;; never task-tagged-changed-paths's own --first-parent walk ─────────────
+
+(with-fixture [root]
+  (commit! root "shared.txt" "shared content\n" "BL-9002: landed on main directly")
+  (mark-origin-main-here! root)
+  (let [origin-main (:out (sh! root "git" "rev-parse" "HEAD"))]
+    (sh! root "git" "checkout" "-q" "--orphan" "sibling-line")
+    (sh! root "git" "rm" "-r" "-q" "--cached" ".")
+    (commit! root "shared.txt" "shared content\n" "BL-9002: sibling's own commit, unrelated history")
+    (let [sib (:out (sh! root "git" "rev-parse" "HEAD"))]
+      (sh! root "git" "checkout" "-q" "-b" "parcel" origin-main)
+      (commit! root "backlog/active/BL-9001-x.yaml" "id: BL-9001\n" "BL-9001: own work")
+      ;; Merge the sibling's unrelated line in - sib rides as the merge's
+      ;; SECOND parent, invisible to a --first-parent walk.
+      (sh! root "git" "merge" "-q" "--no-ff" "--allow-unrelated-histories"
+           "-m" "Merge sibling-line into parcel." sib)
+      (let [tip (:out (sh! root "git" "rev-parse" "HEAD"))
+            candidates (land-step-lib/ancestry-commits root origin-main tip)
+            verdicts (land-step-lib/landed-sibling-verdicts
+                      root tip origin-main candidates #{"BL-9002"})]
+        (assert-true "BL-1650 item 0: a sibling commit reaching the tip only via a merge's second parent is still LANDED when its content already matches origin/main"
+                     (get-in verdicts ["BL-9002" :landed?]))))))
+
+;; ── BL-1650 item 0: a candidate the sibling's OWN ticket lists under
+;; abandoned_commits is never entangled ───────────────────────────────────
+
+(with-fixture [root]
+  ;; BL-9002 is already CLOSED on origin/main, with this exact sibling
+  ;; commit already recorded under its own abandoned_commits (decided when
+  ;; BL-9002 itself landed, elsewhere) - and that same commit independently
+  ;; became an ancestor of BL-9001's own branch later, via an ordinary
+  ;; merge. Realistic shape: the abandonment record predates, and is
+  ;; unrelated to, this later branch's own merge history.
+  (sh! root "git" "checkout" "-q" "-b" "sibling-line")
+  (commit! root "sibling.txt" "abandoned content\n" "BL-9002: sibling's commit, later abandoned")
+  (let [sib (:out (sh! root "git" "rev-parse" "HEAD"))]
+    (sh! root "git" "checkout" "-q" "main")
+    (commit! root "backlog/done/BL-9002-x.yaml"
+             (str "id: BL-9002\nabandoned_commits: [" (subs sib 0 10) "]\n")
+             "Close BL-9002 (its own commit abandoned elsewhere)")
+    (mark-origin-main-here! root)
+    (let [origin-main (:out (sh! root "git" "rev-parse" "HEAD"))]
+      (sh! root "git" "checkout" "-q" "-b" "task" origin-main)
+      (commit! root "backlog/active/BL-9001-x.yaml" "id: BL-9001\n" "BL-9001: own work")
+      (sh! root "git" "merge" "-q" "--no-ff" "-m" "Merge sibling-line into task." sib)
+      (let [tip (:out (sh! root "git" "rev-parse" "HEAD"))
+            plan (land-step-lib/land-plan {:root root :commit tip :task-ticket-id "BL-9001"})]
+        (assert= "BL-1650 item 0: a sibling whose only candidate commit its own ticket abandoned is not entangled at all"
+                 {:action :land} plan)))))
+
+;; ── BL-1650 items 1-2: pure-evidence-or-docs-paths? ──────────────────────
+
+(assert-true "pure-evidence-or-docs-paths?: a lone backlog/evidence/ path"
+             (land-step-lib/pure-evidence-or-docs-paths? ["backlog/evidence/BL-9002-x-20260919.md"]))
+(assert-true "pure-evidence-or-docs-paths?: a lone docs/ path"
+             (land-step-lib/pure-evidence-or-docs-paths? ["docs/how-to/x.md"]))
+(assert-true "pure-evidence-or-docs-paths?: both together"
+             (land-step-lib/pure-evidence-or-docs-paths? ["backlog/evidence/a.md" "docs/b.md"]))
+(assert-false "pure-evidence-or-docs-paths?: one path outside the allowlist fails the whole set"
+              (land-step-lib/pure-evidence-or-docs-paths? ["backlog/evidence/a.md" "swarmforge/scripts/x.bb"]))
+(assert-false "pure-evidence-or-docs-paths?: a backlog ticket yaml is not pure evidence"
+              (land-step-lib/pure-evidence-or-docs-paths? ["backlog/active/BL-9001-x.yaml"]))
+(assert-false "pure-evidence-or-docs-paths?: empty is never a reason to land anything"
+              (land-step-lib/pure-evidence-or-docs-paths? []))
+
+;; ── BL-1650 items 1-2: closed-owner-pure-evidence-stray? ─────────────────
+
+(with-fixture [root]
+  (mark-origin-main-here! root)
+  (let [origin-main (:out (sh! root "git" "rev-parse" "HEAD"))]
+    (sh! root "git" "checkout" "-q" "-b" "role")
+    (commit! root "backlog/evidence/BL-9002-x-20260919.md" "notes\n"
+             "BL-9002: incident evidence, committed after the ticket moved on")
+    (let [stray (:out (sh! root "git" "rev-parse" "HEAD"))]
+      (sh! root "git" "checkout" "-q" "main")
+      (sh! root "git" "merge" "-q" "--no-ff" "-m" "Merge role into main." stray)
+      (commit! root "backlog/done/BL-9002-x.yaml" "id: BL-9002\n" "BL-9002: closed the next day")
+      (let [closed-origin-main (:out (sh! root "git" "rev-parse" "HEAD"))
+            found (land-step-lib/closed-owner-pure-evidence-stray?
+                   root closed-origin-main stray "BL-9001")]
+        (assert-true "closed-owner-pure-evidence-stray?: a closed sibling's pure-evidence-only commit is a stray"
+                     (some? found))
+        (assert= "closed-owner-pure-evidence-stray?: names the stray's own sha and paths"
+                 {:sha stray :sibling "BL-9002" :paths ["backlog/evidence/BL-9002-x-20260919.md"]}
+                 found)))))
+
+(with-fixture [root]
+  (mark-origin-main-here! root)
+  (let [origin-main (:out (sh! root "git" "rev-parse" "HEAD"))]
+    (sh! root "git" "checkout" "-q" "-b" "role")
+    ;; Touches a script, not pure evidence/docs - BL-1546's refusal must
+    ;; stand for this shape unchanged.
+    (commit! root "swarmforge/scripts/some_lib.bb" "(ns x)\n"
+             "BL-9002: a code change riding the same branch")
+    (let [stray (:out (sh! root "git" "rev-parse" "HEAD"))]
+      (sh! root "git" "checkout" "-q" "main")
+      (sh! root "git" "merge" "-q" "--no-ff" "-m" "Merge role into main." stray)
+      (commit! root "backlog/done/BL-9002-x.yaml" "id: BL-9002\n" "BL-9002: closed")
+      (let [closed-origin-main (:out (sh! root "git" "rev-parse" "HEAD"))]
+        (assert= "closed-owner-pure-evidence-stray?: a stray touching code outside the allowlist is never self-landable"
+                 nil
+                 (land-step-lib/closed-owner-pure-evidence-stray?
+                  root closed-origin-main stray "BL-9001"))))))
+
+(with-fixture [root]
+  ;; A sibling still OPEN (not closed on origin/main) is never a stray this
+  ;; step lands itself, even if its only paths are pure evidence - BL-1546's
+  ;; refusal is unchanged for anything but a truly closed owner.
+  (mark-origin-main-here! root)
+  (let [origin-main (:out (sh! root "git" "rev-parse" "HEAD"))]
+    (sh! root "git" "checkout" "-q" "-b" "role")
+    (commit! root "backlog/evidence/BL-9002-x-20260919.md" "notes\n" "BL-9002: still open")
+    (let [stray (:out (sh! root "git" "rev-parse" "HEAD"))]
+      (sh! root "git" "checkout" "-q" "main")
+      (sh! root "git" "merge" "-q" "--no-ff" "-m" "Merge role into main." stray)
+      (commit! root "backlog/active/BL-9002-x.yaml" "id: BL-9002\n" "BL-9002: still active")
+      (let [still-open-origin-main (:out (sh! root "git" "rev-parse" "HEAD"))]
+        (assert= "closed-owner-pure-evidence-stray?: an open (not closed) sibling's evidence is never self-landed"
+                 nil
+                 (land-step-lib/closed-owner-pure-evidence-stray?
+                  root still-open-origin-main stray "BL-9001"))))))
+
+;; ── BL-1650 items 1-2: land-plan end to end - a closed-owner pure-evidence
+;; stray lands on the replay branch itself, and is reported LANDED_SIBLING,
+;; never ENTANGLED_SIBLING ────────────────────────────────────────────────
+
+(with-fixture [root]
+  (mark-origin-main-here! root)
+  (let [seed (:out (sh! root "git" "rev-parse" "HEAD"))]
+    (sh! root "git" "checkout" "-q" "-b" "role" seed)
+    (commit! root "backlog/evidence/BL-9002-x-20260919.md" "notes\n"
+             "BL-9002: incident evidence, committed after the ticket moved on")
+    (let [stray (:out (sh! root "git" "rev-parse" "HEAD"))]
+      (commit! root "backlog/done/BL-9002-x.yaml" "id: BL-9002\n" "BL-9002: closed on this branch too")
+      (commit! root "backlog/active/BL-9001-x.yaml" "id: BL-9001\n" "BL-9001: own work")
+      (let [tip (:out (sh! root "git" "rev-parse" "HEAD"))]
+        ;; origin/main also carries BL-9002 as done, so closed-on-main?
+        ;; reads true.
+        (sh! root "git" "checkout" "-q" "-b" "main-line" seed)
+        (commit! root "backlog/done/BL-9002-x.yaml" "id: BL-9002\n" "BL-9002: closed on main")
+        (sh! root "git" "update-ref" "refs/remotes/origin/main" "HEAD")
+        (sh! root "git" "checkout" "-q" "role")
+        (let [plan (land-step-lib/land-plan {:root root :commit tip :task-ticket-id "BL-9001"})]
+          (assert= "BL-1650 items 1-2: a closed-owner pure-evidence stray still lets the land replay through"
+                   :replay (:action plan))
+          (assert-true "BL-1650 items 1-2: the stray is named in :stray-landed"
+                       (= 1 (count (:stray-landed plan))))
+          (assert= "BL-1650 items 1-2: the stray's own sha is recorded"
+                   stray (:sha (first (:stray-landed plan))))
+          (assert-false "BL-1650 items 1-2: the sibling is never reported ENTANGLED_SIBLING once its stray lands"
+                        (contains? (:unlanded plan) "BL-9002"))
+          (assert-true "BL-1650 items 1-2: the sibling is reported LANDED_SIBLING"
+                       (contains? (:landed plan) "BL-9002"))
+          ;; The stray commit's own content really is on the replay branch,
+          ;; ahead of the parcel's tip-pure commit.
+          (let [show (sh! root "git" "show" (str (:commit plan) ":backlog/evidence/BL-9002-x-20260919.md"))]
+            (assert= "BL-1650 items 1-2: the stray's own file content is on the replay branch"
+                     "notes" (:out show)))
+          (sh! root "git" "worktree" "remove" "-f"
+               (str (fs/path (land-step-lib/git-common-dir root) "land-replay-worktrees"
+                              (str "BL-9001-" (subs tip 0 10)))))
+          (sh! root "git" "branch" "-q" "-D" (:branch plan)))))))
+
+;; ── BL-1650 items 1-2 (hardening finding): a stray cherry-pick that
+;; CONFLICTS aborts the WHOLE replay, fail-closed - the ticket's own FIRM
+;; constraint ("nothing is abandoned") had no test anywhere: every existing
+;; end-to-end case above cherry-picks a stray whose file exists nowhere else
+;; on origin/main, so the cherry-pick always applies cleanly. Realistic
+;; conflicting shape: the stray's own commit modifies a shared evidence
+;; file, and origin/main independently modified the SAME lines of that same
+;; file after the fork (a later, unrelated main progression) - a real
+;; content conflict, not a contrived unmergeable diff. Confirmed by hand
+;; before writing this: the real code already handles it correctly
+;; (`:action :escalate`, the sibling stays in `:unlanded`, never silently
+;; dropped, no branch or worktree left behind, the caller's own checkout
+;; untouched) - this closes the coverage gap, not a behavior bug.
+(with-fixture [root]
+  (mark-origin-main-here! root)
+  (let [seed (:out (sh! root "git" "rev-parse" "HEAD"))]
+    (commit! root "backlog/evidence/shared.md" "line1\nline2\nline3\n" "seed shared evidence")
+    (let [seed2 (:out (sh! root "git" "rev-parse" "HEAD"))]
+      (mark-origin-main-here! root)
+      (sh! root "git" "checkout" "-q" "-b" "role" seed2)
+      (commit! root "backlog/evidence/shared.md" "line1\nROLE-CHANGED\nline3\n"
+               "BL-9002: role modifies shared evidence, later abandoned")
+      (let [stray (:out (sh! root "git" "rev-parse" "HEAD"))]
+        (commit! root "backlog/done/BL-9002-x.yaml" "id: BL-9002\n" "BL-9002: closed on this branch too")
+        (commit! root "backlog/active/BL-9001-x.yaml" "id: BL-9001\n" "BL-9001: own work")
+        (let [tip (:out (sh! root "git" "rev-parse" "HEAD"))]
+          ;; origin/main diverges: the SAME lines of the SAME file, changed
+          ;; differently - the real content conflict git cherry-pick -x
+          ;; cannot auto-resolve.
+          (sh! root "git" "checkout" "-q" "-b" "main-line" seed2)
+          (commit! root "backlog/evidence/shared.md" "line1\nMAIN-CHANGED\nline3\n"
+                   "main: unrelated later edit to the same evidence file")
+          (commit! root "backlog/done/BL-9002-x.yaml" "id: BL-9002\n" "BL-9002: closed on main")
+          (sh! root "git" "update-ref" "refs/remotes/origin/main" "HEAD")
+          (sh! root "git" "checkout" "-q" "role")
+          (let [before-role-head (:out (sh! root "git" "rev-parse" "role"))
+                before-branches (:out (sh! root "git" "branch" "--list"))
+                before-worktree-count (count (str/split-lines (:out (sh! root "git" "worktree" "list"))))
+                plan (land-step-lib/land-plan {:root root :commit tip :task-ticket-id "BL-9001"})]
+            (assert= "BL-1650 (cherry-pick conflict): a conflicting stray escalates rather than landing half-done"
+                     :escalate (:action plan))
+            (assert-includes "BL-1650 (cherry-pick conflict): the reason names the cherry-pick failure"
+                             (:reason plan) "could not cherry-pick stray evidence commit")
+            (assert-includes "BL-1650 (cherry-pick conflict): the reason names the stray's own sha"
+                             (:reason plan) stray)
+            (assert-true "BL-1650 (cherry-pick conflict): the sibling stays unlanded, never silently dropped"
+                         (contains? (:unlanded plan) "BL-9002"))
+            (assert= "BL-1650 (cherry-pick conflict): no branch is left behind by the failed attempt"
+                     before-branches (:out (sh! root "git" "branch" "--list")))
+            (assert= "BL-1650 (cherry-pick conflict): no worktree is left registered"
+                     before-worktree-count (count (str/split-lines (:out (sh! root "git" "worktree" "list")))))
+            (assert= "BL-1650 (cherry-pick conflict): the caller's own role branch is untouched"
+                     before-role-head (:out (sh! root "git" "rev-parse" "role")))))))))
+
+;; ── BL-1650 D1 (QA bounce, 2026-09-20): a stray whose content is ALREADY
+;; on origin/main under a DIFFERENT sha (the everyday shape once a stray of
+;; this kind has been hand-landed once, e.g. the specifier's own manual
+;; cherry-pick -x during an earlier adjudication) makes `git cherry-pick -x`
+;; produce an EMPTY patch ("The previous cherry-pick is now empty") - a
+;; distinct, non-conflict git outcome the pre-fix code treated identically
+;; to a real conflict, escalating every later parcel whose branch still
+;; carries the stray. Reproduces the live incident: land BL-1650's own
+;; approved commit through its own new stray-cherry-pick logic, where the
+;; stray (BL-831's evidence file) was ALREADY landed separately the day
+;; before. Expected per the ticket's own FIRM constraint (written for the
+;; sibling-scoring side of this same fix, applied here to the cherry-pick
+;; side): already-present content replays through, never escalates.
+(with-fixture [root]
+  (mark-origin-main-here! root)
+  (let [seed (:out (sh! root "git" "rev-parse" "HEAD"))]
+    (sh! root "git" "checkout" "-q" "-b" "role" seed)
+    (commit! root "backlog/evidence/BL-9002-x-20260919.md" "notes\n"
+             "BL-9002: incident evidence, committed after the ticket moved on")
+    (let [stray (:out (sh! root "git" "rev-parse" "HEAD"))]
+      (commit! root "backlog/done/BL-9002-x.yaml" "id: BL-9002\n" "BL-9002: closed on this branch too")
+      (commit! root "backlog/active/BL-9001-x.yaml" "id: BL-9001\n" "BL-9001: own work")
+      (let [tip (:out (sh! root "git" "rev-parse" "HEAD"))]
+        ;; origin/main ALREADY carries the stray's own file, byte-identical,
+        ;; under its own separate commit (never the stray's sha itself) -
+        ;; the "already hand-landed once" shape.
+        (sh! root "git" "checkout" "-q" "-b" "main-line" seed)
+        (commit! root "backlog/evidence/BL-9002-x-20260919.md" "notes\n"
+                 "landed by hand during an earlier adjudication")
+        (commit! root "backlog/done/BL-9002-x.yaml" "id: BL-9002\n" "BL-9002: closed on main")
+        (let [main-tip (:out (sh! root "git" "rev-parse" "HEAD"))]
+          (sh! root "git" "update-ref" "refs/remotes/origin/main" "HEAD")
+          (sh! root "git" "checkout" "-q" "role")
+          (let [plan (land-step-lib/land-plan {:root root :commit tip :task-ticket-id "BL-9001"})]
+            (assert= "BL-1650 D1: an already-applied stray still lets the land replay through, never escalates"
+                     :replay (:action plan))
+            (assert-true "BL-1650 D1: the already-applied stray is still named in :stray-landed"
+                         (= 1 (count (:stray-landed plan))))
+            (assert= "BL-1650 D1: the already-applied stray's own source sha is recorded"
+                     stray (:sha (first (:stray-landed plan))))
+            (assert-true "BL-1650 D1: the stray is flagged already-applied, never a fresh land"
+                         (true? (:already-applied? (first (:stray-landed plan)))))
+            (assert= "BL-1650 D1: the recorded landed-sha is where the content already lived (origin/main's own tip), not a new commit"
+                     main-tip (:landed-sha (first (:stray-landed plan))))
+            (assert-true "BL-1650 D1: the sibling is still reported LANDED_SIBLING"
+                         (contains? (:landed plan) "BL-9002"))
+            (sh! root "git" "worktree" "remove" "-f"
+                 (str (fs/path (land-step-lib/git-common-dir root) "land-replay-worktrees"
+                                (str "BL-9001-" (subs tip 0 10)))))
+            (sh! root "git" "branch" "-q" "-D" (:branch plan))))))))
+
 (if (seq @failures)
   (do
     (doseq [f @failures] (println f))
