@@ -188,6 +188,7 @@ notes: |
   a472d22819 is there, as QA found. Documenter: merge main, re-send.
 
 assigned_to: coder
-bounce_count: 1
+bounce_count: 2
 bounce_history:
   - { at: 2026-09-20, by: QA, blamed: coder, class: behavior, commit: 309a50e3ae, evidence: backlog/evidence/BL-1650-bounce-20260920.md }
+  - { at: 2026-09-20, by: QA, blamed: coder, class: acceptance, commit: 6e3e50ce95, evidence: backlog/evidence/BL-1650-bounce-20260920-2.md }
