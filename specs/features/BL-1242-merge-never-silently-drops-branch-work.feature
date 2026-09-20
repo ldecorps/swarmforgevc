@@ -92,3 +92,14 @@ Feature: A merge never silently drops work either branch carries
     Given a merge in progress on a branch that lacks files the incoming branch carries
     When the merge omits a path both branches carry
     Then the removal is reported once
+
+  # BL-1242 an-untagged-removal-of-a-closed-owner-path-merges-when-the-body-names-it-09
+  # BL-1662 (2026-09-20): the closed-ticket subject guard forbids the
+  # id in the subject, so the removal commit is untagged by rule;
+  # attribution reaches past it to the commit that introduced the path.
+  Scenario: a merge carrying a deliberate untagged removal of a closed ticket's path is accepted when the message body names that ticket
+    Given a path introduced by a commit whose subject names ticket BL-9001 and later removed by a commit whose subject names no ticket
+    And a branch that still carries the path
+    When that branch is merged with a commit message whose body names BL-9001
+    Then the merge-deletion guard accepts the merge
+    And the same merge with a message naming no ticket is refused naming BL-9001
