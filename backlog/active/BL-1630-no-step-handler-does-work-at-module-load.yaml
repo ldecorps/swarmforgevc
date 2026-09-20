@@ -40,7 +40,9 @@ approval_context: >
   it. FIRM: the guard reads the real tree: every *Steps.js required in a
   fresh child, its incremental require cost under the budget the parcel
   sets from its own after-measurement (direction: 200 ms), and index.js
-  loading under 5 s. FIRM: the census is recorded before and after in the
+  loading under 5 s - a handler over budget stays green only on the
+  guard's allowlist with a reason AND an owning ticket id, and timing
+  variance is never a reason (2026-09-20 ruling, notes). FIRM: the census is recorded before and after in the
   evidence with the same script, so the twelve names and the two totals
   are re-runnable.
 
@@ -129,6 +131,10 @@ constraints: >
 out_of_scope: |
   - Handlers under the budget today: the guard catches regressions; no
     sweep of all 1189.
+  - The seven remaining eager jsdom handlers (a require-cache cascade the
+    coder found on 2026-09-20): BL-1658, the owner of the guard's bl592
+    allowlist entry. The 75 handlers that require node:test at load for a
+    cleanup hook the acceptance runtime never runs: BL-1659.
   - Making index.js lazy (discovery on demand): a design change to the
     acceptance runtime, its own ticket if the guard is not enough.
   - bl968's acceptance as a pole (BL-1629); the blind-sweep scoping of
@@ -167,4 +173,24 @@ notes: |
   (one child-process census in seconds after the fix). Severity medium:
   cost, not a red.
 
+  Ruling 2026-09-20 (specifier; coder spec-gap note 002060, evidence
+  BL-1630-coder-out-of-scope-findings-20260920.md and
+  BL-1630-coder-census-20260920.md on the coder branch 65c8983538):
+  (1) the guard's allowlist is accepted as the ratchet for debt this
+  parcel exposes but does not own - each entry names a reason and an
+  owning ticket: bl592's jsdom cascade is BL-1658's. (2) bl1050's entry
+  ("timing variance close to the budget") is not accepted: a violator
+  read in the sequential census is measured once more alone in a fresh
+  child before the guard names it (BL-1633's confirm-a-pole-alone rule),
+  and the entry goes. (3) Scenario 02's Then is amended to say what the
+  guard actually claims ("or on its allowlist with an owning ticket") -
+  the handler's step pattern follows the new text. (4) The 75 node:test
+  handlers are BL-1659's, not this parcel's; the twelve plus bl1412,
+  bl1536 and bl1565 that the coder moved stay in scope as unmasked by its
+  own fix. Merge main, re-read, forward as usual.
+
 assigned_to: coder
+bounce_count: 2
+bounce_history:
+  - { at: 2026-09-20, by: cleaner, blamed: coder, class: acceptance, commit: c52846fd16, evidence: backlog/evidence/BL-1630-bounce-20260920.md }
+  - { at: 2026-09-20, by: cleaner, blamed: coder, class: acceptance, commit: dc8236f01f, evidence: backlog/evidence/BL-1630-bounce-20260920.md }

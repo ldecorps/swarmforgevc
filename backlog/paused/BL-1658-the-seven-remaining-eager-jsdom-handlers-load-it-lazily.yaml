@@ -1,0 +1,111 @@
+id: BL-1658
+title: "Seven step handlers still require jsdom at module load (bl592, bl609, bl674, bl686, bl687, bl775, bl929) and a sequential require census charges jsdom's whole load to whichever is alphabetically first, so fixing one only unmasks the next: all seven require jsdom inside the step that builds a DOM, in one sweep, and the module-load guard's bl592 allowlist entry goes"
+milestone: M8
+type: defect
+severity: medium
+# medium: a real, contained cost (about 300 ms on every registry load,
+# paid by every acceptance run and QA-bound send) and a permanent
+# allowlist entry in BL-1630's guard; not a red, not a safety signal.
+status: todo
+epic: unit-suite-speed
+priority: 6
+direction: swarm-reported
+depends_on: [BL-1630]
+# BL-1630 (active at the coder) lands the require census helper, the
+# module-load budget guard and its allowlist entry for bl592 naming this
+# ticket; this parcel removes that entry, so it promotes after BL-1630
+# lands. BL-1659 (sibling, node:test) touches none of these seven files.
+mutation_cost: low
+# low: seven handlers, each one module-level require moved inside the
+# function that builds a DOM (the pattern bl1046, bl1160, bl1153 and
+# bl1412 already use); one allowlist entry removed; feature and handler;
+# step handlers are not under mutation. Runners the feature shells: eight
+# fresh-child requires (each well under a second) - inside BL-1541's
+# ceiling.
+slice_size_envelope: low
+required_stages: [coder, cleaner, architect, hardender, documenter, qa]
+
+acceptance: specs/features/BL-1658-the-seven-remaining-eager-jsdom-handlers-load-it-lazily.feature
+
+required_wiring:
+  - 'specs/pipeline/steps/bl1658SevenJsdomHandlersLoadLazilySteps.js::registerSteps::the handler lands in the same parcel as the feature (BL-233, BL-1371)'
+
+human_approval: pending
+approval_context: >
+  A new feature file is authored here, so it needs a tap. No choice is
+  posed and there are no ruling_options. FIRM: no scenario of any of the
+  seven handlers changes - jsdom is required inside the step that builds
+  the DOM, exactly as bl1153 and bl1412 now do after BL-1630. FIRM: all
+  seven move in ONE parcel (the cascade makes a partial fix invisible).
+  FIRM: the guard's allowlist ends this parcel with no jsdom entry.
+
+invariants: []
+
+description: |
+  ## What is wrong
+
+  BL-1630's coder, moving bl1153's and bl1412's module-level
+  `const { JSDOM } = require('jsdom')` inside their functions, found that
+  the sequential require census pays jsdom's real load exactly once -
+  charged to whichever eager requirer is alphabetically first among the
+  handlers still eager at that moment. Fixing bl1153 unmasked bl1412;
+  fixing bl1412 unmasked bl592 (about 300 ms). Seven handlers remain
+  eager (`grep -rln "^const.*JSDOM.*=.*require\|^const { JSDOM }"
+  specs/pipeline/steps/*.js`, minus the two BL-1630 fixed):
+  bl592SpecTreeOnLiveConsoleWithEpicTierSteps.js,
+  bl609ResidentSpyFontSizeControlSteps.js, bl674EpicDrilldownUiSteps.js,
+  bl686EpicDrilldownSlugMatchSteps.js,
+  bl687EpicReorderIncludesActiveChildrenSteps.js,
+  bl775BubbleLiveScreenShellSteps.js, bl929LiveScreenPackLayoutSteps.js.
+  Fixing bl592 alone would hand the same 300 ms to bl609, then bl674,
+  and so on down the alphabet - seven bounces of the guard, one per fix.
+  BL-1630 allowlisted bl592 with this ticket as the owner (coder evidence
+  `backlog/evidence/BL-1630-coder-out-of-scope-findings-20260920.md`).
+
+  ## What is wanted
+
+  - All seven require jsdom inside the step that builds a DOM; their own
+    features still resolve.
+  - The bl592 entry leaves `extension/test/stepHandlerModuleLoadBudget.test.js`'s
+    allowlist (and the acceptance handler's mirror of it) in the same
+    parcel; the guard over the real tree passes with no jsdom entry.
+
+  ## How (direction, not mandate)
+
+  - The same two-line move BL-1630 made in bl1153/bl1412. Scenario 01
+    reuses BL-1630's `stepHandlerRequireCensus.js` loader intercept to
+    list the modules a handler's require loads (extend the helper to
+    return them if it does not already).
+
+constraints: >
+  The seven handlers (moves only, no scenario change), the guard's
+  allowlist, the feature and its handler, evidence. No change to
+  index.js, runtime.js, any feature file of the seven, or any library.
+  The step handler lands with the feature (BL-233).
+
+out_of_scope: |
+  - The 75 node:test-at-load handlers: BL-1659.
+  - Any handler that requires jsdom lazily already (bl1046, bl1160,
+    bl1153, bl1412).
+
+qa_e2e_procedure: >
+  (1) `node specs/pipeline/cli.js specs/features/BL-1658-the-seven-remaining-eager-jsdom-handlers-load-it-lazily.feature`
+  ONCE on the parcel commit: 8 rows ok. (2)
+  `cd extension && npx vitest run test/stepHandlerModuleLoadBudget.test.js`
+  once: green, and `grep -c jsdom extension/test/stepHandlerModuleLoadBudget.test.js`
+  is 0 outside comments. (3) Each of the seven handlers' own feature runs
+  once and resolves. Never "run it N times".
+
+source: |
+  Coder note to the specifier, priority 00, 2026-09-20T01:02:51Z (inbound
+  00_20260920T010251Z_002060_from_coder), verbatim: "BL-1630 spec-gap:
+  jsdom cascade (7 more) + node:test at load (73) - see evidence". Coder
+  evidence, verbatim: "A follow-up ticket must fix all seven ... in ONE
+  sweep, then remove the allowlist entry, or it will bounce this guard
+  seven times in a row as each fix unmasks the next name." Specifier
+  ruling on BL-1630 the same pass (its notes). Parents: BL-1630, BL-1371.
+
+notes: |
+  Minted 2026-09-20 by the specifier while completing the coder's BL-1630
+  spec-gap note, the same pass as BL-1659 and the BL-1630 ruling. Not
+  auto-approved: severity medium.

@@ -37,7 +37,6 @@ function sweepStaleFixtures() {
     }
   }
 }
-sweepStaleFixtures();
 
 function state(ctx) {
   if (!ctx.bl1327) ctx.bl1327 = {};
@@ -105,6 +104,11 @@ function onlyProposal(ctx) {
 const FEATURE = 'BL-1327 Scheduled descent ladder proposes a cheaper effort-then-model notch per seat';
 
 function registerSteps(registry) {
+  // BL-1630: moved from module load - a mere require() of this file
+  // (bl968's tree probe, the BL-761 registration gate) must not pay for
+  // a temp-dir listing that only a real registration needs.
+  sweepStaleFixtures();
+
   const scoped = (re, fn) => registry.defineScoped(re, fn, FEATURE);
 
   scoped(/^a seat with a guard window computed from bounce and QA outcomes for the tickets it has held$/, (ctx) => {

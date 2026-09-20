@@ -203,7 +203,15 @@ You are QA.
          land them in dependency order first and re-check. Cheap, and it
          resolves the easy case — but check the precondition honestly: unbuilt
          mints, a ticket you just bounced, and retired-ticket files are not
-         landable siblings.
+         landable siblings. When two APPROVED siblings share a whole
+         file (2026-09-20, BL-1652/BL-1653 in handoffd.bb: cited from the
+         shared tip, each replay carried the other's hunks and the boot
+         check refused both), land the OLDER from its own approval point
+         - your commit that merged its documenter parcel, before the
+         sibling's arrived - with origin/main merged onto it immediately
+         before the land, never from the shared tip; the younger then
+         lands from the tip as usual. No companion path: every line lands
+         under the ticket that wrote it.
       2. Otherwise **run the land step's own CLI — this remedy has a tool, do
          not hand-roll the replay**:
          `bb swarmforge/scripts/land_step_cli.bb <task-name> <commit>`

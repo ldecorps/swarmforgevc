@@ -48,8 +48,6 @@ function sweepStaleFixtures() {
   }
 }
 
-sweepStaleFixtures();
-
 function git(root, ...args) {
   execFileSync('git', args, { cwd: root, stdio: 'pipe' });
 }
@@ -103,6 +101,11 @@ const OWNER_SUBJECT = {
 const FEATURE = 'The replay separates two tickets inside one shared path';
 
 function registerSteps(registry) {
+  // BL-1630: moved from module load - a mere require() of this file
+  // (bl968's tree probe, the BL-761 registration gate) must not pay for
+  // a temp-dir listing that only a real registration needs.
+  sweepStaleFixtures();
+
   const scoped = (re, fn) => registry.defineScoped(re, fn, FEATURE);
 
   scoped(/^the land step is replaying a cited commit for ticket "BL-A"$/, (ctx) => {
