@@ -121,3 +121,5 @@ notes: |
   appended in the mint commit (first_seen 2026-09-20, the first sighting
   with a recorded failing run). coder@2, holding BL-1656, was noted the
   same pass that the red is owned.
+
+assigned_to: coder

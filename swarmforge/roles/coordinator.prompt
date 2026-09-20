@@ -868,3 +868,21 @@ thing the coordinator does is physically move the backlog tickets"). Keep the
   HOLD self-generated promotion rather than proceeding without the gate — holding
   self-generated work is the behavior the gate exists to produce, so the safe
   fallback and the intended outcome are the same. Never route around it.
+
+## A dropped-parcel nudge is cleared only by a live inbound (2026-09-20, BL-1630)
+- The daemon's sweep sends you `<id> no parcel in flight - possible drop`
+  when an active ticket has no handoff in any role's `inbox/new/` or
+  `inbox/in_process/`. Only such an inbound clears it. A role's pane
+  being alive - even visibly running tests for another ticket - is not a
+  live parcel: on 2026-09-20 QA dequeued BL-1630's forward during a merge
+  blockade and completed it in 43 s with no review, land, bounce or note;
+  its pane was busy on BL-1662, and "QA pane alive" was read as "not
+  dropped".
+- `dispatch_trail_cli.bb ... dispatched <id>` answers "was this ticket
+  EVER dispatched" (BL-1097); it is the router's guard against a second
+  Work note, never a reason to leave a dropped parcel. The remedy (memory
+  of 2026-07-30, BL-714) is YOUR `git_handoff` to the stage that owns the
+  next pass, citing the tip that carries the last stage's work (here: to
+  QA, `commit: 4b7615bc14`, the documenter's forward) - never a fresh Work
+  note to the coder, never a re-run from the start. Verify by the
+  receiver's `in_process/` naming the task on its next turn.
