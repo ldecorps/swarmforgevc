@@ -816,6 +816,43 @@
        reverse
        vec))
 
+;; BL-1650 QA bounce (D1 rework, 2026-09-20 tip-content ruling): "byte-
+;; identical to origin/main" names the REPLAY TIP's content at a path, never
+;; the historical stray commit's own diff. A stray's own patch can be a
+;; strict subset of how far main's copy has since grown (BL-1639's evidence
+;; file: the stray added 9 lines, main now carries those and 31 more) -
+;; attempting `git cherry-pick -x` there produces a genuine add/add conflict
+;; on content the tip does not even own, not the empty-patch shape
+;; `cherry-pick-already-applied?` already handles. When the tip already
+;; carries, byte for byte, what main carries at every one of the stray's
+;; paths, there is nothing left for this stray to land - skip the cherry-
+;; pick attempt entirely rather than let git discover the same conclusion by
+;; failing.
+;;
+;; Narrowed to the shape a plain cherry-pick attempt cannot already resolve
+;; on its own: when the stray's OWN post-image at a path already equals
+;; origin/main's (the everyday "hand-landed once already" shape QA bounce
+;; D1's `cherry-pick-already-applied?` exists for - scenario 05), the
+;; attempt is left to run and report LAND_STRAY_EVIDENCE_ALREADY_LANDED as
+;; before; skipping it here too would silently swallow that distinct,
+;; equally-auditable report line. This function fires only when the tip has
+;; moved PAST what the stray commit itself would produce.
+(defn stray-tip-already-landed?
+  "True when EVERY one of `paths` already holds, on the replay tip
+   (`commit`, the commit actually being landed), identical content to
+   `origin-main` - AND the stray commit's (`sha`) own post-image there
+   differs from `origin-main`'s, so a cherry-pick attempt would not merely
+   find an empty patch (that shape is `cherry-pick-already-applied?`'s to
+   report) but a genuine conflict against content the tip does not own."
+  [root origin-main commit sha paths]
+  (boolean
+   (and (seq paths)
+        (every? (fn [p]
+                  (let [main-blob (blob-at root origin-main p)]
+                    (and (= (blob-at root commit p) main-blob)
+                         (not= (blob-at root sha p) main-blob))))
+                paths))))
+
 (defn- source-verdict
   "One tree's answer about one ticket."
   [ticket-id {:keys [where folder content]}]
@@ -2400,6 +2437,19 @@
           ;; second candidate walk.
           stray-commits (when candidates
                           (stray-evidence-commits root origin-main task-ticket-id candidates))
+          ;; BL-1650 QA bounce (D1 rework, tip-content ruling): split off
+          ;; every stray whose paths are ALREADY byte-identical between the
+          ;; tip and origin/main - these need no cherry-pick attempt at all
+          ;; (scenario 06) and land only in the sense that nothing is left
+          ;; to land; the rest still go through replay!'s cherry-pick loop
+          ;; exactly as before.
+          already-landed-strays (filter #(stray-tip-already-landed? root origin-main commit (:sha %) (:paths %))
+                                         stray-commits)
+          strays-to-cherry-pick (remove #(stray-tip-already-landed? root origin-main commit (:sha %) (:paths %))
+                                         stray-commits)
+          already-landed-stray-ids (into #{} (map :sibling) already-landed-strays)
+          ;; Both groups' paths are excluded from this ticket's own-paths
+          ;; alike (own-paths' :stray-paths clause) - unchanged union.
           stray-paths (into #{} (mapcat :paths) stray-commits)]
       (cond
         warning {:action :escalate :reason warning}
@@ -2446,7 +2496,7 @@
             (let [replay-result (replay! {:root root :commit commit :task-ticket-id task-ticket-id
                                            :own-paths paths :passengers (or passengers #{})
                                            :origin-main origin-main
-                                           :stray-commits stray-commits})]
+                                           :stray-commits strays-to-cherry-pick})]
               (if-not (:success replay-result)
                 {:action :escalate :reason (:reason replay-result) :unlanded unlanded}
                 (let [parcel-paths (parcel-commit-paths root task-ticket-id origin-main commit)]
@@ -2478,10 +2528,18 @@
                         ;; branch really did land here - moved from
                         ;; :unlanded/:entangled reporting into :landed,
                         ;; never left printed ENTANGLED_SIBLING for content
-                        ;; this same replay just published.
+                        ;; this same replay just published. A sibling whose
+                        ;; stray needed no cherry-pick at all (tip already
+                        ;; byte-identical to origin/main, scenario 06) is
+                        ;; folded in exactly the same way, by the same
+                        ;; posture - it never rode a fresh LAND_STRAY_
+                        ;; EVIDENCE_LANDED line because nothing was landed
+                        ;; for it, but it is still LANDED_SIBLING, not
+                        ;; entangled.
                         (let [stray-landed-ids (into #{} (map :sibling) (:stray-landed replay-result))
-                              unlanded (into #{} (remove stray-landed-ids) unlanded)
-                              landed (into (or landed #{}) stray-landed-ids)]
+                              all-stray-landed-ids (into stray-landed-ids already-landed-stray-ids)
+                              unlanded (into #{} (remove all-stray-landed-ids) unlanded)
+                              landed (into (or landed #{}) all-stray-landed-ids)]
                           {:action :replay :entangled entangled :landed landed :unlanded unlanded
                            :landed-paths (or landed-paths {})
                            :excluded (or excluded [])
