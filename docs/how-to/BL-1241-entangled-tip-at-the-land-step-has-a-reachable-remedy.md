@@ -614,6 +614,37 @@ ticket; only the hand-built route gained a way to write to the same store
 the ordinary route already used. Acceptance:
 `specs/features/BL-1405-a-hand-built-land-records-its-land-approval.feature`.
 
+**The source can itself be a recorded replay, up to three hops (BL-1668,
+2026-09-20).** BL-1405's own record originally resolved one hop only: a
+source counted as approved when it sat on `swarmforge-QA` directly, never
+when it was itself the `commit` of an EARLIER land-approval record. QA
+replacing its own LAND_REPLAY tip with a hand-built commit — done twice
+on 2026-09-19/20 when the replay's base snapshot had gone stale — records
+the hand-built commit's source as the tool's OWN replay (on the scratch
+`land-replay/<ticket>-<sha>` branch, deleted after the land, so no longer
+resolvable to `swarmforge-QA` directly). The one-hop predicate then read
+that chain's second link as unapproved pipeline code and `babysitterd`
+escalated three false Article 4.2 CRITs to the operator in one night
+before an unrelated later merge closed the window each time.
+`source_is_approved` now walks the chain of land-approval records — a
+source is approved when it is on `swarmforge-QA` (as before) OR is itself
+the `commit` of a record whose own source resolves approved, to a depth
+of **three records**; a cycle or an exhausted depth grants nothing, and
+bounce checks apply at every link, not just the first. Every legitimate
+chain QA can produce (replay → hand-built replacement → published commit)
+fits inside that bound.
+
+**The exit code now enforces the verdict it prints (BL-1668).**
+`record_land_approval.bb` always writes the record first, then shells out
+to `is_qa_ancestor.sh` and prints `VERDICT <replay> <verdict>` exactly as
+before — but used to exit 0 regardless of what the verdict said, so QA's
+land recipe step "verify `is_qa_ancestor.sh` exits 0" passed unread even
+when the printed line said `not approved`. It now exits 1 on `not
+approved` and 2 on `undeterminable`, printing the remedy on stderr (name
+the reviewed commit on `swarmforge-QA`, or the recorded replay this
+commit was built from) — 0 remains exclusive to a genuine `approved`
+verdict.
+
 ## One land plan reads one tip, immune to a moving `origin/main` (BL-1431)
 
 `land-plan` used to resolve `origin-main-sha` itself, then hand off to
