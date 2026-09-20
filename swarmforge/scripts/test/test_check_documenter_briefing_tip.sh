@@ -175,6 +175,27 @@ else
   fail "direct mode: expected the already-landed-day refusal, got rc=$rc: $out"
 fi
 
+# ── 7b. direct mode: a tip naming TWO distinct briefing dates resolves no
+#       lane at all, so BOTH briefing files are refused as offending paths
+#       (find_briefing_date's own documented fail-closed rule: a tip
+#       naming zero or more than one distinct date never guesses a lane -
+#       every changed path, including both dates' own briefing files, is
+#       then judged outside it). Neither date is separately "already
+#       landed" here; this is the ambiguous-date branch, not the
+#       already-landed-day branch case 7 above covers. ─────────────────
+mk_repo direct-refused-two-dates
+write_commit "$repo" "$DOC_BRANCH" docs/briefings/2099-01-09.md docs/briefings/2099-01-10.md
+tip="$(g "$repo" rev-parse HEAD)"
+g "$repo" checkout -q main
+out="$(cd "$repo" && bash "$GUARD" --tip "$tip" --branch "$DOC_BRANCH" 2>&1)"; rc=$?
+if [[ $rc -eq 1 ]] && grep -q 'DOCUMENTER_BRIEFING_TIP_REFUSED' <<<"$out" \
+   && grep -q 'docs/briefings/2099-01-09.md' <<<"$out" \
+   && grep -q 'docs/briefings/2099-01-10.md' <<<"$out"; then
+  pass "direct mode: a tip naming two distinct briefing dates is refused, naming both dates' files"
+else
+  fail "direct mode: expected refusal naming both 2099-01-09.md and 2099-01-10.md, got rc=$rc: $out"
+fi
+
 # ── 8. hook mode: an in-lane tip is never refused ───────────────────────
 mk_repo hook-ok
 write_commit "$repo" "$DOC_BRANCH" docs/briefings/2099-01-08.md
