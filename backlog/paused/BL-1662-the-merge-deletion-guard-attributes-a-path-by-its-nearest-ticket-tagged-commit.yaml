@@ -151,3 +151,10 @@ notes: |
   auto-approve-high-severity-defects-amendment-20260917.md. Expedite
   candidate: it blocks coder@2's merges today and every condition-(f)
   removal after it.
+
+  02:4x Z: QA hit the same wall three times merging documenter forwards
+  after its own condition-(f) restore 0aab479e40 (QA evidence
+  check-merge-deletion-unattributed-deadlock-20260920.md); interim for
+  QA (revert the restore; drop the residue on a scratch landing tip only)
+  in the BL-1537 log. Every branch is cut off from every other the moment
+  one of them removes the file - expedite stands.
