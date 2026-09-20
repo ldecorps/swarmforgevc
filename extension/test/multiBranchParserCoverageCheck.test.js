@@ -3,6 +3,7 @@
 const assert = require('node:assert/strict');
 const {
   assessMultiBranchParserCoverage,
+  armExercisedByTests,
   extractTsMultiArmParsers,
   extractCondParsers,
   UNTESTED_PARSER_BRANCH_REFUSAL,
@@ -104,6 +105,57 @@ test('assessMultiBranchParserCoverage passes when every arm is exercised', () =>
     testTexts: ['double-quoted', 'single-quoted case', 'unquoted path'],
   });
   assert.deepEqual(result, { checked: true, parsersScanned: 1 });
+});
+
+// BL-1667: QA's counterexample - arm `c--`'s marker sits as a substring
+// inside tested text `c--a` (itself arm `c--a`'s own marker); plain
+// substring containment read `c--` as covered though no test text
+// exercises it as a whole token.
+test('assessMultiBranchParserCoverage reports a marker nested inside another arm\'s text as untested (BL-1667)', () => {
+  const result = assessMultiBranchParserCoverage({
+    parsers: [
+      {
+        functionName: 'nested-marker-fn',
+        sourcePath: 'x.bb',
+        arms: [
+          { label: 'c--a', marker: 'c--a' },
+          { label: 'a00', marker: 'a00' },
+          { label: 'c--', marker: 'c--' },
+        ],
+      },
+    ],
+    testTexts: ['c--a', 'a00'],
+  });
+  assert.equal(result.checked, true);
+  assert.ok(result.miss, 'expected a miss for the untested c-- arm');
+  assert.equal(result.miss.armLabel, 'c--');
+});
+
+// BL-1667 hardening: extractCondArms/extractTsArms draw a marker from
+// /"([^"]+)"/ and /return\s+['"]([^'"]+)['"]/ - ANY non-quote character,
+// never constrained to the MARKER_CLASS ([a-z0-9-]) that only bounds the
+// WHOLE-TOKEN check's own before/after characters. A real Clojure or TS
+// string-literal marker can carry a regex metacharacter (a `.` is the
+// ordinary case: a literal name, a version string, a path fragment), so
+// armExercisedByTests's own escapeRegExp is load-bearing, not incidental -
+// without it, a marker's regex-special characters would be interpreted as
+// regex syntax instead of literal text. Zero test in this file drove
+// armExercisedByTests directly with a marker containing one before this
+// case (every existing arm's marker - "double-quoted", "c--a", "a00",
+// "unquoted" - happens to already sit inside the MARKER_CLASS alphabet, so
+// escapeRegExp was a no-op for all of them and a mutant that empties its
+// replacement string entirely survived the whole file's existing battery).
+test('armExercisedByTests treats a marker containing a regex metacharacter as a literal, never as regex syntax', () => {
+  assert.equal(
+    armExercisedByTests({ label: 'dotted', marker: 'a.b' }, ['a.b']),
+    true,
+    'the literal marker text must still be found'
+  );
+  assert.equal(
+    armExercisedByTests({ label: 'dotted', marker: 'a.b' }, ['aXb']),
+    false,
+    'an UNESCAPED "." would match any character here (aXb) - a real marker match must not'
+  );
 });
 
 test('assessMultiBranchParserCoverage is a no-op with no multi-arm parsers', () => {

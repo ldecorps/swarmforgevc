@@ -45,3 +45,12 @@ Feature: Multi-branch parsers need one test per arm on /pilot land and in harden
     Given the run's commits touched no function with three or more cond or case arms
     When the pilot runs the landing gate
     Then the land is completed
+
+  # BL-755 parser-branch-07
+  # BL-1667 (2026-09-20): substring containment read an untested arm
+  # as covered when its marker sat inside another arm's text.
+  Scenario: An arm whose marker sits inside another arm's text is still reported untested
+    Given a touched parser with three arms whose markers are c--a, a00 and c--
+    And tests whose texts mention c--a and a00 only
+    When the land is attempted
+    Then it refuses naming the arm c-- as untested
