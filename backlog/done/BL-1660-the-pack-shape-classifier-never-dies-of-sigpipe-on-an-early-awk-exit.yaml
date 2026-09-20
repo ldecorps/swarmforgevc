@@ -172,3 +172,15 @@ notes: |
   BL-1459, was noted the same pass that the red is owned.
 
 assigned_to: coder
+
+abandoned_commits: [4389827038]
+# BL-1241 land-step remedy: the tip 4389827038 named several closed
+# ENTANGLED_SIBLING tickets, all closed on origin/main, plus genuinely
+# unlanded siblings (BL-1630, BL-1650, BL-1656, all bounced tonight).
+# Landed via origin/main's own land_step_cli.bb export (this branch's
+# own copy was under review for BL-1650's third parcel, per the
+# specifier's standing rule). The tip-pure replay
+# land-replay/BL-1660-4389827038 (40117fbf48) was inspected directly:
+# its two-tree diff against origin/main carries only BL-1660's own
+# paths plus harmless untagged-touch passengers (BL-1315). Landed
+# 40117fbf48 in place of 4389827038. By QA.

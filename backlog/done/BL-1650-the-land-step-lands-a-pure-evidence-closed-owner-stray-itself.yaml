@@ -24,10 +24,20 @@ mutation_cost: low
 # one feature and handler on a git fixture.
 slice_size_envelope: low
 required_stages: [coder, cleaner, architect, hardender, documenter, qa]
-abandoned_commits: [95e83eb175]
+abandoned_commits: [95e83eb175, 0cd79ce4f5]
 # 95e83eb175: QA's branch-hygiene restore of this ticket's mint-time
 # feature stub to origin/main content after the 2026-09-20 bounce revert
 # (its subject names the ticket); never parcel work, never forwarded.
+# 0cd79ce4f5: BL-1241 land-step remedy for the fourth (final) pass. The
+# tip-pure replay land-replay/BL-1650-0cd79ce4f5 (90c7b53cca) was
+# inspected directly: its two-tree diff against origin/main carries only
+# BL-1650's own paths (all four passes' evidence) plus one harmless
+# untagged-touch passenger (BL-1315). The tip-content fix correctly
+# resolved dozens of historical closed-owner strays as
+# LAND_STRAY_EVIDENCE_ALREADY_LANDED (no cherry-pick attempted) instead
+# of escalating on stale commit-content comparisons - confirming the D1
+# x2 fix works as intended. Landed 90c7b53cca in place of 0cd79ce4f5.
+# By QA.
 
 acceptance: specs/features/BL-1650-the-land-step-lands-a-pure-evidence-closed-owner-stray-itself.feature
 
