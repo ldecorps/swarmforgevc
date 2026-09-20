@@ -23,14 +23,7 @@ const LAND_STEP_LIB = path.join(REPO_ROOT, 'swarmforge', 'scripts', 'land_step_l
 
 const LANDING = 'BL-9646';
 const SIBLING = 'BL-9647';
-// BL-1650: NOT under backlog/evidence/ or docs/ - this feature's scenarios
-// 02/04 assert LAND_ESCALATE/EXCLUDED_SIBLING_PATH for a closed-owner path
-// no commit of the landing ticket touches, which is exactly the shape
-// BL-1650's own pure-evidence-or-docs stray now lands itself instead of
-// refusing. A production-code path keeps these scenarios testing the case
-// BL-1546's rule still covers (the ticket's own FIRM constraint: "BL-1546's
-// rule stands for every path that is not pure evidence or documentation").
-const SHARED_PATH = 'swarmforge/scripts/shared.sh';
+const SHARED_PATH = 'docs/shared.md';
 
 function git(root, ...args) {
   return execFileSync('git', args, { cwd: root, encoding: 'utf8' }).trim();
