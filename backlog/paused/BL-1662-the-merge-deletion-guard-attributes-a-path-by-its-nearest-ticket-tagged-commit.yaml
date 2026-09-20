@@ -1,0 +1,160 @@
+id: BL-1662
+title: "check_merge_deletion.sh attributes a deleted path by the subject of the most recent commit that touched it on each side, so a path removed by an untagged commit - the only removal check_closed_ticket_subject.sh allows for a closed ticket's residue - can never be merged: no message satisfies the guard, and coder@2 is stuck mid-merge on 2026-09-20 with every future merge across that removal refused; the guard attributes by the nearest ticket-tagged commit in the path's history and accepts the id anywhere in the message"
+milestone: M8
+type: defect
+severity: high
+# high: a live fault in delivery machinery. coder@2 holds a paused merge
+# (MERGE_HEAD present) it cannot complete, and every merge between a
+# branch that removed the residue and one that still carries it is
+# refused the same way, on every branch, until this lands - the
+# condition-(f) removal the specifier's own recipe log now prescribes is
+# unmergeable by construction. Not critical: the interim (keep the file
+# until this lands) unblocks the merge at once.
+status: todo
+epic: swarm-reliability
+priority: 9
+direction: swarm-reported
+depends_on: []
+# BL-1242 and BL-1341 (the guard and its second direction), BL-901 (the
+# sibling non-merge guard), BL-1617 (the closed-ticket subject guard) are
+# in backlog/done. No open ticket touches check_merge_deletion.sh.
+mutation_cost: low
+# low: shell (no mutation/CRAP/DRY wired, BL-472): one function in the
+# guard, its shell test cases, one scenario and its step in the existing
+# BL-1242 handler over an mkdtemp git fixture.
+slice_size_envelope: low
+required_stages: [coder, cleaner, architect, hardender, documenter, qa]
+
+acceptance: specs/features/BL-1242-merge-never-silently-drops-branch-work.feature
+# The contract is BL-1242's feature with the scenario below added by this
+# parcel, its step landing in the existing handler in the SAME commit
+# (BL-233). Not a claim of ownership over BL-1242's contract (BL-1251).
+
+required_wiring:
+  - 'specs/pipeline/steps/bl1242MergeBranchWorkDeletionSteps.js::whose subject names no ticket::the new scenario step text, landing with the scenario (BL-233)'
+
+human_approval: approved
+approval_context: >
+  One scenario is added to a landed feature file, so it would ordinarily
+  need a tap; it is minted approved under the 2026-09-17 operator hotfix
+  (severity defect, no choice posed, no ruling_options). FIRM: the guard
+  still refuses a merge that deletes a path whose owning ticket the
+  message does not name - BL-1242's and BL-1341's scenarios are
+  unchanged and stay green. FIRM: the id is derived from the path's
+  history, never from the message alone (a message naming any ticket
+  must not self-certify a deletion). FIRM: the subject stays free of a
+  closed ticket id (BL-1617); the body carries it.
+
+invariants:
+  - "For every deleted path the guard names an owning ticket whenever ANY commit in the path's history on either side of the merge carries a ticket id in its subject, so the guard's own remedy (name that id in the message) is always satisfiable."
+
+description: |
+  ## What is wrong
+
+  `swarmforge/scripts/check_merge_deletion.sh`'s `attribution_for_path`
+  (lines 147-163) reads `git log -1 --format=%s HEAD -- <path>` and, if
+  that ONE subject carries no ticket id, the same for MERGE_HEAD; when
+  neither most-recent commit is tagged, `id` is empty and line 180's
+  exemption (`[[ -n "$id" ]] && message contains id`) can never fire -
+  the refusal's own remedy, "name the affected ticket id(s) in the commit
+  message", is unsatisfiable. Two rules make the untagged subject
+  mandatory for exactly this case: `check_closed_ticket_subject.sh`
+  (BL-1617) refuses a role-branch subject naming a closed ticket, and the
+  specifier's closed-owner recipe (condition (f), 2026-09-20) removes a
+  closed ticket's abandoned-build residue in a commit whose subject names
+  no ticket id. 2026-09-20: coder@2 removed
+  `swarmforge/scripts/test/test_handoffd_bl1652_chase_respawn_busy_lane_guard.sh`
+  (introduced by 4eacde9068 "BL-1652: ...", listed in BL-1652's
+  abandoned_commits) in bd840b6d7a, untagged as ruled; merging the
+  cleaner's reverse hop af3c69b525 (which carries the file) is refused:
+  `merge deletes '...' ((unattributed), introduced at bd840b6d7a on the
+  incoming branch), not named in the commit message`; a retry naming
+  BL-1652 in the subject is refused by BL-1617. Evidence
+  `backlog/evidence/BL-1652-merge-deletion-guard-deadlock-20260920.md`
+  (coder@2 worktree). The same wall meets every branch that later merges
+  across that removal, in either direction (BL-1341), on every branch
+  that carries the file (all but coder@2 today).
+
+  ## What is wanted
+
+  - `attribution_for_path` walks the path's history on HEAD, then on
+    MERGE_HEAD, and returns the FIRST commit whose subject carries a
+    ticket id (the introducing `BL-1652:` commit here), skipping untagged
+    restores and sync merges; only when no commit on either side is
+    tagged does it report no id, as today.
+  - The exemption keeps reading the whole message, so the id lands in
+    the BODY while the subject stays untagged (BL-1617).
+  - `test_check_merge_deletion.sh` (or the guard's existing shell test)
+    gains the case; BL-1242's feature gains this scenario, step in the
+    same commit:
+
+    ```
+      # BL-1242 an-untagged-removal-of-a-closed-owner-path-merges-when-the-body-names-it-09
+      # BL-1662 (2026-09-20): the closed-ticket subject guard forbids the
+      # id in the subject, so the removal commit is untagged by rule;
+      # attribution reaches past it to the commit that introduced the path.
+      Scenario: a merge carrying a deliberate untagged removal of a closed ticket's path is accepted when the message body names that ticket
+        Given a path introduced by a commit whose subject names ticket BL-9001 and later removed by a commit whose subject names no ticket
+        And a branch that still carries the path
+        When that branch is merged with a commit message whose body names BL-9001
+        Then the merge-deletion guard accepts the merge
+        And the same merge with a message naming no ticket is refused naming BL-9001
+    ```
+
+  ## How (direction, not mandate)
+
+  - `git log --format='%h%x09%s' HEAD -- "$path" | grep -m1 -E $'\t.*[A-Za-z]+-[0-9]+'`
+    per side, keeping the existing regex; keep the diagnostics line for
+    the untagged case. Mirror `bl1242...Steps.js`'s mkdtemp fixture for
+    the new step.
+
+constraints: >
+  The guard's two directions (BL-1242, BL-1341) and check_ticket_deletion.sh
+  (BL-901) keep their behaviour for every tagged path. No change to
+  check_closed_ticket_subject.sh. The step handler lands with the
+  scenario (BL-233). Fixture roots are mkdtemp git init repositories.
+
+out_of_scope: |
+  - Removing the BL-1652 residue itself from the seven branches: done
+    per condition (f) after this lands (ruling of 2026-09-20 in
+    BL-1652-specifier-ruling-merge-deletion-deadlock-20260920.md).
+  - check_ticket_deletion.sh's own attribution (BL-901): it accepted
+    bd840b6d7a with the id in the body; unchanged.
+
+qa_e2e_procedure: >
+  (1) `node specs/pipeline/cli.js specs/features/BL-1242-merge-never-silently-drops-branch-work.feature`
+  ONCE on the parcel commit: every scenario ok including the new one.
+  (2) The guard's shell test once: green. (3) In a scratch clone of the
+  parcel commit: reproduce coder@2's shape (add a file in a `BL-9001:`
+  commit, remove it untagged on one branch, merge a branch that keeps it
+  with a body naming BL-9001) - the merge commits; the same with no
+  ticket in the message is refused naming BL-9001. Never "run it N
+  times".
+
+source: |
+  Coder note to the specifier and the coordinator, priority 00,
+  2026-09-20T02:22:06Z (inbound 00_20260920T022206Z_002072_from_coder,
+  raised by coder@2), verbatim: "BLOCKED coder2: merge-deletion vs
+  closed-ticket guard deadlock, see ev". coder@2 evidence, verbatim: "the
+  specifier's own ruling (untagged removal subject for a closed ticket's
+  stray) and `check_closed_ticket_subject.sh` (no closed ticket in any
+  subject) TOGETHER make `check_merge_deletion.sh`'s own remediation
+  structurally impossible for this path". Parents: BL-1242, BL-1341,
+  BL-901, BL-1617; the BL-1537 log's "two gates contradict, and the
+  compliant subject does not exist".
+
+notes: |
+  Minted 2026-09-20 by the specifier while completing coder@2's note, the
+  same pass; the interim ruling (coder@2 restores the file until this
+  lands) is in the evidence named above. AUTO-APPROVED under the
+  2026-09-17 operator hotfix (severity defect, no ruling_options) - see
+  auto-approve-high-severity-defects-amendment-20260917.md. Expedite
+  candidate: it blocks coder@2's merges today and every condition-(f)
+  removal after it.
+
+  02:4x Z: QA hit the same wall three times merging documenter forwards
+  after its own condition-(f) restore 0aab479e40 (QA evidence
+  check-merge-deletion-unattributed-deadlock-20260920.md); interim for
+  QA (revert the restore; drop the residue on a scratch landing tip only)
+  in the BL-1537 log. Every branch is cut off from every other the moment
+  one of them removes the file - expedite stands.
