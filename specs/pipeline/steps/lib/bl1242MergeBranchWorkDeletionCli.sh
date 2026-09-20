@@ -15,6 +15,8 @@
 #   incoming-detail               - BL-1341 scenario 02
 #   incoming-kept                 - BL-1341 scenario 03
 #   incoming-both-sides           - BL-1341 scenario 04
+#   untagged-removal <named|unnamed> - BL-1662 scenario 09
+#   untagged-removal-incoming-only <named|unnamed> - BL-1662 hardener scenario 10 (MERGE_HEAD-side mirror)
 # Prints one JSON line.
 
 set -uo pipefail
@@ -210,6 +212,88 @@ case "$MODE" in
     MENTIONS="$(printf '%s\n' "$OUT" | grep -c "bl0007SharedSteps.js" || true)"
     printf '{"exitCode":%s,"mentions":%s}\n' "$EXIT_CODE" "$MENTIONS"
     ;;
+  untagged-removal-incoming-only)
+    # BL-1662 hardener hardening: the MERGE_HEAD-side mirror of the
+    # untagged-removal fixture above. The path exists ONLY on the incoming
+    # branch's own history - HEAD's own `git log HEAD -- path` is entirely
+    # empty for it (BL-1341's own shape), so attribution must fall through
+    # to searching MERGE_HEAD's history. The incoming branch's own tip
+    # commit touching the path is untagged (a later edit); only its OLDER,
+    # introducing commit is tagged - proving attribution walks MERGE_HEAD's
+    # WHOLE history, not just its single most recent commit, symmetrically
+    # to the HEAD-side walk the untagged-removal fixture already covers.
+    SEED="$(git -C "$ROOT" rev-list --max-parents=0 HEAD | head -1)"
+    git -C "$ROOT" checkout -q -b receiving-only "$SEED"
+    RECEIVING_TIP="$(git -C "$ROOT" rev-parse --short=10 HEAD)"
+
+    git -C "$ROOT" checkout -q -b incoming-only "$SEED"
+    mkdir -p "$ROOT/specs/pipeline/steps"
+    echo "step v1" > "$ROOT/specs/pipeline/steps/bl9002ExampleSteps.js"
+    git -C "$ROOT" add specs/pipeline/steps/bl9002ExampleSteps.js
+    git -C "$ROOT" commit -q -m "BL-9002: add incoming-only step handler"
+    echo "step v1 + comment" > "$ROOT/specs/pipeline/steps/bl9002ExampleSteps.js"
+    git -C "$ROOT" add specs/pipeline/steps/bl9002ExampleSteps.js
+    git -C "$ROOT" commit -q -m "tidy comment"
+    INCOMING_TIP="$(git -C "$ROOT" rev-parse --short=10 HEAD)"
+
+    git -C "$ROOT" checkout -q receiving-only
+    git -C "$ROOT" reset -q --hard "$RECEIVING_TIP"
+    git -C "$ROOT" merge --no-ff --no-commit "$INCOMING_TIP" >/dev/null 2>&1 || true
+    git -C "$ROOT" rm -f -q specs/pipeline/steps/bl9002ExampleSteps.js >/dev/null 2>&1 || true
+
+    MSG="$ROOT/../msg_$$.txt"
+    if [[ "$PARAM" == "named" ]]; then
+      echo "BL-9002: dropping the incoming-only file deliberately" > "$MSG"
+    else
+      echo "unrelated message" > "$MSG"
+    fi
+    OUT="$(run_merge_guard "$MSG" 2>&1)"
+    EXIT_CODE=$?
+    rm -f "$MSG"
+    STDERR_ESCAPED="$(bb -e '(println (cheshire.core/generate-string (slurp *in*)))' <<<"$OUT")"
+    printf '{"exitCode":%s,"stderr":%s}\n' "$EXIT_CODE" "$STDERR_ESCAPED"
+    ;;
+  untagged-removal)
+    # BL-1662 scenario 09: the path's introducing commit is tagged, but the
+    # LAST commit touching it on EACH side is untagged - HEAD's last touch
+    # untagged-removes it, the incoming branch's last touch is an untagged
+    # edit that keeps it. Neither side's single most recent commit names a
+    # ticket, so attribution must walk each side's whole history to find
+    # the tagged introducing commit, not just check the immediate tip.
+    mkdir -p "$ROOT/specs/pipeline/steps"
+    echo "step v1" > "$ROOT/specs/pipeline/steps/bl9001ExampleSteps.js"
+    git -C "$ROOT" add specs/pipeline/steps/bl9001ExampleSteps.js
+    git -C "$ROOT" commit -q -m "BL-9001: add step handler"
+    TAGGED="$(git -C "$ROOT" rev-parse --short=10 HEAD)"
+
+    git -C "$ROOT" checkout -q -b keeper "$TAGGED"
+    echo "step v1 + comment" > "$ROOT/specs/pipeline/steps/bl9001ExampleSteps.js"
+    git -C "$ROOT" add specs/pipeline/steps/bl9001ExampleSteps.js
+    git -C "$ROOT" commit -q -m "tidy comment"
+    KEEPER_TIP="$(git -C "$ROOT" rev-parse --short=10 HEAD)"
+
+    git -C "$ROOT" checkout -q main
+    git -C "$ROOT" rm -q specs/pipeline/steps/bl9001ExampleSteps.js
+    git -C "$ROOT" commit -q -m "remove stray file"
+    MAIN_TIP="$(git -C "$ROOT" rev-parse --short=10 HEAD)"
+
+    git -C "$ROOT" checkout -q -b landing "$MAIN_TIP"
+    git -C "$ROOT" merge --no-ff --no-commit "$KEEPER_TIP" >/dev/null 2>&1 || true
+    git -C "$ROOT" rm -f -q specs/pipeline/steps/bl9001ExampleSteps.js >/dev/null 2>&1 || true
+
+    MSG="$ROOT/../msg_$$.txt"
+    if [[ "$PARAM" == "named" ]]; then
+      echo "BL-9001: dropping it deliberately" > "$MSG"
+    else
+      echo "unrelated message" > "$MSG"
+    fi
+    OUT="$(run_merge_guard "$MSG" 2>&1)"
+    EXIT_CODE=$?
+    rm -f "$MSG"
+    STDERR_ESCAPED="$(bb -e '(println (cheshire.core/generate-string (slurp *in*)))' <<<"$OUT")"
+    printf '{"exitCode":%s,"stderr":%s}\n' "$EXIT_CODE" "$STDERR_ESCAPED"
+    ;;
+
   *)
     echo "unknown mode: $MODE" >&2
     exit 2

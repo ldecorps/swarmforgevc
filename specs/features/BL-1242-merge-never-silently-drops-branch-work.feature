@@ -1,6 +1,6 @@
-# mutation-stamp: sha256=9485c0896ba8070e9515593ed68da6ef5b877a377e7accff1a3743a800c07a38
+# mutation-stamp: sha256=6ff010f31ae1d6afe96acf5567c0afe677ee9e289bcfbe0029b64d416dd63951
 # acceptance-mutation-manifest-begin
-# {"version":1,"tested_at":"2026-09-02T22:06:17.605016411Z","feature_name":"A merge never silently drops work either branch carries","feature_path":"/home/carillon/swarmforgevc/.worktrees/hardender/specs/features/BL-1242-merge-never-silently-drops-branch-work.feature","background_hash":"3345f26689e75ebd3347f46a9767dfd4a875fe31f8e03183692a6bec9bba4a3f","implementation_hash":"unknown","scenarios":[{"index":0,"name":"The commit message decides whether a removal is accounted for","scenario_hash":"bd083b5467f84ca3dcccbd132693c45e541711289158c518e49b87b54d395db0","mutation_count":4,"result":{"Total":4,"Killed":4,"Survived":0,"Errors":0},"tested_at":"2026-09-02T22:06:17.605016411Z"},{"index":3,"name":"Each removed path is reported by exactly one guard","scenario_hash":"f5144d5dd1cc9c6a4d40566e3eb79c2bfa27bf32c2ad83027dc0fa25e137e984","mutation_count":6,"result":{"Total":6,"Killed":6,"Survived":0,"Errors":0},"tested_at":"2026-09-02T22:06:17.605016411Z"},{"index":4,"name":"The commit message decides whether an incoming removal is accounted for","scenario_hash":"00beaeae1b861ef5c312bb0874924e9ef36dc7c8891d615d2582de52cdcebfad","mutation_count":4,"result":{"Total":4,"Killed":4,"Survived":0,"Errors":0},"tested_at":"2026-09-02T22:06:17.605016411Z"}]}
+# {"version":1,"tested_at":"2026-09-20T03:59:02.775978725Z","feature_name":"A merge never silently drops work either branch carries","feature_path":"/home/carillon/swarmforgevc/.worktrees/hardender/specs/features/BL-1242-merge-never-silently-drops-branch-work.feature","background_hash":"3345f26689e75ebd3347f46a9767dfd4a875fe31f8e03183692a6bec9bba4a3f","implementation_hash":"unknown","scenarios":[{"index":0,"name":"The commit message decides whether a removal is accounted for","scenario_hash":"bd083b5467f84ca3dcccbd132693c45e541711289158c518e49b87b54d395db0","mutation_count":4,"result":{"Total":4,"Killed":4,"Survived":0,"Errors":0},"tested_at":"2026-09-02T22:06:17.605016411Z"},{"index":3,"name":"Each removed path is reported by exactly one guard","scenario_hash":"f5144d5dd1cc9c6a4d40566e3eb79c2bfa27bf32c2ad83027dc0fa25e137e984","mutation_count":6,"result":{"Total":6,"Killed":6,"Survived":0,"Errors":0},"tested_at":"2026-09-02T22:06:17.605016411Z"},{"index":4,"name":"The commit message decides whether an incoming removal is accounted for","scenario_hash":"00beaeae1b861ef5c312bb0874924e9ef36dc7c8891d615d2582de52cdcebfad","mutation_count":4,"result":{"Total":4,"Killed":4,"Survived":0,"Errors":0},"tested_at":"2026-09-02T22:06:17.605016411Z"}]}
 # acceptance-mutation-manifest-end
 
 Feature: A merge never silently drops work either branch carries
@@ -92,3 +92,28 @@ Feature: A merge never silently drops work either branch carries
     Given a merge in progress on a branch that lacks files the incoming branch carries
     When the merge omits a path both branches carry
     Then the removal is reported once
+
+  # BL-1242 an-untagged-removal-of-a-closed-owner-path-merges-when-the-body-names-it-09
+  # BL-1662 (2026-09-20): the closed-ticket subject guard forbids the
+  # id in the subject, so the removal commit is untagged by rule;
+  # attribution reaches past it to the commit that introduced the path.
+  Scenario: a merge carrying a deliberate untagged removal of a closed ticket's path is accepted when the message body names that ticket
+    Given a path introduced by a commit whose subject names ticket BL-9001 and later removed by a commit whose subject names no ticket
+    And a branch that still carries the path
+    When that branch is merged with a commit message whose body names BL-9001
+    Then the merge-deletion guard accepts the merge
+    And the same merge with a message naming no ticket is refused naming BL-9001
+
+  # BL-1242 an-incoming-only-path-tagged-only-at-its-introduction-is-attributed-10
+  # BL-1662 hardener hardening (2026-09-20): BL-1662's own fix walks BOTH
+  # sides' whole history for a tagged commit, but its own scenario 09 only
+  # ever exercises the HEAD-side walk (the tagged commit sits on shared
+  # history reachable from HEAD too). This scenario is the MERGE_HEAD-side
+  # mirror: the path exists ONLY on the incoming branch, whose own tip
+  # commit touching it is untagged and whose introducing commit, deeper in
+  # its history, is tagged.
+  Scenario: a path that exists only on the incoming branch, tagged only at its introduction, is attributed by that introducing commit
+    Given a path that exists only on the incoming branch, introduced by a commit naming ticket BL-9002 and later edited by a commit naming no ticket
+    When that incoming branch is merged, dropping the path, with a commit message whose body names BL-9002
+    Then the merge-deletion guard accepts the merge
+    And the same merge with a message naming no ticket is refused naming BL-9002
