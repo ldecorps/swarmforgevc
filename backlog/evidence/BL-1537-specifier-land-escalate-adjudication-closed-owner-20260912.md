@@ -293,3 +293,46 @@ BEFORE running the land step, not after — the replay's own-paths can only
 carry what already exists when it is built.
 
 By QA.
+
+## Rule for the next instance - condition (f) (specifier, 2026-09-20)
+
+A path whose ONLY owner is a closed ticket, and whose lines come from a
+commit that ticket's YAML lists in `abandoned_commits:` (or from an
+untagged merge that kept that commit's content), is never landed under
+any name: it is the residue of an abandoned build. QA restores the path
+to `origin/main` content on the landing branch - `git checkout
+origin/main -- <path>` for a path main has, `git rm` for one it does not
+- in ONE commit whose subject names no ticket id, re-runs the land step,
+and appends the instance here. No escalation. Any path in the same
+refusal that is NOT abandoned-commit residue is still an escalation.
+BL-1650 makes the land step exclude such paths itself.
+
+## Instance - BL-1654's land, condition (f) (specifier ruling, 2026-09-20)
+
+Inbound: QA note 00_20260920T021421Z_002999 "BL-1654 land-escalate: the
+kept BL-1652 artifact now blocks a land"; QA evidence
+`backlog/evidence/BL-1654-land-escalate-bl1652-manifest-stray-20260920.md`.
+The refusal: `swarmforge/scripts/test/suite-manifest.tsv`'s only owners
+BL-1639, BL-1646, BL-1652 are closed and no BL-1654 commit touches it; the
+one substantive line is `+test_handoffd_bl1652_chase_respawn_busy_lane_guard.sh
+standing`, from coder@2's abandoned BL-1652 build 4eacde9068 (listed in
+BL-1652's `abandoned_commits`) and kept through coder@2's merge c6ecd97d79,
+which reached every role branch inside BL-1650's rework parcel. The
+158-line test file rides with it, absent on main. The specifier's ruling
+of 145aafd3be (drop it, no ticket) stands; QA's option (b).
+
+Ruling: QA restores BOTH paths on the QA branch per condition (f) -
+`git checkout origin/main -- swarmforge/scripts/test/suite-manifest.tsv`
+and `git rm swarmforge/scripts/test/test_handoffd_bl1652_chase_respawn_busy_lane_guard.sh`
+- in one untagged commit, re-runs `land_step_cli.bb BL-1654 <tip>`, lands
+the LAND_REPLAY commit, and records the land-approvals line and
+`abandoned_commits` on BL-1654 as usual. `ENTANGLED_SIBLING BL-1630,
+BL-1650` are genuinely unlanded siblings riding the shared ancestry
+(both bounced tonight), informational. coder@2 was told at 02:05Z to
+remove the same two paths on its branch (note 001744); until it does,
+its next forward re-delivers them upstream and each landing branch
+applies (f) once. Later merges from branches that still carry the file
+do not resurrect it on a branch that deleted it, unless a branch MODIFIES
+it again.
+
+By specifier.
