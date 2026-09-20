@@ -141,3 +141,6 @@ notes: |
   cherry-picked.
 
 assigned_to: coder
+bounce_count: 1
+bounce_history:
+  - { at: 2026-09-20, by: QA, blamed: documenter, class: integration, commit: 63682f8695, evidence: backlog/evidence/BL-1656-bounce-20260920.md }
