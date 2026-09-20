@@ -116,3 +116,5 @@ notes: |
   auto-approve-high-severity-defects-amendment-20260917.md. Register row
   appended in the mint commit (first_seen 2026-09-20). coder@2, holding
   BL-1660, was noted the same pass that the red is owned.
+
+assigned_to: coder
