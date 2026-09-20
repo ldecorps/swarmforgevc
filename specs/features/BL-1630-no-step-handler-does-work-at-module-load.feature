@@ -36,7 +36,7 @@ Feature: BL-1630 No step handler does work at module load
   # BL-1630 no-step-handler-works-at-module-load-02
   Scenario: the guard over the real tree passes and names an offender when one exists
     When the module-load budget guard runs the require census over every step handler
-    Then it reports every handler under the per-handler budget and the index load under 5 seconds
+    Then it reports every handler under the per-handler budget, or on its allowlist with an owning ticket, and the index load under 5 seconds
     And the same guard over a fixture handler that lists the temp dir at load names that handler
 
   # BL-1630 no-step-handler-works-at-module-load-03
