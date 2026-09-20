@@ -1,0 +1,145 @@
+id: BL-1667
+title: "multiBranchParserCoverageCheck.ts decides an arm is exercised by substring containment (text.includes(marker)), so an arm whose marker sits inside another arm's marker or inside any test text reads as covered when no test touches it - the /pilot landing gate of BL-755 then lands an untested parser arm; QA's lane run hit the counterexample arms c--a, a00, c-- on 2026-09-20 and the same input reproduces against main's compiled tool: an arm is exercised only by a test text carrying its marker as a whole token, and the counterexample is pinned"
+milestone: M8
+type: defect
+severity: high
+# high: a broken safety signal in a landing gate (fail-open: an untested
+# parser arm lands), plus a standing red - the property that found it
+# fails on main whenever the generator draws nested markers (QA's full
+# lane run, 2026-09-20; the specifier's one run passed 5/5, the direct
+# reproduction fails every time). Not critical: the gate is the /pilot
+# lane's, and the swarm stays up.
+status: todo
+epic: swarm-reliability
+priority: 8
+direction: swarm-reported
+depends_on: []
+# BL-755 (the checker, its property and unit tests, the gate) is in
+# backlog/done. No open ticket touches multiBranchParserCoverageCheck.ts,
+# pilotAcceptanceGate.ts or commitClaimGitReader.ts.
+mutation_cost: low
+# low: one predicate in a TypeScript tool (Stryker, CRAP and DRY apply
+# and are small), one unit case, the property unchanged, one scenario
+# and step in BL-755's existing handler.
+slice_size_envelope: low
+required_stages: [coder, cleaner, architect, hardender, documenter, qa]
+
+acceptance: specs/features/BL-755-pilot-multi-branch-parser-needs-per-arm-tests.feature
+# The contract is BL-755's feature with scenario 07 (text below) added by
+# this parcel, its step landing in the existing handler in the SAME
+# commit (BL-233). Not a claim of ownership over BL-755's contract
+# (BL-1251).
+
+required_wiring:
+  - 'specs/pipeline/steps/bl755PilotMultiBranchParserNeedsPerArmTestsSteps.js::inside another arm::the new scenario step text, landing with the scenario (BL-233)'
+
+human_approval: approved
+approval_context: >
+  One scenario is added to a landed feature file, so it would ordinarily
+  need a tap; it is minted approved under the 2026-09-17 operator hotfix
+  (severity defect, no choice posed, no ruling_options). FIRM: every
+  existing BL-755 scenario and the five properties keep their meaning;
+  the property that found the defect is not weakened - the fixed
+  predicate makes it pass. FIRM: a marker counts only as a whole token:
+  never when it is a substring of a longer token in the test text.
+
+invariants:
+  - "An arm is reported exercised only when some test text contains its marker as a whole token (not preceded or followed by a marker-class character); no other arm's marker or text can stand in for it, however the strings nest."
+
+description: |
+  ## What is wrong
+
+  `extension/src/tools/multiBranchParserCoverageCheck.ts` line 40:
+
+  ```
+  export function armExercisedByTests(arm: ParserArm, testTexts: string[]): boolean {
+    return testTexts.some((text) => text.includes(arm.marker));
+  }
+  ```
+
+  `String.includes` is substring containment. With arms `c--a`, `a00`,
+  `c--` and test texts `[c--a, a00]` (arm `c--` untested), `"c--a".includes("c--")`
+  is true and the checker returns `{checked: true, parsersScanned: 1}`
+  with no `miss` - the property "any missing arm marker among >=3 arms
+  yields a miss" (`extension/test/multiBranchParserCoverageCheck.property.test.js`
+  line 53, `armWordArb` = `^[a-z][a-z0-9-]{2,10}$`, 40 runs) fails
+  whenever the draw nests one marker inside another arm's text, which
+  QA's full property-lane run hit (evidence
+  `backlog/evidence/unowned-red-multibranch-parser-coverage-substring-false-positive-20260920.md`,
+  QA branch); the specifier's direct call against main's compiled tool
+  (`extension/out/tools/multiBranchParserCoverageCheck.js`) reproduces it
+  every time, while one run of the property file passed 5/5 (0.9 s) -
+  the draw is the only randomness. Two production consumers read the
+  verdict: `pilotAcceptanceGate.ts` line 141 (BL-755's landing gate,
+  which exists to refuse a land with an untested parser arm) and
+  `commitClaimGitReader.ts` line 329. Real arm markers are short literals
+  and keywords, so nesting is ordinary, not contrived.
+
+  ## What is wanted
+
+  - `armExercisedByTests` matches the marker as a whole token: the
+    characters before and after the match, when present, are outside the
+    marker class (`[a-z0-9-]` as the generator and the extractor define
+    it); a marker inside a longer token never counts. Every existing
+    unit case and property passes unchanged, and the counterexample above
+    is added as a unit case.
+  - BL-755's feature gains scenario 07, step in the same commit:
+
+    ```
+      # BL-755 parser-branch-07
+      # BL-1667 (2026-09-20): substring containment read an untested arm
+      # as covered when its marker sat inside another arm's text.
+      Scenario: An arm whose marker sits inside another arm's text is still reported untested
+        Given a touched parser with three arms whose markers are c--a, a00 and c--
+        And tests whose texts mention c--a and a00 only
+        When the land is attempted
+        Then it refuses naming the arm c-- as untested
+    ```
+  - Register row for the property file (lane property, owner BL-1667,
+    added at mint) leaves in this parcel's land (BL-1631).
+
+  ## How (direction, not mandate)
+
+  - A regex built from the escaped marker with lookaround boundaries
+    (`(?<![a-z0-9-])` ... `(?![a-z0-9-])`), or tokenising each test text
+    on any character outside the class and testing set membership -
+    either keeps the predicate pure and the extractor untouched.
+
+constraints: >
+  No change to extractCondParsers or to what a marker is. No change to
+  the two consumers beyond the predicate they call. The step handler
+  lands with the scenario (BL-233).
+
+out_of_scope: |
+  - Markers that are themselves substrings of ordinary prose in a test
+    (a marker like `on` inside the word `contract`): the whole-token rule
+    handles it; a wider notion of "the test exercised the arm" (asserting
+    on the arm's outcome, not its literal) is BL-755's successor if the
+    pilot lane needs it.
+
+qa_e2e_procedure: >
+  (1) `node specs/pipeline/cli.js specs/features/BL-755-pilot-multi-branch-parser-needs-per-arm-tests.feature`
+  ONCE on the parcel commit: 7 scenarios ok. (2) `cd extension && npx vitest run
+  test/multiBranchParserCoverageCheck.test.js` once: green including the
+  new case; `npx vitest run --config vitest.properties.config.mjs
+  test/multiBranchParserCoverageCheck.property.test.js` once: 5 passed.
+  (3) QA's direct call from the evidence against the parcel's compiled
+  tool returns a `miss` naming arm `c--`. Never "run it N times".
+
+source: |
+  QA note to the specifier, priority 00, 2026-09-20T04:25:23Z (inbound
+  00_20260920T042523Z_003016_from_QA), verbatim: "multi-branch parser
+  coverage check has a real substring false-positive bug". QA evidence,
+  verbatim: "A false-positive here means a genuinely untested parser arm
+  can be silently reported as covered whenever its marker string happens
+  to be a substring of another arm's marker or of unrelated test text -
+  exactly the shape this gate exists to catch." Parents: BL-755, BL-1445
+  (a derived census must be pinned - here a derived coverage claim).
+
+notes: |
+  Minted 2026-09-20 by the specifier while completing QA's note, the same
+  pass. AUTO-APPROVED under the 2026-09-17 operator hotfix (severity
+  defect, no ruling_options) - see
+  auto-approve-high-severity-defects-amendment-20260917.md. Register row
+  appended in the mint commit (first_seen 2026-09-20, QA's lane run). QA
+  was noted the same pass that the red is owned.
