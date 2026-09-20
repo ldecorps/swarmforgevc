@@ -90,9 +90,14 @@ set +e
 OUT4="$(bb "$CLI" "$ROOT4" "$REPLAY4_SHA" "$UNAPPROVED_SHA" 2>&1)"
 ST4=$?
 set -e
-[[ "$ST4" -eq 0 ]] || fail "04: expected the write itself to succeed even for an unapproved source, got $ST4: $OUT4"
+# BL-1668: the write itself still succeeds (LAND_APPROVAL_RECORDED is
+# printed) - only the CLI's own EXIT CODE now carries the verdict (a
+# non-zero exit is the verdict, never a refusal to record; QA's land
+# recipe checks this exit code, so it must actually gate).
+[[ "$ST4" -eq 1 ]] || fail "04: expected exit 1 for a not-approved verdict (the line is still written first), got $ST4: $OUT4"
 echo "$OUT4" | grep -q "LAND_APPROVAL_RECORDED" || fail "04: expected a record to be written, got: $OUT4"
 echo "$OUT4" | grep -q "VERDICT ${REPLAY4_SHA:0:10} not approved" || fail "04: expected the printed verdict to say not approved, got: $OUT4"
+echo "$OUT4" | grep -qi "name the reviewed commit on swarmforge-QA" || fail "04: expected the remedy on stderr, got: $OUT4"
 set +e
 (cd "$ROOT4" && bash "$PREDICATE" "$REPLAY4_SHA" >/dev/null 2>&1)
 ST4b=$?
