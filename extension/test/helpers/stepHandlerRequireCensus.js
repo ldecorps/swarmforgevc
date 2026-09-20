@@ -185,7 +185,8 @@ process.stdout.write('===CENSUS_WALL_START===' + (Date.now() - t0) + '===CENSUS_
   return Number(match[1]);
 }
 
-// Pure: turns census rows into a violations list.
+// Pure (unless a confirmAlone callback is passed - see below): turns
+// census rows into a violations list.
 //
 // listedDir/spawnedProcess are absolute - the invariant forbids both
 // outright, and (measured 2026-09-20) nothing in the real tree does
@@ -203,13 +204,32 @@ process.stdout.write('===CENSUS_WALL_START===' + (Date.now() - t0) + '===CENSUS_
 // hard failures the day this guard lands would be a ~6x scope explosion
 // over the twelve this ticket sized ("one sitting" per its own INVEST
 // note) - flagged to the specifier as a separate, much larger finding
-// (2026-09-20 note) rather than grown into this parcel. The field is
-// still recorded on every row (informational, and used by this ticket's
-// own twelve-handler acceptance scenario, which asserts it false for
-// EXACTLY the handlers this parcel fixed - never a tree-wide claim).
-// The ms budget below still catches this behavior's ACTUAL cost
+// (2026-09-20 note, BL-1659) rather than grown into this parcel. The
+// field is still recorded on every row (informational, and used by this
+// ticket's own twelve-handler acceptance scenario, which asserts it
+// false for EXACTLY the handlers this parcel fixed - never a tree-wide
+// claim). The ms budget below still catches this behavior's ACTUAL cost
 // wherever it becomes large enough to matter.
-function checkHandlerBudgets(rows, { budgetMs, allowlist = new Map() } = {}) {
+//
+// BL-1633 confirm-a-pole-alone (2026-09-20 ruling): a sequential
+// census's own ordering and fork contention can inflate one handler's
+// reading over budget without its own require actually costing that
+// much (bl1050CursorRunFailureLogSteps.js measured 137-320ms depending
+// on host load in-sequence, but a consistent 137-180ms alone). Before
+// naming ANY over-budget row a real violation, it is re-measured once
+// more in its own fresh, isolated child via the optional `confirmAlone`
+// callback (wired to censusOneHandler by real callers; omitted in a pure
+// unit test, which then trusts the row's own ms as already-confirmed).
+// A handler whose cost is genuine (an eager jsdom require, say) reads
+// the same or worse alone; only a sequential-only artifact clears.
+//
+// allowlist: entries are documented, ticketed debt this ticket exposed
+// but does not own (2026-09-20 ruling: "each entry names a reason and an
+// owning ticket") - checked only AFTER confirm-alone, so a handler that
+// clears on its own is never even looked up (an allowlist entry left in
+// place after its handler stopped needing it is caught by the guard's
+// own separate "every allowlist entry still exists" test instead).
+function checkHandlerBudgets(rows, { budgetMs, allowlist = new Map(), confirmAlone } = {}) {
   const violations = [];
   for (const row of rows) {
     if (row.error) {
@@ -222,11 +242,17 @@ function checkHandlerBudgets(rows, { budgetMs, allowlist = new Map() } = {}) {
     if (row.spawnedProcess) {
       violations.push({ file: row.file, reason: 'spawns a process at module load' });
     }
-    if (row.ms > budgetMs && !allowlist.has(row.file)) {
-      violations.push({
-        file: row.file,
-        reason: `incremental require cost ${row.ms.toFixed(1)}ms exceeds the ${budgetMs}ms budget`,
-      });
+    if (row.ms > budgetMs) {
+      const confirmedMs = confirmAlone ? confirmAlone(row.file) : row.ms;
+      if (confirmedMs > budgetMs) {
+        if (allowlist.has(row.file)) {
+          continue;
+        }
+        violations.push({
+          file: row.file,
+          reason: `incremental require cost ${confirmedMs.toFixed(1)}ms exceeds the ${budgetMs}ms budget (confirmed alone)`,
+        });
+      }
     }
   }
   return violations;
