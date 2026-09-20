@@ -293,6 +293,70 @@ else
   fail "hook mode: expected exit 0 (provenance exemption), got rc=$rc: $out"
 fi
 
+# ── 13b (BL-1459 an-upstream-commit-behind-a-second-parent-is-not-judged-06,
+#        specifier ruling 2026-09-20): a commit the documenter branch
+#        carries only behind a SECOND parent of an ordinary chain merge
+#        (cleaner -> architect -> hardener -> documenter, exactly BL-1459's
+#        own live incident) is reachable from the documenter branch but is
+#        NOT on its first-parent line - merging it directly elsewhere must
+#        never be judged ─────────────────────────────────────────────────
+mk_repo chain-second-parent
+g "$repo" branch cleaner_branch main
+write_commit "$repo" cleaner_branch extension/src/cleaner_change.ts
+cleaner_tip="$(g "$repo" rev-parse cleaner_branch)"
+g "$repo" checkout -q -b architect_branch main
+g "$repo" merge -q --no-ff -m "Merge cleaner into architect" cleaner_branch
+g "$repo" checkout -q -b hardener_branch main
+g "$repo" merge -q --no-ff -m "Merge architect into hardener" architect_branch
+g "$repo" checkout -q "$DOC_BRANCH"
+g "$repo" merge -q --no-ff -m "Merge hardener into documenter" hardener_branch
+g "$repo" checkout -q -b landing main
+gq "$repo" merge -q --no-ff --no-commit "$cleaner_tip"
+out="$(cd "$repo" && bash "$GUARD" --branch "$DOC_BRANCH" 2>&1)"; rc=$?
+gq "$repo" merge --abort
+if [[ $rc -eq 0 ]]; then
+  pass "hook mode (06): a commit the documenter branch reached only through a merge's second parent is not judged"
+else
+  fail "hook mode (06): expected exit 0 (not first-parent, not judged), got rc=$rc: $out"
+fi
+
+# ── 13c (BL-1459 a-documenter-commit-behind-the-tip-is-still-judged-07):
+#        a documenter commit still on the first-parent line, but no longer
+#        the branch tip, is still judged (proves first-parent membership
+#        is not exact-tip equality either) ───────────────────────────────
+mk_repo old-tip-still-judged
+write_commit "$repo" "$DOC_BRANCH" docs/briefings/2099-02-01.md extension/src/out-of-lane.ts
+older_tip="$(g "$repo" rev-parse HEAD)"
+write_commit "$repo" "$DOC_BRANCH" docs/briefings/2099-02-02.md
+g "$repo" checkout -q -b landing main
+gq "$repo" merge -q --no-ff --no-commit "$older_tip"
+out="$(cd "$repo" && bash "$GUARD" --branch "$DOC_BRANCH" 2>&1)"; rc=$?
+gq "$repo" merge --abort
+if [[ $rc -eq 1 ]] && grep -q 'extension/src/out-of-lane.ts' <<<"$out"; then
+  pass "hook mode (07): a documenter commit behind the tip is still judged"
+else
+  fail "hook mode (07): expected refusal naming extension/src/out-of-lane.ts even though older_tip is not the current tip, got rc=$rc: $out"
+fi
+
+# ── 13d (BL-1459 an-ordinary-forward-is-not-a-briefing-land-08, CRITICAL
+#        fix, specifier ruling 2026-09-20): a documenter commit on the
+#        first-parent line, not yet landed, that touches NO path under
+#        docs/briefings/ at all is an ordinary parcel forward (this is
+#        what QA's own merges of the documenter's real work look like) -
+#        never judged, however many other paths it changes ───────────────
+mk_repo ordinary-forward-not-a-briefing
+write_commit "$repo" "$DOC_BRANCH" extension/src/some_feature.ts docs/how-to/some-guide.md
+ordinary_tip="$(g "$repo" rev-parse HEAD)"
+g "$repo" checkout -q -b landing main
+gq "$repo" merge -q --no-ff --no-commit "$ordinary_tip"
+out="$(cd "$repo" && bash "$GUARD" --branch "$DOC_BRANCH" 2>&1)"; rc=$?
+gq "$repo" merge --abort
+if [[ $rc -eq 0 ]]; then
+  pass "hook mode (08): an ordinary documenter forward that changes no briefing file is merged without judgment"
+else
+  fail "hook mode (08): expected exit 0 (no docs/briefings/ content, not judged), got rc=$rc: $out"
+fi
+
 # ── 14. --branch resolves via .swarmforge/roles.tsv when not given
 #        explicitly ───────────────────────────────────────────────────
 mk_repo roles-tsv-resolution
