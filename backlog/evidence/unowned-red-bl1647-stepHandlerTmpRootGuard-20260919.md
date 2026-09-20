@@ -25,4 +25,15 @@ written, naming a THIRD instance of the same gap. This session's own new
 file (`bl1652ChaseRespawnBusyGuardSteps.js`) used `trackedTmpRoot` from
 the start and does not offend.
 
+## Update 2026-09-20: resolved by merge, no owner ticket needed
+
+Merging `main` into this branch (for BL-1652's own forward) picked up
+BL-1647's OWN landed hardening pass, which added `onAbnormalExit` to
+`bl1647ZombiePidfileNotAliveSteps.js` - `test/stepHandlerTmpRootGuard.test.js`
+is green again on this branch post-merge (verified: `npx vitest run
+test/stepHandlerTmpRootGuard.test.js` - 4/4 passing). The 09-19 07:21Z notes
+to specifier/coordinator predate that merge; no register row or owner
+ticket is needed for this instance - left here only as the historical
+record of the sighting, not an open red.
+
 By coder.
