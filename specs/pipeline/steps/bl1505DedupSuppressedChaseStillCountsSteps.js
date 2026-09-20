@@ -313,7 +313,7 @@ function reachMaxChasesCount(landed) {
 (def adapters
   {:get-liveness (fn [_role] "alive")
    :send-wake-up! (fn [_role] {:attempted true :landed ${landed}})
-   :trigger-respawn! (fn [_role] nil)
+   :trigger-respawn! (fn [_role _readings] nil)
    :log-dead-letter! (fn [_role _path] nil)
    :get-last-activity-ms (fn [_role] ${nowMs})
    :on-stuck-escalation! (fn [_role _escalated] nil)
@@ -343,7 +343,10 @@ function reachMaxChasesCount(landed) {
 }
 
 function decideStaleItemAction(chaseCount, liveness) {
-  const script = `(load-file "${CHASE}")\n(println (chase-sweep-lib/decide-stale-item-action ${chaseCount} {:maxChases ${MAX_CHASES}} "${liveness}"))`;
+  // BL-1652 added two trailing pane-busy?/lane-running? params; false/false
+  // reproduces this scenario's pre-BL-1652 behavior exactly (neither signal
+  // is what BL-1505's own dedup-suppressed-chase invariant is about).
+  const script = `(load-file "${CHASE}")\n(println (chase-sweep-lib/decide-stale-item-action ${chaseCount} {:maxChases ${MAX_CHASES}} "${liveness}" false false))`;
   return execFileSync('bb', ['-e', script], { encoding: 'utf8' }).trim();
 }
 
