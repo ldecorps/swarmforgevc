@@ -1,0 +1,127 @@
+id: BL-1669
+title: "multiBranchParserCoverageCheck.ts's six extraction functions and the assessment's empty-parser branch carry 106 first-run mutants (85 survived, 21 never covered) from the file's first Stryker pass on 2026-09-20 - BL-755 shipped it with an eight-mutant hand sweep - and CRAP flags extractMultiBranchParsers at 20.15 with 15% coverage: every mutant is killed by a behaviour test over a source snippet or accepted as equivalent with its reason, and the three flagged functions come under CRAP 6"
+milestone: M8
+type: chore
+severity: medium
+# medium: hardening debt, not a red and not a safety signal; the gate ran
+# and the parcel that exposed it (BL-1667) proceeds with the debt owned
+# here (rule of 2026-09-10: a reason per survivor names an owner).
+status: todo
+epic: first-run-mutation-debt
+priority: 5
+direction: swarm-reported
+depends_on: []
+# BL-755 (the file) is in backlog/done; BL-1667 (active, at hardender at
+# mint) changes armExercisedByTests and its tests only - promote after
+# BL-1667 lands so the two never edit the same file. BL-1519 is the epic
+# tracker; this slice is added to its decomposes_into in the mint commit.
+mutation_cost: medium
+# medium: TypeScript under Stryker, CRAP and DRY; the whole deliverable
+# IS the mutation run over one 174-line file (216 mutants, scoped run
+# about a minute per the hardener's evidence), plus unit cases with
+# Clojure and TypeScript source snippets. One sitting: six small regex
+# parsers, ~106 mutants (BL-1519's per-function sizing).
+slice_size_envelope: low
+required_stages: [coder, cleaner, architect, hardender, documenter, qa]
+
+acceptance: specs/features/BL-1669-multi-branch-parser-extraction-first-run-survivors-to-zero.feature
+
+required_wiring:
+  - 'specs/pipeline/steps/bl1669MultiBranchParserExtractionSurvivorsToZeroSteps.js::registerSteps::the handler lands in the same parcel as the feature (BL-233, BL-1371)'
+# No production anchor on purpose (BL-1235): the module and its consumers
+# already exist, so any pattern on them matches before and after.
+
+human_approval: pending
+approval_context: >
+  A new feature file is authored here, so it needs a tap. No choice is
+  posed and there are no ruling_options. FIRM: no production behaviour
+  changes - the extraction functions and the assessment keep every
+  contract BL-755's feature pins; only tests are added, and a refactor
+  for CRAP keeps the same outputs. FIRM: "accepted equivalent" needs the
+  code-level reason in the evidence (BL-1520's rule), never "first-run
+  debt" - this ticket IS the owner that rule asks for.
+
+invariants:
+  - "Every mutant Stryker reports for the file at the parcel commit is either killed by a test in the unit suite or recorded in the evidence as an accepted equivalent with the code-level reason; no survivor is left with 'next stage' or 'debt' as its reason."
+
+description: |
+  ## What is wrong
+
+  `extension/src/tools/multiBranchParserCoverageCheck.ts` (174 lines)
+  was never mutation-tested: BL-755's hardener pass of 2026-08-26 ran a
+  surgical sweep of eight hand-made mutants and no Stryker. BL-1667's
+  hardener ran the first scoped Stryker pass on 2026-09-20 (evidence
+  `backlog/evidence/BL-1667-hardender-first-run-survivor-census-20260920.md`,
+  hardender branch): 216 mutants, 106 killed, 1 timeout, 85 survived, 21
+  never covered. Every survivor and uncovered mutant sits in
+  `extractCondParsers`, `extractCondArms`, `extractTsMultiArmParsers`,
+  `extractTsArms`, `sliceBalancedBlock`, `extractMultiBranchParsers`, and
+  `assessMultiBranchParserCoverage`'s `parsers.length === 0` branch -
+  none in BL-1667's own lines, and BL-1667's constraint forbids touching
+  them. `npm run crap` flags `extractMultiBranchParsers` (complexity 5,
+  coverage 15%, CRAP 20.15), `extractTsMultiArmParsers` (7, 83%, 7.26)
+  and `assessMultiBranchParserCoverage` (7, 100%, 7.00). The per-mutant
+  list (kind, out/ line:col) is in the hardener's census.
+
+  ## What is wanted
+
+  - Unit tests over real source snippets - Clojure `(defn ... (cond ...))`
+    bodies and TypeScript multi-arm functions - that kill each survivor
+    group: arm extraction from cond clauses and from `return '...'`
+    branches, balanced-block slicing, the >= 3-arm threshold, the
+    empty-parser no-op.
+  - Each accepted equivalent recorded with its code-level reason.
+  - The three CRAP-flagged functions under 6 (coverage first; a small
+    refactor only where coverage cannot reach).
+  - The scoped Stryker run recorded in the evidence at the parcel
+    commit; the hardener's pass re-runs it and finds nothing unexplained.
+
+  ## How (direction, not mandate)
+
+  - The hardener's census attributes every mutant to a line; group by
+    enclosing function and write one snippet-driven test per group.
+    `vitest.bl1667.stryker.config.mjs` (the hardener's scoped config,
+    deleted before forwarding) is the run recipe: `--mutate
+    out/tools/multiBranchParserCoverageCheck.js`, perTest coverage.
+
+constraints: >
+  No production behaviour change; BL-755's feature (7 scenarios after
+  BL-1667) stays green. No edit to the shared vitest config - a scoped
+  Stryker config that the parcel does not commit (the hardener's own
+  rule). Never a `*_FORCE_RESULT` seam.
+
+out_of_scope: |
+  - `armExercisedByTests`, `escapeRegExp`, MARKER_CLASS: BL-1667's, and
+    its hardener killed their one survivor in-pass.
+  - The Stryker dry-run interference the hardener recorded
+    (bl1652HandoffdRespawnReadingsWiring.test.js failing under the
+    perTest dry run only): an observation for the specifier; not this
+    ticket's.
+
+qa_e2e_procedure: >
+  (1) `node specs/pipeline/cli.js specs/features/BL-1669-multi-branch-parser-extraction-first-run-survivors-to-zero.feature`
+  ONCE on the parcel commit: 2 scenarios ok. (2) `cd extension && npx
+  vitest run test/multiBranchParserCoverageCheck.test.js` once: green
+  with the new cases. (3) `npm run crap` once: none of the three
+  functions above 6. (4) The parcel's evidence names the Stryker totals
+  with survived 0 and no-coverage 0, or each remainder with its reason.
+  Never "run it N times".
+
+source: |
+  Hardender note to the specifier, priority 00, 2026-09-20T05:54:45Z
+  (inbound 00_20260920T055445Z_001439_from_hardender), verbatim:
+  "unowned-survivors BL-1667 multiBranchParser 85/21 (extraction), see
+  ev". Hardener census, verbatim: "Every other survived/no-coverage
+  mutant sits in `extractCondParsers`, `extractCondArms`,
+  `extractTsMultiArmParsers`, `extractTsArms`, `sliceBalancedBlock`, and
+  `assessMultiBranchParserCoverage`'s own no-op branch". Parents: BL-755,
+  BL-1667, BL-1519 (the epic and its per-function sizing), the
+  hardender rule_proposal of 2026-09-10.
+
+notes: |
+  Minted 2026-09-20 by the specifier while completing the hardender's
+  unowned-survivors note, the same pass (rule of 2026-09-10: the owner is
+  minted before the note is completed). Not auto-approved: chore, medium.
+  Added to BL-1519's decomposes_into in the mint commit. IR-DRY at mint:
+  the two scenarios share "When the evidence is read" by design, as
+  BL-1520's do.
