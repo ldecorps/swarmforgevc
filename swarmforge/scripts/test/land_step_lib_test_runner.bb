@@ -3620,6 +3620,64 @@ RESOLVED BY THIS TICKET
                                 (str "BL-9001-" (subs tip 0 10)))))
             (sh! root "git" "branch" "-q" "-D" (:branch plan))))))))
 
+;; ── BL-1650 hardening: stray-tip-already-landed? is an EVERY? fold over a
+;; multi-path stray - a fixture where only ONE of two paths already matches
+;; origin/main's tip content is the only shape that can tell every? apart
+;; from some?/any-match. Every existing scenario for this function is
+;; either all-paths-match (the D1 shape above) or a single-path stray, so a
+;; some?-for-every? mutant survives them all - and its effect is not merely
+;; a wrong log line: with the REAL code this exact mixed stray correctly
+;; ESCALATES (a genuine per-file cherry-pick conflict on the path that does
+;; NOT already match, fail-closed and safe); with every? mutated to some?,
+;; it instead reports :replay, marks the sibling LANDED, and SILENTLY
+;; EXCLUDES the genuinely-new path's content from the replay entirely
+;; (verified by hand: :stray-landed comes back [], the new path lands in
+;; :excluded, and :landed still names the sibling) - a false "landed"
+;; verdict over content that was never actually delivered anywhere.
+(with-fixture [root]
+  (mark-origin-main-here! root)
+  (let [seed (:out (sh! root "git" "rev-parse" "HEAD"))]
+    (sh! root "git" "checkout" "-q" "-b" "role" seed)
+    ;; Path A (guide.md): the STRAY's own post-image differs from what
+    ;; main ends up carrying (predicate needs sha-blob != main-blob), but
+    ;; a LATER role commit overwrites it to the value main also lands -
+    ;; so the TIP matches main at path A even though the stray itself
+    ;; never wrote that value (this alone would genuinely conflict if
+    ;; cherry-picked in isolation - exactly why skipping the cherry-pick
+    ;; when EVERY path qualifies matters). Path B (spec.md): the stray's
+    ;; only touch, never landed on main at all - tip and main disagree
+    ;; there, so the whole stray must NOT be treated as already-landed.
+    (fs/create-dirs (fs/parent (fs/path root "docs/reference/BL-9002-spec.md")))
+    (spit (str (fs/path root "docs/reference/BL-9002-spec.md")) "role-only line\n")
+    (commit! root "docs/how-to/BL-9002-guide.md" "stray original\n"
+             "BL-9002: incident evidence, two paths")
+    (let [stray (:out (sh! root "git" "rev-parse" "HEAD"))]
+      (commit! root "docs/how-to/BL-9002-guide.md" "final content\n"
+               "role: later overwrite of guide.md to final content")
+      (commit! root "backlog/done/BL-9002-x.yaml" "id: BL-9002\n" "BL-9002: closed on this branch too")
+      (commit! root "backlog/active/BL-9001-x.yaml" "id: BL-9001\n" "BL-9001: own work")
+      (let [tip (:out (sh! root "git" "rev-parse" "HEAD"))]
+        ;; origin/main carries guide.md at the SAME final content (under
+        ;; its own separate commit, never the stray's sha) but never
+        ;; touches spec.md at all.
+        (sh! root "git" "checkout" "-q" "-b" "main-line" seed)
+        (commit! root "docs/how-to/BL-9002-guide.md" "final content\n"
+                 "main: landed with final content")
+        (commit! root "backlog/done/BL-9002-x.yaml" "id: BL-9002\n" "BL-9002: closed on main")
+        (sh! root "git" "update-ref" "refs/remotes/origin/main" "HEAD")
+        (let [origin-main (:out (sh! root "git" "rev-parse" "origin/main"))]
+          (sh! root "git" "checkout" "-q" "role")
+          (assert-false
+           "BL-1650 (mixed stray, direct): stray-tip-already-landed? is false when only ONE of two paths matches origin/main - every?, never some?"
+           (land-step-lib/stray-tip-already-landed?
+            root origin-main tip stray
+            ["docs/how-to/BL-9002-guide.md" "docs/reference/BL-9002-spec.md"]))
+          (let [plan (land-step-lib/land-plan {:root root :commit tip :task-ticket-id "BL-9001"})]
+            (assert= "BL-1650 (mixed stray): NOT flagged already-landed, the real cherry-pick conflict on the non-matching path escalates - fail-closed, never a silent partial land"
+                     :escalate (:action plan))
+            (assert-true "BL-1650 (mixed stray): the sibling stays unlanded, never falsely reported LANDED over excluded content"
+                         (contains? (:unlanded plan) "BL-9002"))))))))
+
 (if (seq @failures)
   (do
     (doseq [f @failures] (println f))
