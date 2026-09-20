@@ -82,6 +82,27 @@ role had to rediscover by hand. `attribution_for_path` now falls back to
 when it is empty, and reports the commit from whichever side the id
 actually came from — never a commit/id pair from two different sides.
 
+## Attribution walks the path's WHOLE history on each side, not just its most recent commit (BL-1662)
+
+A path's most recent commit can be genuinely untagged BY RULE, not by
+accident: `check_closed_ticket_subject.sh` (BL-1617) forbids a closed
+ticket's id in a role-branch subject, and the specifier's closed-owner
+recipe removes a closed ticket's abandoned-build residue in a commit
+whose subject names none — the same untagged-subject requirement this
+guard's own exemption used to make unsatisfiable, since the single
+most-recent commit it read on each side was exactly that removal. 2026-09-20:
+coder@2 removed a BL-1652 abandoned-build artifact untagged (as ruled),
+and every later merge across that removal, on either side, was refused
+with no message able to clear it — the "name the affected ticket id(s)"
+remedy below had become impossible for this one shape.
+`attribution_for_path` now walks the path's FULL commit history per side
+(`git log -- <path>`, newest first) and takes the FIRST (most recent)
+commit whose subject carries a ticket id — skipping past an untagged
+restore or removal to the commit that actually introduced the path — and
+only reports no id when NO commit on either side is tagged, as before.
+The exemption still reads the whole merge-commit message, so the id can
+live in the body while the subject itself stays untagged (BL-1617).
+
 ## If you hit this refusal
 
 ```text
@@ -91,12 +112,14 @@ Commit rejected: name the affected ticket id(s) in the commit message to confirm
 ```
 
 Each line names the deleted path, the ticket it was attributed to
-(derived from the subject of the most recent commit — on whichever side
-actually carries the path's history, `HEAD` first, `MERGE_HEAD` as
-fallback — that touched the path, the repo's `TICKET: description`
-commit convention), the commit that introduced it, and which side it
-was dropped from: `on this branch`, `on the incoming branch`, or `on
-this branch and the incoming branch` for a both-sides drop.
+(derived from the first commit, newest first, in the path's WHOLE
+history — on whichever side actually carries it, `HEAD` first,
+`MERGE_HEAD` as fallback — whose subject names a ticket, skipping past
+an untagged restore or removal per BL-1662; the repo's `TICKET:
+description` commit convention), the commit that introduced it, and
+which side it was dropped from: `on this branch`, `on the incoming
+branch`, or `on this branch and the incoming branch` for a both-sides
+drop.
 
 1. **If the removal is genuinely QA's** (a legitimate bounce-revert
    propagating through the merge-up): name every listed ticket id
