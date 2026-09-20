@@ -35,7 +35,6 @@ function sweepStaleFixtures() {
     }
   }
 }
-sweepStaleFixtures();
 
 function state(ctx) {
   if (!ctx.bl1352) ctx.bl1352 = {};
@@ -90,6 +89,11 @@ const STATE_WORD = { ok: 'ok', 'warn-unconfigured': 'warn', fault: 'FAULT' };
 const FEATURE = 'An unanswered-question escalation whose transport cannot deliver is a visible fault';
 
 function registerSteps(registry) {
+  // BL-1630: moved from module load - a mere require() of this file
+  // (bl968's tree probe, the BL-761 registration gate) must not pay for
+  // a temp-dir listing that only a real registration needs.
+  sweepStaleFixtures();
+
   const scoped = (re, fn) => registry.defineScoped(re, fn, FEATURE);
 
   scoped(/^the operator runtime tick is running$/, (ctx) => {

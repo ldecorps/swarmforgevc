@@ -46,8 +46,6 @@ function sweepStaleFixtures() {
   }
 }
 
-sweepStaleFixtures();
-
 function git(root, ...args) {
   execFileSync('git', args, { cwd: root, stdio: 'pipe' });
 }
@@ -125,6 +123,11 @@ function answer(ctx) {
 const FEATURE_NAME = "BL-1343 the replay never drops the landing ticket's own path in silence";
 
 function registerSteps(registry) {
+  // BL-1630: moved from module load - a mere require() of this file
+  // (bl968's tree probe, the BL-761 registration gate) must not pay for
+  // a temp-dir listing that only a real registration needs.
+  sweepStaleFixtures();
+
   // Scoped: "the land step refuses" and its neighbours are generic enough
   // that an unscoped registration would answer another feature's scenarios
   // with this ticket's fixture (BL-425).

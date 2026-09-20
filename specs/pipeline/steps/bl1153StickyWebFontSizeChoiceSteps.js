@@ -3,11 +3,15 @@
 // BL-1153: sticky web UI font-size across Mini Apps and PWA dashboard.
 const assert = require('node:assert/strict');
 const path = require('node:path');
-const { JSDOM } = require(path.join(__dirname, '..', '..', '..', 'extension', 'node_modules', 'jsdom'));
 const { getResidentSpyUiHtml } = require('../../../extension/out/bridge/residentSpyUiHtml');
 const { getPipelineGridUiHtml } = require('../../../extension/out/bridge/pipelineGridUiHtml');
 const { getPausedPagerUiHtml } = require('../../../extension/out/bridge/pausedPagerUiHtml');
 const { PANE_FONT_DEFAULT_PX } = require('../../../extension/out/bridge/residentSpyPaneFontSize');
+
+// BL-1630: the path only - the actual `require(JSDOM_MODULE)` happens inside
+// each function that builds a DOM (bl1046/bl1160's own pattern), so a mere
+// require() of this file never pays for loading jsdom.
+const JSDOM_MODULE = path.join(__dirname, '..', '..', '..', 'extension', 'node_modules', 'jsdom');
 
 function extractInlineScript(html) {
   const match = html.match(/<script>([\s\S]*?)<\/script>/);
@@ -45,6 +49,7 @@ function makeFontFetch(store) {
 }
 
 async function driveLiveScreenReload(store) {
+  const { JSDOM } = require(JSDOM_MODULE);
   const html = getResidentSpyUiHtml();
   const dom = new JSDOM(html, {
     runScripts: 'outside-only',
@@ -67,6 +72,7 @@ async function driveLiveScreenReload(store) {
 }
 
 async function driveGridReload(store) {
+  const { JSDOM } = require(JSDOM_MODULE);
   const html = getPipelineGridUiHtml();
   const dom = new JSDOM(html, {
     runScripts: 'outside-only',
@@ -86,6 +92,7 @@ async function driveGridReload(store) {
 }
 
 async function drivePausedReload(store) {
+  const { JSDOM } = require(JSDOM_MODULE);
   const html = getPausedPagerUiHtml();
   const dom = new JSDOM(html, {
     runScripts: 'outside-only',
