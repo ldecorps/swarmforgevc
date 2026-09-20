@@ -198,3 +198,12 @@ notes: |
   exceeds the ceiling, by design; reviewed and kept.
 
 assigned_to: coder
+
+abandoned_commits: [ae9571cf33]
+# BL-1241 land-step remedy: the tip ae9571cf33 named ENTANGLED_SIBLING
+# BL-1634, BL-1636, BL-1637, BL-1639, BL-1642, BL-1645, BL-1646, BL-1647,
+# BL-1649, BL-831, BL-875, all closed on origin/main (the known
+# BL-1650-item-0 first-parent-walk artifact). The tip-pure replay
+# land-replay/BL-1651-ae9571cf33 (32cf9cef2a) was inspected directly: its
+# two-tree diff against origin/main carries only BL-1651's own paths.
+# Landed 32cf9cef2a in place of ae9571cf33. By QA.
