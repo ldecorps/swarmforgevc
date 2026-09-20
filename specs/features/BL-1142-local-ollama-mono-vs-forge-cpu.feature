@@ -33,3 +33,12 @@ Feature: local Ollama mono-router vs capped forge under CPU
     When the local pack-shape gate is asked to staff qwen-forge
     Then staffing is refused naming the forbidden substitute
     And cursor-forge is not rewritten by this gate
+
+  # BL-1142 classifier-status-survives-an-early-match-05
+  # BL-1660: printf | awk with an early exit under pipefail dies of
+  # SIGPIPE when awk stops reading first; a body larger than the pipe
+  # buffer with the keys on its first lines makes it deterministic.
+  Scenario: the classifier exits 0 for a body larger than the pipe buffer whose config lines come first
+    Given a pack body of config rotation router, config active_backlog_max_depth 1, and 20000 window lines
+    When the classifier is run on that body under set -euo pipefail
+    Then it exits 0 and prints mono-router

@@ -67,5 +67,30 @@ if bash "$GATE" "$ROOT" qwen-forge >/dev/null 2>&1; then
 fi
 pass "06: gate refuses qwen-forge substitute"
 
+# ── 07 (BL-1660): classifier survives a body larger than the pipe buffer ──
+# printf | awk with an early `exit` dies of SIGPIPE under `set -o pipefail`
+# once awk is scheduled between two of printf's writes and stops reading
+# before printf finishes - a genuine race, not merely a size threshold.
+# Measured while authoring this case: calling the function directly INSIDE
+# this already-running, long-lived script's shell did not reproduce it
+# (20/20 clean) - only a FRESH subprocess did (20/20 SIGPIPE against the
+# pre-fix library), matching the ticket's own exact reproduction shape
+# (`bash -c 'set -euo pipefail; source lib; bl1142_classify_pack_shape
+# "$(cat)"'`, body on stdin). Spawning a fresh bash -c per the ticket's own
+# shape, not a same-process function call, is load-bearing for this case
+# actually catching the regression.
+LARGE_BODY="$(
+  {
+    printf 'config rotation router\n'
+    printf 'config active_backlog_max_depth 1\n'
+    for _ in $(seq 1 20000); do printf 'window seat\n'; done
+  }
+)"
+SHAPE="$(printf '%s' "$LARGE_BODY" | bash -c "set -euo pipefail; source '$LIB'; bl1142_classify_pack_shape \"\$(cat)\"")" \
+  || fail "07: classifier exited non-zero on a body larger than the pipe buffer"
+[[ "$SHAPE" == "mono-router" ]] \
+  || fail "07: expected mono-router on the large body, got $SHAPE"
+pass "07: classifier exits 0 and prints mono-router for a body larger than the pipe buffer"
+
 rm -rf "$ROOT"
 echo "BL-1142 local_ollama_pack_shape: ALL PASS"
