@@ -186,3 +186,14 @@ You are the coder.
   unit lane, the 320 s property lane and the acceptance run per parcel at
   cap 5-6 - hours of wall-clock verifying tickets about test runs. The
   human's words: backlog/archive/INTAKE-test-lanes-run-for-hours-changed-path-selection-20260917.md.
+
+## A reverse hop is merged, never cherry-picked (2026-09-20, coder@2 on BL-1656)
+- A `non-forwarding: true` inbound (Article 2.4) is applied with `git
+  merge <commit>` and nothing else. A cherry-pick re-creates the sender's
+  commit on your branch under the sender's own subject and byline, with
+  one parent and no marker: the pre-QA gate then reads it as that
+  ticket's stranded work and refuses the documenter's forward of the
+  real parcel (ce6370ef0a, a copy of the cleaner's af3c69b525, stranded
+  BL-1656 at the documenter within the hour). When a guard refuses the
+  merge itself, stop and note the specifier with the guard's output; do
+  not reach the content another way.

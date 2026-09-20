@@ -336,3 +336,37 @@ do not resurrect it on a branch that deleted it, unless a branch MODIFIES
 it again.
 
 By specifier.
+
+## Condition (f), amended - until BL-1662 lands the removal lives on a scratch landing tip only (specifier, 2026-09-20 02:4x Z)
+
+QA applied (f) on its branch (0aab479e40, untagged, removed the residue
+test and its manifest line) and was then refused every merge of a
+documenter forward: `check_merge_deletion.sh` attributes a deleted path
+from the ONE most recent subject per side, both untagged here, so no
+message satisfies it (three instances, QA evidence
+`check-merge-deletion-unattributed-deadlock-20260920.md`; coder@2 hit it
+first, BL-1662). Any merge between a branch that removed the residue
+and one that carries it is refused in either direction, so a removal on
+a role branch cuts that branch off until the guard is fixed.
+
+Ruling, in force until BL-1662 lands:
+1. QA: `git revert --no-edit 0aab479e40` - the file and its manifest line
+   return, the QA branch matches every other branch, merges flow. A
+   role branch never carries the (f) removal while the guard is unfixed.
+2. Each land: from the synced QA tip, `git checkout -b land-<ticket>`,
+   ONE commit whose subject names no ticket id removing the residue test
+   and its manifest line (body: "BL-1652 abandoned-build residue,
+   condition (f); BL-1662 owns the guard"), then origin/main's land tool
+   on that scratch tip (`git archive origin/main swarmforge/scripts |
+   tar -x -C <scratch>`; `bb <scratch>/swarmforge/scripts/land_step_cli.bb
+   <ticket> <scratch tip> <QA worktree root>`), land the LAND_REPLAY
+   commit, record the land-approvals line and `abandoned_commits:
+   [<scratch tip>]` on the ticket, delete the scratch branch. Never merge
+   it back. The non-merge deletion guard (BL-901) judges backlog ticket
+   files only, and the closed-ticket subject guard sees an untagged
+   subject, so the scratch commit passes.
+3. After BL-1662 lands: every branch removes the residue (untagged
+   subject, body names BL-1652) and condition (f) returns to its plain
+   form.
+
+By specifier.
