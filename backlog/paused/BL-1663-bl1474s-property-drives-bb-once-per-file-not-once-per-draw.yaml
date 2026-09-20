@@ -1,0 +1,118 @@
+id: BL-1663
+title: "bl1474ReplayCommitRefusalReasonInvariants.property.test.js starts a fresh bb and loads the whole land_step_lib.bb once per fast-check draw, forty times, so the one property costs 6-8 s alone and times out at the lane's 20 s in a full run under fork contention (coder@2, 2026-09-20): the draws are evaluated by one bb invocation per test, the reachability floor stays, and the file runs in under a second"
+milestone: M8
+type: defect
+severity: high
+# high (standing-red rule 2026-09-05): a test failing on main in any lane
+# is a broken safety signal, and this one fails the whole property lane
+# for whichever role runs it under load (coder@2 on BL-1660). Not high
+# for product reasons: the function under test is correct; the test's
+# per-draw process start is the defect.
+status: todo
+epic: swarm-reliability
+priority: 8
+direction: swarm-reported
+depends_on: []
+# BL-1474 (the function and this property) is in backlog/done. BL-1633
+# (a pole is confirmed alone before the per-file gate refuses) is done
+# and does not cover a vitest testTimeout. No open ticket touches this
+# file.
+mutation_cost: low
+# low: one test file; no production change, so no mutation, CRAP or DRY
+# surface - the hardener's gate is the property lane run.
+slice_size_envelope: low
+required_stages: [coder, cleaner, architect, hardender, documenter, qa]
+
+acceptance: specs/features/BL-1474-the-replay-reports-why-its-commit-was-refused.feature
+# The contract this ticket must keep satisfying is BL-1474's feature,
+# unchanged (the fix touches only the property test) - BL-1251's shape;
+# this pointer is not a claim of ownership over BL-1474's contract. The
+# gate is that file green through the runner plus the e2e below.
+
+human_approval: approved
+approval_context: >
+  No feature file is authored or changed here; minted approved under the
+  2026-09-17 operator hotfix (severity defect, no choice posed, no
+  ruling_options). FIRM: the property still drives the REAL
+  land-step-lib/replay-commit-refusal-reason through bb (BL-1474's
+  invariant 1 test is not reimplemented in JS). FIRM: the BL-654
+  reachability floor (every declared stderr shape exercised) stays and
+  is asserted over the same draws the function saw.
+
+invariants: []
+
+description: |
+  ## What is wrong
+
+  `extension/test/bl1474ReplayCommitRefusalReasonInvariants.property.test.js`
+  line 30: `replayCommitRefusalReason()` runs `spawnSync('bb', ['-e',
+  ...(load-file land_step_lib.bb)...])` for EVERY property draw - `fc.assert(...,
+  { numRuns: 40 })` at line 109 - so each draw pays a bb start plus the
+  full load of `land_step_lib.bb` and the libs it loads. Alone the file
+  passes in 6.6-8.2 s (specifier on main, 2026-09-20: 8.2 s, one test);
+  in a full `npm run test:properties` under the lane's fork pool it
+  crossed the config's 20 000 ms `testTimeout`: `Test timed out in 20000ms
+  on property (invariant 1): nothing to commit is reported only when the
+  index is empty, whatever stderr says` (coder@2 evidence
+  `backlog/evidence/unowned-red-bl1459-bl1474-property-lane-20260920.md`,
+  green in isolation). The function under test is pure (no git calls, as
+  the file's own header says); forty process starts are the whole cost.
+
+  ## What is wanted
+
+  - The draws are evaluated by ONE bb invocation per test: sample the
+    arbitraries (`fc.sample`, the same count and shapes), pass the array
+    as JSON on stdin, have bb map
+    `land-step-lib/replay-commit-refusal-reason` over it and print the
+    reasons, then assert per draw in JS exactly as today; the
+    reachability floor asserts over the sampled draws.
+  - The file runs in under one second alone; in-suite it stays far
+    inside the 20 s timeout.
+  - Register row for the file (lane property, owner BL-1663, added at
+    mint) leaves in this parcel's land (BL-1631).
+
+  ## How (direction, not mandate)
+
+  - `const draws = fc.sample(inputArb, 40)`; one `spawnSync('bb', ...)`
+    with `(mapv (fn [i] (replay-commit-refusal-reason ...)) inputs)`; keep
+    a fixed seed out of it - the sample varies per run as today. If
+    shrinking matters more than the process count, a long-lived bb child
+    fed one JSON line per draw is the alternative; either keeps the real
+    function under test.
+
+constraints: >
+  No change to land_step_lib.bb or to BL-1474's feature. The file stays
+  in the property lane's allowlist as it is. The bb invocation loads the
+  real library, never a copied function.
+
+out_of_scope: |
+  - Other property files that spawn bb per draw: none sighted red; the
+    census `grep -l "spawnSync('bb'" extension/test/*.property.test.js`
+    is the follow-up's starting point when one is.
+
+qa_e2e_procedure: >
+  (1) `cd extension && npx vitest run --config vitest.properties.config.mjs
+  test/bl1474ReplayCommitRefusalReasonInvariants.property.test.js` ONCE on
+  the parcel commit: passed, duration row under 1 s recorded. (2)
+  `grep -c "spawnSync('bb'" extension/test/bl1474ReplayCommitRefusalReasonInvariants.property.test.js`
+  is 1 and it sits outside the property callback. Never "run it N
+  times".
+
+source: |
+  Coder note to the specifier and the coordinator, priority 00,
+  2026-09-20T02:54:55Z (inbound 00_20260920T025455Z_000032_from_coder,
+  from_seat coder@2), verbatim: "unowned-red: bl1459 stale non-vacuity
+  marker + bl1474 in-suite timeout, evid". Coder evidence, verbatim:
+  "Full-lane run: `Test timed out in 20000ms` ... Re-run in isolation:
+  passed clean, 6.57s (well under the 20s timeout)." The bl1459 half of
+  the note is BL-1459's own rebuild (its property test is not on main).
+  Parents: BL-1474, BL-1620 (real process starts inside a test are the
+  pole), BL-1633.
+
+notes: |
+  Minted 2026-09-20 by the specifier while completing coder@2's note,
+  the same pass. AUTO-APPROVED under the 2026-09-17 operator hotfix
+  (severity defect, no ruling_options) - see
+  auto-approve-high-severity-defects-amendment-20260917.md. Register row
+  appended in the mint commit (first_seen 2026-09-20). coder@2, holding
+  BL-1660, was noted the same pass that the red is owned.
