@@ -37,7 +37,7 @@ approval_context: >
 
 invariants:
   - "A day has at most one landed briefing: no land through this guard ever replaces or adds a second docs/briefings/<date>.md for a date the landed main already carries."
-  - "The guard judges only a documenter-side incoming commit; a merge whose incoming parent is not reachable from the documenter branch, or is already reachable from the landed main, exits 0 without judging (BL-1444 invariant 2)."
+  - "The guard judges only a documenter-side incoming commit - one on the documenter branch's first-parent line and not reachable from the landed main; an incoming parent the documenter branch reached only through a merge's second parent (an upstream chain commit), or one already on the landed main, exits 0 without judging."
 
 description: |
   ## What is wrong
@@ -73,8 +73,11 @@ description: |
     `docs/briefings/<date>.md already on main`.
   - Hook mode: resolves the incoming merge parent
     (`incoming_merge_parent_lib.sh`); exits 0 without judging when it
-    cannot be resolved, is not reachable from the documenter's branch, or
-    is already reachable from the landed main.
+    cannot be resolved, is not on the documenter branch's FIRST-PARENT
+    line (`git rev-list --first-parent <landed-main>..<documenter-branch>`),
+    or is already reachable from the landed main. Ancestry
+    (`merge-base --is-ancestor`) is NOT the test: a chain role's branch
+    carries every upstream commit it merged (amended 2026-09-20, notes).
   - Wired into `swarmforge/git-hooks/pre-merge-commit` beside
     `check_art_director_tip.sh`.
 
@@ -143,4 +146,34 @@ notes: |
   The `required_wiring` anchor is the hook chain line - a pre-existing
   consumer file gaining a call to the new guard, the BL-1444 shape.
 
+  Amended 2026-09-20 by the specifier (spec-gap bounce, blamed on the
+  specifier; evidence backlog/evidence/BL-1459-bounce-20260920.md): the
+  "reachable from the documenter branch" predicate copied from BL-1444
+  is wrong for a chain role - the documenter branch reaches every
+  upstream commit it merged, so the hook refused a cleaner->coder bounce
+  merge in the coder's worktree on 2026-09-20 (coder note 002067). The
+  predicate is first-parent membership (invariant 2, description).
+  The coder's exact-tip hotfix f46bd22ab1 is superseded (it falls silent
+  whenever the documenter commits after sending its note) and rides the
+  rebuild lineage from the coder branch. Scenario 04 stays. The rebuild
+  adds these two scenarios to the feature, handlers in the same commit
+  (BL-233):
+
+    # BL-1459 an-upstream-commit-behind-a-second-parent-is-not-judged-06
+    # 2026-09-20: a chain role's branch carries every upstream commit it
+    # merged; ancestry is not authorship.
+    Scenario: a merge whose incoming parent the documenter branch reached only through a merge's second parent is not judged
+      Given a cleaner-authored commit that the documenter branch carries only behind a second parent of one of its merges
+      When another worktree merges that commit
+      Then the hook exits 0 without judging it
+
+    # BL-1459 a-documenter-commit-behind-the-tip-is-still-judged-07
+    Scenario: a documenter-authored commit that is no longer the branch tip is still judged
+      Given a documenter commit on the documenter branch's first-parent line with a newer documenter commit above it
+      When QA merges the older commit
+      Then the hook judges it against the lane
+
 assigned_to: coder
+bounce_count: 1
+bounce_history:
+  - { at: 2026-09-20, by: specifier, blamed: specifier, class: spec-gap, commit: 05169cb899, evidence: backlog/evidence/BL-1459-bounce-20260920.md }
