@@ -174,7 +174,12 @@ You are QA.
       append ONE line to that file in the master checkout's `.swarmforge/`,
       exactly `{"at":"<ISO-8601 UTC>","ticket":"<BL-id>","commit":"<replay 10-hex>","source":"<cited 10-hex>"}`
       (the source is the commit the parcel was cited on and QA approved -
-      never a commit you did not review); (2) verify `bash
+      never a commit you did not review; when you land from a scratch tip
+      built on your reviewed tip, the source is that reviewed commit, the
+      scratch tip's parent - the predicate resolves one hop and approves
+      only a commit on `swarmforge-QA`, and a deleted scratch branch is on
+      none: BL-1654's 08ae1cd0ef read unapproved on 2026-09-20 for exactly
+      this); (2) verify `bash
       swarmforge/scripts/is_qa_ancestor.sh <replay>` exits 0; (3) record
       `abandoned_commits: [<cited commit>]` on the ticket as the LAND_REPLAY
       item below requires. All six hand-lands of 2026-09-04 skipped all
