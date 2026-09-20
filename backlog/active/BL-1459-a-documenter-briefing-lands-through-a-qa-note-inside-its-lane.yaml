@@ -142,3 +142,5 @@ notes: |
 
   The `required_wiring` anchor is the hook chain line - a pre-existing
   consumer file gaining a call to the new guard, the BL-1444 shape.
+
+assigned_to: coder
