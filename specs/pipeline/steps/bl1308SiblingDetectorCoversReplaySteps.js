@@ -132,29 +132,50 @@ function registerSteps(registry) {
     );
   });
 
-  scoped(/^the ticket that path is attributed to is named in the report$/, (ctx) => {
+  // ── 03b (BL-1654, replaces the retired 03): BL-1389's own exclusion ─────
+
+  scoped(/^the replay tip adds only the cited ticket's own paths$/, (ctx) => {
     const { report } = ctx.bl1308;
-    const foreign = report.replayAdded.filter(
-      (p) => !(report.attribution[p] || []).every((id) => id === CITED_TICKET)
-    );
-    // The premise, checked rather than assumed: this run really did put a
-    // path absent from origin/main and authored under another ticket into
-    // the replay tip. Without it the Then below is vacuously true.
     assert.ok(
-      foreign.length > 0,
-      `the replay tip carried no foreign path, so this scenario proves nothing: ${JSON.stringify(report.replayAdded)}`
+      report.replayAdded.length > 0,
+      `expected the replay tip to add at least the cited ticket's own path(s): ${report.out}`
     );
-    for (const p of foreign) {
-      for (const id of report.attribution[p]) {
-        if (id === CITED_TICKET) continue;
-        assert.equal(
-          namedInReport(report, id),
-          true,
-          `the replay tip adds ${p}, attributed to ${id}, which the report never named: ${report.out}`
+    for (const p of report.replayAdded) {
+      const owners = report.attribution[p] || [];
+      assert.deepEqual(
+        owners,
+        [CITED_TICKET],
+        `replay path ${p} is not attributed solely to the cited ticket: ${JSON.stringify(owners)}`
+      );
+    }
+  });
+
+  // The fixture CLI's own `attribution` map is built ONLY from replayAdded
+  // paths (bl1308SiblingDetectorFixtureCli.sh line ~94-98) - an EXCLUDED
+  // path never enters the replay diff, so it is never in that map by
+  // construction, not because nothing was excluded. The second-parent
+  // shape's sibling untagged files are the fixture's own fixed literals
+  // (sibling_work(), same file), used directly the same way SIBLING and
+  // CITED_TICKET above already are.
+  const SIBLING_PATHS = ['sib_a.txt', 'sib_b.txt'];
+
+  scoped(
+    /^every sibling path left out of the replay is named on its own EXCLUDED_SIBLING_PATH line$/,
+    (ctx) => {
+      const { report } = ctx.bl1308;
+      const excludedLines = report.out.split('\n').filter((l) => l.startsWith('EXCLUDED_SIBLING_PATH '));
+      for (const p of SIBLING_PATHS) {
+        assert.ok(
+          !report.replayAdded.includes(p),
+          `sibling-owned path ${p} rode the replay tip unexcluded: ${report.out}`
+        );
+        assert.ok(
+          excludedLines.includes(`EXCLUDED_SIBLING_PATH ${p} ${SIBLING}`),
+          `expected "EXCLUDED_SIBLING_PATH ${p} ${SIBLING}" in the report, got: ${report.out}`
         );
       }
     }
-  });
+  );
 
   scoped(/^the plan escalates for adjudication$/, (ctx) => {
     const { report } = ctx.bl1308;
