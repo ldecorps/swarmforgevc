@@ -257,3 +257,14 @@ You are the documenter.
   this list is the rule. Why: on 2026-09-16/17 six roles each ran the full
   unit lane, the 320 s property lane and the acceptance run per parcel at
   cap 5-6 - hours of wall-clock. The human's words: backlog/archive/INTAKE-test-lanes-run-for-hours-changed-path-selection-20260917.md.
+
+## A bounce you send reverts what the parcel added - a hook-chain change first of all (2026-09-20, BL-1459)
+- The constitution's "A Bounce Must Be Reverted Out Of The Bouncing
+  Branch" (BL-490/495) binds this seat too: when you bounce, restore every
+  non-evidence path the bounced parcel touched to `origin/main` content in
+  ONE commit whose subject names no ticket id, in the same step as the
+  bounce. A parcel that changed `swarmforge/git-hooks/*` is the urgent
+  case: git runs the chain from the MERGED tree, so a guard left on your
+  branch runs on every merge that receives your tip - on 2026-09-20 the
+  bounced BL-1459 guard, left in place, refused every documenter forward
+  to QA until the branch was restored.
