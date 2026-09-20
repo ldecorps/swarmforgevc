@@ -136,68 +136,121 @@ test('property (BL-1459 invariant 1) non-vacuity: a broken already-landed check 
 
 // ── Invariant 2 ──────────────────────────────────────────────────────────
 
+// 2026-09-20 (specifier ruling, spec-gap bounce): the declared invariant's
+// own wording now names the distinction directly - "one on the documenter
+// branch's first-parent line... an incoming parent the documenter branch
+// reached only through a merge's second parent (an upstream chain commit)
+// ... exits 0 without judging." A plain documenter-side/not boolean (this
+// test's own pre-ruling shape) cannot tell first-parent membership from
+// mere reachability, since neither of ITS two branches ever puts the
+// incoming commit behind a second parent - it would have passed against
+// the coder's own superseded ancestry-based check just as well. `shape`
+// generates all three: a plain documenter commit (first-parent, must be
+// judged), a chain-second-parent commit (reachable but must NOT be judged
+// - this ticket's own live incident), and an unrelated role's commit
+// (not reachable at all).
+const SHAPES = ['plain-documenter', 'chain-second-parent', 'other-role'];
+
+// 2026-09-20 CRITICAL fix (QA note 003000, specifier ruling): the
+// declared invariant's own wording also names "an ordinary documenter
+// forward that changes no briefing file" as a case that must exit 0 -
+// the hook runs from the MERGED tree, so this guard's own parcel
+// enforces itself on the very merge that delivers it, and the documenter
+// mostly sends ordinary parcel forwards, never a briefing land.
+// touchesBriefing is only meaningful for shape='plain-documenter' (the
+// other two shapes already exit 0 before the content trigger is ever
+// reached); generated uniformly regardless so every (shape,
+// touchesBriefing) pair is exercised without a filter.
+function buildIncoming(root, shape, touchesBriefing) {
+  if (shape === 'plain-documenter') {
+    const files = [['extension/src/thing.ts', 'x']];
+    if (touchesBriefing) {
+      files.push(['docs/briefings/2099-03-03.md', 'y']);
+    }
+    writeCommit(root, DOC_BRANCH, files);
+    return git(root, ['rev-parse', 'HEAD']);
+  }
+  // 'other-role' and 'chain-second-parent' both touch docs/briefings/ too
+  // (never gated by touchesBriefing, unlike plain-documenter) - they must
+  // exit 0 via the reachability/first-parent checks specifically, not
+  // merely because the content trigger also would have skipped them; the
+  // non-vacuity tests below rely on that to isolate each check in turn.
+  if (shape === 'other-role') {
+    git(root, ['branch', 'other-role', 'main']);
+    writeCommit(root, 'other-role', [
+      ['extension/src/thing.ts', 'x'],
+      ['docs/briefings/2099-03-04.md', 'y'],
+    ]);
+    return git(root, ['rev-parse', 'HEAD']);
+  }
+  // chain-second-parent: cleaner -> architect -> hardener -> documenter,
+  // the exact ordinary chain BL-1459's own incident rode in on.
+  git(root, ['branch', 'cleaner_branch', 'main']);
+  writeCommit(root, 'cleaner_branch', [
+    ['extension/src/thing.ts', 'x'],
+    ['docs/briefings/2099-03-05.md', 'y'],
+  ]);
+  const cleanerTip = git(root, ['rev-parse', 'cleaner_branch']);
+  git(root, ['checkout', '-q', '-b', 'architect_branch', 'main']);
+  git(root, ['merge', '-q', '--no-ff', '-m', 'Merge cleaner into architect', 'cleaner_branch']);
+  git(root, ['checkout', '-q', '-b', 'hardener_branch', 'main']);
+  git(root, ['merge', '-q', '--no-ff', '-m', 'Merge architect into hardener', 'architect_branch']);
+  git(root, ['checkout', '-q', DOC_BRANCH]);
+  git(root, ['merge', '-q', '--no-ff', '-m', 'Merge hardener into documenter', 'hardener_branch']);
+  return cleanerTip;
+}
+
 test(
-  'property (BL-1459 invariant 2): hook mode judges (and can refuse) only a documenter-side, not-yet-landed incoming commit',
+  'property (BL-1459 invariant 2): hook mode judges (and can refuse) only a first-parent, not-yet-landed, briefing-touching documenter commit',
   () => {
     let draws = 0;
     fc.assert(
-      fc.property(fc.boolean(), fc.boolean(), (isDocumenterSide, isAlreadyLanded) => {
+      fc.property(fc.constantFrom(...SHAPES), fc.boolean(), fc.boolean(), (shape, isAlreadyLanded, touchesBriefing) => {
         draws += 1;
         const root = mkTmpDir('bl1459-invariant2-');
         initRepo(root);
+        const incomingSha = buildIncoming(root, shape, touchesBriefing);
 
-        const commitBranch = isDocumenterSide ? DOC_BRANCH : 'other-role';
-        if (!isDocumenterSide) {
-          git(root, ['branch', 'other-role', 'main']);
-        }
-
-        let landingBase = 'main';
         if (isAlreadyLanded) {
-          // Merge the commit branch's new work into main FIRST, so the
-          // incoming commit is already an ancestor of landed main by the
-          // time the landing branch is built from that same main tip.
-          writeCommit(root, commitBranch, [['extension/src/thing.ts', 'x']]);
-          const incomingSha = git(root, ['rev-parse', 'HEAD']);
           git(root, ['checkout', '-q', 'main']);
-          git(root, ['merge', '-q', '--no-ff', '-m', 'land it first', commitBranch]);
-          landingBase = 'main';
-          git(root, ['checkout', '-q', '-b', 'landing', landingBase]);
+          git(root, ['merge', '-q', '--no-ff', '-m', 'land it first', incomingSha]);
+          git(root, ['checkout', '-q', '-b', 'landing', 'main']);
           spawnSync('git', ['merge', '--no-ff', '--no-commit', incomingSha], { cwd: root });
         } else {
-          const early = git(root, ['rev-parse', 'main']);
-          writeCommit(root, commitBranch, [['extension/src/thing.ts', 'x']]);
-          const incomingSha = git(root, ['rev-parse', 'HEAD']);
-          git(root, ['checkout', '-q', '-b', 'landing', early]);
+          git(root, ['checkout', '-q', '-b', 'landing', 'main']);
           spawnSync('git', ['merge', '--no-ff', '--no-commit', incomingSha], { cwd: root });
         }
 
         const { status, stdout, stderr } = runGuard(root, ['--branch', DOC_BRANCH]);
         spawnSync('git', ['merge', '--abort'], { cwd: root });
 
-        // Judged (may refuse: extension/src/thing.ts is out of lane) only
-        // when documenter-side AND not already landed; every other
-        // quadrant exits 0 without judging.
-        if (isDocumenterSide && !isAlreadyLanded) {
-          assert.equal(status, 1, `expected the guard to judge (and refuse the out-of-lane path) for documenter-side, not-yet-landed, got status ${status}: ${stdout}${stderr}`);
+        // Judged (refused: extension/src/thing.ts is out of lane) only for
+        // a plain, first-parent documenter commit that is not already
+        // landed AND touches docs/briefings/; every other combination
+        // (including an ordinary plain-documenter forward that never
+        // touches a briefing file) exits 0 without judging.
+        const shouldJudge = shape === 'plain-documenter' && !isAlreadyLanded && touchesBriefing;
+        if (shouldJudge) {
+          assert.equal(status, 1, `expected the guard to judge (and refuse the out-of-lane path) for shape=${shape} alreadyLanded=${isAlreadyLanded} touchesBriefing=${touchesBriefing}, got status ${status}: ${stdout}${stderr}`);
         } else {
           assert.equal(
             status,
             0,
-            `expected exit 0 without judging (documenterSide=${isDocumenterSide}, alreadyLanded=${isAlreadyLanded}), got status ${status}: ${stdout}${stderr}`
+            `expected exit 0 without judging (shape=${shape}, alreadyLanded=${isAlreadyLanded}, touchesBriefing=${touchesBriefing}), got status ${status}: ${stdout}${stderr}`
           );
         }
       }),
-      { numRuns: 12 }
+      { numRuns: 18 }
     );
-    assert.ok(draws >= 8);
+    assert.ok(draws >= 12);
   },
   SUBPROCESS_HEAVY_TIMEOUT_MS
 );
 
-test('property (BL-1459 invariant 2) non-vacuity: a broken branch-reachability check would judge every merge, even a non-documenter one - proven against a scratch copy, then restored', () => {
+test('property (BL-1459 invariant 2) non-vacuity: a broken first-parent-membership check would judge every merge, even a non-documenter one - proven against a scratch copy, then restored', () => {
   const original = fs.readFileSync(GUARD, 'utf8');
-  const marker = 'if ! git merge-base --is-ancestor "$INCOMING" "$DOCUMENTER_BRANCH" 2>/dev/null; then\n  exit 0\nfi\n';
-  assert.ok(original.includes(marker), 'expected to find the hook-mode branch-reachability check to remove for the non-vacuity probe');
+  const marker = 'if ! git rev-list --first-parent "${LANDED_MAIN}..${DOCUMENTER_BRANCH}" 2>/dev/null | grep -qx "$INCOMING"; then\n  exit 0\nfi\n';
+  assert.ok(original.includes(marker), 'expected to find the hook-mode first-parent-membership check to remove for the non-vacuity probe');
   const broken = original.replace(marker, '');
   assert.notEqual(broken, original, 'expected the textual removal to actually change the file');
 
@@ -207,7 +260,13 @@ test('property (BL-1459 invariant 2) non-vacuity: a broken branch-reachability c
   try {
     initRepo(root);
     git(root, ['branch', 'other-role', 'main']);
-    writeCommit(root, 'other-role', [['extension/src/thing.ts', 'x']]);
+    // Touches docs/briefings/ too (unlike a truly ordinary commit) so this
+    // probe isolates the first-parent-membership check alone - the
+    // content-trigger check must not also account for the exit-0 result.
+    writeCommit(root, 'other-role', [
+      ['extension/src/thing.ts', 'x'],
+      ['docs/briefings/2099-03-06.md', 'y'],
+    ]);
     const incomingSha = git(root, ['rev-parse', 'HEAD']);
     const early = git(root, ['rev-parse', 'main']);
     git(root, ['checkout', '-q', '-b', 'landing', early]);
@@ -218,6 +277,67 @@ test('property (BL-1459 invariant 2) non-vacuity: a broken branch-reachability c
       result.status,
       1,
       `expected the broken (reachability check removed) guard to wrongly judge (and refuse) a non-documenter merge, got status ${result.status}: ${result.stdout}${result.stderr}`
+    );
+  } finally {
+    fs.rmSync(brokenPath, { force: true });
+  }
+});
+
+test('property (BL-1459 invariant 2) non-vacuity: plain ancestry (the superseded design) would wrongly judge a chain-second-parent commit - this ticket\'s own live incident, reproduced then discarded', () => {
+  const original = fs.readFileSync(GUARD, 'utf8');
+  const marker = 'if ! git rev-list --first-parent "${LANDED_MAIN}..${DOCUMENTER_BRANCH}" 2>/dev/null | grep -qx "$INCOMING"; then\n  exit 0\nfi\n';
+  assert.ok(original.includes(marker), 'expected to find the hook-mode first-parent-membership check to replace for this probe');
+  // The naive replacement is exactly check_art_director_tip.sh's own
+  // pattern (plain ancestry) - the design this ticket's incident showed
+  // is wrong for a CHAIN role, not a strawman.
+  const naiveAncestry = 'if ! git merge-base --is-ancestor "$INCOMING" "$DOCUMENTER_BRANCH" 2>/dev/null; then\n  exit 0\nfi\n';
+  const broken = original.replace(marker, naiveAncestry);
+  assert.notEqual(broken, original, 'expected the textual replacement to actually change the file');
+
+  const brokenPath = path.join(path.dirname(GUARD), `check_documenter_briefing_tip-non-vacuity-scratch3-${process.pid}-${Date.now()}.sh`);
+  fs.writeFileSync(brokenPath, broken, { mode: 0o755 });
+  const root = mkTmpDir('bl1459-non-vacuity3-');
+  try {
+    initRepo(root);
+    const chainCommit = buildIncoming(root, 'chain-second-parent');
+    git(root, ['checkout', '-q', '-b', 'landing', 'main']);
+    spawnSync('git', ['merge', '--no-ff', '--no-commit', chainCommit], { cwd: root });
+    const result = spawnSync('bash', [brokenPath, '--branch', DOC_BRANCH], { cwd: root, encoding: 'utf8' });
+    spawnSync('git', ['merge', '--abort'], { cwd: root });
+    assert.equal(
+      result.status,
+      1,
+      `expected the naive-ancestry guard to wrongly judge (and refuse) the chain-second-parent commit - reproducing this ticket's own incident - got status ${result.status}: ${result.stdout}${result.stderr}`
+    );
+  } finally {
+    fs.rmSync(brokenPath, { force: true });
+  }
+});
+
+test('property (BL-1459 invariant 2) non-vacuity: a broken content trigger would judge every ordinary documenter forward - CRITICAL fix (QA note 003000), reproduced then discarded', () => {
+  const original = fs.readFileSync(GUARD, 'utf8');
+  const marker = 'if ! git diff --name-only "$BASE" "$INCOMING" 2>/dev/null | grep -q "^${BRIEFINGS_DIR}"; then\n  exit 0\nfi\n';
+  assert.ok(original.includes(marker), 'expected to find the hook-mode content-trigger check to remove for this probe');
+  const broken = original.replace(marker, '');
+  assert.notEqual(broken, original, 'expected the textual removal to actually change the file');
+
+  const brokenPath = path.join(path.dirname(GUARD), `check_documenter_briefing_tip-non-vacuity-scratch4-${process.pid}-${Date.now()}.sh`);
+  fs.writeFileSync(brokenPath, broken, { mode: 0o755 });
+  const root = mkTmpDir('bl1459-non-vacuity4-');
+  try {
+    initRepo(root);
+    // An ordinary forward: first-parent, not-yet-landed, but touches NO
+    // briefing file at all - exactly QA's own CRITICAL incident shape.
+    writeCommit(root, DOC_BRANCH, [['extension/src/some_feature.ts', 'x']]);
+    const ordinaryTip = git(root, ['rev-parse', 'HEAD']);
+    git(root, ['checkout', '-q', '-b', 'landing', 'main']);
+    spawnSync('git', ['merge', '--no-ff', '--no-commit', ordinaryTip], { cwd: root });
+    const result = spawnSync('bash', [brokenPath, '--branch', DOC_BRANCH], { cwd: root, encoding: 'utf8' });
+    spawnSync('git', ['merge', '--abort'], { cwd: root });
+    assert.equal(
+      result.status,
+      1,
+      `expected the broken (content-trigger removed) guard to wrongly judge (and refuse) an ordinary documenter forward, got status ${result.status}: ${result.stdout}${result.stderr}`
     );
   } finally {
     fs.rmSync(brokenPath, { force: true });

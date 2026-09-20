@@ -129,6 +129,102 @@ function registerSteps(registry) {
     assert.equal(ctx.bl1459.result.status, 0, `expected exit 0, got ${ctx.bl1459.result.status}: ${ctx.bl1459.result.stdout}${ctx.bl1459.result.stderr}`);
   });
 
+  // BL-1459 scenario 06 (specifier ruling, 2026-09-20): a cleaner-authored
+  // commit that reaches the documenter branch ONLY behind a second parent
+  // of an ordinary chain merge (cleaner -> architect -> hardener ->
+  // documenter, exactly this ticket's own live incident) must never be
+  // judged when merged directly elsewhere - it is reachable from the
+  // documenter branch but is not on its first-parent line.
+  scoped(
+    /^a cleaner-authored commit that the documenter branch carries only behind a second parent of one of its merges$/,
+    (ctx) => {
+      const root = ctx.bl1459.root;
+      git(root, ['branch', 'cleaner_branch', 'main']);
+      writeCommit(root, 'cleaner_branch', [['extension/src/cleaner_change.ts', 'x']]);
+      const cleanerTip = git(root, ['rev-parse', 'cleaner_branch']);
+      git(root, ['checkout', '-q', '-b', 'architect_branch', 'main']);
+      git(root, ['merge', '-q', '--no-ff', '-m', 'Merge cleaner into architect', 'cleaner_branch']);
+      git(root, ['checkout', '-q', '-b', 'hardener_branch', 'main']);
+      git(root, ['merge', '-q', '--no-ff', '-m', 'Merge architect into hardener', 'architect_branch']);
+      git(root, ['checkout', '-q', DOC_BRANCH]);
+      git(root, ['merge', '-q', '--no-ff', '-m', 'Merge hardener into documenter', 'hardener_branch']);
+      ctx.bl1459.chainCommit = cleanerTip;
+    }
+  );
+
+  scoped(/^another worktree merges that commit$/, (ctx) => {
+    const root = ctx.bl1459.root;
+    git(root, ['checkout', '-q', '-b', 'landing', 'main']);
+    spawnSync('git', ['merge', '-q', '--no-ff', '--no-commit', ctx.bl1459.chainCommit], { cwd: root });
+  });
+
+  scoped(/^the hook exits 0 without judging it$/, (ctx) => {
+    ctx.bl1459.result = runGuard(ctx.bl1459.root, ['--branch', DOC_BRANCH]);
+    spawnSync('git', ['merge', '--abort'], { cwd: ctx.bl1459.root });
+    assert.equal(
+      ctx.bl1459.result.status,
+      0,
+      `expected exit 0, got ${ctx.bl1459.result.status}: ${ctx.bl1459.result.stdout}${ctx.bl1459.result.stderr}`
+    );
+  });
+
+  // BL-1459 scenario 07: a documenter commit still on the first-parent
+  // line, but no longer the branch tip, is still judged - proves
+  // first-parent membership is not exact-tip equality either. The older
+  // commit deliberately also touches an out-of-lane path, so "judged"
+  // (refused) is unambiguously distinct from "skipped" (exit 0).
+  scoped(
+    /^a documenter commit on the documenter branch's first-parent line with a newer documenter commit above it$/,
+    (ctx) => {
+      const root = ctx.bl1459.root;
+      writeCommit(root, DOC_BRANCH, [
+        ['docs/briefings/2099-02-01.md', 'older briefing'],
+        ['extension/src/out-of-lane.ts', 'x'],
+      ]);
+      ctx.bl1459.olderTip = git(root, ['rev-parse', 'HEAD']);
+      writeCommit(root, DOC_BRANCH, [['docs/briefings/2099-02-02.md', 'newer briefing']]);
+    }
+  );
+
+  scoped(/^QA merges the older commit$/, (ctx) => {
+    const root = ctx.bl1459.root;
+    git(root, ['checkout', '-q', '-b', 'landing2', 'main']);
+    spawnSync('git', ['merge', '-q', '--no-ff', '--no-commit', ctx.bl1459.olderTip], { cwd: root });
+  });
+
+  scoped(/^the hook judges it against the lane$/, (ctx) => {
+    ctx.bl1459.result = runGuard(ctx.bl1459.root, ['--branch', DOC_BRANCH]);
+    spawnSync('git', ['merge', '--abort'], { cwd: ctx.bl1459.root });
+    const { status, stdout, stderr } = ctx.bl1459.result;
+    const combined = stdout + stderr;
+    assert.equal(status, 1, `expected the hook to judge (and refuse) the older commit, got status ${status}: ${combined}`);
+    assert.ok(combined.includes('extension/src/out-of-lane.ts'), `expected the refusal to name the out-of-lane path, got: ${combined}`);
+  });
+
+  // BL-1459 scenario 08 (CRITICAL fix, specifier ruling 2026-09-20): the
+  // hook runs from the MERGED tree, so this guard's own parcel enforces
+  // itself on the very merge that delivers it - and the documenter mostly
+  // sends ORDINARY PARCEL FORWARDS to QA, never a briefing land. A
+  // first-parent, not-yet-landed documenter commit that touches NO path
+  // under docs/briefings/ at all must never be judged, however many
+  // other paths it changes.
+  scoped(
+    /^a documenter commit on the documenter branch's first-parent line that changes paths outside docs\/briefings\/ and no briefing file$/,
+    (ctx) => {
+      writeCommit(ctx.bl1459.root, DOC_BRANCH, [
+        ['extension/src/some_feature.ts', 'x'],
+        ['docs/how-to/some-guide.md', 'y'],
+      ]);
+      ctx.bl1459.ordinaryTip = git(ctx.bl1459.root, ['rev-parse', 'HEAD']);
+    }
+  );
+
+  scoped(/^QA merges that commit as a parcel forward$/, (ctx) => {
+    const root = ctx.bl1459.root;
+    git(root, ['checkout', '-q', '-b', 'landing3', 'main']);
+    spawnSync('git', ['merge', '-q', '--no-ff', '--no-commit', ctx.bl1459.ordinaryTip], { cwd: root });
+  });
+
   scoped(/^the pre-merge-commit hook chain is inspected$/, (ctx) => {
     ctx.bl1459 = ctx.bl1459 || {};
     ctx.bl1459.hookText = fs.readFileSync(PRE_MERGE_COMMIT_HOOK, 'utf8');
