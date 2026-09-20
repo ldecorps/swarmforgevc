@@ -65,3 +65,16 @@ Aborted the merge cleanly (`git merge --abort`), working tree clean, no
 `4d30a08308`) is unmerged, held pending resolution.
 
 By QA.
+
+## Instance 2 — BL-1630's forward, same class, no new escalation (2026-09-20)
+
+Identical refusal merging documenter's BL-1630 rework (`4b7615bc14`):
+same path, same `(unattributed)` id, same `0aab479e40` on this branch's
+side. This is the same structural cause already escalated above (note
+`00_20260920T023521Z_003004_from_QA`) — every branch still carrying the
+old file (any branch forked before my untagged restore, or that never
+independently removed it) will hit this identically on its next forward
+to QA. Not re-escalating per Article 4.4 step 4; aborted the merge
+cleanly, held BL-1630 pending the same fix.
+
+By QA.
