@@ -26,10 +26,18 @@ mutation_cost: low
 # line, bb runner cases, one wiring shell test, one feature and handler.
 slice_size_envelope: low
 required_stages: [coder, cleaner, architect, hardender, documenter, qa]
-abandoned_commits: [4eacde9068]
+abandoned_commits: [4eacde9068, a0f3d4d4f9]
 # 4eacde9068: coder@2's unreviewed second build of this ticket after the
 # 2026-09-20 relaunch (ruling in notes). The reviewed lineage from
 # 43213a6bc2 is the record; BL-1655 owns the cause.
+# a0f3d4d4f9: BL-1241 land-step remedy, per the specifier's land-order
+# ruling (backlog/evidence/BL-1652-BL-1653-specifier-ruling-mutual-entanglement-land-order-20260920.md):
+# BL-1652 and BL-1653 both touch swarmforge/scripts/handoffd.bb; BL-1653
+# landed first (from its own approval point), then BL-1652's tip-pure
+# replay land-replay/BL-1652-a0f3d4d4f9 (9e1ee95e7f) was inspected
+# directly: its two-tree diff against origin/main carries only BL-1652's
+# own paths plus harmless untagged-touch passengers (BL-1315). Landed
+# 9e1ee95e7f in place of a0f3d4d4f9. By QA.
 
 acceptance: specs/features/BL-1652-the-chase-sweep-never-respawns-a-busy-role-and-respawns-at-most-once-per-sweep.feature
 
