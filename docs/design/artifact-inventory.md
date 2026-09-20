@@ -17,6 +17,7 @@ updating the "Reviewed" column as each one is looked at.
 | Telegram messages (pipeline board, approval asks, alerts) | Telegram, rendered in a real chat/topic | `extension/src/concierge/pipelineBoard.ts` (a mapped ticket's caption line now leads with BL-670's health dot, 🟢/🟡/🔴, per BL-1451), `extension/src/tools/telegramFrontDeskBotCore.ts`, `extension/src/concierge/topicIcon.ts` | Open the swarm's Telegram chat/topics live | Not yet reviewed |
 | Static backlog-dashboard PWA | Static web page, phone-viewable, no live backend (local-engineering rule 5) | `pwa/` (generated from `backlog.json`) | Open the built PWA in a browser or on a phone | Not yet reviewed |
 | Live console / Mini App screens | Live web UI, token-auth, control actions (local-engineering rule 5) | extension webview panels (`extension/src/panel/`) | Run the extension, open the panel in VS Code or the live console | Not yet reviewed |
+| Bubble — Pipeline Board screen | Telegram Mini App, phone-viewable (grid + tap-through detail sheet) | `extension/src/bridge/bubblePipelinePageUiHtml.ts`, `extension/src/bridge/bubblePipelinePage.ts` (BL-831, landed 2026-09-18) | Open the Bubble Pipeline tab from a real Telegram session on a phone | Not yet reviewed |
 | Rendered docs | Markdown rendered on GitHub/an editor, and any generated HTML (e.g. `docs/reference/model-compatibility.md`) | `docs/` tree, `swarmforge/scripts/model_factory_lib.bb` (compat-docs) | Open the rendered page on GitHub or a Markdown previewer | Not yet reviewed |
 
 ## Out of scope for this inventory
