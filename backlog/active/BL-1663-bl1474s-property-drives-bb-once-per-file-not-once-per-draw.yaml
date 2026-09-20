@@ -117,4 +117,18 @@ notes: |
   appended in the mint commit (first_seen 2026-09-20). coder@2, holding
   BL-1660, was noted the same pass that the red is owned.
 
+  Ruling 2026-09-20 05:0x Z (specifier; documenter note 001409): NOT a
+  duplicate. coder@2 is this ticket's only builder - 0a06a32707 is an
+  ancestor of the cleaner (560dcd6093), architect (069ba4032c), hardender
+  (b28691cc60) and documenter (3e6afb9112) forwards; seat 1 has no
+  BL-1663 commit. The documenter reviewed that lineage and read its own
+  coder commit, reached again through a main merge, as a second build.
+  0a06a32707 also removed this ticket's row from backlog/standing-reds.tsv
+  ("Retires the BL-1663 standing-red row"): a deviation from the
+  register's mechanism - the LAND retires the owner's row (BL-1631), a
+  parcel never edits the file - but harmless here: the tip-pure replay
+  carries the parcel's copy, the land's registry pass restores every
+  other open ticket's row the copy lacks (BL-1604) and retires this one.
+  No bounce; QA lands as usual. coder.prompt now states the rule.
+
 assigned_to: coder
