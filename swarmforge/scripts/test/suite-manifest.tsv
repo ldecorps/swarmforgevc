@@ -544,6 +544,7 @@ test_bl1370_worktree_strays.sh	standing
 test_bl1401_acceptance_fixture_derives_set.sh	standing		
 test_bl1275_refusal_evidence_retained.sh	standing		
 test_bl1444_art_director_tip_guard.sh	standing
+test_check_documenter_briefing_tip.sh	standing
 test_bl1494_deferred_note_no_wake.sh	standing
 test_check_test_file_registration.sh	standing
 test_handoffd_startup_notify_fresh_target.sh	standing		
