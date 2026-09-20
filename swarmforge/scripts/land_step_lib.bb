@@ -2077,6 +2077,23 @@
                  trimmed)]
       (str "land-step replay: commit refused for " task-ticket-id " - " body))))
 
+;; BL-1650 QA bounce (D1, 2026-09-20): `git cherry-pick -x` on a commit
+;; whose content is ALREADY present on the target tree (a distinct commit,
+;; identical diff - the everyday shape once a stray has been hand-landed
+;; once, per the ticket's own FIRM constraint on the sibling-scoring side)
+;; exits non-zero with "The previous cherry-pick is now empty ..." on
+;; stderr and leaves a pending CHERRY_PICK_HEAD - git's own signal that
+;; there is nothing to commit, not a conflict. Treating this identically
+;; to a real conflict (the pre-fix behaviour) escalates every future
+;; parcel whose ancestry carries an already-landed stray of this shape -
+;; observed live landing BL-1650's own approved commit. Detected on stderr
+;; text (git's own message, stable across the versions this project
+;; targets) rather than tree/index state, which a real conflict can also
+;; leave clean once resolved.
+(defn cherry-pick-already-applied?
+  [cherry-pick-result]
+  (boolean (re-find #"previous cherry-pick is now empty" (str (:err cherry-pick-result)))))
+
 (defn replay!
   "Builds a tip-pure commit for task-ticket-id's own-paths, on top of
    origin/main, in a DEDICATED linked worktree
@@ -2137,10 +2154,24 @@
             (doseq [{:keys [sha sibling paths]} stray-commits]
               (when-not @stray-failure
                 (let [cp (git! scratch "cherry-pick" "-x" sha)]
-                  (if (zero? (:exit cp))
+                  (cond
+                    (zero? (:exit cp))
                     (swap! stray-landed conj
                            {:sha sha :sibling sibling :paths paths
                             :landed-sha (str/trim (:out (git! scratch "rev-parse" "HEAD")))})
+
+                    ;; BL-1650 D1: already on the target tree under a
+                    ;; different sha - skip the empty patch (clears the
+                    ;; pending CHERRY_PICK_HEAD) and record it as landed
+                    ;; at the tree's CURRENT tip, never as a failure.
+                    (cherry-pick-already-applied? cp)
+                    (do (git! scratch "cherry-pick" "--skip")
+                        (swap! stray-landed conj
+                               {:sha sha :sibling sibling :paths paths
+                                :landed-sha (str/trim (:out (git! scratch "rev-parse" "HEAD")))
+                                :already-applied? true}))
+
+                    :else
                     (do (git! scratch "cherry-pick" "--abort")
                         (reset! stray-failure
                                 (str "land-step replay: could not cherry-pick stray evidence commit " sha)))))))

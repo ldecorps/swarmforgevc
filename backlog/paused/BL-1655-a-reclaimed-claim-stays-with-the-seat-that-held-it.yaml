@@ -1,0 +1,192 @@
+id: BL-1655
+title: "At relaunch the orphan-claim sweep re-delivers a dead seat's claim into the queue its sibling seat also reads, with nothing naming the seat that held it, so on 2026-09-20 coder@2 claimed BL-1652's Work note 26 s after the sweep took it from the coder seat and the ticket was built twice: a reclaimed file carries the seat that held it, that seat claims it at once, a sibling defers it for the cross-seat deadline and then claims out loud, and a one-seat stage is unchanged"
+milestone: M8
+type: defect
+severity: high
+# high: a live fault in delivery machinery. One relaunch race cost a full
+# duplicate coder build (coder@2, 41 min plus the conflict resolution when
+# the reviewed lineage reached it as a reverse hop), refused the
+# documenter's forward to QA for over an hour on the stray (PRE_QA_GATE_FAIL
+# ancestry), and left a commit naming a soon-closed ticket in coder@2's
+# history - the BL-1616 land-escalation shape. Fourth duplicate-rework
+# incident of the two-seat coder stage since 2026-09-17 (BL-1604, BL-1610,
+# BL-1601 via BL-1616, BL-1652). Not critical: the swarm stayed up and the
+# reviewed lineage was untouched.
+status: todo
+epic: multi-seat-stages
+priority: 8
+direction: swarm-reported
+depends_on: []
+# BL-648 (the sweep), BL-983 (seat mailboxes, stage-queue-dir), BL-1004
+# (cross-seat deferral, its deadline and its stall-sweep hold), BL-1615 (the
+# seat reads the union of the stage queue and its own new/) are all in
+# backlog/done. BL-1652 (active, at documenter) and BL-1649 (active) both
+# touch chase_sweep_lib.bb, which this parcel's hold change also touches:
+# promote after they land (Concurrent Work Orthogonality). BL-1650 (active)
+# is the land step only - no overlap.
+mutation_cost: low
+# low: Babashka (no mutation/CRAP/DRY wired, BL-472): one stamp in the
+# sweep's reclaim, one input to the claim decision and to the stall-sweep
+# hold, the dispatcher passing it through, bb runner cases, one feature and
+# handler over a fixture roster (each scenario is one or two bb starts;
+# the whole feature stays well inside the BL-1358 per-mutant ceiling).
+slice_size_envelope: low
+required_stages: [coder, cleaner, architect, hardender, documenter, qa]
+
+acceptance: specs/features/BL-1655-a-reclaimed-claim-stays-with-the-seat-that-held-it.feature
+
+required_wiring:
+  - 'specs/pipeline/steps/bl1655ReclaimedClaimSeatAffinitySteps.js::registerSteps::the handler lands in the same parcel as the feature (BL-233, BL-1371)'
+
+human_approval: approved
+approval_context: >
+  A new feature file is authored here, so it would ordinarily need a tap;
+  it is minted approved under the 2026-09-17 operator hotfix (severity
+  defect, no choice posed, no ruling_options). FIRM: the sweep still
+  re-delivers a dead session's claim to new/ (BL-648's "never left silently
+  claimed" stands; its six scenarios stay true). FIRM: the deferral reuses
+  BL-1004's deadline (config cross_seat_claim_deadline_ms, default 30 min)
+  and polarity (fail-open: past the deadline any seat claims, out loud),
+  and applies to a reclaimed NOTE as much as a git_handoff - the item that
+  was built twice was a Work note. FIRM: a stage with one seat, and a
+  master-resident seat, behave exactly as today. FIRM: no diagnostic line
+  on the claim path renders a seat id (BL-1004 invariant 2).
+
+invariants:
+  - "Between the sweep's re-delivery and the cross-seat deadline, a reclaimed item is claimable by exactly the seat that held it; every sibling seat's poll leaves it in place, whatever the item's type."
+  - "Every deferral is fail-open: a passed deadline, an unreadable age, or a held-by seat no roster row matches releases the item to any seat of its stage - nothing waits forever, and a stage with one seat never defers."
+
+description: |
+  ## What is wrong
+
+  `orphan_claim_sweep_lib.bb`'s `reclaim-file!` (BL-648) moves a dead
+  session's claimed handoff from the role's `inbox/in_process/` back to the
+  same role's `inbox/new/` under its original basename, drops the claim
+  sidecars, and logs `BL-648 RECLAIM: role=<role> ...`. On a stage with two
+  seats the `coder` row's `new/` IS the stage queue: `stage-queue-dir`
+  (BL-983) resolves `coder@2`'s stage queue to that directory and the
+  dispatcher reads the union of the stage queue and the seat's own new/
+  (BL-1615). The moved file carries no seat identity, and
+  `seat_affinity_lib.bb`'s `rework-claim-decision` defers only a
+  `git_handoff` whose task a sibling has already WORKED (its completed
+  sets); a reclaimed note is `{:action :claim}` for whichever seat polls
+  first. So the seat that held the claim - whose worktree holds the
+  half-built work - loses it to its sibling in the seconds after relaunch.
+
+  2026-09-20, from the launch log and the mailboxes: the 01:00 relaunch's
+  sweep logged `BL-648 RECLAIM: role=coder owning session not alive -
+  reclaiming orphaned claim .../.worktrees/coder/.swarmforge/handoffs/inbox/in_process/10_20260919T062510Z_009782_from_coordinator_to_coder_for_coder.handoff
+  -> .../.worktrees/coder/.swarmforge/handoffs/inbox/new/...` (the coder
+  seat had claimed that Work note for BL-1652 on 2026-09-19 at ~06:54Z and
+  was mid-build when the shift ended). coder@2 dequeued it at
+  `2026-09-20T00:00:26Z` (the file now sits in
+  `.worktrees/coder2/.swarmforge/handoffs/inbox/completed/`) and built the
+  ticket (4eacde9068, 00:41Z). The coder seat, with no claim and no inbound,
+  finished the same work from its dirty worktree (43213a6bc2, 00:08Z) and
+  forwarded to the cleaner at 00:22Z; the reviewed lineage reached the
+  documenter at 00:39Z. coder@2 noticed and stood down at 00:43Z; the
+  documenter's forward to QA was refused (`PRE_QA_GATE_FAIL ancestry
+  BL-1652 4eacde9068 stranded on swarmforge-coder@2`) until the specifier
+  recorded the abandon (89198196ee). The documenter's evidence attributes
+  this to the "coder@2 stage-queue-dir reads the shared coder mailbox"
+  watch entry; that shared directory is BL-983's design and BL-1615 made
+  the seat read it correctly - the missing piece is that a reclaimed file
+  says nothing about who held it, so the BL-1004 deferral cannot fire.
+
+  ## What is wanted
+
+  - The reclaim records the seat that held the claim on the re-delivered
+    item (a tool-stamped envelope header registered beside the other
+    reserved headers in `swarmforge/handoff-protocol.md`, or a sidecar the
+    claim path reads and drops - the coder's call; either way it travels
+    with the file and is gone once claimed), and the reclaim line names it.
+  - A seat polling the stage queue treats an item reclaimed from a
+    DIFFERENT seat exactly as BL-1004 treats a sibling's rework: inside the
+    cross-seat deadline it is left in place with a deferral line that
+    names no seat; at or past the deadline, or with no readable age, it is
+    claimed with the cross-seat claim line. Age follows
+    `rework-claim-decision`: `enqueued_at` then `created_at`, never mtime.
+    The seat that held it claims it at once (self-affinity wins). Any type
+    defers - a note as much as a git_handoff.
+  - `deferral-hold?` (the hold `flow_watchdog_lib.bb` and
+    `chase_sweep_lib.bb` consult so a designed wait is not a stuck parcel)
+    holds a reclaimed item inside the same window, for any type.
+  - A stage with one seat and a master-resident seat re-claim their own
+    reclaimed item as today, with no deferral line.
+
+  ## How (direction, not mandate)
+
+  - `reclaim-file!` already has the role-info and the target path; stamp
+    there. `rework-claim-decision` and `deferral-hold?` each take one more
+    input (the held-by seat, nil when absent) and the dispatcher passes it
+    from the parsed file; `ready_for_next_task.bb`'s claim loop already
+    has the seat id and the deadline in scope (its `:defer`/
+    `:claim-cross-seat` branches). Mirror BL-1004's handler
+    (`bl1004ReworkClaimSteps.js`) and BL-1615's
+    (`bl1615SeatDispatcherClaimsSeatMailSteps.js`): the REAL
+    `ready_for_next_task.bb` over a fixture roles.tsv with
+    `SWARMFORGE_ROLE` set, and `relaunch_resume_cli.bb sweep <root> ""`
+    with no `.swarmforge/tmux-socket` file (every session reads dead) for
+    the sweep. The existing runners (`orphan_claim_sweep_lib_test_runner.bb`,
+    `test_relaunch_resume_cli.sh`, the seat-affinity property runner) gain
+    cases; BL-648's feature scenarios are unchanged and stay green.
+
+constraints: >
+  No change to which directory the sweep re-delivers into, to BL-648's
+  reclaim decision (claim-reclaim?), or to the deadline's source. The
+  step handler lands in the same commit as the feature (BL-233). Fixture
+  roots are mkdtemp directories registered for reaping (BL-1636). Every
+  diagnostic line the claim path prints must pass BL-1004's no-seat-id
+  property runner unchanged.
+
+out_of_scope: |
+  - A seat that forwards a parcel with no claim in its in_process (the
+    coder seat on 2026-09-20 committed and forwarded from its dirty
+    worktree before its first ready_for_next.sh): a separate observation,
+    recorded for the specifier.
+  - The land step honouring abandoned_commits for the stray this race left
+    in coder@2's history: BL-1650 (active).
+  - Reclaims that happen mid-run (the sweep has one caller,
+    relaunch_resume_cli.bb, at launch).
+
+qa_e2e_procedure: >
+  (1) `node specs/pipeline/cli.js specs/features/BL-1655-a-reclaimed-claim-stays-with-the-seat-that-held-it.feature`
+  ONCE on the parcel commit: every scenario ok. (2)
+  `bb swarmforge/scripts/test/orphan_claim_sweep_lib_test_runner.bb` once:
+  green. (3) `grep -n 'reclaimed' swarmforge/scripts/seat_affinity_lib.bb`
+  shows the held-by input in both the claim decision and the hold. Never
+  "run it N times".
+
+source: |
+  Coder note to the coordinator and the specifier, priority 00,
+  2026-09-20T00:43:12Z (inbound 00_20260920T004312Z_002058_from_coder),
+  verbatim: "coder@2 dup-built BL-1652, unsent; real chain already at
+  documenter". Documenter note to the specifier, priority 00,
+  2026-09-20T00:43:18Z (inbound 00_20260920T004318Z_001391_from_documenter),
+  verbatim: "BL-1652 gate refused: 4eacde9068 stranded on coder@2, see
+  evidence"; its evidence
+  `backlog/evidence/BL-1652-stranded-coder2-duplicate-20260920.md`
+  (documenter worktree). Root cause read by the specifier from
+  `.swarmforge/start-swarm-launch.log` (the RECLAIM line above), the Work
+  note's `dequeued_at` in coder@2's completed/, and both coder branches.
+  Census of the two-seat coder stage's duplicate-rework incidents:
+  BL-1604 and BL-1610 (2026-09-17, seat mail and Work-note affinity,
+  fixed by BL-1615), BL-1601's second build 2cd26c6ac2 (2026-09-17, ruled
+  on BL-1616's land), BL-1652 (this). Parents: BL-648, BL-983, BL-1004,
+  BL-1615.
+
+notes: |
+  Minted 2026-09-20 by the specifier while completing the coder's and the
+  documenter's notes, the same pass. AUTO-APPROVED under the 2026-09-17
+  operator hotfix (severity defect, no ruling_options) - see
+  auto-approve-high-severity-defects-amendment-20260917.md. The
+  incident's own remedy (abandoned_commits on BL-1652, 89198196ee) is
+  already on main; this ticket stops the next one.
+
+  required_wiring names the step handler only: the production consumers
+  (`ready_for_next_task.bb`'s claim loop calling `rework-claim-decision`,
+  the two stall sweeps calling `deferral-hold?`) exist before the fix and
+  an anchor on them would be satisfied by construction (BL-1235);
+  scenarios 02-06 drive the real dispatcher and sweep, which is the gate.
+  IR-DRY at mint: the scenarios vary the polling seat and the age over
+  one queue by design; reviewed and kept.

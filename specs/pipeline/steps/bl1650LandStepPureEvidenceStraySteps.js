@@ -217,6 +217,40 @@ function registerSteps(registry) {
     assert.equal(ctx.cli.status, 0, `expected LAND_CLEAN (exit 0), got: ${JSON.stringify(ctx.cli)}`);
     assert.ok(ctx.cli.stdout.trim().startsWith('LAND_CLEAN'), `expected LAND_CLEAN, got: ${ctx.cli.stdout}`);
   });
+
+  // ── scenario 05 (QA bounce D1): an already-landed stray ────────────────
+
+  scoped(/^origin\/main already carries the stray's own file content under a separate commit$/, (ctx) => {
+    // A SEPARATE commit on main, byte-identical content at the stray's own
+    // path - never the stray's own sha - the "hand-landed once already"
+    // shape `git cherry-pick -x` sees as an empty patch, not a conflict.
+    git(ctx.root, 'checkout', '-q', 'main');
+    commitFile(ctx.root, ctx.strayPath, 'incident notes\n', `${SIBLING}: landed by hand during an earlier adjudication`);
+    markOriginMain(ctx.root);
+    git(ctx.root, 'checkout', '-q', 'role');
+  });
+
+  scoped(
+    /^it exits LAND_REPLAY and prints LAND_STRAY_EVIDENCE_ALREADY_LANDED naming the stray's own commit and its path$/,
+    (ctx) => {
+      assert.equal(ctx.cli.status, 0, `expected LAND_REPLAY (exit 0), got: ${JSON.stringify(ctx.cli)}`);
+      assert.ok(ctx.cli.stdout.includes('LAND_REPLAY'), `expected LAND_REPLAY, got: ${ctx.cli.stdout}`);
+      assert.ok(
+        !ctx.cli.stdout.split('\n').some((l) => l.startsWith('LAND_STRAY_EVIDENCE_LANDED ')),
+        `an already-applied stray must never print as a fresh LAND_STRAY_EVIDENCE_LANDED: ${ctx.cli.stdout}`,
+      );
+      const line = ctx.cli.stdout.split('\n').find((l) => l.startsWith('LAND_STRAY_EVIDENCE_ALREADY_LANDED'));
+      assert.ok(line, `expected a LAND_STRAY_EVIDENCE_ALREADY_LANDED line, got: ${ctx.cli.stdout}`);
+      assert.ok(line.includes(ctx.strayCommit), `already-landed line does not name the stray's own commit: ${line}`);
+      assert.ok(line.includes(ctx.strayPath), `already-landed line does not name the stray's own path: ${line}`);
+      const branchLine = ctx.cli.stdout.split('\n').find((l) => l.startsWith('LAND_REPLAY'));
+      ctx.replayBranch = branchLine.split(' ')[1];
+      // No separate "replay branch's tip" step for this scenario - clean up
+      // the branch the library leaves behind on success right here, the
+      // same tidiness scenario 01's own dedicated step performs.
+      spawnSync('git', ['-C', ctx.root, 'branch', '-q', '-D', ctx.replayBranch]);
+    },
+  );
 }
 
 module.exports = { registerSteps };
