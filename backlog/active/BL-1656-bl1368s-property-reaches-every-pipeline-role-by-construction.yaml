@@ -123,3 +123,5 @@ notes: |
   appended in the mint commit (first_seen 2026-09-20, the first sighting
   with a recorded failing run). The coder, who raised it while holding
   BL-1630, was noted the same pass that the red is owned.
+
+assigned_to: coder
