@@ -160,3 +160,5 @@ notes: |
   anchor on it would be satisfied by construction (BL-1235); scenarios 01
   and 02 drive that chain through a real merge, which is the gate.
   IR-DRY at mint: scenarios share the roster-row Given by design.
+
+assigned_to: coder
