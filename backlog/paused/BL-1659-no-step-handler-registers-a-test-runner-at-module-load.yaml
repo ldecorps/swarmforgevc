@@ -1,0 +1,144 @@
+id: BL-1659
+title: "75 step handlers require node:test at module load to register an afterEach or after hook that removes their fixture roots, and the acceptance runtime never runs those hooks - 67 cleanups never fire and every acceptance and property-lane run ends with a TAP epilogue and a MaxListenersExceededWarning: every handler disposes what it creates through the runtime's own per-scenario disposal or tracks it for reaping, none requires node:test at load, and the module-load guard names any that does"
+milestone: M8
+type: defect
+severity: medium
+# medium: a real, contained defect - dead cleanup code in 67 handlers
+# (a share of the 686,946 leaked roots BL-1636 measured), exit-listener
+# noise and a spurious test-runner epilogue on every run; BL-1636's
+# age-floored reaper already bounds the leak, so this is not a red and
+# not a safety signal.
+status: todo
+epic: unit-suite-speed
+priority: 6
+direction: swarm-reported
+depends_on: [BL-1630]
+# BL-1630 (active at the coder) lands the require census helper with the
+# node:module loader intercept and the module-load budget guard this
+# parcel extends; it promotes after BL-1630 lands. BL-1636 (done) landed
+# trackedTmpRoot and the temp-root census guard. BL-1658 (sibling, jsdom)
+# touches none of these files.
+mutation_cost: medium
+# medium: 75 handlers, each a mechanical change of the same shape (drop
+# the node:test require, move the hook body into the runtime's disposal
+# or trackedTmpRoot at the step that creates the root); one guard
+# extension; feature and handler. Step handlers are not under mutation;
+# the cost is running each touched handler's own feature once. The
+# feature's runners: one whole-tree census in a fresh child (about a
+# second after BL-1630), two fixture requires, one nested runtime run.
+slice_size_envelope: medium
+required_stages: [coder, cleaner, architect, hardender, documenter, qa]
+
+acceptance: specs/features/BL-1659-no-step-handler-registers-a-test-runner-at-module-load.feature
+
+required_wiring:
+  - 'specs/pipeline/steps/bl1659NoTestRunnerAtModuleLoadSteps.js::registerSteps::the handler lands in the same parcel as the feature (BL-233, BL-1371)'
+
+human_approval: pending
+approval_context: >
+  A new feature file is authored here and 75 handlers change, so it needs
+  a tap. No choice is posed and there are no ruling_options. FIRM: no
+  scenario of any converted handler changes; a cleanup that never ran
+  now runs at the scenario's end through the runtime's disposal (or the
+  root is tracked for BL-1636's reaper) - never a new hook mechanism.
+  FIRM: the guard fails on a node:test require at module load with no
+  allowlist entry left for it when this lands. FIRM: the recipe scenario
+  (04) pins the disposal idiom, not any one converted handler.
+
+invariants:
+  - "No step handler registers a test runner or a process-exit hook at module load; every fixture root a step creates is removed by the runtime's disposal or tracked for reaping (BL-1636), never by a hook the acceptance runtime does not run."
+
+description: |
+  ## What is wrong
+
+  On main 97bb3e3a0f, `grep -lE "^const \{[^}]*\} = require\('node:test'\);"
+  specs/pipeline/steps/*.js` matches 75 handlers (73 on the coder's
+  received commit 6603b47e6c): 72 `const { afterEach } = require('node:test')`,
+  2 `after`, 1 both; 67 of them call `fs.rmSync` on fixture roots inside
+  that hook (e.g. bl633InvariantsSectionSteps.js lines 33-38,
+  bl1057HostSwitchoverDoctorSteps.js line 36). `specs/pipeline/runtime.js`
+  is not node:test and never calls those hooks: an `afterEach` on
+  node:test's root with zero registered tests never fires, so the roots
+  those 67 handlers create are removed only by BL-1636's age-floored
+  reaper. Requiring node:test at load also installs its runner, which
+  prints `TAP version 13 ... 1..0` at exit and adds exit listeners
+  (`MaxListenersExceededWarning: ... 11 exit listeners added`) on every
+  acceptance and property-lane run. BL-1630 named three of these
+  handlers (bl1021, bl1064, bl1069) because only the alphabetically first
+  pays node:test's load; the other 72 cost near-zero and were invisible
+  to a cost ranking (coder evidence
+  `backlog/evidence/BL-1630-coder-out-of-scope-findings-20260920.md`).
+  The runtime already has the mechanism: `context.__disposables` and
+  `dispose()` (BL-1357), used by e.g.
+  bl1545SyncMergePassengerTestOraclesSteps.js line 103, and
+  `trackedTmpRoot` in `specs/pipeline/steps/lib/fixtureReaper.js`
+  (BL-1636) for roots that should outlive a scenario.
+
+  ## What is wanted
+
+  - Every one of the 75 handlers drops its node:test require; the hook
+    body moves to where the root is created: `ctx.__disposables.push(()
+    => fs.rmSync(root, ...))` in the Given that makes it, or
+    `trackedTmpRoot(prefix)` when the root is shared across scenarios.
+    Their own features still resolve.
+  - BL-1630's guard (`extension/test/stepHandlerModuleLoadBudget.test.js`
+    and its census helper) names any handler whose require loads
+    node:test, with no allowlist entry for it once this lands.
+  - `node -e "require('./specs/pipeline/steps/index.js')"` prints no TAP
+    line and no MaxListenersExceededWarning.
+
+  ## How (direction, not mandate)
+
+  - The census helper's `node:module` loader intercept already sees every
+    module id a require loads; record `node:test` among them and treat it
+    as a violation beside "lists a directory" and "spawns a process".
+  - The conversion is uniform enough for a codemod over the 72
+    `afterEach` handlers; hand-check the 3 `after` ones (a shared root
+    across scenarios wants trackedTmpRoot, not per-scenario disposal).
+  - Scenario 04's fixture handler is written by this parcel as the
+    reference for the recipe; scenario 03 reads the child's stderr and
+    stdout together.
+
+constraints: >
+  No change to runtime.js's disposal semantics, to index.js, or to any
+  feature file of a converted handler. No new hook or lifecycle
+  mechanism. The step handler lands with the feature (BL-233). Fixture
+  roots created by this parcel's own handler are tracked for reaping.
+
+out_of_scope: |
+  - The seven eager jsdom handlers: BL-1658.
+  - Reaping roots already leaked: BL-1636's reaper owns it.
+  - Handlers that use `process.once('exit', ...)` for their own cleanup
+    without node:test: the coder's evidence names them as legitimate;
+    they are left as they are.
+
+qa_e2e_procedure: >
+  (1) `node specs/pipeline/cli.js specs/features/BL-1659-no-step-handler-registers-a-test-runner-at-module-load.feature`
+  ONCE on the parcel commit: 4 scenarios ok. (2)
+  `grep -lE "require\('node:test'\)" specs/pipeline/steps/*.js` names no
+  handler outside a string literal (bl1220's fixture text and its own
+  assertion are the two allowed). (3)
+  `cd extension && npx vitest run test/stepHandlerModuleLoadBudget.test.js`
+  once: green. (4) `node -e "require('./specs/pipeline/steps/index.js')" 2>&1 | grep -c 'TAP version\|MaxListeners'`
+  is 0. Never "run it N times".
+
+source: |
+  Coder note to the specifier, priority 00, 2026-09-20T01:02:51Z (inbound
+  00_20260920T010251Z_002060_from_coder), verbatim: "BL-1630 spec-gap:
+  jsdom cascade (7 more) + node:test at load (73) - see evidence". Coder
+  evidence, verbatim: "This is the standing-idiom cause of the
+  `MaxListenersExceededWarning: ... 11 exit listeners added` and `TAP
+  version 13 ... 1..0` noise on every acceptance run and property-lane
+  run"; "It predates a newer, better pattern already in use elsewhere
+  (`ctx.__disposables`, the real APS runtime's own per-scenario disposal
+  mechanism". The specifier verified on main that the runtime never
+  calls the hooks (no node:test reference in runtime.js) and counted the
+  67 rmSync hooks. Parents: BL-1630, BL-1357, BL-1636.
+
+notes: |
+  Minted 2026-09-20 by the specifier while completing the coder's BL-1630
+  spec-gap note, the same pass as BL-1658 and the BL-1630 ruling. Not
+  auto-approved: severity medium. INVEST Small is the borderline letter:
+  75 files, one shape; the feature pins the property (scenario 01's
+  count) and the recipe (04) so the coder can codemod the majority and
+  hand-check the 3 `after` handlers; the envelope is declared medium.
