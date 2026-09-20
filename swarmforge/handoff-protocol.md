@@ -2553,6 +2553,60 @@ Acceptance:
 the real gate through a fixture git repo, a fake `tmux` on PATH, and real
 child processes.
 
+### Chase ceiling never respawns a busy pane or a running lane, and respawns once per sweep (BL-1652)
+
+`chase_sweep_lib.bb`'s `decide-item-action` moves an `inbox/new/` item older
+than `chaseTimeoutSeconds` (30s) with no pane activity for
+`stuckInProcessTimeoutSeconds` (60s) to `decide-stale-item-action`, which
+chases up to `maxChases` (3) and then answers `"respawned"` once the role's
+`compute-liveness` reading (from its heartbeat and pid) is `dead`, `unknown`,
+or `stuck`. Before BL-1652, liveness from a stale heartbeat alone was
+sufficient — the role's own pane showing the busy footer, or a test lane
+(vitest/Stryker/a bb runner/the acceptance CLI) actively running under its
+worktree, was never consulted for a standing-pack role's own chase (only the
+mono-router resident's busy footer gated its chase-driven rotation,
+BL-1535 above). And the decision ran per stuck item, so a role holding
+several items past the ceiling in one sweep answered `"respawned"` once for
+each.
+
+2026-09-19: QA's chase sweep force-relaunched its pane (`respawn-pane -k`)
+seven times in 350ms mid-way through an 80-minute land (unit/property/
+acceptance/e2e for BL-1636), because its heartbeat had gone stale while five
+`new/` items sat past the chase ceiling — the pane itself was busy the
+entire time. The babysitter then read the momentary process gap as
+half-launch (`docs/how-to/BL-611-babysitterd-runbook.md`), and BL-528's
+claim-idle ladder counted the absent pane toward a bounce (BL-1649). The
+kernel never touched the process (`oom_kill` stayed 0 throughout) — the
+daemon's own chase sweep killed the session, twice.
+
+**The fix.** `decide-stale-item-action` takes `pane-busy?` (the same footer
+reading `chase-poke-and-notify!` already uses for `chase-wake-skip-busy`)
+and `lane-running?` (`lane_process_lib.bb`, a `pgrep`-style scan for a test
+runner whose cwd is the role's worktree, cached once per role per sweep).
+Either true answers `"chased"` (or `"skipped"` inside backoff), never
+`"respawned"` — even past the chase ceiling, even on a dead-reading
+heartbeat. `sweep-role-inbox!` also caps respawns at **one per role per
+sweep**: it collects every item that decided `"respawned"` and triggers the
+role once, naming the first triggering item — the other items' chase counts
+are untouched, so nothing is lost, only the redundant relaunches.
+
+**Observing it.** Every real respawn now logs the full reading set instead
+of a bare role name: `chase-respawn <role> <launch-script> item=<id>
+liveness=<state> heartbeat-age-s=<n> activity-age-s=<n> busy=<bool>
+lane=<bool>` (`handoffd.bb`'s `format-respawn-readings`), and the chaser
+telemetry `respawn` row gains the same fields. A pane skipped for busy still
+logs `chase-respawn-skip-busy <role>` as before. Grep `handoffd.log` for
+`chase-respawn` at an incident's timestamp before assuming a role's session
+died on its own — see the babysitterd runbook's half-launch note above for
+the companion read.
+
+A role with a genuinely dead pane and no running lane is still respawned
+exactly as today; the chase ladder's thresholds, backoff, and cooldown are
+unchanged — this only adds the two guards and the per-sweep cap.
+
+Acceptance:
+`specs/features/BL-1652-the-chase-sweep-never-respawns-a-busy-role-and-respawns-at-most-once-per-sweep.feature`.
+
 ### Dispatch-gap sweep
 
 The daemon's existing chase/nudge sweep only watches inbox mail (queued or
