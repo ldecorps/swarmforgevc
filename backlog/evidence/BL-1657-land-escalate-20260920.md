@@ -82,3 +82,13 @@ approved (`backlog/evidence/BL-1667-QA-20260920.md`) and unlanded pending the sa
 third escalation note.
 
 By QA.
+
+## Fourth instance — BL-1664's land, same class (QA, 2026-09-20)
+
+Identical shape: `land_step_cli.bb BL-1664 f197a49556 .` hit the same stray `be826a2060` cherry-pick
+failure, with `ENTANGLED_SIBLING BL-1630,BL-1657,BL-1661,BL-1663,BL-1667`. No new information. BL-1664
+remains approved (`backlog/evidence/BL-1664-QA-20260920.md`) and unlanded pending the same fix. The
+approved-but-unlanded queue behind this one root cause is now: BL-1657, BL-1661, BL-1667, BL-1664 (four
+tickets), plus genuinely-unlanded BL-1630 and misreported-landed BL-1663.
+
+By QA.
