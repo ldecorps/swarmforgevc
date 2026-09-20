@@ -50,6 +50,10 @@
 ;; still open" (backlog/paused + backlog/active basenames), never a second
 ;; reader here.
 (load-file (str (fs/path (fs/parent (fs/canonicalize *file*)) "qa_hold_lib.bb")))
+;; BL-1650: read-abandoned-commits is pre_qa_gate_lib.bb's own already-
+;; shipped `abandoned_commits:` reader - never a second YAML-list parser
+;; here.
+(load-file (str (fs/path (fs/parent (fs/canonicalize *file*)) "pre_qa_gate_lib.bb")))
 
 ;; This lib's own directory, captured at load time: the tree guards the land
 ;; step runs (BL-1375 invariant 2) are its siblings, and *file* is no longer
@@ -438,6 +442,21 @@
                 (diff-readable? root c)))
           candidates))
 
+;; ── BL-1650 item 0: a candidate commit a sibling's OWN ticket already
+;; disclaims (any backlog lane's `abandoned_commits:`) is neither a
+;; candidate for content attribution nor a reason to print
+;; ENTANGLED_SIBLING - the same posture BL-1546/BL-1272 already take for
+;; every other "this content is already accounted for" case.
+;;
+;; `ticket-abandoned-commits` itself is defined further down, after
+;; `worktree-ticket-sources`/`main-ticket-sources` (BL-1375's own backlog
+;; source readers) - it reuses them, never a second ticket-file reader. ──
+
+(defn- abandoned-commit-sha? [sha abandoned]
+  (some #(str/starts-with? sha %) abandoned))
+
+(declare ticket-abandoned-commits)
+
 (defn landed-sibling-verdicts
   "BL-1389. Per sibling: `{:landed? bool :deciding-path path :paths [...]}`.
 
@@ -468,8 +487,27 @@
   ([root commit origin-main candidates siblings paths-fn lines-fn]
    (landed-sibling-verdicts root commit origin-main candidates siblings paths-fn lines-fn nil))
   ([root commit origin-main candidates siblings paths-fn lines-fn extra-paths-fn]
-   (let [walk (or paths-fn
-                  #(task-scope-gate-lib/task-tagged-changed-paths root origin-main commit % :delivered))
+   (let [;; BL-1650 item 0: scored over the SAME candidate commits the
+         ;; entangled detector found for this sibling (`candidates`, the
+         ;; FULL ancestry `ancestry-commits` already walked) - never
+         ;; `task-tagged-changed-paths`'s own `--first-parent` walk, which
+         ;; never visits a commit that rode in on a non-first-parent merge
+         ;; (the everyday pipeline shape: cleaner/architect/hardener/
+         ;; documenter each receive by `git merge <hash>`). A candidate
+         ;; commit the sibling's own ticket already lists under
+         ;; `abandoned_commits:` is excluded - it is not evidence the
+         ;; sibling is entangled, per that ticket's own disclaimer.
+         walk (or paths-fn
+                  (fn [sibling]
+                    (let [abandoned (ticket-abandoned-commits root sibling origin-main)]
+                      (->> candidates
+                           (remove #(merge-commit? root %))
+                           (filter #(= sibling (commit-ticket-id root %)))
+                           (remove #(abandoned-commit-sha? % abandoned))
+                           (mapcat #(task-scope-gate-lib/own-commit-changed-paths root % :delivered))
+                           (remove nil?)
+                           distinct
+                           vec))))
          lines (or lines-fn #(sibling-own-line-changes root candidates %))
          main-lines (memoize #(blob-lines root origin-main %))
          tip-lines (memoize #(blob-lines root commit %))]
@@ -579,6 +617,18 @@
          (let [siblings (->> candidates
                              (keep #(commit-ticket-id root %))
                              (remove #(= % task-ticket-id))
+                             distinct
+                             ;; BL-1650 item 0: a sibling every one of whose
+                             ;; own candidate commits is listed in its OWN
+                             ;; ticket's abandoned_commits is not entangled
+                             ;; at all - never printed ENTANGLED_SIBLING,
+                             ;; never scored, exactly as if it had no
+                             ;; candidate commit here.
+                             (remove (fn [sid]
+                                       (let [own (filter #(= sid (commit-ticket-id root %)) candidates)
+                                             abandoned (ticket-abandoned-commits root sid origin-main)]
+                                         (and (seq own)
+                                              (every? #(abandoned-commit-sha? % abandoned) own)))))
                              set)
                ;; BL-1389: the verdicts carry the path each rests on, so the
                ;; report can say WHY a sibling reads landed instead of leaving
@@ -682,6 +732,21 @@
                                       :content (when (zero? (:exit shown)) (:out shown))}))))))))
          vec))))
 
+(defn ticket-abandoned-commits
+  "Every `abandoned_commits:` entry recorded for `ticket-id`, unioned across
+   every backlog source (worktree and origin/main, any lane) that has a file
+   for it. #{} when no source names any - the everyday case, never nil (an
+   unreadable/ambiguous ticket file is not this function's own question;
+   ticket-approval-state already decides that one door up)."
+  [root ticket-id origin-main]
+  (let [sources (concat (worktree-ticket-sources root ticket-id)
+                         (or (main-ticket-sources root ticket-id origin-main) []))]
+    (into #{}
+          (mapcat (fn [{:keys [content]}]
+                    (when content
+                      (:items (pre-qa-gate-lib/read-abandoned-commits content)))))
+          sources)))
+
 (defn- closed-on-main?
   "BL-1546. A positive finding: `ticket-id`'s file is found under
    backlog/done/ on `origin-main` and under no other backlog folder there -
@@ -697,6 +762,59 @@
   [root origin-main ticket-id]
   (when-let [sources (main-ticket-sources root ticket-id origin-main)]
     (= #{"done"} (into #{} (map :folder) sources))))
+
+;; ── BL-1650 items 1-2: a closed-owner stray whose EVERY path is pure
+;; evidence/documentation may be landed by this step itself, never
+;; escalated - the everyday shape a closed sibling's incident evidence,
+;; committed on a role's own long-lived branch after the sibling moved on,
+;; produces (BL-831/BL-1636). BL-1546's refusal stands unchanged for
+;; anything wider than this narrow set. ────────────────────────────────
+
+(def ^:private stray-pure-evidence-prefixes ["backlog/evidence/" "docs/"])
+
+(defn pure-evidence-or-docs-paths?
+  "Pure over a path list: every one of `paths` sits under backlog/evidence/
+   or docs/, and there is at least one path (an empty diff is never a
+   reason to land anything). Never under extension/, swarmforge/, specs/,
+   android/, pwa/, or any backlog/{paused,active,done,hold} ticket file or
+   backlog/*.tsv/*.yaml - one path outside the allowlist fails the whole
+   set, per this ticket's invariant 1."
+  [paths]
+  (boolean
+   (and (seq paths)
+        (every? (fn [p] (some #(str/starts-with? p %) stray-pure-evidence-prefixes)) paths))))
+
+(defn closed-owner-pure-evidence-stray?
+  "BL-1650 item 1. `{:sha commit :paths [...]}` when `commit` is a stray
+   this land step may cherry-pick and land itself without escalation: its
+   own subject names a sibling ticket (never `task-ticket-id` itself) that
+   is CLOSED on origin/main (`closed-on-main?`), and every path its own
+   :delivered diff touches is pure evidence/documentation
+   (`pure-evidence-or-docs-paths?`). nil otherwise, or when the sibling's
+   closed state or the commit's own diff could not be read - fail-closed,
+   the same posture `closed-on-main?` and BL-1546's refusal already take
+   for every case this one narrows."
+  [root origin-main commit task-ticket-id]
+  (when-let [sibling (commit-ticket-id root commit)]
+    (when-not (= sibling task-ticket-id)
+      (when (true? (closed-on-main? root origin-main sibling))
+        (when-let [paths (task-scope-gate-lib/own-commit-changed-paths root commit :delivered)]
+          (when (pure-evidence-or-docs-paths? paths)
+            {:sha commit :sibling sibling :paths paths}))))))
+
+(defn stray-evidence-commits
+  "The candidates BL-1650 item 1 may land on its own, oldest first (so the
+   cherry-picks below apply in authored order): every commit in
+   `candidates` that is a `closed-owner-pure-evidence-stray?`, merge
+   commits excluded (a merge authors no stray content of its own -
+   `ancestry-commits`'/`sibling-own-line-changes`'s own posture, unchanged
+   here)."
+  [root origin-main task-ticket-id candidates]
+  (->> candidates
+       (remove #(merge-commit? root %))
+       (keep #(closed-owner-pure-evidence-stray? root origin-main % task-ticket-id))
+       reverse
+       vec))
 
 (defn- source-verdict
   "One tree's answer about one ticket."
@@ -1339,7 +1457,14 @@
                                 #(get m %)
                                 #(path-owner-tickets root origin-main commit % walk)))
              path-landed? (or (:path-landed-fn opts)
-                              (sibling-path-landed-fn root origin-main commit))]
+                              (sibling-path-landed-fn root origin-main commit))
+             ;; BL-1650 items 1-2: paths land-plan already decided to
+             ;; cherry-pick itself, as closed-owner pure-evidence strays -
+             ;; BL-1546's refusal below must not fire for these; they are
+             ;; excluded from THIS ticket's own-paths (never folded into its
+             ;; tip-pure commit, which would lose the stray's own author/
+             ;; subject) and land separately, ahead of it.
+             stray-paths (or (:stray-paths opts) #{})]
         (loop [remaining delivered acc [] excluded [] passengers #{} content-clear []]
          (if (empty? remaining)
            ;; BL-1343. An empty set is two different answers wearing the same
@@ -1487,6 +1612,20 @@
                                                   (:ambiguous attribution)))
                               ", and no commit of " task-ticket-id "'s own touches " path
                               " - never decided silently (BL-1544)")}
+
+               ;; BL-1650 items 1-2: a path BL-1546's clause below would
+               ;; otherwise refuse on, but land-plan has already found a
+               ;; closed-owner pure-evidence stray commit that delivers it
+               ;; and will cherry-pick it onto the replay branch itself -
+               ;; excluded here (never folded into this ticket's own tip),
+               ;; never a refusal.
+               (and (seq (:owners attribution))
+                    (not (:any-untagged? attribution))
+                    (not (contains? (:owners attribution) task-ticket-id))
+                    (contains? stray-paths path))
+               (recur (rest remaining) acc
+                      (conj excluded {:path path :owners (:owners attribution)})
+                      passengers content-clear)
 
                ;; BL-1546. A path whose every owner is CLOSED on origin/main
                ;; (backlog/done/ there) is never silently excluded on the
@@ -1938,6 +2077,23 @@
                  trimmed)]
       (str "land-step replay: commit refused for " task-ticket-id " - " body))))
 
+;; BL-1650 QA bounce (D1, 2026-09-20): `git cherry-pick -x` on a commit
+;; whose content is ALREADY present on the target tree (a distinct commit,
+;; identical diff - the everyday shape once a stray has been hand-landed
+;; once, per the ticket's own FIRM constraint on the sibling-scoring side)
+;; exits non-zero with "The previous cherry-pick is now empty ..." on
+;; stderr and leaves a pending CHERRY_PICK_HEAD - git's own signal that
+;; there is nothing to commit, not a conflict. Treating this identically
+;; to a real conflict (the pre-fix behaviour) escalates every future
+;; parcel whose ancestry carries an already-landed stray of this shape -
+;; observed live landing BL-1650's own approved commit. Detected on stderr
+;; text (git's own message, stable across the versions this project
+;; targets) rather than tree/index state, which a real conflict can also
+;; leave clean once resolved.
+(defn cherry-pick-already-applied?
+  [cherry-pick-result]
+  (boolean (re-find #"previous cherry-pick is now empty" (str (:err cherry-pick-result)))))
+
 (defn replay!
   "Builds a tip-pure commit for task-ticket-id's own-paths, on top of
    origin/main, in a DEDICATED linked worktree
@@ -1958,7 +2114,7 @@
    as land-plan's - land_step_cli.bb passes the SAME sha it gave land-plan,
    so the worktree this builds is created off the exact tip own-paths was
    decided against, not a tip main may have moved to since."
-  [{:keys [root commit task-ticket-id own-paths passengers tree-guards-fn] :as opts}]
+  [{:keys [root commit task-ticket-id own-paths passengers tree-guards-fn stray-commits] :as opts}]
   (let [origin-main (if (contains? opts :origin-main) (:origin-main opts) (origin-main-sha root))
         common-dir (git-common-dir root)
         run-guards (or tree-guards-fn (fn [tree-root _] (run-replayed-tree-guards tree-root)))]
@@ -1986,6 +2142,43 @@
           (do (cleanup!)
               (drop-branch!)
               {:success false :reason (str "land-step replay: could not create worktree " scratch " off origin/main")})
+          ;; BL-1650 items 1-2: any closed-owner pure-evidence strays are
+          ;; cherry-picked (`-x`, keeping the stray's own author/subject)
+          ;; onto the scratch branch BEFORE the parcel's own tip-pure
+          ;; commit, in authored order - "lands on main before the
+          ;; parcel's replay" per the ticket's FIRM constraint. A failed
+          ;; cherry-pick aborts the whole replay (fail-closed): nothing is
+          ;; ever published half-landed.
+          (let [stray-failure (atom nil)
+                stray-landed (atom [])]
+            (doseq [{:keys [sha sibling paths]} stray-commits]
+              (when-not @stray-failure
+                (let [cp (git! scratch "cherry-pick" "-x" sha)]
+                  (cond
+                    (zero? (:exit cp))
+                    (swap! stray-landed conj
+                           {:sha sha :sibling sibling :paths paths
+                            :landed-sha (str/trim (:out (git! scratch "rev-parse" "HEAD")))})
+
+                    ;; BL-1650 D1: already on the target tree under a
+                    ;; different sha - skip the empty patch (clears the
+                    ;; pending CHERRY_PICK_HEAD) and record it as landed
+                    ;; at the tree's CURRENT tip, never as a failure.
+                    (cherry-pick-already-applied? cp)
+                    (do (git! scratch "cherry-pick" "--skip")
+                        (swap! stray-landed conj
+                               {:sha sha :sibling sibling :paths paths
+                                :landed-sha (str/trim (:out (git! scratch "rev-parse" "HEAD")))
+                                :already-applied? true}))
+
+                    :else
+                    (do (git! scratch "cherry-pick" "--abort")
+                        (reset! stray-failure
+                                (str "land-step replay: could not cherry-pick stray evidence commit " sha)))))))
+          (if @stray-failure
+            (do (cleanup!)
+                (drop-branch!)
+                {:success false :reason @stray-failure})
           (let [applied? (write-tree-from-paths! scratch commit own-paths)]
             (if-not applied?
               (do (cleanup!)
@@ -2031,7 +2224,8 @@
                                               (str/join "; " refusals))})
                             {:success true :commit sha :branch branch :passengers (set passengers)
                              :restored-registry-rows (:restored restore-result)
-                             :retired-registry-rows (:retired restore-result)}))))))))))))))
+                             :retired-registry-rows (:retired restore-result)
+                             :stray-landed @stray-landed}))))))))))))))))
 
 ;; ── BL-1447: a built replay is verified complete before land-plan ever
 ;;    returns :replay, reading git objects only - never the attribution
@@ -2199,7 +2393,14 @@
           ;; the parcel's last hop is a candidate exactly like one after
           ;; it). walk-base still bounds nothing here; see the docstring.
           {:keys [entangled landed unlanded landed-paths warning]}
-          (entangled-siblings root commit task-ticket-id extra-paths-fn lines-of origin-main)]
+          (entangled-siblings root commit task-ticket-id extra-paths-fn lines-of origin-main)
+          ;; BL-1650 items 1-2: closed-owner pure-evidence strays this land
+          ;; step may land itself, computed over the SAME full-ancestry
+          ;; `candidates` the detection above already walked - never a
+          ;; second candidate walk.
+          stray-commits (when candidates
+                          (stray-evidence-commits root origin-main task-ticket-id candidates))
+          stray-paths (into #{} (mapcat :paths) stray-commits)]
       (cond
         warning {:action :escalate :reason warning}
         (empty? entangled) {:action :land}
@@ -2207,6 +2408,7 @@
         (let [{:keys [paths warning passengers excluded content-clear]}
               (own-paths root commit task-ticket-id unlanded nil nil
                          {:attribution (when attribution @attribution)
+                          :stray-paths stray-paths
                           :path-landed-fn (when origin-main
                                             (sibling-path-landed-fn root origin-main commit lines-of))
                           ;; BL-1481: reuses this SAME per-sibling read
@@ -2243,7 +2445,8 @@
             ;; published for either.
             (let [replay-result (replay! {:root root :commit commit :task-ticket-id task-ticket-id
                                            :own-paths paths :passengers (or passengers #{})
-                                           :origin-main origin-main})]
+                                           :origin-main origin-main
+                                           :stray-commits stray-commits})]
               (if-not (:success replay-result)
                 {:action :escalate :reason (:reason replay-result) :unlanded unlanded}
                 (let [parcel-paths (parcel-commit-paths root task-ticket-id origin-main commit)]
@@ -2270,14 +2473,24 @@
                             {:action :escalate
                              :reason (str "replay-incomplete: " (str/join " " offenders))
                              :unlanded unlanded})
-                        {:action :replay :entangled entangled :landed landed :unlanded unlanded
-                         :landed-paths (or landed-paths {})
-                         :excluded (or excluded [])
-                         :content-clear (or content-clear [])
-                         :own-paths paths :passengers (or passengers #{})
-                         :commit (:commit replay-result) :branch (:branch replay-result)
-                         :restored-registry-rows (:restored-registry-rows replay-result)
-                         :retired-registry-rows (:retired-registry-rows replay-result)}))))))))))))
+                        ;; BL-1650 items 1-2: every sibling whose stray
+                        ;; commit was just cherry-picked onto this replay
+                        ;; branch really did land here - moved from
+                        ;; :unlanded/:entangled reporting into :landed,
+                        ;; never left printed ENTANGLED_SIBLING for content
+                        ;; this same replay just published.
+                        (let [stray-landed-ids (into #{} (map :sibling) (:stray-landed replay-result))
+                              unlanded (into #{} (remove stray-landed-ids) unlanded)
+                              landed (into (or landed #{}) stray-landed-ids)]
+                          {:action :replay :entangled entangled :landed landed :unlanded unlanded
+                           :landed-paths (or landed-paths {})
+                           :excluded (or excluded [])
+                           :content-clear (or content-clear [])
+                           :own-paths paths :passengers (or passengers #{})
+                           :commit (:commit replay-result) :branch (:branch replay-result)
+                           :restored-registry-rows (:restored-registry-rows replay-result)
+                           :retired-registry-rows (:retired-registry-rows replay-result)
+                           :stray-landed (:stray-landed replay-result)})))))))))))))
 
 ;; ── BL-1432 option 1: re-point the QA branch after a successful land ─────
 ;; QA's branch keeps every review merge and every merge-of-main as its own
