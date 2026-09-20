@@ -42,18 +42,6 @@ land_step_cli.bb <task-name> <commit> [repo-root]
   (BL-1375)" below. QA owes each named passenger the same
   `abandoned_commits:` bookkeeping its own land would have produced.
 
-  `<new-commit>`'s own branch may also carry one or more
-  `LAND_STRAY_EVIDENCE_LANDED <sha> -> <landed-sha> <paths>` lines (BL-1650):
-  a closed sibling's stray commit whose EVERY path is pure evidence
-  (`backlog/evidence/`) or documentation (`docs/`) — the everyday shape a
-  role's own incident write-up, committed after the sibling moved on,
-  produces (BL-831/BL-1636) — is cherry-picked (`-x`, keeping the stray's own
-  author and subject) onto the replay branch itself, ahead of the parcel's
-  own tip-pure commit. That sibling then reports `LANDED_SIBLING`, never
-  `ENTANGLED_SIBLING`; nothing is abandoned. Anything wider — a stray
-  touching any path outside that narrow allowlist — still refuses exactly as
-  BL-1546 already does, by name, never decided silently.
-
   A `LANDED_SIBLING` line does not change what action `land-plan` returns —
   the sibling's original commit remains an ancestor, and its content may
   differ from the replay, so the action stays `:land` — only the report.
@@ -108,39 +96,7 @@ detection walk would miss a sibling whose untagged work only reached the
 tip that way, naming other siblings while silently replaying that one's
 files in unreported. `own-commit-changed-paths` and
 `task-tagged-changed-paths` are unaffected by this — only the detector's
-candidate set widened. (`landed-sibling-verdicts`'s own SCORING walk was
-also first-parent-only at the time this section was written — BL-1650
-below closes that gap.)
-
-## Landed-sibling verdicts now score over the same full-ancestry candidates the detector found, and honour abandoned_commits (BL-1650)
-
-`landed-sibling-verdicts` used to attribute paths to a sibling by walking
-`task-tagged-changed-paths`'s own `--first-parent` range — the same
-first-parent limitation BL-1308 (above) fixed for `entangled-siblings`'s
-DETECTION, but left untouched for this function's own SCORING, by that
-section's own written statement. A commit that reached a role's branch
-through a non-first-parent merge — the everyday pipeline shape, since
-every receiving role takes a parcel with `git merge <hash>` — was
-therefore invisible to the walk: `considered` came back empty,
-`sibling-landed?` failed closed, and the sibling printed
-`ENTANGLED_SIBLING` forever, however identical its content already was on
-`origin/main`. Confirmed live 2026-09-19: BL-1636's replay kept printing
-`ENTANGLED_SIBLING BL-831` and `ENTANGLED_SIBLING BL-1634` after a ruled
-cherry-pick had already landed their content, because both siblings'
-identifying commits (6d63104e70, 1e97976a66) rode in on merges.
-
-`landed-sibling-verdicts` now walks the SAME `candidates` set
-`entangled-siblings` already found for the sibling (the full-ancestry
-walk, merges themselves excluded as before — a merge authors no lines),
-filtered to commits that sibling's ticket owns, then further excludes any
-candidate the sibling's OWN ticket already lists under its
-`abandoned_commits:` (any backlog lane — `ticket-abandoned-commits`) —
-that list is the ticket's own disclaimer that the commit was deliberately
-superseded, not evidence the sibling is entangled. A sibling whose every
-remaining attributed path is byte-identical to `origin/main` now reports
-`LANDED_SIBLING`, never `ENTANGLED_SIBLING`. (See the CLI usage section
-above for the sibling `LAND_STRAY_EVIDENCE_LANDED` behavior BL-1650 adds
-alongside this fix.)
+candidate set widened.
 
 ## The replay tip is now based on the full range, not the tagged merge's first-parent diff (BL-1315)
 
