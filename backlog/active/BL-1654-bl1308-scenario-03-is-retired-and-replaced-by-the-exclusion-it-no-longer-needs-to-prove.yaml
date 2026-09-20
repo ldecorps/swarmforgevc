@@ -149,3 +149,5 @@ notes: |
   land_step_cli.bb still prints EXCLUDED_SIBLING_PATH, no open ticket or
   worktree branch touches the feature. Record (BL-1267) at
   .swarmforge/deprecator/adjudications/BL-1654.json.
+
+assigned_to: coder
