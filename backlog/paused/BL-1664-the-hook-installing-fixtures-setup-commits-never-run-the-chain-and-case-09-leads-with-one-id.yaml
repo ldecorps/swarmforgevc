@@ -1,0 +1,129 @@
+id: BL-1664
+title: "test_merge_deletion_guard.sh installs the real commit-msg chain into its fixture and then makes its own setup commits through it, so BL-1617's ambiguous-subject guard (landed 2026-09-18) refuses case 09's setup commit 'revert BL-0003/BL-0004 bounce' and the shell lane has been red since: the four hook-installing fixtures make setup commits with the chain off and only the commits under test run it, case 09 leads with BL-0003, and this file's twenty echo-into-grep -q assertions stop dying of SIGPIPE under pipefail"
+milestone: M8
+type: defect
+severity: high
+# high (standing-red rule 2026-09-05): a test failing on main in any lane
+# is a broken safety signal; test_merge_deletion_guard.sh is a manifest
+# 'standing' entry, red deterministically at case 09 since BL-1617
+# landed. Not high for product reasons: the guards under test are
+# correct; the fixture's own commits are the defect.
+status: todo
+epic: code-quality-gates
+priority: 8
+direction: swarm-reported
+depends_on: []
+# BL-1242/BL-1341 (the guard under test), BL-1484 (the four fixtures
+# derive their guard set from the real chain), BL-1617 (the guard that
+# now refuses the fixture's subject) are in backlog/done. BL-1662
+# (paused) changes check_merge_deletion.sh and BL-1242's feature, never
+# this test file - orthogonal; BL-1665 (sibling, paused) sweeps every
+# other shell test's grep -q and EXCLUDES this file.
+mutation_cost: low
+# low: shell (no mutation/CRAP/DRY wired, BL-472): four fixture files'
+# setup commits, one subject, twenty assertion pipes in one file.
+slice_size_envelope: low
+required_stages: [coder, cleaner, architect, hardender, documenter, qa]
+
+acceptance: specs/features/BL-1242-merge-never-silently-drops-branch-work.feature
+# The contract this ticket must keep satisfying is BL-1242's feature,
+# unchanged (the fix touches test fixtures only) - BL-1251's shape; not a
+# claim of ownership over BL-1242's contract. The gate is that file green
+# through the runner plus the e2e below.
+
+human_approval: approved
+approval_context: >
+  No feature file is authored or changed here; minted approved under the
+  2026-09-17 operator hotfix (severity defect, no choice posed, no
+  ruling_options). FIRM: the commits each fixture puts UNDER TEST (the
+  merges of cases 07-09 here, the analogous commits in the other three)
+  still run the real installed chain; only setup commits bypass it. FIRM:
+  every assertion keeps its meaning; only the pipe's consumer stops
+  exiting early.
+
+invariants:
+  - "In every hook-installing shell fixture, a commit that is not the subject of the case runs no guard, so a guard joining the chain later can fail a case only through the commit that case asserts on."
+
+description: |
+  ## What is wrong
+
+  `swarmforge/scripts/test/test_merge_deletion_guard.sh` line 193 sets
+  `core.hooksPath swarmforge/git-hooks` in its fixture (the real chain,
+  derived by BL-1484's helper), and every later commit in the fixture
+  runs it - setup commits included. Case 09's setup at line 224,
+  `git commit -q -m "revert BL-0003/BL-0004 bounce"`, names two ids and
+  leads with neither; `check_closed_ticket_subject.sh` (BL-1617, landed
+  4c5c375232 on 2026-09-18 11:28) refuses it as AMBIGUOUS and the script
+  aborts before case 09 prints PASS or FAIL: `Error: commit subject names
+  several ticket ids (BL-0003 BL-0004) and leads with none ...
+  (BL-1544)` (cleaner evidence
+  `backlog/evidence/unowned-red-test-merge-deletion-guard-ambiguous-subject-20260920.md`;
+  specifier two runs on main 128e527ce0: cases 01-08 PASS, then the same
+  refusal, exit 1). Red since 2026-09-18; first seen 2026-09-20 by the
+  cleaner reviewing BL-1662. The other three fixtures that install the
+  chain (`test_ticket_deletion_guard.sh`, `test_commit_size_guard.sh`,
+  `test_retirement_readdition_guard.sh`) are exposed the same way: any
+  guard that joins the chain can fail their setup commits.
+
+  A second, independent defect in the same file: its twenty assertions
+  are `echo "$OUT" | grep -q ...` under `set -euo pipefail`. `grep -q`
+  exits at the first match while echo is still writing the later lines,
+  echo dies of SIGPIPE, the pipeline reports 141, and `|| fail` fires on
+  text that contains the needle - the specifier's first run on main
+  failed case 02 exactly so ("refusal must name BL-0001, got: ... (BL-0001,
+  ..."), the second passed. BL-1660's race in a test file; BL-1665 sweeps
+  the other 124 files.
+
+  ## What is wanted
+
+  - In all four hook-installing fixtures, setup commits made after the
+    chain is installed run with hooks off (`git -c core.hooksPath=/dev/null
+    commit ...`, or `--no-verify`); only the commit each case asserts on
+    runs the chain. Case 09's subject leads with one id
+    (`BL-0003: revert the BL-0003/BL-0004 bounce`) so it also reads
+    unambiguously to a human.
+  - `test_merge_deletion_guard.sh`'s pipes consume all input:
+    `grep -q X` becomes `grep X >/dev/null` (same flags), or a bash
+    `[[ "$OUT" == *X* ]]` test where the needle is literal.
+  - Register row for the file (lane shell, owner BL-1664, added at mint)
+    leaves in this parcel's land (BL-1631).
+
+  ## How (direction, not mandate)
+
+  - A `setup_commit()` helper per fixture wrapping `git -c
+    core.hooksPath=/dev/null -C "$ROOT" commit -q -m "$1"`; grep each
+    fixture for `commit -q -m` after its `core.hooksPath` line.
+
+constraints: >
+  The four fixture files and nothing else; no guard, no production
+  script, no feature file changes. Fixture roots stay mkdtemp git init
+  repositories registered for reaping.
+
+out_of_scope: |
+  - Every other shell test's `| grep -q` under pipefail: BL-1665.
+  - The 31 production scripts with the same shape: BL-1660's census.
+
+qa_e2e_procedure: >
+  (1) `bash swarmforge/scripts/test/test_merge_deletion_guard.sh` ONCE on
+  the parcel commit: PASS 01-09, exit 0. (2) Each of the other three
+  fixtures once: PASS, exit 0. (3) `grep -c '| grep -q'
+  swarmforge/scripts/test/test_merge_deletion_guard.sh` is 0. Never "run
+  it N times".
+
+source: |
+  Cleaner note to the specifier, priority 10, 2026-09-20T03:35:24Z
+  (inbound 10_20260920T033524Z_000918_from_cleaner), verbatim:
+  "unowned-red: test_merge_deletion_guard.sh case 09 trips BL-1544".
+  Cleaner evidence, verbatim: "Case 09's own setup commits, at line 224
+  ... names two ticket ids in its subject with no leading id - exactly
+  the shape `check_closed_ticket_subject.sh` refuses as AMBIGUOUS."
+  Parents: BL-1242, BL-1484, BL-1617, BL-1660.
+
+notes: |
+  Minted 2026-09-20 by the specifier while completing the cleaner's note,
+  the same pass as BL-1665. AUTO-APPROVED under the 2026-09-17 operator
+  hotfix (severity defect, no ruling_options) - see
+  auto-approve-high-severity-defects-amendment-20260917.md. Register row
+  appended in the mint commit (first_seen 2026-09-20; red since
+  2026-09-18 by BL-1617's land). The cleaner, reviewing BL-1662, was
+  noted the same pass that the red is owned.

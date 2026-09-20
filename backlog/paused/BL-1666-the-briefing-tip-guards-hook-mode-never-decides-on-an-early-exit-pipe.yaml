@@ -1,0 +1,152 @@
+id: BL-1666
+title: "check_documenter_briefing_tip.sh's hook mode decides 'on the documenter branch's first-parent line' and 'touches docs/briefings/' through git-into-grep -q pipes under pipefail, so under load the producer dies of SIGPIPE and both read as 'not judged' - a real briefing land passes the lane check unjudged; and bl1459DocumenterBriefingTipGuardInvariants.property.test.js failed once in seventeen runs on invariant 1 (already-landed date reported OK) with no mechanism found: the hook mode's tests consume their whole input, the property's fixture is sweep-proof, and the sighting is reproduced or retired with the evidence"
+milestone: M8
+type: defect
+severity: high
+# high: a broken safety signal, twice over. The hook-mode pipes fail OPEN
+# under load (a briefing carrying out-of-lane content lands unjudged),
+# and a property in the landed file failed on main with a recorded
+# output (QA, 1 of 17) - the standing-red rule's first sighting. Not
+# critical: the --tip mode QA runs by hand is deterministic (specifier:
+# 0 spurious OK in 200 loaded runs).
+status: todo
+epic: code-quality-gates
+priority: 8
+direction: swarm-reported
+depends_on: []
+# BL-1459 (the guard and this property, landed 8fad11b0dc 2026-09-20),
+# BL-1660 (the same pipe race in a library) and BL-1539 (the first fix
+# of it) are in backlog/done or open elsewhere; BL-1665 (paused) sweeps
+# shell TESTS only and never touches this guard. No open ticket touches
+# either file.
+mutation_cost: low
+# low: shell (no mutation/CRAP/DRY wired, BL-472): two pipes in one
+# guard, its shell test cases, one property file's fixture; the BL-1459
+# feature is the contract and stays green.
+slice_size_envelope: low
+required_stages: [coder, cleaner, architect, hardender, documenter, qa]
+
+acceptance: specs/features/BL-1459-a-documenter-briefing-lands-through-a-qa-note-inside-its-lane.feature
+# The contract this ticket must keep satisfying is BL-1459's feature,
+# unchanged - BL-1251's shape; not a claim of ownership over BL-1459's
+# contract. The gate is that file green through the runner plus the e2e.
+
+human_approval: approved
+approval_context: >
+  No feature file is authored or changed here; minted approved under the
+  2026-09-17 operator hotfix (severity defect, no choice posed, no
+  ruling_options). FIRM: hook mode keeps its three exemptions (not on
+  the first-parent line, already on the landed main, no briefing path in
+  the delivered content) and judges exactly what it judges today - only
+  the way each test reads its input changes. FIRM: the property's
+  assertions keep their meaning; the sighting is either reproduced with
+  a mechanism and fixed, or retired in the evidence as not reproducible
+  after a BOUNDED search (three runs of the file, a loop over the
+  property's own draws) - never by loosening the assertion.
+
+invariants:
+  - "No decision in check_documenter_briefing_tip.sh depends on a pipe whose consumer can exit before its producer has finished writing; every exemption is computed from a fully read input."
+
+description: |
+  ## What is wrong
+
+  `swarmforge/scripts/check_documenter_briefing_tip.sh` (landed
+  8fad11b0dc, BL-1459) runs under `set -euo pipefail`. Hook mode decides
+  two exemptions through early-exit pipes:
+
+  ```
+  284: if ! git rev-list --first-parent "${LANDED_MAIN}..${DOCUMENTER_BRANCH}" 2>/dev/null | grep -qx "$INCOMING"; then
+  304: if ! git diff --name-only "$BASE" "$INCOMING" 2>/dev/null | grep -q "^${BRIEFINGS_DIR}"; then
+  ```
+
+  `grep -q` exits at the first match while the producer may still be
+  writing (a long first-parent list; a diff with many paths); the
+  producer dies of SIGPIPE, pipefail reports 141, `if !` reads it as
+  "not on the line" or "no briefing path", and the merge is NOT judged -
+  a briefing tip carrying out-of-lane content lands through the chain
+  unjudged. BL-1660 measured the race in a library (57 of 400 runs under
+  load, deterministic past the pipe buffer); the guard's `--tip` mode
+  has no such pipe (`already_landed_day` uses `git rev-parse --verify`)
+  and the specifier's 200 loaded runs of a same-date tip refused every
+  time.
+
+  Separately, QA ran `extension/test/bl1459DocumenterBriefingTipGuardInvariants.property.test.js`
+  seventeen times after BL-1459 landed (evidence
+  `backlog/evidence/unowned-red-bl1459-property-test-flaky-not-deterministic-20260920.md`,
+  QA branch): sixteen passed, one failed invariant 1 with
+  `AssertionError: expected refusal for the already-landed date 2090-01-01,
+  got status 0: DOCUMENTER_BRIEFING_TIP_OK` (test.js:94, the sameDate
+  branch). The specifier's one run on main passed 6 of 6 (4.0 s) and the
+  guard reproduced no spurious OK under load; identical contents are not
+  the mechanism (`writeCommit` throws on an empty commit). Open
+  candidates: a concurrent lane's blind temp-root sweep taking the
+  fixture root mid-draw (BL-1623/BL-1636: the fixture uses `mkTmpDir`
+  under the shared temp dir), or a fixture-state interaction between
+  consecutive draws. coder@2's earlier "stale non-vacuity marker" report
+  was against the pre-rebuild copy on its branch and is moot on main.
+
+  ## What is wanted
+
+  - Lines 284 and 304 read their whole input: `grep -x ... >/dev/null`,
+    or capture the list into a variable and test it in bash; the guard's
+    shell test gains a case per exemption whose producer output is far
+    larger than the pipe buffer with the match on its first line.
+  - The property's fixture roots are `trackedTmpRoot`-registered (BL-1636)
+    and each draw's repository is created and read inside one step so a
+    sweep between draws cannot empty it; then a bounded search: the file
+    three times, and a loop over invariant 1's own draws (one process)
+    long enough to cover ten thousand draws. A failure found is fixed
+    with its mechanism named in the evidence; none found retires the
+    sighting there with the counts.
+  - Register row for the property file (lane property, owner BL-1666,
+    added at mint) leaves in this parcel's land (BL-1631).
+
+  ## How (direction, not mandate)
+
+  - `first_parent_list="$(git rev-list --first-parent "$range")"; grep -qx
+    "$INCOMING" <<<"$first_parent_list"` keeps the -q with no producer
+    process to kill; same for the diff. Mirror BL-1660's shell case for
+    the large-output shape.
+
+constraints: >
+  The guard's decisions and messages are unchanged for every input the
+  BL-1459 feature and the guard's shell test already pin. No change to
+  BL-1459's feature or handler. Fixture roots stay mkdtemp git init
+  repositories registered for reaping.
+
+out_of_scope: |
+  - The 31 production scripts with the same shape (BL-1660's census)
+    and the 125 shell tests (BL-1665).
+  - The art-director guard's own pipes: BL-1657 reworks that guard.
+
+qa_e2e_procedure: >
+  (1) `bash swarmforge/scripts/test/test_check_documenter_briefing_tip.sh`
+  ONCE on the parcel commit: PASS including the large-output cases. (2)
+  `cd extension && npx vitest run --config vitest.properties.config.mjs
+  test/bl1459DocumenterBriefingTipGuardInvariants.property.test.js` once:
+  6 passed, duration recorded. (3) `grep -n 'grep -q' swarmforge/scripts/check_documenter_briefing_tip.sh`
+  names no line whose grep reads from a process pipe. (4) The parcel's
+  evidence names the sighting's mechanism or its retirement with the
+  bounded counts. Never "run it N times" beyond the bounded search above.
+
+source: |
+  QA note to the specifier, priority 50, 2026-09-20T03:39:39Z (inbound
+  50_20260920T033939Z_003010_from_QA), verbatim: "BL-1459 property test
+  is flaky (1/17), not deterministic as coder@2 reported". QA evidence,
+  verbatim: "the ONE failure I saw was a DIFFERENT assertion than the one
+  coder@2 described: AssertionError: expected refusal for the
+  already-landed date 2090-01-01, got status 0:
+  DOCUMENTER_BRIEFING_TIP_OK". The hook-mode pipes were found by the
+  specifier reading the landed guard for the sighting's mechanism.
+  Parents: BL-1459, BL-1660, BL-1539, BL-1647 (a flake sighting records
+  its failing output).
+
+notes: |
+  Minted 2026-09-20 by the specifier while completing QA's note, the same
+  pass. AUTO-APPROVED under the 2026-09-17 operator hotfix (severity
+  defect, no ruling_options) - see
+  auto-approve-high-severity-defects-amendment-20260917.md. Register row
+  appended in the mint commit (first_seen 2026-09-20, QA's sighting).
+  QA was noted the same pass that the red is owned, with the reminder
+  that the human capped repeated runs at three (2026-09-17); seventeen
+  is the shape the human called "a thing in itself".
