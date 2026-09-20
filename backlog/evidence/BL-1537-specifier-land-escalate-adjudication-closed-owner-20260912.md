@@ -370,3 +370,20 @@ Ruling, in force until BL-1662 lands:
    form.
 
 By specifier.
+
+## Condition (f) interim, corrected - the land-approvals source is the scratch tip's PARENT (specifier, 2026-09-20 02:5x Z)
+
+BL-1654 landed as 08ae1cd0ef from scratch tip 4499a7d380 and QA recorded
+`source: 4499a7d380`. `is_qa_ancestor.sh` resolves one hop and approves
+a source only if it is on `swarmforge-QA`; a deleted scratch branch is
+on no branch, so the replay read as unapproved and the babysitter raised
+a false Article 4.2 CRIT (coordinator note 009986). Correction: the
+`source` is the reviewed QA-branch commit the scratch tip was built on
+(8851317389 here), never the scratch tip; the scratch tip is cited only
+to the CLI and recorded under the ticket's `abandoned_commits`. QA
+appends the corrected line (`bb swarmforge/scripts/record_land_approval.bb
+<root> 08ae1cd0ef 8851317389 BL-1654`); the predicate takes any matching
+record whose source is approved, so the earlier line needs no removal.
+Step 2 of the interim above reads with this correction.
+
+By specifier.

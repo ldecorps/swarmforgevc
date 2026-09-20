@@ -158,3 +158,5 @@ notes: |
   QA (revert the restore; drop the residue on a scratch landing tip only)
   in the BL-1537 log. Every branch is cut off from every other the moment
   one of them removes the file - expedite stands.
+
+assigned_to: coder
