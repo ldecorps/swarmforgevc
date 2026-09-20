@@ -170,3 +170,5 @@ notes: |
   appended in the mint commit (first_seen 2026-09-19, QA's sighting on
   BL-1639, the first with a recorded failing status). The coder, holding
   BL-1459, was noted the same pass that the red is owned.
+
+assigned_to: coder
