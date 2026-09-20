@@ -16,8 +16,16 @@ Feature: BL-1650 The land step lands a pure-evidence closed-owner stray itself
   and subject) such a stray itself, ahead of the parcel's own tip-pure
   replay, and report it LAND_STRAY_EVIDENCE_LANDED - narrowly, only when
   every path the stray touches is pure evidence/documentation; anything
-  wider still refuses exactly as BL-1546 already does. Every scenario runs
-  against a fixture repository under mkdtemp with its own origin (BL-1390).
+  wider still refuses exactly as BL-1546 already does. QA bounce (D1,
+  2026-09-20): a stray whose content is ALREADY on origin/main under a
+  different commit (the everyday shape once a stray has been hand-landed
+  once) makes `git cherry-pick -x` exit non-zero with "the previous
+  cherry-pick is now empty" - git's own signal for nothing-to-commit, not
+  a conflict. The pre-fix code aborted and escalated identically to a real
+  conflict; it now skips the empty patch and reports
+  LAND_STRAY_EVIDENCE_ALREADY_LANDED, and the replay proceeds. Every
+  scenario runs against a fixture repository under mkdtemp with its own
+  origin (BL-1390).
 
   Background:
     Given a fixture repository with an origin and a main branch
@@ -55,3 +63,13 @@ Feature: BL-1650 The land step lands a pure-evidence closed-owner stray itself
     And that same commit later becomes an ancestor of the landing ticket's branch through an ordinary merge
     When the land step runs for the landing ticket at the tip
     Then it exits LAND_CLEAN
+
+  # BL-1650 an-already-landed-stray-replays-through-05
+  Scenario: a stray whose content is already on origin/main under a different commit replays through instead of escalating (QA bounce D1)
+    Given a commit on a role branch, tagged with a sibling ticket id, touching only a path under backlog/evidence/
+    And that sibling ticket is closed on origin/main
+    And origin/main already carries the stray's own file content under a separate commit
+    And the landing ticket's own commit is on the same role branch
+    When the land step runs for the landing ticket at the tip
+    Then it exits LAND_REPLAY and prints LAND_STRAY_EVIDENCE_ALREADY_LANDED naming the stray's own commit and its path
+    And the sibling is reported LANDED_SIBLING, never ENTANGLED_SIBLING

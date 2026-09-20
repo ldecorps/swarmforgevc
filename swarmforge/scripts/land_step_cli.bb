@@ -162,9 +162,17 @@
               ;; itself, ahead of the parcel's own tip-pure commit - never
               ;; landed silently (Article 1.9's own posture, same as the
               ;; ENTANGLED_SIBLING/LANDED_SIBLING lines below).
-              (doseq [{:keys [sha landed-sha paths]} (:stray-landed plan)]
-                (println (str "LAND_STRAY_EVIDENCE_LANDED " sha " -> " landed-sha " "
-                              (str/join "," (sort paths)))))
+              (doseq [{:keys [sha landed-sha paths already-applied?]} (:stray-landed plan)]
+                ;; BL-1650 D1: an already-applied stray (content identical
+                ;; to the target tree under a different sha - git's own
+                ;; "now empty" cherry-pick) never lands a NEW commit, so
+                ;; it is never printed as LANDED - a distinct, equally
+                ;; auditable tag names the sha it never needed to move.
+                (if already-applied?
+                  (println (str "LAND_STRAY_EVIDENCE_ALREADY_LANDED " sha " already at " landed-sha " "
+                                (str/join "," (sort paths))))
+                  (println (str "LAND_STRAY_EVIDENCE_LANDED " sha " -> " landed-sha " "
+                                (str/join "," (sort paths))))))
               ;; BL-1604: names every other open ticket's registry row the
               ;; replay restored - a land can no longer silently un-own a
               ;; standing red.
