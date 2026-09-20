@@ -20,10 +20,14 @@ Feature: An unlanded sibling reached only through a merge's second parent
   A role's forward-merge takes its subject from the ticket it is forwarding.
   So when an earlier ticket's commits ride into that merge on the second
   parent - because that ticket is still parked upstream and never got a tagged
-  merge of its own - its paths enter the replay while its id never reaches the
-  report.
-  The detector under-includes exactly where the path set over-includes, so the
-  safety net has a hole shaped like the thing it is meant to catch.
+  merge of its own - the detector under-includes exactly where the path set
+  over-includes: the sibling's id could stay off the report while its paths
+  rode the replay anyway. BL-1389 (06f1babcaf, 2026-09-04) closed that half of
+  the hole from the other side: the replay's own-path set now excludes a path
+  only such an unlanded sibling owns, printing EXCLUDED_SIBLING_PATH for each
+  one, so a foreign path never enters the replay unattributed in the first
+  place. The detector's own sibling-naming behaviour below (scenarios 01-02,
+  04) is unchanged by that fix.
 
   Verified 2026-08-30 on BL-1307's documenter tip `bd27e884cb`: the detector
   named BL-1288, BL-1293 and BL-1299 and never named BL-1300, whose commits
@@ -57,10 +61,23 @@ Feature: An unlanded sibling reached only through a merge's second parent
     Then the sibling ticket is named in the report
 
   # BL-1308 sibling-detector-covers-replay-content-03
-  Scenario: A replay tip carries no path from a ticket the report did not name
-    Given the replay tip adds a path that is absent from origin/main
-    When the land step decides
-    Then the ticket that path is attributed to is named in the report
+  # Retired 2026-09-20 (BL-1654): this scenario's own premise - that an
+  # unlanded sibling's path could ride the replay tip unattributed - was
+  # closed by BL-1389 (06f1babcaf, 2026-09-04), which made the land step
+  # exclude such a path outright and name it EXCLUDED_SIBLING_PATH. Red on
+  # main since that fix landed (BL-1006's shape: the successor that
+  # falsified the premise never retired the scenario built to catch it).
+  # Replaced below by the scenario that pins the exclusion BL-1389 actually
+  # performs, on the same second-parent fixture shape.
+  # BL-1308 sibling-detector-covers-replay-content-03b
+  # Names BL-1389 per BL-1654's own instruction, so the lineage stays
+  # greppable from this feature file alone.
+  Scenario: The replay tip carries only the cited ticket's own paths, and every excluded sibling path is named (BL-1389)
+    Given a forward-merge whose subject names the cited ticket
+    And an unlanded sibling ticket's untagged commits on that merge's second parent
+    When the land step reports its siblings
+    Then the replay tip adds only the cited ticket's own paths
+    And every sibling path left out of the replay is named on its own EXCLUDED_SIBLING_PATH line
 
   # BL-1308 sibling-detector-covers-replay-content-04
   # Preserves the posture entangled-siblings' existing warning path already
