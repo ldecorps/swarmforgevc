@@ -27,12 +27,9 @@ mutation_cost: low
 slice_size_envelope: low
 required_stages: [coder, cleaner, architect, hardender, documenter, qa]
 
-acceptance: specs/features/BL-1657-the-art-director-tip-guard-resolves-its-branch-from-the-roster.feature.draft
-# THIS ticket builds the draft (2026-08-30 rule): as an in-parcel step,
-# rename it to .feature, add and REGISTER the step handler named in
-# required_wiring, and repoint this field. Renaming without landing the
-# handler in the SAME commit turns the suite red for every other parcel
-# (BL-233). BL-1444's feature is the second contract: its handler moves
+acceptance: specs/features/BL-1657-the-art-director-tip-guard-resolves-its-branch-from-the-roster.feature
+# The draft was renamed and its handler registered in this same commit
+# (BL-233). BL-1444's feature is the second contract: its handler moved
 # to the roster shape and all its scenarios stay green.
 
 required_wiring:

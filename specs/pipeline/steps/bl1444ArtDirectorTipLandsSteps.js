@@ -148,8 +148,26 @@ function mkFixtureRepo() {
   git(root, 'commit', '-q', '-m', 'seed hooks');
   git(root, 'config', 'core.hooksPath', 'swarmforge/git-hooks');
 
-  git(root, 'branch', 'primary/art-director', 'main');
-  return root;
+  // BL-1657: the roster shape this host actually uses - a
+  // .swarmforge/roles.tsv row for the art-director seat whose worktree
+  // column points at a REAL linked worktree checked out on
+  // swarmforge-art-director, never a bare branch checked out in the
+  // fixture's own root (that would collide with the root's own HEAD
+  // moving between main/landing/role branches the way `git worktree`
+  // itself refuses - a branch cannot be checked out in two places at
+  // once). The art director's own commits land through that worktree,
+  // exactly as the guard's `git -C <worktree> symbolic-ref --short HEAD`
+  // resolution expects.
+  const adWorktree = fs.mkdtempSync(path.join(os.tmpdir(), 'sfvc-bl1444-ad-worktree-'));
+  fs.rmdirSync(adWorktree);
+  git(root, 'worktree', 'add', '-q', '-b', 'swarmforge-art-director', adWorktree, 'main');
+  fixtureRoots.push(adWorktree);
+  fs.mkdirSync(path.join(root, '.swarmforge'), { recursive: true });
+  fs.writeFileSync(
+    path.join(root, '.swarmforge', 'roles.tsv'),
+    `art-director\tart-director\t${adWorktree}\tswarmforge-art-director\tArt Director\tclaude\ttask\toff\tforward-only\n`
+  );
+  return { root, adWorktree };
 }
 
 function mergeWithNoFf(ctx, targetBranch, ref, message) {
@@ -171,9 +189,11 @@ function mergeWithNoFf(ctx, targetBranch, ref, message) {
 function registerSteps(registry) {
   // ── Background ──────────────────────────────────────────────────────────
   registry.defineScoped(
-    /^a fixture repository with a main branch, the versioned pre-merge-commit hook chain, and a branch primary\/art-director based on main$/,
+    /^a fixture repository with a main branch, the versioned pre-merge-commit hook chain, and a roster worktree checked out on swarmforge-art-director based on main$/,
     (ctx) => {
-      ctx.root = mkFixtureRepo();
+      const { root, adWorktree } = mkFixtureRepo();
+      ctx.root = root;
+      ctx.adWorktree = adWorktree;
     },
     FEATURE
   );
@@ -185,40 +205,36 @@ function registerSteps(registry) {
   }, FEATURE);
 
   // ── shared Givens ───────────────────────────────────────────────────────
-  // Both Givens below restore HEAD to the landing branch afterward. The
-  // Background's landing branch is the ambient checkout every later step
-  // assumes ("judge <sha> against HEAD as the landing branch") - direct
-  // mode reads HEAD literally, and leaving HEAD on primary/art-director
-  // itself after minting the tip would judge the tip against its own
-  // commit (an empty diff) instead of against the landing branch.
+  // BL-1657: the art director's own commits are made in ITS OWN linked
+  // worktree (ctx.adWorktree), never by checking swarmforge-art-director
+  // out in the fixture's root - the root's HEAD stays on the landing
+  // branch throughout, exactly as direct mode's "judge <sha> against HEAD
+  // as the landing branch" already assumes, with no restoring checkout
+  // needed afterward.
   registry.defineScoped(/^the art director's tip changes only (\S+)$/, (ctx, tipPath) => {
     assert.ok(KNOWN_TIP_PATHS.has(tipPath), `unknown tip path example value: ${tipPath}`);
-    git(ctx.root, 'checkout', '-q', 'primary/art-director');
-    writeAndAdd(ctx.root, tipPath);
-    git(ctx.root, 'commit', '-q', '-m', `art-director tip changing ${tipPath}`);
-    ctx.adTip = git(ctx.root, 'rev-parse', 'HEAD');
-    git(ctx.root, 'checkout', '-q', ctx.landingBranch);
+    writeAndAdd(ctx.adWorktree, tipPath);
+    git(ctx.adWorktree, 'commit', '-q', '-m', `art-director tip changing ${tipPath}`);
+    ctx.adTip = git(ctx.adWorktree, 'rev-parse', 'HEAD');
   }, FEATURE);
 
   registry.defineScoped(/^the art director's tip changes docs\/design\/system\.md and (\S+)$/, (ctx, outPath) => {
     assert.ok(KNOWN_OUT_OF_LANE_PATHS.has(outPath), `unknown out-of-lane path example value: ${outPath}`);
-    git(ctx.root, 'checkout', '-q', 'primary/art-director');
-    writeAndAdd(ctx.root, 'docs/design/system.md');
-    writeAndAdd(ctx.root, outPath);
-    git(ctx.root, 'commit', '-q', '-m', `art-director tip changing docs/design/system.md and ${outPath}`);
-    ctx.adTip = git(ctx.root, 'rev-parse', 'HEAD');
-    git(ctx.root, 'checkout', '-q', ctx.landingBranch);
+    writeAndAdd(ctx.adWorktree, 'docs/design/system.md');
+    writeAndAdd(ctx.adWorktree, outPath);
+    git(ctx.adWorktree, 'commit', '-q', '-m', `art-director tip changing docs/design/system.md and ${outPath}`);
+    ctx.adTip = git(ctx.adWorktree, 'rev-parse', 'HEAD');
   }, FEATURE);
 
-  registry.defineScoped(/^main gains a commit touching extension\/src\/ and primary\/art-director merges main$/, (ctx) => {
+  registry.defineScoped(/^main gains a commit touching extension\/src\/ and swarmforge-art-director merges main$/, (ctx) => {
     ctx.earlyMain = git(ctx.root, 'rev-parse', 'main');
     git(ctx.root, 'checkout', '-q', 'main');
     writeAndAdd(ctx.root, 'extension/src/main_change.ts');
     git(ctx.root, 'commit', '-q', '-m', 'main gains extension/src change');
     ctx.newMain = git(ctx.root, 'rev-parse', 'main');
-    git(ctx.root, 'checkout', '-q', 'primary/art-director');
-    git(ctx.root, 'merge', '-q', '--no-ff', '-m', 'art-director merges main', 'main');
-    ctx.adMergedMain = git(ctx.root, 'rev-parse', 'primary/art-director');
+    git(ctx.root, 'checkout', '-q', ctx.landingBranch);
+    git(ctx.adWorktree, 'merge', '-q', '--no-ff', '-m', 'art-director merges main', 'main');
+    ctx.adMergedMain = git(ctx.adWorktree, 'rev-parse', 'HEAD');
   }, FEATURE);
 
   registry.defineScoped(/^a role worktree branch is checked out at the commit before that$/, (ctx) => {
@@ -232,11 +248,11 @@ function registerSteps(registry) {
   }, FEATURE);
 
   registry.defineScoped(
-    /^a commit on a branch other than primary\/art-director that changes only docs\/design\/system\.md$/,
+    /^a commit on a branch other than swarmforge-art-director that changes only docs\/design\/system\.md$/,
     (ctx) => {
       git(ctx.root, 'checkout', '-q', '-b', 'not-art-director', 'main');
       writeAndAdd(ctx.root, 'docs/design/system.md');
-      git(ctx.root, 'commit', '-q', '-m', 'on a branch other than primary/art-director');
+      git(ctx.root, 'commit', '-q', '-m', 'on a branch other than swarmforge-art-director');
       ctx.otherSha = git(ctx.root, 'rev-parse', 'HEAD');
       git(ctx.root, 'checkout', '-q', ctx.landingBranch);
     },
@@ -308,12 +324,12 @@ function registerSteps(registry) {
     assert.match(combined, new RegExp(escapeForRegExp(verdict)), `expected output to print ${verdict}, got: ${combined}`);
   }, FEATURE);
 
-  registry.defineScoped(/^the refusal says the commit is not on primary\/art-director$/, (ctx) => {
+  registry.defineScoped(/^the refusal says the commit is not on swarmforge-art-director$/, (ctx) => {
     const combined = `${ctx.directResult.out}${ctx.directResult.err}`;
     assert.match(
       combined,
-      /is not on primary\/art-director/i,
-      `expected the refusal to say the commit is not on primary/art-director, got: ${combined}`
+      /is not on swarmforge-art-director/i,
+      `expected the refusal to say the commit is not on swarmforge-art-director, got: ${combined}`
     );
   }, FEATURE);
 }
