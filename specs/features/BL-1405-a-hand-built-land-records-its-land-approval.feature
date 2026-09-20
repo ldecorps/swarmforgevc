@@ -44,3 +44,12 @@ Feature: BL-1405 A hand-built land records its land approval
   Scenario: recording the same replay twice leaves one line
     When the land-approval CLI records the replay against the source for ticket "BL-9009" twice
     Then the shared land-approval store holds exactly one line for the replay
+
+  # BL-1405 hand-built-land-05
+  # BL-1668 (2026-09-20): a hand-built final commit recorded against the
+  # land step's replay, itself recorded against the reviewed commit.
+  Scenario: a record whose source is itself a recorded replay with an approved source makes the predicate answer approved
+    Given a replay recorded against an approved source
+    And a second commit recorded against that replay
+    When the predicate is asked about the second commit
+    Then it answers approved naming the chain
