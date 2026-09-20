@@ -5,8 +5,8 @@
 
 Feature: the Art Director's docs/design tip lands on main by QA on its note
 
-  # BL-1444 (human ruling B, 2026-09-06): primary/art-director had no path to
-  # main - QA lands parcels only, the merge-up broadcast names five chain
+  # BL-1444 (human ruling B, 2026-09-06): the art director's branch had no
+  # path to main - QA lands parcels only, the merge-up broadcast names five chain
   # roles, and the seat is not master-resident. The standing path is now: the
   # art director sends QA a note naming its tip, QA lands that tip on main
   # the way it lands a parcel, and a pre-merge-commit guard refuses the land
@@ -22,7 +22,7 @@ Feature: the Art Director's docs/design tip lands on main by QA on its note
   # mkdtemp, never the live one (BL-1390).
 
   Background:
-    Given a fixture repository with a main branch, the versioned pre-merge-commit hook chain, and a branch primary/art-director based on main
+    Given a fixture repository with a main branch, the versioned pre-merge-commit hook chain, and a roster worktree checked out on swarmforge-art-director based on main
     And a landing branch checked out at main's tip
 
   # BL-1444 docs-only-tip-lands-01
@@ -56,14 +56,14 @@ Feature: the Art Director's docs/design tip lands on main by QA on its note
 
   # BL-1444 main-sync-through-the-art-director-branch-unjudged-03
   Scenario: a merge of main's own tip is never judged, even after the art director merged main
-    Given main gains a commit touching extension/src/ and primary/art-director merges main
+    Given main gains a commit touching extension/src/ and swarmforge-art-director merges main
     And a role worktree branch is checked out at the commit before that
     When the role worktree merges main's tip with --no-ff
     Then the merge succeeds
 
   # BL-1444 landed-content-carried-by-the-tip-is-exempt-04
   Scenario: content the tip carries from the landed main is exempt by provenance
-    Given main gains a commit touching extension/src/ and primary/art-director merges main
+    Given main gains a commit touching extension/src/ and swarmforge-art-director merges main
     And the art director's tip changes only docs/design/system.md
     And the landing branch is still at the earlier main tip
     When the landing branch merges the tip with --no-ff
@@ -81,8 +81,8 @@ Feature: the Art Director's docs/design tip lands on main by QA on its note
       | extension/src/tools/telegram-front-desk-bot.ts  | 1    | ART_DIRECTOR_TIP_REFUSED |
 
   # BL-1444 commit-not-on-the-art-director-branch-refused-06
-  Scenario: asked directly about a commit that is not on primary/art-director, the guard refuses and says so
-    Given a commit on a branch other than primary/art-director that changes only docs/design/system.md
+  Scenario: asked directly about a commit that is not on swarmforge-art-director, the guard refuses and says so
+    Given a commit on a branch other than swarmforge-art-director that changes only docs/design/system.md
     When the guard is asked about that commit directly
     Then it exits 1 and prints ART_DIRECTOR_TIP_REFUSED
-    And the refusal says the commit is not on primary/art-director
+    And the refusal says the commit is not on swarmforge-art-director

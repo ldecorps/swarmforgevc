@@ -27,14 +27,14 @@ trap 'rm -rf "$WORK"' EXIT
 git_() { local r="$1"; shift; git -C "$r" "$@"; }
 
 mk_repo() {  # mk_repo <name> -> sets `repo` global to a fresh repo with a
-             # main branch and a primary/art-director branch based on it.
+             # main branch and a swarmforge-art-director branch based on it.
   repo="$WORK/$1"
   mkdir -p "$repo"
   git_ "$repo" init -q -b main
   git_ "$repo" config user.email t@t
   git_ "$repo" config user.name t
   git_ "$repo" commit -q --allow-empty -m init
-  git_ "$repo" branch primary/art-director main
+  git_ "$repo" branch swarmforge-art-director main
 }
 
 write_commit() {  # write_commit <repo> <branch> <path>... - one commit
@@ -61,7 +61,7 @@ fi
 
 # ── 2. direct mode: an in-lane tip is OK ────────────────────────────────
 mk_repo direct-ok
-write_commit "$repo" primary/art-director docs/design/system.md
+write_commit "$repo" swarmforge-art-director docs/design/system.md
 tip="$(git_ "$repo" rev-parse HEAD)"
 git_ "$repo" checkout -q main
 out="$(cd "$repo" && bash "$GUARD" --tip "$tip")"; rc=$?
@@ -73,7 +73,7 @@ fi
 
 # ── 3. direct mode: an out-of-lane tip is refused, naming the path ─────
 mk_repo direct-refused
-write_commit "$repo" primary/art-director extension/src/thing.ts
+write_commit "$repo" swarmforge-art-director extension/src/thing.ts
 tip="$(git_ "$repo" rev-parse HEAD)"
 git_ "$repo" checkout -q main
 set +e
@@ -85,7 +85,7 @@ else
   fail "direct mode: expected ART_DIRECTOR_TIP_REFUSED naming the path, got rc=$rc: $out"
 fi
 
-# ── 4. direct mode: a commit not on primary/art-director is refused,
+# ── 4. direct mode: a commit not on swarmforge-art-director is refused,
 #      saying so ─────────────────────────────────────────────────────────
 mk_repo direct-not-on-branch
 write_commit "$repo" main docs/design/system.md
@@ -93,17 +93,17 @@ tip="$(git_ "$repo" rev-parse HEAD)"
 set +e
 out="$(cd "$repo" && bash "$GUARD" --tip "$tip" 2>&1)"; rc=$?
 set -e
-if [[ $rc -eq 1 ]] && grep -q 'ART_DIRECTOR_TIP_REFUSED' <<<"$out" && grep -qi 'not on primary/art-director' <<<"$out"; then
-  pass "direct mode: a commit not on primary/art-director is refused, saying so"
+if [[ $rc -eq 1 ]] && grep -q 'ART_DIRECTOR_TIP_REFUSED' <<<"$out" && grep -qi 'not on swarmforge-art-director' <<<"$out"; then
+  pass "direct mode: a commit not on swarmforge-art-director is refused, saying so"
 else
   fail "direct mode: expected the not-on-branch refusal, got rc=$rc: $out"
 fi
 
 # ── 5. hook mode: an in-lane tip is never refused ───────────────────────
 mk_repo hook-ok
-write_commit "$repo" primary/art-director docs/design/briefs/x.md
+write_commit "$repo" swarmforge-art-director docs/design/briefs/x.md
 git_ "$repo" checkout -q -b landing main
-git_ "$repo" merge -q --no-ff --no-commit primary/art-director >/dev/null 2>&1
+git_ "$repo" merge -q --no-ff --no-commit swarmforge-art-director >/dev/null 2>&1
 set +e
 out="$(cd "$repo" && bash "$GUARD" 2>&1)"; rc=$?
 set -e
@@ -116,9 +116,9 @@ fi
 
 # ── 6. hook mode: an out-of-lane tip is refused, naming the path ───────
 mk_repo hook-refused
-write_commit "$repo" primary/art-director extension/src/thing.ts
+write_commit "$repo" swarmforge-art-director extension/src/thing.ts
 git_ "$repo" checkout -q -b landing main
-git_ "$repo" merge -q --no-ff --no-commit primary/art-director >/dev/null 2>&1
+git_ "$repo" merge -q --no-ff --no-commit swarmforge-art-director >/dev/null 2>&1
 set +e
 out="$(cd "$repo" && bash "$GUARD" 2>&1)"; rc=$?
 set -e
@@ -134,7 +134,7 @@ fi
 mk_repo hook-main-sync
 early_main="$(git_ "$repo" rev-parse main)"
 write_commit "$repo" main extension/src/main_change.ts
-git_ "$repo" checkout -q primary/art-director
+git_ "$repo" checkout -q swarmforge-art-director
 git_ "$repo" merge -q --no-ff -m "art-director merges main" main
 git_ "$repo" checkout -q -b role-branch "$early_main"
 git_ "$repo" merge -q --no-ff --no-commit main >/dev/null 2>&1
@@ -153,9 +153,9 @@ fi
 mk_repo hook-provenance
 early_main="$(git_ "$repo" rev-parse main)"
 write_commit "$repo" main extension/src/main_change.ts
-git_ "$repo" checkout -q primary/art-director
+git_ "$repo" checkout -q swarmforge-art-director
 git_ "$repo" merge -q --no-ff -m "art-director merges main" main
-write_commit "$repo" primary/art-director docs/design/system.md
+write_commit "$repo" swarmforge-art-director docs/design/system.md
 tip="$(git_ "$repo" rev-parse HEAD)"
 git_ "$repo" checkout -q -b landing "$early_main"
 git_ "$repo" merge -q --no-ff --no-commit "$tip" >/dev/null 2>&1
@@ -195,7 +195,7 @@ git_ "$repo" push -q origin main
 # working tree, so rewinding the CHECKED-OUT branch's ref leaves the newer
 # tip's files sitting in the worktree with nothing to explain them, and the
 # next checkout refuses as an overwrite of "local changes".
-git_ "$repo" checkout -q primary/art-director
+git_ "$repo" checkout -q swarmforge-art-director
 git_ "$repo" update-ref refs/heads/main "$early_main"
 # origin/main now resolves and IS ahead of local main; local main alone
 # would not exempt extension/src/thing.ts by provenance.
@@ -204,9 +204,9 @@ if ! git_ "$repo" rev-parse -q --verify origin/main >/dev/null 2>&1; then
 elif [[ "$(git_ "$repo" rev-parse origin/main)" != "$newer_main" ]]; then
   fail "hook mode: origin/main preferred over lagging local main (setup: origin/main is not the newer tip)"
 else
-  git_ "$repo" checkout -q primary/art-director
+  git_ "$repo" checkout -q swarmforge-art-director
   git_ "$repo" merge -q --no-ff -m "art-director merges the newer main" "$newer_main"
-  write_commit "$repo" primary/art-director docs/design/system.md
+  write_commit "$repo" swarmforge-art-director docs/design/system.md
   tip="$(git_ "$repo" rev-parse HEAD)"
   git_ "$repo" checkout -q -b landing "$early_main"
   git_ "$repo" merge -q --no-ff --no-commit "$tip" >/dev/null 2>&1
@@ -219,6 +219,84 @@ else
   else
     fail "hook mode: expected exit 0 (origin/main provenance exemption despite lagging local main), got rc=$rc: $out"
   fi
+fi
+
+# ── 10. direct mode: --branch overrides everything else, even when a
+#       roster row also resolves to a different branch ──────────────────
+mk_repo branch-override
+git_ "$repo" branch other-branch main
+write_commit "$repo" other-branch docs/design/system.md
+tip="$(git_ "$repo" rev-parse HEAD)"
+git_ "$repo" checkout -q main
+out="$(cd "$repo" && bash "$GUARD" --tip "$tip" --branch other-branch)"; rc=$?
+if [[ $rc -eq 0 ]] && grep -q 'ART_DIRECTOR_TIP_OK' <<<"$out"; then
+  pass "direct mode: --branch overrides the default resolution"
+else
+  fail "direct mode: expected --branch override to find the tip OK, got rc=$rc: $out"
+fi
+
+# ── 11. direct mode: the branch resolves from a .swarmforge/roles.tsv
+#       roster row's own WORKTREE (a linked worktree checked out on
+#       swarmforge-art-director), not the swarmforge-<seat> convention
+#       literal - a differently-named branch in the worktree still
+#       resolves, proving the read is the worktree's checked-out branch,
+#       not a hard-coded name ─────────────────────────────────────────────
+mk_repo roster-worktree
+git_ "$repo" branch -D swarmforge-art-director >/dev/null 2>&1 || true
+wt="$WORK/roster-worktree-ad-wt"
+git_ "$repo" worktree add -q -b ad-real-branch "$wt" main
+mkdir -p "$repo/.swarmforge"
+printf 'art-director\tart-director\t%s\tswarmforge-art-director\tArt Director\tclaude\ttask\toff\tforward-only\n' "$wt" > "$repo/.swarmforge/roles.tsv"
+write_commit "$wt" ad-real-branch docs/design/system.md
+tip="$(git_ "$wt" rev-parse HEAD)"
+out="$(cd "$repo" && bash "$GUARD" --tip "$tip")"; rc=$?
+if [[ $rc -eq 0 ]] && grep -q 'ART_DIRECTOR_TIP_OK' <<<"$out"; then
+  pass "direct mode: the branch resolves from the roster row's own worktree"
+else
+  fail "direct mode: expected the roster-worktree resolution to find the tip OK, got rc=$rc: $out"
+fi
+
+# ── 12. direct mode: a roster row whose worktree is DETACHED refuses,
+#       naming the worktree, never falling through to the convention
+#       literal ──────────────────────────────────────────────────────────
+mk_repo roster-worktree-detached
+git_ "$repo" branch -D swarmforge-art-director >/dev/null 2>&1 || true
+wt="$WORK/roster-worktree-detached-ad-wt"
+git_ "$repo" worktree add -q --detach "$wt" main
+mkdir -p "$repo/.swarmforge"
+printf 'art-director\tart-director\t%s\tswarmforge-art-director\tArt Director\tclaude\ttask\toff\tforward-only\n' "$wt" > "$repo/.swarmforge/roles.tsv"
+tip="$(git_ "$repo" rev-parse main)"
+set +e
+out="$(cd "$repo" && bash "$GUARD" --tip "$tip" 2>&1)"; rc=$?
+set -e
+if [[ $rc -eq 1 ]] && grep -q 'ART_DIRECTOR_TIP_REFUSED' <<<"$out" && grep -q "$wt" <<<"$out"; then
+  pass "direct mode: a detached roster worktree refuses, naming the worktree"
+else
+  fail "direct mode: expected a refusal naming the detached worktree $wt, got rc=$rc: $out"
+fi
+
+# ── 13. direct mode: with NO roles.tsv row for art-director at all, the
+#       resolver falls back to the swarmforge-<seat> convention (BL-1657's
+#       third source) - when that resolved literal does not exist as a
+#       branch, the refusal must name "the swarmforge-<seat> convention"
+#       as its source, not the roster or --branch. Every OTHER test in
+#       this suite either supplies no roles.tsv at all AND has a real
+#       swarmforge-art-director branch (so the convention path succeeds
+#       silently, its source string never observed) or supplies an
+#       explicit roster row/--branch (a different source entirely) - none
+#       of them can tell a correct source label from a wrong one. This
+#       case is the only one where the convention source string is ever
+#       actually read by an assertion. ─────────────────────────────────
+mk_repo convention-fallback-branch-missing
+git_ "$repo" branch -D swarmforge-art-director >/dev/null 2>&1 || true
+tip="$(git_ "$repo" rev-parse main)"
+set +e
+out="$(cd "$repo" && bash "$GUARD" --tip "$tip" 2>&1)"; rc=$?
+set -e
+if [[ $rc -eq 1 ]] && grep -q 'ART_DIRECTOR_TIP_REFUSED' <<<"$out" && grep -qi 'swarmforge-<seat> convention' <<<"$out"; then
+  pass "direct mode: no roster row falls back to the convention, and a missing branch refuses naming the convention as its source"
+else
+  fail "direct mode: expected a refusal naming the swarmforge-<seat> convention as the source, got rc=$rc: $out"
 fi
 
 # ── 9. wiring: joins pre-merge-commit's chain, never run_commit_guards.sh's
