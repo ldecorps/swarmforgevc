@@ -39,14 +39,25 @@ reader rather than parsing a source itself):
 | `swarmforge/scripts/property_suite_standing_allowlist.tsv` | The BL-1175 property-suite allowlist. | A register row naming its file under lane `property`; absent from the register = unowned |
 | `backlog/hardening-debt-ledger.yaml` | The BL-942 hardening-debt ledger (deferred mutation gates by parcel). | The ledger row's own `parcel` field, resolved to a bare ticket id |
 
-`swarmforge/scripts/standing_red_register_cli.bb <project-root>` prints one
-JSON object combining all three:
+`swarmforge/scripts/standing_red_register_cli.bb <project-root> [--now
+YYYY-MM-DD]` prints one JSON object combining all three:
 
 ```json
 {"rows": [{"lane": "property", "file": "...", "ticket": "BL-1206",
            "first_seen": "2026-08-28", "age_days": 8, "owned": true}, ...],
  "count": 27, "oldest_age_days": 8, "unowned": []}
 ```
+
+- **`--now` is an acceptance/manual-fixture seam only (BL-1648).** Omitting
+  it reads the real, live date — the register's own behaviour is
+  unchanged. A pinned `--now` only changes the age arithmetic (`age_days`,
+  `oldest_age_days`), never which rows exist or who owns them, so a
+  fixture's age assertion stays true regardless of when the suite runs
+  (BL-1428's own scenario 01 was a standing-red time bomb before this: it
+  asserted `oldest_age_days` for a fixture row seeded on a fixed date
+  against the real clock, so it read a different number every day). A
+  malformed date refuses loudly (exit 2, naming the argument) rather than
+  silently falling back to today.
 
 - **A register row is emitted directly** — it IS the ownership record.
 - **An allowlist or ledger row the register does not already cover**
