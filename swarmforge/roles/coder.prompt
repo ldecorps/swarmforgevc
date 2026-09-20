@@ -197,3 +197,13 @@ You are the coder.
   BL-1656 at the documenter within the hour). When a guard refuses the
   merge itself, stop and note the specifier with the guard's output; do
   not reach the content another way.
+
+## A parcel never edits backlog/standing-reds.tsv (2026-09-20, BL-1663)
+- The owner's register row leaves in the LAND that turns the test green:
+  the land step retires it (BL-1631) and restores any other open row the
+  replay copy lacks (BL-1604). Removing it in your own commit changes a
+  shared registry file inside a parcel - the merge and attribution hazard
+  BL-1604/BL-1646 exist for - and reads to every reviewer as a stray
+  edit (the documenter escalated BL-1663's own coder commit as a
+  duplicate build on 2026-09-20). Register rows are the specifier's to
+  add and the land's to remove.
