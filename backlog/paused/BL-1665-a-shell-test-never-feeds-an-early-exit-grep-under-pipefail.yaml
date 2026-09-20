@@ -1,0 +1,122 @@
+id: BL-1665
+title: "125 of the 408 shell tests under swarmforge/scripts/test set pipefail and pipe multi-line output into grep -q (732 sites), so any assertion whose needle sits on an early line fails under load when the producer dies of SIGPIPE - test_merge_deletion_guard.sh case 02 on 2026-09-20, BL-1660's race in the test lane: every such pipe consumes its whole input, and a guard in the commit chain refuses a new one"
+milestone: M8
+type: defect
+severity: medium
+# medium: a real, contained flake source across the shell lane (no
+# deterministic red on main; one sighting with a recorded status, in a
+# file BL-1664 owns); not a safety signal, not throttling the register.
+status: todo
+epic: code-quality-gates
+priority: 6
+direction: swarm-reported
+depends_on: []
+# BL-1660 (the same race in local_ollama_pack_shape_lib.sh) and BL-1664
+# (test_merge_deletion_guard.sh, EXCLUDED from this sweep) are open
+# siblings that touch other files; BL-1539 (the first fix of this race,
+# 2026-09-14) is in backlog/done. Promote after BL-1664 lands so the two
+# never edit the same file.
+mutation_cost: medium
+# medium: shell (no mutation/CRAP/DRY wired, BL-472): one guard script and
+# its chain line, one codemod over 124 files / ~710 sites, verified by
+# the shell lane once; feature and handler over an mkdtemp fixture. The
+# edit is mechanical; the lane run is the sitting.
+slice_size_envelope: medium
+required_stages: [coder, cleaner, architect, hardender, documenter, qa]
+
+acceptance: specs/features/BL-1665-a-shell-test-never-feeds-an-early-exit-grep-under-pipefail.feature
+
+required_wiring:
+  - 'swarmforge/git-hooks/pre-commit::run_guard check_shell_test_early_exit_pipe.sh::the guard is reached from the shared chain like every other content guard'
+  - 'specs/pipeline/steps/bl1665ShellTestEarlyExitPipeSteps.js::registerSteps::the handler lands in the same parcel as the feature (BL-233, BL-1371)'
+
+human_approval: pending
+approval_context: >
+  A new feature file and a new commit-chain guard are authored here, so
+  it needs a tap. No choice is posed and there are no ruling_options.
+  FIRM: the guard judges only files under swarmforge/scripts/test that
+  set pipefail, and only a pipe whose consumer is grep with -q (any flag
+  cluster containing q); production scripts are BL-1660's census, not
+  this guard's. FIRM: the codemod changes no assertion's meaning - the
+  same needle, the same flags, a consumer that reads to end of input.
+  FIRM: test_merge_deletion_guard.sh is left to BL-1664.
+
+invariants:
+  - "After the sweep no shell test under swarmforge/scripts/test that sets pipefail pipes into a grep that can exit before its producer has finished writing; the guard's scan of the real tree finds none and covers every file there."
+
+description: |
+  ## What is wrong
+
+  Measured by the specifier on main 128e527ce0, 2026-09-20 03:5x Z: of
+  408 files in `swarmforge/scripts/test/*.sh`, 125 both set `pipefail`
+  and contain `| grep -q` (732 sites; the eight heaviest:
+  test_swarm_ensure.sh 73, test_ready_for_next_rotate_home.sh 37,
+  test_property_suite_drift_guard.sh 33, test_daemon_alarm_lib.sh 21,
+  test_role_ask.sh 20, test_merge_deletion_guard.sh 20,
+  test_pipeline_code_on_main_guard.sh 19, test_branch_claim_guard.sh 16).
+  bash's builtins write a multi-line string to a pipe line by line
+  (BL-1660's measurement: 57 of 400 runs under load), so when the needle
+  is on an early line, `grep -q` exits, the producer's next write dies
+  of SIGPIPE, pipefail reports 141 and `|| fail` fires on a present
+  needle. Seen live: the specifier's first run of
+  test_merge_deletion_guard.sh case 02 on main ("refusal must name
+  BL-0001, got: ... (BL-0001, introduced at ...") while the property lane
+  loaded the host; the second run passed. BL-1539 fixed one instance in
+  a production guard on 2026-09-14; BL-1660 owns the library instance.
+
+  ## What is wanted
+
+  - A guard `swarmforge/scripts/check_shell_test_early_exit_pipe.sh` in
+    the pre-commit chain: for every staged `swarmforge/scripts/test/*.sh`
+    that sets pipefail, refuse any line where a pipe feeds `grep` with a
+    `-q` in its flag cluster, naming file and line; files without
+    pipefail are not judged. Bash 3.2 compatible (no mapfile).
+  - A codemod over the 124 in-scope files: `| grep -q<flags> <args>`
+    becomes `| grep <flags> <args> >/dev/null` (a `!`-negated pipe keeps
+    its `!`); assertions on a literal needle may become
+    `[[ "$OUT" == *needle* ]]` instead. Every assertion keeps its needle
+    and flags.
+  - Scenario 04 pins the census: the scan reports at least 400 files and
+    names none.
+
+  ## How (direction, not mandate)
+
+  - `grep -nE '\|\s*grep\s+-[A-Za-z]*q' <file>` is the detector; the
+    codemod is a `sed -E` over the same pattern with a manual pass on
+    the eight heaviest files. Run the shell lane once after; a case that
+    goes red under the codemod was asserting on grep's early exit and is
+    rewritten by hand.
+
+constraints: >
+  No change to any production script or to any feature file other than
+  this one. test_merge_deletion_guard.sh is BL-1664's. The guard reads
+  staged content only; a bypass env var is not added.
+
+out_of_scope: |
+  - The 31 production scripts under swarmforge/scripts with the same
+    shape: BL-1660's census; a production guard is that ticket's
+    successor if a second production sighting lands.
+  - `| head -1`, `| sed q` and other early-exit consumers: not sighted;
+    the detector is extended when one is.
+
+qa_e2e_procedure: >
+  (1) `node specs/pipeline/cli.js specs/features/BL-1665-a-shell-test-never-feeds-an-early-exit-grep-under-pipefail.feature`
+  ONCE on the parcel commit: 6 rows ok. (2) The shell lane once: green.
+  (3) `for f in swarmforge/scripts/test/*.sh; do grep -q pipefail "$f" && grep -nE '\|\s*grep\s+-[A-Za-z]*q' "$f"; done`
+  prints nothing outside test_merge_deletion_guard.sh. Never "run it N
+  times".
+
+source: |
+  Found by the specifier while adjudicating the cleaner's unowned-red
+  note on test_merge_deletion_guard.sh case 09 (inbound
+  10_20260920T033524Z_000918_from_cleaner, 2026-09-20T03:35:24Z): the
+  first reproduction run failed at case 02 on an `echo | grep -q`
+  assertion whose needle was present in the captured output; the census
+  grep above sized the class. Parents: BL-1539, BL-1660, BL-1664.
+
+notes: |
+  Minted 2026-09-20 by the specifier in the same pass as BL-1664. Not
+  auto-approved: severity medium. INVEST Small is the borderline letter:
+  one mechanical codemod over 124 files, verified by one shell-lane run;
+  the guard makes the class unrepeatable. IR-DRY at mint: scenarios 01-03
+  share the staged-test Given by design.
