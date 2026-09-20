@@ -64,6 +64,26 @@ other file needs an edit.
   (`run_commit_guards.sh`, see
   [BL-1252](BL-1252-commit-guard-chain-reports-every-violation.md)).
 
+## The discovery load has a real cost — a handler's own top level is not free (BL-1630)
+
+Requiring every `*Steps.js` eagerly at `index.js` load means whatever a
+handler does at its own module top level runs on every registry load —
+every acceptance run, every QA-bound send (the BL-761 registration gate),
+and bl968's own spawns. Measured 2026-09-17: 1189 handlers, 12.6s of
+incremental require time (19.5s wall through `index.js`), with twelve
+handlers alone carrying 10.5s of it — six called `sweepStaleFixtures()` (a
+shared temp-dir listing) at module load, three required `jsdom` at load,
+three required `node:test` at load. None of that is discovery's own cost;
+it is work a handler chose to do before any scenario ran it. BL-1630 moved
+those twelve inside their step functions (or behind a lazily-initialised
+once-per-file flag for the sweep) and added
+`extension/test/stepHandlerModuleLoadBudget.test.js`, a unit-lane guard
+that requires every handler in a fresh child process and fails naming any
+whose incremental require exceeds the budget — so a new handler with a
+heavy module-load side effect is caught the same way discovery already
+catches an unresolvable require (above), not left for the next person to
+notice the suite got slower.
+
 ## Why
 
 See `backlog/paused/BL-1371-a-step-handler-registers-without-a-shared-file.yaml`
