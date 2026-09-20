@@ -1,0 +1,162 @@
+id: BL-1657
+title: "check_art_director_tip.sh judges every art-director tip against the literal branch primary/art-director, which exists on the nested pack and never on this host, so the guard has refused every live tip since it shipped on 2026-09-06 and QA verifies each art-director land by hand (2026-09-20, b4cce6448c): the guard resolves the branch from the roster row for the art-director seat, refuses naming the ref and its source when it cannot, and accepts an explicit --branch"
+milestone: M8
+type: defect
+severity: high
+# high: a broken safety signal in delivery machinery. The guard BL-1444
+# put in the shared pre-merge-commit chain fails closed on every live
+# art-director land, so QA falls back to a hand lane check each time;
+# a hand check that slips ships out-of-lane content to main. BL-1444's
+# own feature is green because its handler builds the very literal the
+# script hardcodes (BL-1445's fail-open census shape). Not critical: the
+# swarm stays up and QA's fallback has held.
+status: todo
+epic: art-direction
+priority: 8
+direction: swarm-reported
+depends_on: []
+# BL-1444 (the guard, its feature and handler) is in backlog/done. BL-1459
+# (active, unclaimed at mint) adds the documenter-briefing guard beside
+# this one and already says its branch is read from roles.tsv or
+# --branch; it copies structure, never this file - orthogonal. No open
+# ticket touches check_art_director_tip.sh or bl1444's handler.
+mutation_cost: low
+# low: one shell guard's ref resolution, its shell test, bl1444's handler
+# fixture moved to the roster shape, one small feature and handler; no
+# TypeScript surface.
+slice_size_envelope: low
+required_stages: [coder, cleaner, architect, hardender, documenter, qa]
+
+acceptance: specs/features/BL-1657-the-art-director-tip-guard-resolves-its-branch-from-the-roster.feature.draft
+# THIS ticket builds the draft (2026-08-30 rule): as an in-parcel step,
+# rename it to .feature, add and REGISTER the step handler named in
+# required_wiring, and repoint this field. Renaming without landing the
+# handler in the SAME commit turns the suite red for every other parcel
+# (BL-233). BL-1444's feature is the second contract: its handler moves
+# to the roster shape and all its scenarios stay green.
+
+required_wiring:
+  - 'specs/pipeline/steps/bl1657ArtDirectorGuardRosterBranchSteps.js::registerSteps::the handler lands in the same commit as the renamed feature (BL-233, BL-1371)'
+
+human_approval: approved
+approval_context: >
+  A new feature file is authored here, so it would ordinarily need a tap;
+  it is minted approved under the 2026-09-17 operator hotfix (severity
+  defect, no choice posed, no ruling_options). FIRM: the guard stays
+  fail-closed - a ref it cannot resolve refuses, naming the ref and the
+  source it read it from, never a silent pass. FIRM: the lane rule
+  (docs/design/ plus the seat's own evidence files) and the per-path
+  provenance exemption for content carried from the landed main are
+  untouched. FIRM: --branch is the explicit override, the same flag name
+  BL-1459 gives its sibling guard.
+
+invariants:
+  - "The guard never compares a tip against a branch name that was not read from the roster row for the art-director seat, an explicit --branch, or the swarmforge-<seat> convention as a last resort - and it says which one it used in every refusal."
+
+description: |
+  ## What is wrong
+
+  `swarmforge/scripts/check_art_director_tip.sh` line 49:
+  `ART_DIRECTOR_REF="primary/art-director"`, used at lines 138 and 166
+  (`git merge-base --is-ancestor <tip> "$ART_DIRECTOR_REF"`). No such ref
+  exists on this host: the `primary/*` branches (`primary/QA`,
+  `primary/architect`, `primary/cleaner`, `primary/coder`,
+  `primary/documenter`, `primary/hardender`, `primary/coder-cursor2`) are
+  the nested pack's, frozen at 2e519c4a8f (2026-08-30) under
+  `.worktrees/coder/.worktrees/<role>`, and never included an
+  art-director. The live seat's roster row
+  (`.swarmforge/roles.tsv`: `art-director  art-director
+  .../.worktrees/art-director  swarmforge-art-director ...`) is checked
+  out on `swarmforge-art-director`, which does contain every tip the art
+  director sends. So `--tip <sha>` and hook mode both refuse every live
+  tip with `ART_DIRECTOR_TIP_REFUSED: <sha> is not on primary/art-director.`
+  QA's evidence (QA branch 6ab9160dfe,
+  `backlog/evidence/check-art-director-tip-branch-name-bug-20260920.md`):
+  QA verified the lane by hand (`git diff --name-only $(git merge-base
+  HEAD <sha>) <sha>` = `docs/design/artifact-inventory.md`) and landed
+  d40a6fb21f as b4cce6448c. BL-1444's handler
+  (`specs/pipeline/steps/bl1444ArtDirectorTipLandsSteps.js` lines 151,
+  196-239) creates `primary/art-director` in its fixture, so the guard's
+  own acceptance has been green against a literal production never has -
+  the BL-1445 shape: a fixture that satisfies the anchor by construction
+  gates nothing.
+
+  ## What is wanted
+
+  - The guard resolves the art director's branch, in this order: an
+    explicit `--branch <name>` argument; else the roster row whose seat
+    is `art-director` in `<root>/.swarmforge/roles.tsv` - the branch its
+    worktree path (column 3) has checked out; else the
+    `swarmforge-art-director` convention. Every refusal names the ref it
+    compared against and which of the three sources gave it.
+  - A row whose worktree cannot be read, or a resolved ref that does not
+    exist, refuses (fail-closed) saying so - never a pass, never a fall
+    through to a different branch silently.
+  - BL-1444's handler fixture builds the roster shape (a roles.tsv row
+    and a worktree checked out on `swarmforge-art-director` - the idiom
+    this host actually uses, BL-1445) and every BL-1444 scenario stays
+    green; the shell test `test_bl1444_art_director_tip_guard.sh` covers
+    the three sources.
+  - The draft feature above is renamed, its handler registered, and
+    `acceptance:` repointed, in one commit.
+
+  ## How (direction, not mandate)
+
+  - Read the row with the same `awk -F'\t'` idiom
+    `sweep_all_inbox.sh` uses on `.swarmforge/roles.tsv`; resolve the
+    branch with `git -C <worktree> symbolic-ref --short HEAD` (a detached
+    worktree refuses). Keep the BL-1303 GIT_DIR posture the script
+    already has. Mirror `bl1444ArtDirectorTipLandsSteps.js` for the new
+    handler: same mkdtemp repository, hook chain installed, a `roles.tsv`
+    written per scenario. Scenario 03 drives `--tip <sha> --branch <name>`
+    directly; 01 and 02 drive the hook through a real merge.
+
+constraints: >
+  No change to the lane rule, the provenance exemption, or the hook
+  chain line (`swarmforge/git-hooks/pre-merge-commit:62`). No change to
+  check_documenter_briefing_tip.sh (BL-1459's). The fixture is its own
+  repository under mkdtemp registered for reaping (BL-1390, BL-1636),
+  never the live one.
+
+out_of_scope: |
+  - Removing or refreshing the nested pack's frozen `primary/*` branches
+    and the `.worktrees/coder/.worktrees/*` checkouts: a separate
+    observation for the operator (never remove worktrees by substring).
+  - Generalising the two lane guards into one parameterised script
+    (BL-1459 explicitly defers it).
+
+qa_e2e_procedure: >
+  (1) `node specs/pipeline/cli.js specs/features/BL-1657-the-art-director-tip-guard-resolves-its-branch-from-the-roster.feature`
+  ONCE on the parcel commit: 4 rows ok (outline 2 plus 2); then
+  `node specs/pipeline/cli.js specs/features/BL-1444-the-art-directors-tip-lands-on-main-by-qa.feature`
+  once: every scenario ok. (2)
+  `bash swarmforge/scripts/test/test_bl1444_art_director_tip_guard.sh`
+  once: green. (3) On the live repository from the QA checkout:
+  `swarmforge/scripts/check_art_director_tip.sh --tip d40a6fb21f` exits 0
+  (the docs-only tip QA hand-verified on 2026-09-20), and
+  `... --tip d40a6fb21f --branch no/such-branch` refuses naming
+  `no/such-branch` and the command line as its source. Never "run it N
+  times".
+
+source: |
+  QA note to the specifier, priority 50, 2026-09-20T00:53:21Z (inbound
+  50_20260920T005321Z_002990_from_QA), verbatim:
+  "check_art_director_tip.sh checks nonexistent primary/art-director".
+  QA evidence, verbatim: "the script will incorrectly refuse EVERY future
+  art-director tip until its branch-name check is corrected to
+  `swarmforge-art-director`." The specifier chose the roster over the
+  corrected literal: BL-1459 records that the branch name is
+  pack-dependent, and a second literal breaks the same way on the next
+  pack. Parents: BL-1444, BL-1445, BL-1459.
+
+notes: |
+  Minted 2026-09-20 by the specifier while completing QA's note, the same
+  pass. AUTO-APPROVED under the 2026-09-17 operator hotfix (severity
+  defect, no ruling_options) - see
+  auto-approve-high-severity-defects-amendment-20260917.md.
+
+  required_wiring names the new handler only: the guard's production
+  consumer (the pre-merge-commit chain line) exists before the fix and an
+  anchor on it would be satisfied by construction (BL-1235); scenarios 01
+  and 02 drive that chain through a real merge, which is the gate.
+  IR-DRY at mint: scenarios share the roster-row Given by design.
