@@ -213,6 +213,8 @@ notes: |
       And the replay reports the sibling landed and lands the ticket's own paths
 
 assigned_to: coder
-bounce_count: 1
+bounce_count: 3
 bounce_history:
   - { at: 2026-09-20, by: QA, blamed: coder, class: behavior, commit: 309a50e3ae, evidence: backlog/evidence/BL-1650-bounce-20260920.md }
+  - { at: 2026-09-20, by: QA, blamed: coder, class: acceptance, commit: 6e3e50ce95, evidence: backlog/evidence/BL-1650-bounce-20260920-2.md }
+  - { at: 2026-09-20, by: QA, blamed: specifier, class: spec-gap, commit: 517d4c1aec, evidence: backlog/evidence/BL-1650-bounce-20260920-3.md }
