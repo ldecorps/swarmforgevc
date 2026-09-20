@@ -352,7 +352,7 @@
 - commit: daa34e6778
   subject: "export a full PATH before bb/claude/tmux calls in cron-invoked bedtime scripts"
   detected_at: 2026-09-18
-  state: pending
+  state: stamp-open
   stamp_ticket: BL-1644
   human_decision: null
   decided_at: null
