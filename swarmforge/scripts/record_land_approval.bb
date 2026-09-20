@@ -34,10 +34,23 @@
 (defn- print-verdict! [root replay-commit]
   ;; BL-1405: print the SAME predicate every other consumer calls, never a
   ;; reimplementation of "approved" - so QA sees it before closing the land.
+  ;;
+  ;; BL-1668: the line is written FIRST, unconditionally - a non-zero exit
+  ;; is the verdict, never a refusal to record. QA's land recipe step (2)
+  ;; ("verify is_qa_ancestor.sh exits 0") read this CLI's own always-0 exit
+  ;; and passed unread while the predicate underneath disagreed - exit 1 on
+  ;; "not approved" and 2 on "undeterminable" so that check actually gates,
+  ;; naming the remedy on stderr in either case.
   (let [script (str (fs/path script-dir "is_qa_ancestor.sh"))
-        {:keys [exit]} (process/sh ["bash" script replay-commit] {:dir root})]
-    (println (str "VERDICT " replay-commit " "
-                  (case exit 0 "approved" 1 "not approved" "undeterminable")))))
+        {:keys [exit]} (process/sh ["bash" script replay-commit] {:dir root})
+        verdict (case exit 0 "approved" 1 "not approved" "undeterminable")]
+    (println (str "VERDICT " replay-commit " " verdict))
+    (when (not= verdict "approved")
+      (binding [*out* *err*]
+        (println (str "record_land_approval.bb: " replay-commit " is " verdict
+                       " - name the reviewed commit on swarmforge-QA, or the recorded"
+                       " replay this commit was built from")))
+      (System/exit (if (= verdict "not approved") 1 2)))))
 
 (defn -main [args]
   (when (< (count args) 3) (usage!))

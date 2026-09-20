@@ -31,6 +31,11 @@ function verdict(root, sha) {
   return r.status;
 }
 
+function verdictOutput(root, sha) {
+  const r = spawnSync('bash', [PREDICATE, sha], { cwd: root, encoding: 'utf8' });
+  return { status: r.status, out: `${r.stdout || ''}${r.stderr || ''}` };
+}
+
 function runCli(root, args) {
   const r = spawnSync('bb', [CLI, root, ...args], { encoding: 'utf8' });
   return { status: r.status, out: `${r.stdout || ''}${r.stderr || ''}` };
@@ -115,7 +120,12 @@ function registerSteps(registry) {
   scoped(/^the land-approval CLI records the replay against the unapproved source for ticket "([^"]+)"$/, (ctx, ticket) => {
     const st = ensureState(ctx);
     st.result = runCli(st.root, [st.replay, st.unapprovedSource, ticket]);
-    assert.equal(st.result.status, 0, `expected the write itself to succeed: ${st.result.out}`);
+    // BL-1668: the WRITE itself still succeeds (LAND_APPROVAL_RECORDED is
+    // printed) even though the source is unapproved - only the CLI's own
+    // exit code now carries the verdict, non-zero here since the record
+    // grants nothing on its own.
+    assert.match(st.result.out, /LAND_APPROVAL_RECORDED/, `expected the write itself to succeed: ${st.result.out}`);
+    assert.notEqual(st.result.status, 0, `expected a non-zero exit for an unapproved-source verdict: ${st.result.out}`);
   });
 
   scoped(/^the approval predicate still answers no for the replay$/, (ctx) => {
@@ -130,6 +140,35 @@ function registerSteps(registry) {
     assert.equal(first.status, 0, `expected the first call to succeed: ${first.out}`);
     st.result = runCli(st.root, [st.replay, st.source, ticket]);
     assert.equal(st.result.status, 0, `expected the second call to succeed: ${st.result.out}`);
+  });
+
+  // ── 05 (BL-1668): a chain of two land-approval records ────────────────
+  // required_wiring anchor: itself a recorded replay - the source of the
+  // second record is itself a recorded replay whose own source is
+  // approved.
+  scoped(/^a replay recorded against an approved source$/, (ctx) => {
+    const st = ensureState(ctx);
+    const rec = runCli(st.root, [st.replay, st.source, 'BL-9010']);
+    assert.equal(rec.status, 0, `expected recording the replay to succeed: ${rec.out}`);
+  });
+
+  scoped(/^a second commit recorded against that replay$/, (ctx) => {
+    const st = ensureState(ctx);
+    git(st.root, ['commit', '-q', '--allow-empty', '-m', 'hand-built second commit']);
+    st.secondCommit = git(st.root, ['rev-parse', 'HEAD']);
+    const rec = runCli(st.root, [st.secondCommit, st.replay, 'BL-9011']);
+    assert.equal(rec.status, 0, `expected recording the second commit against the replay to succeed: ${rec.out}`);
+  });
+
+  scoped(/^the predicate is asked about the second commit$/, (ctx) => {
+    const st = ensureState(ctx);
+    st.chainResult = verdictOutput(st.root, st.secondCommit);
+  });
+
+  scoped(/^it answers approved naming the chain$/, (ctx) => {
+    const st = ensureState(ctx);
+    assert.equal(st.chainResult.status, 0, `expected the chain to resolve to approved, got: ${JSON.stringify(st.chainResult)}`);
+    assert.match(st.chainResult.out, /chain/i, `expected the verdict to name the chain, got: ${st.chainResult.out}`);
   });
 
   scoped(/^the shared land-approval store holds exactly one line for the replay$/, (ctx) => {
