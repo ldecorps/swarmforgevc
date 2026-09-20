@@ -4334,11 +4334,26 @@
         (if (master-main-reconcile-lib/may-abort-failed-merge?
              false {:owner-record record :merge-head-sha sha})
           (let [{:keys [success error]} (master-main-merge-abort!)]
-            (if success
+            (cond
+              success
               (do (master-main-clear-merge-owner!)
                   (log! "master-main-reconcile" "aborted-owned-merge"
                         (str "finished this daemon's own leftover merge " sha))
                   {:success false :outcome :aborted-owned-merge})
+
+              ;; BL-1653 item 3: git's own abort error says there was no
+              ;; MERGE_HEAD to abort - nothing is open for a later tick to
+              ;; find either, so retaining ownership only repeats this same
+              ;; log line forever (coordinator note 009765, 2026-09-19).
+              ;; Release it now; the next tick starts fresh from the index
+              ;; check ahead of the merge attempt (item 2).
+              (master-main-reconcile-lib/abort-found-no-merge-head? error)
+              (do (master-main-clear-merge-owner!)
+                  (log! "master-main-reconcile" "merge-abort-no-merge-head"
+                        (str "no MERGE_HEAD left to abort for " sha " - ownership released: " error))
+                  {:success false :outcome :merge-abort-no-merge-head})
+
+              :else
               (do (log! "master-main-reconcile" master-main-merge-abort-failed-label
                         (str "still cannot abort own merge " sha ": " error))
                   {:success false :error "merge-abort-failed" :outcome :merge-abort-failed})))
@@ -4406,7 +4421,20 @@
       ;; :ff-absorb — try fast-forward, then a real 3-way merge (BL-1214),
       ;; else rematch (BL-1141).
       (master-main-reconcile-lib/absorb-with-merge!
-       {:ff! (fn []
+       {:staged-paths! (fn []
+                          (let [{:keys [exit out err]} (daemon-cycle-guard-lib/sh!
+                                                         ["git" "diff" "--cached" "--name-only"]
+                                                         {:dir (str project-root)})]
+                            (if (zero? exit)
+                              (remove str/blank? (str/split-lines (str out)))
+                              ;; BL-1653 item 2: an unreadable check must fail
+                              ;; closed (naming a real, if unhelpful, path)
+                              ;; rather than reading as "nothing staged" and
+                              ;; letting a merge git would refuse anyway
+                              ;; proceed blind.
+                              [(str "<git diff --cached failed, exit " exit ": "
+                                    (str/trim (str err)) ">")])))
+        :ff! (fn []
                (let [{:keys [exit]} (daemon-cycle-guard-lib/sh!
                                      ["git" "merge" "--ff-only" "--no-edit" "origin/main"]
                                      {:dir (str project-root)})]
