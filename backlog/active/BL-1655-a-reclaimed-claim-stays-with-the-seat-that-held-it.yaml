@@ -190,3 +190,5 @@ notes: |
   scenarios 02-06 drive the real dispatcher and sweep, which is the gate.
   IR-DRY at mint: the scenarios vary the polling seat and the age over
   one queue by design; reviewed and kept.
+
+assigned_to: coder
