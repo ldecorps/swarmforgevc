@@ -165,6 +165,17 @@ test('checkHandlerBudgets non-vacuity: a fixture handler that lists a directory 
   assert.match(violations[0].reason, /lists a directory at module load/);
 });
 
+test('checkHandlerBudgets non-vacuity: a handler that fails to require at all is named, never silently skipped', () => {
+  const rows = [
+    { file: 'brokenSteps.js', ms: 0, listedDir: false, spawnedProcess: false, registeredTestRunner: false, error: 'SyntaxError: Unexpected token' },
+  ];
+  const violations = checkHandlerBudgets(rows, { budgetMs: PER_HANDLER_BUDGET_MS });
+  assert.equal(violations.length, 1, `expected exactly one violation for a require failure, got: ${JSON.stringify(violations)}`);
+  assert.equal(violations[0].file, 'brokenSteps.js');
+  assert.match(violations[0].reason, /failed to require/);
+  assert.match(violations[0].reason, /SyntaxError: Unexpected token/);
+});
+
 test('checkHandlerBudgets non-vacuity: the allowlist never exempts a behavioral violation, only the ms budget', () => {
   const rows = [
     { file: 'fakeSteps.js', ms: 1, listedDir: true, spawnedProcess: false, registeredTestRunner: false, error: null },
