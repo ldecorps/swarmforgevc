@@ -20,10 +20,14 @@ mutation_cost: low
 # surface - the hardener's gate is the property lane run.
 slice_size_envelope: low
 required_stages: [coder, cleaner, architect, hardender, documenter, qa]
-abandoned_commits: [ce6370ef0a]
+abandoned_commits: [ce6370ef0a, d858a1a8a9]
 # ce6370ef0a: coder@2's single-parent re-creation of the cleaner's own
 # evidence commit af3c69b525 (a reverse hop applied as a cherry-pick, not
 # a merge, 2026-09-20 02:29Z); byte-identical file, never parcel work.
+# d858a1a8a9: QA-cited commit for the entangled-tip land; the land step
+# (BL-1241) replayed BL-1656's own paths onto origin/main as 491002fc54
+# (an unrelated BL-1630 bookkeeping commit rode QA's branch tip) and that
+# commit landed instead. By QA.
 
 acceptance: specs/features/BL-1368-an-approval-commit-names-the-decider.feature
 # The contract this ticket must keep satisfying is BL-1368's feature,

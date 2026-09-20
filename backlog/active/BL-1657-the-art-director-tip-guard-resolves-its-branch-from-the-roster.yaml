@@ -159,3 +159,6 @@ notes: |
   IR-DRY at mint: scenarios share the roster-row Given by design.
 
 assigned_to: coder
+bounce_count: 1
+bounce_history:
+  - { at: 2026-09-20, by: QA, blamed: coder, class: behavior, commit: bc88388df9, evidence: backlog/evidence/BL-1657-bounce-20260920.md }
