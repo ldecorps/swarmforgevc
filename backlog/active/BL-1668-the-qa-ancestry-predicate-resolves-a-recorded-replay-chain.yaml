@@ -157,3 +157,5 @@ notes: |
   tool's replay, record TWO lines - the replay against the reviewed sync
   tip (as today) and the hand-built commit against that same reviewed
   sync tip, not against the replay - so the single hop resolves.
+
+assigned_to: coder
