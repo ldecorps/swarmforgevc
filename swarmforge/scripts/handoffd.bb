@@ -24,6 +24,7 @@
 (load-file (str (fs/path (fs/parent (fs/canonicalize *file*)) "cron_heartbeat_lib.bb")))
 (load-file (str (fs/path (fs/parent (fs/canonicalize *file*)) "ambulance_lib.bb")))
 (load-file (str (fs/path (fs/parent (fs/canonicalize *file*)) "chase_sweep_lib.bb")))
+(load-file (str (fs/path (fs/parent (fs/canonicalize *file*)) "lane_process_lib.bb")))
 (load-file (str (fs/path (fs/parent (fs/canonicalize *file*)) "landed_ticket_autoclose_lib.bb")))
 (load-file (str (fs/path (fs/parent (fs/canonicalize *file*)) "mono_router_lib.bb")))
 (load-file (str (fs/path (fs/parent (fs/canonicalize *file*)) "backlog_depth_lib.bb")))
@@ -969,6 +970,24 @@
      {:staleTimeoutSeconds 30 :inFlightTimeoutSeconds 60 :deadTimeoutSeconds 120}
      pid-live?)))
 
+;; BL-1652: the raw age get-liveness's own compute-liveness collapses into a
+;; state string - kept separately here so a chase-respawn log line/telemetry
+;; row can name it, never re-derived from the state string (that direction
+;; is lossy: "dead" alone cannot recover how many seconds it has been dead).
+(defn heartbeat-age-seconds [role now-ms]
+  (when-let [hb (parse-heartbeat role)]
+    (try
+      (/ (- now-ms (.toEpochMilli (java.time.Instant/parse (:last_beat hb)))) 1000.0)
+      (catch Exception _ nil))))
+
+;; BL-1652: the daemon's own process-table scan, scoped to role's worktree -
+;; the second respawn guard invariant 1 needs alongside the pane's busy
+;; footer. lane_process_lib.bb's own header explains why this is NOT
+;; defined inline here (bl1163HandoffdParse.property.test.js's naive
+;; paren-balance scan over this file's raw text).
+(defn role-lane-running? [role-info]
+  (lane-process-lib/lane-running? (:worktree-path role-info)))
+
 (defn capture-pane-lines
   "Same as capture-pane-text but limited to the last n lines, mirroring
    tmuxClient.ts's capturePane(socket, target, -50) used for activity
@@ -1003,6 +1022,16 @@
     (not (str/blank? (System/getenv "CLAUDE_CODE_MAX_OUTPUT_TOKENS")))
     (concat ["-e" (str "CLAUDE_CODE_MAX_OUTPUT_TOKENS=" (System/getenv "CLAUDE_CODE_MAX_OUTPUT_TOKENS"))])))
 
+(defn- format-respawn-readings
+  "BL-1652: the one line every real respawn logs, naming the readings the
+   chase-sweep decision was made on - so a human reading handoffd.log never
+   again has to ask, as the 2026-09-19 incident's own respawn lines could
+   not answer, why."
+  [readings]
+  (str "item=" (:itemId readings) " liveness=" (:liveness readings)
+       " heartbeat-age-s=" (:heartbeatAgeS readings) " activity-age-s=" (:activityAgeS readings)
+       " busy=" (boolean (:busy readings)) " lane=" (boolean (:lane readings))))
+
 (defn do-respawn!
   "Busy-vs-wedged precheck (BL-137/BL-147 parity): never types/respawns into
    a pane showing Claude Code's busy footer. Otherwise force-relaunches the
@@ -1012,8 +1041,12 @@
    Launch script is always the canonical project-root
    .swarmforge/launch/<role>.sh (same as swarm_ensure.bb/respawn-role!) —
    never a worktree-local copy, which can drift or be missing and which once
-   left the coordinator session running the coder script after a bad repair."
-  [role-info socket]
+   left the coordinator session running the coder script after a bad repair.
+
+   `readings` (BL-1652) is the same :liveness/:heartbeatAgeS/:activityAgeS/
+   :busy/:lane/:itemId snapshot chase_sweep_lib.bb's decision already saw -
+   folded into the one chase-respawn log line, never recomputed here."
+  [role-info socket readings]
   (let [session (:session role-info)
         role (:role role-info)
         pane (try (capture-pane-text socket session) (catch Exception _ ""))]
@@ -1021,7 +1054,7 @@
       (log! "chase-respawn-skip-busy" role)
       (let [launch-script (fs/path state-dir "launch" (str role ".sh"))
             env-args (openrouter-respawn-env-args)]
-        (log! "chase-respawn" role (str launch-script))
+        (log! "chase-respawn" role (str launch-script) (format-respawn-readings readings))
         (apply tmux! (concat ["-S" socket "respawn-pane" "-k"]
                              env-args
                              ["-t" session (shell-quote-lib/launch-command launch-script)]))))))
@@ -2144,7 +2177,7 @@
                                                     (log! "chase-in-process-resume-error" role (.getMessage e))
                                                     (note-chase-control-plane-failure! socket roles)
                                                     false))))
-                  :trigger-respawn! (fn [role]
+                  :trigger-respawn! (fn [role readings]
                                        (try
                                          ;; Busy gating is scoped like chase-poke-and-notify!:
                                          ;; only pokes landing on the shared resident pane defer
@@ -2165,7 +2198,7 @@
                                              (contains? #{:rotate :wake-resident} action)
                                              (chase-rotate-to! socket roles role)
 
-                                             :else (do-respawn! ri socket)))
+                                             :else (do-respawn! ri socket readings)))
                                          (catch Exception e (log! "chase-respawn-error" role (.getMessage e)))))
                   :log-dead-letter! (fn [role path] (log! "dead-letter" role (fs/file-name path)))
                   :get-last-activity-ms (fn [role] (get-last-activity-ms (get roles role) socket now-ms))
@@ -2208,6 +2241,13 @@
                   (fn [role] (worktree-head-commit-10 roles role))
                   :role-agent-busy?
                   (fn [role] (boolean (recipient-pane-busy? socket roles role)))
+                  ;; BL-1652: read by sweep-role-inbox! (not just the claim-
+                  ;; idle check above) - the SAME :role-agent-busy? key, one
+                  ;; footer reading serving both gates.
+                  :role-lane-running?
+                  (fn [role] (role-lane-running? (get roles role)))
+                  :get-heartbeat-age-seconds
+                  (fn [role] (heartbeat-age-seconds role now-ms))
                   :role-worktree-dirty?
                   (fn [role] (boolean (role-worktree-dirty? roles role)))
                   :claim-idle-context

@@ -67,7 +67,7 @@ function runOneSweep(root, nowMs, wakeResultLiteral) {
 (def adapters
   {:get-liveness (fn [_role] "alive")
    :send-wake-up! (fn [_role] ${wakeResultLiteral})
-   :trigger-respawn! (fn [_role] nil)
+   :trigger-respawn! (fn [_role _readings] nil)
    :log-dead-letter! (fn [_role _path] nil)
    :get-last-activity-ms (fn [_role] ${nowMs})
    :on-stuck-escalation! (fn [_role _escalated] nil)
@@ -182,7 +182,7 @@ test(
 (def adapters
   {:get-liveness (fn [_role] "alive")
    :send-wake-up! (fn [_role] {:attempted false :landed false})
-   :trigger-respawn! (fn [_role] nil)
+   :trigger-respawn! (fn [_role _readings] nil)
    :log-dead-letter! (fn [_role _path] nil)
    :get-last-activity-ms (fn [_role] ${BASE_MS + SWEEP_STEP_MS})
    :on-stuck-escalation! (fn [_role _escalated] nil)
