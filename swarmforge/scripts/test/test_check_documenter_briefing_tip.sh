@@ -175,6 +175,27 @@ else
   fail "direct mode: expected the already-landed-day refusal, got rc=$rc: $out"
 fi
 
+# ── 7b. direct mode: a tip naming TWO distinct briefing dates resolves no
+#       lane at all, so BOTH briefing files are refused as offending paths
+#       (find_briefing_date's own documented fail-closed rule: a tip
+#       naming zero or more than one distinct date never guesses a lane -
+#       every changed path, including both dates' own briefing files, is
+#       then judged outside it). Neither date is separately "already
+#       landed" here; this is the ambiguous-date branch, not the
+#       already-landed-day branch case 7 above covers. ─────────────────
+mk_repo direct-refused-two-dates
+write_commit "$repo" "$DOC_BRANCH" docs/briefings/2099-01-09.md docs/briefings/2099-01-10.md
+tip="$(g "$repo" rev-parse HEAD)"
+g "$repo" checkout -q main
+out="$(cd "$repo" && bash "$GUARD" --tip "$tip" --branch "$DOC_BRANCH" 2>&1)"; rc=$?
+if [[ $rc -eq 1 ]] && grep -q 'DOCUMENTER_BRIEFING_TIP_REFUSED' <<<"$out" \
+   && grep -q 'docs/briefings/2099-01-09.md' <<<"$out" \
+   && grep -q 'docs/briefings/2099-01-10.md' <<<"$out"; then
+  pass "direct mode: a tip naming two distinct briefing dates is refused, naming both dates' files"
+else
+  fail "direct mode: expected refusal naming both 2099-01-09.md and 2099-01-10.md, got rc=$rc: $out"
+fi
+
 # ── 8. hook mode: an in-lane tip is never refused ───────────────────────
 mk_repo hook-ok
 write_commit "$repo" "$DOC_BRANCH" docs/briefings/2099-01-08.md
@@ -270,6 +291,95 @@ if [[ $rc -eq 0 ]]; then
   pass "hook mode: content carried from the landed main is exempt by provenance"
 else
   fail "hook mode: expected exit 0 (provenance exemption), got rc=$rc: $out"
+fi
+
+# ── 13b (BL-1459 an-upstream-commit-behind-a-second-parent-is-not-judged-06,
+#        specifier ruling 2026-09-20): a commit the documenter branch
+#        carries only behind a SECOND parent of an ordinary chain merge
+#        (cleaner -> architect -> hardener -> documenter, exactly BL-1459's
+#        own live incident) is reachable from the documenter branch but is
+#        NOT on its first-parent line - merging it directly elsewhere must
+#        never be judged ─────────────────────────────────────────────────
+mk_repo chain-second-parent
+g "$repo" branch cleaner_branch main
+write_commit "$repo" cleaner_branch extension/src/cleaner_change.ts
+cleaner_tip="$(g "$repo" rev-parse cleaner_branch)"
+g "$repo" checkout -q -b architect_branch main
+g "$repo" merge -q --no-ff -m "Merge cleaner into architect" cleaner_branch
+g "$repo" checkout -q -b hardener_branch main
+g "$repo" merge -q --no-ff -m "Merge architect into hardener" architect_branch
+g "$repo" checkout -q "$DOC_BRANCH"
+g "$repo" merge -q --no-ff -m "Merge hardener into documenter" hardener_branch
+g "$repo" checkout -q -b landing main
+gq "$repo" merge -q --no-ff --no-commit "$cleaner_tip"
+out="$(cd "$repo" && bash "$GUARD" --branch "$DOC_BRANCH" 2>&1)"; rc=$?
+gq "$repo" merge --abort
+if [[ $rc -eq 0 ]]; then
+  pass "hook mode (06): a commit the documenter branch reached only through a merge's second parent is not judged"
+else
+  fail "hook mode (06): expected exit 0 (not first-parent, not judged), got rc=$rc: $out"
+fi
+
+# ── 13c (BL-1459 a-documenter-commit-behind-the-tip-is-still-judged-07):
+#        a documenter commit still on the first-parent line, but no longer
+#        the branch tip, is still judged (proves first-parent membership
+#        is not exact-tip equality either) ───────────────────────────────
+mk_repo old-tip-still-judged
+write_commit "$repo" "$DOC_BRANCH" docs/briefings/2099-02-01.md extension/src/out-of-lane.ts
+older_tip="$(g "$repo" rev-parse HEAD)"
+write_commit "$repo" "$DOC_BRANCH" docs/briefings/2099-02-02.md
+g "$repo" checkout -q -b landing main
+gq "$repo" merge -q --no-ff --no-commit "$older_tip"
+out="$(cd "$repo" && bash "$GUARD" --branch "$DOC_BRANCH" 2>&1)"; rc=$?
+gq "$repo" merge --abort
+if [[ $rc -eq 1 ]] && grep -q 'extension/src/out-of-lane.ts' <<<"$out"; then
+  pass "hook mode (07): a documenter commit behind the tip is still judged"
+else
+  fail "hook mode (07): expected refusal naming extension/src/out-of-lane.ts even though older_tip is not the current tip, got rc=$rc: $out"
+fi
+
+# ── 13d (BL-1459 an-ordinary-forward-is-not-a-briefing-land-08, CRITICAL
+#        fix, specifier ruling 2026-09-20): a documenter commit on the
+#        first-parent line, not yet landed, that touches NO path under
+#        docs/briefings/ at all is an ordinary parcel forward (this is
+#        what QA's own merges of the documenter's real work look like) -
+#        never judged, however many other paths it changes ───────────────
+mk_repo ordinary-forward-not-a-briefing
+write_commit "$repo" "$DOC_BRANCH" extension/src/some_feature.ts docs/how-to/some-guide.md
+ordinary_tip="$(g "$repo" rev-parse HEAD)"
+g "$repo" checkout -q -b landing main
+gq "$repo" merge -q --no-ff --no-commit "$ordinary_tip"
+out="$(cd "$repo" && bash "$GUARD" --branch "$DOC_BRANCH" 2>&1)"; rc=$?
+gq "$repo" merge --abort
+if [[ $rc -eq 0 ]]; then
+  pass "hook mode (08): an ordinary documenter forward that changes no briefing file is merged without judgment"
+else
+  fail "hook mode (08): expected exit 0 (no docs/briefings/ content, not judged), got rc=$rc: $out"
+fi
+
+# ── 13e (BL-1459 09): an email-sweep commit touching ONLY
+#        docs/briefings/.sent.json (no .md file at all) still trips the
+#        content trigger (its own path starts with docs/briefings/) - the
+#        header's own words are "docs/briefings/.sent.json ... never the
+#        landing lane": find_briefing_date resolves no date from a commit
+#        with zero .md paths, so judge_tip_paths refuses it by name,
+#        exactly as a .sent.json path riding alongside a real briefing
+#        already does in direct mode (case 3 above) - this proves the SAME
+#        refusal holds for a .sent.json-only commit reached through the
+#        hook's own content-trigger gate, never silently passed through
+#        because the trigger's own path-prefix match is broad enough to
+#        include it but the lane it unlocks is empty ────────────────────
+mk_repo sent-json-only-commit
+write_commit "$repo" "$DOC_BRANCH" docs/briefings/.sent.json
+sent_only_tip="$(g "$repo" rev-parse HEAD)"
+g "$repo" checkout -q -b landing main
+gq "$repo" merge -q --no-ff --no-commit "$sent_only_tip"
+out="$(cd "$repo" && bash "$GUARD" --branch "$DOC_BRANCH" 2>&1)"; rc=$?
+gq "$repo" merge --abort
+if [[ $rc -eq 1 ]] && grep -q 'docs/briefings/.sent.json' <<<"$out"; then
+  pass "hook mode (09): an email-sweep commit touching only .sent.json trips the content trigger and is refused by name"
+else
+  fail "hook mode (09): expected refusal naming docs/briefings/.sent.json, got rc=$rc: $out"
 fi
 
 # ── 14. --branch resolves via .swarmforge/roles.tsv when not given

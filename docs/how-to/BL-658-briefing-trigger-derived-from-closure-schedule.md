@@ -104,6 +104,58 @@ Before the fixed morning generation sweep:
 Pure decision logic: `extension/src/quality/nightClosingCeremony.ts` (+ live
 advance / gate / run CLIs under `extension/src/tools/`).
 
+## Landing the briefing on main (BL-1459)
+
+The documenter authors and commits `docs/briefings/<date>.md` on its own
+branch (human ruling A, 2026-09-07), then sends QA a `note` `land
+documenter briefing <10-hex>` (BL-1444's shape, priority `50`) — a
+briefing is not a parcel, so it never rides the ordinary `git_handoff`/
+merge-up path. Before this ticket that land had no guarded path at all:
+2026-09-05's briefing was cherry-picked onto main by hand, 2026-09-06's
+was committed on main directly, and 2026-09-07's rode a ticket-less
+`git_handoff` through the whole pipeline as a no-op.
+
+`swarmforge/scripts/check_documenter_briefing_tip.sh`, wired into the
+shared `pre-merge-commit` hook chain beside `check_art_director_tip.sh`
+(BL-1444), now judges QA's `git merge --no-ff <sha>` of that note. Its
+predicate has two parts, both settled after two rebuild rounds
+(2026-09-20):
+
+1. **Which commit is judged.** The incoming commit must be on the
+   documenter branch's own **first-parent** line since the landed main
+   (`git rev-list --first-parent`) — neither plain ancestry (too wide: the
+   documenter is the pipeline's last stage, so its branch reaches every
+   upstream role's commits behind a second parent of an ordinary "Merge X
+   into documenter", and those are never a briefing land) nor exact-tip
+   equality (too narrow: it silently stops judging the moment the branch
+   advances one commit past the tip a landing note named).
+2. **Whether it's a briefing at all.** Only a judged commit whose OWN
+   delivered content touches `docs/briefings/` is treated as a briefing
+   land; everything else exits 0 without judging. Without this content
+   trigger the guard enforced itself on the very merge that delivers it
+   (`core.hooksPath` runs `pre-merge-commit` from the MERGED tree) and
+   refused every ordinary documenter parcel forward to QA — CRITICAL,
+   caught 2026-09-20.
+
+A judged briefing commit's own changed paths must be exactly one day's
+`docs/briefings/<date>.md` and, optionally, the same date's `.json`
+sidecar — never `docs/briefings/.sent.json` (the email sweep's own
+sent-state) and never a second `docs/briefings/<date>.md` for a date the
+landed main already carries. A path whose last touching commit is already
+reachable from the landed main is exempt (BL-1096 provenance, same as the
+art-director guard). `check_documenter_briefing_tip.sh --tip <sha>` prints
+`DOCUMENTER_BRIEFING_TIP_OK` or `DOCUMENTER_BRIEFING_TIP_REFUSED <reason>`
+for direct use outside a merge. The documenter branch is read from
+`.swarmforge/roles.tsv` (pack-dependent — `swarmforge-documenter` here,
+`primary/documenter` on the nested pack), never hard-coded, unlike the
+art-director guard's own fixed branch name.
+
+A bounced parcel that changes a hook in this shared chain must be
+reverted off the bouncing branch in the bounce step itself (not just
+fixed forward) — the chain runs from the merged tree on every downstream
+merge, so a bounced guard left in place keeps enforcing a stale rule
+against every later merge of that branch, documenter or not.
+
 ## Operator notes
 
 - Edit **`closure_stop_local`** (and budgets) in `swarmforge.conf` — not a

@@ -255,35 +255,56 @@ DOCUMENTER_BRANCH="$(resolve_documenter_branch || true)"
 if [[ -z "$DOCUMENTER_BRANCH" ]]; then
   exit 0
 fi
-# BL-1459 hotfix (found live, 2026-09-20): hook mode judges only when
-# INCOMING IS the documenter branch's own current tip - not merely "an
-# ancestor of it". An ancestor-based check (check_art_director_tip.sh's
-# own pattern, tried here first) false-positives the moment ANY role
-# branch has, through unrelated cross-merge/replay activity elsewhere in
-# a concurrent swarm, absorbed a commit that also happens to be reachable
-# from the documenter branch - observed live: a cleaner->coder bounce
-# commit having nothing to do with docs/briefings/ was refused wholesale
-# because it turned out to already be an ancestor of swarmforge-documenter
-# (traced to a prior tip-pure land replay carrying it along). Exact-tip
-# equality trades a narrow, rare race (documenter advances between note
-# composition and this hook firing - the merge is then silently NOT
-# judged, a missed enforcement) for eliminating an ACTIVE, demonstrated
-# false refusal of unrelated merges - the safer failure mode by far.
-DOCUMENTER_BRANCH_TIP="$(git rev-parse -q --verify "$DOCUMENTER_BRANCH" 2>/dev/null || true)"
-if [[ -z "$DOCUMENTER_BRANCH_TIP" || "$INCOMING" != "$DOCUMENTER_BRANCH_TIP" ]]; then
-  exit 0
-fi
 LANDED_MAIN="$(resolve_landed_main || true)"
-if [[ -n "$LANDED_MAIN" ]] && git merge-base --is-ancestor "$INCOMING" "$LANDED_MAIN" 2>/dev/null; then
-  exit 0
-fi
 if [[ -z "$LANDED_MAIN" ]]; then
   echo "Merge refused: check_documenter_briefing_tip.sh could not resolve a landed-main ref (origin/main or main) to judge provenance." >&2
   exit 1
 fi
+if git merge-base --is-ancestor "$INCOMING" "$LANDED_MAIN" 2>/dev/null; then
+  exit 0
+fi
+# BL-1459 spec-gap fix (specifier ruling, 2026-09-20; supersedes the
+# coder's own exact-tip hotfix f46bd22ab1, folded into this lineage and
+# replaced here). The predicate is FIRST-PARENT membership: INCOMING is
+# judged iff it is on the documenter branch's own first-parent line since
+# landed main. Plain ancestry (check_art_director_tip.sh's own pattern,
+# tried here first) is wrong for a CHAIN role: the documenter is the last
+# pipeline stage, so its branch reaches every upstream commit any earlier
+# role ever forwarded, behind a SECOND parent of an ordinary "Merge X into
+# documenter" - observed live: a cleaner->coder bounce commit with nothing
+# to do with docs/briefings/ was refused wholesale because it arrived on
+# swarmforge-documenter through the ordinary cleaner->architect->
+# hardener->documenter merge chain (BL-1241's "legitimate YES", not a
+# defect). Exact-tip equality (the coder's own first attempt) was too
+# NARROW the other way: it silently stops judging the instant the
+# documenter branch advances even one commit past the tip a landing note
+# named - a missed enforcement. First-parent membership gets both right:
+# an upstream chain commit sits behind a second parent and is never on
+# this list; a documenter commit that is no longer the tip still is.
+if ! git rev-list --first-parent "${LANDED_MAIN}..${DOCUMENTER_BRANCH}" 2>/dev/null | grep -qx "$INCOMING"; then
+  exit 0
+fi
 
 LANDING="$(git rev-parse HEAD)"
 BASE="$(git merge-base "$LANDING" "$INCOMING")"
+
+# BL-1459 CRITICAL fix (QA note 003000, specifier ruling, 2026-09-20):
+# core.hooksPath runs pre-merge-commit from the MERGED tree, so THIS
+# parcel's own guard enforces itself on the very merge that delivers it -
+# and the documenter mostly sends ORDINARY PARCEL FORWARDS to QA (this
+# guard's own git_handoff among them), never a briefing land. Without a
+# content trigger, "is this a documenter-side, first-parent, not-yet-
+# landed commit" is true for EVERY one of those, and judge_tip_paths then
+# refuses it for carrying dozens of paths outside docs/briefings/ - QA's
+# CRITICAL report: every ordinary documenter forward to QA was blocked.
+# The art director's own template (BL-1444) never needed this: the art
+# director sends nothing but tip-lands. The documenter sends both; only a
+# commit whose OWN delivered content touches docs/briefings/ is a
+# briefing land at all.
+if ! git diff --name-only "$BASE" "$INCOMING" 2>/dev/null | grep -q "^${BRIEFINGS_DIR}"; then
+  exit 0
+fi
+
 DATE="$(find_briefing_date "$BASE" "$INCOMING" || true)"
 if already_landed_day "$LANDED_MAIN" "$DATE"; then
   echo "Merge refused: docs/briefings/${DATE}.md already on main - a day has at most one landed briefing." >&2

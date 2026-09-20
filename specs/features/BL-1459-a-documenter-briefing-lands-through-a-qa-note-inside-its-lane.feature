@@ -49,3 +49,25 @@ Feature: BL-1459 A documenter briefing lands on main through a QA note, inside i
   Scenario: the guard runs from the shared pre-merge-commit chain
     When the pre-merge-commit hook chain is inspected
     Then it runs the documenter briefing guard beside the art-director guard
+
+  # BL-1459 an-upstream-commit-behind-a-second-parent-is-not-judged-06
+  # 2026-09-20: a chain role's branch carries every upstream commit it
+  # merged; ancestry is not authorship.
+  Scenario: a merge whose incoming parent the documenter branch reached only through a merge's second parent is not judged
+    Given a cleaner-authored commit that the documenter branch carries only behind a second parent of one of its merges
+    When another worktree merges that commit
+    Then the hook exits 0 without judging it
+
+  # BL-1459 a-documenter-commit-behind-the-tip-is-still-judged-07
+  Scenario: a documenter-authored commit that is no longer the branch tip is still judged
+    Given a documenter commit on the documenter branch's first-parent line with a newer documenter commit above it
+    When QA merges the older commit
+    Then the hook judges it against the lane
+
+  # BL-1459 an-ordinary-forward-is-not-a-briefing-land-08
+  # 2026-09-20: the hook runs from the merged tree, so this guard runs
+  # on the merge that delivers it; only a briefing change is judged.
+  Scenario: an ordinary documenter forward that changes no briefing file is merged without judgment
+    Given a documenter commit on the documenter branch's first-parent line that changes paths outside docs/briefings/ and no briefing file
+    When QA merges that commit as a parcel forward
+    Then the hook exits 0 without judging it
