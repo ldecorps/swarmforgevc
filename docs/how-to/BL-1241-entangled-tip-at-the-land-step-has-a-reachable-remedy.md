@@ -76,6 +76,28 @@ land_step_cli.bb <task-name> <commit> [repo-root]
   for it. Any other nonzero cherry-pick outcome still `--abort`s and
   escalates exactly as before.
 
+  **A stray whose TIP content already equals `origin/main` needs no
+  cherry-pick attempt at all (BL-1650 QA bounce round 3, 2026-09-20).**
+  "Byte-identical to `origin/main`" names the REPLAY TIP's content at a
+  path, never the historical stray commit's own diff — a stray's own
+  patch can be a strict SUBSET of how far main's copy has since grown
+  (BL-1639's evidence file: the stray added 9 lines, main now carries
+  those plus 31 more). Attempting `git cherry-pick -x` there produces a
+  genuine add/add conflict on content the tip does not even own — not the
+  empty-patch shape `cherry-pick-already-applied?` (above) already
+  handles, since the stray's own post-image there DIFFERS from main's.
+  `stray-tip-already-landed?` fires only for this narrower shape — every
+  one of the stray's paths already equal on the tip and on `origin/main`,
+  AND the stray's own post-image at at least one of them differs from
+  main's — and skips the cherry-pick attempt entirely: the sibling is
+  folded straight into `LANDED_SIBLING`, with no fresh
+  `LAND_STRAY_EVIDENCE_LANDED`/`_ALREADY_LANDED` line at all, since
+  nothing was landed for it. The everyday "hand-landed once already"
+  shape (scenario 05, above) still runs its cherry-pick attempt and
+  reports `LAND_STRAY_EVIDENCE_ALREADY_LANDED` as before — this new check
+  fires only for the shape a plain cherry-pick attempt cannot already
+  resolve on its own.
+
   A `LANDED_SIBLING` line does not change what action `land-plan` returns —
   the sibling's original commit remains an ancestor, and its content may
   differ from the replay, so the action stays `:land` — only the report.
