@@ -14,29 +14,29 @@ Feature: BL-1665 A shell test under pipefail never feeds grep -q through a pipe,
 
   # BL-1665 a-new-early-exit-pipe-is-refused-01
   Scenario Outline: a staged shell test under pipefail that pipes into an early-exit grep is refused naming the file and line
-    Given a staged shell test under swarmforge/scripts/test that sets pipefail and contains the line <line>
+    Given a staged shell test under swarmforge/scripts/test that sets pipefail and pipes a captured output into <consumer>
     When the commit runs the guard chain
     Then the commit is refused naming the file and the line number
 
     Examples:
-      | line                                  |
-      | echo "$OUT" \| grep -q needle          |
-      | printf '%s' "$OUT" \| grep -qiE 'a\|b' |
+      | consumer                 |
+      | grep -q needle           |
+      | grep -qiE needle-pattern |
 
   # BL-1665 a-whole-input-consumer-passes-02
-  Scenario Outline: a staged shell test whose pipes consume their whole input is accepted
-    Given a staged shell test under swarmforge/scripts/test that sets pipefail and contains the line <line>
+  Scenario Outline: a staged shell test whose assertions consume their whole input is accepted
+    Given a staged shell test under swarmforge/scripts/test that sets pipefail and asserts with <assertion>
     When the commit runs the guard chain
     Then the commit is accepted
 
     Examples:
-      | line                                        |
-      | echo "$OUT" \| grep needle >/dev/null       |
-      | [[ "$OUT" == *needle* ]] \|\| fail "needle" |
+      | assertion                              |
+      | a pipe into grep needle redirected to dev-null |
+      | a bash pattern test on the captured output     |
 
   # BL-1665 a-test-without-pipefail-is-not-judged-03
   Scenario: a staged shell test that never sets pipefail is not judged
-    Given a staged shell test under swarmforge/scripts/test that never sets pipefail and contains the line echo "$OUT" | grep -q needle
+    Given a staged shell test under swarmforge/scripts/test that never sets pipefail and pipes a captured output into grep -q needle
     When the commit runs the guard chain
     Then the commit is accepted
 
