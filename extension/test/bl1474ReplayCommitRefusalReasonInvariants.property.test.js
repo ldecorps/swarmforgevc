@@ -17,6 +17,12 @@
 // Drives the REAL land_step_lib.bb/replay-commit-refusal-reason (a pure
 // function - no git calls) via `bb -e`, never a JS reimplementation of its
 // branching. Runs ONLY via `npm run test:properties`.
+//
+// BL-1663: replayCommitRefusalReason() used to start a fresh bb and load
+// the whole lib for EVERY draw (40 process starts per test), which cost
+// 6-8s alone and timed out the lane's 20s testTimeout under fork
+// contention. One bb invocation now maps over every sampled draw in a
+// single process; the assertions below are unchanged per draw.
 
 const assert = require('node:assert/strict');
 const fc = require('fast-check');
@@ -27,23 +33,27 @@ const REPO_ROOT = path.join(__dirname, '..', '..');
 const LIB = path.join(REPO_ROOT, 'swarmforge', 'scripts', 'land_step_lib.bb');
 const TRUNCATE_LIMIT = 2000;
 
-function replayCommitRefusalReason(ticketId, indexEmpty, stderr) {
-  const input = JSON.stringify({ ticketId, indexEmpty, stderr });
-  const res = spawnSync(
-    'bb',
+function replayCommitRefusalReasons(draws) {
+  const input = JSON.stringify(
+    draws.map(([ticketId, indexEmpty, { stderr }]) => ({ ticketId, indexEmpty, stderr }))
+  );
+  const res = spawnSync('bb',
     [
       '-e',
       `(require '[cheshire.core :as json])
 (load-file "${LIB}")
-(let [input (json/parse-string (slurp *in*) true)]
-  (print (json/generate-string {:reason (land-step-lib/replay-commit-refusal-reason (:ticketId input) (:indexEmpty input) (:stderr input))})))`,
+(let [inputs (json/parse-string (slurp *in*) true)
+      reasons (mapv (fn [{:keys [ticketId indexEmpty stderr]}]
+                       (land-step-lib/replay-commit-refusal-reason ticketId indexEmpty stderr))
+                     inputs)]
+  (print (json/generate-string {:reasons reasons})))`,
     ],
     { input, encoding: 'utf8' }
   );
   if (res.status !== 0) {
     throw new Error(`bb failed (status ${res.status}): ${res.stderr}`);
   }
-  return JSON.parse(res.stdout).reason;
+  return JSON.parse(res.stdout).reasons;
 }
 
 function asciiString(minLength, maxLength) {
@@ -66,48 +76,44 @@ const stderrCaseArb = fc.oneof(
 );
 
 test('property (invariant 1): nothing to commit is reported only when the index is empty, whatever stderr says', () => {
+  const inputArb = fc.tuple(fc.constantFrom('BL-9001', 'BL-42', 'GH-7'), fc.boolean(), stderrCaseArb);
+  const draws = fc.sample(inputArb, 40);
+  const reasons = replayCommitRefusalReasons(draws);
+
   const seen = new Set();
-  fc.assert(
-    fc.property(
-      fc.constantFrom('BL-9001', 'BL-42', 'GH-7'),
-      fc.boolean(),
-      stderrCaseArb,
-      (ticketId, indexEmpty, { kind, stderr }) => {
-        seen.add(`${indexEmpty}:${kind}`);
-        const reason = replayCommitRefusalReason(ticketId, indexEmpty, stderr);
+  draws.forEach(([ticketId, indexEmpty, { kind, stderr }], i) => {
+    seen.add(`${indexEmpty}:${kind}`);
+    const reason = reasons[i];
 
-        if (indexEmpty) {
-          // Index-empty wins outright: even a non-blank stderr must never
-          // leak into the reason once the index itself is the true cause.
-          assert.equal(
-            reason,
-            `land-step replay: nothing to commit for ${ticketId} - own-paths identical to origin/main`
-          );
-          return;
-        }
+    if (indexEmpty) {
+      // Index-empty wins outright: even a non-blank stderr must never
+      // leak into the reason once the index itself is the true cause.
+      assert.equal(
+        reason,
+        `land-step replay: nothing to commit for ${ticketId} - own-paths identical to origin/main`
+      );
+      return;
+    }
 
-        assert.ok(!reason.includes('nothing to commit'), `a non-empty index must never say "nothing to commit": ${reason}`);
-        assert.ok(!reason.includes('own-paths identical to origin/main'), `reason: ${reason}`);
+    assert.ok(!reason.includes('nothing to commit'), `a non-empty index must never say "nothing to commit": ${reason}`);
+    assert.ok(!reason.includes('own-paths identical to origin/main'), `reason: ${reason}`);
 
-        const trimmed = stderr.trim();
-        if (trimmed.length === 0) {
-          assert.equal(reason, `land-step replay: commit refused for ${ticketId}, no text`);
-          return;
-        }
+    const trimmed = stderr.trim();
+    if (trimmed.length === 0) {
+      assert.equal(reason, `land-step replay: commit refused for ${ticketId}, no text`);
+      return;
+    }
 
-        assert.ok(!reason.includes(', no text'), `non-blank stderr must not be reported as "no text": ${reason}`);
-        const prefix = `land-step replay: commit refused for ${ticketId} - `;
-        assert.ok(reason.startsWith(prefix), `reason: ${reason}`);
-        const body = reason.slice(prefix.length);
-        if (trimmed.length > TRUNCATE_LIMIT) {
-          assert.equal(body, `${trimmed.slice(0, TRUNCATE_LIMIT)} ... (truncated)`);
-        } else {
-          assert.equal(body, trimmed, 'stderr at or under the bound must be quoted verbatim, untruncated');
-        }
-      }
-    ),
-    { numRuns: 40 }
-  );
+    assert.ok(!reason.includes(', no text'), `non-blank stderr must not be reported as "no text": ${reason}`);
+    const prefix = `land-step replay: commit refused for ${ticketId} - `;
+    assert.ok(reason.startsWith(prefix), `reason: ${reason}`);
+    const body = reason.slice(prefix.length);
+    if (trimmed.length > TRUNCATE_LIMIT) {
+      assert.equal(body, `${trimmed.slice(0, TRUNCATE_LIMIT)} ... (truncated)`);
+    } else {
+      assert.equal(body, trimmed, 'stderr at or under the bound must be quoted verbatim, untruncated');
+    }
+  });
 
   // Reachability floor (BL-654): every declared shape must actually have
   // been generated at least once, on both sides of index-empty where it

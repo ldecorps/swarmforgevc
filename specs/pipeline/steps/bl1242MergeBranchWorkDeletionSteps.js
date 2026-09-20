@@ -150,6 +150,53 @@ function registerSteps(registry) {
     ctx.bl1242.incomingResult = runCli('incoming-both-sides');
   });
 
+  // ── BL-1662: untagged removal whose attribution reaches past the tip ──
+
+  scoped(/^a path introduced by a commit whose subject names ticket BL-9001 and later removed by a commit whose subject names no ticket$/, (ctx) => {
+    ctx.bl1242.untaggedRemoval = {};
+  });
+
+  scoped(/^a branch that still carries the path$/, () => {
+    // The fixture (bl1242MergeBranchWorkDeletionCli.sh's untagged-removal
+    // mode) builds both sides itself; nothing to record here.
+  });
+
+  scoped(/^that branch is merged with a commit message whose body names BL-9001$/, (ctx) => {
+    ctx.bl1242.untaggedRemoval.namedResult = runCli('untagged-removal', 'named');
+  });
+
+  scoped(/^the merge-deletion guard accepts the merge$/, (ctx) => {
+    const result = ctx.bl1242.untaggedRemoval.namedResult;
+    assert.equal(result.exitCode, 0, `expected the named-message merge to be accepted, got: ${JSON.stringify(result)}`);
+  });
+
+  scoped(/^the same merge with a message naming no ticket is refused naming BL-9001$/, (ctx) => {
+    const result = runCli('untagged-removal', 'unnamed');
+    ctx.bl1242.untaggedRemoval.unnamedResult = result;
+    assert.notEqual(result.exitCode, 0, `expected the unnamed-message merge to be refused, got: ${JSON.stringify(result)}`);
+    assert.ok(result.stderr.includes('BL-9001'), `expected the refusal to name BL-9001, got: ${result.stderr}`);
+  });
+
+  // ── BL-1662 hardener hardening: MERGE_HEAD-side mirror of the walk ────
+
+  // Shares "Then the merge-deletion guard accepts the merge" with scenario
+  // 09 - both read ctx.bl1242.untaggedRemoval.namedResult, so this Given
+  // reuses the same context key.
+  scoped(/^a path that exists only on the incoming branch, introduced by a commit naming ticket BL-9002 and later edited by a commit naming no ticket$/, (ctx) => {
+    ctx.bl1242.untaggedRemoval = {};
+  });
+
+  scoped(/^that incoming branch is merged, dropping the path, with a commit message whose body names BL-9002$/, (ctx) => {
+    ctx.bl1242.untaggedRemoval.namedResult = runCli('untagged-removal-incoming-only', 'named');
+  });
+
+  scoped(/^the same merge with a message naming no ticket is refused naming BL-9002$/, (ctx) => {
+    const result = runCli('untagged-removal-incoming-only', 'unnamed');
+    ctx.bl1242.untaggedRemoval.unnamedResult = result;
+    assert.notEqual(result.exitCode, 0, `expected the unnamed-message merge to be refused, got: ${JSON.stringify(result)}`);
+    assert.ok(result.stderr.includes('BL-9002'), `expected the refusal to name BL-9002, got: ${result.stderr}`);
+  });
+
   scoped(/^the removal is reported once$/, (ctx) => {
     const result = ctx.bl1242.incomingResult;
     assert.notEqual(result.exitCode, 0, `expected a refusal, got: ${JSON.stringify(result)}`);
