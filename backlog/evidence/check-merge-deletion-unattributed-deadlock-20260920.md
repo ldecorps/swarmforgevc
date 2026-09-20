@@ -78,3 +78,15 @@ to QA. Not re-escalating per Article 4.4 step 4; aborted the merge
 cleanly, held BL-1630 pending the same fix.
 
 By QA.
+
+## Instance 3 — BL-1656's re-forward, same class, no new escalation (2026-09-20)
+
+Identical refusal merging documenter's BL-1656 re-forward (`153b16ce09`,
+sent after documenter's own BL-490 revert for the earlier bounce). Same
+path, same `(unattributed)` id, same `0aab479e40` on this branch's side.
+Confirms the class is genuinely swarm-wide: it will refuse every pending
+and future forward from any branch that has not itself independently
+removed the file until this guard is fixed. Aborted cleanly, held
+pending the same fix, no new escalation.
+
+By QA.
