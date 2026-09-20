@@ -184,7 +184,7 @@ rm -f "$ROOT/blob.bin"
 echo "id: BL-100" > "$ROOT/backlog/paused/BL-100-foo.yaml"
 echo "id: BL-200" > "$ROOT/backlog/paused/BL-200-bar.yaml"
 git -C "$ROOT" add -A
-git -C "$ROOT" -c user.email=test@test -c user.name=test commit -q -m "seed two more tickets"
+git -c core.hooksPath=/dev/null -C "$ROOT" -c user.email=test@test -c user.name=test commit -q -m "seed two more tickets"
 git -C "$ROOT" rm -q backlog/paused/BL-100-foo.yaml backlog/paused/BL-200-bar.yaml
 echo "Retire BL-100: superseded" > "$MSG_OMIT"
 set +e

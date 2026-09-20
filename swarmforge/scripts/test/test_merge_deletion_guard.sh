@@ -99,11 +99,11 @@ OUT2="$(run_guard "$MSG" 2>&1)"
 STATUS2=$?
 set -e
 [[ "$STATUS2" -ne 0 ]] || fail "02: expected refusal when the message names neither ticket"
-echo "$OUT2" | grep -q "bl0001ExampleSteps.js" || fail "02: refusal must name the first path, got: $OUT2"
-echo "$OUT2" | grep -q "bl0002_example_lib.bb" || fail "02: refusal must name the second path, got: $OUT2"
-echo "$OUT2" | grep -q "BL-0001" || fail "02: refusal must name BL-0001, got: $OUT2"
-echo "$OUT2" | grep -q "BL-0002" || fail "02: refusal must name BL-0002, got: $OUT2"
-echo "$OUT2" | grep -q "$FEATURE_TIP" || echo "$OUT2" | grep -qE "[0-9a-f]{7,10}" \
+grep -q "bl0001ExampleSteps.js" <<<"$OUT2" || fail "02: refusal must name the first path, got: $OUT2"
+grep -q "bl0002_example_lib.bb" <<<"$OUT2" || fail "02: refusal must name the second path, got: $OUT2"
+grep -q "BL-0001" <<<"$OUT2" || fail "02: refusal must name BL-0001, got: $OUT2"
+grep -q "BL-0002" <<<"$OUT2" || fail "02: refusal must name BL-0002, got: $OUT2"
+grep -q "$FEATURE_TIP" <<<"$OUT2" || grep -qE "[0-9a-f]{7,10}" <<<"$OUT2" \
   || fail "02: refusal must name a commit that introduced the path, got: $OUT2"
 pass "02: a merge removing two branch-introduced files, message naming neither, is refused naming both"
 git -C "$ROOT" merge --abort
@@ -117,8 +117,8 @@ OUT3="$(run_guard "$MSG" 2>&1)"
 STATUS3=$?
 set -e
 [[ "$STATUS3" -ne 0 ]] || fail "03: expected refusal when only one of two tickets is named"
-echo "$OUT3" | grep -q "BL-0002" || fail "03: refusal must still name the unnamed ticket BL-0002, got: $OUT3"
-echo "$OUT3" | grep -q "(BL-0001," && fail "03: refusal must not also flag the already-named ticket BL-0001, got: $OUT3"
+grep -q "BL-0002" <<<"$OUT3" || fail "03: refusal must still name the unnamed ticket BL-0002, got: $OUT3"
+grep -q "(BL-0001," <<<"$OUT3" && fail "03: refusal must not also flag the already-named ticket BL-0001, got: $OUT3"
 pass "03: with only one of two tickets named, the merge is still refused, naming the unnamed one specifically"
 git -C "$ROOT" merge --abort
 
@@ -164,7 +164,7 @@ echo "BL-0002: named" > "$MSG"
 set +e
 OUT6="$(run_guard "$MSG" 2>&1)"
 set -e
-echo "$OUT6" | grep -q "BL-0001-example.yaml" \
+grep -q "BL-0001-example.yaml" <<<"$OUT6" \
   && fail "06: this guard must never report the backlog ticket YAML - that is check_ticket_deletion.sh's domain, got: $OUT6"
 pass "06: a backlog ticket YAML deletion in the same merge is left to check_ticket_deletion.sh, never double-reported here"
 git -C "$ROOT" merge --abort 2>/dev/null || git -C "$ROOT" reset -q --hard "$FEATURE_TIP2"
@@ -197,7 +197,7 @@ OUT7="$(cd "$ROOT" && git -c user.email=test@test -c user.name=test merge --no-f
 STATUS7=$?
 set -e
 [[ "$STATUS7" -ne 0 ]] || fail "07: expected a real git merge --no-ff to be blocked by the installed commit-msg hook"
-echo "$OUT7" | grep -q "BL-0001" || fail "07: hook output must name an affected ticket, got: $OUT7"
+grep -q "BL-0001" <<<"$OUT7" || fail "07: hook output must name an affected ticket, got: $OUT7"
 pass "07: an installed commit-msg hook blocks a real git merge --no-ff that silently drops branch work"
 git -C "$ROOT" merge --abort 2>/dev/null || true
 git -C "$ROOT" reset -q --hard "$FEATURE_TIP3"
@@ -214,20 +214,20 @@ pass "08: with the hooks installed, naming the affected tickets allows the merge
 mkdir -p "$ROOT/specs/pipeline/steps" "$ROOT/backlog/paused"
 echo "step 3" > "$ROOT/specs/pipeline/steps/bl0003ExampleSteps.js"
 git -C "$ROOT" add specs/pipeline/steps/bl0003ExampleSteps.js
-git -C "$ROOT" commit -q -m "BL-0003: add step handler"
+git -c core.hooksPath=/dev/null -C "$ROOT" commit -q -m "BL-0003: add step handler"
 echo "id: BL-0004" > "$ROOT/backlog/paused/BL-0004-example.yaml"
 git -C "$ROOT" add backlog/paused/BL-0004-example.yaml
-git -C "$ROOT" commit -q -m "BL-0004: seed ticket yaml"
+git -c core.hooksPath=/dev/null -C "$ROOT" commit -q -m "BL-0004: seed ticket yaml"
 SHARED_TIP="$(git -C "$ROOT" rev-parse --short=10 HEAD)"
 
 git -C "$ROOT" checkout -q -b feature3 "$SHARED_TIP"
 echo "feature3 progress" > "$ROOT/feature3-note.txt"
 git -C "$ROOT" add feature3-note.txt
-git -C "$ROOT" commit -q -m "feature3: unrelated progress"
+git -c core.hooksPath=/dev/null -C "$ROOT" commit -q -m "feature3: unrelated progress"
 
 git -C "$ROOT" checkout -q -b main3 "$SHARED_TIP"
 git -C "$ROOT" rm -q specs/pipeline/steps/bl0003ExampleSteps.js backlog/paused/BL-0004-example.yaml
-git -C "$ROOT" commit -q -m "revert BL-0003/BL-0004 bounce"
+git -c core.hooksPath=/dev/null -C "$ROOT" commit -q -m "BL-0003: revert the BL-0003/BL-0004 bounce"
 MAIN3_TIP="$(git -C "$ROOT" rev-parse --short=10 HEAD)"
 
 git -C "$ROOT" checkout -q feature3
@@ -236,9 +236,9 @@ OUT9="$(cd "$ROOT" && git -c user.email=test@test -c user.name=test merge --no-f
 STATUS9=$?
 set -e
 [[ "$STATUS9" -ne 0 ]] || fail "09: expected refusal when the merge violates both guards"
-echo "$OUT9" | grep -q "BL-0004-example.yaml" \
+grep -q "BL-0004-example.yaml" <<<"$OUT9" \
   || fail "09: expected check_ticket_deletion.sh's own violation in the output, got: $OUT9"
-echo "$OUT9" | grep -q "bl0003ExampleSteps.js" \
+grep -q "bl0003ExampleSteps.js" <<<"$OUT9" \
   || fail "09: expected check_merge_deletion.sh's violation too - a failing first guard call must not stop the second from running, got: $OUT9"
 pass "09: a merge violating both guards at once reports both, not just the first to run"
 git -C "$ROOT" merge --abort 2>/dev/null || true
@@ -254,14 +254,14 @@ setup_incoming_fixture() {
   git -C "$ROOT" checkout -q -b "receiving$1" "$SEED"
   echo "receiving side $1" > "$ROOT/receiving$1.txt"
   git -C "$ROOT" add -A
-  git -C "$ROOT" commit -q -m "BL-0005: receiving-side work $1"
+  git -c core.hooksPath=/dev/null -C "$ROOT" commit -q -m "BL-0005: receiving-side work $1"
   RECEIVING_TIP="$(git -C "$ROOT" rev-parse --short=10 HEAD)"
 
   git -C "$ROOT" checkout -q -b "incoming$1" "$SEED"
   mkdir -p "$ROOT/specs/pipeline/steps"
   echo "// incoming only" > "$ROOT/specs/pipeline/steps/bl0006IncomingSteps.js"
   git -C "$ROOT" add -A
-  git -C "$ROOT" commit -q -m "BL-0006: work only the incoming branch carries"
+  git -c core.hooksPath=/dev/null -C "$ROOT" commit -q -m "BL-0006: work only the incoming branch carries"
   INCOMING_TIP="$(git -C "$ROOT" rev-parse --short=10 HEAD)"
 
   git -C "$ROOT" checkout -q "receiving$1"
@@ -289,9 +289,9 @@ OUT10="$(run_guard "$MSG" 2>&1)"
 STATUS10=$?
 set -e
 [[ "$STATUS10" -ne 0 ]] || fail "10: expected refusal when the resolution drops an incoming-only path"
-echo "$OUT10" | grep -q "bl0006IncomingSteps.js" || fail "10: refusal must name the dropped incoming path, got: $OUT10"
-echo "$OUT10" | grep -q "BL-0006" || fail "10: refusal must name the incoming path's ticket, got: $OUT10"
-echo "$OUT10" | grep -qi "incoming" || fail "10: refusal must say which side the path came from, got: $OUT10"
+grep -q "bl0006IncomingSteps.js" <<<"$OUT10" || fail "10: refusal must name the dropped incoming path, got: $OUT10"
+grep -q "BL-0006" <<<"$OUT10" || fail "10: refusal must name the incoming path's ticket, got: $OUT10"
+grep -qi "incoming" <<<"$OUT10" || fail "10: refusal must say which side the path came from, got: $OUT10"
 pass "10: an unaccounted incoming-side drop is refused, naming path, ticket and side"
 git -C "$ROOT" merge --abort 2>/dev/null || true
 
@@ -318,12 +318,12 @@ git -C "$ROOT" checkout -q -b receivingd "$SEED"
 mkdir -p "$ROOT/specs/pipeline/steps"
 echo "// shared" > "$ROOT/specs/pipeline/steps/bl0007SharedSteps.js"
 git -C "$ROOT" add -A
-git -C "$ROOT" commit -q -m "BL-0007: a path both sides carry"
+git -c core.hooksPath=/dev/null -C "$ROOT" commit -q -m "BL-0007: a path both sides carry"
 SHARED_BOTH="$(git -C "$ROOT" rev-parse --short=10 HEAD)"
 git -C "$ROOT" checkout -q -b incomingd "$SHARED_BOTH"
 echo "// shared, touched on the incoming side" > "$ROOT/specs/pipeline/steps/bl0007SharedSteps.js"
 git -C "$ROOT" add -A
-git -C "$ROOT" commit -q -m "BL-0007: incoming-side edit"
+git -c core.hooksPath=/dev/null -C "$ROOT" commit -q -m "BL-0007: incoming-side edit"
 INCOMING_TIP="$(git -C "$ROOT" rev-parse --short=10 HEAD)"
 git -C "$ROOT" checkout -q receivingd
 set +e
@@ -336,7 +336,7 @@ OUT13="$(run_guard "$MSG" 2>&1)"
 STATUS13=$?
 set -e
 [[ "$STATUS13" -ne 0 ]] || fail "13: expected refusal when a path both sides carry is dropped"
-COUNT13="$(echo "$OUT13" | grep -c "bl0007SharedSteps.js" || true)"
+COUNT13="$(grep -c "bl0007SharedSteps.js" <<<"$OUT13" || true)"
 [[ "$COUNT13" -eq 1 ]] || fail "13: a path dropped from both sides must be reported once, got $COUNT13 lines: $OUT13"
 pass "13: a path dropped from both sides is reported once, not twice"
 # The single finding must still name BOTH sides, not just whichever one was
@@ -378,7 +378,7 @@ No further detail was given; the specifier is expected to scope the exact
 slice at mint time.
 BODY
   git -C "$ROOT" add -A
-  git -C "$ROOT" commit -q -m "Operator: file a question as raw intake for the swarm"
+  git -c core.hooksPath=/dev/null -C "$ROOT" commit -q -m "Operator: file a question as raw intake for the swarm"
   BASE_TIP="$(git -C "$ROOT" rev-parse --short=10 HEAD)"
 }
 
@@ -391,7 +391,7 @@ git -C "$ROOT" mv "backlog/INTAKE-xa.md" "backlog/archive/INTAKE-xa.md"
 echo "" >> "$ROOT/backlog/archive/INTAKE-xa.md"
 echo "Archived by the specifier's drain." >> "$ROOT/backlog/archive/INTAKE-xa.md"
 git -C "$ROOT" add -A
-git -C "$ROOT" commit -q -m "Mint BL-9009: a text filter on the live spec tree; archive its intake"
+git -c core.hooksPath=/dev/null -C "$ROOT" commit -q -m "Mint BL-9009: a text filter on the live spec tree; archive its intake"
 ARCHIVE_MOVE_TIP="$(git -C "$ROOT" rev-parse --short=10 HEAD)"
 git -C "$ROOT" checkout -q "intakebasea"
 set +e
@@ -408,7 +408,7 @@ git -C "$ROOT" merge --abort 2>/dev/null || true
 mk_no_ticket_intake_branch b
 git -C "$ROOT" checkout -q -b "delete-named-b" "$BASE_TIP"
 git -C "$ROOT" rm -q "backlog/INTAKE-xb.md"
-git -C "$ROOT" commit -q -m "Mint BL-9009: a text filter on the live spec tree; archive its intake"
+git -c core.hooksPath=/dev/null -C "$ROOT" commit -q -m "Mint BL-9009: a text filter on the live spec tree; archive its intake"
 DELETE_NAMED_TIP="$(git -C "$ROOT" rev-parse --short=10 HEAD)"
 git -C "$ROOT" checkout -q "intakebaseb"
 set +e
@@ -420,9 +420,9 @@ OUT15="$(run_guard "$MSG" 2>&1)"
 STATUS15=$?
 set -e
 [[ "$STATUS15" -ne 0 ]] || fail "15: expected refusal - HEAD's own introducing commit names no ticket"
-echo "$OUT15" | grep -q "BL-9009" || fail "15: refusal must fall back to the incoming side's ticket id BL-9009, got: $OUT15"
-echo "$OUT15" | grep -qi "(unattributed)" && fail "15: must not be unattributed when the incoming side names a ticket, got: $OUT15"
-echo "$OUT15" | grep -qE "${DELETE_NAMED_TIP:0:7}" || echo "$OUT15" | grep -qE "[0-9a-f]{7,10}" \
+grep -q "BL-9009" <<<"$OUT15" || fail "15: refusal must fall back to the incoming side's ticket id BL-9009, got: $OUT15"
+grep -qi "(unattributed)" <<<"$OUT15" && fail "15: must not be unattributed when the incoming side names a ticket, got: $OUT15"
+grep -qE "${DELETE_NAMED_TIP:0:7}" <<<"$OUT15" || grep -qE "[0-9a-f]{7,10}" <<<"$OUT15" \
   || fail "15: refusal must name the deleting commit, got: $OUT15"
 pass "15: HEAD naming no ticket falls back to the incoming side's id (BL-9009), never (unattributed)"
 echo "BL-9009: deliberate removal" > "$MSG"
@@ -444,7 +444,7 @@ mk_no_ticket_intake_branch c
 HEAD_INTRODUCING_TIP_C="$(git -C "$ROOT" rev-parse --short HEAD)"
 git -C "$ROOT" checkout -q -b "delete-unnamed-c" "$BASE_TIP"
 git -C "$ROOT" rm -q "backlog/INTAKE-xc.md"
-git -C "$ROOT" commit -q -m "chore: remove a stale intake file"
+git -c core.hooksPath=/dev/null -C "$ROOT" commit -q -m "chore: remove a stale intake file"
 DELETE_UNNAMED_TIP="$(git -C "$ROOT" rev-parse --short=10 HEAD)"
 DELETE_UNNAMED_TIP_SHORT="$(git -C "$ROOT" rev-parse --short HEAD)"
 git -C "$ROOT" checkout -q "intakebasec"
@@ -457,9 +457,9 @@ OUT16="$(run_guard "$MSG" 2>&1)"
 STATUS16=$?
 set -e
 [[ "$STATUS16" -ne 0 ]] || fail "16: expected refusal - neither side names a ticket"
-echo "$OUT16" | grep -qi "(unattributed)" || fail "16: refusal must read (unattributed) when neither side names a ticket, got: $OUT16"
-echo "$OUT16" | grep -qF "$HEAD_INTRODUCING_TIP_C" || fail "16: diagnostic commit must be HEAD's own ($HEAD_INTRODUCING_TIP_C), not the incoming side's ($DELETE_UNNAMED_TIP_SHORT), got: $OUT16"
-echo "$OUT16" | grep -qF "$DELETE_UNNAMED_TIP_SHORT" && fail "16: diagnostic commit must NOT be the incoming side's ($DELETE_UNNAMED_TIP_SHORT), got: $OUT16"
+grep -qi "(unattributed)" <<<"$OUT16" || fail "16: refusal must read (unattributed) when neither side names a ticket, got: $OUT16"
+grep -qF "$HEAD_INTRODUCING_TIP_C" <<<"$OUT16" || fail "16: diagnostic commit must be HEAD's own ($HEAD_INTRODUCING_TIP_C), not the incoming side's ($DELETE_UNNAMED_TIP_SHORT), got: $OUT16"
+grep -qF "$DELETE_UNNAMED_TIP_SHORT" <<<"$OUT16" && fail "16: diagnostic commit must NOT be the incoming side's ($DELETE_UNNAMED_TIP_SHORT), got: $OUT16"
 pass "16: neither side naming a ticket still refuses, correctly as (unattributed), naming HEAD's own commit"
 git -C "$ROOT" merge --abort 2>/dev/null || true
 
