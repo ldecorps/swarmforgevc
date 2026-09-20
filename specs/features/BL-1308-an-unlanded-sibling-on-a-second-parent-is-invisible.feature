@@ -76,7 +76,8 @@ Feature: An unlanded sibling reached only through a merge's second parent
     Given a forward-merge whose subject names the cited ticket
     And an unlanded sibling ticket's untagged commits on that merge's second parent
     When the land step reports its siblings
-    Then the replay tip adds only the cited ticket's own paths
+    Then the sibling ticket is named in the report
+    And the replay tip adds only the cited ticket's own paths
     And every sibling path left out of the replay is named on its own EXCLUDED_SIBLING_PATH line
 
   # BL-1308 sibling-detector-covers-replay-content-04
