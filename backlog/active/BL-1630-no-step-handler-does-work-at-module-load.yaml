@@ -210,7 +210,8 @@ notes: |
   coder has already folded the fix.
 
 assigned_to: coder
-bounce_count: 2
+bounce_count: 3
 bounce_history:
   - { at: 2026-09-20, by: cleaner, blamed: coder, class: acceptance, commit: c52846fd16, evidence: backlog/evidence/BL-1630-bounce-20260920.md }
   - { at: 2026-09-20, by: cleaner, blamed: coder, class: acceptance, commit: dc8236f01f, evidence: backlog/evidence/BL-1630-bounce-20260920.md }
+  - { at: 2026-09-20, by: QA, blamed: coder, class: behavior, commit: 14388ae9e9, evidence: backlog/evidence/BL-1630-bounce-20260920-2.md }
