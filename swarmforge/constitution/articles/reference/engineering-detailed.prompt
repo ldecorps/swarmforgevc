@@ -698,6 +698,21 @@ not as the several separate edits that produced it).
   scoped `role:hardender`; accepted into the shared article instead — the coder implements
   retirements, the cleaner removes dead code, and the specifier retires features, so this binds
   every author who deletes step code, not only the role that caught it late.)
+- **A step handler does no work at module load** (BL-1630): BL-1371 made
+  registration discovery — `specs/pipeline/steps/index.js` requires every
+  `*Steps.js` at load, so a filesystem listing, a temp-dir sweep, or a
+  heavy `require` (jsdom, `node:test`) sitting at a handler's top level is
+  paid by every consumer of the registry: every acceptance run, every
+  QA-bound send (the BL-761 registration gate), and bl968's own spawns.
+  Measured 2026-09-17: twelve handlers carried 10.5s of a 12.6s total
+  incremental require cost, six of them calling `sweepStaleFixtures()`
+  (a shared temp-dir listing) at module load rather than once per test
+  run. The work belongs inside the step function that needs it (or behind
+  a lazily-initialised once-per-file flag for a sweep), never at the
+  handler's top level; `extension/test/stepHandlerModuleLoadBudget.test.js`
+  guards it with a per-handler require-time budget, timing variance never
+  accepted as an allowlist reason (a violator is re-measured alone in a
+  fresh child, BL-1633's confirm-a-pole-alone rule, before it is named).
 
 ## Verification
 - **One command per role encodes the lane set (BL-1618).**
