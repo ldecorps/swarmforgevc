@@ -97,23 +97,46 @@
                     (when-not (= "1" (System/getenv "CHASE_WAKE_SKIP"))
                       (log-call! "wake-up" role))
                     (not= "1" (System/getenv "CHASE_WAKE_SKIP")))
-   ;; BL-1652: context is {:item-id :liveness :heartbeat-age-s :activity-age-s
-   ;; :busy :lane} - logged so a shell test can assert on the readings a
-   ;; respawn was decided on, the same way handoffd.bb's real chase-respawn
-   ;; log line does.
-   :trigger-respawn! (fn [role context]
-                        (log-call! "respawn" role
-                                   (str "item=" (:item-id context))
-                                   (str "liveness=" (:liveness context))
-                                   (str "heartbeat-age-s=" (:heartbeat-age-s context))
-                                   (str "activity-age-s=" (:activity-age-s context))
-                                   (str "busy=" (:busy context))
-                                   (str "lane=" (:lane context))))
+   ;; BL-1652: the original "respawn <role>" line is UNCHANGED (every
+   ;; pre-BL-1652 scenario's exact `^respawn coder$` calls.log assertion
+   ;; keeps matching) - readings ride a second, additive log-call! line a
+   ;; BL-1652 scenario greps for on its own.
+   :trigger-respawn! (fn [role readings]
+                        (log-call! "respawn" role)
+                        (log-call! "respawn-readings" role
+                                   (str "item=" (:itemId readings)) (str "liveness=" (:liveness readings))
+                                   (str "heartbeat-age-s=" (:heartbeatAgeS readings))
+                                   (str "activity-age-s=" (:activityAgeS readings))
+                                   (str "busy=" (boolean (:busy readings))) (str "lane=" (boolean (:lane readings)))))
    :log-dead-letter! (fn [role path] (log-call! "dead-letter" role (fs/file-name path)))
    :get-last-activity-ms (fn [_role] last-activity-ms)
+   ;; BL-1652: PANE_BUSY/LANE_RUNNING - fake readings for the respawn guard.
+   ;; Reuses the SAME :role-agent-busy? key CLAIM_AGENT_BUSY already sets
+   ;; below (never a second busy adapter) - PANE_BUSY is a distinct env var
+   ;; only because a BL-1652 scenario may want busy true without also
+   ;; exercising the BL-528 claim-idle path CLAIM_AGENT_BUSY was named for.
+   :role-agent-busy?
+   (when (or (= "1" (System/getenv "CLAIM_AGENT_BUSY")) (= "1" (System/getenv "PANE_BUSY")))
+     (fn [_role] true))
+   :role-lane-running?
+   (when (= "1" (System/getenv "LANE_RUNNING"))
+     (fn [_role] true))
+   :get-heartbeat-age-seconds
+   (when-let [a (System/getenv "HEARTBEAT_AGE_SECONDS")]
+     (fn [_role] (parse-double a)))
    :on-stuck-escalation! (fn [role escalated] (log-call! "escalation" role (str escalated)))
+   ;; BL-1652: the original "telemetry ..." line is UNCHANGED for every
+   ;; event type - a respawn event's readings ride a second, additive line,
+   ;; the telemetry mirror of :trigger-respawn!'s own "respawn-readings"
+   ;; above (same field order, so a scenario can diff the two).
    :log-telemetry! (fn [event _now-ms]
-                      (log-call! "telemetry" (:type event) (:role event) (:handoffId event) (str (:count event))))
+                      (log-call! "telemetry" (:type event) (:role event) (:handoffId event) (str (:count event)))
+                      (when (= "respawn" (:type event))
+                        (log-call! "telemetry-respawn-readings" (:role event)
+                                   (str "item=" (:handoffId event)) (str "liveness=" (:liveness event))
+                                   (str "heartbeat-age-s=" (:heartbeatAgeS event))
+                                   (str "activity-age-s=" (:activityAgeS event))
+                                   (str "busy=" (boolean (:busy event))) (str "lane=" (boolean (:lane event))))))
    :get-rate-limit-cooldown-until-ms
    (fn [role] (chase-sweep-lib/read-rate-limit-cooldown-until-ms rate-limit-state-dir role))
    :get-rate-limit-cooldown-woken-marker
@@ -125,9 +148,6 @@
    :get-role-head-commit
    (when-let [h (System/getenv "CLAIM_HEAD_COMMIT")]
      (fn [_role] h))
-   :role-agent-busy?
-   (when (= "1" (System/getenv "CLAIM_AGENT_BUSY"))
-     (fn [_role] true))
    :role-worktree-dirty?
    (when (= "1" (System/getenv "CLAIM_WORKTREE_DIRTY"))
      (fn [_role] true))
@@ -155,15 +175,7 @@
      (log-call! "claim-idle-reclaim" role (str "reclaims=" reclaims)
                 (str "busy=" busy) (str "dirty=" dirty) (str "recent=" recent)
                 (str "present=" present) (str "elapsed-min=" elapsed-min)
-                (str "timeout-min=" timeout-min)))
-   ;; BL-1652: CHASE_PANE_BUSY=1 / CHASE_LANE_RUNNING=1 simulate the busy
-   ;; footer / a running verification lane; CHASE_HEARTBEAT_AGE_S sets the
-   ;; respawn log/telemetry's heartbeat-age-s reading. All three absent by
-   ;; default - never changes any pre-existing scenario's behavior.
-   :pane-busy? (fn [_role] (= "1" (System/getenv "CHASE_PANE_BUSY")))
-   :lane-running? (fn [_role] (= "1" (System/getenv "CHASE_LANE_RUNNING")))
-   :get-heartbeat-age-seconds
-   (fn [_role] (some-> (System/getenv "CHASE_HEARTBEAT_AGE_S") parse-double))})
+                (str "timeout-min=" timeout-min)))})
 
 (chase-sweep-lib/run-sweep!
  [{:role role :inbox-new-dir inbox-new-dir :in-process-dir in-process-dir

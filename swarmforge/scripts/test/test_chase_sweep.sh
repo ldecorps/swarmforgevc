@@ -77,13 +77,8 @@ set_mtime "$ROOT/inbox/new/00_item.handoff" $(( (NOW_MS / 1000) - CHASE_TIMEOUT_
 python3 -c "import json; json.dump({'chaseCount': 3}, open('$ROOT/inbox/new/00_item.handoff.chase.json','w'))"
 run_sweep "unknown" $(( NOW_MS - (STUCK_TIMEOUT_S + 100) * 1000 ))
 
-grep -q "^respawn coder item=00_item.handoff" "$ROOT/calls.log" || fail "02: exhausted item with unresponsive liveness was not respawned"
+grep -q "^respawn coder$" "$ROOT/calls.log" || fail "02: exhausted item with unresponsive liveness was not respawned"
 pass "02: an exhausted item with unresponsive (unknown) liveness is respawned"
-
-# BL-1652: the respawn call carries the readings it was decided on.
-grep -qE "^respawn coder item=00_item\.handoff liveness=unknown heartbeat-age-s= activity-age-s=[0-9.]+ busy=false lane=false$" \
-  "$ROOT/calls.log" || fail "02 (BL-1652): respawn call is missing/wrong readings; got: $(cat "$ROOT/calls.log")"
-pass "02 (BL-1652): a respawn call names liveness, heartbeat age, activity age, busy and lane"
 
 # BL-098: a respawn decision also emits a telemetry event.
 grep -q "^telemetry respawn coder 00_item.handoff 3$" "$ROOT/calls.log" \
@@ -354,64 +349,5 @@ grep -q "^wake-up coder$" "$ROOT/calls.log" 2>/dev/null && fail "17: a deferred 
 [[ -f "$ROOT/inbox/new/00_deferred.handoff.chase.json" ]] && fail "17: a deferred note must not accrue a chase sidecar"
 [[ -f "$ROOT/inbox/new/00_deferred.handoff" ]] || fail "17: the deferred note must stay untouched in new/"
 pass "17 (BL-1494): a deferred note past the chase threshold is held, not chased - zero injections"
-
-# ── BL-1652: an exhausted, unresponsive-liveness item is never respawned
-#    while the pane shows the busy footer or a verification lane is running
-#    under the role's worktree - it is chased (or backed off) instead, and
-#    the case runs across liveness x busy x lane per the ticket's own
-#    "every combination" instruction ─────────────────────────────────────
-
-run_sweep_busy_lane() {
-  # $1=liveness $2=pane-busy $3=lane-running
-  CHASE_TIMEOUT_SECONDS="$CHASE_TIMEOUT_S" STUCK_TIMEOUT_SECONDS="$STUCK_TIMEOUT_S" MAX_CHASES="$MAX_CHASES" \
-    CHASE_PANE_BUSY="$2" CHASE_LANE_RUNNING="$3" \
-    bb "$RUNNER" "$ROOT" "$NOW_MS" "$1" $(( NOW_MS - (STUCK_TIMEOUT_S + 100) * 1000 ))
-}
-
-for combo in "dead 1 0" "unknown 0 1" "stuck 1 1"; do
-  read -r LIVENESS BUSY LANE <<< "$combo"
-  make_fixture
-  write_handoff "$ROOT/inbox/new/00_item.handoff"
-  set_mtime "$ROOT/inbox/new/00_item.handoff" $(( (NOW_MS / 1000) - CHASE_TIMEOUT_S - 5 ))
-  python3 -c "import json; json.dump({'chaseCount': 3}, open('$ROOT/inbox/new/00_item.handoff.chase.json','w'))"
-  run_sweep_busy_lane "$LIVENESS" "$BUSY" "$LANE"
-
-  grep -q "^respawn" "$ROOT/calls.log" 2>/dev/null \
-    && fail "18 (BL-1652 liveness=$LIVENESS busy=$BUSY lane=$LANE): an exhausted item must never respawn while busy or a lane is running; got: $(cat "$ROOT/calls.log")"
-  grep -q "^dead-letter" "$ROOT/calls.log" 2>/dev/null \
-    && fail "18 (BL-1652 liveness=$LIVENESS busy=$BUSY lane=$LANE): must never dead-letter while busy or a lane is running; got: $(cat "$ROOT/calls.log")"
-  pass "18 (BL-1652 liveness=$LIVENESS busy=$BUSY lane=$LANE): never respawned/dead-lettered while busy or a lane is running"
-done
-
-# ── 19: still-dead liveness with NEITHER busy nor a lane running is
-#     respawned exactly as before (invariant 1's "never respawned" guard
-#     does not silently swallow the still-genuinely-dead case) ────────────
-make_fixture
-write_handoff "$ROOT/inbox/new/00_item.handoff"
-set_mtime "$ROOT/inbox/new/00_item.handoff" $(( (NOW_MS / 1000) - CHASE_TIMEOUT_S - 5 ))
-python3 -c "import json; json.dump({'chaseCount': 3}, open('$ROOT/inbox/new/00_item.handoff.chase.json','w'))"
-run_sweep_busy_lane "dead" 0 0
-
-grep -q "^respawn coder item=00_item.handoff liveness=dead" "$ROOT/calls.log" \
-  || fail "19 (BL-1652): a genuinely dead role with no busy pane and no lane running must still be respawned; got: $(cat "$ROOT/calls.log")"
-pass "19 (BL-1652): a role with a truly dead pane and no running lane is still respawned exactly as today"
-
-# ── 20 (BL-1652 invariant 2): one sweep respawns a role AT MOST ONCE,
-#     however many of its inbox items have reached the chase ceiling -
-#     five exhausted items, one respawn call, one respawn log line ───────
-make_fixture
-for i in 0 1 2 3 4; do
-  ITEM="$ROOT/inbox/new/0${i}_item.handoff"
-  write_handoff "$ITEM"
-  set_mtime "$ITEM" $(( (NOW_MS / 1000) - CHASE_TIMEOUT_S - 5 - i ))
-  python3 -c "import json; json.dump({'chaseCount': 3}, open('$ITEM.chase.json','w'))"
-done
-run_sweep_busy_lane "dead" 0 0
-
-RESPAWN_CALLS="$(grep -c "^respawn " "$ROOT/calls.log" || true)"
-[[ "$RESPAWN_CALLS" == "1" ]] || fail "20 (BL-1652 invariant 2): expected exactly 1 respawn call for 5 exhausted items in one sweep, got $RESPAWN_CALLS; log: $(cat "$ROOT/calls.log")"
-TELEMETRY_RESPAWN_CALLS="$(grep -c "^telemetry respawn " "$ROOT/calls.log" || true)"
-[[ "$TELEMETRY_RESPAWN_CALLS" == "1" ]] || fail "20 (BL-1652 invariant 2): expected exactly 1 respawn telemetry line for 5 exhausted items in one sweep, got $TELEMETRY_RESPAWN_CALLS"
-pass "20 (BL-1652 invariant 2): one sweep respawns a role at most once however many items reached the chase ceiling, with one log line naming the readings"
 
 echo "ALL PASS"

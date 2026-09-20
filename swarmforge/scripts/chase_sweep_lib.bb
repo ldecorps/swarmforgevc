@@ -155,10 +155,21 @@
 (defn unresponsive-liveness? [liveness]
   (contains? #{"dead" "unknown" "stuck"} liveness))
 
-(defn decide-stale-item-action [chase-count config liveness]
-  (if (< chase-count (:maxChases config))
-    "chased"
-    (if (unresponsive-liveness? liveness) "respawned" "dead-lettered")))
+;; BL-1652: pane-busy?/lane-running? are read ONCE per role per sweep (never
+;; per item - see sweep-role-inbox! below) and gate ONLY the
+;; already-at-ceiling branch: a role below maxChases already answers
+;; "chased" regardless, so busy/lane never need to be consulted there. A
+;; role at the ceiling whose own pane shows the busy footer or whose
+;; worktree has a lane running is chased (backed off exactly like any other
+;; "chased" item downstream) instead of respawned or dead-lettered - a
+;; stale heartbeat alone is never sufficient when either live reading says
+;; otherwise.
+(defn decide-stale-item-action [chase-count config liveness pane-busy? lane-running?]
+  (cond
+    (< chase-count (:maxChases config)) "chased"
+    (or pane-busy? lane-running?) "chased"
+    (unresponsive-liveness? liveness) "respawned"
+    :else "dead-lettered"))
 
 ;; BL-499: a new/ item whose basename is ALREADY terminal (present in
 ;; completed/ or abandoned/ - the SAME already-terminal? predicate
@@ -183,64 +194,30 @@
 ;; never touched either way, so releasing the hold resumes the normal ladder
 ;; from exactly the frozen values (see the ticket's freeze-the-counter note).
 (defn decide-item-action
-  ;; BL-1652: 9-arg form kept for every pre-existing caller (BL-852's own
-  ;; property invariants included) - pane-busy?/lane-running? default false,
-  ;; reproducing the exact pre-BL-1652 ladder byte-for-byte.
-  ([item-mtime-ms chase-count now-ms config liveness last-activity-ms last-chased-at-ms already-terminal? held?]
-   (decide-item-action item-mtime-ms chase-count now-ms config liveness last-activity-ms
-                        last-chased-at-ms already-terminal? held? false false))
-  ([item-mtime-ms chase-count now-ms config liveness last-activity-ms last-chased-at-ms already-terminal? held?
-    pane-busy? lane-running?]
-   (cond
-     already-terminal? "reaped"
-     held? "held"
-     :else
-     (let [age-seconds (/ (- now-ms item-mtime-ms) 1000.0)]
-       (if (< age-seconds (:chaseTimeoutSeconds config))
-         "skipped"
-         (let [idle-seconds (/ (- now-ms last-activity-ms) 1000.0)
-               ;; BL-1652: a busy footer or a running verification lane IS
-               ;; activity the tracked pane-content hash and heartbeat
-               ;; cadence can both miss during an hours-long lane. Folding
-               ;; them in here means the exact same immediate-chase/backed-
-               ;; off-chase/skip branch below governs them too, so
-               ;; decide-stale-item-action's "respawned" branch is never
-               ;; even reached while either is true (invariant 1).
-               has-recent-activity? (or (< idle-seconds (:stuckInProcessTimeoutSeconds config))
-                                         pane-busy? lane-running?)]
-           (if has-recent-activity?
-             (if (nil? last-chased-at-ms)
-               "chased"
-               (let [seconds-since-last-chase (/ (- now-ms last-chased-at-ms) 1000.0)
-                     backoff-seconds (compute-chase-backoff-seconds chase-count config)]
-                 (if (>= seconds-since-last-chase backoff-seconds) "chased" "skipped")))
-             (decide-stale-item-action chase-count config liveness))))))))
+  [item-mtime-ms chase-count now-ms config liveness last-activity-ms last-chased-at-ms already-terminal? held?
+   pane-busy? lane-running?]
+  (cond
+    already-terminal? "reaped"
+    held? "held"
+    :else
+    (let [age-seconds (/ (- now-ms item-mtime-ms) 1000.0)]
+      (if (< age-seconds (:chaseTimeoutSeconds config))
+        "skipped"
+        (let [idle-seconds (/ (- now-ms last-activity-ms) 1000.0)
+              has-recent-activity? (< idle-seconds (:stuckInProcessTimeoutSeconds config))]
+          (if has-recent-activity?
+            (if (nil? last-chased-at-ms)
+              "chased"
+              (let [seconds-since-last-chase (/ (- now-ms last-chased-at-ms) 1000.0)
+                    backoff-seconds (compute-chase-backoff-seconds chase-count config)]
+                (if (>= seconds-since-last-chase backoff-seconds) "chased" "skipped")))
+            (decide-stale-item-action chase-count config liveness pane-busy? lane-running?)))))))
 
 (defn decide-stuck-action [last-activity-ms nudge-count now-ms config]
   (let [idle-seconds (/ (- now-ms last-activity-ms) 1000.0)]
     (if (< idle-seconds (:stuckInProcessTimeoutSeconds config))
       "skipped"
       (if (>= nudge-count (:maxChases config)) "alert" "nudge"))))
-
-;; BL-1652: the one place `:last_beat` is parsed - compute-liveness and the
-;; respawn-log's own heartbeat-age-seconds reading below both resolve it
-;; here, never two independent parses of the same field.
-(defn heartbeat-beat-ms
-  "Epoch millis of heartbeat's own :last_beat timestamp, or nil when
-   heartbeat is absent or its timestamp is unparseable."
-  [heartbeat]
-  (try (.toEpochMilli (java.time.Instant/parse (:last_beat heartbeat)))
-       (catch Exception _ nil)))
-
-(defn heartbeat-age-seconds
-  "Seconds since heartbeat's own last beat, or nil when heartbeat is absent
-   or unparseable. Named alongside the liveness state it was classified
-   from rather than reconstructed from the state string alone - a \"dead\"
-   classification does not say HOW stale (121s and 6h both read \"dead\"),
-   and BL-1652's own respawn log line needs the raw age."
-  [heartbeat now-ms]
-  (when-let [beat-ms (heartbeat-beat-ms heartbeat)]
-    (/ (- now-ms beat-ms) 1000.0)))
 
 ;; liveness.ts's computeLiveness, ported: given a heartbeat snapshot (or nil)
 ;; and whether its recorded pid is alive, decides the LivenessState string.
@@ -250,7 +227,8 @@
     (nil? heartbeat) "unknown"
     (not pid-alive?) "dead"
     :else
-    (let [beat-ms (heartbeat-beat-ms heartbeat)]
+    (let [beat-ms (try (.toEpochMilli (java.time.Instant/parse (:last_beat heartbeat)))
+                        (catch Exception _ nil))]
       (if (nil? beat-ms)
         "unknown"
         (let [age-seconds (/ (- now-ms beat-ms) 1000.0)]
@@ -327,15 +305,6 @@
 ;; ── impure sweep application (adapters map, mirrors ChaserAdapters) ─────────
 ;; adapters keys: :get-liveness :send-wake-up! :trigger-respawn! :log-dead-letter!
 ;;                :get-last-activity-ms :on-stuck-escalation! :log-telemetry!
-;; BL-1652: :pane-busy? (fn [role]), :lane-running? (fn [role]) and
-;; :get-heartbeat-age-seconds (fn [role]) - all OPTIONAL, absent degrades to
-;; false/nil (never blocks a genuinely dead role's respawn; never adds a
-;; heartbeat-age-s reading to the respawn log/telemetry for a fixture that
-;; predates this ticket). :pane-busy?/:lane-running? are read ONCE per role
-;; per sweep in sweep-role-inbox! below, never per item, and folded into
-;; decide-item-action's has-recent-activity? so a busy pane or a running
-;; verification lane is never respawned - the same immediate-chase/backed-
-;; off-chase/skip branch as any other recent activity governs them.
 ;; :send-in-process-resume! returns a plain boolean, truthy only when a pane
 ;; wake was actually delivered (skipped-busy/dedup/recent/failed => false) -
 ;; unchanged, the nudge ladder is not this ticket's concern.
@@ -517,12 +486,12 @@
               ;; the role's worktree HEAD has advanced since the claim.
               (apply-claim-progress-check! role held now-ms config adapters)))))))
 
-(defn- apply-inbox-item-action!
-  "BL-1652: `respawn-context` ({:item-id :liveness :heartbeat-age-s
-   :activity-age-s :busy :lane}, or nil) is only ever consulted by the
-   \"respawned\" branch - every other action ignores it, so a nil context
-   (any pre-BL-1652 caller) changes nothing for them."
-  [role item action adapters now-ms respawn-context]
+;; BL-1652: `readings` (nil for every action but "respawned") carries the
+;; per-sweep :liveness/:heartbeatAgeS/:activityAgeS/:busy/:lane snapshot
+;; sweep-role-inbox! already gathered to DECIDE the action - never
+;; recomputed here, so the log/telemetry line can never disagree with what
+;; the decision actually saw.
+(defn- apply-inbox-item-action! [role item action adapters now-ms readings]
   (case action
     ;; BL-1505: a chase attempt counts whether or not its wake text was
     ;; injected - the adapter was invoked and the pane was reachable
@@ -534,14 +503,11 @@
                (let [count (inc (:chaseCount item))]
                  (write-chase-count! (:filePath item) count now-ms)
                  ((:log-telemetry! adapters) {:type "chase" :role role :handoffId (handoff-id (:filePath item)) :count count} now-ms)))
-    ;; BL-1652 invariant 3: every field the log line names also rides the
-    ;; telemetry row, via the SAME respawn-context map - never two
-    ;; independently-assembled field sets that could silently drift apart.
-    "respawned" (do ((:trigger-respawn! adapters) role respawn-context)
-                     ((:log-telemetry! adapters)
-                      (merge {:type "respawn" :role role :handoffId (handoff-id (:filePath item)) :count (:chaseCount item)}
-                             respawn-context)
-                      now-ms))
+    "respawned" (let [handoff-id-str (handoff-id (:filePath item))]
+                  ((:trigger-respawn! adapters) role (assoc readings :itemId handoff-id-str))
+                  ((:log-telemetry! adapters)
+                   (merge {:type "respawn" :role role :handoffId handoff-id-str :count (:chaseCount item)} readings)
+                   now-ms))
     "dead-lettered" (let [dead (dead-letter-path (:filePath item))
                           sc (sidecar-path (:filePath item))]
                       (fs/move (:filePath item) dead {:replace-existing false})
@@ -664,6 +630,14 @@
       :deadline-ms (:deadline-ms deferral-ctx)})
     (catch Exception _ false)))
 
+;; BL-1652: an optional adapter is read via when-let and defaults to nil/
+;; false - every pre-BL-1652 fixture/property-runner that never wires
+;; :role-agent-busy?/:role-lane-running?/:get-heartbeat-age-seconds keeps
+;; behaving exactly as before (busy?/lane? read false, heartbeat age reads
+;; nil).
+(defn- optional-adapter-call [adapters k role]
+  (when-let [f (k adapters)] (f role)))
+
 (defn sweep-role-inbox! [role inbox-new-dir completed-dir abandoned-dir now-ms config adapters]
   (reap-orphaned-sidecars! inbox-new-dir)
   (let [items (scan-inbox-new inbox-new-dir)
@@ -678,19 +652,35 @@
         abandoned-basenames (handoff-lib/terminal-basenames abandoned-dir)
         liveness ((:get-liveness adapters) role)
         last-activity-ms ((:get-last-activity-ms adapters) role)
+        ;; BL-1652: read ONCE per role per sweep, never per item - reuses
+        ;; :role-agent-busy? (the SAME footer reading the claim-progress
+        ;; check and chase-poke-and-notify! already key on, never a second
+        ;; notion of busy).
+        pane-busy? (boolean (optional-adapter-call adapters :role-agent-busy? role))
+        lane-running? (boolean (optional-adapter-call adapters :role-lane-running? role))
+        heartbeat-age-s (optional-adapter-call adapters :get-heartbeat-age-seconds role)
+        ;; nil-safe: a fixture whose every item is already-terminal (reaped
+        ;; before any branch below ever reads activity) never needed
+        ;; last-activity-ms to resolve to a real number before BL-1652 -
+        ;; base-readings is built unconditionally now (once per sweep,
+        ;; never per item), so it must stay just as tolerant.
+        activity-age-s (when (number? last-activity-ms) (/ (- now-ms last-activity-ms) 1000.0))
+        base-readings {:liveness liveness :heartbeatAgeS heartbeat-age-s
+                       :activityAgeS activity-age-s :busy pane-busy? :lane lane-running?}
         respawn-cooldown-until-ms (read-respawn-cooldown-until-ms inbox-new-dir)
-        ;; BL-1652: read ONCE per role per sweep, never per item - both
-        ;; adapters are optional (a fixture predating this ticket degrades
-        ;; to false, never blocking a genuinely dead role's respawn).
-        pane-busy? (boolean (when-let [f (:pane-busy? adapters)] (f role)))
-        lane-running? (boolean (when-let [f (:lane-running? adapters)] (f role)))
-        heartbeat-age-s (when-let [f (:get-heartbeat-age-seconds adapters)] (f role))
-        activity-age-s (/ (- now-ms last-activity-ms) 1000.0)
         ;; BL-1004: forced only if some non-terminal item actually needs the
         ;; hold check - an empty inbox costs no roles.tsv/conf/mailbox reads.
         deferral-ctx (delay (stage-deferral-context role))
-        ;; BL-1652 invariant 2: one respawn per role per sweep - set once
-        ;; the first item this sweep triggers it.
+        ;; BL-1652: one respawn per role per SWEEP, however many stuck items
+        ;; decide "respawned" - without this, every one of them raced the
+        ;; SAME pre-loop respawn-cooldown-until-ms snapshot (the cooldown
+        ;; file write below only ever protects the NEXT sweep, never a
+        ;; sibling item already mid-doseq in THIS one) and each independently
+        ;; triggered a real respawn: the 2026-09-19 incident (QA respawned
+        ;; seven times within 350ms - do-respawn!'s own busy precheck reads
+        ;; not-busy on every one of those calls because the pane a tmux
+        ;; respawn-pane -k just killed has not yet booted Claude far enough
+        ;; to paint the busy footer before the NEXT item's decision runs).
         respawned-this-sweep? (atom false)]
     (doseq [item items]
       (let [already-terminal? (handoff-lib/already-terminal?
@@ -705,28 +695,20 @@
             decided (decide-item-action (:mtimeMs item) (:chaseCount item) now-ms config
                                          liveness last-activity-ms (:lastChasedAtMs item) already-terminal? held?
                                          pane-busy? lane-running?)
+            respawn-decision? (= decided "respawned")
             action (cond
-                     (not= decided "respawned") decided
+                     (not respawn-decision?) decided
                      (is-cooling-down? respawn-cooldown-until-ms now-ms) "chased"
-                     ;; A later item in the SAME sweep that also decided
-                     ;; "respawned" keeps its own count untouched - no wake,
-                     ;; no write, no telemetry - exactly "held" and "skipped"
-                     ;; above already leave every input alone.
+                     ;; A sibling item already claimed this sweep's one
+                     ;; respawn: this item does NOTHING this tick (never
+                     ;; "chased" either - BL-1652 invariant 2 keeps its
+                     ;; count and sidecars byte-identical, not merely
+                     ;; unrespawned).
                      @respawned-this-sweep? nil
-                     :else "respawned")]
-        (when (= action "respawned") (reset! respawned-this-sweep? true))
-        (when action
-          (apply-inbox-item-action!
-           role item action adapters now-ms
-           (when (= action "respawned")
-             {:item-id (handoff-id (:filePath item))
-              :liveness liveness
-              :heartbeat-age-s heartbeat-age-s
-              :activity-age-s activity-age-s
-              :busy pane-busy?
-              :lane lane-running?}))
-          (when (= action "respawned")
-            (write-respawn-cooldown-until-ms! inbox-new-dir (+ now-ms (* (:respawnCooldownSeconds config) 1000)))))))))
+                     :else (do (reset! respawned-this-sweep? true) "respawned"))]
+        (apply-inbox-item-action! role item action adapters now-ms base-readings)
+        (when (= action "respawned")
+          (write-respawn-cooldown-until-ms! inbox-new-dir (+ now-ms (* (:respawnCooldownSeconds config) 1000))))))))
 
 ;; ── BL-209: rate-limit cooldown gate ─────────────────────────────────────
 ;; A role whose agent hit a provider usage limit must not be blind-retried
@@ -867,30 +849,6 @@
   (let [lines (str/split-lines (or pane-text ""))
         tail (take-last busy-tail-window lines)]
     (boolean (some live-status-frame-line? tail))))
-
-;; ── BL-1652: verification-lane detection (the busy footer's blind spot) ────
-;; A long Stryker/vitest/bb-test/acceptance run can scroll its own output
-;; fast enough, or go quiet between frames long enough, that the busy-footer
-;; classifier above sees an idle-looking tail even deep inside an hours-long
-;; verification pass (the 2026-09-19 QA incident this ticket fixes: an
-;; 80-minute land killed by a chase respawn mid-run). This is a SECOND,
-;; independent liveness signal - a verification process scoped to the
-;; role's own worktree - composed alongside the busy-footer read by
-;; decide-item-action above, never a substitute for it.
-(def lane-process-pattern
-  "Command-line signature of a verification-lane process this respawn guard
-   must never interrupt: Stryker mutation runs, a plain or property-lane
-   vitest invocation, the bb test runner, and the acceptance-pipeline CLI.
-   Case-insensitive, kept narrow so it never matches an unrelated process."
-  #"(?i)stryker|vitest|\bbb test\b|run_acceptance\.sh")
-
-(defn lane-process-cmdline?
-  "True when cmdline names a verification-lane process. Pure string match
-   only - the caller (handoffd.bb) resolves WHICH worktree a matching pid's
-   cwd/argv actually scopes to via process-table-lib/project-scoped-process?,
-   the same shared path-boundary rule the orphan reapers already use."
-  [cmdline]
-  (boolean (re-find lane-process-pattern (or cmdline ""))))
 
 ;; ── durable needs-human escalation state (crosses the daemon/extension-host
 ;; process boundary now that the daemon, not the extension host, decides it) ─

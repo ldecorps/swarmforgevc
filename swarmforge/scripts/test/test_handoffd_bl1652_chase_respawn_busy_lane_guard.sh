@@ -125,7 +125,7 @@ pass "02 (BL-1652 invariant 2): one sweep issues exactly one real respawn for a 
 
 RESPAWN_LOG_LINES="$(grep -c "chase-respawn QA " "$ROOT/.swarmforge/daemon/handoffd.log" || true)"
 [[ "$RESPAWN_LOG_LINES" == "1" ]] || fail "02: expected exactly 1 chase-respawn log line, got $RESPAWN_LOG_LINES; log: $(cat "$ROOT/.swarmforge/daemon/handoffd.log")"
-grep -E "chase-respawn QA item=.+ liveness=dead heartbeat-age-s=[0-9.]+ activity-age-s=[0-9.eE+-]+ busy=false lane=false" \
+grep -E "chase-respawn QA .*item=\S+ liveness=dead heartbeat-age-s=[0-9.]+ activity-age-s=[0-9.eE+-]+ busy=false lane=false" \
   "$ROOT/.swarmforge/daemon/handoffd.log" >/dev/null \
   || fail "02: chase-respawn log line is missing/wrong readings; log: $(cat "$ROOT/.swarmforge/daemon/handoffd.log")"
 pass "02 (BL-1652 invariant 3): the one respawn log line names item, liveness, heartbeat age, activity age, busy and lane"
