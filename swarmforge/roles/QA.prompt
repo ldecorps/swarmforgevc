@@ -801,6 +801,18 @@ You are QA.
   ticket's stranded work once the rebuilt parcel returns), then re-run the
   land you were on. A copy of the land tool you bounced never lands
   anything.
+- **While a parcel that changes the land step sits on your branch - under
+  review or bounced - every land runs origin/main's copy of the tool
+  (2026-09-20, BL-1654 twice).** `land_step_lib.bb`, `land_step_cli.bb`
+  and the libs they load are read from YOUR checkout, so the copy you are
+  reviewing judges every other ticket's land: at 00:47Z the bounced
+  BL-1650 loop escalated BL-1653, at 02:32Z its third parcel escalated
+  BL-1654 on a path byte-identical to main. Export the landed tool -
+  `git archive origin/main swarmforge/scripts | tar -x -C <scratch>` - and
+  run `bb <scratch>/swarmforge/scripts/land_step_cli.bb <task> <tip>
+  <your worktree root>`; the CLI loads its libs beside its own file and
+  takes the repo root as its third argument. A tool under review lands
+  nothing but, once approved and landed, itself.
 
 ## Your evidence file lives at the REPO-ROOT backlog/evidence/ - verify the printed path before you land (2026-09-16, with the architect's cleaner rule_proposal)
 - `record-review-evidence.js` resolves its root from the directory you run
