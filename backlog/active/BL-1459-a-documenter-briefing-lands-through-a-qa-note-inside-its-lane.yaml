@@ -37,7 +37,7 @@ approval_context: >
 
 invariants:
   - "A day has at most one landed briefing: no land through this guard ever replaces or adds a second docs/briefings/<date>.md for a date the landed main already carries."
-  - "The guard judges only a documenter-side incoming commit - one on the documenter branch's first-parent line and not reachable from the landed main; an incoming parent the documenter branch reached only through a merge's second parent (an upstream chain commit), or one already on the landed main, exits 0 without judging."
+  - "The guard judges only a documenter-side BRIEFING commit - one on the documenter branch's first-parent line, not reachable from the landed main, whose delivered content touches docs/briefings/; every other incoming parent (an upstream chain commit behind a second parent, a commit already on the landed main, an ordinary documenter forward that changes no briefing file) exits 0 without judging."
 
 description: |
   ## What is wrong
@@ -172,6 +172,24 @@ notes: |
       Given a documenter commit on the documenter branch's first-parent line with a newer documenter commit above it
       When QA merges the older commit
       Then the hook judges it against the lane
+
+  Amended again 2026-09-20 (QA CRITICAL note 003000; evidence
+  backlog/evidence/BL-1459-specifier-ruling-hook-chain-blocks-every-forward-to-qa-20260920.md):
+  git runs pre-merge-commit from the MERGED tree, so the parcel that adds
+  this guard enforces it on the very merge that receives it, and a guard
+  that judges every documenter tip refused every documenter forward to
+  QA. The hook judges only a documenter-side commit whose delivered
+  content touches docs/briefings/ (invariant 2); an ordinary parcel
+  forward is never judged. The rebuild adds scenario 08, handler in the
+  same commit (BL-233):
+
+    # BL-1459 an-ordinary-forward-is-not-a-briefing-land-08
+    # 2026-09-20: the hook runs from the merged tree, so this guard runs
+    # on the merge that delivers it; only a briefing change is judged.
+    Scenario: an ordinary documenter forward that changes no briefing file is merged without judgment
+      Given a documenter commit on the documenter branch's first-parent line that changes paths outside docs/briefings/ and no briefing file
+      When QA merges that commit as a parcel forward
+      Then the hook exits 0 without judging it
 
 assigned_to: coder
 bounce_count: 1
