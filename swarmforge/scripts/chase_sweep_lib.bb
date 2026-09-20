@@ -155,10 +155,21 @@
 (defn unresponsive-liveness? [liveness]
   (contains? #{"dead" "unknown" "stuck"} liveness))
 
-(defn decide-stale-item-action [chase-count config liveness]
-  (if (< chase-count (:maxChases config))
-    "chased"
-    (if (unresponsive-liveness? liveness) "respawned" "dead-lettered")))
+;; BL-1652: pane-busy?/lane-running? are read ONCE per role per sweep (never
+;; per item - see sweep-role-inbox! below) and gate ONLY the
+;; already-at-ceiling branch: a role below maxChases already answers
+;; "chased" regardless, so busy/lane never need to be consulted there. A
+;; role at the ceiling whose own pane shows the busy footer or whose
+;; worktree has a lane running is chased (backed off exactly like any other
+;; "chased" item downstream) instead of respawned or dead-lettered - a
+;; stale heartbeat alone is never sufficient when either live reading says
+;; otherwise.
+(defn decide-stale-item-action [chase-count config liveness pane-busy? lane-running?]
+  (cond
+    (< chase-count (:maxChases config)) "chased"
+    (or pane-busy? lane-running?) "chased"
+    (unresponsive-liveness? liveness) "respawned"
+    :else "dead-lettered"))
 
 ;; BL-499: a new/ item whose basename is ALREADY terminal (present in
 ;; completed/ or abandoned/ - the SAME already-terminal? predicate
@@ -183,7 +194,8 @@
 ;; never touched either way, so releasing the hold resumes the normal ladder
 ;; from exactly the frozen values (see the ticket's freeze-the-counter note).
 (defn decide-item-action
-  [item-mtime-ms chase-count now-ms config liveness last-activity-ms last-chased-at-ms already-terminal? held?]
+  [item-mtime-ms chase-count now-ms config liveness last-activity-ms last-chased-at-ms already-terminal? held?
+   pane-busy? lane-running?]
   (cond
     already-terminal? "reaped"
     held? "held"
@@ -199,7 +211,7 @@
               (let [seconds-since-last-chase (/ (- now-ms last-chased-at-ms) 1000.0)
                     backoff-seconds (compute-chase-backoff-seconds chase-count config)]
                 (if (>= seconds-since-last-chase backoff-seconds) "chased" "skipped")))
-            (decide-stale-item-action chase-count config liveness)))))))
+            (decide-stale-item-action chase-count config liveness pane-busy? lane-running?)))))))
 
 (defn decide-stuck-action [last-activity-ms nudge-count now-ms config]
   (let [idle-seconds (/ (- now-ms last-activity-ms) 1000.0)]
@@ -474,7 +486,12 @@
               ;; the role's worktree HEAD has advanced since the claim.
               (apply-claim-progress-check! role held now-ms config adapters)))))))
 
-(defn- apply-inbox-item-action! [role item action adapters now-ms]
+;; BL-1652: `readings` (nil for every action but "respawned") carries the
+;; per-sweep :liveness/:heartbeatAgeS/:activityAgeS/:busy/:lane snapshot
+;; sweep-role-inbox! already gathered to DECIDE the action - never
+;; recomputed here, so the log/telemetry line can never disagree with what
+;; the decision actually saw.
+(defn- apply-inbox-item-action! [role item action adapters now-ms readings]
   (case action
     ;; BL-1505: a chase attempt counts whether or not its wake text was
     ;; injected - the adapter was invoked and the pane was reachable
@@ -486,8 +503,11 @@
                (let [count (inc (:chaseCount item))]
                  (write-chase-count! (:filePath item) count now-ms)
                  ((:log-telemetry! adapters) {:type "chase" :role role :handoffId (handoff-id (:filePath item)) :count count} now-ms)))
-    "respawned" (do ((:trigger-respawn! adapters) role)
-                     ((:log-telemetry! adapters) {:type "respawn" :role role :handoffId (handoff-id (:filePath item)) :count (:chaseCount item)} now-ms))
+    "respawned" (let [handoff-id-str (handoff-id (:filePath item))]
+                  ((:trigger-respawn! adapters) role (assoc readings :itemId handoff-id-str))
+                  ((:log-telemetry! adapters)
+                   (merge {:type "respawn" :role role :handoffId handoff-id-str :count (:chaseCount item)} readings)
+                   now-ms))
     "dead-lettered" (let [dead (dead-letter-path (:filePath item))
                           sc (sidecar-path (:filePath item))]
                       (fs/move (:filePath item) dead {:replace-existing false})
@@ -610,6 +630,14 @@
       :deadline-ms (:deadline-ms deferral-ctx)})
     (catch Exception _ false)))
 
+;; BL-1652: an optional adapter is read via when-let and defaults to nil/
+;; false - every pre-BL-1652 fixture/property-runner that never wires
+;; :role-agent-busy?/:role-lane-running?/:get-heartbeat-age-seconds keeps
+;; behaving exactly as before (busy?/lane? read false, heartbeat age reads
+;; nil).
+(defn- optional-adapter-call [adapters k role]
+  (when-let [f (k adapters)] (f role)))
+
 (defn sweep-role-inbox! [role inbox-new-dir completed-dir abandoned-dir now-ms config adapters]
   (reap-orphaned-sidecars! inbox-new-dir)
   (let [items (scan-inbox-new inbox-new-dir)
@@ -624,10 +652,36 @@
         abandoned-basenames (handoff-lib/terminal-basenames abandoned-dir)
         liveness ((:get-liveness adapters) role)
         last-activity-ms ((:get-last-activity-ms adapters) role)
+        ;; BL-1652: read ONCE per role per sweep, never per item - reuses
+        ;; :role-agent-busy? (the SAME footer reading the claim-progress
+        ;; check and chase-poke-and-notify! already key on, never a second
+        ;; notion of busy).
+        pane-busy? (boolean (optional-adapter-call adapters :role-agent-busy? role))
+        lane-running? (boolean (optional-adapter-call adapters :role-lane-running? role))
+        heartbeat-age-s (optional-adapter-call adapters :get-heartbeat-age-seconds role)
+        ;; nil-safe: a fixture whose every item is already-terminal (reaped
+        ;; before any branch below ever reads activity) never needed
+        ;; last-activity-ms to resolve to a real number before BL-1652 -
+        ;; base-readings is built unconditionally now (once per sweep,
+        ;; never per item), so it must stay just as tolerant.
+        activity-age-s (when (number? last-activity-ms) (/ (- now-ms last-activity-ms) 1000.0))
+        base-readings {:liveness liveness :heartbeatAgeS heartbeat-age-s
+                       :activityAgeS activity-age-s :busy pane-busy? :lane lane-running?}
         respawn-cooldown-until-ms (read-respawn-cooldown-until-ms inbox-new-dir)
         ;; BL-1004: forced only if some non-terminal item actually needs the
         ;; hold check - an empty inbox costs no roles.tsv/conf/mailbox reads.
-        deferral-ctx (delay (stage-deferral-context role))]
+        deferral-ctx (delay (stage-deferral-context role))
+        ;; BL-1652: one respawn per role per SWEEP, however many stuck items
+        ;; decide "respawned" - without this, every one of them raced the
+        ;; SAME pre-loop respawn-cooldown-until-ms snapshot (the cooldown
+        ;; file write below only ever protects the NEXT sweep, never a
+        ;; sibling item already mid-doseq in THIS one) and each independently
+        ;; triggered a real respawn: the 2026-09-19 incident (QA respawned
+        ;; seven times within 350ms - do-respawn!'s own busy precheck reads
+        ;; not-busy on every one of those calls because the pane a tmux
+        ;; respawn-pane -k just killed has not yet booted Claude far enough
+        ;; to paint the busy footer before the NEXT item's decision runs).
+        respawned-this-sweep? (atom false)]
     (doseq [item items]
       (let [already-terminal? (handoff-lib/already-terminal?
                                 (fs/file-name (:filePath item)) completed-basenames abandoned-basenames)
@@ -639,11 +693,20 @@
                            (item-deferral-held? @deferral-ctx (:filePath item) now-ms)
                            (item-deferred-note-held? (:filePath item))))
             decided (decide-item-action (:mtimeMs item) (:chaseCount item) now-ms config
-                                         liveness last-activity-ms (:lastChasedAtMs item) already-terminal? held?)
-            action (if (and (= decided "respawned") (is-cooling-down? respawn-cooldown-until-ms now-ms))
-                     "chased"
-                     decided)]
-        (apply-inbox-item-action! role item action adapters now-ms)
+                                         liveness last-activity-ms (:lastChasedAtMs item) already-terminal? held?
+                                         pane-busy? lane-running?)
+            respawn-decision? (= decided "respawned")
+            action (cond
+                     (not respawn-decision?) decided
+                     (is-cooling-down? respawn-cooldown-until-ms now-ms) "chased"
+                     ;; A sibling item already claimed this sweep's one
+                     ;; respawn: this item does NOTHING this tick (never
+                     ;; "chased" either - BL-1652 invariant 2 keeps its
+                     ;; count and sidecars byte-identical, not merely
+                     ;; unrespawned).
+                     @respawned-this-sweep? nil
+                     :else (do (reset! respawned-this-sweep? true) "respawned"))]
+        (apply-inbox-item-action! role item action adapters now-ms base-readings)
         (when (= action "respawned")
           (write-respawn-cooldown-until-ms! inbox-new-dir (+ now-ms (* (:respawnCooldownSeconds config) 1000))))))))
 
