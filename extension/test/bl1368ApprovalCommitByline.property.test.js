@@ -137,14 +137,23 @@ test("property: a pipeline role's own commit still passes the role byline check,
       return JSON.parse(out.trim().split('\n').pop()).status;
     };
 
+    // BL-1656: every role's verdict pair is computed here, deterministically,
+    // ahead of the random draw - reach is true BY CONSTRUCTION, never hoped
+    // for from fc.constantFrom's own uniform draw over 60 runs (which missed
+    // "specifier" once in roughly 1500 runs on 2026-09-20 - about a 1-in-15
+    // chance per run with seven roles and 60 uniform picks). The property
+    // body below still exercises the two invariants per draw; it just reads
+    // a verdict that already exists for every role, so the fixture still
+    // costs exactly seven commit pairs, same as before.
+    for (const role of PIPELINE_ORDER) {
+      verdicts.set(role, {
+        own: checkByline(`${role} does its own work\n\nBy ${role}.`, role),
+        humanDecision: checkByline(humanDecisionCommitMessage(`Approve BL-1368: record human_approval`), role),
+      });
+    }
+
     fc.assert(
       fc.property(fc.constantFrom(...PIPELINE_ORDER), (role) => {
-        if (!verdicts.has(role)) {
-          verdicts.set(role, {
-            own: checkByline(`${role} does its own work\n\nBy ${role}.`, role),
-            humanDecision: checkByline(humanDecisionCommitMessage(`Approve BL-1368: record human_approval`), role),
-          });
-        }
         const verdict = verdicts.get(role);
         // Invariant 2: unchanged - a role's own commit still passes.
         assert.equal(verdict.own, 'pass', `role ${role} lost its byline pass`);
@@ -154,7 +163,9 @@ test("property: a pipeline role's own commit still passes the role byline check,
       }),
       { numRuns: 60 }
     );
-    // Reach: every pipeline role was actually exercised.
+    // Reach: every pipeline role was actually exercised - true by
+    // construction (the loop above), never by hoping the random draw
+    // visits all seven roles in 60 uniform picks.
     assert.deepEqual([...verdicts.keys()].sort(), [...PIPELINE_ORDER].sort());
   } finally {
     fs.rmSync(root, { recursive: true, force: true });
