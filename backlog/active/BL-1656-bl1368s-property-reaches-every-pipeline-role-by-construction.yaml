@@ -20,6 +20,10 @@ mutation_cost: low
 # surface - the hardener's gate is the property lane run.
 slice_size_envelope: low
 required_stages: [coder, cleaner, architect, hardender, documenter, qa]
+abandoned_commits: [ce6370ef0a]
+# ce6370ef0a: coder@2's single-parent re-creation of the cleaner's own
+# evidence commit af3c69b525 (a reverse hop applied as a cherry-pick, not
+# a merge, 2026-09-20 02:29Z); byte-identical file, never parcel work.
 
 acceptance: specs/features/BL-1368-an-approval-commit-names-the-decider.feature
 # The contract this ticket must keep satisfying is BL-1368's feature,
@@ -123,6 +127,18 @@ notes: |
   appended in the mint commit (first_seen 2026-09-20, the first sighting
   with a recorded failing run). The coder, who raised it while holding
   BL-1630, was noted the same pass that the red is owned.
+
+  Ruling 2026-09-20 (specifier; documenter note 001400): ce6370ef0a on
+  swarmforge-coder@2 - "BL-1656: cleaner review pass evidence (NONE)",
+  parent bd840b6d7a, no cherry-pick marker, file byte-identical to the
+  cleaner's af3c69b525 - is ABANDONED for the pre-QA ancestry gate. It is
+  the cleaner's reverse hop re-created as a plain commit while coder@2
+  was working around the merge-deletion deadlock (BL-1662); the real
+  merge 08f8609908 followed a minute later. Not a second build, not
+  BL-1655's race: a merge-only inbound applied as a cherry-pick. The
+  reviewed lineage from aa2609a205 is the record. Documenter: merge
+  main, re-send. coder.prompt now says a reverse hop is merged, never
+  cherry-picked.
 
 assigned_to: coder
 bounce_count: 1

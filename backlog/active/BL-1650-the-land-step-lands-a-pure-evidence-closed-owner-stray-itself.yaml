@@ -187,6 +187,31 @@ notes: |
   ruling's "feature absent on main" was wrong: the mint-time stub
   a472d22819 is there, as QA found. Documenter: merge main, re-send.
 
+  Amended 2026-09-20 02:4x Z (specifier; QA note 003003 on BL-1654's
+  land; evidence
+  backlog/evidence/BL-1654-specifier-ruling-under-review-land-tool-and-tip-content-stray-rule-20260920.md):
+  "byte-identical to origin/main" means the replay TIP's content at the
+  path, never the stray commit's own content. A closed-owner path whose
+  tip content equals origin/main's is landed already - no cherry-pick, no
+  commit, whatever commits touched it and however main's copy grew since
+  (BL-1639-QA-20260919.md: the stray commit added 9 lines, main carries
+  those and 31 more, the tip equals main; the third parcel's loop
+  cherry-picked the commit and hit an add/add conflict). The loop
+  consults only paths present in the two-tree diff (tip vs origin/main)
+  and uses commits for attribution alone. Spec-gap bounce, blamed on the
+  specifier. The rebuild adds scenario 06, handler in the same commit
+  (BL-233):
+
+    # BL-1650 a-stray-whose-tip-content-equals-main-is-landed-already-06
+    # 2026-09-20: main's copy of the evidence file grew after the stray
+    # commit; the tip carries main's copy; nothing is left to land.
+    Scenario: a closed-owner stray commit whose path content on the replay tip already equals origin/main replays through with no cherry-pick
+      Given a closed ticket's evidence commit off the lineage that added part of a file origin/main now carries in full
+      And a replay tip whose copy of that file equals origin/main's
+      When the land step replays the cited ticket
+      Then no cherry-pick is attempted for the stray
+      And the replay reports the sibling landed and lands the ticket's own paths
+
 assigned_to: coder
 bounce_count: 3
 bounce_history:
