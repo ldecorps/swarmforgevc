@@ -1,0 +1,172 @@
+id: BL-1660
+title: "local_ollama_pack_shape_lib.sh's bl1142_pack_config feeds awk through a pipe and exits awk at the first match under set -o pipefail, so printf dies of SIGPIPE whenever awk stops reading first - 57 of 400 classify calls exited 141 under load on main 2026-09-20 (2 of 400 idle; every run on a body larger than the pipe buffer), the property lane reads it as a flake (QA 2026-09-19, QA and coder 2026-09-20) and the launch gate can refuse a mono-router pack: the first match is taken without an early exit, and a body larger than the pipe buffer pins the status"
+milestone: M8
+type: defect
+severity: high
+# high (standing-red rule 2026-09-05): a test failing on main in any lane
+# is a broken safety signal, and this one fails the whole property lane
+# for whichever role runs it (QA on BL-1639 and BL-1650, the coder on
+# BL-1459). Also a live fault: local_ollama_pack_shape_gate.sh runs the
+# same classifier under set -euo pipefail at launch, so the local Ollama
+# decision can exit 141 on a loaded host. Not critical: the swarm stays
+# up and the 3-line pack bodies fail only under load.
+status: todo
+epic: local-llm-swarm
+priority: 8
+direction: swarm-reported
+depends_on: []
+# BL-1142 (the library, gate, feature, property test) and BL-1539 (the
+# same SIGPIPE-under-pipefail race fixed in the dispatch-isolation guard
+# on 2026-09-14) are in backlog/done. No open ticket touches the
+# library, the gate, or BL-1142's feature and handler.
+mutation_cost: low
+# low: shell (no mutation/CRAP/DRY wired, BL-472; the BL-1142 mutation
+# sweep script bl1142_local_ollama_pack_shape_mutation_sweep.sh is the
+# hardener's lane): one awk program, one shell test case, one scenario
+# and its step in the existing BL-1142 handler. Runners the feature
+# shells: five bash children, each under a second.
+slice_size_envelope: low
+required_stages: [coder, cleaner, architect, hardender, documenter, qa]
+
+acceptance: specs/features/BL-1142-local-ollama-mono-vs-forge-cpu.feature
+# The contract is BL-1142's feature with scenario 05 (text below) added
+# by this parcel, its step landing in bl1142LocalOllamaMonoVsForgeCpuSteps.js
+# in the SAME commit (BL-233: a scenario without its handler turns the
+# suite red for every other parcel). This pointer is not a claim of
+# ownership over BL-1142's contract (BL-1251's shape).
+
+required_wiring:
+  - 'specs/pipeline/steps/bl1142LocalOllamaMonoVsForgeCpuSteps.js::larger than the pipe buffer::scenario 05 step text, landing with the scenario (BL-233)'
+
+human_approval: approved
+approval_context: >
+  One scenario is added to a landed feature file, so it would ordinarily
+  need a tap; it is minted approved under the 2026-09-17 operator hotfix
+  (severity defect, no choice posed, no ruling_options). FIRM: the
+  classifier's outputs for every existing scenario and shell case are
+  unchanged - first matching config line wins, exactly as today. FIRM:
+  the fix is in the library, never a retry or a catch in the property
+  test or the gate. FIRM: the new scenario runs the REAL library under
+  set -euo pipefail on a body larger than the pipe buffer, which fails
+  every time today (3 of 3 runs, 408,950 bytes).
+
+invariants:
+  - "Every pipeline in local_ollama_pack_shape_lib.sh consumes its whole input on the reading side - no early exit while a producer may still be writing - so the classifier's exit status is 0 for every well-formed body of any size, under any scheduling."
+
+description: |
+  ## What is wrong
+
+  `swarmforge/scripts/local_ollama_pack_shape_lib.sh`, `bl1142_pack_config`:
+
+  ```
+  printf '%s\n' "$body" | awk -v k="$key" '$1=="config" && $2==k { print $3; exit }'
+  ```
+
+  awk exits at the first matching line. bash's builtin printf writes the
+  body to the pipe line by line, so when awk is scheduled between two
+  of those writes it has already closed its stdin and printf's next
+  write dies of SIGPIPE; under `set -o pipefail` the pipeline reports
+  141, the command substitution `rotation="$(...)"` fails, and `set -e`
+  exits the caller with 141. `bl1142_window_count` reads its whole input
+  and never fails. Measured by the specifier on main 4b9fa7c43b,
+  2026-09-20 01:4x Z, bash 5.2.21, gawk: the exact
+  `bash -c 'set -euo pipefail; source lib; bl1142_classify_pack_shape "$(cat)"'`
+  the property test runs, on its 3-line mono-router body - 57 of 400
+  runs exited 141 under four `yes` loads, 2 of 400 idle; on a body of
+  20,000 window lines with the two config lines first (408,950 bytes,
+  larger than the 64 KiB pipe buffer) 3 of 3 runs exited 141, and the
+  same body through an awk with no early exit passed 3 of 3. This is
+  BL-1539's race (`code_only | grep -q` in the dispatch-isolation guard,
+  2026-09-11 census) in a second script.
+
+  Sightings read as flakes: QA on BL-1639 (2026-09-19, evidence
+  `backlog/evidence/BL-1639-QA-20260919.md`: "exit 141/SIGPIPE from a
+  spawned bash subprocess ... reproduced GREEN 3/3 when re-run in
+  isolation"), QA on BL-1650 (2026-09-20, `BL-1650-bounce-20260920.md`:
+  "judged host-load flake"), the coder on BL-1459 (2026-09-20, evidence
+  `unowned-red-bl1142-local-ollama-pack-shape-sigpipe-20260920.md`:
+  `AssertionError: Expected values to be strictly equal: 141 !== 0` at
+  `classify test/bl1142LocalOllamaPackShape.property.test.js:24:10`).
+  The production consumer `local_ollama_pack_shape_gate.sh` (line 33)
+  calls the same function under `set -euo pipefail` at launch.
+
+  ## What is wanted
+
+  - `bl1142_pack_config` takes the first matching line without exiting
+    awk early, e.g.
+    `awk -v k="$key" '$1=="config" && $2==k && !f { v=$3; f=1 } END { if (f) print v }'`;
+    every existing output is unchanged.
+  - `local_ollama_pack_shape_test_runner.sh` gains a case that classifies
+    a body larger than the pipe buffer with the config lines first and
+    asserts status 0 and the shape.
+  - BL-1142's feature gains scenario 05, its step in the existing handler
+    in the same commit:
+
+    ```
+      # BL-1142 classifier-status-survives-an-early-match-05
+      # BL-1660: printf | awk with an early exit under pipefail dies of
+      # SIGPIPE when awk stops reading first; a body larger than the pipe
+      # buffer with the keys on its first lines makes it deterministic.
+      Scenario: the classifier exits 0 for a body larger than the pipe buffer whose config lines come first
+        Given a pack body of config rotation router, config active_backlog_max_depth 1, and 20000 window lines
+        When the classifier is run on that body under set -euo pipefail
+        Then it exits 0 and prints mono-router
+    ```
+  - Register row for the property file (lane property, owner BL-1660,
+    added at mint) leaves in this parcel's land (BL-1631).
+
+  ## How (direction, not mandate)
+
+  - The awk change above, or a here-string (`awk ... <<< "$body"`, no
+    producer process); prefer the awk change - it keeps the pipeline and
+    behaves the same on macOS bash 3.2. Do not touch the property test:
+    its `classify()` is the consumer that proves the fix.
+  - The step mirrors the handler's existing `sh([...])` helper; build the
+    body in the step, pass it on stdin.
+
+constraints: >
+  The library, its shell test runner, BL-1142's feature (one scenario
+  added, none reworded) and handler, evidence. No change to the gate, to
+  the property test, or to cold_swap_day_shift_to_ollama_qwen.sh. The
+  scenario and its step land in one commit (BL-233).
+
+out_of_scope: |
+  - The same shape elsewhere: 31 scripts under swarmforge/scripts/ set
+    pipefail and feed an early-exit consumer through a pipe
+    (`| grep -q`, `| head -1`, `| grep -m`, `| sed ... q`; census grep in
+    the specifier's evidence for this mint, run 2026-09-20). They fail
+    only when the producer writes more than the pipe buffer after the
+    consumer exits; the awk-exit shape exists in this library only. A
+    sweep is minted from the census when one of them is sighted red.
+  - A retry or a catch in the property lane (BL-1633's shape: the lane
+    must see a real red).
+
+qa_e2e_procedure: >
+  (1) `node specs/pipeline/cli.js specs/features/BL-1142-local-ollama-mono-vs-forge-cpu.feature`
+  ONCE on the parcel commit: 5 scenarios ok. (2)
+  `bash swarmforge/scripts/test/local_ollama_pack_shape_test_runner.sh`
+  once: PASS including the large-body case. (3)
+  `cd extension && npx vitest run --config vitest.properties.config.mjs test/bl1142LocalOllamaPackShape.property.test.js`
+  once: 3 passed, duration row recorded. (4) `grep -c 'exit }'
+  swarmforge/scripts/local_ollama_pack_shape_lib.sh` is 0. Never "run it
+  N times".
+
+source: |
+  Coder note to the specifier, priority 00, 2026-09-20T01:42:14Z (inbound
+  00_20260920T014214Z_002064_from_coder), verbatim: "unowned-red:
+  bl1142LocalOllamaPackShape subprocess SIGPIPE, evidence". Coder
+  evidence, verbatim: "it is subprocess contention under the full
+  property lane's concurrent load ... consistent with a broken pipe on
+  the `input:` write to a bash child that was momentarily unable to read
+  it" - the specifier's reproduction locates it in the library's own
+  pipeline instead. Parents: BL-1142, BL-1539 (the same race, fixed once
+  on 2026-09-14), BL-1647 (a flake sighting records its failing output).
+
+notes: |
+  Minted 2026-09-20 by the specifier while completing the coder's note,
+  the same pass. AUTO-APPROVED under the 2026-09-17 operator hotfix
+  (severity defect, no ruling_options) - see
+  auto-approve-high-severity-defects-amendment-20260917.md. Register row
+  appended in the mint commit (first_seen 2026-09-19, QA's sighting on
+  BL-1639, the first with a recorded failing status). The coder, holding
+  BL-1459, was noted the same pass that the red is owned.
