@@ -275,6 +275,30 @@ else
   fail "direct mode: expected a refusal naming the detached worktree $wt, got rc=$rc: $out"
 fi
 
+# ── 13. direct mode: with NO roles.tsv row for art-director at all, the
+#       resolver falls back to the swarmforge-<seat> convention (BL-1657's
+#       third source) - when that resolved literal does not exist as a
+#       branch, the refusal must name "the swarmforge-<seat> convention"
+#       as its source, not the roster or --branch. Every OTHER test in
+#       this suite either supplies no roles.tsv at all AND has a real
+#       swarmforge-art-director branch (so the convention path succeeds
+#       silently, its source string never observed) or supplies an
+#       explicit roster row/--branch (a different source entirely) - none
+#       of them can tell a correct source label from a wrong one. This
+#       case is the only one where the convention source string is ever
+#       actually read by an assertion. ─────────────────────────────────
+mk_repo convention-fallback-branch-missing
+git_ "$repo" branch -D swarmforge-art-director >/dev/null 2>&1 || true
+tip="$(git_ "$repo" rev-parse main)"
+set +e
+out="$(cd "$repo" && bash "$GUARD" --tip "$tip" 2>&1)"; rc=$?
+set -e
+if [[ $rc -eq 1 ]] && grep -q 'ART_DIRECTOR_TIP_REFUSED' <<<"$out" && grep -qi 'swarmforge-<seat> convention' <<<"$out"; then
+  pass "direct mode: no roster row falls back to the convention, and a missing branch refuses naming the convention as its source"
+else
+  fail "direct mode: expected a refusal naming the swarmforge-<seat> convention as the source, got rc=$rc: $out"
+fi
+
 # ── 9. wiring: joins pre-merge-commit's chain, never run_commit_guards.sh's
 #      (out of scope, BL-1444) ────────────────────────────────────────────
 if grep -q 'run_guard check_art_director_tip\.sh' "$REPO_ROOT/swarmforge/git-hooks/pre-merge-commit"; then
