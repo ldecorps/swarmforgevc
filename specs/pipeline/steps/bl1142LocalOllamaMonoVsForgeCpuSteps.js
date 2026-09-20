@@ -15,6 +15,12 @@ const HOWTO = path.join(REPO, 'docs', 'how-to', 'BL-1142-local-ollama-mono-vs-fo
 const START = path.join(REPO, 'start-swarm-ollama-qwen.sh');
 const PACK = path.join(REPO, 'swarmforge', 'packs', 'ollama-qwen3-mono-router.conf');
 const EVIDENCE = path.join(REPO, 'backlog', 'evidence');
+const LIB = path.join(REPO, 'swarmforge', 'scripts', 'local_ollama_pack_shape_lib.sh');
+
+// BL-1660 scenario 05: a body larger than the pipe buffer, config lines
+// first, run through a fresh bash -c matching the ticket's own exact
+// reproduction shape - a same-process function call does not reliably
+// reproduce the awk-early-exit SIGPIPE race.
 
 function sh(args, opts = {}) {
   return spawnSync(args[0], args.slice(1), {
@@ -129,6 +135,31 @@ function registerSteps(registry) {
       assert.equal(fs.statSync(p).mtimeMs, st.cursorForgeBefore);
     }
     if (st.tmp) fs.rmSync(st.tmp, { recursive: true, force: true });
+  });
+
+  scoped(/^a pack body of config rotation router, config active_backlog_max_depth 1, and 20000 window lines$/, (ctx) => {
+    const st = ensure(ctx);
+    const lines = ['config rotation router', 'config active_backlog_max_depth 1'];
+    for (let i = 0; i < 20000; i += 1) lines.push('window seat');
+    st.largeBody = `${lines.join('\n')}\n`;
+  });
+
+  // BL-1660: a body larger than the pipe buffer must not exit the classifier
+  // via SIGPIPE - spawn a fresh bash -c (the ticket's exact reproduction
+  // shape), body on stdin, not a same-process function call.
+  scoped(/^the classifier is run on that body under set -euo pipefail$/, (ctx) => {
+    const st = ensure(ctx);
+    st.last = spawnSync(
+      'bash',
+      ['-c', `set -euo pipefail; source '${LIB}'; bl1142_classify_pack_shape "$(cat)"`],
+      { encoding: 'utf8', input: st.largeBody, cwd: REPO }
+    );
+  });
+
+  scoped(/^it exits 0 and prints mono-router$/, (ctx) => {
+    const st = ensure(ctx);
+    assert.equal(st.last.status, 0, st.last.stderr || st.last.stdout);
+    assert.equal(st.last.stdout.trim(), 'mono-router');
   });
 }
 
