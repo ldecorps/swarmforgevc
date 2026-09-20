@@ -1,0 +1,159 @@
+id: BL-1668
+title: "is_qa_ancestor.sh approves a recorded land replay only when its source sits on swarmforge-QA, so a final commit hand-built from the land step's own replay (recorded against that replay, which lives on a deleted scratch branch) reads as unapproved pipeline code and the babysitter escalates a false Article 4.2 CRIT to the operator - three times on 2026-09-20; the predicate resolves a recorded replay chain to a reviewed commit, bounded, and the approval writer exits non-zero on a not-approved verdict instead of printing it"
+milestone: M8
+type: defect
+severity: high
+# high: a broken safety signal. The predicate's false negative reaches
+# the operator as an ESCALATED CRIT (05:18Z and 05:38Z tonight) and
+# repeats every babysitter tick until the QA branch happens to merge the
+# landed commit; a signal that cries wolf three times a night is not a
+# signal. Not critical: nothing lands wrongly, the swarm stays up.
+status: todo
+epic: swarm-reliability
+priority: 8
+direction: swarm-reported
+depends_on: []
+# BL-1334 (the replay-to-source record and its predicate rule), BL-1405
+# (the record writer) and BL-1241 (the land step) are in backlog/done.
+# No open ticket touches is_qa_ancestor.sh or record_land_approval.bb.
+mutation_cost: low
+# low: shell predicate (no mutation/CRAP/DRY wired, BL-472) and one bb
+# writer; their shell tests gain cases; one scenario and step in
+# BL-1405's existing handler over a fixture repository.
+slice_size_envelope: low
+required_stages: [coder, cleaner, architect, hardender, documenter, qa]
+
+acceptance: specs/features/BL-1405-a-hand-built-land-records-its-land-approval.feature
+# The contract is BL-1405's feature with scenario 05 (text below) added by
+# this parcel, its step landing in the existing handler in the SAME
+# commit (BL-233); BL-1334's feature stays green unchanged. Not a claim of
+# ownership over either contract (BL-1251).
+
+required_wiring:
+  - 'specs/pipeline/steps/bl1405HandBuiltLandRecordsApprovalSteps.js::itself a recorded replay::the new scenario step text, landing with the scenario (BL-233)'
+
+human_approval: approved
+approval_context: >
+  One scenario is added to a landed feature file and a CLI's exit status
+  changes, so it would ordinarily need a tap; it is minted approved under
+  the 2026-09-17 operator hotfix (severity defect, no choice posed, no
+  ruling_options). FIRM: a source that is neither on swarmforge-QA nor
+  itself a recorded replay with an approved source still grants nothing
+  (BL-1405 scenario 03 unchanged). FIRM: the chain is bounded (three
+  records) and a cycle grants nothing. FIRM: the writer still writes the
+  line before it judges; a non-zero exit is the verdict, never a refusal
+  to record.
+
+invariants:
+  - "A landed commit reads approved iff a chain of at most three land-approval records leads from it to a commit on swarmforge-QA that no bounce record names; every other commit reads exactly as today."
+
+description: |
+  ## What is wrong
+
+  `swarmforge/scripts/is_qa_ancestor.sh` (`source_is_approved`, lines
+  295-311) approves a recorded replay when its `source` is on
+  `swarmforge-QA` and no bounce names it - one hop. The land step's
+  LAND_REPLAY commit is built on a scratch `land-replay/<ticket>-<sha>`
+  branch that is deleted after the land. Twice tonight QA replaced that
+  replay with a hand-built tip-pure commit (its BL-1662 evidence, line
+  47: the replay's base snapshot predated main's own later work) and
+  recorded the hand-built commit against the tool's replay:
+
+  ```
+  05:14:01 BL-1662 replay 9e2ad64363 source ca15869a63 (Merge main ... into QA - on swarmforge-QA)
+  05:18:43 BL-1662 replay d1ba3e5edf source 9e2ad64363 (the replay above - on no branch)
+  05:34:19 BL-1663 replay 328fa64f71 source d945e17a86 (on swarmforge-QA)
+  05:39:36 BL-1663 replay 9bb36c35dd source 328fa64f71 (on no branch)
+  ```
+
+  Each first record is sound; each second names a source the predicate
+  cannot see, so d1ba3e5edf and 9bb36c35dd read as unapproved pipeline
+  code on main and `babysitterd` escalated `pipeline-code-on-main` CRITs
+  to the operator at 05:18:08Z and 05:38:18Z, repeating every tick
+  (05:23, 05:28) until the QA branch merged main and the predicate's
+  last fallback (the commit itself on swarmforge-QA) cleared the first;
+  9bb36c35dd still reads not approved at mint. A third CRIT at 04:22Z
+  (49b543d9b4, a merge commit with no record) cleared the same way. The
+  chain the records describe is legitimate and complete: every link was
+  written by QA at land time. `record_land_approval.bb` runs the
+  predicate after writing and prints `VERDICT <sha> not approved`, but
+  exits 0, so QA's land recipe step (2) - "verify is_qa_ancestor.sh
+  exits 0" - passed unread.
+
+  ## What is wanted
+
+  - `source_is_approved` resolves a chain: a source is approved when it
+    is on swarmforge-QA (as today), or when it is itself the `commit` of
+    a land-approval record whose source is approved, to a depth of three
+    records; a cycle or an exhausted depth grants nothing. Bounce checks
+    apply at every link.
+  - `record_land_approval.bb` exits 1 when its verdict is "not approved"
+    and 2 on "undeterminable", printing the remedy on stderr ("name the
+    reviewed commit on swarmforge-QA, or the recorded replay this commit
+    was built from"); the line is still written first.
+  - BL-1405's feature gains scenario 05, step in the same commit:
+
+    ```
+      # BL-1405 hand-built-land-05
+      # BL-1668 (2026-09-20): a hand-built final commit recorded against the
+      # land step's replay, itself recorded against the reviewed commit.
+      Scenario: a record whose source is itself a recorded replay with an approved source makes the predicate answer approved
+        Given a replay recorded against an approved source
+        And a second commit recorded against that replay
+        When the predicate is asked about the second commit
+        Then it answers approved naming the chain
+    ```
+  - The shell tests of both scripts gain the chain, the depth bound and
+    the non-zero exit.
+
+  ## How (direction, not mandate)
+
+  - Make `source_is_approved` recursive over `LAND_TOKENS` with a depth
+    counter and a visited list (bash 3.2: a space-joined string, no
+    associative arrays). Keep the final fallback (the commit itself on
+    swarmforge-QA) as the last resort it is today.
+
+constraints: >
+  No change to what a bounce record means, to the record format, or to
+  the land step. The step handler lands with the scenario (BL-233).
+  Fixture repositories are mkdtemp git init roots registered for reaping.
+
+out_of_scope: |
+  - Why QA replaced the tool's replay by hand twice tonight (its BL-1662
+    evidence: a replay base predating main's later work) - BL-1650's
+    land-step work and the QA prompt's recipe own that.
+  - The merge commit 49b543d9b4 landing on main with no record: it
+    reached main through the QA branch and reads approved by the last
+    fallback; the QA prompt's land rules already forbid a non-replay
+    push, recorded here as an observation for QA.
+
+qa_e2e_procedure: >
+  (1) `node specs/pipeline/cli.js specs/features/BL-1405-a-hand-built-land-records-its-land-approval.feature`
+  ONCE on the parcel commit: every scenario ok including 05; BL-1334's
+  feature once: ok. (2) On the live repository: `bash
+  swarmforge/scripts/is_qa_ancestor.sh 9bb36c35dd` exits 0 naming the
+  chain through 328fa64f71 to d945e17a86. (3) `bb
+  swarmforge/scripts/record_land_approval.bb <root> <landed sha> <a sha
+  on no branch>` exits 1 with the remedy on stderr and the line written.
+  Never "run it N times".
+
+source: |
+  Coordinator note to the specifier, priority 10, 2026-09-20T05:40:11Z
+  (inbound 10_20260920T054011Z_010134_from_coordinator), verbatim:
+  "is_qa_ancestor.sh single-hop bug hit 3x tonight - worth a ticket."
+  The three instances were read by the specifier from
+  `.swarmforge/land-approvals/2026-09.jsonl` and
+  `.swarmforge/babysitterd/babysitterd.log`. The first instance
+  (02:45Z, BL-1654, a scratch tip recorded as source) was corrected by
+  recipe at 128e527ce0; this ticket makes the predicate carry the chain
+  itself. Parents: BL-1334, BL-1405, BL-1241.
+
+notes: |
+  Minted 2026-09-20 by the specifier while completing the coordinator's
+  note, the same pass. AUTO-APPROVED under the 2026-09-17 operator hotfix
+  (severity defect, no ruling_options) - see
+  auto-approve-high-severity-defects-amendment-20260917.md. Interim for
+  QA until this lands: when the final commit is hand-built from the
+  tool's replay, record TWO lines - the replay against the reviewed sync
+  tip (as today) and the hand-built commit against that same reviewed
+  sync tip, not against the replay - so the single hop resolves.
