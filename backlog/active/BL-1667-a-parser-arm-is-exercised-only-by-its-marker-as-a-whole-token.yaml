@@ -143,3 +143,5 @@ notes: |
   auto-approve-high-severity-defects-amendment-20260917.md. Register row
   appended in the mint commit (first_seen 2026-09-20, QA's lane run). QA
   was noted the same pass that the red is owned.
+
+assigned_to: coder
