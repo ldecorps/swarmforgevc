@@ -177,6 +177,26 @@ function registerSteps(registry) {
     assert.ok(result.stderr.includes('BL-9001'), `expected the refusal to name BL-9001, got: ${result.stderr}`);
   });
 
+  // ── BL-1662 hardener hardening: MERGE_HEAD-side mirror of the walk ────
+
+  // Shares "Then the merge-deletion guard accepts the merge" with scenario
+  // 09 - both read ctx.bl1242.untaggedRemoval.namedResult, so this Given
+  // reuses the same context key.
+  scoped(/^a path that exists only on the incoming branch, introduced by a commit naming ticket BL-9002 and later edited by a commit naming no ticket$/, (ctx) => {
+    ctx.bl1242.untaggedRemoval = {};
+  });
+
+  scoped(/^that incoming branch is merged, dropping the path, with a commit message whose body names BL-9002$/, (ctx) => {
+    ctx.bl1242.untaggedRemoval.namedResult = runCli('untagged-removal-incoming-only', 'named');
+  });
+
+  scoped(/^the same merge with a message naming no ticket is refused naming BL-9002$/, (ctx) => {
+    const result = runCli('untagged-removal-incoming-only', 'unnamed');
+    ctx.bl1242.untaggedRemoval.unnamedResult = result;
+    assert.notEqual(result.exitCode, 0, `expected the unnamed-message merge to be refused, got: ${JSON.stringify(result)}`);
+    assert.ok(result.stderr.includes('BL-9002'), `expected the refusal to name BL-9002, got: ${result.stderr}`);
+  });
+
   scoped(/^the removal is reported once$/, (ctx) => {
     const result = ctx.bl1242.incomingResult;
     assert.notEqual(result.exitCode, 0, `expected a refusal, got: ${JSON.stringify(result)}`);
