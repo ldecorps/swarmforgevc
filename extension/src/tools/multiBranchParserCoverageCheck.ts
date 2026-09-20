@@ -36,8 +36,23 @@ export type MultiBranchParserCoverageOutcome =
     }
   | { checked: false };
 
+// BL-1667: a marker counts only as a WHOLE TOKEN in a test text - plain
+// substring containment (String.includes) let an untested arm's marker
+// read as covered whenever it sat inside another arm's marker or inside
+// unrelated test text (e.g. arm `c--` inside tested text `c--a`). The
+// marker class matches the generator/extractor's own alphabet
+// ([a-z0-9-]); a character immediately before or after the match that is
+// still in that class means the match is part of a longer token, not the
+// marker on its own.
+const MARKER_CLASS = '[a-z0-9-]';
+
+function escapeRegExp(s: string): string {
+  return s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+}
+
 export function armExercisedByTests(arm: ParserArm, testTexts: string[]): boolean {
-  return testTexts.some((text) => text.includes(arm.marker));
+  const wholeTokenRe = new RegExp(`(?<!${MARKER_CLASS})${escapeRegExp(arm.marker)}(?!${MARKER_CLASS})`);
+  return testTexts.some((text) => wholeTokenRe.test(text));
 }
 
 /**
