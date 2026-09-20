@@ -357,6 +357,31 @@ else
   fail "hook mode (08): expected exit 0 (no docs/briefings/ content, not judged), got rc=$rc: $out"
 fi
 
+# ── 13e (BL-1459 09): an email-sweep commit touching ONLY
+#        docs/briefings/.sent.json (no .md file at all) still trips the
+#        content trigger (its own path starts with docs/briefings/) - the
+#        header's own words are "docs/briefings/.sent.json ... never the
+#        landing lane": find_briefing_date resolves no date from a commit
+#        with zero .md paths, so judge_tip_paths refuses it by name,
+#        exactly as a .sent.json path riding alongside a real briefing
+#        already does in direct mode (case 3 above) - this proves the SAME
+#        refusal holds for a .sent.json-only commit reached through the
+#        hook's own content-trigger gate, never silently passed through
+#        because the trigger's own path-prefix match is broad enough to
+#        include it but the lane it unlocks is empty ────────────────────
+mk_repo sent-json-only-commit
+write_commit "$repo" "$DOC_BRANCH" docs/briefings/.sent.json
+sent_only_tip="$(g "$repo" rev-parse HEAD)"
+g "$repo" checkout -q -b landing main
+gq "$repo" merge -q --no-ff --no-commit "$sent_only_tip"
+out="$(cd "$repo" && bash "$GUARD" --branch "$DOC_BRANCH" 2>&1)"; rc=$?
+gq "$repo" merge --abort
+if [[ $rc -eq 1 ]] && grep -q 'docs/briefings/.sent.json' <<<"$out"; then
+  pass "hook mode (09): an email-sweep commit touching only .sent.json trips the content trigger and is refused by name"
+else
+  fail "hook mode (09): expected refusal naming docs/briefings/.sent.json, got rc=$rc: $out"
+fi
+
 # ── 14. --branch resolves via .swarmforge/roles.tsv when not given
 #        explicitly ───────────────────────────────────────────────────
 mk_repo roles-tsv-resolution

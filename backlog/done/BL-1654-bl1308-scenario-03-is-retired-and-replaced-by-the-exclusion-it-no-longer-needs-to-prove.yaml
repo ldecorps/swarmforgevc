@@ -151,3 +151,16 @@ notes: |
   .swarmforge/deprecator/adjudications/BL-1654.json.
 
 assigned_to: coder
+
+abandoned_commits: [4499a7d380]
+# 4499a7d380: interim condition (f) scratch land tip (specifier ruling,
+# backlog/evidence/BL-1537-specifier-land-escalate-adjudication-closed-owner-20260912.md,
+# "Condition (f), amended... until BL-1662 lands"): built on a throwaway
+# scratch branch off the synced QA tip, one untagged commit removing the
+# BL-1652 abandoned-build residue test and its manifest line, landed with
+# origin/main's own (non-buggy) land_step_cli.bb export since the QA
+# branch's own copy was under review for BL-1650's third parcel. The
+# two-tree diff against origin/main was inspected directly and carries
+# only BL-1654's own paths plus harmless untagged-touch passengers
+# (BL-1315). Scratch branch deleted, never merged back per the ruling.
+# Landed 08ae1cd0ef in place of 4499a7d380. By QA.
