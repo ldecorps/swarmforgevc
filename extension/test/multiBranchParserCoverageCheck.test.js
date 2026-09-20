@@ -106,6 +106,30 @@ test('assessMultiBranchParserCoverage passes when every arm is exercised', () =>
   assert.deepEqual(result, { checked: true, parsersScanned: 1 });
 });
 
+// BL-1667: QA's counterexample - arm `c--`'s marker sits as a substring
+// inside tested text `c--a` (itself arm `c--a`'s own marker); plain
+// substring containment read `c--` as covered though no test text
+// exercises it as a whole token.
+test('assessMultiBranchParserCoverage reports a marker nested inside another arm\'s text as untested (BL-1667)', () => {
+  const result = assessMultiBranchParserCoverage({
+    parsers: [
+      {
+        functionName: 'nested-marker-fn',
+        sourcePath: 'x.bb',
+        arms: [
+          { label: 'c--a', marker: 'c--a' },
+          { label: 'a00', marker: 'a00' },
+          { label: 'c--', marker: 'c--' },
+        ],
+      },
+    ],
+    testTexts: ['c--a', 'a00'],
+  });
+  assert.equal(result.checked, true);
+  assert.ok(result.miss, 'expected a miss for the untested c-- arm');
+  assert.equal(result.miss.armLabel, 'c--');
+});
+
 test('assessMultiBranchParserCoverage is a no-op with no multi-arm parsers', () => {
   const result = assessMultiBranchParserCoverage({ parsers: [], testTexts: [] });
   assert.deepEqual(result, { checked: true, parsersScanned: 0 });
