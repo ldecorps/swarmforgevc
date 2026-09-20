@@ -73,3 +73,12 @@ class") — appending here instead, per the specifier's own standing recipe for 
 remains approved (`backlog/evidence/BL-1661-QA-20260920.md`) and unlanded pending the same fix.
 
 By QA.
+
+## Third instance — BL-1667's land, same class (QA, 2026-09-20)
+
+Identical shape: `land_step_cli.bb BL-1667 3e3e4765a9 .` hit the same stray `be826a2060` cherry-pick
+failure, with `ENTANGLED_SIBLING BL-1630,BL-1657,BL-1661,BL-1663`. No new information. BL-1667 remains
+approved (`backlog/evidence/BL-1667-QA-20260920.md`) and unlanded pending the same fix. Not sending a
+third escalation note.
+
+By QA.
