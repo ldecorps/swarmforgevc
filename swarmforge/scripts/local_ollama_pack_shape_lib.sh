@@ -17,10 +17,22 @@ bl1142_is_forbidden_substitute_pack() {
 }
 
 # Extract config value from pack body: "config <key> <value>"
+#
+# BL-1660: `exit` inside the awk program stops it reading its input at the
+# first match - under `set -o pipefail`, if awk is scheduled between two of
+# printf's writes and has already closed its stdin, the next write dies of
+# SIGPIPE (141), and `set -e` fails the caller. Never fires on the small
+# pack bodies that fit in one pipe write; deterministic once the body
+# (config lines plus enough window lines) exceeds the pipe buffer. Fixed by
+# reading the WHOLE input every time - the first match is kept in `v`/`f`
+# and printed once at END - so awk never closes its stdin early regardless
+# of body size or scheduling. Every existing output is unchanged: still the
+# first matching line, still empty when none match.
 bl1142_pack_config() {
   local body="$1" key="$2"
   printf '%s\n' "$body" | awk -v k="$key" '
-    $1=="config" && $2==k { print $3; exit }
+    $1=="config" && $2==k && !f { v=$3; f=1 }
+    END { if (f) print v }
   '
 }
 
