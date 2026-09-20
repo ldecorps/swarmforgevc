@@ -10,6 +10,18 @@ land. Covering only the hazard the ticket narrates leaves other arms dark
 Arm evidence is a test whose body includes that arm's marker (string /
 keyword literal in the clause) — not merely naming the branch in a comment.
 
+**The marker must match as a whole token, never as a substring (BL-1667,
+2026-09-20).** `armExercisedByTests` originally used `text.includes(marker)`,
+plain substring containment: with arms `c--a`, `a00`, `c--` and test texts
+mentioning only `c--a` and `a00`, `"c--a".includes("c--")` is true, so arm
+`c--` read as exercised though no test text carries it as its own token —
+a genuinely untested parser arm silently landed. The predicate now matches
+a marker only when the characters immediately before and after it (when
+present) fall outside the marker class (`[a-z0-9-]`), so one arm's marker
+can never stand in for another's just because it nests inside a longer
+token. `pilotAcceptanceGate.ts` and `commitClaimGitReader.ts`, the two
+production consumers, are unchanged — only the predicate they call.
+
 ## Surfaces
 
 | Surface | Location |

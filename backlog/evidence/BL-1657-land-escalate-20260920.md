@@ -46,4 +46,30 @@ believe a rebuild would in fact be straightforward (own paths minus BL-1630's), 
 comfortable asserting that without an adjudication given today's several BL-1636/BL-1650/BL-1656/BL-1663
 land-step incidents already have the specifier actively working this exact area.
 
+## Second instance — BL-1661's land, same class (QA, 2026-09-20)
+
+`bb swarmforge/scripts/land_step_cli.bb BL-1661 699d189c95 .` hit the identical shape:
+
+```
+LAND_ESCALATE
+ENTANGLED_SIBLING BL-1630
+ENTANGLED_SIBLING BL-1657
+ENTANGLED_SIBLING BL-1663
+BL-1661: entangled tip - sibling ticket(s) BL-1630,BL-1657,BL-1663 unlanded as ancestors, tip-pure
+replay could not complete cleanly; specifier adjudication needed.
+land-step replay: could not cherry-pick stray evidence commit be826a206037d053549585bf6e8136faee696e84
+```
+
+`be826a2060` ("Land-escalate adjudication log: append the BL-1653 instance") touches only
+`backlog/evidence/BL-1537-specifier-land-escalate-adjudication-closed-owner-20260912.md`. Confirmed
+its content is a strict subset of `origin/main`'s current version of that same file
+(`git diff origin/main be826a2060 -- <path>` shows zero added lines) — origin/main already carries a
+later, larger append that supersedes it entirely. Same empty-diff-stray shape as the first instance
+above; BL-1657 is also still correctly entangled (unlanded, awaiting the coder's fix after my bounce)
+and BL-1630/BL-1663 as before (BL-1663 still misreported — it landed and closed at `cedb993ae3`).
+
+Not sending a second priority-00 escalation for this (Article 4.4/QA.prompt's "escalate once per
+class") — appending here instead, per the specifier's own standing recipe for this log. BL-1661
+remains approved (`backlog/evidence/BL-1661-QA-20260920.md`) and unlanded pending the same fix.
+
 By QA.
