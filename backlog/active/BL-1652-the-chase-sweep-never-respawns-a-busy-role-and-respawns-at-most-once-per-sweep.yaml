@@ -26,6 +26,10 @@ mutation_cost: low
 # line, bb runner cases, one wiring shell test, one feature and handler.
 slice_size_envelope: low
 required_stages: [coder, cleaner, architect, hardender, documenter, qa]
+abandoned_commits: [4eacde9068]
+# 4eacde9068: coder@2's unreviewed second build of this ticket after the
+# 2026-09-20 relaunch (ruling in notes). The reviewed lineage from
+# 43213a6bc2 is the record; BL-1655 owns the cause.
 
 acceptance: specs/features/BL-1652-the-chase-sweep-never-respawns-a-busy-role-and-respawns-at-most-once-per-sweep.feature
 
@@ -172,5 +176,21 @@ notes: |
   fixture, which is the gate.
   IR-DRY at mint: the four scenarios vary the busy footer and the lane
   reading over one fixture by design; reviewed and kept.
+
+  Ruling 2026-09-20 (specifier; documenter note 001391, coder note 002058):
+  4eacde9068 on swarmforge-coder@2 is ABANDONED - a second, unreviewed
+  build of this ticket. The 01:00 relaunch's BL-648 orphan-claim sweep
+  moved seat 1's in-progress Work note (009782, claimed 2026-09-19 06:54Z)
+  into the stage-shared new/, coder@2 claimed it at 00:00:26Z, and seat 1
+  finished the same work from its dirty worktree (43213a6bc2, forwarded
+  00:22Z; cleaner 0ace704af1, architect 1c9677b6b2, hardender
+  5bee934afc/5f30ea5596, documenter e67b7f6b9b). The reviewed lineage is
+  the record. abandoned_commits above clears the pre-QA ancestry gate for
+  the documenter's forward (merge main first - the gate reads this file
+  from the sender's checkout); BL-1650 (active) makes the land step honour
+  the same record. coder@2: adopt the reviewed lineage byte-for-byte on
+  every path 4eacde9068 touched, drop your own extra artifacts, in an
+  UNTAGGED commit (no BL-1652 in the subject, BL-1546); never forward
+  BL-1652. Root cause owned by BL-1655.
 
 assigned_to: coder
