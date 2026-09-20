@@ -39,7 +39,6 @@ function sweepStaleFixtures() {
     }
   }
 }
-sweepStaleFixtures();
 
 function howto() {
   return fs.readFileSync(HOWTO, 'utf8');
@@ -106,6 +105,11 @@ const FEATURE =
   'BL-1320 the operator step for adding or removing a seat of a bottleneck stage is documented and executable as written';
 
 function registerSteps(registry) {
+  // BL-1630: moved from module load - a mere require() of this file
+  // (bl968's tree probe, the BL-761 registration gate) must not pay for
+  // a temp-dir listing that only a real registration needs.
+  sweepStaleFixtures();
+
   const scoped = (re, fn) => registry.defineScoped(re, fn, FEATURE);
 
   scoped(/^the how-to page documenting how to add and remove a seat of a stage$/, (ctx) => {

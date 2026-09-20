@@ -33,7 +33,6 @@ function sweepStaleFixtures() {
     }
   }
 }
-sweepStaleFixtures();
 
 function git(cwd, ...args) {
   return execFileSync('git', args, { cwd, encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] }).trim();
@@ -101,6 +100,11 @@ const CHECKOUT = { 'the main checkout': 'main', 'the linked worktree': 'worktree
 const FEATURE = "BL-1339 a land-approval record lands where the predicate reads it";
 
 function registerSteps(registry) {
+  // BL-1630: moved from module load - a mere require() of this file
+  // (bl968's tree probe, the BL-761 registration gate) must not pay for
+  // a temp-dir listing that only a real registration needs.
+  sweepStaleFixtures();
+
   const scoped = (re, fn) => registry.defineScoped(re, fn, FEATURE);
 
   scoped(/^a repository with a main checkout and a linked worktree for a pipeline role$/, (ctx) => {
