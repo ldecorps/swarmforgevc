@@ -23,7 +23,7 @@ const LAND_STEP_LIB = path.join(REPO_ROOT, 'swarmforge', 'scripts', 'land_step_l
 
 const LANDING = 'BL-9646';
 const SIBLING = 'BL-9647';
-const SHARED_PATH = 'docs/shared.md';
+const SHARED_PATH = 'swarmforge/scripts/shared.sh';
 
 function git(root, ...args) {
   return execFileSync('git', args, { cwd: root, encoding: 'utf8' }).trim();
