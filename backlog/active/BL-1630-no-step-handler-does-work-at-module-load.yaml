@@ -189,4 +189,24 @@ notes: |
   bl1536 and bl1565 that the coder moved stay in scope as unmasked by its
   own fix. Merge main, re-read, forward as usual.
 
+  Amended 2026-09-20 04:2x Z (specifier; QA note 003015, evidence
+  unowned-red-bl1630-module-load-budget-timing-flake-20260920.md on the
+  QA branch): (1) the parcel's own property
+  `extension/test/bl1630NoStepHandlerModuleLoadWorkInvariants.property.test.js`
+  test B builds its offender with `readdirSync(require('node:os').tmpdir())`
+  and then asserts the BROKEN census reports NO violation at all; on this
+  host the temp root holds ~114k entries (82 ms idle, 214 ms under the
+  lane's fork contention), so the listing's own cost trips the 200 ms
+  budget and the assertion fails on a budget reason it never meant to
+  test. Fix in the parcel: the offender lists its own fixture directory
+  (a handful of entries), and test B asserts that no violation carries
+  the "lists a directory at module load" reason, never that violations
+  are empty. (2) The forwarded parcel 4b7615bc14 (documenter -> QA,
+  02:34:40Z) was dequeued by QA at 02:35:57Z during the BL-1459 hook
+  blockade and COMPLETED at 02:36:40Z with no review, land, bounce or
+  note - a dropped parcel; the coordinator routes the documenter to
+  re-forward it from its current tip, and QA on arrival bounces it to
+  the coder for (1) (class behavior, the test's own fixture) unless the
+  coder has already folded the fix.
+
 assigned_to: coder
