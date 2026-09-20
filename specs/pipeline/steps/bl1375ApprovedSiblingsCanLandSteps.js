@@ -58,8 +58,6 @@ function sweepStaleFixtures() {
   }
 }
 
-sweepStaleFixtures();
-
 function git(root, ...args) {
   return execFileSync('git', args, { cwd: root, encoding: 'utf8', stdio: 'pipe' });
 }
@@ -129,6 +127,11 @@ function landHandlerOnMain(st) {
 const FEATURE = 'Approved siblings sharing a path can land';
 
 function registerSteps(registry) {
+  // BL-1630: moved from module load - a mere require() of this file
+  // (bl968's tree probe, the BL-761 registration gate) must not pay for
+  // a temp-dir listing that only a real registration needs.
+  sweepStaleFixtures();
+
   const scoped = (re, fn) => registry.defineScoped(re, fn, FEATURE);
 
   scoped(/^several tickets share one path and none of them has landed$/, (ctx) => {

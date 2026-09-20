@@ -24,7 +24,6 @@ const fs = require('node:fs');
 const os = require('node:os');
 const path = require('node:path');
 const { execFileSync } = require('node:child_process');
-const { afterEach } = require('node:test');
 
 const REPO_ROOT = path.join(__dirname, '..', '..', '..');
 const REVERSE_HOP_LIB = path.join(REPO_ROOT, 'swarmforge', 'scripts', 'reverse_hop_lib.bb');
@@ -60,13 +59,6 @@ function sweepStaleFixtures() {
     }
   }
 }
-sweepStaleFixtures();
-
-afterEach(() => {
-  while (trackedRoots.length) {
-    fs.rmSync(trackedRoots.pop(), { recursive: true, force: true });
-  }
-});
 
 function parseList(raw) {
   return String(raw || '')
@@ -149,6 +141,18 @@ function evalTerminalForward(state, sender, recipient) {
 }
 
 function registerSteps(registry) {
+  // BL-1630: moved from module load - a mere require() of this file
+  // (bl968's tree probe, the BL-761 registration gate) must not pay for
+  // a temp-dir listing that only a real registration needs, and must
+  // never register a test runner either.
+  sweepStaleFixtures();
+  const { afterEach } = require('node:test');
+  afterEach(() => {
+    while (trackedRoots.length) {
+      fs.rmSync(trackedRoots.pop(), { recursive: true, force: true });
+    }
+  });
+
   const scoped = (pattern, handler) => registry.defineScoped(pattern, handler, FEATURE_NAME);
 
   // ── Background / Givens ──────────────────────────────────────────────

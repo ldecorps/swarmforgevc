@@ -24,7 +24,6 @@ const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const path = require('node:path');
 const { execFileSync, spawnSync } = require('node:child_process');
-const { afterEach } = require('node:test');
 const { mkSocketFixtureRoot, SHORT_FIXTURE_BASE } = require('./lib/socketFixtureRoot');
 
 const REPO_ROOT = path.join(__dirname, '..', '..', '..');
@@ -89,13 +88,6 @@ function sweepStaleFixtures() {
     }
   }
 }
-sweepStaleFixtures();
-
-afterEach(() => {
-  while (trackedRoots.length) {
-    fs.rmSync(trackedRoots.pop(), { recursive: true, force: true });
-  }
-});
 
 function roleDir(state, role) {
   return state.masterResident.has(role) ? state.root : path.join(state.root, '.worktrees', role);
@@ -160,6 +152,18 @@ function newDirsUnderFixture(state) {
 }
 
 function registerSteps(registry) {
+  // BL-1630: moved from module load - a mere require() of this file
+  // (bl968's tree probe, the BL-761 registration gate) must not pay for
+  // a temp-dir listing that only a real registration needs, and must
+  // never register a test runner either.
+  sweepStaleFixtures();
+  const { afterEach } = require('node:test');
+  afterEach(() => {
+    while (trackedRoots.length) {
+      fs.rmSync(trackedRoots.pop(), { recursive: true, force: true });
+    }
+  });
+
   const scoped = (pattern, handler) => registry.defineScoped(pattern, handler, FEATURE_NAME);
 
   // ── Background ───────────────────────────────────────────────────────
