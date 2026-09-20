@@ -1,0 +1,123 @@
+id: BL-1661
+title: "bl1372InvariantTwoPin.property.test.js draws its sha and ref fixtures from fc.string, so a draw carrying a double quote or ;; corrupts the generated Clojure snippet and defeats the test's own quote-parity comment stripper - seed 287158657 fails deterministically on main (counterexample a quote followed by ;;) and the property lane reads it as a flake: the generators agree with the production domain (hex shas, git refname characters) and the stripper is pinned against a quoted ;;"
+milestone: M8
+type: defect
+severity: high
+# high (standing-red rule 2026-09-05): a test failing on main in the
+# property lane is a broken safety signal; this one fails the whole lane
+# for whichever role draws the seed (coder@2 on BL-1656, 2026-09-20).
+# Not high for product reasons: the production assertion BL-1372 pinned
+# is correct; only the test's fixture generators are wrong.
+status: todo
+epic: code-quality-gates
+priority: 8
+direction: swarm-reported
+depends_on: []
+# BL-1372 (the test and the pin) and BL-1247 (a property generator
+# agrees with the contract it exercises) are in backlog/done. No open
+# ticket touches this file.
+mutation_cost: low
+# low: one test file (four generators and one helper); no production
+# change, so no mutation, CRAP or DRY surface - the hardener's gate is
+# the property lane run.
+slice_size_envelope: low
+required_stages: [coder, cleaner, architect, hardender, documenter, qa]
+
+acceptance: specs/features/BL-1372-the-invariant-two-pin-asks-the-qa-question.feature
+# The contract this ticket must keep satisfying is BL-1372's feature,
+# unchanged (the fix touches only the property test) - BL-1251's shape;
+# this pointer is not a claim of ownership over BL-1372's contract. The
+# gate is that file green through the runner plus the e2e below.
+
+human_approval: approved
+approval_context: >
+  No feature file is authored or changed here; minted approved under the
+  2026-09-17 operator hotfix (severity defect, no choice posed, no
+  ruling_options). FIRM: the ten properties keep their meaning - the
+  assertion under test (NARROWED_PATTERN over comment-stripped Clojure)
+  is unchanged; only what the generators may draw changes, to what
+  production can ever see. FIRM: the helper's parity rule is pinned by a
+  deterministic case (a string literal containing ;;), not loosened.
+
+invariants:
+  - "Every generated fixture in the file is a syntactically valid Clojure snippet on every draw: sha generators emit hexadecimal only, ref generators emit git refname characters only, and the comment stripper's quote-parity assumption holds for every string the generators can produce."
+
+description: |
+  ## What is wrong
+
+  `extension/test/bl1372InvariantTwoPin.property.test.js` interpolates
+  generated values into Clojure source (`(sh! "git" "merge-base"
+  "--is-ancestor" "${sha}" "swarmforge-QA")`) and then strips `;;`
+  comments with `stripCommentsKeepStrings` (lines 72-86), which decides
+  "inside a string" by the parity of `"` before the `;;`. The sha and
+  ref generators are `fc.string({ minLength: 1, maxLength: 20 })` (lines
+  93, 117, 180-181, 218-219): unconstrained, so a draw can carry `"` or
+  `;;`. fast-check's counterexample `"\";; "` yields
+  `(sh! "git" "merge-base" "--is-ancestor" "";; " "swarmforge-QA"))`:
+  eight quotes before the `;;` read as even, the stripper cuts the line
+  there, `swarmforge-QA` disappears, NARROWED_PATTERN no longer matches,
+  and the property asserting "a genuine QA-ancestry predicate must fail"
+  fails - `Property failed after 100 tests { seed: 287158657, path:
+  "99:2:19:16" }`, `AssertionError: ... false !== true`. Deterministic
+  for that seed and for the coder's seedless `node -e` repro (evidence
+  `backlog/evidence/unowned-red-bl1372-invarianttwopin-quote-parity-20260920.md`,
+  coder@2 worktree); 3/3 green for the coder and 1/1 for the specifier
+  (main 5777671147, 10 passed, 0.5 s) without the seed. BL-1247's rule:
+  a property generator agrees with the contract it exercises - a sha is
+  hexadecimal, a ref is a git refname; neither contains a quote.
+
+  ## What is wanted
+
+  - The four sha/ref generators draw from the production domain:
+    hexadecimal of 7-40 characters for a sha, git refname characters
+    (`[A-Za-z0-9._/-]`, no leading `-`) for a ref.
+  - `stripCommentsKeepStrings` is pinned by a deterministic unit case in
+    the same file: a line whose `;;` sits inside a string literal is
+    kept whole; a line whose `;;` follows balanced quotes is cut.
+  - Register row for the file (lane property, owner BL-1661, added at
+    mint) leaves in this parcel's land (BL-1631).
+
+  ## How (direction, not mandate)
+
+  - `fc.hexaString({ minLength: 7, maxLength: 40 })` for shas;
+    `fc.stringMatching(/^[A-Za-z0-9._][A-Za-z0-9._/-]{0,19}$/)` for
+    refs. No production file changes.
+
+constraints: >
+  One test file. No change to NARROWED_PATTERN, to the babysitter check
+  under test, or to any feature file. The file stays in the property
+  lane's allowlist as it is.
+
+out_of_scope: |
+  - Other property files interpolating generated strings into source
+    text: none sighted red; a census is a follow-up when one is.
+
+qa_e2e_procedure: >
+  (1) `cd extension && npx vitest run --config vitest.properties.config.mjs
+  test/bl1372InvariantTwoPin.property.test.js` ONCE on the parcel commit:
+  10 or more passed, duration row recorded. (2) `grep -c 'fc.string('
+  extension/test/bl1372InvariantTwoPin.property.test.js` is 0. (3) The
+  coder's `node -e` repro from the evidence, run against the parcel's
+  helper, keeps `swarmforge-QA` in the stripped line. Never "run it N
+  times".
+
+source: |
+  Coder note to the specifier and the coordinator, priority 00,
+  2026-09-20T01:58:00Z (inbound 00_20260920T015800Z_002068_from_coder,
+  raised by coder@2 while holding BL-1656), verbatim: "unowned-red bl1372
+  quote-parity bug (deterministic), see evidence". Coder evidence,
+  verbatim: "This is a bug in the TEST'S OWN fixture-construction helper
+  ... the generator can construct a `sha` that corrupts the SYNTACTIC
+  validity of the snippet it is embedded in, invalidating the fixture
+  for that draw rather than exercising a real production defect."
+  Parents: BL-1372, BL-1247, BL-1647 (a flake sighting records its
+  failing output).
+
+notes: |
+  Minted 2026-09-20 by the specifier while completing coder@2's note,
+  the same pass. AUTO-APPROVED under the 2026-09-17 operator hotfix
+  (severity defect, no ruling_options) - see
+  auto-approve-high-severity-defects-amendment-20260917.md. Register row
+  appended in the mint commit (first_seen 2026-09-20, the first sighting
+  with a recorded failing run). coder@2, holding BL-1656, was noted the
+  same pass that the red is owned.
