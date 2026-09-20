@@ -1,5 +1,5 @@
 id: BL-1638
-title: "BL-775 landed on 2026-09-18 with its Stryker mutation gate deferred - the perTest dry run over out/bridge/bubbleLiveUiHtml.js and out/bridge/residentPaneLive.js timed out twice at the five-minute ceiling under load 11.5-25.2 with swap in use and eight or more concurrent workers, and a plain coverage run in the same window died with ERR_IPC_CHANNEL_CLOSED after a WSL-captured node abort - so the ledger row names a closed parcel, the register reads it as the only unowned row, and BL-1429's throttle holds the cap at one; this ticket owns the row through the three-day cooldown (not before 2026-09-21), recreates the scoped Stryker config the parcel did not land, runs the gate on a quiet host, and discharges the row with a completed result"
+title: "BL-775 (2026-09-18) and BL-831 (2026-09-19) landed with their Stryker mutation gates deferred - the perTest dry runs over out/bridge/bubbleLiveUiHtml.js, out/bridge/residentPaneLive.js and out/bridge/bubblePipelinePage.js timed out at the five-minute ceiling under load 11.5-25.2 with swap in use and eight or more concurrent workers, and a plain coverage run in the same window died with ERR_IPC_CHANNEL_CLOSED after a WSL-captured node abort - so the ledger row names a closed parcel, the register reads it as the only unowned row, and BL-1429's throttle holds the cap at one; this ticket owns the row through the three-day cooldown (not before 2026-09-21), recreates the scoped Stryker config the parcel did not land, runs the gate on a quiet host, and discharges the row with a completed result"
 milestone: M8
 type: defect
 severity: high
@@ -45,7 +45,7 @@ approval_context: >
 
 invariants:
   - "A ledger row leaves the outstanding debt only through a discharge that names the gate, the parcel and a committed result; a run that cannot complete is recorded as an attempt and leaves the row outstanding and owned."
-  - "The register row leaves in the same commit that discharges the ledger row, never earlier; the hardening lane holds no BL-1638 row only when the BL-775 row carries discharged_at."
+  - "A register row leaves in the same commit that discharges its ledger row, never earlier; the hardening lane holds no BL-1638 row only when both the BL-775 and the BL-831 rows carry discharged_at."
 
 description: |
   ## What is wrong
@@ -80,6 +80,25 @@ description: |
   Earliest run: 2026-09-21. Host at mint: load 13.2 with 16 vitest/stryker
   workers and 1 GiB of swap in use - the same shape the hardender met.
 
+  ## The second row (BL-1643 merged here, 2026-09-19 shift-end sweep)
+
+  `parcel: BL-831, gate: stryker-mutation, file_set:
+  extension/out/bridge/bubblePipelinePage.js, detected_at: 2026-09-18`:
+  the perTest dry run (114 mutants instrumented) never got past "Starting
+  initial test run" before the 300 s wrapper timeout (16:14:23-16:19:23
+  local, concurrency 4, load 11.2-14.3) - the same host shape the same
+  day; the hardender substituted three hand-authored unit tests (max CRAP
+  6.00, BL-113 Gherkin mutation 4/4, acceptance 8/8, DRY 0 clones;
+  `backlog/evidence/BL-831-hardender-20260918.md`). BL-831 landed
+  (cdeb8bdfdb, 2026-09-19 00:39Z) and closed (22c3f6f111); the register
+  row for its file names this ticket since the merge. Cooldown for
+  bubblePipelinePage.ts cleared 2026-09-19 (1-day window, ba3522d794); the
+  two BL-775 files set this ticket's `not_before`. No scoped config for
+  BL-831 exists either: `extension/vitest.bl831.stryker.config.mjs` is
+  created here the same way. Discharge:
+  `hardening_debt_ledger_update.bb . --discharge BL-831 stryker-mutation
+  --evidence backlog/evidence/BL-1638-BL-831-mutation.md`.
+
   ## What changes
 
   - `extension/vitest.bl775.stryker.config.mjs` committed (recreated from
@@ -96,8 +115,12 @@ description: |
     --evidence backlog/evidence/BL-1638-BL-775-mutation.md`; a run that
     cannot complete is recorded with the attempt verb and the row stays
     outstanding and owned (invariant 1).
-  - The `hardening` register row naming BL-1638 leaves in the discharge
-    commit (invariant 2; BL-1631's land step also retires it).
+  - The two `hardening` register rows naming BL-1638 (the BL-775 file
+    pair and BL-831's file) leave in the discharge commit (invariant 2;
+    BL-1631's land step also retires them). Both ledger rows are
+    discharged in this parcel; a run that cannot complete for either is
+    recorded with the attempt verb and that row stays outstanding and
+    owned.
 
   ## How (direction, not mandate)
 
@@ -125,7 +148,7 @@ out_of_scope: |
 
 qa_e2e_procedure: >
   (1) `bb swarmforge/scripts/mutation_cooldown_gate.bb . extension/src/bridge/residentPaneLive.ts`
-  and the same for bubbleLiveUiHtml.ts report the cooldown clear before the
+  and the same for bubbleLiveUiHtml.ts and bubblePipelinePage.ts report the cooldown clear before the
   run. (2) The evidence file shows the Stryker summary block for the two
   compiled files, the host load and the duration, and every survivor with
   an owner. (3) `backlog/hardening-debt-ledger.yaml`: the BL-775
@@ -147,8 +170,22 @@ source: |
   Parents: BL-942 (the ledger), BL-1439 (the verbs), BL-1468 and BL-1488
   (the two prior owners of this shape), BL-1631 (the land step retires
   the row).
+  Merged in at the 2026-09-19 shift-end consolidation sweep: BL-1643,
+  minted on the coordinator's note to the specifier, priority 00,
+  2026-09-19T00:52Z (inbound 00_20260919T005216Z_009593_from_coordinator):
+  "unowned hardening row BL-831 caps depth to 1; mint owner, BL-1638
+  shape". Specifier adjudication of that row:
+  backlog/evidence/BL-1643-specifier-adjudication-of-unowned-hardening-row-20260919.md.
 
 notes: |
+  2026-09-19 shift-end consolidation sweep (BL-680 N:1, Article 5.3):
+  BL-1643 (the BL-831 row, same shape minted the next morning) merged
+  here; BL-1643 is retired to backlog/done as superseded-by-BL-1638, its
+  register row re-pointed to BL-1638, its feature file removed (this
+  feature's scenarios 03-04 carry its contract). One quiet-host session
+  runs three compiled files instead of two parcels walking six stages
+  each.
+
   Minted 2026-09-18 by the specifier while completing the coordinator's
   note, the same pass. AUTO-APPROVED under the 2026-09-17 operator hotfix
   (severity defect, no ruling_options) - see
@@ -164,3 +201,5 @@ notes: |
   the host is quiet), Small (two scenarios, two invariants), Testable (the
   parcel's own committed ledger, evidence and register, read in
   milliseconds).
+  IR-DRY after the merge: scenarios 03/04 mirror 01/02 for the second row
+  by design (two ledger rows, one discharge shape); reviewed and kept.

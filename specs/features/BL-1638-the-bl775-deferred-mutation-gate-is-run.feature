@@ -1,4 +1,4 @@
-Feature: BL-1638 The Stryker mutation gate deferred on BL-775 is run and discharged
+Feature: BL-1638 The Stryker mutation gates deferred on BL-775 and BL-831 are run and discharged
 
   BL-775 landed on 2026-09-18 with its Stryker mutation gate deferred: the
   perTest dry run over the two compiled bridge files timed out twice at
@@ -22,4 +22,16 @@ Feature: BL-1638 The Stryker mutation gate deferred on BL-775 is run and dischar
   Scenario: the discharge evidence records a completed run over the two files with every survivor owned
     When the discharge evidence for the stryker-mutation gate of BL-775 is read
     Then it records a completed Stryker run over bubbleLiveUiHtml and residentPaneLive with zero surviving mutants or, per survivor, killed in this pass, accepted equivalent with its proof, or first-run debt owned by a named ticket
+    And it records the host load and the duration of that run
+
+  # BL-1638 the-bl831-row-is-discharged-and-its-register-row-gone-03
+  Scenario: the BL-831 ledger row is discharged and the register holds no hardening row for its file
+    When the parcel's own hardening-debt ledger and standing-red register are read for BL-831
+    Then the BL-831 stryker-mutation row carries a discharged_at date and a discharged_evidence path
+    And the register report holds no hardening lane row naming BL-1638
+
+  # BL-1638 the-bl831-run-completed-with-every-survivor-owned-04
+  Scenario: the BL-831 discharge evidence records a completed run over bubblePipelinePage with every survivor owned
+    When the discharge evidence for the stryker-mutation gate of BL-831 is read
+    Then it records a completed Stryker run over bubblePipelinePage with zero surviving mutants or, per survivor, killed in this pass, accepted equivalent with its proof, or first-run debt owned by a named ticket
     And it records the host load and the duration of that run
