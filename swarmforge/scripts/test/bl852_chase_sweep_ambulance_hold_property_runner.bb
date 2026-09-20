@@ -85,7 +85,8 @@
   gen-decide-inputs
   (fn [{:keys [item-mtime-ms chase-count now-ms liveness last-activity-ms last-chased-at-ms already-terminal?]}]
     (let [decided (chase-sweep-lib/decide-item-action item-mtime-ms chase-count now-ms config liveness
-                                                        last-activity-ms last-chased-at-ms already-terminal? true)]
+                                                        last-activity-ms last-chased-at-ms already-terminal? true
+                                                        false false)]
       (cond
         already-terminal? (if (= decided "reaped") true (str "expected \"reaped\" (terminal outranks hold), got " decided))
         :else (if (= decided "held") true (str "expected \"held\", got " decided))))))
@@ -109,13 +110,14 @@
               (let [seconds-since-last-chase (/ (- now-ms last-chased-at-ms) 1000.0)
                     backoff-seconds (chase-sweep-lib/compute-chase-backoff-seconds chase-count cfg)]
                 (if (>= seconds-since-last-chase backoff-seconds) "chased" "skipped")))
-            (chase-sweep-lib/decide-stale-item-action chase-count cfg liveness)))))))
+            (chase-sweep-lib/decide-stale-item-action chase-count cfg liveness false false)))))))
 
 (check-all "invariant-2 held?=false reproduces the pre-BL-852 decision ladder byte-for-byte (mode off / patient parcels unaffected)"
   gen-decide-inputs
   (fn [{:keys [item-mtime-ms chase-count now-ms liveness last-activity-ms last-chased-at-ms already-terminal?]}]
     (let [actual (chase-sweep-lib/decide-item-action item-mtime-ms chase-count now-ms config liveness
-                                                       last-activity-ms last-chased-at-ms already-terminal? false)
+                                                       last-activity-ms last-chased-at-ms already-terminal? false
+                                                       false false)
           expected (reference-pre-bl852-decision item-mtime-ms chase-count now-ms config liveness
                                                   last-activity-ms last-chased-at-ms already-terminal?)]
       (if (= actual expected) true (str "held?=false decided " actual " but the pre-BL-852 ladder decides " expected)))))
