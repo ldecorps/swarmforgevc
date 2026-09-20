@@ -174,3 +174,6 @@ notes: |
       Then the hook judges it against the lane
 
 assigned_to: coder
+bounce_count: 1
+bounce_history:
+  - { at: 2026-09-20, by: specifier, blamed: specifier, class: spec-gap, commit: 05169cb899, evidence: backlog/evidence/BL-1459-bounce-20260920.md }
