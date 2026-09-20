@@ -103,8 +103,9 @@ grep -q "bl0001ExampleSteps.js" <<<"$OUT2" || fail "02: refusal must name the fi
 grep -q "bl0002_example_lib.bb" <<<"$OUT2" || fail "02: refusal must name the second path, got: $OUT2"
 grep -q "BL-0001" <<<"$OUT2" || fail "02: refusal must name BL-0001, got: $OUT2"
 grep -q "BL-0002" <<<"$OUT2" || fail "02: refusal must name BL-0002, got: $OUT2"
-grep -q "$FEATURE_TIP" <<<"$OUT2" || grep -qE "[0-9a-f]{7,10}" <<<"$OUT2" \
-  || fail "02: refusal must name a commit that introduced the path, got: $OUT2"
+if ! grep -q "$FEATURE_TIP" <<<"$OUT2" && ! grep -qE "[0-9a-f]{7,10}" <<<"$OUT2"; then
+  fail "02: refusal must name a commit that introduced the path, got: $OUT2"
+fi
 pass "02: a merge removing two branch-introduced files, message naming neither, is refused naming both"
 git -C "$ROOT" merge --abort
 
@@ -422,8 +423,9 @@ set -e
 [[ "$STATUS15" -ne 0 ]] || fail "15: expected refusal - HEAD's own introducing commit names no ticket"
 grep -q "BL-9009" <<<"$OUT15" || fail "15: refusal must fall back to the incoming side's ticket id BL-9009, got: $OUT15"
 grep -qi "(unattributed)" <<<"$OUT15" && fail "15: must not be unattributed when the incoming side names a ticket, got: $OUT15"
-grep -qE "${DELETE_NAMED_TIP:0:7}" <<<"$OUT15" || grep -qE "[0-9a-f]{7,10}" <<<"$OUT15" \
-  || fail "15: refusal must name the deleting commit, got: $OUT15"
+if ! grep -qE "${DELETE_NAMED_TIP:0:7}" <<<"$OUT15" && ! grep -qE "[0-9a-f]{7,10}" <<<"$OUT15"; then
+  fail "15: refusal must name the deleting commit, got: $OUT15"
+fi
 pass "15: HEAD naming no ticket falls back to the incoming side's id (BL-9009), never (unattributed)"
 echo "BL-9009: deliberate removal" > "$MSG"
 run_guard "$MSG" || fail "15b: naming the incoming-attributed ticket must allow the merge"
