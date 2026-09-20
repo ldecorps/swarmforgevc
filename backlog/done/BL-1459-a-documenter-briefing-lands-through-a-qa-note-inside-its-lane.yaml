@@ -192,6 +192,22 @@ notes: |
       Then the hook exits 0 without judging it
 
 assigned_to: coder
+
+abandoned_commits: [658df8707e]
+# BL-1241 land-step remedy: the tip 658df8707e named several closed
+# ENTANGLED_SIBLING tickets (BL-1634, BL-1637, BL-1642, BL-1645, BL-1647,
+# BL-1649, BL-831, BL-875, all closed on origin/main) plus genuinely
+# unlanded siblings (BL-1630, BL-1650, BL-1652, BL-1656, all bounced
+# tonight). Landed via origin/main's own land_step_cli.bb export (this
+# branch's own copy was under review for BL-1650's third parcel, per the
+# specifier's standing rule). The tip-pure replay
+# land-replay/BL-1459-658df8707e (8fad11b0dc) was inspected directly: its
+# two-tree diff against origin/main carries only BL-1459's own paths plus
+# harmless untagged-touch passengers (BL-1315): the BL-1650-cleaner fixture
+# fix (SHARED_PATH) riding along as a net-positive correction, the
+# temporarily-restored BL-1652 residue file (interim condition (f), per
+# the specifier's ruling), and several untagged evidence notes. Landed
+# 8fad11b0dc in place of 658df8707e. By QA.
 bounce_count: 1
 bounce_history:
   - { at: 2026-09-20, by: specifier, blamed: specifier, class: spec-gap, commit: 05169cb899, evidence: backlog/evidence/BL-1459-bounce-20260920.md }
