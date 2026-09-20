@@ -46,8 +46,6 @@ function sweepStaleFixtures() {
   }
 }
 
-sweepStaleFixtures();
-
 function git(root, ...args) {
   execFileSync('git', args, { cwd: root, stdio: 'pipe' });
 }
@@ -112,6 +110,11 @@ function state(ctx) {
 const FEATURE = 'The handoff self-audit completes when required_stages reroutes the recipient';
 
 function registerSteps(registry) {
+  // BL-1630: moved from module load - a mere require() of this file
+  // (bl968's tree probe, the BL-761 registration gate) must not pay for
+  // a temp-dir listing that only a real registration needs.
+  sweepStaleFixtures();
+
   const scoped = (re, fn) => registry.defineScoped(re, fn, FEATURE);
 
   scoped(/^required_stages routing is enabled$/, (ctx) => {
