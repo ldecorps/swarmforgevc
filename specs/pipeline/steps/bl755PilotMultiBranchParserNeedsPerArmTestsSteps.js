@@ -188,7 +188,7 @@ function registerSteps(registry) {
     ctx.testTexts = [];
   });
 
-  // BL-1667: an arm's marker (c--) sitting INSIDE ANOTHER ARM's text (c--a)
+  // BL-1667: an arm's marker (c--) sitting inside another arm's text (c--a)
   // must still read untested - the whole-token fix this scenario pins.
   scoped(
     registry,
