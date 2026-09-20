@@ -85,12 +85,25 @@ function stripCommentsKeepStrings(code) {
     .join('\n');
 }
 
+// BL-1661: the sha/ref generators agree with the production domain
+// (BL-1247's rule) rather than drawing arbitrary strings that can corrupt
+// the Clojure snippet they are interpolated into. A sha is hexadecimal; a
+// git refname is `[A-Za-z0-9._/-]`, never leading with `-`. Neither
+// contains a `"` or a `;`, so a draw can never desynchronize (both built
+// with fc.stringMatching against an explicit regex - this fast-check
+// version has no fc.hexaString).
+// stripCommentsKeepStrings's quote-parity count (the fast-check
+// counterexample `"\";; "` that failed seed 287158657 is now unreachable
+// by construction, not merely unlikely).
+const shaArb = fc.stringMatching(/^[0-9a-f]{7,40}$/);
+const refArb = fc.stringMatching(/^[A-Za-z0-9._][A-Za-z0-9._/-]{0,19}$/);
+
 describe('BL-1372 invariant-two pin', () => {
   describe('invariant 1: second QA-ancestry predicate fails', () => {
     it('fails when an inline merge-base call mentions swarmforge-QA', () => {
       fc.assert(
         fc.property(
-          fc.string({ minLength: 1, maxLength: 20 }), // sha
+          shaArb, // sha
           (sha) => {
             // Construct a genuine QA-ancestry predicate
             const code = `
@@ -114,7 +127,7 @@ describe('BL-1372 invariant-two pin', () => {
     it('fails when an inline --is-ancestor call mentions swarmforge-QA', () => {
       fc.assert(
         fc.property(
-          fc.string({ minLength: 1, maxLength: 20 }), // sha
+          shaArb, // sha
           (sha) => {
             // Construct a genuine QA-ancestry predicate using --is-ancestor
             const code = `
@@ -177,8 +190,8 @@ describe('BL-1372 invariant-two pin', () => {
     it('passes when merge-base checks arbitrary non-QA refs', () => {
       fc.assert(
         fc.property(
-          fc.string({ minLength: 1, maxLength: 20 }), // ref1
-          fc.string({ minLength: 1, maxLength: 20 }), // ref2
+          refArb, // ref1
+          refArb, // ref2
           (ref1, ref2) => {
             // Skip if either ref happens to be swarmforge-QA
             if (ref1 === 'swarmforge-QA' || ref2 === 'swarmforge-QA') {
@@ -215,8 +228,8 @@ describe('BL-1372 invariant-two pin', () => {
     it('passes when --is-ancestor checks non-QA refs', () => {
       fc.assert(
         fc.property(
-          fc.string({ minLength: 1, maxLength: 20 }), // ref1
-          fc.string({ minLength: 1, maxLength: 20 }), // ref2
+          refArb, // ref1
+          refArb, // ref2
           (ref1, ref2) => {
             if (ref1 === 'swarmforge-QA' || ref2 === 'swarmforge-QA') {
               return;
@@ -280,6 +293,29 @@ describe('BL-1372 invariant-two pin', () => {
       // because the pattern is looking for ancestry calls, and a string
       // mentioning both is suspicious enough to warrant review.
       // The real test is whether the actual babysitter_check.bb passes.
+    });
+  });
+
+  // BL-1661: stripCommentsKeepStrings's own quote-parity assumption, pinned
+  // by a deterministic case rather than left to whatever the generators
+  // happen to draw - a `;;` following an ODD number of quotes sits INSIDE a
+  // string literal and must be kept; a `;;` following an EVEN (balanced)
+  // number of quotes is a real comment and must be cut. This is the exact
+  // rule the fast-check counterexample `"\";; "` (seed 287158657) defeated
+  // by exploiting an unconstrained generator to smuggle an extra quote in -
+  // the generators are fixed above; this pin keeps the helper's own logic
+  // honest independently of what they draw.
+  describe('stripCommentsKeepStrings quote-parity pin', () => {
+    it('keeps a line whole when ;; sits inside a string literal (odd quote count before it)', () => {
+      const line = '(println ";; not a comment")';
+      const stripped = stripCommentsKeepStrings(line);
+      assert.equal(stripped, line, 'a ;; inside a string literal must not be cut');
+    });
+
+    it('cuts a line at ;; when it follows balanced (even) quotes', () => {
+      const line = '(println "a string") ;; a real comment';
+      const stripped = stripCommentsKeepStrings(line);
+      assert.equal(stripped, '(println "a string") ', 'a ;; after balanced quotes must be cut as a comment');
     });
   });
 });
