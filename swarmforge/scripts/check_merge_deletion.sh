@@ -144,27 +144,44 @@ message="$(cat "$MSG_FILE")"
 # gives a=x, b="", not a="", b=x) but correctly preserves a TRAILING one, so
 # id - the field that is legitimately empty when neither side attributes -
 # must never be first.
+# BL-1662: attribution walks each side's WHOLE history for the path, not
+# just its single most recent commit - a deliberate untagged removal (the
+# only shape `check_closed_ticket_subject.sh`, BL-1617, allows for a closed
+# ticket's residue, per the specifier's condition-(f) recipe) is by
+# definition the most recent commit and names no ticket, so reading only
+# that commit made the guard's own remedy ("name the affected ticket id(s)
+# in the commit message") unsatisfiable: no commit on either side's history
+# was ever inspected past the untagged tip. The first tagged commit found
+# walking each side's history (most recent first) is used instead; only
+# when NO commit on either side's whole history names a ticket does this
+# fall through to the untagged, diagnostics-only report below.
 attribution_for_path() {
-  local path="$1" subject commit
-  commit="$(git log -1 --format=%h HEAD -- "$path" 2>/dev/null || true)"
-  subject="$(git log -1 --format=%s HEAD -- "$path" 2>/dev/null || true)"
-  if [[ "$subject" =~ ([A-Za-z]+-[0-9]+) ]]; then
-    printf '%s\t%s\n' "$commit" "${BASH_REMATCH[1]}"
-    return
-  fi
-  if [[ -n "$MERGE_HEAD_SHA" ]]; then
-    local m_commit m_subject
-    m_commit="$(git log -1 --format=%h "$MERGE_HEAD_SHA" -- "$path" 2>/dev/null || true)"
-    m_subject="$(git log -1 --format=%s "$MERGE_HEAD_SHA" -- "$path" 2>/dev/null || true)"
-    if [[ "$m_subject" =~ ([A-Za-z]+-[0-9]+) ]]; then
-      printf '%s\t%s\n' "$m_commit" "${BASH_REMATCH[1]}"
+  local path="$1" line commit subject
+  line="$(git log --format='%h%x09%s' HEAD -- "$path" 2>/dev/null | grep -m1 -E $'\t.*[A-Za-z]+-[0-9]+' || true)"
+  if [[ -n "$line" ]]; then
+    IFS=$'\t' read -r commit subject <<<"$line"
+    if [[ "$subject" =~ ([A-Za-z]+-[0-9]+) ]]; then
+      printf '%s\t%s\n' "$commit" "${BASH_REMATCH[1]}"
       return
     fi
-    # Neither side names a ticket - still report a commit for diagnostics,
-    # preferring HEAD's (matches the pre-BL-1403 default) when it exists.
-    if [[ -z "$commit" ]]; then
-      commit="$m_commit"
+  fi
+  if [[ -n "$MERGE_HEAD_SHA" ]]; then
+    local m_line m_commit m_subject
+    m_line="$(git log --format='%h%x09%s' "$MERGE_HEAD_SHA" -- "$path" 2>/dev/null | grep -m1 -E $'\t.*[A-Za-z]+-[0-9]+' || true)"
+    if [[ -n "$m_line" ]]; then
+      IFS=$'\t' read -r m_commit m_subject <<<"$m_line"
+      if [[ "$m_subject" =~ ([A-Za-z]+-[0-9]+) ]]; then
+        printf '%s\t%s\n' "$m_commit" "${BASH_REMATCH[1]}"
+        return
+      fi
     fi
+  fi
+  # Neither side's history names a ticket anywhere - still report a commit
+  # for diagnostics, preferring HEAD's most recent (matches the
+  # pre-BL-1403 default) when it exists.
+  commit="$(git log -1 --format=%h HEAD -- "$path" 2>/dev/null || true)"
+  if [[ -z "$commit" && -n "$MERGE_HEAD_SHA" ]]; then
+    commit="$(git log -1 --format=%h "$MERGE_HEAD_SHA" -- "$path" 2>/dev/null || true)"
   fi
   printf '%s\t%s\n' "$commit" ""
 }
