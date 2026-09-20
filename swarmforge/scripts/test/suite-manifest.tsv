@@ -307,8 +307,9 @@ test_handoffd_aged_note_rotate_wiring.sh	standing
 test_handoffd_ambulance_wiring.sh	standing		
 test_handoffd_answer_file_drain_wiring.sh	standing		
 test_handoffd_auth_observe_wiring.sh	standing		
-test_handoffd_banked_briefing_wiring.sh	standing		
-test_handoffd_bl812_cwd_invariant_root_resolution.sh	standing		
+test_handoffd_banked_briefing_wiring.sh	standing
+test_handoffd_bl1652_chase_respawn_busy_lane_guard.sh	standing
+test_handoffd_bl812_cwd_invariant_root_resolution.sh	standing
 test_handoffd_briefing_email_wiring.sh	standing		
 test_handoffd_briefing_generation_wiring.sh	standing		
 test_handoffd_canary_sweep.sh	standing		
@@ -543,6 +544,7 @@ test_bl1370_worktree_strays.sh	standing
 test_bl1401_acceptance_fixture_derives_set.sh	standing		
 test_bl1275_refusal_evidence_retained.sh	standing		
 test_bl1444_art_director_tip_guard.sh	standing
+test_check_documenter_briefing_tip.sh	standing
 test_bl1494_deferred_note_no_wake.sh	standing
 test_check_test_file_registration.sh	standing
 test_handoffd_startup_notify_fresh_target.sh	standing		
