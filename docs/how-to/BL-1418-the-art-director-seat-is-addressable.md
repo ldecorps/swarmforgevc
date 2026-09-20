@@ -31,9 +31,13 @@ and is never a pipeline stage a ticket is handed to.
   `window art-director claude art-director --model claude-sonnet-5
   --dangerously-skip-permissions --effort medium --remote-control
   SwarmForge-ArtDirector` (task receive mode, forward-only).
-- **Worktree**: `.worktrees/art-director` on branch `primary/art-director`
-  — created by `prepare_worktrees` (`swarmforge.sh`) like every other
-  role's worktree, never hand-created.
+- **Worktree**: `.worktrees/art-director`, on a branch that is
+  **pack-dependent** — created by `prepare_worktrees` (`swarmforge.sh`)
+  like every other role's worktree, never hand-created. On this host the
+  branch is `swarmforge-art-director`; the nested pack's frozen
+  `.worktrees/coder/.worktrees/*` checkouts use `primary/art-director`
+  instead — the two packs never share a branch-naming convention (BL-1657
+  below).
 - **Mailbox**: the standard per-role mailbox under
   `.worktrees/art-director/.swarmforge/handoffs/` — a `type: note` sent
   to `art-director` via `swarm_handoff.sh` is delivered there like any
@@ -74,7 +78,7 @@ next role added does not repeat the grep-and-classify hunt by hand:
 ```bash
 grep art-director .swarmforge/roles.tsv                  # after ./swarm
 tmux ls                                                   # swarmforge-art-director pane exists
-ls .worktrees/art-director                                # worktree exists, branch primary/art-director
+ls .worktrees/art-director                                # worktree exists, branch swarmforge-art-director (pack-dependent)
 bb swarmforge/scripts/model_factory_cli.bb assign --mode quality  # lists art-director
 ```
 
@@ -96,16 +100,16 @@ The file appears under the art director's own `inbox/new/`; its
 ## How the seat's work reaches main (human ruling B, 2026-09-06; BL-1444)
 
 The seat is outside the forward chain (above) and is not master-resident,
-so its commits on `primary/art-director` never reach `main` through QA's
-usual merge-up or the coordinator's bookkeeping. Instead, once the art
-director has committed (a brief, `docs/design/system.md`,
-`docs/design/artifact-inventory.md`, its own sign-off evidence), it sends
-QA a `note`, priority `50`, `message: land art-director tip <10-hex>` —
-not a parcel: no ticket, no coordinator bookkeeping, no merge-up
-broadcast.
+so its commits on its own branch (above — pack-dependent, never
+hard-coded) never reach `main` through QA's usual merge-up or the
+coordinator's bookkeeping. Instead, once the art director has committed
+(a brief, `docs/design/system.md`, `docs/design/artifact-inventory.md`,
+its own sign-off evidence), it sends QA a `note`, priority `50`,
+`message: land art-director tip <10-hex>` — not a parcel: no ticket, no
+coordinator bookkeeping, no merge-up broadcast.
 
-QA then, in order: confirms the sha is on `primary/art-director`; checks
-it against the seat's **lane** — `swarmforge/scripts/check_art_director_tip.sh
+QA then, in order: confirms the sha is on the art director's branch;
+checks it against the seat's **lane** — `swarmforge/scripts/check_art_director_tip.sh
 --tip <sha>` must print `ART_DIRECTOR_TIP_OK` (the lane is `docs/design/**`
 plus `backlog/evidence/*art-director*.md`; a path last touched by a commit
 already on the landed `main` rides along by provenance and doesn't count);
@@ -127,6 +131,23 @@ landed main — every other worktree's routine `main` sync is untouched.
 Direct mode (`--tip <sha>`) judges an arbitrary sha against `HEAD` and
 prints `ART_DIRECTOR_TIP_OK` / `ART_DIRECTOR_TIP_REFUSED` plus the reason;
 `--print-lane` prints the lane definition.
+
+**The branch it judges against is resolved, never hard-coded (BL-1657).**
+The guard shipped 2026-09-06 comparing every tip against the literal
+`primary/art-director` — a branch that exists only on the nested pack's
+frozen checkouts and never on this host, so it refused every live
+art-director tip from the day it shipped; QA fell back to a hand-verified
+lane check each time (b4cce6448c, 2026-09-20) until this was caught. The
+guard now resolves the branch, in order: an explicit `--branch <name>`;
+else the roster row whose seat is `art-director` in
+`.swarmforge/roles.tsv` — the branch that row's own worktree (3rd column)
+has checked out; else the `swarmforge-<seat>` convention as a last
+resort. Every refusal names both the ref it compared against and which
+of the three sources gave it, and a roster row that cannot be resolved to
+a branch (unreadable worktree, detached HEAD) or a resolved ref that does
+not exist is a hard refusal, never a silent pass. `check_documenter_briefing_tip.sh`
+(BL-1459) gives its own sibling guard the same `--branch` override and
+roster-resolution shape.
 
 ## What this ticket does not build
 

@@ -147,8 +147,11 @@ art-director guard). `check_documenter_briefing_tip.sh --tip <sha>` prints
 `DOCUMENTER_BRIEFING_TIP_OK` or `DOCUMENTER_BRIEFING_TIP_REFUSED <reason>`
 for direct use outside a merge. The documenter branch is read from
 `.swarmforge/roles.tsv` (pack-dependent — `swarmforge-documenter` here,
-`primary/documenter` on the nested pack), never hard-coded, unlike the
-art-director guard's own fixed branch name.
+`primary/documenter` on the nested pack), never hard-coded — the same
+roster-resolution shape `check_art_director_tip.sh` gained afterward
+(BL-1657, `docs/how-to/BL-1418-the-art-director-seat-is-addressable.md`),
+once its own hard-coded `primary/art-director` literal was found to
+refuse every live tip on this host since 2026-09-06.
 
 A bounced parcel that changes a hook in this shared chain must be
 reverted off the bouncing branch in the bounce step itself (not just
