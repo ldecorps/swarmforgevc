@@ -1,0 +1,151 @@
+id: BL-1687
+title: "seventeen more step handlers load extension/out/bridge/bridgeServer (the whole bridge graph, 286 modules) when required alone - sixteen via require(path.join(EXT_DIR, 'out', 'bridge', 'bridgeServer')) at module scope and bl709 via a require inside a module-scope object literal, none visible to BL-1685's literal-substring census or to a ^const grep - so stepHandlerModuleLoadBudget reads bl1634RejectedManifestOffersNoPageFromItSteps.js at 693-734 ms alone today and charges it the full graph every run once BL-1685's twelve go lazy; each of the seventeen requires bridgeServer inside the step that starts a bridge, and the census is the loader probe itself, never a text grep"
+milestone: M8
+type: defect
+severity: high
+# high: a test failing on main (standing-red register): the module-load
+# budget guard already reads bl1634 over the 400 ms budget alone on the
+# coder's host and becomes certainly red the moment BL-1685 lands, when
+# bl1634 is the alphabetically first eager loader of the bridge graph in
+# the guard's sequential census. Re-classes the guard file's row, which
+# BL-1685's land would otherwise retire while the file is still red. Not
+# critical: a unit-suite guard, nothing in production.
+status: todo
+epic: unit-suite-speed
+priority: 8
+direction: swarm-reported
+depends_on: []
+# BL-1630 and BL-1658 (done) moved the twelve jsdom and fifteen
+# cursor-bridge requirers; BL-1685 (active, at coder) moves fourteen
+# literal bridgeServer requirers. The seventeen here share no file with
+# BL-1685, but scenario 02 (no handler loads the graph) is red until
+# BL-1685's twelve are lazy - promote AFTER BL-1685 lands.
+mutation_cost: low
+# low: seventeen handlers move one require inside the step that uses it
+# (specs/pipeline/steps, no extension src change, no Stryker); one feature
+# and handler reusing BL-1658's fresh-child loader intercept; scenario 02
+# spawns about 53 children at ~0.3 s each - ~20 s per gherkin mutant,
+# inside the 300 s ceiling (BL-1541).
+slice_size_envelope: low
+required_stages: [coder, cleaner, architect, hardender, documenter, qa]
+
+acceptance: specs/features/BL-1687-the-seventeen-remaining-bridgeserver-loaders-require-it-inside-the-step.feature
+
+# Handler pin only (BL-233, BL-1371). The guard already censuses every
+# handler, so an anchor there matches before and after (BL-1235); the
+# seventeen require moves are the parcel's own diff. Scenario 02 requires
+# every candidate alone in a fresh child, which is the gate.
+required_wiring:
+  - 'specs/pipeline/steps/bl1687BridgeServerLoadersRequireItInsideTheStepSteps.js::registerSteps::the handler lands in the same parcel as the feature (BL-233, BL-1371)'
+
+human_approval: approved
+approval_context: >
+  A new feature file is authored here, so it would ordinarily need a tap;
+  it is minted approved under the 2026-09-17 operator hotfix (severity
+  defect, no choice posed, no ruling_options). FIRM: the population is
+  the loader-probe census, not a grep - all seventeen move in one parcel,
+  and scenario 02 re-runs the probe over every handler that mentions
+  bridgeServer so a require shape nobody has written yet still cannot
+  hide. FIRM: every handler's feature still resolves and each still
+  starts the same real bridge inside its steps - only WHERE bridgeServer
+  is required changes. FIRM: no allowlist entry for any of the seventeen.
+
+invariants:
+  - "Requiring any step handler under specs/pipeline/steps alone in a fresh process never loads extension/out/bridge/bridgeServer: the bridge graph loads only inside a step that starts a bridge, whatever syntax the require uses."
+
+description: |
+  ## What
+  BL-1685's census was a substring grep for `bridge/bridgeServer`. Sixteen
+  handlers build the path instead - `require(path.join(EXT_DIR, 'out',
+  'bridge', 'bridgeServer'))` at module scope (the coder's finding, note
+  000054) - and `bl709BubbleItsOwnTelegramTopicSteps.js` requires it
+  inside a module-scope object literal that a `^const` grep does not
+  match either. The loader itself settles it: requiring each handler
+  alone in a fresh node process and checking `require.cache` for
+  `extension/out/bridge/bridgeServer.js`, 29 of the 53 handlers whose
+  source mentions bridgeServer load it (232-339 ms each at load 5-9);
+  twelve are BL-1685's (bl591 and bl592 do not load it despite their
+  column-0 mention) and seventeen are not, in census order:
+  bl1634RejectedManifestOffersNoPageFromItSteps, bl551LlmCostLedgerSteps,
+  bl565CostLedgerSyntheticPricingSteps, bl709BubbleItsOwnTelegramTopicSteps,
+  bl788BubblePairingClientLogsAdoptSteps, bl829BubbleRemotePagePagerSteps,
+  bl851SideloadApkPreauthSteps, bl866CompanionManifestPackageCatalogSteps,
+  burnRateSteps, deviceRegistrySteps, gateAnswerSteps, gatesListSteps,
+  noInboundMessageIsEverLostSteps, operatorProactiveNotifySteps,
+  replyRelayAtLeastOnceSteps, standingOperatorTopicSteps,
+  telegramTopicThreadsSteps.
+
+  The guard's census is sequential and charges the shared graph to the
+  alphabetically first eager loader. Today bl1634 reads 693-734 ms alone
+  on the coder's host (259 ms at best); once BL-1685's twelve are lazy it
+  is first and pays all of it, every run, then bl551, and so on.
+  Adjudication, probe script and the full loader list:
+  backlog/evidence/unowned-red-second-bridgeserver-population-adjudication-specifier-20260921.md;
+  coder evidence (coder@2 branch):
+  backlog/evidence/unowned-red-second-bridgeserver-population-path-join-style-coder-20260921.md.
+
+  ## Why
+  A standing red on the guard file bounces unrelated parcels and
+  throttles intake (BL-1429); and two text censuses disagreed with the
+  loader in one day (BL-1445's fail-open shape, twice). The require
+  syntax is not the contract - what the loader loads is.
+
+  ## How (direction, not mandate)
+  - In each of the seventeen, move the bridgeServer require inside the
+    step (or a small `getStartBridge()` helper called from the step) that
+    starts the bridge - the shape BL-1658 and BL-1685 used. Nothing else
+    in the handler changes.
+  - The feature's handler reuses BL-1658's fresh-child loader intercept
+    for scenario 01; scenario 02 lists `git grep -l bridgeServer --
+    'specs/pipeline/steps/*Steps.js'` (53 at mint, 54 on main once
+    BL-1681's handler landed) and requires each alone,
+    asserting none loads the module and that at least fifty were examined
+    (a floor over a growing directory, BL-1685's amendment lesson).
+
+  ## Scope
+  - The seventeen handlers under `specs/pipeline/steps/` named above
+    (require placement only).
+  - `specs/features/BL-1687-the-seventeen-remaining-bridgeserver-loaders-require-it-inside-the-step.feature`
+    and `specs/pipeline/steps/bl1687BridgeServerLoadersRequireItInsideTheStepSteps.js`
+    (same parcel, BL-233, registered in `specs/pipeline/steps/index.js`).
+  - The register row for `extension/test/stepHandlerModuleLoadBudget.test.js`
+    (re-pointed to this ticket in the mint commit) leaves in this parcel's
+    land (BL-1631); the parcel never edits the register. No allowlist
+    entry. Documenter: the BL-1630 how-to's lazy-require list gains the
+    seventeen and names the probe as the census; no diagram trigger.
+
+qa_e2e_procedure: |
+  On the parcel commit, ONE run each.
+  1. `cd extension && npx vitest run test/stepHandlerModuleLoadBudget.test.js`:
+     green, no handler named over budget, allowlist unchanged by this parcel.
+  2. `node specs/pipeline/cli.js specs/features/BL-1687-the-seventeen-remaining-bridgeserver-loaders-require-it-inside-the-step.feature`
+     (repo root): all ok - scenario 02's own output states how many
+     handlers it examined (at least fifty).
+  3. The probe from the adjudication evidence over `git grep -l
+     bridgeServer -- 'specs/pipeline/steps/*Steps.js'` prints no
+     `"loaded":true` line.
+  4. The seventeen features each run green through the runner once
+     (about 20 s of registry load per feature - minutes, once).
+  5. Register: the land retires the stepHandlerModuleLoadBudget row; the
+     report after landing shows no unowned row and no BL-1687 row.
+
+notes: |
+  Minted 2026-09-21 by the specifier adjudicating the coder's note 000054
+  (from inside BL-1685). AUTO-APPROVED under the 2026-09-17 operator
+  hotfix (severity defect, no ruling_options) - see
+  auto-approve-high-severity-defects-amendment-20260917.md.
+
+  Register: the row for extension/test/stepHandlerModuleLoadBudget.test.js
+  passed BL-1658 -> BL-1685 earlier today and is re-pointed to BL-1687 in
+  the mint commit (one row per lane+file; the file stays red after
+  BL-1685 lands). The coder (holding BL-1685) and the coordinator were
+  noted the same pass.
+
+  Census at mint (loader probe, load 5-9): 53 candidates, 29 loaders, 17
+  outside BL-1685 - the coder's sixteen plus bl709. Re-run at the mint
+  commit (18:4x, load higher, 420-620 ms each): 54 candidates once
+  BL-1681's handler landed, the same 29 loaders. BL-1685's own outline
+  names bl591 and bl592, which do not load the module when required
+  alone; their rows pass trivially and BL-1685 is not amended for it.
+
+  Promote after BL-1685 lands (scenario 02 needs BL-1685's twelve lazy).
