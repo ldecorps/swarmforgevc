@@ -5,16 +5,13 @@ set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 
 # Move to the SwarmForge scripts root so that relative paths inside the
-# Babashka ready_for_next.bb helper resolve correctly, regardless of the
-# caller's current working directory.
+# Babashka dispatcher script resolve correctly, regardless of the caller's
+# current working directory.
 cd "$SCRIPT_DIR"
 
-# Delegate to the Babashka dispatcher script, capturing (not exec-ing) its
-# stdout: BL-550 needs to inspect the first line for ROTATE_HOME before
-# deciding whether to hand off to rotate_to_role.sh. The exit code is
-# preserved exactly as a plain exec would have propagated it.
+# Delegate to the rotate_to_role.sh script directly.
 set +e
-OUT="$(bb "$SCRIPT_DIR/ready_for_next.bb" "$@")"
+OUT="$(rotate_to_role.sh "$@")"
 RC=$?
 set -e
 
