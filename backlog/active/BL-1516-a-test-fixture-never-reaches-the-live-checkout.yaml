@@ -154,3 +154,5 @@ notes: |
     the list rather than trusting this text. How `$root` came to hold git
     status output in the BL-1378 run is not on record; the proof makes the
     cause irrelevant - a bad root aborts instead of walking up.
+
+assigned_to: coder
