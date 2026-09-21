@@ -154,3 +154,5 @@ notes: |
   Promote after BL-1658 lands: bl592, bl674, bl686, bl687 are edited by
   both (BL-1658 moves their jsdom require; this parcel their bridgeServer
   require) - merge, do not fork.
+
+assigned_to: coder
