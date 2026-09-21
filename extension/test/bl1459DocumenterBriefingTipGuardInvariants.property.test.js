@@ -20,6 +20,36 @@
 // (and can therefore refuse) in exactly the one quadrant the invariant
 // names, and silently exits 0 in the other three.
 //
+// BL-1666's own two declared invariants (coder first authorship - BL-654):
+//
+// "No decision in check_documenter_briefing_tip.sh depends on a pipe
+// whose consumer can exit before its producer has finished writing;
+// every exemption is computed from a fully read input." STATED REASON,
+// no property test: this invariant is about shell/git-subprocess pipe
+// mechanics (SIGPIPE under `set -o pipefail`), not a pure JS-callable
+// module - encoding it as a fast-check property would mean spinning up a
+// real git repository with an output large enough to exceed the OS pipe
+// buffer (~64 KiB - thousands of commits or hundreds of paths, see 13f/
+// 13g below) on EVERY draw; at even a modest numRuns this blows the
+// property lane's few-seconds budget (Test Speed And Isolation). Encoded
+// instead as two deterministic shell integration tests
+// (swarmforge/scripts/test/test_check_documenter_briefing_tip.sh, cases
+// 13f/13g) whose fixtures assert their own size against the 64 KiB bound
+// before trusting a pass (non-vacuous by construction) - the appropriate
+// tier for a shell-only invariant per Design And Testability (no
+// mutation/CRAP/DRY wired for shell either).
+//
+// "For every path outside the lane, a tip whose blob at that path equals
+// the landed main's blob at that path is exempt whatever its commit
+// ancestry; a path whose blob differs from, or is absent on, the landed
+// main is refused." Encoded below (BL-1666 invariant 2) against the real
+// guard's --tip mode over a generated spread of (does the tip's
+// out-of-lane path blob equal main's, is the tip's writing commit ever
+// reachable from main at all) - proving the exemption tracks blob
+// equality even when the path's content was written by two entirely
+// unrelated commits (the hand-built land-step replay shape, never an
+// ancestry relationship).
+//
 // Runs ONLY via `npm run test:properties`.
 
 const assert = require('node:assert/strict');
@@ -46,6 +76,23 @@ function initRepo(root) {
   git(root, ['branch', DOC_BRANCH, 'main']);
 }
 
+// BL-1666: a monotonic counter, embedded in every commit message, so two
+// commits are never byte-identical git objects even when they write the
+// SAME path with the SAME content from the SAME parent - a real draw
+// shape here, since landedContent and tipContent are independently
+// generated strings that DO sometimes collide. Without this, main's and
+// the documenter's commit (same tree, same parent, same message, same
+// author/committer second) hash to the SAME sha, so "the documenter
+// branch" silently collapses onto "main" - every diff-based check then
+// diffs a commit against itself, resolves an empty change, and reads as
+// a no-op. This was invariant 1's own flake (QA's 1-in-17 sighting,
+// 2090-01-01 with byte-identical content on both sides): reproduced
+// deterministically, seed 1875229817, at draw 4911 of a 10,000-draw
+// bounded search (extension/bl1666-invariant1-10k-search.js, not
+// committed - see backlog/evidence/BL-1666-*.md). Not a defect in
+// check_documenter_briefing_tip.sh: the guard reasons about git objects
+// correctly; the fixture's own commit-identity guarantee was the gap.
+let commitSequence = 0;
 function writeCommit(root, branch, files) {
   git(root, ['checkout', '-q', branch]);
   for (const [relPath, content] of files) {
@@ -54,7 +101,8 @@ function writeCommit(root, branch, files) {
     fs.writeFileSync(full, content);
     git(root, ['add', relPath]);
   }
-  git(root, ['commit', '-q', '-m', `change: ${files.map((f) => f[0]).join(' ')}`]);
+  commitSequence += 1;
+  git(root, ['commit', '-q', '-m', `change: ${files.map((f) => f[0]).join(' ')} (#${commitSequence})`]);
 }
 
 function runGuard(root, args) {
@@ -132,6 +180,31 @@ test('property (BL-1459 invariant 1) non-vacuity: a broken already-landed check 
   } finally {
     fs.rmSync(brokenPath, { force: true });
   }
+});
+
+// BL-1666: deterministic regression for QA's own 1-in-17 sighting
+// (evidence unowned-red-bl1459-property-test-flaky-not-deterministic-20260920.md),
+// reproduced with a mechanism via a 10,000-draw bounded search (seed
+// 1875229817, draw 4911: dates ["2090-01-01","2090-01-02"], landedContent
+// "#", tipContent "#", sameDate true). NOT a defect in
+// check_documenter_briefing_tip.sh: main's and the documenter's commit
+// (same tree, same parent, same message, same author/committer second)
+// hashed to the SAME git object, silently collapsing "the documenter
+// branch" onto "main" - every diff-based check then diffed a commit
+// against itself and read a no-op. writeCommit's own commit-sequence
+// counter (above) fixes the fixture; this pins the exact collision shape
+// so a future edit to writeCommit cannot reintroduce it invisibly.
+test('property (BL-1459 invariant 1) regression: byte-identical content on the same date still refuses (BL-1666, was the flake)', () => {
+  const root = mkTmpDir('bl1459-identical-content-');
+  initRepo(root);
+  writeCommit(root, 'main', [['docs/briefings/2090-01-01.md', '#']]);
+  writeCommit(root, DOC_BRANCH, [['docs/briefings/2090-01-01.md', '#']]);
+  const tip = git(root, ['rev-parse', 'HEAD']);
+  git(root, ['checkout', '-q', 'main']);
+  const { status, stdout, stderr } = runGuard(root, ['--tip', tip, '--branch', DOC_BRANCH]);
+  const combined = stdout + stderr;
+  assert.equal(status, 1, `expected refusal for byte-identical content on an already-landed date, got status ${status}: ${combined}`);
+  assert.match(combined, /already on main/);
 });
 
 // ── Invariant 2 ──────────────────────────────────────────────────────────
@@ -249,7 +322,8 @@ test(
 
 test('property (BL-1459 invariant 2) non-vacuity: a broken first-parent-membership check would judge every merge, even a non-documenter one - proven against a scratch copy, then restored', () => {
   const original = fs.readFileSync(GUARD, 'utf8');
-  const marker = 'if ! git rev-list --first-parent "${LANDED_MAIN}..${DOCUMENTER_BRANCH}" 2>/dev/null | grep -qx "$INCOMING"; then\n  exit 0\nfi\n';
+  const marker =
+    'FIRST_PARENT_LIST="$(git rev-list --first-parent "${LANDED_MAIN}..${DOCUMENTER_BRANCH}" 2>/dev/null || true)"\nif ! grep -qx "$INCOMING" <<<"$FIRST_PARENT_LIST"; then\n  exit 0\nfi\n';
   assert.ok(original.includes(marker), 'expected to find the hook-mode first-parent-membership check to remove for the non-vacuity probe');
   const broken = original.replace(marker, '');
   assert.notEqual(broken, original, 'expected the textual removal to actually change the file');
@@ -285,7 +359,8 @@ test('property (BL-1459 invariant 2) non-vacuity: a broken first-parent-membersh
 
 test('property (BL-1459 invariant 2) non-vacuity: plain ancestry (the superseded design) would wrongly judge a chain-second-parent commit - this ticket\'s own live incident, reproduced then discarded', () => {
   const original = fs.readFileSync(GUARD, 'utf8');
-  const marker = 'if ! git rev-list --first-parent "${LANDED_MAIN}..${DOCUMENTER_BRANCH}" 2>/dev/null | grep -qx "$INCOMING"; then\n  exit 0\nfi\n';
+  const marker =
+    'FIRST_PARENT_LIST="$(git rev-list --first-parent "${LANDED_MAIN}..${DOCUMENTER_BRANCH}" 2>/dev/null || true)"\nif ! grep -qx "$INCOMING" <<<"$FIRST_PARENT_LIST"; then\n  exit 0\nfi\n';
   assert.ok(original.includes(marker), 'expected to find the hook-mode first-parent-membership check to replace for this probe');
   // The naive replacement is exactly check_art_director_tip.sh's own
   // pattern (plain ancestry) - the design this ticket's incident showed
@@ -316,7 +391,8 @@ test('property (BL-1459 invariant 2) non-vacuity: plain ancestry (the superseded
 
 test('property (BL-1459 invariant 2) non-vacuity: a broken content trigger would judge every ordinary documenter forward - CRITICAL fix (QA note 003000), reproduced then discarded', () => {
   const original = fs.readFileSync(GUARD, 'utf8');
-  const marker = 'if ! git diff --name-only "$BASE" "$INCOMING" 2>/dev/null | grep -q "^${BRIEFINGS_DIR}"; then\n  exit 0\nfi\n';
+  const marker =
+    'INCOMING_DIFF_PATHS="$(git diff --name-only "$BASE" "$INCOMING" 2>/dev/null || true)"\nif ! grep -q "^${BRIEFINGS_DIR}" <<<"$INCOMING_DIFF_PATHS"; then\n  exit 0\nfi\n';
   assert.ok(original.includes(marker), 'expected to find the hook-mode content-trigger check to remove for this probe');
   const broken = original.replace(marker, '');
   assert.notEqual(broken, original, 'expected the textual removal to actually change the file');
@@ -338,6 +414,89 @@ test('property (BL-1459 invariant 2) non-vacuity: a broken content trigger would
       result.status,
       1,
       `expected the broken (content-trigger removed) guard to wrongly judge (and refuse) an ordinary documenter forward, got status ${result.status}: ${result.stdout}${result.stderr}`
+    );
+  } finally {
+    fs.rmSync(brokenPath, { force: true });
+  }
+});
+
+// ── BL-1666 invariant: the out-of-lane exemption judges blob content, not
+//    commit ancestry ──────────────────────────────────────────────────────
+
+// The documenter branch and main diverge from the very first commit, so
+// main's own write of the out-of-lane path is NEVER reachable from (and
+// never an ancestor of) anything on the documenter branch - the tip's own
+// last-touching commit for that path fails the ancestry exemption
+// definitely, isolating the content-equality exemption as the only path
+// to an OK. This is exactly the hand-built land-step replay shape
+// (BL-1666's amendment): content landed on main through a commit that
+// shares no lineage with the pipeline commit that first wrote it.
+test(
+  'property (BL-1666 invariant): an out-of-lane path is exempt iff its tip blob equals the landed main blob, regardless of commit ancestry',
+  () => {
+    let draws = 0;
+    fc.assert(
+      fc.property(
+        fc.string({ minLength: 1, maxLength: 20 }),
+        fc.string({ minLength: 1, maxLength: 20 }),
+        fc.boolean(),
+        (mainContent, otherContent, blobEqual) => {
+          draws += 1;
+          const tipContent = blobEqual ? mainContent : `${mainContent}\u0000${otherContent}`;
+          const root = mkTmpDir('bl1666-content-exempt-');
+          initRepo(root);
+          // main's own, unrelated commit - never reachable from the
+          // documenter branch, which already forked at init.
+          writeCommit(root, 'main', [['docs/index.md', mainContent]]);
+          writeCommit(root, DOC_BRANCH, [
+            ['docs/briefings/2099-04-01.md', 'briefing'],
+            ['docs/index.md', tipContent],
+          ]);
+          const tip = git(root, ['rev-parse', 'HEAD']);
+          git(root, ['checkout', '-q', 'main']);
+          const { status, stdout, stderr } = runGuard(root, ['--tip', tip, '--branch', DOC_BRANCH]);
+          const combined = stdout + stderr;
+          if (blobEqual) {
+            assert.equal(status, 0, `expected exemption (blob-equal, non-ancestor commit) to print OK, got status ${status}: ${combined}`);
+            assert.match(combined, /DOCUMENTER_BRIEFING_TIP_OK/);
+          } else {
+            assert.equal(status, 1, `expected refusal (blob differs) naming docs/index.md, got status ${status}: ${combined}`);
+            assert.match(combined, /docs\/index\.md/);
+          }
+        }
+      ),
+      { numRuns: 15 }
+    );
+    assert.ok(draws >= 10);
+  },
+  SUBPROCESS_HEAVY_TIMEOUT_MS
+);
+
+test('property (BL-1666 invariant) non-vacuity: without the content-equality exemption, a blob-equal but non-ancestor path is wrongly refused - proven against a scratch copy, then restored', () => {
+  const original = fs.readFileSync(GUARD, 'utf8');
+  const marker =
+    '    tip_blob="$(git rev-parse -q --verify "${tip}:${path}" 2>/dev/null || true)"\n    main_blob="$(git rev-parse -q --verify "${landed_main}:${path}" 2>/dev/null || true)"\n    if [[ -n "$tip_blob" && -n "$main_blob" && "$tip_blob" == "$main_blob" ]]; then\n      continue\n    fi\n';
+  assert.ok(original.includes(marker), 'expected to find the content-equality exemption block to remove for the non-vacuity probe');
+  const broken = original.replace(marker, '');
+  assert.notEqual(broken, original, 'expected the textual removal to actually change the file');
+
+  const brokenPath = path.join(path.dirname(GUARD), `check_documenter_briefing_tip-non-vacuity-scratch5-${process.pid}-${Date.now()}.sh`);
+  fs.writeFileSync(brokenPath, broken, { mode: 0o755 });
+  const root = mkTmpDir('bl1666-non-vacuity-');
+  try {
+    initRepo(root);
+    writeCommit(root, 'main', [['docs/index.md', 'same content']]);
+    writeCommit(root, DOC_BRANCH, [
+      ['docs/briefings/2099-04-02.md', 'briefing'],
+      ['docs/index.md', 'same content'],
+    ]);
+    const tip = git(root, ['rev-parse', 'HEAD']);
+    git(root, ['checkout', '-q', 'main']);
+    const result = spawnSync('bash', [brokenPath, '--tip', tip, '--branch', DOC_BRANCH], { cwd: root, encoding: 'utf8' });
+    assert.equal(
+      result.status,
+      1,
+      `expected the broken (content-equality exemption removed) guard to wrongly refuse a blob-equal, non-ancestor path, got status ${result.status}: ${result.stdout}${result.stderr}`
     );
   } finally {
     fs.rmSync(brokenPath, { force: true });
