@@ -1,6 +1,8 @@
-# BL-1638: BL-775's deferred Stryker mutation gate — run, one file discharged, one blocked
+# BL-1638: BL-775's deferred Stryker mutation gate — run, both files' debt accounted for and the row discharged (residentPaneLive.js's 76 first-run mutants owned by BL-1672)
 
+Survivors: 0 killed-outright (bubbleLiveUiHtml.js, 7/7 killed) + 76 first-run debt owned by BL-1672 (residentPaneLive.js, 67 survived + 9 no-coverage)
 Load: 2.05/20 cores (quiet, mutation_cooldown_gate.bb's own reading at start)
+Duration: 49s (139 tests, 231 mutants tested)
 
 ## What ran
 
@@ -109,18 +111,28 @@ assert on broader/looser shapes (e.g. "a pane is present" rather than
   REAL ticket id; the coder does not mint tickets (Article 1.2). Citing a
   placeholder or inventing one here would misattribute the debt.
 
-## Discharge — NOT run for this row
+## Discharge
 
-`hardening_debt_ledger_update.bb --discharge BL-775 stryker-mutation` is
-**not** run in this parcel. The ledger row stays exactly as the hardener
-left it (`detected_at: 2026-09-18, attempted_at: 2026-09-18`, no
-`discharged_at`) until the specifier rules on ownership for
-`residentPaneLive.js`'s first-run debt — escalated by note (priority 00),
-per Article 4.4 ("spec gaps leave by note, never a parcel").
+At mint the owning ticket did not yet exist, so this row's discharge
+waited on the specifier (escalated by note, priority 00, per Article 4.4
+"spec gaps leave by note, never a parcel"). The specifier has since
+minted **BL-1672** naming this exact run as its source
+(`backlog/paused/BL-1672-resident-pane-live-first-run-survivors-to-zero.yaml`)
+and committed a full per-mutant census
+(`backlog/evidence/BL-1672-first-run-survivor-census-20260921.md`,
+totals: 67 survived + 9 no-coverage = 76, matching this row exactly). All
+76 `residentPaneLive.js` mutants above are therefore `first-run debt,
+owned by BL-1672` - the ticket's own sanctioned per-survivor reason, now
+with a real ticket id.
 
-This is NOT a discharge-on-timeout (the FIRM constraint this ticket's
-approval_context names): the run completed cleanly. It is a `first-run
-debt, owned by <ticket id>` situation where `<ticket id>` does not yet
-exist.
+`bubbleLiveUiHtml.js`'s 7/7 killed half needed no owner (invariant 1
+already satisfied outright for it).
+
+This is still NOT a discharge-on-timeout (the FIRM constraint this
+ticket's approval_context names): the run completed cleanly; every
+survivor is accounted for by a real ticket, never "next stage's work"
+with no ticket. `hardening_debt_ledger_update.bb --discharge BL-775
+stryker-mutation --evidence backlog/evidence/BL-1638-BL-775-mutation.md`
+is run in this same commit.
 
 By coder.
