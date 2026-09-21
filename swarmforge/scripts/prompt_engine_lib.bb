@@ -335,6 +335,19 @@
 ;; provider name - registering a new provider under :bootstrap-text-style
 ;; :generic needs no new text-builder at all; only wording as genuinely novel
 ;; as aider's needs one of these.
+;; 2026-09-21 (Claude Code, operator request): a one-off test against the
+;; qwen2.5-coder mono-router pack confirmed a small aider model reliably
+;; NARRATES this instruction back ("Understood, I will...", a numbered list
+;; of its own responsibilities) instead of emitting an actual `!` command -
+;; even with the ENTIRE prompt visible (ruling out context truncation as
+;; the cause; that is a separate, already-fixed problem in ollama's own
+;; num_ctx). The fix that flipped it from narration to a correct, minimal
+;; `! ready_for_next.sh` in that test was an explicit ban on prose plus a
+;; literal fallback command for the "nothing to do" case - added once here,
+;; at the end of BOTH branches, rather than duplicated at every call site.
+(def aider-no-narration-suffix
+  " Your entire reply must be one or more lines starting with `!` and nothing else — no explanation, no summary, no restating these instructions, no acknowledgement. If there is nothing to do right now, your entire reply must be exactly this one line: `! ")
+
 (defn aider-bootstrap-text [role draft coord-note]
   (if (= role "coordinator")
     (str "You are the SwarmForge coordinator in aider." coord-note
@@ -346,14 +359,16 @@
          "Write a handoff draft with a shell command instead, e.g. `! printf 'type: note\\nto: coder\\npriority: 50\\nmessage: ...\\n' > " draft "`, then `! swarmforge/scripts/swarm_handoff.sh " draft "`. "
          "Ticket moves go through the helpers that commit for you (promote_and_route_next.sh, commit_integrity_cli.bb); never `git commit` yourself. "
          "Then run `" ready-script-rel-path "` once and wait for wake-ups. "
-         "No self-scheduled polling (/loop, cron, or \"check again in N minutes\").")
+         "No self-scheduled polling (/loop, cron, or \"check again in N minutes\")."
+         aider-no-narration-suffix ready-script-rel-path "`")
     (str "You are the SwarmForge " role " agent running in aider with full repository read and write access. "
          "Never claim you cannot read or edit files — that is what aider does. "
          "The files just added are your constitution, pipeline, and role instructions. Read each one completely. "
          "For constitution.prompt and swarmforge/roles/" role ".prompt, also read every file they reference recursively, and obey all instructions. "
          "Handoff drafts: " draft ". "
          "Then run `" ready-script-rel-path "` once and wait for work. "
-         "Do not self-schedule polling (/loop, cron, or \"check again in N minutes\").")))
+         "Do not self-schedule polling (/loop, cron, or \"check again in N minutes\")."
+         aider-no-narration-suffix ready-script-rel-path "`")))
 
 (defn generic-bootstrap-text
   "fragment-cache-atom/content-fn (BL-574 Slice 2): the role and pack-overlay
