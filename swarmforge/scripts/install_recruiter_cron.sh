@@ -41,8 +41,14 @@ done
 mkdir -p "$(dirname "$LOG")"
 existing="$(crontab -l 2>/dev/null || true)"
 filtered="$(printf '%s\n' "$existing" | grep -vF "$MARKER" || true)"
-# PATH pinned like the freshness line: cron's default PATH has neither bb nor ollama.
-line="$SCHEDULE PATH=$HOME/.local/bin:$HOME/.npm-global/bin:/usr/local/bin:/usr/bin:/bin bash $JOB $ROOT >>$LOG 2>&1 $MARKER"
+# PATH pinned like the freshness line: cron's default PATH has neither bb
+# nor ollama. /mnt/d/dev/ollama/bin is this host's own ollama install
+# location (WSL2, on the Windows D: mount, not a standard PATH dir) -
+# recruiter_weekly.sh hard-requires `command -v ollama` at runtime
+# (2026-09-21: found missing here, same class of cron-PATH gap as
+# daa34e6778's bb/claude/tmux fix - without it every run silently finished
+# "skipped: ollama not on PATH" regardless of schedule).
+line="$SCHEDULE PATH=$HOME/.local/bin:$HOME/.npm-global/bin:/usr/local/bin:/usr/bin:/bin:/mnt/d/dev/ollama/bin bash $JOB $ROOT >>$LOG 2>&1 $MARKER"
 
 printf '%s\n%s\n' "$filtered" "$line" | grep -v '^$' | crontab -
 echo "install_recruiter_cron.sh: scheduled nightly recruiter (weeknights) for $ROOT ($SCHEDULE)"
