@@ -34,7 +34,11 @@ Feature: BL-1685 Every eager bridgeServer requirer loads the bridge graph inside
       | gh23ContextBudgetDashboardSteps.js                 |
 
   # BL-1685 the-census-of-eager-requirers-is-empty-02
+  # The total is a FLOOR (32 at mint, 33 on main by 16:40Z as BL-1658's own handler landed): the steps
+  # directory grows with every ticket whose handler mentions the path in step text, so the pin that
+  # matters is the named eager set in scenario 01 being empty after the parcel; the floor only proves
+  # the scan reached the directory (amendment 2026-09-21, coder note 000053).
   Scenario: the census of handlers requiring bridgeServer at module scope is empty
     When the byte-safe census greps specs/pipeline/steps for bridge/bridgeServer
-    Then it names exactly thirty-two handlers
+    Then it names at least thirty-two handlers
     And none of them requires bridge/bridgeServer at module scope
