@@ -1,13 +1,21 @@
-Feature: BL-1549 Stamp-off review of the ephemeral consult session hotfix
+Feature: BL-1549 Stamp-off review of the ephemeral consult session hotfixes
 
-  BL-848 review-only certification of landed commit 5bdf93beed (2026-09-12).
-  BL-1535's chase gate correctly refuses to rotate the mono-router resident
-  away from a role that is mid-parcel, but the target role's mail - often a
-  question FROM the departing role - then had no live pane until the resident
-  went idle. The hotfix spawns the target role's OWN roles.tsv session
-  through resolve-single-role-repair on exactly that refusal, dedupes on a
-  marker, and tears the session down once its pane is idle and its mailbox
-  holds nothing actionable.
+  BL-848 review-only certification of landed commits 5bdf93beed
+  (2026-09-12) and a27d082c2d (2026-09-16, absorbed from BL-1591 on
+  2026-09-21). BL-1535's chase gate correctly refuses to rotate the
+  mono-router resident away from a role that is mid-parcel, but the target
+  role's mail - often a question FROM the departing role - then had no
+  live pane until the resident went idle. The first hotfix spawns the
+  target role's OWN roles.tsv session through resolve-single-role-repair
+  on exactly that refusal, dedupes on a marker, and tears the session down
+  once its pane is idle and its mailbox holds nothing actionable. The
+  night closing ceremony's rotate-documenter step hit the same refusal
+  (respawn-as!, BL-805) and its old fallback note to the coordinator could
+  not respawn a pane, so no briefing was written on 2026-09-15 or
+  2026-09-16; the second hotfix spawns the documenter's OWN session on a
+  refused rotation through a new standalone consult_spawn_cli.bb, which
+  writes the same consult marker the daemon's teardown sweep already
+  manages.
 
   These scenarios confirm or refute what landed; none may rewrite it, and
   none writes a certify or waive decision into backlog/hotfix-ledger.yaml -
@@ -44,18 +52,19 @@ Feature: BL-1549 Stamp-off review of the ephemeral consult session hotfix
     Then the wake goes to the target role's configured session
 
   # BL-1549 swarm-stamp-consult-session-04
-  Scenario Outline: a consult session is torn down only when idle with nothing actionable
-    Given a consult marker for a role whose session is <session>, whose pane is <pane>, and whose mailbox is <mailbox>
+  Scenario Outline: a consult session is torn down only when idle with nothing actionable, whichever spawner wrote its marker
+    Given a consult marker written by <writer> for a role whose session is <session>, whose pane is <pane>, and whose mailbox is <mailbox>
     When the consult teardown sweep runs
     Then the session is <session outcome>
     And the marker is <marker outcome>
 
     Examples:
-      | session | pane | mailbox           | session outcome | marker outcome |
-      | live    | idle | empty             | killed          | cleared        |
-      | live    | busy | empty             | kept            | kept           |
-      | live    | idle | holding a parcel  | kept            | kept           |
-      | gone    | idle | empty             | not killed      | cleared        |
+      | writer               | session | pane | mailbox           | session outcome | marker outcome |
+      | the daemon           | live    | idle | empty             | killed          | cleared        |
+      | the daemon           | live    | busy | empty             | kept            | kept           |
+      | the daemon           | live    | idle | holding a parcel  | kept            | kept           |
+      | the daemon           | gone    | idle | empty             | not killed      | cleared        |
+      | consult_spawn_cli.bb | live    | idle | empty             | killed          | cleared        |
 
   # BL-1549 swarm-stamp-consult-session-05
   Scenario: the existing refusal checks are unchanged by the spawn side effect
@@ -70,6 +79,39 @@ Feature: BL-1549 Stamp-off review of the ephemeral consult session hotfix
   # is null and decided_at is null. The row moves pending -> stamp-open the
   # moment the mint links the stamp ticket, so the literal state pending is
   # unreachable from inside the parcel (BL-1560 cleaner D1, 2026-09-14).
-  Scenario: the stamp leaves the certification decision to the human
+  Scenario Outline: the stamp leaves each certification decision to the human
     When the review parcel completes
-    Then the ledger row for the reviewed commit carries no human decision
+    Then the ledger row for the reviewed commit <commit> carries no human decision
+
+    Examples:
+      | commit     |
+      | 5bdf93beed |
+      | a27d082c2d |
+
+  # BL-1549 swarm-stamp-ceremony-documenter-consult-07
+  # Census pin (BL-1445): the three test names are asserted literally.
+  Scenario: the real rotate-documenter fallback test passes and names its three cases
+    When the rotate-documenter fallback vitest file runs against the compiled ceremony tool
+    Then it reports three tests passed and none failed
+    And its passing tests are named a refused rotation spawns documenter its own ephemeral session, a successful direct rotation never triggers a consult spawn, and spawnConsultDocumenter is independently exercised
+
+  # BL-1549 swarm-stamp-ceremony-documenter-consult-08
+  Scenario: the consult spawn CLI shell test passes, names its four checks, and is a standing suite member
+    When the consult spawn CLI shell test runs with its fake tmux
+    Then it reports every check passed
+    And its passing checks include cases 01 through 04
+    And the shell suite manifest lists test_consult_spawn_cli.sh as standing
+
+  # BL-1549 swarm-stamp-ceremony-documenter-consult-09
+  Scenario Outline: the CLI spawns once, refuses to race, and never fabricates a session
+    Given a fixture root where the documenter's <state>
+    When consult_spawn_cli.bb runs for that role requested by coordinator
+    Then it prints status <status> and exits <exit>
+    And it issues <spawns> new-session commands
+
+    Examples:
+      | state                                    | status             | exit | spawns |
+      | session is absent and no marker exists   | spawned            | 0    | 1      |
+      | session is live                          | already-exists     | 0    | 0      |
+      | session is gone but a marker exists      | already-consulting | 0    | 0      |
+      | roles.tsv row is missing                 | no-such-role       | 1    | 0      |
