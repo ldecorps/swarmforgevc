@@ -7,7 +7,8 @@ severity: medium
 # what is open is the review the constitution owes a hotfix (BL-848). Not
 # high: nothing is degraded today and the ledger's resurfacing keeps the
 # ask alive without the expedite lane.
-status: todo
+status: superseded
+closed_as: superseded-by-BL-1549
 epic: swarm-reliability
 priority: 20
 direction: human-directive
@@ -179,6 +180,17 @@ description: |
     socket.
 
 notes: |
+  RETIRED 2026-09-21 by the specifier on the human's morning consolidation
+  sweep over paused/pending tickets (Consolidation Authority, BL-680;
+  Article 5.3): absorbed into BL-1549 - same root cause or fix shape, one
+  outcome. Every FIRM line, constraint and quoted source sentence of
+  this ticket survives verbatim or in substance in BL-1549; its scenarios are BL-1549 scenarios 07, 08, 09, the CLI row of 04 and the second row of 06; hotfix-ledger row a27d082c2d re-linked to BL-1549.
+  This ticket's feature file is left in place as a scenario-less tombstone
+  (its contract now lives in
+  BL-1549's). Human approval on this ticket stands as history; the absorber
+  was separately approved and nothing unapproved was added. Evidence:
+  backlog/evidence/consolidation-sweep-paused-20260921.md.
+
   Ledger: linked to row a27d082c2d via `hotfix_ledger_update.bb --link` in
   the mint commit, which also commits the sweep-appended row itself.
   Siblings by subject: BL-1549 (stamp of 5bdf93beed, the daemon-side
