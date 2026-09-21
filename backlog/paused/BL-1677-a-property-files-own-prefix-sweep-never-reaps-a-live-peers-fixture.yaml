@@ -1,0 +1,182 @@
+id: BL-1677
+title: "Three property files (bl1354, bl1389, bl1380) still sweep every os.tmpdir() entry sharing their prefix before each invariant - a concurrent run of the same file (QA's lane beside coder2's, 2026-09-21) rm -rf's a live peer's fixture mid-classify, and BL-1623's blind-sweep finder misses them because they alias os.tmpdir() into a variable (the guard reports [] on the live tree); bl1354SharedPathLandedSiblingInvariants read every landed sibling as unlanded with no warning, the exact report a partial object loss produces (emulated) - the three sweeps go through sweepStaleTmpDirs over pid-named roots and the finder matches the aliased form"
+milestone: M8
+type: defect
+severity: high
+# high (standing-red rule 2026-09-05): a property-lane file on main whose
+# verdict is a function of what other lane is alive on the host is a
+# broken safety signal; QA saw it red in the full lane on BL-1640's
+# review (1 of 1267) with a coder2 vitest lane alive. Production is
+# unaffected: land_step_lib's verdict on the partial loss reads
+# unlanded, never landed (invariant 1's safe direction). Same class as
+# BL-1623 (three files it did not reach) and BL-1632.
+status: todo
+epic: code-quality-gates
+priority: 8
+direction: swarm-reported
+depends_on: []
+# BL-1623 (the owner-aware sweep helper, the finder and its guard, seven
+# migrated files), BL-1354, BL-1389 and BL-1380 (the three property files)
+# are in backlog/done. No open ticket touches the three files, the finder
+# or the guard.
+mutation_cost: low
+# low: three test files swap a local sweep for the helper's (the property
+# lane is its own tag, never under mutation/CRAP/DRY - engineering.prompt),
+# one regex in a test helper, one census list in a test, one feature and
+# handler over a mkdtemp fixture, evidence, one register row.
+slice_size_envelope: low
+required_stages: [coder, cleaner, architect, hardender, documenter, qa]
+
+acceptance: specs/features/BL-1677-a-property-files-own-prefix-sweep-never-reaps-a-live-peers-fixture.feature
+
+# The finder's consumer (blindTmpDirSweepGuard.test.js) already calls
+# findBlindTmpDirSweeps, so an anchor there matches before and after (BL-1235);
+# the three files' call into sweepStaleTmpDirs is the parcel's own diff.
+# Handler pin only; scenario 01 runs the real helper and scenario 02 the
+# real finder, which is the gate.
+required_wiring:
+  - 'specs/pipeline/steps/bl1677PrefixSweepNeverReapsLivePeerSteps.js::registerSteps::the handler lands in the same parcel as the feature (BL-233, BL-1371)'
+
+human_approval: approved
+approval_context: >
+  A new feature file is authored here, so it would ordinarily need a tap;
+  it is minted approved under the 2026-09-17 operator hotfix (severity
+  defect, no choice posed, no ruling_options). FIRM: the three files keep
+  every assertion and every draw exactly as today - only how they name
+  and sweep their fixture roots changes (pid-named roots, the helper's
+  owner-aware sweep, BL-1623's own shape). FIRM: the finder keeps its
+  literal match and gains the aliased form; BL-1623's guard census grows
+  by exactly the three files and its scenarios stay green. FIRM: no
+  change to land_step_lib.bb - the partial-loss reading (unlanded, no
+  warning) is invariant 1's safe direction and is recorded here as an
+  observation, not scope.
+
+invariants:
+  - "No test file's own fixture sweep ever removes a temp root a live process created: a root is reaped only when the pid its name records is dead or is the sweeping process itself."
+  - "Every blind prefix sweep of os.tmpdir() under extension/test, whether it calls os.tmpdir() inline or through a variable, is reported by the BL-1623 finder; the live tree reports none."
+
+description: |
+  ## What is wrong
+
+  QA's review of BL-1640 (bounce evidence
+  `backlog/evidence/BL-1640-bounce-20260921.md`, QA branch): the property
+  lane's one failure of 1267 was
+  `extension/test/bl1354SharedPathLandedSiblingInvariants.property.test.js`
+  invariant 2, `AssertionError: BL-9400's own lines are all landed but it
+  read unlanded (all-landed, 2 siblings): {"landed":[],"unlanded":["BL-9400","BL-9401"],"warning":null}`,
+  seed 9660847, in a file BL-1640's diff never touches; vitest processes
+  from `.worktrees/coder2` were alive on the host during the review. The
+  specifier's solo run on main (850faefe0e): green, 2/2, 18.6 s.
+
+  The file's `sweepFixtures()` (line ~127) does `const parent =
+  os.tmpdir(); for (const entry of fs.readdirSync(parent)) if
+  (entry.startsWith(FIXTURE_PREFIX)) fs.rmSync(...)` before EACH
+  invariant - a blind prefix sweep (engineering.prompt Guardrails, BL-971/
+  BL-1385/BL-1390): with two runs of the same file alive (a second lane on
+  the host, a guard re-run, a solo re-run beside a lane), one run's sweep
+  rm -rf's the other's live fixture. `bl1389UnlandedSiblingPathNeverRidesInvariants.property.test.js`
+  (line ~182) and `bl1380ExpediteNeverAnswersUnshownQuestion.property.test.js`
+  (line ~113) carry the identical function. BL-1623 (done) built the
+  owner-aware `sweepStaleTmpDirs({prefix})` in `test/helpers/tmpDir.js`
+  (reaps a root only when the pid its name records is dead or is this
+  process) and migrated seven files, guarded by
+  `test/helpers/blindTmpDirSweepFinder.js` whose `BLIND_CALL_PATTERN` is
+  the literal `readdirSync(os.tmpdir())` - these three alias
+  `os.tmpdir()` into `parent`, so `findBlindTmpDirSweeps(test/)` returns
+  `[]` on the live tree today and the guard is green over three live
+  blind sweeps (BL-1445's fail-open census shape).
+
+  Why the report reads that way (emulated on main, script in the
+  adjudication evidence): a fixture whose WHOLE root is removed before
+  the classify reports `warning: "land-step: origin/main could not be
+  resolved"`; a fixture whose worktree files are removed but `.git` kept
+  reads all landed; a fixture whose landed BLOBS are removed while refs
+  and commits survive reports exactly
+  `{"landed":[],"unlanded":["BL-9400","BL-9401"],"warning":null}` - the
+  state a peer's recursive rm leaves partway through `objects/`. The
+  verdict's silent "absent" on an unreadable blob is invariant 1's safe
+  direction (it never reads landed) and is not changed here.
+
+  ## What is wanted
+
+  1. The three files build their roots with a pid-bearing name
+     (`mkTmpDir(\`${FIXTURE_PREFIX}${process.pid}-\`)`, the shape
+     `sweepStaleTmpDirs` documents) and replace their own `sweepFixtures`
+     with `sweepStaleTmpDirs({ prefix: FIXTURE_PREFIX })`; every draw and
+     assertion is unchanged (scenario 01 drives the real helper: a live
+     peer's root survives, a dead pid's root and this process's own are
+     reaped).
+  2. `blindTmpDirSweepFinder.js` also reports `readdirSync(<ident>)` where
+     `<ident>` was bound from `os.tmpdir()` in the same file (scenario
+     02: a fixture file with the aliased form is reported; the live
+     `extension/test` reports none).
+  3. `blindTmpDirSweepGuard.test.js`'s `MIGRATED_FILES` gains the three
+     files (scenario 03 pins the count at ten, BL-1445).
+  4. The register row for the bl1354 file leaves in this parcel's land
+     (BL-1631). Documenter: the BL-1623 how-to names the aliased form and
+     the three files; no diagram trigger.
+
+  ## How (direction, not mandate)
+
+  - The seven migrated files are the template (any of
+    `bl1343ReplayNeverDropsOwnPathInvariants`,
+    `bl1309LandDecideEntanglementInvariants` - same land-step fixture
+    family as bl1354/bl1389).
+  - Finder: a second pattern `const\s+(\w+)\s*=\s*os\.tmpdir\(\)` then
+    `readdirSync\(\s*<that ident>\s*\)`, per file; keep the literal one.
+  - Fixture roots per BL-1390; the acceptance handler builds two roots
+    under a scratch prefix, one named with `process.pid`, one with a pid
+    that is dead (a just-exited child's), and runs the real helper.
+
+  ## Not in scope
+
+  - `land_step_lib.bb`'s reading of an unreadable blob (observation above).
+  - `stepHandlerModuleLoadBudget.test.js` and
+    `bl968StepRegistryMaterializedTreeGuard.test.js`, which read
+    `os.tmpdir()` for BL-1636's entry census and remove nothing.
+
+qa_e2e_procedure: |
+  On the parcel commit, from `extension/`; fixture roots per BL-1390.
+  1. `grep -n 'readdirSync(parent)' test/bl1354SharedPathLandedSiblingInvariants.property.test.js
+     test/bl1389UnlandedSiblingPathNeverRidesInvariants.property.test.js
+     test/bl1380ExpediteNeverAnswersUnshownQuestion.property.test.js`
+     prints nothing; each file calls `sweepStaleTmpDirs`.
+  2. `npx vitest run test/blindTmpDirSweepGuard.test.js` once: green,
+     MIGRATED_FILES ten.
+  3. `node -e "const {findBlindTmpDirSweeps}=require('./test/helpers/blindTmpDirSweepFinder'); console.log(findBlindTmpDirSweeps(require('path').join(process.cwd(),'test')))"`
+     prints `[]`; the same over a scratch dir holding one file with
+     `const parent = os.tmpdir(); fs.readdirSync(parent)` prints that file.
+  4. `npx vitest run --config vitest.properties.config.mjs
+     test/bl1354SharedPathLandedSiblingInvariants.property.test.js` once
+     while a second copy of the same command runs concurrently from a
+     scratch clone: both green (the one concurrency check this ticket is
+     about; not "run it N times").
+  5. `specs/pipeline/scripts/run_acceptance.sh` on this ticket's feature:
+     4/4 (01 x2, 02, 03), once.
+
+source: |
+  QA note to the specifier and the coordinator, priority 00,
+  2026-09-21T11:16:00Z (inbound 00_20260921T111600Z_003052_from_QA),
+  verbatim: "unowned-red bl1354SharedPathLandedSiblingInvariants, ev in
+  BL-1640 QA evidence". QA evidence, verbatim: "The one failure ... is in
+  a file this parcel's own diff never touches ... and has no owner in
+  backlog/standing-reds.tsv - reported as an unowned red to the specifier
+  and coordinator per Article 4.2, not part of this bounce." Mechanism
+  found and emulated by the specifier the same pass
+  (`backlog/evidence/unowned-red-bl1354-peer-blind-sweep-adjudication-specifier-20260921.md`).
+  Parents: BL-1623, BL-1354, BL-1389, BL-1380, BL-1632, BL-1445.
+
+notes: |
+  Minted 2026-09-21 by the specifier while completing QA's unowned-red
+  note, the same pass (standing-red rule: the owner is named before the
+  note completes). AUTO-APPROVED under the 2026-09-17 operator hotfix
+  (severity defect, no ruling_options) - see
+  auto-approve-high-severity-defects-amendment-20260917.md. Register row
+  `property extension/test/bl1354SharedPathLandedSiblingInvariants.property.test.js
+  BL-1677 2026-09-21` added in the mint commit. QA was noted the owner.
+
+  Interim for every role until this lands: a red in any of the three
+  files that reads as content missing from a fixture (all siblings
+  unlanded with no warning; a "not found" under the fixture root) while
+  another lane is alive on the host is this owned red - one run, record
+  the line, never a bounce for a parcel that touches none of the three.
