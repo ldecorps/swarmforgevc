@@ -1,17 +1,21 @@
 id: BL-1658
-title: "Seven step handlers still require jsdom at module load (bl592, bl609, bl674, bl686, bl687, bl775, bl929) and a sequential require census charges jsdom's whole load to whichever is alphabetically first, so fixing one only unmasks the next: all seven require jsdom inside the step that builds a DOM, in one sweep, and the module-load guard's bl592 allowlist entry goes"
+title: "Seven step handlers still require jsdom at module load (bl592, bl609, bl674, bl686, bl687, bl775, bl929), and bl1050 requires the cursor-bridge session graph the same way (174-204 ms alone at load 3.4, over the 400 ms budget under the full unit suite even confirmed alone - a unit red on main since BL-1630 landed, first sighted 2026-09-21, owned here); and a sequential require census charges jsdom's whole load to whichever is alphabetically first, so fixing one only unmasks the next: all seven require jsdom inside the step that builds a DOM, in one sweep, and the module-load guard's bl592 allowlist entry goes"
 milestone: M8
 type: defect
-severity: medium
-# medium: a real, contained cost (about 300 ms on every registry load,
-# paid by every acceptance run and QA-bound send) and a permanent
-# allowlist entry in BL-1630's guard; not a red, not a safety signal.
+severity: high
+# high (standing-red rule 2026-09-05, re-classed 2026-09-21): this ticket
+# owns a unit red on main - stepHandlerModuleLoadBudget.test.js names
+# bl1050CursorRunFailureLogSteps.js over its 400 ms budget under the full
+# suite (coder sighting, note 002085; green when the guard file runs
+# alone) - a broken safety signal until the eager require goes. Was
+# medium at mint (a contained 300 ms registry-load cost and a permanent
+# allowlist entry).
 status: todo
 epic: unit-suite-speed
 priority: 6
 direction: swarm-reported
 depends_on: [BL-1630]
-# BL-1630 (active at the coder) lands the require census helper, the
+# BL-1630 (landed 2026-09-21) landed the require census helper, the
 # module-load budget guard and its allowlist entry for bl592 naming this
 # ticket; this parcel removes that entry, so it promotes after BL-1630
 # lands. BL-1659 (sibling, node:test) touches none of these seven files.
@@ -21,7 +25,9 @@ mutation_cost: low
 # bl1412 already use); one allowlist entry removed; feature and handler;
 # step handlers are not under mutation. Runners the feature shells: eight
 # fresh-child requires (each well under a second) - inside BL-1541's
-# ceiling.
+# ceiling. Amendment 2026-09-21: plus bl1050's two module-level requires
+# of extension/out/bridge/cursorBridge{AgentSession,RunLog} moved inside
+# its steps - one more handler, the same shape; still one sitting.
 slice_size_envelope: low
 required_stages: [coder, cleaner, architect, hardender, documenter, qa]
 
@@ -38,8 +44,21 @@ approval_context: >
   the DOM, exactly as bl1153 and bl1412 now do after BL-1630. FIRM: all
   seven move in ONE parcel (the cascade makes a partial fix invisible).
   FIRM: the guard's allowlist ends this parcel with no jsdom entry.
+  AMENDED 2026-09-21 by the specifier on the coder's unowned-red note
+  002085 ("unowned-red: stepHandlerModuleLoadBudget bl1050 fails
+  full-suite, clean alone"): bl1050CursorRunFailureLogSteps.js joins the
+  population - it requires extension/out/bridge/cursorBridgeAgentSession
+  (and cursorBridgeRunLog) at module scope, a production graph that
+  pulls @cursor/sdk, telegramCursorBridgeCore, letsTalkCore and more;
+  the same fix shape (the require moves inside the step that needs it),
+  the same guard, the same census. Severity re-classed to high because
+  this ticket now owns a red on main (standing-red rule). Nothing else
+  changes and no choice is posed, so the approval stands (BL-1455: a
+  re-pend would post no fresh ask).
 
-invariants: []
+
+invariants:
+  - "No step handler named in this ticket loads jsdom or the cursor-bridge session graph at module scope: each such require happens inside the step that needs it, so a fresh-child require of the handler alone stays under the guard's budget under any host load."
 
 description: |
   ## What is wrong
@@ -69,6 +88,44 @@ description: |
   - The bl592 entry leaves `extension/test/stepHandlerModuleLoadBudget.test.js`'s
     allowlist (and the acceptance handler's mirror of it) in the same
     parcel; the guard over the real tree passes with no jsdom entry.
+
+  ## Amendment 2026-09-21 - bl1050 joins the population (unit red on main)
+
+  `specs/pipeline/steps/bl1050CursorRunFailureLogSteps.js` lines 29-30
+  require `extension/out/bridge/cursorBridgeAgentSession` and
+  `cursorBridgeRunLog` at module scope; the session module's own top
+  requires `@cursor/sdk`, `../tools/telegramCursorBridgeCore`,
+  `./letsTalkCore`, `../tools/swarmEnv`, `./cursorBridgeProgress` -
+  BL-968-compliant production code, but a heavy graph to pay at registry
+  load. BL-1630's guard (landed 2026-09-21, `stepHandlerModuleLoadBudget.test.js`)
+  deliberately did NOT allowlist it ("timing variance is not an accepted
+  reason") on the reading that its best-of-three confirm-alone
+  re-measurement clears a genuinely heavy 137-180 ms require. It does
+  not under the full unit suite: the three fresh-child samples run
+  concurrently with the suite's other forks, so all three exceed 400 ms
+  and the guard reports `bl1050CursorRunFailureLogSteps.js: incremental
+  require cost <N> ms exceeds the 400ms budget (confirmed alone)` -
+  the coder's sighting on its branch with main merged; the guard file
+  alone is green. Specifier measurement on the master checkout,
+  2026-09-21 09:3xZ, load 3.4: `censusOneHandler` three times 201 / 204
+  / 174 ms; `bl1049CursorBridgeRunSteps.js` and `bl1002ExampleSteps.js`
+  0 ms - the cost is the handler's own requires, not the host.
+
+  - bl1050 requires both bridge modules inside the step that uses them
+    (the pattern this ticket applies to the seven); its scenarios still
+    resolve. Scenario 01 pins it by name; scenario 02's "none of the
+    eight" covers it.
+  - The guard's comment block that says bl1050 is cleared by the
+    confirm-alone re-measurement is re-tensed to say it now loads
+    lazily; the allowlist stays free of any bl1050 entry (the 2026-09-20
+    ruling stands: no "timing variance" entries).
+  - The register row `unit extension/test/stepHandlerModuleLoadBudget.test.js
+    BL-1658 2026-09-21` leaves in this parcel's land (BL-1631).
+  - QA e2e addition: `cd extension && npm test` once on the parcel commit
+    (the whole unit lane, not the guard file alone) - the guard names no
+    violation; and `node -e` over `test/helpers/stepHandlerRequireCensus`
+    `censusOneHandler('bl1050CursorRunFailureLogSteps.js')` reads under
+    20 ms.
 
   ## How (direction, not mandate)
 
@@ -109,3 +166,13 @@ notes: |
   Minted 2026-09-20 by the specifier while completing the coder's BL-1630
   spec-gap note, the same pass as BL-1659 and the BL-1630 ruling. Not
   auto-approved: severity medium.
+
+  Amended 2026-09-21 by the specifier while completing the coder's
+  unowned-red note 002085, the same pass (standing-red rule: the owner
+  is minted or named before the note completes): bl1050 added to the
+  population, severity re-classed high, register row added, the coder
+  (holding BL-1638, which reported it) noted `stepHandlerModuleLoadBudget
+  red owned by BL-1658`. Evidence:
+  backlog/evidence/unowned-red-stepHandlerModuleLoadBudget-bl1050-adjudication-specifier-20260921.md.
+  Folded rather than minted apart: one guard, one census, one fix shape
+  (human directive 2026-09-17, fewer tickets).
