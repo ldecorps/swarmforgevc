@@ -2814,6 +2814,63 @@
           (str (java.time.Instant/now) " " entry "\n")
           :append true)))
 
+;; ── BL-1467: the re-point keeps QA's bookkeeping for OTHER tickets ───────
+;;
+;; The reset above moves the branch/worktree to origin/main; anything
+;; local-only on the old tip that is not superseded by the just-landed
+;; ticket's own replay is either bookkeeping for a DIFFERENT ticket (a
+;; bounce's evidence file and bounce_history edit, a follow-up finding -
+;; QA's own record of work on that OTHER ticket, never captured by this
+;; land's own-paths walk) or genuinely local-only content this land never
+;; owned (a revert of a bounced merge, an unrelated code commit) - the
+;; 2026-09-07 incident (BL-1450's revert and evidence commits, dropped
+;; silently, survived only in the reflog and the coder's own branch).
+
+(def ^:private repoint-bookkeeping-path-pattern
+  ;; backlog/evidence/<id>-*, backlog/<active|paused|done|hold|archive>[/<milestone>]/<id>-*.yaml,
+  ;; backlog/topics/<id>.json - the same shapes the ticket's own "How"
+  ;; names, keyed to whichever ticket id the commit's own subject names.
+  (fn [id]
+    (let [q (java.util.regex.Pattern/quote (str id))]
+      (re-pattern (str "^backlog/(?:evidence/" q "-[^/]*"
+                       "|(?:active|paused|done|hold|archive)(?:/[^/]+)?/" q "-[^/]*\\.yaml"
+                       "|topics/" q "\\.json)$")))))
+
+(defn- repoint-bookkeeping-path? [id path]
+  (boolean (re-matches (repoint-bookkeeping-path-pattern id) path)))
+
+;; {:disposition :keep :sha :subject} or {:disposition :drop :sha :subject
+;; :reason "..."} - never nil, so every candidate is accounted for one way
+;; or the other (this ticket's invariant 1: named, not silently lost).
+(defn- classify-repoint-candidate [root commit landed-task-ticket-id]
+  (let [subject (or (commit-subject root commit) "")]
+    (cond
+      (merge-commit? root commit)
+      {:disposition :drop :sha commit :subject subject :reason "merge"}
+
+      (task-scope-gate-lib/revert-subject? subject)
+      {:disposition :drop :sha commit :subject subject :reason "revert"}
+
+      :else
+      (let [id (commit-ticket-id root commit)
+            paths (commit-changed-paths root commit)]
+        (cond
+          (nil? id)
+          {:disposition :drop :sha commit :subject subject :reason "names no ticket"}
+
+          (= id landed-task-ticket-id)
+          {:disposition :drop :sha commit :subject subject
+           :reason (str "already carried by " landed-task-ticket-id "'s own land")}
+
+          (nil? paths)
+          {:disposition :drop :sha commit :subject subject :reason "could not read its own diff"}
+
+          (and (seq paths) (every? #(repoint-bookkeeping-path? id %) paths))
+          {:disposition :keep :sha commit :subject subject}
+
+          :else
+          {:disposition :drop :sha commit :subject subject :reason "not bookkeeping"})))))
+
 (defn post-land-repoint!
   "{:action :repointed :old-tip :new-tip} on success, or {:action :skipped
    :reason \"...\"} when it is not safe to run - NEVER a bare `reset --hard`
@@ -2825,8 +2882,37 @@
    against that command does not forbid here: the precondition IS the
    clean-tree guarantee that command normally lacks. Both the old and the
    new tip are logged either way (repointed or skipped), so a bookkeeping
-   read never has to diff the branch by hand to see what happened."
-  [{:keys [root in-process-dir]}]
+   read never has to diff the branch by hand to see what happened.
+
+   BL-1467: `:landed-task-ticket-id` is an OPTIONAL key - the ticket this
+   land just published, so a local-only commit that is itself that
+   ticket's own bookkeeping (already carried by its own replay) is dropped
+   as redundant rather than re-applied a second time. Omitted (an old
+   caller, or a hand-run repoint with no ticket in view), every local-only
+   commit is judged purely on shape - the same guards, unchanged.
+
+   Every commit reachable from `old-tip` and not from `origin-main` is
+   enumerated BEFORE the reset and classified: a commit whose own subject
+   is a revert/reapply, a merge, names no ticket, or names the landed
+   ticket itself is DROPPED; a commit naming a DIFFERENT ticket whose
+   every changed path is that ticket's own bookkeeping shape
+   (`backlog/evidence/<id>-*`, a `backlog/**/<id>-*.yaml` ticket file, or
+   `backlog/topics/<id>.json`) is KEPT - re-applied, oldest first, onto
+   the new tip after the reset. A kept commit that conflicts is aborted
+   and re-classified DROPPED with reason \"conflict\", leaving the
+   worktree clean at whatever already applied; one whose patch is already
+   empty against the new tip is recorded kept (`:already-applied? true`),
+   never dropped - its content is already there. Every drop names its sha
+   and subject (invariant 1: nothing is silently lost - it is either on
+   the new tip or named here).
+
+   The candidate walk runs before the reset only to decide WHAT to keep;
+   nothing about it prevents the enumeration also succeeding after (the
+   old tip's own history does not move). A walk that cannot be read at
+   all skips the WHOLE re-point rather than resetting blind (fail-closed,
+   the same posture this ticket's invariant 1 takes everywhere else) -
+   BL-1438's own promise stands regardless: a skip never fails the land."
+  [{:keys [root in-process-dir landed-task-ticket-id]}]
   (let [in-process-dir (or in-process-dir (str (fs/path root ".swarmforge" "handoffs" "inbox" "in_process")))
         old-tip (str/trim (:out (git! root "rev-parse" "HEAD")))
         status (git! root "status" "--porcelain")
@@ -2854,9 +2940,40 @@
         (if-not origin-main
           (let [r {:action :skipped :reason "land-step: origin/main could not be resolved" :old-tip old-tip}]
             (log-repoint! root r) r)
-          (let [res (git! root "reset" "--hard" origin-main)]
-            (if (zero? (:exit res))
-              (let [r {:action :repointed :old-tip old-tip :new-tip origin-main}]
+          (let [candidates (ancestry-commits root origin-main old-tip)]
+            (if (nil? candidates)
+              (let [r {:action :skipped
+                       :reason (str "land-step: could not read " old-tip "'s own local-only history against " origin-main)
+                       :old-tip old-tip}]
                 (log-repoint! root r) r)
-              (let [r {:action :skipped :reason "land-step: branch re-point failed" :old-tip old-tip}]
-                (log-repoint! root r) r))))))))
+              ;; Oldest first: `ancestry-commits` (rev-list) answers
+              ;; newest-first, and a cherry-pick replay must apply in
+              ;; authored order.
+              (let [classified (mapv #(classify-repoint-candidate root % landed-task-ticket-id)
+                                     (reverse candidates))
+                    reset-res (git! root "reset" "--hard" origin-main)]
+                (if-not (zero? (:exit reset-res))
+                  (let [r {:action :skipped :reason "land-step: branch re-point failed" :old-tip old-tip}]
+                    (log-repoint! root r) r)
+                  (let [kept (atom [])
+                        dropped (atom (into [] (comp (filter #(= :drop (:disposition %)))
+                                                     (map #(select-keys % [:sha :subject :reason])))
+                                            classified))]
+                    (doseq [{:keys [disposition sha subject]} classified
+                            :when (= disposition :keep)]
+                      (let [cp (git! root "cherry-pick" sha)]
+                        (cond
+                          (zero? (:exit cp))
+                          (swap! kept conj {:sha sha :subject subject})
+
+                          (cherry-pick-already-applied? cp)
+                          (do (git! root "cherry-pick" "--skip")
+                              (swap! kept conj {:sha sha :subject subject :already-applied? true}))
+
+                          :else
+                          (do (git! root "cherry-pick" "--abort")
+                              (swap! dropped conj {:sha sha :subject subject :reason "conflict"})))))
+                    (let [new-tip (str/trim (:out (git! root "rev-parse" "HEAD")))
+                          r {:action :repointed :old-tip old-tip :new-tip new-tip
+                             :kept @kept :dropped @dropped}]
+                      (log-repoint! root r) r)))))))))))

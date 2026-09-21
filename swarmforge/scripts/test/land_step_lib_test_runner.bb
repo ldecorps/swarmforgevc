@@ -2394,6 +2394,45 @@ RESOLVED BY THIS TICKET
       (assert= "post-land-repoint!: names the reason"
                "a parcel in its in_process" (:reason result)))))
 
+;; ── BL-1467 hardening: classify-repoint-candidate's "every path bookkeeping"
+;; fold, isolated ── every existing BL-1467 fixture (bb runner, property
+;; test) that reaches classify-repoint-candidate's "not bookkeeping" drop
+;; does so via a commit naming NO ticket at all (`commit-ticket-id` -> nil,
+;; the "names no ticket" branch) - so `(every? #(repoint-bookkeeping-path? id
+;; %) paths)` was never exercised against a commit that DOES name a
+;; different ticket but touches a MIX of bookkeeping and non-bookkeeping
+;; paths for it. Hand-mutated `every?` -> `some` at land_step_lib.bb's
+;; classify-repoint-candidate (the fold-mutation the every?/some family
+;; above this file warns about) and confirmed: the bb runner (ALL PASS) and
+;; the BL-1467 property test (2/2 pass) both missed it - a commit touching
+;; one bookkeeping path and one non-bookkeeping path for another ticket was
+;; wrongly KEPT and re-applied. Restored, re-confirmed green, and this test
+;; added to isolate exactly that fold: a single commit for a DIFFERENT
+;; ticket (never the landed one, never ticket-less) whose two changed paths
+;; are one genuine bookkeeping path and one ordinary code path.
+(with-fixture [root]
+  (mark-origin-main-here! root)
+  (let [origin-main (:out (sh! root "git" "rev-parse" "HEAD"))]
+    (fs/create-dirs (fs/path root "backlog" "evidence"))
+    (spit (str (fs/path root "backlog" "evidence" "BL-9002-note.md")) "note\n")
+    (spit (str (fs/path root "some-code.txt")) "code\n")
+    (sh! root "git" "add" "-A")
+    (sh! root "git" "commit" "-q" "-m" "BL-9002: a mixed bookkeeping-and-code commit")
+    (let [mixed-sha (:out (sh! root "git" "rev-parse" "HEAD"))
+          result (land-step-lib/post-land-repoint! {:root root :landed-task-ticket-id "BL-9001"})]
+      (assert= "post-land-repoint! (mixed-paths isolation): still repoints"
+               :repointed (:action result))
+      (assert= "post-land-repoint! (mixed-paths isolation): a commit mixing a bookkeeping path with an ordinary one for another ticket is DROPPED, not kept"
+               nil (some #(= mixed-sha (:sha %)) (:kept result)))
+      (let [dropped-entry (first (filter #(= mixed-sha (:sha %)) (:dropped result)))]
+        (assert-true "post-land-repoint! (mixed-paths isolation): the drop is named" (boolean dropped-entry))
+        (assert= "post-land-repoint! (mixed-paths isolation): the drop reason is \"not bookkeeping\", not the ticketless reason"
+                 "not bookkeeping" (:reason dropped-entry)))
+      (assert= "post-land-repoint! (mixed-paths isolation): the new tip is origin/main - nothing from the mixed commit re-applied"
+               origin-main (:new-tip result))
+      (assert-false "post-land-repoint! (mixed-paths isolation): the non-bookkeeping path never lands on the new tip"
+                     (.exists (java.io.File. (str (fs/path root "some-code.txt"))))))))
+
 ;; ── BL-1447: replay-missing-paths (pure core, no git) ─────────────────────
 
 (assert= "replay-missing-paths: identical blobs at every path -> no offenders"

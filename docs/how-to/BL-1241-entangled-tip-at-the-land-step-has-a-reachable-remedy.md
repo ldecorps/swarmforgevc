@@ -774,6 +774,31 @@ growth from costing anything even when a re-point is skipped. Acceptance:
 `specs/features/BL-1432-the-land-walk-ranges-over-the-parcel.feature` and
 `specs/features/BL-1438-the-publish-re-points-the-qa-branch-after-a-land.feature`.
 
+**The reset no longer silently drops committed local-only bookkeeping for
+another ticket (BL-1467, 2026-09-21).** Both `post-land-repoint!` guards
+above are about UNCOMMITTED state; a bounce's evidence file, the bounced
+ticket's `bounce_history` commit, or a QA follow-up finding — all
+committed — passed them and vanished under `reset --hard origin/main`
+(2026-09-07: BL-1450's bounce evidence and revert were reset away when
+BL-1447 landed minutes later, recoverable only from the reflog or a
+branch that had already merged the bounce). `LAND_REPOINTED`'s output now
+names every commit the reset would otherwise silently drop: before the
+reset, `git rev-list old-tip ^origin-main` is classified by shape — a
+commit whose changed paths are ALL bookkeeping for a ticket OTHER than
+the one just landed (`backlog/evidence/<id>-*`,
+`backlog/**/<id>-*.yaml`, `backlog/topics/<id>.json`) is re-applied on the
+new tip after the reset and printed `LAND_REPOINT_KEPT <sha>` (suffixed
+`(already applied)` when its patch is already empty against the new tip —
+its content rode in some other way and re-applying it would be a no-op,
+not a drop); everything else — a revert (never re-applied, whatever else
+it touches), a merge, a commit naming no ticket or the just-landed ticket
+itself, a commit outside the bookkeeping-path shape, or a re-application
+that conflicts — is dropped and printed `LAND_REPOINT_DROPPED <sha>
+<reason>`. `repoint`'s optional `<landed-task-name>` argument lets the
+just-landed ticket's own bookkeeping drop as redundant (its content is
+already carried by its own replay) instead of re-applying a second time.
+Acceptance: `specs/features/BL-1467-the-re-point-keeps-qa-bookkeeping-and-names-what-it-drops.feature`.
+
 ## The bounded walk never counts landed history, and a replay carries every hop's work (BL-1446)
 
 BL-1432's bound was wrong in two ways the moment a QA branch synced

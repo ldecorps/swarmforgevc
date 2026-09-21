@@ -59,19 +59,30 @@
 ;;   the first offending path and the unapproved ticket it is attributed
 ;;   to (BL-1678 invariant 1/2).
 ;;
-;; BL-1438: land_step_cli.bb repoint <repo-root>
+;; BL-1438: land_step_cli.bb repoint <repo-root> [<landed-task-name>]
 ;;   Thin wrapper over land_step_lib.bb's post-land-repoint! (BL-1432
 ;;   option 1) - the QA-branch re-point, built and tested with no live
-;;   caller until this verb. Prints exactly one line and exits 0 whichever
-;;   way post-land-repoint! decides (a skip is a decision, not a failure -
-;;   invariant 2): "LAND_REPOINTED <old-tip> <new-tip>" on success, or
-;;   "LAND_REPOINT_SKIPPED <reason>" when post-land-repoint!'s own guards
-;;   refuse (an uncommitted change, a parcel still in_process, or
-;;   origin/main not resolving - BL-1432 invariant 3; this verb adds no
-;;   second notion of clean). Exits non-zero ONLY when <repo-root> itself
-;;   cannot be read as a git repository - proved with `rev-parse
-;;   --git-common-dir` before any mutating git call, per BL-1390 - never
-;;   when the re-point itself decides to skip.
+;;   caller until this verb. Exits 0 whichever way post-land-repoint!
+;;   decides (a skip is a decision, not a failure - invariant 2): on
+;;   success, "LAND_REPOINTED <old-tip> <new-tip>" then one
+;;   "LAND_REPOINT_KEPT <sha>" line per local-only bookkeeping commit for
+;;   another ticket re-applied onto the new tip (BL-1467 - suffixed
+;;   "(already applied)" when its patch was already empty against the new
+;;   tip) and one "LAND_REPOINT_DROPPED <sha> <reason>" line per commit
+;;   the reset left behind (a revert, a merge, one naming no ticket or the
+;;   landed ticket itself, one outside the bookkeeping path shape, or one
+;;   that conflicted on re-application); "LAND_REPOINT_SKIPPED <reason>"
+;;   when post-land-repoint!'s own guards refuse (an uncommitted change, a
+;;   parcel still in_process, origin/main not resolving, or the local-only
+;;   history itself unreadable - BL-1432 invariant 3/BL-1467 invariant 1;
+;;   this verb adds no second notion of clean). <landed-task-name> is
+;;   OPTIONAL - the ticket this land just published, so that ticket's own
+;;   bookkeeping (already carried by its own replay) drops as redundant
+;;   rather than re-applying a second time; omitted, every local-only
+;;   commit is judged purely on shape. Exits non-zero ONLY when
+;;   <repo-root> itself cannot be read as a git repository - proved with
+;;   `rev-parse --git-common-dir` before any mutating git call, per
+;;   BL-1390 - never when the re-point itself decides to skip.
 
 (ns land-step-cli
   (:require [babashka.fs :as fs]
@@ -80,7 +91,7 @@
 
 (load-file (str (fs/path (fs/parent (fs/canonicalize *file*)) "land_step_lib.bb")))
 
-(def usage-text "Usage: land_step_cli.bb <task-name> <commit> [repo-root]\n   or: land_step_cli.bb repoint <repo-root>\n   or: land_step_cli.bb verify-push <commit> [repo-root]")
+(def usage-text "Usage: land_step_cli.bb <task-name> <commit> [repo-root]\n   or: land_step_cli.bb repoint <repo-root> [landed-task-name]\n   or: land_step_cli.bb verify-push <commit> [repo-root]")
 
 (defn- verify-push-verb [commit repo-root-arg]
   (when (str/blank? commit)
@@ -102,7 +113,7 @@
           (do (println (str "LAND_PUBLISH_OK " canonical)) (System/exit 0))
           (do (println (str "LAND_PUBLISH_REFUSED " reason)) (System/exit 1)))))))
 
-(defn- repoint-verb [repo-root-arg]
+(defn- repoint-verb [repo-root-arg landed-task-name]
   (when (str/blank? repo-root-arg)
     (binding [*out* *err*] (println usage-text))
     (System/exit 2))
@@ -112,9 +123,22 @@
       (do
         (binding [*out* *err*] (println (str "Cannot read repo root as a git repository: " root)))
         (System/exit 2))
-      (let [result (land-step-lib/post-land-repoint! {:root root})]
+      (let [landed-task-ticket-id (when-not (str/blank? landed-task-name)
+                                     (pipeline-stage-lib/extract-ticket-id landed-task-name))
+            result (land-step-lib/post-land-repoint!
+                    {:root root :landed-task-ticket-id landed-task-ticket-id})]
         (case (:action result)
-          :repointed (println (str "LAND_REPOINTED " (:old-tip result) " " (:new-tip result)))
+          :repointed
+          (do
+            (println (str "LAND_REPOINTED " (:old-tip result) " " (:new-tip result)))
+            ;; BL-1467: named individually - a human reading the publish
+            ;; output sees exactly what survived and what did not, never a
+            ;; bare tip-to-tip move that hides a dropped bounce revert or
+            ;; evidence file.
+            (doseq [{:keys [sha already-applied?]} (:kept result)]
+              (println (str "LAND_REPOINT_KEPT " sha (when already-applied? " (already applied)"))))
+            (doseq [{:keys [sha reason]} (:dropped result)]
+              (println (str "LAND_REPOINT_DROPPED " sha " " reason))))
           :skipped (println (str "LAND_REPOINT_SKIPPED " (:reason result))))
         (System/exit 0)))))
 
@@ -278,7 +302,7 @@
 
 (defn -main [& args]
   (cond
-    (= "repoint" (first args)) (repoint-verb (second args))
+    (= "repoint" (first args)) (repoint-verb (second args) (nth args 2 nil))
     (= "verify-push" (first args)) (verify-push-verb (second args) (nth args 2 nil))
     :else (main-land args)))
 

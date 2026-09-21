@@ -236,8 +236,10 @@ run_land() {
   # reason to fail one that already published. post-land-repoint!'s own
   # guards (an uncommitted change, a parcel still in_process, or
   # origin/main not resolving) are the only guards this call adds none of
-  # its own on top of (invariant 3).
-  repoint_out="$(bb "$SCRIPT_DIR/land_step_cli.bb" repoint "$ROOT" 2>&1)" || true
+  # its own on top of (invariant 3). BL-1467: `$task` names the ticket
+  # this land just published, so the re-point drops that ticket's own
+  # bookkeeping as redundant instead of re-applying it a second time.
+  repoint_out="$(bb "$SCRIPT_DIR/land_step_cli.bb" repoint "$ROOT" "$task" 2>&1)" || true
   printf '%s\n' "$repoint_out"
 
   # 5. A GH-seeded ticket closes its issue; anything else attempts no issue
