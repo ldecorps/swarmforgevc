@@ -79,6 +79,23 @@
     "aider" (* 500 attempt)
     (* notify-retry-delay-ms attempt)))
 
+;; 2026-09-21 (Claude Code, operator request): an explicit :text override
+;; reaches the pane completely as-is for a chat-style agent, but a
+;; shell-run-script agent (aider) has no concept of "reply to this message"
+;; distinct from "edit a file" - without the same ban-on-prose-plus-literal-
+;; fallback suffix the aider bootstrap paste already carries
+;; (prompt-engine-lib/aider-no-narration-suffix), any OTHER injected text
+;; (a babysitter health-sweep nudge, a chase wake, ...) got the same
+;; narrate-or-edit response the bootstrap paste used to get. Observed live:
+;; a babysitter nudge into the qwen2.5-coder mono-router coordinator
+;; produced a hallucinated rewrite of ready_for_next.sh (discarded only
+;; because this seat runs --dry-run). Applied once here so every caller of
+;; notify-agent! - not just the bootstrap path - gets it for free.
+(defn- text-for-agent [agent text]
+  (if (= :shell-run-script (:wake-style (agent-runtime-lib/capabilities agent)))
+    (str text prompt-engine-lib/aider-no-narration-suffix prompt-engine-lib/ready-script-rel-path "`")
+    text))
+
 (defn notify-agent!
   "Agent-aware wake with verified submit (replaces one-size-fits-all chat
    wake). An optional :text overrides the agent's default wake message with
@@ -87,7 +104,7 @@
    machinery as the default wake - never a second, duplicated send path."
   [socket session agent & {:keys [log-fn on-outcome script-rel-path text]}]
   (let [steps (if text
-                [{:op :send-literal :text text} {:op :submit}]
+                [{:op :send-literal :text (text-for-agent agent text)} {:op :submit}]
                 (agent-runtime-lib/wake-steps agent :script-rel-path script-rel-path))
         wake-text (:text (first (filter #(= :send-literal (:op %)) steps)))
         log! (or log-fn (fn [& _] nil))
