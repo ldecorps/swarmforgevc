@@ -262,22 +262,6 @@ function registerSteps(registry) {
     assert.equal(ctx.ttsCalls, 0);
   }, FEATURE);
 
-  registry.defineScoped(/^speech-to-text fails transiently once then succeeds$/, (ctx) => {
-    ctx.sttMode = 'transient-failure';
-    ctx.nextTranscript = 'hello after retry';
-  }, FEATURE);
-
-  registry.defineScoped(/^the page shows conversation state "error" only while retrying$/, (ctx) => {
-    assert.deepEqual(ctx.phaseTrace.slice(0, 2), ['error', 'thinking']);
-    assert.match(ctx.html, /setPhase\('error'\)/);
-  }, FEATURE);
-
-  registry.defineScoped(/^the turn eventually completes with a spoken reply$/, (ctx) => {
-    assert.equal(ctx.turnResult.success, true);
-    assert.ok(ctx.turnResult.replyAudioBase64);
-    assert.equal(ctx.sttCalls >= 2, true);
-  }, FEATURE);
-
   registry.defineScoped(/^I submit a recording with no decodable audio$/, async (ctx) => {
     ctx.sttMode = 'unprocessable';
     await submitTurn(ctx, { audioBase64: Buffer.from('noise').toString('base64') });

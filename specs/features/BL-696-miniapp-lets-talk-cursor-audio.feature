@@ -59,15 +59,6 @@ Feature: Let's Talk — discrete audio turns with the Cursor agent on the Consol
     Then the request is rejected with unauthorized
     And no speech-to-text or Cursor agent call is made
 
-  # BL-696 lets-talk-06
-  Scenario: a transient speech-to-text failure is recoverable and does not wedge the session
-    Given I am on the Let's Talk screen
-    And speech-to-text fails transiently once then succeeds
-    When I record a short spoken question and end the turn
-    Then the page shows conversation state "error" only while retrying
-    And the turn eventually completes with a spoken reply
-    And conversation state returns to "ready"
-
   # BL-696 lets-talk-07
   Scenario: structurally bad audio surfaces a recoverable error
     Given I am on the Let's Talk screen

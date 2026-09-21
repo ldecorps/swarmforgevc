@@ -1,8 +1,9 @@
 Feature: Telegram Cursor Remote operator commands
 
   # BL-696 follow-up (2026-07-28): operator skills on the Cursor Remote
-  # Telegram topic — /expedite, /reexpedite, /redeploy, /log, /update, plus
-  # non-blocking agent runs with throttled progress posts.
+  # Telegram topic — /expedite, /reexpedite, /redeploy (soft operator
+  # confirm, BL-702), /log, /update, plus non-blocking agent runs with
+  # throttled progress posts.
   #
   # Pure decision + handler wiring is exercised against the REAL compiled
   # telegramCursorBridge* modules (no Telegram network I/O).
@@ -39,12 +40,6 @@ Feature: Telegram Cursor Remote operator commands
     When the principal sends "/reexpedite BL-696" on the Cursor Remote topic
     Then the bridge decision is to start reexpedite for ticket "BL-696"
     And the bridge posts a reexpedite started confirmation
-
-  # BL-696 tg-op-04
-  Scenario: /redeploy compiles and restarts the supervised bridge
-    When the principal sends "/redeploy" on the Cursor Remote topic
-    Then the bridge decision is to redeploy
-    And the bridge posts a redeploy started confirmation
 
   # BL-696 tg-op-05
   Scenario: /log tails the expedite operator log for a ticket

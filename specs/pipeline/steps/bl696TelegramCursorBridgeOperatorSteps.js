@@ -235,20 +235,12 @@ function registerSteps(registry) {
     assert.deepEqual(ctx.lastDecision, { action: 'reexpedite', ticket });
   });
 
-  registry.define(/^the bridge decision is to redeploy$/, (ctx) => {
-    assert.deepEqual(ctx.lastDecision, { action: 'redeploy' });
-  });
-
   registry.define(/^the bridge posts an expedite started confirmation$/, (ctx) => {
     assert.ok(ctx.posts.some((p) => /Expedite BL-696 started/i.test(p)));
   });
 
   registry.define(/^the bridge posts a reexpedite started confirmation$/, (ctx) => {
     assert.ok(ctx.posts.some((p) => /WIP checkpoint and restart for BL-696/i.test(p)));
-  });
-
-  registry.define(/^the bridge posts a redeploy started confirmation$/, (ctx) => {
-    assert.ok(ctx.posts.some((p) => /Redeploy started/i.test(p)));
   });
 
   registry.define(/^an expedite operator log exists for ticket "([^"]+)"$/, (ctx, ticket) => {

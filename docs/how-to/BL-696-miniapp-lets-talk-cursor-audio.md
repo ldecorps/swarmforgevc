@@ -20,7 +20,11 @@ new-session routes require the console control token.
 The screen shows:
 
 - a tap-to-toggle **Record** control (tap once to start, tap again to stop);
-- conversation state (`ready`, `thinking`, `speaking`, or `error`);
+- conversation state (`ready`, `thinking`, or `speaking`) — a failed turn
+  shows an inline error message and returns to `ready` rather than
+  entering a separate `error` phase (BL-1681, retiring the earlier
+  `error`-phase behaviour); the **bridge health** badge below degrades
+  instead;
 - status badges for **wake lock**, **bridge health**, and **PWA install**;
 - optional **Hands-free**, **Mute voice playback**, **Keep screen awake**, and
   **Hold music** toggles;
@@ -159,9 +163,11 @@ when `/lets-talk` stays down (see the
   console control auth as the other Mini App control routes (bearer plus
   `X-Control-Token`). A missing or wrong token returns **401** with no
   speech-to-text spend and no agent prompt.
-- Transient speech-to-text errors retry within a bounded budget; the screen
-  briefly shows **error** while retrying, then completes or surfaces a
-  recoverable message.
+- Transient speech-to-text errors retry within a bounded budget: the turn
+  route reports the failure as `recoverable: true, state: 'error'` and the
+  retried turn completes or, once the budget is exhausted, surfaces a
+  recoverable message — the conversation state stays `thinking`/`ready`
+  throughout, never a separate on-screen `error` phase (BL-1681).
 - Structurally bad audio surfaces a recoverable on-screen error and does not
   wedge the session.
 
