@@ -30,7 +30,7 @@ required_wiring:
   - 'swarmforge/git-hooks/pre-commit::run_guard check_shell_test_early_exit_pipe.sh::the guard is reached from the shared chain like every other content guard'
   - 'specs/pipeline/steps/bl1665ShellTestEarlyExitPipeSteps.js::registerSteps::the handler lands in the same parcel as the feature (BL-233, BL-1371)'
 
-human_approval: pending
+human_approval: approved
 approval_context: >
   A new feature file and a new commit-chain guard are authored here, so
   it needs a tap. No choice is posed and there are no ruling_options.
