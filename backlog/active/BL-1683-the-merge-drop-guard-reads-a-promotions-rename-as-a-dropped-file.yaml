@@ -146,3 +146,5 @@ notes: |
   Census (BL-1445): `git log --since='2026-09-21 00:00' --format=%s
   origin/main | grep -c '^Promote'` = 14 on the day of the mint; each is
   a `git mv` paused -> active plus one line.
+
+assigned_to: coder
