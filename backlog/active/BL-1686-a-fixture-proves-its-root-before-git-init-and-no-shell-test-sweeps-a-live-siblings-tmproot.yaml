@@ -160,3 +160,5 @@ notes: |
   guard call proves presence, never placement; when the placement IS the
   contract, the scenario must drive the call site under the failure that
   makes placement matter.
+
+assigned_to: coder
