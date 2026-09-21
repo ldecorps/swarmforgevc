@@ -70,16 +70,113 @@ source "$SCRIPT_DIR/babysitterd_census_lib.sh"
 # window. A missing compile is a loud skip, never a bedtime failure - the
 # ceremony is additive to bedtime's own contract (BL-762), not a new way for it
 # to fail closed.
+#
+# BL-1640: a single tick is ONE step of the ceremony's state machine (freeze,
+# OR drain-to-briefing, OR briefing-to-done) - the daemon's later sweeps used
+# to drive the rest, but finish-shift stops the stack seconds after this
+# call, so a weekday bedtime got only the freeze and nothing after it (no
+# lean packet, no documenter instruction). This now LOOPS the same CLI,
+# unchanged, until its own state reports the sleep done, bounded by a
+# ceiling (the state's own hardDeadlineMs, which already folds in the drain
+# and briefing budgets, plus a fixed grace) so bedtime still never hangs on a
+# ceremony that never finishes.
+#
+# Seams (tests):
+#   FINISH_SHIFT_CEREMONY_CLI            — override the CLI path/command
+#                                           entirely (the fixture never has
+#                                           its own compiled extension/out;
+#                                           scenario 06 also uses this to
+#                                           swap in a stand-in that never
+#                                           reports done).
+#   FINISH_SHIFT_CEREMONY_TICK_SECONDS   — sleep between ticks (default 30,
+#                                           0 in tests).
+_finish_shift_ceremony_lib_dir() {
+  cd "$(dirname "${BASH_SOURCE[0]}")" && pwd
+}
+
+# The decision helper lives in THIS repo's own compiled machinery, resolved
+# from where this library file sits - never from `--target`, which may be an
+# unrelated (or fixture) root with no compiled extension/out of its own.
+_finish_shift_ceremony_repo_root() {
+  cd "$(_finish_shift_ceremony_lib_dir)/../.." && pwd
+}
+
+_finish_shift_now_ms() {
+  node -e 'process.stdout.write(String(Date.now()))'
+}
+
+# Reads .state.<field> out of one tick's JSON stdout. Empty output (never a
+# bash error) on anything unreadable - absence is for the caller to decide.
+_finish_shift_ceremony_state_field() {  # <json> <field>
+  local json="$1" field="$2"
+  printf '%s' "$json" | node -e '
+    const fs = require("fs");
+    try {
+      const data = JSON.parse(fs.readFileSync(0, "utf8"));
+      const v = data && data.state ? data.state[process.argv[1]] : undefined;
+      if (v === undefined || v === null) process.exit(0);
+      process.stdout.write(String(v));
+    } catch {
+      process.exit(0);
+    }
+  ' "$field" 2>/dev/null
+}
+
+# wait | done | overran — the one decision the loop below acts on, computed
+# by the SAME pure function the property test covers (BL-654 invariant 1),
+# never a second copy of the ceiling arithmetic here.
+_finish_shift_sleep_loop_decision() {  # <phase-or-empty> <now_ms> <hard_deadline_ms>
+  local phase="$1" now_ms="$2" hard_deadline_ms="$3" repo_root="$4"
+  node -e '
+    const path = require("path");
+    const { sleepLoopDecision } = require(
+      path.join(process.argv[1], "extension", "out", "quality", "nightClosingCeremonyLive.js")
+    );
+    const phase = process.argv[2] === "" ? undefined : process.argv[2];
+    process.stdout.write(sleepLoopDecision(phase, Number(process.argv[3]), Number(process.argv[4])));
+  ' "$repo_root" "$phase" "$now_ms" "$hard_deadline_ms"
+}
+
 finish_shift_run_closing_ceremony() {
   local root="$1"
-  local cli="$root/extension/out/tools/night-closing-ceremony-run.js"
+  local cli="${FINISH_SHIFT_CEREMONY_CLI:-$root/extension/out/tools/night-closing-ceremony-run.js}"
   if [[ ! -f "$cli" ]]; then
     echo "finish-shift: closing-ceremony CLI not compiled ($cli) - skipping ceremony" >&2
     return 0
   fi
-  if ! node "$cli" --target "$root" --sleep-path finish-shift; then
-    echo "finish-shift: closing ceremony exited non-zero - continuing bedtime" >&2
-  fi
+  local repo_root
+  repo_root="$(_finish_shift_ceremony_repo_root)"
+  local tick_seconds="${FINISH_SHIFT_CEREMONY_TICK_SECONDS:-30}"
+  local out phase hard_deadline_ms now_ms decision
+
+  while :; do
+    if ! out="$(node "$cli" --target "$root" --sleep-path finish-shift 2>&1)"; then
+      echo "finish-shift: closing ceremony exited non-zero - continuing bedtime" >&2
+      echo "$out" >&2
+      return 0
+    fi
+    hard_deadline_ms="$(_finish_shift_ceremony_state_field "$out" hardDeadlineMs)"
+    if [[ -z "$hard_deadline_ms" ]]; then
+      # No state at all (the gate bypass, unreachable with --sleep-path set,
+      # or an unreadable tick) - never loop forever on a read failure.
+      return 0
+    fi
+    phase="$(_finish_shift_ceremony_state_field "$out" phase)"
+    now_ms="$(_finish_shift_now_ms)"
+    decision="$(_finish_shift_sleep_loop_decision "$phase" "$now_ms" "$hard_deadline_ms" "$repo_root")"
+    case "$decision" in
+      done) return 0 ;;
+      overran)
+        echo "finish-shift: closing ceremony overran its budgets - stopping anyway" >&2
+        return 0
+        ;;
+      wait) sleep "$tick_seconds" ;;
+      *)
+        echo "finish-shift: closing ceremony decision unreadable ($decision) - continuing bedtime" >&2
+        return 0
+        ;;
+    esac
+  done
 }
 
 finish_shift_stop_ancillaries() {

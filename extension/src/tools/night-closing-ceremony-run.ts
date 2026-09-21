@@ -431,6 +431,40 @@ function gateModeLabel(gateMode: string, sleepPath: string | null): string {
   return sleepPath === null ? gateMode : `sleep:${sleepPath}`;
 }
 
+const DEFAULT_DRAIN_BUDGET_MINUTES = 25;
+const DEFAULT_BRIEFING_BUDGET_MINUTES = 10;
+
+// BL-1640: a sleep's deadlines are relative to ITS OWN start time, never to
+// the daemon's closure-scheduled stop time - a sleep at 16:00 must never
+// inherit a hard deadline that (like the morning's 08:45) has already
+// passed. The daemon's own window arithmetic (parseHmToMs against
+// closureStopLocal, a hardcoded 25-minute drain) is unchanged - this path
+// is reached only when sleepPath is set.
+function sleepRelativeDeadlines(
+  nowMs: number,
+  gate: { drainBudgetMinutes?: number; briefingBudgetMinutes?: number }
+): { drainBudgetMs: number; hardDeadlineMs: number } {
+  const drainMinutes = gate.drainBudgetMinutes ?? DEFAULT_DRAIN_BUDGET_MINUTES;
+  const briefingMinutes = gate.briefingBudgetMinutes ?? DEFAULT_BRIEFING_BUDGET_MINUTES;
+  const drainBudgetMs = drainMinutes * 60_000;
+  return { drainBudgetMs, hardDeadlineMs: nowMs + drainBudgetMs + briefingMinutes * 60_000 };
+}
+
+// BL-1640: a sleep path gets deadlines relative to its own start; the
+// daemon's own window path keeps parseHmToMs against closureStopLocal.
+// Extracted so `runNightClosingCeremony`'s own complexity does not carry
+// this branch's decision point (differential complexity gate, workflow.prompt).
+function resolveCeremonyDeadlines(
+  nowMs: number,
+  gate: { drainBudgetMinutes?: number; briefingBudgetMinutes?: number; closureStopLocal?: string },
+  sleepPath: string | null
+): { drainBudgetMs: number; hardDeadlineMs: number } {
+  if (sleepPath !== null) {
+    return sleepRelativeDeadlines(nowMs, gate);
+  }
+  return { drainBudgetMs: 25 * 60_000, hardDeadlineMs: parseHmToMs(nowMs, gate.closureStopLocal ?? '06:00') };
+}
+
 export function runNightClosingCeremony(
   target: string,
   confPath: string,
@@ -447,8 +481,7 @@ export function runNightClosingCeremony(
   }
 
   const nightKey = localDayKey(nowMs);
-  const hardDeadlineMs = parseHmToMs(nowMs, gate.closureStopLocal ?? '06:00');
-  const drainBudgetMs = 25 * 60_000;
+  const { drainBudgetMs, hardDeadlineMs } = resolveCeremonyDeadlines(nowMs, gate, sleepPath);
   const flight = deps.scanInFlight(target);
   const obs = {
     nowMs,
@@ -462,6 +495,7 @@ export function runNightClosingCeremony(
     heldParcelIds: deps.scanHeld(target),
     briefingAlreadySent: deps.briefingSent(target, nightKey),
     workedAShift: deps.workedAShift(target),
+    fromSleep: sleepPath !== null,
   };
 
   // Continue in-progress nights even outside the begin window.

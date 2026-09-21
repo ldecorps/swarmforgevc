@@ -58,6 +58,10 @@ function inCeremonyWindow(nowMs: number, beginMin: number, closureMin: number): 
 export function evaluateGate(confContent: string, nowMs: number) {
   const schedule = resolveClosureSchedule(confContent);
   const consultFixed = shouldConsultFixedMorningTrigger(schedule);
+  // BL-1640: read once, expose on every branch - a sleep bypasses the
+  // schedule-validity check entirely (it is due whatever the hour) but
+  // still needs usable drain/briefing minutes for its own deadline math.
+  const budgets = readBudgets(confContent);
   if (schedule.state !== 'ok') {
     return {
       mode: 'fixed-time' as const,
@@ -65,9 +69,10 @@ export function evaluateGate(confContent: string, nowMs: number) {
       surfaced: schedule.surfaced,
       consultFixedMorningTrigger: consultFixed,
       ceremonyDue: false,
+      drainBudgetMinutes: budgets.drainBudgetMinutes,
+      briefingBudgetMinutes: budgets.briefingBudgetMinutes,
     };
   }
-  const budgets = readBudgets(confContent);
   const begin = resolveCeremonyBegin(schedule.closure, budgets);
   const beginMin = minutesOfDay(begin);
   const closureMin = minutesOfDay(schedule.closure);
@@ -80,6 +85,8 @@ export function evaluateGate(confContent: string, nowMs: number) {
     ceremonyDue,
     ceremonyBeginLocal: formatLocalTime(begin),
     closureStopLocal: formatLocalTime(schedule.closure),
+    drainBudgetMinutes: budgets.drainBudgetMinutes,
+    briefingBudgetMinutes: budgets.briefingBudgetMinutes,
   };
 }
 
