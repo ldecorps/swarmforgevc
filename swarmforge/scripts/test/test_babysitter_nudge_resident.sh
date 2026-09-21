@@ -72,6 +72,19 @@ grep -q "^SKIP_BUSY:" <<< "$OUT" || fail "02: expected SKIP_BUSY; got: $OUT"
 grep -q -- '-l' "$CALL_LOG" && fail "02: must not send literal while pane busy; log: $(cat "$CALL_LOG")"
 pass "02: mid-turn pane skips inject (SKIP_BUSY)"
 
+# ── 3b: aider-agent role — no inject at all, SKIP_AIDER_AGENT ───────────────
+AIDER_WT="$ROOT/.worktrees/coordinator"
+printf 'coordinator\tmaster\t%s\tswarmforge-coordinator\tCoordinator\taider\ttask\n' "$AIDER_WT" \
+  >> "$ROOT/.swarmforge/roles.tsv"
+printf '❯ \n' > "$BEFORE_STDOUT_FILE"
+printf '❯ \n' > "$AFTER_STDOUT_FILE"
+: > "$CALL_LOG"
+echo 0 > "$CAPTURE_COUNT_FILE"
+OUT="$(PATH="$FAKE_BIN:$PATH" bb "$NUDGE" "$ROOT" coordinator "$MSG")"
+grep -q "^SKIP_AIDER_AGENT:" <<< "$OUT" || fail "03b: expected SKIP_AIDER_AGENT; got: $OUT"
+grep -q -- '-l' "$CALL_LOG" && fail "03b: must never inject text into an aider seat; log: $(cat "$CALL_LOG")"
+pass "03b (2026-09-21): an aider-agent role is never nudged — SKIP_AIDER_AGENT, no injection"
+
 # ── 3: no swarm — graceful NO_NUDGE ─────────────────────────────────────────
 NO_SWARM="$(mktemp -d)"
 OUT="$(bb "$NUDGE" "$NO_SWARM" coder "$MSG")"

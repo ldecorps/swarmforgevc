@@ -42,9 +42,27 @@
   [pane-text]
   (chase-sweep-lib/actively-processing? pane-text))
 
+;; 2026-09-21 (Claude Code, operator request): "never nudge an aider
+;; coordinator" (the llama3.1:8b incident this repo already carries) - a
+;; shell-run-script agent (aider) has no concept of "reply to this
+;; message" distinct from "edit a file", so any injected nudge text reads
+;; as a task and gets a hallucinated edit in response, regardless of
+;; wording (agent_runtime_inject.bb's aider-no-narration-suffix already
+;; helps, but does not reliably stop this for a nudge that names a
+;; specific file and says "investigate and take action" - proven live
+;; against the qwen2.5-coder mono-router coordinator, which produced a
+;; fabricated ready_for_next.sh rewrite even with that suffix present).
+;; Cheap for aider seats specifically: this pack already runs the
+;; coordinator with --dry-run --no-auto-commits, so no code ever lands
+;; from a hallucinated edit - but every such nudge still burns a full,
+;; slow CPU-bound turn producing throwaway work instead of investigating
+;; anything. Structural skip, not another wording attempt.
+(defn aider-agent? [agent]
+  (= :shell-run-script (:wake-style (agent-runtime-lib/capabilities agent))))
+
 (defn nudge-resident!
   "Verified inject of instruction text into a swarm role pane.
-   Returns {:status :nudged|:skip-busy|:no-target|:failed :detail ...}."
+   Returns {:status :nudged|:skip-busy|:skip-aider-agent|:no-target|:failed :detail ...}."
   [project-root role-name text & {:keys [log-fn]}]
   (let [text (str/trim (str text))
         log! (or log-fn (fn [& _] nil))]
@@ -56,11 +74,20 @@
       (if-let [target (resolve-nudge-target project-root role-name)]
         (let [{:keys [socket wake-session agent role]} target
               pane (try (capture-pane-text socket wake-session) (catch Exception _ ""))]
-          (if (pane-busy? pane)
+          (cond
+            (aider-agent? agent)
+            {:status :skip-aider-agent
+             :role role
+             :session wake-session
+             :detail "aider seat — nudge withheld, not injected (see aider-agent? for why)"}
+
+            (pane-busy? pane)
             {:status :skip-busy
              :role role
              :session wake-session
              :detail "pane mid-turn (esc to interrupt) — retry when idle"}
+
+            :else
             (try
               (let [result (agent-runtime-inject/notify-agent!
                             socket wake-session (or agent "claude")
@@ -82,6 +109,7 @@
   (case status
     :nudged (str "NUDGED: " role " via " session)
     :skip-busy (str "SKIP_BUSY: " role " — " detail)
+    :skip-aider-agent (str "SKIP_AIDER_AGENT: " role " — " detail)
     :no-target (str "NO_NUDGE: " detail)
     :failed (str "FAILED: " (or detail "unknown"))
     (str "FAILED: " (or detail "unknown"))))
