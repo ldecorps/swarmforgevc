@@ -3778,6 +3778,73 @@ RESOLVED BY THIS TICKET
           (assert-true "BL-1670 negative control: the sibling stays unlanded, never silently dropped"
                        (contains? (:unlanded plan) "BL-9002")))))))
 
+;; ── BL-1670 ground (a) fold isolation: stray-content-subset-of-origin-main?
+;; folds `every?` over `paths` - a stray that genuinely touches more than
+;; one backlog/evidence/ or docs/ path (the everyday shape: an incident
+;; note plus a linked doc) must be reported subset ONLY when EVERY one of
+;; its paths is a content subset of origin/main's copy, never when just
+;; one qualifies. A `some` in place of `every?` here would wrongly say
+;; subset because the genuinely-subset path alone is enough to satisfy it.
+(with-fixture [root]
+  (commit! root "backlog/evidence/BL-9002-a.md" "a\nb\n" "seed origin content A")
+  (let [origin (:out (sh! root "git" "rev-parse" "HEAD"))]
+    (commit! root "backlog/evidence/BL-9002-a.md" "a\n" "stray removes a line from A, adds nothing")
+    (commit! root "docs/how-to/BL-9002-b.md" "new content B\n" "stray also adds a brand-new path B, absent from origin-main")
+    (let [stray (:out (sh! root "git" "rev-parse" "HEAD"))]
+      (assert-false "BL-1670 ground (a) fold: a two-path stray where only one path is a content subset is NOT reported subset overall"
+                    (boolean (land-step-lib/stray-content-subset-of-origin-main?
+                              root origin stray
+                              ["backlog/evidence/BL-9002-a.md" "docs/how-to/BL-9002-b.md"])))
+      (assert-true "BL-1670 ground (a) fold sanity: the single genuinely-subset path alone IS reported subset"
+                   (boolean (land-step-lib/stray-content-subset-of-origin-main?
+                             root origin stray
+                             ["backlog/evidence/BL-9002-a.md"]))))))
+
+;; ── BL-1670 ground (b) fold isolation: stray-superseded-verdict folds
+;; `every?` over the blamed shas' ancestor-of-origin/main check. A two-path
+;; conflict where BOTH blamed lines are tagged the stray's own sibling
+;; ticket, but only ONE of those blamed commits is actually an ancestor of
+;; origin/main (the other simulates an EARLIER stray already cherry-picked
+;; onto scratch this same replay walk, not yet on origin/main - exactly
+;; the "to one not (yet) on origin/main" case the function's own docstring
+;; names) must still escalate, never supersede. The owner-tag equality
+;; check alone (unmutated `=`) cannot catch this: both blamed commits
+;; share the same owner tag, so only the ancestor fold can tell them apart.
+(with-fixture [root]
+  (commit! root "docs/how-to/BL-9002-b-guide.md" "Alpha\nBeta\n" "seed doc B")
+  (commit! root "docs/how-to/BL-9002-a-guide.md" "Header\nStep 1\nStep 2\n" "seed doc A")
+  (let [branch-point (:out (sh! root "git" "rev-parse" "HEAD"))]
+    (commit! root "docs/how-to/BL-9002-b-guide.md" "Alpha\nBeta (rebuilt on origin-main, fixes typo)\n"
+             "BL-9002: rebuild B's step")
+    (sh! root "git" "update-ref" "refs/remotes/origin/main" "HEAD")
+    (commit! root "docs/how-to/BL-9002-a-guide.md" "Header\nStep 1\nStep 2 (in-flight cherry-pick, not yet on origin-main)\n"
+             "BL-9002: in-flight cherry-pick already applied to scratch")
+    ;; role branch: the stray under test - ONE commit (the pure-evidence
+    ;; stray's own :delivered diff is a single commit, closed-owner-pure-
+    ;; evidence-stray?'s own shape) touching BOTH paths differently from
+    ;; either main-line commit.
+    (sh! root "git" "checkout" "-q" "-b" "role" branch-point)
+    (fs/create-dirs (fs/parent (fs/path root "docs/how-to/BL-9002-a-guide.md")))
+    (spit (str (fs/path root "docs/how-to/BL-9002-a-guide.md")) "Header\nStep 1\nStep 2 (old wording from role)\n")
+    (spit (str (fs/path root "docs/how-to/BL-9002-b-guide.md")) "Alpha\nBeta (old wording from role)\n")
+    (sh! root "git" "add" "-A")
+    (sh! root "git" "commit" "-q" "-m" "BL-9002: incident evidence, committed after the ticket moved on")
+    (let [stray (:out (sh! root "git" "rev-parse" "HEAD"))]
+      ;; scratch = the working tree checked out on `main` (HEAD = the
+      ;; in-flight commit), simulating scratch mid-replay after an earlier
+      ;; stray already cherry-picked. Cherry-pick the stray commit directly
+      ;; here (same repo, same checkout) to produce real conflict markers
+      ;; on both paths.
+      (sh! root "git" "checkout" "-q" "main")
+      (sh! root "git" "cherry-pick" "-x" stray)
+      (let [verdict (land-step-lib/stray-superseded-verdict
+                     {:root root :scratch root :origin-main "refs/remotes/origin/main"
+                      :sha stray :owner "BL-9002"
+                      :paths ["docs/how-to/BL-9002-a-guide.md" "docs/how-to/BL-9002-b-guide.md"]})]
+        (assert= "BL-1670 ground (b) fold: a two-path conflict where only one blamed commit is an ancestor of origin/main must not be reported superseded"
+                 nil verdict)
+        (sh! root "git" "cherry-pick" "--abort")))))
+
 (if (seq @failures)
   (do
     (doseq [f @failures] (println f))
