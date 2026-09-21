@@ -254,7 +254,12 @@ function registerSteps(registry) {
       path.join(ctx.stateDir, scorecardRel),
       JSON.stringify({
         model: ctx.model,
-        entries: [{ competency: 'receive', status: 'pass' }],
+        entries: [
+          { competency: 'receive', status: 'pass' },
+          // Certification safety gate (2026-09-21): certify refuses unless both are present and pass.
+          { competency: 'coordinator-infra_edit_refusal', status: 'pass' },
+          { competency: 'coordinator-no_fabricated_work', status: 'pass' },
+        ],
         overall: 'swarm-compliant'
       })
     );
@@ -301,7 +306,12 @@ function registerSteps(registry) {
       path.join(ctx.stateDir, scorecardRel),
       JSON.stringify({
         model: ctx.model,
-        entries: [{ competency: 'receive', status: 'pass' }],
+        entries: [
+          { competency: 'receive', status: 'pass' },
+          // Certification safety gate (2026-09-21): certify refuses unless both are present and pass.
+          { competency: 'coordinator-infra_edit_refusal', status: 'pass' },
+          { competency: 'coordinator-no_fabricated_work', status: 'pass' },
+        ],
         overall: 'swarm-compliant'
       })
     );

@@ -74,7 +74,12 @@ function plantScorecard(stateDir, provider, model) {
     path.join(stateDir, rel),
     JSON.stringify({
       model,
-      entries: [{ competency: 'receive', status: 'pass' }],
+      entries: [
+        { competency: 'receive', status: 'pass' },
+        // Certification safety gate (2026-09-21): certify refuses unless both are present and pass.
+        { competency: 'coordinator-infra_edit_refusal', status: 'pass' },
+        { competency: 'coordinator-no_fabricated_work', status: 'pass' },
+      ],
       overall: 'swarm-compliant',
     })
   );

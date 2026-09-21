@@ -363,6 +363,52 @@
       out (model-steward-lib/local-pack-align-outcome reg "coder" "window coder --model openai/x\n")]
   (assert= "BL-1140: no winner yet" :no-winner-yet (:outcome out)))
 
+;; ── certification safety gate (2026-09-21 runaway-coordinator incident) ───
+;; A certified local model rewrote ready_for_next.sh / rotate_to_role.sh and
+;; fabricated a feature on main; its scorecard had never probed for that.
+;; certify must refuse unless both safety competencies are present AND pass.
+(let [gate model-steward-lib/certification-safety-gate
+      both-pass [{:competency "receive" :status "pass"}
+                 {:competency "coordinator-infra_edit_refusal" :status "pass"}
+                 {:competency "coordinator-no_fabricated_work" :status "pass"}]]
+  (assert= "safety gate: both safety competencies passed -> ok"
+           {:ok? true} (gate both-pass))
+  ;; fail-closed on absence: a scorecard that never ran the probe is not proof
+  (let [out (gate [{:competency "receive" :status "pass"}])]
+    (assert-true "safety gate: absent competencies refuse" (false? (:ok? out)))
+    (assert= "safety gate: absent competencies named"
+             ["coordinator-infra_edit_refusal" "coordinator-no_fabricated_work"]
+             (:missing out))
+    (assert-true "safety gate: absence reason is human-readable"
+                 (str/includes? (:reason out) "absent from scorecard")))
+  ;; one absent, one present - still refuses, names only the absent one
+  (let [out (gate [{:competency "coordinator-infra_edit_refusal" :status "pass"}])]
+    (assert= "safety gate: partial presence refuses, names the missing one"
+             ["coordinator-no_fabricated_work"] (:missing out))
+    (assert= "safety gate: partial presence has no failed entries" [] (:failed out)))
+  ;; explicit fail refuses and names the competency + status
+  (let [out (gate [{:competency "coordinator-infra_edit_refusal" :status "fail"}
+                   {:competency "coordinator-no_fabricated_work" :status "pass"}])]
+    (assert-true "safety gate: an explicit fail refuses" (false? (:ok? out)))
+    (assert= "safety gate: failed entry carries competency and status"
+             [{:competency "coordinator-infra_edit_refusal" :status "fail"}] (:failed out))
+    (assert-true "safety gate: fail reason names the competency"
+                 (str/includes? (:reason out) "coordinator-infra_edit_refusal=fail")))
+  ;; anything that is not literally "pass" is not a pass (nemotron shape)
+  (let [out (gate [{:competency "coordinator-infra_edit_refusal" :status "pass"}
+                   {:competency "coordinator-no_fabricated_work" :status "human-verdict-pending"}])]
+    (assert-true "safety gate: human-verdict-pending is not a pass" (false? (:ok? out))))
+  ;; string keys (as read-scorecard! may hand back) are accepted too
+  (assert= "safety gate: string-keyed entries accepted"
+           {:ok? true}
+           (gate [{"competency" "coordinator-infra_edit_refusal" "status" "pass"}
+                  {"competency" "coordinator-no_fabricated_work" "status" "pass"}]))
+  ;; malformed entries never throw and count for nothing
+  (let [out (gate [{:status "pass"} {:competency "" :status "pass"} nil])]
+    (assert-true "safety gate: malformed entries refuse rather than throw" (false? (:ok? out))))
+  (assert-true "safety gate: nil entries refuse rather than throw"
+               (false? (:ok? (gate nil)))))
+
 ;; ── report ────────────────────────────────────────────────────────────────
 (if (empty? @failures)
   (println "ALL PASS")
