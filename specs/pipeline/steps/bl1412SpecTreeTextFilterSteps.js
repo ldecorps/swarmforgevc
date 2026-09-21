@@ -14,10 +14,17 @@ const fs = require('node:fs');
 const os = require('node:os');
 const path = require('node:path');
 const { execFileSync } = require('node:child_process');
-const { afterEach } = require('node:test');
-const { JSDOM } = require(path.join(__dirname, '..', '..', '..', 'extension', 'node_modules', 'jsdom'));
 
 const { startBridge } = require('../../../extension/out/bridge/bridgeServer');
+
+// BL-1630: the path only - jsdom is actually require()'d inside
+// renderSpecTreeScreen (bl1046/bl1160's own lazy pattern), so a mere
+// require() of this file never pays for loading it. Discovered as a
+// hidden cost this ticket's own bl1153 fix unmasked: bl1153 used to be
+// alphabetically first to eagerly require jsdom in a sequential registry
+// census, so this file's own identical eager require rode free on
+// bl1153's cache entry until that got fixed.
+const JSDOM_MODULE = path.join(__dirname, '..', '..', '..', 'extension', 'node_modules', 'jsdom');
 
 const FEATURE = 'BL-1412 A text filter on the live Spec-tree console narrows the milestones view to matching tickets';
 const TOKEN = 'bl1412-spec-tree-token';
@@ -135,6 +142,7 @@ async function ensureBridge(ctx) {
 }
 
 async function renderSpecTreeScreen(ctx) {
+  const { JSDOM } = require(JSDOM_MODULE);
   const port = ctx.bridgeHandle.port;
   const res = await fetch(`http://127.0.0.1:${port}/spec-tree`);
   assert.equal(res.status, 200);
@@ -190,18 +198,22 @@ function stopBridge(ctx) {
     ctx.dom = null;
   }
 }
-afterEach(() => {
-  if (!currentCtx) {
-    return;
-  }
-  stopBridge(currentCtx);
-  if (currentCtx.root) {
-    fs.rmSync(currentCtx.root, { recursive: true, force: true });
-  }
-  currentCtx = undefined;
-});
-
 function registerSteps(registry) {
+  // BL-1630: node:test required here, not at module load - a mere
+  // require() of this file registers no test runner (no exit listeners,
+  // no TAP epilogue) for a consumer that never calls registerSteps.
+  const { afterEach } = require('node:test');
+  afterEach(() => {
+    if (!currentCtx) {
+      return;
+    }
+    stopBridge(currentCtx);
+    if (currentCtx.root) {
+      fs.rmSync(currentCtx.root, { recursive: true, force: true });
+    }
+    currentCtx = undefined;
+  });
+
   const scoped = (re, fn) => registry.defineScoped(re, fn, FEATURE);
 
   // ── Background ───────────────────────────────────────────────────────

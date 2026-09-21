@@ -81,8 +81,6 @@ function reconcileLib(expression) {
   return JSON.parse(r.stdout.trim().split('\n').pop());
 }
 
-sweepStaleFixtures();
-
 function git(root, ...args) {
   execFileSync('git', args, { cwd: root, stdio: 'pipe' });
 }
@@ -96,6 +94,11 @@ const FEATURE = 'main-sync deadlock hints name overlapping paths and teach ./swa
 const MARKED_PATHS = ['docs/how-to/BL-891-master-main-reconcile-sweep.md', 'swarmforge/scripts/handoffd.bb'];
 
 function registerSteps(registry) {
+  // BL-1630: moved from module load - a mere require() of this file
+  // (bl968's tree probe, the BL-761 registration gate) must not pay for
+  // a temp-dir listing that only a real registration needs.
+  sweepStaleFixtures();
+
   const scoped = (re, fn) => registry.defineScoped(re, fn, FEATURE);
 
   scoped(/^a main-sync deadlock is active with reason "dirty"$/, (ctx) => {
