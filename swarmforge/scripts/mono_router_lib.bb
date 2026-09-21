@@ -424,7 +424,16 @@
    (the arity-1 call every pre-BL-651 caller still makes) reproduces BL-636
    ordering byte-for-byte."
   [rows & [starve-after-ms]]
+  ;; The coordinator is never a rotation target (BL-614): it is auto-
+  ;; provisioned on its own pane, and rotating the resident onto it puts a
+  ;; SECOND coordinator on the main checkout and leaves no coder seat. The
+  ;; forward-rotate paths below already exclude it; this chase-redirect
+  ;; selector did not, and on 2026-09-21 the coordinator's own priority-00
+  ;; dropped-parcel self-notes out-ranked every pipeline mailbox, so
+  ;; `chase-rotate-redirect architect coordinator` rotated the resident
+  ;; onto the coordinator (handoffd.log 06:34:15Z).
   (let [ordered (->> rows
+                      (remove #(= "coordinator" (str (:role %))))
                       (filter :actionable?)
                       (sort-by :newest-created-at)
                       reverse

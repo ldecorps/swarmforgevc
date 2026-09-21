@@ -1116,6 +1116,31 @@
          (mono-router-lib/resolve-empty-mailbox-target
           {:forward home-fwd :home-role "coder" :role "QA" :router-preferred "art-director" :known-roles roles}))
 
+;; ── 2026-09-21: the coordinator is never the chase-redirect target ────────
+;; handoffd.log 06:34:15Z: "chase-rotate-redirect architect coordinator" -
+;; the coordinator's own priority-00 dropped-parcel self-notes out-ranked
+;; every pipeline mailbox and the resident was rotated onto the coordinator
+;; seat (a second coordinator on main, no coder). BL-614 already excludes
+;; the coordinator from forward-rotate-target and resolve-empty-mailbox-
+;; target; preferred-rotate-target must agree.
+(assert= "coordinator row is never the preferred rotate target, even at priority 00"
+         "architect"
+         (mono-router-lib/preferred-rotate-target
+          [{:role "coordinator" :newest-created-at "2026-09-21T06:34:00Z" :actionable? true :best-priority 0}
+           {:role "architect"   :newest-created-at "2026-09-21T06:30:00Z" :actionable? true :best-priority 10}]))
+(assert= "coordinator-only actionable mail yields no rotate target"
+         nil
+         (mono-router-lib/preferred-rotate-target
+          [{:role "coordinator" :newest-created-at "2026-09-21T06:34:00Z" :actionable? true :best-priority 0}
+           {:role "coder"       :newest-created-at "2026-09-21T06:30:00Z" :actionable? false :best-priority 50}]))
+(assert= "coordinator exclusion does not disturb the BL-651 starve override among pipeline roles"
+         "cleaner"
+         (mono-router-lib/preferred-rotate-target
+          [{:role "coordinator" :newest-created-at "2026-09-21T06:34:00Z" :actionable? true :best-priority 0 :oldest-actionable-waited-ms 999999}
+           {:role "cleaner"     :newest-created-at "2026-09-21T06:00:00Z" :actionable? true :best-priority 10 :oldest-actionable-waited-ms 600000}
+           {:role "architect"   :newest-created-at "2026-09-21T06:30:00Z" :actionable? true :best-priority 10 :oldest-actionable-waited-ms 1000}]
+          300000))
+
 (when (seq @failures)
   (binding [*out* *err*]
     (doseq [f @failures] (println f)))
