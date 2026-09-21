@@ -40,6 +40,17 @@ else
   fi
 fi
 
+if [[ "${SWARMFORGE_SKIP_RECRUITER_CRON:-}" == "1" ]]; then
+  echo "Skipping weekly recruiter cron install (SWARMFORGE_SKIP_RECRUITER_CRON=1)."
+else
+  # Weekly recruiter (Monday 06:00): Hugging Face -> one candidate -> Model
+  # Steward benchmark + certify. Offer-only - it never staffs a seat or commits.
+  if ! bash "$SCRIPT_DIR/install_recruiter_cron.sh" "$ROOT"; then
+    echo "WARN: weekly recruiter cron install failed for $ROOT" >&2
+    rc=1
+  fi
+fi
+
 # ── BL-1392: is there a cron daemon to schedule INTO? ──────────────────────
 #
 # Every installer above checks that a `crontab` COMMAND exists and then prints

@@ -1116,6 +1116,52 @@
          (mono-router-lib/resolve-empty-mailbox-target
           {:forward home-fwd :home-role "coder" :role "QA" :router-preferred "art-director" :known-roles roles}))
 
+;; ── 2026-09-21: the coordinator is never the chase-redirect target ────────
+;; handoffd.log 06:34:15Z: "chase-rotate-redirect architect coordinator" -
+;; the coordinator's own priority-00 dropped-parcel self-notes out-ranked
+;; every pipeline mailbox and the resident was rotated onto the coordinator
+;; seat (a second coordinator on main, no coder). BL-614 already excludes
+;; the coordinator from forward-rotate-target and resolve-empty-mailbox-
+;; target; preferred-rotate-target must agree.
+(assert= "coordinator row is never the preferred rotate target, even at priority 00"
+         "architect"
+         (mono-router-lib/preferred-rotate-target
+          [{:role "coordinator" :newest-created-at "2026-09-21T06:34:00Z" :actionable? true :best-priority 0}
+           {:role "architect"   :newest-created-at "2026-09-21T06:30:00Z" :actionable? true :best-priority 10}]))
+(assert= "coordinator-only actionable mail yields no rotate target"
+         nil
+         (mono-router-lib/preferred-rotate-target
+          [{:role "coordinator" :newest-created-at "2026-09-21T06:34:00Z" :actionable? true :best-priority 0}
+           {:role "coder"       :newest-created-at "2026-09-21T06:30:00Z" :actionable? false :best-priority 50}]))
+(assert= "coordinator exclusion does not disturb the BL-651 starve override among pipeline roles"
+         "cleaner"
+         (mono-router-lib/preferred-rotate-target
+          [{:role "coordinator" :newest-created-at "2026-09-21T06:34:00Z" :actionable? true :best-priority 0 :oldest-actionable-waited-ms 999999}
+           {:role "cleaner"     :newest-created-at "2026-09-21T06:00:00Z" :actionable? true :best-priority 10 :oldest-actionable-waited-ms 600000}
+           {:role "architect"   :newest-created-at "2026-09-21T06:30:00Z" :actionable? true :best-priority 10 :oldest-actionable-waited-ms 1000}]
+          300000))
+
+;; ── 2026-09-21: a marker naming the coordinator never seats the resident ──
+;; The launcher honoured a stale mono-router-active-role=coordinator marker
+;; (left by the chase mis-rotation above) and booted the resident AS the
+;; coordinator on the main checkout: two coordinators, no coder. roles.tsv
+;; lists the coordinator, so the known-roles check alone let it through.
+(let [out (mono-router-lib/resolve-boot-role
+           {:home-role "coder" :recorded-role "coordinator"
+            :known-roles ["coder" "coordinator" "QA" "architect"] :rotation-mode "router"})]
+  (assert= "boot: coordinator marker falls back to home" "coder" (:role out))
+  (assert-true "boot: coordinator marker is a loud fallback" (true? (:fallback? out)))
+  (assert= "boot: coordinator marker names its reason" :coordinator-never-resident (:reason out)))
+(assert= "boot: a real dormant role in the marker still boots as that role"
+         "QA"
+         (:role (mono-router-lib/resolve-boot-role
+                 {:home-role "coder" :recorded-role "QA"
+                  :known-roles ["coder" "coordinator" "QA"] :rotation-mode "router"})))
+(assert= "ensure: resident-launch-role never restores the coordinator script on the resident"
+         "coder" (mono-router-lib/resident-launch-role "coder" "coordinator"))
+(assert= "ensure: resident-launch-role still restores a real rotated role"
+         "architect" (mono-router-lib/resident-launch-role "coder" "architect"))
+
 (when (seq @failures)
   (binding [*out* *err*]
     (doseq [f @failures] (println f)))
