@@ -159,3 +159,11 @@ notes: |
   IR-DRY at mint: scenarios share the roster-row Given by design.
 
 assigned_to: coder
+bounce_count: 1
+bounce_history:
+  - { at: 2026-09-20, by: QA, blamed: coder, class: behavior, commit: bc88388df9, evidence: backlog/evidence/BL-1657-bounce-20260920.md }
+abandoned_commits: [a8f0779522]
+# a8f0779522 was the QA-approved commit (second pass, NONE); land_step_cli.bb
+# hit LAND_ESCALATE on the empty-diff closed-owner stray 5dbfd9b6a6 (condition
+# g, backlog/evidence/BL-1537-specifier-land-escalate-adjudication-closed-owner-20260912.md).
+# Landed instead as the hand-built tip-pure commit f2f7dfa737 (own paths only).
