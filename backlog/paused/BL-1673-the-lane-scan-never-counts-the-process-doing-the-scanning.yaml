@@ -1,0 +1,177 @@
+id: BL-1673
+title: "lane-running? (lane_process_lib.bb, BL-1652) counts the process that is doing the scanning: a probe whose own argv both matches the lane pattern and names the worktree reads true, and under a Stryker sandbox every bb the tests spawn has its load-file path under .stryker-tmp/, which (?i)stryker matches - so bl1652HandoffdRespawnReadingsWiring's 'a role-info with no matching lane process reads false' is red on every extension mutation dry run (hardener sighting on BL-1640, twice, deterministic; green under plain vitest; three-way probe below); the scan skips its own pid, the wiring probe passes its form through a file, and one case pins the sandbox-shaped argv"
+milestone: M8
+type: defect
+severity: high
+# high (standing-red rule 2026-09-05): Stryker's perTest dry run needs the
+# whole unit suite green before it mutates anything, so this one red case
+# blocks EVERY extension mutation gate run inside a sandbox - BL-1640's
+# hardener fell back to a hand-authored sweep because of it. A broken
+# safety signal in the hardening lane. Not critical: the daemon's own
+# production read is unaffected (handoffd's cmdline matches no lane
+# token), and plain vitest is green.
+status: todo
+epic: swarm-reliability
+priority: 8
+direction: swarm-reported
+depends_on: []
+# BL-1652 (the predicate, its wiring test and its shell test) is in
+# backlog/done; BL-1632 (the bl1071 host-wide probe) and BL-887/BL-1370
+# (process_table_lib's shared scoping) are in backlog/done. No open ticket
+# changes lane_process_lib.bb or the wiring test.
+mutation_cost: low
+# low: Babashka (no mutation/CRAP/DRY wired, BL-472): one exclusion in
+# lane-running?, one helper change in the wiring test, one new vitest
+# case, one feature and handler over a mkdtemp fixture (seconds).
+slice_size_envelope: low
+required_stages: [coder, cleaner, architect, hardender, documenter, qa]
+
+acceptance: specs/features/BL-1673-the-lane-scan-never-counts-the-process-doing-the-scanning.feature
+
+# Handler pin only (BL-233, BL-1371). The consumer (handoffd.bb's
+# role-lane-running? -> lane-process-lib/lane-running?, wired into the
+# chase sweep's adapters) exists before the fix, so an anchor there gates
+# nothing (BL-1235); a pin on the own-pid literal would be the parcel's
+# own diff. Scenario 01 drives the real lib through the real bb, which is
+# the gate.
+required_wiring:
+  - 'specs/pipeline/steps/bl1673LaneScanNeverCountsItselfSteps.js::registerSteps::the handler lands in the same parcel as the feature (BL-233, BL-1371)'
+
+human_approval: approved
+approval_context: >
+  A new feature file is authored here, so it would ordinarily need a tap;
+  it is minted approved under the 2026-09-17 operator hotfix (severity
+  defect, no choice posed, no ruling_options). FIRM: lane-running? keeps
+  every reading it makes today for OTHER processes - a real vitest,
+  stryker, bb test runner or run_acceptance.sh process whose cwd is under
+  the worktree or whose argv names it still reads true (BL-1652's
+  invariant 1 stands); only the scanning process itself is excluded.
+  FIRM: lane-process-pattern is unchanged - a Stryker run's own children
+  carry the sandbox path in their argv and ARE lane activity; the defect
+  is the self-count, not the pattern. FIRM: the wiring test keeps all
+  seven of its cases.
+
+invariants:
+  - "lane-running? never counts the process performing the scan, whatever that process's own command line matches or names; every other process is classified exactly as today."
+
+description: |
+  ## What is wrong
+
+  `swarmforge/scripts/lane_process_lib.bb` `lane-running?` scans the
+  whole process table and reads true for any process whose cmdline
+  matches `lane-process-pattern`
+  (`(?i)stryker|vitest\.properties\.config\.mjs|\bnpm exec vitest\b|\bnpx
+  vitest\b|\(vitest|_test_runner\.bb|run_acceptance\.sh`) AND is
+  project-scoped to the worktree (`process_table_lib.bb`
+  `project-scoped-process?`: the cmdline names the path at a component
+  boundary, or the cwd is under it). Nothing excludes the scanning
+  process itself. `extension/test/bl1652HandoffdRespawnReadingsWiring.test.js`
+  probes the daemon with `execFileSync('bb', ['-e', '(load-file
+  "<REPO_ROOT>/swarmforge/scripts/handoffd.bb")\n(println
+  (handoffd/role-lane-running? {:worktree-path "/tmp/bl1652-role-lane-quiet-..."}))',
+  '--', root])` - the form, and so the worktree path, is on the bb
+  process's own command line. Under plain vitest that cmdline matches no
+  lane token and the case reads false. Under Stryker's dry run the test
+  runs from `extension/.stryker-tmp/sandbox-<id>/`, `REPO_ROOT`
+  (`path.join(__dirname, '..', '..')`) resolves under `.stryker-tmp/`,
+  the load-file path in the bb argv contains `stryker`, the pattern
+  matches the probe's own process, the probe names the worktree, and
+  `lane-running?` reads TRUE - `expected false, got true`, twice,
+  deterministic (hardener, BL-1640, evidence
+  `backlog/evidence/unowned-red-bl1652-role-lane-running-full-suite-hardener-20260921.md`,
+  hardender branch 8d84cc5231). The hardener suspected an unreaped fake
+  lane process from a peer test; the pairing with `laneProcessLib.test.js`
+  is green and no peer is needed.
+
+  Three-way probe on the master checkout, 2026-09-21 (script in the
+  adjudication evidence): a bb whose argv names a fresh empty worktree
+  and carries no lane token reads `false`; the same argv plus one extra
+  token `/x/.stryker-tmp/sandbox-abc` reads `true`; the form read from a
+  FILE with the same extra token (argv names no worktree) reads `false`.
+
+  ## What is wanted
+
+  1. `lane-running?` skips the scanning process's own pid
+     (`(.pid (java.lang.ProcessHandle/current))`) before classifying;
+     every other process is classified exactly as today (scenario 01).
+  2. `bl1652HandoffdRespawnReadingsWiring.test.js`'s `loadHandoffdAndRun`
+     passes its script through a temp file (or stdin) rather than `-e`,
+     so no bb probe in that file names a fixture worktree on its own
+     command line - the same hygiene as probe C above; all seven cases
+     keep their names and verdicts.
+  3. `laneProcessLib.test.js` gains a case named `the scan never counts
+     its own process` that invokes the lib with an argv naming the
+     worktree and carrying a `.stryker-tmp/` token and asserts false;
+     scenario 03 pins that PASS line (BL-1445).
+  4. Documenter: `lane_process_lib.bb`'s header names the self-exclusion
+     and why; the BL-1652 how-to gains one line. No diagram trigger.
+
+  ## How (direction, not mandate)
+
+  - `(let [self (.pid (java.lang.ProcessHandle/current))] ... (some (fn
+    [{:keys [pid cmdline]}] (and (not= pid self) ...))))` - one line in
+    the `some`; bb exposes `ProcessHandle` (the shell tests' own zombie
+    probes use it). Keep the pattern literal and `project-scoped-process?`
+    untouched.
+  - The acceptance handler builds a mkdtemp worktree, runs the real lib
+    through the real bb three ways (the probe's A/B/C shapes) and asserts
+    false/false/true where C's third arm is a real `exec -a
+    run_acceptance.sh sleep 30` child with cwd under the worktree,
+    killed in a finally; validate the outline column against explicit
+    KNOWN_VALUES.
+
+  ## Not in scope
+
+  - `lane-process-pattern` matching a Stryker sandbox path in a child's
+    argv: a mutation run's children are lane activity by definition.
+  - The daemon's respawn ladder (BL-1652's decisions) and
+    `project-scoped-process?` (BL-887's shared classification).
+
+qa_e2e_procedure: |
+  On the parcel commit, from the repo root; fixture roots per BL-1390.
+  1. `cd extension && npx vitest run test/laneProcessLib.test.js
+     test/bl1652HandoffdRespawnReadingsWiring.test.js` once: green, with
+     `the scan never counts its own process` among the passing names and
+     all seven wiring cases present.
+  2. Probe B from the adjudication evidence (`bb -e '<form naming a fresh
+     mkdtemp worktree>' -- /x/.stryker-tmp/sandbox-abc`) prints `false`.
+  3. `specs/pipeline/scripts/run_acceptance.sh` on this ticket's feature:
+     5/5 (01 x3, 02, 03), once.
+  4. Hardening lane, once: `npx stryker run --mutate
+     out/quality/nightClosingCeremonyLive.js --force` from `extension/`
+     gets past its dry run (the wiring case green inside the sandbox);
+     record the dry-run line, then stop the run - the mutation result is
+     not this ticket's.
+  5. Break-then-restore: remove the own-pid exclusion; scenario 01 row 2
+     fails on `true`; restore.
+
+source: |
+  Hardender note to the specifier, priority 00, 2026-09-21T10:20:17Z
+  (inbound 00_20260921T102017Z_001445_from_hardender), verbatim:
+  "unowned-red bl1652 role-lane-running? full-suite only, see evidence".
+  Hardener evidence (hardender branch 8d84cc5231), verbatim: "fails only
+  under the full suite (`npx stryker run --mutate
+  "out/quality/nightClosingCeremonyLive.js" --force`, which drives the
+  whole vitest suite for its dry run) - expected `false`, got `true`.
+  Reproduced twice, deterministically" and "`lane-running?` scans the
+  REAL, HOST-WIDE process table". Mechanism found and probed by the
+  specifier the same pass (adjudication evidence). Parents: BL-1652,
+  BL-1632 (the host-wide probe self-match trap), BL-887/BL-1370.
+
+notes: |
+  Minted 2026-09-21 by the specifier while completing the hardender's
+  unowned-red note, the same pass (standing-red rule: the owner is named
+  before the note completes). AUTO-APPROVED under the 2026-09-17 operator
+  hotfix (severity defect, no ruling_options) - see
+  auto-approve-high-severity-defects-amendment-20260917.md. Register row
+  `unit extension/test/bl1652HandoffdRespawnReadingsWiring.test.js
+  BL-1673 2026-09-21` added in the mint commit; leaves in this parcel's
+  land (BL-1631). The hardener (holding BL-1640) was noted the owner.
+
+  Interim for hardeners until this lands: a Stryker dry run inside a
+  sandbox will fail on this one case; exclude
+  `test/bl1652HandoffdRespawnReadingsWiring.test.js` in the scoped
+  vitest config the run already uses (uncommitted, the hardener's own)
+  and record the exclusion and this ticket id in the evidence, rather
+  than abandoning the mutation run for a hand sweep. Evidence:
+  backlog/evidence/unowned-red-bl1652-role-lane-running-adjudication-specifier-20260921.md.
