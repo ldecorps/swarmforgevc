@@ -73,3 +73,33 @@ class") — appending here instead, per the specifier's own standing recipe for 
 remains approved (`backlog/evidence/BL-1661-QA-20260920.md`) and unlanded pending the same fix.
 
 By QA.
+
+## Third instance — BL-1667's land, same class (QA, 2026-09-20)
+
+Identical shape: `land_step_cli.bb BL-1667 3e3e4765a9 .` hit the same stray `be826a2060` cherry-pick
+failure, with `ENTANGLED_SIBLING BL-1630,BL-1657,BL-1661,BL-1663`. No new information. BL-1667 remains
+approved (`backlog/evidence/BL-1667-QA-20260920.md`) and unlanded pending the same fix. Not sending a
+third escalation note.
+
+By QA.
+
+## Fourth instance — BL-1664's land, same class (QA, 2026-09-20)
+
+Identical shape: `land_step_cli.bb BL-1664 f197a49556 .` hit the same stray `be826a2060` cherry-pick
+failure, with `ENTANGLED_SIBLING BL-1630,BL-1657,BL-1661,BL-1663,BL-1667`. No new information. BL-1664
+remains approved (`backlog/evidence/BL-1664-QA-20260920.md`) and unlanded pending the same fix. The
+approved-but-unlanded queue behind this one root cause is now: BL-1657, BL-1661, BL-1667, BL-1664 (four
+tickets), plus genuinely-unlanded BL-1630 and misreported-landed BL-1663.
+
+By QA.
+
+## Fifth instance — BL-1630's land, same class (QA, 2026-09-20)
+
+`land_step_cli.bb BL-1630 f83f672320 .` hit the same stray `be826a2060` cherry-pick failure, with
+`ENTANGLED_SIBLING BL-1657,BL-1661,BL-1663,BL-1664,BL-1667` (BL-1630 itself correctly excluded from
+its own entanglement list). BL-1630's land was expected to unblock the queue behind it (it was the one
+genuinely-unlanded sibling in every prior instance) — it does not, because the blocker is the
+unrelated stray commit, not BL-1630. BL-1630 remains approved (`backlog/evidence/BL-1630-QA-20260920.md`)
+and unlanded pending the same fix. Five tickets now queue behind this one stray commit.
+
+By QA.

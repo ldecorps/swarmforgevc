@@ -37,7 +37,6 @@ function sweepStaleFixtures() {
     }
   }
 }
-sweepStaleFixtures();
 
 const EVIDENCE_TEXT = {
   exhaustion: `Token Plan weekly quota exhausted, resets at ${RESET_AT}`,
@@ -90,6 +89,11 @@ function readRecords(ctx) {
 const FEATURE = 'BL-1335 exhaustion evidence is promoted into the outage record BL-669 acts on';
 
 function registerSteps(registry) {
+  // BL-1630: moved from module load - a mere require() of this file
+  // (bl968's tree probe, the BL-761 registration gate) must not pay for
+  // a temp-dir listing that only a real registration needs.
+  sweepStaleFixtures();
+
   const scoped = (re, fn) => registry.defineScoped(re, fn, FEATURE);
 
   scoped(/^the swarm is recording provider-outage evidence from live panes$/, (ctx) => {
