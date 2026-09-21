@@ -142,3 +142,5 @@ notes: |
   echoes whatever it prints, so an anchor on the wrapper's text would name
   a literal that never appears there (BL-874) and an anchor on the CLI is
   the parcel's own diff (BL-1235); scenario 02 reads the real output.
+
+assigned_to: coder
