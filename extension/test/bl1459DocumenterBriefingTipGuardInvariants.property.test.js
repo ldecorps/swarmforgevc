@@ -46,6 +46,23 @@ function initRepo(root) {
   git(root, ['branch', DOC_BRANCH, 'main']);
 }
 
+// BL-1666: a monotonic counter, embedded in every commit message, so two
+// commits are never byte-identical git objects even when they write the
+// SAME path with the SAME content from the SAME parent - a real draw
+// shape here, since landedContent and tipContent are independently
+// generated strings that DO sometimes collide. Without this, main's and
+// the documenter's commit (same tree, same parent, same message, same
+// author/committer second) hash to the SAME sha, so "the documenter
+// branch" silently collapses onto "main" - every diff-based check then
+// diffs a commit against itself, resolves an empty change, and reads as
+// a no-op. This was invariant 1's own flake (QA's 1-in-17 sighting,
+// 2090-01-01 with byte-identical content on both sides): reproduced
+// deterministically, seed 1875229817, at draw 4911 of a 10,000-draw
+// bounded search (extension/bl1666-invariant1-10k-search.js, not
+// committed - see backlog/evidence/BL-1666-*.md). Not a defect in
+// check_documenter_briefing_tip.sh: the guard reasons about git objects
+// correctly; the fixture's own commit-identity guarantee was the gap.
+let commitSequence = 0;
 function writeCommit(root, branch, files) {
   git(root, ['checkout', '-q', branch]);
   for (const [relPath, content] of files) {
@@ -54,7 +71,8 @@ function writeCommit(root, branch, files) {
     fs.writeFileSync(full, content);
     git(root, ['add', relPath]);
   }
-  git(root, ['commit', '-q', '-m', `change: ${files.map((f) => f[0]).join(' ')}`]);
+  commitSequence += 1;
+  git(root, ['commit', '-q', '-m', `change: ${files.map((f) => f[0]).join(' ')} (#${commitSequence})`]);
 }
 
 function runGuard(root, args) {
@@ -132,6 +150,31 @@ test('property (BL-1459 invariant 1) non-vacuity: a broken already-landed check 
   } finally {
     fs.rmSync(brokenPath, { force: true });
   }
+});
+
+// BL-1666: deterministic regression for QA's own 1-in-17 sighting
+// (evidence unowned-red-bl1459-property-test-flaky-not-deterministic-20260920.md),
+// reproduced with a mechanism via a 10,000-draw bounded search (seed
+// 1875229817, draw 4911: dates ["2090-01-01","2090-01-02"], landedContent
+// "#", tipContent "#", sameDate true). NOT a defect in
+// check_documenter_briefing_tip.sh: main's and the documenter's commit
+// (same tree, same parent, same message, same author/committer second)
+// hashed to the SAME git object, silently collapsing "the documenter
+// branch" onto "main" - every diff-based check then diffed a commit
+// against itself and read a no-op. writeCommit's own commit-sequence
+// counter (above) fixes the fixture; this pins the exact collision shape
+// so a future edit to writeCommit cannot reintroduce it invisibly.
+test('property (BL-1459 invariant 1) regression: byte-identical content on the same date still refuses (BL-1666, was the flake)', () => {
+  const root = mkTmpDir('bl1459-identical-content-');
+  initRepo(root);
+  writeCommit(root, 'main', [['docs/briefings/2090-01-01.md', '#']]);
+  writeCommit(root, DOC_BRANCH, [['docs/briefings/2090-01-01.md', '#']]);
+  const tip = git(root, ['rev-parse', 'HEAD']);
+  git(root, ['checkout', '-q', 'main']);
+  const { status, stdout, stderr } = runGuard(root, ['--tip', tip, '--branch', DOC_BRANCH]);
+  const combined = stdout + stderr;
+  assert.equal(status, 1, `expected refusal for byte-identical content on an already-landed date, got status ${status}: ${combined}`);
+  assert.match(combined, /already on main/);
 });
 
 // ── Invariant 2 ──────────────────────────────────────────────────────────
@@ -249,7 +292,8 @@ test(
 
 test('property (BL-1459 invariant 2) non-vacuity: a broken first-parent-membership check would judge every merge, even a non-documenter one - proven against a scratch copy, then restored', () => {
   const original = fs.readFileSync(GUARD, 'utf8');
-  const marker = 'if ! git rev-list --first-parent "${LANDED_MAIN}..${DOCUMENTER_BRANCH}" 2>/dev/null | grep -qx "$INCOMING"; then\n  exit 0\nfi\n';
+  const marker =
+    'FIRST_PARENT_LIST="$(git rev-list --first-parent "${LANDED_MAIN}..${DOCUMENTER_BRANCH}" 2>/dev/null || true)"\nif ! grep -qx "$INCOMING" <<<"$FIRST_PARENT_LIST"; then\n  exit 0\nfi\n';
   assert.ok(original.includes(marker), 'expected to find the hook-mode first-parent-membership check to remove for the non-vacuity probe');
   const broken = original.replace(marker, '');
   assert.notEqual(broken, original, 'expected the textual removal to actually change the file');
@@ -285,7 +329,8 @@ test('property (BL-1459 invariant 2) non-vacuity: a broken first-parent-membersh
 
 test('property (BL-1459 invariant 2) non-vacuity: plain ancestry (the superseded design) would wrongly judge a chain-second-parent commit - this ticket\'s own live incident, reproduced then discarded', () => {
   const original = fs.readFileSync(GUARD, 'utf8');
-  const marker = 'if ! git rev-list --first-parent "${LANDED_MAIN}..${DOCUMENTER_BRANCH}" 2>/dev/null | grep -qx "$INCOMING"; then\n  exit 0\nfi\n';
+  const marker =
+    'FIRST_PARENT_LIST="$(git rev-list --first-parent "${LANDED_MAIN}..${DOCUMENTER_BRANCH}" 2>/dev/null || true)"\nif ! grep -qx "$INCOMING" <<<"$FIRST_PARENT_LIST"; then\n  exit 0\nfi\n';
   assert.ok(original.includes(marker), 'expected to find the hook-mode first-parent-membership check to replace for this probe');
   // The naive replacement is exactly check_art_director_tip.sh's own
   // pattern (plain ancestry) - the design this ticket's incident showed
@@ -316,7 +361,8 @@ test('property (BL-1459 invariant 2) non-vacuity: plain ancestry (the superseded
 
 test('property (BL-1459 invariant 2) non-vacuity: a broken content trigger would judge every ordinary documenter forward - CRITICAL fix (QA note 003000), reproduced then discarded', () => {
   const original = fs.readFileSync(GUARD, 'utf8');
-  const marker = 'if ! git diff --name-only "$BASE" "$INCOMING" 2>/dev/null | grep -q "^${BRIEFINGS_DIR}"; then\n  exit 0\nfi\n';
+  const marker =
+    'INCOMING_DIFF_PATHS="$(git diff --name-only "$BASE" "$INCOMING" 2>/dev/null || true)"\nif ! grep -q "^${BRIEFINGS_DIR}" <<<"$INCOMING_DIFF_PATHS"; then\n  exit 0\nfi\n';
   assert.ok(original.includes(marker), 'expected to find the hook-mode content-trigger check to remove for this probe');
   const broken = original.replace(marker, '');
   assert.notEqual(broken, original, 'expected the textual removal to actually change the file');
