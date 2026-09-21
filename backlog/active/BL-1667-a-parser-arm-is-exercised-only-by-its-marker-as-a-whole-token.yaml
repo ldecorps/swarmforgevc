@@ -145,3 +145,9 @@ notes: |
   was noted the same pass that the red is owned.
 
 assigned_to: coder
+abandoned_commits: [3e3e4765a9]
+# 3e3e4765a9 was the QA-approved commit (pass, NONE); land_step_cli.bb hit
+# LAND_ESCALATE on the empty-diff closed-owner stray be826a2060 (condition g,
+# backlog/evidence/BL-1537-specifier-land-escalate-adjudication-closed-owner-20260912.md).
+# Landed instead as a hand-built tip-pure commit (own paths only, plus the
+# register row retirement).
