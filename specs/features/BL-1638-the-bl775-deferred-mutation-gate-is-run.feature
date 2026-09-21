@@ -12,11 +12,14 @@ Feature: BL-1638 The Stryker mutation gates deferred on BL-775 and BL-831 are ru
   Both scenarios read the parcel's own committed ledger, evidence and
   register, the contract at this commit.
 
-  # BL-1638 the-bl775-row-is-discharged-and-its-register-row-gone-01
-  Scenario: the BL-775 ledger row is discharged and the register holds no hardening row for its file set
+  # BL-1638 the-bl775-row-is-discharged-and-its-register-row-owned-01
+  # Amended 2026-09-21: a parcel never edits the register (coder.prompt,
+  # BL-1663); the land retires the row (BL-1631). At the parcel commit the
+  # row is present and owned, never gone.
+  Scenario: the BL-775 ledger row is discharged and the register's hardening row for its file set is owned by BL-1638
     When the parcel's own hardening-debt ledger and standing-red register are read for BL-775
     Then the BL-775 stryker-mutation row carries a discharged_at date and a discharged_evidence path
-    And the register report holds no hardening lane row naming BL-1638
+    And the register report names BL-1638 as the open owner of the hardening lane row for the BL-775 file set and reports no unowned row
 
   # BL-1638 the-run-completed-with-every-survivor-owned-02
   Scenario: the discharge evidence records a completed run over the two files with every survivor owned
@@ -24,11 +27,12 @@ Feature: BL-1638 The Stryker mutation gates deferred on BL-775 and BL-831 are ru
     Then it records a completed Stryker run over bubbleLiveUiHtml and residentPaneLive with zero surviving mutants or, per survivor, killed in this pass, accepted equivalent with its proof, or first-run debt owned by a named ticket
     And it records the host load and the duration of that run
 
-  # BL-1638 the-bl831-row-is-discharged-and-its-register-row-gone-03
-  Scenario: the BL-831 ledger row is discharged and the register holds no hardening row for its file
+  # BL-1638 the-bl831-row-is-discharged-and-its-register-row-owned-03
+  # Amended 2026-09-21, same reason as 01.
+  Scenario: the BL-831 ledger row is discharged and the register's hardening row for its file is owned by BL-1638
     When the parcel's own hardening-debt ledger and standing-red register are read for BL-831
     Then the BL-831 stryker-mutation row carries a discharged_at date and a discharged_evidence path
-    And the register report holds no hardening lane row naming BL-1638
+    And the register report names BL-1638 as the open owner of the hardening lane row for the BL-831 file and reports no unowned row
 
   # BL-1638 the-bl831-run-completed-with-every-survivor-owned-04
   Scenario: the BL-831 discharge evidence records a completed run over bubblePipelinePage with every survivor owned

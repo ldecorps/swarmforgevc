@@ -38,14 +38,25 @@ approval_context: >
   posed and there are no ruling_options. Same shape as BL-1468 and BL-1488
   (both approved and landed) for one row dated 2026-09-18: run the
   deferred Stryker gate, discharge the row with evidence naming an owner
-  for every survivor, remove the register row in the same commit. FIRM: a
+  for every survivor, and leave the register rows for the land to retire
+  (AMENDED 2026-09-21 - see below). FIRM: a
   run that cannot complete is recorded with the ledger's attempt verb and
   the row stays outstanding and owned - never a discharge on a timeout,
   never a raised ceiling, never a narrower mutate scope than the two files.
+  AMENDED 2026-09-21 by the specifier on the coder's spec-gap note 002091
+  (evidence BL-1638-spec-gap-register-row-removal-20260921.md, coder
+  branch): this ticket was minted on 2026-09-18 saying the register rows
+  leave "in the discharge commit"; coder.prompt's rule of 2026-09-20
+  (BL-1663) says a parcel never edits backlog/standing-reds.tsv - the
+  land step retires the owner's rows (BL-1631). The newer rule governs:
+  scenarios 01 and 03 now assert the ledger rows discharged and the two
+  hardening register rows PRESENT and owned by BL-1638 with no unowned
+  row at the parcel commit; their removal is QA's land (REGISTER_ROW_RETIRED
+  lines) and is checked after it. No choice is posed; the approval stands.
 
 invariants:
   - "A ledger row leaves the outstanding debt only through a discharge that names the gate, the parcel and a committed result; a run that cannot complete is recorded as an attempt and leaves the row outstanding and owned."
-  - "A register row leaves in the same commit that discharges its ledger row, never earlier; the hardening lane holds no BL-1638 row only when both the BL-775 and the BL-831 rows carry discharged_at."
+  - "A register row is never edited by this parcel: at the parcel commit both hardening rows name BL-1638 as their open owner and the register reports no unowned row; the rows leave only in the land that lands this ticket (BL-1631, BL-1663)."
 
 description: |
   ## What is wrong
@@ -116,10 +127,11 @@ description: |
     cannot complete is recorded with the attempt verb and the row stays
     outstanding and owned (invariant 1).
   - The two `hardening` register rows naming BL-1638 (the BL-775 file
-    pair and BL-831's file) leave in the discharge commit (invariant 2;
-    BL-1631's land step also retires them). Both ledger rows are
-    discharged in this parcel; a run that cannot complete for either is
-    recorded with the attempt verb and that row stays outstanding and
+    pair and BL-831's file) STAY in this parcel, owned (amended
+    2026-09-21: a parcel never edits the register, coder.prompt/BL-1663;
+    the land step retires them, BL-1631, invariant 2). Both ledger rows
+    are discharged in this parcel; a run that cannot complete for either
+    is recorded with the attempt verb and that row stays outstanding and
     owned.
 
   ## How (direction, not mandate)
@@ -153,8 +165,11 @@ qa_e2e_procedure: >
   compiled files, the host load and the duration, and every survivor with
   an owner. (3) `backlog/hardening-debt-ledger.yaml`: the BL-775
   stryker-mutation row carries `discharged_at` and the evidence path. (4)
-  `bb swarmforge/scripts/standing_red_register_cli.bb .`: no hardening row
-  for the two files, no unowned row. (5)
+  `bb swarmforge/scripts/standing_red_register_cli.bb .` on the parcel
+  commit: both hardening rows present, `"owned":true` naming BL-1638, no
+  unowned row; after QA's land, the same CLI on main names no hardening
+  row for the three files and the land output carries two
+  REGISTER_ROW_RETIRED lines (BL-1631). (5)
   `bb swarmforge/scripts/effective_backlog_depth_cli.bb .` reports the cap
   no longer throttled by the register. One run of each; never "run it N
   times".
@@ -203,5 +218,15 @@ notes: |
   milliseconds).
   IR-DRY after the merge: scenarios 03/04 mirror 01/02 for the second row
   by design (two ledger rows, one discharge shape); reviewed and kept.
+
+  Amended 2026-09-21 by the specifier on the coder's spec-gap note 002091
+  ("BL-1638 sc01/03 want register row gone; BL-1663 says only land
+  removes it"): the specifier's own mint-time wording predated
+  coder.prompt's 2026-09-20 rule; scenarios 01/03, the FIRM line,
+  invariant 2, the description bullet and e2e step (4) now assert the
+  rows present and owned at the parcel commit and gone only after the
+  land. The parcel was at the coder (its holder), noted to merge main and
+  re-read; no bounce occurred, so no bounce record. Evidence:
+  backlog/evidence/BL-1638-spec-gap-register-row-removal-adjudication-specifier-20260921.md.
 
 assigned_to: coder
