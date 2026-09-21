@@ -18,10 +18,16 @@
 # that cannot determine which day is landing never guesses). Everything
 # else, including docs/briefings/.sent.json (the email sweep's own
 # sent-state, never the landing lane) and any path outside docs/briefings/
-# entirely, is exempt only by provenance (BL-1096 shape, same as
-# check_art_director_tip.sh): a tip path whose own last touching commit is
-# already reachable from the landed main is main's content riding along,
-# not new documenter content.
+# entirely, is exempt only by provenance: a tip path whose own blob
+# equals the landed main's blob there is main's content riding along
+# whatever the commit ancestry (BL-1666, 2026-09-21 - a hand-built
+# tip-pure land-step replay lands content through a fresh commit off
+# main, never an ancestor of the pipeline commit that first authored
+# it); failing that, a path whose own last touching commit is already
+# reachable from the landed main (BL-1096 shape, same as
+# check_art_director_tip.sh) is exempt too. A path whose blob differs
+# from, or is absent on, the landed main and fails the ancestry test is
+# refused.
 #
 # The additional invariant BL-1444's lane has no equivalent for: a day has
 # AT MOST ONE landed briefing. Even a byte-identical or different-content
@@ -138,17 +144,36 @@ path_in_lane() {
 }
 
 # The paths <tip> introduces relative to <landing> that are neither in the
-# lane nor exempt by provenance (BL-1096 shape, identical to
-# check_art_director_tip.sh's judge_tip_paths). One offending path per
-# line; no output is a pass for THIS check alone (the already-landed-day
-# check is separate, below).
+# lane nor exempt by provenance. One offending path per line; no output is
+# a pass for THIS check alone (the already-landed-day check is separate,
+# below).
+#
+# BL-1666 amendment (2026-09-21, specifier ruling on QA note 003047): a
+# path is exempt when the TIP's own blob at that path equals the LANDED
+# MAIN's blob there, whatever the commit ancestry - checked FIRST. A
+# hand-built tip-pure land-step replay (condition (g)) lands content on
+# origin/main through a FRESH commit built off origin/main, never an
+# ancestor of the pipeline commit that originally authored it; the
+# ancestry-only check below (BL-1096 shape, identical to
+# check_art_director_tip.sh's judge_tip_paths) then wrongly refused
+# byte-identical content as unprovenanced. The ancestry test stays as the
+# SECOND exemption, unchanged, for a path the tip removed (no blob to
+# compare) or a tree entry with no blob (a gitlink). A path whose blob
+# differs from, or is absent on, the landed main falls through to that
+# same ancestry test exactly as before - this amendment only ADDS a way
+# to exempt, it narrows nothing.
 judge_tip_paths() {
   local landing="$1" tip="$2" landed_main="$3" date="$4"
-  local base path anchor
+  local base path anchor tip_blob main_blob
   base="$(git merge-base "$landing" "$tip")"
   while IFS= read -r path; do
     [[ -n "$path" ]] || continue
     path_in_lane "$path" "$date" && continue
+    tip_blob="$(git rev-parse -q --verify "${tip}:${path}" 2>/dev/null || true)"
+    main_blob="$(git rev-parse -q --verify "${landed_main}:${path}" 2>/dev/null || true)"
+    if [[ -n "$tip_blob" && -n "$main_blob" && "$tip_blob" == "$main_blob" ]]; then
+      continue
+    fi
     anchor="$(git log -1 --format=%H "$tip" -- "$path" 2>/dev/null || true)"
     if [[ -n "$anchor" ]] && git merge-base --is-ancestor "$anchor" "$landed_main" 2>/dev/null; then
       continue
@@ -281,7 +306,15 @@ fi
 # named - a missed enforcement. First-parent membership gets both right:
 # an upstream chain commit sits behind a second parent and is never on
 # this list; a documenter commit that is no longer the tip still is.
-if ! git rev-list --first-parent "${LANDED_MAIN}..${DOCUMENTER_BRANCH}" 2>/dev/null | grep -qx "$INCOMING"; then
+#
+# BL-1666: the list is captured into a variable and grepped from there,
+# never piped straight into grep -q - under set -o pipefail, grep -q
+# exits at its first match while git rev-list may still be writing a
+# long list, killing the producer with SIGPIPE; the pipeline's own exit
+# status (141) then reads as "not on the line", silently skipping
+# judgment on real briefing content under load (BL-1660's shape).
+FIRST_PARENT_LIST="$(git rev-list --first-parent "${LANDED_MAIN}..${DOCUMENTER_BRANCH}" 2>/dev/null || true)"
+if ! grep -qx "$INCOMING" <<<"$FIRST_PARENT_LIST"; then
   exit 0
 fi
 
@@ -301,7 +334,12 @@ BASE="$(git merge-base "$LANDING" "$INCOMING")"
 # director sends nothing but tip-lands. The documenter sends both; only a
 # commit whose OWN delivered content touches docs/briefings/ is a
 # briefing land at all.
-if ! git diff --name-only "$BASE" "$INCOMING" 2>/dev/null | grep -q "^${BRIEFINGS_DIR}"; then
+#
+# BL-1666: same SIGPIPE-under-pipefail shape as the first-parent check
+# above - a diff with many changed paths can still be writing when
+# grep -q's first match arrives, so the diff is captured whole first.
+INCOMING_DIFF_PATHS="$(git diff --name-only "$BASE" "$INCOMING" 2>/dev/null || true)"
+if ! grep -q "^${BRIEFINGS_DIR}" <<<"$INCOMING_DIFF_PATHS"; then
   exit 0
 fi
 

@@ -234,6 +234,24 @@ function registerSteps(registry) {
     assert.match(ctx.bl1459.hookText, /run_guard check_art_director_tip\.sh/);
     assert.match(ctx.bl1459.hookText, /run_guard check_documenter_briefing_tip\.sh/);
   });
+
+  // BL-1666 amendment (scenarios 09/10): the out-of-lane exemption judges
+  // CONTENT (blob equality), not commit ancestry. The Given step that
+  // writes the documenter's own tip (with docs/index.md = 'unrelated
+  // content') already exists above; these two add main's OWN, separate
+  // commit at that same path - naturally never an ancestor of the
+  // documenter's commit, since the two branches only share the fixture's
+  // initial `init` commit.
+  scoped(
+    /^the landed main carries that same (\S+) content through a commit that is not an ancestor of the documenter commit$/,
+    (ctx, extraPath) => {
+      writeCommit(ctx.bl1459.root, 'main', [[extraPath, 'unrelated content']]);
+    }
+  );
+
+  scoped(/^the landed main carries a different (\S+) content$/, (ctx, extraPath) => {
+    writeCommit(ctx.bl1459.root, 'main', [[extraPath, 'a different content entirely']]);
+  });
 }
 
 module.exports = { registerSteps };
