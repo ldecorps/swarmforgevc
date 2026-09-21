@@ -33,6 +33,13 @@ required_stages: [coder, cleaner, architect, hardender, documenter, qa]
 
 acceptance: specs/features/BL-1658-the-seven-remaining-eager-jsdom-handlers-load-it-lazily.feature
 
+# Task-scope declaration (BL-1276), not ownership: this parcel retires
+# scenario 06 of BL-687's landed feature (superseded by BL-905, see the
+# second amendment) and the handler step that scenario alone used.
+retires:
+  - specs/features/BL-687-epic-reorder-includes-active-children.feature
+  - specs/pipeline/steps/bl687EpicReorderIncludesActiveChildrenSteps.js
+
 required_wiring:
   - 'specs/pipeline/steps/bl1658SevenJsdomHandlersLoadLazilySteps.js::registerSteps::the handler lands in the same parcel as the feature (BL-233, BL-1371)'
 
@@ -55,6 +62,22 @@ approval_context: >
   this ticket now owns a red on main (standing-red rule). Nothing else
   changes and no choice is posed, so the approval stands (BL-1455: a
   re-pend would post no fresh ask).
+  AMENDED AGAIN 2026-09-21 by the specifier on the coder's unowned-red
+  note 000037 ("unowned-red BL-687-epic-reorder feature sc08 (drilled-into
+  BL-517) fails"): BL-687's landed feature, scenario 06 (TAP 8), asserts
+  that an epic whose only child is done still drills down to an empty
+  state; BL-905's human-approved hotfix 0f5394a2d0 (2026-08-16) hides a
+  childless epic from the tile list by design ("so a tap cannot land on
+  an invisible shell"), and BL-905's own scenario "An epic with no live
+  children is not listed" pins it. The scenario has been red on main
+  since, unrun by any lane. It is RETIRED (never reworded, BL-1006) in
+  this parcel, which already edits BL-687's handler for the jsdom move -
+  a separate owner would queue behind this one on orthogonality. FIRM:
+  scenarios 01-05 and 07 of BL-687's feature and every scenario of
+  BL-905's stay green; the handler's "the drill-down shows" step goes
+  only if no feature file references it after the retirement; the
+  feature's mutation-stamp header is the parcel's to refresh. No choice
+  is posed; the approval stands.
 
 
 invariants:
@@ -127,6 +150,43 @@ description: |
     `censusOneHandler('bl1050CursorRunFailureLogSteps.js')` reads under
     20 ms.
 
+  ## Amendment 2026-09-21 (2) - retire BL-687 scenario 06, superseded by BL-905
+
+  `specs/features/BL-687-epic-reorder-includes-active-children.feature`
+  scenario 06 ("An epic whose only child is done drills down to the
+  reorderable-topics empty state"; TAP 8 of 9) fails on main at `When the
+  "BL-517" tile is drilled into`: `expected a drill button for epic
+  BL-517` (specifier's one run on main 7fdd96e8d8, 2026-09-21 12:15Z:
+  `# pass 8`, `# fail 1`). The drill button renders for every tile
+  (`epicReorderUiHtml.ts` ~213, unchanged since 2026-07-26); the tile
+  itself is gone: `readEpicReorderMembership` (bridgeServer.ts ~1085)
+  lists only `filterEpicsWithTopics(epics, topics)` - the hotfix
+  0f5394a2d0 "Land hide-childless-epics reorder screen fix (BL-905
+  stamp-off; human-approved hotfix landing)": "Human wants shell epic
+  trackers (no live children) excluded from the Reorder epics tile list
+  and its Move up/Move down neighbours, so a tap cannot land on an
+  invisible shell." BL-905 (done) pins it: "An epic with no live children
+  is not listed". BL-687's scenario 06 states the pre-BL-905 present and
+  has been red since 2026-08-16; no lane runs landed features (BL-1625,
+  paused), so the coder's changed-path census on 2026-09-21 was the first
+  sighting.
+
+  - Retire scenario 06 (its `# BL-687 ...-06` tag and body); never reword
+    it into "has no tile" - BL-905's scenario is that coverage.
+  - In `bl687EpicReorderIncludesActiveChildrenSteps.js`, remove the
+    `the drill-down shows "..."` step only if `grep -rn 'the drill-down
+    shows' specs/features/` returns nothing after the retirement (the
+    "tile is drilled into" step stays: scenarios 01-05 and BL-674/BL-686
+    use it).
+  - The feature's mutation-stamp header is refreshed by the hardener's
+    pass as for any feature this parcel touches.
+  - Register row `acceptance specs/features/BL-687-epic-reorder-includes-active-children.feature
+    BL-1658 2026-09-21` leaves in this parcel's land (BL-1631).
+  - QA e2e addition: `specs/pipeline/scripts/run_acceptance.sh
+    specs/features/BL-687-epic-reorder-includes-active-children.feature`
+    once on the parcel commit: 8/8 (scenario 06 absent), and the BL-905
+    feature 6/6.
+
   ## How (direction, not mandate)
 
   - The same two-line move BL-1630 made in bl1153/bl1412. Scenario 01
@@ -176,5 +236,12 @@ notes: |
   backlog/evidence/unowned-red-stepHandlerModuleLoadBudget-bl1050-adjudication-specifier-20260921.md.
   Folded rather than minted apart: one guard, one census, one fix shape
   (human directive 2026-09-17, fewer tickets).
+
+  Amended again 2026-09-21 by the specifier while completing the coder's
+  unowned-red note 000037 (standing-red rule, same pass): BL-687's
+  scenario 06 retired here (superseded by BL-905's hotfix 0f5394a2d0,
+  2026-08-16), `retires:` declared, register row added, the coder noted.
+  Evidence:
+  backlog/evidence/unowned-red-bl687-sc06-superseded-by-bl905-adjudication-specifier-20260921.md.
 
 assigned_to: coder
