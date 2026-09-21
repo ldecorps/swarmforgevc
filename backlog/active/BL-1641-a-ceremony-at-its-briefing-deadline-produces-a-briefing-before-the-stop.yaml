@@ -212,3 +212,5 @@ notes: |
   The handler entry is the BL-233 same-parcel pin. IR-DRY at mint:
   scenarios 01, 02 and 04 share the deadline Given by design (one decision,
   three states); reviewed and kept.
+
+assigned_to: coder
