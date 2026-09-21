@@ -668,6 +668,19 @@
         base-readings {:liveness liveness :heartbeatAgeS heartbeat-age-s
                        :activityAgeS activity-age-s :busy pane-busy? :lane lane-running?}
         respawn-cooldown-until-ms (read-respawn-cooldown-until-ms inbox-new-dir)
+        ;; A closing-ceremony/operator pause holds a role's ENTIRE inbox/new/
+        ;; uniformly (handoff_lib.bb's resolve-dequeueable-candidates already
+        ;; refuses to dequeue any of it) - read ONCE per sweep, never per
+        ;; item, since it is a property of the moment, not of any individual
+        ;; parcel (same reasoning as liveness/deferral-ctx above). Without
+        ;; this, every item a pause correctly holds back from being claimed
+        ;; still ages normally in THIS sweep's eyes and eventually reads as
+        ;; genuinely stuck - dead-lettered and alarmed on, one email per
+        ;; parcel, for work that is exactly where it is supposed to be
+        ;; (2026-09-21: a bedtime pause held ~19 parcels across every role's
+        ;; inbox and this sweep alarmed on each one once they aged past its
+        ;; threshold).
+        pause-held? (handoff-lib/pause-hold-active?)
         ;; BL-1004: forced only if some non-terminal item actually needs the
         ;; hold check - an empty inbox costs no roles.tsv/conf/mailbox reads.
         deferral-ctx (delay (stage-deferral-context role))
@@ -689,7 +702,8 @@
             ;; it isn't already reaped outright - already-terminal? outranks
             ;; the hold, so there's nothing to protect either way.
             held? (and (not already-terminal?)
-                       (or (item-ambulance-held? (:filePath item))
+                       (or pause-held?
+                           (item-ambulance-held? (:filePath item))
                            (item-deferral-held? @deferral-ctx (:filePath item) now-ms)
                            (item-deferred-note-held? (:filePath item))))
             decided (decide-item-action (:mtimeMs item) (:chaseCount item) now-ms config

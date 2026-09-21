@@ -18,6 +18,13 @@
 ;; thread project-root/ambulance state through by hand.
 (load-file (str (fs/path (fs/parent (fs/canonicalize *file*)) "ambulance_lib.bb")))
 
+;; backlog-depth-lib is also a leaf here (its own load-files are
+;; swarm_identity_lib.bb and daemon_cycle_guard_lib.bb, neither of which
+;; loads this file back) - loaded so resolve-dequeueable-candidates can
+;; read the same control-pause.json handoffd's outbound-wakes-suppressed?
+;; already checks (see pause-hold-active? below).
+(load-file (str (fs/path (fs/parent (fs/canonicalize *file*)) "backlog_depth_lib.bb")))
+
 ;; BL-1029: the ONE place a launch-script path becomes a shell word. Every
 ;; respawn site in the tree routes through shell-quote-lib/launch-command, so
 ;; an install path carrying an apostrophe cannot break the repair that exists
@@ -1709,27 +1716,68 @@
          (recur (next remaining) held (conj valid f)))
        {:held held :valid valid}))))
 
+;; A closing-ceremony/operator pause holds a role's OWN already-delivered
+;; new/ backlog, not just future deliveries. handoffd's
+;; outbound-wakes-suppressed? already stops the daemon from delivering more
+;; parcels into new/ or nudging an idle pane while paused - but every swarm
+;; role's own operating loop is "finish this turn, then call
+;; ready_for_next.sh again", never "wait to be woken", so a pane that
+;; finishes its current parcel during a pause would otherwise walk straight
+;; into whatever ELSE is already sitting in its new/ from before the pause
+;; and start it - the ceremony's own model (nightClosingCeremony.ts
+;; InFlightParcel) assumes exactly one draining parcel per role, not "drain
+;; the whole inbox". Human directive 2026-09-21: "just the seats finish the
+;; tickets they are working on... not exhaust their inbox." Same
+;; never-moved, never-quarantined posture as ambulance-hold (BL-655) above -
+;; a paused candidate is re-considered fresh the moment the pause clears,
+;; never touched while it doesn't.
+(defn pause-hold-active?
+  "The real impure check: reads control-pause.json fresh (never cached),
+   via the SAME backlog-depth-lib/pause-active? + read-pause-state
+   handoffd.bb's outbound-wakes-suppressed? uses - one pause signal governs
+   both delivery and claiming, not two that could drift apart."
+  []
+  (backlog-depth-lib/pause-active?
+   (backlog-depth-lib/read-pause-state (target-root))
+   (System/currentTimeMillis)))
+
+(defn partition-pause-held
+  "A pause holds ALL candidates uniformly (it is a property of the moment,
+   not of any individual parcel) rather than testing each one, but returns
+   the same {:held :valid} shape as partition-ambulance-held so
+   resolve-dequeueable-candidates can treat both stages identically.
+   active?-fn (default pause-hold-active?) is injectable for tests."
+  ([candidate-files] (partition-pause-held candidate-files pause-hold-active?))
+  ([candidate-files active?-fn]
+   (if (active?-fn)
+     {:held (vec candidate-files) :valid []}
+     {:held [] :valid (vec candidate-files)})))
+
 (defn resolve-dequeueable-candidates
   "Shared by ready_for_next_task.bb and ready_for_next_batch.bb: dedups
    new-dir candidates against the completed/abandoned terminal set, then
    quarantines any corrupt candidate (BL-365) and any git_handoff whose
    commit no longer resolves (BL-610), then excludes any candidate BL-655
-   ambulance mode currently holds (left untouched in new/, never
-   quarantined) among what's left - printing the SKIPPED/QUARANTINED
+   ambulance mode currently holds, then excludes every remaining candidate
+   while an operator/ceremony pause is active (left untouched in new/,
+   never quarantined, either way) - printing the SKIPPED/QUARANTINED
    diagnostic for each as a side effect. Returns the final list of files
    genuinely eligible to dequeue - both receive modes apply the identical
    guards this way, rather than each re-deriving them. resolve-fn? (default
-   git-commit-resolves?) and held?-fn (default default-ambulance-held?) are
-   both injectable for tests."
+   git-commit-resolves?), held?-fn (default default-ambulance-held?) and
+   paused?-fn (default pause-hold-active?) are all injectable for tests."
   ([new-files completed-basenames abandoned-basenames]
-   (resolve-dequeueable-candidates new-files completed-basenames abandoned-basenames git-commit-resolves? default-ambulance-held?))
+   (resolve-dequeueable-candidates new-files completed-basenames abandoned-basenames git-commit-resolves? default-ambulance-held? pause-hold-active?))
   ([new-files completed-basenames abandoned-basenames resolve-fn?]
-   (resolve-dequeueable-candidates new-files completed-basenames abandoned-basenames resolve-fn? default-ambulance-held?))
+   (resolve-dequeueable-candidates new-files completed-basenames abandoned-basenames resolve-fn? default-ambulance-held? pause-hold-active?))
   ([new-files completed-basenames abandoned-basenames resolve-fn? held?-fn]
+   (resolve-dequeueable-candidates new-files completed-basenames abandoned-basenames resolve-fn? held?-fn pause-hold-active?))
+  ([new-files completed-basenames abandoned-basenames resolve-fn? held?-fn paused?-fn]
    (let [{:keys [skipped dequeueable]} (dedup-new-candidates new-files completed-basenames abandoned-basenames)
          {:keys [corrupt valid]} (partition-corrupt dequeueable)
          {:keys [quarantined valid]} (partition-unresolvable-commit valid resolve-fn?)
-         {:keys [held valid]} (partition-ambulance-held valid held?-fn)]
+         {:keys [held valid]} (partition-ambulance-held valid held?-fn)
+         {paused :held valid :valid} (partition-pause-held valid paused?-fn)]
      (doseq [f skipped]
        (println "SKIPPED already-processed:" (fs/file-name f)))
      (doseq [f corrupt]
@@ -1738,6 +1786,8 @@
        (println (str "QUARANTINED unresolvable-commit: " (fs/file-name file) " " diagnostic)))
      (doseq [f held]
        (println "SKIPPED ambulance-hold:" (fs/file-name f)))
+     (doseq [f paused]
+       (println "SKIPPED pause-hold:" (fs/file-name f)))
      valid)))
 
 ;; BL-610 shape #5: the send-time decision logic behind swarm_handoff.bb's
