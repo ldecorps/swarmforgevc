@@ -83,3 +83,19 @@ Feature: BL-1650 The land step lands a pure-evidence closed-owner stray itself
     When the land step replays the cited ticket
     Then no cherry-pick is attempted for the stray
     And the replay reports the sibling landed and lands the ticket's own paths
+
+  # BL-1650 a-superseded-closed-owner-stray-is-skipped-and-the-walk-continues-07
+  # BL-1670 (2026-09-20): BL-1459's bounced first-round doc commit
+  # conflicted against BL-1459's own rebuilt land on every branch.
+  Scenario Outline: a pure-evidence stray that conflicts against main's later text is reported superseded and the replay completes
+    Given a stray commit off the lineage whose path <shape> on origin/main
+    And a replay tip that carries the stray and a landed sibling behind it
+    When the land step replays the cited ticket
+    Then it reports the stray as superseded naming the reason
+    And it reports the sibling landed
+    And it lands the ticket's own paths
+
+    Examples:
+      | shape                                               |
+      | is a strict content subset of a later append        |
+      | was rewritten by a later landed commit of its owner |

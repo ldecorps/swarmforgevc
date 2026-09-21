@@ -339,7 +339,7 @@
   subject: "Night-closing-ceremony: documenter gets an ephemeral session when rotate is refused, so the morning briefing actually gets written"
   detected_at: 2026-09-16
   state: stamp-open
-  stamp_ticket: BL-1591
+  stamp_ticket: BL-1549
   human_decision: null
   decided_at: null
 - commit: bab1f918c8

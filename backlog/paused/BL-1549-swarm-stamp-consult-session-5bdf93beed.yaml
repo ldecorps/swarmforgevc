@@ -1,32 +1,42 @@
 id: BL-1549
-title: "Swarm stamp-off: hotfix 5bdf93beed spawns an ephemeral consult session for a role whose mail is stuck behind a :departing-mid-parcel refusal (the target's OWN roles.tsv session, created through resolve-single-role-repair, torn down once idle with nothing actionable) - review the landed diff, confirm or refute, open narrow follow-ups; never rewrite it and never write the ledger decision"
+title: "Swarm stamp-off: hotfixes 5bdf93beed and a27d082c2d - the ephemeral consult session: the daemon spawns a role's OWN roles.tsv session when its mail is stuck behind a :departing-mid-parcel refusal, the night closing ceremony spawns the documenter's the same way through consult_spawn_cli.bb (a copy of the daemon's spawn) when rotate_to_role.sh is refused mid-parcel, and one teardown sweep clears both once idle with nothing actionable - review both landed diffs, confirm or refute, open narrow follow-ups; never rewrite them and never write either ledger decision (absorbs BL-1591, 2026-09-21)"
 milestone: M8
 type: defect
 severity: medium
-# medium: the fault is already fixed on main (the QA-asks-specifier deadlock
-# behind BL-1535's departing-mid-parcel refusal); what is open is the review
-# the constitution owes a hotfix (BL-848). Not high: nothing is degraded
-# today, and the ledger's resurfacing keeps the ask alive without the
-# expedite lane.
+# medium: both faults are already fixed on main (the QA-asks-specifier
+# deadlock behind BL-1535's departing-mid-parcel refusal; two nights with
+# no briefing); what is open is the review the constitution owes a hotfix
+# (BL-848). Not high: nothing is degraded today, and the ledger's
+# resurfacing keeps the ask alive without the expedite lane.
 status: todo
 epic: swarm-reliability
 priority: 20
 direction: swarm-reported
 depends_on: []
 mutation_cost: low
-# low: review-only; Babashka only (no mutation/CRAP/DRY wired, BL-472); one
-# step-handler file drives the real mono_router_lib.bb, handoff_lib.bb and
-# handoffd.bb through the fake-tmux shape test_chase_departing_mid_parcel_gate.sh
-# already uses.
-slice_size_envelope: low
+# low: review-only; Babashka (no mutation/CRAP/DRY wired, BL-472) plus a
+# TypeScript half that is three exported functions with a real-fixture
+# test already landed; one step-handler file drives the real
+# mono_router_lib.bb, handoff_lib.bb, handoffd.bb and consult_spawn_cli.bb
+# through the fake-tmux shape test_chase_departing_mid_parcel_gate.sh
+# already uses. Runners the feature shells, measured on this host: the
+# fallback vitest file 1.4 s wall, test_consult_spawn_cli.sh 0.3 s, the
+# CLI rows about 0.5 s each, the teardown fixture a few seconds - inside
+# the BL-1358 ceiling.
+slice_size_envelope: medium
+# medium since the 2026-09-21 consolidation: two hotfix diffs under one
+# review of one mechanism; still review-only.
 required_stages: [coder, cleaner, architect, hardender, documenter, qa]
 
 acceptance: specs/features/BL-1549-swarm-stamp-consult-session-5bdf93beed.feature
 
 # A review parcel adds no production call site; the mechanism under review
 # is already wired (handoffd.bb attempt-resident-rotate! :departing-mid-parcel
-# branch -> spawn-consult-session!, and the daemon cadence block ->
-# consult-teardown-sweep!). The handler entry is the BL-233 in-parcel pin.
+# branch -> spawn-consult-session!; nightClosingCeremonyRun's
+# rotate-documenter action -> buildRealDeps.rotateDocumenter ->
+# spawnConsultDocumenter -> consult_spawn_cli.bb; and the daemon cadence
+# block -> consult-teardown-sweep!). The handler entry is the BL-233
+# in-parcel pin.
 required_wiring:
   - 'specs/pipeline/steps/bl1549SwarmStampConsultSessionSteps.js::registerSteps::the handler lands in the same parcel as the feature (BL-233, BL-1371)'
 
@@ -46,9 +56,26 @@ approval_context: >
   hotfix_ledger_update.bb --decide after this reaches done. Minted by the
   specifier on the coordinator's ledger note of 2026-09-12 17:26Z; the
   ledger row is linked to this ticket in the mint commit.
+  CONSOLIDATED 2026-09-21 by the specifier on the human's morning sweep
+  directive: BL-1591 (the stamp of a27d082c2d, the ceremony's
+  consult_spawn_cli.bb copy of this spawn; approved 2026-09-16) is
+  absorbed here - one mechanism, two spawners, one teardown sweep, one
+  fake-tmux fixture; BL-1591's own scenario 04 reused this ticket's
+  handler. Its FIRM lines carry over unchanged: the parcel changes no
+  production file - night-closing-ceremony-run.ts, consult_spawn_cli.bb
+  and handoffd.bb are byte-identical to the received commit; it adds
+  evidence, a feature, a step handler and, if the coder extends them,
+  TEST files only; a refuted scenario or a confirmed probe finding (P1-P6
+  below) is a narrow follow-up via note to the specifier, never an
+  in-parcel rewrite; the parcel never writes human_decision into
+  backlog/hotfix-ledger.yaml for EITHER row (scenario 06) - the human
+  records certify or waive with hotfix_ledger_update.bb --decide per
+  commit after this reaches done. Both halves were approved separately by
+  the human and nothing unapproved was added, so the approval stands (no
+  re-pend, BL-1455).
 
 invariants:
-  - "The stamp never rewrites the hotfix: every file the parcel touches is evidence, a feature, a step handler, or a test fixture; swarmforge/scripts/handoffd.bb, mono_router_lib.bb, handoff_lib.bb and single_role_repair_lib.bb are byte-identical to the received commit."
+  - "The stamp never rewrites either hotfix: every file the parcel touches is evidence, a feature, a step handler (plus its lib/ helpers), or a test file or fixture; swarmforge/scripts/handoffd.bb, mono_router_lib.bb, handoff_lib.bb, single_role_repair_lib.bb, consult_spawn_cli.bb and extension/src/tools/night-closing-ceremony-run.ts are byte-identical to the received commit."
 
 source: |
   backlog/hotfix-ledger.yaml row `5bdf93beed` (detected 2026-09-12, state
@@ -60,6 +87,19 @@ source: |
   resident sent specifier a priority-00 note and sat 'in_process pending
   that reply' while chase logged chase-rotate-seated-preferred-yield
   followed by chase-rotate-departing-mid-parcel, forever)."
+
+  Second row (from BL-1591, absorbed 2026-09-21): backlog/hotfix-ledger.yaml
+  row `a27d082c2d` (detected 2026-09-16, state pending, no stamp ticket),
+  appended by the certification sweep to the shared checkout and found
+  uncommitted by the specifier at the 2026-09-16 ceremony pass (no
+  coordinator note had reached the specifier yet; the row was committed
+  with BL-1591's mint so the link had a row to sit on). Hotfix landed by
+  the operator (human-directed, Claude Code) 2026-09-16 07:58 BST with the
+  `Hotfix-Certification: pending` trailer. The commit's own observation,
+  quoted verbatim: "Observed live 2026-09-15: closing-ceremony-run's own
+  state showed sequence ["freeze-promotion","lean-packet","rotate-documenter",
+  "briefing-missing","swarm-stopped"] for the whole night ... No briefing
+  existed for 2026-09-15 or 2026-09-16 as of this fix."
 
 description: |
   ## What
@@ -175,33 +215,176 @@ description: |
     `.swarmforge/daemon/handoffd.log` lines.
   - Scenario 04's "actionable mail" row seeds one `git_handoff` file in
     the target's inbox/new; its "idle" row seeds an empty mailbox.
-  - Scenario 06's handler reads `backlog/hotfix-ledger.yaml` for the row
-    `commit: 5bdf93beed` and asserts `state` is not certified/waived and
-    `human_decision` is null; BL-1346's handler is the precedent.
-  - The step handler is `bl1549SwarmStampConsultSessionSteps.js`,
-    registered in `specs/pipeline/steps/index.js` in the SAME commit as
-    the feature (BL-233); shared fixture helpers go under
-    `specs/pipeline/steps/lib/`.
+  - Scenario 06 is an outline over both commits: its handler reads
+    `backlog/hotfix-ledger.yaml` for the row `commit: <commit>` and
+    asserts `state` is not certified/waived and `human_decision` is null;
+    BL-1346's handler is the precedent.
+  - The step handler is `bl1549SwarmStampConsultSessionSteps.js`, landing
+    in the SAME commit as the feature (BL-233); `steps/index.js` discovers
+    `*Steps.js` by directory scan (BL-1371); shared fixture helpers go
+    under `specs/pipeline/steps/lib/`.
+
+  ## Second hotfix under review: a27d082c2d (absorbed from BL-1591, 2026-09-21)
+
+  The night closing ceremony's rotate-documenter step called
+  `rotate_to_role.sh documenter`, the resident-invoked rotation entry that
+  `respawn-as!` (BL-805) refuses whenever the resident holds an undrained
+  in_process parcel - the normal case mid-work overnight. The old fallback
+  sent a plain note to the coordinator, which cannot respawn a pane it
+  does not own, so the documenter never got a session and no briefing was
+  written on 2026-09-15 or 2026-09-16 (ceremony state "rotate-documenter"
+  -> "briefing-missing" -> "swarm-stopped").
+
+  ### What landed (files to review)
+
+  - `extension/src/tools/night-closing-ceremony-run.ts`: `rotateDocumenter`
+    and `spawnConsultDocumenter` extracted from `buildRealDeps` and
+    exported. `rotateDocumenter` still tries `rotate_to_role.sh documenter`
+    with `SWARMFORGE_ROLE=coordinator`; on a nonzero exit it now calls
+    `spawnConsultDocumenter` (`bb consult_spawn_cli.bb <target> documenter
+    coordinator`, `stdio: 'pipe'`, every failure swallowed) and THEN still
+    sends the old `BL-658: rotate resident to documenter for morning
+    briefing` note to the coordinator.
+  - `swarmforge/scripts/consult_spawn_cli.bb` (new, 112 lines): loads
+    daemon_cycle_guard_lib, shell_quote_lib, single_role_repair_lib,
+    handoff_lib; usage exit 2; `no-such-role` / `no-session-name` exit 1;
+    `already-exists` (session live) and `already-consulting` (marker
+    present) exit 0 with no tmux call; otherwise
+    `resolve-single-role-repair` with `:env-args []` and
+    `:session-present? false`, runs the returned commands, writes
+    `.swarmforge/daemon/consult/<role>.json` `{role, requested_by,
+    started_at_ms}`, prints `spawned`. Deliberately a copy of handoffd.bb's
+    `spawn-consult-session!` (the first hotfix above), not a refactor of it.
+  - `swarmforge/scripts/test/test_consult_spawn_cli.sh` (new, 4 checks,
+    fake tmux on PATH, own socket file) registered in
+    `swarmforge/scripts/test/suite-manifest.tsv` as standing (the same
+    hunk trims trailing tabs on two neighbouring rows).
+  - `extension/test/nightClosingCeremonyRotateDocumenterFallback.test.js`
+    (new, 3 tests): a stub `rotate_to_role.sh` exiting 5, the REAL
+    consult_spawn_cli.bb, a fake tmux; drives the real exported functions.
+    Its fixture builder tripped three guards on main; BL-1593 (done) owns
+    those rows and both fixes - build on BL-1593's landed shape, never
+    touch makeFixture's allocation or scripts block yourself.
+
+  ### Review goals (C1-C9)
+
+  C1. Confirm the fallback end to end (scenario 07): run the real vitest
+      file against `extension/out` and pin its three test names.
+  C2. Confirm the CLI (scenarios 08, 09): run the real shell test and pin
+      its four PASS lines and the manifest row; drive the real CLI through
+      the fixture shape that test builds (fake tmux logging new-session
+      and respawn-pane calls) for the four contract rows. The
+      `no-session-name` and `resolve-single-role-repair` non-ok branches
+      are not rows - record whether the fixture can reach them.
+  C3. Confirm the no-new-teardown-code claim (scenario 04, its CLI row): a
+      marker the CLI wrote (its JSON has `role`, `requested_by`,
+      `started_at_ms`) must be torn down by the real
+      `consult-teardown-sweep!` under the same fixture as the daemon's
+      markers (live session, idle pane, empty mailbox -> killed and
+      cleared). Name any field the daemon's `write-consult-marker!`
+      writes that the CLI does not, and whether the sweep reads it.
+  C4. PROBE P1, record, do not fix: `stdio: 'pipe'` discards the CLI's
+      status JSON, while the commit message says "the CLI's own stdout
+      already named the reason for a human reading the ceremony's process
+      output". Record where, if anywhere, a `no-such-role` /
+      `already-consulting` refusal is visible after a live ceremony run.
+  C5. PROBE P2: after a successful spawn the fallback still sends the
+      coordinator the pre-hotfix `BL-658: rotate resident to documenter`
+      note. Record what the coordinator prompt tells it to do with that
+      note today (a second rotate attempt against a resident that just
+      refused, or nothing) and whether the note is now misleading.
+  C6. PROBE P3: the ceremony sends `instructBriefing` (a note to the
+      documenter) as the action AFTER `rotate-documenter`
+      (nightClosingCeremonyRun.ts ~240-244). The spawned session boots
+      with an empty mailbox; `consult-teardown-sweep!` kills a consult
+      session whose pane is idle and mailbox empty. Record the gap between
+      spawn and the note landing, whether a booting pane reads as idle to
+      the sweep's predicate, and whether the sweep could kill the session
+      before the briefing note arrives. A confirmed race is a note to the
+      specifier.
+  C7. PROBE P4: `env-args`. handoffd.bb's `spawn-consult-session!` passes
+      `(openrouter-respawn-env-args)`; the CLI passes `[]`. Record whether
+      a documenter seat on a non-Claude provider (roles.tsv `agent`
+      column) would spawn without env it needs, against the live roster.
+  C8. Note only, P5: at mint `git branch --contains a27d082c2d` listed
+      main, swarmforge-QA and swarmforge-documenter - not coder, cleaner,
+      architect, hardender. The ceremony runs from the master checkout's
+      `extension/out`, so the live path is main's; record which worktrees
+      carry it on the parcel's day.
+  C9. Note only, P6: the commit says `daemon_cycle_guard_lib_test_runner.bb`
+      reports 0 banned-API debt across 102 files with the new CLI; re-run
+      and record.
+
+  ### Scenario notes for the coder (second hotfix)
+
+  - Scenario 07 runs `npx vitest run
+    test/nightClosingCeremonyRotateDocumenterFallback.test.js` from
+    `extension/` (1.4 s measured) and parses the reporter's test names;
+    `extension/out` must be compiled first, as the acceptance lane
+    already requires.
+  - Scenario 08 runs the real `test_consult_spawn_cli.sh` and greps
+    `suite-manifest.tsv` for the row; scenario 09 builds the same fixture
+    (fake tmux writing `TMUX_LOG`, `.swarmforge/tmux-socket`,
+    `.swarmforge/roles.tsv`, `.swarmforge/launch/documenter.sh`) per row;
+    the `roles.tsv row is missing` row uses a role name absent from the
+    fixture roster. Validate every Outline column against explicit
+    KNOWN_VALUES (never branch on scenario shape).
+  - Scenario 04's CLI row writes its marker by running the real CLI (not
+    hand-written JSON) so the shape under test is the CLI's own.
+  - Fixture roots per BL-1390: `git init` under mkdtemp, proven with
+    `git rev-parse --git-common-dir` before any mutating git command; the
+    fake tmux and its socket file live inside the fixture, never the live
+    socket.
 
 notes: |
   Ledger: linked to row 5bdf93beed via `hotfix_ledger_update.bb --link` in
   the mint commit. The mint commit also carries the coordinator's
   uncommitted ledger edits (the row itself, and four sibling rows
   normalised pending -> stamp-open) because the file is committed whole.
+  Row a27d082c2d re-linked from BL-1591 to this ticket on 2026-09-21 with
+  the same tool, in the consolidation commit.
+
+  Consolidation record (BL-680, Article 5.3), 2026-09-21: absorbs BL-1591
+  (minted 2026-09-16 by the specifier on the ledger sweep's pending row;
+  approved 2026-09-16) on the human's morning consolidation sweep - one
+  mechanism (the consult session), two spawners, one teardown sweep, one
+  fixture; BL-1591's scenario 04 already reused this ticket's handler.
+  BL-1591 retired to backlog/done/M8/ as superseded-by-BL-1549; its
+  scenarios are this feature's 07, 08 and 09, the CLI row of 04 and the
+  second row of 06; its feature file left as a scenario-less tombstone (a deletion on one side of a diverged main can never join the daemon reconcile - check_merge_deletion.sh, BL-1662). BL-1591 quoted the commit
+  message's observation verbatim, carried into source above; no operator
+  sentence was quoted. Siblings by subject: BL-1528 (ceremony send
+  undeliverable), BL-658 (the night closing ceremony), BL-1593 (done - the
+  fallback test's fixture guards). Grep all before minting anything about
+  consult sessions or the ceremony's documenter hop. Evidence:
+  backlog/evidence/consolidation-sweep-paused-20260921.md.
 
 qa_e2e_procedure: |
   On the parcel commit:
   1. `git diff main...HEAD --name-only` names only evidence, the feature,
-     the step handler + index.js registration, and optionally
+     the step handler (+ lib/), and test files (optionally
      `swarmforge/scripts/test/test_chase_departing_mid_parcel_gate.sh` or
-     a new sibling test; none of handoffd.bb, mono_router_lib.bb,
-     handoff_lib.bb, single_role_repair_lib.bb (invariant 1).
-  2. `run_acceptance.sh` on the BL-1549 feature -> 6 scenarios green.
+     a new sibling test); none of handoffd.bb, mono_router_lib.bb,
+     handoff_lib.bb, single_role_repair_lib.bb, consult_spawn_cli.bb,
+     night-closing-ceremony-run.ts (invariant 1).
+  2. `run_acceptance.sh` on the BL-1549 feature -> 9 scenarios green
+     (01 x6, 02, 03, 04 x5, 05, 06 x2, 07, 08, 09 x4).
   3. `bash swarmforge/scripts/test/test_chase_departing_mid_parcel_gate.sh`
      (8 original checks still pass) and
      `bb swarmforge/scripts/test/mono_router_lib_test_runner.bb` green.
+     Under `extension/`: `npx vitest run
+     nightClosingCeremonyRotateDocumenterFallback` -> 3/3;
+     `bash swarmforge/scripts/test/test_consult_spawn_cli.sh` -> ALL
+     CHECKS PASSED with 01-04 in its PASS lines.
   4. The evidence file records review goal 4's probe outcome explicitly
-     (confirmed with the log lines, or refuted with the reason).
-  5. `backlog/hotfix-ledger.yaml` row 5bdf93beed: `human_decision: null`.
-  6. After done: the human runs `bb swarmforge/scripts/hotfix_ledger_update.bb .
-     --decide 5bdf93beed approved|waived` and commits the ledger.
+     (confirmed with the log lines, or refuted with the reason), and
+     C3-C9: the marker-field comparison, P1's visibility, P2's coordinator
+     behaviour, P3's timing and the idle predicate, P4's env-args, P5's
+     worktree list, P6's debt count.
+  5. `backlog/hotfix-ledger.yaml` rows 5bdf93beed and a27d082c2d:
+     `human_decision: null`.
+  6. Live check, read-only, no launch: `bb swarmforge/scripts/consult_spawn_cli.bb`
+     with no arguments prints usage on stderr and exits 2.
+  7. After done: the human runs `bb swarmforge/scripts/hotfix_ledger_update.bb .
+     --decide 5bdf93beed approved|waived` and the same for a27d082c2d,
+     and commits the ledger.

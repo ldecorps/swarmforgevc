@@ -10,7 +10,8 @@ severity: medium
 # landed with a review pass's inventory outside the directory every gate,
 # grep and doc names as the evidence trail (Article 4.4), so for BL-1278
 # (hardender) and BL-1478 (cleaner) the trail reads as missing.
-status: todo
+status: superseded
+closed_as: superseded-by-BL-1603
 epic: code-quality-gates
 priority: 12
 direction: swarm-reported
@@ -136,6 +137,17 @@ description: |
     guard on the source branch already checked.
 
 notes: |
+  RETIRED 2026-09-21 by the specifier on the human's morning consolidation
+  sweep over paused/pending tickets (Consolidation Authority, BL-680;
+  Article 5.3): absorbed into BL-1603 - same root cause or fix shape, one
+  outcome. Every FIRM line, constraint and quoted source sentence of
+  this ticket survives verbatim or in substance in BL-1603; its four scenarios are BL-1603 scenarios 03, 04, 05 and the census pin on 02.
+  This ticket's feature file is left in place as a scenario-less tombstone
+  (its contract now lives in
+  BL-1603's). Human approval on this ticket stands as history; the absorber
+  was separately approved and nothing unapproved was added. Evidence:
+  backlog/evidence/consolidation-sweep-paused-20260921.md.
+
   2026-09-13: human_approval approved by the operator (direct chat
   instruction to the coordinator, scoped to this ticket by name).
 
