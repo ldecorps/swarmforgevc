@@ -1782,7 +1782,20 @@
       (when task-name
         (println (str "2) Implement " task-name " from backlog/active/ with your edit/test tools.")))
       (println "3) Commit, git_handoff to the next role, then done_with_current / ready_for_next.")
-      (println "USE YOUR TOOLS NOW. Narrating or re-printing this TASK is not progress."))))
+      (println "USE YOUR TOOLS NOW. Narrating or re-printing this TASK is not progress."))
+    ;; A note re-served with only the prohibition above and no remedy left
+    ;; every local Ollama coordinator tried on 2026-09-20/21 (four different
+    ;; models) looping on the same in_process note - re-running
+    ;; ready_for_next.sh against the instruction, or inventing infra "fixes"
+    ;; - because nothing told it how to finish. Name the remedy inline, the
+    ;; same way the git_handoff branch already does.
+    (when (= "note" typ)
+      (println "1) Read the PAYLOAD and act on it per your role prompt if it asks for something")
+      (println "   (e.g. a 'no parcel in flight' nudge is cleared by YOUR git_handoff to the stage that owns the next pass).")
+      (println "2) When done - or if there is nothing further you can do about it now - run:")
+      (println "   swarmforge/scripts/done_with_current.sh   (no arguments; completes THIS parcel)")
+      (println "3) Only then run ready_for_next.sh for the next parcel.")
+      (println "USE YOUR TOOLS NOW. Re-running ready_for_next.sh re-serves this same parcel; it does not finish it."))))
 
 ;; BL-1529: the shared two-call protocol every script-originated git_handoff
 ;; sender must speak. swarm_handoff.bb's own self-audit challenge (Article
