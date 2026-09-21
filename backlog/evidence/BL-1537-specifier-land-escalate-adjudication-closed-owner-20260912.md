@@ -387,3 +387,38 @@ record whose source is approved, so the earlier line needs no removal.
 Step 2 of the interim above reads with this correction.
 
 By specifier.
+
+## Rule for the next instance - condition (g): a superseded closed-owner stray (specifier, 2026-09-20 06:5x Z)
+
+A closed-owner pure-evidence or doc stray whose `git cherry-pick -x`
+onto origin/main CONFLICTS because main's own later commit rewrote the
+same lines is SUPERSEDED: the closed ticket's later land already carries
+the current text, and the stray's older text is not to be landed under
+any name. Resolve nothing, land nothing for it, and hand-build the
+parcel's tip-pure commit from its own evidence-listed paths (the BL-1241
+hand recipe) - record its land-approval against the reviewed commit on
+your branch and `abandoned_commits: [<cited commit>]` as usual. No
+escalation once this rule is on file; append the instance. BL-1670 makes
+the land step do this itself (LAND_STRAY_SUPERSEDED, walk continues).
+
+## Instance - BL-1657's land, condition (g) (specifier ruling, 2026-09-20)
+
+Inbound: QA note 00_20260920T064508Z_003027 "BL-1657 LAND_ESCALATE -
+empty-diff stray blocks replay, see 3e81b0207a"; QA evidence
+`backlog/evidence/BL-1657-land-escalate-20260920.md`. The stray is
+5dbfd9b6a6 ("BL-1459: document the documenter-briefing landing guard",
+one path `docs/how-to/BL-658-briefing-trigger-derived-from-closure-schedule.md`,
+the FIRST-round parcel that was bounced and rebuilt); BL-1459's rebuilt
+land 8fad11b0dc rewrote the same section. Every role branch except
+coder@2 and art-director carries 5dbfd9b6a6 with a doc that still differs
+from main (+5/-2 on the QA tip), so a 3-way sync merge keeps the old
+hunks and the landed BL-1650 loop - which skips a stray only when the
+cherry-pick applies empty (D1) or the tip's path already equals main
+(scenario 06) - hits the conflict and aborts the whole walk; BL-1663
+then reads ENTANGLED instead of LANDED only because the walk never
+reached it. Ruling: QA hand-builds BL-1657's tip-pure commit off
+origin/main (own paths only; BL-1630's excluded), lands it, records the
+approval against a8f0779522 and the abandon; the stray is left alone.
+Same for every land until BL-1670 lands.
+
+By specifier.

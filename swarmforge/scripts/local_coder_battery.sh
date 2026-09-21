@@ -85,7 +85,13 @@ EOF
 
   # model pairing probe (live path) — harness --result bypasses via resolve_result
   if command -v ollama >/dev/null 2>&1; then
-    if ollama run "$MODEL" "Reply with exactly: BATTERY_OK" 2>/dev/null | grep -q BATTERY_OK; then
+    # Capture full output before grepping: with `set -o pipefail`, a `grep -q`
+    # that matches early and closes its end of a live pipe can SIGPIPE ollama
+    # mid-write, poisoning the pipeline's exit status even though the match
+    # was found (BL-1127 false-fail, seen against a thinking model whose
+    # reply trails the match with more tokens).
+    model_probe_out="$(ollama run "$MODEL" "Reply with exactly: BATTERY_OK" 2>/dev/null)"
+    if printf '%s' "$model_probe_out" | grep -q BATTERY_OK; then
       echo "phase=model status=pass detail=ollama BATTERY_OK"
     else
       echo "phase=model status=fail detail=ollama probe missed BATTERY_OK"

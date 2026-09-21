@@ -47,6 +47,9 @@ swarmforge_cron_line_belongs_to_root() {
   [[ "$line" == *"# swarmforge-shift-schedule-begin $root "* ]] && return 0
   [[ "$line" == *"# swarmforge-shift-schedule-end $root" ]] && return 0
   [[ "$line" == *"# swarmforge-shift-schedule-end $root "* ]] && return 0
+  # Weekly recruiter (install_recruiter_cron.sh), same root-bounded shape.
+  [[ "$line" == *"# swarmforge-recruiter-weekly $root" ]] && return 0
+  [[ "$line" == *"# swarmforge-recruiter-weekly $root "* ]] && return 0
   # The freshness line's own signature: the swarm writes this env assignment
   # itself, so it is a marker in every sense but the comment syntax.
   [[ "$line" == *"FRESHNESS_ROOT=$root "* ]] && return 0
