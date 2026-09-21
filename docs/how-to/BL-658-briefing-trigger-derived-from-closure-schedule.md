@@ -90,6 +90,56 @@ the daemon's overnight closure window:
     the path costs nothing today and means whoever lifts that guard need
     only add the one line.
 
+**A sleep runs the sequence to its own end before the stack stops
+(BL-1640).** Before this, the CLI above was ONE tick of the state
+machine: the daemon's periodic sweep drove the rest on its overnight
+window, but a bedtime kills the daemon seconds after the CLI call, so a
+weekday 17:00 sleep got only `freeze-promotion` and nothing after it — no
+lean packet, no documenter instruction, no briefing runway (2026-09-18
+16:00Z: freeze, then `kill_all_swarm` four seconds later). Two changes
+close this:
+
+- **Sleep-relative deadlines.** When `--sleep-path` is set,
+  `resolveCeremonyDeadlines` in `night-closing-ceremony-run.ts` computes
+  `drainBudgetMs` and `hardDeadlineMs` from **now**, not from today's
+  `closure_stop_local`: `drainBudgetMs = closing_drain_budget_minutes *
+  60_000`, `hardDeadlineMs = nowMs + drainBudgetMs +
+  closing_briefing_budget_minutes * 60_000`. The daemon's own overnight
+  trigger (`--sleep-path` unset) is untouched and still anchors
+  `hardDeadlineMs` to `closure_stop_local` via `parseHmToMs`. A
+  *continuing* sleep (already `frozen`/`draining`/`briefing`) keeps the
+  deadlines its first tick wrote — only a NEW ceremony computes fresh
+  ones.
+- **The loop and its ceiling.** `finish_shift_run_closing_ceremony` in
+  `swarmforge/scripts/finish_shift_lib.sh` calls the same CLI, unchanged,
+  in a loop (`FINISH_SHIFT_CEREMONY_TICK_SECONDS`, default 30s, 0 in
+  tests) until `sleepLoopDecision` (`nightClosingCeremonyLive.ts`) reads
+  the state's `phase` as `done`. Past the ceiling —
+  `hardDeadlineMs + SLEEP_CEILING_GRACE_MS` (a fixed one-minute grace) —
+  it prints `finish-shift: closing ceremony overran its budgets -
+  stopping anyway` to stderr and the stack stops regardless: bedtime
+  never hangs on a ceremony that never finishes. A tick that exits
+  non-zero, or whose state carries no `hardDeadlineMs` at all (an
+  unreadable tick, or the gate bypass — unreachable with `--sleep-path`
+  set), also stops the loop and lets bedtime continue rather than looping
+  forever on a read failure.
+- **A second sleep the same calendar day is a new ceremony when a shift
+  happened since the first.** `advanceNightClosingCeremony`'s
+  `advanceSameDayDone` starts a fresh `startFrozen` ceremony whenever the
+  observation is `fromSleep` and `workedAShift !== false`; a second sleep
+  with no shift of work since (`workedAShift === false`) leaves the prior
+  `done` state exactly as read — still one recorded outcome per day of
+  actual work, not silence on the days that do more than one shift.
+  `fromSleep` distinguishes this from the daemon's own periodic sweep,
+  which must never reopen a night it already closed on its own overnight
+  window.
+
+  Live proof: the next weekday bedtime's `day-shift.log` block shows the
+  ceremony state `done` with a sequence longer than
+  `["freeze-promotion"]`, the specifier's inbox holds that shift's lean
+  packet note, and the documenter's inbox holds `produce the morning
+  briefing for <date>` — one bedtime, not twenty.
+
 ## `handoffd` wiring
 
 Before the fixed morning generation sweep:
