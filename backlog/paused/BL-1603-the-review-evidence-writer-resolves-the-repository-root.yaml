@@ -1,5 +1,5 @@
 id: BL-1603
-title: "record-review-evidence.js takes its root from process.cwd(), so a role that runs it from extension/ (where npm must run) writes and commits a correct evidence file under extension/backlog/evidence/ that no repo-root grep or bounce-history read ever sees - six such files are on main (cleaner x4, hardender x1, QA x1), five with no repo-root copy; the writer resolves the repository root itself, refuses to write anywhere but <root>/backlog/evidence/, the orphans move to where they belong, and a test with the working directory stubbed to a subdirectory proves it"
+title: "record-review-evidence.js takes its root from process.cwd(), so a role that runs it from extension/ (where npm must run) writes and commits a correct evidence file under extension/backlog/evidence/ that no repo-root grep or bounce-history read ever sees - six such files are on main (cleaner x4, hardender x1, QA x1), five with no repo-root copy; the writer resolves the repository root itself, refuses to write anywhere but <root>/backlog/evidence/, the pre-commit guard chain refuses any staged path whose backlog area directory is not at the repository root and names the root path (absorbed from BL-1552, 2026-09-21), the orphans move to where they belong, and a test with the working directory stubbed to a subdirectory proves it"
 milestone: M8
 type: defect
 severity: medium
@@ -13,14 +13,19 @@ direction: swarm-reported
 depends_on: []
 mutation_cost: medium
 # medium: extension/src/tools/record-review-evidence.ts under Stryker; a
-# root-resolution seam and its unit cases.
-slice_size_envelope: low
+# root-resolution seam and its unit cases. Plus (BL-1552's half) one bash
+# guard and its shell test - no mutation tooling for shell - and one line
+# in run_commit_guards.sh.
+slice_size_envelope: medium
+# medium since the 2026-09-21 consolidation: two mechanisms (the writer's
+# root and the commit-time guard) for one outcome, still one sitting.
 required_stages: [coder, cleaner, architect, hardender, documenter, qa]
 
 acceptance: specs/features/BL-1603-the-review-evidence-writer-resolves-the-repository-root.feature
 
 required_wiring:
   - 'extension/src/tools/record-review-evidence.ts::show-toplevel::the writer resolves the repository root itself; the literal exists only with the fix (BL-1235)'
+  - 'swarmforge/scripts/run_commit_guards.sh::run_guard check_nested_backlog_path.sh::the cheap tier must reach the guard, a present-but-unchained guard gates nothing (from BL-1552)'
   - 'specs/pipeline/steps/bl1603EvidenceWriterResolvesRepoRootSteps.js::registerSteps::the handler lands in the same parcel as the feature (BL-233, BL-1371)'
 
 human_approval: approved
@@ -40,9 +45,23 @@ approval_context: >
   by hand, then removes the stray; extension/backlog/ is gone after the
   parcel. FIRM: the commit subject and the printed 10-hex commit are
   unchanged (the review-forward evidence gate reads them).
+  CONSOLIDATED 2026-09-21 by the specifier on the human's morning sweep
+  directive: BL-1552 (the commit-time guard, approved 2026-09-13 by the
+  operator's direct chat instruction) is absorbed here - same root cause,
+  same stray files, one outcome. Its FIRM lines carry over unchanged: the
+  guard keys on a backlog AREA directory (paused, active, done, hold,
+  evidence, archive, answers-archive, debt, topics) whose backlog/ parent
+  is not the repository root - never on the bare word backlog, so
+  extension/src/backlog/ and a docs file named backlog-*.md stay allowed;
+  the guard joins the cheap tier of run_commit_guards.sh and reports
+  through the chain (every violation at once, BL-1252), not a second hook;
+  no role prompt is edited - the refusal text teaches the fix. Both halves
+  were approved separately by the human and nothing unapproved was added,
+  so the approval stands (no re-pend, BL-1455).
 
 invariants:
   - "The writer never commits a path outside <repo-root>/backlog/evidence/: for any working directory inside the repository, the committed relative path starts with backlog/evidence/, and for any directory outside a repository it commits nothing."
+  - "No commit reaching main adds or modifies a path whose backlog area directory (paused, active, done, hold, evidence, archive, answers-archive, debt, topics) sits under a backlog/ that is not the repository root; the refusal names the root-relative path the file belongs at."
 
 description: |
   ## What is wrong
@@ -84,6 +103,52 @@ description: |
     and `extension/backlog/` does not exist (scenario 02, census pinned
     by the five names).
 
+  ## The commit-time guard (absorbed from BL-1552, 2026-09-21)
+
+  The writer fix above removes the cause; the guard is the backstop for
+  every OTHER way a nested backlog tree can be staged (a role hand-writing
+  evidence from extension/, a redirect, a script resolving relatively).
+  Nothing at commit time refuses the path today: the pre-commit chain
+  (`swarmforge/scripts/run_commit_guards.sh`, hook at
+  `swarmforge/git-hooks/pre-commit` via `core.hooksPath`, shared by every
+  worktree) checks size, ticket deletion, pipeline code on main, handler
+  registration and module graph - none looks at where a backlog path sits.
+  The forward-time gate (`review_forward_evidence_gate_lib.bb`, BL-1307)
+  keys on `backlog/evidence/` and refuses a forward whose ONLY evidence is
+  a stray, but a stray beside a proper file rides through (BL-1278 and
+  BL-1464 did), and BL-1478 reached the architect with no cleaner file
+  under `backlog/evidence/` at all. Whether that last case is the gate's
+  fail-open on a batch role's received-commit lookup is for the coder to
+  confirm; the commit-time guard is upstream of every one of these shapes.
+
+  - `swarmforge/scripts/check_nested_backlog_path.sh`: reads the staged
+    added/modified paths (`git diff --cached --name-only --diff-filter=AM`,
+    the same read `check_commit_size.sh` does) and exits 1 when any path
+    contains a backlog AREA segment - `backlog/` followed by one of
+    `paused`, `active`, `done`, `hold`, `evidence`, `archive`,
+    `answers-archive`, `debt`, `topics` - that is not at the repository
+    root. The refusal names each offending path and, beside it, the
+    root-relative path it belongs at (the substring from `backlog/` on).
+    Exits 0 otherwise; a path that merely contains the word `backlog`
+    (`extension/src/backlog/...`, `docs/.../backlog-*.md`,
+    `backlog/backlog-schema.md`) is never refused.
+  - The guard joins Tier 1 of `run_commit_guards.sh` (`run_guard
+    check_nested_backlog_path.sh`), so the chain reports it beside every
+    other violation in one refusal (BL-1252).
+  - `swarmforge/scripts/test/test_check_nested_backlog_path.sh`, in a
+    mkdtemp fixture proven by `git rev-parse --git-common-dir` (BL-1390),
+    registered in `swarmforge/scripts/test/suite-manifest.tsv` (BL-1424).
+  - `docs/reference/BL-632-commit-time-guard-refuses-pipeline-code-on-main.md`'s
+    guard list gains the guard (documenter).
+
+  Stray census, reconciled: BL-1552 (2026-09-13, main at 083d055ece)
+  counted three strays; this ticket's census (2026-09-16, main at
+  05e7ee0395) counts six and is the one the parcel re-derives with
+  `git ls-files extension/backlog` at its own base. BL-1552's `-summary`
+  qualifier for BL-1464-QA-20260913.md is the file name to use IF the two
+  copies differ and both are kept (the FIRM above); an identical twin is
+  simply removed.
+
   ## How (direction, not mandate)
 
   - `resolveRepoRoot(cwd, execFn)` beside the existing helpers; `main`
@@ -96,17 +161,34 @@ description: |
     and say so in evidence).
   - Documenter: the record-review-evidence how-to (or the tool's header)
     states the root rule; no diagram trigger.
+  - Guard (BL-1552's half): model the script on `check_ticket_deletion.sh`
+    (bash 3.2-safe `case` globs, `set -euo pipefail` inside the guard
+    only); the area list is one literal in the script, quoted by the
+    refusal. BL-1252's handler (`bl1252CommitGuardCompleteInventorySteps.js`)
+    and `test/lib/commit_guard_fixture_copy.sh` already build a fixture
+    with the chain and a second refusing guard; scenario 05 reuses that
+    shape rather than staging a 50 MB file. Scenario 02's last step is the
+    census pin (BL-1445): the handler re-runs `git ls-files | grep -E
+    '(^|/)backlog/' | grep -v '^backlog/'` against the parcel tree and
+    expects zero hits.
 
 constraints: >
-  The tool, its tests, the six files' relocation, evidence and docs; the
-  commit subject format and the printed commit are unchanged; no other
-  tool changes. The step handler lands with the feature (BL-233).
-  Evidence named BL-1603-*.
+  The tool, its tests, the guard and its shell test, the one-line chain
+  edit, the six files' relocation, evidence and docs; the commit subject
+  format and the printed commit are unchanged; no other tool changes. The
+  step handler lands with the feature (BL-233). Evidence named BL-1603-*.
 
 out_of_scope: |
   - record-bounce.js and other writers (none found writing evidence
     relative to cwd; if one is, its own ticket).
   - The role prompts' check (landed with the rule_proposal acceptance).
+  - Editing role prompts to say "run from the repo root"; the guard's
+    refusal is the teaching moment and reaches the role that needs it
+    (BL-1552).
+  - Changing the forward-time evidence gate (BL-1307) or explaining its
+    BL-1478 pass beyond what the coder confirms while building (BL-1552).
+  - The pre-merge-commit hook: a merge brings in paths a commit-time guard
+    on the source branch already checked (BL-1552).
 
 qa_e2e_procedure: |
   On the parcel commit, from `extension/` after `npm run compile`:
@@ -119,8 +201,21 @@ qa_e2e_procedure: |
      -> five files.
   3. `npx vitest run test/recordReviewEvidence*.test.js` -> green with the
      new cwd cases.
-  4. Acceptance resolving both scenarios
+  4. Acceptance resolving every scenario (01 x3, 02, 03 x2, 04 x3, 05)
      (`bash specs/pipeline/scripts/run_acceptance.sh specs/features/BL-1603-*.feature`).
+  5. `bash swarmforge/scripts/test/test_check_nested_backlog_path.sh` -
+     ALL PASS; `grep -n test_check_nested_backlog_path
+     swarmforge/scripts/test/suite-manifest.tsv` prints one standing row;
+     `bash swarmforge/scripts/test/test_run_commit_guards.sh` - ALL PASS
+     (the chain still reports every guard, now one more in the cheap tier).
+  6. In a mkdtemp fixture with the guard scripts copied in: stage
+     `extension/backlog/evidence/BL-1-x.md`, run
+     `swarmforge/scripts/run_commit_guards.sh`; expect exit non-zero and a
+     refusal naming `check_nested_backlog_path.sh` and
+     `backlog/evidence/BL-1-x.md`. Stage `extension/src/backlog/x.ts` and
+     `docs/how-to/backlog-notes.md` instead; expect exit 0.
+  7. Break-then-restore: remove the `run_guard` line from Tier 1;
+     scenario 05 fails (the chain no longer names the guard); restore.
 
 source: |
   Architect rule_proposal to the specifier, priority 50, 2026-09-16T16:40Z
@@ -132,6 +227,18 @@ source: |
   BL-<id> backlog/." Specifier verification: `git ls-files extension/backlog`
   on main lists six files (first 943079fdfc, 2026-09-09).
 
+  BL-1552 (absorbed 2026-09-21): minted 2026-09-13 by the specifier as a
+  second finding of the BL-820 pass for shift 2026-09-13 (evidence
+  backlog/evidence/closing-ceremony-2026-09-13-specifier.md); approved
+  2026-09-13 by the operator (direct chat instruction to the coordinator,
+  scoped to that ticket by name). Its census: `git ls-files | grep -E
+  '(^|/)backlog/' | grep -v '^backlog/'` and `git log --all
+  --format='%h %aI %s' -- extension/backlog/` on main at 083d055ece -
+  five commits by four roles (BL-1448 cleaner 2026-09-07, reverted 4 min
+  later; BL-1278 hardender 09-09; BL-1478 cleaner 09-11; BL-1464 QA 09-13;
+  BL-1484 architect 09-13, reverted 30 s later and rewritten at the root
+  path).
+
 notes: |
   Minted 2026-09-16 by the specifier while accepting the architect's
   rule_proposal (the prompt halves landed in the same commit: cleaner,
@@ -140,5 +247,14 @@ notes: |
   becomes findable and the class cannot recur), Estimable (one resolver,
   two unit cases, six git mv, one sitting), Small (two scenarios, one invariant), Testable (cwd-stubbed cases in milliseconds; the scratch
   clone run in e2e).
+
+  Consolidation record (BL-680, Article 5.3), 2026-09-21: absorbs BL-1552
+  ("a nested backlog tree never enters a commit") on the human's morning
+  consolidation sweep - same root cause (a cwd-relative evidence path),
+  same stray files, one outcome. BL-1552 retired to backlog/done/M8/ as
+  superseded-by-BL-1603; its scenarios are this feature's 03, 04 and 05
+  plus the census pin on 02; its feature file left as a scenario-less tombstone (a deletion on one side of a diverged main can never join the daemon reconcile - check_merge_deletion.sh, BL-1662). BL-1552 quoted no
+  operator sentence; every FIRM line survives in approval_context above.
+  Evidence: backlog/evidence/consolidation-sweep-paused-20260921.md.
 
 assigned_to: null

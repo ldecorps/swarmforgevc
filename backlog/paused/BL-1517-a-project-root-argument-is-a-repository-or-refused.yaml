@@ -1,5 +1,5 @@
 id: BL-1517
-title: "Babashka CLIs that take `<project-root>` positionally accept a flag or a literal as the root and create it under cwd: `main_sync_status_cli.bb --help` wrote `--help/.swarmforge/daemon/` (2026-09-04), `operator_runtime.bb --tick-once` wrote `--tick-once/.swarmforge/operator/` (2026-07-13), `expedite_cli.bb` created `unpark/.swarmforge/expedite/` (2026-09-04); a shared root-argument check refuses a root that is not an existing git checkout before any directory is created"
+title: "Babashka CLIs that take `<project-root>` positionally accept a flag or a literal as the root and create it under cwd: `main_sync_status_cli.bb --help` wrote `--help/.swarmforge/daemon/` (2026-09-04), `operator_runtime.bb --tick-once` wrote `--tick-once/.swarmforge/operator/` (2026-07-13), `expedite_cli.bb` created `unpark/.swarmforge/expedite/` (2026-09-04) - and the test harnesses under swarmforge/scripts/test that bind a fixture root positionally re-root at cwd when the argument is absent (`dropped_parcel_sweep_harness.bb` delivered two real notes into the live coordinator inbox, 2026-08-14; absorbed from BL-889, 2026-09-21); one shared root-argument check refuses a root that is blank, flag-shaped, not a directory or (for a CLI) not a git checkout, before any directory is created or any mailbox is read"
 milestone: M8
 type: defect
 severity: medium
@@ -15,9 +15,10 @@ priority: 14
 direction: swarm-reported
 depends_on: []
 mutation_cost: low
-# low: one small pure lib, three one-line wiring sites, one step handler;
-# the bb lane has no mutation/CRAP/DRY wired (BL-472), the hardener records
-# the degraded fallback.
+# low: one small pure lib, three CLI and three harness one-line wiring
+# sites, one enumerating check over the harness directory, one step
+# handler; the bb lane has no mutation/CRAP/DRY wired (BL-472), the
+# hardener records the degraded fallback.
 slice_size_envelope: low
 required_stages: [coder, cleaner, architect, hardender, documenter, qa]
 
@@ -27,6 +28,9 @@ required_wiring:
   - 'swarmforge/scripts/main_sync_status_cli.bb::project_root_arg_lib.bb::the CLI that wrote --help/ sources the check'
   - 'swarmforge/scripts/operator_runtime.bb::project_root_arg_lib.bb::the CLI that wrote --tick-once/ and --check-once/ sources the check'
   - 'swarmforge/scripts/expedite_cli.bb::project_root_arg_lib.bb::the CLI that wrote unpark/ sources the check'
+  - 'swarmforge/scripts/test/dispatch_gap_sweep_harness.bb::project_root_arg_lib.bb::the harness in which the unguarded shape is reproducible on main sources the check (from BL-889)'
+  - 'swarmforge/scripts/test/dropped_parcel_sweep_harness.bb::project_root_arg_lib.bb::the harness the 2026-08-14 incident happened in sources the check (from BL-889)'
+  - 'swarmforge/scripts/test/commit_integrity_856_scenarios_cli.bb::project_root_arg_lib.bb::the third harness with the silent shape sources the check (from BL-889)'
   - 'specs/pipeline/steps/bl1517ProjectRootArgSteps.js::registerSteps::the handler lands in the same parcel as the feature (BL-233, BL-1371)'
 
 human_approval: approved
@@ -37,9 +41,28 @@ approval_context: >
   refused with usage and exit 2 before any directory is created; the three
   named CLIs are the wiring sites and their behaviour on a valid root is
   unchanged.
+  CONSOLIDATED 2026-09-21 by the specifier on the human's morning sweep
+  directive: BL-889 (a sweep harness invoked without its fixture-root
+  argument silently re-roots at the cwd; approved 2026-08-14 at severity
+  medium, amended 2026-09-03) is absorbed here - the same defect class (an
+  absent or invalid root argument silently resolves against cwd) and the
+  same fix shape (one shared check, wired at each entry point, refusing
+  before the first read or write). BL-889's answered questions carry over:
+  severity medium stands; a harness pointed at real state DELIBERATELY
+  (an explicit `.` or an explicit live path) stays allowed - a harness
+  refuses ABSENCE and, under the shared check, a flag-shaped or
+  non-directory argument, never "a root that looks live"; a correctly
+  invoked harness does exactly what it does today. FIRM: for the
+  harnesses the check's repository requirement is a per-harness
+  strictness the coder verifies against each harness's own fixture (a
+  sweep fixture need not be a git checkout); for the three CLIs it is
+  required. Both halves were approved separately by the human and nothing
+  unapproved was added, so the approval stands (no re-pend, BL-1455).
 
 invariants:
   - "No CLI wired to the check creates a directory, file or log under a root argument that failed the check; the refusal happens before the first write and names the offending argument verbatim."
+  - "No harness under swarmforge/scripts/test/ ever resolves its fixture root relative to the process working directory: an absent root is refused, never defaulted."
+  - "A refused invocation is inert - it reads no mailbox, writes no state, and sends no handoff, so the filesystem is byte-identical before and after it."
 
 description: |
   ## What is wrong
@@ -85,11 +108,81 @@ description: |
   same check on `root`. A valid root behaves exactly as today, including
   main_sync_status_cli.bb's `.` default.
 
+  ## The test harnesses (absorbed from BL-889, 2026-09-21)
+
+  Several harnesses under `swarmforge/scripts/test/` take the fixture
+  project root as a bare first positional argument (`(def project-root
+  (first *command-line-args*))`) and then build every path from it with
+  `babashka.fs/path`. `fs/path` silently drops a nil first segment
+  (`(fs/path nil ".swarmforge" "roles.tsv")` returns the RELATIVE
+  `".swarmforge/roles.tsv"` - verified directly under bb, no exception,
+  no warning), so omitting the argument does not error - it yields a
+  relative path and re-roots the entire run at the process working
+  directory. Run inside a live worktree, the harness reads the real
+  `.swarmforge/` state. That is not a read-only accident: a sweep harness
+  exists precisely to exercise the REAL mechanism - the same
+  `chase_sweep_lib.bb` decisions through the same `swarm_handoff.bb` send
+  path - so a cwd-rooted run decides against live tickets and DELIVERS
+  live parcels into other roles' inboxes. This happened once
+  (`dropped_parcel_sweep_harness.bb`, 2026-08-14, two real notes into the
+  live coordinator inbox for BL-871/BL-746, quarantined before pickup).
+  The hazard has been held off since by a hardender rule (`dc85c6ba8`)
+  alone; this is the guard the rule stands in for.
+
+  Scope: every harness under `swarmforge/scripts/test/` that binds a
+  fixture root from a bare positional argument, as that set exists at
+  implementation time. At spec time (re-verified 2026-09-03 and
+  2026-09-21) that is `dispatch_gap_sweep_harness.bb:25`,
+  `dropped_parcel_sweep_harness.bb:21` and
+  `commit_integrity_856_scenarios_cli.bb:22`, each still carrying the
+  unguarded `(def project-root (first *command-line-args*))` shape and the
+  first two with zero `System/exit` occurrences (the third's `System/exit
+  1` at line 63 is a pre-existing unrelated failure exit, not a guard).
+  `bl619_token_burn_briefing_harness.bb:28` and
+  `commit_integrity_test_cli.bb:32` use `(nth *command-line-args* 0)`,
+  which THROWS on a missing arg; they already fail loud and are out of
+  scope - they are the shape the guarded harnesses should end up behaving
+  like.
+
+  What is wanted for a harness: the same `project_root_arg_lib.bb` check,
+  wired at the point the harness binds its root, so a missing argument
+  prints a usage line naming the missing fixture root to standard error
+  and exits non-zero via an explicit `System/exit` (never a bare uncaught
+  throw) BEFORE any mailbox read, state write, or handoff send (scenario
+  04). A correctly invoked harness still sweeps its fixture root and only
+  that root (scenario 05). Scenario 06 is the durable half: a check that
+  ENUMERATES the harnesses it covers - every file under
+  `swarmforge/scripts/test/` that binds a root from the command line -
+  rather than carrying a hardcoded list, so a harness added later with
+  the same unguarded shape fails the check instead of shipping the hazard
+  again; it must drive the real enumeration, not a stub returning the
+  list the scenario forbids.
+
+  Strictness: the check exposes two levels - `:repository` (blank,
+  flag-shaped, not a directory, or not inside a git checkout is refused;
+  the three CLIs) and `:directory` (the same minus the git test; a
+  harness whose fixture root is a plain `.swarmforge/` tree). Which level
+  each harness takes is the coder's call, verified against that harness's
+  own fixture builder (`dispatch_gap_sweep_harness.bb` already runs `git
+  -C <root> rev-parse`, so `:repository` fits it). Under either level an
+  explicit `.` inside a real checkout is allowed - only ABSENCE and a
+  malformed argument are refused, never "this root looks live".
+
   ## How (direction, not mandate)
 
   Pure lib, IO at the wiring site, like every `*_lib.bb`. Do not sweep
-  every CLI in the tree in this slice - the three named are the ones with
-  a specimen; a follow-up can adopt the lib elsewhere once it exists.
+  every CLI in the tree in this slice - the three named CLIs are the ones
+  with a specimen; a follow-up can adopt the lib elsewhere once it exists.
+  The harness side is bounded by scenario 06's enumeration, not by a list.
+  Scenarios 04 and 05 run harnesses that can WRITE: drive them from a
+  `fs.mkdtempSync` fixture root removed in a `finally` and swept by prefix
+  before the run too, and never let a step resolve a harness root to the
+  repository - an acceptance test for this defect that reproduces the
+  defect is the one failure mode worth designing against. Scenario 04 is
+  a Scenario Outline over the three harnesses: validate its `<harness>`
+  column against an explicit `KNOWN_VALUES` set, no passthrough check.
+  Handler `bl1517ProjectRootArgSteps.js` lands in the SAME commit as the
+  feature (BL-233).
 
   ## QA e2e (qa_e2e)
 
@@ -101,9 +194,48 @@ description: |
   a `REFUSED project-root` line naming the argument, and `ls -A` of that
   directory unchanged. From a real checkout, confirm each CLI's happy path
   is unchanged (main_sync_status_cli.bb prints its JSON verdict).
+  Harnesses (from BL-889): from a scratch directory outside any worktree
+  (`mkdir -p ./tmp/bl1517-scratch && cd ./tmp/bl1517-scratch`), run each
+  in-scope harness with no arguments. Each must print a usage line naming
+  the missing fixture root, exit non-zero, and leave the scratch directory
+  with no `.swarmforge/` in it. Then run `dispatch_gap_sweep_harness.bb`
+  against a fixture root with a seeded dispatch gap and confirm the nudge
+  lands in the FIXTURE's coordinator inbox while the live repository's
+  coordinator inbox is untouched (compare a `ls` of
+  `.swarmforge/handoffs/coordinator/inbox/new/` before and after).
+
+source: |
+  BL-889's source, carried verbatim (absorbed 2026-09-21): Hardender
+  rule_proposal to specifier, 2026-08-14 (handoff
+  50_20260814T012006Z_000124_from_hardender): "Never run a
+  *_sweep_harness.bb w/o its fixture-root arg: bb fs/path silently drops a
+  nil first segment, resolving relative to cwd - inside a live worktree
+  this scans real mailboxes, not a fixture."
+  Rationale as reported: "Ran dropped_parcel_sweep_harness.bb with no args
+  hardening BL-719; it used this worktree as root, delivering 2 real notes
+  into the live coordinator inbox for BL-871/BL-746. Quarantined before
+  pickup."
+  Accepted as a hardender rule in `dc85c6ba8` (the operator-discipline
+  half); the guard was minted as BL-889 (the durable half) and lives here
+  since the consolidation.
 
 notes: |
   - 2026-09-10 (specifier): minted from the coordinator's note "coder
     worktree on branch 'side' + root mkdir pollution, mint cleanup",
     alongside BL-1515 (branch guard + repair) and BL-1516 (fixture proofs,
     suite census, and the removal of the stray entries this class left).
+  - Consolidation record (BL-680, Article 5.3), 2026-09-21: absorbs BL-889
+    (minted 2026-08-14 from the hardender's rule_proposal; approved at
+    medium; amended 2026-09-03 to spell out its draft conversion after the
+    BL-1340 promotion gate starved it) on the human's morning
+    consolidation sweep - same defect class, same fix shape, and BL-889's
+    per-harness `System/exit` guards become three more wiring sites of the
+    one lib this ticket builds. BL-889 retired to backlog/done/M8/ as
+    superseded-by-BL-1517; its three draft scenarios are this feature's
+    04, 05 and 06 (converted from `.feature.draft` here, so the draft
+    pointer trap of 2026-08-30 no longer applies); its draft file left as a scenario-less tombstone (a deletion on one side of a diverged main can never join the daemon reconcile - check_merge_deletion.sh, BL-1662).
+    BL-889 quoted no operator sentence (its source is an agent's
+    rule_proposal, carried verbatim above). The merged ticket keeps the
+    full stage list (BL-889 had skipped the architect; the enumerating
+    check and the shared lib are design). Evidence:
+    backlog/evidence/consolidation-sweep-paused-20260921.md.
