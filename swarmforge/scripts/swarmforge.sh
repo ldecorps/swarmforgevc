@@ -1012,7 +1012,21 @@ provision_coordinator() {
   elif [[ "$COORDINATOR_AGENT" == "aider" ]]; then
     # Aider coordinator: pack sets coordinator_model (e.g. openai/sonar). OpenAI-compat
     # base URL comes from pane env remap (Cerebras/Perplexity guards), not from flags.
-    extra_cli="--model $COORDINATOR_MODEL --no-gitignore --no-show-model-warnings --no-check-update --no-detect-urls"
+    #
+    # The coordinator seat CANNOT write or commit through aider (2026-09-21):
+    # a local model in this seat ignored "NEVER edit swarmforge/scripts" and,
+    # on the shared main checkout with aider's default auto-commit, rewrote
+    # ready_for_next.sh and rotate_to_role.sh into an infinite exec loop and
+    # fabricated a feature - five commits on origin/main, reverted in
+    # 050d5bcd63. The constitution said no; only the launch shape can
+    # enforce it. --dry-run: aider never modifies a file. --no-auto-commits
+    # --no-dirty-commits: aider never commits. --git-commit-verify: aider's
+    # own default is --no-verify, which is how those commits walked past
+    # check_pipeline_code_on_main.sh. The coordinator's legitimate writes
+    # (handoff drafts, ticket moves) go through `!` shell commands and the
+    # helpers that own their own commits (commit_integrity_cli.bb,
+    # promote_and_route_next.sh); `!` still runs under --dry-run.
+    extra_cli="--model $COORDINATOR_MODEL --no-gitignore --no-show-model-warnings --no-check-update --no-detect-urls --dry-run --no-auto-commits --no-dirty-commits --git-commit-verify"
   elif [[ "$COORDINATOR_AGENT" == "vibe" ]]; then
     # Vibe coordinator: coordinator_model is the --max-price cap (dollars).
     extra_cli="--max-price ${COORDINATOR_MODEL:-2.00}"

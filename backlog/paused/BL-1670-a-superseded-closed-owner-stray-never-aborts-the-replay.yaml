@@ -1,5 +1,5 @@
 id: BL-1670
-title: "The land step's stray cherry-pick loop aborts the whole replay when a closed-owner doc stray conflicts against origin/main's own later rewrite of the same lines (BL-1459's bounced first-round doc commit sits on six role branches, so every land escalates until it is tolerated - BL-1657 on 2026-09-20): a stray whose cherry-pick conflicts against a landed rewrite by the same closed owner is superseded, printed as LAND_STRAY_SUPERSEDED, skipped, and the walk continues to its sibling verdicts"
+title: "The land step's stray cherry-pick loop aborts the whole replay when a pure-evidence or doc stray conflicts against origin/main's later text - BL-1459's bounced first-round doc on six role branches, and QA's own log-append commit whose content main already carries in full - so every land escalates until it is tolerated (BL-1657, BL-1661, BL-1667, BL-1664 on 2026-09-20): a pure-evidence or doc stray that adds nothing main lacks, or whose conflicting lines main's landed commits last wrote, is superseded, printed as LAND_STRAY_SUPERSEDED, skipped, and the walk continues to its sibling verdicts"
 milestone: M8
 type: defect
 severity: high
@@ -37,15 +37,16 @@ human_approval: approved
 approval_context: >
   One scenario is added to a landed feature file, so it would ordinarily
   need a tap; it is minted approved under the 2026-09-17 operator hotfix
-  (severity defect, no choice posed, no ruling_options). FIRM: a
-  conflict is read as superseded ONLY when the conflicting lines on
-  origin/main were last touched by a landed commit of the SAME closed
-  owner (the ticket's own later land); a conflict against anyone else's
-  lines still escalates by name (BL-1546: never decided silently). FIRM:
-  a code-path stray keeps scenario 02's refusal.
+  (severity defect, no choice posed, no ruling_options). FIRM:
+  superseded applies to pure-evidence and doc strays only
+  (backlog/evidence/, docs/), and only when the stray adds no line
+  origin/main lacks OR every conflicting line on origin/main was last
+  written by a landed commit; a conflict on any other path, or one that
+  would drop a line main lacks, still escalates by name (BL-1546: never
+  decided silently). FIRM: a code-path stray keeps scenario 02's refusal.
 
 invariants:
-  - "The stray loop never aborts the replay over a closed-owner stray whose every conflicting line on origin/main was last written by a landed commit of that same owner; it reports the stray as superseded and every later verdict of the walk is still computed."
+  - "The stray loop never aborts the replay over a pure-evidence or doc stray that adds no line origin/main lacks or whose conflicting lines main's landed commits last wrote; it reports the stray as superseded naming the reason, and every later verdict of the walk is still computed."
 
 description: |
   ## What is wrong
@@ -73,28 +74,35 @@ description: |
 
   ## What is wanted
 
-  - When a closed-owner stray's cherry-pick conflicts, the loop reads
-    `git blame` (or the log) of the conflicting lines on origin/main: if
-    every such line was last written by a landed commit whose subject
-    attributes to the same closed owner, the stray is superseded - the
-    loop aborts only THAT cherry-pick, prints `LAND_STRAY_SUPERSEDED <sha>
-    <path> <superseding landed sha>`, and continues; the replay and the
-    sibling verdicts complete as if the stray were already landed.
-  - A conflict against lines owned by anyone else still escalates by
-    name (unchanged).
+  - When a pure-evidence or doc stray's cherry-pick conflicts, the loop
+    decides superseded on either ground: (a) `git diff origin/main <sha>
+    -- <paths>` adds no line (the stray is a content subset of main:
+    be826a2060, added 0 / removed 109); or (b) every conflicting line on
+    origin/main was last written by a landed commit (`git blame` over
+    main's side of each hunk: 5dbfd9b6a6, whose 12 older lines BL-1459's
+    landed rebuild rewrote). It aborts only THAT cherry-pick, prints
+    `LAND_STRAY_SUPERSEDED <sha> <path> <reason>`, and continues; the
+    replay and the sibling verdicts complete as if the stray were landed.
+  - A conflict on a code path, or a stray that would drop a line main
+    lacks from an unlanded writer, still escalates by name (unchanged).
   - BL-1650's feature gains scenario 07, step in the same commit:
 
     ```
       # BL-1650 a-superseded-closed-owner-stray-is-skipped-and-the-walk-continues-07
       # BL-1670 (2026-09-20): BL-1459's bounced first-round doc commit
       # conflicted against BL-1459's own rebuilt land on every branch.
-      Scenario: a closed-owner doc stray that conflicts against the same owner's later landed rewrite is reported superseded and the replay completes
-        Given a closed ticket whose first commit off the lineage wrote a doc section and whose later landed commit rewrote the same lines on origin/main
-        And a replay tip that carries the first commit and a landed sibling behind it
+      Scenario Outline: a pure-evidence stray that conflicts against main's later text is reported superseded and the replay completes
+        Given a stray commit off the lineage whose path <shape> on origin/main
+        And a replay tip that carries the stray and a landed sibling behind it
         When the land step replays the cited ticket
-        Then it reports the stray as superseded naming the landed commit
+        Then it reports the stray as superseded naming the reason
         And it reports the sibling landed
         And it lands the ticket's own paths
+
+        Examples:
+          | shape                                               |
+          | is a strict content subset of a later append        |
+          | was rewritten by a later landed commit of its owner |
     ```
 
   ## How (direction, not mandate)
@@ -144,3 +152,11 @@ notes: |
   auto-approve-high-severity-defects-amendment-20260917.md. Condition (g)
   in the BL-1537 log is the interim (hand-built tip-pure land). The
   coordinator was asked to promote it ahead (expedite lane).
+
+  Amended 2026-09-20 07:2x Z (specifier; QA note 003031, four approved
+  parcels blocked: BL-1657, BL-1661, BL-1667, BL-1664): the second stray
+  be826a2060 is QA's own untagged log append whose content origin/main
+  already carries in full (a strict subset, added 0 / removed 109) - the
+  same-owner criterion alone would still have escalated three of the
+  four, so the rule now covers both grounds and scenario 07 is an
+  outline over them. Condition (g) remains the interim.

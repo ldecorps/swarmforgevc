@@ -342,8 +342,9 @@
          "Your job: inspect .swarmforge/ and backlog/, route parcels with swarm_handoff.sh, chase stalls, control intake. "
          "NEVER edit production code, tests, or swarmforge/scripts; NEVER commit domain or infrastructure changes yourself — that is coder/cleaner work. "
          "Do not rewrite ready_for_next.sh, handoffd, or other pipeline machinery unless a human explicitly ordered it. "
-         "You may read any file; do not use aider to apply edits. "
-         "Handoff drafts go in " draft " (never repo-root tmp/ or .swarmforge/ — aider skips gitignored paths). "
+         "You may read any file; you CANNOT apply edits or commit - this seat runs aider with --dry-run and --no-auto-commits, so an edit block you emit is discarded, never written. "
+         "Write a handoff draft with a shell command instead, e.g. `! printf 'type: note\\nto: coder\\npriority: 50\\nmessage: ...\\n' > " draft "`, then `! swarmforge/scripts/swarm_handoff.sh " draft "`. "
+         "Ticket moves go through the helpers that commit for you (promote_and_route_next.sh, commit_integrity_cli.bb); never `git commit` yourself. "
          "Then run `" ready-script-rel-path "` once and wait for wake-ups. "
          "No self-scheduled polling (/loop, cron, or \"check again in N minutes\").")
     (str "You are the SwarmForge " role " agent running in aider with full repository read and write access. "

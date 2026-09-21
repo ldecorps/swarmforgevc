@@ -829,3 +829,16 @@ You are QA.
   confirm the printed path begins with `backlog/evidence/`, and `git mv` a
   stray one before landing. BL-1603 makes the tool resolve the repository
   root itself.
+
+## The property lane runs ONCE per parcel; a red in an untouched file is a note, never a re-run (2026-09-20 closing-ceremony tweak)
+- `npm run test:properties` is one measurement of the parcel commit. A
+  failure in a file the parcel did not touch is an `unowned-red` note to
+  the specifier carrying the failing output (the standing-red rule), and
+  the parcel proceeds on its own touched files; a failure in a touched
+  file is a bounce. Re-running the whole lane to "confirm a flake" - the
+  third BL-1662 run at 05:2x Z, seventeen runs of one bl1459 file - is the
+  shape the human called "a thing in itself" (2026-09-17) and the largest
+  single component of QA's 5.3-hour dwell on 2026-09-20: five property
+  "flakes" that night each had a deterministic mechanism once read
+  (BL-1656, BL-1660, BL-1661, BL-1663, BL-1667), none of which a re-run
+  could find. One run, one note, one owner.
