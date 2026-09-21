@@ -187,3 +187,5 @@ notes: |
   commit pushed by sha; `HEAD:main` retired) - the interim that holds
   until this lands. Expedite candidate: every land until then depends on
   QA following the interim by hand.
+
+assigned_to: coder
