@@ -249,6 +249,18 @@ function advanceFrozen(state: LiveState, obs: LiveObservation): LiveAdvance {
   return enterBriefing({ ...state, hadInFlight: state.hadInFlight || obs.inFlightCount > 0 }, obs);
 }
 
+// BL-1640: a second sleep the same day after a shift of work is a NEW
+// ceremony, not the old one re-read - the human directive was "each time
+// the swarm ... goes to sleep", not "once per calendar day". Extracted so
+// `advanceNightClosingCeremony`'s own complexity does not carry this
+// branch's decision points (differential complexity gate, workflow.prompt).
+function advanceSameDayDone(prev: LiveState, obs: LiveObservation): LiveAdvance {
+  if (obs.fromSleep && obs.workedAShift !== false) {
+    return startFrozen(obs);
+  }
+  return { state: prev, actions: [] };
+}
+
 /**
  * Advance one sweep. Idempotent for a finished night; starts only when due.
  */
@@ -258,13 +270,7 @@ export function advanceNightClosingCeremony(
 ): LiveAdvance {
   const sameNight = prev !== null && prev.nightKey === obs.nightKey;
   if (sameNight && prev.phase === 'done') {
-    // BL-1640: a second sleep the same day after a shift of work is a NEW
-    // ceremony, not the old one re-read - the human directive was "each
-    // time the swarm ... goes to sleep", not "once per calendar day".
-    if (obs.fromSleep && obs.workedAShift !== false) {
-      return startFrozen(obs);
-    }
-    return { state: prev, actions: [] };
+    return advanceSameDayDone(prev, obs);
   }
 
   if (!sameNight || prev === null || prev.phase === 'idle') {
