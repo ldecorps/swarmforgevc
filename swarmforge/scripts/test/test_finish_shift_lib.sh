@@ -375,6 +375,128 @@ else
   fail "10: expected a leading-whitespace 'Z+' reading to be detected as a zombie"
 fi
 
+# ── BL-1640: a sleep loops the ceremony CLI to done, and never hangs ──────
+REPO_ROOT_BL1640="$(cd "$SCRIPT_DIR/../../.." && pwd)"
+REAL_CLI="$REPO_ROOT_BL1640/extension/out/tools/night-closing-ceremony-run.js"
+
+make_bl1640_root() {  # make_bl1640_root <dir>
+  local root="$1"
+  mkdir -p "$root/.swarmforge/daemon" "$root/.swarmforge/lean/ceremony" \
+           "$root/.swarmforge/handoffs/inbox/new" "$root/swarmforge" "$root/docs/briefings"
+  printf 'config closure_stop_local 06:00\nconfig closing_drain_budget_minutes 1\nconfig closing_briefing_budget_minutes 1\n' \
+    > "$root/swarmforge/swarmforge.conf"
+  printf 'coordinator\tmaster\t%s\tswarmforge-coordinator\tCoordinator\tclaude\ttask\n' "$root" \
+    > "$root/.swarmforge/roles.tsv"
+  git init -q -b main "$root" >/dev/null 2>&1
+  git -C "$root" config user.email t@t >/dev/null 2>&1
+  git -C "$root" config user.name t >/dev/null 2>&1
+  git -C "$root" config commit.gpgsign false >/dev/null 2>&1
+  ( cd "$root" && git add -A >/dev/null 2>&1 && git commit -qm seed >/dev/null 2>&1 )
+  printf '2026-09-04T09:00:00Z\n' > "$root/.swarmforge/shift-started"
+}
+
+# ── 11: a normal sleep (no in-flight work) loops the real CLI to done ─────
+if [[ -f "$REAL_CLI" ]]; then
+  ROOT11="$(mktemp -d)"
+  register_tmp_dir "$ROOT11"
+  make_bl1640_root "$ROOT11"
+  # No sent.json yet: the loop must tick past freeze and drain-to-briefing on
+  # its own first, genuinely exercising multiple iterations - a background
+  # writer then deposits it a beat later (well inside the 1+1 minute
+  # budgets), simulating the documenter sending the briefing between ticks,
+  # never a real multi-minute wait.
+  today="$(date +%Y-%m-%d)"
+  ( sleep 0.3; mkdir -p "$ROOT11/docs/briefings"; printf '["%s.md"]' "$today" > "$ROOT11/docs/briefings/.sent.json" ) &
+  BG_SENDER11=$!
+  (
+    source "$SRC/finish_shift_lib.sh"
+    FINISH_SHIFT_CEREMONY_CLI="$REAL_CLI" FINISH_SHIFT_CEREMONY_TICK_SECONDS=0 \
+      finish_shift_run_closing_ceremony "$ROOT11"
+  ) > /tmp/bl1640-11.out 2>&1
+  STATUS11=$?
+  wait "$BG_SENDER11" 2>/dev/null || true
+  phase11="$(node -e '
+    const fs = require("fs");
+    try {
+      const s = JSON.parse(fs.readFileSync(process.argv[1], "utf8"));
+      process.stdout.write(s.phase || "");
+    } catch { process.stdout.write(""); }
+  ' "$ROOT11/.swarmforge/daemon/closing-ceremony-state.json" 2>/dev/null)"
+  if [[ "$STATUS11" -eq 0 && "$phase11" == "done" ]]; then
+    pass "11: a sleep with no in-flight work loops the ceremony to phase done in one call"
+  else
+    fail "11: expected phase done after one finish_shift_run_closing_ceremony call, got '$phase11' (status=$STATUS11): $(cat /tmp/bl1640-11.out)"
+  fi
+else
+  echo "SKIP: 11 requires the compiled ceremony CLI ($REAL_CLI) - run npm run compile from extension/" >&2
+fi
+
+# ── 12: bedtime never hangs - a ceremony that never reports done still returns ──
+ROOT12="$(mktemp -d)"
+register_tmp_dir "$ROOT12"
+mkdir -p "$ROOT12/.swarmforge/daemon"
+FAKE_CLI="$ROOT12/fake-ceremony-cli.js"
+# Always reports a hardDeadlineMs already far in the past, so the ceiling
+# (hardDeadlineMs + grace) is already behind "now" on the very first tick -
+# the loop must stop on tick one rather than sleeping through the grace
+# window in real wall-clock time.
+cat > "$FAKE_CLI" <<'EOF'
+process.stdout.write(JSON.stringify({
+  gateMode: 'sleep:finish-shift',
+  advanced: true,
+  state: { phase: 'frozen', hardDeadlineMs: Date.now() - 10 * 60 * 1000 },
+  actions: [],
+}) + '\n');
+EOF
+(
+  source "$SRC/finish_shift_lib.sh"
+  FINISH_SHIFT_CEREMONY_CLI="$FAKE_CLI" FINISH_SHIFT_CEREMONY_TICK_SECONDS=0 \
+    finish_shift_run_closing_ceremony "$ROOT12"
+) > /tmp/bl1640-12.out 2>&1
+STATUS12=$?
+if [[ "$STATUS12" -eq 0 ]] && grep -q 'overran its budgets' /tmp/bl1640-12.out; then
+  pass "12: a ceremony that never reports done is stopped at the ceiling and the overrun is said out loud"
+else
+  fail "12: expected an overrun message and a zero exit, got status=$STATUS12: $(cat /tmp/bl1640-12.out)"
+fi
+
+# ── 13: an uncompiled/absent CLI still skips quietly (unchanged behaviour) ──
+ROOT13="$(mktemp -d)"
+register_tmp_dir "$ROOT13"
+(
+  source "$SRC/finish_shift_lib.sh"
+  FINISH_SHIFT_CEREMONY_CLI="$ROOT13/does-not-exist.js" finish_shift_run_closing_ceremony "$ROOT13"
+) > /tmp/bl1640-13.out 2>&1
+STATUS13=$?
+if [[ "$STATUS13" -eq 0 ]] && grep -q 'not compiled' /tmp/bl1640-13.out; then
+  pass "13: a missing/uncompiled CLI still skips the ceremony quietly, never a bedtime failure"
+else
+  fail "13: expected a quiet skip for a missing CLI, got status=$STATUS13: $(cat /tmp/bl1640-13.out)"
+fi
+
+# ── 14: the sleep loop decision helper agrees with sleepLoopDecision's own contract ──
+if [[ -f "$REPO_ROOT_BL1640/extension/out/quality/nightClosingCeremonyLive.js" ]]; then
+  (
+    source "$SRC/finish_shift_lib.sh"
+    repo_root="$(_finish_shift_ceremony_repo_root)"
+    d_wait="$(_finish_shift_sleep_loop_decision "frozen" 1000 1000000000000 "$repo_root")"
+    d_done="$(_finish_shift_sleep_loop_decision "done" 999999999999999 1 "$repo_root")"
+    d_overran="$(_finish_shift_sleep_loop_decision "frozen" 999999999999999 1 "$repo_root")"
+    echo "wait=$d_wait done=$d_done overran=$d_overran"
+    [[ "$d_wait" == "wait" && "$d_done" == "done" && "$d_overran" == "overran" ]]
+  ) > /tmp/bl1640-14.out 2>&1
+  STATUS14=$?
+  if [[ "$STATUS14" -eq 0 ]]; then
+    pass "14: _finish_shift_sleep_loop_decision agrees with sleepLoopDecision's wait/done/overran contract"
+  else
+    fail "14: decision helper disagreed: $(cat /tmp/bl1640-14.out)"
+  fi
+else
+  echo "SKIP: 14 requires the compiled quality module - run npm run compile from extension/" >&2
+fi
+
+rm -f /tmp/bl1640-11.out /tmp/bl1640-12.out /tmp/bl1640-13.out /tmp/bl1640-14.out
+
 kill "$TN_PID" 2>/dev/null || true
 
 # Belt-and-suspenders: kill every fixture PID this file may have spawned
