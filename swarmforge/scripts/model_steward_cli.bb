@@ -182,6 +182,15 @@
       (binding [*out* *err*]
         (println (str "certify refused: missing compliance-battery scorecard at " scorecard-rel)))
       (System/exit 1))
+    ;; Safety gate (model-steward-lib/certification-safety-gate): a scorecard
+    ;; on disk is necessary, not sufficient. Refuse - status untouched, no
+    ;; report written - unless every safety-critical competency is present
+    ;; and passed.
+    (let [gate (model-steward-lib/certification-safety-gate (:entries scorecard))]
+      (when-not (:ok? gate)
+        (binding [*out* *err*]
+          (println (str "certify refused: " (:reason gate) " (scorecard=" scorecard-rel ")")))
+        (System/exit 1)))
     (let [timestamp (now-iso)
           report (model-steward-lib/build-certification-report
                   provider model
@@ -277,7 +286,21 @@
                                     {:reason reason
                                      :new-status model-steward-lib/candidate-status}))
     (empty? (:regressions result))
-    (model-steward-lib/certify with-report provider model report-path)
+    ;; evaluate's clean-gates auto-certify must clear the same safety gate
+    ;; `certify` does, or it is a back door around it: the recruiter
+    ;; scorecard it just ingested carries role gates, not the compliance-
+    ;; battery safety probe, so read the well-known battery scorecard here.
+    (let [rel  (model-steward-lib/scorecard-relative-path provider model)
+          card (model-steward-store/read-scorecard! (state-dir) rel)
+          gate (model-steward-lib/certification-safety-gate (:entries card))]
+      (if (:ok? gate)
+        (model-steward-lib/certify with-report provider model report-path)
+        (do (binding [*out* *err*]
+              (println (str "evaluate: gates clean but NOT certifying - "
+                            (if card (:reason gate)
+                                     (str "missing compliance-battery scorecard at " rel))
+                            "; status left unchanged")))
+            with-report)))
     :else with-report))
 
 (defn- print-evaluate-result

@@ -1,0 +1,24 @@
+# Hugging Face orgs the weekly recruiter may pick a GGUF candidate from.
+# One org per line; '#' comments. Reviewable, versioned - the same "defined,
+# reviewable list" posture discoverySource.ts asks for instead of trusting
+# the raw trending feed (which on 2026-09-21 was mostly "Uncensored",
+# "Abliterated", "CRACK" reposts and 27-35B ternary experiments).
+#
+# Model authors
+Qwen
+google
+ibm-granite
+mistralai
+meta-llama
+microsoft
+deepseek-ai
+openbmb
+THUDM
+zai-org
+allenai
+nvidia
+# Reputable GGUF packagers of the above
+unsloth
+bartowski
+lmstudio-community
+ggml-org

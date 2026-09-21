@@ -91,8 +91,6 @@ remains approved (`backlog/evidence/BL-1664-QA-20260920.md`) and unlanded pendin
 approved-but-unlanded queue behind this one root cause is now: BL-1657, BL-1661, BL-1667, BL-1664 (four
 tickets), plus genuinely-unlanded BL-1630 and misreported-landed BL-1663.
 
-By QA.
-
 ## Fifth instance — BL-1630's land, same class (QA, 2026-09-20)
 
 `land_step_cli.bb BL-1630 f83f672320 .` hit the same stray `be826a2060` cherry-pick failure, with
