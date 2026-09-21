@@ -4,4 +4,4 @@
 # Usage: rotate_to_role.sh <role>
 set -euo pipefail
 DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-exec bb "$DIR/rotate_to_role.bb" "$@"
+exec "$DIR/rotate_to_role.sh" "$@"
