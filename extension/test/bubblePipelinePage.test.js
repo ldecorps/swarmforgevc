@@ -55,6 +55,13 @@ test('captureBubblePipelineBoard: an in-flight ticket with a matching backlog re
   const withRecord = state.inFlight.find((row) => row.id === 'BL-9010');
   const withoutRecord = state.inFlight.find((row) => row.id === 'BL-9099');
   assert.ok(withRecord, 'expected BL-9010 to be listed as in flight');
+  // BL-1638 hardening: `title: row.title ?? row.id` - only asserting blurb
+  // above never distinguishes it from `row.title && row.id`, which returns
+  // the SAME id string for a row whose title is truthy (`a && b` yields `b`
+  // when `a` is truthy) purely by coincidence of this row's own id/title
+  // never colliding; asserting the real title text (never equal to the id)
+  // pins the operator.
+  assert.equal(withRecord.title, 'has a backlog record');
   assert.equal(withRecord.blurb, 'First sentence here.');
   assert.equal(withoutRecord, undefined, 'a role-held ticket absent from the backlog must not appear in inFlight');
 });
@@ -62,6 +69,42 @@ test('captureBubblePipelineBoard: an in-flight ticket with a matching backlog re
 test('captureBubblePipelineDetail: returns null for a ticket id not in active or paused', () => {
   const root = mkTmpDir('bl831-missing-');
   assert.equal(captureBubblePipelineDetail(root, 'BL-9999'), null);
+});
+
+// BL-1638 hardening: every other test in this file has exactly one
+// candidate ticket, so `.find((entry) => entry.id === ticketId)` and
+// `.find((entry) => true)` (always the first element) return the same
+// result by coincidence. Two tickets, requesting the SECOND, pins the
+// real predicate - the mutant would answer with the first ticket's own
+// title instead.
+test('captureBubblePipelineDetail: picks the requested ticket among several, never merely the first', () => {
+  const root = mkTmpDir('bl831-multi-');
+  writeTicket(root, 'BL-9007', { title: 'first candidate' });
+  writeTicket(root, 'BL-9008', { title: 'second candidate' });
+  const detail = captureBubblePipelineDetail(root, 'BL-9008');
+  assert.ok(detail);
+  assert.equal(detail.id, 'BL-9008');
+  assert.equal(detail.title, 'second candidate');
+});
+
+// BL-1638 hardening: `item.acceptance.endsWith('.feature')` vs a mutant
+// `.endsWith("")` (always true for any string) are indistinguishable from
+// the OUTSIDE whenever the wrongly-computed path simply doesn't exist on
+// disk either way (both fall through to scenariosNote) - the existing
+// "not a .feature path" test above is exactly that shape. Placing a real
+// file at the literal joined path distinguishes them: the real check
+// leaves featurePath undefined regardless, so the file is never read;
+// the mutant computes a truthy featurePath that DOES resolve, and reads
+// it as a feature.
+test('captureBubblePipelineDetail: a non-.feature acceptance value is never read even when a file coincidentally exists at that joined path', () => {
+  const root = mkTmpDir('bl831-coincidental-');
+  writeTicket(root, 'BL-9009', { title: 'inline gherkin ticket', acceptance: 'not a real path' });
+  fs.mkdirSync(path.dirname(path.join(root, 'not a real path')), { recursive: true });
+  fs.writeFileSync(path.join(root, 'not a real path'), '  Scenario: should never be read\n');
+  const detail = captureBubblePipelineDetail(root, 'BL-9009');
+  assert.ok(detail);
+  assert.equal(detail.scenarios.length, 0);
+  assert.match(detail.scenariosNote, /no acceptance scenarios/i);
 });
 
 test('captureBubblePipelineDetail: an acceptance value that is not a .feature path never reads a feature file', () => {
@@ -105,7 +148,8 @@ test('captureBubblePipelineDetail: a .feature acceptance path that exists on dis
     [
       'Feature: something',
       '',
-      '  Scenario: the first one',
+      '  # See Scenario: BL-1 for related context - a comment, not a header',
+      '  Scenario: the first one   ',
       '    Given a precondition',
       '    When something happens',
       '    Then something is true',
@@ -116,10 +160,23 @@ test('captureBubblePipelineDetail: a .feature acceptance path that exists on dis
       '    Examples:',
       '      | value |',
       '      | 1     |',
+      'Scenario:Multi Word No Space',
     ].join('\n')
   );
   const detail = captureBubblePipelineDetail(root, 'BL-9006');
-  assert.deepEqual(detail.scenarios, ['the first one', 'the second one']);
+  // BL-1638 hardening (kills three prior survivors, one each):
+  // - the leading comment line names "Scenario:" mid-line, never at the
+  //   true (optional-whitespace-prefixed) start of the line - the filter's
+  //   `^` anchor must reject it, or a bogus fourth title appears;
+  // - the trailing spaces on "the first one" must be stripped by .trim(),
+  //   not merely by the label-stripping regex's own trailing \s*;
+  // - the space-free "Scenario:Multi Word No Space" line has no
+  //   whitespace for the label regex's own trailing \s* to consume (zero
+  //   is valid) - a `\s` (exactly one) mutant would leave the whole label
+  //   unstripped, and a `\S*` mutant would over-consume into "Multi",
+  //   losing it from the title; only the real zero-or-more \s* + a no-op
+  //   .trim() reproduces the string exactly.
+  assert.deepEqual(detail.scenarios, ['the first one', 'the second one', 'Multi Word No Space']);
   assert.equal(detail.scenariosNote, undefined);
   assert.ok(!detail.scenarios.some((s) => /^Given |^When |^Then /.test(s)), 'scenario titles must not include step lines');
 });
