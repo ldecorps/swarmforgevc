@@ -853,6 +853,161 @@
                          (not= (blob-at root sha p) main-blob))))
                 paths))))
 
+;; ── BL-1670: a pure-evidence/doc stray whose cherry-pick genuinely
+;; conflicts is not always a reason to abort the whole replay - a stray
+;; superseded by main's own later, more complete text carries nothing left
+;; to land, and the escalation loop this ticket exists to end (BL-1657,
+;; BL-1661, BL-1667, BL-1664 all queued behind exactly this shape on
+;; 2026-09-20) is pure noise. Two grounds, either sufficient: (a) the
+;; stray's own post-image at these paths is a strict content subset of
+;; origin/main's current one - nothing added (be826a2060's shape, added
+;; 0/removed 109); or (b) origin/main's own conflicting lines were LAST
+;; WRITTEN by a landed commit whose own subject names exactly the stray's
+;; sibling ticket - its own later rebuild superseded it
+;; (5dbfd9b6a6/8fad11b0dc's shape). A conflict whose HEAD-side lines trace
+;; to any OTHER ticket, to an untagged commit, or to one not (yet) on
+;; origin/main, or a diff that would drop a line origin/main lacks, fails
+;; BOTH grounds and the caller escalates by name exactly as before - this
+;; narrows nothing wider than these two provable shapes.
+
+(defn- rev-range-line-changes
+  "{path {:added #{} :removed #{}}} for the diff turning `base` into `rev`,
+   restricted to `paths` - the same parser every other line-level read in
+   this file already shares (`diff-line-changes`). nil when the diff could
+   not be read."
+  [root base rev paths]
+  (let [res (apply git! root "diff" "--unified=0" base rev "--" paths)]
+    (when (zero? (:exit res))
+      (diff-line-changes (:out res)))))
+
+(defn stray-content-subset-of-origin-main?
+  "Ground (a). `sha`'s own post-image at `paths`, diffed FROM origin-main,
+   adds no line - sha introduces nothing origin-main lacks there (main may
+   still carry lines sha lacks; that is a removal, never an addition). nil
+   (the diff itself unreadable) fails closed - never superseded on missing
+   evidence."
+  [root origin-main sha paths]
+  (when-let [changes (rev-range-line-changes root origin-main sha paths)]
+    (every? (fn [p] (empty? (:added (get changes p)))) paths)))
+
+(defn- conflict-marker-ours-blocks
+  "Pure. The 'ours' (HEAD-side) line blocks a conflict-marked file's own
+   text carries between each `<<<<<<< ` and its matching `=======` -
+   never the 'theirs' side, which git's own convention places AFTER the
+   `=======` separator. A file can hold more than one conflict region;
+   one block vector per region, in order. Git's own conflict rendering
+   keeps 'ours' text verbatim even when nothing about the SURROUNDING
+   line count changed (an adjacent insert-only diff against HEAD, not a
+   replacement) - this reads the markers directly instead of trying to
+   infer the region from a line-count diff, which the insert-only shape
+   defeats."
+  [file-text]
+  (loop [lines (str/split-lines (or file-text "")) in-ours? false cur [] acc []]
+    (if (empty? lines)
+      acc
+      (let [line (first lines) rest-lines (rest lines)]
+        (cond
+          (str/starts-with? line "<<<<<<< ")
+          (recur rest-lines true [] acc)
+
+          (and in-ours? (str/starts-with? line "======="))
+          (recur rest-lines false [] (conj acc cur))
+
+          in-ours?
+          (recur rest-lines true (conj cur line) acc)
+
+          :else
+          (recur rest-lines false cur acc))))))
+
+(defn- subsequence-index
+  "Pure. The 0-based index in `haystack` where `needle` (a non-empty
+   vector) occurs contiguously, or nil when it does not - absent, or
+   found more than once, which is ambiguous and fails closed rather than
+   guessing which occurrence is the real one."
+  [haystack needle]
+  (when (seq needle)
+    (let [haystack (vec haystack) needle (vec needle)
+          n (count needle) h (count haystack)]
+      (when (<= n h)
+        (let [hits (for [i (range 0 (inc (- h n)))
+                          :when (= needle (subvec haystack i (+ i n)))]
+                      i)]
+          (when (= 1 (count hits)) (first hits)))))))
+
+(defn- head-blob-lines-ordered
+  "`path`'s own lines at HEAD, in order (unlike `blob-lines`'s set, order
+   is exactly what a contiguous-subsequence search needs). nil when the
+   blob is absent or unreadable."
+  [scratch path]
+  (let [blob (blob-at scratch "HEAD" path)]
+    (when-not (= ::absent blob)
+      (let [res (git! scratch "cat-file" "blob" blob)]
+        (when (zero? (:exit res)) (str/split-lines (:out res)))))))
+
+(defn- conflict-hunk-head-ranges
+  "[[start len] ...] - the HEAD-side line ranges (1-based, git blame's own
+   convention) of `path`'s merge-conflict hunk(s) in `scratch`'s current
+   working tree: where each 'ours' block the conflict markers carry
+   occurs, contiguously and unambiguously, within HEAD's own ordered
+   lines at `path`. A block that cannot be placed there this way - empty
+   (HEAD contributed nothing, a delete-side conflict), absent, or
+   ambiguous - is left out; there is no HEAD-side line to blame for it, so
+   ground (b) fails closed rather than guessing."
+  [scratch path]
+  (let [head-lines (head-blob-lines-ordered scratch path)
+        wt-path (str (fs/path scratch path))]
+    (when (and head-lines (fs/exists? wt-path))
+      (into []
+            (keep (fn [block]
+                    (when-let [idx (subsequence-index head-lines block)]
+                      [(inc idx) (count block)])))
+            (conflict-marker-ours-blocks (slurp wt-path))))))
+
+(defn- blame-line-shas
+  "The full commit shas `git blame --porcelain` names across `ranges` of
+   `path` at HEAD - one header line per blamed line, always leading with
+   the full 40-char sha regardless of whether the metadata block after it
+   was elided for a commit repeated within this same blame call
+   (porcelain's own contract)."
+  [scratch path ranges]
+  (into #{}
+        (mapcat (fn [[start len]]
+                  (let [res (git! scratch "blame" "--porcelain" "-L" (str start ",+" len) "HEAD" "--" path)]
+                    (when (zero? (:exit res))
+                      (keep #(second (re-find #"^([0-9a-f]{40})\s" %)) (str/split-lines (:out res)))))))
+        ranges))
+
+(defn stray-superseded-verdict
+  "nil, or {:reason \"...\"} - whether this stray's cherry-pick CONFLICT (a
+   real one, not `cherry-pick-already-applied?`'s empty-patch shape) is
+   superseded on either provable ground, checked in order:
+
+   (a) content-subset: `stray-content-subset-of-origin-main?` - the reason
+       is a fixed, self-explanatory tag (no single sha decides this one;
+       it is a property of the whole diff).
+   (b) rewritten-by-owner: every HEAD-side conflicting line across `paths`
+       was last written by a commit on origin/main whose own subject
+       names EXACTLY `owner` - the reason names those commits' own short
+       shas (QA's own by-hand evidence already reads this way: 8fad11b0dc).
+
+   Must be called BEFORE the caller aborts the cherry-pick - ground (b)
+   reads the conflict-marked working tree the abort would erase. nil when
+   neither ground holds: the caller aborts and escalates by name exactly
+   as before."
+  [{:keys [root scratch origin-main sha owner paths]}]
+  (cond
+    (stray-content-subset-of-origin-main? root origin-main sha paths)
+    {:reason "content-subset-of-origin-main"}
+
+    :else
+    (let [shas (into #{}
+                      (mapcat (fn [p] (blame-line-shas scratch p (conflict-hunk-head-ranges scratch p))))
+                      paths)]
+      (when (and (seq shas)
+                 (every? #(zero? (:exit (git! root "merge-base" "--is-ancestor" % origin-main))) shas)
+                 (= #{owner} (into #{} (map #(commit-ticket-id root %)) shas)))
+        {:reason (str/join "," (sort (map #(subs % 0 (min 10 (count %))) shas)))}))))
+
 (defn- source-verdict
   "One tree's answer about one ticket."
   [ticket-id {:keys [where folder content]}]
@@ -2184,8 +2339,9 @@
           ;; onto the scratch branch BEFORE the parcel's own tip-pure
           ;; commit, in authored order - "lands on main before the
           ;; parcel's replay" per the ticket's FIRM constraint. A failed
-          ;; cherry-pick aborts the whole replay (fail-closed): nothing is
-          ;; ever published half-landed.
+          ;; cherry-pick aborts the whole replay (fail-closed) UNLESS
+          ;; BL-1670's stray-superseded-verdict finds the conflict itself
+          ;; superseded - nothing is ever published half-landed either way.
           (let [stray-failure (atom nil)
                 stray-landed (atom [])]
             (doseq [{:keys [sha sibling paths]} stray-commits]
@@ -2208,10 +2364,20 @@
                                 :landed-sha (str/trim (:out (git! scratch "rev-parse" "HEAD")))
                                 :already-applied? true}))
 
+                    ;; BL-1670: a real conflict is checked against both
+                    ;; superseded grounds BEFORE the abort below erases the
+                    ;; conflict-marked working tree ground (b) reads.
                     :else
-                    (do (git! scratch "cherry-pick" "--abort")
+                    (let [superseded (stray-superseded-verdict
+                                       {:root root :scratch scratch :origin-main origin-main
+                                        :sha sha :owner sibling :paths paths})]
+                      (git! scratch "cherry-pick" "--abort")
+                      (if superseded
+                        (swap! stray-landed conj
+                               {:sha sha :sibling sibling :paths paths
+                                :superseded? true :reason (:reason superseded)})
                         (reset! stray-failure
-                                (str "land-step replay: could not cherry-pick stray evidence commit " sha)))))))
+                                (str "land-step replay: could not cherry-pick stray evidence commit " sha))))))))
           (if @stray-failure
             (do (cleanup!)
                 (drop-branch!)

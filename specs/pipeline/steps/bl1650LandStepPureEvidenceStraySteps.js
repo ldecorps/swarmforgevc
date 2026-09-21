@@ -301,6 +301,129 @@ function registerSteps(registry) {
     );
   });
 
+  // ── scenario 07 (BL-1670): a stray whose cherry-pick genuinely
+  // conflicts, but the conflict itself is superseded by main's own later
+  // text, is reported LAND_STRAY_SUPERSEDED and the replay completes -
+  // never LAND_ESCALATE. Explicit KNOWN_VALUES per the Scenario Outline
+  // handler rule: every Examples row's <shape> text is looked up here,
+  // never passed through unchecked.
+
+  const SUPERSEDED_SHAPE_BUILDERS = new Map([
+    [
+      'is a strict content subset of a later append',
+      // Ground (a): the stray ADDS a path with 9 lines; origin/main
+      // independently adds the SAME path with those 9 lines plus 31 more
+      // (be826a2060's shape - added 0/removed 31 diffing origin-main to
+      // the stray). Cherry-picking the stray's whole-file add onto
+      // scratch (already holding origin-main's grown copy) is an add/add
+      // conflict.
+      (ctx) => {
+        git(ctx.root, 'checkout', '-q', '-b', 'role');
+        const strayPath = `backlog/evidence/${SIBLING}-partial-20260920.md`;
+        const partial = Array.from({ length: 9 }, (_, i) => `line ${i + 1}`).join('\n') + '\n';
+        commitFile(ctx.root, strayPath, partial, `${SIBLING}: incident evidence, committed after the ticket moved on`);
+        ctx.strayCommit = head(ctx.root);
+        ctx.strayPaths = [strayPath];
+        ctx.expectedReason = 'content-subset-of-origin-main';
+
+        git(ctx.root, 'checkout', '-q', 'main');
+        writeDoneTicket(ctx.root, SIBLING);
+        const grown = partial + Array.from({ length: 31 }, (_, i) => `extra ${i + 1}`).join('\n') + '\n';
+        commitFile(ctx.root, strayPath, grown, `${SIBLING}: a later commit grows the evidence file on main`);
+        markOriginMain(ctx.root);
+
+        git(ctx.root, 'checkout', '-q', 'role');
+      },
+    ],
+    [
+      'was rewritten by a later landed commit of its owner',
+      // Ground (b): both the stray and main's later commit rewrite the
+      // SAME line from a common base differently - a genuine one-line
+      // conflict. Main's rewrite is tagged with the STRAY'S OWN sibling
+      // ticket (its own later rebuild superseded it, 5dbfd9b6a6/
+      // 8fad11b0dc's shape), so the reason is that rewrite commit's own
+      // short sha.
+      (ctx) => {
+        const docPath = `docs/how-to/${SIBLING}-guide.md`;
+        commitFile(ctx.root, docPath, 'Header\nStep 1\nStep 2\n', 'seed doc content');
+        markOriginMain(ctx.root);
+
+        git(ctx.root, 'checkout', '-q', '-b', 'role');
+        commitFile(
+          ctx.root,
+          docPath,
+          'Header\nStep 1\nStep 2 (old wording)\n',
+          `${SIBLING}: incident evidence, committed after the ticket moved on`,
+        );
+        ctx.strayCommit = head(ctx.root);
+        ctx.strayPaths = [docPath];
+
+        git(ctx.root, 'checkout', '-q', 'main');
+        commitFile(
+          ctx.root,
+          docPath,
+          'Header\nStep 1\nStep 2 (rebuilt wording, fixes a bug)\n',
+          `${SIBLING}: rebuild the guide's step 2 wording`,
+        );
+        ctx.expectedReason = head(ctx.root).slice(0, 10);
+        writeDoneTicket(ctx.root, SIBLING);
+        markOriginMain(ctx.root);
+
+        git(ctx.root, 'checkout', '-q', 'role');
+      },
+    ],
+  ]);
+
+  scoped(/^a stray commit off the lineage whose path (.+) on origin\/main$/, (ctx, shape) => {
+    const build = SUPERSEDED_SHAPE_BUILDERS.get(shape);
+    if (!build) {
+      throw new Error(`bl1670: unknown stray shape: ${shape}`);
+    }
+    build(ctx);
+  });
+
+  scoped(/^a replay tip that carries the stray and a landed sibling behind it$/, (ctx) => {
+    assert.ok(ctx.strayCommit, 'expected the previous step to have built the stray commit');
+  });
+
+  scoped(/^it reports the stray as superseded naming the reason$/, (ctx) => {
+    assert.equal(ctx.cli.status, 0, `expected LAND_REPLAY (exit 0), got: ${JSON.stringify(ctx.cli)}`);
+    assert.ok(ctx.cli.stdout.includes('LAND_REPLAY'), `expected LAND_REPLAY, got: ${ctx.cli.stdout}`);
+    assert.ok(
+      !ctx.cli.stdout.includes('LAND_ESCALATE'),
+      `a superseded stray must never escalate, got: ${ctx.cli.stdout}`,
+    );
+    const line = ctx.cli.stdout.split('\n').find((l) => l.startsWith('LAND_STRAY_SUPERSEDED'));
+    assert.ok(line, `expected a LAND_STRAY_SUPERSEDED line, got: ${ctx.cli.stdout}`);
+    const parts = line.split(' ');
+    assert.equal(parts[1], ctx.strayCommit, `superseded line does not name the stray's own commit: ${line}`);
+    for (const p of ctx.strayPaths) {
+      assert.ok(line.includes(p), `superseded line does not name path ${p}: ${line}`);
+    }
+    assert.equal(parts[parts.length - 1], ctx.expectedReason, `unexpected reason: ${line}`);
+  });
+
+  scoped(/^it reports the sibling landed$/, (ctx) => {
+    assert.ok(
+      ctx.cli.stdout.split('\n').some((l) => l === `LANDED_SIBLING ${SIBLING}` || l.startsWith(`LANDED_SIBLING ${SIBLING} `)),
+      `expected LANDED_SIBLING ${SIBLING}, got: ${ctx.cli.stdout}`,
+    );
+    assert.ok(
+      !ctx.cli.stdout.includes(`ENTANGLED_SIBLING ${SIBLING}`),
+      `must never print ENTANGLED_SIBLING ${SIBLING}, got: ${ctx.cli.stdout}`,
+    );
+  });
+
+  scoped(/^it lands the ticket's own paths$/, (ctx) => {
+    const branchLine = ctx.cli.stdout.split('\n').find((l) => l.startsWith('LAND_REPLAY'));
+    assert.ok(branchLine, `expected a LAND_REPLAY line, got: ${ctx.cli.stdout}`);
+    const replayBranch = branchLine.split(' ')[1];
+    const replayCommit = branchLine.split(' ')[2];
+    const ownFile = git(ctx.root, 'show', `${replayCommit}:backlog/active/${LANDING}-fixture.yaml`);
+    assert.equal(ownFile.trim(), `id: ${LANDING}`, `expected the landing ticket's own path on the replay tip, got: ${ownFile}`);
+    spawnSync('git', ['-C', ctx.root, 'branch', '-q', '-D', replayBranch]);
+  });
+
   scoped(/^the replay reports the sibling landed and lands the ticket's own paths$/, (ctx) => {
     assert.ok(
       ctx.cli.stdout.split('\n').some((l) => l === `LANDED_SIBLING ${SIBLING}` || l.startsWith(`LANDED_SIBLING ${SIBLING} `)),
